@@ -13,9 +13,10 @@
 #                     target words' memory and layout, rendered through a pool image, its pass binds it loaded with no zeta,
 #                     the pack's lines make each state with the write mask it needs, and on a ROP model it writes what the
 #                     eight draws write
-#   raw_device_zeta_colour_test  raw_zeta_colour.h on raw::Device, as the methods it submitted: a turn copy's and a stencil
-#                     resolve's draw renders through a pool image the copy engine fills from the zeta and copies back,
-#                     never a colour target over the zeta's pages; the direct arm's draw over them, the tiled cache off
+#   raw_device_zeta_colour_test  raw_zeta_colour.h on raw::Device, as the methods it submitted: a turn copy and a stencil
+#                     resolve take the route unasked, its draw renders through a pool image the copy engine fills from the
+#                     zeta and copies back, never a colour target over the zeta's pages; the comparison arm takes the
+#                     eight draws; the direct arm's draw over the zeta's pages, the tiled cache off
 #   raw_target_test   raw/runtime/raw_target.h: the raw path's color target words, pitch as before and a mip chain's level as
 #                     NVK's block-linear target, addressing every texel where raw/fx's layout (the texture header's and
 #                     the 2D engine's view of the chain) has it

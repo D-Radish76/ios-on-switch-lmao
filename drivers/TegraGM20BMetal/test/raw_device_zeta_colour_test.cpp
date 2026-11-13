@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // raw/runtime/raw_zeta_colour.h's stencil planes on raw::Device, read back as the methods it submitted (the kernel model keeps
-// each job's push words): a turn copy and a stencil resolve bind no colour target over the zeta's pages, the copy engine
-// fills a pool image from the zeta before the draw and copies it back after; hw_test_app's direct arm draws over the zeta's
-// pages with the tiled cache off for its draw.
+// each job's push words): a turn copy and a stencil resolve take the route with no probe, bind no colour target over the
+// zeta's pages, the copy engine fills a pool image from the zeta before the draw and copies it back after; hw_test_app's
+// comparison arm takes the eight draws, its direct arm draws over the zeta's pages with the tiled cache off for its draw.
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_mme.h"
 #include "../raw/runtime/raw_record.h"
@@ -102,7 +102,6 @@ protected:
         kernel_model::model.infoFlags = TegraGM20BInfoTiledCache;
         std::string err;
         ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
-        dev.probeZetaColour = true;
         for (uint32_t format : {kD32S8, kS8})
             for (uint32_t samples : {1u, 4u})
                 ASSERT_NE(state(format, samples), nullptr) << format << " " << samples;
@@ -219,6 +218,18 @@ TEST_F(DeviceZetaColour, AStencilResolveRendersThroughAPoolImageTheCopyEngineMov
         ASSERT_FALSE(ev.empty()) << format << ": " << why;
         expectPoolImage(ev, into.va, format == kS8 ? "s8 resolve" : "d32s8 resolve");
     }
+}
+
+// hw_test_app's comparison arm takes the eight draws, the route's state at hand
+TEST_F(DeviceZetaColour, TheComparisonArmTakesTheEightDraws)
+{
+    raw::Texture from = zeta(kD32S8, 1), into = zeta(kD32S8, 1);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    EXPECT_TRUE(cb->zetaColourTakes(into, from, StencilSample::Zero));
+    dev.probeStencilBits = true;
+    EXPECT_FALSE(cb->zetaColourTakes(into, from, StencilSample::Zero));
+    cb->abandon();
 }
 
 // hw_test_app's direct arm: the zeta's own pages the colour target, the tiled cache off around the draw alone

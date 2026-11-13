@@ -176,20 +176,19 @@ TEST(RawZetaColour, ThePassBindsTheViewAlone)
     EXPECT_EQ(p.depthStencil.texture, nullptr);
 }
 
-// Taken while the fact or the probe holds, into a one-sample zeta with stencil and without comptags
+// Taken into every one-sample zeta with stencil and without comptags
 TEST(RawZetaColour, WhichZetasItWrites)
 {
     FakeTexture d32s8 = zeta(260, 8, 8), s8 = zeta(253, 8, 8);
-    EXPECT_TRUE(raw::zetaColourWrites(d32s8, true));
-    EXPECT_TRUE(raw::zetaColourWrites(s8, true));
-    EXPECT_FALSE(raw::zetaColourWrites(d32s8, false));
+    EXPECT_TRUE(raw::zetaColourWrites(d32s8));
+    EXPECT_TRUE(raw::zetaColourWrites(s8));
     FakeTexture compressed = d32s8, multisampled = d32s8;
     compressed.comptags = true;
     multisampled.samples = 4;
-    EXPECT_FALSE(raw::zetaColourWrites(compressed, true));
-    EXPECT_FALSE(raw::zetaColourWrites(multisampled, true));
+    EXPECT_FALSE(raw::zetaColourWrites(compressed));
+    EXPECT_FALSE(raw::zetaColourWrites(multisampled));
     for (const uint32_t depthOnly : {250u, 252u})
-        EXPECT_FALSE(raw::zetaColourWrites(zeta(depthOnly, 8, 8), true)) << depthOnly;
+        EXPECT_FALSE(raw::zetaColourWrites(zeta(depthOnly, 8, 8))) << depthOnly;
 }
 
 // A state for each form the eight draws have, none other; the pack's line makes each: from one sample the whole texel, from

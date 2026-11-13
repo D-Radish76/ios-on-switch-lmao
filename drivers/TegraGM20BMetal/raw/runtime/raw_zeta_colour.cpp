@@ -4,20 +4,10 @@
 
 #include <cstring>
 
-#include "raw_chip_facts.h"
 #include "raw_gpu.h"
 #include "raw_tiled_cache.h"
 
 namespace raw {
-
-bool Device::zetaColourTaken() const
-{
-#if SWITCH_RAW_DIAGNOSTICS
-    if (probeZetaColour.load(std::memory_order_relaxed))
-        return true;
-#endif
-    return kColourRopWritesZeta;
-}
 
 Pipeline *Device::stencilColourPipeline(uint32_t format, uint32_t samples, StencilSample pick)
 {
@@ -27,7 +17,11 @@ Pipeline *Device::stencilColourPipeline(uint32_t format, uint32_t samples, Stenc
 
 bool CommandBuffer::zetaColourTakes(const Texture &into, const Texture &src, StencilSample pick)
 {
-    return into.zeta && src.format == into.format && zetaColourWrites(into, dev_->zetaColourTaken()) &&
+#if SWITCH_RAW_DIAGNOSTICS
+    if (dev_->probeStencilBits.load(std::memory_order_relaxed))
+        return false;
+#endif
+    return into.zeta && src.format == into.format && zetaColourWrites(into) &&
            dev_->stencilColourPipeline(into.format, src.samples, pick);
 }
 

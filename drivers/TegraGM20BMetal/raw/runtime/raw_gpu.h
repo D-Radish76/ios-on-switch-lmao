@@ -1832,8 +1832,6 @@ public:
     Pipeline *depthResolvePipeline(uint32_t format, uint32_t filter);  // raw_samples.h depthResolveState
     Pipeline *stencilBitsPipeline(uint32_t format, uint32_t samples, StencilSample pick);    // raw_stencil_bits.h
     Pipeline *stencilColourPipeline(uint32_t format, uint32_t samples, StencilSample pick);  // raw_zeta_colour.h
-    // raw_zeta_colour.h: the chip fact, or a debug build's probe asking for the route
-    bool zetaColourTaken() const;
     // raw_reach.h: `pl` drawing its geometry into a reach target; null: *why
     Pipeline *reachTwin(Pipeline &pl, const char **why);
     // s's header under address map `map` (Texture::addressMap), made now if it is not yet
@@ -2499,9 +2497,9 @@ public:
     std::atomic<bool> probeMipCandidates{false};
     // memoryless zetas the copy engine fills and drains for the shader's depth tests take their compressible kind (raw_comp.h)
     std::atomic<bool> probeZetaKinds{false};
-    // stencil planes take the one-draw route (raw_zeta_colour.h) where it writes them, whatever kColourRopWritesZeta says
-    std::atomic<bool> probeZetaColour{false};
-    // that route's colour ROP over the zeta's own pages, untiled, rather than through its pool image (raw_zeta_colour.cpp)
+    // stencil planes take raw_stencil_bits.h's eight draws, not the one-draw route (raw_zeta_colour.h)
+    std::atomic<bool> probeStencilBits{false};
+    // the one-draw route's colour ROP over the zeta's own pages, untiled, not through its pool image (raw_zeta_colour.cpp)
     std::atomic<bool> probeZetaDirect{false};
     std::atomic<uint64_t> probeEmitted{0};  // draws that emitted them since they were armed
     // hw_test_app's gpu.sched.long_draw_bands: the band budget its unbanded arm sets to 0 (RawMetalProbe.mm)

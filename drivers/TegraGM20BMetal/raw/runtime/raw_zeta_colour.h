@@ -15,9 +15,8 @@
 // from the zeta before the draw and copies back over the render area after it (CommandBuffer::render, RenderEncoder::end),
 // the engine whose zeta writes gpu.raw.stored_depth proves on both kinds. The fill keeps the texels the draw leaves: a
 // resolve's depth word, a turn copy's texels outside its source rectangle.
-// Taken where raw_chip_facts.h's kColourRopWritesZeta holds, or while a debug build's probe asks for it (hw_test_app
-// gpu.raw.zeta_colour), into a one-sample zeta without comptags; any other stencil plane is raw_stencil_bits.h's eight
-// draws.
+// Every one-sample zeta without comptags takes it; any other stencil plane is raw_stencil_bits.h's eight draws, and so is
+// every plane while a debug build's probe asks for them (hw_test_app gpu.raw.zeta_colour's comparison arm).
 #pragma once
 #include <cstdint>
 #include <type_traits>
@@ -62,10 +61,10 @@ inline const char *stencilColourState(uint32_t format, uint32_t samples, Stencil
     return nullptr;
 }
 
-// Whether the one-draw route writes zeta `z` while the route is `taken`
-template <typename Texture> bool zetaColourWrites(const Texture &z, bool taken)
+// Whether the one-draw route writes zeta `z`
+template <typename Texture> bool zetaColourWrites(const Texture &z)
 {
-    return taken && zetaColourFormat(z.format) && z.samples == 1 && !z.comptags;
+    return zetaColourFormat(z.format) && z.samples == 1 && !z.comptags;
 }
 
 // Zeta `z`'s memory as the route's colour target, rendered through a pool image
