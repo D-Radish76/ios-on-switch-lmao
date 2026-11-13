@@ -11,7 +11,8 @@ import Metal
 /// takes its program and constants from the GPU's macro each draw. Per state, by its key:
 ///   unforced_<key>  the draws the facade took on the rung with the probe at 0 (2 where the rules take the form)
 ///   worst_<key>     the largest difference in codes between the two forced routes' first attachments (rule
-///                   fetch.blend allows 2; rung 3's programs are exact in QuartzCore's arithmetic, so 2 too)
+///                   fetch.blend allows 2; rung 3's programs are exact in QuartzCore's arithmetic, so 2 too); an
+///                   RGBA16Float attachment's halves compared in 8-bit codes, relative to the value above 1
 ///   us_rung4_<key>, us_rung<N>_<key>  one full-screen draw's GPU time each way; us_pass_<key> per pass of the program
 ///   covered_<key>   the storage route's pixels off the clear; a state judged by its codes alone (kfh) with none is
 ///                   uncompared_<key>=1, and its time never votes
@@ -37,6 +38,7 @@ struct FetchRungTest: HWTest {
     static let draws = 10
     static let runs = 5
     static let fetchCounters = ["fetch_sequential", "fetch_interlocked", "fetch_rung2", "fetch_rung3"]
+    static let rgba16Float: UInt = 115
 
     struct Measured {
         var unforced = 0
@@ -71,7 +73,10 @@ struct FetchRungTest: HWTest {
         guard let free = try await FetchRungScene.forcing(rung, gpu.device, draw) else { return nil }
         m.formless = (RawFacade.counters(of: gpu.device)[counter] ?? 0) == forcedFrom
         if m.formless { return m }
-        (m.worst, m.differing) = FetchRungScene.difference(storage.1, free.1)
+        let blended = line.colors.min { $0.index < $1.index }?.format
+        (m.worst, m.differing) =
+            blended == Self.rgba16Float
+            ? FetchRungScene.halfDifference(storage.1, free.1) : FetchRungScene.difference(storage.1, free.1)
         m.covered = Self.covered(storage.1)
         m.paths = "\(storage.0)/\(free.0)"
         for forced in [4, rung] {

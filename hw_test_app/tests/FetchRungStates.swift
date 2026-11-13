@@ -46,6 +46,18 @@ enum FetchRungStates {
             State(label: "PBGRAXm_TimgBdivA2Xhfu_Isrc", key: "divu", program: "div.u", passes: 7),
             State(label: "PBGRAXm_TimgBcdgA2Xhfu_Isrc", key: "cdgu", program: "cdg.u", passes: 9),
             State(label: "PBGRAXm_TimgBdlcA2Xhfu_Isrc", key: "dlcu", program: "dlc.u", passes: 10),
+            // RGBA16Float targets under unbounded range, compared in halves: 24B119's, then 21H461's
+            State(label: "PRGhAXm_TdgdBlltA2Xhfu_Isrc", key: "lltuh", program: "llt.u", passes: 5),
+            State(label: "PRGhAXm_TdgdBsbtA2Xhfu_Isrc", key: "sbtuh", program: "sbt.u", passes: 5),
+            State(label: "PRGhAXm_TdgdBdivA2Xhfu_Isrc", key: "divuh", program: "div.u", passes: 7),
+            State(label: "PRGhAXm_TdgdBcdgA2Xhfu_Isrc", key: "cdguh", program: "cdg.u", passes: 9),
+            State(label: "PRGhAXm_TdgdBdlcA2Xhfu_Isrc", key: "dlcuh", program: "dlc.u", passes: 10),
+            State(label: "PRGhAXm_TdgdBcbnA2Xhfu_Isrc", key: "cbnuh", program: "cbn.u", passes: 11),
+            State(label: "PRGhAXmw_TimgBlltA3Xhfcu_Isrc", key: "lltuh", program: "llt.u", passes: 5),
+            State(label: "PRGhAXmw_TimgBsbtA3Xhfcu_Isrc", key: "sbtuh", program: "sbt.u", passes: 5),
+            State(label: "PRGhAXmw_TimgBdivA3Xhfcu_Isrc", key: "divuh", program: "div.u", passes: 7),
+            State(label: "PRGhAXmw_TimgBcdgA3Xhfcu_Isrc", key: "cdguh", program: "cdg.u", passes: 9),
+            State(label: "PRGhAXmw_TimgBcbnA3Xhfcu_Isrc", key: "cbnuh", program: "cbn.u", passes: 11),
         ],
     ]
 
