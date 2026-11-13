@@ -17,6 +17,13 @@ import caset  # noqa: E402
 import caspec  # noqa: E402
 
 CORPUS = os.path.join(HERE, '..', '..', '..', 'precompile', 'corpus.log')
+OS_BUILDS = re.compile(r' os=(\S+)')
+
+
+def drawn_on_17(line: str) -> bool:
+    """Whether a corpus line is a state of 21H461: untagged, or tagged with it among its builds."""
+    tag = OS_BUILDS.search(line.split(' | ', 1)[0])
+    return not tag or '21H461' in tag[1].split(',')
 
 
 class CorpusStates(unittest.TestCase):
@@ -26,7 +33,7 @@ class CorpusStates(unittest.TestCase):
         with open(CORPUS) as f:
             for line in f:
                 name, want = caspec.corpus_fields(line)
-                if not name:
+                if not name or not drawn_on_17(line):
                     continue
                 try:
                     fields = caspec.state_fields(tables, name)
