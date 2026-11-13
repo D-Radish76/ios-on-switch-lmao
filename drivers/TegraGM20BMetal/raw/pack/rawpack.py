@@ -38,9 +38,10 @@ tools alone):
                   [--ca-preferences <stager>] --out <dir>
            writes <dir>/work/bucket0 .. bucket15, each a corpus.log of its states
        rawpack.py --probe-bucket <bucket dir> --prebuilt <dir> --nvk <host twin dylib> --qc <default.metallib>
-                  [--root <dir>]
+                  [--root <dir>] [--data-libs <dir>]
            makes one bucket in place: records.bin (its states' and kernels' records), and bucket 0's context.log;
-           a line's lib= path is under --root (the crawl's root/ with the build's applications), else QuartzCore's
+           a line's lib= path is under --root (the crawl's root/ with the build's applications), else QuartzCore's,
+           and a lib=data:<SHA-256> library is --data-libs/<SHA-256>.metallib (else the crawl's data/ beside --root)
        rawpack.py --link --out <dir> [--stack <hex key>] [--archives <inventory.tsv>] <bucket dir>...
            directlink.py over the buckets: <dir>/pack.bin and the rest, as the one-step form writes them, with the
            archive inventory's declared states (archives.py)
@@ -476,7 +477,7 @@ def bucket(tools: Path, d: Path, nvk: Path, qc: Path, env: dict[str, str]) -> st
 def probe_env() -> dict[str, str]:
     """Give the probe's environment: this process's, less every knob of the stack, plus the probe's own.
 
-    PROBE_LIB_ROOT is --root where the command line names one.
+    PROBE_LIB_ROOT is --root and PROBE_DATA_LIBS --data-libs where the command line names them.
     """
     env = {
         k: v
@@ -498,6 +499,8 @@ def probe_env() -> dict[str, str]:
     )
     if option('--root', False):
         env['PROBE_LIB_ROOT'] = str(Path(option('--root')).resolve())
+    if option('--data-libs', False):
+        env['PROBE_DATA_LIBS'] = str(Path(option('--data-libs')).resolve())
     return env
 
 
