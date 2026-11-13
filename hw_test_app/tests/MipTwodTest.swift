@@ -16,7 +16,9 @@ import Metal
 /// are reported. generateMipmaps takes the pack's mip state (Metal's taps, sRGB decoded from the codes) at every step the
 /// 2D engine is not proven at and at every step of an sRGB chain. The 3D arm is a control: the texture unit's own bilinear
 /// filter drawing each level into a one-level texture (paths_3d). Details follow: <fmt>_* (proven), <fmt>_odd_*,
-/// <fmt>_3d_* (the control's proven steps), <fmt>_3d_odd_*, <fmt>_l1_* (level 1 of both compared).
+/// <fmt>_3d_* (the control's proven steps), <fmt>_3d_odd_*, <fmt>_l1_* (level 1 of both compared). `layered=` and
+/// <fmt>_layers_*: a two-layer 255x129 BGRA8 and BGRA8 sRGB array chain, every layer's steps against Metal's (a wrong
+/// step fails it).
 struct MipTwodTest: HWTest {
     let id = "gpu.raw.mip_twod"
     let name = "generateMipmaps on the 2D engine within one code of Metal's step, and its GPU time against 3D passes"
@@ -83,8 +85,21 @@ struct MipTwodTest: HWTest {
                 times.append("\(f.name):error")
             }
         }
+        var layered: [String] = []
+        for f in MipFormats.twod where f.name == "bgra8" || f.name == "bgra8srgb" {
+            let chains = MipChains(gpu: gpu, format: f)
+            var proven = MipTally(), odd = MipTally()
+            let (layers, path) = try await chains.generatedLayers(255, 129, layers: 2)
+            paths.insert(path)
+            for levels in layers { chains.compare(levels, 255, 129, proven: &proven, odd: &odd, rounding: nil) }
+            layered.append("\(f.name):\(proven.verdict)/\(odd.verdict)")
+            Self.report(&detail, f.name + "_layers", proven)
+            Self.report(&detail, f.name + "_layers_odd", odd)
+            if proven.wrong > 0 || odd.wrong > 0 { wrong.append("\(f.name)_layers_wrong") }
+        }
         let after = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
+        metrics.set("layered", layered.joined(separator: ","))
         for key in ["mip_twod_levels", "mip_twod_unproven_levels", "mip_3d_levels"] {
             metrics.set(key, (after[key] ?? 0) - (before[key] ?? 0))
         }
