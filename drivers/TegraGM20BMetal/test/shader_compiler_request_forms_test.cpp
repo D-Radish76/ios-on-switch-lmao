@@ -68,10 +68,10 @@ struct Asked {
 };
 
 // A state of an app's own library (vertex_fn's AIR 0xA0..., fragment_fn's 0xA1...) as the client keys and asks it
-Asked render(MTLRenderPipelineDescriptor *d, const raw::RenderVariant &variant)
+Asked render(const raw::PipelineFields &fields, const raw::RenderVariant &variant)
 {
     const raw::StageKey vertex{"vertex_fn", ""}, fragment{"fragment_fn", ""};
-    const std::string packKey = raw::pipelineKey(d, &vertex, &fragment, "", "") + variant.name();
+    const std::string packKey = raw::pipelineKey(fields, &vertex, &fragment, "", "") + variant.name();
     raw::AirHash v, f;
     v.fill(0xA0);
     f.fill(0xA1);
@@ -80,11 +80,16 @@ Asked render(MTLRenderPipelineDescriptor *d, const raw::RenderVariant &variant)
     raw::CompileRequest &r = a.request;
     r.stack = kStack;
     r.key = a.key.key;
-    r.fields = raw::fieldsOf(d);
+    r.fields = fields;
     r.variant = variant;
     r.libraries.push_back(data(made_metallib::universal({"vertex_fn", "fragment_fn"})));
     r.stages = {stage("v", "vertex_fn"), stage("f", "fragment_fn")};
     return a;
+}
+
+Asked render(MTLRenderPipelineDescriptor *d, const raw::RenderVariant &variant)
+{
+    return render(raw::fieldsOf(d), variant);
 }
 
 // The compiler's answer to `r`: "" where it takes it with the key it made in `made`, else why it refused it
@@ -162,12 +167,34 @@ TEST(CompileRequestForms, VertexAmplification)
     }
 }
 
-// NativeM2vMissingTest's patch state: a quad patch's post-tessellation vertex function, integer partitioning, factor 16
-// at most, made by this Mac's Metal so the function's patch type is Metal's own
+// NativeM2vMissingTest's patch state: a quad patch's post-tessellation vertex function (the patch type fieldsOf reads off
+// it), integer partitioning, factor 16 at most
 TEST(CompileRequestForms, ATessellationState)
 {
+    MTLRenderPipelineDescriptor *d = quad(MTLPixelFormatRGBA8Unorm);
+    MTLVertexDescriptor *v = [MTLVertexDescriptor vertexDescriptor];
+    v.attributes[0].format = MTLVertexFormatFloat4;
+    v.layouts[0].stride = 16;
+    v.layouts[0].stepFunction = MTLVertexStepFunctionPerPatchControlPoint;
+    d.vertexDescriptor = v;
+    d.tessellationPartitionMode = MTLTessellationPartitionModeInteger;
+    d.maxTessellationFactor = 16;
+    raw::PipelineFields fields = raw::fieldsOf(d);
+    fields.patchType = MTLPatchTypeQuad;
+    const Asked a = render(fields, {});
+    EXPECT_NE(a.key.key.find(" t=1:0:0:0:0:16:0 "), std::string::npos) << a.key.key;
+    expectTaken(a);
+    raw::CompileRequest bare = a.request;
+    bare.fields.patchType = 0;
+    expectRefusedAt(bare, "t=1:0:0:0:0:16:0");
+}
+
+// fieldsOf reads the patch type off the vertex function itself: this Mac's Metal makes a quad patch's
+TEST(CompileRequestForms, TheVertexFunctionsPatchTypeIsAField)
+{
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    ASSERT_TRUE(device != nil);
+    if (!device)
+        GTEST_SKIP() << "no Metal device on this host";
     NSString *source = @"#include <metal_stdlib>\n"
                         "using namespace metal;\n"
                         "struct ControlPoint { float4 position [[attribute(0)]]; };\n"
@@ -181,20 +208,7 @@ TEST(CompileRequestForms, ATessellationState)
     ASSERT_TRUE(library != nil) << (error ? error.localizedDescription.UTF8String : "");
     MTLRenderPipelineDescriptor *d = quad(MTLPixelFormatRGBA8Unorm);
     d.vertexFunction = [library newFunctionWithName:@"missing_post"];
-    ASSERT_EQ(d.vertexFunction.patchType, MTLPatchTypeQuad);
-    MTLVertexDescriptor *v = [MTLVertexDescriptor vertexDescriptor];
-    v.attributes[0].format = MTLVertexFormatFloat4;
-    v.layouts[0].stride = 16;
-    v.layouts[0].stepFunction = MTLVertexStepFunctionPerPatchControlPoint;
-    d.vertexDescriptor = v;
-    d.tessellationPartitionMode = MTLTessellationPartitionModeInteger;
-    d.maxTessellationFactor = 16;
-    const Asked a = render(d, {});
-    EXPECT_NE(a.key.key.find(" t=1:0:0:0:0:16:0 "), std::string::npos) << a.key.key;
-    expectTaken(a);
-    raw::CompileRequest bare = a.request;
-    bare.fields.patchType = 0;
-    expectRefusedAt(bare, "t=1:0:0:0:0:16:0");
+    EXPECT_EQ(raw::fieldsOf(d).patchType, uint64_t(MTLPatchTypeQuad));
 }
 
 // The key text pipelineKey makes of a descriptor's fields is the one it made of the descriptor itself before (pinned from
