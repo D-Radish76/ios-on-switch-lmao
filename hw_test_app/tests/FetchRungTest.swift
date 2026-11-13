@@ -14,6 +14,7 @@ import Metal
 ///                   fetch.blend allows 2; rung 3's programs are exact in QuartzCore's arithmetic, so 2 too)
 ///   us_rung4_<key>, us_rung<N>_<key>  one full-screen draw's GPU time each way; us_pass_<key> per pass of the program
 ///   error_<key>     a draw the GPU refused (the channel reopens and the next state runs)
+///   noform_<key>    the pack holds no fetch-free form of the state on this IPSW (21H461's pdi): left out of the verdict
 /// proven= the programs every state of which was within the bound and faster; on= the programs the rules drew on the
 /// rung (raw_chip_facts.h kIteratedProven for rung 3). r<N>= the draws the facade's counter says took the fetch-free
 /// form. Core Animation's clear (clr, clr_m1 with its memoryless image) loads no colour, so it draws plain:
@@ -36,6 +37,8 @@ struct FetchRungTest: HWTest {
 
     struct Measured {
         var unforced = 0
+        /// the forced draw took no fetch-free form: the pack holds none of this state on this IPSW
+        var formless = false
         var worst = 0
         var differing = 0
         var paths = ""
@@ -50,9 +53,11 @@ struct FetchRungTest: HWTest {
         _ = try await FetchRungScene.bytes(line, library: library, gpu: gpu)
         m.unforced = (RawFacade.counters(of: gpu.device)[counter] ?? 0) - before
         let draw = { try await FetchRungScene.bytes(line, library: library, gpu: gpu) }
-        guard let storage = try await FetchRungScene.forcing(4, gpu.device, draw),
-            let free = try await FetchRungScene.forcing(rung, gpu.device, draw)
-        else { return nil }
+        guard let storage = try await FetchRungScene.forcing(4, gpu.device, draw) else { return nil }
+        let forcedFrom = RawFacade.counters(of: gpu.device)[counter] ?? 0
+        guard let free = try await FetchRungScene.forcing(rung, gpu.device, draw) else { return nil }
+        m.formless = (RawFacade.counters(of: gpu.device)[counter] ?? 0) == forcedFrom
+        if m.formless { return m }
         (m.worst, m.differing) = FetchRungScene.difference(storage.1, free.1)
         m.paths = "\(storage.0)/\(free.0)"
         for forced in [4, rung] {
@@ -100,8 +105,12 @@ struct FetchRungTest: HWTest {
                 continue
             }
             guard let m = measured else { return .skip("the facade has no probe channel (a release build)") }
-            forcedDraws += 2 + Self.draws * (Self.runs + 1)
             metrics.set("unforced_\(state.key)", m.unforced)
+            if m.formless {
+                metrics.set("noform_\(state.key)", 1)
+                continue
+            }
+            forcedDraws += 2 + Self.draws * (Self.runs + 1)
             metrics.set("worst_\(state.key)", m.worst)
             metrics.set("differing_\(state.key)", m.differing)
             metrics.set("path_\(state.key)", m.paths)
