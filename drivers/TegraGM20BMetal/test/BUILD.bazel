@@ -1424,6 +1424,7 @@ host_test(
         "raw_device_harness.h",
         "raw_job_methods.h",
         "raw_device_amplification_test.cpp",
+        "raw_record_pack.h",
         "raw_kernel_model.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
@@ -1643,6 +1644,7 @@ host_test(
         "raw_device_harness.h",
         "raw_job_methods.h",
         "raw_device_tessellation_test.cpp",
+        "raw_record_pack.h",
         "raw_kernel_model.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
@@ -1716,6 +1718,7 @@ host_test(
         "raw_device_harness.h",
         "raw_job_methods.h",
         "raw_device_stage_in_test.cpp",
+        "raw_record_pack.h",
         "raw_kernel_model.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
@@ -2824,7 +2827,11 @@ py_test(
 py_test(
     name = "splits_layout_test",
     srcs = ["splits_layout_test.py"],
-    data = ["//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h"],
+    data = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_split_metadata.h",
+        "//third_party/mesa/src/nouveau/vulkan:nvk_switch_split.h",
+    ],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
 )
 
@@ -3107,6 +3114,7 @@ host_test(
     name = "raw_split_metadata_test",
     srcs = [
         "raw_split_metadata_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_cbuf.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_pack.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_split_metadata.h",
     ],
@@ -5291,6 +5299,54 @@ host_test(
         "//kits/SwitchRefusal:switch_refusal",
         "//kits/SwitchGM20BEmit/test:method_checks",
     ] + RAW_HOST_DEPS,
+)
+
+# pack/kernel_shapes.h: a D line's stage input (StageInText.h, as the journal writes it) makes the descriptor it names and
+# keys its kernel as the runtime does
+host_test(
+    name = "kernel_shapes_test",
+    srcs = [
+        "kernel_shapes_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+    ],
+    deps = RAW_HOST_DEPS,
+)
+
+# pack/direct_states.h: every corpus line makes a state or is handed back with why (directpack.mm records it refused)
+host_test(
+    name = "direct_states_test",
+    srcs = [
+        "direct_states_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/pack/direct_states.h",
+        "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+        # the generator's headers, built without -Wextra (rawpack.py): probeTextures' brace-initialised sets
+        "-Wno-missing-field-initializers",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+    ],
+    deps = RAW_HOST_DEPS,
 )
 
 # The corpus's render states made on the raw facade with a device build's pack and the IPSW crawl's libraries, which name

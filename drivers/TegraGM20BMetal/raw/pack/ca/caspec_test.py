@@ -13,6 +13,7 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+import caset  # noqa: E402
 import caspec  # noqa: E402
 
 CORPUS = os.path.join(HERE, '..', '..', '..', 'precompile', 'corpus.log')
@@ -41,6 +42,25 @@ class CorpusStates(unittest.TestCase):
                 made += 1
         self.assertGreater(made, 600)
         self.assertLess(other, made // 20)
+
+
+class GenericStates(unittest.TestCase):
+    def test_the_manifest_tier_holds_quartzcore_17s_generic_states(self):
+        tables = caspec.Tables(os.path.join(HERE, 'qc-21H461.json'))
+        generic = [m[0] for m in tables.t['manifest'] if 'Xg' in m[0]]
+        self.assertEqual(len(generic), 18)
+        manifest = caset.labels(tables, [], ('manifest',))['manifest']
+        for name in generic:
+            self.assertIn(name, manifest)
+            line = caspec.state_line(tables, name)
+            self.assertIn(' | v fixed_vert_lph_gen fc_base_color:53:00 fc_generic:53:01 ', line)
+            self.assertIn(' | f fixed_frag_lph_cpf ', line)
+            self.assertNotIn(' a0=', line)
+
+    def test_the_blend_tier_closes_over_them(self):
+        tables = caspec.Tables(os.path.join(HERE, 'qc-21H461.json'))
+        blend = caset.labels(tables, [], ('blend',))['blend']
+        self.assertIn('PBGRABsovXm_A2Xghfc', blend)
 
 
 if __name__ == '__main__':

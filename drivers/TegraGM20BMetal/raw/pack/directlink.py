@@ -41,7 +41,13 @@ PIPELINE_BYTES = (
     + packfile.PIPELINE_V20.size
     + packfile.PIPELINE_V21.size
     + packfile.PIPELINE_V22.size
+    + packfile.PIPELINE_V24.size
 )
+# Where each record tail starts in a PackPipeline
+V24_AT = PIPELINE_BYTES - packfile.PIPELINE_V24.size
+V22_AT = V24_AT - packfile.PIPELINE_V22.size
+V21_AT = V22_AT - packfile.PIPELINE_V21.size
+V20_AT = V21_AT - packfile.PIPELINE_V20.size
 ENTRY_UBO, ENTRY_COLOR_TABLE = 1, 5
 TABLE_KINDS = {code: kind for kind, code in packfile.TABLE_KINDS.items()}
 # SET_VERTEX_STREAM_A_FORMAT(0), 16 bytes apart, and its STRIDE field (bits 11:0)
@@ -117,6 +123,8 @@ def load_records(path: str) -> tuple[list[dict], list[dict]]:
             rec['spill'] = words_of(r.blob())
             mask, push = r.u32(), words_of(r.blob())
             rec['bound'] = {'mask': mask, 'push': push, 'spill': [words_of(r.blob()), words_of(r.blob())]}
+            rec['tess_programs'] = [program(r) for _ in range(r.u32())]
+            rec['extras'], rec['restore'] = (list(zip(*[iter(words_of(r.blob()))] * 2, strict=True)) for _ in range(2))
         states.append(rec)
     return states, kernel_recs
 
@@ -183,16 +191,19 @@ def layout_strides(key: str) -> dict[int, int]:
     return out
 
 
-def check_streams(key: str, slot: int, streams: list[int], regs: dict[int, int]) -> None:
+def check_streams(key: str, slot: int, dynamic: bool, streams: list[int], regs: dict[int, int]) -> None:
     """Refuse a record whose fixed-function vertex stream fetches at another stride than its layout's.
 
     m2v pulls a layout past maxVertexInputBindingStride (2048) in the shader, so no stream's stride is past the format's
-    12 bits; a record that says otherwise would draw at its stride's low bits.
+    12 bits; a record that says otherwise would draw at its stride's low bits. A stream of a dynamic stride (stream 0's
+    `dynamic`, a STREAM_BIND_STRIDE stream) holds none: each draw writes its bind's.
     """
-    buffers = ([slot] if slot != 0xFF else []) + [(s & ~packfile.STREAM_BIND_STRIDE) - 1 for s in streams]
+    buffers = ([(slot, dynamic)] if slot != 0xFF else []) + [
+        ((s & ~packfile.STREAM_BIND_STRIDE) - 1, bool(s & packfile.STREAM_BIND_STRIDE)) for s in streams
+    ]
     strides = layout_strides(key)
-    for k, buffer in enumerate(buffers):
-        stride = strides.get(buffer)
+    for k, (buffer, bind_stride) in enumerate(buffers):
+        stride = 0 if bind_stride else strides.get(buffer)
         held = regs.get(STREAM_FORMAT + 0x10 * k, 0) & STREAM_STRIDE
         if stride is None or stride > STREAM_STRIDE or held != stride:
             raise ValueError(f'vertex stream {k} of buffer {buffer} at stride {held}, its layout {stride}: {key}')
@@ -207,19 +218,11 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         PIPELINE.unpack_from(p)
     )
     mask, *words = struct.unpack_from('<33I', p, PIPELINE.size + packfile.PACK_ENTRIES * 8)
-    v22_at = PIPELINE_BYTES - packfile.PIPELINE_V22.size
-    *written_format, xr_slots = packfile.PIPELINE_V22.unpack_from(p, v22_at)
-    head, array_length_word, pulled, streams, viewport_count_word = packfile.PIPELINE_V21.unpack_from(
-        p, v22_at - packfile.PIPELINE_V21.size
-    )
-    runtime_only = head != packfile.RUNTIME_ONLY_HEAD or pulled != packfile.RUNTIME_ONLY_PULLED
-    if runtime_only or any(s & packfile.STREAM_BIND_STRIDE for s in streams):
-        raise ValueError(
-            'a state of runtime-only fields (tessellation, amplification, dynamic stride): the pack holds none'
-        )
+    *written_format, xr_slots = packfile.PIPELINE_V22.unpack_from(p, V22_AT)
+    head, array_length_word, pulled, streams, viewport_count_word = packfile.PIPELINE_V21.unpack_from(p, V21_AT)
+    stride_twin, layer_word, viewport_word = packfile.PIPELINE_V24.unpack_from(p, V24_AT)[2:5]
     streams = streams[: streams.index(0)] if 0 in streams else streams
-    v20_at = v22_at - packfile.PIPELINE_V21.size - packfile.PIPELINE_V20.size
-    tail = v20_at - packfile.PIPELINE_V18.size - packfile.PIPELINE_V15.size
+    tail = V20_AT - packfile.PIPELINE_V18.size - packfile.PIPELINE_V15.size
     blend, half, _reserved = struct.unpack_from('<BBH', p, tail - 56)
     storage_mask, storage_write_mask, storage_samples, storage_tests, *storage_tic = struct.unpack_from(
         '<BBBB8I', p, tail - 52
@@ -231,11 +234,11 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
     _variants, vertex_variants, _fragment_variants, storage_blend_mask, storage_blend_model = v15[:5]
     bound_entries, uniform, fetch_rung, _variant_name = v15[5:]
     (memory_entries,) = packfile.PIPELINE_V18.unpack_from(p, tail + packfile.PIPELINE_V15.size)
-    v20 = packfile.PIPELINE_V20.unpack_from(p, v20_at)
+    v20 = packfile.PIPELINE_V20.unpack_from(p, V20_AT)
     heap_arrays, heap_bytes, heap_words = v20[6], v20[7], v20[8:24]
     spill_entry, spill_words, spill = list(v20[24:26]), v20[26:28], rec.get('spill', [])
     regs = rec['probe']['records'][0]['regs']
-    check_streams(rec['key'], slot, streams, regs)
+    check_streams(rec['key'], slot, bool(head[3]), streams, regs)
     targets = rec['probe']['targets']
     varying = list(varying)
     if storage_mask:
@@ -248,7 +251,15 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         'form': rec['probe']['form'],
         'vs': prog_index[program_id(rec['programs'][0])],
         'fs': prog_index[program_id(rec['programs'][1])],
-        'blob': [(m, regs.get(m, 0)) for m in varying if m not in PROGRAM_OFFSETS and not mkpack.foreign(m, targets)],
+        'blob': [(m, regs.get(m, 0)) for m in varying if m not in PROGRAM_OFFSETS and not mkpack.foreign(m, targets)]
+        + rec.get('extras', []),
+        'restore': rec.get('restore', []),
+        'tess': [prog_index[program_id(t)] for t in rec.get('tess_programs', [])] or [0, 0],
+        'runtime_head': head,
+        'pulled_stride': pulled,
+        'stride_twin': stride_twin,
+        'amplification_layer_word': layer_word,
+        'amplification_viewport_word': viewport_word,
         'push': [(0x700 + 4 * i, words[i]) for i in range(32) if mask >> i & 1],
         'push_metadata': bool(flags & 4),
         'turn_refused': bool(flags & 64),
@@ -419,15 +430,16 @@ def split_programs(states: list[dict], programs: dict[str, dict]) -> dict[str, d
 
 
 def lay_out_variants(states: list[dict], programs: dict[str, dict], laid: tuple, report: list[str]) -> None:
-    """Append the states' variant programs to the heap image `laid` holds, after every generic program."""
-    count = 0
+    """Append the states' variant and tessellation programs to the heap image `laid` holds, after every generic one."""
+    count = tessellating = 0
     for rec in states:
-        for v in rec.get('variants', []):
-            pid = program_id(v['program'])
-            programs.setdefault(pid, v['program'])
+        for p in [v['program'] for v in rec.get('variants', [])] + rec.get('tess_programs', []):
+            pid = program_id(p)
+            programs.setdefault(pid, p)
             packfile.place_graphics(pid, programs, *laid)
-            count += 1
-    report.append(f'{count} program variants')
+        count += len(rec.get('variants', []))
+        tessellating += bool(rec.get('tess_programs'))
+    report.append(f'{count} program variants, {tessellating} tessellation states')
 
 
 def write_programs(path: str, programs: dict[str, dict]) -> None:

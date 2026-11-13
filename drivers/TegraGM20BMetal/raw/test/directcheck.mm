@@ -232,29 +232,33 @@ int main(int argc, char **argv)
             }
             return outcome;
         };
-        probe::eachState(dev, qc, own, standIn, probe::corpusLines(text, own != nil),
-                         [&](const std::string &line, bool ours, probe::State &s) {
-                             raw::ProbeTextures textures = probe::probeTextures(line, ours);
-                             textures.cubic = s.cubic;
-                             // DIRECTCHECK_TESTS=<n>: each state's variant beside depth or stencil tests of class n
-                             // (raw_fragment_tests.h FragmentTests), the one a fetch without a storage form takes,
-                             // against the pack's record of it (PipelineVariantRecord)
-                             std::string tests;
-                             if (const char *n = getenv("DIRECTCHECK_TESTS"); n && *n) {
-                                 textures.fragmentTests = uint8_t(atoi(n));
-                                 tests = " | tests=" + std::to_string(textures.fragmentTests);
-                             }
-                             textures.xrSlots = s.xrSlots;
-                             textures.written = s.written;
-                             const std::string sampled =
-                                 (s.xrSlots ? raw::xrSampledVariant(s.xrSlots) : std::string()) +
-                                 raw::writtenVariant(s.written);
-                             if (check(line, s, s.key + tests + sampled, textures) != raw::CompileOutcome::Made ||
-                                 !probe::twoPlaneColors(s.key))
-                                 return;
-                             textures.twoPlane = true;
-                             check(line, s, s.key + tests + raw::kXrPlanesVariant + sampled, textures);
-                         });
+        probe::eachState(
+            dev, qc, own, standIn, probe::corpusLines(text, own != nil),
+            [&](const std::string &line, bool ours, probe::State &s) {
+                raw::ProbeTextures textures = probe::probeTextures(line, ours);
+                textures.cubic = s.cubic;
+                // DIRECTCHECK_TESTS=<n>: each state's variant beside depth or stencil tests of class n
+                // (raw_fragment_tests.h FragmentTests), the one a fetch without a storage form takes,
+                // against the pack's record of it (PipelineVariantRecord)
+                std::string tests;
+                if (const char *n = getenv("DIRECTCHECK_TESTS"); n && *n) {
+                    textures.fragmentTests = uint8_t(atoi(n));
+                    tests = " | tests=" + std::to_string(textures.fragmentTests);
+                }
+                textures.xrSlots = s.xrSlots;
+                textures.written = s.written;
+                const std::string sampled =
+                    (s.xrSlots ? raw::xrSampledVariant(s.xrSlots) : std::string()) + raw::writtenVariant(s.written);
+                if (check(line, s, s.key + tests + sampled, textures) != raw::CompileOutcome::Made ||
+                    !probe::twoPlaneColors(s.key))
+                    return;
+                textures.twoPlane = true;
+                check(line, s, s.key + tests + raw::kXrPlanesVariant + sampled, textures);
+            },
+            [&](const std::string &line, const std::string &why) {
+                printf("NO STATE (%s): %s\n", why.c_str(), line.substr(0, 160).c_str());
+                reasons["no state: " + why]++;
+            });
         if (met)
             fclose(met);
         for (const auto &[what, n] : differences)

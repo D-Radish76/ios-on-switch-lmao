@@ -15,14 +15,18 @@
 // fetch-free form names (u32 length and bytes: ca/fetchfree.py, iterated/table.py; empty for any other record), then its
 // argument tables' words (u32 count and words: the vertex table's, then the fragment table's), then m2v's own instantiation
 // of the probe draw that binds every buffer slot at its probe offset (RawDirect.h BoundDraw: its push mask, its 32 root push
-// words as bytes, and each stage's argument table as u32 count and words, vertex then fragment). A record of
-// one of a state's variants has the variant's name after its key (runtime/raw_pack.h variantNameAt); a state's fetch-free
-// form is under the state's key (PipelineFetchFreeForm).
+// words as bytes, and each stage's argument table as u32 count and words, vertex then fragment), then a tessellation
+// state's control and evaluation programs (u32 0, or 2 and the programs as above), and the registers outside raw_emit's it
+// sets and those its draws set back after it (raw_record.h extras and restore: each u32 count and (method, value) words).
+// A record of one of a state's variants has the variant's name after its key (runtime/raw_pack.h variantNameAt); a
+// state's fetch-free form is under the state's key (PipelineFetchFreeForm). A record's stride twin follows it as a record
+// of its own, of its form, under raw_record.h strideTwinKey(key), which its PackPipeline::strideTwin hashes.
 // Then per compute dispatch shape (the corpus's D lines, as the kernel probe read them: kernel_shapes.h): "DKRN", the outcome,
 // its raw_compute_key.h key and the reason, then for a made kernel its PackKernel (raw_direct_compute.h; program 0), its code,
 // shader data and constant buffer types, its sampler headers, which its sampler entries number from 0 (slot 0x80 | n), its
 // argument table's words (u32 count and words), and its state's answers as the runtime's compute prepare gives them
 // (runtime/raw_pack.h PackComputeFacts: three u32).
+// A corpus line that makes no state is a refused DREC, and a D line that makes no kernel a refused DKRN, keyed by the line.
 // PROBE_DATA_LIBS names the directory of the corpus's data: libraries.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -65,33 +69,6 @@ struct Writer {
 };
 
 // The record's head; false: no more follows (it was not made)
-// A record field the pack holds none of (raw_pack.h's v21 fields): the runtime makes such a state at its creation, with its
-// draws' binds and counts
-const char *runtimeOnly(const raw::PackPipeline &p)
-{
-    if (raw::tessellates(p))
-        return "a tessellation state, which the runtime makes";
-    if (p.vertexStrideDynamic)
-        return "a dynamic vertex buffer stride, which the runtime makes";
-    for (const uint8_t stream : p.vertexStreams)
-        if (stream & raw::kStreamBindStride)
-            return "a dynamic vertex buffer stride, which the runtime makes";
-    for (const auto &pulled : p.pulledStride)
-        if (pulled[1])
-            return "a pulled vertex buffer of a dynamic stride, which the runtime makes";
-    if (p.amplificationMax || p.amplificationIdWord || p.amplificationCountWord)
-        return "vertex amplification, which the runtime makes";
-    return nullptr;
-}
-
-const char *runtimeOnly(const raw::PackKernel &k)
-{
-    for (const auto &stride : k.stageInStride)
-        if (stride[1])
-            return "a compute stage-in of a dynamic stride, which the runtime makes";
-    return k.stageInRegionWord ? "a compute stage-in kernel, which the runtime makes" : nullptr;
-}
-
 bool head(Writer &w, const char *tag, const std::string &key, raw::CompileOutcome outcome, const std::string &why)
 {
     fwrite(tag, 1, 4, w.f);
@@ -101,13 +78,18 @@ bool head(Writer &w, const char *tag, const std::string &key, raw::CompileOutcom
     return outcome == raw::CompileOutcome::Made;
 }
 
+// `twinRegisters`: the registers of `rec`'s stride twin (Direct::strideTwinRegisters), which follows it as a record of its
+// own under strideTwinKey(key), of its form
 void record(Writer &w, const std::string &key, raw::CompileOutcome outcome, const std::string &why,
             const raw::RuntimeRecord &rec, const std::map<uint32_t, uint32_t> &registers, const raw::BoundDraw &bound,
-            const std::string &iterated = "")
+            const std::map<uint32_t, uint32_t> &twinRegisters, const std::string &iterated = "")
 {
     if (!head(w, "DREC", key, outcome, why))
         return;
-    w.bytes(&rec.pipeline, sizeof rec.pipeline);
+    raw::PackPipeline pipeline = rec.pipeline;
+    const std::string twinKey = raw::strideTwinKey(key);
+    pipeline.strideTwin = rec.strideTwin ? raw::packKeyHash(twinKey) : 0;
+    w.bytes(&pipeline, sizeof pipeline);
     w.text(rec.keyString);
     std::vector<uint32_t> pairs;
     for (const auto &[m, v] : registers) {
@@ -141,6 +123,26 @@ void record(Writer &w, const std::string &key, raw::CompileOutcome outcome, cons
     w.bytes(bound.push, sizeof bound.push);
     w.list(bound.spill[0]);
     w.list(bound.spill[1]);
+    const bool tess = raw::tessellates(rec.pipeline);
+    w.u32(tess ? 2 : 0);
+    for (uint32_t k = 0; tess && k < 2; k++)
+        program(rec.tessPrograms[k]);
+    for (const auto *list : {&rec.extras, &rec.restore}) {
+        std::vector<uint32_t> words;
+        for (const auto &[m, v] : *list)
+            words.insert(words.end(), {m, v});
+        w.list(words);
+    }
+    if (!rec.strideTwin)
+        return;
+    raw::RuntimeRecord twin = *rec.strideTwin;
+    twin.pipeline.flags |= rec.pipeline.flags & raw::PipelineFetchFreeForm;
+    for (uint32_t c = 0; c < 8; c++)
+        twin.pipeline.fetchRung[c] =
+            (rec.pipeline.flags & raw::PipelineFetchFreeForm)
+                ? rec.pipeline.fetchRung[c]
+                : uint8_t(twin.pipeline.fetchRung[c] | (rec.pipeline.fetchRung[c] & ~raw::kFetchRungMask));
+    record(w, twinKey, raw::CompileOutcome::Made, "", twin, twinRegisters, bound, {}, iterated);
 }
 
 // The rung a Core Animation state's fragment blend is a candidate for (rawpack.py's split tags its line " rung=<2|3>":
@@ -184,9 +186,10 @@ std::vector<uint8_t> testClasses(const raw::PackPipeline &p, const std::string &
 }
 
 struct Counts {
-    uint32_t made = 0, refused = 0, failed = 0, split = 0, variants = 0, planes = 0, planesRefused = 0, sampled = 0;
+    uint32_t made = 0, refused = 0, failed = 0, dropped = 0, split = 0, variants = 0, planes = 0, planesRefused = 0,
+             sampled = 0;
     uint32_t free[4] = {}, freeFetching = 0, freeRefused = 0, freeBarrier = 0;
-    uint32_t written = 0;
+    uint32_t written = 0, twins = 0;
 };
 
 // The state's fetch-free form (fetch_free_make.h), under the state's key
@@ -213,7 +216,7 @@ void makeFetchFree(raw::Direct &direct, Writer &w, id<MTLLibrary> qc, const std:
     rec.pipeline.fetchRung[form.colour] = form.rung == 2 ? raw::FetchBlend : raw::FetchIteratedBlend;
     n.free[form.rung]++;
     n.freeBarrier += barrier;
-    record(w, key, raw::CompileOutcome::Made, why, rec, registers, direct.boundDraw(),
+    record(w, key, raw::CompileOutcome::Made, why, rec, registers, direct.boundDraw(), direct.strideTwinRegisters(),
            form.rung == 3 ? form.program : "");
 }
 
@@ -230,13 +233,10 @@ void makeState(raw::Direct &direct, Writer &w, id<MTLLibrary> qc, const std::str
                           raw::RuntimeRecord &rec) {
         std::map<uint32_t, uint32_t> registers;
         std::string why;
-        raw::CompileOutcome outcome = direct.make(s.d, key, rec, why, t, &registers, true, form);
-        if (const char *runtime = outcome == raw::CompileOutcome::Made ? runtimeOnly(rec.pipeline) : nullptr) {
-            outcome = raw::CompileOutcome::Refused;
-            why = runtime;
-        }
+        const raw::CompileOutcome outcome = direct.make(s.d, key, rec, why, t, &registers, true, form);
         markCandidates(line, rec.pipeline);
-        record(w, key, outcome, why, rec, registers, direct.boundDraw());
+        record(w, key, outcome, why, rec, registers, direct.boundDraw(), direct.strideTwinRegisters());
+        n.twins += outcome == raw::CompileOutcome::Made && rec.strideTwin;
         return outcome;
     };
     const auto forms = [&](raw::ProbeTextures t, const char *suffix) {
@@ -327,13 +327,18 @@ int main(int argc, char **argv)
         direct.makeVariants(true);
         direct.keepBoundDraws(true);
         Counts counts;
-        probe::eachState(libraries, qc, own, standIn, probe::corpusLines(text, own != nil),
-                         [&](const std::string &line, bool ours, probe::State &s) {
-                             raw::ProbeTextures textures = probe::probeTextures(line, ours);
-                             textures.cubic = s.cubic;
-                             makeState(direct, w, qc, line, textures, s, counts);
-                         });
-        uint32_t kernels[3] = {};
+        probe::eachState(
+            libraries, qc, own, standIn, probe::corpusLines(text, own != nil),
+            [&](const std::string &line, bool ours, probe::State &s) {
+                raw::ProbeTextures textures = probe::probeTextures(line, ours);
+                textures.cubic = s.cubic;
+                makeState(direct, w, qc, line, textures, s, counts);
+            },
+            [&](const std::string &line, const std::string &why) {
+                head(w, "DREC", line, raw::CompileOutcome::Refused, why);
+                counts.dropped++;
+            });
+        uint32_t kernels[3] = {}, kernelsDropped = 0;
         probe::eachKernel(
             libraries, text,
             [](const probe::Kernel &k, std::string &why) {
@@ -345,28 +350,29 @@ int main(int argc, char **argv)
                 raw::ComputeRecord rec;
                 std::string why;
                 uint32_t facts[3] = {};
-                raw::CompileOutcome outcome = !offline::kernelFacts(k.descriptor, facts, why)
-                                                  ? raw::CompileOutcome::Refused
-                                                  : direct.kernel(k.descriptor, ask->dispatch(), k.key, rec, why);
-                if (const char *runtime = outcome == raw::CompileOutcome::Made ? runtimeOnly(rec.kernel) : nullptr) {
-                    outcome = raw::CompileOutcome::Refused;
-                    why = runtime;
-                }
+                const raw::CompileOutcome outcome = !offline::kernelFacts(k.descriptor, facts, why)
+                                                        ? raw::CompileOutcome::Refused
+                                                        : direct.kernel(k.descriptor, ask->dispatch(), k.key, rec, why);
                 kernel(w, k.key, outcome, why, rec, facts);
                 kernels[uint32_t(outcome)]++;
             },
-            [](const std::string &, const std::string &) {});
+            [&](const std::string &line, const std::string &why) {
+                head(w, "DKRN", line, raw::CompileOutcome::Refused, why);
+                kernelsDropped++;
+            });
         fclose(w.f);
         fprintf(stderr,
                 "directpack: %u states made (%u split, %u test variants, %u two-plane forms, %u refused, %u sampled "
-                "two-plane variants, %u written-format variants), %u refused, %u failed; %u kernels made, %u refused, "
-                "%u failed\n",
+                "two-plane variants, %u written-format variants), %u refused, %u failed, %u corpus lines making no "
+                "state; %u kernels made, %u refused, %u failed, %u dispatch lines making no kernel\n",
                 counts.made, counts.split, counts.variants, counts.planes, counts.planesRefused, counts.sampled,
-                counts.written, counts.refused, counts.failed, kernels[0], kernels[1], kernels[2]);
+                counts.written, counts.refused, counts.failed, counts.dropped, kernels[0], kernels[1], kernels[2],
+                kernelsDropped);
         fprintf(stderr,
                 "directpack: fetch-free forms: %u on rung 2, %u on rung 3 (%u reading other colours behind a barrier); "
-                "%u still fetch, %u otherwise refused\n",
-                counts.free[2], counts.free[3], counts.freeBarrier, counts.freeFetching, counts.freeRefused);
+                "%u still fetch, %u otherwise refused; %u stride twins\n",
+                counts.free[2], counts.free[3], counts.freeBarrier, counts.freeFetching, counts.freeRefused,
+                counts.twins);
         return 0;
     }
 }

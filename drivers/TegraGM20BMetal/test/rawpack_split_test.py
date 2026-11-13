@@ -115,6 +115,22 @@ class CoreAnimationTest(unittest.TestCase):
         self.assertEqual([rawpack.state_key(drawn) for drawn in harvested], [state, state + ' | xrs=8'])
 
 
+class ProbeEnvTest(unittest.TestCase):
+    def test_a_bucket_reads_the_device_libraries_its_command_line_names(self):
+        # tools/gpu/rawpack.py's view of @gpu_device_data's libraries: a lib=data: D line's library is only there
+        argv, environ = sys.argv, dict(os.environ)
+        try:
+            os.environ['PROBE_DATA_LIBS'] = '/stray'
+            sys.argv = ['rawpack.py', '--probe-bucket', 'b', '--root', '/crawl/root', '--data-libs', '/view/data', '-']
+            env = rawpack.probe_env()
+        finally:
+            sys.argv = argv
+            os.environ.clear()
+            os.environ.update(environ)
+        self.assertEqual(env['PROBE_DATA_LIBS'], str(Path('/view/data').resolve()))
+        self.assertEqual(env['PROBE_LIB_ROOT'], str(Path('/crawl/root').resolve()))
+
+
 class ProbeLogTest(unittest.TestCase):
     def test_an_empty_submission_is_no_probes(self):
         with tempfile.TemporaryDirectory() as scratch:

@@ -724,8 +724,8 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     parts.setBytes = uint16_t(Set0(draw.set0Bindings, draw.set0BindingCount).bytes());
     if (!assembleRecord(parts, key, rules, out, why))
         return CompileOutcome::Refused;
-    out.amplificationLayerWord = uint8_t(draw.amplificationLayerWord);
-    out.amplificationViewportWord = uint8_t(draw.amplificationViewportWord);
+    out.pipeline.amplificationLayerWord = uint8_t(draw.amplificationLayerWord);
+    out.pipeline.amplificationViewportWord = uint8_t(draw.amplificationViewportWord);
     if (!usableStorageMetadata(out.pipeline, out.blob.data(), uint32_t(out.blob.size()))) {
         why = "storage form: assembled record lost its attachment contract";
         return CompileOutcome::Refused;

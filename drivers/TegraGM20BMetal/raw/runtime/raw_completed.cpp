@@ -82,6 +82,15 @@ void Device::offerCompletedSplit(Completed &c, const RuntimeRecord &r, const Pla
     offerSplit(c.pipeline, std::move(source));
 }
 
+std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords)
+{
+    std::vector<uint32_t> words(dwords + 2);
+    Push w{words.data(), words.data() + words.size()};
+    for (uint32_t k = 0; k + 1 < dwords; k += 2)
+        w.m(pairs[k], pairs[k + 1]);
+    return {words.data(), w.at};
+}
+
 Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::string &why, bool *retry)
 {
     if (retry)
@@ -149,13 +158,10 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
           stored.spill.size() == stored.record.spillWords[0] + stored.record.spillWords[1] ? stored.spill.data()
                                                                                            : nullptr,
           tess ? tessPlaced : nullptr);
-    std::vector<uint32_t> words(2 * r.restore.size() + 2);
-    Push w{words.data(), words.data() + words.size()};
+    std::vector<uint32_t> pairs;
     for (const auto &[m, v] : r.restore)
-        w.m(m, v);
-    stored.pipeline.restore.assign(words.data(), w.at);
-    stored.pipeline.amplificationLayerWord = r.amplificationLayerWord;
-    stored.pipeline.amplificationViewportWord = r.amplificationViewportWord;
+        pairs.insert(pairs.end(), {m, v});
+    stored.pipeline.restore = restoreWords(pairs.data(), uint32_t(pairs.size()));
     stored.pipeline.strideTwin = strideTwin;
     if (r.split && !c.record.storageMask)
         offerCompletedSplit(stored, r, vs, caTransform);
@@ -172,8 +178,6 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
                                                                                                : nullptr,
               tess ? tessPlaced : nullptr);
         stored.turned.restore = stored.pipeline.restore;
-        stored.turned.amplificationLayerWord = r.amplificationLayerWord;
-        stored.turned.amplificationViewportWord = r.amplificationViewportWord;
         stored.turned.strideTwin = strideTwin;
         stored.pipeline.turnedTwin = &stored.turned;
         stored.pipeline.turnedVariant = true;

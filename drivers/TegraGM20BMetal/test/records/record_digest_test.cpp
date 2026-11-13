@@ -180,6 +180,42 @@ TEST(RecordDigest, AProgramByteMovesItsRecordAndNamesTheSection)
     EXPECT_EQ(was.at("registers"), now.at("registers"));
 }
 
+// A pack of state 5 with a tessellation state's v24 fields: its control and evaluation programs (of `tessByte`), a stride
+// twin and amplification words, and the restore pairs `restore` after its blob
+std::string writeTessellationPack(const char *name, uint8_t tessByte, const std::vector<uint32_t> &restore)
+{
+    Built b;
+    PackPipeline pp = {};
+    pp.fs = addProgram(b, 0x11, 5);
+    pp.vs = addProgram(b, 0x22, 5);
+    pp.tessPrograms[0] = addProgram(b, tessByte, 1);
+    pp.tessPrograms[1] = addProgram(b, tessByte, 2);
+    pp.controlWord = 5;
+    pp.keyHash = 5;
+    pp.keyString = b.string("state 5");
+    pp.strideTwin = 0x77;
+    pp.amplificationLayerWord = 3;
+    pp.restoreAt = uint32_t(b.blob.size());
+    pp.restoreDwords = uint16_t(restore.size());
+    b.blob.insert(b.blob.end(), restore.begin(), restore.end());
+    b.pipelines.push_back(pp);
+    return write(name, b);
+}
+
+TEST(RecordDigest, ARecordsV24FieldsAreASectionOfTheirOwnWhereItHasThem)
+{
+    const auto plain = records::sectionHashes(state(load(writePack("t0.bin", {5}, 0)), 5));
+    EXPECT_FALSE(plain.count("tail")) << "a record of none digests as a version-23 pack's";
+    const auto a = records::sectionHashes(state(load(writeTessellationPack("t1.bin", 0x55, {0x2080, 0x20})), 5));
+    const auto b = records::sectionHashes(state(load(writeTessellationPack("t2.bin", 0x56, {0x2080, 0x20})), 5));
+    const auto c = records::sectionHashes(state(load(writeTessellationPack("t3.bin", 0x55, {0x2080, 0x21})), 5));
+    ASSERT_TRUE(a.count("tail"));
+    EXPECT_NE(a.at("tail"), b.at("tail")) << "a control program's byte";
+    EXPECT_NE(a.at("tail"), c.at("tail")) << "a restored value";
+    EXPECT_EQ(a.at("record"), b.at("record"));
+    EXPECT_EQ(a.at("vs"), plain.at("vs"));
+}
+
 TEST(RecordDigest, AStatesRegistersAreTheSameFromTheBaselineOrItsBlob)
 {
     const auto registers = [](const char *name, const Registers &registers) {

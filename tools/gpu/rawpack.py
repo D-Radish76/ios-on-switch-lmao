@@ -275,8 +275,7 @@ def probe(args: argparse.Namespace, generator: list[str], env: dict[str, str], w
     if args.data_dir:
         libraries += sorted(Path(args.data_dir).glob('*.metallib'))
     data = library_view(libraries, work / 'data')
-    env = dict(env, PROBE_DATA_LIBS=str(data.resolve()))
-    arguments = ['--probe-bucket', out, '--prebuilt', Path(args.raw).resolve(), '--nvk', dylib]
+    arguments = ['--probe-bucket', out, '--prebuilt', Path(args.raw).resolve(), '--nvk', dylib, '--data-libs', data]
     arguments += ['--root', Path(args.root).resolve()] if args.root else []
     print(generate(generator, [*arguments, '--qc', Path(args.qc).resolve()], env, f'making {out.name}').rstrip())
     for path in out.iterdir():

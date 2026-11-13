@@ -230,7 +230,7 @@ raw::RuntimeRecord amplifying(uint64_t key, bool viewports = false)
     r.pipeline.amplificationIdWord = kIdWord;
     r.pipeline.pushMask = 1u << (kIdWord - 1) | (viewports ? 1u << (kViewportWord - 1) : 0);
     r.pipeline.vertexSlot = 0xff;
-    r.amplificationViewportWord = viewports ? kViewportWord : 0;
+    r.pipeline.amplificationViewportWord = viewports ? kViewportWord : 0;
     return r;
 }
 
