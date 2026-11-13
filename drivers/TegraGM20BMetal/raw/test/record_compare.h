@@ -57,9 +57,19 @@ inline std::string differences(const raw::Pack &pack, const raw::PackPipeline &p
         why += " samplers";
     if (pack.string(pp.keyString) != r.keyString)
         why += " key-fields";
+    // a pack record's blob holds its extras after its varying pairs, its restore pairs at restoreAt (directlink.py)
+    std::vector<uint32_t> held = r.blob, restore;
+    for (const auto &[m, v] : r.extras)
+        held.insert(held.end(), {m, v});
+    for (const auto &[m, v] : r.restore)
+        restore.insert(restore.end(), {m, v});
     const uint32_t *blob = pack.section<uint32_t>(raw::PackBlob) + pp.blob;
-    if (pp.blobDwords != r.blob.size() || memcmp(blob, r.blob.data(), r.blob.size() * 4))
-        why += " blob" + blobDifferences(blob, pp.blobDwords, r.blob);
+    if (pp.blobDwords != held.size() || memcmp(blob, held.data(), held.size() * 4))
+        why += " blob" + blobDifferences(blob, pp.blobDwords, held);
+    if (pp.restoreDwords != restore.size() ||
+        (!restore.empty() &&
+         memcmp(pack.section<uint32_t>(raw::PackBlob) + pp.restoreAt, restore.data(), restore.size() * 4)))
+        why += " restore";
     if (pp.entries != rp.entries || memcmp(pp.entry, rp.entry, sizeof pp.entry)) {
         why += " entries[" + std::to_string(pp.entries) + "/" + std::to_string(rp.entries);
         for (uint32_t k = 0; k < 16; k++)
@@ -101,17 +111,21 @@ inline std::string differences(const raw::Pack &pack, const raw::PackPipeline &p
         why += " reads";
     if (pp.variantCount[0] != rp.variantCount[0] || pp.variantCount[1] != rp.variantCount[1])
         why += " variants";
-    for (int k = 0; k < 2; k++) {
-        const raw::PackProgram &packed = pack.section<raw::PackProgram>(raw::PackPrograms)[k ? pp.fs : pp.vs];
+    const bool tess = raw::tessellates(pp);
+    const uint32_t index[4] = {pp.vs, pp.fs, pp.tessPrograms[0], pp.tessPrograms[1]};
+    const raw::CapturedProgram *program[4] = {&r.programs[0], &r.programs[1], &r.tessPrograms[0], &r.tessPrograms[1]};
+    const char *name[4] = {" vertex-program", " pixel-program", " control-program", " evaluation-program"};
+    for (int k = 0; k < (tess ? 4 : 2); k++) {
+        const raw::PackProgram &packed = pack.section<raw::PackProgram>(raw::PackPrograms)[index[k]];
         raw::PackProgram made;
-        const std::vector<uint8_t> slot = raw::programSlot(r.programs[k], made);
+        const std::vector<uint8_t> slot = raw::programSlot(*program[k], made);
         const uint8_t *heap = pack.section<uint8_t>(raw::PackHeap) + packed.heapOffset;
         if (packed.bytes != made.bytes || memcmp(heap, slot.data(), slot.size()) ||
             packed.program - packed.heapOffset != made.program || packed.dataOffset != made.dataOffset ||
             packed.dataBytes != made.dataBytes || packed.cbufs != made.cbufs ||
             memcmp(packed.cbufType, made.cbufType, sizeof made.cbufType) || packed.gprs != made.gprs ||
             packed.boundTextures != made.boundTextures)
-            why += k ? " pixel-program" : " vertex-program";
+            why += name[k];
     }
     return why;
 }
