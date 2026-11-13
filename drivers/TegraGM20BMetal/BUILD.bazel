@@ -64,6 +64,7 @@ filegroup(
         "raw/runtime/raw_metallib.h",
         "raw/runtime/raw_pack.h",
         "raw/runtime/RawPipelineKey.h",  # the runtime's key of a state, which probe_states.h files records under
+        "raw/runtime/raw_pipeline_fields.h",  # the descriptor fields that key reads
     ],
 )
 
@@ -79,6 +80,7 @@ filegroup(
         "raw/runtime/RawRenderKey.h",
         "raw/runtime/RawRenderKey.mm",
         "raw/runtime/RawPipelineKey.h",
+        "raw/runtime/raw_pipeline_fields.h",
         "raw/runtime/raw_render_key.h",
         "raw/runtime/raw_cache.cpp",
         "raw/runtime/raw_cache.h",

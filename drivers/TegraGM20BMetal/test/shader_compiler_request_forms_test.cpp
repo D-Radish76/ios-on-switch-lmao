@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Each form of state boot 21's shader compiler refused as "a request whose fields give another key than its own" (Core
-// Animation's blur chain and the solid fill into b3a8, a state's written formats, vertex amplification, a compute stage
-// input), keyed the way the client keys it (RawMetalStates.mm's pipeline key and RawMetalCubic.mm's variant name, the
+// Animation's blur chain and the solid fill into b3a8, a state's written formats, vertex amplification, a tessellation
+// state, a compute stage input), keyed the way the client keys it (RawMetalStates.mm's pipeline key and RawMetalCubic.mm's variant name, the
 // compute state's constants in RawMetalComputeState.mm) and asked with the request the client makes of it
 // (RawCompleteRemote.mm): the compiler makes the client's key of every one, and a request that leaves the form out is
 // refused with the first field the two keys part at and both keys. Every field of a request goes over the wire, and the
@@ -159,6 +159,41 @@ TEST(CompileRequestForms, VertexAmplification)
         bare.fields.amplification = 1;
         expectRefusedAt(bare, "amp=2");
     }
+}
+
+// NativeM2vMissingTest's patch state: a quad patch's post-tessellation vertex function, integer partitioning, factor 16
+// at most, made by this Mac's Metal so the function's patch type is Metal's own
+TEST(CompileRequestForms, ATessellationState)
+{
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    ASSERT_TRUE(device != nil);
+    NSString *source = @"#include <metal_stdlib>\n"
+                        "using namespace metal;\n"
+                        "struct ControlPoint { float4 position [[attribute(0)]]; };\n"
+                        "struct QuadPatch { patch_control_point<ControlPoint> points; };\n"
+                        "[[patch(quad, 4)]] vertex float4 missing_post(QuadPatch patch [[stage_in]],\n"
+                        "                                              float2 uv [[position_in_patch]]) {\n"
+                        "    return mix(patch.points[0].position, patch.points[2].position, uv.x);\n"
+                        "}\n";
+    NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithSource:source options:nil error:&error];
+    ASSERT_TRUE(library != nil) << (error ? error.localizedDescription.UTF8String : "");
+    MTLRenderPipelineDescriptor *d = quad(MTLPixelFormatRGBA8Unorm);
+    d.vertexFunction = [library newFunctionWithName:@"missing_post"];
+    ASSERT_EQ(d.vertexFunction.patchType, MTLPatchTypeQuad);
+    MTLVertexDescriptor *v = [MTLVertexDescriptor vertexDescriptor];
+    v.attributes[0].format = MTLVertexFormatFloat4;
+    v.layouts[0].stride = 16;
+    v.layouts[0].stepFunction = MTLVertexStepFunctionPerPatchControlPoint;
+    d.vertexDescriptor = v;
+    d.tessellationPartitionMode = MTLTessellationPartitionModeInteger;
+    d.maxTessellationFactor = 16;
+    const Asked a = render(d, {});
+    EXPECT_NE(a.key.key.find(" t=1:0:0:0:0:16:0 "), std::string::npos) << a.key.key;
+    expectTaken(a);
+    raw::CompileRequest bare = a.request;
+    bare.fields.patchType = 0;
+    expectRefusedAt(bare, "t=1:0:0:0:0:16:0");
 }
 
 // NativeStageInTest's kernel: a float2 per thread from buffer 1 at a static and at the dynamic stride
