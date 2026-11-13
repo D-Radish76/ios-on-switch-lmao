@@ -170,8 +170,8 @@ void scheduled(RMCommandBuffer *cb)
 
 // Completed: CPU-signalled events, written resources marked, handlers (on the queue's completion queue when it has one), the
 // objects released, waiters woken.
-// The raw path's empty chunks go back as m2v's blocks do: on memory pressure, and outside the render server once nothing completed
-// for NMB_IDLE_RELEASE_MS (each completion moves the deadline)
+// The raw path's empty chunks go back as m2v's blocks do: on memory pressure, and once nothing completed for a second (each
+// completion moves the deadline)
 GpuMemoryRelease &gRawRelease = *new GpuMemoryRelease;
 
 static void finished(RMCommandBuffer *cb);

@@ -16,7 +16,7 @@ struct IconRenderTest: HWTest {
 
     static let agent = "iconservicesagent"
     static let inactiveHardMB = 15
-    // NMB_IDLE_RELEASE_MS outside the render server (TegraGM20BMetalPlugin.mm) and the give-back's own work after it
+    // GpuMemoryRelease.h's idle second and the give-back's own work after it
     static let giveBackNs: UInt64 = 2_500_000_000
 
     func run(_ context: TestContext) async throws -> Outcome {
