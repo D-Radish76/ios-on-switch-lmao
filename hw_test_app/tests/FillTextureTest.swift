@@ -56,7 +56,7 @@ struct FillTextureTest: HWTest {
             let texture = try made.get()
             let pattern = (0..<Self.side * Self.side * cell.bytes).map { UInt8(truncatingIfNeeded: $0 &* 37) }
             try await gpu.upload(pattern, to: texture, bytesPerRow: Self.side * cell.bytes)
-            let before = RawFacade.counters(of: gpu.device)["fill_twod"] ?? 0
+            let before = RawFacade.counters(of: gpu.device)["fill_twod"]
             var responded = true
             let path = try await gpu.run { commands in
                 let blit = commands.makeBlitCommandEncoder()!
@@ -69,7 +69,8 @@ struct FillTextureTest: HWTest {
                 blit.endEncoding()
             }.path
             guard responded else { return .skip("the blit encoder answers no fillTexture:") }
-            let twod = (RawFacade.counters(of: gpu.device)["fill_twod"] ?? 0) - before
+            let after = RawFacade.counters(of: gpu.device)["fill_twod"]
+            let twod = before.flatMap { b in after.map { $0 - b } }
             let got = try await gpu.read(texture, bytesPerPixel: cell.bytes)
             let want = Self.codes(cell)
             var inside = 0, outside = 0
@@ -86,10 +87,10 @@ struct FillTextureTest: HWTest {
             metrics.set("\(cell.name)_path", path)
             metrics.set("\(cell.name)_inside_wrong", inside)
             metrics.set("\(cell.name)_outside_changed", outside)
-            metrics.set("\(cell.name)_twod", twod)
+            if let twod { metrics.set("\(cell.name)_twod", twod) }
             if path != "raw" { wrong.append("\(cell.name)_path") }
             if inside > 0 || outside > 0 { wrong.append(cell.name) }
-            if plain && twod != 1 { wrong.append("\(cell.name)_twod") }
+            if plain, let twod, twod != 1 { wrong.append("\(cell.name)_twod") }
         }
         metrics.set("plain", plain ? 1 : 0)
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
@@ -98,9 +99,9 @@ struct FillTextureTest: HWTest {
     /// The colour's bytes in memory order: Metal's nearest codes, sRGB channels encoded, packed as the format stores them
     static func codes(_ cell: Cell) -> [UInt8] {
         let srgb = cell.format == .bgra8Unorm_srgb || cell.format == .rgba8Unorm_srgb
-        func code(_ v: Double, _ max: Double, _ encode: Bool) -> UInt32 {
+        func code(_ v: Double, _ top: Double, _ encode: Bool) -> UInt32 {
             let e = encode ? (v <= 0.0031308 ? v * 12.92 : 1.055 * pow(v, 1 / 2.4) - 0.055) : v
-            return UInt32(min(max(e, 0), 1) * max + 0.5)
+            return UInt32(min(max(e, 0), 1) * top + 0.5)
         }
         func le(_ word: UInt32, _ bytes: Int) -> [UInt8] {
             (0..<bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
