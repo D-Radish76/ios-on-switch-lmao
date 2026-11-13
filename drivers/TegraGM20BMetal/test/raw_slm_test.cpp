@@ -156,8 +156,11 @@ TEST(SlmOwned, EveryPlacedProgramGetsTheAreaBeforeItsBind)
 {
     const std::string gpu = SourceText("../raw/runtime/raw_gpu.cpp");
     const std::string pack = Body(gpu, "Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)");
-    EXPECT_LT(at(pack, "slmNeed(std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header)))"),
-              at(pack, "build(pl, pp, vs, fs,"));
+    // a tessellation state's control and evaluation programs count too
+    EXPECT_LT(at(pack, "uint64_t slm = std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header));"),
+              at(pack, "slm = std::max(slm, slmPerWarpOfHeader(tessPlaced[k].header));"));
+    EXPECT_LT(at(pack, "slm = std::max(slm, slmPerWarpOfHeader(tessPlaced[k].header));"), at(pack, "slmNeed(slm)"));
+    EXPECT_LT(at(pack, "slmNeed(slm)"), at(pack, "build(pl, pp, vs, fs,"));
     const std::string completed = SourceText("../raw/runtime/raw_completed.cpp");
     EXPECT_THAT(Body(completed, "bool Device::placeCompleted(const CapturedProgram &p, PlacedProgram &out)"),
                 HasSubstr("slmNeed(slmPerWarpOfHeader(p.image.data()))"));
