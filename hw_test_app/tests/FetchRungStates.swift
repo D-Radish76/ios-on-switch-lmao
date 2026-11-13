@@ -51,6 +51,12 @@ enum FetchRungStates {
         2: [("PBGRAXm_TimgBclrA2Xhf_Isrc", "clr"), ("PBGRAXm_TimgBclrA2Xhf_IsrcM1", "clr_m1")]
     ]
 
+    /// Whether the pack holds no fetch-free form of the state on this IPSW: 21H461's plus darker
+    /// (raw/pack/iterated/table.py BEYOND_BOUND_ON)
+    static func formless(_ state: State) -> Bool {
+        state.program == "pdi" && ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
+    }
+
     /// The program raw_chip_facts.h names a state's by on this IPSW: QuartzCore 21H461's colour matrix has no clamp pair,
     /// so its form is vcm.rows (raw/pack/fetchfree_link.py)
     static func program(_ state: State) -> String {

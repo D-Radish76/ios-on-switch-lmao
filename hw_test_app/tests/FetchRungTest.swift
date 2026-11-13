@@ -14,7 +14,8 @@ import Metal
 ///                   fetch.blend allows 2; rung 3's programs are exact in QuartzCore's arithmetic, so 2 too)
 ///   us_rung4_<key>, us_rung<N>_<key>  one full-screen draw's GPU time each way; us_pass_<key> per pass of the program
 ///   error_<key>     a draw the GPU refused (the channel reopens and the next state runs)
-///   noform_<key>    the pack holds no fetch-free form of the state on this IPSW (21H461's pdi): left out of the verdict
+///   noform_<key>    the forced draw took no fetch-free form: left out where the pack holds none on this IPSW (21H461's
+///                   pdi), else formless= and FAIL
 /// proven= the programs every state of which was within the bound and faster; on= the programs the rules drew on the
 /// rung (raw_chip_facts.h kIteratedProven for rung 3). r<N>= the draws the facade's counter says took the fetch-free
 /// form. Core Animation's clear (clr, clr_m1 with its memoryless image) loads no colour, so it draws plain:
@@ -87,6 +88,7 @@ struct FetchRungTest: HWTest {
         var beyond: [String] = []
         var slower: [String] = []
         var refused: [String] = []
+        var formless: [String] = []
         var outcomes: [(program: String, ok: Bool)] = []
         var on = Set<String>()
         let key = "fetch_rung\(rung)"
@@ -108,6 +110,7 @@ struct FetchRungTest: HWTest {
             metrics.set("unforced_\(state.key)", m.unforced)
             if m.formless {
                 metrics.set("noform_\(state.key)", 1)
+                if !FetchRungStates.formless(state) { formless.append(state.key) }
                 continue
             }
             forcedDraws += 2 + Self.draws * (Self.runs + 1)
@@ -151,11 +154,12 @@ struct FetchRungTest: HWTest {
         metrics.set("on", named(on.sorted()))
         let counted = taken >= forcedDraws
         let verdict =
-            refused.isEmpty && onUnproven.isEmpty && provenOff.isEmpty && counted && fetching.isEmpty ? "PASS" : "FAIL"
+            refused.isEmpty && formless.isEmpty && onUnproven.isEmpty && provenOff.isEmpty && counted
+                && fetching.isEmpty ? "PASS" : "FAIL"
         metrics.set("verdict", verdict)
         for (field, names) in [
-            ("refused", refused), ("on_unproven", onUnproven), ("proven_off", provenOff), ("beyond", beyond),
-            ("slower", slower), ("fetching", fetching),
+            ("refused", refused), ("formless", formless), ("on_unproven", onUnproven), ("proven_off", provenOff),
+            ("beyond", beyond), ("slower", slower), ("fetching", fetching),
         ] where !names.isEmpty {
             metrics.set(field, named(names))
         }
@@ -163,13 +167,15 @@ struct FetchRungTest: HWTest {
         let why =
             !refused.isEmpty
             ? "the GPU refused a draw"
-            : !onUnproven.isEmpty
-                ? "the rules draw a program on rung \(rung) that is beyond the bound or slower"
-                : !provenOff.isEmpty
-                    ? "a program within the bound and faster is not drawn on rung \(rung)"
-                    : !counted
-                        ? "the facade drew \(taken) of the forced draws on rung \(rung)"
-                        : "a state that loads no colour fetched"
+            : !formless.isEmpty
+                ? "a forced draw took no fetch-free form where the pack should hold one"
+                : !onUnproven.isEmpty
+                    ? "the rules draw a program on rung \(rung) that is beyond the bound or slower"
+                    : !provenOff.isEmpty
+                        ? "a program within the bound and faster is not drawn on rung \(rung)"
+                        : !counted
+                            ? "the facade drew \(taken) of the forced draws on rung \(rung)"
+                            : "a state that loads no colour fetched"
         return .fail(why, metrics)
     }
 }
