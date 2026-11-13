@@ -59,6 +59,12 @@ class Forms27(unittest.TestCase):
         self.assertEqual(self.form('PBGRAXm_TkfhBpldA2Xhf_Irsd'), (3, 'pld'))
         self.assertEqual(self.form('PBGRAXm_TkfhBmpyA2Xhf_Irsd'), (3, 'mpy'))
 
+    def test_an_unbounded_rgba16float_state_takes_its_program_where_one_is_written(self):
+        self.assertEqual(self.form('PRGhAXm_TdgdBsbtA2Xhfu_Isrc'), (3, 'sbt.u'))
+        self.assertEqual(self.form('PRGhAXm_TdgdBdivA2Xhfu_Isrc'), (3, 'div.u'), 'no saturate on a float target')
+        self.assertEqual(self.form('PRGhAXm_TdgdBmpyA2Xhfu_Isrc'), (0, 'no iterated program for mpy'))
+        self.assertEqual(self.form('PRGhAXm_TdgdBaddA2Xhfu_Isrc'), (0, 'blended colour not 8-bit unorm'))
+
     def test_an_unbounded_form_takes_its_program_except_with_the_functions_beyond_the_bound(self):
         self.assertEqual(self.form('PBGRAXm_TimgBlltA2Xhfu_Isrc'), (3, 'llt.u'))
         self.assertEqual(self.form('PBGRAXm_TimgBdivA2Xhfu_Isrc'), (3, 'div.u'))

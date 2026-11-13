@@ -1426,7 +1426,8 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
         pl.readBits |= uint8_t(1u << pl.freeForm.colour);
         if (pl.freeForm.rung == FetchIteratedBlend) {
             pl.restore.clear();
-            iteratedBlendWords(*pack_.iterated(pp), pl.freeForm.colour, pl.methods, pl.restore);
+            iteratedBlendWords(*pack_.iterated(pp), pl.freeForm.colour, pl.colorFormats[pl.freeForm.colour], pl.methods,
+                               pl.restore);
         }
     }
     pl.turnRefused = pp.flags & PipelineTurnRefused;

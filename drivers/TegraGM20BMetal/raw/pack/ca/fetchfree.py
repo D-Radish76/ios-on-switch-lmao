@@ -13,9 +13,10 @@ are not those this QuartzCore makes of its name (another build's journal), nor w
 image and texture pairings iterated/table.py names, and colour opcodes, whose storage forms take the colour they
 compute outside [0, 1] or not by opcode, so no one source clamp fits them (with the saturate rung 3's forms carry,
 508 of 674 states beyond on 24B119 and 373 of 504 on 21H461, up to 255 codes). Rung 2 also needs an 8-bit unorm target
-and no extended or unbounded range (the ROP clamps an 8-bit target's source, the fragment does not). Rung 3 also needs
-the state to write its blended colour alone and that colour to be its first: the unit refuses a draw of more than one
-colour target, so the draw narrows the targets to it.
+and no extended or unbounded range (the ROP clamps an 8-bit target's source, the fragment does not). Rung 3 takes an
+8-bit unorm target, or an RGBA16Float one under unbounded range, whose '.u' program needs no store's clamp and whose
+source the form leaves unsaturated. Rung 3 also needs the state to write its blended colour alone and that colour to
+be its first: the unit refuses a draw of more than one colour target, so the draw narrows the targets to it.
 
 The form is given as edits of the state's R line (free_tokens), which directpack.mm applies to make it.
 """
@@ -33,6 +34,7 @@ FIXED_FUNCTION_BLENDS = range(26)
 # its program and constants come from each draw's uniform (fetchfree_link.py: the GPU's macro loads them)
 COLOUR_MATRIX = 'vcm'
 UNORM8 = (70, 80)  # MTLPixelFormatRGBA8Unorm, MTLPixelFormatBGRA8Unorm
+RGBA16_FLOAT = 115
 
 
 def _image_reads_dest(tables: caspec.Tables, function: int) -> bool:
@@ -63,11 +65,14 @@ def _iterated(tables: caspec.Tables, s: caspec.Spec, colors: dict[int, tuple[int
         return 0, f'no iterated program for {mode}'
     if program in table.BEYOND_BOUND | table.BEYOND_BOUND_ON.get(tables.t['build'], frozenset()):
         return 0, f'{program} beyond the bound on the host gate'
+    saturated = colors[s.S][0] in UNORM8
     names = _image_names(tables, s)
-    if any(program in table.BEYOND_WITH_IMAGE.get(image, ()) for image in names):
+    with_image = [table.BEYOND_WITH_IMAGE] + ([table.BEYOND_SATURATED_WITH_IMAGE] if saturated else [])
+    if any(program in beyond.get(image, ()) for beyond in with_image for image in names):
         return 0, f'{program} beyond the bound on the host gate with its image function'
     texture = {v: k for k, v in tables.dec['TextureFunction'].items()}.get(s.T)
-    if program in table.BEYOND_WITH_TEXTURE.get(texture, ()):
+    with_texture = [table.BEYOND_WITH_TEXTURE] + ([table.BEYOND_SATURATED_WITH_TEXTURE] if saturated else [])
+    if any(program in beyond.get(texture, ()) for beyond in with_texture):
         return 0, f'{program} beyond the bound on the host gate with its texture function'
     if s.S != 0 or any(mask for c, (_fmt, mask) in colors.items() if c != s.S):
         return 0, 'writes another colour'
@@ -102,7 +107,13 @@ def _image_names(tables: caspec.Tables, s: caspec.Spec) -> list[str]:
 
 
 def _target(s: caspec.Spec, colors: dict[int, tuple[int, int]]) -> str:
-    return '' if s.S in colors and colors[s.S][0] in UNORM8 else 'blended colour not 8-bit unorm'
+    """Give why the blended colour's format takes no form, '' where it takes one."""
+    if s.S not in colors:
+        return 'blended colour not 8-bit unorm'
+    if colors[s.S][0] in UNORM8:
+        return ''
+    unbounded_iterated = s.S == 0 and s.flag('u') and s.fragB not in FIXED_FUNCTION_BLENDS
+    return '' if colors[s.S][0] == RGBA16_FLOAT and unbounded_iterated else 'blended colour not 8-bit unorm'
 
 
 def free_tokens(tables: caspec.Tables, name: str, line: str, rung: int) -> str:

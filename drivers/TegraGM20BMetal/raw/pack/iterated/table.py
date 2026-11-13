@@ -32,20 +32,12 @@ def programs() -> dict[str, Program]:
 BEYOND_BOUND = frozenset({'cbn', 'cbn.x', 'div', 'div.x', 'cdg', 'cdg.x', 'hue', 'col', 'llt.x', 'sbt.x'})
 # by QuartzCore build: 21H461's plus darker, 255 codes in every state (210 of 210)
 BEYOND_BOUND_ON = {'21H461': frozenset({'pdi'})}
-# by image function: luminosity and saturation over sar and ara images (16 of 38 states, 137 codes), and the unbounded
-# forms over 24B119's dfr, rsd, scd and usd images (up to 255 codes; over src every one is within)
-BEYOND_WITH_IMAGE = {
-    'sar': frozenset({'lum', 'sat'}),
-    'ara': frozenset({'lum', 'sat'}),
-    'dfr': frozenset({'cbn.u', 'div.u'}),
-    'rsd': frozenset({'div.u'}),
-    'scd': frozenset({'cbn.u', 'div.u', 'dlc.u', 'sbt.u'}),
-    'usd': frozenset({'div.u', 'sbt.u'}),
-}
+# by image function: luminosity and saturation over sar and ara images (16 of 38 states, 137 codes)
+BEYOND_WITH_IMAGE = {'sar': frozenset({'lum', 'sat'}), 'ara': frozenset({'lum', 'sat'})}
 # by texture function: the colour matrices, whose source leaves the premultiplied range the unit's programs assume
 # (151 of 152 states beyond, up to 255 codes); hard light, linear light, lighten, pin light and the colour matrix stay
 # within the bound, darker colour too but under c3b. Luminosity over the spl, dff and dfg functions' memoryless images,
-# whose colour leaves the premultiplied domain (3 to 20 codes). The unbounded forms under clr and dgd (up to 194 codes).
+# whose colour leaves the premultiplied domain (3 to 20 codes).
 _COLOUR_MATRIX_BEYOND = frozenset(
     {'cli', 'dif', 'drk', 'dso', 'lbn', 'lso', 'lum', 'mpy', 'ovl', 'pdi', 'pld', 'sat', 'sbt', 'sds', 'slt'}
 )
@@ -54,8 +46,19 @@ BEYOND_WITH_TEXTURE = dict.fromkeys(('c33', 'c3s', 'c4b', 'c4p'), _COLOUR_MATRIX
     'spl': frozenset({'lum'}),
     'dff': frozenset({'lum'}),
     'dfg': frozenset({'lum'}),
+}
+# On an 8-bit unorm target only, whose form saturates its source: the unbounded forms under 24B119's clr and dgd
+# texture functions and dfr, rsd, scd and usd images (up to 255 codes; over src every one is within). On RGBA16Float,
+# where the source is not saturated, every unbounded state is within (84 of 84 on 24B119, 20 of 20 on 21H461).
+BEYOND_SATURATED_WITH_TEXTURE = {
     'clr': frozenset({'cbn.u', 'cdg.u', 'div.u'}),
     'dgd': frozenset({'cdg.u', 'div.u', 'dlc.u'}),
+}
+BEYOND_SATURATED_WITH_IMAGE = {
+    'dfr': frozenset({'cbn.u', 'div.u'}),
+    'rsd': frozenset({'div.u'}),
+    'scd': frozenset({'cbn.u', 'div.u', 'dlc.u', 'sbt.u'}),
+    'usd': frozenset({'div.u', 'sbt.u'}),
 }
 
 
