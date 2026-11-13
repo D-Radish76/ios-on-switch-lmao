@@ -9,6 +9,7 @@
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
 #include "../raw/runtime/raw_compute_key.h"
+#include "StageInText.h"
 #include "made_metallib.h"
 #include "bazel/testing/source_text.h"
 
@@ -344,6 +345,8 @@ TEST(CompileRequestForms, TheCompilersDescriptorCarriesEveryFieldTheClientRead)
     const raw::StageInFields stageBack = raw::stageInFieldsOf(raw::stageInOf(in));
     EXPECT_EQ(memcmp(&stageBack, &in, sizeof in), 0);
     EXPECT_EQ(raw::stageInOf(raw::StageInFields()), nil);
+    // the frontend's journal writes a D line's stage input as the runtime keys it (pack/kernel_shapes.h reads it back)
+    EXPECT_EQ(stageInText(raw::stageInOf(in)), raw::stageInText(in));
 
     raw::RenderVariant v;
     v.cubic.samplers.push_back({1, 2, 2, 0, 1, false});
