@@ -13,8 +13,10 @@ import Metal
 /// format, `cells=<fmt>:<proven>/<odd>/<3d>` each exact, near (within one code) or wrong, and
 /// `gpu_ms=<fmt>:<2D>/<3D>` (a 1024x1024 chain each way). A unorm or sRGB format wrong at a proven step fails it; the odd
 /// steps (776x24's 97 -> 48, 255x129's 255 -> 127 and 129 -> 64) and RGBA16Float, whose half ulps the probes did not bound,
-/// are reported. The 3D arm draws each level into a one-level texture (paths_3d). Details follow: <fmt>_* (proven),
-/// <fmt>_odd_*, <fmt>_3d_*, <fmt>_l1_* (level 1 of both routes compared).
+/// are reported. generateMipmaps takes the pack's mip state (Metal's taps, sRGB decoded from the codes) at every step the
+/// 2D engine is not proven at and at every step of an sRGB chain. The 3D arm is a control: the texture unit's own bilinear
+/// filter drawing each level into a one-level texture (paths_3d). Details follow: <fmt>_* (proven), <fmt>_odd_*,
+/// <fmt>_3d_* (the control's proven steps), <fmt>_3d_odd_*, <fmt>_l1_* (level 1 of both compared).
 struct MipTwodTest: HWTest {
     let id = "gpu.raw.mip_twod"
     let name = "generateMipmaps on the 2D engine within one code of Metal's step, and its GPU time against 3D passes"
@@ -36,7 +38,8 @@ struct MipTwodTest: HWTest {
         let rounding = MipRounding()
         for f in MipFormats.twod {
             let chains = MipChains(gpu: gpu, format: f)
-            var proven = MipTally(), odd = MipTally(), control = MipTally(), level1 = MipTally()
+            var proven = MipTally(), odd = MipTally(), control = MipTally(), controlOdd = MipTally(),
+                level1 = MipTally()
             var arm3d = "-"
             var evidence = MipSrgbEvidence()
             let isSrgb = f.layout.fields.contains { $0.kind == .srgb }
@@ -51,8 +54,7 @@ struct MipTwodTest: HWTest {
                 do {
                     let (drawn, path3d) = try await chains.drawn(twod[0], w, h)
                     paths3d.insert(path3d)
-                    var unused = MipTally()
-                    chains.compare(drawn, w, h, proven: &control, odd: &unused, rounding: nil)
+                    chains.compare(drawn, w, h, proven: &control, odd: &controlOdd, rounding: nil)
                     level1.add(twod[1], drawn[1], texels: max(1, w / 2) * max(1, h / 2), f.layout)
                     arm3d = control.verdict
                     if isSrgb { evidence.first3d = evidence.first3d ?? chains.firstBeyondOne(drawn, w, h) }
@@ -70,6 +72,7 @@ struct MipTwodTest: HWTest {
             Self.report(&detail, f.name, proven)
             Self.report(&detail, f.name + "_odd", odd)
             Self.report(&detail, f.name + "_3d", control)
+            Self.report(&detail, f.name + "_3d_odd", controlOdd)
             Self.report(&detail, f.name + "_l1", level1)
             if proven.wrong > 0 && !f.layout.fields.contains(where: { $0.kind == .float }) {
                 wrong.append("\(f.name)_wrong")
