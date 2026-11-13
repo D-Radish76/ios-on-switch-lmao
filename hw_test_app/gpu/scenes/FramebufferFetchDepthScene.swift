@@ -15,7 +15,8 @@ struct FramebufferFetchDepthScene: GPUScene {
             for stencil in [false, true] {
                 for memoryless in [false, true] {
                     do {
-                        try await draw(gpu, samples: samples, stencil: stencil, memoryless: memoryless, &packed, &result)
+                        try await draw(
+                            gpu, samples: samples, stencil: stencil, memoryless: memoryless, &packed, &result)
                     } catch {
                         result.expect(false, "\(Self.key(samples, stencil, memoryless)): \(GPU.describe(error))")
                     }

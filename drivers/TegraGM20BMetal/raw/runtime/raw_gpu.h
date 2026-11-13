@@ -3227,8 +3227,9 @@ private:
     uint8_t zetaKindsProbed() const
     {
 #if SWITCH_RAW_DIAGNOSTICS
-        return uint8_t(probeZetaKinds.load(std::memory_order_relaxed) |
-                       probePlainZetas.load(std::memory_order_relaxed) << 1);
+        const bool kinds = probeZetaKinds.load(std::memory_order_relaxed);
+        const bool plain = probePlainZetas.load(std::memory_order_relaxed);
+        return uint8_t(kinds | plain << 1);
 #else
         return 0;
 #endif

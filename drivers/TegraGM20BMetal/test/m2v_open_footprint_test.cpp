@@ -73,7 +73,8 @@ TEST(M2VOpen, ClientFootprint)
 
     // Every process compiles Metal source in-process, the render server too: no environment turns it on
     NSError *error = nil;
-    id<MTLLibrary> library =
-        [device newLibraryWithSource:@"kernel void k(device uint *o [[buffer(0)]]) { o[0] = 1; }" options:nil error:&error];
+    id<MTLLibrary> library = [device newLibraryWithSource:@"kernel void k(device uint *o [[buffer(0)]]) { o[0] = 1; }"
+                                                  options:nil
+                                                    error:&error];
     EXPECT_TRUE(library != nil) << (error ? error.localizedDescription.UTF8String : "no error");
 }
