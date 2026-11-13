@@ -261,6 +261,9 @@ struct Texture {
     // renders it, block-linear, through a pool image the copy engine fills from it before and copies back to it after (NVK's
     // own tiled shadow, nvk_linear_render_copy, for the same targets: the texels stored are the same)
     bool shadowTarget = false;
+    // A colour view of a zeta's memory (raw_zeta_colour.h): its pages keep the zeta's PTE kind, which the colour ROP's writes
+    // do not reach (boot 21's gpu.raw.zeta_colour), so a pass renders it like a shadow target, through a plain pool image
+    bool zetaPages = false;
     bool memoryless = false;  // no memory: a pass gives it a backing (Device::backing)
     bool wc =
         false;  // its span is write-combined GPU-pool memory (createTexture wc): CPU writes need no clean (Buffer::wc)
@@ -1829,8 +1832,6 @@ public:
     Pipeline *depthResolvePipeline(uint32_t format, uint32_t filter);  // raw_samples.h depthResolveState
     Pipeline *stencilBitsPipeline(uint32_t format, uint32_t samples, StencilSample pick);    // raw_stencil_bits.h
     Pipeline *stencilColourPipeline(uint32_t format, uint32_t samples, StencilSample pick);  // raw_zeta_colour.h
-    // raw_zeta_colour.h: the chip fact, or a debug build's probe asking for the route
-    bool zetaColourTaken() const;
     // raw_reach.h: `pl` drawing its geometry into a reach target; null: *why
     Pipeline *reachTwin(Pipeline &pl, const char **why);
     // s's header under address map `map` (Texture::addressMap), made now if it is not yet
@@ -2498,8 +2499,10 @@ public:
     std::atomic<bool> probeZetaKinds{false};
     // memoryless zetas take plain memory whatever their kind: gpu.x1.ce_compressed_depth's reference pictures
     std::atomic<bool> probePlainZetas{false};
-    // stencil planes take the one-draw route (raw_zeta_colour.h) where it writes them, whatever kColourRopWritesZeta says
-    std::atomic<bool> probeZetaColour{false};
+    // stencil planes take raw_stencil_bits.h's eight draws, not the one-draw route (raw_zeta_colour.h)
+    std::atomic<bool> probeStencilBits{false};
+    // the one-draw route's colour ROP over the zeta's own pages, untiled, not through its pool image (raw_zeta_colour.cpp)
+    std::atomic<bool> probeZetaDirect{false};
     std::atomic<uint64_t> probeEmitted{0};  // draws that emitted them since they were armed
     // hw_test_app's gpu.sched.long_draw_bands: the band budget its unbanded arm sets to 0 (RawMetalProbe.mm)
     std::atomic<uint64_t> bandBudgetNs_{TGM_APP_BAND_NS};
