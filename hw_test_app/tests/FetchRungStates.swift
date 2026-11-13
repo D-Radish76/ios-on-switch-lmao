@@ -9,6 +9,8 @@ enum FetchRungStates {
         let key: String
         let program: String
         let passes: Int
+        /// judged by its codes alone: its time and its draws' coverage say nothing of the program
+        var codesOnly = false
     }
 
     static let fetching: [Int: [State]] = [
@@ -38,7 +40,7 @@ enum FetchRungStates {
             // its texture function's colour leaves [0, 1]: the form's SET_PS_SATURATE clamps it ahead of the program
             State(label: "PBGRAXm_TmuaBmpyA2Xhfn_IsrcCcl_Isup", key: "mua", program: "mpy", passes: 2),
             // a texture function whose lanes the host gate's inputs all discard: compared here only
-            State(label: "PBGRAXm_TkfhBmpyA2Xhf_Irsd", key: "kfh", program: "mpy", passes: 2),
+            State(label: "PBGRAXm_TkfhBmpyA2Xhf_Irsd", key: "kfh", program: "mpy", passes: 2, codesOnly: true),
             State(label: "PBGRAXm_TimgBlltA2Xhfu_Isrc", key: "lltu", program: "llt.u", passes: 5),
             State(label: "PBGRAXm_TimgBsbtA2Xhfu_Isrc", key: "sbtu", program: "sbt.u", passes: 5),
             State(label: "PBGRAXm_TimgBdivA2Xhfu_Isrc", key: "divu", program: "div.u", passes: 7),

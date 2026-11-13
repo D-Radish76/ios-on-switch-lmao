@@ -13,6 +13,8 @@ import Metal
 ///   worst_<key>     the largest difference in codes between the two forced routes' first attachments (rule
 ///                   fetch.blend allows 2; rung 3's programs are exact in QuartzCore's arithmetic, so 2 too)
 ///   us_rung4_<key>, us_rung<N>_<key>  one full-screen draw's GPU time each way; us_pass_<key> per pass of the program
+///   covered_<key>   the storage route's pixels off the clear; a state judged by its codes alone (kfh) with none is
+///                   uncompared_<key>=1, and its time never votes
 ///   error_<key>     a draw the GPU refused (the channel reopens and the next state runs)
 ///   noform_<key>    the forced draw took no fetch-free form: left out where the pack holds none on this IPSW (21H461's
 ///                   pdi), else formless= and FAIL
@@ -42,8 +44,18 @@ struct FetchRungTest: HWTest {
         var formless = false
         var worst = 0
         var differing = 0
+        var covered = 0
         var paths = ""
         var us: [Double] = []
+    }
+
+    /// The pixels of a 4-byte target off its most common value (the clear): 0 where every lane was discarded
+    static func covered(_ bytes: [UInt8]) -> Int {
+        var counts: [UInt32: Int] = [:]
+        for at in stride(from: 0, to: bytes.count - 3, by: 4) {
+            counts[bytes[at..<at + 4].reduce(UInt32(0)) { $0 << 8 | UInt32($1) }, default: 0] += 1
+        }
+        return bytes.count / 4 - (counts.values.max() ?? 0)
     }
 
     /// The state as the rules draw it, then forced each way: nil where the facade has no probe channel
@@ -60,6 +72,7 @@ struct FetchRungTest: HWTest {
         m.formless = (RawFacade.counters(of: gpu.device)[counter] ?? 0) == forcedFrom
         if m.formless { return m }
         (m.worst, m.differing) = FetchRungScene.difference(storage.1, free.1)
+        m.covered = Self.covered(storage.1)
         m.paths = "\(storage.0)/\(free.0)"
         for forced in [4, rung] {
             let timed = try await FetchRungScene.forcing(forced, gpu.device) {
@@ -120,7 +133,17 @@ struct FetchRungTest: HWTest {
             metrics.set("us_rung4_\(state.key)", m.us[0], digits: 1)
             metrics.set("us_rung\(rung)_\(state.key)", m.us[1], digits: 1)
             if state.passes > 0 { metrics.set("us_pass_\(state.key)", m.us[1] / Double(state.passes), digits: 2) }
+            metrics.set("covered_\(state.key)", m.covered)
             let within = m.worst <= Self.bound && m.paths == "raw/raw"
+            if state.codesOnly {
+                if m.covered == 0 { metrics.set("uncompared_\(state.key)", 1) }
+                if m.covered > 0 && !within {
+                    beyond.append(state.key)
+                    outcomes.append((program, false))
+                }
+                if m.unforced > 0 { on.insert(program) }
+                continue
+            }
             let faster = m.us[1] > 0 && m.us[1] < m.us[0]
             if !within { beyond.append(state.key) }
             if !faster { slower.append(state.key) }
