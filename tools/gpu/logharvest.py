@@ -2,7 +2,7 @@
 """Add the render states a device made at run time, read from a pulled logarchive, to the precompile corpus.
 
 usage: bazel run //tools/gpu:logharvest -- <boot.logarchive>... [--build <IPSW build>] [--corpus <corpus.log>]
-                                            [--dry-run]
+                                            [--crawl <the build's crawl inventory.json>] [--dry-run]
        bazel run //tools/gpu:logharvest -- --ndjson <file>...   (`log show --style ndjson --info` output instead)
 
 The lines it reads, os_log's (the raw runtime's in debug builds, RawComplete.mm and RawMetalCubic.mm):
@@ -27,11 +27,11 @@ state gets its own line first.
 A USB pull holds several boots with overlapping clocks: each boot (log show's bootUUID) is read alone, and names its OS
 build in its own lines ("OS version: 24B119"). A boot naming none is skipped unless --build names it; one naming
 another build than --build is refused. A key's test class (" | tests=<n>") and two-plane pass (" | xr2p") are left
-off, as the pack builder makes those of every line. Left out and counted: our own apps' states (SwitchHWTest*), a key
-the log cut with no whole parts (or parts that disagree with it), a key whose library the log does not name (" | air
-...": a bundle's), one linking functions, a Core Animation state with no label, a framework whose library path the
-build's archive inventory and the corpus do not name, a variant whose state the corpus lacks, and the states the device
-refused.
+off, as the pack builder makes those of every line. A framework's library path is the build's archive inventory's, the
+corpus's, else its crawl's (--crawl: @ipsw//:crawl_inventory of the build's kind). Left out and counted: our own apps'
+states (SwitchHWTest*), a key the log cut with no whole parts (or parts that disagree with it), a key whose library the
+log does not name (" | air ...": a bundle's), one linking functions, a Core Animation state with no label, a framework
+whose library path none of those name, a variant whose state the corpus lacks, and the states the device refused.
 """
 
 import argparse
@@ -84,6 +84,7 @@ BUILDER_FORMS = re.compile(r' \| (tests=\d+|xr2p)(?= \| |$)')
 OWN_APPS = ('SwitchHWTest',)
 CA_LABEL = 'com.apple.coreanimation.'
 FRAMEWORK_PATH = re.compile(r' lib=(/System/Library/(?:Private)?Frameworks/(\w+)\.framework/default\.metallib)')
+CRAWLED_FRAMEWORK = re.compile(r'"(System/Library/(?:Private)?Frameworks/(\w+)\.framework/default\.metallib)"')
 PREDICATE = ' OR '.join(
     f'eventMessage CONTAINS "{text}"'
     for text in (
@@ -160,15 +161,17 @@ def whole(boot: Boot, process: str, name: str) -> tuple[str, str] | None:
 
 
 class Libraries:
-    """A framework's default.metallib path for one build: its archive inventory's, else the corpus's."""
+    """A framework's default.metallib path for one build: its archive inventory's, the corpus's, else its crawl's."""
 
-    def __init__(self, build: str, corpus: list[str], inventory: Path) -> None:
+    def __init__(self, build: str, corpus: list[str], inventory: Path, crawl: Path | None = None) -> None:
         self.paths: dict[str, str] = {}
         rows = inventory.read_text().splitlines() if inventory.is_file() else []
         tagged = [line for line in corpus if build in os_tags(line)]
         for line in [*rows, *tagged, *corpus]:
             for path, name in FRAMEWORK_PATH.findall(line):
                 self.paths.setdefault(name, path)
+        for path, name in CRAWLED_FRAMEWORK.findall(crawl.read_text() if crawl else ''):
+            self.paths.setdefault(name, '/' + path)
 
 
 def corpus_line(key: str, label: str, build: str, libraries: Libraries) -> tuple[str | None, str]:
@@ -230,7 +233,7 @@ class Report:
 
 
 def harvest(
-    boots: dict[str, Boot], corpus: list[str], forced: str | None, precompile: Path
+    boots: dict[str, Boot], corpus: list[str], forced: str | None, precompile: Path, crawl: Path | None = None
 ) -> tuple[list[str], Report]:
     report, new = Report(), []
     for uuid, boot in sorted(boots.items()):
@@ -241,7 +244,7 @@ def harvest(
         report.boots.append(f'{uuid}: {build}')
         for process, count in boot.unnamed.items():
             report.left[process, "a variant line that names no state hash (the runtime's older line)"] += count
-        libraries = Libraries(build, corpus, precompile / 'archives' / f'{build}.tsv')
+        libraries = Libraries(build, corpus, precompile / 'archives' / f'{build}.tsv', crawl)
         new += harvest_boot(boot, build, libraries, in_corpus(corpus + new, build), report)
     return new, report
 
@@ -316,10 +319,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--ndjson', action='store_true', help='the inputs are `log show --style ndjson` output')
     parser.add_argument('--build', help='the OS build of every boot (each boot must name it or none)')
     parser.add_argument('--corpus', type=Path, default=PROJECT / PRECOMPILE / 'corpus.log')
+    parser.add_argument('--crawl', type=Path, help="the build's crawl inventory.json, for framework library paths")
     parser.add_argument('--dry-run', action='store_true', help='print the lines instead of adding them')
     args = parser.parse_args(argv)
     corpus = args.corpus.read_text().splitlines()
-    new, report = harvest(read_boots(records(args.archives, args.ndjson)), corpus, args.build, args.corpus.parent)
+    new, report = harvest(
+        read_boots(records(args.archives, args.ndjson)), corpus, args.build, args.corpus.parent, args.crawl
+    )
     for line in report.boots:
         print('boot', line)
     for process in sorted(set(report.added) | set(report.present)):
