@@ -23,6 +23,7 @@
 // shader data and constant buffer types, its sampler headers, which its sampler entries number from 0 (slot 0x80 | n), its
 // argument table's words (u32 count and words), and its state's answers as the runtime's compute prepare gives them
 // (runtime/raw_pack.h PackComputeFacts: three u32).
+// A corpus line that makes no state is a refused DREC, and a D line that makes no kernel a refused DKRN, keyed by the line.
 // PROBE_DATA_LIBS names the directory of the corpus's data: libraries.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -184,7 +185,8 @@ std::vector<uint8_t> testClasses(const raw::PackPipeline &p, const std::string &
 }
 
 struct Counts {
-    uint32_t made = 0, refused = 0, failed = 0, split = 0, variants = 0, planes = 0, planesRefused = 0, sampled = 0;
+    uint32_t made = 0, refused = 0, failed = 0, dropped = 0, split = 0, variants = 0, planes = 0, planesRefused = 0,
+             sampled = 0;
     uint32_t free[4] = {}, freeFetching = 0, freeRefused = 0, freeBarrier = 0;
     uint32_t written = 0;
 };
@@ -327,13 +329,18 @@ int main(int argc, char **argv)
         direct.makeVariants(true);
         direct.keepBoundDraws(true);
         Counts counts;
-        probe::eachState(libraries, qc, own, standIn, probe::corpusLines(text, own != nil),
-                         [&](const std::string &line, bool ours, probe::State &s) {
-                             raw::ProbeTextures textures = probe::probeTextures(line, ours);
-                             textures.cubic = s.cubic;
-                             makeState(direct, w, qc, line, textures, s, counts);
-                         });
-        uint32_t kernels[3] = {};
+        probe::eachState(
+            libraries, qc, own, standIn, probe::corpusLines(text, own != nil),
+            [&](const std::string &line, bool ours, probe::State &s) {
+                raw::ProbeTextures textures = probe::probeTextures(line, ours);
+                textures.cubic = s.cubic;
+                makeState(direct, w, qc, line, textures, s, counts);
+            },
+            [&](const std::string &line, const std::string &why) {
+                head(w, "DREC", line, raw::CompileOutcome::Refused, why);
+                counts.dropped++;
+            });
+        uint32_t kernels[3] = {}, kernelsDropped = 0;
         probe::eachKernel(
             libraries, text,
             [](const probe::Kernel &k, std::string &why) {
@@ -355,14 +362,18 @@ int main(int argc, char **argv)
                 kernel(w, k.key, outcome, why, rec, facts);
                 kernels[uint32_t(outcome)]++;
             },
-            [](const std::string &, const std::string &) {});
+            [&](const std::string &line, const std::string &why) {
+                head(w, "DKRN", line, raw::CompileOutcome::Refused, why);
+                kernelsDropped++;
+            });
         fclose(w.f);
         fprintf(stderr,
                 "directpack: %u states made (%u split, %u test variants, %u two-plane forms, %u refused, %u sampled "
-                "two-plane variants, %u written-format variants), %u refused, %u failed; %u kernels made, %u refused, "
-                "%u failed\n",
+                "two-plane variants, %u written-format variants), %u refused, %u failed, %u corpus lines making no "
+                "state; %u kernels made, %u refused, %u failed, %u dispatch lines making no kernel\n",
                 counts.made, counts.split, counts.variants, counts.planes, counts.planesRefused, counts.sampled,
-                counts.written, counts.refused, counts.failed, kernels[0], kernels[1], kernels[2]);
+                counts.written, counts.refused, counts.failed, counts.dropped, kernels[0], kernels[1], kernels[2],
+                kernelsDropped);
         fprintf(stderr,
                 "directpack: fetch-free forms: %u on rung 2, %u on rung 3 (%u reading other colours behind a barrier); "
                 "%u still fetch, %u otherwise refused\n",

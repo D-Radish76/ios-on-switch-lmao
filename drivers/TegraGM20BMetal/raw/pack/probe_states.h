@@ -144,11 +144,18 @@ inline bool cubicBinds(const std::string &segment, raw::CubicBinds &out)
 
 // precompile.mm's R-line parser (the frontend's journal format); the state's key is the one the runtime computes of the
 // descriptor made (raw::pipelineKey), `framework` the library's (<name>.framework/default.metallib), "" for QuartzCore's.
-inline bool parseState(id<MTLLibrary> qc, const std::string &line, State &s, const std::string &framework = "")
+// False with `why` naming what of the line made no state.
+inline bool parseState(id<MTLLibrary> qc, const std::string &line, State &s, const std::string &framework = "",
+                       std::string *why = nullptr)
 {
+    const auto refuse = [why](const std::string &reason) {
+        if (why)
+            *why = reason;
+        return false;
+    };
     size_t bar1 = line.find(" | v "), bar2 = line.find(" | f "), bar3 = line.find(" | ", bar2 + 5);
     if (bar1 == std::string::npos || bar2 == std::string::npos)
-        return false;
+        return refuse("no vertex or fragment segment");
     std::vector<std::string> head = split(line.substr(0, bar1));
     std::vector<std::string> v = split(line.substr(bar1 + 5, bar2 - bar1 - 5));
     std::vector<std::string> f =
@@ -210,22 +217,21 @@ inline bool parseState(id<MTLLibrary> qc, const std::string &line, State &s, con
     raw::StageKey vertex, fragment;
     d.vertexFunction = function(qc, v, vertex);
     d.fragmentFunction = function(qc, f, fragment);
-    if (!d.vertexFunction || (!d.fragmentFunction && !f.empty() && f[0] != "-"))
-        return false;
+    if (!d.vertexFunction)
+        return refuse("its library makes no vertex function " + (v.empty() ? std::string("-") : v[0]));
+    if (!d.fragmentFunction && !f.empty() && f[0] != "-")
+        return refuse("its library makes no fragment function " + f[0]);
     std::string linked;
     for (size_t at = bar3; at != std::string::npos && at + 3 < line.size();) {
         const size_t next = line.find(" | ", at + 3);
         const std::string segment = line.substr(at + 3, (next == std::string::npos ? line.size() : next) - at - 3);
         const std::string tag = segment.substr(0, 3);
         const bool isLinked = tag == "vl " || tag == "vp " || tag == "fl " || tag == "fp ";
-        if (isLinked && !linkedFunction(d, qc, segment, linked))
-            return false;
-        if (segment.rfind("cubic ", 0) == 0 && !cubicBinds(segment, s.cubic))
-            return false;
-        if (segment.rfind("xrs=", 0) == 0 && !(s.xrSlots = uint16_t(strtoul(segment.c_str() + 4, nullptr, 10))))
-            return false;
-        if (segment.rfind("wtex=", 0) == 0 && !raw::parseWritten(segment, s.written))
-            return false;
+        if ((isLinked && !linkedFunction(d, qc, segment, linked)) ||
+            (segment.rfind("cubic ", 0) == 0 && !cubicBinds(segment, s.cubic)) ||
+            (segment.rfind("xrs=", 0) == 0 && !(s.xrSlots = uint16_t(strtoul(segment.c_str() + 4, nullptr, 10)))) ||
+            (segment.rfind("wtex=", 0) == 0 && !raw::parseWritten(segment, s.written)))
+            return refuse("its segment \"" + segment.substr(0, 80) + "\" makes nothing");
         at = next;
     }
     s.key = raw::pipelineKey(d, &vertex, d.fragmentFunction ? &fragment : nullptr, linked, framework) +

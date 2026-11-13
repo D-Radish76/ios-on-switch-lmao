@@ -5180,6 +5180,31 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
+# pack/direct_states.h: every corpus line makes a state or is handed back with why (directpack.mm records it refused)
+host_test(
+    name = "direct_states_test",
+    srcs = [
+        "direct_states_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/pack/direct_states.h",
+        "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+        # the generator's headers, built without -Wextra (rawpack.py): probeTextures' brace-initialised sets
+        "-Wno-missing-field-initializers",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+    ],
+    deps = RAW_HOST_DEPS,
+)
+
 # The corpus's render states made on the raw facade with a device build's pack and the IPSW crawl's libraries, which name
 # what opens m2v. Manual: it needs SWITCH_REAL_PACK (a pack.bin of this build's version) and SWITCH_LIB_ROOT (the crawl's
 # root/), passed with --test_env.
