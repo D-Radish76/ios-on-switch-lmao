@@ -7,9 +7,10 @@ import Metal
 /// the route's draw with the colour ROP straight over the zeta's own pages (switchRawProbeZetaDirect:), the tiled cache
 /// off for the draw, the configuration Gallium nvc0 draws into a ZF32_X24S8 zeta in. Boot 21 drew over those pages with
 /// the tiled cache on and nothing it wrote reached memory. direct_<format>_* at 0: the tiled cache lost those writes;
-/// off: the colour ROP does not write that zeta kind. Each format's resolve and turn cells at every size:
-/// direct_<format>_depth, _stencil and _tested count texels off the pattern, direct_rop_draws the draws, direct_errors
-/// the parts that threw.
+/// off: they are lost untiled too, which leaves the zeta kind or the integer format (nvc0 draws R32G32_FLOAT where this
+/// draws RG32Uint). Each format's resolve and turn cells at every size: direct_<format>_depth, _stencil and _tested count
+/// texels off the pattern, direct_rop_draws the draws, direct_errors the parts that threw, and the test's direct_reopens
+/// and direct_gpu_after the channels it cost and whether the GPU answers after it.
 struct ZetaColourDirect {
     var counts: [String: ZetaColourCells.Count] = [:]
     var draws = 0, errors = 0

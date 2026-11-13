@@ -18,10 +18,11 @@ import Metal
 /// (every stencil resolve pick) and gpu.x1.rotated_target's keptStencil at rotations 1 to 4. <arm>_depth, _stencil and
 /// _tested count texels off the pattern, _msaa the scene's failures, _kept the drawable's pixels off Metal's store,
 /// _errors the parts that threw (a command buffer the GPU failed), _bit_draws and _rop_draws the stencil plane draws of
-/// each route. INCONCLUSIVE where either arm drew a plane by the other's route or none by its own, the colour arm left a
-/// turn cell out, or the control is off where the colour arm is; FAIL where the colour arm alone is off. The route holds
-/// with claim_verdict=PASS, reopens=0, gpu_after=true and no "fault", "ROP", "LTC" or "TRAP" kernel line in the run; off
-/// the facade the arm is the device's own (the test's references held to Metal). Then a diagnostic outside the claim
+/// each route, _cells_ms the arm's time over every part (the parts alike but for the route). INCONCLUSIVE where either
+/// arm drew a plane by the other's route or none by its own, the colour arm left a turn cell out, or the control is off
+/// where the colour arm is; FAIL where the colour arm alone is off. The route holds with claim_verdict=PASS, reopens=0,
+/// gpu_after=true and no "fault", "ROP", "LTC" or "TRAP" kernel line in the run; off the facade the arm is the device's
+/// own (the test's references held to Metal). Then a diagnostic outside the claim, after gpu_after
 /// (ZetaColourDirect.swift): the colour ROP straight over the zeta's own pages.
 struct ZetaColourTest: HWTest {
     let id = "gpu.raw.zeta_colour"
@@ -74,7 +75,9 @@ struct ZetaColourTest: HWTest {
         for arm in raw ? [Arm.bits, .colour] : [.device] {
             _ = Self.probe(gpu.device, "StencilBits", arm == .bits)
             let start = RawFacade.counters(of: gpu.device)
+            let started = Date()
             let result = await armRun(gpu, cells, seed: arm == .colour ? 40 : 10)
+            metrics.set("\(arm)_cells_ms", Date().timeIntervalSince(started) * 1000, digits: 0)
             let end = RawFacade.counters(of: gpu.device)
             let delta = { (key: String) in (end[key] ?? 0) - (start[key] ?? 0) }
             let count: [String: Int] = [
@@ -114,6 +117,7 @@ struct ZetaColourTest: HWTest {
         base.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         let claimed = RawFacade.counters(of: gpu.device)
         base.set("reopens", (claimed["reopens"] ?? 0) - (before["reopens"] ?? 0))
+        base.set("gpu_after", await GPUProbe.answers())
         if raw && Self.probe(gpu.device, "ZetaDirect", true) {
             _ = Self.probe(gpu.device, "StencilBits", false)
             let direct = await ZetaColourDirect.run(gpu, cells)
@@ -121,8 +125,8 @@ struct ZetaColourTest: HWTest {
             if let first = direct.first { notes.append("direct \(first)") }
             let after = RawFacade.counters(of: gpu.device)
             metrics.set("direct_reopens", (after["reopens"] ?? 0) - (claimed["reopens"] ?? 0))
+            metrics.set("direct_gpu_after", await GPUProbe.answers())
         }
-        base.set("gpu_after", await GPUProbe.answers())
         let finding = ProbeFinding(
             verdict, metrics, note: ([why] + notes).filter { !$0.isEmpty }.joined(separator: "; "))
         return finding.outcome(probe: "rop.zeta_colour", base: base, proof: gpu.proof)
