@@ -4328,7 +4328,7 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass)
     uint8_t scratchMask = 0;
     for (uint32_t j = 0; j < pass.count && j < 8; ++j)
         if (const Texture *t = pass.color[j].texture;
-            t && (backed(*t) || t->shadowTarget || (blockLinear && !t->blockLinear)))
+            t && (backed(*t) || t->shadowTarget || t->zetaPages || (blockLinear && !t->blockLinear)))
             scratchMask |= uint8_t(1u << j);
     const auto scratchTags = transientColorTags(scratchMask);
     for (uint32_t j = 0; j < pass.count && j < 8; j++) {
@@ -4338,17 +4338,19 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass)
         if (!t->renderable && !t->shadowTarget)
             return nullptr;
         const bool mixed = blockLinear && !t->blockLinear && !backed(*t);
-        if ((t->shadowTarget && !backed(*t)) ||
+        if (((t->shadowTarget || t->zetaPages) && !backed(*t)) ||
             mixed) {  // rendered through a pool image (end(): copied in before, back after)
             RAW_DIAGNOSTIC(dev_->stats.xrPlaneShadows += t->xrPlane != 0);
             if (mixed) {
                 RAW_DIAGNOSTIC(dev_->stats.rtMixed++);
-            } else {
+            } else if (t->shadowTarget) {
                 RAW_DIAGNOSTIC(dev_->stats.rtUnaligned++);
                 RAW_DIAGNOSTIC(dev_->stats.rtUnalignedPitch = t->pitch);
                 RAW_DIAGNOSTIC(dev_->stats.rtUnalignedVa = uint32_t(t->va & 255));
             }
-            Texture *b = backing(*t, scratchTags[j], blockLinear, !(pass.storageMask >> j & 1), true);
+            // a zeta's view takes plain memory: gpu.x1.ce_compressed proved the copy engine over compressed BGRA8 and
+            // RGBA16Float texels, not over a zeta's depth bits and stencil
+            Texture *b = backing(*t, scratchTags[j], blockLinear, !(pass.storageMask >> j & 1) && !t->zetaPages, true);
             if (!b || !b->renderable)
                 return nullptr;
             e.pass_.color[j].texture = b;

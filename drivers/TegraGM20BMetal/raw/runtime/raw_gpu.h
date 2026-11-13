@@ -261,6 +261,9 @@ struct Texture {
     // renders it, block-linear, through a pool image the copy engine fills from it before and copies back to it after (NVK's
     // own tiled shadow, nvk_linear_render_copy, for the same targets: the texels stored are the same)
     bool shadowTarget = false;
+    // A colour view of a zeta's memory (raw_zeta_colour.h): its pages keep the zeta's PTE kind, which the colour ROP's writes
+    // do not reach (boot 21's gpu.raw.zeta_colour), so a pass renders it like a shadow target, through a plain pool image
+    bool zetaPages = false;
     bool memoryless = false;  // no memory: a pass gives it a backing (Device::backing)
     bool wc =
         false;  // its span is write-combined GPU-pool memory (createTexture wc): CPU writes need no clean (Buffer::wc)
@@ -2498,6 +2501,8 @@ public:
     std::atomic<bool> probeZetaKinds{false};
     // stencil planes take the one-draw route (raw_zeta_colour.h) where it writes them, whatever kColourRopWritesZeta says
     std::atomic<bool> probeZetaColour{false};
+    // that route's colour ROP over the zeta's own pages, untiled, rather than through its pool image (raw_zeta_colour.cpp)
+    std::atomic<bool> probeZetaDirect{false};
     std::atomic<uint64_t> probeEmitted{0};  // draws that emitted them since they were armed
     // hw_test_app's gpu.sched.long_draw_bands: the band budget its unbanded arm sets to 0 (RawMetalProbe.mm)
     std::atomic<uint64_t> bandBudgetNs_{TGM_APP_BAND_NS};
