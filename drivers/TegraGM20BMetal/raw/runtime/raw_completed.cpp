@@ -82,15 +82,6 @@ void Device::offerCompletedSplit(Completed &c, const RuntimeRecord &r, const Pla
     offerSplit(c.pipeline, std::move(source));
 }
 
-std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords)
-{
-    std::vector<uint32_t> words(dwords + 2);
-    Push w{words.data(), words.data() + words.size()};
-    for (uint32_t k = 0; k + 1 < dwords; k += 2)
-        w.m(pairs[k], pairs[k + 1]);
-    return {words.data(), w.at};
-}
-
 Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::string &why, bool *retry)
 {
     if (retry)

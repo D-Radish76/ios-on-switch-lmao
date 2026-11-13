@@ -613,10 +613,10 @@ struct SplitLaunch {
     uint32_t cbufBytes[8] = {};
 };
 
-// A program in the heap: its record, its SET_PIPELINE_PROGRAM value, its shader data's GPU address (0: none) and its header
 // Pipeline::restore's push words of `dwords` words of (method, value) pairs
 std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords);
 
+// A program in the heap: its record, its SET_PIPELINE_PROGRAM value, its shader data's GPU address (0: none) and its header
 struct PlacedProgram {
     const PackProgram *record = nullptr;
     uint32_t program = 0;

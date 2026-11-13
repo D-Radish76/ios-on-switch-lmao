@@ -1219,6 +1219,15 @@ Pipeline *Device::placePipeline(uint64_t keyHash, PackForm form, bool caTransfor
 
 // A pack record is drawn as addRecord draws a runtime record of the same state: a tessellation state's control and
 // evaluation programs bound beside its own, the registers its draws set back after it, and its stride twin
+std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords)
+{
+    std::vector<uint32_t> words(dwords + 2);
+    Push w{words.data(), words.data() + words.size()};
+    for (uint32_t k = 0; k + 1 < dwords; k += 2)
+        w.m(pairs[k], pairs[k + 1]);
+    return {words.data(), w.at};
+}
+
 Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)
 {
     Pipeline &pl = pipelines_[&pp - pack_.section<PackPipeline>(PackPipelines)];
