@@ -393,6 +393,7 @@ py_test(
 py_test(
     name = "iterated_table_test",
     srcs = ["raw/pack/iterated/table_test.py"],
+    data = ["raw/runtime/raw_chip_facts.h"],
     main = "raw/pack/iterated/table_test.py",
     deps = [":raw_pack"],
 )

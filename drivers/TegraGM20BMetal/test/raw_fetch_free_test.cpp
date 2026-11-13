@@ -128,6 +128,19 @@ TEST(RawFetchFree, Rung2TakesAnEightBitScreenTargetTwoLayersDeep)
     EXPECT_FALSE(raw::fetchFreeTaken(f, {80, false, 0}, 4));
 }
 
+TEST(RawFetchFree, APipelinePlacesTheFormsItsRuleTakesAndAnyTheProbeAsksFor)
+{
+    raw::PackIteratedBlend b = multiply();
+    const raw::FetchFreeForm listed = raw::fetchFreeForm(formRecord(0, raw::FetchIteratedBlend), &b);
+    EXPECT_TRUE(raw::fetchFreePlaced(listed));
+    b.name = raw::iteratedProgramName("hue");
+    const raw::FetchFreeForm unlisted = raw::fetchFreeForm(formRecord(0, raw::FetchIteratedBlend), &b);
+    EXPECT_FALSE(raw::fetchFreePlaced(unlisted)) << "release and debug place the same forms";
+    for (uint8_t probe : {2, 3, 4})
+        EXPECT_TRUE(raw::fetchFreePlaced(unlisted, probe));
+    EXPECT_FALSE(raw::fetchFreePlaced(raw::FetchFreeForm{}, 3));
+}
+
 TEST(RawFetchFree, Rung3WaitsForItsPassesToBeProvenUnlessAProbeForcesIt)
 {
     const raw::PackIteratedBlend b = multiply();
