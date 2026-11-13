@@ -48,9 +48,17 @@ enum : uint32_t {
 // its readback and aspect copies are the copy engine's, until HW Test gpu.raw.stored_depth reads
 // compressed_readback_wrong=0 with compressed_readback_facts comptags=1 (T-v3g's gpu.x1.ce_compressed_depth ran no
 // one-sample compressed round: d32f_1x_compressed_rounds=0).
+// The multisampled shader-tested zetas, ZF32_MS2/MS4_2CZ and ZF32_X24S8_MS2/MS4_2CSZV, under the context's CSAA_ENABLE
+// (0x15b4) of 0 (context.tsv): gpu.x1.ce_compressed_depth's csaa_off arm on boots 19 and 21, d32f_4x, d32s8_2x and
+// d32s8_4x each 0 wrong over 16 compressed rounds; d32f_2x is the same kind family, asked by the probe's d32f_2x case.
+constexpr bool copyEngineReadsCompressedZeta(uint32_t kind)
+{
+    return kind == 0x87 || kind == 0x88 || kind == kCompKindZeta + 1 || kind == kCompKindZeta + 2;
+}
+
 constexpr bool copyEngineReadsCompressed(uint32_t kind)
 {
-    return kind == kCompKindC32 || kind == kCompKindC64;
+    return kind == kCompKindC32 || kind == kCompKindC64 || copyEngineReadsCompressedZeta(kind);
 }
 
 // The compressible kind of a block-linear colour target of `bpp`-byte texels at `samples` samples, or of the depth/stencil

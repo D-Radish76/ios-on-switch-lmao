@@ -5,7 +5,7 @@ import Metal
 
 /// gpu.m2v.msaa_fetch's raw arms. Nothing on the m2v path writes SET_ANTI_ALIAS_ENABLE (0x1534) or 0x15b4 (envytools'
 /// CSAA_ENABLE) per draw: NVK sets 0x1534 to 1 once at context init and never writes 0x15b4, which keeps the golden
-/// context's 1 (sw_method_init). So these arms draw gpu.x1.twod_resolve's per-sample pass (x1_sample_fragment at 4x into
+/// context's 1 (sw_method_init); raw's context writes 0x15b4 = 0, as NVIDIA's userspace does (context.tsv). So these arms draw gpu.x1.twod_resolve's per-sample pass (x1_sample_fragment at 4x into
 /// a memoryless target: one pass per sample, no interlock), which raw draws clean, with SET_PIXEL_SHADER_INTERLOCK_CONTROL
 /// and the two controls written around the draw (RawMethods), one factor at a time, and put back after it. The shader
 /// takes no interlock ticket: a kill under pixel detection is the state pair's alone, and an ok does not clear an
@@ -14,17 +14,17 @@ enum M2VMSAARawReplay {
     static let interlockControl: UInt32 = 0x1224
     static let antiAliasEnable: UInt32 = 0x1534
     static let csaaEnable: UInt32 = 0x15b4
-    static let held: [UInt32: UInt32] = [interlockControl: 0, antiAliasEnable: 1, csaaEnable: 1]
+    static let held: [UInt32: UInt32] = [interlockControl: 0, antiAliasEnable: 1, csaaEnable: 0]
     static let conflictPixel: UInt32 = 2
     static let conflictSample: UInt32 = 1
 
     static let arms: [(String, [(UInt32, UInt32)])] = [
         ("r_smp", [(interlockControl, conflictSample)]),
         ("r_aa0", [(antiAliasEnable, 0)]),
-        ("r_csaa0", [(csaaEnable, 0)]),
+        ("r_csaa1", [(csaaEnable, 1)]),
         ("r_px", [(interlockControl, conflictPixel)]),
         ("r_px_aa0", [(interlockControl, conflictPixel), (antiAliasEnable, 0)]),
-        ("r_px_csaa0", [(interlockControl, conflictPixel), (csaaEnable, 0)]),
+        ("r_px_csaa1", [(interlockControl, conflictPixel), (csaaEnable, 1)]),
     ]
 
     /// x1_sample_fragment's colours: every sample of a pixel its own
@@ -127,9 +127,9 @@ enum M2VMSAARawReplay {
         if v["r_px"] == "kill" {
             if v["r_smp"] == "ok" { found.append("pixel_passes") }
             if v["r_px_aa0"] == "ok" { found.append("aa0_spares") }
-            if v["r_px_csaa0"] == "ok" { found.append("csaa0_spares") }
         }
-        for arm in ["r_smp", "r_aa0", "r_csaa0"] where v[arm] == "kill" {
+        if v["r_px"] == "ok" && v["r_px_csaa1"] == "kill" { found.append("csaa0_spares") }
+        for arm in ["r_smp", "r_aa0", "r_csaa1"] where v[arm] == "kill" {
             found.append(String(arm.dropFirst(2)) + "_kills")
         }
         return found.isEmpty ? "none" : found.joined(separator: "+")

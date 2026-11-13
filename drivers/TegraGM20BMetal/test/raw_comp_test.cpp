@@ -118,8 +118,11 @@ TEST(RawComp, CopiedBackingsCompressOnlyAtProvenKinds)
 {
     EXPECT_TRUE(raw::copyEngineReadsCompressed(0xdb));
     EXPECT_TRUE(raw::copyEngineReadsCompressed(0xe9));
-    for (uint32_t kind : {0xf5u, 0xccu, 0xe2u, 0xcdu, 0xf0u, 0xf7u, 0xf9u, 0x02u, 0x86u, 0xceu, 0xcfu, 0xd0u})
+    for (uint32_t kind : {0xf5u, 0xccu, 0xe2u, 0xcdu, 0xf0u, 0xf7u, 0xf9u, 0x02u, 0xceu})
         EXPECT_FALSE(raw::copyEngineReadsCompressed(kind)) << std::hex << kind;
+    // the multisampled shader-tested zetas, under the context's CSAA_ENABLE of 0
+    for (uint32_t kind : {0x87u, 0x88u, 0xcfu, 0xd0u})
+        EXPECT_TRUE(raw::copyEngineReadsCompressed(kind)) << std::hex << kind;
 
     // memoryless: the copy engine never reaches them
     EXPECT_EQ(raw::backingKind(true, true, 0, 4, 1, false), 0xdbu);
@@ -135,10 +138,12 @@ TEST(RawComp, CopiedBackingsCompressOnlyAtProvenKinds)
     EXPECT_EQ(raw::backingKind(true, true, 0, 16, 1, true), 0u);
     EXPECT_EQ(raw::backingKind(true, true, 0, 4, 2, true), 0u);
     EXPECT_EQ(raw::backingKind(true, true, 0, 8, 4, true), 0u);
-    // zetas the shader's depth tests copy with the copy engine: no zeta kind is proven
+    // zetas the shader's depth tests copy with the copy engine: the multisampled ones are compressed
     EXPECT_EQ(raw::backingKind(true, true, 252, 4, 1, false), 0u);
-    EXPECT_EQ(raw::backingKind(true, true, 252, 4, 4, false), 0u);
-    EXPECT_EQ(raw::backingKind(true, true, 260, 8, 2, false), 0u);
+    EXPECT_EQ(raw::backingKind(true, true, 252, 4, 2, false), 0x87u);
+    EXPECT_EQ(raw::backingKind(true, true, 252, 4, 4, false), 0x88u);
+    EXPECT_EQ(raw::backingKind(true, true, 260, 8, 2, false), 0xcfu);
+    EXPECT_EQ(raw::backingKind(true, true, 260, 8, 4, false), 0xd0u);
     EXPECT_EQ(raw::backingKind(true, true, 260, 8, 1, true), 0u);
 
     // a debug build's gpu.x1.ce_compressed_depth probe gives those zetas their kinds, and nothing else

@@ -2496,6 +2496,8 @@ public:
     std::atomic<bool> probeMipCandidates{false};
     // memoryless zetas the copy engine fills and drains for the shader's depth tests take their compressible kind (raw_comp.h)
     std::atomic<bool> probeZetaKinds{false};
+    // memoryless zetas take plain memory whatever their kind: gpu.x1.ce_compressed_depth's reference pictures
+    std::atomic<bool> probePlainZetas{false};
     // stencil planes take the one-draw route (raw_zeta_colour.h) where it writes them, whatever kColourRopWritesZeta says
     std::atomic<bool> probeZetaColour{false};
     std::atomic<uint64_t> probeEmitted{0};  // draws that emitted them since they were armed
@@ -3063,12 +3065,13 @@ private:
     struct BackingAsk {
         uint32_t width = 0, height = 0, format = 0, tag = 0, layers = 1;
         uint8_t samples = 0;
-        // zetaProbe: probeZetaKinds as the ask found it, which compKind reads and no epoch move covers
-        bool zeta = false, blockLinear = false, compression = false, copied = false, zetaProbe = false;
+        // zetaProbe: zetaKindsProbed() as the ask found it, which compKind reads and no epoch move covers
+        bool zeta = false, blockLinear = false, compression = false, copied = false;
+        uint8_t zetaProbe = 0;
         Backing *backing = nullptr;
         uint64_t epoch = 0;
 
-        bool same(const Texture &m, uint32_t t, bool linear, bool compressed, bool copy, bool probe) const
+        bool same(const Texture &m, uint32_t t, bool linear, bool compressed, bool copy, uint8_t probe) const
         {
             return backing && width == m.width && height == m.height && format == m.format && tag == t &&
                    layers == std::max(m.layers, 1u) && samples == m.samples && zeta == m.zeta &&
@@ -3217,12 +3220,14 @@ private:
     raw::CondVar compWake_;
     uint32_t compKind(const Texture &m, bool blockLinear, bool copied) const;
 
-    bool zetaKindsProbed() const
+    // probeZetaKinds in bit 0, probePlainZetas in bit 1
+    uint8_t zetaKindsProbed() const
     {
 #if SWITCH_RAW_DIAGNOSTICS
-        return probeZetaKinds.load(std::memory_order_relaxed);
+        return uint8_t(probeZetaKinds.load(std::memory_order_relaxed) |
+                       probePlainZetas.load(std::memory_order_relaxed) << 1);
 #else
-        return false;
+        return 0;
 #endif
     }
 

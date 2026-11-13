@@ -88,6 +88,8 @@ uint32_t Device::compKind(const Texture &m, bool blockLinear, bool copied) const
     bool zetaProbe = false;
 #if SWITCH_RAW_DIAGNOSTICS
     zetaProbe = probeZetaKinds.load(std::memory_order_relaxed);
+    if (m.zeta && probePlainZetas.load(std::memory_order_relaxed))
+        return 0;
 #endif
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     if (probePlainMemory.load(std::memory_order_relaxed))
