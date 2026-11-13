@@ -2825,7 +2825,11 @@ py_test(
 py_test(
     name = "splits_layout_test",
     srcs = ["splits_layout_test.py"],
-    data = ["//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h"],
+    data = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_split_metadata.h",
+        "//third_party/mesa/src/nouveau/vulkan:nvk_switch_split.h",
+    ],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
 )
 
@@ -3094,6 +3098,7 @@ host_test(
     name = "raw_split_metadata_test",
     srcs = [
         "raw_split_metadata_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_cbuf.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_pack.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_split_metadata.h",
     ],

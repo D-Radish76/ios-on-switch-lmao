@@ -33,7 +33,10 @@ struct nvk_device;
 #define SWITCH_SPLIT_PUSH_BYTES 128
 #define SWITCH_SPLIT_PARAMS_CBUF 0
 #define SWITCH_SPLIT_FRONTIER_ADDRESS 128
-#define SWITCH_SPLIT_MAX_FRONTIER_BYTES 4096
+/* The frontier is bound as one constant buffer (64 KiB at most: SET_CONSTANT_BUFFER_SELECTOR_A SIZE), and the raw pack's
+ * PackSplit::frontierBytes is 16 bits: its largest 16-byte multiple (raw_split_metadata.h kMaxFrontierBytes)
+ */
+#define SWITCH_SPLIT_MAX_FRONTIER_BYTES 0xFFF0
 #define SWITCH_SPLIT_BATCH_VERSION 1
 #define SWITCH_SPLIT_BATCH_THREADS 32
 #define SWITCH_SPLIT_BATCH_RECORD_BYTES 272
