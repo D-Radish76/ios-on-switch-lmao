@@ -10,7 +10,10 @@ image and the destination 8-bit premultiplied codes, as Core Animation's are. Th
 converted to codes by the ROP's store rule; the fetch-free form's output goes through the unit that stands in for the
 fetch: rung 2 the chip's 8-bit integer blender (tools/benchloop/blend_models.py chip, with the form's own factors),
 rung 3 the iterated blend program the form names (raw/pack/iterated/emu.py, every pass rounded to half) over the source
-the form's SET_PS_SATURATE clamps to [0, 1] (raw_fetch_free.h iteratedBlendWords). A colour
+the form's SET_PS_SATURATE clamps to [0, 1] on an 8-bit target (raw_fetch_free.h iteratedBlendWords). On an RGBA16Float
+target the destination is the half of its code, the source is not clamped, the storage form's texel is rounded to half
+as its store converts it and the ROP's result toward zero as it stores it (x1-bench3 BENCH3.md section 8); a channel's
+difference is in 8-bit codes up to 1 and relative above it (half_codes). A colour
 matrix form's program and constants are those the GPU's macro makes of the matrix uniform both programs read
 (fetchfree_link.py finds it as the pack does). The uniform buffers' bind residuals read as 0. Each state gets the
 largest difference in codes over every written channel; rule fetch.blend allows 2 (raw_fetch_rungs.h).
@@ -50,6 +53,7 @@ FETCH_HANDLE = 0x7E5E0000  # a fetched colour's handle word: this, its colour in
 ENTRY_FETCH = 3  # runtime/raw_pack.h EntryFetch
 # a generic attribute's vec4 is seeded premultiplied (w the largest), as Core Animation's vertex colours are
 GENERIC = 0x80
+RGBA16_FLOAT = 115  # MTLPixelFormatRGBA16Float
 
 
 def f32(x: float) -> int:
@@ -73,10 +77,22 @@ class Seeded:
     of each buffer: `buffers`) and a sample by everything but its handle.
     """
 
-    def __init__(self, seed: int, invocation: int, destination: list[int], pinned: dict[tuple[int, int], int]):
+    def __init__(
+        self,
+        seed: int,
+        invocation: int,
+        destination: list[int],
+        pinned: dict[tuple[int, int], int],
+        float_target: bool = False,
+    ):
         self.base = (seed, invocation)
         self.destination = destination
         self.pinned = pinned
+        self.float_target = float_target
+
+    def texel(self) -> list[int]:
+        """Give the destination's texel as the blended colour's target holds it: a half on a float target."""
+        return [f32(emu.r16(code / 255) if self.float_target else code / 255) for code in self.destination]
 
     def rng(self, *key: object) -> random.Random:
         return random.Random(int.from_bytes(hashlib.blake2b(repr((self.base, key)).encode(), digest_size=8).digest()))
@@ -115,7 +131,7 @@ class Seeded:
             if fetches and op[0] in ('suld', 'tld', 'tex') and op[1] & ~0xFF == FETCH_HANDLE:
                 return self.fetched(op[1] & 0xFF, blended, lane)
             if op[0] == 'suld':
-                return [f32(code / 255) for code in self.destination]
+                return self.texel()
             return premultiplied(self.rng('t', op[0], op[2:]) if op[0] == 'tex' else self.rng('t', op))
 
         return Inputs(attribute, cbuf, texture, bound)
@@ -124,7 +140,7 @@ class Seeded:
         """Give a fetched colour's texel: the destination of the blended one, any other's its own."""
         if colour != blended:
             return premultiplied(self.rng('fetch', colour, lane))
-        return [f32(code / 255) for code in self.destination]
+        return self.texel()
 
 
 def premultiplied(rng: random.Random) -> list[int]:
@@ -197,6 +213,35 @@ def iterated_blend(program: object, source: list[float], dest: list[int]) -> lis
     return [store(x) for x in result]
 
 
+def toward_zero_half(x: float) -> float:
+    n = emu.r16(x)
+    if math.isfinite(n) and abs(n) > abs(x):
+        bits = struct.unpack('<H', struct.pack('<e', n))[0]
+        return struct.unpack('<e', struct.pack('<H', bits - 1))[0]
+    return n
+
+
+def iterated_blend_float(program: object, source: list[float], dest: list[int]) -> list[float]:
+    """Give the halves the ROP stores of the program on an RGBA16Float target: the source as the shader wrote it."""
+    return [toward_zero_half(x) for x in emu.run(program, source, [emu.r16(x / 255) for x in dest], fp16=True)]
+
+
+def half_codes(got: float, want: float) -> int:
+    """Give two halves' difference in 8-bit codes, relative to the value above 1; 255 where one is not finite."""
+    if got == want or (math.isnan(got) and math.isnan(want)):
+        return 0
+    if not (math.isfinite(got) and math.isfinite(want)):
+        return 255
+    return min(255, math.ceil(round(abs(got - want) * 255 / max(1.0, abs(want)), 6)))
+
+
+def target_format(record: dict, colour: int) -> int:
+    """Give the MTLPixelFormat of the colour a dumped record blends, from its key."""
+    field = f' c{colour}='
+    key = ' ' + record['key']
+    return int(key.split(field, 1)[1].split(':', 1)[0]) if field in key else 0
+
+
 def pipe(record: dict) -> dict:
     """Give a dump's uniform ranges, set-0 entries and fragment program as fetchfree_link.py reads a pack pipeline's."""
     entries = [
@@ -233,24 +278,50 @@ def matrix_program(seeded: Seeded, at: tuple[int, int, int, int]) -> object:
     return programs_long.vcm(rows, halves[20], halves[21])
 
 
+def unsupported(stored: dict, free: dict) -> str:
+    """Give why the gate cannot compare a state's two forms, '' where it can."""
+    colour = free['free_colour']
+    _, count = target_outputs(bytes.fromhex(free['fs']), colour)
+    if count != 4:
+        return f'unsupported: the form writes {count} components of colour {colour}'
+    if free['free_program'] == fetchfree_link.MATRIX and not matrix_words(stored, free):
+        return 'unsupported: no uniform buffer shows the colour matrix'
+    if free['free_rung'] == 2 and target_format(free, colour) == RGBA16_FLOAT:
+        return 'unsupported: rung 2 on a float target'
+    return ''
+
+
+def channel_differences(free: dict, program: object, source: list[float], dest: list[int], stored: list[int]) -> list:
+    """Give a lane's channel differences in codes: the form's blend of its source against the storage form's store."""
+    colour = free['free_colour']
+    if target_format(free, colour) == RGBA16_FLOAT:
+        want = [emu.r16(value(w)) for w in stored]
+        return [half_codes(x, y) for x, y in zip(iterated_blend_float(program, source, dest), want, strict=True)]
+    want = [store(value(w)) for w in stored]
+    if free['free_rung'] == 2:
+        blob = dict(zip(free['blob'][0::2], free['blob'][1::2], strict=True))
+        got = fixed_blend(blob, colour, source, dest)
+    else:
+        got = iterated_blend(program, source, dest)
+    return [abs(x - y) for x, y in zip(got, want, strict=True)]
+
+
 def check(stored: dict, free: dict, n: int, seed: int) -> tuple[str, Counter]:
     """Give a state's verdict and its channels' differences in codes, counted."""
-    colour, rung = free['free_colour'], free['free_rung']
+    if why := unsupported(stored, free):
+        return why, Counter()
+    colour = free['free_colour']
     storage_code, free_code = bytes.fromhex(stored['fs']), bytes.fromhex(free['fs'])
-    first, count = target_outputs(free_code, colour)
-    if count != 4:
-        return f'unsupported: the form writes {count} components of colour {colour}', Counter()
-    blob = dict(zip(free['blob'][0::2], free['blob'][1::2], strict=True))
+    first, _ = target_outputs(free_code, colour)
     outputs = nakstat_outputs(free_code)
     pinned = {(0, word): 0 for word in stored.get('residual_words', []) + free.get('residual_words', [])}
     matrix = matrix_words(stored, free) if free['free_program'] == fetchfree_link.MATRIX else None
-    if free['free_program'] == fetchfree_link.MATRIX and not matrix:
-        return 'unsupported: no uniform buffer shows the colour matrix', Counter()
+    float_target = target_format(free, colour) == RGBA16_FLOAT
     differences: Counter = Counter()
     rng = random.Random(seed)
     for i in range(n):
         dest = destination(rng)
-        seeded = Seeded(seed, i, dest, pinned)
+        seeded = Seeded(seed, i, dest, pinned, float_target)
         program = matrix_program(seeded, matrix) if matrix else table.PROGRAMS.get(free['free_program'])
         try:
             a = run_quad(storage_code[isa.HEADER_BYTES :], quad(seeded, stored, colour), 0)
@@ -266,11 +337,8 @@ def check(stored: dict, free: dict, n: int, seed: int) -> tuple[str, Counter]:
                 continue
             if len(stores) != 1:
                 return f'different: quad {i} lane {lane}: {len(stores)} stores', differences
-            want = [store(value(w)) for w in stores[0][2][:4]]
             source = [value(w) for w in regs[first : first + 4]]
-            fixed = rung == 2
-            got = fixed_blend(blob, colour, source, dest) if fixed else iterated_blend(program, source, dest)
-            differences.update(abs(x - y) for x, y in zip(got, want, strict=True))
+            differences.update(channel_differences(free, program, source, dest, stores[0][2][:4]))
     return verdict_of(differences), differences
 
 

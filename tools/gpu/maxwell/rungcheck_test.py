@@ -51,6 +51,29 @@ class IteratedBlend(unittest.TestCase):
         self.assertEqual(rungcheck.iterated_blend(program, [float('nan'), 0.2, 1.0, 0.5], dest), clamped)
 
 
+class FloatTarget(unittest.TestCase):
+    def test_an_rgba16float_form_keeps_its_source_and_stores_halves(self):
+        program = rungcheck.table.PROGRAMS['sbt.u']
+        source, dest = [1.5, -0.25, 0.3, 0.75], [128, 64, 32, 255]
+        got = rungcheck.iterated_blend_float(program, source, dest)
+        clamped = rungcheck.iterated_blend_float(program, [1.0, 0.0, 0.3, 0.75], dest)
+        self.assertNotEqual(got, clamped)
+        for x in got:
+            self.assertEqual(x, rungcheck.emu.r16(x))
+
+    def test_halves_differ_by_eight_bit_codes_relative_above_one(self):
+        self.assertEqual(rungcheck.half_codes(0.5, 0.5), 0)
+        self.assertEqual(rungcheck.half_codes(0.5 + 2 / 255, 0.5), 2)
+        self.assertEqual(rungcheck.half_codes(4.0 + 4 * 2 / 255, 4.0), 2)
+        self.assertEqual(rungcheck.half_codes(float('inf'), 1.0), 255)
+
+    def test_the_target_format_comes_from_the_key(self):
+        record = {'key': 'samples=1 topo=0 ds=0/0 c0=115:15:0:1:0:0:1:0:0 c1=80:0:0:1:0:0:1:0:0'}
+        self.assertEqual(rungcheck.target_format(record, 0), rungcheck.RGBA16_FLOAT)
+        self.assertEqual(rungcheck.target_format(record, 1), 80)
+        self.assertEqual(rungcheck.target_format(record, 2), 0)
+
+
 class Outputs(unittest.TestCase):
     def test_each_written_colour_takes_a_vec4(self):
         image = bytearray(80)

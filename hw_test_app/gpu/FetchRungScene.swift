@@ -66,6 +66,23 @@ public enum FetchRungScene {
         return (Stats.percentile(perDraw, 0.5), Set(timings.map(\.path)).sorted().joined(separator: ","))
     }
 
+    /// The largest difference between two RGBA16Float images' halves in 8-bit codes, relative to the value above 1
+    /// (tools/gpu/maxwell/rungcheck.py half_codes), and how many halves differ; 255 where one is not finite.
+    public static func halfDifference(_ a: [UInt8], _ b: [UInt8]) -> (worst: Int, differing: Int) {
+        guard a.count == b.count else { return (Int.max, max(a.count, b.count)) }
+        var worst = 0
+        var differing = 0
+        for at in stride(from: 0, to: a.count - 1, by: 2) {
+            let x = Float(Float16(bitPattern: UInt16(a[at]) | UInt16(a[at + 1]) << 8))
+            let y = Float(Float16(bitPattern: UInt16(b[at]) | UInt16(b[at + 1]) << 8))
+            guard x != y && !(x.isNaN && y.isNaN) else { continue }
+            differing += 1
+            let codes = x.isFinite && y.isFinite ? Int((abs(x - y) * 255 / max(1, abs(x))).rounded(.up)) : 255
+            worst = max(worst, min(codes, 255))
+        }
+        return (worst, differing)
+    }
+
     /// The largest difference in codes between two images of one format's bytes, and how many bytes differ.
     public static func difference(_ a: [UInt8], _ b: [UInt8]) -> (worst: Int, differing: Int) {
         guard a.count == b.count else { return (Int.max, max(a.count, b.count)) }

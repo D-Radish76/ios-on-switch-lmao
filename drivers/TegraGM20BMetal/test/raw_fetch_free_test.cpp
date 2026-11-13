@@ -73,7 +73,7 @@ TEST(RawFetchFree, AColourMatrixFormReadsItsRowsAndTheClampPairWhereItsUniformHa
 TEST(RawFetchFree, TheIteratedWordsEnableTheColoursBlendLoadTheProgramAndTurnOffAfter)
 {
     std::vector<uint32_t> on, off;
-    raw::iteratedBlendWords(multiply(), 0, on, off);
+    raw::iteratedBlendWords(multiply(), 0, 80, on, off);
     ASSERT_GE(on.size(), 4u);
     EXPECT_EQ(on[0], raw::Push::hdr(1, raw::SUBC_3D, 0x1360, 1));  // SET_BLEND(0)
     EXPECT_EQ(on[1], 1u);
@@ -93,20 +93,28 @@ uint32_t saturateAfter(const std::vector<uint32_t> &words)
     return at == words.end() || at + 1 == words.end() ? ~0u : at[1];
 }
 
-TEST(RawFetchFree, TheIteratedFormSaturatesItsColourAndTheNextStateDoesNot)
+TEST(RawFetchFree, TheIteratedFormSaturatesAnEightBitColourAndTheNextStateDoesNot)
 {
     for (uint8_t colour : {0, 2}) {
         std::vector<uint32_t> on, off;
-        raw::iteratedBlendWords(multiply(), colour, on, off);
+        raw::iteratedBlendWords(multiply(), colour, 80, on, off);
         EXPECT_EQ(saturateAfter(on), 1u << (4 * colour)) << "OUTPUT" << int(colour) << " TRUE, CLAMP_RANGE 0 to 1";
         EXPECT_EQ(saturateAfter(off), 0u);
     }
     raw::PackIteratedBlend matrix = {};
     matrix.uniformSlot = 1;
     std::vector<uint32_t> on, off;
-    raw::iteratedBlendWords(matrix, 0, on, off);
+    raw::iteratedBlendWords(matrix, 0, 70, on, off);
     EXPECT_EQ(saturateAfter(on), 1u);
     EXPECT_EQ(saturateAfter(off), 0u);
+}
+
+TEST(RawFetchFree, AFloatTargetsIteratedFormKeepsItsColourUnclamped)
+{
+    std::vector<uint32_t> on, off;
+    raw::iteratedBlendWords(multiply(), 0, 115, on, off);  // RGBA16Float
+    EXPECT_EQ(saturateAfter(on), ~0u) << "no SET_PS_SATURATE: Metal blends a float target's colour as it is";
+    EXPECT_EQ(saturateAfter(off), ~0u);
 }
 
 TEST(RawFetchFree, TargetSelectMapsEachSlotToItself)
