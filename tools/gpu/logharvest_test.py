@@ -262,6 +262,18 @@ class LogHarvestTest(unittest.TestCase):
         self.assertEqual(report.added['Photos'], 1)
         self.assertIn(' lib=/System/Library/PrivateFrameworks/Tungsten.framework/default.metallib ', new[0])
 
+    def test_a_part_whose_trailing_space_the_log_dropped_rejoins_whole(self):
+        head = f'label={CA_LABEL} '
+        key = 'k' * (699 - len(head)) + ' fc_has_premultiply:53:00'
+        text = head + key
+        chunks = [text[i : i + 700] for i in range(0, len(text), 700)]
+        logged = [
+            record(BOOT, 'backboardd', f'raw: harvest 000000000000000a {i + 1}/{len(chunks)} {chunk.rstrip()}')
+            for i, chunk in enumerate(chunks)
+        ]
+        boot = logharvest.read_boots(logged)[BOOT]
+        self.assertEqual(logharvest.whole(boot, 'backboardd', '000000000000000a'), (CA_LABEL, key))
+
     def test_left_out_states_are_counted_by_reason(self):
         boots = logharvest.read_boots(boot_records())
         _, report = logharvest.harvest(boots, CORPUS.splitlines(), None, Path('/nonexistent'))

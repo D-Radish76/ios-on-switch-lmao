@@ -68,6 +68,8 @@ MADE = re.compile(
     r'raw: a state the pack lacks (made|not made|refused) in .*? for a compile slot: ([0-9a-f]{16}) (.*)$', re.DOTALL
 )
 CUT = 400  # RawComplete.mm's made line: %.400s
+# A harvest part's characters but the last part's; the log drops a part's trailing spaces, which pads them back
+PART_CHARS = 700
 PART = re.compile(r'raw: harvest ([0-9a-f]{16}) (\d+)/(\d+) (.*)$', re.DOTALL)
 VARIANT = re.compile(r'state\.variant_unpacked: .*?refused:( \| .*?) of ([0-9a-f]{16}) ')
 VARIANT_ANY = 'state.variant_unpacked: '
@@ -155,7 +157,7 @@ def whole(boot: Boot, process: str, name: str) -> tuple[str, str] | None:
     parts, total = boot.parts.get((process, name)), boot.totals.get((process, name))
     if not parts or sorted(parts) != list(range(1, total + 1)):
         return None
-    text = ''.join(parts[i] for i in range(1, total + 1))
+    text = ''.join(parts[i].ljust(PART_CHARS) for i in range(1, total)) + parts[total]
     label, _, key = text.partition(' ')
     return label.removeprefix('label='), key
 
