@@ -1141,21 +1141,17 @@ Pipeline *Device::pipeline(uint64_t keyHash, PackForm form, bool caTransform)
     return pl;
 }
 
-// Whether the state's fetch-free form, where the pack holds one, is a form a draw can take: its rung's unit proven, or a
-// debug build, whose probe channel forces a rung (its programs are placed in the heap only then)
+// Whether the state's fetch-free form, where the pack holds one, is placed (raw_fetch_free.h fetchFreePlaced)
 bool Device::fetchFreeReachable(uint64_t keyHash) const
 {
     const PackPipeline *rec = pack_.find(keyHash, PackForm::FetchFree);
     if (!rec)
         return false;
-    const FetchFreeForm f = fetchFreeForm(*rec, pack_.iterated(*rec));
-    const bool proven =
-        f.rung == FetchBlend ? fixedBlendProven() : f.rung == FetchIteratedBlend && iteratedPassesProven(f);
+    uint8_t probe = 0;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-    return proven || f.rung != FetchNone;
-#else
-    return proven;
+    probe = probeFetchRung.load(std::memory_order_relaxed);
 #endif
+    return fetchFreePlaced(fetchFreeForm(*rec, pack_.iterated(*rec)), probe);
 }
 
 bool Device::usableRecord(const PackPipeline *rec) const

@@ -85,6 +85,30 @@ TEST(RawFetchFree, TheIteratedWordsEnableTheColoursBlendLoadTheProgramAndTurnOff
     EXPECT_FALSE(off.empty());
 }
 
+// The iterated blend takes the shader's colour unclamped, where Metal's blend into an 8-bit target clamps it first
+uint32_t saturateAfter(const std::vector<uint32_t> &words)
+{
+    const uint32_t header = raw::Push::hdr(1, raw::SUBC_3D, 0x13a8, 1);  // SET_PS_SATURATE
+    const auto at = std::find(words.begin(), words.end(), header);
+    return at == words.end() || at + 1 == words.end() ? ~0u : at[1];
+}
+
+TEST(RawFetchFree, TheIteratedFormSaturatesItsColourAndTheNextStateDoesNot)
+{
+    for (uint8_t colour : {0, 2}) {
+        std::vector<uint32_t> on, off;
+        raw::iteratedBlendWords(multiply(), colour, on, off);
+        EXPECT_EQ(saturateAfter(on), 1u << (4 * colour)) << "OUTPUT" << int(colour) << " TRUE, CLAMP_RANGE 0 to 1";
+        EXPECT_EQ(saturateAfter(off), 0u);
+    }
+    raw::PackIteratedBlend matrix = {};
+    matrix.uniformSlot = 1;
+    std::vector<uint32_t> on, off;
+    raw::iteratedBlendWords(matrix, 0, on, off);
+    EXPECT_EQ(saturateAfter(on), 1u);
+    EXPECT_EQ(saturateAfter(off), 0u);
+}
+
 TEST(RawFetchFree, TargetSelectMapsEachSlotToItself)
 {
     EXPECT_EQ(raw::targetSelect(1) & 0xf, 1u);
@@ -102,6 +126,19 @@ TEST(RawFetchFree, Rung2TakesAnEightBitScreenTargetTwoLayersDeep)
     EXPECT_FALSE(raw::fetchFreeTaken(f, {80, true, 0}));
     EXPECT_FALSE(raw::fetchFreeTaken(f, {115, false, 0}));
     EXPECT_FALSE(raw::fetchFreeTaken(f, {80, false, 0}, 4));
+}
+
+TEST(RawFetchFree, APipelinePlacesTheFormsItsRuleTakesAndAnyTheProbeAsksFor)
+{
+    raw::PackIteratedBlend b = multiply();
+    const raw::FetchFreeForm listed = raw::fetchFreeForm(formRecord(0, raw::FetchIteratedBlend), &b);
+    EXPECT_TRUE(raw::fetchFreePlaced(listed));
+    b.name = raw::iteratedProgramName("hue");
+    const raw::FetchFreeForm unlisted = raw::fetchFreeForm(formRecord(0, raw::FetchIteratedBlend), &b);
+    EXPECT_FALSE(raw::fetchFreePlaced(unlisted)) << "release and debug place the same forms";
+    for (uint8_t probe : {2, 3, 4})
+        EXPECT_TRUE(raw::fetchFreePlaced(unlisted, probe));
+    EXPECT_FALSE(raw::fetchFreePlaced(raw::FetchFreeForm{}, 3));
 }
 
 TEST(RawFetchFree, Rung3WaitsForItsPassesToBeProvenUnlessAProbeForcesIt)

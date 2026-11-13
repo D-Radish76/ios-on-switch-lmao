@@ -43,6 +43,13 @@ class IteratedBlend(unittest.TestCase):
         for g, e in zip(got, exact, strict=True):
             self.assertLessEqual(abs(g - rungcheck.store(e)), 1)
 
+    def test_the_source_is_saturated_as_the_forms_ps_saturate_does(self):
+        dest = [128, 64, 32, 255]
+        program = rungcheck.table.PROGRAMS['mpy']
+        clamped = rungcheck.iterated_blend(program, [0.0, 0.2, 1.0, 0.5], dest)
+        self.assertEqual(rungcheck.iterated_blend(program, [-0.3, 0.2, 1.7, 0.5], dest), clamped)
+        self.assertEqual(rungcheck.iterated_blend(program, [float('nan'), 0.2, 1.0, 0.5], dest), clamped)
+
 
 class Outputs(unittest.TestCase):
     def test_each_written_colour_takes_a_vec4(self):
