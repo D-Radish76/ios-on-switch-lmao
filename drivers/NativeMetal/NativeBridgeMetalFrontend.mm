@@ -3353,7 +3353,7 @@ NB_RESIDENCY_SETS(use)
     if (const std::shared_ptr<nbasync::Making> making = ((NBRenderPipeline *)state).making;
         making && !nbasync::ready(making)) {
         _skipDraws = true;
-        [self.commandBuffer refuse:@"render pipeline compilation failed or timed out"];
+        [self.commandBuffer refuse:@"render pipeline compilation failed"];
         return;
     }
     [self check:nmb_render_set_pipeline(self.handle, [(NBRenderPipeline *)state handle]) what:"setRenderPipelineState"];
