@@ -17,6 +17,7 @@ namespace raw {
 namespace fetch_free {
 
 constexpr uint32_t kBlendEnable = 0x1360;  // SET_BLEND(j)
+constexpr uint32_t kPsSaturate = 0x13a8;   // SET_PS_SATURATE: OUTPUT<j> at bit 4j, its CLAMP_RANGE (0: 0 to 1) above it
 constexpr uint32_t kOglFuncAdd = 0x8006, kOglOne = 0x4001, kOglZero = 0x4000;
 
 template <typename Emit, typename... Args> void emit(std::vector<uint32_t> &out, Emit e, Args &&...args)
@@ -80,7 +81,9 @@ inline FetchFreeForm fetchFreeForm(const PackPipeline &pp, const PackIteratedBle
 
 // A rung-3 form's iterated blend: `on` after its registers (the blend enabled on its colour, the program loaded and
 // enabled; a colour matrix form's program is each draw's), `off` where the next state's registers go (iterated blend off,
-// the per-target blend back as the context has it)
+// the per-target blend back as the context has it). The forms blend into 8-bit unorm targets only (pack/ca/fetchfree.py),
+// whose colour Metal clamps to [0, 1] before the blend; the iterated blend takes the shader's colour as it is, so the
+// shader's output is saturated for the draw (SET_PS_SATURATE: device-proven to clamp, BENCH3 section 6)
 inline void iteratedBlendWords(const PackIteratedBlend &b, uint8_t colour, std::vector<uint32_t> &on,
                                std::vector<uint32_t> &off)
 {
@@ -102,11 +105,15 @@ inline void iteratedBlendWords(const PackIteratedBlend &b, uint8_t colour, std::
     program.constant_count = 3u * b.constants;
     on.push_back(Push::hdr(1, SUBC_3D, fetch_free::kBlendEnable + 4 * colour, 1));
     on.push_back(1);
+    on.push_back(Push::hdr(1, SUBC_3D, fetch_free::kPsSaturate, 1));
+    on.push_back(1u << (4 * colour));
     if (b.count)
         fetch_free::emit(on, switch_gm20b_iterated_blend, &program);
     else
         fetch_free::emit(on, switch_gm20b_iterated_blend_common, &program.common);
     fetch_free::emit(off, switch_gm20b_iterated_blend_off);
+    off.push_back(Push::hdr(1, SUBC_3D, fetch_free::kPsSaturate, 1));
+    off.push_back(0);
 }
 
 // SET_CT_SELECT of `count` colour targets, each slot mapped to itself: a pass's, and one for a rung-3 form's draws

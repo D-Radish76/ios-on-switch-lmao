@@ -9,7 +9,8 @@ The dump is directcheck's DIRECTCHECK_DUMP of a corpus whose lines carry fetch-f
 image and the destination 8-bit premultiplied codes, as Core Animation's are. The storage form's stored texel is
 converted to codes by the ROP's store rule; the fetch-free form's output goes through the unit that stands in for the
 fetch: rung 2 the chip's 8-bit integer blender (tools/benchloop/blend_models.py chip, with the form's own factors),
-rung 3 the iterated blend program the form names (raw/pack/iterated/emu.py, every pass rounded to half). A colour
+rung 3 the iterated blend program the form names (raw/pack/iterated/emu.py, every pass rounded to half) over the source
+the form's SET_PS_SATURATE clamps to [0, 1] (raw_fetch_free.h iteratedBlendWords). A colour
 matrix form's program and constants are those the GPU's macro makes of the matrix uniform both programs read
 (fetchfree_link.py finds it as the pack does). The uniform buffers' bind residuals read as 0. Each state gets the
 largest difference in codes over every written channel; rule fetch.blend allows 2 (raw_fetch_rungs.h).
@@ -186,9 +187,13 @@ def fixed_blend(blob: dict[int, int], colour: int, source: list[float], dest: li
     return out
 
 
+def saturated(x: float) -> float:
+    return 0.0 if math.isnan(x) else min(max(x, 0.0), 1.0)
+
+
 def iterated_blend(program: object, source: list[float], dest: list[int]) -> list[int]:
-    """Give the stored codes of the iterated blend program over the source and destination, each pass in half."""
-    result = emu.run(program, source, [x / 255 for x in dest], fp16=True)
+    """Give the stored codes of the program over the saturated source and the destination, each pass in half."""
+    result = emu.run(program, [saturated(s) for s in source], [x / 255 for x in dest], fp16=True)
     return [store(x) for x in result]
 
 
