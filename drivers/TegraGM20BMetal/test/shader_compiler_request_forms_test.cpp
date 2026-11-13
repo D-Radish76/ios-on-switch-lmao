@@ -196,6 +196,61 @@ TEST(CompileRequestForms, ATessellationState)
     expectRefusedAt(bare, "t=1:0:0:0:0:16:0");
 }
 
+// The key text pipelineKey makes of a descriptor's fields is the one it made of the descriptor itself before (pinned from
+// that form's output, boot 21's log and its packs): the blur downsample's is the key iOS 17's pack holds its record under
+TEST(CompileRequestForms, TheKeyTextIsTheDescriptorsOwn)
+{
+    const raw::StageKey v{"downsample_blur_vert_lph", ""}, f{"downsample_4_frag_lph", ""};
+    const std::string blur = raw::pipelineKey(blurDownsample(), &v, &f, "", "QuartzCore");
+    EXPECT_EQ(blur, "samples=1 topo=0 ds=0/0 c0=550:15:0:1:0:0:1:0:0 c1=550:0:0:1:0:0:1:0:0 a0=31:0:1:48:1:1 "
+                    "a1=29:16:1:48:1:1 a2=29:24:1:48:1:1 a3=27:32:1:48:1:1  | v downsample_blur_vert_lph  | f "
+                    "downsample_4_frag_lph");
+    EXPECT_EQ(raw::Pack::fnv(blur.data(), blur.size()), 0x9caf7830314b781eull);
+
+    MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
+    d.rasterSampleCount = 4;
+    d.inputPrimitiveTopology = MTLPrimitiveTopologyClassTriangle;
+    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    d.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    d.colorAttachments[0].pixelFormat = MTLPixelFormatBGRA8Unorm;
+    d.colorAttachments[0].blendingEnabled = YES;
+    d.colorAttachments[0].sourceRGBBlendFactor = MTLBlendFactorSourceAlpha;
+    d.colorAttachments[0].destinationRGBBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    d.colorAttachments[0].alphaBlendOperation = MTLBlendOperationMax;
+    d.colorAttachments[7].pixelFormat = MTLPixelFormatRGBA16Float;
+    d.colorAttachments[7].writeMask = MTLColorWriteMaskRed | MTLColorWriteMaskAlpha;
+    MTLVertexDescriptor *layout = [MTLVertexDescriptor vertexDescriptor];
+    layout.attributes[0].format = MTLVertexFormatFloat2;
+    layout.attributes[0].bufferIndex = 1;
+    layout.attributes[3].format = MTLVertexFormatUChar4Normalized;
+    layout.attributes[3].offset = 8;
+    layout.attributes[3].bufferIndex = 3;
+    layout.attributes[30].format = MTLVertexFormatFloat4;
+    layout.attributes[30].bufferIndex = 5;
+    layout.layouts[1].stride = 8;
+    layout.layouts[3].stride = 20;
+    layout.layouts[3].stepFunction = MTLVertexStepFunctionPerInstance;
+    layout.layouts[3].stepRate = 2;
+    layout.layouts[5].stride = MTLBufferLayoutStrideDynamic;
+    d.vertexDescriptor = layout;
+    d.maxVertexAmplificationCount = 2;
+    const raw::StageKey cv{"vertex_fn", "#0:33:05000000"}, cf{"fragment_fn", "fc_generic:53:01"};
+    EXPECT_EQ(raw::pipelineKey(d, &cv, &cf, " | fl helper  ", "RenderBox"),
+              "samples=4 topo=3 ds=260/260 c0=80:15:1:4:5:0:1:0:4 c7=115:9:0:1:0:0:1:0:0 a0=29:0:1:8:1:1 a3=9:8:3:20:2:2 "
+              "a30=31:0:5:4294967295:1:1 amp=2  | v vertex_fn #0:33:05000000 | f fragment_fn fc_generic:53:01 | fl "
+              "helper   | l RenderBox");
+    raw::PipelineFields patched = raw::fieldsOf(d);
+    patched.patchType = MTLPatchTypeTriangle;
+    patched.tessellation = {MTLTessellationPartitionModeFractionalEven, MTLTessellationFactorFormatHalf,
+                            MTLTessellationFactorStepFunctionPerPatchAndPerInstance, MTLWindingCounterClockwise,
+                            MTLTessellationControlPointIndexTypeUInt16, 32, 1};
+    EXPECT_EQ(raw::pipelineKey(patched, &cv, &cf, "", ""),
+              "samples=4 topo=3 ds=260/260 c0=80:15:1:4:5:0:1:0:4 c7=115:9:0:1:0:0:1:0:0 a0=29:0:1:8:1:1 a3=9:8:3:20:2:2 "
+              "a30=31:0:5:4294967295:1:1 t=3:0:3:1:1:32:1 amp=2  | v vertex_fn #0:33:05000000 | f fragment_fn "
+              "fc_generic:53:01");
+    EXPECT_EQ(raw::pipelineKey(raw::PipelineFields(), nullptr, nullptr, "", ""), "samples=1 topo=0 ds=0/0  | v -  | f -");
+}
+
 // NativeStageInTest's kernel: a float2 per thread from buffer 1 at a static and at the dynamic stride
 TEST(CompileRequestForms, AComputeStageInput)
 {
