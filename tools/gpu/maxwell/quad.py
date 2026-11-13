@@ -1,7 +1,7 @@
 """A 2x2 quad of interp.py lanes, run in lockstep: cross-lane instructions (SHFL, FSWZADD, VOTE) and divergence.
 
 Memory is modelled as interp.py's single lane has it: a load (SULD, LDG) is a pure function of its operands, a store
-(SUST) is recorded and compared, an atomic returns 0, so the interlock's ticket wait passes at once.
+(SUST) is recorded and compared, an atomic or an L2 (.CG) load returns 0, so the interlock's ticket wait passes at once.
 
 Divergence follows Maxwell's reconvergence stack: SSY, PBK and PCNT push their targets; a branch some active lanes take
 runs the rest first and parks the takers; SYNC (and an empty active set) resumes the next parked path, then reconverges

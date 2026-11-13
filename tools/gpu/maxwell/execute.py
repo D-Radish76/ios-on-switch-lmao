@@ -267,10 +267,15 @@ def iadd(base: str, name: str, w: int, lane: Lane, inputs: Inputs, a: int, d: in
     lane.w(d, total)
 
 
+# LDG's cache op .CG (L2 only): the interlock's ticket wait reads the ticket word with it, which the model holds at 0
+# as it gives an atomic 0, so the wait passes at once either way
+LDG_CG = 1
+
+
 def memory(base: str, w: int, lane: Lane, inputs: Inputs, d: int) -> None:
     if base in {'MEMBAR', 'RED'}:
         return
-    if base == 'ATOM':
+    if base == 'ATOM' or (base == 'LDG' and bits(w, 46, 2) == LDG_CG):
         lane.w(d, 0)
         return
     dimension = 2 if base == 'LDG' else SURFACE_COORDS.get(bits(w, 33, 3), 2)
