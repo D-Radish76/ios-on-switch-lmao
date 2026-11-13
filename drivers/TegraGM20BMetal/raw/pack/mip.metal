@@ -4,8 +4,10 @@
 // fragment. Each texel is Metal's step: one bilinear tap at its centre mapped onto the level above, ((2x + 1) s - d) / 2d
 // source texels for an axis of s texels halved to d, the weight rounded to the nearest 1/256, blended from the four texels
 // read whole: the texture unit's filter takes fractions off the quarters at weights of its own (the 2D engine's put odd
-// steps up to 284 half ulps off Metal's on the chip, boot 21 gpu.raw.mip_twod rgba16f_odd_max_diff). An sRGB level's texels
-// are decoded as they are read and blended in linear light; the target encodes what the fragment writes.
+// steps up to 284 half ulps off Metal's on the chip, boot 21 gpu.raw.mip_twod rgba16f_odd_max_diff). An sRGB level is read
+// as its codes (a header without the sRGB conversion, Device::levelTic) and decoded here, then blended in linear light: the
+// texture unit's decode put proven steps two codes off Metal's (boot 21 srgb=bgra8srgb:3d=57/2). The target encodes what
+// the fragment writes.
 // Buffer 0 holds the step: the size of the level above, then of this level.
 // One function a target format: the pack keys an own state by its function's name.
 #include <metal_stdlib>
@@ -49,11 +51,24 @@ static float4 blend(float4 a, float4 b, float4 c, float4 e, float2 w)
     return fma(bottom, float4(w.y), top * (1.0 - w.y));
 }
 
+static float4 linearLight(float4 code)
+{
+    const float3 c = code.rgb;
+    return float4(select(pow((c + 0.055) / 1.055, 2.4), c / 12.92, c <= 0.04045), code.a);
+}
+
 static float4 levelStep(Out in, texture2d<float> image, constant Step &step)
 {
     const Taps t = taps(in.position.xy, step);
     return blend(image.read(t.first), image.read(uint2(t.second.x, t.first.y)), image.read(uint2(t.first.x, t.second.y)),
                  image.read(t.second), t.weight);
+}
+
+static float4 srgbStep(Out in, texture2d<float> codes, constant Step &step)
+{
+    const Taps t = taps(in.position.xy, step);
+    return blend(linearLight(codes.read(t.first)), linearLight(codes.read(uint2(t.second.x, t.first.y))),
+                 linearLight(codes.read(uint2(t.first.x, t.second.y))), linearLight(codes.read(t.second)), t.weight);
 }
 
 #define MIP(name, form)                                                                                                       \
@@ -75,8 +90,8 @@ MIP(rg16, levelStep)
 MIP(rg16f, levelStep)
 MIP(rgba8, levelStep)
 MIP(bgra8, levelStep)
-MIP(rgba8_srgb, levelStep)
-MIP(bgra8_srgb, levelStep)
+MIP(rgba8_srgb, srgbStep)
+MIP(bgra8_srgb, srgbStep)
 MIP(rgb10a2, levelStep)
 MIP(rg11b10f, levelStep)
 MIP(bgr10a2, levelStep)

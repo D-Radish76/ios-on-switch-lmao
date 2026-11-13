@@ -211,7 +211,8 @@ bool fillTexturePass(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc)
 }
 
 // Levels first + 1 .. last of a chain by the pack's mip state (raw_mip.h): one pass a level, level l + 1 drawn from a header of
-// level l alone, the two levels' sizes its step. Each pass's prologue barrier orders its reads after the pass before wrote.
+// level l alone (an sRGB chain's: its codes), the two levels' sizes its step. Each pass's prologue barrier orders its reads
+// after the pass before wrote.
 bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t last, const char **why)
 {
     raw::Device &d = *gRM->raw;
@@ -219,10 +220,11 @@ bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t la
     const raw::fx::MipChain &c = t->_raw.chain->layout;
     if (!mip || last >= c.levels)
         return false;
+    const raw::FormatInfo *f = raw::formatInfo(t->_raw.format);
     useTexture(rc, t, true);
     for (uint32_t l = first; l < last; l++) {
         raw::Texture from = t->_raw, to;
-        from.tic = d.levelTic(t->_raw, l);
+        from.tic = d.levelTic(t->_raw, l, f && f->srgb);
         if (!from.tic || !raw::chainLevelTarget(t->_raw, l + 1, to))
             return false;
         to.tic = d.levelTic(t->_raw, l + 1);

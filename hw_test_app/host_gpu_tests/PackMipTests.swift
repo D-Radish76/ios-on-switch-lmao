@@ -6,7 +6,7 @@ import XCTest
 
 /// The raw pack's mip states (drivers/TegraGM20BMetal/raw/pack/mip.metal) on this Mac's GPU: every step of every chain
 /// format, odd steps included, within one code of Metal's step (MipReference), each level drawn from the one above as
-/// the runtime's mipPasses draws it (buffer 0: the two levels' sizes). A 32-bit float field may be two ulps off: the
+/// the runtime's mipPasses draws it (buffer 0: the two levels' sizes; an sRGB level read as its codes). A 32-bit float field may be two ulps off: the
 /// state blends in float, rounding twice where MipReference rounds once.
 final class PackMipTests: XCTestCase {
     private func library(_ device: MTLDevice) throws -> MTLLibrary {
@@ -31,6 +31,15 @@ final class PackMipTests: XCTestCase {
         return bytes
     }
 
+    /// What the runtime binds an sRGB level as: its codes (Device::levelTic's codes header)
+    private static func codes(_ format: MTLPixelFormat) -> MTLPixelFormat {
+        switch format {
+        case .bgra8Unorm_srgb: return .bgra8Unorm
+        case .rgba8Unorm_srgb: return .rgba8Unorm
+        default: return format
+        }
+    }
+
     func testEveryStepIsMetalsStep() async throws {
         let device = try XCTUnwrap(MTLCreateSystemDefaultDevice())
         let queue = try XCTUnwrap(device.makeCommandQueue())
@@ -46,7 +55,7 @@ final class PackMipTests: XCTestCase {
                 for l in 1..<dims.count {
                     let (sw, sh) = dims[l - 1], (dw, dh) = dims[l]
                     let above = try gpu.texture(
-                        format.pixel, sw, sh, usage: [.shaderRead], storage: .shared)
+                        Self.codes(format.pixel), sw, sh, usage: [.shaderRead], storage: .shared)
                     above.replace(
                         region: MTLRegionMake2D(0, 0, sw, sh), mipmapLevel: 0, withBytes: level,
                         bytesPerRow: sw * format.layout.bytes)

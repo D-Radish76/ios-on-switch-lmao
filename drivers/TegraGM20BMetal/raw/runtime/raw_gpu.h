@@ -348,6 +348,7 @@ struct Texture {
         uint64_t va = 0;
         uint32_t fmt2d = 0;  // the 2D engine's surface format (fx::twodChainFormat); 0: it makes none of its steps
         uint32_t levelTic[fx::kMaxLevels] = {};  // a view of each level alone (Device::levelTic), made on first use
+        uint32_t levelCodesTic[fx::kMaxLevels] = {};  // the same of an sRGB chain's codes, with no sRGB conversion
     } *chain = nullptr;
 
     // Block-linear (TegraGM20BLayout.h): a chain level as a render target (chainLevelTarget: no memory or header of its own,
@@ -1949,8 +1950,9 @@ public:
     }
 
     // The texture header of level `level` of mipmapped texture `t`'s chain alone, as NVK's view of that level (a pass into
-    // the level fetches its color through it); 0: none
-    uint32_t levelTic(Texture &t, uint32_t level);
+    // the level fetches its color through it); `codes`: an sRGB chain's level read as its codes, with no sRGB conversion
+    // (pack/mip.metal decodes them); 0: none
+    uint32_t levelTic(Texture &t, uint32_t level, bool codes = false);
     // The header a fetch from `part` (raw::attachmentTarget of level `level`, slice `slice` of `t`, maybe in a format view's
     // format) reads: levelTic's for a 2D chain's level in t's format, else attachmentHeader's, made on first use and freed
     // with t's header, kept in views_ as viewTic's are; 0: none

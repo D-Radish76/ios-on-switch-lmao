@@ -2934,10 +2934,10 @@ void Device::destroyTexture(Texture &t)
     if (t.zeta)
         freeOwnedZeta(t.va);
     if (t.chain) {
-        for (const uint32_t level : t.chain->levelTic)
-            if (level) {
-                freeTic(level);
-            }
+        for (const uint32_t *tics : {t.chain->levelTic, t.chain->levelCodesTic})
+            for (uint32_t level = 0; level < fx::kMaxLevels; level++)
+                if (tics[level])
+                    freeTic(tics[level]);
         delete t.chain;
         t.chain = nullptr;
     }
@@ -7347,19 +7347,19 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
     return tic;
 }
 
-uint32_t Device::levelTic(Texture &t, uint32_t level)
+uint32_t Device::levelTic(Texture &t, uint32_t level, bool codes)
 {
     const FormatInfo *f = formatInfo(t.format);
     if (!t.chain || !f || level >= t.chain->layout.levels)
         return 0;
-    uint32_t &slot = t.chain->levelTic[level];
+    uint32_t &slot = (codes ? t.chain->levelCodesTic : t.chain->levelTic)[level];
     if (const uint32_t made = __atomic_load_n(&slot, __ATOMIC_ACQUIRE))
         return made;
     RAW_ENCODE_LOCK(l, lock_);
     uint32_t tic = slot;
     if (!tic && (tic = allocTic())) {
         uint32_t w[8];
-        fx::mipChainTic(t.chain->layout, t.chain->va, f->tic0, f->srgb, level, 1, w);
+        fx::mipChainTic(t.chain->layout, t.chain->va, f->tic0, f->srgb && !codes, level, 1, w);
         memcpy(tic_.cpu + 32 * tic, w, 32);  // visible at the next submission's header invalidate
         __atomic_store_n(&slot, tic, __ATOMIC_RELEASE);
     }
