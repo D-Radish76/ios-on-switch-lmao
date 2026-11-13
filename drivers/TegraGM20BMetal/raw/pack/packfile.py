@@ -16,8 +16,10 @@ MAGIC = b'GM20BPK1'
 # words in the blob section); 21: the runtime records' tessellation, amplification, dynamic stride and stage-in
 # fields (every pack state's are 0), a state's vertex streams past stream 0, layer and viewport count push words; 22:
 # the formats a state's written textures were compiled for, the fragment slots it samples two-plane RGB10A8_2P_XR10
-# textures at; 23: compute states' answers (PackComputeFacts), compared sampler slots
-VERSION = 23
+# textures at; 23: compute states' answers (PackComputeFacts), compared sampler slots; 24: a tessellation state's
+# control and evaluation programs, its stride twin's key hash, an amplifying state's layer and viewport offset words,
+# the registers a state's draws set back after it (pairs in the blob section)
+VERSION = 24
 SECTIONS = 14  # runtime/raw_pack.h PackSectionCount
 ENTRY_COMPARES = 1  # runtime/raw_pack.h kEntryCompares: a handle's sampler slot the state samples by comparison
 # PackIteratedBlend: count, enable, constants, uniformSlot, uniformOffset, uniformWords, reserved, alphaSource,
@@ -50,6 +52,9 @@ KERNEL_V21 = struct.Struct('<B8s3x')
 # PackPipeline's record-v22 tail: writtenFormat[16], by fragment texture slot, xrSlots, reserved
 WRITTEN_SLOTS = 16  # runtime/raw_pack.h kWrittenSlots
 PIPELINE_V22 = struct.Struct(f'<{WRITTEN_SLOTS}HH2x')
+# PackPipeline's record-v24 tail: tessPrograms[2], strideTwin, amplificationLayerWord, amplificationViewportWord,
+# restoreDwords, restoreAt
+PIPELINE_V24 = struct.Struct('<2IQBBHI')
 NO_UNIFORM = b'\xff\x00\x00\x00' * 8
 
 
@@ -312,7 +317,7 @@ def pipeline_bytes(rec: dict, key_offset: int, blob_off: int, variants_off: int 
     )
     v18 = PIPELINE_V18.pack(rec.get('memory_entries', ALL_ENTRIES))
     entries = entry_bytes(rec['entries'])
-    tails = v15 + v18 + v20_tail(rec) + v21_tail(rec) + v22_tail(rec)
+    tails = v15 + v18 + v20_tail(rec) + v21_tail(rec) + v22_tail(rec) + v24_tail(rec)
     return head + entries + push_bytes(rec['push']) + dynamic + storage + tests + tails
 
 
@@ -350,6 +355,19 @@ def v21_tail(rec: dict) -> bytes:
 def v22_tail(rec: dict) -> bytes:
     """Give a record's PIPELINE_V22 tail: its written textures' formats and xrSlots."""
     return PIPELINE_V22.pack(*rec.get('written_format', [0] * WRITTEN_SLOTS), rec.get('xr_slots', 0))
+
+
+def v24_tail(rec: dict) -> bytes:
+    """Give a record's PIPELINE_V24 tail: its tessellation programs, stride twin, amplification words, restore pairs."""
+    restore = rec.get('restore', [])
+    return PIPELINE_V24.pack(
+        *rec.get('tess', [0, 0]),
+        rec.get('stride_twin', 0),
+        rec.get('amplification_layer_word', 0),
+        rec.get('amplification_viewport_word', 0),
+        2 * len(restore),
+        rec.get('restore_at', 0) if restore else 0,
+    )
 
 
 def kernel_window(e: dict) -> int:
@@ -505,8 +523,8 @@ class Pack:
 def pipeline_sections(pipes: list[dict]) -> tuple[bytearray, list[int], bytearray, bytearray]:
     """Give the pipelines, the blob, the strings and the variants.
 
-    The blob holds the registers' pairs, one copy of each distinct run, and each record's argument tables' words, the
-    vertex table's first (its spill_at).
+    The blob holds the registers' pairs, one copy of each distinct run, each record's argument tables' words, the
+    vertex table's first (its spill_at), and the pairs its draws set back after it (its restore_at).
     """
     strings = bytearray()
 
@@ -533,7 +551,10 @@ def pipeline_sections(pipes: list[dict]) -> tuple[bytearray, list[int], bytearra
         spill_at = len(blob)
         for words in rec.get('spill', [[], []]):
             blob += words
-        placed = dict(rec, spill_at=spill_at)
+        restore_at = len(blob)
+        for m, v in rec.get('restore', []):
+            blob += [m, v]
+        placed = dict(rec, spill_at=spill_at, restore_at=restore_at)
         pipe_bin += pipeline_bytes(placed, key_off, blobs[pairs], variants_off, string(name) if name else 0)
     return pipe_bin, blob, strings, variant_bin
 

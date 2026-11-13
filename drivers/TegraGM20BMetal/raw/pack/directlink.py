@@ -41,7 +41,13 @@ PIPELINE_BYTES = (
     + packfile.PIPELINE_V20.size
     + packfile.PIPELINE_V21.size
     + packfile.PIPELINE_V22.size
+    + packfile.PIPELINE_V24.size
 )
+# Where each record tail starts in a PackPipeline
+V24_AT = PIPELINE_BYTES - packfile.PIPELINE_V24.size
+V22_AT = V24_AT - packfile.PIPELINE_V22.size
+V21_AT = V22_AT - packfile.PIPELINE_V21.size
+V20_AT = V21_AT - packfile.PIPELINE_V20.size
 ENTRY_UBO, ENTRY_COLOR_TABLE = 1, 5
 TABLE_KINDS = {code: kind for kind, code in packfile.TABLE_KINDS.items()}
 # SET_VERTEX_STREAM_A_FORMAT(0), 16 bytes apart, and its STRIDE field (bits 11:0)
@@ -207,19 +213,15 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         PIPELINE.unpack_from(p)
     )
     mask, *words = struct.unpack_from('<33I', p, PIPELINE.size + packfile.PACK_ENTRIES * 8)
-    v22_at = PIPELINE_BYTES - packfile.PIPELINE_V22.size
-    *written_format, xr_slots = packfile.PIPELINE_V22.unpack_from(p, v22_at)
-    head, array_length_word, pulled, streams, viewport_count_word = packfile.PIPELINE_V21.unpack_from(
-        p, v22_at - packfile.PIPELINE_V21.size
-    )
+    *written_format, xr_slots = packfile.PIPELINE_V22.unpack_from(p, V22_AT)
+    head, array_length_word, pulled, streams, viewport_count_word = packfile.PIPELINE_V21.unpack_from(p, V21_AT)
     runtime_only = head != packfile.RUNTIME_ONLY_HEAD or pulled != packfile.RUNTIME_ONLY_PULLED
     if runtime_only or any(s & packfile.STREAM_BIND_STRIDE for s in streams):
         raise ValueError(
             'a state of runtime-only fields (tessellation, amplification, dynamic stride): the pack holds none'
         )
     streams = streams[: streams.index(0)] if 0 in streams else streams
-    v20_at = v22_at - packfile.PIPELINE_V21.size - packfile.PIPELINE_V20.size
-    tail = v20_at - packfile.PIPELINE_V18.size - packfile.PIPELINE_V15.size
+    tail = V20_AT - packfile.PIPELINE_V18.size - packfile.PIPELINE_V15.size
     blend, half, _reserved = struct.unpack_from('<BBH', p, tail - 56)
     storage_mask, storage_write_mask, storage_samples, storage_tests, *storage_tic = struct.unpack_from(
         '<BBBB8I', p, tail - 52
@@ -231,7 +233,7 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
     _variants, vertex_variants, _fragment_variants, storage_blend_mask, storage_blend_model = v15[:5]
     bound_entries, uniform, fetch_rung, _variant_name = v15[5:]
     (memory_entries,) = packfile.PIPELINE_V18.unpack_from(p, tail + packfile.PIPELINE_V15.size)
-    v20 = packfile.PIPELINE_V20.unpack_from(p, v20_at)
+    v20 = packfile.PIPELINE_V20.unpack_from(p, V20_AT)
     heap_arrays, heap_bytes, heap_words = v20[6], v20[7], v20[8:24]
     spill_entry, spill_words, spill = list(v20[24:26]), v20[26:28], rec.get('spill', [])
     regs = rec['probe']['records'][0]['regs']

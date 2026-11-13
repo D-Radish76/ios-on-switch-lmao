@@ -196,8 +196,19 @@ Record pipeline(const Pack &pack, const Context &c, const PackPipeline &pp)
             flat.entry[e].sampler = 0;
         }
     std::vector<uint8_t> record;
-    put(record, flat);
+    put(record, &flat, offsetof(PackPipeline, tessPrograms));
     r.sections.push_back({"record", record});
+    // the v24 fields, a section of their own where a record has any: a pack of no such state digests as before them
+    std::vector<uint8_t> tail;
+    if (tessellates(pp))
+        for (const uint32_t index : pp.tessPrograms)
+            program(tail, pack, index);
+    if (pp.strideTwin || pp.amplificationLayerWord || pp.amplificationViewportWord)
+        put(tail, &flat.strideTwin, offsetof(PackPipeline, restoreDwords) - offsetof(PackPipeline, strideTwin));
+    if (pp.restoreDwords && uint64_t(pp.restoreAt + pp.restoreDwords) * 4 <= pack.bytes(PackBlob))
+        put(tail, pack.section<uint32_t>(PackBlob) + pp.restoreAt, size_t(pp.restoreDwords) * 4);
+    if (!tail.empty())
+        r.sections.push_back({"tail", tail});
     r.sections.push_back({"samplers", samplers});
     std::vector<uint8_t> spilled;
     spills(spilled, pack.spills(pp), uint32_t(pp.spillWords[0]) + pp.spillWords[1]);
