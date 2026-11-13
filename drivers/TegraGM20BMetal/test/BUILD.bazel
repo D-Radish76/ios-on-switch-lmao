@@ -5188,6 +5188,29 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
+# pack/kernel_shapes.h: a D line's stage input (StageInText.h, as the journal writes it) makes the descriptor it names and
+# keys its kernel as the runtime does
+host_test(
+    name = "kernel_shapes_test",
+    srcs = [
+        "kernel_shapes_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+    ],
+    deps = RAW_HOST_DEPS,
+)
+
 # pack/direct_states.h: every corpus line makes a state or is handed back with why (directpack.mm records it refused)
 host_test(
     name = "direct_states_test",

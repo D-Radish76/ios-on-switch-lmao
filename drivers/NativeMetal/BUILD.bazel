@@ -26,6 +26,7 @@ filegroup(
         "NativeComputeArtifactStorage.h",
         "NativeComputeReflection.h",
         "QueuePriority.h",
+        "StageInText.h",
         "SurfaceLayout.h",
         "SwitchFrameTimeline.h",
         "SwitchCompileReply.h",

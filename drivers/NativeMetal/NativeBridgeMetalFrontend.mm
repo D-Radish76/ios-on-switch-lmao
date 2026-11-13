@@ -41,6 +41,7 @@
 #include "NativeBridgeMetalFrontend.h"
 #include "NativeComputeReflection.h"
 #include "NativeComputeArtifactStorage.h"
+#include "StageInText.h"
 #include "SwitchCompileReply.h"
 #include "AsyncPipelines.h"
 #include "GpuMemoryRelease.h"
@@ -5269,6 +5270,7 @@ static std::string journalComputePipeline(MTLComputePipelineDescriptor *d, NBFun
         state += " | l " + stageText([l isKindOfClass:[NBFunction class]] ? (NBFunction *)l : nil);
     for (id l in d.linkedFunctions.privateFunctions)
         state += " | p " + stageText([l isKindOfClass:[NBFunction class]] ? (NBFunction *)l : nil);
+    state += stageInText(d.stageInputDescriptor);
     for (char &c : state)
         if (c == '\n')
             c = ' ';
