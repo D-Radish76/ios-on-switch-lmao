@@ -7,14 +7,15 @@ fragment blend set to none writes the blend's source and fetches nothing; the RO
           one the GPU's macro loads with the matrix uniform of each draw
 A state takes a form only where that is the same arithmetic as the fragment's blend. Not where the blend is one of a
 shader's own reasons: an HDR scale (s) or EDR factor (e) applied around it, a destination function (D) on the colour,
-or a texture function QuartzCore never lifts a blend out of (texture_function_info flag 3). Nor where the host gate
-(tools/gpu/maxwell/rungcheck.py) has not shown the form within rule fetch.blend's bound of the storage form: a line
-whose constants are not those this QuartzCore makes of its name (another build's journal), colour opcodes, the texture
-functions whose programs discard every lane it tries, and the programs and image pairings beyond it
-(iterated/table.py). Rung 2 also needs an
-8-bit unorm target and no extended or unbounded range (the ROP clamps an 8-bit target's source, the fragment does
-not). Rung 3 also needs the state to write its blended colour alone and that colour to be its first: the unit refuses
-a draw of more than one colour target, so the draw narrows the targets to it.
+or a texture function QuartzCore never lifts a blend out of (texture_function_info flag 3). Nor a line whose constants
+are not those this QuartzCore makes of its name (another build's journal), nor where the host gate
+(tools/gpu/maxwell/rungcheck.py) measured the form beyond rule fetch.blend's bound of the storage form: the programs,
+image and texture pairings iterated/table.py names, and colour opcodes, whose storage forms take the colour they
+compute outside [0, 1] or not by opcode, so no one source clamp fits them (with the saturate rung 3's forms carry,
+508 of 674 states beyond on 24B119 and 373 of 504 on 21H461, up to 255 codes). Rung 2 also needs an 8-bit unorm target
+and no extended or unbounded range (the ROP clamps an 8-bit target's source, the fragment does not). Rung 3 also needs
+the state to write its blended colour alone and that colour to be its first: the unit refuses a draw of more than one
+colour target, so the draw narrows the targets to it.
 
 The form is given as edits of the state's R line (free_tokens), which directpack.mm applies to make it.
 """
@@ -29,7 +30,6 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 import table
 
 FIXED_FUNCTION_BLENDS = range(26)
-UNCOMPARED_TEXTURE_FUNCTIONS = ('kfh', 'dkf')
 # its program and constants come from each draw's uniform (fetchfree_link.py: the GPU's macro loads them)
 COLOUR_MATRIX = 'vcm'
 UNORM8 = (70, 80)  # MTLPixelFormatRGBA8Unorm, MTLPixelFormatBGRA8Unorm
@@ -46,7 +46,7 @@ def classify(tables: caspec.Tables, name: str, line: str) -> tuple[int, str]:
     except (KeyError, IndexError, ValueError):
         return 0, 'name'
     colors = _colors(line)
-    why = _foreign(tables, line) or _kept_in_fragment(tables, s) or _unproven(tables, s) or _target(s, colors)
+    why = _foreign(tables, line) or _kept_in_fragment(tables, s) or _unproven(s) or _target(s, colors)
     if why:
         return 0, why
     if s.fragB in FIXED_FUNCTION_BLENDS:
@@ -92,11 +92,8 @@ def _foreign(tables: caspec.Tables, line: str) -> str:
     return '' if caspec.made_of_name(tables, line) else "constants not this QuartzCore's of its name"
 
 
-def _unproven(tables: caspec.Tables, s: caspec.Spec) -> str:
-    if any(any(image.O) for image in s.images[: _images(s)]):
-        return 'colour opcodes'
-    texture = {v: k for k, v in tables.dec['TextureFunction'].items()}.get(s.T)
-    return f'{texture} discards every lane on the host gate' if texture in UNCOMPARED_TEXTURE_FUNCTIONS else ''
+def _unproven(s: caspec.Spec) -> str:
+    return 'colour opcodes' if any(any(image.O) for image in s.images[: _images(s)]) else ''
 
 
 def _image_names(tables: caspec.Tables, s: caspec.Spec) -> list[str]:

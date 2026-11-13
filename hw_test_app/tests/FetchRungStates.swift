@@ -37,6 +37,13 @@ enum FetchRungStates {
             State(label: "PBGRAXm_TimgBsatA2Xhf_Isrc", key: "sat", program: "sat", passes: 64),
             // its texture function's colour leaves [0, 1]: the form's SET_PS_SATURATE clamps it ahead of the program
             State(label: "PBGRAXm_TmuaBmpyA2Xhfn_IsrcCcl_Isup", key: "mua", program: "mpy", passes: 2),
+            // a texture function whose lanes the host gate's inputs all discard: compared here only
+            State(label: "PBGRAXm_TkfhBmpyA2Xhf_Irsd", key: "kfh", program: "mpy", passes: 2),
+            State(label: "PBGRAXm_TimgBlltA2Xhfu_Isrc", key: "lltu", program: "llt.u", passes: 5),
+            State(label: "PBGRAXm_TimgBsbtA2Xhfu_Isrc", key: "sbtu", program: "sbt.u", passes: 5),
+            State(label: "PBGRAXm_TimgBdivA2Xhfu_Isrc", key: "divu", program: "div.u", passes: 7),
+            State(label: "PBGRAXm_TimgBcdgA2Xhfu_Isrc", key: "cdgu", program: "cdg.u", passes: 9),
+            State(label: "PBGRAXm_TimgBdlcA2Xhfu_Isrc", key: "dlcu", program: "dlc.u", passes: 10),
         ],
     ]
 

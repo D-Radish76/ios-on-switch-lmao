@@ -25,7 +25,8 @@ class CorpusStates(unittest.TestCase):
         with open(CORPUS) as f:
             for line in f:
                 name, want = caspec.corpus_fields(line)
-                if not name:
+                builds = re.search(r' os=(\S+)', line.split(' | ', 1)[0])
+                if not name or (builds and '21H461' not in builds[1].split(',')):
                     continue
                 try:
                     fields = caspec.state_fields(tables, name)

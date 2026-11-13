@@ -47,10 +47,26 @@ class Forms27(unittest.TestCase):
         self.assertEqual(self.form('PBGRAXm_TcimBaddA2S1Xhfu_Ialp'), (0, 'blended colour not 8-bit unorm'))
         self.assertEqual(self.form('PBGRAXm_TimgA2Xhfn_Isrc'), (0, 'no fragment blend'))
 
-    def test_what_the_host_gate_has_not_shown_within_the_bound_has_no_form(self):
-        self.assertEqual(self.form('PBGRAXm_TkfhBpldA2Xhf_Irsd'), (0, 'kfh discards every lane on the host gate'))
+    def test_what_the_host_gate_measured_beyond_the_bound_has_no_form(self):
         self.assertEqual(self.form('PBGRAXmw_TimgBlltA3Xhfcu_IsrcN3Ocsmtsdnlnlnl'), (0, 'colour opcodes'))
         self.assertEqual(self.form('PBGRAXm_TcimBdivA2Xhf_Isrc'), (0, 'div beyond the bound on the host gate'))
+        self.assertEqual(
+            self.form('PBGRAXm_TsplBlumA2Xhf_Isrc'),
+            (0, 'lum beyond the bound on the host gate with its texture function'),
+        )
+
+    def test_a_texture_function_whose_lanes_the_host_gate_never_keeps_takes_its_form(self):
+        self.assertEqual(self.form('PBGRAXm_TkfhBpldA2Xhf_Irsd'), (3, 'pld'))
+        self.assertEqual(self.form('PBGRAXm_TkfhBmpyA2Xhf_Irsd'), (3, 'mpy'))
+
+    def test_an_unbounded_form_takes_its_program_except_with_the_functions_beyond_the_bound(self):
+        self.assertEqual(self.form('PBGRAXm_TimgBlltA2Xhfu_Isrc'), (3, 'llt.u'))
+        self.assertEqual(self.form('PBGRAXm_TimgBdivA2Xhfu_Isrc'), (3, 'div.u'))
+        self.assertEqual(self.form('PBGRAXm_TdgdBsbtA2Xhfu_Isrc'), (3, 'sbt.u'))
+        self.assertEqual(
+            self.form('PBGRAXm_TdgdBdivA2Xhfu_Isrc'),
+            (0, 'div.u beyond the bound on the host gate with its texture function'),
+        )
 
     def test_another_builds_line_of_the_name_has_no_form(self):
         name = 'PBGRAXm_TcimBmpyA2Xhf_Isr1'
