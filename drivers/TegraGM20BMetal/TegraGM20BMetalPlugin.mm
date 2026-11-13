@@ -17,8 +17,8 @@
 // -[CIContext initWithOptions:] in 21H461 has Metal or GLES and no CPU renderer; without Metal it makes a GLES context that does
 // not exist and crashes at once, and launchd's respawns hang Settings) and, by default, every other process (the kernel's
 // grant admits them too; TEGRA_GPU_ALL_CLIENTS=0 limits it to those named here). A process left out gets nil from here and
-// keeps rendering on the CPU, as does one whose device does not open (the kernel refuses it, the GPU pool is full). Every process but the render server compiles the
-// Metal source and stitched libraries Core Image makes (NMB_SYSTEM_COMPILER, the frontend's in-process MTLCompiler).
+// keeps rendering on the CPU, as does one whose device does not open (the kernel refuses it, the GPU pool is full). Every process,
+// the render server too, compiles the Metal source and stitched libraries Core Image makes (the frontend's in-process MTLCompiler).
 //
 // Knobs, environment variables of the process (none is a boot-arg):
 //   TEGRA_GPU_ALL_CLIENTS=0   only the processes named above get a device (default: every process)
@@ -38,7 +38,6 @@
 //                             the device's own here)
 //   M2V_ZERO_FRESH=1          zero fresh memory and upload staging on the CPU again (default off)
 //   TEGRA_M2V_SEED=0          no shared shader cache seed (default 1)
-//   NMB_SYSTEM_COMPILER       Metal source and stitched libraries compiled in-process (default 1 outside backboardd, 0 in it)
 //   TEGRA_RAW_METAL=0         this process keeps the m2v device even with a raw pack staged
 //
 // The raw GM20B path (raw/runtime/RawMetal.h): when the build's pipeline pack is staged beside the bundle
@@ -807,8 +806,6 @@ id openDevice(unsigned port)
         // for cached memory a 64 MiB block stalled it ~100 ms (r5c: 66 MB of BoAllocs, 103 ms, in the 5 s Settings opened);
         // 16 MiB blocks bound that to a quarter and still pool any 720p texture, half a block being the dedicated limit.
         setenv("M2V_BLOCK_MIB", renderServer ? "16" : "4", 0);
-        if (!renderServer)
-            setenv("NMB_SYSTEM_COMPILER", "1", 0);  // read by the frontend: Core Image's kernels are compiled here
         if (const char *zero = getenv("M2V_ZERO_FRESH"); zero && !strcmp(zero, "0"))
             unsetenv("M2V_ZERO_FRESH");  // the runtime reads any value as on
         char loader[1024];

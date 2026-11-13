@@ -1798,7 +1798,6 @@ static uint64_t constantBytes(uint64_t type)
 #if SWITCH_FRAME_TIMELINE
 static std::string quartzCoreCallers();
 #endif
-static bool systemCompiler();
 @implementation NBLibrary {
     std::once_flag _externsRead;
     NSArray<NSString *> *_externs;
@@ -1861,8 +1860,8 @@ static id functionNotFound(NSString *name, NSError **error)
 {
     if (name && ![self.entries containsObject:name])
         return functionNotFound(name, error);
-    // No values are no constants set (Core Image asks its stitched kernels so), where Core Image's kernels are compiled.
-    if (!values && systemCompiler())
+    // No values are no constants set (Core Image asks its stitched kernels so)
+    if (!values)
         values = [MTLFunctionConstantValues new];
     if (!name || !values || !methodABI(values, @selector(newIndexedConstantArray), "@16@0:8") ||
         !methodABI(values, @selector(newNamedConstantArray), "@16@0:8")) {
@@ -6263,17 +6262,6 @@ static void refuseLibrary(NSString *what)
         NBLOG(@"native-metal: %@ refused (not implemented)", what);
 }
 
-// Whether this process compiles Metal source and stitched libraries (NMB_SYSTEM_COMPILER=1, which the plugin sets in every process but the
-// render server: its requests stay refused, so it never loads the compiler or waits for one).
-static bool systemCompiler()
-{
-    static const bool on = [] {
-        const char *v = getenv("NMB_SYSTEM_COMPILER");
-        return v && strcmp(v, "0");
-    }();
-    return on;
-}
-
 // The target's own _MTLDevice method that writes stitching graphs as the DAG text Metal's compiler reads (the device's base class).
 @protocol NBOriginalStitching
 - (NSString *)newDagStringWithGraphs:(NSArray<MTLFunctionStitchingGraph *> *)graphs;
@@ -6526,11 +6514,6 @@ static uint64_t askAnswer(SEL cmd, NSUInteger arg);
 // stay refused.
 - (id<MTLLibrary>)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options error:(NSError **)error
 {
-    if (!systemCompiler()) {
-        if (error)
-            *error = nbError(@"Metal source is not compiled here (AIR libraries only)");
-        return nil;
-    }
     if (!source) {
         if (error)
             *error = nbError(@"no source");
@@ -6583,11 +6566,6 @@ static uint64_t askAnswer(SEL cmd, NSUInteger arg);
 // texture and builtin nodes) is the same class family; the base class's newDagStringWithGraphs: writes its DAG text.
 - (id<MTLLibrary>)newLibraryWithStitchedDescriptor:(MTLStitchedLibraryDescriptor *)d error:(NSError **)error
 {
-    if (!systemCompiler()) {
-        if (error)
-            *error = nbError(@"function stitching is not implemented");
-        return nil;
-    }
     if (![d respondsToSelector:@selector(functionGraphs)] || ![d respondsToSelector:@selector(functions)]) {
         if (error)
             *error = nbError(@"not a stitched library descriptor");
@@ -6698,13 +6676,6 @@ static uint64_t askAnswer(SEL cmd, NSUInteger arg);
                   imageFilterFunctionInfo:(const switch_metal::ImageFilterFunctionInfo *)info
                                     error:(NSError **)error
 {
-    if (!systemCompiler()) {
-        refuseLibrary(@"Core Image filter-function linking");
-        if (error)
-            *error = nbError(
-                @"Core Image filter-function linking needs the system compiler, which this process does not load");
-        return nil;
-    }
     if (!functions.count || !info) {
         if (error)
             *error = nbError(@"Core Image filter-function linking needs functions and their infos");
