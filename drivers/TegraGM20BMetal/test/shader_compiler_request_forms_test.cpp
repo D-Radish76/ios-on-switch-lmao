@@ -236,20 +236,27 @@ TEST(CompileRequestForms, TheKeyTextIsTheDescriptorsOwn)
     d.vertexDescriptor = layout;
     d.maxVertexAmplificationCount = 2;
     const raw::StageKey cv{"vertex_fn", "#0:33:05000000"}, cf{"fragment_fn", "fc_generic:53:01"};
-    EXPECT_EQ(raw::pipelineKey(d, &cv, &cf, " | fl helper  ", "RenderBox"),
-              "samples=4 topo=3 ds=260/260 c0=80:15:1:4:5:0:1:0:4 c7=115:9:0:1:0:0:1:0:0 a0=29:0:1:8:1:1 a3=9:8:3:20:2:2 "
-              "a30=31:0:5:4294967295:1:1 amp=2  | v vertex_fn #0:33:05000000 | f fragment_fn fc_generic:53:01 | fl "
-              "helper   | l RenderBox");
+    EXPECT_EQ(
+        raw::pipelineKey(d, &cv, &cf, " | fl helper  ", "RenderBox"),
+        "samples=4 topo=3 ds=260/260 c0=80:15:1:4:5:0:1:0:4 c7=115:9:0:1:0:0:1:0:0 a0=29:0:1:8:1:1 a3=9:8:3:20:2:2 "
+        "a30=31:0:5:4294967295:1:1 amp=2  | v vertex_fn #0:33:05000000 | f fragment_fn fc_generic:53:01 | fl "
+        "helper   | l RenderBox");
     raw::PipelineFields patched = raw::fieldsOf(d);
     patched.patchType = MTLPatchTypeTriangle;
-    patched.tessellation = {MTLTessellationPartitionModeFractionalEven, MTLTessellationFactorFormatHalf,
-                            MTLTessellationFactorStepFunctionPerPatchAndPerInstance, MTLWindingCounterClockwise,
-                            MTLTessellationControlPointIndexTypeUInt16, 32, 1};
-    EXPECT_EQ(raw::pipelineKey(patched, &cv, &cf, "", ""),
-              "samples=4 topo=3 ds=260/260 c0=80:15:1:4:5:0:1:0:4 c7=115:9:0:1:0:0:1:0:0 a0=29:0:1:8:1:1 a3=9:8:3:20:2:2 "
-              "a30=31:0:5:4294967295:1:1 t=3:0:3:1:1:32:1 amp=2  | v vertex_fn #0:33:05000000 | f fragment_fn "
-              "fc_generic:53:01");
-    EXPECT_EQ(raw::pipelineKey(raw::PipelineFields(), nullptr, nullptr, "", ""), "samples=1 topo=0 ds=0/0  | v -  | f -");
+    patched.tessellation = {MTLTessellationPartitionModeFractionalEven,
+                            MTLTessellationFactorFormatHalf,
+                            MTLTessellationFactorStepFunctionPerPatchAndPerInstance,
+                            MTLWindingCounterClockwise,
+                            MTLTessellationControlPointIndexTypeUInt16,
+                            32,
+                            1};
+    EXPECT_EQ(
+        raw::pipelineKey(patched, &cv, &cf, "", ""),
+        "samples=4 topo=3 ds=260/260 c0=80:15:1:4:5:0:1:0:4 c7=115:9:0:1:0:0:1:0:0 a0=29:0:1:8:1:1 a3=9:8:3:20:2:2 "
+        "a30=31:0:5:4294967295:1:1 t=3:0:3:1:1:32:1 amp=2  | v vertex_fn #0:33:05000000 | f fragment_fn "
+        "fc_generic:53:01");
+    EXPECT_EQ(raw::pipelineKey(raw::PipelineFields(), nullptr, nullptr, "", ""),
+              "samples=1 topo=0 ds=0/0  | v -  | f -");
 }
 
 // NativeStageInTest's kernel: a float2 per thread from buffer 1 at a static and at the dynamic stride
