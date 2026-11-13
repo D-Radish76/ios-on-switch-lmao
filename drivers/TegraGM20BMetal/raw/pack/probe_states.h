@@ -192,6 +192,21 @@ inline bool parseState(id<MTLLibrary> qc, const std::string &line, State &s, con
             c.sourceAlphaBlendFactor = (MTLBlendFactor)x[6];
             c.destinationAlphaBlendFactor = (MTLBlendFactor)x[7];
             c.alphaBlendOperation = (MTLBlendOperation)x[8];
+        } else if (h.rfind("t=", 0) == 0 && h.find(':') != std::string::npos) {
+            // RawPipelineKey.h's tessellator state (a journal's t=<ms> has no colon)
+            unsigned long t[6] = {};
+            int scale = 0;
+            if (sscanf(h.c_str() + 2, "%lu:%lu:%lu:%lu:%lu:%lu:%d", t, t + 1, t + 2, t + 3, t + 4, t + 5, &scale) != 7)
+                return refuse("its tessellator field " + h + " does not parse");
+            d.tessellationPartitionMode = MTLTessellationPartitionMode(t[0]);
+            d.tessellationFactorFormat = MTLTessellationFactorFormat(t[1]);
+            d.tessellationFactorStepFunction = MTLTessellationFactorStepFunction(t[2]);
+            d.tessellationOutputWindingOrder = MTLWinding(t[3]);
+            d.tessellationControlPointIndexType = MTLTessellationControlPointIndexType(t[4]);
+            d.maxTessellationFactor = t[5];
+            d.tessellationFactorScaleEnabled = scale != 0;
+        } else if (h.rfind("amp=", 0) == 0) {
+            d.maxVertexAmplificationCount = strtoul(h.c_str() + 4, nullptr, 10);
         } else if (h[0] == 'a' && isdigit(h[1])) {
             unsigned i, x[6] = {};
             unsigned long long stride = 0;

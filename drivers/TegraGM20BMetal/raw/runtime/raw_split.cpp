@@ -136,6 +136,7 @@ SplitState *Device::makeSplit(Pipeline &pl)
         return nullptr;
     }
     s.pipeline.restore = pl.restore;
+    s.pipeline.strideTwin = pl.strideTwin;
     s.pipeline.splitOf = &s;
     __atomic_store_n(&pl.split, &s, __ATOMIC_RELEASE);
     return &s;

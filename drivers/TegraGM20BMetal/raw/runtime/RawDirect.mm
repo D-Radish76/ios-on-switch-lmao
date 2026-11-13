@@ -196,7 +196,9 @@ CompileOutcome Direct::strideTwin(MTLRenderPipelineDescriptor *descriptor, Probe
     std::string twinWhy;
     const bool barrier = (out.pipeline.flags & PipelineBarrierForm) || !storageRefusal_.empty();
     const BoundDraw bound = bound_;
-    const CompileOutcome outcome = form(descriptor, barrier, textures, key, attributes, *twin, twinWhy, nullptr, split);
+    twinRegisters_.clear();
+    const CompileOutcome outcome = form(descriptor, barrier, textures, key, attributes, *twin, twinWhy,
+                                        keepBound_ ? &twinRegisters_ : nullptr, split);
     bound_ = bound;
     if (outcome == CompileOutcome::Failed) {
         why = "its stride twin: " + twinWhy;
@@ -207,6 +209,7 @@ CompileOutcome Direct::strideTwin(MTLRenderPipelineDescriptor *descriptor, Probe
     dropUnreadFetches(*twin);
     twin->pipeline.flags |= out.pipeline.flags & PipelineBarrierForm;
     twin->pipeline.keyHash = packKeyHash(strideTwinKey(key));
+    out.pipeline.strideTwin = twin->pipeline.keyHash;
     out.strideTwin = std::move(twin);
     return CompileOutcome::Made;
 }

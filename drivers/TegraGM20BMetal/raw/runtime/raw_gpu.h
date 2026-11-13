@@ -525,9 +525,6 @@ struct Pipeline {
     bool viewportIndex = false;     // its vertex program writes ViewportIndex (SPH OMAP, raw_viewports.h)
     bool writesLayer = false;       // its last stage before the rasterizer writes Layer: SET_RT_LAYER takes it
     uint32_t colorFormats[8] = {};  // MTLPixelFormat of each color attachment the state was made for (0: none)
-    // an amplifying runtime record's push words + 1 of m2v's AmplificationLayerOffset and AmplificationViewportOffset
-    // (RuntimeRecord's; 0: none), which each amplification writes
-    uint8_t amplificationLayerWord = 0, amplificationViewportWord = 0;
     // its vertex function is Core Animation's fixed_vert_l?h_spc (raw_bounds.h), and attribute 0 (the position) as its key
     // gives it: floats from the stream's vertex start (0: no float position)
     bool caTransform = false;
@@ -545,8 +542,8 @@ struct Pipeline {
     uint8_t fetchBits = 0;      // colors it reads by framebuffer fetch
     uint32_t depthFormat =
         0;  // its key's depth attachment format, else its stencil one (ds=<format>/<format>; 0: none)
-    // push words setting back the registers outside the pack's varying ones its methods set (a state the runtime made:
-    // raw_record.h extras), to their value in every pack state: emitted before the next state's methods
+    // push words setting back the registers outside the pack's varying ones its methods set (raw_record.h extras, a pack
+    // record's in its blob), to their value in every other state: emitted before the next state's methods
     std::vector<uint32_t> restore;
     // where its fragment program is split (raw_split.cpp): what its twin is made of, and the twin, made at the first draw that
     // takes it (both read without the device's lock); on that twin, its split
@@ -614,6 +611,9 @@ struct SplitLaunch {
 };
 
 // A program in the heap: its record, its SET_PIPELINE_PROGRAM value, its shader data's GPU address (0: none) and its header
+// Pipeline::restore's push words of `dwords` words of (method, value) pairs
+std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords);
+
 struct PlacedProgram {
     const PackProgram *record = nullptr;
     uint32_t program = 0;

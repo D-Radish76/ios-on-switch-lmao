@@ -343,7 +343,7 @@ constexpr uint32_t kPackEntries = 32, kSetMaxBytes = 16 * kPackEntries;
 constexpr uint32_t kWrittenSlots = 16;
 // A record's fixed-function vertex streams: stream 0 (vertexSlot) and PackPipeline::vertexStreams'
 constexpr uint32_t kPackVertexStreams = 8;
-// A vertexStreams byte's flag: the stream's stride is its bind's (MTLBufferLayoutStrideDynamic, a runtime record's alone)
+// A vertexStreams byte's flag: the stream's stride is its bind's (MTLBufferLayoutStrideDynamic)
 constexpr uint8_t kStreamBindStride = 0x80;
 // The largest stride a fixed-function vertex stream fetches at: NVB197_SET_VERTEX_STREAM_A_FORMAT_STRIDE is bits 11:0
 constexpr uint32_t kStreamStrideField = 0xFFF;
@@ -406,16 +406,14 @@ struct PackPipeline {
     // its words, and the first of them in the blob section (the vertex table's first, then the fragment table's)
     uint8_t spillEntry[2], spillWords[2];
     uint32_t spillAt;
-    // v21. Up to arrayLengthWord and pulledStride, runtime records only (raw_direct.cpp; every pack state has these 0). A
-    // tessellation state's
-    // push word of its control stage's first field + 1 (raw_direct_push.h kControlWords; its control and evaluation
-    // programs are RuntimeRecord's), its patches' control points (0: any) and its control-point index size in bytes (0:
-    // none). vertexStrideDynamic: stream 0's stride is its bind's (MTLBufferLayoutStrideDynamic).
+    // v21. A tessellation state's push word of its control stage's first field + 1 (raw_direct_push.h kControlWords; its
+    // control and evaluation programs: tessPrograms), its patches' control points (0: any) and its control-point index
+    // size in bytes (0: none). vertexStrideDynamic: stream 0's stride is its bind's (MTLBufferLayoutStrideDynamic).
     uint8_t controlWord, controlPoints, controlPointIndexBytes, vertexStrideDynamic;
     // A state of vertex amplification: its maxVertexAmplificationCount (0: 1), and the push words + 1 of m2v's
     // AmplificationId and AmplificationCount (0: none), which each draw writes (its [[amplification_count]] is the draw's)
     uint8_t amplificationMax, amplificationIdWord, amplificationCountWord;
-    // A pack field: the push word + 1 of m2v's RenderTargetArrayLength (0: none), the pass's length, which each draw writes:
+    // The push word + 1 of m2v's RenderTargetArrayLength (0: none), the pass's length, which each draw writes:
     // its vertex program writes Layer (SET_RT_LAYER takes it), an index at or past the length as 0. kLayerDropped: its
     // vertex function chooses its slice, but the translation had no layered form of the state; its record draws layer 0
     uint8_t arrayLengthWord;

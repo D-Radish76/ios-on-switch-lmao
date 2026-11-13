@@ -60,7 +60,7 @@ class RecordsTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'obsolete layout'):
             directlink.pipeline_of(record, [], ids, [])
 
-    def test_vertex_streams_past_stream_0_round_trip_and_a_bind_stride_is_refused(self):
+    def test_vertex_streams_past_stream_0_round_trip_and_a_bind_stride_is_the_pack_s(self):
         rec = dict(
             key='samples=1 c0=80:15:0 a0=30:0:1:12:1:1 a1=31:0:4:16:1:1',
             vs=0,
@@ -88,9 +88,16 @@ class RecordsTest(unittest.TestCase):
         back = directlink.pipeline_of(record, [], ids, [])
         self.assertEqual(back['vertex_streams'], [5])
         self.assertEqual(packfile.pipeline_bytes(back, 0, 0), data)
-        record['pipeline'] = packfile.pipeline_bytes(dict(rec, vertex_streams=[5 | packfile.STREAM_BIND_STRIDE]), 0, 0)
-        with self.assertRaisesRegex(ValueError, 'runtime-only'):
-            directlink.pipeline_of(record, [], ids, [])
+        # a layout of a dynamic stride: its stream's format holds no stride (each draw writes its bind's)
+        bound = dict(rec, key=rec['key'].replace(':16:1:1', ':4294967295:1:1'), vertex_streams=[5 | 0x80])
+        dynamic = dict(record, key=bound['key'], pipeline=packfile.pipeline_bytes(bound, 0, 0))
+        dynamic['probe'] = dict(record['probe'], records=[dict(regs={0x1C00: 0x1000 | 12, 0x1C10: 0x1000})])
+        back = directlink.pipeline_of(dynamic, [], ids, [])
+        self.assertEqual(back['vertex_streams'], [5 | packfile.STREAM_BIND_STRIDE])
+        self.assertEqual(packfile.pipeline_bytes(back, 0, 0), dynamic['pipeline'])
+        dynamic['probe'] = record['probe']
+        with self.assertRaisesRegex(ValueError, 'vertex stream 1 of buffer 4 at stride 16'):
+            directlink.pipeline_of(dynamic, [], ids, [])
         # a vertex function choosing its slice and viewport: the two push words each draw writes are the pack's
         record['pipeline'] = packfile.pipeline_bytes(dict(rec, array_length_word=3, viewport_count_word=4), 0, 0)
         self.assertEqual(
@@ -281,6 +288,52 @@ class RecordsTest(unittest.TestCase):
             for i in range(2)
         ]
         self.assertEqual((tails[0][24:], tails[1][24:]), ((1, 2, 2, 4, 2), (0, 0, 0, 0, 0)))
+
+    def test_a_tessellation_amplification_and_stride_twin_record_is_the_pack_s(self):
+        # directpack.mm's record of a tessellation state of a dynamic stream-0 stride (its stride twin's hash in its
+        # v24 tail) and of vertex amplification: what the runtime makes of such a state at its creation
+        rec = {
+            'key': 'samples=1 topo=3 ds=0/0 c0=80:15:0 a0=30:0:1:4294967295:1:1 t=0:0:0:0:0:16:0 amp=2',
+            'vs': 0,
+            'fs': 1,
+            'blob': [],
+            'entries': [],
+            'push': [],
+            'vbs': [{'stream': 0, 'slot': 1, 'stride': 0}],
+            'set_size': 0,
+            'fetch': False,
+            'runtime_head': bytes([5, 4, 2, 1, 2, 3, 4]),
+            'pulled_stride': bytes([2, 6, 0, 0, 0, 0, 0, 0]),
+            'tess': [2, 3],
+            'stride_twin': 0xFEED,
+            'amplification_layer_word': 7,
+            'amplification_viewport_word': 8,
+        }
+        data = packfile.pipeline_bytes(rec, 0, 0)
+        programs = [{'image': bytes([i]), 'data': b'', 'cbufs': []} for i in range(4)]
+        ids = {directlink.program_id(p): i for i, p in enumerate(programs)}
+        extras, restore = [(0x0320, 0x202), (0x2080, 0x21)], [(0x2080, 0x20)]
+        record = {
+            'pipeline': data,
+            'key': rec['key'],
+            'programs': programs[:2],
+            'tess_programs': programs[2:],
+            'extras': extras,
+            'restore': restore,
+            'samplers': [],
+            'probe': {'index': 0, 'form': '', 'targets': 1, 'records': [{'regs': {0x1C00: 0x1000}}]},
+        }
+        back = directlink.pipeline_of(record, [0x1C00], ids, [])
+        self.assertEqual((back['tess'], back['stride_twin']), ([2, 3], 0xFEED))
+        self.assertEqual((back['amplification_layer_word'], back['amplification_viewport_word']), (7, 8))
+        self.assertEqual(back['blob'], [(0x1C00, 0x1000), *extras])
+        self.assertEqual(back['restore'], restore)
+        self.assertEqual(
+            packfile.pipeline_bytes(dict(back, blob=[]), 0, 0)[: directlink.V24_AT], data[: directlink.V24_AT]
+        )
+        pipes, blob, _, _ = packfile.pipeline_sections([back])
+        self.assertEqual(blob, [0x1C00, 0x1000, 0x0320, 0x202, 0x2080, 0x21, 0x2080, 0x20])
+        self.assertEqual(packfile.PIPELINE_V24.unpack_from(pipes, directlink.V24_AT), (2, 3, 0xFEED, 7, 8, 2, 6))
 
     def test_record_v24_tail_and_its_restore_pairs_in_the_blob(self):
         rec = {

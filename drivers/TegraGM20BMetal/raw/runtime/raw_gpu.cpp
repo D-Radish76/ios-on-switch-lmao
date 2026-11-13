@@ -1221,27 +1221,41 @@ Pipeline *Device::placePipeline(uint64_t keyHash, PackForm form, bool caTransfor
     return placeRecord(*rec, caTransform);
 }
 
+// A pack record is drawn as addRecord draws a runtime record of the same state: a tessellation state's control and
+// evaluation programs bound beside its own, the registers its draws set back after it, and its stride twin
 Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)
 {
     Pipeline &pl = pipelines_[&pp - pack_.section<PackPipeline>(PackPipelines)];
     if (pl.rec)
         return &pl;
-    const PackProgram *progs = pack_.section<PackProgram>(PackPrograms);
-    PlacedProgram vs, fs;
-    if (!place(pp.vs, vs.program, vs.data) || !place(pp.fs, fs.program, fs.data)) {
+    const bool tess = tessellates(pp);
+    PlacedProgram vs, fs, tessPlaced[2];
+    if (!placePackProgram(pp.vs, vs) || !placePackProgram(pp.fs, fs) ||
+        (tess && (!placePackProgram(pp.tessPrograms[0], tessPlaced[0]) ||
+                  !placePackProgram(pp.tessPrograms[1], tessPlaced[1]))))
+        return nullptr;
+    uint64_t slm = std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header));
+    for (uint32_t k = 0; tess && k < 2; k++)
+        slm = std::max(slm, slmPerWarpOfHeader(tessPlaced[k].header));
+    if (!slmNeed(slm)) {
         stats.heapFull++;
         return nullptr;
     }
-    vs.record = &progs[pp.vs];
-    fs.record = &progs[pp.fs];
-    vs.header = pack_.section<uint8_t>(PackHeap) + progs[pp.vs].program;
-    fs.header = pack_.section<uint8_t>(PackHeap) + progs[pp.fs].program;
-    if (!slmNeed(std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header)))) {
-        stats.heapFull++;
-        return nullptr;
+    Pipeline *twin = nullptr;
+    if (pp.strideTwin) {
+        const PackPipeline *twinRecord = pack_.find(pp.strideTwin, recordForm(pp));
+        if (twinRecord && twinRecord != &pp && usableRecord(twinRecord) &&
+            !(twin = placeRecord(*twinRecord, caTransform)))
+            return nullptr;
     }
     build(pl, pp, vs, fs, pack_.section<uint32_t>(PackBlob) + pp.blob, pack_.string(pp.keyString), caTransform,
-          pack_.spills(pp));
+          pack_.spills(pp), tess ? tessPlaced : nullptr);
+    if (pp.restoreDwords && uint64_t(pp.restoreAt) + pp.restoreDwords <= pack_.bytes(PackBlob) / 4) {
+        const std::vector<uint32_t> words =
+            restoreWords(pack_.section<uint32_t>(PackBlob) + pp.restoreAt, pp.restoreDwords);
+        pl.restore.insert(pl.restore.end(), words.begin(), words.end());
+    }
+    pl.strideTwin = twin;
     offerVariants(pl, pp);
     if (const PackSplit *split = pack_.split(pp.fs); split && !pl.storageBits) {
         SplitSource source;
@@ -6512,8 +6526,8 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     const bool dynamicBlend = r.blendColorWord || r.halfBlendColorWord;
     const bool slotRoots = r.rootSlots[0] || r.rootSlots[1];
     const bool patches = tessellates(r);
-    const bool drawnWordsDirty = ((r.amplificationIdWord || r.amplificationCountWord || pl->amplificationLayerWord ||
-                                   pl->amplificationViewportWord) &&
+    const bool drawnWordsDirty = ((r.amplificationIdWord || r.amplificationCountWord || r.amplificationLayerWord ||
+                                   r.amplificationViewportWord) &&
                                   amplificationDirty_) ||
                                  r.pulledStride[0][1] || r.arrayLengthWord || r.viewportCountWord;
     if (pl != emitted_ || residualMask || residualsPushed_ || (dynamicBlend && blendColorDirty_) ||

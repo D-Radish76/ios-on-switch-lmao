@@ -40,11 +40,10 @@ HEAP_ARRAYS = 8
 # PackKernel's v20 tail: rootTableWord, statusWord, heapArrays, reserved, rootSlots, heapBytes, heap[8] pairs,
 # spillEntry, spillWords, reserved, spillAt
 KERNEL_V20 = struct.Struct('<4B2I16IBBHI')
-# PackPipeline's record-v21 tail: the runtime records' fields (controlWord, controlPoints, controlPointIndexBytes,
-# vertexStrideDynamic, amplificationMax, amplificationIdWord, amplificationCountWord), arrayLengthWord, the runtime
-# records' pulledStride[4][2], vertexStreams[7], viewportCountWord
+# PackPipeline's record-v21 tail: its head (controlWord, controlPoints, controlPointIndexBytes, vertexStrideDynamic,
+# amplificationMax, amplificationIdWord, amplificationCountWord), arrayLengthWord, pulledStride[4][2], vertexStreams[7],
+# viewportCountWord
 PIPELINE_V21 = struct.Struct('<7sB8s7sB')
-RUNTIME_ONLY_HEAD, RUNTIME_ONLY_PULLED = bytes(7), bytes(8)
 VERTEX_STREAMS = 7  # PackPipeline.vertexStreams' length: the streams past stream 0
 STREAM_BIND_STRIDE = 0x80  # runtime/raw_pack.h kStreamBindStride
 # PackKernel's record-v21 tail: stageInRegionWord, stageInStride[4][2], reserved
@@ -342,11 +341,11 @@ def v20_tail(rec: dict) -> bytes:
 
 
 def v21_tail(rec: dict) -> bytes:
-    """Give a record's PIPELINE_V21 tail: its runtime-only fields zero, its streams and pass push words."""
+    """Give a record's PIPELINE_V21 tail: its tessellation, stride and amplification fields, streams and pass words."""
     return PIPELINE_V21.pack(
-        RUNTIME_ONLY_HEAD,
+        bytes(rec.get('runtime_head', bytes(7))),
         rec.get('array_length_word', 0),
-        RUNTIME_ONLY_PULLED,
+        bytes(rec.get('pulled_stride', bytes(8))),
         bytes(rec.get('vertex_streams', [])).ljust(VERTEX_STREAMS, b'\0'),
         rec.get('viewport_count_word', 0),
     )
