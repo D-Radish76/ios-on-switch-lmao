@@ -211,7 +211,7 @@ bool fillTexturePass(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc)
 }
 
 // Levels first + 1 .. last of a chain by the pack's mip state (raw_mip.h): one pass a level, level l + 1 drawn from a header of
-// level l alone. Each pass's prologue barrier orders its reads after the pass before wrote.
+// level l alone, the two levels' sizes its step. Each pass's prologue barrier orders its reads after the pass before wrote.
 bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t last, const char **why)
 {
     raw::Device &d = *gRM->raw;
@@ -238,8 +238,8 @@ bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t la
             return false;
         e->setPipeline(mip);
         e->setTexture(0, &from);
-        const float inverseSize[2] = {1.0f / float(p.width), 1.0f / float(p.height)};
-        e->setBytes(2, 0, inverseSize, sizeof inverseSize);
+        const uint32_t step[4] = {c.level[l].width, c.level[l].height, p.width, p.height};
+        e->setBytes(2, 0, step, sizeof step);
         if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
             return false;
         e->end();

@@ -93,18 +93,19 @@ TEST(MipRoute, CoreAnimationStripChain)
     EXPECT_FALSE(raw::fx::mipRoutable(c, false, false));
 }
 
-// Each 2D format's unproven steps have an engine: the pack's mip state where it has one (sRGB), else the 2D engine
+// Each 2D format's unproven steps are its mip state's, which takes Metal's taps (pack/mip.metal)
 TEST(MipRoute, TwoDFormatsAndTheirThreeDStates)
 {
     const struct {
         uint32_t mtl, fmt2d;
-        bool threeD;
-    } formats[] = {{80, 0xcf, false}, {70, 0xd5, false}, {115, 0xca, false}, {10, 0xf3, false},
-                   {30, 0xea, false}, {81, 0xd0, true},  {71, 0xd6, true}};
+    } formats[] = {{80, 0xcf}, {70, 0xd5}, {115, 0xca}, {10, 0xf3}, {30, 0xea}, {81, 0xd0}, {71, 0xd6}};
 
     for (const auto &f : formats) {
         EXPECT_EQ(raw::fx::twodFormat(f.mtl), f.fmt2d) << f.mtl;
-        EXPECT_EQ(raw::mipState(f.mtl) != nullptr, f.threeD) << f.mtl;
+        EXPECT_NE(raw::mipState(f.mtl), nullptr) << f.mtl;
+        const MipChain c = chain(776, 24);
+        for (const MipRun &r : runs(c, true, raw::mipState(f.mtl) != nullptr))
+            EXPECT_EQ(r.unproven, 0u) << f.mtl << ": 97 -> 48 on the 2D engine";
     }
     for (uint32_t mtl : {1u, 20u, 25u, 40u, 43u, 55u, 60u, 65u, 90u, 92u, 94u, 105u, 110u, 125u}) {
         EXPECT_EQ(raw::fx::twodFormat(mtl), 0u) << mtl;
