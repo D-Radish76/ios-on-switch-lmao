@@ -35,6 +35,7 @@ std::vector<Kind> kinds(bool blockLinear)
     using K = raw::TextureAsk;
     std::vector<Kind> out = {{"2D", ask(K::Plain, kRGBA8, blockLinear)},
                              {"2D of a format no target takes", ask(K::Plain, kRGB9E5, blockLinear)},
+                             {"block-compressed 2D", ask(K::Plain, kBC1, true)},
                              {"1D", ask(K::Line, kRGBA8)}};
     K mips = ask(K::Mips, kRGBA8), array = ask(K::Array, kRGBA8), cube = ask(K::Array, kRGBA8),
       volume = ask(K::Volume, kRGBA8);
@@ -63,11 +64,7 @@ std::vector<Kind> kinds(bool blockLinear)
       msaaDepth = ask(K::Zeta, kDepth32);
     msaa.samples = msaaDepth.samples = 4;
     depth.sampled = true;
-    out.insert(out.end(), {{"block-compressed 2D", ask(K::Plain, kBC1, true)},
-                           {"MSAA", msaa},
-                           {"depth", depth},
-                           {"depth-stencil", stencil},
-                           {"MSAA depth", msaaDepth}});
+    out.insert(out.end(), {{"MSAA", msaa}, {"depth", depth}, {"depth-stencil", stencil}, {"MSAA depth", msaaDepth}});
     return out;
 }
 

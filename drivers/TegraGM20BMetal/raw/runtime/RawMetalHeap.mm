@@ -118,7 +118,7 @@ bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &
         ask.kind = raw::TextureAsk::Zeta;
         ask.sampled = (d.usage & MTLTextureUsageShaderRead) != 0;
     } else if (rawShape(d)) {
-        ask.tiled = blockLinear;
+        ask.tiled = blockLinear || raw::blockCompressed(raw::formatInfo(ask.format));
         ask.standIn = raw::xrForm(ask.format) != raw::XrForm::None &&
                       (d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderRead));
     } else {

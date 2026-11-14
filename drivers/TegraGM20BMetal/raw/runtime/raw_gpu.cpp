@@ -2110,6 +2110,7 @@ bool Device::layout(const TextureAsk &ask, Texture &t, uint64_t &bytes, uint64_t
         if (!blockCompressed(f) || !shape(ask.width, ask.height, ask.format, t) ||
             !fx::blockChainLayout(ask.width, ask.height, ask.levels, ask.layers, f->blockW, f->blockH, f->bpp, c))
             return false;
+        chainRows(t, c, c.arrayStride);
         break;
     }
     bytes = c.bytes;

@@ -3,9 +3,9 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A heap's block-compressed textures, a mip chain and a 2D array (drivers/TegraGM20BMetal/raw/runtime/RawMetalHeap.mm
-/// heapTextureAsk, raw::TextureAsk::Block): their size is the device's own answer and each is made in the heap by the
-/// raw path, no m2v device asked and no twin made.
+/// A heap's block-compressed textures, a mip chain and a 2D array in a private heap and one level in a shared one
+/// (drivers/TegraGM20BMetal/raw/runtime/RawMetalHeap.mm heapTextureAsk, raw::TextureAsk::Block): their size is the
+/// device's own answer and each is made in the heap by the raw path, no m2v device asked and no twin made.
 struct NativeHeapBlockTest: HWTest {
     let id = "metal.native.heap_block"
     let name = "A heap's block-compressed textures placed in it, with no m2v"
@@ -16,20 +16,30 @@ struct NativeHeapBlockTest: HWTest {
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
         let needsBefore = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
-        let heapDescriptor = MTLHeapDescriptor()
-        heapDescriptor.storageMode = .private
-        heapDescriptor.size = 4 << 20
-        guard let heap = gpu.device.makeHeap(descriptor: heapDescriptor) else { throw TestFailure("no heap") }
+        func heap(_ mode: MTLStorageMode) throws -> MTLHeap {
+            let descriptor = MTLHeapDescriptor()
+            descriptor.storageMode = mode
+            descriptor.size = 4 << 20
+            guard let made = gpu.device.makeHeap(descriptor: descriptor) else { throw TestFailure("no heap") }
+            return made
+        }
+        let privateHeap = try heap(.private), sharedHeap = try heap(.shared)
         let mips = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .astc_4x4_ldr, width: 100, height: 60, mipmapped: true)
         let layers = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .etc2_rgb8, width: 64, height: 64, mipmapped: false)
         layers.textureType = .type2DArray
         layers.arrayLength = 3
+        let single = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .astc_4x4_ldr, width: 64, height: 64, mipmapped: false)
+        mips.storageMode = .private
+        layers.storageMode = .private
+        single.storageMode = .shared
         var metrics = Metrics()
         var wrong: [String] = []
-        for (name, descriptor) in [("mips", mips), ("array", layers)] {
-            descriptor.storageMode = .private
+        for (name, descriptor, heap) in [
+            ("mips", mips, privateHeap), ("array", layers, privateHeap), ("shared", single, sharedHeap),
+        ] {
             let need = gpu.device.heapTextureSizeAndAlign(descriptor: descriptor)
             metrics.set("\(name)_size", need.size)
             metrics.set("\(name)_align", need.align)

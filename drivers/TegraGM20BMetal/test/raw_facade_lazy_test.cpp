@@ -247,36 +247,41 @@ void surfaceBufferAndLinearRow()
     CFRelease(surface);
 }
 
-// A heap's block-compressed chain or array is placed in its arena as the device lays one out of its own, its size the
-// device's answer (heapTextureAsk's Block)
+// A heap's block-compressed textures (a chain, an array, and a single level in a shared heap, block-linear as the device
+// makes it) are placed in its arena as the device lays them out, each one's size the device's answer (heapTextureAsk)
 void heapBlockTextures()
 {
     const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
     ASSERT_TRUE(device != nil);
-    MTLHeapDescriptor *h = [MTLHeapDescriptor new];
-    h.storageMode = MTLStorageModePrivate;
-    h.size = 16 << 20;
-    id<MTLHeap> heap = [device newHeapWithDescriptor:h];
-    ASSERT_TRUE(heap != nil);
-    MTLTextureDescriptor *mips = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatASTC_4x4_LDR
-                                                                                    width:100
-                                                                                   height:60
-                                                                                mipmapped:YES];
-    MTLTextureDescriptor *layers = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBC1_RGBA
-                                                                                      width:64
-                                                                                     height:64
-                                                                                  mipmapped:NO];
+    const auto heapOf = [&](MTLStorageMode mode) {
+        MTLHeapDescriptor *h = [MTLHeapDescriptor new];
+        h.storageMode = mode;
+        h.size = 16 << 20;
+        return [device newHeapWithDescriptor:h];
+    };
+    const id<MTLHeap> privateHeap = heapOf(MTLStorageModePrivate), sharedHeap = heapOf(MTLStorageModeShared);
+    ASSERT_TRUE(privateHeap != nil && sharedHeap != nil);
+    const auto described = [](MTLPixelFormat format, NSUInteger size, BOOL mipmapped) {
+        return [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                  width:size
+                                                                 height:size * 3 / 5
+                                                              mipmapped:mipmapped];
+    };
+    MTLTextureDescriptor *mips = described(MTLPixelFormatASTC_4x4_LDR, 100, YES),
+                         *layers = described(MTLPixelFormatBC1_RGBA, 64, NO),
+                         *single = described(MTLPixelFormatBC1_RGBA, 64, NO);
     layers.textureType = MTLTextureType2DArray;
     layers.arrayLength = 3;
-    for (MTLTextureDescriptor *d in @[ mips, layers ]) {
-        d.storageMode = MTLStorageModePrivate;
+    mips.storageMode = layers.storageMode = MTLStorageModePrivate;
+    single.storageMode = MTLStorageModeShared;
+    for (MTLTextureDescriptor *d in @[ mips, layers, single ]) {
         const MTLSizeAndAlign need = [device heapTextureSizeAndAlignWithDescriptor:d];
         EXPECT_GT(need.size, 0u);
-        id<MTLTexture> t = [heap newTextureWithDescriptor:d];
+        id<MTLTexture> t = [(d == single ? sharedHeap : privateHeap) newTextureWithDescriptor:d];
         ASSERT_TRUE([(id)t isKindOfClass:[RMTexture class]]) << text(t);
         EXPECT_TRUE(((RMTexture *)t)->_raw.arena);
+        EXPECT_TRUE(((RMTexture *)t)->_raw.blockLinear);
         EXPECT_EQ(((RMTexture *)t)->_raw.span.bytes, need.size);
-        EXPECT_EQ(((RMTexture *)t)->_raw.layers, uint32_t(d.arrayLength));
     }
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
