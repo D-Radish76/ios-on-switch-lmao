@@ -105,6 +105,31 @@ kernel void shadow_planes(texture2d<float, access::write> luma [[texture(0)]], t
         chroma.write(float4(p.b, p.r, 0, 0), id / 2);
 }
 
+/// A kernel's float4 and half4 stores into RGB10A8_2P_XR10 over a two-plane surface, thread i at texel i
+/// (gpu.raw.xr_kernel_store)
+kernel void xr_kernel_store(texture2d<float, access::write> t [[texture(0)]], device const float4 *v [[buffer(0)]],
+                            uint i [[thread_position_in_grid]])
+{
+    t.write(v[i], uint2(i % t.get_width(), i / t.get_width()));
+}
+
+kernel void xr_kernel_store_half(texture2d<half, access::write> t [[texture(0)]], device const half4 *v [[buffer(0)]],
+                                 uint i [[thread_position_in_grid]])
+{
+    t.write(v[i], uint2(i % t.get_width(), i / t.get_width()));
+}
+
+/// read() and a nearest sample in pixel coordinates of RGB10A8_2P_XR10 over a two-plane surface, the texture at both
+/// slots, thread i at texel i (gpu.raw.xr_kernel_read)
+kernel void xr_kernel_read(texture2d<float, access::read> t [[texture(0)]], texture2d<float> s [[texture(1)]],
+                           device float4 *out [[buffer(0)]], uint i [[thread_position_in_grid]])
+{
+    constexpr sampler nearest(coord::pixel, filter::nearest);
+    const uint2 at = uint2(i % t.get_width(), i / t.get_width());
+    out[2 * i] = t.read(at);
+    out[2 * i + 1] = s.sample(nearest, float2(at) + 0.5f);
+}
+
 /// m2v writes a half-float texture through its unsigned integer twin, converting each texel in the shader: the raw path
 /// binds a header of that format over the texture's memory for these (gpu.raw.kernel_view).
 kernel void view_half_write(texture2d<half> source [[texture(0)]], texture2d<half, access::write> rgba [[texture(1)]],

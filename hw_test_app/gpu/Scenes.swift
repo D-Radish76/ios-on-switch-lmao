@@ -25,6 +25,8 @@ public enum Scenes {
         KernelDirectScene(),
         KernelViewScene(),
         KernelShadowScene(),
+        XRKernelStoreScene(),
+        XRKernelReadScene(),
         SharedPointerScene(),
         HeapTwinScene(),
         PlacementHeapScene(),
