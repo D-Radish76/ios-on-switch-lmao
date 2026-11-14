@@ -63,7 +63,7 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 
 - (MTLFunctionOptions)options
 {
-    return [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's options") options];
+    return MTLFunctionOptionNone;
 }
 
 - (NSArray<MTLVertexAttribute *> *)vertexAttributes
@@ -131,7 +131,7 @@ static id functionNotFound(NSString *name, NSError **error)
 - (id)twinOn:(id<MTLDevice>)m2v
 {
     @synchronized(self) {
-        if (_twin || _functions.types.empty())
+        if (_twin || !_functions.listed)
             return _twin;
     }
     std::shared_ptr<raw::LibrarySource> source = _source;
@@ -192,12 +192,12 @@ static id functionNotFound(NSString *name, NSError **error)
 // Whether a function of `name` is made here without m2v: the facade read the library and its type is one it answers
 - (bool)ownsFunction:(NSString *)name
 {
-    return !_functions.types.empty() && name && _functions.type(name.UTF8String ?: "");
+    return _functions.listed && name && _functions.type(name.UTF8String ?: "");
 }
 
 - (bool)listsFunction:(NSString *)name
 {
-    return _functions.types.empty() || (name && _functions.lists(name.UTF8String ?: ""));
+    return !_functions.listed || (name && _functions.lists(name.UTF8String ?: ""));
 }
 
 - (id<MTLFunction>)newFunctionWithName:(NSString *)name
@@ -293,14 +293,28 @@ static id functionNotFound(NSString *name, NSError **error)
     return [self newFunctionWithDescriptor:d error:error];
 }
 
-- (NSArray<NSString *> *)functionNames
+static NSArray<NSString *> *namesOf(const std::vector<std::string> &names)
 {
-    return [(id<MTLLibrary>)RM_LIBRARY_TWIN(self, "a library's function names") functionNames];
+    NSMutableArray<NSString *> *out = [NSMutableArray arrayWithCapacity:names.size()];
+    for (const std::string &name : names)
+        if (NSString *s = [[NSString alloc] initWithBytes:name.data() length:name.size() encoding:NSUTF8StringEncoding])
+            [out addObject:s];
+    return out;
 }
 
+- (NSArray<NSString *> *)functionNames
+{
+    if (_functions.listed)
+        return namesOf(_functions.names);
+    return [(id<MTLLibrary>)_twin functionNames];
+}
+
+// Core Image counts its own kernels by these (ci_stdlib, ci_filters) and finds a kernel's library by them
 - (NSArray<NSString *> *)externFunctionNames
 {
-    return [RM_LIBRARY_TWIN(self, "a library's extern function names") externFunctionNames];
+    if (_functions.listed)
+        return namesOf(_functions.externs);
+    return [_twin externFunctionNames];
 }
 
 - (id<MTLFunction>)newExternFunctionWithName:(NSString *)name
@@ -310,9 +324,10 @@ static id functionNotFound(NSString *name, NSError **error)
                              constants:nil];
 }
 
+// No dynamic library is made on this device (a source compile asking for one fails)
 - (MTLLibraryType)type
 {
-    return [(id<MTLLibrary>)RM_LIBRARY_TWIN(self, "a library's type") type];
+    return MTLLibraryTypeExecutable;
 }
 
 @end
