@@ -133,6 +133,7 @@ host_test(
         "//drivers/TegraDisplayFlip:SwitchFrameTimeline.h",
     ],
     defines = [
+        "DEVELOPMENT=1",
         "SWITCH_IPSW_BUILD=\\\"21H461\\\"",
         "SWITCH_IPSW_DEVICE_J120AP=1",
     ],
@@ -147,6 +148,7 @@ host_test(
         "//drivers/TegraDisplayFlip:SwitchFrameTimeline.h",
     ],
     defines = [
+        "DEVELOPMENT=1",
         "SWITCH_IPSW_BUILD=\\\"24B119\\\"",
         "SWITCH_IPSW_DEVICE_J181AP=1",
     ],

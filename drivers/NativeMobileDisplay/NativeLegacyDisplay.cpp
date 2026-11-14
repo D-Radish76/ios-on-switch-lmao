@@ -4624,6 +4624,7 @@ public:
         const bool timed = request == timedHeldRequest;
         if (timed)
             timedHeldRequest = nullptr;
+        noteOrdinaryTaken(request);
         frameInfo->pending.take(seqOf(request), id, requested, timed);
         frameInfo->tickets.take(request, seqOf(request));
     }
@@ -4642,7 +4643,7 @@ public:
             KDBG(SWITCH_KDBG_CODE(SWITCH_KDBG_FRAME_TICKET), ticket.id, ticket.swapId, ticket.take, ticket.gpu);
 #endif
         switch_frame_info::Frame frame;
-        if (frameInfo->pending.shown(seq, continuous, frame) && frameInfo->clients.any())
+        if (frameInfo->pending.shown(seq, continuous, frame, vsyncInterval / 2) && frameInfo->clients.any())
             native_legacy_frame_info_notify(this, &frame);
     }
 
