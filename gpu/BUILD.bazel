@@ -190,7 +190,12 @@ rust_artifact(
 # (gpu/defs.bzl raw_stack), so an edit to the rest of the raw runtime keeps every record made.
 raw_stack(
     name = "raw_stack",
-    srcs = [GM20B_METAL + ":raw_stack_sources"],
+    # The bridge's own files by bytes, not as a crate: its runtime-device forms make records too (the in-process compile,
+    # native-seed) until the cut, and a crate edge would reach m2v's runtime crate
+    srcs = [
+        GM20B_METAL + ":raw_stack_sources",
+        METAL + ":bridge_rust",
+    ],
     bridge = ":translate",
     compile = COMPILE,
     include_markers = [

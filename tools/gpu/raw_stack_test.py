@@ -82,7 +82,7 @@ class Inputs(unittest.TestCase):
         for path in KEYED:
             self.assertIn(str(path), keyed)
         self.assertTrue(any(path.endswith('/switch_compile.o') for path in keyed), 'the stage compile')
-        self.assertFalse(any('metal2vulkan-runtime' in path for path in keyed), "m2v's runtime makes no record")
+        self.assertFalse(any('metal2vulkan-runtime' in path for path in keyed), "m2v's runtime crate is not hashed")
         self.assertTrue(any('rust_crates__ash-' in path for path in keyed), "the translation's crates.io crates")
 
     def test_the_pack_generator_builds_and_reads_only_hashed_files(self):
