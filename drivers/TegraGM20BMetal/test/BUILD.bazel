@@ -7407,6 +7407,50 @@ host_test(
         "raw_frontend_absent.cpp",
         "raw_kernel_model.h",
     ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# A texture moved off compressed memory from another thread while the submit worker holds the device's command buffer open
+# for an encode ahead: every job it meets reaches the GPU as submitted (raw_facade_move_ahead_test.cpp)
+host_test(
+    name = "raw_facade_move_ahead_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_job_methods.h",
+        "raw_facade_move_ahead_test.cpp",
+        "raw_scale_frames.h",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
     # the recording against the worker's encode ahead; the latency and cost measures time the model's GPU, whose fence
     # writes race the device's reads of the fence page by design (the hardware writes it)
     args = ["--gtest_filter=-*CommitLatency*:*RecordingCost*"],
