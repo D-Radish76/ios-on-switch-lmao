@@ -561,8 +561,8 @@ host_test(
     ],
 )
 
-# A runtime-made state whose split twin found no room in the heap or local memory: made at a later draw that takes it, a
-# few draws at most
+# A runtime-made state whose turned variant or split twin found no room in the heap or local memory when it was made:
+# placed at a later draw that needs it, a draw that finds no room refused alone, a few draws at most
 host_test(
     name = "raw_device_room_test",
     srcs = [

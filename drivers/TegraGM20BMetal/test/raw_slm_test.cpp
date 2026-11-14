@@ -163,7 +163,10 @@ TEST(SlmOwned, EveryPlacedProgramGetsTheAreaBeforeItsBind)
     EXPECT_LT(at(pack, "slmNeed(slm)"), at(pack, "build(pl, pp, vs, fs,"));
     const std::string completed = SourceText("../raw/runtime/raw_completed.cpp");
     EXPECT_THAT(Body(completed, "bool Device::placeCompleted(const CapturedProgram &p, PlacedProgram &out)"),
-                HasSubstr("slmNeed(slmPerWarpOfHeader(p.image.data()))"));
+                HasSubstr("placeCompletedSlot(completedSlot(p), out)"));
+    const std::string slot =
+        Body(completed, "bool Device::placeCompletedSlot(const CompletedSlot &slot, PlacedProgram &out)");
+    EXPECT_LT(at(slot, "slmNeed(slmPerWarpOfHeader(slot.header))"), at(slot, "heapPlace("));
     const std::string split =
         Body(SourceText("../raw/runtime/raw_split.cpp"), "SplitState *Device::makeSplit(Pipeline &pl)");
     EXPECT_LT(at(split, "slmNeed(std::max(slmPerWarpOfHeader(fs.header), slmPerWarpOfQmd(source->rec.qmd)))"),

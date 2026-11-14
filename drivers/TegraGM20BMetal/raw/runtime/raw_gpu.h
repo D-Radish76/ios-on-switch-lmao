@@ -480,6 +480,7 @@ struct Sampler {
 
 struct SplitState;
 struct SplitSource;
+struct TurnedSource;
 
 #if SWITCH_RAW_DIAGNOSTICS
 // The keyline probe (raw_keyline_probe.h) for 30 s or 256 lines: its budgets start again, and every Core Animation state's
@@ -598,6 +599,7 @@ struct Pipeline {
     uint16_t xrSlots = 0;
     uint16_t writtenSlots = 0;  // the fragment slots its programs write textures at (raw_written_textures.h)
     Pipeline *turnedTwin = nullptr;
+    const TurnedSource *turnedSource = nullptr;  // a runtime record's turned variant, built at its first turned draw
     // its vertex program writes memory (SPH DOES_GLOBAL_STORE), which a reach twin or bands would write again
     bool vertexStores = false;
     Pipeline *reachTwin = nullptr;  // Device::reachTwin's
@@ -662,6 +664,26 @@ struct SplitSource {
 
 struct RuntimeRecord;
 struct CapturedProgram;
+
+// A runtime record's program as a heap slot (Device::placeCompleted), placed once per program and constant buffer layout
+struct CompletedSlot {
+    std::string key;  // its program id and constant buffer types
+    std::vector<uint8_t> bytes;
+    PackProgram info = {};
+    uint8_t header[80] = {};
+};
+
+// A runtime record's turned fragment variant (AssumeTurned), placed and built at its state's first turned draw
+// (Device::makeTurned), and the state's own inputs to Device::build
+struct TurnedSource {
+    CompletedSlot fs;
+    const PackPipeline *pp = nullptr;
+    const uint32_t *blob = nullptr, *spills = nullptr;
+    const char *keyString = nullptr;
+    PlacedProgram vs, tess[2];
+    bool tessellates = false, caTransform = false;
+    Pipeline *turned = nullptr;  // where it is built
+};
 
 // A render pass's attachments (Core Animation: color 0 the target, color 1 a memoryless attachment, writeMask 0 or 15)
 struct ColorAttachment {
@@ -1800,6 +1822,9 @@ public:
     // A state the runtime made a record of (raw_record.h), drawn from then on as the pack's are; null: its programs find no room
     // in the heap or its samplers none in the header pool (`why`)
     Pipeline *addRecord(const RuntimeRecord &r, bool caTransform, std::string &why, bool *retry = nullptr);
+    // `pl`'s turned variant (TurnedSource) at a turned draw, built at the first; null where the heap or local memory has no
+    // room for it: that draw alone is refused (one error line), and the next turned draw places it afresh
+    Pipeline *makeTurned(Pipeline &pl);
 
     // Resources (thread safe). All textures are 2D, one level, one sample, pitch-linear.
     // pool memory, rows 256-byte aligned; `wc`: write-combined GPU-pool memory (a texture the CPU writes with replaceRegion:
@@ -2916,6 +2941,7 @@ private:
         std::vector<uint32_t> blob, spill;
         PackProgram programs[2];
         Pipeline pipeline, turned;
+        TurnedSource turnedSource;
     };
 
     std::deque<Completed> completedStore_;
@@ -2931,6 +2957,8 @@ private:
 
     std::map<std::string, CompletedProgram> completedPrograms_;  // by program id and constant buffer types
     bool placeCompleted(const CapturedProgram &p, PlacedProgram &out);
+    static CompletedSlot completedSlot(const CapturedProgram &p);
+    bool placeCompletedSlot(const CompletedSlot &slot, PlacedProgram &out);
     // The constexprTsc_ index of sampler header `words`: the pack's own, one a runtime record placed, or placed now (under
     // lock_); false: no room
     bool constexprSampler(const std::array<uint32_t, 8> &words, uint32_t &index);
