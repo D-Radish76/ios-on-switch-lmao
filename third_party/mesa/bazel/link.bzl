@@ -157,9 +157,16 @@ def mesa_dylib(**kwargs):
 def _mesa_relocatable_impl(ctx):
     cc_toolchain = find_cc_toolchain(ctx)
     features = cc_common.configure_features(ctx = ctx, cc_toolchain = cc_toolchain)
+    action = ACTION_NAMES.cpp_link_dynamic_library
+    clangxx = cc_common.get_tool_for_action(feature_configuration = features, action_name = action)
     env = cc_common.get_environment_variables(
         feature_configuration = features,
-        action_name = ACTION_NAMES.cpp_link_dynamic_library,
+        action_name = action,
+        variables = cc_common.empty_variables(),
+    )
+    target_flags = cc_common.get_memory_inefficient_command_line(
+        feature_configuration = features,
+        action_name = action,
         variables = cc_common.empty_variables(),
     )
     out = ctx.actions.declare_file(ctx.attr.out)
@@ -168,10 +175,13 @@ def _mesa_relocatable_impl(ctx):
     force_load = _archive(ctx.attr.force_load)
     archives = [_archive(t) for t in ctx.attr.archives]
     args = ctx.actions.args()
-    args.add_all(["-r", "-arch", "arm64", "-o", out, "-exported_symbols_list", exported, "-force_load", force_load])
+    args.add_all(target_flags)
+    args.add_all(["-r", "-nostdlib", "-o", out])
+    args.add("-Wl,-exported_symbols_list," + exported.path)
+    args.add("-Wl,-force_load," + force_load.path)
     args.add_all(archives)
     ctx.actions.run(
-        executable = XCODE_TOOLCHAIN + "/ld",
+        executable = clangxx,
         arguments = [args],
         inputs = depset([exported, force_load] + archives, transitive = [cc_toolchain.all_files]),
         outputs = [out],
