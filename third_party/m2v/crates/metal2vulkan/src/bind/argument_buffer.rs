@@ -218,8 +218,9 @@ pub enum ArgumentLayoutError {
     /// not an indirect argument buffer", an M4 under macOS 27.0.1, EV UNI-reflfix-11); without
     /// validation Metal answers an encoder of no bytes for a plain buffer.
     NoArgumentBuffer { index: u32 },
-    /// The argument buffer holds an array of arrays, the argument at `id`: Metal's encoder
-    /// creation raises (`elementIsArgumentBuffer` unrecognized, a probe).
+    /// A reflected binding's struct holds an array of arrays, the argument at `id`
+    /// (`newArgumentEncoderWithBufferBinding:`, whose encoder creation a probe saw raise,
+    /// `elementIsArgumentBuffer` unrecognized). A function's own encoder lays one out flat.
     ArrayOfArrays { id: u32 },
     /// `newArgumentEncoderWithArguments:` of no descriptors ("count must be greater than zero").
     NoDescriptors,
@@ -458,6 +459,22 @@ impl ArgumentBufferLayout {
             reflected_layout(st, None, Rule::PlainBuffer)
         }
     }
+
+    /// The layout `newArgumentEncoderWithBufferIndex:` makes of a plain buffer, from its reflected
+    /// binding: Metal's encoder of no bytes, alignment 1, for one of no struct type, and a struct's
+    /// members by [`Rule::PlainIndex`], each at the offset the function's own program reads it at.
+    pub(crate) fn from_plain_buffer_index(
+        binding: &BufferBinding,
+    ) -> Result<ArgumentBufferLayout, ArgumentLayoutError> {
+        match binding.buffer_struct_type() {
+            Some(st) => reflected_layout(st, None, Rule::PlainIndex),
+            None => Ok(ArgumentBufferLayout {
+                encoded_length: 0,
+                alignment: 1,
+                members: Vec::new(),
+            }),
+        }
+    }
 }
 
 /// Which of Metal's two rules lays out a reflected struct (the module docs, EVs UNI-reflfix-9 to
@@ -471,6 +488,11 @@ enum Rule {
     /// and the encoder its members' largest alignment. An array whose `argumentIndexStride` is 0
     /// gives element `k` the ids `k` times the element's span.
     PlainBuffer,
+    /// A plain buffer's by `newArgumentEncoderWithBufferIndex:`, as an M4 under macOS 27.2 lays it
+    /// out: [`Rule::PlainBuffer`]'s, but an integer or `bool` scalar member (an atomic's too) takes
+    /// its own size at alignment 1 and no id (one in an array still takes an id), and a pointer
+    /// member [`PLAIN_CONSTANT_BYTES`] at that alignment and its own id.
+    PlainIndex,
 }
 
 /// The bytes, and the alignment, a plain buffer's encoder gives each constant member whatever its
@@ -487,6 +509,22 @@ struct ReflectedElement {
     size: u64,
     alignment: u64,
     layout: Option<Arc<ArgumentBufferLayout>>,
+    /// The ids one element takes: a struct its members' span, anything else one, but none for
+    /// [`Rule::PlainIndex`]'s integer scalars.
+    ids: u32,
+    /// The ids an array of the element steps by where its `argumentIndexStride` is 0: `ids`, but
+    /// for [`Rule::PlainIndex`]'s struct the ids its last member reaches.
+    step: u32,
+}
+
+/// A reflected struct's members by a rule, the end of its members, the end of its last member,
+/// its members' largest alignment, and the ids its last member reaches.
+struct ReflectedMembers {
+    members: Vec<ArgumentMember>,
+    end: u64,
+    last_end: u64,
+    alignment: u64,
+    last_span: u32,
 }
 
 /// Struct `st` as an encoder's arguments by `rule`, aligned to `alignment` (its members' largest
@@ -497,25 +535,28 @@ fn reflected_layout(
     alignment: Option<u64>,
     rule: Rule,
 ) -> Result<ArgumentBufferLayout, ArgumentLayoutError> {
-    let (members, end, natural) = reflected_members(st, rule)?;
-    let alignment = alignment.unwrap_or(natural);
+    let r = reflected_members(st, rule)?;
+    let alignment = alignment.unwrap_or(r.alignment);
+    let end = match rule {
+        Rule::PlainIndex => r.last_end,
+        _ => r.end,
+    };
     let encoded_length = metal_align(end, alignment).ok_or(ArgumentLayoutError::TooLarge)?;
     Ok(ArgumentBufferLayout {
         encoded_length,
         alignment,
-        members,
+        members: r.members,
     })
 }
 
-/// The members of reflected struct `st` by `rule`, the end of its last element, and its members'
-/// largest alignment. The recursion is as deep as the struct type, which the reflection built
-/// from a decoded layout under the nesting cap.
-fn reflected_members(
-    st: &StructType,
-    rule: Rule,
-) -> Result<(Vec<ArgumentMember>, u64, u64), ArgumentLayoutError> {
+/// The members of reflected struct `st` by `rule` ([`ReflectedMembers`]). Under
+/// [`Rule::PlainIndex`] an array of structs whose `argumentIndexStride` is 0 steps by the ids the
+/// struct's last member reaches, as an M4 does: a struct whose last member takes no id gives every
+/// element the same ids, and the last element's win. The recursion is as deep as the struct type,
+/// which the reflection built from a decoded layout under the nesting cap.
+fn reflected_members(st: &StructType, rule: Rule) -> Result<ReflectedMembers, ArgumentLayoutError> {
     let mut members = Vec::with_capacity(st.members().len());
-    let (mut end, mut alignment) = (0u64, 1u64);
+    let (mut end, mut last_end, mut alignment, mut last_span) = (0u64, 0u64, 1u64, 0u32);
     for m in st.members() {
         let id = m.argument_index();
         let (element, count, stride, ids_per_element) = match m.array_type() {
@@ -529,12 +570,13 @@ fn reflected_members(
                     a.element_struct_type(),
                     a.element_pointer_type(),
                     rule,
+                    true,
                 )?;
                 let ids = match (a.argument_index_stride(), rule) {
                     (0, Rule::ArgumentBuffer) if element.ty == ArgumentType::Struct => {
                         return Err(unmeasured(m.name()));
                     }
-                    (0, _) => element_ids(&element),
+                    (0, _) => element.step,
                     (ids, _) => ids,
                 };
                 (element, a.array_length(), a.stride(), ids)
@@ -546,8 +588,9 @@ fn reflected_members(
                     m.struct_type(),
                     m.pointer_type(),
                     rule,
+                    false,
                 )?;
-                let ids = element_ids(&element);
+                let ids = element.ids;
                 let size = element.size;
                 (element, 1, size, ids)
             }
@@ -558,50 +601,80 @@ fn reflected_members(
             .and_then(|start| start.checked_add(element.size))
             .ok_or(ArgumentLayoutError::TooLarge)?;
         end = end.max(last);
+        last_end = last;
         alignment = alignment.max(element.alignment);
+        last_span = id.saturating_add(count.saturating_mul(ids_per_element));
+        if ids_per_element > 0 {
+            members.push(ArgumentMember {
+                id,
+                count,
+                ids_per_element,
+                offset: m.offset(),
+                stride,
+                size: element.size,
+                ty: element.ty,
+                layout: element.layout,
+            });
+            continue;
+        }
+        let Some(inner) = element.layout.filter(|l| !l.members.is_empty()) else {
+            continue;
+        };
         members.push(ArgumentMember {
             id,
-            count,
-            ids_per_element,
-            offset: m.offset(),
-            stride,
+            count: 1,
+            ids_per_element: inner.id_span(),
+            offset: last - element.size,
+            stride: element.size,
             size: element.size,
             ty: element.ty,
-            layout: element.layout,
+            layout: Some(inner),
         });
     }
-    Ok((members, end, alignment))
-}
-
-/// The ids one element takes: a struct all its members', anything else one.
-fn element_ids(element: &ReflectedElement) -> u32 {
-    match (element.ty, &element.layout) {
-        (ArgumentType::Struct, Some(l)) => l.id_span(),
-        _ => 1,
-    }
+    Ok(ReflectedMembers {
+        members,
+        end,
+        last_end,
+        alignment,
+        last_span,
+    })
 }
 
 /// One element of reflected type `data_type` (with its struct or pointer type) of member `name`,
-/// by `rule`.
+/// by `rule`, `in_array` where it is an array's element.
 fn reflected_element(
     name: &str,
     data_type: DataType,
     st: Option<&StructType>,
     pointer: Option<&PointerType>,
     rule: Rule,
+    in_array: bool,
 ) -> Result<ReflectedElement, ArgumentLayoutError> {
     if let Some(st) = st {
-        let (members, end, alignment) = reflected_members(st, rule)?;
-        let size = metal_align(end, alignment).ok_or(ArgumentLayoutError::TooLarge)?;
+        let r = reflected_members(st, rule)?;
+        // An M4 ends a plain buffer's struct at its last member (a union's last, an integer, or
+        // a half after a float, can end before an earlier member does), a nested one unpadded.
+        let size = match rule {
+            Rule::PlainIndex => r.last_end,
+            _ => metal_align(r.end, r.alignment).ok_or(ArgumentLayoutError::TooLarge)?,
+        };
+        let layout = ArgumentBufferLayout {
+            encoded_length: size,
+            alignment: 1,
+            members: r.members,
+        };
+        let ids = layout.id_span();
+        let step = match rule {
+            Rule::PlainIndex => r.last_span,
+            _ => ids,
+        };
         return Ok(ReflectedElement {
             ty: ArgumentType::Struct,
             size,
-            alignment,
-            layout: Some(Arc::new(ArgumentBufferLayout {
-                encoded_length: size,
-                alignment: 1,
-                members,
-            })),
+            alignment: r.alignment,
+            layout: Some(Arc::new(layout)),
+            ids,
+            step,
         });
     }
     let (size, alignment, ty) = type_size_align(data_type).ok_or_else(|| unmeasured(name))?;
@@ -622,16 +695,51 @@ fn reflected_element(
                 size,
                 alignment,
                 layout: nested,
+                ids: 1,
+                step: 1,
             })
         }
-        Rule::PlainBuffer if ty == ArgumentType::Constant => Ok(ReflectedElement {
+        Rule::PlainIndex
+            if ty == ArgumentType::Constant && !in_array && integer_scalar(data_type) =>
+        {
+            Ok(ReflectedElement {
+                ty,
+                size,
+                alignment: 1,
+                layout: None,
+                ids: 0,
+                step: 0,
+            })
+        }
+        Rule::PlainBuffer | Rule::PlainIndex if ty == ArgumentType::Constant => {
+            Ok(ReflectedElement {
+                ty,
+                size: PLAIN_CONSTANT_BYTES,
+                alignment: PLAIN_CONSTANT_BYTES,
+                layout: None,
+                ids: 1,
+                step: 1,
+            })
+        }
+        Rule::PlainIndex if ty == ArgumentType::Buffer => Ok(ReflectedElement {
             ty,
             size: PLAIN_CONSTANT_BYTES,
             alignment: PLAIN_CONSTANT_BYTES,
             layout: None,
+            ids: 1,
+            step: 1,
         }),
-        Rule::PlainBuffer => Err(unmeasured(name)),
+        Rule::PlainBuffer | Rule::PlainIndex => Err(unmeasured(name)),
     }
+}
+
+/// An integer or `bool` scalar, which [`Rule::PlainIndex`] lays out at its own size
+fn integer_scalar(ty: DataType) -> bool {
+    use DataType as D;
+    matches!(
+        ty,
+        D::Char | D::UChar | D::Bool | D::Short | D::UShort | D::Int | D::UInt | D::Long | D::ULong
+    )
 }
 
 /// The refusal of a reflected member whose encoder Metal's answer was not measured for.
@@ -742,10 +850,11 @@ impl Builder<'_, '_> {
                 MemberKind::Indirect(arg) => {
                     let (slot, ty) = member_slot(&arg.role).ok_or_else(|| Ok(mismatch()))?;
                     let id = constant(slot.index).map_err(Err)?;
+                    // An array of arrays states its outer length as the member's array and the
+                    // inner elements as the slot's count, `size` being one outer element: Metal's
+                    // encoder lays it out flat, one id per innermost element (an M4 under macOS
+                    // 27.2 for textures, samplers, pointers, constants and three deep).
                     let per_slot = constant(slot.count).map_err(Err)?.max(1);
-                    if member.array_len > 0 && per_slot > 1 {
-                        return Err(Ok(ArgumentLayoutError::ArrayOfArrays { id }));
-                    }
                     if !size.is_multiple_of(u64::from(per_slot)) {
                         return Err(Ok(mismatch()));
                     }

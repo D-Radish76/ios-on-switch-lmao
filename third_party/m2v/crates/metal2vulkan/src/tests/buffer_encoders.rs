@@ -76,18 +76,16 @@ fn a_plain_buffer_of_no_struct_takes_metals_empty_encoder() {
 }
 
 #[test]
-fn an_array_of_arrays_refuses_only_its_own_index() {
+fn an_array_of_arrays_answers_as_its_layout_alone() {
     let Some(function) = fixture_function("kAA") else {
         return;
     };
     let encoders = function
         .buffer_encoders(None, &Budget::default())
         .expect("the kernel decodes");
-    assert_eq!(
-        encoders[0].layout,
-        Err(ArgumentLayoutError::ArrayOfArrays { id: 0 })
-    );
-    assert!(encoders[1].layout.is_ok(), "its plain buffer still answers");
+    assert_eq!(Some(encoders[0].layout.clone()), function_layout("kAA", 0));
+    assert!(encoders[0].layout.is_ok());
+    assert!(encoders[1].layout.is_ok(), "its plain buffer answers too");
 }
 
 /// `kG`: a plain buffer at 0, and one at 1 that function constant 0 (`use_g`) gates; it stores the

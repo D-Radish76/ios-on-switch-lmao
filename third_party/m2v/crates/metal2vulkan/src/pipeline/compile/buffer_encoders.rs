@@ -1,17 +1,16 @@
 //! `newArgumentEncoderWithBufferIndex:` at every buffer index a function declares, from one decode
-//! of its AIR: an argument buffer's layout as [`super::argument_buffer_layout`] makes it, and at a
-//! plain buffer of no struct type the encoder of no bytes, alignment 1, that Metal makes without
-//! API validation (which stops it). An M4 under macOS 27.2 answered that for all 25675 such
-//! buffers of its system metallibs. A plain buffer of a struct is refused as having no argument
-//! buffer: Metal's unvalidated encoder of it is the GPU's own (an M4 differs from an M3 Max's
-//! [`ArgumentBufferLayout::from_buffer_binding`] rule for 4980 of 13322). An index with no buffer
-//! is absent: Metal asserts there.
+//! of its AIR: an argument buffer's layout as [`super::argument_buffer_layout`] makes it, and a
+//! plain buffer's as Metal makes it without API validation (which stops it): of no struct type an
+//! encoder of no bytes, alignment 1 (an M4 under macOS 27.2 for all 25675 such buffers of its
+//! system metallibs), of a struct [`ArgumentBufferLayout::from_plain_buffer_index`], each member
+//! where the function's own program reads it. An index with no buffer is absent: Metal asserts
+//! there.
 //!
 //! A function made without constant values has no buffer a function constant gates: Metal asserts
-//! there too (an M4 under macOS 27.2, for RealityKit's `recalculateNormals` and a probe's own). Of a
-//! function made with them, as `argument_buffer_layout` does per index, only an index a function
-//! constant decides waits on specialization: a specialization that fails refuses those indices
-//! alone.
+//! there too (an M4 under macOS 27.2, for RealityKit's `recalculateNormals` and a probe's own).
+//! Of a function made with them, as `argument_buffer_layout` does per index, only an index a
+//! function constant decides waits on specialization: a specialization that fails refuses those
+//! indices alone.
 
 use std::collections::BTreeMap;
 
@@ -25,6 +24,7 @@ use crate::error::{Error, InternalError, InternalKind};
 use crate::library::{Function, FunctionConstantValues};
 use crate::lower::select::LowerInputs;
 use crate::pipeline::descriptor::{DynamicLibraries, LinkedFunctions};
+use crate::reflection::{self, Binding, Channel};
 
 /// Every buffer `f` declares, by index, made with the function constants `consts` (`None`: made
 /// without constant values); specialized with them, or none, and no linked functions only where a
@@ -142,6 +142,7 @@ fn survey(
         answered: Vec::with_capacity(declared.len()),
         pending: BTreeMap::new(),
     };
+    let mut bindings = None;
     for (index, roles) in declared {
         let argument_buffer = roles
             .iter()
@@ -153,14 +154,11 @@ fn survey(
                     EntryLayout::Specialize => None,
                 }
             }
-            ([ParamRole::Buffer(b)], false) => Some(match b.layout {
-                None => Ok(ArgumentBufferLayout {
-                    encoded_length: 0,
-                    alignment: 1,
-                    members: Vec::new(),
-                }),
-                Some(_) => Err(ArgumentLayoutError::NoArgumentBuffer { index }),
-            }),
+            ([ParamRole::Buffer(_)], false) => {
+                let reflected = bindings
+                    .get_or_insert_with(|| reflection::bindings(ep, structs, Channel::Library));
+                Some(plain_layout(reflected, index))
+            }
             _ => None,
         };
         match layout {
@@ -175,4 +173,19 @@ fn survey(
         }
     }
     Some(s)
+}
+
+/// A plain buffer's encoder, from its library reflection binding
+fn plain_layout(
+    bindings: &Result<Vec<Binding>, Error>,
+    index: u32,
+) -> Result<ArgumentBufferLayout, ArgumentLayoutError> {
+    let bindings = bindings
+        .as_ref()
+        .map_err(|e| ArgumentLayoutError::Compile(e.clone()))?;
+    bindings
+        .iter()
+        .find_map(|b| b.buffer().filter(|_| b.index() == index))
+        .ok_or(ArgumentLayoutError::NoArgumentBuffer { index })
+        .and_then(ArgumentBufferLayout::from_plain_buffer_index)
 }
