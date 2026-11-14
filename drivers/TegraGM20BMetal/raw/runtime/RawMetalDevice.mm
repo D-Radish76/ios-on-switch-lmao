@@ -645,10 +645,13 @@ static bool producesTexture(MTLTextureDescriptor *d)
             refuseTexture(t, PredTexSurfPlane, plane, planes, @"surface", extra);
         else if ((pitch & 15) || (offset & 15) || pitch < packed)  // (its plane's offset: as its pitch)
             refuseTexture(t, PredTexSurfPitch, pitch, offset & 15 ? offset : packed, @"surface", extra);
-        else if (uint64_t(pitch) * d.height > IOSurfaceGetAllocSize(s))
-            refuseTexture(t, PredTexSurfBounds, uint64_t(pitch) * d.height, IOSurfaceGetAllocSize(s), @"surface",
-                          extra);
-        else if (base & (size_t(getpagesize()) - 1))
+        else if (uint64_t(pitch) * d.height > IOSurfaceGetAllocSize(s)) {
+            os_log_error(
+                rawLog(),
+                "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
+                getprogname(), IOSurfaceGetID(s), (unsigned long)d.height, pitch, IOSurfaceGetAllocSize(s), extra);
+            return nil;
+        } else if (base & (size_t(getpagesize()) - 1))
             refuseTexture(t, PredTexSurfBase, base & 0xfff, 0, @"surface", extra);
         else
             refuseTexture(t, PredTexSurfImport, 1, 0, @"surface", extra);

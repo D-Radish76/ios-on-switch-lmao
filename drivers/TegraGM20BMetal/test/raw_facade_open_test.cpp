@@ -8,6 +8,7 @@
 #include "../../../kits/SwitchSeedPack/SwitchSeedStore.h"
 #include "bazel/testing/fresh_process.h"
 
+#import <IOSurface/IOSurface.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 
@@ -208,6 +209,37 @@ void plainLayouts()
     expectNoM2V(device);
 }
 
+// A texture whose rows run past its buffer's or surface's memory, or a memoryless one over a buffer, is nil as Metal
+// answers an invalid descriptor
+void texturesPastTheirMemory()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
+    ASSERT_TRUE(device != nil);
+    id<MTLBuffer> buffer = [device newBufferWithLength:4096 options:MTLResourceStorageModeShared];
+    ASSERT_TRUE(buffer != nil);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                 width:64
+                                                                                height:64
+                                                                             mipmapped:NO];
+    d.usage = MTLTextureUsageShaderRead;
+    EXPECT_EQ([buffer newTextureWithDescriptor:d offset:0 bytesPerRow:256], nil) << "16 KiB of rows in 4 KiB";
+    d.height = 16;
+    d.storageMode = MTLStorageModeMemoryless;
+    EXPECT_EQ([buffer newTextureWithDescriptor:d offset:0 bytesPerRow:256], nil);
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @64,
+        (id)kIOSurfaceHeight : @64,
+        (id)kIOSurfaceBytesPerElement : @4,
+        (id)kIOSurfacePixelFormat : @(uint32_t('BGRA'))
+    });
+    ASSERT_TRUE(surface != nullptr);
+    d.storageMode = MTLStorageModeShared;
+    d.height = 4096;
+    EXPECT_EQ([device newTextureWithDescriptor:d iosurface:surface plane:0], nil) << "rows past the allocation";
+    CFRelease(surface);
+    expectNoM2V(device);
+}
+
 constexpr uint32_t kServing = TegraGM20BCompilerCapable | TegraGM20BCompilerExpected | TegraGM20BCompilerRegistered;
 constexpr uint32_t kFacts[3] = {640, 32, 2048};
 
@@ -306,6 +338,11 @@ void computeFactsWithNoCompiler()
 TEST(RawFacadeOpen, AnUncompressedTextureHasThePlainLayoutAndNoNoCopyTexture)
 {
     switch_ios::test::ExpectPassesInFreshProcess(plainLayouts);
+}
+
+TEST(RawFacadeOpen, ATexturePastItsMemoryIsNil)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(texturesPastTheirMemory);
 }
 
 TEST(RawFacadeOpen, AComputeStateThePackLacksIsAnsweredByTheShaderCompiler)

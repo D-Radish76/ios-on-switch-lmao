@@ -176,7 +176,11 @@
             refuseTexture(t, PredTexBufBase, at, offset, @"buffer", extra);
         else if ((row & 31) || row < packed)
             refuseTexture(t, PredTexBufPitch, row, packed, @"buffer", extra);
-        else
+        else if (d.storageMode == MTLStorageModeMemoryless || offset + uint64_t(row) * d.height > _raw.length) {
+            os_log_error(rawLog(), "raw: %{public}s: no texture over a buffer: memoryless, or past its end: %{public}@",
+                         getprogname(), extra);
+            return nil;
+        } else
             refuseTexture(t, PredTexBufOther, offset + uint64_t(row) * d.height, _raw.length, @"buffer", extra);
     }
     if (!t->_rawOk && ![t rmTwin])
