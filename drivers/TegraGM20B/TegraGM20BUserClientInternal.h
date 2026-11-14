@@ -53,6 +53,7 @@
 #include "SwitchGpuJobFences.h"
 #include "SwitchGpuJobVisibility.h"
 #include "SwitchGpuPathStats.h"
+#include "SwitchGpuRefusalSites.h"
 #include "SwitchGpuTargetPeaks.h"
 #include "SwitchGpuEventClient.h"
 #include "SwitchGpuAsyncReference.h"
@@ -506,6 +507,9 @@ class AGXDeviceUserClient : public IOUserClient
 	// reads the binds without taking it again
 	thread_t hangHolder_ = nullptr;
 	switch_gpu_resource_set *sets_[TegraGM20BMaxResourceSets] = {};
+	// atomic: each site's refusals, for its line's rate bound, and the lines written
+	uint32_t refusals_[size_t(SwitchGpuRefusal::Count)] = {};
+	uint32_t refusalLines_ = 0;
 
 	Bo *findBo(uint64_t handle);
 	Bo *findAddress(uint64_t address, uint64_t bytes = 1);
@@ -605,9 +609,18 @@ class AGXDeviceUserClient : public IOUserClient
 				   TegraGM20BAbiResourceSetCreateReply *out);
 	IOReturn attachSet(const TegraGM20BAbiResourceSetCreate *in, TegraGM20BAbiSurfaceUse *uses,
 			   switch_gpu_set_member *members, TegraGM20BAbiResourceSetCreateReply *out,
-			   uint32_t &refusedAt);
+			   uint32_t &refusedAt, SwitchGpuRefusalNote &why);
 	IOReturn resourceSetRelease(const TegraGM20BAbiResourceSetRelease *in);
 	IOReturn submitJob(const TegraGM20BAbiSubmitAddress *in, TegraGM20BAbiExecReply *out);
+	IOReturn takeJob(const TegraGM20BAbiSubmitAddress *in, TegraGM20BAbiExecReply *out,
+			 SwitchGpuRefusalNote &why, uint32_t &channel);
+	static SwitchGpuRefusal useRefusal(const Bo *bo, const BindingTable::Entry *binding,
+					   const TegraGM20BAbiSurfaceUse &use, uint64_t bytes,
+					   uint64_t &offset);
+	void logRefusal(const char *call, uint32_t channel, IOReturn ret,
+			const SwitchGpuRefusalNote &note);
+	IOReturn refuseCall(const char *call, SwitchGpuRefusal site, IOReturn ret, uint64_t a = 0,
+			    uint64_t b = 0, uint64_t c = 0);
 	IOReturn writerPromise(const TegraGM20BAbiWriterPromise *in,
 			       TegraGM20BAbiWriterPromiseReply *out);
 
@@ -624,10 +637,11 @@ class AGXDeviceUserClient : public IOUserClient
 	void keptPromises(const TegraGM20BAbiJobPromises *promises, uint32_t slot,
 			  const switch_gpu_backing_token &job);
 	IOReturn runJob(const SwitchGpuJobRecord &record, JobScratch &job,
-			TegraGM20BAbiExecReply *out);
+			TegraGM20BAbiExecReply *out, SwitchGpuRefusalNote &why);
 	IOReturn runJobUses(const SwitchGpuJobRecord &record, JobScratch &job,
 			    TegraGM20BAbiExecReply *out, switch_gpu_resource_set *set,
-			    const switch_gpu_sibling_wait *siblings, uint32_t siblingCount);
+			    const switch_gpu_sibling_wait *siblings, uint32_t siblingCount,
+			    SwitchGpuRefusalNote &why);
 	void destroySets();
 	IOReturn unmapToken(const TegraGM20BAbiUnmap *in);
 	void releaseMappings();

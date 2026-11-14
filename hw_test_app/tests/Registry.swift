@@ -21,7 +21,7 @@ public enum Registry {
         MipTwodTest(), MipCandidatesTest(), MipLodTest(),
         VisibilityTest(), FixedBlendRuleTest(), PrivateCompressionTest(), AlphaToCoverageTest(), IconCornersTest(),
         CompileSharedTest(), CompileFirstDrawTest(), DrawBandsTest(), DispatchPiecesTest(), PosterTargetsTest(),
-        ResolveCostTest(), CompressedFloorTest(),
+        ResolveCostTest(), CompressedFloorTest(), JobRefusalLinesTest(),
         MsaaFirstUseTest(), StoredDepthTest(),
         ResolveTwodTest(), FillTextureTest(), StorageCompressedTest(), SharedLayoutTest(), PredicationTest(),
         MPSControlFlowTest(),

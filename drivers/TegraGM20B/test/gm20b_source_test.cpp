@@ -712,9 +712,10 @@ TEST(GM20BRoomSource, SubmitJobNeverSleepsWithBackingLocksHeld)
 			       "switch_gpu_chan_submit_leave();"));
 	EXPECT_TRUE(job.Before("switch_gpu_set_note_job(set, slot, &completion);",
 			       "switch_gpu_chan_submit_leave();"));
-	const CodeText submit = Block(client(), "IOReturn AGXDeviceUserClient::submitJob(");
-	EXPECT_TRUE(submit.Before("submitGate_.enterFast();", "runJob(record, job, out)"));
-	EXPECT_TRUE(submit.Before("runJob(record, job, out)", "submitGate_.leaveFast(lock_);"));
+	const CodeText submit = Block(client(), "IOReturn AGXDeviceUserClient::takeJob(");
+	EXPECT_TRUE(submit.Before("submitGate_.enterFast();", "runJob(record, job, out, why)"));
+	EXPECT_TRUE(
+		submit.Before("runJob(record, job, out, why)", "submitGate_.leaveFast(lock_);"));
 }
 
 // The HW Test's gpu.path.submit_job reads these per process: a job SubmitJob ran, whether it named its set at the current
@@ -723,7 +724,7 @@ TEST(GM20BRoomSource, SubmissionMethodsCountTheirPaths)
 {
 	const CodeText run = Block(client(), "IOReturn AGXDeviceUserClient::runJob(");
 	EXPECT_TRUE(run.Before("switch_gpu_path_taken(SWITCH_GPU_PATH_STALE_SET, 1);",
-			       "return kIOReturnNotReady;"));
+			       "SwitchGpuRefusal::StaleSet, kIOReturnNotReady"));
 	const CodeText job = Block(client(), "IOReturn AGXDeviceUserClient::runJobUses(");
 	EXPECT_TRUE(job.Before("switch_gpu_path_taken(SWITCH_GPU_PATH_SUBMIT_JOB, 1);",
 			       "return kIOReturnSuccess;"));
@@ -754,9 +755,9 @@ TEST(GM20BRoomSource, SubmitJobHoldsACommandBuffersAdmission)
 			       "guardCount, job.leases, leaseCount);",
 			       "switch_gpu_chan_submit_enter(chan);"));
 	EXPECT_TRUE(job.Before("switch_gpu_chan_submit_leave();", "admission.end();"));
-	const CodeText submit = Block(client(), "IOReturn AGXDeviceUserClient::submitJob(");
+	const CodeText submit = Block(client(), "IOReturn AGXDeviceUserClient::takeJob(");
 	EXPECT_TRUE(submit.Before("(record.job->flags & TegraGM20BJobAdmissionCancel)",
-				  "runJob(record, job, out)"));
+				  "runJob(record, job, out, why)"));
 }
 
 // A fence wait woken at its seqno decides from the fence page alone; the connection lock is for publishing, errors and

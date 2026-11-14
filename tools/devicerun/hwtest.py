@@ -141,6 +141,7 @@ TESTS: dict[str, bool] = {
             'gpu.poster_targets',
             'gpu.msaa.resolve_cost',
             'gpu.pool.compressed_floor',
+            'gpu.job.refusal_lines',
             'gpu.msaa.first_use',
             'gpu.raw.stored_depth',
             'gpu.raw.resolve_twod',

@@ -23,6 +23,8 @@ enum {
 	/* "ready_kib=N floor_kib=N held_kib=N": the GPU pool's ready bytes (what a BoAlloc can take now), the floor no
 	 * compressible BoAlloc goes below (TegraGM20BPoolPolicy.h), and the pool bytes this connection holds */
 	TegraGM20BPathsOpPool = 4,
+	/* "lines=N": the refusal lines this connection's GPU job calls wrote (SwitchGpuRefusalSites.h) */
+	TegraGM20BPathsOpRefusals = 5,
 };
 
 struct TegraGM20BAbiPaths {
