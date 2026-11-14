@@ -81,7 +81,10 @@ build --@rules_apple//apple/build_settings:signing_certificate_name=-
 build --ios_multi_cpus=arm64
 # rules_apple tags its bundling, signing and profile-reading actions no-sandbox, for codesign's keychain lookups. An ad
 # hoc identity and an XML profile need neither the keychain nor anything undeclared, so they run sandboxed like the rest.
-build --modify_execution_info=^(BundleApp|BundleTreeApp|ProcessAndSign|SignBinary|ExtractFromProvisioningProfile)$=-no-sandbox
+# It also keeps a device app's ProcessAndSign off remote caches, for teams whose developers sign with their own
+# identities. The ad hoc identity has no key or certificate and codesign stamps no time on it, so the signature is the
+# same on every Mac with the same /usr/bin/codesign and Xcode.
+build --modify_execution_info=^(BundleApp|BundleTreeApp|ProcessAndSign|SignBinary|ExtractFromProvisioningProfile)$=-no-sandbox,^ProcessAndSign$=-no-remote
 
 # --- Output ------------------------------------------------------------------------------------------------------
 build --show_result=30
