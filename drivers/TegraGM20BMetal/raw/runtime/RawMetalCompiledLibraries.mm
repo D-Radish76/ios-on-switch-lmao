@@ -125,7 +125,9 @@ static id<MTLLibrary> compiled(id device, uint32_t type, const std::string &requ
 
 // The stitching DAG's text and the visible functions its nodes name: a stitched descriptor's, and MPS's kernel DAGs
 // (MPSKernelDAG, which MPSGraph's control flow and fused kernels make and abort on nil)
-- (id<MTLLibrary>)newLibraryWithDAG:(NSString *)dag functions:(NSArray<id<MTLFunction>> *)functions error:(NSError **)error
+- (id<MTLLibrary>)newLibraryWithDAG:(NSString *)dag
+                          functions:(NSArray<id<MTLFunction>> *)functions
+                              error:(NSError **)error
 {
     const char *text = [dag isKindOfClass:[NSString class]] ? dag.UTF8String : nullptr;
     if (!text || !*text)

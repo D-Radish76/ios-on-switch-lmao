@@ -31,6 +31,12 @@ public enum RawFacade {
         ((ask(state, "switchRawObject") as? [String: Any])?["packed"] as? NSNumber)?.boolValue
     }
 
+    /// The facade's record of its m2v device, read without opening it (debug builds; empty off the facade):
+    /// "opened", "opens", "opened_for" and "needs" (each need the process asked it for, with its count)
+    public static func m2vRecord(of device: MTLDevice) -> [String: Any] {
+        ask(device, "switchRawM2V") as? [String: Any] ?? [:]
+    }
+
     /// The facade's cumulative command buffer counters (empty off the facade).
     public static func counters(of device: MTLDevice) -> [String: Int] {
         guard let counters = ask(device, "switchRawCounters") as? [String: NSNumber] else { return [:] }

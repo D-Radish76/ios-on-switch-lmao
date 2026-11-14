@@ -276,7 +276,8 @@ void kernelDagLibrary()
                     @"NODE(add) : FUNCTION(add), INPUT(0), NODE(Node_0);\n"
                     @"}\n"
                     @"}\n";
-    NSArray<id<MTLFunction>> *named = @[ [functions newFunctionWithName:@"mul"], [functions newFunctionWithName:@"add"] ];
+    NSArray<id<MTLFunction>> *named =
+        @[ [functions newFunctionWithName:@"mul"], [functions newFunctionWithName:@"add"] ];
     NSError *error = nil;
     id<MTLLibrary> (*withDag)(id, SEL, NSString *, NSArray *, NSError **) =
         (id<MTLLibrary> (*)(id, SEL, NSString *, NSArray *, NSError **))objc_msgSend;
