@@ -18,7 +18,7 @@ MAGIC = b'GM20BPK1'
 # the formats a state's written textures were compiled for, the fragment slots it samples two-plane RGB10A8_2P_XR10
 # textures at; 23: compute states' answers (PackComputeFacts), compared sampler slots
 VERSION = 25
-SECTIONS = 14  # runtime/raw_pack.h PackSectionCount
+SECTIONS = 15  # runtime/raw_pack.h PackSectionCount
 ENTRY_COMPARES = 1  # runtime/raw_pack.h kEntryCompares: a handle's sampler slot the state samples by comparison
 # PackIteratedBlend: count, enable, constants, uniformSlot, uniformOffset, uniformWords, reserved, alphaSource,
 # alphaDest, name, reservedName, constant[8][3], program[128]
@@ -501,6 +501,8 @@ class Pack:
     archives: bytes = b''  # the PackArchives section (archives.py)
     iterated: list[dict] = field(default_factory=list)  # the PackIterated section's programs (iterated_bytes)
     compute_facts: list[dict] = field(default_factory=list)  # the PackComputeStates section (kernels.py state_facts)
+    # the PackReflections section's blobs (reflection_bytes): by (compute, the state's key hash)
+    reflections: dict[tuple[bool, int], bytes] = field(default_factory=dict)
 
 
 def pipeline_sections(pipes: list[dict]) -> tuple[bytearray, list[int], bytearray, bytearray]:
@@ -547,6 +549,26 @@ def compute_facts_bytes(facts: list[dict]) -> bytes:
     )
 
 
+def reflection_bytes(reflections: dict[tuple[bool, int], bytes]) -> bytes:
+    """Give the PackReflections section (runtime/raw_pack.h PackReflection).
+
+    Its counts, the render states' entries, then the compute states', each ascending by key hash, then each distinct
+    blob once, 8-byte aligned.
+    """
+    render = sorted((h, b) for (compute, h), b in reflections.items() if not compute)
+    compute = sorted((h, b) for (computed, h), b in reflections.items() if computed)
+    head = struct.pack('<II', len(render), len(compute))
+    at = len(head) + 16 * (len(render) + len(compute))
+    entries, blobs, placed = bytearray(), bytearray(), {}
+    for h, b in render + compute:
+        if b not in placed:
+            blobs += bytes(-(at + len(blobs)) % 8)
+            placed[b] = at + len(blobs)
+            blobs += b
+        entries += struct.pack('<QII', h, placed[b], len(b))
+    return head + bytes(entries) + bytes(blobs)
+
+
 def pack_bytes(pack: Pack) -> tuple[bytes, list[int]]:
     pipe_bin, blob, strings, variant_bin = pipeline_sections(pack.pipes)
     kernel_bin = bytearray()
@@ -589,6 +611,7 @@ def pack_bytes(pack: Pack) -> tuple[bytes, list[int]]:
         pack.archives,
         iterated_bytes(pack.iterated),
         compute_facts_bytes(pack.compute_facts),
+        reflection_bytes(pack.reflections),
     ]
     assert len(sections) == SECTIONS
     header_size = 8 + 4 * 4 + 8 * 2 * len(sections) + 16  # the section table, then the stack key and chip facts

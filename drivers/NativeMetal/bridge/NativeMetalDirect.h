@@ -338,6 +338,16 @@ bool nmb_offline_compute_pipeline_compiles(const NmbOfflineComputePipelineDescri
 // `facts`: maxTotalThreadsPerThreadgroup, threadExecutionWidth, staticThreadgroupMemoryLength (false with nmb_last_error)
 bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescriptor *descriptor, uint32_t facts[3]);
 
+// A state's reflection with no m2v runtime, as raw/runtime/raw_reflection_blob.h lays it out (NativeMetalReflection.rs):
+// a render state's as newRenderPipelineStateWithDescriptor:options:reflection:error: answers it with argument info, its
+// vertex, fragment, tile, object and mesh stages; a compute state's as the runtime's compute prepare gives it (its kernel's
+// bindings). Null with nmb_last_error. Its bytes live until nmb_reflection_blob_release.
+typedef struct NmbReflectionBlob NmbReflectionBlob;
+NmbReflectionBlob *nmb_offline_render_pipeline_reflection(const NmbOfflineRenderPipelineDescriptor *descriptor);
+NmbReflectionBlob *nmb_offline_compute_pipeline_reflection(const NmbOfflineComputePipelineDescriptor *descriptor);
+const uint8_t *nmb_reflection_blob_bytes(const NmbReflectionBlob *blob, size_t *length);
+void nmb_reflection_blob_release(NmbReflectionBlob *blob);
+
 // The build's compile profile held to `device`'s runtime (false: they differ, nmb_last_error says how), and the profile of
 // `device`'s runtime as JSON into `out` (`length` bytes, unterminated): its length, 0 on failure
 bool nmb_compile_profile_check(NmbDevice *device);

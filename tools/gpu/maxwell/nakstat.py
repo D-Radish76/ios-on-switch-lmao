@@ -181,6 +181,7 @@ LAYOUTS = {
     21: (660, 44, 13, struct.Struct('<QIIIIIBBBBHHI')),
     22: (696, 44, 13, struct.Struct('<QIIIIIBBBBHHI')),
     23: (696, 44, 14, struct.Struct('<QIIIIIBBBBHHI')),
+    25: (696, 44, 15, struct.Struct('<QIIIIIBBBBHHI')),
 }
 # PackProgram's constant buffer slots by its size: the count at byte 20, the slots' types from 21, then the registers
 # and the bound textures' slot + 1
@@ -194,6 +195,7 @@ def program_fields(p: bytes, at: int, program_bytes: int) -> tuple[int, bytes, i
 
 
 VARIANT_RECORD = 16  # PackPipelineFlags PipelineVariantRecord: a variant's record under its state's key
+NO_PROGRAM = 0xFFFFFFFF  # raw_pack.h kNoProgram: a state of no fragment program
 FETCH_FREE_FORM = 32  # PipelineFetchFreeForm: the state drawn with no framebuffer fetch, under its state's key
 
 
@@ -232,6 +234,8 @@ class Pack:
         if not found:
             return None
         fs, blob, dwords = found
+        if fs == NO_PROGRAM:
+            return None
         gprs = self.gprs(fs) if self.version >= 15 else register_count(self.blob(blob, dwords))
         return self.code(fs), gprs
 

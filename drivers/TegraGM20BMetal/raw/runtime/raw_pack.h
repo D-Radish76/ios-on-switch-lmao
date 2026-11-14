@@ -32,6 +32,7 @@ enum PackSectionId {
     PackArchives,
     PackIterated,
     PackComputeStates,
+    PackReflections,
     PackSectionCount
 };
 
@@ -143,6 +144,16 @@ struct PackComputeFacts {
     uint32_t executionWidth;  // threadExecutionWidth
     uint32_t staticMemory;    // staticThreadgroupMemoryLength
     uint32_t reserved;
+};
+
+// A state's reflection (raw_reflection_blob.h) as the translator made it when the pack was made, so a state of the pack
+// answers its creation's reflection without m2v or the shader compiler. The PackReflections section: u32 render count,
+// u32 compute count, the render states' entries ascending by keyHash (the key its records are found by), then the
+// compute states' (Pack::fnv of its computeStateKey), then the blobs, each at `offset` from the section's start and
+// shared by every state of the same reflection.
+struct PackReflection {
+    uint64_t keyHash;
+    uint32_t offset, bytes;
 };
 
 // The rung of the fetch ladder a color attachment's framebuffer fetch needs: FetchNone where it is not fetched
@@ -631,6 +642,7 @@ static_assert(sizeof(PackProgram) == 44, "pack layout");
 static_assert(sizeof(PackVariant) == 8, "pack layout");
 static_assert(sizeof(PackArchive) == 16, "pack layout");
 static_assert(sizeof(PackComputeFacts) == 24, "pack layout: packfile.py compute_facts_bytes");
+static_assert(sizeof(PackReflection) == 16, "pack layout: packfile.py reflection_bytes");
 static_assert(sizeof(PackHeader) == 24 + 16 * PackSectionCount + 16, "pack layout: packfile.py pack_bytes header_size");
 static_assert(sizeof(PackKernel) == 18 + 256 + 14 + 128 + 8 * kKernelEntries + 84 + 12, "pack layout");
 static_assert(offsetof(PackKernel, stageInRegionWord) == 1012, "pack layout: packfile.py KERNEL_V21");
@@ -675,6 +687,9 @@ public:
     const uint32_t *spills(const PackKernel &k) const;
     bool declares(const PackArchive &archive, uint64_t keyHash) const;
     const PackComputeFacts *computeFacts(uint64_t keyHash) const;  // nullptr: the pack has no facts of that state
+    // The reflection blob of the render state (or, with `compute`, the compute state) of `keyHash`, its `length`;
+    // nullptr: the pack holds none
+    const uint8_t *reflection(uint64_t keyHash, bool compute, uint32_t &length) const;
 
     const char *string(uint32_t off) const
     {

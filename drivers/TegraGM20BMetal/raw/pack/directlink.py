@@ -83,13 +83,22 @@ def headers(blob: bytes) -> list[list[int]]:
     return [list(struct.unpack_from('<8I', blob, 32 * i)) for i in range(len(blob) // 32)]
 
 
-def load_records(path: str) -> tuple[list[dict], list[dict]]:
-    """Give a records.bin's states and kernels (directpack.mm's layout)."""
+def load_records(path: str) -> tuple[list[dict], list[dict], dict[tuple[bool, int], bytes]]:
+    """Give a records.bin's states, kernels and reflections (directpack.mm's layout).
+
+    A reflection is a state's: a render state's under its key's hash, a compute state's under its computeStateKey's
+    (a kernel key's part before its dispatch shape, as kernels.state_facts names it).
+    """
     with open(path, 'rb') as f:
         r = Reader(f.read())
-    states, kernel_recs = [], []
+    states, kernel_recs, reflections = [], [], {}
     while not r.done():
         tag = r.take(4)
+        if tag == b'DRFL':
+            compute, key, blob = bool(r.u32()), r.blob().decode(), r.blob()
+            state = key.split(' | tg=', 1)[0] if compute else key
+            reflections.setdefault((compute, packfile.fnv(state.encode())), blob)
+            continue
         if tag not in (b'DREC', b'DKRN'):
             raise ValueError(f'{path}: no record at byte {r.at - 4}')
         outcome = r.u32()
@@ -118,7 +127,7 @@ def load_records(path: str) -> tuple[list[dict], list[dict]]:
             mask, push = r.u32(), words_of(r.blob())
             rec['bound'] = {'mask': mask, 'push': push, 'spill': [words_of(r.blob()), words_of(r.blob())]}
         states.append(rec)
-    return states, kernel_recs
+    return states, kernel_recs, reflections
 
 
 def stage_programs(rec: dict) -> list[dict]:
@@ -500,6 +509,14 @@ def main() -> None:
     declared, kinds = archives.declared(inventory)
     held = archives.held_kernels([k['key'] for k in computes])
     report.append(archives.report(declared, kinds, held))
+    reflections = {}
+    for d in buckets:
+        for state, blob in load_records(os.path.join(d, 'records.bin'))[2].items():
+            reflections.setdefault(state, blob)
+    report.append(
+        f'{sum(not c for c, _ in reflections)} render and {sum(c for c, _ in reflections)} compute reflections, '
+        f'{len(set(reflections.values()))} distinct'
+    )
     pack = packfile.Pack(
         pipes,
         prog_recs,
@@ -512,6 +529,7 @@ def main() -> None:
         archives.section(declared, held),
         iterated,
         compute_facts,
+        reflections,
     )
     data, blob = packfile.pack_bytes(pack)
     os.makedirs(out_dir, exist_ok=True)

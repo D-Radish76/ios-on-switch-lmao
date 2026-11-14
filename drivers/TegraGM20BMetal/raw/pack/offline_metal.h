@@ -28,4 +28,9 @@ bool kernelMade(MTLComputePipelineDescriptor *descriptor, std::string &why);
 // False with `why`.
 bool kernelFacts(MTLComputePipelineDescriptor *descriptor, uint32_t facts[3], std::string &why);
 
+// The reflection of `descriptor`'s state (of RawOfflineDevice's functions) as runtime/raw_reflection_blob.h lays it out:
+// what the pack and the system shader compiler's store hold of it. False with `why`.
+bool renderReflection(MTLRenderPipelineDescriptor *descriptor, std::string &blob, std::string &why);
+bool computeReflection(MTLComputePipelineDescriptor *descriptor, std::string &blob, std::string &why);
+
 }  // namespace offline

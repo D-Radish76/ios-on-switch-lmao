@@ -23,11 +23,14 @@
 // shader data and constant buffer types, its sampler headers, which its sampler entries number from 0 (slot 0x80 | n), its
 // argument table's words (u32 count and words), and its state's answers as the runtime's compute prepare gives them
 // (runtime/raw_pack.h PackComputeFacts: three u32).
+// And per state the corpus names, once: "DRFL", u32 0 for a render state (under its key less any variant name) or 1 for a
+// compute state (under a kernel key of it), the key, and its reflection (runtime/raw_reflection_blob.h: u32 length, bytes).
 // PROBE_DATA_LIBS names the directory of the corpus's data: libraries.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include <cstdio>
 #include <cstdlib>
+#include <set>
 #include "../runtime/raw_emit.h"
 #include "../runtime/raw_xr_pass.h"
 #include "../runtime/raw_zeta.h"
@@ -187,7 +190,24 @@ struct Counts {
     uint32_t made = 0, refused = 0, failed = 0, split = 0, variants = 0, planes = 0, planesRefused = 0, sampled = 0;
     uint32_t free[4] = {}, freeFetching = 0, freeRefused = 0, freeBarrier = 0;
     uint32_t written = 0;
+    uint32_t reflected[2] = {}, unreflected[2] = {};  // render, compute
 };
+
+// The state's reflection under `key`, once a state; a state the translator gives none of is counted and left out
+void reflection(Writer &w, bool compute, const std::string &key, bool made, const std::string &blob,
+                const std::string &why, Counts &n)
+{
+    if (!made) {
+        if (!n.unreflected[compute]++)
+            fprintf(stderr, "directpack: no reflection of %s: %s\n", key.c_str(), why.c_str());
+        return;
+    }
+    n.reflected[compute]++;
+    fwrite("DRFL", 1, 4, w.f);
+    w.u32(compute);
+    w.text(key);
+    w.text(blob);
+}
 
 // The state's fetch-free form (fetch_free_make.h), under the state's key
 void makeFetchFree(raw::Direct &direct, Writer &w, id<MTLLibrary> qc, const std::string &line, const std::string &key,
@@ -327,11 +347,18 @@ int main(int argc, char **argv)
         direct.makeVariants(true);
         direct.keepBoundDraws(true);
         Counts counts;
+        std::set<std::string> reflected;
         probe::eachState(libraries, qc, own, standIn, probe::corpusLines(text, own != nil),
                          [&](const std::string &line, bool ours, probe::State &s) {
                              raw::ProbeTextures textures = probe::probeTextures(line, ours);
                              textures.cubic = s.cubic;
                              makeState(direct, w, qc, line, textures, s, counts);
+                             const std::string state = s.key.substr(0, raw::variantNameAt(s.key));
+                             if (reflected.insert(state).second) {
+                                 std::string blob, why;
+                                 const bool made = offline::renderReflection(s.d, blob, why);
+                                 reflection(w, false, state, made, blob, why, counts);
+                             }
                          });
         uint32_t kernels[3] = {};
         probe::eachKernel(
@@ -354,6 +381,11 @@ int main(int argc, char **argv)
                 }
                 kernel(w, k.key, outcome, why, rec, facts);
                 kernels[uint32_t(outcome)]++;
+                if (reflected.insert(k.key.substr(0, k.key.find(" | tg="))).second) {
+                    std::string blob, unmade;
+                    const bool made = offline::computeReflection(k.descriptor, blob, unmade);
+                    reflection(w, true, k.key, made, blob, unmade, counts);
+                }
             },
             [](const std::string &, const std::string &) {});
         fclose(w.f);
@@ -367,6 +399,8 @@ int main(int argc, char **argv)
                 "directpack: fetch-free forms: %u on rung 2, %u on rung 3 (%u reading other colours behind a barrier); "
                 "%u still fetch, %u otherwise refused\n",
                 counts.free[2], counts.free[3], counts.freeBarrier, counts.freeFetching, counts.freeRefused);
+        fprintf(stderr, "directpack: reflections: %u render (%u none), %u compute (%u none)\n", counts.reflected[0],
+                counts.unreflected[0], counts.reflected[1], counts.unreflected[1]);
         return 0;
     }
 }

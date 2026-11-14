@@ -267,6 +267,27 @@ const PackComputeFacts *Pack::computeFacts(uint64_t keyHash) const
     return at != end && at->keyHash == keyHash ? at : nullptr;
 }
 
+const uint8_t *Pack::reflection(uint64_t keyHash, bool compute, uint32_t &length) const
+{
+    const uint64_t size = bytes(PackReflections);
+    const uint8_t *at = section<uint8_t>(PackReflections);
+    uint32_t counts[2] = {};
+    if (size < sizeof counts)
+        return nullptr;
+    memcpy(counts, at, sizeof counts);
+    if ((uint64_t(counts[0]) + counts[1]) * sizeof(PackReflection) > size - sizeof counts)
+        return nullptr;
+    const auto *first = reinterpret_cast<const PackReflection *>(at + sizeof counts) + (compute ? counts[0] : 0);
+    const PackReflection *end = first + counts[compute ? 1 : 0];
+    const PackReflection *found = std::lower_bound(first, end, keyHash, [](const PackReflection &r, uint64_t h) {
+        return r.keyHash < h;
+    });
+    if (found == end || found->keyHash != keyHash || found->offset > size || found->bytes > size - found->offset)
+        return nullptr;
+    length = found->bytes;
+    return at + found->offset;
+}
+
 bool Pack::declares(const PackArchive &archive, uint64_t keyHash) const
 {
     const uint32_t *counts = section<uint32_t>(PackArchives);

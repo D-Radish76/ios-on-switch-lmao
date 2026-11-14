@@ -1,22 +1,21 @@
 #!/usr/bin/env python3
 """A state of no fragment function is packed: its record names no fragment program (runtime/raw_pack.h kNoProgram).
 
-RenderBox's four path_edges states are the corpus's (precompile/corpus.log): each draws depth and stencil from its vertex
-function alone, and the device looked each up under the key hashes below (out/agent-scratch/x1-tip5/STACK5.md).
+RenderBox's four path_edges states are the corpus's (precompile/corpus.log): each draws depth and stencil from its
+vertex function alone, and the device looked each up under the key hashes below.
 """
 
 import os
 import sys
 import unittest
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, os.path.join(HERE, '..', 'raw', 'pack'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'raw', 'pack'))
 import directlink
 import mkpack
 import packfile
 import rawpack
 
-CORPUS = os.path.join(HERE, '..', 'precompile', 'corpus.log')
+CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'precompile', 'corpus.log')
 RENDER_BOX_KEYS = {0x5A8334BB122A80B3, 0x970DB699817A2E73, 0xE0CA57468521CCEB, 0xE3060592583748EA}
 VERTEX = {'image': bytes(80) + b'\x01', 'data': b'', 'cbufs': [1]}
 NONE = {'image': b'', 'data': b'', 'cbufs': []}
