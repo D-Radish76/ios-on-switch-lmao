@@ -17,7 +17,7 @@ struct RangeEnd {
     bool signals = false;       // shared event signals the CPU publishes when the range completes
     bool observed = false;      // completed handlers, a drawable present, or a thread in waitUntilCompleted
     bool handlersOnly = false;  // observed by completed handlers alone
-    bool compositor = false;    // the render server's device (raw::Device::compositorClass)
+    bool compositor = false;    // the render server's device (raw::Device::Role::RenderServer)
     bool cpuOrdered = false;    // m2v work waits for raw completions on the CPU (the kernel refused Order)
 };
 
