@@ -16,11 +16,14 @@ enum PresentMode: Sendable {
     case mediaTarget
     /// Plain presents for half a second, then linkTarget's on the same layer: a layer Core Animation has already shown.
     case warm
+    /// linkTarget's times, from a CAMetalDisplayLink driving the layer: Core Animation's image queue then carries
+    /// each image's time to the render server with its insertion (CAMetalLayerSetMetalLinkToken, queue flag bit 53).
+    case metalLink
 }
 
 /// One phase on a fresh CAMetalLayer: what each drawable asked for and what Metal told it back.
 @MainActor
-final class PresentAtTimeRun: NSObject {
+final class PresentAtTimeRun: NSObject, CAMetalDisplayLinkDelegate {
     let layer = CAMetalLayer()
     private let queue: MTLCommandQueue?
     private let mode: PresentMode
@@ -29,6 +32,7 @@ final class PresentAtTimeRun: NSObject {
     nonisolated let paths: CommandPaths
     private let frames = PresentedFrames()
     private var link: CADisplayLink?
+    private var metalLink: CAMetalDisplayLink?
     private var started: CFTimeInterval = 0
     private var tick = 0
     private(set) var drawableSize = CGSize.zero
@@ -48,52 +52,81 @@ final class PresentAtTimeRun: NSObject {
     var results: [PresentTimeVerdict.Frame] { frames.all }
 
     func start() {
+        let rate = CAFrameRateRange(minimum: 60, maximum: 60, preferred: 60)
+        started = CACurrentMediaTime()
+        if mode == .metalLink {
+            let link = CAMetalDisplayLink(metalLayer: layer)
+            link.delegate = self
+            link.preferredFrameRateRange = rate
+            link.add(to: .main, forMode: .common)
+            metalLink = link
+            return
+        }
         let link = CADisplayLink(target: self, selector: #selector(step))
-        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 60, preferred: 60)
+        link.preferredFrameRateRange = rate
         link.add(to: .main, forMode: .common)
         self.link = link
-        started = CACurrentMediaTime()
     }
 
     @objc private func step(_ link: CADisplayLink) {
         tick += 1
         let warming = mode == .warm && link.timestamp - started < 0.5
-        if tick % 4 == 0, let queue, let drawable = layer.nextDrawable(), let commands = queue.makeCommandBuffer() {
-            drawableSize = CGSize(width: drawable.texture.width, height: drawable.texture.height)
-            let pass = MTLRenderPassDescriptor()
-            pass.colorAttachments[0].texture = drawable.texture
-            pass.colorAttachments[0].loadAction = .clear
-            let level = Double(tick % 60) / 60
-            pass.colorAttachments[0].clearColor = MTLClearColor(red: 1 - level, green: level, blue: 0.4, alpha: 1)
-            pass.colorAttachments[0].storeAction = .store
-            commands.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()
-            let period = PresentTimeVerdict.period
+        if tick % 4 == 0, let drawable = layer.nextDrawable() {
             let committed = CACurrentMediaTime()
+            let period = PresentTimeVerdict.period
             let target: Double
             switch mode {
-            case .linkTarget, .warm: target = warming ? 0 : link.targetTimestamp + 3 * period
+            case .linkTarget, .warm, .metalLink: target = warming ? 0 : link.targetTimestamp + 3 * period
             case .plain: target = 0
             case .past: target = committed - 0.1
             case .mediaTarget: target = committed + 4 * period
             }
-            if !warming {
-                let index = frames.add(committed: committed, target: target)
-                let record = frames
-                drawable.addPresentedHandler { record.presented(index, at: $0.presentedTime) }
-            }
-            if target == 0 {
-                commands.present(drawable)
-            } else {
-                commands.present(drawable, atTime: target)
-            }
-            paths.watch(commands)
-            commands.commit()
+            present(drawable, target: target, recorded: !warming)
         }
         if link.timestamp - started >= seconds {
             link.invalidate()
             self.link = nil
             done.resume(true)
         }
+    }
+
+    nonisolated func metalDisplayLink(_ link: CAMetalDisplayLink, needsUpdate update: CAMetalDisplayLink.Update) {
+        MainActor.assumeIsolated {
+            tick += 1
+            if tick % 4 == 0 {
+                present(update.drawable, target: update.targetPresentationTimestamp + 3 * PresentTimeVerdict.period)
+            }
+            if CACurrentMediaTime() - started >= seconds {
+                link.invalidate()
+                metalLink = nil
+                done.resume(true)
+            }
+        }
+    }
+
+    /// Clears the drawable and presents it at `target` (0: plainly), recording what Metal reports for it.
+    private func present(_ drawable: CAMetalDrawable, target: Double, recorded: Bool = true) {
+        guard let queue, let commands = queue.makeCommandBuffer() else { return }
+        drawableSize = CGSize(width: drawable.texture.width, height: drawable.texture.height)
+        let pass = MTLRenderPassDescriptor()
+        pass.colorAttachments[0].texture = drawable.texture
+        pass.colorAttachments[0].loadAction = .clear
+        let level = Double(tick % 60) / 60
+        pass.colorAttachments[0].clearColor = MTLClearColor(red: 1 - level, green: level, blue: 0.4, alpha: 1)
+        pass.colorAttachments[0].storeAction = .store
+        commands.makeRenderCommandEncoder(descriptor: pass)?.endEncoding()
+        if recorded {
+            let index = frames.add(committed: CACurrentMediaTime(), target: target)
+            let record = frames
+            drawable.addPresentedHandler { record.presented(index, at: $0.presentedTime) }
+        }
+        if target == 0 {
+            commands.present(drawable)
+        } else {
+            commands.present(drawable, atTime: target)
+        }
+        paths.watch(commands)
+        commands.commit()
     }
 }
 
