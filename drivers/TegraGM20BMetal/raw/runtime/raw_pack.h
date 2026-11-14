@@ -480,7 +480,9 @@ enum PackKernelEntryKind : uint8_t {
     // (EntryTextureTable, EntrySamplerTable)
     KernelTextureTable,
     KernelSamplerTable,
-    KernelSpillTable  // m2v's ArgumentTable (EntrySpillTable)
+    KernelSpillTable,    // m2v's ArgumentTable (EntrySpillTable)
+    KernelTexturePlane,  // the alpha plane (R8Uint) of the two-plane RGB10A8_2P_XR10 texture at the slot (raw_xr_pass.h),
+                         // whose KernelTexture entry binds its color words (R32Uint)
 };
 
 // A word range of set 0 and the Metal argument it holds: a buffer's {address, range} descriptor (its range the bound bytes

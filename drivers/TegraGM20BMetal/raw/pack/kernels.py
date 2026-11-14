@@ -11,7 +11,10 @@ import struct
 import packfile
 
 CONSTEXPR = 0x80  # PackKernelEntry.slot of a constexpr sampler: its index in the pack's constexpr samplers
-BUFFER, TEXTURE, SAMPLER = 0, 1, 2  # runtime/raw_pack.h PackKernelEntryKind
+# runtime/raw_pack.h PackKernelEntryKind
+BUFFER, TEXTURE, SAMPLER, TEXTURE_TABLE, SAMPLER_TABLE, SPILL_TABLE, TEXTURE_PLANE = range(7)
+TWO_PLANES = 'xr2p'  # a tex= field's mark of an RGB10A8_2P_XR10 texture held in two planes (runtime/raw_compute_key.h)
+PLANE_BYTES = {TEXTURE: 4, TEXTURE_PLANE: 1}  # a two-plane texture's color words (R32Uint) and alpha bytes (R8Uint)
 HEAD = struct.Struct('<QIIBb')
 ENTRY = struct.Struct('<HBBI')
 ENTRIES = packfile.KERNEL_ENTRIES
@@ -45,16 +48,26 @@ FORMAT_BYTES = {
 def views_other_texel_size(key: str, entries: list[dict]) -> list[int]:
     """Give the texture slots a record views in texels of another size than the format its key binds there.
 
-    The runtime binds no such view (runtime/raw_view.h SlotView::None).
+    A two-plane texture's slot views its planes: its color words at the slot's entry, its alpha bytes at its plane
+    entry. A plane entry at a slot of another texture is named too. The runtime binds no such view (runtime/raw_view.h
+    SlotView::None).
     """
     found = re.search(r'\btex=([^ |]*)', key)
-    bound = {int(t.split(':')[0]): int(t.split(':')[1]) for t in found.group(1).split(',') if t} if found else {}
+    fields = [t.split(':') for t in found.group(1).split(',') if t] if found else []
+    bound = {int(f[0]): int(f[1]) for f in fields}
+    planes = {int(f[0]) for f in fields if f[-1] == TWO_PLANES}
     other = []
     for e in entries:
-        if e['kind'] != TEXTURE or not e['window']:
+        if e['kind'] not in PLANE_BYTES or not e['window']:
             continue
         texel = TEXEL_BYTES.get(e['window'] & 0x7F)
-        fmt = FORMAT_BYTES.get(bound.get(e['slot'], -1))
+        if e['slot'] in planes:
+            fmt = PLANE_BYTES[e['kind']]
+        elif e['kind'] == TEXTURE_PLANE:
+            other.append(e['slot'])
+            continue
+        else:
+            fmt = FORMAT_BYTES.get(bound.get(e['slot'], -1))
         if texel and fmt and texel != fmt:
             other.append(e['slot'])
     return other
