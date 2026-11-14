@@ -160,7 +160,10 @@
     t->_buffer = self;
     t->_offset = offset;
     t->_rowBytes = row;
-    if (rawShape(d) && d.storageMode != MTLStorageModeMemoryless)
+    if (d.textureType == MTLTextureTypeTextureBuffer)
+        t->_rawOk = d.width <= UINT32_MAX &&
+                    gRM->raw->createTexelBuffer(_raw, offset, uint32_t(d.width), uint32_t(d.pixelFormat), t->_raw);
+    else if (rawShape(d) && d.storageMode != MTLStorageModeMemoryless)
         t->_rawOk = gRM->raw->createBufferTexture(_raw, offset, uint32_t(d.width), uint32_t(d.height), uint32_t(row),
                                                   uint32_t(d.pixelFormat), t->_raw);
     if (t->_rawOk)
@@ -170,7 +173,9 @@
         const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0), at = (_raw.va + offset) & 31;
         NSString *extra = [NSString stringWithFormat:@"offset %lu bytesPerRow %lu buffer %llu", (unsigned long)offset,
                                                      (unsigned long)row, (unsigned long long)_raw.length];
-        if (uint32_t term = rawShapeTerm(d))
+        if (d.textureType == MTLTextureTypeTextureBuffer)
+            refuseTexture(t, at & 15 ? PredTexBufBase : PredTexBufOther, offset, _raw.length, @"texel buffer", extra);
+        else if (uint32_t term = rawShapeTerm(d))
             refuseTexture(t, PredTexShape, term, d.pixelFormat, @"buffer", extra);
         else if (at)
             refuseTexture(t, PredTexBufBase, at, offset, @"buffer", extra);
