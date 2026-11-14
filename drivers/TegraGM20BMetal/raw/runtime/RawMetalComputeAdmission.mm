@@ -4,6 +4,7 @@
 #include "raw_compute_lookup.h"
 #include "raw_kernel_shadow.h"
 #include "raw_kernel_texture.h"
+#include "raw_sampler_map.h"
 #include "raw_view.h"
 
 namespace {
@@ -58,8 +59,8 @@ void noteRefusal(RMCommandBuffer *cb, RMPred pred, uint32_t slot, uint64_t term,
     hit(cb, pred, slot, term);
 }
 
-// Whether a kernel's samplers can take address map `map`: the map changes none of them (Device::samplerVariant's rule), or
-// every texture the kernel binds is under that map
+// Whether the samplers of a kernel's record that do not hold their pairs can take address map `map`: the map changes none
+// of them (raw_sampler_map.h), or every texture the kernel binds is under that map
 template <typename Plan, typename State, typename Objects>
 bool kernelSamplersMapped(Plan &plan, const State &state, const raw::PackKernel &record, const Objects &textures,
                           uint8_t map)
@@ -71,16 +72,46 @@ bool kernelSamplersMapped(Plan &plan, const State &state, const raw::PackKernel 
         if (e.kind == raw::KernelTexture && e.slot < 31 && textures[e.slot]) {
             RMTexture *t = (__bridge RMTexture *)textures[e.slot];
             allMapped = allMapped && t->_rawOk && t->_raw.addressMap == map;
-        } else if (e.kind == raw::KernelSampler) {
+        } else if (e.kind == raw::KernelSampler && !raw::kernelSamplerPairsKnown(e)) {
             RMSampler *s = e.slot < 16 ? (__bridge RMSampler *)samplers[e.slot] : nil;
             constant = constant || (e.slot & 0x80);  // a constexpr sampler: its record's header, never mapped
             if (!s)
                 continue;
             for (uint8_t m : {s->_raw.desc.sAddress, s->_raw.desc.tAddress, s->_raw.desc.rAddress})
-                unchanged = unchanged && !((map & 1) && m >= 1 && m <= 3) && !((map & 2) && (m == 4 || m == 5));
+                unchanged = unchanged && raw::mappedAddressMode(m, map) == m;
         }
     }
     return !constant && (unchanged || allMapped);
+}
+
+// The first sampler entry of a kernel's record that holds its pairs and samples textures whose address maps give it two
+// headers, which one sampler word cannot hold (raw_compute.cpp pairedSamplerTsc); -1 for none. The direct compile pairs a
+// sampler with one texture slot at most (raw_kernel_pairs.h), so only a defective record holds one.
+template <typename Plan, typename State, typename Objects>
+int pairedSamplerSplit(Plan &plan, const State &state, const raw::PackKernel &record, const Objects &textures)
+{
+    const auto &samplers = plan.samplers[2][state.samplers].objects;
+    const raw::Device &dev = *gRM->raw;
+    for (uint32_t i = 0; i < record.entries; ++i) {
+        const raw::PackKernelEntry &e = record.entry[i];
+        if (e.kind != raw::KernelSampler || !raw::kernelSamplerPairsKnown(e))
+            continue;
+        const bool constant = e.slot & 0x80;
+        RMSampler *s = !constant && e.slot < 16 ? (__bridge RMSampler *)samplers[e.slot] : nil;
+        const auto header = [&](uint8_t m) -> uint32_t {
+            if (constant)
+                return dev.constexprTsc(e.slot & 0x7f, m);
+            return s ? raw::mappedModes(s->_raw.desc.sAddress, s->_raw.desc.tAddress, s->_raw.desc.rAddress, m) : 0;
+        };
+        const auto mapOf = [&](uint32_t slot) -> uint8_t {
+            RMTexture *t = slot < 31 ? (__bridge RMTexture *)textures[slot] : nil;
+            return t && t->_rawOk ? t->_raw.addressMap : 0;
+        };
+        uint8_t map = 0;
+        if (!raw::pairedSamplerMap(raw::kernelSamplerPairs(e), header, mapOf, map))
+            return int(i);
+    }
+    return -1;
 }
 
 raw::KernelUse textureUse(RMTexture *t, bool writes)
@@ -158,6 +189,19 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
     uint32_t shadowSlots = 0;
     for (uint8_t region = 0; region < kernels->count; ++region) {
         const auto *k = kernels->jobs[region]->value();
+        if (const int split = pairedSamplerSplit(plan, state, *k->rec, textures); split >= 0) {
+            const raw::PackKernelEntry &x = k->rec->entry[split];
+            NSString *reason =
+                [NSString stringWithFormat:
+                              @"Kernel %016llx's sampler at set-0 offset %u samples texture slots 0x%x whose address "
+                              @"maps give it two headers, which one sampler word cannot hold",
+                              (unsigned long long)k->rec->keyHash, x.offset, raw::kernelSamplerPairs(x)];
+            os_log_error(rawLog(), "raw: %{public}s", reason.UTF8String);
+            failCommandBuffer(cb, reason, MTLCommandBufferErrorInternal);
+            if (why)
+                *why = "a kernel sampler that samples textures whose address maps give it different headers";
+            return false;
+        }
         for (uint32_t e = 0; e < k->rec->entries; e++) {
             const raw::PackKernelEntry &x = k->rec->entry[e];
             RMTexture *t = x.kind == raw::KernelTexture && x.slot < 31 ? textureAt(x.slot) : nil;
@@ -171,9 +215,9 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
             const raw::KernelTextureForm form = t ? raw::kernelTextureForm(t->_raw) : raw::KernelTextureForm::InPlace;
             if (form == raw::KernelTextureForm::Shadow)
                 shadowSlots |= 1u << x.slot;
-            // a kernel's sampler handles are words of their own, not paired with a texture as a draw's are: its samplers
-            // take a converted texture's address map (raw_compute.cpp) where the map changes none of them, or where every
-            // texture the kernel binds is under that one map
+            // a kernel's sampler handles are words of their own, not paired with a texture as a draw's are: a sampler entry
+            // that holds its pairs takes the map of the textures it samples (raw_compute.cpp); the others take a converted
+            // texture's map where it changes none of them, or where every texture the kernel binds is under that one map
             if (form == raw::KernelTextureForm::Converted && t->_raw.addressMap &&
                 !kernelSamplersMapped(plan, state, *k->rec, textures, t->_raw.addressMap)) {
                 noteRefusal(cb, PredComputeImage, x.slot, TermConvertedSampler, t, k->rec->keyHash);

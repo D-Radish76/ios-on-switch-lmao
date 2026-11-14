@@ -1835,6 +1835,15 @@ public:
     Pipeline *reachTwin(Pipeline &pl, const char **why);
     // s's header under address map `map` (Texture::addressMap), made now if it is not yet
     bool samplerVariant(Sampler &s, uint8_t map);
+
+    // Constexpr sampler `index`'s header index under address map `map`, the same index for the same header; 0: no such
+    // sampler. Read without lock_ as constexprTsc_ is.
+    uint32_t constexprTsc(uint32_t index, uint8_t map) const
+    {
+        if (index >= constexprCount_)
+            return 0;
+        return map >= 1 && map <= 3 ? constexprMapped_[index][map - 1] : constexprTsc_[index];
+    }
     // A two-plane 4:4:4 surface's texture of RGB8_444_2P (542): its planes at `luma`/`chroma` (offsets in the allocation,
     // with their pitches), sampled through an RGBA8 image of the pool (Texture::planar)
     bool createPlanarTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t luma,
@@ -2835,6 +2844,10 @@ private:
     static constexpr uint32_t kConstexprSamplers = 256;  // PackEntry::sampler is a byte
     uint32_t constexprTsc_[kConstexprSamplers] = {};
     uint32_t constexprCount_ = 0;
+    // and under address maps 1 to 3, written with them (placeConstexprVariants): a kernel's sampler entry paired with a
+    // converted texture binds its map's
+    uint32_t constexprMapped_[kConstexprSamplers][3] = {};
+    bool placeConstexprVariants(uint32_t index, const uint32_t words[8]);
 
     // the states the runtime made (addRecord), never removed: Pipeline::rec points into them
     struct Completed {

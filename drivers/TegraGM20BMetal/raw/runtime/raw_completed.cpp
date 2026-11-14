@@ -5,6 +5,7 @@
 #include "raw_gpu.h"
 #include "raw_dynamic_push.h"
 #include "raw_record.h"
+#include "raw_sampler_map.h"
 #include "raw_slm.h"
 #include "raw_storage.h"
 
@@ -53,9 +54,37 @@ bool Device::constexprSampler(const std::array<uint32_t, 8> &words, uint32_t &in
             return false;
         memcpy(tsc_.cpu + 32 * tsc, words.data(), 32);
         constexprTsc_[constexprCount_] = tsc;
+        if (!placeConstexprVariants(constexprCount_, words.data())) {
+            freeTsc_.push_back(tsc);
+            return false;
+        }
         known = completedSamplers_.emplace(words, uint8_t(constexprCount_++)).first;
     }
     index = known->second;
+    return true;
+}
+
+// lock_ held, or the device not yet shared: constexpr sampler `index`'s headers under address maps 1 to 3, its own where a
+// map changes none of its modes and one header for each distinct result
+bool Device::placeConstexprVariants(uint32_t index, const uint32_t words[8])
+{
+    uint32_t mapped[4][8], tsc[4] = {constexprTsc_[index]}, taken[3], takenCount = 0;
+    memcpy(mapped[0], words, sizeof mapped[0]);
+    for (uint8_t map = 1; map < 4; map++) {
+        mapSamplerHeader(words, map, mapped[map]);
+        for (uint8_t same = 0; same < map && !tsc[map]; same++)
+            if (!memcmp(mapped[same], mapped[map], sizeof mapped[map]))
+                tsc[map] = tsc[same];
+        if (tsc[map])
+            continue;
+        if (!takeTsc(tsc[map])) {
+            freeTsc_.insert(freeTsc_.end(), taken, taken + takenCount);
+            return false;
+        }
+        taken[takenCount++] = tsc[map];
+        memcpy(tsc_.cpu + 32 * tsc[map], mapped[map], 32);
+    }
+    memcpy(constexprMapped_[index], tsc + 1, sizeof constexprMapped_[index]);
     return true;
 }
 

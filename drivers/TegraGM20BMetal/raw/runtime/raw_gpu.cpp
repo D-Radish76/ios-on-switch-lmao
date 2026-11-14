@@ -35,6 +35,7 @@
 #include "raw_residual.h"
 #include "raw_multisample.h"
 #include "raw_rotated_pass.h"
+#include "raw_sampler_map.h"
 #include "raw_draw_interlock.h"
 #include "raw_ycbcr_store.h"
 #include "raw_fragment_tests.h"
@@ -656,6 +657,11 @@ bool Device::init(std::string &err)
         memcpy(tsc_.cpu + 32 * nextTsc_, cs + 8 * i, 32);
         constexprTsc_[constexprCount_++] = nextTsc_++;
     }
+    for (uint32_t i = 0; i < pack_.header()->samplers; i++)
+        if (!placeConstexprVariants(i, cs + 8 * i)) {
+            err = "no sampler header left for the pack's constexpr samplers under converted textures' address maps";
+            return false;
+        }
     // SET_CT_WRITE(i), as the baseline leaves it where a state's registers do not set it
     const uint32_t *base = pack_.section<uint32_t>(PackBaseline);
     for (uint64_t i = 0; i < pack_.bytes(PackBaseline) / 8; i++)
@@ -3354,10 +3360,8 @@ bool Device::samplerVariant(Sampler &s, uint8_t map)
     if (s.mapped[map])
         return true;
     SamplerDesc d = s.desc;
-    const bool wrapped = map == 1 || map == 3, clamps = map == 2 || map == 3;
     for (uint8_t *m : {&d.sAddress, &d.tAddress, &d.rAddress})
-        if ((wrapped && *m >= 1 && *m <= 3) || (clamps && (*m == 4 || *m == 5)))
-            *m = 0;
+        *m = mappedAddressMode(*m, map);
     if (d.sAddress == s.desc.sAddress && d.tAddress == s.desc.tAddress && d.rAddress == s.desc.rAddress) {
         s.mapped[map] = s.tsc;
         return true;
