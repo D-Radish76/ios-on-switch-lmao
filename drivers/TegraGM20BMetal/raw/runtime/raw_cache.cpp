@@ -193,8 +193,6 @@ void writeRecord(Writer &w, const RuntimeRecord *record)
     w.list(record->extras);
     w.list(record->restore);
     w.list(record->samplers);
-    w.value(record->amplificationLayerWord);
-    w.value(record->amplificationViewportWord);
     w.value(uint8_t((record->splitTried ? kSplitTried : 0) | (record->split ? kSplit : 0)));
     if (record->split) {
         w.value(record->splitRecord);
@@ -227,8 +225,6 @@ bool readRecord(Reader &r, RuntimeRecord &rec, bool twinned)
     rec.extras = r.list<std::pair<uint32_t, uint32_t>>();
     rec.restore = r.list<std::pair<uint32_t, uint32_t>>();
     rec.samplers = r.list<std::array<uint32_t, 8>>();
-    rec.amplificationLayerWord = r.value<uint8_t>();
-    rec.amplificationViewportWord = r.value<uint8_t>();
     const uint8_t split = r.value<uint8_t>();
     rec.splitTried = split & kSplitTried;
     rec.split = split & kSplit;

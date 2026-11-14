@@ -248,6 +248,32 @@ class LogHarvestTest(unittest.TestCase):
         self.assertEqual(logharvest.untested(IMAGE + CUBIC + ' | tests=2 | xr2p | xrs=2'), IMAGE + CUBIC + ' | xrs=2')
         self.assertEqual(logharvest.untested(IMAGE + ' | xr2p'), IMAGE)
 
+    def test_a_framework_only_the_crawl_names_takes_the_crawls_path(self):
+        tungsten = f'{HEAD} | v tungsten_vertex  | f tungsten_fragment  | l Tungsten'
+        records = [record(BOOT, 'Photos', 'OS version: 24B119'), made(BOOT, 'Photos', '0000000000000009', tungsten)]
+        boots = logharvest.read_boots(records)
+        _, report = logharvest.harvest(boots, CORPUS.splitlines(), None, Path('/nonexistent'))
+        self.assertEqual(report.left['Photos', 'no library path for Tungsten'], 1)
+        with tempfile.TemporaryDirectory() as scratch:
+            crawl = Path(scratch) / 'inventory.json'
+            library = 'System/Library/PrivateFrameworks/Tungsten.framework/default.metallib'
+            crawl.write_text(json.dumps({'libraries': [library]}))
+            new, report = logharvest.harvest(boots, CORPUS.splitlines(), None, Path('/nonexistent'), crawl)
+        self.assertEqual(report.added['Photos'], 1)
+        self.assertIn(' lib=/System/Library/PrivateFrameworks/Tungsten.framework/default.metallib ', new[0])
+
+    def test_a_part_whose_trailing_space_the_log_dropped_rejoins_whole(self):
+        head = f'label={CA_LABEL} '
+        key = 'k' * (699 - len(head)) + ' fc_has_premultiply:53:00'
+        text = head + key
+        chunks = [text[i : i + 700] for i in range(0, len(text), 700)]
+        logged = [
+            record(BOOT, 'backboardd', f'raw: harvest 000000000000000a {i + 1}/{len(chunks)} {chunk.rstrip()}')
+            for i, chunk in enumerate(chunks)
+        ]
+        boot = logharvest.read_boots(logged)[BOOT]
+        self.assertEqual(logharvest.whole(boot, 'backboardd', '000000000000000a'), (CA_LABEL, key))
+
     def test_left_out_states_are_counted_by_reason(self):
         boots = logharvest.read_boots(boot_records())
         _, report = logharvest.harvest(boots, CORPUS.splitlines(), None, Path('/nonexistent'))

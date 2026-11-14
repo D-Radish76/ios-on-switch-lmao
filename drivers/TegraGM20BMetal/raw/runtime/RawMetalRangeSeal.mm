@@ -435,7 +435,9 @@ bool RMRangeEncode::seal(size_t to, bool &stale)
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     splitCaptureCommitted(*rc);
 #endif
-    if (!rc->commit(seq)) {
+    const bool committed = rc->commit(seq);
+    cb->_rangeQuiet = rc->quietEnd;
+    if (!committed) {
         cb->_partial = rc->partial;
         if (rc->partial)
             firstContents_->submitted(cb);

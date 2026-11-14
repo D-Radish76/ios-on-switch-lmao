@@ -7,6 +7,7 @@
 #   bazel run //tools/gpu/maxwell:blendcheck -- <dump dir>   (storage forms whose shader computes the blend)
 #   bazel run //tools/gpu/maxwell:gate -- --rungs <dump dir> --corpus ...   (fetch-free forms through the ROP: rungcheck.py)
 #   bazel run //tools/gpu/maxwell:storecheck -- <pack.bin> --corpus ...   (what storage forms do with each fetched colour)
+#   bazel run //tools/gpu/maxwell:ticketcheck -- <pack.bin>   (each interlock ticket reader's wait and header bit)
 #
 # direct_exec_test runs the raw path's direct compile of direct/exec.metal's states and kernels and the counter resolve
 # kernel (direct/directrun.mm, built on this Mac beside the shader tools' mock GM20B) and executes their programs here.
@@ -118,6 +119,7 @@ py_library(
         ":interp",
         ":isa",
         ":nakstat",
+        ":rop",
         "//drivers/TegraGM20BMetal:raw_pack",
         "//tools/benchloop:lib",
     ],
@@ -162,6 +164,41 @@ py_test(
     size = "small",
     srcs = ["storecheck_test.py"],
     deps = [":storecheck_lib"],
+)
+
+py_library(
+    name = "ticketcheck_lib",
+    srcs = ["ticketcheck.py"],
+    deps = [":isa"],
+)
+
+py_binary(
+    name = "ticketcheck",
+    srcs = ["ticketcheck.py"],
+    deps = [":ticketcheck_lib"],
+)
+
+py_test(
+    name = "ticketcheck_test",
+    size = "small",
+    srcs = ["ticketcheck_test.py"],
+    deps = [":ticketcheck_lib"],
+)
+
+# Every interlock ticket reader of the configured kind's full pack (ticketcheck.py)
+py_test(
+    name = "ticketcheck_pack_test",
+    size = "small",
+    srcs = ["ticketcheck_test.py"],
+    data = ["//gpu/seed:raw_pack"],
+    env = {"TICKETCHECK_PACK": "$(rootpath //gpu/seed:raw_pack)/pack.bin"},
+    main = "ticketcheck_test.py",
+    # m2v: //gpu/seed:raw_pack's probe runs NVK until the pack generator stops needing it
+    tags = [
+        "m2v",
+        "pack",
+    ],
+    deps = [":ticketcheck_lib"],
 )
 
 py_test(

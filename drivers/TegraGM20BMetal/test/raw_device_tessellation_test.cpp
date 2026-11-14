@@ -2,8 +2,9 @@
 // raw_tessellation.cpp and a tessellation state's record on raw::Device: its control and evaluation programs bound at their
 // stages beside its tessellator registers, the stages switched off again after it, patches drawn only with it and
 // primitives only without it, a draw's indexing and control points as Metal draws them for the state, and Metal's factor
-// scale as m2v's control stage takes it.
+// scale as m2v's control stage takes it. Each holds of the state's runtime record and of its pack record alike.
 #include "raw_device_harness.h"
+#include "raw_record_pack.h"
 #include "../raw/runtime/raw_icb.h"
 #include "../raw/runtime/raw_record.h"
 #include <cmath>
@@ -68,7 +69,8 @@ raw::RuntimeRecord record(bool tessellates, uint64_t key, uint8_t indexBytes = 0
     return r;
 }
 
-class DeviceTessellation : public harness::DeviceTest {
+// The parameter: the states' records are the pack's (raw_record_pack.h), else the runtime's (Device::addRecord)
+class DeviceTessellation : public harness::DeviceTest, public testing::WithParamInterface<bool> {
 protected:
     raw::Texture target;
     raw::Buffer factors, indices;
@@ -76,17 +78,26 @@ protected:
 
     void SetUp() override
     {
-        DeviceTest::SetUp();
+        const std::vector<raw::RuntimeRecord> records = {record(true, 0x7e55), record(false, 0x7e56),
+                                                         record(true, 0x7e57, 2)};
+        if (GetParam()) {
+            kernel_model::model = {};
+            std::string err;
+            ASSERT_TRUE(dev.open(harness::recordPack(records, "tessellation-pack.bin").c_str(), 0, err,
+                                 raw::Device::Role::Client))
+                << err;
+        } else {
+            DeviceTest::SetUp();
+        }
         ASSERT_TRUE(dev.createTexture(64, 64, kRGBA8, target));
         ASSERT_TRUE(dev.createBuffer(4096, factors));
         ASSERT_TRUE(dev.createBuffer(4096, indices));
-        std::string why;
-        patches = dev.addRecord(record(true, 0x7e55), false, why);
-        ASSERT_NE(patches, nullptr) << why;
-        plain = dev.addRecord(record(false, 0x7e56), false, why);
-        ASSERT_NE(plain, nullptr) << why;
-        indexed = dev.addRecord(record(true, 0x7e57, 2), false, why);
-        ASSERT_NE(indexed, nullptr) << why;
+        raw::Pipeline **made[] = {&patches, &plain, &indexed};
+        for (size_t k = 0; k < records.size(); k++) {
+            std::string why;
+            *made[k] = GetParam() ? dev.pipeline(records[k].pipeline.keyHash) : dev.addRecord(records[k], false, why);
+            ASSERT_NE(*made[k], nullptr) << why;
+        }
     }
 
     template <class Draw> std::string drawWith(raw::Pipeline *pl, Draw draw)
@@ -116,7 +127,7 @@ protected:
     }
 };
 
-TEST_F(DeviceTessellation, AStateBindsItsControlAndEvaluationProgramsAndSwitchesThemOffAfter)
+TEST_P(DeviceTessellation, AStateBindsItsControlAndEvaluationProgramsAndSwitchesThemOffAfter)
 {
     const auto bound = methods(patches->methods);
     ASSERT_EQ(bound.count(kProgramControl), 1u);
@@ -132,7 +143,7 @@ TEST_F(DeviceTessellation, AStateBindsItsControlAndEvaluationProgramsAndSwitches
     EXPECT_EQ(methods(plain->methods).count(kProgramControl), 0u);
 }
 
-TEST_F(DeviceTessellation, PatchesDrawOnlyWithATessellationState)
+TEST_P(DeviceTessellation, PatchesDrawOnlyWithATessellationState)
 {
     EXPECT_EQ(drawWith(patches,
                        [](raw::RenderEncoder &e, const char **why) {
@@ -159,7 +170,7 @@ TEST_F(DeviceTessellation, PatchesDrawOnlyWithATessellationState)
 // As Metal draws them (m2v render.rs draw_patches): the state's control points whatever the draw names, a control-point
 // index buffer the state has no index type for unread, none where it has one read as index 0, patch indices from their
 // offset rounded down to 4; control-point indices off their size are refused
-TEST_F(DeviceTessellation, ADrawsIndexingAndControlPointsAreTheStates)
+TEST_P(DeviceTessellation, ADrawsIndexingAndControlPointsAreTheStates)
 {
     const raw::Buffer *points = &indices;
     EXPECT_EQ(drawWith(patches,
@@ -194,7 +205,7 @@ TEST_F(DeviceTessellation, ADrawsIndexingAndControlPointsAreTheStates)
               "");
 }
 
-TEST_F(DeviceTessellation, AnIndirectPatchDrawReadsItsArgumentsOnTheGpu)
+TEST_P(DeviceTessellation, AnIndirectPatchDrawReadsItsArgumentsOnTheGpu)
 {
     raw::Buffer arguments;
     ASSERT_TRUE(dev.createBuffer(256, arguments));
@@ -209,7 +220,7 @@ TEST_F(DeviceTessellation, AnIndirectPatchDrawReadsItsArgumentsOnTheGpu)
 }
 
 // Set 1 is bound at the vertex and pixel programs' slots alone (Pipeline::heapSlot)
-TEST_F(DeviceTessellation, AStateWhoseTessellationProgramReadsSetOneIsRefused)
+TEST_P(DeviceTessellation, AStateWhoseTessellationProgramReadsSetOneIsRefused)
 {
     raw::RuntimeRecord r = record(true, 0x7e58);
     r.tessPrograms[1].id = "tessheap";
@@ -223,6 +234,23 @@ TEST_F(DeviceTessellation, AStateWhoseTessellationProgramReadsSetOneIsRefused)
                        }),
               "a tessellation program that reads argument buffers through set 1");
 }
+
+// A pack record draws with the methods and restore its runtime record has: only where each program sits differs
+TEST_P(DeviceTessellation, ItsMethodsAndRestoreAreTheRuntimeRecordsOfTheState)
+{
+    std::string why;
+    const raw::Pipeline *made = dev.addRecord(record(true, 0x7e59), false, why);
+    ASSERT_NE(made, nullptr) << why;
+    EXPECT_EQ(patches->restore, made->restore);
+    auto bound = methods(patches->methods), runtime = methods(made->methods);
+    for (const uint32_t placed : {0x2044u, 0x2144u, kProgramControl, kProgramEvaluation}) {
+        bound.erase(placed);
+        runtime.erase(placed);
+    }
+    EXPECT_EQ(bound, runtime);
+}
+
+INSTANTIATE_TEST_SUITE_P(RuntimeAndPackRecords, DeviceTessellation, testing::Bool());
 
 TEST(TessellationScale, MetalsScaleAsAHalfAsM2vPushesIt)
 {

@@ -108,6 +108,13 @@ public:
         return bound_;
     }
 
+    // The pack generator's: the registers of the last make's stride twin (RuntimeRecord::strideTwin), as `registers`
+    // holds the record's
+    const std::map<uint32_t, uint32_t> &strideTwinRegisters() const
+    {
+        return twinRegisters_;
+    }
+
     // The record of `descriptor`'s kernel at a dispatch of `dispatch`'s shape and bindings, whose compute key is `key`
     // (raw_direct_compute.h)
     CompileOutcome kernel(MTLComputePipelineDescriptor *descriptor, const NmbDirectDispatch &dispatch,
@@ -121,6 +128,7 @@ private:
     std::string storageRefusal_;
     bool keepBound_ = false;
     BoundDraw bound_;
+    std::map<uint32_t, uint32_t> twinRegisters_;
 
     CompileOutcome form(MTLRenderPipelineDescriptor *descriptor, bool barrier, ProbeTextures textures,
                         const std::string &key, const std::vector<uint32_t> &attributes, RuntimeRecord &out,

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // The fetch ladder's fixed-function rungs (raw_pack.h PackFetchRung): where a state that blends by fetching its own
 // colour may instead draw through the ROP, with its fetch-free form (raw_fetch_free.h) where the pack holds one. Each
-// rung is taken only once its unit is proven on the chip (raw_chip_facts.h kProvenUnits, kIteratedProven).
+// rung is taken once its unit is proven on the chip (raw_chip_facts.h kProvenUnits), rung 3 for the programs whose
+// passes beat the interlock (kIteratedProven).
 #pragma once
 #include <cstdint>
 #include "raw_chip_facts.h"
@@ -70,7 +71,7 @@ constexpr uint64_t iteratedProgramName(std::string_view name)
     return h;
 }
 
-// Whether the device proved the program worth its passes (raw_chip_facts.h kIteratedProven)
+// Whether the program's passes cost less than the interlocked storage form (raw_chip_facts.h kIteratedProven)
 constexpr bool iteratedProgramProven(uint64_t program)
 {
     for (const std::string_view name : kIteratedProven)

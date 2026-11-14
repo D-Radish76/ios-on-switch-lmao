@@ -270,7 +270,10 @@ host_test(
     name = "context_test",
     srcs = ["context_test.cpp"],
     data = ["testdata/context_capture.txt"],
-    deps = ["//kits/SwitchGM20BEmit:context_h"],
+    deps = [
+        "//kits/SwitchGM20B:classes",
+        "//kits/SwitchGM20BEmit:context_h",
+    ],
 )
 
 host_test(

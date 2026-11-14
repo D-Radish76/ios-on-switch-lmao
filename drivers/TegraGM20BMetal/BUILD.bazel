@@ -71,6 +71,7 @@ filegroup(
         "raw/runtime/raw_metallib.h",
         "raw/runtime/raw_pack.h",
         "raw/runtime/RawPipelineKey.h",  # the runtime's key of a state, which probe_states.h files records under
+        "raw/runtime/raw_pipeline_fields.h",  # the descriptor fields that key reads
     ],
 )
 
@@ -88,10 +89,12 @@ filegroup(
         "raw/runtime/RawRenderKey.h",
         "raw/runtime/RawRenderKey.mm",
         "raw/runtime/RawPipelineKey.h",
+        "raw/runtime/raw_pipeline_fields.h",
         "raw/runtime/raw_render_key.h",
         "raw/runtime/raw_cache.cpp",
         "raw/runtime/raw_cache.h",
         "raw/runtime/raw_cache_io.h",
+        "raw/runtime/raw_cbuf.h",
         "raw/runtime/raw_kernel_cache.cpp",
         "raw/runtime/raw_compute_key.h",
         "raw/runtime/raw_compute_record.h",
@@ -275,8 +278,10 @@ ios_binary(
         "raw/runtime/raw_amplification.cpp",
         "raw/runtime/raw_arena.cpp",
         "raw/runtime/raw_comp.cpp",
+        "raw/runtime/raw_completed.cpp",
         "raw/runtime/raw_gpu.cpp",
         "raw/runtime/raw_private_comp.cpp",
+        "raw/runtime/raw_record_parts.cpp",
         "raw/runtime/raw_draw_bands.cpp",
         "raw/runtime/raw_job_uses.cpp",
         "raw/runtime/raw_resolve_twod.cpp",
@@ -386,6 +391,7 @@ py_test(
     name = "fetchfree_test",
     srcs = ["raw/pack/ca/fetchfree_test.py"],
     data = [
+        "precompile/corpus.log",
         "raw/pack/ca/qc-21H461.json",
         "raw/pack/ca/qc-24B119.json",
     ],
@@ -419,6 +425,7 @@ py_test(
 py_test(
     name = "iterated_table_test",
     srcs = ["raw/pack/iterated/table_test.py"],
+    data = ["raw/runtime/raw_chip_facts.h"],
     main = "raw/pack/iterated/table_test.py",
     deps = [":raw_pack"],
 )

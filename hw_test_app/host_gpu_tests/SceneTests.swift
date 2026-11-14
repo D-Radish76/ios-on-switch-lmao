@@ -48,7 +48,7 @@ final class SceneTests: XCTestCase {
         let scene = try XCTUnwrap(Scenes.all.first { $0.id == "gpu.raw.framebuffer_fetch_depth" })
         let result = try await scene.run(gpu)
         XCTAssertTrue(result.passed, result.reasons(limit: 8).joined(separator: "; "))
-        XCTAssertEqual(result.checks.count, [1, 2, 4, 8].filter(gpu.device.supportsTextureSampleCount).count * 4)
+        XCTAssertEqual(result.checks.count, [1, 2, 4, 8].filter(gpu.device.supportsTextureSampleCount).count * 6)
     }
 
     func testFetchBlendOrderOnThisMac() async throws {

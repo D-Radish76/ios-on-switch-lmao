@@ -1514,7 +1514,7 @@ pub fn translate(
         f => raw::<PixelFormat>(f, "texture format")?,
     };
     let amplification = descriptor.max_vertex_amplification_count.max(1);
-    let budget = Budget::standard();
+    let budget = crate::compile_budget();
     let base = compile
         .compile_render_pipeline(descriptor, &budget)
         .map_err(compile_error("compile"))?;

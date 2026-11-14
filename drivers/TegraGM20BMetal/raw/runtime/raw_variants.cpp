@@ -72,6 +72,7 @@ Pipeline *Device::variant(Pipeline &pl, uint32_t facts)
         if (index[s] != (s ? pp.fs : pp.vs))
             made.memoryEntries |= placedSetReads(placed[s].header, *placed[s].record, pp);
     made.restore = pl.restore;
+    made.strideTwin = pl.strideTwin;
     if (const PackSplit *split = pack_.split(index[1]); split && !made.storageBits) {
         SplitSource source;
         source.rec = *split;

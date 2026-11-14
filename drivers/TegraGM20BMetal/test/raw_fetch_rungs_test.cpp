@@ -60,19 +60,22 @@ TEST(RawFetchRungs, DataTargetsKeepTheExactBlend)
     EXPECT_FALSE(raw::fixedBlendAcceptable(a));
 }
 
-TEST(RawFetchRungs, IteratedBlendTakesTheProgramsTheDeviceProvedOnOneTarget)
+TEST(RawFetchRungs, IteratedBlendTakesTheProgramsWhosePassesBeatTheInterlockOnOneTarget)
 {
     raw::IteratedAsk a;
     a.candidate = true;
     a.colourTargets = 1;
-    a.programWords = 13;
-    a.constants = 3;
-    a.program = raw::iteratedProgramName("dso");
-    EXPECT_EQ(raw::iteratedBlendUsable(a), raw::iteratedProgramProven(a.program));
-    EXPECT_TRUE(raw::kIteratedProven.empty()) << "gpu.raw.fetch_rung3 has proven no program on the chip";
-    EXPECT_NE(raw::iteratedProgramName("dso"), raw::iteratedProgramName("pld"));
+    a.programWords = 2;
+    a.program = raw::iteratedProgramName("mpy");
+    EXPECT_TRUE(raw::iteratedBlendUsable(a));
     a.colourTargets = 2;
-    EXPECT_FALSE(raw::iteratedBlendUsable(a));
+    EXPECT_FALSE(raw::iteratedBlendUsable(a)) << "the unit refuses a second colour target (0x59)";
+    a.colourTargets = 1;
+    for (const char *slower : {"slt", "dso", "dlc", "vcm", "vcm.rows", "lum", "cli", "hue"}) {
+        a.program = raw::iteratedProgramName(slower);
+        EXPECT_FALSE(raw::iteratedBlendUsable(a)) << slower << " costs more passes than the interlock";
+    }
+    EXPECT_NE(raw::iteratedProgramName("dso"), raw::iteratedProgramName("pld"));
 }
 
 }  // namespace

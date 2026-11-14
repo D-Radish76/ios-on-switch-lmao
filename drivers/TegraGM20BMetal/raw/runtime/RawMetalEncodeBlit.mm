@@ -2,6 +2,7 @@
 // A blit encoder's commands of the tape onto the copy engine (and the 2D engine's mip chains): see encodeRaw.
 #import "RawMetalInternal.h"
 #include "../fx/fx_mip_route.h"
+#include "raw_attachment_target.h"
 #include "raw_twod_fill.h"
 
 // What stands for a texture's memory in its blit encoder's order (raw::BlitEncoder::access): its surface, its buffer, or the
@@ -210,8 +211,9 @@ bool fillTexturePass(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc)
     return true;
 }
 
-// Levels first + 1 .. last of a chain by the pack's mip state (raw_mip.h): one pass a level, level l + 1 drawn from a header of
-// level l alone. Each pass's prologue barrier orders its reads after the pass before wrote.
+// Levels first + 1 .. last of a chain by the pack's mip state (raw_mip.h): one pass a level of each layer, level l + 1 drawn
+// from a header of level l alone (an sRGB chain's: its codes), the two levels' sizes its step. Each pass's prologue barrier
+// orders its reads after the pass before wrote.
 bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t last, const char **why)
 {
     raw::Device &d = *gRM->raw;
@@ -219,32 +221,49 @@ bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t la
     const raw::fx::MipChain &c = t->_raw.chain->layout;
     if (!mip || last >= c.levels)
         return false;
+    const raw::FormatInfo *f = raw::formatInfo(t->_raw.format);
+    const bool codes = f && f->srgb;
+    const uint32_t codesFormat = t->_raw.format == 81 ? 80 : t->_raw.format == 71 ? 70 : t->_raw.format;
     useTexture(rc, t, true);
-    for (uint32_t l = first; l < last; l++) {
-        raw::Texture from = t->_raw, to;
-        from.tic = d.levelTic(t->_raw, l);
-        if (!from.tic || !raw::chainLevelTarget(t->_raw, l + 1, to))
-            return false;
-        to.tic = d.levelTic(t->_raw, l + 1);
-        raw::PassDesc p;
-        p.color[0].texture = &to;
-        p.color[0].load = raw::ColorAttachment::DontCare;
-        p.color[0].store = true;
-        p.count = 1;
-        p.width = c.level[l + 1].width;
-        p.height = c.level[l + 1].height;
-        raw::RenderEncoder *e = rc->render(p);
-        if (!e)
-            return false;
-        e->setPipeline(mip);
-        e->setTexture(0, &from);
-        const float inverseSize[2] = {1.0f / float(p.width), 1.0f / float(p.height)};
-        e->setBytes(2, 0, inverseSize, sizeof inverseSize);
-        if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
-            return false;
-        e->end();
-    }
-    RAW_DIAGNOSTIC(d.stats.mip3dLevels += last - first);
+    for (uint32_t layer = 0; layer < c.layers; layer++)
+        for (uint32_t l = first; l < last; l++) {
+            raw::Texture from = t->_raw, to;
+            if (c.layers == 1) {
+                from.tic = d.levelTic(t->_raw, l, codes);
+                if (!raw::chainLevelTarget(t->_raw, l + 1, to))
+                    return false;
+                to.tic = d.levelTic(t->_raw, l + 1);
+            } else {
+                raw::Texture part;
+                if (!raw::attachmentTarget(t->_raw, l, layer, part) ||
+                    !raw::attachmentTarget(t->_raw, l + 1, layer, to))
+                    return false;
+                part.format = codesFormat;
+                from.tic = d.attachmentTic(t->_raw, part, l, layer);
+                to.layers = 1;
+                to.tic = d.attachmentTic(t->_raw, to, l + 1, layer);
+            }
+            if (!from.tic)
+                return false;
+            raw::PassDesc p;
+            p.color[0].texture = &to;
+            p.color[0].load = raw::ColorAttachment::DontCare;
+            p.color[0].store = true;
+            p.count = 1;
+            p.width = c.level[l + 1].width;
+            p.height = c.level[l + 1].height;
+            raw::RenderEncoder *e = rc->render(p);
+            if (!e)
+                return false;
+            e->setPipeline(mip);
+            e->setTexture(0, &from);
+            const uint32_t step[4] = {c.level[l].width, c.level[l].height, p.width, p.height};
+            e->setBytes(2, 0, step, sizeof step);
+            if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
+                return false;
+            e->end();
+        }
+    RAW_DIAGNOSTIC(d.stats.mip3dLevels += (last - first) * c.layers);
     return true;
 }
 

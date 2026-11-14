@@ -87,17 +87,9 @@ CompileOutcome Direct::form(MTLRenderPipelineDescriptor *descriptor, bool barrie
                             const std::string &key, const std::vector<uint32_t> &attributes, RuntimeRecord &out,
                             std::string &why, std::map<uint32_t, uint32_t> *registers, bool split)
 {
-    Asked a = {compile_,
-               rules_,
-               key,
-               attributes,
-               out,
-               registers,
-               split,
-               variants_,
-               keepBound_ ? &bound_ : nullptr,
-               textures.xrSlots,
-               {}};
+    Asked a = {
+        compile_,         rules_, key, attributes, out, registers, split, variants_, keepBound_ ? &bound_ : nullptr,
+        textures.xrSlots, {}};
     if (keepBound_)
         bound_ = {};
     std::vector<NmbDirectCubicSampler> cubic;
@@ -189,7 +181,9 @@ CompileOutcome Direct::strideTwin(MTLRenderPipelineDescriptor *descriptor, Probe
     std::string twinWhy;
     const bool barrier = (out.pipeline.flags & PipelineBarrierForm) || !storageRefusal_.empty();
     const BoundDraw bound = bound_;
-    const CompileOutcome outcome = form(descriptor, barrier, textures, key, attributes, *twin, twinWhy, nullptr, split);
+    twinRegisters_.clear();
+    const CompileOutcome outcome = form(descriptor, barrier, textures, key, attributes, *twin, twinWhy,
+                                        keepBound_ ? &twinRegisters_ : nullptr, split);
     bound_ = bound;
     if (outcome == CompileOutcome::Failed) {
         why = "its stride twin: " + twinWhy;
@@ -200,6 +194,7 @@ CompileOutcome Direct::strideTwin(MTLRenderPipelineDescriptor *descriptor, Probe
     dropUnreadFetches(*twin);
     twin->pipeline.flags |= out.pipeline.flags & PipelineBarrierForm;
     twin->pipeline.keyHash = packKeyHash(strideTwinKey(key));
+    out.pipeline.strideTwin = twin->pipeline.keyHash;
     out.strideTwin = std::move(twin);
     return CompileOutcome::Made;
 }
@@ -244,7 +239,8 @@ CompileOutcome Direct::kernel(MTLComputePipelineDescriptor *descriptor, const Nm
                               const std::string &key, ComputeRecord &out, std::string &why)
 {
     if (!translator_.compute || !StageCompile::abiMatches()) {
-        why = translator_.compute ? "the stage compile's structs are not raw_direct_nvk.h's" : "no translator of kernels";
+        why =
+            translator_.compute ? "the stage compile's structs are not raw_direct_nvk.h's" : "no translator of kernels";
         return CompileOutcome::Failed;
     }
     AskedKernel a = {compile_, key, out, {}};

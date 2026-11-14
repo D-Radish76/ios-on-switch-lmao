@@ -404,6 +404,9 @@ refresh:
 						    semanticBound, scanoutWrites, closesGroup));
 #endif
 	out->seqno = seqno;
-	out->reserved = 0;
+	out->flags = count && (head.flags & TegraGM20BJobQuiet) &&
+				     !(jobVisibility & SWITCH_GPU_SUBMIT_QUIET)
+			     ? uint32_t(TegraGM20BExecReplyLoud)
+			     : 0u;
 	return kIOReturnSuccess;
 }

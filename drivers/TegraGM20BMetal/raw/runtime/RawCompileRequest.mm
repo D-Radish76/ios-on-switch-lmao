@@ -36,46 +36,6 @@ MTLFunctionConstantValues *constantValuesOf(const std::string &text)
     return values;
 }
 
-PipelineFields fieldsOf(MTLRenderPipelineDescriptor *d)
-{
-    PipelineFields f;
-    f.samples = d.rasterSampleCount;
-    f.topology = d.inputPrimitiveTopology;
-    f.depthFormat = d.depthAttachmentPixelFormat;
-    f.stencilFormat = d.stencilAttachmentPixelFormat;
-    f.rasterization = d.rasterizationEnabled ? 1 : 0;
-    f.amplification = d.maxVertexAmplificationCount;
-    f.patchType = d.vertexFunction.patchType;
-    f.tessellation = {d.tessellationPartitionMode,
-                      d.tessellationFactorFormat,
-                      d.tessellationFactorStepFunction,
-                      d.tessellationOutputWindingOrder,
-                      d.tessellationControlPointIndexType,
-                      d.maxTessellationFactor,
-                      d.tessellationFactorScaleEnabled ? 1u : 0u};
-    for (unsigned i = 0; i < 8; i++) {
-        MTLRenderPipelineColorAttachmentDescriptor *a = d.colorAttachments[i];
-        f.color[i] = {a.pixelFormat,
-                      a.writeMask,
-                      a.blendingEnabled ? 1u : 0u,
-                      a.sourceRGBBlendFactor,
-                      a.destinationRGBBlendFactor,
-                      a.rgbBlendOperation,
-                      a.sourceAlphaBlendFactor,
-                      a.destinationAlphaBlendFactor,
-                      a.alphaBlendOperation};
-    }
-    if (MTLVertexDescriptor *v = d.vertexDescriptor)
-        for (unsigned i = 0; i < 31; i++) {
-            MTLVertexAttributeDescriptor *a = v.attributes[i];
-            if (a.format == MTLVertexFormatInvalid)
-                continue;
-            MTLVertexBufferLayoutDescriptor *l = v.layouts[a.bufferIndex < 31 ? a.bufferIndex : 0];
-            f.attributes[i] = {a.format, a.offset, a.bufferIndex, l.stride, l.stepFunction, l.stepRate};
-        }
-    return f;
-}
-
 void applyFields(const PipelineFields &f, MTLRenderPipelineDescriptor *d)
 {
     d.rasterSampleCount = f.samples;
@@ -139,9 +99,7 @@ std::string requestPackKey(const CompileRequest &r, bool &own)
     }
     own = !packable;
     const StageKey v{vertex.function, vertex.constants}, f{fragment.function, fragment.constants};
-    MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
-    applyFields(r.fields, d);
-    return pipelineKey(d, &v, &f, linked, framework) + r.variant.name();
+    return pipelineKey(r.fields, &v, &f, linked, framework) + r.variant.name();
 }
 
 StageInFields stageInFieldsOf(MTLStageInputOutputDescriptor *in)

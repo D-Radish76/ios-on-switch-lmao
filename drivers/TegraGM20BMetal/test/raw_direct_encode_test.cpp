@@ -134,6 +134,19 @@ TEST(DirectEncode, AnswersAsNvk)
     EXPECT_GT(checked, 0u);
 }
 
+// VK_FORMAT_A8_UNORM, which Metal's A8Unorm views come as, under the extension name vk_format.c maps it by
+// (VK_FORMAT_A8_UNORM_KHR, an alias in vulkan_core.h): NIL's A8_UNORM row, an R8 texture read as 000R
+TEST(DirectEncode, AnA8ViewIsAnR8ViewReadAsAlpha)
+{
+    constexpr uint32_t kA8 = 1000470001, kR8 = 9, kA1B5G5R5 = 1000470000;
+    const uint32_t identity[4] = {}, alpha[4] = {1, 1, 1, 3};
+    uint32_t a8 = 0, r8 = 0, a1 = 0;
+    ASSERT_TRUE(raw::viewWord0(kA8, identity, false, a8));
+    ASSERT_TRUE(raw::viewWord0(kR8, alpha, false, r8));
+    EXPECT_EQ(a8, r8);
+    EXPECT_TRUE(raw::viewWord0(kA1B5G5R5, identity, false, a1));
+}
+
 // Set 1 as metal2vulkan's heap_set makes it on the raw path's compile devices (pipeline/link.rs: binding n per heap
 // class, 8192 elements, PARTIALLY_BOUND | UPDATE_AFTER_BIND, UPDATE_UNUSED_WHILE_PENDING on some), live and offline
 // alike

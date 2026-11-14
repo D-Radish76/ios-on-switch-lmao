@@ -98,7 +98,7 @@ NSDictionary *stateJson(const raw::RuntimeRecord &r)
         @"vertex_streams" : numbers(p.vertexStreams, sizeof p.vertexStreams),
         @"pulled_stride" : pulled,
         @"amplification" : @[ @(p.amplificationMax), @(p.amplificationIdWord), @(p.amplificationCountWord) ],
-        @"amplification_offsets" : @[ @(r.amplificationLayerWord), @(r.amplificationViewportWord) ],
+        @"amplification_offsets" : @[ @(p.amplificationLayerWord), @(p.amplificationViewportWord) ],
         @"pass_words" : @[ @(p.arrayLengthWord), @(p.viewportCountWord) ],
         @"storage" : @[ @(p.storageMask), @(p.storageWriteMask), @(p.storageTic[0]) ],
         @"control" : @[ @(p.controlWord), @(p.controlPoints), @(p.controlPointIndexBytes) ],

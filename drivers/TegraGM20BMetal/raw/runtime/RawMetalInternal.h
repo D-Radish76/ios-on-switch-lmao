@@ -189,6 +189,7 @@ struct RMRawRetirement {
     // the range laid predicated loops: the stamp of the record that names one which ran past its copies, and the range
     uint32_t loopStamp = 0;
     uint32_t loopFrom = 0, loopTo = 0;
+    uint64_t frameDue = 0;  // left quiet for its frame's loud end, due by then (raw_completion_source.h completionLook)
 };
 
 // A change of the submit worker's schedule another thread hands it (RawState::schedule)

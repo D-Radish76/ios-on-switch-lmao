@@ -61,7 +61,7 @@ swift_test(
     size = "small",
     srcs = glob(["host_gpu_tests/*.swift"]),
     copts = SWIFT_COPTS,
-    data = glob(["shaders/*.metal"]),
+    data = glob(["shaders/*.metal"]) + ["//drivers/TegraGM20BMetal:raw/pack/mip.metal"],
     tags = ["manual"],
     deps = [
         ":core",

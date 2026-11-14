@@ -272,6 +272,9 @@ struct Texture {
     // renders it, block-linear, through a pool image the copy engine fills from it before and copies back to it after (NVK's
     // own tiled shadow, nvk_linear_render_copy, for the same targets: the texels stored are the same)
     bool shadowTarget = false;
+    // A colour view of a zeta's memory (raw_zeta_colour.h): its pages keep the zeta's PTE kind, which the colour ROP's writes
+    // do not reach (boot 21's gpu.raw.zeta_colour), so a pass renders it like a shadow target, through a plain pool image
+    bool zetaPages = false;
     bool memoryless = false;  // no memory: a pass gives it a backing (Device::backing)
     bool wc =
         false;  // its span is write-combined GPU-pool memory (createTexture wc): CPU writes need no clean (Buffer::wc)
@@ -362,6 +365,7 @@ struct Texture {
         uint64_t va = 0;
         uint32_t fmt2d = 0;  // the 2D engine's surface format (fx::twodChainFormat); 0: it makes none of its steps
         uint32_t levelTic[fx::kMaxLevels] = {};  // a view of each level alone (Device::levelTic), made on first use
+        uint32_t levelCodesTic[fx::kMaxLevels] = {};  // the same of an sRGB chain's codes, with no sRGB conversion
     } *chain = nullptr;
 
     // Block-linear (TegraGM20BLayout.h): a chain level as a render target (chainLevelTarget: no memory or header of its own,
@@ -493,6 +497,7 @@ inline uint32_t borderedTsc(const Sampler &s, const Texture *t)
 
 struct SplitState;
 struct SplitSource;
+struct TurnedSource;
 
 #if SWITCH_RAW_DIAGNOSTICS
 // The keyline probe (raw_keyline_probe.h) for 30 s or 256 lines: its budgets start again, and every Core Animation state's
@@ -556,9 +561,6 @@ struct Pipeline {
     bool viewportIndex = false;     // its vertex program writes ViewportIndex (SPH OMAP, raw_viewports.h)
     bool writesLayer = false;       // its last stage before the rasterizer writes Layer: SET_RT_LAYER takes it
     uint32_t colorFormats[8] = {};  // MTLPixelFormat of each color attachment the state was made for (0: none)
-    // an amplifying runtime record's push words + 1 of m2v's AmplificationLayerOffset and AmplificationViewportOffset
-    // (RuntimeRecord's; 0: none), which each amplification writes
-    uint8_t amplificationLayerWord = 0, amplificationViewportWord = 0;
     // its vertex function is Core Animation's fixed_vert_l?h_spc (raw_bounds.h), and attribute 0 (the position) as its key
     // gives it: floats from the stream's vertex start (0: no float position)
     bool caTransform = false;
@@ -579,8 +581,8 @@ struct Pipeline {
     uint8_t fetchBits = 0;      // colors it reads by framebuffer fetch
     uint32_t depthFormat =
         0;  // its key's depth attachment format, else its stencil one (ds=<format>/<format>; 0: none)
-    // push words setting back the registers outside the pack's varying ones its methods set (a state the runtime made:
-    // raw_record.h extras), to their value in every pack state: emitted before the next state's methods
+    // push words setting back the registers outside the pack's varying ones its methods set (raw_record.h extras, a pack
+    // record's in its blob), to their value in every other state: emitted before the next state's methods
     std::vector<uint32_t> restore;
     // where its fragment program is split (raw_split.cpp): what its twin is made of, and the twin, made at the first draw that
     // takes it (both read without the device's lock); on that twin, its split
@@ -616,6 +618,7 @@ struct Pipeline {
     uint16_t xrSlots = 0;
     uint16_t writtenSlots = 0;  // the fragment slots its programs write textures at (raw_written_textures.h)
     Pipeline *turnedTwin = nullptr;
+    const TurnedSource *turnedSource = nullptr;  // a runtime record's turned variant, built at its first turned draw
     // its vertex program writes memory (SPH DOES_GLOBAL_STORE), which a reach twin or bands would write again
     bool vertexStores = false;
     Pipeline *reachTwin = nullptr;  // Device::reachTwin's
@@ -647,6 +650,9 @@ struct SplitLaunch {
     uint32_t cbufBytes[8] = {};
 };
 
+// Pipeline::restore's push words of `dwords` words of (method, value) pairs
+std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords);
+
 // A program in the heap: its record, its SET_PIPELINE_PROGRAM value, its shader data's GPU address (0: none) and its header
 struct PlacedProgram {
     const PackProgram *record = nullptr;
@@ -677,6 +683,26 @@ struct SplitSource {
 
 struct RuntimeRecord;
 struct CapturedProgram;
+
+// A runtime record's program as a heap slot (Device::placeCompleted), placed once per program and constant buffer layout
+struct CompletedSlot {
+    std::string key;  // its program id and constant buffer types
+    std::vector<uint8_t> bytes;
+    PackProgram info = {};
+    uint8_t header[80] = {};
+};
+
+// A runtime record's turned fragment variant (AssumeTurned), placed and built at its state's first turned draw
+// (Device::makeTurned), and the state's own inputs to Device::build
+struct TurnedSource {
+    CompletedSlot fs;
+    const PackPipeline *pp = nullptr;
+    const uint32_t *blob = nullptr, *spills = nullptr;
+    const char *keyString = nullptr;
+    PlacedProgram vs, tess[2];
+    bool tessellates = false, caTransform = false;
+    Pipeline *turned = nullptr;  // where it is built
+};
 
 // A render pass's attachments (Core Animation: color 0 the target, color 1 a memoryless attachment, writeMask 0 or 15)
 struct ColorAttachment {
@@ -1841,6 +1867,9 @@ public:
     // A state the runtime made a record of (raw_record.h), drawn from then on as the pack's are; null: its programs find no room
     // in the heap or its samplers none in the header pool (`why`)
     Pipeline *addRecord(const RuntimeRecord &r, bool caTransform, std::string &why, bool *retry = nullptr);
+    // `pl`'s turned variant (TurnedSource) at a turned draw, built at the first; null where the heap or local memory has no
+    // room for it: that draw alone is refused (one error line), and the next turned draw places it afresh
+    Pipeline *makeTurned(Pipeline &pl);
 
     // Resources (thread safe). All textures are 2D, one level, one sample, pitch-linear.
     // pool memory, rows 256-byte aligned; `wc`: write-combined GPU-pool memory (a texture the CPU writes with replaceRegion:
@@ -1920,8 +1949,6 @@ public:
     Pipeline *depthResolvePipeline(uint32_t format, uint32_t filter);  // raw_samples.h depthResolveState
     Pipeline *stencilBitsPipeline(uint32_t format, uint32_t samples, StencilSample pick);    // raw_stencil_bits.h
     Pipeline *stencilColourPipeline(uint32_t format, uint32_t samples, StencilSample pick);  // raw_zeta_colour.h
-    // raw_zeta_colour.h: the chip fact, or a debug build's probe asking for the route
-    bool zetaColourTaken() const;
     // raw_reach.h: `pl` drawing its geometry into a reach target; null: *why
     Pipeline *reachTwin(Pipeline &pl, const char **why);
     // s's header under address map `map` (Texture::addressMap), made now if it is not yet
@@ -2045,8 +2072,9 @@ public:
     }
 
     // The texture header of level `level` of mipmapped texture `t`'s chain alone, as NVK's view of that level (a pass into
-    // the level fetches its color through it); 0: none
-    uint32_t levelTic(Texture &t, uint32_t level);
+    // the level fetches its color through it); `codes`: an sRGB chain's level read as its codes, with no sRGB conversion
+    // (pack/mip.metal decodes them); 0: none
+    uint32_t levelTic(Texture &t, uint32_t level, bool codes = false);
     // The header a fetch from `part` (raw::attachmentTarget of level `level`, slice `slice` of `t`, maybe in a format view's
     // format) reads: levelTic's for a 2D chain's level in t's format, else attachmentHeader's, made on first use and freed
     // with t's header, kept in views_ as viewTic's are; 0: none
@@ -2623,8 +2651,10 @@ public:
     std::atomic<bool> probeMipCandidates{false};
     // memoryless zetas the copy engine fills and drains for the shader's depth tests take their compressible kind (raw_comp.h)
     std::atomic<bool> probeZetaKinds{false};
-    // stencil planes take the one-draw route (raw_zeta_colour.h) where it writes them, whatever kColourRopWritesZeta says
-    std::atomic<bool> probeZetaColour{false};
+    // stencil planes take raw_stencil_bits.h's eight draws, not the one-draw route (raw_zeta_colour.h)
+    std::atomic<bool> probeStencilBits{false};
+    // the one-draw route's colour ROP over the zeta's own pages, untiled, not through its pool image (raw_zeta_colour.cpp)
+    std::atomic<bool> probeZetaDirect{false};
     std::atomic<uint64_t> probeEmitted{0};  // draws that emitted them since they were armed
     // hw_test_app's gpu.sched.long_draw_bands: the band budget its unbanded arm sets to 0 (RawMetalProbe.mm)
     std::atomic<uint64_t> bandBudgetNs_{TGM_APP_BAND_NS};
@@ -2993,6 +3023,7 @@ private:
         std::vector<uint32_t> blob, spill;
         PackProgram programs[2];
         Pipeline pipeline, turned;
+        TurnedSource turnedSource;
     };
 
     std::deque<Completed> completedStore_;
@@ -3008,6 +3039,8 @@ private:
 
     std::map<std::string, CompletedProgram> completedPrograms_;  // by program id and constant buffer types
     bool placeCompleted(const CapturedProgram &p, PlacedProgram &out);
+    static CompletedSlot completedSlot(const CapturedProgram &p);
+    bool placeCompletedSlot(const CompletedSlot &slot, PlacedProgram &out);
     // The constexprTsc_ index of sampler header `words`: the pack's own, one a runtime record placed, or placed now (under
     // lock_); false: no room
     bool constexprSampler(const std::array<uint32_t, 8> &words, uint32_t &index);

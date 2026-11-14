@@ -27,9 +27,9 @@ enum class MipEngine : uint8_t {
     ThreeD
 };
 
-// A step goes to the 2D engine where the format has a 2D surface format (twodFormat) and the step is proven, else to the
-// pack's 3D mip state (raw_mip.h). A format with no 3D state keeps its unproven steps on the 2D engine: BGRA8, RGBA8,
-// RGBA16Float, R8 and RG8 have none, and giving them one changes the pack.
+// A step goes to the 2D engine where the format has a 2D surface format (twodChainFormat) and the step is proven, else to
+// the pack's 3D mip state (raw_mip.h), which takes Metal's taps itself. A format with no 3D state would keep its unproven
+// steps on the 2D engine; every 2D chain format has one.
 struct MipStep {
     MipEngine engine = MipEngine::None;
     bool unproven = false;

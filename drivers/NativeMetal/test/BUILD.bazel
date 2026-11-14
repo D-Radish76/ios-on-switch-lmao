@@ -187,6 +187,22 @@ host_test(
 )
 
 host_test(
+    name = "bridge_budget_test",
+    srcs = ["bridge_budget_test.cpp"],
+    data = [
+        "//drivers/NativeMetal:bridge/NativeMetalBridge.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalCompile.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalComputeArtifact.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalDirect.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalDirectCompute.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalDirectTess.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalFunctions.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalOffline.rs",
+        "//drivers/NativeMetal:bridge/NativeMetalVariants.rs",
+    ],
+)
+
+host_test(
     name = "journal_source_test",
     srcs = ["journal_source_test.cpp"],
     data = [

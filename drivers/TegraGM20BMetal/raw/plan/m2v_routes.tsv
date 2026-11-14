@@ -267,7 +267,7 @@ product	twin	rmTwinClass	RawMetal.mm,RawMetalComputeState.mm,RawMetalObjects.h	d
 product	twin	splitTwin	raw_gpu.cpp,raw_gpu.h,raw_split.cpp	none	-	S4 rename	main	-	raw's own split program of a state (prologue and frontier), not m2v: rename to splitForm (S4)
 product	twin	storedZetaTwin	RawMetalMultisample.h,RawMetalMultisample.mm,RawMetalTexture.mm	dead	-	cut	cut	-	the move of a stored depth/stencil texture into its m2v twin before a replay; replaced by nothing
 product	twin	storedZetaTwinExcluded	RawMetalMultisample.mm	dead	-	cut	cut	-	the move of a stored depth/stencil texture into its m2v twin before a replay; replaced by nothing
-product	twin	strideTwin	RawDirect.h,RawDirect.mm,raw_cache.cpp,raw_completed.cpp,raw_gpu.cpp,raw_gpu.h,raw_record.h	none	-	S4 rename	main	-	raw's own stride-form record of a state, not m2v: rename to strideForm (S4)
+product	twin	strideTwin	RawDirect.h,RawDirect.mm,raw_cache.cpp,raw_completed.cpp,raw_gpu.cpp,raw_gpu.h,raw_pack.h,raw_record.h,raw_split.cpp,raw_variants.cpp	none	-	S4 rename	main	-	raw's own stride-form record of a state, not m2v: rename to strideForm (S4)
 product	twin	strideTwinKey	RawDirect.mm,raw_record.h,raw_record_parts.cpp	none	-	S4 rename	main	-	raw's own stride-form record's key, not m2v: rename to strideFormKey (S4)
 product	twin	tTwinTicks	RawMetalObjects.h,RawMetalReplay.mm,RawMetalSubmit.mm	dead	-	cut	cut	-	counters and timing of m2v twins (rates line, frame timeline) or a list of twins; replaced by nothing
 product	twin	takeReachTwin	RawMetalReach.mm,raw_gpu.h,raw_reach.cpp	none	-	S4 rename	main	-	raw's own reach-form selection, not m2v: rename to takeReachForm (S4)
@@ -434,6 +434,9 @@ product	twin	splitTwins	RawMetalSplitRates.mm,raw_gpu.cpp,raw_gpu.h,raw_split.cp
 product	twin	twinDraws	RawMetalPrivateComp.mm,raw_private_comp.h	none	-	S4 rename	main	-	raw's own verdict that a state's barrier form draws the geometry, not m2v: rename to barrierFormDraws (S4)
 product	twin	twinRule	RawMetalDevice.mm,raw_fetch_order.h,raw_gpu.cpp,raw_gpu.h	none	-	S4 rename	main	-	raw's own fetch.twin rule (barrier form over storage form), not m2v: rename to barrierFormRule (S4)
 product	twin	twinTaken	raw_gpu.cpp,raw_twin_rule.h	none	-	S4 rename	main	-	raw's own fetch.twin verdict, not m2v: rename to barrierFormTaken (S4)
+product	twin	strideTwinRegisters	RawDirect.h	none	-	S4 rename	main	-	raw's own stride twin's registers (the record of the state at another vertex stride), not m2v: rename to strideVariantRegisters (S4)
+product	twin	twinRecord	raw_gpu.cpp	none	-	S4 rename	main	-	raw's own stride twin record placed beside its state's (pack strideTwin), not m2v: rename to strideRecord (S4)
+product	twin	twinRegisters_	RawDirect.h,RawDirect.mm	none	-	S4 rename	main	-	raw's own stride twin's registers as RawDirect keeps them, not m2v: rename to strideRegisters_ (S4)
 product	dlsym	MTLCodeGenServiceBuildRequest	compiler_codegen.mm	none	-	-	main	-	not an m2v route (the system's Metal code generation service, which compiles source, stitched and Core Image libraries)
 product	dlsym	MTLCodeGenServiceCreate	compiler_codegen.mm	none	-	-	main	-	not an m2v route (the system's Metal code generation service, which compiles source, stitched and Core Image libraries)
 product	tag	raw:call.tile	RawMetalEncoder.mm	error	raw:call.tile	x1-m2v-forms	x1-m2v-forms@5f33032e4	-	tile dispatch, tile bindings and imageblock sizes on an encoder: tile shaders and imageblocks are Apple4 (Metal feature set tables), a family the device does not claim (raw/test/refused.txt): answered zero with this error line

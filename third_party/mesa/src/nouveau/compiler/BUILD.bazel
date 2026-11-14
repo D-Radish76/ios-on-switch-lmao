@@ -332,6 +332,20 @@ py_test(
     main = "run_host_test.py",
 )
 
+# ios-on-switch-lmao: NAK's 64-bit three-source add before Volta, which SM50's IADD3 lets NIR form (nak/builder.rs
+# sm50_iadd64_tests), from the same binary
+py_test(
+    name = "sm50_iadd64_test",
+    size = "small",
+    srcs = ["run_host_test.py"],
+    args = [
+        "$(rootpath :nak_sm53_half_test_bin)",
+        "sm50_iadd64_tests",
+    ],
+    data = [":nak_sm53_half_test_bin"],
+    main = "run_host_test.py",
+)
+
 # ios-on-switch-lmao: NAK's SM50 XMAD encodings and multiply sequences (nak/sm50/xmad.rs sm53_xmad_tests), from the same binary
 py_test(
     name = "sm53_xmad_test",
@@ -353,6 +367,19 @@ py_test(
     args = [
         "$(rootpath :nak_sm53_half_test_bin)",
         "sm50::alu_tests",
+    ],
+    data = [":nak_sm53_half_test_bin"],
+    main = "run_host_test.py",
+)
+
+# ios-on-switch-lmao: NAK's SM50 LDG cache ops (nak/sm50/ld_cache_tests.rs): the interlock's ticket wait reads L2 alone
+py_test(
+    name = "sm50_ld_cache_test",
+    size = "small",
+    srcs = ["run_host_test.py"],
+    args = [
+        "$(rootpath :nak_sm53_half_test_bin)",
+        "sm50::ld_cache_tests",
     ],
     data = [":nak_sm53_half_test_bin"],
     main = "run_host_test.py",

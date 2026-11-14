@@ -93,18 +93,19 @@ TEST(MipRoute, CoreAnimationStripChain)
     EXPECT_FALSE(raw::fx::mipRoutable(c, false, false));
 }
 
-// Each 2D format's unproven steps have an engine: the pack's mip state where it has one (sRGB), else the 2D engine
+// Each 2D format's unproven steps are its mip state's, which takes Metal's taps (pack/mip.metal)
 TEST(MipRoute, TwoDFormatsAndTheirThreeDStates)
 {
     const struct {
         uint32_t mtl, fmt2d;
-        bool threeD;
-    } formats[] = {{80, 0xcf, false}, {70, 0xd5, false}, {115, 0xca, false}, {10, 0xf3, false},
-                   {30, 0xea, false}, {81, 0xd0, true},  {71, 0xd6, true}};
+    } formats[] = {{80, 0xcf}, {70, 0xd5}, {115, 0xca}, {10, 0xf3}, {30, 0xea}, {81, 0xd0}, {71, 0xd6}};
 
     for (const auto &f : formats) {
         EXPECT_EQ(raw::fx::twodFormat(f.mtl), f.fmt2d) << f.mtl;
-        EXPECT_EQ(raw::mipState(f.mtl) != nullptr, f.threeD) << f.mtl;
+        EXPECT_NE(raw::mipState(f.mtl), nullptr) << f.mtl;
+        const MipChain c = chain(776, 24);
+        for (const MipRun &r : runs(c, true, raw::mipState(f.mtl) != nullptr))
+            EXPECT_EQ(r.unproven, 0u) << f.mtl << ": 97 -> 48 on the 2D engine";
     }
     for (uint32_t mtl : {1u, 20u, 25u, 40u, 43u, 55u, 60u, 65u, 90u, 92u, 94u, 105u, 110u, 125u}) {
         EXPECT_EQ(raw::fx::twodFormat(mtl), 0u) << mtl;
@@ -118,7 +119,7 @@ TEST(MipRoute, ChainFormatsHalveOnTheTwoDEngineAtProvenStepsOnly)
 {
     const struct {
         uint32_t mtl, fmt2d;
-    } formats[] = {{80, 0xcf}, {70, 0xd5}, {115, 0xca}, {10, 0xf3},  {30, 0xea},  {81, 0xd0},  {71, 0xd6},
+    } formats[] = {{80, 0xcf}, {70, 0xd5}, {115, 0xca}, {10, 0xf3},  {30, 0xea},  {81, 0},     {71, 0},
                    {1, 0xf7},  {20, 0xee}, {25, 0xf2},  {40, 0xe8},  {55, 0xe5},  {60, 0xda},  {65, 0xde},
                    {90, 0xd1}, {92, 0xe0}, {94, 0xdf},  {105, 0xcb}, {110, 0xc6}, {125, 0xc0}, {43, 0xe9}};
 
@@ -135,6 +136,13 @@ TEST(MipRoute, ChainFormatsHalveOnTheTwoDEngineAtProvenStepsOnly)
         twod |= run.engine == MipEngine::TwoD;
     }
     EXPECT_TRUE(twod) << "15 -> 7 ... 3 -> 1 are proven";
+
+    for (uint32_t srgb : {71u, 81u}) {
+        const std::vector<MipRun> all =
+            runs(chain(512, 512), raw::fx::twodChainFormat(srgb) != 0, raw::mipState(srgb) != nullptr);
+        ASSERT_EQ(all.size(), 1u) << srgb;
+        EXPECT_EQ(all[0].engine, MipEngine::ThreeD) << srgb << ": every step of an sRGB chain is its mip state's";
+    }
 }
 
 TEST(MipRoute, PowerOfTwoChainsAreOneTwoDRun)

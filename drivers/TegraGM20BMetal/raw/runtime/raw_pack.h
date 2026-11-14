@@ -35,12 +35,12 @@ enum PackSectionId {
     PackSectionCount
 };
 
-constexpr uint32_t kPackVersion = 23;
+constexpr uint32_t kPackVersion = 24;
 
 // What a record or a program variant (PackVariant) assumes, as bits of a mask: a draw takes a variant only where all of them
 // hold. Bits 0-15 are facts of the draw's bindings, bit 16 of its pipeline, bit 26 of its pass, bits 17-25 of the chip
-// (kChipAssumptions): 17 and
-// 18 of the code a variant runs, 19-25 of the ROP blend a storage form computes in its program (PackPipeline::storageBlendModel
+// (kChipAssumptions): 17 and 18 of the code a program runs (a proven one is every program's, raw_chip_facts.h, so no
+// variant assumes it), 19-25 of the ROP blend a storage form computes in its program (PackPipeline::storageBlendModel
 // holds them shifted down by kRopBlendShift, m2v rop_blend::Assumption's bits). A record is drawn whatever its ROP bits: they
 // name what a device probe has to confirm before the program's blend can be called the ROP's.
 enum PackAssumption : uint32_t {
@@ -343,7 +343,7 @@ constexpr uint32_t kPackEntries = 32, kSetMaxBytes = 16 * kPackEntries;
 constexpr uint32_t kWrittenSlots = 16;
 // A record's fixed-function vertex streams: stream 0 (vertexSlot) and PackPipeline::vertexStreams'
 constexpr uint32_t kPackVertexStreams = 8;
-// A vertexStreams byte's flag: the stream's stride is its bind's (MTLBufferLayoutStrideDynamic, a runtime record's alone)
+// A vertexStreams byte's flag: the stream's stride is its bind's (MTLBufferLayoutStrideDynamic)
 constexpr uint8_t kStreamBindStride = 0x80;
 // The largest stride a fixed-function vertex stream fetches at: NVB197_SET_VERTEX_STREAM_A_FORMAT_STRIDE is bits 11:0
 constexpr uint32_t kStreamStrideField = 0xFFF;
@@ -406,16 +406,14 @@ struct PackPipeline {
     // its words, and the first of them in the blob section (the vertex table's first, then the fragment table's)
     uint8_t spillEntry[2], spillWords[2];
     uint32_t spillAt;
-    // v21. Up to arrayLengthWord and pulledStride, runtime records only (raw_direct.cpp; every pack state has these 0). A
-    // tessellation state's
-    // push word of its control stage's first field + 1 (raw_direct_push.h kControlWords; its control and evaluation
-    // programs are RuntimeRecord's), its patches' control points (0: any) and its control-point index size in bytes (0:
-    // none). vertexStrideDynamic: stream 0's stride is its bind's (MTLBufferLayoutStrideDynamic).
+    // v21. A tessellation state's push word of its control stage's first field + 1 (raw_direct_push.h kControlWords; its
+    // control and evaluation programs: tessPrograms), its patches' control points (0: any) and its control-point index
+    // size in bytes (0: none). vertexStrideDynamic: stream 0's stride is its bind's (MTLBufferLayoutStrideDynamic).
     uint8_t controlWord, controlPoints, controlPointIndexBytes, vertexStrideDynamic;
     // A state of vertex amplification: its maxVertexAmplificationCount (0: 1), and the push words + 1 of m2v's
     // AmplificationId and AmplificationCount (0: none), which each draw writes (its [[amplification_count]] is the draw's)
     uint8_t amplificationMax, amplificationIdWord, amplificationCountWord;
-    // A pack field: the push word + 1 of m2v's RenderTargetArrayLength (0: none), the pass's length, which each draw writes:
+    // The push word + 1 of m2v's RenderTargetArrayLength (0: none), the pass's length, which each draw writes:
     // its vertex program writes Layer (SET_RT_LAYER takes it), an index at or past the length as 0. kLayerDropped: its
     // vertex function chooses its slice, but the translation had no layered form of the state; its record draws layer 0
     uint8_t arrayLengthWord;
@@ -437,6 +435,18 @@ struct PackPipeline {
     // the fragment texture slots its programs read through a two-plane RGB10A8_2P_XR10 texture's header pair (raw_xr_pass.h):
     // the record of its " | xrs=<slots>" variant
     uint16_t xrSlots, xrReserved;
+    // v24. A tessellation state's control and evaluation programs (program indices; a runtime record's are its
+    // tessPrograms). strideTwin: the keyHash of the same state with its bind-stride layouts pulled in the shader
+    // (RuntimeRecord::strideTwin), which a draw of a bind stride past a stream's 12 bits takes; 0: none.
+    uint32_t tessPrograms[2];
+    uint64_t strideTwin;
+    // An amplifying state's push words + 1 of m2v's AmplificationLayerOffset and AmplificationViewportOffset (0: none),
+    // which each amplification writes
+    uint8_t amplificationLayerWord, amplificationViewportWord;
+    // The registers its draws set back after it (RuntimeRecord::restore): restoreDwords words of (method, value) pairs in the
+    // blob section from restoreAt
+    uint16_t restoreDwords;
+    uint32_t restoreAt;
 };
 
 // PackPipeline::arrayLengthWord of a record of one layer whose vertex function chooses its slice
@@ -606,7 +616,7 @@ struct InitAddresses {
 uint32_t relocated(const PackInitMethod &m, const InitAddresses &a);
 static_assert(sizeof(PackShaderTests) == 16, "shader test layout");
 static_assert(sizeof(PackPipeline) ==
-                  40 + kPackEntries * 8 + 4 + 32 * 4 + 4 + 36 + 16 + 56 + 4 + 92 + 24 + 2 * kWrittenSlots + 4,
+                  40 + kPackEntries * 8 + 4 + 32 * 4 + 4 + 36 + 16 + 56 + 4 + 92 + 24 + 2 * kWrittenSlots + 4 + 24,
               "pack layout");
 static_assert(offsetof(PackPipeline, storageBlendMask) == 490 && offsetof(PackPipeline, fetchRung) == 528,
               "pack layout: packfile.py PIPELINE_V15");
@@ -618,6 +628,9 @@ static_assert(offsetof(PackPipeline, controlWord) == 636 && offsetof(PackPipelin
               "pack layout: packfile.py PIPELINE_V21");
 static_assert(offsetof(PackPipeline, writtenFormat) == 660 && offsetof(PackPipeline, xrSlots) == 692,
               "pack layout: packfile.py PIPELINE_V22");
+static_assert(offsetof(PackPipeline, tessPrograms) == 696 && offsetof(PackPipeline, strideTwin) == 704 &&
+                  offsetof(PackPipeline, restoreAt) == 716,
+              "pack layout: packfile.py PIPELINE_V24");
 static_assert(sizeof(PackProgram) == 44, "pack layout");
 static_assert(sizeof(PackVariant) == 8, "pack layout");
 static_assert(sizeof(PackArchive) == 16, "pack layout");

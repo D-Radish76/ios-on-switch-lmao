@@ -415,7 +415,7 @@ struct RMSharedEventWait {
     bool _submittedM2v;
     // a drawable present was added (its completion is observed); the range being submitted ends quiet
     // (raw_completion_source.h)
-    bool _presents, _rangeQuiet;
+    bool _presents, _rangeQuiet, _rangeHeld;
     // writer promises (Device::promise) made when it counted as scheduled before its work reached the kernel, under
     // _lock; taken once its last raw range carries them to the kernel or finish() cancels them. _promised: any were
     // asked for, read without the lock by the frame path

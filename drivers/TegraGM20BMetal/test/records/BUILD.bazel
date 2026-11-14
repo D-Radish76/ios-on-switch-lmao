@@ -191,6 +191,7 @@ cc_test(
         GM20B_METAL + ":raw/pack/probe_states.h",
         GM20B_METAL + ":raw/runtime/RawPipelineKey.h",
         GM20B_METAL + ":raw/runtime/raw_cubic.h",
+        GM20B_METAL + ":raw/runtime/raw_pipeline_fields.h",
         GM20B_METAL + ":raw/runtime/raw_emit.cpp",
         GM20B_METAL + ":raw/runtime/raw_emit.h",
         GM20B_METAL + ":raw/runtime/raw_pack.cpp",

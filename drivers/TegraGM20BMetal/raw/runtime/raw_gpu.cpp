@@ -1164,21 +1164,17 @@ Pipeline *Device::pipeline(uint64_t keyHash, PackForm form, bool caTransform)
     return pl;
 }
 
-// Whether the state's fetch-free form, where the pack holds one, is a form a draw can take: its rung's unit proven, or a
-// debug build, whose probe channel forces a rung (its programs are placed in the heap only then)
+// Whether the state's fetch-free form, where the pack holds one, is placed (raw_fetch_free.h fetchFreePlaced)
 bool Device::fetchFreeReachable(uint64_t keyHash) const
 {
     const PackPipeline *rec = pack_.find(keyHash, PackForm::FetchFree);
     if (!rec)
         return false;
-    const FetchFreeForm f = fetchFreeForm(*rec, pack_.iterated(*rec));
-    const bool proven =
-        f.rung == FetchBlend ? fixedBlendProven() : f.rung == FetchIteratedBlend && iteratedPassesProven(f);
+    uint8_t probe = 0;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-    return proven || f.rung != FetchNone;
-#else
-    return proven;
+    probe = probeFetchRung.load(std::memory_order_relaxed);
 #endif
+    return fetchFreePlaced(fetchFreeForm(*rec, pack_.iterated(*rec)), probe);
 }
 
 bool Device::usableRecord(const PackPipeline *rec) const
@@ -1243,27 +1239,50 @@ Pipeline *Device::placePipeline(uint64_t keyHash, PackForm form, bool caTransfor
     return placeRecord(*rec, caTransform);
 }
 
+// A pack record is drawn as addRecord draws a runtime record of the same state: a tessellation state's control and
+// evaluation programs bound beside its own, the registers its draws set back after it, and its stride twin
+std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords)
+{
+    std::vector<uint32_t> words(dwords + 2);
+    Push w{words.data(), words.data() + words.size()};
+    for (uint32_t k = 0; k + 1 < dwords; k += 2)
+        w.m(pairs[k], pairs[k + 1]);
+    return {words.data(), w.at};
+}
+
 Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)
 {
     Pipeline &pl = pipelines_[&pp - pack_.section<PackPipeline>(PackPipelines)];
     if (pl.rec)
         return &pl;
-    const PackProgram *progs = pack_.section<PackProgram>(PackPrograms);
-    PlacedProgram vs, fs;
-    if (!place(pp.vs, vs.program, vs.data) || !place(pp.fs, fs.program, fs.data)) {
+    const bool tess = tessellates(pp);
+    PlacedProgram vs, fs, tessPlaced[2];
+    if (!placePackProgram(pp.vs, vs) || !placePackProgram(pp.fs, fs) ||
+        (tess && (!placePackProgram(pp.tessPrograms[0], tessPlaced[0]) ||
+                  !placePackProgram(pp.tessPrograms[1], tessPlaced[1]))))
+        return nullptr;
+    uint64_t slm = std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header));
+    for (uint32_t k = 0; tess && k < 2; k++)
+        slm = std::max(slm, slmPerWarpOfHeader(tessPlaced[k].header));
+    if (!slmNeed(slm)) {
         stats.heapFull++;
         return nullptr;
     }
-    vs.record = &progs[pp.vs];
-    fs.record = &progs[pp.fs];
-    vs.header = pack_.section<uint8_t>(PackHeap) + progs[pp.vs].program;
-    fs.header = pack_.section<uint8_t>(PackHeap) + progs[pp.fs].program;
-    if (!slmNeed(std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header)))) {
-        stats.heapFull++;
-        return nullptr;
+    Pipeline *twin = nullptr;
+    if (pp.strideTwin) {
+        const PackPipeline *twinRecord = pack_.find(pp.strideTwin, recordForm(pp));
+        if (twinRecord && twinRecord != &pp && usableRecord(twinRecord) &&
+            !(twin = placeRecord(*twinRecord, caTransform)))
+            return nullptr;
     }
     build(pl, pp, vs, fs, pack_.section<uint32_t>(PackBlob) + pp.blob, pack_.string(pp.keyString), caTransform,
-          pack_.spills(pp));
+          pack_.spills(pp), tess ? tessPlaced : nullptr);
+    if (pp.restoreDwords && uint64_t(pp.restoreAt) + pp.restoreDwords <= pack_.bytes(PackBlob) / 4) {
+        const std::vector<uint32_t> words =
+            restoreWords(pack_.section<uint32_t>(PackBlob) + pp.restoreAt, pp.restoreDwords);
+        pl.restore.insert(pl.restore.end(), words.begin(), words.end());
+    }
+    pl.strideTwin = twin;
     offerVariants(pl, pp);
     if (const PackSplit *split = pack_.split(pp.fs); split && !pl.storageBits) {
         SplitSource source;
@@ -1461,7 +1480,8 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
         pl.readBits |= uint8_t(1u << pl.freeForm.colour);
         if (pl.freeForm.rung == FetchIteratedBlend) {
             pl.restore.clear();
-            iteratedBlendWords(*pack_.iterated(pp), pl.freeForm.colour, pl.methods, pl.restore);
+            iteratedBlendWords(*pack_.iterated(pp), pl.freeForm.colour, pl.colorFormats[pl.freeForm.colour], pl.methods,
+                               pl.restore);
         }
     }
     pl.turnRefused = pp.flags & PipelineTurnRefused;
@@ -3048,10 +3068,10 @@ void Device::destroyTexture(Texture &t)
     if (t.zeta)
         freeOwnedZeta(t.va);
     if (t.chain) {
-        for (const uint32_t level : t.chain->levelTic)
-            if (level) {
-                freeTic(level);
-            }
+        for (const uint32_t *tics : {t.chain->levelTic, t.chain->levelCodesTic})
+            for (uint32_t level = 0; level < fx::kMaxLevels; level++)
+                if (tics[level])
+                    freeTic(tics[level]);
         delete t.chain;
         t.chain = nullptr;
     }
@@ -4542,7 +4562,7 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass)
     uint8_t scratchMask = 0;
     for (uint32_t j = 0; j < pass.count && j < 8; ++j)
         if (const Texture *t = pass.color[j].texture;
-            t && (backed(*t) || t->shadowTarget || (blockLinear && !t->blockLinear)))
+            t && (backed(*t) || t->shadowTarget || t->zetaPages || (blockLinear && !t->blockLinear)))
             scratchMask |= uint8_t(1u << j);
     const auto scratchTags = transientColorTags(scratchMask);
     for (uint32_t j = 0; j < pass.count && j < 8; j++) {
@@ -4552,18 +4572,20 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass)
         if (!t->renderable && !t->shadowTarget)
             return nullptr;
         const bool mixed = blockLinear && !t->blockLinear && !backed(*t);
-        if ((t->shadowTarget && !backed(*t)) ||
+        if (((t->shadowTarget || t->zetaPages) && !backed(*t)) ||
             mixed) {  // rendered through a pool image (end(): copied in before, back after)
             RAW_DIAGNOSTIC(dev_->stats.xrPlaneShadows += t->xrPlane != 0);
             if (mixed) {
                 RAW_DIAGNOSTIC(dev_->stats.rtMixed++);
-            } else {
+            } else if (t->shadowTarget) {
                 RAW_DIAGNOSTIC(dev_->stats.rtUnaligned++);
                 RAW_DIAGNOSTIC(dev_->stats.rtUnalignedPitch = t->pitch);
                 RAW_DIAGNOSTIC(dev_->stats.rtUnalignedVa = uint32_t(t->va & 255));
             }
+            // a zeta's view takes plain memory: gpu.x1.ce_compressed proved the copy engine over compressed BGRA8 and
+            // RGBA16Float texels, not over a zeta's depth bits and stencil
             Texture *b = backing(*t, scratchTags[j], blockLinear,
-                                 dev_->storageCompressedOk() || !(pass.storageMask >> j & 1), true);
+                                 !t->zetaPages && (dev_->storageCompressedOk() || !(pass.storageMask >> j & 1)), true);
             if (!b || !b->renderable)
                 return nullptr;
             e.pass_.color[j].texture = b;
@@ -5024,6 +5046,8 @@ bool CommandBuffer::commit(uint32_t &seqno)
                   memberRemovals_, invalidates || memberHostWritten_ || tablesInvalidate, admission, admissionFlags,
                   !last || quietEnd, last && !promises.empty() ? &promises : nullptr);
         RAW_ENCODE_END(execSpan);
+        if (executed && last && quietEnd && raw::jobKeptLoud())
+            quietEnd = false;
         if (!executed) {
             admissionBlocked = !published && result == kIOReturnCannotLock;
             setRefused = d.setView_.refused;
@@ -6481,9 +6505,15 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     if (!generic)
         pl = twin;
     // a variant has no split of its own: a draw large enough for the generic program's split twin keeps the twin
-    if (rot_.turned() && pl->turnedTwin)
-        pl = pl->turnedTwin;
-    else if (!pl->splitOf && !generic)
+    if (rot_.turned() && pl->turnedSource) {
+        Pipeline *turned = __atomic_load_n(&pl->turnedTwin, __ATOMIC_ACQUIRE);
+        if (!turned && !(turned = dev_->makeTurned(*pl))) {
+            *why = rotatedRefusalText(RotatedRefusal::Variant);
+            cb_->refusal = {RefRotated, uint32_t(RotatedRefusal::Variant), rot_.turn};
+            return false;
+        }
+        pl = turned;
+    } else if (!pl->splitOf && !generic)
         pl = dev_->variant(*pl, bindingFacts(*pl) | (rot_.turned() ? AssumeTurned : 0u));
 #if SWITCH_RAW_DIAGNOSTICS
     if (genericMerge)
@@ -6819,8 +6849,8 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     const bool dynamicBlend = r.blendColorWord || r.halfBlendColorWord;
     const bool slotRoots = r.rootSlots[0] || r.rootSlots[1];
     const bool patches = tessellates(r);
-    const bool drawnWordsDirty = ((r.amplificationIdWord || r.amplificationCountWord || pl->amplificationLayerWord ||
-                                   pl->amplificationViewportWord) &&
+    const bool drawnWordsDirty = ((r.amplificationIdWord || r.amplificationCountWord || r.amplificationLayerWord ||
+                                   r.amplificationViewportWord) &&
                                   amplificationDirty_) ||
                                  r.pulledStride[0][1] || r.arrayLengthWord || r.viewportCountWord;
     const bool rebinds = pl != emitted_;
@@ -7699,19 +7729,19 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
     return tic;
 }
 
-uint32_t Device::levelTic(Texture &t, uint32_t level)
+uint32_t Device::levelTic(Texture &t, uint32_t level, bool codes)
 {
     const FormatInfo *f = formatInfo(t.format);
     if (!t.chain || !f || level >= t.chain->layout.levels)
         return 0;
-    uint32_t &slot = t.chain->levelTic[level];
+    uint32_t &slot = (codes ? t.chain->levelCodesTic : t.chain->levelTic)[level];
     if (const uint32_t made = __atomic_load_n(&slot, __ATOMIC_ACQUIRE))
         return made;
     RAW_ENCODE_LOCK(l, lock_);
     uint32_t tic = slot;
     if (!tic && (tic = allocTic())) {
         uint32_t w[8];
-        fx::mipChainTic(t.chain->layout, t.chain->va, f->tic0, f->srgb, level, 1, w);
+        fx::mipChainTic(t.chain->layout, t.chain->va, f->tic0, f->srgb && !codes, level, 1, w);
         memcpy(tic_.cpu + 32 * tic, w, 32);  // visible at the next submission's header invalidate
         __atomic_store_n(&slot, tic, __ATOMIC_RELEASE);
     }
