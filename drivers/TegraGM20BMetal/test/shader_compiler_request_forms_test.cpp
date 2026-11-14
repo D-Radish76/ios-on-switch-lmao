@@ -465,7 +465,7 @@ TEST(CompileRequestForms, EveryFieldGoesOverTheWire)
          }},
         {"kernel textures",
          [](auto &q) {
-             q.kernel.textures.push_back({1, 80, 2, 3, 1, 1, 1});
+             q.kernel.textures.push_back({1, 0, 80, 2, 3, 1, 1, 1});
          }},
     };
     for (const auto &[what, change] : changes) {

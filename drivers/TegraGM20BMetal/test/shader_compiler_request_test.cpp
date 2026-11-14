@@ -121,7 +121,7 @@ TEST(CompileRequest, RoundTripsWhole)
     k.kernel.maxThreads = 256;
     k.kernel.threads[0] = 64;
     k.kernel.memory[2] = 1024;
-    k.kernel.textures.push_back({1, 80, 2, 3, 1, 1, 1});
+    k.kernel.textures.push_back({1, 0, 80, 2, 3, 1, 1, 1});
     NmbDirectBoundSampler sampler = {};
     sampler.slot = 4;
     sampler.descriptor.max_anisotropy = 8;
@@ -300,7 +300,7 @@ TEST(CompileRequest, AKernelIsKeyedByItsFunctionAndNamedByItsDispatch)
     r.kernel.maxThreads = 1024;
     r.kernel.threads[0] = 64;
     r.kernel.threads[1] = r.kernel.threads[2] = 1;
-    r.kernel.textures.push_back({0, 80, 2, 0x17, 1, 1, 1});
+    r.kernel.textures.push_back({0, 0, 80, 2, 0x17, 1, 1, 1});
     raw::AirHash air;
     air.fill(0x30);
     const std::string compute = raw::computeKey(air, "", 1024, false, r.kernel.threads, "", "0:80:2:1:1:00010203", "");
