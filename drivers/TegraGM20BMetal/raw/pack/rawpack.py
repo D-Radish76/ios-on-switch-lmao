@@ -18,10 +18,12 @@ fragment (CA_TIERS).
   3. directlink.py writes pack.bin by mkpack.py's rules: per state its programs, registers, push words and layout, plus
      the context init with the addresses to relocate.
 
-usage: rawpack.py --bridge <host libnative_metal_bridge.a> --compile <host switch_compile.o> --metal-abi <MetalABI.h>
-                  --qc <default.metallib> --corpus <corpus.log> --out <dir> [--stack <hex key>] [--prebuilt <dir>]
-       rawpack.py --build-only --bridge <host libnative_metal_bridge.a> --compile <host switch_compile.o>
-                  --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h> --out <dir>
+usage: rawpack.py --bridge <host libnative_metal_bridge.a> --translate <host libnative_metal_translate_static.a>
+                  --compile <host switch_compile.o> --metal-abi <MetalABI.h> --qc <default.metallib> --corpus <corpus.log>
+                  --out <dir> [--stack <hex key>] [--prebuilt <dir>]
+       rawpack.py --build-only --bridge <host libnative_metal_bridge.a> --translate <host libnative_metal_translate_static.a>
+                  --compile <host switch_compile.o> --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h>
+                  --out <dir>
 writes <out>/pack.bin, pack.json, layouts.txt, report.txt and keeps the buckets in <out>/work (deleted with --clean).
 --build-only compiles directpack, the probe, the mock GPU (libmock_iokit.dylib) and own.metallib into <dir>, with the
 channel's context init as nvdec runs it (context.log), and stops;
@@ -213,7 +215,7 @@ DIRECT_RUNTIME = ('raw_direct', 'raw_direct_compute', 'raw_record_parts', 'raw_e
 FRONTEND_WEAK = ('render_direct', 'compute_direct', 'function_metallib', 'function_library_name')
 
 
-def build(work: Path, bridge: Path, compile_object: Path, metal_abi: Path, context_header: Path) -> None:
+def build(work: Path, bridge: Path, translate: Path, compile_object: Path, metal_abi: Path, context_header: Path) -> None:
     """Build the mock GPU, the probe and the raw path's own states into `work`, and run the context init.
 
     The mock GPU with nvdec on every submission, the probe through the frontend + host bridge (beside it: rpath
@@ -273,10 +275,11 @@ def build(work: Path, bridge: Path, compile_object: Path, metal_abi: Path, conte
     run([work / 'context-state'], out=work / 'context.log')
 
     def tool(name: str, objcxx: list[Path], cxx: tuple[Path, ...] = (), frontend: bool = True) -> None:
-        """Link one of the generator's tools over the host bridge (and the frontend), beside the mock GPU (rpath).
+        """Link one of the generator's tools over the host bridge and the frontend, beside the mock GPU (rpath).
 
-        Without the frontend, raw's weak references to it (RawDirect.mm, RawRenderKey.mm) stay unbound. A tool of the
-        direct compile (raw_direct.cpp among `cxx`) links the stage compile's object.
+        Without the frontend, a tool links the translation alone (no m2v runtime) and raw's weak references to the
+        frontend (RawDirect.mm, RawRenderKey.mm) stay unbound. A tool of the direct compile (raw_direct.cpp among `cxx`)
+        links the stage compile's object.
         """
         compiles = any(p.name == 'raw_direct.cpp' for p in cxx)
         frameworks = [
@@ -308,7 +311,7 @@ def build(work: Path, bridge: Path, compile_object: Path, metal_abi: Path, conte
                 *(['-x', 'c++', *cxx] if cxx else []),
                 '-x',
                 'none',
-                bridge,
+                bridge if frontend else translate,
                 *([compile_object] if compiles else []),
                 '-L',
                 work,
@@ -548,6 +551,7 @@ def main() -> None:
             build(
                 Path(scratch),
                 Path(option('--bridge')).resolve(),
+                Path(option('--translate')).resolve(),
                 Path(option('--compile')).resolve(),
                 Path(option('--metal-abi')).resolve(),
                 Path(option('--context-header')).resolve(),
@@ -582,6 +586,7 @@ def main() -> None:
         build(
             work,
             Path(option('--bridge')).resolve(),
+            Path(option('--translate')).resolve(),
             Path(option('--compile')).resolve(),
             Path(option('--metal-abi')).resolve(),
             Path(option('--context-header')).resolve(),

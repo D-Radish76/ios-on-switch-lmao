@@ -3,11 +3,12 @@
 
 One action per step (gpu/seed/tools.bzl seed_tools builds, gpu/seed/defs.bzl seed_raw_pack runs the rest):
 
-    rawpack.py build --xcode-env F --host-bridge <darwin bridge .a> --compile <switch_compile.o> --metal-abi <MetalABI.h>
-                     --context-header <SwitchGM20BContext.h> --generator <raw/pack/rawpack.py> --tree <tree> --out <dir>
-        the generator's host tools (directpack over the host bridge and the stage compile, the probes through this
-        build's frontend too, the mock GM20B, the raw path's own.metallib) into <dir>, with the context init nvdec ran
-        (context.log)
+    rawpack.py build --xcode-env F --host-bridge <darwin bridge .a> --translate <darwin translation .a>
+                     --compile <switch_compile.o> --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h>
+                     --generator <raw/pack/rawpack.py> --tree <tree> --out <dir>
+        the generator's host tools (directpack over the translation and the stage compile, the probes through this
+        build's frontend and host bridge, the mock GM20B, the raw path's own.metallib) into <dir>, with the context
+        init nvdec ran (context.log)
     rawpack.py corpus --corpus corpus.log --build <IPSW build> [--archives <build>.tsv]
                       [--app-states <build>.log] --out <file> --report <file>
         the corpus lines the probe makes (raw/pack/probe.mm: Core Animation's render states, without lib=, and every
@@ -246,7 +247,8 @@ def fresh(path: Path) -> Path:
 def build(args: argparse.Namespace, generator: list[str], env: dict[str, str], root: Path) -> None:
     xcode = dict(line.split('=', 1) for line in Path(args.xcode_env).read_text().splitlines() if '=' in line)
     env['DEVELOPER_DIR'] = xcode['DEVELOPER_DIR']
-    arguments = ['--build-only', '--bridge', root / args.host_bridge, '--compile', root / args.compile]
+    arguments = ['--build-only', '--bridge', root / args.host_bridge, '--translate', root / args.translate]
+    arguments += ['--compile', root / args.compile]
     arguments += ['--metal-abi', root / args.metal_abi]
     arguments += ['--context-header', root / args.context_header]
     arguments += ['--out', root / args.out]
@@ -321,7 +323,17 @@ def stamp(args: argparse.Namespace, generator: list[str], env: dict[str, str], _
 
 
 STEPS = {
-    'build': ('xcode-env', 'host-bridge', 'compile', 'metal-abi', 'context-header', 'generator', 'tree', 'out'),
+    'build': (
+        'xcode-env',
+        'host-bridge',
+        'translate',
+        'compile',
+        'metal-abi',
+        'context-header',
+        'generator',
+        'tree',
+        'out',
+    ),
     'split': ('generator', 'qc', 'corpus'),
     'probe': ('generator', 'raw', 'qc', 'lines', 'out'),
     'link': ('generator', 'out'),
