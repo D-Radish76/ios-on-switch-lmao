@@ -6,14 +6,13 @@
 //! variant's layout and samplers are made too; the offline compile (the pack generator's, and the compile context's:
 //! NativeMetalCompile.rs) runs on the compile profile's native device with the layout as data alone.
 
-use crate::compute_artifact::NmbComputeArtifact;
+use crate::descriptors::{
+    DescriptorFunction, NmbComputePipelineDescriptorOf, NmbSamplerDescriptor, compute_descriptor, e, get, guard, raw,
+    sampler_descriptor,
+};
 use crate::direct::{
     HEAP_ARRAYS, Layout, NMB_DIRECT_IMMUTABLE, NmbDirectBinding, NmbDirectSamplerState, NmbDirectStage, NmbDirectWrite,
     compile_error, residual_words, sampler_state, spill_table, write_of,
-};
-use crate::objects::{
-    DescriptorFunction, NmbComputePipelineDescriptor, NmbComputePipelineDescriptorOf, NmbDevice, NmbSamplerDescriptor,
-    compute_descriptor, e, get, guard, raw, sampler_descriptor,
 };
 use crate::offline::{Devices, NmbOfflineComputePipelineDescriptor, offline_devices};
 use ash::vk as avk;
@@ -288,7 +287,7 @@ fn bind_state(run: Run, dispatch: &NmbDirectDispatch, stage_in: bool) -> Result<
 
 /// The kernel compiled under variant `key`, as the runtime compiles a state's variant: the function under the key's lowering
 /// inputs with the descriptor's stage input and call stack depth, then the pipeline of it
-pub(crate) fn compiled(
+pub fn compiled(
     compile: &metal2vulkan::device::Device,
     descriptor: &ComputePipelineDescriptor,
     key: &VariantKey,
@@ -311,8 +310,14 @@ pub(crate) fn compiled(
     })
 }
 
+/// A kernel's compiled variants a caller already holds (the m2v runtime's compute artifact), taken in place of compiling
+/// them again
+pub trait KernelVariants {
+    fn pipeline(&self, key: &VariantKey, budget: &Budget) -> Result<Arc<NativeComputePipeline>, String>;
+}
+
 #[derive(Clone)]
-pub(crate) struct NativeComputePipeline {
+pub struct NativeComputePipeline {
     pub pipeline: Arc<NativePipeline>,
 }
 
@@ -335,7 +340,7 @@ fn settle(
     state: &BindState,
     dispatch: &Dispatch,
     budget: &Budget,
-    artifact: Option<&NmbComputeArtifact>,
+    artifact: Option<&dyn KernelVariants>,
 ) -> Result<Settled, String> {
     let shape = state.shape();
     let pipeline = |key: &VariantKey| match artifact {
@@ -591,27 +596,6 @@ fn kernel_write(
     Ok(out)
 }
 
-/// # Safety
-/// `descriptor` and `dispatch` are valid records; `each` is valid for `ctx` for the call's length.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn nmb_compute_pipeline_direct(
-    device: *mut NmbDevice,
-    descriptor: *const NmbComputePipelineDescriptor,
-    dispatch: *const NmbDirectDispatch,
-    each: unsafe extern "C" fn(kernel: *const NmbDirectKernel, ctx: *mut c_void) -> bool,
-    ctx: *mut c_void,
-) -> bool {
-    guard(false, || {
-        let nmb = get(device)?;
-        let native = crate::direct::native_compute_device(nmb)?;
-        let descriptor = compute_descriptor(descriptor)?;
-        let ask = get(dispatch)?;
-        // SAFETY: the runtime device's own handles, used while it lives.
-        let handles = unsafe { nmb.device().raw() };
-        direct(Some(handles.device), &native, &descriptor, None, ask, each, ctx)
-    })
-}
-
 /// nmb_compute_pipeline_direct's answer for a kernel of offline functions, made on the compile profile's device with no
 /// Vulkan object: every handle the kernel hands over is 0.
 ///
@@ -631,7 +615,7 @@ pub unsafe extern "C" fn nmb_compute_pipeline_offline(
 
 /// nmb_compute_pipeline_offline's compile on `devices`, of a descriptor of either function handle: the pack generator's
 /// offline functions, or the compile context's (NativeMetalCompile.rs)
-pub(crate) fn compute_offline<F: DescriptorFunction>(
+pub fn compute_offline<F: DescriptorFunction>(
     devices: &Devices,
     descriptor: *const NmbComputePipelineDescriptorOf<F>,
     dispatch: *const NmbDirectDispatch,
@@ -675,37 +659,11 @@ pub unsafe extern "C" fn nmb_offline_compute_pipeline_facts(
     })
 }
 
-/// # Safety
-/// The artifact and dispatch are live; the callback is valid for this call.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn nmb_compute_artifact_direct(
-    device: *mut NmbDevice,
-    artifact: *const NmbComputeArtifact,
-    dispatch: *const NmbDirectDispatch,
-    each: unsafe extern "C" fn(kernel: *const NmbDirectKernel, ctx: *mut c_void) -> bool,
-    ctx: *mut c_void,
-) -> bool {
-    guard(false, || {
-        let artifact = get(artifact)?;
-        // SAFETY: the runtime device's own handles, used while it lives.
-        let handles = unsafe { get(device)?.device().raw() };
-        direct(
-            Some(handles.device),
-            &artifact.compile,
-            &artifact.descriptor,
-            Some(artifact),
-            get(dispatch)?,
-            each,
-            ctx,
-        )
-    })
-}
-
-fn direct(
+pub fn direct(
     vulkan: Option<&ash::Device>,
     compile: &metal2vulkan::device::Device,
     descriptor: &ComputePipelineDescriptor,
-    artifact: Option<&NmbComputeArtifact>,
+    artifact: Option<&dyn KernelVariants>,
     ask: &NmbDirectDispatch,
     each: unsafe extern "C" fn(kernel: *const NmbDirectKernel, ctx: *mut c_void) -> bool,
     ctx: *mut c_void,

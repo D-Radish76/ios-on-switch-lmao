@@ -46,8 +46,10 @@ filegroup(
     srcs = [
         "bridge/NativeMetalBridge.rs",
         "bridge/NativeMetalCompile.rs",
+        "bridge/NativeMetalDescriptors.rs",
         "bridge/NativeMetalDirect.rs",
         "bridge/NativeMetalDirectCompute.rs",
+        "bridge/NativeMetalDirectDevice.rs",
         "bridge/NativeMetalOffline.rs",
         "bridge/NativeMetalHeap.rs",
         "bridge/NativeMetalArguments.rs",
@@ -61,5 +63,7 @@ filegroup(
         "bridge/NativeMetalFunctions.rs",
         "bridge/NativeMetalObjects.rs",
         "bridge/NativeMetalTarget.rs",
+        "bridge/NativeMetalTranslate.rs",
+        "bridge/NativeMetalTranslateStatic.rs",
     ],
 )

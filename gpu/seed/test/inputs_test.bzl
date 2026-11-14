@@ -6,8 +6,8 @@
   plugin edit reaches none; it reports the NVK twin unused, keyed on the twin's compiler identity instead;
 - the join reads the buckets' indexes and reports, never their packs or the tools;
 - the bundle check is a validation action, so the GPU bundle is no input of anything that makes the seed;
-- the raw pack's probes read their bucket's states, the probe tools, the twin and QuartzCore's library, and only the
-  stamp reads the tools' manifest (the stack key).
+- the raw pack's probes read their bucket's states, the probe tools and QuartzCore's library, no NVK (directpack links
+  the stage compile), and only the stamp reads the tools' manifest (the stack key).
 """
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
@@ -100,7 +100,7 @@ def _raw_impl(ctx):
         lines = [p for p in names if p.endswith(".log")]
         asserts.equals(env, ["bucket{}.log".format(i)], [p.rpartition("/")[2] for p in lines], "one bucket's states")
         asserts.equals(env, [], [p for p in names if p.endswith("MANIFEST.json")], "a probe reads no stack key")
-        asserts.true(env, [p for p in names if p.endswith("libvulkan_nouveau.dylib")] != [], "the twin")
+        asserts.equals(env, [], [p for p in names if p.endswith("libvulkan_nouveau.dylib")], "no NVK")
         for library in (
             "crawl/tree/data/0.metallib",
             "device/1.metallib",

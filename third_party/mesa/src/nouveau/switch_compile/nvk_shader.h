@@ -6,7 +6,6 @@
 #define NVK_SHADER_H 1
 
 #include "nvk_private.h"
-#include "nvk_device_memory.h"
 
 #include "vk_pipeline_cache.h"
 

@@ -56,8 +56,8 @@ TEST(RawLinkedSource, ThePacksKeysAreTheRuntimes)
 // the offline compile's alike (render_descriptor is generic over both).
 TEST(RawLinkedSource, TheBridgeGivesEachStagesLinkedFunctionsToTheTranslator)
 {
-    const std::string bridge = SourceText("../../NativeMetal/bridge/NativeMetalObjects.rs");
-    const std::string convert = Body(bridge, "fn render_descriptor<F: DescriptorFunction>(");
+    const std::string descriptors = SourceText("../../NativeMetal/bridge/NativeMetalDescriptors.rs");
+    const std::string convert = Body(descriptors, "fn render_descriptor<F: DescriptorFunction>(");
     EXPECT_THAT(convert, HasSubstr("stage_function().with_linked(vertex_linked)"));
     EXPECT_THAT(convert, HasSubstr("stage_function().with_linked(fragment_linked)"));
 }
@@ -74,7 +74,7 @@ TEST(RawLinkedSource, TheDescriptorsCAndRustFormsAgree)
 {
     const std::string c = Between(SourceText("../../NativeMetal/bridge/NativeMetalObjects.h"),
                                   "#define NMB_RENDER_PIPELINE_DESCRIPTOR_FIELDS(Function)", "\n\n");
-    const std::string rust = Between(SourceText("../../NativeMetal/bridge/NativeMetalObjects.rs"),
+    const std::string rust = Between(SourceText("../../NativeMetal/bridge/NativeMetalDescriptors.rs"),
                                      "pub struct NmbRenderPipelineDescriptorOf<F> {", "\n}");
     const std::vector<std::string> namesC = fields(c, std::regex(R"((\w+_(?:linked|count));)"));
     EXPECT_EQ(namesC, fields(rust, std::regex(R"(pub (\w+_(?:linked|count)):)")));

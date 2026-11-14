@@ -406,7 +406,7 @@ def _generator_files(ctx, names):
     return files
 
 def _raw_buckets(ctx, tools, crawl, corpora):
-    probe_inputs = depset([tools.twin] + tools.raw + ctx.files.device_libraries +
+    probe_inputs = depset(tools.raw + ctx.files.device_libraries +
                           _generator_files(ctx, _RAW_PROBE), transitive = [crawl.files])
     buckets = []
     for i, bucket_corpus in enumerate(corpora):
@@ -416,7 +416,6 @@ def _raw_buckets(ctx, tools, crawl, corpora):
         args.add("probe")
         args.add("--generator", ctx.file.generator)
         args.add("--raw", tools.raw_dir)
-        args.add("--nvk", tools.twin)
         args.add("--qc", crawl.qc)
 
         # The probe reads every library under --root, the crawl's root/ with this build's applications (the pack's app

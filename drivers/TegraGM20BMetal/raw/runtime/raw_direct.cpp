@@ -24,26 +24,6 @@
 namespace raw {
 namespace {
 
-// nvk_switch_split.h switch_nvk_split_layout, nvk_switch_compile.h switch_nvk_split_parts
-struct NvkSplitLayout {
-    uint32_t frontierBytes;
-    uint8_t frontierCbuf, prologueCbufs, shaderDataCbuf, uboCount;
-    uint8_t uboCbuf[6];
-    uint16_t batchVersion, batchThreads;
-    uint32_t frontierValues, prologueInstrs;
-};
-
-struct NvkSplitParts {
-    NvkStage fs, prologue;
-    NvkSplitLayout layout;
-    uint32_t qmd[64];
-    uint32_t thresholdPixels;
-    SplitCost cost;
-};
-
-using SplitParts = void (*)(const void *split, NvkSplitParts *);
-using CompileAbi = void (*)(uint32_t sizes[3]);
-
 // VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR: m2v's states are made of pipeline libraries
 constexpr uint64_t kLibraryBit = 0x800;
 constexpr uint32_t kFragmentBit = 0x10;  // VK_SHADER_STAGE_FRAGMENT_BIT
@@ -99,18 +79,18 @@ uint32_t halfFloatTargets(const std::string &key)
 
 class Stages {
 public:
-    Stages(const DirectNvk &nvk, const NakLayoutData &layout, uint64_t xrPlaneBindings = 0)
-        : nvk_(nvk), layout_(layout), xrPlaneBindings_(xrPlaneBindings)
+    Stages(const StageCompile &compile, const NakLayoutData &layout, uint64_t xrPlaneBindings = 0)
+        : compile_(compile), layout_(layout), xrPlaneBindings_(xrPlaneBindings)
     {}
 
     ~Stages()
     {
         for (NvkStage &s : made_)
             if (s.owner)
-                nvk::nakStageFinish(nvk_, s);
+                switch_compile_stage_finish(&s);
     }
 
-    // Refused: a state the raw path does not draw from a record; Failed: NVK could not compile a stage. `split`: the fragment
+    // Refused: a state the raw path does not draw from a record; Failed: the stage compile could not compile a stage. `split`: the fragment
     // stage's split too (split()). `zeroPush`: root push words compiled as the constant 0 besides the state's constant ones.
     // `turned`: the fragment stage alone, as a turned plane's (NVK's nvk_switch_turn.h)
     CompileOutcome compile(const NmbDirectState &state, uint32_t halfTargets, bool split, std::string &why,
@@ -156,9 +136,9 @@ public:
             for (uint32_t i = 0; i < 32; i++)
                 if (zeroPush >> i & 1)
                     info.constPushWords[i] = 0;
-            const int32_t result = nvk::nakCompileStage(nvk_, nvk_.nakTarget, info, layout_.layout, made_[k]);
+            const int32_t result = compileStage(compile_, info, layout_.layout, made_[k]);
             if (result != 0) {
-                why = "NVK refused stage " + std::to_string(k) + " (VkResult " + std::to_string(result) + ")";
+                why = "the stage compile refused stage " + std::to_string(k) + " (VkResult " + std::to_string(result) + ")";
                 return CompileOutcome::Failed;
             }
             programs_[k] = programOf(made_[k]);
@@ -188,7 +168,7 @@ public:
     }
 
 private:
-    const DirectNvk &nvk_;
+    const StageCompile &compile_;
     const NakLayoutData &layout_;
     uint64_t xrPlaneBindings_;
     NvkStage made_[4] = {};
@@ -423,7 +403,7 @@ bool emitted(const std::string &key, const Stages &stages, const std::vector<uin
 // words that hold uniform bind residuals (raw_residual.h) as the constant 0, so a uniform read is a constant-buffer operand
 // at an immediate offset; and where the chip is proven to round them so (raw_chip_facts.h), fetches rounded to half in
 // TEXS's F16 forms. A stage's variant is kept only where its code differs, and nothing else a record says of it does.
-void programVariants(const NmbDirectState &state, const DirectNvk &nvk, const NakLayoutData &layout,
+void programVariants(const NmbDirectState &state, const StageCompile &compile, const NakLayoutData &layout,
                      uint32_t halfTargets, uint64_t xrPlanes, const Stages &generic, RuntimeRecord &out)
 {
     uint32_t residual[2] = {}, zeroPush = 0;
@@ -454,7 +434,7 @@ void programVariants(const NmbDirectState &state, const DirectNvk &nvk, const Na
         kinds.push_back({0, true});
     std::vector<RuntimeRecord::Variant> made[2];
     for (const Kind &kind : kinds) {
-        Stages stages(nvk, layout, xrPlanes);
+        Stages stages(compile, layout, xrPlanes);
         std::string why;
         if (stages.compile(state, halfTargets, false, why, kind.zeroPush, kind.texsF16) != CompileOutcome::Made)
             continue;
@@ -526,7 +506,7 @@ void tessellationRegisters(const NmbDirectTess &tess, RuntimeRecord &out)
 // The fragment program's turned variant (AssumeTurned), first of its stage's: compiled where the generic program's code may read
 // a turned plane's axes (turnSensitive) and kept where its code differs, the turn then being the program's to undo. Where it
 // would be needed and cannot be made, the record says so (PipelineTurnRefused).
-void turnedVariant(const NmbDirectState &state, const DirectNvk &nvk, const NakLayoutData &layout, uint32_t halfTargets,
+void turnedVariant(const NmbDirectState &state, const StageCompile &compile, const NakLayoutData &layout, uint32_t halfTargets,
                    uint64_t xrPlanes, const Stages &generic, RuntimeRecord &out)
 {
     const CapturedProgram &fs = generic.program(1);
@@ -538,7 +518,7 @@ void turnedVariant(const NmbDirectState &state, const DirectNvk &nvk, const NakL
     memcpy(code.data(), fs.image.data() + 80, code.size() * 4);
     if (!turnSensitive(sph, code.data(), uint32_t(code.size()), false))
         return;
-    Stages stages(nvk, layout, xrPlanes);
+    Stages stages(compile, layout, xrPlanes);
     std::string why;
     const EmitProgram a = generic.emit(1);
     if (stages.compile(state, halfTargets, false, why, 0, false, true) != CompileOutcome::Made) {
@@ -559,12 +539,12 @@ void turnedVariant(const NmbDirectState &state, const DirectNvk &nvk, const NakL
 }
 
 // The fragment program's split as a record holds it (NVK made none where it saves nothing)
-void splitInto(const DirectNvk &nvk, const void *split, RuntimeRecord &out)
+void splitInto(const void *split, RuntimeRecord &out)
 {
     if (!split)
         return;
     NvkSplitParts parts;
-    reinterpret_cast<SplitParts>(nvk.splitParts)(split, &parts);
+    switch_compile_split_parts(split, &parts);
     const NvkSplitLayout &l = parts.layout;
     if (parts.fs.cbufCount > kSplitProgramCbufs || l.prologueCbufs > kQmdCbufs || l.uboCount > sizeof l.uboCbuf)
         return;
@@ -590,29 +570,19 @@ void splitInto(const DirectNvk &nvk, const void *split, RuntimeRecord &out)
 
 }  // namespace
 
-DirectNvk DirectNvk::find(void *(*symbol)(const char *name))
+StageCompile StageCompile::linked(bool ranked)
 {
-    DirectNvk nvk;
-    nvk.splitParts = symbol("switch_nvk_split_parts");
-    nvk.nakCompileStage = symbol("switch_nak_compile_stage");
-    nvk.nakStageFinish = symbol("switch_nak_stage_finish");
-    nvk.nakFreeze = symbol("switch_nak_freeze");
-    nvk.nakTarget = kNakTarget;
-    if (const auto abi = reinterpret_cast<CompileAbi>(symbol("switch_nvk_compile_abi"))) {
-        uint32_t sizes[3] = {};
-        abi(sizes);
-        nvk.abiMatches =
-            sizes[0] == sizeof(NvkStageInfo) && sizes[1] == sizeof(NvkStage) && sizes[2] == sizeof(NvkSplitParts);
-    }
-    return nvk;
+    return {ranked, kNakTarget};
 }
 
-bool DirectNvk::complete() const
+bool StageCompile::abiMatches()
 {
-    return nakCompileStage && nakStageFinish && splitParts && abiMatches;
+    uint32_t sizes[3] = {};
+    switch_compile_abi(sizes);
+    return sizes[0] == sizeof(NvkStageInfo) && sizes[1] == sizeof(NvkStage) && sizes[2] == sizeof(NvkSplitParts);
 }
 
-CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, const PackRules &rules,
+CompileOutcome directRecord(const NmbDirectState &state, const StageCompile &compile, const PackRules &rules,
                             const std::string &key, const std::vector<uint32_t> &attributes, RuntimeRecord &out,
                             std::string &why, std::map<uint32_t, uint32_t> *registers, bool split, bool variants,
                             uint16_t xrSlots)
@@ -650,7 +620,7 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     // a split prologue binds its own constant buffers, set 1 not among them
     const bool splits = split && !storage.storageMask && !heap.arrays && !draw.spillWords[0] && !draw.spillWords[1] &&
                         state.stageCount == 2;
-    Stages stages(nvk, nakLayout, xrPlanes);
+    Stages stages(compile, nakLayout, xrPlanes);
     if (const CompileOutcome compiled = stages.compile(state, halfFloatTargets(key), splits, why);
         compiled != CompileOutcome::Made)
         return compiled;
@@ -739,10 +709,10 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     out.pipeline.xrSlots = xrSlots;
     out.splitTried = split && state.stageCount == 2;
     if (splits)
-        splitInto(nvk, stages.split(1), out);
+        splitInto(stages.split(1), out);
     if (variants && state.stageCount == 2)
-        programVariants(state, nvk, nakLayout, halfFloatTargets(key), xrPlanes, stages, out);
-    turnedVariant(state, nvk, nakLayout, halfFloatTargets(key), xrPlanes, stages, out);
+        programVariants(state, compile, nakLayout, halfFloatTargets(key), xrPlanes, stages, out);
+    turnedVariant(state, compile, nakLayout, halfFloatTargets(key), xrPlanes, stages, out);
     return CompileOutcome::Made;
 }
 

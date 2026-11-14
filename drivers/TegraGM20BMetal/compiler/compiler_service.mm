@@ -5,9 +5,9 @@
 // earlier build's store had (compiler_log.h) again at the background class, and takes
 // requests one by one on a thread that sleeps in the kernel between them. A request is prepared there (compiler_request.h),
 // answered from the store when its entry is in, and otherwise handed to the pool (compiler_pool.h), which makes each
-// record once for every process that asks, at the class of its most urgent waiter. The compile context it compiles with is
-// opened at the first compile (compiler_engine.h), inside the sandbox: a compiler whose store holds every state asked of
-// it never opens one.
+// record once for every process that asks, at the class of its most urgent waiter. What it compiles with is made at the
+// first compile (compiler_engine.h), inside the sandbox: a compiler whose store holds every state asked of it never makes
+// one.
 #import <Foundation/Foundation.h>
 
 #include <IOKit/IOKitLib.h>

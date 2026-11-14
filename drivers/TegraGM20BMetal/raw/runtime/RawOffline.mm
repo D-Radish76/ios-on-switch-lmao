@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: MIT
-// See offline_metal.h. Each call answers as the frontend's (NativeBridgeMetalFrontend.mm NBLibrary, NBFunction,
+// See RawOffline.h. Each call answers as the frontend's (NativeBridgeMetalFrontend.mm NBLibrary, NBFunction,
 // renderDescriptor, computeDescriptor) does for its own objects, with the translator's functions in place of the runtime's.
-#import "offline_metal.h"
+#import "RawOffline.h"
 
-#include <dlfcn.h>
 #include <string>
 #include <vector>
-#include "../runtime/RawPipelineKey.h"
-#include "../runtime/RawRenderKey.h"
+#include "RawPipelineKey.h"
+#include "RawRenderKey.h"
 #include "MetallibEntries.h"
 #include "MetallibSlice.h"
 #include "bridge/NativeMetalDirect.h"
@@ -253,13 +252,6 @@ NSError *refusal(NSString *why)
 namespace offline {
 namespace {
 
-void *gNvk = nullptr;
-
-void *nvkSymbol(const char *name)
-{
-    return gNvk ? dlsym(gNvk, name) : nullptr;
-}
-
 bool handles(NSArray *functions, std::vector<NmbOfflineFunction *> &out)
 {
     for (id f in functions) {
@@ -461,13 +453,11 @@ bool kernelFacts(MTLComputePipelineDescriptor *descriptor, uint32_t facts[3], st
     return false;
 }
 
-raw::DirectTranslator translator(const char *nvk)
+raw::DirectTranslator translator()
 {
-    gNvk = dlopen(nvk, RTLD_NOW | RTLD_LOCAL);
     raw::DirectTranslator t;
     t.render = render;
     t.compute = compute;
-    t.nvkSymbol = nvkSymbol;
     return t;
 }
 

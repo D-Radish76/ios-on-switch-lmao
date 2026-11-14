@@ -2,8 +2,9 @@
 """rawpack: the raw GM20B path's pipeline pack (runtime/raw_pack.h), made on this Mac.
 
 Core Animation's render pipeline states (PROBE_LABEL: the render server's) are made as the runtime makes a state the
-pack lacks: this build's own frontend + m2v (the host bridge) translate each, and NVK (the host twin with the device's
-pipeline cache identity) compiles its stages, with no pipeline, draw or capture (directpack.mm, runtime/RawDirect.h).
+pack lacks: the translator (the host bridge's offline compile) translates each, and the stage compile
+(third_party/mesa/src/nouveau/switch_compile, linked in) compiles its stages, with no device, pipeline, draw or capture
+(directpack.mm, runtime/RawDirect.h).
 The harvested Core Animation lines go in as drawn, beside the states made from their names (ca/caset.py, ca/caspec.py:
 QuartzCore's own decoding of a name into a state, with this IPSW's tables, ca/qc-<build>.json): QuartzCore's offline
 compilation manifest, and the closure over the blend CA puts in the pipeline and over the blend it leaves in the
@@ -17,14 +18,17 @@ fragment (CA_TIERS).
   3. directlink.py writes pack.bin by mkpack.py's rules: per state its programs, registers, push words and layout, plus
      the context init with the addresses to relocate.
 
-usage: rawpack.py --bridge <host libnative_metal_bridge.a> --metal-abi <MetalABI.h> --nvk <host twin dylib>
-                  --qc <default.metallib> --corpus <corpus.log> --out <dir> [--stack <hex key>] [--prebuilt <dir>]
-       rawpack.py --build-only --bridge <host libnative_metal_bridge.a> --metal-abi <MetalABI.h>
-                  --context-header <SwitchGM20BContext.h> --out <dir>
+usage: rawpack.py [--bridge <host libnative_metal_bridge.a>] --translate <host libnative_metal_translate_static.a>
+                  --compile <host switch_compile.o> --metal-abi <MetalABI.h> --qc <default.metallib>
+                  --corpus <corpus.log> --out <dir> [--stack <hex key>] [--prebuilt <dir>]
+       rawpack.py --build-only [--bridge <host libnative_metal_bridge.a>]
+                  --translate <host libnative_metal_translate_static.a> --compile <host switch_compile.o>
+                  --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h> --out <dir>
 writes <out>/pack.bin, pack.json, layouts.txt, report.txt and keeps the buckets in <out>/work (deleted with --clean).
---build-only compiles directpack, the probe, the mock GPU (libmock_iokit.dylib) and own.metallib into <dir>, with the
-channel's context init as nvdec runs it (context.log), and stops;
---prebuilt <dir> runs those instead of compiling them (//gpu/seed:local_tools makes them its own action, so a corpus
+--build-only compiles directpack, the mock GPU (libmock_iokit.dylib) and own.metallib into <dir>, with the channel's
+context init as nvdec runs it (context.log), and with --bridge the probe, native-seed and compile-profile too, then
+stops;
+--prebuilt <dir> runs those instead of compiling them (//gpu/seed:local_raw_tools makes them its own action, so a corpus
 edit only reruns the buckets).
 --ca-names: Core Animation states a device's logs name as missing from the pack (precompile/ca_names.py), made from
 their names in the corpus tier, as the journal's own are.
@@ -37,8 +41,7 @@ tools alone):
        rawpack.py --split --qc <default.metallib> --corpus <corpus.log> [--ca-names <ca-names/<build>.txt>]
                   [--ca-preferences <stager>] --out <dir>
            writes <dir>/work/bucket0 .. bucket15, each a corpus.log of its states
-       rawpack.py --probe-bucket <bucket dir> --prebuilt <dir> --nvk <host twin dylib> --qc <default.metallib>
-                  [--root <dir>]
+       rawpack.py --probe-bucket <bucket dir> --prebuilt <dir> --qc <default.metallib> [--root <dir>]
            makes one bucket in place: records.bin (its states' and kernels' records), and bucket 0's context.log;
            a line's lib= path is under --root (the crawl's root/ with the build's applications), else QuartzCore's
        rawpack.py --link --out <dir> [--stack <hex key>] [--archives <inventory.tsv>] <bucket dir>...
@@ -60,6 +63,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import packfile
@@ -101,7 +105,9 @@ def option(name: str, required: bool = True) -> str | None:
     return None
 
 
-BUILT = ('probe', 'directpack', 'native-seed', 'compile-profile', 'libmock_iokit.dylib', 'own.metallib', 'context.log')
+# The pack's own tools, and those only a build with the host bridge makes (the frontend's: m2v's runtime in them)
+PACK_TOOLS = ('directpack', 'libmock_iokit.dylib', 'own.metallib', 'context.log')
+BUILT = (*PACK_TOOLS, 'probe', 'native-seed', 'compile-profile')
 # Another framework's states, a bundle's or a framework resource library's, and our own apps' (their lines keep lib=,
 # tools/gpu/rawpack.py framework_line and app_line): the probe loads that library from the crawl's root
 FRAMEWORK = re.compile(
@@ -210,16 +216,26 @@ def drawn_here(line: str, build: str) -> bool:
 # The raw runtime's sources directpack.mm makes its records with (RawDirect.mm beside them)
 DIRECT_RUNTIME = ('raw_direct', 'raw_direct_compute', 'raw_record_parts', 'raw_emit', 'raw_pack', 'raw_metallib')
 # The frontend's exports raw refers to weakly (native_bridge_metal_<name>), unbound in directpack
-FRONTEND_WEAK = ('render_direct', 'compute_direct', 'nvk_symbol', 'function_metallib', 'function_library_name')
+FRONTEND_WEAK = ('render_direct', 'compute_direct', 'function_metallib', 'function_library_name')
 
 
-def build(work: Path, bridge: Path, metal_abi: Path, context_header: Path) -> None:
+class Links(NamedTuple):
+    """What the tools link: the host bridge (None: only the pack's own tools), the translation, the stage compile."""
+
+    bridge: Path | None
+    translate: Path
+    compile_object: Path
+
+
+def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tuple[str, ...]:
     """Build the mock GPU, the probe and the raw path's own states into `work`, and run the context init.
 
     The mock GPU with nvdec on every submission, the probe through the frontend + host bridge (beside it: rpath
     @executable_path) and the raw path's own states: the YCbCr conversions (ycbcr.metal) and the extended-range
     stand-ins (xr.metal), an iOS library like QuartzCore's, drawn after Core Animation's (probe.mm PROBE_OWN_LIB).
+    With no `bridge`, only the pack's own tools (PACK_TOOLS). Gives the tools made.
     """
+    bridge, translate, compile_object = links
     # Source paths (Mesa's asserts' __FILE__) as /switch-ios/..., whichever checkout or sandbox this runs in: the probe
     # and the mock are an action's outputs, and the run's cache key is their bytes.
     maps = [f'-ffile-prefix-map={RAW.parents[2]}=/switch-ios/tree', f'-ffile-prefix-map={Path.cwd()}=/switch-ios']
@@ -273,10 +289,13 @@ def build(work: Path, bridge: Path, metal_abi: Path, context_header: Path) -> No
     run([work / 'context-state'], out=work / 'context.log')
 
     def tool(name: str, objcxx: list[Path], cxx: tuple[Path, ...] = (), frontend: bool = True) -> None:
-        """Link one of the generator's tools over the host bridge (and the frontend), beside the mock GPU (rpath).
+        """Link one of the generator's tools over the host bridge and the frontend, beside the mock GPU (rpath).
 
-        Without the frontend, raw's weak references to it (RawDirect.mm, RawRenderKey.mm) stay unbound.
+        Without the frontend, a tool links the translation alone (no m2v runtime) and raw's weak references to the
+        frontend (RawDirect.mm, RawRenderKey.mm) stay unbound. A tool of the direct compile (raw_direct.cpp among `cxx`)
+        links the stage compile's object.
         """
+        compiles = any(p.name == 'raw_direct.cpp' for p in cxx)
         frameworks = [
             f
             for framework in ('Foundation', 'Metal', 'IOSurface', 'IOKit', 'CoreVideo')
@@ -306,7 +325,8 @@ def build(work: Path, bridge: Path, metal_abi: Path, context_header: Path) -> No
                 *(['-x', 'c++', *cxx] if cxx else []),
                 '-x',
                 'none',
-                bridge,
+                bridge if frontend else translate,
+                *([compile_object] if compiles else []),
                 '-L',
                 work,
                 '-lmock_iokit',
@@ -319,24 +339,25 @@ def build(work: Path, bridge: Path, metal_abi: Path, context_header: Path) -> No
             ]
         )
 
-    tool('probe', [HERE / 'probe.mm'])
     tool(
         'directpack',
         [
             HERE / 'directpack.mm',
-            HERE / 'offline_metal.mm',
+            RAW / 'runtime/RawOffline.mm',
             RAW / 'runtime/RawDirect.mm',
             RAW / 'runtime/RawRenderKey.mm',
         ],
         tuple(RAW / f'runtime/{name}.cpp' for name in DIRECT_RUNTIME),
         frontend=False,
     )
-    tool('compile-profile', [HERE / 'compile_profile.mm'])
-    tool(
-        'native-seed',
-        [HERE / 'native_seed.mm', RAW / 'runtime/RawDirect.mm', RAW / 'runtime/RawRenderKey.mm'],
-        tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
-    )
+    if bridge:
+        tool('probe', [HERE / 'probe.mm'])
+        tool('compile-profile', [HERE / 'compile_profile.mm'])
+        tool(
+            'native-seed',
+            [HERE / 'native_seed.mm', RAW / 'runtime/RawDirect.mm', RAW / 'runtime/RawRenderKey.mm'],
+            tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
+        )
     own = ('ycbcr', 'ycbcr_store', 'xr', 'resolve', 'mip', 'turn', 'stencil_bits')
     # resolve.metal's sums in sample order and its NaN tests kept; ycbcr_store.metal's NaN tests and half rounding;
     # stencil_bits.metal's depth comparisons
@@ -358,6 +379,7 @@ def build(work: Path, bridge: Path, metal_abi: Path, context_header: Path) -> No
             ]
         )
     run(['xcrun', '-sdk', 'iphoneos', 'metallib', *(work / f'{name}.air' for name in own), '-o', work / 'own.metallib'])
+    return BUILT if bridge else PACK_TOOLS
 
 
 # The states are probed in buckets, each its own probe processes over a share of the states (fnv64 of the state's line,
@@ -435,7 +457,7 @@ def state_key(line: str) -> str:
     return (f'{key} | l {framework}' if framework else key).strip() + cubic + sampled + written
 
 
-def bucket(tools: Path, d: Path, nvk: Path, qc: Path, env: dict[str, str]) -> str:
+def bucket(tools: Path, d: Path, qc: Path, env: dict[str, str]) -> str:
     """Make one bucket's records directly (directpack.mm: records.bin, its states' and its dispatch shapes' kernels).
 
     Bucket 0 holds the tools' context.log: the context init and the registers every record is laid over (directlink.py).
@@ -466,7 +488,7 @@ def bucket(tools: Path, d: Path, nvk: Path, qc: Path, env: dict[str, str]) -> st
         bridge_said.extend(line for line in r.stderr.splitlines() if line.startswith(DIRECT_COMPILE_SAYS))
 
     own = {'PROBE_OWN_LIB': str(tools / 'own.metallib')} if d.name == 'bucket0' else {}
-    step('directpack', [tools / 'directpack', nvk, qc, corpus, d / 'records.bin'], own, d / 'directpack.out')
+    step('directpack', [tools / 'directpack', qc, corpus, d / 'records.bin'], own, d / 'directpack.out')
     if d.name == 'bucket0':
         shutil.copyfile(tools / 'context.log', d / 'context.log')
     shutil.rmtree(cache, ignore_errors=True)
@@ -541,14 +563,19 @@ def main() -> None:
     if '--build-only' in sys.argv[1:]:
         out = Path(option('--out')).resolve()
         out.mkdir(parents=True, exist_ok=True)
+        bridge = option('--bridge', False)
         with tempfile.TemporaryDirectory() as scratch:
-            build(
+            made = build(
                 Path(scratch),
-                Path(option('--bridge')).resolve(),
+                Links(
+                    Path(bridge).resolve() if bridge else None,
+                    Path(option('--translate')).resolve(),
+                    Path(option('--compile')).resolve(),
+                ),
                 Path(option('--metal-abi')).resolve(),
                 Path(option('--context-header')).resolve(),
             )
-            for name in BUILT:
+            for name in made:
                 shutil.copyfile(Path(scratch) / name, out / name)
                 (out / name).chmod(0o755)
         return
@@ -556,11 +583,8 @@ def main() -> None:
     if stamp_or_link(stack):
         return
     qc = Path(option('--qc')).resolve()
-    nvk = Path(option('--nvk')).resolve() if '--split' not in sys.argv[1:] else qc
-    if '--probe-bucket' in sys.argv[1:]:  # --probe-bucket <dir> --prebuilt <tools> --nvk <dylib> --qc <metallib>
-        print(
-            bucket(Path(option('--prebuilt')).resolve(), Path(option('--probe-bucket')).resolve(), nvk, qc, probe_env())
-        )
+    if '--probe-bucket' in sys.argv[1:]:  # --probe-bucket <dir> --prebuilt <tools> --qc <metallib>
+        print(bucket(Path(option('--prebuilt')).resolve(), Path(option('--probe-bucket')).resolve(), qc, probe_env()))
         return
     corpus = Path(option('--corpus')).resolve()
     out = Path(option('--out')).resolve()
@@ -574,20 +598,25 @@ def main() -> None:
         return
     prebuilt = option('--prebuilt', False)
     if prebuilt:
-        for name in BUILT:
+        for name in PACK_TOOLS:
             shutil.copyfile(Path(prebuilt) / name, work / name)
             (work / name).chmod(0o755)
     else:
+        bridge = option('--bridge', False)
         build(
             work,
-            Path(option('--bridge')).resolve(),
+            Links(
+                Path(bridge).resolve() if bridge else None,
+                Path(option('--translate')).resolve(),
+                Path(option('--compile')).resolve(),
+            ),
             Path(option('--metal-abi')).resolve(),
             Path(option('--context-header')).resolve(),
         )
     env = probe_env()
     buckets = split_buckets(corpus, work, BUCKETS)
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        for line in pool.map(lambda b: bucket(work, b, nvk, qc, env), buckets):
+        for line in pool.map(lambda b: bucket(work, b, qc, env), buckets):
             print(line)
     link(out, buckets, stack)
     if '--clean' in sys.argv[1:]:

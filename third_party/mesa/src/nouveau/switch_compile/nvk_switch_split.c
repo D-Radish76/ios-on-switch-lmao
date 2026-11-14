@@ -9,10 +9,9 @@
 
 #include "nvk_switch_split.h"
 
-#include "nvk_device.h"
-#include "nvk_physical_device.h"
+#include "nvk_descriptor_types.h"
 #include "nvk_shader.h"
-#include "nvk_switch_capture.h"
+#include "nvk_switch_stage.h"
 
 #include "nak.h"
 #include "util/u_math.h"

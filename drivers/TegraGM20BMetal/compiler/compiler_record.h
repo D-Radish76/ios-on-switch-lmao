@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // A prepared request's record (compiler_request.h), made by raw::Direct from the functions of the libraries it names: the
-// engine's over its compile context (compiler_engine.h). Who makes the libraries is the caller's: a record depends only on
-// the functions and the Direct.
+// engine's from the translator alone (compiler_engine.h). Who makes the libraries is the caller's: a record depends only
+// on the functions and the Direct.
 #pragma once
 #import <Metal/Metal.h>
 #include <functional>

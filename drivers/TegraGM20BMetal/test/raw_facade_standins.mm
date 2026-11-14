@@ -73,6 +73,69 @@ extern "C" const char *nmb_last_error(void)
     return "no bridge on this host";
 }
 
+extern "C" {
+
+// The translation's device-free entry points (bridge/NativeMetalDirect.h) the facade's RawOffline.mm links: none made here
+NmbOfflineLibrary *nmb_offline_library_new(const void *, size_t)
+{
+    return nullptr;
+}
+
+void nmb_offline_library_release(NmbOfflineLibrary *)
+{}
+
+NmbOfflineFunction *nmb_offline_function_new(const NmbOfflineLibrary *, const char *)
+{
+    return nullptr;
+}
+
+NmbOfflineFunction *nmb_offline_function_new_specialized(const NmbOfflineLibrary *, const char *, const char *,
+                                                         const struct NmbConstant *, uint32_t)
+{
+    return nullptr;
+}
+
+void nmb_offline_function_release(NmbOfflineFunction *)
+{}
+
+uint64_t nmb_offline_function_type(const NmbOfflineFunction *)
+{
+    return 0;
+}
+
+int64_t nmb_offline_function_vertex_attribute_count(const NmbOfflineFunction *)
+{
+    return -1;
+}
+
+size_t nmb_offline_function_vertex_attribute(const NmbOfflineFunction *, uint32_t, char *, size_t, uint64_t[5])
+{
+    return 0;
+}
+
+bool nmb_render_pipeline_offline(const NmbOfflineRenderPipelineDescriptor *, bool, uint64_t, uint32_t,
+                                 const NmbDirectBinds *, bool (*)(const NmbDirectState *, void *), void *)
+{
+    return false;
+}
+
+bool nmb_compute_pipeline_offline(const NmbOfflineComputePipelineDescriptor *, const NmbDirectDispatch *,
+                                  bool (*)(const NmbDirectKernel *, void *), void *)
+{
+    return false;
+}
+
+bool nmb_offline_compute_pipeline_compiles(const NmbOfflineComputePipelineDescriptor *)
+{
+    return false;
+}
+
+bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescriptor *, uint32_t[3])
+{
+    return false;
+}
+}
+
 id native_bridge_metal_buffer_over_foreign(const struct switch_foreign_memory *, void *, NSUInteger, NSUInteger)
 {
     return nil;

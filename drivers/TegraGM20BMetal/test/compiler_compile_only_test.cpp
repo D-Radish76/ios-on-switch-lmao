@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
-// The system shader compiler's compile context (compiler_engine.h over bridge/NativeMetalCompile.h) against the m2v device
-// it replaced, each in a process of its own over hostsim's mock GM20B and NVK's host twin: the context's enable set and
-// compile devices are a runtime device's, and each record the engine makes of a sample of the corpus's states, render and
-// compute, is byte for byte the one made of the m2v device's libraries by its direct compile on its own Vulkan device.
+// The system shader compiler's engine (compiler_engine.h, the translator alone: raw/runtime/RawOffline.h) against the m2v
+// device it replaced, each in a process of its own over hostsim's mock GM20B and NVK's host twin: each record the engine
+// makes of a sample of the corpus's states, render and compute, is byte for byte the one made of the m2v device's
+// libraries by its direct compile on its own Vulkan device; and the frontend's compile context
+// (bridge/NativeMetalCompile.h) has a runtime device's enable set and compile devices.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include "NativeBridgeMetalFrontend.h"
@@ -181,7 +182,7 @@ void viaTheEngine()
     environment();
     switch_compiler::Engine engine;
     std::string why;
-    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), loader(), root(), {}}, why)) << why;
+    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), root(), {}}, why)) << why;
     writeEntries("engine", [&](const switch_compiler::Prepared &p, std::string &entry, std::string &failed) {
         return engine.compile(p, entry, failed);
     });

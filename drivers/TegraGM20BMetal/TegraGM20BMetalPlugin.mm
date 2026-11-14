@@ -766,9 +766,11 @@ private:
     {
         const uint64_t began = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
         id made = nil;
-        @try {
+        // C++'s catch, which takes Objective-C exceptions too: Objective-C's own personality routine would be the image's
+        // fourth beside two Rust standard libraries' (the bridge's, the stage compile's), past what compact unwind encodes
+        try {
             made = native_bridge_metal_open(loader_, cache, registryID_, missing);
-        } @catch (NSException *exception) {
+        } catch (...) {
             made = nil;
         }
         bridgeNs_ += clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - began;

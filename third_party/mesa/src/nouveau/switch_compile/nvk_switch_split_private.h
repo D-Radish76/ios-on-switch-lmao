@@ -11,7 +11,7 @@
 
 #include "nvk_switch_split.h"
 
-#include "nvk_cmd_buffer.h"
+#include "nvk_root_table.h"
 #include "nvk_shader.h"
 
 #include "util/bitset.h"

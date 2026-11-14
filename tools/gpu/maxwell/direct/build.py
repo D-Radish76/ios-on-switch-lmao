@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build directrun (directrun.mm) and exec.metallib (exec.metal and the counter resolve kernel) into one directory.
 
-usage: build.py --xcode-env <xcode.env> --host-bridge <darwin bridge .a> --metal-abi <MetalABI.h>
-                --raw <shader tools' raw/> --out <dir>
+usage: build.py --xcode-env <xcode.env> --host-bridge <darwin bridge .a> --compile <switch_compile.o>
+                --metal-abi <MetalABI.h> --raw <shader tools' raw/> --out <dir>
 
 directrun links the raw runtime's direct compile as the pack generator's directpack does (raw/pack/rawpack.py tool),
 over the frontend and the host bridge, beside the shader tools' mock GM20B (rpath @executable_path). The counter resolve
@@ -31,7 +31,7 @@ def run(command: list, env: dict[str, str]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    for name in ('xcode-env', 'host-bridge', 'metal-abi', 'raw', 'out'):
+    for name in ('xcode-env', 'host-bridge', 'compile', 'metal-abi', 'raw', 'out'):
         parser.add_argument('--' + name, required=True)
     args = parser.parse_args()
     xcode = dict(line.split('=', 1) for line in Path(args.xcode_env).read_text().splitlines() if '=' in line)
@@ -90,6 +90,7 @@ def main() -> None:
             '-x',
             'none',
             args.host_bridge,
+            args.compile,
             '-L',
             out,
             '-lmock_iokit',

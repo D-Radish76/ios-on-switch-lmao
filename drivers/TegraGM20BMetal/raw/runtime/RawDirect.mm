@@ -17,13 +17,12 @@ extern "C" bool native_bridge_metal_render_direct(id descriptor, bool barrier, N
 extern "C" bool native_bridge_metal_compute_direct(id descriptor, const struct NmbDirectDispatch *dispatch,
                                                    bool (*each)(const struct NmbDirectKernel *, void *), void *ctx,
                                                    const char **why) __attribute__((weak_import));
-extern "C" void *native_bridge_metal_nvk_symbol(const char *name) __attribute__((weak_import));
 
 namespace raw {
 namespace {
 
 struct Asked {
-    const DirectNvk &nvk;
+    const StageCompile &compile;
     const PackRules &rules;
     const std::string &key;
     const std::vector<uint32_t> &attributes;
@@ -40,7 +39,7 @@ struct Asked {
 bool made(const NmbDirectState *state, void *ctx)
 {
     Asked &a = *static_cast<Asked *>(ctx);
-    a.outcome = directRecord(*state, a.nvk, a.rules, a.key, a.attributes, a.out, a.why, a.registers, a.split,
+    a.outcome = directRecord(*state, a.compile, a.rules, a.key, a.attributes, a.out, a.why, a.registers, a.split,
                              a.variants, a.xrSlots);
     if (a.bound) {
         const NmbDirectDraw &d = state->draws[3];
@@ -53,7 +52,7 @@ bool made(const NmbDirectState *state, void *ctx)
 }
 
 struct AskedKernel {
-    const DirectNvk &nvk;
+    const StageCompile &compile;
     const std::string &key;
     ComputeRecord &out;
     std::string why;
@@ -63,7 +62,7 @@ struct AskedKernel {
 bool madeKernel(const NmbDirectKernel *kernel, void *ctx)
 {
     AskedKernel &a = *static_cast<AskedKernel *>(ctx);
-    a.outcome = directKernel(*kernel, a.nvk, a.key, a.out, a.why);
+    a.outcome = directKernel(*kernel, a.compile, a.key, a.out, a.why);
     return true;
 }
 
@@ -74,7 +73,6 @@ DirectTranslator DirectTranslator::frontend()
     DirectTranslator t;
     t.render = native_bridge_metal_render_direct;
     t.compute = native_bridge_metal_compute_direct;
-    t.nvkSymbol = native_bridge_metal_nvk_symbol;
     return t;
 }
 
@@ -82,18 +80,14 @@ Direct::Direct(const Pack &pack) : Direct(PackRules::of(pack))
 {}
 
 Direct::Direct(PackRules rules, bool rankArtifacts, DirectTranslator translator)
-    : rules_(std::move(rules)), translator_(translator),
-      nvk_(translator.nvkSymbol ? DirectNvk::find(translator.nvkSymbol) : DirectNvk{})
-{
-    if (rankArtifacts)
-        nvk_.nakCompileStage = translator.nvkSymbol ? translator.nvkSymbol("switch_nak_compile_ranked_stage") : nullptr;
-}
+    : rules_(std::move(rules)), translator_(translator), compile_(StageCompile::linked(rankArtifacts))
+{}
 
 CompileOutcome Direct::form(MTLRenderPipelineDescriptor *descriptor, bool barrier, ProbeTextures textures,
                             const std::string &key, const std::vector<uint32_t> &attributes, RuntimeRecord &out,
                             std::string &why, std::map<uint32_t, uint32_t> *registers, bool split)
 {
-    Asked a = {nvk_,
+    Asked a = {compile_,
                rules_,
                key,
                attributes,
@@ -138,9 +132,8 @@ CompileOutcome Direct::make(MTLRenderPipelineDescriptor *descriptor, const std::
                             bool split, PackForm requested)
 {
     storageRefusal_.clear();
-    if (!translator_.render || !nvk_.complete()) {
-        why = nvk_.nakCompileStage && !nvk_.abiMatches ? "NVK's switch_nvk_compile structs are not raw_direct.cpp's"
-                                                       : "the frontend or NVK has no direct compile";
+    if (!translator_.render || !StageCompile::abiMatches()) {
+        why = translator_.render ? "the stage compile's structs are not raw_direct_nvk.h's" : "no translator";
         return CompileOutcome::Failed;
     }
     // The function's reflection marks active an attribute a function constant gates (CoreRE's vsShadow texcoord, under
@@ -250,11 +243,11 @@ const NmbDirectDispatch &KernelDispatch::dispatch()
 CompileOutcome Direct::kernel(MTLComputePipelineDescriptor *descriptor, const NmbDirectDispatch &dispatch,
                               const std::string &key, ComputeRecord &out, std::string &why)
 {
-    if (!translator_.compute || !nvk_.complete()) {
-        why = "the frontend or NVK has no direct compile of kernels";
+    if (!translator_.compute || !StageCompile::abiMatches()) {
+        why = translator_.compute ? "the stage compile's structs are not raw_direct_nvk.h's" : "no translator of kernels";
         return CompileOutcome::Failed;
     }
-    AskedKernel a = {nvk_, key, out, {}};
+    AskedKernel a = {compile_, key, out, {}};
     const char *refused = nullptr;
     if (!translator_.compute(descriptor, &dispatch, madeKernel, &a, &refused)) {
         why = std::string("m2v refused its translation: ") + (refused ? refused : "");

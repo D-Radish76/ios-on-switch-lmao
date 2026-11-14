@@ -6,10 +6,7 @@
 //! generator's, and the system shader compiler's compile context: NativeMetalCompile.rs) runs on the compile profile's
 //! devices with the layouts as data alone.
 
-use crate::objects::{
-    DescriptorFunction, NmbDevice, NmbRenderPipelineDescriptor, NmbRenderPipelineDescriptorOf, e, get, guard, raw,
-    render_descriptor,
-};
+use crate::descriptors::{DescriptorFunction, NmbRenderPipelineDescriptorOf, e, guard, raw, render_descriptor};
 use crate::offline::{Devices, NmbOfflineRenderPipelineDescriptor, offline_devices};
 use ash::vk as avk;
 use metal2vulkan::Budget;
@@ -19,7 +16,6 @@ use metal2vulkan::bind::{
     SamplerSource, StageTable, TextureFacts, VertexAmplification, ViewMapping, WriteSource, heap_class_code,
 };
 use metal2vulkan::cache::VariantKey;
-use metal2vulkan::device::{DeviceDescription, VkExtension, VkFeature};
 use metal2vulkan::error::{BindError, Retry};
 use metal2vulkan::metal::{
     PixelFormat, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, TextureType,
@@ -38,10 +34,10 @@ const PROBE_TAGGED: u32 = 16;
 const RUN_BYTES: [u32; 4] = [256, 16, 4096, 256];
 const BOUND_RUN: usize = 3;
 const MAX_WRITES: usize = 64;
-pub(crate) const HEAP_ARRAYS: usize = 8;
+pub const HEAP_ARRAYS: usize = 8;
 /// The raw path's texture header pool (raw_heap_tables.h kHeapElements): its heap holds texture header i and sampler header
 /// i at element i, so no array needs more elements
-pub(crate) const RAW_HEAP_ELEMENTS: u32 = 8192;
+pub const RAW_HEAP_ELEMENTS: u32 = 8192;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -124,7 +120,7 @@ pub struct NmbDirectSamplerState {
 }
 
 /// What vk_sampler_state_init reads of `info`, with the reduction mode and border mapping metal2vulkan chains to it
-pub(crate) fn sampler_state(
+pub fn sampler_state(
     info: &avk::SamplerCreateInfo<'_>,
     reduction: avk::SamplerReductionMode,
     components: Option<avk::ComponentMapping>,
@@ -258,10 +254,10 @@ pub struct NmbDirectBinds {
 /// What the probe binds besides its tagged textures and samplers: cubic sampler states, and other textures' formats, by
 /// slot; and whether the state is compiled for RGB10A8_2P_XR10 attachments held in their two planes
 #[derive(Default)]
-struct Binds {
+pub struct Binds {
     cubic: Vec<(u32, SamplerDescriptor)>,
     textures: Vec<(u32, PixelFormat)>,
-    fragment_tests: u32,
+    pub fragment_tests: u32,
     bind_stride: Option<u32>,
     two_plane: bool,
 }
@@ -269,7 +265,7 @@ struct Binds {
 impl Binds {
     /// # Safety
     /// `binds` is null or valid, its arrays of their counts
-    unsafe fn of(binds: *const NmbDirectBinds) -> Result<Binds, String> {
+    pub unsafe fn of(binds: *const NmbDirectBinds) -> Result<Binds, String> {
         let mut out = Binds::default();
         // SAFETY: the caller's contract.
         let Some(b) = (unsafe { binds.as_ref() }) else {
@@ -389,18 +385,13 @@ pub struct NmbDirectState {
 
 /// A translation's failure as the caller's text; one the same request may get past (its deadline, the host's memory) starts
 /// "retry: ", which the caller does not keep as the state's refusal
-pub(crate) fn compile_error(what: &'static str) -> impl FnOnce(metal2vulkan::error::Error) -> String {
+pub fn compile_error(what: &'static str) -> impl FnOnce(metal2vulkan::error::Error) -> String {
     move |error| match error.retry() {
         Retry::Later => format!("retry: {what}: {error:?}"),
         _ => format!("{what}: {error:?}"),
     }
 }
 
-/// The compile device of the probe's barrier form: the runtime's enabled description without the pixel interlock, as the
-/// pack's barrier probe ran NVK with it hidden (NVK_DEBUG=no_fsi). One per process, made at its first ask.
-static BARRIER: Mutex<Option<(usize, Arc<metal2vulkan::device::Device>)>> = Mutex::new(None);
-static ORDERED: Mutex<Option<(usize, Arc<metal2vulkan::device::Device>)>> = Mutex::new(None);
-static COMPUTE: Mutex<Option<([u8; 32], Arc<metal2vulkan::device::Device>)>> = Mutex::new(None);
 type Planed = Vec<([u8; 32], Arc<metal2vulkan::device::Device>)>;
 static TWO_PLANE: Mutex<Planed> = Mutex::new(Vec::new());
 
@@ -413,70 +404,6 @@ fn two_plane_device(compile: &metal2vulkan::device::Device) -> Result<Arc<metal2
     }
     let device = Arc::new(compile.with_two_plane_extended_range());
     kept.push((fingerprint, device.clone()));
-    Ok(device)
-}
-
-pub(crate) fn native_compute_device(nmb: &NmbDevice) -> Result<Arc<metal2vulkan::device::Device>, String> {
-    let mut kept = COMPUTE.lock().map_err(|_| "native compute device lock")?;
-    let compile = nmb.device().compile_device();
-    let fingerprint = compile.profile_fingerprint();
-    if let Some((_, device)) = kept.as_ref().filter(|(of, _)| *of == fingerprint) {
-        return Ok(device.clone());
-    }
-    let device = Arc::new(
-        compile
-            .with_native_target(metal2vulkan::device::NativeShaderTarget::Sm53)
-            .with_heap_elements(RAW_HEAP_ELEMENTS),
-    );
-    *kept = Some((fingerprint, device.clone()));
-    Ok(device)
-}
-
-pub(crate) fn specialized_device(nmb: &NmbDevice, barrier: bool) -> Result<Arc<metal2vulkan::device::Device>, String> {
-    let mut kept = if barrier { &BARRIER } else { &ORDERED }
-        .lock()
-        .map_err(|_| "native compile device lock")?;
-    let id = nmb as *const NmbDevice as usize;
-    if let Some((of, device)) = kept.as_ref().filter(|(of, _)| *of == id) {
-        let _ = of;
-        return Ok(device.clone());
-    }
-    let runtime = nmb.device();
-    // SAFETY: the handles are the live runtime device's, used only for this query.
-    let handles = unsafe { runtime.raw() };
-    let description =
-        unsafe { DeviceDescription::query(handles.instance, handles.physical_device, handles.instance_api_version) }
-            .map_err(e("device description"))?;
-    let mut enabled = description
-        .with_enabled(runtime.enabled())
-        .map_err(e("enabled description"))?;
-    enabled.generated_commands = None;
-    let mut policy = *runtime.compile_device().policy();
-    let same = metal2vulkan::device::Device::new(enabled.clone(), policy).map_err(e("compile device"))?;
-    if same.profile_fingerprint() != runtime.compile_device().profile_fingerprint() {
-        return Err("the runtime's compile device is not its enabled description's".into());
-    }
-    if barrier {
-        enabled.extensions.remove(&VkExtension::ExtFragmentShaderInterlock);
-        enabled.features.remove(&VkFeature::FragmentShaderPixelInterlock);
-        enabled.features.remove(&VkFeature::FragmentShaderSampleInterlock);
-    } else {
-        policy.framebuffer_fetch = metal2vulkan::device::FramebufferFetchPolicy::RequireOrdered;
-        // The raw stage compiler explicitly interpolates FragCoord.z at the pixel center.
-        // This profile uses that contract for sample-depth correction; the runtime profile stays unchanged.
-    }
-    let device = if barrier {
-        metal2vulkan::device::Device::new(enabled, policy)
-    } else {
-        metal2vulkan::device::Device::new_with_center_fragment_depth(enabled, policy)
-    };
-    let device = Arc::new(
-        device
-            .map_err(e("native compile device"))?
-            .with_native_target(metal2vulkan::device::NativeShaderTarget::Sm53)
-            .with_heap_elements(RAW_HEAP_ELEMENTS),
-    );
-    *kept = Some((id, device.clone()));
     Ok(device)
 }
 
@@ -747,7 +674,7 @@ fn probed_format(state: &BindState, w: &NmbDirectWrite) -> u32 {
     }
 }
 
-pub(crate) fn slot_parts(slot: &SlotRef) -> (u32, u32) {
+pub fn slot_parts(slot: &SlotRef) -> (u32, u32) {
     (stage_number(slot.stage), slot.index)
 }
 
@@ -758,7 +685,7 @@ fn neutral_view(neutral: &NeutralResource) -> i32 {
     }
 }
 
-pub(crate) fn write_of(w: &metal2vulkan::bind::DescriptorWrite, ranges: &[DescriptorRange]) -> NmbDirectWrite {
+pub fn write_of(w: &metal2vulkan::bind::DescriptorWrite, ranges: &[DescriptorRange]) -> NmbDirectWrite {
     let mut out = NmbDirectWrite {
         set: w.set,
         binding: w.binding,
@@ -907,7 +834,7 @@ fn table_of(mut write: NmbDirectWrite, layout: &PipelineLayout) -> NmbDirectWrit
 
 /// The words instantiation gave `stage`'s argument table (m2v's push fields past the stage's push window), empty where its
 /// placement spilled none
-pub(crate) fn spill_table(plan: &BindingPlan, bytes: &[DescriptorBytes], stage: Stage) -> Vec<u32> {
+pub fn spill_table(plan: &BindingPlan, bytes: &[DescriptorBytes], stage: Stage) -> Vec<u32> {
     let Some(write) = plan
         .descriptors
         .iter()
@@ -933,7 +860,7 @@ pub(crate) fn spill_table(plan: &BindingPlan, bytes: &[DescriptorBytes], stage: 
 /// By buffer slot, the record's word + 1 of each SlotBindOffset residual of `stage` as the plan places it: a root push
 /// word (1 to 32), or the stage's argument table word + 33 (33 to 63). The probe's codes cannot name a storage residual
 /// whose slot shares its code with another.
-pub(crate) fn residual_words(plan: &BindingPlan, stage: Stage) -> [u8; 32] {
+pub fn residual_words(plan: &BindingPlan, stage: Stage) -> [u8; 32] {
     let mut out = [0u8; 32];
     for field in plan.push.fields.iter().filter(|f| f.stage == stage) {
         let PushField::SlotBindOffset(slot) = field.field else {
@@ -1061,21 +988,21 @@ fn heap_of(pipeline: &RenderPipeline, layout: &Layout<'_>, draw: &mut NmbDirectD
 
 /// A variant's layout as data, and as the runtime makes it on its device where there is one (pipeline/objects.rs
 /// create_set_layout); with no device its handles are 0
-pub(crate) struct Layout<'d> {
+pub struct Layout<'d> {
     device: Option<&'d ash::Device>,
     samplers: Vec<avk::Sampler>,
     sets: Vec<avk::DescriptorSetLayout>,
-    pub(crate) pipeline: avk::PipelineLayout,
+    pub pipeline: avk::PipelineLayout,
     /// Set 0's bindings, as data
-    pub(crate) set0_bindings: Vec<NmbDirectBinding>,
+    pub set0_bindings: Vec<NmbDirectBinding>,
     set_bindings: Vec<Vec<NmbDirectBinding>>,
     set_records: Vec<NmbDirectSet>,
     push_ranges: Vec<NmbDirectPushRange>,
-    pub(crate) data: NmbDirectLayout,
+    pub data: NmbDirectLayout,
 }
 
 impl<'d> Layout<'d> {
-    pub(crate) fn new(device: Option<&'d ash::Device>, layout: &PipelineLayout) -> Result<Layout<'d>, String> {
+    pub fn new(device: Option<&'d ash::Device>, layout: &PipelineLayout) -> Result<Layout<'d>, String> {
         let mut made = Layout {
             device,
             samplers: Vec::new(),
@@ -1210,12 +1137,12 @@ impl<'d> Layout<'d> {
         Ok(made)
     }
 
-    pub(crate) fn set0(&self) -> u64 {
+    pub fn set0(&self) -> u64 {
         self.sets.first().map_or(0, |s| avk::Handle::as_raw(*s))
     }
 
     /// The handle of the `at`th set layout, 0: none
-    pub(crate) fn set_at(&self, at: usize) -> u64 {
+    pub fn set_at(&self, at: usize) -> u64 {
         self.sets.get(at).map_or(0, |s| avk::Handle::as_raw(*s))
     }
 }
@@ -1500,49 +1427,6 @@ fn stage_order(pipeline: &RenderPipeline) -> Result<Vec<usize>, String> {
         .collect()
 }
 
-/// `texture_format`, `texture_samples`: the probe's tagged textures' MTLPixelFormat (0: BGRA8Unorm) and sample count, as
-/// probe.mm binds them for the state; `binds` (null: none): what it binds besides.
-///
-/// # Safety
-/// `descriptor` is a valid record; `binds` is null or valid; `each` is valid for `ctx` for the call's length.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn nmb_render_pipeline_direct(
-    device: *mut NmbDevice,
-    descriptor: *const NmbRenderPipelineDescriptor,
-    barrier: bool,
-    texture_format: u64,
-    texture_samples: u32,
-    binds: *const NmbDirectBinds,
-    each: unsafe extern "C" fn(state: *const NmbDirectState, ctx: *mut c_void) -> bool,
-    ctx: *mut c_void,
-) -> bool {
-    guard(false, || {
-        // SAFETY: the caller's contract.
-        let binds = unsafe { Binds::of(binds) }?;
-        let nmb = get(device)?;
-        let descriptor = render_descriptor(descriptor)?;
-        // Every raw form of a state (default, storage, ordered, barrier) and every compute kernel lowers half on SM53, so
-        // a storage form and its barrier twin round alike. m2v's own twin stays on the Vulkan target (no float16 below SM70).
-        let compile = if barrier || binds.fragment_tests != 0 {
-            specialized_device(nmb, barrier)?
-        } else {
-            native_compute_device(nmb)?
-        };
-        // SAFETY: the runtime device's own handles, used while it lives.
-        let handles = unsafe { nmb.device().raw() };
-        translate(
-            &compile,
-            &descriptor,
-            Some(handles.device),
-            texture_format,
-            texture_samples,
-            &binds,
-            each,
-            ctx,
-        )
-    })
-}
-
 /// nmb_render_pipeline_direct's answer for a state of offline functions, made on the compile profile's devices with no
 /// Vulkan object: every handle the state hands over is 0.
 ///
@@ -1581,7 +1465,7 @@ pub unsafe extern "C" fn nmb_render_pipeline_offline(
 /// # Safety
 /// As nmb_render_pipeline_direct's.
 #[allow(clippy::too_many_arguments)]
-pub(crate) unsafe fn render_offline<F: DescriptorFunction>(
+pub unsafe fn render_offline<F: DescriptorFunction>(
     devices: &Devices,
     descriptor: *const NmbRenderPipelineDescriptorOf<F>,
     barrier: bool,
@@ -1610,7 +1494,7 @@ pub(crate) unsafe fn render_offline<F: DescriptorFunction>(
 /// The state `descriptor` describes as the translator makes it on `compile` (its two-plane profile where `binds` ask)
 /// for the probe's draws, its layouts made on `vulkan` where there is one, handed to `each`
 #[allow(clippy::too_many_arguments)]
-fn translate(
+pub fn translate(
     compile: &metal2vulkan::device::Device,
     descriptor: &RenderPipelineDescriptor,
     vulkan: Option<&ash::Device>,

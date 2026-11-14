@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-use crate::direct::native_compute_device;
 use crate::direct_compute::{NativeComputePipeline, compiled};
+use crate::direct_device::native_compute_device;
 use crate::objects::{NmbComputePipelineDescriptor, NmbDevice, compute_descriptor, e, get, guard};
 use crate::reflection::{NmbReflectionNode, Reflection};
 use crate::variants::Variants;

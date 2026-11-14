@@ -3303,6 +3303,7 @@ host_test(
     srcs = ["m2v_source_test.cpp"],
     data = [
         "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
+        "//drivers/NativeMetal:bridge/NativeMetalDescriptors.rs",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalComputeState.mm",
@@ -3312,9 +3313,9 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalSubmit.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawRenderKey.mm",
         "//third_party/m2v/crates/metal2vulkan-runtime:sources",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_cmd_buffer.h",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_nir_lower_descriptors.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_shader.c",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_nir_lower_descriptors.c",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_root_table.h",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_shader_lower.c",
     ],
     tags = ["m2v"],
 )
@@ -3333,6 +3334,7 @@ host_test(
     srcs = ["raw_linked_source_test.cpp"],
     data = [
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
+        "//drivers/NativeMetal:bridge/NativeMetalDescriptors.rs",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
         "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawComplete.mm",
@@ -3603,11 +3605,7 @@ py_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h",  # mkpack.py reads it at import
         "//gpu/seed:raw_pack",
     ],
-    # m2v: //gpu/seed:raw_pack's probe runs NVK until the pack generator stops needing it
-    tags = [
-        "m2v",
-        "pack",
-    ],
+    tags = ["pack"],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
 )
 
@@ -5880,6 +5878,7 @@ RAW_HOST_DEPS = [
     "//drivers/NativeMetal/abi:metal_abi",
     "//kits/SwitchGM20B:caps",
     "//kits/SwitchGM20BEmit:macros_h",
+    "//third_party/mesa/src/nouveau/switch_compile:host_cc",
 ]
 
 # The raw facade and runtime with the host tests' sanitizers and the harness marks, the frontend and the bridge answered by
@@ -7321,9 +7320,10 @@ host_test(
     deps = [":frontend_host"],
 )
 
-# The system shader compiler's compile context (compiler/compiler_engine.mm over bridge/NativeMetalCompile.h) against the
-# m2v device it replaced, each a process over the mock GM20B: the same enable set and compile devices, and byte-identical
-# records of a sample of the corpus's states (render and compute) made from the crawl's libraries
+# The system shader compiler's engine (compiler/compiler_engine.mm, the translator alone: raw/runtime/RawOffline.h)
+# against the m2v device it replaced, each a process over the mock GM20B: byte-identical records of a sample of the
+# corpus's states (render and compute) made from the crawl's libraries; and the frontend's compile context
+# (bridge/NativeMetalCompile.h) has the runtime device's enable set and compile devices
 host_test(
     name = "compiler_compile_only_test",
     size = "medium",
@@ -7515,13 +7515,11 @@ host_test(
     cxx_std = "c++17",
     data = [
         "//drivers/TegraGM20BMetal:precompile/corpus.log",
-        "//gpu/nvk:host_dylib",
         "@ipsw//:crawl_qc",
         "@ipsw//:crawl_tree",
     ],
     env = {
         "SWITCH_CORPUS": "$(rootpath //drivers/TegraGM20BMetal:precompile/corpus.log)",
-        "SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)",
         "SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)",
     },
     linkopts = [

@@ -2,7 +2,7 @@
  * Copyright © 2026 Bruno St John
  * SPDX-License-Identifier: MIT
  *
- * Switch: switch_nvk_compile_stage's compile with no instance and no device.
+ * Switch: NVK's device stage compile with no instance and no device.
  * What it read of NVK's physical and logical device comes from a frozen
  * table (switch_nak_frozen), and the layout comes as data. NVK's lowering
  * passes read set layouts through NVK's layout structs, which are filled
@@ -12,9 +12,8 @@
 #include "nvk_switch_offline.h"
 
 #include "nvk_descriptor_set_layout.h"
-#include "nvk_device.h"
 #include "nvk_shader.h"
-#include "nvk_switch_capture.h"
+#include "nvk_switch_stage.h"
 #include "nvk_switch_ir.h"
 #include "nvk_switch_push.h"
 #include "nvk_switch_round.h"
@@ -137,6 +136,14 @@ layout_of(const struct switch_nak_layout *in, struct offline_layout *out)
    return true;
 }
 
+/* A layout given as data has no immutable samplers, so no YCbCr conversion */
+static const struct vk_ycbcr_conversion_state *
+no_ycbcr(UNUSED const void *data, UNUSED uint32_t set, UNUSED uint32_t binding,
+         UNUSED uint32_t array_index)
+{
+   return NULL;
+}
+
 static nir_shader *
 spirv_nir(const struct switch_nak_frozen *f,
           const struct switch_nvk_stage_info *info, const uint32_t *words,
@@ -233,7 +240,7 @@ compile(const struct switch_nak_frozen *f,
                                   (struct vk_pipeline_layout *)&layout->pipeline);
    struct nvk_cbuf_map cbuf_map = {0};
    switch_nvk_lower(&t, nir, flags, &rs, layout->pipeline.set_count,
-                    layout->pipeline.set_layouts, &cbuf_map);
+                    layout->pipeline.set_layouts, no_ycbcr, NULL, &cbuf_map);
    switch_nvk_varyings(nir);
    switch_nvk_lower_late(nir, flags);
    shader->cbuf_map = cbuf_map;
@@ -259,10 +266,10 @@ compile(const struct switch_nak_frozen *f,
 }
 
 SWITCH_EXPORT VkResult
-switch_nak_compile_stage(const struct switch_nak_frozen *frozen,
-                         const struct switch_nvk_stage_info *info,
-                         const struct switch_nak_layout *layout,
-                         struct switch_nvk_stage *out)
+switch_compile_stage(const struct switch_nak_frozen *frozen,
+                     const struct switch_nvk_stage_info *info,
+                     const struct switch_nak_layout *layout,
+                     struct switch_nvk_stage *out)
 {
    memset(out, 0, sizeof(*out));
    if (frozen->version != sizeof(*frozen))
@@ -299,7 +306,7 @@ switch_nak_compile_stage(const struct switch_nak_frozen *frozen,
    switch_nvk_xr_plane_bindings_current = 0;
    layout_finish(&l);
    if (result != VK_SUCCESS) {
-      switch_nak_stage_finish(&(struct switch_nvk_stage){.owner = shader});
+      switch_compile_stage_finish(&(struct switch_nvk_stage){.owner = shader});
       return result;
    }
    switch_nvk_stage_of(shader, out);
@@ -309,7 +316,7 @@ switch_nak_compile_stage(const struct switch_nak_frozen *frozen,
 }
 
 SWITCH_EXPORT void
-switch_nak_stage_finish(struct switch_nvk_stage *stage)
+switch_compile_stage_finish(struct switch_nvk_stage *stage)
 {
    struct nvk_shader *shader = stage->owner;
    if (shader == NULL)
@@ -321,32 +328,4 @@ switch_nak_stage_finish(struct switch_nvk_stage *stage)
    ralloc_free((void *)shader->nir_str);
    free(shader);
    stage->owner = NULL;
-}
-
-SWITCH_EXPORT size_t
-switch_nak_freeze(VkDevice _device, struct switch_nak_frozen *out, size_t size)
-{
-   VK_FROM_HANDLE(nvk_device, dev, _device);
-   if (out == NULL || size != sizeof(*out))
-      return sizeof(*out);
-   const struct nvk_physical_device *pdev = nvk_device_physical(dev);
-   const struct vk_properties *p = &pdev->vk.properties;
-   memset(out, 0, sizeof(*out));
-   out->version = sizeof(*out);
-   out->info = pdev->info;
-   out->debug_flags = pdev->debug_flags;
-   out->min_ssbo_alignment =
-      switch_nvk_target_of(pdev).min_ssbo_alignment;
-   out->robustness = dev->vk.robustness_state;
-   out->spirv_caps = vk_physical_device_get_spirv_capabilities(&pdev->vk);
-   out->subgroup_size = p->subgroupSize;
-   out->min_subgroup_size = p->minSubgroupSize;
-   out->max_subgroup_size = p->maxSubgroupSize;
-   out->sampler_descriptor_size = p->samplerDescriptorSize;
-   out->sampler_descriptor_alignment = p->samplerDescriptorAlignment;
-   out->image_descriptor_size = p->imageDescriptorSize;
-   out->image_descriptor_alignment = p->imageDescriptorAlignment;
-   out->buffer_descriptor_size = p->bufferDescriptorSize;
-   out->buffer_descriptor_alignment = p->bufferDescriptorAlignment;
-   return sizeof(*out);
 }

@@ -12,7 +12,7 @@ const PROBE_FACTOR_BYTES: u64 = 4096;
 const PROBE_INDEX_BYTES: u64 = 4096;
 
 /// The control-point index size of the state's patches, in bytes (0: none)
-pub(crate) fn index_bytes(tess: &TessellationState) -> u32 {
+pub fn index_bytes(tess: &TessellationState) -> u32 {
     match tess.control_point_index_type {
         TessellationControlPointIndexType::UInt16 => 2,
         TessellationControlPointIndexType::UInt32 => 4,
@@ -22,7 +22,7 @@ pub(crate) fn index_bytes(tess: &TessellationState) -> u32 {
 
 /// The probe's draw of a state: four vertices of primitives, or four patches of a tessellation state (indexed where it has a
 /// control-point index type)
-pub(crate) fn probe_draw(tess: Option<&TessellationState>) -> DrawCall {
+pub fn probe_draw(tess: Option<&TessellationState>) -> DrawCall {
     let Some(t) = tess else {
         return DrawCall::Primitives {
             vertex_start: 0,
@@ -44,7 +44,7 @@ pub(crate) fn probe_draw(tess: Option<&TessellationState>) -> DrawCall {
 
 /// The probe's factor buffer, which a tessellation state's draws read (the raw path binds its zero buffer where the encoder
 /// set none)
-pub(crate) fn bind_factors(state: &mut BindState) {
+pub fn bind_factors(state: &mut BindState) {
     state.tessellation_factors =
         TessellationFactors::new(Some(TessellationFactorBuffer::new(PROBE_FACTOR_BYTES, 0, 0)), 1.0);
 }

@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "nir_builder.h"
-#include "nvk_cmd_buffer.h"
+#include "nvk_root_table.h"
 #include "util/u_dynarray.h"
 
 _Thread_local bool switch_nvk_turned_current;
