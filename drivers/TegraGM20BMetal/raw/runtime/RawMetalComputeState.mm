@@ -231,6 +231,7 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
     s->_keyed = f && linkedText(descriptor, linked) && airOf(function, s->_air, libraryName);
     s->_libraryName = libraryName;
     const std::string stageIn = stageInText(descriptor.stageInputDescriptor);
+    s->_stageIn = !stageIn.empty();
     s->_constants = (f ? f->_constants : "") + stageIn + linked;
     s->_m2vMissing = rmM2vMissingKernel(descriptor);
     s->_maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);

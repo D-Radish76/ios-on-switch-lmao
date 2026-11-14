@@ -379,15 +379,14 @@ bool rmComputeReflection(RMComputeState *s, MTLPipelineOption o, MTLAutoreleased
     if (!reflectionAsked(o))
         return true;
     if (!s->_keyed || !s->_function) {
-        os_log_error(rawLog(), "raw: %{public}s: no reflection of a compute state of linked or foreign functions "
+        os_log_error(rawLog(), "raw: %{public}s: no reflection of a compute state of functions not all raw's "
                      "(%{public}s)", getprogname(), s->_direct.label.UTF8String ?: "-");
         return true;
     }
     const std::string key = raw::computeStateKey(s->_air, s->_constants, s->_maxThreads, s->_multipleOfWidth);
     uint32_t length = 0;
     std::string blob, why = "no completion";
-    // a stage input's layouts are in its key (RawMetalComputeState.mm stageInText), which no request carries
-    const bool askable = s->_constants == s->_function->_constants;
+    const bool askable = !s->_stageIn;
     if (const uint8_t *packed = gRM->raw->pack().reflection(raw::Pack::fnv(key.data(), key.size()), true, length))
         *reflection = rmReflectionOf(packed, length, true);
     else if (!askable)

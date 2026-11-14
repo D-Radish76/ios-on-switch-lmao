@@ -6,6 +6,7 @@
 @interface RMComputeState : RMObject {
 @public
     bool _keyed;
+    bool _stageIn;  // its stage input's layouts are in its key (RawMetalComputeState.mm stageInText), which no request carries
     raw::AirHash _air;
     std::string _constants;
     uint32_t _maxThreads, _threadLimit;

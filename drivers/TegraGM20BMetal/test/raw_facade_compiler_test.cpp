@@ -150,7 +150,8 @@ void refusedKernel()
 
 // MPSGraph's kernels link the functions of the library MPSKernelDAG stitched as private functions. Such a state is keyed
 // with them (raw_compute_key.h computeLinkedText): its facts and its dispatch's kernel are asked of the shader compiler with
-// them as stages after the kernel ("kp"), and the same kernel without them is another state. Nothing goes to m2v.
+// them as stages after the kernel ("kp"), as is its reflection, and the same kernel without them is another state. Nothing
+// goes to m2v.
 void linkedKernel()
 {
     FactsCompiler compiler;
@@ -214,6 +215,17 @@ void linkedKernel()
     EXPECT_NE(text(cb.error.localizedDescription).find("refused"), std::string::npos) << text(cb.error);
 
     EXPECT_NE(stateKey, raw::computeStateKey(hashes["k"], "", 0, false)) << "the kernel alone is another state";
+
+    MTLAutoreleasedComputePipelineReflection reflection = nil;
+    [device newComputePipelineStateWithDescriptor:d
+                                          options:MTLPipelineOptionBufferTypeInfo
+                                       reflection:&reflection
+                                            error:&error];
+    ASSERT_GE(compiler.requests.size(), 3u) << "its reflection is asked of the compiler as its facts were";
+    const raw::CompileRequest &reflected = compiler.requests[2];
+    EXPECT_EQ(reflected.kind, raw::RequestKind::Reflection);
+    EXPECT_EQ(reflected.key, raw::computeReflectionKey(reflected.stack, stateKey).key);
+    EXPECT_EQ(reflected.stages.size(), 3u);
     expectNoM2V(device);
 }
 
