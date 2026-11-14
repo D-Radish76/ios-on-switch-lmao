@@ -163,6 +163,7 @@ filegroup(
         "compiler/compiler_service.mm",
         # the translator's offline libraries, which a Reflection request's state is made of as the pack's is
         "raw/pack/offline_metal.mm",
+        "raw/pack/offline_reflection.mm",
     ],
 )
 

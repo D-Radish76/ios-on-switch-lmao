@@ -5021,6 +5021,7 @@ host_test(
         "raw_job_methods.h",
         "raw_reflection_values_test.cpp",
         "reflection_blob_writer.h",
+        "reflection_compare.h",
         "raw_facade_standins.h",
         "raw_frontend_absent.cpp",
         "raw_kernel_model.h",
@@ -5585,14 +5586,16 @@ host_test(
 )
 
 # The system shader compiler's compile context (compiler/compiler_engine.mm over bridge/NativeMetalCompile.h) against the
-# m2v device it replaced, each a process over the mock GM20B: the same enable set and compile devices, and byte-identical
-# records of a sample of the corpus's states (render and compute) made from the crawl's libraries
+# m2v device it replaced, each a process over the mock GM20B: the same enable set and compile devices, byte-identical
+# records of a sample of the corpus's states (render and compute) made from the crawl's libraries, and each sampled
+# kernel's reflection (a Reflection request, the translator alone) answering as the device's compute prepare's
 host_test(
     name = "compiler_compile_only_test",
     size = "medium",
     srcs = [
         "compiler_compile_only_test.cpp",
         "compiler_requests.h",
+        "reflection_compare.h",
         ":libmock_iokit.dylib",
         "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",

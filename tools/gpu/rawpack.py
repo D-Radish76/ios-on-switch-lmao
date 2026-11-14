@@ -64,6 +64,8 @@ FRAMEWORK_LIBRARY = re.compile(r' lib=/System/Library/(?:Private)?Frameworks/(\w
 OS_LIBRARY = re.compile(r' lib=/System/Library/\S+?\.(?:bundle|framework/Resources)/\S+\.metallib')
 QUARTZCORE = '/QuartzCore.framework/'
 STAGE_LIBRARY = re.compile(r' \| [vf] \S+( lib=\S+)')
+# A state of no fragment function (RawMetalStates.mm packs it from its vertex function's library alone)
+NO_FRAGMENT = re.compile(r' \| f - ')
 # Our own apps' libraries (SwitchHWTest's): the runtime keys their states by their functions' AIR, as a bundle's; the
 # pack holds only those precompile/app-states names, since a test of a state made at its creation must find none
 APP_LIBRARY = re.compile(r' lib=/Applications/Switch\w*\.app/default\.metallib')
@@ -90,7 +92,8 @@ RGB_WRITES = 0b1110
 def framework_line(line: str) -> bool:
     """Whether the runtime looks the line's state up in the pack (RawMetalStates.mm pipelineFor).
 
-    A vertex and a fragment function of one framework's default.metallib, and every function it links a framework
+    A vertex and a fragment function (or a vertex function and none) of one framework's default.metallib, and every
+    function it links a framework
     library's: under its framework; or of one bundle or framework resource library (OS_LIBRARY), linking none: under
     its functions' AIR (RawRenderKey.h). Not QuartzCore's, whose states the pack makes from their names
     (rawpack.py ca_states).
@@ -98,7 +101,7 @@ def framework_line(line: str) -> bool:
     stages = STAGE_LIBRARY.findall(line)
     frameworks = {m.group(1) for lib in stages if (m := FRAMEWORK_LIBRARY.fullmatch(lib))}
     linked = [lib for lib in LIBRARY.findall(line) if lib not in stages]
-    if len(stages) != 2 or len(set(stages)) != 1:
+    if len(stages) != (1 if NO_FRAGMENT.search(line) else 2) or len(set(stages)) != 1:
         return False
     if not frameworks:
         return not LINKED_LIBRARY.search(line) and bool(OS_LIBRARY.fullmatch(stages[0])) and QUARTZCORE not in stages[0]

@@ -6,6 +6,7 @@
 #include "../raw/runtime/RawMetalReflection.h"
 #include "NativeComputeReflection.h"
 #include "reflection_blob_writer.h"
+#include "reflection_compare.h"
 
 #import <objc/message.h>
 #include <gtest/gtest.h>
@@ -71,68 +72,6 @@ extern "C" bool nmb_compute_artifact_reflection(const NmbComputeArtifact *, cons
 
 namespace {
 
-constexpr const char *kCounts[] = {"type",
-                                   "access",
-                                   "index",
-                                   "bufferAlignment",
-                                   "bufferDataSize",
-                                   "bufferDataType",
-                                   "threadgroupMemoryAlignment",
-                                   "threadgroupMemoryDataSize",
-                                   "textureType",
-                                   "textureDataType",
-                                   "arrayLength",
-                                   "dataType",
-                                   "offset",
-                                   "argumentIndex",
-                                   "elementType",
-                                   "stride",
-                                   "argumentIndexStride",
-                                   "alignment",
-                                   "dataSize"};
-constexpr const char *kFlags[] = {"isUsed", "isActive", "isArgument", "isDepthTexture", "elementIsArgumentBuffer"};
-constexpr const char *kObjects[] = {"bufferStructType",   "bufferPointerType",          "structType",
-                                    "arrayType",          "textureReferenceType",       "pointerType",
-                                    "elementStructType",  "elementArrayType",           "elementTextureReferenceType",
-                                    "elementPointerType"};
-
-void expectSame(id m2v, id raw, const std::string &path);
-
-void expectSameList(NSArray *m2v, NSArray *raw, const std::string &path)
-{
-    ASSERT_EQ(m2v.count, raw.count) << path;
-    for (NSUInteger i = 0; i < m2v.count; i++)
-        expectSame(m2v[i], raw[i], path + "[" + std::to_string(i) + "]");
-}
-
-void expectSame(id m2v, id raw, const std::string &path)
-{
-    ASSERT_EQ(m2v == nil, raw == nil) << path;
-    if (!m2v)
-        return;
-    EXPECT_TRUE([[m2v name] isEqual:[raw name]] || (![m2v name] && ![raw name])) << path;
-    for (const char *s : kCounts)
-        EXPECT_EQ(((NSUInteger(*)(id, SEL))objc_msgSend)(m2v, sel_registerName(s)),
-                  ((NSUInteger(*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)))
-            << path << " " << s;
-    for (const char *s : kFlags)
-        EXPECT_EQ(((BOOL(*)(id, SEL))objc_msgSend)(m2v, sel_registerName(s)),
-                  ((BOOL(*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)))
-            << path << " " << s;
-    for (Class c : {[MTLArgument class], [MTLStructType class], [MTLStructMember class], [MTLArrayType class],
-                    [MTLPointerType class], [MTLTextureReferenceType class], [MTLType class]})
-        EXPECT_EQ([m2v isKindOfClass:c], [raw isKindOfClass:c]) << path << " " << class_getName(c);
-    for (Protocol *p : {@protocol(MTLBinding), @protocol(MTLBufferBinding), @protocol(MTLTextureBinding),
-                        @protocol(MTLThreadgroupBinding)})
-        EXPECT_EQ([m2v conformsToProtocol:p], [raw conformsToProtocol:p]) << path << " " << protocol_getName(p);
-    for (const char *s : kObjects)
-        expectSame(((id(*)(id, SEL))objc_msgSend)(m2v, sel_registerName(s)),
-                   ((id(*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)), path + "." + s);
-    expectSameList([m2v members], [raw members], path + ".members");
-    for (id member in [m2v members])
-        expectSame([m2v memberByName:[member name]], [raw memberByName:[member name]], path + ".memberByName");
-}
-
 std::string blob(uint32_t stages)
 {
     return reflection_blob::of(kTable.nodes, kTable.edges, stages);
@@ -152,8 +91,8 @@ TEST(RawReflection, AComputeStatesAnswersAsM2VsFromTheSameTable)
     ASSERT_NE(m2v, nil);
     ASSERT_NE(raw, nil);
     EXPECT_TRUE([raw isKindOfClass:[MTLComputePipelineReflection class]]);
-    expectSameList([m2v bindings], [raw bindings], "bindings");
-    expectSameList([m2v arguments], [raw arguments], "arguments");
+    reflection_compare::expectSameList([m2v bindings], [raw bindings], "bindings");
+    reflection_compare::expectSameList([m2v arguments], [raw arguments], "arguments");
     EXPECT_EQ([[raw bindings] count], 3u);
 }
 
@@ -163,8 +102,8 @@ TEST(RawReflection, ARenderStatesStagesAreItsBlobsStages)
     id raw = rawOf(blob(raw::kReflectionRenderStages), false);
     ASSERT_NE(raw, nil);
     EXPECT_TRUE([raw isKindOfClass:[MTLRenderPipelineReflection class]]);
-    expectSameList([m2v bindings], [raw vertexBindings], "vertexBindings");
-    expectSameList([m2v arguments], [raw vertexArguments], "vertexArguments");
+    reflection_compare::expectSameList([m2v bindings], [raw vertexBindings], "vertexBindings");
+    reflection_compare::expectSameList([m2v arguments], [raw vertexArguments], "vertexArguments");
     for (NSString *empty : @[ @"fragmentBindings", @"tileBindings", @"objectBindings", @"meshBindings" ])
         EXPECT_EQ([((NSArray * (*)(id, SEL)) objc_msgSend)(raw, NSSelectorFromString(empty)) count], 0u)
             << empty.UTF8String;

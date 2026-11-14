@@ -325,6 +325,7 @@ def build(work: Path, bridge: Path, metal_abi: Path, context_header: Path) -> No
         [
             HERE / 'directpack.mm',
             HERE / 'offline_metal.mm',
+            HERE / 'offline_reflection.mm',
             RAW / 'runtime/RawDirect.mm',
             RAW / 'runtime/RawRenderKey.mm',
         ],

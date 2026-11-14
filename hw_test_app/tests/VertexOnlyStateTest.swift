@@ -39,7 +39,7 @@ struct VertexOnlyStateTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let needsBefore = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
+        let needsBefore = ReflectionCheck.needs(gpu.device)
         let size = 64
         let color = try gpu.texture(.rgba8Unorm, size, size)
         let depth = try gpu.texture(.depth32Float_stencil8, size, size, usage: [.renderTarget])
@@ -81,8 +81,7 @@ struct VertexOnlyStateTest: HWTest {
                 if stencils[y * size + x] != (left ? 1 : 0) { wrongStencil += 1 }
             }
         }
-        let needsAfter = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
-        let asked = Set(needsAfter.keys).subtracting(needsBefore.keys).sorted()
+        let asked = ReflectionCheck.needsAsked(gpu.device, since: needsBefore)
         var metrics = Metrics()
         metrics.set("wrong_color", wrongColor)
         metrics.set("wrong_depth", wrongDepth)

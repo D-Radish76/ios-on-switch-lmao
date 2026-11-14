@@ -461,40 +461,16 @@ bool kernelFacts(MTLComputePipelineDescriptor *descriptor, uint32_t facts[3], st
     return false;
 }
 
-// A reflection blob's bytes into `out`, the blob released; false with `why`
-static bool blobBytes(NmbReflectionBlob *made, std::string &out, std::string &why)
+bool descriptorOf(MTLRenderPipelineDescriptor *d, NmbOfflineRenderPipelineDescriptor &p,
+                  std::vector<NmbOfflineFunction *> &linked)
 {
-    if (!made) {
-        why = std::string("no reflection: ") + nmb_last_error();
-        return false;
-    }
-    size_t length = 0;
-    const uint8_t *bytes = nmb_reflection_blob_bytes(made, &length);
-    out.assign(reinterpret_cast<const char *>(bytes), bytes ? length : 0);
-    nmb_reflection_blob_release(made);
-    return bytes != nullptr;
+    return renderDescriptor(d, p, linked);
 }
 
-bool renderReflection(MTLRenderPipelineDescriptor *descriptor, std::string &blob, std::string &why)
+bool descriptorOf(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelineDescriptor &p,
+                  std::vector<NmbOfflineFunction *> &linked)
 {
-    NmbOfflineRenderPipelineDescriptor p = {};
-    std::vector<NmbOfflineFunction *> linked;
-    if (!renderDescriptor(descriptor, p, linked)) {
-        why = "a function of another device, or what the frontend does not represent";
-        return false;
-    }
-    return blobBytes(nmb_offline_render_pipeline_reflection(&p), blob, why);
-}
-
-bool computeReflection(MTLComputePipelineDescriptor *descriptor, std::string &blob, std::string &why)
-{
-    NmbOfflineComputePipelineDescriptor p = {};
-    std::vector<NmbOfflineFunction *> linked;
-    if (!computeDescriptor(descriptor, p, linked)) {
-        why = "a function of another device, or what the frontend does not represent";
-        return false;
-    }
-    return blobBytes(nmb_offline_compute_pipeline_reflection(&p), blob, why);
+    return computeDescriptor(d, p, linked);
 }
 
 raw::DirectTranslator translator(const char *nvk)

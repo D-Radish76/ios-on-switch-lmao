@@ -3,17 +3,25 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The raw facade's reflections (drivers/TegraGM20BMetal/raw/runtime/RawMetalReflection.mm): asked with argument info, a
-/// state's bindings come from the pack's blob or the system shader compiler's, never from m2v's device.
+/// The raw facade's reflections (drivers/TegraGM20BMetal/raw/runtime/RawMetalReflection.mm): asked with argument info,
+/// a state's bindings come from the pack's blob or the system shader compiler's, never from m2v's device.
 enum ReflectionCheck {
     static func describe(_ bindings: [MTLBinding]) -> String {
         bindings.isEmpty ? "-" : bindings.map { "\($0.name):\($0.index):\($0.type.rawValue)" }.joined(separator: ",")
     }
 
-    static func needsAsked(_ device: MTLDevice, since before: [String: Any]) -> [String] {
-        let after = RawFacade.m2vRecord(of: device)["needs"] as? [String: Any] ?? [:]
-        return Set(after.keys).subtracting(before.keys).sorted()
+    /// Each need's count, so a need an earlier test asked shows again when this one asks it
+    static func needs(_ device: MTLDevice) -> [String: Int] {
+        let record = RawFacade.m2vRecord(of: device)["needs"] as? [String: Any] ?? [:]
+        return record.mapValues { ($0 as? NSNumber)?.intValue ?? 0 }
     }
+
+    static func needsAsked(_ device: MTLDevice, since before: [String: Int]) -> [String] {
+        needs(device).filter { $0.value > before[$0.key, default: 0] }.keys.sorted()
+    }
+
+    /// The needs m2v answered reflections by before the raw path did (RawMetalReflection.mm)
+    static let reflectionNeeds: Set = ["a render state's twin with its reflection", "a compute state's reflection"]
 }
 
 /// quad_vertex's corners at buffer 0 and solid_fragment's colour at buffer 0, from a state made with argument info
@@ -26,7 +34,7 @@ struct RenderReflectionTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
+        let before = ReflectionCheck.needs(gpu.device)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = gpu.library.makeFunction(name: "quad_vertex")
         descriptor.fragmentFunction = gpu.library.makeFunction(name: "solid_fragment")
@@ -48,6 +56,7 @@ struct RenderReflectionTest: HWTest {
                 ("a reflection given", reflection != nil),
                 ("corners: vertex buffer 0", corners?.index == 0 && corners?.type == .buffer),
                 ("color: fragment buffer 0", color?.index == 0 && color?.type == .buffer),
+                ("no reflection need", ReflectionCheck.reflectionNeeds.isDisjoint(with: asked)),
                 ("no m2v need", asked.isEmpty),
             ], metrics, proof: gpu.proof)
     }
@@ -63,8 +72,10 @@ struct ComputeReflectionTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
-        guard let function = gpu.library.makeFunction(name: "multiply_add") else { throw TestFailure("no multiply_add") }
+        let before = ReflectionCheck.needs(gpu.device)
+        guard let function = gpu.library.makeFunction(name: "multiply_add") else {
+            throw TestFailure("no multiply_add")
+        }
         let (_, reflection) = try gpu.device.makeComputePipelineState(
             function: function, options: [.argumentInfo, .bufferTypeInfo])
         let bindings = reflection?.bindings ?? []
@@ -79,6 +90,7 @@ struct ComputeReflectionTest: HWTest {
         return .judged(
             [
                 ("a reflection given", reflection != nil), ("a, b, out, counter: buffers 0-3", named),
+                ("no reflection need", ReflectionCheck.reflectionNeeds.isDisjoint(with: asked)),
                 ("no m2v need", asked.isEmpty),
             ], metrics, proof: gpu.proof)
     }

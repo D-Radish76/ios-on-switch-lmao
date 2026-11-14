@@ -13,10 +13,14 @@
 #include "../compiler/compiler_engine.h"
 #include "../raw/runtime/raw_cache.h"
 #include "../raw/runtime/raw_pack.h"
+#include "../raw/runtime/RawMetalReflection.h"
+#include "../raw/runtime/raw_reflection_blob.h"
+#include "reflection_compare.h"
 
 #include <gtest/gtest.h>
 #include <fstream>
 #include <regex>
+#include <set>
 
 namespace {
 
@@ -178,7 +182,60 @@ void viaTheEngine()
     });
 }
 
+// Each sampled kernel's reflection as the shader compiler makes it (a Reflection request: the translator alone, no m2v
+// runtime) and as the m2v device's compute prepare gave it, selector by selector
+void reflectionsAsTheDevice()
+{
+    environment();
+    id<MTLDevice> device = native_bridge_metal_open(loader().c_str(), nullptr, 0, nullptr);
+    ASSERT_TRUE(device != nil) << nmb_last_error();
+    switch_compiler::Engine engine;
+    std::string why;
+    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), loader(), root()}, why)) << why;
+    const switch_compiler::Libraries libraries = compiler_test::deviceLibraries(device, root());
+    switch_compiler::SystemLibraries system(root());
+    std::set<std::string> states;
+    for (raw::CompileRequest r : requests()) {
+        switch_compiler::Prepared kernel;
+        if (r.kind != raw::RequestKind::Kernel || !r.stages[0].constants.empty() ||
+            !switch_compiler::prepare(raw::encodeRequest(r), 0, system, kernel, why))
+            continue;
+        const std::string state = kernel.packKey.substr(0, kernel.packKey.find(" | tg="));
+        if (!states.insert(state).second)
+            continue;
+        id<MTLLibrary> library = libraries(r.libraries[r.stages[0].library], why);
+        ASSERT_TRUE(library != nil) << why;
+        MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
+        d.computeFunction = [library newFunctionWithName:@(r.stages[0].function.c_str())];
+        d.maxTotalThreadsPerThreadgroup = r.kernel.maxThreads;
+        d.threadGroupSizeIsMultipleOfThreadExecutionWidth = r.kernel.multipleOfWidth;
+        id m2v = nil;
+        NSError *error = nil;
+        ASSERT_TRUE(native_bridge_metal_compute_prepare(d, MTLPipelineOptionArgumentInfo, &m2v, &error) != nil)
+            << state << ": " << (error ? error.localizedDescription.UTF8String : "");
+        r.kind = raw::RequestKind::Reflection;
+        r.key = raw::computeReflectionKey(0, state).key;
+        switch_compiler::Prepared p;
+        ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why)) << why;
+        std::string entry, blob;
+        ASSERT_EQ(engine.compile(p, entry, why), TegraGM20BCompileMade) << state << ": " << why;
+        bool made = false;
+        ASSERT_TRUE(raw::decodeReflectionEntry(entry, p.key, made, blob) && made) << state << ": " << blob;
+        id raw = rmReflectionOf(reinterpret_cast<const uint8_t *>(blob.data()), blob.size(), true);
+        ASSERT_TRUE(raw != nil) << state;
+        reflection_compare::expectSameList([m2v bindings], [raw bindings], state);
+    }
+    EXPECT_FALSE(states.empty()) << "the sample has no kernel of no constants";
+    printf("%zu compute reflections compared\n", states.size());
+}
+
 }  // namespace
+
+TEST(CompilerCompileOnly, AKernelsReflectionIsTheDevicesSelectorForSelector)
+{
+    ASSERT_FALSE(root().empty());
+    switch_ios::test::ExpectPassesInFreshProcess(reflectionsAsTheDevice);
+}
 
 TEST(CompilerCompileOnly, TheContextCompilesAsTheRuntimeDevice)
 {

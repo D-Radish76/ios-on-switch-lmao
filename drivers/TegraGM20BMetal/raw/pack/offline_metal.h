@@ -6,6 +6,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include <string>
+#include <vector>
 #include "../runtime/RawDirect.h"
 
 // The device calls the line parsers make of a library: newLibraryWithURL:error: and newLibraryWithData:error:
@@ -28,7 +29,15 @@ bool kernelMade(MTLComputePipelineDescriptor *descriptor, std::string &why);
 // False with `why`.
 bool kernelFacts(MTLComputePipelineDescriptor *descriptor, uint32_t facts[3], std::string &why);
 
-// The reflection of `descriptor`'s state (of RawOfflineDevice's functions) as runtime/raw_reflection_blob.h lays it out:
+// `d`'s descriptor as the bridge's offline exports take it, `linked` holding the handles it points into; false: a function
+// of another device, or what the frontend does not represent
+bool descriptorOf(MTLRenderPipelineDescriptor *d, NmbOfflineRenderPipelineDescriptor &p,
+                  std::vector<NmbOfflineFunction *> &linked);
+bool descriptorOf(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelineDescriptor &p,
+                  std::vector<NmbOfflineFunction *> &linked);
+
+// The reflection of `descriptor`'s state (of RawOfflineDevice's functions) as runtime/raw_reflection_blob.h lays it out
+// (offline_reflection.mm):
 // what the pack and the system shader compiler's store hold of it. False with `why`.
 bool renderReflection(MTLRenderPipelineDescriptor *descriptor, std::string &blob, std::string &why);
 bool computeReflection(MTLComputePipelineDescriptor *descriptor, std::string &blob, std::string &why);
