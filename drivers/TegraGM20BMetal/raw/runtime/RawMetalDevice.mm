@@ -647,7 +647,6 @@ static bool producesTexture(MTLTextureDescriptor *d)
         const size_t planes = IOSurfaceGetPlaneCount(s),
                      pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
         const uintptr_t base = uintptr_t(IOSurfaceGetBaseAddress(s));
-        const uintptr_t offset = planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - base : 0;
         const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
         const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0);
         const OSType fourcc = IOSurfaceGetPixelFormat(s);
