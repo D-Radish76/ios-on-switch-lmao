@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: MIT
-// See raw_facade_standins.h. The frontend's calls answer none (no device, no twin, no NVK); the bridge's heap words are the
-// test's constants.
-#include "raw_facade_standins.h"
+// What the facade asks of the frontend and the bridge on a host with no m2v device: the frontend's calls answer none (no
+// device, no twin, no NVK), as one with no device would.
 #import <Metal/Metal.h>
 #include "NativeBridgeMetalFrontend.h"
 #include "bridge/NativeMetalDirect.h"
 #include "bridge/NativeMetalObjects.h"
-
-namespace standin {
-
-}  // namespace standin
 
 extern "C" const char *nmb_last_error(void)
 {
