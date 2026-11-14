@@ -175,28 +175,29 @@ void Completion::create(Ask asked, Ready ready)
     request(std::move(asked), std::make_shared<Pending>(pending_, std::move(ready), true));
 }
 
-// Why an ask of `k` that came to nothing failed, "" where it was refused
-std::string Completion::failureOf(const CacheKey &k)
+// Why an ask of `k` that came to nothing failed: for a variant's ask, "" where it was refused
+std::string Completion::failureOf(const CacheKey &k, bool creation)
 {
     if (remote_->declined())
         return kNoCompilerComes;
     RuntimeRecord record;
     std::string why;
-    return compiler_->lookup(k, record, why) == RecordCache::Found::Refusal ? std::string()
-                                                                            : "the state's compile could not run";
+    if (compiler_->lookup(k, record, why) != RecordCache::Found::Refusal)
+        return "the state's compile could not run";
+    return creation ? "the shader compiler refused the state" + (why.empty() ? std::string() : ": " + why) : "";
 }
 
 void Completion::request(Ask asked, std::shared_ptr<Pending> pending)
 {
     dispatch_async(queue_, ^{
         if (stopping_.load(std::memory_order_acquire)) {
-            pending->ready(nullptr, std::string());
+            pending->ready(nullptr, pending->creation ? "the shader compiler's client is stopping" : "");
             return;
         }
         Ask a = asked;
         CacheKey k;
         if (!keyOf(a, k)) {
-            pending->ready(nullptr, std::string());
+            pending->ready(nullptr, pending->creation ? kInexpressible : "");
             return;
         }
         // the installed seed's, this process's or the disk's answer, which compiler_->ask then gives at once
@@ -217,7 +218,7 @@ void Completion::request(Ask asked, std::shared_ptr<Pending> pending)
                 if (record)
                     place(k, record, caTransform, pending);
                 else
-                    pending->ready(nullptr, failureOf(k));
+                    pending->ready(nullptr, failureOf(k, pending->creation));
             }))
             return;
         auto done = [this, k, asked, pending, caTransform](const RuntimeRecord *record, const std::string &) {
@@ -231,7 +232,7 @@ void Completion::request(Ask asked, std::shared_ptr<Pending> pending)
                     request(asked, pending);
                 });
             else
-                pending->ready(nullptr, failureOf(k));
+                pending->ready(nullptr, failureOf(k, pending->creation));
         };
         const RuntimeRecord *made = nullptr;
         const Compiler::State state = compiler_->ask(k, done, &made);
@@ -248,7 +249,7 @@ void Completion::place(const CacheKey &key, const RuntimeRecord *record, bool ca
     const CacheKey keptKey = key;
     dispatch_async(queue_, ^{
         if (stopping_.load(std::memory_order_acquire)) {
-            pending->ready(nullptr, std::string());
+            pending->ready(nullptr, pending->creation ? "the shader compiler's client is stopping" : "");
             return;
         }
         std::string full;
@@ -260,6 +261,8 @@ void Completion::place(const CacheKey &key, const RuntimeRecord *record, bool ca
                     full = why;
                     retry = false;
                 }
+                if (!made && !retry && pending->creation && full.empty())
+                    full = why.empty() ? "the state's record could not be placed" : why;
                 return made;
             },
             [&](Pipeline *made) {
@@ -276,8 +279,10 @@ Pipeline *Completion::makeNow(Ask a, std::string &failure)
 {
     failure.clear();
     CacheKey k;
-    if (!keyOf(a, k))
+    if (!keyOf(a, k)) {
+        failure = kInexpressible;
         return nullptr;
+    }
     {
         std::lock_guard<raw::Mutex> l(lock_);
         asked_[k.name()] = a;
@@ -311,12 +316,15 @@ Pipeline *Completion::makeNow(Ask a, std::string &failure)
         failure = "the state's compile could not run" + (why.empty() ? std::string() : ": " + why);
         return nullptr;
     }
-    if (state != Compiler::State::Ready)
+    if (state != Compiler::State::Ready) {
+        const std::string refusal = why.empty() ? failure : why;
+        failure = "the shader compiler refused the state" + (refusal.empty() ? std::string() : ": " + refusal);
         return nullptr;
+    }
     bool heapFull = false;
     Pipeline *made = device_.addRecord(record, a.caTransform, why, &heapFull);
-    if (!made && heapFull)
-        failure = why;
+    if (!made)
+        failure = why.empty() ? "the state's record could not be placed" : why;
     return made;
 }
 

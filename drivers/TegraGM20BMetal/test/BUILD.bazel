@@ -251,8 +251,8 @@
 #                     instruction as its source does, and no FTZ result or widened half is a denormal
 #   raw_facade_lazy_test  the raw facade (RawMetal.h) over the kernel model with a pack of one state (raw_facade_harness.h):
 #                     a packed state's draw opens no m2v device and runs its programs in place from the pack's pages;
-#                     an unpacked state, a reflection, a foreign sampler and a method only m2v's device class has each open
-#                     it once, naming what for
+#                     an unpacked state fails its creation with Metal's error; a reflection, a foreign sampler and a method
+#                     only m2v's device class has each open it once, naming what for
 #   raw_facade_open_test  what no process opens m2v for: a library's names, type and options, a library Metal would not
 #                     load (nil and Metal's error), no memory (nil), pages the kernel cannot wire (no buffer), a YCbCr
 #                     target state raw draws (its twin made only at a fallback), texture layouts and a full sampler header

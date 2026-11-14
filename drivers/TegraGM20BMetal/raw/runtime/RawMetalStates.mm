@@ -442,6 +442,14 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
             *error = nil;
         return (id<MTLRenderPipelineState>)p;
     }
+    if (!p->_raw && p->_completable) {
+        const std::string failure = p->_failure.empty() ? "no shader compiler serves this process" : p->_failure;
+        os_log_error(rawLog(), "raw: %{public}s: no render state %{public}s: %{public}s", getprogname(),
+                     d.label.UTF8String ?: "-", failure.c_str());
+        if (error)
+            *error = rmCreationError(failure);
+        return nil;
+    }
     if (reflection) {
         id<MTLDevice> m2v = RM_M2V("a render state's twin with its reflection");
         p->_twin = [m2v newRenderPipelineStateWithDescriptor:packedTwinDescriptor(d, packed)
