@@ -1,4 +1,5 @@
 import HWTestCore
+import HWTestGPU
 import Metal
 import QuartzCore
 import UIKit
@@ -19,6 +20,7 @@ final class PresentAtTimeRun: NSObject {
     private var started: CFTimeInterval = 0
     private var frame = 0
     private(set) var submitted = 0
+    nonisolated let paths = CommandPaths()
     nonisolated static let period = 1.0 / 60
 
     init(done: Waiter<Bool>) {
@@ -55,6 +57,7 @@ final class PresentAtTimeRun: NSObject {
             let shown = shown
             drawable.addPresentedHandler { shown.add($0.presentedTime, target: target) }
             commands.present(drawable, atTime: target)
+            paths.watch(commands)
             commands.commit()
             submitted += 1
         }
@@ -134,7 +137,8 @@ struct PresentAtTimeTest: HWTest {
             [
                 ("drawables presented with a time", submitted > 20 && offsets.count >= submitted / 2),
                 ("none shown more than half a period before its time (early 0)", early.isEmpty),
-            ], metrics)
+            ], metrics
+        ).onRawPath(run.paths, device: MTLCreateSystemDefaultDevice())
     }
 
     /// kern.switch_frame_info_shown and _unsent (debug kernels), nil when either cannot be read.
