@@ -7,7 +7,7 @@ use crate::bind::{
     ArgumentBufferLayout, ArgumentDescriptor, ArgumentLayoutError, ArgumentType as T,
 };
 use crate::budget::Budget;
-use crate::library::{FunctionConstantValues, Library};
+use crate::library::{Function, FunctionConstantValues, Library};
 use crate::metal::DataType as D;
 use crate::pipeline::testing::AssembleError;
 
@@ -464,12 +464,8 @@ define void @kP(ptr addrspace(1) %p) {
   !"air.arg_type_name", !"float", !"air.arg_name", !"p"}
 "#;
 
-/// The layout of the argument buffer `kernel` of [`MODULE`] takes at `index`; `None` where
-/// `llvm-as` is missing.
-pub(super) fn function_layout(
-    kernel: &str,
-    index: u32,
-) -> Option<Result<ArgumentBufferLayout, ArgumentLayoutError>> {
+/// Kernel `kernel` of [`MODULE`]; `None` where `llvm-as` is missing.
+pub(super) fn fixture_function(kernel: &str) -> Option<Function> {
     let bitcode = match metal2vulkan_devtools::llvm_assemble_text(MODULE) {
         Ok(bitcode) => bitcode,
         Err(AssembleError::Missing(why)) => {
@@ -479,8 +475,16 @@ pub(super) fn function_layout(
         Err(AssembleError::Rejected(why)) => panic!("llvm-as rejected the module: {why}"),
     };
     let library = Library::from_air(&bitcode).expect("the module decodes");
-    let function = library.function(kernel).expect("the kernel");
-    Some(function.argument_buffer_layout(
+    Some(library.function(kernel).expect("the kernel"))
+}
+
+/// The layout of the argument buffer `kernel` of [`MODULE`] takes at `index`; `None` where
+/// `llvm-as` is missing.
+pub(super) fn function_layout(
+    kernel: &str,
+    index: u32,
+) -> Option<Result<ArgumentBufferLayout, ArgumentLayoutError>> {
+    Some(fixture_function(kernel)?.argument_buffer_layout(
         index,
         &FunctionConstantValues::defaults(),
         &Budget::default(),

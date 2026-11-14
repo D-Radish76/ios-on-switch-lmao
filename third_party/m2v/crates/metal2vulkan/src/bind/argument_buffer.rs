@@ -197,6 +197,17 @@ impl ArgumentDescriptor {
     }
 }
 
+/// What `newArgumentEncoderWithBufferIndex:` encodes into at buffer `index` of a function
+/// ([`Function::buffer_encoders`](crate::library::Function::buffer_encoders)): an argument
+/// buffer's layout, or a plain buffer's (`argument_buffer` false), which Metal makes only without
+/// API validation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BufferEncoder {
+    pub index: u32,
+    pub argument_buffer: bool,
+    pub layout: Result<ArgumentBufferLayout, ArgumentLayoutError>,
+}
+
 /// Why no argument-buffer layout is made: what Metal stops, raises or answers nil for.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]

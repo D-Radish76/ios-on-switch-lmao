@@ -10,6 +10,7 @@ mod air_input;
 mod argument_buffers;
 mod argument_runs;
 mod bind_shape_of;
+mod buffer_encoders;
 mod constant_blob_footprint;
 mod engine_absent_handles;
 mod engine_absent_threadgroup;

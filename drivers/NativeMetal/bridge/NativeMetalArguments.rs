@@ -4,7 +4,7 @@
 //! of leaf arguments (bind/argument_runs.rs), the layouts of the argument buffers its pointers point to after it.
 
 use crate::objects::{NmbFunction, e, get, guard};
-use metal2vulkan::bind::{ArgumentRun, ArgumentType, FlatLayout, flat_layouts};
+use metal2vulkan::bind::{ArgumentBufferLayout, ArgumentRun, ArgumentType, flat_layouts};
 use std::ffi::c_void;
 
 /// raw_argument_layout.h ArgumentRun
@@ -64,9 +64,34 @@ fn run_of(r: &ArgumentRun) -> Result<NmbArgumentRun, String> {
     })
 }
 
+/// `layout`, then each argument buffer its pointers point to (a run's `nested`: that layout's index + 1), as flat runs
+/// handed to `each` (valid during the call)
+pub(crate) fn with_flat_layouts<R>(
+    layout: &ArgumentBufferLayout,
+    each: impl FnOnce(&[NmbArgumentLayout]) -> R,
+) -> Result<R, String> {
+    let flat = flat_layouts(layout);
+    let runs = flat
+        .iter()
+        .map(|l| l.runs.iter().map(run_of).collect::<Result<Vec<_>, String>>())
+        .collect::<Result<Vec<_>, String>>()?;
+    let layouts: Vec<NmbArgumentLayout> = flat
+        .iter()
+        .zip(&runs)
+        .map(|(l, r)| NmbArgumentLayout {
+            encoded_length: l.encoded_length,
+            alignment: l.alignment,
+            runs: r.as_ptr(),
+            run_count: r.len() as u32,
+            reserved: 0,
+        })
+        .collect();
+    Ok(each(&layouts))
+}
+
 /// `newArgumentEncoderWithBufferIndex:`'s layouts: the argument buffer `function` takes at buffer `index`, then each one its
-/// pointers point to (a run's `nested`: that layout's index + 1), handed to `each` (valid during the call). False with
-/// nmb_last_error where Metal makes no encoder, or `each`'s false.
+/// pointers point to (with_flat_layouts), handed to `each`. False with nmb_last_error where Metal makes no encoder, or
+/// `each`'s false.
 ///
 /// # Safety
 /// `each` is valid for `ctx` for the call's length.
@@ -82,23 +107,9 @@ pub unsafe extern "C" fn nmb_function_argument_layouts(
             .function()?
             .new_argument_encoder_with_buffer_index(index)
             .map_err(e("argument encoder"))?;
-        let flat: Vec<FlatLayout> = flat_layouts(encoder.layout());
-        let runs = flat
-            .iter()
-            .map(|l| l.runs.iter().map(run_of).collect::<Result<Vec<_>, String>>())
-            .collect::<Result<Vec<_>, String>>()?;
-        let layouts: Vec<NmbArgumentLayout> = flat
-            .iter()
-            .zip(&runs)
-            .map(|(l, r)| NmbArgumentLayout {
-                encoded_length: l.encoded_length,
-                alignment: l.alignment,
-                runs: r.as_ptr(),
-                run_count: r.len() as u32,
-                reserved: 0,
-            })
-            .collect();
-        // SAFETY: the caller's contract; `layouts` and `runs` live until after the call.
-        Ok(unsafe { each(layouts.as_ptr(), layouts.len() as u32, ctx) })
+        // SAFETY: the caller's contract; the layouts live until after the call.
+        with_flat_layouts(encoder.layout(), |layouts| unsafe {
+            each(layouts.as_ptr(), layouts.len() as u32, ctx)
+        })
     })
 }

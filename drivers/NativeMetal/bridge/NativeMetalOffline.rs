@@ -4,6 +4,7 @@
 //! of a Vulkan query, and libraries and functions made by the translator alone. nmb_compile_profile_check holds a live
 //! runtime to the profile; nmb_compile_profile_freeze writes the profile of one.
 
+use crate::arguments::{NmbArgumentLayout, with_flat_layouts};
 use crate::direct::RAW_HEAP_ELEMENTS;
 use crate::objects::{
     DescriptorFunction, NmbComputePipelineDescriptorOf, NmbConstant, NmbDevice, NmbRenderPipelineDescriptorOf,
@@ -16,7 +17,7 @@ use metal2vulkan::device::{
 use metal2vulkan::library::{FunctionConstantValues, Library, LibraryType};
 use metal2vulkan::pipeline::{FunctionDescriptor, LinkedFunction};
 use metal2vulkan::reflection::{Attribute, FunctionProperties};
-use std::ffi::{CStr, c_char, c_void};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::sync::OnceLock;
 
 const PROFILE: &str = include_str!(env!("NMB_COMPILE_PROFILE"));
@@ -356,5 +357,58 @@ pub extern "C" fn nmb_offline_function_stage_input_attribute(
             size,
             info,
         )
+    })
+}
+
+/// What `newArgumentEncoderWithBufferIndex:` encodes into at every buffer index `function` declares, in index order
+/// (metal2vulkan bind BufferEncoder): `each` gets the index, whether it is an argument buffer (else a plain buffer, whose
+/// encoder Metal makes only without API validation), and its layouts as nmb_function_argument_layouts gives them, or none
+/// and `refusal` where Metal makes no encoder. False with nmb_last_error where the function does not decode, or `each`'s
+/// false.
+///
+/// # Safety
+/// `each` is valid for `ctx` for the call's length.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn nmb_offline_function_buffer_encoders(
+    function: *const NmbOfflineFunction,
+    each: unsafe extern "C" fn(
+        index: u32,
+        argument_buffer: bool,
+        layouts: *const NmbArgumentLayout,
+        count: u32,
+        refusal: *const c_char,
+        ctx: *mut c_void,
+    ) -> bool,
+    ctx: *mut c_void,
+) -> bool {
+    guard(false, || {
+        let f = get(function)?;
+        let encoders = f
+            .function
+            .buffer_encoders(&f.constants, &Budget::standard())
+            .map_err(e("buffer encoders"))?;
+        for b in &encoders {
+            // SAFETY: the caller's contract; the layouts and the refusal live until after the call.
+            let going = match &b.layout {
+                Ok(layout) => with_flat_layouts(layout, |l| unsafe {
+                    each(
+                        b.index,
+                        b.argument_buffer,
+                        l.as_ptr(),
+                        l.len() as u32,
+                        std::ptr::null(),
+                        ctx,
+                    )
+                })?,
+                Err(why) => {
+                    let refusal = CString::new(format!("{why:?}")).map_err(e("refusal"))?;
+                    unsafe { each(b.index, b.argument_buffer, std::ptr::null(), 0, refusal.as_ptr(), ctx) }
+                }
+            };
+            if !going {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     })
 }

@@ -84,11 +84,13 @@ rust_test(
     deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
 )
 
-# The raw path's argument buffers: a layout's flat runs against its own lookup, and a heap class's word
+# The raw path's argument buffers: a layout's flat runs against its own lookup, a function's buffer encoders against
+# each index's layout alone, and a heap class's word
 rust_test(
     name = "argument_runs_test",
     args = [
         "argument_runs",
+        "buffer_encoders",
         "heap_code",
     ],
     compile_data = glob(["tests/**"]),
