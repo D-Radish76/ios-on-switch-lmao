@@ -130,6 +130,22 @@ rust_test(
     deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
 )
 
+# powr's and pow's special-operand rules on the interpreter against the rules read from the bits (every half base and
+# exponent against the specials), the compositions they wrap, and their word estimates. The other arith tests that run
+# modules check them against the committed Vulkan profiles, which this import leaves out.
+rust_test(
+    name = "powr_specials_test",
+    size = "large",
+    args = [
+        "lower::arith::tests::powr::",
+        "fast_functions_are_metals_compositions",
+        "second_stage_fits_its_word_estimates",
+    ],
+    compile_data = glob(["tests/**"]),
+    crate = ":metal2vulkan",
+    deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
+)
+
 rust_test(
     name = "store_code_test",
     args = ["lower::arith::tests::store_code::"],
