@@ -214,6 +214,30 @@ TEST_F(FacadeKernelWindow, ATextureOverABufferWithRowsOffThirtyTwoIsSampledThrou
     EXPECT_EQ(ran.work.order, "CL") << "its pool image filled from the rows, then the launch; nothing written back";
 }
 
+// raw_dispatch_regions.h: threads past 2^32 - 1 on an axis have no thread_position_in_grid; the command buffer fails
+// with an error line, nothing launched, m2v never opened (raw once refused it to m2v as compute.nokernel)
+TEST_F(FacadeKernelWindow, AGridPastAThreadsPositionFailsTheCommandBuffer)
+{
+    id<MTLBuffer> buffer = [gDevice newBufferWithLength:kBytes options:MTLResourceStorageModeShared];
+    ASSERT_TRUE(buffer != nil);
+    for (int run = 0; run < 2; ++run) {
+        const size_t jobs = kernel_model::model.jobs.size();
+        const int opens = gOpens;
+        id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
+        id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
+        [e setComputePipelineState:gState];
+        [e setBuffer:buffer offset:0 atIndex:0];
+        [e dispatchThreads:MTLSizeMake(NSUInteger(1) << 32, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [e endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+        EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+        EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInvalidResource);
+        EXPECT_EQ(gOpens - opens, 0);
+        EXPECT_EQ(submitted(jobs).order.find('L'), std::string::npos);
+    }
+}
+
 TEST_F(FacadeKernelWindow, ABufferOnSixteenStaysInPlace)
 {
     id<MTLBuffer> buffer = [gDevice newBufferWithLength:kBytes options:MTLResourceStorageModeShared];
