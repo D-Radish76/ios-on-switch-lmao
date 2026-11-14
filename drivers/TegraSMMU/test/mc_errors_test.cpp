@@ -138,7 +138,7 @@ TEST_F(McErrors, AClientsRunPrintsItsFirstFourThenOneCountLineWhenItsSwgroupDeta
     ASSERT_EQ(switch_test_lines.size(), 5u);
     EXPECT_EQ(
         switch_test_lines[4].rfind("TegraSMMU: MC error run over: 50 errors by csr_nvjpgsrd (NVJPG) (client 0x7e), "
-                                   "the first 4 printed; the last INVALID_SMMU_PAGE",
+                                   "the first 4 printed, ended by detach; the last INVALID_SMMU_PAGE",
                                    0),
         0u)
         << switch_test_lines[4];
@@ -158,7 +158,10 @@ TEST_F(McErrors, AQuietClientsRunEndsAndInterleavedStormsStayBounded)
     for (uint32_t i = 0; i < 17; ++i)
         fault(0x79, 0x1000);
     ASSERT_EQ(switch_test_lines.size(), 9u);
-    EXPECT_EQ(switch_test_lines[8].rfind("TegraSMMU: MC error run over: 6 errors by csr_nvdecsrd (NVDEC)", 0), 0u)
+    EXPECT_EQ(switch_test_lines[8].rfind("TegraSMMU: MC error run over: 6 errors by csr_nvdecsrd (NVDEC) (client 0x78), "
+                                         "the first 4 printed, ended by displaced; the last ",
+                                         0),
+              0u)
         << switch_test_lines[8];
     switch_test_lines.clear();
     for (uint32_t i = 0; i < 100; ++i)
@@ -166,7 +169,9 @@ TEST_F(McErrors, AQuietClientsRunEndsAndInterleavedStormsStayBounded)
     EXPECT_EQ(switch_test_lines.size(), 1u + 4u + 4u) << "csw_nvdecswr's run ends quiet with its count; two new runs";
     switch_test_lines.clear();
     switch_mc_errors_resume();
-    EXPECT_EQ(switch_test_lines.size(), 2u) << "SC7 ends both runs, each with its count";
+    ASSERT_EQ(switch_test_lines.size(), 2u) << "SC7 ends both runs, each with its count";
+    for (const std::string &line : switch_test_lines)
+        EXPECT_NE(line.find(", the first 4 printed, ended by SC7; the last "), std::string::npos) << line;
 }
 
 TEST(McErrorsDescribe, AKindWithItsOwnCaptureRegistersIsNamedAlone)

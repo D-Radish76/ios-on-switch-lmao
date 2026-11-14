@@ -114,7 +114,7 @@ IOReturn endRuns(OSObject *, void *swgroup, void *, void *, void *)
                     return true;
             return false;
         },
-        ended);
+        group ? switch_mc::Runs::Cause::kDetach : switch_mc::Runs::Cause::kSC7, ended);
     printEnded(ended, count);
     return kIOReturnSuccess;
 }
