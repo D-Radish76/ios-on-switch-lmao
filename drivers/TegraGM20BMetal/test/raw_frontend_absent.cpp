@@ -153,4 +153,32 @@ uint32_t switch_nmb_sampler_word(const struct NmbSamplerDescriptor *)
 {
     return 0;
 }
+
+// The translator alone (the shader compiler's facts, compiler/compiler_facts.mm): none here
+NmbOfflineLibrary *nmb_offline_library_new(const void *, size_t)
+{
+    return nullptr;
+}
+
+void nmb_offline_library_release(NmbOfflineLibrary *)
+{}
+
+NmbOfflineFunction *nmb_offline_function_new(const NmbOfflineLibrary *, const char *)
+{
+    return nullptr;
+}
+
+NmbOfflineFunction *nmb_offline_function_new_specialized(const NmbOfflineLibrary *, const char *, const char *,
+                                                         const struct NmbConstant *, uint32_t)
+{
+    return nullptr;
+}
+
+void nmb_offline_function_release(NmbOfflineFunction *)
+{}
+
+bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescriptor *, uint32_t[3])
+{
+    return false;
+}
 }

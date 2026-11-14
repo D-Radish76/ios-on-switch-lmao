@@ -6,15 +6,18 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include "compiler_codegen.h"
 #include "compiler_request.h"
 
 namespace switch_compiler {
 
-// Where the engine reads: the pack and NVK, and the root the system volumes are at ("" on the device)
+// Where the engine reads: the pack and NVK, the root the system volumes are at ("" on the device), and where the system's
+// Metal front end keeps its module cache and replies and finds the seed's
 struct EngineInputs {
     std::string pack, nvk, systemRoot;
+    CodeGenPaths codeGen;
 
-    // The installed plugin's, beside it
+    // The installed plugin's, beside it, with the seed's replies: the service names where the front end writes
     static EngineInputs installed();
 };
 

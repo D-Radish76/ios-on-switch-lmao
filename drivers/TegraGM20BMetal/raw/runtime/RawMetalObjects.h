@@ -78,7 +78,7 @@ static inline id twinPublish(id object, __strong id &slot, id made)
 @public
     std::string _framework;  // "QuartzCore", "RenderBox"...; empty: not a framework's default library (never looked up)
     std::shared_ptr<raw::LibrarySource> _source;
-    raw::MetallibFunctions _functions;  // empty: an m2v library from its creation
+    raw::MetallibFunctions _functions;  // none listed: an m2v library from its creation
 }
 - (id)twinOn:(id<MTLDevice>)m2v;
 @end
@@ -158,6 +158,10 @@ enum class RMShareable : uint8_t {
     IOSurfaceRef _surface;
     SurfaceWriteCount *_surfaceWrites;  // its surface's writes (RawMetalSurfaceWrites.mm), held while it lives
     NSUInteger _plane;
+    // A plane whose offset or rows are off 16: Metal's GPU reads it from both rounded down to 16 (_raw's layout), its CPU
+    // from the plane's own (m2v linear_plan.rs, measured), here; null: the CPU's rows are _raw's
+    uint8_t *_cpuRows;
+    size_t _cpuPitch;
     // a planar texture's image (4:2:0 converted, 4:4:4 codes) holds its surface at this seed (_imageCurrent): converted
     // again only once the surface's seed moves (r8a: a YouTube page's thumbnails converted again at every command buffer)
     uint32_t _imageSeed;

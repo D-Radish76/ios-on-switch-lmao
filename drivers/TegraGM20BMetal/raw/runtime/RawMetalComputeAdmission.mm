@@ -282,7 +282,7 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
     return true;
 }
 
-int computeReadiness(RMCommandBuffer *cb, const RMSegment &range)
+int computeReadiness(RMCommandBuffer *cb, const RMSegment &range, const char **why)
 {
     using Job = raw::ComputeKernelSet<raw::ComputeState>;
     const auto &dispatches = cb->_plan.pendingComputes(range.from, range.to);
@@ -301,8 +301,10 @@ int computeReadiness(RMCommandBuffer *cb, const RMSegment &range)
         const auto state = job->observe(std::move(observer));
         if (state == Job::State::Failed)
             return -2;
-        if (state == Job::State::Refused)
+        if (state == Job::State::Refused) {
+            *why = "a compute kernel the shader compiler refused";
             return -1;
+        }
         if (state == Job::State::Pending)
             pending = true;
     }
@@ -311,8 +313,7 @@ int computeReadiness(RMCommandBuffer *cb, const RMSegment &range)
     bool accepted = true;
     for (size_t at : dispatches) {
         auto *job = static_cast<Job *>(cb->_plan.dispatch(at).pending);
-        const char *why = nullptr;
-        if (!admitComputeDispatch(cb, at, job, &why)) {
+        if (!admitComputeDispatch(cb, at, job, why)) {
             accepted = false;
             break;
         }

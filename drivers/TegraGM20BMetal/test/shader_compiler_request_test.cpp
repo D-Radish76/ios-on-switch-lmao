@@ -265,6 +265,42 @@ TEST(CompileRequest, AKernelKeepsTheStoreNameItHadBeforeItsRequestCarriedItsStag
     EXPECT_EQ(hex, "ef9afce2f43ca2e100a94e8bff343b186d9d01edc8efbbb3bdc6b84a8eae1758");
 }
 
+// A compute state's facts: keyed by its function's AIR, constants and limits as the pack keys PackComputeFacts, named apart
+// from a kernel request of the same function and limits, and refused when its claimed key names another state
+TEST(CompileRequest, ComputeFactsAreKeyedAsThePacksStateKey)
+{
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Facts;
+    r.libraries.push_back(data(made_metallib::universal({"kernel_fn"}, 0x30)));
+    r.stages = {stage("k", "kernel_fn", 0, "#0:33:05000000")};
+    r.kernel.maxThreads = 256;
+    r.kernel.multipleOfWidth = true;
+    raw::AirHash air;
+    air.fill(0x30);
+    const std::string state = raw::computeStateKey(air, "#0:33:05000000", 256, true);
+    r.key = raw::factsCacheKey(kStack, state).key;
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back));
+    EXPECT_EQ(back.kind, raw::RequestKind::Facts);
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+    EXPECT_EQ(p.key.key, "facts | " + state);
+
+    raw::CompileRequest kernel = r;
+    kernel.kind = raw::RequestKind::Kernel;
+    EXPECT_NE(raw::storeName(p.key, kernel, identities(kernel)), p.name);
+    raw::CompileRequest wider = r;
+    wider.kernel.maxThreads = 512;
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(wider), kStack, system, p, why));
+    raw::CompileRequest two = r;
+    two.stages.push_back(stage("k", "kernel_fn"));
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "a facts request names one function";
+}
+
 TEST(CompileRequest, TheCompilerRefusesWhatItCannotTrust)
 {
     switch_compiler::SystemLibraries system;

@@ -181,7 +181,7 @@ void viaTheEngine()
     environment();
     switch_compiler::Engine engine;
     std::string why;
-    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), loader(), root()}, why)) << why;
+    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), loader(), root(), {}}, why)) << why;
     writeEntries("engine", [&](const switch_compiler::Prepared &p, std::string &entry, std::string &failed) {
         return engine.compile(p, entry, failed);
     });

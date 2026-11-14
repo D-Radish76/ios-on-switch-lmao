@@ -2400,12 +2400,14 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
                                   uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, uint32_t format,
                                   Texture &t, bool writes)
 {
-    // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`
-    if (!shape(width, height, format, t) || (pitch & 15) || (offset & 15) || pitch < width * t.bpp ||
-        offset > allocBytes || uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp > allocBytes - offset ||
-        (uintptr_t(base) & (pageSize() - 1)))
+    // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`.
+    // A base off a page (a surface over the client's memory) is imported from its page, its VA as far into it (bindImport).
+    const bool offPage = uintptr_t(base) & (pageSize() - 1);
+    if (!shape(width, height, format, t) || (pitch & 15) || ((uintptr_t(base) + offset) & 15) ||
+        pitch < width * t.bpp || offset > allocBytes ||
+        uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp > allocBytes - offset)
         return false;
-    const bool unaligned = (pitch | offset) & 31;
+    const bool unaligned = (pitch | (uintptr_t(base) + offset)) & 31;
     Texture *sampled = nullptr;
     if (unaligned) {
         sampled = new Texture;
@@ -2418,6 +2420,10 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
     t.pitch = pitch;
     const LayoutAsk ask = {width, height, t.bpp, pitch, writes && !offset && !sampled};
     t.import = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface, &ask);
+    if (t.import && offPage && t.import->kernelTiled()) {
+        release(t.import);
+        t.import = nullptr;
+    }
     if (t.import && t.import->kernelTiled()) {
         SurfaceView view;
         const bool valid = surfaceView(t.import->layout, offset, width, height, t.bpp, pitch, view);
@@ -2530,10 +2536,19 @@ bool Device::createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBy
 bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
                                  uint32_t format, Texture &t)
 {
-    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 31) ||
+    // rows and address a multiple of 16, as a surface's (createSurfaceTexture): the texture header's 32 through `sampled`
+    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 15) ||
         pitch < width * t.bpp || offset > b.length || uint64_t(pitch) * height > b.length - offset ||
-        offset > UINT64_MAX - b.va || ((b.va + offset) & 31))
+        offset > UINT64_MAX - b.va || ((b.va + offset) & 15))
         return false;
+    Texture *sampled = nullptr;
+    if ((pitch | (b.va + offset)) & 31) {
+        sampled = new Texture;
+        if (!createTexture(width, height, format, *sampled, false, true)) {
+            delete sampled;
+            return false;
+        }
+    }
     std::lock_guard<raw::Mutex> l(lock_);
     t.pitch = pitch;
     t.va = b.va + offset;
@@ -2541,6 +2556,11 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     t.shadowTarget = t.renderable && !linearTarget(t);
     t.renderable = t.renderable && linearTarget(t);
     t.cpu = b.cpu + offset;
+    if (sampled) {  // sampled through its pool image's header
+        t.sampled = sampled;
+        t.tic = sampled->tic;
+        return true;
+    }
     if (!(t.tic = allocTic()))
         return false;
     writeTic(t);
@@ -3406,6 +3426,37 @@ bool Device::takeTsc(uint32_t &tsc)
     return true;
 }
 
+bool Device::takeHeader(const uint32_t words[8], uint32_t &slot)
+{
+    std::array<uint32_t, 8> header;
+    memcpy(header.data(), words, sizeof header);
+    if (const auto shared = sharedTsc_.find(header); shared != sharedTsc_.end()) {
+        shared->second.users++;
+        slot = shared->second.slot;
+        return true;
+    }
+    if (!takeTsc(slot))
+        return false;
+    memcpy(tsc_.cpu + 32 * slot, words, 32);
+    sharedTsc_[header] = {slot, 1};
+    tscHeaders_[slot] = header;
+    return true;
+}
+
+void Device::dropHeader(uint32_t slot)
+{
+    const auto header = tscHeaders_.find(slot);
+    if (header == tscHeaders_.end())
+        return;
+    const auto shared = sharedTsc_.find(header->second);
+    if (shared != sharedTsc_.end() && --shared->second.users)
+        return;
+    if (shared != sharedTsc_.end())
+        sharedTsc_.erase(shared);
+    tscHeaders_.erase(header);
+    freeTsc_.push_back(slot);
+}
+
 bool Device::createSampler(const SamplerDesc &d, Sampler &s)
 {
     uint32_t w[8], compared[8];
@@ -3414,15 +3465,15 @@ bool Device::createSampler(const SamplerDesc &d, Sampler &s)
     compareHeader(compared, d.compare);
     s.desc = d;
     std::lock_guard<raw::Mutex> l(lock_);
+    // the sampler's own slot is its name in the argument heap (heapSampler), so never shared; its compare form is
     if (!takeTsc(s.tsc))
         return false;
-    if (!takeTsc(s.compareTsc)) {
+    if (!takeHeader(compared, s.compareTsc)) {
         freeTsc_.push_back(s.tsc);
         s.tsc = 0;
         return false;
     }
     memcpy(tsc_.cpu + 32 * s.tsc, w, 32);
-    memcpy(tsc_.cpu + 32 * s.compareTsc, compared, 32);
     return true;
 }
 
@@ -3432,13 +3483,13 @@ void Device::destroySampler(Sampler &s)
     if (s.tsc)
         freeTsc_.push_back(s.tsc);
     if (s.compareTsc)
-        freeTsc_.push_back(s.compareTsc);
+        dropHeader(s.compareTsc);
     for (uint32_t m : s.mapped)
-        if (m && m != s.tsc && std::find(freeTsc_.begin(), freeTsc_.end(), m) == freeTsc_.end())
-            freeTsc_.push_back(m);
+        if (m && m != s.tsc)
+            dropHeader(m);
     for (uint32_t b : s.bordered)
         if (b)
-            freeTsc_.push_back(b);
+            dropHeader(b);
     s = {};
 }
 
@@ -3463,9 +3514,8 @@ bool Device::samplerVariant(Sampler &s, uint8_t map)
     }
     RAW_ENCODE_LOCK(l, lock_);
     uint32_t tsc = 0;
-    if (!takeTsc(tsc))
+    if (!takeHeader(w, tsc))
         return false;
-    memcpy(tsc_.cpu + 32 * tsc, w, 32);
     s.mapped[map] = tsc;
     return true;
 }
@@ -3487,9 +3537,8 @@ bool Device::borderVariant(Sampler &s, const Texture &t)
     borderHeader(w, texel);
     RAW_ENCODE_LOCK(l, lock_);
     uint32_t tsc = 0;
-    if (!takeTsc(tsc))
+    if (!takeHeader(w, tsc))
         return false;
-    memcpy(tsc_.cpu + 32 * tsc, w, 32);
     s.bordered[texel] = tsc;
     return true;
 }

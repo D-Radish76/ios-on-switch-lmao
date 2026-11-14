@@ -331,7 +331,6 @@ bool bufferRows(uint64_t offset, uint64_t bytesPerRow, uint32_t rows, uint32_t r
 uint64_t bufferRow(const BufferRows &r, uint64_t offset, uint64_t bytesPerRow, uint32_t y);
 
 // RawMetalLibrary.mm
-RMLibrary *wrapLibrary(id device, id<MTLLibrary> twin, NSString *path);
 // A library of the metallib `bytes` (a file's at `path`, or data) read by the facade, with no m2v twin; nil: bytes it does
 // not read (m2v's library answers then)
 RMLibrary *readLibrary(id device, NSString *path, NSData *bytes);
@@ -368,6 +367,9 @@ void noteReplayShape(RMCommandBuffer *cb, size_t from, size_t to);
 bool heapResident(RMHeap *h);
 // The device's ask of `d` in an arena of `blockLinear` (a private heap's): every kind the raw path keeps; false: none
 bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask);
+// RawMetalPlainLayout.mm: the texture layout object of a texture no block-linear image of caller memory is made of, nil for
+// one it does not describe
+id rmPlainLayout(id device, MTLTextureDescriptor *d);
 
 // RawMetalTexture.mm
 void declareGpuWrites(RMTexture *t);
@@ -643,7 +645,8 @@ void commitBuffer(RMCommandBuffer *cb);
 void submitLoop();
 bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKernelSet<raw::ComputeState> *kernels,
                           const char **why);
-int computeReadiness(RMCommandBuffer *cb, const RMSegment &range);
+// 1 ready, 0 still being made, -1 refused (`why`), -2 failed to compile
+int computeReadiness(RMCommandBuffer *cb, const RMSegment &range, const char **why);
 // RawMetalComputeAdmission.mm: an admitted dispatch's textures and buffers, and the encoder's resources it may reach
 void kernelUses(RMCommandBuffer *cb, size_t at, std::vector<raw::KernelUse> &uses);
 

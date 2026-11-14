@@ -236,8 +236,14 @@ bool RMRangeEncode::conversions()
         return fail(PredEncPlanarClamp, "no constexpr sampler header for an address map");
     for (__unsafe_unretained RMTexture *t : planar)
         for (__unsafe_unretained RMSampler *sm : samplers)
-            if (t->_raw.addressMap && !d.samplerVariant(sm->_raw, t->_raw.addressMap))
-                return fail(PredEncPlanarClamp, "no sampler header for an address map");
+            if (t->_raw.addressMap && !d.samplerVariant(sm->_raw, t->_raw.addressMap)) {
+                failCommandBuffer(cb,
+                                  @"no sampler header left in the device's table for a planar texture's address modes",
+                                  MTLCommandBufferErrorOutOfMemory);
+                rc->abandon();
+                abandoned_ = true;
+                return false;
+            }
     // an image converted already from its surface at the surface's seed now is not converted again: the work that
     // converted it went before on this channel (the decoder and ImageIO write a surface under a write lock, which
     // moves its seed). The new seeds take effect once this command buffer is submitted.

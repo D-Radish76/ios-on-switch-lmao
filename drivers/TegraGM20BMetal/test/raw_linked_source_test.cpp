@@ -48,7 +48,7 @@ TEST(RawLinkedSource, ThePacksKeysAreTheRuntimes)
                 HasSubstr("s.key = raw::pipelineKey(d, &vertex, d.fragmentFunction ? &fragment : nullptr, linked,"));
     EXPECT_THAT(Body(SourceText("../raw/pack/probe_states.h"), "inline id<MTLFunction> function("),
                 HasSubstr("key.constants = raw::constantsText(values);"));
-    EXPECT_THAT(Body(SourceText("../raw/runtime/RawMetalLibrary.mm"), "- (RMFunction *)wrap:"),
+    EXPECT_THAT(Body(SourceText("../raw/runtime/RawMetalLibrary.mm"), "- (RMFunction *)function:"),
                 HasSubstr("f->_constants = raw::constantsText(values);"));
 }
 

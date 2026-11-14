@@ -156,14 +156,15 @@ uint32_t ycbcrTargetFormat(MTLRenderPipelineDescriptor *d)
                                      }];
         return nil;
     }
-    MTLRenderPipelineDescriptor *twin = twinDescriptor(made);
-    if (reflection)
-        p->_twin = [RM_M2V(NeedYcbcrStateTwin) newRenderPipelineStateWithDescriptor:twin
+    if (reflection) {
+        p->_twin = [RM_M2V(NeedYcbcrStateTwin) newRenderPipelineStateWithDescriptor:twinDescriptor(made)
                                                                             options:o
                                                                          reflection:reflection
                                                                               error:error];
-    else if (native_bridge_metal_render_pipeline_lazy)
-        p->_twin = native_bridge_metal_render_pipeline_lazy(RM_M2V(NeedYcbcrStateTwin), twin, o);
+    } else {
+        p->_twinOptions = o;
+        p->_twinLater = true;
+    }
     if (error)
         *error = nil;
     return (id<MTLRenderPipelineState>)p;

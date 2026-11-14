@@ -30,6 +30,8 @@ namespace raw {
 class Device;
 struct ComputeRecord;
 struct ComputeState;
+struct MadeLibrary;
+struct PackComputeFacts;
 struct Pipeline;
 
 class Completion {
@@ -65,8 +67,8 @@ public:
     void askVariant(Ask a, Ready ready);
     // The state's pipeline now, on the caller's thread: its record from this process or the disk (a state made in an earlier
     // boot is raw from its first draw), else made while the thread waits, as Metal makes a state at its creation, so its
-    // first draw is raw. Null with `failure` empty: refused (m2v draws it); with it, the creation fails with it as Metal's
-    // does: no compiler comes this boot, its compile could not run, or the shader heap is full.
+    // first draw is raw. Null: the creation fails with `failure` as Metal's does: the compiler refused the state, no request
+    // names it, no compiler comes this boot, its compile could not run, or the shader heap is full.
     Pipeline *makeNow(Ask a, std::string &failure);
 
     // The kernel of compute key `key` (raw_compute_key.h) for `descriptor` (over m2v's functions) at `dispatch`, placed:
@@ -76,6 +78,17 @@ public:
     const ComputeState *kernel(MTLComputePipelineDescriptor *descriptor, const NmbDirectDispatch &dispatch,
                                const std::string &key, bool *retry = nullptr, id facadeFunction = nil,
                                bool *gone = nullptr);
+
+    // The answers of a compute state the pack lacks (raw_pack.h PackComputeFacts): `descriptor`'s over the facade's
+    // `facadeFunction`, of raw_compute_key.h computeStateKey `stateKey`, the shader compiler's from its store or made while
+    // this thread sleeps, as a state's creation waits for its record. False with `failure` as makeNow's: no compiler
+    // comes, or it made none; no process makes them itself.
+    bool facts(id facadeFunction, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey,
+               PackComputeFacts &out, std::string &failure);
+    // The library the system's Metal front end makes of code generation request `bytes` of `type` (raw_codegen_request.h),
+    // the shader compiler's from its store or made while this thread sleeps. False with `failure`: the front end's error
+    // log (`refused`), or why no compiler made it; no process makes one itself.
+    bool library(uint32_t type, const std::string &bytes, MadeLibrary &out, std::string &failure, bool &refused);
 
     void backgroundKernel(std::function<void()> work);
 
@@ -98,7 +111,7 @@ public:
 private:
     struct Pending;
     void request(Ask asked, std::shared_ptr<Pending> pending);
-    std::string failureOf(const CacheKey &k);
+    std::string failureOf(const CacheKey &k, bool creation);
     void place(const CacheKey &key, const RuntimeRecord *record, bool caTransform, std::shared_ptr<Pending> pending);
 
     struct Kernel {
