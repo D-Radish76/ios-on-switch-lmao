@@ -116,6 +116,7 @@ struct CompileStageLibraryTest: HWTest {
         var info = Dl_info()
         guard dladdr(address, &info) != 0, let image = info.dli_fname else { return "unknown image" }
         let resolved = String(cString: image)
-        return resolved.hasSuffix("/TegraGM20BMetal.bundle/TegraGM20BMetal") ? "plugin" : (resolved as NSString).lastPathComponent
+        if resolved.hasSuffix("/TegraGM20BMetal.bundle/TegraGM20BMetal") { return "plugin" }
+        return (resolved as NSString).lastPathComponent
     }
 }
