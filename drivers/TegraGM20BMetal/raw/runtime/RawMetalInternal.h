@@ -606,7 +606,8 @@ void commitBuffer(RMCommandBuffer *cb);
 void submitLoop();
 bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKernelSet<raw::ComputeState> *kernels,
                           const char **why);
-int computeReadiness(RMCommandBuffer *cb, const RMSegment &range);
+// 1 ready, 0 still being made, -1 refused (`why`), -2 failed to compile
+int computeReadiness(RMCommandBuffer *cb, const RMSegment &range, const char **why);
 
 // RawMetalFootprint.mm: the idle give-back's line, `relieved` the bytes malloc gave back
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG

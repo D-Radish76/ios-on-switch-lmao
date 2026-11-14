@@ -261,18 +261,24 @@ struct FactsCompiler {
         kernel_model::model.storeBytes = store.mappedBytes();
         kernel_model::model.compiler = [this](const std::string &bytes) {
             raw::CompileRequest r;
-            constexpr char kPrefix[] = "facts | ";
-            if (!raw::decodeRequest(bytes, r) || r.kind != raw::RequestKind::Facts || r.key.rfind(kPrefix, 0))
+            constexpr char kFactsPrefix[] = "facts | ", kKernelPrefix[] = "kernel | ";
+            if (!raw::decodeRequest(bytes, r))
                 return int32_t(TegraGM20BCompileUnavailable);
             asked.push_back(r.key);
-            const raw::CacheKey k = raw::factsCacheKey(r.stack, r.key.substr(sizeof kPrefix - 1));
             std::vector<raw::LibraryIdentity> ids;
             for (const raw::RequestLibrary &l : r.libraries)
                 ids.push_back(raw::identityOf(l));
-            const std::string entry = raw::encodeFactsEntry(k, kFacts, "");
+            const bool facts = r.kind == raw::RequestKind::Facts && !r.key.rfind(kFactsPrefix, 0);
+            const bool kernel = r.kind == raw::RequestKind::Kernel && !r.key.rfind(kKernelPrefix, 0);
+            if (!facts && !kernel)
+                return int32_t(TegraGM20BCompileUnavailable);
+            const raw::CacheKey k = facts ? raw::factsCacheKey(r.stack, r.key.substr(sizeof kFactsPrefix - 1))
+                                          : raw::kernelCacheKey(r.stack, r.key.substr(sizeof kKernelPrefix - 1));
+            const std::string entry = facts ? raw::encodeFactsEntry(k, kFacts, "")
+                                            : raw::encodeKernelEntry(k, nullptr, "a kernel this compiler refuses");
             const raw::Digest name = raw::storeName(k, r, ids);
             store.put(name.data(), reinterpret_cast<const uint8_t *>(entry.data()), uint32_t(entry.size()));
-            return int32_t(TegraGM20BCompileMade);
+            return int32_t(facts ? TegraGM20BCompileMade : TegraGM20BCompileRefused);
         };
         return true;
     }
@@ -316,6 +322,37 @@ void computeFactsFromTheCompiler()
     expectNoM2V(device);
 }
 
+// A dispatch whose kernel the shader compiler refused fails its command buffer, as Metal's does for a pipeline it could not
+// compile, whether the refusal comes before the command buffer is recorded or at its submission; nothing goes to m2v
+void refusedKernel()
+{
+    FactsCompiler compiler;
+    ASSERT_TRUE(compiler.serve());
+    id<MTLDevice> device = completing();
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];
+    id<MTLFunction> kernel = [library newFunctionWithName:@"k"];
+    ASSERT_TRUE(kernel != nil) << text(error);
+    id<MTLComputePipelineState> state = [device newComputePipelineStateWithFunction:kernel error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    id<MTLBuffer> out = [device newBufferWithLength:4096 options:MTLResourceStorageModeShared];
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+    for (int round = 0; round < 2; round++) {
+        id<MTLCommandBuffer> cb = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
+        [e setComputePipelineState:state];
+        [e setBuffer:out offset:0 atIndex:0];
+        [e dispatchThreadgroups:MTLSizeMake(4, 1, 1) threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+        [e endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+        EXPECT_EQ(cb.status, MTLCommandBufferStatusError) << "round " << round;
+        EXPECT_NE(text(cb.error.localizedDescription).find("refused"), std::string::npos) << text(cb.error);
+    }
+    expectNoM2V(device);
+}
+
 // With no compiler this boot the creation fails as Metal's does when it cannot compile, never through m2v
 void computeFactsWithNoCompiler()
 {
@@ -348,6 +385,11 @@ TEST(RawFacadeOpen, ATexturePastItsMemoryIsNil)
 TEST(RawFacadeOpen, AComputeStateThePackLacksIsAnsweredByTheShaderCompiler)
 {
     switch_ios::test::ExpectPassesInFreshProcess(computeFactsFromTheCompiler);
+}
+
+TEST(RawFacadeOpen, AKernelTheCompilerRefusedFailsItsCommandBuffer)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(refusedKernel);
 }
 
 TEST(RawFacadeOpen, AComputeStateWithNoCompilerFailsItsCreation)
