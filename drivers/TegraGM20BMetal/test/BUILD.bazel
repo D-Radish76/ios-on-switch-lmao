@@ -2893,11 +2893,7 @@ py_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h",  # mkpack.py reads it at import
         "//gpu/seed:raw_pack",
     ],
-    # m2v: //gpu/seed:raw_pack's probe runs NVK until the pack generator stops needing it
-    tags = [
-        "m2v",
-        "pack",
-    ],
+    tags = ["pack"],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
 )
 

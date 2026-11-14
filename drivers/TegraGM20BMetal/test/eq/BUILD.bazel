@@ -167,11 +167,7 @@ py_test(
         ["testdata/*"],
         exclude = ["testdata/compute_*"],
     ),
-    # m2v: //gpu/seed:raw_pack's probe runs NVK until the pack generator stops needing it
-    tags = [
-        "m2v",
-        "pack",
-    ],
+    tags = ["pack"],
     deps = [":draw_goldens"],
 )
 
@@ -195,10 +191,6 @@ py_test(
         ":computeframe",
         "//gpu/seed:raw_pack",
     ] + glob(["testdata/**"]),
-    # m2v: //gpu/seed:raw_pack's probe runs NVK until the pack generator stops needing it
-    tags = [
-        "m2v",
-        "pack",
-    ],
+    tags = ["pack"],
     deps = [":draw_goldens"],
 )

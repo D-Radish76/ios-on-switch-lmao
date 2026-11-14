@@ -136,14 +136,12 @@ CORPUS_ARGS = select({
     for kind in KINDS
 })
 
-# The sample pack's tools are the full pack's, NVK's host twin among them (until x1-nomvk replaces its compile): m2v
 cc_test(
     name = "record_sample_test",
     srcs = ["record_check.cpp"],
     args = SAMPLE_ARGS,
     copts = ["-std=c++17"],
     data = GOLDENS + [":sample_pack"],
-    tags = ["m2v"],
     deps = [":records"],
 )
 
@@ -154,7 +152,6 @@ cc_test(
     args = ["$(rootpath :sample_pack)/pack.bin"],
     copts = ["-std=c++17"],
     data = [":sample_pack"],
-    tags = ["m2v"],
     deps = [":records"],
 )
 
@@ -175,7 +172,6 @@ cc_test(
     args = ["$(rootpath :sample_pack)/pack.bin"],
     copts = ["-std=c++17"],
     data = [":sample_pack"],
-    tags = ["m2v"],
 )
 
 # raw_emit's vertex input registers of each QuartzCore state of the sample corpus, its vertex function made with this
@@ -229,7 +225,6 @@ cc_test(
         "-framework",
         "Metal",
     ],
-    tags = ["m2v"],
 )
 
 # The full pack (//gpu/seed:raw_pack): manual, run by the gate that packages a build
