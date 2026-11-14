@@ -8,6 +8,7 @@
 #include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/raw_codegen_request.h"
 #include "../raw/runtime/raw_compute_key.h"
+#include "../raw/runtime/raw_function_attributes.h"
 #include "../raw/runtime/raw_render_key.h"
 
 namespace switch_compiler {
@@ -33,11 +34,12 @@ bool renderKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
                std::string &why)
 {
     const raw::CompileRequest &r = p.request;
-    raw::AirHash vertex, fragment;
-    if (!airOf(r, air, r.stages[0], vertex, why) || !airOf(r, air, r.stages[1], fragment, why))
+    raw::AirHash vertex, fragment{};
+    const size_t f = raw::fragmentStage(r);
+    if (!airOf(r, air, r.stages[0], vertex, why) || (f != raw::kNoStage && !airOf(r, air, r.stages[f], fragment, why)))
         return false;
     std::vector<raw::LinkedStageAir> linked;
-    for (size_t i = 2; i < r.stages.size(); ++i) {
+    for (size_t i = raw::firstLinked(r); i < r.stages.size(); ++i) {
         raw::LinkedStageAir stage{r.stages[i].tag[0], {}};
         if (!airOf(r, air, r.stages[i], stage.air, why))
             return false;
@@ -51,21 +53,43 @@ bool renderKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
     return true;
 }
 
-// The compute key's own part (its function's AIR, constants and stage input, limits and shape) is the compiler's; the bound
-// textures', samplers' and memory's text past it is the client's, and the store name binds the dispatch they describe
+// A compute request's state key (raw_compute_key.h computeStateKey): its kernel's AIR and constants, its stage input, then
+// its linked stages' (computeLinkedText), and its limits
+bool stateKeyOf(const raw::CompileRequest &r, const std::vector<std::map<std::string, raw::AirHash>> &air,
+                std::string &key, std::string &why)
+{
+    raw::AirHash hash;
+    if (!airOf(r, air, r.stages[0], hash, why))
+        return false;
+    std::vector<raw::LinkedComputeFunction> linked;
+    for (size_t i = 1; i < r.stages.size(); ++i) {
+        raw::LinkedComputeFunction f;
+        f.hidden = r.stages[i].tag == "kp";
+        f.constants = r.stages[i].constants;
+        if (!airOf(r, air, r.stages[i], f.air, why))
+            return false;
+        linked.push_back(std::move(f));
+    }
+    const std::string constants =
+        r.stages[0].constants + raw::stageInText(r.kernel.stageIn) + raw::computeLinkedText(linked);
+    key = raw::computeStateKey(hash, constants, r.kernel.maxThreads, r.kernel.multipleOfWidth);
+    return true;
+}
+
+// The compute key's own part (its function's AIR, constants, stage input, linked functions, limits and shape) is the
+// compiler's; the bound textures', samplers' and memory's text past it is the client's, and the store name binds the
+// dispatch they describe
 bool kernelKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
                std::string &why)
 {
     const raw::CompileRequest &r = p.request;
-    raw::AirHash hash;
-    if (!airOf(r, air, r.stages[0], hash, why))
+    std::string state;
+    if (!stateKeyOf(r, air, state, why))
         return false;
     const raw::KernelRequest &k = r.kernel;
     char shape[64];
     snprintf(shape, sizeof shape, " | tg=%u,%u,%u | tgmem=", k.threads[0], k.threads[1], k.threads[2]);
-    const std::string constants = r.stages[0].constants + raw::stageInText(k.stageIn);
-    const std::string own =
-        kKernelPrefix + raw::computeStateKey(hash, constants, k.maxThreads, k.multipleOfWidth) + shape;
+    const std::string own = kKernelPrefix + state + shape;
     if (r.key.compare(0, own.size(), own))
         return why = "a kernel request whose key is not its function's: " + keyDifference(r.key, own), false;
     const std::string region = " | region=1";
@@ -80,16 +104,37 @@ bool kernelKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
     return true;
 }
 
+// A compute state's reflection is keyed by its function's AIR, constants and limits alone (raw_compute_key.h
+// computeStateKey), as the pack keys it
+bool computeReflectionKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
+                          std::string &why)
+{
+    if (!stateKeyOf(p.request, air, p.packKey, why))
+        return false;
+    p.key = raw::computeReflectionKey(stack, p.packKey);
+    return true;
+}
+
 // A compute state's facts: its function's AIR, constants and limits, as the pack keys its PackComputeFacts
 bool factsKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
               std::string &why)
 {
-    const raw::CompileRequest &r = p.request;
-    raw::AirHash hash;
-    if (!airOf(r, air, r.stages[0], hash, why))
+    if (!stateKeyOf(p.request, air, p.packKey, why))
         return false;
-    p.packKey = raw::computeStateKey(hash, r.stages[0].constants, r.kernel.maxThreads, r.kernel.multipleOfWidth);
     p.key = raw::factsCacheKey(stack, p.packKey);
+    return true;
+}
+
+// One function's attributes: its AIR, constants and the name it was made under (raw_function_attributes.h)
+bool attributesKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
+                   std::string &why)
+{
+    const raw::RequestStage &s = p.request.stages[0];
+    raw::AirHash hash;
+    if (!airOf(p.request, air, s, hash, why))
+        return false;
+    p.packKey = raw::functionAttributesKey(hash, s.constants, s.name);
+    p.key = raw::functionAttributesCacheKey(stack, p.packKey);
     return true;
 }
 
@@ -171,9 +216,12 @@ bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, 
         identities.push_back(raw::identityOf(library));
     }
     const raw::RequestKind kind = p.request.kind;
-    if (!(kind == raw::RequestKind::Kernel  ? kernelKey(p, air, stack, why)
-          : kind == raw::RequestKind::Facts ? factsKey(p, air, stack, why)
-                                            : renderKey(p, air, stack, why)))
+    const bool keyed = raw::functionAttributes(p.request)  ? attributesKey(p, air, stack, why)
+                       : raw::computeReflection(p.request) ? computeReflectionKey(p, air, stack, why)
+                       : kind == raw::RequestKind::Kernel  ? kernelKey(p, air, stack, why)
+                       : kind == raw::RequestKind::Facts   ? factsKey(p, air, stack, why)
+                                                           : renderKey(p, air, stack, why);
+    if (!keyed)
         return false;
     if (p.key.key != p.request.key)
         return why = "a request whose fields give another key than its own: " + keyDifference(p.request.key, p.key.key),

@@ -52,6 +52,10 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
         *why = "a draw whose vertex program writes memory, which drawing its geometry again would write twice";
         return nullptr;
     }
+    if (pl.stagesOff) {
+        *why = "a draw of no pixel stage or no rasterisation, which reaches no pixel";
+        return nullptr;
+    }
     const Pipeline *reach = pipeline(Pack::fnv(kReachState, strlen(kReachState)));
     std::lock_guard<raw::Mutex> l(lock_);
     if (pl.reachTwin)

@@ -3,6 +3,7 @@
 #include "raw_ca_route.h"
 #import "RawRenderKey.h"
 #import "RawMetalBinaryArchive.h"
+#import "RawMetalReflection.h"
 
 @implementation RMSampler
 
@@ -283,10 +284,16 @@ static raw::ArchiveAnswer renderArchiveAnswer(MTLRenderPipelineDescriptor *d, MT
     return answer;
 }
 
+// A state's functions all this device's: a fragment function of its own, or none (its pixel stage off)
+static bool ownFunctions(MTLRenderPipelineDescriptor *d)
+{
+    return [(id)d.vertexFunction isKindOfClass:[RMFunction class]] &&
+           (!d.fragmentFunction || [(id)d.fragmentFunction isKindOfClass:[RMFunction class]]);
+}
+
 bool rmRenderArchiveMissed(MTLRenderPipelineDescriptor *d, MTLPipelineOption o, NSError **error)
 {
-    if (![(id)d.vertexFunction isKindOfClass:[RMFunction class]] ||
-        ![(id)d.fragmentFunction isKindOfClass:[RMFunction class]])
+    if (!ownFunctions(d))
         return false;
     const std::string key = raw_metal_pipeline_key(d).UTF8String;
     return renderArchiveAnswer(d, o, raw::Pack::fnv(key.data(), key.size()), error) == raw::ArchiveAnswer::Missed;
@@ -304,9 +311,9 @@ RMPipeline *rmPipelineShell(RMDevice *device, MTLRenderPipelineDescriptor *d, MT
     RMFunction *vf = [(id)d.vertexFunction isKindOfClass:[RMFunction class]] ? (RMFunction *)d.vertexFunction : nil;
     RMFunction *ff = [(id)d.fragmentFunction isKindOfClass:[RMFunction class]] ? (RMFunction *)d.fragmentFunction : nil;
     // a state linking functions is packed under them too (its key names each), where they are framework libraries' as well
-    p->_packable =
-        vf && ff && !vf->_framework.empty() && vf->_framework == ff->_framework && raw_metal_linked_packable(d);
-    p->_completable = vf && ff;
+    p->_completable = ownFunctions(d);
+    p->_packable = p->_completable && !vf->_framework.empty() && (!ff || vf->_framework == ff->_framework) &&
+                   raw_metal_linked_packable(d);
     if (p->_completable) {
         p->_key = raw_metal_pipeline_key(d).UTF8String;
         p->_madeFrom = [d copy];
@@ -322,6 +329,7 @@ RMPipeline *rmPipelineShell(RMDevice *device, MTLRenderPipelineDescriptor *d, MT
         packKey = raw::Pack::fnv(own.key.data(), own.key.size());  // another library's: under its functions' AIR too
         lookedUp = true;
     }
+    p->_packKey = packKey;
     if (lookedUp) {
         p->_raw = gRM->raw->pipeline(packKey, raw::PackForm::Default, p->_caTransform);
         markRoute(p->_raw, d.label);
@@ -429,12 +437,15 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
 
 // A state of `d` under `o`: its record the pack's, or made at once, unless the archives it lists miss it as Metal's would; its
 // m2v twin made as a packed state's where the pack or an archive holds it (packedTwinDescriptor). A state raw draws from
-// its creation, asked for no reflection, gets its twin only if a command buffer that sets it goes to m2v.
+// its creation gets its twin only if a command buffer that sets it goes to m2v; its reflection is raw's
+// (RawMetalReflection.h).
 id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescriptor *d, MTLPipelineOption o,
                                          MTLAutoreleasedRenderPipelineReflection *reflection, NSError **error)
 {
     const bool packed = p->_raw || p->_archived;
-    if (p->_raw && p->_madeFrom && !reflection) {
+    if (reflection)
+        *reflection = rmRenderReflection(p, d, o);
+    if (p->_raw && p->_madeFrom) {
         p->_twinOptions = o;
         p->_twinLater = true;
         if (error)
@@ -447,17 +458,11 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
                      d.label.UTF8String ?: "-", failure.c_str());
         if (error)
             *error = rmCreationError(failure);
+        if (reflection)
+            *reflection = nil;
         return nil;
     }
-    if (reflection) {
-        id<MTLDevice> m2v = RM_M2V(NeedRenderStateReflection);
-        p->_twin = [m2v newRenderPipelineStateWithDescriptor:packedTwinDescriptor(d, packed)
-                                                     options:packedTwinOptions(o, packed)
-                                                  reflection:reflection
-                                                       error:error];
-    } else {
-        p->_twin = pipelineTwin(d, o, packed, error);
-    }
+    p->_twin = pipelineTwin(d, o, packed, error);
     refuseUnmade(p, d);
     if (error && p->_raw)
         *error = nil;

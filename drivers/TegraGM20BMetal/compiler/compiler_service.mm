@@ -34,6 +34,7 @@
 #include "compiler_sandbox.h"
 #include "compiler_store.h"
 #include "../raw/runtime/raw_cache_io.h"
+#include "../raw/runtime/raw_reflection_blob.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
 #include "../raw/runtime/raw_library_entry.h"
 
@@ -73,7 +74,8 @@ int32_t storedResult(const std::string &bytes, const raw::CacheKey &k)
     uint32_t kind = 0;
     if (!raw::readEntryHead(bytes, r, k, kind) || kind == raw::kKindLibraryRefusal)
         return -1;
-    return kind == raw::kKindRecord || kind == raw::kKindKernel || kind == raw::kKindFacts || kind == raw::kKindLibrary
+    return kind == raw::kKindRecord || kind == raw::kKindKernel || kind == raw::kKindFacts ||
+                   kind == raw::kKindLibrary || kind == raw::kKindReflection
                ? TegraGM20BCompileMade
                : TegraGM20BCompileRefused;
 }

@@ -209,9 +209,10 @@ int main(int argc, char **argv)
             if (outcome == raw::CompileOutcome::Failed) {
                 verdict = " failed (" + why + ")";
             } else if (pp) {
-                verdict = outcome == raw::CompileOutcome::Made ? recordcompare::differences(pack, *pp, rec) +
-                                                                     recordcompare::splitDifferences(pack, *pp, rec)
-                                                               : " refused (" + why + ")";
+                verdict = outcome == raw::CompileOutcome::Made
+                              ? recordcompare::differences(pack, *pp, rec) +
+                                    recordcompare::splitDifferences(pack, *pp, rec, direct.splittable())
+                              : " refused (" + why + ")";
                 splits += verdict.empty() && rec.split;
                 (barrier ? barriers : same) += verdict.empty();
                 if (met && verdict.empty())

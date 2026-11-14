@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: MIT
 // What the system shader compiler answers in place of m2v (raw/runtime/RawCompleteRemote.mm, compiler/): a compute state's
-// facts the pack lacks, made once and then read from its store, and a kernel it refused, whose command buffer fails. The
-// kernel model runs a stand-in compiler over a store, as SwitchShaderCompiler fills it.
+// facts the pack lacks, made once and then read from its store, a kernel it refused, whose command buffer fails, and a
+// kernel with linked functions (MPSGraph's). The kernel model runs a stand-in compiler over a store, as
+// SwitchShaderCompiler fills it.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_compile_request.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
+#include "../raw/runtime/raw_compute_key.h"
 #include "../../../kits/SwitchSeedPack/SwitchSeedStore.h"
 #include "bazel/testing/fresh_process.h"
 
+#include <dispatch/dispatch.h>
 #include <gtest/gtest.h>
 
 namespace {
@@ -38,6 +41,7 @@ constexpr uint32_t kFacts[3] = {640, 32, 2048};
 struct FactsCompiler {
     switch_seed_pack::StoreWriter store;
     std::vector<std::string> asked;
+    std::vector<raw::CompileRequest> requests;
 
     bool serve()
     {
@@ -55,6 +59,7 @@ struct FactsCompiler {
             if (!raw::decodeRequest(bytes, r))
                 return int32_t(TegraGM20BCompileUnavailable);
             asked.push_back(r.key);
+            requests.push_back(r);
             std::vector<raw::LibraryIdentity> ids;
             for (const raw::RequestLibrary &l : r.libraries)
                 ids.push_back(raw::identityOf(l));
@@ -143,6 +148,87 @@ void refusedKernel()
     expectNoM2V(device);
 }
 
+// MPSGraph's kernels link the functions of the library MPSKernelDAG stitched as private functions. Such a state is keyed
+// with them (raw_compute_key.h computeLinkedText): its facts and its dispatch's kernel are asked of the shader compiler with
+// them as stages after the kernel ("kp"), as is its reflection, and the same kernel without them is another state. Nothing
+// goes to m2v.
+void linkedKernel()
+{
+    FactsCompiler compiler;
+    ASSERT_TRUE(compiler.serve());
+    id<MTLDevice> device = completing();
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    const std::string metallib = writeMetallib();
+    id<MTLLibrary> library = [device newLibraryWithURL:fileURL(metallib) error:&error];
+    id<MTLFunction> kernel = [library newFunctionWithName:@"k"];
+    ASSERT_TRUE(kernel != nil) << text(error);
+    const std::string stitched =
+        made_metallib::thin({"prefixPrimary_i8", "postfixPrimary_i8"}, {4, 4},
+                            {made_metallib::wrappedBitcode(0x81), made_metallib::wrappedBitcode(0x82)});
+    dispatch_data_t data =
+        dispatch_data_create(stitched.data(), stitched.size(), nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    id<MTLLibrary> dag = [device newLibraryWithData:data error:&error];
+    ASSERT_TRUE(dag != nil) << text(error);
+    MTLLinkedFunctions *linked = [MTLLinkedFunctions linkedFunctions];
+    linked.privateFunctions =
+        @[ [dag newFunctionWithName:@"prefixPrimary_i8"], [dag newFunctionWithName:@"postfixPrimary_i8"] ];
+    MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
+    d.computeFunction = kernel;
+    d.linkedFunctions = linked;
+    id<MTLComputePipelineState> state =
+        [device newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    EXPECT_EQ(state.threadExecutionWidth, kFacts[1]);
+
+    std::map<std::string, raw::AirHash> hashes, dagHashes;
+    ASSERT_TRUE(raw::metallibAirHashes(metallib, hashes));
+    ASSERT_TRUE(raw::metallibAirHashes(reinterpret_cast<const uint8_t *>(stitched.data()), stitched.size(), dagHashes));
+    const std::string stateKey = raw::computeStateKey(
+        hashes["k"],
+        raw::computeLinkedText({{true, dagHashes["prefixPrimary_i8"], ""}, {true, dagHashes["postfixPrimary_i8"], ""}}),
+        0, false);
+    ASSERT_EQ(compiler.requests.size(), 1u);
+    const raw::CompileRequest &facts = compiler.requests[0];
+    EXPECT_EQ(facts.key, "facts | " + stateKey);
+    ASSERT_EQ(facts.stages.size(), 3u);
+    EXPECT_EQ(facts.stages[0].tag, "k");
+    EXPECT_EQ(facts.stages[1].tag, "kp");
+    EXPECT_EQ(facts.stages[1].function, "prefixPrimary_i8");
+    EXPECT_EQ(facts.stages[2].function, "postfixPrimary_i8");
+    EXPECT_EQ(facts.libraries.size(), 2u);
+
+    id<MTLBuffer> out = [device newBufferWithLength:4096 options:MTLResourceStorageModeShared];
+    id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
+    id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
+    [e setComputePipelineState:state];
+    [e setBuffer:out offset:0 atIndex:0];
+    [e dispatchThreadgroups:MTLSizeMake(4, 1, 1) threadsPerThreadgroup:MTLSizeMake(64, 1, 1)];
+    [e endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    ASSERT_EQ(compiler.requests.size(), 2u);
+    const raw::CompileRequest &dispatched = compiler.requests[1];
+    EXPECT_EQ(dispatched.kind, raw::RequestKind::Kernel);
+    EXPECT_EQ(dispatched.key.rfind("kernel | " + stateKey + " | tg=64,1,1", 0), 0u) << dispatched.key;
+    EXPECT_EQ(dispatched.stages.size(), 3u);
+    EXPECT_NE(text(cb.error.localizedDescription).find("refused"), std::string::npos) << text(cb.error);
+
+    EXPECT_NE(stateKey, raw::computeStateKey(hashes["k"], "", 0, false)) << "the kernel alone is another state";
+
+    MTLAutoreleasedComputePipelineReflection reflection = nil;
+    [device newComputePipelineStateWithDescriptor:d
+                                          options:MTLPipelineOptionBufferTypeInfo
+                                       reflection:&reflection
+                                            error:&error];
+    ASSERT_GE(compiler.requests.size(), 3u) << "its reflection is asked of the compiler as its facts were";
+    const raw::CompileRequest &reflected = compiler.requests[2];
+    EXPECT_EQ(reflected.kind, raw::RequestKind::Reflection);
+    EXPECT_EQ(reflected.key, raw::computeReflectionKey(reflected.stack, stateKey).key);
+    EXPECT_EQ(reflected.stages.size(), 3u);
+    expectNoM2V(device);
+}
+
 // With no compiler this boot the creation fails as Metal's does when it cannot compile, never through m2v
 void computeFactsWithNoCompiler()
 {
@@ -170,6 +256,11 @@ TEST(RawFacadeCompiler, AComputeStateThePackLacksIsAnsweredByTheShaderCompiler)
 TEST(RawFacadeCompiler, AKernelTheCompilerRefusedFailsItsCommandBuffer)
 {
     switch_ios::test::ExpectPassesInFreshProcess(refusedKernel);
+}
+
+TEST(RawFacadeCompiler, AKernelsLinkedFunctionsAreKeyedAndAskedOfTheShaderCompiler)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(linkedKernel);
 }
 
 TEST(RawFacadeCompiler, AComputeStateWithNoCompilerFailsItsCreation)

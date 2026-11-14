@@ -8,6 +8,7 @@
 // itself.
 #pragma once
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -27,12 +28,16 @@ using Digest = std::array<uint8_t, 32>;
 
 // Facts: a kernel's compute state's answers to Metal's per-state queries (raw_pack.h PackComputeFacts), which its creation
 // needs before any dispatch; its one stage and limits as a kernel's, no dispatch. Library: a library the system's Metal
-// front end makes at run time from a code generation request (raw_codegen_request.h), with no stage or library of its own
+// front end makes at run time from a code generation request (raw_codegen_request.h), with no stage or library of its own.
+// Reflection: a render state's (the stages and fields of Render) or a compute state's (Kernel's one stage and limits)
+// reflection blob (raw_reflection_blob.h), or one function's attributes (one stage tagged "a", raw_function_attributes.h),
+// which the compiler makes with no compile context and stores
 enum class RequestKind : uint8_t {
     Render,
     Kernel,
     Facts,
-    Library
+    Library,
+    Reflection
 };
 
 // MTLCodeGenServiceBuildRequest's request types a Library request carries (ImageFilterLink.h's is the filter link's)
@@ -52,7 +57,8 @@ struct RequestLibrary {
 };
 
 // A stage's function: for a render state the vertex function, the fragment function, then the linked ones (tags "vl",
-// "vp", "fl", "fp" as RawMetalLibrary.mm's linkedKey lists them); for a kernel its one function (tag "k")
+// "vp", "fl", "fp" as RawMetalLibrary.mm's linkedKey lists them); for a kernel its function (tag "k"), then its linked
+// ones (tags "kl", "kp": raw_compute_key.h computeLinkedText)
 struct RequestStage {
     std::string tag;
     std::string function;      // the library function it was made from
@@ -89,6 +95,12 @@ struct CompileRequest {
     std::string codeGen;  // a Library's code generation request, sent only for one
 };
 
+// A render request's fragment stage (tag "f", second where it has one), kNoStage for a state of no fragment function; and
+// its first linked stage
+constexpr size_t kNoStage = SIZE_MAX;
+size_t fragmentStage(const CompileRequest &r);
+size_t firstLinked(const CompileRequest &r);
+
 std::string encodeRequest(const CompileRequest &r);
 // False: not a request this build reads (a bound passed, a stage naming no library, a system library given bytes)
 bool decodeRequest(const std::string &bytes, CompileRequest &out);
@@ -110,6 +122,13 @@ Digest storeName(const CacheKey &k, const CompileRequest &r, const std::vector<L
 
 // The CacheKey of a kernel's compute key (RawComplete.mm kernel())
 CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey);
+// Whether `r` asks a compute state's reflection (a Reflection of Kernel's one stage), and that reflection's CacheKey of the
+// state's computeStateKey (raw_compute_key.h)
+bool computeReflection(const CompileRequest &r);
+CacheKey computeReflectionKey(uint64_t stack, const std::string &stateKey);
+// Whether `r` asks one function's attributes, and their CacheKey of its functionAttributesKey (raw_function_attributes.h)
+bool functionAttributes(const CompileRequest &r);
+CacheKey functionAttributesCacheKey(uint64_t stack, const std::string &functionKey);
 // The CacheKey of a compute state's facts, of its raw_compute_key.h computeStateKey
 CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey);
 // The CacheKey of the library the front end makes of code generation request `bytes` of `type`: the request's SHA-256

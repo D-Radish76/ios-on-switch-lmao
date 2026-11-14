@@ -32,10 +32,11 @@ enum PackSectionId {
     PackArchives,
     PackIterated,
     PackComputeStates,
+    PackReflections,
     PackSectionCount
 };
 
-constexpr uint32_t kPackVersion = 24;
+constexpr uint32_t kPackVersion = 25;
 
 // What a record or a program variant (PackVariant) assumes, as bits of a mask: a draw takes a variant only where all of them
 // hold. Bits 0-15 are facts of the draw's bindings, bit 16 of its pipeline, bit 26 of its pass, bits 17-25 of the chip
@@ -143,6 +144,16 @@ struct PackComputeFacts {
     uint32_t executionWidth;  // threadExecutionWidth
     uint32_t staticMemory;    // staticThreadgroupMemoryLength
     uint32_t reserved;
+};
+
+// A state's reflection (raw_reflection_blob.h) as the translator made it when the pack was made, so a state of the pack
+// answers its creation's reflection without m2v or the shader compiler. The PackReflections section: u32 render count,
+// u32 compute count, the render states' entries ascending by keyHash (the key its records are found by), then the
+// compute states' (Pack::fnv of its computeStateKey), then the blobs, each at `offset` from the section's start and
+// shared by every state of the same reflection.
+struct PackReflection {
+    uint64_t keyHash;
+    uint32_t offset, bytes;
 };
 
 // The rung of the fetch ladder a color attachment's framebuffer fetch needs: FetchNone where it is not fetched
@@ -365,10 +376,14 @@ constexpr uint32_t kPackHeapArrays = 8;
 // Every heap array's elements: the texture header pool's (Device kTicCount), which the sampler header pool's fits
 constexpr uint32_t kPackHeapElements = 8192;
 
+// PackPipeline::fs of a state of no fragment function: its draws run with the pixel stage off (raw_stage_switches.h),
+// writing depth and stencil and no colour
+constexpr uint32_t kNoProgram = 0xFFFFFFFF;
+
 struct PackPipeline {
     uint64_t keyHash;    // FNV-1a 64 of the state key (the frontend journal's R-line fields but the label)
     uint32_t keyString;  // offset in the strings section: the key's fields before " | v" (attachments, vertex layout)
-    uint32_t vs, fs;     // program indices
+    uint32_t vs, fs;     // program indices; fs kNoProgram: none
     uint32_t blob, blobDwords;  // (method, value) pairs in the blob section, dwords = 2 x pairs
     uint8_t entries, pushes, vertexSlot, pad;
     uint16_t vertexStride, setBytes;
@@ -477,6 +492,11 @@ inline bool bindStrideStreams(const PackPipeline &r)
 inline bool tessellates(const PackPipeline &p)
 {
     return p.controlWord != 0;
+}
+
+inline bool pixelStage(const PackPipeline &p)
+{
+    return p.fs != kNoProgram;
 }
 
 // A compute state at one threadgroup shape (runtime/raw_compute.h): NVK's work for the kernel m2v made of it, keyed by
@@ -635,6 +655,7 @@ static_assert(sizeof(PackProgram) == 44, "pack layout");
 static_assert(sizeof(PackVariant) == 8, "pack layout");
 static_assert(sizeof(PackArchive) == 16, "pack layout");
 static_assert(sizeof(PackComputeFacts) == 24, "pack layout: packfile.py compute_facts_bytes");
+static_assert(sizeof(PackReflection) == 16, "pack layout: packfile.py reflection_bytes");
 static_assert(sizeof(PackHeader) == 24 + 16 * PackSectionCount + 16, "pack layout: packfile.py pack_bytes header_size");
 static_assert(sizeof(PackKernel) == 18 + 256 + 14 + 128 + 8 * kKernelEntries + 84 + 12, "pack layout");
 static_assert(offsetof(PackKernel, stageInRegionWord) == 1012, "pack layout: packfile.py KERNEL_V21");
@@ -679,6 +700,9 @@ public:
     const uint32_t *spills(const PackKernel &k) const;
     bool declares(const PackArchive &archive, uint64_t keyHash) const;
     const PackComputeFacts *computeFacts(uint64_t keyHash) const;  // nullptr: the pack has no facts of that state
+    // The reflection blob of the render state (or, with `compute`, the compute state) of `keyHash`, its `length`;
+    // nullptr: the pack holds none
+    const uint8_t *reflection(uint64_t keyHash, bool compute, uint32_t &length) const;
 
     const char *string(uint32_t off) const
     {

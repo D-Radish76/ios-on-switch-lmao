@@ -24,15 +24,13 @@ mod functions;
 mod heap;
 #[path = "NativeMetalObjects.rs"]
 pub mod objects;
-#[path = "NativeMetalReflection.rs"]
-mod reflection;
 #[path = "NativeMetalTarget.rs"]
 mod target;
 #[path = "NativeMetalVariants.rs"]
 mod variants;
 
 pub use native_metal_translate::{air_slice, direct, direct_compute, offline};
-use native_metal_translate::compile_budget;
+use native_metal_translate::{compile_budget, reflection};
 
 use metal2vulkan::metal::{PixelFormat, PrimitiveType, TextureUsage};
 use metal2vulkan::pipeline::{ColorAttachmentDescriptor, RenderPipelineDescriptor, StageSource};

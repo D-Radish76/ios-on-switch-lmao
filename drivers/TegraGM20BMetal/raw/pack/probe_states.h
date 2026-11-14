@@ -169,6 +169,8 @@ inline bool parseState(id<MTLLibrary> qc, const std::string &line, State &s, con
                 d.label = @(s.label.c_str());
         } else if (h.rfind("samples=", 0) == 0)
             d.rasterSampleCount = strtoul(h.c_str() + 8, nullptr, 10);
+        else if (h == "rast=0")
+            d.rasterizationEnabled = NO;
         else if (h.rfind("topo=", 0) == 0)
             d.inputPrimitiveTopology = (MTLPrimitiveTopologyClass)strtoul(h.c_str() + 5, nullptr, 10);
         else if (h.rfind("ds=", 0) == 0) {

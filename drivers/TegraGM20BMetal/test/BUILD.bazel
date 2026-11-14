@@ -68,6 +68,10 @@
 #   raw_tic_words_test  raw/runtime/raw_zeta.h and raw_gpu.cpp's block-compressed rows: each depth/stencil format's
 #                     SET_ZT_FORMAT and texture header word 0, its stencil view's word 0 (raw_stencil_bits.h), and each
 #                     compressed format's word 0, rebuilt from NIL's row of NVK's format by NIL's generator rules
+#   pack_reflections_test  raw/pack: directpack's DRFL records filed under the hashes Pack::reflection looks up, and the
+#                     PackReflections section of them, each kind ascending, a shared blob once
+#   pack_vertex_only_test  raw/pack: a state of no fragment function keys as the device looked it up and links with no
+#                     fragment program (kNoProgram); the pixel stage's and rasteriser's switches are the runtime's
 #   mkpack_owned_test raw/pack/mkpack.py: no blob or baseline register is one the raw path owns, or one of a target the
 #                     state's draw does not write; a two-plane state's alpha targets are its own, where raw_xr_pass.h
 #                     puts them (raw_xr_pass_test's cases)
@@ -3647,6 +3651,26 @@ py_test(
 )
 
 py_test(
+    name = "pack_vertex_only_test",
+    srcs = ["pack_vertex_only_test.py"],
+    data = [
+        "//drivers/TegraGM20BMetal:precompile/corpus.log",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h",
+    ],
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
+py_test(
+    name = "pack_reflections_test",
+    srcs = ["pack_reflections_test.py"],
+    data = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_chip_facts.h",  # packfile.py stamps its chip facts
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h",
+    ],
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
+py_test(
     name = "rawpack_split_test",
     srcs = ["rawpack_split_test.py"],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
@@ -5623,6 +5647,8 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/RawCompileRequest.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawPipelineKey.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_compute_key.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_function_attributes.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
         "//drivers/NativeMetal:MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
@@ -5687,6 +5713,8 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/RawCompileRequest.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawPipelineKey.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_compute_key.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_function_attributes.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
         "//drivers/NativeMetal:MetallibSlice.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
@@ -6213,6 +6241,97 @@ host_test(
         "raw_facade_harness.h",
         "raw_job_methods.h",
         "raw_facade_lazy_test.cpp",
+        "reflection_blob_writer.h",
+        "raw_facade_standins.h",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# The facade's reflection objects of a blob (RawMetalReflection.mm) answer every selector of Metal's reflection classes as
+# m2v's frontend did of the same node table (NativeComputeReflection.h); a blob that is not one whole gives none
+host_test(
+    name = "raw_reflection_values_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_job_methods.h",
+        "raw_reflection_values_test.cpp",
+        "reflection_blob_writer.h",
+        "reflection_compare.h",
+        "raw_facade_standins.h",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# A state of no fragment function is the pack's record and the raw path's draw, its creation and pass never opening the
+# m2v device; its bind turns the pixel stage off (one Metal does not rasterize, the rasteriser) and its pass's end back on
+host_test(
+    name = "raw_facade_vertex_only_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_job_methods.h",
+        "raw_facade_vertex_only_test.cpp",
         "raw_facade_standins.h",
         "raw_frontend_absent.cpp",
         "raw_kernel_model.h",
@@ -7504,7 +7623,8 @@ host_test(
 
 # The system shader compiler's engine (compiler/compiler_engine.mm, the translator alone: raw/runtime/RawOffline.h)
 # against the m2v device it replaced, each a process over the mock GM20B: byte-identical records of a sample of the
-# corpus's states (render and compute) made from the crawl's libraries; and the frontend's compile context
+# corpus's states (render and compute) made from the crawl's libraries, each sampled kernel's reflection (a Reflection
+# request, the translator alone) answering as the device's compute prepare's; and the frontend's compile context
 # (bridge/NativeMetalCompile.h) has the runtime device's enable set and compile devices
 host_test(
     name = "compiler_compile_only_test",
@@ -7512,6 +7632,7 @@ host_test(
     srcs = [
         "compiler_compile_only_test.cpp",
         "compiler_requests.h",
+        "reflection_compare.h",
         ":libmock_iokit.dylib",
         "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",

@@ -118,10 +118,10 @@ TEST(M2VSource, AFunctionKeepsTheSpecializedNameItWasMadeUnder)
                 HasSubstr("self.0.linked_function().with_link_name(self.1.clone())"));
 }
 
-// A state the pack holds is this device's archive hit: every way the facade asks m2v for its twin (at once, with
-// reflection; a completion handler's creation finishes as the synchronous one does) drops the creation's archives and
+// A state the pack holds is this device's archive hit: every way the facade asks m2v for its twin (at once or later; a
+// completion handler's creation finishes as the synchronous one does) drops the creation's archives and
 // FailOnBinaryArchiveMiss, so a command buffer that falls back never meets a twin m2v refused (device boot 10: "foreign
-// render pipeline", 833 failed frames).
+// render pipeline", 833 failed frames). A state made with reflection has it from the raw path, not a twin.
 TEST(M2VSource, APackedStatesTwinNeverFailsOnTheArchive)
 {
     const std::string states = SourceText("../raw/runtime/RawMetalStates.mm");
@@ -132,7 +132,7 @@ TEST(M2VSource, APackedStatesTwinNeverFailsOnTheArchive)
     EXPECT_THAT(Body(states, "static id<MTLRenderPipelineState> pipelineTwin("),
                 HasSubstr("packedTwinOptions(o, true)"));
     const std::string finish = Body(states, "id<MTLRenderPipelineState> rmFinishState(");
-    EXPECT_THAT(finish, HasSubstr("packedTwinOptions(o, packed)"));
+    EXPECT_THAT(finish, HasSubstr("rmRenderReflection(p, d, o)"));
     EXPECT_THAT(finish, HasSubstr("pipelineTwin(d, o, packed, error)"));
     EXPECT_THAT(Body(states, "static id<MTLRenderPipelineState> makeState("), HasSubstr("rmFinishState(p, d, o"));
     const std::string later = SourceText("../raw/runtime/RawMetalStatesLater.mm");

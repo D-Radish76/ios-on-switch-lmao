@@ -223,7 +223,7 @@ def raw_bound(simple: list[dict], programs: dict[str, dict]) -> tuple[list[dict]
     for p in simple:
         unbound = [
             programs[pid]['cbufs']
-            for pid in (p['records'][0]['prog'][st][0] for st in (1, 5))
+            for pid in (prog[0] for prog in p['records'][0]['prog'].values())
             if not raw_bindable(programs[pid])
         ]
         if unbound:
@@ -255,7 +255,6 @@ EXPECTED_SKIPS = (
     'as a uniform buffer the layout does not name',
     'set-0 entries',
     "a buffer of m2v's own",
-    'no fragment stage',
 )
 # raw_pack.h kNoSlot: a texture3d argument's Metal index, which the probe cannot tell (m2v binds its own 3D view
 # there); the direct compile's records name it
@@ -318,9 +317,7 @@ def record_reason(records: list[dict]) -> str | None:
     r = records[0]
     if any(v[2] != 'known' for v in r['prog'].values()):
         return 'unknown program'
-    if sorted(r['prog']) == [1]:
-        return 'no fragment stage'
-    if sorted(r['prog']) != [1, 5]:
+    if sorted(r['prog']) not in ([1], [1, 5]):
         return f'stages {sorted(r["prog"])}'
     return None
 
@@ -440,8 +437,8 @@ def lay_out_programs(
     used = []
     for p in simple:
         for st in (1, 5):
-            pid = p['records'][0]['prog'][st][0]
-            if pid not in used:
+            pid = p['records'][0]['prog'][st][0] if st in p['records'][0]['prog'] else None
+            if pid is not None and pid not in used:
                 used.append(pid)
     heap, prog_index, prog_recs = bytearray(), {}, []
     for pid in used:
@@ -460,7 +457,8 @@ def probed_register_counts(simple: list[dict], programs: dict[str, dict]) -> dic
     for p in simple:
         record = p['records'][0]
         for stage, method in REGISTER_COUNTS.items():
-            programs[record['prog'][stage][0]]['gprs'] = record['regs'].get(method, 0)
+            if stage in record['prog']:
+                programs[record['prog'][stage][0]]['gprs'] = record['regs'].get(method, 0)
     return programs
 
 
@@ -593,7 +591,7 @@ def pipeline(
         'key': p['key'],
         'form': p['form'],
         'vs': prog_index[r['prog'][1][0]],
-        'fs': prog_index[r['prog'][5][0]],
+        'fs': prog_index[r['prog'][5][0]] if 5 in r['prog'] else packfile.NO_PROGRAM,
     }
     rec['blob'] = [
         (m, r['regs'].get(m, 0)) for m in varying if m not in (0x2044, 0x2144) and not foreign(m, p['targets'])
@@ -628,7 +626,7 @@ def with_unnamed_ubos(rec: dict, p: dict, programs: dict[str, dict]) -> dict:
     uniform = {e['off'] for e in rec['entries'] if e['kind'] == 'ubo' and not e['ssbo']}
     rec['problems'] += [
         f'stage {stage} reads set 0 at {offset} as a uniform buffer the layout does not name'
-        for stage, pid in ((1, r['prog'][1][0]), (5, r['prog'][5][0]))
+        for stage, pid in ((stage, prog[0]) for stage, prog in r['prog'].items())
         for offset in ubo_offsets(programs[pid])
         if offset not in uniform
     ]

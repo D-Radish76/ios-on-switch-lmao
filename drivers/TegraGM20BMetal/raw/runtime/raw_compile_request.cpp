@@ -112,10 +112,14 @@ bool readVariant(Reader &r, RenderVariant &v)
 bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
-    if (r.kind != RequestKind::Render)
-        return tag == "k";
-    if (index < 2)
-        return tag == (index ? "f" : "v");
+    if (r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r))
+        return index == 0 ? tag == "k" : tag == "kl" || tag == "kp";
+    if (functionAttributes(r))
+        return tag == "a";
+    if (index == 0)
+        return tag == "v";
+    if (index == 1 && tag == "f")
+        return true;
     return tag == "vl" || tag == "vp" || tag == "fl" || tag == "fp";
 }
 
@@ -135,11 +139,12 @@ bool sane(const CompileRequest &r)
 {
     if (r.kind == RequestKind::Library)
         return saneLibrary(r);
-    const bool kernel = r.kind != RequestKind::Render;
-    if ((kernel ? r.stages.size() != 1 : r.stages.size() < 2) || r.stages.size() > kRequestStageLimit ||
+    const bool kernel =
+        r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r) || functionAttributes(r);
+    if (r.stages.empty() || (functionAttributes(r) && r.stages.size() != 1) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit ||
         r.kernel.textures.size() > kRequestBindLimit || r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() ||
-        (kernel && r.form != RequestForm::Primary))
+        ((kernel || r.kind == RequestKind::Reflection) && r.form != RequestForm::Primary))
         return false;
     for (size_t i = 0; i < r.stages.size(); ++i)
         if (!knownTag(r, i) || r.stages[i].library >= r.libraries.size() || r.stages[i].function.empty())
@@ -175,6 +180,16 @@ NmbDirectDispatch KernelRequest::dispatch() const
     d.samplerCount = uint32_t(samplers.size());
     d.regionMode = regionMode;
     return d;
+}
+
+size_t fragmentStage(const CompileRequest &r)
+{
+    return r.stages.size() > 1 && r.stages[1].tag == "f" ? 1 : kNoStage;
+}
+
+size_t firstLinked(const CompileRequest &r)
+{
+    return fragmentStage(r) == kNoStage ? 1 : 2;
 }
 
 std::string encodeRequest(const CompileRequest &r)
@@ -225,7 +240,7 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     q.key = r.text();
     readWhole(r, q.fields);
     const uint32_t stages = r.value<uint32_t>();
-    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Library) || form > 1 ||
+    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Reflection) || form > 1 ||
         stages > kRequestStageLimit)
         return false;
     q.stages.resize(stages);
@@ -339,6 +354,32 @@ CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey)
     CacheKey k;
     k.stack = stack;
     k.key = "kernel | " + computeKey;
+    return k;
+}
+
+bool computeReflection(const CompileRequest &r)
+{
+    return r.kind == RequestKind::Reflection && !r.stages.empty() && r.stages[0].tag == "k";
+}
+
+CacheKey computeReflectionKey(uint64_t stack, const std::string &stateKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "reflection | " + stateKey;
+    return k;
+}
+
+bool functionAttributes(const CompileRequest &r)
+{
+    return r.kind == RequestKind::Reflection && !r.stages.empty() && r.stages[0].tag == "a";
+}
+
+CacheKey functionAttributesCacheKey(uint64_t stack, const std::string &functionKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "attributes | " + functionKey;
     return k;
 }
 

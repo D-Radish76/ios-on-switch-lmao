@@ -35,4 +35,8 @@ CompileOutcome directRecord(const NmbDirectState &state, const StageCompile &com
                             std::string &why, std::map<uint32_t, uint32_t> *registers = nullptr, bool split = false,
                             bool variants = false, uint16_t xrSlots = 0);
 
+// Whether directRecord splits `state`'s fragment program when asked to (RuntimeRecord::splitTried): only a state of a vertex
+// and a fragment stage, never a vertex stage alone or a tessellated state
+bool splitsFragment(const NmbDirectState &state);
+
 }  // namespace raw

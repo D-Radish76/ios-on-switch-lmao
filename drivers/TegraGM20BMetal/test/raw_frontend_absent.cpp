@@ -154,7 +154,8 @@ uint32_t switch_nmb_sampler_word(const struct NmbSamplerDescriptor *)
     return 0;
 }
 
-// The translation's device-free entry points (bridge/NativeMetalDirect.h) the facade's RawOffline.mm links: none made here
+// The translation's device-free entry points (translate/NativeMetalTranslate.h) the facade's RawOffline.mm and
+// RawOfflineReflection.mm link: none made here
 NmbOfflineLibrary *nmb_offline_library_new(const void *, size_t)
 {
     return nullptr;
@@ -192,6 +193,16 @@ size_t nmb_offline_function_vertex_attribute(const NmbOfflineFunction *, uint32_
     return 0;
 }
 
+int64_t nmb_offline_function_stage_input_attribute_count(const NmbOfflineFunction *)
+{
+    return -1;
+}
+
+size_t nmb_offline_function_stage_input_attribute(const NmbOfflineFunction *, uint32_t, char *, size_t, uint64_t[5])
+{
+    return 0;
+}
+
 bool nmb_render_pipeline_offline(const NmbOfflineRenderPipelineDescriptor *, bool, uint64_t, uint32_t,
                                  const NmbDirectBinds *, bool (*)(const NmbDirectState *, void *), void *)
 {
@@ -213,4 +224,22 @@ bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescripto
 {
     return false;
 }
+
+NmbReflectionBlob *nmb_offline_render_pipeline_reflection(const NmbOfflineRenderPipelineDescriptor *)
+{
+    return nullptr;
+}
+
+NmbReflectionBlob *nmb_offline_compute_pipeline_reflection(const NmbOfflineComputePipelineDescriptor *)
+{
+    return nullptr;
+}
+
+const uint8_t *nmb_reflection_blob_bytes(const NmbReflectionBlob *, size_t *)
+{
+    return nullptr;
+}
+
+void nmb_reflection_blob_release(NmbReflectionBlob *)
+{}
 }

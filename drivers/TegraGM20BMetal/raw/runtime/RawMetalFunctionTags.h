@@ -7,6 +7,5 @@
 
 NSDictionary<NSString *, MTLFunctionConstant *> *rmFunctionConstants(RMFunction *f);
 
-// vertexAttributes (`stageInput` false) or stageInputAttributes into `out` (nil where Metal answers nil). False for a function
-// made with constant values that has attributes: which of them its constants gate off is in its AIR, not its tags.
-bool rmFunctionAttributes(RMFunction *f, bool stageInput, NSArray **out);
+// vertexAttributes (`stageInput` false) or stageInputAttributes; nil where Metal answers nil
+NSArray *rmFunctionAttributes(RMFunction *f, bool stageInput);

@@ -118,10 +118,19 @@ int32_t Engine::compile(const Prepared &p, std::string &entry, std::string &why)
 {
     if (p.request.kind == raw::RequestKind::Facts)
         return makeFacts(p, state_->inputs.systemRoot, entry, why);
+    if (raw::functionAttributes(p.request))
+        return makeAttributes(p, state_->inputs.systemRoot, entry, why);
     if (p.request.kind == raw::RequestKind::Library)
         return state_->codeGen->make(p, entry, why);
-    raw::Direct &direct = compiler();
     State &s = *state_;
+    if (p.request.kind == raw::RequestKind::Reflection) {
+        const std::string &root = s.inputs.systemRoot;
+        const Libraries offline = [&root](const raw::RequestLibrary &l, std::string &failed) {
+            return offlineLibrary(l, root, failed);
+        };
+        return makeReflectionEntry(p, offline, s.stack, entry, why);
+    }
+    raw::Direct &direct = compiler();
     LibraryCache &cache = *s.libraries;
     const Libraries libraries = [&cache](const raw::RequestLibrary &l, std::string &failed) {
         return cache.library(l, failed);

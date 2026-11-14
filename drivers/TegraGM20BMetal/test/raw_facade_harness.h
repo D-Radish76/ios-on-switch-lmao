@@ -117,11 +117,13 @@ inline std::vector<uint8_t> slot(uint32_t k)
 
 // A pack of this build's version holding the state of `key`: vertex program slot 0, fragment slot 1, each kSlot bytes in
 // the heap section at kHeap, so a page-multiple slot of the pack's own pages; `kernels`, each with a program slot of its
-// own after those (its `program` set here); `facts`: its compute states' answers; `named`: further states the device looks up
-// by name (Device::ycbcrPipeline's), each over the same two programs, its fields the key's with its own attachment 0 format;
-// `entries`: the handles and buffers the key's state reads
+// own after those (its `program` set here); `facts`: its compute states' answers. Without `pixelStage` the state has no
+// fragment program (raw_pack.h kNoProgram). `reflections`: its PackReflections section (reflection_blob_writer.h).
+// `named`: further states the device looks up by name (Device::ycbcrPipeline's), each over the same two programs, its
+// fields the key's with its own attachment 0 format; `entries`: the handles and buffers the key's state reads
 inline std::string writePack(const std::string &key, std::vector<raw::PackKernel> kernels = {},
-                             std::vector<raw::PackComputeFacts> facts = {},
+                             std::vector<raw::PackComputeFacts> facts = {}, bool pixelStage = true,
+                             const std::string &reflections = "",
                              const std::vector<std::pair<std::string, MTLPixelFormat>> &named = {},
                              const std::vector<raw::PackEntry> &entries = {})
 {
@@ -180,20 +182,25 @@ inline std::string writePack(const std::string &key, std::vector<raw::PackKernel
         kernels[i].program = uint16_t(2 + i);
         memcpy(file.data() + kKernels + i * sizeof(raw::PackKernel), &kernels[i], sizeof(raw::PackKernel));
     }
+    const uint64_t keyHash = raw::Pack::fnv(key.data(), key.size());
     size_t record = 0;
     for (const auto &[hash, at] : fieldsAt) {
         raw::PackPipeline pp = {};
         pp.keyHash = hash;
         pp.keyString = at;
         pp.vs = 0;
-        pp.fs = 1;
-        if (hash == raw::Pack::fnv(key.data(), key.size())) {
+        pp.fs = hash != keyHash || pixelStage ? 1 : raw::kNoProgram;
+        if (hash == keyHash) {
             pp.entries = uint8_t(std::min<size_t>(entries.size(), raw::kPackEntries));
             std::copy_n(entries.begin(), pp.entries, pp.entry);
         }
         memcpy(file.data() + kPipelines + record++ * sizeof pp, &pp, sizeof pp);
     }
     memcpy(file.data() + kStrings, strings.data(), strings.size());
+    const uint64_t reflectionsAt = file.size();
+    file.insert(file.end(), reflections.begin(), reflections.end());
+    h.section[raw::PackReflections] = {reflectionsAt, reflections.size()};
+    memcpy(file.data(), &h, sizeof h);
     const std::string path = dir() + "/pack.bin";
     std::ofstream(path, std::ios::binary)
         .write(reinterpret_cast<const char *>(file.data()), std::streamsize(file.size()));

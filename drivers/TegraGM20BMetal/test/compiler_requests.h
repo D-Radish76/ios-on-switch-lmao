@@ -54,7 +54,8 @@ public:
             const size_t next = line.find(" | ", at + 3);
             const std::string segment = line.substr(at + 3, (next == std::string::npos ? line.size() : next) - at - 3);
             const std::string tag = segment.substr(0, segment.find(' '));
-            if (tag == "v" || tag == "f" || tag == "vl" || tag == "vp" || tag == "fl" || tag == "fp") {
+            const bool noFragment = tag == "f" && segment.rfind("f - ", 0) == 0;
+            if (!noFragment && (tag == "v" || tag == "f" || tag == "vl" || tag == "vp" || tag == "fl" || tag == "fp")) {
                 if (!stage(r, tag, segment.substr(tag.size()), why))
                     return false;
             } else if (tag == "cubic" && !probe::cubicBinds(segment, r.variant.cubic)) {
@@ -70,8 +71,8 @@ public:
             }
             at = next;
         }
-        if (r.stages.size() < 2 || r.stages[0].tag != "v" || r.stages[1].tag != "f")
-            return why = "no vertex and fragment function", false;
+        if (r.stages.empty() || r.stages[0].tag != "v")
+            return why = "no vertex function", false;
         return renderKey(r, why);
     }
 
@@ -244,14 +245,16 @@ private:
             return hashes_[r.libraries[s.library].path][s.function];
         };
         std::vector<raw::LinkedStageAir> linked;
-        for (size_t i = 2; i < r.stages.size(); ++i)
+        for (size_t i = raw::firstLinked(r); i < r.stages.size(); ++i)
             linked.push_back({r.stages[i].tag[0], air(r.stages[i])});
+        const size_t f = raw::fragmentStage(r);
+        const raw::AirHash fragment = f == raw::kNoStage ? raw::AirHash{} : air(r.stages[f]);
         bool own = false;
         std::string packKey;
         @autoreleasepool {
             packKey = raw::requestPackKey(r, own);
         }
-        r.key = raw::renderCacheKey(r.stack, packKey, air(r.stages[0]), air(r.stages[1]), linked, own).key;
+        r.key = raw::renderCacheKey(r.stack, packKey, air(r.stages[0]), fragment, linked, own).key;
         return !r.key.empty() || (why = "no key", false);
     }
 };

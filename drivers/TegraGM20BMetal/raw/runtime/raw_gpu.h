@@ -584,6 +584,7 @@ struct Pipeline {
     // push words setting back the registers outside the pack's varying ones its methods set (raw_record.h extras, a pack
     // record's in its blob), to their value in every other state: emitted before the next state's methods
     std::vector<uint32_t> restore;
+    bool stagesOff = false;  // its methods turn the pixel stage or the rasteriser off (raw_stage_switches.h)
     // where its fragment program is split (raw_split.cpp): what its twin is made of, and the twin, made at the first draw that
     // takes it (both read without the device's lock); on that twin, its split
     const SplitSource *splitSource = nullptr;
@@ -660,6 +661,9 @@ struct PlacedProgram {
     uint64_t data = 0;
     const uint8_t *header = nullptr;  // its shader header, as the CPU holds it
 };
+
+// The pixel program of a state of none (raw_stage_switches.h): it binds and reads nothing, its header all zeros
+PlacedProgram noPixelProgram();
 
 // What a state's split twin is made of: the pack's split (its programs by index) or a runtime record's programs, and the
 // state's own inputs to Device::build

@@ -34,11 +34,13 @@ struct Asked {
     uint16_t xrSlots;
     std::string why;
     CompileOutcome outcome = CompileOutcome::Failed;
+    bool splittable = false;
 };
 
 bool made(const NmbDirectState *state, void *ctx)
 {
     Asked &a = *static_cast<Asked *>(ctx);
+    a.splittable = splitsFragment(*state);
     a.outcome = directRecord(*state, a.compile, a.rules, a.key, a.attributes, a.out, a.why, a.registers, a.split,
                              a.variants, a.xrSlots);
     if (a.bound) {
@@ -112,6 +114,7 @@ CompileOutcome Direct::form(MTLRenderPipelineDescriptor *descriptor, bool barrie
         return refused && !strncmp(refused, "retry: ", 7) ? CompileOutcome::Failed : CompileOutcome::Refused;
     }
     why = a.why;
+    splittable_ = a.splittable;
     if (a.outcome == CompileOutcome::Made && !compiledFor(out.pipeline, textures.written)) {
         why = "a written texture's variant m2v compiled for another format than the one bound";
         return CompileOutcome::Refused;
@@ -124,6 +127,7 @@ CompileOutcome Direct::make(MTLRenderPipelineDescriptor *descriptor, const std::
                             bool split, PackForm requested)
 {
     storageRefusal_.clear();
+    splittable_ = false;
     if (!translator_.render || !StageCompile::abiMatches()) {
         why = translator_.render ? "the stage compile's structs are not raw_direct_nvk.h's" : "no translator";
         return CompileOutcome::Failed;

@@ -111,11 +111,16 @@ inline std::string differences(const raw::Pack &pack, const raw::PackPipeline &p
         why += " reads";
     if (pp.variantCount[0] != rp.variantCount[0] || pp.variantCount[1] != rp.variantCount[1])
         why += " variants";
+    if (raw::pixelStage(pp) != raw::pixelStage(rp))
+        why += " pixel-stage";
     const bool tess = raw::tessellates(pp);
     const uint32_t index[4] = {pp.vs, pp.fs, pp.tessPrograms[0], pp.tessPrograms[1]};
     const raw::CapturedProgram *program[4] = {&r.programs[0], &r.programs[1], &r.tessPrograms[0], &r.tessPrograms[1]};
     const char *name[4] = {" vertex-program", " pixel-program", " control-program", " evaluation-program"};
+    const bool pixels = raw::pixelStage(pp) && raw::pixelStage(rp);
     for (int k = 0; k < (tess ? 4 : 2); k++) {
+        if (k == 1 && !pixels)
+            continue;
         const raw::PackProgram &packed = pack.section<raw::PackProgram>(raw::PackPrograms)[index[k]];
         raw::PackProgram made;
         const std::vector<uint8_t> slot = raw::programSlot(*program[k], made);
@@ -130,10 +135,14 @@ inline std::string differences(const raw::Pack &pack, const raw::PackPipeline &p
     return why;
 }
 
-// How the split a record made with its split (Direct::make's `split`) differs from the pack's of the same state
-inline std::string splitDifferences(const raw::Pack &pack, const raw::PackPipeline &pp, const raw::RuntimeRecord &r)
+// How the split a record made with its split (Direct::make's `split`) differs from the pack's of the same state.
+// `splittable`: its state is one the direct compile splits (raw_direct.h splitsFragment); any other has no split to make
+inline std::string splitDifferences(const raw::Pack &pack, const raw::PackPipeline &pp, const raw::RuntimeRecord &r,
+                                    bool splittable)
 {
     const raw::PackSplit *packed = pack.split(pp.fs);
+    if (!splittable)
+        return packed ? " split-packed" : r.splitTried || r.split ? " split-extra" : "";
     if (!r.splitTried)
         return " split-untried";
     if (!packed || !r.split)

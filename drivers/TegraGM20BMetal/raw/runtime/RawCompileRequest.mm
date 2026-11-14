@@ -88,18 +88,20 @@ std::string requestPackKey(const CompileRequest &r, bool &own)
     const auto frameworkAt = [&](const RequestStage &s) {
         return frameworkOf(r.libraries[s.library].path);
     };
-    const RequestStage &vertex = r.stages[0], &fragment = r.stages[1];
+    const RequestStage &vertex = r.stages[0];
+    const RequestStage *fragment = fragmentStage(r) == kNoStage ? nullptr : &r.stages[fragmentStage(r)];
     const std::string framework = frameworkAt(vertex);
-    bool packable = !framework.empty() && framework == frameworkAt(fragment);
+    bool packable = !framework.empty() && (!fragment || framework == frameworkAt(*fragment));
     std::string linked;
-    for (size_t i = 2; i < r.stages.size(); ++i) {
+    for (size_t i = firstLinked(r); i < r.stages.size(); ++i) {
         const RequestStage &s = r.stages[i];
         linked += linkedSegment(s.tag.c_str(), {s.function, s.constants}, s.name);
         packable &= !frameworkAt(s).empty();
     }
     own = !packable;
-    const StageKey v{vertex.function, vertex.constants}, f{fragment.function, fragment.constants};
-    return pipelineKey(r.fields, &v, &f, linked, framework) + r.variant.name();
+    const StageKey v{vertex.function, vertex.constants};
+    const StageKey f{fragment ? fragment->function : "", fragment ? fragment->constants : ""};
+    return pipelineKey(r.fields, &v, fragment ? &f : nullptr, linked, framework) + r.variant.name();
 }
 
 StageInFields stageInFieldsOf(MTLStageInputOutputDescriptor *in)

@@ -6,6 +6,7 @@
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
 #include "../raw/runtime/raw_compute_key.h"
+#include "../raw/runtime/raw_function_attributes.h"
 #include "made_metallib.h"
 
 #include <gtest/gtest.h>
@@ -201,6 +202,94 @@ TEST(CompileRequest, TheStoreNameBindsLibraryBytesAndRasterization)
     EXPECT_NE(raw::storeName(k, rasterizing, identities(rasterizing)), name);
 }
 
+// A state of no fragment function (RenderBox's path_edges) is asked by its vertex stage alone: the request round-trips, keys
+// "f -" with no fragment AIR, as the facade keys it, and the compiler's descriptor of it has no fragment function
+TEST(CompileRequest, AStateOfNoFragmentFunctionIsAskedByItsVertexStageAlone)
+{
+    raw::CompileRequest r = renderRequest();
+    r.stages = {stage("v", "vertex_fn"), stage("vl", "fragment_fn")};
+    EXPECT_EQ(raw::fragmentStage(r), raw::kNoStage);
+    EXPECT_EQ(raw::firstLinked(r), 1u);
+    bool own = false;
+    const raw::StageKey v{"vertex_fn", ""};
+    const std::string packKey = raw::requestPackKey(r, own);
+    EXPECT_EQ(packKey, raw::pipelineKey(descriptor(), &v, nullptr, " | vl fragment_fn ", ""));
+    EXPECT_NE(packKey.find(" | f -"), std::string::npos) << packKey;
+    raw::AirHash vertex, none{}, linked;
+    vertex.fill(0xA0);
+    linked.fill(0xA1);
+    const raw::CacheKey k = raw::renderCacheKey(kStack, packKey, vertex, none, {{'v', linked}}, own);
+    r.key = k.key;
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back));
+    EXPECT_EQ(raw::encodeRequest(back), raw::encodeRequest(r));
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.key.key, k.key);
+    EXPECT_EQ(memcmp(p.key.fragmentAir, none.data(), 32), 0);
+
+    raw::CompileRequest two = renderRequest();
+    EXPECT_EQ(raw::fragmentStage(two), 1u);
+    EXPECT_EQ(raw::firstLinked(two), 2u);
+    raw::CompileRequest misplaced = renderRequest();
+    misplaced.stages = {stage("v", "vertex_fn"), stage("vl", "vertex_fn"), stage("f", "fragment_fn")};
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(misplaced), back));
+}
+
+// A state Metal does not rasterize keys rast=0 after its attachments and vertex layout; one it does names nothing
+TEST(CompileRequest, TheKeyNamesAStateMetalDoesNotRasterize)
+{
+    MTLRenderPipelineDescriptor *d = descriptor();
+    const raw::StageKey v{"vertex_fn", ""};
+    const std::string off = raw::pipelineKey(d, &v, nullptr, "", "");
+    EXPECT_NE(off.find(" a3=9:8:3:20:2:2 rast=0  | v vertex_fn"), std::string::npos) << off;
+    d.rasterizationEnabled = YES;
+    EXPECT_EQ(raw::pipelineKey(d, &v, nullptr, "", "").find("rast="), std::string::npos);
+}
+
+// A Reflection asks a render state's reflection by the render request's stages and fields, keyed as the state is and named
+// apart from its record; a compute state's by its kernel's one stage and limits, keyed by its computeStateKey alone
+TEST(CompileRequest, AReflectionIsKeyedAsItsStateAndNamedApart)
+{
+    raw::CompileRequest render = renderRequest();
+    const raw::CacheKey k = runtimeKey(render);
+    render.key = k.key;
+    raw::CompileRequest reflection = render;
+    reflection.kind = raw::RequestKind::Reflection;
+    EXPECT_FALSE(raw::computeReflection(reflection));
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(reflection), back));
+    EXPECT_EQ(back.kind, raw::RequestKind::Reflection);
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(reflection), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.key.key, k.key);
+    EXPECT_NE(p.name, raw::storeName(k, render, identities(render)));
+
+    raw::CompileRequest compute;
+    compute.stack = kStack;
+    compute.kind = raw::RequestKind::Reflection;
+    compute.libraries.push_back(data(made_metallib::universal({"kernel_fn"}, 0x30)));
+    compute.stages = {stage("k", "kernel_fn")};
+    compute.kernel.maxThreads = 512;
+    raw::AirHash air;
+    air.fill(0x30);
+    const std::string state = raw::computeStateKey(air, "", 512, false);
+    compute.key = raw::computeReflectionKey(kStack, state).key;
+    EXPECT_TRUE(raw::computeReflection(compute));
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(compute), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+    raw::CompileRequest limits = compute;
+    limits.kernel.maxThreads = 256;
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(limits), kStack, system, p, why));
+    raw::CompileRequest split = compute;
+    split.form = raw::RequestForm::Split;
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(split), back));
+}
+
 TEST(CompileRequest, AKernelIsKeyedByItsFunctionAndNamedByItsDispatch)
 {
     raw::CompileRequest r;
@@ -298,7 +387,118 @@ TEST(CompileRequest, ComputeFactsAreKeyedAsThePacksStateKey)
     EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(wider), kStack, system, p, why));
     raw::CompileRequest two = r;
     two.stages.push_back(stage("k", "kernel_fn"));
-    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "a facts request names one function";
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "a facts request names one kernel";
+}
+
+// A kernel's linked functions (MPSGraph's kernels link their DAG library's privately) are its request's stages after the
+// kernel, "kl" visible then "kp" private, and its key names each by AIR and constants past the kernel's own constants
+// (raw_compute_key.h computeLinkedText), for its facts, its dispatches and its reflection alike. The same kernel without
+// them is another state; a linked tag cannot stand first.
+TEST(CompileRequest, AKernelsLinkedFunctionsAreItsStagesAndPartOfItsKey)
+{
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Facts;
+    r.libraries.push_back(data(made_metallib::universal({"kernel_fn"}, 0x30)));
+    r.libraries.push_back(data(made_metallib::universal({"visible_fn", "prefixPrimary_i8"}, 0x40)));
+    r.stages = {stage("k", "kernel_fn"), stage("kl", "visible_fn", 1, "#1:29:01"), stage("kp", "prefixPrimary_i8", 1)};
+    r.kernel.maxThreads = 256;
+    raw::AirHash kernelAir, visibleAir, privateAir;
+    kernelAir.fill(0x30);
+    visibleAir.fill(0x40);
+    privateAir.fill(0x41);
+    const std::string linked = raw::computeLinkedText({{false, visibleAir, "#1:29:01"}, {true, privateAir, ""}});
+    EXPECT_EQ(raw::airText(privateAir).size(), 64u);
+    EXPECT_EQ(raw::airText(privateAir).substr(0, 6), "414141");
+    EXPECT_EQ(linked, " | kl " + raw::airText(visibleAir) + " #1:29:01 | kp " + raw::airText(privateAir));
+    const std::string state = raw::computeStateKey(kernelAir, linked, 256, false);
+    r.key = raw::factsCacheKey(kStack, state).key;
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+
+    raw::CompileRequest alone = r;
+    alone.stages.resize(1);
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(alone), kStack, system, p, why))
+        << "the kernel alone claiming the linked state's key";
+    alone.key = raw::factsCacheKey(kStack, raw::computeStateKey(kernelAir, "", 256, false)).key;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(alone), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey.find(" | kp "), std::string::npos);
+
+    raw::CompileRequest kernel = r;
+    kernel.kind = raw::RequestKind::Kernel;
+    kernel.kernel.threads[0] = 64;
+    kernel.kernel.threads[1] = kernel.kernel.threads[2] = 1;
+    const std::string compute = raw::computeKey(kernelAir, linked, 256, false, kernel.kernel.threads, "", "", "");
+    EXPECT_EQ(compute.rfind(state, 0), 0u);
+    kernel.key = "kernel | " + compute;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(kernel), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, compute);
+
+    raw::CompileRequest reflection = r;
+    reflection.kind = raw::RequestKind::Reflection;
+    reflection.key = raw::computeReflectionKey(kStack, state).key;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(reflection), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+
+    raw::CompileRequest first = r;
+    first.stages[0].tag = "kp";
+    raw::CompileRequest back;
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(first), back));
+    raw::CompileRequest render = r;
+    render.stages[1].tag = "vl";
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(render), back)) << "a render stage's tag on a kernel";
+}
+
+// A specialized function's attributes: one stage tagged "a", keyed by its AIR, constants and the name it was made under,
+// refused with any other stage or a key naming other constants; the blob carries both lists, nil apart from empty
+TEST(CompileRequest, AFunctionsAttributesAreKeyedByItsAirConstantsAndName)
+{
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Reflection;
+    r.libraries.push_back(data(made_metallib::universal({"vertex_fn"}, 0x30)));
+    r.stages = {stage("a", "vertex_fn", 0, "#4:53:00")};
+    raw::AirHash air;
+    air.fill(0x30);
+    const std::string function = raw::functionAttributesKey(air, "#4:53:00", "vertex_fn");
+    r.key = raw::functionAttributesCacheKey(kStack, function).key;
+    EXPECT_TRUE(raw::functionAttributes(r));
+    EXPECT_FALSE(raw::computeReflection(r));
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.key.key, "attributes | " + function);
+    raw::CompileRequest other = r;
+    other.stages[0].constants = "#4:53:01";
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(other), kStack, system, p, why));
+    raw::CompileRequest two = r;
+    two.stages.push_back(stage("a", "vertex_fn"));
+    raw::CompileRequest back;
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "an attributes request names one function";
+
+    raw::FunctionAttributeTag position, normal;
+    position.name = "position";
+    position.type = 6;
+    position.active = true;
+    normal.name = "normal";
+    normal.index = 5;
+    normal.type = 5;
+    normal.patchData = normal.controlPointData = true;
+    const raw::AttributeList vertex = std::vector<raw::FunctionAttributeTag>{position, normal};
+    raw::AttributeList readVertex, readStage = std::vector<raw::FunctionAttributeTag>{};
+    ASSERT_TRUE(raw::decodeAttributeLists(raw::encodeAttributeLists(vertex, std::nullopt), readVertex, readStage));
+    ASSERT_TRUE(readVertex.has_value());
+    EXPECT_FALSE(readStage.has_value()) << "nil, not empty";
+    ASSERT_EQ(readVertex->size(), 2u);
+    EXPECT_EQ((*readVertex)[1].name, "normal");
+    EXPECT_EQ((*readVertex)[1].index, 5);
+    EXPECT_TRUE((*readVertex)[1].patchData && (*readVertex)[1].controlPointData && !(*readVertex)[1].active);
+    EXPECT_FALSE(
+        raw::decodeAttributeLists(raw::encodeAttributeLists(vertex, std::nullopt) + "x", readVertex, readStage));
 }
 
 TEST(CompileRequest, TheCompilerRefusesWhatItCannotTrust)

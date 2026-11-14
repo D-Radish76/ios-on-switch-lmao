@@ -453,6 +453,18 @@ bool kernelFacts(MTLComputePipelineDescriptor *descriptor, uint32_t facts[3], st
     return false;
 }
 
+bool descriptorOf(MTLRenderPipelineDescriptor *d, NmbOfflineRenderPipelineDescriptor &p,
+                  std::vector<NmbOfflineFunction *> &linked)
+{
+    return renderDescriptor(d, p, linked);
+}
+
+bool descriptorOf(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelineDescriptor &p,
+                  std::vector<NmbOfflineFunction *> &linked)
+{
+    return computeDescriptor(d, p, linked);
+}
+
 raw::DirectTranslator translator()
 {
     raw::DirectTranslator t;

@@ -10,6 +10,9 @@
 #include "../raw/runtime/RawPipelineKey.h"
 #include "../raw/runtime/RawRenderKey.h"
 #include "../raw/runtime/raw_cache.h"
+#include "../raw/runtime/raw_reflection_blob.h"
+#include "../raw/runtime/RawOffline.h"
+#include "compiler_request.h"
 
 namespace switch_compiler {
 namespace {
@@ -77,11 +80,12 @@ MTLRenderPipelineDescriptor *descriptor(const Prepared &p, const Libraries &libr
     MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
     raw::applyFields(r.fields, d);
     d.vertexFunction = made[0];
-    d.fragmentFunction = made[1];
+    if (const size_t f = raw::fragmentStage(r); f != raw::kNoStage)
+        d.fragmentFunction = made[f];
     if (uint64_t(made[0].patchType) != r.fields.patchType)
         return why = "a vertex function of another patch type than its request names", nil;
     NSMutableDictionary<NSString *, NSMutableArray *> *linked = [NSMutableDictionary dictionary];
-    for (size_t i = 2; i < r.stages.size(); ++i) {
+    for (size_t i = raw::firstLinked(r); i < r.stages.size(); ++i) {
         NSString *tag = @(r.stages[i].tag.c_str());
         if (!linked[tag])
             linked[tag] = [NSMutableArray array];
@@ -114,16 +118,33 @@ int32_t render(const Prepared &p, const Libraries &libraries, raw::Direct &direc
     return resultOf(outcome);
 }
 
+// A compute request's state over `made`, its stages' functions: the kernel, its linked functions ("kl" visible, "kp"
+// private), its stage input and limits
+MTLComputePipelineDescriptor *computeDescriptor(const raw::CompileRequest &r, const std::vector<id<MTLFunction>> &made)
+{
+    MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
+    d.computeFunction = made[0];
+    d.maxTotalThreadsPerThreadgroup = r.kernel.maxThreads;
+    d.threadGroupSizeIsMultipleOfThreadExecutionWidth = r.kernel.multipleOfWidth;
+    d.stageInputDescriptor = raw::stageInOf(r.kernel.stageIn);
+    if (made.size() > 1) {
+        NSMutableArray *visible = [NSMutableArray array], *hidden = [NSMutableArray array];
+        for (size_t i = 1; i < made.size(); ++i)
+            [(r.stages[i].tag == "kp" ? hidden : visible) addObject:made[i]];
+        MTLLinkedFunctions *linked = [MTLLinkedFunctions linkedFunctions];
+        linked.functions = visible;
+        linked.privateFunctions = hidden;
+        d.linkedFunctions = linked;
+    }
+    return d;
+}
+
 int32_t kernel(const Prepared &p, const Libraries &libraries, raw::Direct &direct, std::string &entry, std::string &why)
 {
     std::vector<id<MTLFunction>> made;
     if (!functions(p.request, libraries, made, why))
         return TegraGM20BCompileUnavailable;
-    MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
-    d.computeFunction = made[0];
-    d.maxTotalThreadsPerThreadgroup = p.request.kernel.maxThreads;
-    d.threadGroupSizeIsMultipleOfThreadExecutionWidth = p.request.kernel.multipleOfWidth;
-    d.stageInputDescriptor = raw::stageInOf(p.request.kernel.stageIn);
+    MTLComputePipelineDescriptor *d = computeDescriptor(p.request, made);
     const NmbDirectDispatch dispatch = p.request.kernel.dispatch();
     raw::ComputeRecord record;
     const raw::CompileOutcome outcome = direct.kernel(d, dispatch, p.packKey, record, why);
@@ -132,7 +153,55 @@ int32_t kernel(const Prepared &p, const Libraries &libraries, raw::Direct &direc
     return resultOf(outcome);
 }
 
+int32_t reflection(const Prepared &p, const Libraries &libraries, uint64_t stack, std::string &entry, std::string &why)
+{
+    std::string blob;
+    bool made = false;
+    if (raw::computeReflection(p.request)) {
+        std::vector<id<MTLFunction>> kernel;
+        if (!functions(p.request, libraries, kernel, why))
+            return TegraGM20BCompileUnavailable;
+        made = offline::computeReflection(computeDescriptor(p.request, kernel), blob, why);
+    } else {
+        MTLRenderPipelineDescriptor *d = descriptor(p, libraries, stack, why);
+        if (!d)
+            return TegraGM20BCompileUnavailable;
+        made = offline::renderReflection(d, blob, why);
+    }
+    entry = raw::encodeReflectionEntry(p.key, made ? &blob : nullptr, why);
+    return made ? TegraGM20BCompileMade : TegraGM20BCompileRefused;
+}
+
 }  // namespace
+
+int32_t makeReflectionEntry(const Prepared &p, const Libraries &libraries, uint64_t stack, std::string &entry,
+                            std::string &why)
+{
+    @autoreleasepool {
+        return reflection(p, libraries, stack, entry, why);
+    }
+}
+
+id<MTLLibrary> offlineLibrary(const raw::RequestLibrary &l, const std::string &systemRoot, std::string &why)
+{
+    static RawOfflineDevice *const device = [RawOfflineDevice new];
+    NSError *error = nil;
+    id<MTLLibrary> made = nil;
+    if (l.system) {
+        std::string real;
+        if (!SystemLibraries::resolve(systemRoot, l.path, real, why))
+            return nil;
+        made = [device newLibraryWithURL:[NSURL fileURLWithPath:@(real.c_str())] error:&error];
+    } else {
+        dispatch_data_t bytes =
+            dispatch_data_create(l.bytes.data(), l.bytes.size(), nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+        made = [device newLibraryWithData:bytes error:&error];
+    }
+    if (!made)
+        why = std::string("the translator refused the library ") + (l.path.empty() ? "of its data" : l.path) +
+              (error ? std::string(": ") + error.localizedDescription.UTF8String : "");
+    return made;
+}
 
 int32_t makeEntry(const Prepared &p, const Libraries &libraries, raw::Direct &direct, uint64_t stack,
                   std::string &entry, std::string &why)

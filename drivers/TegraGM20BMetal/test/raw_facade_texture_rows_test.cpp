@@ -78,7 +78,7 @@ void texturesPastTheirMemory()
 void bufferTexturesAt16()
 {
     const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
-    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, {}, {sampled}));
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, {sampled}));
     ASSERT_TRUE(device != nil);
     NSError *error = nil;
     id<MTLLibrary> library = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];
@@ -111,7 +111,7 @@ void bufferTexturesAt16()
 void planesOff16()
 {
     const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
-    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, {}, {sampled}));
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, {sampled}));
     ASSERT_TRUE(device != nil);
     NSError *error = nil;
     id<MTLLibrary> library = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];

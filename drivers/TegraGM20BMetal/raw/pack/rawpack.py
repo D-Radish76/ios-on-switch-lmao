@@ -41,7 +41,8 @@ tools alone):
        rawpack.py --split --qc <default.metallib> --corpus <corpus.log> [--ca-names <ca-names/<build>.txt>]
                   [--ca-preferences <stager>] --out <dir>
            writes <dir>/work/bucket0 .. bucket15, each a corpus.log of its states
-       rawpack.py --probe-bucket <bucket dir> --prebuilt <dir> --qc <default.metallib> [--root <dir>] [--data-libs <dir>]
+       rawpack.py --probe-bucket <bucket dir> --prebuilt <dir> --qc <default.metallib> [--root <dir>]
+                  [--data-libs <dir>]
            makes one bucket in place: records.bin (its states' and kernels' records), and bucket 0's context.log;
            a line's lib= path is under --root (the crawl's root/ with the build's applications), else QuartzCore's,
            and a lib=data:<SHA-256> library is --data-libs/<SHA-256>.metallib (else the crawl's data/ beside --root)
@@ -345,6 +346,7 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
         [
             HERE / 'directpack.mm',
             RAW / 'runtime/RawOffline.mm',
+            RAW / 'runtime/RawOfflineReflection.mm',
             RAW / 'runtime/RawDirect.mm',
             RAW / 'runtime/RawRenderKey.mm',
         ],
@@ -438,7 +440,7 @@ def state_key(line: str) -> str:
         h
         for h in line[:bar1].split()
         if h.startswith(('samples=', 'topo=', 'ds=')) or (len(h) > 1 and h[0] in 'ca' and h[1].isdigit())
-    ]
+    ] + [h for h in line[:bar1].split() if h == 'rast=0']
     key = ' '.join(fields) + ' ' + line[bar1 : bar3 if bar3 >= 0 else len(line)]
     cubic = sampled = written = ''
     for segment in line[bar3 + 3 :].split(' | ') if bar3 >= 0 else ():

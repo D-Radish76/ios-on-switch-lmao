@@ -55,8 +55,9 @@ Pipeline *Device::variant(Pipeline &pl, uint32_t facts)
     const PackPipeline &pp = *pl.rec;
     const uint32_t index[2] = {v < pl.variantCount[0] ? pl.variants[0][v].program : pp.vs,
                                f < pl.variantCount[1] ? pl.variants[1][f].program : pp.fs};
-    PlacedProgram placed[2];
-    bool placedBoth = placePackProgram(index[0], placed[0]) && placePackProgram(index[1], placed[1]);
+    PlacedProgram placed[2] = {{}, noPixelProgram()};
+    bool placedBoth =
+        placePackProgram(index[0], placed[0]) && (!pixelStage(pp) || placePackProgram(index[1], placed[1]));
     if (placedBoth && !slmNeed(std::max(slmPerWarpOfHeader(placed[0].header), slmPerWarpOfHeader(placed[1].header)))) {
         stats.heapFull++;
         placedBoth = false;
@@ -73,7 +74,7 @@ Pipeline *Device::variant(Pipeline &pl, uint32_t facts)
             made.memoryEntries |= placedSetReads(placed[s].header, *placed[s].record, pp);
     made.restore = pl.restore;
     made.strideTwin = pl.strideTwin;
-    if (const PackSplit *split = pack_.split(index[1]); split && !made.storageBits) {
+    if (const PackSplit *split = pixelStage(pp) ? pack_.split(index[1]) : nullptr; split && !made.storageBits) {
         SplitSource source;
         source.rec = *split;
         source.packed = true;

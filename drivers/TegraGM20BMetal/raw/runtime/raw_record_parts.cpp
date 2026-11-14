@@ -222,6 +222,8 @@ bool programsBindable(const RecordParts &parts, std::string &why)
     const CapturedProgram *all[] = {parts.programs[0], parts.programs[1], parts.tessPrograms[0], parts.tessPrograms[1]};
     for (uint32_t k = 0; k < (parts.controlWord ? 4u : 2u); k++) {
         const CapturedProgram *p = all[k];
+        if (k == 1 && !parts.pixelStage)
+            continue;
         if (!p) {
             why = "unknown program";
             return false;
@@ -297,7 +299,7 @@ bool assembleRecord(const RecordParts &parts, const std::string &key, const Pack
     if (!programsBindable(parts, why))
         return false;
     out.programs[0] = *parts.programs[0];
-    out.programs[1] = *parts.programs[1];
+    out.programs[1] = parts.pixelStage ? *parts.programs[1] : CapturedProgram();
     if (parts.controlWord) {
         out.tessPrograms[0] = *parts.tessPrograms[0];
         out.tessPrograms[1] = *parts.tessPrograms[1];
@@ -377,7 +379,7 @@ bool assembleRecord(const RecordParts &parts, const std::string &key, const Pack
     }
     p.keyHash = packKeyHash(key);
     p.vs = 0;
-    p.fs = 1;
+    p.fs = parts.pixelStage ? 1 : kNoProgram;
     p.blobDwords = uint32_t(out.blob.size());
     for (const auto &[offset, word] : parts.push) {
         if (offset < 0x700 || offset >= 0x780)

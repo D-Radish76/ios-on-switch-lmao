@@ -209,13 +209,14 @@ enum class RMShareable : uint8_t {
     // its record is the pack's, and so are its variants' (RawMetalCubic.mm packedVariants); a record this process made is
     // not, and its variants are made as well
     bool _packed;
-    bool _completable;  // both its functions are this device's (the runtime makes its record if the pack has none)
+    bool _completable;  // its functions, fragment or none, are this device's (made at creation where the pack has none)
     bool _archived;     // an archive its creation listed declares it: its twin is made as a packed one's
     bool _caTransform;
     // its alpha to coverage and alpha to one (raw_alpha_control.h), which its key does not hold
     uint32_t _alphaControl;
     std::string _failure;  // why its creation failed (Completion::makeNow), as Metal's would
     std::string _key;      // its pack key (completable states')
+    uint64_t _packKey;     // the hash the pack finds its records and reflection by (its key's, or its key and AIR's)
     MTLRenderPipelineDescriptor
         *_madeFrom;                  // completable states': what its cubic variants and a later twin are made of
     const char *_m2vMissing;         // what of it m2v has no form of (rmM2vMissingState), null: nothing

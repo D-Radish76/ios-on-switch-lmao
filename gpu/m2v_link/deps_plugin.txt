@@ -16,7 +16,6 @@
 //drivers/NativeMetal:bridge/NativeMetalHeap.rs
 //drivers/NativeMetal:bridge/NativeMetalObjects.h
 //drivers/NativeMetal:bridge/NativeMetalObjects.rs
-//drivers/NativeMetal:bridge/NativeMetalReflection.rs
 //drivers/NativeMetal:bridge/NativeMetalTarget.rs
 //drivers/NativeMetal:bridge/NativeMetalVariants.rs
 //gpu:bridge

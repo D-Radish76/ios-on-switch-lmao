@@ -14,6 +14,8 @@ pub mod direct_compute;
 mod direct_tess;
 #[path = "NativeMetalOffline.rs"]
 pub mod offline;
+#[path = "NativeMetalReflection.rs"]
+pub mod reflection;
 #[path = "NativeMetalTessModes.rs"]
 mod tess_modes;
 

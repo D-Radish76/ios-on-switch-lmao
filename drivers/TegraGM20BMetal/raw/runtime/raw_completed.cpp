@@ -102,9 +102,10 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
 {
     if (retry)
         *retry = false;
-    const bool tess = tessellates(r.pipeline);
+    const bool tess = tessellates(r.pipeline), pixel = pixelStage(r.pipeline);
     for (const CapturedProgram *program : {&r.programs[0], &r.programs[1], &r.tessPrograms[0], &r.tessPrograms[1]}) {
-        if (!tess && (program == &r.tessPrograms[0] || program == &r.tessPrograms[1]))
+        if ((!tess && (program == &r.tessPrograms[0] || program == &r.tessPrograms[1])) ||
+            (!pixel && program == &r.programs[1]))
             continue;
         if (program->image.size() < sizeof CompletedProgram::header) {
             why = "missing shader program header";
@@ -124,8 +125,8 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
     const uint64_t key = r.pipeline.keyHash;
     if (const auto it = completed_.find(key); it != completed_.end())
         return it->second;
-    PlacedProgram vs, fs, tessPlaced[2];
-    if (!placeCompleted(r.programs[0], vs) || !placeCompleted(r.programs[1], fs) ||
+    PlacedProgram vs, fs = noPixelProgram(), tessPlaced[2];
+    if (!placeCompleted(r.programs[0], vs) || (pixel && !placeCompleted(r.programs[1], fs)) ||
         (tess &&
          (!placeCompleted(r.tessPrograms[0], tessPlaced[0]) || !placeCompleted(r.tessPrograms[1], tessPlaced[1])))) {
         stats.heapFull++;
@@ -168,7 +169,8 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
     std::vector<uint32_t> pairs;
     for (const auto &[m, v] : r.restore)
         pairs.insert(pairs.end(), {m, v});
-    stored.pipeline.restore = restoreWords(pairs.data(), uint32_t(pairs.size()));
+    const std::vector<uint32_t> restored = restoreWords(pairs.data(), uint32_t(pairs.size()));
+    stored.pipeline.restore.insert(stored.pipeline.restore.end(), restored.begin(), restored.end());
     stored.pipeline.strideTwin = strideTwin;
     if (r.split && !c.record.storageMask)
         offerCompletedSplit(stored, r, vs, caTransform);

@@ -276,7 +276,7 @@ MTLSamplerDescriptor *wrappingSampler(float lodMax)
 void planarSamplerTableFull()
 {
     const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
-    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {},
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
                                           {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float}}, {sampled}));
     ASSERT_TRUE(device != nil);
     NSError *error = nil;

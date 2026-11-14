@@ -3,12 +3,16 @@
 #import "compiler_facts.h"
 
 #import <Foundation/Foundation.h>
+#include <algorithm>
+#include <deque>
 #include <vector>
 #include "MetallibSlice.h"
 #include "TegraGM20BCompilerABI.h"
 #include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/RawPipelineKey.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
+#include "../raw/runtime/raw_function_attributes.h"
+#include "../raw/runtime/raw_reflection_blob.h"
 #include "../translate/NativeMetalTranslate.h"
 
 namespace switch_compiler {
@@ -38,7 +42,7 @@ bool airSliceOf(const raw::RequestLibrary &l, const std::string &root, NSData *_
     return true;
 }
 
-// The constants as the translator takes them, indexed then named (raw/pack/offline_metal.mm)
+// The constants as the translator takes them, indexed then named (raw/runtime/RawOffline.mm)
 bool constantsOf(MTLFunctionConstantValues *values, std::vector<NmbConstant> &out, std::string &why)
 {
     NSArray *indexed = [values newIndexedConstantArray], *named = [values newNamedConstantArray];
@@ -70,40 +74,132 @@ NmbOfflineFunction *functionOf(const NmbOfflineLibrary *library, const raw::Requ
                                                 uint32_t(constants.size()));
 }
 
+// vertexAttributes (`stageInput` false) or stageInputAttributes as the translator answers them; nullopt for nil
+raw::AttributeList attributesOf(const NmbOfflineFunction *f, bool stageInput)
+{
+    const int64_t count = stageInput ? nmb_offline_function_stage_input_attribute_count(f)
+                                     : nmb_offline_function_vertex_attribute_count(f);
+    if (count < 0)
+        return std::nullopt;
+    std::vector<raw::FunctionAttributeTag> out;
+    for (uint32_t i = 0; i < uint32_t(count); i++) {
+        char name[256];
+        uint64_t info[5] = {};
+        const size_t named = stageInput ? nmb_offline_function_stage_input_attribute(f, i, name, sizeof name, info)
+                                        : nmb_offline_function_vertex_attribute(f, i, name, sizeof name, info);
+        if (!named)
+            return std::nullopt;
+        raw::FunctionAttributeTag a;
+        a.name = name;
+        a.index = uint8_t(info[0]);
+        a.type = uint8_t(info[1]);
+        a.active = info[2];
+        a.patchData = info[3];
+        a.controlPointData = info[4];
+        out.push_back(std::move(a));
+    }
+    return out;
+}
+
+// A request's stages as the translator's functions, each library read once from its AIR slice; all released with it
+class OfflineStages {
+public:
+    OfflineStages() = default;
+    OfflineStages(const OfflineStages &) = delete;
+    OfflineStages &operator=(const OfflineStages &) = delete;
+
+    ~OfflineStages()
+    {
+        for (NmbOfflineFunction *f : functions_)
+            nmb_offline_function_release(f);
+        for (NmbOfflineLibrary *l : libraries_)
+            if (l)
+                nmb_offline_library_release(l);
+    }
+
+    bool make(const raw::CompileRequest &r, const std::string &root, std::string &why)
+    {
+        libraries_.assign(r.libraries.size(), nullptr);
+        held_.resize(r.libraries.size());
+        for (const raw::RequestStage &s : r.stages) {
+            NmbOfflineLibrary *&library = libraries_[s.library];
+            if (!library) {
+                const uint8_t *slice = nullptr;
+                size_t size = 0;
+                if (!airSliceOf(r.libraries[s.library], root, held_[s.library], slice, size, why))
+                    return false;
+                if (!(library = nmb_offline_library_new(slice, size)))
+                    return why = std::string("a library the translator does not read: ") + nmb_last_error(), false;
+            }
+            MTLFunctionConstantValues *values = nil;
+            NmbOfflineFunction *f = functionOf(library, s, constants_.emplace_back(), values, why);
+            if (values)
+                [values_ addObject:values];
+            if (!f) {
+                if (why.empty())
+                    why = "no function " + s.function + ": " + nmb_last_error();
+                return false;
+            }
+            functions_.push_back(f);
+        }
+        return true;
+    }
+
+    NmbOfflineFunction *function(size_t stage) const
+    {
+        return functions_[stage];
+    }
+
+private:
+    std::vector<NSData *> held_;
+    std::vector<NmbOfflineLibrary *> libraries_;
+    std::deque<std::vector<NmbConstant>> constants_;  // what each function was made with, held as long as it is
+    NSMutableArray *values_ = [NSMutableArray array];
+    std::vector<NmbOfflineFunction *> functions_;
+};
+
 }  // namespace
+
+int32_t makeAttributes(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
+{
+    @autoreleasepool {
+        OfflineStages stages;
+        if (!stages.make(p.request, systemRoot, why))
+            return TegraGM20BCompileUnavailable;
+        const NmbOfflineFunction *function = stages.function(0);
+        const std::string blob = raw::encodeAttributeLists(attributesOf(function, false), attributesOf(function, true));
+        entry = raw::encodeReflectionEntry(p.key, &blob, why);
+        return TegraGM20BCompileMade;
+    }
+}
 
 int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
 {
     @autoreleasepool {
-        const raw::RequestStage &s = p.request.stages[0];
-        NSData *held = nil;
-        const uint8_t *slice = nullptr;
-        size_t size = 0;
-        if (!airSliceOf(p.request.libraries[s.library], systemRoot, held, slice, size, why))
+        OfflineStages stages;
+        if (!stages.make(p.request, systemRoot, why))
             return TegraGM20BCompileUnavailable;
-        NmbOfflineLibrary *library = nmb_offline_library_new(slice, size);
-        if (!library)
-            return why = std::string("a library the translator does not read: ") + nmb_last_error(),
-                   TegraGM20BCompileUnavailable;
-        std::vector<NmbConstant> constants;
-        MTLFunctionConstantValues *values = nil;
-        NmbOfflineFunction *function = functionOf(library, s, constants, values, why);
-        if (!function) {
-            if (why.empty())
-                why = "no function " + s.function + ": " + nmb_last_error();
-            nmb_offline_library_release(library);
-            return TegraGM20BCompileUnavailable;
-        }
+        std::vector<NmbOfflineFunction *> linked;
+        for (const bool hidden : {false, true})
+            for (size_t i = 1; i < p.request.stages.size(); ++i)
+                if ((p.request.stages[i].tag == "kp") == hidden)
+                    linked.push_back(stages.function(i));
+        const size_t visible =
+            size_t(std::count_if(p.request.stages.begin() + 1, p.request.stages.end(), [](const raw::RequestStage &s) {
+                return s.tag == "kl";
+            }));
         NmbOfflineComputePipelineDescriptor d = {};
-        d.function = function;
+        d.function = stages.function(0);
         d.max_threads = p.request.kernel.maxThreads;
         d.multiple_of_execution_width = p.request.kernel.multipleOfWidth;
+        d.linked = linked.data();
+        d.linked_count = visible;
+        d.private_linked = linked.data() + visible;
+        d.private_count = linked.size() - visible;
         uint32_t facts[3] = {};
         const bool made = nmb_offline_compute_pipeline_facts(&d, facts);
         if (!made)
             why = std::string("no compute prepare: ") + nmb_last_error();
-        nmb_offline_function_release(function);
-        nmb_offline_library_release(library);
         entry = raw::encodeFactsEntry(p.key, made ? facts : nullptr, why);
         return made ? TegraGM20BCompileMade : TegraGM20BCompileRefused;
     }
