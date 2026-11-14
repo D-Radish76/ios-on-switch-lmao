@@ -69,7 +69,8 @@ TEST(RasterOrdered, AnAssembledRecordKeepsItsInterlockControlAndFlag)
     rules.varying = {0x1a00};
     raw::RuntimeRecord out;
     std::string why;
-    ASSERT_TRUE(raw::assembleRecord(parts, "samples=1 topo=0 ds=0/0 c0=70:0:0:1:0:0:1:0:0 | v vs | f fs", rules, out, why))
+    ASSERT_TRUE(
+        raw::assembleRecord(parts, "samples=1 topo=0 ds=0/0 c0=70:0:0:1:0:0:1:0:0 | v vs | f fs", rules, out, why))
         << why;
     EXPECT_TRUE(out.pipeline.flags & raw::PipelineRasterOrdered);
     bool kept = false;
