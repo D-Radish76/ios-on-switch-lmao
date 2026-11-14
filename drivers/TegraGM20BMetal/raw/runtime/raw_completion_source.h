@@ -37,6 +37,14 @@ inline bool quietEnd(const RangeEnd &end)
     return !end.observed && end.followed;
 }
 
+// The render server's frame-end rule needs a kernel that says which asked-quiet jobs it keeps loud
+// (TegraGM20BInfoJobLoud): without that answer the scanout's last writer would be held as quiet, so an older kernel
+// keeps the rule before it.
+inline bool frameEndRule(bool renderServer, bool kernelReportsLoud)
+{
+    return renderServer && kernelReportsLoud;
+}
+
 // A quiet range nothing in hand follows, left for its frame's loud end
 inline bool frameHeld(const RangeEnd &end)
 {

@@ -79,6 +79,7 @@ enum {
 	TegraGM20BInfoSubmitAddress = 1u << 14,
 	TegraGM20BInfoCpuPreserveDirty = 1u << 15,
 	TegraGM20BInfoCanonicalSurfaceLayout = 1u << 16,
+	TegraGM20BInfoJobLoud = 1u << 17, /* SubmitJob's reply carries TegraGM20BExecReplyLoud */
     TegraGM20BInfoPushFences = 1u << 26, /* SubmitAddress takes TegraGM20BPushFence */
 };
 

@@ -221,7 +221,8 @@ static raw::RangeEnd rangeEnd(RMCommandBuffer *cb, bool last, bool followed, boo
     const bool waited = cb->_presents || gRM->completionWaiters.load(std::memory_order_relaxed) != 0;
     end.observed = handlers || waited;
     end.handlersOnly = handlers && !waited;
-    end.compositor = gRM->raw->role() == raw::Device::Role::RenderServer;
+    end.compositor =
+        raw::frameEndRule(gRM->raw->role() == raw::Device::Role::RenderServer, gRM->raw->kernelReportsLoud());
     end.cpuOrdered = !gRM->gpuOrder;
     return end;
 }

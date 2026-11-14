@@ -2269,6 +2269,11 @@ public:
         return k_.canOrder();
     }
 
+    bool kernelReportsLoud() const
+    {
+        return k_.reportsLoud();
+    }
+
     // A channel the kernel killed is made again first (between command buffers, as begin() would), so one GPU fault does not
     // leave the process ordered on the CPU for good
     int orderAfterOthers(uint32_t &waits)

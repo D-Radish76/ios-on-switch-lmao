@@ -290,6 +290,12 @@ public:
         return (info_.flags & TegraGM20BInfoOrder) != 0;
     }
 
+    // SubmitJob's reply says when a job asked quiet ends loud all the same (TegraGM20BInfoJobLoud; jobKeptLoud)
+    bool reportsLoud() const
+    {
+        return (info_.flags & TegraGM20BInfoJobLoud) != 0;
+    }
+
     // A channel's fence word is a TegraGM20BAbiFence: a kill names the seqnos it took
     bool killRecords() const
     {

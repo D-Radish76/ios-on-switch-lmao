@@ -22,7 +22,9 @@ struct Channel {
         unsigned buffer;
     };
 
-    explicit Channel(bool compositorRule) : compositorRule(compositorRule)
+    // compositorRule: the runtime's frame-end rule (raw::frameEndRule); reportsLoud: the kernel's TegraGM20BInfoJobLoud
+    Channel(bool compositorRule, bool reportsLoud = true)
+        : compositorRule(raw::frameEndRule(compositorRule, reportsLoud)), reportsLoud(reportsLoud)
     {
         switch_gpu_quiet_init(&quiet, 0);
         switch_gpu_jobs_init(&jobs, 0);
@@ -44,7 +46,8 @@ struct Channel {
         if (announce)
             switch_gpu_quiet_announce(&quiet, seqno);
         fifo.push_back({seqno, announce != 0});
-        const bool rangeQuiet = asked && quietEnd;
+        // an older kernel answers no flags: the range keeps what was asked
+        const bool rangeQuiet = asked && (quietEnd || !reportsLoud);
         inflight.push_back({seqno, rangeQuiet, rangeQuiet && raw::frameHeld(end) ? now + raw::kFrameEndNs : 0, buffer});
         completionThread();
         return seqno;
@@ -103,7 +106,7 @@ struct Channel {
         }
     }
 
-    bool compositorRule;
+    bool compositorRule, reportsLoud;
     switch_gpu_quiet quiet{};
     switch_gpu_jobs jobs{};
     uint32_t submitted = 0, fence = 0, sleepingOn = 0, waiters = 0;
@@ -187,4 +190,21 @@ TEST(CaFrame, AnAppsCommandBufferKeepsItsInterrupt)
     EXPECT_TRUE(raw::frameHeld(end));
     end.handlersOnly = false;
     EXPECT_FALSE(raw::quietEnd(end)) << "a present or a waiter";
+}
+
+// Landing order: a runtime with the rule over a kernel without TegraGM20BInfoJobLoud keeps the rule before it (two
+// interrupts, nothing held, no wake-entry call), and a runtime without the rule over the new kernel is the rule before it
+// as well: the kernel's reply flag is output only, and the request it reads is unchanged.
+TEST(CaFrame, EitherSideAloneKeepsTheRuleBeforeIt)
+{
+    EXPECT_FALSE(raw::frameEndRule(true, false));
+    EXPECT_FALSE(raw::frameEndRule(false, true));
+    for (const bool runtimeRule : {true, false}) {
+        Channel c(runtimeRule, !runtimeRule);
+        caFrame(c);
+        EXPECT_EQ(c.interrupts, 2u);
+        EXPECT_EQ(c.wakes, 2u);
+        EXPECT_EQ(c.threadCalls, 0u);
+        EXPECT_EQ(c.handlers, (std::vector<unsigned>{1, 2}));
+    }
 }
