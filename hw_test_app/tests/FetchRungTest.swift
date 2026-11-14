@@ -22,9 +22,13 @@ import Metal
 /// proven= the programs every state of which was within the bound and faster; on= the programs the rules drew on the
 /// rung (raw_chip_facts.h kIteratedProven for rung 3). r<N>= the draws the facade's counter says took the fetch-free
 /// form. Core Animation's clear (clr, clr_m1 with its memoryless image) loads no colour, so it draws plain:
-/// fetched_<key> the fetching draws the facade counted over its draws (0), path_<key> its path.
-/// verdict=PASS: on equals proven, no draw refused, every forced draw counted and every plain state drawn raw with no
-/// fetch; on_unproven= and proven_off= name the programs the rules take wrongly either way. A state this IPSW's
+/// fetched_<key> the fetching draws the facade counted over its draws (0), path_<key> its path. Rung 2 also stacks 4
+/// layers of each state over one target with no rung forced, so rule fetch.blend decides: the pattern is an 8-bit image,
+/// so every layer takes the ROP's blend, and a second command buffer that loads the target and blends again takes none
+/// (a target re-blended across frames, `accumulates`): stack_r2_<key>=<first>/<second> (4/0), worst_stack_<key> its codes
+/// against the same stack on the storage form.
+/// verdict=PASS: on equals proven, no draw refused, every forced draw counted, every rung-2 stack counted 4/0 within the
+/// bound, and every plain state drawn raw with no fetch; on_unproven= and proven_off= name the programs the rules take wrongly either way. A state this IPSW's
 /// QuartzCore lacks is skipped. Rung 3 programs a unit no other driver here drives: a wrong setup kills the channel
 /// (class errors 0x59, 0x5c, 0x5d, INVALID_VALUE at 0x0df4 in the kernel log), so it runs last.
 struct FetchRungTest: HWTest {
@@ -35,6 +39,7 @@ struct FetchRungTest: HWTest {
     var timeout: TimeInterval { 600 }
 
     static let bound = 2
+    static let stackLayers = 4
     static let draws = 10
     static let runs = 5
     static let fetchCounters = ["fetch_sequential", "fetch_interlocked", "fetch_rung2", "fetch_rung3"]
@@ -109,6 +114,7 @@ struct FetchRungTest: HWTest {
         var formless: [String] = []
         var outcomes: [(program: String, ok: Bool)] = []
         var on = Set<String>()
+        var unstacked: [String] = []
         let key = "fetch_rung\(rung)"
         let before = RawFacade.counters(of: gpu.device)[key] ?? 0
         var forcedDraws = 0
@@ -154,6 +160,21 @@ struct FetchRungTest: HWTest {
             if !faster { slower.append(state.key) }
             if m.unforced > 0 { on.insert(program) }
             outcomes.append((program, within && faster))
+            if rung == 2 {
+                let stack = {
+                    try await FetchRungScene.stack(
+                        line, layers: Self.stackLayers, frames: 2, library: library, gpu: gpu)
+                }
+                if let ruled = try await FetchRungScene.forcing(0, gpu.device, stack),
+                    let stored = try await FetchRungScene.forcing(4, gpu.device, stack)
+                {
+                    let (worst, _) = FetchRungScene.difference(stored.bytes, ruled.bytes)
+                    metrics.set("worst_stack_\(state.key)", worst)
+                    metrics.set("stack_r2_\(state.key)", ruled.rung2.map(String.init).joined(separator: "/"))
+                    if worst > Self.bound { beyond.append("stack_" + state.key) }
+                    if ruled.rung2 != [Self.stackLayers, 0] { unstacked.append(state.key) }
+                }
+            }
         }
         var fetching: [String] = []
         let fetchedDraws = {
@@ -183,11 +204,11 @@ struct FetchRungTest: HWTest {
         let counted = taken >= forcedDraws
         let verdict =
             refused.isEmpty && formless.isEmpty && onUnproven.isEmpty && provenOff.isEmpty && counted
-                && fetching.isEmpty ? "PASS" : "FAIL"
+                && fetching.isEmpty && unstacked.isEmpty ? "PASS" : "FAIL"
         metrics.set("verdict", verdict)
         for (field, names) in [
             ("refused", refused), ("formless", formless), ("on_unproven", onUnproven), ("proven_off", provenOff),
-            ("beyond", beyond), ("slower", slower), ("fetching", fetching),
+            ("beyond", beyond), ("slower", slower), ("fetching", fetching), ("unstacked", unstacked),
         ] where !names.isEmpty {
             metrics.set(field, named(names))
         }
@@ -203,7 +224,7 @@ struct FetchRungTest: HWTest {
                         ? "a program within the bound and faster is not drawn on rung \(rung)"
                         : !counted
                             ? "the facade drew \(taken) of the forced draws on rung \(rung)"
-                            : "a state that loads no colour fetched"
+                            : !unstacked.isEmpty ? "rule fetch.blend's stack counts" : "a state that loads no colour fetched"
         return .fail(why, metrics)
     }
 }

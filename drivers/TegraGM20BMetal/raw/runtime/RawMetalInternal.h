@@ -222,7 +222,6 @@ struct RawState {
     // The two drivers' order (stored under m2vLock): on the GPU when the kernel has Order (TegraGM20BInfoOrder), else on
     // the CPU (the m2v work before a raw command buffer completes first, and the raw work before an m2v one).
     std::atomic<bool> gpuOrder{false};
-    uint64_t orderRefusedAt = 0;  // raw::Device::Stats::reopens when the kernel last refused an Order (raw_order.h)
     bool rawSinceM2v =
         false;  // raw work submitted since the last m2v commit: the next m2v one waits for it (BeforeTask)
     bool m2vSinceRaw =
@@ -599,7 +598,7 @@ void queuePriorityAdd(RMQueue *queue);
 void queuePriorityRemove(RMQueue *queue);
 
 // RawMetalSubmit.mm
-void orderRefused(const char *what, int kr);
+NSString *orderRefused(const char *what, int kr);
 void commitBuffer(RMCommandBuffer *cb);
 void submitLoop();
 bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKernelSet<raw::ComputeState> *kernels,
@@ -619,8 +618,5 @@ void watchKeylineProbe();
 // RawMetalGlassProbe.mm
 void watchGlassProbe(raw::Device *dev);
 void glassProbeCommitted(RMCommandBuffer *cb);
-bool rmWholePrograms();
-bool rmZeroNewBuffers();
-bool rmHalfViewRefused();
 void splitCaptureCommitted(raw::CommandBuffer &rc);
 #endif

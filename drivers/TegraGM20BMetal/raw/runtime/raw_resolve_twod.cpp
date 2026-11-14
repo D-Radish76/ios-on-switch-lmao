@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
-// The 2D engine's blit-encoder work outside the probes. Rules resolve.twod and resolve.exact (raw_resolve_rule.h): an
-// MSAA resolve as one 2D-engine scaled blit. The multisampled image is NIL's image of its sample grid (fx::msLayout: 2x
-// is 2x1 samples a pixel, 4x 2x2), so the grid read at 2:1 bilinear, corner origin at half a step, gives each
-// destination texel the mean of its samples. The blit encoder's opening wait orders the read after the pass that
-// rendered the samples, as for every blit.
+// The 2D engine's blit-encoder work outside the probes. Rule resolve.twod (raw_resolve_rule.h), and the probe's
+// complement: an MSAA resolve as one 2D-engine scaled blit. The multisampled image is NIL's image of its sample grid
+// (fx::msLayout: 2x is 2x1 samples a pixel, 4x 2x2), so the grid read at 2:1 bilinear, corner origin at half a step,
+// gives each destination texel the mean of its samples. The blit encoder's opening wait orders the read after the pass
+// that rendered the samples, as for every blit.
 #include "../../../../kits/SwitchGM20BEmit/SwitchGM20BEmit2D.h"
 #include "../fx/fx_image.h"
 #include "../fx/fx_mip.h"
@@ -28,6 +28,19 @@ switch_gm20b_2d_surface gridSurface(const Texture &t, uint32_t fmt2d, uint32_t w
     s.height = height;
     s.compressed = t.comptags;
     return s;
+}
+
+// fx::twodFormat's formats, RGB10A2Unorm, whose resolve the pack has no state for, and RG11B10Float
+uint32_t resolveFormat(uint32_t mtl)
+{
+    switch (mtl) {
+    case 90:
+        return NV902D_SET_DST_FORMAT_V_A2B10G10R10;
+    case 92:
+        return NV902D_SET_DST_FORMAT_V_BF10GF11RF11;
+    default:
+        return fx::twodFormat(mtl);
+    }
 }
 
 }  // namespace
@@ -67,7 +80,7 @@ void BlitEncoder::fillTwod(const Texture &t, uint32_t x0, uint32_t y0, uint32_t 
 bool CommandBuffer::resolveTwod(const Texture &multisampled, const Texture &into, bool exact, bool keepSamples)
 {
     fx::MipChain grid;
-    const uint32_t fmt2d = fx::twodFormat(into.format);
+    const uint32_t fmt2d = resolveFormat(into.format);
     if (!fmt2d || into.format != multisampled.format || into.samples > 1 ||
         !fx::msLayout(multisampled.width, multisampled.height, multisampled.samples, multisampled.bpp, grid) ||
         grid.sxLog2 > 1 || grid.syLog2 > 1 || (!grid.sxLog2 && !grid.syLog2) || multisampled.width != into.width ||
@@ -79,6 +92,7 @@ bool CommandBuffer::resolveTwod(const Texture &multisampled, const Texture &into
     b->resolveTwod(multisampled, grid.sxLog2, grid.syLog2, into, fmt2d, exact, keepSamples);
     b->end();
     RAW_DIAGNOSTIC(dev_->stats.resolveTwod++; dev_->stats.resolveExact += exact;
+                   dev_->stats.resolveTwodCompressed += multisampled.comptags;
                    dev_->stats.resolveRoute[exact ? ResolveByComplement : ResolveByTwod]
                                            [resolveSampleSlot(multisampled.samples)]++);
     return true;
