@@ -103,10 +103,15 @@ FirstUse firstUse(RMCommandBuffer *cb, size_t from, size_t to, RMTexture *t)
 
 }  // namespace
 
+bool freshFills(RMTexture *t, MTLTextureDescriptor *d)
+{
+    return t->_rawOk && t->_kind == RMTexturePool && !t->_heap && !t->_raw.memoryless && !t->_raw.arena &&
+           !t->_raw.zeta && d.storageMode == MTLStorageModePrivate;
+}
+
 void establishFresh(RMTexture *t, MTLTextureDescriptor *d)
 {
-    if (!t->_rawOk || t->_kind != RMTexturePool || t->_heap || t->_raw.memoryless || t->_raw.arena || t->_raw.zeta ||
-        d.storageMode != MTLStorageModePrivate)
+    if (!freshFills(t, d))
         return;
     gFresh.add({t});
 #if SWITCH_RAW_DIAGNOSTICS

@@ -386,10 +386,12 @@ static void reportNonFiniteStart(RMTexture *t, MTLTextureDescriptor *d)
     const uint32_t n = found ? seen.fetch_add(1, std::memory_order_relaxed) + 1 : 0;
     if (found && (n <= 32 || n % 64 == 0))
         os_log(rawLog(),
-               "raw: new %lux%lu format %lu texture (%lu levels, %llu bytes) starts on non-finite values: %u "
-               "components in its sampled lines (#%u)",
+               "raw: new %lux%lu format %lu texture (%lu levels, %llu bytes, storage %lu) starts on non-finite values: %u "
+               "components in its sampled lines (#%u); %{public}s",
                (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.pixelFormat,
-               (unsigned long)d.mipmapLevelCount, (unsigned long long)bytes, found, n);
+               (unsigned long)d.mipmapLevelCount, (unsigned long long)bytes, (unsigned long)d.storageMode, found, n,
+               freshFills(t, d) ? "its fresh contents are written ahead of its first use"
+                                : "no fresh contents are written: what it holds is what a read finds");
 }
 #endif
 
