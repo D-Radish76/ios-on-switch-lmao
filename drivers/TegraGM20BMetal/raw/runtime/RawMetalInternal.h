@@ -355,6 +355,9 @@ void noteReplayShape(RMCommandBuffer *cb, size_t from, size_t to);
 bool heapResident(RMHeap *h);
 // The device's ask of `d` in an arena of `blockLinear` (a private heap's): every kind the raw path keeps; false: none
 bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask);
+// RawMetalPlainLayout.mm: the texture layout object of a texture no block-linear image of caller memory is made of, nil for
+// one it does not describe
+id rmPlainLayout(id device, MTLTextureDescriptor *d);
 
 // RawMetalTexture.mm
 void declareGpuWrites(RMTexture *t);

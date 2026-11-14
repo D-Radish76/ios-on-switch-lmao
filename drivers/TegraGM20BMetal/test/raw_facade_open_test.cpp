@@ -155,6 +155,58 @@ void ycbcrTargetState()
     expectNoM2V(device);
 }
 
+// The plain layout of a texture whose memory no block-linear image is made in (an uncompressed one), as m2v's frontend
+// answered it; a heap's or buffer's texture has none; a no-copy texture of it is refused, as it was
+void plainLayouts()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
+    ASSERT_TRUE(device != nil);
+    const auto layoutOf = [&](MTLTextureDescriptor *d, BOOL backed) {
+        return ((id (*)(id, SEL, id, BOOL))objc_msgSend)(
+            device, sel_registerName("newTextureLayoutWithDescriptor:isHeapOrBufferBacked:"), d, backed);
+    };
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                 width:64
+                                                                                height:32
+                                                                             mipmapped:NO];
+    id layout = layoutOf(d, NO);
+    ASSERT_TRUE(layout != nil);
+    EXPECT_EQ(((NSUInteger (*)(id, SEL))objc_msgSend)(layout, sel_registerName("size")), 64u * 32 * 4);
+    EXPECT_EQ(layoutOf(d, YES), nil);
+    std::vector<uint32_t> linear(64 * 32), memory(64 * 32), back(64 * 32);
+    for (size_t i = 0; i < linear.size(); i++)
+        linear[i] = uint32_t(i * 2654435761u);
+    const MTLRegion all = MTLRegionMake2D(0, 0, 64, 32);
+    ((void (*)(id, SEL, const void *, NSUInteger, NSUInteger, NSUInteger, void *, NSUInteger, NSUInteger,
+               MTLRegion))objc_msgSend)(
+        layout,
+        sel_registerName("copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:"
+                         "textureSlice:textureLevel:textureRegion:"),
+        linear.data(), 0, 256, 0, memory.data(), 0, 0, all);
+    ((void (*)(id, SEL, const void *, NSUInteger, NSUInteger, MTLRegion, void *, NSUInteger, NSUInteger,
+               NSUInteger))objc_msgSend)(
+        layout,
+        sel_registerName("copyFromTextureMemory:textureSlice:textureLevel:textureRegion:toLinearBytes:linearOffset:"
+                         "linearBytesPerRow:linearBytesPerImage:"),
+        memory.data(), 0, 0, all, back.data(), 0, 256, 0);
+    EXPECT_EQ(memory, linear) << "rows packed";
+    EXPECT_EQ(back, linear);
+    MTLTextureDescriptor *volume = [MTLTextureDescriptor new];
+    volume.textureType = MTLTextureType3D;
+    volume.pixelFormat = MTLPixelFormatR16Float;
+    volume.width = 8;
+    volume.height = 4;
+    volume.depth = 3;
+    id volumeLayout = layoutOf(volume, NO);
+    ASSERT_TRUE(volumeLayout != nil);
+    EXPECT_EQ(((NSUInteger (*)(id, SEL))objc_msgSend)(volumeLayout, sel_registerName("size")), 8u * 4 * 3 * 2);
+    EXPECT_EQ(((id (*)(id, SEL, void *, NSUInteger, id, id))objc_msgSend)(
+                  device, sel_registerName("newTextureWithBytesNoCopy:length:descriptor:deallocator:"), memory.data(),
+                  memory.size() * 4, d, nil),
+              nil);
+    expectNoM2V(device);
+}
+
 constexpr uint32_t kServing = TegraGM20BCompilerCapable | TegraGM20BCompilerExpected | TegraGM20BCompilerRegistered;
 constexpr uint32_t kFacts[3] = {640, 32, 2048};
 
@@ -249,6 +301,11 @@ void computeFactsWithNoCompiler()
 }
 
 }  // namespace
+
+TEST(RawFacadeOpen, AnUncompressedTextureHasThePlainLayoutAndNoNoCopyTexture)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(plainLayouts);
+}
 
 TEST(RawFacadeOpen, AComputeStateThePackLacksIsAnsweredByTheShaderCompiler)
 {

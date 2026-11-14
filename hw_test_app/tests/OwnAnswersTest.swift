@@ -7,8 +7,9 @@ import Metal
 /// What the raw facade answers itself, never through m2v (drivers/TegraGM20BMetal/raw/runtime RawMetalLibrary.mm,
 /// RawMetalLibraries.mm, RawMetalDevice.mm, RawMetalYcbcrTargets.mm): a library's function names, extern names and
 /// type from its own metallib; a library Metal would not load (a missing file, bytes that are no metallib) as Metal's
-/// error; a buffer the kernel has no memory for, and one over pages it cannot wire, as nil; and a two-plane YCbCr target's
-/// state drawn by raw, whose m2v twin waits for a fallback. The case fails if any of them asked for the m2v device
+/// error; a buffer the kernel has no memory for, and one over pages it cannot wire, as nil; an uncompressed texture's
+/// plain layout (RawMetalPlainLayout.mm), none for a heap's; and a two-plane YCbCr target's state drawn by raw, whose m2v
+/// twin waits for a fallback. The case fails if any of them asked for the m2v device
 /// (m2v_needs_asked names what did).
 struct OwnAnswersTest: HWTest {
     let id = "gpu.raw.own_answers"
@@ -50,6 +51,17 @@ struct OwnAnswersTest: HWTest {
         let unwired = gpu.device.makeBuffer(
             bytesNoCopy: unmapped, length: length, options: .storageModeShared, deallocator: nil)
         if unwired != nil { wrong.append("unwired_pages") }
+
+        let layoutSelector = NSSelectorFromString("newTextureLayoutWithDescriptor:isHeapOrBufferBacked:")
+        typealias Layout = @convention(c) (AnyObject, Selector, MTLTextureDescriptor, Bool) -> Unmanaged<AnyObject>?
+        let layoutOf = unsafeBitCast((gpu.device as AnyObject).method(for: layoutSelector), to: Layout.self)
+        let plain = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: 64, height: 32, mipmapped: false)
+        let layout = layoutOf(gpu.device as AnyObject, layoutSelector, plain, false)?.takeRetainedValue()
+        let layoutBytes = (layout?.value(forKey: "size") as? NSNumber)?.intValue ?? -1
+        metrics.set("plain_layout_bytes", layoutBytes)
+        if layoutBytes != 64 * 32 * 4 { wrong.append("plain_layout") }
+        if layoutOf(gpu.device as AnyObject, layoutSelector, plain, true) != nil { wrong.append("backed_layout") }
 
         let state = try gpu.render(fragment: "texel_values", format: MTLPixelFormat(rawValue: 500)!)
         metrics.set("ycbcr_state", String(describing: type(of: state as AnyObject)))
