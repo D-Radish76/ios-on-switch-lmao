@@ -239,6 +239,8 @@
 #                     same for every pair of halves; and fquantize2f16's widening as HADD2.F32 (nak/from_nir.rs)
 #   raw_completion_source_test  raw/runtime/raw_completion_source.h over the kernel's quiet job ends: which jobs end quiet,
 #                     the range the completion thread sleeps on, and a frame's interrupts and wakes before and after
+#   raw_ca_frame_test  the compositor's frame (two command buffers with completed handlers, then the present): one
+#                     interrupt and one pass, its handlers in order; a frame with no present asked for a period later
 #   raw_order_test    raw/runtime/raw_order.h: the raw path orders on the CPU only after the kernel refused an Order, never
 #                     while its channel is being made again, and orders on the GPU again once the kernel made it
 #   raw_handler_order_test  raw/runtime/raw_handler_order.h: a queue's completed handlers run in the order its command
@@ -2225,6 +2227,20 @@ host_test(
     name = "raw_completion_source_test",
     srcs = [
         "raw_completion_source_test.cpp",
+        "//drivers/TegraGM20B:SwitchGpuBacking.h",
+        "//drivers/TegraGM20B:SwitchGpuJobFences.h",
+        "//drivers/TegraGM20B:SwitchGpuQuiet.h",
+        "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BGpu.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_completion_source.h",
+    ],
+    cxx_std = "c++17",
+)
+
+host_test(
+    name = "raw_ca_frame_test",
+    srcs = [
+        "raw_ca_frame_test.cpp",
         "//drivers/TegraGM20B:SwitchGpuBacking.h",
         "//drivers/TegraGM20B:SwitchGpuJobFences.h",
         "//drivers/TegraGM20B:SwitchGpuQuiet.h",
