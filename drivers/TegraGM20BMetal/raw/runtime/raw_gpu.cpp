@@ -2597,15 +2597,17 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
     uint64_t va = of.va;
     Texture image;
     if (of.chain) {
-        if (baseLayer || layers != 1 || baseLevel + levels > of.chain->layout.levels ||
+        c = of.chain->layout;
+        if (baseLevel + levels > c.levels || baseLayer + layers > c.layers ||
             (baseLevel && !chainLevelImage(of, baseLevel, image)))
             return false;
-        c = of.chain->layout;
-        va = of.chain->va;
+        va = of.chain->va + baseLayer * c.arrayStride;
         if (!baseLevel)
             image = of;
         // (a later level's block height is the chain's clamp, not its own image's: the CPU goes by m2v)
+        image.va += baseLayer * c.arrayStride;
         image.cpu = nullptr;
+        image.layers = layers;
         image.layerBytes = c.arrayStride;
     } else {
         if (baseLevel || levels != 1 || baseLayer + layers > of.layers ||
