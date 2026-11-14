@@ -129,6 +129,18 @@ class IconCacheTest(unittest.TestCase):
         self.assertEqual((self.cache.stat().st_mode, self.cache.stat().st_mtime_ns), (stat.st_mode, stat.st_mtime_ns))
         self.assertEqual(self.info.stat().st_ino, inode)
 
+    def test_a_record_of_the_top_only_step_does_not_hold_back_a_salted_cache(self):
+        self.info.unlink()
+        salted = self.cache / 'SALT' / icon_cache.INFO
+        salted.parent.mkdir()
+        agent_launch(salted)
+        self.stage('a' * 64)
+        folder = renamed.data_folder(self.data)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / 'icon-cache-gpu').write_text('a' * 64 + '\n')
+        self.assertEqual(icon_cache.present(self.data, Log()), 'reset at the next launch')
+        self.assertTrue(agent_resets(salted))
+
     def test_a_removed_gpu_build_is_a_change(self):
         self.stage('a' * 64)
         icon_cache.present(self.data, Log())

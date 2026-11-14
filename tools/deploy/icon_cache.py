@@ -16,9 +16,10 @@ _iconservices and it carries no ACL (-[ISMutableIconCache initWithURL:] in 21H46
 OS build, so an update that changes how icons draw also changes ProductBuildVersion. Here the GPU build changes alone,
 and the icons it drew before stay in the cache. So a deploy whose staged GPU build (the stager's whole-list digest, the
 first line of ngpu/stage.tsv.gz) differs from the one the cache was last let go for removes ProductBuildVersion from
-__cache_info__, then records that digest in <Data>/Switch/icon-cache-gpu: the agent's own reset runs at its next
+__cache_info__, then records that digest in <Data>/Switch/icon-cache-gpu-2: the agent's own reset runs at its next
 launch, and a deploy of the same build changes nothing. The cache directory itself is never touched: its owner and
-ACL are the other two conditions.
+ACL are the other two conditions. icon-cache-gpu, the record of a step that looked for __cache_info__ only at the cache
+folder's top, says nothing about a 24B119 cache and is not read.
 """
 
 import gzip
@@ -35,7 +36,7 @@ CACHE = 'Library/Caches/com.apple.IconsCache'
 INFO = '__cache_info__'
 BUILD_KEY = 'ProductBuildVersion'
 STAGE_LIST = 'ngpu/stage.tsv.gz'  # drivers/TegraGM20BMetal/stage-tegra-gm20b-metal.py STATE
-RECORD = 'icon-cache-gpu'
+RECORD = 'icon-cache-gpu-2'
 
 
 def _names_group(metadata: Path) -> bool:
