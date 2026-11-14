@@ -101,7 +101,8 @@ protected:
     {
         const uint32_t maxThreads = uint32_t([MTLComputePipelineDescriptor new].maxTotalThreadsPerThreadgroup);
         gDevice =
-            open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {windowRecord(maxThreads), textureRecord(maxThreads)}),
+            open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {windowRecord(maxThreads), textureRecord(maxThreads)},
+                           {kernelFacts(0, maxThreads), kernelFacts(1, maxThreads)}),
                  [HarnessM2VMethods class], [HarnessComputeM2V class]);
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
