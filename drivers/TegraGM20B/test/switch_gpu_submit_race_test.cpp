@@ -36,7 +36,9 @@ extern "C" int tgm_deadline_counts(struct tgm_deadline_counts *)
 	return 0;
 }
 
-extern "C" void tgm_hold_counts(struct tgm_hold_counts *) {}
+extern "C" void tgm_hold_counts(struct tgm_hold_counts *)
+{
+}
 
 namespace
 {

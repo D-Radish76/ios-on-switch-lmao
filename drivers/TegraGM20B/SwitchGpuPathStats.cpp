@@ -239,14 +239,15 @@ extern "C" void switch_gpu_span_line(char *line, size_t size)
 	switch_gpu_comp_sync_take(&gSyncAsked, &sync);
 	switch_gpu_comp_round round = {};
 	switch_gpu_comp_round_take(&gRound, &round);
-	tgm_deadline_counts deadline = {};
-	tgm_hold_counts holds = {};
+	struct tgm_deadline_counts deadline = {};
+	struct tgm_hold_counts holds = {};
 	const int deadlineUp = tgm_deadline_counts(&deadline);
 	tgm_hold_counts(&holds);
 	char head[320];
 	IOLockLock(held);
 	if (deadlineUp)
-		switch_gpu_comp_round_deadline(&round, &gDeadlineSeen, deadline.windows, holds.holds);
+		switch_gpu_comp_round_deadline(&round, &gDeadlineSeen, deadline.windows,
+					       holds.holds);
 	const int put = switch_gpu_comp_round_format(head, sizeof(head), &round);
 	const size_t used =
 		put > 0 && static_cast<size_t>(put) < sizeof(head) ? static_cast<size_t>(put) : 0;

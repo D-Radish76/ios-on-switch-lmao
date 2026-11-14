@@ -69,9 +69,8 @@ unsigned xnu_stall_wait_names(void)
     return SWITCH_STALL_WAIT_NAMES;
 }
 
-unsigned xnu_stall_most(const uint64_t *tids, const uint64_t *cpus, unsigned n, bool complete,
-                        const uint64_t *now_tids, const uint64_t *now_cpus, unsigned now_n, unsigned k,
-                        uint64_t *top_tids, uint64_t *top_gains)
+unsigned xnu_stall_most(const uint64_t *tids, const uint64_t *cpus, unsigned n, bool complete, const uint64_t *now_tids,
+                        const uint64_t *now_cpus, unsigned now_n, unsigned k, uint64_t *top_tids, uint64_t *top_gains)
 {
     struct switch_stall_used seen[64];
     struct switch_stall_top top[8] = {{0}};

@@ -256,8 +256,7 @@ static void stall_put_used(struct stall_line *l)
         const uint64_t tid = thread_tid(t);
         const struct switch_stall_top e = {
             .tid = tid,
-            .cpu = switch_stall_gained(stall_used, stall_used_n, stall_used_complete, tid,
-                                       recount_thread_time_mach(t)),
+            .cpu = switch_stall_gained(stall_used, stall_used_n, stall_used_complete, tid, recount_thread_time_mach(t)),
             .ref = t,
         };
 
@@ -280,8 +279,7 @@ static void stall_put_used(struct stall_line *l)
         thread_get_thread_name(th, name);
         absolutetime_to_nanoseconds(top[i].cpu, &ns);
         switch_stall_put(l, " %s[%d] 0x%llx %s %s %d %llu ms;", process, task_pid(get_threadtask(th)), top[i].tid,
-                         name[0] ? name : "-", switch_stall_mode_name(th->sched_mode), th->sched_pri,
-                         ns / 1000000ull);
+                         name[0] ? name : "-", switch_stall_mode_name(th->sched_mode), th->sched_pri, ns / 1000000ull);
         thread_deallocate(th);
     }
 }
