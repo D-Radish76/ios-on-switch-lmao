@@ -87,6 +87,9 @@ What sets the host's speed, measured on 14 Nov (10-core M4, 16 executors):
   stay the same files: a third of the scans, worker and fseventsd time, and 40-58% more actions a second.
 - Developer Tools. XProtect still scans each new executable with Gatekeeper off; bb_runner in Privacy & Security >
   Developer Tools exempts the actions it starts.
+- Executors. At 16 the first host's load average sat near 30, with 30% of its CPU in the kernel. At 12 it did the
+  same 3.3 actions a second, and its CppCompile and SwiftCompile times fell by about a third. `auto` gives one
+  executor per 2 GiB of memory: 12 on the 24 GiB M4s, 8 on the 16 GiB M1.
 
 Full Disk Access and Developer Tools are granted to the binaries' code hashes: a rebuilt bb_worker or bb_runner needs
 both again.
