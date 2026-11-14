@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later OR LGPL-3.0-or-later
-// MTLArgumentEncoder over a layout of argument descriptors, or of a function's buffer as its AIR lays it out (the shader
-// compiler's answer, raw_buffer_encoders.h), whose writes and refusals are raw::ArgumentEncoder's (raw_argument_encoder.h).
-// Each argument is the 8 bytes a program could write itself: a buffer's GPU address plus its offset, any other object's
-// gpuResourceID (raw_resource_id.h); a constant is the program's own bytes (constantDataAtIndex:). A refusal writes nothing
-// and is one line.
+// MTLArgumentEncoder over a layout of argument descriptors, or of a function's buffer as its AIR lays it out (the
+// shader compiler's answer, raw_buffer_encoders.h), whose writes and refusals are raw::ArgumentEncoder's
+// (raw_argument_encoder.h). Each argument is the 8 bytes a program could write itself: a buffer's GPU address plus its
+// offset, any other object's gpuResourceID (raw_resource_id.h); a constant is the program's own bytes
+// (constantDataAtIndex:). A refusal writes nothing and is one line.
 #import "RawMetalFunctionTags.h"
 #import "RawMetalInternal.h"
 #include "raw_argument_encoder.h"

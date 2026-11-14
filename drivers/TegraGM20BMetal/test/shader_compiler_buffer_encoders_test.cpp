@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// A function's buffer encoders as a compile request (raw/runtime/raw_buffer_encoders.h): one stage tagged "b", keyed by the
-// function's AIR, constants and whether it was made with them, and refused with any other stage or a key naming other
-// constants; and the blob the compiler stores, read back whole or not at all.
+// A function's buffer encoders as a compile request (raw/runtime/raw_buffer_encoders.h): one stage tagged "b", keyed by
+// the function's AIR, constants and whether it was made with them, and refused with any other stage or a key naming
+// other constants; and the blob the compiler stores, read back whole or not at all.
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
 #include "../raw/runtime/raw_buffer_encoders.h"

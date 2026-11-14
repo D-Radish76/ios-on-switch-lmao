@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-// A function's newArgumentEncoderWithBufferIndex: is the shader compiler's answer (raw_buffer_encoders.h), with no m2v device
-// opened. testdata/function_arguments/args.metallib is Xcode's metal 32023.922 build of args.metal. The stand-in compiler
-// answers with the runs the real compiler made of it on this Mac (the bridge's nmb_offline_function_buffer_encoders over
-// the translator); the expected lengths, alignments and offsets are what Metal answered for the same metallib on an Apple
-// M4 Max under macOS 27.2: constantDataAtIndex:, and where setTexture:, setSamplerState: and setBuffer: wrote.
+// A function's newArgumentEncoderWithBufferIndex: is the shader compiler's answer (raw_buffer_encoders.h), with no m2v
+// device opened. testdata/function_arguments/args.metallib is Xcode's metal 32023.922 build of args.metal. The stand-in
+// compiler answers with the runs the real compiler made of it on this Mac (the bridge's
+// nmb_offline_function_buffer_encoders over the translator); the expected lengths, alignments and offsets are what
+// Metal answered for the same metallib on an Apple M4 Max under macOS 27.2: constantDataAtIndex:, and where
+// setTexture:, setSamplerState: and setBuffer: wrote.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_buffer_encoders.h"
 #include "../raw/runtime/raw_compile_request.h"
@@ -19,7 +20,7 @@ using namespace harness;
 
 constexpr uint32_t kBuffer = 0, kTexture = 1, kSampler = 2, kConstant = 3;
 
-// The compiler's answers for args.metal's functions
+// The compiler's answers for args.metal's functions; "<name> made with constant values" where that differs
 const std::map<std::string, raw::BufferEncoders> &compiled()
 {
     static const std::map<std::string, raw::BufferEncoders> answers = {
@@ -43,8 +44,11 @@ const std::map<std::string, raw::BufferEncoders> &compiled()
           {1, false, "", {{0, 1, {}}}}}},
         {"plain_fragment",
          {{0, true, "", {{16, 8, {{0, 1, 1, 1, kTexture, 0, 0, 8, 0, 8}, {1, 1, 1, 1, kBuffer, 0, 8, 8, 0, 8}}}}},
-          {1, false, "NoArgumentBuffer { index: 1 }", {}},
+          {1, false, "", {{24, 8, {{0, 1, 1, 1, kConstant, 0, 0, 8, 0, 8}, {0, 1, 1, 1, kConstant, 0, 16, 8, 0, 8}}}}},
           {2, false, "", {{0, 1, {}}}}}},
+        {"gated_fragment", {}},
+        {"gated_fragment made with constant values",
+         {{0, true, "Compile(NeedsInput(FunctionConstant { index: 0 }))", {}}}},
     };
     return answers;
 }
@@ -73,7 +77,9 @@ struct EncodersCompiler {
             if (!raw::decodeRequest(bytes, r) || !raw::bufferEncoders(r) || r.key.rfind(kPrefix, 0))
                 return int32_t(TegraGM20BCompileUnavailable);
             asked.push_back(r.key);
-            const auto found = compiled().find(r.stages[0].function);
+            auto found = compiled().find(r.stages[0].function + " made with constant values");
+            if (!r.stages[0].specialized || found == compiled().end())
+                found = compiled().find(r.stages[0].function);
             if (found == compiled().end())
                 return int32_t(TegraGM20BCompileUnavailable);
             std::vector<raw::LibraryIdentity> ids;
@@ -146,9 +152,10 @@ uint64_t idWord(MTLResourceID id)
     return w;
 }
 
-// mixed_fragment's argument buffer and the one behind its pointer at id 8 answer Metal's lengths, alignments and offsets,
-// and the setters write there; its plain float4 pointer takes Metal's empty encoder; the one request is the compiler's, and
-// the function made with constant values is another request (a constant-gated buffer is absent only made without them)
+// mixed_fragment's argument buffer and the one behind its pointer at id 8 answer Metal's lengths, alignments and
+// offsets, and the setters write there; its plain float4 pointer takes Metal's empty encoder; the one request is the
+// compiler's, and the function made with constant values is another request (a constant-gated buffer is absent only
+// made without them)
 void aFunctionsEncoderIsTheCompilersAndMetals()
 {
     EncodersCompiler compiler;
@@ -218,21 +225,47 @@ void aFunctionsEncoderIsTheCompilersAndMetals()
     expectNoM2V(device);
 }
 
-// An index the compiler refuses is nil (plain_fragment's plain struct buffer, whose unvalidated encoder is the GPU's own)
-// while the function's other buffers still answer
-void aRefusedIndexIsNilAndTheOthersAnswer()
+// A plain struct buffer answers the layout its program reads (Metal's on an M4: plain_fragment's float4 and float at 0
+// and 16, id 0 the later); an index the compiler refuses (gated_fragment made with no value for the constant its buffer
+// is gated on) or one with no buffer (gated_fragment made without constant values: Metal asserts) is nil with one error
+// line each
+void aPlainStructAnswersAndARefusedIndexIsNilWithItsLine()
 {
     EncodersCompiler compiler;
     id<MTLDevice> device = servedDevice(compiler);
     ASSERT_TRUE(device != nil);
-    id<MTLFunction> plain = [argsLibrary(device) newFunctionWithName:@"plain_fragment"];
+    id<MTLLibrary> library = argsLibrary(device);
+    id<MTLFunction> plain = [library newFunctionWithName:@"plain_fragment"];
     ASSERT_TRUE(plain != nil);
-    EXPECT_EQ([plain newArgumentEncoderWithBufferIndex:1], nil);
-    id<MTLArgumentEncoder> inner = [plain newArgumentEncoderWithBufferIndex:0];
-    ASSERT_TRUE(inner != nil);
-    EXPECT_EQ(inner.encodedLength, 16u);
+    id<MTLArgumentEncoder> structured = [plain newArgumentEncoderWithBufferIndex:1];
+    ASSERT_TRUE(structured != nil);
+    EXPECT_EQ(structured.encodedLength, 24u);
+    EXPECT_EQ(structured.alignment, 8u);
+    id<MTLBuffer> arguments = [device newBufferWithLength:64 options:MTLResourceStorageModeShared];
+    [structured setArgumentBuffer:arguments offset:0];
+    EXPECT_EQ(static_cast<uint8_t *>([structured constantDataAtIndex:0]) - static_cast<uint8_t *>(arguments.contents),
+              16);
+    EXPECT_EQ([plain newArgumentEncoderWithBufferIndex:0].encodedLength, 16u);
     EXPECT_EQ([plain newArgumentEncoderWithBufferIndex:2].encodedLength, 0u);
-    EXPECT_EQ(compiler.asked.size(), 1u);
+
+    NSError *error = nil;
+    id<MTLFunction> gated =
+        [library newFunctionWithName:@"gated_fragment" constantValues:[MTLFunctionConstantValues new] error:&error];
+    ASSERT_TRUE(gated != nil) << text(error);
+    id<MTLFunction> unspecialized = [library newFunctionWithName:@"gated_fragment"];
+    testing::internal::CaptureStderr();
+    EXPECT_EQ([gated newArgumentEncoderWithBufferIndex:0], nil);
+    EXPECT_EQ([unspecialized newArgumentEncoderWithBufferIndex:0], nil);
+    const std::string lines = testing::internal::GetCapturedStderr();
+    EXPECT_NE(lines.find("raw: argument encoder creation refused: buffer 0 of gated_fragment: "
+                         "Compile(NeedsInput(FunctionConstant { index: 0 }))"),
+              std::string::npos)
+        << lines;
+    EXPECT_NE(lines.find("raw: argument encoder creation refused: buffer 0 of gated_fragment: the function declares no "
+                         "buffer there"),
+              std::string::npos)
+        << lines;
+    EXPECT_EQ(compiler.asked.size(), 3u) << "plain_fragment, and gated_fragment made each way";
     expectNoM2V(device);
 }
 
@@ -254,9 +287,9 @@ TEST(RawFacadeBufferEncoders, AFunctionsEncoderIsTheCompilersAndMetals)
     switch_ios::test::ExpectPassesInFreshProcess(aFunctionsEncoderIsTheCompilersAndMetals);
 }
 
-TEST(RawFacadeBufferEncoders, ARefusedIndexIsNilAndTheOthersAnswer)
+TEST(RawFacadeBufferEncoders, APlainStructAnswersAndARefusedIndexIsNilWithItsLine)
 {
-    switch_ios::test::ExpectPassesInFreshProcess(aRefusedIndexIsNilAndTheOthersAnswer);
+    switch_ios::test::ExpectPassesInFreshProcess(aPlainStructAnswersAndARefusedIndexIsNilWithItsLine);
 }
 
 TEST(RawFacadeBufferEncoders, WithNoCompilerAFunctionsEncoderIsNil)

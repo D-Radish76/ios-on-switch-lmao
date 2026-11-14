@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-// A function's encoders at every buffer index it declares (newArgumentEncoderWithBufferIndex:), which only its AIR states:
-// the shader compiler answers them from the translator (RequestKind::Reflection of one stage tagged "b",
+// A function's encoders at every buffer index it declares (newArgumentEncoderWithBufferIndex:), which only its AIR
+// states: the shader compiler answers them from the translator (RequestKind::Reflection of one stage tagged "b",
 // raw_compile_request.h bufferEncoders; bridge nmb_offline_function_buffer_encoders), keyed by the function's AIR, its
-// constants and whether it was made with constant values (made without, a buffer a constant gates is absent). The blob is a u32 count of buffers, then each one's u32 index, a flag byte (1 an argument buffer, 2 refused)
-// and either its refusal, NUL-terminated, or a u32 count of layouts (the buffer's, then those its pointers point to), each
-// a u64 encodedLength, u64 alignment, u32 run count and its runs (raw_argument_layout.h ArgumentRun).
+// constants and whether it was made with constant values (made without, a buffer a constant gates is absent). The blob
+// is a u32 count of buffers, then each one's u32 index, a flag byte (1 an argument buffer, 2 refused) and either its
+// refusal, NUL-terminated, or a u32 count of layouts (the buffer's, then those its pointers point to), each a u64
+// encodedLength, u64 alignment, u32 run count and its runs (raw_argument_layout.h ArgumentRun).
 #pragma once
 #include <cstdio>
 #include <string>
