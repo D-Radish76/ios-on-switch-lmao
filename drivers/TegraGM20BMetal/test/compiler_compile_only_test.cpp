@@ -201,7 +201,7 @@ void reflectionsAsTheDevice()
     ASSERT_TRUE(device != nil) << nmb_last_error();
     switch_compiler::Engine engine;
     std::string why;
-    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), loader(), root(), {}}, why)) << why;
+    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), root(), {}}, why)) << why;
     const switch_compiler::Libraries libraries = compiler_test::deviceLibraries(device, root());
     switch_compiler::SystemLibraries system(root());
     std::set<std::string> states;

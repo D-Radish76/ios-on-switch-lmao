@@ -205,7 +205,7 @@ inline std::string pipelineKey(const PipelineFields &f, const StageKey *vertex, 
         key += head;
     }
     // a state Metal does not rasterize: the raw path draws it with the rasteriser off (raw_stage_switches.h)
-    if (!d.rasterizationEnabled)
+    if (!f.rasterization)
         key += "rast=0 ";
     key += " | v " + (vertex ? vertex->function : std::string("-")) + " " + (vertex ? vertex->constants : "");
     key += " | f " + (fragment ? fragment->function : std::string("-")) + " " + (fragment ? fragment->constants : "");
