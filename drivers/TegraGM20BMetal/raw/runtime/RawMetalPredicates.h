@@ -14,8 +14,7 @@ enum RMPred : uint8_t {
     PredNone = 0,
     // textures the raw path does not keep, decided when made (a bind hits the texture's own predicate)
     PredTexShape,  // rawShape: a = failing term (1 type, 2 levels, 3 samples, 4 array/depth, 5 rotation, 6 format), b = format
-    PredTexPoolAlloc,  // no pool span or texture header
-    PredTexSurfPitch,  // bytesPerRow or plane offset & 15, or short: a = bytesPerRow, b = offset (when off 16) or width x bpp
+    PredTexPoolAlloc,   // no pool span or texture header
     PredTexSurfBounds,  // offset + rows past the allocation
     PredTexSurfBase,    // base address off a page: a = base & 0xfff
     PredTexSurfImport,  // the import or the header slot refused
@@ -81,7 +80,6 @@ static_assert(PredCount <= 64, "one mask word");
 static constexpr const char *kPredNames[] = {"-",
                                              "tex.shape",
                                              "tex.pool",
-                                             "tex.surf.pitch",
                                              "tex.surf.bounds",
                                              "tex.surf.base",
                                              "tex.surf.imp",

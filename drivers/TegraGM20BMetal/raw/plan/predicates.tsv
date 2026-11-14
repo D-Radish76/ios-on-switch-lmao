@@ -8,7 +8,6 @@
 # tag	fires	fate	covered_by	note
 tex.shape	create	gap	rotated_target,stored_multisample,two_plane_extended_range,planar_target	terms 5 rotation (R1, probe gpu.x1.rotated_target), 3 samples (R3), 6 format 550 over two planes (R2) and planar YCbCr (R4); terms 1, 2, 4 (type, levels, arrays) are L3 layouts from NIL
 tex.pool	create	growth	-	pool span or header slot: the pool grows (L3), the GPU work waits
-tex.surf.pitch	create	layer	L3	L3 gives such a surface a conforming pool image; the planner's shadow.refresh then fills it on the copy engine before each pass that samples it
 tex.surf.bounds	create	nil	-	rows past the surface's allocation: newTextureWithDescriptor:iosurface:plane: answers nil
 tex.surf.base	create	layer	L3	a base off a page: a pool image L3 makes, filled by shadow.refresh
 tex.surf.imp	create	layer	L3	the kernel refused the import or the header slot: a resource failure at creation
