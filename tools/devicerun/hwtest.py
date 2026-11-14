@@ -398,6 +398,7 @@ TESTS: dict[str, bool] = {
     'system.overlay_apps': False,
     'system.overlay_app_records': False,
     'system.icon_cache': False,
+    'system.icon_cache_reset': False,
     'system.widgets_render': False,
     'ui.icon_render': False,
     'system.snapshot_purgeable': False,

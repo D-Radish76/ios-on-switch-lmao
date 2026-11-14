@@ -58,7 +58,7 @@ struct IconRenderTest: HWTest {
     /// A process's footprint by name (the first pid with it): proc_pid_rusage's phys_footprint, resident size and lifetime
     /// peak footprint; nil when it is not running or its rusage is refused
     static func footprint(_ process: String) -> Reading? {
-        guard let pid = RunningProcesses.pid(named: process),
+        guard let pid = RunningProcesses.pid(named: process, in: RunningProcesses.list(sysctl: "kern.proc.all")),
             let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "proc_pid_rusage")
         else { return nil }
         let rusage = unsafeBitCast(symbol, to: Rusage.self)

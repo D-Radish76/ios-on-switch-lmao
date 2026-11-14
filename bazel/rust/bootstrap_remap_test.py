@@ -23,7 +23,9 @@ class BootstrapRemap(unittest.TestCase):
         [rlib] = [path for path in RLIBS if path.name.startswith('libtinyjson-')]
         data = rlib.read_bytes()
         self.assertEqual(around(data, b'/execroot/'), b'')
-        self.assertTrue(b'./external/rules_rust++i+rules_rust_tinyjson/src/parser.rs' in data, 'no remapped source path')
+        self.assertTrue(
+            b'./external/rules_rust++i+rules_rust_tinyjson/src/parser.rs' in data, 'no remapped source path'
+        )
 
 
 if __name__ == '__main__':

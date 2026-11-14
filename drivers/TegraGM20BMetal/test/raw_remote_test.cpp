@@ -6,6 +6,7 @@
 // compiler answers from one compile, a compiler lost while they wait, an Unavailable end), a request past the
 // connection's bound is held until an earlier one is answered, and a remote that goes ends what it still waits for.
 #include "../raw/runtime/raw_remote.h"
+#include "../raw/runtime/raw_answer_class.h"
 #include "../raw/runtime/raw_cache_io.h"
 #include "../raw/runtime/raw_obtained.h"
 #include "../raw/runtime/raw_program_pages.h"
@@ -16,6 +17,9 @@
 
 #include <IOKit/IOReturn.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/OSMessageNotification.h>
+#include <mach/mach.h>
+#include <pthread/qos.h>
 #include <cstdlib>
 #include <filesystem>
 #include <functional>
@@ -37,10 +41,12 @@ public:
     std::function<void()> compiling;  // what the compiler does before it answers
     switch_seed_pack::StoreWriter store;
 
-    // An asynchronous request as the kernel keeps it: its cookie and the callback its reference names
+    // An asynchronous request as the kernel keeps it: its cookie, the callback its reference names and the port its answer
+    // goes to
     struct Waiting {
         uint64_t cookie;
         uint64_t reference[kOSAsyncRef64Count];
+        uint32_t port = 0;
     };
 
     std::vector<Waiting> waiting;
@@ -64,10 +70,39 @@ public:
                  reinterpret_cast<void **>(words), TegraGM20BCompileAnswerWords);
     }
 
+    // The oldest waiting request answered as the kernel answers it: IOUserClient's completion message to the request's own
+    // port, which carries no class
+    void send(int32_t answer)
+    {
+        const Waiting w = waiting.front();
+        waiting.erase(waiting.begin());
+        uint64_t words[TegraGM20BCompileAnswerWords] = {w.cookie, uint64_t(uint32_t(answer)) | uint64_t(generation)
+                                                                                                   << 32};
+        const IOReturn result = kIOReturnSuccess;
+        alignas(8)
+            uint8_t bytes[sizeof(mach_msg_header_t) + sizeof(OSNotificationHeader64) + sizeof result + sizeof words] =
+                {};
+        auto *header = reinterpret_cast<mach_msg_header_t *>(bytes);
+        auto *notification = reinterpret_cast<OSNotificationHeader64 *>(bytes + sizeof *header);
+        uint8_t *content = bytes + sizeof *header + sizeof *notification;
+        header->msgh_bits = MACH_MSGH_BITS(MACH_MSG_TYPE_MAKE_SEND, 0);
+        header->msgh_size = sizeof bytes;
+        header->msgh_remote_port = w.port;
+        header->msgh_id = kOSNotificationMessageID;
+        notification->size = sizeof result + sizeof words;
+        notification->type = kIOAsyncCompletionNotificationType;
+        memcpy(notification->reference, w.reference, sizeof w.reference);
+        memcpy(content, &result, sizeof result);
+        memcpy(content + sizeof result, words, sizeof words);
+        ASSERT_EQ(
+            mach_msg(header, MACH_SEND_MSG, sizeof bytes, 0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL),
+            KERN_SUCCESS);
+    }
+
     raw::Remote::Call call()
     {
         return [this](uint32_t method, const void *in, size_t, void *out, size_t outSize, uint64_t *reference,
-                      uint32_t) -> int {
+                      uint32_t port) -> int {
             if (method == TegraGM20BMethodCompile && reference) {
                 if (waiting.size() >= bound)
                     return kIOReturnNoResources;
@@ -75,7 +110,7 @@ public:
                 if (asyncCalled != kIOReturnSuccess)
                     return asyncCalled;
                 compiles++;
-                Waiting w = {static_cast<const TegraGM20BAbiCompile *>(in)->cookie, {}};
+                Waiting w = {static_cast<const TegraGM20BAbiCompile *>(in)->cookie, {}, port};
                 memcpy(w.reference, reference, sizeof w.reference);
                 waiting.push_back(w);
                 return kIOReturnSuccess;
@@ -473,6 +508,64 @@ TEST_F(RemoteCompile, TheCompilersTimesReachTheAskerAndSplitItsWait)
     EXPECT_EQ(stored.queueUs, -1);
     EXPECT_EQ(stored.answerUs, -1);
     EXPECT_EQ(stored.storeUs, 500);
+}
+
+// Boot 22: an asynchronous answer was taken on one queue of the user-initiated class whatever its asker's, an interactive
+// asker's one class below it. Each answer is now sent to a port of its asker's class and taken there; a thread of fixed
+// priority counts as interactive.
+TEST_F(RemoteCompile, AnAsynchronousAnswerIsTakenAtItsAskersClass)
+{
+    publish();
+    raw::Remote remote(kernel.call(), kStack);
+
+    struct Taken {
+        dispatch_semaphore_t done = dispatch_semaphore_create(0);
+        qos_class_t at = QOS_CLASS_UNSPECIFIED;
+    };
+
+    const qos_class_t asked[] = {QOS_CLASS_USER_INTERACTIVE, QOS_CLASS_BACKGROUND, QOS_CLASS_UNSPECIFIED,
+                                 QOS_CLASS_UTILITY};
+    Taken taken[std::size(asked)];
+    for (size_t i = 0; i < std::size(asked); ++i)
+        ASSERT_TRUE(remote.compileAsync("a request", true, asked[i],
+                                        [&taken, i](raw::Remote::Answer, const raw::Remote::Answered &) {
+                                            taken[i].at = qos_class_self();
+                                            dispatch_semaphore_signal(taken[i].done);
+                                        }));
+    ASSERT_EQ(kernel.waiting.size(), std::size(asked));
+    EXPECT_NE(kernel.waiting[0].port, kernel.waiting[1].port);
+    EXPECT_EQ(kernel.waiting[0].port, kernel.waiting[2].port) << "a fixed-priority asker is answered as interactive";
+    for (size_t i = 0; i < std::size(asked); ++i)
+        kernel.send(TegraGM20BCompileMade);
+    for (size_t i = 0; i < std::size(asked); ++i) {
+        ASSERT_EQ(dispatch_semaphore_wait(taken[i].done, dispatch_time(DISPATCH_TIME_NOW, 10 * int64_t(NSEC_PER_SEC))),
+                  0)
+            << "answer " << i << " never taken";
+        EXPECT_EQ(taken[i].at, raw::answerClass(asked[i])) << "answer " << i;
+    }
+}
+
+// Completion's queue (RawComplete.mm) runs each block at its asker's class, below its own default as well as above it,
+// and in order
+TEST(AnswerQueue, EachBlockRunsAtItsAskersClassInOrder)
+{
+    dispatch_queue_t queue = raw::answerQueue("answer-queue-test");
+    const qos_class_t asked[] = {QOS_CLASS_BACKGROUND, QOS_CLASS_USER_INTERACTIVE, QOS_CLASS_UTILITY,
+                                 QOS_CLASS_UNSPECIFIED};
+    std::vector<qos_class_t> ran;
+    std::vector<qos_class_t> *into = &ran;
+    dispatch_semaphore_t done = dispatch_semaphore_create(0);
+    for (qos_class_t qos : asked)
+        raw::asyncAt(queue, qos, ^{
+            into->push_back(qos_class_self());
+            dispatch_semaphore_signal(done);
+        });
+    for (size_t i = 0; i < std::size(asked); ++i)
+        ASSERT_EQ(dispatch_semaphore_wait(done, dispatch_time(DISPATCH_TIME_NOW, 10 * int64_t(NSEC_PER_SEC))), 0);
+    ASSERT_EQ(ran.size(), std::size(asked));
+    for (size_t i = 0; i < std::size(asked); ++i)
+        EXPECT_EQ(ran[i], raw::answerClass(asked[i])) << "block " << i;
+    dispatch_release(queue);
 }
 
 }  // namespace

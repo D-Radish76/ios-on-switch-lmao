@@ -412,6 +412,15 @@ filegroup(
     ],
 )
 
+# tools/devicerun:hwtest_test walks every Swift file outside host_*; a worker's runfiles hold only what is listed.
+filegroup(
+    name = "swift_sources",
+    srcs = glob(
+        ["**/*.swift"],
+        exclude = ["host_*/**"],
+    ),
+)
+
 swift_interop_hint(
     name = "cpu_clock_module",
     module_name = "SwitchCPUClock",
@@ -458,6 +467,8 @@ cc_library(
 )
 
 exports_files([
+    "SwitchHWTest.entitlements",
+    "SwitchHWTest27.entitlements",
     "cpu/switch_ipi_probe.c",
     "cpu/switch_ipi_probe.h",
     "cpu/switch_workloop_probe.c",
@@ -562,15 +573,6 @@ cc_library(
 
 # The texture peer's jetsam limits, which //overlay:jetsam_properties merges into iOS 27's overlay in debug
 exports_files(["peer/com.brunostjohn.switch.texpeer.jetsam.plist"])
-
-# tools/devicerun's hwtest_test holds every sysctl a test reads to both apps' sandbox exceptions
-exports_files(
-    [
-        "SwitchHWTest.entitlements",
-        "SwitchHWTest27.entitlements",
-    ],
-    visibility = ["//tools/devicerun:__pkg__"],
-)
 
 # tools/benchloop's tests hold the app's known program and method ranges to the host's
 exports_files(

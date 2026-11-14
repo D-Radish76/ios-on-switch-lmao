@@ -6050,7 +6050,7 @@ py_binary(
 genrule(
     name = "wide_index",
     outs = ["wide_index.bin"],
-    cmd = "$(location :wide_index_pack) $@",
+    cmd = "$(execpath :wide_index_pack) $@",
     tools = [":wide_index_pack"],
 )
 
@@ -6725,6 +6725,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_pass.h",
         "raw_remote_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_answer_class.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_obtained.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "//drivers/TegraGM20B:TegraGM20BCompilerABI.h",

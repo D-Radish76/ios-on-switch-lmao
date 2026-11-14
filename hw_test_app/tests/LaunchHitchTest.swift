@@ -46,7 +46,8 @@ struct LaunchHitchTest: HWTest {
             let table = try? String(contentsOf: url, encoding: .utf8)
         else { return .fail("ca_generic_keys.txt is not in the app's bundle") }
         let states = GenericStates.parse(table)
-        let target = LaunchTarget.state(of: Self.launchedProcess, in: RunningProcesses.list(), own: getpid())
+        let processes = RunningProcesses.list(sysctl: "kern.proc.all")
+        let target = LaunchTarget.state(of: Self.launchedProcess, in: processes, own: getpid())
         let task = await MainActor.run { UIApplication.shared.beginBackgroundTask(withName: id) }
         defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(task) } }
         var arms: [LaunchHitchArm] = []

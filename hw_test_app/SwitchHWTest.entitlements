@@ -24,6 +24,11 @@
 	<array>
 		<string>com.apple.BlueTool</string>
 	</array>
+	<key>com.apple.security.exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/private/var/Switch/icon-cache-gpu</string>
+		<string>/private/var/Switch/icon-cache-reset</string>
+	</array>
 	<key>com.apple.security.exception.files.absolute-path.read-write</key>
 	<array>
 		<string>/private/var/mobile/Media/Switch/benchloop/</string>
@@ -85,6 +90,7 @@
 		<string>kern.switch_scanout_vic</string>
 		<string>kern.switch_scanout_vic_up</string>
 		<string>kern.memorystatus_level</string>
+		<string>kern.proc.all</string>
 		<string>kern.switch_shader_compiler</string>
 	</array>
 	<key>com.apple.security.exception.sysctl.read-write</key>
