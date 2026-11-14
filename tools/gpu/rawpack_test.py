@@ -88,6 +88,14 @@ class CodeTargetStandIn(unittest.TestCase):
             'R ok=1 label=- samples=1 topo=0 ds=0/0 c0=125:15:0:1:0:0:1:0:0 c1=80:15:1:1:5:0:1:5:0' + self.TAIL,
         )
 
+    def test_every_rendered_code_format_alone_and_in_a_pair_takes_the_stand_in(self):
+        head = 'R ok=1 label=- samples=1 topo=0 ds=0/0 '
+        for colors, stand_in in (
+            ('c0=543:15:0:1:0:0:1:0:0', 'c0=125:15:0:1:0:0:1:0:0'),
+            ('c0=540:15:0:1:0:0:1:0:0 c1=544:15:0:1:0:0:1:0:0', 'c0=125:15:0:1:0:0:1:0:0 c1=125:15:0:1:0:0:1:0:0'),
+        ):
+            self.assertEqual(ycbcr_stand_in(head + colors + self.TAIL), head + stand_in + self.TAIL)
+
     def test_a_state_the_runtime_leaves_to_m2v_keeps_its_formats(self):
         for colors in (
             'c0=540:15:1:1:5:0:1:5:0',
