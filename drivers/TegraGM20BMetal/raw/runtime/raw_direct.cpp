@@ -664,11 +664,12 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
         why = "storage form: multisampled fetch requires per-sample shader invocations";
         return CompileOutcome::Refused;
     }
-    if (storage.storageMask ? !orderedStorageControl(interlock) : interlock != 0) {
+    if (!interlockMatchesStorage(interlock, storage.storageMask)) {
         why = "storage form: compiled shader does not match the ordered attachment contract";
         return CompileOutcome::Refused;
     }
     RecordParts parts;
+    parts.rasterOrdered = interlock && !storage.storageMask;
     parts.storageMask = storage.storageMask;
     parts.storageWriteMask = storage.storageWriteMask;
     parts.storageSamples = storage.storageSamples;
@@ -727,7 +728,9 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     out.amplificationLayerWord = uint8_t(draw.amplificationLayerWord);
     out.amplificationViewportWord = uint8_t(draw.amplificationViewportWord);
     if (!usableStorageMetadata(out.pipeline, out.blob.data(), uint32_t(out.blob.size()))) {
-        why = "storage form: assembled record lost its attachment contract";
+        // a raster-ordered record refused as a storage form would be made again without the interlock, its groups unordered
+        why = parts.rasterOrdered ? "raster order groups: the assembled record lost its interlock control"
+                                  : "storage form: assembled record lost its attachment contract";
         return CompileOutcome::Refused;
     }
     if (state.stageCount == 4)

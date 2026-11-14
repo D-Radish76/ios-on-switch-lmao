@@ -94,6 +94,8 @@ enum DescriptorType : int32_t {
     CombinedImageSampler = 1,
     SampledImage = 2,
     StorageImage = 3,
+    UniformTexelBuffer = 4,
+    StorageTexelBuffer = 5,
     UniformBuffer = 6,
     StorageBuffer = 7,
     UniformBufferDynamic = 8,

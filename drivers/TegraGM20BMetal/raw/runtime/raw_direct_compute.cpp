@@ -93,7 +93,10 @@ public:
         const uint16_t offset = uint16_t(b.offset + w.element * b.stride);
         if (bufferType(w.type))
             return buffer(w, offset, why);
-        if (w.type == SampledImage || w.type == StorageImage || w.type == CombinedImageSampler) {
+        // NVK's descriptor of a texel buffer view is an image's: its header's index (raw binds the texture's own header,
+        // a texel buffer one of a texture buffer, Device::createTexelBuffer)
+        if (w.type == SampledImage || w.type == StorageImage || w.type == CombinedImageSampler ||
+            w.type == UniformTexelBuffer || w.type == StorageTexelBuffer) {
             if (!texture(kw, offset, why))
                 return false;
             return w.type != CombinedImageSampler || sampler(kw, offset, why);
@@ -145,7 +148,8 @@ private:
             why = "a texture slot the dispatch leaves unbound at " + std::to_string(offset);
             return false;
         }
-        if (!viewWord0(kw.viewFormat, kw.components, w.type == StorageImage, word0)) {
+        const bool storage = w.type == StorageImage || w.type == StorageTexelBuffer;
+        if (!viewWord0(kw.viewFormat, kw.components, storage, word0)) {
             why = "a texture view of VkFormat " + std::to_string(kw.viewFormat) + " NVK has no header for";
             return false;
         }

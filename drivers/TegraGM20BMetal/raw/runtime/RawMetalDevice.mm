@@ -63,6 +63,7 @@
     d[@"split_room_refusals"] = @(gRM->raw->stats.splitRoomRefusals.load());
     d[@"heap_full"] = @(gRM->raw->stats.heapFull.load());
     d[@"interlock_draws"] = @(gRM->raw->stats.interlockDraws.load());
+    d[@"raster_ordered_draws"] = @(gRM->raw->stats.rasterOrderedDraws.load());
     d[@"banded_draws"] = @(gRM->raw->stats.bandedDraws.load());
     d[@"bands"] = @(gRM->raw->stats.bands.load());
     d[@"learned_draws"] = @(gRM->raw->stats.learnedDraws.load());
