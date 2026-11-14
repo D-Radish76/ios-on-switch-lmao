@@ -13,7 +13,7 @@ import UIKit
 /// debug kernel answers the compositor's round (SwitchGpuCompositorRound.h through the spans op): its jobs and GPU time,
 /// jobs longer than a refresh period, surfaces it imported, BoAllocs it made on its own thread (no zeroed spare), and the
 /// passes, interlock enables and barrier twin draws (a triangle a draw) of its push-scanned submissions, each a
-/// submission. A round fails on a missed display period, an import, a cold BoAlloc, a
+/// submission, and the deadline windows opened and app channels held. A round fails on a missed display period, an import, a cold BoAlloc, a
 /// compositor job over one period, fewer than half its frames shown by the probe, or a compositor that did not animate.
 struct ScalePacingTest: HWTest {
     let id = "ui.scale_pacing"
@@ -32,7 +32,7 @@ struct ScalePacingTest: HWTest {
 
     struct Round {
         var missed = 0, shown = 0, imports = 0, importUs = 0, coldAllocs = 0, overPeriod = 0, jobs = 0, gpuUs = 0,
-            scanned = 0, passes = 0, interlocks = 0, twins = 0, jobMaxUs = 0
+            scanned = 0, passes = 0, interlocks = 0, twins = 0, windows = 0, holds = 0, jobMaxUs = 0
     }
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -68,6 +68,8 @@ struct ScalePacingTest: HWTest {
                 r.passes = reading.counts["passes"] ?? 0
                 r.interlocks = reading.counts["ilk"] ?? 0
                 r.twins = reading.counts["twin"] ?? 0
+                r.windows = reading.counts["windows"] ?? 0
+                r.holds = reading.counts["holds"] ?? 0
                 r.jobMaxUs = reading.jobMaxUs
                 let key = "\(kind.rawValue)\(i)"
                 metrics.set("\(key)_missed", r.missed)
@@ -79,6 +81,8 @@ struct ScalePacingTest: HWTest {
                 metrics.set("\(key)_passes", r.scanned > 0 ? Double(r.passes) / Double(r.scanned) : 0, digits: 1)
                 metrics.set("\(key)_ilk", r.scanned > 0 ? Double(r.interlocks) / Double(r.scanned) : 0, digits: 1)
                 metrics.set("\(key)_twin", r.scanned > 0 ? Double(r.twins) / Double(r.scanned) : 0, digits: 1)
+                metrics.set("\(key)_windows", r.windows)
+                metrics.set("\(key)_holds", r.holds)
                 metrics.set("\(key)_gpu_ms", r.jobs > 0 ? Double(r.gpuUs) / Double(r.jobs) / 1000 : 0, digits: 2)
                 metrics.set("\(key)_job_max_ms", Double(r.jobMaxUs) / 1000, digits: 2)
                 if r.missed > 0 { failures.append("\(key) missed \(r.missed) periods") }
