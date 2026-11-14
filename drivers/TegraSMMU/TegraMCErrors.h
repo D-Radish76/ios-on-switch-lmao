@@ -88,17 +88,24 @@ inline const char *describe(const Error &e, char *text, size_t size)
 }
 
 // A fault storm, bounded per client: the first kFullLines errors of a client's run print in full and the rest are only
-// counted, and the run ends with one count line once kQuietErrors errors by other clients have come since its last
-// (it went quiet), when its swgroup detaches, or when SC7 resets the MC. Nothing here keeps time. The client is ERR_ID
-// for the kinds MC_ERR_STATUS captures, one shared key (kUncaptured) for the others. The action's alone.
+// counted, and the run ends with one count line naming why: displaced (kQuietErrors errors by other clients since its
+// last, or kOpen other runs open), its swgroup's detach, or SC7 resetting the MC. Nothing here keeps time. The client
+// is ERR_ID for the kinds MC_ERR_STATUS captures, one shared key (kUncaptured) for the others. The action's alone.
 class Runs {
 public:
     static constexpr uint32_t kFullLines = 4, kQuietErrors = 16, kUncaptured = 0x100;
     static constexpr unsigned kOpen = 8;
 
+    enum class Cause : uint8_t {
+        kDisplaced,
+        kDetach,
+        kSC7
+    };
+
     struct Ended {
         uint32_t client, errors;
         Error last;
+        Cause cause;
     };
 
     static uint32_t clientOf(const Error &e)
@@ -125,7 +132,7 @@ public:
                 continue;
             }
             if (seen - r.lastAt > kQuietErrors) {
-                end(r, ended, endedCount);
+                end(r, Cause::kDisplaced, ended, endedCount);
                 free = free ? free : &r;
                 continue;
             }
@@ -133,7 +140,7 @@ public:
         }
         if (!run) {
             if (!free) {
-                end(*oldest, ended, endedCount);
+                end(*oldest, Cause::kDisplaced, ended, endedCount);
                 free = oldest;
             }
             run = free;
@@ -145,13 +152,13 @@ public:
         return run->errors <= kFullLines;
     }
 
-    // The runs of the clients `match` takes end now (a detach, SC7); as error()'s `ended`.
-    template <class Match> unsigned endWhere(Match match, Ended *ended)
+    // The runs of the clients `match` takes end now, by `cause` (a detach, SC7); as error()'s `ended`.
+    template <class Match> unsigned endWhere(Match match, Cause cause, Ended *ended)
     {
         unsigned count = 0;
         for (Run &r : runs)
             if (r.open && match(r.client))
-                end(r, ended, count);
+                end(r, cause, ended, count);
         return count;
     }
 
@@ -163,10 +170,10 @@ private:
         bool open;
     };
 
-    static void end(Run &r, Ended *ended, unsigned &count)
+    static void end(Run &r, Cause cause, Ended *ended, unsigned &count)
     {
         if (r.errors > kFullLines)
-            ended[count++] = {r.client, r.errors, r.last};
+            ended[count++] = {r.client, r.errors, r.last, cause};
         r.open = false;
     }
 
@@ -174,17 +181,31 @@ private:
     uint64_t seen = 0;
 };
 
+inline const char *causeName(Runs::Cause cause)
+{
+    switch (cause) {
+    case Runs::Cause::kDisplaced:
+        return "displaced";
+    case Runs::Cause::kDetach:
+        return "detach";
+    case Runs::Cause::kSC7:
+        return "SC7";
+    }
+    return "displaced";
+}
+
 // The count line of a run that printed only its first kFullLines errors.
 inline const char *describeRun(const Runs::Ended &run, char *text, size_t size)
 {
     char last[256];
     describe(run.last, last, sizeof(last));
     if (run.client == Runs::kUncaptured)
-        snprintf(text, size, "%u errors of kinds MC_ERR_STATUS does not capture, the first %u printed; the last %s",
-                 run.errors, Runs::kFullLines, last);
+        snprintf(text, size,
+                 "%u errors of kinds MC_ERR_STATUS does not capture, the first %u printed, ended by %s; the last %s",
+                 run.errors, Runs::kFullLines, causeName(run.cause), last);
     else
-        snprintf(text, size, "%u errors by %s (client %#x), the first %u printed; the last %s", run.errors,
-                 client(run.client), run.client, Runs::kFullLines, last);
+        snprintf(text, size, "%u errors by %s (client %#x), the first %u printed, ended by %s; the last %s", run.errors,
+                 client(run.client), run.client, Runs::kFullLines, causeName(run.cause), last);
     return text;
 }
 }  // namespace switch_mc

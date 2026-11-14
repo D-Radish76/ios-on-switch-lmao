@@ -4727,7 +4727,10 @@ public:
         copy.source = memory;
         copy.sourceStride = stride;
         copy.sourceBytes = allocation;
-        copy.flags = TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry);
+        // A tiled slot is the GPU's block-linear surface window A scans in 16-GOB blocks: the present maps it under the
+        // block-linear kind it was written with, and the debug read-back copies it out of those blocks.
+        copy.flags = TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry) | (tiled ? TEGRA_SCANOUT_COPY_SOURCE_BLOCK : 0u);
+        copy.sourceBlockHeightLog2 = tiled ? kScanBlockLog2 : 0u;
         copy.alsoWritten = planeNextAlsoWritten();
         switch_gpu_backing_token planeTokens[kPlaneDependencies] = {};
         planeNextDependencies(copy, planeTokens);
