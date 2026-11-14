@@ -630,13 +630,13 @@ static bool producesTexture(MTLTextureDescriptor *d)
         const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
         const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0);
         const OSType fourcc = IOSurfaceGetPixelFormat(s);
-        NSString *extra =
-            [NSString stringWithFormat:@"surface %ux%u '%c%c%c%c' bytesPerRow %lu planes %lu plane %lu alloc %lu "
-                                       @"base&0xfff 0x%lx",
-                                       unsigned(IOSurfaceGetWidth(s)), unsigned(IOSurfaceGetHeight(s)),
-                                       char(fourcc >> 24), char(fourcc >> 16), char(fourcc >> 8), char(fourcc),
-                                       (unsigned long)pitch, (unsigned long)planes, (unsigned long)plane,
-                                       (unsigned long)IOSurfaceGetAllocSize(s), (unsigned long)(base & 0xfff)];
+        NSString *extra = [NSString
+            stringWithFormat:@"surface %u %ux%u '%c%c%c%c' bytesPerRow %lu planes %lu plane %lu alloc %lu "
+                             @"base&0xfff 0x%lx",
+                             IOSurfaceGetID(s), unsigned(IOSurfaceGetWidth(s)), unsigned(IOSurfaceGetHeight(s)),
+                             char(fourcc >> 24), char(fourcc >> 16), char(fourcc >> 8), char(fourcc),
+                             (unsigned long)pitch, (unsigned long)planes, (unsigned long)plane,
+                             (unsigned long)IOSurfaceGetAllocSize(s), (unsigned long)(base & 0xfff)];
         if (planar444(d, s, plane))
             refuseTexture(t, PredTexPlanar, d.width, d.height, @"surface", extra);
         else if (uint32_t term = rawShapeTerm(d))

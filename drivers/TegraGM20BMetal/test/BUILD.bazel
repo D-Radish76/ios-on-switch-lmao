@@ -254,8 +254,11 @@
 #                     an unpacked state, a reflection, a foreign sampler and a method only m2v's device class has each open
 #                     it once, naming what for
 #   raw_facade_open_test  what no process opens m2v for: a library's names, type and options, a library Metal would not
-#                     load (nil and Metal's error), no memory (nil), pages the kernel cannot wire (no buffer), and a
-#                     YCbCr target state raw draws (its twin made only at a fallback)
+#                     load (nil and Metal's error), no memory (nil), pages the kernel cannot wire (no buffer), a YCbCr
+#                     target state raw draws (its twin made only at a fallback), texture layouts, textures past their
+#                     memory and a full sampler header table
+#   raw_facade_compiler_test  the shader compiler's answers in place of m2v: a compute state's facts the pack lacks, and a
+#                     kernel it refused failing its command buffer
 #   raw_arena_trim_test  raw/runtime/raw_arena_trim.h: an idle heap kept non-volatile gives back the ranges no resource is
 #                     placed in, keeps the rest's contents, and binds a hole again at a placement into it
 #   raw_seed_slot_test  a seeded record's program of a page or more runs from the installed seed's pages (raw_cache.h
@@ -4999,6 +5002,48 @@ host_test(
         "raw_facade_harness.h",
         "raw_job_methods.h",
         "raw_facade_open_test.cpp",
+        "raw_facade_standins.h",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+host_test(
+    name = "raw_facade_compiler_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_job_methods.h",
+        "raw_facade_compiler_test.cpp",
         "raw_facade_standins.h",
         "raw_frontend_absent.cpp",
         "raw_kernel_model.h",

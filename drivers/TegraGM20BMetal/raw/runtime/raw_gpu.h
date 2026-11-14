@@ -2773,7 +2773,14 @@ private:
     // again before it gives out a command buffer. channel_ is 0 while the kernel holds none of this device's.
     bool contextless_ = false;
     std::vector<uint32_t> freeTic_, freeTsc_, freeTicPairs_;
-    ViewCache views_{kTextureHeaders};  // viewTic's answers, the encoding thread's
+
+    struct SharedHeader {
+        uint32_t slot, users;
+    };
+
+    std::map<std::array<uint32_t, 8>, SharedHeader> sharedTsc_;         // lock_
+    std::unordered_map<uint32_t, std::array<uint32_t, 8>> tscHeaders_;  // lock_: a shared slot's header
+    ViewCache views_{kTextureHeaders};                                  // viewTic's answers, the encoding thread's
     // by header: its views' word 0 (above it, the sample grid of a storage view: raw_view.h viewHeader) and header (viewTic)
     std::unordered_multimap<uint32_t, std::pair<uint64_t, uint32_t>> viewTics_;
     // by header: its attachment views and their headers (attachmentViewTic)
@@ -2864,6 +2871,10 @@ private:
 
     void offerCompletedSplit(Completed &c, const RuntimeRecord &r, const PlacedProgram &vs, bool caTransform);
     bool takeTsc(uint32_t &tsc);
+    // A sampler header slot holding `words` (lock_): one slot for every sampler's compare form and address-map variant of
+    // the same 32 bytes, given back when its last user drops it; false: the table is full
+    bool takeHeader(const uint32_t words[8], uint32_t &slot);
+    void dropHeader(uint32_t slot);
     const Pipeline *extrasLive_ = nullptr;  // the state whose extras (Pipeline::restore) the channel holds
     HeldSegment heldSegment_;               // the state segment its registers hold after everything submitted
     StateSegmentHeap segmentHeap_;          // lock_ (place)

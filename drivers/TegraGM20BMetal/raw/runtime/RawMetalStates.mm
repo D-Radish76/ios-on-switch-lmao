@@ -123,7 +123,12 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
     r.label = d.label;
     // what the raw sampler header does not express: the m2v twin is the sampler, and the raw path refuses the draws that use it
     const bool rawOk = raw::takeSampler(m, s);
-    if (!rawOk || !gRM->raw->createSampler(s, r->_raw)) {
+    if (rawOk && !gRM->raw->createSampler(s, r->_raw)) {
+        os_log_error(rawLog(), "raw: %{public}s: no sampler header left in the device's table: no sampler made",
+                     getprogname());
+        return nil;
+    }
+    if (!rawOk) {
         if (!predLogged(PredCallSamplerForeign))
             logPred(
                 PredCallSamplerForeign, d.maxAnisotropy, d.compareFunction,

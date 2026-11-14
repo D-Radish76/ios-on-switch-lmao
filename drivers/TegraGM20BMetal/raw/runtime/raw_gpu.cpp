@@ -3309,6 +3309,37 @@ bool Device::takeTsc(uint32_t &tsc)
     return true;
 }
 
+bool Device::takeHeader(const uint32_t words[8], uint32_t &slot)
+{
+    std::array<uint32_t, 8> header;
+    memcpy(header.data(), words, sizeof header);
+    if (const auto shared = sharedTsc_.find(header); shared != sharedTsc_.end()) {
+        shared->second.users++;
+        slot = shared->second.slot;
+        return true;
+    }
+    if (!takeTsc(slot))
+        return false;
+    memcpy(tsc_.cpu + 32 * slot, words, 32);
+    sharedTsc_[header] = {slot, 1};
+    tscHeaders_[slot] = header;
+    return true;
+}
+
+void Device::dropHeader(uint32_t slot)
+{
+    const auto header = tscHeaders_.find(slot);
+    if (header == tscHeaders_.end())
+        return;
+    const auto shared = sharedTsc_.find(header->second);
+    if (shared != sharedTsc_.end() && --shared->second.users)
+        return;
+    if (shared != sharedTsc_.end())
+        sharedTsc_.erase(shared);
+    tscHeaders_.erase(header);
+    freeTsc_.push_back(slot);
+}
+
 bool Device::createSampler(const SamplerDesc &d, Sampler &s)
 {
     uint32_t w[8], compared[8];
@@ -3317,15 +3348,15 @@ bool Device::createSampler(const SamplerDesc &d, Sampler &s)
     compareHeader(compared, d.compare);
     s.desc = d;
     std::lock_guard<raw::Mutex> l(lock_);
+    // the sampler's own slot is its name in the argument heap (heapSampler), so never shared; its compare form is
     if (!takeTsc(s.tsc))
         return false;
-    if (!takeTsc(s.compareTsc)) {
+    if (!takeHeader(compared, s.compareTsc)) {
         freeTsc_.push_back(s.tsc);
         s.tsc = 0;
         return false;
     }
     memcpy(tsc_.cpu + 32 * s.tsc, w, 32);
-    memcpy(tsc_.cpu + 32 * s.compareTsc, compared, 32);
     return true;
 }
 
@@ -3335,10 +3366,10 @@ void Device::destroySampler(Sampler &s)
     if (s.tsc)
         freeTsc_.push_back(s.tsc);
     if (s.compareTsc)
-        freeTsc_.push_back(s.compareTsc);
+        dropHeader(s.compareTsc);
     for (uint32_t m : s.mapped)
-        if (m && m != s.tsc && std::find(freeTsc_.begin(), freeTsc_.end(), m) == freeTsc_.end())
-            freeTsc_.push_back(m);
+        if (m && m != s.tsc)
+            dropHeader(m);
     s = {};
 }
 
@@ -3366,9 +3397,8 @@ bool Device::samplerVariant(Sampler &s, uint8_t map)
     samplerHeader(d, w);
     RAW_ENCODE_LOCK(l, lock_);
     uint32_t tsc = 0;
-    if (!takeTsc(tsc))
+    if (!takeHeader(w, tsc))
         return false;
-    memcpy(tsc_.cpu + 32 * tsc, w, 32);
     s.mapped[map] = tsc;
     return true;
 }
