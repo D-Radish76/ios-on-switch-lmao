@@ -1584,7 +1584,7 @@ TEST(GM20BJobFencesSource, OneJobOwnsItsUsesUntilItsLastFence)
 	EXPECT_TRUE(
 		emit.Has("last = switch_gpu_job_emit(pushes, count, chan->submitted, &emitter);"));
 	EXPECT_TRUE(Block(client(), "uint32_t switch_gpu_info_flags(void)")
-			    .Has("TegraGM20BInfoPushFences;"));
+			    .Has("TegraGM20BInfoPushFences | TegraGM20BInfoJobLoud;"));
 }
 
 // A use's handle is found by the index (switch_gpu_bo_index_test), never by walking the connection's BOs; every BO
