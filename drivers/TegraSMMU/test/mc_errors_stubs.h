@@ -130,7 +130,8 @@ public:
         return &loop;
     }
 
-    static IOReturn addEventSource(IOInterruptEventSource *)
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static): stands in for IOWorkLoop's instance method
+    IOReturn addEventSource(IOInterruptEventSource *)
     {
         return kIOReturnSuccess;
     }
