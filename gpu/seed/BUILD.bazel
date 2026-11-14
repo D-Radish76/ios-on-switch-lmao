@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("//bazel/lint:defs.bzl", "lint_files")
 load(":defs.bzl", "metal_seed", "seed_raw_pack", "seed_tree", "shader_crawl")
-load(":tools.bzl", "seed_tools", "tools_archive")
+load(":tools.bzl", "raw_tools", "seed_tools", "tools_archive")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -26,6 +26,15 @@ alias(
     actual = select({
         "//install:from_release": "@switch_release//:shader_tools",
         "//conditions:default": ":local_tools",
+    }),
+)
+
+# The raw pack's tools: the release's prebuilt shader tools, or these (no m2v or NVK in them)
+alias(
+    name = "default_raw_tools",
+    actual = select({
+        "//install:from_release": "@switch_release//:shader_tools",
+        "//conditions:default": ":local_raw_tools",
     }),
 )
 
@@ -78,6 +87,17 @@ seed_tools(
     twin = "//gpu/nvk:twin",
 )
 
+raw_tools(
+    name = "local_raw_tools",
+    compile = "//third_party/mesa/src/nouveau/switch_compile:host",
+    context_header = "//kits/SwitchGM20BEmit:context",
+    metal_abi = METAL + "/abi:MetalABI.h",
+    raw_generator = GM20B_METAL + ":raw/pack/rawpack.py",
+    raw_srcs = [GM20B_METAL + ":raw_stack_sources"],
+    stack = "//gpu:raw_stack",
+    translate = "//gpu:translate_host",
+)
+
 tools_archive(
     name = "tools_archive",
     tools = ":local_tools",
@@ -123,7 +143,7 @@ seed_raw_pack(
     device_libraries = "@gpu_device_data//:libraries",
     generator = GM20B_METAL + ":raw/pack/rawpack.py",
     tags = ["manual"],
-    tools = ":tools",
+    tools = ":default_raw_tools",
 )
 
 seed_tree(

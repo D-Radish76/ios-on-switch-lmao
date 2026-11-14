@@ -60,6 +60,37 @@ def seed_tool_files(target):
         raw_dir = root + "/raw",
     )
 
+def _raw_build(ctx, name, host_bridge):
+    """The pack generator's tools (raw/pack/rawpack.py build) as one directory; with `host_bridge` the frontend's too."""
+    tree = ctx.file.raw_generator.dirname.partition("drivers/TegraGM20BMetal/")[0].rstrip("/") or "."
+    raw = ctx.actions.declare_directory(name)
+    args = ctx.actions.args()
+    args.add("build")
+    args.add("--xcode-env", ctx.file._xcode_env)
+    if host_bridge:
+        args.add("--host-bridge", host_bridge)
+    args.add("--translate", ctx.file.translate)
+    args.add("--compile", ctx.file.compile)
+    args.add("--metal-abi", ctx.file.metal_abi)
+    args.add("--context-header", ctx.file.context_header)
+    args.add("--generator", ctx.file.raw_generator)
+    args.add("--tree", tree)
+    args.add("--out", raw.path)
+    sources = [f for f in ctx.files.raw_srcs if f.extension != "py" or f.basename in _RAW_BUILD_MODULES]
+    ctx.actions.run(
+        executable = ctx.executable._rawpack,
+        arguments = [args],
+        inputs = depset(
+            [ctx.file.translate, ctx.file.compile, ctx.file.metal_abi, ctx.file.context_header, ctx.file.raw_generator] +
+            ([host_bridge] if host_bridge else []) + [ctx.file._xcode_env, ctx.file._xcode_identity] + sources,
+        ),
+        outputs = [raw],
+        mnemonic = "SeedToolsRaw",
+        progress_message = "Building the raw pack's tools and mock GM20B",
+        execution_requirements = _DARWIN,
+    )
+    return raw
+
 def _seed_tools_impl(ctx):
     xcode = [ctx.file._xcode_env, ctx.file._xcode_identity]
     tool = ctx.executable._tool
@@ -108,28 +139,7 @@ def _seed_tools_impl(ctx):
         execution_requirements = _DARWIN,
     )
 
-    tree = ctx.file.raw_generator.dirname.partition("drivers/TegraGM20BMetal/")[0].rstrip("/") or "."
-    raw = ctx.actions.declare_directory(ctx.attr.name + "_raw")
-    args = ctx.actions.args()
-    args.add("build")
-    args.add("--xcode-env", ctx.file._xcode_env)
-    args.add("--host-bridge", ctx.file.host_bridge)
-    args.add("--translate", ctx.file.translate)
-    args.add("--compile", ctx.file.compile)
-    args.add("--metal-abi", ctx.file.metal_abi)
-    args.add("--context-header", ctx.file.context_header)
-    args.add("--generator", ctx.file.raw_generator)
-    args.add("--tree", tree)
-    args.add("--out", raw.path)
-    ctx.actions.run(
-        executable = ctx.executable._rawpack,
-        arguments = [args],
-        inputs = depset([ctx.file.host_bridge, ctx.file.translate, ctx.file.compile, ctx.file.metal_abi, ctx.file.context_header, ctx.file.raw_generator] + xcode + [f for f in ctx.files.raw_srcs if f.extension != "py" or f.basename in _RAW_BUILD_MODULES]),
-        outputs = [raw],
-        mnemonic = "SeedToolsRaw",
-        progress_message = "Building the raw pack's probe and mock GM20B",
-        execution_requirements = _DARWIN,
-    )
+    raw = _raw_build(ctx, ctx.attr.name + "_raw", ctx.file.host_bridge)
 
     out = ctx.actions.declare_directory(ctx.attr.name)
     manifest = ctx.actions.declare_file(ctx.attr.name + "_manifest/MANIFEST.json")
@@ -187,6 +197,46 @@ seed_tools = rule(
         "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the raw path's stack key"),
         "translate": attr.label(mandatory = True, allow_single_file = True, doc = "the translation alone (no m2v runtime)"),
         "_tool": attr.label(default = "//tools/gpu:seed", executable = True, cfg = "exec"),
+        "_rawpack": attr.label(default = "//tools/gpu:rawpack", executable = True, cfg = "exec"),
+    },
+)
+
+def _raw_tools_impl(ctx):
+    raw = _raw_build(ctx, ctx.attr.name + "_raw", None)
+    manifest = ctx.actions.declare_file(ctx.attr.name + "_manifest/MANIFEST.json")
+    ctx.actions.run_shell(
+        command = 'printf \'{\\n "format": 1,\\n "stack": "%s"\\n}\\n\' "$(cat "$1")" > "$2"',
+        arguments = [ctx.file.stack.path, manifest.path],
+        inputs = [ctx.file.stack],
+        outputs = [manifest],
+        mnemonic = "RawToolsManifest",
+        progress_message = "Writing the raw pack tools' manifest",
+    )
+    return [
+        DefaultInfo(files = depset([raw, manifest])),
+        SeedToolsInfo(
+            precompile = None,
+            mock = None,
+            twin = None,
+            manifest = manifest,
+            nvk_identity = None,
+            raw = [raw],
+            raw_dir = raw.path,
+        ),
+    ]
+
+raw_tools = rule(
+    implementation = _raw_tools_impl,
+    doc = """The raw pack's own tools (directpack over the translation and the stage compile, the mock GM20B, own.metallib,
+    the context init) and a manifest of the stack key alone: what the raw pack is made with, no m2v in them.""",
+    attrs = _XCODE | {
+        "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's macOS object"),
+        "context_header": attr.label(mandatory = True, allow_single_file = True, doc = "the channel's context init"),
+        "metal_abi": attr.label(mandatory = True, allow_single_file = True, doc = "the selected IPSW kind's MetalABI.h"),
+        "raw_generator": attr.label(mandatory = True, allow_single_file = True, doc = "raw/pack/rawpack.py"),
+        "raw_srcs": attr.label_list(allow_files = True),
+        "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the raw path's stack key"),
+        "translate": attr.label(mandatory = True, allow_single_file = True, doc = "the translation alone (no m2v runtime)"),
         "_rawpack": attr.label(default = "//tools/gpu:rawpack", executable = True, cfg = "exec"),
     },
 )

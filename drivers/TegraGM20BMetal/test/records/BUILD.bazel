@@ -104,7 +104,7 @@ sample_raw_pack(
     crawl = "//gpu/seed:crawl",
     device_libraries = "@gpu_device_data//:libraries",
     generator = GM20B_METAL + ":raw/pack/rawpack.py",
-    tools = "//gpu/seed:tools",
+    tools = "//gpu/seed:default_raw_tools",
 )
 
 GOLDENS = select({

@@ -3,12 +3,12 @@
 
 One action per step (gpu/seed/tools.bzl seed_tools builds, gpu/seed/defs.bzl seed_raw_pack runs the rest):
 
-    rawpack.py build --xcode-env F --host-bridge <darwin bridge .a> --translate <darwin translation .a>
+    rawpack.py build --xcode-env F [--host-bridge <darwin bridge .a>] --translate <darwin translation .a>
                      --compile <switch_compile.o> --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h>
                      --generator <raw/pack/rawpack.py> --tree <tree> --out <dir>
-        the generator's host tools (directpack over the translation and the stage compile, the probes through this
-        build's frontend and host bridge, the mock GM20B, the raw path's own.metallib) into <dir>, with the context
-        init nvdec ran (context.log)
+        the generator's host tools (directpack over the translation and the stage compile, the mock GM20B, the raw
+        path's own.metallib; with the host bridge the probe, native-seed and compile-profile through this build's
+        frontend too) into <dir>, with the context init nvdec ran (context.log)
     rawpack.py corpus --corpus corpus.log --build <IPSW build> [--archives <build>.tsv]
                       [--app-states <build>.log] --out <file> --report <file>
         the corpus lines the probe makes (raw/pack/probe.mm: Core Animation's render states, without lib=, and every
@@ -247,8 +247,8 @@ def fresh(path: Path) -> Path:
 def build(args: argparse.Namespace, generator: list[str], env: dict[str, str], root: Path) -> None:
     xcode = dict(line.split('=', 1) for line in Path(args.xcode_env).read_text().splitlines() if '=' in line)
     env['DEVELOPER_DIR'] = xcode['DEVELOPER_DIR']
-    arguments = ['--build-only', '--bridge', root / args.host_bridge, '--translate', root / args.translate]
-    arguments += ['--compile', root / args.compile]
+    arguments = ['--build-only', '--translate', root / args.translate, '--compile', root / args.compile]
+    arguments += ['--bridge', root / args.host_bridge] if args.host_bridge else []
     arguments += ['--metal-abi', root / args.metal_abi]
     arguments += ['--context-header', root / args.context_header]
     arguments += ['--out', root / args.out]
@@ -325,7 +325,6 @@ def stamp(args: argparse.Namespace, generator: list[str], env: dict[str, str], _
 STEPS = {
     'build': (
         'xcode-env',
-        'host-bridge',
         'translate',
         'compile',
         'metal-abi',
@@ -355,6 +354,7 @@ def main() -> None:
         p = steps.add_parser(step)
         for name in names:
             p.add_argument('--' + name, required=True)
+    steps.choices['build'].add_argument('--host-bridge')
     steps.choices['split'].add_argument('--out', nargs='+', required=True)
     steps.choices['split'].add_argument('--ca-names')
     steps.choices['split'].add_argument('--ca-preferences')

@@ -18,16 +18,16 @@ fragment (CA_TIERS).
   3. directlink.py writes pack.bin by mkpack.py's rules: per state its programs, registers, push words and layout, plus
      the context init with the addresses to relocate.
 
-usage: rawpack.py --bridge <host libnative_metal_bridge.a> --translate <host libnative_metal_translate_static.a>
+usage: rawpack.py [--bridge <host libnative_metal_bridge.a>] --translate <host libnative_metal_translate_static.a>
                   --compile <host switch_compile.o> --metal-abi <MetalABI.h> --qc <default.metallib> --corpus <corpus.log>
                   --out <dir> [--stack <hex key>] [--prebuilt <dir>]
-       rawpack.py --build-only --bridge <host libnative_metal_bridge.a> --translate <host libnative_metal_translate_static.a>
+       rawpack.py --build-only [--bridge <host libnative_metal_bridge.a>] --translate <host libnative_metal_translate_static.a>
                   --compile <host switch_compile.o> --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h>
                   --out <dir>
 writes <out>/pack.bin, pack.json, layouts.txt, report.txt and keeps the buckets in <out>/work (deleted with --clean).
---build-only compiles directpack, the probe, the mock GPU (libmock_iokit.dylib) and own.metallib into <dir>, with the
-channel's context init as nvdec runs it (context.log), and stops;
---prebuilt <dir> runs those instead of compiling them (//gpu/seed:local_tools makes them its own action, so a corpus
+--build-only compiles directpack, the mock GPU (libmock_iokit.dylib) and own.metallib into <dir>, with the channel's
+context init as nvdec runs it (context.log), and with --bridge the probe, native-seed and compile-profile too, and stops;
+--prebuilt <dir> runs those instead of compiling them (//gpu/seed:local_raw_tools makes them its own action, so a corpus
 edit only reruns the buckets).
 --ca-names: Core Animation states a device's logs name as missing from the pack (precompile/ca_names.py), made from
 their names in the corpus tier, as the journal's own are.
@@ -103,7 +103,9 @@ def option(name: str, required: bool = True) -> str | None:
     return None
 
 
-BUILT = ('probe', 'directpack', 'native-seed', 'compile-profile', 'libmock_iokit.dylib', 'own.metallib', 'context.log')
+# The pack's own tools, and those only a build with the host bridge makes (the frontend's: m2v's runtime in them)
+PACK_TOOLS = ('directpack', 'libmock_iokit.dylib', 'own.metallib', 'context.log')
+BUILT = PACK_TOOLS + ('probe', 'native-seed', 'compile-profile')
 # Another framework's states, a bundle's or a framework resource library's, and our own apps' (their lines keep lib=,
 # tools/gpu/rawpack.py framework_line and app_line): the probe loads that library from the crawl's root
 FRAMEWORK = re.compile(
@@ -215,12 +217,15 @@ DIRECT_RUNTIME = ('raw_direct', 'raw_direct_compute', 'raw_record_parts', 'raw_e
 FRONTEND_WEAK = ('render_direct', 'compute_direct', 'function_metallib', 'function_library_name')
 
 
-def build(work: Path, bridge: Path, translate: Path, compile_object: Path, metal_abi: Path, context_header: Path) -> None:
+def build(
+    work: Path, bridge: Path | None, translate: Path, compile_object: Path, metal_abi: Path, context_header: Path
+) -> tuple[str, ...]:
     """Build the mock GPU, the probe and the raw path's own states into `work`, and run the context init.
 
     The mock GPU with nvdec on every submission, the probe through the frontend + host bridge (beside it: rpath
     @executable_path) and the raw path's own states: the YCbCr conversions (ycbcr.metal) and the extended-range
     stand-ins (xr.metal), an iOS library like QuartzCore's, drawn after Core Animation's (probe.mm PROBE_OWN_LIB).
+    With no `bridge`, only the pack's own tools (PACK_TOOLS). Gives the tools made.
     """
     # Source paths (Mesa's asserts' __FILE__) as /switch-ios/..., whichever checkout or sandbox this runs in: the probe
     # and the mock are an action's outputs, and the run's cache key is their bytes.
@@ -325,7 +330,6 @@ def build(work: Path, bridge: Path, translate: Path, compile_object: Path, metal
             ]
         )
 
-    tool('probe', [HERE / 'probe.mm'])
     tool(
         'directpack',
         [
@@ -337,12 +341,14 @@ def build(work: Path, bridge: Path, translate: Path, compile_object: Path, metal
         tuple(RAW / f'runtime/{name}.cpp' for name in DIRECT_RUNTIME),
         frontend=False,
     )
-    tool('compile-profile', [HERE / 'compile_profile.mm'])
-    tool(
-        'native-seed',
-        [HERE / 'native_seed.mm', RAW / 'runtime/RawDirect.mm', RAW / 'runtime/RawRenderKey.mm'],
-        tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
-    )
+    if bridge:
+        tool('probe', [HERE / 'probe.mm'])
+        tool('compile-profile', [HERE / 'compile_profile.mm'])
+        tool(
+            'native-seed',
+            [HERE / 'native_seed.mm', RAW / 'runtime/RawDirect.mm', RAW / 'runtime/RawRenderKey.mm'],
+            tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
+        )
     own = ('ycbcr', 'ycbcr_store', 'xr', 'resolve', 'mip', 'turn', 'stencil_bits')
     # resolve.metal's sums in sample order and its NaN tests kept; ycbcr_store.metal's NaN tests and half rounding;
     # stencil_bits.metal's depth comparisons
@@ -364,6 +370,7 @@ def build(work: Path, bridge: Path, translate: Path, compile_object: Path, metal
             ]
         )
     run(['xcrun', '-sdk', 'iphoneos', 'metallib', *(work / f'{name}.air' for name in own), '-o', work / 'own.metallib'])
+    return BUILT if bridge else PACK_TOOLS
 
 
 # The states are probed in buckets, each its own probe processes over a share of the states (fnv64 of the state's line,
@@ -547,16 +554,17 @@ def main() -> None:
     if '--build-only' in sys.argv[1:]:
         out = Path(option('--out')).resolve()
         out.mkdir(parents=True, exist_ok=True)
+        bridge = option('--bridge', False)
         with tempfile.TemporaryDirectory() as scratch:
-            build(
+            made = build(
                 Path(scratch),
-                Path(option('--bridge')).resolve(),
+                Path(bridge).resolve() if bridge else None,
                 Path(option('--translate')).resolve(),
                 Path(option('--compile')).resolve(),
                 Path(option('--metal-abi')).resolve(),
                 Path(option('--context-header')).resolve(),
             )
-            for name in BUILT:
+            for name in made:
                 shutil.copyfile(Path(scratch) / name, out / name)
                 (out / name).chmod(0o755)
         return
@@ -579,13 +587,14 @@ def main() -> None:
         return
     prebuilt = option('--prebuilt', False)
     if prebuilt:
-        for name in BUILT:
+        for name in PACK_TOOLS:
             shutil.copyfile(Path(prebuilt) / name, work / name)
             (work / name).chmod(0o755)
     else:
+        bridge = option('--bridge', False)
         build(
             work,
-            Path(option('--bridge')).resolve(),
+            Path(bridge).resolve() if bridge else None,
             Path(option('--translate')).resolve(),
             Path(option('--compile')).resolve(),
             Path(option('--metal-abi')).resolve(),
