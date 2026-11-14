@@ -193,12 +193,14 @@ host_test(
         "//drivers/NativeMetal:bridge/NativeMetalBridge.rs",
         "//drivers/NativeMetal:bridge/NativeMetalCompile.rs",
         "//drivers/NativeMetal:bridge/NativeMetalComputeArtifact.rs",
-        "//drivers/NativeMetal:bridge/NativeMetalDirect.rs",
-        "//drivers/NativeMetal:bridge/NativeMetalDirectCompute.rs",
-        "//drivers/NativeMetal:bridge/NativeMetalDirectTess.rs",
         "//drivers/NativeMetal:bridge/NativeMetalFunctions.rs",
-        "//drivers/NativeMetal:bridge/NativeMetalOffline.rs",
         "//drivers/NativeMetal:bridge/NativeMetalVariants.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirect.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectCompute.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectTess.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalOffline.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalReflection.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.rs",
     ],
 )
 
