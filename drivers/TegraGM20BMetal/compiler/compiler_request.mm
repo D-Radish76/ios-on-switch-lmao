@@ -119,7 +119,7 @@ bool attributesKey(Prepared &p, const std::vector<std::map<std::string, raw::Air
     return true;
 }
 
-// One function's buffer encoders: its AIR and constants (raw_buffer_encoders.h)
+// One function's buffer encoders: its AIR, constants and whether it was made with them (raw_buffer_encoders.h)
 bool bufferEncodersKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
                        std::string &why)
 {
@@ -127,7 +127,7 @@ bool bufferEncodersKey(Prepared &p, const std::vector<std::map<std::string, raw:
     raw::AirHash hash;
     if (!airOf(p.request, air, s, hash, why))
         return false;
-    p.packKey = raw::bufferEncodersKey(hash, s.constants);
+    p.packKey = raw::bufferEncodersKey(hash, s.constants, s.specialized);
     p.key = raw::bufferEncodersCacheKey(stack, p.packKey);
     return true;
 }

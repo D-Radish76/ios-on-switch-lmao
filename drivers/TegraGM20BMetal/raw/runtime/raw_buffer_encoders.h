@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // A function's encoders at every buffer index it declares (newArgumentEncoderWithBufferIndex:), which only its AIR states:
 // the shader compiler answers them from the translator (RequestKind::Reflection of one stage tagged "b",
-// raw_compile_request.h bufferEncoders; bridge nmb_offline_function_buffer_encoders), keyed by the function's AIR and
-// constants. The blob is a u32 count of buffers, then each one's u32 index, a flag byte (1 an argument buffer, 2 refused)
+// raw_compile_request.h bufferEncoders; bridge nmb_offline_function_buffer_encoders), keyed by the function's AIR, its
+// constants and whether it was made with constant values (made without, a buffer a constant gates is absent). The blob is a u32 count of buffers, then each one's u32 index, a flag byte (1 an argument buffer, 2 refused)
 // and either its refusal, NUL-terminated, or a u32 count of layouts (the buffer's, then those its pointers point to), each
 // a u64 encodedLength, u64 alignment, u32 run count and its runs (raw_argument_layout.h ArgumentRun).
 #pragma once
@@ -32,7 +32,7 @@ using BufferEncoders = std::vector<BufferEncoder>;
 constexpr uint8_t kBufferEncoderArgumentBuffer = 1, kBufferEncoderRefused = 2;
 constexpr uint32_t kBufferEncoderLimit = 31, kBufferEncoderLayoutLimit = 1u << 16, kBufferEncoderRunLimit = 1u << 16;
 
-inline std::string bufferEncodersKey(const AirHash &air, const std::string &constants)
+inline std::string bufferEncodersKey(const AirHash &air, const std::string &constants, bool specialized)
 {
     std::string key;
     char b[4];
@@ -40,7 +40,7 @@ inline std::string bufferEncodersKey(const AirHash &air, const std::string &cons
         snprintf(b, sizeof b, "%02x", x);
         key += b;
     }
-    return key + " | " + constants;
+    return key + " | " + constants + (specialized ? " | specialized" : "");
 }
 
 inline std::string encodeBufferEncoders(const BufferEncoders &encoders)

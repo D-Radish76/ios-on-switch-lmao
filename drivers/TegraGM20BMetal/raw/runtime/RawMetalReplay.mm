@@ -95,13 +95,14 @@ static bool takesArgumentBuffers(id<MTLFunction> f)
     if (!function->_argumentBuffers) {
         raw::BufferEncoders encoders;
         std::string why;
-        bool takes = false;
-        if (rmBufferEncoders(function, encoders, why))
-            for (const raw::BufferEncoder &e : encoders)
-                takes |= e.argumentBuffer;
-        else
+        if (!rmBufferEncoders(function, encoders, why)) {
             once([NSString stringWithFormat:@"replay: whether %@ takes an argument buffer is unknown, none taken: %s",
                                             function.name, why.c_str()]);
+            return false;
+        }
+        bool takes = false;
+        for (const raw::BufferEncoder &e : encoders)
+            takes |= e.argumentBuffer;
         function->_argumentBuffers = takes ? 2 : 1;
     }
     return function->_argumentBuffers == 2;

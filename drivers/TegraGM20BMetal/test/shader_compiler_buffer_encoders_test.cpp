@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // A function's buffer encoders as a compile request (raw/runtime/raw_buffer_encoders.h): one stage tagged "b", keyed by the
-// function's AIR and constants and refused with any other stage or a key naming other constants; and the blob the compiler
-// stores, read back whole or not at all.
+// function's AIR, constants and whether it was made with them, and refused with any other stage or a key naming other
+// constants; and the blob the compiler stores, read back whole or not at all.
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
 #include "../raw/runtime/raw_buffer_encoders.h"
@@ -34,7 +34,7 @@ raw::CompileRequest request(const char *constants)
     r.stages = {stage("b", "fragment_fn", constants)};
     raw::AirHash air;
     air.fill(0x30);
-    r.key = raw::bufferEncodersCacheKey(kStack, raw::bufferEncodersKey(air, constants)).key;
+    r.key = raw::bufferEncodersCacheKey(kStack, raw::bufferEncodersKey(air, constants, constants[0] != 0)).key;
     return r;
 }
 
@@ -50,8 +50,14 @@ TEST(BufferEncodersRequest, IsKeyedByItsFunctionsAirAndConstants)
     ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
     raw::AirHash air;
     air.fill(0x30);
-    EXPECT_EQ(p.key.key, "buffer encoders | " + raw::bufferEncodersKey(air, "#0:53:01"));
+    EXPECT_EQ(p.key.key, "buffer encoders | " + raw::bufferEncodersKey(air, "#0:53:01", true));
     EXPECT_NE(p.key.key, request("").key) << "other constants, another key";
+    raw::CompileRequest none = request("");
+    none.stages[0].specialized = true;
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(none), kStack, system, p, why))
+        << "made with no constant values names another key than made without";
+    none.key = raw::bufferEncodersCacheKey(kStack, raw::bufferEncodersKey(air, "", true)).key;
+    EXPECT_TRUE(switch_compiler::prepare(raw::encodeRequest(none), kStack, system, p, why)) << why;
 
     raw::CompileRequest other = r;
     other.stages[0].constants = "#0:53:00";

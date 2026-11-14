@@ -147,7 +147,8 @@ uint64_t idWord(MTLResourceID id)
 }
 
 // mixed_fragment's argument buffer and the one behind its pointer at id 8 answer Metal's lengths, alignments and offsets,
-// and the setters write there; its plain float4 pointer takes Metal's empty encoder; the one request is the compiler's
+// and the setters write there; its plain float4 pointer takes Metal's empty encoder; the one request is the compiler's, and
+// the function made with constant values is another request (a constant-gated buffer is absent only made without them)
 void aFunctionsEncoderIsTheCompilersAndMetals()
 {
     EncodersCompiler compiler;
@@ -205,7 +206,15 @@ void aFunctionsEncoderIsTheCompilersAndMetals()
     std::map<std::string, raw::AirHash> hashes;
     ASSERT_TRUE(raw::metallibAirHashes(getenv("SWITCH_FUNCTION_ARGUMENTS_PROBE"), hashes));
     ASSERT_EQ(compiler.asked.size(), 1u) << "every ask after the first is the store's";
-    EXPECT_EQ(compiler.asked[0], "buffer encoders | " + raw::bufferEncodersKey(hashes["mixed_fragment"], ""));
+    EXPECT_EQ(compiler.asked[0], "buffer encoders | " + raw::bufferEncodersKey(hashes["mixed_fragment"], "", false));
+
+    NSError *error = nil;
+    id<MTLFunction> specialized =
+        [library newFunctionWithName:@"mixed_fragment" constantValues:[MTLFunctionConstantValues new] error:&error];
+    ASSERT_TRUE(specialized != nil) << text(error);
+    EXPECT_EQ([specialized newArgumentEncoderWithBufferIndex:0].encodedLength, 160u);
+    ASSERT_EQ(compiler.asked.size(), 2u) << "made with constant values, even none, it is asked apart";
+    EXPECT_EQ(compiler.asked[1], "buffer encoders | " + raw::bufferEncodersKey(hashes["mixed_fragment"], "", true));
     expectNoM2V(device);
 }
 

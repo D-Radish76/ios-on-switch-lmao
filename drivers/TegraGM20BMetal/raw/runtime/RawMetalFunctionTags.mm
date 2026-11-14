@@ -118,7 +118,7 @@ bool rmBufferEncoders(RMFunction *f, raw::BufferEncoders &out, std::string &why)
         return false;
     if (!gRM->completion)
         return why = "no shader compiler comes this boot", false;
-    if (!gRM->completion->bufferEncoders(f, raw::bufferEncodersKey(air, f->_constants), blob, why))
+    if (!gRM->completion->bufferEncoders(f, raw::bufferEncodersKey(air, f->_constants, f->_specialized), blob, why))
         return false;
     if (!raw::decodeBufferEncoders(blob, out))
         return why = "the shader compiler's answer does not decode", false;
