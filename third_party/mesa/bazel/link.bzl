@@ -153,3 +153,81 @@ def mesa_dylib(**kwargs):
         **kwargs: the rule's attributes.
     """
     _mesa_dylib(target_compatible_with = MESA_ONLY, **kwargs)
+
+def _mesa_relocatable_impl(ctx):
+    cc_toolchain = find_cc_toolchain(ctx)
+    features = cc_common.configure_features(ctx = ctx, cc_toolchain = cc_toolchain)
+    env = cc_common.get_environment_variables(
+        feature_configuration = features,
+        action_name = ACTION_NAMES.cpp_link_dynamic_library,
+        variables = cc_common.empty_variables(),
+    )
+    out = ctx.actions.declare_file(ctx.attr.out)
+    exported = ctx.actions.declare_file(ctx.attr.name + ".exported")
+    ctx.actions.write(exported, "".join(["_{}\n".format(s) for s in ctx.attr.exported]))
+    force_load = _archive(ctx.attr.force_load)
+    archives = [_archive(t) for t in ctx.attr.archives]
+    args = ctx.actions.args()
+    args.add_all(["-r", "-arch", "arm64", "-o", out, "-exported_symbols_list", exported, "-force_load", force_load])
+    args.add_all(archives)
+    ctx.actions.run(
+        executable = XCODE_TOOLCHAIN + "/ld",
+        arguments = [args],
+        inputs = depset([exported, force_load] + archives, transitive = [cc_toolchain.all_files]),
+        outputs = [out],
+        env = env,
+        mnemonic = "MesaRelocatable",
+        progress_message = "Linking %{output} (its entry points global, the rest local)",
+        execution_requirements = XCODE_EXECUTION,
+    )
+
+    # Every symbol the object still needs comes from the system: a Mesa or Rust name left undefined would be bound to
+    # whatever the consumer's image defines under that name.
+    check = ctx.actions.declare_file(ctx.attr.name + ".undefined")
+    ctx.actions.run_shell(
+        command = """\
+set -e
+"$1" -u "$2" | sort -u > "$3"
+if grep -v -E "$4" "$3" >&2; then
+  echo "mesa_relocatable: $2 leaves the names above undefined" >&2
+  exit 1
+fi
+""",
+        arguments = [XCODE_TOOLCHAIN + "/nm", out.path, check.path, ctx.attr.system_undefined],
+        inputs = depset([out], transitive = [cc_toolchain.all_files]),
+        outputs = [check],
+        env = env,
+        mnemonic = "MesaRelocatableUndefined",
+        progress_message = "Checking %{input}'s undefined names",
+        execution_requirements = XCODE_EXECUTION,
+    )
+    return [
+        DefaultInfo(files = depset([out])),
+        OutputGroupInfo(_validation = depset([check])),
+    ]
+
+_mesa_relocatable = rule(
+    implementation = _mesa_relocatable_impl,
+    doc = """One relocatable object (ld -r) of an archive linked whole and what it needs of other archives, whose only
+    global symbols are `exported`: every other one, a Rust staticlib's standard library included, is local to it.""",
+    attrs = {
+        "archives": attr.label_list(mandatory = True, doc = "the archives `force_load` draws members from"),
+        "exported": attr.string_list(mandatory = True, doc = "the C names left global"),
+        "force_load": attr.label(mandatory = True, doc = "the archive linked whole"),
+        "out": attr.string(mandatory = True),
+        "system_undefined": attr.string(
+            default = "^_(_|[a-z])",
+            doc = "a regular expression every undefined name must match (the system's C, C++ and runtime names)",
+        ),
+    },
+    toolchains = use_cc_toolchain(),
+    fragments = ["cpp"],
+)
+
+def mesa_relocatable(**kwargs):
+    """A Mesa relocatable object (see _mesa_relocatable), built only in NVK's configuration.
+
+    Args:
+        **kwargs: the rule's attributes.
+    """
+    _mesa_relocatable(target_compatible_with = MESA_ONLY, **kwargs)

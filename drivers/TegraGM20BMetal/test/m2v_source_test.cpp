@@ -38,12 +38,12 @@ TEST(M2VSource, TheFrontendsPlainEventAnswersASharedEventsSelectors)
 
 TEST(M2VSource, NvksComputeShadersReadTheirWorkgroupBaseFromTheRootTable)
 {
-    const std::string root = SourceText("../../../third_party/mesa/src/nouveau/vulkan/nvk_cmd_buffer.h");
+    const std::string root = SourceText("../../../third_party/mesa/src/nouveau/switch_compile/nvk_root_table.h");
     EXPECT_THAT(
         root, HasSubstr("struct {\n         uint32_t base_group[3];\n         uint32_t group_count[3];\n      } cs;"));
-    EXPECT_THAT(SourceText("../../../third_party/mesa/src/nouveau/vulkan/nvk_shader.c"),
+    EXPECT_THAT(SourceText("../../../third_party/mesa/src/nouveau/switch_compile/nvk_shader_lower.c"),
                 HasSubstr(".has_base_workgroup_id = mesa_shader_stage_is_compute(nir->info.stage),"));
-    EXPECT_THAT(SourceText("../../../third_party/mesa/src/nouveau/vulkan/nvk_nir_lower_descriptors.c"),
+    EXPECT_THAT(SourceText("../../../third_party/mesa/src/nouveau/switch_compile/nvk_nir_lower_descriptors.c"),
                 HasSubstr("return lower_sysval_to_root_table(b, intrin, cs.base_group, ctx);"));
 }
 

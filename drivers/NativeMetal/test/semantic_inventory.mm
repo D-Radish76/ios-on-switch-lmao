@@ -5,7 +5,7 @@
 #include "../../TegraGM20BMetal/precompile/PrecompileInputs.h"
 #include "../../TegraGM20BMetal/raw/pack/kernel_shapes.h"
 #include "device_compile.h"
-#include "../../../third_party/mesa/src/nouveau/vulkan/nvk_switch_ir.h"
+#include "../../../third_party/mesa/src/nouveau/switch_compile/nvk_switch_ir.h"
 #include <fstream>
 
 static bool compileCandidates;
@@ -14,7 +14,7 @@ static unsigned artifactIndex;
 static NSDictionary *metrics(const raw::NvkStage &stage)
 {
     auto read = reinterpret_cast<bool (*)(const raw::NvkStage *, raw::NvkStageMetrics *, size_t)>(
-        native_bridge_metal_nvk_symbol("switch_nvk_stage_metrics"));
+        native_bridge_metal_nvk_symbol("switch_compile_stage_metrics"));
     raw::NvkStageMetrics m = {};
     if (!read || !read(&stage, &m, sizeof(m)) || m.version != 1)
         return @{@"error" : @"stage metrics unavailable"};

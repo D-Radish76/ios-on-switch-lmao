@@ -16,7 +16,7 @@
 
 #include "nvk_switch_split_private.h"
 
-#include "nvk_switch_capture.h"
+#include "nvk_switch_stage.h"
 
 #include "nir_builder.h"
 

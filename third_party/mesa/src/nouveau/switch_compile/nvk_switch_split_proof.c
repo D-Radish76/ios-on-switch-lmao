@@ -26,7 +26,7 @@
 
 #if defined(__APPLE__) && TARGET_OS_OSX
 
-#include "nvk_cmd_buffer.h"
+#include "nvk_root_table.h"
 #include "nvk_shader.h"
 #include "nvk_switch_split_fold.h"
 

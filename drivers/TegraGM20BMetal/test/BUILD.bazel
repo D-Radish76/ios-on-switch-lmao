@@ -2639,9 +2639,9 @@ host_test(
         "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalSubmit.mm",
         "//third_party/m2v/crates/metal2vulkan-runtime:sources",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_cmd_buffer.h",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_nir_lower_descriptors.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_shader.c",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_nir_lower_descriptors.c",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_root_table.h",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_shader_lower.c",
     ],
     tags = ["m2v"],
 )

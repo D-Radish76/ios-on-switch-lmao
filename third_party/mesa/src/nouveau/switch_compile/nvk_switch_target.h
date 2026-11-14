@@ -2,7 +2,7 @@
  * Copyright © 2026 Bruno St John
  * SPDX-License-Identifier: MIT
  *
- * Switch: what NVK's stage compile reads of its physical device. The device
+ * Switch: what NVK's stage compile reads of its physical device. NVK's device
  * path takes it from the nvk_physical_device, the offline compile
  * (nvk_switch_offline.c) from a frozen table, so both run the same lowering.
  */
@@ -12,6 +12,7 @@
 #include <stdint.h>
 
 #include "nir.h"
+#include "vk_nir_convert_ycbcr.h"
 #include "vulkan/vulkan_core.h"
 
 struct nak_compiler;
@@ -45,7 +46,10 @@ void switch_nvk_lower(const struct switch_nvk_target *t, nir_shader *nir,
                       const struct vk_pipeline_robustness_state *rs,
                       uint32_t set_layout_count,
                       struct vk_descriptor_set_layout * const *set_layouts,
+                      nir_vk_ycbcr_conversion_lookup_cb ycbcr,
+                      const void *ycbcr_data,
                       struct nvk_cbuf_map *cbuf_map_out);
+void switch_nvk_nir_opts(nir_shader *nir, void *data);
 void switch_nvk_varyings(nir_shader *nir);
 void switch_nvk_lower_late(nir_shader *nir,
                            VkShaderCreateFlagsEXT shader_flags);

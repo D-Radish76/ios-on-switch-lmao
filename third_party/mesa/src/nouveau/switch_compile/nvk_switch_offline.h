@@ -3,14 +3,14 @@
  * SPDX-License-Identifier: MIT
  *
  * Switch: a raw stage compile with no instance and no device. The frozen
- * table is every input switch_nvk_compile_stage read off NVK's physical and
- * logical device; switch_nak_freeze makes it of a live device, so a caller
- * holds one copy and checks it against a live device once.
+ * table is every input NVK's device compile read off its physical and logical
+ * device; raw/runtime/raw_nak_target.h holds the GM20B's, frozen from NVK on
+ * the mock GM20B.
  */
 #ifndef NVK_SWITCH_OFFLINE_H
 #define NVK_SWITCH_OFFLINE_H
 
-#include "nvk_switch_compile.h"
+#include "switch_compile.h"
 
 #include "compiler/spirv/nir_spirv.h"
 #include "compiler/spirv/spirv_info.h"
@@ -57,25 +57,21 @@ struct switch_nak_layout {
    uint32_t push_range_count;
 };
 
-/* switch_nvk_compile_stage's stage, with `info->layout` ignored for
- * `layout`; out's pointers live until switch_nak_stage_finish
+/* NVK's device compile of the stage, with `info->layout` ignored for
+ * `layout`; out's pointers live until switch_compile_stage_finish
  */
-VkResult switch_nak_compile_stage(const struct switch_nak_frozen *frozen,
-                                  const struct switch_nvk_stage_info *info,
-                                  const struct switch_nak_layout *layout,
-                                  struct switch_nvk_stage *out);
-void switch_nak_stage_finish(struct switch_nvk_stage *stage);
-/* switch_nvk_compile_ranked_stage's choice between the native and the portable
- * program, compiled by switch_nak_compile_stage
+VkResult switch_compile_stage(const struct switch_nak_frozen *frozen,
+                              const struct switch_nvk_stage_info *info,
+                              const struct switch_nak_layout *layout,
+                              struct switch_nvk_stage *out);
+void switch_compile_stage_finish(struct switch_nvk_stage *stage);
+/* The stage compiled from its native program and from its portable SPIR-V:
+ * the portable one where it dominates on every metric
  */
-VkResult switch_nak_compile_ranked_stage(const struct switch_nak_frozen *frozen,
-                                         const struct switch_nvk_stage_info *info,
-                                         const struct switch_nak_layout *layout,
-                                         struct switch_nvk_stage *out);
-
-/* The table's size, and the table of `device` in `out` where `size` is it */
-size_t switch_nak_freeze(VkDevice device, struct switch_nak_frozen *out,
-                         size_t size);
+VkResult switch_compile_ranked_stage(const struct switch_nak_frozen *frozen,
+                                     const struct switch_nvk_stage_info *info,
+                                     const struct switch_nak_layout *layout,
+                                     struct switch_nvk_stage *out);
 
 #ifdef __cplusplus
 }
