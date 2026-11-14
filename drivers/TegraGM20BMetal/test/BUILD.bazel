@@ -5232,6 +5232,52 @@ host_test(
     deps = ["//drivers/NativeMetal/abi:metal_abi"],
 )
 
+# The native seed tool's output directory (raw/pack/native_seed_manifest.h openOutput): a failed step prints its step,
+# path and errno; a directory already at its mode is not chmodded
+host_test(
+    name = "raw_native_seed_output_test",
+    srcs = [
+        "raw_native_seed_output_test.mm",
+        "//drivers/NativeMetal:NativeMetalArtifactCache.h",
+        "//drivers/TegraGM20BMetal:raw/pack/native_seed_manifest.h",
+        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_program_pages.h",
+        "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
+        "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_cache_io.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_render_key.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_capture.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_compiler.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_compiler.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_lock.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stats.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_compute_record.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_cache.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_metallib.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_metallib.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_pack.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_pack.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_record.h",
+        "//drivers/TegraGM20BMetal:raw/test/cache_checks.h",
+        "//kits/SwitchSeedPack:SwitchSeedPack.h",
+        "//kits/SwitchSeedPack:SwitchSeedPackWriter.h",
+    ],
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+        "-Idrivers/NativeMetal",
+    ],
+    cxx_std = "c++17",
+    linkopts = [
+        "-framework",
+        "Foundation",
+    ],
+    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+)
+
 host_test(
     name = "nak_fp32_flush_test",
     size = "medium",
