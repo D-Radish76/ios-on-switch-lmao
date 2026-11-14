@@ -99,10 +99,10 @@ TEST(TimedPresentSource, TheKickAsksFirstAndAFrameEndKicksAgain)
 {
     const std::string display = SourceText("../NativeLegacyDisplay.cpp");
     const CodeText kick = Block(display, "void kickOnce()");
-    EXPECT_TRUE(kick.Before("if (presentNotDue(request))", "planeDecide(request, pd);"));
-    EXPECT_TRUE(kick.Before("if (!request || !isValidated(request))", "if (presentNotDue(request))"));
-    EXPECT_TRUE(CodeText(SourceText("../SwitchTimedPresentDisplay.h")).Has("kickDeferred = true;"));
-    EXPECT_TRUE(Block(display, "bool frameEndNeeded()").Has("kickDeferred"));
-    EXPECT_TRUE(CodeText(SourceText("../SwitchRetireDisplay.h")).Has("kickDeferred = false; kickSwapQueue();"));
+    EXPECT_TRUE(kick.before("if (presentNotDue(request))", "planeDecide(request, pd);"));
+    EXPECT_TRUE(kick.before("if (!request || !isValidated(request))", "if (presentNotDue(request))"));
+    EXPECT_TRUE(CodeText(SourceText("../SwitchTimedPresentDisplay.h")).has("kickDeferred = true;"));
+    EXPECT_TRUE(Block(display, "bool frameEndNeeded()").has("kickDeferred"));
+    EXPECT_TRUE(CodeText(SourceText("../SwitchRetireDisplay.h")).has("kickDeferred = false; kickSwapQueue();"));
 }
 }  // namespace

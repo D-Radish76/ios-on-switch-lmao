@@ -80,17 +80,17 @@ TEST(ScanReturnSource, TheDisplayChecksEveryHandBackAndFrameEnd)
 {
     const std::string source = display();
     const CodeText taken = Block(source, "void noteTaken(const OriginalLegacySwapRequest *request, uint64_t kickAt)");
-    EXPECT_TRUE(taken.Before("take(request);", "scanReturnTaken(request);"));
-    EXPECT_TRUE(taken.Has("readbackTaken();"));
+    EXPECT_TRUE(taken.before("take(request);", "scanReturnTaken(request);"));
+    EXPECT_TRUE(taken.has("readbackTaken();"));
     const CodeText retire = Block(source, "bool retireSwap(const OriginalLegacySwapRequest *request, bool force)");
-    EXPECT_TRUE(retire.Before("scanReturnRetired(request);", "untake(request);"));
+    EXPECT_TRUE(retire.before("scanReturnRetired(request);", "untake(request);"));
     const CodeText tick = Block(source, "void vblankTick()");
-    EXPECT_TRUE(tick.Before("checkRotation();", "scanReturnFrameEnd();"));
+    EXPECT_TRUE(tick.before("checkRotation();", "scanReturnFrameEnd();"));
     const CodeText kick = Block(source, "void kickOnce()");
-    EXPECT_TRUE(kick.Before("scanReturnKick(request, memory);", "offerDirect(request, surface, memory,"));
-    EXPECT_TRUE(kick.Before("scanReturnKick(request, switch_display::ScanReturn::kUnchanged);",
+    EXPECT_TRUE(kick.before("scanReturnKick(request, memory);", "offerDirect(request, surface, memory,"));
+    EXPECT_TRUE(kick.before("scanReturnKick(request, switch_display::ScanReturn::kUnchanged);",
                             "kickPlaneOnly(request, pd, mach_absolute_time());"));
-    EXPECT_TRUE(kick.Before("scanReturnBlank(request);", "noteTaken(request, kickAt);"));
+    EXPECT_TRUE(kick.before("scanReturnBlank(request);", "noteTaken(request, kickAt);"));
 }
 
 // Only a frame tegra_gm20b_scanout_copy accepted keeps the read-back's frame before it: a direct frame flipped from the
@@ -99,20 +99,20 @@ TEST(ScanReturnSource, OnlyAnAcceptedOfferKeepsTheReadbacksFrameBefore)
 {
     const std::string source = display();
     const CodeText direct = Block(source, "bool offerDirect(");
-    EXPECT_TRUE(direct.Before("readbackOffer();", "noteTaken(request, kickAt);\n        if (stats)"));
-    EXPECT_TRUE(direct.Before("presentDirectVisible(request, entry, width, height, kickAt)", "readbackOffer();"));
+    EXPECT_TRUE(direct.before("readbackOffer();", "noteTaken(request, kickAt);\n        if (stats)"));
+    EXPECT_TRUE(direct.before("presentDirectVisible(request, entry, width, height, kickAt)", "readbackOffer();"));
     const CodeText copy = Block(source, "bool offerGpuCopy(");
-    EXPECT_TRUE(copy.Before("readbackOffer();", "noteTaken(request, kickAt);\n        if (!latchRetire"));
+    EXPECT_TRUE(copy.before("readbackOffer();", "noteTaken(request, kickAt);\n        if (!latchRetire"));
     const CodeText visible = Block(SourceText("../SwitchDirectVisibleDisplay.h"), "bool presentDirectVisible(");
-    EXPECT_FALSE(visible.Has("readbackOffer"));
+    EXPECT_FALSE(visible.has("readbackOffer"));
     const CodeText bypass = Block(SourceText("../SwitchReadbackShownDisplay.h"), "void readbackTaken()");
-    EXPECT_TRUE(bypass.Has("if (!readbackOffered) tegra_gm20b_scanout_bypassed();"));
+    EXPECT_TRUE(bypass.has("if (!readbackOffered) tegra_gm20b_scanout_bypassed();"));
     const CodeText forget =
         Block(SourceText("../../TegraGM20B/TegraGM20BReadback.cpp"), "void tgm_readback_bypassed()");
-    EXPECT_TRUE(forget.Has("gShown = {};"));
+    EXPECT_TRUE(forget.has("gShown = {};"));
     const CodeText locked = Block(SourceText("../../TegraGM20B/TegraGM20BUserClientPresent.cpp"),
                                   "extern \"C\" void tegra_gm20b_scanout_bypassed(void)");
-    EXPECT_TRUE(locked.Before("IOLockLock(gPresentLock);", "tgm_readback_bypassed();"));
+    EXPECT_TRUE(locked.before("IOLockLock(gPresentLock);", "tgm_readback_bypassed();"));
 }
 
 }  // namespace
