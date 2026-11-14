@@ -62,6 +62,15 @@ kernel void salted_kernel(device uint *out [[buffer(0)]], uint id [[thread_posit
     out[id] = id ^ compile_salt;
 }
 
+/// Each threadgroup writes its index in the grid, plus one, at that index: a grid past the 65535 threadgroups down or deep
+/// one QMD holds (gpu.raw.grid_slices)
+kernel void grid_positions(device uint *out [[buffer(0)]], uint3 group [[threadgroup_position_in_grid]],
+                           uint3 groups [[threadgroups_per_grid]])
+{
+    const uint at = (group.z * groups.y + group.y) * groups.x + group.x;
+    out[at] = at + 1;
+}
+
 /// Writes exactly the floats it is given, so the render target's own float-to-format conversion is what is tested.
 fragment float4 exact_fragment(constant float4 &value [[buffer(0)]])
 {

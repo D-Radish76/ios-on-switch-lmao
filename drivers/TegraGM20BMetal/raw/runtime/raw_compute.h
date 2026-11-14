@@ -130,6 +130,11 @@ public:
                           const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
                           const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
                           const char **why);
+    // One launch of a region past the QMD's grid fields: its slice (raw_dispatch_bands.h qmdSlice)
+    static bool icbRegion(Device &dev, const ComputeState &k, const ComputeRegion &region, const DispatchPiece &slice,
+                          const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
+                          const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
+                          const char **why);
     // The set-0 buffer descriptors and StageInStride root words of a region of kernel `k` written at `va` (icbRegion), as a
     // buffer that inherits the encoder's buffers binds them at an execute (raw_icb_compute.h ComputeBind, ComputeStride).
     // False: refused (*why).
