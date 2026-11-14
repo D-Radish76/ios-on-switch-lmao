@@ -46,8 +46,32 @@ TEST(TimedPresent, AnOrdinaryFrameGoesAtAnyTimerPhase)
 {
     const uint64_t tick = kFrameEnd + 10000, now = tick + 1500;
     EXPECT_EQ(decide(tick + kPeriod, at(now)), Decision::Early);
-    EXPECT_EQ(decide(tick + kPeriod, at(now, 0, kFrameEnd, now - 200)), Decision::Due);
+    EXPECT_TRUE(switch_timed_present::due(decide(tick + kPeriod, at(now, 0, kFrameEnd, now - 200))));
     EXPECT_EQ(decide(tick + 2 * kPeriod, at(now, 0, kFrameEnd, now - 200)), Decision::Early);
+}
+
+// The ordinary-frame clause latches a swap at a frame end more than half a period before its requested presentation:
+// it says so (Ordinary), for the debug count, and stays due. A swap the next frame end suits, or one decided without a
+// phase, is plainly Due.
+TEST(TimedPresent, TheOrdinaryClauseIsNamedWhereItShowsAFrameEarly)
+{
+    const uint64_t tick = kFrameEnd + 10000, now = tick + 1500, accepted = now - 200;
+    EXPECT_EQ(decide(tick + kPeriod, at(now, 0, kFrameEnd, accepted)), Decision::Ordinary);
+    EXPECT_TRUE(switch_timed_present::due(Decision::Ordinary));
+    EXPECT_FALSE(switch_timed_present::due(Decision::Early));
+    EXPECT_FALSE(switch_timed_present::due(Decision::NeedsPhase));
+    EXPECT_EQ(decide(kFrameEnd + kPeriod, at(now, 0, kFrameEnd, accepted)), Decision::Due);
+    const uint64_t stale = kFrameEnd + 10 * kPeriod + 1500;
+    EXPECT_EQ(decide(stale + kPeriod, at(stale, 0, kFrameEnd, stale - 200)), Decision::Due);
+    EXPECT_EQ(decide(stale + kPeriod, at(stale)), Decision::NeedsPhase);
+}
+
+// The display counts the clause's swaps (debug kernels) and treats them as due.
+TEST(TimedPresentSource, TheDisplayCountsTheOrdinaryClause)
+{
+    const CodeText gate = Block(SourceText("../SwitchTimedPresentDisplay.h"), "bool presentNotDue(");
+    EXPECT_TRUE(gate.Before("Decision::Ordinary", "if (switch_timed_present::due(decision))"));
+    EXPECT_TRUE(gate.Has("++frameInfo->pending.timedOrdinary;"));
 }
 
 TEST(TimedPresent, ATargetTwoFramesOutWaitsForTheFrameEndBeforeIt)
