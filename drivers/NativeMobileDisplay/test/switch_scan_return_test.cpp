@@ -174,6 +174,10 @@ TEST(ScanReturnSource, AColourBlankSwapRetiresOnceItsBlackIsOnScreen)
     EXPECT_TRUE(Block(source, "void flipLatched()").Has("colourBlankSwap.ended();"));
     const CodeText stopped = Block(source, "void settleStopped()");
     EXPECT_TRUE(stopped.Before("colourBlankSwap.ended();", "retireThrough(seq, mach_absolute_time());"));
+    const CodeText suspend = Block(source, "void quiesceForSuspend()");
+    EXPECT_TRUE(suspend.Before("colourBlankSwap.ended();", "retireSuspendShown(shown > blank ? shown : blank);"));
+    EXPECT_TRUE(kick.Has("if (colourBlank && latchRetire && !scanoutStopped && !hwSuspended)"))
+        << "a blank kicked with no frame end to come is on screen at once, as before";
     const std::string check = SourceText("../SwitchScanReturnDisplay.h");
     const CodeText reach = Block(check, "const char *scanReach(int entry)");
     EXPECT_TRUE(reach.Has("const bool hidden = colourBlankSwap.hidesWindowA();"));

@@ -50,6 +50,14 @@ struct LandscapeVideoTest: HWTest {
             return (item, AVPlayer(playerItem: item))
         }
         let video = player
+        defer {
+            _ = session.call(LandscapeSample.request(op: LandscapeSample.force, value: 0), replyBytes: 0)
+            _ = session.call(LandscapeSample.request(op: LandscapeSample.portrait, value: 0), replyBytes: 0)
+            _ = session.call(LandscapeSample.request(op: LandscapeSample.fail, value: 0), replyBytes: 0)
+        }
+        // Before the stage: with V3 shipped, the clip's first frame would take the landscape route.
+        _ = session.call(
+            LandscapeSample.request(op: LandscapeSample.portrait, value: LandscapeSample.portraitFrames), replyBytes: 0)
         await context.onStage(fullScreen: true) { stage in
             let view = PlayerView(frame: stage.bounds)
             view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -57,14 +65,7 @@ struct LandscapeVideoTest: HWTest {
             view.playerLayer.videoGravity = .resizeAspect
             stage.addSubview(view)
         }
-        defer {
-            _ = session.call(LandscapeSample.request(op: LandscapeSample.force, value: 0), replyBytes: 0)
-            _ = session.call(LandscapeSample.request(op: LandscapeSample.portrait, value: 0), replyBytes: 0)
-            _ = session.call(LandscapeSample.request(op: LandscapeSample.fail, value: 0), replyBytes: 0)
-        }
         let held = Held(frame: Self.heldFrame, clip: duration)
-        _ = session.call(
-            LandscapeSample.request(op: LandscapeSample.portrait, value: LandscapeSample.portraitFrames), replyBytes: 0)
         await MainActor.run { video.play() }
         try? await Task.sleep(nanoseconds: 1_000_000_000)
 

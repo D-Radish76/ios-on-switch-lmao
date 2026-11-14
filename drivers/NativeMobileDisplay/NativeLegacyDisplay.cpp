@@ -3269,6 +3269,7 @@ public:
         landscapeRunAbort();
         abortProbe("the display suspended (SC7)");
         const uint64_t shown = suspendShownSeq();
+        const uint64_t blank = colourBlankSwap.ended();  // a colour blank swap still waiting for its black
         planesQuiesce();  // r18-planes
         resumeLit = !scanoutStopped;
         setScanout(false);
@@ -3288,7 +3289,7 @@ public:
         __asm__ volatile("dmb ish" ::: "memory");
         vblankSource->disable();
         hwSuspended = true;
-        retireSuspendShown(shown);
+        retireSuspendShown(shown > blank ? shown : blank);
     }
 
 #include "SwitchDisplayResume.h"
@@ -3687,7 +3688,7 @@ public:
             __asm__ volatile("dsb sy" ::: "memory");
             scanReturnBlank(request);
             noteTaken(request, kickAt);  // before the flip, which carries it to the present
-            if (colourBlank && latchRetire)
+            if (colourBlank && latchRetire && !scanoutStopped && !hwSuspended)
                 colourBlankSwap.kicked(seqOf(request), color->generation());
             if (block && !colourBlank)
                 presentBlock();

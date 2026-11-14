@@ -253,14 +253,14 @@ TEST_F(CompletionFlip, SuspendPutsAWrittenFlipInTheRingAndWithdrawsAnArmedOne)
     EXPECT_EQ(d.ring.front, kSlot + 1);
 }
 
-// quiesceForSuspend reads what SC7 will take as shown before planesQuiesce and ring.settle, and retires through it once
-// hwSuspended holds any kick it makes for the resume.
+// quiesceForSuspend reads what SC7 will take as shown (a colour blank swap still waiting for its black too) before
+// planesQuiesce and ring.settle, and retires through it once hwSuspended holds any kick it makes for the resume.
 TEST(CompletionFlipSource, SuspendRetiresWhatItsSettlesTakeAsShown)
 {
     const CodeText quiesce = Block(SourceText("../NativeLegacyDisplay.cpp"), "void quiesceForSuspend()");
     EXPECT_TRUE(quiesce.Before("const uint64_t shown = suspendShownSeq();", "planesQuiesce();"));
     EXPECT_TRUE(quiesce.Before("ring.settle();", "hwSuspended = true;"));
-    EXPECT_TRUE(quiesce.Before("hwSuspended = true;", "retireSuspendShown(shown);"));
+    EXPECT_TRUE(quiesce.Before("hwSuspended = true;", "retireSuspendShown(shown > blank ? shown : blank);"));
 }
 
 // SC7 takes window A's pending flip as shown: its swap completes at the settle, with nothing presented after the
