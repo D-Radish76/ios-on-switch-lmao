@@ -6,6 +6,7 @@
 #include <string>
 
 #include "bazel/testing/source_text.h"
+#include "../SwitchColourBlank.h"
 #include "../SwitchScanReturn.h"
 
 namespace {
@@ -113,6 +114,71 @@ TEST(ScanReturnSource, OnlyAnAcceptedOfferKeepsTheReadbacksFrameBefore)
     const CodeText locked = Block(SourceText("../../TegraGM20B/TegraGM20BUserClientPresent.cpp"),
                                   "extern \"C\" void tegra_gm20b_scanout_bypassed(void)");
     EXPECT_TRUE(locked.Before("IOLockLock(gPresentLock);", "tgm_readback_bypassed();"));
+}
+
+// A colour blank swap retires once its black is on screen: one frame end after the one at which the colour unit
+// settled its generation, since that action's CMU_ENABLE latches at the next frame start. Until then window A shows the
+// page before it, which the retirement gives back.
+TEST(ColourBlank, TheBlankSwapRetiresAFrameAfterTheColourUnitSettledIt)
+{
+    switch_display::ColourBlank blank;
+    blank.kicked(7, 40);
+    EXPECT_TRUE(blank.holds(7));
+    EXPECT_FALSE(blank.holds(6));
+    EXPECT_EQ(blank.generation(), 40u);
+    EXPECT_EQ(blank.frameEnd(100, false), 0u);
+    EXPECT_FALSE(blank.hidesWindowA());
+    EXPECT_EQ(blank.frameEnd(101, true), 0u) << "settled at this frame end: the enable written now latches next";
+    EXPECT_FALSE(blank.hidesWindowA());
+    EXPECT_EQ(blank.frameEnd(102, true), 7u);
+    EXPECT_TRUE(blank.hidesWindowA());
+    EXPECT_FALSE(blank.waiting());
+    EXPECT_EQ(blank.frameEnd(103, true), 0u);
+    EXPECT_EQ(blank.ended(), 0u);
+    EXPECT_FALSE(blank.hidesWindowA());
+}
+
+// A flip that latches, or a stop, before the blank is shown takes the waiting blank swap with it; a second blank swap
+// while the first is shown keeps window A hidden.
+TEST(ColourBlank, AFlipOrAStopTakesTheWaitingBlankSwapAndASecondBlankStaysHidden)
+{
+    switch_display::ColourBlank blank;
+    blank.kicked(3, 1);
+    EXPECT_EQ(blank.ended(), 3u);
+    EXPECT_FALSE(blank.waiting());
+    blank.kicked(4, 2);
+    blank.frameEnd(10, true);
+    EXPECT_EQ(blank.frameEnd(11, true), 4u);
+    blank.kicked(5, 2);
+    EXPECT_TRUE(blank.hidesWindowA()) << "the black is still on screen";
+    EXPECT_TRUE(blank.waiting());
+}
+
+// The colour blank's wiring: the swap is held from its kick's retirement, retired by the frame end after the colour unit's
+// action, keeps frame ends coming meanwhile, and goes with the next latch or a stop; the scan check takes window A as
+// showing nothing of the page under a shown blank.
+TEST(ScanReturnSource, AColourBlankSwapRetiresOnceItsBlackIsOnScreen)
+{
+    const std::string source = display();
+    const CodeText kick = Block(source, "void kickOnce()");
+    EXPECT_TRUE(kick.Before("noteTaken(request, kickAt);",
+                            "colourBlankSwap.kicked(seqOf(request), color->generation());"));
+    const CodeText finish = Block(source, "void finishTransfer(const OriginalLegacySwapRequest *request, bool force");
+    EXPECT_TRUE(finish.Before("!colourBlankSwap.holds(seqOf(request))", "retireThrough(seqOf(request),"));
+    const CodeText tick = Block(source, "void vblankTick()");
+    EXPECT_TRUE(tick.Before("color->frameEndAction(mayRequest);", "colourBlankFrameEnd();"));
+    const CodeText frameEnd = Block(source, "void colourBlankFrameEnd()");
+    EXPECT_TRUE(frameEnd.Has("color->settledThrough(colourBlankSwap.generation())"));
+    EXPECT_TRUE(frameEnd.Has("retireThrough(seq,"));
+    EXPECT_TRUE(Block(source, "bool frameEndNeeded()").Has("colourBlankSwap.waiting()"));
+    EXPECT_TRUE(Block(source, "void flipLatched()").Has("colourBlankSwap.ended();"));
+    const CodeText stopped = Block(source, "void settleStopped()");
+    EXPECT_TRUE(stopped.Before("colourBlankSwap.ended();", "retireThrough(seq, mach_absolute_time());"));
+    const std::string check = SourceText("../SwitchScanReturnDisplay.h");
+    const CodeText reach = Block(check, "const char *scanReach(int entry)");
+    EXPECT_TRUE(reach.Has("const bool hidden = colourBlankSwap.hidesWindowA();"));
+    EXPECT_TRUE(reach.Has("if (!hidden && entry == ring.front)"));
+    EXPECT_TRUE(Block(check, "void scanReturnFrameEnd()").Has("!colourBlankSwap.hidesWindowA()"));
 }
 
 }  // namespace
