@@ -36,6 +36,7 @@ RAW = ('-imagekey', 'diskimage-class=CRawDiskImage')
 class Attachment:
     whole: str
     volumes: list[str]
+    container: str | None  # the APFS container disk macOS synthesized for it (host.apfs_container), if any
 
 
 def _entities(image: Path, writable: bool, raw: bool, log: host.Log) -> list[dict]:
@@ -57,7 +58,7 @@ def attached(image: Path, log: host.Log, writable: bool = True, raw: bool = Fals
         if e.get('content-hint', '').upper() == APFS_VOLUME and re.fullmatch(r'/dev/disk\d+s\d+', e['dev-entry'])
     ]
     try:
-        yield Attachment(disks[0], volumes)
+        yield Attachment(disks[0], volumes, host.attached_container(entities))
     finally:
         host.run('hdiutil', 'detach', disks[0], log=log, check=False)
 
