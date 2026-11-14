@@ -199,6 +199,8 @@ bool Completion::remoteNow(const Ask &a, const CacheKey &k, Compiler::State &sta
     }
     compiler_->keep(k, found, record, why);
     state = found == RecordCache::Found::Record ? Compiler::State::Ready : Compiler::State::Refused;
+    if (state == Compiler::State::Refused)
+        failure = why;
     return true;
 }
 

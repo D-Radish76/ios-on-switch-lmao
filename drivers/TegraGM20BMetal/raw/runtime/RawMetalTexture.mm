@@ -10,6 +10,15 @@ public:
     {
         if (!texture->_rawOk || !texture->_raw.cpu)
             return;
+        if (texture->_cpuRows) {
+            const uint64_t bpp = texture->_raw.bpp;
+            const uint8_t *cpu = texture->_cpuRows + region.origin.y * texture->_cpuPitch + region.origin.x * bpp;
+            const uint64_t bytes = (region.size.height - 1) * texture->_cpuPitch + region.size.width * bpp;
+            if (!gRM->raw->hostAccess(texture->_raw, cpu, bytes, write, access_))
+                [NSException raise:NSInternalInconsistencyException format:@"GPU texture CPU ownership failed"];
+            native_ = true;
+            return;
+        }
         const auto &image = texture->_raw;
         if (image.blockW > 1 || image.blockH > 1)
             return;
@@ -55,6 +64,24 @@ private:
     raw::HostAccess access_;
     bool native_ = false;
 };
+
+// A plane at Metal's GPU layout whose CPU rows are its own (RMTexture _cpuRows): one level, one slice
+void planeRows(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, uint8_t *bytes, NSUInteger row,
+               bool write)
+{
+    if (level || slice || r.origin.z || r.size.depth != 1 || r.origin.x + r.size.width > t->_raw.width ||
+        r.origin.y + r.size.height > t->_raw.height)
+        return;
+    TextureCpuAccess access(t, r, level, slice, write);
+    const size_t line = r.size.width * t->_raw.bpp;
+    for (NSUInteger y = 0; y < r.size.height; y++) {
+        uint8_t *at = t->_cpuRows + (r.origin.y + y) * t->_cpuPitch + r.origin.x * t->_raw.bpp;
+        if (write)
+            memcpy(at, bytes + y * row, line);
+        else
+            memcpy(bytes + y * row, at, line);
+    }
+}
 }  // namespace
 
 // Before the raw path first renders into a surface texture: the kernel takes the surface's imports as only sampled until
@@ -421,6 +448,10 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
 #endif
     if (_surfaceWrites)
         noteSurfaceWrite(_surfaceWrites);
+    if (_cpuRows) {
+        planeRows(self, r, level, slice, (uint8_t *)bytes, row, true);
+        return;
+    }
     if (transferTexture(self, r, level, slice, const_cast<void *>(bytes), row, image, true))
         return;
     if (_rawOk && _raw.blockW * _raw.blockH > 1 && _raw.blockLinear) {
@@ -481,6 +512,10 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
 {
     if (!r.size.width || !r.size.height || !r.size.depth)
         return;
+    if (_cpuRows) {
+        planeRows(self, r, level, slice, (uint8_t *)bytes, row, false);
+        return;
+    }
     if (transferTexture(self, r, level, slice, bytes, row, image, false))
         return;
     if (_rawOk && _raw.blockW * _raw.blockH > 1 && _raw.blockLinear) {

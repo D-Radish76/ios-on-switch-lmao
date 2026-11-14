@@ -74,8 +74,8 @@ public:
     void askVariant(Ask a, Ready ready);
     // The state's pipeline now, on the caller's thread: its record from this process or the disk (a state made in an earlier
     // boot is raw from its first draw), else made while the thread waits, as Metal makes a state at its creation, so its
-    // first draw is raw. Null with `failure` empty: refused (m2v draws it); with it, the creation fails with it as Metal's
-    // does: no compiler comes this boot, its compile could not run, or the shader heap is full.
+    // first draw is raw. Null: the creation fails with `failure` as Metal's does: the compiler refused the state, no request
+    // names it, no compiler comes this boot, its compile could not run, or the shader heap is full.
     Pipeline *makeNow(Ask a, std::string &failure);
 
     // The kernel of compute key `key` (raw_compute_key.h) for `descriptor` (over m2v's functions) at `dispatch`, placed:
@@ -132,7 +132,7 @@ public:
 private:
     struct Pending;
     void request(Ask asked, std::shared_ptr<Pending> pending);
-    std::string failureOf(const CacheKey &k);
+    std::string failureOf(const CacheKey &k, bool creation);
     void place(const CacheKey &key, const RuntimeRecord *record, bool caTransform, std::shared_ptr<Pending> pending);
 
     struct Kernel {

@@ -255,17 +255,19 @@
 #                     instruction as its source does, and no FTZ result or widened half is a denormal
 #   raw_facade_lazy_test  the raw facade (RawMetal.h) over the kernel model with a pack of one state (raw_facade_harness.h):
 #                     a packed state's draw opens no m2v device and runs its programs in place from the pack's pages;
-#                     an unpacked state, a reflection, a foreign sampler and a method only m2v's device class has each open
-#                     it once, naming what for
+#                     an unpacked state fails its creation with Metal's error; a reflection, a foreign sampler and a method
+#                     only m2v's device class has each open it once, naming what for
 #   raw_facade_open_test  what no process opens m2v for: a library's names, type and options, a library Metal would not
 #                     load (nil and Metal's error), no memory (nil), pages the kernel cannot wire (no buffer), a YCbCr
-#                     target state raw draws (its twin made only at a fallback), texture layouts, textures past their
-#                     memory and a full sampler header table
+#                     target state raw draws (its twin made only at a fallback), texture layouts and a full sampler header
+#                     table
 #   raw_facade_compiler_test  the shader compiler's answers in place of m2v: a compute state's facts the pack lacks, and a
 #                     kernel it refused failing its command buffer
 #   raw_facade_compiled_libraries_test  a library from source, a stitched library and Core Image's filter link are the
 #                     system shader compiler's (the front end's request the builder writes, the reply read as raw's own
 #                     library), a refusal is Metal's compile failure asked again each time, and none opens m2v
+#   raw_facade_texture_rows_test  textures over a buffer's or a surface's rows as Metal lays them out: past their memory
+#                     nil, a buffer texture at 16 bytes through a pool image, a surface plane off 16 at Metal's GPU layout
 #   raw_facade_function_tags_test  a function's constants and attributes read from its metallib's public metadata, as
 #                     Metal answers them for testdata/function_tags/probe.metallib, and as m2v did for tags it never measured
 #   raw_arena_trim_test  raw/runtime/raw_arena_trim.h: an idle heap kept non-volatile gives back the ranges no resource is
@@ -5201,6 +5203,50 @@ host_test(
     linkopts = [
         "-framework",
         "CoreVideo",
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# Textures over a buffer's or a surface's rows as Metal lays them out: rows past their memory nil, a buffer texture at 16
+# bytes sampled through a pool image, a surface plane off 16 at Metal's GPU layout with its own CPU rows
+host_test(
+    name = "raw_facade_texture_rows_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_standins.h",
+        "raw_facade_texture_rows_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_job_methods.h",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = [
         "-framework",
         "Foundation",
         "-framework",

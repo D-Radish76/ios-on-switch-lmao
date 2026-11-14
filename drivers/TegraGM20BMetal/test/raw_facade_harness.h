@@ -252,6 +252,34 @@ inline id<MTLDevice> open(const std::string &pack, Class methods = [HarnessM2VMe
     return device;
 }
 
+// One draw of `state` sampling fragment texture 0 through sampler 0 into a 64x64 BGRA8 target, committed and waited for
+inline id<MTLCommandBuffer> drawSampling(id<MTLDevice> device, id<MTLRenderPipelineState> state, id<MTLTexture> texture,
+                                         id<MTLSamplerState> sampler)
+{
+    MTLTextureDescriptor *rt = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                  width:64
+                                                                                 height:64
+                                                                              mipmapped:NO];
+    rt.storageMode = MTLStorageModePrivate;
+    rt.usage = MTLTextureUsageRenderTarget;
+    id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = [device newTextureWithDescriptor:rt];
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass];
+    [e setRenderPipelineState:state];
+    [e setFragmentTexture:texture atIndex:0];
+    [e setFragmentSamplerState:sampler atIndex:0];
+    const float vertices[12] = {-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1};
+    [e setVertexBytes:vertices length:sizeof vertices atIndex:0];
+    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [e endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    return cb;
+}
+
 inline NSDictionary *ask(id<MTLDevice> device, const char *selector)
 {
     return ((NSDictionary * (*)(id, SEL)) objc_msgSend)(device, sel_registerName(selector));

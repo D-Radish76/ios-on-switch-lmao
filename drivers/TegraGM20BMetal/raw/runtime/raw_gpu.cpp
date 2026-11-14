@@ -2450,10 +2450,19 @@ bool Device::createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBy
 bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
                                  uint32_t format, Texture &t)
 {
-    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 31) ||
+    // rows and address a multiple of 16, as a surface's (createSurfaceTexture): the texture header's 32 through `sampled`
+    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 15) ||
         pitch < width * t.bpp || offset > b.length || uint64_t(pitch) * height > b.length - offset ||
-        offset > UINT64_MAX - b.va || ((b.va + offset) & 31))
+        offset > UINT64_MAX - b.va || ((b.va + offset) & 15))
         return false;
+    Texture *sampled = nullptr;
+    if ((pitch | (b.va + offset)) & 31) {
+        sampled = new Texture;
+        if (!createTexture(width, height, format, *sampled, false, true)) {
+            delete sampled;
+            return false;
+        }
+    }
     std::lock_guard<raw::Mutex> l(lock_);
     t.pitch = pitch;
     t.va = b.va + offset;
@@ -2461,6 +2470,11 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     t.shadowTarget = t.renderable && !linearTarget(t);
     t.renderable = t.renderable && linearTarget(t);
     t.cpu = b.cpu + offset;
+    if (sampled) {  // sampled through its pool image's header
+        t.sampled = sampled;
+        t.tic = sampled->tic;
+        return true;
+    }
     if (!(t.tic = allocTic()))
         return false;
     writeTic(t);

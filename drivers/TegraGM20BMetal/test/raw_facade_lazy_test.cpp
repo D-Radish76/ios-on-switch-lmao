@@ -118,13 +118,16 @@ void packedDraw()
     note("packed_draw", line);
 }
 
+// A state of this device's functions that no record draws (the pack lacks it and no shader compiler serves the process)
+// fails its creation with Metal's error, as a state Metal could not compile; it is never m2v's
 void unpackedState()
 {
     const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
     ASSERT_TRUE(device != nil && library != nil);
     NSError *error = nil;
-    (void)[device newRenderPipelineStateWithDescriptor:descriptor(library, kUnpacked) error:&error];
-    expectOpenedFor(device, "a render state's twin");
+    EXPECT_EQ([device newRenderPipelineStateWithDescriptor:descriptor(library, kUnpacked) error:&error], nil);
+    EXPECT_EQ(error.domain, MTLLibraryErrorDomain);
+    EXPECT_EQ(gOpens, 0);
 }
 
 // One buffer binding, "uniforms" at index 2, as a blob of `stages` stages
@@ -388,7 +391,7 @@ TEST(RawFacadeLazy, PackedDrawOpensNoM2V)
     show("packed_draw");
 }
 
-TEST(RawFacadeLazy, UnpackedStateOpensM2VForItsTwin)
+TEST(RawFacadeLazy, AnUnpackedStateIsMetalsCreationFailure)
 {
     switch_ios::test::ExpectPassesInFreshProcess(unpackedState);
 }

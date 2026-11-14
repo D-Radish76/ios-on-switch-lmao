@@ -453,6 +453,16 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
             *error = nil;
         return (id<MTLRenderPipelineState>)p;
     }
+    if (!p->_raw && p->_completable) {
+        const std::string failure = p->_failure.empty() ? "no shader compiler serves this process" : p->_failure;
+        os_log_error(rawLog(), "raw: %{public}s: no render state %{public}s: %{public}s", getprogname(),
+                     d.label.UTF8String ?: "-", failure.c_str());
+        if (error)
+            *error = rmCreationError(failure);
+        if (reflection)
+            *reflection = nil;
+        return nil;
+    }
     p->_twin = pipelineTwin(d, o, packed, error);
     refuseUnmade(p, d);
     if (error && p->_raw)

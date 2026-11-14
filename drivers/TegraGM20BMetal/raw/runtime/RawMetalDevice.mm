@@ -535,6 +535,24 @@ static bool writesTexture(MTLTextureDescriptor *d)
     return d.usage == MTLTextureUsageUnknown || (d.usage & (MTLTextureUsageRenderTarget | MTLTextureUsageShaderWrite));
 }
 
+// A plane's rows as Metal's GPU reads them: its bytesPerRow rounded down to 16 (a single row's whatever covers it)
+static size_t gpuRows(size_t pitch, MTLTextureDescriptor *d)
+{
+    const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
+    const size_t packed = d.width * (f ? f->bpp : 0);
+    return d.height == 1 ? std::max(pitch & ~size_t(15), (packed + 15) & ~size_t(15)) : pitch & ~size_t(15);
+}
+
+// A plane whose offset or rows are off 16, made at Metal's GPU layout (both rounded down to 16): its CPU's rows are the
+// plane's own
+static void keepCpuRows(RMTexture *t, uint8_t *rows, size_t pitch)
+{
+    if (t->_rawOk && !t->_raw.blockLinear && ((uintptr_t(rows) | pitch) & 15)) {
+        t->_cpuRows = rows;
+        t->_cpuPitch = pitch;
+    }
+}
+
 // Whether a texture of this descriptor is made to be rendered into or stored to, as the kernel's layout decision takes it
 // (TegraGM20BLayout.h): a surface whose first texture says Unknown is left pitch, as the CPU may produce it
 static bool producesTexture(MTLTextureDescriptor *d)
@@ -599,20 +617,23 @@ static bool producesTexture(MTLTextureDescriptor *d)
         const bool one = IOSurfaceGetPlaneCount(s) == 1;
         const uint64_t offset = one ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 0)) - uintptr_t(base) : 0;
         const size_t pitch = one ? IOSurfaceGetBytesPerRowOfPlane(s, 0) : IOSurfaceGetBytesPerRow(s);
-        t->_rawOk = gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset,
-                                                   uint32_t(d.width), uint32_t(d.height), uint32_t(pitch),
-                                                   uint32_t(d.pixelFormat), t->_raw, producesTexture(d));
+        const size_t gpuPitch = one ? gpuRows(pitch, d) : pitch;
+        t->_rawOk = gRM->raw->createSurfaceTexture(
+            IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset & ~15ull, uint32_t(d.width),
+            uint32_t(d.height), uint32_t(gpuPitch), uint32_t(d.pixelFormat), t->_raw, producesTexture(d));
+        keepCpuRows(t, static_cast<uint8_t *>(base) + offset, pitch);
         if (t->_rawOk)
             keepExtendedRange(d, t->_raw, false);
     } else if (rawShape(d) && plane < IOSurfaceGetPlaneCount(s)) {
         // a plane as a texture of its own (a video player's R8 luma and RG8 chroma): the plane's bytes, pitch, as CoreVideo
         // lays its planes out for every other reader (never a block-linear layout the kernel would decide for the surface)
         void *base = IOSurfaceGetBaseAddress(s);
+        const uint64_t offset = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - uintptr_t(base);
+        const size_t pitch = IOSurfaceGetBytesPerRowOfPlane(s, plane);
         t->_rawOk = gRM->raw->createSurfaceTexture(
-            IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s,
-            uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - uintptr_t(base), uint32_t(d.width),
-            uint32_t(d.height), uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, plane)), uint32_t(d.pixelFormat), t->_raw,
-            false);
+            IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset & ~15ull, uint32_t(d.width),
+            uint32_t(d.height), uint32_t(gpuRows(pitch, d)), uint32_t(d.pixelFormat), t->_raw, false);
+        keepCpuRows(t, static_cast<uint8_t *>(base) + offset, pitch);
         const OSType fourcc = IOSurfaceGetPixelFormat(s);
         if (t->_rawOk && (fourcc == 0x34323076 || fourcc == 0x34323066))
             t->_raw.nativePlane = uint32_t(plane);
@@ -624,9 +645,9 @@ static bool producesTexture(MTLTextureDescriptor *d)
     if (!t->_rawOk) {  // a surface the raw path does not take: m2v's texture over it, made now (it may refuse: nil, as today)
         // which term (createSurfaceTexture's, recomputed here: a creation, not the hot path)
         const size_t planes = IOSurfaceGetPlaneCount(s),
-                     pitch = planes == 1 ? IOSurfaceGetBytesPerRowOfPlane(s, 0) : IOSurfaceGetBytesPerRow(s);
+                     pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
         const uintptr_t base = uintptr_t(IOSurfaceGetBaseAddress(s));
-        const uintptr_t offset = planes == 1 ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 0)) - base : 0;
+        const uintptr_t offset = planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - base : 0;
         const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
         const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0);
         const OSType fourcc = IOSurfaceGetPixelFormat(s);
@@ -641,11 +662,19 @@ static bool producesTexture(MTLTextureDescriptor *d)
             refuseTexture(t, PredTexPlanar, d.width, d.height, @"surface", extra);
         else if (uint32_t term = rawShapeTerm(d))
             refuseTexture(t, PredTexShape, term, d.pixelFormat, @"surface", extra);
-        else if (plane || planes > 1)
-            refuseTexture(t, PredTexSurfPlane, plane, planes, @"surface", extra);
-        else if ((pitch & 15) || (offset & 15) || pitch < packed)  // (its plane's offset: as its pitch)
-            refuseTexture(t, PredTexSurfPitch, pitch, offset & 15 ? offset : packed, @"surface", extra);
-        else if (uint64_t(pitch) * d.height > IOSurfaceGetAllocSize(s)) {
+        else if (plane >= std::max<size_t>(planes, 1)) {
+            os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: it has no plane %lu: %{public}@",
+                         getprogname(), IOSurfaceGetID(s), (unsigned long)plane, extra);
+            return nil;
+        } else if (planes ? (pitch & ~size_t(15)) < packed && d.height > 1 : (pitch & 15) || pitch < packed) {
+            // Metal asserts on a surface without planes whose rows are not 16 bytes apart; a plane's rows rounded down to 16
+            // overlap on its GPU. m2v refused both (linear_plan.rs).
+            os_log_error(
+                rawLog(),
+                "raw: %{public}s: no texture over IOSurface %u: rows off 16 that Metal does not take: %{public}@",
+                getprogname(), IOSurfaceGetID(s), extra);
+            return nil;
+        } else if (uint64_t(pitch) * d.height > IOSurfaceGetAllocSize(s)) {
             os_log_error(
                 rawLog(),
                 "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",

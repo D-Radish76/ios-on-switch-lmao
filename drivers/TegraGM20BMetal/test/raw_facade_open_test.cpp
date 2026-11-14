@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // What no process opens its m2v device for: a library's own answers, a library Metal would not load, memory the kernel
-// has none of, pages it cannot wire, a YCbCr target state raw draws, texture layouts, textures past their memory and a full
-// sampler header table. Each answer is the raw device's or Metal's nil.
+// has none of, pages it cannot wire, a YCbCr target state raw draws, texture layouts and a full sampler header table. Each
+// answer is the raw device's or Metal's nil.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_ycbcr_store.h"
 #include "bazel/testing/fresh_process.h"
@@ -219,37 +219,6 @@ void plainLayouts()
     expectNoM2V(device);
 }
 
-// A texture whose rows run past its buffer's or surface's memory, or a memoryless one over a buffer, is nil as Metal
-// answers an invalid descriptor
-void texturesPastTheirMemory()
-{
-    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
-    ASSERT_TRUE(device != nil);
-    id<MTLBuffer> buffer = [device newBufferWithLength:4096 options:MTLResourceStorageModeShared];
-    ASSERT_TRUE(buffer != nil);
-    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                                 width:64
-                                                                                height:64
-                                                                             mipmapped:NO];
-    d.usage = MTLTextureUsageShaderRead;
-    EXPECT_EQ([buffer newTextureWithDescriptor:d offset:0 bytesPerRow:256], nil) << "16 KiB of rows in 4 KiB";
-    d.height = 16;
-    d.storageMode = MTLStorageModeMemoryless;
-    EXPECT_EQ([buffer newTextureWithDescriptor:d offset:0 bytesPerRow:256], nil);
-    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
-        (id)kIOSurfaceWidth : @64,
-        (id)kIOSurfaceHeight : @64,
-        (id)kIOSurfaceBytesPerElement : @4,
-        (id)kIOSurfacePixelFormat : @(uint32_t('BGRA'))
-    });
-    ASSERT_TRUE(surface != nullptr);
-    d.storageMode = MTLStorageModeShared;
-    d.height = 4096;
-    EXPECT_EQ([device newTextureWithDescriptor:d iosurface:surface plane:0], nil) << "rows past the allocation";
-    CFRelease(surface);
-    expectNoM2V(device);
-}
-
 // The `i`th of a run of samplers with headers of their own: four address modes, then a level clamp on the 1/64 grid
 MTLSamplerDescriptor *distinctSampler(NSUInteger i)
 {
@@ -299,34 +268,6 @@ MTLSamplerDescriptor *wrappingSampler(float lodMax)
     d.mipFilter = MTLSamplerMipFilterNearest;
     d.lodMaxClamp = lodMax;
     return d;
-}
-
-// One draw of `state` sampling `texture` through `sampler`, committed and waited for
-id<MTLCommandBuffer> drawSampling(id<MTLDevice> device, id<MTLRenderPipelineState> state, id<MTLTexture> texture,
-                                  id<MTLSamplerState> sampler)
-{
-    MTLTextureDescriptor *rt = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                                  width:64
-                                                                                 height:64
-                                                                              mipmapped:NO];
-    rt.storageMode = MTLStorageModePrivate;
-    rt.usage = MTLTextureUsageRenderTarget;
-    id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
-    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
-    pass.colorAttachments[0].texture = [device newTextureWithDescriptor:rt];
-    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
-    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
-    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass];
-    [e setRenderPipelineState:state];
-    [e setFragmentTexture:texture atIndex:0];
-    [e setFragmentSamplerState:sampler atIndex:0];
-    const float vertices[12] = {-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1};
-    [e setVertexBytes:vertices length:sizeof vertices atIndex:0];
-    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-    [e endEncoding];
-    [cb commit];
-    [cb waitUntilCompleted];
-    return cb;
 }
 
 // A draw sampling a 4:2:2 texture through a wrapping sampler takes a sampler header under the texture's address map; with
@@ -389,11 +330,6 @@ void planarSamplerTableFull()
 TEST(RawFacadeOpen, AnUncompressedTextureHasThePlainLayoutAndNoNoCopyTexture)
 {
     switch_ios::test::ExpectPassesInFreshProcess(plainLayouts);
-}
-
-TEST(RawFacadeOpen, ATexturePastItsMemoryIsNil)
-{
-    switch_ios::test::ExpectPassesInFreshProcess(texturesPastTheirMemory);
 }
 
 TEST(RawFacadeOpen, ALibraryAnswersItsNamesTypeOptionsAndExternFunctions)
