@@ -305,16 +305,11 @@ bool rmFunctionSource(id<MTLFunction> function, const void **bytes, size_t *leng
     if (![(id)function isKindOfClass:[RMFunction class]])
         return false;
     RMFunction *f = (RMFunction *)function;
-    if (f->_source && f->_source->bytes) {
-        *bytes = f->_source->bytes;
-        *length = f->_source->size;
-        *name = [NSString stringWithUTF8String:libraryName(f).c_str()];
-        return true;
-    }
-    id twin = f->_twin;
-    if (!native_bridge_metal_function_metallib(twin, bytes, length))
+    if (!f->_source || !f->_source->bytes)
         return false;
-    *name = native_bridge_metal_function_library_name(twin);
+    *bytes = f->_source->bytes;
+    *length = f->_source->size;
+    *name = [NSString stringWithUTF8String:libraryName(f).c_str()];
     return true;
 }
 
