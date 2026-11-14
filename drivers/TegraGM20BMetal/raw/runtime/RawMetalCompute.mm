@@ -6,6 +6,7 @@
 #include "raw_compute.h"
 #include "raw_compute_key.h"
 #include "raw_compute_lookup.h"
+#include "raw_kernel_texture.h"
 #import "RawMetalComputeState.h"
 #import "RawMetalResolveAsk.h"
 #include "raw_predication.h"
@@ -90,7 +91,7 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
 // RGBA16Float image of its values drawn from the planes as the encoder begins (no header reads the two planes as one image)
 static MTLPixelFormat kernelFormat(RMTexture *t)
 {
-    return raw::kernelTextureFormat(t->_raw, t->_descriptor.pixelFormat);
+    return MTLPixelFormat(raw::kernelTextureFormat(t->_raw, uint32_t(t->_descriptor.pixelFormat)));
 }
 
 static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
