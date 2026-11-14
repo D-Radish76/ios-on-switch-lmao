@@ -11,8 +11,10 @@ import HWTestGPU
 /// refusal is kIOReturnNoMemory, and the asks stopped at a hardware fact, within the last ask and 8 MiB (other
 /// processes' and the scrubber's moves meanwhile): the floor (`ready_after_kib` < `floor_kib` + 128 + 8192), or no
 /// whole clean 128 KiB chunk left in a fragmented pool (`clean_chunks_after` * 128 < 8192); something was made when
-/// the pool had room. Fields: `ready_before_kib`, `ready_after_kib`, `floor_kib`, `held_before_kib`,
-/// `clean_chunks_before`, `clean_chunks_after`, `made_kib`, `asks`, `refused` (the first refusal's kern_return_t).
+/// the pool had room. It drains the pool to its floor for a moment, so it runs after every other test (Registry.last):
+/// a "compressed memory ... not made" line of any process inside its window is its own doing. Fields:
+/// `ready_before_kib`, `ready_after_kib`, `floor_kib`, `held_before_kib`, `clean_chunks_before`, `clean_chunks_after`,
+/// `made_kib`, `asks`, `refused` (the first refusal's kern_return_t).
 struct CompressedFloorTest: HWTest {
     let id = "gpu.pool.compressed_floor"
     let name = "An app's compressed memory is made down to the GPU pool's floor"
