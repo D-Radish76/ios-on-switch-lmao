@@ -635,6 +635,7 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 		memcpy(chan->prof_sdraws, prof->sampleDraws, count * sizeof(prof->sampleDraws[0]));
 		memcpy(chan->prof_kpx, prof->kpx, count * sizeof(prof->kpx[0]));
 		memcpy(chan->prof_ilk, prof->interlocks, count);
+		memcpy(chan->prof_twin, prof->twinDraws, count * sizeof(prof->twinDraws[0]));
 		WRITE_ONCE(chan->prof_count, count);
 		WRITE_ONCE(chan->prof_first, chan->submitted + 1);
 		WRITE_ONCE(chan->prof_seqno,
