@@ -205,7 +205,7 @@ product	bridge	native_bridge_metal_function_library_name	RawMetalBinaryArchive.m
 product	bridge	native_bridge_metal_function_metallib	RawCompleteRemote.mm,RawMetalLibrary.mm,RawRenderKey.mm	form	-	x1-m2v-open	open	-	a function's metallib bytes read from its m2v twin (remote completion, render keys): raw reads the library itself
 product	bridge	native_bridge_metal_journal_dispatch	RawMetalCompute.mm	dead	-	cut	cut	-	m2v's journal of compute states (debug)
 product	bridge	native_bridge_metal_journal_render	RawMetalInternal.h,RawMetalStates.mm	dead	-	cut	cut	-	m2v's journal of render states, written only while m2v is open (debug)
-product	bridge	native_bridge_metal_memory	RawMetalFootprint.mm	dead	-	cut	cut	-	m2v's memory in the footprint line (debug)
+product	bridge	native_bridge_metal_memory	RawMetalFootprint.mm,TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	m2v's memory in the footprint line (debug)
 product	bridge	native_bridge_metal_nvk_symbol	RawDirect.mm	form	-	-	open	-	the direct compile finds NAK's exports through NVK's image the bridge loaded: NAK becomes a library raw loads itself
 product	bridge	native_bridge_metal_open	TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	opens the m2v device (RawM2V.open)
 product	bridge	native_bridge_metal_rates	TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	m2v's rates line
