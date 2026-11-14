@@ -60,6 +60,52 @@ final class LaunchHitchVerdictTests: XCTestCase {
         XCTAssertEqual(verdict.metrics["generic"], .text("k64ed02fd5d7a1865 PBGRAXm_A2Xghfc 30500 us"))
     }
 
+    /// Boot 22's cold launch of Settings as the two-arm test would have read it: the return's two generic spans, the
+    /// kernel's longest job of that window (stats at 13:47:13.233: exec max 50546 us), Settings not running at the
+    /// start (spawned 13:47:00.018), the return 8.70 s (asked 13:47:04.469, foreground 13:47:13.173); the warm arm as
+    /// boot 21's run with Settings already up
+    func testBoot22sColdArmFailsAndNamesItsGenericSpansWithinOneLogLine() {
+        let line22 = Self.boot22.replacingOccurrences(of: "job_max_us=50535", with: "job_max_us=50546")
+        let cold = LaunchHitchVerdict(reading: SpanReading.parse(line22), states: Self.states27, jobBoundUs: 50_000)
+        let warm = LaunchHitchVerdict(
+            reading: SpanReading.parse("job_max_us=9295 sync_subs=2 spans=0"), states: Self.states27,
+            jobBoundUs: 50_000)
+        let outcome = LaunchHitchArm.outcome(
+            [
+                LaunchHitchArm(name: "cold", verdict: cold, launchMs: 162, returnMs: 8704),
+                LaunchHitchArm(name: "warm", verdict: warm, launchMs: 593, returnMs: 2613),
+            ], targetRunning: false, genericStates: 19)
+        XCTAssertEqual(outcome.verdict, .fail)
+        XCTAssertTrue(outcome.detail.hasPrefix("cold: the compositor's longest job took 50546 us"), outcome.detail)
+        XCTAssertEqual(outcome.metrics["cold_generic_spans"], .integer(2))
+        XCTAssertEqual(outcome.metrics["cold_first_generic_ms"], .number(41.339, digits: 2))
+        XCTAssertEqual(outcome.metrics["cold_generic_total_ms"], .number(82.609, digits: 2))
+        XCTAssertEqual(outcome.metrics["warm_generic_spans"], .integer(0))
+        XCTAssertEqual(outcome.metrics["warm_job_max_us"], .integer(9295))
+        let line = LogLine.format(id: "ui.launch_hitch", outcome: outcome, milliseconds: 25_000)
+        XCTAssertLessThanOrEqual(line.utf8.count, 1000, line)
+        for field in [
+            " target_running=0 ", " cold_launch_ms=162 ", " cold_return_ms=8704 ", " cold_job_max_us=50546 ",
+            " cold_generic_total_ms=82.61 ", " warm_return_ms=2613 ",
+        ] {
+            XCTAssertTrue(line.contains(field), field)
+        }
+        XCTAssertFalse(line.contains("cold_span0="), "the spans' own text is in the report only")
+    }
+
+    func testATargetAlreadyRunningHasNoColdArm() {
+        let warm = LaunchHitchVerdict(
+            reading: SpanReading.parse("job_max_us=9295 sync_subs=2 spans=0"), states: Self.states27,
+            jobBoundUs: 50_000)
+        let outcome = LaunchHitchArm.outcome(
+            [LaunchHitchArm(name: "warm", verdict: warm, launchMs: 593, returnMs: nil)], targetRunning: true,
+            genericStates: 19)
+        XCTAssertEqual(outcome.verdict, .pass)
+        XCTAssertEqual(outcome.metrics["target_running"], .flag(true))
+        XCTAssertEqual(outcome.metrics["cold"], .text("skipped_target_running"))
+        XCTAssertEqual(outcome.metrics["warm_return_ms"], .number(-1, digits: 0), "a return not seen in time reads -1")
+    }
+
     /// The kernel keeps the notes one line has no room for: a launch's notes over two asks read as one window
     func testTheAsksOfOneDrainReadAsOneWindow() {
         let first = SpanReading.parse(
