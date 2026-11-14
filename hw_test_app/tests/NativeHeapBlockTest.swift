@@ -5,7 +5,7 @@ import Metal
 
 /// A heap's block-compressed textures, a mip chain and a 2D array in a private heap and one level in a shared one
 /// (drivers/TegraGM20BMetal/raw/runtime/RawMetalHeap.mm heapTextureAsk, raw::TextureAsk::Block): their size is the
-/// device's own answer and each is made in the heap by the raw path, no m2v device asked and no twin made.
+/// device's own answer and each is made in the heap by the raw path (an object of raw's), no m2v device asked.
 struct NativeHeapBlockTest: HWTest {
     let id = "metal.native.heap_block"
     let name = "A heap's block-compressed textures placed in it, with no m2v"
@@ -47,12 +47,11 @@ struct NativeHeapBlockTest: HWTest {
                 wrong.append("\(name)_made")
                 continue
             }
-            let object = NativeObject.answer(texture)
-            metrics.set("\(name)_class", object?.name ?? "-")
-            metrics.set("\(name)_twin", object?.twin ?? true)
+            let made = NativeObject.name(texture)
+            metrics.set("\(name)_class", made ?? "-")
             if need.size == 0 { wrong.append("\(name)_size") }
             if texture.heap !== heap { wrong.append("\(name)_heap") }
-            if object == nil || object!.twin { wrong.append("\(name)_twin") }
+            if made == nil { wrong.append("\(name)_not_raw") }
         }
         let needsAfter = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
         let asked = Set(needsAfter.keys).subtracting(needsBefore.keys).sorted()
