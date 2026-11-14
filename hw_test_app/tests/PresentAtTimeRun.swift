@@ -13,6 +13,8 @@ enum PresentMode: Sendable {
     case past
     /// presentDrawable:atTime: four periods after CACurrentMediaTime(), the display link not involved.
     case mediaTarget
+    /// Plain presents for half a second, then linkTarget's on the same layer: a layer Core Animation has already shown.
+    case warm
 }
 
 /// One phase on a fresh CAMetalLayer: what each drawable asked for and what Metal told it back.
@@ -52,6 +54,7 @@ final class PresentAtTimeRun: NSObject {
 
     @objc private func step(_ link: CADisplayLink) {
         tick += 1
+        let warming = mode == .warm && link.timestamp - started < 0.5
         if tick % 4 == 0, let queue, let drawable = layer.nextDrawable(), let commands = queue.makeCommandBuffer() {
             drawableSize = CGSize(width: drawable.texture.width, height: drawable.texture.height)
             let pass = MTLRenderPassDescriptor()
@@ -65,15 +68,17 @@ final class PresentAtTimeRun: NSObject {
             let committed = CACurrentMediaTime()
             let target: Double
             switch mode {
-            case .linkTarget: target = link.targetTimestamp + 3 * period
+            case .linkTarget, .warm: target = warming ? 0 : link.targetTimestamp + 3 * period
             case .plain: target = 0
             case .past: target = committed - 0.1
             case .mediaTarget: target = committed + 4 * period
             }
-            let index = frames.add(committed: committed, target: target)
-            let record = frames
-            drawable.addPresentedHandler { record.presented(index, at: $0.presentedTime) }
-            if mode == .plain {
+            if !warming {
+                let index = frames.add(committed: committed, target: target)
+                let record = frames
+                drawable.addPresentedHandler { record.presented(index, at: $0.presentedTime) }
+            }
+            if target == 0 {
                 commands.present(drawable)
             } else {
                 commands.present(drawable, atTime: target)

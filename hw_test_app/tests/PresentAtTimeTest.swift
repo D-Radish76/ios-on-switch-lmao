@@ -5,13 +5,15 @@ import QuartzCore
 import UIKit
 
 /// presentDrawable:atTime: three periods past the display link's next frame, every fourth frame for three seconds, on a
-/// CAMetalLayer the stage's size (judged: PresentTimeVerdict). Three controls follow on fresh layers of the same size
-/// and cadence, a second each: plain presents (plain=), a time already past (past=) and four periods after
-/// CACurrentMediaTime() (media=), each "shown/submitted" with its plane flips, so a failure says whether timed
-/// presents, future times or this layer's route lose presentedTime. offsets_ms= is each timed drawable's presentedTime
-/// minus its target ("x": none); lead_min_ms its commit to target; hlag_* when its handler ran against its target.
-/// d_fi_* (debug kernels) count the display's swaps: held for their time and shown or replaced unsent, let go by the
-/// ordinary-frame clause, and shown more than half a period before their requested presentation.
+/// CAMetalLayer the stage's size (judged: PresentTimeVerdict). Controls follow at the same size and cadence, each
+/// "shown/submitted" with its plane flips and median latency: on fresh layers for a second each, plain presents
+/// (plain=), a time already past (past=) and four periods after CACurrentMediaTime() (media=); then warm=, the timed
+/// presents after half a second of plain ones on one layer. A failure so says whether timed presents, future times, a
+/// layer Core Animation has not shown yet or this layer's route lose presentedTime. offsets_ms= is each timed
+/// drawable's presentedTime minus its target ("x": none); lead_min_ms its commit to target; hlag_* when its handler ran
+/// against its target. d_fi_* (debug kernels) count the display's swaps: held for their time and shown or replaced
+/// unsent, let go early by the ordinary-frame clause, and shown more than half a period before their requested
+/// presentation.
 struct PresentAtTimeTest: HWTest {
     let id = "display.present_at_time"
     let name = "presentDrawable:atTime: shows each drawable at its refresh, with its presentedTime"
@@ -25,6 +27,7 @@ struct PresentAtTimeTest: HWTest {
         let plain = try await phase(context, .plain, seconds: 1)
         let past = try await phase(context, .past, seconds: 1)
         let media = try await phase(context, .mediaTarget, seconds: 1)
+        let warm = try await phase(context, .warm, seconds: 1.5)
         let kernelAfter = Self.frameInfoTotals()
 
         let frames = timed.frames
@@ -49,7 +52,7 @@ struct PresentAtTimeTest: HWTest {
             }
         }
         metrics.set("asleep_ms", Self.asleepMs(), digits: 0)
-        for (key, control) in [("plain", plain), ("past", past), ("media", media)] {
+        for (key, control) in [("plain", plain), ("past", past), ("media", media), ("warm", warm)] {
             metrics.set(key, PresentTimeVerdict.shown(control.frames))
             metrics.set(key + "_flips", control.flips)
             let latency = control.frames.compactMap(\.latencyMs)
