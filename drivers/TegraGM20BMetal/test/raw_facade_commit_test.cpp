@@ -150,22 +150,23 @@ TEST(RawFacadeCommit, PassesBesideAMemorylessColourAreEncodedAhead)
     }
 }
 
-// Pass 9 of 15 into a target whose format the state does not draw: that encoder goes to m2v, refused as it records,
-// after the worker was handed (and may be encoding) the ones before it. The device comes back whole: the next command
-// buffer is encoded ahead as any other.
+// Pass 9 of 15 into a target of a format the raw path renders none of (RGB9E5Float, which GM20B has no colour target
+// for: pass.fmt): that encoder goes to m2v, refused as it records, after the worker was handed (and may be encoding) the
+// ones before it. The device comes back whole: the next command buffer is encoded ahead as any other.
 TEST(RawFacadeCommit, AnEncoderRefusedAfterTheHandOffsGivesTheDeviceBack)
 {
     ASSERT_TRUE(opened().device != nil);
     id<MTLCommandQueue> queue = [opened().device newCommandQueue];
     const scale_frames::Shape shape{15, 90, 4};
     const auto into = scale_frames::targets(opened().device, shape);
-    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGB9E5Float
                                                                                   width:shape.width
                                                                                  height:shape.height
                                                                               mipmapped:NO];
     td.storageMode = MTLStorageModePrivate;
     td.usage = MTLTextureUsageRenderTarget;
     const id<MTLTexture> other = [opened().device newTextureWithDescriptor:td];
+    ASSERT_TRUE(other != nil);
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     for (int p = 0; p < shape.passes; p++) {
         if (p == 9)
