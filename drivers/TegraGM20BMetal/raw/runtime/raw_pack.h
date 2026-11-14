@@ -39,8 +39,8 @@ constexpr uint32_t kPackVersion = 24;
 
 // What a record or a program variant (PackVariant) assumes, as bits of a mask: a draw takes a variant only where all of them
 // hold. Bits 0-15 are facts of the draw's bindings, bit 16 of its pipeline, bit 26 of its pass, bits 17-25 of the chip
-// (kChipAssumptions): 17 and
-// 18 of the code a variant runs, 19-25 of the ROP blend a storage form computes in its program (PackPipeline::storageBlendModel
+// (kChipAssumptions): 17 and 18 of the code a program runs (a proven one is every program's, raw_chip_facts.h, so no
+// variant assumes it), 19-25 of the ROP blend a storage form computes in its program (PackPipeline::storageBlendModel
 // holds them shifted down by kRopBlendShift, m2v rop_blend::Assumption's bits). A record is drawn whatever its ROP bits: they
 // name what a device probe has to confirm before the program's blend can be called the ROP's.
 enum PackAssumption : uint32_t {

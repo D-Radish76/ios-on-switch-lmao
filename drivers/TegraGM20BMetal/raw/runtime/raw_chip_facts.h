@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// The chip facts (raw_pack.h kChipAssumptions) a device probe has proved on GM20B. The pack builder compiles the variants
-// that assume them and stamps them into the pack header (PackHeader::chipFacts, pack/packfile.py chip_facts), whose draws
-// then hold them. A bit is set here by hand, from the probe's log line, never at run time; pack/packfile.py reads the
-// literal, so it stays a number.
+// The chip facts (raw_pack.h kChipAssumptions) a device probe has proved on GM20B. Every program a record holds is compiled
+// under them, its generic one too (raw_direct.cpp), and the pack builder stamps them into the pack header
+// (PackHeader::chipFacts, pack/packfile.py chip_facts), whose draws then hold them. A bit is set here by hand, from the
+// probe's log line, never at run time; pack/packfile.py reads the literal, so it stays a number.
 //   AssumeTexsF16 (1 << 18): SwitchHWTest gpu.raw.texs_f16 on boots 14, 15, 17, 18, 19 and 21: every unorm8_* and
 //     rgba16f_* "_f16_wrong" 0, its "_proof" 0x53460001
 //   AssumeRopRounding: no probe yet (COMPILER.md E3)

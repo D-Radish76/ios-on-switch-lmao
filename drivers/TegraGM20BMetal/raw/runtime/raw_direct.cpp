@@ -24,6 +24,10 @@
 namespace raw {
 namespace {
 
+// The chip facts device probes proved (raw_chip_facts.h) hold for every draw (PackHeader::chipFacts), so every program a
+// record holds is compiled under them: TEXS's F16 forms round fetches to half as the chip does.
+constexpr bool kTexsF16Proven = (kProvenChipFacts & AssumeTexsF16) != 0;
+
 // nvk_switch_split.h switch_nvk_split_layout, nvk_switch_compile.h switch_nvk_split_parts
 struct NvkSplitLayout {
     uint32_t frontierBytes;
@@ -419,10 +423,11 @@ bool emitted(const std::string &key, const Stages &stages, const std::vector<uin
     return true;
 }
 
-// Each stage's program variants, most specialised first (raw_pack.h PackVariant): residual 0, compiled with the root push
-// words that hold uniform bind residuals (raw_residual.h) as the constant 0, so a uniform read is a constant-buffer operand
-// at an immediate offset; and where the chip is proven to round them so (raw_chip_facts.h), fetches rounded to half in
-// TEXS's F16 forms. A stage's variant is kept only where its code differs, and nothing else a record says of it does.
+// Each stage's program variant (raw_pack.h PackVariant): residual 0, compiled with the root push words that hold uniform
+// bind residuals (raw_residual.h) as the constant 0, so a uniform read is a constant-buffer operand at an immediate offset.
+// A stage's variant is kept only where its code differs, nothing else a record says of it does, and its own uniform ranges
+// hold the residual it assumes zero. The proven chip facts are every program's (kTexsF16Proven), the generic's too: a
+// variant assuming them alone, or one beside its twin without them, would be a program no draw selects.
 void programVariants(const NmbDirectState &state, const DirectNvk &nvk, const NakLayoutData &layout,
                      uint32_t halfTargets, uint64_t xrPlanes, const Stages &generic, RuntimeRecord &out)
 {
@@ -438,42 +443,21 @@ void programVariants(const NmbDirectState &state, const DirectNvk &nvk, const Na
         residual[e.stage == 1 ? 0 : 1] |= AssumeUniformAligned << k;
         zeroPush |= 1u << word;
     }
-
-    struct Kind {
-        uint32_t zeroPush;
-        bool texsF16;
-    };
-
-    const bool f16 = kProvenChipFacts & AssumeTexsF16;
-    std::vector<Kind> kinds;
-    if (zeroPush && f16)
-        kinds.push_back({zeroPush, true});
-    if (zeroPush)
-        kinds.push_back({zeroPush, false});
-    if (f16)
-        kinds.push_back({0, true});
-    std::vector<RuntimeRecord::Variant> made[2];
-    for (const Kind &kind : kinds) {
-        Stages stages(nvk, layout, xrPlanes);
-        std::string why;
-        if (stages.compile(state, halfTargets, false, why, kind.zeroPush, kind.texsF16) != CompileOutcome::Made)
-            continue;
-        for (uint32_t k = 0; k < 2; k++) {
-            const EmitProgram a = generic.emit(int(k)), b = stages.emit(int(k));
-            const CapturedProgram &program = stages.program(int(k));
-            const auto same = [&](const RuntimeRecord::Variant &v) {
-                return v.program.image == program.image;
-            };
-            if (program.image == out.programs[k].image || program.cbufTypes != out.programs[k].cbufTypes ||
-                a.earlyFragmentTests != b.earlyFragmentTests || a.interlockControl != b.interlockControl ||
-                a.usesSampleShading != b.usesSampleShading || std::any_of(made[k].begin(), made[k].end(), same))
-                continue;
-            made[k].push_back({(kind.zeroPush ? residual[k] : 0) | (kind.texsF16 ? AssumeTexsF16 : 0), program});
-        }
-    }
+    if (!zeroPush)
+        return;
+    Stages stages(nvk, layout, xrPlanes);
+    std::string why;
+    if (stages.compile(state, halfTargets, false, why, zeroPush, kTexsF16Proven) != CompileOutcome::Made)
+        return;
     for (uint32_t k = 0; k < 2; k++) {
-        out.pipeline.variantCount[k] = uint8_t(made[k].size());
-        out.variants.insert(out.variants.end(), made[k].begin(), made[k].end());
+        const EmitProgram a = generic.emit(int(k)), b = stages.emit(int(k));
+        const CapturedProgram &program = stages.program(int(k));
+        if (program.image == out.programs[k].image || program.cbufTypes != out.programs[k].cbufTypes ||
+            a.earlyFragmentTests != b.earlyFragmentTests || a.interlockControl != b.interlockControl ||
+            a.usesSampleShading != b.usesSampleShading || !residual[k])
+            continue;
+        out.pipeline.variantCount[k] = 1;
+        out.variants.push_back({residual[k], program});
     }
 }
 
@@ -541,7 +525,7 @@ void turnedVariant(const NmbDirectState &state, const DirectNvk &nvk, const NakL
     Stages stages(nvk, layout, xrPlanes);
     std::string why;
     const EmitProgram a = generic.emit(1);
-    if (stages.compile(state, halfTargets, false, why, 0, false, true) != CompileOutcome::Made) {
+    if (stages.compile(state, halfTargets, false, why, 0, kTexsF16Proven, true) != CompileOutcome::Made) {
         out.pipeline.flags |= PipelineTurnRefused;
         return;
     }
@@ -651,7 +635,7 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     const bool splits = split && !storage.storageMask && !heap.arrays && !draw.spillWords[0] && !draw.spillWords[1] &&
                         state.stageCount == 2;
     Stages stages(nvk, nakLayout, xrPlanes);
-    if (const CompileOutcome compiled = stages.compile(state, halfFloatTargets(key), splits, why);
+    if (const CompileOutcome compiled = stages.compile(state, halfFloatTargets(key), splits, why, 0, kTexsF16Proven);
         compiled != CompileOutcome::Made)
         return compiled;
     const uint32_t interlock = stages.emit(1).interlockControl;
