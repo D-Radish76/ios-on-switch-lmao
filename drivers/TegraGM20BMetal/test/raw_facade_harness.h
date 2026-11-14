@@ -118,9 +118,10 @@ inline std::vector<uint8_t> slot(uint32_t k)
 // A pack of this build's version holding the state of `key`: vertex program slot 0, fragment slot 1, each kSlot bytes in
 // the heap section at kHeap, so a page-multiple slot of the pack's own pages; `kernels`, each with a program slot of its
 // own after those (its `program` set here); `facts`: its compute states' answers. Without `pixelStage` the state has no
-// fragment program (raw_pack.h kNoProgram).
+// fragment program (raw_pack.h kNoProgram). `reflections`: its PackReflections section (reflection_blob_writer.h).
 inline std::string writePack(const std::string &key, std::vector<raw::PackKernel> kernels = {},
-                             std::vector<raw::PackComputeFacts> facts = {}, bool pixelStage = true)
+                             std::vector<raw::PackComputeFacts> facts = {}, bool pixelStage = true,
+                             const std::string &reflections = "")
 {
     constexpr uint64_t kPrograms = 0x180, kPipelines = 0x800, kComputeStates = 0xc00, kStrings = 0xe00,
                        kKernels = 0x2000;
@@ -172,6 +173,10 @@ inline std::string writePack(const std::string &key, std::vector<raw::PackKernel
     pp.fs = pixelStage ? 1 : raw::kNoProgram;
     memcpy(file.data() + kPipelines, &pp, sizeof pp);
     memcpy(file.data() + kStrings, strings.data(), strings.size());
+    const uint64_t reflectionsAt = file.size();
+    file.insert(file.end(), reflections.begin(), reflections.end());
+    h.section[raw::PackReflections] = {reflectionsAt, reflections.size()};
+    memcpy(file.data(), &h, sizeof h);
     const std::string path = dir() + "/pack.bin";
     std::ofstream(path, std::ios::binary)
         .write(reinterpret_cast<const char *>(file.data()), std::streamsize(file.size()));

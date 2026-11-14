@@ -4,6 +4,7 @@
 #include "raw_ca_route.h"
 #import "RawRenderKey.h"
 #import "RawMetalBinaryArchive.h"
+#import "RawMetalReflection.h"
 
 // The m2v device's Core Image filter-function linking (_MTLDevice's newLibraryWithImageFilterFunctionsSPI: sends it here)
 @protocol RMImageFilterLinking
@@ -331,6 +332,7 @@ RMPipeline *rmPipelineShell(RMDevice *device, MTLRenderPipelineDescriptor *d, MT
         packKey = raw::Pack::fnv(own.key.data(), own.key.size());  // another library's: under its functions' AIR too
         lookedUp = true;
     }
+    p->_packKey = packKey;
     if (lookedUp) {
         p->_raw = gRM->raw->pipeline(packKey, raw::PackForm::Default, p->_caTransform);
         markRoute(p->_raw, d.label);
@@ -438,27 +440,22 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
 
 // A state of `d` under `o`: its record the pack's, or made at once, unless the archives it lists miss it as Metal's would; its
 // m2v twin made as a packed state's where the pack or an archive holds it (packedTwinDescriptor). A state raw draws from
-// its creation, asked for no reflection, gets its twin only if a command buffer that sets it goes to m2v.
+// its creation gets its twin only if a command buffer that sets it goes to m2v; its reflection is raw's
+// (RawMetalReflection.h).
 id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescriptor *d, MTLPipelineOption o,
                                          MTLAutoreleasedRenderPipelineReflection *reflection, NSError **error)
 {
     const bool packed = p->_raw || p->_archived;
-    if (p->_raw && p->_madeFrom && !reflection) {
+    if (reflection)
+        *reflection = rmRenderReflection(p, d, o);
+    if (p->_raw && p->_madeFrom) {
         p->_twinOptions = o;
         p->_twinLater = true;
         if (error)
             *error = nil;
         return (id<MTLRenderPipelineState>)p;
     }
-    if (reflection) {
-        id<MTLDevice> m2v = RM_M2V("a render state's twin with its reflection");
-        p->_twin = [m2v newRenderPipelineStateWithDescriptor:packedTwinDescriptor(d, packed)
-                                                     options:packedTwinOptions(o, packed)
-                                                  reflection:reflection
-                                                       error:error];
-    } else {
-        p->_twin = pipelineTwin(d, o, packed, error);
-    }
+    p->_twin = pipelineTwin(d, o, packed, error);
     refuseUnmade(p, d);
     if (error && p->_raw)
         *error = nil;

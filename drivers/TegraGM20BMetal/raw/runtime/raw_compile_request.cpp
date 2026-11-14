@@ -64,7 +64,7 @@ void readKernel(Reader &r, KernelRequest &k)
 bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
-    if (r.kind == RequestKind::Kernel)
+    if (r.kind == RequestKind::Kernel || computeReflection(r))
         return tag == "k";
     if (index == 0)
         return tag == "v";
@@ -75,11 +75,12 @@ bool knownTag(const CompileRequest &r, size_t index)
 
 bool sane(const CompileRequest &r)
 {
-    const bool kernel = r.kind == RequestKind::Kernel;
+    const bool kernel = r.kind == RequestKind::Kernel || computeReflection(r);
     if ((kernel ? r.stages.size() != 1 : r.stages.empty()) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
         r.cubic.textures.size() > 16 || r.kernel.textures.size() > kRequestBindLimit ||
-        r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() || (kernel && r.form != RequestForm::Primary))
+        r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() ||
+        ((kernel || r.kind == RequestKind::Reflection) && r.form != RequestForm::Primary))
         return false;
     for (size_t i = 0; i < r.stages.size(); ++i)
         if (!knownTag(r, i) || r.stages[i].library >= r.libraries.size() || r.stages[i].function.empty())
@@ -176,12 +177,13 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     CompileRequest q;
     q.stack = r.value<uint64_t>();
     const uint8_t kind = r.value<uint8_t>(), form = r.value<uint8_t>();
-    q.kind = kind ? RequestKind::Kernel : RequestKind::Render;
+    q.kind = RequestKind(kind);
     q.form = form ? RequestForm::Split : RequestForm::Primary;
     q.key = r.text();
     readFields(r, q.fields);
     const uint32_t stages = r.value<uint32_t>();
-    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > 1 || form > 1 || stages > kRequestStageLimit)
+    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Reflection) || form > 1 ||
+        stages > kRequestStageLimit)
         return false;
     q.stages.resize(stages);
     for (RequestStage &s : q.stages) {
@@ -302,6 +304,19 @@ CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey)
     CacheKey k;
     k.stack = stack;
     k.key = "kernel | " + computeKey;
+    return k;
+}
+
+bool computeReflection(const CompileRequest &r)
+{
+    return r.kind == RequestKind::Reflection && !r.stages.empty() && r.stages[0].tag == "k";
+}
+
+CacheKey computeReflectionKey(uint64_t stack, const std::string &stateKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "reflection | " + stateKey;
     return k;
 }
 

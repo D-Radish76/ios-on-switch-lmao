@@ -25,9 +25,12 @@ constexpr uint32_t kRequestStageLimit = 1u << 16, kRequestLibraryLimit = 1u << 1
 
 using Digest = std::array<uint8_t, 32>;
 
+// Reflection: a render state's (the stages and fields of Render) or a compute state's (Kernel's one stage and limits)
+// reflection blob (raw_reflection_blob.h), which the compiler makes with no compile context and stores
 enum class RequestKind : uint8_t {
     Render,
-    Kernel
+    Kernel,
+    Reflection
 };
 
 // Primary: the state's record; Split: the same with its fragment program's split, which the compiler makes after the
@@ -106,5 +109,9 @@ Digest storeName(const CacheKey &k, const CompileRequest &r, const std::vector<L
 
 // The CacheKey of a kernel's compute key (RawComplete.mm kernel())
 CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey);
+// Whether `r` asks a compute state's reflection (a Reflection of Kernel's one stage), and that reflection's CacheKey of the
+// state's computeStateKey (raw_compute_key.h)
+bool computeReflection(const CompileRequest &r);
+CacheKey computeReflectionKey(uint64_t stack, const std::string &stateKey);
 
 }  // namespace raw

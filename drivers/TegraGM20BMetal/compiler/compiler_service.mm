@@ -32,6 +32,7 @@
 #include "compiler_sandbox.h"
 #include "compiler_store.h"
 #include "../raw/runtime/raw_cache_io.h"
+#include "../raw/runtime/raw_reflection_blob.h"
 
 namespace switch_compiler {
 namespace {
@@ -68,7 +69,9 @@ int32_t storedResult(const std::string &bytes, const raw::CacheKey &k)
     uint32_t kind = 0;
     if (!raw::readEntryHead(bytes, r, k, kind))
         return -1;
-    return kind == raw::kKindRecord || kind == raw::kKindKernel ? TegraGM20BCompileMade : TegraGM20BCompileRefused;
+    return kind == raw::kKindRecord || kind == raw::kKindKernel || kind == raw::kKindReflection
+               ? TegraGM20BCompileMade
+               : TegraGM20BCompileRefused;
 }
 
 #if SWITCH_DEBUG

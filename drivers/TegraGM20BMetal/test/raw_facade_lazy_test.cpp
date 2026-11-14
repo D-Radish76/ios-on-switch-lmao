@@ -2,6 +2,7 @@
 // A process that draws only states the pack holds never opens its m2v device (RawM2V); each thing only m2v does opens it
 // once, at its first use, naming it. Each scenario is a process of its own: one raw device and one m2v device a process.
 #include "raw_facade_harness.h"
+#include "reflection_blob_writer.h"
 #include "MetalABI.h"
 #include "bazel/testing/fresh_process.h"
 
@@ -126,18 +127,62 @@ void unpackedState()
     expectOpenedFor(device, "a render state's twin");
 }
 
+// One buffer binding, "uniforms" at index 2, as a blob of `stages` stages
+std::string oneBinding(uint32_t stages)
+{
+    NmbReflectionNode root = {}, binding = {};
+    root.count = 1;
+    binding.kind = raw::ReflectionBinding;
+    binding.name = "uniforms";
+    binding.flags = 1;
+    binding.values[0] = MTLBindingTypeBuffer;
+    binding.values[2] = 2;
+    for (NmbReflectionNode *n : {&root, &binding})
+        std::fill(std::begin(n->children), std::end(n->children), raw::kReflectionAbsent);
+    return reflection_blob::of({root, binding}, {1}, stages);
+}
+
+// A render and a compute state's reflections asked with argument info are the pack's (PackReflections): no m2v device
+// opens, and without the option none is given
 void reflection()
 {
-    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
-    ASSERT_TRUE(device != nil && library != nil);
-    MTLAutoreleasedRenderPipelineReflection reflected = nil;
+    const std::string metallib = writeMetallib();
+    const uint64_t kernelState = computeStateHash(metallib, "k");
+    const std::string key = packKey(kPacked);
+    const std::string reflections =
+        reflection_blob::section({{raw::Pack::fnv(key.data(), key.size()), false, oneBinding(5)},
+                                  {kernelState, true, oneBinding(1)}});
+    id<MTLDevice> device = open(writePack(key, {}, {{kernelState, 768, 32, 1024, 0}}, true, reflections));
+    ASSERT_TRUE(device != nil);
     NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(metallib.c_str())] error:&error];
+    ASSERT_TRUE(library != nil) << text(error);
+    MTLAutoreleasedRenderPipelineReflection reflected = nil;
     id<MTLRenderPipelineState> state = [device newRenderPipelineStateWithDescriptor:descriptor(library, kPacked)
                                                                             options:MTLPipelineOptionArgumentInfo
                                                                          reflection:&reflected
                                                                               error:&error];
     EXPECT_TRUE(state != nil) << text(error);
-    expectOpenedFor(device, "a render state's twin with its reflection");
+    ASSERT_EQ(reflected.vertexBindings.count, 1u);
+    EXPECT_STREQ(reflected.vertexBindings[0].name.UTF8String, "uniforms");
+    EXPECT_EQ(reflected.vertexBindings[0].index, 2u);
+    EXPECT_EQ(reflected.fragmentBindings.count, 0u);
+    MTLAutoreleasedComputePipelineReflection computed = nil;
+    id<MTLComputePipelineState> kernel = [device newComputePipelineStateWithFunction:[library newFunctionWithName:@"k"]
+                                                                            options:MTLPipelineOptionBufferTypeInfo
+                                                                         reflection:&computed
+                                                                              error:&error];
+    EXPECT_TRUE(kernel != nil) << text(error);
+    ASSERT_EQ(computed.bindings.count, 1u);
+    EXPECT_STREQ(computed.bindings[0].name.UTF8String, "uniforms");
+    MTLAutoreleasedRenderPipelineReflection unasked = nil;
+    (void)[device newRenderPipelineStateWithDescriptor:descriptor(library, kPacked)
+                                               options:MTLPipelineOptionNone
+                                            reflection:&unasked
+                                                 error:&error];
+    EXPECT_EQ(unasked, nil);
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 void foreignSampler()
@@ -347,7 +392,7 @@ TEST(RawFacadeLazy, UnpackedStateOpensM2VForItsTwin)
     switch_ios::test::ExpectPassesInFreshProcess(unpackedState);
 }
 
-TEST(RawFacadeLazy, ReflectionOpensM2VForItsTwin)
+TEST(RawFacadeLazy, ReflectionsOfPackedStatesOpenNoM2V)
 {
     switch_ios::test::ExpectPassesInFreshProcess(reflection);
 }

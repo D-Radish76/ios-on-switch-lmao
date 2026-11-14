@@ -161,6 +161,8 @@ filegroup(
         "compiler/compiler_request.mm",
         "compiler/compiler_sandbox.mm",
         "compiler/compiler_service.mm",
+        # the translator's offline libraries, which a Reflection request's state is made of as the pack's is
+        "raw/pack/offline_metal.mm",
     ],
 )
 
@@ -175,7 +177,7 @@ filegroup(
 
 filegroup(
     name = "compiler_headers",
-    srcs = glob(["compiler/*.h"]),
+    srcs = glob(["compiler/*.h"]) + ["raw/pack/offline_metal.h"],
 )
 
 # /usr/libexec/SwitchShaderCompiler (overlay/manifest.json): loads the plugin and runs its compiler. launchd starts it on

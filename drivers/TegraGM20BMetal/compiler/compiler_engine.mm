@@ -120,9 +120,16 @@ raw::Digest Engine::rules() const
 
 int32_t Engine::compile(const Prepared &p, std::string &entry, std::string &why)
 {
+    State &s = *state_;
+    if (p.request.kind == raw::RequestKind::Reflection) {
+        const std::string &root = s.inputs.systemRoot;
+        const Libraries offline = [&root](const raw::RequestLibrary &l, std::string &failed) {
+            return offlineLibrary(l, root, failed);
+        };
+        return makeReflectionEntry(p, offline, s.stack, entry, why);
+    }
     if (!openCompiler(why))
         return TegraGM20BCompileUnavailable;
-    State &s = *state_;
     LibraryCache &cache = *s.libraries;
     const Libraries libraries = [&cache](const raw::RequestLibrary &l, std::string &failed) {
         return cache.library(l, failed);

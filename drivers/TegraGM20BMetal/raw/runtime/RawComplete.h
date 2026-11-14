@@ -103,6 +103,13 @@ public:
         return remote_->storeMapping(bytes);
     }
 
+    // A state's reflection blob (raw_reflection_blob.h) from the system shader compiler's store, asked of the compiler where
+    // the store lacks it while the calling thread waits: a render state's of `a`, or the compute state's of `function` (this
+    // facade's) under `descriptor`'s limits and its computeStateKey `stateKey`. False with `why`: the compiler gave none
+    bool reflection(Ask a, std::string &blob, std::string &why);
+    bool reflection(id function, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey, std::string &blob,
+                    std::string &why);
+
     // What the calling thread's last makeNow got its record by
     static Obtained lastObtained();
     static void noteObtained(const Obtained &o);
@@ -143,7 +150,10 @@ private:
     void compiledHere(InProcess::Why why);
     // `every`: each library's bytes, a system one's too, as a data library
     bool renderRequest(const Ask &a, const CacheKey &k, bool bytes, CompileRequest &r, Digest &name,
-                       bool every = false);
+                       bool every = false, RequestKind kind = RequestKind::Render);
+    // A reflection entry of `k` from the store, else asked of the compiler with `request`'s (`every`: as renderRequest's)
+    bool storedReflection(const std::function<bool(bool every, CompileRequest &, Digest &)> &request, const CacheKey &k,
+                          std::string &blob, std::string &why);
     RecordCache::Found fromStore(const Digest &name, const CacheKey &k, RuntimeRecord &record, std::string &why);
     // A process compiles a state itself only on a debug boot with no compiler at all (switch-no-bt hides iOS 17's
     // launcher), and host tests: a release client never carries a compile's memory

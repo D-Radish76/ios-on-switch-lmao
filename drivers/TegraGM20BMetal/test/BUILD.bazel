@@ -63,6 +63,8 @@
 #   raw_tic_words_test  raw/runtime/raw_zeta.h and raw_gpu.cpp's block-compressed rows: each depth/stencil format's
 #                     SET_ZT_FORMAT and texture header word 0, its stencil view's word 0 (raw_stencil_bits.h), and each
 #                     compressed format's word 0, rebuilt from NIL's row of NVK's format by NIL's generator rules
+#   pack_reflections_test  raw/pack: directpack's DRFL records filed under the hashes Pack::reflection looks up, and the
+#                     PackReflections section of them, each kind ascending, a shared blob once
 #   pack_vertex_only_test  raw/pack: a state of no fragment function keys as the device looked it up and links with no
 #                     fragment program (kNoProgram); the pixel stage's and rasteriser's switches are the runtime's
 #   mkpack_owned_test raw/pack/mkpack.py: no blob or baseline register is one the raw path owns, or one of a target the
@@ -2839,6 +2841,13 @@ py_test(
 )
 
 py_test(
+    name = "pack_reflections_test",
+    srcs = ["pack_reflections_test.py"],
+    data = ["//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h"],
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
+py_test(
     name = "rawpack_split_test",
     srcs = ["rawpack_split_test.py"],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
@@ -4966,6 +4975,52 @@ host_test(
         "raw_facade_harness.h",
         "raw_job_methods.h",
         "raw_facade_lazy_test.cpp",
+        "reflection_blob_writer.h",
+        "raw_facade_standins.h",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# The facade's reflection objects of a blob (RawMetalReflection.mm) answer every selector of Metal's reflection classes as
+# m2v's frontend did of the same node table (NativeComputeReflection.h); a blob that is not one whole gives none
+host_test(
+    name = "raw_reflection_values_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_job_methods.h",
+        "raw_reflection_values_test.cpp",
+        "reflection_blob_writer.h",
         "raw_facade_standins.h",
         "raw_frontend_absent.cpp",
         "raw_kernel_model.h",

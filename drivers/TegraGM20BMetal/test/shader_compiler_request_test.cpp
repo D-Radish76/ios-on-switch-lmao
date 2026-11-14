@@ -248,6 +248,47 @@ TEST(CompileRequest, TheKeyNamesAStateMetalDoesNotRasterize)
     EXPECT_EQ(raw::pipelineKey(d, &v, nullptr, "", "").find("rast="), std::string::npos);
 }
 
+// A Reflection asks a render state's reflection by the render request's stages and fields, keyed as the state is and named
+// apart from its record; a compute state's by its kernel's one stage and limits, keyed by its computeStateKey alone
+TEST(CompileRequest, AReflectionIsKeyedAsItsStateAndNamedApart)
+{
+    raw::CompileRequest render = renderRequest();
+    const raw::CacheKey k = runtimeKey(render);
+    render.key = k.key;
+    raw::CompileRequest reflection = render;
+    reflection.kind = raw::RequestKind::Reflection;
+    EXPECT_FALSE(raw::computeReflection(reflection));
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(reflection), back));
+    EXPECT_EQ(back.kind, raw::RequestKind::Reflection);
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(reflection), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.key.key, k.key);
+    EXPECT_NE(p.name, raw::storeName(k, render, identities(render)));
+
+    raw::CompileRequest compute;
+    compute.stack = kStack;
+    compute.kind = raw::RequestKind::Reflection;
+    compute.libraries.push_back(data(made_metallib::universal({"kernel_fn"}, 0x30)));
+    compute.stages = {stage("k", "kernel_fn")};
+    compute.kernel.maxThreads = 512;
+    raw::AirHash air;
+    air.fill(0x30);
+    const std::string state = raw::computeStateKey(air, "", 512, false);
+    compute.key = raw::computeReflectionKey(kStack, state).key;
+    EXPECT_TRUE(raw::computeReflection(compute));
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(compute), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+    raw::CompileRequest limits = compute;
+    limits.kernel.maxThreads = 256;
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(limits), kStack, system, p, why));
+    raw::CompileRequest split = compute;
+    split.form = raw::RequestForm::Split;
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(split), back));
+}
+
 TEST(CompileRequest, AKernelIsKeyedByItsFunctionAndNamedByItsDispatch)
 {
     raw::CompileRequest r;

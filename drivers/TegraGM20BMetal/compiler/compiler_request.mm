@@ -76,6 +76,20 @@ bool kernelKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
     return true;
 }
 
+// A compute state's reflection is keyed by its function's AIR, constants and limits alone (raw_compute_key.h
+// computeStateKey), as the pack keys it
+bool computeReflectionKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
+                          std::string &why)
+{
+    const raw::CompileRequest &r = p.request;
+    raw::AirHash hash;
+    if (!airOf(r, air, r.stages[0], hash, why))
+        return false;
+    p.packKey = raw::computeStateKey(hash, r.stages[0].constants, r.kernel.maxThreads, r.kernel.multipleOfWidth);
+    p.key = raw::computeReflectionKey(stack, p.packKey);
+    return true;
+}
+
 }  // namespace
 
 bool SystemLibraries::resolve(const std::string &root, const std::string &path, std::string &real, std::string &why)
@@ -133,8 +147,10 @@ bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, 
             return why = why.empty() ? "a library that is not a metallib" : why, false;
         identities.push_back(raw::identityOf(library));
     }
-    const bool kernel = p.request.kind == raw::RequestKind::Kernel;
-    if (!(kernel ? kernelKey(p, air, stack, why) : renderKey(p, air, stack, why)))
+    const bool keyed = raw::computeReflection(p.request)                 ? computeReflectionKey(p, air, stack, why)
+                       : p.request.kind == raw::RequestKind::Kernel ? kernelKey(p, air, stack, why)
+                                                                     : renderKey(p, air, stack, why);
+    if (!keyed)
         return false;
     if (p.key.key != p.request.key)
         return why = "a request whose fields give another key than its own: " + p.key.key.substr(0, 300), false;

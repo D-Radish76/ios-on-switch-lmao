@@ -9,6 +9,7 @@
 #include "RawCompileRequest.h"
 #include "RawMetalInternal.h"
 #include "raw_compute_record.h"
+#include "raw_reflection_blob.h"
 #include "raw_remote_ask.h"
 
 namespace raw {
@@ -84,13 +85,15 @@ void Completion::compiledHere(InProcess::Why why)
                      InProcess::text(why));
 }
 
-bool Completion::renderRequest(const Ask &a, const CacheKey &k, bool bytes, CompileRequest &r, Digest &name, bool every)
+bool Completion::renderRequest(const Ask &a, const CacheKey &k, bool bytes, CompileRequest &r, Digest &name, bool every,
+                               RequestKind kind)
 {
     MTLRenderPipelineDescriptor *d = a.facade;
     if (!d)
         return false;
     r = {};
     r.stack = stack_;
+    r.kind = kind;
     r.key = k.key;
     r.fields = fieldsOf(d);
     r.cubic = a.cubic;
@@ -308,6 +311,71 @@ Compiler::Outcome Completion::remoteKernel(id facadeFunction, MTLComputePipeline
         return Compiler::Outcome::Failed;
     taken = true;
     return found == RecordCache::Found::Record ? Compiler::Outcome::Made : Compiler::Outcome::Refused;
+}
+
+bool Completion::storedReflection(const std::function<bool(bool, CompileRequest &, Digest &)> &request,
+                                  const CacheKey &k, std::string &blob, std::string &why)
+{
+    CompileRequest r;
+    Digest name;
+    std::string text;
+    bool made = false;
+    const auto stored = [&] {
+        std::string bytes;
+        return remote_->find(name, bytes) && decodeReflectionEntry(bytes, k, made, text);
+    };
+    if (!request(false, r, name))
+        return why = kInexpressible, false;
+    bool found = stored();
+    for (const bool again : {false, true}) {
+        if (found || !remote_->taking() || (again && !request(true, r, name)))
+            break;
+        const Remote::Answer answer = remote_->compile(encodeRequest(r));
+        if (answer == Remote::Answer::Made || answer == Remote::Answer::Refused)
+            found = stored();
+        if (askNext(answer, found, again, remote_->declined()) != AskNext::AskAgain)
+            break;
+    }
+    if (!found)
+        return why = remote_->taking() ? kNotStored : kNoCompilerComes, false;
+    if (!made)
+        return why = text, false;
+    blob = std::move(text);
+    return true;
+}
+
+bool Completion::reflection(Ask a, std::string &blob, std::string &why)
+{
+    CacheKey k;
+    if (!keyOf(a, k))
+        return why = kInexpressible, false;
+    return storedReflection(
+        [&](bool every, CompileRequest &r, Digest &name) {
+            return renderRequest(a, k, true, r, name, every, RequestKind::Reflection);
+        },
+        k, blob, why);
+}
+
+bool Completion::reflection(id function, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey,
+                            std::string &blob, std::string &why)
+{
+    const CacheKey k = computeReflectionKey(stack_, stateKey);
+    return storedReflection(
+        [&](bool every, CompileRequest &r, Digest &name) {
+            r = {};
+            r.stack = stack_;
+            r.kind = RequestKind::Reflection;
+            r.key = k.key;
+            r.kernel.maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
+            r.kernel.multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
+            std::vector<LibraryIdentity> ids;
+            std::map<const LibrarySource *, uint32_t> seen;
+            if (!addStage(r, ids, seen, "k", function, true, every))
+                return false;
+            name = storeName(k, r, ids);
+            return true;
+        },
+        k, blob, why);
 }
 
 }  // namespace raw

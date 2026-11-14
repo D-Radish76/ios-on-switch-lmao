@@ -10,6 +10,9 @@
 #include "../raw/runtime/RawPipelineKey.h"
 #include "../raw/runtime/RawRenderKey.h"
 #include "../raw/runtime/raw_cache.h"
+#include "../raw/runtime/raw_reflection_blob.h"
+#include "../raw/pack/offline_metal.h"
+#include "compiler_request.h"
 
 namespace switch_compiler {
 namespace {
@@ -133,7 +136,59 @@ int32_t kernel(const Prepared &p, const Libraries &libraries, raw::Direct &direc
     return resultOf(outcome);
 }
 
+int32_t reflection(const Prepared &p, const Libraries &libraries, uint64_t stack, std::string &entry, std::string &why)
+{
+    std::string blob;
+    bool made = false;
+    if (raw::computeReflection(p.request)) {
+        std::vector<id<MTLFunction>> kernel;
+        if (!functions(p.request, libraries, kernel, why))
+            return TegraGM20BCompileUnavailable;
+        MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
+        d.computeFunction = kernel[0];
+        d.maxTotalThreadsPerThreadgroup = p.request.kernel.maxThreads;
+        d.threadGroupSizeIsMultipleOfThreadExecutionWidth = p.request.kernel.multipleOfWidth;
+        made = offline::computeReflection(d, blob, why);
+    } else {
+        MTLRenderPipelineDescriptor *d = descriptor(p, libraries, stack, why);
+        if (!d)
+            return TegraGM20BCompileUnavailable;
+        made = offline::renderReflection(d, blob, why);
+    }
+    entry = raw::encodeReflectionEntry(p.key, made ? &blob : nullptr, why);
+    return made ? TegraGM20BCompileMade : TegraGM20BCompileRefused;
+}
+
 }  // namespace
+
+int32_t makeReflectionEntry(const Prepared &p, const Libraries &libraries, uint64_t stack, std::string &entry,
+                            std::string &why)
+{
+    @autoreleasepool {
+        return reflection(p, libraries, stack, entry, why);
+    }
+}
+
+id<MTLLibrary> offlineLibrary(const raw::RequestLibrary &l, const std::string &systemRoot, std::string &why)
+{
+    static RawOfflineDevice *const device = [RawOfflineDevice new];
+    NSError *error = nil;
+    id<MTLLibrary> made = nil;
+    if (l.system) {
+        std::string real;
+        if (!SystemLibraries::resolve(systemRoot, l.path, real, why))
+            return nil;
+        made = [device newLibraryWithURL:[NSURL fileURLWithPath:@(real.c_str())] error:&error];
+    } else {
+        dispatch_data_t bytes =
+            dispatch_data_create(l.bytes.data(), l.bytes.size(), nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+        made = [device newLibraryWithData:bytes error:&error];
+    }
+    if (!made)
+        why = std::string("the translator refused the library ") + (l.path.empty() ? "of its data" : l.path) +
+              (error ? std::string(": ") + error.localizedDescription.UTF8String : "");
+    return made;
+}
 
 int32_t makeEntry(const Prepared &p, const Libraries &libraries, raw::Direct &direct, uint64_t stack,
                   std::string &entry, std::string &why)

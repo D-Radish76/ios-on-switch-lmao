@@ -8,6 +8,7 @@
 // texture is refused: Metal reloads the chroma interpolated between blocks. R10Unorm_PACKED and RG10Unorm_PACKED planes
 // (raw_packed_plane.h) render the same way, into an R32Float or RG32Float stand-in, through one store state into their words.
 #import "RawMetalInternal.h"
+#import "RawMetalReflection.h"
 #include "raw_ycbcr_store.h"
 
 void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStoreShape &store)
@@ -158,11 +159,8 @@ uint32_t ycbcrTargetFormat(MTLRenderPipelineDescriptor *d)
     }
     MTLRenderPipelineDescriptor *twin = twinDescriptor(made);
     if (reflection)
-        p->_twin = [RM_M2V("a YCbCr target state's twin") newRenderPipelineStateWithDescriptor:twin
-                                                                                       options:o
-                                                                                    reflection:reflection
-                                                                                         error:error];
-    else if (native_bridge_metal_render_pipeline_lazy)
+        *reflection = rmRenderReflection(p, made, o);
+    if (native_bridge_metal_render_pipeline_lazy)
         p->_twin = native_bridge_metal_render_pipeline_lazy(RM_M2V("a YCbCr target state's twin"), twin, o);
     if (error)
         *error = nil;

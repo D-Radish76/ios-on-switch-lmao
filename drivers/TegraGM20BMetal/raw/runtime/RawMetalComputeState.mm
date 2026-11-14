@@ -2,6 +2,7 @@
 #import "RawMetalInternal.h"
 #import "RawMetalBinaryArchive.h"
 #import "RawMetalComputeState.h"
+#import "RawMetalReflection.h"
 #include "NativeBridgeMetalFrontend.h"
 #include "raw_compute_key.h"
 #include "raw_metallib.h"
@@ -147,12 +148,10 @@ static bool archivesAnswer(RMComputeState *s, RMFunction *f, MTLPipelineOption &
     return false;
 }
 
-// m2v's state of `s`, whose answers and reflection it then gives: for a state the pack has no facts of, or a reflection
-static bool m2vAnswers(RMComputeState *s, MTLPipelineOption options,
-                       MTLAutoreleasedComputePipelineReflection *reflection, NSError **error)
+// m2v's state of `s`, whose answers it then gives: for a state the pack has no facts of
+static bool m2vAnswers(RMComputeState *s, MTLPipelineOption options, NSError **error)
 {
-    id<MTLDevice> m2v =
-        reflection ? RM_M2V("a compute state's reflection") : RM_M2V("a compute state the pack has no facts of");
+    id<MTLDevice> m2v = RM_M2V("a compute state the pack has no facts of");
     MTLComputePipelineDescriptor *twin = m2v ? twinComputeDescriptor(s->_direct) : nil;
     if (!twin) {
         if (error)
@@ -161,21 +160,17 @@ static bool m2vAnswers(RMComputeState *s, MTLPipelineOption options,
                                      userInfo:@{NSLocalizedDescriptionKey : @"the compute function has no m2v twin"}];
         return false;
     }
-    id nativeReflection = nil;
     NSError *nativeError = nil;
     if (s->_keyed)
-        s->_metadata =
-            native_bridge_metal_compute_prepare(twin, options, reflection ? &nativeReflection : nullptr, &nativeError);
+        s->_metadata = native_bridge_metal_compute_prepare(twin, options, nullptr, &nativeError);
     if (s->_metadata) {
-        if (reflection)
-            *reflection = nativeReflection;
         if (error)
             *error = nil;
         return true;
     }
     s->_compatibility = [m2v newComputePipelineStateWithDescriptor:twin
                                                            options:options
-                                                        reflection:reflection
+                                                        reflection:nil
                                                              error:error];
     s->_metadata = s->_compatibility;
     return s->_metadata != nil;
@@ -204,16 +199,18 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
     if (!archivesAnswer(s, f, options, error))
         return nil;
     const raw::PackComputeFacts *facts =
-        s->_keyed && !reflection
+        s->_keyed
             ? rmPackComputeFacts(raw::computeStateKey(s->_air, s->_constants, s->_maxThreads, s->_multipleOfWidth))
             : nullptr;
     if (facts) {
         s->_facts = *facts;
         if (error)
             *error = nil;
-    } else if (!m2vAnswers(s, options, reflection, error)) {
+    } else if (!m2vAnswers(s, options, error)) {
         return nil;
     }
+    if (reflection && !rmComputeReflection(s, options, reflection, error))
+        return nil;
     s->_threadLimit = uint32_t(std::min<NSUInteger>(1024, s.maxTotalThreadsPerThreadgroup));
     if (s->_maxThreads)
         s->_threadLimit = std::min(s->_threadLimit, s->_maxThreads);
