@@ -131,3 +131,38 @@ extension Outcome {
         return marked.failing(offRaw: gpu.paths.offRaw)
     }
 }
+
+/// The facade's paths of command buffers a test makes itself rather than through a GPU (a layer's drawables), each read
+/// once it completed.
+public final class CommandPaths: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tally = PathTally()
+
+    public init() {}
+
+    public func watch(_ buffer: MTLCommandBuffer) {
+        buffer.addCompletedHandler { [self] done in
+            let path = RawFacade.path(of: done)
+            lock.lock()
+            tally.add(path)
+            lock.unlock()
+        }
+    }
+
+    public var paths: PathTally {
+        lock.lock()
+        defer { lock.unlock() }
+        return tally
+    }
+}
+
+extension Outcome {
+    /// onRawPath for command buffers `watched` saw on `device`.
+    public func onRawPath(_ watched: CommandPaths, device: MTLDevice?) -> Outcome {
+        guard let device, RawFacade.kind(of: device) == "raw" else { return self }
+        var marked = self
+        let paths = watched.paths
+        marked.metrics.set("paths", paths.isEmpty ? "-" : paths.text)
+        return marked.failing(offRaw: paths.offRaw)
+    }
+}
