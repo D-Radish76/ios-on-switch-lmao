@@ -130,6 +130,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.mip_lod',
             'gpu.raw.visibility',
             'gpu.raw.fixed_blend_rule',
+            'gpu.raw.fixed_blend_formats',
             'gpu.raw.private_compression',
             'gpu.raw.alpha_to_coverage',
             'gpu.raw.icon_corners',
