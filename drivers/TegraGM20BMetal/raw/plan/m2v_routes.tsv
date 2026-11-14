@@ -179,7 +179,7 @@ product	tag	raw:texture.shared.handle	RawMetalSharedTextures.mm	none	-	-	main	pr
 product	tag	raw:texture.shared.open	RawMetalSharedTextures.mm	none	-	-	main	procs=0	a shared texture handle with no IOSurface, or one raw cannot open: nil
 product	tag	raw:texture.shared.surface	RawMetalSharedTextures.mm	none	-	-	main	procs=0	IOSurfaceCreate refused a shared texture's surface: nil
 product	tag	raw:twin.texture	RawMetalTexture.mm	dead	-	cut	cut	procs=3	no m2v twin for a texture (boot 21: cameracaptured, mediaanalysisd, HW Test); goes with twins
-product	tag	raw:texture.cpu.memoryless	RawMetalTexture.mm	none	-	x1-m2v-errors	x1-m2v-errors@pending	-	a CPU copy of a memoryless texture moves nothing, as Apple's driver (getBytes leaves the bytes, replaceRegion drops them), where it opened m2v for a twin
+product	tag	raw:texture.cpu.memoryless	RawMetalTexture.mm	none	-	x1-m2v-errors	x1-m2v-errors@f87f17ea0	-	a CPU copy of a memoryless texture moves nothing, as Apple's driver (getBytes leaves the bytes, replaceRegion drops them), where it opened m2v for a twin
 product	tag	raw:xr.planes	RawMetalXrPlanes.mm	form	-	x1-m2v-forms	open	procs=0	no raw texture over a two-plane extended-range surface: m2v's (POST-MERGE C2)
 product	tag	raw:xr.planes_pass	RawMetalEncoder.mm	form	-	x1-m2v-forms	open	procs=0	an extended-range two-plane pass raw refuses: m2v's (pass.fmt 550; POST-MERGE C2)
 product	tag	raw:ycbcr.target	RawMetalYcbcrTargets.mm	form	-	x1-m2v-forms	open	procs=0	no stand-in or store state for a YCbCr render target: its passes go to m2v (enc.planarrt)
