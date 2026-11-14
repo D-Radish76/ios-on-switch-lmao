@@ -7,14 +7,14 @@ import Metal
 /// A connection's SubmitJob beside its BoImport (drivers/TegraGM20B/TegraGM20BUserClientDispatch.cpp): an import's
 /// wiring, zero-fill faults, page walk and clean run before the connection's lock and submit gate, so a command buffer
 /// committed while another thread makes textures over fresh IOSurfaces is scheduled without waiting for them. One
-/// thread makes textures over new 2048x2048 surfaces back to back; this one commits fills of a private buffer meanwhile,
+/// thread makes textures over new 4096x2048 surfaces back to back; this one commits fills of a private buffer meanwhile,
 /// timing each from commit to waitUntilScheduled, and the same with no imports first. A submission is beside the
 /// imports when its time overlaps one. An import's own wiring is timed on the test's own connection: a fresh surface's
 /// BoImport less a second BoImport of it, which adopts the first's wiring (TegraGM20BUserClientBo.cpp sharedWiringFind)
 /// and so skips the zero-fill, page walk, nvkm memory and clean (`wire_ms`; both imports' times are logged). The
-/// surfaces are 16 MiB so that half a wiring stands clear of the run's contention (ImportBesideVerdict: 3.5 MiB wired in
-/// 0.28 ms on boot 22, too short to tell); eight of them, 128 MiB, are held. Fails when imports add half a wiring or more
-/// to the submissions' p99. The fills are private because the raw runtime holds its device lock across a surface
+/// surfaces are 32 MiB so that half a wiring stands clear of the run's contention (ImportBesideVerdict: 3.5 MiB wired in
+/// 0.28 ms on boot 22, too short to tell, makes about 2.6 ms); four of them, 128 MiB, are held. Fails when imports add
+/// half a wiring or more to the submissions' p99. The fills are private because the raw runtime holds its device lock across a surface
 /// texture's import (raw_gpu.cpp createSurfaceTexture) and takes it again before a command buffer that wrote a
 /// CPU-cached buffer is scheduled (raw_alias.cpp captureCpuCompletion); a private fill's encode and submission never take
 /// it, so the two threads meet only in the kernel.
@@ -22,7 +22,7 @@ struct ImportBesideSubmitsTest: GPUPathTest {
     let id = "gpu.path.import_beside_submits"
     let name = "Command buffers are scheduled without waiting for another thread's IOSurface imports"
     let counters = ["submit_jobs"]
-    static let width = 2048, height = 2048, rowBytes = 8192, imports = 8, quiet = 160, minimumBeside = 40
+    static let width = 4096, height = 2048, rowBytes = 16384, imports = 4, quiet = 160, minimumBeside = 40
     static let calibrations = 3, fillBytes = 256, warmFills = 8
     static let boImportGpuReads: UInt32 = 1
 

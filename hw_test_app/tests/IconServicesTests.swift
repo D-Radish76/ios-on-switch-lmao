@@ -16,8 +16,12 @@ import UIKit
 ///    missing app's icon at the same size).
 /// A failure names the field.
 enum IconArm {
-    static func placeholder(points: CGFloat, scale: CGFloat) -> IconServicesCache.Image? {
-        IconServicesCache.icon(IconServicesCache.missingApp, points: points, scale: scale, ignoreCache: true)
+    static func placeholder(
+        _ source: IconServicesCache.IconSource, points: CGFloat, scale: CGFloat
+    )
+        -> IconServicesCache.Image?
+    {
+        IconServicesCache.icon(source.missing, points: points, scale: scale, ignoreCache: true)
     }
 
     static func judge(
@@ -43,9 +47,12 @@ enum IconArm {
             metrics.set("\(prefix)_cached_diff", "unmatched")
             failures.append("\(prefix)_cached_diff")
         }
-        if let placeholder, IconServicesCache.differing(placeholder, fresh) == 0 {
-            metrics.set("\(prefix)_placeholder", true)
-            failures.append("\(prefix)_placeholder")
+        if let placeholder {
+            let isPlaceholder = IconServicesCache.differing(placeholder, fresh) == 0
+            metrics.set("\(prefix)_placeholder", isPlaceholder)
+            if isPlaceholder { failures.append("\(prefix)_placeholder") }
+        } else {
+            metrics.set("\(prefix)_placeholder", "unknown")
         }
         return failures
     }
@@ -71,7 +78,7 @@ struct IconSmallSizesTest: HWTest {
         var failures: [String] = []
         for scale in await IconArm.scales() {
             for points: CGFloat in [68, 40, 28, 16] {
-                let placeholder = IconArm.placeholder(points: points, scale: scale)
+                let placeholder = IconArm.placeholder(IconServicesCache.settings, points: points, scale: scale)
                 failures += IconArm.judge(
                     "set", IconServicesCache.settings, points: points, scale: scale, placeholder: placeholder,
                     &metrics)
@@ -96,7 +103,7 @@ struct IconPasscodeTest: HWTest {
         let passcode = IconServicesCache.IconSource.type("com.apple.graphic-icon.passcode")
         for scale in await IconArm.scales() {
             for points: CGFloat in [29, 68] where (points * scale).rounded() == points * scale {
-                let placeholder = IconArm.placeholder(points: points, scale: scale)
+                let placeholder = IconArm.placeholder(passcode, points: points, scale: scale)
                 failures += IconArm.judge(
                     "pc", passcode, points: points, scale: scale, placeholder: placeholder, &metrics)
             }
@@ -117,11 +124,12 @@ struct IconCalendarTest: HWTest {
     func run(_ context: TestContext) async throws -> Outcome {
         var metrics = Metrics()
         var failures: [String] = []
+        let calendar = IconServicesCache.IconSource.bundle("com.apple.mobilecal")
         for scale in await IconArm.scales() {
             for points: CGFloat in [68, 28] {
-                let placeholder = IconArm.placeholder(points: points, scale: scale)
+                let placeholder = IconArm.placeholder(calendar, points: points, scale: scale)
                 failures += IconArm.judge(
-                    "cal", .bundle("com.apple.mobilecal"), points: points, scale: scale, placeholder: placeholder,
+                    "cal", calendar, points: points, scale: scale, placeholder: placeholder,
                     &metrics)
             }
         }
@@ -129,8 +137,8 @@ struct IconCalendarTest: HWTest {
     }
 }
 
-/// What iconservicesagent's rendered-icon cache holds (IconServicesCache.cacheInfo): `folders` (24B119 keeps its cache
-/// in a salt folder), `info_at` (top, salt or none), `info_build` (__cache_info__'s ProductBuildVersion, which the
+/// What iconservicesagent's rendered-icon cache holds (IconServicesCache.cacheInfo): `container` (the group container's
+/// folder, a UUID or the group's name), `folders` and `first_folder` (24B119 keeps its cache in a salt folder), `info_at` (top, salt or none), `info_build` (__cache_info__'s ProductBuildVersion, which the
 /// agent resets the cache at launch without), `reset_this_boot`, `system_build`, and `served`: whether a cached request
 /// for Settings' icon left the store index as it was (cache) or grew it (generated). FAIL: no __cache_info__ the app can
 /// read, a ProductBuildVersion other than the system's, or no store index beside it.
@@ -144,7 +152,9 @@ struct IconCacheTest: HWTest {
         let system = IconServicesCache.systemBuild() ?? "unreadable"
         let found = IconServicesCache.cacheInfo()
         metrics.set("system_build", system)
-        metrics.set("folders", found.folders.isEmpty ? "-" : found.folders.joined(separator: ","))
+        metrics.set("container", found.container.isEmpty ? "-" : found.container)
+        metrics.set("folders", found.folders.count)
+        if let first = found.folders.first { metrics.set("first_folder", first) }
         metrics.set("info_at", found.at)
         metrics.set("info_build", found.build)
         if let reset = found.resetThisBoot { metrics.set("reset_this_boot", reset) }

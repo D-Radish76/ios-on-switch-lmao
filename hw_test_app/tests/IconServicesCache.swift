@@ -29,10 +29,19 @@ enum IconServicesCache {
     static let iconRadius = 0.2237
     static let settings = IconSource.bundle("com.apple.Preferences")
     static let missingApp = IconSource.bundle("com.brunostjohn.switch.no-such-app")
+    static let missingType = IconSource.type("com.brunostjohn.switch.no-such-type")
 
     enum IconSource {
         case bundle(String)
         case type(String)
+
+        /// What IconServices draws for a request of this kind it cannot or will not serve
+        var missing: IconSource {
+            switch self {
+            case .bundle: IconServicesCache.missingApp
+            case .type: IconServicesCache.missingType
+            }
+        }
     }
 
     struct Image {
@@ -43,7 +52,7 @@ enum IconServicesCache {
     }
 
     struct CacheInfo {
-        var build = "absent", at = "none", resetThisBoot: Bool?
+        var build = "absent", at = "none", container = "", resetThisBoot: Bool?
         var folders: [String] = []
         var store: URL?
     }
@@ -116,34 +125,44 @@ enum IconServicesCache {
         @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>, UnsafeMutablePointer<UInt64>) ->
         UnsafeMutablePointer<CChar>?
 
-    static func cacheDirectory() -> Result<URL, String> {
+    /// The cache folder in the group container, or why the app cannot name it
+    static func cacheDirectory() -> (URL?, String) {
         guard let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "container_system_group_path_for_identifier")
-        else { return .failure("unreadable:no_container_lookup") }
+        else { return (nil, "unreadable:no_container_lookup") }
         var error: UInt64 = 1
         guard let path = unsafeBitCast(symbol, to: GroupPath.self)(nil, group, &error) else {
-            return .failure("unreadable:container_error_\(error)")
+            return (nil, "unreadable:container_error_\(error)")
         }
         defer { free(path) }
-        return .success(URL(fileURLWithPath: String(cString: path)).appendingPathComponent(cache))
+        return (URL(fileURLWithPath: String(cString: path)).appendingPathComponent(cache), "")
     }
 
     /// __cache_info__'s ProductBuildVersion ("absent" without one), where it is, whether it was written since this boot,
-    /// the folders the cache holds and the store index beside the info, or why the app cannot read them
+    /// the container's folder name, the cache's subfolders and the store index beside the info, or why the app cannot
+    /// read them
     static func cacheInfo() -> CacheInfo {
         var found = CacheInfo()
-        let directory: URL
-        switch cacheDirectory() {
-        case .failure(let why):
+        let (located, why) = cacheDirectory()
+        guard let directory = located else {
             found.build = why
             return found
-        case .success(let url): directory = url
         }
+        found.container =
+            directory.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .lastPathComponent
+        let names: [String]
         do {
-            found.folders = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+            names = try FileManager.default.contentsOfDirectory(atPath: directory.path)
         } catch {
             found.build = "unreadable:" + "\((error as NSError).domain)_\((error as NSError).code)"
             return found
         }
+        found.folders = names.filter { name in
+            var folder: ObjCBool = false
+            return FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent(name).path, isDirectory: &folder)
+                && folder.boolValue
+        }.sorted()
         let candidates =
             [(directory, "top")]
             + found.folders.map { (directory.appendingPathComponent($0), "salt") }
