@@ -139,7 +139,7 @@ void scanCount(const tgm_scan::SubmissionRead &read, const char *owner, bool com
 		       (unsigned long long)dropped, (unsigned long long)late);
 }
 
-// Whether the record's submission may have completed: its channel's fence reached its first seqno, or the fence page
+// Whether the record's submission may have completed: its channel's fence reached its last seqno, or the fence page
 // went to another connection
 bool submissionPassed(const ScanQueue::Record &r)
 {
@@ -216,8 +216,9 @@ void tgm_uc::tgm_target_peaks_line(char *line, size_t size)
 // By every submission path (exec, SubmitJob), before its kick: every kScanEvery-th submission is read, every
 // kProfileEvery-th of those profiled, whose profile the kick stamps. Channels of one connection submit at once with no
 // connection lock: the counts are atomic.
-const tgm_prof *AGXDeviceUserClient::scanSubmission(uint32_t slot, const tgm_push *pushes,
-						    uint32_t count, tgm_prof &prof, bool rawMacros)
+const tgm_prof *AGXDeviceUserClient::scanSubmission(uint32_t slot, uint32_t fences,
+						    const tgm_push *pushes, uint32_t count,
+						    tgm_prof &prof, bool rawMacros)
 {
 	if (!TGM_STATS || !count ||
 	    __atomic_fetch_add(&pushSubmits_, 1u, __ATOMIC_RELAXED) % kScanEvery)
@@ -226,7 +227,7 @@ const tgm_prof *AGXDeviceUserClient::scanSubmission(uint32_t slot, const tgm_pus
 		count <= TGM_PROF_MAX &&
 		__atomic_fetch_add(&pushScans_, 1u, __ATOMIC_RELAXED) % kProfileEvery == 0;
 	if (!profiled) {
-		deferScan(slot, pushes, count, rawMacros);
+		deferScan(slot, fences, pushes, count, rawMacros);
 		return nullptr;
 	}
 	scanPushes(pushes, count, &prof, rawMacros);
@@ -252,9 +253,10 @@ void AGXDeviceUserClient::scanPushes(const tgm_push *pushes, uint32_t count, tgm
 
 // Inside the channel's submit lock (the published bindings it reads stay until it leaves): where each push's words lie in
 // the pool, whose kernel mapping lives as long as the kernel, for the thread call to read. A push in any other BO is not read: its mapping may go first.
-// The record names the submission's first seqno on its channel's fence, past which its words may be another's.
-void AGXDeviceUserClient::deferScan(uint32_t slot, const tgm_push *pushes, uint32_t count,
-				    bool rawMacros)
+// The record names the submission's last seqno on its channel's fence (its `fences` internal ones come before it),
+// past which its words may be another's.
+void AGXDeviceUserClient::deferScan(uint32_t slot, uint32_t fences, const tgm_push *pushes,
+				    uint32_t count, bool rawMacros)
 {
 	Deferral *d = deferral();
 	if (!d)
@@ -274,7 +276,7 @@ void AGXDeviceUserClient::deferScan(uint32_t slot, const tgm_push *pushes, uint3
 		r->compositor = critical_;
 		r->fence = tgm_fence_offset(fence_va_ + static_cast<size_t>(slot) * 16);
 		r->fenceOwner = tgm_fence_owner(r->fence);
-		r->seqno = tgm_chan_submitted(chans_[slot]) + 1;
+		r->seqno = tgm_chan_submitted(chans_[slot]) + fences + 1;
 		gQueue.publish();
 	}
 	IOLockUnlock(d->lock);

@@ -161,7 +161,7 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 		return kIOReturnBadArgument;
 #if TGM_STATS
 	tgm_prof prof;
-	const tgm_prof *profile = scanSubmission(slot, pushes, count, prof, true);
+	const tgm_prof *profile = scanSubmission(slot, fences, pushes, count, prof, true);
 #else
 	const tgm_prof *profile = nullptr;
 #endif

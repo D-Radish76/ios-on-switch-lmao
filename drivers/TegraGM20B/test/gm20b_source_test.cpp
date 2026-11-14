@@ -374,16 +374,16 @@ TEST(GM20BPushScanSource, EverySubmissionPathScansItsPushes)
 	const CodeText job =
 		Block(client(),
 		      "IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record,");
-	EXPECT_TRUE(job.Before(
-		"const tgm_prof *profile = scanSubmission(slot, pushes, count, prof, true);",
-		"switch_gpu_chan_exec_events("));
+	EXPECT_TRUE(job.Before("const tgm_prof *profile = scanSubmission(slot, fences, pushes, "
+			       "count, prof, true);",
+			       "switch_gpu_chan_exec_events("));
 	EXPECT_TRUE(job.Has("&seqno, profile, jobVisibility, releases, keptCount, &transaction);"));
 	const CodeText exec = Block(
 		client(),
 		"IOReturn AGXDeviceUserClient::exec(uint32_t channel, TegraGM20BAbiPush *input,");
 	EXPECT_TRUE(
-		exec.Before("const tgm_prof *profile = scanSubmission(channel - 1, pushes, count, "
-			    "prof, false);",
+		exec.Before("const tgm_prof *profile = scanSubmission(channel - 1, fences, pushes, "
+			    "count, prof, false);",
 			    "switch_gpu_chan_exec_events("));
 	EXPECT_TRUE(exec.Has("&seqno, profile, jobVisibility, nullptr, 0, &transaction);"));
 	EXPECT_EQ(clientCode().Count("scanPushes(pushes, count,"), 1u);
@@ -399,13 +399,13 @@ TEST(GM20BPushScanSource, OnlyAProfiledSubmissionIsReadOnItsThread)
 {
 	const CodeText submission =
 		Block(client(), "const tgm_prof *AGXDeviceUserClient::scanSubmission(");
-	EXPECT_TRUE(submission.Before("deferScan(slot, pushes, count, rawMacros);",
+	EXPECT_TRUE(submission.Before("deferScan(slot, fences, pushes, count, rawMacros);",
 				      "scanPushes(pushes, count, &prof, rawMacros);"));
 	const CodeText defer = Block(client(), "void AGXDeviceUserClient::deferScan(");
 	EXPECT_TRUE(defer.Has("hit->bo->pool_va"));
 	EXPECT_TRUE(defer.Has("thread_call_enter(d->call);"));
 	EXPECT_FALSE(defer.Has("readSubmission("));
-	EXPECT_TRUE(defer.Has("r->seqno = tgm_chan_submitted(chans_[slot]) + 1;"));
+	EXPECT_TRUE(defer.Has("r->seqno = tgm_chan_submitted(chans_[slot]) + fences + 1;"));
 	const CodeText work = Block(client(), "void deferredWork(");
 	EXPECT_TRUE(work.Has("switch_gpu_scan_record("));
 	EXPECT_TRUE(work.Has("submissionPassed"));
