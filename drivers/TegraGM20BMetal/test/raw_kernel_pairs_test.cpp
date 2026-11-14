@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // raw/runtime/raw_kernel_pairs.h and raw_sampler_map.h: the texture slots the direct compile records for a kernel's sampler
-// entry (a combined descriptor's own image; a heap sampler's unknown), a sampler header under a converted texture's
-// address map as the header NVK packs of the mapped modes, and the one map a sampler entry takes of its textures.
+// entry (a combined descriptor's own image; a heap sampler's unknown), a converted texture's address map on a header's
+// fields as on the modes NVK packs them from, and a sampler kept only where its own textures' maps leave its modes.
 #include <gtest/gtest.h>
 
 #include "../../../kits/SwitchGM20B/SwitchGM20BSampler.h"
@@ -57,7 +57,7 @@ TEST(KernelPairs, TheWindowReadsBackAsItsSlots)
     EXPECT_FALSE(raw::kernelSamplerPairsKnown(old));
 }
 
-TEST(SamplerMap, AMappedHeaderIsTheHeaderOfTheMappedModes)
+TEST(SamplerMap, AHeadersMappedFieldsAreTheHeaderOfTheMappedModes)
 {
     for (uint8_t s = 0; s < 6; ++s)
         for (uint8_t t = 0; t < 6; ++t)
@@ -65,51 +65,49 @@ TEST(SamplerMap, AMappedHeaderIsTheHeaderOfTheMappedModes)
                 const uint8_t modes[3] = {s, t, uint8_t((s + t) % 6)};
                 const uint8_t mapped[3] = {raw::mappedAddressMode(modes[0], map), raw::mappedAddressMode(modes[1], map),
                                            raw::mappedAddressMode(modes[2], map)};
-                uint32_t own[8], want[8], got[8];
+                uint32_t own[8], want[8];
                 nvkHeader(modes, own);
                 nvkHeader(mapped, want);
-                raw::mapSamplerHeader(own, map, got);
-                EXPECT_EQ(memcmp(got, want, sizeof got), 0)
-                    << "modes " << unsigned(s) << unsigned(t) << " map " << unsigned(map) << ": " << std::hex << got[0]
-                    << " for " << want[0];
+                uint32_t got = own[0];
+                for (const uint32_t shift : {0u, 3u, 6u})
+                    got = (got & ~(7u << shift)) | raw::mappedHeaderAddress(own[0] >> shift & 7, map) << shift;
+                EXPECT_EQ(got, want[0]) << "modes " << unsigned(s) << unsigned(t) << " map " << unsigned(map);
+                EXPECT_EQ(memcmp(own + 1, want + 1, 7 * sizeof(uint32_t)), 0) << "only word 0 holds the modes";
+                EXPECT_EQ(raw::mapLeavesHeader(own[0], map), raw::mapLeavesModes(modes[0], modes[1], modes[2], map))
+                    << "modes " << unsigned(s) << unsigned(t) << " map " << unsigned(map);
             }
 }
 
 TEST(SamplerMap, MapsSendWrappingAndClampingModesToTheEdge)
 {
     EXPECT_EQ(raw::mappedAddressMode(2, 1), 0) << "repeat";
-    EXPECT_EQ(raw::mappedAddressMode(4, 1), 4) << "clamp to zero kept by a 4:4:4 map";
+    EXPECT_EQ(raw::mappedAddressMode(4, 1), 4) << "clamp to zero kept by a 4:2:0 converted texture's map";
     EXPECT_EQ(raw::mappedAddressMode(4, 2), 0);
     EXPECT_EQ(raw::mappedAddressMode(5, 3), 0);
     EXPECT_EQ(raw::mappedAddressMode(2, 0), 2);
-    EXPECT_EQ(raw::mappedModes(2, 0, 5, 2), raw::mappedModes(2, 0, 4, 2)) << "both clamps go to the edge";
+    EXPECT_TRUE(raw::mapLeavesModes(0, 0, 0, 3)) << "clamp to edge everywhere";
+    EXPECT_FALSE(raw::mapLeavesModes(0, 2, 0, 1));
 }
 
-TEST(SamplerMap, ASamplerTakesTheOneMapItsTexturesShare)
+TEST(SamplerMap, ASamplerIsKeptWhereEveryPairedTexturesMapLeavesIt)
 {
-    const std::map<uint32_t, uint8_t> maps = {{0, 3}, {1, 0}, {2, 1}, {4, 3}};
+    const std::map<uint32_t, uint8_t> maps = {{0, 3}, {1, 0}, {2, 2}};
     const auto mapOf = [&](uint32_t slot) -> uint8_t {
         const auto at = maps.find(slot);
         return at == maps.end() ? 0 : at->second;
     };
-    // a repeating sampler: maps 1 and 3 give one header, 0 and 2 its own
-    const auto header = [](uint8_t m) {
-        return raw::mappedModes(2, 2, 2, m);
+    const auto repeating = [](uint8_t m) {
+        return raw::mapLeavesModes(2, 2, 2, m);
     };
-    uint8_t map = 9;
-    EXPECT_TRUE(raw::pairedSamplerMap(0, header, mapOf, map));
-    EXPECT_EQ(map, 0);
-    EXPECT_TRUE(raw::pairedSamplerMap(1u << 0, header, mapOf, map));
-    EXPECT_EQ(map, 3);
-    EXPECT_TRUE(raw::pairedSamplerMap(1u << 0 | 1u << 2 | 1u << 4, header, mapOf, map));
-    EXPECT_EQ(map, 3);
-    EXPECT_TRUE(raw::pairedSamplerMap(1u << 1 | 1u << 3, header, mapOf, map)) << "unbound slot 3 reads no map";
-    EXPECT_EQ(map, 0);
-    EXPECT_FALSE(raw::pairedSamplerMap(1u << 0 | 1u << 1, header, mapOf, map));
     const auto edge = [](uint8_t m) {
-        return raw::mappedModes(0, 0, 0, m);
+        return raw::mapLeavesModes(0, 0, 0, m);
     };
-    EXPECT_TRUE(raw::pairedSamplerMap(1u << 0 | 1u << 1, edge, mapOf, map)) << "a map that changes nothing";
+    EXPECT_TRUE(raw::pairedSamplerKept(0, repeating, mapOf)) << "the null image";
+    EXPECT_TRUE(raw::pairedSamplerKept(1u << 1 | 1u << 7, repeating, mapOf)) << "no converted texture";
+    EXPECT_TRUE(raw::pairedSamplerKept(1u << 2, repeating, mapOf)) << "a map of the clamps alone";
+    EXPECT_FALSE(raw::pairedSamplerKept(1u << 0, repeating, mapOf));
+    EXPECT_FALSE(raw::pairedSamplerKept(1u << 0 | 1u << 1, repeating, mapOf));
+    EXPECT_TRUE(raw::pairedSamplerKept(1u << 0 | 1u << 1 | 1u << 2, edge, mapOf));
 }
 
 }  // namespace

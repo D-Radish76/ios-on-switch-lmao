@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // A kernel's sampler entries that hold the texture slots they sample (raw_pack.h kernelSamplerPairs) on raw::Device: each
-// binds its header under the address map of its own textures (raw_sampler_map.h), a constexpr one through the variants the
-// device made with it. A kernel sampling a 4:2:0 YCbCr texture through a constexpr sampler beside an RGBA texture went to
-// m2v (compute.image, TermConvertedSampler): one map for the whole kernel serves only one of them.
+// binds its own header where the address maps of its own textures leave its modes, the kernel's code and header then what
+// a compile under those maps makes; one whose modes a map changes is no dispatch (raw_sampler_map.h). A kernel sampling a
+// 4:2:0 YCbCr texture through a constexpr sampler beside an RGBA texture went to m2v (compute.image, TermConvertedSampler).
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_compute.h"
 #include "../raw/runtime/raw_compute_record.h"
@@ -96,27 +96,45 @@ protected:
     }
 };
 
-TEST_F(DeviceKernelPairs, EachSamplerTakesTheMapOfTheTextureItSamples)
+TEST_F(DeviceKernelPairs, AnEdgeSamplerOfAConvertedTextureKeepsItsHeader)
 {
-    static const raw::ComputeRecord r = kernel(kWrap, kKnown | 1u << 0, kKnown | 1u << 1);
+    static const raw::ComputeRecord r = kernel(kEdge, kKnown | 1u << 0, kKnown | 1u << 1);
     std::string why;
     const std::vector<uint32_t> set = words(r, why);
     ASSERT_EQ(set.size(), 2u) << why;
     EXPECT_EQ(set[0] & 0xfffff, converted.tic);
     EXPECT_EQ(set[1] & 0xfffff, rgba.tic);
-    EXPECT_EQ(address(set[0]), kEdge) << "the YCbCr texture's repeat reads clamp to its edge";
-    EXPECT_EQ(address(set[1]), kWrap) << "the RGBA texture's sampler keeps its own header";
-    EXPECT_EQ(raw::DeviceHarness::samplerHeader(dev, set[0] >> 20)[1], header(kWrap)[1]);
+    EXPECT_EQ(address(set[0]), kEdge);
+    EXPECT_EQ(set[0] >> 20, set[1] >> 20);
 }
 
-TEST_F(DeviceKernelPairs, ASamplerOfTheNullImageOrNoConvertedTextureKeepsItsHeader)
+TEST_F(DeviceKernelPairs, ASamplerWhoseModesTheMapChangesIsNoDispatch)
 {
-    static const raw::ComputeRecord r = kernel(kBorder, kKnown, kKnown | 1u << 1);
+    static const raw::ComputeRecord r = kernel(kWrap, kKnown | 1u << 0, kKnown | 1u << 1);
+    std::string why;
+    EXPECT_TRUE(words(r, why).empty())
+        << "its kernel wraps the coordinate itself: only a compile under the map is right";
+    EXPECT_EQ(why, "a kernel sampler whose modes a converted texture's address map changes, compiled without that map");
+}
+
+TEST_F(DeviceKernelPairs, ARepeatingSamplerOfOnlyTheRgbaTextureKeepsItsHeader)
+{
+    static const raw::ComputeRecord r = kernel(kWrap, kKnown, kKnown | 1u << 1);
+    std::string why;
+    const std::vector<uint32_t> set = words(r, why);
+    ASSERT_EQ(set.size(), 2u) << why;
+    EXPECT_EQ(address(set[0]), kWrap) << "the null image's";
+    EXPECT_EQ(address(set[1]), kWrap);
+}
+
+TEST_F(DeviceKernelPairs, AMapOfTheWrappingModesLeavesAClampToZero)
+{
+    converted.addressMap = 1;  // a converted 4:2:0 texture, not read as codes
+    static const raw::ComputeRecord r = kernel(kBorder, kKnown | 1u << 0, kKnown | 1u << 1);
     std::string why;
     const std::vector<uint32_t> set = words(r, why);
     ASSERT_EQ(set.size(), 2u) << why;
     EXPECT_EQ(address(set[0]), kBorder);
-    EXPECT_EQ(address(set[1]), kBorder);
 }
 
 TEST_F(DeviceKernelPairs, ARecordWithoutPairsKeepsTheOldRule)
@@ -125,48 +143,8 @@ TEST_F(DeviceKernelPairs, ARecordWithoutPairsKeepsTheOldRule)
     std::string why;
     const std::vector<uint32_t> set = words(r, why);
     ASSERT_EQ(set.size(), 2u) << why;
-    EXPECT_EQ(address(set[0]), kWrap) << "a constexpr sampler without pairs is bound unmapped (admission refuses it)";
+    EXPECT_EQ(address(set[0]), kWrap) << "a constexpr sampler without pairs is bound as it is (admission refuses it)";
     EXPECT_EQ(address(set[1]), kWrap);
-}
-
-TEST_F(DeviceKernelPairs, OneSamplerOfTexturesUnderOneHeaderTakesIt)
-{
-    rgba.addressMap = 1;  // repeat to the edge as map 3 sends it: the same header
-    static const raw::ComputeRecord r = kernel(kWrap, kKnown | 3u, kKnown | 3u);
-    std::string why;
-    const std::vector<uint32_t> set = words(r, why);
-    ASSERT_EQ(set.size(), 2u) << why;
-    EXPECT_EQ(address(set[0]), kEdge);
-    EXPECT_EQ(set[0] >> 20, set[1] >> 20);
-}
-
-TEST_F(DeviceKernelPairs, OneSamplerOfTexturesUnderTwoHeadersIsNoDispatch)
-{
-    static const raw::ComputeRecord r = kernel(kWrap, kKnown | 3u, kKnown | 1u << 1);
-    std::string why;
-    EXPECT_TRUE(words(r, why).empty());
-    EXPECT_EQ(why, "a kernel sampler that samples textures whose address maps give it different headers");
-}
-
-TEST_F(DeviceKernelPairs, AConstexprSamplerHasOneHeaderPerDistinctMapping)
-{
-    static const raw::ComputeRecord wrap = kernel(kWrap, kKnown, kKnown), edge = kernel(kEdge, kKnown, kKnown),
-                                    border = kernel(kBorder, kKnown, kKnown);
-    for (const raw::ComputeRecord *r : {&wrap, &edge, &border})
-        ASSERT_NE(raw::placeCompute(dev, *r), nullptr);
-    const auto index = [&](const raw::ComputeRecord &r) {
-        return uint32_t(raw::placeCompute(dev, r)->rec->entry[1].slot & 0x7f);
-    };
-    const uint32_t w = index(wrap), e = index(edge), b = index(border);
-    EXPECT_NE(dev.constexprTsc(w, 1), dev.constexprTsc(w, 0));
-    EXPECT_EQ(dev.constexprTsc(w, 2), dev.constexprTsc(w, 0)) << "clamps to zero or the border: none in WRAP";
-    EXPECT_EQ(dev.constexprTsc(w, 3), dev.constexprTsc(w, 1));
-    for (uint8_t map = 1; map < 4; ++map)
-        EXPECT_EQ(dev.constexprTsc(e, map), dev.constexprTsc(e, 0)) << unsigned(map);
-    EXPECT_EQ(dev.constexprTsc(b, 1), dev.constexprTsc(b, 0));
-    EXPECT_NE(dev.constexprTsc(b, 2), dev.constexprTsc(b, 0));
-    EXPECT_EQ(dev.constexprTsc(b, 3), dev.constexprTsc(b, 2));
-    EXPECT_EQ(raw::DeviceHarness::samplerHeader(dev, dev.constexprTsc(b, 2))[0] & kAddress, kEdge);
 }
 
 }  // namespace
