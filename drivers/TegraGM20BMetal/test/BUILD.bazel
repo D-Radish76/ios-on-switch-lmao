@@ -5069,55 +5069,6 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
-# Scheduled handlers at the fixed priority of the thread that commits and waits for them (raw/test/schedcheck.mm's check)
-host_test(
-    name = "raw_facade_scheduled_test",
-    srcs = [
-        "made_metallib.h",
-        "raw_facade_scheduled_test.cpp",
-        "raw_facade_harness.h",
-        "raw_job_methods.h",
-        "raw_frontend_absent.cpp",
-        "raw_kernel_model.h",
-        "empty_pack.h",
-        "raw_facade_standins.h",
-    ] + RAW_HOST_HEADERS,
-    additional_compiler_inputs = [
-        "//drivers/TegraGM20BMetal:compiler_srcs",
-        "//drivers/TegraGM20BMetal:raw_facade_srcs",
-    ],
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-        "-Wno-nullability-completeness",
-        "-Wno-nullability-completeness-on-arrays",
-    ] + RAW_HOST_COPTS,
-    cxx_std = "c++17",
-    data = [":fake_nvk/libvulkan_nouveau.dylib"],
-    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
-    sanitize = False,
-    deps = [
-        ":raw_facade_plugin_host",
-        ":raw_runtime_plugin_host",
-        "//kits/SwitchRefusal:switch_refusal",
-        "//kits/SwitchGM20BEmit/test:method_checks",
-    ] + RAW_HOST_DEPS,
-)
-
 # A render state the pack lacks fails its creation with an NSError where the shader compiler makes no record: the broker's
 # answers stood in by the kernel model, the m2v stand-in making each library's twin (raw_facade_compute.h)
 host_test(
