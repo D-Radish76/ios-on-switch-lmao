@@ -147,8 +147,9 @@ static void growBytesChunks(void *)
     gBytesGrowing.store(false, std::memory_order_release);
 }
 
-// The pool is grown by a chunk once it is down to its last (or had none), on the utility queue: a command buffer recorded
-// after a burst takes the one made meanwhile instead of making its own on its recording thread
+// The pool is grown by a chunk, on the utility queue, when a completion that gave chunks back leaves it at its last chunk
+// or none: the completion side decides, so a recording thread only ever takes a chunk (or, finding none, makes its own: a
+// miss)
 static void growBytesChunksAhead()
 {
     if (gBytesChunks.kept() <= 1 && !gBytesGrowing.exchange(true, std::memory_order_acq_rel))
@@ -158,12 +159,15 @@ static void growBytesChunksAhead()
 void rmBytesDone(RMCommandBuffer *cb)
 {
     RMBytes &s = cb->_bytes;
+    const bool gaveBack = !s.chunks.empty();
     coalesceBytes(s);
     for (const raw::Buffer &k : s.chunks)
         keepBytesChunk(k);
     s.chunks.clear();  // its capacity goes on with the recording to the next command buffer
     s.at = 0;
     s.used = 0;
+    if (gaveBack)
+        growBytesChunksAhead();
 }
 
 bool rmTakeBytesChunk(uint64_t length, raw::Buffer &chunk)
@@ -176,12 +180,10 @@ bool rmTakeBytesChunk(uint64_t length, raw::Buffer &chunk)
             gBytesChunks.giveBack(node);
             gBytesChunkBytes.fetch_sub(chunk.length, std::memory_order_relaxed);
             gBytesChunkLength.store(std::min(chunk.length, kChunkMost), std::memory_order_relaxed);
-            growBytesChunksAhead();
             return true;
         }
         gBytesChunks.keep(node);
     }
-    growBytesChunksAhead();
     if (!gRM->raw->createControlBuffer(std::max(length, gBytesChunkLength.load(std::memory_order_relaxed)), chunk))
         return false;
     RM_CHUNK_COUNT(gChunkMisses, 1);

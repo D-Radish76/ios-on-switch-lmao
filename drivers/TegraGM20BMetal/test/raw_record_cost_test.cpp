@@ -3,8 +3,8 @@
 // (boot 21: 15 passes, 30 render target switches, 90 draws, 55 textures of other processes) and its parts, each draw
 // setting its vertices, transform and colour by setBytes, a texture and sampler by Core Animation's call and a scissor
 // of its own; the same frame at twice the draws; encoders with no draws; draws with no state set between them. Per
-// scenario: the recording thread's time, instructions and cycles, and its Objective-C messages, locks and allocations
-// (record_count.c). The counts are the test; times are printed.
+// scenario: the recording thread's time, instructions and cycles, and its Objective-C messages, locks, allocations and
+// dispatches (record_count.c). The counts are the test; times are printed.
 #include "raw_facade_harness.h"
 #include "raw_job_words.h"
 
@@ -17,13 +17,17 @@
 
 extern "C" {
 struct record_count {
-    uint64_t sends, locks, mallocs, frees, weaks, retains;
+    uint64_t sends, locks, mallocs, frees, weaks, retains, dispatches;
 };
 
 void record_count_start(void);
 void record_count_stop(struct record_count *out);
 int thread_selfcounts(int type, void *buf, size_t nbytes);
 }
+
+@protocol RecordCostChunkStats <NSObject>
++ (NSDictionary<NSString *, NSNumber *> *)switchRawBytesChunkStats;  // RawMetalCommandBuffer.mm (debug builds)
+@end
 
 @protocol RecordCostCoreAnimationSPI
 - (void)setFragmentTexture:(id<MTLTexture>)texture
@@ -220,6 +224,7 @@ Sample measure(const Record &record)
             const uint64_t ticks = mach_absolute_time() - t;
             record_count_stop(&s.counts);
             const Counts after = counts();
+            EXPECT_EQ(s.counts.dispatches, 0u) << "round " << round;
             s.us = ticksToUs(ticks);
             s.instructions = double(after.instructions - before.instructions);
             s.cycles = double(after.cycles - before.cycles);
@@ -251,8 +256,10 @@ Sample difference(const Sample &a, const Sample &b)
     d.us = a.us - b.us;
     d.instructions = a.instructions - b.instructions;
     d.cycles = a.cycles - b.cycles;
-    d.counts = {a.counts.sends - b.counts.sends, a.counts.locks - b.counts.locks, a.counts.mallocs - b.counts.mallocs,
-                a.counts.frees - b.counts.frees, a.counts.weaks - b.counts.weaks, a.counts.retains - b.counts.retains};
+    d.counts = {a.counts.sends - b.counts.sends,          a.counts.locks - b.counts.locks,
+                a.counts.mallocs - b.counts.mallocs,      a.counts.frees - b.counts.frees,
+                a.counts.weaks - b.counts.weaks,          a.counts.retains - b.counts.retains,
+                a.counts.dispatches - b.counts.dispatches};
     return d;
 }
 
@@ -297,6 +304,62 @@ TEST(RawRecordCost, CompositorScaleFrame)
     EXPECT_EQ(frame.counts.locks, 0u);
     EXPECT_LE(difference(doubled, frame).counts.retains, uint64_t(2 * kDraws));
     EXPECT_EQ(difference(repeated, one).counts.retains, 0u);
+}
+
+// Command buffers recorded back to back before any is committed, so the setBytes chunk pool runs dry: the recording
+// thread takes chunks or makes its own, and the pool's refill is left to the completions
+TEST(RawRecordCost, ABurstDispatchesNothingFromTheRecordingThread)
+{
+    Bench &b = bench();
+    ASSERT_TRUE(b.device != nil && b.state != nil);
+    constexpr int kBurst = 72;  // past the pool's 64 kept chunks
+    std::vector<id<MTLCommandBuffer>> recorded;
+    uint64_t dispatches = 0;
+    for (int f = 0; f < kBurst; f++)
+        @autoreleasepool {
+            id<MTLCommandBuffer> cb = [b.queue commandBuffer];
+            const std::vector<MTLRenderPassDescriptor *> into = passes(b, kEncoders);
+            record_count c;
+            record_count_start();
+            compositorFrame(cb, b, into, 2 * kDraws, uint32_t(f));
+            record_count_stop(&c);
+            dispatches += c.dispatches;
+            recorded.push_back(cb);
+        }
+    for (id<MTLCommandBuffer> cb : recorded)
+        [cb commit];
+    [recorded.back() waitUntilCompleted];
+    for (id<MTLCommandBuffer> cb : recorded)
+        EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
+    EXPECT_EQ(dispatches, 0u);
+}
+
+// A command buffer recorded after the last one completed takes its setBytes chunks from the pool: once the pool has
+// grown to what one frame in flight needs, no recording makes its own (debug builds count those misses)
+TEST(RawRecordCost, SteadyFramesTakeTheirChunksFromThePool)
+{
+    Bench &b = bench();
+    ASSERT_TRUE(b.device != nil && b.state != nil);
+    Class<RecordCostChunkStats> cls = (Class<RecordCostChunkStats>)NSClassFromString(@"RMCommandBuffer");
+    if (![cls respondsToSelector:@selector(switchRawBytesChunkStats)])
+        GTEST_SKIP() << "release builds count no misses";
+    const auto misses = [&] {
+        return [[cls switchRawBytesChunkStats][@"misses"] unsignedLongLongValue];
+    };
+    const auto frame = [&](int f) {
+        @autoreleasepool {
+            id<MTLCommandBuffer> cb = [b.queue commandBuffer];
+            compositorFrame(cb, b, passes(b, kEncoders), 2 * kDraws, uint32_t(f));
+            [cb commit];
+            [cb waitUntilCompleted];
+        }
+    };
+    for (int f = 0; f < kWarm; f++)
+        frame(f);
+    const unsigned long long before = misses();
+    for (int f = kWarm; f < kWarm + kRounds; f++)
+        frame(f);
+    EXPECT_EQ(misses() - before, 0u);
 }
 
 // Each call of a compositor draw, its instructions apart (less what two counter reads cost), over a frame's 90 draws

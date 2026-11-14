@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // What one thread does while it records (raw_record_cost_test): its Objective-C messages, locks, allocations, weak
-// reference calls (each takes the runtime's side-table lock, which the lock interposers cannot see) and retains and
-// releases, counted by interposers in this library, which the test links so dyld applies them at launch. Only the thread
+// reference calls (each takes the runtime's side-table lock, which the lock interposers cannot see), retains and
+// releases, and work it hands to a dispatch queue, counted by interposers in this library, which the test links so dyld applies them at launch. Only the thread
 // that called record_count_start counts, so a completion or a queue thread of the facade never adds to it.
+#include <dispatch/dispatch.h>
 #include <malloc/malloc.h>
 #include <os/lock.h>
 #include <pthread.h>
@@ -20,13 +21,13 @@ typedef struct objc_object *id;
         (const void *)(unsigned long)&_replacement, (const void *)(unsigned long)&_replacee};
 
 struct record_count {
-    uint64_t sends, locks, mallocs, frees, weaks, retains;
+    uint64_t sends, locks, mallocs, frees, weaks, retains, dispatches;
 };
 
 // the counting thread's TPIDRRO_EL0 with its low bits clear (0: none), which the message trampoline compares
 uintptr_t record_count_thread;
 uint64_t record_count_sends;
-static uint64_t locks, mallocs, frees, weaks, retains;
+static uint64_t locks, mallocs, frees, weaks, retains, dispatches;
 
 static uintptr_t threadWord(void)
 {
@@ -163,6 +164,20 @@ static void countedRelease(id object)
 }
 DYLD_INTERPOSE(countedRelease, objc_release)
 
+static void countedDispatchAsyncF(dispatch_queue_t queue, void *context, dispatch_function_t work)
+{
+    dispatches += counting();
+    dispatch_async_f(queue, context, work);
+}
+DYLD_INTERPOSE(countedDispatchAsyncF, dispatch_async_f)
+
+static void countedDispatchAsync(dispatch_queue_t queue, dispatch_block_t block)
+{
+    dispatches += counting();
+    dispatch_async(queue, block);
+}
+DYLD_INTERPOSE(countedDispatchAsync, dispatch_async)
+
 typedef void(malloc_logger_t)(uint32_t type, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3, uintptr_t result,
                               uint32_t num_hot_frames_to_skip);
 extern malloc_logger_t *malloc_logger;
@@ -184,7 +199,7 @@ static void countAllocations(uint32_t type, uintptr_t a, uintptr_t b, uintptr_t 
 
 void record_count_start(void)
 {
-    record_count_sends = locks = mallocs = frees = weaks = retains = 0;
+    record_count_sends = locks = mallocs = frees = weaks = retains = dispatches = 0;
     malloc_logger = countAllocations;
     atomic_thread_fence(memory_order_seq_cst);
     record_count_thread = threadWord();
@@ -201,4 +216,5 @@ void record_count_stop(struct record_count *out)
     out->frees = frees;
     out->weaks = weaks;
     out->retains = retains;
+    out->dispatches = dispatches;
 }
