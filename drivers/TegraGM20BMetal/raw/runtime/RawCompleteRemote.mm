@@ -380,6 +380,25 @@ bool Completion::reflection(id function, MTLComputePipelineDescriptor *descripto
         k, blob, why);
 }
 
+bool Completion::attributes(id function, const std::string &functionKey, std::string &blob, std::string &why)
+{
+    const CacheKey k = functionAttributesCacheKey(stack_, functionKey);
+    return storedReflection(
+        [&](bool every, CompileRequest &r, Digest &name) {
+            r = {};
+            r.stack = stack_;
+            r.kind = RequestKind::Reflection;
+            r.key = k.key;
+            std::vector<LibraryIdentity> ids;
+            std::map<const LibrarySource *, uint32_t> seen;
+            if (!addStage(r, ids, seen, "a", function, true, every))
+                return false;
+            name = storeName(k, r, ids);
+            return true;
+        },
+        k, blob, why);
+}
+
 bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey,
                        PackComputeFacts &out, std::string &failure)
 {

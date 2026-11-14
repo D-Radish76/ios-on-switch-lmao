@@ -122,6 +122,8 @@ public:
     bool reflection(Ask a, std::string &blob, std::string &why);
     bool reflection(id function, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey, std::string &blob,
                     std::string &why);
+    // The attributes blob (raw_function_attributes.h) of `function` (this facade's), keyed by its functionAttributesKey
+    bool attributes(id function, const std::string &functionKey, std::string &blob, std::string &why);
 
     // What the calling thread's last makeNow got its record by
     static Obtained lastObtained();

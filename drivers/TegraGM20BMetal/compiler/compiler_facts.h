@@ -13,4 +13,8 @@ namespace switch_compiler {
 // TegraGM20BCompilerABI.h's result
 int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why);
 
+// The attributes of `p`'s one function made with its constants (raw_function_attributes.h), as a reflection entry
+// (raw_reflection_blob.h encodeReflectionEntry), from the translator alone as makeFacts' are
+int32_t makeAttributes(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why);
+
 }  // namespace switch_compiler

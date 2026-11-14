@@ -6,6 +6,7 @@
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
 #include "../raw/runtime/raw_compute_key.h"
+#include "../raw/runtime/raw_function_attributes.h"
 #include "made_metallib.h"
 
 #include <gtest/gtest.h>
@@ -357,6 +358,55 @@ TEST(CompileRequest, ComputeFactsAreKeyedAsThePacksStateKey)
     raw::CompileRequest two = r;
     two.stages.push_back(stage("k", "kernel_fn"));
     EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "a facts request names one function";
+}
+
+// A specialized function's attributes: one stage tagged "a", keyed by its AIR, constants and the name it was made under,
+// refused with any other stage or a key naming other constants; the blob carries both lists, nil apart from empty
+TEST(CompileRequest, AFunctionsAttributesAreKeyedByItsAirConstantsAndName)
+{
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Reflection;
+    r.libraries.push_back(data(made_metallib::universal({"vertex_fn"}, 0x30)));
+    r.stages = {stage("a", "vertex_fn", 0, "#4:53:00")};
+    raw::AirHash air;
+    air.fill(0x30);
+    const std::string function = raw::functionAttributesKey(air, "#4:53:00", "vertex_fn");
+    r.key = raw::functionAttributesCacheKey(kStack, function).key;
+    EXPECT_TRUE(raw::functionAttributes(r));
+    EXPECT_FALSE(raw::computeReflection(r));
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.key.key, "attributes | " + function);
+    raw::CompileRequest other = r;
+    other.stages[0].constants = "#4:53:01";
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(other), kStack, system, p, why));
+    raw::CompileRequest two = r;
+    two.stages.push_back(stage("a", "vertex_fn"));
+    raw::CompileRequest back;
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "an attributes request names one function";
+
+    raw::FunctionAttributeTag position, normal;
+    position.name = "position";
+    position.type = 6;
+    position.active = true;
+    normal.name = "normal";
+    normal.index = 5;
+    normal.type = 5;
+    normal.patchData = normal.controlPointData = true;
+    const raw::AttributeList vertex = std::vector<raw::FunctionAttributeTag>{position, normal};
+    raw::AttributeList readVertex, readStage = std::vector<raw::FunctionAttributeTag>{};
+    ASSERT_TRUE(raw::decodeAttributeLists(raw::encodeAttributeLists(vertex, std::nullopt), readVertex, readStage));
+    ASSERT_TRUE(readVertex.has_value());
+    EXPECT_FALSE(readStage.has_value()) << "nil, not empty";
+    ASSERT_EQ(readVertex->size(), 2u);
+    EXPECT_EQ((*readVertex)[1].name, "normal");
+    EXPECT_EQ((*readVertex)[1].index, 5);
+    EXPECT_TRUE((*readVertex)[1].patchData && (*readVertex)[1].controlPointData && !(*readVertex)[1].active);
+    EXPECT_FALSE(
+        raw::decodeAttributeLists(raw::encodeAttributeLists(vertex, std::nullopt) + "x", readVertex, readStage));
 }
 
 TEST(CompileRequest, TheCompilerRefusesWhatItCannotTrust)

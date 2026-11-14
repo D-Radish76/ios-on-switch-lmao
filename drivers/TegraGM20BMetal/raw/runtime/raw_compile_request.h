@@ -29,7 +29,8 @@ using Digest = std::array<uint8_t, 32>;
 // needs before any dispatch; its one stage and limits as a kernel's, no dispatch. Library: a library the system's Metal
 // front end makes at run time from a code generation request (raw_codegen_request.h), with no stage or library of its own.
 // Reflection: a render state's (the stages and fields of Render) or a compute state's (Kernel's one stage and limits)
-// reflection blob (raw_reflection_blob.h), which the compiler makes with no compile context and stores
+// reflection blob (raw_reflection_blob.h), or one function's attributes (one stage tagged "a", raw_function_attributes.h),
+// which the compiler makes with no compile context and stores
 enum class RequestKind : uint8_t {
     Render,
     Kernel,
@@ -123,6 +124,9 @@ CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey);
 // state's computeStateKey (raw_compute_key.h)
 bool computeReflection(const CompileRequest &r);
 CacheKey computeReflectionKey(uint64_t stack, const std::string &stateKey);
+// Whether `r` asks one function's attributes, and their CacheKey of its functionAttributesKey (raw_function_attributes.h)
+bool functionAttributes(const CompileRequest &r);
+CacheKey functionAttributesCacheKey(uint64_t stack, const std::string &functionKey);
 // The CacheKey of a compute state's facts, of its raw_compute_key.h computeStateKey
 CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey);
 // The CacheKey of the library the front end makes of code generation request `bytes` of `type`: the request's SHA-256

@@ -66,6 +66,8 @@ bool knownTag(const CompileRequest &r, size_t index)
     const std::string &tag = r.stages[index].tag;
     if (r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r))
         return tag == "k";
+    if (functionAttributes(r))
+        return tag == "a";
     if (index == 0)
         return tag == "v";
     if (index == 1 && tag == "f")
@@ -89,7 +91,8 @@ bool sane(const CompileRequest &r)
 {
     if (r.kind == RequestKind::Library)
         return saneLibrary(r);
-    const bool kernel = r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r);
+    const bool kernel =
+        r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r) || functionAttributes(r);
     if ((kernel ? r.stages.size() != 1 : r.stages.empty()) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
         r.cubic.textures.size() > 16 || r.kernel.textures.size() > kRequestBindLimit ||
@@ -339,6 +342,19 @@ CacheKey computeReflectionKey(uint64_t stack, const std::string &stateKey)
     CacheKey k;
     k.stack = stack;
     k.key = "reflection | " + stateKey;
+    return k;
+}
+
+bool functionAttributes(const CompileRequest &r)
+{
+    return r.kind == RequestKind::Reflection && !r.stages.empty() && r.stages[0].tag == "a";
+}
+
+CacheKey functionAttributesCacheKey(uint64_t stack, const std::string &functionKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "attributes | " + functionKey;
     return k;
 }
 

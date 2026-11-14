@@ -69,18 +69,12 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 
 - (NSArray<MTLVertexAttribute *> *)vertexAttributes
 {
-    NSArray *attributes = nil;
-    return rmFunctionAttributes(self, false, &attributes)
-               ? attributes
-               : [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's vertex attributes") vertexAttributes];
+    return rmFunctionAttributes(self, false);
 }
 
 - (NSArray<MTLAttribute *> *)stageInputAttributes
 {
-    NSArray *attributes = nil;
-    return rmFunctionAttributes(self, true, &attributes)
-               ? attributes
-               : [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's stage input attributes") stageInputAttributes];
+    return rmFunctionAttributes(self, true);
 }
 
 - (MTLPatchType)patchType

@@ -7,6 +7,7 @@
 #include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/raw_codegen_request.h"
 #include "../raw/runtime/raw_compute_key.h"
+#include "../raw/runtime/raw_function_attributes.h"
 #include "../raw/runtime/raw_render_key.h"
 
 namespace switch_compiler {
@@ -104,6 +105,19 @@ bool factsKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>
     return true;
 }
 
+// One function's attributes: its AIR, constants and the name it was made under (raw_function_attributes.h)
+bool attributesKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
+                   std::string &why)
+{
+    const raw::RequestStage &s = p.request.stages[0];
+    raw::AirHash hash;
+    if (!airOf(p.request, air, s, hash, why))
+        return false;
+    p.packKey = raw::functionAttributesKey(hash, s.constants, s.name);
+    p.key = raw::functionAttributesCacheKey(stack, p.packKey);
+    return true;
+}
+
 // A library the front end makes: keyed by its code generation request's bytes, which must be what a client's builder
 // makes (raw_codegen_request.h)
 bool libraryKey(Prepared &p, uint64_t stack, std::string &why)
@@ -182,10 +196,11 @@ bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, 
         identities.push_back(raw::identityOf(library));
     }
     const raw::RequestKind kind = p.request.kind;
-    const bool keyed = raw::computeReflection(p.request)  ? computeReflectionKey(p, air, stack, why)
-                       : kind == raw::RequestKind::Kernel ? kernelKey(p, air, stack, why)
-                       : kind == raw::RequestKind::Facts  ? factsKey(p, air, stack, why)
-                                                          : renderKey(p, air, stack, why);
+    const bool keyed = raw::functionAttributes(p.request)  ? attributesKey(p, air, stack, why)
+                       : raw::computeReflection(p.request) ? computeReflectionKey(p, air, stack, why)
+                       : kind == raw::RequestKind::Kernel  ? kernelKey(p, air, stack, why)
+                       : kind == raw::RequestKind::Facts   ? factsKey(p, air, stack, why)
+                                                           : renderKey(p, air, stack, why);
     if (!keyed)
         return false;
     if (p.key.key != p.request.key)

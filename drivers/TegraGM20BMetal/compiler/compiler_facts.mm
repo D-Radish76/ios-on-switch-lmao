@@ -10,6 +10,8 @@
 #include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/RawPipelineKey.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
+#include "../raw/runtime/raw_function_attributes.h"
+#include "../raw/runtime/raw_reflection_blob.h"
 
 namespace switch_compiler {
 namespace {
@@ -70,7 +72,64 @@ NmbOfflineFunction *functionOf(const NmbOfflineLibrary *library, const raw::Requ
                                                 uint32_t(constants.size()));
 }
 
+// vertexAttributes (`stageInput` false) or stageInputAttributes as the translator answers them; nullopt for nil
+raw::AttributeList attributesOf(const NmbOfflineFunction *f, bool stageInput)
+{
+    const int64_t count = stageInput ? nmb_offline_function_stage_input_attribute_count(f)
+                                     : nmb_offline_function_vertex_attribute_count(f);
+    if (count < 0)
+        return std::nullopt;
+    std::vector<raw::FunctionAttributeTag> out;
+    for (uint32_t i = 0; i < uint32_t(count); i++) {
+        char name[256];
+        uint64_t info[5] = {};
+        const size_t named = stageInput ? nmb_offline_function_stage_input_attribute(f, i, name, sizeof name, info)
+                                        : nmb_offline_function_vertex_attribute(f, i, name, sizeof name, info);
+        if (!named)
+            return std::nullopt;
+        raw::FunctionAttributeTag a;
+        a.name = name;
+        a.index = uint8_t(info[0]);
+        a.type = uint8_t(info[1]);
+        a.active = info[2];
+        a.patchData = info[3];
+        a.controlPointData = info[4];
+        out.push_back(std::move(a));
+    }
+    return out;
+}
+
 }  // namespace
+
+int32_t makeAttributes(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
+{
+    @autoreleasepool {
+        const raw::RequestStage &s = p.request.stages[0];
+        NSData *held = nil;
+        const uint8_t *slice = nullptr;
+        size_t size = 0;
+        if (!airSliceOf(p.request.libraries[s.library], systemRoot, held, slice, size, why))
+            return TegraGM20BCompileUnavailable;
+        NmbOfflineLibrary *library = nmb_offline_library_new(slice, size);
+        if (!library)
+            return why = std::string("a library the translator does not read: ") + nmb_last_error(),
+                   TegraGM20BCompileUnavailable;
+        std::vector<NmbConstant> constants;
+        MTLFunctionConstantValues *values = nil;
+        NmbOfflineFunction *function = functionOf(library, s, constants, values, why);
+        if (!function) {
+            if (why.empty())
+                why = "no function " + s.function + ": " + nmb_last_error();
+            nmb_offline_library_release(library);
+            return TegraGM20BCompileUnavailable;
+        }
+        const std::string blob = raw::encodeAttributeLists(attributesOf(function, false), attributesOf(function, true));
+        nmb_offline_function_release(function);
+        nmb_offline_library_release(library);
+        entry = raw::encodeReflectionEntry(p.key, &blob, why);
+        return TegraGM20BCompileMade;
+    }
+}
 
 int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
 {

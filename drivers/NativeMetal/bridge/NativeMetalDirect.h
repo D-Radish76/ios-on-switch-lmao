@@ -315,6 +315,10 @@ uint64_t nmb_offline_function_type(const NmbOfflineFunction *);
 int64_t nmb_offline_function_vertex_attribute_count(const NmbOfflineFunction *);
 size_t nmb_offline_function_vertex_attribute(const NmbOfflineFunction *, uint32_t at, char *out, size_t size,
                                              uint64_t info[5]);
+// stageInputAttributes, likewise
+int64_t nmb_offline_function_stage_input_attribute_count(const NmbOfflineFunction *);
+size_t nmb_offline_function_stage_input_attribute(const NmbOfflineFunction *, uint32_t at, char *out, size_t size,
+                                                  uint64_t info[5]);
 
 typedef struct NmbOfflineRenderPipelineDescriptor {
     NMB_RENDER_PIPELINE_DESCRIPTOR_FIELDS(NmbOfflineFunction)

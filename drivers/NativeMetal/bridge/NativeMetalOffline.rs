@@ -323,3 +323,38 @@ pub extern "C" fn nmb_offline_function_vertex_attribute(
         attribute_out(&vertex_attributes(function)?.unwrap_or_default(), at, out, size, info)
     })
 }
+
+/// `stageInputAttributes` as the runtime's function answers it: `None` where Metal answers nil
+fn stage_input_attributes(function: *const NmbOfflineFunction) -> Result<Option<Vec<Attribute>>, String> {
+    Ok(properties(function, "stage input attributes")?
+        .stage_input_attributes()
+        .map(<[Attribute]>::to_vec))
+}
+
+/// nmb_function_attribute_count's answer for `stageInputAttributes`, of an offline function
+#[unsafe(no_mangle)]
+pub extern "C" fn nmb_offline_function_stage_input_attribute_count(function: *const NmbOfflineFunction) -> i64 {
+    guard(-1, || {
+        Ok(stage_input_attributes(function)?.map_or(-1, |a| a.len() as i64))
+    })
+}
+
+/// nmb_function_attribute's answer for `stageInputAttributes`, of an offline function
+#[unsafe(no_mangle)]
+pub extern "C" fn nmb_offline_function_stage_input_attribute(
+    function: *const NmbOfflineFunction,
+    at: u32,
+    out: *mut c_char,
+    size: usize,
+    info: *mut u64,
+) -> usize {
+    guard(0, || {
+        attribute_out(
+            &stage_input_attributes(function)?.unwrap_or_default(),
+            at,
+            out,
+            size,
+            info,
+        )
+    })
+}

@@ -192,6 +192,16 @@ size_t nmb_offline_function_vertex_attribute(const NmbOfflineFunction *, uint32_
     return 0;
 }
 
+int64_t nmb_offline_function_stage_input_attribute_count(const NmbOfflineFunction *)
+{
+    return -1;
+}
+
+size_t nmb_offline_function_stage_input_attribute(const NmbOfflineFunction *, uint32_t, char *, size_t, uint64_t[5])
+{
+    return 0;
+}
+
 bool nmb_render_pipeline_offline(const NmbOfflineRenderPipelineDescriptor *, bool, uint64_t, uint32_t,
                                  const NmbDirectBinds *, bool (*)(const NmbDirectState *, void *), void *)
 {

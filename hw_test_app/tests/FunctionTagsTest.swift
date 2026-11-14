@@ -7,8 +7,10 @@ import MetalPerformanceShaders
 /// A function's functionConstantsDictionary, vertexAttributes and stageInputAttributes come from its metallib's public
 /// metadata (drivers/TegraGM20BMetal/raw/runtime/raw_function_tags.h), never from an m2v twin. The expected answers for
 /// shaders/FunctionTags.metal are what an M-series Mac's Metal gives for the same source built for iOS. A function made
-/// with constant values answers no constants. MPS reads its kernels' constants before specializing them, so a Gaussian
-/// blur is encoded too. The case fails on a wrong answer, or if any of this asked for the m2v device (m2v_needs_asked).
+/// with constant values answers no constants, and the attributes its constants leave (tags_has_normal false drops
+/// normal), which the shader compiler reads from its specialized AIR. MPS reads its kernels' constants before specializing
+/// them, so a Gaussian blur is encoded too. The case fails on a wrong answer, or if any of this asked for the m2v device
+/// (m2v_needs_asked).
 struct FunctionTagsTest: HWTest {
     let id = "gpu.raw.function_tags"
     let name = "Function constants and attributes from the metallib, without m2v"
@@ -75,6 +77,21 @@ struct FunctionTagsTest: HWTest {
         values.setConstantValue(&mode, type: .int, index: 3)
         let specialized = try await gpu.library.makeFunction(name: "tags_kernel", constantValues: values)
         if !Self.constants(specialized).isEmpty { wrong.append("specialized_constants") }
+        for normal in [false, true] {
+            let gated = MTLFunctionConstantValues()
+            var has = normal
+            var scale: Float = 1
+            gated.setConstantValue(&has, type: .bool, index: 4)
+            gated.setConstantValue(&scale, type: .float, index: 1)
+            let f = try await gpu.library.makeFunction(name: "tags_vertex", constantValues: gated)
+            let expected =
+                "position:0:6:a-- uv:2:4:a-- " + (normal ? "normal:5:5:a-- " : "") + "colour:7:19:--- "
+            let answered = Self.attributes(f.vertexAttributes)
+            metrics.set("specialized_normal\(normal ? 1 : 0)", answered)
+            if answered != expected || Self.attributes(f.stageInputAttributes) != expected {
+                wrong.append("specialized_attributes")
+            }
+        }
 
         let size = 32
         let source = try gpu.texture(.rgba8Unorm, size, size, usage: [.shaderRead])
