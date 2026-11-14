@@ -192,11 +192,9 @@ void computeStates()
     MTLComputePipelineDescriptor *other = [MTLComputePipelineDescriptor new];
     other.computeFunction = kernel;
     other.maxTotalThreadsPerThreadgroup = 256;
-    EXPECT_EQ([device newComputePipelineStateWithDescriptor:other
-                                                    options:MTLPipelineOptionNone
-                                                 reflection:nil
-                                                      error:&error],
-              nil);
+    EXPECT_EQ(
+        [device newComputePipelineStateWithDescriptor:other options:MTLPipelineOptionNone reflection:nil error:&error],
+        nil);
     EXPECT_NE(error, nil);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));

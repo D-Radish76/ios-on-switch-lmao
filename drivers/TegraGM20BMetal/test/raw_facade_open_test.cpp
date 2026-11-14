@@ -129,10 +129,11 @@ void unwiredPages()
     void *pages = mmap(nullptr, length, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
     ASSERT_NE(pages, MAP_FAILED);
     kernel_model::model.refuseImports = 1;
-    EXPECT_EQ([device newBufferWithBytesNoCopy:pages length:length options:MTLResourceStorageModeShared deallocator:nil],
-              nil);
-    EXPECT_NE([device newBufferWithBytesNoCopy:pages length:length options:MTLResourceStorageModeShared deallocator:nil],
-              nil)
+    EXPECT_EQ(
+        [device newBufferWithBytesNoCopy:pages length:length options:MTLResourceStorageModeShared deallocator:nil],
+        nil);
+    EXPECT_NE(
+        [device newBufferWithBytesNoCopy:pages length:length options:MTLResourceStorageModeShared deallocator:nil], nil)
         << "the next import is taken";
     expectNoM2V(device);
 }

@@ -169,7 +169,8 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     q.key = r.text();
     readFields(r, q.fields);
     const uint32_t stages = r.value<uint32_t>();
-    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Facts) || form > 1 || stages > kRequestStageLimit)
+    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Facts) || form > 1 ||
+        stages > kRequestStageLimit)
         return false;
     q.stages.resize(stages);
     for (RequestStage &s : q.stages) {
