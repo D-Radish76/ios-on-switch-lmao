@@ -35,13 +35,13 @@ extension NativeLoudErrorTest {
         let path = commandBuffer.map(RawFacade.path(of:)) ?? "-"
         let error = commandBuffer?.error.map { $0 as NSError }
         metrics.set("path", path)
+        let code = error?.code ?? 0
         metrics.set("domain", error?.domain ?? "-")
-        metrics.set("code", error?.code ?? 0)
+        metrics.set("code", code)
         metrics.set("failed", failed)
         metrics.set("m2v", m2v)
         if commandBuffer?.status != .error { failures.append("the command buffer did not fail") }
-        if error?.domain != MTLCommandBufferErrorDomain || error?.code != MTLCommandBufferError.invalidResource.rawValue
-        {
+        if error?.domain != MTLCommandBufferErrorDomain || code != Int(MTLCommandBufferError.invalidResource.rawValue) {
             failures.append("its error is not MTLCommandBufferErrorDomain InvalidResource")
         }
         if path != "error:\(predicate)" { failures.append("its path is \(path)") }
