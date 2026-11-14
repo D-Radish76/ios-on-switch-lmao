@@ -14,6 +14,9 @@
 namespace raw {
 namespace {
 
+// RawDirect.mm Direct::kernel's reason for a translation the bridge fails
+const std::string kTranslationFails = "m2v refused its translation: fails: ";
+
 constexpr uint64_t kCacheCap = 8u << 20;
 
 #if SWITCH_RAW_DIAGNOSTICS
@@ -460,6 +463,10 @@ const ComputeState *Completion::kernel(MTLComputePipelineDescriptor *descriptor,
                 break;
             }
             }
+            // a translation the bridge fails ("fails: ", NativeMetalDirectCompute.rs mapped_samplers) fails the same at
+            // every try: its dispatches fail, and nothing asks again
+            if (outcome == Compiler::Outcome::Failed && !why.compare(0, kTranslationFails.size(), kTranslationFails))
+                return Build::Outcome::Gone;
             return outcome == Compiler::Outcome::Made      ? Build::Outcome::Made
                    : outcome == Compiler::Outcome::Refused ? Build::Outcome::Refused
                                                            : Build::Outcome::Failed;
