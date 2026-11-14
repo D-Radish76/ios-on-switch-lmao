@@ -36,7 +36,7 @@ rust_test(
 
 rust_test(
     name = "native_tess_modes_test",
-    srcs = ["//drivers/NativeMetal:bridge/NativeMetalTessModes.rs"],
+    srcs = ["//drivers/TegraGM20BMetal:translate/NativeMetalTessModes.rs"],
     edition = "2024",
     # m2v: the bridge's own Rust
     tags = ["m2v"],
@@ -124,6 +124,7 @@ host_test(
         "//drivers/NativeMetal:GpuMemoryRelease.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h",
     ],
     cxx_std = "c++17",
 )

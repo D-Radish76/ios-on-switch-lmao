@@ -42,8 +42,8 @@ KEYED = [
     PACK / 'native_seed.mm',
     Path('drivers/NativeMetal/NativeBridgeMetalFrontend.mm'),
     Path('drivers/NativeMetal/abi/MetalABI.h'),
-    Path('drivers/NativeMetal/bridge/NativeMetalDirect.rs'),
-    Path('drivers/NativeMetal/bridge/NativeMetalTranslate.rs'),
+    Path('drivers/TegraGM20BMetal/translate/NativeMetalDirect.rs'),
+    Path('drivers/TegraGM20BMetal/translate/NativeMetalTranslate.rs'),
     Path('third_party/m2v/crates/metal2vulkan/src/lib.rs'),
 ]
 

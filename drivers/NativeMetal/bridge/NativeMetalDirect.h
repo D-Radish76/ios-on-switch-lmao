@@ -6,7 +6,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "NativeMetalObjects.h"
-#include "../../TegraGM20BMetal/raw/runtime/raw_direct_abi.h"
+#include "../../TegraGM20BMetal/translate/NativeMetalTranslate.h"
 #include "NativeMetalBlend.h"
 
 #ifdef __cplusplus
@@ -26,47 +26,6 @@ bool nmb_render_pipeline_direct(NmbDevice *device, const NmbRenderPipelineDescri
 bool nmb_compute_pipeline_direct(NmbDevice *device, const struct NmbComputePipelineDescriptor *descriptor,
                                  const NmbDirectDispatch *dispatch,
                                  bool (*each)(const NmbDirectKernel *kernel, void *ctx), void *ctx);
-
-// The direct compile with no m2v runtime (NativeMetalOffline.rs): libraries and functions the translator makes alone, and
-// states and kernels of them made on the build's compile profile's devices, every Vulkan handle they hand over 0.
-typedef struct NmbOfflineLibrary NmbOfflineLibrary;
-typedef struct NmbOfflineFunction NmbOfflineFunction;
-
-// As nmb_library_new's metallib, nmb_function_new's and nmb_function_new_specialized's functions
-NmbOfflineLibrary *nmb_offline_library_new(const void *bytes, size_t length);
-void nmb_offline_library_release(NmbOfflineLibrary *);
-NmbOfflineFunction *nmb_offline_function_new(const NmbOfflineLibrary *, const char *name);
-NmbOfflineFunction *nmb_offline_function_new_specialized(const NmbOfflineLibrary *, const char *name,
-                                                         const char *specialized_name,
-                                                         const struct NmbConstant *constants, uint32_t count);
-void nmb_offline_function_release(NmbOfflineFunction *);
-uint64_t nmb_offline_function_type(const NmbOfflineFunction *);
-// vertexAttributes, as nmb_function_attribute_count and nmb_function_attribute answer it
-int64_t nmb_offline_function_vertex_attribute_count(const NmbOfflineFunction *);
-size_t nmb_offline_function_vertex_attribute(const NmbOfflineFunction *, uint32_t at, char *out, size_t size,
-                                             uint64_t info[5]);
-
-typedef struct NmbOfflineRenderPipelineDescriptor {
-    NMB_RENDER_PIPELINE_DESCRIPTOR_FIELDS(NmbOfflineFunction)
-} NmbOfflineRenderPipelineDescriptor;
-
-typedef struct NmbOfflineComputePipelineDescriptor {
-    NMB_COMPUTE_PIPELINE_DESCRIPTOR_FIELDS(NmbOfflineFunction)
-} NmbOfflineComputePipelineDescriptor;
-
-// nmb_render_pipeline_direct's and nmb_compute_pipeline_direct's answers for offline functions
-bool nmb_render_pipeline_offline(const NmbOfflineRenderPipelineDescriptor *descriptor, bool barrier,
-                                 uint64_t textureFormat, uint32_t textureSamples, const NmbDirectBinds *binds,
-                                 bool (*each)(const NmbDirectState *state, void *ctx), void *ctx);
-bool nmb_compute_pipeline_offline(const NmbOfflineComputePipelineDescriptor *descriptor,
-                                  const NmbDirectDispatch *dispatch,
-                                  bool (*each)(const NmbDirectKernel *kernel, void *ctx), void *ctx);
-// Whether the m2v runtime's own compile device compiles `descriptor`'s kernel, as its compute state creation does (false
-// with nmb_last_error)
-bool nmb_offline_compute_pipeline_compiles(const NmbOfflineComputePipelineDescriptor *descriptor);
-// The answers the runtime's compute prepare gives `descriptor`'s state (its native compute artifact's metal_info), into
-// `facts`: maxTotalThreadsPerThreadgroup, threadExecutionWidth, staticThreadgroupMemoryLength (false with nmb_last_error)
-bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescriptor *descriptor, uint32_t facts[3]);
 
 // The build's compile profile held to `device`'s runtime (false: they differ, nmb_last_error says how), and the profile of
 // `device`'s runtime as JSON into `out` (`length` bytes, unterminated): its length, 0 on failure

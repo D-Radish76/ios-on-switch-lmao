@@ -8,7 +8,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "../../TegraGM20BMetal/raw/runtime/raw_direct_abi.h"
+#include "../../TegraGM20BMetal/translate/NativeMetalTranslate.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -28,7 +28,6 @@ typedef struct NmbEncoder NmbEncoder;
 typedef struct NmbEvent NmbEvent;
 typedef struct NmbFence NmbFence;
 
-const char *nmb_last_error(void);
 /* The bridge's embedded AIR fixtures: the runtime's own runtime_examples and kernel_function_constant_gate_fold. */
 const void *nmb_fixture_air(size_t *length);
 const void *nmb_function_constant_air(size_t *length);
@@ -162,12 +161,6 @@ NmbFunction *nmb_function_new(NmbLibrary *, const char *name);
 
 /* A function specialized with constant values (newFunctionWithName:constantValues:error:): type is Metal's MTLDataType, name is null for an
  * indexed value; bytes holds the value's bytes. */
-struct NmbConstant {
-    uint64_t type, index;
-    const char *name;
-    const void *bytes;
-    uint64_t length;
-};
 
 /* specialized_name: MTLFunctionDescriptor.specializedName, the name a pipeline links the function under (null: its own). */
 NmbFunction *nmb_function_new_specialized(NmbLibrary *, const char *name, const char *specialized_name,
@@ -190,44 +183,6 @@ uint64_t nmb_compute_pipeline_max_threads(const NmbComputePipeline *);
 uint64_t nmb_compute_pipeline_execution_width(const NmbComputePipeline *);
 uint64_t nmb_compute_pipeline_static_threadgroup_memory(const NmbComputePipeline *); /* staticThreadgroupMemoryLength */
 
-struct NmbColorAttachment {
-    uint64_t format, write_mask, blending, source_rgb, destination_rgb, rgb_operation, source_alpha, destination_alpha,
-        alpha_operation;
-};
-
-struct NmbVertexAttribute {
-    uint64_t format, offset, buffer;
-};
-
-struct NmbVertexLayout {
-    uint64_t stride, step_function, step_rate;
-};
-
-/* A render pipeline descriptor's fields over handles of `Function` (NmbFunction, or the offline compile's
- * NmbOfflineFunction: NativeMetalDirect.h), as the bridge's NmbRenderPipelineDescriptorOf takes them. vertex_inputs 0: no
- * vertex descriptor. The linked arrays are vertexLinkedFunctions' and fragmentLinkedFunctions' functions and
- * privateFunctions, as NmbComputePipelineDescriptor's linked functions are. tessellation through
- * factor_scale_enabled are the descriptor's tessellator state, as MTLRenderPipelineDescriptor's (0: Metal's defaults),
- * and max_amplification its maxVertexAmplificationCount. */
-#define NMB_RENDER_PIPELINE_DESCRIPTOR_FIELDS(Function)                                                           \
-    Function *vertex, *fragment;                                                                                  \
-    struct NmbColorAttachment colors[8];                                                                          \
-    uint64_t depth_format, stencil_format, samples, topology, rasterization;                                      \
-    uint64_t vertex_inputs;                                                                                       \
-    struct NmbVertexAttribute attributes[31];                                                                     \
-    struct NmbVertexLayout layouts[31];                                                                           \
-    Function *const *vertex_linked;                                                                               \
-    uint64_t vertex_linked_count;                                                                                 \
-    Function *const *vertex_private_linked;                                                                       \
-    uint64_t vertex_private_count;                                                                                \
-    Function *const *fragment_linked;                                                                             \
-    uint64_t fragment_linked_count;                                                                               \
-    Function *const *fragment_private_linked;                                                                     \
-    uint64_t fragment_private_count;                                                                              \
-    uint64_t tessellation, max_tessellation_factor, partition_mode, factor_format, factor_step_function, winding, \
-        control_point_index_type, factor_scale_enabled;                                                           \
-    uint64_t max_amplification;
-
 struct NmbRenderPipelineDescriptor {
     NMB_RENDER_PIPELINE_DESCRIPTOR_FIELDS(NmbFunction)
 };
@@ -241,24 +196,6 @@ struct NmbPipelineOptions {
     NmbBinaryArchive *const *archives;
     size_t archive_count;
 };
-
-/* As NMB_RENDER_PIPELINE_DESCRIPTOR_FIELDS, a compute pipeline descriptor's. The linked arrays are MTLLinkedFunctions'
- * functions and privateFunctions, the external functions the kernel calls by name (counted arrays of live handles for
- * the duration of the call; none where the count is 0). The stage_ fields are the stageInputDescriptor (stage_inputs 0:
- * none): its attributes by index (format 0: none) and layouts by buffer index (stride UINT64_MAX:
- * MTLBufferLayoutStrideDynamic), its index type and index buffer. */
-#define NMB_COMPUTE_PIPELINE_DESCRIPTOR_FIELDS(Function)                                                        \
-    Function *function;                                                                                         \
-    uint64_t max_threads, multiple_of_execution_width, indirect, max_call_stack_depth, adding_binary_functions; \
-    uint64_t mutability[31];                                                                                    \
-    Function *const *linked;                                                                                    \
-    uint64_t linked_count;                                                                                      \
-    Function *const *private_linked;                                                                            \
-    uint64_t private_count;                                                                                     \
-    uint64_t stage_inputs;                                                                                      \
-    struct NmbVertexAttribute stage_attributes[31];                                                             \
-    struct NmbVertexLayout stage_layouts[31];                                                                   \
-    uint64_t stage_index_type, stage_index_buffer;
 
 struct NmbComputePipelineDescriptor {
     NMB_COMPUTE_PIPELINE_DESCRIPTOR_FIELDS(NmbFunction)

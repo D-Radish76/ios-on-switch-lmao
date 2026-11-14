@@ -2619,7 +2619,8 @@ host_test(
     srcs = ["m2v_source_test.cpp"],
     data = [
         "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
-        "//drivers/NativeMetal:bridge/NativeMetalDescriptors.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDescriptors.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalComputeState.mm",
@@ -4586,6 +4587,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/NativeMetal:bridge/NativeMetalDirect.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
