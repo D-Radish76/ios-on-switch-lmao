@@ -2,7 +2,8 @@
 // A state of no fragment function (RenderBox's path_edges: depth and stencil from its vertex function, its colours
 // masked) is the pack's record and the raw path's draw: its creation and its pass never open the m2v device, its bind
 // turns the pixel stage off and the pass's end turns it back on (raw_stage_switches.h). One Metal does not rasterize keys
-// rast=0 and turns the rasteriser off the same way. Each scenario is a process of its own.
+// rast=0 and turns the rasteriser off the same way. A state of both stages draws with both on, as the channel's context
+// turned them (raw_gpu.cpp stageSwitchesOn): no pack baseline or record sets them. Each scenario is a process of its own.
 #include "raw_facade_harness.h"
 #include "bazel/testing/fresh_process.h"
 #include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
@@ -41,6 +42,19 @@ std::string vertexOnlyKey(bool rasterize)
 {
     const raw::StageKey vertex{"v", ""};
     return raw::pipelineKey(vertexOnly(nil, rasterize), &vertex, nullptr, "", "QuartzCore");
+}
+
+MTLRenderPipelineDescriptor *twoStage(id<MTLLibrary> library)
+{
+    MTLRenderPipelineDescriptor *d = vertexOnly(library, true);
+    d.fragmentFunction = [library newFunctionWithName:@"f"];
+    return d;
+}
+
+std::string twoStageKey()
+{
+    const raw::StageKey vertex{"v", ""}, fragment{"f", ""};
+    return raw::pipelineKey(twoStage(nil), &vertex, &fragment, "", "QuartzCore");
 }
 
 id<MTLTexture> target(id<MTLDevice> device, MTLPixelFormat format)
@@ -147,6 +161,31 @@ void unrasterizedDraw()
     drawnWithItsSwitchOff(false);
 }
 
+void twoStageDraw()
+{
+    const std::string metallib = writeMetallib();
+    id<MTLDevice> device = open(writePack(twoStageKey()));
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(metallib.c_str())] error:&error];
+    ASSERT_TRUE(library != nil) << text(error);
+    MTLRenderPipelineDescriptor *d = twoStage(library);
+    EXPECT_EQ(std::string(raw_metal_pipeline_key(d).UTF8String), twoStageKey());
+    id<MTLRenderPipelineState> state = [device newRenderPipelineStateWithDescriptor:d error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    EXPECT_TRUE([[(id)state switchPackHit] boolValue]);
+    id<MTLCommandBuffer> cb = drawDepth(device, state);
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
+
+    const std::vector<uint32_t> pixel = written(0, raw::kPixelStageSwitch), raster = written(0, raw::kRasterSwitch);
+    EXPECT_FALSE(pixel.empty()) << "no channel context turned the pixel stage on";
+    EXPECT_FALSE(raster.empty()) << "no channel context turned the rasteriser on";
+    for (const uint32_t v : pixel)
+        EXPECT_EQ(v, raw::kPixelStageOn);
+    for (const uint32_t v : raster)
+        EXPECT_EQ(v, 1u);
+}
+
 }  // namespace
 
 TEST(RawFacadeVertexOnly, AStateOfNoFragmentFunctionIsDrawnByTheRawPathWithItsPixelStageOff)
@@ -157,4 +196,9 @@ TEST(RawFacadeVertexOnly, AStateOfNoFragmentFunctionIsDrawnByTheRawPathWithItsPi
 TEST(RawFacadeVertexOnly, AStateMetalDoesNotRasterizeIsDrawnWithTheRasteriserOff)
 {
     switch_ios::test::ExpectPassesInFreshProcess(unrasterizedDraw);
+}
+
+TEST(RawFacadeVertexOnly, AStateOfBothStagesDrawsWithThePixelStageAndRasteriserTheContextTurnedOn)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(twoStageDraw);
 }
