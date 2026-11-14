@@ -332,18 +332,6 @@ static NSArray<NSString *> *namesOf(const std::vector<std::string> &names)
 
 @end
 
-RMLibrary *wrapLibrary(id device, id<MTLLibrary> twin, NSString *path)
-{
-    if (!twin)
-        return nil;
-    RMLibrary *l = [RMLibrary new];
-    l->_device = device;
-    l->_twin = twin;
-    l->_source = std::make_shared<raw::LibrarySource>(path.UTF8String ?: "");
-    l->_framework = raw::frameworkOf(l->_source->path);
-    return l;
-}
-
 RMLibrary *readLibrary(id device, NSString *path, NSData *bytes)
 {
     raw::MetallibFunctions functions;

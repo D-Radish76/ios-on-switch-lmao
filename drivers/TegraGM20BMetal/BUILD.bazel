@@ -155,6 +155,7 @@ filegroup(
 filegroup(
     name = "compiler_srcs",
     srcs = [
+        "compiler/compiler_codegen.mm",
         "compiler/compiler_engine.mm",
         "compiler/compiler_facts.mm",
         "compiler/compiler_libraries.mm",

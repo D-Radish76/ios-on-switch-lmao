@@ -5,13 +5,6 @@
 #import "RawRenderKey.h"
 #import "RawMetalBinaryArchive.h"
 
-// The m2v device's Core Image filter-function linking (_MTLDevice's newLibraryWithImageFilterFunctionsSPI: sends it here)
-@protocol RMImageFilterLinking
-- (id<MTLLibrary>)newLibraryWithCIFilters:(NSArray *)functions
-                  imageFilterFunctionInfo:(const void *)info
-                                    error:(NSError **)error;
-@end
-
 @implementation RMSampler
 
 + (Class)twinClass
@@ -542,51 +535,6 @@ static id<MTLRenderPipelineState> makeState(RMDevice *device, MTLRenderPipelineD
                                                                                              options:o
                                                                                           reflection:r
                                                                                                error:error]];
-}
-
-// The m2v device links these libraries from its own functions' bitcode: the functions here are their twins. Its methods, inherited
-// by this class, would be sent this device's functions.
-static NSArray *twinFunctions(NSArray *functions, NSError **error)
-{
-    NSMutableArray *twins = [NSMutableArray arrayWithCapacity:functions.count];
-    for (id f in functions) {
-        id twin = twinOf(f);
-        if (!twin) {
-            if (error)
-                *error = [NSError errorWithDomain:MTLLibraryErrorDomain
-                                             code:MTLLibraryErrorFunctionNotFound
-                                         userInfo:@{NSLocalizedDescriptionKey : @"a function with no m2v twin"}];
-            return nil;
-        }
-        [twins addObject:twin];
-    }
-    return twins;
-}
-
-- (id<MTLLibrary>)newLibraryWithStitchedDescriptor:(MTLStitchedLibraryDescriptor *)d error:(NSError **)error
-{
-    NSArray *twins = twinFunctions(d.functions, error);
-    if (!twins)
-        return nil;
-    MTLStitchedLibraryDescriptor *t = [d copy];
-    t.functions = twins;
-    id<MTLDevice> m2v = RM_M2V("a stitched library");
-    return (id<MTLLibrary>)wrapLibrary(self, [m2v newLibraryWithStitchedDescriptor:t error:error], nil);
-}
-
-- (id<MTLLibrary>)newLibraryWithCIFilters:(NSArray *)functions
-                  imageFilterFunctionInfo:(const void *)info
-                                    error:(NSError **)error
-{
-    NSArray *twins = twinFunctions(functions, error);
-    if (!twins)
-        return nil;
-    id<MTLDevice> m2v = RM_M2V("a Core Image filter library");
-    return (id<MTLLibrary>)wrapLibrary(self,
-                                       [(id<RMImageFilterLinking>)m2v newLibraryWithCIFilters:twins
-                                                                      imageFilterFunctionInfo:info
-                                                                                        error:error],
-                                       nil);
 }
 
 - (id)newResourceGroupFromResources:(const id __unsafe_unretained *)resources count:(NSUInteger)count

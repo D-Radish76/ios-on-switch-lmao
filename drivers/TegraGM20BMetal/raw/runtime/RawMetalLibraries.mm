@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // A library the device makes of a metallib it reads itself (RawMetalLibrary.mm readLibrary): its twin and its functions'
 // are m2v's only once something asks for them. A file, URL, data or bundle library it cannot read fails as Metal's and
-// m2v's do. Source, stitching and Core Image's linking are m2v's from the start.
+// m2v's do. Source, stitching and Core Image's linking are the system's Metal front end's (RawMetalCompiledLibraries.mm).
 #import "RawMetalInternal.h"
 
 #include <os/log.h>
@@ -100,12 +100,6 @@ static id<MTLLibrary> fileLibrary(id device, NSString *path, NSString *named, NS
         return nil;
     }
     return fileLibrary(self, url.path, [bundle.bundlePath stringByAppendingString:@"/default.metallib"], error);
-}
-
-- (id<MTLLibrary>)newLibraryWithSource:(NSString *)source options:(MTLCompileOptions *)options error:(NSError **)error
-{
-    id<MTLDevice> m2v = RM_M2V("a library from source");
-    return (id<MTLLibrary>)wrapLibrary(self, [m2v newLibraryWithSource:source options:options error:error], nil);
 }
 
 @end
