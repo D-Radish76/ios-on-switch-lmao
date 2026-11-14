@@ -475,6 +475,19 @@ static void presented_run(void *arg)
 			} else if (frame_target && now > frame_target) {
 				WRITE_ONCE(dl.missed_clear, dl.missed_clear + 1);
 			}
+			if (frame_target && now > frame_target) {
+				const u64 kick = READ_ONCE(dl.kick_last);
+				const struct tgm_deadline_miss miss = {
+					now - frame_target,
+					kick < frame_target ? frame_target - kick : 0,
+					ours ? frame_ns : 0,
+					dl.expected,
+					READ_ONCE(dl.kick_app_last) > dl.presented_at,
+					READ_ONCE(dl.pass_biased),
+				};
+
+				tgm_deadline_missed(&miss);
+			}
 		}
 		if (p->pass && !tail && ours && !READ_ONCE(dl.pass_biased) && frame_ns) {
 			WRITE_ONCE(dl.expected, tgm_expect(dl.expected, frame_ns));

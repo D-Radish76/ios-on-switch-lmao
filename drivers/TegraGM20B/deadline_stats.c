@@ -16,6 +16,27 @@ static struct {
 } cost;
 #endif
 
+void tgm_deadline_missed(const struct tgm_deadline_miss *m)
+{
+#if TGM_STATS
+	static u32 lines;
+	char line[320];
+
+	lines++;
+	if (lines > 32 && lines % 64)
+		return;
+	/* formatted here and logged as one string: os_log drops a message whose scalars outgrow its buffer */
+	scnprintf(line, sizeof(line),
+		  "tegra-gm20b: compositor frame missed its vblank by %llu us: %s (its GPU time %llu us, learned %llu "
+		  "us; last kick %llu us before the vblank; an app kicked %d, held the GPU %d) (#%u)",
+		  m->late_ns / 1000, tgm_deadline_miss_cause(m), m->gpu_ns / 1000, m->expected_ns / 1000,
+		  m->kick_lead_ns / 1000, m->app_kicked, m->app_held, lines);
+	nvxnu_log("%s", line);
+#else
+	(void)m;
+#endif
+}
+
 void tgm_deadline_learned(uint64_t ns)
 {
 #if TGM_STATS
