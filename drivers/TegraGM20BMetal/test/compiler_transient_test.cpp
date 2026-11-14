@@ -32,13 +32,6 @@ std::string dir()
     return tmp ? tmp : "/tmp";
 }
 
-std::string loader()
-{
-    char path[PATH_MAX];
-    const char *nvk = getenv("SWITCH_NVK");
-    return nvk && realpath(nvk, path) ? path : "";
-}
-
 std::string root()
 {
     return compiler_test::systemRoot(getenv("SWITCH_QUARTZCORE"));

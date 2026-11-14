@@ -5610,13 +5610,11 @@ host_test(
     cxx_std = "c++17",
     data = [
         "//drivers/TegraGM20BMetal:precompile/corpus.log",
-        "//gpu/nvk:host_dylib",
         "@ipsw//:crawl_qc",
         "@ipsw//:crawl_tree",
     ],
     env = {
         "SWITCH_CORPUS": "$(rootpath //drivers/TegraGM20BMetal:precompile/corpus.log)",
-        "SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)",
         "SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)",
     },
     linkopts = [
