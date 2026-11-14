@@ -29,6 +29,7 @@
 #include "../../../../kits/SwitchGM20BEmit/SwitchGM20BEmitRaster.h"
 #include "raw_mme.h"
 #include "raw_mip.h"
+#include "../fx/fx_mip_probe.h"
 #include "../fx/fx_mip_route.h"
 #include "raw_owned.h"
 #include "raw_cbuf.h"
@@ -2200,7 +2201,7 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
     if (chain) {
         const FormatInfo *f = formatInfo(ask.format);
         chain->va = t.va;
-        chain->fmt2d = fx::twodFormat(ask.format);
+        chain->fmt2d = fx::twodChainFormat(ask.format);
         uint32_t w[8];
         fx::mipChainTic(chain->layout, chain->va, f->tic0, f->srgb, 0, ask.levels, w);
         // the texture's header: the chain's (visible at the next header invalidate)
@@ -2271,7 +2272,7 @@ void Device::layImage(const fx::MipChain &c, const FormatInfo *f, uint8_t type, 
     t.chain = new Texture::Chain;
     t.chain->layout = c;
     t.chain->va = t.va;
-    t.chain->fmt2d = volume ? 0 : fx::twodFormat(t.format);
+    t.chain->fmt2d = volume ? 0 : fx::twodChainFormat(t.format);
     uint32_t w[8];
     fx::mipChainTic(c, t.va, f->tic0, f->srgb, 0, c.levels, w, type);
     memcpy(tic_.cpu + 32 * t.tic, w, 32);  // visible at the next submission's header invalidate
@@ -2953,10 +2954,10 @@ void Device::destroyTexture(Texture &t)
     if (t.zeta)
         freeOwnedZeta(t.va);
     if (t.chain) {
-        for (const uint32_t level : t.chain->levelTic)
-            if (level) {
-                freeTic(level);
-            }
+        for (const uint32_t *tics : {t.chain->levelTic, t.chain->levelCodesTic})
+            for (uint32_t level = 0; level < fx::kMaxLevels; level++)
+                if (tics[level])
+                    freeTic(tics[level]);
         delete t.chain;
         t.chain = nullptr;
     }
@@ -7374,19 +7375,19 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
     return tic;
 }
 
-uint32_t Device::levelTic(Texture &t, uint32_t level)
+uint32_t Device::levelTic(Texture &t, uint32_t level, bool codes)
 {
     const FormatInfo *f = formatInfo(t.format);
     if (!t.chain || !f || level >= t.chain->layout.levels)
         return 0;
-    uint32_t &slot = t.chain->levelTic[level];
+    uint32_t &slot = (codes ? t.chain->levelCodesTic : t.chain->levelTic)[level];
     if (const uint32_t made = __atomic_load_n(&slot, __ATOMIC_ACQUIRE))
         return made;
     RAW_ENCODE_LOCK(l, lock_);
     uint32_t tic = slot;
     if (!tic && (tic = allocTic())) {
         uint32_t w[8];
-        fx::mipChainTic(t.chain->layout, t.chain->va, f->tic0, f->srgb, level, 1, w);
+        fx::mipChainTic(t.chain->layout, t.chain->va, f->tic0, f->srgb && !codes, level, 1, w);
         memcpy(tic_.cpu + 32 * tic, w, 32);  // visible at the next submission's header invalidate
         __atomic_store_n(&slot, tic, __ATOMIC_RELEASE);
     }
@@ -8344,8 +8345,16 @@ static ProbeSurface probeSurface(const Texture &t, uint32_t fmt2d, uint32_t widt
     return s;
 }
 
-void BlitEncoder::probe(const ProbeOp &op, const Texture *read, const Texture &written)
+// The op's surfaces from the textures' memory at encode, which a private texture's move to plain memory may have changed
+// since the op was recorded; its formats and sizes as recorded
+void BlitEncoder::probe(const ProbeOp &recorded, const Texture *read, const Texture &written)
 {
+    ProbeOp op = recorded;
+    if (op.kind != ProbeOpKind::Method) {
+        op.dst = probeSurface(written, op.dst.fmt2d, op.dst.width, op.dst.height);
+        if (read)
+            op.src = probeSurface(*read, op.src.fmt2d, op.src.width, op.src.height);
+    }
     room(uint32_t(probeOpWords(op)) + kProbeBracketWords);
     if (read)
         cb_->use(*read, false);

@@ -2625,6 +2625,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/fx/fx_image.h",
         "//drivers/TegraGM20BMetal:raw/fx/fx_mip.cpp",
         "//drivers/TegraGM20BMetal:raw/fx/fx_mip.h",
+        "//drivers/TegraGM20BMetal:raw/fx/fx_mip_probe.h",
         "//drivers/TegraGM20BMetal:raw/fx/fx_mip_route.h",
         "//drivers/TegraGM20BMetal:raw/fx/test/twod_sim.cpp",
         "//drivers/TegraGM20BMetal:raw/fx/test/twod_sim.h",
@@ -5052,7 +5053,8 @@ objc_library(
 # descriptors and over a function's runs, nested encoders and refusals, and the gpuResourceID of its textures and samplers,
 # named at the first ask and forgotten when they go. raw_facade_heap_use_test: useHeap on its render and compute encoders
 # is one use of the heap in the plan and of its arena in each job at 4 and 404 textures, host-written for a shared heap;
-# a heap texture either encoder uses alone names its own range. Each test's unit holds the kernel model's IOKit calls.
+# a heap texture either encoder uses alone names its own range. raw_facade_probe_test: a 2D-engine probe op's textures are
+# uses of its blit encoder. Each test's unit holds the kernel model's IOKit calls.
 [objc_library(
     name = name + "_unit",
     testonly = True,
@@ -5077,6 +5079,7 @@ objc_library(
 ) for name in [
     "raw_facade_arguments_test",
     "raw_facade_heap_use_test",
+    "raw_facade_probe_test",
 ]]
 
 [host_test(
@@ -5089,6 +5092,7 @@ objc_library(
 ) for name in [
     "raw_facade_arguments_test",
     "raw_facade_heap_use_test",
+    "raw_facade_probe_test",
 ]]
 
 # The facade is linked for RMRenderEncoder only; no device is opened, and the textures are the host Metal device's.

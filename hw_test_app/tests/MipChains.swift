@@ -7,10 +7,10 @@ import Metal
 /// one-level texture a level, from the same level 0, and each step compared with MipReference
 final class MipChains {
     let gpu: GPU
-    let format: MipTwodTest.Format
+    let format: MipFormat
     private var drawState: MTLRenderPipelineState?
 
-    init(gpu: GPU, format: MipTwodTest.Format) {
+    init(gpu: GPU, format: MipFormat) {
         self.gpu = gpu
         self.format = format
     }
@@ -69,6 +69,39 @@ final class MipChains {
         var levels: [[UInt8]] = []
         for l in 0..<dims.count { levels.append(try await gpu.read(chain, bytesPerPixel: layout.bytes, level: l)) }
         return (levels, timing.path)
+    }
+
+    /// generateMipmaps of a 2D array chain of `layers` layers, layer k's level 0 the pattern of seed k: [layer][level] bytes
+    /// and the command buffer's path
+    func generatedLayers(_ w: Int, _ h: Int, layers: Int) async throws -> ([[[UInt8]]], String) {
+        let dims = Self.dims(w, h)
+        let d = MTLTextureDescriptor()
+        d.textureType = .type2DArray
+        d.pixelFormat = format.pixel
+        d.width = w
+        d.height = h
+        d.arrayLength = layers
+        d.mipmapLevelCount = dims.count
+        d.usage = [.shaderRead, .renderTarget]
+        d.storageMode = .private
+        guard let chain = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("makeTexture returned nil") }
+        for k in 0..<layers {
+            try await gpu.upload(pattern(w, h, seed: k), to: chain, bytesPerRow: w * layout.bytes, slice: k)
+        }
+        let timing = try await gpu.run { commands in
+            let blit = commands.makeBlitCommandEncoder()!
+            blit.generateMipmaps(for: chain)
+            blit.endEncoding()
+        }
+        var out: [[[UInt8]]] = []
+        for k in 0..<layers {
+            var levels: [[UInt8]] = []
+            for l in 0..<dims.count {
+                levels.append(try await gpu.read(chain, bytesPerPixel: layout.bytes, level: l, slice: k))
+            }
+            out.append(levels)
+        }
+        return (out, timing.path)
     }
 
     /// The chain drawn from `level0` by 3D passes into one-level textures

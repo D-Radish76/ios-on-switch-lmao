@@ -230,13 +230,17 @@ def key_hash(rec: dict) -> int:
                 f'{name}_frag'
                 for name in (
                     'a8',
+                    'r8',
                     'r16',
                     'r16f',
+                    'rg8',
                     'b5g6r5',
                     'bgr5a1',
                     'r32f',
                     'rg16',
                     'rg16f',
+                    'rgba8',
+                    'bgra8',
                     'rgba8_srgb',
                     'bgra8_srgb',
                     'rgb10a2',
@@ -244,6 +248,7 @@ def key_hash(rec: dict) -> int:
                     'bgr10a2',
                     'rg32f',
                     'rgba16',
+                    'rgba16f',
                     'rgba32f',
                 )
             ),

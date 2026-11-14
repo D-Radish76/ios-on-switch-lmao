@@ -349,8 +349,9 @@ struct Texture {
     struct Chain {
         fx::MipChain layout;
         uint64_t va = 0;
-        uint32_t fmt2d = 0;  // the 2D engine's surface format (fx::twodFormat); 0: it does not filter this one
+        uint32_t fmt2d = 0;  // the 2D engine's surface format (fx::twodChainFormat); 0: it makes none of its steps
         uint32_t levelTic[fx::kMaxLevels] = {};  // a view of each level alone (Device::levelTic), made on first use
+        uint32_t levelCodesTic[fx::kMaxLevels] = {};  // the same of an sRGB chain's codes, with no sRGB conversion
     } *chain = nullptr;
 
     // Block-linear (TegraGM20BLayout.h): a chain level as a render target (chainLevelTarget: no memory or header of its own,
@@ -1950,8 +1951,9 @@ public:
     }
 
     // The texture header of level `level` of mipmapped texture `t`'s chain alone, as NVK's view of that level (a pass into
-    // the level fetches its color through it); 0: none
-    uint32_t levelTic(Texture &t, uint32_t level);
+    // the level fetches its color through it); `codes`: an sRGB chain's level read as its codes, with no sRGB conversion
+    // (pack/mip.metal decodes them); 0: none
+    uint32_t levelTic(Texture &t, uint32_t level, bool codes = false);
     // The header a fetch from `part` (raw::attachmentTarget of level `level`, slice `slice` of `t`, maybe in a format view's
     // format) reads: levelTic's for a 2D chain's level in t's format, else attachmentHeader's, made on first use and freed
     // with t's header, kept in views_ as viewTic's are; 0: none
@@ -2453,6 +2455,7 @@ public:
         std::atomic<uint64_t> blendKillStates{0}, blendKillBinds{0};
         std::atomic<uint64_t> blurTwodPasses{0};  // blur-chain passes drawn as 2D blits (raw_draw_shortcuts.cpp)
         std::atomic<uint64_t> resolveTwod{0};     // MSAA resolves by the 2D engine (raw_resolve_twod.cpp)
+        std::atomic<uint64_t> fillTwod{0};        // fillTexture: regions by the 2D engine (raw_twod_fill.h)
         std::atomic<uint64_t> resolveExact{0};    // those through the grid's complement (rule resolve.exact)
         // MSAA resolves by route, 2x and 4x: resolve.twod, resolve.exact, the pack's pass (index 2: other sample counts)
         std::atomic<uint64_t> resolveRoute[3][3] = {};
@@ -2493,7 +2496,8 @@ public:
     };
 
     std::atomic<bool> probeArmed{false};
-    // generateMipmaps of a format no probe covered on the 2D engine as fx_mip_probe.h's surface format, recorded from now
+    // generateMipmaps of a format the pack's mip state makes, every step on the 2D engine as fx_mip_probe.h's surface
+    // format, recorded from now
     std::atomic<bool> probeMipCandidates{false};
     // memoryless zetas the copy engine fills and drains for the shader's depth tests take their compressible kind (raw_comp.h)
     std::atomic<bool> probeZetaKinds{false};

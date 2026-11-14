@@ -122,6 +122,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.zcull',
             'gpu.raw.mip_twod',
             'gpu.raw.mip_twod_candidates',
+            'gpu.raw.mip_lod',
             'gpu.raw.visibility',
             'gpu.raw.fixed_blend_rule',
             'gpu.raw.private_compression',
