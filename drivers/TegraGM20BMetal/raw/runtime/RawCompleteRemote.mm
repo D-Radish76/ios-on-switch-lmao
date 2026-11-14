@@ -340,6 +340,10 @@ bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descript
         return failure = kInexpressible, false;
     RecordCache::Found found = stored();
     Remote::Answer answer = Remote::Answer::Unavailable;
+#if SWITCH_RAW_DIAGNOSTICS
+    const bool fromStore = found != RecordCache::Found::None;
+    const uint64_t began = nowUs();
+#endif
     if (found == RecordCache::Found::None) {
         if (!remote_->serving() || !remote_->taking())
             return failure = kNoCompilerComes, false;
@@ -367,6 +371,14 @@ bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descript
     }
     if (found == RecordCache::Found::Refusal)
         return failure = "the shader compiler made no compute state of the kernel: " + refusal, false;
+#if SWITCH_RAW_DIAGNOSTICS
+    os_log(
+        rawLog(),
+        "raw: a compute state the pack lacks answered %{public}s in %llu ms: max %u width %u memory %u: %{public}.300s",
+        fromStore ? "from the shader compiler's store" : "by the shader compiler",
+        (unsigned long long)((nowUs() - began) / 1000), out.maxThreads, out.executionWidth, out.staticMemory,
+        stateKey.c_str());
+#endif
     return true;
 }
 
