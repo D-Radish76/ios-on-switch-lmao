@@ -61,6 +61,21 @@ class FloatTarget(unittest.TestCase):
         for x in got:
             self.assertEqual(x, rungcheck.emu.r16(x))
 
+    def test_rung_2_on_a_float_target_keeps_the_source_and_stores_toward_zero(self):
+        add = {rungcheck.PER_TARGET + k: v for k, v in ((0x4, 0x8006), (0x8, 0x4001), (0xC, 0x4001))}
+        add |= {rungcheck.PER_TARGET + k: v for k, v in ((0x10, 0x8006), (0x14, 0x4001), (0x18, 0x4001))}
+        got = rungcheck.fixed_blend_float(add, 0, [1.5, -0.25, 0.1, 0.5], [0.5, 0.5, 0.2, 0.5])
+        self.assertEqual(got[:2], [2.0, 0.25])
+        # 0.1 + 0.2 in f32 is 0.30000001192..., whose nearest half is above it: toward zero is one half below
+        self.assertEqual(got[2], rungcheck.half_value(0x34CC))
+        self.assertEqual(got[3], 1.0)
+
+    def test_source_over_on_a_float_target_weighs_the_destination_by_one_minus_source_alpha(self):
+        words = ((0x4, 0x8006), (0x8, 0x4001), (0xC, 0x4303), (0x10, 0x8006), (0x14, 0x4001), (0x18, 0x4303))
+        sov = {rungcheck.PER_TARGET + k: v for k, v in words}
+        got = rungcheck.fixed_blend_float(sov, 0, [2.0, 0.0, 0.0, 0.25], [1.0, 1.0, 1.0, 1.0])
+        self.assertEqual(got, [2.75, 0.75, 0.75, 1.0])
+
     def test_halves_differ_by_eight_bit_codes_relative_above_one(self):
         self.assertEqual(rungcheck.half_codes(0.5, 0.5), 0)
         self.assertEqual(rungcheck.half_codes(0.5 + 2 / 255, 0.5), 2)

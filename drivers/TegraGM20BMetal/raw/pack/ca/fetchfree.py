@@ -13,10 +13,12 @@ are not those this QuartzCore makes of its name (another build's journal), nor w
 image and texture pairings iterated/table.py names, and colour opcodes, whose storage forms take the colour they
 compute outside [0, 1] or not by opcode, so no one source clamp fits them (with the saturate rung 3's forms carry,
 508 of 674 states beyond on 24B119 and 373 of 504 on 21H461, up to 255 codes). Rung 2 also needs an 8-bit unorm target
-and no extended or unbounded range (the ROP clamps an 8-bit target's source, the fragment does not). Rung 3 takes an
-8-bit unorm target, or an RGBA16Float one under unbounded range, whose '.u' program needs no store's clamp and whose
-source the form leaves unsaturated. Rung 3 also needs the state to write its blended colour alone and that colour to
-be its first: the unit refuses a draw of more than one colour target, so the draw narrows the targets to it.
+under neither extended nor unbounded range (the ROP clamps an 8-bit target's source, the fragment does not), or an
+RGBA16Float one under any range but extended (the ROP clamps no float target's source, as the fragment does not).
+Rung 3 takes an 8-bit unorm target, or an RGBA16Float one under unbounded range, whose '.u' program needs no store's
+clamp and whose source the form leaves unsaturated. Rung 3 also needs the state to write its blended colour alone and
+that colour to be its first: the unit refuses a draw of more than one colour target, so the draw narrows the targets to
+it.
 
 The form is given as edits of the state's R line (free_tokens), which directpack.mm applies to make it.
 """
@@ -52,7 +54,11 @@ def classify(tables: caspec.Tables, name: str, line: str) -> tuple[int, str]:
     if why:
         return 0, why
     if s.fragB in FIXED_FUNCTION_BLENDS:
-        return (0, 'extended range') if s.flag('x') or s.flag('u') else (2, '')
+        if s.flag('x'):
+            return 0, 'extended range'
+        if s.flag('u') and colors[s.S][0] != RGBA16_FLOAT:
+            return 0, 'unbounded range on an 8-bit target'
+        return 2, ''
     return _iterated(tables, s, colors)
 
 
@@ -110,7 +116,7 @@ def _target(s: caspec.Spec, colors: dict[int, tuple[int, int]]) -> str:
     """Give why the blended colour's format takes no form, '' where it takes one."""
     if s.S not in colors:
         return 'blended colour not 8-bit unorm'
-    if colors[s.S][0] in UNORM8:
+    if colors[s.S][0] in UNORM8 or (colors[s.S][0] == RGBA16_FLOAT and s.fragB in FIXED_FUNCTION_BLENDS):
         return ''
     unbounded_iterated = s.S == 0 and s.flag('u') and s.fragB not in FIXED_FUNCTION_BLENDS
     return '' if colors[s.S][0] == RGBA16_FLOAT and unbounded_iterated else 'blended colour not 8-bit unorm'

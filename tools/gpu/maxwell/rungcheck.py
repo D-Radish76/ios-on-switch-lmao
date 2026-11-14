@@ -8,7 +8,9 @@ The dump is directcheck's DIRECTCHECK_DUMP of a corpus whose lines carry fetch-f
 (quad.py) on the same seeded attributes, constant buffers and texture samples, every texture an 8-bit premultiplied
 image and the destination 8-bit premultiplied codes, as Core Animation's are. The storage form's stored texel is
 converted to codes by the ROP's store rule; the fetch-free form's output goes through the unit that stands in for the
-fetch: rung 2 the chip's 8-bit integer blender (tools/benchloop/blend_models.py chip, with the form's own factors),
+fetch: rung 2 the chip's 8-bit integer blender (tools/benchloop/blend_models.py chip, with the form's own factors), or
+on an RGBA16Float target its float blender (each factor, term and the sum rounded to f32, the source not clamped, the
+sum stored toward zero to half: rop.py),
 rung 3 the iterated blend program the form names (raw/pack/iterated/emu.py, every pass rounded to half) over the source
 the form's SET_PS_SATURATE clamps to [0, 1] on an 8-bit target (raw_fetch_free.h iteratedBlendWords). On an RGBA16Float
 target the destination is the half of its code, the source is not clamped, the storage form's texel is rounded to half
@@ -41,7 +43,7 @@ import table
 from ucode import half_value
 
 from tools.benchloop.blend_models import store
-from tools.gpu.maxwell import isa, nakstat
+from tools.gpu.maxwell import isa, nakstat, rop
 from tools.gpu.maxwell.interp import Inputs, UnsupportedError
 from tools.gpu.maxwell.quad import LANES, run_quad
 
@@ -203,6 +205,46 @@ def fixed_blend(blob: dict[int, int], colour: int, source: list[float], dest: li
     return out
 
 
+def float_factor(code: int, channel: int, s: list[float], d: list[float]) -> float:
+    """Give an OGL blend coefficient as the float blender reads it from the unclamped source and the destination."""
+    sa, da = s[3], d[3]
+    return {
+        0x4000: 0.0,
+        0x4001: 1.0,
+        0x4300: s[channel],
+        0x4301: rounded(1.0 - s[channel]),
+        0x4302: sa,
+        0x4303: rounded(1.0 - sa),
+        0x4304: da,
+        0x4305: rounded(1.0 - da),
+        0x4306: d[channel],
+        0x4307: rounded(1.0 - d[channel]),
+        0x4308: min(sa, rounded(1.0 - da)) if channel < 3 else 1.0,
+    }[code]
+
+
+def rounded(x: float) -> float:
+    """Give x rounded to f32 (nearest even), as each of the float blender's products and sums is."""
+    return value(f32(x)) if math.isfinite(x) and abs(x) < 3.4e38 else x
+
+
+def fixed_blend_float(blob: dict[int, int], colour: int, source: list[float], dest: list[float]) -> list[float]:
+    """Give the halves the ROP stores of the form's per-target blend into an RGBA16Float target, all four channels."""
+    s = [rounded(x) for x in source]
+    base = PER_TARGET + 0x20 * colour
+    out = []
+    for c in range(4):
+        op, fs, fd = (blob.get(base + k, 0) for k in ((0x10, 0x14, 0x18) if c == 3 else (0x4, 0x8, 0xC)))
+        if op in (OP_MIN, OP_MAX):
+            t = (min if op == OP_MIN else max)(s[c], dest[c])
+        else:
+            first = rounded(s[c] * float_factor(fs, c, s, dest))
+            second = rounded(dest[c] * float_factor(fd, c, s, dest))
+            t = rounded(first - second if op == OP_SUBTRACT else second - first if op == OP_REVERSE else first + second)
+        out.append(half_value(rop.store_code(f32(t), rop.HALF)))
+    return out
+
+
 def saturated(x: float) -> float:
     return 0.0 if math.isnan(x) else min(max(x, 0.0), 1.0)
 
@@ -286,8 +328,6 @@ def unsupported(stored: dict, free: dict) -> str:
         return f'unsupported: the form writes {count} components of colour {colour}'
     if free['free_program'] == fetchfree_link.MATRIX and not matrix_words(stored, free):
         return 'unsupported: no uniform buffer shows the colour matrix'
-    if free['free_rung'] == 2 and target_format(free, colour) == RGBA16_FLOAT:
-        return 'unsupported: rung 2 on a float target'
     return ''
 
 
@@ -296,7 +336,12 @@ def channel_differences(free: dict, program: object, source: list[float], dest: 
     colour = free['free_colour']
     if target_format(free, colour) == RGBA16_FLOAT:
         want = [emu.r16(value(w)) for w in stored]
-        return [half_codes(x, y) for x, y in zip(iterated_blend_float(program, source, dest), want, strict=True)]
+        if free['free_rung'] == 2:
+            blob = dict(zip(free['blob'][0::2], free['blob'][1::2], strict=True))
+            got = fixed_blend_float(blob, colour, source, [emu.r16(x / 255) for x in dest])
+        else:
+            got = iterated_blend_float(program, source, dest)
+        return [half_codes(x, y) for x, y in zip(got, want, strict=True)]
     want = [store(value(w)) for w in stored]
     if free['free_rung'] == 2:
         blob = dict(zip(free['blob'][0::2], free['blob'][1::2], strict=True))
