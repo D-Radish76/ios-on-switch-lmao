@@ -8,6 +8,7 @@
 #include <mutex>
 #include "NativeBridgeMetalFrontend.h"
 #include "TegraGM20BCompilerABI.h"
+#include "compiler_facts.h"
 #include "compiler_libraries.h"
 #include "compiler_record.h"
 #include "../raw/runtime/RawDirect.h"
@@ -120,6 +121,8 @@ raw::Digest Engine::rules() const
 
 int32_t Engine::compile(const Prepared &p, std::string &entry, std::string &why)
 {
+    if (p.request.kind == raw::RequestKind::Facts)
+        return makeFacts(p, state_->inputs.systemRoot, entry, why);
     if (!openCompiler(why))
         return TegraGM20BCompileUnavailable;
     State &s = *state_;

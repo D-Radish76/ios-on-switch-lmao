@@ -64,7 +64,7 @@ void readKernel(Reader &r, KernelRequest &k)
 bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
-    if (r.kind == RequestKind::Kernel)
+    if (r.kind != RequestKind::Render)
         return tag == "k";
     if (index < 2)
         return tag == (index ? "f" : "v");
@@ -73,7 +73,7 @@ bool knownTag(const CompileRequest &r, size_t index)
 
 bool sane(const CompileRequest &r)
 {
-    const bool kernel = r.kind == RequestKind::Kernel;
+    const bool kernel = r.kind != RequestKind::Render;
     if ((kernel ? r.stages.size() != 1 : r.stages.size() < 2) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
         r.cubic.textures.size() > 16 || r.kernel.textures.size() > kRequestBindLimit ||
@@ -164,12 +164,12 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     CompileRequest q;
     q.stack = r.value<uint64_t>();
     const uint8_t kind = r.value<uint8_t>(), form = r.value<uint8_t>();
-    q.kind = kind ? RequestKind::Kernel : RequestKind::Render;
+    q.kind = RequestKind(kind);
     q.form = form ? RequestForm::Split : RequestForm::Primary;
     q.key = r.text();
     readFields(r, q.fields);
     const uint32_t stages = r.value<uint32_t>();
-    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > 1 || form > 1 || stages > kRequestStageLimit)
+    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Facts) || form > 1 || stages > kRequestStageLimit)
         return false;
     q.stages.resize(stages);
     for (RequestStage &s : q.stages) {
@@ -290,6 +290,14 @@ CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey)
     CacheKey k;
     k.stack = stack;
     k.key = "kernel | " + computeKey;
+    return k;
+}
+
+CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "facts | " + stateKey;
     return k;
 }
 

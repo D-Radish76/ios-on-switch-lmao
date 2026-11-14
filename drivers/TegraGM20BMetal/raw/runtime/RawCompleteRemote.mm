@@ -8,6 +8,7 @@
 #include "NativeBridgeMetalFrontend.h"
 #include "RawCompileRequest.h"
 #include "RawMetalInternal.h"
+#include "raw_compute_facts_entry.h"
 #include "raw_compute_record.h"
 #include "raw_remote_ask.h"
 
@@ -308,6 +309,65 @@ Compiler::Outcome Completion::remoteKernel(id facadeFunction, MTLComputePipeline
         return Compiler::Outcome::Failed;
     taken = true;
     return found == RecordCache::Found::Record ? Compiler::Outcome::Made : Compiler::Outcome::Refused;
+}
+
+bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey,
+                       PackComputeFacts &out, std::string &failure)
+{
+    const CacheKey k = factsCacheKey(stack_, stateKey);
+    CompileRequest r;
+    Digest name;
+    const auto request = [&](bool bytes, bool every) {
+        r = {};
+        r.stack = stack_;
+        r.kind = RequestKind::Facts;
+        r.key = k.key;
+        r.kernel.maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
+        r.kernel.multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
+        std::vector<LibraryIdentity> ids;
+        std::map<const LibrarySource *, uint32_t> seen;
+        if (!addStage(r, ids, seen, "k", facadeFunction, bytes, every))
+            return false;
+        name = storeName(k, r, ids);
+        return true;
+    };
+    std::string refusal;
+    const auto stored = [&]() {
+        std::string bytes;
+        return remote_->find(name, bytes) ? decodeFactsEntry(bytes, k, out, refusal) : RecordCache::Found::None;
+    };
+    if (!request(false, false))
+        return failure = kInexpressible, false;
+    RecordCache::Found found = stored();
+    Remote::Answer answer = Remote::Answer::Unavailable;
+    if (found == RecordCache::Found::None) {
+        if (!remote_->serving() || !remote_->taking())
+            return failure = kNoCompilerComes, false;
+        for (const bool again : {false, true}) {
+            if (!request(true, again))
+                return failure = kInexpressible, false;
+            answer = remote_->compile(encodeRequest(r));
+            if (answer == Remote::Answer::Made || answer == Remote::Answer::Refused)
+                found = stored();
+            if (askNext(answer, found != RecordCache::Found::None, again, remote_->declined()) != AskNext::AskAgain)
+                break;
+        }
+    }
+    switch (askFailure(answer, found != RecordCache::Found::None, remote_->declined())) {
+    case AskFailure::None:
+        break;
+    case AskFailure::CouldNotRun:
+        return failure = "the kernel's compile could not run", false;
+    case AskFailure::NoCompilerComes:
+        return failure = kNoCompilerComes, false;
+    case AskFailure::NotTaken:
+        return failure = kNotTaken, false;
+    case AskFailure::NotStored:
+        return failure = kNotStored, false;
+    }
+    if (found == RecordCache::Found::Refusal)
+        return failure = "the shader compiler made no compute state of the kernel: " + refusal, false;
+    return true;
 }
 
 }  // namespace raw

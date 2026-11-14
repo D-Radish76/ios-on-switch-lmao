@@ -24,9 +24,12 @@ constexpr uint32_t kRequestStageLimit = 1u << 16, kRequestLibraryLimit = 1u << 1
 
 using Digest = std::array<uint8_t, 32>;
 
+// Facts: a kernel's compute state's answers to Metal's per-state queries (raw_pack.h PackComputeFacts), which its creation
+// needs before any dispatch; its one stage and limits as a kernel's, no dispatch
 enum class RequestKind : uint8_t {
     Render,
-    Kernel
+    Kernel,
+    Facts
 };
 
 // Primary: the state's record; Split: the same with its fragment program's split, which the compiler makes after the
@@ -99,5 +102,7 @@ Digest storeName(const CacheKey &k, const CompileRequest &r, const std::vector<L
 
 // The CacheKey of a kernel's compute key (RawComplete.mm kernel())
 CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey);
+// The CacheKey of a compute state's facts, of its raw_compute_key.h computeStateKey
+CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey);
 
 }  // namespace raw

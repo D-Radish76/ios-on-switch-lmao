@@ -30,6 +30,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -141,6 +142,13 @@ struct Model {
     uint32_t compilerFlags = 0;
     std::vector<int32_t> compileResults = {TegraGM20BCompileUnavailable};
     unsigned compiles = 0;
+    // The compiler's store a client maps (TegraGM20BCompilerStoreToken), of stack 0 as the harness's packs are, and the
+    // compiler itself: each request's bytes, answered with its result once it put what it made in the store (unset: the
+    // answers are compileResults'); each answer names a new store generation, which the client maps again
+    const uint8_t *store = nullptr;
+    uint64_t storeBytes = 0;
+    uint32_t storeGeneration = 1;
+    std::function<int32_t(const std::string &request)> compiler;
     unsigned refuse = 0;  // submissions refused from now, with `refusal`
     // BoAllocs and BoImports refused from now, kIOReturnNoMemory: memory the kernel has none of, pages it cannot wire
     unsigned refuseAllocs = 0, refuseImports = 0;
@@ -597,6 +605,8 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         auto &reply = *static_cast<TegraGM20BAbiMapReply *>(output);
         if (in.token == kernel_model::kFenceToken)
             reply = {uint64_t(uintptr_t(model.fences)), sizeof model.fences};
+        else if (in.token == TegraGM20BCompilerStoreToken)
+            reply = {uint64_t(uintptr_t(model.store)), model.storeBytes};
         else
             reply = {uint64_t(uintptr_t(model.memory[in.token].data())), model.memory[in.token].size()};
         return KERN_SUCCESS;
@@ -657,12 +667,20 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         auto &info = *static_cast<TegraGM20BAbiCompilerInfoReply *>(output);
         info = {};
         info.flags = model.compilerFlags;
+        info.store_bytes = model.storeBytes;
+        info.generation = model.storeGeneration;
         return KERN_SUCCESS;
     }
     case TegraGM20BMethodCompile: {
         const size_t at = std::min<size_t>(model.compiles++, model.compileResults.size() - 1);
         auto &reply = *static_cast<TegraGM20BAbiCompileReply *>(output);
         reply = {};
+        if (model.compiler) {
+            const auto &in = *static_cast<const TegraGM20BAbiCompile *>(input);
+            reply.result = model.compiler(std::string(reinterpret_cast<const char *>(uintptr_t(in.address)), in.bytes));
+            reply.generation = ++model.storeGeneration;
+            return KERN_SUCCESS;
+        }
         reply.result = model.compileResults[at];
         return KERN_SUCCESS;
     }
