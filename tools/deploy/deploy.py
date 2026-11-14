@@ -29,7 +29,7 @@ Steps:
                    plugin's stager, which copies only the files whose sha256 the card does not already hold and
                    reads nothing more when the card's list matches the build (its CDHashes must be in the same
                    build's kernel window: deploy the boot package built with that bundle); --remove-gpu removes it
-  4a icon cache    where the staged GPU build (the stager's list digest) is not the one <Data>/Switch/icon-cache-gpu
+  4a icon cache    where the staged GPU build (the stager's list digest) is not the one <Data>/Switch/icon-cache-gpu-2
                    names, removes ProductBuildVersion from IconServices' __cache_info__ so iconservicesagent empties its
                    rendered icons at its next launch, as after an OS update (icon_cache.py), then records the digest
   4b AWDL          --awdl on|off: creates or removes <Data>/Switch/awdl-enable, the empty file SwitchWLAN's AWDL

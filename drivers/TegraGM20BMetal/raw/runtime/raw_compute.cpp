@@ -224,6 +224,12 @@ void ComputeEncoder::setBytesAt(uint32_t slot, uint64_t va, uint32_t length, con
     }
 }
 
+void ComputeEncoder::setKernelBytes(uint32_t slot, uint64_t va, uint32_t length)
+{
+    if (slot < 31)
+        bindBuffer(slot, {va, length, nullptr, 0, va, true});
+}
+
 void ComputeEncoder::setBuffer(uint32_t slot, const Buffer *b, uint64_t offset)
 {
     if (slot >= 31)
@@ -361,7 +367,7 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             const Bound &b = bufs_[e.slot];
             if (b.buffer)
                 cb_.use(*b.buffer, writes);
-            else
+            else if (!b.kernelMemory)
                 cb_.useAddress(b.va, b.size, writes);
             BufferDescriptor desc;
             if (!bufferDescriptor(e, windowMask_ >> e.slot & 1 ? windows_[e.slot] : b.va, b.size, desc)) {
@@ -747,7 +753,8 @@ void ComputeEncoder::argumentRoot(const PackKernel &r, uint32_t *root)
             cb_.use(*b.buffer, true);
             slot[n] = {b.buffer->va, b.buffer->length, b.offset};
         } else {
-            cb_.useAddress(b.va, b.size, true);
+            if (!b.kernelMemory)
+                cb_.useAddress(b.va, b.size, true);
             slot[n] = {b.va, b.size, 0};
         }
     }

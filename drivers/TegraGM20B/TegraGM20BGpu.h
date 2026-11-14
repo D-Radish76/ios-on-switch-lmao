@@ -84,6 +84,8 @@ void tgm_pool_free(void *va, uint64_t bytes, uint64_t pa);
  * order and adjacent or not; `pas` gets every 4 KiB page. 0, or -ENOMEM with nothing taken.
  * tgm_pool_free_chunks gives them back dirty, for the scrubber. */
 int tgm_pool_alloc_chunks(uint64_t bytes, uint64_t *pas);
+/* The 128 KiB chunks tgm_pool_alloc_chunks could take now */
+uint64_t tgm_pool_clean_chunks(void);
 void tgm_pool_free_chunks(const uint64_t *pas, uint32_t npages);
 
 /* Address spaces: one per user-client connection, which claims it (tgm_vm_claim_connection): only channels made for
@@ -559,9 +561,8 @@ int tgm_coherency_layout_fitted(struct tgm_coh *c, uint32_t width, uint32_t heig
 
 /* TegraGM20BTiled.cpp's stats, this window's (debug kernels): layouts decided block-linear, then pitch because the first
  * import only samples, because another import or a CPU lock existed, because the shape does not tile, because the
- * tiling move failed, because another process maps it for the CPU; the live block-linear surfaces and their bytes; the
- * CPU views' scratch bytes held now and at most */
-void tgm_tiled_take_stats(uint64_t out[10]);
+ * tiling move failed; the live block-linear surfaces and their bytes; the CPU views' scratch bytes held now and at most */
+void tgm_tiled_take_stats(uint64_t out[9]);
 /* The same window's relayouts (TegraGM20BTiled.h tgm_relayout_count): tiling moves skipped because nothing had written
  * the surface, untiles deferred to a CPU lock, deferred untiles a lock made, deferred surfaces gone block-linear, and the
  * moves made */

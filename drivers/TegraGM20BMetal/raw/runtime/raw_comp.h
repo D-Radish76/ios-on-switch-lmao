@@ -154,8 +154,8 @@ inline uint32_t backingKind(bool compression, bool blockLinear, uint32_t zeta, u
 }
 
 // A refusal of compressed memory (the BoAlloc's or the VmBind's kern_return_t, kIOReturnNoSpace for no VA) for want of
-// memory: the kernel's pool (its floor, or this client's share), the comptags or the VA. Only memory given back changes
-// that answer. Any other refusal is the request's own fault and has never fired (boot 19 and 21 logged none).
+// memory: the kernel's pool (its floor, or no whole clean 128 KiB chunk), the comptags or the VA. Only memory given back
+// changes that answer. Any other refusal is the request's own fault and has never fired (boot 19 and 21 logged none).
 inline bool compShortage(int kr)
 {
     return kr == kIOReturnNoMemory || kr == kIOReturnNoResources || kr == kIOReturnNoSpace;

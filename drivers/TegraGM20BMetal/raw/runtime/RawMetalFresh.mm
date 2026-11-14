@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalFresh.h"
 #include "raw_fresh.h"
+#include "raw_fresh_fill.h"
 #include "raw_fresh_queue.h"
 
 namespace {
@@ -26,12 +27,6 @@ RMTexture *ownerOf(RMTexture *t)
     return t;
 }
 
-void fillLevel(raw::BlitEncoder &b, const raw::Texture &image, const raw::CopyFill &fill, uint32_t planes)
-{
-    for (uint32_t z = 0; z < planes; z++)
-        b.fillTexels(image, z, image.width, image.height, fill);
-}
-
 uint64_t writeFresh(raw::BlitEncoder &b, RMTexture *t)
 {
     MTLTextureDescriptor *d = t->_descriptor;
@@ -46,17 +41,7 @@ uint64_t writeFresh(raw::BlitEncoder &b, RMTexture *t)
         return 0;
     const bool hasPattern = patterned && raw::freshPatternTexel(x.format, texel) && texel.size == x.bpp &&
                             raw::copyFillOf(texel.bytes, texel.size, pattern);
-    const uint32_t planes = x.type == raw::fx::kTexThreeD ? x.depth : x.layers;
-    uint64_t bytes = 0;
-    for (uint32_t level = 0; level < levels; level++) {
-        raw::Texture image;
-        if (x.chain && !raw::chainLevelImage(x, level, image))
-            continue;
-        const raw::Texture &target = x.chain ? image : x;
-        fillLevel(b, target, hasPattern && level < patterned ? pattern : zero, planes);
-        bytes += uint64_t(target.width) * target.height * planes * x.bpp;
-    }
-    return bytes;
+    return raw::fillFresh(b, x, hasPattern ? patterned : 0, pattern, zero);
 }
 
 enum class FirstUse {
@@ -118,10 +103,15 @@ FirstUse firstUse(RMCommandBuffer *cb, size_t from, size_t to, RMTexture *t)
 
 }  // namespace
 
+bool freshFills(RMTexture *t, MTLTextureDescriptor *d)
+{
+    return t->_rawOk && t->_kind == RMTexturePool && !t->_heap && !t->_raw.memoryless && !t->_raw.arena &&
+           !t->_raw.zeta && d.storageMode == MTLStorageModePrivate;
+}
+
 void establishFresh(RMTexture *t, MTLTextureDescriptor *d)
 {
-    if (!t->_rawOk || t->_kind != RMTexturePool || t->_heap || t->_raw.memoryless || t->_raw.arena || t->_raw.zeta ||
-        d.storageMode != MTLStorageModePrivate)
+    if (!freshFills(t, d))
         return;
     gFresh.add({t});
 #if SWITCH_RAW_DIAGNOSTICS

@@ -196,8 +196,8 @@ bool RMRangeEncode::command(size_t at)
             return fail(PredCompute, "a dispatch with an incomplete region plan", c.op);
         if (dispatch.arguments) {
             ce_->setState(kernels->jobs[0]->value());
-            if (const char *w = nullptr;
-                !ce_->dispatchIndirect(&((__bridge RMBuffer *)dispatch.arguments)->_raw, dispatch.argumentsOffset, &w))
+            if (const char *w = nullptr; !ce_->dispatchIndirect(&((__bridge RMBuffer *)dispatch.arguments)->_raw,
+                                                                dispatch.argumentsOffset, regions.nominal, &w))
                 return fail(PredCompute, w, c.op);
         }
         for (uint8_t region = 0; region < regions.count && !dispatch.arguments; ++region) {

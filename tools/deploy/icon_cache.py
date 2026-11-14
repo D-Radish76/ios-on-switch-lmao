@@ -1,8 +1,13 @@
 """IconServices' rendered-icon cache on Data, made stale when a deploy stages another GPU build.
 
-iconservicesagent keeps the icons it renders in the system group container systemgroup.com.apple.lsd.iconscache:
+iconservicesagent keeps the icons it renders in the system group container systemgroup.com.apple.lsd.iconscache,
+a folder named by its UUID or by the group itself (the agent's own sandbox exception names the latter):
 
-    <Data>/containers/Shared/SystemGroup/<UUID>/Library/Caches/com.apple.IconsCache/{store.index, __cache_info__, ...}
+    <Data>/containers/Shared/SystemGroup/<UUID or group>/Library/Caches/com.apple.IconsCache/[<salt>/]{store.index,
+    __cache_info__, ...}
+
+24B119's IconServices adds <salt>, a UUID of its own build time, the BuildVersion and the UniqueDeviceID
+(-[ISDefaults cacheURL]); a cache at the folder's top is still let go where one is there.
 
 __cache_info__ records the ProductBuildVersion the icons were rendered under. At launch the agent empties the cache
 unless that value is the system's (/System/Library/CoreServices/SystemVersion.plist), the cache directory belongs to
@@ -11,9 +16,10 @@ _iconservices and it carries no ACL (-[ISMutableIconCache initWithURL:] in 21H46
 OS build, so an update that changes how icons draw also changes ProductBuildVersion. Here the GPU build changes alone,
 and the icons it drew before stay in the cache. So a deploy whose staged GPU build (the stager's whole-list digest, the
 first line of ngpu/stage.tsv.gz) differs from the one the cache was last let go for removes ProductBuildVersion from
-__cache_info__, then records that digest in <Data>/Switch/icon-cache-gpu: the agent's own reset runs at its next
+__cache_info__, then records that digest in <Data>/Switch/icon-cache-gpu-2: the agent's own reset runs at its next
 launch, and a deploy of the same build changes nothing. The cache directory itself is never touched: its owner and
-ACL are the other two conditions.
+ACL are the other two conditions. icon-cache-gpu, the record of a step that looked for __cache_info__ only at the cache
+folder's top, says nothing about a 24B119 cache and is not read.
 """
 
 import gzip
@@ -30,22 +36,33 @@ CACHE = 'Library/Caches/com.apple.IconsCache'
 INFO = '__cache_info__'
 BUILD_KEY = 'ProductBuildVersion'
 STAGE_LIST = 'ngpu/stage.tsv.gz'  # drivers/TegraGM20BMetal/stage-tegra-gm20b-metal.py STATE
-RECORD = 'icon-cache-gpu'
+RECORD = 'icon-cache-gpu-2'
 
 
-def cache_directory(data_root: Path) -> Path | None:
-    """Return the agent's cache directory on a mounted Data volume, None where the group container is not made yet."""
+def _names_group(metadata: Path) -> bool:
+    try:
+        with open(metadata, 'rb') as handle:
+            return plistlib.load(handle).get('MCMMetadataIdentifier') == GROUP
+    except (OSError, plistlib.InvalidFileException, ValueError):
+        return False
+
+
+def cache_directories(data_root: Path) -> list[Path]:
+    """Return the agent's cache directories on a mounted Data volume, none where the group container is not made yet."""
     groups = Path(data_root) / SYSTEM_GROUPS
     if not groups.is_dir():
-        return None
-    for metadata in sorted(groups.glob('*/' + METADATA)):
-        try:
-            with open(metadata, 'rb') as handle:
-                if plistlib.load(handle).get('MCMMetadataIdentifier') == GROUP:
-                    return metadata.parent / CACHE
-        except (OSError, plistlib.InvalidFileException, ValueError):
-            continue
-    return None
+        return []
+    containers = [groups / GROUP] if (groups / GROUP).is_dir() else []
+    containers += [m.parent for m in sorted(groups.glob('*/' + METADATA)) if m.parent.name != GROUP and _names_group(m)]
+    return [c / CACHE for c in containers]
+
+
+def cache_infos(directory: Path) -> list[Path]:
+    """Return each __cache_info__ of a cache directory: at its top and in each salt folder."""
+    found = [directory / INFO] if (directory / INFO).is_file() else []
+    if directory.is_dir():
+        found += sorted(p for p in directory.glob('*/' + INFO) if p.is_file())
+    return found
 
 
 def staged_gpu(data_root: Path) -> str:
@@ -72,6 +89,13 @@ def _forget_build(info: Path) -> bool:
     return True
 
 
+def _let_go(info: Path) -> str:
+    try:
+        return 'reset at the next launch' if _forget_build(info) else 'already set to reset'
+    except (OSError, plistlib.InvalidFileException, ValueError) as error:
+        return f'unreadable __cache_info__ ({error}): the agent resets it'
+
+
 def present(data_root: Path, log: Callable[..., None]) -> str:
     """Let the cache go where the staged GPU build is not the one it was last let go for; return what was done."""
     folder = renamed.data_folder(data_root)
@@ -80,14 +104,11 @@ def present(data_root: Path, log: Callable[..., None]) -> str:
     previous = record.read_text().strip() if record.is_file() else None
     if previous == gpu:
         return 'unchanged'
-    directory = cache_directory(data_root)
-    info = directory / INFO if directory else None
+    infos = [info for directory in cache_directories(data_root) for info in cache_infos(directory)]
+    outcomes = [_let_go(info) for info in infos]
     done = 'no cache yet'
-    if info and info.is_file():
-        try:
-            done = 'reset at the next launch' if _forget_build(info) else 'already set to reset'
-        except (OSError, plistlib.InvalidFileException, ValueError) as error:
-            done = f'unreadable __cache_info__ ({error}): the agent resets it'
+    if outcomes:
+        done = 'reset at the next launch' if 'reset at the next launch' in outcomes else outcomes[0]
     folder.mkdir(parents=True, exist_ok=True)
     record.write_text(gpu + '\n')
     log(f'icon cache: GPU build {gpu[:12] or "none"} (was {(previous or "unrecorded")[:12]}): {done}')

@@ -113,6 +113,7 @@ swift_test(
     srcs = glob(["host_tests/*.swift"]),
     copts = SWIFT_COPTS,
     data = [
+        "peer/texpeer.entitlements",
         "//tools/benchloop:generated_batches.json",
         "//tools/benchloop:testdata/golden_batch.json",
         "//tools/benchloop:testdata/split_capture_batch.json",
@@ -122,6 +123,7 @@ swift_test(
         "BENCH_GOLDEN": "$(rlocationpath //tools/benchloop:testdata/golden_batch.json)",
         "BENCH_CAPTURE": "$(rlocationpath //tools/benchloop:testdata/split_capture_batch.json)",
         "HWTEST_MEDIA": " ".join(MEDIA),
+        "TEXPEER_ENTITLEMENTS": "$(rlocationpath peer/texpeer.entitlements)",
     },
     deps = [":core"],
 )
@@ -358,7 +360,8 @@ apple_resource_group(
 )
 
 # --- The apps --------------------------------------------------------------------------------------------------
-# tools/devicerun:hwtest_test reads the test IDs out of these, and checks every literal metric key in them.
+# tools/devicerun:hwtest_test reads the test IDs out of these, checks every literal metric key in them, and holds the
+# sysctls they read to both apps' sandbox exceptions.
 filegroup(
     name = "test_sources",
     srcs = glob([
@@ -371,7 +374,10 @@ filegroup(
         "gpu/x1/*.swift",
         "kit/*.swift",
         "tests/*.swift",
-    ]),
+    ]) + [
+        "SwitchHWTest.entitlements",
+        "SwitchHWTest27.entitlements",
+    ],
 )
 
 swift_interop_hint(
@@ -456,6 +462,7 @@ cc_library(
 
 # metal.native.shared_texture_peer's second process (peer/texpeer.mm): debug boot packages stage it at /usr/bin/switch-texpeer;
 # the 21H461 BlueTool stand-in starts it for the app, 24B119's launchd for its Mach service (com.brunostjohn.switch.texpeer.plist).
+# Its entitlements open IOSurfaceRootUserClient past the system policy, as 21H461's and 24B119's iconservicesagent do.
 ios_binary(
     name = "switch-texpeer",
     srcs = ["peer/texpeer.mm"],
@@ -478,6 +485,7 @@ ios_binary(
         "//ipsw:24B119": ["-DSWITCH_TEXPEER_LAUNCHD=1"],
         "//conditions:default": [],
     }),
+    entitlements = "peer/texpeer.entitlements",
 )
 
 # The overlay files of this package that overlay/manifest.json names.
@@ -523,6 +531,7 @@ cc_library(
 # The texture peer's jetsam limits, which //overlay:jetsam_properties merges into iOS 27's overlay in debug
 exports_files(["peer/com.brunostjohn.switch.texpeer.jetsam.plist"])
 
+# tools/devicerun's hwtest_test holds every sysctl a test reads to both apps' sandbox exceptions
 exports_files(
     [
         "SwitchHWTest.entitlements",

@@ -320,6 +320,7 @@ int computeReadiness(RMCommandBuffer *cb, const RMSegment &range, const char **w
         if (state == Job::State::Failed)
             return -2;
         if (state == Job::State::Refused) {
+            hit(cb, PredComputeKernel, at);
             *why = "a compute kernel the shader compiler refused";
             return -1;
         }
