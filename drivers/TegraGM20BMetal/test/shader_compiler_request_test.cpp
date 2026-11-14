@@ -201,6 +201,53 @@ TEST(CompileRequest, TheStoreNameBindsLibraryBytesAndRasterization)
     EXPECT_NE(raw::storeName(k, rasterizing, identities(rasterizing)), name);
 }
 
+// A state of no fragment function (RenderBox's path_edges) is asked by its vertex stage alone: the request round-trips, keys
+// "f -" with no fragment AIR, as the facade keys it, and the compiler's descriptor of it has no fragment function
+TEST(CompileRequest, AStateOfNoFragmentFunctionIsAskedByItsVertexStageAlone)
+{
+    raw::CompileRequest r = renderRequest();
+    r.stages = {stage("v", "vertex_fn"), stage("vl", "fragment_fn")};
+    EXPECT_EQ(raw::fragmentStage(r), raw::kNoStage);
+    EXPECT_EQ(raw::firstLinked(r), 1u);
+    bool own = false;
+    const raw::StageKey v{"vertex_fn", ""};
+    const std::string packKey = raw::requestPackKey(r, own);
+    EXPECT_EQ(packKey, raw::pipelineKey(descriptor(), &v, nullptr, " | vl fragment_fn ", ""));
+    EXPECT_NE(packKey.find(" | f -"), std::string::npos) << packKey;
+    raw::AirHash vertex, none{}, linked;
+    vertex.fill(0xA0);
+    linked.fill(0xA1);
+    const raw::CacheKey k = raw::renderCacheKey(kStack, packKey, vertex, none, {{'v', linked}}, own);
+    r.key = k.key;
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back));
+    EXPECT_EQ(raw::encodeRequest(back), raw::encodeRequest(r));
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.key.key, k.key);
+    EXPECT_EQ(memcmp(p.key.fragmentAir, none.data(), 32), 0);
+
+    raw::CompileRequest two = renderRequest();
+    EXPECT_EQ(raw::fragmentStage(two), 1u);
+    EXPECT_EQ(raw::firstLinked(two), 2u);
+    raw::CompileRequest misplaced = renderRequest();
+    misplaced.stages = {stage("v", "vertex_fn"), stage("vl", "vertex_fn"), stage("f", "fragment_fn")};
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(misplaced), back));
+}
+
+// A state Metal does not rasterize keys rast=0 after its attachments and vertex layout; one it does names nothing
+TEST(CompileRequest, TheKeyNamesAStateMetalDoesNotRasterize)
+{
+    MTLRenderPipelineDescriptor *d = descriptor();
+    const raw::StageKey v{"vertex_fn", ""};
+    const std::string off = raw::pipelineKey(d, &v, nullptr, "", "");
+    EXPECT_NE(off.find(" a3=9:8:3:20:2:2 rast=0  | v vertex_fn"), std::string::npos) << off;
+    d.rasterizationEnabled = YES;
+    EXPECT_EQ(raw::pipelineKey(d, &v, nullptr, "", "").find("rast="), std::string::npos);
+}
+
 TEST(CompileRequest, AKernelIsKeyedByItsFunctionAndNamedByItsDispatch)
 {
     raw::CompileRequest r;

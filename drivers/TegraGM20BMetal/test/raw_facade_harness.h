@@ -117,9 +117,10 @@ inline std::vector<uint8_t> slot(uint32_t k)
 
 // A pack of this build's version holding the state of `key`: vertex program slot 0, fragment slot 1, each kSlot bytes in
 // the heap section at kHeap, so a page-multiple slot of the pack's own pages; `kernels`, each with a program slot of its
-// own after those (its `program` set here); `facts`: its compute states' answers
+// own after those (its `program` set here); `facts`: its compute states' answers. Without `pixelStage` the state has no
+// fragment program (raw_pack.h kNoProgram).
 inline std::string writePack(const std::string &key, std::vector<raw::PackKernel> kernels = {},
-                             std::vector<raw::PackComputeFacts> facts = {})
+                             std::vector<raw::PackComputeFacts> facts = {}, bool pixelStage = true)
 {
     constexpr uint64_t kPrograms = 0x180, kPipelines = 0x800, kComputeStates = 0xc00, kStrings = 0xe00,
                        kKernels = 0x2000;
@@ -168,7 +169,7 @@ inline std::string writePack(const std::string &key, std::vector<raw::PackKernel
     pp.keyHash = raw::Pack::fnv(key.data(), key.size());
     pp.keyString = 1;
     pp.vs = 0;
-    pp.fs = 1;
+    pp.fs = pixelStage ? 1 : raw::kNoProgram;
     memcpy(file.data() + kPipelines, &pp, sizeof pp);
     memcpy(file.data() + kStrings, strings.data(), strings.size());
     const std::string path = dir() + "/pack.bin";

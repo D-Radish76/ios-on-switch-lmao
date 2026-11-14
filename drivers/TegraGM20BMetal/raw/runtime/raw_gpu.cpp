@@ -7714,11 +7714,13 @@ void RenderEncoder::end()
     if (samples_ > 1)
         sampleWords(p_, 1, d.root_.va);
     // the 3D engine's work outside the pass (the blit encoder's draws) meets no iterated blend and the pass's
-    // targets, and the pixel stage and rasteriser on
+    // targets, and the pixel stage and rasteriser on; the state's segment, run again at its next bind, turns them off
     if (const Pipeline *live = cb_->extrasLive_;
         live && (live->freeForm.rung == FetchIteratedBlend || live->stagesOff)) {
         p_.raw(live->restore.data(), uint32_t(live->restore.size()));
         cb_->extrasLive_ = nullptr;
+        if (live->stagesOff)
+            cb_->heldSegment_.lose();
     }
     if (narrowed_) {
         p_.m(CT_SELECT, targetSelect(colorTargets()));
