@@ -3559,6 +3559,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_completed.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_compute.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_compute_loops.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_compute_indirect.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_loop_copies.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_predication.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_predicate_loops.cpp",
@@ -4486,6 +4487,7 @@ host_test(
 host_test(
     name = "raw_sampler_test",
     srcs = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_sampler_map.h",
         "raw_sampler_test.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_sampler.h",
     ],
@@ -6081,6 +6083,7 @@ host_test(
 host_test(
     name = "shader_compiler_request_test",
     srcs = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
         "made_metallib.h",
         "shader_compiler_request_test.cpp",
         "//drivers/NativeMetal:ImageFilterLink.h",
@@ -6151,6 +6154,13 @@ host_test(
 host_test(
     name = "shader_compiler_buffer_encoders_test",
     srcs = [
+        "//drivers/TegraGM20BMetal:compiler/compiler_key_difference.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/RawDirect.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_direct.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_render_variant.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_written_textures.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_pass.h",
         "made_metallib.h",
         "shader_compiler_buffer_encoders_test.cpp",
         "//drivers/NativeMetal:ImageFilterLink.h",
@@ -6212,6 +6222,7 @@ host_test(
 host_test(
     name = "shader_compiler_library_request_test",
     srcs = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
         "made_metallib.h",
         "shader_compiler_library_request_test.cpp",
         "//drivers/NativeMetal:ImageFilterLink.h",
@@ -6282,6 +6293,11 @@ host_test(
 host_test(
     name = "shader_compiler_request_forms_test",
     srcs = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_argument_layout.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_buffer_encoders.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_function_attributes.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
         "made_metallib.h",
         "shader_compiler_request_forms_test.cpp",
         "//drivers/NativeMetal:ImageFilterLink.h",
@@ -6356,6 +6372,9 @@ host_test(
 host_test(
     name = "shader_compiler_store_test",
     srcs = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_written_textures.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_pass.h",
         "shader_compiler_store_test.cpp",
         "//drivers/TegraGM20BMetal:compiler/compiler_log.cpp",
         "//drivers/TegraGM20BMetal:compiler/compiler_log.h",
@@ -6403,6 +6422,9 @@ host_test(
 host_test(
     name = "raw_remote_test",
     srcs = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_written_textures.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_pass.h",
         "raw_remote_test.cpp",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "//drivers/TegraGM20B:TegraGM20BCompilerABI.h",

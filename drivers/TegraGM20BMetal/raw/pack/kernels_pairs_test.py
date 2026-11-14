@@ -4,9 +4,12 @@ The window holds the texture slots the sampler samples (runtime/raw_pack.h kerne
 runtime maps the sampler's header by.
 """
 
+import os
 import struct
+import sys
 import unittest
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kernels
 import packfile
 

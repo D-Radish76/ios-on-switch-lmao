@@ -3,8 +3,11 @@
 The runtime would fail its command buffer (runtime/raw_view.h SlotView::None).
 """
 
+import os
+import sys
 import unittest
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kernels
 
 KEY = 'k | tg=8,8,1 | tgmem= | tex=0:70:2:1:1:02030405,1:115:2:1:1:02030405 | smp='

@@ -100,6 +100,24 @@ bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescripto
 {
     return false;
 }
+
+NmbReflectionBlob *nmb_offline_render_pipeline_reflection(const NmbOfflineRenderPipelineDescriptor *)
+{
+    return nullptr;
+}
+
+NmbReflectionBlob *nmb_offline_compute_pipeline_reflection(const NmbOfflineComputePipelineDescriptor *)
+{
+    return nullptr;
+}
+
+const uint8_t *nmb_reflection_blob_bytes(const NmbReflectionBlob *, size_t *)
+{
+    return nullptr;
+}
+
+void nmb_reflection_blob_release(NmbReflectionBlob *)
+{}
 }
 
 id native_bridge_metal_buffer_over_foreign(const struct switch_foreign_memory *, void *, NSUInteger, NSUInteger)

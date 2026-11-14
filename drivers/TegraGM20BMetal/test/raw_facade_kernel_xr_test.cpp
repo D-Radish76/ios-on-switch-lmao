@@ -77,7 +77,7 @@ IOSurfaceRef twoPlanes()
     return IOSurfaceCreate((__bridge CFDictionaryRef) @{
         (id)kIOSurfaceWidth : @(kSide),
         (id)kIOSurfaceHeight : @(kSide),
-        (id)kIOSurfacePixelFormat : @('b3a8'),
+        (id)kIOSurfacePixelFormat : @(uint32_t('b3a8')),
         (id)kIOSurfaceAllocSize : @(kSide * 5 * kSide),
         (id)kIOSurfacePlaneInfo : @[ words, alphas ]
     });

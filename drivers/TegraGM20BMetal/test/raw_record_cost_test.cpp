@@ -93,7 +93,8 @@ Bench &bench()
 {
     static Bench b = [] {
         Bench made;
-        const std::string pack = writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, {}, compositorEntries());
+        const std::string pack =
+            writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, compositorEntries());
         const std::string metallib = writeMetallib();
         made.device = open(pack);
         if (!made.device)
