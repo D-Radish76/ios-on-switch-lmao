@@ -158,10 +158,11 @@ TEST_F(McErrors, AQuietClientsRunEndsAndInterleavedStormsStayBounded)
     for (uint32_t i = 0; i < 17; ++i)
         fault(0x79, 0x1000);
     ASSERT_EQ(switch_test_lines.size(), 9u);
-    EXPECT_EQ(switch_test_lines[8].rfind("TegraSMMU: MC error run over: 6 errors by csr_nvdecsrd (NVDEC) (client 0x78), "
-                                         "the first 4 printed, ended by displaced; the last ",
-                                         0),
-              0u)
+    EXPECT_EQ(
+        switch_test_lines[8].rfind("TegraSMMU: MC error run over: 6 errors by csr_nvdecsrd (NVDEC) (client 0x78), "
+                                   "the first 4 printed, ended by displaced; the last ",
+                                   0),
+        0u)
         << switch_test_lines[8];
     switch_test_lines.clear();
     for (uint32_t i = 0; i < 100; ++i)
