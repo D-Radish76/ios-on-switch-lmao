@@ -506,7 +506,7 @@ TEST(CompileRequestForms, TheClientsRequestsCarryWhatItsKeysAreMadeOf)
         computeState.find(
             "const std::string stageIn = raw::stageInText(raw::stageInFieldsOf(descriptor.stageInputDescriptor));"),
         std::string::npos);
-    EXPECT_NE(computeState.find("s->_constants = (f ? f->_constants : \"\") + stageIn;"), std::string::npos);
+    EXPECT_NE(computeState.find("s->_constants = (f ? f->_constants : \"\") + stageIn + linked;"), std::string::npos);
     EXPECT_NE(SourceText("../compiler/compiler_record.mm").find("raw::probeTexturesOf(p.request.variant)"),
               std::string::npos);
 }
