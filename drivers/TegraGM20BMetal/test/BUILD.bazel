@@ -262,6 +262,8 @@
 #   raw_facade_compiled_libraries_test  a library from source, a stitched library and Core Image's filter link are the
 #                     system shader compiler's (the front end's request the builder writes, the reply read as raw's own
 #                     library), a refusal is Metal's compile failure asked again each time, and none opens m2v
+#   raw_facade_function_tags_test  a function's constants and attributes read from its metallib's public metadata, as
+#                     Metal answers them for testdata/function_tags/probe.metallib, and as m2v did for tags it never measured
 #   raw_arena_trim_test  raw/runtime/raw_arena_trim.h: an idle heap kept non-volatile gives back the ranges no resource is
 #                     placed in, keeps the rest's contents, and binds a hole again at a placement into it
 #   raw_seed_slot_test  a seeded record's program of a page or more runs from the installed seed's pages (raw_cache.h
@@ -5083,6 +5085,56 @@ host_test(
     linkopts = [
         "-framework",
         "CoreVideo",
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# A function's constants and attributes are read from its metallib's public metadata, as Metal answers them for a library
+# Xcode's metal built (testdata/function_tags), with no m2v device opened
+host_test(
+    name = "raw_facade_function_tags_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_function_tags_test.cpp",
+        "raw_facade_harness.h",
+        "raw_facade_standins.h",
+        "raw_frontend_absent.cpp",
+        "raw_job_methods.h",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [
+        "testdata/function_tags/probe.metallib",
+        ":fake_nvk/libvulkan_nouveau.dylib",
+    ],
+    env = {
+        "SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)",
+        "SWITCH_FUNCTION_TAGS_PROBE": "$(rootpath testdata/function_tags/probe.metallib)",
+    },
+    linkopts = [
         "-framework",
         "Foundation",
         "-framework",

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#import "RawMetalFunctionTags.h"
 #import "RawMetalInternal.h"
 #import "RawPipelineKey.h"
 #include "NativeBridgeMetalFrontend.h"
@@ -56,10 +57,9 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
     return MTLFunctionType(_type);
 }
 
-// Reflection: the AIR's, as m2v's function decodes it
 - (NSDictionary<NSString *, MTLFunctionConstant *> *)functionConstantsDictionary
 {
-    return [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's constants") functionConstantsDictionary];
+    return rmFunctionConstants(self);
 }
 
 - (MTLFunctionOptions)options
@@ -69,12 +69,18 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 
 - (NSArray<MTLVertexAttribute *> *)vertexAttributes
 {
-    return [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's vertex attributes") vertexAttributes];
+    NSArray *attributes = nil;
+    return rmFunctionAttributes(self, false, &attributes)
+               ? attributes
+               : [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's vertex attributes") vertexAttributes];
 }
 
 - (NSArray<MTLAttribute *> *)stageInputAttributes
 {
-    return [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's stage input attributes") stageInputAttributes];
+    NSArray *attributes = nil;
+    return rmFunctionAttributes(self, true, &attributes)
+               ? attributes
+               : [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's stage input attributes") stageInputAttributes];
 }
 
 - (MTLPatchType)patchType
