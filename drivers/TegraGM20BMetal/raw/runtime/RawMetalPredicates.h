@@ -15,7 +15,6 @@ enum RMPred : uint8_t {
     // textures the raw path does not keep, decided when made (a bind hits the texture's own predicate)
     PredTexShape,  // rawShape: a = failing term (1 type, 2 levels, 3 samples, 4 array/depth, 5 rotation, 6 format), b = format
     PredTexPoolAlloc,   // no pool span or texture header
-    PredTexSurfBounds,  // offset + rows past the allocation
     PredTexSurfImport,  // the import or the header slot refused
     PredTexPlanar,      // the 4:4:4 two-plane texture refused
     PredTexBufOther,    // memoryless, past the buffer, header slot
@@ -73,7 +72,6 @@ static_assert(PredCount <= 64, "one mask word");
 static constexpr const char *kPredNames[] = {"-",
                                              "tex.shape",
                                              "tex.pool",
-                                             "tex.surf.bounds",
                                              "tex.surf.imp",
                                              "tex.planar",
                                              "tex.buf.other",
