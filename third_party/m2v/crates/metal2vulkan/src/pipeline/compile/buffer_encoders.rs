@@ -1,7 +1,7 @@
 //! `newArgumentEncoderWithBufferIndex:` at every buffer index a function declares, from one decode
 //! of its AIR: an argument buffer's layout as [`super::argument_buffer_layout`] makes it, and a
 //! plain buffer's as Metal makes it without API validation (which stops it): of no struct type an
-//! encoder of no bytes, alignment 1 (an M4 under macOS 27.2 for all 25675 such buffers of its
+//! encoder of no bytes, alignment 1 (an M4 under macOS 27.2 for all 25711 such buffers of its
 //! system metallibs), of a struct [`ArgumentBufferLayout::from_plain_buffer_index`], each member
 //! where the function's own program reads it. An index with no buffer is absent: Metal asserts
 //! there.
@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use super::{guarded, spec_request, with_request, InputsFrom};
 use crate::air;
-use crate::air::abi::{AbiInt, EntryPoint, ParamRole, StructInfo};
+use crate::air::abi::{AbiInt, EntryPoint, ParamBinding, ParamRole, StructInfo};
 use crate::bind::argument_buffer::{self, EntryLayout};
 use crate::bind::{ArgumentBufferLayout, ArgumentLayoutError, BufferEncoder};
 use crate::budget::Meter;
@@ -24,7 +24,7 @@ use crate::error::{Error, InternalError, InternalKind};
 use crate::library::{Function, FunctionConstantValues};
 use crate::lower::select::LowerInputs;
 use crate::pipeline::descriptor::{DynamicLibraries, LinkedFunctions};
-use crate::reflection::{self, Binding, Channel};
+use crate::reflection::{self, Channel};
 
 /// Every buffer `f` declares, by index, made with the function constants `consts` (`None`: made
 /// without constant values); specialized with them, or none, and no linked functions only where a
@@ -122,7 +122,7 @@ fn survey(
     ungated_only: bool,
     m: &mut Meter,
 ) -> Option<Survey> {
-    let mut declared: BTreeMap<u32, Vec<&ParamRole>> = BTreeMap::new();
+    let mut declared: BTreeMap<u32, Vec<&ParamBinding>> = BTreeMap::new();
     let mut gated = BTreeMap::new();
     for p in &ep.params {
         let location = match &p.role {
@@ -135,30 +135,32 @@ fn survey(
         let AbiInt::Const(index) = location.index else {
             return None;
         };
-        declared.entry(index).or_default().push(&p.role);
+        declared.entry(index).or_default().push(p);
         *gated.entry(index).or_insert(false) |= p.predicate.is_some();
     }
     let mut s = Survey {
         answered: Vec::with_capacity(declared.len()),
         pending: BTreeMap::new(),
     };
-    let mut bindings = None;
-    for (index, roles) in declared {
-        let argument_buffer = roles
+    for (index, params) in declared {
+        let argument_buffer = params
             .iter()
-            .any(|r| matches!(r, ParamRole::ArgumentBuffer(_)));
-        let layout = match (roles.as_slice(), gated[&index]) {
-            ([ParamRole::ArgumentBuffer(_)], false) => {
-                match argument_buffer::entry_layout(&ep.params, structs, index, m) {
-                    EntryLayout::Done(layout) => Some(layout),
-                    EntryLayout::Specialize => None,
+            .any(|p| matches!(p.role, ParamRole::ArgumentBuffer(_)));
+        let layout = match (params.as_slice(), gated[&index]) {
+            ([p], false) => match &p.role {
+                ParamRole::ArgumentBuffer(_) => {
+                    match argument_buffer::entry_layout(&ep.params, structs, index, m) {
+                        EntryLayout::Done(layout) => Some(layout),
+                        EntryLayout::Specialize => None,
+                    }
                 }
-            }
-            ([ParamRole::Buffer(_)], false) => {
-                let reflected = bindings
-                    .get_or_insert_with(|| reflection::bindings(ep, structs, Channel::Library));
-                Some(plain_layout(reflected, index))
-            }
+                ParamRole::Buffer(b) if b.layout.is_none() => Some(Ok(ArgumentBufferLayout {
+                    encoded_length: 0,
+                    alignment: 1,
+                    members: Vec::new(),
+                })),
+                _ => Some(plain_layout(ep, structs, p, index)),
+            },
             _ => None,
         };
         match layout {
@@ -175,17 +177,17 @@ fn survey(
     Some(s)
 }
 
-/// A plain buffer's encoder, from its library reflection binding
+/// A plain buffer's encoder, from its own library reflection binding
 fn plain_layout(
-    bindings: &Result<Vec<Binding>, Error>,
+    ep: &EntryPoint,
+    structs: &[StructInfo],
+    p: &ParamBinding,
     index: u32,
 ) -> Result<ArgumentBufferLayout, ArgumentLayoutError> {
-    let bindings = bindings
+    reflection::binding(ep, structs, Channel::Library, p)
+        .map_err(ArgumentLayoutError::Compile)?
         .as_ref()
-        .map_err(|e| ArgumentLayoutError::Compile(e.clone()))?;
-    bindings
-        .iter()
-        .find_map(|b| b.buffer().filter(|_| b.index() == index))
+        .and_then(|b| b.buffer())
         .ok_or(ArgumentLayoutError::NoArgumentBuffer { index })
         .and_then(ArgumentBufferLayout::from_plain_buffer_index)
 }

@@ -260,7 +260,17 @@ fn reflected_element(
             step,
         });
     }
-    let (size, alignment, ty) = type_size_align(data_type).ok_or_else(|| unmeasured(name))?;
+    let (size, alignment, ty) = match type_size_align(data_type) {
+        Some(t) => t,
+        // A one-component vector (`packed_float1`), the one member Metal reflects with no data
+        // type: an M4 lays it out as any other non-integer constant.
+        None if data_type == DataType::None && rule == Rule::PlainIndex => (
+            PLAIN_CONSTANT_BYTES,
+            PLAIN_CONSTANT_BYTES,
+            ArgumentType::Constant,
+        ),
+        None => return Err(unmeasured(name)),
+    };
     match rule {
         Rule::ArgumentBuffer => {
             let nested = match pointer {

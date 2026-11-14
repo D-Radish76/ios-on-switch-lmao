@@ -164,3 +164,25 @@ fn a_plain_struct_ends_at_its_last_member() {
     ]);
     assert_eq!(answers(&l, 1), ((24, 8), vec![Some(20)]));
 }
+
+#[test]
+fn a_one_component_vector_is_a_constant() {
+    // struct { packed_float1 a; packed_int1 b; float c; packed_uint1 d[3]; }: Metal reflects
+    // each one-component vector with no data type.
+    let l = layout(vec![
+        plain("a", 0, D::None),
+        plain("b", 4, D::None),
+        plain("c", 8, D::Float),
+        array("d", 12, D::None, 3, 4),
+    ]);
+    assert_eq!(
+        answers(&l, 4),
+        ((32, 8), vec![Some(12), Some(16), Some(20), None])
+    );
+    // struct { float x; packed_int1 a; }
+    let l = layout(vec![plain("x", 0, D::Float), plain("a", 4, D::None)]);
+    assert_eq!(answers(&l, 1), ((16, 8), vec![Some(4)]));
+    // struct { half x; packed_half1 a; }
+    let l = layout(vec![plain("x", 0, D::Half), plain("a", 2, D::None)]);
+    assert_eq!(answers(&l, 1), ((16, 8), vec![Some(2)]));
+}
