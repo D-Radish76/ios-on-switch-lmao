@@ -33,6 +33,7 @@
 #include "compiler_store.h"
 #include "../raw/runtime/raw_cache_io.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
+#include "../raw/runtime/raw_library_entry.h"
 
 namespace switch_compiler {
 namespace {
@@ -62,15 +63,17 @@ struct Asked : Work {
     dispatch_semaphore_t done = nullptr;  // signalled once it ran, for the replay that waits on it
 };
 
-// What a stored entry answers, -1 for one that is not `k`'s whole (retired, and made again)
+// What a stored entry answers, -1 for one that is not `k`'s whole, or a library the front end refused (retired, and made
+// again: the store is not named by what the front end ran with)
 int32_t storedResult(const std::string &bytes, const raw::CacheKey &k)
 {
     raw::Reader r(bytes);
     uint32_t kind = 0;
-    if (!raw::readEntryHead(bytes, r, k, kind))
+    if (!raw::readEntryHead(bytes, r, k, kind) || kind == raw::kKindLibraryRefusal)
         return -1;
-    return kind == raw::kKindRecord || kind == raw::kKindKernel || kind == raw::kKindFacts ? TegraGM20BCompileMade
-                                                                                           : TegraGM20BCompileRefused;
+    return kind == raw::kKindRecord || kind == raw::kKindKernel || kind == raw::kKindFacts || kind == raw::kKindLibrary
+               ? TegraGM20BCompileMade
+               : TegraGM20BCompileRefused;
 }
 
 #if SWITCH_DEBUG
@@ -348,8 +351,11 @@ bool Service::open(uint64_t stack)
 {
     root_ = geteuid() ? kMobileRoot : kSystemRoot;
     std::string why;
-    if (!connect(why) || !engine_.open(stack, EngineInputs::installed(), why) ||
-        !store_.open(root_, stack, engine_.rules(), why) || !registerStore(stack, why)) {
+    EngineInputs inputs = EngineInputs::installed();
+    inputs.codeGen.modules = root_ + "/modules";
+    inputs.codeGen.replies = root_ + "/msl";
+    if (!connect(why) || !engine_.open(stack, inputs, why) || !store_.open(root_, stack, engine_.rules(), why) ||
+        !registerStore(stack, why)) {
         os_log_error(logger(), "SwitchShaderCompiler: not serving: %{public}s", why.c_str());
         decline();
         return false;

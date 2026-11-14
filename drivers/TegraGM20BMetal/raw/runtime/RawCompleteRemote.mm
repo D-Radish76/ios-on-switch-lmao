@@ -10,6 +10,7 @@
 #include "RawMetalInternal.h"
 #include "raw_compute_facts_entry.h"
 #include "raw_compute_record.h"
+#include "raw_library_entry.h"
 #include "raw_remote_ask.h"
 
 namespace raw {
@@ -379,6 +380,57 @@ bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descript
         (unsigned long long)((nowUs() - began) / 1000), out.maxThreads, out.executionWidth, out.staticMemory,
         stateKey.c_str());
 #endif
+    return true;
+}
+
+bool Completion::library(uint32_t type, const std::string &bytes, MadeLibrary &out, std::string &failure, bool &refused)
+{
+    refused = false;
+    CompileRequest r;
+    r.stack = stack_;
+    r.kind = RequestKind::Library;
+    const CacheKey k = libraryCacheKey(stack_, type, bytes);
+    r.key = k.key;
+    r.codeGenType = type;
+    r.codeGen = bytes;
+    const Digest name = storeName(k, r, {});
+    std::string log;
+    const auto stored = [&]() {
+        std::string entry;
+        return remote_->find(name, entry) ? decodeLibraryEntry(entry, k, out, log) : RecordCache::Found::None;
+    };
+    // a refusal is only read after this process's own ask: the front end makes a refused library again at each
+    RecordCache::Found found =
+        stored() == RecordCache::Found::Record ? RecordCache::Found::Record : RecordCache::Found::None;
+    Remote::Answer answer = Remote::Answer::Unavailable;
+    if (found == RecordCache::Found::None) {
+        if (!remote_->serving() || !remote_->taking())
+            return failure = kNoCompilerComes, false;
+        const std::string request = encodeRequest(r);
+        for (const bool again : {false, true}) {
+            answer = remote_->compile(request);
+            if (answer == Remote::Answer::Made || answer == Remote::Answer::Refused)
+                found = stored();
+            if (askNext(answer, found != RecordCache::Found::None, again, remote_->declined()) != AskNext::AskAgain)
+                break;
+        }
+    }
+    switch (askFailure(answer, found != RecordCache::Found::None, remote_->declined())) {
+    case AskFailure::None:
+        break;
+    case AskFailure::CouldNotRun:
+        return failure = "the system's Metal compiler could not run", false;
+    case AskFailure::NoCompilerComes:
+        return failure = kNoCompilerComes, false;
+    case AskFailure::NotTaken:
+        return failure = "the shader compiler did not take the library", false;
+    case AskFailure::NotStored:
+        return failure = "the shader compiler's store does not keep the library", false;
+    }
+    if (found == RecordCache::Found::Refusal) {
+        refused = true;
+        return failure = log, false;
+    }
     return true;
 }
 

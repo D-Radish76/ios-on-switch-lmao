@@ -120,6 +120,8 @@ TESTS: dict[str, bool] = {
             'gpu.raw.surface_buffer',
             'gpu.raw.own_answers',
             'gpu.raw.compute_facts',
+            'gpu.raw.source_library',
+            'gpu.raw.stitched_library',
             'gpu.raw.compressed_targets',
             'gpu.raw.zcull',
             'gpu.raw.mip_twod',

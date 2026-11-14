@@ -318,7 +318,6 @@ bool bufferRows(uint64_t offset, uint64_t bytesPerRow, uint32_t rows, uint32_t r
 uint64_t bufferRow(const BufferRows &r, uint64_t offset, uint64_t bytesPerRow, uint32_t y);
 
 // RawMetalLibrary.mm
-RMLibrary *wrapLibrary(id device, id<MTLLibrary> twin, NSString *path);
 // A library of the metallib `bytes` (a file's at `path`, or data) read by the facade, with no m2v twin; nil: bytes it does
 // not read (m2v's library answers then)
 RMLibrary *readLibrary(id device, NSString *path, NSData *bytes);

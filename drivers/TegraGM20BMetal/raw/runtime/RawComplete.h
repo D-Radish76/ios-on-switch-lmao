@@ -32,6 +32,7 @@ class Device;
 class Direct;
 struct ComputeRecord;
 struct ComputeState;
+struct MadeLibrary;
 struct PackComputeFacts;
 struct Pipeline;
 
@@ -91,6 +92,10 @@ public:
     // comes, or it made none; no process makes them itself.
     bool facts(id facadeFunction, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey,
                PackComputeFacts &out, std::string &failure);
+    // The library the system's Metal front end makes of code generation request `bytes` of `type` (raw_codegen_request.h),
+    // the shader compiler's from its store or made while this thread sleeps. False with `failure`: the front end's error
+    // log (`refused`), or why no compiler made it; no process makes one itself.
+    bool library(uint32_t type, const std::string &bytes, MadeLibrary &out, std::string &failure, bool &refused);
 
     void backgroundKernel(std::function<void()> work);
 

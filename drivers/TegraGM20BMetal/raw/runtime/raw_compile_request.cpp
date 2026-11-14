@@ -71,8 +71,22 @@ bool knownTag(const CompileRequest &r, size_t index)
     return tag == "vl" || tag == "vp" || tag == "fl" || tag == "fp";
 }
 
+bool knownCodeGen(uint32_t type)
+{
+    return type == kCodeGenSource || type == kCodeGenStitch || type == kCodeGenImageFilters;
+}
+
+bool saneLibrary(const CompileRequest &r)
+{
+    return r.stages.empty() && r.libraries.empty() && r.cubic.samplers.empty() && r.cubic.textures.empty() &&
+           r.kernel.textures.empty() && r.kernel.samplers.empty() && !r.key.empty() && r.form == RequestForm::Primary &&
+           !r.codeGen.empty() && knownCodeGen(r.codeGenType);
+}
+
 bool sane(const CompileRequest &r)
 {
+    if (r.kind == RequestKind::Library)
+        return saneLibrary(r);
     const bool kernel = r.kind != RequestKind::Render;
     if ((kernel ? r.stages.size() != 1 : r.stages.size() < 2) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
@@ -151,6 +165,10 @@ std::string encodeRequest(const CompileRequest &r)
     }
     w.value(r.fragmentTests);
     writeKernel(w, r.kernel);
+    if (r.kind == RequestKind::Library) {
+        w.value(r.codeGenType);
+        w.text(r.codeGen);
+    }
     return w.out;
 }
 
@@ -169,7 +187,7 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     q.key = r.text();
     readFields(r, q.fields);
     const uint32_t stages = r.value<uint32_t>();
-    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Facts) || form > 1 ||
+    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Library) || form > 1 ||
         stages > kRequestStageLimit)
         return false;
     q.stages.resize(stages);
@@ -207,6 +225,10 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     }
     q.fragmentTests = r.value<uint8_t>();
     readKernel(r, q.kernel);
+    if (q.kind == RequestKind::Library) {
+        q.codeGenType = r.value<uint32_t>();
+        q.codeGen = r.text();
+    }
     if (!r.ok() || r.at() != bytes.size() || !sane(q))
         return false;
     out = std::move(q);
@@ -299,6 +321,21 @@ CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey)
     CacheKey k;
     k.stack = stack;
     k.key = "facts | " + stateKey;
+    return k;
+}
+
+CacheKey libraryCacheKey(uint64_t stack, uint32_t type, const std::string &bytes)
+{
+    static constexpr char kDigits[] = "0123456789abcdef";
+    const Digest digest = sha256(bytes.data(), bytes.size());
+    std::string hex;
+    for (const uint8_t b : digest) {
+        hex += kDigits[b >> 4];
+        hex += kDigits[b & 15];
+    }
+    CacheKey k;
+    k.stack = stack;
+    k.key = "library | " + std::to_string(type) + " | " + hex;
     return k;
 }
 

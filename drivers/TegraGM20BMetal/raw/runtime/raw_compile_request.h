@@ -25,12 +25,17 @@ constexpr uint32_t kRequestStageLimit = 1u << 16, kRequestLibraryLimit = 1u << 1
 using Digest = std::array<uint8_t, 32>;
 
 // Facts: a kernel's compute state's answers to Metal's per-state queries (raw_pack.h PackComputeFacts), which its creation
-// needs before any dispatch; its one stage and limits as a kernel's, no dispatch
+// needs before any dispatch; its one stage and limits as a kernel's, no dispatch. Library: a library the system's Metal
+// front end makes at run time from a code generation request (raw_codegen_request.h), with no stage or library of its own
 enum class RequestKind : uint8_t {
     Render,
     Kernel,
-    Facts
+    Facts,
+    Library
 };
+
+// MTLCodeGenServiceBuildRequest's request types a Library request carries (ImageFilterLink.h's is the filter link's)
+constexpr uint32_t kCodeGenImageFilters = 5, kCodeGenSource = 13, kCodeGenStitch = 14;
 
 // Primary: the state's record; Split: the same with its fragment program's split, which the compiler makes after the
 // primary record is published and nobody waits for
@@ -79,6 +84,8 @@ struct CompileRequest {
     uint8_t fragmentTests = 0;
     KernelRequest kernel;
     std::string key;  // the CacheKey text the client made (a kernel's starts "kernel | ")
+    uint32_t codeGenType = 0;
+    std::string codeGen;  // a Library's code generation request, sent only for one
 };
 
 std::string encodeRequest(const CompileRequest &r);
@@ -104,5 +111,7 @@ Digest storeName(const CacheKey &k, const CompileRequest &r, const std::vector<L
 CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey);
 // The CacheKey of a compute state's facts, of its raw_compute_key.h computeStateKey
 CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey);
+// The CacheKey of the library the front end makes of code generation request `bytes` of `type`: the request's SHA-256
+CacheKey libraryCacheKey(uint64_t stack, uint32_t type, const std::string &bytes);
 
 }  // namespace raw
