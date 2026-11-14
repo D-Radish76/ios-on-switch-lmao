@@ -13,7 +13,7 @@ import UIKit
 ///  - `_cached_diff`: the pixels where the cached image is more than IconServicesCache.codes off the uncached one,
 ///    `unmatched` where the sizes differ: a cache that holds another build's or another day's picture;
 ///  - `_placeholder`: the uncached image is the placeholder IconServices makes when the agent refuses the request (a
-///    missing app's icon at the same size).
+///    missing app's or type's icon at the same size, by the request's kind), `unknown` without one.
 /// A failure names the field.
 enum IconArm {
     static func placeholder(
