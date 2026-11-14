@@ -39,9 +39,10 @@ common --incompatible_strict_action_env
 # unsandboxed fallback, so there is none: a new one that tries to read undeclared inputs fails instead of passing.
 build --spawn_strategy=sandboxed
 # One exception: iOS 27's translation attaches and mounts disk images (hdiutil, diskutil), which no sandbox
-# allows, so its two actions (install/translated.bzl) run here.
-build --strategy=Pretranslate=local
-build --strategy=TranslatedCryptex=local
+# allows, so its two actions (install/translated.bzl) run on a build host's worker, or unsandboxed here when there is
+# none (--config=noremote).
+build --strategy=Pretranslate=remote,local
+build --strategy=TranslatedCryptex=remote,local
 # And rules_apple's actool (the HW Test apps' asset catalog), which asks CoreSimulator's services for its compile and is
 # marked no-sandbox.
 build --strategy=AssetCatalogCompile=local
