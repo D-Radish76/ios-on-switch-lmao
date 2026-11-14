@@ -13,6 +13,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// NOLINTBEGIN(modernize-avoid-c-style-cast,modernize-loop-convert): plain C, compiled by C host tests as well
 #define SWITCH_DP_MAX_WIDTH      1920u
 #define SWITCH_DP_MAX_HEIGHT     1080u
 #define SWITCH_DP_MAX_REFRESH    60500u  // mHz: 60 Hz and 59.94 Hz
@@ -30,25 +31,25 @@ struct switch_dp_mode {
 
 static inline uint32_t switch_dp_mode_htotal(const struct switch_dp_mode *m)
 {
-    return static_cast<uint32_t>(m->hactive) + m->hfront + m->hsync + m->hback;
+    return (uint32_t)m->hactive + m->hfront + m->hsync + m->hback;
 }
 
 static inline uint32_t switch_dp_mode_vtotal(const struct switch_dp_mode *m)
 {
-    return static_cast<uint32_t>(m->vactive) + m->vfront + m->vsync + m->vback;
+    return (uint32_t)m->vactive + m->vfront + m->vsync + m->vback;
 }
 
 static inline uint32_t switch_dp_mode_refresh_mhz(const struct switch_dp_mode *m)
 {
-    const uint64_t total = static_cast<uint64_t>(switch_dp_mode_htotal(m)) * switch_dp_mode_vtotal(m);
-    return total == 0 ? 0 : static_cast<uint32_t>((static_cast<uint64_t>(m->pixel_khz) * 1000000u + total / 2) / total);
+    const uint64_t total = (uint64_t)switch_dp_mode_htotal(m) * switch_dp_mode_vtotal(m);
+    return total == 0 ? 0 : (uint32_t)(((uint64_t)m->pixel_khz * 1000000u + total / 2) / total);
 }
 
 static inline bool switch_dp_edid_block_valid(const uint8_t *block)
 {
     uint8_t sum = 0;
     for (unsigned i = 0; i < 128; ++i) {
-        sum = static_cast<uint8_t>(sum + block[i]);
+        sum = (uint8_t)(sum + block[i]);
     }
     return sum == 0;
 }
@@ -67,18 +68,18 @@ static inline bool switch_dp_edid_header_valid(const uint8_t *edid)
 // An 18-byte detailed timing descriptor; false for display descriptors (pixel clock 0) and interlaced timings.
 static inline bool switch_dp_edid_dtd(const uint8_t *d, struct switch_dp_mode *mode)
 {
-    const uint32_t clock = (d[0] | (static_cast<uint32_t>(d[1]) << 8));
+    const uint32_t clock = d[0] | ((uint32_t)d[1] << 8);
     if (clock == 0 || (d[17] & 0x80u) != 0) {
         return false;
     }
-    const uint16_t hactive = static_cast<uint16_t>(d[2] | ((d[4] & 0xF0u) << 4));
-    const uint16_t hblank = static_cast<uint16_t>(d[3] | ((d[4] & 0x0Fu) << 8));
-    const uint16_t vactive = static_cast<uint16_t>(d[5] | ((d[7] & 0xF0u) << 4));
-    const uint16_t vblank = static_cast<uint16_t>(d[6] | ((d[7] & 0x0Fu) << 8));
-    const uint16_t hfront = static_cast<uint16_t>(d[8] | ((d[11] & 0xC0u) << 2));
-    const uint16_t hsync = static_cast<uint16_t>(d[9] | ((d[11] & 0x30u) << 4));
-    const uint16_t vfront = static_cast<uint16_t>((static_cast<uint32_t>(d[10]) >> 4) | ((d[11] & 0x0Cu) << 2));
-    const uint16_t vsync = static_cast<uint16_t>((d[10] & 0x0Fu) | ((d[11] & 0x03u) << 4));
+    const uint16_t hactive = (uint16_t)(d[2] | ((d[4] & 0xF0u) << 4));
+    const uint16_t hblank = (uint16_t)(d[3] | ((d[4] & 0x0Fu) << 8));
+    const uint16_t vactive = (uint16_t)(d[5] | ((d[7] & 0xF0u) << 4));
+    const uint16_t vblank = (uint16_t)(d[6] | ((d[7] & 0x0Fu) << 8));
+    const uint16_t hfront = (uint16_t)(d[8] | ((d[11] & 0xC0u) << 2));
+    const uint16_t hsync = (uint16_t)(d[9] | ((d[11] & 0x30u) << 4));
+    const uint16_t vfront = (uint16_t)(((uint32_t)d[10] >> 4) | ((d[11] & 0x0Cu) << 2));
+    const uint16_t vsync = (uint16_t)((d[10] & 0x0Fu) | ((d[11] & 0x03u) << 4));
     if (hfront + hsync >= hblank || vfront + vsync >= vblank || hactive == 0 || vactive == 0) {
         return false;
     }
@@ -88,11 +89,11 @@ static inline bool switch_dp_edid_dtd(const uint8_t *d, struct switch_dp_mode *m
         hactive,
         hfront,
         hsync,
-        static_cast<uint16_t>(hblank - hfront - hsync),
+        (uint16_t)(hblank - hfront - hsync),
         vactive,
         vfront,
         vsync,
-        static_cast<uint16_t>(vblank - vfront - vsync),
+        (uint16_t)(vblank - vfront - vsync),
         digital_separate && (d[17] & 0x02u) != 0,
         digital_separate && (d[17] & 0x04u) != 0,
         false,
@@ -122,9 +123,9 @@ static inline bool switch_dp_cta_vic(unsigned vic, struct switch_dp_mode *mode)
         {34, {74250, 1920, 88, 44, 148, 1080, 4, 5, 36, true, true, false}},
     };
 
-    for (const auto &i : table) {
-        if (i.vic == vic) {
-            *mode = i.mode;
+    for (size_t i = 0; i < sizeof(table) / sizeof(table[0]); ++i) {
+        if (table[i].vic == vic) {
+            *mode = table[i].mode;
             return true;
         }
     }
@@ -196,7 +197,7 @@ static inline void switch_dp_edid_modes(const uint8_t *edid, unsigned blocks, st
     }
     const unsigned extensions = edid[126] < blocks - 1 ? edid[126] : blocks - 1;
     for (unsigned b = 1; b <= extensions; ++b) {
-        const uint8_t *block = edid + size_t{128} * b;
+        const uint8_t *block = edid + (size_t)128 * b;
         if (switch_dp_edid_block_valid(block)) {
             switch_dp_edid_cta(block, list);
         }
@@ -207,8 +208,7 @@ static inline bool switch_dp_mode_allowed(const struct switch_dp_mode *m, uint64
 {
     const uint32_t refresh = switch_dp_mode_refresh_mhz(m);
     return m->hactive <= SWITCH_DP_MAX_WIDTH && m->vactive <= SWITCH_DP_MAX_HEIGHT && refresh != 0 &&
-           refresh <= SWITCH_DP_MAX_REFRESH &&
-           static_cast<uint64_t>(m->pixel_khz) * SWITCH_DP_BITS_PER_PIXEL < link_payload_kbps;
+           refresh <= SWITCH_DP_MAX_REFRESH && (uint64_t)m->pixel_khz * SWITCH_DP_BITS_PER_PIXEL < link_payload_kbps;
 }
 
 static inline bool switch_dp_mode_is_1080p60(const struct switch_dp_mode *m)
@@ -228,8 +228,8 @@ static inline bool switch_dp_mode_better(const struct switch_dp_mode *a, const s
     if ((ra >= SWITCH_DP_SMOOTH) != (rb >= SWITCH_DP_SMOOTH)) {
         return ra >= SWITCH_DP_SMOOTH;
     }
-    const uint32_t area_a = static_cast<uint32_t>(a->hactive) * a->vactive;
-    const uint32_t area_b = static_cast<uint32_t>(b->hactive) * b->vactive;
+    const uint32_t area_a = (uint32_t)a->hactive * a->vactive;
+    const uint32_t area_b = (uint32_t)b->hactive * b->vactive;
     if (area_a != area_b) {
         return area_a > area_b;
     }
@@ -247,10 +247,12 @@ static inline int switch_dp_pick_mode(const struct switch_dp_mode_list *list, ui
         const struct switch_dp_mode *m = &list->modes[i];
         if (switch_dp_mode_allowed(m, link_payload_kbps) &&
             (best < 0 || switch_dp_mode_better(m, &list->modes[best]))) {
-            best = static_cast<int>(i);
+            best = (int)i;
         }
     }
     return best;
 }
+
+// NOLINTEND(modernize-avoid-c-style-cast,modernize-loop-convert)
 
 #endif
