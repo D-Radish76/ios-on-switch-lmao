@@ -680,9 +680,7 @@ static bool producesTexture(MTLTextureDescriptor *d)
                 "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
                 getprogname(), IOSurfaceGetID(s), (unsigned long)d.height, pitch, IOSurfaceGetAllocSize(s), extra);
             return nil;
-        } else if (base & (size_t(getpagesize()) - 1))
-            refuseTexture(t, PredTexSurfBase, base & 0xfff, 0, @"surface", extra);
-        else
+        } else
             refuseTexture(t, PredTexSurfImport, 1, 0, @"surface", extra);
         if (![t rmTwin])
             return nil;
