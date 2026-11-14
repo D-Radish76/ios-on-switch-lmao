@@ -75,7 +75,7 @@ class LayOutTest(unittest.TestCase):
     def test_the_frontier_bound_is_the_runtimes_and_nvks(self) -> None:
         root = Path(os.path.abspath(__file__)).parents[3]
         runtime = (root / 'drivers/TegraGM20BMetal/raw/runtime/raw_split_metadata.h').read_text()
-        nvk = (root / 'third_party/mesa/src/nouveau/vulkan/nvk_switch_split.h').read_text()
+        nvk = (root / 'third_party/mesa/src/nouveau/switch_compile/nvk_switch_split.h').read_text()
         self.assertIn(f'kMaxFrontierBytes = 0x{splits.MAX_FRONTIER_BYTES:X};', runtime)
         self.assertIn(f'#define SWITCH_SPLIT_MAX_FRONTIER_BYTES 0x{splits.MAX_FRONTIER_BYTES:X}\n', nvk)
 
