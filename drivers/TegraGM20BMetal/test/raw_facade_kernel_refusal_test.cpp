@@ -44,10 +44,8 @@ protected:
         ASSERT_TRUE(library != nil) << (error.description.UTF8String ?: "");
         MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
         d.computeFunction = [library newFunctionWithName:@(kernelName(0).c_str())];
-        gState = [gDevice newComputePipelineStateWithDescriptor:d
-                                                        options:MTLPipelineOptionNone
-                                                     reflection:nil
-                                                          error:&error];
+        gState =
+            [gDevice newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&error];
         ASSERT_TRUE(gState != nil) << (error.description.UTF8String ?: "");
     }
 };
