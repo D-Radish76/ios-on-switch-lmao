@@ -80,8 +80,11 @@ arm_none_eabi(name = "arm_none_eabi")
 
 bazel_dep(name = "rules_rust", version = "0.75.0")
 
-# One change to rules_rust (bazel/rust/rules_rust.patch): a crate whose rustc_flags carry its own -Cmetadata keeps that
-# value alone, as its output hash too, so m2v's crates keep cargo's symbol names and NAK's meson's.
+# Our changes to rules_rust (bazel/rust/rules_rust.patch): a crate whose rustc_flags carry its own -Cmetadata keeps that
+# value alone, as its output hash too, so m2v's crates keep cargo's symbol names and NAK's meson's. The compiles of
+# process_wrapper itself (the bootstrap) expand ${pwd} in the params file a long command line spills into, as they do
+# on the command line, and strip on macOS in the linker, not with the sysroot's rust-objcopy that NVK's toolchain does
+# not declare: their bytes are the same in any sandbox or on a worker.
 single_version_override(
     module_name = "rules_rust",
     patch_strip = 1,
