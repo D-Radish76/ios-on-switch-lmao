@@ -1,5 +1,7 @@
-"""raw/pack/kernels.py: a kernel record that views a texture slot in texels of another size than its key binds there
-is left out of the pack (the runtime would fail its command buffer: runtime/raw_view.h SlotView::None)."""
+"""raw/pack/kernels.py: a record viewing a texture slot in texels of another size is left out of the pack.
+
+The runtime would fail its command buffer (runtime/raw_view.h SlotView::None).
+"""
 
 import unittest
 

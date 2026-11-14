@@ -43,8 +43,10 @@ FORMAT_BYTES = {
 
 
 def views_other_texel_size(key: str, entries: list[dict]) -> list[int]:
-    """Give the texture slots a record views in texels of another size than the format its key binds there (a view the
-    runtime cannot bind: runtime/raw_view.h SlotView::None)."""
+    """Give the texture slots a record views in texels of another size than the format its key binds there.
+
+    The runtime binds no such view (runtime/raw_view.h SlotView::None).
+    """
     found = re.search(r'\btex=([^ |]*)', key)
     bound = {int(t.split(':')[0]): int(t.split(':')[1]) for t in found.group(1).split(',') if t} if found else {}
     other = []
