@@ -304,8 +304,10 @@ struct tgm_chan {
 	/* the ACQUIRE probe: the first look that found it parked on an acquire, and what it had completed then */
 	u64 acquire_probe_ns;
 	u32 acquire_probe_done;
-	/* RAMFC's timeslice as last written, and the seqno submitted then (gpu_ramfc_probe.c) */
+	/* RAMFC's timeslice as last written, the seqno submitted then, and whether that was the creation's (nvkm's or
+	 * tgm_chan_ramfc_open's, not a level change's) (gpu_ramfc_probe.c) */
 	u32 timeslice, timeslice_at;
+	int timeslice_created;
 #endif
 	u32 acquire_unread; /* checks since its interrupt that found RAMFC naming nothing yet */
 
@@ -590,6 +592,8 @@ extern u64 tgm_high_end_ns, tgm_high_end_pt;
 static void present_fenced(struct tgm_chan *chan);
 static void scrub_fenced(struct tgm_chan *chan);
 void tgm_chan_ramfc_due(struct tgm_chan *chan);
+/* gpu_chan_level.c, chan_new under tgm_gpu.lock: the new channel's timeslice (high when critical) and acquire timeout */
+int tgm_chan_ramfc_open(struct tgm_chan *chan, int critical);
 
 static int chan_push_wait(struct tgm_chan *chan, u32 push_nr);
 

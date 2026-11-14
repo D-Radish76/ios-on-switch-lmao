@@ -545,9 +545,10 @@ class AGXDeviceUserClient : public IOUserClient
 	bool bindCuts(const TegraGM20BAbiVmBind *in, uint32_t count);
 	IOReturn bindOp(const TegraGM20BAbiBindOp &op, bool &changed);
 	void scanPushes(const tgm_push *pushes, uint32_t count, tgm_prof *prof, bool rawMacros);
-	void deferScan(const tgm_push *pushes, uint32_t count, bool rawMacros);
-	const tgm_prof *scanSubmission(const tgm_push *pushes, uint32_t count, tgm_prof &prof,
-				       bool rawMacros);
+	void deferScan(uint32_t slot, uint32_t fences, const tgm_push *pushes, uint32_t count,
+		       bool rawMacros);
+	const tgm_prof *scanSubmission(uint32_t slot, uint32_t fences, const tgm_push *pushes,
+				       uint32_t count, tgm_prof &prof, bool rawMacros);
 	const uint32_t *pushView(uint64_t va, uint64_t bytes,
 				 const BindingTable::Entry *&hit) const;
 	IOReturn run(uint32_t method, const void *in, uint32_t inSize, void *out,

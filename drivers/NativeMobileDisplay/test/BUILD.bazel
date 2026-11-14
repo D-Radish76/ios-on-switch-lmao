@@ -550,10 +550,12 @@ host_test(
     name = "switch_scan_return_test",
     srcs = [
         "switch_scan_return_test.cpp",
+        "//drivers/NativeMobileDisplay:SwitchColourBlank.h",
         "//drivers/NativeMobileDisplay:SwitchScanReturn.h",
     ],
     data = [
         "//drivers/NativeMobileDisplay:NativeLegacyDisplay.cpp",
+        "//drivers/NativeMobileDisplay:SwitchScanReturnDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchDirectVisibleDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchReadbackShownDisplay.h",
         "//drivers/TegraGM20B:TegraGM20BReadback.cpp",
