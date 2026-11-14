@@ -99,6 +99,7 @@
 #include <sys/file_internal.h>
 #include <sys/stat.h>
 #include <sys/uio_internal.h>
+#include <sys/dirent.h>
 #include <sys/acct.h>
 #include <sys/exec.h>
 #include <sys/kdebug.h>
@@ -8212,6 +8213,92 @@ native_switch_identity_cache(proc_t p, user_addr_t scratch, mount_t data_mount)
 	printf("SwitchRawBoot: identity %016llx: MobileGestalt cache dropped (%d)\n", digest, error);
 }
 
+/* iconservicesagent keeps the icons it rendered (systemgroup.com.apple.lsd.iconscache's
+ * Library/Caches/com.apple.IconsCache, 21H461 at its top, 24B119 in a salt folder of -[ISDefaults cacheURL]) while
+ * their __cache_info__ names the system's ProductBuildVersion (-[ISMutableIconCache initWithURL:]), which our GPU build
+ * does not change, so icons a GPU build drew outlive it. The deploy names the GPU build it staged in
+ * /private/var/Switch/icon-cache-gpu (tools/deploy/icon_cache.py) and leaves the cache alone, which the Mac's user can
+ * be refused. When that name is not the marker's, the build the cache was last dropped for, each __cache_info__ goes
+ * and the agent empties the cache at its first launch, as after an OS update; the directories keep their owner and
+ * ACL, the agent's other two conditions. Then the marker. Failures are logged only; without the marker the next boot
+ * tries again. */
+static const char native_switch_icons_cache[] = "/private/var/containers/Shared/SystemGroup/"
+    "systemgroup.com.apple.lsd.iconscache/Library/Caches/com.apple.IconsCache";
+
+/* unlink(2) of the cache's __cache_info__ at its top (salt NULL) or in one salt folder; none there is no error. */
+static int
+native_switch_icon_cache_unlink(proc_t p, user_addr_t scratch, const char *salt, int *dropped)
+{
+	char path[192];
+	const int size = snprintf(path, sizeof(path), "%s/%s%s__cache_info__", native_switch_icons_cache, salt ? salt : "",
+	    salt ? "/" : "");
+	if (size < 0 || (size_t)size >= sizeof(path)) return ENAMETOOLONG;
+	struct unlink_args request = {.path = scratch + 0x900};
+	int32_t result = 0;
+	int error = copyout(path, request.path, (size_t)size + 1);
+	if (!error) error = native_switch_unlink(p, &request, &result);
+	if (!error) ++*dropped;
+	return error == ENOENT ? 0 : error;
+}
+
+static int
+native_switch_icon_cache_unlink_all(proc_t p, user_addr_t scratch, int *dropped)
+{
+	enum { kEntries = 2048 };
+	vfs_context_t context = vfs_context_current();
+	vnode_t cache = NULLVP;
+	int error = vnode_open(native_switch_icons_cache, FREAD | O_DIRECTORY | O_NOFOLLOW_ANY, 0, 0, &cache, context);
+	if (error) return error == ENOENT ? 0 : error;
+	error = native_switch_icon_cache_unlink(p, scratch, NULL, dropped);
+	char *entries = kalloc_data(kEntries, Z_WAITOK);
+	UIO_STACKBUF(uio_buf, 1);
+	uio_t uio = uio_createwithbuffer(1, 0, UIO_SYSSPACE, UIO_READ, uio_buf, sizeof(uio_buf));
+	if (!error && !entries) error = ENOMEM;
+	for (int eof = 0, count = 0; !error && !eof;) {
+		uio_reset(uio, uio_offset(uio), UIO_SYSSPACE, UIO_READ);
+		uio_addiov(uio, CAST_USER_ADDR_T(entries), kEntries);
+		error = VNOP_READDIR(cache, uio, 0, &eof, &count, context);
+		const size_t filled = kEntries - (size_t)uio_resid(uio);
+		if (!filled) eof = 1;
+		for (size_t at = 0; !error && at < filled;) {
+			const struct dirent *entry = (const struct dirent *)(entries + at);
+			if (!entry->d_reclen) break;
+			at += entry->d_reclen;
+			if (entry->d_ino && entry->d_type == DT_DIR && entry->d_name[0] != '.') {
+				error = native_switch_icon_cache_unlink(p, scratch, entry->d_name, dropped);
+			}
+		}
+	}
+	if (entries) kfree_data(entries, kEntries);
+	int close_error = vnode_close(cache, FREAD, context);
+	return error ? error : close_error;
+}
+
+static void
+native_switch_icon_cache(proc_t p, user_addr_t scratch, mount_t data_mount)
+{
+	static const char request[] = "/private/var/Switch/icon-cache-gpu", marker[] = "/private/var/Switch/icon-cache-reset";
+	char *gpu = NULL;
+	int length = 0, error = native_switch_read_data_file(p, request, data_mount, &gpu, &length);
+	if (error == ENOENT || (!error && !gpu)) return;
+	if (error) {
+		printf("SwitchRawBoot: icon cache: %s unreadable (%d)\n", request, error);
+		return;
+	}
+	if (native_switch_file_unchanged(marker, gpu, length, data_mount, 0, 0, 0644)) {
+		kfree_data(gpu, (vm_size_t)length);
+		return;
+	}
+	int dropped = 0;
+	error = native_switch_icon_cache_unlink_all(p, scratch, &dropped);
+	if (!error) error = native_switch_watchdog_file(p, scratch, marker, gpu, length, data_mount, 0, 0, 0644);
+	int shown = 0;
+	while (shown < length && shown < 12 && gpu[shown] != '\n') shown++;
+	printf("SwitchRawBoot: icon cache for GPU build %.*s: %d __cache_info__ dropped%s (%d)\n", shown ? shown : 4,
+	    shown ? gpu : "none", dropped, dropped ? ", iconservicesagent renders the icons again" : "", error);
+	kfree_data(gpu, (vm_size_t)length);
+}
+
 /* The ambient light sensor (drivers/SwitchBrightness/SwitchALS.cpp): MobileGestalt's ambient-light-sensor is an
  * IOServiceGetMatchingService on {PrimaryUsagePage 0xff00, PrimaryUsage 4}, which the sensor's HID service answers, and
  * Settings' Auto-Brightness switch and CoreBrightness's DisplayBrightnessAuto both gate on it. The answer is precacheable
@@ -8512,6 +8599,7 @@ native_switch_setup_state(proc_t p, user_addr_t scratch, mount_t data_mount)
 		native_switch_watchdogs_release(p, scratch, data_mount);
 		native_switch_gamut_cache(p, scratch, data_mount);
 		native_switch_identity_cache(p, scratch, data_mount);
+		native_switch_icon_cache(p, scratch, data_mount);
 		native_switch_als_cache(p, scratch, data_mount);
 		native_switch_timed_cache(p, scratch, data_mount);
 		native_switch_ui_scale_cache(p, scratch, data_mount);
