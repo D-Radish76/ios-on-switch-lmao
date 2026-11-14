@@ -6242,9 +6242,15 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     if (!generic)
         pl = twin;
     // a variant has no split of its own: a draw large enough for the generic program's split twin keeps the twin
-    if (rot_.turned() && pl->turnedTwin)
-        pl = pl->turnedTwin;
-    else if (!pl->splitOf && !generic)
+    if (rot_.turned() && pl->turnedSource) {
+        Pipeline *turned = __atomic_load_n(&pl->turnedTwin, __ATOMIC_ACQUIRE);
+        if (!turned && !(turned = dev_->makeTurned(*pl))) {
+            *why = rotatedRefusalText(RotatedRefusal::Variant);
+            cb_->refusal = {RefRotated, uint32_t(RotatedRefusal::Variant), rot_.turn};
+            return false;
+        }
+        pl = turned;
+    } else if (!pl->splitOf && !generic)
         pl = dev_->variant(*pl, bindingFacts(*pl) | (rot_.turned() ? AssumeTurned : 0u));
     RAW_DIAGNOSTIC(logUniformTuple(*pl));
     RAW_ENCODE_END(variantSpan);
