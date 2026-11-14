@@ -662,7 +662,7 @@ pub unsafe extern "C" fn nmb_offline_compute_pipeline_facts(
             &offline_devices()?.native,
             &descriptor,
             &VariantKey::new(),
-            &Budget::standard(),
+            &crate::compile_budget(),
         )?;
         let info = &made.metal_info;
         // SAFETY: the caller's three words.
@@ -710,7 +710,7 @@ fn direct(
     each: unsafe extern "C" fn(kernel: *const NmbDirectKernel, ctx: *mut c_void) -> bool,
     ctx: *mut c_void,
 ) -> Result<bool, String> {
-    let budget = Budget::standard();
+    let budget = crate::compile_budget();
     let call = if ask.region_mode != 0 {
         Dispatch::ThreadgroupRange {
             groups: GRID,

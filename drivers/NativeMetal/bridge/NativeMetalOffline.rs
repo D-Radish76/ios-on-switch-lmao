@@ -9,7 +9,7 @@ use crate::objects::{
     DescriptorFunction, NmbComputePipelineDescriptorOf, NmbConstant, NmbDevice, NmbRenderPipelineDescriptorOf,
     attribute_out, compute_descriptor, e, get, guard, release, specialization,
 };
-use metal2vulkan::Budget;
+
 use metal2vulkan::device::{
     Device, DeviceDescription, DevicePolicy, FramebufferFetchPolicy, NativeShaderTarget, VkExtension, VkFeature,
 };
@@ -265,7 +265,7 @@ pub extern "C" fn nmb_offline_function_release(function: *mut NmbOfflineFunction
 /// The function's `MTLFunction` properties as the runtime's function answers them, failing with `what`
 fn properties(function: *const NmbOfflineFunction, what: &'static str) -> Result<FunctionProperties, String> {
     let f = get(function)?;
-    let budget = Budget::standard();
+    let budget = crate::compile_budget();
     if f.specialized {
         f.function.specialized_properties(&f.constants, &budget)
     } else {
@@ -291,7 +291,7 @@ pub extern "C" fn nmb_offline_compute_pipeline_compiles(
         let descriptor = compute_descriptor(descriptor)?;
         offline_devices()?
             .runtime
-            .compile_compute_pipeline(&descriptor, &Budget::standard())
+            .compile_compute_pipeline(&descriptor, &crate::compile_budget())
             .map_err(e("compute pipeline"))?;
         Ok(true)
     })
