@@ -114,15 +114,24 @@ static id<MTLLibrary> compiled(id device, uint32_t type, const std::string &requ
 - (id<MTLLibrary>)newLibraryWithStitchedDescriptor:(MTLStitchedLibraryDescriptor *)d error:(NSError **)error
 {
     NSArray<MTLFunctionStitchingGraph *> *graphs = d.functionGraphs;
-    NSArray<id<MTLFunction>> *functions = d.functions;
-    if (!graphs.count || !functions.count)
+    if (!graphs.count || !d.functions.count)
         return failed(MTLLibraryErrorCompileFailure, "a stitched library needs graphs and functions", error);
     if (![self respondsToSelector:@selector(newDagStringWithGraphs:)])
         return failed(MTLLibraryErrorInternal, "no DAG writer in the base device", error);
-    NSString *dag = [(id<RMDagWriter>)self newDagStringWithGraphs:graphs];
-    const char *text = dag.UTF8String;
+    return [self newLibraryWithDAG:[(id<RMDagWriter>)self newDagStringWithGraphs:graphs]
+                         functions:d.functions
+                             error:error];
+}
+
+// The stitching DAG's text and the visible functions its nodes name: a stitched descriptor's, and MPS's kernel DAGs
+// (MPSKernelDAG, which MPSGraph's control flow and fused kernels make and abort on nil)
+- (id<MTLLibrary>)newLibraryWithDAG:(NSString *)dag functions:(NSArray<id<MTLFunction>> *)functions error:(NSError **)error
+{
+    const char *text = [dag isKindOfClass:[NSString class]] ? dag.UTF8String : nullptr;
     if (!text || !*text)
-        return failed(MTLLibraryErrorCompileFailure, "the stitching graphs have no DAG text", error);
+        return failed(MTLLibraryErrorCompileFailure, "a stitched library needs its DAG text", error);
+    if (!functions.count)
+        return failed(MTLLibraryErrorCompileFailure, "a stitched library needs the functions its DAG names", error);
     std::vector<raw::codegen::Bitcode> bitcodes;
     for (id function in functions) {
         raw::codegen::Bitcode b;

@@ -87,20 +87,6 @@ API_AVAILABLE(ios(18.0), macos(15.0))
     return [[RMResidencySet alloc] initWithDescriptor:descriptor device:self];
 }
 
-// Function stitching from Core Image's DAG form, which m2v refuses
-- (id<MTLLibrary>)newLibraryWithDAG:(id)dag functions:(NSArray *)functions error:(NSError **)error
-{
-    (void)dag;
-    (void)functions;
-    SWITCH_REFUSE("raw", "library.dag", "function stitching (DAG) refused, as m2v refuses it");
-    if (error)
-        *error =
-            [NSError errorWithDomain:@"org.blu-sharky.native-metal"
-                                code:-1
-                            userInfo:@{NSLocalizedDescriptionKey : @"function stitching (DAG) is not implemented"}];
-    return nil;
-}
-
 // _MTLDevice sends Core Image's legacy DAG and a kernel's constants reflection here
 - (id<MTLLibrary>)newLibraryWithImageFilterFunctionsSPI:(NSArray *)functions
                                 imageFilterFunctionInfo:(const void *)info
