@@ -4,6 +4,7 @@
 // kernel with linked functions (MPSGraph's). The kernel model runs a stand-in compiler over a store, as
 // SwitchShaderCompiler fills it.
 #include "raw_facade_harness.h"
+#include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/raw_compile_request.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
 #include "../raw/runtime/raw_compute_key.h"
@@ -114,6 +115,37 @@ void computeFactsFromTheCompiler()
     ASSERT_TRUE(again != nil) << text(error);
     EXPECT_EQ(again.staticThreadgroupMemoryLength, kFacts[2]);
     EXPECT_EQ(compiler.asked.size(), 1u) << "the second state's facts are the store's";
+    expectNoM2V(device);
+}
+
+// A kernel with a stage input the pack has no facts of: its facts request carries the stage input beside the constants, and
+// is keyed with it as the pack keys the state, so the compiler compiles the kernel the client creates
+void stageInputFactsFromTheCompiler()
+{
+    FactsCompiler compiler;
+    ASSERT_TRUE(compiler.serve());
+    id<MTLDevice> device = completing();
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    const std::string metallib = writeMetallib();
+    id<MTLLibrary> library = [device newLibraryWithURL:fileURL(metallib) error:&error];
+    MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
+    d.computeFunction = [library newFunctionWithName:@"k"];
+    d.stageInputDescriptor.attributes[0].format = MTLAttributeFormatFloat2;
+    d.stageInputDescriptor.attributes[0].bufferIndex = 1;
+    d.stageInputDescriptor.layouts[1].stride = 8;
+    id<MTLComputePipelineState> made =
+        [device newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&error];
+    ASSERT_TRUE(made != nil) << text(error);
+    EXPECT_EQ(made.maxTotalThreadsPerThreadgroup, kFacts[0]);
+    const std::string stageIn = raw::stageInText(raw::stageInFieldsOf(d.stageInputDescriptor));
+    ASSERT_FALSE(stageIn.empty());
+    std::map<std::string, raw::AirHash> hashes;
+    ASSERT_TRUE(raw::metallibAirHashes(metallib, hashes));
+    ASSERT_EQ(compiler.requests.size(), 1u);
+    EXPECT_EQ(compiler.requests[0].key, "facts | " + raw::computeStateKey(hashes["k"], stageIn, 0, false));
+    EXPECT_EQ(raw::stageInText(compiler.requests[0].kernel.stageIn), stageIn)
+        << "the request carries the stage input its key names";
     expectNoM2V(device);
 }
 
@@ -247,6 +279,11 @@ void computeFactsWithNoCompiler()
 }
 
 }  // namespace
+
+TEST(RawFacadeCompiler, AStageInputKernelsFactsAreTheShaderCompilers)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(stageInputFactsFromTheCompiler);
+}
 
 TEST(RawFacadeCompiler, AComputeStateThePackLacksIsAnsweredByTheShaderCompiler)
 {

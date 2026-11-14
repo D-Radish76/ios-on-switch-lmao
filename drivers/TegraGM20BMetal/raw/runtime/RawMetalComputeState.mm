@@ -152,8 +152,8 @@ static bool archivesAnswer(RMComputeState *s, RMFunction *f, const std::string &
     return false;
 }
 
-// The answers of a keyed state the pack has no facts of, the shader compiler's (RawComplete.h facts): a state with a stage
-// input keys it into its constants, which no request carries
+// The answers of a keyed state the pack has no facts of, the shader compiler's (RawComplete.h facts); a stage input is keyed
+// after the constants and sent beside them (KernelRequest::stageIn)
 static bool compilerAnswers(RMComputeState *s, RMFunction *f, NSError **error)
 {
     std::string failure = "no shader compiler comes this boot";
@@ -224,7 +224,7 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
         s->_facts = *facts;
         if (error)
             *error = nil;
-    } else if (s->_keyed && stageIn.empty()) {
+    } else if (s->_keyed) {
         if (!compilerAnswers(s, f, error))
             return nil;
     } else if (!m2vAnswers(s, options, error)) {

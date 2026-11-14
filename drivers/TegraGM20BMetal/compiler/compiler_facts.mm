@@ -102,6 +102,22 @@ raw::AttributeList attributesOf(const NmbOfflineFunction *f, bool stageInput)
     return out;
 }
 
+// The stage input as the offline descriptor takes it (raw/runtime/RawOffline.mm computeDescriptor)
+void stageInputOf(const raw::StageInFields &in, NmbOfflineComputePipelineDescriptor &d)
+{
+    for (uint32_t i = 0; i < 31; ++i) {
+        const raw::AttributeFields &a = in.attributes[i];
+        if (!a.format)
+            continue;
+        d.stage_inputs = 1;
+        d.stage_attributes[i] = {a.format, a.offset, a.buffer};
+        if (a.buffer < 31)
+            d.stage_layouts[a.buffer] = {a.stride, a.step, a.rate};
+    }
+    d.stage_index_type = in.indexType;
+    d.stage_index_buffer = in.indexBuffer;
+}
+
 // A request's stages as the translator's functions, each library read once from its AIR slice; all released with it
 class OfflineStages {
 public:
@@ -230,6 +246,7 @@ int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string 
         d.linked_count = visible;
         d.private_linked = linked.data() + visible;
         d.private_count = linked.size() - visible;
+        stageInputOf(p.request.kernel.stageIn, d);
         uint32_t facts[3] = {};
         const bool made = nmb_offline_compute_pipeline_facts(&d, facts);
         if (!made)

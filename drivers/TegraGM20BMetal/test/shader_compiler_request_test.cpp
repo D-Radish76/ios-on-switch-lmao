@@ -452,6 +452,31 @@ TEST(CompileRequest, AKernelsLinkedFunctionsAreItsStagesAndPartOfItsKey)
     EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(render), back)) << "a render stage's tag on a kernel";
 }
 
+// A stage-input kernel's facts: its stage input travels beside its constants and keys the state after them, as the pack
+// keys it; a request whose stage input is not its key's is refused
+TEST(CompileRequest, AStageInputKernelsFactsAreKeyedWithItsStageInput)
+{
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Facts;
+    r.libraries.push_back(data(made_metallib::universal({"kernel_fn"}, 0x30)));
+    r.stages = {stage("k", "kernel_fn")};
+    r.kernel.stageIn.attributes[0] = {29, 0, 1, 8, 1, 1};
+    raw::AirHash air;
+    air.fill(0x30);
+    const std::string state = raw::computeStateKey(air, raw::stageInText(r.kernel.stageIn), 0, false);
+    ASSERT_NE(state.find(" | in a0="), std::string::npos);
+    r.key = raw::factsCacheKey(kStack, state).key;
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+    raw::CompileRequest other = r;
+    other.kernel.stageIn.attributes[0].offset = 4;
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(other), kStack, system, p, why));
+}
+
 // A specialized function's attributes: one stage tagged "a", keyed by its AIR, constants and the name it was made under,
 // refused with any other stage or a key naming other constants; the blob carries both lists, nil apart from empty
 TEST(CompileRequest, AFunctionsAttributesAreKeyedByItsAirConstantsAndName)

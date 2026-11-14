@@ -6,13 +6,32 @@ import Metal
 /// A compute state the pack holds no answers of (icb_fold at a thread limit of 192, which no corpus line names) gets its
 /// maxTotalThreadsPerThreadgroup, threadExecutionWidth and staticThreadgroupMemoryLength from the system shader compiler
 /// at its creation (drivers/TegraGM20BMetal/raw/runtime/RawMetalComputeState.mm compilerAnswers), never from m2v, and
-/// its dispatch runs on the raw path. The case fails if its creation asked for the m2v device (m2v_needs_asked).
+/// its dispatch runs on the raw path. So does tags_kernel made with a stage input, whose facts request carries it. The case
+/// fails if either creation asked for the m2v device (m2v_needs_asked).
 struct ComputeFactsTest: HWTest {
     let id = "gpu.raw.compute_facts"
     let name = "A compute state the pack lacks, answered by the shader compiler"
     let subsystem = Subsystem.metal
 
     static let count = 256
+
+    /// tags_kernel (shaders/FunctionTags.metal) made with a stage input: its facts travel with the stage input to the
+    /// shader compiler, which keys them as the pack does
+    static func stageInputState(_ gpu: GPU) async throws -> MTLComputePipelineState {
+        let values = MTLFunctionConstantValues()
+        var mode: Int32 = 2
+        values.setConstantValue(&mode, type: .int, index: 3)
+        let descriptor = MTLComputePipelineDescriptor()
+        descriptor.computeFunction = try await gpu.library.makeFunction(name: "tags_kernel", constantValues: values)
+        descriptor.stageInputDescriptor = MTLStageInputOutputDescriptor()
+        descriptor.stageInputDescriptor?.attributes[1].format = .float2
+        descriptor.stageInputDescriptor?.attributes[1].bufferIndex = 0
+        descriptor.stageInputDescriptor?.attributes[4].format = .uint
+        descriptor.stageInputDescriptor?.attributes[4].offset = 8
+        descriptor.stageInputDescriptor?.attributes[4].bufferIndex = 0
+        descriptor.stageInputDescriptor?.layouts[0].stride = 12
+        return try gpu.device.makeComputePipelineState(descriptor: descriptor, options: [], reflection: nil)
+    }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -26,6 +45,7 @@ struct ComputeFactsTest: HWTest {
         let started = Date()
         let state = try gpu.device.makeComputePipelineState(descriptor: descriptor, options: [], reflection: nil)
         let createdMs = Date().timeIntervalSince(started) * 1000
+        let staged = try await Self.stageInputState(gpu)
         let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
 
         let data = try gpu.buffer(Self.count * 4)
@@ -53,10 +73,12 @@ struct ComputeFactsTest: HWTest {
         metrics.set("created_ms", createdMs)
         metrics.set("words_off", off)
         metrics.set("path", path)
+        metrics.set("stage_input_max_threads", staged.maxTotalThreadsPerThreadgroup)
         metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
         var wrong: [String] = []
         if state.maxTotalThreadsPerThreadgroup < 1 || state.maxTotalThreadsPerThreadgroup > 192 { wrong.append("max") }
         if state.threadExecutionWidth != 32 { wrong.append("width") }
+        if staged.maxTotalThreadsPerThreadgroup < 1 || staged.threadExecutionWidth != 32 { wrong.append("stage_input") }
         if off > 0 { wrong.append("words") }
         if path != "raw" { wrong.append("path") }
         if !asked.isEmpty { wrong.append("m2v") }

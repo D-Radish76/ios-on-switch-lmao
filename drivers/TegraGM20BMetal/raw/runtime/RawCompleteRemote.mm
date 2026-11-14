@@ -441,6 +441,7 @@ bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descript
         r.key = k.key;
         r.kernel.maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
         r.kernel.multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
+        r.kernel.stageIn = stageInFieldsOf(descriptor.stageInputDescriptor);
         std::vector<LibraryIdentity> ids;
         std::map<const LibrarySource *, uint32_t> seen;
         if (!addKernelStages(r, ids, seen, facadeFunction, descriptor, bytes, every))
