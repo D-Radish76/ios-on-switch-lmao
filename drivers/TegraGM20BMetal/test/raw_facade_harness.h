@@ -119,10 +119,13 @@ inline std::vector<uint8_t> slot(uint32_t k)
 // the heap section at kHeap, so a page-multiple slot of the pack's own pages; `kernels`, each with a program slot of its
 // own after those (its `program` set here); `facts`: its compute states' answers. Without `pixelStage` the state has no
 // fragment program (raw_pack.h kNoProgram). `reflections`: its PackReflections section (reflection_blob_writer.h).
-// `named`: further states the device looks up by name (Device::ycbcrPipeline's), each over the same two programs and fields
+// `named`: further states the device looks up by name (Device::ycbcrPipeline's), each over the same two programs, its
+// fields the key's with its own attachment 0 format; `entries`: the handles and buffers the key's state reads
 inline std::string writePack(const std::string &key, std::vector<raw::PackKernel> kernels = {},
                              std::vector<raw::PackComputeFacts> facts = {}, bool pixelStage = true,
-                             const std::string &reflections = "", const std::vector<std::string> &named = {})
+                             const std::string &reflections = "",
+                             const std::vector<std::pair<std::string, MTLPixelFormat>> &named = {},
+                             const std::vector<raw::PackEntry> &entries = {})
 {
     constexpr uint64_t kPrograms = 0x180, kComputeStates = 0xc00, kStrings = 0xe00, kKernels = 0x2000;
     // one state's record fits below the compute states; more go between the kernels and the heap
@@ -136,8 +139,19 @@ inline std::string writePack(const std::string &key, std::vector<raw::PackKernel
     h.pipelines = uint32_t(1 + named.size());
     const std::string fields = key.substr(0, key.find(" | v"));
     std::vector<char> strings(1, 0);
-    strings.insert(strings.end(), fields.begin(), fields.end());
-    strings.push_back(0);
+    std::map<uint64_t, uint32_t> fieldsAt;
+    auto addState = [&](const std::string &name, const std::string &stateFields) {
+        fieldsAt[raw::Pack::fnv(name.data(), name.size())] = uint32_t(strings.size());
+        strings.insert(strings.end(), stateFields.begin(), stateFields.end());
+        strings.push_back(0);
+    };
+    addState(key, fields);
+    for (const auto &[name, format] : named) {
+        std::string own = fields;
+        if (const size_t at = own.find(" c0="); at != std::string::npos)
+            own.replace(at + 4, own.find(':', at) - at - 4, std::to_string(format));
+        addState(name, own);
+    }
     h.section[raw::PackPrograms] = {kPrograms, programs * sizeof(raw::PackProgram)};
     h.section[raw::PackPipelines] = {kPipelines, h.pipelines * sizeof(raw::PackPipeline)};
     h.section[raw::PackStrings] = {kStrings, strings.size()};
@@ -169,17 +183,18 @@ inline std::string writePack(const std::string &key, std::vector<raw::PackKernel
         memcpy(file.data() + kKernels + i * sizeof(raw::PackKernel), &kernels[i], sizeof(raw::PackKernel));
     }
     const uint64_t keyHash = raw::Pack::fnv(key.data(), key.size());
-    std::vector<uint64_t> hashes = {keyHash};
-    for (const std::string &name : named)
-        hashes.push_back(raw::Pack::fnv(name.data(), name.size()));
-    std::sort(hashes.begin(), hashes.end());
-    for (size_t i = 0; i < hashes.size(); i++) {
+    size_t record = 0;
+    for (const auto &[hash, at] : fieldsAt) {
         raw::PackPipeline pp = {};
-        pp.keyHash = hashes[i];
-        pp.keyString = 1;
+        pp.keyHash = hash;
+        pp.keyString = at;
         pp.vs = 0;
-        pp.fs = hashes[i] != keyHash || pixelStage ? 1 : raw::kNoProgram;
-        memcpy(file.data() + kPipelines + i * sizeof pp, &pp, sizeof pp);
+        pp.fs = hash != keyHash || pixelStage ? 1 : raw::kNoProgram;
+        if (hash == keyHash) {
+            pp.entries = uint8_t(entries.size());
+            std::copy(entries.begin(), entries.end(), pp.entry);
+        }
+        memcpy(file.data() + kPipelines + record++ * sizeof pp, &pp, sizeof pp);
     }
     memcpy(file.data() + kStrings, strings.data(), strings.size());
     const uint64_t reflectionsAt = file.size();

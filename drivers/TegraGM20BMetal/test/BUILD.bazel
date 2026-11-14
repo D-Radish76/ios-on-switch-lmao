@@ -5194,6 +5194,8 @@ host_test(
     env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
     linkopts = [
         "-framework",
+        "CoreVideo",
+        "-framework",
         "Foundation",
         "-framework",
         "Metal",

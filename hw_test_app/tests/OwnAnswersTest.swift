@@ -1,3 +1,4 @@
+import CoreImage
 import Darwin
 import Foundation
 import HWTestCore
@@ -8,9 +9,9 @@ import Metal
 /// RawMetalLibraries.mm, RawMetalDevice.mm, RawMetalYcbcrTargets.mm): a library's function names, extern names and
 /// type from its own metallib; a library Metal would not load (a missing file, bytes that are no metallib) as Metal's
 /// error; a buffer the kernel has no memory for, and one over pages it cannot wire, as nil; an uncompressed texture's
-/// plain layout (RawMetalPlainLayout.mm), none for a heap's; and a two-plane YCbCr target's state drawn by raw, whose m2v
-/// twin waits for a fallback. The case fails if any of them asked for the m2v device
-/// (m2v_needs_asked names what did).
+/// plain layout (RawMetalPlainLayout.mm), none for a heap's; a two-plane YCbCr target's state drawn by raw, whose m2v
+/// twin waits for a fallback; and a Core Image filter chain, whose linked program's extern functions the library makes
+/// from its own list. The case fails if any of them asked for the m2v device (m2v_needs_asked names what did).
 struct OwnAnswersTest: HWTest {
     let id = "gpu.raw.own_answers"
     let name = "Library names, unloadable libraries, no memory and a YCbCr target state, answered without m2v"
@@ -66,6 +67,19 @@ struct OwnAnswersTest: HWTest {
 
         let state = try gpu.render(fragment: "texel_values", format: MTLPixelFormat(rawValue: 500)!)
         metrics.set("ycbcr_state", String(describing: type(of: state as AnyObject)))
+
+        let ci = CIContext(mtlDevice: gpu.device, options: [.cacheIntermediates: false])
+        let flat = CIImage(color: CIColor(red: 0.2, green: 0.4, blue: 0.6)).cropped(
+            to: CGRect(x: 0, y: 0, width: 64, height: 64))
+        let chain = flat.applyingFilter("CIColorInvert").applyingGaussianBlur(sigma: 2)
+        var pixel = [UInt8](repeating: 0, count: 4)
+        ci.render(
+            chain.cropped(to: CGRect(x: 32, y: 32, width: 1, height: 1)), toBitmap: &pixel, rowBytes: 4,
+            bounds: CGRect(x: 32, y: 32, width: 1, height: 1), format: .RGBA8,
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+        metrics.set("core_image_rgb", pixel.prefix(3).map(String.init).joined(separator: ","))
+        // inverted in Core Image's linear working space: 1 - linear(0.2, 0.4, 0.6), back to sRGB
+        if !zip(pixel.prefix(3), [251, 239, 215]).allSatisfy({ abs(Int($0) - $1) <= 2 }) { wrong.append("core_image") }
 
         let after = Self.needs(gpu.device)
         let asked = after.filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
