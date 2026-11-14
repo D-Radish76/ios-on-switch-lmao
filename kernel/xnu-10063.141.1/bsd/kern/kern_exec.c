@@ -7233,6 +7233,7 @@ native_owner_cache_checkpoint(int status, int authorized)
 #include "SwitchRawMount.h"
 #include "SwitchPanicSave.h"
 #include <switch/prefs.h>
+#include <switch/icon_cache.h>
 #endif
 
 static int
@@ -8212,6 +8213,90 @@ native_switch_identity_cache(proc_t p, user_addr_t scratch, mount_t data_mount)
 	printf("SwitchRawBoot: identity %016llx: MobileGestalt cache dropped (%d)\n", digest, error);
 }
 
+/* IconServices' rendered icons let go once per GPU build a deploy names (<switch/icon_cache.h>), over the Data volume's
+ * files as the other setup steps make them. */
+struct native_switch_icon_cache_data {
+	proc_t p;
+	user_addr_t scratch;
+	mount_t data_mount;
+};
+
+static int
+native_switch_icon_cache_path(char path[256], const char *relative)
+{
+	const int size = snprintf(path, 256, "/private/var/%s", relative);
+	return size < 0 || size >= 256 ? ENAMETOOLONG : 0;
+}
+
+static int
+native_switch_icon_cache_read(void *context, const char *relative, char *buffer, size_t size, size_t *length)
+{
+	const struct native_switch_icon_cache_data *data = context;
+	char path[256], *bytes = NULL;
+	int got = 0, error = native_switch_icon_cache_path(path, relative);
+	if (!error) error = native_switch_read_data_file(data->p, path, data->data_mount, &bytes, &got);
+	if (!error && (size_t)got > size) error = EFBIG;
+	if (!error && got) memcpy(buffer, bytes, (size_t)got);
+	if (!error) *length = (size_t)got;
+	if (bytes) kfree_data(bytes, (vm_size_t)got);
+	return error;
+}
+
+static bool
+native_switch_icon_cache_holds(void *context, const char *relative, const char *bytes, size_t length)
+{
+	const struct native_switch_icon_cache_data *data = context;
+	char path[256];
+	return !native_switch_icon_cache_path(path, relative) &&
+	       native_switch_file_unchanged(path, bytes, (int)length, data->data_mount, 0, 0, 0644);
+}
+
+static int
+native_switch_icon_cache_write(void *context, const char *relative, const char *bytes, size_t length)
+{
+	const struct native_switch_icon_cache_data *data = context;
+	char path[256];
+	int error = native_switch_icon_cache_path(path, relative);
+	if (!error) {
+		error = native_switch_watchdog_file(data->p, data->scratch, path, bytes, (int)length, data->data_mount, 0, 0,
+		    0644);
+	}
+	return error;
+}
+
+static int
+native_switch_icon_cache_unlink(void *context, const char *relative)
+{
+	const struct native_switch_icon_cache_data *data = context;
+	struct unlink_args request = {.path = data->scratch + 0x900};
+	int32_t result = 0;
+	char path[256];
+	int error = native_switch_icon_cache_path(path, relative);
+	if (!error) error = copyout(path, request.path, strlen(path) + 1);
+	if (!error) error = native_switch_unlink(data->p, &request, &result);
+	return error;
+}
+
+static void
+native_switch_icon_cache(proc_t p, user_addr_t scratch, mount_t data_mount)
+{
+	struct native_switch_icon_cache_data data = {.p = p, .scratch = scratch, .data_mount = data_mount};
+	const struct switch_icon_cache_ops ops = {
+		.context = &data, .read = native_switch_icon_cache_read, .holds = native_switch_icon_cache_holds,
+		.write = native_switch_icon_cache_write, .unlink = native_switch_icon_cache_unlink,
+	};
+	struct switch_icon_cache_result result;
+	switch_icon_cache_drop(&ops, &result);
+	if (result.error) {
+		printf("SwitchRawBoot: icon cache for GPU build %s NOT dropped: %d\n", result.build, result.error);
+	}
+#if DEVELOPMENT || DEBUG
+	else if (result.requested) {
+		printf("SwitchRawBoot: icon cache for GPU build %s: %d __cache_info__ dropped\n", result.build, result.dropped);
+	}
+#endif
+}
+
 /* The ambient light sensor (drivers/SwitchBrightness/SwitchALS.cpp): MobileGestalt's ambient-light-sensor is an
  * IOServiceGetMatchingService on {PrimaryUsagePage 0xff00, PrimaryUsage 4}, which the sensor's HID service answers, and
  * Settings' Auto-Brightness switch and CoreBrightness's DisplayBrightnessAuto both gate on it. The answer is precacheable
@@ -8512,6 +8597,7 @@ native_switch_setup_state(proc_t p, user_addr_t scratch, mount_t data_mount)
 		native_switch_watchdogs_release(p, scratch, data_mount);
 		native_switch_gamut_cache(p, scratch, data_mount);
 		native_switch_identity_cache(p, scratch, data_mount);
+		native_switch_icon_cache(p, scratch, data_mount);
 		native_switch_als_cache(p, scratch, data_mount);
 		native_switch_timed_cache(p, scratch, data_mount);
 		native_switch_ui_scale_cache(p, scratch, data_mount);
