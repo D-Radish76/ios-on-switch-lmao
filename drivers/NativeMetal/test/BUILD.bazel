@@ -123,6 +123,7 @@ host_test(
         "gpu_memory_release_test.cpp",
         "//drivers/NativeMetal:GpuMemoryRelease.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
     ],
     cxx_std = "c++17",
 )

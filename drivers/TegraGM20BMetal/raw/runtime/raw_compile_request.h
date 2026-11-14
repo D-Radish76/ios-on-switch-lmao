@@ -10,7 +10,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "bridge/NativeMetalDirect.h"
+#include "raw_direct_abi.h"
 #include "raw_cache.h"
 #include "raw_cubic.h"
 #include "raw_pipeline_fields.h"

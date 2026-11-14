@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
-#include "bridge/NativeMetalDirect.h"
+#include "raw_direct_abi.h"
 #include "raw_compute_key.h"
 #include "raw_direct_encode.h"
 #include "raw_direct_nvk.h"

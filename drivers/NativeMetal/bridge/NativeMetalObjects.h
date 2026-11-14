@@ -8,6 +8,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "../../TegraGM20BMetal/raw/runtime/raw_direct_abi.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -275,12 +276,6 @@ bool nmb_binary_archive_add_compute(NmbBinaryArchive *, NmbFunction *);
 bool nmb_binary_archive_add_compute_descriptor(NmbBinaryArchive *, const struct NmbComputePipelineDescriptor *);
 void nmb_render_pipeline_release(NmbRenderPipeline *);
 
-struct NmbSamplerDescriptor {
-    uint64_t min_filter, mag_filter, mip_filter, s_address, t_address, r_address, border_color, normalized,
-        max_anisotropy, compare, lod_average;
-    float lod_min, lod_max;
-};
-
 NmbSampler *nmb_sampler_new(NmbDevice *, const struct NmbSamplerDescriptor *);
 void nmb_sampler_release(NmbSampler *);
 
@@ -459,17 +454,6 @@ NmbArgumentEncoder *nmb_argument_encoder_new_nested(const NmbArgumentEncoder *, 
  * A run covers `count` elements of `ids_per_element` ids from `id`, the first `width` of them arguments of `kind`
  * (raw::ArgumentKind) at offset + element * stride + w * element_stride; `nested`: a pointer's layout index + 1, 0 none.
  * The layouts are valid during `each`; false with nmb_last_error where Metal makes no encoder, or each's false. */
-struct NmbArgumentRun {
-    uint32_t id, count, ids_per_element, width, kind, nested;
-    uint64_t offset, stride, element_stride, size;
-};
-
-struct NmbArgumentLayout {
-    uint64_t encoded_length, alignment;
-    const struct NmbArgumentRun *runs;
-    uint32_t run_count, reserved;
-};
-
 bool nmb_function_argument_layouts(NmbFunction *, uint32_t buffer_index,
                                    bool (*each)(const struct NmbArgumentLayout *layouts, uint32_t count, void *ctx),
                                    void *ctx);

@@ -36,6 +36,7 @@ filegroup(
         "bridge/NativeMetalDirect.h",
         "bridge/NativeMetalComputeArtifact.h",
         "bridge/NativeMetalObjects.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
         "//kits/SwitchDMA:SwitchDcache.h",
         "//kits/SwitchSeedPack:SwitchSeedPack.h",
     ],
