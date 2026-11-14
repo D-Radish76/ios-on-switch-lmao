@@ -149,12 +149,14 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     if (![(id)buffer isKindOfClass:[RMBuffer class]]) {
         [_cb takeReason:WhyCall why:@"an index buffer not made by this device"];
         hit(_cb, PredCallBufForeign, 0xffff, 0);
-    } else if ((indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
-               !((RMBuffer *)buffer)->_raw.cpu) {
-        [_cb takeReason:WhyEncode why:@"an indexed draw the raw path does not take"];
-        hit(_cb, PredEncIndexedRange, offset, indexType == MTLIndexTypeUInt16 ? 2 : 4);
+    } else if (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) {
+        return hit(_cb, PredEncIndexedRange, offset, indexType, "an index type Metal has none of: the draw skipped");
+    } else if (!((RMBuffer *)buffer)->_raw.cpu) {
+        [_cb takeReason:WhyCall why:@"an index buffer the raw pool had no room for"];
+        hit(_cb, PredCallBufForeign, 0xfffe, ((RMBuffer *)buffer)->_raw.length);
     }
-    [self checkDraw];
+    if (![self checkDraw])
+        return;
     checkFetch(self, type, count, instances, false, true);
     if (buffer)
         [_cb retain:buffer];
@@ -224,36 +226,41 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 }
 
 // What raw::RenderEncoder::prepare would refuse of a draw with the encoder's bindings, decided here (the same tests)
-- (void)checkDraw
+- (BOOL)checkDraw
 {
     _drew = true;
     // no raw draw to decide (m2v drops a draw without a state too), or this encoder goes to m2v already (its pass refused: its
     // formats are not recorded, and every draw would hit enc.colorfmt for nothing, r7p5's "a=0 b=0")
     if (!_pipe || !_pipe->_raw || _cb->_encRefused)
-        return;
+        return YES;
     if (_checkedEligibility == _eligibility && _checkedEpoch == _cb->_plan.stateEpoch() &&
         _checkedPipeline == _pipe->_raw)
-        return;
+        return YES;
     const raw::Pipeline &pl = *_pipe->_raw;
     for (uint32_t j = 0; j < 8; j++) {
         const uint32_t f = j < _count ? _formats[j] : 0;
-        if (f != pl.colorFormats[j] && !(f && pl.colorFormats[j] == 0)) {
-            [_cb takeReason:WhyEncode why:@"a state whose color formats differ from the pass's"];
-            return hit(_cb, PredEncColorFormats, j, f);
+        if (f != pl.colorFormats[j] && !(f && pl.colorFormats[j] == 0) &&
+            !(raw::targetOrdersChannels(pl.colorFormats[j], f) && !(pl.storageBits >> j & 1))) {
+            hit(_cb, PredEncColorFormats, j, f, "a state's colour format another than its pass's: the draw skipped");
+            return NO;
         }
     }
     if (!raw::recordedDepthStencilFits(pl.depthFormat, _zeta, _ds)) {
         [_cb takeReason:WhyEncode why:@"a depth/stencil state or format the pass's attachment does not take"];
-        return hit(_cb, PredEncDepthStencil, pl.depthFormat, _zeta | uint64_t(_ds.active()) << 32);
+        hit(_cb, PredEncDepthStencil, pl.depthFormat, _zeta | uint64_t(_ds.active()) << 32);
+        return YES;
     }
     if (_turn && pl.turnRefused) {
         [_cb takeReason:WhyEncode why:@(raw::rotatedRefusalText(raw::RotatedRefusal::Variant))];
-        return hit(_cb, PredPassRotated, uint64_t(raw::RotatedRefusal::Variant), _turn);
+        hit(_cb, PredPassRotated, uint64_t(raw::RotatedRefusal::Variant), _turn);
+        return YES;
     }
     uint32_t sampleMasks[4];
-    if (pl.samples != _samples || !raw::sampleShadingMasks(_samples, pl.samplePasses, sampleMasks)) {
-        [_cb takeReason:WhyEncode why:@"a state whose samples a pixel or per-sample shading the pass does not take"];
-        return hit(_cb, PredEncSamples, pl.samples, _samples | uint64_t(pl.samplePasses) << 32);
+    if (!raw::samplesDrawn(pl.samples, _samples, pl.samplePasses) ||
+        !raw::sampleShadingMasks(_samples, pl.samples == _samples ? pl.samplePasses : 1, sampleMasks)) {
+        hit(_cb, PredEncSamples, pl.samples, _samples | uint64_t(pl.samplePasses) << 32,
+            "a state's samples its pass draws nothing defined for: the draw skipped");
+        return NO;
     }
     const raw::PackPipeline &r = *pl.rec;
     for (uint32_t i = 0; i < r.entries; i++) {
@@ -269,7 +276,8 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
                 [_cb takeReason:WhyEncode
                             why:storage ? @"a storage buffer bound at an offset that is not a multiple of 16"
                                         : @"a uniform buffer bound at an offset that is not a multiple of 256"];
-                return hit(_cb, PredEncUboOffset, uint64_t(e.stage) << 8 | e.slot, residual);
+                hit(_cb, PredEncUboOffset, uint64_t(e.stage) << 8 | e.slot, residual);
+                return YES;
             }
         }
     }
@@ -277,6 +285,7 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     _checkedEligibility = _eligibility;
     _checkedEpoch = _cb->_plan.stateEpoch();
     _checkedPipeline = _pipe->_raw;
+    return YES;
 }
 
 - (void)setScissorRect:(MTLScissorRect)r
@@ -414,7 +423,8 @@ static void recordDraw(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
                        NSUInteger count, NSUInteger instances, NSUInteger base)
 {
     SWITCH_API(ApiDraw);
-    [e checkDraw];
+    if (![e checkDraw])
+        return;
     checkFetch(e, type, count, instances, false, false);
     Cmd m = cmd(OpDraw, uint8_t(type));
     m.a = uint32_t(start);
@@ -486,13 +496,15 @@ static void recordDraw(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
     const uint64_t bytes = indexed ? 20 : 16;
     RMBuffer *buffer = [(id)arguments isKindOfClass:[RMBuffer class]] ? (RMBuffer *)arguments : nil;
     RMBuffer *index = [(id)indices isKindOfClass:[RMBuffer class]] ? (RMBuffer *)indices : nil;
-    if (!buffer || (offset & 3) || offset > buffer->_raw.length || bytes > buffer->_raw.length - offset ||
+    if (!buffer || (offset & 3) ||
         (indexed && (!index || (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
-                     indexOffset > index->_raw.length || indexOffset % (indexType == MTLIndexTypeUInt16 ? 2 : 4)))) {
-        [_cb takeReason:WhyEncode why:@"indirect draw arguments or indices outside the buffer"];
-        hit(_cb, PredEncIndexedRange, offset, bytes);
-    }
-    [self checkDraw];
+                     indexOffset > index->_raw.length || indexOffset % (indexType == MTLIndexTypeUInt16 ? 2 : 4))))
+        return hit(_cb, PredEncIndexedRange, offset, bytes,
+                   "indirect arguments or indices Metal reads nothing of: the draw skipped");
+    if (offset > buffer->_raw.length || bytes > buffer->_raw.length - offset)
+        hit(_cb, PredEncIndexedRange, offset, bytes, "indirect arguments past their buffer read as zeros");
+    if (![self checkDraw])
+        return;
     checkFetch(self, type, 0, 1, true, indexed);
     [_cb retain:arguments];
     [_cb retain:indices];

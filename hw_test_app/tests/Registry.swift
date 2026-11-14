@@ -22,8 +22,7 @@ public enum Registry {
         PlaneRows16Test(), CompressedTargetsTest(), ZcullTest(), MipTwodTest(), MipCandidatesTest(), MipLodTest(),
         VisibilityTest(), FixedBlendRuleTest(), PrivateCompressionTest(), AlphaToCoverageTest(), IconCornersTest(),
         CompileSharedTest(), CompileFirstDrawTest(), CompileStageLibraryTest(), DrawBandsTest(), DispatchPiecesTest(),
-        PosterTargetsTest(),
-        ResolveCostTest(),
+        PosterTargetsTest(), PushScanTargetsTest(), ResolveCostTest(),
         MsaaFirstUseTest(), StoredDepthTest(),
         ResolveTwodTest(), FillTextureTest(), StorageCompressedTest(), SharedLayoutTest(), PredicationTest(),
         MPSControlFlowTest(),
@@ -58,7 +57,7 @@ public enum Registry {
             ColourPipelineTest(), PlanesTest(), SmallDrawableTest(), PresentAtTimeTest(), PlaneInUseTest(),
             ScanoutRoutesTest(), PlainSurfacesTest(), DisplaySnapshotTest(), WakeTest(),
             PlanesCroppedTest(),
-        ] + DisplayWindowProbeTest.all + [LandscapeVideoTest()]
+        ] + DisplayWindowProbeTest.all + [LandscapeVideoTest(), LandscapeDownscaleTest()]
         // Holds the swaps for a second each; the forced producer failure last.
         + [Host1xFlipTest.trial, Host1xFlipTest.teardown]
 
@@ -97,7 +96,7 @@ public enum Registry {
         // May stop the display's host1x channel for 50 ms: last.
         + [DcHost1xClassTest()]
         // Every client channel's RAMFC timeslice once the shared tests have run jobs on them.
-        + [RamfcTimesliceTest()]
+        + [RamfcTimesliceTest(), RamfcCreationTest()]
         // Rail-gates the GPU under every other client four times: after the shared tests.
         + [GpuRailCycleTest()]
         // Leaves this app for Settings and opens it again: last, so no other test runs while it is away.

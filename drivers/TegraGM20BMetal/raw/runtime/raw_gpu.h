@@ -96,6 +96,7 @@
 #include "raw_depth_stencil_state.h"
 #include "raw_sample_positions.h"
 #include "raw_alpha_control.h"
+#include "raw_client_errors.h"
 #include "raw_zcull.h"
 #include "raw_zcull_planes.h"
 #include "raw_xr.h"
@@ -245,7 +246,8 @@ struct TextureAsk {
         Volume,       // createVolume: `view2d`, `levels`
         Array,        // createArray: `type` its header's, `layers` (six a cube), `levels`
         Multisample,  // createStoredMultisample
-        Zeta          // createOwnedZeta: `sampled` (a multisampled one has a header either way)
+        Zeta,         // createOwnedZeta: `sampled` (a multisampled one has a header either way)
+        Block         // createBlockTexture: `levels`, `layers`, `type` (2D or 2D array)
     } kind = Plain;
 
     uint32_t width = 0, height = 1, depth = 1, layers = 1, levels = 1, samples = 1, format = 0;
@@ -1144,7 +1146,15 @@ private:
     bool measuringInline() const;
     bool bindsBySegment() const;
     const Pipeline *compatible_ = nullptr;
-    uint32_t compatibleSampleMasks_[4]{};
+    uint32_t compatibleSampleMasks_[4]{}, compatibleRasterMask_ = kSampleMaskAll;
+    // prepare() found a draw Apple's driver draws nothing defined for (raw_client_errors.h): its caller draws nothing
+    bool skipDraw_ = false;
+
+    bool skippedDraw()
+    {
+        return std::exchange(skipDraw_, false);
+    }
+
     bool residualsPushed_ = false;  // the last draw's push words held SlotBindOffset residuals (RenderEncoder::prepare)
     PreparedDescriptors descriptors_;
     SpillUpload spillUploads_[2];  // each stage's argument table as the encoder uploaded it last (raw_spill_table.h)
@@ -1476,13 +1486,14 @@ enum RefusalId : uint8_t {
     RefColorFormats,
     RefUboOffset,
     RefNoTic,
-    RefDepthStencil,   // a: the state's depth format, b: the pass's
-    RefSamples,        // a: the state's samples, b: the pass's, c: the state's shading passes
-    RefGeometry,       // CPU ordering proof unavailable; requires an interlocked native program
-    RefStorageView,    // a: the attachment, b: its format, c: its width (raw_storage_form.h)
-    RefRotated,        // a: why (raw_rotated_pass.h RotatedRefusal), b: the rotation
-    RefViewports,      // a: the encoder's viewport count
-    RefWrittenTexture  // a: the slot, b: the bound format, c: the format the record's programs store
+    RefDepthStencil,    // a: the state's depth format, b: the pass's
+    RefSamples,         // a: the state's samples, b: the pass's, c: the state's shading passes
+    RefGeometry,        // CPU ordering proof unavailable; requires an interlocked native program
+    RefStorageView,     // a: the attachment, b: its format, c: its width (raw_storage_form.h)
+    RefRotated,         // a: why (raw_rotated_pass.h RotatedRefusal), b: the rotation
+    RefViewports,       // a: the encoder's viewport count
+    RefWrittenTexture,  // a: the slot, b: the bound format, c: the format the record's programs store
+    RefIndexMemory      // an index buffer with no raw memory (its pool had no room): a: the offset, b: its length
 };
 
 struct Refusal {
@@ -1492,7 +1503,9 @@ struct Refusal {
 
 class CommandBuffer {
 public:
-    Refusal refusal;                              // the last refused draw's predicate and its values
+    Refusal refusal;  // the last refused draw's predicate and its values
+    Refusal skipped;  // the last draw skipped as Apple's driver draws nothing for it
+    uint32_t skips = 0;
     RenderEncoder *render(const PassDesc &pass);  // null: an attachment the raw path cannot render to
     // raw_turn_copy.h: each texel of `dst` from `src`'s at `map`, both of one texel size or depth format (a pass of the pack's
     // turn copy state; `src` given a texture header where it has none), over `dst`'s first width x height (0: all of an axis);
@@ -1567,6 +1580,9 @@ public:
     std::vector<uint32_t> promises;
     bool promisesKept = false;
     int nativeError = 0;
+    // A commit that submitted nothing more: the kernel's answer to the job it refused (0: none), else why it sent none
+    int kernelResult = 0;
+    const char *notSubmitted = nullptr;
     // Why a job was refused when it was the resource set: its generation ended and the kernel refused to make it again
     // (SetView::refused). The command buffer fails with it.
     std::string setRefused;
@@ -1769,6 +1785,7 @@ private:
     uint32_t restart_ = 0;                  // SET_DA_PRIMITIVE_RESTART_INDEX as the GPU will hold it
     uint32_t rtLayer_ = ~0u;                // and SET_RT_LAYER (~0: not known)
     uint32_t alphaHeld_ = ~0u;              // and SET_ANTI_ALIAS_ALPHA_CONTROL (~0: not known)
+    uint32_t sampleMaskHeld_ = ~0u;         // and SET_SAMPLE_MASK_X0_Y0..X1_Y1 (~0: not known)
     DepthStencilRegs ds_;                   // and its depth/stencil registers
     const Pipeline *extrasLive_ = nullptr;  // and the state whose extras it holds (Pipeline::restore)
     HeldSegment heldSegment_;               // and the state segment its registers hold
@@ -2062,7 +2079,7 @@ public:
     // A block-compressed 2D texture (or 2D array, `type`) of `levels` levels and `layers` layers in block-linear memory of its
     // own: NIL's image (fx::blockChainLayout), which the copy engine and the CPU (in its view of kind-0xFE memory) address
     bool createBlockTexture(uint32_t width, uint32_t height, uint32_t levels, uint32_t layers, uint32_t format,
-                            uint8_t type, Texture &t);
+                            uint8_t type, Texture &t, const ArenaAt *at = nullptr);
     // A block-compressed 2D texture (or 2D array) over the caller's `bytes` (newTextureWithBytesNoCopy), already laid out as
     // `layout` (fx::blockChainLayout of its texel size, levels and layers), its pages cleaned to memory. At the layout's
     // alignment (raw_block_base.h) the pages are imported under kind 0xFE with a block-linear header of the texel size over
@@ -2296,7 +2313,7 @@ public:
     bool nameSampler(const Sampler &s, uint32_t word, Sampler &twin);
     void forgetSampler(const Sampler &s, Sampler &twin);
 
-    // Which texture an image array of a heap holds (the facade's: the bridge's switch_nmb_heap_holds), before any ID is named
+    // Which texture an image array of a heap holds (the facade's: heapHolds, raw_heap_fit.h), before any ID is named
     void heapHolds(HeapHolds holds)
     {
         heapHolds_ = holds;
@@ -3073,11 +3090,12 @@ private:
     HeldSegment heldSegment_;               // the state segment its registers hold after everything submitted
     StateSegmentHeap segmentHeap_;          // lock_ (place)
     CommandBuffer cb_;
-    uint32_t rootPush_[32] = {};  // what the GPU's root table holds at [0x700, 0x780) after everything submitted
-    uint32_t restart_ = 0;        // and its primitive restart index
-    uint32_t rtLayer_ = ~0u;      // and SET_RT_LAYER (~0: not known)
-    uint32_t alphaHeld_ = ~0u;    // and SET_ANTI_ALIAS_ALPHA_CONTROL (~0: not known)
-    DepthStencilRegs ds_;         // and its depth/stencil registers
+    uint32_t rootPush_[32] = {};     // what the GPU's root table holds at [0x700, 0x780) after everything submitted
+    uint32_t restart_ = 0;           // and its primitive restart index
+    uint32_t rtLayer_ = ~0u;         // and SET_RT_LAYER (~0: not known)
+    uint32_t alphaHeld_ = ~0u;       // and SET_ANTI_ALIAS_ALPHA_CONTROL (~0: not known)
+    uint32_t sampleMaskHeld_ = ~0u;  // and SET_SAMPLE_MASK_X0_Y0..X1_Y1 (~0: not known)
+    DepthStencilRegs ds_;            // and its depth/stencil registers
     std::map<std::tuple<uint64_t, uint64_t, uint64_t>, Import *> surfaces_;
     // Surface imports no texture holds, kept for the surface's next texture: Core Animation makes a texture over its
     // pooled surface every frame after it drops the last, and an import made again is bound, untiled, cleaned and laid

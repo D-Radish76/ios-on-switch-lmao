@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using IOReturn = int;
@@ -124,6 +125,8 @@ public:
 
 class IOWorkLoop : public OSObject {
 public:
+    using Action = IOReturn (*)(OSObject *, void *, void *, void *, void *);
+
     static IOWorkLoop *workLoop()
     {
         static IOWorkLoop loop;
@@ -134,7 +137,33 @@ public:
     {
         return kIOReturnSuccess;
     }
+
+    // The gate: the action runs as the work loop's own (no event source's action runs meanwhile).
+    IOReturn runAction(Action action, OSObject *target, void *arg0 = nullptr, void *arg1 = nullptr,
+                       void *arg2 = nullptr, void *arg3 = nullptr)
+    {
+        switch_test_may_block("IOWorkLoop::runAction");
+        return action(target, arg0, arg1, arg2, arg3);
+    }
 };
+
+using wait_result_t = int;
+using thread_t = void *;
+using kern_return_t = int;
+constexpr kern_return_t KERN_SUCCESS = 0;
+
+// kernel_thread_start's threads, run by the test when it chooses (the GIC comes up later than the start).
+inline std::vector<std::pair<void (*)(void *, wait_result_t), void *>> switch_test_threads;
+
+inline kern_return_t kernel_thread_start(void (*body)(void *, wait_result_t), void *context, thread_t *thread)
+{
+    switch_test_threads.emplace_back(body, context);
+    *thread = nullptr;
+    return KERN_SUCCESS;
+}
+
+inline void thread_deallocate(thread_t)
+{}
 
 extern "C" uintptr_t ml_io_map(uintptr_t phys_addr, uintptr_t size);
 

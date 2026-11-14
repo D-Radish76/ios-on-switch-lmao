@@ -575,6 +575,43 @@ class ThreadgroupMemory(Records):
 
     THREADS = 256
 
+    def run_kernel(self, record: dict, rows: int) -> list[int]:
+        """Run one threadgroup of THREADS threads under exactly the shared memory its QMD sizes; give out[]."""
+        size = qmd_field(record['qmd'], QMD_SHARED_MEMORY_SIZE)
+        binding = dr.Binding()
+        out = binding.bind((3, 0), bytes(4 * self.THREADS))
+        binding.bind((3, 1), struct.pack('<I', rows))
+        push = dr.record_push(record)
+        if record['region_word'] >= 0:
+            for k, v in enumerate([0, 0, 0, self.THREADS - 1, self.THREADS, 1, 1, 0]):
+                push[record['region_word'] + k] = v
+        binding.tables(dr.root_table(push, record['set_bytes'], {12: 1, 16: 1, 20: 1}), dr.kernel_set(record, binding))
+        shared = bytearray(size)
+        for tid in range(self.THREADS):
+            system = {SV_TID_X: tid, 0x22: 0, 0x23: 0, SV_COMBINED_TID: tid, SV_LANE_ID: tid % 32}
+            system.update({SV_CTAID_X: 0, 0x26: 0, 0x27: 0})
+            environment = dr.stage(record, binding, attributes({}), system)
+            environment.shared = shared
+            dr.execute(record, environment, header=False)
+        return list(struct.unpack(f'<{self.THREADS}I', binding.memory.read(out, 4 * self.THREADS)))
+
+    def test_a_dispatchs_48_kib_takes_the_whole_cta(self):
+        """The length a dispatch sets (setThreadgroupMemoryLength:atIndex:), as MPS's kernels take theirs."""
+        record = self.kernel('dynamic_threadgroup')
+        self.assertEqual(qmd_field(record['qmd'], QMD_SHARED_MEMORY_SIZE), 48 << 10)
+        self.assertEqual(qmd_field(record['qmd'], QMD_L1_CONFIGURATION), QMD_L1_48KB)
+        want = []
+        for tid in range(self.THREADS):
+            x = 0
+            for k in range(48):
+                x ^= ((tid + 256 * k) * 2654435761 + k) & 0xFFFF_FFFF
+            want.append(x)
+        self.assertEqual(self.run_kernel(record, 48), want)
+
+    def test_a_dispatch_past_48_kib_is_refused_naming_the_limit(self):
+        self.assertNotIn('past_dynamic_threadgroup', RECORDS['kernels'])
+        self.assertIn('MaxComputeSharedMemorySize', RECORDS['refused'].get('past_dynamic_threadgroup', ''))
+
     def test_a_kernel_of_48_kib_takes_the_whole_cta(self):
         record = self.kernel('wide_threadgroup')
         size = qmd_field(record['qmd'], QMD_SHARED_MEMORY_SIZE)

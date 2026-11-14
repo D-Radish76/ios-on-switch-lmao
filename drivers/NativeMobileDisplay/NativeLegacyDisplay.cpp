@@ -37,6 +37,7 @@
 #include "DisplaySmmuProbe.h"
 #include "NativePlaneFence.h"
 #include "NativePlanes.h"
+#include "SwitchColourBlank.h"
 #include "SwitchCompletionFlip.h"
 #include "SwitchDisplayComposition.h"
 #include "SwitchDisplayMemoryEnvelope.h"
@@ -675,6 +676,7 @@ class NativeLegacyDisplay : public IOMobileFramebufferLegacy {
     TegraDisplayColor *color = nullptr;
     switch_frame_info::State *frameInfo = nullptr;  // out of the object for the same reason
     bool blanked = false;  // a blank swap's black is the colour unit's until the next flip latches
+    static inline switch_display::ColourBlank colourBlankSwap;  // static: the instance is at the kalloc_type limit
 
     // Every request the validator accepted and the family has not retired yet. A client may submit swap N+1 while swap N is still on the GPU
     // (int-131: swap 3 was validated during swap 2's GPU copy and one remembered pointer lost swap 2, which then never retired and left
@@ -1492,7 +1494,8 @@ class NativeLegacyDisplay : public IOMobileFramebufferLegacy {
                ring.held != kNoBuffer || (rotated && !rotationLatched) || probeRequest || probe.active() ||
                (!probeRan && (probeTables.memory != nullptr) && doubleBuffer) || (planesOn && planeLatch.requested()) ||
                planeProbe.active() || planeHeldSet || planeRecoveryWaits() || landscapeState.wanted ||
-               completionFlipOut() || (offerAged && gpuScanout) || scanoutAttachHoldsFrameEnds();
+               completionFlipOut() || (offerAged && gpuScanout) || scanoutAttachHoldsFrameEnds() ||
+               colourBlankSwap.waiting();
     }
 
 public:
@@ -1658,6 +1661,7 @@ private:
                                     !columnScanBusy() && !windowProbeHolds() && !host1xFlipBusy();
             color->frameEndAction(mayRequest);
             paletteFrameEnd(mayRequest);
+            colourBlankFrameEnd();
         }
         if ((status & kFrameEndInt) && stats) {
             if (frameStall.frameEnd(mach_absolute_time(), refreshTicks(), vsyncWanted()))
@@ -2977,12 +2981,25 @@ private:
             blanked = false;
             color->setBlank(false);
         }
+        colourBlankSwap.ended();
         if (const int held = ring.flipHeld(); held != kNoBuffer)
             writeFlip(held);
         if (kickDeferred) {
             kickDeferred = false;
             kickSwapQueue();
         }
+    }
+
+    // After the colour unit's frame-end action: a colour blank swap retires once its black is on screen
+    // (SwitchColourBlank.h), giving back the page window A still fetches under it.
+    // NOLINTNEXTLINE(misc-no-recursion): kickSwapQueue's kicking flag stops re-entry; a nested kick only loops
+    void colourBlankFrameEnd()
+    {
+        if (!colourBlankSwap.waiting())
+            return;
+        if (const uint64_t seq =
+                colourBlankSwap.frameEnd(frameEnds, color->settledThrough(colourBlankSwap.generation())))
+            retireThrough(seq, __atomic_load_n(&feStamp, __ATOMIC_ACQUIRE));
     }
 
     // Under the gate, with the scanout stopped (display power off): no boundary takes a request until the restart, whose first
@@ -2994,6 +3011,8 @@ private:
     {
         const int asked = ring.pending;
         uint64_t seq = asked != kNoBuffer ? entrySeq[asked] : 0;
+        const uint64_t blank = colourBlankSwap.ended();
+        seq = blank > seq ? blank : seq;
         ring.settle();
         releaseIdleDirectReads();
         if (planeLatch.requested()) {
@@ -3250,6 +3269,7 @@ public:
         landscapeRunAbort();
         abortProbe("the display suspended (SC7)");
         const uint64_t shown = suspendShownSeq();
+        const uint64_t blank = colourBlankSwap.ended();
         planesQuiesce();  // r18-planes
         resumeLit = !scanoutStopped;
         setScanout(false);
@@ -3269,7 +3289,7 @@ public:
         __asm__ volatile("dmb ish" ::: "memory");
         vblankSource->disable();
         hwSuspended = true;
-        retireSuspendShown(shown);
+        retireSuspendShown(shown > blank ? shown : blank);
     }
 
 #include "SwitchDisplayResume.h"
@@ -3668,6 +3688,8 @@ public:
             __asm__ volatile("dsb sy" ::: "memory");
             scanReturnBlank(request);
             noteTaken(request, kickAt);  // before the flip, which carries it to the present
+            if (colourBlank && latchRetire && !scanoutStopped && !hwSuspended)
+                colourBlankSwap.kicked(seqOf(request), color->generation());
             if (block && !colourBlank)
                 presentBlock();
             transferred = true;
@@ -4544,7 +4566,8 @@ public:
         if (latchRetire) {  // retiring at the latch (direct scanout on): checkFlip retires it once it is seen on screen
             // r18-planes: a frame no flip carries (a blank fill of the pitch window before the first rotation, or the single
             // buffer) is on screen now.
-            if (ring.pending == kNoBuffer && ring.held == kNoBuffer && !planeLatch.requested() && !planeHeldSet)
+            if (ring.pending == kNoBuffer && ring.held == kNoBuffer && !planeLatch.requested() && !planeHeldSet &&
+                !colourBlankSwap.holds(seqOf(request)))
                 retireThrough(seqOf(request), mach_absolute_time());
             transferred = false;
             kickSwapQueue();
@@ -4704,7 +4727,10 @@ public:
         copy.source = memory;
         copy.sourceStride = stride;
         copy.sourceBytes = allocation;
-        copy.flags = TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry);
+        // A tiled slot is the GPU's block-linear surface window A scans in 16-GOB blocks: the present maps it under the
+        // block-linear kind it was written with, and the debug read-back copies it out of those blocks.
+        copy.flags = TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry) | (tiled ? TEGRA_SCANOUT_COPY_SOURCE_BLOCK : 0u);
+        copy.sourceBlockHeightLog2 = tiled ? kScanBlockLog2 : 0u;
         copy.alsoWritten = planeNextAlsoWritten();
         switch_gpu_backing_token planeTokens[kPlaneDependencies] = {};
         planeNextDependencies(copy, planeTokens);

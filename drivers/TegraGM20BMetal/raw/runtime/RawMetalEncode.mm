@@ -14,14 +14,24 @@ RMRangeEncode &rmRangeEncode()
     return *encode;
 }
 
+RMPred refusalPred(uint8_t id)
+{
+    static const RMPred map[] = {PredEncPassRender,  PredEncIndexedRange, PredEncColorFormats, PredEncUboOffset,
+                                 PredEncNoTic,       PredEncDepthStencil, PredEncSamples,      PredEncGeometry,
+                                 PredEncStorageView, PredPassRotated,     PredEncPassRender,   PredEncPassRender,
+                                 PredCallBufForeign};
+    static_assert(sizeof map / sizeof *map == raw::RefIndexMemory + 1, "a predicate for each refusal");
+    return id < sizeof map / sizeof *map ? map[id] : PredEncPassRender;
+}
+
 // Encoded ahead, a failure is not the command buffer's yet: its encode at the commit meets it again and counts it
-bool RMRangeEncode::fail(RMPred p, const char *w, uint64_t a, uint64_t b)
+bool RMRangeEncode::fail(RMPred p, const char *w, uint64_t a, uint64_t b, const char *detail)
 {
     *why_ = w;
     if (ahead_)
         veto_ = VetoFailed;
     else
-        hit(cb_, p, a, b);
+        hit(cb_, p, a, b, detail);
     if (encoder_ != SIZE_MAX)
         *refusedEncoder_ = encoder_;
     rc_->abandon();
@@ -38,17 +48,13 @@ bool RMRangeEncode::stop(uint32_t veto)
 // a draw the encoder refused: its predicate and values (raw_gpu.h Refusal)
 bool RMRangeEncode::refused()
 {
-    static const RMPred map[] = {PredEncPassRender,  PredEncIndexedRange, PredEncColorFormats, PredEncUboOffset,
-                                 PredEncNoTic,       PredEncDepthStencil, PredEncSamples,      PredEncGeometry,
-                                 PredEncStorageView, PredPassRotated};
     const raw::Refusal &f = rc_->refusal;
     if (rc_->contentsDeferred)
         veto_ = VetoContents;
     else if (ahead_)
         veto_ = VetoFailed;
     else
-        hit(cb_, f.id < sizeof map / sizeof *map ? map[f.id] : PredEncPassRender, f.a,
-            uint64_t(f.b) | uint64_t(f.c) << 32);
+        hit(cb_, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32);
     if (encoder_ != SIZE_MAX)
         *refusedEncoder_ = encoder_;
     rc_->abandon();
@@ -80,9 +86,7 @@ __attribute__((objc_externally_retained)) bool RMRangeEncode::open(RMCommandBuff
     rc_ = d.begin();
     if (!rc_) {
         *why = "the kernel gave the raw path no channel";
-        if (!predLogged(PredEncNoChannel))
-            logPred(PredEncNoChannel, 0, 0, @(d.channelError().c_str()));
-        hit(cb, PredEncNoChannel);
+        hit(cb, PredEncNoChannel, 0, 0, d.channelError().c_str());
         return false;
     }
     generation_ = d.channelGeneration();

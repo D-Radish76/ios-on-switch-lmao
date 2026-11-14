@@ -97,12 +97,16 @@ int tegra_smmu_resume(void);
 // The memory controller's error interrupt (TegraMCErrors.cpp), the one owner of MC_INTSTATUS, INTMASK, ERR_STATUS and
 // ERR_ADR: each decode, security or SMMU error a client raises is one line naming its kind, client, direction and
 // address, and its INTSTATUS bit is cleared so the next is captured. Nobody else clears INTSTATUS: a driver that wants
-// the MC's errors in its own line reads tegra_mc_error_latest. Thread context, at boot; -1 with one line when the
-// interrupt cannot be had.
+// the MC's errors in its own line reads tegra_mc_error_latest. A client's run of errors prints its first few in full and
+// then one count line when it ends (TegraMCErrors.h Runs). Thread context, at boot; returns at once, its own thread
+// attaching once the GIC is up; -1 with one line when that thread or the registers cannot be had.
 int tegra_mc_errors_start(void);
 // How many errors the interrupt took since boot, and the latest one (zeros before the first). Any context.
 uint32_t tegra_mc_error_latest(uint32_t *intstatus, uint32_t *status, uint32_t *address);
+// After SC7 (the MC was reset): the runs end, INTMASK again. Thread context.
 void switch_mc_errors_resume(void);
+// Swgroup register `asidReg` went back to bypass (tegra_smmu_detach): its clients' runs end. Thread context, no lock held.
+void switch_mc_errors_detached(uint32_t asidReg);
 
 #ifdef __cplusplus
 }

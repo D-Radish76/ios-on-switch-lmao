@@ -90,7 +90,7 @@ private:
         uint64_t writes, nativeGeneration;
     };
 
-    bool fail(RMPred p, const char *w, uint64_t a = 0, uint64_t b = 0);
+    bool fail(RMPred p, const char *w, uint64_t a = 0, uint64_t b = 0, const char *detail = nullptr);
     bool refused();
     bool stop(uint32_t veto);
     uint32_t ineligible(size_t from, size_t until);
@@ -169,3 +169,5 @@ private:
 
 // The submit worker's one range encode
 RMRangeEncode &rmRangeEncode();
+// The refusal predicate of an encode-time refusal or skip (raw_gpu.h RefusalId)
+RMPred refusalPred(uint8_t id);

@@ -2221,6 +2221,12 @@ bool Device::layout(const TextureAsk &ask, Texture &t, uint64_t &bytes, uint64_t
         align = std::max(align, kBlAlign);
         kind = kZetaFormatInfo[zetaFormatIndex(ask.format)].kind;
         return true;
+    case TextureAsk::Block:
+        if (!blockCompressed(f) || !shape(ask.width, ask.height, ask.format, t) ||
+            !fx::blockChainLayout(ask.width, ask.height, ask.levels, ask.layers, f->blockW, f->blockH, f->bpp, c))
+            return false;
+        chainRows(t, c, c.arrayStride);
+        break;
     }
     bytes = c.bytes;
     align = c.align;
@@ -2268,7 +2274,7 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
     uint64_t bytes = 0, align = 0;
     uint32_t kind = 0;
     Texture::Chain *chain = ask.kind == TextureAsk::Mips ? new Texture::Chain : nullptr;
-    const bool image = ask.kind == TextureAsk::Volume || ask.kind == TextureAsk::Array;
+    const bool image = ask.kind == TextureAsk::Volume || ask.kind == TextureAsk::Array || ask.kind == TextureAsk::Block;
     fx::MipChain imageLayout;
     if ((!at && ask.kind == TextureAsk::Plain) || !layout(ask, t, bytes, align, kind,
                                                           chain   ? &chain->layout
@@ -2325,6 +2331,8 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
         t.chain = chain;
         RAW_DIAGNOSTIC(stats.chains++);
         RAW_DIAGNOSTIC(stats.chainBytes += chain->layout.bytes);
+    } else if (ask.kind == TextureAsk::Block) {
+        layBlocks(imageLayout, formatInfo(ask.format), ask.width, ask.height, ask.type, t);
     } else if (image) {
         layImage(imageLayout, formatInfo(ask.format), t.type, t);
     } else if (t.tic) {
@@ -3004,25 +3012,17 @@ bool Device::createBlockTextureOver(void *bytes, uint64_t length, uint32_t width
 }
 
 bool Device::createBlockTexture(uint32_t width, uint32_t height, uint32_t levels, uint32_t layers, uint32_t format,
-                                uint8_t type, Texture &t)
+                                uint8_t type, Texture &t, const ArenaAt *at)
 {
-    const FormatInfo *f = formatInfo(format);
-    fx::MipChain c;
-    if (!blockCompressed(f) || !shape(width, height, format, t) ||
-        !fx::blockChainLayout(width, height, levels, layers, f->blockW, f->blockH, f->bpp, c))
-        return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    if (!blAlloc(c.bytes, c.align, t.span))
-        return false;
-    t.va = t.span.va;
-    t.cpu = t.span.cpu;
-    if (!(t.tic = allocTic())) {
-        Lease *none = nullptr;
-        freeSpan(t.span, Memory::Bl, none);
-        return false;
-    }
-    layBlocks(c, f, width, height, type, t);
-    return true;
+    TextureAsk ask;
+    ask.kind = TextureAsk::Block;
+    ask.width = width;
+    ask.height = height;
+    ask.levels = levels;
+    ask.layers = layers;
+    ask.format = format;
+    ask.type = type;
+    return createLaidOut(ask, t, at);
 }
 
 void Device::layBlocks(const fx::MipChain &layout, const FormatInfo *f, uint32_t width, uint32_t height, uint8_t type,
@@ -4264,6 +4264,7 @@ bool Device::newContext(uint32_t channel, uint32_t &seq)
     restart_ = 0;
     rtLayer_ = ~0u;
     alphaHeld_ = kAlphaControlUnknown;
+    sampleMaskHeld_ = kSampleMaskUnknown;
     const uint32_t words = contextWords() + uint32_t(fx::twodInitWords());
     uint64_t va;
     uint32_t *start = reinterpret_cast<uint32_t *>(alloc(push_, words * 4, 256, va));
@@ -4379,6 +4380,8 @@ CommandBuffer *Device::begin()
 #endif
     cb.draws = cb.passes = cb.blits = cb.bands = 0;
     cb.refusal = {};
+    cb.skipped = {};
+    cb.skips = 0;
     cb.partial = false;
     cb.admissionBlocked = false;
     cb.quietEnd = false;
@@ -4398,6 +4401,7 @@ CommandBuffer *Device::begin()
     cb.restart_ = restart_;
     cb.rtLayer_ = rtLayer_;
     cb.alphaHeld_ = alphaHeld_;
+    cb.sampleMaskHeld_ = sampleMaskHeld_;
     cb.ds_ = ds_;
     cb.extrasLive_ = extrasLive_;
     cb.heldSegment_ = heldSegment_;
@@ -4950,8 +4954,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
     d.heldSegment_.lose();
     launchPrologues();
     if (d.overflowing_) {
-        os_log_error(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
-                     "raw: a command buffer larger than its ring, with no memory for a larger one: not submitted");
+        notSubmitted = "a command buffer larger than its ring, with no memory for a larger one";
         return false;
     }
     bool invalidates = false, published = false;
@@ -5045,13 +5048,17 @@ bool CommandBuffer::commit(uint32_t &seqno)
             nameHeaps();
         }
     }
-    if (geometryWritable())
+    if (geometryWritable()) {
+        notSubmitted = "a geometry write after the CPU read it";
         return false;  // later internal writes invalidate the CPU proof; no prefix may reach the GPU
+    }
     if (!batchWork_.operations)
         segments_.includeTail();
     const uint32_t maxPushes = d.k_.maxPushes(), maxFences = d.k_.maxFences();
-    if (!segments_.valid(maxPushes))
+    if (!segments_.valid(maxPushes)) {
+        notSubmitted = "a continuation group past the kernel's pushes a job";
         return false;  // validate all indivisible continuation groups before publishing any prefix
+    }
     // A command buffer of several jobs holds its shared uses' CPU-lock admission from its first job to its last
     const bool multiple = (!segments_.empty() && segments_.submission(0, maxPushes, maxFences) < segments_.size()) ||
                           sharedWaits_.size() + sharedSignals_.size() > TegraGM20BMaxJobEvents;
@@ -5077,6 +5084,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
         if (executed && last && quietEnd && raw::jobKeptLoud())
             quietEnd = false;
         if (!executed) {
+            kernelResult = result;
             admissionBlocked = !published && result == kIOReturnCannotLock;
             setRefused = d.setView_.refused;
             if (admissionHeld) {
@@ -5168,6 +5176,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
     d.restart_ = restart_;
     d.rtLayer_ = rtLayer_;
     d.alphaHeld_ = alphaHeld_;
+    d.sampleMaskHeld_ = sampleMaskHeld_;
     d.ds_ = ds_;
     d.extrasLive_ = extrasLive_;
     d.heldSegment_ = heldSegment_;
@@ -5601,7 +5610,7 @@ bool RenderEncoder::draw(uint32_t primitive, uint32_t first, uint32_t count, uin
             const bool prepared = prepare(pl, primitive, first + begin, first + begin, end - begin, false, why);
             raster_.winding ^= reverse;
             if (!prepared)
-                return false;
+                return skippedDraw();
             if (drawnWhole(*pl)) {
                 wholeDraw(*pl, false, first + begin, end - begin, 1, first + begin, baseInstance);
                 finishDraw(end - begin, 1);
@@ -5613,7 +5622,7 @@ bool RenderEncoder::draw(uint32_t primitive, uint32_t first, uint32_t count, uin
         return true;
     }
     if (!prepare(pl, primitive, first, first, count, false, why))
-        return false;
+        return skippedDraw();
     cb_->draws += amplifies() ? amplifications_ : 1;
     const uint32_t drawnInstances = amplifies() ? instances * amplifications_ : instances;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
@@ -5810,10 +5819,14 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
     readBits_ |= pl->fetchBits;
     if (!count || !instances)
         return true;
-    if (!ib || (indexSize != 2 && indexSize != 4) || !ib->cpu) {
-        *why = "an indexed draw the raw path does not take";
-        cb_->refusal = {RefIndexedRange, uint32_t(offset), indexSize,
-                        ib ? uint32_t(std::min<uint64_t>(ib->length, ~0u)) : 0};
+    if (!ib || (indexSize != 2 && indexSize != 4)) {
+        cb_->skipped = {RefIndexedRange, uint32_t(offset), indexSize, 0};
+        cb_->skips++;
+        return true;
+    }
+    if (!ib->cpu) {
+        *why = "an index buffer with no raw memory";
+        cb_->refusal = {RefIndexMemory, uint32_t(offset), uint32_t(std::min<uint64_t>(ib->length, ~0u))};
         return false;
     }
     // Metal's fetch (m2v render.rs draw_indexed_primitives, measured): the offset's low 32 bits rounded down to the index size,
@@ -5851,9 +5864,9 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
         drawIndexBuffer_ = nullptr;  // the CPU reads no index past the buffer's end (an unbounded draw)
     } else if (count > inside) {
         if (inside && !cb_->acquireGeometry(*ib, ib->cpu + offset, inside * indexSize)) {
-            *why = "index padding requires available CPU read ownership";
-            cb_->refusal = {RefIndexedRange, uint32_t(offset), indexSize, count};
-            return false;
+            cb_->skipped = {RefIndexedRange, uint32_t(offset), indexSize, count};
+            cb_->skips++;
+            return true;
         }
         const uint64_t bytes = uint64_t(count) * indexSize;
         uint8_t *m =
@@ -5903,7 +5916,7 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
         raster_.winding ^= reverse;
         drawIndices_ = nullptr;
         if (!prepared)
-            return false;
+            return skippedDraw();
         const uint64_t va = ib->va + offset, last = va + indexLimit - 1;
         if (va != ibVa_ || last != ibEnd_ || indexSize != ibSize_) {
             p_.inc(INDEX_BUFFER_A, {uint32_t(va >> 32), uint32_t(va), uint32_t(last >> 32), uint32_t(last)});
@@ -5942,21 +5955,25 @@ bool RenderEncoder::indirect(uint32_t primitive, bool indexed, const Buffer *arg
         return false;
     }
     const uint32_t bytes = indexed ? 20 : 16;
-    if (!arguments || !arguments->va || (offset & 3) || offset > arguments->length ||
-        arguments->length - offset < bytes) {
-        *why = "indirect arguments outside their buffer or not four-byte aligned";
-        return false;
+    if (!arguments || !arguments->va || (offset & 3)) {
+        cb_->skipped = {RefIndexedRange, uint32_t(offset), bytes, 0};
+        cb_->skips++;
+        return true;
     }
+    // arguments past their buffer read as zeros, never the memory after it
+    const uint32_t inside = argumentWordsInside(arguments->length, offset, bytes / 4);
     called_ = true;
     indirectGeometry_ = true;
     const bool prepared = prepare(form, primitive, 0, 0, UINT32_MAX, indexed, why);
     indirectGeometry_ = false;
     if (!prepared)
-        return false;
-    cb_->use(*arguments, false);
-    if (arguments->hostVisible && !arguments->wc && arguments->cpu)
-        cb_->clean(arguments->cpu + offset, bytes);
-    if (p_.room() < 8 + mme::kAmplificationScratchWords + mme::kAmplifyCallWords)
+        return skippedDraw();
+    if (inside) {
+        cb_->use(*arguments, false);
+        if (arguments->hostVisible && !arguments->wc && arguments->cpu)
+            cb_->clean(arguments->cpu + offset, inside * 4);
+    }
+    if (p_.room() < 8 + bytes / 4 + mme::kAmplificationScratchWords + mme::kAmplifyCallWords)
         reserve();
     // Prior shader writes must reach the command fetcher; NO_PREFETCH on the argument entry prevents early fetch.
     p_.m(WAIT_FOR_IDLE, 0);
@@ -5969,11 +5986,15 @@ bool RenderEncoder::indirect(uint32_t primitive, bool indexed, const Buffer *arg
     } else {
         mme::indirectHeader(p_, indexed);
     }
-    bodies_.push_back({bodyStart_, p_.at, 0, 0, true});
-    bodies_.push_back(PushBody::resident(arguments->va + offset, bytes / 4, TegraGM20BPushNoPrefetch));
-    dev_->push_.head = uint64_t(reinterpret_cast<uint8_t *>(p_.at) - dev_->push_.bo.cpu);
-    bodyStart_ = nullptr;
-    reserve();
+    if (inside) {
+        bodies_.push_back({bodyStart_, p_.at, 0, 0, true});
+        bodies_.push_back(PushBody::resident(arguments->va + offset, inside, TegraGM20BPushNoPrefetch));
+        dev_->push_.head = uint64_t(reinterpret_cast<uint8_t *>(p_.at) - dev_->push_.bo.cpu);
+        bodyStart_ = nullptr;
+        reserve();
+    }
+    for (uint32_t k = inside; k < bytes / 4; k++)
+        *p_.at++ = 0;
     params_.unknown = true;
     cb_->draws += amplifies() ? amplifications_ : 1;
     finishDraw(0, 0, true);
@@ -5993,8 +6014,9 @@ bool RenderEncoder::drawIndexedIndirect(uint32_t primitive, uint32_t indexSize, 
         return true;
     if (!indices || !indices->va || (indexSize != 2 && indexSize != 4) || indexOffset > indices->length ||
         indices->length - indexOffset < indexSize || indexOffset % indexSize) {
-        *why = "an indirect draw has no valid aligned index buffer range";
-        return false;
+        cb_->skipped = {RefIndexedRange, uint32_t(indexOffset), indexSize, 0};
+        cb_->skips++;
+        return true;
     }
     if (p_.room() < 16)
         reserve();
@@ -6042,8 +6064,10 @@ bool RenderEncoder::executeSlots(const IcbExecute &x, const char **why)
     indirectGeometry_ = true;
     const bool prepared = prepare(form, x.primitive, 0, 0, UINT32_MAX, x.indexed, why);
     indirectGeometry_ = false;
+    if (!prepared)
+        return skippedDraw();
     const bool patches = x.primitive == icb::kPatchPrimitive;
-    if (!prepared || (patches && !icbPatchLayout(why)))
+    if (patches && !icbPatchLayout(why))
         return false;
     cb_->use(*x.slots, false);
     if (x.slots->hostVisible && !x.slots->wc && x.slots->cpu)
@@ -6086,6 +6110,7 @@ bool RenderEncoder::executeSlots(const IcbExecute &x, const char **why)
         icbPatchesDone();
     topology_ = restart_ = ~0u;
     cb_->alphaHeld_ = kAlphaControlUnknown;
+    cb_->sampleMaskHeld_ = kSampleMaskUnknown;
     ibVa_ = ibEnd_ = ~uint64_t(0);
     ibSize_ = 0;
     params_.unknown = true;
@@ -6564,9 +6589,13 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     if (compatible_ != pl) {
         for (uint32_t j = 0; j < 8; j++) {  // the pass's attachments are the formats the state was made for
             const Texture *t = j < pass_.count ? pass_.color[j].texture : nullptr;
-            if ((t ? t->format : 0) != pl->colorFormats[j] && !(t && pl->colorFormats[j] == 0)) {
-                *why = "a state whose color formats differ from the pass's";
-                cb_->refusal = {RefColorFormats, j, t ? t->format : 0, pl->colorFormats[j]};
+            const uint32_t f = t ? t->format : 0;
+            if (f != pl->colorFormats[j] && !(t && pl->colorFormats[j] == 0) &&
+                !(targetOrdersChannels(pl->colorFormats[j], f) && !(pl->storageBits >> j & 1))) {
+                *why = "a state whose color formats differ from the pass's: the draw skipped";
+                cb_->skipped = {RefColorFormats, j, f, pl->colorFormats[j]};
+                cb_->skips++;
+                skipDraw_ = true;
                 return false;
             }
         }
@@ -6584,11 +6613,15 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
             cb_->refusal = {RefDepthStencil, pl->depthFormat, declared ? declared->format : 0, ds_.active()};
             return false;
         }
-        if (pl->samples != samples_ || !sampleShadingMasks(samples_, pl->samplePasses, compatibleSampleMasks_)) {
-            *why = "a state whose samples a pixel or per-sample shading the pass's attachments do not take";
-            cb_->refusal = {RefSamples, pl->samples, samples_, pl->samplePasses};
+        if (!samplesDrawn(pl->samples, samples_, pl->samplePasses) ||
+            !sampleShadingMasks(samples_, pl->samples == samples_ ? pl->samplePasses : 1, compatibleSampleMasks_)) {
+            *why = "a state whose samples a pixel or per-sample shading the pass's attachments do not take: skipped";
+            cb_->skipped = {RefSamples, pl->samples, samples_, pl->samplePasses};
+            cb_->skips++;
+            skipDraw_ = true;
             return false;
         }
+        compatibleRasterMask_ = sampleMaskFor(pl->samples, samples_);
         if (rot_.turned() && pl->turnRefused) {
             *why = rotatedRefusalText(RotatedRefusal::Variant);
             cb_->refusal = {RefRotated, uint32_t(RotatedRefusal::Variant), rot_.turn};
@@ -6950,6 +6983,13 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     }
     writeAlphaControl(p, cb_->alphaHeld_, alphaWanted_, rebinds, pl->namesAlphaControl, pl->ownsAlphaControl,
                       pl->blendKill);
+    if (rebinds && cb_->sampleMaskHeld_ != kSampleMaskAll)
+        cb_->sampleMaskHeld_ = kSampleMaskUnknown;
+    if (compatibleRasterMask_ != cb_->sampleMaskHeld_) {
+        const uint32_t m = compatibleRasterMask_;
+        p.inc(NVB197_SET_SAMPLE_MASK_X0_Y0, {m, m, m, m});
+        cb_->sampleMaskHeld_ = m;
+    }
     RAW_ENCODE_END(bindSpan);
     if (!writeClipControl(p, *pl, why))
         return false;
@@ -7951,7 +7991,11 @@ TextureTransferResult Device::transferTexture(const Texture &texture, uint32_t l
         return TextureTransferResult::Unsupported;
     }
     const Texture &t = *selected;
-    if (!t.va || t.zeta || t.samples > 1 || t.converted() || t.blockW > 1 || t.blockH > 1 ||
+    // A one-aspect depth or stencil texture moves as a colour one of its texel: the copy engine reads and writes it through
+    // its own Z kind, whose GOB interior the memory system keeps, as NVK copies a depth image. Metal copies a combined
+    // depth/stencil texture per aspect.
+    const bool oneAspect = zetaHasDepth(t.format) != zetaHasStencil(t.format);
+    if (!t.va || (t.zeta && !oneAspect) || t.samples > 1 || t.converted() || t.blockW > 1 || t.blockH > 1 ||
         xrForm(t.format) != XrForm::None || !size[0] || !size[1] || !size[2] || origin[0] > t.width ||
         size[0] > t.width - origin[0] || origin[1] > t.height || size[1] > t.height - origin[1])
         return TextureTransferResult::Unsupported;

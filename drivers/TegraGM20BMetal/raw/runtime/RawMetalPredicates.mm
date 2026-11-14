@@ -13,6 +13,7 @@ static constexpr std::array<uint64_t, PredCount> predKeys()
 static constexpr std::array<uint64_t, PredCount> kPredKeys = predKeys();
 #if SWITCH_RAW_DIAGNOSTICS
 std::atomic<uint64_t> gPredCbs[PredCount], gPredOnly[PredCount];
+std::atomic<uint64_t> gPredFailed[PredCount];
 #endif
 std::atomic<uint64_t> gPredLogged{0};
 
@@ -30,6 +31,22 @@ void logPred(RMPred p, uint64_t a, uint64_t b, NSString *detail)
     fprintf(stderr, "raw: first %s: a=%llu b=%llu %s\n", kPredNames[p], (unsigned long long)a, (unsigned long long)b,
             detail ? detail.UTF8String : "");
 #endif
+}
+
+void predFails(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *detail)
+{
+    const NSInteger code = predFailure(p);
+    gPredLogged.fetch_or(1ull << p, std::memory_order_relaxed);
+    switch_refusal_k(kPredKeys[p], "raw", kPredNames[p],
+                     "the command buffer fails (MTLCommandBufferErrorDomain %ld) a=%llu (0x%llx) b=%llu (0x%llx)%s%s",
+                     long(code), (unsigned long long)a, (unsigned long long)a, (unsigned long long)b,
+                     (unsigned long long)b, detail ? " " : "", detail ?: "");
+    RAW_DIAGNOSTIC(gPredFailed[p].fetch_add(1, std::memory_order_relaxed));
+    if (!cb->_failedBy)
+        cb->_failedBy = p;
+    failCommandBuffer(
+        cb, [NSString stringWithFormat:@"The raw path refused %s%s%s", kPredNames[p], detail ? ": " : "", detail ?: ""],
+        MTLCommandBufferError(code));
 }
 
 // The type encoding of a selector some MTL* protocol declares (the plugin's answerUnimplemented uses the same lookup), walked

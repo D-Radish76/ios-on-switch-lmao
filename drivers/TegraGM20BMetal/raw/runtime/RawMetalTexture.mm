@@ -83,6 +83,18 @@ void planeRows(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, ui
             memcpy(bytes + y * row, at, line);
     }
 }
+
+// A memoryless texture holds nothing between passes: Apple's driver leaves getBytes' bytes as they were and drops
+// replaceRegion's (an M-series Mac with API validation off), where its twin would open m2v
+bool cpuReachesNothing(RMTexture *t)
+{
+    if (t->_descriptor.storageMode != MTLStorageModeMemoryless)
+        return false;
+    SWITCH_REFUSE("raw", "texture.cpu.memoryless",
+                  "a CPU copy of a memoryless %lux%lu texture: nothing moved, as Metal",
+                  (unsigned long)t->_descriptor.width, (unsigned long)t->_descriptor.height);
+    return true;
+}
 }  // namespace
 
 // Before the raw path first renders into a surface texture: the kernel takes the surface's imports as only sampled until
@@ -443,7 +455,7 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
           bytesPerRow:(NSUInteger)row
         bytesPerImage:(NSUInteger)image
 {
-    if (!r.size.width || !r.size.height || !r.size.depth)
+    if (!r.size.width || !r.size.height || !r.size.depth || cpuReachesNothing(self))
         return;
 #if SWITCH_RAW_DIAGNOSTICS
     _raw.probeWritten = true;
@@ -513,7 +525,7 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
       mipmapLevel:(NSUInteger)level
             slice:(NSUInteger)slice
 {
-    if (!r.size.width || !r.size.height || !r.size.depth)
+    if (!r.size.width || !r.size.height || !r.size.depth || cpuReachesNothing(self))
         return;
     freshBeforeTransfer(self);
     if (_cpuRows) {

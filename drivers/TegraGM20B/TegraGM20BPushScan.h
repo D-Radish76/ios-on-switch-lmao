@@ -10,6 +10,7 @@
 #pragma once
 #include <stdint.h>
 #include "TegraGM20BGpu.h"
+#include "SwitchGpuPushScanQueue.h"
 #include "../../kits/SwitchGM20BEmit/SwitchGM20BMacroSlots.h"
 
 namespace tgm_scan
@@ -344,5 +345,59 @@ inline uint8_t scanPush(PushCounts &c, PushParse &p, bool &whole, const uint32_t
 	pushParse(c, p, w, n);
 	whole = whole && c.unparsed == before.unparsed;
 	return whole && !p.left ? pushClass(before, c, p) : TGM_PC_SKIP;
+}
+
+struct SubmissionRead {
+	PushCounts c;
+	TargetImage largest;  // the largest image a draw or clear of the submission drew into
+};
+
+// A submission's pushes (`push[i].words` null: not read), `budget` bytes of them at most, and with `prof` each push's
+// profile class and marks. `rawMacros`: a raw job's stream (PushParse).
+inline SubmissionRead readSubmission(const switch_gpu_scan_words *push, uint32_t count,
+				     tgm_prof *prof, bool rawMacros, uint64_t budget)
+{
+	SubmissionRead r = {};
+	PushParse p = {};
+	p.rawMacros = rawMacros;
+	bool whole = true;
+	for (uint32_t i = 0; i < count; i++) {
+		if (prof && i < TGM_PROF_MAX) {
+			prof->cls[i] = TGM_PC_SKIP;
+			prof->draws[i] = prof->sampleDraws[i] = prof->kpx[i] = 0;
+			prof->interlocks[i] = 0;
+		}
+		const uint64_t bytes = static_cast<uint64_t>(push[i].dwords) * 4;
+		r.c.bytes += bytes;
+		if (!push[i].words || bytes > budget) {
+			scanPush(r.c, p, whole, nullptr, 0);  // not read: no later push is stamped
+			continue;
+		}
+		budget -= bytes;
+		r.c.readBytes += bytes;
+		const PushCounts before = r.c;
+		const uint8_t cls = scanPush(r.c, p, whole, push[i].words, bytes / 4);
+		if (r.c.draws > before.draws || r.c.clears > before.clears) {
+			const TargetImage drawn = targetImage(p);
+			if (static_cast<uint64_t>(drawn.width) * drawn.height >
+			    static_cast<uint64_t>(r.largest.width) * r.largest.height)
+				r.largest = drawn;
+		}
+		if (prof && i < TGM_PROF_MAX) {
+			prof->cls[i] = cls;
+			const uint64_t draws = r.c.draws - before.draws;
+			const uint64_t sample = r.c.sampleDraws - before.sampleDraws;
+			prof->draws[i] = static_cast<uint16_t>(draws > 0xffff ? 0xffff : draws);
+			prof->sampleDraws[i] =
+				static_cast<uint16_t>(sample > 0xffff ? 0xffff : sample);
+			const uint64_t kpx = targetPixels(p) / 1000;
+			const uint64_t interlocks = r.c.interlocks - before.interlocks;
+			prof->kpx[i] = static_cast<uint16_t>(kpx > 0xffff ? 0xffff : kpx);
+			prof->interlocks[i] =
+				static_cast<uint8_t>(interlocks > 0xff ? 0xff : interlocks);
+		}
+	}
+	r.c.scanned = 1;
+	return r;
 }
 }  // namespace tgm_scan

@@ -14,7 +14,6 @@ enum RMNeed : uint8_t {
     NeedTextureNoMemory,
     NeedTextureShape,
     NeedHeapTextureSize,
-    NeedLinearRow,
     // what a library or function answers from its m2v twin
     NeedLibraryTwin,
     NeedFunctionTwin,
@@ -43,7 +42,6 @@ static constexpr const char *kNeedNames[] = {
     "a texture the raw path made no memory for",
     "a texture of a shape the raw path does not take",
     "a heap texture's size the raw path does not place",
-    "a linear row of a format raw does not lay out",
     "a library's twin",
     "a function's twin",
     "a compute state the pack has no facts of",
