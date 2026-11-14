@@ -24,7 +24,8 @@ struct StitchedLibraryTest: HWTest {
         let a = MTLFunctionStitchingInputNode(argumentIndex: 0)
         let b = MTLFunctionStitchingInputNode(argumentIndex: 1)
         let sum = MTLFunctionStitchingFunctionNode(name: "stitch_add", arguments: [a, b], controlDependencies: [])
-        let product = MTLFunctionStitchingFunctionNode(name: "stitch_mul", arguments: [sum, b], controlDependencies: [])
+        let product = MTLFunctionStitchingFunctionNode(
+            name: "stitch_mul", arguments: [sum, b], controlDependencies: [])
         let descriptor = MTLStitchedLibraryDescriptor()
         descriptor.functionGraphs = [
             MTLFunctionStitchingGraph(functionName: "stitch_madd", nodes: [sum], outputNode: product, attributes: [])

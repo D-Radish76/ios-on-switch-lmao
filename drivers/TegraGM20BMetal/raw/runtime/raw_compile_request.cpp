@@ -126,9 +126,9 @@ bool knownCodeGen(uint32_t type)
 
 bool saneLibrary(const CompileRequest &r)
 {
-    return r.stages.empty() && r.libraries.empty() && r.cubic.samplers.empty() && r.cubic.textures.empty() &&
-           r.kernel.textures.empty() && r.kernel.samplers.empty() && !r.key.empty() && r.form == RequestForm::Primary &&
-           !r.codeGen.empty() && knownCodeGen(r.codeGenType);
+    return r.stages.empty() && r.libraries.empty() && r.variant.name().empty() && r.kernel.textures.empty() &&
+           r.kernel.samplers.empty() && !r.key.empty() && r.form == RequestForm::Primary && !r.codeGen.empty() &&
+           knownCodeGen(r.codeGenType);
 }
 
 bool sane(const CompileRequest &r)
