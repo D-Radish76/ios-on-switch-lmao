@@ -1930,6 +1930,9 @@ void Device::writeTic(const Texture &t)
         one.bpp = t.bpp;
         one.yLog2 = t.blockHeight;
         fx::mipChainTic(one, t.va, kZetaFormatInfo[zetaFormatIndex(t.format)].tic0, false, 0, 1, w, fx::kTexTwoD);
+    } else if (t.type == fx::kTexOneDBuffer) {
+        const FormatInfo *f = formatInfo(t.format);
+        fx::bufferTic(t.va, f->tic0, f->srgb, t.width, w);
     } else if (const FormatInfo *f = formatInfo(t.format);
                (t.layers > 1 && fx::arrayLayout(t.width, t.height, t.layers, 1, t.bpp, one)) ||
                (t.type == fx::kTexThreeD &&
@@ -2547,6 +2550,32 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     return true;
 }
 
+// NVK's texel buffer views start on 16 bytes (NVK_MIN_TEXEL_BUFFER_ALIGNMENT, its minTexelBufferOffsetAlignment) and hold
+// at most 2^27 texels (maxTexelBufferElements); the header itself takes a byte address
+bool Device::createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t)
+{
+    constexpr uint64_t kTexelBufferAlign = 16, kMaxElements = 1u << 27;
+    const FormatInfo *f = formatInfo(format);
+    if (!f || blockCompressed(f) || xrForm(format) != XrForm::None || !elements || elements > kMaxElements ||
+        offset > b.length || uint64_t(elements) * f->bpp > b.length - offset || ((b.va + offset) % kTexelBufferAlign))
+        return false;
+    std::lock_guard<raw::Mutex> l(lock_);
+    t = {};
+    t.format = format;
+    t.bpp = f->bpp;
+    t.width = t.texelWidth = elements;
+    t.height = t.texelHeight = 1;
+    t.pitch = elements * f->bpp;
+    t.type = fx::kTexOneDBuffer;
+    t.va = b.va + offset;
+    t.storage = {t.va, uint64_t(t.pitch), b.hostVisible};
+    t.cpu = b.cpu ? b.cpu + offset : nullptr;
+    if (!(t.tic = allocTic()))
+        return false;
+    writeTic(t);
+    return true;
+}
+
 bool Device::createView(const Texture &of, uint32_t format, Texture &t)
 {
     // Metal views a converted image (planar, YCbCr) only in its own format or that format's sRGB twin (m2v view_plan.rs),
@@ -2597,15 +2626,17 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
     uint64_t va = of.va;
     Texture image;
     if (of.chain) {
-        if (baseLayer || layers != 1 || baseLevel + levels > of.chain->layout.levels ||
+        c = of.chain->layout;
+        if (baseLevel + levels > c.levels || baseLayer + layers > c.layers ||
             (baseLevel && !chainLevelImage(of, baseLevel, image)))
             return false;
-        c = of.chain->layout;
-        va = of.chain->va;
+        va = of.chain->va + baseLayer * c.arrayStride;
         if (!baseLevel)
             image = of;
         // (a later level's block height is the chain's clamp, not its own image's: the CPU goes by m2v)
+        image.va += baseLayer * c.arrayStride;
         image.cpu = nullptr;
+        image.layers = layers;
         image.layerBytes = c.arrayStride;
     } else {
         if (baseLevel || levels != 1 || baseLayer + layers > of.layers ||

@@ -1968,6 +1968,9 @@ public:
     bool createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
                              uint32_t format,
                              Texture &t);  // over a buffer's memory (t holds no reference: the caller keeps the buffer)
+    // MTLTextureTypeTextureBuffer: `elements` texels of `format` from `offset` in a buffer, under a texel buffer header
+    // (fx::bufferTic), as createBufferTexture holds no reference
+    bool createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t);
     bool createView(const Texture &of, uint32_t format, Texture &t);  // the same memory as another format
     // Its header's sources read through `channels` (MTLTextureSwizzle each, Texture::swizzle), its header written as it is
     void swizzle(Texture &t, const uint8_t channels[4]);
