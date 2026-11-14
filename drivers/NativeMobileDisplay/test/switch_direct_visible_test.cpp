@@ -217,7 +217,10 @@ TEST(DirectVisibleSource, TheOfferTriesItOnceTheSlotIsMappedAndSlotsHoldTheirBac
     const CodeText offer = Block(display, "bool offerDirect(");
     EXPECT_TRUE(offer.Before("if (entry == kNoBuffer)", "presentDirectVisible(request, entry, width"));
     EXPECT_TRUE(offer.Before("presentDirectVisible(request, entry, width", "offerWithCompletionFlip(copy, entry)"));
-    EXPECT_TRUE(offer.Has("copy.flags = TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry);"));
+    EXPECT_TRUE(offer.Has("copy.flags = TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry) | (tiled ? "
+                          "TEGRA_SCANOUT_COPY_SOURCE_BLOCK : 0u);"))
+        << "a tiled slot's present names its blocks: mapped as pitch, ui.glass_live's read-back copied scrambled rows";
+    EXPECT_TRUE(offer.Has("copy.sourceBlockHeightLog2 = tiled ? kScanBlockLog2 : 0u;"));
     const std::string slots = SourceText("../SwitchDirectSlots.h");
     EXPECT_TRUE(Block(slots, "void dropSlot(unsigned k)").Has("releaseScanoutBacking(k);"));
     EXPECT_TRUE(CodeText(slots).Has("*slot.read = snapshot; holdScanoutBacking(static_cast<unsigned>(victim));"));
