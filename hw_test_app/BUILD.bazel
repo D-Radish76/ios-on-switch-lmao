@@ -458,6 +458,8 @@ cc_library(
 )
 
 exports_files([
+    "SwitchHWTest.entitlements",
+    "SwitchHWTest27.entitlements",
     "cpu/switch_ipi_probe.c",
     "cpu/switch_ipi_probe.h",
     "cpu/switch_workloop_probe.c",
