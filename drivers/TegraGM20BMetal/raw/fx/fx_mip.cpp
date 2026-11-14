@@ -273,9 +273,9 @@ void bufferTic(uint64_t va, uint32_t tic0, bool srgb, uint32_t elements, uint32_
 {
     memset(out, 0, 32);
     out[0] = tic0;
-    setField(out, 63, 32, va & 0xffffffff);           // ADDRESS_BITS31TO0
-    setField(out, 79, 64, (va >> 32) & 0xffff);       // ADDRESS_BITS47TO32
-    setField(out, 111, 96, (elements - 1) >> 16);     // WIDTH_MINUS_ONE_BITS31TO16
+    setField(out, 63, 32, va & 0xffffffff);            // ADDRESS_BITS31TO0
+    setField(out, 79, 64, (va >> 32) & 0xffff);        // ADDRESS_BITS47TO32
+    setField(out, 111, 96, (elements - 1) >> 16);      // WIDTH_MINUS_ONE_BITS31TO16
     setField(out, 143, 128, (elements - 1) & 0xffff);  // WIDTH_MINUS_ONE_BITS15TO0
     setField(out, 150, 150, srgb ? 1 : 0);             // S_R_G_B_CONVERSION
     setField(out, 154, 151, kTexOneDBuffer);           // TEXTURE_TYPE
