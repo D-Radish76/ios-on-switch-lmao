@@ -303,24 +303,20 @@ const char *ComputeEncoder::pairedSamplerTsc(const Device &dev, const PackKernel
     const bool constant = e.slot & kConstexprSampler;
     const uint32_t index = e.slot & ~kConstexprSampler;
     const Sampler *s = !constant && e.slot < 16 ? samplers[e.slot] : nullptr;
-    if (constant && !dev.constexprTsc(index, 0))
+    if (constant && index >= dev.constexprCount_)
         return "a kernel's constexpr sampler the pack holds no header of";
-    const auto header = [&](uint8_t m) -> uint32_t {
+    const auto leaves = [&](uint8_t m) {
         if (constant)
-            return dev.constexprTsc(index, m);
-        return s ? mappedModes(s->desc.sAddress, s->desc.tAddress, s->desc.rAddress, m) : 0;
+            return dev.constexprLeaves(index, m);
+        return !s || mapLeavesModes(s->desc.sAddress, s->desc.tAddress, s->desc.rAddress, m);
     };
     const auto mapOf = [&](uint32_t slot) -> uint8_t {
         return slot < 31 && textures[slot] ? textures[slot]->addressMap : 0;
     };
-    uint8_t map = 0;
-    if (!pairedSamplerMap(kernelSamplerPairs(e), header, mapOf, map))
-        return "a kernel sampler that samples textures whose address maps give it different headers";
-    if (constant)
-        tsc = dev.constexprTsc(index, map);
-    else
-        tsc = !s ? dev.neutralTsc_ : map >= 1 && map <= 3 ? s->mapped[map] : s->tsc;
-    return tsc ? nullptr : "a planar texture's sampler without its address map";
+    if (!pairedSamplerKept(kernelSamplerPairs(e), leaves, mapOf))
+        return "a kernel sampler whose modes a converted texture's address map changes, compiled without that map";
+    tsc = constant ? dev.constexprTsc_[index] : s ? s->tsc : dev.neutralTsc_;
+    return nullptr;
 }
 
 bool ComputeEncoder::prepareDescriptors(const char **why)
@@ -341,9 +337,9 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
         *why = "an argument table whose words the kernel's record does not hold";
         return false;
     }
-    // a planar or YCbCr texture's address map: its samplers' headers with the map applied, as a draw's handle takes them.
-    // A sampler entry that holds its pairs takes the map of the textures it samples; for the others admission keeps a
-    // kernel here only where every texture it binds is under one map, or the map changes no sampler
+    // a planar or YCbCr texture's address map: its samplers' headers with the map applied, as a draw's handle takes them
+    // (admission keeps a kernel here only where every texture it binds is under one map, or the map changes no sampler;
+    // a sampler entry that holds its pairs only where its own textures' maps change none of its modes)
     uint8_t map = 0;
     for (uint32_t i = 0; i < r.entries; i++)
         if (r.entry[i].kind == KernelTexture && r.entry[i].slot < 31 && textures_[r.entry[i].slot])

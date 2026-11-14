@@ -167,8 +167,8 @@ private:
                          uint32_t *qmd, const char **why);
     // Why an indirect dispatch command cannot carry kernel `k`, null where it can
     static const char *icbRefusal(const ComputeState &k);
-    // The header index sampler entry `e`, whose record holds its pairs, binds under the address maps of the textures it
-    // samples (raw_sampler_map.h); null, or why it has none
+    // The header index sampler entry `e`, whose record holds its pairs, binds: its own, where the address maps of the
+    // textures it samples change none of its modes (raw_sampler_map.h); null, or why it has none
     static const char *pairedSamplerTsc(const Device &dev, const PackKernelEntry &e,
                                         const Texture *const (&textures)[31], const Sampler *const (&samplers)[16],
                                         uint32_t &tsc);

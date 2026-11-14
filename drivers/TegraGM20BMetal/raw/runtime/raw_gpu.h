@@ -42,6 +42,7 @@
 #include "raw_visibility.h"
 #include "raw_fresh.h"
 #include "raw_view.h"
+#include "raw_sampler_map.h"
 #include <array>
 #include <atomic>
 #include <thread>
@@ -1836,13 +1837,11 @@ public:
     // s's header under address map `map` (Texture::addressMap), made now if it is not yet
     bool samplerVariant(Sampler &s, uint8_t map);
 
-    // Constexpr sampler `index`'s header index under address map `map`, the same index for the same header; 0: no such
-    // sampler. Read without lock_ as constexprTsc_ is.
-    uint32_t constexprTsc(uint32_t index, uint8_t map) const
+    // Whether address map `map` leaves the modes of constexpr sampler `index` (raw_sampler_map.h); false for no such sampler.
+    // Read without lock_ as constexprTsc_ is.
+    bool constexprLeaves(uint32_t index, uint8_t map) const
     {
-        if (index >= constexprCount_)
-            return 0;
-        return map >= 1 && map <= 3 ? constexprMapped_[index][map - 1] : constexprTsc_[index];
+        return index < constexprCount_ && mapLeavesHeader(constexprWord0_[index], map);
     }
     // A two-plane 4:4:4 surface's texture of RGB8_444_2P (542): its planes at `luma`/`chroma` (offsets in the allocation,
     // with their pitches), sampled through an RGBA8 image of the pool (Texture::planar)
@@ -2844,10 +2843,7 @@ private:
     static constexpr uint32_t kConstexprSamplers = 256;  // PackEntry::sampler is a byte
     uint32_t constexprTsc_[kConstexprSamplers] = {};
     uint32_t constexprCount_ = 0;
-    // and under address maps 1 to 3, written with them (placeConstexprVariants): a kernel's sampler entry paired with a
-    // converted texture binds its map's
-    uint32_t constexprMapped_[kConstexprSamplers][3] = {};
-    bool placeConstexprVariants(uint32_t index, const uint32_t words[8]);
+    uint32_t constexprWord0_[kConstexprSamplers] = {};  // and their headers' word 0, written with them
 
     // the states the runtime made (addRecord), never removed: Pipeline::rec points into them
     struct Completed {

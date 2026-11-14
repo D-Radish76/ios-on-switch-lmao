@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-// A sampler under a converted texture's address map (Texture::addressMap), and the map a kernel's sampler entry whose pairs
-// its record holds (raw_pack.h kernelSamplerPairs) binds its header under: a draw's handle pairs each texture with its
-// sampler, a kernel's sampler is a word of its own.
+// A sampler under a converted texture's address map (Texture::addressMap), and whether a kernel's sampler entry whose
+// pairs its record holds (raw_pack.h kernelSamplerPairs) samples its textures as Metal does. The translator reads a
+// constexpr sampler's modes into the kernel's code as well as its header (nearest samples on a wrapping axis, gathers,
+// emulated filters: metal2vulkan lower/sampler/position.rs), and maps them only where a texture's map changes one
+// (bind/plan/slots.rs address_map_variant): a sampler whose modes its textures' maps leave is exact unmapped.
 #pragma once
 #include <cstdint>
-#include <cstring>
 
 namespace raw {
 
@@ -23,34 +24,28 @@ constexpr uint32_t mappedHeaderAddress(uint32_t field, uint8_t map)
     return ((map & 1) && (field == 0 || field == 1 || field == 5)) || ((map & 2) && field == 3) ? 2 : field;
 }
 
-inline void mapSamplerHeader(const uint32_t in[8], uint8_t map, uint32_t out[8])
+// Whether `map` leaves the modes of the header whose word 0 is `word0`
+constexpr bool mapLeavesHeader(uint32_t word0, uint8_t map)
 {
-    memcpy(out, in, 8 * sizeof(uint32_t));
     for (const uint32_t shift : {0u, 3u, 6u})
-        out[0] = (out[0] & ~(7u << shift)) | mappedHeaderAddress(in[0] >> shift & 7, map) << shift;
-}
-
-// A bound sampler's modes under `map`: one value for each header they give
-constexpr uint32_t mappedModes(uint8_t s, uint8_t t, uint8_t r, uint8_t map)
-{
-    return mappedAddressMode(s, map) | uint32_t(mappedAddressMode(t, map)) << 8 |
-           uint32_t(mappedAddressMode(r, map)) << 16;
-}
-
-// The map of the texture at the entry's first paired slot (`mapOf`, 0 where none is bound), where every paired texture's
-// map gives the sampler the same header (`header(m)`, one value for each header under map m). False where two give it
-// different headers, which one word cannot hold.
-template <typename Header, typename MapOf>
-bool pairedSamplerMap(uint32_t pairs, Header header, MapOf mapOf, uint8_t &map)
-{
-    map = 0;
-    for (uint32_t s = pairs, first = 1; s; s &= s - 1, first = 0) {
-        const uint8_t m = mapOf(uint32_t(__builtin_ctz(s)));
-        if (first)
-            map = m;
-        else if (m != map && header(m) != header(map))
+        if (mappedHeaderAddress(word0 >> shift & 7, map) != (word0 >> shift & 7))
             return false;
-    }
+    return true;
+}
+
+// Whether `map` leaves a bound sampler's modes
+constexpr bool mapLeavesModes(uint8_t s, uint8_t t, uint8_t r, uint8_t map)
+{
+    return mappedAddressMode(s, map) == s && mappedAddressMode(t, map) == t && mappedAddressMode(r, map) == r;
+}
+
+// Whether the maps of the textures at a sampler entry's paired slots (`mapOf`, 0 where none is bound) all leave its modes
+// (`leaves(m)`)
+template <typename Leaves, typename MapOf> bool pairedSamplerKept(uint32_t pairs, Leaves leaves, MapOf mapOf)
+{
+    for (uint32_t s = pairs; s; s &= s - 1)
+        if (const uint8_t m = mapOf(uint32_t(__builtin_ctz(s))); m && !leaves(m))
+            return false;
     return true;
 }
 

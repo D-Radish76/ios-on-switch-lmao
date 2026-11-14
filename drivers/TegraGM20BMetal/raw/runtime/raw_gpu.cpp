@@ -655,13 +655,9 @@ bool Device::init(std::string &err)
     }
     for (uint32_t i = 0; i < pack_.header()->samplers; i++) {
         memcpy(tsc_.cpu + 32 * nextTsc_, cs + 8 * i, 32);
+        constexprWord0_[constexprCount_] = cs[8 * i];
         constexprTsc_[constexprCount_++] = nextTsc_++;
     }
-    for (uint32_t i = 0; i < pack_.header()->samplers; i++)
-        if (!placeConstexprVariants(i, cs + 8 * i)) {
-            err = "no sampler header left for the pack's constexpr samplers under converted textures' address maps";
-            return false;
-        }
     // SET_CT_WRITE(i), as the baseline leaves it where a state's registers do not set it
     const uint32_t *base = pack_.section<uint32_t>(PackBaseline);
     for (uint64_t i = 0; i < pack_.bytes(PackBaseline) / 8; i++)
