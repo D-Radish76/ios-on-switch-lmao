@@ -127,9 +127,12 @@
 #                     the one the selected IPSW ships AGX binaries for, its QuartzCore's
 #   raw_metal_formats_test  raw/runtime/raw_metal_formats.h: every format with a linear alignment has a texel Metal
 #                     describes, formats of blocks and depth formats answer no row, and the caps table agrees with it
+#   raw_heap_fit_test  raw/runtime/raw_heap_fit.h: m2v's heap rules over raw_heap_classes.h: a class of the texture's
+#                     shape and numeric type holds it, a raw-texel form the unsigned class, the half-bits twin a writable
+#                     unswizzled half texture; flags by swizzle; facts no Metal enumerator has fit nothing
 #   raw_bridge_parity_test  (m2v) what raw took over from the bridge is the bridge's: raw_metal_formats.h is the m2v
-#                     device's description and refuses its rows alike, and every capability query the bridge answered has
-#                     an answer of raw_device_answers.h's of its kind
+#                     device's description and refuses its rows alike, every capability query the bridge answered has
+#                     an answer of raw_device_answers.h's of its kind, and the sampler word and heap rules are its own
 #   raw_device_answers_test  raw/runtime/raw_device_answers.h, every kind: YES for shared texture handles and
 #                     buffers over IOSurfaces, GM20B's counts (caps) where raw draws them (layers, viewports,
 #                     tessellation, amplification, dynamic stride, threadgroup memory, interpolants, framebuffer bits,
@@ -4320,6 +4323,20 @@ host_test(
         "//drivers/NativeMetal/abi:metal_abi",
         "//kits/SwitchGM20B:caps",
     ],
+)
+
+# Which heap image array holds a texture and its handle-table flags (raw_heap_fit.h over raw_heap_classes.h)
+host_test(
+    name = "raw_heap_fit_test",
+    srcs = [
+        "raw_heap_fit_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_heap_classes.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_heap_fit.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_heap_tables.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_pack.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_resource_id.h",
+    ],
+    cxx_std = "c++17",
 )
 
 # What raw took over from the bridge, against the bridge (the host bridge over NVK's host twin): raw_metal_formats.h, the

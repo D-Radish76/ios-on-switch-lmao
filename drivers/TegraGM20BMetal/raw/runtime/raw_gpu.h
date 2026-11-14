@@ -2212,7 +2212,7 @@ public:
     bool nameSampler(const Sampler &s, uint32_t word, Sampler &twin);
     void forgetSampler(const Sampler &s, Sampler &twin);
 
-    // Which texture an image array of a heap holds (the facade's: the bridge's switch_nmb_heap_holds), before any ID is named
+    // Which texture an image array of a heap holds (the facade's: heapHolds, raw_heap_fit.h), before any ID is named
     void heapHolds(HeapHolds holds)
     {
         heapHolds_ = holds;

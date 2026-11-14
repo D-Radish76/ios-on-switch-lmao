@@ -4,17 +4,24 @@
 // (nmb_device_linear_bytes_per_row) is refused exactly where the raw device answers none; every capability query the
 // bridge installed on m2v's device class (nmb_device_answer_selector) has an answer of its kind in raw_device_answers.h, so
 // the raw device opens m2v for none of them; a sampler's word (raw_sampler_word.h) is switch_nmb_sampler_word's over every
-// enumerator value and one past each, and over the level clamps on and around Metal's grid. The m2v device is the host
+// enumerator value and one past each, and over the level clamps on and around Metal's grid; which heap image array holds
+// a texture and its handle-table flags (raw_heap_fit.h) are switch_nmb_heap_holds' and switch_nmb_heap_texture_flags':
+// the flags over every format value below 2048 and every swizzle of the six channel sources and one past them, and
+// holding over every format, texture type, usage of the sampled and storage classes, sample count and kind of swizzle
+// against each class word of the type's own dimension, plus every class word's field values against a few textures. The m2v device is the host
 // bridge over NVK's host twin and hostsim's mock GM20B.
 #include "bridge/NativeMetalDirect.h"
 #include "bridge/NativeMetalObjects.h"
 #include "../raw/runtime/raw_device_answers.h"
+#include "../raw/runtime/raw_heap_fit.h"
 #include "../raw/runtime/raw_metal_formats.h"
 #include "../raw/runtime/raw_sampler_word.h"
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cfloat>
 #include <climits>
+#include <cstddef>
 #include <cmath>
 #include <vector>
 #include <cstdlib>
@@ -173,6 +180,81 @@ TEST(RawBridgeParity, TheSamplerWordIsTheBridgesOverTheLevelClamps)
         for (float hi : {NAN, 0.0f, 0.5f, 0.515625f, 14.99f, 15.0f, INFINITY})
             f.lodMin = lo, f.lodMax = hi, p.check(f);
     EXPECT_EQ(p.differ, 0u);
+}
+
+static_assert(sizeof(raw::HeapTextureFacts) == sizeof(NmbHeapTextureFacts) &&
+                  offsetof(raw::HeapTextureFacts, swizzle) == offsetof(NmbHeapTextureFacts, swizzle),
+              "the bridge's texture facts");
+
+struct HeapParity {
+    size_t compared = 0, differ = 0;
+
+    void check(uint32_t word, const raw::HeapTextureFacts &f, bool flagsToo)
+    {
+        const auto *bridgeFacts = reinterpret_cast<const NmbHeapTextureFacts *>(&f);
+        const bool ours = raw::heapHolds(word, &f), bridge = switch_nmb_heap_holds(word, bridgeFacts);
+        const uint32_t ourFlags = flagsToo ? raw::heapTextureFlags(f) : 0,
+                       bridgeFlags = flagsToo ? switch_nmb_heap_texture_flags(bridgeFacts) : 0;
+        compared++;
+        if ((ours != bridge || ourFlags != bridgeFlags) && ++differ <= 8)
+            ADD_FAILURE() << std::hex << "class " << word << " format " << std::dec << f.pixelFormat << " type "
+                          << f.textureType << " samples " << f.sampleCount << " usage " << std::hex << f.usage
+                          << " swizzle " << int(f.swizzle[0]) << int(f.swizzle[1]) << int(f.swizzle[2])
+                          << int(f.swizzle[3]) << ": raw " << ours << "/" << ourFlags << ", bridge " << bridge << "/"
+                          << bridgeFlags;
+    }
+};
+
+TEST(RawBridgeParity, TheHeapTextureFlagsAreTheBridgesOverEveryFormatAndSwizzle)
+{
+    HeapParity p;
+    for (uint32_t format = 0; format < 2048; format++)
+        for (uint32_t s = 0; s < 7 * 7 * 7 * 7; s++) {
+            raw::HeapTextureFacts f = {format, 2, 1, 1, 1, 1, {}};
+            for (int c = 0, v = int(s); c < 4; c++, v /= 7)
+                f.swizzle[c] = uint8_t(v % 7);
+            p.check(0, f, true);
+        }
+    EXPECT_EQ(p.differ, 0u);
+}
+
+TEST(RawBridgeParity, AHeapArrayHoldsWhatTheBridgesHolds)
+{
+    // MTLTextureType's dimension, arrayedness and multisampling in a class word's fields
+    constexpr uint32_t kShapes[10][3] = {{0, 0, 0}, {0, 1, 0}, {1, 0, 0}, {1, 1, 0}, {1, 0, 1},
+                                         {3, 0, 0}, {3, 1, 0}, {2, 0, 0}, {1, 1, 1}, {4, 0, 0}};
+    constexpr uint8_t kSwizzles[][4] = {{2, 3, 4, 5}, {2, 3, 4, 1}, {2, 0, 0, 1}, {3, 2, 4, 5}, {2, 3, 4, 6}};
+    constexpr uint32_t kFormatClasses[][2] = {{0, 0}, {1, 0}, {3, 0}, {2, 37}};
+    HeapParity p;
+    for (uint32_t format = 0; format < 1024; format++)
+        for (uint32_t type = 0; type < 11; type++)
+            for (uint32_t usage : {0x1u, 0x2u, 0x3u, 0x10000u, 0x40u})
+                for (uint32_t samples : {0u, 1u, 4u})
+                    for (const auto &swizzle : kSwizzles) {
+                        const raw::HeapTextureFacts f = {
+                            format, type, samples, usage, 1, 1, {swizzle[0], swizzle[1], swizzle[2], swizzle[3]}};
+                        const uint32_t *shape = kShapes[std::min(type, 9u)];
+                        for (uint32_t sampled = 0; sampled < 4; sampled++)
+                            for (uint32_t compareStorage = 0; compareStorage < 4; compareStorage++)
+                                for (const auto &fc : kFormatClasses)
+                                    p.check(1 | shape[0] << 2 | shape[1] << 5 | shape[2] << 6 | sampled << 7 |
+                                                (compareStorage & 1) << 9 | (compareStorage >> 1) << 10 | fc[0] << 11 |
+                                                fc[1] << 13,
+                                            f, false);
+                    }
+    const raw::HeapTextureFacts few[] = {{70, 2, 1, 1, 1, 1, {2, 3, 4, 5}},
+                                         {25, 2, 1, 2, 1, 1, {2, 3, 4, 5}},
+                                         {252, 2, 1, 1, 1, 1, {2, 3, 4, 5}},
+                                         {70, 4, 4, 1, 1, 1, {2, 3, 4, 5}},
+                                         {26, 3, 1, 3, 1, 1, {2, 3, 4, 5}}};
+    for (uint32_t word = 0; word < 1u << 15; word++)
+        for (const raw::HeapTextureFacts &f : few) {
+            p.check(word, f, false);
+            p.check(word | 37u << 13, f, false);
+            p.check(word | 1u << 31, f, false);
+        }
+    EXPECT_EQ(p.differ, 0u);
+    EXPECT_GT(p.compared, 50000000u);
 }
 
 }  // namespace

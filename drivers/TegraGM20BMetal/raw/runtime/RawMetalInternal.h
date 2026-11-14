@@ -84,9 +84,7 @@ static constexpr auto kWaitLimit = std::chrono::seconds(20);
 
 os_log_t rawLog();
 void once(NSString *text);
-// The device's handle tables of argument buffers (RawMetalResourceIds.mm): which texture a heap array holds, and an object
-// whose ID was named going
-bool rmHeapHolds(uint32_t heapClass, const raw::HeapTextureFacts *facts);
+// The device's handle tables of argument buffers (RawMetalResourceIds.mm): an object whose ID was named going
 void rmHeapForgetTexture(RMTexture *t);
 void rmHeapForgetSampler(RMSampler *s);
 // A resource a heap made outside its arena (RawMetalHeap.mm): a member of what a job names of the heap until it goes
