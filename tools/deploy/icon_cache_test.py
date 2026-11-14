@@ -71,8 +71,32 @@ class IconCacheTest(unittest.TestCase):
         return (renamed.data_folder(self.data) / icon_cache.RECORD).read_text().strip()
 
     def test_the_cache_is_found_by_its_group_not_its_uuid(self):
-        self.assertEqual(icon_cache.cache_directory(self.data), self.cache)
-        self.assertIsNone(icon_cache.cache_directory(self.data / 'nothing'))
+        self.assertEqual(icon_cache.cache_directories(self.data), [self.cache])
+        self.assertEqual(icon_cache.cache_directories(self.data / 'nothing'), [])
+
+    def test_a_container_named_by_its_group_is_found_without_metadata(self):
+        named = self.data / icon_cache.SYSTEM_GROUPS / icon_cache.GROUP / icon_cache.CACHE
+        named.mkdir(parents=True)
+        self.assertEqual(icon_cache.cache_directories(self.data), [named, self.cache])
+
+    def test_24b119s_salted_cache_is_let_go(self):
+        self.info.unlink()
+        salted = self.cache / '0F3A9C1E-1D2B-4C5D-8E6F-708192A3B4C5' / icon_cache.INFO
+        salted.parent.mkdir()
+        agent_launch(salted)
+        self.stage('a' * 64)
+        self.assertEqual(icon_cache.present(self.data, Log()), 'reset at the next launch')
+        self.assertTrue(agent_resets(salted))
+        self.assertEqual(plistlib.loads(salted.read_bytes()), {'language': 'en'})
+
+    def test_a_top_and_a_salted_cache_are_both_let_go(self):
+        salted = self.cache / 'SALT' / icon_cache.INFO
+        salted.parent.mkdir()
+        agent_launch(salted)
+        self.stage('a' * 64)
+        self.assertEqual(icon_cache.present(self.data, Log()), 'reset at the next launch')
+        self.assertTrue(agent_resets(self.info))
+        self.assertTrue(agent_resets(salted))
 
     def test_a_new_gpu_build_makes_the_agent_reset_and_keeps_language(self):
         self.stage('a' * 64)
