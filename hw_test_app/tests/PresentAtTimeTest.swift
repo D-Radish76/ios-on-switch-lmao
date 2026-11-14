@@ -9,12 +9,13 @@ import UIKit
 /// CAMetalLayer the stage's size (judged: PresentTimeVerdict). Controls follow at the same size and cadence, each
 /// "shown/submitted" with its plane flips and median latency: on fresh layers for a second each, plain presents
 /// (plain=), a time already past (past=) and four periods after CACurrentMediaTime() (media=); then warm=, the timed
-/// presents after half a second of plain ones on one layer. A failure so says whether timed presents, future times, a
-/// layer Core Animation has not shown yet or this layer's route lose presentedTime. offsets_ms= is each timed
-/// drawable's presentedTime minus its target ("x": none); lead_min_ms its commit to target; hlag_* when its handler ran
-/// against its target. d_fi_* (debug kernels) count the display's swaps: held for their time and shown or replaced
-/// unsent, let go early by the ordinary-frame clause, and shown more than half a period before their requested
-/// presentation.
+/// presents after half a second of plain ones on one layer, and mlink=, the same times from a CAMetalDisplayLink
+/// driving a fresh layer for two seconds (warm_off_ms, mlink_off_ms: median presentedTime minus target). A failure so
+/// says whether timed presents, future times, a layer Core Animation has not shown yet, the kind of display link or
+/// this layer's route lose presentedTime. offsets_ms= is each timed drawable's presentedTime minus its target ("x":
+/// none); lead_min_ms its commit to target; hlag_* when its handler ran against its target. d_fi_* (debug kernels)
+/// count the display's swaps: held for their time and shown or replaced unsent, let go early by the ordinary-frame
+/// clause, and shown more than half a period before their requested presentation.
 struct PresentAtTimeTest: HWTest {
     let id = "display.present_at_time"
     let name = "presentDrawable:atTime: shows each drawable at its refresh, with its presentedTime"
@@ -30,6 +31,7 @@ struct PresentAtTimeTest: HWTest {
         let past = try await phase(context, .past, seconds: 1, paths: paths)
         let media = try await phase(context, .mediaTarget, seconds: 1, paths: paths)
         let warm = try await phase(context, .warm, seconds: 1.5, paths: paths)
+        let metalLink = try await phase(context, .metalLink, seconds: 2, paths: paths)
         let kernelAfter = Self.frameInfoTotals()
 
         let frames = timed.frames
@@ -54,11 +56,15 @@ struct PresentAtTimeTest: HWTest {
             }
         }
         metrics.set("asleep_ms", Self.asleepMs(), digits: 0)
-        for (key, control) in [("plain", plain), ("past", past), ("media", media), ("warm", warm)] {
+        let controls = [("plain", plain), ("past", past), ("media", media), ("warm", warm), ("mlink", metalLink)]
+        for (key, control) in controls {
             metrics.set(key, PresentTimeVerdict.shown(control.frames))
             metrics.set(key + "_flips", control.flips)
             let latency = control.frames.compactMap(\.latencyMs)
             metrics.set(key + "_lat_ms", Stats.percentile(latency, 0.5), digits: 1)
+        }
+        for (key, control) in [("warm", warm), ("mlink", metalLink)] {
+            metrics.set(key + "_off_ms", Stats.percentile(control.frames.compactMap(\.offsetMs), 0.5), digits: 1)
         }
         metrics.set("offsets_ms", PresentTimeVerdict.offsets(frames))
         metrics.fitLog(within: 760, keeping: ["submitted", "timed", "handled", "early", "late", "offsets_ms"])
