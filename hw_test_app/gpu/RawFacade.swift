@@ -4,8 +4,8 @@ import Metal
 
 /// What the Switch's Metal stack tells a process about its GPU paths (drivers/TegraGM20BMetal/raw/runtime/RawMetal.mm,
 /// debug builds): the default device is the raw GM20B facade unless the process runs with TEGRA_RAW_METAL=0 or the
-/// pack was refused; the facade hands out the m2v device it wraps, counts its command buffers per path and names each
-/// one's path. On a Mac (the host tests) or a device without them, every answer says so instead.
+/// pack was refused; the facade counts its command buffers per path and names each one's path. On a Mac (the host tests)
+/// or a device without them, every answer says so instead.
 public enum RawFacade {
     static let facadeClass = "RawGM20BMetalDevice"
 
@@ -19,10 +19,6 @@ public enum RawFacade {
         #endif
     }
 
-    public static func m2vDevice(of device: MTLDevice) -> MTLDevice? {
-        ask(device, "switchM2VDevice") as? MTLDevice
-    }
-
     /// Whether the facade still wraps an m2v device (a debug build that has one answers switchM2VDevice), asked
     /// without opening it.
     public static func wrapsM2V(_ device: MTLDevice) -> Bool {
@@ -33,12 +29,6 @@ public enum RawFacade {
     /// facade or in a release runtime, raw/runtime/RawMetalObjectProbe.mm).
     public static func packed(_ state: MTLRenderPipelineState) -> Bool? {
         ((ask(state, "switchRawObject") as? [String: Any])?["packed"] as? NSNumber)?.boolValue
-    }
-
-    /// The facade's record of its m2v device, read without opening it (debug builds; empty off the facade):
-    /// "opened", "opens", "opened_for" and "needs" (each need the process asked it for, with its count)
-    public static func m2vRecord(of device: MTLDevice) -> [String: Any] {
-        ask(device, "switchRawM2V") as? [String: Any] ?? [:]
     }
 
     /// The facade's cumulative command buffer counters (empty off the facade).
