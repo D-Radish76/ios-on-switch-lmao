@@ -224,7 +224,8 @@ struct FetchRungTest: HWTest {
                         ? "a program within the bound and faster is not drawn on rung \(rung)"
                         : !counted
                             ? "the facade drew \(taken) of the forced draws on rung \(rung)"
-                            : !unstacked.isEmpty ? "rule fetch.blend's stack counts" : "a state that loads no colour fetched"
+                            : !unstacked.isEmpty
+                                ? "rule fetch.blend's stack counts" : "a state that loads no colour fetched"
         return .fail(why, metrics)
     }
 }
