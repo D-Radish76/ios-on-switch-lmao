@@ -5,18 +5,22 @@
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_compute.h"
 #include "../raw/runtime/raw_compute_record.h"
-#include "../raw/runtime/raw_view.h"
 #include "../raw/runtime/raw_xr_pass.h"
+#include "../../../kits/SwitchGM20B/SwitchGM20BTexture.h"
 
 namespace {
 
 constexpr uint32_t kSide = 64, kTwoPlanes = 550;
+constexpr uint32_t kVkR8Uint = 13, kVkR32Uint = 98;
 
-// A header's word 0 of `format` as a record names its own view
-uint32_t ownWord0(uint32_t format)
+// The header word 0 the direct compile records for the translator's view of `vkFormat` (raw_direct_compute.cpp
+// Entries::texture: viewWord0 of the view's format and its components, the texture's default swizzle composed in)
+uint32_t viewWord0(uint32_t vkFormat, bool storage)
 {
-    const raw::FormatInfo *f = raw::formatInfo(format);
-    return f ? f->tic0 : 0;
+    const uint32_t rgba[4] = {3, 4, 5, 6};
+    uint32_t word0 = 0;
+    EXPECT_TRUE(switch_gm20b_view_word0(vkFormat, rgba, storage, &word0));
+    return word0;
 }
 
 class DeviceXrKernel : public harness::DeviceTest {
@@ -38,7 +42,7 @@ protected:
     }
 
     // A placed kernel whose set 0 holds slot 0's texture entry, and its plane entry where `plane`; `readOnly`: bit i entry
-    // i is only read
+    // i is only read (3: a sampled slot's views, else storage views)
     const raw::ComputeState *kernel(uint64_t key, bool plane, uint64_t readOnly)
     {
         raw::ComputeRecord r;
@@ -46,8 +50,9 @@ protected:
         r.keyString = "xr kernel " + std::to_string(key);
         r.kernel.keyHash = key;
         r.kernel.entries = plane ? 2 : 1;
-        r.kernel.entry[0] = {0, raw::KernelTexture, 0, ownWord0(raw::kXrWordFormat)};
-        r.kernel.entry[1] = {16, raw::KernelTexturePlane, 0, ownWord0(raw::kXrAlphaFormat)};
+        const bool storage = readOnly != 3;
+        r.kernel.entry[0] = {0, raw::KernelTexture, 0, viewWord0(kVkR32Uint, storage)};
+        r.kernel.entry[1] = {16, raw::KernelTexturePlane, 0, viewWord0(kVkR8Uint, storage)};
         r.kernel.readOnlyEntries = readOnly;
         r.kernel.setBytes = 32;
         r.cbufs = 2;

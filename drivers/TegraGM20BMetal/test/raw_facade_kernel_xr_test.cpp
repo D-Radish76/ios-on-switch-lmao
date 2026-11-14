@@ -6,8 +6,7 @@
 // validation stops it. None of them opens m2v.
 #include "raw_facade_compute.h"
 
-#include "../raw/runtime/raw_view.h"
-#include "../raw/runtime/raw_xr_pass.h"
+#include "../../../kits/SwitchGM20B/SwitchGM20BTexture.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -24,9 +23,14 @@ constexpr uint32_t kStore = 0, kLoad = 1;  // the library's kernels the records 
 id<MTLDevice> gDevice;
 id<MTLComputePipelineState> gStates[2];
 
-uint32_t ownWord0(uint32_t format)
+// The header word 0 the direct compile records for the translator's view of `vkFormat` (raw_direct_compute.cpp
+// Entries::texture), the texture's default swizzle composed in
+uint32_t viewWord0(uint32_t vkFormat, bool storage)
 {
-    return raw::formatInfo(format)->tic0;
+    const uint32_t rgba[4] = {3, 4, 5, 6};
+    uint32_t word0 = 0;
+    switch_gm20b_view_word0(vkFormat, rgba, storage, &word0);
+    return word0;
 }
 
 // Kernel `i`'s record over a two-plane texture at slot 0: its words' and its alpha bytes' entries, read only where `load`
@@ -45,8 +49,8 @@ raw::PackKernel planesRecord(uint32_t i, uint32_t maxThreads, bool load)
     k.qmd[kThreadsWord + 1] = kThreads[1] | kThreads[2] << 16;
     k.entries = 2;
     k.setBytes = 32;
-    k.entry[0] = {0, uint8_t(raw::KernelTexture), 0, ownWord0(raw::kXrWordFormat)};
-    k.entry[1] = {16, uint8_t(raw::KernelTexturePlane), 0, ownWord0(raw::kXrAlphaFormat)};
+    k.entry[0] = {0, uint8_t(raw::KernelTexture), 0, viewWord0(98, !load)};    // VK_FORMAT_R32_UINT
+    k.entry[1] = {16, uint8_t(raw::KernelTexturePlane), 0, viewWord0(13, !load)};  // VK_FORMAT_R8_UINT
     k.readOnlyEntries = load ? 3 : 0;
     return k;
 }

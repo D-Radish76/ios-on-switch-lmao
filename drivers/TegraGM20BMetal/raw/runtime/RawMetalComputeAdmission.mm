@@ -215,12 +215,12 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                     *why = "a kernel loads an RGB10A8_2P_XR10 texture made without ShaderRead";
                 return false;
             }
-            // a two-plane texture is reached through its planes' own views (raw_compute.cpp): its color words at the
-            // slot's entry, its alpha bytes at its plane entry
+            // a two-plane texture is reached through its planes (raw_compute.cpp): its color words at the slot's entry,
+            // its alpha bytes at its plane entry, each through a view of its own texel size
             const raw::Texture *plane = !twoPlanes                             ? nullptr
                                         : x.kind == raw::KernelTexturePlane ? t->_raw.chroma
                                                                              : t->_raw.luma;
-            if (twoPlanes && !standIn && (!plane || viewOf(*plane) != raw::SlotView::Own)) {
+            if (twoPlanes && !standIn && (!plane || viewOf(*plane) == raw::SlotView::None)) {
                 const uint64_t term = TermTwoPlanesBare;
                 noteRefusal(cb, PredComputeImage, x.slot, term, t, k->rec->keyHash);
                 if (why)
@@ -232,7 +232,9 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                 if (t->_raw.xrPlanes)
                     cb->_xrStandIns.insert(t);
             }
-            const raw::SlotView view = !t || !t->_raw.tic || standIn || twoPlanes ? raw::SlotView::Own : viewOf(t->_raw);
+            const raw::SlotView view = !t || !t->_raw.tic || standIn ? raw::SlotView::Own
+                                       : twoPlanes                    ? viewOf(*plane)
+                                                                      : viewOf(t->_raw);
             bool viewRefused = false;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
             viewRefused = view == raw::SlotView::View && rmHalfViewRefused();
