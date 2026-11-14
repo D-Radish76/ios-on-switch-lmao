@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build directrun (directrun.mm) and exec.metallib (exec.metal and the counter resolve kernel) into one directory.
 
-usage: build.py --xcode-env <xcode.env> --host-bridge <darwin bridge .a> --compile <switch_compile.o> --metal-abi <MetalABI.h>
-                --raw <shader tools' raw/> --out <dir>
+usage: build.py --xcode-env <xcode.env> --host-bridge <darwin bridge .a> --compile <switch_compile.o>
+                --metal-abi <MetalABI.h> --raw <shader tools' raw/> --out <dir>
 
 directrun links the raw runtime's direct compile as the pack generator's directpack does (raw/pack/rawpack.py tool),
 over the frontend and the host bridge, beside the shader tools' mock GM20B (rpath @executable_path). The counter resolve

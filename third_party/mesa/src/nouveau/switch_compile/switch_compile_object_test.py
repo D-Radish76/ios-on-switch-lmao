@@ -1,6 +1,7 @@
-"""The stage compile's object: its only global definitions are the six entry points, and every name it leaves undefined
-is one libSystem or libc++ exports, so no Mesa, NAK or Rust name of it can bind to another copy in the image that links it
-(NAK's Rust carries its own standard library).
+"""The stage compile's object: its only global definitions are the six entry points.
+
+Every name it leaves undefined is one libSystem or libc++ exports, so no Mesa, NAK or Rust name of it can bind to
+another copy in the image that links it (NAK's Rust carries its own standard library).
 
 usage: switch_compile_object_test.py <nm> (<object> <SDK>)...
 """

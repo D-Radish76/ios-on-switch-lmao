@@ -155,14 +155,14 @@ mesa_relocatable(
 
 mesa_files(
     name = "ios",
-    platform = "ios",
     srcs = [":switch_compile_o"],
+    platform = "ios",
 )
 
 mesa_files(
     name = "host",
-    platform = "macos",
     srcs = [":switch_compile_o"],
+    platform = "macos",
 )
 
 # The macOS object as a library host tests link (the raw runtime's direct compile calls it)

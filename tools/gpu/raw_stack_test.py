@@ -105,7 +105,7 @@ class Key(unittest.TestCase):
                 shutil.copyfile(path, self.root / path)
 
     def key(self, ipsw: str = 'one build') -> str:
-        """Give the copy's key over the paths the rule hashes that this test has (not the stage compile or crates.io's)."""
+        """Give the copy's key over the hashed paths this test has (not the stage compile or crates.io's)."""
         return raw_stack.key(ipsw, {name: self.root / name for name in hashed() if (self.root / name).is_file()})
 
     def edited(self, path: Path) -> str:

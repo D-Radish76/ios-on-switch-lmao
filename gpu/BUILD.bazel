@@ -192,6 +192,7 @@ raw_stack(
     name = "raw_stack",
     srcs = [GM20B_METAL + ":raw_stack_sources"],
     bridge = ":translate",
+    compile = COMPILE,
     include_markers = [
         METAL + ":NativeBridgeMetalFrontend.h",
         GM20B_ABI,
@@ -199,7 +200,6 @@ raw_stack(
         # where NVIDIA's class headers find "nvtypes.h" (raw/pack/nvdec.cpp)
         "//third_party/mesa/src/nouveau/headers:nvtypes.h",
     ],
-    compile = COMPILE,
     metal_abi = METAL_ABI,
     readers = [GM20B_METAL + ":raw/runtime/raw_completed.cpp"],
 )
@@ -243,7 +243,6 @@ metal_plugin(
     ],
     bridge = ":bridge_ios",
     c_srcs = ["//kits/SwitchGM20BEmit:" + s for s in EMIT_SOURCES],
-    compile = COMPILE,
     cc_srcs = [
         GM20B_METAL + ":raw/runtime/raw_amplification.cpp",
         GM20B_METAL + ":raw/runtime/raw_vertex_streams.cpp",
@@ -305,6 +304,7 @@ metal_plugin(
         GM20B_METAL + ":raw/runtime/raw_remote.cpp",
         GM20B_METAL + ":compiler_cc_srcs",
     ],
+    compile = COMPILE,
     frameworks = [
         "Foundation",
         "Metal",
