@@ -21,8 +21,6 @@ enum RMPred : uint8_t {
     PredTexSurfBase,    // base address off a page: a = base & 0xfff
     PredTexSurfImport,  // the import or the header slot refused
     PredTexPlanar,      // the 4:4:4 two-plane texture refused
-    PredTexBufBase,     // (va + offset) & 255: a = that, b = offset
-    PredTexBufPitch,    // bytesPerRow & 31, or short: a = bytesPerRow, b = width x bpp
     PredTexBufOther,    // memoryless, past the buffer, header slot
     PredTexView,  // a view of a texture the raw path does not keep, or of another texel size: a = format, b = parent raw
     PredTexForeign,  // not an RMTexture (m2v's own: over an m2v buffer, or a creation selector the facade does not answer)
@@ -90,8 +88,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "tex.surf.base",
                                              "tex.surf.imp",
                                              "tex.planar",
-                                             "tex.buf.base",
-                                             "tex.buf.pitch",
                                              "tex.buf.other",
                                              "tex.view",
                                              "tex.foreign",

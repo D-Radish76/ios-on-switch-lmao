@@ -384,6 +384,38 @@ void planarSamplerTableFull()
     expectNoM2V(device);
 }
 
+// A texture over a buffer at an offset and rows 16 but not 32 bytes apart (boot 21's SwitchHWTest, 12x8 at offset 48) is
+// sampled through a pool image the copy engine fills before the draw; one off 16, which Metal's validation stops, is nil
+void bufferTexturesAt16()
+{
+    const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, {}, {sampled}));
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];
+    id<MTLRenderPipelineState> state =
+        [device newRenderPipelineStateWithDescriptor:descriptor(library, MTLPixelFormatBGRA8Unorm) error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    id<MTLBuffer> buffer = [device newBufferWithLength:4096 options:MTLResourceStorageModeShared];
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                 width:12
+                                                                                height:8
+                                                                             mipmapped:NO];
+    d.usage = MTLTextureUsageShaderRead;
+    id<MTLTexture> texture = [buffer newTextureWithDescriptor:d offset:48 bytesPerRow:48];
+    ASSERT_TRUE(texture != nil);
+    EXPECT_EQ(gOpens, 0) << "made by the raw path";
+    uint8_t texel[4] = {1, 2, 3, 4};
+    [texture replaceRegion:MTLRegionMake2D(5, 3, 1, 1) mipmapLevel:0 withBytes:texel bytesPerRow:4];
+    EXPECT_EQ(memcmp(static_cast<uint8_t *>(buffer.contents) + 48 + 3 * 48 + 5 * 4, texel, 4), 0)
+        << "its rows the buffer's";
+    id<MTLSamplerState> sampler = [device newSamplerStateWithDescriptor:[MTLSamplerDescriptor new]];
+    EXPECT_EQ(drawSampling(device, state, texture, sampler).status, MTLCommandBufferStatusCompleted);
+    EXPECT_EQ([buffer newTextureWithDescriptor:d offset:56 bytesPerRow:48], nil) << "an offset off 16";
+    EXPECT_EQ([buffer newTextureWithDescriptor:d offset:48 bytesPerRow:56], nil) << "rows off 16";
+    expectNoM2V(device);
+}
+
 }  // namespace
 
 TEST(RawFacadeOpen, AnUncompressedTextureHasThePlainLayoutAndNoNoCopyTexture)
@@ -424,6 +456,11 @@ TEST(RawFacadeOpen, AYcbcrTargetStateOpensNoM2V)
 TEST(RawFacadeOpen, SamplersShareTheirCompareFormAndAFullTableIsNil)
 {
     switch_ios::test::ExpectPassesInFreshProcess(samplerTable);
+}
+
+TEST(RawFacadeOpen, ABufferTextureAt16IsSampledThroughAPoolImage)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(bufferTexturesAt16);
 }
 
 TEST(RawFacadeOpen, APlanarDrawWithTheHeaderTableFullFailsItsCommandBuffer)

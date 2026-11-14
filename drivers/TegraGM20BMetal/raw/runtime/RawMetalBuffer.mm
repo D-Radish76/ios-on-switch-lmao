@@ -167,16 +167,19 @@
         keepExtendedRange(d, t->_raw, true);
     if (!t->_rawOk) {  // which term (createBufferTexture's, recomputed: not the hot path)
         const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
-        const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0), at = (_raw.va + offset) & 31;
+        const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0);
         NSString *extra = [NSString stringWithFormat:@"offset %lu bytesPerRow %lu buffer %llu", (unsigned long)offset,
                                                      (unsigned long)row, (unsigned long long)_raw.length];
         if (uint32_t term = rawShapeTerm(d))
             refuseTexture(t, PredTexShape, term, d.pixelFormat, @"buffer", extra);
-        else if (at)
-            refuseTexture(t, PredTexBufBase, at, offset, @"buffer", extra);
-        else if ((row & 31) || row < packed)
-            refuseTexture(t, PredTexBufPitch, row, packed, @"buffer", extra);
-        else if (d.storageMode == MTLStorageModeMemoryless || offset + uint64_t(row) * d.height > _raw.length) {
+        else if (((_raw.va + offset) & 15) || (row & 15) || row < packed) {
+            // a 2D texture's offset and rows are multiples of 16 (m2v linear_plan.rs, measured): Metal's validation stops
+            // any other, which m2v refused
+            os_log_error(rawLog(),
+                         "raw: %{public}s: no texture over a buffer: offset or rows off 16, or short: %{public}@",
+                         getprogname(), extra);
+            return nil;
+        } else if (d.storageMode == MTLStorageModeMemoryless || offset + uint64_t(row) * d.height > _raw.length) {
             os_log_error(rawLog(), "raw: %{public}s: no texture over a buffer: memoryless, or past its end: %{public}@",
                          getprogname(), extra);
             return nil;

@@ -14,8 +14,6 @@ tex.surf.bounds	create	nil	-	rows past the surface's allocation: newTextureWithD
 tex.surf.base	create	layer	L3	a base off a page: a pool image L3 makes, filled by shadow.refresh
 tex.surf.imp	create	layer	L3	the kernel refused the import or the header slot: a resource failure at creation
 tex.planar	create	rule	planar.codes	the 4:4:4 two-plane code texture: copy-engine remaps from its planes when stale
-tex.buf.base	create	layer	L3	a base 16 but not 32 bytes into the buffer while the device answers 16 (iosurfaceReadOnlyTextureAlignmentBytes held at 16): a pool image L3 makes, filled by shadow.refresh; below the answered alignment it is a client error
-tex.buf.pitch	create	layer	L3	bytesPerRow 16 but not 32 apart: as tex.buf.base
 tex.buf.other	create	nil	-	memoryless, or past the buffer: newTextureWithDescriptor:offset:bytesPerRow: answers nil
 tex.view	create	layer	L3	views of another texel size or of a part of a 3D texture: TIC views made at view creation
 tex.foreign	record	m2v	-	m2v's own texture
