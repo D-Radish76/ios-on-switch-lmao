@@ -6,7 +6,7 @@
 //! generator's, and the system shader compiler's compile context: NativeMetalCompile.rs) runs on the compile profile's
 //! devices with the layouts as data alone.
 
-use crate::descriptors::{DescriptorFunction, NmbRenderPipelineDescriptorOf, e, get, guard, raw, render_descriptor};
+use crate::descriptors::{DescriptorFunction, NmbRenderPipelineDescriptorOf, e, guard, raw, render_descriptor};
 use crate::offline::{Devices, NmbOfflineRenderPipelineDescriptor, offline_devices};
 use ash::vk as avk;
 use metal2vulkan::Budget;
@@ -16,7 +16,6 @@ use metal2vulkan::bind::{
     SamplerSource, StageTable, TextureFacts, VertexAmplification, ViewMapping, WriteSource, heap_class_code,
 };
 use metal2vulkan::cache::VariantKey;
-use metal2vulkan::device::{DeviceDescription, VkExtension, VkFeature};
 use metal2vulkan::error::{BindError, Retry};
 use metal2vulkan::metal::{
     PixelFormat, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, TextureType,

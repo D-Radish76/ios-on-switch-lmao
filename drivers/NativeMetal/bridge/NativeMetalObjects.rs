@@ -10,22 +10,14 @@ pub use native_metal_translate::descriptors::{
     NmbSamplerDescriptor, NmbVertexAttribute, NmbVertexLayout, attribute_out, compute_descriptor, copy_out, e, get, guard,
     optional_format, raw, release, render_descriptor, sampler_descriptor, set_error, specialization,
 };
-use metal2vulkan::bind::{ArgumentDescriptor, SamplerDescriptor};
-use metal2vulkan::library::{FunctionConstantValue, FunctionConstantValues};
+use metal2vulkan::bind::ArgumentDescriptor;
 use metal2vulkan::metal::state::{DepthStencilDescriptor, StencilDescriptor};
 use metal2vulkan::metal::{
-    AttributeFormat, BarrierScope, BindingAccess, BlendFactor, BlendOperation, ColorWriteMask, CompareFunction,
-    CullMode, DataType, DepthClipMode, DispatchType, IndexType, PixelFormat, PrimitiveTopologyClass, PrimitiveType,
-    RenderStages, ResourceUsage, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter,
-    StencilOperation, StepFunction, TessellationControlPointIndexType, TessellationFactorFormat,
-    TessellationFactorStepFunction, TessellationPartitionMode, TextureType, TextureUsage, TriangleFillMode,
-    VertexFormat, VertexStepFunction, Winding,
+    BarrierScope, BindingAccess, CompareFunction, CullMode, DataType, DepthClipMode, DispatchType, IndexType,
+    PixelFormat, PrimitiveType, RenderStages, ResourceUsage, StencilOperation, TextureType, TextureUsage,
+    TriangleFillMode, Winding,
 };
-use metal2vulkan::pipeline::{
-    ColorAttachmentDescriptor, ComputePipelineDescriptor, FunctionDescriptor, LinkedFunction, LinkedFunctions,
-    RenderPipelineDescriptor, StageInputAttributeDescriptor, StageInputDescriptor, StageInputLayoutDescriptor,
-    StageSource, TessellationDescriptor, VertexAttributeDescriptor, VertexBufferLayoutDescriptor, VertexDescriptor,
-};
+use metal2vulkan::pipeline::{ComputePipelineDescriptor, FunctionDescriptor, LinkedFunction, StageSource};
 use metal2vulkan_runtime::{
     ArgumentEncoder, BinaryArchive, BinaryArchiveDescriptor, BlitCommandEncoder, BlitOption, Buffer, ClearColor,
     CommandBuffer, CommandQueue, ComputeCommandEncoder, ComputePipelineState, DebugMessage, DepthStencilState, Device,
@@ -37,7 +29,6 @@ use metal2vulkan_runtime::{
     SharedEvent, SharedEventListener, Size, StoreAction, SubmissionMemoryHook, SurfaceYCbCrMatrix, Texture,
     TextureDescriptor, Viewport, VisibilityResultMode,
 };
-use std::cell::RefCell;
 use std::ffi::{CStr, c_char, c_void};
 use std::path::PathBuf;
 use std::ptr::NonNull;
