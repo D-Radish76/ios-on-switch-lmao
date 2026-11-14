@@ -56,9 +56,7 @@ raw::Digest rulesDigest(const raw::PackRules &r)
 }  // namespace
 
 struct Engine::State {
-    std::mutex opening;
-    bool opened = false, compiles = false;
-    std::string openRefusal;
+    std::mutex making;
     EngineInputs inputs;
     uint64_t stack = 0;
     raw::Pack pack;
@@ -89,23 +87,21 @@ bool Engine::open(uint64_t stack, const EngineInputs &inputs, std::string &why)
     return true;
 }
 
-bool Engine::openCompiler(std::string &why)
+raw::Direct &Engine::compiler()
 {
     State &s = *state_;
-    std::lock_guard<std::mutex> l(s.opening);
-    if (s.opened)
-        return s.compiles ? true : (why = s.openRefusal, false);
-    s.opened = true;
+    std::lock_guard<std::mutex> l(s.making);
+    if (s.direct)
+        return *s.direct;
 #if SWITCH_DEBUG
     const uint64_t began = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #endif
     s.direct = std::make_unique<raw::Direct>(raw::PackRules::of(s.pack), false, offline::translator());
-    s.compiles = true;
 #if SWITCH_DEBUG
     os_log(logger(), "SwitchShaderCompiler: compiler made for its first compile in %llu ms",
            (unsigned long long)((clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - began) / 1000000));
 #endif
-    return true;
+    return *s.direct;
 }
 
 raw::Digest Engine::rules() const
@@ -115,15 +111,14 @@ raw::Digest Engine::rules() const
 
 int32_t Engine::compile(const Prepared &p, std::string &entry, std::string &why)
 {
-    if (!openCompiler(why))
-        return TegraGM20BCompileUnavailable;
+    raw::Direct &direct = compiler();
     State &s = *state_;
     LibraryCache &cache = *s.libraries;
     const Libraries libraries = [&cache](const raw::RequestLibrary &l, std::string &failed) {
         return cache.library(l, failed);
     };
     cache.began();
-    const int32_t result = makeEntry(p, libraries, *s.direct, s.stack, entry, why);
+    const int32_t result = makeEntry(p, libraries, direct, s.stack, entry, why);
     cache.ended();
     return result;
 }

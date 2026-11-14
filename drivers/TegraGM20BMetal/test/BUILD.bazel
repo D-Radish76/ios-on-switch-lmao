@@ -5475,9 +5475,10 @@ host_test(
     deps = [":frontend_host"],
 )
 
-# The system shader compiler's compile context (compiler/compiler_engine.mm over bridge/NativeMetalCompile.h) against the
-# m2v device it replaced, each a process over the mock GM20B: the same enable set and compile devices, and byte-identical
-# records of a sample of the corpus's states (render and compute) made from the crawl's libraries
+# The system shader compiler's engine (compiler/compiler_engine.mm, the translator alone: raw/runtime/RawOffline.h)
+# against the m2v device it replaced, each a process over the mock GM20B: byte-identical records of a sample of the
+# corpus's states (render and compute) made from the crawl's libraries; and the frontend's compile context
+# (bridge/NativeMetalCompile.h) has the runtime device's enable set and compile devices
 host_test(
     name = "compiler_compile_only_test",
     size = "medium",
