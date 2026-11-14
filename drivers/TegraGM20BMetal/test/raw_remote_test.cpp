@@ -190,9 +190,9 @@ TEST_F(RemoteCompile, ARecordTheCompilerMadeIsReadOnceItAnswersFromItsNewGenerat
         publish();
         kernel.generation = 2;
     };
-    uint32_t how = 0;
-    EXPECT_EQ(remote.compile("a request", &how), raw::Remote::Answer::Made);
-    EXPECT_EQ(how, kernel.how);
+    raw::Remote::Answered answered;
+    EXPECT_EQ(remote.compile("a request", &answered), raw::Remote::Answer::Made);
+    EXPECT_EQ(answered.how, kernel.how);
     EXPECT_TRUE(remote.find(name, bytes));
     EXPECT_EQ(kernel.maps, 2u);
     EXPECT_TRUE(remote.find(name, bytes));

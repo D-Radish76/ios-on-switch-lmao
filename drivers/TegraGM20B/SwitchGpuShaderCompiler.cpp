@@ -84,7 +84,7 @@ IOReturn compile(const void *owner, task_t task, const TegraGM20BAbiCompile *in,
 		IOLockUnlock(gBroker.lock);
 		if (async)
 			return kIOReturnNotReady;
-		*reply = {TegraGM20BCompileUnavailable, generation, 0, 0};
+		*reply = {TegraGM20BCompileUnavailable, generation, 0, 0, {}};
 		return kIOReturnSuccess;
 	}
 	const bool room = reserve(owner, in->bytes, async);
