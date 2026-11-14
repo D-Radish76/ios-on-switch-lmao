@@ -93,8 +93,10 @@ public:
     // refused (*why), nothing encoded
     bool dispatch(const uint32_t groups[3], const uint32_t threads[3], const char **why);
     // dispatchThreadgroupsWithIndirectBuffer: the grid is the three words at `offset` in `arguments` as the GPU reads
-    // them when it reaches the dispatch (raw_icb_compute.cpp). False: refused (*why), nothing encoded
-    bool dispatchIndirect(const Buffer *arguments, uint64_t offset, const char **why);
+    // them when it reaches the dispatch (raw_icb_compute.cpp), in threadgroups of `threads`. False: refused (*why),
+    // nothing encoded
+    bool dispatchIndirect(const Buffer *arguments, uint64_t offset, const std::array<uint32_t, 3> &threads,
+                          const char **why);
     // setStageInRegionWithIndirectBuffer: the dispatches after it take their stage-in origin and size from the six words
     // at `offset` in `region` as the GPU reads them at each dispatch; null: setStageInRegion:'s words again
     void setStageInRegionIndirect(const Buffer *region, uint64_t offset);
