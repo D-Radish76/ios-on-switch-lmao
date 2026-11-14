@@ -147,6 +147,17 @@ extern "C" void tegra_smmu_flush(uint32_t asid)
     IOSimpleLockUnlock(gLock);
 }
 
+extern "C" void switch_smmu_flush_range(uint32_t asid, uint64_t tablesPa, uint64_t tableBytes, uint64_t iova,
+                                        uint64_t iovaBytes)
+{
+    if (!ready())
+        return;
+    IOSimpleLockLock(gLock);
+    RegisterAccess io;
+    switch_smmu::flushRange(io, asid, tablesPa, tableBytes, iova, iovaBytes);
+    IOSimpleLockUnlock(gLock);
+}
+
 extern "C" uint32_t tegra_smmu_read(uint32_t offset)
 {
     return ready() ? r32(offset) : 0;

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// TegraNVJPG.cpp's idle gate and stall cancellation against the engine model (switch_nvjpg_engine_model.h).
+// TegraNVJPG.cpp's idle gate, stall cancellation and job windows against the engine model
+// (switch_nvjpg_engine_model.h).
 #include "switch_nvjpg_engine_model.h"
 #include "../TegraNVJPGRequest.h"
 
@@ -335,4 +336,49 @@ TEST_F(NVJPGGate, ACancellationTakesThePowerLockOutsideTheStateLock)
     // base 1: the power lock inside gStateLock; base 4: the job's submit and wait and the reboot's proof under gStateLock
     EXPECT_EQ(gEngine.powerUnderStateLock, 0);
     EXPECT_EQ(gEngine.waitsUnderStateLock, 0);
+}
+
+// A job window's map writes its page entries and flushes only their PTE groups and IOVAs (switch_smmu_flush_range),
+// never every ASID's page-table cache; a smaller map unmaps the old tail; nothing written, nothing flushed.
+TEST_F(NVJPGGate, AWindowMapFlushesOnlyTheEntriesItWrote)
+{
+    constexpr uint32_t kWindow = TEGRA_NVJPG_WINDOW_OUT;
+    const uint64_t base = kTegraNVJPGWindowBase[kWindow];
+    const uint64_t tablesPa = gTables.pa + (1 + kWindowTables[0]) * 4096ULL;  // the out window's first table
+    std::vector<uint64_t> pages(300);
+    for (uint32_t i = 0; i < pages.size(); ++i)
+        pages[i] = 0x90000000ULL + i * 4096ULL;
+    gSmmuRangeFlushes.clear();
+    gSmmuFlushAlls = 0;
+
+    ASSERT_EQ(tegra_nvjpg_window_map(kWindow, pages.data(), 300, true), base);
+    for (uint32_t i = 0; i < 300; ++i)
+        ASSERT_EQ(gDomain.translate(base + i * 4096ULL), pages[i]) << "page " << i;
+    EXPECT_EQ(gDomain.translate(base + 300 * 4096ULL), UINT64_MAX);
+    ASSERT_EQ(gSmmuRangeFlushes.size(), 1u);
+    SmmuRangeFlush f = gSmmuRangeFlushes.back();
+    EXPECT_EQ(f.asid, uint32_t(TEGRA_SMMU_ASID_NVJPG));
+    EXPECT_EQ(f.tablesPa, tablesPa);
+    EXPECT_EQ(f.tableBytes, 300u * 4);
+    EXPECT_EQ(f.iova, base);
+    EXPECT_EQ(f.iovaBytes, 300u * 4096);
+
+    ASSERT_EQ(tegra_nvjpg_window_map(kWindow, pages.data(), 100, false), base);
+    EXPECT_EQ(gDomain.translate(base + 99 * 4096ULL), pages[99]);
+    EXPECT_EQ(gDomain.translate(base + 100 * 4096ULL), UINT64_MAX) << "the old tail stayed mapped";
+    ASSERT_EQ(gSmmuRangeFlushes.size(), 2u);
+    f = gSmmuRangeFlushes.back();
+    EXPECT_EQ(f.tablesPa, tablesPa);
+    EXPECT_EQ(f.tableBytes, 300u * 4);
+    EXPECT_EQ(f.iovaBytes, 300u * 4096);
+
+    tegra_nvjpg_window_clear(kWindow);
+    EXPECT_EQ(gDomain.translate(base), UINT64_MAX);
+    ASSERT_EQ(gSmmuRangeFlushes.size(), 3u);
+    EXPECT_EQ(gSmmuRangeFlushes.back().iovaBytes, 100u * 4096);
+
+    tegra_nvjpg_window_clear(kWindow);
+    EXPECT_EQ(tegra_nvjpg_window_map(kWindow, pages.data(), 0, true), base);
+    EXPECT_EQ(gSmmuRangeFlushes.size(), 3u) << "a flush with nothing written";
+    EXPECT_EQ(gSmmuFlushAlls, 0u) << "a flush of every ASID's page-table cache";
 }

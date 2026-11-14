@@ -198,11 +198,65 @@ void basics()
               "window table %u not consecutive", t);
     }
 }
+
+#define CHECK_CHANGE(c, iovaFrom, iovaTo, dir, ...)                                                               \
+    CHECK((c).iovaLow == (iovaFrom) && (c).iovaHigh == (iovaTo) && (c).directory == (dir),                        \
+          "%s: IOVAs [%#llx, %#llx) directory %d", message(__VA_ARGS__).c_str(), (unsigned long long)(c).iovaLow, \
+          (unsigned long long)(c).iovaHigh, (c).directory)
+
+// What each change records for the flush (takeChange): the table bytes it wrote and their physical address, the IOVAs
+// whose page entries it wrote and whether it wrote a directory entry; takeDirty takes all of it.
+void changes()
+{
+    Buffer b(1 + 32 + 3, 0xe6000000);
+    TegraSMMUDomain d;
+    TegraSMMUDomain::Change c{};
+    CHECK(d.init(b.va(), b.pa, 1 + 32 + 3) && d.takeChange(&c) && c.directory, "init writes the directory");
+    CHECK(!d.takeChange(&c), "a change taken twice");
+    CHECK(d.reserve(0x10000000, 128ull << 20) && d.takeChange(&c) && c.directory, "reserve writes the directory");
+
+    const uint64_t pages[3] = {0x81000000, 0x81001000, 0x81002000};
+    CHECK(d.map(0x10003000, pages, 3, true) && d.takeChange(&c), "map");
+    CHECK_CHANGE(c, 0x10003000ull, 0x10006000ull, false, "map");
+    CHECK(c.low == reinterpret_cast<uintptr_t>(d.pte(0x10003000, false)) && c.high - c.low == 12 &&
+              c.pa == b.pa + 4096 + 3 * 4,
+          "map: table bytes at %#llx, %llu of them", (unsigned long long)c.pa, (unsigned long long)(c.high - c.low));
+
+    d.unmap(0x10004000, 1);
+    CHECK(d.takeChange(&c), "unmap");
+    CHECK_CHANGE(c, 0x10004000ull, 0x10005000ull, false, "unmap");
+    CHECK(c.pa == b.pa + 4096 + 4 * 4 && c.high - c.low == 4, "unmap: table bytes at %#llx", (unsigned long long)c.pa);
+    d.unmap(0x10004000, 1);
+    CHECK(!d.takeChange(&c), "unmapping an unmapped page changed something");
+
+    CHECK(d.map(0x103ff000, pages, 3, false) && d.takeChange(&c), "map across a section");
+    CHECK_CHANGE(c, 0x103ff000ull, 0x10402000ull, false, "map across a section");
+    CHECK(c.pa == b.pa + 4096 + 1023 * 4 && c.high - c.low == 12, "map across a section: table bytes at %#llx",
+          (unsigned long long)c.pa);
+
+    CHECK(d.identity(0x88001800, 0x1000, false) && d.takeChange(&c), "identity in a section without a table");
+    CHECK_CHANGE(c, 0x88001000ull, 0x88003000ull, true, "identity in a new section");
+    CHECK(d.identity(0x88004000, 4096, true) && d.takeChange(&c), "identity in its table");
+    CHECK_CHANGE(c, 0x88004000ull, 0x88005000ull, false, "identity in its table");
+    CHECK(c.pa == b.pa + 33 * 4096 + 4 * 4, "identity: table bytes at %#llx", (unsigned long long)c.pa);
+
+    uintptr_t low = 0, high = 0;
+    CHECK(d.identity(0x8c000000, 4096, true) && d.takeDirty(&low, &high), "identity, taken by takeDirty");
+    CHECK(!d.takeChange(&c), "takeDirty left a change behind");
+    CHECK(d.map(0x10020000, pages, 1, false) && d.takeChange(&c), "map after takeDirty");
+    CHECK_CHANGE(c, 0x10020000ull, 0x10021000ull, false, "map after takeDirty");
+}
 }  // namespace
 
 TEST(TegraSMMUDomain, Basics)
 {
     basics();
+}
+
+// The IOVAs and table bytes a flush needs, and whether the directory changed, after map, unmap and identity.
+TEST(TegraSMMUDomain, Changes)
+{
+    changes();
 }
 
 // The tables TegraVIC builds on the shared domain, byte for byte as its original algorithm built them.

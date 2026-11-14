@@ -61,6 +61,7 @@
 #include "../TegraHost1x/TegraHost1x.h"
 #include "../TegraSMMU/TegraSMMU.h"
 #include "../TegraSMMU/TegraSMMUDomain.h"
+#include "../TegraSMMU/TegraSMMUPublish.h"
 #include "TegraNVJPG.h"
 #include "TegraNVJPGStats.h"
 #include "nvidia/cle7d0.h"
@@ -199,21 +200,6 @@ bool contiguous(uint64_t bytes, switch_dma_buffer *dma, TegraNVJPGBuffer *out)
         return false;
     *out = {dma->pa, dma->size, dma->va};
     return true;
-}
-
-inline uint32_t *table(uint32_t index)
-{
-    return gDomain.table(index);
-}
-
-inline uint32_t windowTable(uint32_t window)
-{
-    return 1 + (window ? kWindowTables[0] : 0);
-}
-
-void smmuFlush()
-{
-    tegra_smmu_flush(kAsid);
 }
 
 // The directory, the windows' tables (fixed, empty; installed first, so they are the consecutive pages 1..) and the
@@ -626,26 +612,22 @@ extern "C" uint64_t tegra_nvjpg_window_map(uint32_t window, const uint64_t *page
 {
     if (window >= TEGRA_NVJPG_WINDOWS || count > (uint32_t)(kTegraNVJPGWindowBytes[window] >> SWITCH_HW_PAGE_SHIFT))
         return 0;
-    uint32_t *pt = table(windowTable(window));  // the window's tables are consecutive pages
-    for (uint32_t i = 0; i < count; i++)
-        pt[i] = TegraSMMUDomain::entry(pages[i], writable);
-    for (uint32_t i = count; i < gWindowMapped[window]; i++)
-        pt[i] = 0;
-    switch_dcache_clean(pt, (uint64_t)(count > gWindowMapped[window] ? count : gWindowMapped[window]) * 4);
+    const uint64_t base = kTegraNVJPGWindowBase[window];
+    gDomain.map(base, pages, count, writable);  // the window's tables are all installed: it cannot fail
+    if (gWindowMapped[window] > count)
+        gDomain.unmap(base + (uint64_t)count * SWITCH_HW_PAGE_SIZE, gWindowMapped[window] - count);
     gWindowMapped[window] = count;
-    smmuFlush();
-    return kTegraNVJPGWindowBase[window];
+    switch_smmu_publish(gDomain, kAsid, SWITCH_DCACHE_CLEAN);
+    return base;
 }
 
 extern "C" void tegra_nvjpg_window_clear(uint32_t window)
 {
     if (window >= TEGRA_NVJPG_WINDOWS || !gWindowMapped[window])
         return;
-    uint32_t *pt = table(windowTable(window));
-    bzero(pt, (uint64_t)gWindowMapped[window] * 4);
-    switch_dcache_clean(pt, (uint64_t)gWindowMapped[window] * 4);
+    gDomain.unmap(kTegraNVJPGWindowBase[window], gWindowMapped[window]);
     gWindowMapped[window] = 0;
-    smmuFlush();
+    switch_smmu_publish(gDomain, kAsid, SWITCH_DCACHE_CLEAN);
 }
 
 // Job lock held. The setup and status slots are the kernel's (no client maps them); the stream is SETCLASS, the
