@@ -65,7 +65,7 @@ bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
     if (r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r))
-        return tag == "k";
+        return index == 0 ? tag == "k" : tag == "kl" || tag == "kp";
     if (functionAttributes(r))
         return tag == "a";
     if (index == 0)
@@ -93,7 +93,7 @@ bool sane(const CompileRequest &r)
         return saneLibrary(r);
     const bool kernel =
         r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r) || functionAttributes(r);
-    if ((kernel ? r.stages.size() != 1 : r.stages.empty()) || r.stages.size() > kRequestStageLimit ||
+    if (r.stages.empty() || (functionAttributes(r) && r.stages.size() != 1) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
         r.cubic.textures.size() > 16 || r.kernel.textures.size() > kRequestBindLimit ||
         r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() ||

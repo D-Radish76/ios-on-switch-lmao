@@ -104,6 +104,28 @@ static bool airOf(id<MTLFunction> function, raw::AirHash &out, NSString *__stron
     return true;
 }
 
+// The descriptor's linked functions as the compute key takes them (raw_compute_key.h computeLinkedText); false for any the
+// key cannot name: another device's, a binary function or a function group
+static bool linkedText(MTLComputePipelineDescriptor *d, std::string &text)
+{
+    MTLLinkedFunctions *l = d.linkedFunctions;
+    if (l.binaryFunctions.count || l.groups.count)
+        return false;
+    std::vector<raw::LinkedComputeFunction> linked;
+    for (const bool hidden : {false, true})
+        for (id function in hidden ? l.privateFunctions : l.functions) {
+            raw::LinkedComputeFunction f;
+            f.hidden = hidden;
+            NSString *libraryName = nil;
+            if (![function isKindOfClass:[RMFunction class]] || !airOf(function, f.air, libraryName))
+                return false;
+            f.constants = ((RMFunction *)function)->_constants;
+            linked.push_back(std::move(f));
+        }
+    text = raw::computeLinkedText(linked);
+    return true;
+}
+
 // A stage input descriptor's set attributes and their layouts, as a key names them (a dynamic stride as UINT32_MAX, as
 // RawPipelineKey.h's vertex layouts): "" for none, so a kernel without one keys as before
 static std::string stageInText(MTLStageInputOutputDescriptor *in)
@@ -129,14 +151,16 @@ static std::string stageInText(MTLStageInputOutputDescriptor *in)
 
 // The creations under MTLPipelineOptionFailOnBinaryArchiveMiss lists (this device's, RawMetalBinaryArchive.mm), as
 // Metal's answer: false (and Metal's error) where none holds the state and the pack holds no kernel of it, never compiled.
-// m2v's state goes without the archives or the option either way: it reads none of this device's archives.
-static bool archivesAnswer(RMComputeState *s, RMFunction *f, MTLPipelineOption &options, NSError **error)
+// m2v's state goes without the archives or the option either way: it reads none of this device's archives. An archive
+// names a state by its function and `constants` alone, never its linked functions.
+static bool archivesAnswer(RMComputeState *s, RMFunction *f, const std::string &constants, MTLPipelineOption &options,
+                           NSError **error)
 {
     raw::ArchiveAnswer answer = raw::ArchiveAnswer::NotAsked;
     if (f) {
         NSString *name = s->_libraryName ?: f.name;
         const std::string key =
-            raw::computeArchiveKey(name.UTF8String ?: "", s->_constants, s->_maxThreads, s->_multipleOfWidth);
+            raw::computeArchiveKey(name.UTF8String ?: "", constants, s->_maxThreads, s->_multipleOfWidth);
         answer = rmArchiveAnswer(s->_direct.binaryArchives, options, raw::Pack::fnv(key.data(), key.size()));
     }
     options &= ~MTLPipelineOptionFailOnBinaryArchiveMiss;
@@ -203,18 +227,17 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
     s->_device = device;
     RMFunction *f = [(id)function isKindOfClass:[RMFunction class]] ? (RMFunction *)function : nil;
     NSString *libraryName = nil;
-    // linked functions are no part of the key: such a state's dispatches stay m2v's
-    s->_keyed = f && !descriptor.linkedFunctions.functions.count &&
-                !descriptor.linkedFunctions.privateFunctions.count && airOf(function, s->_air, libraryName);
+    std::string linked;
+    s->_keyed = f && linkedText(descriptor, linked) && airOf(function, s->_air, libraryName);
     s->_libraryName = libraryName;
     const std::string stageIn = stageInText(descriptor.stageInputDescriptor);
-    s->_constants = (f ? f->_constants : "") + stageIn;
+    s->_constants = (f ? f->_constants : "") + stageIn + linked;
     s->_m2vMissing = rmM2vMissingKernel(descriptor);
     s->_maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
     s->_multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
     s->_direct = [descriptor copy];
     s->_function = f;
-    if (!archivesAnswer(s, f, options, error))
+    if (!archivesAnswer(s, f, (f ? f->_constants : "") + stageIn, options, error))
         return nil;
     const raw::PackComputeFacts *facts =
         s->_keyed

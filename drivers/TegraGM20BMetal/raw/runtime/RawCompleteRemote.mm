@@ -66,6 +66,22 @@ bool addStage(CompileRequest &r, std::vector<LibraryIdentity> &ids, std::map<con
     return true;
 }
 
+// A compute state's kernel and its linked functions as its request's stages: "k", then "kl" for each visible and "kp" for
+// each private one, in the order its key names them (raw_compute_key.h computeLinkedText)
+bool addKernelStages(CompileRequest &r, std::vector<LibraryIdentity> &ids, std::map<const LibrarySource *, uint32_t> &seen,
+                     id kernel, MTLComputePipelineDescriptor *d, bool bytes, bool every)
+{
+    if (!addStage(r, ids, seen, "k", kernel, bytes, every))
+        return false;
+    for (id f in d.linkedFunctions.functions)
+        if (!addStage(r, ids, seen, "kl", f, bytes, every))
+            return false;
+    for (id f in d.linkedFunctions.privateFunctions)
+        if (!addStage(r, ids, seen, "kp", f, bytes, every))
+            return false;
+    return r.stages.size() <= kRequestStageLimit;
+}
+
 thread_local Obtained tObtained;
 
 }  // namespace
@@ -284,7 +300,7 @@ Compiler::Outcome Completion::remoteKernel(id facadeFunction, MTLComputePipeline
         std::vector<LibraryIdentity> ids;
         std::map<const LibrarySource *, uint32_t> seen;
         if (q.textures.size() > kRequestBindLimit || q.samplers.size() > kRequestBindLimit ||
-            !addStage(r, ids, seen, "k", facadeFunction, true, every))
+            !addKernelStages(r, ids, seen, facadeFunction, descriptor, true, every))
             return false;
         name = storeName(k, r, ids);
         return true;
@@ -374,7 +390,7 @@ bool Completion::reflection(id function, MTLComputePipelineDescriptor *descripto
             r.kernel.multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
             std::vector<LibraryIdentity> ids;
             std::map<const LibrarySource *, uint32_t> seen;
-            if (!addStage(r, ids, seen, "k", function, true, every))
+            if (!addKernelStages(r, ids, seen, function, descriptor, true, every))
                 return false;
             name = storeName(k, r, ids);
             return true;
@@ -416,7 +432,7 @@ bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descript
         r.kernel.multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
         std::vector<LibraryIdentity> ids;
         std::map<const LibrarySource *, uint32_t> seen;
-        if (!addStage(r, ids, seen, "k", facadeFunction, bytes, every))
+        if (!addKernelStages(r, ids, seen, facadeFunction, descriptor, bytes, every))
             return false;
         name = storeName(k, r, ids);
         return true;

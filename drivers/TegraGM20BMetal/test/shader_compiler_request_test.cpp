@@ -357,7 +357,69 @@ TEST(CompileRequest, ComputeFactsAreKeyedAsThePacksStateKey)
     EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(wider), kStack, system, p, why));
     raw::CompileRequest two = r;
     two.stages.push_back(stage("k", "kernel_fn"));
-    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "a facts request names one function";
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "a facts request names one kernel";
+}
+
+// A kernel's linked functions (MPSGraph's kernels link their DAG library's privately) are its request's stages after the
+// kernel, "kl" visible then "kp" private, and its key names each by AIR and constants past the kernel's own constants
+// (raw_compute_key.h computeLinkedText), for its facts, its dispatches and its reflection alike. The same kernel without
+// them is another state; a linked tag cannot stand first.
+TEST(CompileRequest, AKernelsLinkedFunctionsAreItsStagesAndPartOfItsKey)
+{
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Facts;
+    r.libraries.push_back(data(made_metallib::universal({"kernel_fn"}, 0x30)));
+    r.libraries.push_back(data(made_metallib::universal({"visible_fn", "prefixPrimary_i8"}, 0x40)));
+    r.stages = {stage("k", "kernel_fn"), stage("kl", "visible_fn", 1, "#1:29:01"), stage("kp", "prefixPrimary_i8", 1)};
+    r.kernel.maxThreads = 256;
+    raw::AirHash kernelAir, visibleAir, privateAir;
+    kernelAir.fill(0x30);
+    visibleAir.fill(0x40);
+    privateAir.fill(0x41);
+    const std::string linked = raw::computeLinkedText({{false, visibleAir, "#1:29:01"}, {true, privateAir, ""}});
+    EXPECT_EQ(raw::airText(privateAir).size(), 64u);
+    EXPECT_EQ(raw::airText(privateAir).substr(0, 6), "414141");
+    EXPECT_EQ(linked, " | kl " + raw::airText(visibleAir) + " #1:29:01 | kp " + raw::airText(privateAir));
+    const std::string state = raw::computeStateKey(kernelAir, linked, 256, false);
+    r.key = raw::factsCacheKey(kStack, state).key;
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+
+    raw::CompileRequest alone = r;
+    alone.stages.resize(1);
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(alone), kStack, system, p, why))
+        << "the kernel alone claiming the linked state's key";
+    alone.key = raw::factsCacheKey(kStack, raw::computeStateKey(kernelAir, "", 256, false)).key;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(alone), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey.find(" | kp "), std::string::npos);
+
+    raw::CompileRequest kernel = r;
+    kernel.kind = raw::RequestKind::Kernel;
+    kernel.kernel.threads[0] = 64;
+    kernel.kernel.threads[1] = kernel.kernel.threads[2] = 1;
+    const std::string compute = raw::computeKey(kernelAir, linked, 256, false, kernel.kernel.threads, "", "", "");
+    EXPECT_EQ(compute.rfind(state, 0), 0u);
+    kernel.key = "kernel | " + compute;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(kernel), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, compute);
+
+    raw::CompileRequest reflection = r;
+    reflection.kind = raw::RequestKind::Reflection;
+    reflection.key = raw::computeReflectionKey(kStack, state).key;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(reflection), kStack, system, p, why)) << why;
+    EXPECT_EQ(p.packKey, state);
+
+    raw::CompileRequest first = r;
+    first.stages[0].tag = "kp";
+    raw::CompileRequest back;
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(first), back));
+    raw::CompileRequest render = r;
+    render.stages[1].tag = "vl";
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(render), back)) << "a render stage's tag on a kernel";
 }
 
 // A specialized function's attributes: one stage tagged "a", keyed by its AIR, constants and the name it was made under,

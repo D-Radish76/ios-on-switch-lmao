@@ -119,15 +119,32 @@ int32_t render(const Prepared &p, const Libraries &libraries, raw::Direct &direc
     return resultOf(outcome);
 }
 
+// A compute request's state over `made`, its stages' functions: the kernel, its linked functions ("kl" visible, "kp"
+// private) and limits
+MTLComputePipelineDescriptor *computeDescriptor(const raw::CompileRequest &r, const std::vector<id<MTLFunction>> &made)
+{
+    MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
+    d.computeFunction = made[0];
+    d.maxTotalThreadsPerThreadgroup = r.kernel.maxThreads;
+    d.threadGroupSizeIsMultipleOfThreadExecutionWidth = r.kernel.multipleOfWidth;
+    if (made.size() > 1) {
+        NSMutableArray *visible = [NSMutableArray array], *hidden = [NSMutableArray array];
+        for (size_t i = 1; i < made.size(); ++i)
+            [(r.stages[i].tag == "kp" ? hidden : visible) addObject:made[i]];
+        MTLLinkedFunctions *linked = [MTLLinkedFunctions linkedFunctions];
+        linked.functions = visible;
+        linked.privateFunctions = hidden;
+        d.linkedFunctions = linked;
+    }
+    return d;
+}
+
 int32_t kernel(const Prepared &p, const Libraries &libraries, raw::Direct &direct, std::string &entry, std::string &why)
 {
     std::vector<id<MTLFunction>> made;
     if (!functions(p.request, libraries, made, why))
         return TegraGM20BCompileUnavailable;
-    MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
-    d.computeFunction = made[0];
-    d.maxTotalThreadsPerThreadgroup = p.request.kernel.maxThreads;
-    d.threadGroupSizeIsMultipleOfThreadExecutionWidth = p.request.kernel.multipleOfWidth;
+    MTLComputePipelineDescriptor *d = computeDescriptor(p.request, made);
     const NmbDirectDispatch dispatch = p.request.kernel.dispatch();
     raw::ComputeRecord record;
     const raw::CompileOutcome outcome = direct.kernel(d, dispatch, p.packKey, record, why);
@@ -144,11 +161,7 @@ int32_t reflection(const Prepared &p, const Libraries &libraries, uint64_t stack
         std::vector<id<MTLFunction>> kernel;
         if (!functions(p.request, libraries, kernel, why))
             return TegraGM20BCompileUnavailable;
-        MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
-        d.computeFunction = kernel[0];
-        d.maxTotalThreadsPerThreadgroup = p.request.kernel.maxThreads;
-        d.threadGroupSizeIsMultipleOfThreadExecutionWidth = p.request.kernel.multipleOfWidth;
-        made = offline::computeReflection(d, blob, why);
+        made = offline::computeReflection(computeDescriptor(p.request, kernel), blob, why);
     } else {
         MTLRenderPipelineDescriptor *d = descriptor(p, libraries, stack, why);
         if (!d)

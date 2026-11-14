@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 #include "raw_metallib.h"
 #include "raw_pack.h"
 
@@ -69,18 +70,43 @@ inline std::string computeSamplers(const BoundSampler *s, size_t count)
     return text;
 }
 
+inline std::string airText(const AirHash &air)
+{
+    std::string text;
+    char b[4];
+    for (uint8_t x : air) {
+        snprintf(b, sizeof b, "%02x", x);
+        text += b;
+    }
+    return text;
+}
+
 // What a compute state is made from, as its creation names it: every dispatch shape's key starts with it
 inline std::string computeStateKey(const AirHash &air, const std::string &constants, uint32_t maxThreads,
                                    bool multipleOfWidth)
 {
-    std::string key;
     char b[48];
-    for (uint8_t x : air) {
-        snprintf(b, sizeof b, "%02x", x);
-        key += b;
-    }
     snprintf(b, sizeof b, " | max=%u tgm=%d", maxThreads, multipleOfWidth ? 1 : 0);
-    return key + " | " + constants + b;
+    return airText(air) + " | " + constants + b;
+}
+
+// A compute state's linked function (MTLLinkedFunctions functions, or privateFunctions when `hidden`) by its AIR and
+// constants, as the translator links it into the kernel (MPSGraph's kernels link their DAG library's this way)
+struct LinkedComputeFunction {
+    bool hidden = false;
+    AirHash air = {};
+    std::string constants;
+};
+
+// A compute state's linked functions as its key takes them past its kernel's constants: " | kl" (visible) or " | kp"
+// (private) with each one's AIR and constants, in the descriptor's order. "" for none, so a kernel without them keys as
+// before
+inline std::string computeLinkedText(const std::vector<LinkedComputeFunction> &linked)
+{
+    std::string text;
+    for (const LinkedComputeFunction &f : linked)
+        text += (f.hidden ? " | kp " : " | kl ") + airText(f.air) + (f.constants.empty() ? "" : " " + f.constants);
+    return text;
 }
 
 // A compute state as an archive inventory names it (pack/archives.py): its library function, not its AIR

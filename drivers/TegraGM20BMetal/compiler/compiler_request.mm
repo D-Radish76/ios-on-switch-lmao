@@ -52,20 +52,42 @@ bool renderKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
     return true;
 }
 
-// The compute key's own part (its function's AIR, constants, limits and shape) is the compiler's; the bound textures',
-// samplers' and memory's text past it is the client's, and the store name binds the dispatch they describe
+// A compute request's state key (raw_compute_key.h computeStateKey): its kernel's AIR and constants, then its linked
+// stages' (computeLinkedText), and its limits
+bool stateKeyOf(const raw::CompileRequest &r, const std::vector<std::map<std::string, raw::AirHash>> &air,
+                std::string &key, std::string &why)
+{
+    raw::AirHash hash;
+    if (!airOf(r, air, r.stages[0], hash, why))
+        return false;
+    std::vector<raw::LinkedComputeFunction> linked;
+    for (size_t i = 1; i < r.stages.size(); ++i) {
+        raw::LinkedComputeFunction f;
+        f.hidden = r.stages[i].tag == "kp";
+        f.constants = r.stages[i].constants;
+        if (!airOf(r, air, r.stages[i], f.air, why))
+            return false;
+        linked.push_back(std::move(f));
+    }
+    key = raw::computeStateKey(hash, r.stages[0].constants + raw::computeLinkedText(linked), r.kernel.maxThreads,
+                               r.kernel.multipleOfWidth);
+    return true;
+}
+
+// The compute key's own part (its function's AIR, constants, linked functions, limits and shape) is the compiler's; the
+// bound textures', samplers' and memory's text past it is the client's, and the store name binds the dispatch they
+// describe
 bool kernelKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
                std::string &why)
 {
     const raw::CompileRequest &r = p.request;
-    raw::AirHash hash;
-    if (!airOf(r, air, r.stages[0], hash, why))
+    std::string state;
+    if (!stateKeyOf(r, air, state, why))
         return false;
     const raw::KernelRequest &k = r.kernel;
     char shape[64];
     snprintf(shape, sizeof shape, " | tg=%u,%u,%u | tgmem=", k.threads[0], k.threads[1], k.threads[2]);
-    const std::string own =
-        kKernelPrefix + raw::computeStateKey(hash, r.stages[0].constants, k.maxThreads, k.multipleOfWidth) + shape;
+    const std::string own = kKernelPrefix + state + shape;
     if (r.key.compare(0, own.size(), own))
         return why = "a kernel request whose key is not its function's", false;
     const std::string region = " | region=1";
@@ -83,11 +105,8 @@ bool kernelKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
 bool computeReflectionKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
                           std::string &why)
 {
-    const raw::CompileRequest &r = p.request;
-    raw::AirHash hash;
-    if (!airOf(r, air, r.stages[0], hash, why))
+    if (!stateKeyOf(p.request, air, p.packKey, why))
         return false;
-    p.packKey = raw::computeStateKey(hash, r.stages[0].constants, r.kernel.maxThreads, r.kernel.multipleOfWidth);
     p.key = raw::computeReflectionKey(stack, p.packKey);
     return true;
 }
@@ -96,11 +115,8 @@ bool computeReflectionKey(Prepared &p, const std::vector<std::map<std::string, r
 bool factsKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
               std::string &why)
 {
-    const raw::CompileRequest &r = p.request;
-    raw::AirHash hash;
-    if (!airOf(r, air, r.stages[0], hash, why))
+    if (!stateKeyOf(p.request, air, p.packKey, why))
         return false;
-    p.packKey = raw::computeStateKey(hash, r.stages[0].constants, r.kernel.maxThreads, r.kernel.multipleOfWidth);
     p.key = raw::factsCacheKey(stack, p.packKey);
     return true;
 }

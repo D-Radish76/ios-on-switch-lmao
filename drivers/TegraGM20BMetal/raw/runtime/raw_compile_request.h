@@ -56,7 +56,8 @@ struct RequestLibrary {
 };
 
 // A stage's function: for a render state the vertex function, the fragment function, then the linked ones (tags "vl",
-// "vp", "fl", "fp" as RawMetalLibrary.mm's linkedKey lists them); for a kernel its one function (tag "k")
+// "vp", "fl", "fp" as RawMetalLibrary.mm's linkedKey lists them); for a kernel its function (tag "k"), then its linked
+// ones (tags "kl", "kp": raw_compute_key.h computeLinkedText)
 struct RequestStage {
     std::string tag;
     std::string function;      // the library function it was made from
