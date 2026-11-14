@@ -27,7 +27,8 @@
 // sealed_encoders (encoders the worker encoded ahead of their commit, of all it sealed), pipeline_handoffs and
 // pipeline_handoff_wakes (hand-offs to the worker as encoders ended, and those that found it asleep: a wake each),
 // pipeline_abandons.<reason>,
-// m2v.<reason>, pred.<predicate> (nonzero only).
+// m2v.<reason>, pred.<predicate> and failed.<predicate> (the command buffers a predicate of predFailure failed;
+// nonzero only).
 - (NSDictionary<NSString *, NSNumber *> *)switchRawCounters
 {
     const Stats &s = gRM->stats;
@@ -130,9 +131,12 @@
     for (int r = 1; r < WhyCount; r++)
         if (const uint64_t n = s.reasons[r].load())
             d[[NSString stringWithFormat:@"m2v.%s", kReasonNames[r]]] = @(n);
-    for (int p = 1; p < PredCount; p++)
+    for (int p = 1; p < PredCount; p++) {
         if (const uint64_t n = gPredCbs[p].load(std::memory_order_relaxed))
             d[[NSString stringWithFormat:@"pred.%s", kPredNames[p]]] = @(n);
+        if (const uint64_t n = gPredFailed[p].load(std::memory_order_relaxed))
+            d[[NSString stringWithFormat:@"failed.%s", kPredNames[p]]] = @(n);
+    }
 #if SWITCH_RAW_DIAGNOSTICS
     // states created that the pack lacked: found in this build's record cache or compiled (states_compiled)
     if (gRM->completion) {

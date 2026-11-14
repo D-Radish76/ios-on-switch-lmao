@@ -8,6 +8,7 @@
 #import <Metal/Metal.h>
 #include <cstddef>
 #include <cstdio>
+#include <map>
 #include <string>
 #include "NativeBridgeMetalFrontend.h"
 #include "raw/runtime/RawDirect.h"
@@ -193,13 +194,14 @@ public:
         refused_[name] = @(why.c_str());
     }
 
-    void kernel(NSString *name, NSString *function, uint32_t threads, void (^setUp)(MTLComputePipelineDescriptor *))
+    void kernel(NSString *name, NSString *function, uint32_t threads, void (^setUp)(MTLComputePipelineDescriptor *),
+                const std::map<uint32_t, uint32_t> &memory = {})
     {
         MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
         d.computeFunction = [library_ newFunctionWithName:function];
         setUp(d);
         const uint32_t shape[3] = {threads, 1, 1};
-        raw::KernelDispatch dispatch(shape, {});
+        raw::KernelDispatch dispatch(shape, memory);
         raw::ComputeRecord record;
         std::string why;
         if (!d.computeFunction)
@@ -299,6 +301,14 @@ void make(Runner &run)
     run.kernel(@"past_threadgroup", @"past_threadgroup_kernel", 256,
                ^(MTLComputePipelineDescriptor *){
                });
+    run.kernel(@"dynamic_threadgroup", @"dynamic_threadgroup_kernel", 256,
+               ^(MTLComputePipelineDescriptor *){
+               },
+               {{0, 48u << 10}});
+    run.kernel(@"past_dynamic_threadgroup", @"dynamic_threadgroup_kernel", 256,
+               ^(MTLComputePipelineDescriptor *){
+               },
+               {{0, (48u << 10) + 16}});
     run.kernel(@"counter_resolve", @(raw::counters::kResolveFunction), raw::counters::kResolveThreads,
                ^(MTLComputePipelineDescriptor *){
                });

@@ -255,9 +255,13 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
 - (void)fillBuffer:(id<MTLBuffer>)b range:(NSRange)r value:(uint8_t)value
 {
     RMBuffer *t = (RMBuffer *)b;
-    if (![(id)t isKindOfClass:[RMBuffer class]] || NSMaxRange(r) > t->_raw.length) {
-        [_cb takeReason:WhyCall why:@"a buffer fill out of range"];
-        hit(_cb, PredCallBufCopyRange, NSMaxRange(r), [(id)t isKindOfClass:[RMBuffer class]] ? t->_raw.length : 0);
+    if (![(id)t isKindOfClass:[RMBuffer class]])
+        return hit(_cb, PredCallBufCopyRange, NSMaxRange(r), 0, "a fill of a buffer not this device's: none filled");
+    if (NSMaxRange(r) > t->_raw.length) {
+        hit(_cb, PredCallBufCopyRange, NSMaxRange(r), t->_raw.length, "a fill past its buffer, clamped to it");
+        r.length = NSUInteger(raw::clampedCopy(t->_raw.length, r.location, t->_raw.length, r.location, r.length));
+        if (!r.length)
+            return;
     }
     [_cb retain:b];
     Cmd m = cmd(OpFillBuffer);
@@ -276,10 +280,13 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
                   size:(NSUInteger)n
 {
     RMBuffer *a = (RMBuffer *)s, *b = (RMBuffer *)d;
-    if (![(id)a isKindOfClass:[RMBuffer class]] || ![(id)b isKindOfClass:[RMBuffer class]] || so + n > a->_raw.length ||
-        dof + n > b->_raw.length) {
-        [_cb takeReason:WhyCall why:@"a buffer copy out of range"];
-        hit(_cb, PredCallBufCopyRange, so + n, dof + n);
+    if (![(id)a isKindOfClass:[RMBuffer class]] || ![(id)b isKindOfClass:[RMBuffer class]])
+        return hit(_cb, PredCallBufCopyRange, so + n, dof + n, "a copy of a buffer not this device's: none copied");
+    if (so + n > a->_raw.length || dof + n > b->_raw.length) {
+        hit(_cb, PredCallBufCopyRange, so + n, dof + n, "a copy past its buffers, clamped to both");
+        n = NSUInteger(raw::clampedCopy(a->_raw.length, so, b->_raw.length, dof, n));
+        if (!n)
+            return;
     }
     [_cb retain:s];
     [_cb retain:d];

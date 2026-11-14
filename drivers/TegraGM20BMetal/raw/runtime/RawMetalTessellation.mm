@@ -54,7 +54,8 @@ static RMBuffer *ownBuffer(RMCommandBuffer *cb, id<MTLBuffer> buffer)
        argumentOffset:(NSUInteger)argumentOffset
 {
     SWITCH_API(ApiDraw);
-    [self checkDraw];
+    if (![self checkDraw])
+        return;
     if (_tessFactors)
         [_cb retain:_tessFactors];
     Cmd m = cmd(op, uint8_t(raw::icb::kPatchPrimitive));

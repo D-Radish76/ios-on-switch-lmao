@@ -526,6 +526,7 @@ struct RMSharedEventWait {
     uint64_t _preds;          // every refusal predicate it hit (1 << RMPred)
     uint64_t _predA, _predB;  // the first one's values
     uint8_t _pred0;           // the first one
+    uint8_t _failedBy;        // the predicate that failed it (predFailure), 0: none
 #if SWITCH_FRAME_TIMELINE
     switch_frame::Stamps _frame;
 #endif
@@ -541,9 +542,14 @@ struct RMSharedEventWait {
 - (void)recordBinding:(const Cmd &)cmd __attribute__((objc_direct));
 @end
 
+// `cb` fails with predicate `p`'s error (predFailure): one error line a process and reason, kept in release, naming
+// `detail` where given (RawMetalPredicates.mm)
+void predFails(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *detail);
+
 // A refusal predicate hit while recording (or encoding) `cb`: into its mask; the first one's values kept; the process's first hit
-// of `p` logged with them
-static inline void hit(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64_t a = 0, uint64_t b = 0)
+// of `p` logged with them; a predicate of predFailure fails the command buffer
+static inline void hit(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64_t a = 0, uint64_t b = 0,
+                       const char *detail = nullptr)
 {
     cb->_preds |= 1ull << p;
     if (!cb->_pred0) {
@@ -551,8 +557,10 @@ static inline void hit(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64
         cb->_predA = a;
         cb->_predB = b;
     }
+    if (predFailure(p))
+        return predFails(cb, p, a, b, detail);
     if (!predLogged(p))
-        logPred(p, a, b, nil);
+        logPred(p, a, b, detail ? @(detail) : nil);
 }
 
 // Why a command buffer's tape is encoded at its commit, not as its encoders end (RMCommandBuffer::_pipelineVeto, and the
@@ -707,7 +715,8 @@ static inline void setBinding(__unsafe_unretained RMCommandBuffer *cb, Op op, in
 id<MTLSamplerState> clampedSampler(id<MTLSamplerState> s, float lodMin, float lodMax);
 
 @interface RMRenderEncoder ()
-- (void)checkDraw __attribute__((objc_direct));  // (RawMetalRenderEncoder.mm)
+// (RawMetalRenderEncoder.mm) NO: a draw Apple's driver draws nothing defined for, which is skipped (raw_client_errors.h)
+- (BOOL)checkDraw __attribute__((objc_direct));
 @end
 
 // RawMetalEncoder.mm: the encoder's own copy of its pass, where it shares the thread's, before it changes it

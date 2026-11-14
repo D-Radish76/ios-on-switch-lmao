@@ -872,7 +872,6 @@ id openOnce(unsigned port, raw::OpenFailure &failure)
                 return m2v.device();
             };
             lazy.methods = NSClassFromString(@"NBDeviceMethods");
-            lazy.answerSelector = nmb_device_answer_selector;
             NSString *why = nil;
             if (id raw = raw_metal_device_open_lazy(pack, uint64_t(TEGRA_RAW_STACK), registryID, lazy, &why)) {
                 os_log(logger(), "TegraGM20BMetal: raw GM20B path on in %{public}s (pack %{public}s, stack %016llx)",

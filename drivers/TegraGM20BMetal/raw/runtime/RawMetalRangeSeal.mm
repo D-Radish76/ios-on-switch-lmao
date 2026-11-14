@@ -473,9 +473,17 @@ bool RMRangeEncode::seal(size_t to, bool &stale)
             rc->abandon();
             return false;
         }
-        return fail(PredEncKernel, "the kernel refused the submission");
+        char answer[96];
+        if (rc->kernelResult)
+            snprintf(answer, sizeof answer, "the kernel answered 0x%x", unsigned(rc->kernelResult));
+        else
+            snprintf(answer, sizeof answer, "not submitted: %s", rc->notSubmitted ?: "?");
+        return fail(PredEncKernel, "the kernel refused the submission", uint32_t(rc->kernelResult), 0, answer);
     }
     firstContents_->submitted(cb);
+    if (rc->skips)
+        hit(cb, refusalPred(rc->skipped.id), rc->skipped.a, uint64_t(rc->skipped.b) | uint64_t(rc->skipped.c) << 32,
+            "a draw Apple's driver draws nothing defined for: skipped");
     publishSharedEvents(cb);
     if (rc->promisesKept) {
         std::lock_guard<raw::Mutex> l(cb->_lock);

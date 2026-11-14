@@ -91,6 +91,12 @@ bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &
     if (chainShape(d)) {
         ask.kind = raw::TextureAsk::Mips;
         ask.levels = uint32_t(d.mipmapLevelCount);
+    } else if (blockShape(d)) {
+        const bool layered = d.textureType == MTLTextureType2DArray;
+        ask.kind = raw::TextureAsk::Block;
+        ask.levels = uint32_t(std::max<NSUInteger>(d.mipmapLevelCount, 1));
+        ask.layers = uint32_t(layered ? std::max<NSUInteger>(d.arrayLength, 1) : 1);
+        ask.type = uint8_t(layered ? raw::fx::kTexTwoDArray : raw::fx::kTexTwoD);
     } else if (lineShape(d)) {
         ask.kind = raw::TextureAsk::Line;
     } else if (stored != RMStoredSamples::None) {
@@ -112,7 +118,7 @@ bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &
         ask.kind = raw::TextureAsk::Zeta;
         ask.sampled = (d.usage & MTLTextureUsageShaderRead) != 0;
     } else if (rawShape(d)) {
-        ask.tiled = blockLinear;
+        ask.tiled = blockLinear || raw::blockCompressed(raw::formatInfo(ask.format));
         ask.standIn = raw::xrForm(ask.format) != raw::XrForm::None &&
                       (d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderRead));
     } else {

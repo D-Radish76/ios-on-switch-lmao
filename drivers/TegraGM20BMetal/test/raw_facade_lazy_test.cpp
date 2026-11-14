@@ -8,7 +8,9 @@
 #import <IOSurface/IOSurface.h>
 #include <gtest/gtest.h>
 #include <mach/vm_page_size.h>
+#include <algorithm>
 #include <set>
+#include <vector>
 
 @protocol HarnessDeviceSPI
 - (id<MTLBuffer>)newBufferWithIOSurface:(IOSurfaceRef)surface;
@@ -212,7 +214,8 @@ void computeStates()
 // A buffer over an IOSurface's pages and a linear texture's row are the raw device's own answers
 void surfaceBufferAndLinearRow()
 {
-    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
+    const Opened opened = openWithLibrary(writePack(packKey(kPacked)));
+    const id<MTLDevice> device = opened.device;
     ASSERT_TRUE(device != nil);
     id<HarnessDeviceSPI> spi = (id<HarnessDeviceSPI>)device;
     IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
@@ -236,10 +239,86 @@ void surfaceBufferAndLinearRow()
     EXPECT_EQ([spi requiredLinearTextureBytesPerRowForDescriptor:d], (400 + align - 1) / align * align);
     d.pixelFormat = MTLPixelFormatASTC_4x4_LDR;
     EXPECT_EQ([spi requiredLinearTextureBytesPerRowForDescriptor:d], 0u);
+    const auto rowOf = [&](NSUInteger format) {
+        d.pixelFormat = MTLPixelFormat(format);
+        return [spi requiredLinearTextureBytesPerRowForDescriptor:d];
+    };
+    const auto aligned = [&](NSUInteger format, NSUInteger bytes) {
+        const NSUInteger a = [device minimumLinearTextureAlignmentForPixelFormat:MTLPixelFormat(format)];
+        return a ? (100 * bytes + a - 1) / a * a : 0;
+    };
+    EXPECT_GT(aligned(MTLPixelFormatR8Snorm, 1), 0u);
+    EXPECT_EQ(rowOf(MTLPixelFormatR8Snorm), aligned(MTLPixelFormatR8Snorm, 1));
+    EXPECT_EQ(rowOf(MTLPixelFormatRGBA16Snorm), aligned(MTLPixelFormatRGBA16Snorm, 8));
+    EXPECT_EQ(rowOf(26), aligned(26, 2));    // R16Bfloat
+    EXPECT_EQ(rowOf(550), aligned(550, 8));  // RGB10A8_2P_XR10, raw's texel, not Metal's plane of 2
+    EXPECT_EQ(rowOf(MTLPixelFormatDepth32Float), 0u);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
     buffer = nil;
     CFRelease(surface);
+}
+
+// A heap's block-compressed textures (a chain, an array, and a single level in a shared heap, block-linear as the device
+// makes it) are placed in its arena as the device lays them out, each one's size the device's answer (heapTextureAsk)
+void heapBlockTextures()
+{
+    const Opened opened = openWithLibrary(writePack(packKey(kPacked)));
+    const id<MTLDevice> device = opened.device;
+    ASSERT_TRUE(device != nil);
+    const auto heapOf = [&](MTLStorageMode mode) {
+        MTLHeapDescriptor *h = [MTLHeapDescriptor new];
+        h.storageMode = mode;
+        h.size = 16 << 20;
+        return [device newHeapWithDescriptor:h];
+    };
+    const id<MTLHeap> privateHeap = heapOf(MTLStorageModePrivate), sharedHeap = heapOf(MTLStorageModeShared);
+    ASSERT_TRUE(privateHeap != nil && sharedHeap != nil);
+    const auto described = [](MTLPixelFormat format, NSUInteger size, BOOL mipmapped) {
+        return [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                  width:size
+                                                                 height:size * 3 / 5
+                                                              mipmapped:mipmapped];
+    };
+    MTLTextureDescriptor *mips = described(MTLPixelFormatASTC_4x4_LDR, 100, YES),
+                         *layers = described(MTLPixelFormatBC1_RGBA, 64, NO),
+                         *single = described(MTLPixelFormatBC1_RGBA, 64, NO);
+    layers.textureType = MTLTextureType2DArray;
+    layers.arrayLength = 3;
+    mips.storageMode = layers.storageMode = MTLStorageModePrivate;
+    single.storageMode = MTLStorageModeShared;
+    for (MTLTextureDescriptor *d in @[ mips, layers, single ]) {
+        const MTLSizeAndAlign need = [device heapTextureSizeAndAlignWithDescriptor:d];
+        EXPECT_GT(need.size, 0u);
+        id<MTLTexture> t = [(d == single ? sharedHeap : privateHeap) newTextureWithDescriptor:d];
+        ASSERT_TRUE([(id)t isKindOfClass:[RMTexture class]]) << text(t);
+        EXPECT_TRUE(((RMTexture *)t)->_raw.arena);
+        EXPECT_TRUE(((RMTexture *)t)->_raw.blockLinear);
+        EXPECT_EQ(((RMTexture *)t)->_raw.span.bytes, need.size);
+    }
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
+}
+
+// A CPU copy of a memoryless texture moves nothing, as Apple's driver: getBytes leaves the bytes, replaceRegion drops them
+void memorylessCpuCopies()
+{
+    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
+    ASSERT_TRUE(device != nil);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                 width:16
+                                                                                height:16
+                                                                             mipmapped:NO];
+    d.storageMode = MTLStorageModeMemoryless;
+    d.usage = MTLTextureUsageRenderTarget;
+    id<MTLTexture> t = [device newTextureWithDescriptor:d];
+    ASSERT_TRUE(t != nil);
+    std::vector<uint8_t> in(16 * 16 * 4, 0x5a), out(16 * 16 * 4, 0xab);
+    [t replaceRegion:MTLRegionMake2D(0, 0, 16, 16) mipmapLevel:0 withBytes:in.data() bytesPerRow:64];
+    [t getBytes:out.data() bytesPerRow:64 fromRegion:MTLRegionMake2D(0, 0, 16, 16) mipmapLevel:0];
+    EXPECT_EQ(std::count(out.begin(), out.end(), 0xab), ptrdiff_t(out.size()));
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // The device is an _MTLDevice of its own; its identity and every limits field m2v's device answered are its own answers
@@ -380,6 +459,16 @@ TEST(RawFacadeLazy, AComputeStateThePackAnswersOpensNoM2V)
 TEST(RawFacadeLazy, SurfaceBufferAndLinearRowOpenNoM2V)
 {
     switch_ios::test::ExpectPassesInFreshProcess(surfaceBufferAndLinearRow);
+}
+
+TEST(RawFacadeLazy, AHeapsBlockCompressedTexturesArePlacedInItsArena)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(heapBlockTextures);
+}
+
+TEST(RawFacadeLazy, ACpuCopyOfAMemorylessTextureMovesNothing)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(memorylessCpuCopies);
 }
 
 TEST(RawFacadeLazy, DeviceIsItsOwn)
