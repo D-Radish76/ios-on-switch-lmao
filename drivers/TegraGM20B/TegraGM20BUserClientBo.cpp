@@ -194,7 +194,8 @@ void AGXDeviceUserClient::poolLine(char *line, size_t size)
 	const uint64_t held = pool_bytes_;
 	IOLockUnlock(lock_);
 	snprintf(line, size, "ready_kib=%llu floor_kib=%llu held_kib=%llu clean_chunks=%llu",
-		 tgm_pool_avail() >> 10, kPoolFloorBytes >> 10, held >> 10, tgm_pool_clean_chunks());
+		 tgm_pool_avail() >> 10, kPoolFloorBytes >> 10, held >> 10,
+		 tgm_pool_clean_chunks());
 }
 #endif
 

@@ -125,7 +125,8 @@ struct ChainLevelZeroScene: GPUScene {
         texture.replace(
             region: levelOne.region, mipmapLevel: 1, withBytes: one, bytesPerRow: levelOne.width * format.bytesPerTexel)
         let whole = UploadRect(x: 0, y: 0, width: width, height: height)
-        let zero = Patterns.bytes(Patterns.busy(width: width, height: height, channels: format.channels, seed: 3), format)
+        let zero = Patterns.bytes(
+            Patterns.busy(width: width, height: height, channels: format.channels, seed: 3), format)
         GPU.replace(whole, zero, in: texture, texel: format.bytesPerTexel)
         let back = GPU.getBytes(whole, from: texture, texel: format.bytesPerTexel)
         result.compare(

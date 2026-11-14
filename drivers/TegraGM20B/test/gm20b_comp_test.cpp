@@ -260,7 +260,8 @@ TEST(PoolChunks, CleanChunksAreWholeUnusedAndZeroedOnes)
 		Pool::set(p.dirty, c * TGM_COMP_PAGES);
 	EXPECT_EQ(tgm_comp_clean_chunks(p.map.data(), p.dirty.data(), Pool::kPages), total / 2);
 	std::vector<uint64_t> chunks;
-	EXPECT_EQ(p.pick(uint32_t(total / 2), chunks), 0) << "every counted chunk is the pick's, clean";
+	EXPECT_EQ(p.pick(uint32_t(total / 2), chunks), 0)
+		<< "every counted chunk is the pick's, clean";
 }
 
 // The kernel picks under the pool's spinlock: one pass over 2048 chunks, however fragmented the pool, in microseconds.

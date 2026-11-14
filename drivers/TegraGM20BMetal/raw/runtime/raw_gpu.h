@@ -1650,7 +1650,6 @@ public:
     bool loopsLaid = false;           // a predicated loop's copies: the GPU writes the push ring
 
 private:
-    bool submitJobs(uint32_t &seqno);
     friend class Device;
     friend struct DeviceHarness;
     std::vector<TegraGM20BAbiEventUse> sharedWaits_, sharedSignals_;
