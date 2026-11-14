@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
-import MachO
 import HWTestCore
 import HWTestGPU
+import MachO
 import Metal
 
 /// A render state and a kernel no pack or store holds, made by the shader compiler with NAK's stage compile linked into
