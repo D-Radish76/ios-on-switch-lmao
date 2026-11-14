@@ -10,8 +10,8 @@ import HWTestGPU
 /// The agent keeps its renders in systemgroup.com.apple.lsd.iconscache's Library/Caches/com.apple.IconsCache, 24B119's
 /// in a salt folder under it (-[ISDefaults cacheURL]: a UUID of IconServices' build time, the BuildVersion and the
 /// UniqueDeviceID), and resets them at launch unless __cache_info__ holds the system's ProductBuildVersion (21H461's and
-/// 24B119's -[ISMutableIconCache initWithURL:]); a deploy that stages another GPU build removes that value
-/// (tools/deploy/icon_cache.py). `icon_cache_build`: the system's ProductBuildVersion, the key; `icon_cache_info_build`
+/// 24B119's -[ISMutableIconCache initWithURL:]); after a deploy that stages another GPU build the kernel removes
+/// __cache_info__ at boot (kernel/switch/boot/icon_cache.c). `icon_cache_build`: the system's ProductBuildVersion, the key; `icon_cache_info_build`
 /// and `icon_cache_reset_this_boot`: what __cache_info__ holds and whether the agent wrote it since this boot (a reset),
 /// or why the app cannot read it; `icon_cache_info_at`: top, salt or none. The cached images are read before anything
 /// renders uncached (an uncached render can be stored): `icon<pt>_cached_fresh_diff` counts the pixels where the cached

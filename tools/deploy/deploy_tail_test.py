@@ -59,7 +59,7 @@ class DeployTailTest(unittest.TestCase):
             stack.enter_context(mock.patch.object(deploy.joycon_pairing, 'read', return_value=None))
             stack.enter_context(mock.patch.object(deploy.joycon_pairing, 'stage'))
             stack.enter_context(mock.patch.object(deploy.renamed, 'migrate_data'))
-            stack.enter_context(mock.patch.object(deploy.cards, 'sync_overlay'))
+            stack.enter_context(mock.patch.object(deploy.cards, 'sync_overlay', side_effect=failing.get('overlay')))
             stack.enter_context(mock.patch.object(deploy.deployed, 'record'))
             stack.enter_context(mock.patch.object(deploy.system_apps, 'apps', return_value={}))
             stack.enter_context(mock.patch.object(deploy.system_apps, 'register'))
@@ -85,6 +85,13 @@ class DeployTailTest(unittest.TestCase):
         status, lines = self.deploy()
         self.assertEqual((status, lines[-1]), (0, 'deployed'))
         self.assertEqual(self.order[-1], '_eject')
+
+    def test_a_refused_overlay_stops_the_deploy_with_one_line(self):
+        error = denied('Switch/overlay')
+        status, lines = self.deploy(overlay=error)
+        self.assertEqual(status, 1)
+        self.assertEqual(self.order, [])
+        self.assertEqual(lines[-1], f'FAILED: {error}')
 
     def test_a_failed_gpu_bundle_still_stops_the_deploy(self):
         status, lines = self.deploy(_stage_gpu=deploy.host.HostError('GPU bundle NOT staged'))

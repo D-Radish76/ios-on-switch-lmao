@@ -41,7 +41,8 @@ Steps:
   6 eject          unmount the iPad volumes, eject the card (--no-eject keeps it)
 
 A step besides the boot entry, the overlay and the GPU bundle that fails logs one line saying so and the deploy goes on
-to the eject; it then ends FAILED, naming what was not done, with exit status 1.
+to the eject; it then ends FAILED, naming what was not done, with exit status 1. Those three stop the deploy with one
+FAILED line, unmounted and not ejected.
 """
 
 import argparse
@@ -344,7 +345,7 @@ def main(argv: list[str] | None = None) -> int:
     except cards.RefusedError as error:
         log('REFUSED:', error)
         return 2
-    except host.HostError as error:
+    except (host.HostError, OSError) as error:
         log('FAILED:', error)
         return 1
 
