@@ -2106,6 +2106,11 @@ bool Device::layout(const TextureAsk &ask, Texture &t, uint64_t &bytes, uint64_t
         align = std::max(align, kBlAlign);
         kind = kZetaFormatInfo[zetaFormatIndex(ask.format)].kind;
         return true;
+    case TextureAsk::Block:
+        if (!blockCompressed(f) || !shape(ask.width, ask.height, ask.format, t) ||
+            !fx::blockChainLayout(ask.width, ask.height, ask.levels, ask.layers, f->blockW, f->blockH, f->bpp, c))
+            return false;
+        break;
     }
     bytes = c.bytes;
     align = c.align;
@@ -2153,7 +2158,7 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
     uint64_t bytes = 0, align = 0;
     uint32_t kind = 0;
     Texture::Chain *chain = ask.kind == TextureAsk::Mips ? new Texture::Chain : nullptr;
-    const bool image = ask.kind == TextureAsk::Volume || ask.kind == TextureAsk::Array;
+    const bool image = ask.kind == TextureAsk::Volume || ask.kind == TextureAsk::Array || ask.kind == TextureAsk::Block;
     fx::MipChain imageLayout;
     if ((!at && ask.kind == TextureAsk::Plain) || !layout(ask, t, bytes, align, kind,
                                                           chain   ? &chain->layout
@@ -2210,6 +2215,8 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
         t.chain = chain;
         RAW_DIAGNOSTIC(stats.chains++);
         RAW_DIAGNOSTIC(stats.chainBytes += chain->layout.bytes);
+    } else if (ask.kind == TextureAsk::Block) {
+        layBlocks(imageLayout, formatInfo(ask.format), ask.width, ask.height, ask.type, t);
     } else if (image) {
         layImage(imageLayout, formatInfo(ask.format), t.type, t);
     } else if (t.tic) {
@@ -2875,25 +2882,17 @@ bool Device::createBlockTextureOver(void *bytes, uint64_t length, uint32_t width
 }
 
 bool Device::createBlockTexture(uint32_t width, uint32_t height, uint32_t levels, uint32_t layers, uint32_t format,
-                                uint8_t type, Texture &t)
+                                uint8_t type, Texture &t, const ArenaAt *at)
 {
-    const FormatInfo *f = formatInfo(format);
-    fx::MipChain c;
-    if (!blockCompressed(f) || !shape(width, height, format, t) ||
-        !fx::blockChainLayout(width, height, levels, layers, f->blockW, f->blockH, f->bpp, c))
-        return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    if (!blAlloc(c.bytes, c.align, t.span))
-        return false;
-    t.va = t.span.va;
-    t.cpu = t.span.cpu;
-    if (!(t.tic = allocTic())) {
-        Lease *none = nullptr;
-        freeSpan(t.span, Memory::Bl, none);
-        return false;
-    }
-    layBlocks(c, f, width, height, type, t);
-    return true;
+    TextureAsk ask;
+    ask.kind = TextureAsk::Block;
+    ask.width = width;
+    ask.height = height;
+    ask.levels = levels;
+    ask.layers = layers;
+    ask.format = format;
+    ask.type = type;
+    return createLaidOut(ask, t, at);
 }
 
 void Device::layBlocks(const fx::MipChain &layout, const FormatInfo *f, uint32_t width, uint32_t height, uint8_t type,

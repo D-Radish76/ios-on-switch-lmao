@@ -216,6 +216,7 @@ TESTS: dict[str, bool] = {
             'metal.native.error_samples',
             'metal.native.error_positions',
             'metal.native.linear_row',
+            'metal.native.heap_block',
             'metal.native.rate_map',
         ],
         False,

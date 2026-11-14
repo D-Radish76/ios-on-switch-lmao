@@ -494,7 +494,8 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     if (!buffer || (offset & 3) ||
         (indexed && (!index || (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
                      indexOffset > index->_raw.length || indexOffset % (indexType == MTLIndexTypeUInt16 ? 2 : 4))))
-        return hit(_cb, PredEncIndexedRange, offset, bytes, "indirect arguments or indices Metal reads nothing of: the draw skipped");
+        return hit(_cb, PredEncIndexedRange, offset, bytes,
+                   "indirect arguments or indices Metal reads nothing of: the draw skipped");
     if (offset > buffer->_raw.length || bytes > buffer->_raw.length - offset)
         hit(_cb, PredEncIndexedRange, offset, bytes, "indirect arguments past their buffer read as zeros");
     if (![self checkDraw])

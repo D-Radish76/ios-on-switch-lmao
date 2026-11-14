@@ -247,6 +247,41 @@ void surfaceBufferAndLinearRow()
     CFRelease(surface);
 }
 
+// A heap's block-compressed chain or array is placed in its arena as the device lays one out of its own, its size the
+// device's answer (heapTextureAsk's Block)
+void heapBlockTextures()
+{
+    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
+    ASSERT_TRUE(device != nil);
+    MTLHeapDescriptor *h = [MTLHeapDescriptor new];
+    h.storageMode = MTLStorageModePrivate;
+    h.size = 16 << 20;
+    id<MTLHeap> heap = [device newHeapWithDescriptor:h];
+    ASSERT_TRUE(heap != nil);
+    MTLTextureDescriptor *mips = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatASTC_4x4_LDR
+                                                                                    width:100
+                                                                                   height:60
+                                                                                mipmapped:YES];
+    MTLTextureDescriptor *layers = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBC1_RGBA
+                                                                                      width:64
+                                                                                     height:64
+                                                                                  mipmapped:NO];
+    layers.textureType = MTLTextureType2DArray;
+    layers.arrayLength = 3;
+    for (MTLTextureDescriptor *d in @[ mips, layers ]) {
+        d.storageMode = MTLStorageModePrivate;
+        const MTLSizeAndAlign need = [device heapTextureSizeAndAlignWithDescriptor:d];
+        EXPECT_GT(need.size, 0u);
+        id<MTLTexture> t = [heap newTextureWithDescriptor:d];
+        ASSERT_TRUE([(id)t isKindOfClass:[RMTexture class]]) << text(t);
+        EXPECT_TRUE(((RMTexture *)t)->_raw.arena);
+        EXPECT_EQ(((RMTexture *)t)->_raw.span.bytes, need.size);
+        EXPECT_EQ(((RMTexture *)t)->_raw.layers, uint32_t(d.arrayLength));
+    }
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
+}
+
 // The device is an _MTLDevice of its own; its identity and every limits field m2v's device answered are its own answers
 void ownDevice()
 {
@@ -385,6 +420,11 @@ TEST(RawFacadeLazy, AComputeStateThePackAnswersOpensNoM2V)
 TEST(RawFacadeLazy, SurfaceBufferAndLinearRowOpenNoM2V)
 {
     switch_ios::test::ExpectPassesInFreshProcess(surfaceBufferAndLinearRow);
+}
+
+TEST(RawFacadeLazy, AHeapsBlockCompressedTexturesArePlacedInItsArena)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(heapBlockTextures);
 }
 
 TEST(RawFacadeLazy, DeviceIsItsOwn)

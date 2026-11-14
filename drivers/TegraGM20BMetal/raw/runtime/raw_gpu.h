@@ -243,7 +243,8 @@ struct TextureAsk {
         Volume,       // createVolume: `view2d`, `levels`
         Array,        // createArray: `type` its header's, `layers` (six a cube), `levels`
         Multisample,  // createStoredMultisample
-        Zeta          // createOwnedZeta: `sampled` (a multisampled one has a header either way)
+        Zeta,         // createOwnedZeta: `sampled` (a multisampled one has a header either way)
+        Block         // createBlockTexture: `levels`, `layers`, `type` (2D or 2D array)
     } kind = Plain;
 
     uint32_t width = 0, height = 1, depth = 1, layers = 1, levels = 1, samples = 1, format = 0;
@@ -1088,10 +1089,12 @@ private:
     uint32_t compatibleSampleMasks_[4]{}, compatibleRasterMask_ = kSampleMaskAll;
     // prepare() found a draw Apple's driver draws nothing defined for (raw_client_errors.h): its caller draws nothing
     bool skipDraw_ = false;
+
     bool skippedDraw()
     {
         return std::exchange(skipDraw_, false);
     }
+
     bool residualsPushed_ = false;  // the last draw's push words held SlotBindOffset residuals (RenderEncoder::prepare)
     PreparedDescriptors descriptors_;
     SpillUpload spillUploads_[2];  // each stage's argument table as the encoder uploaded it last (raw_spill_table.h)
@@ -1434,8 +1437,8 @@ struct Refusal {
 
 class CommandBuffer {
 public:
-    Refusal refusal;                              // the last refused draw's predicate and its values
-    Refusal skipped;                              // the last draw skipped as Apple's driver draws nothing for it
+    Refusal refusal;  // the last refused draw's predicate and its values
+    Refusal skipped;  // the last draw skipped as Apple's driver draws nothing for it
     uint32_t skips = 0;
     RenderEncoder *render(const PassDesc &pass);  // null: an attachment the raw path cannot render to
     // raw_turn_copy.h: each texel of `dst` from `src`'s at `map`, both of one texel size or depth format (a pass of the pack's
@@ -1984,7 +1987,7 @@ public:
     // A block-compressed 2D texture (or 2D array, `type`) of `levels` levels and `layers` layers in block-linear memory of its
     // own: NIL's image (fx::blockChainLayout), which the copy engine and the CPU (in its view of kind-0xFE memory) address
     bool createBlockTexture(uint32_t width, uint32_t height, uint32_t levels, uint32_t layers, uint32_t format,
-                            uint8_t type, Texture &t);
+                            uint8_t type, Texture &t, const ArenaAt *at = nullptr);
     // A block-compressed 2D texture (or 2D array) over the caller's `bytes` (newTextureWithBytesNoCopy), already laid out as
     // `layout` (fx::blockChainLayout of its texel size, levels and layers), its pages cleaned to memory. At the layout's
     // alignment (raw_block_base.h) the pages are imported under kind 0xFE with a block-linear header of the texel size over
@@ -2950,12 +2953,12 @@ private:
     HeldSegment heldSegment_;               // the state segment its registers hold after everything submitted
     StateSegmentHeap segmentHeap_;          // lock_ (place)
     CommandBuffer cb_;
-    uint32_t rootPush_[32] = {};  // what the GPU's root table holds at [0x700, 0x780) after everything submitted
-    uint32_t restart_ = 0;        // and its primitive restart index
-    uint32_t rtLayer_ = ~0u;      // and SET_RT_LAYER (~0: not known)
-    uint32_t alphaHeld_ = ~0u;    // and SET_ANTI_ALIAS_ALPHA_CONTROL (~0: not known)
+    uint32_t rootPush_[32] = {};     // what the GPU's root table holds at [0x700, 0x780) after everything submitted
+    uint32_t restart_ = 0;           // and its primitive restart index
+    uint32_t rtLayer_ = ~0u;         // and SET_RT_LAYER (~0: not known)
+    uint32_t alphaHeld_ = ~0u;       // and SET_ANTI_ALIAS_ALPHA_CONTROL (~0: not known)
     uint32_t sampleMaskHeld_ = ~0u;  // and SET_SAMPLE_MASK_X0_Y0..X1_Y1 (~0: not known)
-    DepthStencilRegs ds_;         // and its depth/stencil registers
+    DepthStencilRegs ds_;            // and its depth/stencil registers
     std::map<std::tuple<uint64_t, uint64_t, uint64_t>, Import *> surfaces_;
     std::vector<std::unique_ptr<NativeSurface>> nativeSurfaces_;
     uint64_t nativeGeneration_ = 0;

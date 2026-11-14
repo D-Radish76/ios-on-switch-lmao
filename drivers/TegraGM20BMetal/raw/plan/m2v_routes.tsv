@@ -98,7 +98,7 @@ product	need	a function's stage input attributes	RawMetalLibrary.mm	form	-	x1-m2
 product	need	a function's twin	RawMetalLibrary.mm	form	-	x1-m2v-open	open	asked=8,opened=0	a function's m2v twin (boot 21: 8 processes)
 product	need	a function's type	RawMetalLibrary.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a function's type answered from its m2v twin when the metallib did not give one
 product	need	a function's vertex attributes	RawMetalLibrary.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a function's vertexAttributes answered from its m2v twin
-product	need	a heap texture's size the raw path does not place	RawMetalHeap.mm	form	-	x1-m2v-open	open	asked=0,opened=0	heapTextureSizeAndAlignWithDescriptor: for a texture raw does not place in a heap
+product	need	a heap texture's size the raw path does not place	RawMetalHeap.mm	dead	-	x1-m2v-errors	open	asked=0,opened=0	heapTextureSizeAndAlignWithDescriptor: of a texture the device makes none of (twin-only: the texture shape and no-memory rows), or of a storage mode no arena holds; goes with those rows. Block-compressed chains and arrays placed in the arena at x1-m2v-errors
 product	need	a library from a URL raw does not read	RawMetalLibraries.mm	form	-	x1-m2v-open	open	asked=3,opened=1	a library from a URL raw does not read (POST-MERGE D2)
 product	need	a library from a file raw does not read	RawMetalLibraries.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a library from a file raw does not read (D2)
 product	need	a library from data raw does not read	RawMetalLibraries.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a library from data raw does not read (D2)

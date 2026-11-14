@@ -301,12 +301,14 @@ void make(Runner &run)
     run.kernel(@"past_threadgroup", @"past_threadgroup_kernel", 256,
                ^(MTLComputePipelineDescriptor *){
                });
-    run.kernel(
-        @"dynamic_threadgroup", @"dynamic_threadgroup_kernel", 256, ^(MTLComputePipelineDescriptor *){
-        }, {{0, 48u << 10}});
-    run.kernel(
-        @"past_dynamic_threadgroup", @"dynamic_threadgroup_kernel", 256, ^(MTLComputePipelineDescriptor *){
-        }, {{0, (48u << 10) + 16}});
+    run.kernel(@"dynamic_threadgroup", @"dynamic_threadgroup_kernel", 256,
+               ^(MTLComputePipelineDescriptor *){
+               },
+               {{0, 48u << 10}});
+    run.kernel(@"past_dynamic_threadgroup", @"dynamic_threadgroup_kernel", 256,
+               ^(MTLComputePipelineDescriptor *){
+               },
+               {{0, (48u << 10) + 16}});
     run.kernel(@"counter_resolve", @(raw::counters::kResolveFunction), raw::counters::kResolveThreads,
                ^(MTLComputePipelineDescriptor *){
                });
