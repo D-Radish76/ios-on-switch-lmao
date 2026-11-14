@@ -9,6 +9,7 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 typedef struct objc_object *id;
@@ -28,6 +29,20 @@ struct record_count {
 uintptr_t record_count_thread;
 uint64_t record_count_sends;
 static uint64_t locks, mallocs, frees, weaks, retains, dispatches;
+
+// each counted retain's and release's caller (a release's with the top bit set), the first kRetainSites of a window
+enum {
+    kRetainSites = 1 << 14
+};
+
+static uintptr_t retainSites[kRetainSites];
+
+static void countRetain(uintptr_t caller)
+{
+    if (retains < kRetainSites)
+        retainSites[retains] = caller;
+    retains++;
+}
 
 static uintptr_t threadWord(void)
 {
@@ -166,7 +181,7 @@ DYLD_INTERPOSE(countedMoveWeak, objc_moveWeak)
 static id countedRetain(id object)
 {
     if (counting())
-        retains++;
+        countRetain((uintptr_t)__builtin_return_address(0));
     return objc_retain(object);
 }
 DYLD_INTERPOSE(countedRetain, objc_retain)
@@ -174,7 +189,7 @@ DYLD_INTERPOSE(countedRetain, objc_retain)
 static void countedRelease(id object)
 {
     if (counting())
-        retains++;
+        countRetain((uintptr_t)__builtin_return_address(0) | (uintptr_t)1 << 63);
     objc_release(object);
 }
 DYLD_INTERPOSE(countedRelease, objc_release)
@@ -234,4 +249,11 @@ void record_count_stop(struct record_count *out)
     out->weaks = weaks;
     out->retains = retains;
     out->dispatches = dispatches;
+}
+
+// The last window's retain and release callers (record_count_stop's `retains` of them, at most kRetainSites)
+const uintptr_t *record_count_retain_sites(size_t *count)
+{
+    *count = retains < kRetainSites ? (size_t)retains : kRetainSites;
+    return retainSites;
 }

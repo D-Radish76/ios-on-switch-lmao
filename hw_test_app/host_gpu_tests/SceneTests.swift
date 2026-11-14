@@ -22,11 +22,18 @@ final class SceneTests: XCTestCase {
         return GPU(device: device, queue: queue, library: library)
     }
 
+    /// Scenes whose reference off the raw path is Metal's safe math. gpu.sm53_probe's rounds each half op to half
+    /// before it widens; the apps' -ffast-math lets Apple's compiler keep the f32 result instead (MSL 1.6.3, 8).
+    private static let safeMathScenes: Set = ["gpu.sm53_probe"]
+
     func testEverySceneMatchesItsReferenceOnThisMac() async throws {
-        let gpu = try makeGPU()
+        let gpu = try makeGPU(), safeMath = try makeGPU(strictMath: true)
+        let host = HostFacts.fields(gpu.device)
+        print("Scenes \(host)")
         for scene in Scenes.all {
-            let result = try await scene.run(gpu)
-            XCTAssertTrue(result.passed, "\(scene.id): \(result.reasons(limit: 4).joined(separator: "; "))")
+            let result = try await scene.run(Self.safeMathScenes.contains(scene.id) ? safeMath : gpu)
+            XCTAssertTrue(
+                result.passed, "\(scene.id) on \(host): \(result.reasons(limit: 4).joined(separator: "; "))")
         }
     }
 

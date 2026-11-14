@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalPassCache.h"
-#include <mach/mach.h>
 #include <objc/runtime.h>
-#include <pthread.h>
 #include <algorithm>
 #include <atomic>
 #include <cstring>
@@ -155,20 +153,20 @@ std::vector<Cache *> &caches()  // every thread's, for rmPassTrim
     return *list;
 }
 
-// The entries' hashes and last lookups apart from the entries, so a lookup reads two small arrays and one entry. Only its
-// thread touches a cache, with no lock: rmPassTrim, on another thread, takes a cache's copies only while that thread is
-// stopped (thread_suspend) outside rmPassFind..rmPassDone and rmPassKeep (`inside` false), and else asks the thread to
-// let them go at its next lookup (`dropAsked`). A thread that encodes nothing more after an animation never looks up
-// again, and its copies hold the textures of its last passes.
+// The entries' hashes and last lookups apart from the entries, so a lookup reads two small arrays and one entry. A cache
+// is its thread's, with no lock, but rmPassTrim on another thread takes its copies: a thread that encodes nothing more
+// after an animation never looks up again, and its copies hold the textures of its last passes. The two meet through
+// `inside` and `trimming` alone (Dekker's: each stores its own flag, then loads the other's, all sequentially consistent,
+// so at least one of them sees the other): the thread holds the cache from enter() to leave() unless it saw `trimming`,
+// and the trim takes the copies only where it saw `inside` false, else asks the thread to let them go at its next lookup
+// (`dropAsked`). Their release stores and acquire loads order the cache's plain fields between the two.
 struct Cache {
     std::array<RMPassEntry, kEntries> entries{};
     std::array<uint64_t, kEntries> hashes{}, used{};
     uint64_t clock = 0;
-    // stored and loaded relaxed: plain stores and loads, never a read-modify-write
-    std::atomic<bool> inside{false}, dropAsked{false};
+    std::atomic<bool> inside{false}, trimming{false}, dropAsked{false};
     // the copies kept and the textures they name, for the rates line: stored by whoever holds the cache, read by anyone
     std::atomic<uint32_t> passes{0}, textures{0};
-    const mach_port_t thread = pthread_mach_thread_np(pthread_self());
 
     Cache()
     {
@@ -204,8 +202,7 @@ void count(Cache &c, int64_t passes, int64_t textures)
     c.textures.store(uint32_t(c.textures.load(std::memory_order_relaxed) + textures), std::memory_order_relaxed);
 }
 
-// Entry `i`'s copy out of the cache, for its taker to release (plain stores: the cache's thread may be stopped holding
-// any lock, the allocator's and the Objective-C runtime's among them)
+// Entry `i`'s copy out of the cache, for its taker to release
 CFTypeRef take(Cache &c, size_t i)
 {
     RMPassEntry &e = c.entries[i];
@@ -216,17 +213,19 @@ CFTypeRef take(Cache &c, size_t i)
     return gone;
 }
 
-// The window rmPassTrim must not take a cache's copies in. The compiler keeps the cache's reads and writes inside it.
-void enter(Cache &c)
+// The window rmPassTrim takes none of the cache in; false: a trim holds the cache now, and this pass goes without it
+bool enter(Cache &c)
 {
-    c.inside.store(true, std::memory_order_relaxed);
-    std::atomic_signal_fence(std::memory_order_seq_cst);
+    c.inside.store(true, std::memory_order_seq_cst);
+    if (!c.trimming.load(std::memory_order_seq_cst))
+        return true;
+    c.inside.store(false, std::memory_order_release);
+    return false;
 }
 
 void leave(Cache &c)
 {
-    std::atomic_signal_fence(std::memory_order_seq_cst);
-    c.inside.store(false, std::memory_order_relaxed);
+    c.inside.store(false, std::memory_order_release);
 }
 
 void release(const CFTypeRef (&gone)[kEntries])
@@ -326,7 +325,8 @@ bool rmPassKey(MTLRenderPassDescriptor *d, std::vector<uint8_t> &key, uint64_t &
 RMPassEntry *rmPassFind(const std::vector<uint8_t> &key, uint64_t hash)
 {
     Cache &c = tCache;
-    enter(c);
+    if (!enter(c))
+        return nullptr;
     if (++c.clock % kEntries == 0 || c.dropAsked.load(std::memory_order_relaxed)) {
         CFTypeRef gone[kEntries] = {};
         dropIdle(c, gone);
@@ -360,18 +360,11 @@ RMPassTrim rmPassHeld()
 RMPassTrim rmPassTrim()
 {
     RMPassTrim trimmed = {};
-    const mach_port_t self = pthread_mach_thread_np(pthread_self());
     std::lock_guard<std::mutex> registry(cachesLock());
     for (Cache *c : caches()) {
         CFTypeRef gone[kEntries] = {};
-        const bool other = c->thread != self;
-        // thread_suspend returns once the thread is off its core: its last instruction is precise, so `inside` says
-        // whether it stopped within the window. A thread this process may not suspend drops its copies itself.
-        if (other && thread_suspend(c->thread) != KERN_SUCCESS) {
-            c->dropAsked.store(true, std::memory_order_relaxed);
-            continue;
-        }
-        if (c->inside.load(std::memory_order_relaxed)) {
+        c->trimming.store(true, std::memory_order_seq_cst);
+        if (c->inside.load(std::memory_order_seq_cst)) {
             c->dropAsked.store(true, std::memory_order_relaxed);
         } else {
             for (size_t i = 0; i < kEntries; i++)
@@ -381,8 +374,7 @@ RMPassTrim rmPassTrim()
                     gone[i] = take(*c, i);
                 }
         }
-        if (other)
-            thread_resume(c->thread);
+        c->trimming.store(false, std::memory_order_release);
         release(gone);
     }
     return trimmed;
@@ -392,7 +384,8 @@ void rmPassKeep(const std::vector<uint8_t> &key, uint64_t hash, MTLRenderPassDes
                 const RMRenderEncoder *e)
 {
     Cache &c = tCache;
-    enter(c);
+    if (!enter(c))
+        return;
     size_t at = 0;
     for (size_t i = 0; i < kEntries; i++) {
         if (!c.entries[i].pass) {
