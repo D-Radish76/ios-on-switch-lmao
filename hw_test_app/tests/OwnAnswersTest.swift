@@ -30,7 +30,8 @@ struct OwnAnswersTest: HWTest {
 
         let names = gpu.library.functionNames
         metrics.set("function_names", names.count)
-        let externs = (gpu.library as AnyObject).perform(NSSelectorFromString("externFunctionNames"))?
+        let externs =
+            (gpu.library as AnyObject).perform(NSSelectorFromString("externFunctionNames"))?
             .takeUnretainedValue() as? [String]
         metrics.set("extern_names", externs?.count ?? -1)
         if names.isEmpty || externs == nil || gpu.library.type != .executable { wrong.append("library") }
