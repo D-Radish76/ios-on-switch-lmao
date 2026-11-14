@@ -19,7 +19,7 @@ constexpr char kReflectionMagic[4] = {'S', 'W', 'R', 'F'};
 constexpr uint32_t kReflectionVersion = 1;
 constexpr uint32_t kReflectionComputeStages = 1, kReflectionRenderStages = 5;
 constexpr uint32_t kReflectionAbsent = UINT32_MAX;
-constexpr uint32_t kKindReflection = 5, kKindReflectionRefusal = 6;
+constexpr uint32_t kKindReflection = 9, kKindReflectionRefusal = 10;  // after the facts (5, 6) and library (7, 8) kinds
 
 enum ReflectionKind : uint32_t {
     ReflectionBinding = 1,
@@ -31,6 +31,7 @@ enum ReflectionKind : uint32_t {
 };
 
 #pragma pack(push, 1)
+
 struct ReflectionHeader {
     char magic[4];
     uint32_t version, stages, nodes, edges, nameBytes;
@@ -49,6 +50,7 @@ struct ReflectionNode {
     uint32_t reserved;
     uint64_t values[8];
 };
+
 #pragma pack(pop)
 
 static_assert(sizeof(ReflectionHeader) == 24 && sizeof(ReflectionNode) == 104, "bridge/NativeMetalReflection.rs blob");

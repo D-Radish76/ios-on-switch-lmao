@@ -265,10 +265,13 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
         kernels = _kernel;
     }
     const auto kernelState = kernels ? kernels->state() : RMKernelSet::State::Refused;
-    // a kernel no compiler made fails its command buffer at submission (computeReadiness), as one still being made waits
+    // a kernel no compiler made fails its command buffer at submission (computeReadiness), as one still being made waits;
+    // one the compiler refused fails it as Metal's does a pipeline it could not compile
     const bool pending = kernelState == RMKernelSet::State::Pending || kernelState == RMKernelSet::State::Failed;
     const bool ready = kernelState == RMKernelSet::State::Ready;
-    if (!refused && !ready && !pending)
+    if (!refused && !ready && !pending && kernels)
+        failCommandBuffer(_cb, @"a compute kernel the shader compiler refused");
+    else if (!refused && !ready && !pending)
         [self refuse:PredComputeKernel value:groups[0] why:@"a dispatch the raw path has no kernel for"];
     Cmd m = cmd(OpDispatch, 3, perThread);
     m.c = uint64_t(t[0]) | uint64_t(t[1]) << 16 | uint64_t(t[2]) << 32;

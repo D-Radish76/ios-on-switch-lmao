@@ -8,6 +8,7 @@
 #include <mutex>
 #include "NativeBridgeMetalFrontend.h"
 #include "TegraGM20BCompilerABI.h"
+#include "compiler_facts.h"
 #include "compiler_libraries.h"
 #include "compiler_record.h"
 #include "../raw/runtime/RawDirect.h"
@@ -65,6 +66,7 @@ struct Engine::State {
     raw::Digest rules{};
     std::unique_ptr<raw::Direct> direct;
     std::shared_ptr<LibraryCache> libraries;
+    std::unique_ptr<CodeGen> codeGen;
 };
 
 Engine::Engine() : state_(std::make_unique<State>())
@@ -74,7 +76,10 @@ Engine::~Engine() = default;
 
 EngineInputs EngineInputs::installed()
 {
-    return {besidePlugin("TegraGM20BMetal.raw/pack.bin", true), besidePlugin("libvulkan_nouveau.dylib"), ""};
+    EngineInputs inputs = {
+        besidePlugin("TegraGM20BMetal.raw/pack.bin", true), besidePlugin("libvulkan_nouveau.dylib"), "", {}};
+    inputs.codeGen.seed = besidePlugin("TegraGM20BMetal.m2v-seed/shared/msl", true);
+    return inputs;
 }
 
 bool Engine::open(uint64_t stack, const EngineInputs &inputs, std::string &why)
@@ -87,6 +92,7 @@ bool Engine::open(uint64_t stack, const EngineInputs &inputs, std::string &why)
         return why = "the raw pack: " + why, false;
     s.rules = rulesDigest(raw::PackRules::of(s.pack));
     s.libraries = std::make_shared<LibraryCache>(inputs.systemRoot);
+    s.codeGen = std::make_unique<CodeGen>(inputs.codeGen);
     return true;
 }
 
@@ -120,6 +126,10 @@ raw::Digest Engine::rules() const
 
 int32_t Engine::compile(const Prepared &p, std::string &entry, std::string &why)
 {
+    if (p.request.kind == raw::RequestKind::Facts)
+        return makeFacts(p, state_->inputs.systemRoot, entry, why);
+    if (p.request.kind == raw::RequestKind::Library)
+        return state_->codeGen->make(p, entry, why);
     State &s = *state_;
     if (p.request.kind == raw::RequestKind::Reflection) {
         const std::string &root = s.inputs.systemRoot;

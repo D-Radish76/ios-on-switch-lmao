@@ -8,8 +8,10 @@
 #include "NativeBridgeMetalFrontend.h"
 #include "RawCompileRequest.h"
 #include "RawMetalInternal.h"
+#include "raw_compute_facts_entry.h"
 #include "raw_compute_record.h"
 #include "raw_reflection_blob.h"
+#include "raw_library_entry.h"
 #include "raw_remote_ask.h"
 
 namespace raw {
@@ -376,6 +378,128 @@ bool Completion::reflection(id function, MTLComputePipelineDescriptor *descripto
             return true;
         },
         k, blob, why);
+}
+
+bool Completion::facts(id facadeFunction, MTLComputePipelineDescriptor *descriptor, const std::string &stateKey,
+                       PackComputeFacts &out, std::string &failure)
+{
+    const CacheKey k = factsCacheKey(stack_, stateKey);
+    CompileRequest r;
+    Digest name;
+    const auto request = [&](bool bytes, bool every) {
+        r = {};
+        r.stack = stack_;
+        r.kind = RequestKind::Facts;
+        r.key = k.key;
+        r.kernel.maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
+        r.kernel.multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
+        std::vector<LibraryIdentity> ids;
+        std::map<const LibrarySource *, uint32_t> seen;
+        if (!addStage(r, ids, seen, "k", facadeFunction, bytes, every))
+            return false;
+        name = storeName(k, r, ids);
+        return true;
+    };
+    std::string refusal;
+    const auto stored = [&]() {
+        std::string bytes;
+        return remote_->find(name, bytes) ? decodeFactsEntry(bytes, k, out, refusal) : RecordCache::Found::None;
+    };
+    if (!request(false, false))
+        return failure = kInexpressible, false;
+    RecordCache::Found found = stored();
+    Remote::Answer answer = Remote::Answer::Unavailable;
+#if SWITCH_RAW_DIAGNOSTICS
+    const bool fromStore = found != RecordCache::Found::None;
+    const uint64_t began = nowUs();
+#endif
+    if (found == RecordCache::Found::None) {
+        if (!remote_->serving() || !remote_->taking())
+            return failure = kNoCompilerComes, false;
+        for (const bool again : {false, true}) {
+            if (!request(true, again))
+                return failure = kInexpressible, false;
+            answer = remote_->compile(encodeRequest(r));
+            if (answer == Remote::Answer::Made || answer == Remote::Answer::Refused)
+                found = stored();
+            if (askNext(answer, found != RecordCache::Found::None, again, remote_->declined()) != AskNext::AskAgain)
+                break;
+        }
+    }
+    switch (askFailure(answer, found != RecordCache::Found::None, remote_->declined())) {
+    case AskFailure::None:
+        break;
+    case AskFailure::CouldNotRun:
+        return failure = "the kernel's compile could not run", false;
+    case AskFailure::NoCompilerComes:
+        return failure = kNoCompilerComes, false;
+    case AskFailure::NotTaken:
+        return failure = kNotTaken, false;
+    case AskFailure::NotStored:
+        return failure = kNotStored, false;
+    }
+    if (found == RecordCache::Found::Refusal)
+        return failure = "the shader compiler made no compute state of the kernel: " + refusal, false;
+#if SWITCH_RAW_DIAGNOSTICS
+    os_log(
+        rawLog(),
+        "raw: a compute state the pack lacks answered %{public}s in %llu ms: max %u width %u memory %u: %{public}.300s",
+        fromStore ? "from the shader compiler's store" : "by the shader compiler",
+        (unsigned long long)((nowUs() - began) / 1000), out.maxThreads, out.executionWidth, out.staticMemory,
+        stateKey.c_str());
+#endif
+    return true;
+}
+
+bool Completion::library(uint32_t type, const std::string &bytes, MadeLibrary &out, std::string &failure, bool &refused)
+{
+    refused = false;
+    CompileRequest r;
+    r.stack = stack_;
+    r.kind = RequestKind::Library;
+    const CacheKey k = libraryCacheKey(stack_, type, bytes);
+    r.key = k.key;
+    r.codeGenType = type;
+    r.codeGen = bytes;
+    const Digest name = storeName(k, r, {});
+    std::string log;
+    const auto stored = [&]() {
+        std::string entry;
+        return remote_->find(name, entry) ? decodeLibraryEntry(entry, k, out, log) : RecordCache::Found::None;
+    };
+    // a refusal is only read after this process's own ask: the front end makes a refused library again at each
+    RecordCache::Found found =
+        stored() == RecordCache::Found::Record ? RecordCache::Found::Record : RecordCache::Found::None;
+    Remote::Answer answer = Remote::Answer::Unavailable;
+    if (found == RecordCache::Found::None) {
+        if (!remote_->serving() || !remote_->taking())
+            return failure = kNoCompilerComes, false;
+        const std::string request = encodeRequest(r);
+        for (const bool again : {false, true}) {
+            answer = remote_->compile(request);
+            if (answer == Remote::Answer::Made || answer == Remote::Answer::Refused)
+                found = stored();
+            if (askNext(answer, found != RecordCache::Found::None, again, remote_->declined()) != AskNext::AskAgain)
+                break;
+        }
+    }
+    switch (askFailure(answer, found != RecordCache::Found::None, remote_->declined())) {
+    case AskFailure::None:
+        break;
+    case AskFailure::CouldNotRun:
+        return failure = "the system's Metal compiler could not run", false;
+    case AskFailure::NoCompilerComes:
+        return failure = kNoCompilerComes, false;
+    case AskFailure::NotTaken:
+        return failure = "the shader compiler did not take the library", false;
+    case AskFailure::NotStored:
+        return failure = "the shader compiler's store does not keep the library", false;
+    }
+    if (found == RecordCache::Found::Refusal) {
+        refused = true;
+        return failure = log, false;
+    }
+    return true;
 }
 
 }  // namespace raw

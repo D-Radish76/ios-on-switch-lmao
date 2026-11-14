@@ -349,10 +349,11 @@ static void wroteThroughLayout(const void *memory)
 {
     raw::fx::MipChain layout;
     const raw::FormatInfo *f = nullptr;
-    if (backed || !blockLayout(d, layout, &f)) {
-        id<MTLDevice> m2v = RM_M2V("a texture layout the raw path does not take");
-        return ((id (*)(id, SEL, id, BOOL))objc_msgSend)(m2v, _cmd, d, backed);
-    }
+    // nil as m2v answered: a heap's or a buffer's texture is laid out by the device when it is made there
+    if (backed)
+        return nil;
+    if (!blockLayout(d, layout, &f))
+        return rmPlainLayout(self, d);
     RMBlockLayout *l = [RMBlockLayout new];
     l->_device = self;
     l->_layout = layout;
@@ -369,8 +370,12 @@ static void wroteThroughLayout(const void *memory)
     raw::fx::MipChain layout;
     const raw::FormatInfo *f = nullptr;
     if (!blockLayout(d, layout, &f)) {
-        id<MTLDevice> m2v = RM_M2V("a no-copy texture the raw path does not take");
-        return ((id (*)(id, SEL, void *, NSUInteger, id, id))objc_msgSend)(m2v, _cmd, bytes, length, d, deallocator);
+        os_log_error(rawLog(),
+                     "raw: %{public}s: no no-copy texture of format %lu %lux%lu type %lu: only block-compressed 2D "
+                     "images are laid out in caller memory",
+                     getprogname(), (unsigned long)d.pixelFormat, (unsigned long)d.width, (unsigned long)d.height,
+                     (unsigned long)d.textureType);
+        return nil;
     }
     RMNoCopyTexture *t = [RMNoCopyTexture new];
     t->_device = self;

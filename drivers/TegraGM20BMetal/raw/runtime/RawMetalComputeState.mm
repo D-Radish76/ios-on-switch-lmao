@@ -4,8 +4,10 @@
 #import "RawMetalComputeState.h"
 #import "RawMetalReflection.h"
 #include "NativeBridgeMetalFrontend.h"
+#include "RawComplete.h"
 #include "raw_compute_key.h"
 #include "raw_metallib.h"
+#include "raw_pack.h"
 
 @implementation RMComputeState
 
@@ -148,6 +150,24 @@ static bool archivesAnswer(RMComputeState *s, RMFunction *f, MTLPipelineOption &
     return false;
 }
 
+// The answers of a keyed state the pack has no facts of, the shader compiler's (RawComplete.h facts): a state with a stage
+// input keys it into its constants, which no request carries
+static bool compilerAnswers(RMComputeState *s, RMFunction *f, NSError **error)
+{
+    std::string failure = "no shader compiler comes this boot";
+    raw::PackComputeFacts made = {};
+    const std::string key = raw::computeStateKey(s->_air, s->_constants, s->_maxThreads, s->_multipleOfWidth);
+    if (!gRM->completion || !gRM->completion->facts(f, s->_direct, key, made, failure)) {
+        if (error)
+            *error = rmCreationError(failure);
+        return false;
+    }
+    s->_facts = made;
+    if (error)
+        *error = nil;
+    return true;
+}
+
 // m2v's state of `s`, whose answers it then gives: for a state the pack has no facts of
 static bool m2vAnswers(RMComputeState *s, MTLPipelineOption options, NSError **error)
 {
@@ -168,10 +188,7 @@ static bool m2vAnswers(RMComputeState *s, MTLPipelineOption options, NSError **e
             *error = nil;
         return true;
     }
-    s->_compatibility = [m2v newComputePipelineStateWithDescriptor:twin
-                                                           options:options
-                                                        reflection:nil
-                                                             error:error];
+    s->_compatibility = [m2v newComputePipelineStateWithDescriptor:twin options:options reflection:nil error:error];
     s->_metadata = s->_compatibility;
     return s->_metadata != nil;
 }
@@ -190,7 +207,8 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
     s->_keyed = f && !descriptor.linkedFunctions.functions.count &&
                 !descriptor.linkedFunctions.privateFunctions.count && airOf(function, s->_air, libraryName);
     s->_libraryName = libraryName;
-    s->_constants = (f ? f->_constants : "") + stageInText(descriptor.stageInputDescriptor);
+    const std::string stageIn = stageInText(descriptor.stageInputDescriptor);
+    s->_constants = (f ? f->_constants : "") + stageIn;
     s->_m2vMissing = rmM2vMissingKernel(descriptor);
     s->_maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
     s->_multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
@@ -206,6 +224,9 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
         s->_facts = *facts;
         if (error)
             *error = nil;
+    } else if (s->_keyed && stageIn.empty()) {
+        if (!compilerAnswers(s, f, error))
+            return nil;
     } else if (!m2vAnswers(s, options, error)) {
         return nil;
     }

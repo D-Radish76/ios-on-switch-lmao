@@ -214,7 +214,8 @@ void inheritedMethod()
     EXPECT_EQ(gOpens, 1);
 }
 
-// A compute state the pack answers is made without m2v, its answers the pack's; one it has no answers of opens m2v
+// A compute state the pack answers is made without m2v, its answers the pack's; one it has no answers of is the shader
+// compiler's (raw_facade_open_test), and with none this boot fails its creation, opening no m2v
 void computeStates()
 {
     const std::string metallib = writeMetallib();
@@ -236,12 +237,12 @@ void computeStates()
     MTLComputePipelineDescriptor *other = [MTLComputePipelineDescriptor new];
     other.computeFunction = kernel;
     other.maxTotalThreadsPerThreadgroup = 256;
-    (void)[device newComputePipelineStateWithDescriptor:other
-                                                options:MTLPipelineOptionNone
-                                             reflection:nil
-                                                  error:&error];
-    EXPECT_EQ(gOpens, 1);
-    EXPECT_NE(m2vRecord(device)[@"needs"][@"a compute state the pack has no facts of"], nil) << text(m2vRecord(device));
+    EXPECT_EQ(
+        [device newComputePipelineStateWithDescriptor:other options:MTLPipelineOptionNone reflection:nil error:&error],
+        nil);
+    EXPECT_NE(error, nil);
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // A buffer over an IOSurface's pages and a linear texture's row are the raw device's own answers

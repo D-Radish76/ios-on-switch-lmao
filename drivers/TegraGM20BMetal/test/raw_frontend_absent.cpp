@@ -160,7 +160,8 @@ NmbOfflineLibrary *nmb_offline_library_new(const void *, size_t)
     return nullptr;
 }
 
-void nmb_offline_library_release(NmbOfflineLibrary *) {}
+void nmb_offline_library_release(NmbOfflineLibrary *)
+{}
 
 NmbOfflineFunction *nmb_offline_function_new(const NmbOfflineLibrary *, const char *)
 {
@@ -173,7 +174,8 @@ NmbOfflineFunction *nmb_offline_function_new_specialized(const NmbOfflineLibrary
     return nullptr;
 }
 
-void nmb_offline_function_release(NmbOfflineFunction *) {}
+void nmb_offline_function_release(NmbOfflineFunction *)
+{}
 
 uint64_t nmb_offline_function_type(const NmbOfflineFunction *)
 {
@@ -227,5 +229,6 @@ const uint8_t *nmb_reflection_blob_bytes(const NmbReflectionBlob *, size_t *)
     return nullptr;
 }
 
-void nmb_reflection_blob_release(NmbReflectionBlob *) {}
+void nmb_reflection_blob_release(NmbReflectionBlob *)
+{}
 }

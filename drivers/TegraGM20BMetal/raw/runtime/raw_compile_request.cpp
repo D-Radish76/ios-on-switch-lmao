@@ -64,7 +64,7 @@ void readKernel(Reader &r, KernelRequest &k)
 bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
-    if (r.kind == RequestKind::Kernel || computeReflection(r))
+    if (r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r))
         return tag == "k";
     if (index == 0)
         return tag == "v";
@@ -73,9 +73,23 @@ bool knownTag(const CompileRequest &r, size_t index)
     return tag == "vl" || tag == "vp" || tag == "fl" || tag == "fp";
 }
 
+bool knownCodeGen(uint32_t type)
+{
+    return type == kCodeGenSource || type == kCodeGenStitch || type == kCodeGenImageFilters;
+}
+
+bool saneLibrary(const CompileRequest &r)
+{
+    return r.stages.empty() && r.libraries.empty() && r.cubic.samplers.empty() && r.cubic.textures.empty() &&
+           r.kernel.textures.empty() && r.kernel.samplers.empty() && !r.key.empty() && r.form == RequestForm::Primary &&
+           !r.codeGen.empty() && knownCodeGen(r.codeGenType);
+}
+
 bool sane(const CompileRequest &r)
 {
-    const bool kernel = r.kind == RequestKind::Kernel || computeReflection(r);
+    if (r.kind == RequestKind::Library)
+        return saneLibrary(r);
+    const bool kernel = r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r);
     if ((kernel ? r.stages.size() != 1 : r.stages.empty()) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
         r.cubic.textures.size() > 16 || r.kernel.textures.size() > kRequestBindLimit ||
@@ -164,6 +178,10 @@ std::string encodeRequest(const CompileRequest &r)
     }
     w.value(r.fragmentTests);
     writeKernel(w, r.kernel);
+    if (r.kind == RequestKind::Library) {
+        w.value(r.codeGenType);
+        w.text(r.codeGen);
+    }
     return w.out;
 }
 
@@ -220,6 +238,10 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     }
     q.fragmentTests = r.value<uint8_t>();
     readKernel(r, q.kernel);
+    if (q.kind == RequestKind::Library) {
+        q.codeGenType = r.value<uint32_t>();
+        q.codeGen = r.text();
+    }
     if (!r.ok() || r.at() != bytes.size() || !sane(q))
         return false;
     out = std::move(q);
@@ -317,6 +339,29 @@ CacheKey computeReflectionKey(uint64_t stack, const std::string &stateKey)
     CacheKey k;
     k.stack = stack;
     k.key = "reflection | " + stateKey;
+    return k;
+}
+
+CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "facts | " + stateKey;
+    return k;
+}
+
+CacheKey libraryCacheKey(uint64_t stack, uint32_t type, const std::string &bytes)
+{
+    static constexpr char kDigits[] = "0123456789abcdef";
+    const Digest digest = sha256(bytes.data(), bytes.size());
+    std::string hex;
+    for (const uint8_t b : digest) {
+        hex += kDigits[b >> 4];
+        hex += kDigits[b & 15];
+    }
+    CacheKey k;
+    k.stack = stack;
+    k.key = "library | " + std::to_string(type) + " | " + hex;
     return k;
 }
 

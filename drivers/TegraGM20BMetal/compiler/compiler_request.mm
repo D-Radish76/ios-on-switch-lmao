@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include "../raw/runtime/RawCompileRequest.h"
+#include "../raw/runtime/raw_codegen_request.h"
 #include "../raw/runtime/raw_compute_key.h"
 #include "../raw/runtime/raw_render_key.h"
 
@@ -90,6 +91,33 @@ bool computeReflectionKey(Prepared &p, const std::vector<std::map<std::string, r
     return true;
 }
 
+// A compute state's facts: its function's AIR, constants and limits, as the pack keys its PackComputeFacts
+bool factsKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
+              std::string &why)
+{
+    const raw::CompileRequest &r = p.request;
+    raw::AirHash hash;
+    if (!airOf(r, air, r.stages[0], hash, why))
+        return false;
+    p.packKey = raw::computeStateKey(hash, r.stages[0].constants, r.kernel.maxThreads, r.kernel.multipleOfWidth);
+    p.key = raw::factsCacheKey(stack, p.packKey);
+    return true;
+}
+
+// A library the front end makes: keyed by its code generation request's bytes, which must be what a client's builder
+// makes (raw_codegen_request.h)
+bool libraryKey(Prepared &p, uint64_t stack, std::string &why)
+{
+    const raw::CompileRequest &r = p.request;
+    if (!raw::codegen::requestOk(r.codeGenType, r.codeGen))
+        return why = "a library request of type " + std::to_string(r.codeGenType) + " no client's builder makes", false;
+    p.key = raw::libraryCacheKey(stack, r.codeGenType, r.codeGen);
+    if (p.key.key != r.key)
+        return why = "a library request whose bytes give another key than its own", false;
+    p.name = raw::storeName(p.key, r, {});
+    return true;
+}
+
 }  // namespace
 
 bool SystemLibraries::resolve(const std::string &root, const std::string &path, std::string &real, std::string &why)
@@ -135,6 +163,12 @@ bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, 
         return why = "an unreadable request", false;
     if (p.request.stack != stack)
         return why = "a request of another stack", false;
+    if (p.request.kind == raw::RequestKind::Library) {
+        if (!libraryKey(p, stack, why))
+            return false;
+        out = std::move(p);
+        return true;
+    }
     std::vector<std::map<std::string, raw::AirHash>> air(p.request.libraries.size());
     std::vector<raw::LibraryIdentity> identities;
     for (size_t i = 0; i < p.request.libraries.size(); ++i) {
@@ -147,9 +181,11 @@ bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, 
             return why = why.empty() ? "a library that is not a metallib" : why, false;
         identities.push_back(raw::identityOf(library));
     }
-    const bool keyed = raw::computeReflection(p.request)                 ? computeReflectionKey(p, air, stack, why)
-                       : p.request.kind == raw::RequestKind::Kernel ? kernelKey(p, air, stack, why)
-                                                                     : renderKey(p, air, stack, why);
+    const raw::RequestKind kind = p.request.kind;
+    const bool keyed = raw::computeReflection(p.request)  ? computeReflectionKey(p, air, stack, why)
+                       : kind == raw::RequestKind::Kernel ? kernelKey(p, air, stack, why)
+                       : kind == raw::RequestKind::Facts  ? factsKey(p, air, stack, why)
+                                                          : renderKey(p, air, stack, why);
     if (!keyed)
         return false;
     if (p.key.key != p.request.key)

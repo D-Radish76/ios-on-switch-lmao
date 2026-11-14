@@ -157,11 +157,10 @@ uint32_t ycbcrTargetFormat(MTLRenderPipelineDescriptor *d)
                                      }];
         return nil;
     }
-    MTLRenderPipelineDescriptor *twin = twinDescriptor(made);
     if (reflection)
         *reflection = rmRenderReflection(p, made, o);
-    if (native_bridge_metal_render_pipeline_lazy)
-        p->_twin = native_bridge_metal_render_pipeline_lazy(RM_M2V("a YCbCr target state's twin"), twin, o);
+    p->_twinOptions = o;
+    p->_twinLater = true;
     if (error)
         *error = nil;
     return (id<MTLRenderPipelineState>)p;

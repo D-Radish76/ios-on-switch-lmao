@@ -119,25 +119,27 @@ inline std::vector<uint8_t> slot(uint32_t k)
 // the heap section at kHeap, so a page-multiple slot of the pack's own pages; `kernels`, each with a program slot of its
 // own after those (its `program` set here); `facts`: its compute states' answers. Without `pixelStage` the state has no
 // fragment program (raw_pack.h kNoProgram). `reflections`: its PackReflections section (reflection_blob_writer.h).
+// `named`: further states the device looks up by name (Device::ycbcrPipeline's), each over the same two programs and fields
 inline std::string writePack(const std::string &key, std::vector<raw::PackKernel> kernels = {},
                              std::vector<raw::PackComputeFacts> facts = {}, bool pixelStage = true,
-                             const std::string &reflections = "")
+                             const std::string &reflections = "", const std::vector<std::string> &named = {})
 {
-    constexpr uint64_t kPrograms = 0x180, kPipelines = 0x800, kComputeStates = 0xc00, kStrings = 0xe00,
-                       kKernels = 0x2000;
+    constexpr uint64_t kPrograms = 0x180, kComputeStates = 0xc00, kStrings = 0xe00, kKernels = 0x2000;
+    // one state's record fits below the compute states; more go between the kernels and the heap
+    const uint64_t kPipelines = named.empty() ? 0x800 : 0x8000;
     const uint32_t programs = 2 + uint32_t(kernels.size());
     std::vector<uint8_t> file(kHeap + programs * kSlot + 0x1000, 0);
     raw::PackHeader h = {};
     memcpy(h.magic, "GM20BPK1", 8);
     h.version = raw::kPackVersion;
     h.programs = programs;
-    h.pipelines = 1;
+    h.pipelines = uint32_t(1 + named.size());
     const std::string fields = key.substr(0, key.find(" | v"));
     std::vector<char> strings(1, 0);
     strings.insert(strings.end(), fields.begin(), fields.end());
     strings.push_back(0);
     h.section[raw::PackPrograms] = {kPrograms, programs * sizeof(raw::PackProgram)};
-    h.section[raw::PackPipelines] = {kPipelines, sizeof(raw::PackPipeline)};
+    h.section[raw::PackPipelines] = {kPipelines, h.pipelines * sizeof(raw::PackPipeline)};
     h.section[raw::PackStrings] = {kStrings, strings.size()};
     h.section[raw::PackKernels] = {kKernels, kernels.size() * sizeof(raw::PackKernel)};
     h.section[raw::PackHeap] = {kHeap, programs * kSlot + 0x1000};
@@ -166,12 +168,19 @@ inline std::string writePack(const std::string &key, std::vector<raw::PackKernel
         kernels[i].program = uint16_t(2 + i);
         memcpy(file.data() + kKernels + i * sizeof(raw::PackKernel), &kernels[i], sizeof(raw::PackKernel));
     }
-    raw::PackPipeline pp = {};
-    pp.keyHash = raw::Pack::fnv(key.data(), key.size());
-    pp.keyString = 1;
-    pp.vs = 0;
-    pp.fs = pixelStage ? 1 : raw::kNoProgram;
-    memcpy(file.data() + kPipelines, &pp, sizeof pp);
+    const uint64_t keyHash = raw::Pack::fnv(key.data(), key.size());
+    std::vector<uint64_t> hashes = {keyHash};
+    for (const std::string &name : named)
+        hashes.push_back(raw::Pack::fnv(name.data(), name.size()));
+    std::sort(hashes.begin(), hashes.end());
+    for (size_t i = 0; i < hashes.size(); i++) {
+        raw::PackPipeline pp = {};
+        pp.keyHash = hashes[i];
+        pp.keyString = 1;
+        pp.vs = 0;
+        pp.fs = hashes[i] != keyHash || pixelStage ? 1 : raw::kNoProgram;
+        memcpy(file.data() + kPipelines + i * sizeof pp, &pp, sizeof pp);
+    }
     memcpy(file.data() + kStrings, strings.data(), strings.size());
     const uint64_t reflectionsAt = file.size();
     file.insert(file.end(), reflections.begin(), reflections.end());

@@ -76,7 +76,7 @@ static inline id twinPublish(id object, __strong id &slot, id made)
 @public
     std::string _framework;  // "QuartzCore", "RenderBox"...; empty: not a framework's default library (never looked up)
     std::shared_ptr<raw::LibrarySource> _source;
-    raw::MetallibFunctions _functions;  // empty: an m2v library from its creation
+    raw::MetallibFunctions _functions;  // none listed: an m2v library from its creation
 }
 - (id)twinOn:(id<MTLDevice>)m2v;
 @end
