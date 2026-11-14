@@ -144,6 +144,9 @@ struct Model {
     unsigned compiles = 0;
     std::vector<std::string> compileRequests;  // each compile's request bytes, as the client sent them
     unsigned refuse = 0;                       // submissions refused from now, with `refusal`
+    // a SubmitJob use of no BO the connection holds or binds refused kIOReturnBadArgument, as the kernel refuses it (off:
+    // the tests whose uses name memory the model never bound)
+    bool unknownUsesRefused = false;
     // BoAllocs of control memory (TegraGM20BBoControl) made, and whether they are answered kIOReturnNoMemory
     unsigned controlAllocs = 0;
     bool refuseControl = false;
@@ -308,7 +311,7 @@ struct Model {
         const auto *shared = reinterpret_cast<const TegraGM20BAbiSurfaceUse *>(
             reinterpret_cast<const uint8_t *>(head + 1) + head->push_count * sizeof(TegraGM20BAbiPush));
         for (uint32_t i = 0; i < head->shared_count; ++i)
-            if (const uint64_t bo = resolve(shared[i]); bo && bos.at(bo).set)
+            if (const uint64_t bo = resolve(shared[i]); (!bo && unknownUsesRefused) || (bo && bos.at(bo).set))
                 return kIOReturnBadArgument;
         const uint32_t admission = head->flags & TegraGM20BJobAdmission;
         const uint64_t cookie =

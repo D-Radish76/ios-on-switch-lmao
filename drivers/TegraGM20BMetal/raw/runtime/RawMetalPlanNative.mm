@@ -29,7 +29,7 @@ struct NativePlanSink {
             return;
         }
         if (binding.source == raw::BufferBinding::Source::ClockAnchors) {
-            compute->setBytesAt(slot, binding.offset, binding.length);
+            compute->setKernelBytes(slot, binding.offset, binding.length);
             return;
         }
         if (binding.source == raw::BufferBinding::Source::Bytes) {

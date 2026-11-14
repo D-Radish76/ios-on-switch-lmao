@@ -552,7 +552,7 @@ bool encodeKernel(raw::ComputeEncoder &e, raw::CommandBuffer &rc, RMCommandBuffe
         e.setBufferOffset(c.index, c.c);
         break;
     case OpKernelClockAnchors:
-        e.setBytesAt(c.index, c.c, c.b);
+        e.setKernelBytes(c.index, c.c, c.b);
         break;
     case OpKernelTexture: {
         RMTexture *t = (RMTexture *)object;
