@@ -17,6 +17,13 @@ pub mod offline;
 #[path = "NativeMetalTessModes.rs"]
 mod tess_modes;
 
+/// The budget of every compile the translator and the bridge start: no deadline, so the translator's deterministic
+/// work-unit cap and memory ledger bound it alone. A wall-clock deadline fails a compile that runs long under load
+/// ("Budget(Time)") and passes the same compile later.
+pub fn compile_budget() -> metal2vulkan::Budget {
+    metal2vulkan::Budget::default()
+}
+
 /// The AIR slice of a universal metallib (a fat container, big endian, of an AIR64 metallib and an Apple-GPU binary, as the target's
 /// frameworks ship them), as Metal itself picks it; a thin metallib is returned as it is.
 pub fn air_slice(bytes: &[u8]) -> Option<&[u8]> {

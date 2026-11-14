@@ -32,6 +32,7 @@ mod target;
 mod variants;
 
 pub use native_metal_translate::{air_slice, direct, direct_compute, offline};
+use native_metal_translate::compile_budget;
 
 use metal2vulkan::metal::{PixelFormat, PrimitiveType, TextureUsage};
 use metal2vulkan::pipeline::{ColorAttachmentDescriptor, RenderPipelineDescriptor, StageSource};
@@ -46,13 +47,6 @@ use std::time::Duration;
 
 /// The runtime's own example library (validation/fixtures/public/examples/runtime_examples.ll), assembled to AIR at build time.
 static FIXTURE_AIR: &[u8] = include_bytes!(env!("NMB_FIXTURE_AIR"));
-
-/// The budget of every compile the bridge starts: no deadline, so the translator's deterministic work-unit cap and memory
-/// ledger bound it alone. A wall-clock deadline fails a compile that runs long under load ("Budget(Time)") and passes the
-/// same compile later.
-pub(crate) fn compile_budget() -> metal2vulkan::Budget {
-    metal2vulkan::Budget::default()
-}
 
 unsafe extern "C" {
     /// libkern (libSystem): clean and invalidate the data cache over a range, from user space.
