@@ -108,6 +108,20 @@ TEST_F(DeviceKernelPairs, AnEdgeSamplerOfAConvertedTextureKeepsItsHeader)
     EXPECT_EQ(set[0] >> 20, set[1] >> 20);
 }
 
+TEST_F(DeviceKernelPairs, ARecordCompiledUnderTheMapIsDispatchedAsMade)
+{
+    // the direct compile under the texture's map (NativeMetalDirectCompute.rs facts_of) makes a repeating sampler of the
+    // 4:2:0 codes texture's header clamp to edge
+    uint32_t compiled = kWrap;
+    for (const uint32_t shift : {0u, 3u, 6u})
+        compiled = (compiled & ~(7u << shift)) | raw::mappedHeaderAddress(kWrap >> shift & 7, 3) << shift;
+    static const raw::ComputeRecord r = kernel(compiled, kKnown | 1u << 0, kKnown);
+    std::string why;
+    const std::vector<uint32_t> set = words(r, why);
+    ASSERT_EQ(set.size(), 2u) << why;
+    EXPECT_EQ(address(set[0]), kEdge);
+}
+
 TEST_F(DeviceKernelPairs, ASamplerWhoseModesTheMapChangesIsNoDispatch)
 {
     static const raw::ComputeRecord r = kernel(kWrap, kKnown | 1u << 0, kKnown | 1u << 1);

@@ -78,6 +78,20 @@ TEST(SamplerMap, AHeadersMappedFieldsAreTheHeaderOfTheMappedModes)
             }
 }
 
+TEST(SamplerMap, AHeaderCompiledUnderAMapIsLeftByIt)
+{
+    for (uint8_t s = 0; s < 6; ++s)
+        for (uint8_t t = 0; t < 6; ++t)
+            for (uint8_t map = 0; map < 4; ++map) {
+                const uint8_t compiled[3] = {raw::mappedAddressMode(s, map), raw::mappedAddressMode(t, map),
+                                             raw::mappedAddressMode(uint8_t((s + t) % 6), map)};
+                uint32_t header[8];
+                nvkHeader(compiled, header);
+                EXPECT_TRUE(raw::mapLeavesHeader(header[0], map))
+                    << "modes " << unsigned(s) << unsigned(t) << " map " << unsigned(map);
+            }
+}
+
 TEST(SamplerMap, MapsSendWrappingAndClampingModesToTheEdge)
 {
     EXPECT_EQ(raw::mappedAddressMode(2, 1), 0) << "repeat";
