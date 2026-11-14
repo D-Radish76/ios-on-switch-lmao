@@ -47,15 +47,19 @@ inline const char *refusal(uint64_t bytes, uint64_t held, uint64_t avail, const 
 }
 
 // Why a compressible BO of `bytes` (pool chunks, TegraGM20BBoCompressible) is refused, or nullptr. Compressed memory
-// is the pool's last claim: whatever the client, it leaves the floor and the reserve free for coherent BOs and nvkm, and
-// a client other than the compositor stays within its share. A refusal is no failure: the target renders uncompressed
-// and its client asks again later.
+// has no other source, so it leaves the floor to nvkm, whose page tables and channels have none either. The reserve
+// is the compositor's room ("the rest stays for the compositor"): another client's compressed memory leaves it too
+// and stays within its share, the compositor's takes it, as its coherent BOs do (past the floor they come from system
+// memory). Boot 21: backboardd's 12 MiB colour target was refused at 55 MiB free, holding 60 MiB, under the old
+// 48 MiB. A refusal is no failure: the target renders uncompressed and its client asks again later.
 inline const char *compressibleRefusal(uint64_t bytes, uint64_t held, uint64_t avail,
 				       const Limits &l, bool compositor)
 {
+	if (compositor)
+		return avail < bytes + l.floorBytes ? "the pool's last 16 MiB stay for nvkm" : nullptr;
 	if (avail < bytes + l.floorBytes + l.reserveBytes)
-		return "the pool's last 48 MiB stay for coherent BOs and nvkm";
-	if (!compositor && held + bytes > l.clientBytes)
+		return "the pool's last 48 MiB stay for the compositor and nvkm";
+	if (held + bytes > l.clientBytes)
 		return "past the client's share";
 	return nullptr;
 }

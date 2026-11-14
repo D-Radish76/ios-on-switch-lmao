@@ -166,8 +166,9 @@ TEST(GM20BPoolPolicy, RoomForEveryone)
 }
 
 // Compressed targets on boot 11's pool (54 of 256 MiB used): the compositor's full-screen RGBA16F memoryless targets
-// (7296 KiB each) come from the pool until it holds 48 MiB free, and then its next 16 MiB m2v block still does
-TEST(GM20BPoolPolicy, CompressedTargetsLeaveCoherentRoom)
+// (7296 KiB each) come from the pool down to its floor, which stays nvkm's; its next 16 MiB coherent block then comes
+// from system memory, and an app's compressed target waits
+TEST(GM20BPoolPolicy, CompressedTargetsLeaveTheFloor)
 {
 	Pool p;
 	p.used = 54 * MiB;
@@ -179,19 +180,48 @@ TEST(GM20BPoolPolicy, CompressedTargetsLeaveCoherentRoom)
 		compositor.held += 7296 * KiB;
 		made++;
 	}
-	EXPECT_EQ(made, 21u);
-	EXPECT_GE(p.avail(), kLimits.floorBytes + kLimits.reserveBytes);
+	EXPECT_EQ(made, 26u);
+	EXPECT_GE(p.avail(), kLimits.floorBytes);
+	EXPECT_LT(p.avail(), kLimits.floorBytes + 7296 * KiB);
 	Result r;
 	alloc(p, compositor, 16 * MiB, false, r);
-	check(r.fromPool == 1, "the compositor's m2v block still comes from the pool");
+	check(r.fromSystem == 1 && r.failed == 0,
+	      "the compositor's coherent block comes from system memory, the floor stays nvkm's");
 	Client app{false};
 	check(tgm_pool::compressibleRefusal(128 * KiB, app.held, p.avail(), kLimits, false) !=
 		      nullptr,
-	      "an app's compressed target waits for room as the compositor's do");
+	      "an app's compressed target leaves the compositor's reserve");
 	Pool fresh;
 	check(tgm_pool::compressibleRefusal(64 * MiB, 0, fresh.avail(), kLimits, false) ==
 			      nullptr &&
 		      tgm_pool::compressibleRefusal(64 * MiB + 128 * KiB, 0, fresh.avail(), kLimits,
 						    false) != nullptr,
 	      "an app's compressed targets stay within its share");
+}
+
+// Boot 21, an app opening: backboardd held 60 MiB of the pool (12 coherent, 48 compressed) with 55 MiB free, and
+// asked for its 1792x1472 BGRA8 target's 12 MiB (kind 0xdb), then its RGBA16F memoryless target's 24 MiB (kind 0xe9).
+// The unattributed share (nvkm's page tables and channels, the kernel's own pages) peaked at 84 MiB and grew at most
+// 8 MiB in one 5 s window: the 16 MiB floor holds two such steps.
+TEST(GM20BPoolPolicy, Boot21CompositorTargetsTakeTheReserve)
+{
+	Pool p;
+	p.used = p.size - 55 * MiB;
+	Client compositor{true, 60 * MiB};
+	for (uint64_t bytes : {12 * MiB, 24 * MiB}) {
+		const uint64_t held = compositor.held, avail = p.avail();
+		EXPECT_EQ(tgm_pool::compressibleRefusal(bytes, held, avail, kLimits, true), nullptr)
+			<< bytes / MiB << " MiB at " << avail / MiB << " MiB free";
+		p.used += bytes;
+		compositor.held += bytes;
+	}
+	EXPECT_EQ(p.avail(), 19 * MiB);
+	EXPECT_STREQ(
+		tgm_pool::compressibleRefusal(4 * MiB, compositor.held, p.avail(), kLimits, true),
+		"the pool's last 16 MiB stay for nvkm");
+	Client app{false};
+	Pool q;
+	q.used = q.size - 55 * MiB;
+	EXPECT_STREQ(tgm_pool::compressibleRefusal(12 * MiB, app.held, q.avail(), kLimits, false),
+		     "the pool's last 48 MiB stay for the compositor and nvkm");
 }
