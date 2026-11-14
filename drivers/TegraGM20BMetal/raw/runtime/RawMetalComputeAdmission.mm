@@ -111,18 +111,34 @@ void kernelUses(RMCommandBuffer *cb, size_t at, std::vector<raw::KernelUse> &use
     const auto &bindings = plan.buffers[2][state.buffers];
     const auto &textures = plan.textures[2][state.textures].objects;
     uses.clear();
+    // a window slot's one window covers what every region's record reaches of it
+    raw::KernelUse windows[31];
     for (uint8_t region = 0; kernels && region < kernels->count; ++region) {
         const auto &record = *kernels->jobs[region]->value()->rec;
         for (uint32_t i = 0; i < record.entries; ++i) {
             const auto &e = record.entry[i];
             const bool writes = raw::kernelEntryWrites(record, i);
-            if (e.kind == raw::KernelTexture && e.slot < 31 && textures[e.slot])
+            const bool buffer = e.kind == raw::KernelBuffer && e.slot < 31 &&
+                                bindings[e.slot].source == raw::BufferBinding::Source::Buffer &&
+                                bindings[e.slot].object;
+            if (e.kind == raw::KernelTexture && e.slot < 31 && textures[e.slot]) {
                 uses.push_back(textureUse((__bridge RMTexture *)textures[e.slot], writes));
-            else if (e.kind == raw::KernelBuffer && e.slot < 31 &&
-                     bindings[e.slot].source == raw::BufferBinding::Source::Buffer && bindings[e.slot].object)
+            } else if (buffer && (dispatch.windowSlots >> e.slot & 1)) {
+                const raw::KernelUse bound =
+                    bufferUse((__bridge RMBuffer *)bindings[e.slot].object, bindings[e.slot].offset, writes);
+                const raw::ByteSpan span =
+                    raw::kernelBufferWindowSpan(bound.span.va, bound.span.bytes, raw::kernelBufferWindow(e));
+                raw::KernelUse &w = windows[e.slot];
+                w = {bound.object, {span.va, std::max(w.span.bytes, span.bytes)}, true, w.writes || writes,
+                     int8_t(e.slot)};
+            } else if (buffer) {
                 uses.push_back(bufferUse((__bridge RMBuffer *)bindings[e.slot].object, bindings[e.slot].offset, writes));
+            }
         }
     }
+    for (const raw::KernelUse &w : windows)
+        if (w.windowSlot >= 0)
+            uses.push_back(w);
     for (size_t use = dispatch.encoderBegin; use < at; ++use) {
         if (plan.operation(use).op != OpKernelUse)
             continue;
@@ -159,7 +175,7 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
     };
     if (!kernels || kernels->state() != raw::ComputeKernelSet<raw::ComputeState>::State::Ready)
         return refuse(PredComputeKernel, 0, "a dispatch the raw path has no kernel for");
-    uint32_t shadowSlots = 0;
+    uint32_t shadowSlots = 0, windowSlots = 0;
     for (uint8_t region = 0; region < kernels->count; ++region) {
         const auto *k = kernels->jobs[region]->value();
         for (uint32_t e = 0; e < k->rec->entries; e++) {
@@ -262,12 +278,11 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                     *why = "a kernel m2v binds a view of another texel size at a texture slot";
                 return false;
             }
-            // m2v's descriptor starts at the bind offset rounded down to 16, the rest in a push word the record names
+            // m2v's descriptor starts at the bind offset rounded down to 16, the rest in a push word the record names;
+            // a record that names none reaches the bytes through a window on 16 (raw_kernel_shadow.h)
             if (x.kind == raw::KernelBuffer && raw::kernelResidualWord(x) < 0 && x.slot < 31 && bufferAt(x.slot) &&
-                ((bufferAt(x.slot)->_raw.va + bindings[x.slot].offset) & 15)) {
-                return refuse(PredComputeOff16, x.slot,
-                              "a kernel's buffer bound at an offset that is not a multiple of 16");
-            }
+                ((bufferAt(x.slot)->_raw.va + bindings[x.slot].offset) & 15))
+                windowSlots |= 1u << x.slot;
         }
     }
     plan.setKernelUses(at, kernels, [&](std::vector<raw::ResourceUse> &exact) {
@@ -291,7 +306,7 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
             }
         }
     });
-    plan.resolveDispatch(at, kernels, shadowSlots);
+    plan.resolveDispatch(at, kernels, shadowSlots, windowSlots);
     return true;
 }
 

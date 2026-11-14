@@ -2433,10 +2433,20 @@ bool Device::createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBy
 bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
                                  uint32_t format, Texture &t)
 {
-    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 31) ||
+    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 15) ||
         pitch < width * t.bpp || offset > b.length || uint64_t(pitch) * height > b.length - offset ||
-        offset > UINT64_MAX - b.va || ((b.va + offset) & 31))
+        offset > UINT64_MAX - b.va || ((b.va + offset) & 15))
         return false;
+    // rows or a start 16 bytes off 32, which the texture header cannot address: sampled through a pool image of its
+    // texels, as a surface texture's are (createSurfaceTexture)
+    Texture *sampled = nullptr;
+    if ((pitch | (b.va + offset)) & 31) {
+        sampled = new Texture;
+        if (!createTexture(width, height, format, *sampled, false, true)) {
+            delete sampled;
+            return false;
+        }
+    }
     std::lock_guard<raw::Mutex> l(lock_);
     t.pitch = pitch;
     t.va = b.va + offset;
@@ -2444,6 +2454,11 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     t.shadowTarget = t.renderable && !linearTarget(t);
     t.renderable = t.renderable && linearTarget(t);
     t.cpu = b.cpu + offset;
+    if (sampled) {
+        t.sampled = sampled;
+        t.tic = sampled->tic;
+        return true;
+    }
     if (!(t.tic = allocTic()))
         return false;
     writeTic(t);
@@ -4439,6 +4454,13 @@ void CommandBuffer::releaseEvent(uint64_t va, uint32_t payload)
     if (!publish)
         dev_->unflushed_.fetch_add(1, std::memory_order_relaxed);
 #endif
+}
+
+uint64_t CommandBuffer::transient(uint32_t bytes)
+{
+    uint64_t va = 0;
+    dev_->alloc(dev_->upload_, std::max(bytes, 16u), 256, va);
+    return va;
 }
 
 BlitEncoder *CommandBuffer::blit()

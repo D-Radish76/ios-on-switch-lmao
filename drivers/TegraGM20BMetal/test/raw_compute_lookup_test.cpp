@@ -346,8 +346,10 @@ TEST(RawComputeLookup, PlansEdgesAndRejectsOutOfRangeGroupsBeforeLookup)
     EXPECT_TRUE(edge.multi);
     EXPECT_EQ(edge.axis, 0);
     EXPECT_EQ(raw::computeDispatch({1, 1, 1}, {0, 1, 1}, true).reason, raw::ComputeDispatch::Edge);
-    EXPECT_EQ(raw::computeDispatch({1, 65536, 1}, {1, 1, 1}, false).reason, raw::ComputeDispatch::Range);
-    EXPECT_EQ(raw::computeDispatch({uint64_t(1) << 31, 1, 1}, {1, 1, 1}, false).reason, raw::ComputeDispatch::Range);
+    // past the QMD's grid fields: launched in slices (raw_dispatch_bands.h qmdSlice), not refused
+    EXPECT_EQ(raw::computeDispatch({1, 65536, 1}, {1, 1, 1}, false).reason, raw::ComputeDispatch::Ready);
+    EXPECT_EQ(raw::computeDispatch({uint64_t(1) << 31, 1, 1}, {1, 1, 1}, false).reason, raw::ComputeDispatch::Ready);
+    EXPECT_EQ(raw::computeDispatch({1, uint64_t(1) << 32, 1}, {1, 1, 1}, false).reason, raw::ComputeDispatch::Range);
     EXPECT_EQ(raw::computeDispatch({0, 0, 0}, {8, 4, 1}, true).reason, raw::ComputeDispatch::Ready);
 }
 
