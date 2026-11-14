@@ -623,6 +623,11 @@ bool DirectNvk::complete() const
     return nakCompileStage && nakStageFinish && splitParts && abiMatches;
 }
 
+bool splitsFragment(const NmbDirectState &state)
+{
+    return state.stageCount == 2;
+}
+
 CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, const PackRules &rules,
                             const std::string &key, const std::vector<uint32_t> &attributes, RuntimeRecord &out,
                             std::string &why, std::map<uint32_t, uint32_t> *registers, bool split, bool variants,
@@ -660,7 +665,7 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     }
     // a split prologue binds its own constant buffers, set 1 not among them
     const bool splits = split && !storage.storageMask && !heap.arrays && !draw.spillWords[0] && !draw.spillWords[1] &&
-                        state.stageCount == 2;
+                        splitsFragment(state);
     Stages stages(nvk, nakLayout, xrPlanes);
     if (const CompileOutcome compiled = stages.compile(state, halfFloatTargets(key), splits, why);
         compiled != CompileOutcome::Made)
@@ -749,7 +754,7 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     if (state.twoPlane)
         out.pipeline.flags |= PipelineTwoPlane;
     out.pipeline.xrSlots = xrSlots;
-    out.splitTried = split && state.stageCount == 2;
+    out.splitTried = split && splitsFragment(state);
     if (splits)
         splitInto(nvk, stages.split(1), out);
     if (variants && state.stageCount == 2)

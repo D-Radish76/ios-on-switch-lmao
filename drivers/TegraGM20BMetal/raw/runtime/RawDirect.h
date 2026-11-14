@@ -98,6 +98,12 @@ public:
         return storageRefusal_;
     }
 
+    // Whether the last make's state is one directRecord splits (splitsFragment)
+    bool splittable() const
+    {
+        return splittable_;
+    }
+
     // The pack generator's: each make keeps m2v's bound probe draw of the state it made (boundDraw)
     void keepBoundDraws(bool on)
     {
@@ -120,6 +126,7 @@ private:
     DirectNvk nvk_;
     bool variants_ = false;
     std::string storageRefusal_;
+    bool splittable_ = false;
     bool keepBound_ = false;
     BoundDraw bound_;
 

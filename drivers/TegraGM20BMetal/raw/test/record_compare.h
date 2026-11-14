@@ -118,10 +118,14 @@ inline std::string differences(const raw::Pack &pack, const raw::PackPipeline &p
     return why;
 }
 
-// How the split a record made with its split (Direct::make's `split`) differs from the pack's of the same state
-inline std::string splitDifferences(const raw::Pack &pack, const raw::PackPipeline &pp, const raw::RuntimeRecord &r)
+// How the split a record made with its split (Direct::make's `split`) differs from the pack's of the same state.
+// `splittable`: its state is one the direct compile splits (raw_direct.h splitsFragment); any other has no split to make
+inline std::string splitDifferences(const raw::Pack &pack, const raw::PackPipeline &pp, const raw::RuntimeRecord &r,
+                                    bool splittable)
 {
     const raw::PackSplit *packed = pack.split(pp.fs);
+    if (!splittable)
+        return packed ? " split-packed" : r.splitTried || r.split ? " split-extra" : "";
     if (!r.splitTried)
         return " split-untried";
     if (!packed || !r.split)
