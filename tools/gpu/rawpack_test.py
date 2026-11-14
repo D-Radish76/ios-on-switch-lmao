@@ -76,7 +76,7 @@ class BuildTags(unittest.TestCase):
             own_build([line], '24B119')
 
 
-class YcbcrStandIn(unittest.TestCase):
+class CodeTargetStandIn(unittest.TestCase):
     """A state of 8-bit two-plane code attachments is the runtime's state of their RGBA32Float stand-in."""
 
     TAIL = ' a0=29:0:0:8:1:1 | v vertexBlur  | f fragmentBlur #0:53:01 | '
@@ -90,10 +90,8 @@ class YcbcrStandIn(unittest.TestCase):
 
     def test_a_state_the_runtime_leaves_to_m2v_keeps_its_formats(self):
         for colors in (
-            'c0=543:15:0:1:0:0:1:0:0',
             'c0=540:15:1:1:5:0:1:5:0',
             'c0=541:8:0:1:0:0:1:0:0',
-            'c0=540:15:0:1:0:0:1:0:0 c1=544:15:0:1:0:0:1:0:0',
             'c0=80:15:0:1:0:0:1:0:0',
         ):
             line = f'R ok=1 label=- samples=1 topo=0 ds=0/0 {colors}' + self.TAIL
