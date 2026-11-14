@@ -4415,43 +4415,6 @@ host_test(
     cxx_std = "c++17",
 )
 
-# What raw took over from the bridge, against the bridge (the host bridge over NVK's host twin): raw_metal_formats.h, the
-# capability queries raw_device_answers.h answers
-host_test(
-    name = "raw_bridge_parity_test",
-    size = "medium",
-    srcs = [
-        "raw_bridge_parity_test.cpp",
-        ":libmock_iokit.dylib",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_metal_formats.h",
-        "//gpu:bridge_darwin",
-    ] + RAW_HOST_HEADERS,
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-    ] + RAW_HOST_COPTS,
-    cxx_std = "c++17",
-    data = ["//gpu/nvk:host_dylib"],
-    env = {"SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)"},
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
-    sanitize = False,
-    tags = ["m2v"],
-    deps = [":frontend_host"] + RAW_HOST_DEPS,
-)
-
 # A shared texture over its IOSurface (raw::Device::createSurfaceImage, raw_device_harness.h): the private texture of the
 # same descriptor's fields and header words at the import's address, bound 0xFE and not as a kernel-tiled surface
 host_test(
@@ -6048,6 +6011,43 @@ host_library(
     cxx_std = "c++17",
     sanitize = False,
     deps = ["//drivers/NativeMetal/abi:metal_abi"],
+)
+
+# What raw took over from the bridge, against the bridge (the host bridge over NVK's host twin): raw_metal_formats.h, the
+# capability queries raw_device_answers.h answers
+host_test(
+    name = "raw_bridge_parity_test",
+    size = "medium",
+    srcs = [
+        "raw_bridge_parity_test.cpp",
+        ":libmock_iokit.dylib",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_metal_formats.h",
+        "//gpu:bridge_darwin",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = ["//gpu/nvk:host_dylib"],
+    env = {"SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    tags = ["m2v"],
+    deps = [":frontend_host"] + RAW_HOST_DEPS,
 )
 
 # What the m2v device's open costs a client process (the frontend, the host bridge, NVK's host twin over the mock GM20B)
