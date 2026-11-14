@@ -142,4 +142,7 @@ uintptr_t ml_io_map(uintptr_t phys_addr, uintptr_t)
 
 void switch_mc_errors_resume(void)
 {}
+
+void switch_mc_errors_detached(uint32_t)
+{}
 }

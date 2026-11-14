@@ -134,6 +134,7 @@ extern "C" void tegra_smmu_detach(uint32_t asid, uint32_t asidReg)
     w32(PTB_DATA, 0);
     flushLocked(asid);
     IOSimpleLockUnlock(gLock);
+    switch_mc_errors_detached(asidReg);
 }
 
 extern "C" void tegra_smmu_flush(uint32_t asid)

@@ -86,4 +86,105 @@ inline const char *describe(const Error &e, char *text, size_t size)
              client(s & 0xff), s & 0xff, static_cast<unsigned long long>(address), e.intstatus, s, e.address);
     return text;
 }
+
+// A fault storm, bounded per client: the first kFullLines errors of a client's run print in full and the rest are only
+// counted, and the run ends with one count line once kQuietErrors errors by other clients have come since its last
+// (it went quiet), when its swgroup detaches, or when SC7 resets the MC. Nothing here keeps time. The client is ERR_ID
+// for the kinds MC_ERR_STATUS captures, one shared key (kUncaptured) for the others. The action's alone.
+class Runs {
+public:
+    static constexpr uint32_t kFullLines = 4, kQuietErrors = 16, kUncaptured = 0x100;
+    static constexpr unsigned kOpen = 8;
+
+    struct Ended {
+        uint32_t client, errors;
+        Error last;
+    };
+
+    static uint32_t clientOf(const Error &e)
+    {
+        constexpr uint32_t kCaptured = 1u << 6 | 1u << 8 | 1u << 10;
+        return e.intstatus & kCaptured ? e.status & 0xff : kUncaptured;
+    }
+
+    // An error: true when it prints in full. The runs it ends (quiet ones, or the least recent when kOpen are open)
+    // with more errors than printed go to `ended` (room for kOpen); their count is returned in `endedCount`.
+    bool error(const Error &e, Ended *ended, unsigned &endedCount)
+    {
+        endedCount = 0;
+        const uint32_t client = clientOf(e);
+        ++seen;
+        Run *run = nullptr, *free = nullptr, *oldest = nullptr;
+        for (Run &r : runs) {
+            if (!r.open) {
+                free = free ? free : &r;
+                continue;
+            }
+            if (r.client == client) {
+                run = &r;
+                continue;
+            }
+            if (seen - r.lastAt > kQuietErrors) {
+                end(r, ended, endedCount);
+                free = free ? free : &r;
+                continue;
+            }
+            oldest = !oldest || r.lastAt < oldest->lastAt ? &r : oldest;
+        }
+        if (!run) {
+            if (!free) {
+                end(*oldest, ended, endedCount);
+                free = oldest;
+            }
+            run = free;
+            *run = {client, 0, 0, {}, true};
+        }
+        ++run->errors;
+        run->lastAt = seen;
+        run->last = e;
+        return run->errors <= kFullLines;
+    }
+
+    // The runs of the clients `match` takes end now (a detach, SC7); as error()'s `ended`.
+    template <class Match> unsigned endWhere(Match match, Ended *ended)
+    {
+        unsigned count = 0;
+        for (Run &r : runs)
+            if (r.open && match(r.client))
+                end(r, ended, count);
+        return count;
+    }
+
+private:
+    struct Run {
+        uint32_t client, errors;
+        uint64_t lastAt;
+        Error last;
+        bool open;
+    };
+
+    static void end(Run &r, Ended *ended, unsigned &count)
+    {
+        if (r.errors > kFullLines)
+            ended[count++] = {r.client, r.errors, r.last};
+        r.open = false;
+    }
+
+    Run runs[kOpen] = {};
+    uint64_t seen = 0;
+};
+
+// The count line of a run that printed only its first kFullLines errors.
+inline const char *describeRun(const Runs::Ended &run, char *text, size_t size)
+{
+    char last[256];
+    describe(run.last, last, sizeof(last));
+    if (run.client == Runs::kUncaptured)
+        snprintf(text, size, "%u errors of kinds MC_ERR_STATUS does not capture, the first %u printed; the last %s",
+                 run.errors, Runs::kFullLines, last);
+    else
+        snprintf(text, size, "%u errors by %s (client %#x), the first %u printed; the last %s", run.errors,
+                 client(run.client), run.client, Runs::kFullLines, last);
+    return text;
+}
 }  // namespace switch_mc
