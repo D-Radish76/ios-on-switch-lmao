@@ -84,6 +84,8 @@ void tgm_pool_free(void *va, uint64_t bytes, uint64_t pa);
  * order and adjacent or not; `pas` gets every 4 KiB page. 0, or -ENOMEM with nothing taken.
  * tgm_pool_free_chunks gives them back dirty, for the scrubber. */
 int tgm_pool_alloc_chunks(uint64_t bytes, uint64_t *pas);
+/* The 128 KiB chunks tgm_pool_alloc_chunks could take now */
+uint64_t tgm_pool_clean_chunks(void);
 void tgm_pool_free_chunks(const uint64_t *pas, uint32_t npages);
 
 /* Address spaces: one per user-client connection, which claims it (tgm_vm_claim_connection): only channels made for

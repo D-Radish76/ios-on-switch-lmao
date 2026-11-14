@@ -73,7 +73,7 @@ IOReturn AGXDeviceUserClient::takeJob(const TegraGM20BAbiSubmitAddress *in,
 				result = switch_gpu_refuse(why, SwitchGpuRefusal::EventPrepare,
 							   prepared == -5 ? kIOReturnAborted
 									  : ioreturn(prepared),
-							   prepared);
+							   switch_gpu_refusal_errno(prepared));
 		}
 		if (!result) {
 			bool admitted = submitGate_.enterFast();
@@ -252,7 +252,8 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 				    *bo->nativeView, access, job.uses, job.guards, job.capacity,
 				    useTotal, nativeGuardCount))
 				return switch_gpu_refuse(why, SwitchGpuRefusal::NativeRead,
-							 ioreturn(error), i, error);
+							 ioreturn(error), i,
+							 switch_gpu_refusal_errno(error));
 			for (uint32_t u = first; u < useTotal; ++u)
 				job.uses[u].access |= claim;
 			continue;
@@ -288,7 +289,8 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 	int error = events->sequence(eventChannels_[slot]);
 	if (error)
 		return switch_gpu_refuse(why, SwitchGpuRefusal::EventSequence,
-					 error == -5 ? kIOReturnAborted : ioreturn(error), error);
+					 error == -5 ? kIOReturnAborted : ioreturn(error),
+					 switch_gpu_refusal_errno(error));
 	// an event's waiters are woken by the interrupt at its signal; the job's semantic fence and scanout writes are
 	// known below (switch_gpu_quiet_end)
 	const bool quiet =
@@ -466,7 +468,8 @@ refresh:
 			: stage == SwitchGpuRefusal::Exec || stage == SwitchGpuRefusal::Room
 				? count
 				: useTotal;
-		return switch_gpu_refuse(why, stage, ret, int64_t(error), counted, dependencies);
+		return switch_gpu_refuse(why, stage, ret, switch_gpu_refusal_errno(error), counted,
+					 dependencies);
 	}
 	if (count) {
 		switch_gpu_path_job(jobVisibility, unlockedWrites, leanChannels_[slot], rangedUses);
