@@ -107,7 +107,6 @@ product	need	a library's extern function names	RawMetalLibrary.mm	form	-	x1-m2v-
 product	need	a library's function names	RawMetalLibrary.mm	form	-	x1-m2v-open	open	asked=5,opened=0	a library's function names answered from its m2v twin (boot 21: 5 processes)
 product	need	a library's twin	RawMetalLibrary.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a library's m2v twin, made for what raw does not answer from the metallib it read
 product	need	a library's type	RawMetalLibrary.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a library's type answered from its m2v twin
-product	need	a linear row of a format raw does not lay out	RawMetalDeviceAnswers.mm	form	-	-	open	asked=0,opened=0	minimumLinearTextureAlignmentForPixelFormat: of a format raw does not lay out
 product	need	a no-copy buffer the raw path refused	RawMetalDevice.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a no-copy buffer raw refused (POST-MERGE D3)
 product	need	a no-copy texture the raw path does not take	RawMetalNoCopy.mm	form	-	x1-m2v-open	open	asked=0,opened=0	a no-copy texture raw does not take (POST-MERGE D4)
 product	need	a packed render state's twin	RawMetalStates.mm	dead	-	cut	cut	asked=0,opened=0	a packed render state's lazy m2v twin for replay

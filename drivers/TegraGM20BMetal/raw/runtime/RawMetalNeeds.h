@@ -21,7 +21,6 @@ enum RMNeed : uint8_t {
     NeedTextureLayout,
     NeedNoCopyTexture,
     NeedHeapTextureSize,
-    NeedLinearRow,
     // libraries raw does not read
     NeedLibraryUrl,
     NeedLibraryFile,
@@ -82,7 +81,6 @@ static constexpr const char *kNeedNames[] = {
     "a texture layout the raw path does not take",
     "a no-copy texture the raw path does not take",
     "a heap texture's size the raw path does not place",
-    "a linear row of a format raw does not lay out",
     "a library from a URL raw does not read",
     "a library from a file raw does not read",
     "a library from data raw does not read",

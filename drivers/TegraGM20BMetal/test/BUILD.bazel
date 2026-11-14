@@ -125,6 +125,9 @@
 #                     cubes and volumes are chains of fx's layouts, as the methods raw::Device submitted
 #   raw_device_identity_test  raw/runtime/raw_device_answers.h: the identity's GPU subtype (MTLDevice.architecture) is
 #                     the one the selected IPSW ships AGX binaries for, its QuartzCore's
+#   raw_metal_formats_test  raw/runtime/raw_metal_formats.h: every format with a linear alignment has a texel Metal
+#                     describes, formats of blocks and depth formats answer no row, and the caps table agrees with it
+#   raw_linear_row_bridge_test  (m2v) raw_metal_formats.h is the m2v device's description and refuses its rows alike
 #   raw_device_answers_test  raw/runtime/raw_device_answers.h, every kind: YES for shared texture handles and
 #                     buffers over IOSurfaces, GM20B's counts (caps) where raw draws them (layers, viewports,
 #                     tessellation, amplification, dynamic stride, threadgroup memory, interpolants, framebuffer bits,
@@ -4298,6 +4301,59 @@ host_test(
         "//drivers/NativeMetal/abi:metal_abi",
         "//kits/SwitchGM20B:caps",
     ],
+)
+
+# A linear row of a format raw does not lay out, from Metal's description (raw_metal_formats.h)
+host_test(
+    name = "raw_metal_formats_test",
+    srcs = [
+        "raw_metal_formats_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_device_answers.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_metal_formats.h",
+        "//kits/SwitchGM20BEmit:SwitchGM20BMacroSlots.h",
+    ],
+    copts = ["-I$(GENDIR)/kits/SwitchGM20B"],
+    cxx_std = "c++17",
+    deps = [
+        "//drivers/NativeMetal/abi:metal_abi",
+        "//kits/SwitchGM20B:caps",
+    ],
+)
+
+# raw_metal_formats.h against the m2v device it was ported from (the host bridge over NVK's host twin)
+host_test(
+    name = "raw_linear_row_bridge_test",
+    size = "medium",
+    srcs = [
+        "raw_linear_row_bridge_test.cpp",
+        ":libmock_iokit.dylib",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_metal_formats.h",
+        "//gpu:bridge_darwin",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = ["//gpu/nvk:host_dylib"],
+    env = {"SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    tags = ["m2v"],
+    deps = [":frontend_host"] + RAW_HOST_DEPS,
 )
 
 # A shared texture over its IOSurface (raw::Device::createSurfaceImage, raw_device_harness.h): the private texture of the

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include "raw_archive.h"
 #include "raw_device_answers.h"
+#include "raw_metal_formats.h"
 
 namespace {
 
@@ -218,17 +219,16 @@ void installDeviceAnswers(Class cls)
     return s <= 14 && s != 11;
 }
 
-// (SPI) A linear texture's row of `width` texels rounded up to the format's linear alignment, as m2v answers: 0 for a format
-// of blocks, which has no texel size
+// (SPI) A linear texture's row of `width` texels rounded up to the format's linear alignment: 0 for a format of blocks, which
+// has no texel size. A format the raw path lays out takes its own texel (RGB10A8_2P_XR10's is 8 bytes where Metal describes
+// a plane of 2), any other Metal's.
 - (NSUInteger)requiredLinearTextureBytesPerRowForDescriptor:(MTLTextureDescriptor *)d
 {
-    const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
+    const uint32_t format = uint32_t(d.pixelFormat);
+    const raw::FormatInfo *f = raw::formatInfo(format);
+    const uint32_t bytes = f ? (raw::blockCompressed(f) ? 0 : f->bpp) : raw::metal_formats::texelBytes(format);
     const uint64_t align = [(id<MTLDevice>)self minimumLinearTextureAlignmentForPixelFormat:d.pixelFormat];
-    if (raw::blockCompressed(f))
-        return 0;
-    if (!f || !align)
-        return [(id<RMDeviceSPI>)RM_M2V(NeedLinearRow) requiredLinearTextureBytesPerRowForDescriptor:d];
-    return NSUInteger((uint64_t(d.width) * f->bpp + align - 1) / align * align);
+    return NSUInteger(raw::metal_formats::linearRow(d.width, bytes, align));
 }
 
 // A texture buffer's start is a linear texture's: the pitch texture header's 32 bytes (IconRendering's textures over

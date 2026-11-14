@@ -13,7 +13,7 @@ enum NativeCallTests {
         NativeViewportIndexTest(), NativeBlockTexturesTest(), NativeDepthSlicesTest(), NativeWideTargetsTest(),
         NativeInterpolantsTest(), NativeThreadgroupMemoryTest(), NativeArgumentTier2Test(), NativeErrorBufferCopyTest(),
         NativeErrorIndexRangeTest(), NativeErrorColourFormatTest(), NativeErrorFormatSkipTest(), NativeErrorSamplesTest(),
-        NativeErrorPositionsTest(),
+        NativeErrorPositionsTest(), NativeLinearRowTest(),
         NativeRateMapAnswerTest(),
     ]
 }

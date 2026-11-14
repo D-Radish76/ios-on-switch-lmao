@@ -226,6 +226,21 @@ void surfaceBufferAndLinearRow()
     EXPECT_EQ([spi requiredLinearTextureBytesPerRowForDescriptor:d], (400 + align - 1) / align * align);
     d.pixelFormat = MTLPixelFormatASTC_4x4_LDR;
     EXPECT_EQ([spi requiredLinearTextureBytesPerRowForDescriptor:d], 0u);
+    const auto rowOf = [&](NSUInteger format) {
+        d.pixelFormat = MTLPixelFormat(format);
+        return [spi requiredLinearTextureBytesPerRowForDescriptor:d];
+    };
+    const auto aligned = [&](NSUInteger format, NSUInteger bytes) {
+        const NSUInteger a = [device minimumLinearTextureAlignmentForPixelFormat:MTLPixelFormat(format)];
+        return a ? (100 * bytes + a - 1) / a * a : 0;
+    };
+    EXPECT_GT(aligned(MTLPixelFormatR8Snorm, 1), 0u);
+    EXPECT_EQ(rowOf(MTLPixelFormatR8Snorm), aligned(MTLPixelFormatR8Snorm, 1));
+    EXPECT_EQ(rowOf(MTLPixelFormatRGBA16Snorm), aligned(MTLPixelFormatRGBA16Snorm, 8));
+    EXPECT_EQ(rowOf(26), aligned(26, 2));    // R16Bfloat
+    EXPECT_EQ(rowOf(550), aligned(550, 8));  // RGB10A8_2P_XR10, raw's texel, not Metal's plane of 2
+    EXPECT_EQ(rowOf(MTLPixelFormatDepth32Float), 0u);
+    EXPECT_EQ(rowOf(9999), 0u);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
     buffer = nil;
