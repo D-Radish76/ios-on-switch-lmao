@@ -4780,6 +4780,8 @@ bool CommandBuffer::commit(uint32_t &seqno)
                   memberRemovals_, invalidates || memberHostWritten_ || tablesInvalidate, admission, admissionFlags,
                   !last || quietEnd, last && !promises.empty() ? &promises : nullptr);
         RAW_ENCODE_END(execSpan);
+        if (executed && last && quietEnd && raw::jobKeptLoud())
+            quietEnd = false;
         if (!executed) {
             admissionBlocked = !published && result == kIOReturnCannotLock;
             setRefused = d.setView_.refused;

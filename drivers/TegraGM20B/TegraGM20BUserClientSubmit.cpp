@@ -584,6 +584,6 @@ refresh:
 							   seqno);
 	}
 	out->seqno = seqno;
-	out->reserved = 0;
+	out->flags = 0;
 	return kIOReturnSuccess;
 }

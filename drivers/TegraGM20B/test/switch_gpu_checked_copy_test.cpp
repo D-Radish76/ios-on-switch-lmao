@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <atomic>
+#include <thread>
 #include <map>
 #include <memory>
 #include "switch_gpu_copy_stubs.h"
@@ -62,20 +64,32 @@ uint8_t *poolBytes;
 switch_gpu_mapping pushWindow;
 std::vector<CopyEngine::Syncpt> syncpts;
 
+// The backings' retirement work, which retires the queue's ended copies first (switch_gpu_backing_retire)
+bool retirementPending;
+unsigned retirementRequests;
+
 void pump()
 {
-	if (queue.retirement && queue.retirement->pending) {
-		queue.retirement->pending = false;
-		queue.retirement->fn(nullptr, nullptr);
+	if (retirementPending) {
+		retirementPending = false;
+		switch_gpu_copy_retire();
 	}
+}
+
+// An interrupt pass that sees the copy channel's fence move: its fence callback, then the pass's end
+// (switch_gpu_backing_completed).
+void pass()
+{
+	if (irq)
+		irq(irqContext);
+	switch_gpu_copy_completed();
 }
 
 void finish(int semantic = 1)
 {
 	gpu.completed = gpu.submitted;
 	semanticStatus = semantic;
-	if (irq)
-		irq(irqContext);
+	pass();
 	pump();
 }
 
@@ -92,6 +106,12 @@ const tgm_chan &channelOf(const switch_gpu_backing_token &token)
 {
 	return token.queue == channelId ? gpu : replaced.at(token.queue);
 }
+}
+
+extern "C" void switch_gpu_backing_schedule_retirement(void)
+{
+	++retirementRequests;
+	retirementPending = true;
 }
 
 extern "C" void *tgm_pool_alloc(uint64_t bytes, uint64_t, uint64_t *pa)
@@ -529,8 +549,6 @@ protected:
 		tgm_mem_del(&queue.space.fence);
 		free(queue.space.words);
 		free(queue.dependencies);
-		if (queue.retirement)
-			thread_call_free(queue.retirement);
 		if (queue.lock)
 			IOLockFree(queue.lock);
 		queue.~Copier();
@@ -604,6 +622,53 @@ TEST_F(CheckedCopy, WarmCopiesKeepPreparedDescriptorsAndMappings)
 	EXPECT_EQ(b.first->prepares, 1u);
 	EXPECT_EQ(a.first->walks, 4u);
 	EXPECT_EQ(calls, 1000u);
+}
+
+// A pass that sees copies end hands their retirement to the backings' retirement work, which that pass schedules anyway:
+// no thread call of the copy queue's own.
+TEST_F(CheckedCopy, ACompletedCopyTakesNoThreadCallOfItsOwn)
+{
+	auto a = allocation(), b = allocation();
+	ASSERT_EQ(copy(a, b), 0);
+	ASSERT_EQ(copy(b, a), 0);
+	switchCopyThreadCalls = retirementRequests = 0;
+	gpu.completed = gpu.submitted;
+	pass();
+	EXPECT_EQ(switchCopyThreadCalls, 0u) << "thread calls of the copy queue's own for one pass";
+	EXPECT_GE(retirementRequests, 1u);
+	pump();
+	EXPECT_EQ(calls, 2u);
+	EXPECT_EQ(tokenRefs, 0u);
+}
+
+// The retirement work never waits for the queue's lock, which a submission holds across its wait for room: it asks the
+// holder, which brings the work back once it lets the lock go.
+TEST_F(CheckedCopy, RetirementNeverWaitsForTheQueuesLock)
+{
+	auto a = allocation(), b = allocation();
+	ASSERT_EQ(copy(a, b), 0);
+	gpu.completed = gpu.submitted;
+	pass();
+	std::atomic<int> step{0};
+	std::thread holder([&] {
+		IOLockLock(queue.lock);
+		step.store(1);
+		while (step.load() != 2)
+			;
+		IOLockUnlock(queue.lock);
+		copyUnlocked();
+	});
+	while (step.load() != 1)
+		;
+	pump();
+	EXPECT_EQ(calls, 0u) << "retired under another thread's hold of the lock";
+	EXPECT_FALSE(retirementPending);
+	step.store(2);
+	holder.join();
+	EXPECT_TRUE(retirementPending) << "the holder brings the retirement back";
+	pump();
+	EXPECT_EQ(calls, 1u);
+	EXPECT_EQ(tokenRefs, 0u);
 }
 
 TEST_F(CheckedCopy, PhysicalCompletionWaitsForSemanticAuthority)
