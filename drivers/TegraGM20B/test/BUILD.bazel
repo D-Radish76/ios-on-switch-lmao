@@ -1483,6 +1483,7 @@ host_library(
         "//drivers/TegraGM20B:TegraGM20BRecord.h",
         "//drivers/TegraGM20B:TegraGM20BRelayout.h",
         "//drivers/TegraGM20B:TegraGM20BTiled.h",
+        "//drivers/TegraGM20B:TegraGM20BTiledDecision.h",
         "//drivers/TegraGM20B:TegraGM20BViewMerge.h",
         "//drivers/TegraGM20B:TegraGM20BViews.h",
         "//drivers/TegraGM20B:SwitchGpuPathStats.h",
