@@ -157,5 +157,6 @@ mod fast_paths;
 mod fuzz_interp;
 mod fuzz_soak;
 mod golden_hashes;
+mod handle_grids;
 mod plain_index_encoders;
 mod public_fixtures_engine;
