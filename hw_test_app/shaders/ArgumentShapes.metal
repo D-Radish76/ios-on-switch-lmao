@@ -56,11 +56,20 @@ struct PlainS {
     float3 h;
 };
 
-/// Reads back what the plain buffers' own encoders wrote: k's ids 0, 1 and 2 (tail, n[1], m[2]) and s's id 0 (h)
+/// One-component vectors, which Metal reflects with no data type
+struct PlainV {
+    float x;
+    packed_vec<int, 1> a;
+};
+
+/// Reads back what the plain buffers' own encoders wrote: k's ids 0, 1 and 2 (tail, n[1], m[2]), s's id 0 (h) and v's
+/// id 0 (a)
 kernel void plain_struct_kernel(constant PlainK &k [[buffer(0)]], device atomic_uint *counter [[buffer(1)]],
-                                constant PlainS &s [[buffer(2)]], device float4 *out [[buffer(3)]])
+                                constant PlainS &s [[buffer(2)]], device float4 *out [[buffer(3)]],
+                                constant PlainV &v [[buffer(4)]])
 {
     out[0] = float4(k.tail, float(k.n[1]), k.m[2], 0);
     out[1] = float4(s.h, 0);
+    out[2] = float4(float(v.a[0]), 0, 0, 0);
     atomic_fetch_add_explicit(counter, 1, memory_order_relaxed);
 }
