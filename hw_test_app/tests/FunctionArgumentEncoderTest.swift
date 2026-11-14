@@ -75,7 +75,12 @@ struct FunctionArgumentEncoderTest: HWTest {
                 metrics.set("\(function)_\(index)", "\(gotSized) \(gotPlaces)")
             }
         }
-        try await draw(gpu, &metrics, &wrong)
+        do {
+            try await draw(gpu, &metrics, &wrong)
+        } catch {
+            metrics.set("draw", "threw: \(String(describing: error).prefix(200))")
+            wrong.append("draw")
+        }
 
         let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
         metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
