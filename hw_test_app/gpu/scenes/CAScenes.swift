@@ -27,7 +27,7 @@ struct FirstTiledSurfaceScene: GPUScene {
             let library = try gpu.device.makeLibrary(URL: CAState.library)
             pipeline = try CAState.pipeline(CACorpus.state("PBGRAXm_A2Xhf")!, library: library, device: gpu.device)
         } catch {
-            result.notes.append("clear only: no Core Animation fill state here (\(GPU.describe(error)))")
+            result.unavailable("clear only: no Core Animation fill state here (\(GPU.describe(error)))", on: gpu.device)
         }
         var hashes: Set<UInt64> = []
         for round in 0..<3 {
@@ -37,7 +37,9 @@ struct FirstTiledSurfaceScene: GPUScene {
                 pipeline == nil
                 ? nil
                 : try gpu.texture(
-                    .bgra8Unorm, Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
+                    CACorpus.colorFormat(CACorpus.state("PBGRAXm_A2Xhf")!, 1), Self.width, Self.height,
+                    usage: [.renderTarget],
+                    storage: .memoryless)
             let timing = try await gpu.run(tolerateError: true) { commands in
                 let encoder = commands.makeRenderCommandEncoder(descriptor: Self.pass(target.texture, colour1))!
                 if let pipeline {

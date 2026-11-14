@@ -5,42 +5,29 @@
 
 #include <CommonCrypto/CommonDigest.h>
 #include <algorithm>
-#include <cstdio>
 #include <cstring>
+#include <type_traits>
 
 namespace raw {
 namespace {
 
-constexpr char kRequestMagic[8] = {'S', 'W', 'C', 'R', 'E', 'Q', '0', '2'};
+constexpr char kRequestMagic[8] = {'S', 'W', 'C', 'R', 'E', 'Q', '0', '3'};
 constexpr char kNameMagic[8] = {'S', 'W', 'R', 'A', 'W', 'N', 'M', '2'};
 
-void writeFields(Writer &w, const PipelineFields &f)
+// A struct of plain values with no padding, written and read as its bytes: every field it has goes over the wire
+template <class T> void writeWhole(Writer &w, const T &v)
 {
-    w.value(f.samples);
-    w.value(f.topology);
-    w.value(f.depthFormat);
-    w.value(f.stencilFormat);
-    w.value(f.rasterization);
-    for (const ColorFields &c : f.color)
-        w.bytes(&c, sizeof c);
-    for (const AttributeFields &a : f.attributes)
-        w.bytes(&a, sizeof a);
+    static_assert(std::has_unique_object_representations_v<T>, "a field or padding the request would not carry");
+    w.bytes(&v, sizeof v);
 }
 
-void readFields(Reader &r, PipelineFields &f)
+template <class T> void readWhole(Reader &r, T &v)
 {
-    f.samples = r.value<uint64_t>();
-    f.topology = r.value<uint64_t>();
-    f.depthFormat = r.value<uint64_t>();
-    f.stencilFormat = r.value<uint64_t>();
-    f.rasterization = r.value<uint64_t>();
-    for (ColorFields &c : f.color)
-        r.bytes(&c, sizeof c);
-    for (AttributeFields &a : f.attributes)
-        r.bytes(&a, sizeof a);
+    static_assert(std::has_unique_object_representations_v<T>, "a field or padding the request would not carry");
+    r.bytes(&v, sizeof v);
 }
 
-void writeKernel(Writer &w, const KernelRequest &k)
+void writeDispatch(Writer &w, const KernelRequest &k)
 {
     w.value(k.maxThreads);
     w.value(uint8_t(k.multipleOfWidth));
@@ -51,45 +38,10 @@ void writeKernel(Writer &w, const KernelRequest &k)
     w.list(k.samplers);
 }
 
-// After everything else, so a request logged before kernels carried it reads as one without: the store name leaves it out
-// (the key names it)
-// What a request carries past its kernel's stage input, last as that is (a request logged before these reads as one
-// without): a render state's tessellator state and amplification count, and its variant's forms
-void writeLater(Writer &w, const CompileRequest &r)
+void writeKernel(Writer &w, const KernelRequest &k)
 {
-    w.bytes(&r.fields.tessellation, sizeof r.fields.tessellation);
-    w.value(r.fields.amplification);
-    w.value(uint8_t(r.twoPlane));
-    w.value(r.xrSlots);
-    w.value(uint32_t(r.written.size()));
-    for (const WrittenTexture &t : r.written) {
-        w.value(t.slot);
-        w.value(t.format);
-    }
-}
-
-bool readLater(Reader &r, CompileRequest &q)
-{
-    r.bytes(&q.fields.tessellation, sizeof q.fields.tessellation);
-    q.fields.amplification = r.value<uint64_t>();
-    q.twoPlane = r.value<uint8_t>() != 0;
-    q.xrSlots = r.value<uint16_t>();
-    const uint32_t written = r.value<uint32_t>();
-    if (!r.ok() || written > kRequestBindLimit)
-        return false;
-    for (uint32_t i = 0; i < written; ++i) {
-        const uint8_t slot = r.value<uint8_t>();
-        q.written.push_back({slot, r.value<uint32_t>()});
-    }
-    return r.ok();
-}
-
-void writeStageIn(Writer &w, const StageInFields &in)
-{
-    for (const AttributeFields &a : in.attributes)
-        w.bytes(&a, sizeof a);
-    w.value(in.indexType);
-    w.value(in.indexBuffer);
+    writeDispatch(w, k);
+    writeWhole(w, k.stageIn);
 }
 
 void readKernel(Reader &r, KernelRequest &k)
@@ -101,33 +53,93 @@ void readKernel(Reader &r, KernelRequest &k)
     r.bytes(k.memory, sizeof k.memory);
     k.textures = r.list<NmbDirectBoundTexture>();
     k.samplers = r.list<NmbDirectBoundSampler>();
+    readWhole(r, k.stageIn);
 }
 
-void readStageIn(Reader &r, StageInFields &in)
+void writeVariant(Writer &w, const RenderVariant &v)
 {
-    for (AttributeFields &a : in.attributes)
-        r.bytes(&a, sizeof a);
-    in.indexType = r.value<uint64_t>();
-    in.indexBuffer = r.value<uint64_t>();
+    w.value(uint32_t(v.cubic.samplers.size()));
+    for (const CubicBinds::Sampler &s : v.cubic.samplers) {
+        const uint8_t packed[6] = {s.slot, s.s, s.t, s.r, s.border, uint8_t(s.normalized)};
+        w.bytes(packed, sizeof packed);
+    }
+    w.value(uint32_t(v.cubic.textures.size()));
+    for (const CubicBinds::Texture &t : v.cubic.textures) {
+        w.value(t.slot);
+        w.value(t.format);
+    }
+    w.value(v.fragmentTests);
+    w.value(uint8_t(v.twoPlane));
+    w.value(v.xrSlots);
+    w.value(uint32_t(v.written.size()));
+    for (const WrittenTexture &t : v.written) {
+        w.value(t.slot);
+        w.value(t.format);
+    }
+}
+
+// False: more binds than a variant has
+bool readVariant(Reader &r, RenderVariant &v)
+{
+    const uint32_t samplers = r.value<uint32_t>();
+    if (!r.ok() || samplers > 16)
+        return false;
+    for (uint32_t i = 0; i < samplers; ++i) {
+        uint8_t packed[6] = {};
+        r.bytes(packed, sizeof packed);
+        v.cubic.samplers.push_back({packed[0], packed[1], packed[2], packed[3], packed[4], packed[5] != 0});
+    }
+    const uint32_t textures = r.value<uint32_t>();
+    if (!r.ok() || textures > 16)
+        return false;
+    for (uint32_t i = 0; i < textures; ++i) {
+        const uint8_t slot = r.value<uint8_t>();
+        v.cubic.textures.push_back({slot, r.value<uint32_t>()});
+    }
+    v.fragmentTests = r.value<uint8_t>();
+    v.twoPlane = r.value<uint8_t>() != 0;
+    v.xrSlots = r.value<uint16_t>();
+    const uint32_t written = r.value<uint32_t>();
+    if (!r.ok() || written > kWrittenSlots)
+        return false;
+    for (uint32_t i = 0; i < written; ++i) {
+        const uint8_t slot = r.value<uint8_t>();
+        v.written.push_back({slot, r.value<uint32_t>()});
+    }
+    return r.ok();
 }
 
 bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
-    if (r.kind == RequestKind::Kernel)
+    if (r.kind != RequestKind::Render)
         return tag == "k";
     if (index < 2)
         return tag == (index ? "f" : "v");
     return tag == "vl" || tag == "vp" || tag == "fl" || tag == "fp";
 }
 
+bool knownCodeGen(uint32_t type)
+{
+    return type == kCodeGenSource || type == kCodeGenStitch || type == kCodeGenImageFilters;
+}
+
+bool saneLibrary(const CompileRequest &r)
+{
+    return r.stages.empty() && r.libraries.empty() && r.variant.name().empty() && r.kernel.textures.empty() &&
+           r.kernel.samplers.empty() && !r.key.empty() && r.form == RequestForm::Primary && !r.codeGen.empty() &&
+           knownCodeGen(r.codeGenType);
+}
+
 bool sane(const CompileRequest &r)
 {
-    const bool kernel = r.kind == RequestKind::Kernel;
+    if (r.kind == RequestKind::Library)
+        return saneLibrary(r);
+    const bool kernel = r.kind != RequestKind::Render;
     if ((kernel ? r.stages.size() != 1 : r.stages.size() < 2) || r.stages.size() > kRequestStageLimit ||
-        r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
-        r.cubic.textures.size() > 16 || r.kernel.textures.size() > kRequestBindLimit ||
-        r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() || (kernel && r.form != RequestForm::Primary))
+        r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit ||
+        r.kernel.textures.size() > kRequestBindLimit || r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() ||
+        (kernel && r.form != RequestForm::Primary))
         return false;
     for (size_t i = 0; i < r.stages.size(); ++i)
         if (!knownTag(r, i) || r.stages[i].library >= r.libraries.size() || r.stages[i].function.empty())
@@ -152,26 +164,6 @@ template <class T> void hashValue(CC_SHA256_CTX &c, const T &value)
 
 }  // namespace
 
-std::string stageInText(const StageInFields &in)
-{
-    std::string text;
-    char b[96];
-    for (unsigned i = 0; i < 31; i++) {
-        const AttributeFields &a = in.attributes[i];
-        if (!a.format)
-            continue;
-        const uint64_t stride = a.stride == UINT64_MAX ? UINT32_MAX : a.stride;
-        snprintf(b, sizeof b, " a%u=%llu:%llu:%llu:%llu:%llu:%llu", i, (unsigned long long)a.format,
-                 (unsigned long long)a.offset, (unsigned long long)a.buffer, (unsigned long long)stride,
-                 (unsigned long long)a.step, (unsigned long long)a.rate);
-        text += b;
-    }
-    if (text.empty())
-        return text;
-    snprintf(b, sizeof b, " i=%llu:%llu", (unsigned long long)in.indexType, (unsigned long long)in.indexBuffer);
-    return " | in" + text + b;
-}
-
 NmbDirectDispatch KernelRequest::dispatch() const
 {
     NmbDirectDispatch d = {};
@@ -193,7 +185,7 @@ std::string encodeRequest(const CompileRequest &r)
     w.value(uint8_t(r.kind));
     w.value(uint8_t(r.form));
     w.text(r.key);
-    writeFields(w, r.fields);
+    writeWhole(w, r.fields);
     w.value(uint32_t(r.stages.size()));
     for (const RequestStage &s : r.stages) {
         w.text(s.tag);
@@ -209,20 +201,12 @@ std::string encodeRequest(const CompileRequest &r)
         w.value(uint8_t(l.system));
         w.text(l.bytes);
     }
-    w.value(uint32_t(r.cubic.samplers.size()));
-    for (const CubicBinds::Sampler &s : r.cubic.samplers) {
-        const uint8_t packed[6] = {s.slot, s.s, s.t, s.r, s.border, uint8_t(s.normalized)};
-        w.bytes(packed, sizeof packed);
-    }
-    w.value(uint32_t(r.cubic.textures.size()));
-    for (const CubicBinds::Texture &t : r.cubic.textures) {
-        w.value(t.slot);
-        w.value(t.format);
-    }
-    w.value(r.fragmentTests);
+    writeVariant(w, r.variant);
     writeKernel(w, r.kernel);
-    writeStageIn(w, r.kernel.stageIn);
-    writeLater(w, r);
+    if (r.kind == RequestKind::Library) {
+        w.value(r.codeGenType);
+        w.text(r.codeGen);
+    }
     return w.out;
 }
 
@@ -236,12 +220,13 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
     CompileRequest q;
     q.stack = r.value<uint64_t>();
     const uint8_t kind = r.value<uint8_t>(), form = r.value<uint8_t>();
-    q.kind = kind ? RequestKind::Kernel : RequestKind::Render;
+    q.kind = RequestKind(kind);
     q.form = form ? RequestForm::Split : RequestForm::Primary;
     q.key = r.text();
-    readFields(r, q.fields);
+    readWhole(r, q.fields);
     const uint32_t stages = r.value<uint32_t>();
-    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > 1 || form > 1 || stages > kRequestStageLimit)
+    if (!r.ok() || memcmp(magic, kRequestMagic, sizeof magic) || kind > uint8_t(RequestKind::Library) || form > 1 ||
+        stages > kRequestStageLimit)
         return false;
     q.stages.resize(stages);
     for (RequestStage &s : q.stages) {
@@ -261,27 +246,13 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
         l.system = r.value<uint8_t>() != 0;
         l.bytes = r.text();
     }
-    const uint32_t samplers = r.value<uint32_t>();
-    if (!r.ok() || samplers > 16)
+    if (!readVariant(r, q.variant))
         return false;
-    for (uint32_t i = 0; i < samplers; ++i) {
-        uint8_t packed[6] = {};
-        r.bytes(packed, sizeof packed);
-        q.cubic.samplers.push_back({packed[0], packed[1], packed[2], packed[3], packed[4], packed[5] != 0});
-    }
-    const uint32_t textures = r.value<uint32_t>();
-    if (!r.ok() || textures > 16)
-        return false;
-    for (uint32_t i = 0; i < textures; ++i) {
-        const uint8_t slot = r.value<uint8_t>();
-        q.cubic.textures.push_back({slot, r.value<uint32_t>()});
-    }
-    q.fragmentTests = r.value<uint8_t>();
     readKernel(r, q.kernel);
-    if (r.ok() && r.at() < bytes.size())
-        readStageIn(r, q.kernel.stageIn);
-    if (r.ok() && r.at() < bytes.size() && !readLater(r, q))
-        return false;
+    if (q.kind == RequestKind::Library) {
+        q.codeGenType = r.value<uint32_t>();
+        q.codeGen = r.text();
+    }
     if (!r.ok() || r.at() != bytes.size() || !sane(q))
         return false;
     out = std::move(q);
@@ -352,8 +323,10 @@ Digest storeName(const CacheKey &k, const CompileRequest &r, const std::vector<L
     if (r.kind == RequestKind::Render) {
         hashValue(c, r.fields.rasterization);
     } else {
+        // the stage input is bound by the key already: a kernel keeps the name it was stored under before requests
+        // carried it
         Writer w;
-        writeKernel(w, r.kernel);
+        writeDispatch(w, r.kernel);
         hashText(c, w.out);
     }
     Digest out{};
@@ -366,6 +339,29 @@ CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey)
     CacheKey k;
     k.stack = stack;
     k.key = "kernel | " + computeKey;
+    return k;
+}
+
+CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "facts | " + stateKey;
+    return k;
+}
+
+CacheKey libraryCacheKey(uint64_t stack, uint32_t type, const std::string &bytes)
+{
+    static constexpr char kDigits[] = "0123456789abcdef";
+    const Digest digest = sha256(bytes.data(), bytes.size());
+    std::string hex;
+    for (const uint8_t b : digest) {
+        hex += kDigits[b >> 4];
+        hex += kDigits[b & 15];
+    }
+    CacheKey k;
+    k.stack = stack;
+    k.key = "library | " + std::to_string(type) + " | " + hex;
     return k;
 }
 

@@ -1,10 +1,11 @@
 import Foundation
+import HWTestCore
 import Metal
 
 /// What the Switch's Metal stack tells a process about its GPU paths (drivers/TegraGM20BMetal/raw/runtime/RawMetal.mm,
 /// debug builds): the default device is the raw GM20B facade unless the process runs with TEGRA_RAW_METAL=0 or the
-/// pack was refused; the facade hands out the m2v device it wraps, counts its command buffers per path and names each
-/// one's path. On a Mac (the host tests) or a device without them, every answer says so instead.
+/// pack was refused; the facade counts its command buffers per path and names each one's path. On a Mac (the host tests)
+/// or a device without them, every answer says so instead.
 public enum RawFacade {
     static let facadeClass = "RawGM20BMetalDevice"
 
@@ -16,10 +17,6 @@ public enum RawFacade {
         #else
             return "m2v"
         #endif
-    }
-
-    public static func m2vDevice(of device: MTLDevice) -> MTLDevice? {
-        ask(device, "switchM2VDevice") as? MTLDevice
     }
 
     /// Whether the facade still wraps an m2v device (a debug build that has one answers switchM2VDevice), asked
@@ -118,6 +115,12 @@ public enum RawFacade {
         ask(device, "switchCompilerStore") as? String
     }
 
+    /// What the submit worker encoded of a completed buffer ahead of its commit (debug builds; empty elsewhere):
+    /// "encoders", "pipelined", "abandons", "veto" (RMPipelineVeto bits) and "commit_to_gpu_start_us".
+    public static func pipelined(_ buffer: MTLCommandBuffer) -> [String: NSNumber] {
+        ask(buffer, "switchRawPipelined") as? [String: NSNumber] ?? [:]
+    }
+
     /// The buffer binds every state as the inline copy it was before state segments (debug builds, before its commit).
     public static func inlineStates(in buffer: MTLCommandBuffer) -> Bool {
         (ask(buffer, "switchRawInlineStates") as? NSNumber)?.boolValue ?? false
@@ -127,5 +130,51 @@ public enum RawFacade {
         let selector = NSSelectorFromString(name)
         guard let object = object as? NSObject, object.responds(to: selector) else { return nil }
         return object.perform(selector)?.takeUnretainedValue()
+    }
+}
+
+extension Outcome {
+    /// On the facade, FAIL naming the command buffers `gpu` ran off the raw path (their paths name the refusal), ahead of
+    /// whatever else the test found; unchanged off the facade and when every one ran raw. paths= on the line.
+    public func onRawPath(_ gpu: GPU) -> Outcome {
+        guard RawFacade.kind(of: gpu.device) == "raw" else { return self }
+        var marked = self
+        marked.metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
+        return marked.failing(offRaw: gpu.paths.offRaw)
+    }
+}
+
+/// The facade's paths of command buffers a test makes itself rather than through a GPU (a layer's drawables), each read
+/// once it completed.
+public final class CommandPaths: @unchecked Sendable {
+    private let lock = NSLock()
+    private var tally = PathTally()
+
+    public init() {}
+
+    public func watch(_ buffer: MTLCommandBuffer) {
+        buffer.addCompletedHandler { [self] done in
+            let path = RawFacade.path(of: done)
+            lock.lock()
+            tally.add(path)
+            lock.unlock()
+        }
+    }
+
+    public var paths: PathTally {
+        lock.lock()
+        defer { lock.unlock() }
+        return tally
+    }
+}
+
+extension Outcome {
+    /// onRawPath for command buffers `watched` saw on `device`.
+    public func onRawPath(_ watched: CommandPaths, device: MTLDevice?) -> Outcome {
+        guard let device, RawFacade.kind(of: device) == "raw" else { return self }
+        var marked = self
+        let paths = watched.paths
+        marked.metrics.set("paths", paths.isEmpty ? "-" : paths.text)
+        return marked.failing(offRaw: paths.offRaw)
     }
 }

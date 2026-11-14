@@ -44,8 +44,7 @@ a test that only the other version's app has as N/A. Tapping a test in the list 
 `cpu.clock` and `cpu.sustained` read each core's clock from a chain of dependent ADDs (`cpu/switch_cpu_clock.c`, one
 cycle each on the A57) divided by the thread's own CPU time, so preemption doesn't lower the reading. `cpu.sustained`
 keeps every core busy for 20 s and compares the last two seconds with the first. `gpu.latency` times 120 small
-command buffers on each device: the CPU's encode, and commit to completed handler. `gpu.raw_share` runs last and
-reads the facade's process-wide counters: how many command buffers went to raw, to m2v or split, and why.
+command buffers on each device: the CPU's encode, and commit to completed handler.
 
 ## GPU, compositor and pacing scenes
 
@@ -55,14 +54,13 @@ model, such as Core Animation's states with zero uniforms or a cubic filter. Tho
 drawn on a Mac's GPU with the same IPSW's QuartzCore (`goldens/scenes_<build>.txt`), using the 8x8 block means that
 `gpu.ca.sweep` uses below, and each logs `golden_<picture>=exact|close|wrong|missing`. After a scene's picture changes,
 `bazel run //hw_test_app:scene_goldens` (again with `--config=ios27`) redraws them. A scene's verdict comes from the
-process's default Metal device, the raw GM20B facade, alone. While the facade still wraps an m2v device the scene also
-runs there and logs `m2v_` fields and `m2v_same=` (how many pictures it drew in raw's bytes), but that run cannot fail
-the test, and a build without m2v skips it. `raw_paths=` lists the path each command buffer took, as `raw`,
-`m2v:<reason>:<predicate>` or `split:…`. `raw_cbs`, `m2v_cbs` and `m2v_why` are the facade's process-wide counters
-over the run. They come from `switchRawCounters` and `switchM2VDevice` in `RawMetalDevice.mm` and `switchRawPath` in
-`RawMetalCommandBuffer.mm`, which only debug builds have. A failed comparison names the first wrong pixel, both values,
-the bounding box, an 8x8 hex map of the wrong area and any streak columns, and saves got, want and diff PNGs under
-`Documents/gpu/<id>/`.
+process's default Metal device, the raw GM20B facade, alone. `raw_paths=` lists the path each command buffer took, as
+`raw`, `m2v:<reason>:<predicate>` or `split:…`, and a scene whose own command buffer took any path but `raw` fails,
+naming it (the X1 probes and the `metal.*` tests do the same). `raw_cbs`, `m2v_cbs` and `m2v_why` are the facade's
+process-wide counters over the run, framework work included, and judge nothing. They come from `switchRawCounters` in
+`RawMetalDevice.mm` and `switchRawPath` in `RawMetalCommandBuffer.mm`, which only debug builds have. A failed comparison
+names the first wrong pixel, both values, the bounding box, an 8x8 hex map of the wrong area and any streak columns, and
+saves got, want and diff PNGs under `Documents/gpu/<id>/`.
 
 `gpu.ca.sweep` checks the raw path against a Mac's GPU too. It draws one Core Animation state of
 each class in the raw pack's corpus (`ca_states.log`, cut from `precompile/corpus.log` at build time). It compares each

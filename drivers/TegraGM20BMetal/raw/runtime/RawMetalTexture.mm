@@ -11,6 +11,15 @@ public:
     {
         if (!texture->_rawOk || !texture->_raw.cpu)
             return;
+        if (texture->_cpuRows) {
+            const uint64_t bpp = texture->_raw.bpp;
+            const uint8_t *cpu = texture->_cpuRows + region.origin.y * texture->_cpuPitch + region.origin.x * bpp;
+            const uint64_t bytes = (region.size.height - 1) * texture->_cpuPitch + region.size.width * bpp;
+            if (!gRM->raw->hostAccess(texture->_raw, cpu, bytes, write, access_))
+                [NSException raise:NSInternalInconsistencyException format:@"GPU texture CPU ownership failed"];
+            native_ = true;
+            return;
+        }
         const auto &image = texture->_raw;
         if (image.blockW > 1 || image.blockH > 1)
             return;
@@ -57,6 +66,24 @@ private:
     bool native_ = false;
 };
 
+// A plane at Metal's GPU layout whose CPU rows are its own (RMTexture _cpuRows): one level, one slice
+void planeRows(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, uint8_t *bytes, NSUInteger row,
+               bool write)
+{
+    if (level || slice || r.origin.z || r.size.depth != 1 || r.origin.x + r.size.width > t->_raw.width ||
+        r.origin.y + r.size.height > t->_raw.height)
+        return;
+    TextureCpuAccess access(t, r, level, slice, write);
+    const size_t line = r.size.width * t->_raw.bpp;
+    for (NSUInteger y = 0; y < r.size.height; y++) {
+        uint8_t *at = t->_cpuRows + (r.origin.y + y) * t->_cpuPitch + r.origin.x * t->_raw.bpp;
+        if (write)
+            memcpy(at, bytes + y * row, line);
+        else
+            memcpy(bytes + y * row, at, line);
+    }
+}
+
 // A memoryless texture holds nothing between passes: Apple's driver leaves getBytes' bytes as they were and drops
 // replaceRegion's (an M-series Mac with API validation off), where its twin would open m2v
 bool cpuReachesNothing(RMTexture *t)
@@ -74,7 +101,8 @@ bool cpuReachesNothing(RMTexture *t)
 // then, so a CPU lock of a surface the GPU never writes invalidates nothing.
 void declareGpuWrites(RMTexture *t)
 {
-    if (!t->_surface || t->_gpuWrites.exchange(true))
+    // every pass over a surface target asks: only the first may exchange
+    if (!t->_surface || t->_gpuWrites.load(std::memory_order_acquire) || t->_gpuWrites.exchange(true))
         return;
     if (gRM && gRM->raw && gRM->raw->surfaceGpuWrites(IOSurfaceGetID(t->_surface)))
         return;
@@ -435,6 +463,10 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
     if (_surfaceWrites)
         noteSurfaceWrite(_surfaceWrites);
     freshBeforeTransfer(self);
+    if (_cpuRows) {
+        planeRows(self, r, level, slice, (uint8_t *)bytes, row, true);
+        return;
+    }
     if (transferTexture(self, r, level, slice, const_cast<void *>(bytes), row, image, true))
         return;
     if (_rawOk && _raw.blockW * _raw.blockH > 1 && _raw.blockLinear) {
@@ -496,6 +528,10 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
     if (!r.size.width || !r.size.height || !r.size.depth || cpuReachesNothing(self))
         return;
     freshBeforeTransfer(self);
+    if (_cpuRows) {
+        planeRows(self, r, level, slice, (uint8_t *)bytes, row, false);
+        return;
+    }
     if (transferTexture(self, r, level, slice, bytes, row, image, false))
         return;
     if (_rawOk && _raw.blockW * _raw.blockH > 1 && _raw.blockLinear) {

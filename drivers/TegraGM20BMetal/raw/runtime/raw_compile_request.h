@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 // A compile request, as a GPU client hands it to the system's shader compiler (drivers/TegraGM20BMetal/compiler) through the
-// kernel: a render state's descriptor fields, or a kernel's limits and dispatch, each stage's function and the library it
-// comes from, and the variant. It carries the key the client made, which the compiler checks against the key it makes itself
-// from the rest (RawCompileRequest.mm), and no record. A record is filed under a store name that binds that key to the exact
-// libraries it was compiled from: a system volume's library by its path (the compiler reads it there), any other by the
-// SHA-256 of its bytes (which the request carries). A client only ever finds a record made from what it holds itself.
+// kernel: a render state's descriptor fields, or a kernel's limits, stage input and dispatch, each stage's function and the
+// library it comes from, and the variant. It carries the key the client made, which the compiler checks against the key it
+// makes itself from the rest (RawCompileRequest.mm), and no record. A record is filed under a store name that binds that key
+// to the exact libraries it was compiled from: a system volume's library by its path (the compiler reads it there), any
+// other by the SHA-256 of its bytes (which the request carries). A client only ever finds a record made from what it holds
+// itself.
 #pragma once
 #include <array>
 #include <cstdint>
@@ -12,9 +13,8 @@
 #include <vector>
 #include "bridge/NativeMetalDirect.h"
 #include "raw_cache.h"
-#include "raw_cubic.h"
 #include "raw_pipeline_fields.h"
-#include "raw_written_textures.h"
+#include "raw_render_variant.h"
 
 namespace raw {
 
@@ -25,10 +25,18 @@ constexpr uint32_t kRequestStageLimit = 1u << 16, kRequestLibraryLimit = 1u << 1
 
 using Digest = std::array<uint8_t, 32>;
 
+// Facts: a kernel's compute state's answers to Metal's per-state queries (raw_pack.h PackComputeFacts), which its creation
+// needs before any dispatch; its one stage and limits as a kernel's, no dispatch. Library: a library the system's Metal
+// front end makes at run time from a code generation request (raw_codegen_request.h), with no stage or library of its own
 enum class RequestKind : uint8_t {
     Render,
-    Kernel
+    Kernel,
+    Facts,
+    Library
 };
+
+// MTLCodeGenServiceBuildRequest's request types a Library request carries (ImageFilterLink.h's is the filter link's)
+constexpr uint32_t kCodeGenImageFilters = 5, kCodeGenSource = 13, kCodeGenStitch = 14;
 
 // Primary: the state's record; Split: the same with its fragment program's split, which the compiler makes after the
 // primary record is published and nobody waits for
@@ -54,14 +62,7 @@ struct RequestStage {
     uint32_t library = 0;
 };
 
-// A kernel's stage input descriptor: each set attribute with the layout of the buffer it reads (stride as Metal gives it,
-// MTLBufferLayoutStrideDynamic too), and its index buffer
-struct StageInFields {
-    AttributeFields attributes[31];
-    uint64_t indexType = 0, indexBuffer = 0;
-};
-
-// A kernel at one dispatch shape and its bindings (RawDirect.h KernelDispatch)
+// A kernel at one dispatch shape and its bindings (RawDirect.h KernelDispatch), and its descriptor's stage input
 struct KernelRequest {
     uint32_t maxThreads = 0;
     bool multipleOfWidth = false, regionMode = false;
@@ -74,10 +75,6 @@ struct KernelRequest {
     NmbDirectDispatch dispatch() const;
 };
 
-// The stage input as a compute key names it after the function's constants (RawMetalComputeState.mm): "" for none, so a
-// kernel without one keys as before; a dynamic stride as UINT32_MAX, as RawPipelineKey.h's vertex layouts
-std::string stageInText(const StageInFields &in);
-
 struct CompileRequest {
     uint64_t stack = 0;
     RequestKind kind = RequestKind::Render;
@@ -85,13 +82,11 @@ struct CompileRequest {
     PipelineFields fields;
     std::vector<RequestStage> stages;
     std::vector<RequestLibrary> libraries;
-    CubicBinds cubic;
-    uint8_t fragmentTests = 0;
-    bool twoPlane = false;                // its " | xr2p" variant (raw_xr_pass.h)
-    uint16_t xrSlots = 0;                 // its " | xrs=" variant's sampled two-plane slots
-    std::vector<WrittenTexture> written;  // its " | wtex=" variant's written textures (raw_written_textures.h)
+    RenderVariant variant;
     KernelRequest kernel;
     std::string key;  // the CacheKey text the client made (a kernel's starts "kernel | ")
+    uint32_t codeGenType = 0;
+    std::string codeGen;  // a Library's code generation request, sent only for one
 };
 
 std::string encodeRequest(const CompileRequest &r);
@@ -115,5 +110,9 @@ Digest storeName(const CacheKey &k, const CompileRequest &r, const std::vector<L
 
 // The CacheKey of a kernel's compute key (RawComplete.mm kernel())
 CacheKey kernelCacheKey(uint64_t stack, const std::string &computeKey);
+// The CacheKey of a compute state's facts, of its raw_compute_key.h computeStateKey
+CacheKey factsCacheKey(uint64_t stack, const std::string &stateKey);
+// The CacheKey of the library the front end makes of code generation request `bytes` of `type`: the request's SHA-256
+CacheKey libraryCacheKey(uint64_t stack, uint32_t type, const std::string &bytes);
 
 }  // namespace raw

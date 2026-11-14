@@ -6,29 +6,9 @@
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
 #include "../raw/runtime/raw_compute_key.h"
-#include "../raw/runtime/raw_xr_pass.h"
 #include "made_metallib.h"
 
 #include <gtest/gtest.h>
-
-// A post-tessellation vertex function as pipelineKey sees it: its patch type is all it reads off the function
-@interface PatchFunction : NSObject
-@property (readonly) MTLPatchType patchType;
-@end
-@implementation PatchFunction
-
-- (MTLPatchType)patchType
-{
-    return MTLPatchTypeQuad;
-}
-
-// what the descriptor checks when it takes a vertex function
-- (MTLFunctionType)functionType
-{
-    return MTLFunctionTypeVertex;
-}
-
-@end
 
 namespace {
 
@@ -123,9 +103,9 @@ TEST(CompileRequest, RoundTripsWhole)
 {
     raw::CompileRequest r = renderRequest();
     r.stages.push_back(stage("fl", "fragment_fn", 0));
-    r.cubic.samplers.push_back({2, 1, 1, 0, 3, true});
-    r.cubic.textures.push_back({2, 80});
-    r.fragmentTests = 3;
+    r.variant.cubic.samplers.push_back({2, 1, 1, 0, 3, true});
+    r.variant.cubic.textures.push_back({2, 80});
+    r.variant.fragmentTests = 3;
     r.key = "a key";
     raw::CompileRequest back;
     ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back));
@@ -169,88 +149,13 @@ TEST(CompileRequest, ItsPackKeyIsTheFacadesForFrameworkAndOwnLibraries)
     const raw::StageKey v{"vertex_fn", ""}, f{"fragment_fn", "#0:33:05000000"};
     EXPECT_EQ(raw::requestPackKey(r, own), raw::pipelineKey(descriptor(), &v, &f, "", "RenderBox"));
     EXPECT_FALSE(own);
-    r.cubic.samplers.push_back({0, 2, 2, 2, 0, true});
-    r.fragmentTests = 2;
+    r.variant.cubic.samplers.push_back({0, 2, 2, 2, 0, true});
+    r.variant.fragmentTests = 2;
     EXPECT_EQ(raw::requestPackKey(r, own),
-              raw::pipelineKey(descriptor(), &v, &f, "", "RenderBox") + r.cubic.key() + " | tests=2");
+              raw::pipelineKey(descriptor(), &v, &f, "", "RenderBox") + r.variant.cubic.key() + " | tests=2");
     raw::CompileRequest data = renderRequest();
     EXPECT_EQ(raw::requestPackKey(data, own), raw::pipelineKey(descriptor(), &v, &f, "", ""));
     EXPECT_TRUE(own);
-}
-
-// The facade's key of a state's variant (RawMetalCubic.mm renderVariant's name after RawMetalStates.mm's key)
-std::string facadeKey(MTLRenderPipelineDescriptor *d, const raw::CompileRequest &r)
-{
-    const raw::StageKey v{"vertex_fn", ""}, f{"fragment_fn", "#0:33:05000000"};
-    return raw::pipelineKey(d, &v, &f, "", "") + (r.cubic.empty() ? std::string() : r.cubic.key()) +
-           (r.fragmentTests ? " | tests=" + std::to_string(r.fragmentTests) : std::string()) +
-           (r.twoPlane ? std::string(raw::kXrPlanesVariant) : std::string()) +
-           (r.xrSlots ? raw::xrSampledVariant(r.xrSlots) : std::string()) + raw::writtenVariant(r.written);
-}
-
-// Boot 21's 34 'request whose fields give another key than its own' lines: amplified, tessellated, two-plane, sampled
-// two-plane and written-texture states, whose keys name what the request did not carry
-TEST(CompileRequest, EveryStateShapesRequestRebuildsItsOwnKey)
-{
-    const auto shapes = [](int shape, MTLRenderPipelineDescriptor *d, raw::CompileRequest &r) {
-        if (shape == 1 || shape == 8)
-            d.maxVertexAmplificationCount = 2;
-        if (shape == 2 || shape == 8) {
-            d.vertexFunction = (id<MTLFunction>)[PatchFunction new];
-            d.tessellationPartitionMode = MTLTessellationPartitionModeFractionalEven;
-            d.tessellationFactorStepFunction = MTLTessellationFactorStepFunctionPerPatch;
-            d.tessellationOutputWindingOrder = MTLWindingCounterClockwise;
-            d.maxTessellationFactor = 32;
-            d.tessellationFactorScaleEnabled = YES;
-            d.vertexDescriptor.layouts[1].stepFunction = MTLVertexStepFunctionPerPatchControlPoint;
-        }
-        if (shape == 3 || shape == 8)
-            r.cubic.samplers.push_back({0, 2, 2, 2, 0, true});
-        if (shape == 4 || shape == 8)
-            r.fragmentTests = 2;
-        if (shape == 5 || shape == 8)
-            r.twoPlane = true;
-        if (shape == 6 || shape == 8)
-            r.xrSlots = 0x5;
-        if (shape == 7 || shape == 8)
-            r.written = {{1, uint32_t(MTLPixelFormatR16Uint)}, {3, uint32_t(MTLPixelFormatR32Uint)}};
-    };
-    for (int shape = 0; shape <= 8; shape++) {
-        MTLRenderPipelineDescriptor *d = descriptor();
-        raw::CompileRequest r = renderRequest();
-        shapes(shape, d, r);
-        r.fields = raw::fieldsOf(d);
-        r.key = runtimeKey(r).key;
-        raw::CompileRequest back;
-        ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back)) << shape;
-        bool own = false;
-        EXPECT_EQ(raw::requestPackKey(back, own), facadeKey(d, r)) << shape;
-        switch_compiler::SystemLibraries system;
-        switch_compiler::Prepared p;
-        std::string why;
-        EXPECT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << shape << ": " << why;
-        MTLRenderPipelineDescriptor *made = [MTLRenderPipelineDescriptor new];
-        raw::applyFields(p.request.fields, made);
-        EXPECT_EQ(made.maxVertexAmplificationCount, d.maxVertexAmplificationCount) << shape;
-        EXPECT_EQ(made.maxTessellationFactor, d.maxTessellationFactor) << shape;
-        EXPECT_EQ(p.request.written.size(), r.written.size()) << shape;
-    }
-}
-
-TEST(CompileRequest, AKeyItsFieldsDoNotGiveIsRefusedNamingTheField)
-{
-    raw::CompileRequest r = renderRequest();
-    r.key = runtimeKey(r).key + raw::kXrPlanesVariant;
-    switch_compiler::SystemLibraries system;
-    switch_compiler::Prepared p;
-    std::string why;
-    ASSERT_FALSE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why));
-    EXPECT_NE(why.find("the request's ' | xr2p' where its fields give ''"), std::string::npos) << why;
-    raw::CompileRequest amp = renderRequest();
-    amp.key = runtimeKey(amp).key;
-    amp.fields.amplification = 2;
-    ASSERT_FALSE(switch_compiler::prepare(raw::encodeRequest(amp), kStack, system, p, why));
-    EXPECT_NE(why.find("where its fields give 'amp=2'"), std::string::npos) << why;
 }
 
 TEST(CompileRequest, TheCompilerKeysItAsTheRuntimeDoes)
@@ -330,61 +235,70 @@ TEST(CompileRequest, AKernelIsKeyedByItsFunctionAndNamedByItsDispatch)
     EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(other), kStack, system, p, why));
 }
 
-// Boot 21's metal.native.stage_in kernel (stage_sum): its client key names the stage input after the constants as
-// " | in a0=29:0:1:16:5:1 i=0:0", and the compiler took no request of it ('a kernel request whose key is not its
-// function's'), so the HW Test failed with 'A render pipeline could not be compiled'
-TEST(CompileRequest, AStageInKernelCarriesItsStageInputToTheCompiler)
+// A kernel's store name binds its dispatch as before requests carried a stage input (which its key binds): a store a
+// device kept from an earlier build still names each kernel it holds (the digest is the one format 02's requests made)
+TEST(CompileRequest, AKernelKeepsTheStoreNameItHadBeforeItsRequestCarriedItsStageInput)
 {
-    MTLStageInputOutputDescriptor *in = [MTLStageInputOutputDescriptor stageInputOutputDescriptor];
-    in.attributes[0].format = MTLAttributeFormatFloat2;
-    in.attributes[0].bufferIndex = 1;
-    in.layouts[1].stride = 16;
-    in.layouts[1].stepFunction = MTLStepFunctionThreadPositionInGridX;
-    const raw::StageInFields fields = raw::stageInOf(in);
-    EXPECT_EQ(raw::stageInText(fields), " | in a0=29:0:1:16:5:1 i=0:0");
-    EXPECT_EQ(raw::stageInText(raw::stageInOf(nil)), "");
-    in.layouts[1].stride = MTLBufferLayoutStrideDynamic;
-    EXPECT_EQ(raw::stageInText(raw::stageInOf(in)), " | in a0=29:0:1:4294967295:5:1 i=0:0");
-
     raw::CompileRequest r;
     r.stack = kStack;
     r.kind = raw::RequestKind::Kernel;
-    r.libraries.push_back(data(made_metallib::universal({"stage_sum"}, 0x40)));
-    r.stages = {stage("k", "stage_sum")};
-    r.kernel.threads[0] = r.kernel.threads[1] = r.kernel.threads[2] = 1;
-    r.kernel.stageIn = fields;
+    r.libraries.push_back(data("library bytes"));
+    r.stages = {stage("k", "kernel_fn")};
+    r.kernel.maxThreads = 1024;
+    r.kernel.threads[0] = 64;
+    r.kernel.threads[1] = r.kernel.threads[2] = 1;
+    r.kernel.memory[2] = 4096;
+    NmbDirectBoundTexture t;
+    memset(&t, 0, sizeof t);
+    t.pixelFormat = 80;
+    t.textureType = 2;
+    t.usage = 0x17;
+    t.levels = t.arrayLength = t.samples = 1;
+    r.kernel.textures.push_back(t);
+    const raw::Digest name = raw::storeName(raw::kernelCacheKey(kStack, "a compute key"), r, identities(r));
+    std::string hex;
+    for (uint8_t b : name) {
+        char two[3];
+        snprintf(two, sizeof two, "%02x", b);
+        hex += two;
+    }
+    EXPECT_EQ(hex, "ef9afce2f43ca2e100a94e8bff343b186d9d01edc8efbbb3bdc6b84a8eae1758");
+}
+
+// A compute state's facts: keyed by its function's AIR, constants and limits as the pack keys PackComputeFacts, named apart
+// from a kernel request of the same function and limits, and refused when its claimed key names another state
+TEST(CompileRequest, ComputeFactsAreKeyedAsThePacksStateKey)
+{
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Facts;
+    r.libraries.push_back(data(made_metallib::universal({"kernel_fn"}, 0x30)));
+    r.stages = {stage("k", "kernel_fn", 0, "#0:33:05000000")};
+    r.kernel.maxThreads = 256;
+    r.kernel.multipleOfWidth = true;
     raw::AirHash air;
-    air.fill(0x40);
-    const std::string compute = raw::computeKey(air, raw::stageInText(fields), 0, false, r.kernel.threads, "", "", "");
-    r.key = "kernel | " + compute;
+    air.fill(0x30);
+    const std::string state = raw::computeStateKey(air, "#0:33:05000000", 256, true);
+    r.key = raw::factsCacheKey(kStack, state).key;
     raw::CompileRequest back;
     ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back));
-    EXPECT_EQ(raw::stageInText(back.kernel.stageIn), raw::stageInText(fields));
-    raw::CompileRequest plain = r;
-    plain.kernel.stageIn = {};
-    const std::string logged = raw::encodeRequest(plain);
-    // what a request carries after its kernel's stage input (writeLater): tessellator state, amplification, two-plane,
-    // sampled slots and a count of written textures
-    constexpr size_t kLaterBytes = sizeof(raw::TessellationFields) + sizeof(uint64_t) + 1 + 2 + 4;
-    constexpr size_t kStageInBytes = sizeof(raw::StageInFields::attributes) + 2 * sizeof(uint64_t);
-    ASSERT_TRUE(raw::decodeRequest(logged.substr(0, logged.size() - kLaterBytes), back));
-    ASSERT_TRUE(raw::decodeRequest(logged.substr(0, logged.size() - kLaterBytes - kStageInBytes), back));
-    EXPECT_EQ(raw::stageInText(back.kernel.stageIn), "");
-    const raw::Digest named = raw::storeName(raw::kernelCacheKey(kStack, "k"), r, {});
-    EXPECT_EQ(named, raw::storeName(raw::kernelCacheKey(kStack, "k"), plain, {}));
-
+    EXPECT_EQ(back.kind, raw::RequestKind::Facts);
     switch_compiler::SystemLibraries system;
     switch_compiler::Prepared p;
     std::string why;
     ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), kStack, system, p, why)) << why;
-    EXPECT_EQ(p.packKey, compute);
-    MTLComputePipelineDescriptor *made = [MTLComputePipelineDescriptor new];
-    raw::applyStageIn(p.request.kernel.stageIn, made);
-    EXPECT_EQ(raw::stageInText(raw::stageInOf(made.stageInputDescriptor)), raw::stageInText(fields));
+    EXPECT_EQ(p.packKey, state);
+    EXPECT_EQ(p.key.key, "facts | " + state);
 
-    raw::CompileRequest none = r;
-    none.kernel.stageIn = {};
-    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(none), kStack, system, p, why));
+    raw::CompileRequest kernel = r;
+    kernel.kind = raw::RequestKind::Kernel;
+    EXPECT_NE(raw::storeName(p.key, kernel, identities(kernel)), p.name);
+    raw::CompileRequest wider = r;
+    wider.kernel.maxThreads = 512;
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(wider), kStack, system, p, why));
+    raw::CompileRequest two = r;
+    two.stages.push_back(stage("k", "kernel_fn"));
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(two), back)) << "a facts request names one function";
 }
 
 TEST(CompileRequest, TheCompilerRefusesWhatItCannotTrust)

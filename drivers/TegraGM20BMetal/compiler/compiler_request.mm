@@ -2,10 +2,11 @@
 // See compiler_request.h.
 #import "compiler_request.h"
 
-#include <algorithm>
 #include <limits.h>
 #include <stdlib.h>
+#include "compiler_key_difference.h"
 #include "../raw/runtime/RawCompileRequest.h"
+#include "../raw/runtime/raw_codegen_request.h"
 #include "../raw/runtime/raw_compute_key.h"
 #include "../raw/runtime/raw_render_key.h"
 
@@ -50,8 +51,8 @@ bool renderKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
     return true;
 }
 
-// The compute key's own part (its function's AIR, constants, limits and shape) is the compiler's; the bound textures',
-// samplers' and memory's text past it is the client's, and the store name binds the dispatch they describe
+// The compute key's own part (its function's AIR, constants and stage input, limits and shape) is the compiler's; the bound
+// textures', samplers' and memory's text past it is the client's, and the store name binds the dispatch they describe
 bool kernelKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
                std::string &why)
 {
@@ -66,32 +67,44 @@ bool kernelKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
     const std::string own =
         kKernelPrefix + raw::computeStateKey(hash, constants, k.maxThreads, k.multipleOfWidth) + shape;
     if (r.key.compare(0, own.size(), own))
-        return why = "a kernel request whose key is not its function's", false;
+        return why = "a kernel request whose key is not its function's: " + keyDifference(r.key, own), false;
     const std::string region = " | region=1";
     const bool regionKey =
         r.key.size() > region.size() && !r.key.compare(r.key.size() - region.size(), region.size(), region);
     if (k.regionMode != regionKey)
-        return why = "a kernel request whose key names another dispatch mode", false;
+        return why = std::string("a kernel request whose key names another dispatch mode than its dispatch's (") +
+                     (k.regionMode ? "regions" : "one grid") + "): its key " + key_difference::excerpt(r.key, 0),
+               false;
     p.packKey = r.key.substr(sizeof kKernelPrefix - 1);
     p.key = raw::kernelCacheKey(stack, p.packKey);
     return true;
 }
 
-// Where two keys first differ, as each one's text there: the rest of the longer where one ends first, else the field
-// (space to space) around that point
-std::string differingField(const std::string &asked, const std::string &made)
+// A compute state's facts: its function's AIR, constants and limits, as the pack keys its PackComputeFacts
+bool factsKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash>> &air, uint64_t stack,
+              std::string &why)
 {
-    size_t at = 0;
-    while (at < asked.size() && at < made.size() && asked[at] == made[at])
-        ++at;
-    const bool ended = at == asked.size() || at == made.size();
-    const size_t space = at && !ended ? asked.rfind(' ', at - 1) : std::string::npos;
-    const size_t from = ended ? at : space == std::string::npos ? 0 : space + 1;
-    const auto field = [from, at, ended](const std::string &key) {
-        const size_t end = ended ? std::string::npos : key.find(' ', at);
-        return from >= key.size() ? std::string() : key.substr(from, std::min<size_t>(end - from, 80));
-    };
-    return "the request's '" + field(asked) + "' where its fields give '" + field(made) + "'";
+    const raw::CompileRequest &r = p.request;
+    raw::AirHash hash;
+    if (!airOf(r, air, r.stages[0], hash, why))
+        return false;
+    p.packKey = raw::computeStateKey(hash, r.stages[0].constants, r.kernel.maxThreads, r.kernel.multipleOfWidth);
+    p.key = raw::factsCacheKey(stack, p.packKey);
+    return true;
+}
+
+// A library the front end makes: keyed by its code generation request's bytes, which must be what a client's builder
+// makes (raw_codegen_request.h)
+bool libraryKey(Prepared &p, uint64_t stack, std::string &why)
+{
+    const raw::CompileRequest &r = p.request;
+    if (!raw::codegen::requestOk(r.codeGenType, r.codeGen))
+        return why = "a library request of type " + std::to_string(r.codeGenType) + " no client's builder makes", false;
+    p.key = raw::libraryCacheKey(stack, r.codeGenType, r.codeGen);
+    if (p.key.key != r.key)
+        return why = "a library request whose bytes give another key than its own", false;
+    p.name = raw::storeName(p.key, r, {});
+    return true;
 }
 
 }  // namespace
@@ -139,6 +152,12 @@ bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, 
         return why = "an unreadable request", false;
     if (p.request.stack != stack)
         return why = "a request of another stack", false;
+    if (p.request.kind == raw::RequestKind::Library) {
+        if (!libraryKey(p, stack, why))
+            return false;
+        out = std::move(p);
+        return true;
+    }
     std::vector<std::map<std::string, raw::AirHash>> air(p.request.libraries.size());
     std::vector<raw::LibraryIdentity> identities;
     for (size_t i = 0; i < p.request.libraries.size(); ++i) {
@@ -151,13 +170,13 @@ bool prepare(const std::string &bytes, uint64_t stack, SystemLibraries &system, 
             return why = why.empty() ? "a library that is not a metallib" : why, false;
         identities.push_back(raw::identityOf(library));
     }
-    const bool kernel = p.request.kind == raw::RequestKind::Kernel;
-    if (!(kernel ? kernelKey(p, air, stack, why) : renderKey(p, air, stack, why)))
+    const raw::RequestKind kind = p.request.kind;
+    if (!(kind == raw::RequestKind::Kernel  ? kernelKey(p, air, stack, why)
+          : kind == raw::RequestKind::Facts ? factsKey(p, air, stack, why)
+                                            : renderKey(p, air, stack, why)))
         return false;
     if (p.key.key != p.request.key)
-        return why =
-                   "a request whose fields give another key than its own: " + differingField(p.request.key, p.key.key) +
-                   " | " + p.key.key.substr(0, 300),
+        return why = "a request whose fields give another key than its own: " + keyDifference(p.request.key, p.key.key),
                false;
     p.name = raw::storeName(p.key, p.request, identities);
     out = std::move(p);

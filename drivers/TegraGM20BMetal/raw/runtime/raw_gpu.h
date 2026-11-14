@@ -34,6 +34,7 @@
 #include "raw_attachment_view.h"
 #include "raw_barrier_forms.h"
 #include "raw_pass_hazard.h"
+#include "raw_buffer_writes.h"
 #include "raw_probe_forms.h"
 #include "raw_probe_ops.h"
 #include "raw_private_comp.h"
@@ -187,7 +188,8 @@ const FormatInfo *formatInfo(uint32_t mtlPixelFormat);
 // A texture of this size and format the raw path can lay out: `t` reset to it, with no memory yet
 bool shape(uint32_t width, uint32_t height, uint32_t format, Texture &t);
 
-constexpr uint64_t kBlAlign = 16384;  // NVK's image alignment here (r12-cafx niloracle), a multiple of NIL's
+constexpr uint64_t kBlAlign = 16384;         // NVK's image alignment here (r12-cafx niloracle), a multiple of NIL's
+constexpr uint64_t kChunkVaAlign = 0x10000;  // the GMMU big page, a multiple of kBlAlign
 
 // An import of this task's pages into the GPU VM, shared by everything over them.
 struct Import {
@@ -474,7 +476,22 @@ struct Sampler {
     // its headers under a planar texture's address map (Texture::addressMap 1 to 3): m2v samples those textures through the
     // sampler with the map applied (Device::samplerVariant makes them; the same header where the map changes nothing)
     uint32_t mapped[4] = {};
+    // an opaque border's headers by the texel a texture reads at it (borderTexel), where that is not tsc's
+    // (Device::borderVariant makes them before the work that samples the texture through the sampler)
+    uint32_t bordered[32] = {};
 };
+
+// The border texel a draw sampling `t` through `s` reads (raw_sampler.h borderTexel), 0 for a sampler of no opaque border
+uint8_t samplerBorderTexel(const Sampler &s, const Texture &t);
+
+// The header a draw sampling `t` through `s` takes: its own, or its border's for `t` (0: not made yet)
+inline uint32_t borderedTsc(const Sampler &s, const Texture *t)
+{
+    if (!s.desc.border || !t)
+        return s.tsc;
+    const uint8_t texel = samplerBorderTexel(s, *t);
+    return texel == ownBorderTexel(s.desc.border) ? s.tsc : s.bordered[texel];
+}
 
 struct SplitState;
 struct SplitSource;
@@ -488,6 +505,8 @@ void armKeylineProbe();
 struct Pipeline {
     const PackPipeline *rec = nullptr;
     uint32_t vertexInstructions = 1, fragmentInstructions = 1;
+    // vertex, fragment: its program can write memory a buffer binding names (raw_program_stores.h)
+    bool writesMemory[2] = {true, true};
     std::vector<uint32_t> methods;  // the state's registers as ready push words (program offsets relocated)
     uint32_t viewportClip = 0;      // its SET_VIEWPORT_CLIP_CONTROL
     bool namesViewportClip = false;
@@ -688,10 +707,20 @@ struct DepthStencilAttachment {
     bool loadedLater = false;           // a later pass of the command buffer loads this depth
 };
 
+// A pass whose depth and stencil attachments are two textures, a Depth32Float and a Stencil8 of one extent and sample count:
+// it renders a Depth32Float_Stencil8 backing of theirs (depthStencil names the depth texture), each aspect copied in from
+// its texture where loaded and back where stored; an aspect left DontCare keeps its texture's texels, as Metal leaves them
+// (metal2vulkan-runtime depth_stencil_scratch.rs, measured on an M4)
+struct SeparateZeta {
+    const Texture *depth = nullptr, *stencil = nullptr;
+    bool loadDepth = false, loadStencil = false, storeDepth = false, storeStencil = false;
+};
+
 struct PassDesc {
     ColorAttachment color[8];
     uint32_t count = 0;
     DepthStencilAttachment depthStencil;
+    SeparateZeta separate;
     // renderTargetWidth / renderTargetHeight: the render area's bounds where nonzero (m2v render_pass.rs `area`: the
     // attachments' smallest extent, each axis limited by its target size)
     uint32_t width = 0, height = 0;
@@ -1182,9 +1211,14 @@ private:
     Texture *shaderDepth_ = nullptr, *shaderStencil_ = nullptr, *shaderStencilTemp_ = nullptr;
     uint8_t shaderTestsActive_ = 0;
     bool prepareShaderTests(const Pipeline &pipeline, const char **why);
-    uint64_t rootTable(const PackPipeline &r, uint32_t k);
+    uint64_t rootTable(const PackPipeline &r, uint32_t k, bool writes);
     void copyShaderTests(uint8_t flags, bool toAttachment);
     void endShaderTests();
+    // PassDesc::separate's textures and the copy engine's two-byte stand-in for their stencil; the aspects (raw_shader_tests.h
+    // flags) copied into the pass's backing (`toAttachment`) or out of it
+    SeparateZeta separate_;
+    Texture *separateTemp_ = nullptr;
+    void copySeparateZeta(Push &p, uint8_t aspects, bool toAttachment);
 
     // the encoder's culling, winding and fill, and what the registers hold: the context's (Metal's defaults: no culling,
     // clockwise, fill) at a pass's start, put back at its end
@@ -1269,6 +1303,7 @@ private:
     StorageFallback storageFallback(const Pipeline &pl) const;
 #if SWITCH_RAW_DIAGNOSTICS
     void probeEdges() const;
+    void noteLargePass(const PixelBox &drawn, bool drawnKnown) const;
     void probeDraw(const Pipeline &bound, Pipeline &drawn, uint32_t primitive, int32_t first, uint32_t count,
                    bool indexed, const PixelBox &limit);
     void probeGlassDraw(const Pipeline &bound, const Pipeline &drawn, const PixelBox &limit);
@@ -1520,6 +1555,13 @@ public:
     std::shared_ptr<ResourceReadyCompletion> resourceReadiness(std::function<void()> ready, int &result);
     const Texture *readTexture(const Texture *texture);
     void requirePitch(const Import *source);
+    // An import required pitch after a texture over it was read through its native image
+    bool pitchAfterNativeRead() const;
+    // Encoded before its command buffer's commit (RawMetalRangeEncode.h): the CPU may still write a buffer, so the encode
+    // reads no buffer's contents; one that would have is `contentsDeferred` (the encode then stops, and goes again at the
+    // commit)
+    bool deferContents = false;
+    bool contentsDeferred = false;
     void invalidateNativeReads();
     void releaseNativeReads();
 
@@ -1607,7 +1649,9 @@ public:
     }
 
     bool useMember(uint64_t va, uint64_t bytes, bool write, bool hostWritten);
-    void use(const Buffer &buffer, bool write);
+    // `noted`: a write the command buffer's later reads must see (bufferWrites_); false where the GPU may write the
+    // memory but no program of the draw does
+    void use(const Buffer &buffer, bool write, bool noted = true);
     void use(const Texture &texture, bool write);
 
     uint32_t draws = 0, passes = 0, blits = 0, bands = 0;
@@ -1667,6 +1711,7 @@ private:
     struct DrawCounts {
         uint64_t uploadBytes = 0, segmentBinds = 0, segmentWords = 0, segmentSkips = 0, segmentCopies = 0,
                  blendKillBinds = 0, interlockDraws = 0, interlocked = 0, interlockedBlends = 0, twinRule = 0;
+        uint64_t splitTwins = 0, splitWhole[size_t(SplitWhole::Count)] = {};
     } counts_;
 
     void foldCounts();
@@ -1722,7 +1767,7 @@ private:
     SplitBatchPlanner splitBatches_;
     SplitReuse splitReuse_;
     // GPU work encoded before may have written a buffer: a prologue, run ahead of it, reads only what the CPU wrote
-    bool buffersWritten_ = false;
+    BufferWrites bufferWrites_;
     void segment(uint32_t *from, uint32_t *to);
     // An encoder's words from `start` as segments of the unit's open loops (raw_loop_copies.h), or plain ones
     LoopStream loopStream(Push &p, uint32_t *&start);
@@ -1898,6 +1943,10 @@ public:
     Pipeline *reachTwin(Pipeline &pl, const char **why);
     // s's header under address map `map` (Texture::addressMap), made now if it is not yet
     bool samplerVariant(Sampler &s, uint8_t map);
+    // Every constexpr sampler's headers under the address maps, those of samplers placed since made now; false: no room
+    bool constexprMapsPlaced();
+    // s's header for sampling `t` at an opaque border (Sampler::bordered), made now if it is not yet
+    bool borderVariant(Sampler &s, const Texture &t);
     // A two-plane 4:4:4 surface's texture of RGB8_444_2P (542): its planes at `luma`/`chroma` (offsets in the allocation,
     // with their pitches), sampled through an RGBA8 image of the pool (Texture::planar)
     bool createPlanarTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t luma,
@@ -2037,9 +2086,17 @@ public:
         return k_.shared();
     }
 
-    // The memory no resource holds goes back to the kernel: empty chunks of the pool, of images and of buffers, and the kept
-    // dedicated ones (the kernel keeps their pages until the work submitted before has completed)
-    void trim();
+    // The memory no resource holds goes back to the kernel: empty chunks of the pool, of images and of buffers, the kept
+    // dedicated ones (the kernel keeps their pages until the work submitted before has completed) and the kept surface
+    // imports, which it counts
+    struct Trimmed {
+        size_t keptImports = 0;
+        uint64_t keptImportBytes = 0;
+    };
+
+    Trimmed trim();
+    // The kept surface imports trim would give back now (debug builds' rates line)
+    Trimmed keptImports();
 
     // Whether the device's resource lock is free now (try, never waits: the stall line's)
     bool lockFree()
@@ -2233,6 +2290,12 @@ public:
         return generations_.current();
     }
 
+    // The channel an encode began on (channelGeneration() then) is the one begin() would hand out now
+    bool channelCurrent(uint64_t generation) const
+    {
+        return channelGeneration() == generation && !contextless_ && !k_.lost(channel_);
+    }
+
     uint32_t completed() const
     {
         return *fence_;
@@ -2272,6 +2335,10 @@ public:
 
     // A completed command buffer's GPU time from its stamps; false when its slot holds a later one's
     bool gpuNanoseconds(uint32_t stamp, uint64_t &ns) const;
+#if SWITCH_RAW_DIAGNOSTICS
+    // The PTIMER value its submission started at, while its slot still holds its stamps
+    bool gpuStartUnits(uint32_t stamp, uint64_t &units) const;
+#endif
     // a committed command buffer's measured draws, kept until the GPU has run them (raw_band_rates.h)
     void noteCommittedTimings(std::vector<DrawTiming> &timings);
     // the measured draws the GPU has run, each teaching its state's rate: every command buffer's completer calls it
@@ -2530,6 +2597,8 @@ public:
         // stencil plane draws encoded: the eight-draw route's (raw_stencil_bits.h) and the one-draw route's
         // (raw_zeta_colour.h)
         std::atomic<uint64_t> stencilBitDraws{0}, zetaColourDraws{0};
+        // draws of states with a split that took their twin, and those that did not by why (RenderEncoder::splitTwin)
+        std::atomic<uint64_t> splitTwins{0}, splitWhole[size_t(SplitWhole::Count)]{};
         std::atomic<uint64_t> splitPrologues{0};         // split draws' prologue launches (raw_split.cpp)
         std::atomic<uint64_t> reopenTicks{0};            // the last reopen that made a channel, mach_absolute_time
         std::atomic<uint64_t> bandedDraws{0}, bands{0};  // raw_draw_bands.h
@@ -2692,7 +2761,8 @@ private:
         std::map<uint64_t, uint64_t> free;  // offset -> bytes, coalesced
         uint64_t used = 0;
         bool dedicated = false;
-        uint64_t pitchVa = 0;  // a block-linear chunk's kind-0 view (blPitchVa), made at its first ask
+        bool hostPages = false;  // memory is this task's anonymous pages, imported (chunkMemory)
+        uint64_t pitchVa = 0;    // a block-linear chunk's kind-0 view (blPitchVa), made at its first ask
     };
 
     // A role's memory steps: the shared pool chunk (a span over half of one gets its own), a chunk of block-linear images, a
@@ -2858,7 +2928,14 @@ private:
     // again before it gives out a command buffer. channel_ is 0 while the kernel holds none of this device's.
     bool contextless_ = false;
     std::vector<uint32_t> freeTic_, freeTsc_, freeTicPairs_;
-    ViewCache views_{kTextureHeaders};  // viewTic's answers, the encoding thread's
+
+    struct SharedHeader {
+        uint32_t slot, users;
+    };
+
+    std::map<std::array<uint32_t, 8>, SharedHeader> sharedTsc_;         // lock_
+    std::unordered_map<uint32_t, std::array<uint32_t, 8>> tscHeaders_;  // lock_: a shared slot's header
+    ViewCache views_{kTextureHeaders};                                  // viewTic's answers, the encoding thread's
     // by header: its views' word 0 (above it, the sample grid of a storage view: raw_view.h viewHeader) and header (viewTic)
     std::unordered_multimap<uint32_t, std::pair<uint64_t, uint32_t>> viewTics_;
     // by header: its attachment views and their headers (attachmentViewTic)
@@ -2919,7 +2996,12 @@ private:
     // once, before the state that names it is published, and never moves: a draw reads it without lock_.
     static constexpr uint32_t kConstexprSamplers = 256;  // PackEntry::sampler is a byte
     uint32_t constexprTsc_[kConstexprSamplers] = {};
-    uint32_t constexprCount_ = 0;
+    // and each one's headers under a planar texture's address maps 1 to 3 (mapSamplerAddresses): the pack's placed with
+    // them, a runtime record's by constexprMapsPlaced before the work that samples a planar texture
+    uint32_t constexprMapped_[kConstexprSamplers][4] = {};
+    uint32_t constexprCount_ = 0, constexprMappedCount_ = 0;
+    // constexprMapped_[index] from its header `words` (lock_ held, or the device not yet open); false: no room
+    bool placeConstexprMaps(uint32_t index, const uint32_t words[8]);
 
     // the states the runtime made (addRecord), never removed: Pipeline::rec points into them
     struct Completed {
@@ -2949,6 +3031,10 @@ private:
 
     void offerCompletedSplit(Completed &c, const RuntimeRecord &r, const PlacedProgram &vs, bool caTransform);
     bool takeTsc(uint32_t &tsc);
+    // A sampler header slot holding `words` (lock_): one slot for every sampler's compare form and address-map variant of
+    // the same 32 bytes, given back when its last user drops it; false: the table is full
+    bool takeHeader(const uint32_t words[8], uint32_t &slot);
+    void dropHeader(uint32_t slot);
     const Pipeline *extrasLive_ = nullptr;  // the state whose extras (Pipeline::restore) the channel holds
     HeldSegment heldSegment_;               // the state segment its registers hold after everything submitted
     StateSegmentHeap segmentHeap_;          // lock_ (place)
@@ -2960,6 +3046,14 @@ private:
     uint32_t sampleMaskHeld_ = ~0u;  // and SET_SAMPLE_MASK_X0_Y0..X1_Y1 (~0: not known)
     DepthStencilRegs ds_;            // and its depth/stencil registers
     std::map<std::tuple<uint64_t, uint64_t, uint64_t>, Import *> surfaces_;
+    // Surface imports no texture holds, kept for the surface's next texture: Core Animation makes a texture over its
+    // pooled surface every frame after it drops the last, and an import made again is bound, untiled, cleaned and laid
+    // out again (boot 21: 3.4-4 ms of each app-close frame). Oldest first, at most kKeptImports and kKeptImportBytes;
+    // trim (idle, memory pressure) gives them all back. Each holds its surface (Import::owner) until then.
+    static constexpr size_t kKeptImports = 8;
+    static constexpr uint64_t kKeptImportBytes = 64ull << 20;
+    std::vector<Import *> keptImports_;
+    uint64_t keptImportBytes_ = 0;
     std::vector<std::unique_ptr<NativeSurface>> nativeSurfaces_;
     uint64_t nativeGeneration_ = 0;
     const Texture *nativeRead(const Texture &source, NativeSurface *&owner, int &error);
@@ -3105,7 +3199,8 @@ private:
     static constexpr uint32_t kShaderDepthTag = kMemorylessTag + 8;
     static constexpr uint32_t kShaderStencilTag = kShaderDepthTag + 1;
     static constexpr uint32_t kShaderStencilTempTag = kShaderDepthTag + 2;
-    std::array<Backing *, kShaderStencilTempTag + 1> lastBackings_{};
+    static constexpr uint32_t kSeparateZetaTag = kShaderDepthTag + 3, kSeparateTempTag = kShaderDepthTag + 4;
+    std::array<Backing *, kSeparateTempTag + 1> lastBackings_{};
 
     static constexpr uint32_t kPlainPool = 0, kPlainBl = 1, kPlainZeta = 2;
     std::vector<std::unique_ptr<PlainMem>> plainMems_;
@@ -3187,6 +3282,7 @@ private:
     bool growing_ = false, stopping_ = false;
     raw::CondVar grow_, grown_;
     std::thread grower_;
+    bool chunkMemory(uint64_t size, uint32_t kind, std::unique_lock<raw::Mutex> *unlocked, Chunk &ch);
     bool newChunk(uint64_t size, bool dedicated, std::unique_lock<raw::Mutex> *unlocked, uint32_t &index);
     void growLoop();
     // Written by the submitting thread alone; a command buffer's backings are marked used before closedCount_ moves
@@ -3277,7 +3373,11 @@ private:
     bool tiledSurfaceTexture(uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, Texture &t,
                              Texture *sampled);
     Import *importSurface(uint64_t id, void *base, uint64_t bytes, const void *owner, const LayoutAsk *ask = nullptr);
+    // lock_ held: a texture's hold on its import goes. A surface's import no texture holds is kept (keepImport)
     void release(Import *i);
+    void keepImport(Import *i);
+    void dropImport(Import *i);
+    Trimmed dropKeptImports();
     // lock_ held (raw_alias.cpp): a hold on a span's lease, made at its first alias; the last drop frees what the lease holds
     Lease *leaseSpan(Lease *&lease, const Span &span, Memory from);
     void dropLocked(Lease *lease);

@@ -44,6 +44,7 @@
 #include "raw_slm.h"
 #include "raw_srgb_table.h"
 #include "raw_stamps.h"
+#include "raw_program_stores.h"
 #include "raw_storage.h"
 #include "raw_surface_view.h"
 #include "raw_native_surface.h"
@@ -237,7 +238,7 @@ void turnWordsInto(Push &p, uint64_t root, const Rotation &r)
 }
 
 // Texture header word 0 per MTLPixelFormat as NVK writes it (pack/mkformats.py over the twin, 11-04), and the color target format
-// NVK writes for a target of it (raw/test/targetcheck.py over the probe's PROBE_TARGETS run; 0 where m2v's NVK renders none).
+// NVK writes for a target of it (0 where m2v's NVK renders none): both NIL's rows (test/raw_tic_words_test.py).
 // The integer formats' are NIL's rows (nil_formats.csv: the class's RU*/RS* target, UINT or SINT components, alpha ONE_INT).
 const FormatInfo kFormats[] = {
     {1, 0xf7, 0x2002491d, 1, false},     // A8Unorm
@@ -496,6 +497,7 @@ Device::~Device()
     {
         std::lock_guard<raw::Mutex> l(lock_);
         stopping_ = true;
+        dropKeptImports();
     }
     grow_.notify_all();
     if (grower_.joinable())
@@ -658,8 +660,13 @@ bool Device::init(std::string &err)
     }
     for (uint32_t i = 0; i < pack_.header()->samplers; i++) {
         memcpy(tsc_.cpu + 32 * nextTsc_, cs + 8 * i, 32);
-        constexprTsc_[constexprCount_++] = nextTsc_++;
+        constexprTsc_[constexprCount_] = nextTsc_++;
+        if (!placeConstexprMaps(constexprCount_++, cs + 8 * i)) {
+            err = "no sampler header left for the pack's constexpr samplers under planar address maps";
+            return false;
+        }
     }
+    constexprMappedCount_ = constexprCount_;
     // SET_CT_WRITE(i), as the baseline leaves it where a state's registers do not set it
     const uint32_t *base = pack_.section<uint32_t>(PackBaseline);
     for (uint64_t i = 0; i < pack_.bytes(PackBaseline) / 8; i++)
@@ -1284,6 +1291,13 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
     };
     pl.vertexInstructions = instructions(*vs.record);
     pl.fragmentInstructions = instructions(*fs.record);
+    // the code as the heap holds it (a runtime record's CPU copy is its header alone)
+    const auto writesMemory = [&](const PlacedProgram &p) {
+        const uint8_t *header = heapCpu(p.program);
+        return !header || placedWritesMemory(header, *p.record);
+    };
+    pl.writesMemory[0] = writesMemory(vs);
+    pl.writesMemory[1] = writesMemory(fs);
     pl.memoryEntries = pp.memoryEntries;
     std::vector<uint32_t> words(64 + 16 + (tess ? 64 : 0) + pp.blobDwords * 2);
     Push w{words.data(), words.data() + words.size()};
@@ -1406,7 +1420,8 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
     if (const char *ds = strstr(keyString, "ds=")) {
         uint32_t depth = 0, stencil = 0;
         sscanf(ds, "ds=%u/%u", &depth, &stencil);
-        pl.depthFormat = depth ? depth : stencil;
+        // a Depth32Float and a Stencil8 apart are rendered as one Depth32Float_Stencil8 (PassDesc::separate)
+        pl.depthFormat = depth == 252 && stencil == 253 ? kZetaFormat : depth ? depth : stencil;
     }
     if (const char *n = strstr(keyString, "samples="))
         pl.samples = uint8_t(std::max(1, atoi(n + 8)));
@@ -1457,8 +1472,7 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
 
 // ---- device: memory ----
 
-// A span of `bytes` (page multiple) from the pool: first fit in a chunk, else a new chunk (one BoImport of fresh anonymous
-// memory; its pages are wired and their zeros cleaned to memory by the kext: ~10 ms for 16 MiB on the device, r7l). A span of more
+// A span of `bytes` (page multiple) from the pool: first fit in a chunk, else a new chunk (newChunk). A span of more
 // than half a chunk gets a chunk of its own, given back whole when the span is freed. The shared chunks grow ahead of need: once their
 // free bytes fall below a chunk's worth the grower thread makes the next one, so this (the render thread's resource creation) finds room;
 // one that does not waits for a chunk the grower is making, or makes one itself (Stats::poolStalls: a burst outran the mark).
@@ -1479,25 +1493,43 @@ uint64_t Device::chunkSize(const std::vector<Chunk> &chunks, uint64_t cap, uint6
     return (size + align - 1) & ~(align - 1);
 }
 
-// lock_ held (`unlocked`: the caller's lock, let go for the kernel's wiring and taken again); the chunk's index in chunks_
-bool Device::newChunk(uint64_t size, bool dedicated, std::unique_lock<raw::Mutex> *unlocked, uint32_t &index)
+// The render server's chunks are cached BoAllocs, which the kernel serves from its spares: pages wired, zeroed by the
+// copy engine and cleaned ahead of time, so a chunk costs a BO and a bind, not a wiring of fresh anonymous pages that the
+// CPU zero-fills (r7l, boot 21: ~9 ms for 16 MiB, on the render thread when a burst outran the grower). A chunk given back
+// returns to those spares. A client's stay imports of its own anonymous pages: m2v twins a client's raw memory by importing
+// its CPU range, and a kernel BO's view must not be freed under another import of its mapping (TegraGM20BUserClientPool.cpp).
+bool Device::chunkMemory(uint64_t size, uint32_t kind, std::unique_lock<raw::Mutex> *unlocked, Chunk &ch)
 {
-    vm_address_t memory = 0;
-    if (vm_allocate(mach_task_self(), &memory, size, VM_FLAGS_ANYWHERE) != KERN_SUCCESS)
+    vm_address_t host = 0;
+    const bool kernelMemory = role_ == Role::RenderServer;
+    if (!kernelMemory && vm_allocate(mach_task_self(), &host, size, VM_FLAGS_ANYWHERE) != KERN_SUCCESS)
         return false;
-    Chunk ch;
-    ch.memory = reinterpret_cast<void *>(memory);
-    ch.bytes = size;
-    ch.dedicated = dedicated;
     if (unlocked)
         unlocked->unlock();
-    const bool wired = k_.importPages(ch.memory, size, ch.bo);
+    const bool made = kernelMemory ? k_.alloc(size, false, ch.bo, kind, kChunkVaAlign)
+                                   : k_.importPages(reinterpret_cast<void *>(host), size, ch.bo);
     if (unlocked)
         unlocked->lock();
-    if (!wired || !k_.bindImport(ch.memory, ch.bo, kPteKindPitch)) {
-        vm_deallocate(mach_task_self(), memory, size);
+    if (!made || (!kernelMemory && !k_.bindImport(reinterpret_cast<void *>(host), ch.bo, kind))) {
+        if (ch.bo.handle)
+            k_.free(ch.bo);
+        if (host)
+            vm_deallocate(mach_task_self(), host, size);
         return false;
     }
+    ch.memory = kernelMemory ? ch.bo.cpu : reinterpret_cast<void *>(host);
+    ch.bytes = size;
+    ch.hostPages = !kernelMemory;
+    return true;
+}
+
+// lock_ held (`unlocked`: the caller's lock, let go for the kernel's call and taken again); the chunk's index in chunks_
+bool Device::newChunk(uint64_t size, bool dedicated, std::unique_lock<raw::Mutex> *unlocked, uint32_t &index)
+{
+    Chunk ch;
+    ch.dedicated = dedicated;
+    if (!chunkMemory(size, kPteKindPitch, unlocked, ch))
+        return false;
     uint32_t c = 0;
     while (c < chunks_.size() && chunks_[c].memory)
         c++;
@@ -1673,16 +1705,19 @@ void Device::freeChunk(Chunk &ch)
     RAW_DIAGNOSTIC(stats.poolBytes -= ch.bytes);
     RAW_DIAGNOSTIC(stats.poolChunks--);
     RAW_DIAGNOSTIC(glassMemEvent("chunk freed", ch.bytes));
+    const bool host = ch.hostPages;
     k_.free(ch.bo);
     if (ch.pitchVa)
         k_.releaseVa(ch.pitchVa, ch.bytes);
-    vm_deallocate(mach_task_self(), vm_address_t(ch.memory), ch.bytes);
+    if (host)
+        vm_deallocate(mach_task_self(), vm_address_t(ch.memory), ch.bytes);
     ch = Chunk();
 }
 
-void Device::trim()
+Device::Trimmed Device::trim()
 {
     std::lock_guard<raw::Mutex> l(lock_);
+    const Trimmed trimmed = dropKeptImports();
     reapNativeSurfaces();
     for (const Spare &sp : spares_)
         freeChunk(chunks_[sp.chunk]);
@@ -1705,6 +1740,7 @@ void Device::trim()
             k_.free(ch.bo);
             ch = Chunk();
         }
+    return trimmed;
 }
 
 // A surface's one import in this task. A new one asks the kernel its layout (`ask`: the first texture's shape and whether it
@@ -1716,9 +1752,13 @@ Import *Device::importSurface(uint64_t id, void *base, uint64_t bytes, const voi
     if (id) {
         auto it = surfaces_.find(key);
         if (it != surfaces_.end()) {
-            it->second->refs++;
+            Import *kept = it->second;
+            if (!kept->refs++) {
+                keptImports_.erase(std::find(keptImports_.begin(), keptImports_.end(), kept));
+                keptImportBytes_ -= kept->bo.bytes;
+            }
             RAW_DIAGNOSTIC(stats.importHits++);
-            return it->second;
+            return kept;
         }
     }
     Import *i = new Import;
@@ -1760,6 +1800,42 @@ void Device::release(Import *i)
 {
     if (!i || --i->refs)
         return;
+    if (i->id && i->owner)
+        keepImport(i);
+    else
+        dropImport(i);
+}
+
+void Device::keepImport(Import *i)
+{
+    keptImports_.push_back(i);
+    keptImportBytes_ += i->bo.bytes;
+    while (keptImports_.size() > kKeptImports || keptImportBytes_ > kKeptImportBytes) {
+        Import *oldest = keptImports_.front();
+        keptImports_.erase(keptImports_.begin());
+        keptImportBytes_ -= oldest->bo.bytes;
+        dropImport(oldest);
+    }
+}
+
+Device::Trimmed Device::keptImports()
+{
+    std::lock_guard<raw::Mutex> l(lock_);
+    return {keptImports_.size(), keptImportBytes_};
+}
+
+Device::Trimmed Device::dropKeptImports()
+{
+    const Trimmed trimmed = {keptImports_.size(), keptImportBytes_};
+    for (Import *i : keptImports_)
+        dropImport(i);
+    keptImports_.clear();
+    keptImportBytes_ = 0;
+    return trimmed;
+}
+
+void Device::dropImport(Import *i)
+{
     if (i->id)
         if (auto it = surfaces_.find(std::make_tuple(i->id, i->base, i->bytes));
             it != surfaces_.end() && it->second == i)
@@ -2332,12 +2408,14 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
                                   uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, uint32_t format,
                                   Texture &t, bool writes)
 {
-    // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`
-    if (!shape(width, height, format, t) || (pitch & 15) || (offset & 15) || pitch < width * t.bpp ||
-        offset > allocBytes || uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp > allocBytes - offset ||
-        (uintptr_t(base) & (pageSize() - 1)))
+    // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`.
+    // A base off a page (a surface over the client's memory) is imported from its page, its VA as far into it (bindImport).
+    const bool offPage = uintptr_t(base) & (pageSize() - 1);
+    if (!shape(width, height, format, t) || (pitch & 15) || ((uintptr_t(base) + offset) & 15) ||
+        pitch < width * t.bpp || offset > allocBytes ||
+        uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp > allocBytes - offset)
         return false;
-    const bool unaligned = (pitch | offset) & 31;
+    const bool unaligned = (pitch | (uintptr_t(base) + offset)) & 31;
     Texture *sampled = nullptr;
     if (unaligned) {
         sampled = new Texture;
@@ -2350,6 +2428,10 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
     t.pitch = pitch;
     const LayoutAsk ask = {width, height, t.bpp, pitch, writes && !offset && !sampled};
     t.import = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface, &ask);
+    if (t.import && offPage && t.import->kernelTiled()) {
+        release(t.import);
+        t.import = nullptr;
+    }
     if (t.import && t.import->kernelTiled()) {
         SurfaceView view;
         const bool valid = surfaceView(t.import->layout, offset, width, height, t.bpp, pitch, view);
@@ -2462,10 +2544,19 @@ bool Device::createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBy
 bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
                                  uint32_t format, Texture &t)
 {
-    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 31) ||
+    // rows and address a multiple of 16, as a surface's (createSurfaceTexture): the texture header's 32 through `sampled`
+    if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 15) ||
         pitch < width * t.bpp || offset > b.length || uint64_t(pitch) * height > b.length - offset ||
-        offset > UINT64_MAX - b.va || ((b.va + offset) & 31))
+        offset > UINT64_MAX - b.va || ((b.va + offset) & 15))
         return false;
+    Texture *sampled = nullptr;
+    if ((pitch | (b.va + offset)) & 31) {
+        sampled = new Texture;
+        if (!createTexture(width, height, format, *sampled, false, true)) {
+            delete sampled;
+            return false;
+        }
+    }
     std::lock_guard<raw::Mutex> l(lock_);
     t.pitch = pitch;
     t.va = b.va + offset;
@@ -2473,6 +2564,11 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     t.shadowTarget = t.renderable && !linearTarget(t);
     t.renderable = t.renderable && linearTarget(t);
     t.cpu = b.cpu + offset;
+    if (sampled) {  // sampled through its pool image's header
+        t.sampled = sampled;
+        t.tic = sampled->tic;
+        return true;
+    }
     if (!(t.tic = allocTic()))
         return false;
     writeTic(t);
@@ -2663,22 +2759,14 @@ bool Device::tiledWanted(const std::vector<Chunk> &chunks) const
 bool Device::newTiledChunk(std::vector<Chunk> &chunks, uint32_t kind, uint64_t size, bool dedicated,
                            std::unique_lock<raw::Mutex> *unlocked, uint32_t &index)
 {
-    vm_address_t memory = 0;
-    if (vm_allocate(mach_task_self(), &memory, size, VM_FLAGS_ANYWHERE) != KERN_SUCCESS)
-        return false;
     Chunk ch;
-    ch.memory = reinterpret_cast<void *>(memory);
-    ch.bytes = size;
     ch.dedicated = dedicated;
-    if (unlocked)
-        unlocked->unlock();
-    const bool wired = k_.importPages(ch.memory, size, ch.bo);
-    if (unlocked)
-        unlocked->lock();
-    if (!wired || !k_.bindImport(ch.memory, ch.bo, kind) || (ch.bo.va & (kBlAlign - 1))) {
-        if (ch.bo.handle)
-            k_.free(ch.bo);
-        vm_deallocate(mach_task_self(), memory, size);
+    if (!chunkMemory(size, kind, unlocked, ch))
+        return false;
+    if (ch.bo.va & (kBlAlign - 1)) {
+        k_.free(ch.bo);
+        if (ch.hostPages)
+            vm_deallocate(mach_task_self(), vm_address_t(ch.memory), ch.bytes);
         return false;
     }
     uint32_t c = 0;
@@ -3320,6 +3408,8 @@ void samplerHeader(const SamplerDesc &d, uint32_t w[8])
     maxLod = std::max(maxLod, minLod);
     setField(w + 2, 11, 0, lodField(minLod));
     setField(w + 2, 23, 12, lodField(maxLod));
+    if (d.border)
+        borderHeader(w, ownBorderTexel(d.border));
 }
 
 // lock_ held: a free entry of the sampler header pool
@@ -3336,6 +3426,37 @@ bool Device::takeTsc(uint32_t &tsc)
     return true;
 }
 
+bool Device::takeHeader(const uint32_t words[8], uint32_t &slot)
+{
+    std::array<uint32_t, 8> header;
+    memcpy(header.data(), words, sizeof header);
+    if (const auto shared = sharedTsc_.find(header); shared != sharedTsc_.end()) {
+        shared->second.users++;
+        slot = shared->second.slot;
+        return true;
+    }
+    if (!takeTsc(slot))
+        return false;
+    memcpy(tsc_.cpu + 32 * slot, words, 32);
+    sharedTsc_[header] = {slot, 1};
+    tscHeaders_[slot] = header;
+    return true;
+}
+
+void Device::dropHeader(uint32_t slot)
+{
+    const auto header = tscHeaders_.find(slot);
+    if (header == tscHeaders_.end())
+        return;
+    const auto shared = sharedTsc_.find(header->second);
+    if (shared != sharedTsc_.end() && --shared->second.users)
+        return;
+    if (shared != sharedTsc_.end())
+        sharedTsc_.erase(shared);
+    tscHeaders_.erase(header);
+    freeTsc_.push_back(slot);
+}
+
 bool Device::createSampler(const SamplerDesc &d, Sampler &s)
 {
     uint32_t w[8], compared[8];
@@ -3344,15 +3465,15 @@ bool Device::createSampler(const SamplerDesc &d, Sampler &s)
     compareHeader(compared, d.compare);
     s.desc = d;
     std::lock_guard<raw::Mutex> l(lock_);
+    // the sampler's own slot is its name in the argument heap (heapSampler), so never shared; its compare form is
     if (!takeTsc(s.tsc))
         return false;
-    if (!takeTsc(s.compareTsc)) {
+    if (!takeHeader(compared, s.compareTsc)) {
         freeTsc_.push_back(s.tsc);
         s.tsc = 0;
         return false;
     }
     memcpy(tsc_.cpu + 32 * s.tsc, w, 32);
-    memcpy(tsc_.cpu + 32 * s.compareTsc, compared, 32);
     return true;
 }
 
@@ -3362,10 +3483,13 @@ void Device::destroySampler(Sampler &s)
     if (s.tsc)
         freeTsc_.push_back(s.tsc);
     if (s.compareTsc)
-        freeTsc_.push_back(s.compareTsc);
+        dropHeader(s.compareTsc);
     for (uint32_t m : s.mapped)
-        if (m && m != s.tsc && std::find(freeTsc_.begin(), freeTsc_.end(), m) == freeTsc_.end())
-            freeTsc_.push_back(m);
+        if (m && m != s.tsc)
+            dropHeader(m);
+    for (uint32_t b : s.bordered)
+        if (b)
+            dropHeader(b);
     s = {};
 }
 
@@ -3380,23 +3504,80 @@ bool Device::samplerVariant(Sampler &s, uint8_t map)
         return false;
     if (s.mapped[map])
         return true;
-    SamplerDesc d = s.desc;
-    const bool wrapped = map == 1 || map == 3, clamps = map == 2 || map == 3;
-    for (uint8_t *m : {&d.sAddress, &d.tAddress, &d.rAddress})
-        if ((wrapped && *m >= 1 && *m <= 3) || (clamps && (*m == 4 || *m == 5)))
-            *m = 0;
-    if (d.sAddress == s.desc.sAddress && d.tAddress == s.desc.tAddress && d.rAddress == s.desc.rAddress) {
+    uint32_t own[8], w[8];
+    samplerHeader(s.desc, own);
+    memcpy(w, own, sizeof w);
+    mapSamplerAddresses(w, map);
+    if (!memcmp(w, own, sizeof w)) {
         s.mapped[map] = s.tsc;
         return true;
     }
-    uint32_t w[8];
-    samplerHeader(d, w);
     RAW_ENCODE_LOCK(l, lock_);
     uint32_t tsc = 0;
-    if (!takeTsc(tsc))
+    if (!takeHeader(w, tsc))
         return false;
-    memcpy(tsc_.cpu + 32 * tsc, w, 32);
     s.mapped[map] = tsc;
+    return true;
+}
+
+uint8_t samplerBorderTexel(const Sampler &s, const Texture &t)
+{
+    constexpr uint32_t kA8Unorm = 1;
+    const FormatInfo *f = formatInfo(t.format);
+    return f ? borderTexel(f->tic0, t.swizzle, t.format == kA8Unorm, s.desc.border) : ownBorderTexel(s.desc.border);
+}
+
+bool Device::borderVariant(Sampler &s, const Texture &t)
+{
+    const uint8_t texel = samplerBorderTexel(s, t);
+    if (!s.desc.border || texel == ownBorderTexel(s.desc.border) || s.bordered[texel])
+        return true;
+    uint32_t w[8];
+    samplerHeader(s.desc, w);
+    borderHeader(w, texel);
+    RAW_ENCODE_LOCK(l, lock_);
+    uint32_t tsc = 0;
+    if (!takeHeader(w, tsc))
+        return false;
+    s.bordered[texel] = tsc;
+    return true;
+}
+
+bool Device::constexprMapsPlaced()
+{
+    RAW_ENCODE_LOCK(l, lock_);
+    for (; constexprMappedCount_ < constexprCount_; constexprMappedCount_++) {
+        const auto placed = std::find_if(completedSamplers_.begin(), completedSamplers_.end(), [&](const auto &s) {
+            return s.second == constexprMappedCount_;
+        });
+        if (placed == completedSamplers_.end() || !placeConstexprMaps(constexprMappedCount_, placed->first.data()))
+            return false;
+    }
+    return true;
+}
+
+bool Device::placeConstexprMaps(uint32_t index, const uint32_t words[8])
+{
+    const uint32_t own = constexprTsc_[index];
+    uint32_t taken[4] = {};
+    for (uint8_t map = 1; map < 4; map++) {
+        uint32_t w[8];
+        memcpy(w, words, sizeof w);
+        mapSamplerAddresses(w, map);
+        if (!memcmp(w, words, sizeof w)) {
+            constexprMapped_[index][map] = own;
+            continue;
+        }
+        if (!takeTsc(taken[map])) {
+            for (uint32_t tsc : taken)
+                if (tsc)
+                    freeTsc_.push_back(tsc);
+            return false;
+        }
+        memcpy(tsc_.cpu + 32 * taken[map], w, sizeof w);
+        constexprMapped_[index][map] = taken[map];
+    }
+    constexprMapped_[index][0] = own;
     return true;
 }
 
@@ -4170,6 +4351,7 @@ CommandBuffer *Device::begin()
     cb.nativeReads_.clear();
     cb.nativeSurfaces_.clear();
     cb.pitchImports_.clear();
+    cb.deferContents = cb.contentsDeferred = false;
     overflowing_ = false;
     overflow_.clear();
     cb.pushStart_ = push_.head;
@@ -4229,7 +4411,7 @@ CommandBuffer *Device::begin()
     cb.splits_.clear();
     cb.splitRecords_.clear();
     cb.splitReuse_.clear();
-    cb.buffersWritten_ = false;
+    cb.bufferWrites_.clear();
     cb.geometryBudget_ = {};
     cb.geometryPool_.clear();
     cb.geometryRefusedBuffers_.clear();
@@ -4411,6 +4593,27 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass)
         e.hiddenZeta_ = true;
         backings_.push_back(b);
     }
+    if (const Texture *depth = pass.separate.depth) {
+        constexpr uint32_t kRG8Unorm = 30;
+        Texture shape;
+        shape.width = depth->width;
+        shape.height = depth->height;
+        shape.samples = depth->samples;
+        shape.layers = layers;
+        shape.format = kZetaFormat;
+        shape.zeta = shape.memoryless = true;
+        Texture *b = backing(shape, Device::kSeparateZetaTag, false, true, true);
+        shape.format = kRG8Unorm;
+        shape.zeta = false;
+        Texture *temporary = b ? backing(shape, Device::kSeparateTempTag, true, false, true) : nullptr;
+        if (!temporary)
+            return nullptr;
+        e.pass_.depthStencil.texture = b;
+        e.separate_ = pass.separate;
+        e.separateTemp_ = temporary;
+        backings_.push_back(b);
+        backings_.push_back(temporary);
+    }
     if (backingLock.owns_lock())
         backingLock.unlock();
     // the depth's stored region (raw_zcull_planes.h), taken before this pass's own write leaves it stale
@@ -4438,7 +4641,7 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass)
         e.areaH_ = std::min(e.areaH_, pass.height);
     ZcullAsk zask;
     zask.on = dev_->zcullOn_;
-    zask.depth = zeta && zetaHasDepth(zeta->format);
+    zask.depth = zeta && !pass.separate.depth && zetaHasDepth(zeta->format);
     zask.cleared = pass.depthStencil.clearDepth;
     zask.layers = layers;
     zask.zetaLayers = zeta ? std::max(zeta->layers, 1u) : 1;
@@ -4553,6 +4756,10 @@ uint64_t CommandBuffer::batchLimit() const
 // would allow a producer to replace the vertices between the snapshot and this draw's GPU read.
 bool CommandBuffer::acquireGeometry(const Buffer &buffer, const uint8_t *cpu, uint64_t bytes)
 {
+    if (deferContents) {
+        contentsDeferred = true;
+        return false;
+    }
     Device &d = *dev_;
     if (!cpu || !buffer.cpu || uintptr_t(cpu) < uintptr_t(buffer.cpu) || !bytes)
         return false;
@@ -4668,6 +4875,9 @@ void CommandBuffer::foldCounts()
     stats.fetch.interlocked += counts_.interlocked;
     stats.fetch.interlockedBlends += counts_.interlockedBlends;
     stats.fetch.twinRule += counts_.twinRule;
+    stats.splitTwins += counts_.splitTwins;
+    for (size_t k = 0; k < size_t(SplitWhole::Count); k++)
+        stats.splitWhole[k] += counts_.splitWhole[k];
     counts_ = {};
 }
 #endif
@@ -4955,6 +5165,17 @@ bool Device::gpuNanoseconds(uint32_t stamp, uint64_t &ns) const
 }
 
 #if SWITCH_RAW_DIAGNOSTICS
+bool Device::gpuStartUnits(uint32_t stamp, uint64_t &units) const
+{
+    if (!stamp || !stamps_.cpu)
+        return false;
+    const auto *slot = reinterpret_cast<const volatile StampSlot *>(stamps_.cpu + stampOffset(stamp));
+    if (slot->start.payload != stamp || slot->end.payload != stamp)
+        return false;
+    units = slot->start.ptimer;
+    return true;
+}
+
 std::vector<StateSpan> Device::longSpans(uint32_t stamp)
 {
     if (!spans_.on() || !stamp)
@@ -4976,8 +5197,23 @@ void RenderEncoder::markSpan(Push &p, uint32_t index, SpanKind kind)
     const Texture *t = pass_.color[0].texture;
     const uint32_t kpx = t ? uint32_t(uint64_t(t->width) * t->height * t->samples / 1000) : 0;
     SpanLabel label;
-    if (kind == SpanKind::Draws && emitted_)
+    if (kind == SpanKind::Draws && emitted_) {
         label = drawSpanLabel(*emitted_, emitted_->rec ? emitted_->rec->keyHash : 0, kpx, samples_);
+        const Pipeline &pl = *emitted_;
+        label.form = pl.splitOf                      ? SpanForm::Twin
+                     : pl.freeForm.rung != FetchNone ? SpanForm::FetchFree
+                     : pl.storageBits                ? SpanForm::Interlock
+                     : pipeline_ && &pl != pipeline_ ? SpanForm::Variant
+                                                     : SpanForm::Whole;
+        label.pixels = uint32_t(std::min<uint64_t>(drawPixels_, UINT32_MAX));
+        if (t) {
+            label.format = t->format;
+            label.width = uint16_t(std::min<uint32_t>(t->width, 0xffff));
+            label.height = uint16_t(std::min<uint32_t>(t->height, 0xffff));
+            label.blockLinear = t->blockLinear;
+            label.compressed = t->comptags;
+        }
+    }
     label.kind = kind;
     label.kpx = uint16_t(std::min<uint32_t>(kpx, 0xffff));
     label.samples = samples_;
@@ -6169,7 +6405,7 @@ static void logEdgeMiss(const char *what, const Texture &t, const PixelBox &r, c
 
 // Stage `k`'s (0 vertex, 1 fragment) root table for this draw, in the upload ring: m2v's {null, sink, an entry per buffer slot
 // it reaches through the table} over the identity resident set (raw_heap_tables.h). A buffer reached so may be written.
-uint64_t RenderEncoder::rootTable(const PackPipeline &r, uint32_t k)
+uint64_t RenderEncoder::rootTable(const PackPipeline &r, uint32_t k, bool writes)
 {
     Device &d = *dev_;
     const uint32_t slots = r.rootSlots[k], entries = drawRootEntries(slots);
@@ -6180,7 +6416,7 @@ uint64_t RenderEncoder::rootTable(const PackPipeline &r, uint32_t k)
         if (!(slots >> n & 1) || !b.va)
             continue;
         if (b.buffer) {
-            cb_->use(*b.buffer, true);
+            cb_->use(*b.buffer, true, writes);
             slot[n] = {b.buffer->va, b.buffer->length, b.offset};
         } else {
             cb_->useAddress(b.va, b.size, true);
@@ -6198,6 +6434,9 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
                             bool indexed, const char **why)
 {
     RAW_ENCODE_SPAN(Prepare);
+#if SWITCH_RAW_DIAGNOSTICS
+    const bool genericMerge = pl->genericState;
+#endif
     if (pl->strideTwin && bindStridePastStream(*pl->rec))
         pl = pl->strideTwin;
     if (tessellates(*pl->rec) != (primitive == icb::kPatchPrimitive)) {
@@ -6271,7 +6510,10 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         pl = pl->turnedTwin;
     else if (!pl->splitOf && !generic)
         pl = dev_->variant(*pl, bindingFacts(*pl) | (rot_.turned() ? AssumeTurned : 0u));
-    RAW_DIAGNOSTIC(logUniformTuple(*pl));
+#if SWITCH_RAW_DIAGNOSTICS
+    if (genericMerge)
+        logUniformTuple(*pl);
+#endif
     RAW_ENCODE_END(variantSpan);
     if (!whole_) {
         if (x[1] > x[0] && y[1] > y[0]) {
@@ -6308,7 +6550,7 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         // A pass that declares no attachment tests depth and stencil against its hidden one (PassDesc::hiddenZeta), which the
         // pass is given when its recorded states need it; the pipeline was made for the attachment the pass declares
         const Texture *declared = hiddenZeta_ ? nullptr : zeta;
-        if (pl->depthFormat != (declared ? declared->format : 0) || (!zeta && testsHiddenZeta(ds_))) {
+        if (!depthStencilFits(pl->depthFormat, declared ? declared->format : 0, zeta != nullptr, ds_)) {
             *why = "a depth/stencil state or format the pass's depth/stencil attachment does not take";
             cb_->refusal = {RefDepthStencil, pl->depthFormat, declared ? declared->format : 0, ds_.active()};
             return false;
@@ -6430,7 +6672,8 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
                 }
                 if (e.kind == EntryUbo || e.kind == EntryTessBuffer) {
                     const Bound b = e.kind == EntryUbo ? bufs_[e.stage][e.slot] : tessBuffer(e.slot);
-                    cb_->buffersWritten_ |= bufferStorage(e);
+                    if (bufferStorage(e))
+                        cb_->bufferWrites_.note(b.va, b.size);
                     if (b.buffer)
                         cb_->use(*b.buffer, bufferStorage(e));
                     else if (!b.named || bufferStorage(e))
@@ -6563,19 +6806,20 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
                     }
                     tsc = s          ? (map        ? s->mapped[map]
                                         : compares ? s->compareTsc
-                                                   : s->tsc)
+                                                   : borderedTsc(*s, mapped))
                           : compares ? d.neutralCompareTsc_
                                      : d.neutralTsc_;
-                    if (s && map && !tsc) {
-                        *why = "a planar texture's sampler without its address map";
+                    if (s && !tsc) {
+                        *why = map ? "a planar texture's sampler without its address map"
+                                   : "a sampler without its opaque border's header for the texture";
                         return false;
                     }
                 } else if (e.samplerKind == SamplerConstexpr) {
-                    if (map) {  // m2v compiles a variant of the function for it (RuntimeFact::ConstexprSampled)
-                        *why = "a planar texture sampled through a constexpr sampler";
+                    tsc = map ? d.constexprMapped_[e.sampler][map] : d.constexprTsc_[e.sampler];
+                    if (!tsc) {
+                        *why = "a planar texture's constexpr sampler without its address map";
                         return false;
                     }
-                    tsc = d.constexprTsc_[e.sampler];
                 }
                 at[0] = tic | tsc << 20;
             }
@@ -6659,7 +6903,7 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         patchShaderTestPush(r.shaderTests, ds_, stencilRef_, depthRange_, false, want);
         for (uint32_t k = 0; k < 2; k++)
             if (const uint8_t word = r.rootTableWord[k]; r.rootSlots[k] && word && word <= 31) {
-                const uint64_t table = rootTable(r, k);
+                const uint64_t table = rootTable(r, k, pl->writesMemory[k]);
                 want[word - 1] = uint32_t(table);
                 want[word] = uint32_t(table >> 32);
             }
@@ -7353,6 +7597,55 @@ void RenderEncoder::copyShaderTests(uint8_t flags, bool toAttachment)
     p_.m(INVALIDATE_TEXTURE_DATA_CACHE_NO_WFI, 0);
 }
 
+// The separate depth and stencil textures' aspects into the pass's Depth32Float_Stencil8 backing, or out of it, by
+// raw_shader_tests.h's copies (as a shader test's stand-ins are filled and drained): after the work before is done with them,
+// and done before the work after reads them
+void RenderEncoder::copySeparateZeta(Push &p, uint8_t aspects, bool toAttachment)
+{
+    const Texture &zeta = *pass_.depthStencil.texture;
+    ShaderTestShape shape;
+    if (!aspects || !shaderTestShape(zeta.format, samples_, planeArea().x1, planeArea().y1, aspects, shape))
+        return;
+    auto side = [](const Texture &texture) {
+        auto result = sideOf(texture, 0, 0, 0);
+        result.height = sampleRows(texture);
+        return result;
+    };
+    const auto image = [&](ShaderTestImage which) {
+        switch (which) {
+        case ShaderTestImage::depth:
+            return side(*separate_.depth);
+        case ShaderTestImage::stencil:
+            return side(*separate_.stencil);
+        case ShaderTestImage::temporary:
+            return side(*separateTemp_);
+        case ShaderTestImage::attachment:
+            break;
+        }
+        return side(zeta);
+    };
+    if (aspects & kShaderTestDepth)
+        cb_->use(*separate_.depth, !toAttachment);
+    if (aspects & kShaderTestStencil)
+        cb_->use(*separate_.stencil, !toAttachment);
+    cb_->use(zeta, toAttachment);
+    tiledCacheDrain(p, dev_->k_.info());
+    p.m(WAIT_FOR_IDLE, 0);
+    if (toAttachment)
+        p.m(INVALIDATE_SHADER_CACHES, kFlushData | kInvalidateData);
+    const auto copies = shaderTestTransfers(aspects, shape.packedStencil, toAttachment);
+    for (uint8_t at = 0; at < copies.count; ++at) {
+        const auto &copy = copies.transfers[at];
+        copyRemapped(p, image(copy.source), image(copy.destination), shape.width, shape.height, copy.remap, copy.bytes,
+                     dev_->stats, copy.ordered);
+    }
+    RAW_DIAGNOSTIC(dev_->stats.compZetaCopies += zeta.comptags);
+    p.inc(CE_LINE_LENGTH_IN, {0, 0}, SUBC_COPY);
+    p.m(CE_LAUNCH_DMA, (kLaunchPitch & ~3u) | 2u | (1u << 10), SUBC_COPY);
+    p.m(INVALIDATE_SHADER_CACHES, kInvalidateData);
+    p.m(INVALIDATE_TEXTURE_DATA_CACHE_NO_WFI, 0);
+}
+
 void RenderEncoder::endShaderTests()
 {
     if (!shaderTestsActive_)
@@ -7769,6 +8062,34 @@ void RenderEncoder::probeEdges() const
         if (drawnKnown)
             logEdgeMiss("pass.draws", *a.texture, drawn, detail);
     }
+    noteLargePass(drawn, drawnKnown);
+}
+
+// A pass over a colour target of more pixels than the panel's (boot 21: Core Animation's 1792x1472 on every app open):
+// its render area and the box its draws reached, so a boot names what was drawn there; 20 lines a second a thread at most
+void RenderEncoder::noteLargePass(const PixelBox &drawn, bool drawnKnown) const
+{
+    constexpr uint64_t kPanelPixels = 1280 * 720;
+    const Texture *t = shadowOf_[0] ? shadowOf_[0] : pass_.color[0].texture;
+    if (!t || uint64_t(t->width) * t->height <= kPanelPixels)
+        return;
+    thread_local int64_t second = -1;
+    thread_local uint32_t inSecond = 0;
+    const int64_t now =
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    if (now != second) {
+        second = now;
+        inSecond = 0;
+    }
+    if (inSecond++ >= 20)
+        return;
+    const Texture *c1 = pass_.count > 1 ? pass_.color[1].texture : nullptr;
+    os_log(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
+           "raw: large target pass %ux%u f%u%{public}s area %ux%u box %{public}s%u,%u-%u,%u rects %zu load %c c1 "
+           "%u%{public}s",
+           t->width, t->height, t->format, t->comptags ? " comp" : "", areaW_, areaH_, drawnKnown ? "" : "unknown ",
+           drawn.x0, drawn.y0, drawn.x1, drawn.y1, rects_.size(), "dlc"[pass_.color[0].load], c1 ? c1->format : 0u,
+           c1 && memoryless_[1] ? "+ml" : "");
 }
 #endif
 
@@ -7846,7 +8167,8 @@ void RenderEncoder::end()
     const std::vector<uint32_t> &restore = extrasAtBegin_ ? extrasAtBegin_->restore : std::vector<uint32_t>();
     const uint32_t room = 160 + 8 * 32 + uint32_t(cl.size()) * 48 + kZetaTargetWords + kZcullRegionWords +
                           kZetaClearWords + 16 + kSampleWords + kTurnWordsMethods + uint32_t(restore.size()) +
-                          kSpanMarkWords + startStampCount_ * counters::kTimestampWords + kDrawStampWords;
+                          kSpanMarkWords + startStampCount_ * counters::kTimestampWords + kDrawStampWords +
+                          (separate_.depth ? 192 : 0);
     uint64_t va;
     uint32_t *start = reinterpret_cast<uint32_t *>(d.alloc(d.push_, room * 4, 256, va));
     Push p{start, start + room};
@@ -7888,6 +8210,9 @@ void RenderEncoder::end()
         p.m(WAIT_FOR_IDLE, 0);
         p.m(INVALIDATE_TEXTURE_DATA_CACHE_NO_WFI, 0);
     }
+    if (separate_.depth)
+        copySeparateZeta(
+            p, (separate_.loadDepth ? kShaderTestDepth : 0) | (separate_.loadStencil ? kShaderTestStencil : 0), true);
     // the clears m2v makes by passes of their own first (Clear loads reaching past the render area): each its attachment alone
     // as target 0, over its reach, then the barrier between passes
     bool own = false;
@@ -8004,6 +8329,18 @@ void RenderEncoder::end()
         checkRoom(q, "a pass's shadow stores");
         cb_->segment(at, q.at);
         cb_->lastEngine_ = BarrierEngine::Copy;
+        d.push_.head = uint64_t(reinterpret_cast<uint8_t *>(q.at) - d.push_.bo.cpu);
+        RAW_DIAGNOSTIC(d.stats.pushBytes += uint64_t(q.at - at) * 4);
+    }
+    if (const uint8_t aspects =
+            (separate_.storeDepth ? kShaderTestDepth : 0) | (separate_.storeStencil ? kShaderTestStencil : 0);
+        separate_.depth && aspects) {
+        constexpr uint32_t room3 = 192;
+        uint32_t *at = reinterpret_cast<uint32_t *>(d.alloc(d.push_, room3 * 4, 256, va));
+        Push q{at, at + room3};
+        copySeparateZeta(q, aspects, false);
+        checkRoom(q, "a pass's separate depth and stencil stores");
+        cb_->segment(at, q.at);
         d.push_.head = uint64_t(reinterpret_cast<uint8_t *>(q.at) - d.push_.bo.cpu);
         RAW_DIAGNOSTIC(d.stats.pushBytes += uint64_t(q.at - at) * 4);
     }
@@ -8138,7 +8475,7 @@ void BlitEncoder::copyBytes(uint64_t src, uint64_t dst, uint64_t bytes)
         cb_->useAddress(src, bytes, false);
         cb_->useAddress(dst, bytes, true);
     }
-    cb_->buffersWritten_ = true;
+    cb_->bufferWrites_.note(dst, bytes);
     for (uint64_t done = 0; done < bytes;) {
         room();
         const uint32_t n = uint32_t(std::min<uint64_t>(bytes - done, 1u << 17));
@@ -8174,7 +8511,7 @@ void BlitEncoder::fillWords(uint64_t dst, uint64_t bytes, uint32_t word)
 {
     if (bytes)
         cb_->useAddress(dst, bytes, true);
-    cb_->buffersWritten_ = true;
+    cb_->bufferWrites_.note(dst, bytes);
     if (bytes < 4)
         return;
     room();
@@ -8196,7 +8533,7 @@ void BlitEncoder::fillBytes(uint64_t dst, uint64_t bytes, uint8_t value)
 {
     if (bytes)
         cb_->useAddress(dst, bytes, true);
-    cb_->buffersWritten_ = true;
+    cb_->bufferWrites_.note(dst, bytes);
     auto bytesOf = [&](uint64_t at, uint64_t n) {
         if (!n)
             return;
@@ -8216,7 +8553,7 @@ void BlitEncoder::fillBytes(uint64_t dst, uint64_t bytes, uint8_t value)
 void BlitEncoder::copyRect(uint64_t src, uint32_t srcPitch, uint64_t dst, uint32_t dstPitch, uint32_t width,
                            uint32_t lines, uint32_t bpp)
 {
-    cb_->buffersWritten_ = true;
+    cb_->bufferWrites_.note(dst, rowStorageBytes(dstPitch, width, lines, bpp));
     if (!width || !lines || !bpp)
         return;
     cb_->useAddress(src, rowStorageBytes(srcPitch, width, lines, bpp), false);
@@ -8254,7 +8591,8 @@ void BlitEncoder::copyBufferTexels(uint64_t va, uint32_t pitch, const Texture &t
 {
     if (t.xrPlanes && t.luma)  // plane 0's words alone (raw_xr.h bufferTexelBytes): the alpha plane stays as it is
         return copyBufferTexels(va, pitch, *t.luma, x, y, z, w, h, toTexture, aspect);
-    cb_->buffersWritten_ |= !toTexture;
+    if (!toTexture)
+        cb_->bufferWrites_.note(va, uint64_t(pitch) * h + uint64_t(w) * 16);
     const uint32_t element = t.zeta && aspect == kAspectStencil ? 1
                              : t.zeta && aspect == kAspectDepth ? 4
                                                                 : bufferTexelBytes(t.format, t.bpp);

@@ -4,13 +4,6 @@
 #import "RawRenderKey.h"
 #import "RawMetalBinaryArchive.h"
 
-// The m2v device's Core Image filter-function linking (_MTLDevice's newLibraryWithImageFilterFunctionsSPI: sends it here)
-@protocol RMImageFilterLinking
-- (id<MTLLibrary>)newLibraryWithCIFilters:(NSArray *)functions
-                  imageFilterFunctionInfo:(const void *)info
-                                    error:(NSError **)error;
-@end
-
 @implementation RMSampler
 
 + (Class)twinClass
@@ -122,7 +115,12 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
     r.label = d.label;
     // what the raw sampler header does not express: the m2v twin is the sampler, and the raw path refuses the draws that use it
     const bool rawOk = raw::takeSampler(m, s);
-    if (!rawOk || !gRM->raw->createSampler(s, r->_raw)) {
+    if (rawOk && !gRM->raw->createSampler(s, r->_raw)) {
+        os_log_error(rawLog(), "raw: %{public}s: no sampler header left in the device's table: no sampler made",
+                     getprogname());
+        return nil;
+    }
+    if (!rawOk) {
         if (!predLogged(PredCallSamplerForeign))
             logPred(
                 PredCallSamplerForeign, d.maxAnisotropy, d.compareFunction,
@@ -443,6 +441,14 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
             *error = nil;
         return (id<MTLRenderPipelineState>)p;
     }
+    if (!p->_raw && p->_completable) {
+        const std::string failure = p->_failure.empty() ? "no shader compiler serves this process" : p->_failure;
+        os_log_error(rawLog(), "raw: %{public}s: no render state %{public}s: %{public}s", getprogname(),
+                     d.label.UTF8String ?: "-", failure.c_str());
+        if (error)
+            *error = rmCreationError(failure);
+        return nil;
+    }
     if (reflection) {
         id<MTLDevice> m2v = RM_M2V(NeedRenderStateReflection);
         p->_twin = [m2v newRenderPipelineStateWithDescriptor:packedTwinDescriptor(d, packed)
@@ -533,59 +539,13 @@ static id<MTLRenderPipelineState> makeState(RMDevice *device, MTLRenderPipelineD
                                                             reflection:(MTLAutoreleasedRenderPipelineReflection *)r
                                                                  error:(NSError **)error
 {
-    MTLTileRenderPipelineDescriptor *t = [d copy];
-    t.tileFunction = twinOf(d.tileFunction);
-    if (!rmTileArchiveAnswer(t, d, o, error))
-        return nil;
-    return [self wrapCarried:[RM_M2V(NeedTileRenderState) newRenderPipelineStateWithTileDescriptor:t
-                                                                                           options:o
-                                                                                        reflection:r
-                                                                                             error:error]];
-}
-
-// The m2v device links these libraries from its own functions' bitcode: the functions here are their twins. Its methods, inherited
-// by this class, would be sent this device's functions.
-static NSArray *twinFunctions(NSArray *functions, NSError **error)
-{
-    NSMutableArray *twins = [NSMutableArray arrayWithCapacity:functions.count];
-    for (id f in functions) {
-        id twin = twinOf(f);
-        if (!twin) {
-            if (error)
-                *error = [NSError errorWithDomain:MTLLibraryErrorDomain
-                                             code:MTLLibraryErrorFunctionNotFound
-                                         userInfo:@{NSLocalizedDescriptionKey : @"a function with no m2v twin"}];
-            return nil;
-        }
-        [twins addObject:twin];
-    }
-    return twins;
-}
-
-- (id<MTLLibrary>)newLibraryWithStitchedDescriptor:(MTLStitchedLibraryDescriptor *)d error:(NSError **)error
-{
-    NSArray *twins = twinFunctions(d.functions, error);
-    if (!twins)
-        return nil;
-    MTLStitchedLibraryDescriptor *t = [d copy];
-    t.functions = twins;
-    id<MTLDevice> m2v = RM_M2V(NeedLibraryStitched);
-    return (id<MTLLibrary>)wrapLibrary(self, [m2v newLibraryWithStitchedDescriptor:t error:error], nil);
-}
-
-- (id<MTLLibrary>)newLibraryWithCIFilters:(NSArray *)functions
-                  imageFilterFunctionInfo:(const void *)info
-                                    error:(NSError **)error
-{
-    NSArray *twins = twinFunctions(functions, error);
-    if (!twins)
-        return nil;
-    id<MTLDevice> m2v = RM_M2V(NeedLibraryCoreImage);
-    return (id<MTLLibrary>)wrapLibrary(self,
-                                       [(id<RMImageFilterLinking>)m2v newLibraryWithCIFilters:twins
-                                                                      imageFilterFunctionInfo:info
-                                                                                        error:error],
-                                       nil);
+    (void)d, (void)o;
+    if (r)
+        *r = nil;
+    return rmRefuseUnsupported(
+        "a tile render state: tile shaders are Apple4's (Metal feature set tables), a family this "
+        "device does not claim",
+        error);
 }
 
 - (id)newResourceGroupFromResources:(const id __unsafe_unretained *)resources count:(NSUInteger)count

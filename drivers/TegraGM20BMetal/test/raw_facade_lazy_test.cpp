@@ -119,13 +119,16 @@ void packedDraw()
     note("packed_draw", line);
 }
 
+// A state of this device's functions that no record draws (the pack lacks it and no shader compiler serves the process)
+// fails its creation with Metal's error, as a state Metal could not compile; it is never m2v's
 void unpackedState()
 {
     const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
     ASSERT_TRUE(device != nil && library != nil);
     NSError *error = nil;
-    (void)[device newRenderPipelineStateWithDescriptor:descriptor(library, kUnpacked) error:&error];
-    expectOpenedFor(device, "a render state's twin");
+    EXPECT_EQ([device newRenderPipelineStateWithDescriptor:descriptor(library, kUnpacked) error:&error], nil);
+    EXPECT_EQ(error.domain, MTLLibraryErrorDomain);
+    EXPECT_EQ(gOpens, 0);
 }
 
 void reflection()
@@ -150,9 +153,15 @@ void foreignSampler()
     compared.compareFunction = MTLCompareFunctionLess;
     EXPECT_TRUE([(id)[device newSamplerStateWithDescriptor:compared] isKindOfClass:NSClassFromString(@"RMSampler")]);
     EXPECT_EQ(gOpens, 0);
+    MTLSamplerDescriptor *white = [MTLSamplerDescriptor new];
+    white.sAddressMode = MTLSamplerAddressModeClampToBorderColor;
+    white.borderColor = MTLSamplerBorderColorOpaqueWhite;
+    EXPECT_TRUE([(id)[device newSamplerStateWithDescriptor:white] isKindOfClass:NSClassFromString(@"RMSampler")])
+        << "an opaque border is the raw sampler's";
+    EXPECT_EQ(gOpens, 0);
     MTLSamplerDescriptor *s = [MTLSamplerDescriptor new];
-    s.sAddressMode = MTLSamplerAddressModeClampToBorderColor;
-    s.borderColor = MTLSamplerBorderColorOpaqueWhite;
+    s.normalizedCoordinates = NO;
+    s.sAddressMode = MTLSamplerAddressModeMirrorClampToEdge;
     (void)[device newSamplerStateWithDescriptor:s];
     expectOpenedFor(device, "a sampler's twin");
 }
@@ -171,7 +180,8 @@ void inheritedMethod()
     EXPECT_EQ(gOpens, 1);
 }
 
-// A compute state the pack answers is made without m2v, its answers the pack's; one it has no answers of opens m2v
+// A compute state the pack answers is made without m2v, its answers the pack's; one it has no answers of is the shader
+// compiler's (raw_facade_open_test), and with none this boot fails its creation, opening no m2v
 void computeStates()
 {
     const std::string metallib = writeMetallib();
@@ -193,12 +203,12 @@ void computeStates()
     MTLComputePipelineDescriptor *other = [MTLComputePipelineDescriptor new];
     other.computeFunction = kernel;
     other.maxTotalThreadsPerThreadgroup = 256;
-    (void)[device newComputePipelineStateWithDescriptor:other
-                                                options:MTLPipelineOptionNone
-                                             reflection:nil
-                                                  error:&error];
-    EXPECT_EQ(gOpens, 1);
-    EXPECT_NE(m2vRecord(device)[@"needs"][@"a compute state the pack has no facts of"], nil) << text(m2vRecord(device));
+    EXPECT_EQ(
+        [device newComputePipelineStateWithDescriptor:other options:MTLPipelineOptionNone reflection:nil error:&error],
+        nil);
+    EXPECT_NE(error, nil);
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // A buffer over an IOSurface's pages and a linear texture's row are the raw device's own answers
@@ -420,7 +430,7 @@ TEST(RawFacadeLazy, PackedDrawOpensNoM2V)
     show("packed_draw");
 }
 
-TEST(RawFacadeLazy, UnpackedStateOpensM2VForItsTwin)
+TEST(RawFacadeLazy, AnUnpackedStateIsMetalsCreationFailure)
 {
     switch_ios::test::ExpectPassesInFreshProcess(unpackedState);
 }

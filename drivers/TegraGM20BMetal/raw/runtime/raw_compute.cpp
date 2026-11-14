@@ -329,6 +329,12 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
         *why = "an argument table whose words the kernel's record does not hold";
         return false;
     }
+    // a planar or YCbCr texture's address map: its samplers' headers with the map applied, as a draw's handle takes them
+    // (admission keeps a kernel here only where every texture it binds is under one map, or the map changes no sampler)
+    uint8_t map = 0;
+    for (uint32_t i = 0; i < r.entries; i++)
+        if (r.entry[i].kind == KernelTexture && r.entry[i].slot < 31 && textures_[r.entry[i].slot])
+            map = std::max(map, textures_[r.entry[i].slot]->addressMap);
     for (uint32_t i = 0; i < r.entries; i++) {
         const PackKernelEntry &e = r.entry[i];
         const bool writes = kernelEntryWrites(r, i);
@@ -358,9 +364,18 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             at[3] = 0;
         } else if (e.kind == KernelTexture) {
             const Texture *t = writes ? textures_[e.slot] : cb_.readTexture(textures_[e.slot]);
-            if (t && !t->tic) {
-                *why = "a texture the raw path cannot sample";
-                return false;
+            if (t && !t->tic) {  // memoryless, or depth without ShaderRead: a load reads header 0's zeros
+                if (writes) {
+                    *why = "a kernel stores a texture with no memory a shader can address";
+                    return false;
+                }
+                continue;
+            }
+            if (t && !writes && t->standIn) {
+                const FormatInfo *s = formatInfo(t->standIn->format);
+                if (s && slotView(e.window, s->tic0, swizzledWord0(s->tic0, t->standIn->swizzle), s->bpp,
+                                  blockCompressed(s)) == SlotView::Own)
+                    t = t->standIn;
             }
             if (t) {
                 cb_.use(*t, writes);
@@ -400,7 +415,17 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             at[0] |= dev_.constexprTsc_[index] << 20;
         } else {
             const Sampler *s = e.slot < 16 ? samplers_[e.slot] : nullptr;
-            at[0] |= (s ? s->tsc : dev_.neutralTsc_) << 20;
+            const Texture *sampled = nullptr;
+            for (uint32_t j = 0; s && s->desc.border && j < r.entries; j++)
+                if (r.entry[j].kind == KernelTexture && r.entry[j].offset == e.offset && r.entry[j].slot < 31)
+                    sampled = textures_[r.entry[j].slot];
+            const uint32_t mapped = s && map ? s->mapped[map] : 0;
+            const uint32_t tsc = s ? (mapped ? mapped : borderedTsc(*s, sampled)) : dev_.neutralTsc_;
+            if (!tsc) {
+                *why = "a kernel's sampler without its opaque border's header for the texture";
+                return false;
+            }
+            at[0] |= tsc << 20;
         }
     }
     if (r.spillEntry && r.spillEntry <= r.entries) {
@@ -533,7 +558,7 @@ bool ComputeEncoder::dispatchRegion(const ComputeRegion &part, const std::array<
 {
     const auto *groups = part.groups.data();
     const auto *threads = part.local.data();
-    cb_.buffersWritten_ = true;
+    cb_.bufferWrites_.anything();
     if (!state_) {
         *why = "a dispatch without a kernel";
         return false;
@@ -605,7 +630,7 @@ bool ComputeEncoder::launch(const std::array<uint32_t, 3> &grid, const DispatchP
                             const std::array<uint32_t, 8> &region, const char **why)
 {
     const PackKernel &r = *state_->rec;
-    if (!rootVa_ || grid_ != grid || base_ != piece.base || region_ != region) {
+    if (!rootVa_ || stageInRegion_ || grid_ != grid || base_ != piece.base || region_ != region) {
         uint32_t root[kRootBytes / 4] = {};
         rootWords(r, piece.base.data(), grid.data(), setVa_, residualMask_, residuals_, region.data(), root);
         argumentRoot(r, root);
@@ -616,6 +641,7 @@ bool ComputeEncoder::launch(const std::array<uint32_t, 3> &grid, const DispatchP
         base_ = piece.base;
         region_ = region;
         RAW_DIAGNOSTIC(dev_.stats.uploadBytes += kRootBytes);
+        stageInFromMemory(r, rootVa_);
     }
     uint64_t qmdVa = 0;
     uint32_t qmd[kQmdWords];

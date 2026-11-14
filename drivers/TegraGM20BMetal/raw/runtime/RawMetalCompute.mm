@@ -119,6 +119,8 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
     if (sampler && ![(id)sampler isKindOfClass:[RMSampler class]])
         [self refuse:PredCompute value:index why:@"a kernel's sampler not made by this device"];
     RMSampler *s = [(id)sampler isKindOfClass:[RMSampler class]] ? (RMSampler *)sampler : nil;
+    if (s && s->_raw.desc.border)
+        _cb->_borderSamplers = true;
     if (index < 16 && _samplers[index] != s) {
         _samplers[index] = s;
         raw::BoundSampler bound = {};
@@ -188,14 +190,38 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
 
 - (void)dispatch:(MTLSize)grid threads:(MTLSize)threads perThread:(bool)perThread
 {
+    [self dispatch:grid threads:threads perThread:perThread arguments:nil offset:0];
+}
+
+// `arguments`: dispatchThreadgroupsWithIndirectBuffer:'s, whose words the GPU reads as the grid; `grid` is then one
+// threadgroup, the shape the kernel is looked up at
+- (void)dispatch:(MTLSize)grid
+         threads:(MTLSize)threads
+       perThread:(bool)perThread
+       arguments:(RMBuffer *)arguments
+          offset:(NSUInteger)offset
+{
     const std::array<uint32_t, 3> t = {uint32_t(threads.width), uint32_t(threads.height), uint32_t(threads.depth)};
     const auto dispatch =
         raw::computeDispatch({grid.width, grid.height, grid.depth}, t, perThread, _state ? _state->_threadLimit : 1024);
     const auto &groups = dispatch.groups;
-    const bool refused = dispatch.reason != raw::ComputeDispatch::Ready || threads.width > 1024 ||
+    // threads per threadgroup past the state's maxTotalThreadsPerThreadgroup (or 1024), or none on an axis: a dispatch
+    // Metal's API validation stops, which the command buffer fails with
+    const bool invalid = dispatch.reason == raw::ComputeDispatch::Edge || threads.width > 1024 ||
                          threads.height > 1024 || threads.depth > 1024;
-    if (refused)
-        [self refuse:PredComputeKernel value:groups[0] why:@"a dispatch outside the raw grid or local-size limits"];
+    if (invalid)
+        failCommandBuffer(_cb,
+                          [NSString stringWithFormat:@"threadsPerThreadgroup %lux%lux%lu is not within the compute "
+                                                     @"pipeline state's maxTotalThreadsPerThreadgroup %u",
+                                                     (unsigned long)threads.width, (unsigned long)threads.height,
+                                                     (unsigned long)threads.depth,
+                                                     _state ? _state->_threadLimit : 1024u],
+                          MTLCommandBufferErrorInvalidResource);
+    // more threadgroups than the grid's QMD fields hold (2^31 - 1 across, 65535 down and deep) or threads past 2^32 on
+    // an axis
+    const bool refused = invalid || dispatch.reason != raw::ComputeDispatch::Ready;
+    if (refused && !invalid)
+        [self refuse:PredComputeKernel value:groups[0] why:@"a dispatch past the grid's QMD limits"];
     bool sameShape = _shape.count == dispatch.count && _shape.multi == dispatch.multi;
     for (uint8_t i = 0; sameShape && i < dispatch.count; ++i)
         sameShape = _shape.regions[i].local == dispatch.regions[i].local;
@@ -256,17 +282,22 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
         kernels = _kernel;
     }
     const auto kernelState = kernels ? kernels->state() : RMKernelSet::State::Refused;
-    // a kernel no compiler made fails its command buffer at submission (computeReadiness), as one still being made waits
+    // a kernel no compiler made fails its command buffer at submission (computeReadiness), as one still being made waits;
+    // one the compiler refused fails it as Metal's does a pipeline it could not compile
     const bool pending = kernelState == RMKernelSet::State::Pending || kernelState == RMKernelSet::State::Failed;
     const bool ready = kernelState == RMKernelSet::State::Ready;
-    if (!refused && !ready && !pending)
+    if (!refused && !ready && !pending && kernels)
+        failCommandBuffer(_cb, @"a compute kernel the shader compiler refused");
+    else if (!refused && !ready && !pending)
         [self refuse:PredComputeKernel value:groups[0] why:@"a dispatch the raw path has no kernel for"];
     Cmd m = cmd(OpDispatch, 3, perThread);
     m.c = uint64_t(t[0]) | uint64_t(t[1]) << 16 | uint64_t(t[2]) << 32;
     m.x = _cb->_extra.size();
     for (uint64_t v : {uint64_t(grid.width), uint64_t(grid.height), uint64_t(grid.depth), groups[0], groups[1],
                        groups[2], uint64_t(_stageIn.origin.x), uint64_t(_stageIn.origin.y), uint64_t(_stageIn.origin.z),
-                       uint64_t(_stageIn.size.width), uint64_t(_stageIn.size.height), uint64_t(_stageIn.size.depth)})
+                       uint64_t(_stageIn.size.width), uint64_t(_stageIn.size.height), uint64_t(_stageIn.size.depth),
+                       uint64_t(uintptr_t((__bridge void *)arguments)), uint64_t(offset),
+                       uint64_t(uintptr_t((__bridge void *)_stageInBuffer)), uint64_t(_stageInOffset)})
         _cb->_extra.push_back(v);
     if (kernels) {
         _cb->_computeJobs.try_emplace(kernels.get(), kernels);
@@ -369,6 +400,19 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
     [self dispatch:grid threads:threads perThread:true];
 }
 
+- (void)dispatchThreadgroupsWithIndirectBuffer:(id<MTLBuffer>)buffer
+                          indirectBufferOffset:(NSUInteger)offset
+                         threadsPerThreadgroup:(MTLSize)threads
+{
+    RMBuffer *arguments = [(id)buffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)buffer : nil;
+    if (!arguments || (offset & 3) || offset > arguments->_raw.length || arguments->_raw.length - offset < 12) {
+        [self refuse:PredCompute value:offset why:@"indirect dispatch arguments not this device's, or outside them"];
+        return;
+    }
+    [_cb retain:buffer];
+    [self dispatch:MTLSizeMake(1, 1, 1) threads:threads perThread:false arguments:arguments offset:offset];
+}
+
 @end
 
 @implementation RMComputeEncoder (State)
@@ -399,25 +443,17 @@ void replayKernel(id encoder, RMCommandBuffer *cb, const Cmd &c, std::set<RMBuff
     case OpKernelState:
         [e setComputePipelineState:twinOf(object)];
         break;
+    // a stride form's stride is a stage-in kernel's alone, which m2v never runs (rmM2vMissingKernel): the plain forms
     case OpKernelBytes:
-        if (c.x)
-            [e setBytes:cb->_bytes.chunks[c.c].cpu + c.a length:c.b attributeStride:commandStride(c) atIndex:c.index];
-        else
-            [e setBytes:cb->_bytes.chunks[c.c].cpu + c.a length:c.b atIndex:c.index];
+        [e setBytes:cb->_bytes.chunks[c.c].cpu + c.a length:c.b atIndex:c.index];
         break;
     case OpKernelBuffer:
         if ([object isKindOfClass:[RMBuffer class]])
             buffers.insert((RMBuffer *)object);
-        if (c.x)
-            [e setBuffer:twinOf(object) offset:c.c attributeStride:commandStride(c) atIndex:c.index];
-        else
-            [e setBuffer:twinOf(object) offset:c.c atIndex:c.index];
+        [e setBuffer:twinOf(object) offset:c.c atIndex:c.index];
         break;
     case OpKernelBufferOffset:
-        if (c.x)
-            [e setBufferOffset:c.c attributeStride:commandStride(c) atIndex:c.index];
-        else
-            [e setBufferOffset:c.c atIndex:c.index];
+        [e setBufferOffset:c.c atIndex:c.index];
         break;
     case OpKernelClockAnchors: {
         const TegraGM20BAbiClockAnchors anchors = rmClockAnchorsNow();
@@ -453,9 +489,6 @@ void replayKernel(id encoder, RMCommandBuffer *cb, const Cmd &c, std::set<RMBuff
             [e dispatchThreadgroups:grid threadsPerThreadgroup:threads];
         break;
     }
-    case OpExecuteKernels:
-        replayKernelCommands(e, (__bridge RMKernelExecute *)c.obj, buffers);
-        break;
     default:
         break;
     }

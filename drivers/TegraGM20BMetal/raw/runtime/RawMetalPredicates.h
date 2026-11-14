@@ -15,15 +15,9 @@ enum RMPred : uint8_t {
     PredNone = 0,
     // textures the raw path does not keep, decided when made (a bind hits the texture's own predicate)
     PredTexShape,  // rawShape: a = failing term (1 type, 2 levels, 3 samples, 4 array/depth, 5 rotation, 6 format), b = format
-    PredTexPoolAlloc,  // no pool span or texture header
-    PredTexSurfPlane,  // a plane of a planar surface (not the 4:4:4 one): a = plane, b = plane count
-    PredTexSurfPitch,  // bytesPerRow or plane offset & 15, or short: a = bytesPerRow, b = offset (when off 16) or width x bpp
-    PredTexSurfBounds,  // offset + rows past the allocation
-    PredTexSurfBase,    // base address off a page: a = base & 0xfff
+    PredTexPoolAlloc,   // no pool span or texture header
     PredTexSurfImport,  // the import or the header slot refused
     PredTexPlanar,      // the 4:4:4 two-plane texture refused
-    PredTexBufBase,     // (va + offset) & 255: a = that, b = offset
-    PredTexBufPitch,    // bytesPerRow & 31, or short: a = bytesPerRow, b = width x bpp
     PredTexBufOther,    // memoryless, past the buffer, header slot
     PredTexView,  // a view of a texture the raw path does not keep, or of another texel size: a = format, b = parent raw
     PredTexForeign,  // not an RMTexture (m2v's own: over an m2v buffer, or a creation selector the facade does not answer)
@@ -39,9 +33,7 @@ enum RMPred : uint8_t {
     PredCallBufForeign,      // a = stage << 8 | index (0xffff: an index buffer)
     PredCallSamplerForeign,  // a sampler the raw path does not express (its reason logged when it was made)
     PredCallVertexSampler,
-    PredCallDepthBias,     // a = bias, b = slope (float bits)
-    PredCallInvocation,    // an encoder selector recorded as an invocation (each selector logged once)
-    PredCallCBInvocation,  // a command buffer selector recorded as an invocation
+    PredCallDepthBias,  // a = bias, b = slope (float bits)
     PredCallBlitOptions,
     PredCallBufCopyRange,
     PredBlitTexCopy,
@@ -53,7 +45,6 @@ enum RMPred : uint8_t {
     PredComputeOff16,      // a buffer off 16 bytes where the kernel's record names no residual word: a = slot
     PredComputeKernel,     // no pack kernel at the dispatch's shape, memory, textures and samplers
     PredComputeImage,      // a texture sampled through an image of its own: a = slot
-    PredComputeView,       // a texture where m2v binds a view of another texel size: a = slot
     PredComputePredicate,  // predication raw cannot run (a misused record, a word outside a raw buffer): the command buffer fails; a = kind or offset
     PredMipmaps,
     PredMipmapsFormat,  // a mipmapped texture's generateMipmaps in a format neither the 2D engine nor a mip state filters: a = format
@@ -82,14 +73,8 @@ static_assert(PredCount <= 64, "one mask word");
 static constexpr const char *kPredNames[] = {"-",
                                              "tex.shape",
                                              "tex.pool",
-                                             "tex.surf.plane",
-                                             "tex.surf.pitch",
-                                             "tex.surf.bounds",
-                                             "tex.surf.base",
                                              "tex.surf.imp",
                                              "tex.planar",
-                                             "tex.buf.base",
-                                             "tex.buf.pitch",
                                              "tex.buf.other",
                                              "tex.view",
                                              "tex.foreign",
@@ -104,8 +89,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "call.sampler",
                                              "call.vsampler",
                                              "call.dbias",
-                                             "call.inv",
-                                             "call.cbinv",
                                              "call.blitopt",
                                              "call.bufcopy",
                                              "blit.tex",
@@ -117,7 +100,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "compute.off16",
                                              "compute.nokernel",
                                              "compute.image",
-                                             "compute.view",
                                              "compute.predicate",
                                              "mipmaps",
                                              "mipmaps.fmt",

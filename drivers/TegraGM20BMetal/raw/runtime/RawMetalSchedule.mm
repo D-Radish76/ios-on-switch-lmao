@@ -3,6 +3,7 @@
 #import "RawMetalEventJobs.h"
 #include "raw_scheduled_wait.h"
 #include "TegraGM20BJobABI.h"
+#import "RawMetalPipeline.h"
 
 void wakeSubmit(void *queue, uint32_t dependencies)
 {
@@ -119,6 +120,10 @@ void commitBuffer(RMCommandBuffer *cb)
 static void applyChange(RawState &r, const RMScheduleChange &change)
 {
     RMCommandBuffer *cb = change.buffer;
+    if (change.kind == RMScheduleChange::Encoded) {
+        rmPipelineHanded(cb);
+        return;
+    }
     // a commit on one thread can hand over before the enqueue another thread made of the same command buffer
     if (change.kind != RMScheduleChange::Wake && !cb->_reserved) {
         cb->_reservation = r.waiting.reserve((__bridge void *)cb->_queue, cb);
@@ -141,6 +146,8 @@ static void applyChange(RawState &r, const RMScheduleChange &change)
         if (change.queue)
             r.waiting.wake(change.queue);
         r.waiting.wakeDependencies(change.dependencies);
+        break;
+    case RMScheduleChange::Encoded:
         break;
     }
 }
@@ -182,9 +189,21 @@ static int pipelineReadiness(RMCommandBuffer *cb, const RMSegment &range)
     return pending ? 0 : 1;
 }
 
-// A native variant this queue head waits for, made on the raw compiler's two bounded workers: refused, the range goes to m2v at
-// once. No deadline.
-static int variantReadiness(RMCommandBuffer *cb, const RMSegment &range)
+// A native variant this queue head waits for, made on the raw compiler's two bounded workers: refused, its command buffer
+// fails. No deadline.
+// Work the raw path cannot run: its command buffer fails, as Metal's does for a pipeline it could not compile, never handed
+// to another device. Logged for the first few a process meets.
+static NSError *refusedAtReadiness(const char *why)
+{
+    static std::atomic<uint32_t> told{0};
+    if (told.fetch_add(1, std::memory_order_relaxed) < 8)
+        os_log_error(rawLog(), "raw: %{public}s: a command buffer failed: %{public}s", getprogname(), why ?: "");
+    return [NSError errorWithDomain:MTLCommandBufferErrorDomain
+                               code:MTLCommandBufferErrorInternal
+                           userInfo:@{NSLocalizedDescriptionKey : [NSString stringWithFormat:@"%s", why ?: ""]}];
+}
+
+static int variantReadiness(RMCommandBuffer *cb, const RMSegment &range, const char **why)
 {
     using Variant = raw::Variant<raw::Pipeline>;
     bool pending = false;
@@ -200,8 +219,10 @@ static int variantReadiness(RMCommandBuffer *cb, const RMSegment &range)
         const auto state = variant->observe(std::move(observer));
         if (state == Variant::State::Failed)
             return -2;
-        if (state == Variant::State::Refused)
+        if (state == Variant::State::Refused) {
+            *why = "a render state variant the shader compiler refused";
             return -1;
+        }
         if (state == Variant::State::Pending)
             pending = true;
     }
@@ -266,6 +287,12 @@ void submitLoop()
                     break;
                 }
                 closePromise();
+                if (r.orphanCheck.load(std::memory_order_relaxed) &&
+                    r.orphanCheck.exchange(false, std::memory_order_acquire))
+                    rmPipelineOrphans();
+                // nothing to submit: what the command buffer being recorded has published, encoded ahead of its commit
+                if (rmPipelineStep())
+                    continue;
                 r.progress.idle(r.waiting.parked() != 0);
                 const auto due = r.waiting.deadline();
                 dispatch_time_t until = DISPATCH_TIME_FOREVER;
@@ -275,7 +302,13 @@ void submitLoop()
                         DISPATCH_TIME_NOW,
                         std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::nanoseconds>(left).count()));
                 }
+                r.submitAsleep.store(true, std::memory_order_seq_cst);
+                if (rmPipelinePublished()) {
+                    r.submitAsleep.store(false, std::memory_order_relaxed);
+                    continue;
+                }
                 r.schedule.sleep(until);
+                r.submitAsleep.store(false, std::memory_order_relaxed);
             }
             const uint64_t judged = r.progress.visit();
             RMCommandBuffer *cb = ticket.value;
@@ -305,21 +338,17 @@ void submitLoop()
                     blocked = true;
                     dependencies = RMRawProgress;
                 } else if (!range.event && range.raw) {
-                    int ready = variantReadiness(cb, range);
+                    const char *why = "";
+                    int ready = variantReadiness(cb, range, &why);
                     if (ready > 0)
-                        ready = computeReadiness(cb, range);
+                        ready = computeReadiness(cb, range, &why);
                     if (ready == -2) {
                         error = [NSError
                             errorWithDomain:MTLCommandBufferErrorDomain
                                        code:MTLCommandBufferErrorInternal
                                    userInfo:@{NSLocalizedDescriptionKey : @"A render pipeline could not be compiled"}];
                     } else if (ready < 0) {
-                        range.raw = false;
-                        blocked = eventReadiness(cb, deadline) == raw::EventReadiness::blocked;
-                        if (blocked)
-                            wait = eventWait(cb);
-                        std::lock_guard<raw::Mutex> lock(cb->_lock);
-                        error = cb->_segError;
+                        error = refusedAtReadiness(why);
                     } else if (!ready) {
                         blocked = true;
                         wait = raw::HeadWait::compile;

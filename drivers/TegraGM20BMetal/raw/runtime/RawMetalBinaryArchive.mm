@@ -41,17 +41,9 @@ uint64_t rmArchiveKey(const std::string &key)
     return raw::Pack::fnv(key.data(), key.size());
 }
 
-static NSString *archiveLibraryName(id<MTLFunction> function)
-{
-    if ([(id)function isKindOfClass:[RMFunction class]])
-        return [NSString stringWithUTF8String:libraryName((RMFunction *)function).c_str()];
-    return native_bridge_metal_function_library_name(function) ?: function.name;
-}
-
 static std::string computeKey(MTLComputePipelineDescriptor *d, RMFunction *f)
 {
-    return raw::computeArchiveKey(archiveLibraryName((id<MTLFunction>)f).UTF8String ?: "", f->_constants,
-                                  uint32_t(d.maxTotalThreadsPerThreadgroup),
+    return raw::computeArchiveKey(libraryName(f), f->_constants, uint32_t(d.maxTotalThreadsPerThreadgroup),
                                   d.threadGroupSizeIsMultipleOfThreadExecutionWidth);
 }
 
@@ -60,8 +52,8 @@ static std::string tileKey(MTLTileRenderPipelineDescriptor *d, RMFunction *f)
     std::vector<uint32_t> formats;
     for (NSUInteger i = 0; i < 8; i++)
         formats.push_back(uint32_t(d.colorAttachments[i].pixelFormat));
-    return raw::archiveTileKey(archiveLibraryName((id<MTLFunction>)f).UTF8String ?: "", f->_constants, formats,
-                               uint32_t(d.rasterSampleCount), d.threadgroupSizeMatchesTileSize);
+    return raw::archiveTileKey(libraryName(f), f->_constants, formats, uint32_t(d.rasterSampleCount),
+                               d.threadgroupSizeMatchesTileSize);
 }
 
 static RMFunction *own(id<MTLFunction> function)
@@ -200,15 +192,6 @@ NSError *rmArchiveMissError(NSString *function, const char *pipeline)
                            userInfo:@{NSLocalizedDescriptionKey : text}];
 }
 
-static bool missed(raw::ArchiveAnswer answer, NSString *function, const char *pipeline, NSError **error)
-{
-    if (answer != raw::ArchiveAnswer::Missed)
-        return false;
-    if (error)
-        *error = rmArchiveMissError(function, pipeline);
-    return true;
-}
-
 bool rmPackHoldsKernels(const std::string &stateKey)
 {
     const raw::Pack &pack = gRM->raw->pack();
@@ -219,15 +202,4 @@ bool rmPackHoldsKernels(const std::string &stateKey)
 const raw::PackComputeFacts *rmPackComputeFacts(const std::string &stateKey)
 {
     return gRM->raw->pack().computeFacts(raw::Pack::fnv(stateKey.data(), stateKey.size()));
-}
-
-bool rmTileArchiveAnswer(MTLTileRenderPipelineDescriptor *twin, MTLTileRenderPipelineDescriptor *d,
-                         MTLPipelineOption &options, NSError **error)
-{
-    RMFunction *f = own(d.tileFunction);
-    const raw::ArchiveAnswer answer =
-        f ? rmArchiveAnswer(d.binaryArchives, options, rmArchiveKey(tileKey(d, f))) : raw::ArchiveAnswer::NotAsked;
-    twin.binaryArchives = nil;
-    options &= ~MTLPipelineOptionFailOnBinaryArchiveMiss;
-    return !missed(answer, f.name, "tile", error);
 }

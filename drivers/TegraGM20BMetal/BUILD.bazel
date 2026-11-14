@@ -155,7 +155,9 @@ filegroup(
 filegroup(
     name = "compiler_srcs",
     srcs = [
+        "compiler/compiler_codegen.mm",
         "compiler/compiler_engine.mm",
+        "compiler/compiler_facts.mm",
         "compiler/compiler_libraries.mm",
         "compiler/compiler_record.mm",
         "compiler/compiler_request.mm",
@@ -557,20 +559,6 @@ py_binary(
         "//tools/gpu/maxwell:interp",
         "//tools/gpu/maxwell:isa",
     ],
-)
-
-py_binary(
-    name = "ordercheck",
-    srcs = ["raw/test/ordercheck.py"],
-    main = "raw/test/ordercheck.py",
-)
-
-# The raw path's target check against the pack (it reads it with the pack generator's modules).
-py_binary(
-    name = "targetcheck",
-    srcs = ["raw/test/targetcheck.py"],
-    main = "raw/test/targetcheck.py",
-    deps = [":raw_pack"],
 )
 
 py_binary(
