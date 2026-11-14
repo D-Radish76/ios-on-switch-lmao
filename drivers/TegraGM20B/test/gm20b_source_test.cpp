@@ -44,8 +44,8 @@ const std::string &gpu()
 		std::string units;
 		for (const char *unit :
 		     {"bringup", "clock", "mem", "hang", "describe", "acquire", "stats",
-		      "stats_tick", "chan", "sync", "exec", "present", "present_deadline",
-		      "present_redo", "reload", "scrub", "power"})
+		      "stats_tick", "chan", "chan_level", "sync", "exec", "present",
+		      "present_deadline", "present_redo", "reload", "scrub", "power"})
 			units += SourceText(std::string("../gpu_") + unit + ".c");
 		return units + SourceText("../gpu_internal.h") + SourceText("../gpu_inline.h") +
 		       SourceText("../gpu_fenced.h") + SourceText("../SwitchGpuVmMap.h") +
@@ -342,8 +342,11 @@ TEST(GM20BPushScanSource, KernelUsesTheHeader)
 	EXPECT_TRUE(clientCode().Has("#include \"TegraGM20BPushScan.h\""));
 	EXPECT_FALSE(clientCode().Has("void pushMethod("));
 	EXPECT_FALSE(clientCode().Has("void pushParse("));
-	const CodeText scan = Block(client(), "void scanRead(");
-	EXPECT_TRUE(scan.Has("scanPush(c, p, whole, nullptr, 0)"));
+	EXPECT_EQ(clientCode().Count("tgm_scan::readSubmission("), 2u)
+		<< "the profiled read and the thread call's";
+	const CodeText scan = Block(SourceText("../TegraGM20BPushScan.h"),
+				    "inline SubmissionRead readSubmission(");
+	EXPECT_TRUE(scan.Has("scanPush(r.c, p, whole, nullptr, 0)"));
 	EXPECT_TRUE(scan.Has("prof->cls[i] = cls;"));
 	// A stamp only after a push the profile's rule left a class (switch_gpu_prof_stamped), only on a profiled submission.
 	EXPECT_TRUE(Block(gpu(), "void chan_job_entry(")
@@ -371,15 +374,16 @@ TEST(GM20BPushScanSource, EverySubmissionPathScansItsPushes)
 	const CodeText job =
 		Block(client(),
 		      "IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record,");
-	EXPECT_TRUE(
-		job.Before("const tgm_prof *profile = scanSubmission(pushes, count, prof, true);",
-			   "switch_gpu_chan_exec_events("));
+	EXPECT_TRUE(job.Before(
+		"const tgm_prof *profile = scanSubmission(slot, pushes, count, prof, true);",
+		"switch_gpu_chan_exec_events("));
 	EXPECT_TRUE(job.Has("&seqno, profile, jobVisibility, releases, keptCount, &transaction);"));
 	const CodeText exec = Block(
 		client(),
 		"IOReturn AGXDeviceUserClient::exec(uint32_t channel, TegraGM20BAbiPush *input,");
 	EXPECT_TRUE(
-		exec.Before("const tgm_prof *profile = scanSubmission(pushes, count, prof, false);",
+		exec.Before("const tgm_prof *profile = scanSubmission(channel - 1, pushes, count, "
+			    "prof, false);",
 			    "switch_gpu_chan_exec_events("));
 	EXPECT_TRUE(exec.Has("&seqno, profile, jobVisibility, nullptr, 0, &transaction);"));
 	EXPECT_EQ(clientCode().Count("scanPushes(pushes, count,"), 1u);
@@ -395,14 +399,17 @@ TEST(GM20BPushScanSource, OnlyAProfiledSubmissionIsReadOnItsThread)
 {
 	const CodeText submission =
 		Block(client(), "const tgm_prof *AGXDeviceUserClient::scanSubmission(");
-	EXPECT_TRUE(submission.Before("deferScan(pushes, count, rawMacros);",
+	EXPECT_TRUE(submission.Before("deferScan(slot, pushes, count, rawMacros);",
 				      "scanPushes(pushes, count, &prof, rawMacros);"));
 	const CodeText defer = Block(client(), "void AGXDeviceUserClient::deferScan(");
 	EXPECT_TRUE(defer.Has("hit->bo->pool_va"));
 	EXPECT_TRUE(defer.Has("thread_call_enter(d->call);"));
-	EXPECT_FALSE(defer.Has("scanRead("));
-	EXPECT_TRUE(
-		Block(client(), "void deferredWork(").Has("scanRead(r->push, r->count, nullptr,"));
+	EXPECT_FALSE(defer.Has("readSubmission("));
+	EXPECT_TRUE(defer.Has("r->seqno = tgm_chan_submitted(chans_[slot]) + 1;"));
+	const CodeText work = Block(client(), "void deferredWork(");
+	EXPECT_TRUE(work.Has("switch_gpu_scan_record("));
+	EXPECT_TRUE(work.Has("submissionPassed"));
+	EXPECT_TRUE(Block(client(), "Deferral *deferral()").Has("THREAD_CALL_OPTIONS_ONCE"));
 	EXPECT_TRUE(Block(client(), "IOReturn AGXDeviceUserClient::boImport(")
 			    .Has("if (critical) switch_gpu_compositor_import(cost.total_ns);"));
 }
@@ -1132,8 +1139,13 @@ TEST(GM20BAcquireSource, TheAcquireInterruptIsTakenBeforeNvkmsHandler)
 TEST(GM20BAcquireSource, EveryChannelIsArmedBeforeItsFirstKickAndReArmedWhenIdle)
 {
 	const CodeText create = Block(gpu(), "static int chan_new(");
-	EXPECT_TRUE(create.Before("chan->chid = args.chan.chid;", "tgm_acquire_arm(chan->chid);"));
-	EXPECT_TRUE(create.Before("tgm_acquire_arm(chan->chid);", "PUSH_KICK(push);"));
+	EXPECT_TRUE(create.Before("chan->chid = args.chan.chid;",
+				  "ret = tgm_chan_ramfc_open(chan, critical);"));
+	EXPECT_TRUE(
+		create.Before("ret = tgm_chan_ramfc_open(chan, critical);", "PUSH_KICK(push);"));
+	EXPECT_TRUE(Block(gpu(), "int tgm_chan_ramfc_open(struct tgm_chan *chan, int critical)")
+			    .Has("tgm_sched_ramfc(tgm_gpu.device, chan->chid, ramfc_due_write, "
+				 "&due, 1)"));
 	EXPECT_TRUE(Block(gpu(), "static void ramfc_due_write(void *arg)")
 			    .Has("tgm_acquire_arm(due->chid);"));
 	EXPECT_TRUE(Block(gpu(), "void tgm_chan_ramfc_due(struct tgm_chan *chan)")

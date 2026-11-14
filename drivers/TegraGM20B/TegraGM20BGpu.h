@@ -681,6 +681,11 @@ void tgm_rail_cycle_register(void);
  * debug.switch_gpu_ramfc). 0, or -EBUSY before M3. */
 struct tgm_ramfc_look {
 	uint32_t channels, checked, high, mismatched, chid, ramfc, expected;
+	/* client channels mismatched whose last write was their creation's; the kernel channels (present, scrubber), each
+	 * written high at its creation, checked and mismatched; each mismatched channel as "chid:owner:c" (creation) or
+	 * ":l" (level change), comma-separated, "-" for none */
+	uint32_t created_mismatched, kernel_checked, kernel_mismatched;
+	char owners[200];
 	/* the kernel probe channel's timeslice written to flip_to and back to flip_from, each read after a job */
 	uint32_t flip_chid, flip_from, flip_to, flip_read, back_read;
 	int flip_ret;

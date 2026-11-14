@@ -260,6 +260,21 @@ host_test(
     name = "gm20b_push_scan_test",
     srcs = [
         "gm20b_push_scan_test.cpp",
+        "//drivers/TegraGM20B:SwitchGpuPushScanQueue.h",
+        "//drivers/TegraGM20B:TegraGM20BGpu.h",
+        "//drivers/TegraGM20B:TegraGM20BPushScan.h",
+        "//kits/SwitchGM20BEmit:SwitchGM20BMacroSlots.h",
+    ],
+    copts = ["-Wno-unused-parameter"],
+    cxx_std = "c++17",
+    deps = ["//kits/SwitchGM20BEmit:macros_h"],
+)
+
+host_test(
+    name = "gm20b_push_scan_deferred_test",
+    srcs = [
+        "gm20b_push_scan_deferred_test.cpp",
+        "//drivers/TegraGM20B:SwitchGpuPushScanQueue.h",
         "//drivers/TegraGM20B:TegraGM20BGpu.h",
         "//drivers/TegraGM20B:TegraGM20BPushScan.h",
         "//kits/SwitchGM20BEmit:SwitchGM20BMacroSlots.h",
@@ -981,6 +996,7 @@ host_test(
         "//drivers/TegraGM20B:TegraGM20BUserClient.cpp",
         "//drivers/TegraGM20B:TegraGM20BUserClientBo.cpp",
         "//drivers/TegraGM20B:TegraGM20BUserClientImport.cpp",
+        "//drivers/TegraGM20B:TegraGM20BPushScan.h",
         "//drivers/TegraGM20B:TegraGM20BPushScanRun.cpp",
         "//drivers/TegraGM20B:TegraGM20BUserClientChannel.cpp",
         "//drivers/TegraGM20B:TegraGM20BUserClientDispatch.cpp",
@@ -2797,6 +2813,43 @@ grep -q '^void tgm_deadline_stats(' $@
 """,
 )
 
+genrule(
+    name = "deadline_lines_source",
+    testonly = True,
+    srcs = ["//drivers/TegraGM20B:deadline_lines.c"],
+    outs = ["deadline_lines_source.h"],
+    cmd = """
+set -e
+grep -v '^#include' $< > $@
+grep -q '^void tgm_latency_add(' $@
+""",
+)
+
+host_library(
+    name = "deadline_lines_unit",
+    srcs = [
+        "gm20b_deadline_lines_unit.c",
+        ":deadline_lines_source",
+    ],
+    hdrs = [
+        "gm20b_sched_stubs.h",
+        "//drivers/TegraGM20B:TegraGM20BGpu.h",
+        "//drivers/TegraGM20B:deadline_stats.h",
+    ],
+    c_std = "gnu11",
+    defines = ["DEVELOPMENT=1"],
+)
+
+# deadline_lines.c: the deadline's stats lines at every count's widest, and many channels' latencies, each line whole
+# within nvxnu_stats's 1 KiB
+host_test(
+    name = "gm20b_deadline_lines_test",
+    srcs = ["gm20b_deadline_lines_test.cpp"],
+    cxx_std = "c++17",
+    defines = ["DEVELOPMENT=1"],
+    deps = [":deadline_lines_unit"],
+)
+
 SCHED_UNIT_HDRS = [
     "gm20b_sched_stubs.h",
     "//drivers/TegraGM20B:SwitchGpuBusy.h",
@@ -2842,6 +2895,7 @@ host_library(
     c_std = "gnu11",
     copts = ["-Wno-unused-function"],
     defines = ["DEVELOPMENT=1"],
+    deps = [":deadline_lines_unit"],
 )
 
 host_test(
@@ -2905,6 +2959,7 @@ host_library(
     c_std = "gnu11",
     copts = ["-Wno-unused-function"],
     defines = ["DEVELOPMENT=1"],
+    deps = [":deadline_lines_unit"],
 )
 
 # deadline.c and hold.c over whole display periods: the locks, read-modify-writes and thread calls one costs, and the
@@ -2921,6 +2976,23 @@ host_test(
 )
 
 host_library(
+    name = "deadline_lines_unit_tsan",
+    srcs = [
+        "gm20b_deadline_lines_unit.c",
+        ":deadline_lines_source",
+    ],
+    hdrs = [
+        "gm20b_sched_stubs.h",
+        "//drivers/TegraGM20B:TegraGM20BGpu.h",
+        "//drivers/TegraGM20B:deadline_stats.h",
+    ],
+    c_std = "gnu11",
+    copts = ["-fsanitize=thread"],
+    defines = ["DEVELOPMENT=1"],
+    sanitize = False,
+)
+
+host_library(
     name = "deadline_unit_tsan",
     srcs = DEADLINE_UNIT_SRCS,
     hdrs = DEADLINE_UNIT_HDRS,
@@ -2931,6 +3003,7 @@ host_library(
     ],
     defines = ["DEVELOPMENT=1"],
     sanitize = False,
+    deps = [":deadline_lines_unit_tsan"],
 )
 
 host_library(
@@ -2944,6 +3017,7 @@ host_library(
     ],
     defines = ["DEVELOPMENT=1"],
     sanitize = False,
+    deps = [":deadline_lines_unit_tsan"],
 )
 
 # deadline.c and hold.c between the frame end, the pass, the kicks, teardown, sleep and the owner's thread calls,
