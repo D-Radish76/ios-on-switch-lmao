@@ -171,6 +171,8 @@ TEST(ScanReturnSource, AColourBlankSwapRetiresOnceItsBlackIsOnScreen)
     EXPECT_TRUE(frameEnd.Has("color->settledThrough(colourBlankSwap.generation())"));
     EXPECT_TRUE(frameEnd.Has("retireThrough(seq,"));
     EXPECT_TRUE(Block(source, "bool frameEndNeeded()").Has("colourBlankSwap.waiting()"));
+    EXPECT_TRUE(Block(source, "void kickSwapQueue() override").Before("kickUnmaskFrameEnd();", "kickOnce();"))
+        << "a blank kicked under a blank already shown publishes no colour change: the kick itself routes FRAME_END";
     EXPECT_TRUE(Block(source, "void flipLatched()").Has("colourBlankSwap.ended();"));
     const CodeText stopped = Block(source, "void settleStopped()");
     EXPECT_TRUE(stopped.Before("colourBlankSwap.ended();", "retireThrough(seq, mach_absolute_time());"));
