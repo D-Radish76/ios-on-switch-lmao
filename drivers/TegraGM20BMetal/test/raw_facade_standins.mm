@@ -3,27 +3,11 @@
 // test's constants.
 #include "raw_facade_standins.h"
 #import <Metal/Metal.h>
-#include <map>
-#include <utility>
 #include "NativeBridgeMetalFrontend.h"
 #include "bridge/NativeMetalDirect.h"
 #include "bridge/NativeMetalObjects.h"
 
 namespace standin {
-namespace {
-
-std::map<std::pair<void *, uint32_t>, std::vector<Layout>> &layouts()
-{
-    static std::map<std::pair<void *, uint32_t>, std::vector<Layout>> all;
-    return all;
-}
-
-}  // namespace
-
-void functionLayouts(id twin, uint32_t index, std::vector<Layout> made)
-{
-    layouts()[{(__bridge void *)twin, index}] = std::move(made);
-}
 
 Asks &asks()
 {
@@ -32,24 +16,6 @@ Asks &asks()
 }
 
 }  // namespace standin
-
-static_assert(sizeof(raw::ArgumentRun) == sizeof(NmbArgumentRun), "the bridge's runs");
-
-extern "C" bool native_bridge_metal_argument_layouts(id function, NSUInteger index,
-                                                     bool (*each)(const struct NmbArgumentLayout *, uint32_t, void *),
-                                                     void *ctx, const char **why)
-{
-    const auto found = standin::layouts().find({(__bridge void *)function, uint32_t(index)});
-    if (found == standin::layouts().end()) {
-        *why = "no argument buffer at that index";
-        return false;
-    }
-    std::vector<NmbArgumentLayout> out;
-    for (const standin::Layout &l : found->second)
-        out.push_back({l.encodedLength, l.alignment, reinterpret_cast<const NmbArgumentRun *>(l.runs.data()),
-                       uint32_t(l.runs.size()), 0});
-    return each(out.data(), uint32_t(out.size()), ctx);
-}
 
 extern "C" bool switch_nmb_heap_holds(uint32_t, const NmbHeapTextureFacts *)
 {

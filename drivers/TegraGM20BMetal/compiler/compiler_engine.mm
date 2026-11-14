@@ -130,6 +130,8 @@ int32_t Engine::compile(const Prepared &p, std::string &entry, std::string &why)
         return makeFacts(p, state_->inputs.systemRoot, entry, why);
     if (raw::functionAttributes(p.request))
         return makeAttributes(p, state_->inputs.systemRoot, entry, why);
+    if (raw::bufferEncoders(p.request))
+        return makeBufferEncoders(p, state_->inputs.systemRoot, entry, why);
     if (p.request.kind == raw::RequestKind::Library)
         return state_->codeGen->make(p, entry, why);
     State &s = *state_;

@@ -4,20 +4,10 @@
 #pragma once
 #import <Foundation/Foundation.h>
 #include <cstdint>
-#include <vector>
-#include "../raw/runtime/raw_argument_layout.h"
 
 namespace standin {
 
 constexpr uint32_t kTextureFlags = 0x25u << 16, kSamplerWord = 0x40;
-
-struct Layout {
-    uint64_t encodedLength = 0, alignment = 1;
-    std::vector<raw::ArgumentRun> runs;
-};
-
-// The layouts native_bridge_metal_argument_layouts answers for `twin`'s buffer `index`; none: it refuses
-void functionLayouts(id twin, uint32_t index, std::vector<Layout> layouts);
 
 struct Asks {
     uint32_t textureFlags = 0, samplerWords = 0;

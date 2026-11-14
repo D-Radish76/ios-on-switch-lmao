@@ -202,6 +202,14 @@ size_t nmb_offline_function_stage_input_attribute(const NmbOfflineFunction *, ui
     return 0;
 }
 
+bool nmb_offline_function_buffer_encoders(const NmbOfflineFunction *,
+                                          bool (*)(uint32_t, bool, const struct NmbArgumentLayout *, uint32_t,
+                                                   const char *, void *),
+                                          void *)
+{
+    return false;
+}
+
 bool nmb_render_pipeline_offline(const NmbOfflineRenderPipelineDescriptor *, bool, uint64_t, uint32_t,
                                  const NmbDirectBinds *, bool (*)(const NmbDirectState *, void *), void *)
 {

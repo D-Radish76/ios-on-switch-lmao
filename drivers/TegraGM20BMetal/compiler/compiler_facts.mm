@@ -9,6 +9,7 @@
 #include "bridge/NativeMetalDirect.h"
 #include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/RawPipelineKey.h"
+#include "../raw/runtime/raw_buffer_encoders.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
 #include "../raw/runtime/raw_function_attributes.h"
 #include "../raw/runtime/raw_reflection_blob.h"
@@ -99,30 +100,76 @@ raw::AttributeList attributesOf(const NmbOfflineFunction *f, bool stageInput)
     return out;
 }
 
+bool collectEncoder(uint32_t index, bool argumentBuffer, const NmbArgumentLayout *layouts, uint32_t count,
+                    const char *refusal, void *ctx)
+{
+    static_assert(sizeof(raw::ArgumentRun) == sizeof(NmbArgumentRun), "the bridge's runs");
+    raw::BufferEncoder e;
+    e.index = index;
+    e.argumentBuffer = argumentBuffer;
+    e.refusal = refusal ? refusal : "";
+    for (uint32_t i = 0; i < count; i++) {
+        const auto *runs = reinterpret_cast<const raw::ArgumentRun *>(layouts[i].runs);
+        e.layouts.push_back({layouts[i].encoded_length, layouts[i].alignment,
+                             std::vector<raw::ArgumentRun>(runs, runs + layouts[i].run_count)});
+    }
+    static_cast<raw::BufferEncoders *>(ctx)->push_back(std::move(e));
+    return true;
+}
+
+// `s`'s function with the request's constants, made by the translator alone; null with `why`, `library` released
+NmbOfflineFunction *requestFunction(const raw::RequestStage &s, const raw::RequestLibrary &l, const std::string &root,
+                                    NmbOfflineLibrary *&library, std::string &why)
+{
+    NSData *held = nil;
+    const uint8_t *slice = nullptr;
+    size_t size = 0;
+    if (!airSliceOf(l, root, held, slice, size, why))
+        return nullptr;
+    if (!(library = nmb_offline_library_new(slice, size)))
+        return why = std::string("a library the translator does not read: ") + nmb_last_error(), nullptr;
+    std::vector<NmbConstant> constants;
+    MTLFunctionConstantValues *values = nil;
+    NmbOfflineFunction *function = functionOf(library, s, constants, values, why);
+    if (function)
+        return function;
+    if (why.empty())
+        why = "no function " + s.function + ": " + nmb_last_error();
+    nmb_offline_library_release(library);
+    library = nullptr;
+    return nullptr;
+}
+
 }  // namespace
+
+int32_t makeBufferEncoders(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
+{
+    @autoreleasepool {
+        const raw::RequestStage &s = p.request.stages[0];
+        NmbOfflineLibrary *library = nullptr;
+        NmbOfflineFunction *function = requestFunction(s, p.request.libraries[s.library], systemRoot, library, why);
+        if (!function)
+            return TegraGM20BCompileUnavailable;
+        raw::BufferEncoders encoders;
+        const bool made = nmb_offline_function_buffer_encoders(function, collectEncoder, &encoders);
+        if (!made)
+            why = "the translator does not decode " + s.function + ": " + nmb_last_error();
+        nmb_offline_function_release(function);
+        nmb_offline_library_release(library);
+        const std::string blob = raw::encodeBufferEncoders(encoders);
+        entry = raw::encodeReflectionEntry(p.key, made ? &blob : nullptr, why);
+        return made ? TegraGM20BCompileMade : TegraGM20BCompileRefused;
+    }
+}
 
 int32_t makeAttributes(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
 {
     @autoreleasepool {
         const raw::RequestStage &s = p.request.stages[0];
-        NSData *held = nil;
-        const uint8_t *slice = nullptr;
-        size_t size = 0;
-        if (!airSliceOf(p.request.libraries[s.library], systemRoot, held, slice, size, why))
+        NmbOfflineLibrary *library = nullptr;
+        NmbOfflineFunction *function = requestFunction(s, p.request.libraries[s.library], systemRoot, library, why);
+        if (!function)
             return TegraGM20BCompileUnavailable;
-        NmbOfflineLibrary *library = nmb_offline_library_new(slice, size);
-        if (!library)
-            return why = std::string("a library the translator does not read: ") + nmb_last_error(),
-                   TegraGM20BCompileUnavailable;
-        std::vector<NmbConstant> constants;
-        MTLFunctionConstantValues *values = nil;
-        NmbOfflineFunction *function = functionOf(library, s, constants, values, why);
-        if (!function) {
-            if (why.empty())
-                why = "no function " + s.function + ": " + nmb_last_error();
-            nmb_offline_library_release(library);
-            return TegraGM20BCompileUnavailable;
-        }
         const std::string blob = raw::encodeAttributeLists(attributesOf(function, false), attributesOf(function, true));
         nmb_offline_function_release(function);
         nmb_offline_library_release(library);

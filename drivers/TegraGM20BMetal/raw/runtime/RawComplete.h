@@ -124,6 +124,8 @@ public:
                     std::string &why);
     // The attributes blob (raw_function_attributes.h) of `function` (this facade's), keyed by its functionAttributesKey
     bool attributes(id function, const std::string &functionKey, std::string &blob, std::string &why);
+    // The buffer encoders blob (raw_buffer_encoders.h) of `function` (this facade's), keyed by its bufferEncodersKey
+    bool bufferEncoders(id function, const std::string &functionKey, std::string &blob, std::string &why);
 
     // What the calling thread's last makeNow got its record by
     static Obtained lastObtained();
@@ -169,6 +171,8 @@ private:
     // A reflection entry of `k` from the store, else asked of the compiler with `request`'s (`every`: as renderRequest's)
     bool storedReflection(const std::function<bool(bool every, CompileRequest &, Digest &)> &request, const CacheKey &k,
                           std::string &blob, std::string &why);
+    // storedReflection of one function of this facade as a request's one stage tagged `tag`
+    bool functionReflection(const char *tag, id function, const CacheKey &k, std::string &blob, std::string &why);
     RecordCache::Found fromStore(const Digest &name, const CacheKey &k, RuntimeRecord &record, std::string &why);
     // A process compiles a state itself only on a debug boot with no compiler at all (switch-no-bt hides iOS 17's
     // launcher), and host tests: a release client never carries a compile's memory
