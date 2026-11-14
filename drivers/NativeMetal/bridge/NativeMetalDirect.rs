@@ -801,6 +801,10 @@ pub(crate) fn write_of(w: &metal2vulkan::bind::DescriptorWrite, ranges: &[Descri
             (out.stage, out.slot) = slot_parts(slot);
             out.view_type = avk::ImageViewType::from(view.view_type).as_raw();
         }
+        WriteSource::TexelBuffer { slot, .. } => {
+            out.source = NmbDirectSource::Texture;
+            (out.stage, out.slot) = slot_parts(slot);
+        }
         WriteSource::Sampler { slot, compare, .. } => {
             out.source = NmbDirectSource::Sampler;
             (out.stage, out.slot) = slot_parts(slot);
