@@ -3269,7 +3269,7 @@ public:
         landscapeRunAbort();
         abortProbe("the display suspended (SC7)");
         const uint64_t shown = suspendShownSeq();
-        const uint64_t blank = colourBlankSwap.ended();  // a colour blank swap still waiting for its black
+        const uint64_t blank = colourBlankSwap.ended();
         planesQuiesce();  // r18-planes
         resumeLit = !scanoutStopped;
         setScanout(false);

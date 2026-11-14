@@ -75,9 +75,9 @@ void scanOverlap(const char *when, int entry, const char *why, uint64_t seq = 0,
     const uint32_t overlaps = scanCount(2);
     if (overlaps >= kScanOverlapLines)
         return;
-    const char *kind = shown == &scanBlank                              ? "a blank"
+    const char *kind = shown == &scanBlank                             ? "a blank"
                        : shown == switch_display::ScanReturn::kUnknown ? "unknown"
-                                                                        : "a page";
+                                                                       : "a page";
     IOLog("SwitchDisplay: %s, a buffer its owner has back is in reach: %s (%d; overlap %u, swap %llu showing %s, "
           "frame end %llu; window A front %d pending %d replaced %d held %d, colour blank %d)\n",
           when, why, entry, overlaps + 1, static_cast<unsigned long long>(seq), seq ? kind : "-",

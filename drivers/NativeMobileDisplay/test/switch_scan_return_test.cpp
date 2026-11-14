@@ -161,8 +161,8 @@ TEST(ScanReturnSource, AColourBlankSwapRetiresOnceItsBlackIsOnScreen)
 {
     const std::string source = display();
     const CodeText kick = Block(source, "void kickOnce()");
-    EXPECT_TRUE(kick.Before("noteTaken(request, kickAt);",
-                            "colourBlankSwap.kicked(seqOf(request), color->generation());"));
+    EXPECT_TRUE(
+        kick.Before("noteTaken(request, kickAt);", "colourBlankSwap.kicked(seqOf(request), color->generation());"));
     const CodeText finish = Block(source, "void finishTransfer(const OriginalLegacySwapRequest *request, bool force");
     EXPECT_TRUE(finish.Before("!colourBlankSwap.holds(seqOf(request))", "retireThrough(seqOf(request),"));
     const CodeText tick = Block(source, "void vblankTick()");

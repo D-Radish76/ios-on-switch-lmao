@@ -136,10 +136,11 @@ TEST_F(McErrors, AClientsRunPrintsItsFirstFourThenOneCountLineWhenItsSwgroupDeta
     EXPECT_EQ(switch_test_lines.size(), 4u);
     switch_mc_errors_detached(TEGRA_SMMU_NVJPG_ASID);
     ASSERT_EQ(switch_test_lines.size(), 5u);
-    EXPECT_EQ(switch_test_lines[4].rfind("TegraSMMU: MC error run over: 50 errors by csr_nvjpgsrd (NVJPG) (client 0x7e), "
-                                         "the first 4 printed; the last INVALID_SMMU_PAGE",
-                                         0),
-              0u)
+    EXPECT_EQ(
+        switch_test_lines[4].rfind("TegraSMMU: MC error run over: 50 errors by csr_nvjpgsrd (NVJPG) (client 0x7e), "
+                                   "the first 4 printed; the last INVALID_SMMU_PAGE",
+                                   0),
+        0u)
         << switch_test_lines[4];
     EXPECT_NE(switch_test_lines[4].find("at 0x33000"), std::string::npos) << "the run's last error";
     fault(0x7e, 0x1000);
