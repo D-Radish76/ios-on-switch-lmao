@@ -2663,6 +2663,7 @@ host_test(
     srcs = ["raw_linked_source_test.cpp"],
     data = [
         "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
+        "//drivers/NativeMetal:bridge/NativeMetalDescriptors.rs",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
         "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
