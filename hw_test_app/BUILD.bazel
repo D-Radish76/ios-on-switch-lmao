@@ -523,6 +523,15 @@ cc_library(
 # The texture peer's jetsam limits, which //overlay:jetsam_properties merges into iOS 27's overlay in debug
 exports_files(["peer/com.brunostjohn.switch.texpeer.jetsam.plist"])
 
+# tools/devicerun's hwtest_test holds every sysctl a test reads to both apps' sandbox exceptions
+exports_files(
+    [
+        "SwitchHWTest.entitlements",
+        "SwitchHWTest27.entitlements",
+    ],
+    visibility = ["//tools/devicerun:__pkg__"],
+)
+
 # tools/benchloop's tests hold the app's known program and method ranges to the host's
 exports_files(
     [
