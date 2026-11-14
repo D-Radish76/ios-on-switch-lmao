@@ -234,10 +234,9 @@ void replayKernelCommands(id<MTLComputeCommandEncoder> encoder, RMKernelExecute 
     const auto [from, to] = reach(x);
     std::lock_guard<raw::Mutex> hold(b->_lock);
     if (!b->_m2v)
-        b->_m2v = [RM_M2V(NeedIcbDispatchReplay)
-            newIndirectCommandBufferWithDescriptor:b->_descriptor
-                                   maxCommandCount:b->_count
-                                           options:0];
+        b->_m2v = [RM_M2V(NeedIcbDispatchReplay) newIndirectCommandBufferWithDescriptor:b->_descriptor
+                                                                        maxCommandCount:b->_count
+                                                                                options:0];
     if (!b->_m2v) {
         SWITCH_REFUSE("raw", "icb.replay", "m2v made no indirect command buffer of dispatches: none run");
         return;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 #import <Foundation/Foundation.h>
+#import <Metal/Metal.h>
 #include <atomic>
 #include <cstdint>
 
@@ -30,7 +31,7 @@ enum RMPred : uint8_t {
     PredPassAttFormat,  // a color attachment not kept or not renderable: a = format, b = attachment index | kind << 8
     PredPassAttLevel,   // slice, depth plane or resolve, or a level of a texture with no chain
     PredPassDepthStencil,  // a = depth format, b = stencil format
-    PredPassOther,  // a = its own sample positions, b = a rasterization rate map
+    PredPassOther,         // a rasterization rate map: b = 1
     // states and calls
     PredStateForeign,
     PredStateNotPackable,  // a state whose functions are not this device's (neither in the pack nor made by the runtime)
@@ -74,6 +75,7 @@ enum RMPred : uint8_t {
     PredEncGeometry,      // a = primitive, b = count | instances << 32; no native raster-order plan
     PredEncStorageView,  // a = attachment, b = format | width << 32: no storage view and no barrier form to take
     PredPassRotated,     // a = raw::RotatedRefusal, b = the rotation (a pass's, or the state's at encode)
+    PredPassPositions,   // sample positions Metal takes and draws nothing defined for: a = their count, b = the samples
     PredCount
 };
 
@@ -136,8 +138,31 @@ static constexpr const char *kPredNames[] = {"-",
                                              "enc.nochannel",
                                              "enc.geometry",
                                              "enc.storage",
-                                             "pass.rotated"};
+                                             "pass.rotated",
+                                             "pass.positions"};
 static_assert(sizeof kPredNames / sizeof *kPredNames == PredCount, "a name for each predicate");
+
+// The predicates whose command buffer fails, its work run nowhere, with MTLCommandBufferErrorDomain's code (0: not one).
+// The client's errors: an Apple GPU completes a copy, fill or index range past its buffer, and a state whose colour
+// formats or samples are not its pass's, with no error (measured on an M-series Mac, API validation off) and Metal's
+// validation layer stops them; here the command buffer fails InvalidResource instead of drawing what no device defines.
+// The kernel refusing a submission or the channel fails it Internal (raw/plan/predicates.tsv cb-error).
+constexpr NSInteger predFailure(RMPred p)
+{
+    switch (p) {
+    case PredCallBufCopyRange:
+    case PredEncIndexedRange:
+    case PredEncColorFormats:
+    case PredEncSamples:
+    case PredPassPositions:
+        return MTLCommandBufferErrorInvalidResource;
+    case PredEncKernel:
+    case PredEncNoChannel:
+        return MTLCommandBufferErrorInternal;
+    default:
+        return 0;
+    }
+}
 
 // What makes a command buffer go to m2v (counted, one log line each kind)
 enum RMReason : uint8_t {
@@ -158,6 +183,7 @@ static const char *const kReasonNames[WhyCount] = {"raw",     "state",   "textur
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
 extern std::atomic<uint64_t> gPredCbs[PredCount], gPredOnly[PredCount];
+extern std::atomic<uint64_t> gPredFailed[PredCount];  // command buffers each predicate failed (predFailure)
 #endif
 extern std::atomic<uint64_t> gPredLogged;
 

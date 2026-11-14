@@ -11,6 +11,9 @@ enum NativeCallTests {
         NativeWideStrideTest(), NativeM2vMissingTest(), NativeTargetPartsTest(), NativeLayeredClearTest(),
         NativeLayeredMemorylessTest(), NativeLayeredVertexTest(), NativeLayeredFetchTest(), NativeViewportsTest(),
         NativeViewportIndexTest(), NativeBlockTexturesTest(), NativeDepthSlicesTest(), NativeWideTargetsTest(),
-        NativeInterpolantsTest(), NativeThreadgroupMemoryTest(), NativeArgumentTier2Test(),
+        NativeInterpolantsTest(), NativeThreadgroupMemoryTest(), NativeArgumentTier2Test(), NativeErrorBufferCopyTest(),
+        NativeErrorIndexRangeTest(), NativeErrorColourFormatTest(), NativeErrorSamplesTest(),
+        NativeErrorPositionsTest(),
+        NativeRateMapAnswerTest(),
     ]
 }

@@ -42,7 +42,7 @@ class Routes(unittest.TestCase):
 
     def test_vocabulary(self) -> None:
         for row in self.rows:
-            where = f"{row['route']} {row['name']}"
+            where = f'{row["route"]} {row["name"]}'
             self.assertIn(row['kind'], KINDS, where)
             self.assertIn(row['gone'], GONE, where)
             status = row['status']
@@ -77,8 +77,10 @@ class Routes(unittest.TestCase):
             if row['kind'] != 'product' or row['gone'] != 'error' or row['status'] != 'main' or row['route'] == 'sel':
                 continue
             files = set(row['raised_in'].split(','))
-            self.assertTrue(tags.get(row['logs'], set()) & files,
-                            f"{row['route']} {row['name']}: closed, but {row['logs']} is not raised in {files}")
+            self.assertTrue(
+                tags.get(row['logs'], set()) & files,
+                f'{row["route"]} {row["name"]}: closed, but {row["logs"]} is not raised in {files}',
+            )
 
 
 if __name__ == '__main__':

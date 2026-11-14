@@ -256,7 +256,6 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
 {
     RMBuffer *t = (RMBuffer *)b;
     if (![(id)t isKindOfClass:[RMBuffer class]] || NSMaxRange(r) > t->_raw.length) {
-        [_cb takeReason:WhyCall why:@"a buffer fill out of range"];
         hit(_cb, PredCallBufCopyRange, NSMaxRange(r), [(id)t isKindOfClass:[RMBuffer class]] ? t->_raw.length : 0);
     }
     [_cb retain:b];
@@ -278,7 +277,6 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
     RMBuffer *a = (RMBuffer *)s, *b = (RMBuffer *)d;
     if (![(id)a isKindOfClass:[RMBuffer class]] || ![(id)b isKindOfClass:[RMBuffer class]] || so + n > a->_raw.length ||
         dof + n > b->_raw.length) {
-        [_cb takeReason:WhyCall why:@"a buffer copy out of range"];
         hit(_cb, PredCallBufCopyRange, so + n, dof + n);
     }
     [_cb retain:s];

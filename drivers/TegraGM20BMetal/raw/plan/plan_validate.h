@@ -8,7 +8,8 @@ namespace raw::plan {
 
 enum class Verdict : uint8_t {
     Plannable,
-    ClientError,  // Metal's validation layer rejects it and defines no NSError: the command is dropped, logged once
+    ClientError,  // Metal's validation layer rejects it and a device defines nothing: the command buffer fails
+                  // MTLCommandBufferErrorInvalidResource, logged once (RawMetalPredicates.h predFailure)
     QueryGated,   // the device answers that it lacks the feature: a client error the client was expected to avoid
     CommandBufferError,  // the command buffer fails with an MTLCommandBufferErrorDomain code
     NoGpuRung,           // Metal allows it and the planner has no GPU-side rung yet: the remaining work

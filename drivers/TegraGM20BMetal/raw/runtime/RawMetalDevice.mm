@@ -23,7 +23,7 @@
 // process opened again), reopen_us (the last one's time), set_refusals and set_rebuilds (resource set registrations
 // the kernel refused, and those it took once made again without what it refused), gpu_order (1: the drivers order on
 // the GPU now), cpu_ordered (the Orders the kernel refused, each a CPU-ordered line), m2v.<reason>, pred.<predicate>
-// (nonzero only).
+// and failed.<predicate> (the command buffers a predicate of predFailure failed; nonzero only).
 - (NSDictionary<NSString *, NSNumber *> *)switchRawCounters
 {
     const Stats &s = gRM->stats;
@@ -115,9 +115,12 @@
     for (int r = 1; r < WhyCount; r++)
         if (const uint64_t n = s.reasons[r].load())
             d[[NSString stringWithFormat:@"m2v.%s", kReasonNames[r]]] = @(n);
-    for (int p = 1; p < PredCount; p++)
+    for (int p = 1; p < PredCount; p++) {
         if (const uint64_t n = gPredCbs[p].load(std::memory_order_relaxed))
             d[[NSString stringWithFormat:@"pred.%s", kPredNames[p]]] = @(n);
+        if (const uint64_t n = gPredFailed[p].load(std::memory_order_relaxed))
+            d[[NSString stringWithFormat:@"failed.%s", kPredNames[p]]] = @(n);
+    }
 #if SWITCH_RAW_DIAGNOSTICS
     // states created that the pack lacked: found in this build's record cache or compiled (states_compiled)
     if (gRM->completion) {

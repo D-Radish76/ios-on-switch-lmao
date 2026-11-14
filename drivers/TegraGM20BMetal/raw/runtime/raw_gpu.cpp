@@ -4690,8 +4690,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
     d.heldSegment_.lose();
     launchPrologues();
     if (d.overflowing_) {
-        os_log_error(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
-                     "raw: a command buffer larger than its ring, with no memory for a larger one: not submitted");
+        notSubmitted = "a command buffer larger than its ring, with no memory for a larger one";
         return false;
     }
     bool invalidates = false, published = false;
@@ -4785,13 +4784,17 @@ bool CommandBuffer::commit(uint32_t &seqno)
             nameHeaps();
         }
     }
-    if (geometryWritable())
+    if (geometryWritable()) {
+        notSubmitted = "a geometry write after the CPU read it";
         return false;  // later internal writes invalidate the CPU proof; no prefix may reach the GPU
+    }
     if (!batchWork_.operations)
         segments_.includeTail();
     const uint32_t maxPushes = d.k_.maxPushes(), maxFences = d.k_.maxFences();
-    if (!segments_.valid(maxPushes))
+    if (!segments_.valid(maxPushes)) {
+        notSubmitted = "a continuation group past the kernel's pushes a job";
         return false;  // validate all indivisible continuation groups before publishing any prefix
+    }
     // A command buffer of several jobs holds its shared uses' CPU-lock admission from its first job to its last
     const bool multiple = (!segments_.empty() && segments_.submission(0, maxPushes, maxFences) < segments_.size()) ||
                           sharedWaits_.size() + sharedSignals_.size() > TegraGM20BMaxJobEvents;
@@ -4815,6 +4818,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
                   !last || quietEnd, last && !promises.empty() ? &promises : nullptr);
         RAW_ENCODE_END(execSpan);
         if (!executed) {
+            kernelResult = result;
             admissionBlocked = !published && result == kIOReturnCannotLock;
             setRefused = d.setView_.refused;
             if (admissionHeld) {
@@ -5522,10 +5526,14 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
     readBits_ |= pl->fetchBits;
     if (!count || !instances)
         return true;
-    if (!ib || (indexSize != 2 && indexSize != 4) || !ib->cpu) {
-        *why = "an indexed draw the raw path does not take";
-        cb_->refusal = {RefIndexedRange, uint32_t(offset), indexSize,
-                        ib ? uint32_t(std::min<uint64_t>(ib->length, ~0u)) : 0};
+    if (!ib || (indexSize != 2 && indexSize != 4)) {
+        *why = "an indexed draw of no index buffer or index size";
+        cb_->refusal = {RefIndexedRange, uint32_t(offset), indexSize, 0};
+        return false;
+    }
+    if (!ib->cpu) {
+        *why = "an index buffer with no raw memory";
+        cb_->refusal = {RefIndexMemory, uint32_t(offset), uint32_t(std::min<uint64_t>(ib->length, ~0u))};
         return false;
     }
     // Metal's fetch (m2v render.rs draw_indexed_primitives, measured): the offset's low 32 bits rounded down to the index size,

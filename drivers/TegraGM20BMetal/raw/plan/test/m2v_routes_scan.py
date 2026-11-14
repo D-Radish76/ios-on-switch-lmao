@@ -65,7 +65,7 @@ def strip_comments(text: str, strings: bool = True) -> str:
             j = i + 1
             while j < n and text[j] != c and text[j] != '\n':
                 j += 2 if text[j] == '\\' else 1
-            out.append(text[i:j + 1] if strings else c + c)
+            out.append(text[i : j + 1] if strings else c + c)
             i = j + 1
         elif text.startswith('//', i):
             j = text.find('\n', i)
@@ -110,8 +110,9 @@ class Census:
         self.texts = {p: strip_comments(t) for p, t in sources.items()}
         self.code = {p: strip_comments(t, strings=False) for p, t in sources.items()}
         self.routes: dict[tuple[str, str], set[str]] = defaultdict(set)
-        self.preds = enum_pairs((RUNTIME / 'RawMetalPredicates.h').read_text(), 'RMPred', 'kPredNames',
-                                ('PredNone', 'PredCount'))
+        self.preds = enum_pairs(
+            (RUNTIME / 'RawMetalPredicates.h').read_text(), 'RMPred', 'kPredNames', ('PredNone', 'PredCount')
+        )
         self.needs = enum_pairs((RUNTIME / 'RawMetalNeeds.h').read_text(), 'RMNeed', 'kNeedNames', ('NeedCount',))
         self._enumerators('pred', self.preds, 'RawMetalPredicates.h')
         self._enumerators('need', self.needs, 'RawMetalNeeds.h')
@@ -160,8 +161,11 @@ class Census:
             self.add('sel', f'{fields[0]} {fields[2]}', INVENTORY.name)
 
     def _kernel(self) -> None:
-        texts = {p.name: strip_comments(p.read_text(errors='replace'), strings=False)
-                 for p in kernel_units() if p.name != 'TegraGM20BABI.h'}
+        texts = {
+            p.name: strip_comments(p.read_text(errors='replace'), strings=False)
+            for p in kernel_units()
+            if p.name != 'TegraGM20BABI.h'
+        }
         texts.update({p.name: t for p, t in self.code.items()})
         for method in KERNEL_LEGACY:
             word = re.compile(r'\bTegraGM20BMethod' + method + r'\b')

@@ -412,9 +412,9 @@ static id<MTLRenderPipelineState> pipelineTwin(MTLRenderPipelineDescriptor *d, M
         return native_bridge_metal_render_pipeline_lazy(RM_M2V(NeedPackedRenderStateTwin),
                                                         packedTwinDescriptor(d, true), packedTwinOptions(o, true));
     return [RM_M2V(NeedRenderStateTwin) newRenderPipelineStateWithDescriptor:twinDescriptor(d)
-                                                                         options:packedTwinOptions(o, packed)
-                                                                      reflection:nil
-                                                                           error:error];
+                                                                     options:packedTwinOptions(o, packed)
+                                                                  reflection:nil
+                                                                       error:error];
 }
 
 // The twin of a state raw drew from its creation, made when a command buffer that sets it first goes to m2v
@@ -538,9 +538,9 @@ static id<MTLRenderPipelineState> makeState(RMDevice *device, MTLRenderPipelineD
     if (!rmTileArchiveAnswer(t, d, o, error))
         return nil;
     return [self wrapCarried:[RM_M2V(NeedTileRenderState) newRenderPipelineStateWithTileDescriptor:t
-                                                                                             options:o
-                                                                                          reflection:r
-                                                                                               error:error]];
+                                                                                           options:o
+                                                                                        reflection:r
+                                                                                             error:error]];
 }
 
 // The m2v device links these libraries from its own functions' bitcode: the functions here are their twins. Its methods, inherited

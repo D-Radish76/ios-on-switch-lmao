@@ -147,10 +147,11 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     if (![(id)buffer isKindOfClass:[RMBuffer class]]) {
         [_cb takeReason:WhyCall why:@"an index buffer not made by this device"];
         hit(_cb, PredCallBufForeign, 0xffff, 0);
-    } else if ((indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
-               !((RMBuffer *)buffer)->_raw.cpu) {
-        [_cb takeReason:WhyEncode why:@"an indexed draw the raw path does not take"];
-        hit(_cb, PredEncIndexedRange, offset, indexType == MTLIndexTypeUInt16 ? 2 : 4);
+    } else if (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) {
+        hit(_cb, PredEncIndexedRange, offset, indexType);
+    } else if (!((RMBuffer *)buffer)->_raw.cpu) {
+        [_cb takeReason:WhyCall why:@"an index buffer the raw pool had no room for"];
+        hit(_cb, PredCallBufForeign, 0xfffe, ((RMBuffer *)buffer)->_raw.length);
     }
     [self checkDraw];
     checkFetch(self, type, count, instances, false, true);
@@ -234,7 +235,6 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     for (uint32_t j = 0; j < 8; j++) {
         const uint32_t f = j < _count ? _formats[j] : 0;
         if (f != pl.colorFormats[j] && !(f && pl.colorFormats[j] == 0)) {
-            [_cb takeReason:WhyEncode why:@"a state whose color formats differ from the pass's"];
             return hit(_cb, PredEncColorFormats, j, f);
         }
     }
@@ -248,7 +248,6 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     }
     uint32_t sampleMasks[4];
     if (pl.samples != _samples || !raw::sampleShadingMasks(_samples, pl.samplePasses, sampleMasks)) {
-        [_cb takeReason:WhyEncode why:@"a state whose samples a pixel or per-sample shading the pass does not take"];
         return hit(_cb, PredEncSamples, pl.samples, _samples | uint64_t(pl.samplePasses) << 32);
     }
     const raw::PackPipeline &r = *pl.rec;
@@ -483,7 +482,6 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     if (!buffer || (offset & 3) || offset > buffer->_raw.length || bytes > buffer->_raw.length - offset ||
         (indexed && (!index || (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
                      indexOffset > index->_raw.length || indexOffset % (indexType == MTLIndexTypeUInt16 ? 2 : 4)))) {
-        [_cb takeReason:WhyEncode why:@"indirect draw arguments or indices outside the buffer"];
         hit(_cb, PredEncIndexedRange, offset, bytes);
     }
     [self checkDraw];

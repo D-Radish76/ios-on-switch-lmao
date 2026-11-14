@@ -1410,13 +1410,14 @@ enum RefusalId : uint8_t {
     RefColorFormats,
     RefUboOffset,
     RefNoTic,
-    RefDepthStencil,   // a: the state's depth format, b: the pass's
-    RefSamples,        // a: the state's samples, b: the pass's, c: the state's shading passes
-    RefGeometry,       // CPU ordering proof unavailable; requires an interlocked native program
-    RefStorageView,    // a: the attachment, b: its format, c: its width (raw_storage_form.h)
-    RefRotated,        // a: why (raw_rotated_pass.h RotatedRefusal), b: the rotation
-    RefViewports,      // a: the encoder's viewport count
-    RefWrittenTexture  // a: the slot, b: the bound format, c: the format the record's programs store
+    RefDepthStencil,    // a: the state's depth format, b: the pass's
+    RefSamples,         // a: the state's samples, b: the pass's, c: the state's shading passes
+    RefGeometry,        // CPU ordering proof unavailable; requires an interlocked native program
+    RefStorageView,     // a: the attachment, b: its format, c: its width (raw_storage_form.h)
+    RefRotated,         // a: why (raw_rotated_pass.h RotatedRefusal), b: the rotation
+    RefViewports,       // a: the encoder's viewport count
+    RefWrittenTexture,  // a: the slot, b: the bound format, c: the format the record's programs store
+    RefIndexMemory      // an index buffer with no raw memory (its pool had no room): a: the offset, b: its length
 };
 
 struct Refusal {
@@ -1498,6 +1499,9 @@ public:
     std::vector<uint32_t> promises;
     bool promisesKept = false;
     int nativeError = 0;
+    // A commit that submitted nothing more: the kernel's answer to the job it refused (0: none), else why it sent none
+    int kernelResult = 0;
+    const char *notSubmitted = nullptr;
     // Why a job was refused when it was the resource set: its generation ended and the kernel refused to make it again
     // (SetView::refused). The command buffer fails with it.
     std::string setRefused;

@@ -754,6 +754,8 @@ void rmPoolCommandBuffers()
 {
     if (!_completedSent)
         return @"pending";
+    if (_failedBy)
+        return [NSString stringWithFormat:@"error:%s", kPredNames[_failedBy]];
     raw::ExecutionAttribution route;
     for (const RMSegment &range : _segs)
         route.add(range.raw, range.event);

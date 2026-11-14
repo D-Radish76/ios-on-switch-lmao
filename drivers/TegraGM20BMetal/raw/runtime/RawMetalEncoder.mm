@@ -503,11 +503,12 @@ void rmPoolEncoders()
     [self retain:e->_visibility];
     const NSUInteger positions = [pass getSamplePositions:nullptr count:0];
     facts.layers = uint32_t(std::clamp<NSUInteger>(pass.renderTargetArrayLength, 1, 2048));
-    if (pass.rasterizationRateMap ||
-        (positions && !passSamplePositions(pass, positions, e->_samples, facts.positions))) {
-        [self takeReason:WhyPass why:@"a rate map or sample positions of its own"];
-        hit(self, PredPassOther, positions, pass.rasterizationRateMap != nil);
+    if (pass.rasterizationRateMap) {
+        [self takeReason:WhyPass why:@"a rasterization rate map"];
+        hit(self, PredPassOther, 0, 1);
     }
+    if (positions && !passSamplePositions(pass, positions, e->_samples, facts.positions))
+        hit(self, PredPassPositions, positions, e->_samples);
     e->_renderAt = _plan.size();
     Cmd m = cmd(OpRender);
     m.obj = (__bridge void *)pass;

@@ -44,9 +44,7 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
     raw::CommandBuffer *rc = d.begin();
     if (!rc) {
         *why = "the kernel gave the raw path no channel";
-        if (!predLogged(PredEncNoChannel))
-            logPred(PredEncNoChannel, 0, 0, @(d.channelError().c_str()));
-        hit(cb, PredEncNoChannel);
+        hit(cb, PredEncNoChannel, 0, 0, d.channelError().c_str());
         return false;
     }
     const uint64_t generation = d.channelGeneration();
@@ -138,9 +136,9 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
             break;
     }
 
-    auto fail = [&](RMPred p, const char *w, uint64_t a = 0, uint64_t b = 0) {
+    auto fail = [&](RMPred p, const char *w, uint64_t a = 0, uint64_t b = 0, const char *detail = nullptr) {
         *why = w;
-        hit(cb, p, a, b);
+        hit(cb, p, a, b, detail);
         if (encoder < to)
             *refusedEncoder = encoder;
         rc->abandon();
@@ -150,7 +148,9 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
     auto refused = [&]() {
         static const RMPred map[] = {PredEncPassRender,  PredEncIndexedRange, PredEncColorFormats, PredEncUboOffset,
                                      PredEncNoTic,       PredEncDepthStencil, PredEncSamples,      PredEncGeometry,
-                                     PredEncStorageView, PredPassRotated};
+                                     PredEncStorageView, PredPassRotated,     PredEncPassRender,   PredEncPassRender,
+                                     PredCallBufForeign};
+        static_assert(sizeof map / sizeof *map == raw::RefIndexMemory + 1, "a predicate for each refusal");
         const raw::Refusal &f = rc->refusal;
         hit(cb, f.id < sizeof map / sizeof *map ? map[f.id] : PredEncPassRender, f.a,
             uint64_t(f.b) | uint64_t(f.c) << 32);
@@ -945,7 +945,12 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
             rc->abandon();
             return false;
         }
-        return fail(PredEncKernel, "the kernel refused the submission");
+        char answer[96];
+        if (rc->kernelResult)
+            snprintf(answer, sizeof answer, "the kernel answered 0x%x", unsigned(rc->kernelResult));
+        else
+            snprintf(answer, sizeof answer, "not submitted: %s", rc->notSubmitted ?: "?");
+        return fail(PredEncKernel, "the kernel refused the submission", uint32_t(rc->kernelResult), 0, answer);
     }
     firstContents.submitted(cb);
     publishSharedEvents(cb);

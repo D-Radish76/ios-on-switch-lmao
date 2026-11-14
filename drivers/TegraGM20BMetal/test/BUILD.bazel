@@ -5445,6 +5445,50 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
+# The refusals that fail their command buffer with Metal's error (RawMetalPredicates.h predFailure) on the raw facade: each
+# client error at recording, the kernel refusing a submission or the channel at encoding; m2v never opened or asked for
+host_test(
+    name = "raw_facade_errors_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_job_methods.h",
+        "raw_facade_errors_test.cpp",
+        "raw_facade_standins.h",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
 # The answers above the identity through the facade device's selectors, on the kind of the build's config, and the paths
 # behind them raw: a layered pass that draws, eight RGBA32Float targets, eight amplifications, patches in an indirect
 # command buffer
