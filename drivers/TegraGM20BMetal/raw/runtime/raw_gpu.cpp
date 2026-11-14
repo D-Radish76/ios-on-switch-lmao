@@ -7836,7 +7836,7 @@ TextureTransferResult Device::transferTexture(const Texture &texture, uint32_t l
 {
     Texture view;
     const Texture *selected = &texture;
-    if (texture.chain) {
+    if (texture.chain && level) {
         if (!chainLevelImage(texture, level, view))
             return TextureTransferResult::Unsupported;
         selected = &view;
