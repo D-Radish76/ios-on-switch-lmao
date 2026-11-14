@@ -107,6 +107,7 @@ using namespace held_blocks_test;
 TEST(RawFacadeHeldBlocks, ACommittedCommandBufferHoldsNoBlockOfTheRuntimePerDraw)
 {
     ASSERT_NE(scale_frames::opened().device, nil);
+    ASSERT_NE(encode_cost::profile()[@"recording_misses"], nil) << "no recording counts in the encode profile";
     timed_gpu::Gpu gpu;
     for (int draws : kDraws)
         EXPECT_TRUE(encode_cost::settle(draws));
@@ -143,6 +144,7 @@ TEST(RawFacadeHeldBlocks, ACommittedCommandBufferHoldsNoBlockOfTheRuntimePerDraw
 TEST(RawFacadeHeldBlocks, TheHwTestsSequenceHoldsAndAllocatesNoMoreWithItsDraws)
 {
     ASSERT_NE(scale_frames::opened().device, nil);
+    ASSERT_NE(encode_cost::profile()[@"recording_misses"], nil) << "no recording counts in the encode profile";
     timed_gpu::Gpu gpu;
     const Sequence s = hwTestSequence();
     for (int a = 0; a < 2; a++) {
