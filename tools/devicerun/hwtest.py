@@ -124,6 +124,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.stitched_library',
             'gpu.raw.sampler_table',
             'gpu.raw.function_tags',
+            'gpu.raw.function_argument_encoder',
             'gpu.raw.compressed_targets',
             'gpu.raw.zcull',
             'gpu.raw.mip_twod',
