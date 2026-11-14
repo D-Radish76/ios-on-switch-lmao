@@ -5,21 +5,23 @@
 // and the box of its draws' scissors within their viewports, the box raw logs. A load pass whose box stops short of its
 // target prints its draws' viewports and scissors.
 //
-// iOS's IconRendering pool hands RenderBox targets rounded up to 32 texels (boot 22: every iconservicesagent target is a
-// multiple of 32, and its edge-miss box is the content), macOS's makes them the content's size. --round32 rounds the
-// heap's and the device's 2D single-level render targets the same way here; --start zero|nan then fills each such
-// target on the command buffer of its first loading pass (nan: NaN in the 16- and 32-bit float formats, zero elsewhere),
-// as the Switch's fresh memory may hold it. The targets come from an MTLHeap whose memory RenderBox aliases, so a fill
-// on another queue would land before reads of the memory it reuses. --dump writes the icon as RGBA8 (sRGB,
-// premultiplied).
+// iOS's iconservicesagent makes RenderBox's targets rounded up to 32 texels (boot 22: all 32 of its new targets are
+// multiples of 32 while the HW Test's and backboardd's are not, and raw makes a texture the size asked), macOS's
+// IconRendering makes them the content's size. --round32 rounds the heap's and the device's 2D single-level render
+// targets the same way here; --start zero|nan then clears each such target in a pass of its own just before the first
+// pass that loads it (nan: NaN in a float format, magenta in any other, RGB10A8_2P_XR10 included), as the Switch's fresh
+// memory may hold it; --late clears it before its second such pass instead, over what RenderBox drew, the control that
+// shows a start can reach the icon. The targets come from an MTLHeap whose memory RenderBox aliases, so the clear goes
+// on the target's own command buffer: on another queue it would land before reads of the memory it reuses. --dump
+// writes the icon as RGBA8 (sRGB, premultiplied).
 //
 // Measured on an M4 Max, macOS 27.2.1, 64 pt at scale 2: with --round32 RenderBox's viewport is the whole target and its
 // scissor the content (Settings: 128x128 f80, scissor 0,0 126x125, short right 2 bottom 3 as on the device), so Metal
-// leaves the band as it was. The icon over zero-started and NaN-started targets is the exact-size icon to the pixel
-// (App Store, Safari, Settings, Calendar, Messages; Photos within the 1 pixel it differs by from run to run): nothing
+// leaves the band as it was. Zero- and NaN-started targets give the exact-size icon to the pixel (App Store, Safari,
+// Settings, Calendar, Messages: 10-29 targets started each), --late changes 44,894-45,803 of its 65,536 pixels: nothing
 // reads the band.
 //
-// usage: iconpassoracle [--round32] [--start zero|nan] [--dump <prefix>] <bundle id> <points> <scale>
+// usage: iconpassoracle [--round32] [--start zero|nan] [--late] [--dump <file>] <bundle id> <points> <scale>
 // build: xcrun clang++ -O1 -std=c++20 -fobjc-arc iconpassoracle.mm -F/System/Library/PrivateFrameworks
 //        -framework IconServices -framework Foundation -framework Metal -framework CoreGraphics -o iconpassoracle
 #import <CoreGraphics/CoreGraphics.h>
@@ -48,6 +50,7 @@ struct Pass {
 
 struct Options {
     bool round32 = false;
+    unsigned startPass = 1;
     const char *start = nullptr, *dump = nullptr;
 };
 
@@ -56,7 +59,7 @@ std::mutex gLock;
 std::map<std::pair<Class, SEL>, IMP> gOrig;
 std::map<void *, Pass> gPasses;
 std::map<void *, unsigned> gTextureIds;
-std::map<void *, id<MTLTexture>> gUnstarted;
+std::map<void *, unsigned> gUnstarted;  // a rounded target: the passes that drew into it
 unsigned gCommits = 0, gRounded = 0, gStarted = 0, gShort = 0;
 
 IMP orig(id self, SEL s)
@@ -79,10 +82,14 @@ id hRenderEncoder(id self, SEL s, MTLRenderPassDescriptor *d)
 {
     for (unsigned j = 0; j < 8; j++) {
         id<MTLTexture> t = d.colorAttachments[j].texture;
-        std::lock_guard<std::mutex> l(gLock);
-        if (!t || !gUnstarted.erase((__bridge void *)t))
-            continue;
-        if (d.colorAttachments[j].loadAction == MTLLoadActionLoad)
+        bool start = false;
+        {
+            std::lock_guard<std::mutex> l(gLock);
+            auto it = t ? gUnstarted.find((__bridge void *)t) : gUnstarted.end();
+            start = it != gUnstarted.end() && ++it->second == gOptions.startPass &&
+                    d.colorAttachments[j].loadAction == MTLLoadActionLoad;
+        }
+        if (start)
             fillStart(self, t);
     }
     id e = ((id (*)(id, SEL, id))orig(self, s))(self, s, d);
@@ -206,53 +213,29 @@ void hCommit(id self, SEL s)
     ((void (*)(id, SEL))orig(self, s))(self, s);
 }
 
-unsigned texelBytes(MTLPixelFormat f)
+bool floatFormat(MTLPixelFormat f)
 {
-    switch (f) {
-    case MTLPixelFormatR8Unorm:
-        return 1;
-    case MTLPixelFormatR16Float:
-        return 2;
-    case MTLPixelFormatRG16Float:
-    case MTLPixelFormatBGRA8Unorm:
-    case MTLPixelFormatRGBA8Unorm:
-    case MTLPixelFormatRGB10A2Unorm:
-    case MTLPixelFormatR32Float:
-        return 4;
-    case MTLPixelFormatRGBA16Float:
-        return 8;
-    default:
-        return 0;
-    }
+    return f == MTLPixelFormatR16Float || f == MTLPixelFormatRG16Float || f == MTLPixelFormatRGBA16Float ||
+           f == MTLPixelFormatR32Float || f == MTLPixelFormatRG32Float || f == MTLPixelFormatRGBA32Float;
 }
 
-uint16_t startHalf(MTLPixelFormat f)
-{
-    const bool isFloat = f == MTLPixelFormatR16Float || f == MTLPixelFormatRG16Float ||
-                         f == MTLPixelFormatRGBA16Float || f == MTLPixelFormatR32Float;
-    return gOptions.start && !strcmp(gOptions.start, "nan") && isFloat ? 0x7e00 : 0;
-}
-
-// On the command buffer of the target's first pass, so that it lands after every earlier use of memory the heap aliases
+// A clear pass of its own before the target's pass, through the original encoder method: zero, or NaN in a float
+// target and magenta in any other (RGB10A8_2P_XR10 included)
 void fillStart(id<MTLCommandBuffer> cb, id<MTLTexture> t)
 {
-    const unsigned bytes = texelBytes(t.pixelFormat);
-    if (!bytes)
-        return;
-    const size_t row = t.width * bytes, size = row * t.height;
-    std::vector<uint16_t> words((size + 1) / 2, startHalf(t.pixelFormat));
-    id<MTLBuffer> b = [t.device newBufferWithBytes:words.data() length:size options:MTLResourceStorageModeShared];
-    id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-    [blit copyFromBuffer:b
-               sourceOffset:0
-          sourceBytesPerRow:row
-        sourceBytesPerImage:size
-                 sourceSize:MTLSizeMake(t.width, t.height, 1)
-                  toTexture:t
-           destinationSlice:0
-           destinationLevel:0
-          destinationOrigin:MTLOriginMake(0, 0, 0)];
-    [blit endEncoding];
+    const bool nan = !strcmp(gOptions.start, "nan");
+    const double n = std::nan("");
+    MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
+    rp.colorAttachments[0].texture = t;
+    rp.colorAttachments[0].loadAction = MTLLoadActionClear;
+    rp.colorAttachments[0].storeAction = MTLStoreActionStore;
+    rp.colorAttachments[0].clearColor = !nan                         ? MTLClearColorMake(0, 0, 0, 0)
+                                        : floatFormat(t.pixelFormat) ? MTLClearColorMake(n, n, n, n)
+                                                                     : MTLClearColorMake(1, 0, 1, 1);
+    SEL s = @selector(renderCommandEncoderWithDescriptor:), end = @selector(endEncoding);
+    id e = ((id (*)(id, SEL, id))orig(cb, s))(cb, s, rp);
+    ((void (*)(id, SEL))orig(e, end))(e, end);
+    std::lock_guard<std::mutex> l(gLock);
     gStarted++;
 }
 
@@ -270,7 +253,7 @@ id hNewTexture(id self, SEL s, MTLTextureDescriptor *d)
     id<MTLTexture> t = ((id (*)(id, SEL, id))orig(self, s))(self, s, use);
     if (t && target && gOptions.start) {
         std::lock_guard<std::mutex> l(gLock);
-        gUnstarted[(__bridge void *)t] = t;
+        gUnstarted[(__bridge void *)t] = 0;
     }
     return t;
 }
@@ -342,11 +325,13 @@ int main(int argc, char **argv)
                 gOptions.round32 = true;
             else if (!strcmp(argv[k], "--start") && k + 1 < argc)
                 gOptions.start = argv[++k];
+            else if (!strcmp(argv[k], "--late"))
+                gOptions.startPass = 2;
             else if (!strcmp(argv[k], "--dump") && k + 1 < argc)
                 gOptions.dump = argv[++k];
         }
         if (argc - k != 3) {
-            fprintf(stderr, "usage: iconpassoracle [--round32] [--start zero|nan] [--dump <prefix>] <bundle id> "
+            fprintf(stderr, "usage: iconpassoracle [--round32] [--start zero|nan] [--late] [--dump <file>] <bundle id> "
                             "<points> <scale>\n");
             return 2;
         }
