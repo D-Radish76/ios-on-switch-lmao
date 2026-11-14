@@ -3,9 +3,10 @@ import Darwin
 import HWTestCore
 import UIKit
 
-/// IOMFBDisplayRefresh on the internal display (AppleCLCD), which IOMobileFramebufferLegacy::setDisplayRefreshProperties
-/// publishes on Apple's pipes and QuartzCore's AppleDisplay::update_display_limits reads (24B119). Its shortest refresh
-/// interval is the panel's period at its highest rate; *_mach fields are mach ticks, period_mach the period expected.
+/// IOMFBDisplayRefresh on the internal display (AppleCLCD), which QuartzCore's AppleDisplay::update_display_limits
+/// reads (24B119) and IOMobileFramebufferLegacy::setDisplayRefreshProperties publishes. Its shortest refresh interval
+/// is the panel's period at its highest rate, and on a fixed-rate internal panel the longest is the same (the family
+/// answers 1/24 s for an external display); *_mach fields are mach ticks, period_mach the period expected.
 struct DisplayRefreshTest: HWTest {
     let id = "display.refresh_dictionary"
     let name = "The display publishes IOMFBDisplayRefresh"
@@ -31,12 +32,13 @@ struct DisplayRefreshTest: HWTest {
             metrics.set(field, Int(number.int64Value))
         }
         let minMach = Double(values["min_mach"] ?? 0)
+        let internalPanel = values["max_mach"].map { $0 == values["min_mach"] } ?? false
         return .judged(
             [
                 ("IOMFBDisplayRefresh on AppleCLCD (present)", found != nil),
                 ("all six keys", values.count == Self.keys.count),
                 ("min_mach within 1% of period_mach", abs(minMach - period) <= period / 100),
-                ("max_mach >= min_mach", (values["max_mach"] ?? 0) >= (values["min_mach"] ?? 1)),
+                ("max_mach == min_mach (an internal panel)", internalPanel),
             ], metrics)
     }
 
