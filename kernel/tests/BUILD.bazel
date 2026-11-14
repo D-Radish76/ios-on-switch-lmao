@@ -8,8 +8,9 @@
 #   xnu_memcmp_source_test   subrs.c uses it on arm64 only, through the two bodies the harness copies
 #   xnu_kernel_classes_source_test  both trees' OSKext.cpp register our drivers' classes under sKextLock, as OSKext::start
 #                            does, and no driver calls OSMetaClass::preModLoad/postModLoad itself
-#   xnu_icon_cache_source_test  both trees' boot setup drops IconServices' __cache_info__ once per GPU build the
-#                            deploy names, before launchd, and never sets up the cache's directories
+#   switch_icon_cache_<xnu>_test  kernel/switch/boot/icon_cache.c over a host Data tree in that XNU's cache layout:
+#                            __cache_info__ alone goes, once per GPU build the deploy names
+#   xnu_icon_cache_source_test  both trees' boot setup runs it once before launchd, with one error line
 #   xnu_stall_test           kernel/switch/diag/stall.h's decisions: which samples of a UI main thread are a stall,
 #                            one report and one end per episode, wait names by block_hint.h value, user addresses
 #   xnu_render_senders_test  osfmk/ipc/switch_render_senders.h's table and line: the render server's senders by
@@ -170,17 +171,6 @@ host_test(
     data = [
         "//kernel/xnu-10063.141.1/bsd:kern/kern_event.c",
         "//kernel/xnu-12377.121.6/bsd:kern/kern_event.c",
-    ],
-)
-
-# Both kernels let IconServices' rendered icons go once per GPU build the deploy names (tools/deploy/icon_cache.py).
-host_test(
-    name = "xnu_icon_cache_source_test",
-    srcs = ["xnu_icon_cache_source_test.cpp"],
-    data = [
-        "//kernel/xnu-10063.141.1/bsd:kern/kern_exec.c",
-        "//kernel/xnu-12377.121.6/bsd:kern/kern_exec.c",
-        "//tools/deploy:icon_cache.py",
     ],
 )
 
@@ -738,6 +728,47 @@ host_test(
     data = ["//kernel/xnu-12377.121.6/bsd:kern/kern_exec.c"],
     defines = ['KERN_EXEC_12377=\\"$(rootpath //kernel/xnu-12377.121.6/bsd:kern/kern_exec.c)\\"'],
     includes = ["."],
+)
+
+# --- kernel/switch/boot/icon_cache.c -----------------------------------------------------------------------------------
+copy_file(
+    name = "switch_icon_cache_header",
+    src = "//kernel/switch:include/switch/icon_cache.h",
+    out = "switch/icon_cache.h",
+)
+
+# One build per XNU, each in its iOS's cache layout: 24B119's salt folders, 21H461's top.
+[
+    host_library(
+        name = "icon_cache_" + xnu,
+        srcs = ["//kernel/switch:boot/icon_cache.c"],
+        hdrs = ["switch/icon_cache.h"],
+        defines = ["XNU_%s=1" % xnu],
+        includes = ["."],
+    )
+    for xnu in ("12377_121_6", "10063_141_1")
+]
+
+[
+    host_test(
+        name = "switch_icon_cache_%s_test" % xnu,
+        srcs = ["switch_icon_cache_test.cpp"],
+        defines = ["XNU_%s=1" % xnu],
+        deps = [":icon_cache_" + xnu],
+    )
+    for xnu in ("12377_121_6", "10063_141_1")
+]
+
+# Both kernels' setup runs it once before launchd, with one error line, and reads the record the deploy writes.
+host_test(
+    name = "xnu_icon_cache_source_test",
+    srcs = ["xnu_icon_cache_source_test.cpp"],
+    data = [
+        "//kernel/switch:boot/icon_cache.c",
+        "//kernel/xnu-10063.141.1/bsd:kern/kern_exec.c",
+        "//kernel/xnu-12377.121.6/bsd:kern/kern_exec.c",
+        "//tools/deploy:icon_cache.py",
+    ],
 )
 
 # --- kernel/switch/boot/prefs.c ----------------------------------------------------------------------------------------

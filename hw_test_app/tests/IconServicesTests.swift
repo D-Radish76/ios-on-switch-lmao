@@ -154,7 +154,7 @@ struct IconCacheTest: HWTest {
     }
 }
 
-/// The kernel's drop of the rendered-icon cache at boot (native_switch_icon_cache in both bsd/kern/kern_exec.c):
+/// The kernel's drop of the rendered-icon cache at boot (kernel/switch/boot/icon_cache.c):
 /// `request`, the GPU build the last deploy named in /private/var/Switch/icon-cache-gpu (tools/deploy/icon_cache.py),
 /// `none` without one; `dropped_for`, the build the kernel last removed __cache_info__ for (icon-cache-reset), and
 /// `dropped_this_boot`; `container`, the agent's group container folder, which the kernel names by the group;

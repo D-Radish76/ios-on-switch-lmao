@@ -1,5 +1,5 @@
-// Both kernels' boot setup lets IconServices' rendered icons go once per GPU build the deploy names
-// (tools/deploy/icon_cache.py), before launchd starts iconservicesagent, without setting up the cache's directories.
+// Both kernels' boot setup runs kernel/switch/boot/icon_cache.c once, before launchd, on the record the deploy writes
+// (tools/deploy/icon_cache.py), with one error line in release; only xnu-12377's walks 24B119's salt folders.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -12,66 +12,46 @@ using switch_ios::test::Body;
 using switch_ios::test::Count;
 using switch_ios::test::SourceText;
 using testing::HasSubstr;
+using testing::Not;
 
 namespace {
-const char *const kKernels[] = {"../xnu-10063.141.1/bsd/kern/kern_exec.c", "../xnu-12377.121.6/bsd/kern/kern_exec.c"};
-constexpr const char *kIconCache = "native_switch_icon_cache(proc_t p, user_addr_t scratch, mount_t data_mount)";
-constexpr const char *kUnlinkAll = "native_switch_icon_cache_unlink_all(proc_t p, user_addr_t scratch, int *dropped)";
-constexpr const char *kUnlink =
-    "native_switch_icon_cache_unlink(proc_t p, user_addr_t scratch, const char *salt, int *dropped)";
+constexpr const char *k10063 = "../xnu-10063.141.1/bsd/kern/kern_exec.c";
+constexpr const char *k12377 = "../xnu-12377.121.6/bsd/kern/kern_exec.c";
+constexpr const char *kHook = "native_switch_icon_cache(proc_t p, user_addr_t scratch, mount_t data_mount)";
 constexpr const char *kSetup = "native_switch_setup_state(proc_t p, user_addr_t scratch, mount_t data_mount)";
-constexpr const char *kUnchanged = "native_switch_file_unchanged(marker, gpu, length, data_mount, 0, 0, 0644)";
-constexpr const char *kDrop = "native_switch_icon_cache_unlink_all(p, scratch, &dropped)";
-constexpr const char *kMark = "native_switch_watchdog_file(p, scratch, marker, gpu, length, data_mount, 0, 0, 0644)";
+constexpr const char *kError = "printf(\"SwitchRawBoot: icon cache for GPU build %s NOT dropped: %d\\n\"";
 }  // namespace
 
 TEST(XnuIconCacheSource, TheKernelReadsTheRecordTheDeployWrites)
 {
     const std::string record = Between(SourceText("../../tools/deploy/icon_cache.py"), "\nRECORD = '", "'");
     ASSERT_FALSE(record.empty());
-    for (const char *path : kKernels) {
-        const std::string body = Body(SourceText(path), kIconCache);
-        EXPECT_THAT(body, HasSubstr("request[] = \"/private/var/Switch/" + record + "\"")) << path;
-    }
+    EXPECT_THAT(SourceText("../switch/boot/icon_cache.c"),
+                HasSubstr("switch_icon_cache_request[] = \"Switch/" + record + "\";"));
 }
 
-// The marker is compared before anything goes and written after, so the same GPU build keeps the icons and a boot cut
-// short drops them again; only the marker is written, and no directory is made or given an owner (the agent resets a
-// cache directory that is not _iconservices').
-TEST(XnuIconCacheSource, EachCacheInfoGoesOncePerGpuBuild)
+TEST(XnuIconCacheSource, EachTreeRunsItOnceBeforeLaunchdWithOneReleaseLine)
 {
-    std::string first;
-    for (const char *path : kKernels) {
+    for (const char *path : {k10063, k12377}) {
         const std::string source = SourceText(path);
-        const std::string body = Body(source, kIconCache), all = Body(source, kUnlinkAll), one = Body(source, kUnlink);
-        ASSERT_FALSE(body.empty() || all.empty() || one.empty()) << path;
-        EXPECT_THAT(source, HasSubstr("\"systemgroup.com.apple.lsd.iconscache/Library/Caches/com.apple.IconsCache\""))
-            << path;
-        EXPECT_THAT(one, HasSubstr("__cache_info__\"")) << path;
-        const size_t unchanged = body.find(kUnchanged), drop = body.find(kDrop), mark = body.find(kMark);
-        ASSERT_NE(unchanged, std::string::npos) << path;
-        EXPECT_LT(unchanged, drop) << path;
-        EXPECT_LT(drop, mark) << path;
-        EXPECT_EQ(Count(body + all + one, "native_switch_watchdog_file("), 1u) << path;
-        EXPECT_EQ(Count(body + all + one, "native_switch_mkdir("), 0u) << path;
-        EXPECT_EQ(Count(body + all + one, "native_switch_watchdog_directory("), 0u) << path;
+        const std::string hook = Body(source, kHook);
+        ASSERT_FALSE(hook.empty()) << path;
+        EXPECT_EQ(Count(source, "native_switch_icon_cache(p, scratch, data_mount);"), 1u) << path;
         EXPECT_EQ(Count(Body(source, kSetup), "native_switch_icon_cache(p, scratch, data_mount);"), 1u) << path;
-        if (first.empty())
-            first = body + all + one;
-        EXPECT_EQ(body + all + one, first) << path << ": the two kernels' drops differ";
+        EXPECT_EQ(Count(hook, "switch_icon_cache_drop(&ops, &result);"), 1u) << path;
+        EXPECT_EQ(Count(hook, "printf("), 2u) << path;
+        const size_t error = hook.find(kError), debug = hook.find("#if DEVELOPMENT || DEBUG");
+        ASSERT_NE(error, std::string::npos) << path;
+        EXPECT_LT(error, debug) << path << ": the error line is the one release keeps";
+        EXPECT_LT(debug, hook.find("printf(", error + 1)) << path << ": every other line is a debug kernel's";
     }
 }
 
-// 21H461 keeps __cache_info__ at the cache's top, 24B119 in a salt folder (-[ISDefaults cacheURL]): both go.
-TEST(XnuIconCacheSource, TheTopAndEverySaltFolderLoseTheirCacheInfo)
+TEST(XnuIconCacheSource, OnlyXnu12377WalksSaltFolders)
 {
-    for (const char *path : kKernels) {
-        const std::string all = Body(SourceText(path), kUnlinkAll);
-        const size_t top = all.find("native_switch_icon_cache_unlink(p, scratch, NULL, dropped)");
-        const size_t walk = all.find("VNOP_READDIR(cache, uio, 0, &eof, &count, context)");
-        ASSERT_NE(top, std::string::npos) << path;
-        EXPECT_LT(top, walk) << path;
-        EXPECT_THAT(all, HasSubstr("entry->d_type == DT_DIR && entry->d_name[0] != '.'")) << path;
-        EXPECT_THAT(all, HasSubstr("native_switch_icon_cache_unlink(p, scratch, entry->d_name, dropped)")) << path;
-    }
+    const std::string salted = SourceText(k12377), top = SourceText(k10063);
+    EXPECT_THAT(Body(salted, kHook), HasSubstr(".folders = native_switch_icon_cache_folders,"));
+    EXPECT_THAT(salted, HasSubstr("VNOP_READDIR(folder, uio, 0, &eof, &count, vfs)"));
+    EXPECT_THAT(Body(top, kHook), Not(HasSubstr(".folders")));
+    EXPECT_THAT(top, Not(HasSubstr("native_switch_icon_cache_folders")));
 }
