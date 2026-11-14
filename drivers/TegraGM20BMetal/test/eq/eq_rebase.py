@@ -104,7 +104,7 @@ def dumped(words: list[str]) -> list[tuple[int, int, list[int], dict[int, str]]]
     """Give eq_capture.cpp's EQ_UBO_WORDS lines: stage, slot, words, and the sampler header each handle word names."""
     out = []
     for line in words:
-        head, _, named = line.partition(' | ')
+        head, _, named = line.partition(' |')
         _, stage, slot, *values = head.split()
         headers = dict(entry.split(':') for entry in named.split())
         out.append((int(stage), int(slot), [int(v, 16) for v in values], {int(k): h for k, h in headers.items()}))

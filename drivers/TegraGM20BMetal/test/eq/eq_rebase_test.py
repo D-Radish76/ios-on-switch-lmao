@@ -91,6 +91,12 @@ class TscRenumber(unittest.TestCase):
             self.assertEqual(len(refused), 1, words)
             self.assertIn('word 0', refused[0])
 
+    def test_a_buffer_with_no_handle_word_is_read_too(self):
+        self.assertEqual(
+            eq_rebase.tsc_renumber(run('aaaa'), ['U 5 1 7 |'], run('cccc'), ['U 5 1 8 |']),
+            ['tscrenumber: uniform buffer 0 word 0 7 -> 8 is no sampler header renumbered'],
+        )
+
     def test_a_word_that_names_no_header_is_refused(self):
         words = ['U 5 1 1000005 8 | 0:000260db02000291']
         refused = eq_rebase.tsc_renumber(run('aaaa'), KEPT_WORDS, run('cccc'), words)
