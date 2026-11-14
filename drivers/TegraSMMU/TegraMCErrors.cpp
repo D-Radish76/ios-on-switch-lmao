@@ -101,6 +101,7 @@ IOReturn takeLatched(OSObject *, void *, void *, void *, void *)
     return kIOReturnSuccess;
 }
 
+// NOLINTNEXTLINE(misc-const-correctness): IOWorkLoop::Action's signature
 IOReturn endRuns(OSObject *, void *swgroup, void *, void *, void *)
 {
     const Swgroup *group = static_cast<const Swgroup *>(swgroup);
@@ -109,9 +110,10 @@ IOReturn endRuns(OSObject *, void *swgroup, void *, void *, void *)
         [group](uint32_t client) {
             if (!group)
                 return true;
-            for (unsigned i = 0; i < group->count; ++i)
+            for (unsigned i = 0; i < group->count; ++i) {
                 if (group->clients[i] == client)
                     return true;
+            }
             return false;
         },
         group ? switch_mc::Runs::Cause::kDetach : switch_mc::Runs::Cause::kSC7, ended);
@@ -179,9 +181,12 @@ extern "C" void switch_mc_errors_detached(uint32_t asidReg)
 {
     if (!source())
         return;
-    for (const Swgroup &group : kSwgroups)
-        if (group.asidReg == asidReg)
-            gLoop->runAction(&endRuns, nullptr, const_cast<Swgroup *>(&group));
+    for (const Swgroup &group : kSwgroups) {
+        if (group.asidReg == asidReg) {
+            Swgroup detached = group;  // runAction takes a mutable argument and has run the action when it returns
+            gLoop->runAction(&endRuns, nullptr, &detached);
+        }
+    }
 }
 
 extern "C" uint32_t tegra_mc_error_latest(uint32_t *intstatus, uint32_t *status, uint32_t *address)

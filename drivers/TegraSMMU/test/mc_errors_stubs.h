@@ -139,6 +139,7 @@ public:
     }
 
     // The gate: the action runs as the work loop's own (no event source's action runs meanwhile).
+    // NOLINTNEXTLINE(readability-convert-member-functions-to-static): a member in IOKit, called through the work loop
     IOReturn runAction(Action action, OSObject *target, void *arg0 = nullptr, void *arg1 = nullptr,
                        void *arg2 = nullptr, void *arg3 = nullptr)
     {
