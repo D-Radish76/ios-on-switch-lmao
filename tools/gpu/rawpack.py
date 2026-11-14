@@ -181,10 +181,12 @@ def own_build(lines: list[str], build: str) -> tuple[list[str], list[str]]:
     """Give the lines a pack for IPSW `build` takes, without their os= tag, and the report's lines.
 
     A line tagged with other builds only is theirs: its encodings (RenderBox's c1 format, QuartzCore's constant sets)
-    are not this one's, so it is left out; but a Core Animation line of theirs is kept, tag and all, for its name, which
-    names a state this build's QuartzCore makes too (the generator makes it from the name with this IPSW's tables,
-    raw/pack/rawpack.py ca_states). A line with no tag names no build, and none is guessed for it: the step fails
-    (precompile/harvest.py and tools/gpu/logharvest.py tag what they add).
+    are not this one's, so it is left out; but a Core Animation render line of theirs is kept, tag and all, for its
+    name, which names a state this build's QuartzCore makes too (the generator makes it from the name with this IPSW's
+    tables, raw/pack/rawpack.py ca_states). A compute line (C, D) names a kernel, not a state a name makes: another
+    build's is left out like any other line (21H461's QuartzCore has no compute_sum_luma). A line with no tag names no
+    build, and none is guessed for it: the step fails (precompile/harvest.py and tools/gpu/logharvest.py tag what they
+    add).
     """
     taken, named, other, untagged = [], [], {}, []
     for line in lines:
@@ -196,7 +198,7 @@ def own_build(lines: list[str], build: str) -> tuple[list[str], list[str]]:
         if build in builds:
             taken.append(OS_BUILD.sub('', line, count=1))
             continue
-        if PROBE_LABEL in line:
+        if line.startswith('R ') and PROBE_LABEL in line:
             named.append(line)
         for b in builds:
             other[b] = other.get(b, 0) + 1

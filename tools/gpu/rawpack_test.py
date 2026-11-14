@@ -66,6 +66,16 @@ class BuildTags(unittest.TestCase):
         self.assertEqual(taken, [ca])
         self.assertIn('1 Core Animation lines kept for their names', report[0])
 
+    def test_another_builds_core_animation_kernel_is_left_out(self):
+        label = 'label=com.apple.coreanimation.compute_sum_luma'
+        lines = [
+            f'C ok=1 form=d opt=0 {label} os=24B119 | k compute_sum_luma',
+            f'D ok=1 tg=1,1,1 edge=0,0,0 threads=0 os=24B119 | form=d opt=0 {label} | k compute_sum_luma',
+        ]
+        taken, report = own_build(lines, '21H461')
+        self.assertEqual(taken, [])
+        self.assertIn('0 Core Animation lines kept for their names', report[0])
+
     def test_a_line_that_names_no_build_fails_the_step(self):
         with self.assertRaises(SystemExit):
             own_build([f'R ok=1 label=x os=24B119 {STATE}', f'R ok=1 label=x {STATE}'], '24B119')
