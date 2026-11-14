@@ -194,7 +194,7 @@ product	bridge	native_bridge_metal_answer_unimplemented	TegraGM20BMetalPlugin.mm
 product	bridge	native_bridge_metal_argument_layouts	RawMetalArgumentEncoder.mm,RawMetalReplay.mm	form	-	x1-m2v-open	open	-	an argument encoder's buffer layouts come from the function's m2v twin (RawMetalArgumentEncoder.mm newArgumentEncoderWithBufferIndex, replay's check): raw reads argument-buffer layouts from the metallib's reflection itself
 product	bridge	native_bridge_metal_buffer_over_foreign	RawAlias.mm	dead	-	cut	cut	-	makes m2v buffers over raw's aliased memory (weak); no m2v buffers once m2v is gone
 product	bridge	native_bridge_metal_commit_origin	TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	m2v's commit-origin diagnostics line
-product	bridge	native_bridge_metal_compute_direct	RawDirect.mm	form	-	-	open	-	the runtime's direct compute compile (AIR to NAK) lives in the bridge crate: it moves to a crate with no runtime crate (raw stack key moves)
+product	bridge	native_bridge_metal_compute_direct	RawDirect.mm	dead	-	cut	cut	-	the frontend's direct kernel compile over the m2v device, now only the plugin's in-process compile (RawComplete.mm direct(), debug builds with no compiler) over its functions' m2v twins; the compiler daemon and the pack generator compile through native_metal_translate (RawOffline.mm, x1-naklib). Goes with the twins
 product	bridge	native_bridge_metal_compute_prepare	RawMetalComputeState.mm	form	-	x1-m2v-open	open	-	a compute state the pack has no facts of gets its metadata and reflection from its m2v twin: raw's own kernel facts and reflection
 product	bridge	native_bridge_metal_function_library_name	RawMetalBinaryArchive.mm,RawMetalLibrary.mm,RawRenderKey.mm	form	-	x1-m2v-open	open	-	a function's library name read from its m2v twin (libraries raw did not read itself, binary archives' keys): raw names it from the metallib it reads
 product	bridge	native_bridge_metal_function_metallib	RawCompleteRemote.mm,RawMetalLibrary.mm,RawRenderKey.mm	form	-	x1-m2v-open	open	-	a function's metallib bytes read from its m2v twin (remote completion, render keys): raw reads the library itself
@@ -203,7 +203,7 @@ product	bridge	native_bridge_metal_journal_render	RawMetalInternal.h,RawMetalSta
 product	bridge	native_bridge_metal_memory	RawMetalFootprint.mm	dead	-	cut	cut	-	m2v's memory in the footprint line (debug)
 product	bridge	native_bridge_metal_open	TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	opens the m2v device (RawM2V.open)
 product	bridge	native_bridge_metal_rates	TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	m2v's rates line
-product	bridge	native_bridge_metal_render_direct	RawDirect.mm	form	-	-	open	-	the runtime's direct render compile lives in the bridge crate: as native_bridge_metal_compute_direct
+product	bridge	native_bridge_metal_render_direct	RawDirect.mm	dead	-	cut	cut	-	the frontend's direct render compile: as native_bridge_metal_compute_direct
 product	bridge	native_bridge_metal_render_pipeline_lazy	RawMetalInternal.h,RawMetalStates.mm,RawMetalYcbcrTargets.mm	dead	-	cut	cut	-	m2v twin states made lazily for replay (NeedPackedRenderStateTwin, NeedYcbcrStateTwin)
 product	bridge	native_bridge_metal_render_pipeline_ready	RawMetalInternal.h,RawMetalSchedule.mm	dead	-	cut	cut	-	whether a lazy m2v twin is made (scheduling waits on it)
 product	bridge	native_bridge_metal_render_pipeline_urge	RawMetalInternal.h,RawMetalSchedule.mm	dead	-	cut	cut	-	urges a lazy m2v twin's compile
