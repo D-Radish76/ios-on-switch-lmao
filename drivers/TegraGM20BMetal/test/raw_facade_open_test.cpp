@@ -35,6 +35,11 @@ NSURL *fileURL(const std::string &path)
     return [NSURL fileURLWithPath:@(path.c_str())];
 }
 
+NSArray<NSString *> *externNames(id<MTLLibrary> library)
+{
+    return ((NSArray<NSString *> * (*)(id, SEL)) objc_msgSend)(library, sel_registerName("externFunctionNames"));
+}
+
 void libraryAnswers()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
@@ -43,7 +48,7 @@ void libraryAnswers()
     id<MTLLibrary> kernels = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];
     ASSERT_TRUE(kernels != nil) << text(error);
     EXPECT_TRUE([kernels.functionNames isEqualToArray:(@[ @"v", @"f", @"k" ])]) << text(kernels.functionNames);
-    EXPECT_EQ(kernels.externFunctionNames.count, 0u);
+    EXPECT_EQ(externNames(kernels).count, 0u);
     EXPECT_EQ(kernels.type, MTLLibraryTypeExecutable);
     EXPECT_EQ([kernels newFunctionWithName:@"k"].options, MTLFunctionOptionNone);
 
@@ -51,8 +56,7 @@ void libraryAnswers()
     id<MTLLibrary> externs = [device newLibraryWithFile:@(writeFile("ci.metallib", ci).c_str()) error:&error];
     ASSERT_TRUE(externs != nil) << text(error);
     EXPECT_EQ(externs.functionNames.count, 0u);
-    EXPECT_TRUE([externs.externFunctionNames isEqualToArray:(@[ @"tint", @"swap_rb" ])])
-        << text(externs.externFunctionNames);
+    EXPECT_TRUE([externNames(externs) isEqualToArray:(@[ @"tint", @"swap_rb" ])]) << text(externNames(externs));
 
     const std::string none = made_metallib::universal({});
     id<MTLLibrary> empty = [device newLibraryWithURL:fileURL(writeFile("none.metallib", none)) error:&error];
@@ -94,7 +98,8 @@ void noMemory()
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
     ASSERT_TRUE(device != nil);
     constexpr NSUInteger kLarge = 64u << 20;
-    kernel_model::model.refuseAllocs = 1000;
+    // the pool's chunks are the task's pages imported (raw_gpu.cpp newChunk), block-linear chunks the kernel's own
+    kernel_model::model.refuseAllocs = kernel_model::model.refuseImports = 1000;
     EXPECT_EQ([device newBufferWithLength:kLarge options:MTLResourceStorageModeShared], nil);
     EXPECT_EQ([device newBufferWithLength:kLarge options:MTLResourceStorageModePrivate], nil);
     std::vector<uint8_t> bytes(kLarge, 0x5A);
@@ -108,7 +113,7 @@ void noMemory()
     EXPECT_EQ([device newTextureWithDescriptor:d], nil);
     d.storageMode = MTLStorageModeShared;
     EXPECT_EQ([device newTextureWithDescriptor:d], nil);
-    kernel_model::model.refuseAllocs = 0;
+    kernel_model::model.refuseAllocs = kernel_model::model.refuseImports = 0;
     EXPECT_NE([device newBufferWithLength:kLarge options:MTLResourceStorageModeShared], nil) << "memory again: made";
     expectNoM2V(device);
 }
