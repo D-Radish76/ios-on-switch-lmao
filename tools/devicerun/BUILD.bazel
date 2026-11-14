@@ -49,6 +49,7 @@ py_test(
     data = [
         "//hw_test_app:SwitchHWTest.entitlements",
         "//hw_test_app:SwitchHWTest27.entitlements",
+        "//hw_test_app:swift_sources",
         "//hw_test_app:test_sources",
     ],
     deps = [":lib"],

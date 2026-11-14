@@ -374,6 +374,15 @@ filegroup(
     ]),
 )
 
+# tools/devicerun:hwtest_test walks every Swift file outside host_*; a worker's runfiles hold only what is listed.
+filegroup(
+    name = "swift_sources",
+    srcs = glob(
+        ["**/*.swift"],
+        exclude = ["host_*/**"],
+    ),
+)
+
 swift_interop_hint(
     name = "cpu_clock_module",
     module_name = "SwitchCPUClock",
