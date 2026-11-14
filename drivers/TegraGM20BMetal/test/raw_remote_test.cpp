@@ -7,6 +7,7 @@
 // connection's bound is held until an earlier one is answered, and a remote that goes ends what it still waits for.
 #include "../raw/runtime/raw_remote.h"
 #include "../raw/runtime/raw_cache_io.h"
+#include "../raw/runtime/raw_obtained.h"
 #include "../raw/runtime/raw_program_pages.h"
 #include "TegraGM20BABI.h"
 #include "TegraGM20BCompilerABI.h"
@@ -31,6 +32,7 @@ public:
     unsigned infos = 0;
     int32_t answer = TegraGM20BCompileMade;
     uint32_t generation = 1, how = TegraGM20BCompileCompiled | 4u << 8;
+    TegraGM20BAbiCompileTimes times = {};  // the compiler's, as its Complete gave them
     unsigned maps = 0, compiles = 0, asyncAsked = 0;
     std::function<void()> compiling;  // what the compiler does before it answers
     switch_seed_pack::StoreWriter store;
@@ -50,11 +52,16 @@ public:
     {
         const Waiting w = waiting.front();
         waiting.erase(waiting.begin());
-        using Callback = void (*)(void *, int, void *, void *);
-        const auto callback = reinterpret_cast<Callback>(uintptr_t(w.reference[kIOAsyncCalloutFuncIndex]));
-        const uint64_t word = uint64_t(uint32_t(answer)) | uint64_t(generation) << 32;
+        const auto callback = reinterpret_cast<IOAsyncCallback>(uintptr_t(w.reference[kIOAsyncCalloutFuncIndex]));
+        uint64_t words[TegraGM20BCompileAnswerWords] = {
+            w.cookie,
+            uint64_t(uint32_t(answer)) | uint64_t(generation) << 32,
+            times.compile_start,
+            times.compile_end,
+            times.answered,
+            uint64_t(times.answer_priority) | uint64_t(times.reserved) << 32};
         callback(reinterpret_cast<void *>(uintptr_t(w.reference[kIOAsyncCalloutRefconIndex])), result,
-                 reinterpret_cast<void *>(uintptr_t(w.cookie)), reinterpret_cast<void *>(uintptr_t(word)));
+                 reinterpret_cast<void **>(words), TegraGM20BCompileAnswerWords);
     }
 
     raw::Remote::Call call()
@@ -90,7 +97,7 @@ public:
                     return kIOReturnBadArgument;
                 if (compiling)
                     compiling();
-                *static_cast<TegraGM20BAbiCompileReply *>(out) = {answer, generation, how, 0};
+                *static_cast<TegraGM20BAbiCompileReply *>(out) = {answer, generation, how, 0, times};
                 return called;
             default:
                 return kIOReturnUnsupported;
@@ -208,7 +215,7 @@ TEST_F(RemoteCompile, AProcessServedNoCompilerIsToldSoWithNoCall)
     raw::Remote remote(kernel.call(), kStack);
     EXPECT_FALSE(remote.serving());
     EXPECT_EQ(remote.compile("a request"), raw::Remote::Answer::Unavailable);
-    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer) {}));
+    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer, const raw::Remote::Answered &) {}));
     EXPECT_EQ(kernel.compiles, 0u);
     kernel.flags = 0;
     raw::Remote older(kernel.call(), kStack);
@@ -295,7 +302,7 @@ TEST_F(RemoteCompile, AProcessSendsNoRequestOnceOneFindsNoCompilerUntilOneRegist
     EXPECT_TRUE(remote.serving());
     EXPECT_FALSE(remote.taking());
     EXPECT_EQ(remote.compile("a request"), raw::Remote::Answer::Unavailable);
-    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer) {}));
+    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer, const raw::Remote::Answered &) {}));
     EXPECT_EQ(kernel.compiles, 1u);
     publish();
     std::string bytes;
@@ -312,10 +319,10 @@ TEST_F(RemoteCompile, AnAsynchronousRequestRefusedForWantOfACompilerStopsTheRequ
     raw::Remote remote(kernel.call(), kStack);
     kernel.flags = TegraGM20BCompilerCapable;
     kernel.asyncCalled = kIOReturnNotReady;
-    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer) {}));
+    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer, const raw::Remote::Answered &) {}));
     EXPECT_TRUE(remote.serving());
     EXPECT_FALSE(remote.taking());
-    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer) {}));
+    EXPECT_FALSE(remote.compileAsync("a request", true, 0, [](raw::Remote::Answer, const raw::Remote::Answered &) {}));
     EXPECT_EQ(kernel.compiles, 0u);
     EXPECT_EQ(kernel.asyncAsked, 1u);
 }
@@ -345,11 +352,13 @@ TEST_F(RemoteCompile, AStoreOfAnotherStackIsNotRead)
 // The answers callbacks got, in the order they came
 struct Answers {
     std::vector<raw::Remote::Answer> got;
+    std::vector<raw::Remote::Answered> with;
 
-    std::function<void(raw::Remote::Answer)> next()
+    raw::Remote::Done next()
     {
-        return [this](raw::Remote::Answer a) {
+        return [this](raw::Remote::Answer a, const raw::Remote::Answered &answered) {
             got.push_back(a);
+            with.push_back(answered);
         };
     }
 };
@@ -427,6 +436,43 @@ TEST_F(RemoteCompile, ARemoteThatGoesEndsWhatItWaitsFor)
         ASSERT_TRUE(remote.compileAsync("a request", true, 0x21, waiting.next()));
     }
     EXPECT_EQ(waiting.got, std::vector<raw::Remote::Answer>{raw::Remote::Answer::Unavailable});
+}
+
+// A debug compiler's account of the wait reaches the asker whole, answered either way, and splits the asker's wait
+TEST_F(RemoteCompile, TheCompilersTimesReachTheAskerAndSplitItsWait)
+{
+    kernel.times = {2'000'000, 47'000'000, 48'000'000, 37, 0};
+    publish();
+    raw::Remote remote(kernel.call(), kStack);
+    raw::Remote::Answered answered;
+    ASSERT_EQ(remote.compile("a request", &answered), raw::Remote::Answer::Made);
+    EXPECT_EQ(answered.how, kernel.how);
+    EXPECT_EQ(answered.times.compile_start, 2'000'000u);
+    EXPECT_EQ(answered.times.compile_end, 47'000'000u);
+    EXPECT_EQ(answered.times.answered, 48'000'000u);
+    EXPECT_EQ(answered.times.answer_priority, 37u);
+    EXPECT_NE(answered.at, 0u);
+
+    Answers later;
+    ASSERT_TRUE(remote.compileAsync("a request", true, 0x21, later.next()));
+    kernel.deliver(kIOReturnSuccess, TegraGM20BCompileMade);
+    ASSERT_EQ(later.with.size(), 1u);
+    EXPECT_EQ(later.with[0].times.compile_end, 47'000'000u);
+    EXPECT_EQ(later.with[0].times.answered, 48'000'000u);
+    EXPECT_EQ(later.with[0].times.answer_priority, 37u);
+
+    raw::Obtained o;
+    o.split(1'000, 2'000'000, 47'000'000, 48'000'000, 48'500'000, 49'000);
+    EXPECT_EQ(o.queueUs, 1'000);
+    EXPECT_EQ(o.compileUs, 45'000);
+    EXPECT_EQ(o.answerUs, 1'000);
+    EXPECT_EQ(o.wakeUs, 500);
+    EXPECT_EQ(o.storeUs, 500);
+    raw::Obtained stored;
+    stored.split(1'000, 0, 0, 0, 48'500'000, 49'000);
+    EXPECT_EQ(stored.queueUs, -1);
+    EXPECT_EQ(stored.answerUs, -1);
+    EXPECT_EQ(stored.storeUs, 500);
 }
 
 }  // namespace

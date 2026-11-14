@@ -12,12 +12,10 @@
 
 #include <IOKit/IOKitLib.h>
 #include <dispatch/dispatch.h>
-#include <notify.h>
 #include <mach/mach.h>
 #include <malloc/malloc.h>
 #include <os/log.h>
 #include <pthread/qos.h>
-#include <signal.h>
 #include <time.h>
 #include <unistd.h>
 #include <memory>
@@ -26,6 +24,7 @@
 #include <vector>
 #include "TegraGM20BABI.h"
 #include "TegraGM20BCompilerABI.h"
+#include "compiler_debug.h"
 #include "compiler_engine.h"
 #include "compiler_log.h"
 #include "compiler_pool.h"
@@ -33,6 +32,7 @@
 #include "compiler_restart.h"
 #include "compiler_sandbox.h"
 #include "compiler_store.h"
+#include "compiler_times.h"
 #include "../raw/runtime/raw_cache_io.h"
 
 namespace switch_compiler {
@@ -61,6 +61,9 @@ struct Asked : Work {
     std::string request;  // what the log keeps of a client's request ("": the log's own, which it keeps already)
     int32_t pid = 0;      // the process that asked first, whose share of the store the record takes
     dispatch_semaphore_t done = nullptr;  // signalled once it ran, for the replay that waits on it
+#if SWITCH_DEBUG
+    uint64_t takenNs = 0;
+#endif
 };
 
 // What a stored entry answers, -1 for one that is not `k`'s whole (retired, and made again)
@@ -72,32 +75,6 @@ int32_t storedResult(const std::string &bytes, const raw::CacheKey &k)
         return -1;
     return kind == raw::kKindRecord || kind == raw::kKindKernel ? TegraGM20BCompileMade : TegraGM20BCompileRefused;
 }
-
-#if SWITCH_DEBUG
-const char *resultName(int32_t result)
-{
-    static const char *names[] = {"made", "refused", "not made", "not taken"};
-    return result >= 0 && result <= 3 ? names[result] : "?";
-}
-
-// What jetsam holds against the plist's JetsamProperties: the footprint now and its peak this process, and the heap's part
-void logFootprint(const char *when)
-{
-    task_vm_info_data_t vm = {};
-    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
-    if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vm), &count) != KERN_SUCCESS)
-        return;
-    malloc_statistics_t heap = {};
-    malloc_zone_statistics(nullptr, &heap);
-    os_log(
-        logger(),
-        "SwitchShaderCompiler: footprint %{public}s: %llu KiB, peak %llu KiB; internal %llu KiB, compressed %llu KiB; "
-        "heap %llu KiB in use of %llu KiB",
-        when, (unsigned long long)(vm.phys_footprint >> 10), (unsigned long long)(vm.ledger_phys_footprint_peak >> 10),
-        (unsigned long long)(vm.internal >> 10), (unsigned long long)(vm.compressed >> 10),
-        (unsigned long long)(heap.size_in_use >> 10), (unsigned long long)(heap.size_allocated >> 10));
-}
-#endif
 
 // Take's buffer, left uninitialised: zeroing it would touch every page, which jetsam counts, and Take writes only a
 // request's own bytes
@@ -111,7 +88,7 @@ void idle()
 {
     malloc_zone_pressure_relief(nullptr, 0);
 #if SWITCH_DEBUG
-    logFootprint("idle");
+    logFootprint(logger(), "idle");
 #endif
 }
 
@@ -142,7 +119,7 @@ private:
     {
         if (!waiter.id)
             return;
-        const TegraGM20BAbiCompilerComplete done = {waiter.id, result, how | uint32_t(ran) << 8};
+        const TegraGM20BAbiCompilerComplete done = {waiter.id, result, how | uint32_t(ran) << 8, answering()};
         if (const int error = call(TegraGM20BMethodCompilerComplete, &done, sizeof done, nullptr, 0);
             error && error != kIOReturnNotFound)
             os_log_error(logger(), "SwitchShaderCompiler: completing request %llu: 0x%x", (unsigned long long)waiter.id,
@@ -152,6 +129,7 @@ private:
     std::mutex publishLock_;
 
     int32_t run(Work &work);
+    void remember(const Asked &asked, int32_t ran);
     bool publish(const raw::Digest *name, const raw::CacheKey &key, const std::string &entry, bool slots,
                  std::string &why);
     bool connect(std::string &why, StartFailure &failure);
@@ -208,30 +186,42 @@ int32_t Service::run(Work &work)
     std::string entry, why;
     if (store_.find(p.name, entry)) {
         const int32_t stored = storedResult(entry, p.key);
-        if (stored >= 0)
+        if (stored >= 0) {
+            noCompile();
             return packed(stored, true, workerClass);
+        }
         store_.retire(p.name);
     }
     entry.clear();
-#if SWITCH_DEBUG
-    const uint64_t wall = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-#endif
+    compileStarted();
     int32_t result = engine_.compile(p, entry, why);
     if (!entry.empty() && !publish(&p.name, p.key, entry, result == TegraGM20BCompileMade, why))
         result = TegraGM20BCompileFailed;
-    if ((result == TegraGM20BCompileMade || result == TegraGM20BCompileRefused) && !asked.request.empty())
-        log_.add(p.name, asked.request);
-    if (result == TegraGM20BCompileRefused)
-        refusals_->confirm(p.name);
+    compileEnded();
     if (result == TegraGM20BCompileFailed || result == TegraGM20BCompileUnavailable)
         os_log_error(logger(), "SwitchShaderCompiler: pid %d's state not made: %{public}s | %{public}.300s", asked.pid,
                      why.c_str(), p.key.key.c_str());
 #if SWITCH_DEBUG
-    os_log(logger(), "SwitchShaderCompiler: %{public}s in %llu ms (class 0x%x) for pid %d: %{public}.400s",
-           resultName(result), (unsigned long long)((clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - wall) / 1000000),
+    os_log(logger(),
+           "SwitchShaderCompiler: %{public}s in %llu ms, queued %llu ms (class 0x%x) for pid %d: %{public}.400s",
+           resultName(result), (unsigned long long)((tJobTimes.compile_end - tJobTimes.compile_start) / 1000000),
+           (unsigned long long)(asked.takenNs ? (tJobTimes.compile_start - asked.takenNs) / 1000000 : 0),
            unsigned(workerClass), asked.pid, p.key.key.c_str());
 #endif
     return packed(result, false, workerClass);
+}
+
+// What a compile leaves besides its record, once its waiters have it: the request kept for the next build's store, and a
+// refusal confirmed for this build
+void Service::remember(const Asked &asked, int32_t ran)
+{
+    const int32_t result = ran & 0xff;
+    if (ran & kStoredBit)
+        return;
+    if ((result == TegraGM20BCompileMade || result == TegraGM20BCompileRefused) && !asked.request.empty())
+        log_.add(asked.prepared.name, asked.request);
+    if (result == TegraGM20BCompileRefused)
+        refusals_->confirm(asked.prepared.name);
 }
 
 // True: a job of its own runs it, which signals `done` once it ran
@@ -251,32 +241,13 @@ bool Service::submit(Prepared prepared, std::string request, const Waiter &waite
     work->pid = pid;
     work->request = std::move(request);
     work->done = done;
+#if SWITCH_DEBUG
+    work->takenNs = uptimeNs();
+#endif
     const raw::Digest name = prepared.name;
     work->prepared = std::move(prepared);
     return pool_->submit(name, std::move(work), waiter);
 }
-
-#if SWITCH_DEBUG
-// HW Test gpu.compile.first_draw: the compiler dies as the memory limit kills one, holding the next request of the pid
-// this name's notify state holds, so a run shows that request's creation completing once launchd's next compiler takes it
-constexpr const char *kDiesAtNextRequest = "com.brunostjohn.switch.debug.compiler-dies-at-next-request";
-int gDeathToken = -1;
-
-void armDeath()
-{
-    notify_register_check(kDiesAtNextRequest, &gDeathToken);
-}
-
-// The state is cleared first, so the compiler launchd starts next serves the request
-void dieIfArmedFor(int32_t pid)
-{
-    uint64_t armed = 0;
-    if (!pid || gDeathToken < 0 || notify_get_state(gDeathToken, &armed) != NOTIFY_STATUS_OK || armed != uint64_t(pid))
-        return;
-    notify_set_state(gDeathToken, 0);
-    kill(getpid(), SIGKILL);
-}
-#endif
 
 void Service::take(uint64_t stack)
 {
@@ -398,7 +369,7 @@ void Service::open(uint64_t stack)
     os_log(logger(), "SwitchShaderCompiler: serving at %llu ms of uptime",
            (unsigned long long)(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) / 1000000));
 #if SWITCH_DEBUG
-    logFootprint("serving");
+    logFootprint(logger(), "serving");
 #endif
 }
 
@@ -453,8 +424,10 @@ void Service::serve()
     hooks.run = [this](Work &work, const std::function<void(int32_t)> &primary) {
         const int32_t result = run(work);
         primary(result);
-        if (const dispatch_semaphore_t done = static_cast<Asked &>(work).done)
-            dispatch_semaphore_signal(done);
+        const Asked &asked = static_cast<Asked &>(work);
+        remember(asked, result);
+        if (asked.done)
+            dispatch_semaphore_signal(asked.done);
         return result;
     };
     hooks.complete = [this](const Waiter &waiter, int32_t result) {

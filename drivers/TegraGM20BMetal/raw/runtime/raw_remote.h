@@ -48,6 +48,16 @@ public:
         Unavailable  // no compiler this boot, or it did not take the request
     };
 
+    // What came with an answer: how the compiler answered and the class it ran at (TegraGM20BCompilerABI.h's `how`), a
+    // debug compiler's account of the wait, and (debug builds) when this process had the answer, in CLOCK_UPTIME_RAW ns
+    struct Answered {
+        uint32_t how = 0;
+        TegraGM20BAbiCompileTimes times = {};
+        uint64_t at = 0;
+    };
+
+    using Done = std::function<void(Answer, const Answered &)>;
+
     // One call on the connection: a struct method, or with `reference` its asynchronous form (raw_kernel.cpp's forms)
     using Call = std::function<int(uint32_t method, const void *in, size_t inSize, void *out, size_t outSize,
                                    uint64_t *reference, uint32_t port)>;
@@ -77,13 +87,12 @@ public:
     std::string storeIdentity() const;
     // The mapped store's first byte and size; null with none mapped
     const uint8_t *storeMapping(uint64_t &bytes) const;
-    // Asked of the compiler at the calling thread's class; the thread sleeps until it answers. *how: the reply's
-    // (TegraGM20BCompilerABI.h TegraGM20BCompileCompiled... and the class it ran at)
-    Answer compile(const std::string &request, uint32_t *how = nullptr);
+    // Asked of the compiler at the calling thread's class; the thread sleeps until it answers
+    Answer compile(const std::string &request, Answered *answered = nullptr);
     // Asked with `done` called on this remote's queue; `waited`: at class `qos` (the waiting thread's), else as background
     // work. A request past the kernel's bound on this connection waits here for one of them to be answered. False: not
     // asked (`done` is not called)
-    bool compileAsync(const std::string &request, bool waited, uint32_t qos, std::function<void(Answer)> done);
+    bool compileAsync(const std::string &request, bool waited, uint32_t qos, Done done);
 
 private:
     struct Mapping {
@@ -98,7 +107,7 @@ private:
         std::string request;
         bool waited;
         uint32_t qos;
-        std::function<void(Answer)> done;
+        Done done;
     };
 
     const Call call_;
@@ -111,7 +120,7 @@ private:
     raw::Mutex mapLock_, asyncLock_;
     std::vector<const Mapping *> mappings_;  // every one ever made: a reader may still be inside an older one
     void *port_ = nullptr, *queue_ = nullptr;
-    std::map<uint64_t, std::function<void(Answer)>> pending_;
+    std::map<uint64_t, Done> pending_;
     std::vector<Held> held_;  // past the bound, asked once an earlier one is answered
     uint64_t nextCookie_ = 1;
 
@@ -124,7 +133,7 @@ private:
     void map(uint32_t generation);
     static Call transportCall(const KernelTransport &transport);
     static Answer answerOf(int32_t result);
-    static void delivered(void *refcon, int result, void *cookie, void *word);
+    static void delivered(void *refcon, int result, void **words, uint32_t count);
 };
 
 }  // namespace raw

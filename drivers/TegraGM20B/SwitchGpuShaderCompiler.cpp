@@ -50,7 +50,7 @@ IOReturn waitFor(Request *request, TegraGM20BAbiCompileReply *out)
 		if (IOLockSleep(gBroker.lock, request, THREAD_ABORTSAFE) == THREAD_INTERRUPTED)
 			break;
 	if (request->done) {
-		*out = {request->result, gBroker.generation, request->how, 0};
+		*out = {request->result, gBroker.generation, request->how, 0, request->times};
 		unlink(request);
 		IOLockUnlock(gBroker.lock);
 		freeRequest(request);
@@ -246,8 +246,10 @@ IOReturn completeRequest(const void *owner, const TegraGM20BAbiCompilerComplete 
 	while (request &&
 	       (request->id != in->id || !request->taken || request->copying || request->done))
 		request = request->next;
-	if (request)
+	if (request) {
+		request->times = in->times;
 		finish(request, in->result, &sends, in->how);
+	}
 	const uint32_t generation = gBroker.generation;
 	IOLockUnlock(gBroker.lock);
 	send(sends, generation);
