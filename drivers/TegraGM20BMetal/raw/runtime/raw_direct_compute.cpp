@@ -150,7 +150,7 @@ private:
             why = "a texture view of VkFormat " + std::to_string(kw.viewFormat) + " NVK has no header for";
             return false;
         }
-        entries.push_back({offset, KernelTexture, uint8_t(w.slot), word0});
+        entries.push_back({offset, kw.plane ? KernelTexturePlane : KernelTexture, uint8_t(w.slot), word0});
         return true;
     }
 
@@ -331,8 +331,9 @@ CompileOutcome directKernel(const NmbDirectKernel &k, const DirectNvk &nvk, cons
         if (entry.slot >= 32)
             continue;
         const uint32_t bit = 1u << entry.slot;
+        const bool texture = entry.kind == KernelTexture || entry.kind == KernelTexturePlane;
         if ((entry.kind == KernelBuffer && (k.bufferReads & bit) && !(k.bufferWrites & bit)) ||
-            (entry.kind == KernelTexture && (k.textureReads & bit) && !(k.textureWrites & bit)))
+            (texture && (k.textureReads & bit) && !(k.textureWrites & bit)))
             r.readOnlyEntries |= 1ull << i;
     }
     for (const auto &[offset, word] : pushWords(k.pushMask, k.push, k.regionWord)) {

@@ -36,6 +36,18 @@ final class SceneTests: XCTestCase {
         XCTAssertTrue(result.passed, result.reasons(limit: 8).joined(separator: "; "))
     }
 
+    func testXRKernelStoreOnThisMac() async throws {
+        let scene = try XCTUnwrap(Scenes.all.first { $0.id == "gpu.raw.xr_kernel_store" })
+        let result = try await scene.run(makeGPU())
+        XCTAssertTrue(result.passed, result.reasons(limit: 8).joined(separator: "; "))
+    }
+
+    func testXRKernelReadOnThisMac() async throws {
+        let scene = try XCTUnwrap(Scenes.all.first { $0.id == "gpu.raw.xr_kernel_read" })
+        let result = try await scene.run(makeGPU())
+        XCTAssertTrue(result.passed, result.reasons(limit: 8).joined(separator: "; "))
+    }
+
     func testFramebufferFetchOnThisMac() async throws {
         let scene = try XCTUnwrap(Scenes.all.first { $0.id == "gpu.raw.framebuffer_fetch" })
         let result = try await scene.run(makeGPU())

@@ -371,7 +371,7 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             at[1] = uint32_t(desc.base >> 32);
             at[2] = b.va ? desc.range : 0;
             at[3] = 0;
-        } else if (e.kind == KernelTexture) {
+        } else if (e.kind == KernelTexture || e.kind == KernelTexturePlane) {
             const Texture *t = writes ? textures_[e.slot] : cb_.readTexture(textures_[e.slot]);
             if (t && !t->tic) {  // memoryless, or depth without ShaderRead: a load reads header 0's zeros
                 if (writes) {
@@ -385,6 +385,13 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
                 if (s && slotView(e.window, s->tic0, swizzledWord0(s->tic0, t->standIn->swizzle), s->bpp,
                                   blockCompressed(s)) == SlotView::Own)
                     t = t->standIn;
+            }
+            // a two-plane texture's color words at the slot's own entry, its alpha bytes at its plane entry
+            if (t && t->xrPlanes && t->luma && t->chroma) {
+                t = e.kind == KernelTexturePlane ? t->chroma : t->luma;
+            } else if (t && e.kind == KernelTexturePlane) {
+                *why = "a kernel record's alpha plane at a texture held in one image";
+                return false;
             }
             if (t) {
                 cb_.use(*t, writes);
@@ -407,6 +414,9 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             at[0] |= tic;
         } else if (e.kind == KernelSpillTable) {
             continue;
+        } else if (e.kind != KernelSampler && e.kind != KernelTextureTable && e.kind != KernelSamplerTable) {
+            *why = "a kernel record entry of a kind the raw path does not bind";
+            return false;
         } else if (e.kind == KernelTextureTable || e.kind == KernelSamplerTable) {
             const HeapTables &tables = dev_.heapTables_;
             const bool textures = e.kind == KernelTextureTable;

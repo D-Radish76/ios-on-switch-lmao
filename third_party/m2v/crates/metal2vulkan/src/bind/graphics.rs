@@ -1669,6 +1669,10 @@ fn plan(p: &RenderPipeline, device: &Device, shape: &BindShape) -> Result<Bindin
                 BindingSource::RawTexture(slot) => {
                     resources.raw_texture(set.set, b.binding, b.ty, slot)?
                 }
+                // A two-plane `RGB10A8_2P_XR10` texture's alpha plane.
+                BindingSource::TexturePlane(slot) => {
+                    resources.texture_plane(set.set, b.binding, b.ty, slot)?
+                }
                 // The `half` shadow of an extended-range attachment the draw's instance holds.
                 BindingSource::ExtendedShadow(color_index) => {
                     WriteSource::ExtendedShadow { color_index }

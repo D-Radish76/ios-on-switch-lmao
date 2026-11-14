@@ -28,6 +28,8 @@ public enum Scenes {
         KernelYcbcrSamplerScene(),
         KernelYcbcrMappedSamplerScene(),
         KernelYcbcrSharedSamplerScene(),
+        XRKernelStoreScene(),
+        XRKernelReadScene(),
         SharedPointerScene(),
         HeapTwinScene(),
         PlacementHeapScene(),

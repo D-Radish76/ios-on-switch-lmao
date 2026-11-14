@@ -43,6 +43,7 @@ const GRID: [u32; 3] = [3, 5, 2];
 #[repr(C)]
 pub struct NmbDirectBoundTexture {
     pub slot: u32,
+    pub planes: u32,
     pub pixel_format: u64,
     pub texture_type: u64,
     pub usage: u64,
@@ -74,6 +75,7 @@ pub struct NmbDirectKernelWrite {
     pub write: NmbDirectWrite,
     pub view_format: u32,
     pub components: [u32; 4],
+    pub plane: u32,
     pub sampler: u64,
     pub sampler_state: NmbDirectSamplerState,
     pub has_sampler: bool,
@@ -318,6 +320,7 @@ fn facts_of(t: &NmbDirectBoundTexture) -> Result<TextureFacts, String> {
     facts.sample_count = u32::try_from(t.samples.max(1)).map_err(e("sample count"))?;
     facts.array_length = u32::try_from(t.array_length.max(1)).map_err(e("array length"))?;
     facts.mipmap_level_count = u32::try_from(t.levels.max(1)).map_err(e("levels"))?;
+    facts.two_planes = t.planes != 0;
     Ok(facts)
 }
 
@@ -626,9 +629,19 @@ fn view_parts(view: &metal2vulkan::bind::ImageViewDesc) -> (u32, [u32; 4]) {
     )
 }
 
+/// Whether binding `(set, binding)` of `layout` is a two-plane texture's alpha plane
+fn alpha_plane(layout: &PipelineLayout, set: u32, binding: u32) -> bool {
+    layout
+        .sets
+        .iter()
+        .filter(|s| s.set == set)
+        .flat_map(|s| &s.bindings)
+        .any(|b| b.binding == binding && matches!(b.source, BindingSource::TexturePlane(_)))
+}
+
 fn kernel_write(
     w: &metal2vulkan::bind::DescriptorWrite,
-    commands: &DispatchCommands,
+    (commands, layout): (&DispatchCommands, &PipelineLayout),
     compile: &metal2vulkan::device::Device,
     state: &BindState,
     samplers: &mut Samplers<'_>,
@@ -637,6 +650,7 @@ fn kernel_write(
         write: write_of(w, &commands.descriptor_ranges),
         view_format: 0,
         components: [0; 4],
+        plane: u32::from(alpha_plane(layout, w.set, w.binding)),
         sampler: 0,
         sampler_state: NmbDirectSamplerState::default(),
         has_sampler: false,
@@ -865,7 +879,10 @@ fn direct(
         .plan
         .descriptors
         .iter()
-        .map(|w| kernel_write(w, &plain.commands, compile, &plain.state, &mut samplers))
+        .map(|w| {
+            let parts = (&plain.commands, &plain.pipeline.layout);
+            kernel_write(w, parts, compile, &plain.state, &mut samplers)
+        })
         .collect::<Result<Vec<_>, String>>()?;
     let first = plain.commands.regions.first();
     let specialization = first.map(|r| r.specialization.clone()).unwrap_or_default();

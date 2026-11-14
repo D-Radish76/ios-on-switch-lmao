@@ -63,7 +63,7 @@ inline NSMutableDictionary *computeRow(const std::string &line, uint64_t stack, 
         descriptor.arrayLength = texture.arrayLength;
         descriptor.sampleCount = 1;
         descriptor.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-        dispatch.texture(texture.slot, descriptor);
+        dispatch.texture(texture.slot, descriptor, texture.planes);
     }
     for (const auto &sampler : shape.samplers)
         dispatch.sampler(sampler.slot, probe::samplerDescriptor(sampler));

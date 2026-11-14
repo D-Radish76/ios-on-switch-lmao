@@ -9,7 +9,7 @@ bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
     return raw::xrForm(uint32_t(d.pixelFormat)) == raw::XrForm::Planes && plane == 0 &&
            IOSurfaceGetPlaneCount(s) == 2 && d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 &&
            d.sampleCount == 1 && !turned && d.usage &&
-           !(d.usage & ~(MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget)) &&
+           !(d.usage & ~(MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget)) &&
            IOSurfaceGetWidthOfPlane(s, 0) == d.width && IOSurfaceGetHeightOfPlane(s, 0) == d.height &&
            IOSurfaceGetWidthOfPlane(s, 1) == d.width && IOSurfaceGetHeightOfPlane(s, 1) == d.height &&
            IOSurfaceGetBytesPerElementOfPlane(s, 0) == 4 && IOSurfaceGetBytesPerElementOfPlane(s, 1) == 1;
