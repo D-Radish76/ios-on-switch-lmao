@@ -258,7 +258,10 @@ CompileOutcome Direct::kernel(MTLComputePipelineDescriptor *descriptor, const Nm
     const char *refused = nullptr;
     if (!translator_.compute(descriptor, &dispatch, madeKernel, &a, &refused)) {
         why = std::string("m2v refused its translation: ") + (refused ? refused : "");
-        return refused && !strncmp(refused, "retry: ", 7) ? CompileOutcome::Failed : CompileOutcome::Refused;
+        // "fails: ", a dispatch Metal runs that m2v fails too (NativeMetalDirectCompute.rs mapped_samplers): its command
+        // buffer fails, not a route to m2v
+        const bool fails = refused && (!strncmp(refused, "retry: ", 7) || !strncmp(refused, "fails: ", 7));
+        return fails ? CompileOutcome::Failed : CompileOutcome::Refused;
     }
     why = a.why;
     return a.outcome;
