@@ -193,12 +193,9 @@ TEST(GM20BPoolPolicySource, CompressibleBosArePoolChunksNoTaskMaps)
 					      "if (!ret && (in->flags & TegraGM20BBoCoherent)) {");
 	EXPECT_TRUE(chunks.Has("ret = charge.refused ? kIOReturnNoMemory : takeChunks("));
 	EXPECT_TRUE(Block(client(), "AGXDeviceUserClient::BoCharge AGXDeviceUserClient::chargeBo(")
-			    .Has("c.refused = compressibleRefusal(in->bytes, pool_bytes_, "
-				 "critical_);"));
-	EXPECT_TRUE(Block(client(), "const char *compressibleRefusal(uint64_t bytes, "
-				    "uint64_t held, bool compositor)")
-			    .Has("tgm_pool::compressibleRefusal(bytes, held, avail, limits, "
-				 "compositor)"));
+			    .Has("c.refused = compressibleRefusal(in->bytes);"));
+	EXPECT_TRUE(Block(client(), "const char *compressibleRefusal(uint64_t bytes)")
+			    .Has("tgm_pool::compressibleRefusal(bytes, tgm_pool_avail(), limits)"));
 	EXPECT_TRUE(chunks.Has("takeChunks(in->bytes, bo->pas)"));
 	EXPECT_TRUE(alloc.Has("} else if (!ret && !compressible) {"));
 	EXPECT_FALSE(Block(client(), "IOReturn takeChunks(uint64_t bytes, uint64_t *pas)")

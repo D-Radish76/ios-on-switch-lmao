@@ -379,6 +379,8 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 			switch_gpu_span_line(reply->line, sizeof(reply->line));
 		} else if (op == TegraGM20BPathsOpCounts)
 			switch_gpu_path_line(reply->line, sizeof(reply->line));
+		else if (op == TegraGM20BPathsOpPool)
+			poolLine(reply->line, sizeof(reply->line));
 #if TGM_STATS
 		else if (op == TegraGM20BPathsOpTargetPeaks)
 			tgm_target_peaks_line(reply->line, sizeof(reply->line));

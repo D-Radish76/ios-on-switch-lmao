@@ -565,6 +565,9 @@ class AGXDeviceUserClient : public IOUserClient
 	IOReturn settleBo(const TegraGM20BAbiBoAlloc *in, const BoCharge &charge, Bo *bo,
 			  IOReturn ret, bool chunksRefused, bool system);
 	IOReturn boAlloc(const TegraGM20BAbiBoAlloc *in, TegraGM20BAbiBoAllocReply *out);
+#if SWITCH_GPU_PATH_STATS
+	void poolLine(char *line, size_t size);
+#endif
 	IOReturn boImport(const TegraGM20BAbiBoImport *in, TegraGM20BAbiBoAllocReply *out);
 	static void adoptWiring(Bo *bo, SharedWiring *w);
 	void publishWiring(Bo *bo, const TegraGM20BAbiBoImport *in);

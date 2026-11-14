@@ -46,22 +46,17 @@ inline const char *refusal(uint64_t bytes, uint64_t held, uint64_t avail, const 
 	return nullptr;
 }
 
-// Why a compressible BO of `bytes` (pool chunks, TegraGM20BBoCompressible) is refused, or nullptr. Compressed memory
-// has no other source, so it leaves the floor to nvkm, whose page tables and channels have none either. The reserve
-// is the compositor's room ("the rest stays for the compositor"): another client's compressed memory leaves it too
-// and stays within its share, the compositor's takes it, as its coherent BOs do (past the floor they come from system
-// memory). Boot 21: backboardd's 12 MiB colour target was refused at 55 MiB free, holding 60 MiB, under the old
-// 48 MiB. A refusal is no failure: the target renders uncompressed and its client asks again later.
-inline const char *compressibleRefusal(uint64_t bytes, uint64_t held, uint64_t avail,
-				       const Limits &l, bool compositor)
+// Why a compressible BO of `bytes` (pool chunks, TegraGM20BBoCompressible) is refused with `avail` of the pool ready, or
+// nullptr. Compression has no memory but the pool's: GM20B compresses through big pages only (nouveau gm200_vmm gives
+// NVKM_VMM_PAGE_COMP to the 128 KiB page alone, nvgpu demotes a compressible kind on smaller ones), the GPU reaches DRAM
+// untranslated (address bit 34 clear, SWGROUP GPU: TRM p.796-797), so a big page is 128 KiB of physically contiguous,
+// aligned RAM, and the pool's chunks are the only such RAM. The comptags are no limit (30674 lines cover 3.8 GiB).
+// nvkm's page tables and channels are physically contiguous too and have only the pool: the floor stays theirs, and is
+// the only room any client's compressed memory leaves. Boot 22's largest step of that share in a 5 s window was 8 MiB,
+// its peak 55 MiB. A refusal is no failure: the target renders uncompressed.
+inline const char *compressibleRefusal(uint64_t bytes, uint64_t avail, const Limits &l)
 {
-	if (compositor)
-		return avail < bytes + l.floorBytes ? "the pool's last 16 MiB stay for nvkm" : nullptr;
-	if (avail < bytes + l.floorBytes + l.reserveBytes)
-		return "the pool's last 48 MiB stay for the compositor and nvkm";
-	if (held + bytes > l.clientBytes)
-		return "past the client's share";
-	return nullptr;
+	return avail < bytes + l.floorBytes ? "the pool's last 16 MiB stay for nvkm" : nullptr;
 }
 
 constexpr uint64_t ControlClientBytes = 16ULL << 20;
