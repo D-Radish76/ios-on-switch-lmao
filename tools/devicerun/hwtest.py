@@ -119,6 +119,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.compare_sampler',
             'gpu.raw.surface_buffer',
             'gpu.raw.own_answers',
+            'gpu.raw.compute_facts',
             'gpu.raw.compressed_targets',
             'gpu.raw.zcull',
             'gpu.raw.mip_twod',
