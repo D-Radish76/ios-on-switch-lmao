@@ -327,7 +327,7 @@ constexpr uint8_t cbufKind(uint8_t type)
     return type & 7;
 }
 
-// A program's constant buffer of set 1, the heap's arrays (nvk_switch_capture.c switch_nvk_cbuf_code: the set in bits 3-7)
+// A program's constant buffer of set 1, the heap's arrays (nvk_switch_stage.c switch_nvk_cbuf_code: the set in bits 3-7)
 constexpr uint8_t kCbufHeapSet = CbufSet | 1 << 3;
 
 constexpr uint32_t cbufUboOffset(uint8_t type)
