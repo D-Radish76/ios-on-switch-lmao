@@ -5,6 +5,7 @@ sampler headers, which its sampler entries name as CONSTEXPR | n. The pack numbe
 samplers, and a buffer entry's window keeps its residual word + 1 in its top byte (runtime/raw_pack.h).
 """
 
+import re
 import struct
 
 import packfile
@@ -24,6 +25,37 @@ KERNEL_BYTES = (
     + packfile.KERNEL_V20.size
     + packfile.KERNEL_V21.size
 )
+
+
+# Header word 0's COMPONENTS (clb097tex.h): a texel's bytes (runtime/raw_view.h texelBytes)
+TEXEL_BYTES = {
+    0x01: 16, 0x02: 12, 0x03: 8, 0x04: 8, 0x05: 8, 0x07: 4, 0x08: 4, 0x09: 4, 0x0C: 4, 0x0D: 4, 0x0E: 4, 0x0F: 4,
+    0x20: 4, 0x21: 4, 0x12: 2, 0x13: 2, 0x14: 2, 0x15: 2, 0x16: 2, 0x18: 2, 0x1B: 2, 0x1D: 1, 0x1E: 1,
+}
+# MTLPixelFormat: a texel's bytes, the uncompressed colour formats a kernel binds
+FORMAT_BYTES = {
+    **dict.fromkeys((10, 11, 12, 13, 14), 1),
+    **dict.fromkeys((20, 22, 23, 24, 25, 30, 31, 32, 33, 34, 40, 41, 42, 43), 2),
+    **dict.fromkeys((53, 54, 55, 60, 62, 63, 64, 65, 70, 71, 72, 73, 74, 80, 81, 90, 91, 92, 93, 94, 554, 555), 4),
+    **dict.fromkeys((103, 104, 105, 110, 112, 113, 114, 115, 552, 553), 8),
+    **dict.fromkeys((123, 124, 125), 16),
+}
+
+
+def views_other_texel_size(key: str, entries: list[dict]) -> list[int]:
+    """Give the texture slots a record views in texels of another size than the format its key binds there (a view the
+    runtime cannot bind: runtime/raw_view.h SlotView::None)."""
+    found = re.search(r'\btex=([^ |]*)', key)
+    bound = {int(t.split(':')[0]): int(t.split(':')[1]) for t in found.group(1).split(',') if t} if found else {}
+    other = []
+    for e in entries:
+        if e['kind'] != TEXTURE or not e['window']:
+            continue
+        texel = TEXEL_BYTES.get(e['window'] & 0x7F)
+        fmt = FORMAT_BYTES.get(bound.get(e['slot'], -1))
+        if texel and fmt and texel != fmt:
+            other.append(e['slot'])
+    return other
 
 
 def entry(fields: tuple[int, int, int, int], headers: list[list[int]], constexpr_tsc: list[list[int]]) -> dict:
@@ -91,7 +123,11 @@ def from_records(records: list[dict], constexpr_tsc: list[list[int]]) -> tuple[l
         if rec['outcome']:
             skipped.append((rec['key'], rec['why']))
             continue
-        kernels.append(kernel(rec, constexpr_tsc))
+        made = kernel(rec, constexpr_tsc)
+        if slots := views_other_texel_size(rec['key'], made['entries']):
+            skipped.append((rec['key'], f'texture slots {slots} viewed in texels of another size'))
+            continue
+        kernels.append(made)
     return kernels, skipped
 
 
