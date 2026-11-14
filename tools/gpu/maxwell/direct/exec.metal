@@ -259,3 +259,17 @@ fragment float4 argument_textures_fragment(float4 position [[position]],
     return position.x < 4.0 ? arguments.first.sample(arguments.nearest, centre)
                              : arguments.second.sample(arguments.nearest, centre);
 }
+
+// Threadgroup memory a dispatch sizes (setThreadgroupMemoryLength:atIndex: 0), as MPS's kernels take theirs: each thread
+// writes its words of every 1 KiB row of `words`, and reads its own back after the barrier
+kernel void dynamic_threadgroup_kernel(threadgroup uint *memory [[threadgroup(0)]], device uint *out [[buffer(0)]],
+                                       constant uint &rows [[buffer(1)]], uint tid [[thread_index_in_threadgroup]])
+{
+    for (uint k = 0; k < rows; k++)
+        memory[tid + 256 * k] = (tid + 256 * k) * 2654435761u;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    uint x = 0;
+    for (uint k = 0; k < rows; k++)
+        x ^= memory[tid + 256 * k] + k;
+    out[tid] = x;
+}
