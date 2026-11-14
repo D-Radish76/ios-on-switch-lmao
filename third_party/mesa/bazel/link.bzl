@@ -190,31 +190,7 @@ def _mesa_relocatable_impl(ctx):
         progress_message = "Linking %{output} (its entry points global, the rest local)",
         execution_requirements = XCODE_EXECUTION,
     )
-
-    # Every symbol the object still needs comes from the system: a Mesa or Rust name left undefined would be bound to
-    # whatever the consumer's image defines under that name.
-    check = ctx.actions.declare_file(ctx.attr.name + ".undefined")
-    ctx.actions.run_shell(
-        command = """\
-set -e
-"$1" -u "$2" | sort -u > "$3"
-if grep -v -E "$4" "$3" >&2; then
-  echo "mesa_relocatable: $2 leaves the names above undefined" >&2
-  exit 1
-fi
-""",
-        arguments = [XCODE_TOOLCHAIN + "/nm", out.path, check.path, ctx.attr.system_undefined],
-        inputs = depset([out], transitive = [cc_toolchain.all_files]),
-        outputs = [check],
-        env = env,
-        mnemonic = "MesaRelocatableUndefined",
-        progress_message = "Checking %{input}'s undefined names",
-        execution_requirements = XCODE_EXECUTION,
-    )
-    return [
-        DefaultInfo(files = depset([out])),
-        OutputGroupInfo(_validation = depset([check])),
-    ]
+    return [DefaultInfo(files = depset([out]))]
 
 _mesa_relocatable = rule(
     implementation = _mesa_relocatable_impl,
@@ -225,10 +201,6 @@ _mesa_relocatable = rule(
         "exported": attr.string_list(mandatory = True, doc = "the C names left global"),
         "force_load": attr.label(mandatory = True, doc = "the archive linked whole"),
         "out": attr.string(mandatory = True),
-        "system_undefined": attr.string(
-            default = "^_(_|[a-z])",
-            doc = "a regular expression every undefined name must match (the system's C, C++ and runtime names)",
-        ),
     },
     toolchains = use_cc_toolchain(),
     fragments = ["cpp"],

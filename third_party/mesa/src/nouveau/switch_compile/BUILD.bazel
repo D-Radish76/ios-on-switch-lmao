@@ -6,6 +6,7 @@
 #   bazel build //third_party/mesa/src/nouveau/switch_compile:host    the macOS object the pack tools link
 
 load("@rules_python//python:py_test.bzl", "py_test")
+load("@xcode//:defs.bzl", "IPHONEOS_SDK", "MACOSX_SDK", "XCODE_TOOLCHAIN")
 load("//bazel/lint:defs.bzl", "lint_files")
 load("//third_party/mesa/bazel:defs.bzl", "MESA_LINT_EXCLUDE", "mesa_args", "mesa_cc_library", "mesa_files")
 load("//third_party/mesa/bazel:identity.bzl", "mesa_identity_files")
@@ -161,6 +162,24 @@ mesa_files(
     name = "host",
     platform = "macos",
     srcs = [":switch_compile_o"],
+)
+
+py_test(
+    name = "switch_compile_object_test",
+    size = "small",
+    srcs = ["switch_compile_object_test.py"],
+    args = [
+        XCODE_TOOLCHAIN + "/nm",
+        "$(rootpath :host)",
+        MACOSX_SDK,
+        "$(rootpath :ios)",
+        IPHONEOS_SDK,
+    ],
+    data = [
+        ":host",
+        ":ios",
+    ],
+    tags = ["requires-darwin"],
 )
 
 mesa_cc_library(

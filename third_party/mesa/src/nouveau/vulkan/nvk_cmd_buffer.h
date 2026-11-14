@@ -12,6 +12,7 @@
 #include "nvk_descriptor_set.h"
 #include "nvk_image.h"
 #include "nvk_root_table.h"
+#include "nvk_device_memory.h"
 #include "nvk_shader.h"
 
 #include "util/u_dynarray.h"
