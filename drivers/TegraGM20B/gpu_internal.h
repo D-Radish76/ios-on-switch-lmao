@@ -349,7 +349,8 @@ struct tgm_chan {
 		prof_spans; /* this window's jobs kicked with stamps, their stamps, spans read */
 	u64 prof_span;      /* those spans (PTIMER units) */
 	u8 prof_cls[TGM_PROF_MAX], prof_ilk[TGM_PROF_MAX];
-	u16 prof_draws[TGM_PROF_MAX], prof_sdraws[TGM_PROF_MAX], prof_kpx[TGM_PROF_MAX];
+	u16 prof_draws[TGM_PROF_MAX], prof_sdraws[TGM_PROF_MAX], prof_kpx[TGM_PROF_MAX],
+		prof_twin[TGM_PROF_MAX];
 	struct switch_gpu_prof_seq prof_run,
 		prof_slow; /* the profile being read, the window's slowest */
 	u64 prof_ns[TGM_PC_COUNT];
