@@ -335,7 +335,8 @@ void Remote::delivered(void *refcon, int result, void **words, uint32_t count)
     auto *remote = static_cast<Remote *>(refcon);
     // IOKit hands the message's own packed words, four bytes past an eight-byte boundary
     uint64_t word[TegraGM20BCompileAnswerWords] = {};
-    memcpy(word, words, std::min<size_t>(count, TegraGM20BCompileAnswerWords) * sizeof *word);
+    memcpy(word, reinterpret_cast<const unsigned char *>(words),
+           std::min<size_t>(count, TegraGM20BCompileAnswerWords) * sizeof *word);
     const uint64_t packed = word[1];
     const Answered answered = {
         0, {word[2], word[3], word[4], uint32_t(word[5]), uint32_t(word[5] >> 32)}, answeredAt()};

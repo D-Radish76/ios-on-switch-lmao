@@ -16,10 +16,13 @@ constexpr qos_class_t answerClass(uint32_t qos)
     return qos == QOS_CLASS_UNSPECIFIED ? QOS_CLASS_USER_INTERACTIVE : qos_class_t(qos);
 }
 
-// A serial queue with no class of its own, whose blocks run at the class each was submitted for (asyncAt)
+// A serial queue whose blocks run at the class each was submitted for (asyncAt). Its own class is the lowest: dispatch
+// runs a block at its own class only where that is not below its queue's, and a queue with none takes the default class
+// of the global queue it targets.
 inline dispatch_queue_t answerQueue(const char *label)
 {
-    return dispatch_queue_create(label, DISPATCH_QUEUE_SERIAL);
+    return dispatch_queue_create(
+        label, dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_BACKGROUND, 0));
 }
 
 // `work` on `queue` at the asker's class `qos`. A more urgent block queued behind it raises the queue's drain until that
