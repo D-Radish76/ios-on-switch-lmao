@@ -139,21 +139,6 @@ const char *nmb_last_error(void)
     return "no device";
 }
 
-bool switch_nmb_heap_holds(uint32_t, const NmbHeapTextureFacts *)
-{
-    return true;
-}
-
-uint32_t switch_nmb_heap_texture_flags(const NmbHeapTextureFacts *)
-{
-    return 0;
-}
-
-uint32_t switch_nmb_sampler_word(const struct NmbSamplerDescriptor *)
-{
-    return 0;
-}
-
 // The translator alone (the shader compiler's facts, compiler/compiler_facts.mm): none here
 NmbOfflineLibrary *nmb_offline_library_new(const void *, size_t)
 {

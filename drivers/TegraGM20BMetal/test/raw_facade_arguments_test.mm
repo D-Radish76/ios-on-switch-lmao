@@ -6,7 +6,9 @@
 #include "raw_device_harness.h"
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_argument_encoder.h"
+#include "../raw/runtime/raw_heap_fit.h"
 #include "../raw/runtime/raw_resource_id.h"
+#include "../raw/runtime/raw_sampler_word.h"
 
 namespace {
 
@@ -263,18 +265,30 @@ TEST(FacadeResourceIds, AnIdNamesItsObjectFromItsFirstAskUntilItIsGone)
         ASSERT_NE(tsc, 0u);
         if (tables.attached())
             EXPECT_EQ(tables.textureEntryAt(tic).element, 0u) << "made, never asked";
-        const standin::Asks before = standin::asks();
         EXPECT_EQ(word([t gpuResourceID]), raw::textureResourceId(tic));
         EXPECT_EQ(word([t gpuResourceID]), raw::textureResourceId(tic));
-        EXPECT_EQ(standin::asks().textureFlags, before.textureFlags + 1) << "one ask names it";
         ASSERT_TRUE(tables.attached());
         EXPECT_EQ(tables.textureEntryAt(tic).element, tic);
-        EXPECT_EQ(tables.textureEntryAt(tic).flags, standin::kTextureFlags);
+        const MTLTextureSwizzleChannels swizzle = t.swizzle;
+        const raw::HeapTextureFacts facts = raw::heapFacts(
+            {uint32_t(t.pixelFormat),
+             uint32_t(t.textureType),
+             uint32_t(t.sampleCount),
+             uint32_t(t.usage),
+             uint32_t(t.arrayLength),
+             uint32_t(t.mipmapLevelCount),
+             {uint8_t(swizzle.red), uint8_t(swizzle.green), uint8_t(swizzle.blue), uint8_t(swizzle.alpha)}});
+        EXPECT_NE(raw::heapTextureFlags(facts), 0u);
+        EXPECT_EQ(tables.textureEntryAt(tic).flags, raw::heapTextureFlags(facts));
 
         EXPECT_EQ(word([s gpuResourceID]), raw::samplerResourceId(tsc));
-        EXPECT_EQ(standin::asks().samplerWords, before.samplerWords + 1);
         EXPECT_EQ(tables.samplerEntryAt(tsc).element, tsc);
-        EXPECT_EQ(tables.samplerEntryAt(tsc).flags, standin::kSamplerWord);
+        MTLSamplerDescriptor *d = ((RMSampler *)s)->_descriptor;
+        const raw::SamplerFacts sampler = {d.minFilter,     d.magFilter,       d.mipFilter,   d.sAddressMode,
+                                           d.tAddressMode,  d.rAddressMode,    d.borderColor, d.normalizedCoordinates,
+                                           d.maxAnisotropy, d.compareFunction, d.lodAverage,  d.lodMinClamp,
+                                           d.lodMaxClamp};
+        EXPECT_EQ(tables.samplerEntryAt(tsc).flags, raw::samplerWord(sampler));
         EXPECT_NE(((RMSampler *)s)->_normalized.tsc, 0u) << "a pixel-coordinate sampler's heap holds its twin";
     }
     EXPECT_EQ(tables.textureEntryAt(tic).element, 0u) << "the texture is gone";

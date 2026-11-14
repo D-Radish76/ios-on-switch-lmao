@@ -25,12 +25,6 @@ void functionLayouts(id twin, uint32_t index, std::vector<Layout> made)
     layouts()[{(__bridge void *)twin, index}] = std::move(made);
 }
 
-Asks &asks()
-{
-    static Asks counted;
-    return counted;
-}
-
 }  // namespace standin
 
 static_assert(sizeof(raw::ArgumentRun) == sizeof(NmbArgumentRun), "the bridge's runs");
@@ -49,23 +43,6 @@ extern "C" bool native_bridge_metal_argument_layouts(id function, NSUInteger ind
         out.push_back({l.encodedLength, l.alignment, reinterpret_cast<const NmbArgumentRun *>(l.runs.data()),
                        uint32_t(l.runs.size()), 0});
     return each(out.data(), uint32_t(out.size()), ctx);
-}
-
-extern "C" bool switch_nmb_heap_holds(uint32_t, const NmbHeapTextureFacts *)
-{
-    return true;
-}
-
-extern "C" uint32_t switch_nmb_heap_texture_flags(const NmbHeapTextureFacts *)
-{
-    standin::asks().textureFlags++;
-    return standin::kTextureFlags;
-}
-
-extern "C" uint32_t switch_nmb_sampler_word(const struct NmbSamplerDescriptor *)
-{
-    standin::asks().samplerWords++;
-    return standin::kSamplerWord;
 }
 
 extern "C" const char *nmb_last_error(void)
