@@ -180,9 +180,10 @@ Expected: `icache 127.3 KiB <c> cycles/warp-instr`, above the 62.3 KiB line if t
 
 35 experiments, 1.9 MB, about 78 MB of readback. `fast::powr` is `exp2(y * log2(x))`, which NAK emits as MUFU.LG2,
 FMUL.FTZ, RRO.EX2 and MUFU.EX2. The translator wraps it in Metal's special-value rules (`fast_powr_special` in
-metal2vulkan's `lower/arith/math.rs`), about 28 issue slots per powr, and state 4c33d27bde9b894a has six powrs. The rules
-can go if the chip's own composition already gives Metal's answers, and this batch records the raw result bits that
-decide it.
+metal2vulkan's `lower/arith/math.rs`), about 28 issue slots per powr, and state 4c33d27bde9b894a has six powrs. The
+rules can go if the chip's own composition already gives Metal's answers, and this batch records the raw result bits
+that decide it. Its results are 8 times the size of any other batch's (4.2 MB a chain experiment), so run it alone
+first.
 
 The two chain programs (`base`, `exponent`) run the state's own instruction words, which `powr_native_test` holds to
 NAK's: both halves widened by F2F, the four instructions, then the narrowing F2F the state ends with. They put every
