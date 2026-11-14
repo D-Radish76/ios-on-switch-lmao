@@ -3,12 +3,13 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// A kernel sampling a two-plane 4:2:0 YCbCr texture (540, RGB8_420_2P read as codes, over a '420v' surface) through
-/// constexpr repeating and clamp-to-zero samplers beside an RGBA8 texture through a bound repeating sampler, across a
-/// grid twice the textures' width. Metal samples the 4:2:0 texture's wrapping and zero clamping as clamp to edge (an M4
-/// Max's reads) and the RGBA texture's repeat as repeat, so one address map for the whole kernel serves only one of
-/// them: the raw path sent such kernels to m2v (compute.image). It now binds each sampler under the map of the texture
-/// it samples (the record's sampler pairs, raw_pack.h kernelSamplerPairs). Every sample is a texel's codes, exact.
+/// A kernel sampling a two-plane 4:2:0 YCbCr texture (540, RGB8_420_2P read as codes, over a '420v' surface) through a
+/// constexpr clamp-to-edge sampler beside an RGBA8 texture through a bound repeating sampler, across a grid twice the
+/// textures' width. The raw path refused every constexpr sampler beside a converted texture (compute.image: a kernel's
+/// sampler is a word of its own, and the texture's address map could have changed it). The record now names the texture
+/// each sampler samples (raw_pack.h kernelSamplerPairs), and the texture's map leaves clamp to edge, so the kernel runs
+/// raw as compiled. Every sample is a texel's codes, exact: the YCbCr texture's edge past its right side, the RGBA one
+/// repeated.
 struct KernelYcbcrSamplerScene: GPUScene {
     let id = "gpu.raw.kernel_ycbcr_sampler"
     let name = "A kernel sampling a YCbCr and an RGBA texture through samplers of their own"
@@ -47,7 +48,7 @@ struct KernelYcbcrSamplerScene: GPUScene {
             throw TestFailure("makeSamplerState returned nil")
         }
         let pipeline = try gpu.compute("ycbcr_sampler_pairs")
-        let samples = 2 * w * h * 3
+        let samples = 2 * w * h * 2
         let out = try gpu.buffer(samples * MemoryLayout<SIMD4<Float>>.stride)
         let refused = { RawFacade.counters(of: gpu.device)["pred.compute.image"] ?? 0 }
         let before = refused()
@@ -65,13 +66,12 @@ struct KernelYcbcrSamplerScene: GPUScene {
         }
         let refusals = refused() - before
         let got = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: samples)
-        var wrong = [0, 0, 0]
+        var wrong = [0, 0]
         var maxError: Float = 0
         for y in 0..<h {
             for x in 0..<2 * w {
-                let edge = Self.ycbcr(min(x, w - 1), y), wrapped = Self.rgba(x % w, y)
-                for (k, want) in [edge, edge, wrapped].enumerated() {
-                    let sample = got[(y * 2 * w + x) * 3 + k] * 255
+                for (k, want) in [Self.ycbcr(min(x, w - 1), y), Self.rgba(x % w, y)].enumerated() {
+                    let sample = got[(y * 2 * w + x) * 2 + k] * 255
                     let error = (0..<4).map { abs(sample[$0] - Float(want[$0])) }.max() ?? 0
                     maxError = max(maxError, error.isNaN ? .infinity : error)
                     if !(error < 0.01) { wrong[k] += 1 }
@@ -81,14 +81,13 @@ struct KernelYcbcrSamplerScene: GPUScene {
         result.metrics.set("path", timing.path)
         result.metrics.set("refusals", refusals)
         result.metrics.set("max_error", String(format: "%.3f", maxError))
-        result.metrics.set("wrong_wrap", wrong[0])
-        result.metrics.set("wrong_zero", wrong[1])
-        result.metrics.set("wrong_rgba", wrong[2])
-        result.metrics.set("past_edge", String(format: "%.1f", got[(2 * w - 1) * 3][1] * 255))
+        result.metrics.set("wrong_ycbcr", wrong[0])
+        result.metrics.set("wrong_rgba", wrong[1])
+        result.metrics.set("past_edge", String(format: "%.1f", got[(2 * w - 1) * 2][1] * 255))
         result.expect(
-            wrong == [0, 0, 0],
-            "samples off their texel's codes: \(wrong[0]) repeating, \(wrong[1]) clamped to zero (YCbCr: the edge), "
-                + "\(wrong[2]) RGBA repeating; largest error \(maxError) codes")
+            wrong == [0, 0],
+            "samples off their texel's codes: \(wrong[0]) YCbCr (clamped to its edge), \(wrong[1]) RGBA (repeated); "
+                + "largest error \(maxError) codes")
         if RawFacade.kind(of: gpu.device) == "raw" {
             result.expect(timing.path == "raw", "the kernel took \(timing.path), not raw")
             result.expect(refusals == 0, "compute.image refused it \(refusals) times")

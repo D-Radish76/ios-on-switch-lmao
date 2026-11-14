@@ -105,23 +105,20 @@ kernel void shadow_planes(texture2d<float, access::write> luma [[texture(0)]], t
         chroma.write(float4(p.b, p.r, 0, 0), id / 2);
 }
 
-/// A two-plane 4:2:0 YCbCr texture sampled through two constexpr samplers beside an RGBA texture sampled through a bound
-/// one, each at the texel centres of a grid twice the textures' width (gpu.raw.kernel_ycbcr_sampler): three samples a
-/// thread
+/// A two-plane 4:2:0 YCbCr texture sampled through a constexpr clamp-to-edge sampler beside an RGBA texture sampled through
+/// a bound one, each at the texel centres of a grid twice the textures' width (gpu.raw.kernel_ycbcr_sampler)
 kernel void ycbcr_sampler_pairs(texture2d<float> ycbcr [[texture(0)]], texture2d<float> rgba [[texture(1)]],
                                 sampler bound [[sampler(0)]], device float4 *out [[buffer(0)]],
                                 uint2 id [[thread_position_in_grid]])
 {
-    constexpr sampler wrap(address::repeat, filter::nearest);
-    constexpr sampler zero(address::clamp_to_zero, filter::nearest);
+    constexpr sampler edge(address::clamp_to_edge, filter::nearest);
     const uint width = ycbcr.get_width(), height = ycbcr.get_height();
     if (id.x >= 2 * width || id.y >= height)
         return;
     const float2 uv = (float2(id) + 0.5f) / float2(width, height);
-    const uint at = (id.y * 2 * width + id.x) * 3;
-    out[at] = ycbcr.sample(wrap, uv);
-    out[at + 1] = ycbcr.sample(zero, uv);
-    out[at + 2] = rgba.sample(bound, uv);
+    const uint at = (id.y * 2 * width + id.x) * 2;
+    out[at] = ycbcr.sample(edge, uv);
+    out[at + 1] = rgba.sample(bound, uv);
 }
 
 /// m2v writes a half-float texture through its unsigned integer twin, converting each texel in the shader: the raw path
