@@ -5237,7 +5237,7 @@ host_test(
 host_test(
     name = "raw_native_seed_output_test",
     srcs = [
-        "raw_native_seed_output_test.mm",
+        "raw_native_seed_output_test.cpp",
         "//drivers/NativeMetal:NativeMetalArtifactCache.h",
         "//drivers/TegraGM20BMetal:raw/pack/native_seed_manifest.h",
         "//drivers/NativeMetal:MetallibSlice.h",
