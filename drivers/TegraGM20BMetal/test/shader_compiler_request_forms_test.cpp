@@ -387,10 +387,12 @@ TEST(CompileRequestForms, TheClientsRequestsCarryWhatItsKeysAreMadeOf)
     EXPECT_NE(cubic.find("request.variant = forms;"), std::string::npos);
     EXPECT_NE(cubic.find("fallback.key = p->_key + suffix;"), std::string::npos);
     EXPECT_NE(cubic.find("fallback.variant = forms.untested();"), std::string::npos);
-    EXPECT_NE(SourceText("../raw/runtime/RawMetalComputeState.mm")
-                  .find("s->_constants = (f ? f->_constants : \"\") + "
-                        "raw::stageInText(raw::stageInFieldsOf(descriptor.stageInputDescriptor));"),
-              std::string::npos);
+    const std::string computeState = SourceText("../raw/runtime/RawMetalComputeState.mm");
+    EXPECT_NE(
+        computeState.find(
+            "const std::string stageIn = raw::stageInText(raw::stageInFieldsOf(descriptor.stageInputDescriptor));"),
+        std::string::npos);
+    EXPECT_NE(computeState.find("s->_constants = (f ? f->_constants : \"\") + stageIn;"), std::string::npos);
     EXPECT_NE(SourceText("../compiler/compiler_record.mm").find("raw::probeTexturesOf(p.request.variant)"),
               std::string::npos);
 }
