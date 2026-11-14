@@ -6,6 +6,7 @@
 #include "../raw/runtime/raw_ycbcr_store.h"
 #include "bazel/testing/fresh_process.h"
 
+#import <CoreVideo/CoreVideo.h>
 #import <IOSurface/IOSurface.h>
 #include <gtest/gtest.h>
 #include <sys/mman.h>
@@ -289,6 +290,100 @@ void samplerTable()
     expectNoM2V(device);
 }
 
+// A wrapping sampler whose chroma-subsampled address map variant (clamped to the edge) no other header in the table has
+MTLSamplerDescriptor *wrappingSampler(float lodMax)
+{
+    MTLSamplerDescriptor *d = [MTLSamplerDescriptor new];
+    d.sAddressMode = d.tAddressMode = MTLSamplerAddressModeRepeat;
+    d.minFilter = d.magFilter = MTLSamplerMinMagFilterLinear;
+    d.mipFilter = MTLSamplerMipFilterNearest;
+    d.lodMaxClamp = lodMax;
+    return d;
+}
+
+// One draw of `state` sampling `texture` through `sampler`, committed and waited for
+id<MTLCommandBuffer> drawSampling(id<MTLDevice> device, id<MTLRenderPipelineState> state, id<MTLTexture> texture,
+                                  id<MTLSamplerState> sampler)
+{
+    MTLTextureDescriptor *rt = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                  width:64
+                                                                                 height:64
+                                                                              mipmapped:NO];
+    rt.storageMode = MTLStorageModePrivate;
+    rt.usage = MTLTextureUsageRenderTarget;
+    id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = [device newTextureWithDescriptor:rt];
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass];
+    [e setRenderPipelineState:state];
+    [e setFragmentTexture:texture atIndex:0];
+    [e setFragmentSamplerState:sampler atIndex:0];
+    const float vertices[12] = {-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1};
+    [e setVertexBytes:vertices length:sizeof vertices atIndex:0];
+    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [e endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    return cb;
+}
+
+// A draw sampling a 4:2:2 texture through a wrapping sampler takes a sampler header under the texture's address map; with
+// the table full its command buffer fails out of memory, as Metal's does for a resource it has no room for. (4:2:2, not
+// 4:2:0: the kernel model has no native surface views, which a 4:2:0 surface's planes are read through.)
+void planarSamplerTableFull()
+{
+    const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {},
+                                          {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float}}, {sampled}));
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];
+    id<MTLRenderPipelineState> state =
+        [device newRenderPipelineStateWithDescriptor:descriptor(library, MTLPixelFormatBGRA8Unorm) error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    CVPixelBufferRef pixels = nullptr;
+    ASSERT_EQ(CVPixelBufferCreate(
+                  kCFAllocatorDefault, 64, 48, kCVPixelFormatType_422YpCbCr8BiPlanarFullRange,
+                  (__bridge CFDictionaryRef)
+                      @{(id)kCVPixelBufferIOSurfacePropertiesKey : @{}},
+                  &pixels),
+              kCVReturnSuccess);
+    IOSurfaceRef surface = CVPixelBufferGetIOSurface(pixels);
+    IOSurfaceSetValue(surface, CFSTR("IOSurfaceYCbCrMatrix"), CFSTR("ITU_R_709_2"));
+    MTLTextureDescriptor *td =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(502) width:64 height:48 mipmapped:NO];
+    td.usage = MTLTextureUsageShaderRead;
+    id<MTLTexture> planar = [device newTextureWithDescriptor:td iosurface:surface plane:0];
+    ASSERT_TRUE(planar != nil);
+    EXPECT_EQ(gOpens, 0) << "a converted 4:2:2 texture of the raw path's own";
+    id<MTLSamplerState> drawnFirst = [device newSamplerStateWithDescriptor:wrappingSampler(4)];
+    id<MTLSamplerState> drawnFull = [device newSamplerStateWithDescriptor:wrappingSampler(8)];
+    ASSERT_TRUE(drawnFirst != nil && drawnFull != nil);
+    id<MTLCommandBuffer> first = drawSampling(device, state, planar, drawnFirst);
+    EXPECT_EQ(first.status, MTLCommandBufferStatusCompleted) << text(first.error);
+    NSMutableArray<id<MTLSamplerState>> *held = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 4096; i++)
+        if (id<MTLSamplerState> s = [device newSamplerStateWithDescriptor:distinctSampler(i)])
+            [held addObject:s];
+        else
+            break;
+    // a sampler of a descriptor made already takes one slot, its own, so these take the last one a distinct one could not
+    while (id<MTLSamplerState> s = [device newSamplerStateWithDescriptor:distinctSampler(0)])
+        [held addObject:s];
+    ASSERT_LT(held.count, 4096u) << "the table is full";
+    ASSERT_EQ([device newSamplerStateWithDescriptor:wrappingSampler(12)], nil);
+    id<MTLCommandBuffer> full = drawSampling(device, state, planar, drawnFull);
+    EXPECT_EQ(full.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(full.error.code, MTLCommandBufferErrorOutOfMemory) << text(full.error);
+    [held removeAllObjects];
+    id<MTLCommandBuffer> freed = drawSampling(device, state, planar, drawnFull);
+    EXPECT_EQ(freed.status, MTLCommandBufferStatusCompleted) << text(freed.error);
+    CVPixelBufferRelease(pixels);
+    expectNoM2V(device);
+}
+
 }  // namespace
 
 TEST(RawFacadeOpen, AnUncompressedTextureHasThePlainLayoutAndNoNoCopyTexture)
@@ -329,4 +424,9 @@ TEST(RawFacadeOpen, AYcbcrTargetStateOpensNoM2V)
 TEST(RawFacadeOpen, SamplersShareTheirCompareFormAndAFullTableIsNil)
 {
     switch_ios::test::ExpectPassesInFreshProcess(samplerTable);
+}
+
+TEST(RawFacadeOpen, APlanarDrawWithTheHeaderTableFullFailsItsCommandBuffer)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(planarSamplerTableFull);
 }
