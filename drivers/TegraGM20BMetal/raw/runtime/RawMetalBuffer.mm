@@ -173,9 +173,16 @@
         const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0);
         NSString *extra = [NSString stringWithFormat:@"offset %lu bytesPerRow %lu buffer %llu", (unsigned long)offset,
                                                      (unsigned long)row, (unsigned long long)_raw.length];
-        if (d.textureType == MTLTextureTypeTextureBuffer)
-            refuseTexture(t, at & 15 ? PredTexBufBase : PredTexBufOther, offset, _raw.length, @"texel buffer", extra);
-        else if (uint32_t term = rawShapeTerm(d))
+        if (d.textureType == MTLTextureTypeTextureBuffer) {
+            if ((_raw.va + offset) & 15) {
+                // a texel buffer's offset is a multiple of 16 (NVK's minTexelBufferOffsetAlignment): Metal's validation
+                // stops any other
+                os_log_error(rawLog(), "raw: %{public}s: no texel buffer over a buffer: offset off 16: %{public}@",
+                             getprogname(), extra);
+                return nil;
+            }
+            refuseTexture(t, PredTexBufOther, offset, _raw.length, @"texel buffer", extra);
+        } else if (uint32_t term = rawShapeTerm(d))
             refuseTexture(t, PredTexShape, term, d.pixelFormat, @"buffer", extra);
         else if (((_raw.va + offset) & 15) || (row & 15) || row < packed) {
             // a 2D texture's offset and rows are multiples of 16 (m2v linear_plan.rs, measured): Metal's validation stops
