@@ -55,7 +55,7 @@ public enum Registry {
             ColourPipelineTest(), PlanesTest(), SmallDrawableTest(), PresentAtTimeTest(), PlaneInUseTest(),
             ScanoutRoutesTest(), PlainSurfacesTest(), DisplaySnapshotTest(), WakeTest(),
             PlanesCroppedTest(),
-        ] + DisplayWindowProbeTest.all + [LandscapeVideoTest()]
+        ] + DisplayWindowProbeTest.all + [LandscapeVideoTest(), LandscapeDownscaleTest()]
         // Holds the swaps for a second each; the forced producer failure last.
         + [Host1xFlipTest.trial, Host1xFlipTest.teardown]
 
