@@ -6,6 +6,7 @@
 #import "RawMetalInternal.h"
 #include "bridge/NativeMetalDirect.h"
 #include "raw_resource_id.h"
+#include "raw_sampler_word.h"
 
 static_assert(sizeof(raw::HeapTextureFacts) == sizeof(NmbHeapTextureFacts) &&
                   offsetof(raw::HeapTextureFacts, swizzle) == offsetof(NmbHeapTextureFacts, swizzle),
@@ -82,11 +83,11 @@ void rmHeapForgetSampler(RMSampler *s)
     const uint64_t word = raw::samplerResourceId(_raw.tsc);
     if (word && gRM && !_idNamed.exchange(true, std::memory_order_acq_rel)) {
         MTLSamplerDescriptor *d = _descriptor;
-        const NmbSamplerDescriptor desc = {d.minFilter,     d.magFilter,       d.mipFilter,   d.sAddressMode,
-                                           d.tAddressMode,  d.rAddressMode,    d.borderColor, d.normalizedCoordinates,
-                                           d.maxAnisotropy, d.compareFunction, d.lodAverage,  d.lodMinClamp,
-                                           d.lodMaxClamp};
-        if (!gRM->raw->nameSampler(_raw, switch_nmb_sampler_word(&desc), _normalized))
+        const raw::SamplerFacts facts = {d.minFilter,     d.magFilter,       d.mipFilter,   d.sAddressMode,
+                                         d.tAddressMode,  d.rAddressMode,    d.borderColor, d.normalizedCoordinates,
+                                         d.maxAnisotropy, d.compareFunction, d.lodAverage,  d.lodMinClamp,
+                                         d.lodMaxClamp};
+        if (!gRM->raw->nameSampler(_raw, raw::samplerWord(facts), _normalized))
             heapRefused("sampler");
     }
     return resourceId(word);
