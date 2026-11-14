@@ -31,7 +31,7 @@ inline void IOLog(const char *format, ...)
 {
     switch_test_may_block("IOLog");
     char line[512];
-    va_list arguments;
+    va_list arguments;  // NOLINT(cppcoreguidelines-init-variables): va_start initialises it
     va_start(arguments, format);
     vsnprintf(line, sizeof(line), format, arguments);
     va_end(arguments);
@@ -130,7 +130,7 @@ public:
         return &loop;
     }
 
-    IOReturn addEventSource(IOInterruptEventSource *)
+    static IOReturn addEventSource(IOInterruptEventSource *)
     {
         return kIOReturnSuccess;
     }

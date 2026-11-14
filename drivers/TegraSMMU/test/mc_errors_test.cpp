@@ -66,7 +66,9 @@ TEST_F(McErrors, TheFilterTakesTheCaptureBeforeClearingAndTheActionNamesTheClien
     EXPECT_EQ(switch_test_lines[0], "TegraSMMU: MC error DECERR_EMEM: DECERR_EMEM (no DRAM at the address), a read by "
                                     "csr_sesrd (SE) (client 0x80) at 0; INTSTATUS 0x40 ERR_STATUS 0x20000080 ERR_ADR "
                                     "0\n");
-    uint32_t intstatus = 0, status = 0, address = 0;
+    uint32_t intstatus = 0;
+    uint32_t status = 0;
+    uint32_t address = 0;
     EXPECT_GE(tegra_mc_error_latest(&intstatus, &status, &address), 1u);
     EXPECT_EQ(intstatus, 1u << 6);
     EXPECT_EQ(status, 0x20000080u);
@@ -140,6 +142,7 @@ uintptr_t ml_io_map(uintptr_t phys_addr, uintptr_t)
 }
 }
 
+// NOLINTNEXTLINE(misc-use-internal-linkage): the driver under test links to this symbol
 IOService *switch_interrupt_nub(uint32_t, bool)
 {
     static IOService nub;

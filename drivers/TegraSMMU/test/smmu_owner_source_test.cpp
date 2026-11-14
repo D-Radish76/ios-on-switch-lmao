@@ -33,7 +33,7 @@ TEST(TegraSMMUSource, OneOwnerOfTheGlobalRegisters)
             continue;
         }
         ++units;
-        std::ifstream file(path, std::ios::binary);
+        std::ifstream const file(path, std::ios::binary);
         std::ostringstream text;
         text << file.rdbuf();
         for (const char *global : {"MC_SMMU_PTB_ASID", "MC_SMMU_PTB_DATA", "MC_SMMU_TLB_FLUSH", "MC_SMMU_PTC_FLUSH"})

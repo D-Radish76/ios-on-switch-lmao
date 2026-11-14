@@ -78,9 +78,10 @@ inline const char *describe(const Error &e, char *text, size_t size)
     const uint32_t s = e.status;
     const uint64_t address = static_cast<uint64_t>((s >> 20) & 3) << 32 | e.address;
     char page[64] = "";
-    if (((s >> 28) & 7) == 6)
+    if (((s >> 28) & 7) == 6) {
         snprintf(page, sizeof(page), " (page readable %u writable %u nonsecure %u)", (s >> 27) & 1, (s >> 26) & 1,
                  (s >> 25) & 1);
+    }
     snprintf(text, size, "%s: %s%s, a %s by %s (client %#x) at %#llx; INTSTATUS %#x ERR_STATUS %#x ERR_ADR %#x",
              bitNames(e.intstatus, kinds, sizeof(kinds)), errorType(s), page, (s >> 16) & 1 ? "write" : "read",
              client(s & 0xff), s & 0xff, static_cast<unsigned long long>(address), e.intstatus, s, e.address);
