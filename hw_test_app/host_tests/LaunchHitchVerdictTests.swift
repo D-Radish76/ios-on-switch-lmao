@@ -74,7 +74,7 @@ final class LaunchHitchVerdictTests: XCTestCase {
             [
                 LaunchHitchArm(name: "cold", verdict: cold, launchMs: 162, returnMs: 8704),
                 LaunchHitchArm(name: "warm", verdict: warm, launchMs: 593, returnMs: 2613),
-            ], targetRunning: false, genericStates: 19)
+            ], target: .notRunning, genericStates: 19)
         XCTAssertEqual(outcome.verdict, .fail)
         XCTAssertTrue(outcome.detail.hasPrefix("cold: the compositor's longest job took 50546 us"), outcome.detail)
         XCTAssertEqual(outcome.metrics["cold_generic_spans"], .integer(2))
@@ -85,7 +85,7 @@ final class LaunchHitchVerdictTests: XCTestCase {
         let line = LogLine.format(id: "ui.launch_hitch", outcome: outcome, milliseconds: 25_000)
         XCTAssertLessThanOrEqual(line.utf8.count, 1000, line)
         for field in [
-            " target_running=0 ", " cold_launch_ms=162 ", " cold_return_ms=8704 ", " cold_job_max_us=50546 ",
+            " target_running=not_running ", " cold_launch_ms=162 ", " cold_return_ms=8704 ", " cold_job_max_us=50546 ",
             " cold_generic_total_ms=82.61 ", " warm_return_ms=2613 ",
         ] {
             XCTAssertTrue(line.contains(field), field)
@@ -98,12 +98,35 @@ final class LaunchHitchVerdictTests: XCTestCase {
             reading: SpanReading.parse("job_max_us=9295 sync_subs=2 spans=0"), states: Self.states27,
             jobBoundUs: 50_000)
         let outcome = LaunchHitchArm.outcome(
-            [LaunchHitchArm(name: "warm", verdict: warm, launchMs: 593, returnMs: nil)], targetRunning: true,
+            [LaunchHitchArm(name: "warm", verdict: warm, launchMs: 593, returnMs: nil)], target: .running,
             genericStates: 19)
         XCTAssertEqual(outcome.verdict, .pass)
-        XCTAssertEqual(outcome.metrics["target_running"], .flag(true))
+        XCTAssertEqual(outcome.metrics["target_running"], .text("running"))
         XCTAssertEqual(outcome.metrics["cold"], .text("skipped_target_running"))
         XCTAssertEqual(outcome.metrics["warm_return_ms"], .number(-1, digits: 0), "a return not seen in time reads -1")
+    }
+
+    /// A process list a sandbox cut to the app's own pid cannot say Settings is not running: no cold arm is claimed
+    func testOnlyAListShowingOtherProcessesTellsWhetherTheTargetRuns() {
+        let own: Int32 = 482
+        let me = RunningProcesses.Entry(pid: own, name: "SwitchHWTest")
+        let others = [me, RunningProcesses.Entry(pid: 69, name: "backboardd")]
+        XCTAssertEqual(LaunchTarget.state(of: "Preferences", in: nil, own: own), .unknown)
+        XCTAssertEqual(LaunchTarget.state(of: "Preferences", in: [me], own: own), .unknown)
+        XCTAssertEqual(LaunchTarget.state(of: "Preferences", in: others, own: own), .notRunning)
+        XCTAssertEqual(
+            LaunchTarget.state(of: "Preferences", in: others + [.init(pid: 492, name: "Preferences")], own: own),
+            .running)
+        XCTAssertEqual(LaunchTarget.notRunning.arms, ["cold", "warm"])
+        XCTAssertEqual(LaunchTarget.running.arms, ["warm"])
+        XCTAssertEqual(LaunchTarget.unknown.arms, ["first", "warm"])
+        let first = LaunchHitchVerdict(
+            reading: SpanReading.parse("job_max_us=9295 spans=0"), states: Self.states27, jobBoundUs: 50_000)
+        let outcome = LaunchHitchArm.outcome(
+            [LaunchHitchArm(name: "first", verdict: first, launchMs: 160, returnMs: 2600)], target: .unknown,
+            genericStates: 19)
+        XCTAssertEqual(outcome.metrics["cold"], .text("skipped_target_unknown"))
+        XCTAssertEqual(outcome.metrics["target_running"], .text("unknown"))
     }
 
     /// The kernel keeps the notes one line has no room for: a launch's notes over two asks read as one window

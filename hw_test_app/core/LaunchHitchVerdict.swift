@@ -2,6 +2,7 @@ import Foundation
 
 /// HW Test ui.launch_hitch's judgement of one launch and the return to the test app, read as one SpanReading: it fails
 /// on a compositor job over the bound and names the generic merge states' spans (GenericStates) by key, name and time.
+/// Only spans of 5 ms or more are noted (raw_span_marks.h kLongSpanNs), so the generic counts and times are a floor.
 public struct LaunchHitchVerdict: Sendable {
     public let reading: SpanReading
     public let generic: [LongSpan]
@@ -81,13 +82,13 @@ public struct LaunchHitchArm: Sendable {
     }
 
     /// The test's outcome over its arms, each field prefixed with its arm's name: it fails on any arm's job over the
-    /// bound. `targetRunning` is whether the target was running when the test began; where it was, the app has no way
-    /// to end it, so there is no cold arm and `cold` says why.
-    public static func outcome(_ arms: [LaunchHitchArm], targetRunning: Bool, genericStates: Int) -> Outcome {
+    /// bound. `target` is whether the target app ran when the test began; the app has no way to end it, so where it ran
+    /// or where that is unknown there is no cold arm, and `cold` says why.
+    public static func outcome(_ arms: [LaunchHitchArm], target: LaunchTarget, genericStates: Int) -> Outcome {
         var metrics = Metrics()
-        metrics.set("target_running", targetRunning)
+        metrics.set("target_running", target.rawValue)
         metrics.set("generic_states", genericStates)
-        if !arms.contains(where: { $0.name == "cold" }) { metrics.set("cold", "skipped_target_running") }
+        if !arms.contains(where: { $0.name == "cold" }) { metrics.set("cold", "skipped_target_" + target.rawValue) }
         var failures: [String] = []
         for arm in arms {
             metrics.set(arm.name + "_launch_ms", arm.launchMs ?? -1, digits: 0)

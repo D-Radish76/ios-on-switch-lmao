@@ -9,8 +9,9 @@ import UIKit
 /// FrontBoard's launch entitlement), then this app again, and the debug kernel answers the compositor's longest GPU job
 /// and every span of 5 ms or more of one state the render server's raw path noted (TegraGM20BPathsABI.h spans op;
 /// raw_span_marks.h), each "<us> us k<key> <state> <instructions> instr x<marks> <target>k[m]".
-/// - The cold arm is the first round, run only where Settings was not running when the test began: the app holds no
-///   right to end another app.
+/// - The cold arm is the first round, run only where the process list shows Settings was not running when the test
+///   began: the app holds no right to end another app, and a list the sandbox cuts to this app cannot tell (the
+///   first round is then reported as "first").
 /// - The warm arm is the next round.
 /// The return counts: boot 22's generic spans came after this app was opened again, while Settings was still launching.
 /// Any arm's job longer than three frames fails. The spans of Core Animation's generic merge states are named by key
@@ -45,17 +46,17 @@ struct LaunchHitchTest: HWTest {
             let table = try? String(contentsOf: url, encoding: .utf8)
         else { return .fail("ca_generic_keys.txt is not in the app's bundle") }
         let states = GenericStates.parse(table)
-        let targetRunning = RunningProcesses.pid(named: Self.launchedProcess) != nil
+        let target = LaunchTarget.state(of: Self.launchedProcess, in: RunningProcesses.list(), own: getpid())
         let task = await MainActor.run { UIApplication.shared.beginBackgroundTask(withName: id) }
         defer { Task { @MainActor in UIApplication.shared.endBackgroundTask(task) } }
         var arms: [LaunchHitchArm] = []
-        for name in targetRunning ? ["warm"] : ["cold", "warm"] {
+        for name in target.arms {
             guard let arm = try await Self.round(name, connection, states) else {
                 return .skip("LSApplicationWorkspace refused to open \(Self.launched)")
             }
             arms.append(arm)
         }
-        return LaunchHitchArm.outcome(arms, targetRunning: targetRunning, genericStates: states.names.count)
+        return LaunchHitchArm.outcome(arms, target: target, genericStates: states.names.count)
     }
 
     /// Settings opened and this app opened again, judged as one window from a drained start; nil where Settings would
