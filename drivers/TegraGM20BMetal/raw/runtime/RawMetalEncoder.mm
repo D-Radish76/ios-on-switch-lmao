@@ -508,7 +508,7 @@ void rmPoolEncoders()
         hit(self, PredPassOther, 0, 1);
     }
     if (positions && !passSamplePositions(pass, positions, e->_samples, facts.positions))
-        hit(self, PredPassPositions, positions, e->_samples);
+        hit(self, PredPassPositions, positions, e->_samples, "sample positions past the pass's samples: drawn at the standard ones");
     e->_renderAt = _plan.size();
     Cmd m = cmd(OpRender);
     m.obj = (__bridge void *)pass;

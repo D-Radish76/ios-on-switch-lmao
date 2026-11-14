@@ -142,20 +142,13 @@ static constexpr const char *kPredNames[] = {"-",
                                              "pass.positions"};
 static_assert(sizeof kPredNames / sizeof *kPredNames == PredCount, "a name for each predicate");
 
-// The predicates whose command buffer fails, its work run nowhere, with MTLCommandBufferErrorDomain's code (0: not one).
-// The client's errors: an Apple GPU completes a copy, fill or index range past its buffer, and a state whose colour
-// formats or samples are not its pass's, with no error (measured on an M-series Mac, API validation off) and Metal's
-// validation layer stops them; here the command buffer fails InvalidResource instead of drawing what no device defines.
-// The kernel refusing a submission or the channel fails it Internal (raw/plan/predicates.tsv cb-error).
+// The predicates whose command buffer fails, its work run nowhere, with MTLCommandBufferErrorDomain's code (0: not one):
+// the kernel refusing a submission or the channel (raw/plan/predicates.tsv cb-error). The client's errors (call.bufcopy,
+// enc.idxrange, enc.colorfmt, enc.samples, pass.positions) complete as Apple's driver completes them
+// (raw_client_errors.h), each logged once.
 constexpr NSInteger predFailure(RMPred p)
 {
     switch (p) {
-    case PredCallBufCopyRange:
-    case PredEncIndexedRange:
-    case PredEncColorFormats:
-    case PredEncSamples:
-    case PredPassPositions:
-        return MTLCommandBufferErrorInvalidResource;
     case PredEncKernel:
     case PredEncNoChannel:
         return MTLCommandBufferErrorInternal;

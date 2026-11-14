@@ -341,7 +341,8 @@ void rmWriteCommand(RMIndirectCommandBuffer *b, NSUInteger index, const RMICBCom
         hit(_cb, PredEncGeometry, 0, kinds);
     }
     const std::vector<RMBuffer *> reads = [b buffers];
-    [self checkDraw];
+    if (![self checkDraw])
+        return;
     [_cb retain:b];
     [_cb retain:rangeBuffer];
     for (RMBuffer *read : reads)

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
-// The refusals whose command buffer fails with Metal's error instead of running on m2v (RawMetalPredicates.h
-// predFailure): the client's errors fail InvalidResource at recording (a copy or fill past its buffer, indirect arguments
-// past theirs, a state's colour formats or samples that are not its pass's, sample positions past the pass's samples) and
-// at encoding, the kernel refusing a submission or the channel fails Internal naming the kernel's answer. The m2v device is
-// never opened or asked for, the path is error:<predicate> and the predicate's failed count is the command buffer's.
+// What Metal's validation layer would stop completes on the raw facade as Apple's driver completes it, nothing on m2v
+// (raw_client_errors.h, measured on an M-series Mac with API validation off: every one of these command buffers
+// completed with no error): a copy or fill past its buffer, indirect arguments past theirs, a state of the other
+// four-channel 8-bit order or another sample count than its pass, sample positions past the pass's samples, and a state
+// whose colour Apple writes as reinterpreted bits (its draw skipped). The kernel refusing a submission or the channel
+// fails the command buffer Internal naming the kernel's answer (RawMetalPredicates.h predFailure).
 #include "raw_facade_harness.h"
 #include "bazel/testing/fresh_process.h"
 
@@ -94,6 +95,19 @@ void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pre
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
+// `cb` committed completed on the raw path, no error, m2v never opened or asked
+void expectCompleted(id<MTLDevice> device, id<MTLCommandBuffer> cb)
+{
+    [cb commit];
+    [cb waitUntilCompleted];
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
+    EXPECT_EQ(std::string(path(cb).UTF8String ?: ""), "raw");
+    NSDictionary *counts = counters(device);
+    EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
+}
+
 void bufferCopyPastItsBuffer()
 {
     const Opened o = openPacked();
@@ -103,7 +117,7 @@ void bufferCopyPastItsBuffer()
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     [blit copyFromBuffer:a sourceOffset:0 toBuffer:b destinationOffset:0 size:1 << 20];
     [blit endEncoding];
-    expectFailed(o.device, cb, "call.bufcopy", MTLCommandBufferErrorInvalidResource);
+    expectCompleted(o.device, cb);
 }
 
 void bufferFillPastItsBuffer()
@@ -115,7 +129,7 @@ void bufferFillPastItsBuffer()
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     [blit fillBuffer:a range:NSMakeRange(0, 1 << 22) value:7];
     [blit endEncoding];
-    expectFailed(o.device, cb, "call.bufcopy", MTLCommandBufferErrorInvalidResource);
+    expectCompleted(o.device, cb);
 }
 
 void indirectArgumentsPastTheirBuffer()
@@ -129,16 +143,27 @@ void indirectArgumentsPastTheirBuffer()
     [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
     [e drawPrimitives:MTLPrimitiveTypeTriangle indirectBuffer:arguments indirectBufferOffset:4];
     [e endEncoding];
-    expectFailed(o.device, cb, "enc.idxrange", MTLCommandBufferErrorInvalidResource);
+    expectCompleted(o.device, cb);
 }
 
-void stateColourFormatNotThePasss()
+// Apple's driver draws the right colour (the target orders the channels)
+void stateOfTheOtherChannelOrder()
 {
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil && o.state != nil);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     drawInto(cb, pass(target(o.device, MTLPixelFormatRGBA8Unorm)), o.state);
-    expectFailed(o.device, cb, "enc.colorfmt", MTLCommandBufferErrorInvalidResource);
+    expectCompleted(o.device, cb);
+}
+
+// Apple's driver writes the other format's bits: the draw is skipped, the command buffer completed
+void stateOfAnotherColourFormat()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+    drawInto(cb, pass(target(o.device, MTLPixelFormatRGBA16Float)), o.state);
+    expectCompleted(o.device, cb);
 }
 
 void stateSamplesNotThePasss()
@@ -147,7 +172,7 @@ void stateSamplesNotThePasss()
     ASSERT_TRUE(o.device != nil && o.state != nil);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     drawInto(cb, pass(target(o.device, kPacked, 4)), o.state);
-    expectFailed(o.device, cb, "enc.samples", MTLCommandBufferErrorInvalidResource);
+    expectCompleted(o.device, cb);
 }
 
 void samplePositionsPastThePasssSamples()
@@ -159,7 +184,7 @@ void samplePositionsPastThePasssSamples()
     [p setSamplePositions:positions count:4];
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
-    expectFailed(o.device, cb, "pass.positions", MTLCommandBufferErrorInvalidResource);
+    expectCompleted(o.device, cb);
 }
 
 // One command buffer completes first, so the channel is made before the kernel refuses the next submission
@@ -205,32 +230,37 @@ void kernelRefusesTheChannel()
 
 }  // namespace
 
-TEST(RawFacadeErrors, ABufferCopyPastItsBufferFails)
+TEST(RawFacadeErrors, ABufferCopyPastItsBufferCompletes)
 {
     switch_ios::test::ExpectPassesInFreshProcess(bufferCopyPastItsBuffer);
 }
 
-TEST(RawFacadeErrors, ABufferFillPastItsBufferFails)
+TEST(RawFacadeErrors, ABufferFillPastItsBufferCompletes)
 {
     switch_ios::test::ExpectPassesInFreshProcess(bufferFillPastItsBuffer);
 }
 
-TEST(RawFacadeErrors, IndirectArgumentsPastTheirBufferFail)
+TEST(RawFacadeErrors, IndirectArgumentsPastTheirBufferComplete)
 {
     switch_ios::test::ExpectPassesInFreshProcess(indirectArgumentsPastTheirBuffer);
 }
 
-TEST(RawFacadeErrors, AStateOfAnotherColourFormatFails)
+TEST(RawFacadeErrors, AStateOfTheOtherChannelOrderCompletes)
 {
-    switch_ios::test::ExpectPassesInFreshProcess(stateColourFormatNotThePasss);
+    switch_ios::test::ExpectPassesInFreshProcess(stateOfTheOtherChannelOrder);
 }
 
-TEST(RawFacadeErrors, AStateOfOtherSamplesFails)
+TEST(RawFacadeErrors, AStateOfAnotherColourFormatCompletes)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(stateOfAnotherColourFormat);
+}
+
+TEST(RawFacadeErrors, AStateOfOtherSamplesCompletes)
 {
     switch_ios::test::ExpectPassesInFreshProcess(stateSamplesNotThePasss);
 }
 
-TEST(RawFacadeErrors, SamplePositionsPastThePasssSamplesFail)
+TEST(RawFacadeErrors, SamplePositionsPastThePasssSamplesComplete)
 {
     switch_ios::test::ExpectPassesInFreshProcess(samplePositionsPastThePasssSamples);
 }

@@ -18,6 +18,17 @@
 #include "raw_samples.h"
 #include "raw_turned_pass.h"
 
+// The refusal predicate of an encode-time refusal or skip (raw_gpu.h RefusalId)
+static RMPred refusalPred(uint8_t id)
+{
+    static const RMPred map[] = {PredEncPassRender,  PredEncIndexedRange, PredEncColorFormats, PredEncUboOffset,
+                                 PredEncNoTic,       PredEncDepthStencil, PredEncSamples,      PredEncGeometry,
+                                 PredEncStorageView, PredPassRotated,     PredEncPassRender,   PredEncPassRender,
+                                 PredCallBufForeign};
+    static_assert(sizeof map / sizeof *map == raw::RefIndexMemory + 1, "a predicate for each refusal");
+    return id < sizeof map / sizeof *map ? map[id] : PredEncPassRender;
+}
+
 // ---- the tape onto the raw path ----
 // false: something in it the raw path cannot do after all (*why); nothing of it was submitted then. A refusal inside one
 // encoder names that encoder's first command in *refusedEncoder; one no encoder owns (the channel's, the kernel's, a planar
@@ -146,14 +157,8 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
     };
     // a draw the encoder refused: its predicate and values (raw_gpu.h Refusal)
     auto refused = [&]() {
-        static const RMPred map[] = {PredEncPassRender,  PredEncIndexedRange, PredEncColorFormats, PredEncUboOffset,
-                                     PredEncNoTic,       PredEncDepthStencil, PredEncSamples,      PredEncGeometry,
-                                     PredEncStorageView, PredPassRotated,     PredEncPassRender,   PredEncPassRender,
-                                     PredCallBufForeign};
-        static_assert(sizeof map / sizeof *map == raw::RefIndexMemory + 1, "a predicate for each refusal");
         const raw::Refusal &f = rc->refusal;
-        hit(cb, f.id < sizeof map / sizeof *map ? map[f.id] : PredEncPassRender, f.a,
-            uint64_t(f.b) | uint64_t(f.c) << 32);
+        hit(cb, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32);
         if (encoder < to)
             *refusedEncoder = encoder;
         rc->abandon();
@@ -953,6 +958,9 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
         return fail(PredEncKernel, "the kernel refused the submission", uint32_t(rc->kernelResult), 0, answer);
     }
     firstContents.submitted(cb);
+    if (rc->skips)
+        hit(cb, refusalPred(rc->skipped.id), rc->skipped.a, uint64_t(rc->skipped.b) | uint64_t(rc->skipped.c) << 32,
+            "a draw Apple's driver draws nothing defined for: skipped");
     publishSharedEvents(cb);
     if (rc->promisesKept) {
         std::lock_guard<raw::Mutex> l(cb->_lock);

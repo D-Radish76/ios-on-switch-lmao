@@ -24,7 +24,7 @@ pass.level	record	layer	L3	levels, slices and depth planes of the textures the r
 pass.ds	record	gap	stored_multisample	a stored depth/stencil attachment (zetaDescriptor keeps one-sample depth only)
 pass.other	record	gap	rasterization_rate_map	a rasterization rate map: supportsRasterizationRateMapWithLayerCount: answers yes, newRasterizationRateMapWithDescriptor: is _MTLDevice's own
 pass.rotated	record	gap	rotated_target	a turned attachment beside one of another rotation or size or a loaded or stored one not turned, a rotation-4 Load, and at encode a state whose turned variant could not be made (PipelineTurnRefused)
-pass.positions	record	client	sample_positions	sample positions Metal takes and the pass's samples do not (a count past them, not 2 or 4): the command buffer fails InvalidResource
+pass.positions	record	client	sample_positions	sample positions past the pass's samples: drawn at the standard ones, as Apple's driver, logged once
 state.foreign	record	m2v	-	an m2v pipeline state
 state.notpack	record	m2v	-	functions from another device's library: with one backend every function is this device's
 state.pack	record	layer	L4	a state the pack lacks: made at creation (compiler daemon) or the archive-miss error FailOnBinaryArchiveMiss asks for
@@ -36,7 +36,7 @@ call.dbias	record	layer	L4	an infinite or NaN depth bias: the state program's vi
 call.inv	record	layer	L6	an encoder selector raw does not implement: implemented, or failed at creation per Metal
 call.cbinv	record	layer	L6	a command buffer selector raw does not implement: as call.inv
 call.blitopt	record	rule	copy.ce	depth or stencil of a combined format: copy-engine remap of the aspect
-call.bufcopy	record	client	buffer_range	a copy or fill past the buffer: the command buffer fails InvalidResource (predFailure)
+call.bufcopy	record	client	buffer_range	a copy or fill past its buffer: clamped to the bytes inside both, as Apple's driver copies (raw_client_errors.h), logged once
 blit.tex	record	rule	copy.ce	levels, slices and 3D planes: one copy rectangle per layer; texel sizes that differ are client error copy_texel_size
 blit.b2t	record	rule	copy.ce	buffer rows into a texture: copy rectangles, one per plane
 blit.t2b	record	rule	copy.ce	texture rows into a buffer: as blit.b2t
@@ -56,12 +56,12 @@ enc.planarclamp	encode	gap	sampler_address_mode	a sampler header under a planar 
 enc.planarrt	encode	rule	planar.standin_load,planar.standin_store	a planar target through its stand-in; sampled and rendered in one command buffer: its codes converted again after the store (edges order it)
 enc.pass	encode	rule	resolve.draw,ycbcr.image,xr.standin	a pass raw could not begin: resolve, YCbCr and extended-range targets are nodes with their rule decided before emission
 enc.kernel	encode	cb-error	-	the kernel refused the submission: a commit-time outcome, the command buffer's error (MTLCommandBufferErrorInternal)
-enc.idxrange	encode	client	index_buffer_offset	the command buffer fails InvalidResource (predFailure)
-enc.colorfmt	encode	client	pipeline_color_format	the command buffer fails InvalidResource (predFailure)
+enc.idxrange	encode	client	index_buffer_offset	an index type Metal has none of, indirect arguments past their buffer (read as zeros) or indices outside it (skipped), as Apple's driver, logged once
+enc.colorfmt	encode	client	pipeline_color_format	a state of the other four-channel 8-bit order drawn into the pass's format; another format skipped (Apple writes other bits), logged once
 enc.ubo	encode	layer	L4	a uniform buffer bound off the descriptor base: the record's residual words (E9)
 enc.notic	encode	layer	L3	a texture with no header at the draw: every view gets its header slot when made
 enc.ds	encode	client	pipeline_depth_format	a state testing depth or stencil the pass lacks; shader-side tests (copyShaderTests) stay the pass's own work
-enc.samples	encode	client	pipeline_sample_count	the command buffer fails InvalidResource (predFailure)
+enc.samples	encode	client	pipeline_sample_count	a one-sample state in a pass of more writes sample 0, a many-sample one in a one-sample pass draws whole, as Apple's driver; others skipped, logged once
 enc.nochannel	encode	cb-error	channel_lost	MTLCommandBufferErrorInternal
 enc.geometry	encode	rule	fetch.interlock	fetch ladder rung 4 for any geometry; the states with no storage form stay gap fetch_without_storage_form (11 on iOS 27, 53 on iOS 17 per x1-f1)
 enc.storage	encode	rule	fetch.barrier,fetch.interlock	a fetched colour with neither form stays gap fetch_without_storage_form

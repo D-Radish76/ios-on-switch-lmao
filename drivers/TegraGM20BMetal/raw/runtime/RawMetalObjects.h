@@ -638,7 +638,8 @@ static inline void setBinding(RMCommandBuffer *cb, Op op, int stage, NSUInteger 
 id<MTLSamplerState> clampedSampler(id<MTLSamplerState> s, float lodMin, float lodMax);
 
 @interface RMRenderEncoder ()
-- (void)checkDraw __attribute__((objc_direct));  // (RawMetalRenderEncoder.mm)
+// (RawMetalRenderEncoder.mm) NO: a draw Apple's driver draws nothing defined for, which is skipped (raw_client_errors.h)
+- (BOOL)checkDraw __attribute__((objc_direct));
 @end
 
 // RawMetalEncoder.mm: the encoder's own copy of its pass, where it shares the thread's, before it changes it

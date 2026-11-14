@@ -212,6 +212,7 @@ TESTS: dict[str, bool] = {
             'metal.native.error_bufcopy',
             'metal.native.error_idxrange',
             'metal.native.error_colorfmt',
+            'metal.native.error_format_skip',
             'metal.native.error_samples',
             'metal.native.error_positions',
             'metal.native.rate_map',

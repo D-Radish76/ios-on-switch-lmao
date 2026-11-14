@@ -94,6 +94,7 @@
 #include "raw_depth_stencil_state.h"
 #include "raw_sample_positions.h"
 #include "raw_alpha_control.h"
+#include "raw_client_errors.h"
 #include "raw_zcull.h"
 #include "raw_zcull_planes.h"
 #include "raw_xr.h"
@@ -1084,7 +1085,13 @@ private:
     bool measuringInline() const;
     bool bindsBySegment() const;
     const Pipeline *compatible_ = nullptr;
-    uint32_t compatibleSampleMasks_[4]{};
+    uint32_t compatibleSampleMasks_[4]{}, compatibleRasterMask_ = kSampleMaskAll;
+    // prepare() found a draw Apple's driver draws nothing defined for (raw_client_errors.h): its caller draws nothing
+    bool skipDraw_ = false;
+    bool skippedDraw()
+    {
+        return std::exchange(skipDraw_, false);
+    }
     bool residualsPushed_ = false;  // the last draw's push words held SlotBindOffset residuals (RenderEncoder::prepare)
     PreparedDescriptors descriptors_;
     SpillUpload spillUploads_[2];  // each stage's argument table as the encoder uploaded it last (raw_spill_table.h)
@@ -1428,6 +1435,8 @@ struct Refusal {
 class CommandBuffer {
 public:
     Refusal refusal;                              // the last refused draw's predicate and its values
+    Refusal skipped;                              // the last draw skipped as Apple's driver draws nothing for it
+    uint32_t skips = 0;
     RenderEncoder *render(const PassDesc &pass);  // null: an attachment the raw path cannot render to
     // raw_turn_copy.h: each texel of `dst` from `src`'s at `map`, both of one texel size or depth format (a pass of the pack's
     // turn copy state; `src` given a texture header where it has none), over `dst`'s first width x height (0: all of an axis);
@@ -1694,6 +1703,7 @@ private:
     uint32_t restart_ = 0;                  // SET_DA_PRIMITIVE_RESTART_INDEX as the GPU will hold it
     uint32_t rtLayer_ = ~0u;                // and SET_RT_LAYER (~0: not known)
     uint32_t alphaHeld_ = ~0u;              // and SET_ANTI_ALIAS_ALPHA_CONTROL (~0: not known)
+    uint32_t sampleMaskHeld_ = ~0u;         // and SET_SAMPLE_MASK_X0_Y0..X1_Y1 (~0: not known)
     DepthStencilRegs ds_;                   // and its depth/stencil registers
     const Pipeline *extrasLive_ = nullptr;  // and the state whose extras it holds (Pipeline::restore)
     HeldSegment heldSegment_;               // and the state segment its registers hold
@@ -2944,6 +2954,7 @@ private:
     uint32_t restart_ = 0;        // and its primitive restart index
     uint32_t rtLayer_ = ~0u;      // and SET_RT_LAYER (~0: not known)
     uint32_t alphaHeld_ = ~0u;    // and SET_ANTI_ALIAS_ALPHA_CONTROL (~0: not known)
+    uint32_t sampleMaskHeld_ = ~0u;  // and SET_SAMPLE_MASK_X0_Y0..X1_Y1 (~0: not known)
     DepthStencilRegs ds_;         // and its depth/stencil registers
     std::map<std::tuple<uint64_t, uint64_t, uint64_t>, Import *> surfaces_;
     std::vector<std::unique_ptr<NativeSurface>> nativeSurfaces_;
