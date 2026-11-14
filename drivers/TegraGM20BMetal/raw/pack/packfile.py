@@ -273,6 +273,7 @@ def pipeline_bytes(rec: dict, key_offset: int, blob_off: int, variants_off: int 
     flags |= 32 if rec.get('form') == 'free' else 0
     flags |= 64 if rec.get('turn_refused') else 0  # PipelineTurnRefused
     flags |= 128 if rec.get('two_plane') else 0  # PipelineTwoPlane
+    flags |= 256 if rec.get('raster_ordered') else 0  # PipelineRasterOrdered
     head = struct.pack(
         '<QIIIIIBBBBHHI',
         keyhash,

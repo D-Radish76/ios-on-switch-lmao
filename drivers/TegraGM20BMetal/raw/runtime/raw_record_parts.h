@@ -81,6 +81,7 @@ struct RecordParts {
     std::map<uint32_t, uint32_t> push;  // the root words [0x700, 0x780) the draw writes
     uint16_t setBytes = 0;
     bool pushMetadata = false;
+    bool rasterOrdered = false;  // PipelineRasterOrdered
     uint8_t blendColorWord = 0, halfBlendColorWord = 0;
     uint8_t storageMask = 0, storageWriteMask = 0, storageSamples = 0, storageTests = 0;
     uint8_t storageBlendMask = 0, storageBlendModel = 0;

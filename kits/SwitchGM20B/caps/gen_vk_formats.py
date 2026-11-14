@@ -47,11 +47,10 @@ def vk_to_pipe(path: str) -> dict[str, str]:
 
 
 def vk_values(path: str) -> dict[str, int]:
+    """Each VkFormat enumerant's value, an alias (VK_FORMAT_A8_UNORM_KHR = VK_FORMAT_A8_UNORM) taking its target's."""
     with open(path, encoding='utf-8') as f:
         text = f.read()
     values = {name: int(v) for name, v in re.findall(r'^\s+VK_FORMAT_(\w+) = (\d+),', text, re.MULTILINE)}
-    # vk_format.c maps some formats by an extension's name, which vulkan_core.h defines as the core enumerant's alias
-    # (VK_FORMAT_A8_UNORM_KHR = VK_FORMAT_A8_UNORM)
     for name, target in re.findall(r'^\s+VK_FORMAT_(\w+) = VK_FORMAT_(\w+),', text, re.MULTILINE):
         if target in values:
             values[name] = values[target]

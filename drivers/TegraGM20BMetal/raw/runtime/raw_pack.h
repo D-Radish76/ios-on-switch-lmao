@@ -310,7 +310,10 @@ enum PackPipelineFlags : uint32_t {
     // does not draw it
     PipelineTurnRefused = 64,
     // its RGB10A8_2P_XR10 colours drawn in Metal's two planes (raw_xr_pass.h): the record of the state's " | xr2p" variant
-    PipelineTwoPlane = 128
+    PipelineTwoPlane = 128,
+    // its fragment program runs whole inside the pixel interlock with no colour in the storage form: m2v orders the
+    // function's raster order groups so (rog.rs), each pixel's fragments in primitive order by the ticket
+    PipelineRasterOrdered = 256
 };
 
 // Where a key's variant name starts (" | cubic ...", then " | tests=<n>", then " | xr2p", then " | xrs=<slots>", then

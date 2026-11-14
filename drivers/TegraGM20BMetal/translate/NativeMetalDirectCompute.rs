@@ -345,13 +345,23 @@ fn bind_state(run: Run, dispatch: &NmbDirectDispatch, stage_in: bool) -> Result<
         table.buffers.insert(slot, bound);
     }
     for t in counted(dispatch.textures, dispatch.texture_count) {
-        table.textures.insert(
-            t.slot,
+        let bound = if raw::<TextureType>(t.texture_type, "texture type")? == TextureType::TextureBuffer {
+            // the texel buffer view raw binds is the texture's own header (Device::createTexelBuffer), not this range
+            BoundTexture::Buffer {
+                pixel_format: raw::<PixelFormat>(t.pixel_format, "pixel format")?,
+                offset: 0,
+                length: u64::from(TAG_BYTES),
+                bytes_per_row: u64::from(TAG_BYTES),
+                resource_id: None,
+                swizzle: TextureSwizzleChannels::default(),
+            }
+        } else {
             BoundTexture::Texture {
                 facts: facts_of(t)?,
                 resource_id: None,
-            },
-        );
+            }
+        };
+        table.textures.insert(t.slot, bound);
     }
     for s in counted(dispatch.samplers, dispatch.sampler_count) {
         table
@@ -662,6 +672,7 @@ fn kernel_write(
     };
     match &w.source {
         WriteSource::Texture { view, .. } => (out.view_format, out.components) = view_parts(view),
+        WriteSource::TexelBuffer { format, .. } => out.view_format = format.as_raw() as u32,
         WriteSource::Sampler {
             slot,
             compare,

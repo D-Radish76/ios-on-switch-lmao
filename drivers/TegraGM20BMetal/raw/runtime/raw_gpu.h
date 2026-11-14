@@ -1746,7 +1746,8 @@ private:
     // add per draw for each was a measurable share of a debug build's draw
     struct DrawCounts {
         uint64_t uploadBytes = 0, segmentBinds = 0, segmentWords = 0, segmentSkips = 0, segmentCopies = 0,
-                 blendKillBinds = 0, interlockDraws = 0, interlocked = 0, interlockedBlends = 0, twinRule = 0;
+                 blendKillBinds = 0, interlockDraws = 0, interlocked = 0, interlockedBlends = 0, twinRule = 0,
+                 rasterOrderedDraws = 0;
         uint64_t splitTwins = 0, splitWhole[size_t(SplitWhole::Count)] = {};
     } counts_;
 
@@ -2659,6 +2660,8 @@ public:
         // split twins that found no room in the heap or local memory at a draw that took them
         std::atomic<uint64_t> splitRoomRefusals{0};
         std::atomic<uint64_t> interlockDraws{0}, storageBarriers{0};
+        // draws of a state whose raster order groups run in the pixel interlock (PipelineRasterOrdered)
+        std::atomic<uint64_t> rasterOrderedDraws{0};
         // state segment binds, the inline words they replaced, a pass's first binds of the segment the channel still held
         // from the pass or command buffer before (no words; raw_state_segment.h), and passes that could not keep it because
         // their prologue set back the last state's extras (Pipeline::restore)
