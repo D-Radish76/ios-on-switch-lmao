@@ -1,5 +1,5 @@
-// When a device gives back the GPU memory no resource holds (nmb_device_release_idle_memory: m2v's empty blocks and
-// spares; the raw path's empty chunks, raw::Device::trim). Apple's driver keeps such memory in IOGPU's resource pools, which it can mark purgeable (IOGPUResourceSetPurgeable)
+// When a device gives back the GPU memory no resource holds (the raw path's empty chunks, raw::Device::trim; its caller
+// names what to release, so nothing here is m2v's). Apple's driver keeps such memory in IOGPU's resource pools, which it can mark purgeable (IOGPUResourceSetPurgeable)
 // so that it stops counting in the process's footprint, and AGXMetal listens for DISPATCH_SOURCE_TYPE_MEMORYPRESSURE. Ours
 // are kernel BOs mapped into the process and charged to its footprint as iokit_mapped until freed, so they go back on the
 // same events, and once the GPU has had nothing to do for a second: a widget or a snapshot service that stopped drawing
@@ -11,19 +11,9 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <atomic>
-#include "bridge/NativeMetalObjects.h"
 
 class GpuMemoryRelease {
 public:
-    void start(NmbDevice *device)
-    {
-        start(
-            [](void *d) {
-                nmb_device_release_idle_memory(static_cast<NmbDevice *>(d));
-            },
-            device);
-    }
-
     // inFlight: the caller's command buffers committed and not finished. With it, the idle deadline gives nothing back
     // while one is in flight (a GPU busy past it without a drain is not idle) and the next drain sets it again; memory
     // pressure still gives back at once.

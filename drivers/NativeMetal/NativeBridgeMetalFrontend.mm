@@ -7620,7 +7620,11 @@ extern "C" id native_bridge_metal_open(const char *loader, const char *cache, ui
         NBLOG(@"native-metal: device refused: %s", nmb_last_error());
         return nil;
     }
-    gMemoryRelease.start(gDevice);
+    gMemoryRelease.start(
+        [](void *d) {
+            nmb_device_release_idle_memory(static_cast<NmbDevice *>(d));
+        },
+        gDevice);
     if (cache) {
         gCompileCache = std::string(cache) + "/msl";
         gNativeArtifactStorage.cache = std::string(cache) + "/native-analysis";
