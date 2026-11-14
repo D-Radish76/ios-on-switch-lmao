@@ -288,6 +288,7 @@ TESTS: dict[str, bool] = {
     'display.planes_composite': False,
     'display.small_drawable': False,
     'display.present_at_time': False,
+    'display.refresh_dictionary': False,
     'display.plane_in_use': False,
     'display.scanout_routes': False,
     'display.plain_surfaces': False,

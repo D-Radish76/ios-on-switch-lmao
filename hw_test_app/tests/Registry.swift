@@ -53,7 +53,8 @@ public enum Registry {
         [
             DisplayModeTest(), DisplayPacingTest(), CompletionFlipTest(), MediaCompletionFlipTest(),
             MediaCompletionFlipGatedTest(), ScanReturnedTest(), BrightnessTest(),
-            ColourPipelineTest(), PlanesTest(), SmallDrawableTest(), PresentAtTimeTest(), PlaneInUseTest(),
+            ColourPipelineTest(), PlanesTest(), SmallDrawableTest(), PresentAtTimeTest(), DisplayRefreshTest(),
+            PlaneInUseTest(),
             ScanoutRoutesTest(), PlainSurfacesTest(), DisplaySnapshotTest(), WakeTest(),
             PlanesCroppedTest(),
         ] + DisplayWindowProbeTest.all + [LandscapeVideoTest(), LandscapeDownscaleTest()]

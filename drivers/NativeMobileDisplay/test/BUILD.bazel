@@ -1186,6 +1186,18 @@ host_test(
     deps = [":surface_use_kernel"],
 )
 
+# IOMFBDisplayRefresh: the hardware start has the family publish it, flag first, under the gate; both kinds bind it.
+host_test(
+    name = "switch_refresh_properties_test",
+    srcs = ["switch_refresh_properties_test.cpp"],
+    data = [
+        "//drivers/NativeMobileDisplay:NativeLegacyDisplay.cpp",
+        "//kits/SwitchABI:interface/IOMobileFramebufferLegacy.json",
+        "//kits/SwitchABI:kinds/21H461/IOMobileFramebufferLegacy.json",
+        "//kits/SwitchABI:kinds/24B119/IOMobileFramebufferLegacy.json",
+    ],
+)
+
 # SwitchTimedPresent.h: a swap flips at the frame end before its requested presentation; the next vblank's as before.
 host_test(
     name = "switch_timed_present_test",
