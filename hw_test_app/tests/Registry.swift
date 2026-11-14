@@ -20,6 +20,7 @@ public enum Registry {
         Float32FilterTest(), CompareSamplerTest(), SurfaceBufferTest(), CompressedTargetsTest(), ZcullTest(),
         MipTwodTest(), MipCandidatesTest(), MipLodTest(),
         VisibilityTest(), FixedBlendRuleTest(), PrivateCompressionTest(), AlphaToCoverageTest(), IconCornersTest(),
+        IconSmallSizesTest(), IconPasscodeTest(), IconCalendarTest(),
         CompileSharedTest(), CompileFirstDrawTest(), DrawBandsTest(), DispatchPiecesTest(), PosterTargetsTest(),
         ResolveCostTest(),
         MsaaFirstUseTest(), StoredDepthTest(),
@@ -74,7 +75,7 @@ public enum Registry {
     static let cpuAndSystem: [any HWTest] = [
         CPUSingleTest(), CPUMultiTest(), A64XSelfTest(), CryptoKitTest(), CommonCryptoTest(), KeychainTest(),
         LocalAuthenticationTest(), IdentityTest(), PowerStateTest(), ThermalTest(), SocThermThrottleTest(),
-        MemoryTest(), UnionDirectoryTest(), OverlayAppsTest(), OverlayAppRecordsTest(), CPUClockTest(),
+        MemoryTest(), UnionDirectoryTest(), OverlayAppsTest(), OverlayAppRecordsTest(), IconCacheTest(), CPUClockTest(),
         CPUDfllLandingTest(), CPUSustainedTest(), CPUSchedTest(), CPUIPIPingPongTest(),
         DispatchSyncTest(), DispatchSyncWorkloopTest(), WorkloopSyncTest(), WidgetsRenderTest(), IconRenderTest(),
         SnapshotPurgeableTest(),
