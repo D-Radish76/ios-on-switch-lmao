@@ -36,7 +36,7 @@ enum PackSectionId {
     PackSectionCount
 };
 
-constexpr uint32_t kPackVersion = 25;
+constexpr uint32_t kPackVersion = 26;
 
 // What a record or a program variant (PackVariant) assumes, as bits of a mask: a draw takes a variant only where all of them
 // hold. Bits 0-15 are facts of the draw's bindings, bit 16 of its pipeline, bit 26 of its pass, bits 17-25 of the chip
@@ -510,7 +510,9 @@ enum PackKernelEntryKind : uint8_t {
     // (EntryTextureTable, EntrySamplerTable)
     KernelTextureTable,
     KernelSamplerTable,
-    KernelSpillTable  // m2v's ArgumentTable (EntrySpillTable)
+    KernelSpillTable,    // m2v's ArgumentTable (EntrySpillTable)
+    KernelTexturePlane,  // the alpha plane (R8Uint) of the two-plane RGB10A8_2P_XR10 texture at the slot (raw_xr_pass.h),
+                         // whose KernelTexture entry binds its color words (R32Uint)
 };
 
 // A word range of set 0 and the Metal argument it holds: a buffer's {address, range} descriptor (its range the bound bytes
@@ -520,9 +522,24 @@ struct PackKernelEntry {
     uint16_t offset;
     uint8_t kind;  // PackKernelEntryKind
     uint8_t slot;
-    // buffers: kernelBufferWindow, kernelResidualWord; textures: the header's word 0 m2v bound (format, swizzle)
+    // buffers: kernelBufferWindow, kernelResidualWord; textures: the header's word 0 m2v bound (format, swizzle);
+    // samplers: kernelSamplerPairs (v26)
     uint32_t window;
 };
+
+// A sampler entry's window: bit 31 set where the record holds the texture slots whose reads the sampler samples, bits
+// 0-30 (none: it samples only images at no slot, or none); clear where it does not know them
+constexpr uint32_t kSamplerPairsKnown = 1u << 31;
+
+inline bool kernelSamplerPairsKnown(const PackKernelEntry &e)
+{
+    return e.window & kSamplerPairsKnown;
+}
+
+inline uint32_t kernelSamplerPairs(const PackKernelEntry &e)
+{
+    return e.window & ~kSamplerPairsKnown;
+}
 
 // A buffer entry's window in bytes, 0 the whole buffer
 inline uint32_t kernelBufferWindow(const PackKernelEntry &e)

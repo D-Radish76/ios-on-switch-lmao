@@ -88,6 +88,10 @@ public:
     void setStageInRegion(const std::array<uint32_t, 6> &region);
     void setTexture(uint32_t slot, const Texture *t);
     void setSampler(uint32_t slot, const Sampler *s);
+    // The bytes bound at buffer slot `slot` reached through a copy of them at `va`, on 16: a buffer bound off 16 bytes
+    // whose record names no residual word (raw_kernel_shadow.h KernelUse::windowSlot); clearBufferWindows: all in place
+    void setBufferWindow(uint32_t slot, uint64_t va);
+    void clearBufferWindows();
 
     // dispatchThreadgroups: `groups` threadgroups of `threads` threads, the shape the kernel's record was made at. False:
     // refused (*why), nothing encoded
@@ -136,6 +140,11 @@ public:
                           const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
                           const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
                           const char **why);
+    // One launch of a region past the QMD's grid fields: its slice (raw_dispatch_bands.h qmdSlice)
+    static bool icbRegion(Device &dev, const ComputeState &k, const ComputeRegion &region, const DispatchPiece &slice,
+                          const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
+                          const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
+                          const char **why);
     // The set-0 buffer descriptors and StageInStride root words of a region of kernel `k` written at `va` (icbRegion), as a
     // buffer that inherits the encoder's buffers binds them at an execute (raw_icb_compute.h ComputeBind, ComputeStride).
     // False: refused (*why).
@@ -173,6 +182,11 @@ private:
                          uint32_t *qmd, const char **why);
     // Why an indirect dispatch command cannot carry kernel `k`, null where it can
     static const char *icbRefusal(const ComputeState &k);
+    // The header index sampler entry `e`, whose record holds its pairs, binds: its own, where the address maps of the
+    // textures it samples change none of its modes (raw_sampler_map.h); null, or why it has none
+    static const char *pairedSamplerTsc(const Device &dev, const PackKernelEntry &e,
+                                        const Texture *const (&textures)[31], const Sampler *const (&samplers)[16],
+                                        uint32_t &tsc);
 
     struct Bound {
         uint64_t va = 0;
@@ -194,6 +208,8 @@ private:
     uint32_t *start_ = nullptr;
     const ComputeState *state_ = nullptr;
     Bound bufs_[31];
+    uint64_t windows_[31] = {};
+    uint32_t windowMask_ = 0;
     const Texture *textures_[31] = {};
     const Sampler *samplers_[16] = {};
     bool serial_ = false, dispatched_ = false;

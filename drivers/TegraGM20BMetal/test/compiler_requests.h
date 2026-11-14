@@ -108,7 +108,7 @@ public:
                 d.pixelFormat = MTLPixelFormat(t.pixelFormat);
                 d.textureType = MTLTextureType(t.textureType);
                 d.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-                dispatch.texture(t.slot, d);
+                dispatch.texture(t.slot, d, t.planes);
             }
             for (const raw::BoundSampler &b : region.samplers)
                 dispatch.sampler(b.slot, probe::samplerDescriptor(b));

@@ -235,6 +235,7 @@ typedef struct NmbDirectBinds {
 // A texture a kernel's dispatch binds at `slot`, as its MTLTextureDescriptor answers
 typedef struct NmbDirectBoundTexture {
     uint32_t slot;
+    uint32_t planes;  // 1: an RGB10A8_2P_XR10 texture held in Metal's two planes (raw_xr_pass.h), 0: one image
     uint64_t pixelFormat, textureType, usage, levels, arrayLength, samples;
 } NmbDirectBoundTexture;
 
@@ -259,6 +260,7 @@ typedef struct NmbDirectKernelWrite {
     NmbDirectWrite write;
     uint32_t viewFormat;  // a texture's view: its VkFormat, its VkComponentSwizzles with the texture's own composed in
     uint32_t components[4];  //   (identity where the function swizzles itself), 0: no view
+    uint32_t plane;          // 1: the view of a two-plane RGB10A8_2P_XR10 texture's alpha plane (R8_UINT) at its slot
     uint64_t sampler;  // a sampler made for the write (VkSampler on the kernel's device, live during the call), 0: none
     NmbDirectSamplerState samplerState;  // that sampler's state
     bool hasSampler;                     // the write takes a sampler (its state; offline, with no VkSampler)

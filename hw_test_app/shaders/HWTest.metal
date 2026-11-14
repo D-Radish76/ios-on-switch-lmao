@@ -62,6 +62,40 @@ kernel void salted_kernel(device uint *out [[buffer(0)]], uint id [[thread_posit
     out[id] = id ^ compile_salt;
 }
 
+/// Each threadgroup writes its index in the grid, plus one, at that index: a grid past the 65535 threadgroups down or deep
+/// one QMD holds (gpu.raw.grid_slices)
+kernel void grid_positions(device uint *out [[buffer(0)]], uint3 group [[threadgroup_position_in_grid]],
+                           uint3 groups [[threadgroups_per_grid]])
+{
+    const uint at = (group.z * groups.y + group.y) * groups.x + group.x;
+    out[at] = at + 1;
+}
+
+/// Each element of a buffer bound off 16 bytes, doubled plus one, into another bound off 16 (gpu.raw.kernel_window)
+kernel void window_float(device const float *src [[buffer(0)]], device float *dst [[buffer(1)]],
+                         uint id [[thread_position_in_grid]])
+{
+    dst[id] = src[id] * 2.0f + 1.0f;
+}
+
+kernel void window_float2(device const float2 *src [[buffer(0)]], device float2 *dst [[buffer(1)]],
+                          uint id [[thread_position_in_grid]])
+{
+    dst[id] = src[id] * 2.0f + 1.0f;
+}
+
+kernel void window_packed3(device const packed_float3 *src [[buffer(0)]], device packed_float3 *dst [[buffer(1)]],
+                           uint id [[thread_position_in_grid]])
+{
+    dst[id] = float3(src[id]) * 2.0f + 1.0f;
+}
+
+/// The texel under each pixel of texture 0 (gpu.raw.buffer_texture_rows16)
+fragment float4 texel_fragment(float4 position [[position]], texture2d<float> source [[texture(0)]])
+{
+    return source.read(uint2(position.xy));
+}
+
 /// Writes exactly the floats it is given, so the render target's own float-to-format conversion is what is tested.
 fragment float4 exact_fragment(constant float4 &value [[buffer(0)]])
 {
@@ -110,6 +144,80 @@ kernel void shadow_planes(texture2d<float, access::write> luma [[texture(0)]], t
     luma.write(float4(p.g), id);
     if (!(id.x & 1) && !(id.y & 1))
         chroma.write(float4(p.b, p.r, 0, 0), id / 2);
+}
+
+/// A two-plane 4:2:0 YCbCr texture sampled through a constexpr clamp-to-edge sampler beside an RGBA texture sampled through
+/// a bound one, each at the texel centres of a grid twice the textures' width (gpu.raw.kernel_ycbcr_sampler)
+kernel void ycbcr_sampler_pairs(texture2d<float> ycbcr [[texture(0)]], texture2d<float> rgba [[texture(1)]],
+                                sampler bound [[sampler(0)]], device float4 *out [[buffer(0)]],
+                                uint2 id [[thread_position_in_grid]])
+{
+    constexpr sampler edge(address::clamp_to_edge, filter::nearest);
+    const uint width = ycbcr.get_width(), height = ycbcr.get_height();
+    if (id.x >= 2 * width || id.y >= height)
+        return;
+    const float2 uv = (float2(id) + 0.5f) / float2(width, height);
+    const uint at = (id.y * 2 * width + id.x) * 2;
+    out[at] = ycbcr.sample(edge, uv);
+    out[at + 1] = rgba.sample(bound, uv);
+}
+
+/// The same texture through constexpr repeating and clamp-to-zero samplers, which Metal reads as clamp to edge on it
+/// (gpu.raw.kernel_ycbcr_sampler_mapped): three samples a thread
+kernel void ycbcr_sampler_mapped(texture2d<float> ycbcr [[texture(0)]], texture2d<float> rgba [[texture(1)]],
+                                 sampler bound [[sampler(0)]], device float4 *out [[buffer(0)]],
+                                 uint2 id [[thread_position_in_grid]])
+{
+    constexpr sampler wrap(address::repeat, filter::nearest);
+    constexpr sampler zero(address::clamp_to_zero, filter::nearest);
+    const uint width = ycbcr.get_width(), height = ycbcr.get_height();
+    if (id.x >= 2 * width || id.y >= height)
+        return;
+    const float2 uv = (float2(id) + 0.5f) / float2(width, height);
+    const uint at = (id.y * 2 * width + id.x) * 3;
+    out[at] = ycbcr.sample(wrap, uv);
+    out[at + 1] = ycbcr.sample(zero, uv);
+    out[at + 2] = rgba.sample(bound, uv);
+}
+
+/// Both textures through the one bound repeating sampler, which Metal reads as clamp to edge on the YCbCr one alone
+/// (gpu.raw.kernel_ycbcr_shared_sampler)
+kernel void ycbcr_sampler_shared(texture2d<float> ycbcr [[texture(0)]], texture2d<float> rgba [[texture(1)]],
+                                 sampler bound [[sampler(0)]], device float4 *out [[buffer(0)]],
+                                 uint2 id [[thread_position_in_grid]])
+{
+    const uint width = ycbcr.get_width(), height = ycbcr.get_height();
+    if (id.x >= 2 * width || id.y >= height)
+        return;
+    const float2 uv = (float2(id) + 0.5f) / float2(width, height);
+    const uint at = (id.y * 2 * width + id.x) * 2;
+    out[at] = ycbcr.sample(bound, uv);
+    out[at + 1] = rgba.sample(bound, uv);
+}
+
+/// A kernel's float4 and half4 stores into RGB10A8_2P_XR10 over a two-plane surface, thread i at texel i
+/// (gpu.raw.xr_kernel_store)
+kernel void xr_kernel_store(texture2d<float, access::write> t [[texture(0)]], device const float4 *v [[buffer(0)]],
+                            uint i [[thread_position_in_grid]])
+{
+    t.write(v[i], uint2(i % t.get_width(), i / t.get_width()));
+}
+
+kernel void xr_kernel_store_half(texture2d<half, access::write> t [[texture(0)]], device const half4 *v [[buffer(0)]],
+                                 uint i [[thread_position_in_grid]])
+{
+    t.write(v[i], uint2(i % t.get_width(), i / t.get_width()));
+}
+
+/// read() and a nearest sample in pixel coordinates of RGB10A8_2P_XR10 over a two-plane surface, the texture at both
+/// slots, thread i at texel i (gpu.raw.xr_kernel_read)
+kernel void xr_kernel_read(texture2d<float, access::read> t [[texture(0)]], texture2d<float> s [[texture(1)]],
+                           device float4 *out [[buffer(0)]], uint i [[thread_position_in_grid]])
+{
+    constexpr sampler nearest(coord::pixel, filter::nearest);
+    const uint2 at = uint2(i % t.get_width(), i / t.get_width());
+    out[2 * i] = t.read(at);
+    out[2 * i + 1] = s.sample(nearest, float2(at) + 0.5f);
 }
 
 /// m2v writes a half-float texture through its unsigned integer twin, converting each texel in the shader: the raw path

@@ -112,6 +112,7 @@ filegroup(
         "raw/runtime/raw_direct_heap.h",
         "raw/runtime/raw_direct_nvk.h",
         "raw/runtime/raw_direct_push.h",
+        "raw/runtime/raw_kernel_pairs.h",
         "raw/runtime/raw_dynamic_push.h",
         "raw/runtime/raw_spill_table.h",
         "raw/runtime/raw_direct_storage.h",
@@ -419,6 +420,22 @@ py_test(
     name = "fetchfree_link_test",
     srcs = ["raw/pack/fetchfree_link_test.py"],
     main = "raw/pack/fetchfree_link_test.py",
+    deps = [":raw_pack"],
+)
+
+# raw/pack/kernels.py: a kernel record viewing a texture slot in texels of another size is left out of the pack.
+py_test(
+    name = "kernels_view_test",
+    srcs = ["raw/pack/kernels_view_test.py"],
+    main = "raw/pack/kernels_view_test.py",
+    deps = [":raw_pack"],
+)
+
+# raw/pack/kernels.py and packfile.py: a kernel sampler entry's window (the texture slots it samples) reaches the pack.
+py_test(
+    name = "kernels_pairs_test",
+    srcs = ["raw/pack/kernels_pairs_test.py"],
+    main = "raw/pack/kernels_pairs_test.py",
     deps = [":raw_pack"],
 )
 

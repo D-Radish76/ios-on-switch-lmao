@@ -24,7 +24,8 @@ public:
     KernelDispatch(const KernelDispatch &) = delete;
     KernelDispatch &operator=(const KernelDispatch &) = delete;
 
-    void texture(uint32_t slot, MTLTextureDescriptor *d);
+    // `planes`: an RGB10A8_2P_XR10 texture held in Metal's two planes (BoundTexture::planes)
+    void texture(uint32_t slot, MTLTextureDescriptor *d, bool planes = false);
     void sampler(uint32_t slot, MTLSamplerDescriptor *d);
     const NmbDirectDispatch &dispatch();
 

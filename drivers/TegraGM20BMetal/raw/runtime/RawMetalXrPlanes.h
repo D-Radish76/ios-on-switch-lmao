@@ -5,6 +5,6 @@
 #import "RawMetalInternal.h"
 
 // 550 over plane 0 of a two-plane surface of a 4-byte and a 1-byte plane, both the descriptor's size: a 2D texture, one level,
-// one sample, no rotation, rendered or sampled
+// one sample, no rotation, rendered, sampled, or read and written by kernels
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane);
 bool makeXrPlanes(RMTexture *t, IOSurfaceRef s);

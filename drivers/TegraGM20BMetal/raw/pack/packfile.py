@@ -19,8 +19,8 @@ MAGIC = b'GM20BPK1'
 # textures at; 23: compute states' answers (PackComputeFacts), compared sampler slots; 24: a tessellation state's
 # control and evaluation programs, its stride twin's key hash, an amplifying state's layer and viewport offset words,
 # the registers a state's draws set back after it (pairs in the blob section); 25: states of no fragment program
-# (NO_PROGRAM), the reflections section
-VERSION = 25
+# (NO_PROGRAM), the reflections section; 26: the texture slots a kernel's sampler entry samples (its window)
+VERSION = 26
 SECTIONS = 15  # runtime/raw_pack.h PackSectionCount
 ENTRY_COMPARES = 1  # runtime/raw_pack.h kEntryCompares: a handle's sampler slot the state samples by comparison
 # PackIteratedBlend: count, enable, constants, uniformSlot, uniformOffset, uniformWords, reserved, alphaSource,

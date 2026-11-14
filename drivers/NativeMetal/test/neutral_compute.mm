@@ -80,6 +80,7 @@ int main(int argc, char **argv)
                 descriptor.computeFunction = [library newFunctionWithName:@(name)];
                 bool depth = !strcmp(name, "neutral_compare");
                 NmbDirectBoundTexture texture = {0,
+                                                 0,
                                                  depth ? MTLPixelFormatDepth32Float : MTLPixelFormatRGBA32Float,
                                                  MTLTextureType2D,
                                                  MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite,

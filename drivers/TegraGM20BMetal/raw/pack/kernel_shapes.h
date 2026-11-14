@@ -108,25 +108,21 @@ inline id<MTLSamplerState> sampler(id<MTLDevice> dev, const raw::BoundSampler &b
     return [dev newSamplerStateWithDescriptor:samplerDescriptor(b)];
 }
 
-// tex=<slot>:<pixelFormat>:<textureType>:<levels>:<arrayLength>:<swizzle>,... (raw_compute_key.h computeTextures)
+// tex=<slot>:<pixelFormat>:<textureType>:<levels>:<arrayLength>:<swizzle>[:xr2p],... (raw_compute_key.h computeTextures)
 inline bool parseTextures(const std::string &text, std::vector<raw::BoundTexture> &out, std::string &why)
 {
     std::istringstream in(text);
     std::string one;
     while (std::getline(in, one, ',')) {
         raw::BoundTexture t = {};
-        unsigned slot, swizzle;
-        unsigned long long format, type, levels, array;
-        if (sscanf(one.c_str(), "%u:%llu:%llu:%llu:%llu:%x", &slot, &format, &type, &levels, &array, &swizzle) != 6) {
+        if (!raw::parseComputeTexture(one, t)) {
             why = "a tex= field it cannot read";
             return false;
         }
-        if (type != MTLTextureType2D || levels != 1 || array != 1) {
+        if (t.textureType != MTLTextureType2D || t.levels != 1 || t.arrayLength != 1) {
             why = "a texture of another type than a one-level 2D one";
             return false;
         }
-        t = {slot,   format, type,
-             levels, array,  {uint8_t(swizzle >> 24), uint8_t(swizzle >> 16), uint8_t(swizzle >> 8), uint8_t(swizzle)}};
         out.push_back(t);
     }
     return true;

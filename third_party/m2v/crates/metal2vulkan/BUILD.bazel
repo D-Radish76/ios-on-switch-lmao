@@ -211,3 +211,15 @@ rust_test(
     env = {"METAL2VULKAN_LLVM_AS": "$(rootpath @gpu_llvm_as//:bin/llvm-as)"},
     deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
 )
+
+# A kernel's RGB10A8_2P_XR10 texture in its two planes (VariantKey::two_plane_textures): the binder's variant and plane
+# binding, and stores, reads and samples against Apple's bytes (src/tests/engine_extended_range/planes_m4.txt)
+rust_test(
+    name = "kernel_planes_test",
+    args = ["tests::engine_extended_range::kernel_planes::"],
+    compile_data = glob(["tests/**"]),
+    crate = ":metal2vulkan",
+    data = ["@gpu_llvm_as//:bin/llvm-as"],
+    env = {"METAL2VULKAN_LLVM_AS": "$(rootpath @gpu_llvm_as//:bin/llvm-as)"},
+    deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
+)

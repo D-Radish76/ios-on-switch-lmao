@@ -274,7 +274,7 @@ int main(int argc, char **argv)
             if (!strcmp(name, "semantic_subgroup"))
                 descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth = YES;
             NmbDirectBoundTexture texture = {
-                0, MTLPixelFormatRGBA32Float, MTLTextureType2D, MTLTextureUsageShaderRead, 1, 1, 1};
+                0, 0, MTLPixelFormatRGBA32Float, MTLTextureType2D, MTLTextureUsageShaderRead, 1, 1, 1};
             NmbDirectDispatch dispatch = {};
             dispatch.threads[0] = 32;
             dispatch.threads[1] = dispatch.threads[2] = 1;

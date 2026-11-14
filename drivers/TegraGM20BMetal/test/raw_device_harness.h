@@ -145,6 +145,12 @@ struct DeviceHarness {
     {
         return e.descriptorWords_.empty() ? nullptr : e.descriptorWords_.data();
     }
+
+    // The sampler header the device wrote at index `tsc`
+    static const uint32_t *samplerHeader(const Device &d, uint32_t tsc)
+    {
+        return reinterpret_cast<const uint32_t *>(d.tsc_.cpu + 32 * tsc);
+    }
 };
 
 }  // namespace raw

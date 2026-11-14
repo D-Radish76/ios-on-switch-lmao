@@ -206,7 +206,7 @@ static bool dispatch(const std::string &line, NSMutableArray *stages, std::strin
     }
     std::vector<NmbDirectBoundTexture> textures;
     for (const auto &t : shape.textures)
-        textures.push_back({t.slot, t.pixelFormat, t.textureType,
+        textures.push_back({t.slot, 0, t.pixelFormat, t.textureType,
                             MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite, t.levels, t.arrayLength, 1});
     std::vector<NmbDirectBoundSampler> samplers;
     for (const auto &s : shape.samplers)

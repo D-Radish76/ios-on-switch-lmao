@@ -45,6 +45,7 @@
 #include "raw_visibility.h"
 #include "raw_fresh.h"
 #include "raw_view.h"
+#include "raw_sampler_map.h"
 #include <array>
 #include <atomic>
 #include <thread>
@@ -1522,6 +1523,9 @@ public:
     bool zetaColour(const Texture &into, const Texture &src, StencilSample pick, const TurnMap &map, uint32_t width,
                     uint32_t height, const char **why);
     BlitEncoder *blit();
+    // `bytes` of GPU memory this command buffer's work writes and reads until it completes (the upload ring's, on 256
+    // bytes); 0: none, the ring past what it can grow to, whose commit is then refused
+    uint64_t transient(uint32_t bytes);
 
     // Metal's predication unit ended (raw_predication.h)
     void endPredicationUnit()
@@ -1961,6 +1965,14 @@ public:
     bool constexprMapsPlaced();
     // s's header for sampling `t` at an opaque border (Sampler::bordered), made now if it is not yet
     bool borderVariant(Sampler &s, const Texture &t);
+
+    // Whether address map `map` leaves the modes of constexpr sampler `index` (raw_sampler_map.h); false for no such sampler.
+    // Read without lock_ as constexprTsc_ is.
+    bool constexprLeaves(uint32_t index, uint8_t map) const
+    {
+        return index < constexprCount_ && mapLeavesHeader(constexprWord0_[index], map);
+    }
+
     // A two-plane 4:4:4 surface's texture of RGB8_444_2P (542): its planes at `luma`/`chroma` (offsets in the allocation,
     // with their pitches), sampled through an RGBA8 image of the pool (Texture::planar)
     bool createPlanarTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t luma,
@@ -2619,6 +2631,7 @@ public:
         std::atomic<uint64_t> bandedDraws{0}, bands{0};  // raw_draw_bands.h
         std::atomic<uint64_t> learnedDraws{0};           // raw_band_rates.h
         std::atomic<uint64_t> bandedDispatches{0};       // raw_dispatch_bands.h
+        std::atomic<uint64_t> kernelWindows{0};          // buffer slots bound through a window (raw_kernel_windows.h)
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
         std::atomic<uint64_t> splitLaunches{0};
         // split twins that found no room in the heap or local memory at a draw that took them
@@ -3017,6 +3030,7 @@ private:
     // them, a runtime record's by constexprMapsPlaced before the work that samples a planar texture
     uint32_t constexprMapped_[kConstexprSamplers][4] = {};
     uint32_t constexprCount_ = 0, constexprMappedCount_ = 0;
+    uint32_t constexprWord0_[kConstexprSamplers] = {};  // and their headers' word 0, written with them
     // constexprMapped_[index] from its header `words` (lock_ held, or the device not yet open); false: no room
     bool placeConstexprMaps(uint32_t index, const uint32_t words[8]);
 

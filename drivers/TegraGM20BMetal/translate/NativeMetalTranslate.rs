@@ -4,6 +4,8 @@
 //! (NativeMetalDirect.h). The pack generator and the shader compiler daemon compile through it; the m2v bridge
 //! (NativeMetalBridge.rs) adds its runtime device's forms on top.
 
+#[path = "NativeMetalAddressMaps.rs"]
+mod address_maps;
 #[path = "NativeMetalArgumentLayouts.rs"]
 pub mod argument_layouts;
 #[path = "NativeMetalDescriptors.rs"]

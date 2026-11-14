@@ -70,6 +70,7 @@ rust_library(
     name = "translate",
     srcs = [
         TRANSLATE + "NativeMetalTranslate.rs",
+        TRANSLATE + "NativeMetalAddressMaps.rs",
         TRANSLATE + "NativeMetalArgumentLayouts.rs",
         TRANSLATE + "NativeMetalDescriptors.rs",
         TRANSLATE + "NativeMetalDirect.rs",

@@ -17,6 +17,9 @@ load("@rules_rust//rust:defs.bzl", "rust_test")
 #                           ci_filters', so a real device misses there too (NBLibrary answers that miss as Metal does)
 #   native_tess_modes_test  NativeMetalTessModes.rs: a tessellation state's SET_TESSELLATION_PARAMETERS, and its evaluation
 #                           stage's module with the control stage's modes, as the raw path's direct compile needs them
+#   native_address_maps_test  NativeMetalAddressMaps.rs: the address-mode map of each two-plane format raw converts, as raw's
+#                           Texture::addressMap, and the map each runtime sampler takes of the textures it samples, a
+#                           sampler two maps give two sets of modes named
 #   journal_source_test     NativeBridgeMetalFrontend.mm: a raw-made state's journal line is written on the persist queue,
 #                           not on its creating thread
 #
@@ -29,6 +32,12 @@ lint_files()
 rust_test(
     name = "native_variants_test",
     srcs = ["//drivers/NativeMetal:bridge/NativeMetalVariants.rs"],
+    edition = "2024",
+)
+
+rust_test(
+    name = "native_address_maps_test",
+    srcs = ["//drivers/TegraGM20BMetal:translate/NativeMetalAddressMaps.rs"],
     edition = "2024",
 )
 

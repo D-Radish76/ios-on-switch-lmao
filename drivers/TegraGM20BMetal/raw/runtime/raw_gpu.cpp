@@ -36,6 +36,7 @@
 #include "raw_residual.h"
 #include "raw_multisample.h"
 #include "raw_rotated_pass.h"
+#include "raw_sampler_map.h"
 #include "raw_draw_interlock.h"
 #include "raw_ycbcr_store.h"
 #include "raw_fragment_tests.h"
@@ -673,6 +674,7 @@ bool Device::init(std::string &err)
     }
     for (uint32_t i = 0; i < pack_.header()->samplers; i++) {
         memcpy(tsc_.cpu + 32 * nextTsc_, cs + 8 * i, 32);
+        constexprWord0_[constexprCount_] = cs[8 * i];
         constexprTsc_[constexprCount_] = nextTsc_++;
         if (!placeConstexprMaps(constexprCount_++, cs + 8 * i)) {
             err = "no sampler header left for the pack's constexpr samplers under planar address maps";
@@ -2578,6 +2580,8 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
         pitch < width * t.bpp || offset > b.length || uint64_t(pitch) * height > b.length - offset ||
         offset > UINT64_MAX - b.va || ((b.va + offset) & 15))
         return false;
+    // rows or a start 16 bytes off 32, which the texture header cannot address: sampled through a pool image of its
+    // texels, as a surface texture's are (createSurfaceTexture)
     Texture *sampled = nullptr;
     if ((pitch | (b.va + offset)) & 31) {
         sampled = new Texture;
@@ -4734,6 +4738,13 @@ void CommandBuffer::releaseEvent(uint64_t va, uint32_t payload)
     if (!publish)
         dev_->unflushed_.fetch_add(1, std::memory_order_relaxed);
 #endif
+}
+
+uint64_t CommandBuffer::transient(uint32_t bytes)
+{
+    uint64_t va = 0;
+    dev_->alloc(dev_->upload_, std::max(bytes, 16u), 256, va);
+    return va;
 }
 
 BlitEncoder *CommandBuffer::blit()

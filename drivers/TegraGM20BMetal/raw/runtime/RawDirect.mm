@@ -216,10 +216,10 @@ KernelDispatch::KernelDispatch(const uint32_t threads[3], const std::map<uint32_
             dispatch_.memory[index] = length;
 }
 
-void KernelDispatch::texture(uint32_t slot, MTLTextureDescriptor *d)
+void KernelDispatch::texture(uint32_t slot, MTLTextureDescriptor *d, bool planes)
 {
-    textures_.push_back(
-        {slot, d.pixelFormat, d.textureType, d.usage, d.mipmapLevelCount, d.arrayLength, d.sampleCount});
+    textures_.push_back({slot, planes ? 1u : 0u, d.pixelFormat, d.textureType, d.usage, d.mipmapLevelCount,
+                         d.arrayLength, d.sampleCount});
 }
 
 void KernelDispatch::sampler(uint32_t slot, MTLSamplerDescriptor *d)
@@ -251,7 +251,10 @@ CompileOutcome Direct::kernel(MTLComputePipelineDescriptor *descriptor, const Nm
     const char *refused = nullptr;
     if (!translator_.compute(descriptor, &dispatch, madeKernel, &a, &refused)) {
         why = std::string("m2v refused its translation: ") + (refused ? refused : "");
-        return refused && !strncmp(refused, "retry: ", 7) ? CompileOutcome::Failed : CompileOutcome::Refused;
+        // "fails: ", a dispatch Metal runs that m2v fails too (NativeMetalDirectCompute.rs mapped_samplers): its command
+        // buffer fails, not a route to m2v
+        const bool fails = refused && (!strncmp(refused, "retry: ", 7) || !strncmp(refused, "fails: ", 7));
+        return fails ? CompileOutcome::Failed : CompileOutcome::Refused;
     }
     why = a.why;
     return a.outcome;

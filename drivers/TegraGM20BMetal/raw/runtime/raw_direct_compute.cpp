@@ -10,6 +10,7 @@
 #include "raw_compute_key.h"
 #include "raw_direct_encode.h"
 #include "raw_direct_nvk.h"
+#include "raw_kernel_pairs.h"
 #include "raw_spill_table.h"
 
 namespace raw {
@@ -147,7 +148,7 @@ private:
             why = "a texture view of VkFormat " + std::to_string(kw.viewFormat) + " NVK has no header for";
             return false;
         }
-        entries.push_back({offset, KernelTexture, uint8_t(w.slot), word0});
+        entries.push_back({offset, kw.plane ? KernelTexturePlane : KernelTexture, uint8_t(w.slot), word0});
         return true;
     }
 
@@ -162,7 +163,9 @@ private:
             why = "a sampler slot the dispatch leaves unbound at " + std::to_string(offset);
             return false;
         }
-        entries.push_back({offset, KernelSampler, samplerSlot(out_, header), 0});
+        const uint32_t pairs = directSamplerWindow(
+            w.type == CombinedImageSampler, w.source == NmbDirectCombined && w.slot != NMB_DIRECT_NEUTRAL, w.slot);
+        entries.push_back({offset, KernelSampler, samplerSlot(out_, header), pairs});
         return true;
     }
 };
@@ -262,8 +265,8 @@ bool recordable(const NmbDirectKernel &k, std::string &why)
 
 }  // namespace
 
-CompileOutcome directKernel(const NmbDirectKernel &k, const StageCompile &compiler, const std::string &key, ComputeRecord &out,
-                            std::string &why)
+CompileOutcome directKernel(const NmbDirectKernel &k, const StageCompile &compiler, const std::string &key,
+                            ComputeRecord &out, std::string &why)
 {
     out = {};
     if (!recordable(k, why))
@@ -326,8 +329,9 @@ CompileOutcome directKernel(const NmbDirectKernel &k, const StageCompile &compil
         if (entry.slot >= 32)
             continue;
         const uint32_t bit = 1u << entry.slot;
+        const bool texture = entry.kind == KernelTexture || entry.kind == KernelTexturePlane;
         if ((entry.kind == KernelBuffer && (k.bufferReads & bit) && !(k.bufferWrites & bit)) ||
-            (entry.kind == KernelTexture && (k.textureReads & bit) && !(k.textureWrites & bit)))
+            (texture && (k.textureReads & bit) && !(k.textureWrites & bit)))
             r.readOnlyEntries |= 1ull << i;
     }
     for (const auto &[offset, word] : pushWords(k.pushMask, k.push, k.regionWord)) {
