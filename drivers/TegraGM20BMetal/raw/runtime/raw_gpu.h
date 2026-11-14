@@ -1426,6 +1426,9 @@ public:
     bool zetaColour(const Texture &into, const Texture &src, StencilSample pick, const TurnMap &map, uint32_t width,
                     uint32_t height, const char **why);
     BlitEncoder *blit();
+    // `bytes` of GPU memory this command buffer's work writes and reads until it completes (the upload ring's, on 256
+    // bytes); 0: none, the ring past what it can grow to, whose commit is then refused
+    uint64_t transient(uint32_t bytes);
 
     // Metal's predication unit ended (raw_predication.h)
     void endPredicationUnit()
@@ -2465,6 +2468,7 @@ public:
         std::atomic<uint64_t> bandedDraws{0}, bands{0};  // raw_draw_bands.h
         std::atomic<uint64_t> learnedDraws{0};           // raw_band_rates.h
         std::atomic<uint64_t> bandedDispatches{0};       // raw_dispatch_bands.h
+        std::atomic<uint64_t> kernelWindows{0};          // buffer slots bound through a window (raw_kernel_windows.h)
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
         std::atomic<uint64_t> splitLaunches{0};
         std::atomic<uint64_t> interlockDraws{0}, storageBarriers{0};

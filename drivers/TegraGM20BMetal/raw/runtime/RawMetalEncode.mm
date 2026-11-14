@@ -13,6 +13,7 @@
 #include <optional>
 #include "raw_compute.h"
 #include "raw_compute_lookup.h"
+#include "raw_kernel_windows.h"
 #include "raw_clear.h"
 #include "raw_samples.h"
 #include "raw_turned_pass.h"
@@ -524,10 +525,14 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
     // command buffer's native view of a decoder's plane answers (readTexture) reads in place.
     static thread_local std::vector<raw::KernelUse> uses, encoderUses;
     raw::KernelShadows kernelShadows;
+    raw::KernelWindows kernelWindows;
     bool encoderShadows = false;
     auto localShadows = [&](std::vector<raw::KernelUse> &list) {
+        kernelWindows.name(list, [&](uint64_t bytes) {
+            return rc->transient(uint32_t(std::min<uint64_t>(bytes, UINT32_MAX)));
+        });
         for (raw::KernelUse &u : list)
-            if (u.shadowed && !u.writes) {
+            if (u.shadowed && !u.writes && u.windowSlot < 0) {
                 const raw::Texture &x = ((__bridge RMTexture *)u.object)->_raw;
                 if (const raw::Texture *native = rc->readTexture(&x); native != &x) {
                     u.shadowed = false;
@@ -538,10 +543,18 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
     auto shadowCopies = [&](const std::vector<const void *> &back, const std::vector<const void *> &fill) {
         raw::BlitEncoder *copy = rc->blit();
         for (const void *o : back) {
+            if (const raw::KernelWindows::Window *w = kernelWindows.find(o)) {
+                copy->copyBytes(w->va, w->span.va, w->span.bytes);
+                continue;
+            }
             const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
             copy->copyTexels(*x.sampled, 0, 0, 0, x, 0, 0, 0, x.width, x.height);
         }
         for (const void *o : fill) {
+            if (const raw::KernelWindows::Window *w = kernelWindows.find(o)) {
+                copy->copyBytes(w->span.va, w->va, w->span.bytes);
+                continue;
+            }
             const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
             copy->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
         }
@@ -550,7 +563,8 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
     auto beginKernelShadows = [&](size_t encoderAt) {
         encoderUses.clear();
         for (size_t at = encoderAt; at < cb->_plan.encoderEnd(encoderAt); ++at) {
-            if (cb->_plan.operation(at).op != OpDispatch || !cb->_plan.dispatch(at).surfaceSlots)
+            if (cb->_plan.operation(at).op != OpDispatch ||
+                !(cb->_plan.dispatch(at).surfaceSlots | cb->_plan.dispatch(at).windowSlots))
                 continue;
             kernelUses(cb, at, uses);
             localShadows(uses);
@@ -590,7 +604,7 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
             const auto &state = cb->_plan.kernelStates[dispatch.state];
             const auto &textures = cb->_plan.textures[2][state.textures].objects;
             uses.clear();
-            if (dispatch.surfaceSlots && !encoderShadows) {  // a range that begins inside its encoder
+            if ((dispatch.surfaceSlots | dispatch.windowSlots) && !encoderShadows) {  // a range begun inside its encoder
                 ce->end();
                 ce.reset();
                 beginKernelShadows(dispatch.encoderBegin);
@@ -611,6 +625,10 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
                 stateCursor.reset();
             }
             encodePlannedState(cb, at, *rc, re, &*ce, stateCursor);
+            ce->clearBufferWindows();
+            for (const raw::KernelUse &u : uses)
+                if (u.windowSlot >= 0)
+                    ce->setBufferWindow(uint32_t(u.windowSlot), kernelWindows.find(u.object)->va);
             const auto &regions = dispatch.regions;
             ce->setStageInRegion(dispatch.stageIn);
             if (!kernels || kernels->count != regions.count)

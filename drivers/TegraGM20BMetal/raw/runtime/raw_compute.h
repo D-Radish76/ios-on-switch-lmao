@@ -88,6 +88,10 @@ public:
     void setStageInRegion(const std::array<uint32_t, 6> &region);
     void setTexture(uint32_t slot, const Texture *t);
     void setSampler(uint32_t slot, const Sampler *s);
+    // The bytes bound at buffer slot `slot` reached through a copy of them at `va`, on 16: a buffer bound off 16 bytes
+    // whose record names no residual word (raw_kernel_shadow.h KernelUse::windowSlot); clearBufferWindows: all in place
+    void setBufferWindow(uint32_t slot, uint64_t va);
+    void clearBufferWindows();
 
     // dispatchThreadgroups: `groups` threadgroups of `threads` threads, the shape the kernel's record was made at. False:
     // refused (*why), nothing encoded
@@ -193,6 +197,8 @@ private:
     uint32_t *start_ = nullptr;
     const ComputeState *state_ = nullptr;
     Bound bufs_[31];
+    uint64_t windows_[31] = {};
+    uint32_t windowMask_ = 0;
     const Texture *textures_[31] = {};
     const Sampler *samplers_[16] = {};
     bool serial_ = false, dispatched_ = false;

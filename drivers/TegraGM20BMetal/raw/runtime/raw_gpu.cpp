@@ -4441,6 +4441,13 @@ void CommandBuffer::releaseEvent(uint64_t va, uint32_t payload)
 #endif
 }
 
+uint64_t CommandBuffer::transient(uint32_t bytes)
+{
+    uint64_t va = 0;
+    dev_->alloc(dev_->upload_, std::max(bytes, 16u), 256, va);
+    return va;
+}
+
 BlitEncoder *CommandBuffer::blit()
 {
     BlitEncoder &e = blit_;

@@ -287,6 +287,24 @@ void ComputeEncoder::setSampler(uint32_t slot, const Sampler *s)
     }
 }
 
+void ComputeEncoder::setBufferWindow(uint32_t slot, uint64_t va)
+{
+    if (slot < 31 && (!(windowMask_ >> slot & 1) || windows_[slot] != va)) {
+        windows_[slot] = va;
+        windowMask_ |= 1u << slot;
+        ++bindingRevision_;
+        RAW_DIAGNOSTIC(dev_.stats.kernelWindows++);
+    }
+}
+
+void ComputeEncoder::clearBufferWindows()
+{
+    if (windowMask_) {
+        windowMask_ = 0;
+        ++bindingRevision_;
+    }
+}
+
 void ComputeEncoder::bindBuffer(uint32_t slot, const Bound &binding)
 {
     if (!(bufs_[slot] == binding)) {
@@ -330,7 +348,7 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             else
                 cb_.useAddress(b.va, b.size, writes);
             BufferDescriptor desc;
-            if (!bufferDescriptor(e, b.va, b.size, desc)) {
+            if (!bufferDescriptor(e, windowMask_ >> e.slot & 1 ? windows_[e.slot] : b.va, b.size, desc)) {
                 *why = "a buffer bound at an offset that is not a multiple of 16";
                 return false;
             }

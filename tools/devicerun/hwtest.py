@@ -82,6 +82,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.kernel_view',
             'gpu.raw.kernel_shadow',
             'gpu.raw.grid_slices',
+            'gpu.raw.kernel_window',
             'gpu.shared.retained_pointer',
             'gpu.heap.m2v_target',
             'gpu.heap.placement',

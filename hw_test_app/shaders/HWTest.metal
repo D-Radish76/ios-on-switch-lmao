@@ -71,6 +71,25 @@ kernel void grid_positions(device uint *out [[buffer(0)]], uint3 group [[threadg
     out[at] = at + 1;
 }
 
+/// Each element of a buffer bound off 16 bytes, doubled plus one, into another bound off 16 (gpu.raw.kernel_window)
+kernel void window_float(device const float *src [[buffer(0)]], device float *dst [[buffer(1)]],
+                         uint id [[thread_position_in_grid]])
+{
+    dst[id] = src[id] * 2.0f + 1.0f;
+}
+
+kernel void window_float2(device const float2 *src [[buffer(0)]], device float2 *dst [[buffer(1)]],
+                          uint id [[thread_position_in_grid]])
+{
+    dst[id] = src[id] * 2.0f + 1.0f;
+}
+
+kernel void window_packed3(device const packed_float3 *src [[buffer(0)]], device packed_float3 *dst [[buffer(1)]],
+                           uint id [[thread_position_in_grid]])
+{
+    dst[id] = float3(src[id]) * 2.0f + 1.0f;
+}
+
 /// Writes exactly the floats it is given, so the render target's own float-to-format conversion is what is tested.
 fragment float4 exact_fragment(constant float4 &value [[buffer(0)]])
 {
