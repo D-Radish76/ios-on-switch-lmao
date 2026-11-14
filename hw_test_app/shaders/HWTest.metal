@@ -90,6 +90,12 @@ kernel void window_packed3(device const packed_float3 *src [[buffer(0)]], device
     dst[id] = float3(src[id]) * 2.0f + 1.0f;
 }
 
+/// The texel under each pixel of texture 0 (gpu.raw.buffer_texture_rows16)
+fragment float4 texel_fragment(float4 position [[position]], texture2d<float> source [[texture(0)]])
+{
+    return source.read(uint2(position.xy));
+}
+
 /// Writes exactly the floats it is given, so the render target's own float-to-format conversion is what is tested.
 fragment float4 exact_fragment(constant float4 &value [[buffer(0)]])
 {

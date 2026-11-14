@@ -3,7 +3,8 @@
 // kernel model (raw_facade_compute.h): its bytes reach the kernel through a window of them on 16 that the copy engine
 // fills before the launch and copies back after it (raw_kernel_windows.h), where raw once refused it as compute.off16. The
 // same buffer bound in place by a later dispatch is another resource over those bytes: the window is copied back before
-// that dispatch. None of it opens m2v.
+// that dispatch. A texture over a buffer whose rows and start are 16 bytes off 32 is sampled through a pool image the copy
+// engine fills (raw_gpu.cpp createBufferTexture), where raw once refused to make it. None of it opens m2v.
 #include "raw_facade_compute.h"
 
 #include <gtest/gtest.h>
@@ -20,7 +21,7 @@ constexpr uint32_t kOffsetIn = 0x0400, kOffsetOutLower = 0x040c, kLineLength = 0
                    kSendPcasA = 0x02b4;
 
 id<MTLDevice> gDevice;
-id<MTLComputePipelineState> gState;
+id<MTLComputePipelineState> gState, gTextureState;
 
 // Kernel 0's record with one buffer entry at slot 0 that it writes, its residual word none
 raw::PackKernel windowRecord(uint32_t maxThreads)
@@ -29,6 +30,24 @@ raw::PackKernel windowRecord(uint32_t maxThreads)
     k.entries = 1;
     k.setBytes = 16;
     k.entry[0] = {0, uint8_t(raw::KernelBuffer), 0, 0};
+    return k;
+}
+
+// Kernel 1's record: the RGBA8 texture at slot 0, read
+raw::PackKernel textureRecord(uint32_t maxThreads)
+{
+    raw::AirHash air;
+    air.fill(uint8_t(kKernelSeed + 1));
+    const uint32_t threads[3] = {2, 1, 1};
+    raw::BoundTexture bound[1] = {{0, MTLPixelFormatRGBA8Unorm, MTLTextureType2D, 1, 1, {2, 3, 4, 5}}};
+    const std::string key =
+        raw::computeKey(air, "", maxThreads, false, threads, "", raw::computeTextures(bound, 1), "");
+    raw::PackKernel k = kernelRecord(1, maxThreads);
+    k.keyHash = raw::computeKeyHash(key);
+    k.entries = 1;
+    k.setBytes = 16;
+    k.entry[0] = {0, uint8_t(raw::KernelTexture), 0, 0};
+    k.readOnlyEntries = 1;
     return k;
 }
 
@@ -80,7 +99,7 @@ protected:
     static void SetUpTestSuite()
     {
         const uint32_t maxThreads = uint32_t([MTLComputePipelineDescriptor new].maxTotalThreadsPerThreadgroup);
-        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {windowRecord(maxThreads)}),
+        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {windowRecord(maxThreads), textureRecord(maxThreads)}),
                        [HarnessM2VMethods class], [HarnessComputeM2V class]);
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
@@ -97,6 +116,12 @@ protected:
                                                      reflection:nil
                                                           error:&error];
         ASSERT_TRUE(gState != nil) << (error.description.UTF8String ?: "");
+        d.computeFunction = [library newFunctionWithName:@(kernelName(1).c_str())];
+        gTextureState = [gDevice newComputePipelineStateWithDescriptor:d
+                                                               options:MTLPipelineOptionNone
+                                                            reflection:nil
+                                                                 error:&error];
+        ASSERT_TRUE(gTextureState != nil) << (error.description.UTF8String ?: "");
     }
 
     // One command buffer of a dispatch per offset, each binding `buffer` at slot 0 there, in one encoder
@@ -153,6 +178,40 @@ TEST_F(FacadeKernelWindow, TheWindowIsCopiedBackBeforeTheBufferIsReachedInPlace)
     EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(ran.opens, 0);
     EXPECT_EQ(ran.work.order, "CLCL") << "fill, the window's launch, its copy back, the in-place launch";
+}
+
+TEST_F(FacadeKernelWindow, ATextureOverABufferWithRowsOffThirtyTwoIsSampledThroughItsPoolImage)
+{
+    constexpr NSUInteger kRow = 48, kStart = 48, kWidth = 12, kHeight = 8;
+    id<MTLBuffer> buffer = [gDevice newBufferWithLength:kStart + kRow * kHeight options:MTLResourceStorageModeShared];
+    ASSERT_TRUE(buffer != nil);
+    ASSERT_EQ((buffer.gpuAddress + kStart) % 32, 16u);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                 width:kWidth
+                                                                                height:kHeight
+                                                                             mipmapped:NO];
+    d.usage = MTLTextureUsageShaderRead;
+    d.storageMode = MTLStorageModeShared;
+    id<MTLTexture> texture = [buffer newTextureWithDescriptor:d offset:kStart bytesPerRow:kRow];
+    ASSERT_TRUE(texture != nil);
+    auto run = [&] {
+        const size_t jobs = kernel_model::model.jobs.size();
+        const int opens = gOpens;
+        id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
+        id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
+        [e setComputePipelineState:gTextureState];
+        [e setTexture:texture atIndex:0];
+        [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(2, 1, 1)];
+        [e endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+        return Ran{cb.status, submitted(jobs), gOpens - opens};
+    };
+    run();
+    const Ran ran = run();
+    EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
+    EXPECT_EQ(ran.opens, 0) << "m2v ran it";
+    EXPECT_EQ(ran.work.order, "CL") << "its pool image filled from the rows, then the launch; nothing written back";
 }
 
 TEST_F(FacadeKernelWindow, ABufferOnSixteenStaysInPlace)

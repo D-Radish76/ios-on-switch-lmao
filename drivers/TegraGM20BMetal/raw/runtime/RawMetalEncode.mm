@@ -454,7 +454,8 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
     RAW_ENCODE_END(resourceSpan);
     // textures sampled through a pool image (rows 16 but not 32 apart, raw::Texture::sampled): refreshed from their texels by the
     // copy engine before the first pass that samples them, and again after work here wrote them (m2v copies such a surface into
-    // its shadow at each encoder that uses it once written since)
+    // its shadow at each encoder that uses it once written since); a texture over a buffer before every pass that samples
+    // it, as any work may write the buffer's bytes
     std::set<RMTexture *> fresh;
     raw::Texture levelTargets[8];  // the open pass's level targets: the encoder reads them until its end()
     raw::Texture zetaPart;         // and its depth/stencil attachment's layer
@@ -469,7 +470,8 @@ encodeRawAttempt(RMCommandBuffer *cb, size_t from, size_t to, const char **why, 
                                           return;
                                       __unsafe_unretained RMTexture *t = (__bridge RMTexture *)use.object;
                                       if (rc->readTexture(&t->_raw) != &t->_raw || !t->_raw.sampled ||
-                                          (!t->_raw.surfaceView && !fresh.insert(t).second))
+                                          (!t->_raw.surfaceView && t->_kind != RMTextureBuffer &&
+                                           !fresh.insert(t).second))
                                           return;
                                       const raw::Texture &x = t->_raw;
                                       raw::BlitEncoder *b = rc->blit();

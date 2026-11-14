@@ -167,14 +167,14 @@
         keepExtendedRange(d, t->_raw, true);
     if (!t->_rawOk) {  // which term (createBufferTexture's, recomputed: not the hot path)
         const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
-        const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0), at = (_raw.va + offset) & 31;
+        const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0), at = (_raw.va + offset) & 15;
         NSString *extra = [NSString stringWithFormat:@"offset %lu bytesPerRow %lu buffer %llu", (unsigned long)offset,
                                                      (unsigned long)row, (unsigned long long)_raw.length];
         if (uint32_t term = rawShapeTerm(d))
             refuseTexture(t, PredTexShape, term, d.pixelFormat, @"buffer", extra);
         else if (at)
             refuseTexture(t, PredTexBufBase, at, offset, @"buffer", extra);
-        else if ((row & 31) || row < packed)
+        else if ((row & 15) || row < packed)
             refuseTexture(t, PredTexBufPitch, row, packed, @"buffer", extra);
         else
             refuseTexture(t, PredTexBufOther, offset + uint64_t(row) * d.height, _raw.length, @"buffer", extra);
