@@ -42,6 +42,21 @@ TEST(RawFetchRungs, EachFormatTheFormatArmsJudgeTakesTheRop)
     }
 }
 
+TEST(RawFetchRungs, AnSrgbTargetTakesEightBitSourcesTwoLayersDeepAsComputedColour)
+{
+    for (uint16_t format : {uint16_t(81), uint16_t(71)}) {
+        raw::FixedBlendAsk a = screenLayer();
+        a.format = format;
+        a.computedLayers = 2;
+        EXPECT_EQ(raw::fixedBlendAcceptable(a), raw::fixedBlendProven()) << format;
+        a.computedLayers = 3;
+        EXPECT_FALSE(raw::fixedBlendAcceptable(a)) << format << ": 3 codes off Metal by eight layers";
+    }
+    raw::FixedBlendAsk a = screenLayer();
+    a.computedLayers = 8;
+    EXPECT_EQ(raw::fixedBlendAcceptable(a), raw::fixedBlendProven()) << "BGRA8's 8-bit sources at any depth";
+}
+
 TEST(RawFetchRungs, DataTargetsKeepTheExactBlend)
 {
     for (uint16_t format : {uint16_t(90), uint16_t(110), uint16_t(72), uint16_t(550), uint16_t(552), uint16_t(554)}) {

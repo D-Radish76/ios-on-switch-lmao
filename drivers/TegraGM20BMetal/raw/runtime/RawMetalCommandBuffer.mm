@@ -802,7 +802,7 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
         return [NSString stringWithFormat:@"split:%zu+%zu:%s:%s", route.native, route.compatibility,
                                           kReasonNames[_reason], kPredNames[_pred0]];
     if (!route.onlyCompatibility() && !_m2v)
-        return @"raw";
+        return _error && _pred0 ? [NSString stringWithFormat:@"error:%s", kPredNames[_pred0]] : @"raw";
     return [NSString stringWithFormat:@"m2v:%s:%s", kReasonNames[_reason], kPredNames[_pred0]];
 }
 

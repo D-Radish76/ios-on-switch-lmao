@@ -121,7 +121,9 @@ public:
         endedCount = 0;
         const uint32_t client = clientOf(e);
         ++seen;
-        Run *run = nullptr, *free = nullptr, *oldest = nullptr;
+        Run *run = nullptr;
+        Run *free = nullptr;
+        Run *oldest = nullptr;
         for (Run &r : runs) {
             if (!r.open) {
                 free = free ? free : &r;
@@ -156,9 +158,10 @@ public:
     template <class Match> unsigned endWhere(Match match, Cause cause, Ended *ended)
     {
         unsigned count = 0;
-        for (Run &r : runs)
+        for (Run &r : runs) {
             if (r.open && match(r.client))
                 end(r, cause, ended, count);
+        }
         return count;
     }
 
@@ -199,13 +202,14 @@ inline const char *describeRun(const Runs::Ended &run, char *text, size_t size)
 {
     char last[256];
     describe(run.last, last, sizeof(last));
-    if (run.client == Runs::kUncaptured)
+    if (run.client == Runs::kUncaptured) {
         snprintf(text, size,
                  "%u errors of kinds MC_ERR_STATUS does not capture, the first %u printed, ended by %s; the last %s",
                  run.errors, Runs::kFullLines, causeName(run.cause), last);
-    else
+    } else {
         snprintf(text, size, "%u errors by %s (client %#x), the first %u printed, ended by %s; the last %s", run.errors,
                  client(run.client), run.client, Runs::kFullLines, causeName(run.cause), last);
+    }
     return text;
 }
 }  // namespace switch_mc

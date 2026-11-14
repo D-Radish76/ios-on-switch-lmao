@@ -6,6 +6,7 @@
 #include "raw_compute.h"
 #include "raw_compute_key.h"
 #include "raw_compute_lookup.h"
+#include "raw_kernel_texture.h"
 #import "RawMetalComputeState.h"
 #import "RawMetalResolveAsk.h"
 #include "raw_predication.h"
@@ -92,6 +93,26 @@ static bool heldInPlanes(RMTexture *t)
         [self setBuffer:buffers[k] offset:offsets[k] atIndex:range.location + k];
 }
 
+// The format a kernel is compiled to read `t` in: its own where the kernel reads and writes its two planes apart
+// (heldInPlanes, keyed :xr2p); else an RGB10A8_2P_XR10 texture with a stand-in as that stand-in, the RGBA16Float image of
+// its values drawn from the planes as the encoder begins. The two are never keyed together.
+static MTLPixelFormat kernelFormat(RMTexture *t)
+{
+    if (heldInPlanes(t))
+        return t->_descriptor.pixelFormat;
+    return MTLPixelFormat(raw::kernelTextureFormat(t->_raw, uint32_t(t->_descriptor.pixelFormat)));
+}
+
+static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
+{
+    MTLTextureDescriptor *d = t->_descriptor;
+    if (kernelFormat(t) == d.pixelFormat)
+        return d;
+    d = [d copy];
+    d.pixelFormat = kernelFormat(t);
+    return d;
+}
+
 - (void)setTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index
 {
     RMTexture *t = [(id)texture isKindOfClass:[RMTexture class]] ? (RMTexture *)texture : nil;
@@ -101,8 +122,8 @@ static bool heldInPlanes(RMTexture *t)
         if (t) {
             MTLTextureDescriptor *d = t->_descriptor;
             const MTLTextureSwizzleChannels w = d.swizzle;
-            bound = {uint32_t(index),    d.pixelFormat, d.textureType,
-                     d.mipmapLevelCount, d.arrayLength, {w.red, w.green, w.blue, w.alpha},
+            bound = {uint32_t(index),    kernelFormat(t), d.textureType,
+                     d.mipmapLevelCount, d.arrayLength,   {w.red, w.green, w.blue, w.alpha},
                      heldInPlanes(t)};
         }
         if (_specialization.bindTexture(uint32_t(index), t ? &bound : nullptr))
@@ -265,7 +286,7 @@ static bool heldInPlanes(RMTexture *t)
                                                                      specialization.regionMode);
                     for (uint32_t slot = 0; slot < 31; ++slot)
                         if (_textures[slot])
-                            ask->texture(slot, _textures[slot]->_descriptor, heldInPlanes(_textures[slot]));
+                            ask->texture(slot, kernelDescriptor(_textures[slot]), heldInPlanes(_textures[slot]));
                     for (uint32_t slot = 0; slot < 16; ++slot)
                         if (_samplers[slot])
                             ask->sampler(slot, _samplers[slot]->_descriptor);
@@ -572,7 +593,7 @@ bool encodeKernel(raw::ComputeEncoder &e, raw::CommandBuffer &rc, RMCommandBuffe
         e.setBufferOffset(c.index, c.c);
         break;
     case OpKernelClockAnchors:
-        e.setBytesAt(c.index, c.c, c.b);
+        e.setKernelBytes(c.index, c.c, c.b);
         break;
     case OpKernelTexture: {
         RMTexture *t = (RMTexture *)object;

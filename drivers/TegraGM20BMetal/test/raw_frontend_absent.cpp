@@ -139,21 +139,6 @@ const char *nmb_last_error(void)
     return "no device";
 }
 
-bool switch_nmb_heap_holds(uint32_t, const NmbHeapTextureFacts *)
-{
-    return true;
-}
-
-uint32_t switch_nmb_heap_texture_flags(const NmbHeapTextureFacts *)
-{
-    return 0;
-}
-
-uint32_t switch_nmb_sampler_word(const struct NmbSamplerDescriptor *)
-{
-    return 0;
-}
-
 // The translation's device-free entry points (translate/NativeMetalTranslate.h) the facade's RawOffline.mm and
 // RawOfflineReflection.mm link: none made here
 NmbOfflineLibrary *nmb_offline_library_new(const void *, size_t)

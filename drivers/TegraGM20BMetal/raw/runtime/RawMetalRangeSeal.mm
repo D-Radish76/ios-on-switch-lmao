@@ -475,12 +475,14 @@ bool RMRangeEncode::seal(size_t to, bool &stale)
             rc->abandon();
             return false;
         }
-        char answer[96];
-        if (rc->kernelResult)
-            snprintf(answer, sizeof answer, "the kernel answered 0x%x", unsigned(rc->kernelResult));
-        else
-            snprintf(answer, sizeof answer, "not submitted: %s", rc->notSubmitted ?: "?");
-        return fail(PredEncKernel, "the kernel refused the submission", uint32_t(rc->kernelResult), 0, answer);
+        char reason[192];
+        rc->describeRefusal(reason, sizeof reason);
+        // as Metal fails a command buffer its driver could not submit: nothing of it runs elsewhere
+        if (!ahead_ && !rc->partial && !rc->nativeError)
+            failCommandBuffer(
+                cb, [NSString stringWithFormat:@"The GPU driver did not submit the command buffer: %s", reason],
+                MTLCommandBufferErrorInternal);
+        return fail(PredEncKernel, "the kernel refused the submission", uint32_t(rc->kernelResult), 0, reason);
     }
     firstContents_->submitted(cb);
     if (rc->skips)

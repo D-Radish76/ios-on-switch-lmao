@@ -204,9 +204,10 @@ extern "C" void switch_gpu_compositor_alloc(uint64_t ns, int cold)
 	switch_gpu_comp_round_alloc(&gRound, ns, cold);
 }
 
-extern "C" void switch_gpu_compositor_scanned(uint64_t passes, uint64_t draws)
+extern "C" void switch_gpu_compositor_scanned(uint64_t passes, uint64_t draws, uint64_t interlocks,
+					      uint64_t twins)
 {
-	switch_gpu_comp_round_scanned(&gRound, passes, draws);
+	switch_gpu_comp_round_scanned(&gRound, passes, draws, interlocks, twins);
 }
 
 extern "C" void switch_gpu_compositor_sync(uint32_t syncs, uint64_t ns, int behind)

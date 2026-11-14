@@ -9,30 +9,7 @@
 
 namespace standin {
 
-Asks &asks()
-{
-    static Asks counted;
-    return counted;
-}
-
 }  // namespace standin
-
-extern "C" bool switch_nmb_heap_holds(uint32_t, const NmbHeapTextureFacts *)
-{
-    return true;
-}
-
-extern "C" uint32_t switch_nmb_heap_texture_flags(const NmbHeapTextureFacts *)
-{
-    standin::asks().textureFlags++;
-    return standin::kTextureFlags;
-}
-
-extern "C" uint32_t switch_nmb_sampler_word(const struct NmbSamplerDescriptor *)
-{
-    standin::asks().samplerWords++;
-    return standin::kSamplerWord;
-}
 
 extern "C" const char *nmb_last_error(void)
 {

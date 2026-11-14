@@ -24,6 +24,24 @@ struct Texture {
     }
 };
 
+// gpu.ca.glass_split's compute read of a 'b3a8' surface's RGB10A8_2P_XR10 texture: m2v compiles the kernel for the format
+// it is asked at, and at 550 reads one R32G32_UINT image of the word and the alpha that no header of the two planes is,
+// so admission refused it (compute.image b 2). Asked at its stand-in's RGBA16Float, the kernel's view is the stand-in's.
+TEST(KernelTexture, ATwoPlaneTextureIsCompiledForAsItsStandIn)
+{
+    const Texture standIn;
+    Texture t;
+    t.xrPlanes = true;
+    t.standIn = &standIn;
+    EXPECT_EQ(raw::kernelTextureFormat(t, 550), raw::kXrStandInFormat);
+    t.standIn = nullptr;
+    EXPECT_EQ(raw::kernelTextureFormat(t, 550), 550u) << "no stand-in: refused as it was";
+    Texture codes;
+    codes.standIn = &standIn;
+    EXPECT_EQ(raw::kernelTextureFormat(codes, 554), 554u) << "BGR10_XR's codes are an image of their own";
+    EXPECT_EQ(raw::kernelTextureFormat(Texture(), 80), 80u);
+}
+
 TEST(KernelTexture, AMipmappedTextureIsSampledInPlace)
 {
     Texture t;

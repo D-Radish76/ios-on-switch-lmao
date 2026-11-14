@@ -4624,6 +4624,7 @@ public:
         const bool timed = request == timedHeldRequest;
         if (timed)
             timedHeldRequest = nullptr;
+        noteOrdinaryTaken(request);
         frameInfo->pending.take(seqOf(request), id, requested, timed);
         frameInfo->tickets.take(request, seqOf(request));
     }
@@ -4642,7 +4643,7 @@ public:
             KDBG(SWITCH_KDBG_CODE(SWITCH_KDBG_FRAME_TICKET), ticket.id, ticket.swapId, ticket.take, ticket.gpu);
 #endif
         switch_frame_info::Frame frame;
-        if (frameInfo->pending.shown(seq, continuous, frame) && frameInfo->clients.any())
+        if (frameInfo->pending.shown(seq, continuous, frame, vsyncInterval / 2) && frameInfo->clients.any())
             native_legacy_frame_info_notify(this, &frame);
     }
 
@@ -5197,10 +5198,30 @@ public:
                 valid = native_legacy_gop_mapping_observed(this, bootMapping, width, height);
                 if (valid && SWITCH_PORTRAIT_NATIVE)
                     publishStrideRequirements();
+                if (valid)
+                    publishRefreshProperties();
             }
         }
         OSSafeReleaseNULL(mapping);
         return valid;
+    }
+
+    // IOMFBDisplayRefresh, which QuartzCore's AppleDisplay::update_display_limits reads, is the family's to publish
+    // (setDisplayRefreshProperties); Apple's pipes call it from their own hardware start, under the work-loop gate, with
+    // the internal-display flag already set. The family's timing getter then answers the panel's 1/60 s for the shortest
+    // and longest interval and no step.
+    static IOReturn publishRefreshGated(OSObject *owner, void *, void *, void *, void *)
+    {
+        return native_legacy_set_display_refresh_properties(owner) ? kIOReturnSuccess : kIOReturnError;
+    }
+
+    void publishRefreshProperties()
+    {
+        setInternalDisplay(true);
+        IOWorkLoop *loop = getWorkLoop();
+        if (!loop || loop->runAction(&publishRefreshGated, this) != kIOReturnSuccess)
+            IOLog("SwitchDisplay: IOMobileFramebufferLegacy::setDisplayRefreshProperties failed: no "
+                  "IOMFBDisplayRefresh\n");
     }
 
     // The compositor's framebuffer rows (QuartzCore CA::WindowServer::AppleDisplay::update_display_limits reads this IOMFB

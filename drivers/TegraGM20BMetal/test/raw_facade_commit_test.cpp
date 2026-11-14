@@ -226,6 +226,45 @@ id<MTLTexture> newTarget()
 
 // A new target its first pass clears and stores whole, with no renderTargetWidth set: Metal renders over the attachment
 // whole, so nothing writes its contents first
+// A job the kernel refuses fails its command buffer as Metal fails one its driver could not submit (Internal, the
+// kernel's answer in the description), the path error:enc.kernel, and nothing of it replays on m2v; the next command
+// buffer is raw again. Boot 22's iconservicesagent: `enc.kernel a=0 b=0` with no reason, then a 13.8 s m2v replay.
+TEST(RawFacadeCommit, AJobTheKernelRefusesFailsItsCommandBufferAsMetalDoes)
+{
+    ASSERT_TRUE(opened().device != nil);
+    id<MTLCommandQueue> queue = [opened().device newCommandQueue];
+    const scale_frames::Shape shape{3, 6, 1};
+    const auto into = scale_frames::targets(opened().device, shape);
+    id<MTLCommandBuffer> settled = scale_frames::record(queue, opened().state, into, shape, 0);
+    [settled commit];
+    [settled waitUntilCompleted];
+    ASSERT_EQ(settled.status, MTLCommandBufferStatusCompleted);
+    const long long m2vBefore = [counters(opened().device)[@"m2v"] longLongValue];
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        kernel_model::model.refuse = 1000;
+        kernel_model::model.refusal = kIOReturnBadArgument;
+    }
+    id<MTLCommandBuffer> cb = scale_frames::record(queue, opened().state, into, shape, 1);
+    [cb commit];
+    [cb waitUntilCompleted];
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        kernel_model::model.refuse = 0;
+    }
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
+    const std::string described = cb.error.localizedDescription.UTF8String ?: "";
+    EXPECT_NE(described.find("0xe00002c2"), std::string::npos) << described;
+    EXPECT_EQ(path(cb), "error:enc.kernel");
+    EXPECT_EQ([counters(opened().device)[@"m2v"] longLongValue], m2vBefore) << "a range of it replayed on m2v";
+    id<MTLCommandBuffer> after = scale_frames::record(queue, opened().state, into, shape, 2);
+    [after commit];
+    [after waitUntilCompleted];
+    EXPECT_EQ(after.status, MTLCommandBufferStatusCompleted);
+    EXPECT_EQ(path(after), "raw");
+}
+
 TEST(RawFacadeCommit, ANewTargetClearedWholeTakesNoFill)
 {
     ASSERT_TRUE(opened().device != nil);

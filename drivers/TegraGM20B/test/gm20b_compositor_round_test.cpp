@@ -19,14 +19,15 @@ TEST(CompositorRound, ARoundCountsJobsOverAPeriodImportsAndScannedPasses)
 	switch_gpu_comp_round_import(&r, 3500000);
 	switch_gpu_comp_round_alloc(&r, 100000, 0);
 	switch_gpu_comp_round_alloc(&r, 9000000, 1);
-	switch_gpu_comp_round_scanned(&r, 15, 90);
-	switch_gpu_comp_round_scanned(&r, 7, 17);
+	switch_gpu_comp_round_scanned(&r, 15, 90, 28, 0);
+	switch_gpu_comp_round_scanned(&r, 7, 17, 0, 12);
 	switch_gpu_comp_round taken = {};
 	switch_gpu_comp_round_take(&r, &taken);
 	char line[256];
 	switch_gpu_comp_round_format(line, sizeof(line), &taken);
 	EXPECT_STREQ(line, "jobs=3 gpu_us=41666 over_period=1 imports=1 import_us=3500 allocs=2 "
-			   "alloc_us=9100 cold_allocs=1 scanned=2 passes=22 draws=107 ");
+			   "alloc_us=9100 cold_allocs=1 scanned=2 passes=22 draws=107 ilk=28 "
+			   "twin=12 ");
 }
 
 TEST(CompositorRound, TakingStartsTheNextRoundEmpty)

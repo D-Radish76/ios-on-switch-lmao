@@ -98,7 +98,7 @@ void ComputeEncoder::inheritBuffers(IcbBuffer (&out)[31], std::array<uint32_t, 3
             cb_.use(*b.buffer, true);
             if (b.buffer->hostVisible && !b.buffer->wc && b.buffer->cpu)
                 cb_.clean(b.buffer->cpu + b.offset, b.size);
-        } else if (b.va) {
+        } else if (b.va && !b.kernelMemory) {
             cb_.useAddress(b.va, b.size, true);
         }
     }

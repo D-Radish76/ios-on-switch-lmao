@@ -1580,9 +1580,11 @@ public:
     std::vector<uint32_t> promises;
     bool promisesKept = false;
     int nativeError = 0;
-    // A commit that submitted nothing more: the kernel's answer to the job it refused (0: none), else why it sent none
+    // A commit that submitted nothing more: the kernel's answer to the job it refused (0: none), else why none was sent
     int kernelResult = 0;
     const char *notSubmitted = nullptr;
+    // Why the last commit submitted nothing more, as its error line and its command buffer's error give it
+    void describeRefusal(char *line, size_t size) const;
     // Why a job was refused when it was the resource set: its generation ended and the kernel refused to make it again
     // (SetView::refused). The command buffer fails with it.
     std::string setRefused;
@@ -2022,6 +2024,9 @@ public:
     bool createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
                              uint32_t format,
                              Texture &t);  // over a buffer's memory (t holds no reference: the caller keeps the buffer)
+    // MTLTextureTypeTextureBuffer: `elements` texels of `format` from `offset` in a buffer, under a texel buffer header
+    // (fx::bufferTic), as createBufferTexture holds no reference
+    bool createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t);
     bool createView(const Texture &of, uint32_t format, Texture &t);  // the same memory as another format
     // Its header's sources read through `channels` (MTLTextureSwizzle each, Texture::swizzle), its header written as it is
     void swizzle(Texture &t, const uint8_t channels[4]);

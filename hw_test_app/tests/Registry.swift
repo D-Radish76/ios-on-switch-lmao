@@ -9,7 +9,8 @@ public enum Registry {
     static let metal: [any HWTest] = [
         MetalDeviceTest(), MetalComputeTest(), MetalColorPassTest(), MetalDepthStencilTest(), MetalMSAATest(),
         MetalPixelFormatTest(), MetalHalfRoundingTest(), MetalCompressedTest(), MetalBlitTest(), MetalTextureViewTest(),
-        MetalIOSurfaceTest(), SurfaceTiledDefaultTest(), SurfaceCrossProcessTest(), RawReadbackRoutesTest(),
+        MetalIOSurfaceTest(), SurfaceTiledDefaultTest(), SurfaceCrossProcessTest(), SurfaceSnapshotLayoutTest(),
+        PeerUserClientTest(), RawReadbackRoutesTest(),
         YcbcrTargetTest(),
         YcbcrPackedTargetTest(),
         PackedPlaneTargetTest(), PackedSpareBitsTest(), XRTwoPlaneTest(),
@@ -20,9 +21,12 @@ public enum Registry {
         SourceLibraryTest(), StitchedLibraryTest(), SamplerTableTest(), FunctionTagsTest(),
         FunctionArgumentEncoderTest(), ArgumentGridsTest(), PlainStructEncoderTest(), BufferTexture16Test(),
         PlaneRows16Test(), CompressedTargetsTest(), ZcullTest(), MipTwodTest(), MipCandidatesTest(), MipLodTest(),
-        VisibilityTest(), FixedBlendRuleTest(), PrivateCompressionTest(), AlphaToCoverageTest(), IconCornersTest(),
-        CompileSharedTest(), CompileFirstDrawTest(), CompileStageLibraryTest(), DrawBandsTest(), DispatchPiecesTest(),
-        PosterTargetsTest(), PushScanTargetsTest(), ResolveCostTest(),
+        VisibilityTest(), FixedBlendRuleTest(), FixedBlendFormatsTest(), PrivateCompressionTest(),
+        AlphaToCoverageTest(),
+        IconCornersTest(), TextureBufferTest(), IconSmallSizesTest(), IconPasscodeTest(), IconCalendarTest(),
+        CompileSharedTest(), CompileFirstDrawTest(), CompileStageLibraryTest(), CompileAnswerLatencyTest(),
+        DrawBandsTest(), DispatchPiecesTest(), PosterTargetsTest(),
+        PushScanTargetsTest(), ResolveCostTest(), JobRefusalLinesTest(),
         MsaaFirstUseTest(), StoredDepthTest(),
         ResolveTwodTest(), FillTextureTest(), StorageCompressedTest(), SharedLayoutTest(), PredicationTest(),
         MPSControlFlowTest(),
@@ -54,7 +58,8 @@ public enum Registry {
         [
             DisplayModeTest(), DisplayPacingTest(), CompletionFlipTest(), MediaCompletionFlipTest(),
             MediaCompletionFlipGatedTest(), ScanReturnedTest(), BrightnessTest(),
-            ColourPipelineTest(), PlanesTest(), SmallDrawableTest(), PresentAtTimeTest(), PlaneInUseTest(),
+            ColourPipelineTest(), PlanesTest(), SmallDrawableTest(), PresentAtTimeTest(), DisplayRefreshTest(),
+            PlaneInUseTest(),
             ScanoutRoutesTest(), PlainSurfacesTest(), DisplaySnapshotTest(), WakeTest(),
             PlanesCroppedTest(),
         ] + DisplayWindowProbeTest.all + [LandscapeVideoTest(), LandscapeDownscaleTest()]
@@ -75,7 +80,7 @@ public enum Registry {
     static let cpuAndSystem: [any HWTest] = [
         CPUSingleTest(), CPUMultiTest(), A64XSelfTest(), CryptoKitTest(), CommonCryptoTest(), KeychainTest(),
         LocalAuthenticationTest(), IdentityTest(), PowerStateTest(), ThermalTest(), SocThermThrottleTest(),
-        MemoryTest(), UnionDirectoryTest(), OverlayAppsTest(), OverlayAppRecordsTest(), CPUClockTest(),
+        MemoryTest(), UnionDirectoryTest(), OverlayAppsTest(), OverlayAppRecordsTest(), IconCacheTest(), CPUClockTest(),
         CPUDfllLandingTest(), CPUSustainedTest(), CPUSchedTest(), CPUIPIPingPongTest(),
         DispatchSyncTest(), DispatchSyncWorkloopTest(), WorkloopSyncTest(), WidgetsRenderTest(), IconRenderTest(),
         SnapshotPurgeableTest(),
@@ -102,8 +107,10 @@ public enum Registry {
         // Leaves this app for Settings and opens it again: last, so no other test runs while it is away.
         + [LaunchHitchTest()]
 
-    /// Programs a unit no other driver here drives, which kills the channel when its setup is wrong: each app's last.
-    public static let last: [any HWTest] = [FetchRungTest(id: "gpu.raw.fetch_rung3", rung: 3)]
+    /// Takes the GPU pool's compressed memory down to its floor, which refuses every other process's compressed asks
+    /// while it runs; then programs a unit no other driver here drives, which kills the channel when its setup is
+    /// wrong: each app's last.
+    public static let last: [any HWTest] = [CompressedFloorTest(), FetchRungTest(id: "gpu.raw.fetch_rung3", rung: 3)]
     /// Reset the copy engine under the present, then kill the app's raw channel: each app runs them after all its other
     /// tests, so a failed recovery spoils none of them.
     public static let recovery: [any HWTest] = [

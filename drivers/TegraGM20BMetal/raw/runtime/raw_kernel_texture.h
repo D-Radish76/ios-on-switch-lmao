@@ -3,6 +3,7 @@
 // (Texture::chain), so a kernel samples its levels as a draw does.
 #pragma once
 #include <cstdint>
+#include "raw_xr.h"
 
 namespace raw {
 
@@ -28,6 +29,13 @@ template <typename Texture> constexpr KernelTextureForm kernelTextureForm(const 
     if (x.sampled)
         return KernelTextureForm::Shadow;
     return KernelTextureForm::InPlace;
+}
+
+// The MTLPixelFormat a kernel is compiled to read texture `x` of `format` in: a two-plane RGB10A8_2P_XR10 texture's stand-in
+// (kXrStandInFormat), whose header admission binds where the record views the slot so; else its own
+template <typename Texture> constexpr uint32_t kernelTextureFormat(const Texture &x, uint32_t format)
+{
+    return x.xrPlanes && x.standIn ? kXrStandInFormat : format;
 }
 
 inline const char *kernelTextureFormName(KernelTextureForm f)

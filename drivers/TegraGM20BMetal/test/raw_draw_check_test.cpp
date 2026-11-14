@@ -54,7 +54,7 @@ TEST(DrawCheck, TheFacadesBindsAndCheckUseTheRule)
     const std::string encoder = SourceText("../raw/runtime/RawMetalRenderEncoder.mm"),
                       bindings = SourceText("../raw/runtime/RawMetalBindings.mm"),
                       strides = SourceText("../raw/runtime/RawMetalStrides.mm");
-    const std::string check = Body(encoder, "- (void)checkDraw");
+    const std::string check = Body(encoder, "- (BOOL)checkDraw");
     EXPECT_THAT(check,
                 HasSubstr("if (_checkedEligibility == _eligibility && _checkedEpoch == _cb->_plan.stateEpoch() &&"));
     EXPECT_THAT(check, HasSubstr("_checkedPipeline == _pipe->_raw)"));

@@ -1969,6 +1969,9 @@ void Device::writeTic(const Texture &t)
         one.bpp = t.bpp;
         one.yLog2 = t.blockHeight;
         fx::mipChainTic(one, t.va, kZetaFormatInfo[zetaFormatIndex(t.format)].tic0, false, 0, 1, w, fx::kTexTwoD);
+    } else if (t.type == fx::kTexOneDBuffer) {
+        const FormatInfo *f = formatInfo(t.format);
+        fx::bufferTic(t.va, f->tic0, f->srgb, t.width, w);
     } else if (const FormatInfo *f = formatInfo(t.format);
                (t.layers > 1 && fx::arrayLayout(t.width, t.height, t.layers, 1, t.bpp, one)) ||
                (t.type == fx::kTexThreeD &&
@@ -2616,6 +2619,32 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     return true;
 }
 
+// NVK's texel buffer views start on 16 bytes (NVK_MIN_TEXEL_BUFFER_ALIGNMENT, its minTexelBufferOffsetAlignment) and hold
+// at most 2^27 texels (maxTexelBufferElements); the header itself takes a byte address
+bool Device::createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t)
+{
+    constexpr uint64_t kTexelBufferAlign = 16, kMaxElements = 1u << 27;
+    const FormatInfo *f = formatInfo(format);
+    if (!f || blockCompressed(f) || xrForm(format) != XrForm::None || !elements || elements > kMaxElements ||
+        offset > b.length || uint64_t(elements) * f->bpp > b.length - offset || ((b.va + offset) % kTexelBufferAlign))
+        return false;
+    std::lock_guard<raw::Mutex> l(lock_);
+    t = {};
+    t.format = format;
+    t.bpp = f->bpp;
+    t.width = t.texelWidth = elements;
+    t.height = t.texelHeight = 1;
+    t.pitch = elements * f->bpp;
+    t.type = fx::kTexOneDBuffer;
+    t.va = b.va + offset;
+    t.storage = {t.va, uint64_t(t.pitch), b.hostVisible};
+    t.cpu = b.cpu ? b.cpu + offset : nullptr;
+    if (!(t.tic = allocTic()))
+        return false;
+    writeTic(t);
+    return true;
+}
+
 bool Device::createView(const Texture &of, uint32_t format, Texture &t)
 {
     // Metal views a converted image (planar, YCbCr) only in its own format or that format's sRGB twin (m2v view_plan.rs),
@@ -2666,15 +2695,17 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
     uint64_t va = of.va;
     Texture image;
     if (of.chain) {
-        if (baseLayer || layers != 1 || baseLevel + levels > of.chain->layout.levels ||
+        c = of.chain->layout;
+        if (baseLevel + levels > c.levels || baseLayer + layers > c.layers ||
             (baseLevel && !chainLevelImage(of, baseLevel, image)))
             return false;
-        c = of.chain->layout;
-        va = of.chain->va;
+        va = of.chain->va + baseLayer * c.arrayStride;
         if (!baseLevel)
             image = of;
         // (a later level's block height is the chain's clamp, not its own image's: the CPU goes by m2v)
+        image.va += baseLayer * c.arrayStride;
         image.cpu = nullptr;
+        image.layers = layers;
         image.layerBytes = c.arrayStride;
     } else {
         if (baseLevel || levels != 1 || baseLayer + layers > of.layers ||
@@ -4388,6 +4419,8 @@ CommandBuffer *Device::begin()
     cb.promises.clear();
     cb.promisesKept = false;
     cb.nativeError = 0;
+    cb.kernelResult = 0;
+    cb.notSubmitted = nullptr;
     cb.setRefused.clear();
     cb.nativeReads_.clear();
     cb.nativeSurfaces_.clear();
@@ -4932,8 +4965,45 @@ void CommandBuffer::foldCounts()
 }
 #endif
 
+void CommandBuffer::describeRefusal(char *line, size_t size) const
+{
+    if (!setRefused.empty())
+        snprintf(line, size, "%s", setRefused.c_str());
+    else if (kernelResult)
+        snprintf(line, size, "the kernel refused its job (0x%x)", unsigned(kernelResult));
+    else
+        snprintf(line, size, "%s", notSubmitted ? notSubmitted : "nothing named why");
+}
+
+// One error line a commit that submits nothing more for a reason its caller does not take up again (the CPU holding a
+// use, a native surface changed under it): the first 16, then every 256th
+static void logNotSubmitted(const CommandBuffer &cb)
+{
+    if (cb.kernelResult == kIOReturnCannotLock || (cb.nativeError && cb.kernelResult == cb.nativeError))
+        return;
+    static std::atomic<uint32_t> lines{0};
+    const uint32_t n = lines.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n > 16 && n % 256)
+        return;
+    char why[192];
+    cb.describeRefusal(why, sizeof why);
+    os_log_error(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
+                 "raw: a command buffer not submitted: %{public}s (#%u)", why, n);
+}
+
 bool CommandBuffer::commit(uint32_t &seqno)
 {
+    struct NotSubmittedLine {
+        const CommandBuffer &cb;
+        bool submitted = false;
+
+        ~NotSubmittedLine()
+        {
+            if (!submitted && (cb.kernelResult || cb.notSubmitted || !cb.setRefused.empty()))
+                logNotSubmitted(cb);
+        }
+    } notSubmittedLine{*this};
+
     RAW_ENCODE_SPAN(Commit);
     RAW_ENCODE_COUNT(GeometryVertices, GeometryBudget().vertices - geometryBudget_.vertices);
     if (nativeError)
@@ -5049,14 +5119,15 @@ bool CommandBuffer::commit(uint32_t &seqno)
         }
     }
     if (geometryWritable()) {
-        notSubmitted = "a geometry write after the CPU read it";
+        notSubmitted = surfaces_.valid() ? "a write of the geometry the CPU read"
+                                         : "a job's uses past what one job names, or a use of no backing";
         return false;  // later internal writes invalidate the CPU proof; no prefix may reach the GPU
     }
     if (!batchWork_.operations)
         segments_.includeTail();
     const uint32_t maxPushes = d.k_.maxPushes(), maxFences = d.k_.maxFences();
     if (!segments_.valid(maxPushes)) {
-        notSubmitted = "a continuation group past the kernel's pushes a job";
+        notSubmitted = "a continuation group past the pushes one job takes";
         return false;  // validate all indivisible continuation groups before publishing any prefix
     }
     // A command buffer of several jobs holds its shared uses' CPU-lock admission from its first job to its last
@@ -5084,7 +5155,10 @@ bool CommandBuffer::commit(uint32_t &seqno)
         if (executed && last && quietEnd && raw::jobKeptLoud())
             quietEnd = false;
         if (!executed) {
-            kernelResult = result;
+            if (!uses.valid())
+                notSubmitted = "a job's uses past what one job names, or a use of no backing";
+            else
+                kernelResult = result;
             admissionBlocked = !published && result == kIOReturnCannotLock;
             setRefused = d.setView_.refused;
             if (admissionHeld) {
@@ -5192,6 +5266,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
     d.noteCommittedTimings(timings);
     releaseNativeReads();
     RAW_DIAGNOSTIC(d.stats.commits++);
+    notSubmittedLine.submitted = true;
     return true;
 }
 
@@ -7983,7 +8058,7 @@ TextureTransferResult Device::transferTexture(const Texture &texture, uint32_t l
 {
     Texture view;
     const Texture *selected = &texture;
-    if (texture.chain) {
+    if (texture.chain && level) {
         if (!chainLevelImage(texture, level, view))
             return TextureTransferResult::Unsupported;
         selected = &view;

@@ -80,6 +80,9 @@ public:
     void setBytes(uint32_t slot, const void *bytes, uint32_t length);
     void setBytesAt(uint32_t slot, uint64_t va, uint32_t length,
                     const Buffer *allocation = nullptr);  // bytes already where the GPU reads them
+    // The kernel's own memory mapped for the connection (its clock anchor table): bound, never a job's use, since no BO of
+    // the client's holds it and SubmitJob refuses a use it cannot find
+    void setKernelBytes(uint32_t slot, uint64_t va, uint32_t length);
     void setBuffer(uint32_t slot, const Buffer *buffer, uint64_t offset);
     void setBufferOffset(uint32_t slot, uint64_t offset);
     // A stage-in kernel's: a buffer slot's bind stride (UINT32_MAX: none), which a layout of a dynamic stride reads, and
@@ -97,8 +100,10 @@ public:
     // refused (*why), nothing encoded
     bool dispatch(const uint32_t groups[3], const uint32_t threads[3], const char **why);
     // dispatchThreadgroupsWithIndirectBuffer: the grid is the three words at `offset` in `arguments` as the GPU reads
-    // them when it reaches the dispatch (raw_icb_compute.cpp). False: refused (*why), nothing encoded
-    bool dispatchIndirect(const Buffer *arguments, uint64_t offset, const char **why);
+    // them when it reaches the dispatch (raw_icb_compute.cpp), in threadgroups of `threads`. False: refused (*why),
+    // nothing encoded
+    bool dispatchIndirect(const Buffer *arguments, uint64_t offset, const std::array<uint32_t, 3> &threads,
+                          const char **why);
     // setStageInRegionWithIndirectBuffer: the dispatches after it take their stage-in origin and size from the six words
     // at `offset` in `region` as the GPU reads them at each dispatch; null: setStageInRegion:'s words again
     void setStageInRegionIndirect(const Buffer *region, uint64_t offset);
@@ -194,11 +199,12 @@ private:
         const Buffer *buffer = nullptr;
         uint64_t offset = 0;
         uint64_t resourceVa = 0;
+        bool kernelMemory = false;
 
         bool operator==(const Bound &b) const
         {
             return va == b.va && size == b.size && buffer == b.buffer && offset == b.offset &&
-                   resourceVa == b.resourceVa;
+                   resourceVa == b.resourceVa && kernelMemory == b.kernelMemory;
         }
     };
 
