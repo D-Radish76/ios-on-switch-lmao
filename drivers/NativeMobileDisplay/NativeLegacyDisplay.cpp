@@ -4601,6 +4601,7 @@ public:
         const bool timed = request == timedHeldRequest;
         if (timed)
             timedHeldRequest = nullptr;
+        noteOrdinaryTaken(request);
         frameInfo->pending.take(seqOf(request), id, requested, timed);
         frameInfo->tickets.take(request, seqOf(request));
     }

@@ -11,6 +11,23 @@ static inline const OriginalLegacySwapRequest *timedHeldRequest = nullptr;
 #if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
 bool timedHoldLogged = false;
 #endif
+#if SWITCH_FRAME_TIMELINE
+// The swap the gate's last decision let go by the ordinary-frame clause: counted once, when the kick takes it (a kick
+// that defers it for another reason asks the gate again).
+static inline const OriginalLegacySwapRequest *ordinaryRequest = nullptr;
+#endif
+
+void noteOrdinaryTaken(const OriginalLegacySwapRequest *request)
+{
+#if SWITCH_FRAME_TIMELINE
+    if (request && request == ordinaryRequest) {
+        ordinaryRequest = nullptr;
+        ++frameInfo->pending.timedOrdinary;
+    }
+#else
+    (void)request;
+#endif
+}
 
 bool presentNotDue(const OriginalLegacySwapRequest *request)
 {
@@ -26,8 +43,7 @@ bool presentNotDue(const OriginalLegacySwapRequest *request)
                                                submittedAt(request)};
     const auto decision = switch_timed_present::decide(requested, clock);
 #if SWITCH_FRAME_TIMELINE
-    if (decision == switch_timed_present::Decision::Ordinary)
-        ++frameInfo->pending.timedOrdinary;
+    ordinaryRequest = decision == switch_timed_present::Decision::Ordinary ? request : nullptr;
 #endif
     if (switch_timed_present::due(decision))
         return false;

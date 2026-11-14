@@ -66,12 +66,17 @@ TEST(TimedPresent, TheOrdinaryClauseIsNamedWhereItShowsAFrameEarly)
     EXPECT_EQ(decide(stale + kPeriod, at(stale)), Decision::NeedsPhase);
 }
 
-// The display counts the clause's swaps (debug kernels) and treats them as due.
-TEST(TimedPresentSource, TheDisplayCountsTheOrdinaryClause)
+// The display treats the clause's swaps as due and counts each once (debug kernels), when the kick takes it: a kick
+// that defers it for another reason asks the gate again, which must not count it twice.
+TEST(TimedPresentSource, TheDisplayCountsAnOrdinarySwapOnceAtItsTake)
 {
-    const CodeText gate = Block(SourceText("../SwitchTimedPresentDisplay.h"), "bool presentNotDue(");
-    EXPECT_TRUE(gate.Before("Decision::Ordinary", "if (switch_timed_present::due(decision))"));
-    EXPECT_TRUE(gate.Has("++frameInfo->pending.timedOrdinary;"));
+    const std::string source = SourceText("../SwitchTimedPresentDisplay.h");
+    const CodeText gate = Block(source, "bool presentNotDue(");
+    EXPECT_TRUE(gate.Before("Decision::Ordinary ? request : nullptr", "if (switch_timed_present::due(decision))"));
+    EXPECT_FALSE(gate.Has("timedOrdinary"));
+    EXPECT_TRUE(Block(source, "void noteOrdinaryTaken(").Has("++frameInfo->pending.timedOrdinary;"));
+    EXPECT_TRUE(Block(SourceText("../NativeLegacyDisplay.cpp"), "void noteFrameInfoTaken(")
+                    .Before("noteOrdinaryTaken(request);", "frameInfo->pending.take("));
 }
 
 TEST(TimedPresent, ATargetTwoFramesOutWaitsForTheFrameEndBeforeIt)
