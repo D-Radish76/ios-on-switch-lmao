@@ -18,18 +18,18 @@ namespace {
 TEST(RefreshProperties, TheHardwareStartPublishesThemForTheBuiltInPanel)
 {
     const CodeText start = Block(SourceText("../NativeLegacyDisplay.cpp"), "bool startHardware() override");
-    EXPECT_TRUE(start.Before("primary = true;", "publishRefreshProperties();"));
-    EXPECT_TRUE(start.Before("valid = native_legacy_gop_mapping_observed(", "publishRefreshProperties();"));
+    EXPECT_TRUE(start.before("primary = true;", "publishRefreshProperties();"));
+    EXPECT_TRUE(start.before("valid = native_legacy_gop_mapping_observed(", "publishRefreshProperties();"));
 }
 
 TEST(RefreshProperties, TheFlagIsSetBeforeTheFamilyPublishesUnderItsGate)
 {
     const std::string display = SourceText("../NativeLegacyDisplay.cpp");
     const CodeText publish = Block(display, "void publishRefreshProperties()");
-    EXPECT_TRUE(publish.Before("setInternalDisplay(true);", "loop->runAction(&publishRefreshGated, this)"));
-    EXPECT_TRUE(publish.Has("IOLog(\"SwitchDisplay: IOMobileFramebufferLegacy::setDisplayRefreshProperties failed"));
+    EXPECT_TRUE(publish.before("setInternalDisplay(true);", "loop->runAction(&publishRefreshGated, this)"));
+    EXPECT_TRUE(publish.has("IOLog(\"SwitchDisplay: IOMobileFramebufferLegacy::setDisplayRefreshProperties failed"));
     EXPECT_TRUE(Block(display, "static IOReturn publishRefreshGated(")
-                    .Has("native_legacy_set_display_refresh_properties(owner)"));
+                    .has("native_legacy_set_display_refresh_properties(owner)"));
 }
 
 TEST(RefreshProperties, BothKindsBindThePublisherAndTheFlag)

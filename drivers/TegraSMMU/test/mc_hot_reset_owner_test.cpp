@@ -157,7 +157,12 @@ TEST(McHotResetSource, OnlyTheOwnerWritesTheHotResetRegisters)
                     continue;
                 if (std::regex_search(line, write) &&
                     (std::regex_search(line, named) || std::regex_search(line, offset)))
-                    writers.push_back(name + ":" + std::to_string(number) + ": " + line);
+                {
+                    std::string entry = name;
+                    entry += ":" + std::to_string(number) + ": ";
+                    entry += line;
+                    writers.push_back(std::move(entry));
+                }
             }
         }
     }
@@ -179,6 +184,7 @@ IOSimpleLock *IOSimpleLockAlloc()
     return new IOSimpleLock{};
 }
 
+// NOLINTNEXTLINE(misc-const-correctness): IOKit's signature
 void IOSimpleLockFree(IOSimpleLock *lock)
 {
     delete lock;
@@ -208,16 +214,17 @@ uint32_t switch_mmio_model_read32(uintptr_t address)
         return gRegisters[kMc + kCtrl1];
     const uint32_t value = gRegisters[address];
     if (address == kMc + gSecondAt && gSecond) {
-        std::function<void()> second = std::move(gSecond);
+        std::function<void()> const second = std::move(gSecond);
         gSecond = nullptr;
-        std::function<void()> run = [second] {
+        std::function<void()> const run = [second] {
             second();
             gSecondRan = true;
         };
-        if (gLocksHeld)
+        if (gLocksHeld) {
             gSpinning.push_back(run);
-        else
+        } else {
             run();
+        }
     }
     return value;
 }

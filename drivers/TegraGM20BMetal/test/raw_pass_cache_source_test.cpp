@@ -29,17 +29,17 @@ TEST(RawPassCacheSource, ThePassPathTakesNoLockAndNoReadModifyWrite)
         const CodeText body = Block(cache(), head);
         for (const char *banned :
              {"_lock", "lock_guard", "mutex", "fetch_", "exchange", "__atomic", "OSAtomic", "@synchronized"})
-            EXPECT_FALSE(body.Has(banned)) << head << " " << banned;
+            EXPECT_FALSE(body.has(banned)) << head << " " << banned;
     }
 }
 
 TEST(RawPassCacheSource, TrimTakesCopiesOnlyFromAStoppedThreadOutsideItsWindow)
 {
     const CodeText trim = Block(cache(), "RMPassTrim rmPassTrim()");
-    EXPECT_TRUE(trim.Before("thread_suspend(c->thread)", "c->inside.load(std::memory_order_relaxed)"));
-    EXPECT_TRUE(trim.Before("gone[i] = take(*c, i);", "thread_resume(c->thread);"));
-    EXPECT_TRUE(trim.Before("thread_resume(c->thread);", "release(gone);"));
-    EXPECT_TRUE(trim.Has("if (other && thread_suspend(c->thread) != KERN_SUCCESS) { "
+    EXPECT_TRUE(trim.before("thread_suspend(c->thread)", "c->inside.load(std::memory_order_relaxed)"));
+    EXPECT_TRUE(trim.before("gone[i] = take(*c, i);", "thread_resume(c->thread);"));
+    EXPECT_TRUE(trim.before("thread_resume(c->thread);", "release(gone);"));
+    EXPECT_TRUE(trim.has("if (other && thread_suspend(c->thread) != KERN_SUCCESS) { "
                          "c->dropAsked.store(true, std::memory_order_relaxed); continue; }"))
         << "a thread trim cannot stop keeps its copies only until its next lookup";
 }

@@ -137,16 +137,16 @@ TEST(SwitchGpuRefusalSitesSource, EveryJobRefusalNamesItsSite)
 
 	for (const auto &b : bodies) {
 		const CodeText body = Block(b.source, b.head);
-		EXPECT_EQ(body.Count("return kIOReturn"), body.Count("return kIOReturnSuccess"))
+		EXPECT_EQ(body.count("return kIOReturn"), body.count("return kIOReturnSuccess"))
 			<< b.head;
-		EXPECT_EQ(body.Count("return ioreturn("), 0u) << b.head;
-		EXPECT_EQ(body.Count("? kIOReturnBadArgument :"), 0u) << b.head;
+		EXPECT_EQ(body.count("return ioreturn("), 0u) << b.head;
+		EXPECT_EQ(body.count("? kIOReturnBadArgument :"), 0u) << b.head;
 	}
 	EXPECT_TRUE(Block(submit, "IOReturn AGXDeviceUserClient::submitJob(")
-			    .Before("takeJob(in, out, why, channel)",
+			    .before("takeJob(in, out, why, channel)",
 				    "logRefusal(\"SubmitJob\", channel, result, why)"));
 	EXPECT_TRUE(Block(sets, "IOReturn AGXDeviceUserClient::resourceSetCreate(")
-			    .Before("IOLockUnlock(lock_);",
+			    .before("IOLockUnlock(lock_);",
 				    "logRefusal(\"ResourceSetCreate\", 0, result, why)"));
-	EXPECT_EQ(CodeText(submit).Count("IOLog("), 0u) << "one line, from the exit";
+	EXPECT_EQ(CodeText(submit).count("IOLog("), 0u) << "one line, from the exit";
 }

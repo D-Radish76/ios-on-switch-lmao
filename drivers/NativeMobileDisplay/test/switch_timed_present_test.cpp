@@ -72,11 +72,11 @@ TEST(TimedPresentSource, TheDisplayCountsAnOrdinarySwapOnceAtItsTake)
 {
     const std::string source = SourceText("../SwitchTimedPresentDisplay.h");
     const CodeText gate = Block(source, "bool presentNotDue(");
-    EXPECT_TRUE(gate.Before("Decision::Ordinary ? request : nullptr", "if (switch_timed_present::due(decision))"));
-    EXPECT_FALSE(gate.Has("timedOrdinary"));
-    EXPECT_TRUE(Block(source, "void noteOrdinaryTaken(").Has("++frameInfo->pending.timedOrdinary;"));
+    EXPECT_TRUE(gate.before("Decision::Ordinary ? request : nullptr", "if (switch_timed_present::due(decision))"));
+    EXPECT_FALSE(gate.has("timedOrdinary"));
+    EXPECT_TRUE(Block(source, "void noteOrdinaryTaken(").has("++frameInfo->pending.timedOrdinary;"));
     EXPECT_TRUE(Block(SourceText("../NativeLegacyDisplay.cpp"), "void noteFrameInfoTaken(")
-                    .Before("noteOrdinaryTaken(request);", "frameInfo->pending.take("));
+                    .before("noteOrdinaryTaken(request);", "frameInfo->pending.take("));
 }
 
 TEST(TimedPresent, ATargetTwoFramesOutWaitsForTheFrameEndBeforeIt)
@@ -128,10 +128,10 @@ TEST(TimedPresentSource, TheKickAsksFirstAndAFrameEndKicksAgain)
 {
     const std::string display = SourceText("../NativeLegacyDisplay.cpp");
     const CodeText kick = Block(display, "void kickOnce()");
-    EXPECT_TRUE(kick.Before("if (presentNotDue(request))", "planeDecide(request, pd);"));
-    EXPECT_TRUE(kick.Before("if (!request || !isValidated(request))", "if (presentNotDue(request))"));
-    EXPECT_TRUE(CodeText(SourceText("../SwitchTimedPresentDisplay.h")).Has("kickDeferred = true;"));
-    EXPECT_TRUE(Block(display, "bool frameEndNeeded()").Has("kickDeferred"));
-    EXPECT_TRUE(CodeText(SourceText("../SwitchRetireDisplay.h")).Has("kickDeferred = false; kickSwapQueue();"));
+    EXPECT_TRUE(kick.before("if (presentNotDue(request))", "planeDecide(request, pd);"));
+    EXPECT_TRUE(kick.before("if (!request || !isValidated(request))", "if (presentNotDue(request))"));
+    EXPECT_TRUE(CodeText(SourceText("../SwitchTimedPresentDisplay.h")).has("kickDeferred = true;"));
+    EXPECT_TRUE(Block(display, "bool frameEndNeeded()").has("kickDeferred"));
+    EXPECT_TRUE(CodeText(SourceText("../SwitchRetireDisplay.h")).has("kickDeferred = false; kickSwapQueue();"));
 }
 }  // namespace
