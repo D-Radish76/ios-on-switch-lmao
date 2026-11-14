@@ -503,10 +503,12 @@ void rmPoolEncoders()
     [self retain:e->_visibility];
     const NSUInteger positions = [pass getSamplePositions:nullptr count:0];
     facts.layers = uint32_t(std::clamp<NSUInteger>(pass.renderTargetArrayLength, 1, 2048));
-    if (pass.rasterizationRateMap) {
-        [self takeReason:WhyPass why:@"a rasterization rate map"];
-        hit(self, PredPassOther, 0, 1);
-    }
+    // A device without rate maps draws such a pass at full rate, the map ignored, its command buffer completed (Metal's
+    // iOS simulator GPU, which answers supportsRasterizationRateMapWithLayerCount: NO, given a pass carrying one)
+    if (pass.rasterizationRateMap)
+        SWITCH_REFUSE("raw", "pass.ratemap",
+                      "a pass with a rasterization rate map: drawn at full rate, as Metal draws it on "
+                      "a device without rate maps");
     if (positions && !passSamplePositions(pass, positions, e->_samples, facts.positions))
         hit(self, PredPassPositions, positions, e->_samples,
             "sample positions past the pass's samples: drawn at the standard ones");

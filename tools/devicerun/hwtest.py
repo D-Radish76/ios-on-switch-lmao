@@ -219,7 +219,7 @@ TESTS: dict[str, bool] = {
             'metal.native.heap_block',
             'metal.native.depth_cpu',
             'metal.native.memoryless_cpu',
-            'metal.native.rate_map',
+            'metal.native.rate_map_absent',
         ],
         False,
     ),

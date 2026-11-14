@@ -14,6 +14,8 @@
 // attribute stride, the amplification the amplify macro keeps (SWITCH_GM20B_AMP_MAX), 48 KiB of threadgroup memory,
 // eight targets of the widest colour a pixel, tier-2 argument buffers through the handle tables (raw_heap_tables.h),
 // and 128 interpolated components on 21H461 (24B119 keeps Metal 27's ceiling of 124).
+// Below the identity, on purpose (the owner's ruling, 14 Nov): no rasterization rate map of any layer count, as GM20B has no
+// variable-rate unit and none is emulated.
 // An argument answer holds `value` for every argument in [first, last] and 0 elsewhere.
 #pragma once
 #include <cstddef>
@@ -207,7 +209,7 @@ inline constexpr ArgRange kArgs21H461[] = {
     {"supportsTextureSampleCount:", true, 1, 2, 1},
     {"supportsTextureSampleCount:", true, 4, 4, 1},
     {"supportsVertexAmplificationCount:", true, 0, SWITCH_GM20B_AMP_MAX, 1},
-    {"supportsRasterizationRateMapWithLayerCount:", true, 1, 2, 1},
+    {"supportsRasterizationRateMapWithLayerCount:", true, 0, ~0ull, 0},
     {"supportsCounterSampling:", true, 0, 0, 1},
     {"supportsFamily:", true, 1001, 1003, 1},
     {"supportsFamily:", true, 3001, 3002, 1},
@@ -346,7 +348,7 @@ inline constexpr ArgRange kArgs24B119[] = {
     {"supportsTextureSampleCount:", true, 1, 2, 1},
     {"supportsTextureSampleCount:", true, 4, 4, 1},
     {"supportsVertexAmplificationCount:", true, 0, SWITCH_GM20B_AMP_MAX, 1},
-    {"supportsRasterizationRateMapWithLayerCount:", true, 1, 2, 1},
+    {"supportsRasterizationRateMapWithLayerCount:", true, 0, ~0ull, 0},
     {"supportsCounterSampling:", true, 0, 0, 1},
     {"supportsFamily:", true, 1001, 1003, 1},
     {"supportsFamily:", true, 3001, 3003, 1},

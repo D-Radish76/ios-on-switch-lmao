@@ -15,6 +15,6 @@ enum NativeCallTests {
         NativeErrorIndexRangeTest(), NativeErrorColourFormatTest(), NativeErrorFormatSkipTest(), NativeErrorSamplesTest(),
         NativeErrorPositionsTest(), NativeLinearRowTest(), NativeHeapBlockTest(),
         NativeDepthCpuTest(), NativeMemorylessCpuTest(),
-        NativeRateMapAnswerTest(),
+        NativeRateMapAbsentTest(),
     ]
 }

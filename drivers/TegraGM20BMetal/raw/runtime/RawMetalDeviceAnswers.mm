@@ -243,6 +243,14 @@ void installDeviceAnswers(Class cls)
     return NO;
 }
 
+// No rate maps (supportsRasterizationRateMapWithLayerCount: NO): nil, as Metal answers on a device without them
+- (id<MTLRasterizationRateMap>)newRasterizationRateMapWithDescriptor:(MTLRasterizationRateMapDescriptor *)d
+{
+    SWITCH_REFUSE("raw", "ratemap", "a rasterization rate map of %lu layers: none on this GPU, nil as Metal answers",
+                  (unsigned long)d.layerCount);
+    return nil;
+}
+
 // A pipeline library (RenderBox's default.pipelinelib, PencilKit's...) holds Apple GPUs' compiled pipelines, none for this one:
 // refused as Metal refuses one without the device's file, and its caller makes its states from its metallib at once
 - (id)newPipelineLibraryWithFilePath:(NSString *)path error:(NSError **)error

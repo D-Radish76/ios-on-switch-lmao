@@ -207,36 +207,3 @@ struct NativeErrorPositionsTest: NativeObjectTest {
         return work
     }
 }
-
-/// What is left of pass.other: rasterization rate maps. The device answers supportsRasterizationRateMapWithLayerCount:
-/// YES for 1 and 2 layers (raw_device_answers.h) and newRasterizationRateMapWithDescriptor: is _MTLDevice's own, which
-/// no device run has read. Logs both; where a rate map is made, a pass of it must draw on the raw path, which it does not
-/// yet (pass.other sends it to m2v), so this fails until raw draws rate maps or the device answers NO.
-struct NativeRateMapAnswerTest: NativeObjectTest {
-    let id = "metal.native.rate_map"
-    let name = "A rate map the device answers it makes draws its pass on the raw path"
-
-    func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
-        var work = NativeWork()
-        let answers = gpu.device.supportsRasterizationRateMap(layerCount: 1)
-        metrics.set("answers", answers ? "yes" : "no")
-        let layer = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSize(width: 2, height: 2, depth: 0))
-        let descriptor = MTLRasterizationRateMapDescriptor(
-            screenSize: MTLSize(width: 32, height: 32, depth: 0), layer: layer)
-        let map = gpu.device.makeRasterizationRateMap(descriptor: descriptor)
-        metrics.set("made", map.map { NSStringFromClass(type(of: $0 as AnyObject)) } ?? "nil")
-        if answers != (map != nil) {
-            work.failures.append("the device answers \(answers ? "YES" : "NO") and \(map == nil ? "made none" : "made one")")
-        }
-        guard let map else { return work }
-        let target = try gpu.texture(.rgba8Unorm, 32, 32)
-        work.objects.append(target)
-        let timing = try await gpu.run(tolerateError: true) { commands in
-            let pass = ClientErrors.pass(target)
-            pass.rasterizationRateMap = map
-            commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
-        }
-        work.paths.append(timing.path)
-        return work
-    }
-}

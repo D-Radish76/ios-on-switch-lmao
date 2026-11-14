@@ -56,7 +56,6 @@ product	pred	mipmaps.fmt	RawMetalBlit.mm	form	-	-	open	0	generateMipmaps in a fo
 product	pred	pass.ds	RawMetalEncoder.mm,RawMetalRenderEncoder.mm	form	-	x1-m2v-forms	open	cbs=1,procs=1	a stored multisample depth/stencil attachment (stencil shadow, POST-MERGE C1)
 product	pred	pass.fmt	RawMetalEncoder.mm	form	-	x1-m2v-forms	open	0	R1 rotated, R2 two-plane extended range, R3 stored multisample, R4 planar targets, as tex.shape
 product	pred	pass.level	RawMetalEncoder.mm	form	-	-	open	0	a resolve into a texture raw does not keep or render, a planar or YCbCr one, a format with no resolve state, a resolve from a part of a texture
-product	pred	pass.other	RawMetalEncoder.mm	form	-	x1-m2v-errors	open	0	rasterization rate maps alone (layered passes left in DEV-51b, own sample positions are pass.positions): the device answers supportsRasterizationRateMapWithLayerCount: YES and creation is _MTLDevice's, unread (HW Test metal.native.rate_map): draw them or answer NO
 product	pred	pass.positions	RawMetalEncoder.mm	native	-	x1-m2v-errors	x1-m2v-errors@002da0f87	-	sample positions past the pass's samples drawn at the standard ones, as Apple's driver, completed, one line
 product	pred	pass.rotated	RawMetalEncode.mm,RawMetalEncoder.mm,RawMetalRenderEncoder.mm	form	-	x1-m2v-forms	open	0	a turned attachment beside another rotation or size, a rotation-4 Load, a state whose turned variant could not be made
 product	pred	state.foreign	RawMetalRenderEncoder.mm	dead	-	cut	cut	0	an m2v pipeline state
@@ -157,6 +156,8 @@ product	tag	raw:library.dag	RawMetalDeviceBase.mm	none	-	-	main	procs=0	newLibra
 product	tag	raw:limits.layout	RawMetalDeviceBase.mm	none	-	-	main	procs=0	a limits field _MTLDevice does not read where raw writes it
 product	tag	raw:pass.ycbcr	RawMetalYcbcrTargets.mm	form	-	x1-m2v-forms	open	procs=0	a YCbCr or packed 10-bit (588/589) attachment loaded: the pass goes to m2v (POST-MERGE C4, Load on the packed formats)
 product	tag	raw:pipelinelibrary	RawMetalDeviceAnswers.mm	none	-	-	main	procs=2	a pipeline library: none for this GPU, file not found as Metal answers
+product	tag	raw:ratemap	RawMetalDeviceAnswers.mm	none	-	x1-m2v-errors	x1-m2v-errors@pending	-	no rasterization rate maps on either identity (the owner's ruling, 14 Nov: no variable-rate unit): newRasterizationRateMapWithDescriptor: nil, as Metal answers on a device without them (supportsRasterizationRateMapWithLayerCount: NO)
+product	tag	raw:pass.ratemap	RawMetalEncoder.mm	none	-	x1-m2v-errors	x1-m2v-errors@pending	-	a pass carrying a rate map (made elsewhere) draws at full rate, the map ignored, its command buffer completed, as Metal's iOS simulator GPU (no rate maps) draws it; was pass.other, which sent it to m2v
 product	tag	raw:planar.target	RawMetalDevice.mm	form	-	x1-m2v-forms	open	procs=0	no stand-in for a 4:4:4 planar render target: its passes go to m2v (enc.planarrt)
 product	tag	raw:queue.priority	RawMetalQueuePriority.mm	none	-	-	main	procs=0	the kernel did not take the queues' GPU priority
 product	tag	raw:replay.arguments	RawMetalReplay.mm	dead	-	cut	cut	procs=0	a range replayed on m2v reads raw's argument buffer or heap: the command buffer fails; goes with replay

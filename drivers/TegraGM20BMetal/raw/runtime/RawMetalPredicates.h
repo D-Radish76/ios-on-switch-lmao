@@ -31,7 +31,6 @@ enum RMPred : uint8_t {
     PredPassAttFormat,  // a color attachment not kept or not renderable: a = format, b = attachment index | kind << 8
     PredPassAttLevel,   // slice, depth plane or resolve, or a level of a texture with no chain
     PredPassDepthStencil,  // a = depth format, b = stencil format
-    PredPassOther,         // a rasterization rate map: b = 1
     // states and calls
     PredStateForeign,
     PredStateNotPackable,  // a state whose functions are not this device's (neither in the pack nor made by the runtime)
@@ -97,7 +96,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "pass.fmt",
                                              "pass.level",
                                              "pass.ds",
-                                             "pass.other",
                                              "state.foreign",
                                              "state.notpack",
                                              "state.pack",
