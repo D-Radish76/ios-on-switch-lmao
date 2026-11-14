@@ -6,6 +6,7 @@
 //! variant's layout and samplers are made too; the offline compile (the pack generator's, and the compile context's:
 //! NativeMetalCompile.rs) runs on the compile profile's native device with the layout as data alone.
 
+use crate::address_maps;
 use crate::compute_artifact::NmbComputeArtifact;
 use crate::direct::{
     HEAP_ARRAYS, Layout, NMB_DIRECT_IMMUTABLE, NmbDirectBinding, NmbDirectSamplerState, NmbDirectStage, NmbDirectWrite,
@@ -24,10 +25,12 @@ use metal2vulkan::bind::{
     WriteSource, heap_class_code,
 };
 use metal2vulkan::cache::VariantKey;
-use metal2vulkan::metal::{PixelFormat, TextureSwizzleChannels, TextureType, TextureUsage};
+use metal2vulkan::metal::format::{ChromaSubsampling, YCbCrReads, ycbcr_format};
+use metal2vulkan::metal::sampler::AddressModeMap;
+use metal2vulkan::metal::{PixelFormat, SamplerAddressMode, TextureSwizzleChannels, TextureType, TextureUsage};
 use metal2vulkan::pipeline::{
     BindingSource, ComputePipeline, ComputePipelineDescriptor, NativePipeline, NativeProgram, NativeRecord,
-    PipelineLayout, PushField, SlotClass, Stage, StageSource,
+    PipelineLayout, PushField, SamplerRef, SlotClass, Stage, StageSource,
 };
 use std::ffi::{CString, c_void};
 use std::sync::Arc;
@@ -226,11 +229,91 @@ fn counted<'a, T>(items: *const T, count: u32) -> &'a [T] {
     unsafe { std::slice::from_raw_parts(items, count as usize) }
 }
 
+/// The address-mode map (address_maps.rs) of a texture of `pf` the raw path samples through an image it converts: a
+/// two-plane YCbCr format's
+fn converted_map(pf: PixelFormat) -> u8 {
+    ycbcr_format(pf).map_or(0, |y| {
+        address_maps::converted_map(
+            !matches!(y.subsampling, ChromaSubsampling::Chroma444),
+            matches!(y.reads, YCbCrReads::Codes),
+        )
+    })
+}
+
+/// Map `map` (address_maps.rs) as the translator's
+fn address_modes(map: u8) -> AddressModeMap {
+    let edge = SamplerAddressMode::ClampToEdge;
+    let mut out = AddressModeMap::IDENTITY;
+    if map & address_maps::WRAPPED != 0 {
+        for mode in [
+            SamplerAddressMode::MirrorClampToEdge,
+            SamplerAddressMode::Repeat,
+            SamplerAddressMode::MirrorRepeat,
+        ] {
+            out = out.with(mode, edge);
+        }
+    }
+    if map & address_maps::CLAMPS != 0 {
+        for mode in [SamplerAddressMode::ClampToZero, SamplerAddressMode::ClampToBorderColor] {
+            out = out.with(mode, edge);
+        }
+    }
+    out
+}
+
+/// The map of the texture a dispatch binds at `slot`, 0 for none
+fn bound_map(ask: &NmbDirectDispatch, slot: u32) -> u8 {
+    counted(ask.textures, ask.texture_count)
+        .iter()
+        .find(|t| t.slot == slot)
+        .and_then(|t| raw::<PixelFormat>(t.pixel_format, "pixel format").ok())
+        .map_or(0, converted_map)
+}
+
+/// `state` with each runtime sampler the kernel samples a converted texture through mapped by that texture's map, as
+/// m2v binds it (metal2vulkan-runtime address_map.rs `sampler_maps`): the pairs are the layout's. A sampler two textures
+/// need under different modes fails the dispatch's command buffer ("fails: ", RawDirect.mm), as m2v's
+/// `SharedSamplerSlot` does.
+fn mapped_samplers(layout: &PipelineLayout, ask: &NmbDirectDispatch, state: &BindState) -> Result<BindState, String> {
+    let mut pairs = Vec::new();
+    for b in layout.sets.iter().flat_map(|s| &s.bindings) {
+        if let BindingSource::CombinedTextureSampler { texture, sampler }
+        | BindingSource::SeparateTexture { texture, sampler } = &b.source
+            && texture.stage == Stage::Kernel
+            && let SamplerRef::Slot(index) = &sampler.sampler
+        {
+            pairs.push((texture.index, *index));
+        }
+    }
+    let samplers = counted(ask.samplers, ask.sampler_count);
+    let modes_of = |slot: u32| {
+        samplers
+            .iter()
+            .find(|s| s.slot == slot)
+            .map(|s| [s.descriptor.s_address, s.descriptor.t_address, s.descriptor.r_address])
+    };
+    let maps = address_maps::sampler_maps(&pairs, |slot| bound_map(ask, slot), modes_of).map_err(|shared| {
+        format!(
+            "fails: kernel sampler slot {} samples texture slots {} and {}, whose address-mode maps give it two sets \
+             of modes, which one sampler cannot hold (m2v's SharedSamplerSlot)",
+            shared.sampler, shared.textures[0], shared.textures[1]
+        )
+    })?;
+    let mut mapped = state.clone();
+    if let Some(table) = mapped.stages.get_mut(&Stage::Kernel) {
+        for (slot, map) in maps {
+            if let Some(bound) = table.samplers.get_mut(&slot) {
+                bound.desc = address_modes(map).sampler(bound.desc);
+            }
+        }
+    }
+    Ok(mapped)
+}
+
 fn facts_of(t: &NmbDirectBoundTexture) -> Result<TextureFacts, String> {
-    let mut facts = TextureFacts::new(
-        raw::<TextureType>(t.texture_type, "texture type")?,
-        raw::<PixelFormat>(t.pixel_format, "pixel format")?,
-    );
+    let pf = raw::<PixelFormat>(t.pixel_format, "pixel format")?;
+    let mut facts = TextureFacts::new(raw::<TextureType>(t.texture_type, "texture type")?, pf);
+    facts.address_modes = address_modes(converted_map(pf));
     facts.usage = raw::<TextureUsage>(t.usage, "texture usage")?;
     facts.sample_count = u32::try_from(t.samples.max(1)).map_err(e("sample count"))?;
     facts.array_length = u32::try_from(t.array_length.max(1)).map_err(e("array length"))?;
@@ -327,22 +410,24 @@ struct Settled {
     pipeline: NativeComputePipeline,
     plan: BindingPlan,
     commands: DispatchCommands,
+    state: BindState,
 }
 
 fn settle(
     compile: &metal2vulkan::device::Device,
     descriptor: &ComputePipelineDescriptor,
-    state: &BindState,
+    (ask, state): (&NmbDirectDispatch, &BindState),
     dispatch: &Dispatch,
     budget: &Budget,
     artifact: Option<&NmbComputeArtifact>,
 ) -> Result<Settled, String> {
-    let shape = state.shape();
     let pipeline = |key: &VariantKey| match artifact {
         Some(artifact) => artifact.pipeline(key, budget).map(|p| (*p).clone()),
         None => compiled(compile, descriptor, key, budget),
     };
     let base = pipeline(&VariantKey::new())?;
+    let state = mapped_samplers(&base.layout, ask, state)?;
+    let shape = state.shape();
     let plan = base.plan(compile, &shape).map_err(e("plan"))?;
     let wanted = plan.dispatch_variant(dispatch).map_err(e("dispatch variant"))?;
     let (pipeline, plan) = if wanted == VariantKey::new() {
@@ -356,12 +441,13 @@ fn settle(
         (pipeline, plan)
     };
     let commands = plan
-        .instantiate_dispatch(state, dispatch)
+        .instantiate_dispatch(&state, dispatch)
         .map_err(e("instantiate dispatch"))?;
     Ok(Settled {
         pipeline,
         plan,
         commands,
+        state,
     })
 }
 
@@ -725,12 +811,18 @@ fn direct(
         }
     };
     let stage_in = descriptor.stage_input.is_some();
-    let state = bind_state(Run::Bytes, ask, stage_in)?;
-    let plain = settle(compile, descriptor, &state, &call, &budget, artifact)?;
+    let plain = settle(
+        compile,
+        descriptor,
+        (ask, &bind_state(Run::Bytes, ask, stage_in)?),
+        &call,
+        &budget,
+        artifact,
+    )?;
     let moved = settle(
         compile,
         descriptor,
-        &bind_state(Run::Moved, ask, stage_in)?,
+        (ask, &bind_state(Run::Moved, ask, stage_in)?),
         &call,
         &budget,
         artifact,
@@ -738,7 +830,7 @@ fn direct(
     let bound = settle(
         compile,
         descriptor,
-        &bind_state(Run::Bound, ask, stage_in)?,
+        (ask, &bind_state(Run::Bound, ask, stage_in)?),
         &call,
         &budget,
         artifact,
@@ -773,7 +865,7 @@ fn direct(
         .plan
         .descriptors
         .iter()
-        .map(|w| kernel_write(w, &plain.commands, compile, &state, &mut samplers))
+        .map(|w| kernel_write(w, &plain.commands, compile, &plain.state, &mut samplers))
         .collect::<Result<Vec<_>, String>>()?;
     let first = plain.commands.regions.first();
     let specialization = first.map(|r| r.specialization.clone()).unwrap_or_default();

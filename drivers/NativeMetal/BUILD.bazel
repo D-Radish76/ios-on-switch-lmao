@@ -45,6 +45,7 @@ filegroup(
     name = "bridge_rust",
     srcs = [
         "bridge/NativeMetalBridge.rs",
+        "bridge/NativeMetalAddressMaps.rs",
         "bridge/NativeMetalCompile.rs",
         "bridge/NativeMetalDirect.rs",
         "bridge/NativeMetalDirectCompute.rs",
