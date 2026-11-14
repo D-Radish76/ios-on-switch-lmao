@@ -153,3 +153,58 @@ struct IconCacheTest: HWTest {
             ], metrics)
     }
 }
+
+/// The kernel's drop of the rendered-icon cache at boot (native_switch_icon_cache in both bsd/kern/kern_exec.c):
+/// `request`, the GPU build the last deploy named in /private/var/Switch/icon-cache-gpu (tools/deploy/icon_cache.py),
+/// `none` without one; `dropped_for`, the build the kernel last removed __cache_info__ for (icon-cache-reset), and
+/// `dropped_this_boot`; `container`, the agent's group container folder, which the kernel names by the group;
+/// `reset_this_boot`, whether the agent wrote __cache_info__ since this boot. FAIL: a record the app cannot read, a
+/// container folder the kernel does not look in, a named build the kernel did not drop the cache for, or a drop this
+/// boot the agent did not follow with its own reset.
+struct IconCacheResetTest: HWTest {
+    let id = "system.icon_cache_reset"
+    let name = "The kernel lets IconServices' icons go once per GPU build a deploy names"
+    let subsystem = Subsystem.system
+    static let request = "/private/var/Switch/icon-cache-gpu"
+    static let marker = "/private/var/Switch/icon-cache-reset"
+
+    func run(_ context: TestContext) async throws -> Outcome {
+        var metrics = Metrics()
+        let request = Self.record(Self.request), dropped = Self.record(Self.marker)
+        let found = IconServicesCache.cacheInfo()
+        metrics.set("request", request.text)
+        metrics.set("dropped_for", dropped.text)
+        metrics.set("dropped_this_boot", dropped.thisBoot)
+        metrics.set("container", found.container.isEmpty ? "-" : found.container)
+        metrics.set("info_at", found.at)
+        metrics.set("info_build", found.build)
+        if let reset = found.resetThisBoot { metrics.set("reset_this_boot", reset) }
+        let readable = !request.text.hasPrefix("unreadable") && !dropped.text.hasPrefix("unreadable")
+        return .judged(
+            [
+                ("both records are readable", readable),
+                ("the agent's container is the folder the kernel drops in", found.container == IconServicesCache.group),
+                (
+                    "the kernel dropped the cache for the named build",
+                    request.text == "none" || request.text == dropped.text
+                ),
+                ("a drop this boot is followed by the agent's reset", !dropped.thisBoot || found.resetThisBoot == true),
+            ], metrics)
+    }
+
+    /// A record's first line, at most 12 characters (`empty` for an empty line, `none` without the file, or why the app
+    /// cannot read it), and whether it was written since this boot
+    static func record(_ path: String) -> (text: String, thisBoot: Bool) {
+        do {
+            let line = try String(contentsOfFile: path, encoding: .utf8).prefix { $0 != "\n" }.prefix(12)
+            let written = try FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date
+            let boot = Date(timeIntervalSinceNow: -ProcessInfo.processInfo.systemUptime)
+            return (line.isEmpty ? "empty" : String(line), (written ?? .distantPast) > boot)
+        } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError
+        {
+            return ("none", false)
+        } catch {
+            return ("unreadable:\((error as NSError).domain)_\((error as NSError).code)", false)
+        }
+    }
+}
