@@ -14,6 +14,7 @@ enum NativeCallTests {
         NativeInterpolantsTest(), NativeThreadgroupMemoryTest(), NativeArgumentTier2Test(), NativeErrorBufferCopyTest(),
         NativeErrorIndexRangeTest(), NativeErrorColourFormatTest(), NativeErrorFormatSkipTest(), NativeErrorSamplesTest(),
         NativeErrorPositionsTest(), NativeLinearRowTest(), NativeHeapBlockTest(),
+        NativeDepthCpuTest(),
         NativeRateMapAnswerTest(),
     ]
 }

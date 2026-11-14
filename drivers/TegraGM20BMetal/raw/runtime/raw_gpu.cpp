@@ -7640,7 +7640,11 @@ TextureTransferResult Device::transferTexture(const Texture &texture, uint32_t l
         return TextureTransferResult::Unsupported;
     }
     const Texture &t = *selected;
-    if (!t.va || t.zeta || t.samples > 1 || t.converted() || t.blockW > 1 || t.blockH > 1 ||
+    // A one-aspect depth or stencil texture moves as a colour one of its texel: the copy engine reads and writes it through
+    // its own Z kind, whose GOB interior the memory system keeps, as NVK copies a depth image. Metal copies a combined
+    // depth/stencil texture per aspect.
+    const bool oneAspect = zetaHasDepth(t.format) != zetaHasStencil(t.format);
+    if (!t.va || (t.zeta && !oneAspect) || t.samples > 1 || t.converted() || t.blockW > 1 || t.blockH > 1 ||
         xrForm(t.format) != XrForm::None || !size[0] || !size[1] || !size[2] || origin[0] > t.width ||
         size[0] > t.width - origin[0] || origin[1] > t.height || size[1] > t.height - origin[1])
         return TextureTransferResult::Unsupported;
