@@ -2,10 +2,12 @@
 // See raw_remote.h. The call forms are raw_kernel.cpp's (direct, or tunnelled through the selector the sandbox admits).
 #include "raw_lock.h"
 #include "raw_remote.h"
+#include "raw_stats.h"
 
 #include <IOKit/IOKitLib.h>
 #include <dispatch/dispatch.h>
 #include <pthread/qos.h>
+#include <time.h>
 #include <cstdio>
 #include <os/log.h>
 #include <cstring>
@@ -17,6 +19,15 @@ namespace {
 
 constexpr size_t kTunnelBytes = 64;
 constexpr size_t kIdentityStackAt = 40;  // SwitchSeedStore.h: the header's identity, whose first word is the stack
+
+uint64_t answeredAt()
+{
+#if SWITCH_RAW_DIAGNOSTICS
+    return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
+#else
+    return 0;
+#endif
+}
 
 }  // namespace
 
@@ -94,7 +105,7 @@ bool Remote::declined()
 
 Remote::~Remote()
 {
-    std::map<uint64_t, std::function<void(Answer)>> pending;
+    std::map<uint64_t, Done> pending;
     {
         std::lock_guard<raw::Mutex> l(asyncLock_);
         if (port_)
@@ -103,7 +114,7 @@ Remote::~Remote()
         pending.swap(pending_);
     }
     for (auto &[cookie, done] : pending)
-        done(Answer::Unavailable);
+        done(Answer::Unavailable, Answered{});
     if (queue_)
         dispatch_release(static_cast<dispatch_queue_t>(queue_));
 }
@@ -235,7 +246,7 @@ Remote::Answer Remote::answerOf(int32_t result)
     }
 }
 
-Remote::Answer Remote::compile(const std::string &request, uint32_t *how)
+Remote::Answer Remote::compile(const std::string &request, Answered *answered)
 {
     if (!serving() || !taking())
         return Answer::Unavailable;
@@ -254,14 +265,14 @@ Remote::Answer Remote::compile(const std::string &request, uint32_t *how)
     if (called != kIOReturnSuccess)
         return Answer::Unavailable;
     latest_.store(reply.generation, std::memory_order_release);
-    if (how)
-        *how = reply.how;
+    if (answered)
+        *answered = {reply.how, reply.times, answeredAt()};
     if (reply.result == TegraGM20BCompileUnavailable)
         recheck();
     return answerOf(reply.result);
 }
 
-bool Remote::compileAsync(const std::string &request, bool waited, uint32_t qos, std::function<void(Answer)> done)
+bool Remote::compileAsync(const std::string &request, bool waited, uint32_t qos, Done done)
 {
     if (!serving() || !taking())
         return false;
@@ -304,15 +315,20 @@ bool Remote::ask(Held &&held)
     return true;
 }
 
-void Remote::delivered(void *refcon, int result, void *cookie, void *word)
+void Remote::delivered(void *refcon, int result, void **words, uint32_t count)
 {
     auto *remote = static_cast<Remote *>(refcon);
-    const uint64_t packed = uint64_t(uintptr_t(word));
-    std::function<void(Answer)> done;
-    std::vector<std::function<void(Answer)>> refused;
+    uint64_t word[TegraGM20BCompileAnswerWords] = {};
+    for (uint32_t i = 0; i < count && i < TegraGM20BCompileAnswerWords; ++i)
+        word[i] = uint64_t(uintptr_t(words[i]));
+    const uint64_t packed = word[1];
+    const Answered answered = {
+        0, {word[2], word[3], word[4], uint32_t(word[5]), uint32_t(word[5] >> 32)}, answeredAt()};
+    Done done;
+    std::vector<Done> refused;
     {
         std::lock_guard<raw::Mutex> l(remote->asyncLock_);
-        const auto found = remote->pending_.find(uint64_t(uintptr_t(cookie)));
+        const auto found = remote->pending_.find(word[0]);
         if (found == remote->pending_.end())
             return;
         done = std::move(found->second);
@@ -320,20 +336,20 @@ void Remote::delivered(void *refcon, int result, void *cookie, void *word)
         if (!remote->held_.empty()) {
             Held next = std::move(remote->held_.front());
             remote->held_.erase(remote->held_.begin());
-            std::function<void(Answer)> nextDone = next.done;
+            Done nextDone = next.done;
             if (!remote->ask(std::move(next)))
                 refused.push_back(std::move(nextDone));
         }
     }
     for (const auto &r : refused)
-        r(Answer::Unavailable);
+        r(Answer::Unavailable, Answered{});
     if (result != kIOReturnSuccess)
-        return done(Answer::Unavailable);
+        return done(Answer::Unavailable, Answered{});
     remote->latest_.store(uint32_t(packed >> 32), std::memory_order_release);
     const int32_t answer = int32_t(uint32_t(packed));
     if (answer == TegraGM20BCompileUnavailable)
         remote->recheck();
-    done(answerOf(answer));
+    done(answerOf(answer), answered);
 }
 
 }  // namespace raw

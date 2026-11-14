@@ -155,7 +155,7 @@ private:
     Compiler::Outcome remoteKernel(id facadeFunction, MTLComputePipelineDescriptor *descriptor,
                                    const NmbDirectDispatch &dispatch, const CacheKey &k, ComputeRecord &record,
                                    std::string &why, bool &taken);
-    void logRemote(const Ask &a, const CacheKey &k, RecordCache::Found found, const char *how, uint64_t waitedUs);
+    void logRemote(const Ask &a, const CacheKey &k, RecordCache::Found found, const char *how, const Obtained &o);
 };
 
 #if SWITCH_RAW_DIAGNOSTICS

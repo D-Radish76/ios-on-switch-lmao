@@ -118,23 +118,28 @@ RecordCache::Found Completion::fromStore(const Digest &name, const CacheKey &k, 
     return decodeEntry(bytes, k, record, why);
 }
 
+// The wait split where it went (raw_obtained.h; -1 for a part not measured): the request queued until its compile
+// started, the compile, the compiler's answer after it, this thread's wake after that, and the store lookup. The split
+// stays inside the parentheses: tools/gpu/logharvest.py reads the name and key after "for a compile slot: ".
 void Completion::logRemote(const Ask &a, const CacheKey &k, RecordCache::Found found, const char *how,
-                           uint64_t waitedUs)
+                           const Obtained &o)
 {
 #if SWITCH_RAW_DIAGNOSTICS
     const bool made = found == RecordCache::Found::Record;
     os_log(rawLog(),
-           "raw: a state the pack lacks %{public}s in %llu ms (%{public}s, %{public}s) after 0 ms for a compile slot: "
-           "%016llx %{public}.400s",
-           made ? "made" : "refused", (unsigned long long)(waitedUs / 1000), classText(qos_class_self()), how,
-           (unsigned long long)k.name(), k.key.c_str());
+           "raw: a state the pack lacks %{public}s in %llu ms (%{public}s, %{public}s; queue %lld us, compile %lld us, "
+           "answer %lld us at priority %u, wake %lld us, store %lld us) after 0 ms for a compile slot: %016llx "
+           "%{public}.400s",
+           made ? "made" : "refused", (unsigned long long)(o.waitUs / 1000), classText(qos_class_self()), how,
+           (long long)o.queueUs, (long long)o.compileUs, (long long)o.answerUs, o.answerPriority, (long long)o.wakeUs,
+           (long long)o.storeUs, (unsigned long long)k.name(), k.key.c_str());
     logHarvestParts(k.name(), a.descriptor.label ?: a.facade.label, k.key);
 #else
     (void)a;
     (void)k;
     (void)found;
     (void)how;
-    (void)waitedUs;
+    (void)o;
 #endif
 }
 
@@ -152,12 +157,15 @@ bool Completion::remoteNow(const Ask &a, const CacheKey &k, Compiler::State &sta
     if (found == RecordCache::Found::None) {
         if (!remote_->taking())
             return failure = kNoCompilerComes, false;
-        uint32_t how = 0;
+        Remote::Answered answered;
         Remote::Answer answer = Remote::Answer::Unavailable;
+        uint64_t sent = began;
         for (const bool again : {false, true}) {
             if (!renderRequest(a, k, true, r, name, again))
                 return failure = kInexpressible, false;
-            answer = remote_->compile(encodeRequest(r), &how);
+            const std::string request = encodeRequest(r);
+            RAW_DIAGNOSTIC(sent = nowUs());
+            answer = remote_->compile(request, &answered);
             if (answer == Remote::Answer::Made || answer == Remote::Answer::Refused)
                 found = fromStore(name, k, record, why);
             if (askNext(answer, found != RecordCache::Found::None, again, remote_->declined()) != AskNext::AskAgain)
@@ -165,9 +173,16 @@ bool Completion::remoteNow(const Ask &a, const CacheKey &k, Compiler::State &sta
         }
 #if SWITCH_RAW_DIAGNOSTICS
         static const char *const kinds[] = {"compiled", "joined", "stored"};
+        const uint32_t how = answered.how;
         tObtained.how = (how & 0xff) < 3 ? kinds[how & 0xff] : "?";
-        tObtained.waitUs = nowUs() - began;
         tObtained.ran = how;
+        const uint64_t foundUs = nowUs();
+        tObtained.waitUs = foundUs - began;
+        const TegraGM20BAbiCompileTimes &t = answered.times;
+        tObtained.split(sent, t.compile_start, t.compile_end, t.answered, answered.at, foundUs);
+        tObtained.answerPriority = t.answer_priority;
+#else
+        (void)sent;
 #endif
         switch (askFailure(answer, found != RecordCache::Found::None, remote_->declined())) {
         case AskFailure::None:
@@ -182,9 +197,9 @@ bool Completion::remoteNow(const Ask &a, const CacheKey &k, Compiler::State &sta
         case AskFailure::NotStored:
             return failure = kNotStored, false;
         }
-        logRemote(a, k, found, "by the shader compiler", nowUs() - began);
+        logRemote(a, k, found, "by the shader compiler", tObtained);
     } else {
-        logRemote(a, k, found, "from the shader compiler's store", 0);
+        logRemote(a, k, found, "from the shader compiler's store", tObtained);
     }
     compiler_->keep(k, found, record, why);
     state = found == RecordCache::Found::Record ? Compiler::State::Ready : Compiler::State::Refused;
@@ -218,7 +233,7 @@ bool Completion::remoteLater(const Ask &a, const CacheKey &k, std::function<void
     RuntimeRecord record;
     std::string why;
     if (const RecordCache::Found found = fromStore(name, k, record, why); found != RecordCache::Found::None) {
-        logRemote(a, k, found, "from the shader compiler's store", 0);
+        logRemote(a, k, found, "from the shader compiler's store", Obtained{"store", 0, uint32_t(qos_class_self())});
         settle(found, record, why);
         return true;
     }
@@ -226,19 +241,27 @@ bool Completion::remoteLater(const Ask &a, const CacheKey &k, std::function<void
         done(nullptr);
         return true;
     }
+    const std::string request = encodeRequest(r);
     const uint64_t began = nowUs();
     const Ask asked = a;
     const bool sent = remote_->compileAsync(
-        encodeRequest(r), true, a.qos, [this, asked, k, name, began, settle, done, again](Remote::Answer answer) {
+        request, true, a.qos,
+        [this, asked, k, name, began, settle, done, again](Remote::Answer answer, const Remote::Answered &answered) {
             RuntimeRecord made;
             std::string refusal;
             const RecordCache::Found found = answer == Remote::Answer::Made || answer == Remote::Answer::Refused
                                                  ? fromStore(name, k, made, refusal)
                                                  : RecordCache::Found::None;
             switch (askNext(answer, found != RecordCache::Found::None, again, remote_->declined())) {
-            case AskNext::Use:
-                logRemote(asked, k, found, "by the shader compiler", nowUs() - began);
+            case AskNext::Use: {
+                Obtained o{"compiled", nowUs() - began, asked.qos, answered.how};
+                const TegraGM20BAbiCompileTimes &t = answered.times;
+                RAW_DIAGNOSTIC(
+                    o.split(began, t.compile_start, t.compile_end, t.answered, answered.at, began + o.waitUs));
+                o.answerPriority = t.answer_priority;
+                logRemote(asked, k, found, "by the shader compiler", o);
                 return settle(found, made, refusal);
+            }
             case AskNext::AskAgain:
                 return (void)remoteLater(asked, k, done, true);
             case AskNext::End:

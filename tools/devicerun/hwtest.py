@@ -154,6 +154,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.icon_calendar',
             'gpu.compile.shared',
             'gpu.compile.first_draw',
+            'gpu.compile.answer_latency',
             'gpu.sched.long_draw_bands',
             'gpu.sched.long_dispatch_pieces',
             'gpu.poster_targets',
