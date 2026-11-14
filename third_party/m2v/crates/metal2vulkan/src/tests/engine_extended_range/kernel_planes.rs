@@ -443,3 +443,76 @@ fn two_plane_samples_are_apples_values() {
         }
     }
 }
+
+/// A sampled kernel slot bound to a two-plane texture joins the variant through a constexpr and
+/// a runtime sampler (`ResourcePlanner::combined`): the variant's plan views the slot's image as
+/// `R32_UINT`, binds its plane as `R8_UINT` and binds no sampler; a texture of one image leaves
+/// the variant.
+#[test]
+fn a_sampled_two_plane_texture_joins_the_variant() {
+    use super::samples::{sample_kernel, sampled_state, words, Through};
+    use crate::bind::SamplerDescriptor;
+    let mut planned = 0;
+    for through in [
+        Through::Constexpr(words(false, 1, true, 0)),
+        Through::Runtime,
+    ] {
+        let Some(bc) = assemble(
+            "planes sample bind",
+            &sample_kernel(through, false, (0, 0), false),
+        ) else {
+            return;
+        };
+        for (stem, dev) in gm20b() {
+            let what = format!("{through:?} on {stem}");
+            let plain = pipeline(&dev, &bc, &LowerInputs::new()).expect("a sampling kernel");
+            let mut held = sampled_state(PixelFormat::RGB10A82PXR10, SamplerDescriptor::new());
+            if let Some(BoundTexture::Texture { facts, .. }) = held
+                .stages
+                .get_mut(&Stage::Kernel)
+                .and_then(|t| t.textures.get_mut(&0))
+            {
+                facts.two_planes = true;
+            }
+            let shape = held.shape();
+            let plan = plain
+                .plan(&dev, &shape)
+                .unwrap_or_else(|e| panic!("{what}: {e}"));
+            assert_eq!(plan.variant.two_plane_textures, [SOURCE].into(), "{what}");
+            let key = plan.variant.lowering_inputs(Stage::Kernel);
+            let variant = pipeline(&dev, &bc, &key).expect("the variant's inputs");
+            let again = variant.plan(&dev, &shape).expect("variant plan");
+            assert_eq!(again.variant, plan.variant, "{what}");
+            let set0 = &variant.layout.sets[0];
+            let mut views = Vec::new();
+            for d in again.descriptors.iter().filter(|d| d.set == 0) {
+                match &d.source {
+                    WriteSource::Texture { view, .. } => {
+                        views.push((set0.bindings[d.binding as usize].source, view.format))
+                    }
+                    WriteSource::Sampler { .. } | WriteSource::CombinedImageSampler { .. } => {
+                        panic!("{what}: the variant binds {:?}", d.source)
+                    }
+                    _ => {}
+                }
+            }
+            views.sort_by_key(|v| v.0);
+            assert_eq!(
+                views,
+                [
+                    (BindingSource::Texture(SOURCE), crate::vk::Format::R32_UINT),
+                    (
+                        BindingSource::TexturePlane(SOURCE),
+                        crate::vk::Format::R8_UINT
+                    ),
+                ],
+                "{what}"
+            );
+            let one = sampled_state(PixelFormat::RGB10A82PXR10, SamplerDescriptor::new()).shape();
+            let one = variant.plan(&dev, &one).expect("plan");
+            assert!(one.variant.two_plane_textures.is_empty(), "{what}");
+            planned += 1;
+        }
+    }
+    assert_eq!(planned, 2);
+}
