@@ -22,8 +22,8 @@ product	pred	blit.t2b	RawMetalBlit.mm	form	-	-	open	0	texture rows into a buffer
 product	pred	blit.tex	RawMetalBlit.mm	form	-	-	open	0	levels, slices and 3D planes: one copy rectangle per layer
 product	pred	blit.whole	RawMetalBlit.mm	form	-	-	open	0	a whole-texture copy of several levels or slices: one rectangle each
 product	pred	call.blitopt	RawMetalBlit.mm	form	-	-	open	0	depth or stencil of a combined format: copy-engine remap of the aspect
-product	pred	call.buf	RawMetalBindings.mm,RawMetalDevice.mm,RawMetalRenderEncoder.mm,RawMetalStrides.mm,RawMetalTessellation.mm	dead	-	cut	cut	0	an m2v buffer (made when the pool had no room: the buffer.pool and need rows carry that)
-product	pred	call.bufcopy	RawMetalBlit.mm	error	raw:call.bufcopy	-	open	0	a copy or fill past the buffer: the client's error
+product	pred	call.buf	RawMetalBindings.mm,RawMetalDevice.mm,RawMetalEncode.mm,RawMetalRenderEncoder.mm,RawMetalStrides.mm,RawMetalTessellation.mm	dead	-	cut	cut	0	an m2v buffer (made when the pool had no room: the buffer.pool and need rows carry that)
+product	pred	call.bufcopy	RawMetalBlit.mm	error	raw:call.bufcopy	x1-m2v-errors	x1-m2v-errors@bddb404b1	0	a copy or fill past the buffer: the client's error; the command buffer fails InvalidResource (predFailure; an Apple GPU completes it with no error)
 product	pred	call.cbinv	RawMetalCommandBuffer.mm	form	-	x1-m2v-forms	open	0	a command buffer selector raw does not implement
 product	pred	call.dbias	RawMetalRenderEncoder.mm	form	-	-	open	0	an infinite or NaN depth bias: the state program's viewport Z offset
 product	pred	call.inv	RawMetalEncoder.mm	form	-	x1-m2v-forms	open	cbs=1,procs=1	an encoder selector raw does not implement (the sel rows: indirect dispatch, stage-in, tile dispatch)
@@ -36,18 +36,18 @@ product	pred	compute.nokernel	RawMetalCompute.mm,RawMetalComputeAdmission.mm,Raw
 product	pred	compute.off16	RawMetalComputeAdmission.mm	form	-	-	open	0	a kernel buffer off 16 bytes with no residual word: the binding ABI's residual words for kernels
 product	pred	compute.predicate	RawMetalCompute.mm	error	raw:compute.predicate	-	main	0	predication raw cannot run already fails the command buffer (records on m2v's encoders are not taken)
 product	pred	compute.view	RawMetalComputeAdmission.mm	form	-	x1-compute-image	open	0	a view of another texel size at a kernel's texture slot: a shadow in the kernel's format
-product	pred	enc.colorfmt	RawMetalEncode.mm,RawMetalRenderEncoder.mm	error	raw:enc.colorfmt	-	open	0	a state whose colour format is not the pass's: the client's error
+product	pred	enc.colorfmt	RawMetalEncode.mm,RawMetalRenderEncoder.mm	error	raw:enc.colorfmt	x1-m2v-errors	x1-m2v-errors@bddb404b1	0	a state whose colour format is not the pass's: the client's error; the command buffer fails InvalidResource
 product	pred	enc.ds	RawMetalEncode.mm,RawMetalRenderEncoder.mm	error	raw:enc.ds	x1-m2v-forms	open	procs=1	a state testing depth or stencil the pass lacks: the client's error; the hidden-depth case is raw's on x1-m2v-forms
 product	pred	enc.geometry	RawMetalEncode.mm,RawMetalIndirect.mm,RawMetalRenderEncoder.mm	form	-	x1-m2v-forms	open	cbs=3,procs=2	a fetching draw with no native raster-order plan; the compressed-target case is built on x1-m2v-forms (boot 21 iconservicesagent)
-product	pred	enc.idxrange	RawMetalEncode.mm,RawMetalRenderEncoder.mm	error	raw:enc.idxrange	-	open	0	an index buffer range past its buffer: the client's error
-product	pred	enc.kernel	RawMetalEncode.mm	error	raw:enc.kernel	-	open	cbs=1,procs=1	the kernel refused the submission: the command buffer's error (MTLCommandBufferErrorInternal)
-product	pred	enc.nochannel	RawMetalEncode.mm	error	raw:enc.nochannel	-	open	0	the kernel refused the channel or its context: the command buffer's error (channel lost)
+product	pred	enc.idxrange	RawMetalEncode.mm,RawMetalRenderEncoder.mm	error	raw:enc.idxrange	x1-m2v-errors	x1-m2v-errors@bddb404b1	0	an index type, index range or indirect arguments past their buffer: the client's error; the command buffer fails InvalidResource (an index buffer with no raw memory is call.buf)
+product	pred	enc.kernel	RawMetalEncode.mm	error	raw:enc.kernel	x1-m2v-errors	x1-m2v-errors@bddb404b1	cbs=1,procs=1	the kernel refused the submission: the command buffer fails Internal, its line naming the kernel's answer (kernelResult) or why nothing was submitted
+product	pred	enc.nochannel	RawMetalEncode.mm	error	raw:enc.nochannel	x1-m2v-errors	x1-m2v-errors@bddb404b1	0	the kernel refused the channel or its context: the command buffer fails Internal, its line naming the channel error
 product	pred	enc.notic	RawMetalBindings.mm,RawMetalEncode.mm	form	-	-	open	0	a texture with no header at the draw: every view gets its header slot when made
 product	pred	enc.pass	RawMetalEncode.mm	form	-	-	open	0	a pass raw could not begin: resolve, YCbCr and extended-range targets
 product	pred	enc.planarclamp	RawMetalEncode.mm,RawMetalRenderEncoder.mm	form	-	x1-m2v-forms	open	procs=1	a sampler header under a planar texture's address map; constexpr samplers built on x1-m2v-forms (boot 21 WidgetRenderer)
 product	pred	enc.planarcopy	RawMetalBlit.mm	form	-	-	open	0	copies to or from a planar texture: copy engine per plane
 product	pred	enc.planarrt	RawMetalEncode.mm,RawMetalEncoder.mm	form	-	x1-m2v-forms	open	0	a planar target through its stand-in
-product	pred	enc.samples	RawMetalEncode.mm,RawMetalRenderEncoder.mm	error	raw:enc.samples	-	open	0	a state's sample count is not the pass's: the client's error
+product	pred	enc.samples	RawMetalEncode.mm,RawMetalRenderEncoder.mm	error	raw:enc.samples	x1-m2v-errors	x1-m2v-errors@bddb404b1	0	a state whose sample count is not the pass's: the client's error; the command buffer fails InvalidResource
 product	pred	enc.storage	RawMetalEncode.mm	form	-	x1-m2v-forms	open	cbs=1,procs=1	a fetched colour with neither a storage view nor a barrier form; layered passes (POST-MERGE C5)
 product	pred	enc.ubo	RawMetalEncode.mm,RawMetalRenderEncoder.mm	form	-	-	open	0	a uniform buffer bound off the descriptor base: the record's residual words
 product	pred	event	RawMetalEncode.mm,RawMetalEvents.mm	form	-	-	open	0	MTLEvent waits and signals raw does not order: GPU semaphore acquire and release nodes
@@ -56,7 +56,8 @@ product	pred	mipmaps.fmt	RawMetalBlit.mm	form	-	-	open	0	generateMipmaps in a fo
 product	pred	pass.ds	RawMetalEncoder.mm,RawMetalRenderEncoder.mm	form	-	x1-m2v-forms	open	cbs=1,procs=1	a stored multisample depth/stencil attachment (stencil shadow, POST-MERGE C1)
 product	pred	pass.fmt	RawMetalEncoder.mm	form	-	x1-m2v-forms	open	0	R1 rotated, R2 two-plane extended range, R3 stored multisample, R4 planar targets, as tex.shape
 product	pred	pass.level	RawMetalEncoder.mm	form	-	-	open	0	a resolve into a texture raw does not keep or render, a planar or YCbCr one, a format with no resolve state, a resolve from a part of a texture
-product	pred	pass.other	RawMetalEncoder.mm	error	raw:pass.other	-	open	0	layered rendering, rasterization rate maps, custom sample positions: the device answers no for all three, so a pass with one is the client's error
+product	pred	pass.other	RawMetalEncoder.mm	form	-	x1-m2v-errors	open	0	rasterization rate maps alone (layered passes left in DEV-51b, own sample positions are pass.positions): the device answers supportsRasterizationRateMapWithLayerCount: YES and creation is _MTLDevice's, unread (HW Test metal.native.rate_map): draw them or answer NO
+product	pred	pass.positions	RawMetalEncoder.mm	error	raw:pass.positions	x1-m2v-errors	x1-m2v-errors@bddb404b1	-	sample positions Metal takes that the pass's samples do not: the client's error; the command buffer fails InvalidResource
 product	pred	pass.rotated	RawMetalEncode.mm,RawMetalEncoder.mm,RawMetalRenderEncoder.mm	form	-	x1-m2v-forms	open	0	a turned attachment beside another rotation or size, a rotation-4 Load, a state whose turned variant could not be made
 product	pred	state.foreign	RawMetalRenderEncoder.mm	dead	-	cut	cut	0	an m2v pipeline state
 product	pred	state.notpack	RawMetalRenderEncoder.mm	dead	-	cut	cut	0	functions of another device's library: with one backend every function is this device's
