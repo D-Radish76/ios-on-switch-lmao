@@ -97,6 +97,7 @@ filegroup(
         "raw/runtime/raw_direct_heap.h",
         "raw/runtime/raw_direct_nvk.h",
         "raw/runtime/raw_direct_push.h",
+        "raw/runtime/raw_kernel_pairs.h",
         "raw/runtime/raw_dynamic_push.h",
         "raw/runtime/raw_spill_table.h",
         "raw/runtime/raw_direct_storage.h",

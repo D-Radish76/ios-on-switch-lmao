@@ -10,6 +10,7 @@
 #include "raw_compute_key.h"
 #include "raw_direct_encode.h"
 #include "raw_direct_nvk.h"
+#include "raw_kernel_pairs.h"
 #include "raw_spill_table.h"
 
 namespace raw {
@@ -164,7 +165,9 @@ private:
             why = "a sampler slot the dispatch leaves unbound at " + std::to_string(offset);
             return false;
         }
-        entries.push_back({offset, KernelSampler, samplerSlot(out_, header), 0});
+        const uint32_t pairs = directSamplerWindow(
+            w.type == CombinedImageSampler, w.source == NmbDirectCombined && w.slot != NMB_DIRECT_NEUTRAL, w.slot);
+        entries.push_back({offset, KernelSampler, samplerSlot(out_, header), pairs});
         return true;
     }
 };

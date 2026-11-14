@@ -1,8 +1,9 @@
 """The compute kernels directpack.mm made directly, for directlink.py.
 
 A DKRN record holds its PackKernel with program index 0, its program (code, shader data, constant buffer types) and
-sampler headers, which its sampler entries name as CONSTEXPR | n. The pack numbers those headers among its constexpr
-samplers, and a buffer entry's window keeps its residual word + 1 in its top byte (runtime/raw_pack.h).
+sampler headers, which its sampler entries name as CONSTEXPR | n, each with the texture slots it samples in its window.
+The pack numbers those headers among its constexpr samplers, and a buffer entry's window keeps its residual word + 1 in
+its top byte (runtime/raw_pack.h).
 """
 
 import re
@@ -67,7 +68,7 @@ def entry(fields: tuple[int, int, int, int], headers: list[list[int]], constexpr
         header = headers[slot & (CONSTEXPR - 1)]
         if header not in constexpr_tsc:
             constexpr_tsc.append(header)
-        return {'off': off, 'kind': kind, 'slot': CONSTEXPR | constexpr_tsc.index(header), 'window': 0}
+        return {'off': off, 'kind': kind, 'slot': CONSTEXPR | constexpr_tsc.index(header), 'window': window}
     if kind == BUFFER:
         residual = (window >> 24) - 1
         return {
