@@ -217,7 +217,6 @@ product	bridge	native_bridge_metal_set_surface_importer	RawAlias.mm	dead	-	cut	c
 product	bridge	native_bridge_metal_texture_in_place	RawMetalInternal.h,RawMetalTexture.mm	dead	-	cut	cut	-	m2v twin textures over raw's memory
 product	bridge	native_bridge_metal_texture_memory	RawMetalInternal.h,RawMetalMultisample.mm	form	-	x1-m2v-forms	open	-	a stored depth/stencil (multisampled) texture's memory is NVK's (its m2v twin's), which raw renders in place (RawMetalMultisample.mm): raw allocates that zeta itself (C1 stencil shadow / stored MSAA zeta)
 product	bridge	native_bridge_metal_texture_tiled_in_place	RawMetalInternal.h,RawMetalTexture.mm	dead	-	cut	cut	-	m2v twin textures over raw's block-linear memory
-product	bridge	nmb_device_answer_selector	TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	the bridge's capability selectors the device forwards to m2v (installM2VForwarders); raw answers each from raw_device_answers
 product	bridge	nmb_last_error	RawMetalInternal.h,RawMetalTexture.mm,TegraGM20BMetalPlugin.mm,compiler_engine.mm	dead	-	cut	cut	-	error text of bridge calls; goes with them (the compiler daemon's use moves with its compile)
 product	bridge	switch_nmb_heap_holds	RawMetalResourceIds.mm	form	-	-	open	-	raw's heap image-array placement rule lives in the bridge crate (Rust): port it into raw (as raw_blend_color.h was)
 product	bridge	switch_nmb_heap_texture_flags	RawMetalResourceIds.mm	form	-	-	open	-	raw's heap texture ID flags live in the bridge crate: port into raw
@@ -274,7 +273,6 @@ product	dlsym	/System/Library/Frameworks/IOKit.framework/IOKit	TegraGM20BMetalPl
 product	dlsym	IORegistryEntryGetRegistryEntryID	TegraGM20BMetalPlugin.mm	none	-	-	main	-	not an m2v route
 product	dlsym	container_system_path_for_identifier	TegraGM20BMetalPlugin.mm	none	-	-	main	-	not an m2v route
 product	dlsym	ledger	RawMetalFootprint.mm	none	-	-	main	-	not an m2v route (the footprint's kernel ledger)
-product	dlsym	nmb_device_answer_selector	RawMetal.mm	dead	-	cut	cut	-	raw_metal_device_open's answer selectors for HW Test and the host harness: as bridge nmb_device_answer_selector
 product	dlsym	switch_nvk_connection	raw_kernel.cpp	native	-	cut	cut	-	raw shares NVK's GPU connection while NVK is loaded; with no NVK image Kernel::open already opens its own (openOwn, raw_kernel.cpp)
 product	dlsym	switch_nvk_connection_release	raw_kernel.cpp	native	-	cut	cut	-	as switch_nvk_connection
 product	kernel	Exec	TegraGM20BUserClientDispatch.cpp	dead	-	cut	cut	-	method 8: only NVK calls it (nvkmd_darwin.c), and the kernel's dispatch; delete with NVK

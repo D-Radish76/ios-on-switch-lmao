@@ -127,7 +127,9 @@
 #                     the one the selected IPSW ships AGX binaries for, its QuartzCore's
 #   raw_metal_formats_test  raw/runtime/raw_metal_formats.h: every format with a linear alignment has a texel Metal
 #                     describes, formats of blocks and depth formats answer no row, and the caps table agrees with it
-#   raw_linear_row_bridge_test  (m2v) raw_metal_formats.h is the m2v device's description and refuses its rows alike
+#   raw_bridge_parity_test  (m2v) what raw took over from the bridge is the bridge's: raw_metal_formats.h is the m2v
+#                     device's description and refuses its rows alike, and every capability query the bridge answered has
+#                     an answer of raw_device_answers.h's of its kind
 #   raw_device_answers_test  raw/runtime/raw_device_answers.h, every kind: YES for shared texture handles and
 #                     buffers over IOSurfaces, GM20B's counts (caps) where raw draws them (layers, viewports,
 #                     tessellation, amplification, dynamic stride, threadgroup memory, interpolants, framebuffer bits,
@@ -4320,12 +4322,13 @@ host_test(
     ],
 )
 
-# raw_metal_formats.h against the m2v device it was ported from (the host bridge over NVK's host twin)
+# What raw took over from the bridge, against the bridge (the host bridge over NVK's host twin): raw_metal_formats.h, the
+# capability queries raw_device_answers.h answers
 host_test(
-    name = "raw_linear_row_bridge_test",
+    name = "raw_bridge_parity_test",
     size = "medium",
     srcs = [
-        "raw_linear_row_bridge_test.cpp",
+        "raw_bridge_parity_test.cpp",
         ":libmock_iokit.dylib",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_metal_formats.h",
         "//gpu:bridge_darwin",

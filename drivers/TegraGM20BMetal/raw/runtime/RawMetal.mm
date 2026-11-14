@@ -22,7 +22,6 @@
 #include "raw_device_answers.h"
 #include "raw_limits_fill.h"
 
-#include <dlfcn.h>
 #include <malloc/malloc.h>
 
 #if SWITCH_FRAME_TIMELINE
@@ -282,15 +281,12 @@ static Class deviceClass(const RawM2V &m2v, NSString **error)
 
 id<MTLDevice> raw_metal_device_open(const char *packPath, uint64_t stack, id<MTLDevice> fallback, NSString **error)
 {
-    static const auto answerSelector =
-        reinterpret_cast<const char *(*)(size_t, uint32_t *)>(dlsym(RTLD_DEFAULT, "nmb_device_answer_selector"));
     RawM2V m2v;
     if (fallback)
         m2v.open = ^{
             return fallback;
         };
     m2v.methods = NSClassFromString(@"NBDeviceMethods");
-    m2v.answerSelector = answerSelector;
     static const SEL registry = NSSelectorFromString(@"registryID");
     const uint64_t registryID = [fallback respondsToSelector:registry] ? [fallback registryID] : 0;
     return raw_metal_device_open_lazy(packPath, stack, registryID, m2v, error);
