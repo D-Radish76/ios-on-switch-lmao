@@ -5,6 +5,7 @@
 #   bazel build //third_party/mesa/src/nouveau/switch_compile:ios     the iOS object the plugin links
 #   bazel build //third_party/mesa/src/nouveau/switch_compile:host    the macOS object the pack tools link
 
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("@xcode//:defs.bzl", "IPHONEOS_SDK", "MACOSX_SDK", "XCODE_TOOLCHAIN")
 load("//bazel/lint:defs.bzl", "lint_files")
@@ -162,6 +163,14 @@ mesa_files(
     name = "host",
     platform = "macos",
     srcs = [":switch_compile_o"],
+)
+
+# The macOS object as a library host tests link (the raw runtime's direct compile calls it)
+cc_library(
+    name = "host_cc",
+    srcs = [":host"],
+    linkstatic = True,
+    tags = ["no-lint"],
 )
 
 py_test(
