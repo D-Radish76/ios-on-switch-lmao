@@ -16,24 +16,76 @@ static struct {
 } cost;
 #endif
 
+#if TGM_STATS
+static const char *const kMissCause[TGM_MISS_CAUSES] = {
+	"an app's job held the GPU at a compositor kick",
+	"the compositor's own GPU time past what it learned",
+	"the compositor's first kick too late for its GPU time",
+	"an app's work on the GPU between the compositor's kicks",
+	"the present completed late with GPU time to spare",
+};
+
+/* The gate's counts, which only grow, and the line budget of the window it last saw; the tick's window and what its
+ * last line read */
+static struct {
+	u32 by_cause[TGM_MISS_CAUSES];
+	u32 lines, lines_window;
+	u32 window;
+	u32 seen[TGM_MISS_CAUSES];
+} miss;
+#endif
+
 void tgm_deadline_missed(const struct tgm_deadline_miss *m)
 {
 #if TGM_STATS
-	static u32 lines;
+	const enum tgm_deadline_miss_cause cause = tgm_deadline_miss_cause(m);
+	const u32 window = READ_ONCE(miss.window);
 	char line[320];
 
-	lines++;
-	if (lines > 32 && lines % 64)
+	WRITE_ONCE(miss.by_cause[cause], miss.by_cause[cause] + 1);
+	if (miss.lines_window != window) {
+		miss.lines_window = window;
+		miss.lines = 0;
+	}
+	if (++miss.lines > 8)
 		return;
 	/* formatted here and logged as one string: os_log drops a message whose scalars outgrow its buffer */
 	scnprintf(line, sizeof(line),
 		  "tegra-gm20b: compositor frame missed its vblank by %llu us: %s (its GPU time %llu us, learned %llu "
-		  "us; last kick %llu us before the vblank; an app kicked %d, held the GPU %d) (#%u)",
-		  m->late_ns / 1000, tgm_deadline_miss_cause(m), m->gpu_ns / 1000, m->expected_ns / 1000,
-		  m->kick_lead_ns / 1000, m->app_kicked, m->app_held, lines);
+		  "us; first kick %llu us before the vblank; an app kicked %d, held the GPU %d)",
+		  m->late_ns / 1000, kMissCause[cause], m->gpu_ns / 1000, m->expected_ns / 1000,
+		  m->kick_lead_ns / 1000, m->app_kicked, m->app_held);
 	nvxnu_log("%s", line);
 #else
 	(void)m;
+#endif
+}
+
+int tgm_deadline_miss_stats(char *buf, unsigned int len)
+{
+#if TGM_STATS
+	u32 now[TGM_MISS_CAUSES];
+	u32 total = 0;
+	unsigned int i = 0;
+
+	for (i = 0; i < TGM_MISS_CAUSES; i++) {
+		now[i] = READ_ONCE(miss.by_cause[i]) - miss.seen[i];
+		miss.seen[i] += now[i];
+		total += now[i];
+	}
+	WRITE_ONCE(miss.window, miss.window + 1);
+	if (!total)
+		return 0;
+	scnprintf(buf, len,
+		  "%u compositor frames missed their vblank: app held the GPU %u, own GPU time %u, first kick late %u, "
+		  "app work between kicks %u, present late %u",
+		  total, now[TGM_MISS_APP_HELD], now[TGM_MISS_OWN_GPU], now[TGM_MISS_LATE_KICK],
+		  now[TGM_MISS_APP_BETWEEN], now[TGM_MISS_PRESENT]);
+	return 1;
+#else
+	(void)buf;
+	(void)len;
+	return 0;
 #endif
 }
 

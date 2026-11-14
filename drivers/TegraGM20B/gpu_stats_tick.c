@@ -235,6 +235,8 @@ static void stats_deadline(char *buf, unsigned int len)
 	u64 latency = 0;
 
 	tgm_deadline_stats(deadline, sizeof(deadline));
+	if (tgm_deadline_miss_stats(holds, sizeof(holds)))
+		nvxnu_stats("tegra-gm20b: %s", holds);
 	tgm_hold_stats(holds, sizeof(holds));
 	n = scnprintf(buf, len, "%s; %s; latency by channel:", deadline, holds);
 	mutex_lock(&tgm_live_lock);

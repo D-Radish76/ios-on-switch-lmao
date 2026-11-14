@@ -37,8 +37,9 @@ static struct {
 	u64 interval, next_target, vsync_last, vsync_since;
 	struct switch_gpu_kept_window kept;
 	/* the high kicks' own, plain stores and no lock (a kick's time is a hint a racing kick may set a few us back): the
-	 * compositor's last kick, the last kick that found an app on the GPU, the vblank the frame's first kick aimed for */
-	u64 kick_last, kick_app_last, frame_target;
+	 * compositor's last kick, the last kick that found an app on the GPU, the vblank the frame's first kick aimed for
+	 * and when that kick came */
+	u64 kick_last, kick_app_last, frame_target, kick_first;
 	/* the interrupt pass's own: the compositor's GPU time since the present that moved frame_epoch to pass_epoch, and
 	 * whether an app biased it; the PTIMER anchor and rate, anchored again when resume moves recal */
 	u64 pass_ns, cal_ns, cal_pt, pt_rate;
@@ -327,8 +328,10 @@ void tgm_deadline_kicked(int compositor, int app)
 	if (!READ_ONCE(dl.device))
 		return;
 	if (compositor) {
-		if (READ_ONCE(dl.kick_last) <= READ_ONCE(dl.presented_at))
+		if (READ_ONCE(dl.kick_last) <= READ_ONCE(dl.presented_at)) {
 			WRITE_ONCE(dl.frame_target, READ_ONCE(dl.next_target));
+			WRITE_ONCE(dl.kick_first, now);
+		}
 		WRITE_ONCE(dl.kick_last, now);
 	}
 	if (app)
@@ -476,7 +479,7 @@ static void presented_run(void *arg)
 				WRITE_ONCE(dl.missed_clear, dl.missed_clear + 1);
 			}
 			if (frame_target && now > frame_target) {
-				const u64 kick = READ_ONCE(dl.kick_last);
+				const u64 kick = READ_ONCE(dl.kick_first);
 				const struct tgm_deadline_miss miss = {
 					now - frame_target,
 					kick < frame_target ? frame_target - kick : 0,
