@@ -1,7 +1,7 @@
 //! `newArgumentEncoderWithBufferIndex:` at every buffer index a function declares, from one decode
 //! of its AIR: an argument buffer's layout as [`super::argument_buffer_layout`] makes it, and at a
 //! plain buffer of no struct type the encoder of no bytes, alignment 1, that Metal makes without
-//! API validation (which stops it). An M4 under macOS 27.2 answered that for all 22100 such
+//! API validation (which stops it). An M4 under macOS 27.2 answered that for all 25675 such
 //! buffers of its system metallibs. A plain buffer of a struct is refused as having no argument
 //! buffer: Metal's unvalidated encoder of it is the GPU's own (an M4 differs from an M3 Max's
 //! [`ArgumentBufferLayout::from_buffer_binding`] rule for 4980 of 13322). An index with no buffer
