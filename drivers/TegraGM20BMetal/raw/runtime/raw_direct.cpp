@@ -664,11 +664,12 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
         why = "storage form: multisampled fetch requires per-sample shader invocations";
         return CompileOutcome::Refused;
     }
-    if (storage.storageMask ? !orderedStorageControl(interlock) : interlock != 0) {
+    if (!interlockMatchesStorage(interlock, storage.storageMask)) {
         why = "storage form: compiled shader does not match the ordered attachment contract";
         return CompileOutcome::Refused;
     }
     RecordParts parts;
+    parts.rasterOrdered = interlock && !storage.storageMask;
     parts.storageMask = storage.storageMask;
     parts.storageWriteMask = storage.storageWriteMask;
     parts.storageSamples = storage.storageSamples;

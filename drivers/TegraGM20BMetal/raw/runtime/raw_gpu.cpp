@@ -4821,6 +4821,7 @@ void CommandBuffer::foldCounts()
     stats.segmentCopies += counts_.segmentCopies;
     stats.blendKillBinds += counts_.blendKillBinds;
     stats.interlockDraws += counts_.interlockDraws;
+    stats.rasterOrderedDraws += counts_.rasterOrderedDraws;
     stats.fetch.interlocked += counts_.interlocked;
     stats.fetch.interlockedBlends += counts_.interlockedBlends;
     stats.fetch.twinRule += counts_.twinRule;
@@ -6985,6 +6986,7 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         probeDraw(*pipeline_, *pl, primitive, first, count, indexed, {x[0], y[0], x[1], y[1]});
 #endif
     RAW_DIAGNOSTIC(cb_->counts_.interlockDraws += pl->storageBits != 0);
+    RAW_DIAGNOSTIC(cb_->counts_.rasterOrderedDraws += pl->rec && (pl->rec->flags & PipelineRasterOrdered));
 #if SWITCH_RAW_DIAGNOSTICS
     if (pl->rec && pl->storageBits)
         dev_->stats.fetch.interlockKeys.note(pl->rec->keyHash);

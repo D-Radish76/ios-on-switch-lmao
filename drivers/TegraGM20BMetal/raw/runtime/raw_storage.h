@@ -10,13 +10,22 @@ inline bool orderedStorageControl(uint32_t control)
     return control == 1 || control == 2;
 }
 
+// Whether a fragment program's SET_PIXEL_SHADER_INTERLOCK_CONTROL keeps the ordering its state needs: the ordered interlock
+// around the colours it fetches in the storage form, around a body of raster order groups with none (PipelineRasterOrdered),
+// or none at all
+inline bool interlockMatchesStorage(uint32_t control, uint8_t storageMask)
+{
+    return (!storageMask && !control) || orderedStorageControl(control);
+}
+
 inline bool usableStorage(const PackPipeline &pipeline, uint32_t control)
 {
     if (pipeline.entries > kPackEntries)
         return false;
     if (!(pipeline.flags & PipelineStorageMetadata)) {
-        if (control || pipeline.storageMask || pipeline.storageWriteMask || pipeline.storageSamples ||
-            pipeline.storageTests)
+        const bool ordered = pipeline.flags & PipelineRasterOrdered;
+        if ((ordered ? !orderedStorageControl(control) : control != 0) || pipeline.storageMask ||
+            pipeline.storageWriteMask || pipeline.storageSamples || pipeline.storageTests)
             return false;
         for (uint32_t tic : pipeline.storageTic)
             if (tic)
@@ -29,7 +38,7 @@ inline bool usableStorage(const PackPipeline &pipeline, uint32_t control)
     }
     if (!orderedStorageControl(control) || !pipeline.storageMask || !nativeSamples(pipeline.storageSamples) ||
         pipeline.storageTests > 4 || (pipeline.storageWriteMask & ~pipeline.storageMask) ||
-        (pipeline.flags & PipelineBarrierForm))
+        (pipeline.flags & (PipelineBarrierForm | PipelineRasterOrdered)))
         return false;
     uint32_t bound = 0;
     uint8_t testBindings = 0;

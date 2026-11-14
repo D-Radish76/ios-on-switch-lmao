@@ -242,6 +242,8 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         for method in [0x0210, 0x0754, 0x1224] + [0x1A00 + 4 * i for i in range(8) if storage_mask >> i & 1]:
             if method not in varying:
                 varying.append(method)
+    if flags & 256 and 0x1224 not in varying:  # PipelineRasterOrdered: its interlock control is its own
+        varying.append(0x1224)
     return {
         'index': rec['probe']['index'],
         'key': rec['key'],
@@ -253,6 +255,7 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         'push_metadata': bool(flags & 4),
         'turn_refused': bool(flags & 64),
         'two_plane': bool(flags & 128),
+        'raster_ordered': bool(flags & 256),
         'blend_color_word': blend,
         'half_blend_color_word': half,
         'xr_slots': xr_slots,

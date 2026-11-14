@@ -394,6 +394,7 @@ bool assembleRecord(const RecordParts &parts, const std::string &key, const Pack
     p.blendColorWord = parts.blendColorWord;
     p.halfBlendColorWord = parts.halfBlendColorWord;
     p.flags |= parts.storageMask ? PipelineStorageMetadata : 0;
+    p.flags |= parts.rasterOrdered ? PipelineRasterOrdered : 0;
     p.storageMask = parts.storageMask;
     p.storageWriteMask = parts.storageWriteMask;
     p.storageSamples = parts.storageSamples;
