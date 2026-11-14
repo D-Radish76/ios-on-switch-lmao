@@ -55,7 +55,7 @@ fn entry_of(words: &[u32], model: u32) -> Option<u32> {
 }
 
 /// The tessellation modes the control stage's module declares for its entry point
-pub(crate) fn control_modes(control: &[u32]) -> Vec<u32> {
+pub fn control_modes(control: &[u32]) -> Vec<u32> {
     let Some(entry) = entry_of(control, MODEL_TESSELLATION_CONTROL) else {
         return Vec::new();
     };
@@ -68,7 +68,7 @@ pub(crate) fn control_modes(control: &[u32]) -> Vec<u32> {
 
 /// The evaluation stage's module with `modes` declared for its entry point where it declares none of them itself; None where
 /// it has no evaluation entry point
-pub(crate) fn evaluation_with_modes(evaluation: &[u32], modes: &[u32]) -> Option<Vec<u32>> {
+pub fn evaluation_with_modes(evaluation: &[u32], modes: &[u32]) -> Option<Vec<u32>> {
     let entry = entry_of(evaluation, MODEL_TESSELLATION_EVALUATION)?;
     let declared: Vec<u32> = instructions(evaluation)
         .filter(|(op, i)| *op == OP_EXECUTION_MODE && i.len() == 3 && i[1] == entry)
@@ -93,7 +93,7 @@ pub(crate) fn evaluation_with_modes(evaluation: &[u32], modes: &[u32]) -> Option
 /// SET_TESSELLATION_PARAMETERS as NVK_MME_SET_TESS_PARAMS makes it of the modes (nvk_cmd_draw.c nvk_mme_set_tess_params): the
 /// domain, the spacing, and the output primitives (points, lines, or triangles in the order the control stage names, for
 /// Vulkan's default upper-left domain origin); 0 where the modes name no domain
-pub(crate) fn parameters(modes: &[u32]) -> u32 {
+pub fn parameters(modes: &[u32]) -> u32 {
     let has = |m: u32| modes.contains(&m);
     let domain = if has(MODE_TRIANGLES) {
         1

@@ -10,7 +10,7 @@
 # crates (@rust_crates, bazel/rust), Rust 1.98.0 and LLVM 23.1.4's llvm-as (pinned downloads), Xcode, NVK and its host
 # twin (//gpu/nvk: Mesa 77452b90 + the series).
 
-load("@rules_rust//rust:defs.bzl", "rust_static_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_static_library")
 load("//bazel/lint:defs.bzl", "lint_files")
 load("//bazel/rust:defs.bzl", "cargo_ids", "rust_artifact")
 load("//kits/SwitchGM20BEmit:defs.bzl", "EMIT_SOURCES")
@@ -61,6 +61,52 @@ alias(
     }),
 )
 
+# The raw path's direct compile with no m2v runtime (bridge/NativeMetalTranslate.rs): the translator's own libraries,
+# functions and compile devices (the build's compile profile, which it compiles in), what the pack generator and the shader
+# compiler daemon compile with. The bridge below builds on it.
+rust_library(
+    name = "translate",
+    srcs = [
+        METAL + ":bridge/NativeMetalTranslate.rs",
+        METAL + ":bridge/NativeMetalDescriptors.rs",
+        METAL + ":bridge/NativeMetalDirect.rs",
+        METAL + ":bridge/NativeMetalDirectCompute.rs",
+        METAL + ":bridge/NativeMetalDirectTess.rs",
+        METAL + ":bridge/NativeMetalOffline.rs",
+        METAL + ":bridge/NativeMetalTessModes.rs",
+    ],
+    compile_data = [":compile_profile"],
+    crate_name = "native_metal_translate",
+    crate_root = METAL + ":bridge/NativeMetalTranslate.rs",
+    edition = "2024",
+    rustc_env = {"NMB_COMPILE_PROFILE": "$(execpath :compile_profile)"},
+    rustc_flags = cargo_ids("5b1c2e7f0a9d4e63", "8f2a6c1d3e5b7094"),
+    version = "0.1.0",
+    deps = [
+        "//kits/SwitchRefusal:switch_refusal_rs",
+        "//third_party/m2v/crates/metal2vulkan",
+        "@rust_crates//:ash",
+        "@rust_crates//:serde",
+        "@rust_crates//:serde_json",
+    ],
+)
+
+# The translate crate alone as a static library: the pack tools' (no m2v runtime in them).
+rust_static_library(
+    name = "translate_static",
+    srcs = [METAL + ":bridge/NativeMetalTranslateStatic.rs"],
+    crate_name = "native_metal_translate_static",
+    crate_root = METAL + ":bridge/NativeMetalTranslateStatic.rs",
+    edition = "2024",
+    deps = [":translate"],
+)
+
+rust_artifact(
+    name = "translate_host",
+    crate = ":translate_static",
+    kind = "tool",
+)
+
 # The Metal bridge: NativeMetal's bridge (drivers/NativeMetal/bridge) over m2v's runtime and translator, a static
 # library the plugin links. One crate graph, built per crate (bazel/rust/defs.bzl): each m2v crate and crates.io crate is
 # its own cached rustc action, so an edit recompiles that crate and its dependents only.
@@ -69,13 +115,9 @@ rust_static_library(
     srcs = [
         METAL + ":bridge/NativeMetalBridge.rs",
         METAL + ":bridge/NativeMetalCompile.rs",
-        METAL + ":bridge/NativeMetalDirect.rs",
-        METAL + ":bridge/NativeMetalDirectCompute.rs",
-        METAL + ":bridge/NativeMetalOffline.rs",
+        METAL + ":bridge/NativeMetalDirectDevice.rs",
         METAL + ":bridge/NativeMetalHeap.rs",
         METAL + ":bridge/NativeMetalArguments.rs",
-        METAL + ":bridge/NativeMetalDirectTess.rs",
-        METAL + ":bridge/NativeMetalTessModes.rs",
         METAL + ":bridge/NativeMetalComputeArtifact.rs",
         METAL + ":bridge/NativeMetalArtifactCodec.rs",
         METAL + ":bridge/NativeMetalReflection.rs",
@@ -88,7 +130,6 @@ rust_static_library(
     # The AIR fixtures and the compile profile it compiles in (include_bytes!(env!(...)); rules_rust makes $(execpath)
     # absolute).
     compile_data = [
-        ":compile_profile",
         ":function_constant_air",
         ":runtime_examples_air",
     ],
@@ -96,7 +137,6 @@ rust_static_library(
     crate_root = METAL + ":bridge/NativeMetalBridge.rs",
     edition = "2024",
     rustc_env = {
-        "NMB_COMPILE_PROFILE": "$(execpath :compile_profile)",
         "NMB_FC_AIR": "$(execpath :function_constant_air)",
         "NMB_FIXTURE_AIR": "$(execpath :runtime_examples_air)",
     },
@@ -111,6 +151,7 @@ rust_static_library(
     # switch_refusal_rs brings kits/SwitchRefusal's C, bundled into the archive by rustc (a static native library of a
     # staticlib): the plugin image's one copy, which the frontend and the raw path call too
     deps = [
+        ":translate",
         "//kits/SwitchRefusal:switch_refusal_rs",
         "//third_party/m2v/crates/metal2vulkan",
         "//third_party/m2v/crates/metal2vulkan-runtime",
@@ -150,7 +191,7 @@ rust_artifact(
 raw_stack(
     name = "raw_stack",
     srcs = [GM20B_METAL + ":raw_stack_sources"],
-    bridge = ":bridge",
+    bridge = ":translate",
     include_markers = [
         METAL + ":NativeBridgeMetalFrontend.h",
         GM20B_ABI,

@@ -43,8 +43,8 @@ KEYED = [
     Path('drivers/NativeMetal/NativeBridgeMetalFrontend.mm'),
     Path('drivers/NativeMetal/abi/MetalABI.h'),
     Path('drivers/NativeMetal/bridge/NativeMetalDirect.rs'),
+    Path('drivers/NativeMetal/bridge/NativeMetalTranslate.rs'),
     Path('third_party/m2v/crates/metal2vulkan/src/lib.rs'),
-    Path('third_party/m2v/crates/metal2vulkan-runtime/src/lib.rs'),
 ]
 
 
@@ -81,8 +81,9 @@ class Inputs(unittest.TestCase):
         keyed = hashed()
         for path in KEYED:
             self.assertIn(str(path), keyed)
-        self.assertTrue(any(path.endswith('/libvulkan_nouveau.dylib') for path in keyed))
-        self.assertTrue(any('rust_crates__ash-' in path for path in keyed), "the bridge's crates.io crates")
+        self.assertTrue(any(path.endswith('/switch_compile.o') for path in keyed), 'the stage compile')
+        self.assertFalse(any('metal2vulkan-runtime' in path for path in keyed), "m2v's runtime makes no record")
+        self.assertTrue(any('rust_crates__ash-' in path for path in keyed), "the translation's crates.io crates")
 
     def test_the_pack_generator_builds_and_reads_only_hashed_files(self):
         keyed = hashed()
@@ -104,7 +105,7 @@ class Key(unittest.TestCase):
                 shutil.copyfile(path, self.root / path)
 
     def key(self, ipsw: str = 'one build') -> str:
-        """Give the copy's key over the paths the rule hashes that this test has (not NVK or the crates.io crates)."""
+        """Give the copy's key over the paths the rule hashes that this test has (not the stage compile or crates.io's)."""
         return raw_stack.key(ipsw, {name: self.root / name for name in hashed() if (self.root / name).is_file()})
 
     def edited(self, path: Path) -> str:

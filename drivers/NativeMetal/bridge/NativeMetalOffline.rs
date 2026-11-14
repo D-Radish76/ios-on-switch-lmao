@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 //! The direct compile with no m2v runtime: the translator's compile devices made from the build's compile profile (the
 //! enabled description and policy of the runtime's device, frozen per IPSW build in compile_profile/<build>.json) instead
-//! of a Vulkan query, and libraries and functions made by the translator alone. nmb_compile_profile_check holds a live
-//! runtime to the profile; nmb_compile_profile_freeze writes the profile of one.
+//! of a Vulkan query, and libraries and functions made by the translator alone. The bridge's nmb_compile_profile_check
+//! holds a live runtime to the profile; its nmb_compile_profile_freeze writes the profile of one.
 
 use crate::direct::RAW_HEAP_ELEMENTS;
-use crate::objects::{
-    DescriptorFunction, NmbComputePipelineDescriptorOf, NmbConstant, NmbDevice, NmbRenderPipelineDescriptorOf,
-    attribute_out, compute_descriptor, e, get, guard, release, specialization,
+use crate::descriptors::{
+    DescriptorFunction, NmbComputePipelineDescriptorOf, NmbConstant, NmbRenderPipelineDescriptorOf, attribute_out,
+    compute_descriptor, e, get, guard, release, specialization,
 };
 use metal2vulkan::Budget;
 use metal2vulkan::device::{
@@ -22,24 +22,24 @@ use std::sync::OnceLock;
 const PROFILE: &str = include_str!(env!("NMB_COMPILE_PROFILE"));
 
 #[derive(serde::Serialize, serde::Deserialize)]
-struct Profile {
-    enabled: DeviceDescription,
-    policy: DevicePolicy,
+pub struct Profile {
+    pub enabled: DeviceDescription,
+    pub policy: DevicePolicy,
 }
 
 /// The direct compile's three devices: the default render and compute form, the barrier form (no pixel interlock), the
 /// ordered form (`RequireOrdered`, centre fragment depth); and the runtime's own compile device, which its states compile
 /// on
-pub(crate) struct Devices {
-    pub(crate) native: Device,
-    pub(crate) barrier: Device,
-    pub(crate) ordered: Device,
-    pub(crate) runtime: Device,
+pub struct Devices {
+    pub native: Device,
+    pub barrier: Device,
+    pub ordered: Device,
+    pub runtime: Device,
 }
 
 impl Devices {
     /// The device a render state's form compiles on, as the runtime path picks it
-    pub(crate) fn render(&self, barrier: bool, fragment_tests: u32) -> &Device {
+    pub fn render(&self, barrier: bool, fragment_tests: u32) -> &Device {
         if barrier {
             &self.barrier
         } else if fragment_tests != 0 {
@@ -75,7 +75,7 @@ fn devices(p: &Profile) -> Result<Devices, String> {
     })
 }
 
-fn frozen() -> Result<&'static Profile, String> {
+pub fn frozen() -> Result<&'static Profile, String> {
     static READ: OnceLock<Result<Profile, String>> = OnceLock::new();
     READ.get_or_init(|| serde_json::from_str(PROFILE).map_err(|e| format!("compile profile: {e}")))
         .as_ref()
@@ -83,66 +83,9 @@ fn frozen() -> Result<&'static Profile, String> {
 }
 
 /// The profile's devices, made once per process
-pub(crate) fn offline_devices() -> Result<&'static Devices, String> {
+pub fn offline_devices() -> Result<&'static Devices, String> {
     static MADE: OnceLock<Result<Devices, String>> = OnceLock::new();
     MADE.get_or_init(|| devices(frozen()?)).as_ref().map_err(Clone::clone)
-}
-
-/// The profile of `nmb`'s runtime: its queried description with what it enabled, as the runtime path's barrier and ordered
-/// devices are made of it (direct.rs specialized_device)
-fn live_profile(nmb: &NmbDevice) -> Result<Profile, String> {
-    let runtime = nmb.device();
-    // SAFETY: the handles are the live runtime device's, used only for this query.
-    let handles = unsafe { runtime.raw() };
-    let description =
-        unsafe { DeviceDescription::query(handles.instance, handles.physical_device, handles.instance_api_version) }
-            .map_err(e("device description"))?;
-    let mut enabled = description
-        .with_enabled(runtime.enabled())
-        .map_err(e("enabled description"))?;
-    enabled.generated_commands = None;
-    Ok(Profile {
-        enabled,
-        policy: *runtime.compile_device().policy(),
-    })
-}
-
-/// The compile profile of `device`'s runtime as JSON into `out` (`len` bytes, unterminated); its length, 0 on failure
-///
-/// # Safety
-/// `out` is null or `len` writable bytes.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn nmb_compile_profile_freeze(device: *mut NmbDevice, out: *mut c_char, len: usize) -> usize {
-    guard(0, || {
-        let json = serde_json::to_string_pretty(&live_profile(get(device)?)?).map_err(|e| e.to_string())?;
-        if !out.is_null() && len >= json.len() {
-            // SAFETY: the caller's contract.
-            unsafe { std::ptr::copy_nonoverlapping(json.as_ptr(), out.cast(), json.len()) };
-        }
-        Ok(json.len())
-    })
-}
-
-/// Whether the build's compile profile is `device`'s runtime's: its enabled description and policy, and the runtime's own
-/// compile device the one made of them. False with nmb_last_error naming the difference.
-#[unsafe(no_mangle)]
-pub extern "C" fn nmb_compile_profile_check(device: *mut NmbDevice) -> bool {
-    guard(false, || {
-        let nmb = get(device)?;
-        let live = live_profile(nmb)?;
-        let frozen = frozen()?;
-        if live.enabled != frozen.enabled {
-            return Err("the runtime's enabled description is not the compile profile's".into());
-        }
-        if live.policy != frozen.policy {
-            return Err("the runtime's compile policy is not the compile profile's".into());
-        }
-        let made = Device::new(frozen.enabled.clone(), frozen.policy).map_err(e("compile device"))?;
-        if made.profile_fingerprint() != nmb.device().compile_device().profile_fingerprint() {
-            return Err("the runtime's compile device is not the compile profile's".into());
-        }
-        Ok(true)
-    })
 }
 
 /// A metallib's library, made by the translator alone

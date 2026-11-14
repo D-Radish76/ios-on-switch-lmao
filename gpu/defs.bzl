@@ -264,8 +264,8 @@ raw_stack = rule(
     implementation = _raw_stack_impl,
     doc = """The raw path's stack key (tools/gpu/raw_stack.py): what its records are made and read by.
 
-    srcs and readers, by path and bytes, with the stage compile's object, MetalABI.h, every crate the Metal bridge
-    compiles (its sources, compile data and build scripts) and the IPSW build. Each C, C++ and Objective-C++ unit of srcs
+    srcs and readers, by path and bytes, with the stage compile's object, MetalABI.h, every crate the direct compile's
+    translation compiles (native_metal_translate's graph: sources, compile data and build scripts) and the IPSW build. Each C, C++ and Objective-C++ unit of srcs
     is checked to include only srcs and MetalABI.h; the hashed files' paths are the output group `inputs`.""",
     attrs = _XCODE | {
         "srcs": attr.label_list(
@@ -274,7 +274,7 @@ raw_stack = rule(
             doc = "what records, pack entries and native records are made by",
         ),
         "readers": attr.label_list(allow_files = True, doc = "files that only read the records the device made"),
-        "bridge": attr.label(mandatory = True, aspects = [_crate_sources], doc = "the Metal bridge (its crate graph)"),
+        "bridge": attr.label(mandatory = True, aspects = [_crate_sources], doc = "the translation's crate (its graph)"),
         "include_markers": attr.label_list(allow_files = True, doc = "one file per -I directory of srcs' units"),
         "metal_abi": attr.label(mandatory = True, allow_single_file = True, doc = "the IPSW kind's MetalABI.h"),
         "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's iOS object"),
