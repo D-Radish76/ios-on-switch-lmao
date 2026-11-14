@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // The pack generator's records made directly (runtime/RawDirect.h): every state of a bucket's corpus compiled from m2v's
-// translation and NVK's stage compile, as the runtime makes a state the pack lacks, with no device, pipeline, draw or
-// capture: the translator's own libraries and functions (offline_metal.h), and NVK's offline stage compile from its dylib.
-// directlink.py makes the pack of them.
-// usage: directpack <nvk dylib> <default.metallib> <corpus.log> <records.bin>
+// translation and the stage compile (third_party/mesa/src/nouveau/switch_compile, linked in), as the runtime makes a state
+// the pack lacks, with no device, pipeline, draw or capture: the translator's own libraries and functions
+// (runtime/RawOffline.h). directlink.py makes the pack of them.
+// usage: directpack <default.metallib> <corpus.log> <records.bin>
 // (PROBE_OWN_LIB, PROBE_LIB_ROOT and PROBE_LABEL as probe.mm reads them)
 //
 // records.bin, little-endian, per state: "DREC", the outcome (0 made, 1 refused, 2 failed), the key and the reason (u32 length,
@@ -35,7 +35,7 @@
 #include "direct_kernels.h"
 #include "direct_states.h"
 #include "fetch_free_make.h"
-#include "offline_metal.h"
+#include "../runtime/RawOffline.h"
 
 namespace {
 
@@ -296,15 +296,15 @@ void kernel(Writer &w, const std::string &key, raw::CompileOutcome outcome, cons
 int main(int argc, char **argv)
 {
     @autoreleasepool {
-        if (argc != 5) {
-            fprintf(stderr, "usage: directpack <nvk dylib> <default.metallib> <corpus.log> <records.bin>\n");
+        if (argc != 4) {
+            fprintf(stderr, "usage: directpack <default.metallib> <corpus.log> <records.bin>\n");
             return 2;
         }
         id<MTLDevice> libraries = (id<MTLDevice>)[RawOfflineDevice new];
         NSError *error = nil;
-        id<MTLLibrary> qc = [libraries newLibraryWithURL:[NSURL fileURLWithPath:@(argv[2])] error:&error];
-        NSString *text = [NSString stringWithContentsOfFile:@(argv[3]) encoding:NSUTF8StringEncoding error:nil];
-        Writer w = {fopen(argv[4], "wb")};
+        id<MTLLibrary> qc = [libraries newLibraryWithURL:[NSURL fileURLWithPath:@(argv[1])] error:&error];
+        NSString *text = [NSString stringWithContentsOfFile:@(argv[2]) encoding:NSUTF8StringEncoding error:nil];
+        Writer w = {fopen(argv[3], "wb")};
         if (!qc || !text || !w.f) {
             fprintf(stderr, "directpack: library, corpus or output unread\n");
             return 1;
@@ -323,7 +323,7 @@ int main(int argc, char **argv)
         // every register raw_emit writes, over no baseline: directlink.py sets them over the context
         raw::PackRules rules;
         rules.varying = raw::emittableMethods();
-        raw::Direct direct(std::move(rules), false, offline::translator(argv[1]));
+        raw::Direct direct(std::move(rules), false, offline::translator());
         direct.makeVariants(true);
         direct.keepBoundDraws(true);
         Counts counts;

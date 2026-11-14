@@ -176,7 +176,7 @@ void compileOne(size_t index)
     switch_compiler::Prepared p;
     ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why)) << why;
     switch_compiler::Engine engine;
-    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), loader(), root()}, why)) << why;
+    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), root()}, why)) << why;
     const std::string label =
         line.substr(line.find("label=") + 6, line.find(' ', line.find("label=")) - line.find("label=") - 6);
     Sampler sampler;

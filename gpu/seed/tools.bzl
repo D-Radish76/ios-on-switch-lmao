@@ -114,6 +114,7 @@ def _seed_tools_impl(ctx):
     args.add("build")
     args.add("--xcode-env", ctx.file._xcode_env)
     args.add("--host-bridge", ctx.file.host_bridge)
+    args.add("--compile", ctx.file.compile)
     args.add("--metal-abi", ctx.file.metal_abi)
     args.add("--context-header", ctx.file.context_header)
     args.add("--generator", ctx.file.raw_generator)
@@ -122,7 +123,7 @@ def _seed_tools_impl(ctx):
     ctx.actions.run(
         executable = ctx.executable._rawpack,
         arguments = [args],
-        inputs = depset([ctx.file.host_bridge, ctx.file.metal_abi, ctx.file.context_header, ctx.file.raw_generator] + xcode + [f for f in ctx.files.raw_srcs if f.extension != "py" or f.basename in _RAW_BUILD_MODULES]),
+        inputs = depset([ctx.file.host_bridge, ctx.file.compile, ctx.file.metal_abi, ctx.file.context_header, ctx.file.raw_generator] + xcode + [f for f in ctx.files.raw_srcs if f.extension != "py" or f.basename in _RAW_BUILD_MODULES]),
         outputs = [raw],
         mnemonic = "SeedToolsRaw",
         progress_message = "Building the raw pack's probe and mock GM20B",
@@ -168,6 +169,7 @@ seed_tools = rule(
     doc = "The host tools the seed runs, as one directory (the release ships it prebuilt).",
     attrs = _XCODE | {
         "abi_header": attr.label(mandatory = True, allow_single_file = True),
+        "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's macOS object"),
         "mock_iokit": attr.label(mandatory = True, allow_single_file = True),
         "metal_header": attr.label(mandatory = True, allow_single_file = True),
         "metal_abi": attr.label(mandatory = True, allow_single_file = True, doc = "the selected IPSW kind's MetalABI.h"),

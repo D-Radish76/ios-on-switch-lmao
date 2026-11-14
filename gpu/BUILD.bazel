@@ -34,6 +34,10 @@ GM20B_LAYOUT = "//drivers/TegraGM20B:TegraGM20BLayout.h"
 
 NVK = "//gpu/nvk:dylib"
 
+# The stage compile (NAK, with no Vulkan device) the raw path makes records with: one object, its entry points its only
+# global symbols (third_party/mesa/src/nouveau/switch_compile).
+COMPILE = "//third_party/mesa/src/nouveau/switch_compile:ios"
+
 # The runtime's AIR fixtures, which the bridge compiles in (include_bytes!).
 llvm_as(
     name = "runtime_examples_air",
@@ -154,8 +158,8 @@ raw_stack(
         # where NVIDIA's class headers find "nvtypes.h" (raw/pack/nvdec.cpp)
         "//third_party/mesa/src/nouveau/headers:nvtypes.h",
     ],
+    compile = COMPILE,
     metal_abi = METAL_ABI,
-    nvk = NVK,
     readers = [GM20B_METAL + ":raw/runtime/raw_completed.cpp"],
 )
 
@@ -198,6 +202,7 @@ metal_plugin(
     ],
     bridge = ":bridge_ios",
     c_srcs = ["//kits/SwitchGM20BEmit:" + s for s in EMIT_SOURCES],
+    compile = COMPILE,
     cc_srcs = [
         GM20B_METAL + ":raw/runtime/raw_amplification.cpp",
         GM20B_METAL + ":raw/runtime/raw_vertex_streams.cpp",

@@ -278,7 +278,7 @@ void withTheEngine()
     Steps steps{"context"};
     switch_compiler::Engine engine;
     std::string why;
-    ASSERT_TRUE(engine.open(0, {packPath(), loader(), root()}, why)) << why;
+    ASSERT_TRUE(engine.open(0, {packPath(), root()}, why)) << why;
     Serving serving;
     ASSERT_TRUE(
         serving.open(engine.rules(), [&](const switch_compiler::Prepared &p, std::string &entry, std::string &failed) {

@@ -76,6 +76,8 @@ filegroup(
         "precompile/PrecompileInputs.h",
         "raw/runtime/RawDirect.h",
         "raw/runtime/RawDirect.mm",
+        "raw/runtime/RawOffline.h",
+        "raw/runtime/RawOffline.mm",
         "raw/runtime/RawRenderKey.h",
         "raw/runtime/RawRenderKey.mm",
         "raw/runtime/RawPipelineKey.h",

@@ -8,6 +8,7 @@ def _direct_runner_impl(ctx):
     args = ctx.actions.args()
     args.add("--xcode-env", ctx.file._xcode_env)
     args.add("--host-bridge", ctx.file.host_bridge)
+    args.add("--compile", ctx.file.compile)
     args.add("--metal-abi", ctx.file.metal_abi)
     args.add("--raw", tools.raw_dir)
     args.add("--out", out.path)
@@ -16,7 +17,7 @@ def _direct_runner_impl(ctx):
         arguments = [args],
         inputs = depset(
             ctx.files.srcs + tools.raw +
-            [ctx.file.host_bridge, ctx.file.metal_abi, ctx.file._xcode_env, ctx.file._xcode_identity],
+            [ctx.file.host_bridge, ctx.file.compile, ctx.file.metal_abi, ctx.file._xcode_env, ctx.file._xcode_identity],
         ),
         outputs = [out],
         mnemonic = "DirectRunner",
@@ -31,6 +32,11 @@ direct_runner = rule(
     attrs = {
         "srcs": attr.label_list(allow_files = True, doc = "directrun.mm, exec.metal and every source they compile"),
         "host_bridge": attr.label(mandatory = True, allow_single_file = True),
+        "compile": attr.label(
+            default = "//third_party/mesa/src/nouveau/switch_compile:host",
+            allow_single_file = True,
+            doc = "the stage compile's macOS object",
+        ),
         "metal_abi": attr.label(mandatory = True, allow_single_file = True),
         "tools": attr.label(mandatory = True, providers = [SeedToolsInfo]),
         "_build": attr.label(default = "//tools/gpu/maxwell:direct_build", executable = True, cfg = "exec"),

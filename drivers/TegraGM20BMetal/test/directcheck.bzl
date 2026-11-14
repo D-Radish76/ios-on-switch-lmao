@@ -25,6 +25,7 @@ def _raw_directcheck_impl(ctx):
     args = ctx.actions.args()
     args.add("--xcode-env", ctx.file._xcode_env)
     args.add("--host-bridge", ctx.file.host_bridge)
+    args.add("--compile", ctx.file.compile)
     args.add("--metal-abi", ctx.file.metal_abi)
     args.add("--raw", tools.raw_dir)
     args.add("--twin", tools.twin)
@@ -34,7 +35,7 @@ def _raw_directcheck_impl(ctx):
         arguments = [args],
         inputs = depset(
             ctx.files.srcs + tools.raw +
-            [tools.twin, ctx.file.host_bridge, ctx.file.metal_abi, ctx.file._xcode_env, ctx.file._xcode_identity],
+            [tools.twin, ctx.file.host_bridge, ctx.file.compile, ctx.file.metal_abi, ctx.file._xcode_env, ctx.file._xcode_identity],
         ),
         outputs = [out],
         mnemonic = "Directcheck",
@@ -60,6 +61,11 @@ raw_directcheck = rule(
     attrs = {
         "srcs": attr.label_list(allow_files = True, doc = "directcheck.mm and every source it compiles"),
         "host_bridge": attr.label(mandatory = True, allow_single_file = True),
+        "compile": attr.label(
+            default = "//third_party/mesa/src/nouveau/switch_compile:host",
+            allow_single_file = True,
+            doc = "the stage compile's macOS object",
+        ),
         "metal_abi": attr.label(mandatory = True, allow_single_file = True),
         "tools": attr.label(mandatory = True, doc = "the shader tools the pack was made with (//gpu/seed:tools)"),
         "crawl": attr.label(mandatory = True, providers = [CrawlInfo]),

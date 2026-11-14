@@ -3,10 +3,11 @@
 
 One action per step (gpu/seed/tools.bzl seed_tools builds, gpu/seed/defs.bzl seed_raw_pack runs the rest):
 
-    rawpack.py build --xcode-env F --host-bridge <darwin bridge .a> --metal-abi <MetalABI.h>
+    rawpack.py build --xcode-env F --host-bridge <darwin bridge .a> --compile <switch_compile.o> --metal-abi <MetalABI.h>
                      --context-header <SwitchGM20BContext.h> --generator <raw/pack/rawpack.py> --tree <tree> --out <dir>
-        the generator's host tools (directpack over the host bridge, the probes through this build's frontend too, the
-        mock GM20B, the raw path's own.metallib) into <dir>, with the context init nvdec ran (context.log)
+        the generator's host tools (directpack over the host bridge and the stage compile, the probes through this
+        build's frontend too, the mock GM20B, the raw path's own.metallib) into <dir>, with the context init nvdec ran
+        (context.log)
     rawpack.py corpus --corpus corpus.log --build <IPSW build> [--archives <build>.tsv]
                       [--app-states <build>.log] --out <file> --report <file>
         the corpus lines the probe makes (raw/pack/probe.mm: Core Animation's render states, without lib=, and every
@@ -23,12 +24,12 @@ One action per step (gpu/seed/tools.bzl seed_tools builds, gpu/seed/defs.bzl see
                      --out <bucket corpus>...
         the states of each of the generator's buckets, with the Core Animation states a device's logs named
         (precompile/ca-names/<build>.txt)
-    rawpack.py probe --generator <rawpack.py> --raw <dir> --nvk <twin dylib> --qc default.metallib [--root <dir>]
+    rawpack.py probe --generator <rawpack.py> --raw <dir> --qc default.metallib [--root <dir>]
                      --lines <bucket corpus> --out <dir named bucket<i>>
         one bucket's states and kernels made directly through the shader tools (raw/ holds directpack, the probe, the
-        mock, own.metallib and context.log; the NVK twin, whose offline compile directpack calls), with bucket 0's
-        context.log: the channel's context init as nvdec runs it; their libraries'
-        paths under --root (the crawl's root/ with this build's applications in it), else under QuartzCore's crawl
+        mock, own.metallib and context.log), with bucket 0's context.log: the channel's context init as nvdec runs it;
+        their libraries' paths under --root (the crawl's root/ with this build's applications in it), else under
+        QuartzCore's crawl
     rawpack.py link --generator <rawpack.py> --out <dir> [--corpus-report <file>] [--archives <build>.tsv]
                     <bucket dir>...
         the pack made from the buckets' records, unstamped: <out>/pack.bin and report.txt, with the archive
@@ -37,8 +38,8 @@ One action per step (gpu/seed/tools.bzl seed_tools builds, gpu/seed/defs.bzl see
         <out>/pack.bin with the tools' stack key in its header
 
 Only the stamp reads the stack key, which every raw/ source changes: a raw runtime edit reruns the stamp alone (but for
-the direct compile's own sources, which the tools build from), and a bucket runs again only when its states, the tools,
-the NVK twin or QuartzCore's library change. No step but build
+the direct compile's own sources, which the tools build from), and a bucket runs again only when its states, the tools
+(directpack holds the stage compile) or QuartzCore's library change. No step but build
 runs a compiler, so the image builder runs them with the release's prebuilt tools.
 """
 
@@ -245,7 +246,8 @@ def fresh(path: Path) -> Path:
 def build(args: argparse.Namespace, generator: list[str], env: dict[str, str], root: Path) -> None:
     xcode = dict(line.split('=', 1) for line in Path(args.xcode_env).read_text().splitlines() if '=' in line)
     env['DEVELOPER_DIR'] = xcode['DEVELOPER_DIR']
-    arguments = ['--build-only', '--bridge', root / args.host_bridge, '--metal-abi', root / args.metal_abi]
+    arguments = ['--build-only', '--bridge', root / args.host_bridge, '--compile', root / args.compile]
+    arguments += ['--metal-abi', root / args.metal_abi]
     arguments += ['--context-header', root / args.context_header]
     arguments += ['--out', root / args.out]
     generate(generator, arguments, env, "the pack generator's tools")
@@ -266,17 +268,12 @@ def split(args: argparse.Namespace, generator: list[str], env: dict[str, str], w
 def probe(args: argparse.Namespace, generator: list[str], env: dict[str, str], work: Path) -> None:
     out = fresh(Path(args.out).resolve())
     shutil.copyfile(args.lines, out / 'corpus.log')
-    # The probe opens NVK from a copy of its own: an input is a link to the output base's file, which dyld can name by
-    # another of its links.
-    dylib = work / 'libvulkan_nouveau.dylib'
-    shutil.copyfile(args.nvk, dylib)
-    dylib.chmod(0o755)
     libraries = [Path(p) for p in args.data]
     if args.data_dir:
         libraries += sorted(Path(args.data_dir).glob('*.metallib'))
     data = library_view(libraries, work / 'data')
     env = dict(env, PROBE_DATA_LIBS=str(data.resolve()))
-    arguments = ['--probe-bucket', out, '--prebuilt', Path(args.raw).resolve(), '--nvk', dylib]
+    arguments = ['--probe-bucket', out, '--prebuilt', Path(args.raw).resolve()]
     arguments += ['--root', Path(args.root).resolve()] if args.root else []
     print(generate(generator, [*arguments, '--qc', Path(args.qc).resolve()], env, f'making {out.name}').rstrip())
     for path in out.iterdir():
@@ -324,9 +321,9 @@ def stamp(args: argparse.Namespace, generator: list[str], env: dict[str, str], _
 
 
 STEPS = {
-    'build': ('xcode-env', 'host-bridge', 'metal-abi', 'context-header', 'generator', 'tree', 'out'),
+    'build': ('xcode-env', 'host-bridge', 'compile', 'metal-abi', 'context-header', 'generator', 'tree', 'out'),
     'split': ('generator', 'qc', 'corpus'),
-    'probe': ('generator', 'raw', 'nvk', 'qc', 'lines', 'out'),
+    'probe': ('generator', 'raw', 'qc', 'lines', 'out'),
     'link': ('generator', 'out'),
     'stamp': ('generator', 'pack', 'manifest', 'out'),
 }

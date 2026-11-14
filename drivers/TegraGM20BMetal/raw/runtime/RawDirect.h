@@ -48,16 +48,15 @@ struct ProbeTextures {
     std::vector<WrittenTexture> written;
 };
 
-// What makes a state's or a kernel's translation and finds NVK's exports: the frontend over its m2v runtime device, or
-// the pack generator's offline compile (pack/offline_metal.h), whose descriptors hold its own functions. False with `why`:
-// the translator refused it.
+// What makes a state's or a kernel's translation: the frontend over its m2v runtime device, or the pack generator's
+// offline compile (RawOffline.h), whose descriptors hold its own functions. False with `why`: the translator
+// refused it.
 struct DirectTranslator {
     bool (*render)(id descriptor, bool barrier, NSUInteger textureFormat, NSUInteger textureSamples,
                    const NmbDirectBinds *binds, bool (*each)(const NmbDirectState *, void *), void *ctx,
                    const char **why) = nullptr;
     bool (*compute)(id descriptor, const NmbDirectDispatch *dispatch, bool (*each)(const NmbDirectKernel *, void *),
                     void *ctx, const char **why) = nullptr;
-    void *(*nvkSymbol)(const char *name) = nullptr;
 
     static DirectTranslator frontend();
 };
@@ -117,7 +116,7 @@ public:
 private:
     PackRules rules_;
     DirectTranslator translator_;
-    DirectNvk nvk_;
+    StageCompile compile_;
     bool variants_ = false;
     std::string storageRefusal_;
     bool keepBound_ = false;

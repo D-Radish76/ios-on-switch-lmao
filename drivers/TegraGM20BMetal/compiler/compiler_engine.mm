@@ -6,11 +6,11 @@
 #include <dlfcn.h>
 #include <os/log.h>
 #include <mutex>
-#include "NativeBridgeMetalFrontend.h"
 #include "TegraGM20BCompilerABI.h"
 #include "compiler_libraries.h"
 #include "compiler_record.h"
 #include "../raw/runtime/RawDirect.h"
+#include "../raw/runtime/RawOffline.h"
 #include "../raw/runtime/raw_pack.h"
 
 namespace switch_compiler {
@@ -74,7 +74,7 @@ Engine::~Engine() = default;
 
 EngineInputs EngineInputs::installed()
 {
-    return {besidePlugin("TegraGM20BMetal.raw/pack.bin", true), besidePlugin("libvulkan_nouveau.dylib"), ""};
+    return {besidePlugin("TegraGM20BMetal.raw/pack.bin", true), ""};
 }
 
 bool Engine::open(uint64_t stack, const EngineInputs &inputs, std::string &why)
@@ -82,7 +82,6 @@ bool Engine::open(uint64_t stack, const EngineInputs &inputs, std::string &why)
     State &s = *state_;
     s.stack = stack;
     s.inputs = inputs;
-    setenv("NVK_DARWIN_SERVICE", "AGXAccelerator", 0);
     if (!s.pack.load(inputs.pack.c_str(), stack, why))
         return why = "the raw pack: " + why, false;
     s.rules = rulesDigest(raw::PackRules::of(s.pack));
@@ -100,14 +99,10 @@ bool Engine::openCompiler(std::string &why)
 #if SWITCH_DEBUG
     const uint64_t began = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #endif
-    if (!native_bridge_metal_compile_open(s.inputs.nvk.c_str())) {
-        s.openRefusal = std::string("no compile context: ") + nmb_last_error();
-        return why = s.openRefusal, false;
-    }
-    s.direct = std::make_unique<raw::Direct>(s.pack);
+    s.direct = std::make_unique<raw::Direct>(raw::PackRules::of(s.pack), false, offline::translator());
     s.compiles = true;
 #if SWITCH_DEBUG
-    os_log(logger(), "SwitchShaderCompiler: compile context opened for its first compile in %llu ms",
+    os_log(logger(), "SwitchShaderCompiler: compiler made for its first compile in %llu ms",
            (unsigned long long)((clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - began) / 1000000));
 #endif
     return true;
