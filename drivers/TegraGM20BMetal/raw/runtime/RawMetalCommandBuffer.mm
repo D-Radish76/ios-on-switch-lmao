@@ -791,6 +791,8 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 {
     if (!_completedSent)
         return @"pending";
+    if (_error && !_m2v && _pred0)
+        return [NSString stringWithFormat:@"error:%s", kPredNames[_pred0]];
     raw::ExecutionAttribution route;
     for (const RMSegment &range : _segs)
         route.add(range.raw, range.event);

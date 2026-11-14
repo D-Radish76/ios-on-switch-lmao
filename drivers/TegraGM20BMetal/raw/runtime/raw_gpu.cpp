@@ -4295,6 +4295,8 @@ CommandBuffer *Device::begin()
     cb.promises.clear();
     cb.promisesKept = false;
     cb.nativeError = 0;
+    cb.kernelResult = 0;
+    cb.notSubmitted = nullptr;
     cb.setRefused.clear();
     cb.nativeReads_.clear();
     cb.nativeSurfaces_.clear();
@@ -4829,7 +4831,41 @@ void CommandBuffer::foldCounts()
 }
 #endif
 
+void CommandBuffer::describeRefusal(char *line, size_t size) const
+{
+    if (!setRefused.empty())
+        snprintf(line, size, "%s", setRefused.c_str());
+    else if (kernelResult)
+        snprintf(line, size, "the kernel refused its job (0x%x)", unsigned(kernelResult));
+    else
+        snprintf(line, size, "%s", notSubmitted ? notSubmitted : "nothing named why");
+}
+
+// One error line a commit that submits nothing more for a reason its caller does not take up again (the CPU holding a
+// use, a native surface changed under it): the first 16, then every 256th
+static void logNotSubmitted(const CommandBuffer &cb)
+{
+    if (cb.kernelResult == kIOReturnCannotLock || (cb.nativeError && cb.kernelResult == cb.nativeError))
+        return;
+    static std::atomic<uint32_t> lines{0};
+    const uint32_t n = lines.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (n > 16 && n % 256)
+        return;
+    char why[192];
+    cb.describeRefusal(why, sizeof why);
+    os_log_error(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
+                 "raw: a command buffer not submitted: %{public}s (#%u)", why, n);
+}
+
 bool CommandBuffer::commit(uint32_t &seqno)
+{
+    const bool submitted = submitJobs(seqno);
+    if (!submitted && (kernelResult || notSubmitted || !setRefused.empty()))
+        logNotSubmitted(*this);
+    return submitted;
+}
+
+bool CommandBuffer::submitJobs(uint32_t &seqno)
 {
     RAW_ENCODE_SPAN(Commit);
     RAW_ENCODE_COUNT(GeometryVertices, GeometryBudget().vertices - geometryBudget_.vertices);
@@ -4851,8 +4887,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
     d.heldSegment_.lose();
     launchPrologues();
     if (d.overflowing_) {
-        os_log_error(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
-                     "raw: a command buffer larger than its ring, with no memory for a larger one: not submitted");
+        notSubmitted = "a command buffer larger than its ring, with no memory for a larger one";
         return false;
     }
     bool invalidates = false, published = false;
@@ -4946,13 +4981,18 @@ bool CommandBuffer::commit(uint32_t &seqno)
             nameHeaps();
         }
     }
-    if (geometryWritable())
+    if (geometryWritable()) {
+        notSubmitted = surfaces_.valid() ? "a write of the geometry the CPU read"
+                                         : "a job's uses past what one job names, or a use of no backing";
         return false;  // later internal writes invalidate the CPU proof; no prefix may reach the GPU
+    }
     if (!batchWork_.operations)
         segments_.includeTail();
     const uint32_t maxPushes = d.k_.maxPushes(), maxFences = d.k_.maxFences();
-    if (!segments_.valid(maxPushes))
+    if (!segments_.valid(maxPushes)) {
+        notSubmitted = "a continuation group past the pushes one job takes";
         return false;  // validate all indivisible continuation groups before publishing any prefix
+    }
     // A command buffer of several jobs holds its shared uses' CPU-lock admission from its first job to its last
     const bool multiple = (!segments_.empty() && segments_.submission(0, maxPushes, maxFences) < segments_.size()) ||
                           sharedWaits_.size() + sharedSignals_.size() > TegraGM20BMaxJobEvents;
@@ -4976,6 +5016,10 @@ bool CommandBuffer::commit(uint32_t &seqno)
                   !last || quietEnd, last && !promises.empty() ? &promises : nullptr);
         RAW_ENCODE_END(execSpan);
         if (!executed) {
+            if (!uses.valid())
+                notSubmitted = "a job's uses past what one job names, or a use of no backing";
+            else
+                kernelResult = result;
             admissionBlocked = !published && result == kIOReturnCannotLock;
             setRefused = d.setView_.refused;
             if (admissionHeld) {

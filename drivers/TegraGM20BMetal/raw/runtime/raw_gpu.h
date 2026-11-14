@@ -1533,6 +1533,11 @@ public:
     std::vector<uint32_t> promises;
     bool promisesKept = false;
     int nativeError = 0;
+    // A commit that submitted nothing more: the kernel's answer to the job it refused (0: none), else why none was sent
+    int kernelResult = 0;
+    const char *notSubmitted = nullptr;
+    // Why the last commit submitted nothing more, as its error line and its command buffer's error give it
+    void describeRefusal(char *line, size_t size) const;
     // Why a job was refused when it was the resource set: its generation ended and the kernel refused to make it again
     // (SetView::refused). The command buffer fails with it.
     std::string setRefused;
@@ -1645,6 +1650,7 @@ public:
     bool loopsLaid = false;           // a predicated loop's copies: the GPU writes the push ring
 
 private:
+    bool submitJobs(uint32_t &seqno);
     friend class Device;
     friend struct DeviceHarness;
     std::vector<TegraGM20BAbiEventUse> sharedWaits_, sharedSignals_;
