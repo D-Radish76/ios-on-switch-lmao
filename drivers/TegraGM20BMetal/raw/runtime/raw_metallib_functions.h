@@ -2,6 +2,7 @@
 // The functions a metallib lists, read by the facade itself (MetallibEntries.h over the AIR slice MetallibSlice.h picks), so
 // a library and its functions need no m2v object until something only m2v answers is asked of them.
 #pragma once
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -77,6 +78,12 @@ struct MetallibFunctions {
     bool lists(const std::string &name) const
     {
         return types.count(name) != 0;
+    }
+
+    // A Core Image extern (TYPE 5): Metal makes its function by name, which Core Image's filter link takes
+    bool isExtern(const std::string &name) const
+    {
+        return std::find(externs.begin(), externs.end(), name) != externs.end();
     }
 };
 

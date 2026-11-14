@@ -50,9 +50,10 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
     return RM_FUNCTION_TWIN(self, "a function's twin");
 }
 
+// 0 for a Core Image extern, as m2v's translator measured none for its TYPE (metallib_properties: Other(5))
 - (MTLFunctionType)functionType
 {
-    return _type ? MTLFunctionType(_type) : [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's type") functionType];
+    return MTLFunctionType(_type);
 }
 
 // Reflection: the AIR's, as m2v's function decodes it
@@ -153,22 +154,6 @@ static id functionNotFound(NSString *name, NSError **error)
     return RM_LIBRARY_TWIN(self, "a library's twin");
 }
 
-- (RMFunction *)wrap:(id<MTLFunction>)twin name:(NSString *)name constants:(MTLFunctionConstantValues *)values
-{
-    if (!twin)
-        return nil;
-    RMFunction *f = [RMFunction new];
-    f->_device = _device;
-    f->_twin = twin;
-    f->_constants = raw::constantsText(values);
-    f->_framework = _framework;
-    f->_source = _source;
-    f->_specialized = values != nil;
-    f->_libraryName = native_bridge_metal_function_library_name(twin).UTF8String ?: "";
-    f.name = name;
-    return f;
-}
-
 // A function of a library the facade read, with no twin: `libraryName` is listed with a type the facade answers
 - (RMFunction *)function:(NSString *)libraryName
                       as:(NSString *)specializedName
@@ -189,85 +174,50 @@ static id functionNotFound(NSString *name, NSError **error)
     return f;
 }
 
-// Whether a function of `name` is made here without m2v: the facade read the library and its type is one it answers
+// Whether the library makes a function of `name`: one of a type the facade answers, or one of its Core Image externs (a
+// dynamic library's export is none: Metal's newFunctionWithName: stops at an assertion for it)
 - (bool)ownsFunction:(NSString *)name
 {
-    return _functions.listed && name && _functions.type(name.UTF8String ?: "");
-}
-
-- (bool)listsFunction:(NSString *)name
-{
-    return !_functions.listed || (name && _functions.lists(name.UTF8String ?: ""));
+    const std::string n = name.UTF8String ?: "";
+    return name && (_functions.type(n) || _functions.isExtern(n));
 }
 
 - (id<MTLFunction>)newFunctionWithName:(NSString *)name
 {
-    if ([self ownsFunction:name])
-        return (id<MTLFunction>)[self function:name as:nil values:nil specialized:false];
-    if (![self listsFunction:name])
-        return nil;
-    return (id<MTLFunction>)[self wrap:[(id<MTLLibrary>)RM_LIBRARY_TWIN(self, "a function of a kind raw does not list")
-                                           newFunctionWithName:name]
-                                  name:name
-                             constants:nil];
+    return [self ownsFunction:name] ? (id<MTLFunction>)[self function:name as:nil values:nil specialized:false] : nil;
 }
 
 - (id<MTLFunction>)newFunctionWithName:(NSString *)name
                         constantValues:(MTLFunctionConstantValues *)values
                                  error:(NSError **)error
 {
-    if (values && [self ownsFunction:name]) {
-        if (error)
-            *error = nil;
-        return (id<MTLFunction>)[self function:name as:nil values:values specialized:true];
-    }
-    if (![self listsFunction:name])
+    if (![self ownsFunction:name])
         return functionNotFound(name, error);
-    return (id<MTLFunction>)[self
-             wrap:[(id<MTLLibrary>)RM_LIBRARY_TWIN(self, "a specialized function raw does not list")
-                      newFunctionWithName:name
-                           constantValues:values
-                                    error:error]
-             name:name
-        constants:values];
+    if (error)
+        *error = nil;
+    return (id<MTLFunction>)[self function:name as:nil values:values specialized:true];
 }
 
 - (void)newFunctionWithName:(NSString *)name
              constantValues:(MTLFunctionConstantValues *)values
           completionHandler:(void (^)(id<MTLFunction>, NSError *))handler
 {
-    if (values && [self ownsFunction:name]) {
-        handler((id<MTLFunction>)[self function:name as:nil values:values specialized:true], nil);
-        return;
-    }
-    RMLibrary *me = self;
-    MTLFunctionConstantValues *copy = [values copy];
-    [(id<MTLLibrary>)RM_LIBRARY_TWIN(self, "a specialized function raw does not list")
-        newFunctionWithName:name
-             constantValues:values
-          completionHandler:^(id<MTLFunction> f, NSError *e) {
-              handler((id<MTLFunction>)[me wrap:f name:name constants:copy], e);
-          }];
+    NSError *error = nil;
+    id<MTLFunction> function = [self newFunctionWithName:name constantValues:values error:&error];
+    handler(function, error);
 }
 
 // Named as Metal names it: the specialized name it was made under, else the library function's
 - (id<MTLFunction>)newFunctionWithDescriptor:(MTLFunctionDescriptor *)d error:(NSError **)error
 {
-    if ([self ownsFunction:d.name]) {
-        if (error)
-            *error = nil;
-        return (id<MTLFunction>)[self function:d.name
-                                            as:d.specializedName
-                                        values:d.constantValues
-                                   specialized:d.constantValues != nil];
-    }
-    if (d.name && ![self listsFunction:d.name])
+    if (![self ownsFunction:d.name])
         return functionNotFound(d.name, error);
-    return (id<MTLFunction>)[self wrap:[(id<MTLLibrary>)RM_LIBRARY_TWIN(self, "a function raw does not list")
-                                           newFunctionWithDescriptor:d
-                                                               error:error]
-                                  name:d.specializedName.length ? d.specializedName : d.name
-                             constants:d.constantValues];
+    if (error)
+        *error = nil;
+    return (id<MTLFunction>)[self function:d.name
+                                        as:d.specializedName
+                                    values:d.constantValues
+                               specialized:d.constantValues != nil];
 }
 
 // Made at once, as m2v's library makes it: through the descriptor, so the function is this library's (its states keyed by
@@ -304,24 +254,19 @@ static NSArray<NSString *> *namesOf(const std::vector<std::string> &names)
 
 - (NSArray<NSString *> *)functionNames
 {
-    if (_functions.listed)
-        return namesOf(_functions.names);
-    return [(id<MTLLibrary>)_twin functionNames];
+    return namesOf(_functions.names);
 }
 
 // Core Image counts its own kernels by these (ci_stdlib, ci_filters) and finds a kernel's library by them
 - (NSArray<NSString *> *)externFunctionNames
 {
-    if (_functions.listed)
-        return namesOf(_functions.externs);
-    return [_twin externFunctionNames];
+    return namesOf(_functions.externs);
 }
 
+// As Metal's: the function of any name the library has, extern or not
 - (id<MTLFunction>)newExternFunctionWithName:(NSString *)name
 {
-    return (id<MTLFunction>)[self wrap:[RM_LIBRARY_TWIN(self, "an extern function") newExternFunctionWithName:name]
-                                  name:name
-                             constants:nil];
+    return [self newFunctionWithName:name];
 }
 
 // No dynamic library is made on this device (a source compile asking for one fails)
