@@ -8,7 +8,9 @@
 #import <IOSurface/IOSurface.h>
 #include <gtest/gtest.h>
 #include <mach/vm_page_size.h>
+#include <algorithm>
 #include <set>
+#include <vector>
 
 @protocol HarnessDeviceSPI
 - (id<MTLBuffer>)newBufferWithIOSurface:(IOSurfaceRef)surface;
@@ -287,6 +289,27 @@ void heapBlockTextures()
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
+// A CPU copy of a memoryless texture moves nothing, as Apple's driver: getBytes leaves the bytes, replaceRegion drops them
+void memorylessCpuCopies()
+{
+    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
+    ASSERT_TRUE(device != nil);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                 width:16
+                                                                                height:16
+                                                                             mipmapped:NO];
+    d.storageMode = MTLStorageModeMemoryless;
+    d.usage = MTLTextureUsageRenderTarget;
+    id<MTLTexture> t = [device newTextureWithDescriptor:d];
+    ASSERT_TRUE(t != nil);
+    std::vector<uint8_t> in(16 * 16 * 4, 0x5a), out(16 * 16 * 4, 0xab);
+    [t replaceRegion:MTLRegionMake2D(0, 0, 16, 16) mipmapLevel:0 withBytes:in.data() bytesPerRow:64];
+    [t getBytes:out.data() bytesPerRow:64 fromRegion:MTLRegionMake2D(0, 0, 16, 16) mipmapLevel:0];
+    EXPECT_EQ(std::count(out.begin(), out.end(), 0xab), ptrdiff_t(out.size()));
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
+}
+
 // The device is an _MTLDevice of its own; its identity and every limits field m2v's device answered are its own answers
 void ownDevice()
 {
@@ -430,6 +453,11 @@ TEST(RawFacadeLazy, SurfaceBufferAndLinearRowOpenNoM2V)
 TEST(RawFacadeLazy, AHeapsBlockCompressedTexturesArePlacedInItsArena)
 {
     switch_ios::test::ExpectPassesInFreshProcess(heapBlockTextures);
+}
+
+TEST(RawFacadeLazy, ACpuCopyOfAMemorylessTextureMovesNothing)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(memorylessCpuCopies);
 }
 
 TEST(RawFacadeLazy, DeviceIsItsOwn)
