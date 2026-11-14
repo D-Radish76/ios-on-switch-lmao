@@ -160,6 +160,27 @@ void planesOff16()
     expectNoM2V(device);
 }
 
+// A surface over the client's memory may start off a page: its texture is imported from that page, its GPU address as far
+// into the page as the surface's base and its CPU rows the surface's (Device::createSurfaceTexture, Kernel::bindImport)
+void surfaceOffAPage()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
+    ASSERT_TRUE(device != nil);
+    const size_t page = size_t(getpagesize());
+    void *pages = nullptr;
+    ASSERT_EQ(posix_memalign(&pages, page, 3 * page), 0);
+    uint8_t *base = static_cast<uint8_t *>(pages) + 256;
+    raw::Texture t;
+    ASSERT_TRUE(gRM->raw->createSurfaceTexture(0, base, 64 * 64 * 4, nullptr, 0, 64, 64, 256,
+                                               uint32_t(MTLPixelFormatBGRA8Unorm), t, false));
+    ASSERT_TRUE(t.import != nullptr);
+    EXPECT_EQ(t.cpu, base);
+    EXPECT_EQ(t.va - t.import->bo.vaBase, 256u) << "the GPU reads from the surface's base, not its page's";
+    gRM->raw->destroyTexture(t);
+    free(pages);
+    expectNoM2V(device);
+}
+
 }  // namespace
 
 TEST(RawFacadeTextureRows, ATexturePastItsMemoryOrOffItsRowsIsNil)
@@ -175,4 +196,9 @@ TEST(RawFacadeTextureRows, ABufferTextureAt16IsSampledThroughAPoolImage)
 TEST(RawFacadeTextureRows, APlaneOff16IsMadeAtMetalsGpuLayoutWithItsCpuRows)
 {
     switch_ios::test::ExpectPassesInFreshProcess(planesOff16);
+}
+
+TEST(RawFacadeTextureRows, ASurfaceOffAPageIsImportedFromItsPage)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(surfaceOffAPage);
 }

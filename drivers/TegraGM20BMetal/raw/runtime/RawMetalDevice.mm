@@ -647,7 +647,6 @@ static bool producesTexture(MTLTextureDescriptor *d)
         const size_t planes = IOSurfaceGetPlaneCount(s),
                      pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
         const uintptr_t base = uintptr_t(IOSurfaceGetBaseAddress(s));
-        const uintptr_t offset = planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - base : 0;
         const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
         const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0);
         const OSType fourcc = IOSurfaceGetPixelFormat(s);
@@ -680,9 +679,7 @@ static bool producesTexture(MTLTextureDescriptor *d)
                 "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
                 getprogname(), IOSurfaceGetID(s), (unsigned long)d.height, pitch, IOSurfaceGetAllocSize(s), extra);
             return nil;
-        } else if (base & (size_t(getpagesize()) - 1))
-            refuseTexture(t, PredTexSurfBase, base & 0xfff, 0, @"surface", extra);
-        else
+        } else
             refuseTexture(t, PredTexSurfImport, 1, 0, @"surface", extra);
         if (![t rmTwin])
             return nil;

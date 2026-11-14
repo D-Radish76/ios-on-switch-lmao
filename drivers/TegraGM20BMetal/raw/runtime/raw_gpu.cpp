@@ -2320,12 +2320,14 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
                                   uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, uint32_t format,
                                   Texture &t, bool writes)
 {
-    // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`
-    if (!shape(width, height, format, t) || (pitch & 15) || (offset & 15) || pitch < width * t.bpp ||
-        offset > allocBytes || uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp > allocBytes - offset ||
-        (uintptr_t(base) & (pageSize() - 1)))
+    // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`.
+    // A base off a page (a surface over the client's memory) is imported from its page, its VA as far into it (bindImport).
+    const bool offPage = uintptr_t(base) & (pageSize() - 1);
+    if (!shape(width, height, format, t) || (pitch & 15) || ((uintptr_t(base) + offset) & 15) ||
+        pitch < width * t.bpp || offset > allocBytes ||
+        uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp > allocBytes - offset)
         return false;
-    const bool unaligned = (pitch | offset) & 31;
+    const bool unaligned = (pitch | (uintptr_t(base) + offset)) & 31;
     Texture *sampled = nullptr;
     if (unaligned) {
         sampled = new Texture;
@@ -2338,6 +2340,10 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
     t.pitch = pitch;
     const LayoutAsk ask = {width, height, t.bpp, pitch, writes && !offset && !sampled};
     t.import = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface, &ask);
+    if (t.import && offPage && t.import->kernelTiled()) {
+        release(t.import);
+        t.import = nullptr;
+    }
     if (t.import && t.import->kernelTiled()) {
         SurfaceView view;
         const bool valid = surfaceView(t.import->layout, offset, width, height, t.bpp, pitch, view);
