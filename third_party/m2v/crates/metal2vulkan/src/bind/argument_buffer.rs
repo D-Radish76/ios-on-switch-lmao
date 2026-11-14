@@ -201,6 +201,7 @@ impl ArgumentDescriptor {
 /// ([`Function::buffer_encoders`](crate::library::Function::buffer_encoders)): an argument
 /// buffer's layout, or a plain buffer's (`argument_buffer` false), which Metal makes only without
 /// API validation.
+#[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BufferEncoder {
     pub index: u32,

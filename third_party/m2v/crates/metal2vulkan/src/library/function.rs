@@ -470,14 +470,15 @@ impl Function {
     }
 
     /// What `newArgumentEncoderWithBufferIndex:` encodes into at every buffer index the function
-    /// declares, in index order, from one decode of its AIR under `budget`: at an argument buffer
-    /// [`Function::argument_buffer_layout`]'s answer, at a plain buffer of no struct type the
-    /// empty encoder Metal makes without API validation (the rules are
-    /// `pipeline::compile::buffer_encoders`'). An index with no buffer is absent. Refused: the
+    /// declares, made with `constants` (`None`: made without constant values, so a buffer a
+    /// function constant gates is absent), in index order, from one decode of its AIR under
+    /// `budget`: at an argument buffer [`Function::argument_buffer_layout`]'s answer, at a plain
+    /// buffer of no struct type the empty encoder Metal makes without API validation (the rules
+    /// are `pipeline::compile::buffer_encoders`'). An index with no buffer is absent. Refused: the
     /// decode's or specialization's own errors (`Compile`).
     pub fn buffer_encoders(
         &self,
-        constants: &FunctionConstantValues,
+        constants: Option<&FunctionConstantValues>,
         budget: &Budget,
     ) -> Result<Vec<BufferEncoder>, ArgumentLayoutError> {
         let mut m = Meter::new(budget);

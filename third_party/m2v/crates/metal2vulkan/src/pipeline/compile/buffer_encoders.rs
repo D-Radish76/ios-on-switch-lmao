@@ -1,11 +1,17 @@
 //! `newArgumentEncoderWithBufferIndex:` at every buffer index a function declares, from one decode
 //! of its AIR: an argument buffer's layout as [`super::argument_buffer_layout`] makes it, and at a
 //! plain buffer of no struct type the encoder of no bytes, alignment 1, that Metal makes without
-//! API validation (which stops it). An M4 under macOS 27.2 answered that for all 22107 such
+//! API validation (which stops it). An M4 under macOS 27.2 answered that for all 22100 such
 //! buffers of its system metallibs. A plain buffer of a struct is refused as having no argument
 //! buffer: Metal's unvalidated encoder of it is the GPU's own (an M4 differs from an M3 Max's
 //! [`ArgumentBufferLayout::from_buffer_binding`] rule for 4980 of 13322). An index with no buffer
 //! is absent: Metal asserts there.
+//!
+//! A function made without constant values has no buffer a function constant gates: Metal asserts
+//! there too (an M4 under macOS 27.2, for RealityKit's `recalculateNormals` and a probe's own). Of a
+//! function made with them, as `argument_buffer_layout` does per index, only an index a function
+//! constant decides waits on specialization: a specialization that fails refuses those indices
+//! alone.
 
 use std::collections::BTreeMap;
 
@@ -19,22 +25,23 @@ use crate::error::{Error, InternalError, InternalKind};
 use crate::library::{Function, FunctionConstantValues};
 use crate::lower::select::LowerInputs;
 use crate::pipeline::descriptor::{DynamicLibraries, LinkedFunctions};
-use crate::reflection::{self, Channel};
 
-/// Every buffer `f` declares with the function constants `consts`, by index; specialized with
-/// `consts` and no linked functions only where a function constant decides a buffer's index,
-/// presence or argument buffer.
+/// Every buffer `f` declares, by index, made with the function constants `consts` (`None`: made
+/// without constant values); specialized with them, or none, and no linked functions only where a
+/// function constant decides a buffer's index, presence or layout.
 pub(crate) fn buffer_encoders(
     f: &Function,
-    consts: &FunctionConstantValues,
+    consts: Option<&FunctionConstantValues>,
     m: &mut Meter,
 ) -> Result<Vec<BufferEncoder>, ArgumentLayoutError> {
     let (linked, libraries) = (LinkedFunctions::default(), DynamicLibraries::default());
     let inputs = LowerInputs::new();
+    let none = FunctionConstantValues::defaults();
+    let ungated_only = consts.is_none();
     let answer = guarded(|| {
         with_request(
             f,
-            consts,
+            consts.unwrap_or(&none),
             (&linked, &libraries),
             InputsFrom::Given(&inputs),
             |r| {
@@ -43,19 +50,29 @@ pub(crate) fn buffer_encoders(
                     decoded.abi.check_container(&decoded.module, c, m)?;
                 }
                 let req = spec_request(&decoded, r.entry, r.consts)?;
-                let decided = {
+                let unspecialized = {
                     let ep = air::canon::select(&decoded.module, &decoded.abi, &req.entry)?;
-                    encoders_of(ep, &decoded.abi.structs, m)
+                    survey(ep, &decoded.abi.structs, ungated_only, m)
                 };
-                if let Some(encoders) = decided {
-                    return Ok(encoders);
-                }
-                let spec = air::specialize_linked(decoded, &req, &[], m)?;
-                encoders_of(&spec.ep, &spec.structs, m).ok_or_else(|| {
-                    Error::Internal(InternalError::new(
-                        InternalKind::Invariant,
-                        "a specialized entry left a buffer to specialization",
-                    ))
+                let unspecialized = match unspecialized {
+                    Some(s) if s.pending.is_empty() => return Ok(s.answered),
+                    other => other,
+                };
+                let specialized = air::specialize_linked(decoded, &req, &[], m)
+                    .map_err(Error::from)
+                    .and_then(|spec| {
+                        survey(&spec.ep, &spec.structs, false, m)
+                            .filter(|s| s.pending.is_empty())
+                            .ok_or_else(|| {
+                                Error::Internal(InternalError::new(
+                                    InternalKind::Invariant,
+                                    "a specialized entry left a buffer to specialization",
+                                ))
+                            })
+                    });
+                Ok(match (unspecialized, specialized) {
+                    (None, specialized) => specialized?.answered,
+                    (Some(s), specialized) => s.settled(specialized),
                 })
             },
         )
@@ -63,59 +80,99 @@ pub(crate) fn buffer_encoders(
     answer.map_err(ArgumentLayoutError::Compile)
 }
 
-/// `ep`'s buffers by index, or `None` where a function constant decides one.
-fn encoders_of(
+/// An entry's buffers: those answered as it stands, and the indices (whether one holds an argument
+/// buffer) a function constant decides.
+struct Survey {
+    answered: Vec<BufferEncoder>,
+    pending: BTreeMap<u32, bool>,
+}
+
+impl Survey {
+    /// The answers with each pending index the specialized entry's, or its failure
+    fn settled(mut self, specialized: Result<Survey, Error>) -> Vec<BufferEncoder> {
+        match specialized {
+            Ok(spec) => self.answered.extend(
+                spec.answered
+                    .into_iter()
+                    .filter(|b| self.pending.contains_key(&b.index)),
+            ),
+            Err(e) => {
+                self.answered
+                    .extend(
+                        self.pending
+                            .iter()
+                            .map(|(&index, &argument_buffer)| BufferEncoder {
+                                index,
+                                argument_buffer,
+                                layout: Err(ArgumentLayoutError::Compile(e.clone())),
+                            }),
+                    )
+            }
+        }
+        self.answered.sort_by_key(|b| b.index);
+        self.answered
+    }
+}
+
+/// `ep`'s buffers, those a function constant gates left out where `ungated_only`; `None` where a
+/// function constant computes a buffer's index, which decides every index.
+fn survey(
     ep: &EntryPoint,
     structs: &[StructInfo],
+    ungated_only: bool,
     m: &mut Meter,
-) -> Option<Vec<BufferEncoder>> {
-    let mut declared = BTreeMap::new();
+) -> Option<Survey> {
+    let mut declared: BTreeMap<u32, Vec<&ParamRole>> = BTreeMap::new();
+    let mut gated = BTreeMap::new();
     for p in &ep.params {
-        let (location, argument_buffer) = match &p.role {
-            ParamRole::ArgumentBuffer(b) => (b.location, true),
-            ParamRole::Buffer(b) => (b.location, false),
+        let location = match &p.role {
+            ParamRole::ArgumentBuffer(b) | ParamRole::Buffer(b) => b.location,
             _ => continue,
         };
+        if ungated_only && p.predicate.is_some() {
+            continue;
+        }
         let AbiInt::Const(index) = location.index else {
             return None;
         };
-        if p.predicate.is_some() || declared.insert(index, argument_buffer).is_some() {
-            return None;
+        declared.entry(index).or_default().push(&p.role);
+        *gated.entry(index).or_insert(false) |= p.predicate.is_some();
+    }
+    let mut s = Survey {
+        answered: Vec::with_capacity(declared.len()),
+        pending: BTreeMap::new(),
+    };
+    for (index, roles) in declared {
+        let argument_buffer = roles
+            .iter()
+            .any(|r| matches!(r, ParamRole::ArgumentBuffer(_)));
+        let layout = match (roles.as_slice(), gated[&index]) {
+            ([ParamRole::ArgumentBuffer(_)], false) => {
+                match argument_buffer::entry_layout(&ep.params, structs, index, m) {
+                    EntryLayout::Done(layout) => Some(layout),
+                    EntryLayout::Specialize => None,
+                }
+            }
+            ([ParamRole::Buffer(b)], false) => Some(match b.layout {
+                None => Ok(ArgumentBufferLayout {
+                    encoded_length: 0,
+                    alignment: 1,
+                    members: Vec::new(),
+                }),
+                Some(_) => Err(ArgumentLayoutError::NoArgumentBuffer { index }),
+            }),
+            _ => None,
+        };
+        match layout {
+            Some(layout) => s.answered.push(BufferEncoder {
+                index,
+                argument_buffer,
+                layout,
+            }),
+            None => {
+                s.pending.insert(index, argument_buffer);
+            }
         }
     }
-    let mut bindings = None;
-    let mut encoders = Vec::with_capacity(declared.len());
-    for (index, argument_buffer) in declared {
-        let layout = if argument_buffer {
-            match argument_buffer::entry_layout(&ep.params, structs, index, m) {
-                EntryLayout::Done(layout) => layout,
-                EntryLayout::Specialize => return None,
-            }
-        } else {
-            let reflected =
-                bindings.get_or_insert_with(|| reflection::bindings(ep, structs, Channel::Library));
-            plain_layout(reflected, index)
-        };
-        encoders.push(BufferEncoder {
-            index,
-            argument_buffer,
-            layout,
-        });
-    }
-    Some(encoders)
-}
-
-fn plain_layout(
-    bindings: &Result<Vec<reflection::Binding>, Error>,
-    index: u32,
-) -> Result<ArgumentBufferLayout, ArgumentLayoutError> {
-    let bindings = bindings
-        .as_ref()
-        .map_err(|e| ArgumentLayoutError::Compile(e.clone()))?;
-    bindings
-        .iter()
-        .find_map(|b| b.buffer().filter(|_| b.index() == index))
-        .filter(|binding| binding.buffer_struct_type().is_none())
-        .ok_or(ArgumentLayoutError::NoArgumentBuffer { index })
-        .and_then(ArgumentBufferLayout::from_buffer_binding)
+    Some(s)
 }

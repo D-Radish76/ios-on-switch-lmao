@@ -385,7 +385,7 @@ pub unsafe extern "C" fn nmb_offline_function_buffer_encoders(
         let f = get(function)?;
         let encoders = f
             .function
-            .buffer_encoders(&f.constants, &Budget::standard())
+            .buffer_encoders(f.specialized.then_some(&f.constants), &Budget::standard())
             .map_err(e("buffer encoders"))?;
         for b in &encoders {
             // SAFETY: the caller's contract; the layouts and the refusal live until after the call.

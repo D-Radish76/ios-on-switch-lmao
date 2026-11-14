@@ -444,6 +444,7 @@ surface! {
         struct ArgumentMember N;
         struct ArgumentPlace N;
         enum ArgumentType N;
+        struct BufferEncoder N;
         const ARGUMENT_HANDLE_BYTES;
         enum Dispatch N;
         struct DispatchCommands N;
