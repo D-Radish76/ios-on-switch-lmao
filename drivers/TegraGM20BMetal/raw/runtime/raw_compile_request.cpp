@@ -116,6 +116,8 @@ bool knownTag(const CompileRequest &r, size_t index)
         return index == 0 ? tag == "k" : tag == "kl" || tag == "kp";
     if (functionAttributes(r))
         return tag == "a";
+    if (bufferEncoders(r))
+        return tag == "b";
     if (index == 0)
         return tag == "v";
     if (index == 1 && tag == "f")
@@ -139,10 +141,10 @@ bool sane(const CompileRequest &r)
 {
     if (r.kind == RequestKind::Library)
         return saneLibrary(r);
-    const bool kernel =
-        r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r) || functionAttributes(r);
-    if (r.stages.empty() || (functionAttributes(r) && r.stages.size() != 1) || r.stages.size() > kRequestStageLimit ||
-        r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit ||
+    const bool kernel = r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r) ||
+                        functionAttributes(r) || bufferEncoders(r);
+    if (r.stages.empty() || ((functionAttributes(r) || bufferEncoders(r)) && r.stages.size() != 1) ||
+        r.stages.size() > kRequestStageLimit || r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit ||
         r.kernel.textures.size() > kRequestBindLimit || r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() ||
         ((kernel || r.kind == RequestKind::Reflection) && r.form != RequestForm::Primary))
         return false;
@@ -380,6 +382,19 @@ CacheKey functionAttributesCacheKey(uint64_t stack, const std::string &functionK
     CacheKey k;
     k.stack = stack;
     k.key = "attributes | " + functionKey;
+    return k;
+}
+
+bool bufferEncoders(const CompileRequest &r)
+{
+    return r.kind == RequestKind::Reflection && !r.stages.empty() && r.stages[0].tag == "b";
+}
+
+CacheKey bufferEncodersCacheKey(uint64_t stack, const std::string &functionKey)
+{
+    CacheKey k;
+    k.stack = stack;
+    k.key = "buffer encoders | " + functionKey;
     return k;
 }
 

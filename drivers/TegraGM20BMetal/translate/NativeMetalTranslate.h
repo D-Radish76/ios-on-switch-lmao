@@ -101,6 +101,15 @@ size_t nmb_offline_function_vertex_attribute(const NmbOfflineFunction *, uint32_
 int64_t nmb_offline_function_stage_input_attribute_count(const NmbOfflineFunction *);
 size_t nmb_offline_function_stage_input_attribute(const NmbOfflineFunction *, uint32_t at, char *out, size_t size,
                                                   uint64_t info[5]);
+// newArgumentEncoderWithBufferIndex:'s layouts at every buffer index the function declares, in index order: `each` gets
+// the index, whether it is an argument buffer (else a plain buffer, whose encoder Metal makes only without API validation)
+// and its layouts as nmb_function_argument_layouts gives them, or none and `refusal` where Metal makes no encoder. Valid
+// during `each`; false with nmb_last_error where the function does not decode, or each's false.
+bool nmb_offline_function_buffer_encoders(const NmbOfflineFunction *,
+                                          bool (*each)(uint32_t index, bool argument_buffer,
+                                                       const struct NmbArgumentLayout *layouts, uint32_t count,
+                                                       const char *refusal, void *ctx),
+                                          void *ctx);
 
 typedef struct NmbOfflineRenderPipelineDescriptor {
     NMB_RENDER_PIPELINE_DESCRIPTOR_FIELDS(NmbOfflineFunction)

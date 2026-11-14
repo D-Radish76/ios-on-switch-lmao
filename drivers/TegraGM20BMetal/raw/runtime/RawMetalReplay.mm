@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "raw_lock.h"
 #import "RawMetalCounters.h"
+#import "RawMetalFunctionTags.h"
 #import "RawMetalMultisample.h"
 #import <objc/message.h>
 #import "RawMetalPlanAdapters.h"
@@ -92,17 +93,16 @@ static bool takesArgumentBuffers(id<MTLFunction> f)
         return false;
     RMFunction *function = (RMFunction *)f;
     if (!function->_argumentBuffers) {
-        id twin = function->_twin ?: [function twinOn:RM_M2V(NeedReplayArgumentCheck)];
-        bool takes = false;
-        for (NSUInteger index = 0; index < 31 && !takes; index++) {
-            const char *why = nullptr;
-            takes = native_bridge_metal_argument_layouts(
-                twin, index,
-                [](const NmbArgumentLayout *, uint32_t, void *) {
-                    return true;
-                },
-                nullptr, &why);
+        raw::BufferEncoders encoders;
+        std::string why;
+        if (!rmBufferEncoders(function, encoders, why)) {
+            once([NSString stringWithFormat:@"replay: whether %@ takes an argument buffer is unknown, none taken: %s",
+                                            function.name, why.c_str()]);
+            return false;
         }
+        bool takes = false;
+        for (const raw::BufferEncoder &e : encoders)
+            takes |= e.argumentBuffer;
         function->_argumentBuffers = takes ? 2 : 1;
     }
     return function->_argumentBuffers == 2;

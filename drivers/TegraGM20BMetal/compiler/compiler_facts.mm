@@ -10,6 +10,7 @@
 #include "TegraGM20BCompilerABI.h"
 #include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/RawPipelineKey.h"
+#include "../raw/runtime/raw_buffer_encoders.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
 #include "../raw/runtime/raw_function_attributes.h"
 #include "../raw/runtime/raw_reflection_blob.h"
@@ -158,7 +159,40 @@ private:
     std::vector<NmbOfflineFunction *> functions_;
 };
 
+bool collectEncoder(uint32_t index, bool argumentBuffer, const NmbArgumentLayout *layouts, uint32_t count,
+                    const char *refusal, void *ctx)
+{
+    static_assert(sizeof(raw::ArgumentRun) == sizeof(NmbArgumentRun), "the bridge's runs");
+    raw::BufferEncoder e;
+    e.index = index;
+    e.argumentBuffer = argumentBuffer;
+    e.refusal = refusal ? refusal : "";
+    for (uint32_t i = 0; i < count; i++) {
+        const auto *runs = reinterpret_cast<const raw::ArgumentRun *>(layouts[i].runs);
+        e.layouts.push_back({layouts[i].encoded_length, layouts[i].alignment,
+                             std::vector<raw::ArgumentRun>(runs, runs + layouts[i].run_count)});
+    }
+    static_cast<raw::BufferEncoders *>(ctx)->push_back(std::move(e));
+    return true;
+}
+
 }  // namespace
+
+int32_t makeBufferEncoders(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
+{
+    @autoreleasepool {
+        OfflineStages stages;
+        if (!stages.make(p.request, systemRoot, why))
+            return TegraGM20BCompileUnavailable;
+        raw::BufferEncoders encoders;
+        const bool made = nmb_offline_function_buffer_encoders(stages.function(0), collectEncoder, &encoders);
+        if (!made)
+            why = "the translator does not decode " + p.request.stages[0].function + ": " + nmb_last_error();
+        const std::string blob = raw::encodeBufferEncoders(encoders);
+        entry = raw::encodeReflectionEntry(p.key, made ? &blob : nullptr, why);
+        return made ? TegraGM20BCompileMade : TegraGM20BCompileRefused;
+    }
+}
 
 int32_t makeAttributes(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why)
 {

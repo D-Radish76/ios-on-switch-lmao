@@ -75,20 +75,29 @@ static NSArray *attributeObjects(const std::vector<raw::FunctionAttributeTag> &l
     return attributes;
 }
 
-// A function made with constant values that has attributes: the shader compiler's answer of its specialized AIR
-static NSArray *specializedAttributes(RMFunction *f, bool stageInput)
+// The AIR hash of the library function `f` was made from; false with `why`
+static bool airHashOf(RMFunction *f, raw::AirHash &out, std::string &why)
 {
     const void *bytes = nullptr;
     size_t length = 0;
     NSString *libraryFunction = nil;
     std::map<std::string, raw::AirHash> hashes;
-    std::string blob, why = "the function's library has no AIR of it";
+    if (!rmFunctionSource((id<MTLFunction>)f, &bytes, &length, &libraryFunction) ||
+        !raw::metallibAirHashes(static_cast<const uint8_t *>(bytes), length, hashes) ||
+        !hashes.count(libraryFunction.UTF8String ?: ""))
+        return why = "the function's library has no AIR of it", false;
+    out = hashes[libraryFunction.UTF8String];
+    return true;
+}
+
+// A function made with constant values that has attributes: the shader compiler's answer of its specialized AIR
+static NSArray *specializedAttributes(RMFunction *f, bool stageInput)
+{
+    raw::AirHash air;
+    std::string blob, why;
     raw::AttributeList vertex, stage;
-    if (rmFunctionSource((id<MTLFunction>)f, &bytes, &length, &libraryFunction) &&
-        raw::metallibAirHashes(static_cast<const uint8_t *>(bytes), length, hashes) &&
-        hashes.count(libraryFunction.UTF8String ?: "")) {
-        const std::string key =
-            raw::functionAttributesKey(hashes[libraryFunction.UTF8String], f->_constants, f.name.UTF8String ?: "");
+    if (airHashOf(f, air, why)) {
+        const std::string key = raw::functionAttributesKey(air, f->_constants, f.name.UTF8String ?: "");
         if (!gRM->completion)
             why = "no shader compiler comes this boot";
         else if (gRM->completion->attributes(f, key, blob, why) && raw::decodeAttributeLists(blob, vertex, stage)) {
@@ -99,6 +108,21 @@ static NSArray *specializedAttributes(RMFunction *f, bool stageInput)
     os_log_error(rawLog(), "raw: %{public}s: no attributes of specialized function %{public}s: %{public}s, nil given",
                  getprogname(), f.name.UTF8String ?: "?", why.c_str());
     return nil;
+}
+
+bool rmBufferEncoders(RMFunction *f, raw::BufferEncoders &out, std::string &why)
+{
+    raw::AirHash air;
+    std::string blob;
+    if (!airHashOf(f, air, why))
+        return false;
+    if (!gRM->completion)
+        return why = "no shader compiler comes this boot", false;
+    if (!gRM->completion->bufferEncoders(f, raw::bufferEncodersKey(air, f->_constants, f->_specialized), blob, why))
+        return false;
+    if (!raw::decodeBufferEncoders(blob, out))
+        return why = "the shader compiler's answer does not decode", false;
+    return true;
 }
 
 NSArray *rmFunctionAttributes(RMFunction *f, bool stageInput)

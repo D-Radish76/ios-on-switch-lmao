@@ -76,6 +76,11 @@ public:
         return take(&v, 2);
     }
 
+    bool bytes(void *v, size_t n)
+    {
+        return take(v, n);
+    }
+
     bool cstr(std::string &v)
     {
         const void *nul = memchr(at_, 0, size_t(end_ - at_));

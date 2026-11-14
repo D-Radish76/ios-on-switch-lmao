@@ -9,7 +9,6 @@ enum RMNeed : uint8_t {
     // command buffers and indirect command buffers replayed on m2v
     NeedReplay,
     NeedReplayQueue,
-    NeedReplayArgumentCheck,
     NeedRawStateTwinAtReplay,
     // resources the raw path made no memory for or refused
     NeedTextureNoMemory,
@@ -19,7 +18,6 @@ enum RMNeed : uint8_t {
     // what a library or function answers from its m2v twin
     NeedLibraryTwin,
     NeedFunctionTwin,
-    NeedFunctionArgumentEncoder,
     // pipeline states made on m2v, or m2v twins of the raw path's
     NeedComputeStateUnpacked,
     NeedComputeStateTwin,
@@ -41,7 +39,6 @@ enum RMNeed : uint8_t {
 static constexpr const char *kNeedNames[] = {
     "a command buffer replayed on m2v",
     "a command queue for a command buffer replayed on it",
-    "a replay's argument-buffer check",
     "a raw state's twin, at its first m2v replay",
     "a texture the raw path made no memory for",
     "a texture of a shape the raw path does not take",
@@ -49,7 +46,6 @@ static constexpr const char *kNeedNames[] = {
     "a linear row of a format raw does not lay out",
     "a library's twin",
     "a function's twin",
-    "a function's argument encoder",
     "a compute state the pack has no facts of",
     "a compute state's twin",
     "a render state's twin",

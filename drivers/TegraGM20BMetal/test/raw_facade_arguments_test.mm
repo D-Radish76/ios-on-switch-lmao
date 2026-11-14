@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // The raw facade's argument buffers on the host (raw_facade_harness.h). An encoder of descriptors
-// (RawMetalArgumentEncoder.mm) writes what raw::ArgumentEncoder writes over the same layout and refuses what it refuses; a
-// function's encoder and its nested ones take the bridge's runs (RawMetalLibrary.mm); a texture's or sampler's ID names it
-// in the device's handle tables from its first ask until it is gone (RawMetalResourceIds.mm).
+// (RawMetalArgumentEncoder.mm) writes what raw::ArgumentEncoder writes over the same layout and refuses what it refuses (a
+// function's encoder: raw_facade_buffer_encoders_test); a texture's or sampler's ID names it in the device's handle tables
+// from its first ask until it is gone (RawMetalResourceIds.mm).
 #include "raw_device_harness.h"
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_argument_encoder.h"
@@ -172,81 +172,6 @@ TEST(FacadeArgumentEncoder, RefusesWhatMetalsValidationStopsAndWritesNothing)
         [encoder setArgumentBuffer:arguments startOffset:0 arrayElement:2];
         [encoder setTexture:t atIndex:1];
         EXPECT_EQ(at(arguments, 2 * encoder.encodedLength + 8), word([t gpuResourceID]));
-    }
-}
-
-TEST(FacadeArgumentEncoder, AFunctionsEncoderAndItsNestedOnesTakeTheBridgesRuns)
-{
-    @autoreleasepool {
-        id twin = [NSObject new];
-        RMFunction *function = [RMFunction new];
-        function->_device = facade::device();
-        function->_twin = twin;
-        const uint32_t buffer = uint32_t(ArgumentKind::Buffer), tex = uint32_t(ArgumentKind::Texture);
-        const uint32_t constant = uint32_t(ArgumentKind::Constant);
-        standin::Layout outer{24, 8, {{0, 1, 1, 1, buffer, 2, 0, 0, 0, 8}, {1, 2, 1, 1, tex, 0, 8, 8, 0, 8}}};
-        standin::Layout inner{32,
-                              16,
-                              {{0, 1, 1, 1, tex, 0, 0, 0, 0, 8},
-                               {1, 1, 1, 1, buffer, 0, 8, 0, 0, 8},
-                               {2, 1, 1, 1, constant, 0, 16, 0, 0, 16}}};
-        standin::functionLayouts(twin, 0, {outer, inner});
-
-        id<MTLArgumentEncoder> encoder = [(id)function newArgumentEncoderWithBufferIndex:0];
-        ASSERT_NE(encoder, nil);
-        EXPECT_EQ(encoder.encodedLength, 24u);
-        EXPECT_EQ(encoder.alignment, 8u);
-        EXPECT_EQ([(id)function newArgumentEncoderWithBufferIndex:3], nil) << "no argument buffer there";
-        MTLArgument *reflected = (MTLArgument *)twin;
-        EXPECT_NE([(id)function newArgumentEncoderWithBufferIndex:0 reflection:&reflected], nil);
-        EXPECT_EQ(reflected, nil);
-
-        id<MTLArgumentEncoder> nested = [encoder newArgumentEncoderForBufferAtIndex:0];
-        ASSERT_NE(nested, nil);
-        EXPECT_EQ(nested.encodedLength, 32u);
-        EXPECT_EQ(nested.alignment, 16u);
-        EXPECT_EQ(nested.device, facade::device());
-        EXPECT_EQ([encoder newArgumentEncoderForBufferAtIndex:1], nil) << "a texture";
-        EXPECT_EQ([nested newArgumentEncoderForBufferAtIndex:1], nil) << "a pointer to plain memory";
-
-        id<MTLBuffer> top = filled(64), below = filled(64), data = shared(256);
-        std::vector<uint8_t> wantTop = bytesOf(top), wantBelow = bytesOf(below);
-        id<MTLTexture> a = texture(), b = texture(), c = texture();
-        const id<MTLTexture> pair[2] = {a, b};
-        const float colour[4] = {0, 1, 0, 1};
-        [encoder setArgumentBuffer:top offset:0];
-        [encoder setBuffer:below offset:0 atIndex:0];
-        [encoder setTextures:pair withRange:NSMakeRange(1, 2)];
-        [nested setArgumentBuffer:below offset:0];
-        [nested setTexture:c atIndex:0];
-        [nested setBuffer:data offset:16 atIndex:1];
-        memcpy([nested constantDataAtIndex:2], colour, sizeof colour);
-        EXPECT_EQ(at(top, 0), below.gpuAddress);
-        EXPECT_EQ(at(top, 8), word([a gpuResourceID]));
-        EXPECT_EQ(at(top, 16), word([b gpuResourceID]));
-        EXPECT_EQ(at(below, 0), word([c gpuResourceID]));
-        EXPECT_EQ(at(below, 8), data.gpuAddress + 16);
-        EXPECT_EQ(memcmp(static_cast<const uint8_t *>(below.contents) + 16, colour, sizeof colour), 0);
-        [nested setTexture:c atIndex:1];
-        EXPECT_EQ(at(below, 8), data.gpuAddress + 16) << "a texture at a buffer's index";
-
-        const raw::ArgumentRuns runs[2] = {
-            {outer.encodedLength, outer.alignment, outer.runs.data(), uint32_t(outer.runs.size())},
-            {inner.encodedLength, inner.alignment, inner.runs.data(), uint32_t(inner.runs.size())}};
-        raw::ArgumentEncoder ref, refNested;
-        ASSERT_TRUE(raw::ArgumentEncoder::fromRuns(runs, 2, ref));
-        ASSERT_TRUE(ref.nested(0, refNested));
-        ASSERT_EQ(ref.setBuffer(wantTop.data(), wantTop.size(), 0, 0), raw::ArgumentRefusal::None);
-        EXPECT_EQ(ref.writeBuffer(below.gpuAddress, below.length, 0, 0), raw::ArgumentRefusal::None);
-        EXPECT_EQ(ref.write(word([a gpuResourceID]), 1, ArgumentKind::Texture), raw::ArgumentRefusal::None);
-        EXPECT_EQ(ref.write(word([b gpuResourceID]), 2, ArgumentKind::Texture), raw::ArgumentRefusal::None);
-        ASSERT_EQ(refNested.setBuffer(wantBelow.data(), wantBelow.size(), 0, 0), raw::ArgumentRefusal::None);
-        EXPECT_EQ(refNested.write(word([c gpuResourceID]), 0, ArgumentKind::Texture), raw::ArgumentRefusal::None);
-        EXPECT_EQ(refNested.writeBuffer(data.gpuAddress, data.length, 16, 1), raw::ArgumentRefusal::None);
-        raw::ArgumentRefusal why;
-        memcpy(refNested.constantData(2, why), colour, sizeof colour);
-        EXPECT_EQ(bytesOf(top), wantTop);
-        EXPECT_EQ(bytesOf(below), wantBelow);
     }
 }
 

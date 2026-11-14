@@ -17,4 +17,7 @@ int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string 
 // (raw_reflection_blob.h encodeReflectionEntry), from the translator alone as makeFacts' are
 int32_t makeAttributes(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why);
 
+// The buffer encoders of `p`'s one function (raw_buffer_encoders.h) as a reflection entry, from the translator alone
+int32_t makeBufferEncoders(const Prepared &p, const std::string &systemRoot, std::string &entry, std::string &why);
+
 }  // namespace switch_compiler
