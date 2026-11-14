@@ -30,8 +30,8 @@ const char *classText(uint32_t qos)
 #endif
 
 // A function of this facade as a request's stage, its library added to `r` once (`ids` beside it); false: one no request
-// can name (another device's, or one neither the facade nor m2v keeps a metallib of). The bytes are the AIR slice the
-// facade read, else m2v's library's; `every` sends a system library's too, as a data library.
+// can name (another device's). The bytes are the AIR slice the facade read; `every` sends a system library's too, as a data
+// library.
 bool addStage(CompileRequest &r, std::vector<LibraryIdentity> &ids, std::map<const LibrarySource *, uint32_t> &seen,
               const char *tag, id function, bool bytes, bool every = false)
 {
@@ -40,7 +40,7 @@ bool addStage(CompileRequest &r, std::vector<LibraryIdentity> &ids, std::map<con
     RMFunction *f = function;
     const void *data = f->_source ? f->_source->bytes : nullptr;
     size_t length = f->_source ? f->_source->size : 0;
-    if (!f->_source || (!data && !native_bridge_metal_function_metallib(f->_twin, &data, &length)))
+    if (!data)
         return false;
     const auto [at, first] = seen.try_emplace(f->_source.get(), uint32_t(r.libraries.size()));
     if (first) {

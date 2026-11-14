@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#import "RawMetalFunctionTags.h"
 #import "RawMetalInternal.h"
 #import "RawPipelineKey.h"
 #include "NativeBridgeMetalFrontend.h"
@@ -56,10 +57,9 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
     return MTLFunctionType(_type);
 }
 
-// Reflection: the AIR's, as m2v's function decodes it
 - (NSDictionary<NSString *, MTLFunctionConstant *> *)functionConstantsDictionary
 {
-    return [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's constants") functionConstantsDictionary];
+    return rmFunctionConstants(self);
 }
 
 - (MTLFunctionOptions)options
@@ -69,12 +69,18 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 
 - (NSArray<MTLVertexAttribute *> *)vertexAttributes
 {
-    return [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's vertex attributes") vertexAttributes];
+    NSArray *attributes = nil;
+    return rmFunctionAttributes(self, false, &attributes)
+               ? attributes
+               : [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's vertex attributes") vertexAttributes];
 }
 
 - (NSArray<MTLAttribute *> *)stageInputAttributes
 {
-    return [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's stage input attributes") stageInputAttributes];
+    NSArray *attributes = nil;
+    return rmFunctionAttributes(self, true, &attributes)
+               ? attributes
+               : [(id<MTLFunction>)RM_FUNCTION_TWIN(self, "a function's stage input attributes") stageInputAttributes];
 }
 
 - (MTLPatchType)patchType
@@ -299,16 +305,11 @@ bool rmFunctionSource(id<MTLFunction> function, const void **bytes, size_t *leng
     if (![(id)function isKindOfClass:[RMFunction class]])
         return false;
     RMFunction *f = (RMFunction *)function;
-    if (f->_source && f->_source->bytes) {
-        *bytes = f->_source->bytes;
-        *length = f->_source->size;
-        *name = [NSString stringWithUTF8String:libraryName(f).c_str()];
-        return true;
-    }
-    id twin = f->_twin;
-    if (!native_bridge_metal_function_metallib(twin, bytes, length))
+    if (!f->_source || !f->_source->bytes)
         return false;
-    *name = native_bridge_metal_function_library_name(twin);
+    *bytes = f->_source->bytes;
+    *length = f->_source->size;
+    *name = [NSString stringWithUTF8String:libraryName(f).c_str()];
     return true;
 }
 
