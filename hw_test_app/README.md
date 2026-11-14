@@ -58,9 +58,9 @@ process's default Metal device, the raw GM20B facade, alone. `raw_paths=` lists 
 `raw`, `m2v:<reason>:<predicate>` or `split:…`, and a scene whose own command buffer took any path but `raw` fails,
 naming it (the X1 probes and the `metal.*` tests do the same). `raw_cbs`, `m2v_cbs` and `m2v_why` are the facade's
 process-wide counters over the run, framework work included, and judge nothing. They come from `switchRawCounters` in
-`RawMetalDevice.mm` and `switchRawPath` in `RawMetalCommandBuffer.mm`, which only debug builds have. A failed comparison names the first wrong pixel, both values,
-the bounding box, an 8x8 hex map of the wrong area and any streak columns, and saves got, want and diff PNGs under
-`Documents/gpu/<id>/`.
+`RawMetalDevice.mm` and `switchRawPath` in `RawMetalCommandBuffer.mm`, which only debug builds have. A failed comparison
+names the first wrong pixel, both values, the bounding box, an 8x8 hex map of the wrong area and any streak columns, and
+saves got, want and diff PNGs under `Documents/gpu/<id>/`.
 
 `gpu.ca.sweep` checks the raw path against a Mac's GPU too. It draws one Core Animation state of
 each class in the raw pack's corpus (`ca_states.log`, cut from `precompile/corpus.log` at build time). It compares each
