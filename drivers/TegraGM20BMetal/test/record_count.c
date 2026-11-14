@@ -36,6 +36,8 @@ static uintptr_t threadWord(void)
     return word & ~(uintptr_t)7;
 }
 
+// Every other thread calls the interposers too, so a counter is only written behind this test: an `x += counting()` on
+// another thread writes back what it read and loses the counting thread's increments in between
 static bool counting(void)
 {
     return record_count_thread && threadWord() == record_count_thread;
@@ -65,28 +67,32 @@ DYLD_INTERPOSE(record_count_msgSend, objc_msgSend)
 
 static int countedMutexLock(pthread_mutex_t *m)
 {
-    locks += counting();
+    if (counting())
+        locks++;
     return pthread_mutex_lock(m);
 }
 DYLD_INTERPOSE(countedMutexLock, pthread_mutex_lock)
 
 static int countedMutexTryLock(pthread_mutex_t *m)
 {
-    locks += counting();
+    if (counting())
+        locks++;
     return pthread_mutex_trylock(m);
 }
 DYLD_INTERPOSE(countedMutexTryLock, pthread_mutex_trylock)
 
 static void countedUnfairLock(os_unfair_lock_t l)
 {
-    locks += counting();
+    if (counting())
+        locks++;
     os_unfair_lock_lock(l);
 }
 DYLD_INTERPOSE(countedUnfairLock, os_unfair_lock_lock)
 
 static bool countedUnfairTryLock(os_unfair_lock_t l)
 {
-    locks += counting();
+    if (counting())
+        locks++;
     return os_unfair_lock_trylock(l);
 }
 DYLD_INTERPOSE(countedUnfairTryLock, os_unfair_lock_trylock)
@@ -103,77 +109,88 @@ extern void objc_release(id object);
 
 static id countedLoadWeakRetained(id *location)
 {
-    weaks += counting();
+    if (counting())
+        weaks++;
     return objc_loadWeakRetained(location);
 }
 DYLD_INTERPOSE(countedLoadWeakRetained, objc_loadWeakRetained)
 
 static id countedLoadWeak(id *location)
 {
-    weaks += counting();
+    if (counting())
+        weaks++;
     return objc_loadWeak(location);
 }
 DYLD_INTERPOSE(countedLoadWeak, objc_loadWeak)
 
 static id countedStoreWeak(id *location, id object)
 {
-    weaks += counting();
+    if (counting())
+        weaks++;
     return objc_storeWeak(location, object);
 }
 DYLD_INTERPOSE(countedStoreWeak, objc_storeWeak)
 
 static id countedInitWeak(id *location, id object)
 {
-    weaks += counting();
+    if (counting())
+        weaks++;
     return objc_initWeak(location, object);
 }
 DYLD_INTERPOSE(countedInitWeak, objc_initWeak)
 
 static void countedDestroyWeak(id *location)
 {
-    weaks += counting();
+    if (counting())
+        weaks++;
     objc_destroyWeak(location);
 }
 DYLD_INTERPOSE(countedDestroyWeak, objc_destroyWeak)
 
 static void countedCopyWeak(id *to, id *from)
 {
-    weaks += counting();
+    if (counting())
+        weaks++;
     objc_copyWeak(to, from);
 }
 DYLD_INTERPOSE(countedCopyWeak, objc_copyWeak)
 
 static void countedMoveWeak(id *to, id *from)
 {
-    weaks += counting();
+    if (counting())
+        weaks++;
     objc_moveWeak(to, from);
 }
 DYLD_INTERPOSE(countedMoveWeak, objc_moveWeak)
 
 static id countedRetain(id object)
 {
-    retains += counting();
+    if (counting())
+        retains++;
     return objc_retain(object);
 }
 DYLD_INTERPOSE(countedRetain, objc_retain)
 
 static void countedRelease(id object)
 {
-    retains += counting();
+    if (counting())
+        retains++;
     objc_release(object);
 }
 DYLD_INTERPOSE(countedRelease, objc_release)
 
 static void countedDispatchAsyncF(dispatch_queue_t queue, void *context, dispatch_function_t work)
 {
-    dispatches += counting();
+    if (counting())
+        dispatches++;
     dispatch_async_f(queue, context, work);
 }
 DYLD_INTERPOSE(countedDispatchAsyncF, dispatch_async_f)
 
 static void countedDispatchAsync(dispatch_queue_t queue, dispatch_block_t block)
 {
-    dispatches += counting();
+    if (counting())
+        dispatches++;
     dispatch_async(queue, block);
 }
 DYLD_INTERPOSE(countedDispatchAsync, dispatch_async)
