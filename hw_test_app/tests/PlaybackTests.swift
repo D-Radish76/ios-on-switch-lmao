@@ -53,7 +53,8 @@ final class PresentationCounter: NSObject {
 /// The clip played by AVPlayer in a visible layer, five times back to back in one composition: the system's
 /// own decode, timing and presentation path. AVFoundation's access log counts the frames it dropped. On a debug kernel
 /// the decoder's and the client's pools also keep one identity each (MediaMapCounters): no buffer is mapped again after
-/// an eviction (boot 22 made 1.6 VIC mappings a present) and each client surface keeps one publication object.
+/// an eviction (boot 22 made 1.6 VIC mappings a present); the client's surfaces and their publication objects are
+/// printed beside it.
 struct PlaybackTest: HWTest {
     let clip: Clip
     let subsystem = Subsystem.decode
@@ -128,7 +129,7 @@ struct PlaybackTest: HWTest {
             ("sampled frames match the pattern", checked > 0 && mismatched == 0),
         ]
         if let mapsBefore, let mapsAfter = MediaMapCounters.read().counters {
-            checks += mapsAfter.judge(since: mapsBefore, into: &metrics)
+            checks += mapsAfter.judge(since: mapsBefore, into: &metrics, objects: false)
         } else {
             metrics.set("map_counters", KernelSysctl.code(mapsUnread))
         }

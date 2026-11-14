@@ -247,6 +247,36 @@ TEST(SmmuFlushRangeFields, HighPhysicalBitsAndTheLastSection)
     };
     EXPECT_EQ(io.events, expected);
 }
+
+// An entry in the upper half of a 64-byte group: the group's own address is flushed too, in case a PTE group is the
+// 16 entries 18.6.3.3 names rather than the 32-byte atom.
+TEST(SmmuFlushRangeFields, AnEntryInAGroupsUpperHalfFlushesTheGroupsBase)
+{
+    struct Recorder {
+        std::vector<Event> events;
+
+        uint32_t read(uint32_t offset)
+        {
+            events.push_back({"read", offset, 0});
+            return 0;
+        }
+
+        void write(uint32_t offset, uint32_t value)
+        {
+            events.push_back({"write", offset, value});
+        }
+    } io;
+
+    switch_smmu::flushRange(io, 127, 0x80001024ULL, 4, 0x10000000ULL, 4096);
+    const std::vector<Event> expected = {
+        mcWrite(kPtcFlushHi, 0),
+        mcWrite(kPtcFlush, 0x80001000u | 1),
+        mcWrite(kPtcFlush, 0x80001020u | 1),
+        mcWrite(kTlbFlush, (1u << 31) | (127u << 24) | 0x10000u | kSectionMatch),
+        mcRead(kPtbAsid),
+    };
+    EXPECT_EQ(io.events, expected);
+}
 }  // namespace
 
 void switch_test_dcache(const char *op, uintptr_t line)

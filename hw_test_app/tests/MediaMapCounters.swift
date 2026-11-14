@@ -34,8 +34,11 @@ struct MediaMapCounters {
     }
 
     /// vic_maps, vic_remaps, d_remaps, maps_steady (every remake), surface_objects and surfaces since `before`, and the
-    /// checks they decide.
-    func judge(since before: MediaMapCounters, into metrics: inout Metrics) -> [(String, Bool)] {
+    /// checks they decide. `objects` judges one object a surface too: only where nothing but the CPU reads the
+    /// pictures, since a GPU texture of a published picture holds its object past the surface's next publication.
+    func judge(
+        since before: MediaMapCounters, into metrics: inout Metrics, objects judgeObjects: Bool
+    ) -> [(String, Bool)] {
         let remaps = since(before, "kern.switch_vic_remaps"), planeRemaps = since(before, Self.planeRemaps)
         let objects = since(before, "kern.switch_native_objects")
         let surfaces = since(before, "kern.switch_native_surfaces")
@@ -47,9 +50,11 @@ struct MediaMapCounters {
         metrics.set("maps_steady", remaps + planeRemaps)
         metrics.set("surface_objects", objects)
         metrics.set("surfaces", surfaces)
-        return [
-            ("no buffer mapped again after eviction (maps_steady 0)", remaps + planeRemaps == 0),
-            ("one publication object a client surface (surface_objects <= surfaces)", objects <= surfaces),
-        ]
+        var checks = [("no buffer mapped again after eviction (maps_steady 0)", remaps + planeRemaps == 0)]
+        if judgeObjects {
+            checks.append(
+                ("one publication object a client surface (surface_objects <= surfaces)", objects <= surfaces))
+        }
+        return checks
     }
 }
