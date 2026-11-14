@@ -1,7 +1,9 @@
 import Darwin
 
-/// The processes running now, as kern.proc.all lists them to the app. A sandbox may leave out every process but the
-/// caller's own, so a name missing from the list proves nothing unless the list shows other processes (LaunchTarget).
+/// The processes running now, as the kern.proc.all sysctl lists them. The app's sandbox refuses that read unless the
+/// name is in its sysctl exceptions (boot 22: "deny(1) sysctl-read kern.proc.all.0" for the four-part name, which
+/// carries KERN_PROC_ALL's unused argument); asked by name, it is the three-part "kern.proc.all" the exceptions list.
+/// A list that shows no process but the caller's own proves nothing about the others (LaunchTarget).
 public enum RunningProcesses {
     public struct Entry: Equatable, Sendable {
         public let pid: Int32
@@ -13,14 +15,14 @@ public enum RunningProcesses {
         }
     }
 
-    /// Every process the list shows, by pid and command name; nil when the list is refused
-    public static func list() -> [Entry]? {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
+    /// Every process the list shows, by pid and command name; nil when the read is refused. `name` is the sysctl,
+    /// which the caller names so tools/devicerun/hwtest_test.py finds it in the app's sandbox exceptions.
+    public static func list(sysctl name: String) -> [Entry]? {
         var size = 0
-        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+        guard sysctlbyname(name, nil, &size, nil, 0) == 0, size > 0 else { return nil }
         var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride + 8)
         size = procs.count * MemoryLayout<kinfo_proc>.stride
-        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return nil }
+        guard sysctlbyname(name, &procs, &size, nil, 0) == 0 else { return nil }
         return procs.prefix(size / MemoryLayout<kinfo_proc>.stride).map { proc in
             var comm = proc.kp_proc.p_comm
             let name = withUnsafeBytes(of: &comm) { String(decoding: $0.prefix { $0 != 0 }, as: UTF8.self) }
@@ -28,9 +30,9 @@ public enum RunningProcesses {
         }
     }
 
-    /// The first pid whose command name is `name`; nil when the list shows none or is refused
-    public static func pid(named name: String) -> Int32? {
-        list()?.first { $0.name == name }?.pid
+    /// The first pid in `list` whose command name is `name`; nil when it shows none or the list was refused
+    public static func pid(named name: String, in list: [Entry]?) -> Int32? {
+        list?.first { $0.name == name }?.pid
     }
 }
 
