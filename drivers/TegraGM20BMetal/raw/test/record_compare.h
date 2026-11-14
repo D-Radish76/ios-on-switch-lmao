@@ -101,7 +101,9 @@ inline std::string differences(const raw::Pack &pack, const raw::PackPipeline &p
         why += " reads";
     if (pp.variantCount[0] != rp.variantCount[0] || pp.variantCount[1] != rp.variantCount[1])
         why += " variants";
-    for (int k = 0; k < 2; k++) {
+    if (raw::pixelStage(pp) != raw::pixelStage(rp))
+        why += " pixel-stage";
+    for (int k = 0; k < (raw::pixelStage(pp) && raw::pixelStage(rp) ? 2 : 1); k++) {
         const raw::PackProgram &packed = pack.section<raw::PackProgram>(raw::PackPrograms)[k ? pp.fs : pp.vs];
         raw::PackProgram made;
         const std::vector<uint8_t> slot = raw::programSlot(r.programs[k], made);

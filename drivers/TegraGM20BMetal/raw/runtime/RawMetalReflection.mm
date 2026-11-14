@@ -378,17 +378,20 @@ bool rmComputeReflection(RMComputeState *s, MTLPipelineOption o, MTLAutoreleased
     *reflection = nil;
     if (!reflectionAsked(o))
         return true;
-    // a stage input's layouts are in its key (RawMetalComputeState.mm stageInText), which no request carries
-    if (!s->_keyed || !s->_function || s->_constants != s->_function->_constants) {
-        os_log_error(rawLog(), "raw: %{public}s: no reflection of a compute state no request can name (%{public}s)",
-                     getprogname(), s->_direct.label.UTF8String ?: "-");
+    if (!s->_keyed || !s->_function) {
+        os_log_error(rawLog(), "raw: %{public}s: no reflection of a compute state of linked or foreign functions "
+                     "(%{public}s)", getprogname(), s->_direct.label.UTF8String ?: "-");
         return true;
     }
     const std::string key = raw::computeStateKey(s->_air, s->_constants, s->_maxThreads, s->_multipleOfWidth);
     uint32_t length = 0;
     std::string blob, why = "no completion";
+    // a stage input's layouts are in its key (RawMetalComputeState.mm stageInText), which no request carries
+    const bool askable = s->_constants == s->_function->_constants;
     if (const uint8_t *packed = gRM->raw->pack().reflection(raw::Pack::fnv(key.data(), key.size()), true, length))
         *reflection = rmReflectionOf(packed, length, true);
+    else if (!askable)
+        why = "a stage-input kernel the pack holds no reflection of, which no request can name";
     else if (gRM->completion && gRM->completion->reflection(s->_function, s->_direct, key, blob, why))
         *reflection = fromBlob(blob, true);
     if (*reflection)

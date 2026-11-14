@@ -137,6 +137,7 @@ class Pipeline:
     excluded_families: frozenset[int] = frozenset()
     max_threads: int = 0
     multiple_of_width: int = 0
+    rasterize: bool = True  # rasterizationEnabled: a state of NO keys rast=0 (raw/runtime/RawPipelineKey.h)
 
     def for_device(self) -> bool:
         """Whether a device of the raw device's families is one the archive declares the state for."""
@@ -157,6 +158,8 @@ class Pipeline:
             if a.format:
                 lay = self.layouts.get(a.buffer, Layout())
                 head += f' a{a.index}={a.format}:{a.offset}:{a.buffer}:{lay.stride}:{lay.step_function}:{lay.step_rate}'
+        if not self.rasterize:
+            head += ' rast=0'
         if self.kind == TILE:
             return f'T{head[1:]} | t {self.kernel.stage() if self.kernel else "- "} | '
         vertex = self.vertex.stage() if self.vertex else '- '

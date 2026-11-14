@@ -229,7 +229,8 @@ int main(int argc, char **argv)
     const bool committed = cb->commit(sequence) && dev.wait(sequence);
     const raw::PackProgram *programs = dev.pack().section<raw::PackProgram>(raw::PackPrograms);
     const auto [vsChecked, vsWrong] = checkUniforms(programs[r.vs], 0, r, buffers);
-    const auto [fsChecked, fsWrong] = checkUniforms(programs[r.fs], 4, r, buffers);
+    const auto [fsChecked, fsWrong] =
+        raw::pixelStage(r) ? checkUniforms(programs[r.fs], 4, r, buffers) : std::pair<uint32_t, uint32_t>{0, 0};
     printf("%016llx: %u handles, %u not what their stage and slot bind; %u + %u uniform buffers (vertex, pixel), %u "
            "not their own; %s\n",
            (unsigned long long)key, checked, wrong, vsChecked, fsChecked, vsWrong + fsWrong,

@@ -34,7 +34,7 @@ void put(std::vector<uint8_t> &out, const std::string &s)
 // The program's record with its heap placement left out, then its slot's bytes (header, code, shader data)
 void program(std::vector<uint8_t> &out, const Pack &pack, uint32_t index)
 {
-    if (uint64_t(index + 1) * sizeof(PackProgram) > pack.bytes(PackPrograms))
+    if ((uint64_t(index) + 1) * sizeof(PackProgram) > pack.bytes(PackPrograms))
         return put(out, uint32_t(0xFFFFFFFF));
     PackProgram p = pack.section<PackProgram>(PackPrograms)[index];
     const uint32_t at = p.heapOffset;

@@ -11,16 +11,16 @@
 @class RMPipeline;
 @class RMComputeState;
 
-// The blob of `stages` stages as Metal's reflection: a compute state's (one stage) or a render state's (five); nil where
-// it is not one whole
+// The blob as Metal's reflection: a compute state's (one stage) or a render state's (five); nil where it is not one
+// whole
 id rmReflectionOf(const uint8_t *bytes, size_t length, bool compute);
 
-// `p`'s reflection under creation options `o`, of its descriptor `d`; nil where none was asked or none could be made (an
-// error line names why)
+// `p`'s reflection under creation options `o`, of its descriptor `d`; nil where none was asked or none could be made
+// (an error line names why)
 MTLAutoreleasedRenderPipelineReflection rmRenderReflection(RMPipeline *p, MTLRenderPipelineDescriptor *d,
                                                            MTLPipelineOption o);
-// `s`'s reflection under `o` into `*reflection` (nil where none was asked, or for a state no request can name: linked
-// functions, a stage input, another device's function, as m2v answered); false with Metal's error where the pack and the
-// compiler give none, which fails the creation as m2v's compute prepare did
+// `s`'s reflection under `o` into `*reflection` (nil where none was asked, or for a state of linked or another device's
+// functions, as m2v answered); false with Metal's error where the pack and the compiler give none (a stage-input kernel
+// the pack lacks among them: no request names its stage input), which fails the creation as m2v's compute prepare did
 bool rmComputeReflection(RMComputeState *s, MTLPipelineOption o, MTLAutoreleasedComputePipelineReflection *reflection,
                          NSError **error);
