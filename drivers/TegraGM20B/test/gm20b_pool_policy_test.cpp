@@ -167,7 +167,7 @@ TEST(GM20BPoolPolicy, RoomForEveryone)
 
 // Compressed targets on boot 11's pool (54 of 256 MiB used): the compositor's full-screen RGBA16F memoryless targets
 // (7296 KiB each) come from the pool down to its floor, which stays nvkm's; its next 16 MiB coherent block then comes
-// from system memory, and an app's compressed target waits there as the compositor's does
+// from system memory, and an app's compressed asks stop at the same floor
 TEST(GM20BPoolPolicy, CompressedTargetsLeaveTheFloor)
 {
 	Pool p;
@@ -186,8 +186,10 @@ TEST(GM20BPoolPolicy, CompressedTargetsLeaveTheFloor)
 	alloc(p, compositor, 16 * MiB, false, r);
 	check(r.fromSystem == 1 && r.failed == 0,
 	      "the compositor's coherent block comes from system memory, the floor stays nvkm's");
-	check(tgm_pool::compressibleRefusal(128 * KiB, p.avail(), kLimits) != nullptr,
-	      "an app's compressed target at the floor is refused");
+	while (!tgm_pool::compressibleRefusal(128 * KiB, p.avail(), kLimits))
+		p.used += 128 * KiB;
+	check(p.avail() >= kLimits.floorBytes && p.avail() < kLimits.floorBytes + 128 * KiB,
+	      "an app's compressed asks stop within one comptag line of the floor");
 	Pool fresh;
 	check(tgm_pool::compressibleRefusal(fresh.size - kLimits.floorBytes, fresh.avail(),
 					    kLimits) == nullptr,
@@ -219,6 +221,7 @@ TEST(GM20BPoolPolicy, Boot22LoggedRefusalsAreMade)
 		const char *who;
 		uint64_t bytes, heldMiB, freeMiB;
 	};
+
 	const Ask asks[] = {
 		{"iconservicesagent 13:34:57.679 kind 0xce", 1280 * KiB, 22, 48},
 		{"backboardd 13:35:03.337 kind 0xe9", 3200 * KiB, 91, 46},
@@ -236,7 +239,7 @@ TEST(GM20BPoolPolicy, Boot22LoggedRefusalsAreMade)
 // 13:35:18, 7.5 MiB at 13:35:38) and backboardd's 3200 KiB still held.
 TEST(GM20BPoolPolicy, Boot22InOrderTheCompositorIsStillServed)
 {
-	const uint64_t icon[] = {1280, 1536, 1536, 256, 640, 1024, 512, 1280, 1536,
+	const uint64_t icon[] = {1280, 1536, 1536, 256,  640,  1024, 512,  1280, 1536,
 				 1536, 128,  128,  1536, 1536, 1280, 2048, 2048, 1280};
 	Pool p;
 	p.used = p.size - 48 * MiB;
