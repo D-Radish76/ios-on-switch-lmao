@@ -19,13 +19,13 @@ struct GridArguments {
     array<array<constant GridInner *, 2>, 2> inners [[id(70)]];
 };
 
-/// One element a pixel: 0 tex[1][0] through samp[1][2], 1 the colour behind ptrs[2][1], 2 cube[1][0][1], 3
+/// One element a pixel: 0 tex[0][1] through samp[1][2], 1 the colour behind ptrs[2][1], 2 cube[1][0][1], 3
 /// consts[2][1], consts[0][1].x and lead, 4 the texture behind inners[1][0], 5 the colour behind inners[0][1]
 fragment float4 grid_fragment(float4 position [[position]], constant GridArguments &g [[buffer(0)]])
 {
     switch (uint(position.x)) {
     case 0:
-        return g.tex[1][0].sample(g.samp[1][2], float2(0.5));
+        return g.tex[0][1].sample(g.samp[1][2], float2(0.5));
     case 1:
         return *g.ptrs[2][1];
     case 2:

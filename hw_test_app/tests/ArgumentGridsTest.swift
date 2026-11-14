@@ -73,7 +73,7 @@ struct ArgumentGridsTest: HWTest {
         let cyan = try gpu.buffer([SIMD4<Float>(0, 1, 1, 1)])
         var used: [MTLResource] = [red, green, blue, yellow, miss, hit, cyan]
         encoder.constantData(at: 0).storeBytes(of: Float(1), as: Float.self)
-        for k in 0..<4 { encoder.setTexture(k == 2 ? green : red, index: 3 + k) }
+        for k in 0..<4 { encoder.setTexture(k == 1 ? green : red, index: 3 + k) }
         for k in 0..<6 { encoder.setSamplerState(sampler, index: 9 + k) }
         for k in 0..<6 { encoder.setBuffer(k == 5 ? hit : miss, offset: 0, index: 20 + k) }
         for k in 0..<8 { encoder.setTexture(k == 5 ? blue : red, index: 30 + k) }
