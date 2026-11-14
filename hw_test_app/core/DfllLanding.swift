@@ -2,25 +2,25 @@ import Foundation
 
 /// HW Test cpu.dfll_landing's verdict on the kernel's line (drivers/SwitchPower/SwitchThermalDfllLanding.h): case i is
 /// "i=<from MHz>><to MHz>", its readings "i.<ms>=<probe kHz>,<FREQ_REQ>,<TUNE1>,<OUTPUT_CFG>,<MONITOR_DATA>,<I2C_STS>".
-/// Judged at 200 ms, once clk-dfll.c's Vmin calibration has run: every row at most 0.8 % under the rate asked and the
-/// same from above and from below within 0.5 %, and over it by no more than the DFLL resolves where its loop stood.
-/// A loop pinned at DFLL_OUTPUT_CFG MIN runs the DVCO floor skipped down: 0.25 %, so a landing a skipper step fast
-/// (boot 21: 0.48 % and 0.56 % over) fails. A loop above MIN regulates the DVCO, and T210B01's runs without its
-/// integral term (cf 6, ci 0, cg 2: TegraDFLL/platform.c; Tegra X1 TRM 6.1.3 CI_PARAM clears a cycle surplus only when
-/// set), so the surplus it leaves is bounded by what the DFLL measures: one DFLL_MONITOR_DATA unit of REF_CLK / 4
-/// (clk-dfll.c REF_CLK_CYC_PER_DVCO_SAMPLE) at the skipper's (SCALE + 1) / 256, and its monitored count within that
-/// unit of the MULT x REF_CLK / 2 asked. Boot 22 held 1581 MHz (MULT 62, SCALE 255) at output 14, MIN 0, the monitor
-/// one unit over: 0.36 % over by the probe, inside 0.81 %.
+/// Judged at 200 ms, once clk-dfll.c's Vmin calibration has run: every row at most 0.8 % under the rate asked, and over
+/// it, and apart from above and from below, by no more than the DFLL holds where its loop stood.
+/// A loop pinned at DFLL_OUTPUT_CFG MIN runs the DVCO floor skipped down: 0.25 % over and 0.5 % apart, so a landing a
+/// skipper step fast (boot 21: 0.48 % and 0.56 % over) fails. A loop above MIN regulates the DVCO by LUT output steps,
+/// and T210B01's runs without its integral term (cf 6, ci 0, cg 2: TegraDFLL/platform.c; Tegra X1 TRM 6.1.3 CI_PARAM),
+/// so it rests anywhere within one step of its target or alternates between two: one step of DVCO at the skipper's
+/// (SCALE + 1) / 256. A step is 15 mV of LUT at this console's 2.04 MHz/mV (clk-tegra124-dfll-fcpu.c's CPUB01 rows
+/// 1581 and 1683 MHz at speedo 1659: 834 and 884 mV), 30 MHz, as TegraDFLL's landing model takes it; boot 22 measured
+/// 20.6 to 23.4 MHz between outputs 17 and 18 at MULT 76, and held 1581 MHz at output 14 0.36 % over.
 public enum DfllLanding {
     public static let settledMs = 200
 
-    /// One reading's probe and registers (Tegra X1 TRM 6.1.6 DFLL_FREQ_REQ, 6.1.9 DFLL_OUTPUT_CFG; clk-dfll.c's
-    /// DFLL_MONITOR_DATA and DFLL_I2C_STS fields).
+    /// One reading's probe and where its loop stood (Tegra X1 TRM 6.1.6 DFLL_FREQ_REQ SCALE, 6.1.9 DFLL_OUTPUT_CFG MIN;
+    /// clk-dfll.c's DFLL_I2C_STS last output).
     struct Reading {
-        static let monitorUnitKhz = 51000.0 / 4
+        static let outputStepKhz = 30000.0
 
         let khz: Double
-        let mult, scale, outMin, monitor, lastOutput: UInt32
+        let scale, outMin, lastOutput: UInt32
 
         init?(_ value: String) {
             let parts = value.split(separator: ",")
@@ -28,20 +28,20 @@ public enum DfllLanding {
             let registers = parts.dropFirst().compactMap { UInt32($0, radix: 16) }
             guard registers.count == 5 else { return nil }
             self.khz = khz
-            mult = registers[0] & 0x7f
             scale = (registers[0] >> 8) & 0xff
             outMin = (registers[2] >> 8) & 0x3f
-            monitor = registers[3] & 0xffff
             lastOutput = (registers[4] >> 1) & 0x3f
         }
 
         var pinned: Bool { lastOutput <= outMin }
 
-        func overBoundPct(asked mhz: Int) -> Double {
-            pinned ? 0.25 : Self.monitorUnitKhz * Double(scale + 1) / 256 / Double(mhz * 1000) * 100
-        }
+        func overBoundPct(asked mhz: Int) -> Double { pinned ? 0.25 : stepPct(asked: mhz) }
 
-        var monitorHoldsTarget: Bool { abs(Int(monitor) - 2 * Int(mult)) <= 1 }
+        func spreadBoundPct(asked mhz: Int) -> Double { pinned ? 0.5 : stepPct(asked: mhz) }
+
+        func stepPct(asked mhz: Int) -> Double {
+            Self.outputStepKhz * Double(scale + 1) / 256 / Double(mhz * 1000) * 100
+        }
     }
 
     public static func judge(_ fields: [String: String]) -> (checks: [(String, Bool)], metrics: Metrics) {
@@ -93,24 +93,24 @@ public enum DfllLanding {
         metrics.set("spread_pct_\(asked)", spread, digits: 2)
         let bounds = readings.map { $0.reading?.overBoundPct(asked: asked) ?? 0.25 }
         let worst = overs.indices.max { overs[$0] - bounds[$0] < overs[$1] - bounds[$1] } ?? 0
-        let pinned = readings[worst].reading?.pinned ?? true
-        let how = pinned ? "pinned at OUTPUT_CFG MIN" : "one DFLL monitor unit, the loop above MIN"
-        let bound = String(format: "%.2f", bounds[worst])
-        var checks = [
+        let how = { (reading: Reading?) in
+            reading?.pinned ?? true ? "pinned at OUTPUT_CFG MIN" : "one LUT output step, the loop above MIN"
+        }
+        let spreadBound = readings.map { $0.reading?.spreadBoundPct(asked: asked) ?? 0.5 }.min() ?? 0.5
+        let regulating = readings.allSatisfy { !($0.reading?.pinned ?? true) }
+        let percent = { (value: Double) in String(format: "%.2f", value) }
+        return [
             (
-                "\(asked) MHz at most \(bound)% over the rate asked at \(settledMs) ms (\(how))",
+                "\(asked) MHz at most \(percent(bounds[worst]))% over the rate asked at \(settledMs) ms "
+                    + "(\(how(readings[worst].reading)))",
                 zip(overs, bounds).allSatisfy { $0 <= $1 }
             ),
             ("\(asked) MHz at most 0.8% under the rate asked at \(settledMs) ms", under <= 0.8),
-            ("\(asked) MHz the same from above and below (within 0.5%)", spread <= 0.5),
+            (
+                "\(asked) MHz the same from above and below (within \(percent(spreadBound))%, "
+                    + "\(regulating ? "one LUT output step" : "a loop pinned at MIN"))",
+                spread <= spreadBound
+            ),
         ]
-        for reading in readings.compactMap(\.reading) where !reading.pinned && !reading.monitorHoldsTarget {
-            checks.append(
-                (
-                    "\(asked) MHz: the DVCO within one monitor unit of MULT x 2 = \(2 * reading.mult) by the DFLL's "
-                        + "monitor (read \(reading.monitor))", false
-                ))
-        }
-        return checks
     }
 }

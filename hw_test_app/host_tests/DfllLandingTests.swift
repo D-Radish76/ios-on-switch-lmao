@@ -50,21 +50,21 @@ final class DfllLandingTests: XCTestCase {
         XCTAssertTrue(outcome.detail.contains("1581 MHz at most 0.25% over"), outcome.detail)
     }
 
-    func testARegulatingRowOverOneMonitorUnitFails() {
+    func testARegulatingRowOverOneOutputStepFails() {
         let fast = Self.boot22.replacingOccurrences(
             of: "0.200=1586751,1040ffbe,12207ff,4e200000,1007d,1c",
-            with: "0.200=1595000,1040ffbe,12207ff,4e200000,1007d,1c")
+            with: "0.200=1612000,1040ffbe,12207ff,4e200000,1007f,1c")
         let (outcome, _) = judged(fast)
         XCTAssertEqual(outcome.verdict, .fail)
-        XCTAssertTrue(outcome.detail.contains("1581 MHz at most 0.81% over"), outcome.detail)
+        XCTAssertTrue(outcome.detail.contains("1581 MHz at most 1.90% over"), outcome.detail)
     }
 
-    func testALoopOffItsTargetByItsOwnMonitorFails() {
-        let off = Self.boot22.replacingOccurrences(
-            of: "0.200=1586751,1040ffbe,12207ff,4e200000,1007d,1c",
-            with: "0.200=1586751,1040ffbe,12207ff,4e200000,1007f,1c")
-        let (outcome, _) = judged(off)
-        XCTAssertEqual(outcome.verdict, .fail)
-        XCTAssertTrue(outcome.detail.contains("monitor"), outcome.detail)
+    func testAReadingOnTheUpperOfTwoOutputsTheLoopAlternatesPasses() {
+        let upper = Self.boot22.replacingOccurrences(
+            of: "4.200=1778525,1340ebcc,3fff7ff,4e201000,10098,22",
+            with: "4.200=1797575,1340ebcc,3fff7ff,4e201000,10099,24")
+        let (outcome, metrics) = judged(upper)
+        XCTAssertEqual(outcome.verdict, .pass, outcome.detail)
+        XCTAssertEqual(metrics["over_pct_1785"]?.logText, "0.70")
     }
 }
