@@ -301,8 +301,10 @@ int computeReadiness(RMCommandBuffer *cb, const RMSegment &range)
         const auto state = job->observe(std::move(observer));
         if (state == Job::State::Failed)
             return -2;
-        if (state == Job::State::Refused)
+        if (state == Job::State::Refused) {
+            hit(cb, PredComputeKernel, at);
             return -1;
+        }
         if (state == Job::State::Pending)
             pending = true;
     }
