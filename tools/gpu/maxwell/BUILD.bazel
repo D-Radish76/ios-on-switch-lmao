@@ -188,7 +188,7 @@ py_test(
 # Every interlock ticket reader of the configured kind's full pack (ticketcheck.py)
 py_test(
     name = "ticketcheck_pack_test",
-    size = "small",
+    size = "medium",
     srcs = ["ticketcheck_test.py"],
     data = ["//gpu/seed:raw_pack"],
     env = {"TICKETCHECK_PACK": "$(rootpath //gpu/seed:raw_pack)/pack.bin"},
