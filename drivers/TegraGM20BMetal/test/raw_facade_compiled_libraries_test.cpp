@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Libraries the system's Metal front end makes, through the system shader compiler and never m2v
-// (raw/runtime/RawMetalCompiledLibraries.mm): Metal source, a stitched library and Core Image's filter-function link.
+// (raw/runtime/RawMetalCompiledLibraries.mm): Metal source, a stitched library, MPS's kernel DAG and Core Image's
+// filter-function link.
 // The kernel model's compiler keeps the code generation request each one sends and answers it with a metallib in the
 // store; the library is then the raw device's own, its functions raw's.
 #include "raw_facade_harness.h"
@@ -248,6 +249,60 @@ void stitchedLibrary()
     expectNoM2V(device);
 }
 
+// MPSKernelDAG's library (MPSGraph's control flow and fused kernels, which abort on nil): its DAG text as MPS writes it
+// (one graph per function it makes, ALWAYS_INLINE, nodes over INPUTs and earlier NODEs) and the visible functions its
+// nodes name, in MPS's order, which is not the DAG's. The request is that text and those functions' bitcode in that
+// order; the library's functions are the DAG's, raw's own
+void kernelDagLibrary()
+{
+    LibraryCompiler compiler;
+    ASSERT_TRUE(compiler.serve());
+    compiler.made.metallib =
+        made_metallib::thin({"prefixPrimary_i8", "postfixPrimary_i8"}, {4, 4},
+                            {made_metallib::wrappedBitcode(0x81), made_metallib::wrappedBitcode(0x82)});
+    id<MTLDevice> device = completing();
+    ASSERT_TRUE(device != nil);
+    id<MTLLibrary> functions = stitchable(device);
+    ASSERT_TRUE(functions != nil);
+    NSString *dag = @"DAGS {\n"
+                    @"prefixPrimary_i8 {\n"
+                    @"ALWAYS_INLINE;\n"
+                    @"NODE(Node_0) : FUNCTION(add), INPUT(0), INPUT(1);\n"
+                    @"OUTPUT(Node_value) : FUNCTION(mul), NODE(Node_0), INPUT(1);\n"
+                    @"}\n"
+                    @"postfixPrimary_i8 {\n"
+                    @"ALWAYS_INLINE;\n"
+                    @"NODE(Node_0) : FUNCTION(mul), INPUT(0), INPUT(1), INPUT(2);\n"
+                    @"NODE(add) : FUNCTION(add), INPUT(0), NODE(Node_0);\n"
+                    @"}\n"
+                    @"}\n";
+    NSArray<id<MTLFunction>> *named = @[ [functions newFunctionWithName:@"mul"], [functions newFunctionWithName:@"add"] ];
+    NSError *error = nil;
+    id<MTLLibrary> (*withDag)(id, SEL, NSString *, NSArray *, NSError **) =
+        (id<MTLLibrary> (*)(id, SEL, NSString *, NSArray *, NSError **))objc_msgSend;
+    const SEL selector = sel_registerName("newLibraryWithDAG:functions:error:");
+    id<MTLLibrary> library = withDag(device, selector, dag, named, &error);
+    ASSERT_TRUE(library != nil) << text(error);
+    NSArray<NSString *> *names = [library.functionNames sortedArrayUsingSelector:@selector(compare:)];
+    NSArray<NSString *> *dagFunctions = @[ @"postfixPrimary_i8", @"prefixPrimary_i8" ];
+    EXPECT_TRUE([names isEqualToArray:dagFunctions]) << text(names);
+    id<MTLFunction> prefix = [library newFunctionWithName:@"prefixPrimary_i8"];
+    ASSERT_TRUE(prefix != nil);
+    EXPECT_EQ(prefix.functionType, MTLFunctionTypeVisible);
+    ASSERT_EQ(compiler.asked.size(), 1u);
+    EXPECT_EQ(compiler.asked[0].codeGenType, raw::kCodeGenStitch);
+    const raw::codegen::Bitcode add = {reinterpret_cast<const uint8_t *>(kAdd.data()), kAdd.size()},
+                                mul = {reinterpret_cast<const uint8_t *>(kMul.data()), kMul.size()};
+    EXPECT_EQ(compiler.asked[0].codeGen, raw::codegen::stitchRequest(dag.UTF8String, {mul, add}));
+
+    EXPECT_EQ(withDag(device, selector, @"", named, &error), nil);
+    EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorCompileFailure)) << text(error);
+    EXPECT_EQ(withDag(device, selector, dag, @[], &error), nil);
+    EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorCompileFailure)) << text(error);
+    EXPECT_EQ(compiler.asked.size(), 1u);
+    expectNoM2V(device);
+}
+
 // Core Image's filter-function link is ImageFilterLink.h's request of the functions' bitcode and infos
 void filterLibrary()
 {
@@ -295,6 +350,11 @@ TEST(RawFacadeCompiledLibraries, WithNoCompilerALibraryFailsItsCreation)
 TEST(RawFacadeCompiledLibraries, AStitchedLibraryIsTheShaderCompilers)
 {
     switch_ios::test::ExpectPassesInFreshProcess(stitchedLibrary);
+}
+
+TEST(RawFacadeCompiledLibraries, AnMpsKernelDagLibraryIsTheShaderCompilers)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(kernelDagLibrary);
 }
 
 TEST(RawFacadeCompiledLibraries, ACoreImageFilterLibraryIsTheShaderCompilers)
