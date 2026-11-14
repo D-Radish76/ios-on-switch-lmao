@@ -12,15 +12,15 @@ enum class KernelTextureForm : uint8_t {
     Converted,  // the image the command buffer converts from its planes before any work (planar, YCbCr, packed plane)
     NoHeader,   // no header and no texels a header could hold: memoryless, or a depth texture made without ShaderRead
     StandIn,    // extended range: the codes' header, sampled through a stand-in drawn from them
-    TwoPlanes,  // RGB10A8_2P_XR10 in Metal's two planes: a header pair
+    TwoPlanes,  // RGB10A8_2P_XR10 in Metal's two planes: each plane's own header (Texture::luma, Texture::chroma)
 };
 
 template <typename Texture> constexpr KernelTextureForm kernelTextureForm(const Texture &x)
 {
-    if (x.xrPlanes)
-        return KernelTextureForm::TwoPlanes;
     if (x.memoryless || !x.tic)
         return KernelTextureForm::NoHeader;
+    if (x.xrPlanes)
+        return KernelTextureForm::TwoPlanes;
     if (x.converted())
         return KernelTextureForm::Converted;
     if (x.standIn)

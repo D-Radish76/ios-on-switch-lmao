@@ -67,4 +67,14 @@ TEST(KernelTexture, EveryOtherTermHasItsForm)
     EXPECT_EQ(raw::kernelTextureForm(t), KernelTextureForm::TwoPlanes);
 }
 
+// A memoryless RGB10A8_2P_XR10 texture's planes have no memory a kernel could reach (raw_xr_texture.cpp
+// createXrMemoryless): a load reads header 0, a store fails its command buffer, as any memoryless texture's
+TEST(KernelTexture, AMemorylessTwoPlaneTextureHasNoHeader)
+{
+    Texture t;
+    t.xrPlanes = true;
+    t.memoryless = true;
+    EXPECT_EQ(raw::kernelTextureForm(t), KernelTextureForm::NoHeader);
+}
+
 }  // namespace

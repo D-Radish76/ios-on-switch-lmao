@@ -10,7 +10,7 @@ namespace {
 
 // Which of a texture's terms refused it: compute.image's b, named in its first line
 enum ImageTerm : uint8_t {
-    TermTwoPlanesBare = 2,     // RGB10A8_2P_XR10 read where the record's view is not its stand-in's format
+    TermTwoPlanesBare = 2,     // RGB10A8_2P_XR10 reached through a view neither its planes' nor its stand-in's
     TermConvertedSampler,      // a converted texture beside a sampler its address map would change (draws take its variant)
 };
 
@@ -18,7 +18,7 @@ const char *imageTermName(uint64_t term)
 {
     switch (term) {
     case TermTwoPlanesBare:
-        return "an RGB10A8_2P_XR10 texture read through a view other than its stand-in's";
+        return "an RGB10A8_2P_XR10 texture reached through a view other than its planes' or its stand-in's";
     case TermConvertedSampler:
         return "a converted texture beside a sampler that does not clamp to its edge";
     }
@@ -160,7 +160,8 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
         const auto *k = kernels->jobs[region]->value();
         for (uint32_t e = 0; e < k->rec->entries; e++) {
             const raw::PackKernelEntry &x = k->rec->entry[e];
-            RMTexture *t = x.kind == raw::KernelTexture && x.slot < 31 ? textureAt(x.slot) : nil;
+            const bool texture = x.kind == raw::KernelTexture || x.kind == raw::KernelTexturePlane;
+            RMTexture *t = texture && x.slot < 31 ? textureAt(x.slot) : nil;
             if (t && !t->_rawOk) {  // m2v's texture, refused as it was made: its own predicate's command buffer
                 hit(cb, RMPred(t->_pred ?: PredTexShape), t->_descriptor.pixelFormat, t->_kind);
                 if (why)
@@ -200,23 +201,26 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
             };
             // a load of an extended-range texture binds its stand-in where the record's view is the stand-in's own,
             // else its codes (raw_compute.cpp)
-            const bool standIn = t && !writes && t->_raw.standIn && viewOf(*t->_raw.standIn) == raw::SlotView::Own;
-            // RGB10A8_2P_XR10 is made with no usage but ShaderRead and RenderTarget (xrPlanesShape): a kernel's store to
-            // it, or a load of one made without ShaderRead, is outside its usage, which Metal's validation stops
-            const bool outsideUsage = form == raw::KernelTextureForm::TwoPlanes &&
-                                      (writes || !(t->_descriptor.usage & MTLTextureUsageShaderRead));
-            if (outsideUsage) {
-                NSString *reason =
-                    [NSString stringWithFormat:@"A kernel %@ an RGB10A8_2P_XR10 texture outside its usage 0x%lx: %@",
-                                               writes ? @"stores" : @"loads", (unsigned long)t->_descriptor.usage,
-                                               textureFacts(t)];
+            const bool standIn = t && !writes && x.kind == raw::KernelTexture && t->_raw.standIn &&
+                                 viewOf(*t->_raw.standIn) == raw::SlotView::Own;
+            const bool twoPlanes = form == raw::KernelTextureForm::TwoPlanes;
+            // a load of a texture made without ShaderRead, which Metal's validation stops
+            if (twoPlanes && !writes && !(t->_descriptor.usage & MTLTextureUsageShaderRead)) {
+                NSString *reason = [NSString
+                    stringWithFormat:@"A kernel loads an RGB10A8_2P_XR10 texture made without ShaderRead: %@",
+                                     textureFacts(t)];
                 os_log_error(rawLog(), "raw: %{public}s", reason.UTF8String);
                 failCommandBuffer(cb, reason, MTLCommandBufferErrorInvalidResource);
                 if (why)
-                    *why = "a kernel reaches an RGB10A8_2P_XR10 texture outside its usage";
+                    *why = "a kernel loads an RGB10A8_2P_XR10 texture made without ShaderRead";
                 return false;
             }
-            if (form == raw::KernelTextureForm::TwoPlanes && !standIn) {
+            // a two-plane texture is reached through its planes' own views (raw_compute.cpp): its color words at the
+            // slot's entry, its alpha bytes at its plane entry
+            const raw::Texture *plane = !twoPlanes                             ? nullptr
+                                        : x.kind == raw::KernelTexturePlane ? t->_raw.chroma
+                                                                             : t->_raw.luma;
+            if (twoPlanes && !standIn && (!plane || viewOf(*plane) != raw::SlotView::Own)) {
                 const uint64_t term = TermTwoPlanesBare;
                 noteRefusal(cb, PredComputeImage, x.slot, term, t, k->rec->keyHash);
                 if (why)
@@ -228,9 +232,7 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                 if (t->_raw.xrPlanes)
                     cb->_xrStandIns.insert(t);
             }
-            const raw::SlotView view = !t || !t->_raw.tic ? raw::SlotView::Own
-                                       : standIn          ? raw::SlotView::Own
-                                                          : viewOf(t->_raw);
+            const raw::SlotView view = !t || !t->_raw.tic || standIn || twoPlanes ? raw::SlotView::Own : viewOf(t->_raw);
             bool viewRefused = false;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
             viewRefused = view == raw::SlotView::View && rmHalfViewRefused();

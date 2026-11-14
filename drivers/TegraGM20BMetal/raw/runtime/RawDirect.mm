@@ -224,10 +224,10 @@ KernelDispatch::KernelDispatch(const uint32_t threads[3], const std::map<uint32_
             dispatch_.memory[index] = length;
 }
 
-void KernelDispatch::texture(uint32_t slot, MTLTextureDescriptor *d)
+void KernelDispatch::texture(uint32_t slot, MTLTextureDescriptor *d, bool planes)
 {
-    textures_.push_back(
-        {slot, d.pixelFormat, d.textureType, d.usage, d.mipmapLevelCount, d.arrayLength, d.sampleCount});
+    textures_.push_back({slot, planes ? 1u : 0u, d.pixelFormat, d.textureType, d.usage, d.mipmapLevelCount,
+                         d.arrayLength, d.sampleCount});
 }
 
 void KernelDispatch::sampler(uint32_t slot, MTLSamplerDescriptor *d)

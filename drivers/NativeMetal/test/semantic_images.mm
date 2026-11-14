@@ -185,6 +185,7 @@ int main(int argc, char **argv)
             auto *descriptor = [MTLComputePipelineDescriptor new];
             descriptor.computeFunction = [library newFunctionWithName:@(test.name)];
             NmbDirectBoundTexture texture = {0,
+                                             0,
                                              test.format,
                                              test.type,
                                              MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite,
