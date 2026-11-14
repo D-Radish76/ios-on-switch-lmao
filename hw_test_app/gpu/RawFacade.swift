@@ -136,11 +136,8 @@ extension Outcome {
     /// whatever else the test found; unchanged off the facade and when every one ran raw. paths= on the line.
     public func onRawPath(_ gpu: GPU) -> Outcome {
         guard RawFacade.kind(of: gpu.device) == "raw" else { return self }
-        var metrics = self.metrics
-        metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let off = gpu.paths.offRaw
-        guard !off.isEmpty else { return Outcome(verdict, metrics, detail: detail, proof: proof) }
-        let reason = "command buffers off the raw path: \(off.text)"
-        return Outcome(.fail, metrics, detail: detail.isEmpty ? reason : reason + "; " + detail, proof: proof)
+        var marked = self
+        marked.metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
+        return marked.failing(offRaw: gpu.paths.offRaw)
     }
 }
