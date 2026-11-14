@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 // See raw_remote.h. The call forms are raw_kernel.cpp's (direct, or tunnelled through the selector the sandbox admits).
+#include "raw_answer_class.h"
 #include "raw_lock.h"
 #include "raw_remote.h"
 #include "raw_stats.h"
@@ -8,6 +9,7 @@
 #include <dispatch/dispatch.h>
 #include <pthread/qos.h>
 #include <time.h>
+#include <algorithm>
 #include <cstdio>
 #include <os/log.h>
 #include <cstring>
@@ -108,15 +110,18 @@ Remote::~Remote()
     std::map<uint64_t, Done> pending;
     {
         std::lock_guard<raw::Mutex> l(asyncLock_);
-        if (port_)
-            IONotificationPortDestroy(static_cast<IONotificationPortRef>(port_));
-        port_ = nullptr;
+        for (Port &p : ports_) {
+            if (p.port)
+                IONotificationPortDestroy(static_cast<IONotificationPortRef>(p.port));
+            p.port = nullptr;
+        }
         pending.swap(pending_);
     }
     for (auto &[cookie, done] : pending)
         done(Answer::Unavailable, Answered{});
-    if (queue_)
-        dispatch_release(static_cast<dispatch_queue_t>(queue_));
+    for (Port &p : ports_)
+        if (p.queue)
+            dispatch_release(static_cast<dispatch_queue_t>(p.queue));
 }
 
 Remote::Call Remote::transportCall(const KernelTransport &transport)
@@ -146,11 +151,28 @@ Remote::Call Remote::transportCall(const KernelTransport &transport)
     };
 }
 
-int Remote::call(uint32_t method, const void *in, size_t inSize, void *out, size_t outSize, uint64_t *reference)
+int Remote::call(uint32_t method, const void *in, size_t inSize, void *out, size_t outSize)
 {
-    const uint32_t port =
-        reference && port_ ? IONotificationPortGetMachPort(static_cast<IONotificationPortRef>(port_)) : 0;
-    return call_(method, in, inSize, out, outSize, reference, port);
+    return call_(method, in, inSize, out, outSize, nullptr, 0);
+}
+
+uint32_t Remote::portAt(qos_class_t cls)
+{
+    size_t slot = 0;
+    while (slot + 1 < ports_.size() && kAnswerClasses[slot] > cls)
+        slot++;
+    Port &p = ports_[slot];
+    if (!p.port) {
+        IONotificationPortRef port = IONotificationPortCreate(kIOMainPortDefault);
+        if (!port)
+            return 0;
+        p.queue = dispatch_queue_create(
+            "com.brunostjohn.switch.raw.remote",
+            dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, kAnswerClasses[slot], 0));
+        IONotificationPortSetDispatchQueue(port, static_cast<dispatch_queue_t>(p.queue));
+        p.port = port;
+    }
+    return IONotificationPortGetMachPort(static_cast<IONotificationPortRef>(p.port));
 }
 
 // The store a compiler registered, checked to be this build's (its pack rules are the compiler's: both load the one
@@ -277,16 +299,6 @@ bool Remote::compileAsync(const std::string &request, bool waited, uint32_t qos,
     if (!serving() || !taking())
         return false;
     std::lock_guard<raw::Mutex> l(asyncLock_);
-    if (!port_) {
-        IONotificationPortRef port = IONotificationPortCreate(kIOMainPortDefault);
-        if (!port)
-            return false;
-        queue_ = dispatch_queue_create(
-            "com.brunostjohn.switch.raw.remote",
-            dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0));
-        IONotificationPortSetDispatchQueue(port, static_cast<dispatch_queue_t>(queue_));
-        port_ = port;
-    }
     return ask({request, waited, qos, std::move(done)});
 }
 
@@ -302,8 +314,11 @@ bool Remote::ask(Held &&held)
     uint64_t reference[kOSAsyncRef64Count] = {};
     reference[kIOAsyncCalloutFuncIndex] = uint64_t(reinterpret_cast<uintptr_t>(&delivered));
     reference[kIOAsyncCalloutRefconIndex] = uint64_t(reinterpret_cast<uintptr_t>(this));
+    const uint32_t port = portAt(held.waited ? answerClass(held.qos) : QOS_CLASS_BACKGROUND);
+    if (!port)
+        return false;
     pending_.emplace(cookie, held.done);
-    const int asked = call(TegraGM20BMethodCompile, &in, sizeof in, nullptr, 0, reference);
+    const int asked = call_(TegraGM20BMethodCompile, &in, sizeof in, nullptr, 0, reference, port);
     if (asked == kIOReturnSuccess)
         return true;
     pending_.erase(cookie);
@@ -318,9 +333,9 @@ bool Remote::ask(Held &&held)
 void Remote::delivered(void *refcon, int result, void **words, uint32_t count)
 {
     auto *remote = static_cast<Remote *>(refcon);
+    // IOKit hands the message's own packed words, four bytes past an eight-byte boundary
     uint64_t word[TegraGM20BCompileAnswerWords] = {};
-    for (uint32_t i = 0; i < count && i < TegraGM20BCompileAnswerWords; ++i)
-        word[i] = uint64_t(uintptr_t(words[i]));
+    memcpy(word, words, std::min<size_t>(count, TegraGM20BCompileAnswerWords) * sizeof *word);
     const uint64_t packed = word[1];
     const Answered answered = {
         0, {word[2], word[3], word[4], uint32_t(word[5]), uint32_t(word[5] >> 32)}, answeredAt()};

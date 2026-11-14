@@ -7,6 +7,7 @@
 #include "NativeBridgeMetalFrontend.h"
 #include "RawMetalInternal.h"
 #include "RawRenderKey.h"
+#include "raw_answer_class.h"
 #include "raw_compute.h"
 #include "raw_gpu.h"
 
@@ -42,10 +43,7 @@ void logHarvestParts(uint64_t name, NSString *label, const std::string &key)
 #endif
 
 Completion::Completion(Device &device, const char *cacheDir, uint64_t stack, const char *seedDir)
-    : device_(device), stack_(stack),
-      queue_(dispatch_queue_create(
-          "com.brunostjohn.switch.raw.complete",
-          dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_USER_INITIATED, 0))),
+    : device_(device), stack_(stack), queue_(answerQueue("com.brunostjohn.switch.raw.complete")),
       persistenceQueue_(
           dispatch_queue_create("com.brunostjohn.switch.raw.kernel-cache",
                                 dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0))),
@@ -158,7 +156,7 @@ std::string Completion::failureOf(const CacheKey &k)
 
 void Completion::request(Ask asked, std::shared_ptr<Pending> pending)
 {
-    dispatch_async(queue_, ^{
+    asyncAt(queue_, asked.qos, ^{
         if (stopping_.load(std::memory_order_acquire)) {
             pending->ready(nullptr, std::string());
             return;
@@ -176,7 +174,7 @@ void Completion::request(Ask asked, std::shared_ptr<Pending> pending)
         if (compiler_->lookup(k, known, why) != RecordCache::Found::None) {
             const RuntimeRecord *kept = nullptr;
             if (compiler_->ask(k, nullptr, &kept) == Compiler::State::Ready && kept)
-                place(k, kept, caTransform, pending);
+                place(k, kept, caTransform, a.qos, pending);
             else
                 pending->ready(nullptr, std::string());
             return;
@@ -185,20 +183,20 @@ void Completion::request(Ask asked, std::shared_ptr<Pending> pending)
             pending->ready(nullptr, kNoCompilerComes);
             return;
         }
-        remoteLater(a, k, [this, k, caTransform, pending](const RuntimeRecord *record) {
+        remoteLater(a, k, [this, k, caTransform, qos = a.qos, pending](const RuntimeRecord *record) {
             if (record)
-                place(k, record, caTransform, pending);
+                place(k, record, caTransform, qos, pending);
             else
                 pending->ready(nullptr, failureOf(k));
         });
     });
 }
 
-void Completion::place(const CacheKey &key, const RuntimeRecord *record, bool caTransform,
+void Completion::place(const CacheKey &key, const RuntimeRecord *record, bool caTransform, uint32_t qos,
                        std::shared_ptr<Pending> pending)
 {
     const CacheKey keptKey = key;
-    dispatch_async(queue_, ^{
+    asyncAt(queue_, qos, ^{
         if (stopping_.load(std::memory_order_acquire)) {
             pending->ready(nullptr, std::string());
             return;

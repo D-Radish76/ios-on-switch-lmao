@@ -5639,6 +5639,7 @@ host_test(
     name = "raw_remote_test",
     srcs = [
         "raw_remote_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_answer_class.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_obtained.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "//drivers/TegraGM20B:TegraGM20BCompilerABI.h",

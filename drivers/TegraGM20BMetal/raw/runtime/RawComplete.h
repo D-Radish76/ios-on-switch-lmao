@@ -99,7 +99,9 @@ private:
     struct Pending;
     void request(Ask asked, std::shared_ptr<Pending> pending);
     std::string failureOf(const CacheKey &k);
-    void place(const CacheKey &key, const RuntimeRecord *record, bool caTransform, std::shared_ptr<Pending> pending);
+    // `qos`: the asker's class, which the record is placed at (raw_answer_class.h)
+    void place(const CacheKey &key, const RuntimeRecord *record, bool caTransform, uint32_t qos,
+               std::shared_ptr<Pending> pending);
 
     struct Kernel {
         raw::Mutex lock;
