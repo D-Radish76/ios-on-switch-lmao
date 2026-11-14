@@ -1,4 +1,5 @@
-# Writes drivers/TegraGM20BMetal/raw/runtime/raw_heap_classes.h from m2v's translator (src/main.rs). Not built by Bazel.
+# Writes drivers/TegraGM20BMetal/raw/runtime/raw_heap_classes.h from m2v's translator (src/main.rs); Bazel builds and
+# tests it (BUILD.bazel), this manifest is for a plain cargo run
 [package]
 name = "raw_heap_classes"
 version = "0.1.0"
