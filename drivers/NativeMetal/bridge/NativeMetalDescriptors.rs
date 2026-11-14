@@ -7,8 +7,8 @@ use metal2vulkan::bind::SamplerDescriptor;
 use metal2vulkan::library::{FunctionConstantValue, FunctionConstantValues};
 use metal2vulkan::metal::{
     AttributeFormat, BlendFactor, BlendOperation, ColorWriteMask, CompareFunction, DataType, IndexType, PixelFormat,
-    PrimitiveTopologyClass, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, StepFunction,
-    TessellationControlPointIndexType, TessellationFactorFormat, TessellationFactorStepFunction,
+    PrimitiveTopologyClass, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter,
+    StepFunction, TessellationControlPointIndexType, TessellationFactorFormat, TessellationFactorStepFunction,
     TessellationPartitionMode, VertexFormat, VertexStepFunction, Winding,
 };
 use metal2vulkan::pipeline::{

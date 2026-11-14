@@ -5,11 +5,6 @@
 //! string, and no call unwinds into C.
 
 use crate::functions::{FunctionOf, LibraryOf};
-pub use native_metal_translate::descriptors::{
-    DescriptorFunction, NmbColorAttachment, NmbComputePipelineDescriptorOf, NmbConstant, NmbRenderPipelineDescriptorOf,
-    NmbSamplerDescriptor, NmbVertexAttribute, NmbVertexLayout, attribute_out, compute_descriptor, copy_out, e, get, guard,
-    optional_format, raw, release, render_descriptor, sampler_descriptor, set_error, specialization,
-};
 use metal2vulkan::bind::ArgumentDescriptor;
 use metal2vulkan::metal::state::{DepthStencilDescriptor, StencilDescriptor};
 use metal2vulkan::metal::{
@@ -28,6 +23,11 @@ use metal2vulkan_runtime::{
     RenderPassDescriptor, RenderPipelineState, ResourceOptions, ResourceRef, RowState, SamplerState, ScissorRect,
     SharedEvent, SharedEventListener, Size, StoreAction, SubmissionMemoryHook, SurfaceYCbCrMatrix, Texture,
     TextureDescriptor, Viewport, VisibilityResultMode,
+};
+pub use native_metal_translate::descriptors::{
+    DescriptorFunction, NmbColorAttachment, NmbComputePipelineDescriptorOf, NmbConstant, NmbRenderPipelineDescriptorOf,
+    NmbSamplerDescriptor, NmbVertexAttribute, NmbVertexLayout, attribute_out, compute_descriptor, copy_out, e, get,
+    guard, optional_format, raw, release, render_descriptor, sampler_descriptor, set_error, specialization,
 };
 use std::ffi::{CStr, c_char, c_void};
 use std::path::PathBuf;

@@ -6,8 +6,8 @@
 //! (NativeMetalFunctions.rs) behind the NmbLibrary and NmbFunction handles.
 
 use crate::direct::{NmbDirectBinds, NmbDirectState, render_offline};
-use crate::direct_device::{native_compute_device, nmb_compile_profile_check, specialized_device};
 use crate::direct_compute::{NmbDirectDispatch, NmbDirectKernel, compute_offline};
+use crate::direct_device::{native_compute_device, nmb_compile_profile_check, specialized_device};
 use crate::functions::LibraryOf;
 use crate::objects::{
     NmbComputePipelineDescriptor, NmbDevice, NmbLibrary, NmbRenderPipelineDescriptor, e, get, guard, library_handle,

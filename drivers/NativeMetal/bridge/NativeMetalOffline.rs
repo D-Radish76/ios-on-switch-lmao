@@ -4,11 +4,11 @@
 //! of a Vulkan query, and libraries and functions made by the translator alone. The bridge's nmb_compile_profile_check
 //! holds a live runtime to the profile; its nmb_compile_profile_freeze writes the profile of one.
 
-use crate::direct::RAW_HEAP_ELEMENTS;
 use crate::descriptors::{
     DescriptorFunction, NmbComputePipelineDescriptorOf, NmbConstant, NmbRenderPipelineDescriptorOf, attribute_out,
     compute_descriptor, e, get, guard, release, specialization,
 };
+use crate::direct::RAW_HEAP_ELEMENTS;
 use metal2vulkan::Budget;
 use metal2vulkan::device::{
     Device, DeviceDescription, DevicePolicy, FramebufferFetchPolicy, NativeShaderTarget, VkExtension, VkFeature,

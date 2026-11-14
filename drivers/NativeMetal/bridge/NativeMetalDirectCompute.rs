@@ -6,13 +6,13 @@
 //! variant's layout and samplers are made too; the offline compile (the pack generator's, and the compile context's:
 //! NativeMetalCompile.rs) runs on the compile profile's native device with the layout as data alone.
 
-use crate::direct::{
-    HEAP_ARRAYS, Layout, NMB_DIRECT_IMMUTABLE, NmbDirectBinding, NmbDirectSamplerState, NmbDirectStage, NmbDirectWrite,
-    compile_error, residual_words, sampler_state, spill_table, write_of,
-};
 use crate::descriptors::{
     DescriptorFunction, NmbComputePipelineDescriptorOf, NmbSamplerDescriptor, compute_descriptor, e, get, guard, raw,
     sampler_descriptor,
+};
+use crate::direct::{
+    HEAP_ARRAYS, Layout, NMB_DIRECT_IMMUTABLE, NmbDirectBinding, NmbDirectSamplerState, NmbDirectStage, NmbDirectWrite,
+    compile_error, residual_words, sampler_state, spill_table, write_of,
 };
 use crate::offline::{Devices, NmbOfflineComputePipelineDescriptor, offline_devices};
 use ash::vk as avk;
