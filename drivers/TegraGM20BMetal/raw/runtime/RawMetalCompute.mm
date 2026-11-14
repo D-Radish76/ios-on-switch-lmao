@@ -86,6 +86,23 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
         [self setBuffer:buffers[k] offset:offsets[k] atIndex:range.location + k];
 }
 
+// The format a kernel is compiled to read `t` in: an RGB10A8_2P_XR10 texture held in Metal's two planes as its stand-in, the
+// RGBA16Float image of its values drawn from the planes as the encoder begins (no header reads the two planes as one image)
+static MTLPixelFormat kernelFormat(RMTexture *t)
+{
+    return raw::kernelTextureFormat(t->_raw, t->_descriptor.pixelFormat);
+}
+
+static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
+{
+    MTLTextureDescriptor *d = t->_descriptor;
+    if (kernelFormat(t) == d.pixelFormat)
+        return d;
+    d = [d copy];
+    d.pixelFormat = kernelFormat(t);
+    return d;
+}
+
 - (void)setTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index
 {
     RMTexture *t = [(id)texture isKindOfClass:[RMTexture class]] ? (RMTexture *)texture : nil;
@@ -95,8 +112,8 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
         if (t) {
             MTLTextureDescriptor *d = t->_descriptor;
             const MTLTextureSwizzleChannels w = d.swizzle;
-            bound = {uint32_t(index),    d.pixelFormat, d.textureType,
-                     d.mipmapLevelCount, d.arrayLength, {w.red, w.green, w.blue, w.alpha}};
+            bound = {uint32_t(index),    kernelFormat(t), d.textureType,
+                     d.mipmapLevelCount, d.arrayLength,   {w.red, w.green, w.blue, w.alpha}};
         }
         if (_specialization.bindTexture(uint32_t(index), t ? &bound : nullptr))
             _kernelCurrent = false;
@@ -248,7 +265,7 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
                                                                      specialization.regionMode);
                     for (uint32_t slot = 0; slot < 31; ++slot)
                         if (_textures[slot])
-                            ask->texture(slot, _textures[slot]->_descriptor);
+                            ask->texture(slot, kernelDescriptor(_textures[slot]));
                     for (uint32_t slot = 0; slot < 16; ++slot)
                         if (_samplers[slot])
                             ask->sampler(slot, _samplers[slot]->_descriptor);
