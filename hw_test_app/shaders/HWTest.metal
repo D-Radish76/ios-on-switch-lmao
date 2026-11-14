@@ -121,6 +121,39 @@ kernel void ycbcr_sampler_pairs(texture2d<float> ycbcr [[texture(0)]], texture2d
     out[at + 1] = rgba.sample(bound, uv);
 }
 
+/// The same texture through constexpr repeating and clamp-to-zero samplers, which Metal reads as clamp to edge on it
+/// (gpu.raw.kernel_ycbcr_sampler_mapped): three samples a thread
+kernel void ycbcr_sampler_mapped(texture2d<float> ycbcr [[texture(0)]], texture2d<float> rgba [[texture(1)]],
+                                 sampler bound [[sampler(0)]], device float4 *out [[buffer(0)]],
+                                 uint2 id [[thread_position_in_grid]])
+{
+    constexpr sampler wrap(address::repeat, filter::nearest);
+    constexpr sampler zero(address::clamp_to_zero, filter::nearest);
+    const uint width = ycbcr.get_width(), height = ycbcr.get_height();
+    if (id.x >= 2 * width || id.y >= height)
+        return;
+    const float2 uv = (float2(id) + 0.5f) / float2(width, height);
+    const uint at = (id.y * 2 * width + id.x) * 3;
+    out[at] = ycbcr.sample(wrap, uv);
+    out[at + 1] = ycbcr.sample(zero, uv);
+    out[at + 2] = rgba.sample(bound, uv);
+}
+
+/// Both textures through the one bound repeating sampler, which Metal reads as clamp to edge on the YCbCr one alone
+/// (gpu.raw.kernel_ycbcr_shared_sampler)
+kernel void ycbcr_sampler_shared(texture2d<float> ycbcr [[texture(0)]], texture2d<float> rgba [[texture(1)]],
+                                 sampler bound [[sampler(0)]], device float4 *out [[buffer(0)]],
+                                 uint2 id [[thread_position_in_grid]])
+{
+    const uint width = ycbcr.get_width(), height = ycbcr.get_height();
+    if (id.x >= 2 * width || id.y >= height)
+        return;
+    const float2 uv = (float2(id) + 0.5f) / float2(width, height);
+    const uint at = (id.y * 2 * width + id.x) * 2;
+    out[at] = ycbcr.sample(bound, uv);
+    out[at + 1] = rgba.sample(bound, uv);
+}
+
 /// m2v writes a half-float texture through its unsigned integer twin, converting each texel in the shader: the raw path
 /// binds a header of that format over the texture's memory for these (gpu.raw.kernel_view).
 kernel void view_half_write(texture2d<half> source [[texture(0)]], texture2d<half, access::write> rgba [[texture(1)]],

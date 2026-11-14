@@ -26,6 +26,8 @@ public enum Scenes {
         KernelViewScene(),
         KernelShadowScene(),
         KernelYcbcrSamplerScene(),
+        KernelYcbcrMappedSamplerScene(),
+        KernelYcbcrSharedSamplerScene(),
         SharedPointerScene(),
         HeapTwinScene(),
         PlacementHeapScene(),
