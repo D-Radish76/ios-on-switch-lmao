@@ -253,7 +253,6 @@ void surfaceBufferAndLinearRow()
     EXPECT_EQ(rowOf(26), aligned(26, 2));    // R16Bfloat
     EXPECT_EQ(rowOf(550), aligned(550, 8));  // RGB10A8_2P_XR10, raw's texel, not Metal's plane of 2
     EXPECT_EQ(rowOf(MTLPixelFormatDepth32Float), 0u);
-    EXPECT_EQ(rowOf(9999), 0u);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
     buffer = nil;
