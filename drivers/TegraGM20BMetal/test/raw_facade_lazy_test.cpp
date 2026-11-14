@@ -214,7 +214,8 @@ void computeStates()
 // A buffer over an IOSurface's pages and a linear texture's row are the raw device's own answers
 void surfaceBufferAndLinearRow()
 {
-    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
+    const Opened opened = openWithLibrary(writePack(packKey(kPacked)));
+    const id<MTLDevice> device = opened.device;
     ASSERT_TRUE(device != nil);
     id<HarnessDeviceSPI> spi = (id<HarnessDeviceSPI>)device;
     IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
@@ -263,7 +264,8 @@ void surfaceBufferAndLinearRow()
 // makes it) are placed in its arena as the device lays them out, each one's size the device's answer (heapTextureAsk)
 void heapBlockTextures()
 {
-    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
+    const Opened opened = openWithLibrary(writePack(packKey(kPacked)));
+    const id<MTLDevice> device = opened.device;
     ASSERT_TRUE(device != nil);
     const auto heapOf = [&](MTLStorageMode mode) {
         MTLHeapDescriptor *h = [MTLHeapDescriptor new];
