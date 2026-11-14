@@ -62,6 +62,40 @@ kernel void salted_kernel(device uint *out [[buffer(0)]], uint id [[thread_posit
     out[id] = id ^ compile_salt;
 }
 
+/// Each threadgroup writes its index in the grid, plus one, at that index: a grid past the 65535 threadgroups down or deep
+/// one QMD holds (gpu.raw.grid_slices)
+kernel void grid_positions(device uint *out [[buffer(0)]], uint3 group [[threadgroup_position_in_grid]],
+                           uint3 groups [[threadgroups_per_grid]])
+{
+    const uint at = (group.z * groups.y + group.y) * groups.x + group.x;
+    out[at] = at + 1;
+}
+
+/// Each element of a buffer bound off 16 bytes, doubled plus one, into another bound off 16 (gpu.raw.kernel_window)
+kernel void window_float(device const float *src [[buffer(0)]], device float *dst [[buffer(1)]],
+                         uint id [[thread_position_in_grid]])
+{
+    dst[id] = src[id] * 2.0f + 1.0f;
+}
+
+kernel void window_float2(device const float2 *src [[buffer(0)]], device float2 *dst [[buffer(1)]],
+                          uint id [[thread_position_in_grid]])
+{
+    dst[id] = src[id] * 2.0f + 1.0f;
+}
+
+kernel void window_packed3(device const packed_float3 *src [[buffer(0)]], device packed_float3 *dst [[buffer(1)]],
+                           uint id [[thread_position_in_grid]])
+{
+    dst[id] = float3(src[id]) * 2.0f + 1.0f;
+}
+
+/// The texel under each pixel of texture 0 (gpu.raw.buffer_texture_rows16)
+fragment float4 texel_fragment(float4 position [[position]], texture2d<float> source [[texture(0)]])
+{
+    return source.read(uint2(position.xy));
+}
+
 /// Writes exactly the floats it is given, so the render target's own float-to-format conversion is what is tested.
 fragment float4 exact_fragment(constant float4 &value [[buffer(0)]])
 {

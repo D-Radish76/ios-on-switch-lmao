@@ -438,6 +438,7 @@ void RMRangeEncode::reset()
     cb_ = nil;
     serialCompute_ = computeUnit_ = continuing_ = encoderShadows_ = false;
     kernelShadows_ = {};
+    kernelWindows_ = {};
     stateCursor_ = {};
     fused_ = {};
     fusedAt_ = renderBegin_ = encoder_ = freshAt_ = SIZE_MAX;

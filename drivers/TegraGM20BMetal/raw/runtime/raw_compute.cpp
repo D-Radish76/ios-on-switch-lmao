@@ -303,6 +303,24 @@ void ComputeEncoder::setSampler(uint32_t slot, const Sampler *s)
     }
 }
 
+void ComputeEncoder::setBufferWindow(uint32_t slot, uint64_t va)
+{
+    if (slot < 31 && (!(windowMask_ >> slot & 1) || windows_[slot] != va)) {
+        windows_[slot] = va;
+        windowMask_ |= 1u << slot;
+        ++bindingRevision_;
+        RAW_DIAGNOSTIC(dev_.stats.kernelWindows++);
+    }
+}
+
+void ComputeEncoder::clearBufferWindows()
+{
+    if (windowMask_) {
+        windowMask_ = 0;
+        ++bindingRevision_;
+    }
+}
+
 void ComputeEncoder::bindBuffer(uint32_t slot, const Bound &binding)
 {
     if (!(bufs_[slot] == binding)) {
@@ -346,7 +364,7 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             else
                 cb_.useAddress(b.va, b.size, writes);
             BufferDescriptor desc;
-            if (!bufferDescriptor(e, b.va, b.size, desc)) {
+            if (!bufferDescriptor(e, windowMask_ >> e.slot & 1 ? windows_[e.slot] : b.va, b.size, desc)) {
                 *why = "a buffer bound at an offset that is not a multiple of 16";
                 return false;
             }
@@ -565,8 +583,8 @@ bool ComputeEncoder::dispatchRegion(const ComputeRegion &part, const std::array<
     }
     if (!groups[0] || !groups[1] || !groups[2])
         return true;
-    if (groups[1] > 0xffff || groups[2] > 0xffff) {
-        *why = "a grid taller or deeper than 65535 threadgroups";
+    if (qmdSliceCount({groups[0], groups[1], groups[2]}) > kMaxQmdSlices) {
+        *why = "a grid of more slices than raw launches";
         return false;
     }
     const PackKernel &r = *state_->rec;
@@ -603,8 +621,11 @@ bool ComputeEncoder::dispatchRegion(const ComputeRegion &part, const std::array<
         noteDispatch(units, looping);
     slotTableVa_ = 0;
     for (uint32_t i = 0; i < pieces; i++) {
-        if (!launch(grid, dispatchPiece(grid, axis, i, pieces), region, why))
-            return false;
+        const DispatchPiece piece = dispatchPiece(grid, axis, i, pieces);
+        const uint64_t slices = qmdSliceCount({piece.groups[0], piece.groups[1], piece.groups[2]});
+        for (uint64_t s = 0; s < slices; s++)
+            if (!launch(grid, qmdSlice(piece, s), region, why))
+                return false;
         if (pieces > 1)
             cutBatch();
     }

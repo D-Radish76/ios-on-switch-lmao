@@ -88,6 +88,10 @@ public:
     void setStageInRegion(const std::array<uint32_t, 6> &region);
     void setTexture(uint32_t slot, const Texture *t);
     void setSampler(uint32_t slot, const Sampler *s);
+    // The bytes bound at buffer slot `slot` reached through a copy of them at `va`, on 16: a buffer bound off 16 bytes
+    // whose record names no residual word (raw_kernel_shadow.h KernelUse::windowSlot); clearBufferWindows: all in place
+    void setBufferWindow(uint32_t slot, uint64_t va);
+    void clearBufferWindows();
 
     // dispatchThreadgroups: `groups` threadgroups of `threads` threads, the shape the kernel's record was made at. False:
     // refused (*why), nothing encoded
@@ -133,6 +137,11 @@ public:
     // `block` (GPU address `va`, icb::computeRegionBytes(k.rec->setBytes) long), the command's stage-in words in its root
     // table. False: refused (*why), as a dispatch is.
     static bool icbRegion(Device &dev, const ComputeState &k, const ComputeRegion &region,
+                          const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
+                          const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
+                          const char **why);
+    // One launch of a region past the QMD's grid fields: its slice (raw_dispatch_bands.h qmdSlice)
+    static bool icbRegion(Device &dev, const ComputeState &k, const ComputeRegion &region, const DispatchPiece &slice,
                           const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
                           const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
                           const char **why);
@@ -194,6 +203,8 @@ private:
     uint32_t *start_ = nullptr;
     const ComputeState *state_ = nullptr;
     Bound bufs_[31];
+    uint64_t windows_[31] = {};
+    uint32_t windowMask_ = 0;
     const Texture *textures_[31] = {};
     const Sampler *samplers_[16] = {};
     bool serial_ = false, dispatched_ = false;

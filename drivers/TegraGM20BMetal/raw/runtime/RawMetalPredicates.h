@@ -42,7 +42,6 @@ enum RMPred : uint8_t {
     PredBlitWholeTexCopy,
     PredBlitTexFill,       // a fillTexture: the raw path does not draw: a = pixel format, b = level or other format
     PredCompute,           // a kernel's buffer, texture or sampler not made by this device
-    PredComputeOff16,      // a buffer off 16 bytes where the kernel's record names no residual word: a = slot
     PredComputeKernel,     // no pack kernel at the dispatch's shape, memory, textures and samplers
     PredComputeImage,      // a texture sampled through an image of its own: a = slot
     PredComputePredicate,  // predication raw cannot run (a misused record, a word outside a raw buffer): the command buffer fails; a = kind or offset
@@ -97,7 +96,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "blit.whole",
                                              "blit.fill",
                                              "compute",
-                                             "compute.off16",
                                              "compute.nokernel",
                                              "compute.image",
                                              "compute.predicate",

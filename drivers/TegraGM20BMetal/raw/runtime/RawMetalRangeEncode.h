@@ -13,6 +13,7 @@
 #include <set>
 #include <vector>
 #include "raw_compute.h"
+#include "raw_kernel_windows.h"
 #include "raw_pass_fusion.h"
 #include "raw_turned_pass.h"
 
@@ -133,6 +134,7 @@ private:
     std::optional<raw::ComputeEncoder> ce_;
     bool serialCompute_ = false, computeUnit_ = false;
     raw::KernelShadows kernelShadows_;  // the open compute encoder's (raw_kernel_shadow.h)
+    raw::KernelWindows kernelWindows_;  // the command buffer's buffer windows (raw_kernel_windows.h)
     std::vector<raw::KernelUse> dispatchUses_, encoderUses_;
     bool encoderShadows_ = false;
     raw::StateCursor stateCursor_;

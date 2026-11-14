@@ -217,11 +217,21 @@ using RMKernelJob = raw::ComputeKernelJob<raw::ComputeState>;
                                                      (unsigned long)threads.depth,
                                                      _state ? _state->_threadLimit : 1024u],
                           MTLCommandBufferErrorInvalidResource);
-    // more threadgroups than the grid's QMD fields hold (2^31 - 1 across, 65535 down and deep) or threads past 2^32 on
-    // an axis
-    const bool refused = invalid || dispatch.reason != raw::ComputeDispatch::Ready;
-    if (refused && !invalid)
-        [self refuse:PredComputeKernel value:groups[0] why:@"a dispatch past the grid's QMD limits"];
+    // threads past 2^32 - 1 on an axis have no thread_position_in_grid (a uint3); a grid past the QMD's fields is
+    // launched in slices (raw_dispatch_bands.h kQmdGroups), past kMaxQmdSlices of them not at all
+    const bool unaddressable =
+        !invalid && (dispatch.reason != raw::ComputeDispatch::Ready || raw::qmdSliceCount(groups) > raw::kMaxQmdSlices);
+    if (unaddressable) {
+        NSString *reason =
+            [NSString stringWithFormat:@"A dispatch of %lux%lux%lu %@ of %lux%lux%lu threads is past what a thread's "
+                                       @"position in the grid or raw's launches hold",
+                                       (unsigned long)grid.width, (unsigned long)grid.height, (unsigned long)grid.depth,
+                                       perThread ? @"threads" : @"threadgroups", (unsigned long)threads.width,
+                                       (unsigned long)threads.height, (unsigned long)threads.depth];
+        os_log_error(rawLog(), "raw: %{public}s", reason.UTF8String);
+        failCommandBuffer(_cb, reason, MTLCommandBufferErrorInvalidResource);
+    }
+    const bool refused = invalid || unaddressable;
     bool sameShape = _shape.count == dispatch.count && _shape.multi == dispatch.multi;
     for (uint8_t i = 0; sameShape && i < dispatch.count; ++i)
         sameShape = _shape.regions[i].local == dispatch.regions[i].local;

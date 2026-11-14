@@ -11,22 +11,23 @@
 
 // textures sampled through a pool image (rows 16 but not 32 apart, raw::Texture::sampled): refreshed from their texels by the
 // copy engine before the first pass that samples them, and again after work here wrote them (m2v copies such a surface into
-// its shadow at each encoder that uses it once written since)
+// its shadow at each encoder that uses it once written since); a texture over a buffer before every pass that samples
+// it, as any work may write the buffer's bytes
 void RMRangeEncode::refresh(size_t pass)
 {
-    cb_->_plan.forEachResource(pass, cb_->_plan.encoderEnd(pass), RMResourceKind::Texture,
-                               [&](const RMRangeResource &use) {
-                                   if (!(use.access & raw::ResourceUse::Sample))
-                                       return;
-                                   __unsafe_unretained RMTexture *t = (__bridge RMTexture *)use.object;
-                                   if (rc_->readTexture(&t->_raw) != &t->_raw || !t->_raw.sampled ||
-                                       (!t->_raw.surfaceView && !fresh_.insert(t).second))
-                                       return;
-                                   const raw::Texture &x = t->_raw;
-                                   raw::BlitEncoder *b = rc_->blit();
-                                   b->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
-                                   b->end();
-                               });
+    cb_->_plan.forEachResource(
+        pass, cb_->_plan.encoderEnd(pass), RMResourceKind::Texture, [&](const RMRangeResource &use) {
+            if (!(use.access & raw::ResourceUse::Sample))
+                return;
+            __unsafe_unretained RMTexture *t = (__bridge RMTexture *)use.object;
+            if (rc_->readTexture(&t->_raw) != &t->_raw || !t->_raw.sampled ||
+                (!t->_raw.surfaceView && t->_kind != RMTextureBuffer && !fresh_.insert(t).second))
+                return;
+            const raw::Texture &x = t->_raw;
+            raw::BlitEncoder *b = rc_->blit();
+            b->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
+            b->end();
+        });
 }
 
 // extended-range textures (raw_xr.h): a draw samples the stand-in, drawn from the codes by the pack's conversion state
@@ -76,8 +77,11 @@ bool RMRangeEncode::standIns(size_t pass)
 // command buffer's native view of a decoder's plane answers (readTexture) reads in place.
 void RMRangeEncode::localShadows(std::vector<raw::KernelUse> &list)
 {
+    kernelWindows_.name(list, [&](uint64_t bytes) {
+        return rc_->transient(uint32_t(std::min<uint64_t>(bytes, UINT32_MAX)));
+    });
     for (raw::KernelUse &u : list)
-        if (u.shadowed && !u.writes) {
+        if (u.shadowed && !u.writes && u.windowSlot < 0) {
             const raw::Texture &x = ((__bridge RMTexture *)u.object)->_raw;
             if (const raw::Texture *native = rc_->readTexture(&x); native != &x) {
                 u.shadowed = false;
@@ -90,10 +94,18 @@ void RMRangeEncode::shadowCopies(const std::vector<const void *> &back, const st
 {
     raw::BlitEncoder *copy = rc_->blit();
     for (const void *o : back) {
+        if (const raw::KernelWindows::Window *w = kernelWindows_.find(o)) {
+            copy->copyBytes(w->va, w->span.va, w->span.bytes);
+            continue;
+        }
         const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
         copy->copyTexels(*x.sampled, 0, 0, 0, x, 0, 0, 0, x.width, x.height);
     }
     for (const void *o : fill) {
+        if (const raw::KernelWindows::Window *w = kernelWindows_.find(o)) {
+            copy->copyBytes(w->span.va, w->va, w->span.bytes);
+            continue;
+        }
         const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
         copy->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
     }
@@ -104,7 +116,8 @@ void RMRangeEncode::beginKernelShadows(size_t encoderAt)
 {
     encoderUses_.clear();
     for (size_t at = encoderAt; at < cb_->_plan.encoderEnd(encoderAt); ++at) {
-        if (cb_->_plan.operation(at).op != OpDispatch || !cb_->_plan.dispatch(at).surfaceSlots)
+        if (cb_->_plan.operation(at).op != OpDispatch ||
+            !(cb_->_plan.dispatch(at).surfaceSlots | cb_->_plan.dispatch(at).windowSlots))
             continue;
         kernelUses(cb_, at, dispatchUses_);
         localShadows(dispatchUses_);
@@ -149,7 +162,7 @@ bool RMRangeEncode::command(size_t at)
         const auto &state = cb->_plan.kernelStates[dispatch.state];
         const auto &textures = cb->_plan.textures[2][state.textures].objects;
         dispatchUses_.clear();
-        if (dispatch.surfaceSlots && !encoderShadows_) {  // a range that begins inside its encoder
+        if ((dispatch.surfaceSlots | dispatch.windowSlots) && !encoderShadows_) {  // a range begun inside its encoder
             ce_->end();
             ce_.reset();
             beginKernelShadows(dispatch.encoderBegin);
@@ -170,6 +183,10 @@ bool RMRangeEncode::command(size_t at)
             stateCursor_.reset();
         }
         encodePlannedState(cb, at, *rc, re_, &*ce_, stateCursor_);
+        ce_->clearBufferWindows();
+        for (const raw::KernelUse &u : dispatchUses_)
+            if (u.windowSlot >= 0)
+                ce_->setBufferWindow(uint32_t(u.windowSlot), kernelWindows_.find(u.object)->va);
         const auto &regions = dispatch.regions;
         ce_->setStageInRegion(dispatch.stageIn);
         ce_->setStageInRegionIndirect(dispatch.stageInBuffer ? &((__bridge RMBuffer *)dispatch.stageInBuffer)->_raw

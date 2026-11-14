@@ -952,8 +952,8 @@ TEST(SemanticPlan, DeferredComputeRebuildsRangeOwnershipFromTheOriginalSnapshot)
     plan.setKernelUses(2, object(200), [](std::vector<raw::ResourceUse> &out) {
         out = std::vector<raw::ResourceUse>{{object(20), raw::ResourceUse::Write}};
     });
-    plan.resolveDispatch(1, object(200), 4);
-    plan.resolveDispatch(2, object(200), 0);
+    plan.resolveDispatch(1, object(200), 4, 1u << 3);
+    plan.resolveDispatch(2, object(200), 0, 0);
     plan.invalidateUses();
     plan.prepareRange(0, boundary);
     plan.prepareRange(0, plan.size());
@@ -961,6 +961,9 @@ TEST(SemanticPlan, DeferredComputeRebuildsRangeOwnershipFromTheOriginalSnapshot)
     EXPECT_EQ(plan.pendingComputes(0, plan.size()), (std::vector<size_t>{boundary + 1}));
     EXPECT_EQ(plan.dispatch(1).kernel, object(200));
     EXPECT_EQ(plan.dispatch(1).surfaceSlots, 4u);
+    EXPECT_EQ(plan.dispatch(1).windowSlots, 1u << 3);
+    EXPECT_EQ(plan.legacy(1).a, 4u);
+    EXPECT_EQ(plan.legacy(1).b, 1u << 3) << "a dispatch's window slots go through the plan's command form";
     std::map<void *, uint8_t> uses;
     plan.forEachUse(0, boundary, [&](void *object, uint8_t access) {
         uses[object] = access;
@@ -1097,7 +1100,7 @@ TEST(SemanticPlan, NonuniformRegionsKeepOneOriginalReplayOperationAndImmutableGr
     ASSERT_EQ(plan.dispatch(1).regions.count, 8);
     EXPECT_EQ(plan.dispatch(1).grid, (std::array<uint64_t, 3>{19, 11, 7}));
     EXPECT_EQ(plan.dispatch(1).threads, (std::array<uint32_t, 3>{8, 5, 3}));
-    plan.resolveDispatch(1, object(41), 0);
+    plan.resolveDispatch(1, object(41), 0, 0);
     plan.record(dispatch, words({3, 2, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0}));
     EXPECT_EQ(plan.dispatch(1).regions.count, 8);
     EXPECT_EQ(plan.dispatch(2).regions.count, 1);
