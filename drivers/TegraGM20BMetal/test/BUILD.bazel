@@ -2515,15 +2515,15 @@ host_test(
         "//drivers/TegraGM20BMetal:raw_runtime_headers",
         "//drivers/TegraGM20B:TegraGM20BCompilerABI.h",
     ],
-    data = [
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalCompute.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalPlanNative.mm",
-    ],
     copts = [
         "-Idrivers/TegraGM20B",
         "-DSWITCH_RAW_HARNESS_MARKS",
     ],
     cxx_std = "c++17",
+    data = [
+        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalCompute.mm",
+        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalPlanNative.mm",
+    ],
     linkopts = [
         "-framework",
         "IOKit",

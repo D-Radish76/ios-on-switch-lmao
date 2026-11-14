@@ -51,7 +51,8 @@ void tgm_deadline_missed(const struct tgm_deadline_miss *m)
 		return;
 	/* formatted here and logged as one string: os_log drops a message whose scalars outgrow its buffer */
 	scnprintf(line, sizeof(line),
-		  "tegra-gm20b: compositor frame missed its vblank by %llu us: %s (its GPU time %llu us, learned %llu "
+		  "tegra-gm20b: compositor frame missed its vblank by %llu us: %s (its GPU time "
+		  "%llu us, learned %llu "
 		  "us; first kick %llu us before the vblank; an app kicked %d, held the GPU %d)",
 		  m->late_ns / 1000, kMissCause[cause], m->gpu_ns / 1000, m->expected_ns / 1000,
 		  m->kick_lead_ns / 1000, m->app_kicked, m->app_held);
@@ -77,7 +78,8 @@ int tgm_deadline_miss_stats(char *buf, unsigned int len)
 	if (!total)
 		return 0;
 	scnprintf(buf, len,
-		  "%u compositor frames missed their vblank: app held the GPU %u, own GPU time %u, first kick late %u, "
+		  "%u compositor frames missed their vblank: app held the GPU %u, own GPU time %u, "
+		  "first kick late %u, "
 		  "app work between kicks %u, present late %u",
 		  total, now[TGM_MISS_APP_HELD], now[TGM_MISS_OWN_GPU], now[TGM_MISS_LATE_KICK],
 		  now[TGM_MISS_APP_BETWEEN], now[TGM_MISS_PRESENT]);

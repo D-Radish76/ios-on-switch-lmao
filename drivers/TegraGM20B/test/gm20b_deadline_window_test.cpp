@@ -426,13 +426,19 @@ TEST_F(DeadlineWindow, AMissedFrameNamesItsCause)
 	}
 	ASSERT_EQ(logged.size(), 8u) << "a line for each of the window's first 8";
 	EXPECT_NE(logged[0].find("missed its vblank by"), std::string::npos) << logged[0];
-	EXPECT_NE(logged[0].find("the compositor's first kick too late for its GPU time"), std::string::npos) << logged[0];
+	EXPECT_NE(logged[0].find("the compositor's first kick too late for its GPU time"),
+		  std::string::npos)
+		<< logged[0];
 	EXPECT_NE(logged[0].find("its GPU time 9000 us"), std::string::npos) << logged[0];
-	EXPECT_NE(logged[0].find("first kick 2000 us before the vblank"), std::string::npos) << logged[0];
+	EXPECT_NE(logged[0].find("first kick 2000 us before the vblank"), std::string::npos)
+		<< logged[0];
 	ASSERT_EQ(tgm_deadline_miss_stats(window, sizeof(window)), 1);
-	EXPECT_NE(std::string(window).find("10 compositor frames missed their vblank"), std::string::npos) << window;
+	EXPECT_NE(std::string(window).find("10 compositor frames missed their vblank"),
+		  std::string::npos)
+		<< window;
 	EXPECT_NE(std::string(window).find("first kick late 10"), std::string::npos) << window;
-	EXPECT_EQ(tgm_deadline_miss_stats(window, sizeof(window)), 0) << "the next window had no miss";
+	EXPECT_EQ(tgm_deadline_miss_stats(window, sizeof(window)), 0)
+		<< "the next window had no miss";
 
 	const tgm_deadline_miss held = {1000, 8000000, 9000000, 9000000, 1, 1};
 	EXPECT_EQ(tgm_deadline_miss_cause(&held), TGM_MISS_APP_HELD);

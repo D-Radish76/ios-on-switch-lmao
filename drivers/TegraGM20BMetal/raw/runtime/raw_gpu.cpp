@@ -4890,14 +4890,17 @@ static void logNotSubmitted(const CommandBuffer &cb)
 
 bool CommandBuffer::commit(uint32_t &seqno)
 {
-    const bool submitted = submitJobs(seqno);
-    if (!submitted && (kernelResult || notSubmitted || !setRefused.empty()))
-        logNotSubmitted(*this);
-    return submitted;
-}
+    struct NotSubmittedLine {
+        const CommandBuffer &cb;
+        bool submitted = false;
 
-bool CommandBuffer::submitJobs(uint32_t &seqno)
-{
+        ~NotSubmittedLine()
+        {
+            if (!submitted && (cb.kernelResult || cb.notSubmitted || !cb.setRefused.empty()))
+                logNotSubmitted(cb);
+        }
+    } notSubmittedLine{*this};
+
     RAW_ENCODE_SPAN(Commit);
     RAW_ENCODE_COUNT(GeometryVertices, GeometryBudget().vertices - geometryBudget_.vertices);
     if (nativeError)
@@ -5157,6 +5160,7 @@ bool CommandBuffer::submitJobs(uint32_t &seqno)
     d.noteCommittedTimings(timings);
     releaseNativeReads();
     RAW_DIAGNOSTIC(d.stats.commits++);
+    notSubmittedLine.submitted = true;
     return true;
 }
 

@@ -71,12 +71,14 @@ TEST(SwitchGpuRefusalSites, ALineNamesTheProcessChannelSiteAndValues)
 		  "tegra-gm20b: iconservicesagen[209]: SubmitJob on channel 2 refused, 0xe00002c2: "
 		  "a shared "
 		  "use's GPU address has no binding use=3 address=0x1fff00040 bytes=4");
-	EXPECT_EQ(line(note(SwitchGpuRefusal::Exec, switch_gpu_refusal_errno(-5), 12, 3), kNotResponding),
+	EXPECT_EQ(line(note(SwitchGpuRefusal::Exec, switch_gpu_refusal_errno(-5), 12, 3),
+		       kNotResponding),
 		  "tegra-gm20b: iconservicesagen[209]: SubmitJob on channel 2 refused, 0xe00002ed: "
 		  "the channel "
 		  "refused the job error=-5 pushes=12 dependencies=3");
 	EXPECT_EQ(line(note(SwitchGpuRefusal::UseNoBacking, 0, 0x2a, 4096), kBadArgument),
-		  "tegra-gm20b: iconservicesagen[209]: SubmitJob on channel 2 refused, 0xe00002c2: a shared "
+		  "tegra-gm20b: iconservicesagen[209]: SubmitJob on channel 2 refused, 0xe00002c2: "
+		  "a shared "
 		  "use's BO has no GPU backing use=0 handle=0x2a bytes=4096");
 	EXPECT_EQ(line(note(SwitchGpuRefusal::JobHeader, 0x16b2c0000), kBadArgument, 0),
 		  "tegra-gm20b: iconservicesagen[209]: SubmitJob refused, 0xe00002c2: the job "

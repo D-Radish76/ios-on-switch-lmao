@@ -127,8 +127,8 @@ IOReturn AGXDeviceUserClient::attachSet(const TegraGM20BAbiResourceSetCreate *in
 		if (!refused) {
 			switch_gpu_set_destroy(made);
 			return switch_gpu_refuse(why, SwitchGpuRefusal::SetAttach,
-						 ioreturn(attached), switch_gpu_refusal_errno(attached),
-						 count);
+						 ioreturn(attached),
+						 switch_gpu_refusal_errno(attached), count);
 		}
 		uint32_t kept = 0;
 		for (uint32_t m = 0; m < count; ++m)
@@ -137,8 +137,8 @@ IOReturn AGXDeviceUserClient::attachSet(const TegraGM20BAbiResourceSetCreate *in
 		if (kept == count) {
 			switch_gpu_set_destroy(made);
 			return switch_gpu_refuse(why, SwitchGpuRefusal::SetAttach,
-						 ioreturn(attached), switch_gpu_refusal_errno(attached),
-						 count);
+						 ioreturn(attached),
+						 switch_gpu_refusal_errno(attached), count);
 		}
 		count = kept;
 		for (uint32_t i = 0; i < in->count; ++i) {

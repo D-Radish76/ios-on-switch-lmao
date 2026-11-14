@@ -44,8 +44,8 @@ protected:
                 va = (va & ~0xffffffffull) | m[i].value;
             else if (m[i].method == NVB0B5_SET_REMAP_CONST_A)
                 constA = m[i].value;
-            else if (m[i].method == NVB0B5_LAUNCH_DMA && (m[i].value & 3) != NVB0B5_LAUNCH_DMA_DATA_TRANSFER_TYPE_NONE &&
-                     (m[i].value & (1u << 10)))
+            else if (m[i].method == NVB0B5_LAUNCH_DMA &&
+                     (m[i].value & 3) != NVB0B5_LAUNCH_DMA_DATA_TRANSFER_TYPE_NONE && (m[i].value & (1u << 10)))
                 out.push_back({va, constA});
         }
         return out;
@@ -73,7 +73,8 @@ TEST_F(DeviceFreshFill, EveryLevelOfAChainLevelZeroIncludedIsFilled)
     ASSERT_NE(cb, nullptr);
     raw::BlitEncoder *b = cb->blit();
     ASSERT_NE(b, nullptr);
-    EXPECT_EQ(raw::fillFresh(*b, t, patterned, pattern, zero), uint64_t(64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 16 + 4 + 1) * 4);
+    EXPECT_EQ(raw::fillFresh(*b, t, patterned, pattern, zero),
+              uint64_t(64 * 64 + 32 * 32 + 16 * 16 + 8 * 8 + 16 + 4 + 1) * 4);
     b->end();
     uint32_t seqno = 0;
     ASSERT_TRUE(cb->commit(seqno));

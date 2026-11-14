@@ -50,8 +50,7 @@ protected:
     }
 
     // One dispatch of the slot-3 reader with the table bound by `bind`, committed: whether the kernel took it
-    template <typename Bind>
-    bool dispatchCommitted(Bind bind)
+    template <typename Bind> bool dispatchCommitted(Bind bind)
     {
         const raw::ComputeState *k = raw::placeCompute(dev, reader());
         EXPECT_NE(k, nullptr);
@@ -102,8 +101,7 @@ TEST_F(DeviceKernelBytes, TheFacadeBindsTheTableAsKernelMemoryAtBothSites)
     ASSERT_FALSE(native.empty());
     const size_t op = compute.find("case OpKernelClockAnchors:\n        e.");
     ASSERT_NE(op, std::string::npos);
-    EXPECT_EQ(compute.compare(op + std::string("case OpKernelClockAnchors:\n        e.").size(), 15,
-                              "setKernelBytes("),
+    EXPECT_EQ(compute.compare(op + std::string("case OpKernelClockAnchors:\n        e.").size(), 15, "setKernelBytes("),
               0);
     const size_t plan = native.find("Source::ClockAnchors) {\n            compute->");
     ASSERT_NE(plan, std::string::npos);
