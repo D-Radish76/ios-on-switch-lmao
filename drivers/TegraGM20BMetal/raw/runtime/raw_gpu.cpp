@@ -41,6 +41,7 @@
 #include "raw_shader_tests.h"
 #include "raw_shader_test_push.h"
 #include "raw_slm.h"
+#include "raw_stage_switches.h"
 #include "raw_srgb_table.h"
 #include "raw_stamps.h"
 #include "raw_storage.h"
@@ -372,7 +373,18 @@ void cleanToMemory(const void *at, uint64_t bytes)
     (void)bytes;
 #endif
 }
+
+const PackProgram kNoPixelProgram = {};
+const uint8_t kNoPixelHeader[0x50] = {};
 }  // namespace
+
+PlacedProgram noPixelProgram()
+{
+    PlacedProgram p;
+    p.record = &kNoPixelProgram;
+    p.header = kNoPixelHeader;
+    return p;
+}
 
 // The render server's: what one 720p screen's composition holds. A client's: the most it grows a chunk to (chunkSize).
 const Device::Sizes Device::kSizes[2] = {
@@ -529,6 +541,7 @@ void Device::emitContext(Push &p)
     for (uint64_t i = 0; i < pack_.bytes(PackBaseline) / 8; i++)
         if (!ownedMethod(base[2 * i]))
             p.m(base[2 * i], base[2 * i + 1]);
+    stageSwitchesOn(p);
     mme::install(p, root_.va);
     tiledCacheInit(p, k_.info());
     // the depth/stencil registers (the runtime's, as NVK leaves them for Metal's default state in a pass without the attachment)
@@ -1227,15 +1240,17 @@ Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)
     if (pl.rec)
         return &pl;
     const PackProgram *progs = pack_.section<PackProgram>(PackPrograms);
-    PlacedProgram vs, fs;
-    if (!place(pp.vs, vs.program, vs.data) || !place(pp.fs, fs.program, fs.data)) {
+    PlacedProgram vs, fs = noPixelProgram();
+    if (!place(pp.vs, vs.program, vs.data) || (pixelStage(pp) && !place(pp.fs, fs.program, fs.data))) {
         stats.heapFull++;
         return nullptr;
     }
     vs.record = &progs[pp.vs];
-    fs.record = &progs[pp.fs];
     vs.header = pack_.section<uint8_t>(PackHeap) + progs[pp.vs].program;
-    fs.header = pack_.section<uint8_t>(PackHeap) + progs[pp.fs].program;
+    if (pixelStage(pp)) {
+        fs.record = &progs[pp.fs];
+        fs.header = pack_.section<uint8_t>(PackHeap) + progs[pp.fs].program;
+    }
     if (!slmNeed(std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header)))) {
         stats.heapFull++;
         return nullptr;
@@ -1243,7 +1258,7 @@ Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)
     build(pl, pp, vs, fs, pack_.section<uint32_t>(PackBlob) + pp.blob, pack_.string(pp.keyString), caTransform,
           pack_.spills(pp));
     offerVariants(pl, pp);
-    if (const PackSplit *split = pack_.split(pp.fs); split && !pl.storageBits) {
+    if (const PackSplit *split = pixelStage(pp) ? pack_.split(pp.fs) : nullptr; split && !pl.storageBits) {
         SplitSource source;
         source.rec = *split;
         source.packed = true;
@@ -1270,7 +1285,7 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
     pl.vertexInstructions = instructions(*vs.record);
     pl.fragmentInstructions = instructions(*fs.record);
     pl.memoryEntries = pp.memoryEntries;
-    std::vector<uint32_t> words(64 + 16 + (tess ? 64 : 0) + pp.blobDwords * 2);
+    std::vector<uint32_t> words(64 + 16 + kStageSwitchWords + (tess ? 64 : 0) + pp.blobDwords * 2);
     Push w{words.data(), words.data() + words.size()};
     uint32_t writes[8];
     uint32_t interlockControl = 0;
@@ -1311,9 +1326,11 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
         if (writes[c] & 0x1111)  // R_ENABLE, G_ENABLE, B_ENABLE, A_ENABLE
             pl.writeBits |= uint8_t(1u << c);
     w.m(0x2044, vs.program);  // SET_PIPELINE_PROGRAM(VERTEX)
-    w.m(0x2144, fs.program);  // SET_PIPELINE_PROGRAM(PIXEL)
     w.m(PIPELINE_REGISTER_COUNT_VERTEX, vs.record->gprs);
-    w.m(PIPELINE_REGISTER_COUNT_PIXEL, fs.record->gprs);
+    if (pixelStage(pp)) {
+        w.m(0x2144, fs.program);  // SET_PIPELINE_PROGRAM(PIXEL)
+        w.m(PIPELINE_REGISTER_COUNT_PIXEL, fs.record->gprs);
+    }
     if (fs.record->boundTextures)
         w.m(BINDLESS_TEXTURE, fs.record->boundTextures - 1u);
     bool exactCbufs = false;
@@ -1344,6 +1361,8 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
             if (entry < pp.entries)
                 pl.ubos[pl.uboCount++] = {group, c, entry};
         }
+    stageSwitches(pp, keyString, w, pl.restore);
+    pl.stagesOff = !pixelStage(pp) || rasterOff(keyString);
     pl.methods.assign(words.data(), w.at);
     pl.segment = segmentHeap_.place(pl.methods.data(), uint32_t(pl.methods.size()));
     memcpy(pl.push, pp.pushWords, sizeof pl.push);
@@ -7694,8 +7713,10 @@ void RenderEncoder::end()
     }
     if (samples_ > 1)
         sampleWords(p_, 1, d.root_.va);
-    // the 3D engine's work outside the pass (the blit encoder's draws) meets no iterated blend and the pass's targets
-    if (const Pipeline *live = cb_->extrasLive_; live && live->freeForm.rung == FetchIteratedBlend) {
+    // the 3D engine's work outside the pass (the blit encoder's draws) meets no iterated blend and the pass's
+    // targets, and the pixel stage and rasteriser on
+    if (const Pipeline *live = cb_->extrasLive_;
+        live && (live->freeForm.rung == FetchIteratedBlend || live->stagesOff)) {
         p_.raw(live->restore.data(), uint32_t(live->restore.size()));
         cb_->extrasLive_ = nullptr;
     }

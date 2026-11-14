@@ -17,7 +17,7 @@ MAGIC = b'GM20BPK1'
 # fields (every pack state's are 0), a state's vertex streams past stream 0, layer and viewport count push words; 22:
 # the formats a state's written textures were compiled for, the fragment slots it samples two-plane RGB10A8_2P_XR10
 # textures at; 23: compute states' answers (PackComputeFacts), compared sampler slots
-VERSION = 23
+VERSION = 25
 SECTIONS = 14  # runtime/raw_pack.h PackSectionCount
 ENTRY_COMPARES = 1  # runtime/raw_pack.h kEntryCompares: a handle's sampler slot the state samples by comparison
 # PackIteratedBlend: count, enable, constants, uniformSlot, uniformOffset, uniformWords, reserved, alphaSource,
@@ -31,6 +31,7 @@ PIPELINE_V15 = struct.Struct('<IBBBBI32s8sI')
 # PackPipeline's record-v18 tail: memoryEntries
 PIPELINE_V18 = struct.Struct('<I')
 ALL_ENTRIES = 0xFFFFFFFF  # a record whose programs' set reads no tool read: every entry read from memory
+NO_PROGRAM = 0xFFFFFFFF  # runtime/raw_pack.h kNoProgram: a state of no fragment program
 # PackPipeline's record-v20 tail: rootTableWord[2], statusWord[2], rootSlots[2], heapArrays, heapBytes, heap[8] as
 # (heapClass, offset) pairs, spillEntry[2], spillWords[2], spillAt
 PIPELINE_V20 = struct.Struct('<2B2B2IB3xI16I2B2BI')
@@ -644,5 +645,5 @@ def write_layouts(path: str, pack: Pack) -> None:
             slots = ' '.join(f'{e["off"]}:{entry_kind(e)}' for e in rec['entries'])
             vs = name(pack.programs[rec['vs']])
             for fs in (rec['fs'], split.get(rec['fs'])):
-                if fs is not None:
+                if fs is not None and fs != NO_PROGRAM:
                     f.write(f'{vs} {name(pack.programs[fs])} {rec["set_size"]:x} {slots}\n')

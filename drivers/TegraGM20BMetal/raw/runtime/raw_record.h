@@ -48,7 +48,7 @@ struct PackRules {
 };
 
 struct RuntimeRecord {
-    PackPipeline pipeline = {};  // vs 0, fs 1: programs[]; blob and keyString: below
+    PackPipeline pipeline = {};  // vs 0, fs 1 (kNoProgram: none): programs[]; blob and keyString: below
     std::string keyString;
     CapturedProgram programs[2];
     CapturedProgram tessPrograms[2];  // a tessellation state's (PackPipeline tessellates): control, evaluation

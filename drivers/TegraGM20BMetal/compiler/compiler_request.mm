@@ -31,11 +31,12 @@ bool renderKey(Prepared &p, const std::vector<std::map<std::string, raw::AirHash
                std::string &why)
 {
     const raw::CompileRequest &r = p.request;
-    raw::AirHash vertex, fragment;
-    if (!airOf(r, air, r.stages[0], vertex, why) || !airOf(r, air, r.stages[1], fragment, why))
+    raw::AirHash vertex, fragment{};
+    const size_t f = raw::fragmentStage(r);
+    if (!airOf(r, air, r.stages[0], vertex, why) || (f != raw::kNoStage && !airOf(r, air, r.stages[f], fragment, why)))
         return false;
     std::vector<raw::LinkedStageAir> linked;
-    for (size_t i = 2; i < r.stages.size(); ++i) {
+    for (size_t i = raw::firstLinked(r); i < r.stages.size(); ++i) {
         raw::LinkedStageAir stage{r.stages[i].tag[0], {}};
         if (!airOf(r, air, r.stages[i], stage.air, why))
             return false;

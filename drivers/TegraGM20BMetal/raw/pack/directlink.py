@@ -121,6 +121,11 @@ def load_records(path: str) -> tuple[list[dict], list[dict]]:
     return states, kernel_recs
 
 
+def stage_programs(rec: dict) -> list[dict]:
+    """Give a record's vertex program and its fragment program, which a state of no fragment function has none of."""
+    return [p for p in rec['programs'] if p['image']]
+
+
 def program_id(program: dict) -> str:
     """Name a program by its header, code, shader data and constant buffer types (FNV-1a).
 
@@ -247,7 +252,7 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         'key': rec['key'],
         'form': rec['probe']['form'],
         'vs': prog_index[program_id(rec['programs'][0])],
-        'fs': prog_index[program_id(rec['programs'][1])],
+        'fs': prog_index[program_id(rec['programs'][1])] if rec['programs'][1]['image'] else packfile.NO_PROGRAM,
         'blob': [(m, regs.get(m, 0)) for m in varying if m not in PROGRAM_OFFSETS and not mkpack.foreign(m, targets)],
         'push': [(0x700 + 4 * i, words[i]) for i in range(32) if mask >> i & 1],
         'push_metadata': bool(flags & 4),
@@ -353,16 +358,17 @@ def probe_of(rec: dict, index: int, context: dict[int, int]) -> dict:
     n = mkpack.target_mask(rec['key'], bool(PIPELINE.unpack_from(rec['pipeline'])[12] & 128))
     regs = dict(context)
     regs.update(rec['regs'])
-    for method, program in zip(PROGRAM_OFFSETS, rec['programs'], strict=True):
+    programs = stage_programs(rec)
+    for method, program in zip(PROGRAM_OFFSETS, programs, strict=False):
         regs[method] = int(program_id(program), 16) & 0xFFFFFFFF
     regs = {m: 0 if mkpack.disabled_stream(m, v) else v for m, v in regs.items() if not mkpack.foreign(m, n)}
-    ids = [program_id(program) for program in rec['programs']]
+    ids = [program_id(program) for program in programs]
     return {
         'index': index,
         'key': rec['key'],
         'form': rec['form'],
         'targets': n,
-        'records': [{'regs': regs, 'prog': {1: (ids[0],), 5: (ids[1],)}}],
+        'records': [{'regs': regs, 'prog': dict(zip((1, 5), ((i,) for i in ids), strict=False))}],
     }
 
 
@@ -473,7 +479,7 @@ def main() -> None:
     warm = next(d for d in buckets if os.path.exists(os.path.join(d, 'context.log')))
     _, post = mkpack.load_init(os.path.join(warm, 'context.log'))
     states, refused = gather(buckets, draw_context(post[0]))
-    programs = {program_id(p): p for rec in states for p in rec['programs']}
+    programs = {program_id(p): p for rec in states for p in stage_programs(rec)}
     found = split_programs(states, programs)
     simple = [rec['probe'] for rec in states]
     report = [f'{len(states) + len(refused)} states made directly, {len(states)} records, {len(refused)} refused']
@@ -488,7 +494,7 @@ def main() -> None:
     pipes = sorted((pipeline_of(rec, varying, prog_index, constexpr_tsc) for rec in states), key=packfile.key_hash)
     pipes, iterated = fetchfree_link.attach(pipes, report)
     computes, compute_facts = compute_kernels(buckets, constexpr_tsc, laid, report)
-    used = list(dict.fromkeys(prog_recs[rec['fs']]['id'] for rec in pipes))
+    used = list(dict.fromkeys(prog_recs[rec['fs']]['id'] for rec in pipes if rec['fs'] != packfile.NO_PROGRAM))
     split = splits.lay_out(used, found, programs, laid, report)
     init_recs = init_records(os.path.join(warm, 'context.log'))
     declared, kinds = archives.declared(inventory)

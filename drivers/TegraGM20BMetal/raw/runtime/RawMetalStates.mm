@@ -287,10 +287,16 @@ static raw::ArchiveAnswer renderArchiveAnswer(MTLRenderPipelineDescriptor *d, MT
     return answer;
 }
 
+// A state's functions all this device's: a fragment function of its own, or none (its pixel stage off)
+static bool ownFunctions(MTLRenderPipelineDescriptor *d)
+{
+    return [(id)d.vertexFunction isKindOfClass:[RMFunction class]] &&
+           (!d.fragmentFunction || [(id)d.fragmentFunction isKindOfClass:[RMFunction class]]);
+}
+
 bool rmRenderArchiveMissed(MTLRenderPipelineDescriptor *d, MTLPipelineOption o, NSError **error)
 {
-    if (![(id)d.vertexFunction isKindOfClass:[RMFunction class]] ||
-        ![(id)d.fragmentFunction isKindOfClass:[RMFunction class]])
+    if (!ownFunctions(d))
         return false;
     const std::string key = raw_metal_pipeline_key(d).UTF8String;
     return renderArchiveAnswer(d, o, raw::Pack::fnv(key.data(), key.size()), error) == raw::ArchiveAnswer::Missed;
@@ -307,9 +313,9 @@ RMPipeline *rmPipelineShell(RMDevice *device, MTLRenderPipelineDescriptor *d, MT
     RMFunction *vf = [(id)d.vertexFunction isKindOfClass:[RMFunction class]] ? (RMFunction *)d.vertexFunction : nil;
     RMFunction *ff = [(id)d.fragmentFunction isKindOfClass:[RMFunction class]] ? (RMFunction *)d.fragmentFunction : nil;
     // a state linking functions is packed under them too (its key names each), where they are framework libraries' as well
-    p->_packable =
-        vf && ff && !vf->_framework.empty() && vf->_framework == ff->_framework && raw_metal_linked_packable(d);
-    p->_completable = vf && ff;
+    p->_completable = ownFunctions(d);
+    p->_packable = p->_completable && !vf->_framework.empty() && (!ff || vf->_framework == ff->_framework) &&
+                   raw_metal_linked_packable(d);
     if (p->_completable) {
         p->_key = raw_metal_pipeline_key(d).UTF8String;
         p->_madeFrom = [d copy];

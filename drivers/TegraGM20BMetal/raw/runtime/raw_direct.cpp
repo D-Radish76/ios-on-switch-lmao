@@ -112,14 +112,17 @@ public:
 
     // Refused: a state the raw path does not draw from a record; Failed: NVK could not compile a stage. `split`: the fragment
     // stage's split too (split()). `zeroPush`: root push words compiled as the constant 0 besides the state's constant ones.
-    // `turned`: the fragment stage alone, as a turned plane's (NVK's nvk_switch_turn.h)
+    // `turned`: the fragment stage alone, as a turned plane's (NVK's nvk_switch_turn.h). A state of one stage has no
+    // fragment function: its pixel stage is off (raw_stage_switches.h)
     CompileOutcome compile(const NmbDirectState &state, uint32_t halfTargets, bool split, std::string &why,
                            uint32_t zeroPush = 0, bool texsF16 = false, bool turned = false)
     {
-        if (state.stageCount != 2 && !(state.stageCount == 4 && state.tess.parameters && state.tess.controlWord)) {
+        if (state.stageCount != 2 && !(state.stageCount == 1 && !turned) &&
+            !(state.stageCount == 4 && state.tess.parameters && state.tess.controlWord)) {
             why = std::to_string(state.stageCount) + " stages";
             return CompileOutcome::Refused;
         }
+        pixel_ = state.stageCount != 1;
         const uint32_t first = turned ? 1 : 0, end = turned ? 2 : state.stageCount;
         for (uint32_t k = first; k < end; k++) {
             const NmbDirectStage &s = state.stages[k];
@@ -176,8 +179,15 @@ public:
         return made_[3].owner != nullptr;
     }
 
+    bool pixel() const
+    {
+        return pixel_;
+    }
+
     EmitProgram emit(int k) const
     {
+        if (k == 1 && !pixel_)
+            return {};
         return {made_[k].header, made_[k].numGprs, made_[k].earlyFragmentTests, made_[k].interlockControl,
                 bool(made_[k].usesSampleShading)};
     }
@@ -191,6 +201,7 @@ private:
     const DirectNvk &nvk_;
     const NakLayoutData &layout_;
     uint64_t xrPlaneBindings_;
+    bool pixel_ = true;
     NvkStage made_[4] = {};
     CapturedProgram programs_[4];
 };
@@ -683,7 +694,8 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     parts.blendColorWord = uint8_t(draw.blendColorWord);
     parts.halfBlendColorWord = uint8_t(draw.halfBlendColorWord);
     parts.programs[0] = &stages.program(0);
-    parts.programs[1] = &stages.program(1);
+    parts.programs[1] = stages.pixel() ? &stages.program(1) : nullptr;
+    parts.pixelStage = stages.pixel();
     parts.heap = heap;
     if (state.stageCount == 4) {
         parts.tessPrograms[0] = &stages.program(2);

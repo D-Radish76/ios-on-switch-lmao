@@ -35,7 +35,7 @@ enum PackSectionId {
     PackSectionCount
 };
 
-constexpr uint32_t kPackVersion = 23;
+constexpr uint32_t kPackVersion = 25;
 
 // What a record or a program variant (PackVariant) assumes, as bits of a mask: a draw takes a variant only where all of them
 // hold. Bits 0-15 are facts of the draw's bindings, bit 16 of its pipeline, bit 26 of its pass, bits 17-25 of the chip
@@ -365,10 +365,14 @@ constexpr uint32_t kPackHeapArrays = 8;
 // Every heap array's elements: the texture header pool's (Device kTicCount), which the sampler header pool's fits
 constexpr uint32_t kPackHeapElements = 8192;
 
+// PackPipeline::fs of a state of no fragment function: its draws run with the pixel stage off (raw_stage_switches.h),
+// writing depth and stencil and no colour
+constexpr uint32_t kNoProgram = 0xFFFFFFFF;
+
 struct PackPipeline {
     uint64_t keyHash;    // FNV-1a 64 of the state key (the frontend journal's R-line fields but the label)
     uint32_t keyString;  // offset in the strings section: the key's fields before " | v" (attachments, vertex layout)
-    uint32_t vs, fs;     // program indices
+    uint32_t vs, fs;     // program indices; fs kNoProgram: none
     uint32_t blob, blobDwords;  // (method, value) pairs in the blob section, dwords = 2 x pairs
     uint8_t entries, pushes, vertexSlot, pad;
     uint16_t vertexStride, setBytes;
@@ -467,6 +471,11 @@ inline bool bindStrideStreams(const PackPipeline &r)
 inline bool tessellates(const PackPipeline &p)
 {
     return p.controlWord != 0;
+}
+
+inline bool pixelStage(const PackPipeline &p)
+{
+    return p.fs != kNoProgram;
 }
 
 // A compute state at one threadgroup shape (runtime/raw_compute.h): NVK's work for the kernel m2v made of it, keyed by

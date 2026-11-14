@@ -203,7 +203,7 @@ enum class RMShareable : uint8_t {
     // its record is the pack's, and so are its variants' (RawMetalCubic.mm packedVariants); a record this process made is
     // not, and its variants are made as well
     bool _packed;
-    bool _completable;  // both its functions are this device's (the runtime makes its record if the pack has none)
+    bool _completable;  // its functions, fragment or none, are this device's (made at creation where the pack has none)
     bool _archived;     // an archive its creation listed declares it: its twin is made as a packed one's
     bool _caTransform;
     std::string _failure;  // why its creation failed (Completion::makeNow), as Metal's would

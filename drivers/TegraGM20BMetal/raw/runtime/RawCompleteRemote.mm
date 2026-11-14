@@ -99,7 +99,7 @@ bool Completion::renderRequest(const Ask &a, const CacheKey &k, bool bytes, Comp
     std::map<const LibrarySource *, uint32_t> seen;
     @autoreleasepool {
         if (!addStage(r, ids, seen, "v", d.vertexFunction, bytes, every) ||
-            !addStage(r, ids, seen, "f", d.fragmentFunction, bytes, every))
+            (d.fragmentFunction && !addStage(r, ids, seen, "f", d.fragmentFunction, bytes, every)))
             return false;
         const std::pair<const char *, NSArray *> linked[] = {{"vl", d.vertexLinkedFunctions.functions},
                                                              {"vp", d.vertexLinkedFunctions.privateFunctions},

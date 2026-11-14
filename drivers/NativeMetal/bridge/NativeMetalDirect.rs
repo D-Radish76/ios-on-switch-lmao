@@ -1473,7 +1473,8 @@ pub unsafe extern "C" fn switch_nmb_blend_color_words(color: *const f32, words: 
     }
 }
 
-/// The pipeline's stages in NmbDirectState's order: vertex and fragment, then a tessellation state's control and evaluation
+/// The pipeline's stages in NmbDirectState's order: vertex and fragment, then a tessellation state's control and
+/// evaluation; a state of no fragment function (rasterization on or off) its vertex stage alone
 fn stage_order(pipeline: &RenderPipeline) -> Result<Vec<usize>, String> {
     let wanted: &[avk::ShaderStageFlags] = if pipeline.graphics.tessellation.is_some() {
         &[
@@ -1482,6 +1483,8 @@ fn stage_order(pipeline: &RenderPipeline) -> Result<Vec<usize>, String> {
             avk::ShaderStageFlags::TESSELLATION_CONTROL,
             avk::ShaderStageFlags::TESSELLATION_EVALUATION,
         ]
+    } else if pipeline.stages.len() == 1 {
+        &[avk::ShaderStageFlags::VERTEX]
     } else {
         &[avk::ShaderStageFlags::VERTEX, avk::ShaderStageFlags::FRAGMENT]
     };

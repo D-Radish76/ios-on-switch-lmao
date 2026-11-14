@@ -86,9 +86,10 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
 {
     if (retry)
         *retry = false;
-    const bool tess = tessellates(r.pipeline);
+    const bool tess = tessellates(r.pipeline), pixel = pixelStage(r.pipeline);
     for (const CapturedProgram *program : {&r.programs[0], &r.programs[1], &r.tessPrograms[0], &r.tessPrograms[1]}) {
-        if (!tess && (program == &r.tessPrograms[0] || program == &r.tessPrograms[1]))
+        if ((!tess && (program == &r.tessPrograms[0] || program == &r.tessPrograms[1])) ||
+            (!pixel && program == &r.programs[1]))
             continue;
         if (program->image.size() < sizeof CompletedProgram::header) {
             why = "missing shader program header";
@@ -108,8 +109,8 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
     const uint64_t key = r.pipeline.keyHash;
     if (const auto it = completed_.find(key); it != completed_.end())
         return it->second;
-    PlacedProgram vs, fs, tessPlaced[2];
-    if (!placeCompleted(r.programs[0], vs) || !placeCompleted(r.programs[1], fs) ||
+    PlacedProgram vs, fs = noPixelProgram(), tessPlaced[2];
+    if (!placeCompleted(r.programs[0], vs) || (pixel && !placeCompleted(r.programs[1], fs)) ||
         (tess &&
          (!placeCompleted(r.tessPrograms[0], tessPlaced[0]) || !placeCompleted(r.tessPrograms[1], tessPlaced[1])))) {
         stats.heapFull++;
@@ -153,7 +154,7 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
     Push w{words.data(), words.data() + words.size()};
     for (const auto &[m, v] : r.restore)
         w.m(m, v);
-    stored.pipeline.restore.assign(words.data(), w.at);
+    stored.pipeline.restore.insert(stored.pipeline.restore.end(), words.data(), w.at);
     stored.pipeline.amplificationLayerWord = r.amplificationLayerWord;
     stored.pipeline.amplificationViewportWord = r.amplificationViewportWord;
     stored.pipeline.strideTwin = strideTwin;

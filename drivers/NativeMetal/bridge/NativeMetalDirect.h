@@ -178,7 +178,7 @@ typedef struct NmbDirectState {
     uint64_t device;                    // VkDevice of the stage compile
     uint64_t layout;                    // VkPipelineLayout of draw 0's variant
     const NmbDirectLayout *layoutData;  // that layout, as data
-    uint32_t stageCount;                // 2, or 4 for a tessellation state
+    uint32_t stageCount;                // 2, 4 for a tessellation state, 1 for a state of no fragment function
     NmbDirectStage stages[4];           // vertex, fragment, then a tessellation state's control and evaluation stages
     NmbDirectTess tess;
     bool sampleShading;

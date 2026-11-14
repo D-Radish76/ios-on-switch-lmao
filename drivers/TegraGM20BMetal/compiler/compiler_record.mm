@@ -77,9 +77,10 @@ MTLRenderPipelineDescriptor *descriptor(const Prepared &p, const Libraries &libr
     MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
     raw::applyFields(r.fields, d);
     d.vertexFunction = made[0];
-    d.fragmentFunction = made[1];
+    if (const size_t f = raw::fragmentStage(r); f != raw::kNoStage)
+        d.fragmentFunction = made[f];
     NSMutableDictionary<NSString *, NSMutableArray *> *linked = [NSMutableDictionary dictionary];
-    for (size_t i = 2; i < r.stages.size(); ++i) {
+    for (size_t i = raw::firstLinked(r); i < r.stages.size(); ++i) {
         NSString *tag = @(r.stages[i].tag.c_str());
         if (!linked[tag])
             linked[tag] = [NSMutableArray array];

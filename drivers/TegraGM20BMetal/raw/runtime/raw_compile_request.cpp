@@ -66,15 +66,17 @@ bool knownTag(const CompileRequest &r, size_t index)
     const std::string &tag = r.stages[index].tag;
     if (r.kind == RequestKind::Kernel)
         return tag == "k";
-    if (index < 2)
-        return tag == (index ? "f" : "v");
+    if (index == 0)
+        return tag == "v";
+    if (index == 1 && tag == "f")
+        return true;
     return tag == "vl" || tag == "vp" || tag == "fl" || tag == "fp";
 }
 
 bool sane(const CompileRequest &r)
 {
     const bool kernel = r.kind == RequestKind::Kernel;
-    if ((kernel ? r.stages.size() != 1 : r.stages.size() < 2) || r.stages.size() > kRequestStageLimit ||
+    if ((kernel ? r.stages.size() != 1 : r.stages.empty()) || r.stages.size() > kRequestStageLimit ||
         r.libraries.empty() || r.libraries.size() > kRequestLibraryLimit || r.cubic.samplers.size() > 16 ||
         r.cubic.textures.size() > 16 || r.kernel.textures.size() > kRequestBindLimit ||
         r.kernel.samplers.size() > kRequestBindLimit || r.key.empty() || (kernel && r.form != RequestForm::Primary))
@@ -113,6 +115,16 @@ NmbDirectDispatch KernelRequest::dispatch() const
     d.samplerCount = uint32_t(samplers.size());
     d.regionMode = regionMode;
     return d;
+}
+
+size_t fragmentStage(const CompileRequest &r)
+{
+    return r.stages.size() > 1 && r.stages[1].tag == "f" ? 1 : kNoStage;
+}
+
+size_t firstLinked(const CompileRequest &r)
+{
+    return fragmentStage(r) == kNoStage ? 1 : 2;
 }
 
 std::string encodeRequest(const CompileRequest &r)

@@ -7,6 +7,7 @@
 // SHA-256 of its bytes (which the request carries). A client only ever finds a record made from what it holds itself.
 #pragma once
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -77,6 +78,12 @@ struct CompileRequest {
     KernelRequest kernel;
     std::string key;  // the CacheKey text the client made (a kernel's starts "kernel | ")
 };
+
+// A render request's fragment stage (tag "f", second where it has one), kNoStage for a state of no fragment function; and
+// its first linked stage
+constexpr size_t kNoStage = SIZE_MAX;
+size_t fragmentStage(const CompileRequest &r);
+size_t firstLinked(const CompileRequest &r);
 
 std::string encodeRequest(const CompileRequest &r);
 // False: not a request this build reads (a bound passed, a stage naming no library, a system library given bytes)

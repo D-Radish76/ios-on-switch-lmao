@@ -59,6 +59,7 @@ struct RecordHeap {
 
 struct RecordParts {
     const CapturedProgram *programs[2] = {};      // vertex, fragment
+    bool pixelStage = true;                       // false: a state of no fragment function, no fragment program
     const CapturedProgram *tessPrograms[2] = {};  // a tessellation state's control and evaluation programs
     uint8_t controlWord = 0, controlPoints = 0, controlPointIndexBytes = 0;  // PackPipeline's
     std::vector<LayoutEntry> layout;                                         // by offset
@@ -99,7 +100,7 @@ uint32_t targets(const std::string &key);
 // foreign)
 bool foreign(uint32_t method, uint32_t targets);
 
-// Whether both programs are known and bind only what the raw path binds (mkpack.py raw_bindable); false: why not
+// Whether its programs are known and bind only what the raw path binds (mkpack.py raw_bindable); false: why not
 bool programsBindable(const RecordParts &parts, std::string &why);
 // mkpack.py's record of `parts`, the state of pack key `key`; false: set aside (`why`)
 bool assembleRecord(const RecordParts &parts, const std::string &key, const PackRules &rules, RuntimeRecord &out,
