@@ -207,7 +207,7 @@ void kernelRefusesTheSubmission()
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     drawInto(cb, pass(target(o.device, kPacked)), o.state);
     expectFailed(o.device, cb, "enc.kernel", MTLCommandBufferErrorInternal);
-    EXPECT_NE(text(cb.error).find("the kernel answered 0x"), std::string::npos) << text(cb.error);
+    EXPECT_NE(text(cb.error).find("the kernel refused its job (0x"), std::string::npos) << text(cb.error);
 }
 
 void kernelRefusesTheChannel()
