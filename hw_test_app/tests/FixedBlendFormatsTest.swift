@@ -11,7 +11,8 @@ import Metal
 /// 1 - alpha moves a tiny result by several half steps (8 at the worst texel) while the value moves by under 2^-11.
 /// Apple's GPU (M4 Max, the same shader and reference) is 1, 3 and 7 half steps and 2^-11, 2^-10 and 5 x 2^-11 off at
 /// 1, 2 and 8 layers: the bound is 2^-11 a layer plus one. rgba16f_<n>_steps is the half steps, rgba16f_<n>_value the
-/// largest value difference. sRGB is judged at 1 and 2 layers, all the rule takes of 8-bit sources there; 8 layers are
+/// largest value difference, rgba16f_<n>_model the half steps from a blend of the source rounded to half first (alpha
+/// too), the model that puts the worst texel 8 steps off at every depth (reported, not judged). sRGB is judged at 1 and 2 layers, all the rule takes of 8-bit sources there; 8 layers are
 /// reported (GM20B 3 codes, Apple's GPU 2). <arm>_<n>_at= is the worst texel: x,y,channel:got/want (half bits in hex,
 /// codes in decimal).
 struct FixedBlendFormatsTest: HWTest {
@@ -26,7 +27,7 @@ struct FixedBlendFormatsTest: HWTest {
     ]
 
     struct Worst {
-        var codes = 0, value = 0.0
+        var codes = 0, model = 0, value = 0.0
         var at = "-"
     }
 
@@ -56,6 +57,7 @@ struct FixedBlendFormatsTest: HWTest {
                 metrics.set(label + "_at", worst.at)
                 if arm.format == .rgba16Float {
                     metrics.set(label + "_steps", worst.codes)
+                    metrics.set(label + "_model", worst.model)
                     metrics.set(label + "_value", worst.value, digits: 6)
                     if worst.value > Double(layers + 1) / 2048 { wrong.append(label) }
                 } else {
@@ -79,16 +81,22 @@ struct FixedBlendFormatsTest: HWTest {
         for y in 0..<size {
             for x in 0..<size {
                 var d = (0..<4).map { c in Rule.store(Rule.clear[c], format, colour: c < 3) }
+                var m = d
                 for layer in 0..<layers {
                     let s = Rule.source(x, y, layer: layer, computed: false)
                     d = (0..<4).map { c in
                         Rule.store(s[c] + Rule.load(d[c], format, colour: c < 3) * (1 - s[3]), format, colour: c < 3)
+                    }
+                    let h = s.map { Double(Float(Float16(Float($0)))) }
+                    m = (0..<4).map { c in
+                        Rule.store(h[c] + Rule.load(m[c], format, colour: c < 3) * (1 - h[3]), format, colour: c < 3)
                     }
                 }
                 let got = Rule.codes(bytes, x, y, format).map { half && $0 == 0x8000 ? 0 : $0 }
                 for c in 0..<4 {
                     let steps = abs(got[c] - d[c])
                     out.codes = max(out.codes, steps)
+                    out.model = max(out.model, abs(got[c] - m[c]))
                     let distance =
                         half
                         ? abs(Rule.load(got[c], format, colour: false) - Rule.load(d[c], format, colour: false))
