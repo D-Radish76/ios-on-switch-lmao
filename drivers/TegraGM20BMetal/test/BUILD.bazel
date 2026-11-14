@@ -8330,6 +8330,42 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
+# The native seed tool's output directory (raw/pack/native_seed_manifest.h openOutput): a failed step prints its step,
+# path and errno; a directory already at its mode is not chmodded
+host_test(
+    name = "raw_native_seed_output_test",
+    srcs = [
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        "raw_native_seed_output_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/pack/native_seed_manifest.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "IOKit",
+        "-framework",
+        "CoreFoundation",
+        "-lobjc",
+    ],
+    sanitize = False,
+    deps = [
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+    ] + RAW_HOST_DEPS,
+)
+
 # What the shader compiler's open costs (compiler_engine.mm openDevice), a step a process over the mock GM20B: NVK's image,
 # a bare NVK device, and the m2v device it opens; each step's growth by image and VM tag
 host_test(
