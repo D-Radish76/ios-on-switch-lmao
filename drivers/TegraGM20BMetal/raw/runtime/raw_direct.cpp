@@ -728,7 +728,9 @@ CompileOutcome directRecord(const NmbDirectState &state, const DirectNvk &nvk, c
     out.amplificationLayerWord = uint8_t(draw.amplificationLayerWord);
     out.amplificationViewportWord = uint8_t(draw.amplificationViewportWord);
     if (!usableStorageMetadata(out.pipeline, out.blob.data(), uint32_t(out.blob.size()))) {
-        why = "storage form: assembled record lost its attachment contract";
+        // a raster-ordered record refused as a storage form would be made again without the interlock, its groups unordered
+        why = parts.rasterOrdered ? "raster order groups: the assembled record lost its interlock control"
+                                  : "storage form: assembled record lost its attachment contract";
         return CompileOutcome::Refused;
     }
     if (state.stageCount == 4)
