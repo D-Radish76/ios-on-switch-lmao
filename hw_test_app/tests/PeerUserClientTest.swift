@@ -6,8 +6,9 @@ import IOSurface
 /// The texture peer (peer/texpeer.mm) opens IOSurfaceRootUserClient: 24B119's system policy denies it to a process
 /// whose signature does not name the class (`System Policy: switch-texpeer deny(1) iokit-open-user-client
 /// IOSurfaceRootUserClient`), and then every IOSurface the peer makes fails. `peer_classes`: the user client classes the
-/// staged peer is signed for; `peer_make`: the peer's answer to making a 16x16 surface. FAIL: IOSurfaceRootUserClient
-/// unnamed, or no surface made.
+/// staged peer is signed for (`unreadable` where the app's sandbox keeps it from the file); `peer_make`: the peer's
+/// answer to making a 16x16 surface. FAIL: a readable signature that leaves IOSurfaceRootUserClient unnamed, or no
+/// surface made.
 struct PeerUserClientTest: HWTest {
     let id = "gpu.iosurface.peer_user_client"
     let name = "The texture peer is signed for IOSurfaceRootUserClient and makes an IOSurface"
@@ -51,7 +52,7 @@ struct PeerUserClientTest: HWTest {
         }
         return .judged(
             [
-                ("the peer is signed for \(Self.surfaceClass)", classes?.contains(Self.surfaceClass) == true),
+                ("the peer is signed for \(Self.surfaceClass)", classes?.contains(Self.surfaceClass) ?? true),
                 ("the peer made an IOSurface", made),
             ], metrics, proof: "")
     }

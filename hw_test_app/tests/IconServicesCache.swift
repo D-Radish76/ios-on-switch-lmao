@@ -74,10 +74,11 @@ enum IconServicesCache {
             wrong.append("icon_api")
             return
         }
-        if let placeholder = icon(missingApp, points: 68, scale: 2, ignoreCache: true) {
-            let isPlaceholder = differing(placeholder, large) == 0
-            metrics.set("icon_placeholder", isPlaceholder)
-            if isPlaceholder { wrong.append("icon_placeholder") }
+        if let placeholder = icon(missingApp, points: 68, scale: 2, ignoreCache: true),
+            differing(placeholder, large) == 0
+        {
+            metrics.set("icon_placeholder", true)
+            wrong.append("icon_placeholder")
         }
         for (points, fresh) in [(27, small), (68, large)] {
             guard let image = cached[points] ?? nil, image.side == fresh.side else {
@@ -180,6 +181,23 @@ enum IconServicesCache {
             return found
         }
         return found
+    }
+
+    /// The number of files under `folder` and their bytes, which a stored render changes
+    static func stamp(_ folder: URL) -> [Int]? {
+        guard
+            let files = FileManager.default.enumerator(
+                at: folder, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey])
+        else { return nil }
+        var count = 0, bytes = 0
+        for case let url as URL in files {
+            guard let values = try? url.resourceValues(forKeys: [.fileSizeKey, .isRegularFileKey]),
+                values.isRegularFile == true
+            else { continue }
+            count += 1
+            bytes += values.fileSize ?? 0
+        }
+        return [count, bytes]
     }
 
     typealias InitSizeScale = @convention(c) (AnyObject, Selector, CGSize, CGFloat) -> AnyObject
