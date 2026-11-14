@@ -16,8 +16,9 @@ MAGIC = b'GM20BPK1'
 # words in the blob section); 21: the runtime records' tessellation, amplification, dynamic stride and stage-in
 # fields (every pack state's are 0), a state's vertex streams past stream 0, layer and viewport count push words; 22:
 # the formats a state's written textures were compiled for, the fragment slots it samples two-plane RGB10A8_2P_XR10
-# textures at; 23: compute states' answers (PackComputeFacts), compared sampler slots
-VERSION = 23
+# textures at; 23: compute states' answers (PackComputeFacts), compared sampler slots; 26: the texture slots a kernel's
+# sampler entry samples (its window)
+VERSION = 26
 SECTIONS = 14  # runtime/raw_pack.h PackSectionCount
 ENTRY_COMPARES = 1  # runtime/raw_pack.h kEntryCompares: a handle's sampler slot the state samples by comparison
 # PackIteratedBlend: count, enable, constants, uniformSlot, uniformOffset, uniformWords, reserved, alphaSource,
