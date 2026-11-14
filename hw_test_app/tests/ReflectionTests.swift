@@ -22,6 +22,21 @@ enum ReflectionCheck {
 
     /// The needs m2v answered reflections by before the raw path did (RawMetalReflection.mm)
     static let reflectionNeeds: Set = ["a render state's twin with its reflection", "a compute state's reflection"]
+
+    // Synchronous on purpose: inside an async run Swift resolves the tuple-returning calls to Metal's completion-handler
+    // forms
+    static func render(_ device: MTLDevice, _ descriptor: MTLRenderPipelineDescriptor) throws
+        -> MTLRenderPipelineReflection?
+    {
+        try device.makeRenderPipelineState(descriptor: descriptor, options: [.bindingInfo, .bufferTypeInfo]).1
+    }
+
+    static func compute(_ device: MTLDevice, _ function: MTLFunction) throws -> MTLComputePipelineReflection? {
+        var reflection: MTLComputePipelineReflection?
+        _ = try device.makeComputePipelineState(
+            function: function, options: [.bindingInfo, .bufferTypeInfo], reflection: &reflection)
+        return reflection
+    }
 }
 
 /// quad_vertex's corners at buffer 0 and solid_fragment's colour at buffer 0, from a state made with argument info
@@ -39,8 +54,7 @@ struct RenderReflectionTest: HWTest {
         descriptor.vertexFunction = gpu.library.makeFunction(name: "quad_vertex")
         descriptor.fragmentFunction = gpu.library.makeFunction(name: "solid_fragment")
         descriptor.colorAttachments[0].pixelFormat = .rgba8Unorm
-        let (_, reflection) = try gpu.device.makeRenderPipelineState(
-            descriptor: descriptor, options: [.argumentInfo, .bufferTypeInfo])
+        let reflection = try ReflectionCheck.render(gpu.device, descriptor)
         let vertex = reflection?.vertexBindings ?? []
         let fragment = reflection?.fragmentBindings ?? []
         let asked = ReflectionCheck.needsAsked(gpu.device, since: before)
@@ -76,8 +90,7 @@ struct ComputeReflectionTest: HWTest {
         guard let function = gpu.library.makeFunction(name: "multiply_add") else {
             throw TestFailure("no multiply_add")
         }
-        let (_, reflection) = try gpu.device.makeComputePipelineState(
-            function: function, options: [.argumentInfo, .bufferTypeInfo])
+        let reflection = try ReflectionCheck.compute(gpu.device, function)
         let bindings = reflection?.bindings ?? []
         let asked = ReflectionCheck.needsAsked(gpu.device, since: before)
         var metrics = Metrics()

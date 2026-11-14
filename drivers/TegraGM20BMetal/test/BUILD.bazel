@@ -2856,7 +2856,10 @@ py_test(
 py_test(
     name = "pack_reflections_test",
     srcs = ["pack_reflections_test.py"],
-    data = ["//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h"],
+    data = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_chip_facts.h",  # packfile.py stamps its chip facts
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_owned.h",
+    ],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
 )
 
