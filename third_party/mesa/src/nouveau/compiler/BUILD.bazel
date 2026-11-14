@@ -387,32 +387,29 @@ py_test(
 mesa_cc_library(
     name = "nak_fs_depth_test_objects",
     testonly = True,
-    c_args = mesa_args(
-        "c",
-        include_dirs = [
-            "src/nouveau/compiler",
-            "gen:src/nouveau/compiler",
-            "include",
-            "gen:include",
-            "src",
-            "gen:src",
-            "src/compiler",
-            "gen:src/compiler",
-            "src/compiler/nir",
-            "gen:src/compiler/nir",
-            "src/nouveau/nil",
-            "gen:src/nouveau/nil",
-            "src/nouveau/headers",
-            "gen:src/nouveau/headers",
-            "src/nouveau/headers/nvidia/classes",
-            "gen:src/util",
-            "gen:src/util/format",
-        ],
-    ),
     sources = [
         "nak_fs_depth_test.c",
         "nak_nir_lower_fs_inputs.c",
     ],
+    c_args = mesa_args("c", include_dirs = [
+        "src/nouveau/compiler",
+        "gen:src/nouveau/compiler",
+        "include",
+        "gen:include",
+        "src",
+        "gen:src",
+        "src/compiler",
+        "gen:src/compiler",
+        "src/compiler/nir",
+        "gen:src/compiler/nir",
+        "src/nouveau/nil",
+        "gen:src/nouveau/nil",
+        "src/nouveau/headers",
+        "gen:src/nouveau/headers",
+        "src/nouveau/headers/nvidia/classes",
+        "gen:src/util",
+        "gen:src/util/format",
+    ]),
 )
 
 fs_depth_test_binary(
@@ -440,10 +437,7 @@ py_test(
     name = "fs_depth_test",
     size = "small",
     srcs = ["run_host_test.py"],
-    args = [
-        "$(rootpath :nak_fs_depth_test_host)",
-        "depth",
-    ],
+    args = ["$(rootpath :nak_fs_depth_test_host)", "depth"],
     data = [":nak_fs_depth_test_host"],
     main = "run_host_test.py",
 )
@@ -451,22 +445,19 @@ py_test(
 mesa_cc_library(
     name = "nak_half_contract_test_objects",
     testonly = True,
-    c_args = mesa_args(
-        "c",
-        include_dirs = [
-            "include",
-            "gen:include",
-            "src",
-            "gen:src",
-            "src/compiler",
-            "gen:src/compiler",
-            "src/compiler/nir",
-            "gen:src/compiler/nir",
-            "gen:src/util",
-            "gen:src/util/format",
-        ],
-    ),
     sources = ["nak_half_contract_test.c"],
+    c_args = mesa_args("c", include_dirs = [
+        "include",
+        "gen:include",
+        "src",
+        "gen:src",
+        "src/compiler",
+        "gen:src/compiler",
+        "src/compiler/nir",
+        "gen:src/compiler/nir",
+        "gen:src/util",
+        "gen:src/util/format",
+    ]),
 )
 
 fs_depth_test_binary(
@@ -494,10 +485,7 @@ py_test(
     name = "half_contract_test",
     size = "small",
     srcs = ["run_host_test.py"],
-    args = [
-        "$(rootpath :nak_half_contract_test_host)",
-        "half-contract",
-    ],
+    args = ["$(rootpath :nak_half_contract_test_host)", "half-contract"],
     data = [":nak_half_contract_test_host"],
     main = "run_host_test.py",
 )
