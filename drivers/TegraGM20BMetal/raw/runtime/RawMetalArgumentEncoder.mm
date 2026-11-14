@@ -5,7 +5,7 @@
 // (raw_resource_id.h); a constant is the program's own bytes (constantDataAtIndex:). A refusal writes nothing and is one line.
 #import "RawMetalInternal.h"
 #include "NativeBridgeMetalFrontend.h"
-#include "bridge/NativeMetalObjects.h"
+#include "raw_direct_abi.h"
 #include "raw_argument_encoder.h"
 
 // MTLDataTypeDepthStencilState (iOS 26): spelled as its value, so the iOS 17 build names no constant its SDK floor lacks

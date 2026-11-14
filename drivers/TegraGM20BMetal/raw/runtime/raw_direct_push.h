@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-#include "bridge/NativeMetalDirect.h"
+#include "raw_direct_abi.h"
 #include "raw_dynamic_push.h"
 
 namespace raw {

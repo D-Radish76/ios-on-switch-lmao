@@ -25,6 +25,8 @@ METAL = "//drivers/NativeMetal"
 
 GM20B_METAL = "//drivers/TegraGM20BMetal"
 
+TRANSLATE = GM20B_METAL + ":translate/"
+
 # The selected IPSW kind's Metal.framework facts (drivers/NativeMetal/abi).
 METAL_ABI = METAL + "/abi:MetalABI.h"
 
@@ -52,32 +54,32 @@ llvm_as(
 )
 
 # The selected IPSW build's compile profile: the m2v runtime device the bridge's offline compile makes its translator
-# devices of (bridge/NativeMetalOffline.rs). Another build needs its own, frozen from its runtime.
+# devices of (translate/NativeMetalOffline.rs). Another build needs its own, frozen from its runtime.
 alias(
     name = "compile_profile",
     actual = select({
-        "//ipsw:21H461": METAL + ":bridge/compile_profile/21H461.json",
-        "//ipsw:24B119": METAL + ":bridge/compile_profile/24B119.json",
+        "//ipsw:21H461": TRANSLATE + "compile_profile/21H461.json",
+        "//ipsw:24B119": TRANSLATE + "compile_profile/24B119.json",
     }),
 )
 
-# The raw path's direct compile with no m2v runtime (bridge/NativeMetalTranslate.rs): the translator's own libraries,
+# The raw path's direct compile with no m2v runtime (drivers/TegraGM20BMetal/translate/NativeMetalTranslate.rs): the translator's own libraries,
 # functions and compile devices (the build's compile profile, which it compiles in), what the pack generator and the shader
 # compiler daemon compile with. The bridge below builds on it.
 rust_library(
     name = "translate",
     srcs = [
-        METAL + ":bridge/NativeMetalTranslate.rs",
-        METAL + ":bridge/NativeMetalDescriptors.rs",
-        METAL + ":bridge/NativeMetalDirect.rs",
-        METAL + ":bridge/NativeMetalDirectCompute.rs",
-        METAL + ":bridge/NativeMetalDirectTess.rs",
-        METAL + ":bridge/NativeMetalOffline.rs",
-        METAL + ":bridge/NativeMetalTessModes.rs",
+        TRANSLATE + "NativeMetalTranslate.rs",
+        TRANSLATE + "NativeMetalDescriptors.rs",
+        TRANSLATE + "NativeMetalDirect.rs",
+        TRANSLATE + "NativeMetalDirectCompute.rs",
+        TRANSLATE + "NativeMetalDirectTess.rs",
+        TRANSLATE + "NativeMetalOffline.rs",
+        TRANSLATE + "NativeMetalTessModes.rs",
     ],
     compile_data = [":compile_profile"],
     crate_name = "native_metal_translate",
-    crate_root = METAL + ":bridge/NativeMetalTranslate.rs",
+    crate_root = TRANSLATE + "NativeMetalTranslate.rs",
     edition = "2024",
     rustc_env = {"NMB_COMPILE_PROFILE": "$(execpath :compile_profile)"},
     rustc_flags = cargo_ids("5b1c2e7f0a9d4e63", "8f2a6c1d3e5b7094"),
@@ -94,9 +96,9 @@ rust_library(
 # The translate crate alone as a static library: the pack tools' (no m2v runtime in them).
 rust_static_library(
     name = "translate_static",
-    srcs = [METAL + ":bridge/NativeMetalTranslateStatic.rs"],
+    srcs = [TRANSLATE + "NativeMetalTranslateStatic.rs"],
     crate_name = "native_metal_translate_static",
-    crate_root = METAL + ":bridge/NativeMetalTranslateStatic.rs",
+    crate_root = TRANSLATE + "NativeMetalTranslateStatic.rs",
     edition = "2024",
     deps = [":translate"],
 )
@@ -201,6 +203,7 @@ raw_stack(
     # native-seed) until the cut, and a crate edge would reach m2v's runtime crate
     srcs = [
         GM20B_METAL + ":raw_stack_sources",
+        GM20B_METAL + ":translate_rust",
         METAL + ":bridge_rust",
     ],
     bridge = ":translate",

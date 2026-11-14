@@ -6,10 +6,10 @@
 #include <vector>
 #include "MetallibSlice.h"
 #include "TegraGM20BCompilerABI.h"
-#include "bridge/NativeMetalDirect.h"
 #include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/RawPipelineKey.h"
 #include "../raw/runtime/raw_compute_facts_entry.h"
+#include "../translate/NativeMetalTranslate.h"
 
 namespace switch_compiler {
 namespace {

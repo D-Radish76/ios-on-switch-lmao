@@ -9,7 +9,7 @@
 #include "RawRenderKey.h"
 #include "MetallibEntries.h"
 #include "MetallibSlice.h"
-#include "bridge/NativeMetalDirect.h"
+#include "../../translate/NativeMetalTranslate.h"
 
 @interface RawOfflineLibrary : NSObject
 @property (nonatomic) NmbOfflineLibrary *handle;

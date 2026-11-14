@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Libraries and functions with no m2v runtime (bridge/NativeMetalOffline.rs): made by the translator alone from a
+// Libraries and functions with no m2v runtime (translate/NativeMetalOffline.rs): made by the translator alone from a
 // metallib's file or bytes, for the pack generator (where probe_states.h and kernel_shapes.h make a corpus line's state,
 // so a state's key is made as before) and the shader compiler daemon; and the direct compile of a descriptor of them.
 #pragma once

@@ -2,7 +2,7 @@
 #pragma once
 #include <cstdio>
 #include <cstring>
-#include "bridge/NativeMetalDirect.h"
+#include "raw_direct_abi.h"
 #include "raw_storage.h"
 
 namespace raw {

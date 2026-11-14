@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include "bridge/NativeMetalDirect.h"
+#include "raw_direct_abi.h"
 #include "raw_cache.h"
 #include "raw_pipeline_fields.h"
 #include "raw_render_variant.h"
