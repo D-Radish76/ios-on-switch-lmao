@@ -624,9 +624,9 @@ static bool producesTexture(MTLTextureDescriptor *d)
     if (!t->_rawOk) {  // a surface the raw path does not take: m2v's texture over it, made now (it may refuse: nil, as today)
         // which term (createSurfaceTexture's, recomputed here: a creation, not the hot path)
         const size_t planes = IOSurfaceGetPlaneCount(s),
-                     pitch = planes == 1 ? IOSurfaceGetBytesPerRowOfPlane(s, 0) : IOSurfaceGetBytesPerRow(s);
+                     pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
         const uintptr_t base = uintptr_t(IOSurfaceGetBaseAddress(s));
-        const uintptr_t offset = planes == 1 ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 0)) - base : 0;
+        const uintptr_t offset = planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - base : 0;
         const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
         const uint64_t packed = uint64_t(d.width) * (f ? f->bpp : 0);
         const OSType fourcc = IOSurfaceGetPixelFormat(s);
@@ -641,9 +641,16 @@ static bool producesTexture(MTLTextureDescriptor *d)
             refuseTexture(t, PredTexPlanar, d.width, d.height, @"surface", extra);
         else if (uint32_t term = rawShapeTerm(d))
             refuseTexture(t, PredTexShape, term, d.pixelFormat, @"surface", extra);
-        else if (plane || planes > 1)
-            refuseTexture(t, PredTexSurfPlane, plane, planes, @"surface", extra);
-        else if ((pitch & 15) || (offset & 15) || pitch < packed)  // (its plane's offset: as its pitch)
+        else if (plane >= std::max<size_t>(planes, 1)) {
+            os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: it has no plane %lu: %{public}@",
+                         getprogname(), IOSurfaceGetID(s), (unsigned long)plane, extra);
+            return nil;
+        } else if (!planes && ((pitch & 15) || pitch < packed)) {
+            // Metal asserts on a surface without planes whose rows are not 16 bytes apart, and m2v refused it (linear_plan.rs)
+            os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: rows off 16, or short: %{public}@",
+                         getprogname(), IOSurfaceGetID(s), extra);
+            return nil;
+        } else if ((pitch & 15) || (offset & 15) || pitch < packed)  // (its plane's offset: as its pitch)
             refuseTexture(t, PredTexSurfPitch, pitch, offset & 15 ? offset : packed, @"surface", extra);
         else if (uint64_t(pitch) * d.height > IOSurfaceGetAllocSize(s)) {
             os_log_error(

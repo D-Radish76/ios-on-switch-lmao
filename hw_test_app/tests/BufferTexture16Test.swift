@@ -1,13 +1,14 @@
 import Foundation
 import HWTestCore
 import HWTestGPU
+import IOSurface
 import Metal
 
 /// A texture over a buffer at offset 48 with rows of 48 bytes (16 mod 32, which the texture header cannot address) is the
 /// raw path's: a draw samples it through a pool image that the copy engine fills from the buffer first
 /// (drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp createBufferTexture). Every texel drawn must be the buffer's. One at an
-/// offset or with rows off 16, which Metal's validation stops, is nil. Nothing may ask for the m2v device
-/// (m2v_needs_asked).
+/// offset or with rows off 16, which Metal's validation stops, is nil, as is one over an IOSurface without planes whose rows
+/// are off 16 (Metal asserts there) or over a plane the surface lacks. Nothing may ask for the m2v device (m2v_needs_asked).
 struct BufferTexture16Test: HWTest {
     let id = "gpu.raw.buffer_texture16"
     let name = "A texture over a buffer at 16 bytes is sampled through a pool image, without m2v"
@@ -37,6 +38,24 @@ struct BufferTexture16Test: HWTest {
         }
         if buffer.makeTexture(descriptor: descriptor, offset: offset, bytesPerRow: rowBytes + 8) != nil {
             wrong.append("rows_off16")
+        }
+
+        let properties: [IOSurfacePropertyKey: Any] = [
+            .width: 60, .height: 16, .bytesPerElement: 4, .bytesPerRow: 248, .pixelFormat: 0x4247_5241,
+        ]
+        guard let narrow = IOSurface(properties: properties) else { throw TestFailure("no IOSurface") }
+        metrics.set("narrow_bytes_per_row", narrow.bytesPerRow)
+        let surfaceDescriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm, width: 60, height: 16, mipmapped: false)
+        surfaceDescriptor.usage = [.shaderRead]
+        let surface = unsafeBitCast(narrow, to: IOSurfaceRef.self)
+        if narrow.bytesPerRow & 15 != 0
+            && gpu.device.makeTexture(descriptor: surfaceDescriptor, iosurface: surface, plane: 0) != nil
+        {
+            wrong.append("surface_rows_off16")
+        }
+        if gpu.device.makeTexture(descriptor: surfaceDescriptor, iosurface: surface, plane: 1) != nil {
+            wrong.append("surface_missing_plane")
         }
 
         let state = try gpu.render(vertex: "device_textured_vertex", fragment: "sampled_fragment", format: .bgra8Unorm)

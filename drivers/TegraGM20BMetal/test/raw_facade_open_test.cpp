@@ -246,7 +246,21 @@ void texturesPastTheirMemory()
     d.storageMode = MTLStorageModeShared;
     d.height = 4096;
     EXPECT_EQ([device newTextureWithDescriptor:d iosurface:surface plane:0], nil) << "rows past the allocation";
+    d.height = 16;
+    EXPECT_EQ([device newTextureWithDescriptor:d iosurface:surface plane:1], nil) << "a plane it does not have";
     CFRelease(surface);
+    IOSurfaceRef narrow = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @60,
+        (id)kIOSurfaceHeight : @16,
+        (id)kIOSurfaceBytesPerElement : @4,
+        (id)kIOSurfaceBytesPerRow : @248,
+        (id)kIOSurfacePixelFormat : @(uint32_t('BGRA'))
+    });
+    ASSERT_TRUE(narrow != nullptr);
+    ASSERT_EQ(IOSurfaceGetBytesPerRow(narrow) & 15, 8u) << "rows 8 past a multiple of 16";
+    d.width = 60;
+    EXPECT_EQ([device newTextureWithDescriptor:d iosurface:narrow plane:0], nil) << "Metal asserts on rows off 16";
+    CFRelease(narrow);
     expectNoM2V(device);
 }
 
@@ -423,7 +437,7 @@ TEST(RawFacadeOpen, AnUncompressedTextureHasThePlainLayoutAndNoNoCopyTexture)
     switch_ios::test::ExpectPassesInFreshProcess(plainLayouts);
 }
 
-TEST(RawFacadeOpen, ATexturePastItsMemoryIsNil)
+TEST(RawFacadeOpen, ATexturePastItsMemoryOrOffItsRowsIsNil)
 {
     switch_ios::test::ExpectPassesInFreshProcess(texturesPastTheirMemory);
 }
