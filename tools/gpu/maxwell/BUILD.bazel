@@ -119,6 +119,7 @@ py_library(
         ":interp",
         ":isa",
         ":nakstat",
+        ":rop",
         "//drivers/TegraGM20BMetal:raw_pack",
         "//tools/benchloop:lib",
     ],

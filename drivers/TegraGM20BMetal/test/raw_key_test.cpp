@@ -40,7 +40,7 @@ TEST(RawKey, EveryMipStateIsAnOwnState)
             "samples=1 topo=0 ds=0/0 c0=" + std::to_string(format) + ":15:0:1:0:0:1:0:0  | v mip_vert  | f " + fragment;
         EXPECT_EQ(raw::packKeyHash(key), hash(name)) << format;
     }
-    EXPECT_EQ(states, 16);
+    EXPECT_EQ(states, 21);
 }
 
 TEST(RawKey, FrameworkResolveSpecializationsHaveDistinctKeys)

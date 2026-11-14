@@ -363,6 +363,7 @@ py_test(
     name = "fetchfree_test",
     srcs = ["raw/pack/ca/fetchfree_test.py"],
     data = [
+        "precompile/corpus.log",
         "raw/pack/ca/qc-21H461.json",
         "raw/pack/ca/qc-24B119.json",
     ],
