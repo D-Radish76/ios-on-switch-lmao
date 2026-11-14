@@ -232,6 +232,37 @@ genrule(
     tools = [":ca_asked_forms"],
 )
 
+# The keys of the selected IPSW's generic merge states (ca_generic_keys.py), which ui.launch_hitch counts long spans of
+py_binary(
+    name = "ca_generic_keys_tool",
+    srcs = ["ca_generic_keys.py"],
+    main = "ca_generic_keys.py",
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
+genrule(
+    name = "ca_generic_keys",
+    srcs = select({"//ipsw:" + kind: [tables] for kind, tables in QC_TABLES.items()}),
+    outs = ["ca_generic_keys.txt"],
+    cmd = select({
+        "//ipsw:" + kind: "$(execpath :ca_generic_keys_tool) $(execpath " + tables + ") $@"
+        for kind, tables in QC_TABLES.items()
+    }),
+    tools = [":ca_generic_keys_tool"],
+)
+
+py_test(
+    name = "ca_generic_keys_test",
+    size = "small",
+    srcs = [
+        "ca_generic_keys.py",
+        "ca_generic_keys_test.py",
+    ],
+    data = QC_TABLES.values(),
+    env = {"QC_" + kind: "$(rootpath " + tables + ")" for kind, tables in QC_TABLES.items()},
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
 py_test(
     name = "ca_states_test",
     size = "small",
@@ -274,6 +305,7 @@ apple_resource_group(
     name = "ca_states_resources",
     resources = [
         ":ca_asked",
+        ":ca_generic_keys",
         ":ca_goldens_txt",
         ":ca_states",
     ],
