@@ -52,6 +52,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.pass_fusion',
             'gpu.upload.glyph_atlas',
             'gpu.upload.replace_region',
+            'gpu.upload.chain_level0',
             'gpu.upload.blit_buffer',
             'gpu.iosurface.cpu_lock',
             'gpu.clear.formats',
