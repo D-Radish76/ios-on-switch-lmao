@@ -2,6 +2,7 @@
 #include "switch_gpu_backing_fixture.h"
 #include "drivers/TegraGM20B/SwitchGpuBackingMemory.h"
 #include <functional>
+#include <vector>
 
 namespace
 {
@@ -220,4 +221,49 @@ TEST_F(BackingMemory, IncompatibleOwnerAndCompressedPrefixFailWithoutReplacingOb
 	EXPECT_EQ(switch_gpu_backing_memory_acquire(b, 2, createMemory, destroyOther, &other), -95);
 	EXPECT_EQ(other, nullptr);
 	switch_gpu_backing_release(b);
+}
+
+namespace
+{
+std::vector<uint64_t> forgotten;
+
+void forgetVic(uint64_t allocation)
+{
+	forgotten.push_back(allocation);
+}
+}
+
+// An engine's map cache holds no reference on what it maps (SwitchGpuBackingMaps.h): the backing's destruction tells
+// every engine that noted a mapping of it, after its last job and before its pages go back.
+TEST_F(BackingMemory, EnginesThatMappedABackingForgetItBeforeItsPagesGoBack)
+{
+	ASSERT_EQ(switch_gpu_backing_register_forget(SWITCH_GPU_ENGINE_VIC, forgetVic), 0);
+	EXPECT_EQ(switch_gpu_backing_register_forget(SWITCH_GPU_ENGINE_VIC, forgetVic), 0);
+	EXPECT_EQ(switch_gpu_backing_register_forget(SWITCH_GPU_ENGINE_VIC, nullptr), -22);
+	forgotten.clear();
+	const uint64_t page = next_page += 4096;
+	bool released = false;
+	auto *b = switch_gpu_backing_register(&page, 1, 0, &released, [](void *owner) {
+		EXPECT_EQ(forgotten.size(), 1u);
+		*static_cast<bool *>(owner) = true;
+	});
+	switch_gpu_backing_info info{};
+	switch_gpu_backing_describe(b, &info);
+	switch_gpu_backing_note_mapped(b, SWITCH_GPU_ENGINE_VIC);
+	ASSERT_EQ(publish(b, SWITCH_GPU_BACKING_READ, token(702, 4)), 0);
+	switch_gpu_backing_release(b);
+	switch_gpu_backing_retire();
+	EXPECT_TRUE(forgotten.empty()) << "a job still reads it";
+	const auto completed = token(702, 4);
+	timelines[key(&completed)].completed = 4;
+	switch_gpu_backing_completed();
+	switch_gpu_backing_retire();
+	ASSERT_EQ(forgotten.size(), 1u);
+	EXPECT_EQ(forgotten[0], info.allocation_id);
+	EXPECT_TRUE(released);
+
+	auto *unmapped = backing();
+	switch_gpu_backing_release(unmapped);
+	switch_gpu_backing_retire();
+	EXPECT_EQ(forgotten.size(), 1u) << "a backing no engine mapped is forgotten by none";
 }

@@ -102,6 +102,11 @@ struct switch_gpu_backing_engine {
 
 int switch_gpu_backing_register_engine(uint32_t engine,
 				       const struct switch_gpu_backing_engine *operations);
+/* An engine that maps backings into its own SMMU space (SwitchGpuBackingMaps.h) notes each backing it maps; when such a
+ * backing is destroyed (no reference left and none of its jobs pending), its forget runs with the allocation's id
+ * before the pages go back. Registered once per engine, before its first mapping. */
+int switch_gpu_backing_register_forget(uint32_t engine, void (*forget)(uint64_t allocation_id));
+void switch_gpu_backing_note_mapped(struct switch_gpu_backing *backing, uint32_t engine);
 int switch_gpu_backing_token_retain(const struct switch_gpu_backing_token *token);
 void switch_gpu_backing_token_release(const struct switch_gpu_backing_token *token);
 int switch_gpu_backing_token_status(const struct switch_gpu_backing_token *token);

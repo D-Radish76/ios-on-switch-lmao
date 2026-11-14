@@ -11,7 +11,36 @@ enum : uint32_t {
 
 switch_gpu_backing_timeline_refs refs[SWITCH_GPU_ENGINE_COUNT];
 uint32_t state[SWITCH_GPU_ENGINE_COUNT];
+void (*forgets[SWITCH_GPU_ENGINE_COUNT])(uint64_t);
 }  // namespace
+
+extern "C" int switch_gpu_backing_register_forget(uint32_t engine, void (*forget)(uint64_t))
+{
+	if (!engine || engine >= SWITCH_GPU_ENGINE_COUNT || !forget)
+		return -22;
+	void (*expected)(uint64_t) = nullptr;
+	if (!__atomic_compare_exchange_n(&forgets[engine], &expected, forget, false,
+					 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+		return expected == forget ? 0 : -16;
+	return 0;
+}
+
+// Once per new mapping, never per use: the miss path of an engine's map cache.
+extern "C" void switch_gpu_backing_note_mapped(switch_gpu_backing *backing, uint32_t engine)
+{
+	if (backing && engine < SWITCH_GPU_ENGINE_COUNT)
+		__atomic_fetch_or(&backing->mapped_engines, 1u << engine, __ATOMIC_RELEASE);
+}
+
+void switch_gpu_backing_forget_mapped(const switch_gpu_backing *backing)
+{
+	const uint32_t engines = __atomic_load_n(&backing->mapped_engines, __ATOMIC_ACQUIRE);
+	for (uint32_t engine = 1; engines && engine < SWITCH_GPU_ENGINE_COUNT; ++engine) {
+		auto *forget = __atomic_load_n(&forgets[engine], __ATOMIC_ACQUIRE);
+		if ((engines & (1u << engine)) && forget)
+			forget(backing->id);
+	}
+}
 
 extern "C" int
 switch_gpu_backing_register_timeline_refs(uint32_t engine,

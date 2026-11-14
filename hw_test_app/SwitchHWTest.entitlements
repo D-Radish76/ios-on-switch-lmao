@@ -40,6 +40,12 @@
 		<string>kern.switch_planes_maps</string>
 		<string>kern.switch_planes_dropped</string>
 		<string>kern.switch_planes_native</string>
+		<string>kern.switch_planes_remaps</string>
+		<string>kern.switch_vic_maps</string>
+		<string>kern.switch_vic_remaps</string>
+		<string>kern.switch_native_objects</string>
+		<string>kern.switch_native_surfaces</string>
+		<string>kern.switch_native_publications</string>
 		<string>kern.switch_frame_info_shown</string>
 		<string>kern.switch_frame_info_unsent</string>
 		<string>kern.switch_frame_info_ordinary</string>

@@ -148,6 +148,7 @@ bool reached_locked(switch_gpu_backing *backing)
 
 void destroy(switch_gpu_backing *backing)
 {
+	switch_gpu_backing_forget_mapped(backing);
 	switch_gpu_backing_writer_free_locked(backing);
 	if (backing->host_acquire.engine)
 		switch_gpu_backing_drop_token(backing->host_acquire);
