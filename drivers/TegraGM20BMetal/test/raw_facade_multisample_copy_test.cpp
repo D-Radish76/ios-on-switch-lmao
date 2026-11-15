@@ -75,6 +75,22 @@ protected:
         ASSERT_TRUE(s.blockLinear && d.blockLinear);
         ASSERT_EQ(s.samples, samples);
         ASSERT_EQ(d.samples, samples);
+        auto queue = [device newCommandQueue];
+        if (!s.zeta) {
+            auto initialized = [queue commandBuffer];
+            for (id<MTLTexture> t : {source, destination}) {
+                auto *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+                pass.colorAttachments[0].texture = t;
+                pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+                pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+                auto e = [initialized renderCommandEncoderWithDescriptor:pass];
+                ASSERT_NE(e, nil);
+                [e endEncoding];
+            }
+            [initialized commit];
+            [initialized waitUntilCompleted];
+            ASSERT_EQ(initialized.status, MTLCommandBufferStatusCompleted);
+        }
         const auto sr = s.storageRange(), dr = d.storageRange();
         uint8_t *from = kernel_model::model.host(sr.va, sr.bytes), *to = kernel_model::model.host(dr.va, dr.bytes);
         ASSERT_NE(from, nullptr);
@@ -106,7 +122,7 @@ protected:
             target = [destination newTextureViewWithPixelFormat:format];
             ASSERT_NE(target, nil);
         }
-        auto cb = [[device newCommandQueue] commandBuffer];
+        auto cb = [queue commandBuffer];
         auto e = [cb blitCommandEncoder];
         if (whole)
             [e copyFromTexture:input toTexture:target];

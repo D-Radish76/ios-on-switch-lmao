@@ -1588,7 +1588,7 @@ public:
     // `w` x `h` texels from (sx, sy) of plane sz of `src` to (dx, dy) of plane dz of `dst`, each pitch or block-linear (a 2D
     // texture's plane is 0) (vkCmdCopyImage)
     void copyTexels(const Texture &src, uint32_t sx, uint32_t sy, uint32_t sz, const Texture &dst, uint32_t dx,
-                    uint32_t dy, uint32_t dz, uint32_t w, uint32_t h);
+                    uint32_t dy, uint32_t dz, uint32_t w, uint32_t h, uint8_t aspect = kAspectWhole);
     // `w` x `h` texels from the origin of plane z of `t` (a chain level: chainLevelImage) each set to `fill`'s texel
     void fillTexels(const Texture &t, uint32_t z, uint32_t w, uint32_t h, const CopyFill &fill);
     // The first byte of each texel of `from` into the first byte of `to`'s, every other byte of `to` as it was: one remapped

@@ -88,8 +88,7 @@ static bool inElements(RMTexture *t, MTLOrigin &o, MTLSize &size)
 // In elements (inElements)
 static bool copySideOk(RMTexture *t, NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size)
 {
-    if (!t->_rawOk || t->_raw.memoryless || t->_raw.samples > 1 || level >= t->_descriptor.mipmapLevelCount ||
-        !inElements(t, o, size))
+    if (!t->_rawOk || t->_raw.memoryless || level >= t->_descriptor.mipmapLevelCount || !inElements(t, o, size))
         return false;
     raw::Texture view;
     if (!blitImage(t, uint32_t(level), view))
@@ -175,8 +174,11 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
 {
     RMTexture *a = (RMTexture *)s, *b = (RMTexture *)d;
     const bool both = [(id)a isKindOfClass:[RMTexture class]] && [(id)b isKindOfClass:[RMTexture class]];
+    const bool stencilSource = both && a->_descriptor.pixelFormat == MTLPixelFormatX32_Stencil8,
+               stencilDestination = both && b->_descriptor.pixelFormat == MTLPixelFormatX32_Stencil8;
     // the copy engine's, of bytes, between pitch and block-linear sides as each side is laid out
-    const bool ok = both && a->_raw.bpp == b->_raw.bpp && a->_raw.blockW == b->_raw.blockW &&
+    const bool ok = both && stencilSource == stencilDestination && a->_raw.samples == b->_raw.samples &&
+                    a->_raw.bpp == b->_raw.bpp && a->_raw.blockW == b->_raw.blockW &&
                     a->_raw.blockH == b->_raw.blockH && copySideOk(a, ss, sl, so, size) &&
                     copySideOk(b, ds, dl, dorg, size);
     if (!ok) {
@@ -196,6 +198,7 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
     if ([(id)d isKindOfClass:[RMTexture class]])
         declareGpuWrites((RMTexture *)d);
     Cmd m = cmd(OpCopyTexture);
+    m.a = stencilSource ? raw::kAspectStencil : raw::kAspectWhole;
     m.obj = (__bridge void *)s;
     m.obj2 = (__bridge void *)d;
     m.x = _cb->_extra.size();
@@ -360,7 +363,7 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
     MTLOrigin eo = dorg;
     MTLSize es = size;
     const bool ok =
-        [(id)a isKindOfClass:[RMBuffer class]] && [(id)b isKindOfClass:[RMTexture class]] &&
+        [(id)a isKindOfClass:[RMBuffer class]] && [(id)b isKindOfClass:[RMTexture class]] && b->_raw.samples == 1 &&
         copySideOk(b, ds, dl, dorg, size) && b->_raw.bpp && inElements(b, eo, es) &&
         bufferPlanes(so, row, image, es, raw::bufferUnit(b->_raw, uint8_t(std::max(aspect, 0))), a->_raw.length, true);
     if (!ok) {
@@ -428,7 +431,7 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
     MTLOrigin eo = so;
     MTLSize es = size;
     const bool ok = [(id)a isKindOfClass:[RMTexture class]] && [(id)b isKindOfClass:[RMBuffer class]] &&
-                    copySideOk(a, ss, sl, so, size) && a->_raw.bpp && inElements(a, eo, es) &&
+                    a->_raw.samples == 1 && copySideOk(a, ss, sl, so, size) && a->_raw.bpp && inElements(a, eo, es) &&
                     bufferPlanes(dof, row, image, es, raw::bufferUnit(a->_raw, uint8_t(std::max(aspect, 0))),
                                  b->_raw.length, false);
     if (!ok) {

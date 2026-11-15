@@ -9169,12 +9169,15 @@ void BlitEncoder::copyRect(uint64_t src, uint32_t srcPitch, uint64_t dst, uint32
 }
 
 void BlitEncoder::copyTexels(const Texture &src, uint32_t sx, uint32_t sy, uint32_t sz, const Texture &dst, uint32_t dx,
-                             uint32_t dy, uint32_t dz, uint32_t w, uint32_t h)
+                             uint32_t dy, uint32_t dz, uint32_t w, uint32_t h, uint8_t aspect)
 {
     cb_->use(src, false);
     cb_->use(dst, true);
     room(32);
-    copySides(p_, sideOf(src, sx, sy, sz), sideOf(dst, dx, dy, dz), w, h, src.bpp, dev_->stats);
+    const uint32_t remap = aspect == kAspectStencil ? remapOf(kRemapNoWrite, 1, kRemapNoWrite, kRemapNoWrite, 4, 2, 2)
+                                                    : texelRemap(src.bpp);
+    copyRemapped(p_, sideOf(src, sx, sy, sz), sideOf(dst, dx, dy, dz), w, h, remap,
+                 aspect == kAspectStencil ? 4 : src.bpp, dev_->stats);
 #if SWITCH_RAW_DIAGNOSTICS
     char detail[64];
     snprintf(detail, sizeof detail, " from %ux%u f%u at %u,%u", src.width, src.height, src.format, sx, sy);

@@ -102,10 +102,25 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         blitImage(t, uint32_t(dl), toLevel);
         uint32_t ex = sx, ey = sy, ew = w, eh = h;
         raw::toElements(s->_raw, ex, ey, ew, eh);  // (whole blocks, the same blocks both sides: checked at record)
-        const uint32_t fx = dx / t->_raw.blockW, fy = dy / t->_raw.blockH;
+        uint32_t fx = dx / t->_raw.blockW, fy = dy / t->_raw.blockH;
+        if (fromLevel.samples > 1) {
+            uint32_t gx, gy;
+            raw::sampleGrid(fromLevel.samples, gx, gy);
+            for (raw::Texture *grid : {&fromLevel, &toLevel}) {
+                grid->width <<= gx;
+                grid->height <<= gy;
+                grid->samples = 1;
+            }
+            ex <<= gx;
+            ey <<= gy;
+            ew <<= gx;
+            eh <<= gy;
+            fx <<= gx;
+            fy <<= gy;
+        }
         for (uint32_t k = 0; k < std::max(d, 1u); k++)
             be->copyTexels(fromLevel, ex, ey, layerOrPlane(fromLevel, ss, sz + k), toLevel, fx, fy,
-                           layerOrPlane(t->_raw, ds, dz + k), ew, eh);
+                           layerOrPlane(t->_raw, ds, dz + k), ew, eh, uint8_t(c.a));
         copyToCallerPages(be, rc, t);
         break;
     }
