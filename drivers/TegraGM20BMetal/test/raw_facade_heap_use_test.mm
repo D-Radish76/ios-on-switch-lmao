@@ -252,4 +252,34 @@ TEST_F(FacadeHeapUse, ABlitReadsAHeapBufferAcrossRestoredMappings)
     }
 }
 
+TEST_F(FacadeHeapUse, ARecordedHeapUseOutlivesMakeAliasableAndIdleTrim)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    constexpr uint64_t quarter = 0x40000;
+    for (MTLStorageMode mode : {MTLStorageModeShared, MTLStorageModePrivate}) {
+        SCOPED_TRACE(int(mode));
+        @autoreleasepool {
+            id<MTLHeap> h = facade::heap(mode, 4 * quarter);
+            ASSERT_NE(h, nil);
+            const auto options = MTLResourceOptions(mode << MTLResourceStorageModeShift);
+            id<MTLBuffer> a = [h newBufferWithLength:quarter options:options];
+            id<MTLBuffer> b = [h newBufferWithLength:quarter options:options];
+            id<MTLBuffer> c = [h newBufferWithLength:quarter options:options];
+            ASSERT_NE(a, nil);
+            ASSERT_NE(b, nil);
+            ASSERT_NE(c, nil);
+            id<MTLCommandBuffer> cb = [[facade::device() newCommandQueue] commandBuffer];
+            id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+            [blit fillBuffer:b range:NSMakeRange(0, quarter) value:0xA7];
+            [blit endEncoding];
+            [b makeAliasable];
+            EXPECT_EQ(h.usedSize, 2 * quarter);
+            gRM->raw->trimArenas(gRM->committed);
+            [cb commit];
+            [cb waitUntilCompleted];
+            EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error.description.UTF8String;
+        }
+    }
+}
+
 }  // namespace
