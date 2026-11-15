@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "raw_facade_harness.h"
+#include "../raw/runtime/raw_samples.h"
 #include "drivers/TegraGM20B/test/gm20b_ce_model.h"
 #include "kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
 
@@ -11,17 +12,20 @@ class FacadeMultisampleCopies : public testing::Test {
 protected:
     static void SetUpTestSuite()
     {
-        device = harness::open(harness::writePack(harness::packKey(MTLPixelFormatBGRA8Unorm)));
+        device = harness::open(harness::writePack(harness::packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                                  {{raw::resolveState(70, 2), MTLPixelFormatRGBA8Unorm},
+                                                   {raw::resolveState(70, 4), MTLPixelFormatRGBA8Unorm}}));
         ASSERT_NE(device, nil);
     }
 
-    static id<MTLTexture> texture(MTLPixelFormat format, NSUInteger samples, NSUInteger width, NSUInteger height)
+    static id<MTLTexture> texture(MTLPixelFormat format, NSUInteger samples, NSUInteger width, NSUInteger height,
+                                  MTLStorageMode storage = MTLStorageModePrivate)
     {
         auto *d =
             [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:width height:height mipmapped:NO];
         d.textureType = samples > 1 ? MTLTextureType2DMultisample : MTLTextureType2D;
         d.sampleCount = samples;
-        d.storageMode = MTLStorageModePrivate;
+        d.storageMode = storage;
         d.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget | MTLTextureUsagePixelFormatView;
         return [device newTextureWithDescriptor:d];
     }
@@ -216,6 +220,45 @@ TEST_F(FacadeMultisampleCopies, FirstUseInitializesEverySampleAndPreservesPaddin
                 execute(cb);
                 EXPECT_EQ(memcmp(from, expectedSource.data(), expectedSource.size()), 0);
                 EXPECT_EQ(memcmp(to, expectedDestination.data(), expectedDestination.size()), 0);
+            }
+        }
+}
+
+TEST_F(FacadeMultisampleCopies, AWholeClearAndStoredResolveTakesNoFill)
+{
+    for (uint32_t samples : {2u, 4u})
+        for (bool whole : {false, true}) {
+            @autoreleasepool {
+                SCOPED_TRACE(testing::Message() << "samples " << samples << ", whole " << whole);
+                auto source = texture(MTLPixelFormatRGBA8Unorm, samples, 37, 29);
+                auto resolved = texture(MTLPixelFormatRGBA8Unorm, 1, 37, 29, MTLStorageModeShared);
+                ASSERT_NE(source, nil);
+                ASSERT_NE(resolved, nil);
+                NSDictionary *before = harness::ask(device, "switchRawFresh");
+                ASSERT_NE(before[@"filled"], nil);
+                auto cb = [[device newCommandQueue] commandBuffer];
+                auto *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+                pass.colorAttachments[0].texture = source;
+                pass.colorAttachments[0].resolveTexture = resolved;
+                pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+                pass.colorAttachments[0].storeAction = MTLStoreActionStoreAndMultisampleResolve;
+                if (!whole) {
+                    pass.renderTargetWidth = 8;
+                    pass.renderTargetHeight = 8;
+                }
+                auto e = [cb renderCommandEncoderWithDescriptor:pass];
+                ASSERT_NE(e, nil);
+                [e endEncoding];
+                [cb commit];
+                [cb waitUntilCompleted];
+                ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error.description.UTF8String;
+                NSString *path = ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));
+                ASSERT_TRUE([path isEqualToString:@"raw"]) << path.UTF8String;
+                NSDictionary *after = harness::ask(device, "switchRawFresh");
+                EXPECT_EQ([after[@"filled"] unsignedLongLongValue] - [before[@"filled"] unsignedLongLongValue],
+                          whole ? 0u : 1u);
+                EXPECT_EQ([after[@"cleared"] unsignedLongLongValue] - [before[@"cleared"] unsignedLongLongValue],
+                          whole ? 1u : 0u);
             }
         }
 }
