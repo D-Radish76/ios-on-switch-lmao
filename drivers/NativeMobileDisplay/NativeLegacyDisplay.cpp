@@ -2446,6 +2446,7 @@ private:
         tapeAddress = static_cast<uint32_t>(tapeBuffer.pa);
         tapeStrideSet = false;
         tapeAttached = true;
+        unmaskFrameEnd();
         dc[kDcRegActControl] = pitchActControl & ~kWinAActHcntrSel;
         dc[kDcStateAccess] = dc[kDcStateAccess] & ~(kReadMuxActive | kWriteMuxActive);
         // XNU redraws its screen on the tape, then calls tapeShow(0), under its console lock.
