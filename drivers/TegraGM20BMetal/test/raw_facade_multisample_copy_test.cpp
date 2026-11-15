@@ -182,4 +182,41 @@ TEST_F(FacadeMultisampleCopies, StencilViewsPreserveDestinationDepth)
         }
     }
 }
+
+TEST_F(FacadeMultisampleCopies, FirstUseInitializesEverySampleAndPreservesPadding)
+{
+    for (uint32_t samples : {1u, 2u, 4u})
+        for (MTLPixelFormat format : {MTLPixelFormatR8Unorm, MTLPixelFormatRG8Unorm, MTLPixelFormatRGBA8Unorm,
+                                      MTLPixelFormatRGBA16Float, MTLPixelFormatRGBA32Float}) {
+            @autoreleasepool {
+                SCOPED_TRACE(testing::Message() << format << ", samples " << samples);
+                auto source = texture(format, samples, 37, 29), destination = texture(format, samples, 37, 29);
+                ASSERT_NE(source, nil);
+                ASSERT_NE(destination, nil);
+                const raw::Texture &s = ((RMTexture *)source)->_raw, &d = ((RMTexture *)destination)->_raw;
+                const auto sr = s.storageRange(), dr = d.storageRange();
+                uint8_t *from = kernel_model::model.host(sr.va, sr.bytes),
+                        *to = kernel_model::model.host(dr.va, dr.bytes);
+                ASSERT_NE(from, nullptr);
+                ASSERT_NE(to, nullptr);
+                memset(from, 0xa5, sr.bytes);
+                memset(to, 0xa5, dr.bytes);
+                std::vector<uint8_t> expectedSource(sr.bytes, 0xa5), expectedDestination(dr.bytes, 0xa5);
+                for (uint32_t y = 0; y < 29; ++y)
+                    for (uint32_t x = 0; x < 37; ++x)
+                        for (uint32_t sample = 0; sample < samples; ++sample)
+                            for (uint32_t byte = 0; byte < s.bpp; ++byte) {
+                                expectedSource.at(offset(s, x, y, sample, byte)) = 0;
+                                expectedDestination.at(offset(d, x, y, sample, byte)) = 0;
+                            }
+                auto cb = [[device newCommandQueue] commandBuffer];
+                auto e = [cb blitCommandEncoder];
+                [e copyFromTexture:source toTexture:destination];
+                [e endEncoding];
+                execute(cb);
+                EXPECT_EQ(memcmp(from, expectedSource.data(), expectedSource.size()), 0);
+                EXPECT_EQ(memcmp(to, expectedDestination.data(), expectedDestination.size()), 0);
+            }
+        }
+}
 }  // namespace
