@@ -189,6 +189,7 @@ bool encodePatches(raw::RenderEncoder *re, raw::CommandBuffer *rc, const RMPlanD
     if (indirect) {
         if (!arguments) {
             *why = "an indirect patch draw without arguments";
+            rc->refusal = {raw::RefIndirectArguments};
             return false;
         }
         return re->drawPatchesIndirect(patches.controlPoints, patchBuffer, draw.indexOffset, pointBuffer,

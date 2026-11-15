@@ -27,13 +27,13 @@ static void createLater(RMDevice *device, MTLRenderPipelineDescriptor *d, MTLPip
 {
     const qos_class_t qos = qos_class_self();
     dispatch_async(creationQueue(qos), ^{
-        if (ycbcrTargetFormat(d)) {
+        if (standInTargetFormat(d)) {
             NSError *error = nil;
             MTLAutoreleasedRenderPipelineReflection reflection = nil;
-            id<MTLRenderPipelineState> state = [device ycbcrTargetState:d
-                                                                options:o
-                                                             reflection:reflect ? &reflection : nil
-                                                                  error:&error];
+            id<MTLRenderPipelineState> state = [device standInTargetState:d
+                                                                  options:o
+                                                               reflection:reflect ? &reflection : nil
+                                                                    error:&error];
             return finish(state, reflection, error);
         }
         NSError *error = nil;

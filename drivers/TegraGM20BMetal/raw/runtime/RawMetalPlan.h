@@ -225,7 +225,8 @@ public:
     }
 
     raw::BufferSnapshots buffers[3];
-    raw::TextureSnapshots textures[3];
+    raw::TextureSnapshots textures[2];  // vertex, fragment
+    raw::KernelTextureSnapshots kernelTextures;
     raw::SamplerSnapshots samplers[3];
     raw::StateSnapshots<raw::RasterState> raster;
     raw::StateSnapshots<raw::KernelState> kernel;

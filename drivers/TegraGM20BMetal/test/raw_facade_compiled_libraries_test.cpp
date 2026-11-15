@@ -4,11 +4,8 @@
 // filter-function link.
 // The kernel model's compiler keeps the code generation request each one sends and answers it with a metallib in the
 // store; the library is then the raw device's own, its functions raw's.
-#include "raw_facade_harness.h"
-#include "../raw/runtime/raw_codegen_request.h"
-#include "../raw/runtime/raw_compile_request.h"
-#include "../raw/runtime/raw_library_entry.h"
-#include "../../../kits/SwitchSeedPack/SwitchSeedStore.h"
+#include "raw_facade_compiler_store.h"
+#include "../raw/runtime/RawCompileRequest.h"
 #include "ImageFilterLink.h"
 #include "bazel/testing/fresh_process.h"
 
@@ -34,50 +31,68 @@ void expectNoM2V(id<MTLDevice> device)
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
-constexpr uint32_t kServing = TegraGM20BCompilerCapable | TegraGM20BCompilerExpected | TegraGM20BCompilerRegistered;
-
-// The shader compiler as the kernel model runs it for a library: each request kept, and answered with `made` (or, with
-// `log` set, the front end's error) in the store under the request's own key and name
-struct LibraryCompiler {
-    switch_seed_pack::StoreWriter store;
-    std::vector<raw::CompileRequest> asked;
-    raw::MadeLibrary made;
-    std::string log;
-
-    bool serve()
-    {
-        uint8_t identity[switch_seed_pack::kIdentityBytes] = {};
-        identity[8] = 0x99;
-        std::string why;
-        if (!store.open(dir() + "/store", identity, 64, 1u << 20, why))
-            return false;
-        kernel_model::model.compilerFlags = kServing | TegraGM20BCompilerStore;
-        kernel_model::model.store = store.base();
-        kernel_model::model.storeBytes = store.mappedBytes();
-        kernel_model::model.compiler = [this](const std::string &bytes) {
-            raw::CompileRequest r;
-            if (!raw::decodeRequest(bytes, r) || r.kind != raw::RequestKind::Library)
-                return int32_t(TegraGM20BCompileUnavailable);
-            asked.push_back(r);
-            const raw::CacheKey k = raw::libraryCacheKey(r.stack, r.codeGenType, r.codeGen);
-            if (k.key != r.key || !raw::codegen::requestOk(r.codeGenType, r.codeGen))
-                return int32_t(TegraGM20BCompileUnavailable);
-            const std::string entry = raw::encodeLibraryEntry(k, log.empty() ? &made : nullptr, log);
-            store.put(raw::storeName(k, r, {}).data(), reinterpret_cast<const uint8_t *>(entry.data()),
-                      uint32_t(entry.size()), true);
-            return int32_t(log.empty() ? TegraGM20BCompileMade : TegraGM20BCompileRefused);
-        };
-        return true;
-    }
-};
-
-id<MTLDevice> completing()
+void consume(LibraryCompiler &compiler, id<MTLDevice> device, id<MTLFunction> function, NSArray *linked = nil,
+             bool stageInput = false)
 {
-    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
-    const std::string cache = dir() + "/cache";
-    mkdir(cache.c_str(), 0700);
-    raw_metal_complete_states(cache.c_str(), nullptr);
-    return device;
+    ASSERT_TRUE(function != nil);
+    MTLComputePipelineDescriptor *descriptor = [MTLComputePipelineDescriptor new];
+    descriptor.computeFunction = function;
+    if (linked.count) {
+        descriptor.linkedFunctions = [MTLLinkedFunctions linkedFunctions];
+        descriptor.linkedFunctions.privateFunctions = linked;
+    }
+    if (stageInput) {
+        descriptor.stageInputDescriptor = [MTLStageInputOutputDescriptor stageInputOutputDescriptor];
+        descriptor.stageInputDescriptor.attributes[0].format = MTLAttributeFormatFloat2;
+        descriptor.stageInputDescriptor.attributes[0].bufferIndex = 1;
+        descriptor.stageInputDescriptor.layouts[1].stride = 8;
+    }
+    const size_t first = compiler.consumers.size(), jobs = kernel_model::model.jobs.size();
+    NSError *error = nil;
+    MTLAutoreleasedComputePipelineReflection reflection = nil;
+    id<MTLComputePipelineState> state = [device newComputePipelineStateWithDescriptor:descriptor
+                                                                              options:MTLPipelineOptionBufferTypeInfo
+                                                                           reflection:&reflection
+                                                                                error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    ASSERT_TRUE(reflection != nil) << text(error);
+    EXPECT_EQ(state.threadExecutionWidth, 32u);
+    EXPECT_EQ(reflection.arguments.count, 0u);
+    ASSERT_EQ(compiler.consumers.size(), first + 2);
+    const auto &facts = compiler.consumers[first], &reflected = compiler.consumers[first + 1];
+    EXPECT_EQ(facts.kind, raw::RequestKind::Facts);
+    EXPECT_EQ(reflected.kind, raw::RequestKind::Reflection);
+    EXPECT_EQ(reflected.key, "reflection | " + facts.key.substr(strlen("facts | ")));
+    const std::string layout = raw::stageInText(raw::stageInFieldsOf(descriptor.stageInputDescriptor));
+    if (stageInput)
+        ASSERT_FALSE(layout.empty());
+    EXPECT_EQ(raw::stageInText(facts.kernel.stageIn), layout);
+    EXPECT_EQ(raw::stageInText(reflected.kernel.stageIn), layout);
+    ASSERT_EQ(reflected.stages.size(), 1 + linked.count);
+    for (NSUInteger i = 0; i < linked.count; i++) {
+        EXPECT_EQ(reflected.stages[i + 1].tag, "kp");
+        EXPECT_EQ(reflected.stages[i + 1].function, [linked[i] name].UTF8String);
+    }
+    id<MTLCommandBuffer> commands = [[device newCommandQueue] commandBuffer];
+    id<MTLComputeCommandEncoder> encoder = [commands computeCommandEncoder];
+    [encoder setComputePipelineState:state];
+    [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+    [encoder endEncoding];
+    [commands commit];
+    [commands waitUntilCompleted];
+    EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << text(commands.error);
+    ASSERT_EQ(compiler.consumers.size(), first + 3);
+    EXPECT_EQ(compiler.consumers.back().kind, raw::RequestKind::Kernel);
+    EXPECT_EQ(raw::stageInText(compiler.consumers.back().kernel.stageIn), layout);
+    EXPECT_TRUE(computeLaunched(jobs));
+    expectNoM2V(device);
+}
+
+id<MTLFunction> consumerKernel(id<MTLDevice> device)
+{
+    const std::string bytes = made_metallib::thin({"consumer"}, {2}, {made_metallib::wrappedBitcode(0x91)});
+    dispatch_data_t data = dispatch_data_create(bytes.data(), bytes.size(), nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    return [[device newLibraryWithData:data error:nil] newFunctionWithName:@"consumer"];
 }
 
 const std::string kAdd = made_metallib::wrappedBitcode(0x41), kMul = made_metallib::wrappedBitcode(0x42, 96);
@@ -149,6 +164,8 @@ void sourceLibrary()
     ASSERT_TRUE(raw::codegen::readSource(compiler.asked[1].codeGen, sent, options));
     EXPECT_NE(options.find("-fno-fast-math"), std::string_view::npos) << options;
     EXPECT_NE(options.find("\"-DNAME=a b\""), std::string_view::npos) << options;
+    consume(compiler, device, square);
+    consume(compiler, device, square, nil, true);
     expectNoM2V(device);
 }
 
@@ -246,6 +263,7 @@ void stitchedLibrary()
     EXPECT_EQ([device newLibraryWithStitchedDescriptor:foreign error:&error], nil);
     EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorFunctionNotFound)) << text(error);
     EXPECT_EQ(compiler.asked.size(), 1u);
+    consume(compiler, device, consumerKernel(device), @[ stitched ]);
     expectNoM2V(device);
 }
 
@@ -301,6 +319,7 @@ void kernelDagLibrary()
     EXPECT_EQ(withDag(device, selector, dag, @[], &error), nil);
     EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorCompileFailure)) << text(error);
     EXPECT_EQ(compiler.asked.size(), 1u);
+    consume(compiler, device, consumerKernel(device), @[ prefix, [library newFunctionWithName:@"postfixPrimary_i8"] ]);
     expectNoM2V(device);
 }
 
@@ -328,6 +347,7 @@ void filterLibrary()
     linked[1] = {"mul", reinterpret_cast<const uint8_t *>(kMul.data()), kMul.size(), false, {}};
     const std::vector<uint8_t> request = switch_metal::imageFilterLinkRequest(linked);
     EXPECT_EQ(compiler.asked[0].codeGen, std::string(request.begin(), request.end()));
+    consume(compiler, device, [library newFunctionWithName:@"ciKernelMain"]);
     expectNoM2V(device);
 }
 

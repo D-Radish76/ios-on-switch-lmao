@@ -338,47 +338,59 @@ TEST_F(NVJPGGate, ACancellationTakesThePowerLockOutsideTheStateLock)
     EXPECT_EQ(gEngine.waitsUnderStateLock, 0);
 }
 
-// A job window's map writes its page entries and flushes only their PTE groups and IOVAs (switch_smmu_flush_range),
-// never every ASID's page-table cache; a smaller map unmaps the old tail; nothing written, nothing flushed.
-TEST_F(NVJPGGate, AWindowMapFlushesOnlyTheEntriesItWrote)
+TEST_F(NVJPGGate, AllocationsKeepDisjointMappingsUntilTheirOwnRelease)
 {
     constexpr uint32_t kWindow = TEGRA_NVJPG_WINDOW_OUT;
     const uint64_t base = kTegraNVJPGWindowBase[kWindow];
-    const uint64_t tablesPa = gTables.pa + (1 + kWindowTables[0]) * 4096ULL;  // the out window's first table
+    const uint64_t tablesPa = gTables.pa + (1 + kWindowTables[0]) * 4096ULL;
     std::vector<uint64_t> pages(300);
     for (uint32_t i = 0; i < pages.size(); ++i)
         pages[i] = 0x90000000ULL + i * 4096ULL;
     gSmmuRangeFlushes.clear();
     gSmmuFlushAlls = 0;
 
-    ASSERT_EQ(tegra_nvjpg_window_map(kWindow, pages.data(), 300, true), base);
+    const uint64_t first = tegra_nvjpg_pages_map(kWindow, pages.data(), 300, true);
+    ASSERT_EQ(first, base);
     for (uint32_t i = 0; i < 300; ++i)
-        ASSERT_EQ(gDomain.translate(base + i * 4096ULL), pages[i]) << "page " << i;
-    EXPECT_EQ(gDomain.translate(base + 300 * 4096ULL), UINT64_MAX);
+        ASSERT_EQ(gDomain.translate(first + i * 4096ULL), pages[i]) << "page " << i;
+    EXPECT_EQ(gDomain.translate(first + 300 * 4096ULL), UINT64_MAX);
     ASSERT_EQ(gSmmuRangeFlushes.size(), 1u);
     SmmuRangeFlush f = gSmmuRangeFlushes.back();
     EXPECT_EQ(f.asid, uint32_t(TEGRA_SMMU_ASID_NVJPG));
     EXPECT_EQ(f.tablesPa, tablesPa);
     EXPECT_EQ(f.tableBytes, 300u * 4);
-    EXPECT_EQ(f.iova, base);
+    EXPECT_EQ(f.iova, first);
     EXPECT_EQ(f.iovaBytes, 300u * 4096);
 
-    ASSERT_EQ(tegra_nvjpg_window_map(kWindow, pages.data(), 100, false), base);
-    EXPECT_EQ(gDomain.translate(base + 99 * 4096ULL), pages[99]);
-    EXPECT_EQ(gDomain.translate(base + 100 * 4096ULL), UINT64_MAX) << "the old tail stayed mapped";
+    const uint64_t second = tegra_nvjpg_pages_map(kWindow, pages.data(), 100, false);
+    ASSERT_EQ(second, first + TegraSMMUSpace::round(300u * 4096));
+    EXPECT_EQ(gDomain.translate(first + 299 * 4096ULL), pages[299]);
+    EXPECT_EQ(gDomain.translate(second + 99 * 4096ULL), pages[99]);
     ASSERT_EQ(gSmmuRangeFlushes.size(), 2u);
-    f = gSmmuRangeFlushes.back();
-    EXPECT_EQ(f.tablesPa, tablesPa);
-    EXPECT_EQ(f.tableBytes, 300u * 4);
-    EXPECT_EQ(f.iovaBytes, 300u * 4096);
-
-    tegra_nvjpg_window_clear(kWindow);
-    EXPECT_EQ(gDomain.translate(base), UINT64_MAX);
-    ASSERT_EQ(gSmmuRangeFlushes.size(), 3u);
+    EXPECT_EQ(gSmmuRangeFlushes.back().iova, second);
     EXPECT_EQ(gSmmuRangeFlushes.back().iovaBytes, 100u * 4096);
 
-    tegra_nvjpg_window_clear(kWindow);
-    EXPECT_EQ(tegra_nvjpg_window_map(kWindow, pages.data(), 0, true), base);
-    EXPECT_EQ(gSmmuRangeFlushes.size(), 3u) << "a flush with nothing written";
-    EXPECT_EQ(gSmmuFlushAlls, 0u) << "a flush of every ASID's page-table cache";
+    tegra_nvjpg_pages_unmap(first, 300);
+    EXPECT_EQ(gDomain.translate(first), UINT64_MAX);
+    EXPECT_EQ(gDomain.translate(second), pages[0]);
+    ASSERT_EQ(gSmmuRangeFlushes.size(), 3u);
+    EXPECT_EQ(gSmmuRangeFlushes.back().iovaBytes, 300u * 4096);
+    EXPECT_EQ(tegra_nvjpg_pages_map(kWindow, pages.data(), 300, true), first);
+    tegra_nvjpg_pages_unmap(first, 300);
+    tegra_nvjpg_pages_unmap(second, 100);
+    const size_t flushes = gSmmuRangeFlushes.size();
+    tegra_nvjpg_pages_unmap(0, 0);
+    EXPECT_EQ(tegra_nvjpg_pages_map(kWindow, pages.data(), 0, true), 0u);
+    EXPECT_EQ(gSmmuRangeFlushes.size(), flushes);
+    EXPECT_EQ(gSmmuFlushAlls, 0u);
+}
+
+TEST_F(NVJPGGate, UnalignedAndUnreachablePagesNeverReachThePageTable)
+{
+    uint64_t page = 1ULL << 34;
+    const uint64_t free = gSpaces[TEGRA_NVJPG_WINDOW_OUT].bytesFree();
+    EXPECT_EQ(tegra_nvjpg_pages_map(TEGRA_NVJPG_WINDOW_OUT, &page, 1, true), 0u);
+    page = 0x90000001;
+    EXPECT_EQ(tegra_nvjpg_pages_map(TEGRA_NVJPG_WINDOW_OUT, &page, 1, true), 0u);
+    EXPECT_EQ(gSpaces[TEGRA_NVJPG_WINDOW_OUT].bytesFree(), free);
 }

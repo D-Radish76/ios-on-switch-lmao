@@ -219,6 +219,8 @@ pub struct NmbComputePipelineDescriptorOf<F> {
     pub linked_count: u64,
     pub private_linked: *const *mut F,
     pub private_count: u64,
+    pub binary_linked: *const *mut F,
+    pub binary_count: u64,
     pub stage_inputs: u64,
     pub stage_attributes: [NmbVertexAttribute; 31],
     pub stage_layouts: [NmbVertexLayout; 31],
@@ -283,6 +285,10 @@ pub fn compute_descriptor<F: DescriptorFunction>(
     let mut linked = LinkedFunctions::new();
     linked.functions = linked_functions(d.linked, d.linked_count)?;
     linked.private_functions = linked_functions(d.private_linked, d.private_count)?;
+    linked.binary_functions = linked_functions(d.binary_linked, d.binary_count)?
+        .into_iter()
+        .map(|f| f.with_precompiled(true))
+        .collect();
     let mut out = ComputePipelineDescriptor::new(StageSource::Function(
         get(d.function)?.stage_function().with_linked(linked),
     ));

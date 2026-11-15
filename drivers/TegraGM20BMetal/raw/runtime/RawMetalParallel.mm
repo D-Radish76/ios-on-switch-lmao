@@ -110,6 +110,7 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
 - (RMRenderEncoder *)makeSub
 {
     RMSubRecorder *s = [RMSubRecorder new];
+    rmTakeRecording(s);
     s->_commandLog = &s->_log;
     s->_device = _device;
     s->_queue = _cb->_queue;
@@ -184,6 +185,7 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
         seam(subs[at], _descriptor, at, subs.size());
         begins.push_back(cb->_plan.size());
         splice(cb, subs[at], refused);
+        rmRecordingDone(subs[at]);
     }
     if (!refused && std::any_of(begins.begin(), begins.end(), [&](size_t b) {
             return cb->_plan.begin(b).refused;

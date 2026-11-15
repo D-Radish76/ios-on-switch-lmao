@@ -170,12 +170,12 @@ TEST(DisplayPlanesSource, TheConsoleHoldKeepsTheScreen)
 TEST(DisplayPlanesSource, PlaneSlotsHoldTheSurfaceTheyScan)
 {
     const std::string planes = Planes();
-    const CodeText make = Block(planes, "int planeSlotFor(");
+    const CodeText make = Block(SourceText("../SwitchPlaneSlots.h"), "int planeSlotFor(");
     EXPECT_TRUE(make.has("surface->retain();"));
     EXPECT_TRUE(make.has("planeSlots[k].tiled == tiled"));
     EXPECT_TRUE(make.before("tegra_gm20b_surface_hold(", "(held != 0) != tiled"));
     EXPECT_TRUE(Block(planes, "void planeDecide(")
-                    .before("planeNativeSlotFor(layer.surface", "planeBuildingSlots |= 1u << unsigned(slot)"));
+                    .before("planeNativeSlotFor(layer.surface", "planeBuildingSlots |= uint64_t(1) << unsigned(slot)"));
     const CodeText native(SourceText("../SwitchNativePlaneDisplay.h"));
     EXPECT_TRUE(native.before("switch_native_scanout_acquire(surface", "planeMapSnapshot(scanout, image)"));
     EXPECT_TRUE(native.has("surfaceLayout(surface, block)"));

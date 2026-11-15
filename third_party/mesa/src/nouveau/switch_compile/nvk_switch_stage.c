@@ -45,6 +45,12 @@ switch_nvk_cbuf_code(const struct nvk_cbuf *cbuf)
    return NVK_CBUF_TYPE_UBO_DESC | (cbuf->desc_offset / 16) << 3;
 }
 
+uint32_t
+switch_nvk_cbuf_offset(const struct nvk_cbuf *cbuf)
+{
+   return cbuf->type == NVK_CBUF_TYPE_UBO_DESC ? cbuf->desc_offset : 0;
+}
+
 void
 switch_nvk_stage_of(const struct nvk_shader *shader,
                     struct switch_nvk_stage *out)
@@ -58,6 +64,7 @@ switch_nvk_stage_of(const struct nvk_shader *shader,
    for (uint32_t c = 0; c < out->cbuf_count; c++) {
       out->cbuf_types[c] = switch_nvk_cbuf_code(&shader->cbuf_map.cbufs[c]);
       out->cbuf_sets[c] = shader->cbuf_map.cbufs[c].desc_set;
+      out->cbuf_offsets[c] = switch_nvk_cbuf_offset(&shader->cbuf_map.cbufs[c]);
    }
    qmd_inputs(&shader->info, out);
    out->num_gprs = shader->info.num_gprs;
@@ -83,6 +90,8 @@ split_program(const struct switch_nvk_program *p, struct switch_nvk_stage *out)
    out->data_bytes = p->data_bytes;
    out->cbuf_count = MIN2(p->cbuf_count, 16);
    memcpy(out->cbuf_types, p->cbuf_types, sizeof(out->cbuf_types));
+   memcpy(out->cbuf_sets, p->cbuf_sets, sizeof(out->cbuf_sets));
+   memcpy(out->cbuf_offsets, p->cbuf_offsets, sizeof(out->cbuf_offsets));
    out->num_gprs = p->info.num_gprs;
    out->bound_textures = p->info.bound_textures;
    qmd_inputs(&p->info, out);

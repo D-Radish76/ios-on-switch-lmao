@@ -23,6 +23,7 @@ import fetchfree_link
 import kernels
 import mkpack
 import packfile
+import selector_section
 import splits
 
 PIPELINE = struct.Struct('<QIIIIIBBBBHHI')
@@ -76,6 +77,8 @@ class Reader:
 
 def program(r: Reader) -> dict:
     out = {'image': r.blob(), 'data': r.blob(), 'cbufs': list(r.blob())}
+    far = r.blob()
+    out['far_ubos'] = list(struct.unpack(f'<{len(far) // 2}H', far))
     words = r.u32()
     out['gprs'], out['bound_textures'] = words & 0xFF, words >> 8 & 0xFF
     return out
@@ -134,6 +137,9 @@ def load_records(path: str) -> tuple[list[dict], list[dict], dict[tuple[bool, in
             rec['bound'] = {'mask': mask, 'push': push, 'spill': [words_of(r.blob()), words_of(r.blob())]}
             rec['tess_programs'] = [program(r) for _ in range(r.u32())]
             rec['extras'], rec['restore'] = (list(zip(*[iter(words_of(r.blob()))] * 2, strict=True)) for _ in range(2))
+            rec['far'] = words_of(r.blob())
+            rec['selectors'] = selector_section.read(r, program)
+            rec['selector_generic'] = words_of(r.blob())
         states.append(rec)
     return states, kernel_recs, reflections
 
@@ -149,18 +155,24 @@ def program_id(program: dict) -> str:
     One code can read its uniform buffers at other set-0 offsets in another state (its constant buffer types): each is
     a program of its own, so neither state binds the other's.
     """
-    return (
-        f'{packfile.fnv(program["image"] + program["data"] + bytes(program["cbufs"]) + program.get("identity", b"")):x}'
-    )
+    far = struct.pack(f'<{len(program.get("far_ubos", []))}H', *program.get('far_ubos', []))
+    named = program['image'] + program['data'] + bytes(program['cbufs']) + program.get('identity', b'') + far
+    return f'{packfile.fnv(named):x}'
 
 
-def entries_of(pipeline: bytes, count: int, samplers: list[list[int]], constexpr_tsc: list[list[int]]) -> list[dict]:
-    """Give a record's set-0 entries as mkpack.py's pipeline() makes them, constexpr samplers numbered in the pack's."""
+def entries_of(
+    pipeline: bytes, count: int, samplers: list[list[int]], constexpr_tsc: list[list[int]], far: bytes = b''
+) -> list[dict]:
+    """Give a record's set-0 entries as mkpack.py's pipeline() makes them, constexpr samplers numbered in the pack's.
+
+    Its entries past packfile.PACK_ENTRIES are in `far`, its far block's (raw_set_entries.h).
+    """
     out = []
     for i in range(count):
-        off, kind, stage, slot, sampler_kind, sampler, pad = struct.unpack_from(
-            '<HBBBBBB', pipeline, PIPELINE.size + 8 * i
+        source, at = (
+            (pipeline, PIPELINE.size + 8 * i) if i < packfile.PACK_ENTRIES else (far, 8 * (i - packfile.PACK_ENTRIES))
         )
+        off, kind, stage, slot, sampler_kind, sampler, pad = struct.unpack_from('<HBBBBBB', source, at)
         if kind == ENTRY_COLOR_TABLE:
             out.append({'off': off, 'kind': 'color_table'})
         elif kind in TABLE_KINDS:
@@ -228,9 +240,16 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
     p = rec['pipeline']
     if len(p) != PIPELINE_BYTES:
         raise ValueError('pipeline record has an obsolete layout')
-    _hash, _key, _vs, _fs, _blob, _dwords, entries, _pushes, slot, _pad, stride, set_bytes, flags = (
+    _hash, _key, _vs, _fs, _blob, _dwords, entries, _pushes, slot, entries_high, stride, set_bytes, flags = (
         PIPELINE.unpack_from(p)
     )
+    entries |= entries_high << 8
+    far = rec.get('far', [])
+    far_entries = max(entries - packfile.PACK_ENTRIES, 0)
+    masks = (far_entries + 31) // 32
+    if len(far) != 2 * far_entries + 2 * masks:
+        raise ValueError(f'{rec["key"]}: a far block of {len(far)} words for {entries} entries')
+    far_bits = [sum(far[2 * far_entries + m * masks + i] << 32 * i for i in range(masks)) for m in range(2)]
     mask, *words = struct.unpack_from('<33I', p, PIPELINE.size + packfile.PACK_ENTRIES * 8)
     *written_format, xr_slots = packfile.PIPELINE_V22.unpack_from(p, V22_AT)
     head, array_length_word, pulled, streams, viewport_count_word = packfile.PIPELINE_V21.unpack_from(p, V21_AT)
@@ -241,7 +260,7 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
     storage_mask, storage_write_mask, storage_samples, storage_tests, *storage_tic = struct.unpack_from(
         '<BBBB8I', p, tail - 52
     )
-    depth_word, stencil_word, test_flags, _reserved, depth_tic, stencil_tic, _reserved = struct.unpack_from(
+    depth_word, stencil_word, test_flags, shadow_word, depth_tic, stencil_tic, _reserved = struct.unpack_from(
         '<BBBBIII', p, tail - 16
     )
     v15 = packfile.PIPELINE_V15.unpack_from(p, tail)
@@ -250,12 +269,15 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
     (memory_entries,) = packfile.PIPELINE_V18.unpack_from(p, tail + packfile.PIPELINE_V15.size)
     v20 = packfile.PIPELINE_V20.unpack_from(p, V20_AT)
     heap_arrays, heap_bytes, heap_words = v20[6], v20[7], v20[8:24]
-    spill_entry, spill_words, spill = list(v20[24:26]), v20[26:28], rec.get('spill', [])
+    (spill_high,) = struct.unpack_from('<H', p, V22_AT + packfile.V22_SPILL_HIGH)
+    spill_entry = [v20[24] | (spill_high & 0xFF) << 8, v20[25] | (spill_high >> 8) << 8]
+    spill_words, spill = v20[26:28], rec.get('spill', [])
     regs = rec['probe']['records'][0]['regs']
     check_streams(rec['key'], slot, bool(head[3]), streams, regs)
     targets = rec['probe']['targets']
     varying = list(varying)
-    if storage_mask:
+    # a shader-side stencil's program runs in the ordered interlock as a storage form's does
+    if storage_mask or shadow_word:
         for method in [0x0210, 0x0754, 0x1224] + [0x1A00 + 4 * i for i in range(8) if storage_mask >> i & 1]:
             if method not in varying:
                 varying.append(method)
@@ -293,11 +315,14 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         'depth_test_word': depth_word,
         'stencil_test_word': stencil_word,
         'test_flags': test_flags,
+        'shadow_stencil_word': shadow_word,
         'depth_tic': depth_tic,
         'stencil_tic': stencil_tic,
         'storage_tic': storage_tic,
         'set_size': set_bytes,
-        'entries': entries_of(p, entries, rec['samplers'], constexpr_tsc),
+        'entries': entries_of(
+            p, entries, rec['samplers'], constexpr_tsc, struct.pack(f'<{2 * far_entries}I', *far[: 2 * far_entries])
+        ),
         'vbs': [{'stream': 0, 'slot': slot, 'stride': stride}] if slot != 0xFF else [],
         'vertex_streams': list(streams),
         'array_length_word': array_length_word,
@@ -305,8 +330,8 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
         'fetch': bool(flags & 1),
         'clears': 0,
         'problems': [],
-        'bound_entries': bound_entries,
-        'memory_entries': memory_entries,
+        'bound_entries': bound_entries | far_bits[0] << packfile.PACK_ENTRIES,
+        'memory_entries': memory_entries | far_bits[1] << packfile.PACK_ENTRIES,
         'root_table_word': list(v20[0:2]),
         'status_word': list(v20[2:4]),
         'root_slots': list(v20[4:6]),
@@ -327,6 +352,7 @@ def pipeline_of(rec: dict, varying: list[int], prog_index: dict[str, int], const
             }
             for i, v in enumerate(rec.get('variants', []))
         ],
+        'selectors': selector_section.of_record(rec, lambda p: prog_index[program_id(p)]),
     }
 
 
@@ -398,8 +424,7 @@ def probe_of(rec: dict, index: int, context: dict[int, int]) -> dict:
 def compute_kernels(
     buckets: list[str], constexpr_tsc: list[list[int]], laid: tuple, report: list[str]
 ) -> tuple[list[dict], list[dict]]:
-    """Give the buckets' kernels (kernels.py), their programs appended to the heap image `laid` holds, and their states'
-    answers."""
+    """Give the buckets' kernels (kernels.py) and answers, their programs appended to the heap image `laid` holds."""
     records = [rec for d in buckets for rec in load_records(os.path.join(d, 'records.bin'))[1]]
     programs = {}
     for rec in records:
@@ -451,7 +476,11 @@ def lay_out_variants(states: list[dict], programs: dict[str, dict], laid: tuple,
     """Append the states' variant and tessellation programs to the heap image `laid` holds, after every generic one."""
     count = tessellating = 0
     for rec in states:
-        for p in [v['program'] for v in rec.get('variants', [])] + rec.get('tess_programs', []):
+        for p in (
+            [v['program'] for v in rec.get('variants', [])]
+            + rec.get('tess_programs', [])
+            + selector_section.programs(rec)
+        ):
             pid = program_id(p)
             programs.setdefault(pid, p)
             packfile.place_graphics(pid, programs, *laid)
@@ -492,14 +521,20 @@ def variant_report(states: list[dict]) -> list[str]:
     ]
 
 
+def read_option(buckets: list[str], name: str) -> str | None:
+    if name not in buckets:
+        return None
+    at = buckets.index(name)
+    with open(buckets[at + 1]) as f:
+        text = f.read()
+    del buckets[at : at + 2]
+    return text
+
+
 def main() -> None:
     out_dir, *buckets = sys.argv[1:]
-    inventory = ''
-    if '--archives' in buckets:
-        at = buckets.index('--archives')
-        with open(buckets[at + 1]) as f:
-            inventory = f.read()
-        del buckets[at : at + 2]
+    selector_table = read_option(buckets, '--ca-selectors')
+    inventory = read_option(buckets, '--archives') or ''
     warm = next(d for d in buckets if os.path.exists(os.path.join(d, 'context.log')))
     _, post = mkpack.load_init(os.path.join(warm, 'context.log'))
     states, refused = gather(buckets, draw_context(post[0]))
@@ -507,6 +542,8 @@ def main() -> None:
     found = split_programs(states, programs)
     simple = [rec['probe'] for rec in states]
     report = [f'{len(states) + len(refused)} states made directly, {len(states)} records, {len(refused)} refused']
+    if selector_table is not None:
+        report += selector_section.coverage(states + refused, selector_table, packfile.key_hash)
     report += variant_report(states)
     varying, baseline = mkpack.split_registers(simple, post)
     report.append(f'{len(varying)} per-pipeline registers: ' + ' '.join(f'{m:x}' for m in varying))

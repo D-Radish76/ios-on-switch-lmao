@@ -38,7 +38,7 @@ struct MediaCompletionFlipTest: HWTest {
             AVPlayerItem(asset: AVURLAsset(url: context.media.appendingPathComponent(clip.file)))
         }
         let player = await MainActor.run { AVPlayer(playerItem: item) }
-        let finished = await CopyRouteHold.during {
+        let finished = try await CopyRouteHold.during {
             await context.onStage { stage in
                 let view = PlayerView(frame: stage.bounds)
                 view.autoresizingMask = [.flexibleWidth, .flexibleHeight]

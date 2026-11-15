@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalInternal.h"
-#include "NativeBridgeMetalFrontend.h"
 #include "RawComplete.h"
 #include "RawDirect.h"
 #include "raw_compute.h"
@@ -291,8 +290,7 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
                         if (_samplers[slot])
                             ask->sampler(slot, _samplers[slot]->_descriptor);
                     RMComputeState *state = _state;
-                    completion->backgroundKernel([pending, ask, specialization, state, completion, grid, threads,
-                                                  perThread, region] {
+                    completion->backgroundKernel([pending, ask, specialization, state, completion] {
                         RMKernelJob::Run run{pending};
                         const auto text = specialization.text();
                         const auto key =
@@ -306,11 +304,6 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
                         }
                         run.result.state = completion->kernel(state->_direct, ask->dispatch(), key, &run.result.retry,
                                                               state->_function, &run.result.gone);
-                        // the journal names m2v's state: a state the pack answered has none
-                        if (run.result.state && !region && state->_metadata)
-                            native_bridge_metal_journal_dispatch(state->_metadata, grid, threads, perThread,
-                                                                 text.memory.c_str(), text.textures.c_str(),
-                                                                 text.samplers.c_str());
                     });
                 });
             }

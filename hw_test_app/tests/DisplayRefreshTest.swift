@@ -3,7 +3,7 @@ import Darwin
 import HWTestCore
 import UIKit
 
-/// IOMFBDisplayRefresh on the internal display (AppleCLCD), which QuartzCore's AppleDisplay::update_display_limits
+/// IOMFBDisplayRefresh from IOMobileFramebufferCopyProperty, which QuartzCore's AppleDisplay::update_display_limits
 /// reads (24B119) and IOMobileFramebufferLegacy::setDisplayRefreshProperties publishes. Its shortest refresh interval
 /// is the panel's period at its highest rate, and on a fixed-rate internal panel the longest is the same (the family
 /// answers 1/24 s for an external display); *_mach fields are mach ticks, period_mach the period expected.
@@ -21,8 +21,11 @@ struct DisplayRefreshTest: HWTest {
     func run(_ context: TestContext) async throws -> Outcome {
         let fps = await MainActor.run { UIScreen.main.maximumFramesPerSecond }
         let period = Self.machTicks(seconds: 1 / Double(max(fps, 1)))
-        let found = Self.dictionary()
+        let display = Self.dictionary()
+        let found = display.values
         var metrics = Metrics()
+        metrics.set("display_found", display.found)
+        metrics.set("open_kr", display.status.map { String(UInt32(bitPattern: $0), radix: 16) } ?? "not_opened")
         metrics.set("present", found != nil)
         metrics.set("period_mach", Int(period))
         var values: [String: Int64] = [:]
@@ -35,7 +38,7 @@ struct DisplayRefreshTest: HWTest {
         let internalPanel = values["max_mach"].map { $0 == values["min_mach"] } ?? false
         return .judged(
             [
-                ("IOMFBDisplayRefresh on AppleCLCD (present)", found != nil),
+                ("IOMobileFramebufferCopyProperty returns IOMFBDisplayRefresh", found != nil),
                 ("all six keys", values.count == Self.keys.count),
                 ("min_mach within 1% of period_mach", abs(minMach - period) <= period / 100),
                 ("max_mach == min_mach (an internal panel)", internalPanel),
@@ -48,23 +51,24 @@ struct DisplayRefreshTest: HWTest {
         return seconds * 1e9 * Double(base.denom) / Double(base.numer)
     }
 
-    typealias Matching = @convention(c) (UnsafePointer<CChar>) -> CFMutableDictionary?
-    typealias Service = @convention(c) (mach_port_t, CFDictionary?) -> mach_port_t
-    typealias Property = @convention(c) (mach_port_t, CFString, CFAllocator?, UInt32) -> Unmanaged<CFTypeRef>?
-    typealias Release = @convention(c) (mach_port_t) -> kern_return_t
+    typealias MainDisplay = @convention(c) (UnsafeMutablePointer<Unmanaged<CFTypeRef>?>) -> kern_return_t
+    typealias CopyProperty = @convention(c) (CFTypeRef, CFString) -> Unmanaged<CFTypeRef>?
 
-    /// AppleCLCD's IOMFBDisplayRefresh, nil when the service or the property is missing.
-    static func dictionary() -> [String: Any]? {
-        guard let iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW),
-            let matching = dlsym(iokit, "IOServiceMatching"), let service = dlsym(iokit, "IOServiceGetMatchingService"),
-            let property = dlsym(iokit, "IORegistryEntryCreateCFProperty"),
-            let release = dlsym(iokit, "IOObjectRelease")
-        else { return nil }
-        let display = unsafeBitCast(service, to: Service.self)(
-            0, unsafeBitCast(matching, to: Matching.self)("AppleCLCD"))
-        guard display != 0 else { return nil }
-        defer { _ = unsafeBitCast(release, to: Release.self)(display) }
-        let value = unsafeBitCast(property, to: Property.self)(display, "IOMFBDisplayRefresh" as CFString, nil, 0)
-        return value?.takeRetainedValue() as? [String: Any]
+    static func dictionary() -> (found: Bool, status: kern_return_t?, values: [String: Any]?) {
+        guard
+            let library = dlopen(
+                "/System/Library/PrivateFrameworks/IOMobileFramebuffer.framework/IOMobileFramebuffer", RTLD_NOW)
+        else { return (false, nil, nil) }
+        defer { dlclose(library) }
+        guard let mainDisplay = dlsym(library, "IOMobileFramebufferGetMainDisplay"),
+            let copyProperty = dlsym(library, "IOMobileFramebufferCopyProperty")
+        else { return (false, nil, nil) }
+        var display: Unmanaged<CFTypeRef>?
+        let status = unsafeBitCast(mainDisplay, to: MainDisplay.self)(&display)
+        defer { display?.release() }
+        guard status == KERN_SUCCESS, let display else { return (false, status, nil) }
+        let value = unsafeBitCast(copyProperty, to: CopyProperty.self)(
+            display.takeUnretainedValue(), "IOMFBDisplayRefresh" as CFString)
+        return (true, status, value?.takeRetainedValue() as? [String: Any])
     }
 }

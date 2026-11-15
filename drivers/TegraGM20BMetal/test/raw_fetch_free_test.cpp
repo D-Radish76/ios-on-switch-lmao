@@ -152,12 +152,26 @@ TEST(RawFetchFree, APipelinePlacesTheFormsItsRuleTakesAndAnyTheProbeAsksFor)
 TEST(RawFetchFree, AFormKnowsTheFragmentTexturesItSamples)
 {
     raw::PackPipeline pp = formRecord(0, raw::FetchBlend);
-    pp.entries = 3;
+    raw::setEntryCount(pp, 3);
     pp.entry[0] = {0, raw::EntryTexture, 2, 3, 0, 0, 0};
     pp.entry[1] = {8, raw::EntryTexture, 1, 5, 0, 0, 0};
     pp.entry[2] = {16, raw::EntryUbo, 2, 0, 0, 0, 0};
     const raw::FetchFreeForm f = raw::fetchFreeForm(pp, nullptr);
     EXPECT_EQ(f.sampledSlots, 1u << 3) << "the fragment stage's texture alone";
+    EXPECT_FALSE(f.samplesPast32);
+}
+
+// 24B119's fragment slots 32 to 127: a form sampling one is never a draw of eight-bit sources, whatever it binds there
+TEST(RawFetchFree, AFormSamplingAFragmentSlotPast31KnowsItSamplesOneSampledSlotsCannotName)
+{
+    raw::PackPipeline pp = formRecord(0, raw::FetchBlend);
+    raw::setEntryCount(pp, 3);
+    pp.entry[0] = {0, raw::EntryTexture, 2, 31, 0, 0, 0};
+    pp.entry[1] = {8, raw::EntryTexture, 2, 64, 0, 0, 0};
+    pp.entry[2] = {16, raw::EntryTexture, 1, 127, 0, 0, 0};
+    const raw::FetchFreeForm f = raw::fetchFreeForm(pp, nullptr);
+    EXPECT_EQ(f.sampledSlots, 1u << 31);
+    EXPECT_TRUE(f.samplesPast32);
 }
 
 struct Image {

@@ -207,11 +207,66 @@ test(bool aligned)
    ralloc_free(source);
 }
 
+static void
+test_local_array(unsigned index, bool branch, unsigned replacement)
+{
+   static const nir_shader_compiler_options options = {0};
+   const uint32_t initial[] = {11, 22, 33, 44};
+   nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_FRAGMENT, &options, "local-array");
+   nir_variable *array = nir_local_variable_create(b.impl, glsl_array_type(glsl_uint_type(), 4, 0), "values");
+   nir_deref_instr *base = nir_build_deref_var(&b, array);
+   for (unsigned i = 0; i < ARRAY_SIZE(initial); i++)
+      nir_store_deref(&b, nir_build_deref_array_imm(&b, base, i), nir_imm_int(&b, initial[i]), 1);
+
+   nir_def *zero = nir_imm_int(&b, 0);
+   nir_def *selected = nir_iand_imm(&b, nir_ldc_nv(&b, 1, 32, zero, zero, .align_mul = 4), 3);
+   nir_def *condition = nir_ldc_nv(&b, 1, 32, zero, nir_imm_int(&b, 4), .align_mul = 4);
+   nir_deref_instr *at = nir_build_deref_array(&b, base, selected);
+   nir_def *first = nir_load_deref(&b, at);
+   nir_store_global(&b, first, nir_imm_int64(&b, FRONTIER_VA), .align_mul = 4);
+   nir_store_deref(&b, at, nir_imm_int(&b, replacement), 1);
+   nir_def *next = nir_iand_imm(&b, nir_iadd_imm(&b, selected, 1), 3);
+   nir_deref_instr *neighbor = nir_build_deref_array(&b, base, next);
+   nir_push_if(&b, nir_ine_imm(&b, condition, 0));
+   nir_store_deref(&b, at, nir_imm_int(&b, replacement + 1), 1);
+   nir_push_else(&b, NULL);
+   nir_store_deref(&b, neighbor, nir_imm_int(&b, replacement + 2), 1);
+   nir_pop_if(&b, NULL);
+   nir_store_global(&b, nir_load_deref(&b, at), nir_imm_int64(&b, FRONTIER_VA + 4), .align_mul = 4);
+   nir_store_global(&b, nir_load_deref(&b, neighbor), nir_imm_int64(&b, FRONTIER_VA + 8), .align_mul = 4);
+   nir_validate_shader(b.shader, "before local-array folding");
+
+   struct model m = {0};
+   put(m.header, index, 4);
+   put(m.header + 4, branch, 4);
+   run(b.shader, &m, 0);
+   if (m.writes != 12) {
+      fprintf(stderr, "local array left %u output bytes, expected 12\n", m.writes);
+      abort();
+   }
+   const uint32_t expected[] = {initial[index], replacement + branch,
+                                branch ? initial[(index + 1) & 3] : replacement + 2};
+   for (unsigned word = 0; word < ARRAY_SIZE(expected); word++)
+      for (unsigned byte = 0; byte < 4; byte++)
+         if (m.output[0][word * 4 + byte] != ((expected[word] >> (8 * byte)) & 0xff)) {
+            fprintf(stderr, "local array index %u branch %u changed output %u\n", index, branch, word);
+            abort();
+         }
+   ralloc_free(b.shader);
+}
+
 int
 main(void)
 {
+   glsl_type_singleton_init_or_ref();
    test(false);
    test(true);
+   for (unsigned index = 0; index < 4; index++)
+      for (unsigned branch = 0; branch < 2; branch++) {
+         test_local_array(index, branch, 7);
+         test_local_array(index, branch, 113);
+      }
+   glsl_type_singleton_decref();
    puts("33 batched NIR records, 31 inactive lanes, bounded partial and unaligned reads passed");
    return 0;
 }

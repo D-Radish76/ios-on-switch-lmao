@@ -47,24 +47,38 @@ std::vector<Kind> kinds(bool blockLinear)
     cube.layers = 6;
     volume.depth = 4;
     volume.view2d = true;
-    K blockMips = ask(K::Block, kBC1), blockArray = ask(K::Block, kBC1);
+    K blockMips = ask(K::Block, kBC1), blockArray = ask(K::Block, kBC1), blockCube = ask(K::Block, kBC1),
+      blockVolume = ask(K::Block, kBC1);
     blockMips.levels = 5;
     blockMips.type = raw::fx::kTexTwoD;
     blockArray.layers = 3;
     blockArray.type = raw::fx::kTexTwoDArray;
+    blockCube.height = 64;
+    blockCube.layers = 6;
+    blockCube.type = raw::fx::kTexCube;
+    blockVolume.depth = 4;
+    blockVolume.levels = 2;
+    blockVolume.type = raw::fx::kTexThreeD;
     out.insert(out.end(), {{"mips", mips},
                            {"2D array", array},
                            {"cube", cube},
                            {"3D", volume},
                            {"block-compressed mips", blockMips},
-                           {"block-compressed 2D array", blockArray}});
+                           {"block-compressed 2D array", blockArray},
+                           {"block-compressed cube", blockCube},
+                           {"block-compressed 3D", blockVolume}});
+    K depth = ask(K::Zeta, kDepth32), stencil = ask(K::Zeta, kDepth32Stencil8), depthCube = ask(K::Zeta, kDepth32);
+    depth.sampled = depthCube.sampled = true;
+    depthCube.type = raw::fx::kTexCube;
+    depthCube.height = 64;
+    depthCube.layers = 6;
+    depthCube.levels = 3;
+    out.insert(out.end(), {{"depth", depth}, {"depth-stencil", stencil}, {"depth cube of levels", depthCube}});
     if (!blockLinear)
         return out;
-    K msaa = ask(K::Multisample, kRGBA8), depth = ask(K::Zeta, kDepth32), stencil = ask(K::Zeta, kDepth32Stencil8),
-      msaaDepth = ask(K::Zeta, kDepth32);
+    K msaa = ask(K::Multisample, kRGBA8), msaaDepth = ask(K::Zeta, kDepth32);
     msaa.samples = msaaDepth.samples = 4;
-    depth.sampled = true;
-    out.insert(out.end(), {{"MSAA", msaa}, {"depth", depth}, {"depth-stencil", stencil}, {"MSAA depth", msaaDepth}});
+    out.insert(out.end(), {{"MSAA", msaa}, {"MSAA depth", msaaDepth}});
     return out;
 }
 

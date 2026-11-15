@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // raw_amplification.cpp on raw::Device: a state of vertex amplification drawn once per amplification by one amplify macro
 // call over the scratch words the encoder writes, a count the state does not take refused, each amplification's view
-// mapping offsets in the scratch maps and the state's offset words, and a dynamic vertex stride taken from the bind up to
-// the stream's 12-bit field, past it by the state's stride twin alone. Each holds of the states' runtime records and of
-// their pack records alike.
+// mapping offsets in the scratch maps (one past their 16 bits as 0xFFFF) and the state's offset words, and a dynamic
+// vertex stride taken from the bind up to the stream's 12-bit field, past it by the state's stride twin alone. Each holds
+// of the states' runtime records and of their pack records alike.
 #include "raw_device_harness.h"
 #include "raw_record_pack.h"
 #include "../raw/runtime/raw_record.h"
@@ -91,6 +91,7 @@ protected:
         std::string why;
         uint32_t draws = 0;
         std::vector<uint32_t> words;  // what the device submitted for the draw's command buffer
+        raw::Refusal refusal;
     };
 
     // One draw of `pl` at amplification `count` under view mappings of viewport offsets `viewports`, the vertex buffer at
@@ -101,14 +102,14 @@ protected:
         Drawn d;
         raw::CommandBuffer *cb = dev.begin();
         if (!cb)
-            return {"no command buffer", 0, {}};
+            return {"no command buffer", 0, {}, {}};
         raw::PassDesc pass;
         pass.color[0].texture = &target;
         pass.count = 1;
         raw::RenderEncoder *e = cb->render(pass);
         if (!e) {
             cb->abandon();
-            return {"no pass", 0, {}};
+            return {"no pass", 0, {}, {}};
         }
         e->setPipeline(pl);
         e->setBuffer(1, 1, &vertices, 0);
@@ -124,6 +125,7 @@ protected:
         d.draws = cb->draws;
         uint32_t seqno = 0;
         if (!ok || !cb->commit(seqno)) {
+            d.refusal = cb->refusal;
             cb->abandon();
             d.why = why ? why : "not committed";
         }
@@ -258,17 +260,43 @@ TEST_P(DeviceAmplification, ACountReadingStateTakesEachDrawsCount)
     EXPECT_EQ(countWord, root);
 }
 
-// A mapping's offsets share one scratch word, 16 bits each
-TEST_P(DeviceAmplification, AMappingOffsetPastHalfItsScratchWordIsRefused)
+// A mapping's offsets share one scratch word, 16 bits each: one past them draws as 0xFFFF, past any viewport or layer,
+// which an M4 Max draws into viewport and slice 0 as it does 0x10000 (raw_mme.h mappedOffset); one amplification's
+// word is the CPU's, whole
+TEST_P(DeviceAmplification, AMappingOffsetPastHalfItsScratchWordDrawsAsTheLastItHolds)
 {
-    EXPECT_NE(drawWith(offsetting, 2, {3, 0x10000}).why, "");
+    const uint32_t scratch = NVB197_SET_MME_SHADOW_SCRATCH(0);
+    std::map<uint32_t, uint32_t> words;
+    const Drawn wide = drawWith(offsetting, 2, {3, 0x10000});
+    EXPECT_EQ(wide.why, "");
+    for (const auto &[m, v] : methods(wide.words))
+        if (m >= scratch + 4 * SWITCH_GM20B_SCRATCH_AMP_COUNT_WORD && m < scratch + 4 * SWITCH_GM20B_SCRATCH_AMP_END)
+            words[(m - scratch) / 4] = v;
+    EXPECT_EQ(words[SWITCH_GM20B_SCRATCH_AMP_MAPS] >> SWITCH_GM20B_AMP_MAP_VIEWPORT_SHIFT, 3u);
+    EXPECT_EQ(words[SWITCH_GM20B_SCRATCH_AMP_MAPS + 1] >> SWITCH_GM20B_AMP_MAP_VIEWPORT_SHIFT, 0xffffu);
     EXPECT_EQ(drawWith(offsetting, 2, {3, 0xffff}).why, "");
+    uint32_t offset = 0, word = 0;
+    for (const auto &[m, v] : methods(drawWith(offsetting, 1, {0x10000}).words)) {
+        if (m == NVB197_LOAD_CONSTANT_BUFFER_OFFSET) {
+            offset = v;
+        } else if (m >= NVB197_LOAD_CONSTANT_BUFFER(0) && m < NVB197_LOAD_CONSTANT_BUFFER(16)) {
+            if (offset == 0x700 + 4 * 5)
+                word = v;
+            offset += 4;
+        }
+    }
+    EXPECT_EQ(word, 0x10000u);
 }
 
+// Metal's validation error (setVertexAmplificationCount:viewMappings:), which fails the command buffer
 TEST_P(DeviceAmplification, ACountTheStateDoesNotTakeIsRefused)
 {
-    EXPECT_NE(drawWith(amplified, 3).why, "");
-    EXPECT_NE(drawWith(plain, 2).why, "");
+    const Drawn above = drawWith(amplified, 3);
+    EXPECT_NE(above.why, "");
+    EXPECT_EQ(above.refusal.id, raw::RefAmplificationCount);
+    EXPECT_EQ(above.refusal.a, 3u);
+    EXPECT_EQ(above.refusal.b, 2u);
+    EXPECT_EQ(drawWith(plain, 2).refusal.id, raw::RefAmplificationCount);
     EXPECT_EQ(drawWith(plain, 1).why, "");
     EXPECT_EQ(drawWith(counted, 1).why, "");
     EXPECT_EQ(drawWith(counted, 2).why, "");
@@ -304,7 +332,9 @@ TEST_P(DeviceAmplification, ADynamicStrideIsTheBindsUpToTheStreamField)
     EXPECT_EQ(drawWith(strided, 1, {}, 16).why, "");
     EXPECT_EQ(drawWith(strided, 1, {}, 0xfff).why, "");
     EXPECT_EQ(drawWith(strided, 1).why, "");
-    EXPECT_NE(drawWith(strided, 1, {}, 0x1000).why, "");
+    const Drawn past = drawWith(strided, 1, {}, 0x1000);
+    EXPECT_NE(past.why, "");
+    EXPECT_EQ(past.refusal.id, raw::RefStrideTwin);
 }
 
 TEST_P(DeviceAmplification, AStream0BindStridePastTheFieldDrawsTheStrideTwin)

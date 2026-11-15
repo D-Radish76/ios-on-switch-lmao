@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // A dispatch whose kernel the compiler refused (HW Test gpu.upload.blit_buffer and gpu.upload.replace_region: "a kernel
 // the pack lacks is refused ... a texture view of VkFormat 1000470001 NVK has no header for"): its command buffer leaves
-// the raw path named by compute.nokernel, the predicate of a dispatch the raw path has no kernel for, not "-".
+// the raw path with an Internal error named by compute.nokernel, never replayed elsewhere.
 #include "raw_facade_compute.h"
 #include "../raw/runtime/raw_cache.h"
 
@@ -64,8 +64,13 @@ TEST_F(FacadeKernelRefusal, ADispatchOfARefusedKernelNamesComputeNoKernel)
     [cb waitUntilCompleted];
     NSString *path = [(id)cb valueForKey:@"switchRawPath"];
     ASSERT_TRUE(path != nil);
-    EXPECT_TRUE([path hasPrefix:@"m2v:"]) << path.UTF8String;
-    EXPECT_TRUE([path hasSuffix:@":compute.nokernel"]) << path.UTF8String;
+    EXPECT_TRUE([path isEqualToString:@"error:compute.nokernel"]) << path.UTF8String;
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+    ASSERT_TRUE(cb.error != nil);
+    EXPECT_TRUE([cb.error.domain isEqualToString:MTLCommandBufferErrorDomain]);
+    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
+    EXPECT_EQ(gOpens, 0);
+    EXPECT_EQ([m2vRecord(gDevice)[@"needs"] count], 0u);
 }
 
 }  // namespace

@@ -64,7 +64,9 @@ NmbOfflineFunction *functionOf(const NmbOfflineLibrary *library, const raw::Requ
     if (!s.specialized) {
         if (!s.constants.empty())
             return why = "constants of a function made without them", nullptr;
-        return nmb_offline_function_new(library, s.function.c_str());
+        return s.name == s.function
+                   ? nmb_offline_function_new(library, s.function.c_str())
+                   : nmb_offline_function_new_specialized(library, s.function.c_str(), s.name.c_str(), nullptr, 0);
     }
     if (!(values = raw::constantValuesOf(s.constants)))
         return why = "constants it cannot read: " + s.constants, nullptr;
@@ -230,13 +232,17 @@ int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string 
         if (!stages.make(p.request, systemRoot, why))
             return TegraGM20BCompileUnavailable;
         std::vector<NmbOfflineFunction *> linked;
-        for (const bool hidden : {false, true})
+        for (const char *tag : {"kl", "kp", "kb"})
             for (size_t i = 1; i < p.request.stages.size(); ++i)
-                if ((p.request.stages[i].tag == "kp") == hidden)
+                if (p.request.stages[i].tag == tag)
                     linked.push_back(stages.function(i));
         const size_t visible =
             size_t(std::count_if(p.request.stages.begin() + 1, p.request.stages.end(), [](const raw::RequestStage &s) {
                 return s.tag == "kl";
+            }));
+        const size_t hidden =
+            size_t(std::count_if(p.request.stages.begin() + 1, p.request.stages.end(), [](const raw::RequestStage &s) {
+                return s.tag == "kp";
             }));
         NmbOfflineComputePipelineDescriptor d = {};
         d.function = stages.function(0);
@@ -245,7 +251,9 @@ int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string 
         d.linked = linked.data();
         d.linked_count = visible;
         d.private_linked = linked.data() + visible;
-        d.private_count = linked.size() - visible;
+        d.private_count = hidden;
+        d.binary_linked = linked.data() + visible + hidden;
+        d.binary_count = linked.size() - visible - hidden;
         stageInputOf(p.request.kernel.stageIn, d);
         uint32_t facts[3] = {};
         const bool made = nmb_offline_compute_pipeline_facts(&d, facts);

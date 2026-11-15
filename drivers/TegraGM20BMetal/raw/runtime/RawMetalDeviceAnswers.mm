@@ -10,10 +10,16 @@
 #include "raw_archive.h"
 #include "raw_device_answers.h"
 #include "raw_metal_formats.h"
+#include "raw_stage_textures.h"
 
 namespace {
 
 constexpr const raw::answers::Kind &kKind = raw::answers::kThisKind;
+
+static_assert(
+    raw::kStageTextures == raw::answers::thisKindCount("maxVertexTextures") &&
+        raw::kStageTextures == raw::answers::thisKindCount("maxFragmentTextures"),
+    "the raw encoder keeps every texture slot the device answers a render stage binds (raw_stage_textures.h)");
 
 struct Answers {
     std::unordered_map<SEL, uint64_t> counts;

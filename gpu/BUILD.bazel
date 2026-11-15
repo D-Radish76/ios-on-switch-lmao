@@ -10,7 +10,7 @@
 # crates (@rust_crates, bazel/rust), Rust 1.98.0 and LLVM 23.1.4's llvm-as (pinned downloads), Xcode, NVK and its host
 # twin (//gpu/nvk: Mesa 77452b90 + the series).
 
-load("@rules_rust//rust:defs.bzl", "rust_library", "rust_static_library")
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_static_library", "rust_test")
 load("//bazel/lint:defs.bzl", "lint_files")
 load("//bazel/rust:defs.bzl", "cargo_ids", "rust_artifact")
 load("//kits/SwitchGM20BEmit:defs.bzl", "EMIT_SOURCES")
@@ -85,7 +85,11 @@ rust_library(
     crate_root = TRANSLATE + "NativeMetalTranslate.rs",
     edition = "2024",
     rustc_env = {"NMB_COMPILE_PROFILE": "$(execpath :compile_profile)"},
-    rustc_flags = cargo_ids("5b1c2e7f0a9d4e63", "8f2a6c1d3e5b7094"),
+    # target_j181: iOS 27's A13, whose render stages bind 128 textures (NativeMetalDirect.rs MAX_WRITES)
+    rustc_flags = cargo_ids("5b1c2e7f0a9d4e63", "8f2a6c1d3e5b7094") + ["--check-cfg=cfg(target_j181)"] + select({
+        "//ipsw:24B119": ["--cfg=target_j181"],
+        "//conditions:default": [],
+    }),
     version = "0.1.0",
     deps = [
         "//kits/SwitchRefusal:switch_refusal_rs",
@@ -94,6 +98,16 @@ rust_library(
         "@rust_crates//:serde",
         "@rust_crates//:serde_json",
     ],
+)
+
+# The translate crate's unit tests, built for this build's identity (target_j181 on 24B119)
+rust_test(
+    name = "translate_test",
+    crate = ":translate",
+    rustc_flags = ["--check-cfg=cfg(target_j181)"] + select({
+        "//ipsw:24B119": ["--cfg=target_j181"],
+        "//conditions:default": [],
+    }),
 )
 
 # The translate crate alone as a static library: the pack tools' (no m2v runtime in them).
@@ -287,14 +301,17 @@ PLUGIN_CC_SRCS = [
     GM20B_METAL + ":raw/runtime/raw_predication.cpp",
     GM20B_METAL + ":raw/runtime/raw_predicate_loops.cpp",
     GM20B_METAL + ":raw/runtime/raw_private_comp.cpp",
+    GM20B_METAL + ":raw/runtime/raw_mip_passes.cpp",
     GM20B_METAL + ":raw/runtime/raw_resolve_twod.cpp",
     GM20B_METAL + ":raw/runtime/raw_multisample.cpp",
     GM20B_METAL + ":raw/runtime/raw_object_pool.cpp",
     GM20B_METAL + ":raw/runtime/raw_surface_image.cpp",
+    GM20B_METAL + ":raw/runtime/raw_texture_shape.cpp",
     GM20B_METAL + ":raw/runtime/raw_turn_copy.cpp",
     GM20B_METAL + ":raw/runtime/raw_stencil_bits.cpp",
     GM20B_METAL + ":raw/runtime/raw_zeta_colour.cpp",
     GM20B_METAL + ":raw/runtime/raw_turned_pass.cpp",
+    GM20B_METAL + ":raw/runtime/raw_format_standin.cpp",
     GM20B_METAL + ":raw/runtime/raw_area_load.cpp",
     GM20B_METAL + ":raw/runtime/raw_reach.cpp",
     GM20B_METAL + ":raw/runtime/raw_comp.cpp",

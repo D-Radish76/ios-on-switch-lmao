@@ -11,8 +11,14 @@
 namespace raw {
 namespace {
 
-constexpr char kRequestMagic[8] = {'S', 'W', 'C', 'R', 'E', 'Q', '0', '3'};
+// Any change to a field's bytes or meaning takes the next magic: the compiler's request log (compiler/compiler_log.h)
+// keeps requests across builds and replays them, so a request of another layout must be refused whole
+constexpr char kRequestMagic[8] = {'S', 'W', 'C', 'R', 'E', 'Q', '0', '4'};
 constexpr char kNameMagic[8] = {'S', 'W', 'R', 'A', 'W', 'N', 'M', '2'};
+// A cubic bind's sampler flag byte: bit 0 normalized, bit 1 the vertex stage, no other; its texture's slot byte's top
+// bit: the vertex stage. Each stage binds up to 16 samplers
+constexpr uint8_t kCubicNormalizedBit = 1, kCubicVertexBit = 2, kCubicVertexSlot = 0x80;
+constexpr uint32_t kCubicBindLimit = 32;
 
 // A struct of plain values with no padding, written and read as its bytes: every field it has goes over the wire
 template <class T> void writeWhole(Writer &w, const T &v)
@@ -60,15 +66,17 @@ void writeVariant(Writer &w, const RenderVariant &v)
 {
     w.value(uint32_t(v.cubic.samplers.size()));
     for (const CubicBinds::Sampler &s : v.cubic.samplers) {
-        const uint8_t packed[6] = {s.slot, s.s, s.t, s.r, s.border, uint8_t(s.normalized)};
+        const uint8_t packed[6] = {
+            s.slot, s.s, s.t, s.r, s.border, uint8_t(s.normalized | (s.stage == kCubicVertex ? kCubicVertexBit : 0))};
         w.bytes(packed, sizeof packed);
     }
     w.value(uint32_t(v.cubic.textures.size()));
     for (const CubicBinds::Texture &t : v.cubic.textures) {
-        w.value(t.slot);
+        w.value(uint8_t(t.slot | (t.stage == kCubicVertex ? kCubicVertexSlot : 0)));
         w.value(t.format);
     }
     w.value(v.fragmentTests);
+    w.value(v.xrShadows);
     w.value(uint8_t(v.twoPlane));
     w.value(v.xrSlots);
     w.value(uint32_t(v.written.size()));
@@ -78,25 +86,31 @@ void writeVariant(Writer &w, const RenderVariant &v)
     }
 }
 
-// False: more binds than a variant has
+// False: more binds than a variant has, or a sampler flag this layout does not define
 bool readVariant(Reader &r, RenderVariant &v)
 {
     const uint32_t samplers = r.value<uint32_t>();
-    if (!r.ok() || samplers > 16)
+    if (!r.ok() || samplers > kCubicBindLimit)
         return false;
     for (uint32_t i = 0; i < samplers; ++i) {
         uint8_t packed[6] = {};
         r.bytes(packed, sizeof packed);
-        v.cubic.samplers.push_back({packed[0], packed[1], packed[2], packed[3], packed[4], packed[5] != 0});
+        if (packed[5] & ~(kCubicNormalizedBit | kCubicVertexBit))
+            return false;
+        const uint8_t stage = packed[5] & kCubicVertexBit ? kCubicVertex : kCubicFragment;
+        v.cubic.samplers.push_back(
+            {packed[0], packed[1], packed[2], packed[3], packed[4], (packed[5] & kCubicNormalizedBit) != 0, stage});
     }
     const uint32_t textures = r.value<uint32_t>();
-    if (!r.ok() || textures > 16)
+    if (!r.ok() || textures > kCubicBindLimit)
         return false;
     for (uint32_t i = 0; i < textures; ++i) {
         const uint8_t slot = r.value<uint8_t>();
-        v.cubic.textures.push_back({slot, r.value<uint32_t>()});
+        const uint8_t stage = slot & kCubicVertexSlot ? kCubicVertex : kCubicFragment;
+        v.cubic.textures.push_back({uint8_t(slot & ~kCubicVertexSlot), r.value<uint32_t>(), stage});
     }
     v.fragmentTests = r.value<uint8_t>();
+    v.xrShadows = r.value<uint8_t>();
     v.twoPlane = r.value<uint8_t>() != 0;
     v.xrSlots = r.value<uint16_t>();
     const uint32_t written = r.value<uint32_t>();
@@ -113,7 +127,7 @@ bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
     if (r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r))
-        return index == 0 ? tag == "k" : tag == "kl" || tag == "kp";
+        return index == 0 ? tag == "k" : tag == "kl" || tag == "kp" || tag == "kb";
     if (functionAttributes(r))
         return tag == "a";
     if (bufferEncoders(r))

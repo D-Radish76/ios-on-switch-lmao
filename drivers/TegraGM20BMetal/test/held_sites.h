@@ -20,7 +20,12 @@
 
 namespace held_sites {
 
-enum class Owner { Runtime, Model, Test, Apple };
+enum class Owner {
+    Runtime,
+    Model,
+    Test,
+    Apple
+};
 
 inline const char *ownerName(Owner o)
 {
@@ -82,8 +87,9 @@ inline bool allocator(const Frame &f)
 {
     if (f.image == "libsystem_malloc.dylib" || f.image == "libheld_sites.dylib" || startsWith(f.symbol, "operator new"))
         return true;
-    for (const char *alloc : {"_objc_rootAlloc", "objc_alloc", "class_createInstance", "objc_opt_new", "+[NSObject alloc",
-                              "+[NSObject new", "_class_createInstance", "swift_slowAlloc", "swift_allocObject"})
+    for (const char *alloc :
+         {"_objc_rootAlloc", "objc_alloc", "class_createInstance", "objc_opt_new", "+[NSObject alloc", "+[NSObject new",
+          "_class_createInstance", "swift_slowAlloc", "swift_allocObject"})
         if (startsWith(f.symbol, alloc))
             return true;
     return false;
@@ -95,9 +101,9 @@ inline Owner mainOwner(const Frame &f)
     for (const char *model : {"kernel_model::", "timed_gpu::", "model_gpu::", "IOConnect", "IOService", "IORegistry"})
         if (startsWith(f.symbol, model))
             return Owner::Model;
-    for (const char *test : {"held_blocks_test::", "encode_cost::", "harness::", "scale_frames::", "held_sites::",
-                             "testing::", "main", "RawFacadeHeldBlocks", "-[Harness", "+[Harness", "facade::",
-                             "-[EncodeCostGone"})
+    for (const char *test :
+         {"held_blocks_test::", "encode_cost::", "harness::", "scale_frames::", "held_sites::", "testing::", "main",
+          "RawFacadeHeldBlocks", "-[Harness", "+[Harness", "facade::", "-[EncodeCostGone"})
         if (startsWith(f.symbol, test))
             return Owner::Test;
     return Owner::Runtime;

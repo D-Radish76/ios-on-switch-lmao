@@ -12,7 +12,14 @@
 #include "../../kits/SwitchSysctl/SwitchSysctl.h"
 
 namespace {
-enum : int { kMaps, kRemaps, kObjects, kSurfaces, kPublications, kTotals };
+enum : int {
+    kMaps,
+    kRemaps,
+    kObjects,
+    kSurfaces,
+    kPublications,
+    kTotals
+};
 struct sysctl_oid gOids[kTotals];
 
 int readTotal(struct sysctl_oid *, void *, int which, struct sysctl_req *req)

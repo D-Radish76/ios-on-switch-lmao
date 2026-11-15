@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalInternal.h"
-#import "RawMetalRotated.h"
 
 #include "raw_fetch_order.h"
 #include "raw_residual.h"
 #include "raw_sample_shading.h"
+#include "raw_shader_test_push.h"
 
 // What raw::RenderEncoder::selfRuns refuses of a draw that fetches a color it writes before it reads any geometry
 // (raw_fetch_order.h), decided as the draw is recorded: its encoder goes to m2v, the command buffer's others stay raw
@@ -42,8 +42,10 @@ static void checkFetch(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
               samplerState:(__unsafe_unretained id<MTLSamplerState>)s
             atSamplerIndex:(NSUInteger)si
 {
-    rmBindTexture(self, 2, t, ti);
-    rmBindSampler(self, 2, s, si);
+    const bool textureChanged = rmBindTexture(self, 2, t, ti);
+    const bool samplerChanged = rmBindSampler(self, 2, s, si);
+    if (textureChanged || samplerChanged)
+        [self prepareDrawnRecord];
 }
 
 // A store action the pass left Unknown, decided by the encoder: the pass's descriptor takes it before either driver encodes it
@@ -56,26 +58,39 @@ static void checkFetch(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
     }
 }
 
+// A depth or stencil store the pass left Unknown, decided now: Store or DontCare, kept as the pass's; a resolve there names
+// no resolve texture (the pass took Unknown only without one), Metal's validation error
+static void decideZetaStore(RMRenderEncoder *e, uint32_t aspect, MTLStoreAction action)
+{
+    e->_cb->_passes[e->_passAt].zeta[aspect].store = action;
+    if (e->_zeta && action != MTLStoreActionDontCare && action != MTLStoreActionStore) {
+        [e->_cb takeReason:WhyPass why:@"a depth or stencil store action that resolves with no resolve texture"];
+        hit(e->_cb, PredPassDepthStencil, e->_zeta, action);
+    }
+}
+
 - (void)setDepthStoreAction:(MTLStoreAction)action
 {
     rmOwnPass(self);
     _pass.depthAttachment.storeAction = action;
-    _cb->_passes[_passAt].zeta[0].store = action;
-    if (_zeta && action != MTLStoreActionDontCare) {
-        [_cb takeReason:WhyPass why:@"a depth/stencil attachment the raw path does not take"];
-        hit(_cb, PredPassDepthStencil, _zeta, action);
-    }
+    decideZetaStore(self, 0, action);
 }
 
 - (void)setStencilStoreAction:(MTLStoreAction)action
 {
     rmOwnPass(self);
     _pass.stencilAttachment.storeAction = action;
-    _cb->_passes[_passAt].zeta[1].store = action;
-    if (_zeta && action != MTLStoreActionDontCare) {
-        [_cb takeReason:WhyPass why:@"a depth/stencil attachment the raw path does not take"];
-        hit(_cb, PredPassDepthStencil, _zeta, action);
-    }
+    decideZetaStore(self, 1, action);
+}
+
+void visibilityError(RMCommandBuffer *cb, uint64_t mode, uint64_t offset, const char *why)
+{
+    if (!predLogged(PredCallVisibility))
+        logPred(PredCallVisibility, mode, offset,
+                [NSString stringWithFormat:@"%s: Metal's validation error (MTLRenderCommandEncoder.h "
+                                           @"setVisibilityResultMode:offset:, MTLVisibilityResultMode)",
+                                           why]);
+    hit(cb, PredCallVisibility, mode, offset);
 }
 
 // Apple's encoder SPI as metal2vulkan answers it (metal2vulkan-runtime apple_only.rs, render/restart.rs, from Metal's measured
@@ -112,25 +127,28 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 }
 
 // Core Animation sets the mode Disabled when its encoder state changes (update_encoder_state); a counting mode is the 3D
-// engine's sample counter (raw_visibility.h)
+// engine's sample counter (raw_visibility.h). What the raw path refuses here Metal's validation stops
+// (MTLRenderCommandEncoder.h setVisibilityResultMode:offset: and MTLVisibilityResultMode).
 - (void)setVisibilityResultMode:(MTLVisibilityResultMode)mode offset:(NSUInteger)offset
 {
     id<MTLBuffer> results = _visibility;
+    bool accumulate = false;
     if (mode != MTLVisibilityResultModeDisabled) {
         raw::VisibilityAsk ask;
         ask.mode = uint32_t(mode);
         ask.offset = offset;
         ask.rawBuffer = [(id)results isKindOfClass:[RMBuffer class]];
         ask.bufferLength = ask.rawBuffer ? ((RMBuffer *)results)->_raw.length : 0;
-        ask.accumulate = [_pass respondsToSelector:@selector(visibilityResultType)] &&
-                         [[(id)_pass valueForKey:@"visibilityResultType"] integerValue] != 0;
+        accumulate = [_pass respondsToSelector:@selector(visibilityResultType)] &&
+                     [[(id)_pass valueForKey:@"visibilityResultType"] integerValue] != 0;
         if (const char *why = raw::visibilityRefusal(ask)) {
             [_cb takeReason:WhyCall why:@(why)];
-            hit(_cb, PredCallVisibility, mode);
+            visibilityError(_cb, mode, offset, why);
         }
     }
     Cmd m = cmd(OpVisibility);
     m.a = uint32_t(mode);
+    m.b = accumulate;
     m.c = offset;
     m.obj = (__bridge void *)results;
     [_cb record:m];
@@ -218,11 +236,17 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
         [_cb takeReason:WhyState why:@"a state not in the pack (its label: the line it was made with)"];
         hit(_cb, !p->_completable ? PredStateNotPackable : PredStateNotInPack);
     }
-    _pipe = [(id)p isKindOfClass:[RMPipeline class]] ? p : nil;
+    __unsafe_unretained RMPipeline *next = [(id)p isKindOfClass:[RMPipeline class]] ? p : nil;
+    const bool changed = _pipe != next;
+    if (changed)
+        _formSamplers[0] = _formSamplers[1] = 0;
+    _pipe = next;
     _drawn = _pipe ? _pipe->_raw : nullptr;
     _drawnVariant = nullptr;
     _eligibility++;
     setBinding(_cb, OpPipeline, 0, 0, state, 0);
+    if (changed)
+        [self prepareDrawnRecord];
 }
 
 // What raw::RenderEncoder::prepare would refuse of a draw with the encoder's bindings, decided here (the same tests)
@@ -233,6 +257,7 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     // formats are not recorded, and every draw would hit enc.colorfmt for nothing, r7p5's "a=0 b=0")
     if (!_pipe || !_pipe->_raw || _cb->_encRefused)
         return YES;
+    rmXrShadowDrew(_cb, *_pipe->_raw);
     if (_checkedEligibility == _eligibility && _checkedEpoch == _cb->_plan.stateEpoch() &&
         _checkedPipeline == _pipe->_raw)
         return YES;
@@ -251,9 +276,8 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
         return YES;
     }
     if (_turn && pl.turnRefused) {
-        [_cb takeReason:WhyEncode why:@(raw::rotatedRefusalText(raw::RotatedRefusal::Variant))];
-        hit(_cb, PredPassRotated, uint64_t(raw::RotatedRefusal::Variant), _turn);
-        return YES;
+        rmTurnRefused(_cb, pl.rec->keyHash, _turn, _pipe->_key.c_str());
+        return NO;
     }
     uint32_t sampleMasks[4];
     if (!raw::samplesDrawn(pl.samples, _samples, pl.samplePasses) ||
@@ -262,9 +286,8 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
             "a state's samples its pass draws nothing defined for: the draw skipped");
         return NO;
     }
-    const raw::PackPipeline &r = *pl.rec;
-    for (uint32_t i = 0; i < r.entries; i++) {
-        const raw::PackEntry &e = r.entry[i];
+    for (uint32_t i = 0; i < pl.entries.size(); i++) {
+        const raw::PackEntry &e = pl.entries[i];
         if (e.kind == raw::EntryUbo) {
             // an offset off m2v's descriptor base alignment needs the push word of its SlotBindOffset residual, which a
             // record made without the probe's offset run lacks, or a storage slot whose code another shares
@@ -337,6 +360,10 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     if (raw::testsHiddenZeta(_ds))
         _cb->_passes[_passAt].testsHiddenZeta = true;
     setBinding(_cb, OpDepthStencil, 0, 0, s, 0);
+    if (const raw::Pipeline *pl = _pipe ? _pipe->_raw : nullptr;
+        pl && _forms.fragmentTests != raw::drawnTests(pl->fetchBits && pl->depthFormat && !pl->storageBits,
+                                                      pl->rec->shaderTests, _ds, _zeta))
+        [self prepareDrawnRecord];
 }
 
 // SPI: lines one pixel wide are what the raw path draws (its default); any other width goes to m2v with the call
@@ -399,15 +426,6 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 
 - (void)setDepthBias:(float)bias slopeScale:(float)slope clamp:(float)clamp
 {
-    // an infinite or NaN factor biases every fragment to a depth m2v sets through the viewport (render_state.rs
-    // depth_bias_effect), which the raw path does not
-    if (!std::isfinite(bias) || !std::isfinite(slope)) {
-        uint32_t b, k;
-        memcpy(&b, &bias, 4);
-        memcpy(&k, &slope, 4);
-        [_cb takeReason:WhyCall why:@"a depth bias of an infinite or NaN factor"];
-        hit(_cb, PredCallDepthBias, b, k);
-    }
     Cmd m = cmd(OpDepthBias);
     m.x = _cb->_extra.size();
     const float f[3] = {bias, slope, clamp};
@@ -498,7 +516,7 @@ static void recordDraw(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
     RMBuffer *index = [(id)indices isKindOfClass:[RMBuffer class]] ? (RMBuffer *)indices : nil;
     if (!buffer || (offset & 3) ||
         (indexed && (!index || (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
-                     indexOffset > index->_raw.length || indexOffset % (indexType == MTLIndexTypeUInt16 ? 2 : 4))))
+                     indexOffset % (indexType == MTLIndexTypeUInt16 ? 2 : 4))))
         return hit(_cb, PredEncIndexedRange, offset, bytes,
                    "indirect arguments or indices Metal reads nothing of: the draw skipped");
     if (offset > buffer->_raw.length || bytes > buffer->_raw.length - offset)

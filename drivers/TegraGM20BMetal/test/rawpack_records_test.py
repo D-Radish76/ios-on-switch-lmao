@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """What the raw pack generator keeps of a probe.
 
-A texture3d argument is an entry with no slot, a state holds up to 32 set-0 entries, the buffer m2v binds of its own
+A texture3d argument is an entry with no slot, a state holds 32 set-0 entries in line, the buffer m2v binds of its own
 beside an 8-bit sRGB target is named as such, and a storage buffer's SlotBindOffset residual word is named by its code
 (raw/pack/probe_bind.h, the runtime's raw_residual_test); a compute kernel's direct record (kernels.py) is the
 PackKernel it holds, its samplers numbered among the pack's.
@@ -96,7 +96,7 @@ class RecordsTest(unittest.TestCase):
         # a layout of a dynamic stride: its stream's format holds no stride (each draw writes its bind's)
         bound = dict(rec, key=rec['key'].replace(':16:1:1', ':4294967295:1:1'), vertex_streams=[5 | 0x80])
         dynamic = dict(record, key=bound['key'], pipeline=packfile.pipeline_bytes(bound, 0, 0))
-        dynamic['probe'] = dict(record['probe'], records=[dict(regs={0x1C00: 0x1000 | 12, 0x1C10: 0x1000})])
+        dynamic['probe'] = dict(record['probe'], records=[{'regs': {0x1C00: 0x1000 | 12, 0x1C10: 0x1000}}])
         back = directlink.pipeline_of(dynamic, [], ids, [])
         self.assertEqual(back['vertex_streams'], [5 | packfile.STREAM_BIND_STRIDE])
         self.assertEqual(packfile.pipeline_bytes(back, 0, 0), dynamic['pipeline'])
@@ -551,6 +551,22 @@ class RecordsTest(unittest.TestCase):
         back['blob'] = []
         self.assertEqual(packfile.pipeline_bytes(back, 0, 0), data)
 
+    def test_own_states_are_keyed_by_the_names_the_runtime_asks_for(self):
+        # raw_own_states.h is the one list: a state added there (the YCbCr loads and masked stores, the XR tile, merge
+        # and split states) is keyed as the runtime looks it up, never by its full key
+        head = 'samples=1 topo=0 ds=0/0 c0=80:15:0:1:0:0:1:0:0 | v '
+        for vertex, fragment, name in (
+            ('ycbcr_vert', 'ycbcr_load_codes_frag', b'raw.ycbcr.ycbcr_load_codes_frag'),
+            ('ycbcr_store_vert', 'ycbcr_store_luma8_masked_frag', b'raw.ycbcr_store.ycbcr_store_luma8_masked_frag'),
+            ('xr_vert', 'xr_tile_bgr10_frag', b'raw.xr.xr_tile_bgr10_frag'),
+            ('xr_vert', 'xr_planes_merge_frag', b'raw.xr.xr_planes_merge_frag'),
+            ('two_plane_cover', 'two_plane_load', b'raw.two_plane.two_plane_load'),
+        ):
+            with self.subTest(fragment=fragment):
+                key = f'{head}{vertex}  | f {fragment}'
+                self.assertEqual(packfile.key_hash({'key': key}), packfile.fnv(name))
+        self.assertGreaterEqual(len(packfile.own_states()), 168)
+
     def test_only_known_own_shader_pairs_use_alias_keys(self):
         own = 'samples=1 topo=0 ds=0/0 c0=80:15:0:1:0:0:1:0:0 | v resolve_vert  | f resolve_bgra8_frag'
         self.assertEqual(packfile.key_hash({'key': own}), packfile.fnv(b'raw.resolve.resolve_bgra8_frag'))
@@ -619,11 +635,12 @@ class RecordsTest(unittest.TestCase):
         read = directlink.entries_of(pipeline, 2, [], [])
         self.assertEqual([e['compare'] for e in read], [True, False])
 
-    def test_a_pipeline_holds_32_entries(self):
+    def test_a_pipeline_holds_32_entries_and_a_record_every_argument_past_them(self):
         ents = packfile.entry_bytes([handle(('slot', 3))] * 27)
         self.assertEqual(len(ents), 8 * 32)
+        self.assertEqual(len(packfile.entry_bytes([handle(('slot', 3))] * 33)), 8 * 33)
         with self.assertRaises(ValueError):
-            packfile.entry_bytes([handle(('slot', 3))] * 33)
+            packfile.entry_bytes([handle(('slot', 3))] * (packfile.SET_ENTRIES_MAX + 1))
 
     def test_srgb_targets(self):
         key = 'samples=1 topo=0 ds=0/0 c0=81:15:0:1:0:0:1:0:0 c1=115:15:0:1:0:0:1:0:0  | v f'

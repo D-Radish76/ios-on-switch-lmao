@@ -198,8 +198,12 @@ CBUF_HEAP_SET = CBUF_SET | 1 << 3  # runtime/raw_pack.h kCbufHeapSet: set 1, a h
 
 
 def ubo_offsets(program: dict) -> list[int]:
-    """Return the set-0 byte offsets of the uniform buffers the program reads as constant buffers."""
-    return [(c >> 3) * 16 for c in program['cbufs'][1:] if c & 7 == CBUF_UBO]
+    """Return the set-0 byte offsets of the uniform buffers the program reads as constant buffers.
+
+    One past 496 bytes is in the program's far table (raw_pack.h PackProgram::farUbos), its type's offset bits 0.
+    """
+    far = list(program.get('far_ubos', [])) + [0] * len(program['cbufs'])
+    return [far[i] * 16 or (c >> 3) * 16 for i, c in enumerate(program['cbufs']) if i and c & 7 == CBUF_UBO]
 
 
 def raw_bindable(program: dict, heap: bool = False) -> bool:

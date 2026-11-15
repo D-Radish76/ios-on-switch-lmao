@@ -40,12 +40,10 @@ The same work in three steps, for a build that caches each bucket's run (it depe
 tools alone):
        rawpack.py --split --qc <default.metallib> --corpus <corpus.log> [--ca-names <ca-names/<build>.txt>]
                   [--ca-preferences <stager>] --out <dir>
-           writes <dir>/work/bucket0 .. bucket15, each a corpus.log of its states
-       rawpack.py --probe-bucket <bucket dir> --prebuilt <dir> --qc <default.metallib> [--root <dir>]
-                  [--data-libs <dir>]
-           makes one bucket in place: records.bin (its states' and kernels' records), and bucket 0's context.log;
-           a line's lib= path is under --root (the crawl's root/ with the build's applications), else QuartzCore's,
-           and a lib=data:<SHA-256> library is --data-libs/<SHA-256>.metallib (else the crawl's data/ beside --root)
+           writes <dir>/work/bucket0 .. bucket16, each a corpus.log of its states (bucket16 our own apps')
+       directbucket.py --probe-bucket <bucket dir> --prebuilt <dir> --qc <default.metallib> [--root <dir>]
+                       [--data-libs <dir>]
+           makes one bucket in place (directbucket.py)
        rawpack.py --link --out <dir> [--stack <hex key>] [--archives <inventory.tsv>] <bucket dir>...
            directlink.py over the buckets: <dir>/pack.bin and the rest, as the one-step form writes them, with the
            archive inventory's declared states (archives.py)
@@ -77,8 +75,6 @@ METAL = TREE / 'drivers/NativeMetal'
 ABI = TREE / 'drivers/TegraGM20B'
 CLASSES = TREE / 'third_party/mesa/src/nouveau/headers'  # NVIDIA's class headers find nvtypes.h here (nvdec.cpp)
 STAGER = RAW.parent / 'stage-tegra-gm20b-metal.py'
-# Lines the bridge's direct compile writes to stderr (NativeMetalDirect.rs translate): the build's output carries them
-DIRECT_COMPILE_SAYS = 'direct compile: '
 
 
 def run(cmd: list[str | Path], env: dict[str, str] | None = None, out: Path | None = None) -> str:
@@ -116,21 +112,12 @@ FRAMEWORK = re.compile(
     r' lib=(?:/System/Library/(?:(?:Private)?Frameworks/\w+\.framework/default'
     r'|\S+?\.(?:bundle|framework/Resources)/\S+)|/Applications/Switch\w*\.app/default)\.metallib '
 )
-QC_PATH = 'System/Library/Frameworks/QuartzCore.framework/default.metallib'
 LIBRARY = re.compile(r' lib=(\S+)')
 # A function a state links (" | <vl|vp|fl|fp> <function> lib=<library> ..."): its library is not the state's
 LINKED_LIBRARY = re.compile(r'( \| [vf][lp] \S+) lib=\S+')
 LINKED = ('vl ', 'vp ', 'fl ', 'fp ')
 # The OS builds a corpus line is a state of (tools/gpu/rawpack.py own_build strips it from the lines a pack takes)
 OS_BUILD = re.compile(r' os=\S+')
-
-
-def library_root(qc: Path) -> str:
-    """Give the crawl root that QuartzCore's default.metallib lies in.
-
-    Other frameworks' libraries are under the same root.
-    """
-    return str(qc)[: -len(QC_PATH) - 1] if str(qc).endswith(QC_PATH) else ''
 
 
 # The Core Animation states the pack holds (ca/caset.py's tiers): every one. The runtime makes a state and places its
@@ -334,6 +321,9 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
                 '-lmock_iokit',
                 '-Wl,-rpath,@executable_path',
                 *([] if frontend else [f'-Wl,-U,_native_bridge_metal_{weak}' for weak in FRONTEND_WEAK]),
+                # No debug map: its paths name the build's sandbox or worker slot, so every link made other bytes and
+                # every bucket keyed on the tool ran again
+                '-Wl,-S',
                 '-lobjc',
                 *frameworks,
                 '-o',
@@ -361,10 +351,15 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
             [HERE / 'native_seed.mm', RAW / 'runtime/RawDirect.mm', RAW / 'runtime/RawRenderKey.mm'],
             tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
         )
-    own = ('ycbcr', 'ycbcr_store', 'xr', 'resolve', 'mip', 'turn', 'stencil_bits')
+    own = ('ycbcr', 'ycbcr_store', 'xr', 'resolve', 'mip', 'turn', 'stencil_bits', 'fmt')
     # resolve.metal's sums in sample order and its NaN tests kept; ycbcr_store.metal's NaN tests and half rounding;
-    # stencil_bits.metal's depth comparisons
-    exact = {'resolve': ['-fno-fast-math'], 'ycbcr_store': ['-fno-fast-math'], 'stencil_bits': ['-fno-fast-math']}
+    # stencil_bits.metal's depth comparisons; fmt.metal's NaN tests and half rounding
+    exact = {
+        'resolve': ['-fno-fast-math'],
+        'ycbcr_store': ['-fno-fast-math'],
+        'stencil_bits': ['-fno-fast-math'],
+        'fmt': ['-fno-fast-math'],
+    }
     for name in own:
         run(
             [
@@ -388,23 +383,28 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
 # The states are probed in buckets, each its own probe processes over a share of the states (fnv64 of the state's line,
 # so a state stays in its bucket whatever else changes), all at once: a bucket's outputs are a function of its states
 # and the tools alone (what a cache of probe runs can key by). Bucket 0 also draws the raw path's own states
-# (PROBE_OWN_LIB).
+# (PROBE_OWN_LIB). Our own apps' states (APP_LIBRARY) are one more bucket after these, the only one whose probe reads
+# the apps' libraries: an app's shader edit reruns that bucket alone.
 BUCKETS = 16
+APP_LIBRARY = re.compile(r' lib=/Applications/Switch\w*\.app/default\.metallib')
 
 
 def split_buckets(corpus: Path, work: Path, count: int) -> list[Path]:
     """Write each bucket's corpus (its Core Animation lines, in corpus order) into work/bucket<i>/corpus.log.
 
+    The count buckets share every state but our own apps', which bucket<count> holds.
+
     Each bucket starts with the first downsample_4_frag state: the probe's warm-up draws it so its dummy sampler takes
     NVK's sampler index 0 (layouts.py reads a handle naming index 0 as no sampler). A bucket that also holds it probes
     it twice; mkpack.py keeps one.
     """
-    lines: list[list[str]] = [[] for _ in range(count)]
+    lines: list[list[str]] = [[] for _ in range(count + 1)]
     warm = ''
     with open(corpus) as f:
         for line in f:
             if line.startswith('R ') and (' label=com.apple.coreanimation.' in line or FRAMEWORK.search(line)):
-                lines[packfile.fnv(line.split(' ', 3)[3].encode()) % count].append(line)
+                at = count if APP_LIBRARY.search(line) else packfile.fnv(line.split(' ', 3)[3].encode()) % count
+                lines[at].append(line)
                 warm = warm or (line if 'f downsample_4_frag' in line else '')
             elif line.startswith('D ok=1 '):  # a compute dispatch shape (directpack.mm's kernels)
                 lines[packfile.fnv(line.encode()) % count].append(line)
@@ -460,74 +460,6 @@ def state_key(line: str) -> str:
     return (f'{key} | l {framework}' if framework else key).strip() + cubic + sampled + written
 
 
-def bucket(tools: Path, d: Path, qc: Path, env: dict[str, str]) -> str:
-    """Make one bucket's records directly (directpack.mm: records.bin, its states' and its dispatch shapes' kernels).
-
-    Bucket 0 holds the tools' context.log: the context init and the registers every record is laid over (directlink.py).
-    """
-    root = env.get('PROBE_LIB_ROOT') or library_root(qc)
-    env = dict(env, PROBE_LIB_ROOT=root, PROBE_DATA_LIBS=env.get('PROBE_DATA_LIBS', str(Path(root).parent / 'data')))
-    corpus = d / 'corpus.log'
-    cache = d / 'cache'
-    said = []
-    bridge_said = []
-
-    def step(name: str, cmd: list, extra: dict[str, str], out: Path) -> None:
-        shutil.rmtree(cache, ignore_errors=True)
-        cache.mkdir()
-        with open(out, 'w') as stdout:
-            r = subprocess.run(
-                [str(c) for c in cmd],
-                env=dict(env, **extra),
-                stdout=stdout,
-                stderr=subprocess.PIPE,
-                text=True,
-                check=False,
-            )
-        if r.returncode:
-            sys.exit(f'rawpack: {d.name} {name} failed:\n{r.stderr[-4000:]}')
-        tail = [line for line in r.stderr.splitlines() if line.startswith(name.split(maxsplit=1)[0] + ':')]
-        said.append(f'{name}: {tail[-1] if tail else "?"}')
-        bridge_said.extend(line for line in r.stderr.splitlines() if line.startswith(DIRECT_COMPILE_SAYS))
-
-    own = {'PROBE_OWN_LIB': str(tools / 'own.metallib')} if d.name == 'bucket0' else {}
-    step('directpack', [tools / 'directpack', qc, corpus, d / 'records.bin'], own, d / 'directpack.out')
-    if d.name == 'bucket0':
-        shutil.copyfile(tools / 'context.log', d / 'context.log')
-    shutil.rmtree(cache, ignore_errors=True)
-    return '\n'.join([f'rawpack: {d.name}: ' + '; '.join(said), *bridge_said])
-
-
-def probe_env() -> dict[str, str]:
-    """Give the probe's environment: this process's, less every knob of the stack, plus the probe's own.
-
-    PROBE_LIB_ROOT is --root and PROBE_DATA_LIBS --data-libs where the command line names them.
-    """
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(
-            ('NAK_', 'NVK_', 'MESA_', 'NMB_', 'M2V_', 'METAL2VULKAN_', 'TEGRA_', 'MTL_', 'NVDEC_', 'RAWCAP_', 'PROBE_')
-        )
-    }
-    # NMB_CACHE_MB: the m2v cache directory holds every state's NVK driver record until mkprograms reads them (the
-    # bridge's 256 MiB cap evicts the oldest past ~7000 states, which then bind programs no record names)
-    env.update(
-        MESA_SHADER_CACHE_DISABLE='true',
-        NVDEC_PROBE='1',
-        NVDEC_SCRUB='1',
-        NVDEC_TRACE='3',
-        NMB_ASYNC_PSO='0',
-        NMB_ASYNC_PSO_API='0',
-        NMB_CACHE_MB='65536',
-    )
-    if option('--root', False):
-        env['PROBE_LIB_ROOT'] = str(Path(option('--root')).resolve())
-    if option('--data-libs', False):
-        env['PROBE_DATA_LIBS'] = str(Path(option('--data-libs')).resolve())
-    return env
-
-
 def stamp(pack_bin: Path, stack: int) -> None:
     """Write the stack key into pack.bin's header."""
     pack = bytearray(pack_bin.read_bytes())
@@ -536,14 +468,17 @@ def stamp(pack_bin: Path, stack: int) -> None:
     pack_bin.write_bytes(pack)
 
 
-def link(out: Path, buckets: list[Path], stack: int, inventory: Path | None = None) -> None:
+def link(
+    out: Path, buckets: list[Path], stack: int, inventory: Path | None = None, selectors: str | None = None
+) -> None:
     """directlink.py over the buckets' records: out/pack.bin, stamped with the stack key.
 
     `inventory`: the IPSW's archive inventory, whose archives' declared states the pack lists (archives.py).
     """
     out.mkdir(parents=True, exist_ok=True)
     archives = ['--archives', inventory] if inventory else []
-    report = run([sys.executable, HERE / 'directlink.py', out, *archives, *buckets])
+    table = ['--ca-selectors', selectors] if selectors else []
+    report = run([sys.executable, HERE / 'directlink.py', out, *archives, *table, *buckets])
     if stack:
         stamp(out / 'pack.bin', stack)
     print(report.rstrip())
@@ -559,7 +494,7 @@ def stamp_or_link(stack: int) -> bool:
         buckets = [Path(a).resolve() for a in sys.argv[sys.argv.index('--link') + 1 :] if Path(a).is_dir()]
         buckets = [b for b in buckets if b != out]
         inventory = option('--archives', False)
-        link(out, buckets, stack, Path(inventory).resolve() if inventory else None)
+        link(out, buckets, stack, Path(inventory).resolve() if inventory else None, option('--ca-selectors', False))
         return True
     return False
 
@@ -588,9 +523,6 @@ def main() -> None:
     if stamp_or_link(stack):
         return
     qc = Path(option('--qc')).resolve()
-    if '--probe-bucket' in sys.argv[1:]:  # --probe-bucket <dir> --prebuilt <tools> --qc <metallib>
-        print(bucket(Path(option('--prebuilt')).resolve(), Path(option('--probe-bucket')).resolve(), qc, probe_env()))
-        return
     corpus = Path(option('--corpus')).resolve()
     out = Path(option('--out')).resolve()
     work = out / 'work'
@@ -618,12 +550,14 @@ def main() -> None:
             Path(option('--metal-abi')).resolve(),
             Path(option('--context-header')).resolve(),
         )
+    from directbucket import bucket, probe_env  # noqa: PLC0415 (no other step reads it: the build keys none of them on it)
+
     env = probe_env()
     buckets = split_buckets(corpus, work, BUCKETS)
     with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 1) as pool:
-        for line in pool.map(lambda b: bucket(work, b, qc, env), buckets):
+        for line in pool.map(lambda b: bucket(work, b, qc, env, option('--ca-selectors', False)), buckets):
             print(line)
-    link(out, buckets, stack)
+    link(out, buckets, stack, selectors=option('--ca-selectors', False))
     if '--clean' in sys.argv[1:]:
         shutil.rmtree(work)
 

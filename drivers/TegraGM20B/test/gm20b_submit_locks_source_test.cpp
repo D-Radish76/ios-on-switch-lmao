@@ -21,15 +21,23 @@ std::string unit(const char *name)
 }
 }  // namespace
 
-TEST(GM20BSubmitLocksSource, ProducerChannelsResolveUnderOneLiveLockAPass)
+TEST(GM20BSubmitLocksSource, ProducerChannelsResolveUnderOneLiveLock)
 {
 	const std::string exec = unit("gpu_exec.c");
-	const CodeText all = Block(exec, "int tgm_backing_dependencies(");
+	const CodeText status = Block(exec, "static u32 backing_unsettled(");
+	EXPECT_EQ(status.count("switch_gpu_backing_token_status(&tokens[i])"), 1u);
+	EXPECT_FALSE(status.has("mutex_lock("));
+	const CodeText all =
+		Block(exec, "static inline __attribute__((always_inline)) int chan_exec_body(");
 	EXPECT_EQ(all.count("mutex_lock(&tgm_live_lock)"), 1u);
-	EXPECT_TRUE(all.before("switch_gpu_backing_token_status(&tokens[i])",
+	EXPECT_TRUE(all.before("backing_unsettled(dependencies, dependency_count, unsettled)",
 			       "mutex_lock(&tgm_live_lock)"));
-	EXPECT_TRUE(all.before("mutex_lock(&tgm_live_lock)",
-			       "backing_dependency(chan, &tokens[i], emit)"));
+	EXPECT_TRUE(
+		all.before("mutex_lock(&tgm_live_lock)",
+			   "backing_waits(chan, dependencies, dependency_count, unsettled, 0)"));
+	EXPECT_TRUE(
+		all.before("backing_waits(chan, dependencies, dependency_count, unsettled, 0)",
+			   "backing_waits(chan, dependencies, dependency_count, unsettled, 1)"));
 	const CodeText one = Block(exec, "static int backing_dependency(");
 	EXPECT_TRUE(one.has("live_by_uid(token->queue)"));
 	EXPECT_FALSE(one.has("mutex_lock("));
@@ -45,26 +53,26 @@ TEST(GM20BSubmitLocksSource, SubmitJobTakesNoReferencePerUse)
 	EXPECT_FALSE(job.has("switch_gpu_backing_begin_conversion_checked("));
 }
 
-// A job's records go up at exec's point of no return: past the last step that can still fail and roll its push back,
-// before the dependencies' acquires (tgm_live_lock), the GPFIFO writes and the doorbell, so none of those runs under its
-// backings' locks. The emitting pass skips a producer gone since the checking pass, and both submission paths hand exec
-// their transaction instead of committing it after the kick (switch_gpu_kick_race_test runs what that buys).
+// The hardware boundary is GP_PUT; private control words may precede publication while defer_kick holds them back.
 TEST(GM20BSubmitLocksSource, AJobsRecordsGoUpBeforeItsKick)
 {
 	const std::string exec = unit("gpu_exec.c");
 	const CodeText body =
 		Block(exec, "static inline __attribute__((always_inline)) int chan_exec_body(");
 	EXPECT_EQ(body.count("chan->chan.gpfifo.cur = ring_cur;"), 1u);
-	EXPECT_TRUE(body.afterLast("chan->chan.gpfifo.cur = ring_cur;")
-			    .has("switch_gpu_backing_commit(owned);"));
-	const CodeText published = body.afterLast("switch_gpu_backing_commit(owned);");
-	EXPECT_TRUE(published.startsWith(
-		"tgm_backing_dependencies(chan, dependencies, dependency_count, 1);"));
-	EXPECT_TRUE(published.has("PUSH_KICK(&chan->chan.push);"));
-	EXPECT_FALSE(published.has("return ret;"));
-	EXPECT_FALSE(published.has("return -"));
 	EXPECT_TRUE(
-		Block(exec, "static int backing_dependency(").has("return emit ? 0 : -ENODEV;"));
+		body.before("chan->chan.defer_kick = true;",
+			    "backing_waits(chan, dependencies, dependency_count, unsettled, 1)"));
+	EXPECT_TRUE(
+		body.afterLast("backing_waits(chan, dependencies, dependency_count, unsettled, 1)")
+			.before("mutex_unlock(&tgm_live_lock);",
+				"switch_gpu_backing_publish(owned);"));
+	const CodeText published = body.afterLast("switch_gpu_backing_publish(owned);");
+	EXPECT_FALSE(published.has("goto rollback;"));
+	EXPECT_TRUE(published.has("*seqno = chan_fence_job("));
+	const CodeText fence = Block(exec, "static u32 chan_fence_job(");
+	EXPECT_TRUE(fence.before("chan_doorbell(chan);", "switch_gpu_backing_finish(owned);"));
+	EXPECT_TRUE(fence.before("switch_gpu_backing_finish(owned);", "tgm_sched_kicked("));
 	const CodeText job = Block(unit("TegraGM20BUserClientJobSubmit.cpp"),
 				   "IOReturn AGXDeviceUserClient::runJobUses(");
 	EXPECT_TRUE(job.has("jobVisibility, releases, keptCount, &transaction);"));

@@ -62,7 +62,9 @@ struct LaunchHitchTest: HWTest {
 
     /// Settings opened and this app opened again, judged as one window from a drained start; nil where Settings would
     /// not open
-    static func round(_ name: String, _ connection: GPUConnection, _ states: GenericStates) async throws
+    static func round(
+        _ name: String, _ connection: GPUConnection, _ states: GenericStates
+    ) async throws
         -> LaunchHitchArm?
     {
         _ = drain(connection)

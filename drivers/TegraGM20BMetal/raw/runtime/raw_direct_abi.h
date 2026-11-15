@@ -62,7 +62,8 @@ typedef enum NmbDirectSource : uint32_t {
     // a tessellation state's control stage: the encoder's factor buffer, the draw's patch and control-point index buffers
     NmbDirectTessFactors,
     NmbDirectPatchIndices,
-    NmbDirectControlPointIndices
+    NmbDirectControlPointIndices,
+    NmbDirectExtendedShadow  // an extended-range colour's half shadow (m2v WriteSource::ExtendedShadow), a storage image
 } NmbDirectSource;
 
 #define NMB_DIRECT_IMMUTABLE UINT32_MAX
@@ -131,7 +132,8 @@ typedef struct NmbDirectDraw {
     uint32_t push[32];
     uint32_t blendColorWord, halfBlendColorWord;  // push word + 1, zero when absent
     uint32_t depthTestWord, stencilTestWord;
-    uint32_t pushHoles;  // push words the consumer fills with addresses
+    uint32_t shadowStencilWord;  // m2v's ShadowStencilState (a fragment function's [[stencil]] output): push word + 1
+    uint32_t pushHoles;          // push words the consumer fills with addresses
     // Of them, each stage's (vertex, fragment) root-table and ExecutionStatus address as push word + 1 (0: none), and the
     // holes of any other kind; the buffer slots each stage's root table holds (bit n: [[buffer(n)]], m2v BufferForm::Psb)
     uint8_t rootTableWord[2], statusWord[2];
@@ -165,7 +167,7 @@ typedef struct NmbDirectDraw {
     const uint32_t *spill[2];
     uint32_t spillWords[2];
     // By stage and buffer slot, the record's word + 1 of the slot's SlotBindOffset residual as the plan places it: a root
-    // push word (1-32) or the stage's argument table word + 33 (33-63); 0: none
+    // push word (1-32) or the stage's argument table word + 33 (33-63); 0: none; 255: placed past what a record names
     uint8_t residualWord[2][32];
 } NmbDirectDraw;
 
@@ -177,6 +179,9 @@ typedef struct NmbDirectStorage {
     // the attachments whose fixed-function blend the shader computes, and the union of their blend models' assumptions
     // (m2v StorageAttachmentUse::blend_model)
     uint32_t blendMask, blendModel;
+    // a fragment function's [[stencil]] output tested in its program (m2v ShadowStencilUse): the shadow's VkFormat (0: none,
+    // or a pass without a stencil attachment) and samples
+    uint32_t shadowFormat, shadowSamples;
 } NmbDirectStorage;
 
 // A tessellation state's draws (m2v link/tessellation): each patch one control point of a PATCH_LIST of one. `parameters`:
@@ -207,17 +212,20 @@ typedef struct NmbDirectState {
     bool twoPlane;  // compiled with each RGB10A8_2P_XR10 colour in its two planes (NmbDirectBinds::twoPlane)
 } NmbDirectState;
 
-// A fragment sampler slot the probe binds a cubic sampler state at (MTLSamplerMinMagFilterCubic, no mip filter): its address
-// modes and border colour (MTLSamplerAddressMode, MTLSamplerBorderColor) and coordinates
+// A sampler slot the probe binds a cubic sampler state at (MTLSamplerMinMagFilterCubic, no mip filter): its address
+// modes and border colour (MTLSamplerAddressMode, MTLSamplerBorderColor) and coordinates; the fragment stage's unless
+// `vertex`
 typedef struct NmbDirectCubicSampler {
     uint32_t slot, sAddress, tAddress, rAddress, borderColor;
     bool normalized;
+    bool vertex;
 } NmbDirectCubicSampler;
 
-// A fragment texture slot the probe binds a texture of another MTLPixelFormat at
+// A texture slot the probe binds a texture of another MTLPixelFormat at, the fragment stage's unless `vertex`
 typedef struct NmbDirectTextureFormat {
     uint32_t slot;
     uint64_t format;
+    bool vertex;
 } NmbDirectTextureFormat;
 
 // What the probe binds beyond its tagged textures and samplers (the raw path's cubic variants: raw/runtime/raw_cubic.h).
@@ -230,6 +238,8 @@ typedef struct NmbDirectBinds {
     uint32_t fragmentTests;
     uint32_t bindStride;  // the attributeStride the probe binds every vertex buffer at (0: none)
     bool twoPlane;
+    // the extended-range colours whose half shadow the draws' pass holds, bit n colour n (m2v BindState::extended_shadows)
+    uint32_t extendedShadows;
 } NmbDirectBinds;
 
 // A texture a kernel's dispatch binds at `slot`, as its MTLTextureDescriptor answers

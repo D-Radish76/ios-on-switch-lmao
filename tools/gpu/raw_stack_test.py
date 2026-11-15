@@ -40,6 +40,7 @@ KEYED = [
     PACK / 'rawpack.py',
     PACK / 'packfile.py',
     PACK / 'native_seed.mm',
+    Path('drivers/TegraGM20BMetal/precompile/ca-selectors/raw_ca_selector_layout.h'),
     Path('drivers/NativeMetal/NativeBridgeMetalFrontend.mm'),
     Path('drivers/NativeMetal/abi/MetalABI.h'),
     Path('drivers/TegraGM20BMetal/translate/NativeMetalDirect.rs'),

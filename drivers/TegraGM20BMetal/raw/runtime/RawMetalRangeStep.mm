@@ -8,26 +8,37 @@
 #import "RawMetalTargetViews.h"
 #include "raw_compute_lookup.h"
 #include "raw_clear.h"
+#include "raw_srgb_pair.h"
+#include "raw_xr_parts.h"
+
+static void noteWritten(std::vector<__unsafe_unretained RMTexture *> &list, RMTexture *t)
+{
+    if (std::find(list.begin(), list.end(), t) == list.end())
+        list.push_back(t);
+}
 
 // textures sampled through a pool image (rows 16 but not 32 apart, raw::Texture::sampled): refreshed from their texels by the
 // copy engine before the first pass that samples them, and again after work here wrote them (m2v copies such a surface into
 // its shadow at each encoder that uses it once written since); a texture over a buffer before every pass that samples
-// it, as any work may write the buffer's bytes
+// it, as any work may write the buffer's bytes. One the pass's draws store into is copied back after it.
 void RMRangeEncode::refresh(size_t pass)
 {
-    cb_->_plan.forEachResource(
-        pass, cb_->_plan.encoderEnd(pass), RMResourceKind::Texture, [&](const RMRangeResource &use) {
-            if (!(use.access & raw::ResourceUse::Sample))
-                return;
-            __unsafe_unretained RMTexture *t = (__bridge RMTexture *)use.object;
-            if (rc_->readTexture(&t->_raw) != &t->_raw || !t->_raw.sampled ||
-                (!t->_raw.surfaceView && t->_kind != RMTextureBuffer && !fresh_.insert(t).second))
-                return;
-            const raw::Texture &x = t->_raw;
-            raw::BlitEncoder *b = rc_->blit();
-            b->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
-            b->end();
-        });
+    cb_->_plan.forEachResource(pass, cb_->_plan.encoderEnd(pass), RMResourceKind::Texture,
+                               [&](const RMRangeResource &use) {
+                                   if (!(use.access & raw::ResourceUse::Sample))
+                                       return;
+                                   __unsafe_unretained RMTexture *t = (__bridge RMTexture *)use.object;
+                                   if (rc_->readTexture(&t->_raw) != &t->_raw || !t->_raw.sampled)
+                                       return;
+                                   if (use.access & raw::ResourceUse::Write)
+                                       noteWritten(shadowsWritten_, t);
+                                   if (!t->_raw.surfaceView && t->_kind != RMTextureBuffer && !fresh_.insert(t).second)
+                                       return;
+                                   const raw::Texture &x = t->_raw;
+                                   raw::BlitEncoder *b = rc_->blit();
+                                   b->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
+                                   b->end();
+                               });
 }
 
 // extended-range textures (raw_xr.h): a draw samples the stand-in, drawn from the codes by the pack's conversion state
@@ -41,32 +52,72 @@ bool RMRangeEncode::standIns(size_t pass)
                                    if (!(use.access & raw::ResourceUse::Sample))
                                        return;
                                    __unsafe_unretained RMTexture *texture = (__bridge RMTexture *)use.object;
+                                   if ((use.access & raw::ResourceUse::Write) && texture->_raw.standIn)
+                                       noteWritten(standInsWritten_, texture);
                                    if (texture->_raw.standIn && !standInFresh_.count(texture) &&
                                        (!texture->_raw.xrPlanes || cb_->_xrStandIns.count(texture)))
                                        stale.push_back(texture);
                                });
-    for (__unsafe_unretained RMTexture *t : stale) {
-        raw::Texture &x = t->_raw;
+    // one pass of the conversion state from `from` into `into`, `width` x `height` of each; false: refused
+    auto convert = [&](raw::Texture *into, const raw::Texture *from, const raw::Texture &x, uint32_t width,
+                       uint32_t height) -> bool {
         raw::PassDesc p;
-        p.color[0].texture = x.standIn;
+        p.color[0].texture = into;
         p.color[0].load = raw::ColorAttachment::DontCare;
         p.color[0].store = true;
         p.count = 1;
+        p.width = width;
+        p.height = height;
         raw::RenderEncoder *conv = rc_->render(p);
         if (!conv)
             return fail(PredEncPassRender, "an extended-range texture's stand-in the raw path cannot render");
-        codes_.push_back(x);
-        codes_.back().standIn = nullptr;
-        useTexture(rc_, t, false);
         conv->setPipeline(d_->xrPipeline(raw::xrForm(x.format), x.xrPlanes));
-        conv->setTexture(0, x.xrPlanes ? x.luma : &codes_.back());
+        conv->setTexture(0, from);
         if (x.xrPlanes)
             conv->setTexture(1, x.chroma);
-        conv->setViewport(0, 0, x.width, x.height, 0, 1);
-        conv->setScissor(0, 0, x.width, x.height);
+        conv->setViewport(0, 0, width, height, 0, 1);
+        conv->setScissor(0, 0, width, height);
         if (!conv->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why_))
             return refused();
         conv->end();
+        return true;
+    };
+    for (__unsafe_unretained RMTexture *t : stale) {
+        raw::Texture &x = t->_raw;
+        codes_.push_back(x);
+        raw::Texture &own = codes_.back();
+        own.standIn = nullptr;
+        useTexture(rc_, t, false);
+        if (raw::srgbPair(x.format)) {  // RG8Unorm_sRGB: its bytes widened by the copy engine (raw_srgb_pair.h)
+            raw::BlitEncoder *b = rc_->blit();
+            const bool widened = b->widenSrgbPair(x);
+            b->end();
+            if (!widened)
+                return fail(PredEncPassRender, "an RG8Unorm_sRGB texture whose stand-in is not of its texels");
+            standInFresh_.insert(t);
+            continue;
+        }
+        const bool one = x.xrPlanes || (!x.chain && x.layers <= 1 && x.samples <= 1 && x.type == raw::fx::kTexTwoD);
+        if (one) {
+            if (!convert(x.standIn, x.xrPlanes ? x.luma : &own, x, x.width, x.height))
+                return false;
+            standInFresh_.insert(t);
+            continue;
+        }
+        // a layered, mipmapped, 3D or multisampled one: a pass a pair of 2D images over the same texels (raw_xr_parts.h)
+        std::vector<raw::XrPart> parts;
+        if (!raw::xrParts(own, *x.standIn, parts))
+            return fail(PredEncPassRender, "an extended-range texture whose stand-in is not of its texels");
+        for (raw::XrPart &part : parts) {
+            codeParts_.push_back(part);
+            raw::XrPart &held = codeParts_.back();
+            held.codes.tic = d_->attachmentTic(own, held.codes, held.level, held.key);
+            held.standIn.tic = d_->attachmentTic(*x.standIn, held.standIn, held.level, held.key);
+            if (!held.codes.tic || !held.standIn.tic)
+                return fail(PredEncPassRender, "no header left for an extended-range texture's conversion");
+            if (!convert(&held.standIn, &held.codes, x, held.codes.width, held.codes.height))
+                return false;
+        }
         standInFresh_.insert(t);
     }
     return true;
@@ -160,7 +211,7 @@ bool RMRangeEncode::command(size_t at)
         const auto &dispatch = cb->_plan.dispatch(at);
         const auto *kernels = static_cast<const raw::ComputeKernelSet<raw::ComputeState> *>(dispatch.kernel);
         const auto &state = cb->_plan.kernelStates[dispatch.state];
-        const auto &textures = cb->_plan.textures[2][state.textures].objects;
+        const auto &textures = cb->_plan.kernelTextures[state.textures].objects;
         dispatchUses_.clear();
         if ((dispatch.surfaceSlots | dispatch.windowSlots) && !encoderShadows_) {  // a range begun inside its encoder
             ce_->end();
@@ -266,8 +317,12 @@ bool RMRangeEncode::command(size_t at)
         if (!re_->setVisibility(
                 c.a,
                 [(__bridge id)c.obj isKindOfClass:[RMBuffer class]] ? &((__bridge RMBuffer *)c.obj)->_raw : nullptr,
-                c.c))
-            return fail(PredCallVisibility, "a visibility offset the raw path cannot take", c.a, c.c);
+                c.c, c.b != 0)) {
+            const char *taken = "an offset set twice in an encoder or past maxVisibilityQueryOffset, or no report page";
+            if (!ahead_)
+                visibilityError(cb, c.a, c.c, taken);
+            return fail(PredCallVisibility, taken, c.a, c.c);
+        }
         break;
     case OpDrawIndexed: {
         const auto &draw = cb->_plan.draw(at);
@@ -338,7 +393,11 @@ bool RMRangeEncode::command(size_t at)
         rc->endPredicationUnit();
         if (!releaseInlineSignal(cb, at, rc)) {
             encoder_ = SIZE_MAX;
-            return fail(PredEvent, "a signal inside a raw range whose event the kernel no longer holds");
+            const char *lost =
+                "a signal whose shared event the kernel refused to import (EventImport): the command buffer fails";
+            if (!ahead_)
+                eventError(cb, true, lost);
+            return fail(PredEvent, lost);
         }
         break;
     default:  // states, fences, events, resources the raw path needs nothing for

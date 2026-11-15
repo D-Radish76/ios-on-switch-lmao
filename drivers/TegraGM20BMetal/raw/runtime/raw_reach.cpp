@@ -86,8 +86,11 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
         reachRestore_.assign(restore.data(), r.at);
     }
     PackPipeline &rec = reachRecords_.emplace_back(*pl.rec);
-    for (uint32_t i = 0; i < rec.entries; i++)
-        if (PackEntry &e = rec.entry[i]; e.kind != EntryUbo || e.stage != 1) {
+    std::vector<uint32_t> &far = reachFar_.emplace_back();
+    if (pl.entries.far())
+        far.assign(pl.entries.far(), pl.entries.far() + farWords(entryCount(rec)));
+    for (uint32_t i = 0; i < pl.entries.size(); i++)
+        if (PackEntry &e = entryAt(rec, far, i); e.kind != EntryUbo || e.stage != 1) {
             e.kind = EntrySamplerOnly;
             e.samplerKind = SamplerNone;
         }
@@ -99,6 +102,7 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
     rec.variantCount[0] = rec.variantCount[1] = 0;
     Pipeline &t = reachPipelines_.emplace_back();
     t.rec = &rec;
+    t.entries = SetEntries(rec, far.empty() ? nullptr : far.data());
     t.vertexInstructions = pl.vertexInstructions;
     t.methods = pl.methods;
     t.methods.insert(t.methods.end(), reachMethods_.begin(), reachMethods_.end());

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalInternal.h"
+#import "RawMetalRotated.h"
 
 @implementation RMBuffer
 
@@ -153,6 +154,8 @@
                                     offset:(NSUInteger)offset
                                bytesPerRow:(NSUInteger)row
 {
+    if (refuseTurnedOffSurface(d))
+        return nil;
     RMTexture *t = [RMTexture new];
     t->_device = _device;
     t->_descriptor = [d copy];

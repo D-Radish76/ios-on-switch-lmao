@@ -68,7 +68,7 @@ class SamplerPairs(unittest.TestCase):
         self.assertEqual(windows(entries, []), [(kernels.BUFFER, 3, 0x40 | 5 << 24)])
 
     def test_the_pack_is_version_26(self) -> None:
-        self.assertEqual(packfile.VERSION, 26)
+        self.assertEqual(packfile.VERSION, 28)
 
 
 if __name__ == '__main__':

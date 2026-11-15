@@ -156,8 +156,7 @@ TEST(McHotResetSource, OnlyTheOwnerWritesTheHotResetRegisters)
                     line.find("w32") == std::string::npos && line.find("nvkm_mask") == std::string::npos)
                     continue;
                 if (std::regex_search(line, write) &&
-                    (std::regex_search(line, named) || std::regex_search(line, offset)))
-                {
+                    (std::regex_search(line, named) || std::regex_search(line, offset))) {
                     std::string entry = name;
                     entry += ":" + std::to_string(number) + ": ";
                     entry += line;

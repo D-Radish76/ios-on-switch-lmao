@@ -24,13 +24,14 @@ RMPred refusalPred(uint8_t id)
     return id < sizeof map / sizeof *map ? map[id] : PredEncPassRender;
 }
 
-// Encoded ahead, a failure is not the command buffer's yet: its encode at the commit meets it again and counts it
+// Encoded ahead, a failure is not the command buffer's yet: its encode at the commit meets it again and counts it. A draw
+// that refused under another step (a turned pass's reach) still fails as Metal's error.
 bool RMRangeEncode::fail(RMPred p, const char *w, uint64_t a, uint64_t b, const char *detail)
 {
     *why_ = w;
     if (ahead_)
         veto_ = VetoFailed;
-    else
+    else if (!drawFailed(cb_, rc_->refusal, w))
         hit(cb_, p, a, b, detail);
     if (encoder_ != SIZE_MAX)
         *refusedEncoder_ = encoder_;
@@ -45,7 +46,15 @@ bool RMRangeEncode::stop(uint32_t veto)
     return false;
 }
 
-// a draw the encoder refused: its predicate and values (raw_gpu.h Refusal)
+// A pass raw::CommandBuffer::render refused: Metal's validation or out of memory, named in the predicate's first line
+bool RMRangeEncode::passRefused(uint64_t a)
+{
+    if (!ahead_ && !predLogged(PredEncPassRender))
+        logPred(PredEncPassRender, a, 0, @(*why_));
+    return fail(PredEncPassRender, *why_, a);
+}
+
+// A draw the encoder refused: Metal's error, or its predicate and values (raw_gpu.h Refusal)
 bool RMRangeEncode::refused()
 {
     const raw::Refusal &f = rc_->refusal;
@@ -53,7 +62,7 @@ bool RMRangeEncode::refused()
         veto_ = VetoContents;
     else if (ahead_)
         veto_ = VetoFailed;
-    else
+    else if (!drawFailed(cb_, f, *why_))
         hit(cb_, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32);
     if (encoder_ != SIZE_MAX)
         *refusedEncoder_ = encoder_;
@@ -267,15 +276,18 @@ bool RMRangeEncode::conversions()
         }
     }
     planar.swap(stale);
-    // 4:4:4 code textures: two copy-engine remaps each
+    // 4:4:4 code textures and one-plane 4:2:2 YCbCr textures' planes: two copy-engine remaps each
     bool copies = false;
     for (__unsafe_unretained RMTexture *t : planar)
-        copies |= t->_raw.planar;
+        copies |= t->_raw.planar || t->_raw.onePlane;
     if (copies) {
         raw::BlitEncoder *conv = rc->blit();
-        for (__unsafe_unretained RMTexture *t : planar)
+        for (__unsafe_unretained RMTexture *t : planar) {
             if (t->_raw.planar)
                 conv->convertPlanar(t->_raw);
+            if (t->_raw.onePlane)
+                conv->splitPlane(t->_raw);
+        }
         conv->end();
     }
     // YCbCr textures' planes whose rows or offset are 16 bytes apart but not 32 (ImageIO's photo thumbnails, a width of
@@ -451,6 +463,11 @@ void RMRangeEncode::reset()
     planesWritten_.clear();
     standInStores_.clear();
     backings_ = {};
+    planeLoads_.clear();
+    loadedReach_ = {};
+    loadedTargets_ = 0;
+    formatTargets_.clear();
+    formatStores_.clear();
     resolves_.clear();
     resolveTargets_.clear();
     turned_ = {};
@@ -461,8 +478,16 @@ void RMRangeEncode::reset()
     for (raw::Texture &t : levelTargets_)
         t = {};
     zetaPart_ = {};
+    separatePart_[0] = separatePart_[1] = {};
+    separateResolved_[0] = separateResolved_[1] = nullptr;
+    depth16_ = nil;
+    depth16Scratch_ = nullptr;
+    shadowsWritten_.clear();
+    standInsWritten_.clear();
+    planesImaged_.clear();
     standInFresh_.clear();
     codes_.clear();
+    codeParts_.clear();
 #if SWITCH_RAW_DIAGNOSTICS
     levelPasses_ = 0;
 #endif
@@ -479,6 +504,7 @@ bool encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why, si
     // what was encoded ahead of the commit goes on: the rest of the range, then the seal
     if (rmPipelineTake(cb, from)) {
         bool stale = false;
+        cb->_xrShadowCurrent = nullptr;
         const bool encoded = encode.resume(to, why, refusedEncoder) && encode.step(to) && encode.seal(to, stale);
         const bool stopped = !encoded && encode.vetoed();
         encode.reset();
@@ -492,6 +518,7 @@ bool encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why, si
     }
     for (unsigned attempt = 0; attempt < 3; ++attempt) {
         bool stale = false;
+        cb->_xrShadowCurrent = nullptr;
         const bool encoded =
             encode.open(cb, from, to, true, why, refusedEncoder) && encode.step(to) && encode.seal(to, stale);
         encode.reset();

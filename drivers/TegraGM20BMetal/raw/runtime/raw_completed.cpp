@@ -16,7 +16,7 @@ namespace raw {
 // submission's prologue invalidates the shader and constant caches before any draw reads it.
 bool Device::placeCompleted(const CapturedProgram &p, PlacedProgram &out)
 {
-    const std::string key = p.id + std::string(p.cbufTypes.begin(), p.cbufTypes.end());
+    const std::string key = programSlotKey(p);
     if (const auto it = completedPrograms_.find(key); it != completedPrograms_.end()) {
         out = it->second.placed;
         return true;
@@ -27,8 +27,9 @@ bool Device::placeCompleted(const CapturedProgram &p, PlacedProgram &out)
 CompletedSlot Device::completedSlot(const CapturedProgram &p)
 {
     CompletedSlot slot;
-    slot.key = p.id + std::string(p.cbufTypes.begin(), p.cbufTypes.end());
+    slot.key = programSlotKey(p);
     slot.bytes = programSlot(p, slot.info);
+    slot.farUbos = p.farUbos;
     memcpy(slot.header, p.image.data(), std::min(sizeof slot.header, p.image.size()));
     return slot;
 }
@@ -47,8 +48,10 @@ bool Device::placeCompletedSlot(const CompletedSlot &slot, PlacedProgram &out)
     placed.info = slot.info;
     placed.info.heapOffset = uint32_t(at);
     memcpy(placed.header, slot.header, sizeof placed.header);
+    placed.farUbos = slot.farUbos;
     placed.placed = {&placed.info, uint32_t(at) + slot.info.program,
-                     slot.info.dataBytes ? heap_.va + at + slot.info.dataOffset : 0, placed.header};
+                     slot.info.dataBytes ? heap_.va + at + slot.info.dataOffset : 0, placed.header,
+                     placed.farUbos.empty() ? nullptr : placed.farUbos.data()};
     RAW_DIAGNOSTIC(stats.programsPlaced++);
     out = placed.placed;
     return true;
@@ -93,6 +96,7 @@ void Device::offerCompletedSplit(Completed &c, const RuntimeRecord &r, const Pla
     source.prologueSlot.insert(source.prologueSlot.end(), prologue.data.begin(), prologue.data.end());
     source.pp = &c.record;
     source.blob = c.blob.data();
+    source.far = c.far.empty() ? nullptr : c.far.data();
     source.keyString = c.keyString.c_str();
     source.vs = vs;
     source.caTransform = caTransform;
@@ -141,18 +145,23 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
     c.keyString = r.keyString;
     c.blob = r.blob;
     c.spill = r.spill;
+    c.far = r.far;
+    if (c.far.size() != farWords(entryCount(c.record))) {
+        why = "a record whose far entries are not its entries'";
+        return nullptr;
+    }
     for (const auto &[m, v] : r.extras) {
         c.blob.push_back(m);
         c.blob.push_back(v);
     }
     c.record.blobDwords = uint32_t(c.blob.size());
-    if (!usableStorageMetadata(c.record, c.blob.data(), c.record.blobDwords)) {
+    if (!usableStorageMetadata(c.record, c.blob.data(), c.record.blobDwords, c.far.empty() ? nullptr : c.far.data())) {
         why = "missing or invalid ordered storage attachment metadata";
         return nullptr;
     }
     bool unknownSampler = false;
     if (!placeConstexprSamplers(
-            c.record, r.samplers,
+            c.record, c.far, r.samplers,
             [&](const std::array<uint32_t, 8> &words, uint32_t &index) {
                 return constexprSampler(words, index);
             },
@@ -166,7 +175,7 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
     build(stored.pipeline, stored.record, vs, fs, stored.blob.data(), stored.keyString.c_str(), caTransform,
           stored.spill.size() == stored.record.spillWords[0] + stored.record.spillWords[1] ? stored.spill.data()
                                                                                            : nullptr,
-          tess ? tessPlaced : nullptr);
+          stored.far.empty() ? nullptr : stored.far.data(), tess ? tessPlaced : nullptr);
     std::vector<uint32_t> pairs;
     for (const auto &[m, v] : r.restore)
         pairs.insert(pairs.end(), {m, v});
@@ -186,6 +195,7 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
         t.fs = completedSlot(r.variants[i].program);
         t.pp = &stored.record;
         t.blob = stored.blob.data();
+        t.far = stored.far.empty() ? nullptr : stored.far.data();
         t.spills = stored.spill.size() == stored.record.spillWords[0] + stored.record.spillWords[1]
                        ? stored.spill.data()
                        : nullptr;
@@ -221,7 +231,7 @@ Pipeline *Device::makeTurned(Pipeline &pl)
         return nullptr;
     }
     Pipeline &turned = *t->turned;
-    build(turned, *t->pp, t->vs, fs, t->blob, t->keyString, t->caTransform, t->spills,
+    build(turned, *t->pp, t->vs, fs, t->blob, t->keyString, t->caTransform, t->spills, t->far,
           t->tessellates ? t->tess : nullptr);
     turned.restore = pl.restore;
     turned.strideTwin = pl.strideTwin;

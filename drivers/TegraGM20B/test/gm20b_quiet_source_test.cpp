@@ -194,18 +194,19 @@ TEST(GM20BPromiseSource, PresentsAndJobsOrderBehindWriterPromises)
 	const CodeText kick =
 		Block(exec, "static inline __attribute__((always_inline)) int chan_exec_body(");
 	EXPECT_TRUE(
-		kick.before("tgm_backing_dependencies(chan, dependencies, dependency_count, 1);",
+		kick.before("backing_waits(chan, dependencies, dependency_count, unsettled, 1);",
 			    "PUSH_KICK(&chan->chan.push);"));
 	EXPECT_TRUE(kick.before("PUSH_KICK(&chan->chan.push);",
-				"tgm_chan_park_promises(chan, dependencies, dependency_count);"));
+				"switch_gpu_chan_park_promises_locked(chan, dependencies, "
+				"dependency_count, unsettled);"));
 	const CodeText copy = Block(unit("gpu_present.c"), "static int present_copy(");
-	EXPECT_TRUE(copy.before(
-		"ret = tgm_backing_dependencies(chan, tgm_present.tokens.tokens, dependency_count, "
-		"1);",
-		"tgm_chan_park_promises(chan, tgm_present.tokens.tokens, dependency_count);"));
-	EXPECT_TRUE(copy.before(
-		"tgm_chan_park_promises(chan, tgm_present.tokens.tokens, dependency_count);",
-		"chan_fence(chan);"));
+	EXPECT_TRUE(copy.before("ret = tgm_backing_dependencies(chan, tgm_present.tokens.tokens, "
+				"dependency_count);",
+				"switch_gpu_chan_fence_sealed("));
+	const CodeText copiedDependencies = Block(exec, "int tgm_backing_dependencies(");
+	EXPECT_TRUE(copiedDependencies.before(
+		"backing_waits(chan, tokens, count, unsettled, 1);",
+		"switch_gpu_chan_park_promises_locked(chan, tokens, count, unsettled);"));
 	// the hang rule raises no promise: a reader parked on one is a victim it spares, and the give-up is the one place
 	EXPECT_FALSE(Block(unit("gpu_hang.c"), "enum tgm_hang tgm_hang_recover(").has("promise"));
 	// The raise is a plain store-release to the write-combined fence page, which the parked PBDMA reads from DRAM
@@ -258,7 +259,7 @@ TEST(GM20BPromiseSource, PresentsAndJobsOrderBehindWriterPromises)
 		"nvxnu_work_schedule_after(tgm_present.deadline_work, tgm_present.recheck);"));
 	EXPECT_TRUE(copy.before(
 		"nvxnu_work_schedule_after(tgm_present.deadline_work, tgm_present.recheck);",
-		"chan_fence(chan);"));
+		"switch_gpu_chan_fence_sealed("));
 	EXPECT_TRUE(
 		Block(unit("gpu_hang.c"), "static u64 progress_step(").has("return TGM_HANG_NS;"));
 	EXPECT_TRUE(Block(unit("gpu_hang.c"), "uint64_t tgm_chan_check_progress(")

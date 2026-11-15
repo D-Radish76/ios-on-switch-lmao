@@ -388,11 +388,8 @@ bool rmComputeReflection(RMComputeState *s, MTLPipelineOption o, MTLAutoreleased
     const std::string key = raw::computeStateKey(s->_air, s->_constants, s->_maxThreads, s->_multipleOfWidth);
     uint32_t length = 0;
     std::string blob, why = "no completion";
-    const bool askable = !s->_stageIn;
     if (const uint8_t *packed = gRM->raw->pack().reflection(raw::Pack::fnv(key.data(), key.size()), true, length))
         *reflection = rmReflectionOf(packed, length, true);
-    else if (!askable)
-        why = "a stage-input kernel the pack holds no reflection of, which no request can name";
     else if (gRM->completion && gRM->completion->reflection(s->_function, s->_direct, key, blob, why))
         *reflection = fromBlob(blob, true);
     if (*reflection)

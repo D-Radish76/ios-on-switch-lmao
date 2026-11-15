@@ -3,6 +3,7 @@
 // has none of, pages it cannot wire, a YCbCr target state raw draws, texture layouts and a full sampler header table. Each
 // answer is the raw device's or Metal's nil.
 #include "raw_facade_harness.h"
+#include "../raw/runtime/raw_srgb_pair.h"
 #include "../raw/runtime/raw_ycbcr_store.h"
 #include "bazel/testing/fresh_process.h"
 
@@ -111,6 +112,14 @@ void noMemory()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
     ASSERT_TRUE(device != nil);
+    MTLTextureDescriptor *converted =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(raw::kRG8Srgb)
+                                                           width:64
+                                                          height:64
+                                                       mipmapped:NO];
+    converted.storageMode = MTLStorageModePrivate;
+    converted.usage = MTLTextureUsageShaderRead;
+    ASSERT_TRUE([device newTextureWithDescriptor:converted] != nil);
     constexpr NSUInteger kLarge = 64u << 20;
     // the pool's chunks are the task's pages imported (raw_gpu.cpp newChunk), block-linear chunks the kernel's own
     kernel_model::model.refuseAllocs = kernel_model::model.refuseImports = 1000;
@@ -127,6 +136,10 @@ void noMemory()
     EXPECT_EQ([device newTextureWithDescriptor:d], nil);
     d.storageMode = MTLStorageModeShared;
     EXPECT_EQ([device newTextureWithDescriptor:d], nil);
+    converted.width = converted.height = 4096;
+    EXPECT_EQ([device newTextureWithDescriptor:converted], nil);
+    converted.storageMode = MTLStorageModeShared;
+    EXPECT_EQ([device newTextureWithDescriptor:converted], nil);
     kernel_model::model.refuseAllocs = kernel_model::model.refuseImports = 0;
     EXPECT_NE([device newBufferWithLength:kLarge options:MTLResourceStorageModeShared], nil) << "memory again: made";
     expectNoM2V(device);

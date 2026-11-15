@@ -27,11 +27,12 @@ id<MTLFunction> function(id<MTLLibrary> library, const raw::RequestStage &s, std
     NSError *error = nil;
     NSString *name = @(s.function.c_str());
     id<MTLFunction> made = nil;
-    if (s.name != s.function) {
+    if (s.name != s.function || s.tag == "kb") {
         MTLFunctionDescriptor *d = [MTLFunctionDescriptor functionDescriptor];
         d.name = name;
         d.specializedName = @(s.name.c_str());
         d.constantValues = values;
+        d.options = s.tag == "kb" ? MTLFunctionOptionCompileToBinary : MTLFunctionOptionNone;
         made = [library newFunctionWithDescriptor:d error:&error];
     } else {
         made = values ? [library newFunctionWithName:name constantValues:values error:&error]
@@ -119,7 +120,7 @@ int32_t render(const Prepared &p, const Libraries &libraries, raw::Direct &direc
 }
 
 // A compute request's state over `made`, its stages' functions: the kernel, its linked functions ("kl" visible, "kp"
-// private), its stage input and limits
+// private, "kb" binary), its stage input and limits
 MTLComputePipelineDescriptor *computeDescriptor(const raw::CompileRequest &r, const std::vector<id<MTLFunction>> &made)
 {
     MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
@@ -128,12 +129,14 @@ MTLComputePipelineDescriptor *computeDescriptor(const raw::CompileRequest &r, co
     d.threadGroupSizeIsMultipleOfThreadExecutionWidth = r.kernel.multipleOfWidth;
     d.stageInputDescriptor = raw::stageInOf(r.kernel.stageIn);
     if (made.size() > 1) {
-        NSMutableArray *visible = [NSMutableArray array], *hidden = [NSMutableArray array];
+        NSMutableArray *visible = [NSMutableArray array], *hidden = [NSMutableArray array],
+                       *binary = [NSMutableArray array];
         for (size_t i = 1; i < made.size(); ++i)
-            [(r.stages[i].tag == "kp" ? hidden : visible) addObject:made[i]];
+            [(r.stages[i].tag == "kb" ? binary : r.stages[i].tag == "kp" ? hidden : visible) addObject:made[i]];
         MTLLinkedFunctions *linked = [MTLLinkedFunctions linkedFunctions];
         linked.functions = visible;
         linked.privateFunctions = hidden;
+        linked.binaryFunctions = binary;
         d.linkedFunctions = linked;
     }
     return d;

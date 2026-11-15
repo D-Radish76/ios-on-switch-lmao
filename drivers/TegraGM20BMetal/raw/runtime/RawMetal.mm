@@ -211,7 +211,7 @@ void raw_metal_prepare(const char *packPath, uint64_t stack)
 
 void raw_metal_complete_states(const char *cacheDir, const char *nativeSeed)
 {
-    if (gRM && gRM->m2v.open && !gRM->completion)
+    if (gRM && !gRM->completion)
         gRM->completion =
             std::make_unique<raw::Completion>(*gRM->raw, cacheDir, gRM->raw->pack().header()->stack, nativeSeed);
 }

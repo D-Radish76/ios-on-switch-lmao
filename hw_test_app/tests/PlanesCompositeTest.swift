@@ -30,7 +30,13 @@ public struct PlanesCompositeTest: HWTest {
             return .skip("arming the composite: the display answered \(Int32(bitPattern: reply[3]))")
         case .success: break
         }
-        let played = try await CopyRouteHold.during { try await PlanesTest().run(context) }
+        let played: Outcome
+        do {
+            played = try await CopyRouteHold.during { try await PlanesTest().run(context) }
+        } catch {
+            _ = kernelTest(Self.report, Self.replyBytes)
+            throw error
+        }
         let composited: Int
         switch kernelTest(Self.report, Self.replyBytes) {
         case .failure(let failure): return .fail("reporting the composite: \(failure)", played.metrics)

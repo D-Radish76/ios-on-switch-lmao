@@ -112,22 +112,28 @@ inline std::string computeStateKey(const AirHash &air, const std::string &consta
     return airText(air) + " | " + constants + b;
 }
 
-// A compute state's linked function (MTLLinkedFunctions functions, or privateFunctions when `hidden`) by its AIR and
-// constants, as the translator links it into the kernel (MPSGraph's kernels link their DAG library's this way)
+// A compute state's linked function by its AIR, constants, list and exported name.
 struct LinkedComputeFunction {
     bool hidden = false;
     AirHash air = {};
     std::string constants;
+    bool binary = false;
+    std::string symbol = {}, name = {};
 };
 
-// A compute state's linked functions as its key takes them past its kernel's constants: " | kl" (visible) or " | kp"
-// (private) with each one's AIR and constants, in the descriptor's order. "" for none, so a kernel without them keys as
-// before
+// Lists retain descriptor order. Names distinguish binaries and renamed imports; unchanged kl/kp entries keep their keys.
 inline std::string computeLinkedText(const std::vector<LinkedComputeFunction> &linked)
 {
     std::string text;
-    for (const LinkedComputeFunction &f : linked)
-        text += (f.hidden ? " | kp " : " | kl ") + airText(f.air) + (f.constants.empty() ? "" : " " + f.constants);
+    for (const LinkedComputeFunction &f : linked) {
+        text += (f.binary   ? " | kb "
+                 : f.hidden ? " | kp "
+                            : " | kl ") +
+                airText(f.air) + (f.constants.empty() ? "" : " " + f.constants);
+        if (f.binary || (!f.name.empty() && f.name != f.symbol))
+            text += " name=" + std::to_string(f.symbol.size()) + ":" + f.symbol + std::to_string(f.name.size()) + ":" +
+                    f.name;
+    }
     return text;
 }
 

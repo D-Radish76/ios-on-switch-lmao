@@ -4,7 +4,7 @@
  */
 
 /*
- * The raw path's macros (ABI v6, at the slots and shadow scratch words kits/SwitchGM20BEmit/SwitchGM20BMacroSlots.h
+ * The raw path's macros (ABI v7, at the slots and shadow scratch words kits/SwitchGM20BEmit/SwitchGM20BMacroSlots.h
  * names: R1 the first argument, constant buffer 0 left selected), built with Mesa's MME builder. The draw macros take
  * the slots NVK's draw macros take, so a push profile that counts NVK's draw calls counts the raw path's too. The
  * instance loops are NVK's pre-Pascal nvk_mme_build_draw_loop and
@@ -467,10 +467,10 @@ static void build_icb_draw(struct mme_builder *b, bool indexed)
 }
 
 /* The constant buffer at the two scratch words' address, `bytes` long, selected for the loads after it */
-static void select_scratch_cbuf(struct mme_builder *b, uint32_t hi, uint32_t bytes)
+static void select_scratch_cbuf(struct mme_builder *b, uint32_t hi, struct mme_value bytes)
 {
     mme_mthd(b, NVB197_SET_CONSTANT_BUFFER_SELECTOR_A);
-    mme_emit(b, mme_imm(bytes));
+    mme_emit(b, bytes);
     struct mme_value word = mme_state(b, NVB197_SET_MME_SHADOW_SCRATCH(hi));
     mme_emit(b, word);
     mme_free_reg(b, word);
@@ -493,7 +493,9 @@ static void build_icb_patches(struct mme_builder *b, bool unused)
     struct mme_value instances = mme_load(b);
     mme_and_to(b, instances, instances, inside);
     mme_free_reg(b, inside);
-    select_scratch_cbuf(b, SWITCH_GM20B_SCRATCH_ICB_SET_HI, SWITCH_GM20B_ICB_SET_BYTES);
+    struct mme_value set_bytes = mme_state(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_SET_BYTES));
+    select_scratch_cbuf(b, SWITCH_GM20B_SCRATCH_ICB_SET_HI, set_bytes);
+    mme_free_reg(b, set_bytes);
     for (uint32_t k = 0; k < SWITCH_GM20B_ICB_PATCH_BUFFERS; k++) {
         struct mme_value entry = mme_state(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_ENTRY + k));
         struct mme_value lo = mme_load(b);
@@ -514,7 +516,7 @@ static void build_icb_patches(struct mme_builder *b, bool unused)
         mme_free_reg(b, hi);
         mme_free_reg(b, range);
     }
-    select_scratch_cbuf(b, SWITCH_GM20B_SCRATCH_ROOT_HI, SWITCH_GM20B_ICB_ROOT_BYTES);
+    select_scratch_cbuf(b, SWITCH_GM20B_SCRATCH_ROOT_HI, mme_imm(SWITCH_GM20B_ICB_ROOT_BYTES));
     struct mme_value control = mme_state(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_CONTROL));
     mme_mthd(b, NVB197_LOAD_CONSTANT_BUFFER_OFFSET);
     mme_emit(b, control);

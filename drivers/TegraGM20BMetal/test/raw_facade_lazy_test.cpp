@@ -8,6 +8,7 @@
 
 #import <IOSurface/IOSurface.h>
 #include <gtest/gtest.h>
+#include <cmath>
 #include <mach/vm_page_size.h>
 #include <algorithm>
 #include <set>
@@ -203,11 +204,16 @@ void foreignSampler()
     EXPECT_TRUE([(id)[device newSamplerStateWithDescriptor:white] isKindOfClass:NSClassFromString(@"RMSampler")])
         << "an opaque border is the raw sampler's";
     EXPECT_EQ(gOpens, 0);
+    MTLSamplerDescriptor *mirrored = [MTLSamplerDescriptor new];
+    mirrored.normalizedCoordinates = NO;
+    mirrored.sAddressMode = MTLSamplerAddressModeMirrorClampToEdge;
+    EXPECT_TRUE([(id)[device newSamplerStateWithDescriptor:mirrored] isKindOfClass:NSClassFromString(@"RMSampler")])
+        << "pixel coordinates mirrored once are the raw sampler's, clamped to the edge";
+    EXPECT_EQ(gOpens, 0);
     MTLSamplerDescriptor *s = [MTLSamplerDescriptor new];
-    s.normalizedCoordinates = NO;
-    s.sAddressMode = MTLSamplerAddressModeMirrorClampToEdge;
-    (void)[device newSamplerStateWithDescriptor:s];
-    expectOpenedFor(device, "a sampler's twin");
+    s.lodMinClamp = NAN;
+    EXPECT_EQ([device newSamplerStateWithDescriptor:s], nil) << "a sampler the device has no form of is nil";
+    EXPECT_EQ(gOpens, 0);
 }
 
 // A method of m2v's device class the raw device has none of answers respondsToSelector: at once, opens the m2v device at

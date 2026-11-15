@@ -8,7 +8,9 @@
 // as its codes (a header without the sRGB conversion, Device::levelTic) and decoded here, then blended in linear light: the
 // texture unit's decode put proven steps two codes off Metal's (boot 21 srgb=bgra8srgb:3d=57/2). The target encodes what
 // the fragment writes.
-// Buffer 0 holds the step: the size of the level above, then of this level.
+// Buffer 0 holds the step: the size of the level above, then of this level. A 3D texture's level is drawn a plane a pass,
+// each plane Metal's step across planes too (the same tap rule on the third axis, between two bilinear blends; this Mac's
+// generateMipmapsForTexture: of a 3D texture is a trilinear tap at the texel's centre), its step the depths and the plane.
 // One function a target format: the pack keys an own state by its function's name.
 #include <metal_stdlib>
 using namespace metal;
@@ -99,3 +101,60 @@ MIP(rg32f, levelStep)
 MIP(rgba16, levelStep)
 MIP(rgba16f, levelStep)
 MIP(rgba32f, levelStep)
+
+struct VolumeStep {
+    uint2 above, size;
+    uint aboveDepth, depth, plane;
+};
+
+static float4 decoded(float4 x, bool srgb)
+{
+    return srgb ? linearLight(x) : x;
+}
+
+static float4 planeBlend(texture3d<float> image, Taps t, uint z, bool srgb)
+{
+    return blend(decoded(image.read(uint3(t.first, z)), srgb), decoded(image.read(uint3(t.second.x, t.first.y, z)), srgb),
+                 decoded(image.read(uint3(t.first.x, t.second.y, z)), srgb), decoded(image.read(uint3(t.second, z)), srgb),
+                 t.weight);
+}
+
+static float4 volumeStep(Out in, texture3d<float> image, constant VolumeStep &step, bool srgb)
+{
+    constant Step &plane = reinterpret_cast<constant Step &>(step);
+    const Taps t = taps(in.position.xy, plane);
+    const uint s = step.aboveDepth, d = step.depth, at = (2 * step.plane + 1) * s - d;
+    const uint z0 = min(at / (2 * d), s - 1), z1 = min(at / (2 * d) + 1, s - 1);
+    const float w = float((at % (2 * d) * 256 + d) / (2 * d)) / 256.0;
+    const float4 near = planeBlend(image, t, z0, srgb), far = planeBlend(image, t, z1, srgb);
+    return fma(far, float4(w), near * (1.0 - w));
+}
+
+#define MIP3D(name, srgb)                                                                                                     \
+    fragment float4 mip_3d_##name##_frag(Out in [[stage_in]], texture3d<float> image [[texture(0)]],                      \
+                                         constant VolumeStep &step [[buffer(0)]])                                            \
+    {                                                                                                                         \
+        return volumeStep(in, image, step, srgb);                                                                             \
+    }
+
+MIP3D(a8, false)
+MIP3D(r8, false)
+MIP3D(r16, false)
+MIP3D(r16f, false)
+MIP3D(rg8, false)
+MIP3D(b5g6r5, false)
+MIP3D(bgr5a1, false)
+MIP3D(r32f, false)
+MIP3D(rg16, false)
+MIP3D(rg16f, false)
+MIP3D(rgba8, false)
+MIP3D(bgra8, false)
+MIP3D(rgba8_srgb, true)
+MIP3D(bgra8_srgb, true)
+MIP3D(rgb10a2, false)
+MIP3D(rg11b10f, false)
+MIP3D(bgr10a2, false)
+MIP3D(rg32f, false)
+MIP3D(rgba16, false)
+MIP3D(rgba16f, false)
+MIP3D(rgba32f, false)

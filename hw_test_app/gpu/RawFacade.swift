@@ -31,6 +31,11 @@ public enum RawFacade {
         ((ask(state, "switchRawObject") as? [String: Any])?["packed"] as? NSNumber)?.boolValue
     }
 
+    /// The set-0 entries of the record the facade draws `state` from (0: none; nil off the facade or in a release runtime).
+    public static func entries(of state: MTLRenderPipelineState) -> Int? {
+        ((ask(state, "switchRawObject") as? [String: Any])?["entries"] as? NSNumber)?.intValue
+    }
+
     /// The facade's record of its m2v device, read without opening it (debug builds; empty off the facade):
     /// "opened", "opens", "opened_for" and "needs" (each need the process asked it for, with its count)
     public static func m2vRecord(of device: MTLDevice) -> [String: Any] {

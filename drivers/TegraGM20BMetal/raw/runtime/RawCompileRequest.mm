@@ -151,6 +151,7 @@ ProbeTextures probeTexturesOf(const RenderVariant &v)
     t.twoPlane = v.twoPlane;
     t.xrSlots = v.xrSlots;
     t.written = v.written;
+    t.xrShadows = v.xrShadows;
     return t;
 }
 

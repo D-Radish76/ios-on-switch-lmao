@@ -105,6 +105,7 @@ ENGINE_MODEL = [
     "//drivers/TegraSMMU:TegraSMMU.h",
     "//drivers/TegraSMMU:TegraSMMUDomain.h",
     "//drivers/TegraSMMU:TegraSMMUPublish.h",
+    "//drivers/TegraSMMU:TegraSMMUSpace.h",
     "//kits/SwitchCAR:SwitchCAR.h",
     "//kits/SwitchCAR:SwitchEngineClock.h",
     "//kits/SwitchCAR:SwitchEngineClockPlan.h",
@@ -160,5 +161,16 @@ host_test(
     defines = ["DEVELOPMENT=1"],
     linkopts = ["-fsanitize=thread"],
     sanitize = False,
+    deps = [":gate_kernel"],
+)
+
+host_test(
+    name = "switch_nvjpg_mapping_test",
+    srcs = [
+        "switch_nvjpg_mapping_test.cpp",
+        "//drivers/TegraGM20B:SwitchGpuBacking.h",
+        "//drivers/TegraNVJPG:TegraNVJPGMapping.h",
+    ] + ENGINE_MODEL,
+    additional_compiler_inputs = ENGINE_SOURCES + ["//drivers/TegraNVJPG:TegraNVJPGMapping.cpp"],
     deps = [":gate_kernel"],
 )

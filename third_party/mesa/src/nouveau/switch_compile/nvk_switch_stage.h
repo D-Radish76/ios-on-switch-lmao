@@ -25,6 +25,8 @@ extern _Thread_local bool switch_nvk_texs_f16_current;
 
 /* A constant buffer as the raw path's pack names it (raw_pack.h PackCbufType) */
 uint8_t switch_nvk_cbuf_code(const struct nvk_cbuf *cbuf);
+/* A UBO descriptor's offset in its set, 0 for any other constant buffer */
+uint32_t switch_nvk_cbuf_offset(const struct nvk_cbuf *cbuf);
 
 /* What a stage compile hands over of a compiled shader */
 void switch_nvk_stage_of(const struct nvk_shader *shader,

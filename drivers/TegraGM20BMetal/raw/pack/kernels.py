@@ -169,7 +169,7 @@ def from_records(records: list[dict], constexpr_tsc: list[list[int]]) -> tuple[l
 
 
 def state_facts(records: list[dict]) -> list[dict]:
-    """Give each compute state's answers (directpack.mm's DKRN facts), once a state: every shape of it names the same."""
+    """Give each compute state's DKRN answers once: every dispatch shape must carry the same answers."""
     facts: dict[int, dict] = {}
     for rec in records:
         if rec['outcome'] or 'facts' not in rec:

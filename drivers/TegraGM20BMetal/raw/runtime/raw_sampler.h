@@ -154,9 +154,6 @@ inline bool takeSampler(const MetalSamplerFields &m, SamplerDesc &s)
                   m.sAddress == kAddressMirrorClampToEdge || m.tAddress == kAddressMirrorClampToEdge ||
                   m.rAddress == kAddressMirrorClampToEdge))
         return false;
-    if (!m.normalizedCoordinates &&
-        (m.sAddress == kAddressMirrorClampToEdge || m.tAddress == kAddressMirrorClampToEdge))
-        return false;
     const bool border =
         m.sAddress >= kAddressClampToZero || m.tAddress >= kAddressClampToZero || m.rAddress >= kAddressClampToZero;
     const uint64_t borderColor = m.borderColor & 3;
@@ -177,10 +174,11 @@ inline bool takeSampler(const MetalSamplerFields &m, SamplerDesc &s)
     s.pixel = !m.normalizedCoordinates;
     s.compare = uint8_t(m.compareFunction);
     s.border = border && borderColor != 3 ? uint8_t(borderColor) : 0;
+    // Metal leaves pixel coordinates sampled with any wrap mode but ClampToEdge undefined (MTLSampler.h
+    // normalizedCoordinates), so each wrapping or mirroring axis clamps to the edge
     if (s.pixel) {
         for (uint8_t *axis : {&s.sAddress, &s.tAddress, &s.rAddress})
-            if (*axis == kAddressRepeat || *axis == kAddressMirrorRepeat ||
-                (axis == &s.rAddress && *axis == kAddressMirrorClampToEdge))
+            if (*axis == kAddressRepeat || *axis == kAddressMirrorRepeat || *axis == kAddressMirrorClampToEdge)
                 *axis = kAddressClampToEdge;
         s.mipFilter = 0;
         s.maxAnisotropy = 1;

@@ -425,7 +425,7 @@ void switch_dma_free(switch_dma_buffer *buffer)
 }
 
 namespace {
-TegraNVJPGJob decodeJob()
+[[maybe_unused]] TegraNVJPGJob decodeJob()
 {
     TegraNVJPGJob job = {};
     job.setup.frame_width = 64;
@@ -440,13 +440,13 @@ TegraNVJPGJob decodeJob()
     return job;
 }
 
-void idle()
+[[maybe_unused]] void idle()
 {
     thread_call_t timer = switch_test_calls().back();
     timer->fire(timer->param, nullptr);
 }
 
-bool logged(const char *text)
+[[maybe_unused]] bool logged(const char *text)
 {
     const auto &lines = switch_test_log();
     return std::any_of(lines.begin(), lines.end(), [&](const std::string &line) {

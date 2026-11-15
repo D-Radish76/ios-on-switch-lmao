@@ -9,7 +9,9 @@
 //    with it, a resolve keeps the depth word, and a texel outside a turn copy's source rectangle is kept.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <regex>
 #include <string>
 #include <vector>
@@ -17,6 +19,7 @@
 #include "../raw/runtime/raw_depth_stencil_state.h"
 #include "../raw/runtime/raw_target.h"
 #include "../raw/runtime/raw_zeta_colour.h"
+#include "../raw/runtime/raw_own_states.h"
 #include "bazel/testing/source_text.h"
 
 namespace {
@@ -196,7 +199,6 @@ TEST(RawZetaColour, WhichZetasItWrites)
 TEST(RawZetaColour, ThePackMakesEachState)
 {
     const std::string metal = SourceText("../raw/pack/stencil_bits.metal");
-    const std::string keys = SourceText("../raw/runtime/raw_record_parts.cpp");
     for (const uint32_t format : {253u, 260u, 252u})
         for (const auto &[samples, pick] : kForms) {
             const char *colour = raw::stencilColourState(format, samples, pick);
@@ -207,7 +209,9 @@ TEST(RawZetaColour, ThePackMakesEachState)
             const std::string f = function(colour);
             EXPECT_EQ(std::string(colour), "raw.stencil_bits." + f);
             EXPECT_NE(metal.find("fragment uint4 " + f + "("), std::string::npos) << f;
-            EXPECT_NE(keys.find("\"stencil_bits_vert | f " + f + "\""), std::string::npos) << f;
+            EXPECT_TRUE(std::any_of(std::begin(raw::kOwnStates), std::end(raw::kOwnStates), [&](const char *key) {
+                return "stencil_bits_vert | f " + f == key;
+            })) << f;
             EXPECT_EQ(lineMask(f, raw::zetaColourFormat(format)), format == 260 && samples > 1 ? 4u : 15u) << f;
         }
 }

@@ -363,7 +363,10 @@ switch_fold(nir_shader *s, const struct switch_fold_model *m)
 
    bool ok = true;
    for (unsigned round = 0; round < 4096 && ok; round++) {
-      bool progress = substitute_values(s, m, &ok);
+      bool progress = nir_opt_deref(s);
+      progress |= nir_lower_vars_to_ssa(s);
+      progress |= nir_opt_copy_prop_vars(s);
+      progress |= substitute_values(s, m, &ok);
       progress |= nir_opt_constant_folding(s);
       progress |= nir_opt_copy_prop(s);
       progress |= substitute_leaves(s, m);

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // replaceRegion and getBytes of a one-aspect depth or stencil texture go through the copy engine
 // (raw::Device::transferTexture), as a colour texture's do: Apple's driver takes a CPU copy of a private depth texture
-// (an M-series Mac with API validation off reads back every byte written). A combined depth/stencil texture and a
-// multisampled one are not moved.
+// (an M-series Mac with API validation off reads back every byte written). A combined depth/stencil texture moves its
+// depth floats alone and a multisampled one its pixels' samples in turn (raw_zeta_cpu.h, raw_device_zeta_image_test).
 #include "raw_device_harness.h"
 
 #include <utility>
@@ -45,13 +45,15 @@ TEST_F(DeviceZetaCpu, AOneAspectDepthOrStencilTextureMovesThroughTheCopyEngine)
     }
 }
 
-TEST_F(DeviceZetaCpu, ACombinedOrMultisampledZetaIsNotMoved)
+TEST_F(DeviceZetaCpu, ACombinedZetaMovesItsDepthAndAMultisampledOneItsSamples)
 {
     raw::Texture combined, multisampled;
     ASSERT_TRUE(dev.createOwnedZeta(64, 48, kDepth32FloatStencil8, 1, true, combined));
-    EXPECT_EQ(write(combined, 8), raw::TextureTransferResult::Unsupported);
+    EXPECT_EQ(write(combined, 4), raw::TextureTransferResult::Complete) << "four bytes a texel: its depth float";
+    EXPECT_TRUE(lastJobNames(combined));
     ASSERT_TRUE(dev.createOwnedZeta(64, 48, kDepth32Float, 4, true, multisampled));
-    EXPECT_EQ(write(multisampled, 4), raw::TextureTransferResult::Unsupported);
+    EXPECT_EQ(write(multisampled, 4 * 4), raw::TextureTransferResult::Complete) << "a pixel's four samples in turn";
+    EXPECT_TRUE(lastJobNames(multisampled));
     dev.destroyTexture(combined);
     dev.destroyTexture(multisampled);
 }

@@ -11,6 +11,7 @@
 #include "nvk_switch_compile.h"
 #include "nvk_switch_stage.h"
 #include "nvk_switch_turn.h"
+#include "nvk_switch_ubo_fold.h"
 #include "nvk_switch_xr_planes.h"
 
 #include "nvk_device.h"
@@ -75,13 +76,18 @@ switch_nvk_compile_stage(VkDevice _device,
    struct switch_nvk_const_push push = {.mask = info->const_push_mask};
    memcpy(push.words, info->const_push_words, sizeof(push.words));
    switch_nvk_const_push_current = push.mask ? &push : NULL;
+   struct switch_nvk_ubo_fold ubo = {.desc = info->ubo_fold_desc,
+                                     .mask = info->ubo_fold_mask};
+   memcpy(ubo.bytes, info->ubo_fold_bytes, sizeof(ubo.bytes));
+   switch_nvk_ubo_fold_current = ubo.mask ? &ubo : NULL;
    switch_nvk_half_targets_current = info->half_targets;
    struct vk_shader *shader = NULL;
    switch_nvk_split_current = info->split;
    switch_nvk_center_frag_depth_current = info->center_frag_depth != 0;
    switch_nvk_texs_f16_current = info->texs_f16;
    switch_nvk_turned_current = info->turned;
-   switch_nvk_xr_plane_bindings_current = info->xr_plane_bindings;
+   memcpy(switch_nvk_xr_plane_bindings_current, info->xr_plane_bindings,
+          sizeof(switch_nvk_xr_plane_bindings_current));
    bool native_used = false;
    VkResult result =
       vk_pipeline_compile_native_stage(&dev->vk, info->pipeline_flags,
@@ -102,12 +108,13 @@ switch_nvk_compile_stage(VkDevice _device,
       }
    }
    switch_nvk_const_push_current = NULL;
+   switch_nvk_ubo_fold_current = NULL;
    switch_nvk_half_targets_current = 0;
    switch_nvk_split_current = false;
    switch_nvk_center_frag_depth_current = false;
    switch_nvk_texs_f16_current = false;
    switch_nvk_turned_current = false;
-   switch_nvk_xr_plane_bindings_current = 0;
+   memset(switch_nvk_xr_plane_bindings_current, 0, sizeof(switch_nvk_xr_plane_bindings_current));
    if (result != VK_SUCCESS)
       return result;
 

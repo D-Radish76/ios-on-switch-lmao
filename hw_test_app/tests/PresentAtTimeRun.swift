@@ -16,8 +16,7 @@ enum PresentMode: Sendable {
     case mediaTarget
     /// Plain presents for half a second, then linkTarget's on the same layer: a layer Core Animation has already shown.
     case warm
-    /// linkTarget's times, from a CAMetalDisplayLink driving the layer: Core Animation's image queue then carries
-    /// each image's time to the render server with its insertion (CAMetalLayerSetMetalLinkToken, queue flag bit 53).
+    /// CAMetalDisplayLink owns the drawable's target time; the command buffer presents it without an explicit time.
     case metalLink
 }
 
@@ -94,7 +93,7 @@ final class PresentAtTimeRun: NSObject, CAMetalDisplayLinkDelegate {
         MainActor.assumeIsolated {
             tick += 1
             if tick % 4 == 0 {
-                present(update.drawable, target: update.targetPresentationTimestamp + 3 * PresentTimeVerdict.period)
+                present(update.drawable, target: update.targetPresentationTimestamp)
             }
             if CACurrentMediaTime() - started >= seconds {
                 link.invalidate()
@@ -120,7 +119,7 @@ final class PresentAtTimeRun: NSObject, CAMetalDisplayLinkDelegate {
             let record = frames
             drawable.addPresentedHandler { record.presented(index, at: $0.presentedTime) }
         }
-        if target == 0 {
+        if target == 0 || mode == .metalLink {
             commands.present(drawable)
         } else {
             commands.present(drawable, atTime: target)

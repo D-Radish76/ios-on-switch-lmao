@@ -41,23 +41,25 @@ void RenderEncoder::setAmplification(uint32_t count, const uint32_t (&viewports)
     std::copy(std::begin(viewports), std::end(viewports), amplificationViewports_);
     std::copy(std::begin(layers), std::end(layers), amplificationLayers_);
     amplificationDirty_ = true;
-    amplificationMapsWide_ = false;
-    for (uint32_t a = 0; a < std::min(amplifications_, kAmplificationMaps); a++)
-        amplificationMapsWide_ |= ((layers[a] | viewports[a]) >> SWITCH_GM20B_AMP_MAP_VIEWPORT_SHIFT) != 0;
 }
 
-const char *RenderEncoder::drawnWordsRefusal(const PackPipeline &r) const
+const char *RenderEncoder::drawnWordsRefusal(const PackPipeline &r, Refusal &refusal) const
 {
     const uint32_t most = std::max<uint32_t>(1, r.amplificationMax);
-    if (amplifications_ > most)
+    refusal = {};
+    if (amplifications_ > most) {
+        refusal = {RefAmplificationCount, amplifications_, most, 0};
         return "a vertex amplification count above the state's maxVertexAmplificationCount";
-    if (amplificationMapsWide_)
-        return "a vertex amplification view mapping's offset past the 16 bits of its scratch word";
+    }
     for (uint32_t k = 1; k < kPackVertexStreams && r.vertexStreams[k - 1]; k++)
-        if (streamSlot(r.vertexStreams[k - 1]) >= 31)
+        if (streamSlot(r.vertexStreams[k - 1]) >= 31) {
+            refusal = {RefStreamSlot, streamSlot(r.vertexStreams[k - 1])};
             return "a vertex stream of no Metal buffer";
-    if (bindStridePastStream(r))
+        }
+    if (bindStridePastStream(r)) {
+        refusal = {RefStrideTwin};
         return "a vertex buffer bind stride past the vertex stream's 12-bit stride, of a state with no stride twin";
+    }
     return nullptr;
 }
 
@@ -135,10 +137,12 @@ void RenderEncoder::heldAmplifyWords(const Pipeline &pl)
 {
     const PackPipeline &r = *pl.rec;
     const uint32_t last = std::min(amplifications_, kAmplificationMaps) - 1;
+    const uint32_t layer = mme::mappedOffset(amplificationLayers_[last]),
+                   viewport = mme::mappedOffset(amplificationViewports_[last]);
     const std::pair<uint8_t, uint32_t> words[] = {{r.amplificationIdWord, amplifications_ - 1},
                                                   {r.amplificationCountWord, amplifications_},
-                                                  {pl.rec->amplificationLayerWord, amplificationLayers_[last]},
-                                                  {pl.rec->amplificationViewportWord, amplificationViewports_[last]}};
+                                                  {r.amplificationLayerWord, layer},
+                                                  {r.amplificationViewportWord, viewport}};
     for (const auto &[word, value] : words)
         if (word && word <= 32)
             cb_->rootPush_[word - 1] = value;

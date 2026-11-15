@@ -455,6 +455,17 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
           bytesPerRow:(NSUInteger)row
         bytesPerImage:(NSUInteger)image
 {
+    if (!cpuXrWords(self, r, level, slice, (uint8_t *)bytes, row, image, true))
+        [self rmReplaceRegion:r mipmapLevel:level slice:slice withBytes:bytes bytesPerRow:row bytesPerImage:image];
+}
+
+- (void)rmReplaceRegion:(MTLRegion)r
+            mipmapLevel:(NSUInteger)level
+                  slice:(NSUInteger)slice
+              withBytes:(const void *)bytes
+            bytesPerRow:(NSUInteger)row
+          bytesPerImage:(NSUInteger)image
+{
     if (!r.size.width || !r.size.height || !r.size.depth || cpuReachesNothing(self))
         return;
 #if SWITCH_RAW_DIAGNOSTICS
@@ -467,10 +478,15 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
         planeRows(self, r, level, slice, (uint8_t *)bytes, row, true);
         return;
     }
-    if (transferTexture(self, r, level, slice, const_cast<void *>(bytes), row, image, true))
+    if (transferTexture(self, r, level, slice, const_cast<void *>(bytes), row, image, true) ||
+        refuseZetaCpu(self, r, level, slice, true))
         return;
     if (_rawOk && _raw.blockW * _raw.blockH > 1 && _raw.blockLinear) {
-        cpuBlocks(self, r, level, slice, (uint8_t *)bytes, row, true);
+        cpuBlocks(self, r, level, slice, (uint8_t *)bytes, row, image, true);
+        return;
+    }
+    if (_rawOk && _raw.samples > 1 && !_raw.zeta) {
+        cpuSamples(self, r, (uint8_t *)bytes, row, true);
         return;
     }
     TextureCpuAccess access(self, r, level, slice, true);
@@ -525,6 +541,17 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
       mipmapLevel:(NSUInteger)level
             slice:(NSUInteger)slice
 {
+    if (!cpuXrWords(self, r, level, slice, (uint8_t *)bytes, row, image, false))
+        [self rmGetBytes:bytes bytesPerRow:row bytesPerImage:image fromRegion:r mipmapLevel:level slice:slice];
+}
+
+- (void)rmGetBytes:(void *)bytes
+       bytesPerRow:(NSUInteger)row
+     bytesPerImage:(NSUInteger)image
+        fromRegion:(MTLRegion)r
+       mipmapLevel:(NSUInteger)level
+             slice:(NSUInteger)slice
+{
     if (!r.size.width || !r.size.height || !r.size.depth || cpuReachesNothing(self))
         return;
     freshBeforeTransfer(self);
@@ -532,10 +559,14 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
         planeRows(self, r, level, slice, (uint8_t *)bytes, row, false);
         return;
     }
-    if (transferTexture(self, r, level, slice, bytes, row, image, false))
+    if (transferTexture(self, r, level, slice, bytes, row, image, false) || refuseZetaCpu(self, r, level, slice, false))
         return;
     if (_rawOk && _raw.blockW * _raw.blockH > 1 && _raw.blockLinear) {
-        cpuBlocks(self, r, level, slice, (uint8_t *)bytes, row, false);
+        cpuBlocks(self, r, level, slice, (uint8_t *)bytes, row, image, false);
+        return;
+    }
+    if (_rawOk && _raw.samples > 1 && !_raw.zeta) {
+        cpuSamples(self, r, (uint8_t *)bytes, row, false);
         return;
     }
     TextureCpuAccess access(self, r, level, slice, false);
@@ -596,8 +627,7 @@ id<MTLTexture> swizzled(id<MTLTexture> t, MTLTextureSwizzleChannels s)
     return t;
 }
 
-// The header type of a view of `type` (-1: one the raw path makes none of)
-static int viewHeaderType(MTLTextureType type)
+int viewHeaderType(MTLTextureType type)
 {
     switch (type) {
     case MTLTextureType1D:
@@ -612,6 +642,12 @@ static int viewHeaderType(MTLTextureType type)
         return raw::fx::kTexCube;
     case MTLTextureTypeCubeArray:
         return raw::fx::kTexCubeArray;
+    case MTLTextureType3D:
+        return raw::fx::kTexThreeD;
+    case MTLTextureType2DMultisample:
+        return raw::fx::kTexTwoD;
+    case MTLTextureType2DMultisampleArray:
+        return raw::fx::kTexTwoDArray;
     default:
         return -1;
     }
@@ -636,10 +672,11 @@ static int viewHeaderType(MTLTextureType type)
     v->_descriptor.pixelFormat = format;
     v->_descriptor.textureType = type;
     v->_descriptor.mipmapLevelCount = levels.length;
-    v->_descriptor.width = std::max<NSUInteger>(_descriptor.width >> levels.location, 1);
-    v->_descriptor.height = std::max<NSUInteger>(_descriptor.height >> levels.location, 1);
+    const NSUInteger shift = std::min<NSUInteger>(levels.location, 63);
+    v->_descriptor.width = std::max<NSUInteger>(_descriptor.width >> shift, 1);
+    v->_descriptor.height = std::max<NSUInteger>(_descriptor.height >> shift, 1);
     if (type == MTLTextureType3D)
-        v->_descriptor.depth = std::max<NSUInteger>(_descriptor.depth >> levels.location, 1);
+        v->_descriptor.depth = std::max<NSUInteger>(_descriptor.depth >> shift, 1);
     const bool viewCube = type == MTLTextureTypeCube || type == MTLTextureTypeCubeArray;
     v->_descriptor.arrayLength = std::max<NSUInteger>(viewCube ? slices.length / 6 : slices.length, 1);
     v->_kind = RMTextureView;
@@ -647,11 +684,17 @@ static int viewHeaderType(MTLTextureType type)
     v->_viewPart = true;
     v->_viewLevels = levels;
     v->_viewSlices = slices;
+    v->_levelsOwner = _levelsOwner ?: self;
+    v->_levelsBase = _levelsBase + uint32_t(levels.location);
+    v->_slicesBase = _slicesBase + uint32_t(slices.location);
     const int header = viewHeaderType(type);
-    if (_rawOk && header >= 0 && raw::formatInfo(uint32_t(format)))
-        v->_rawOk = gRM->raw->createPartView(_raw, uint32_t(format), uint32_t(header), uint32_t(levels.location),
-                                             uint32_t(levels.length), uint32_t(slices.location),
-                                             uint32_t(slices.length), v->_raw);
+    const bool multisampled = type == MTLTextureType2DMultisample || type == MTLTextureType2DMultisampleArray;
+    const bool inParent = levels.location < _descriptor.mipmapLevelCount && levels.length &&
+                          levels.length <= _descriptor.mipmapLevelCount - levels.location &&
+                          slices.location < allSlices && slices.length && slices.length <= allSlices - slices.location;
+    if (_rawOk && inParent && header >= 0 && multisampled == (_raw.samples > 1))
+        v->_rawOk = gRM->raw->createPartView(v->_levelsOwner->_raw, uint32_t(format), uint32_t(header), v->_levelsBase,
+                                             uint32_t(levels.length), v->_slicesBase, uint32_t(slices.length), v->_raw);
     if (v->_rawOk)
         return (id<MTLTexture>)v;
     if (![v rmTwin])
@@ -691,7 +734,10 @@ static int viewHeaderType(MTLTextureType type)
     v->_descriptor.pixelFormat = format;
     v->_kind = RMTextureView;
     v->_parent = self;
-    if (_rawOk && !_raw.memoryless && raw::formatInfo(uint32_t(format)))
+    v->_levelsOwner = _levelsOwner ?: self;
+    v->_levelsBase = _levelsBase;
+    v->_slicesBase = _slicesBase;
+    if (_rawOk && !_raw.memoryless)
         v->_rawOk = gRM->raw->createView(_raw, uint32_t(format), v->_raw);
     if (!v->_rawOk)
         refuseTexture(v, PredTexView, format, _rawOk, @"view",

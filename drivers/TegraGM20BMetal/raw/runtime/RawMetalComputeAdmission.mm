@@ -110,7 +110,7 @@ void kernelUses(RMCommandBuffer *cb, size_t at, std::vector<raw::KernelUse> &use
     const auto *kernels = static_cast<const raw::ComputeKernelSet<raw::ComputeState> *>(dispatch.kernel);
     const auto &state = plan.kernelStates[dispatch.state];
     const auto &bindings = plan.buffers[2][state.buffers];
-    const auto &textures = plan.textures[2][state.textures].objects;
+    const auto &textures = plan.kernelTextures[state.textures].objects;
     uses.clear();
     // a window slot's one window covers what every region's record reaches of it
     raw::KernelUse windows[31];
@@ -164,7 +164,7 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
     const auto &dispatch = plan.dispatch(at);
     const auto &state = plan.kernelStates[dispatch.state];
     const auto &bindings = plan.buffers[2][state.buffers];
-    const auto &textures = plan.textures[2][state.textures].objects;
+    const auto &textures = plan.kernelTextures[state.textures].objects;
     auto textureAt = [&](uint32_t slot) -> RMTexture * {
         return (__bridge RMTexture *)textures[slot];
     };
@@ -293,7 +293,7 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                     if (binding.source == raw::BufferBinding::Source::Buffer)
                         exact.push_back({binding.object, access});
                 } else if (entry.kind == raw::KernelTexture && entry.slot < 31) {
-                    exact.push_back({plan.textures[2][state.textures].objects[entry.slot],
+                    exact.push_back({plan.kernelTextures[state.textures].objects[entry.slot],
                                      uint8_t(access | raw::ResourceUse::Sample)});
                 } else if (entry.kind == raw::KernelSampler && entry.slot < 16) {
                     exact.push_back({plan.samplers[2][state.samplers].objects[entry.slot], raw::ResourceUse::Read});

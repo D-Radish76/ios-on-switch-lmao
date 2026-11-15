@@ -37,6 +37,7 @@ struct CopyEngine {
 	bool flushed = false;
 	uint32_t launches = 0;
 	bool fault = false;
+	bool requireNonPipelined = true;
 	uint32_t failLaunch = 0, failAfterBytes = 0;
 
 	explicit CopyEngine(Memory &mem) : memory(mem)
@@ -47,7 +48,15 @@ struct CopyEngine {
 	uint64_t blockLinear(const Side &s, uint32_t texelBytes, uint32_t xB, uint32_t y) const
 	{
 		const uint32_t yLog2 = (s.blockSize >> 4) & 0xf;
-		return tgm_layout_offset_of(s.width * texelBytes, uint8_t(yLog2), xB, y);
+		const uint32_t zLog2 = (s.blockSize >> 8) & 0xf;
+		const uint32_t blockRows = 8u << yLog2;
+		const uint32_t blocksX = (s.width * texelBytes + 63) / 64;
+		const uint32_t blocksY = (s.height + blockRows - 1) / blockRows;
+		const uint64_t block =
+			(uint64_t(s.layer >> zLog2) * blocksY + y / blockRows) * blocksX + xB / 64;
+		return (block << (9 + yLog2 + zLog2)) +
+		       (uint64_t(s.layer & ((1u << zLog2) - 1)) << (9 + yLog2)) +
+		       uint64_t((y % blockRows) / 8) * 512 + tgm_layout_gob_offset(xB, y);
 	}
 
 	uint32_t bpp() const
@@ -60,7 +69,10 @@ struct CopyEngine {
 	{
 		launches++;
 		flushed = false;
-		ASSERT_EQ(flags & 3u, 2u) << "NON_PIPELINED";
+		if (requireNonPipelined)
+			ASSERT_EQ(flags & 3u, 2u) << "NON_PIPELINED";
+		else
+			ASSERT_TRUE((flags & 3u) == 1u || (flags & 3u) == 2u);
 		ASSERT_TRUE(flags & (1u << 2)) << "FLUSH_ENABLE";
 		const bool remap = flags & (1u << 10);
 		const uint64_t in = uint64_t(m[0x0400]) << 32 | m[0x0404],
@@ -71,16 +83,28 @@ struct CopyEngine {
 			<< "a block-linear side is addressed in texels: remapped";
 		if (remap &&
 		    (m.at(0x0708) & 7) == 4) {  // DST_X CONST_A: a fill of the constant, no source
-			ASSERT_TRUE(dstPitch);
+			const uint32_t components = m.at(0x0708),
+				       unit = ((components >> 16) & 3) + 1;
+			const uint32_t dstBytes = unit * (((components >> 24) & 3) + 1);
 			for (uint32_t y = 0; y < h; y++)
-				for (uint32_t x = 0; x < w * b; x++) {
-					uint8_t *pd =
-						memory.at(out + uint64_t(y) * m[0x0414] + x, true);
+				for (uint32_t x = 0; x < w * dstBytes; x++) {
+					const uint32_t source =
+						(components >> (4 * ((x % dstBytes) / unit))) & 7;
+					ASSERT_TRUE(source == 4 || source == 5);
+					const uint64_t at =
+						dstPitch
+							? out + uint64_t(y) * m[0x0414] + x
+							: out + blockLinear(dst, dstBytes,
+									    x + (dst.origin &
+										 0xffff) * dstBytes,
+									    y + (dst.origin >> 16));
+					uint8_t *pd = memory.at(at, true);
 					if (!pd) {
 						fault = true;
 						return;
 					}
-					*pd = uint8_t(m[0x0700] >> (8 * (x % 4)));
+					*pd = uint8_t(m[source == 4 ? 0x0700 : 0x0704] >>
+						      (8 * (x % unit)));
 				}
 			return;
 		}
@@ -88,10 +112,16 @@ struct CopyEngine {
 		const uint32_t pitchIn = m[0x0410], pitchOut = m[0x0414];
 		for (uint32_t y = 0; y < h; y++)
 			for (uint32_t x = 0; x < w * b; x++) {
-				const uint64_t s = srcPitch ? in + uint64_t(y) * pitchIn + x
-							    : in + blockLinear(src, b, x, y);
-				const uint64_t d = dstPitch ? out + uint64_t(y) * pitchOut + x
-							    : out + blockLinear(dst, b, x, y);
+				const uint64_t s =
+					srcPitch ? in + uint64_t(y) * pitchIn + x
+						 : in + blockLinear(src, b,
+								    x + (src.origin & 0xffff) * b,
+								    y + (src.origin >> 16));
+				const uint64_t d =
+					dstPitch ? out + uint64_t(y) * pitchOut + x
+						 : out + blockLinear(dst, b,
+								     x + (dst.origin & 0xffff) * b,
+								     y + (dst.origin >> 16));
 				uint8_t *ps = memory.at(s), *pd = memory.at(d, true);
 				if (!ps || !pd) {
 					fault = true;

@@ -114,29 +114,23 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
     r->_device = self;
     r->_descriptor = [d copy];
     r.label = d.label;
-    // what the raw sampler header does not express: the m2v twin is the sampler, and the raw path refuses the draws that use it
+    // A descriptor the raw sampler header does not express is no sampler of this device's (Metal answers nil for a sampler
+    // it cannot make): an enum out of range, a NaN lod clamp, or a cubic filter with a mip filter, anisotropy, a border
+    // of 3 or a mirror-clamp axis, whose result Apple's GPUs are not measured for (m2v refuses it too: metal2vulkan
+    // bicubic.rs runtime_cubic_measured); a header the pool has no slot for is the same answer
     const bool rawOk = raw::takeSampler(m, s);
-    if (rawOk && !gRM->raw->createSampler(s, r->_raw)) {
-        os_log_error(rawLog(), "raw: %{public}s: no sampler header left in the device's table: no sampler made",
-                     getprogname());
+    if (!rawOk || !gRM->raw->createSampler(s, r->_raw)) {
+        SWITCH_REFUSE_DETAIL("raw", "sampler.unsupported", rawOk,
+                             "no sampler (%s): min %lu mag %lu mip %lu address %lu/%lu/%lu anisotropy %lu compare %lu "
+                             "border %lu lod %g..%g "
+                             "normalized %d",
+                             rawOk ? "no header slot" : "a descriptor the device has no form of",
+                             (unsigned long)d.minFilter, (unsigned long)d.magFilter, (unsigned long)d.mipFilter,
+                             (unsigned long)d.sAddressMode, (unsigned long)d.tAddressMode,
+                             (unsigned long)d.rAddressMode, (unsigned long)d.maxAnisotropy,
+                             (unsigned long)d.compareFunction, (unsigned long)d.borderColor, double(d.lodMinClamp),
+                             double(d.lodMaxClamp), (int)d.normalizedCoordinates);
         return nil;
-    }
-    if (!rawOk) {
-        if (!predLogged(PredCallSamplerForeign))
-            logPred(
-                PredCallSamplerForeign, d.maxAnisotropy, d.compareFunction,
-                [NSString
-                    stringWithFormat:@"(made: normalized %d address %lu/%lu border %lu lodAverage %d header slot %d)",
-                                     (int)d.normalizedCoordinates, (unsigned long)d.sAddressMode,
-                                     (unsigned long)d.tAddressMode, (unsigned long)d.borderColor, (int)d.lodAverage,
-                                     (int)rawOk]);
-        if (![r rmTwin])
-            return nil;
-        RMTwinObject *o =
-            [RMTwinObject new];  // a sampler the raw path cannot use: a draw with it goes to m2v (not an RMSampler)
-        o->_device = self;
-        o->_twin = r->_twin;
-        return (id<MTLSamplerState>)o;
     }
     return (id<MTLSamplerState>)r;
 }
@@ -480,8 +474,8 @@ static id<MTLRenderPipelineState> makeState(RMDevice *device, MTLRenderPipelineD
                                                              error:(NSError **)error
 {
     SWITCH_API(ApiObject);
-    if (ycbcrTargetFormat(d))
-        return [self ycbcrTargetState:d options:MTLPipelineOptionNone reflection:nil error:error];
+    if (standInTargetFormat(d))
+        return [self standInTargetState:d options:MTLPipelineOptionNone reflection:nil error:error];
     return makeState(self, d, MTLPipelineOptionNone, nil, error);
 }
 
@@ -491,8 +485,8 @@ static id<MTLRenderPipelineState> makeState(RMDevice *device, MTLRenderPipelineD
                                                              error:(NSError **)error
 {
     SWITCH_API(ApiObject);
-    if (ycbcrTargetFormat(d))
-        return [self ycbcrTargetState:d options:o reflection:reflection error:error];
+    if (standInTargetFormat(d))
+        return [self standInTargetState:d options:o reflection:reflection error:error];
     return makeState(self, d, o, reflection, error);
 }
 

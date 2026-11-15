@@ -25,7 +25,7 @@ constexpr uint64_t kChainVa = 0x2000000000ull;
 std::vector<MipRun> runs(const MipChain &c, bool twod, bool threeD, bool *routed = nullptr)
 {
     std::vector<MipRun> out;
-    const bool ok = raw::fx::eachMipRun(c, twod, threeD, [&](const MipRun &r) {
+    const bool ok = raw::fx::eachMipRun(c, 0, c.levels - 1, twod, threeD, [&](const MipRun &r) {
         out.push_back(r);
     });
     if (routed)
@@ -185,27 +185,27 @@ std::vector<uint8_t> level(const std::vector<uint8_t> &mem, const MipChain &c, u
 
 // emitGenerateLayers of levels first + 1 .. last through the model: each such level is the reference step from the level above
 // as the model left it, the levels outside the run keep their bytes, and the run is ordered and ends sampleable
-void checkRun(const MipChain &c, uint32_t first, uint32_t last)
+void checkRun(const MipChain &c, uint32_t first, uint32_t last, uint32_t firstLayer, uint32_t layers)
 {
     std::vector<uint8_t> mem(c.bytes * c.layers, 0);
     for (uint32_t layer = 0; layer < c.layers; layer++)
         for (uint32_t l = 0; l < c.levels; l++)
             fill(mem, c, layer, l, layer * 16 + l);
     const std::vector<uint8_t> before = mem;
-    std::vector<uint32_t> push(raw::fx::twodInitWords() + raw::fx::generateLayersWords(c, first, last));
+    std::vector<uint32_t> push(raw::fx::twodInitWords() + raw::fx::generateWords(c, first, last) * layers);
     raw::Push p{push.data(), push.data() + push.size()};
     raw::fx::emitTwodInit(p);
-    raw::fx::emitGenerateLayers(p, c, kChainVa, kBgra8, first, last);
+    raw::fx::emitGenerateLayers(p, c, kChainVa, kBgra8, first, last, firstLayer, layers);
     ASSERT_LE(p.at, push.data() + push.size());
     twodsim::Sim sim;
     sim.map(kChainVa, mem);
     ASSERT_TRUE(sim.run(push.data(), size_t(p.at - push.data()))) << sim.error();
     EXPECT_TRUE(sim.endsSampleable);
-    EXPECT_EQ(sim.launches, (last - first) * c.layers);
+    EXPECT_EQ(sim.launches, (last - first) * layers);
     for (uint32_t layer = 0; layer < c.layers; layer++)
         for (uint32_t l = 0; l < c.levels; l++) {
             const std::vector<uint8_t> got = level(mem, c, layer, l);
-            if (l <= first || l > last) {
+            if (layer < firstLayer || layer >= firstLayer + layers || l <= first || l > last) {
                 EXPECT_EQ(got, level(before, c, layer, l))
                     << "layer " << layer << " level " << l << " outside the run changed";
                 continue;
@@ -222,16 +222,16 @@ void checkRun(const MipChain &c, uint32_t first, uint32_t last)
 TEST(MipRoute, TwoDRunsWriteOnlyTheirLevels)
 {
     const MipChain c = chain(20, 12);
-    checkRun(c, 0, c.levels - 1);
-    checkRun(c, 1, 3);
-    checkRun(c, 2, 3);
+    checkRun(c, 0, c.levels - 1, 0, c.layers);
+    checkRun(c, 1, 3, 0, c.layers);
+    checkRun(c, 2, 3, 0, c.layers);
 }
 
 TEST(MipRoute, TwoDRunsAroundAThreeDRun)
 {
     const MipChain c = chain(776, 24);
-    checkRun(c, 0, 3);
-    checkRun(c, 4, 9);
+    checkRun(c, 0, 3, 0, c.layers);
+    checkRun(c, 4, 9, 0, c.layers);
 }
 
 TEST(MipRoute, EveryLayerOfAnArrayChain)
@@ -239,8 +239,32 @@ TEST(MipRoute, EveryLayerOfAnArrayChain)
     MipChain c;
     ASSERT_TRUE(raw::fx::arrayLayout(16, 8, 3, 5, 4, c));
     ASSERT_EQ(c.layers, 3u);
-    checkRun(c, 0, 4);
-    checkRun(c, 1, 2);
+    checkRun(c, 0, 4, 0, c.layers);
+    checkRun(c, 1, 2, 0, c.layers);
+}
+
+TEST(MipRoute, AViewWritesOnlyItsLaterLevelsAndSelectedLayers)
+{
+    MipChain c;
+    ASSERT_TRUE(raw::fx::arrayLayout(32, 16, 4, 6, 4, c));
+    checkRun(c, 1, 3, 1, 2);
+    checkRun(c, 2, 4, 3, 1);
+}
+
+TEST(MipRoute, AViewRoutesOnlyItsLevelInterval)
+{
+    const MipChain c = chain(776, 24);
+    std::vector<MipRun> selected;
+    ASSERT_TRUE(raw::fx::eachMipRun(c, 3, 6, true, true, [&](const MipRun &r) {
+        selected.push_back(r);
+    }));
+    ASSERT_EQ(selected.size(), 2u);
+    EXPECT_EQ(selected[0].engine, MipEngine::ThreeD);
+    EXPECT_EQ(selected[0].first, 3u);
+    EXPECT_EQ(selected[0].last, 4u);
+    EXPECT_EQ(selected[1].engine, MipEngine::TwoD);
+    EXPECT_EQ(selected[1].first, 4u);
+    EXPECT_EQ(selected[1].last, 6u);
 }
 
 }  // namespace

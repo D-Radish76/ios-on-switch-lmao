@@ -32,6 +32,7 @@ struct Asked {
     bool variants;
     BoundDraw *bound;
     uint16_t xrSlots;
+    const SelectorConfigs *selectors;
     std::string why;
     CompileOutcome outcome = CompileOutcome::Failed;
     bool splittable = false;
@@ -42,7 +43,7 @@ bool made(const NmbDirectState *state, void *ctx)
     Asked &a = *static_cast<Asked *>(ctx);
     a.splittable = splitsFragment(*state);
     a.outcome = directRecord(*state, a.compile, a.rules, a.key, a.attributes, a.out, a.why, a.registers, a.split,
-                             a.variants, a.xrSlots);
+                             a.variants, a.xrSlots, a.selectors);
     if (a.bound) {
         const NmbDirectDraw &d = state->draws[3];
         a.bound->pushMask = d.pushMask;
@@ -89,24 +90,30 @@ CompileOutcome Direct::form(MTLRenderPipelineDescriptor *descriptor, bool barrie
                             const std::string &key, const std::vector<uint32_t> &attributes, RuntimeRecord &out,
                             std::string &why, std::map<uint32_t, uint32_t> *registers, bool split)
 {
+    const SelectorConfigs *selectors = nullptr;
+    if (selectors_) {
+        const auto found = selectors_->find(packKeyHash(key.substr(0, variantNameAt(key))));
+        if (found != selectors_->end())
+            selectors = &found->second;
+    }
     Asked a = {
-        compile_,         rules_, key, attributes, out, registers, split, variants_, keepBound_ ? &bound_ : nullptr,
-        textures.xrSlots, {}};
+        compile_,         rules_,    key, attributes, out, registers, split, variants_, keepBound_ ? &bound_ : nullptr,
+        textures.xrSlots, selectors, {}};
     if (keepBound_)
         bound_ = {};
     std::vector<NmbDirectCubicSampler> cubic;
     std::vector<NmbDirectTextureFormat> formats;
     for (const CubicBinds::Sampler &c : textures.cubic.samplers)
-        cubic.push_back({c.slot, c.s, c.t, c.r, c.border, c.normalized});
+        cubic.push_back({c.slot, c.s, c.t, c.r, c.border, c.normalized, c.stage == kCubicVertex});
     for (const CubicBinds::Texture &t : textures.cubic.textures)
-        formats.push_back({t.slot, t.format});
+        formats.push_back({t.slot, t.format, t.stage == kCubicVertex});
     for (const WrittenTexture &t : textures.written)
-        formats.push_back({t.slot, t.format});
+        formats.push_back({t.slot, t.format, false});
     const NmbDirectBinds binds = {
-        cubic.data(),           uint32_t(cubic.size()), formats.data(),   uint32_t(formats.size()),
-        textures.fragmentTests, textures.bindStride,    textures.twoPlane};
-    const bool plain =
-        formats.empty() && cubic.empty() && !textures.fragmentTests && !textures.bindStride && !textures.twoPlane;
+        cubic.data(),           uint32_t(cubic.size()), formats.data(),    uint32_t(formats.size()),
+        textures.fragmentTests, textures.bindStride,    textures.twoPlane, textures.xrShadows};
+    const bool plain = formats.empty() && cubic.empty() && !textures.fragmentTests && !textures.bindStride &&
+                       !textures.twoPlane && !textures.xrShadows;
     const char *refused = nullptr;
     if (!translator_.render(descriptor, barrier, textures.format, textures.samples, plain ? nullptr : &binds, made, &a,
                             &refused)) {

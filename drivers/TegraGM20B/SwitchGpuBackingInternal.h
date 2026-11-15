@@ -66,7 +66,11 @@ struct switch_gpu_backing {
 	const void *host_acquire_handle;  // host_acquire's timeline, as a record's handle
 	uint32_t
 		claims;  // under the ownership order: parties holding `lock` as a claim (switch_gpu_backing_claim)
-	uint32_t mapped_engines;  // atomic: 1 << engine for each engine that mapped it (switch_gpu_backing_note_mapped)
+	void *mapping_contexts[SWITCH_GPU_ENGINE_COUNT];
+	void (*mapping_destroy[SWITCH_GPU_ENGINE_COUNT])(void *);
+	uint32_t mapping_engines;
+	uint32_t
+		mapped_engines;  // atomic: 1 << engine for each engine that mapped it (switch_gpu_backing_note_mapped)
 };
 
 struct switch_gpu_cpu_lease {

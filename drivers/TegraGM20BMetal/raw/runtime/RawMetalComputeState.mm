@@ -3,7 +3,6 @@
 #import "RawMetalBinaryArchive.h"
 #import "RawMetalComputeState.h"
 #import "RawMetalReflection.h"
-#include "NativeBridgeMetalFrontend.h"
 #include "RawComplete.h"
 #include "RawCompileRequest.h"
 #include "raw_compute_key.h"
@@ -106,21 +105,24 @@ static bool airOf(id<MTLFunction> function, raw::AirHash &out, NSString *__stron
 }
 
 // The descriptor's linked functions as the compute key takes them (raw_compute_key.h computeLinkedText); false for any the
-// key cannot name: another device's, a binary function or a function group
+// key cannot name: another device's or a function group
 static bool linkedText(MTLComputePipelineDescriptor *d, std::string &text)
 {
     MTLLinkedFunctions *l = d.linkedFunctions;
-    if (l.binaryFunctions.count || l.groups.count)
+    if (l.groups.count)
         return false;
     std::vector<raw::LinkedComputeFunction> linked;
-    for (const bool hidden : {false, true})
-        for (id function in hidden ? l.privateFunctions : l.functions) {
+    for (const uint32_t list : {0u, 1u, 2u})
+        for (id function in list == 2 ? l.binaryFunctions : list == 1 ? l.privateFunctions : l.functions) {
             raw::LinkedComputeFunction f;
-            f.hidden = hidden;
+            f.hidden = list == 1;
+            f.binary = list == 2;
             NSString *libraryName = nil;
             if (![function isKindOfClass:[RMFunction class]] || !airOf(function, f.air, libraryName))
                 return false;
             f.constants = ((RMFunction *)function)->_constants;
+            f.symbol = libraryName.UTF8String ?: "";
+            f.name = [function name].UTF8String ?: "";
             linked.push_back(std::move(f));
         }
     text = raw::computeLinkedText(linked);
@@ -182,14 +184,6 @@ static bool m2vAnswers(RMComputeState *s, MTLPipelineOption options, NSError **e
                                      userInfo:@{NSLocalizedDescriptionKey : @"the compute function has no m2v twin"}];
         return false;
     }
-    NSError *nativeError = nil;
-    if (s->_keyed)
-        s->_metadata = native_bridge_metal_compute_prepare(twin, options, nullptr, &nativeError);
-    if (s->_metadata) {
-        if (error)
-            *error = nil;
-        return true;
-    }
     s->_compatibility = [m2v newComputePipelineStateWithDescriptor:twin options:options reflection:nil error:error];
     s->_metadata = s->_compatibility;
     return s->_metadata != nil;
@@ -198,6 +192,14 @@ static bool m2vAnswers(RMComputeState *s, MTLPipelineOption options, NSError **e
 id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipelineOption options,
                   MTLAutoreleasedComputePipelineReflection *reflection, NSError **error)
 {
+    descriptor = [descriptor copy];
+    for (id<MTLFunction> binary in descriptor.linkedFunctions.binaryFunctions)
+        if (![(id)binary isKindOfClass:[RMFunction class]] || !(binary.options & MTLFunctionOptionCompileToBinary)) {
+            if (error)
+                *error = rmCreationError(
+                    "a binary function must be this device's visible function made with CompileToBinary");
+            return nil;
+        }
     id<MTLFunction> function = descriptor.computeFunction;
     RMComputeState *s = [RMComputeState new];
     s->_device = device;
@@ -212,7 +214,7 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
     s->_m2vMissing = rmM2vMissingKernel(descriptor);
     s->_maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
     s->_multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
-    s->_direct = [descriptor copy];
+    s->_direct = descriptor;
     s->_function = f;
     if (!archivesAnswer(s, f, (f ? f->_constants : "") + stageIn, options, error))
         return nil;

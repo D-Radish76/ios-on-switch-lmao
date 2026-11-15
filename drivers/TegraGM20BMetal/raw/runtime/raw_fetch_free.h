@@ -10,6 +10,7 @@
 #include "../../../../kits/SwitchGM20BEmit/SwitchGM20BEmitIterated.h"
 #include "raw_fetch_rungs.h"
 #include "raw_pack.h"
+#include "raw_set_entries.h"
 #include "raw_push.h"
 
 namespace raw {
@@ -36,8 +37,9 @@ struct FetchFreeForm {
     uint8_t rung = FetchNone;  // FetchBlend or FetchIteratedBlend; FetchNone: not a fetch-free form
     uint8_t colour = 0;        // the colour it blends
     uint8_t programWords = 0, constants = 0;
-    uint64_t program = 0;       // the iterated blend program's name (PackIteratedBlend::name)
-    uint32_t sampledSlots = 0;  // the fragment texture slots its program samples
+    uint64_t program = 0;        // the iterated blend program's name (PackIteratedBlend::name)
+    uint32_t sampledSlots = 0;   // the fragment texture slots its program samples
+    bool samplesPast32 = false;  // it samples a fragment texture sampledSlots cannot name (24B119's slots 32 to 127)
     // a colour matrix form's: the fragment buffer the matrix is in, its bytes from the bind offset and its words there,
     // which each draw's macro call reads (kNoUniform: the program is the record's)
     uint8_t matrixSlot = kNoUniform;
@@ -50,7 +52,9 @@ struct FetchFreeForm {
 constexpr uint8_t kMatrixProgramWords = 38, kMatrixConstants = 8, kMatrixRowWords = 10, kMatrixWords = 11;
 
 // The form a record describes; rung FetchNone where it is not one, or names an iterated program the pack lacks
-inline FetchFreeForm fetchFreeForm(const PackPipeline &pp, const PackIteratedBlend *iterated)
+// `far`: the record's far block (raw_set_entries.h), null where it has kPackEntries entries or fewer
+inline FetchFreeForm fetchFreeForm(const PackPipeline &pp, const PackIteratedBlend *iterated,
+                                   const uint32_t *far = nullptr)
 {
     FetchFreeForm f;
     if (!(pp.flags & PipelineFetchFreeForm))
@@ -65,10 +69,15 @@ inline FetchFreeForm fetchFreeForm(const PackPipeline &pp, const PackIteratedBle
             return f;
         f.rung = rung;
         f.colour = c;
-        for (uint32_t k = 0; k < pp.entries && k < kPackEntries; k++) {
-            const PackEntry &e = pp.entry[k];
-            if ((e.kind == EntryTexture || e.kind == EntryTexture3d) && handleStage(e) == 1 && e.slot < kStageTextures)
-                f.sampledSlots |= 1u << e.slot;
+        const SetEntries entries(pp, far);
+        for (uint32_t k = 0; k < entries.size() && entries.complete(); k++) {
+            const PackEntry &e = entries[k];
+            if ((e.kind == EntryTexture || e.kind == EntryTexture3d) && handleStage(e) == 1) {
+                if (e.slot < 32)
+                    f.sampledSlots |= 1u << e.slot;
+                else
+                    f.samplesPast32 = true;
+            }
         }
         f.program = rung == FetchIteratedBlend ? iterated->name : 0;
         f.programWords = rung != FetchIteratedBlend ? 0 : matrix ? kMatrixProgramWords : iterated->count;

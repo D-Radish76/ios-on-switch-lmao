@@ -27,11 +27,12 @@ TEST(RasterOrdered, ARecordCarriesItsOrderedInterlockControl)
     raw::PackPipeline p = {};
     p.flags = raw::PipelineRasterOrdered;
     const uint32_t ordered[2] = {kInterlockControl, kPixel}, none[2] = {kInterlockControl, 0};
-    EXPECT_TRUE(raw::usableStorageMetadata(p, ordered, 2));
-    EXPECT_FALSE(raw::usableStorageMetadata(p, none, 2)) << "raster ordered with no interlock";
-    EXPECT_FALSE(raw::usableStorageMetadata(p, nullptr, 0)) << "raster ordered with no interlock control";
+    EXPECT_TRUE(raw::usableStorageMetadata(p, ordered, 2, nullptr));
+    EXPECT_FALSE(raw::usableStorageMetadata(p, none, 2, nullptr)) << "raster ordered with no interlock";
+    EXPECT_FALSE(raw::usableStorageMetadata(p, nullptr, 0, nullptr)) << "raster ordered with no interlock control";
     p.flags = 0;
-    EXPECT_FALSE(raw::usableStorageMetadata(p, ordered, 2)) << "an interlock the record does not say orders anything";
+    EXPECT_FALSE(raw::usableStorageMetadata(p, ordered, 2, nullptr))
+        << "an interlock the record does not say orders anything";
 }
 
 TEST(RasterOrdered, AStorageFormIsNotRasterOrdered)
@@ -41,13 +42,13 @@ TEST(RasterOrdered, AStorageFormIsNotRasterOrdered)
     p.storageMask = p.storageWriteMask = 1;
     p.storageSamples = 1;
     p.storageTic[0] = 1;
-    p.entries = 1;
+    raw::setEntryCount(p, 1);
     p.entry[0].kind = raw::EntryFetch;
     p.entry[0].stage = 2;
     const uint32_t blob[4] = {kInterlockControl, kPixel, 0x1a00, 0};
-    EXPECT_FALSE(raw::usableStorageMetadata(p, blob, 4));
+    EXPECT_FALSE(raw::usableStorageMetadata(p, blob, 4, nullptr));
     p.flags = raw::PipelineStorageMetadata;
-    EXPECT_TRUE(raw::usableStorageMetadata(p, blob, 4));
+    EXPECT_TRUE(raw::usableStorageMetadata(p, blob, 4, nullptr));
 }
 
 // The record keeps its interlock control in its blob whether or not the pack's states vary it (they vary it only where some
@@ -77,7 +78,8 @@ TEST(RasterOrdered, AnAssembledRecordKeepsItsInterlockControlAndFlag)
     for (size_t i = 0; i + 1 < out.blob.size(); i += 2)
         kept |= out.blob[i] == kInterlockControl && out.blob[i + 1] == kPixel;
     EXPECT_TRUE(kept) << "the blob carries SET_PIXEL_SHADER_INTERLOCK_CONTROL";
-    EXPECT_TRUE(raw::usableStorageMetadata(out.pipeline, out.blob.data(), uint32_t(out.blob.size())));
+    EXPECT_TRUE(raw::usableStorageMetadata(out.pipeline, out.blob.data(), uint32_t(out.blob.size()),
+                                           out.far.empty() ? nullptr : out.far.data()));
 }
 
 }  // namespace

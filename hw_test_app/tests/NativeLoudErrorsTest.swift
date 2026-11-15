@@ -45,7 +45,8 @@ enum ClientErrors {
     }
 
     static func record(
-        _ gpu: GPU, _ m2vBefore: Int, _ status: MTLCommandBufferStatus, _ work: inout NativeWork, _ metrics: inout Metrics
+        _ gpu: GPU, _ m2vBefore: Int, _ status: MTLCommandBufferStatus, _ work: inout NativeWork,
+        _ metrics: inout Metrics
     ) {
         let m2v = (RawFacade.counters(of: gpu.device)["m2v"] ?? 0) - m2vBefore
         metrics.set("status", status == .completed ? "completed" : "\(status.rawValue)")
@@ -203,7 +204,8 @@ struct NativeErrorPositionsTest: NativeObjectTest {
             MTLSamplePosition(x: 0.25, y: 0.75), MTLSamplePosition(x: 0.75, y: 0.75),
         ])
         try await ClientErrors.draw(gpu, pass, state, &work, &metrics)
-        try await ClientErrors.texel(gpu, resolved, want: ClientErrors.colour, slack: 1, field: "texel", &work, &metrics)
+        try await ClientErrors.texel(
+            gpu, resolved, want: ClientErrors.colour, slack: 1, field: "texel", &work, &metrics)
         return work
     }
 }

@@ -231,8 +231,9 @@ TEST_F(FacadeStoredZeta, TwoAsksAtOnceMoveItOnce)
     }
 }
 
-// A 2D array (3 layers) and a cube (6 faces) of each format: held in their own zeta memory, layerBytes apart and no
-// header, no twin; a replay's twin is NVK's image with every layer copied into it, layer by layer at its stride
+// A 2D array (3 layers) and a cube (6 faces) of each format: held in their own zeta memory, layerBytes apart, with the
+// array or cube header their ShaderRead usage samples them through, no twin; a replay's twin is NVK's image with every
+// layer copied into it, layer by layer at its stride
 TEST_F(FacadeStoredZeta, ArraysAndCubesAreHeldAndMoveEveryLayer)
 {
     for (const MTLTextureType type : {MTLTextureType2DArray, MTLTextureTypeCube})
@@ -244,7 +245,7 @@ TEST_F(FacadeStoredZeta, ArraysAndCubesAreHeldAndMoveEveryLayer)
             ASSERT_TRUE(t->_rawOk) << f.format << " " << type;
             const uint32_t layers = layersOf(d);
             EXPECT_EQ(t->_raw.layers, layers);
-            EXPECT_EQ(t->_raw.tic, 0u) << "a layered zeta has no header";
+            EXPECT_NE(t->_raw.tic, 0u) << "a ShaderRead layered zeta has its header";
             EXPECT_GE(t->_raw.storage.bytes, t->_raw.layerBytes * layers);
             @synchronized(t) {
                 EXPECT_TRUE(t->_twin == nil);

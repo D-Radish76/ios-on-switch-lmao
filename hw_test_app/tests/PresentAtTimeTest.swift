@@ -9,7 +9,7 @@ import UIKit
 /// CAMetalLayer the stage's size (judged: PresentTimeVerdict). Controls follow at the same size and cadence, each
 /// "shown/submitted" with its plane flips and median latency: on fresh layers for a second each, plain presents
 /// (plain=), a time already past (past=) and four periods after CACurrentMediaTime() (media=); then warm=, the timed
-/// presents after half a second of plain ones on one layer, and mlink=, the same times from a CAMetalDisplayLink
+/// presents after half a second of plain ones on one layer, and mlink=, normal presents from a CAMetalDisplayLink
 /// driving a fresh layer for two seconds (warm_off_ms, mlink_off_ms: median presentedTime minus target). A failure so
 /// says whether timed presents, future times, a layer Core Animation has not shown yet, the kind of display link or
 /// this layer's route lose presentedTime. offsets_ms= is each timed drawable's presentedTime minus its target ("x":
@@ -68,7 +68,14 @@ struct PresentAtTimeTest: HWTest {
         }
         metrics.set("offsets_ms", PresentTimeVerdict.offsets(frames))
         metrics.fitLog(within: 760, keeping: ["submitted", "timed", "handled", "early", "late", "offsets_ms"])
-        return .judged(PresentTimeVerdict.checks(frames, minimum: 40), metrics)
+        let linked = PresentTimeVerdict.Summary(metalLink.frames)
+        let checks =
+            PresentTimeVerdict.checks(frames, minimum: 40) + [
+                ("metal_link_submitted", linked.submitted > 0),
+                ("metal_link_handlers", linked.handled == linked.submitted),
+                ("metal_link_presented_times", linked.timed == linked.submitted),
+            ]
+        return .judged(checks, metrics)
             .onRawPath(paths, device: MTLCreateSystemDefaultDevice())
     }
 

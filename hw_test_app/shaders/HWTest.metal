@@ -361,6 +361,65 @@ vertex TintVertex spill_vertex(uint vid [[vertex_id]], constant float4 *corners 
                                                                0, 0)};
 }
 
+/// gpu.raw.unaligned_buffer_offsets: one float from each of twenty uniform buffers, as the quad's red tint, every one
+/// bound off its 256-byte base, so each reads through its bind offset residual, the last ones from the vertex argument
+/// table
+vertex TintVertex residual_vertex(uint vid [[vertex_id]], constant float4 *corners [[buffer(0)]],
+                                  constant float *u1 [[buffer(1)]], constant float *u2 [[buffer(2)]],
+                                  constant float *u3 [[buffer(3)]], constant float *u4 [[buffer(4)]],
+                                  constant float *u5 [[buffer(5)]], constant float *u6 [[buffer(6)]],
+                                  constant float *u7 [[buffer(7)]], constant float *u8 [[buffer(8)]],
+                                  constant float *u9 [[buffer(9)]], constant float *u10 [[buffer(10)]],
+                                  constant float *u11 [[buffer(11)]], constant float *u12 [[buffer(12)]],
+                                  constant float *u13 [[buffer(13)]], constant float *u14 [[buffer(14)]],
+                                  constant float *u15 [[buffer(15)]], constant float *u16 [[buffer(16)]],
+                                  constant float *u17 [[buffer(17)]], constant float *u18 [[buffer(18)]],
+                                  constant float *u19 [[buffer(19)]], constant float *u20 [[buffer(20)]])
+{
+    const float sum = u1[0] + u2[0] + u3[0] + u4[0] + u5[0] + u6[0] + u7[0] + u8[0] + u9[0] + u10[0] + u11[0] +
+                      u12[0] + u13[0] + u14[0] + u15[0] + u16[0] + u17[0] + u18[0] + u19[0] + u20[0];
+    return TintVertex{corners[vid], float4(sum, 0, 0, 1)};
+}
+
+/// The vertex stage's red beside one float from each of eight storage buffers, in green, each bound off its 16-byte
+/// base
+fragment float4 residual_fragment(TintVertex in [[stage_in]], device const float *s0 [[buffer(0)]],
+                                  device const float *s1 [[buffer(1)]], device const float *s2 [[buffer(2)]],
+                                  device const float *s3 [[buffer(3)]], device const float *s4 [[buffer(4)]],
+                                  device const float *s5 [[buffer(5)]], device const float *s6 [[buffer(6)]],
+                                  device const float *s7 [[buffer(7)]])
+{
+    const float sum = s0[0] + s1[0] + s2[0] + s3[0] + s4[0] + s5[0] + s6[0] + s7[0];
+    return float4(in.tint.x, sum, 0, 1);
+}
+
+/// gpu.raw.vertex_cubic_sampler: one point per sample, each the texel a vertex function reads through the bound sampler at
+/// its own coordinate
+struct CubicPoint {
+    float4 position [[position]];
+    float size [[point_size]];
+    float4 colour;
+};
+
+vertex CubicPoint cubic_vertex(uint vid [[vertex_id]], texture2d<float> t [[texture(0)]], sampler s [[sampler(0)]],
+                               constant float *u [[buffer(0)]], constant uint &count [[buffer(1)]])
+{
+    const float x = (float(vid) + 0.5) / float(count) * 2 - 1;
+    return CubicPoint{float4(x, 0, 0, 1), 1, t.sample(s, float2(u[vid], 0.5), level(0))};
+}
+
+fragment float4 cubic_point_fragment(CubicPoint in [[stage_in]])
+{
+    return in.colour;
+}
+
+/// The same samples read by a fragment function, pixel x reading coordinate x
+fragment float4 cubic_row_fragment(float4 position [[position]], texture2d<float> t [[texture(0)]],
+                                   sampler s [[sampler(0)]], constant float *u [[buffer(0)]])
+{
+    return t.sample(s, float2(u[uint(position.x)], 0.5), level(0));
+}
+
 fragment float4 tint_fragment(TintVertex in [[stage_in]])
 {
     return in.tint;

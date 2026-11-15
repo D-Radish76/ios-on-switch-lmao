@@ -33,7 +33,18 @@ const PROBE_SLOTS: u32 = 31;
 const PROBE_TAGGED: u32 = 16;
 const RUN_BYTES: [u32; 4] = [256, 16, 4096, 256];
 const BOUND_RUN: usize = 3;
-const MAX_WRITES: usize = 64;
+/// A render stage's Metal arguments on this identity (raw_set_entries.h): 31 buffers, the A10X's 31 textures (21H461) or the
+/// A13's 128 (24B119, `target_j181`), 16 samplers
+#[cfg(not(target_j181))]
+const STAGE_TEXTURES: usize = 31;
+#[cfg(target_j181)]
+const STAGE_TEXTURES: usize = 128;
+const STAGE_ARGUMENTS: usize = 31 + STAGE_TEXTURES + 16;
+/// raw_set_entries.h kSyntheticEntries: the colour table, the handle and argument tables, the tessellation buffers, the
+/// depth and stencil stand-ins, and each colour's fetch and extended-range shadow
+const SYNTHETIC_WRITES: usize = 1 + 4 + 2 + 3 + 2 + 8 + 8;
+/// The set-0 writes a state's record holds at most: every argument one render pipeline binds, and every synthetic entry
+const MAX_WRITES: usize = 2 * STAGE_ARGUMENTS + SYNTHETIC_WRITES;
 pub const HEAP_ARRAYS: usize = 8;
 /// The raw path's texture header pool (raw_heap_tables.h kHeapElements): its heap holds texture header i and sampler header
 /// i at element i, so no array needs more elements
@@ -75,6 +86,7 @@ pub enum NmbDirectSource {
     TessFactors,
     PatchIndices,
     ControlPointIndices,
+    ExtendedShadow,
 }
 
 pub const NMB_DIRECT_IMMUTABLE: u32 = u32::MAX;
@@ -196,6 +208,7 @@ pub struct NmbDirectDraw {
     pub half_blend_color_word: u32,
     pub depth_test_word: u32,
     pub stencil_test_word: u32,
+    pub shadow_stencil_word: u32,
     pub push_holes: u32,
     pub root_table_word: [u8; 2],
     pub status_word: [u8; 2],
@@ -231,6 +244,7 @@ pub struct NmbDirectCubicSampler {
     pub r_address: u32,
     pub border_color: u32,
     pub normalized: bool,
+    pub vertex: bool,
 }
 
 #[repr(C)]
@@ -238,6 +252,7 @@ pub struct NmbDirectCubicSampler {
 pub struct NmbDirectTextureFormat {
     pub slot: u32,
     pub format: u64,
+    pub vertex: bool,
 }
 
 #[repr(C)]
@@ -249,17 +264,19 @@ pub struct NmbDirectBinds {
     pub fragment_tests: u32,
     pub bind_stride: u32,
     pub two_plane: bool,
+    pub extended_shadows: u32,
 }
 
 /// What the probe binds besides its tagged textures and samplers: cubic sampler states, and other textures' formats, by
-/// slot; and whether the state is compiled for RGB10A8_2P_XR10 attachments held in their two planes
+/// stage and slot; and whether the state is compiled for RGB10A8_2P_XR10 attachments held in their two planes
 #[derive(Default)]
 pub struct Binds {
-    cubic: Vec<(u32, SamplerDescriptor)>,
-    textures: Vec<(u32, PixelFormat)>,
+    cubic: Vec<(Stage, u32, SamplerDescriptor)>,
+    textures: Vec<(Stage, u32, PixelFormat)>,
     pub fragment_tests: u32,
     bind_stride: Option<u32>,
     two_plane: bool,
+    extended_shadows: u32,
 }
 
 impl Binds {
@@ -277,6 +294,7 @@ impl Binds {
         out.fragment_tests = b.fragment_tests;
         out.bind_stride = (b.bind_stride != 0).then_some(b.bind_stride);
         out.two_plane = b.two_plane;
+        out.extended_shadows = b.extended_shadows & 0xFF;
         let cubic: &[NmbDirectCubicSampler] = if b.cubic.is_null() {
             &[]
         } else {
@@ -292,7 +310,7 @@ impl Binds {
             d.r_address_mode = raw::<SamplerAddressMode>(c.r_address.into(), "address mode")?;
             d.border_color = raw::<SamplerBorderColor>(c.border_color.into(), "border color")?;
             d.normalized_coordinates = c.normalized;
-            out.cubic.push((c.slot, d));
+            out.cubic.push((bound_stage(c.vertex), c.slot, d));
         }
         let textures: &[NmbDirectTextureFormat] = if b.textures.is_null() {
             &[]
@@ -301,11 +319,26 @@ impl Binds {
             unsafe { std::slice::from_raw_parts(b.textures, b.texture_count as usize) }
         };
         for t in textures {
-            out.textures
-                .push((t.slot, raw::<PixelFormat>(t.format, "texture format")?));
+            out.textures.push((
+                bound_stage(t.vertex),
+                t.slot,
+                raw::<PixelFormat>(t.format, "texture format")?,
+            ));
         }
         Ok(out)
     }
+
+    /// The cubic sampler state the probe binds at `stage`'s sampler slot `slot`
+    fn cubic_at(&self, stage: Stage, slot: u32) -> Option<SamplerDescriptor> {
+        self.cubic
+            .iter()
+            .find(|(at, s, _)| *at == stage && *s == slot)
+            .map(|(_, _, d)| *d)
+    }
+}
+
+fn bound_stage(vertex: bool) -> Stage {
+    if vertex { Stage::Vertex } else { Stage::Fragment }
 }
 
 #[repr(C)]
@@ -323,6 +356,8 @@ pub struct NmbDirectStorage {
     pub test_planes: u32,
     pub blend_mask: u32,
     pub blend_model: u32,
+    pub shadow_format: u32,
+    pub shadow_samples: u32,
 }
 
 fn storage_of(graphics: &GraphicsState) -> Result<NmbDirectStorage, String> {
@@ -338,6 +373,10 @@ fn storage_of(graphics: &GraphicsState) -> Result<NmbDirectStorage, String> {
             storage.stencil_format = stencil.format.as_raw() as u32;
             storage.test_planes |= u32::from(!matches!(stencil.view, StandInView::Image)) << 1;
         }
+    }
+    if let Some(shadow) = graphics.shadow_stencil {
+        storage.shadow_format = shadow.format.as_raw() as u32;
+        storage.shadow_samples = shadow.samples;
     }
     for attachment in &graphics.storage_attachments {
         let index = attachment.color_index as usize;
@@ -445,6 +484,17 @@ fn probe_bind_offset(stage: u32, slot: u32) -> u64 {
     } else {
         16 * (1 + slot / 3) + 4 * (1 + slot % 3)
     }
+}
+
+/// A state of more set-0 writes than its record holds is refused, naming it: no write is dropped
+fn set0_writes_fit(count: usize, name: impl FnOnce() -> String) -> Result<(), String> {
+    if count <= MAX_WRITES {
+        return Ok(());
+    }
+    Err(format!(
+        "{}: {count} set-0 descriptor writes, past the {MAX_WRITES} of every argument a render pipeline binds",
+        name()
+    ))
 }
 
 fn state_name(descriptor: &RenderPipelineDescriptor) -> String {
@@ -564,6 +614,7 @@ fn probe_state(
     if patches {
         crate::direct_tess::bind_factors(&mut state);
     }
+    state.extended_shadows = (0..8).filter(|c| binds.extended_shadows >> c & 1 != 0).collect();
     state.fragment_tests = match binds.fragment_tests {
         1 => FragmentTests::Pass,
         2 => FragmentTests::Drop,
@@ -609,8 +660,8 @@ fn probe_state(
             binds
                 .textures
                 .iter()
-                .find(|(slot, _)| stage == Stage::Fragment && *slot == t)
-                .map(|(_, f)| *f)
+                .find(|(at, slot, _)| *at == stage && *slot == t)
+                .map(|(_, _, f)| *f)
         };
         for (_, t, d) in declared
             .iter()
@@ -626,7 +677,8 @@ fn probe_state(
         }
         if stage == Stage::Vertex {
             for &s in vertex_samplers {
-                table.samplers.insert(s, BoundSampler::new(probe_sampler(s)));
+                let sampler = binds.cubic_at(Stage::Vertex, s).unwrap_or_else(|| probe_sampler(s));
+                table.samplers.insert(s, BoundSampler::new(sampler));
             }
         }
         if stage == Stage::Fragment {
@@ -647,7 +699,7 @@ fn probe_state(
                         resource_id: None,
                     },
                 );
-                let cubic = binds.cubic.iter().find(|(slot, _)| *slot == t).map(|(_, d)| *d);
+                let cubic = binds.cubic_at(Stage::Fragment, t);
                 table
                     .samplers
                     .insert(t, BoundSampler::new(cubic.unwrap_or_else(|| probe_sampler(t))));
@@ -766,7 +818,15 @@ pub fn write_of(w: &metal2vulkan::bind::DescriptorWrite, ranges: &[DescriptorRan
                 StorageAttachmentView::SamplePlanes { .. } => avk::ImageViewType::TYPE_2D_ARRAY.as_raw(),
             };
         }
-        WriteSource::DepthStandIn | WriteSource::StencilStandIn => {
+        // the pass's half shadow of an extended-range colour (raw_xr_shadow.h), bound by the colour's index
+        WriteSource::ExtendedShadow { color_index } => {
+            out.source = NmbDirectSource::ExtendedShadow;
+            out.stage = 2;
+            out.slot = *color_index;
+            out.view_type = avk::ImageViewType::TYPE_2D.as_raw();
+        }
+        // the shader-side stencil's shadow is the raw path's stencil stand-in (raw_shader_test_push.h shadowStencil)
+        WriteSource::DepthStandIn | WriteSource::StencilStandIn | WriteSource::ShadowStencil => {
             out.source = if matches!(w.source, WriteSource::DepthStandIn) {
                 NmbDirectSource::DepthStandIn
             } else {
@@ -812,6 +872,9 @@ pub fn write_of(w: &metal2vulkan::bind::DescriptorWrite, ranges: &[DescriptorRan
 /// A handle table's write as its binding's synthetic kind names it, not by its size or place: the texture table or the
 /// sampler table
 fn table_of(mut write: NmbDirectWrite, layout: &PipelineLayout) -> NmbDirectWrite {
+    if write.source == NmbDirectSource::Neutral {
+        return shadow_of(write, layout);
+    }
     if write.source != NmbDirectSource::TextureTable {
         return write;
     }
@@ -833,6 +896,32 @@ fn table_of(mut write: NmbDirectWrite, layout: &PipelineLayout) -> NmbDirectWrit
         }) => NmbDirectSource::TextureTable,
         _ => NmbDirectSource::Other,
     };
+    write
+}
+
+/// The neutral m2v binds at a shader-side stencil's shadow in a pass without a stencil attachment, which the function never
+/// reads: the raw path's stencil stand-in binding, empty in such a pass
+fn shadow_of(mut write: NmbDirectWrite, layout: &PipelineLayout) -> NmbDirectWrite {
+    let shadow = layout
+        .sets
+        .iter()
+        .filter(|s| s.set == write.set)
+        .flat_map(|s| &s.bindings)
+        .find(|b| b.binding == write.binding)
+        .is_some_and(|b| {
+            matches!(
+                b.source,
+                BindingSource::Synthetic {
+                    binding: SyntheticBinding::ShadowStencil,
+                    ..
+                }
+            )
+        });
+    if shadow {
+        write.source = NmbDirectSource::StencilStandIn;
+        write.stage = 2;
+        write.view_type = avk::ImageViewType::TYPE_2D.as_raw();
+    }
     write
 }
 
@@ -861,9 +950,14 @@ pub fn spill_table(plan: &BindingPlan, bytes: &[DescriptorBytes], stage: Stage) 
         })
 }
 
+/// A SlotBindOffset residual the plan places where a record holds no word for it (raw_pack.h bufferResidualWord: 6
+/// bits), so the direct compile refuses the state (raw_direct.cpp spillTables) where a record without the word would
+/// refuse every draw that binds the slot off its base alignment
+pub(crate) const UNNAMED_RESIDUAL: u8 = u8::MAX;
+
 /// By buffer slot, the record's word + 1 of each SlotBindOffset residual of `stage` as the plan places it: a root push
-/// word (1 to 32), or the stage's argument table word + 33 (33 to 63). The probe's codes cannot name a storage residual
-/// whose slot shares its code with another.
+/// word (1 to 32), or the stage's argument table word + 33 (33 to 63); UNNAMED_RESIDUAL past them. The probe's codes
+/// cannot name a storage residual whose slot shares its code with another.
 pub fn residual_words(plan: &BindingPlan, stage: Stage) -> [u8; 32] {
     let mut out = [0u8; 32];
     for field in plan.push.fields.iter().filter(|f| f.stage == stage) {
@@ -873,12 +967,11 @@ pub fn residual_words(plan: &BindingPlan, stage: Stage) -> [u8; 32] {
         if slot.class != SlotClass::Buffer || slot.index >= 32 {
             continue;
         }
-        let word = match field.location {
-            FieldLocation::PushWindow { offset } if offset / 4 < 32 => offset / 4 + 1,
-            FieldLocation::ArgumentTable { offset } if offset / 4 < 31 => offset / 4 + 33,
-            _ => continue,
+        out[slot.index as usize] = match field.location {
+            FieldLocation::PushWindow { offset } if offset / 4 < 32 => (offset / 4 + 1) as u8,
+            FieldLocation::ArgumentTable { offset } if offset / 4 < 31 => (offset / 4 + 33) as u8,
+            _ => UNNAMED_RESIDUAL,
         };
-        out[slot.index as usize] = word as u8;
     }
     out
 }
@@ -912,10 +1005,11 @@ fn immutable_samplers(layout: &PipelineLayout, written: &[NmbDirectWrite]) -> Ve
     out
 }
 
-/// The stages of a hole's flags as raw_direct.cpp numbers them: bit 0 vertex, bit 1 fragment
+/// The stages of a hole's flags as raw_direct.cpp numbers them: bit 0 Metal's vertex stage (a tessellation state's is
+/// its evaluation stage, which reads the vertex stage's buffers), bit 1 fragment
 fn hole_stages(stages: metal2vulkan::vk::ShaderStageFlags) -> u32 {
     use metal2vulkan::vk::ShaderStageFlags as S;
-    u32::from(stages.contains(S::VERTEX)) | u32::from(stages.contains(S::FRAGMENT)) << 1
+    u32::from(stages.intersects(S::VERTEX | S::TESSELLATION_EVALUATION)) | u32::from(stages.contains(S::FRAGMENT)) << 1
 }
 
 /// The holes of `commands` the raw path fills into `draw` (each stage's root-table and ExecutionStatus address, as push word
@@ -1251,6 +1345,7 @@ fn draw_of(
         half_blend_color_word: 0,
         depth_test_word: 0,
         stencil_test_word: 0,
+        shadow_stencil_word: 0,
         push_holes: run.commands.push_holes.len() as u32,
         root_table_word: [0; 2],
         status_word: [0; 2],
@@ -1298,6 +1393,7 @@ fn draw_of(
             PushField::HalfBlendColor => (&mut draw.half_blend_color_word, 16),
             PushField::ShaderTestsState => (&mut draw.depth_test_word, 16),
             PushField::ShaderStencilState => (&mut draw.stencil_test_word, 16),
+            PushField::ShadowStencilState => (&mut draw.shadow_stencil_word, 8),
             PushField::RenderTargetArrayLength => (&mut draw.array_length_word, 4),
             PushField::ViewportCount => (&mut draw.viewport_count_word, 4),
             _ => continue,
@@ -1588,7 +1684,8 @@ pub fn translate(
         .map(|(_, pipeline)| Layout::new(vulkan, &pipeline.layout))
         .collect::<Result<Vec<_>, String>>()?;
     // The layered storage variant's attachments are the runtime's views of the pass's layers (render_target.rs
-    // attachment_view_in), which its storage images address at each primitive's layer
+    // attachment_view_in), which its storage images address at each primitive's layer, and so are its depth and stencil
+    // stand-ins (lower/fragment/depth_test.rs)
     let writes: Vec<Vec<NmbDirectWrite>> = runs
         .iter()
         .map(|run| {
@@ -1598,10 +1695,16 @@ pub fn translate(
                 .descriptors
                 .iter()
                 .filter(|w| w.set == 0)
-                .take(MAX_WRITES)
                 .map(|w| {
                     let mut out = table_of(write_of(w, &run.commands.descriptor_ranges), layout);
-                    if run.plan.variant.layered_storage && out.source == NmbDirectSource::StorageAttachment {
+                    if run.plan.variant.layered_storage
+                        && matches!(
+                            out.source,
+                            NmbDirectSource::StorageAttachment
+                                | NmbDirectSource::DepthStandIn
+                                | NmbDirectSource::StencilStandIn
+                        )
+                    {
                         out.view_type = avk::ImageViewType::TYPE_2D_ARRAY.as_raw();
                     }
                     out.format = probed_format(&run.state, &out);
@@ -1609,9 +1712,10 @@ pub fn translate(
                 })
                 .collect();
             writes.extend(immutable_samplers(layout, &writes));
-            writes
+            set0_writes_fit(writes.len(), || state_name(descriptor))?;
+            Ok(writes)
         })
-        .collect();
+        .collect::<Result<_, String>>()?;
     let spills: Vec<[Vec<u32>; 2]> = runs
         .iter()
         .map(|run| {
@@ -1651,7 +1755,7 @@ pub fn translate(
             return Err("storage form: probe variants change the attachment contract".into());
         }
     }
-    if storage.mask != 0 {
+    if storage.mask != 0 || storage.depth_format != 0 {
         storage.fragment_tests = binds.fragment_tests;
     }
     let specialization = &first.plan.specialization;
@@ -1754,4 +1858,39 @@ pub fn translate(
     }
     // SAFETY: the caller's contract; everything `state` points at lives until after the call.
     Ok(unsafe { each(&state, ctx) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MAX_WRITES, STAGE_TEXTURES, hole_stages, set0_writes_fit};
+
+    #[test]
+    fn a_states_writes_reach_every_argument_of_its_identity_and_its_synthetic_entries() {
+        assert_eq!(MAX_WRITES, 2 * (31 + STAGE_TEXTURES + 16) + 28);
+        #[cfg(not(target_j181))]
+        assert_eq!(MAX_WRITES, 156 + 28);
+        #[cfg(target_j181)]
+        assert_eq!(MAX_WRITES, 350 + 28);
+    }
+
+    #[test]
+    fn a_state_past_them_is_refused_by_name_not_truncated() {
+        assert!(set0_writes_fit(MAX_WRITES, || "v + f".to_owned()).is_ok());
+        let why = set0_writes_fit(MAX_WRITES + 1, || "v + f".to_owned()).unwrap_err();
+        assert!(why.starts_with("v + f: "), "{why}");
+        assert!(
+            why.contains(&format!("{} set-0 descriptor writes", MAX_WRITES + 1)),
+            "{why}"
+        );
+    }
+    use metal2vulkan::vk::ShaderStageFlags as S;
+
+    #[test]
+    fn a_tessellation_states_evaluation_holes_are_its_vertex_stages() {
+        assert_eq!(hole_stages(S::TESSELLATION_EVALUATION), 1);
+        assert_eq!(hole_stages(S::TESSELLATION_EVALUATION | S::FRAGMENT), 3);
+        assert_eq!(hole_stages(S::VERTEX), 1);
+        assert_eq!(hole_stages(S::FRAGMENT), 2);
+        assert_eq!(hole_stages(S::TESSELLATION_CONTROL), 0);
+    }
 }

@@ -57,6 +57,31 @@ class CaSelectorsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             ca_selectors.parse('layout slot=0 length=2 padding=\nb0f4f3daabb01e2e 0a0b\nb0f4f3daabb01e2e 0a0b\n')
 
+    def test_global_ids_are_shared_between_states_and_padding_never_selects_another_config(self):
+        s = ca_selectors.parse(
+            'layout slot=0 length=3 padding=1\n'
+            '0000000000000001 010003\n0000000000000002 010003\n0000000000000002 020004\n'
+        )
+        self.assertEqual(ca_selectors.selector_id(s, b'\x01\xff\x03'), 1)
+        self.assertEqual(ca_selectors.selector_id(s, b'\x02\x00\x04'), 2)
+        self.assertEqual(ca_selectors.selector_id(s, b'\x01\x00\x04'), 0)
+        self.assertEqual(ca_selectors.selector_id(s, b'\x01\x00'), 0)
+
+    def test_every_observed_config_has_its_own_direct_id_and_unseen_fields_keep_the_generic(self):
+        s = ca_selectors.parse((TABLES / '24B119.txt').read_text())
+        configs, _, _ = ca_selectors.dispatch(s)
+        self.assertEqual(len(configs), 73)
+        for index, value in enumerate(configs, 1):
+            self.assertEqual(ca_selectors.selector_id(s, value), index)
+        unknown = bytearray(configs[0])
+        unknown[48] ^= 1
+        self.assertEqual(ca_selectors.selector_id(s, bytes(unknown)), 0)
+
+    def test_a_kind_with_no_observations_has_only_the_generic_id(self):
+        s = ca_selectors.parse((TABLES / '21H461.txt').read_text())
+        self.assertEqual(ca_selectors.selector_id(s, STALE), 0)
+        self.assertIn('kCaSelectorConfigs = 0;', ca_selectors.header(s, '21H461.txt'))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -33,12 +33,13 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
     id<MTLLibrary> library = [_library twinOn:m2v];
     NSString *name = [NSString stringWithUTF8String:_libraryName.c_str()];
     id made = nil;
-    if (_values || ![self.name isEqualToString:name]) {
+    if (_values || _options || ![self.name isEqualToString:name]) {
         MTLFunctionDescriptor *d = [MTLFunctionDescriptor functionDescriptor];
         d.name = name;
         if (![self.name isEqualToString:name])
             d.specializedName = self.name;
         d.constantValues = _values;
+        d.options = _options;
         made = [library newFunctionWithDescriptor:d error:nil];
     } else {
         made = [library newFunctionWithName:name];
@@ -64,7 +65,7 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 
 - (MTLFunctionOptions)options
 {
-    return MTLFunctionOptionNone;
+    return _options;
 }
 
 - (NSArray<MTLVertexAttribute *> *)vertexAttributes
@@ -212,12 +213,23 @@ static id functionNotFound(NSString *name, NSError **error)
 {
     if (![self ownsFunction:d.name])
         return functionNotFound(d.name, error);
+    if ((d.options & MTLFunctionOptionCompileToBinary) &&
+        _functions.type(d.name.UTF8String) != MTLFunctionTypeVisible) {
+        if (error)
+            *error =
+                [NSError errorWithDomain:MTLLibraryErrorDomain
+                                    code:MTLLibraryErrorCompileFailure
+                                userInfo:@{NSLocalizedDescriptionKey : @"CompileToBinary requires a visible function"}];
+        return nil;
+    }
     if (error)
         *error = nil;
-    return (id<MTLFunction>)[self function:d.name
-                                        as:d.specializedName
-                                    values:d.constantValues
-                               specialized:d.constantValues != nil];
+    RMFunction *function = [self function:d.name
+                                       as:d.specializedName
+                                   values:d.constantValues
+                              specialized:d.constantValues != nil];
+    function->_options = d.options;
+    return (id<MTLFunction>)function;
 }
 
 // Made at once, as m2v's library makes it: through the descriptor, so the function is this library's (its states keyed by

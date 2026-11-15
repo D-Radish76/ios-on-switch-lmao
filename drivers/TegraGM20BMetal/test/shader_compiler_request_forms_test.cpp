@@ -388,6 +388,7 @@ TEST(CompileRequestForms, EveryFieldGoesOverTheWire)
     r.variant.twoPlane = true;
     r.variant.xrSlots = 3;
     r.variant.written = {{1, 23}};
+    r.variant.xrShadows = 1;
     r.kernel.stageIn.attributes[0] = {29, 0, 1, 16, 5, 1};
     const std::string bytes = raw::encodeRequest(r);
     raw::CompileRequest back;
@@ -458,6 +459,10 @@ TEST(CompileRequestForms, EveryFieldGoesOverTheWire)
         {"written",
          [](auto &q) {
              q.variant.written[0].format = 63;
+         }},
+        {"extended-range shadows",
+         [](auto &q) {
+             q.variant.xrShadows = 6;
          }},
         {"stage input",
          [](auto &q) {

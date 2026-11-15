@@ -19,7 +19,7 @@ struct held_sites_event {
     uintptr_t allocated;  // the block handed out (0: none)
     uint64_t size;
     uint32_t frames;
-    uint32_t ready;  // written last, with __atomic release
+    uint32_t ready;                     // written last, with __atomic release
     uintptr_t frame[kHeldSitesFrames];  // the allocation's return addresses, innermost first
 };
 

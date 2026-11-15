@@ -67,7 +67,7 @@ bool addStage(CompileRequest &r, std::vector<LibraryIdentity> &ids, std::map<con
 }
 
 // A compute state's kernel and its linked functions as its request's stages: "k", then "kl" for each visible and "kp" for
-// each private one, in the order its key names them (raw_compute_key.h computeLinkedText)
+// each private one, then "kb" for binary functions, in the order its key names them (raw_compute_key.h computeLinkedText)
 bool addKernelStages(CompileRequest &r, std::vector<LibraryIdentity> &ids,
                      std::map<const LibrarySource *, uint32_t> &seen, id kernel, MTLComputePipelineDescriptor *d,
                      bool bytes, bool every)
@@ -79,6 +79,9 @@ bool addKernelStages(CompileRequest &r, std::vector<LibraryIdentity> &ids,
             return false;
     for (id f in d.linkedFunctions.privateFunctions)
         if (!addStage(r, ids, seen, "kp", f, bytes, every))
+            return false;
+    for (id f in d.linkedFunctions.binaryFunctions)
+        if (!addStage(r, ids, seen, "kb", f, bytes, every))
             return false;
     return r.stages.size() <= kRequestStageLimit;
 }
@@ -412,6 +415,7 @@ bool Completion::reflection(id function, MTLComputePipelineDescriptor *descripto
             r.key = k.key;
             r.kernel.maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
             r.kernel.multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
+            r.kernel.stageIn = stageInFieldsOf(descriptor.stageInputDescriptor);
             std::vector<LibraryIdentity> ids;
             std::map<const LibrarySource *, uint32_t> seen;
             if (!addKernelStages(r, ids, seen, function, descriptor, true, every))

@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <map>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace {
@@ -241,10 +242,14 @@ TEST(SemanticPlan, ADrawsTextureCaptureCopiesOnlyTheChunkOfSlotsItBound)
         EXPECT_EQ(textures.objects[0], object(100 + d % 3));
         EXPECT_EQ(textures.objects[1], nullptr);
         EXPECT_EQ(textures.objects[9], object(70));
-        EXPECT_EQ(textures.set, 1u << 0 | 1u << 1 | 1u << 9);
+        raw::TextureSnapshots::Mask set{};
+        for (uint32_t slot : {0, 1, 9})
+            raw::addSlot(set, slot);
+        EXPECT_TRUE(textures.set == set);
     }
-    // a capture's chunk of four slots and its chunk list, half of a whole table's copy and its mask at most
-    EXPECT_LT(plan.textures[1].storageBytes(), kDraws * 32 * sizeof(void *) / 2);
+    // a capture's chunk of slots and its chunk list, half of a whole table's copy and its mask at most
+    EXPECT_LT(plan.textures[1].storageBytes(),
+              kDraws * raw::kMaskSlots<raw::TextureSnapshots::Mask> * sizeof(void *) / 2);
 }
 
 TEST(SemanticPlan, AWordKeyedMapKeepsItsStorageAcrossClears)
@@ -1168,8 +1173,8 @@ void applyEverySlot(const RMCommandPlan &plan, uint32_t index, uint32_t &applied
             const auto bindings = plan.textures[stage][next.textures[stage]];
             const auto old = plan.textures[stage][previous ? previous->textures[stage] : next.textures[stage]];
             for (uint32_t slot = 0; slot < bindings.objects.size(); ++slot)
-                if ((bindings.set & (1u << slot)) &&
-                    (!previous || !(old.set & (1u << slot)) || bindings.objects[slot] != old.objects[slot]))
+                if (raw::hasSlot(bindings.set, slot) &&
+                    (!previous || !raw::hasSlot(old.set, slot) || bindings.objects[slot] != old.objects[slot]))
                     log.texture(stage + 1, slot, bindings.objects[slot]);
         }
         if (!previous || previous->samplers[stage] != next.samplers[stage]) {
@@ -1271,6 +1276,55 @@ TEST(SemanticPlan, ASnapshotNotNextAfterTheAppliedOneComparesEverySlot)
         applyEverySlot(plan, plan.draw(at).state, applied, every);
     }
     EXPECT_EQ(masked.calls, every.calls);
+}
+
+// A render stage's texture slots are the identity's (raw_stage_textures.h): 24B119's 128, whose binds at slots 31, 64 and
+// 127 are captured, compared and applied as a bind at slot 0 is, an edit past the first mask word compared alone; on
+// 21H461 a bind past its 31 is not kept. A kernel's table keeps 31 slots on both.
+TEST(SemanticPlan, ARenderStagesTextureSlotsAreTheIdentitysAndAKernelsAre31)
+{
+    static_assert(raw::kStageTextures > 32 || std::is_same_v<raw::TextureSnapshots::Mask, uint32_t>,
+                  "21H461's tables keep the one-word masks they had");
+    static_assert(std::is_same_v<raw::KernelTextureSnapshots::Mask, uint32_t>);
+    const std::vector<uint16_t> slots =
+        raw::kStageTextures == 128 ? std::vector<uint16_t>{31, 64, 127} : std::vector<uint16_t>{29, 30};
+    RMCommandPlan plan;
+    plan.record(cmd(OpRender), {});
+    for (uint8_t stage : {1, 2})
+        for (uint16_t slot : slots)
+            plan.record(binding(OpTexture, stage, slot, 1000 * stage + slot), {});
+    plan.record(binding(OpTexture, 2, uint16_t(raw::kStageTextures), 7), {});
+    draw(plan, 0);
+    plan.record(binding(OpTexture, 2, slots.back(), 9), {});
+    draw(plan, 1);
+    const auto &first = plan.renderStates[plan.draw(plan.size() - 2).state];
+    const auto &second = plan.renderStates[plan.draw(plan.size() - 1).state];
+    for (uint32_t stage = 0; stage < 2; ++stage) {
+        const auto textures = plan.textures[stage][first.textures[stage]];
+        EXPECT_EQ(raw::slotCount(textures.set), slots.size()) << "stage " << stage + 1;
+        for (uint16_t slot : slots) {
+            EXPECT_TRUE(raw::hasSlot(textures.set, slot)) << "stage " << stage + 1 << " slot " << slot;
+            EXPECT_EQ(textures.objects[slot], object(1000 * (stage + 1) + slot)) << "slot " << slot;
+        }
+    }
+    EXPECT_EQ(plan.textures[1][second.textures[1]].objects[slots.back()], object(9));
+    EXPECT_TRUE(plan.textures[1].changedFrom(first.textures[1], second.textures[1]) ==
+                raw::oneSlot<raw::TextureSnapshots::Mask>(slots.back()));
+    CallLog masked, every;
+    raw::StateCursor cursor;
+    uint32_t applied = raw::kNoSnapshot;
+    for (size_t at : {plan.size() - 2, plan.size() - 1}) {
+        raw::applyRenderState(plan, plan.draw(at).state, cursor, masked);
+        applyEverySlot(plan, plan.draw(at).state, applied, every);
+    }
+    EXPECT_EQ(masked.calls, every.calls);
+    const std::string rebound = "t2." + std::to_string(slots.back()) + "=9";
+    EXPECT_EQ(masked.calls.back(), rebound);
+    plan.record(cmd(OpEnd), {});
+    plan.record(cmd(OpCompute), {});
+    plan.record(binding(OpKernelTexture, 3, 30, 11), {});
+    plan.record(binding(OpKernelTexture, 3, 31, 12), {});
+    EXPECT_EQ(plan.kernelTextures.current().set, 1u << 30);
 }
 
 // A draw whose caller resolves its state's uses after it (resolvesUses) leaves them to the caller only while the state

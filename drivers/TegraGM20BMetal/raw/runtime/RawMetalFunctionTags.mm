@@ -5,18 +5,18 @@
 #include "raw_function_attributes.h"
 #include "raw_function_tags.h"
 
-// MTLFunctionConstant's readable properties (Metal's own class has no public initializer)
-@interface RMFunctionConstant : NSObject
+// Swift's collection bridges require Metal's concrete metadata classes.
+@interface SwitchMetalFunctionConstant : MTLFunctionConstant
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic) MTLDataType type;
 @property (nonatomic) NSUInteger index;
 @property (nonatomic) BOOL required;
 @end
-@implementation RMFunctionConstant
+@implementation SwitchMetalFunctionConstant
+@synthesize name = switch_name, type = switch_type, index = switch_index, required = switch_required;
 @end
 
-// MTLVertexAttribute's and MTLAttribute's readable properties
-@interface RMAttribute : NSObject
+@interface SwitchMetalVertexAttribute : MTLVertexAttribute
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic) NSUInteger attributeIndex;
 @property (nonatomic) MTLDataType attributeType;
@@ -24,7 +24,22 @@
 @property (nonatomic, getter=isPatchData) BOOL patchData;
 @property (nonatomic, getter=isPatchControlPointData) BOOL patchControlPointData;
 @end
-@implementation RMAttribute
+@implementation SwitchMetalVertexAttribute
+@synthesize name = switch_name, attributeIndex = switch_index, attributeType = switch_type, active = switch_active,
+            patchData = switch_patch_data, patchControlPointData = switch_patch_control_point_data;
+@end
+
+@interface SwitchMetalAttribute : MTLAttribute
+@property (nonatomic, copy) NSString *name;
+@property (nonatomic) NSUInteger attributeIndex;
+@property (nonatomic) MTLDataType attributeType;
+@property (nonatomic, getter=isActive) BOOL active;
+@property (nonatomic, getter=isPatchData) BOOL patchData;
+@property (nonatomic, getter=isPatchControlPointData) BOOL patchControlPointData;
+@end
+@implementation SwitchMetalAttribute
+@synthesize name = switch_name, attributeIndex = switch_index, attributeType = switch_type, active = switch_active,
+            patchData = switch_patch_data, patchControlPointData = switch_patch_control_point_data;
 @end
 
 static bool tagsOf(RMFunction *f, raw::FunctionTags &tags)
@@ -49,7 +64,7 @@ NSDictionary<NSString *, MTLFunctionConstant *> *rmFunctionConstants(RMFunction 
                      "not measured for: none given",
                      getprogname(), f->_libraryName.c_str());
     for (const raw::FunctionConstantTag &c : tags.constants.value_or(std::vector<raw::FunctionConstantTag>{})) {
-        RMFunctionConstant *constant = [RMFunctionConstant new];
+        SwitchMetalFunctionConstant *constant = [SwitchMetalFunctionConstant new];
         constant.name = @(c.name.c_str());
         constant.type = MTLDataType(c.type);
         constant.index = c.index;
@@ -59,17 +74,17 @@ NSDictionary<NSString *, MTLFunctionConstant *> *rmFunctionConstants(RMFunction 
     return (NSDictionary<NSString *, MTLFunctionConstant *> *)out;
 }
 
-static NSArray *attributeObjects(const std::vector<raw::FunctionAttributeTag> &list)
+static NSArray *attributeObjects(const std::vector<raw::FunctionAttributeTag> &list, bool stageInput)
 {
     NSMutableArray *attributes = [NSMutableArray arrayWithCapacity:list.size()];
     for (const raw::FunctionAttributeTag &a : list) {
-        RMAttribute *attribute = [RMAttribute new];
-        attribute.name = @(a.name.c_str());
-        attribute.attributeIndex = a.index;
-        attribute.attributeType = MTLDataType(a.type);
-        attribute.active = a.active;
-        attribute.patchData = a.patchData;
-        attribute.patchControlPointData = a.controlPointData;
+        id attribute = stageInput ? [SwitchMetalAttribute new] : [SwitchMetalVertexAttribute new];
+        [attribute setName:@(a.name.c_str())];
+        [attribute setAttributeIndex:a.index];
+        [attribute setAttributeType:MTLDataType(a.type)];
+        [attribute setActive:a.active];
+        [attribute setPatchData:a.patchData];
+        [attribute setPatchControlPointData:a.controlPointData];
         [attributes addObject:attribute];
     }
     return attributes;
@@ -102,7 +117,7 @@ static NSArray *specializedAttributes(RMFunction *f, bool stageInput)
             why = "no shader compiler comes this boot";
         else if (gRM->completion->attributes(f, key, blob, why) && raw::decodeAttributeLists(blob, vertex, stage)) {
             const raw::AttributeList &list = stageInput ? stage : vertex;
-            return list ? attributeObjects(*list) : nil;
+            return list ? attributeObjects(*list, stageInput) : nil;
         }
     }
     os_log_error(rawLog(), "raw: %{public}s: no attributes of specialized function %{public}s: %{public}s, nil given",
@@ -139,5 +154,5 @@ NSArray *rmFunctionAttributes(RMFunction *f, bool stageInput)
     }
     if (tags.attributes->empty() || (!stageInput && f->_type != MTLFunctionTypeVertex))
         return nil;
-    return f->_specialized ? specializedAttributes(f, stageInput) : attributeObjects(*tags.attributes);
+    return f->_specialized ? specializedAttributes(f, stageInput) : attributeObjects(*tags.attributes, stageInput);
 }

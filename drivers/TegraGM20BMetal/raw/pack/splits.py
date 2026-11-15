@@ -53,7 +53,15 @@ def binds_as_whole(s: dict, whole: str, programs: dict[str, dict]) -> bool:
     buffers from its state's set-0 entries, so a type the whole program does not name binds another buffer.
     """
     types = programs[whole]['cbufs']
-    return s['frontier_cbuf'] == len(types) and programs[s['fs']]['cbufs'] == [*types, FRONTIER]
+
+    def far(program: dict) -> list[int]:
+        return (list(program.get('far_ubos', [])) + [0] * len(types))[: len(types)]
+
+    return (
+        s['frontier_cbuf'] == len(types)
+        and programs[s['fs']]['cbufs'] == [*types, FRONTIER]
+        and far(programs[s['fs']]) == far(programs[whole])
+    )
 
 
 def lay_out(

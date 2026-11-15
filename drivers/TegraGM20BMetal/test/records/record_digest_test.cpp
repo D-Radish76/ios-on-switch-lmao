@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include "drivers/TegraGM20BMetal/test/records/golden_files.h"
+#include "drivers/TegraGM20BMetal/raw/runtime/raw_set_entries.h"
 
 namespace {
 
@@ -72,6 +73,7 @@ std::string write(const char *name, const Built &b)
     h.pipelines = uint32_t(b.pipelines.size());
     std::vector<uint8_t> file(sizeof h);
     const auto append = [&](PackSectionId id, const void *p, size_t n) {
+        file.resize((file.size() + 7) & ~size_t(7));
         h.section[id] = {file.size(), n};
         file.insert(file.end(), static_cast<const uint8_t *>(p), static_cast<const uint8_t *>(p) + n);
     };
@@ -166,6 +168,24 @@ TEST(RecordDigest, ARecordDigestsTheSameWhereverItsProgramsAreLaidOut)
         EXPECT_EQ(a[i].key, b[i].key);
         EXPECT_EQ(a[i].digest, b[i].digest) << records::keyText(a[i].key);
     }
+}
+
+TEST(RecordDigest, ATexture3dPastTheInlineEntriesKeepsItsSamplingTrait)
+{
+    Built b;
+    PackPipeline pp = {};
+    pp.keyHash = 5;
+    pp.keyString = b.string("state 5");
+    pp.vs = addProgram(b, 0x22, 5);
+    pp.fs = addProgram(b, 0x11, 5);
+    setEntryCount(pp, kPackEntries + 1);
+    b.blob.resize(farWords(entryCount(pp)));
+    PackEntry texture = {};
+    texture.kind = EntryTexture3d;
+    memcpy(b.blob.data(), &texture, sizeof texture);
+    b.pipelines.push_back(pp);
+    const auto all = load(write("far_texture.bin", b));
+    EXPECT_TRUE(state(all, 5).traits & records::TraitTexture3d);
 }
 
 TEST(RecordDigest, AProgramByteMovesItsRecordAndNamesTheSection)

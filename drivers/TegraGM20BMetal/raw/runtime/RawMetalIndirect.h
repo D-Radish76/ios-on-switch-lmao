@@ -25,8 +25,8 @@ struct RMICBCommand {
     RMBuffer *factors = nil, *patchIndices = nil, *pointIndices = nil;
 };
 
-// The kinds of a buffer's commands (RMIndirectCommandBuffer kinds): triangles and lines or points take different raster
-// state (raw::icb::triangles), patches a tessellation state
+// The kinds of a buffer's commands (RMIndirectCommandBuffer kinds): triangles and lines or points take different polygon
+// offsets (raw::icb::polygonOffset), patches a tessellation state
 enum RMICBKinds : uint8_t {
     RMICBTriangles = 1,
     RMICBOthers = 2,

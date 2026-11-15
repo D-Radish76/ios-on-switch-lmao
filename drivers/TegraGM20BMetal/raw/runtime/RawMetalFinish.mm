@@ -232,14 +232,15 @@ static void completeBuffer(RMCommandBuffer *cb)
     cb->_doneHandlers = nil;
     for (MTLCommandBufferHandler h in handlers)
         h((id<MTLCommandBuffer>)cb);
-    cb->_scheduledDone = true;
-    cb->_completedDone = true;
-    rmChanged(cb);
     cb->_owners.clear();  // the resources may die now: no submission uses them any more (its capacity is recycled)
     rmBytesDone(cb);
     cb->_computeJobs.clear();
     cb->_sharedEventWaits.clear();
     cb->_resourceReady.reset();
+    rmRecordingDone(cb);
+    cb->_scheduledDone = true;
+    cb->_completedDone = true;
+    rmChanged(cb);
     gRM->committed.fetch_sub(1, std::memory_order_acq_rel);
 #if SWITCH_FRAME_TIMELINE
     switch_frame::finished(cb->_frame);

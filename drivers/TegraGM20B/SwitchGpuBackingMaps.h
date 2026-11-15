@@ -51,8 +51,8 @@ struct SwitchGpuBackingMaps {
 	}
 
 	// info: the caller's switch_gpu_backing_describe of `backing`.
-	Map *acquire(switch_gpu_backing *backing, const switch_gpu_backing_info &info, bool writable,
-		     uint32_t firstPage, uint32_t pageCount)
+	Map *acquire(switch_gpu_backing *backing, const switch_gpu_backing_info &info,
+		     bool writable, uint32_t firstPage, uint32_t pageCount)
 	{
 		if (!lock || !backing)
 			return nullptr;
@@ -94,7 +94,7 @@ struct SwitchGpuBackingMaps {
 				noteMade(key);
 				static_cast<SwitchGpuBackingMap &>(*map) = {
 					key.allocation, key.generation, address, ++clock,
-					firstPage,	pageCount,	1,	 writable};
+					firstPage,      pageCount,      1,       writable};
 				bytes += size;
 			} else {
 				map = nullptr;
@@ -194,8 +194,8 @@ private:
 		if (!map.address)
 			return;
 #if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
-		evicted[evictedNext++ % kEvictedKeys] = {map.allocation, map.generation, map.firstPage,
-							 map.pages, map.writable};
+		evicted[evictedNext++ % kEvictedKeys] = {map.allocation, map.generation,
+							 map.firstPage, map.pages, map.writable};
 #endif
 		evict(map);
 	}

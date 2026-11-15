@@ -275,8 +275,8 @@ int switch_gpu_chan_exec_job(struct tgm_chan *chan, const struct tgm_push *push,
 			     uint32_t *seqno, const struct tgm_prof *prof, uint32_t visibility,
 			     const struct switch_gpu_release *releases, uint32_t release_count);
 /* switch_gpu_chan_exec_job with acquires on event words as well (SwitchGpuWordWait.h). `owned`, the job's ownership
- * transaction (SwitchGpuBacking.h) or NULL, is committed once nothing can fail the job, before its kick: a return of 0
- * has committed it, an error leaves it for the caller's abort, and the kick holds none of its backings' locks. */
+ * ordered transaction (SwitchGpuBacking.h) or NULL, is published once nothing can fail the job. Its backing locks are
+ * released before GP_PUT, and the ownership order after it. A return of 0 finished it; an error leaves it for abort. */
 struct switch_gpu_word_wait;
 struct switch_gpu_backing_transaction;
 int switch_gpu_chan_exec_events(struct tgm_chan *chan, const struct tgm_push *push, uint32_t count,

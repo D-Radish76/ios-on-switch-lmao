@@ -21,7 +21,9 @@ public enum Registry {
         SourceLibraryTest(), StitchedLibraryTest(), SamplerTableTest(), FunctionTagsTest(),
         FunctionArgumentEncoderTest(), ArgumentGridsTest(), PlainStructEncoderTest(), BufferTexture16Test(),
         PlaneRows16Test(), CompressedTargetsTest(), ZcullTest(), MipTwodTest(), MipCandidatesTest(), MipLodTest(),
+        MipmapVolumeTest(), ShadowStencilTest(), ShadowStencilDepthTest(), XrShadowTest(),
         VisibilityTest(), FixedBlendRuleTest(), FixedBlendFormatsTest(), PrivateCompressionTest(),
+        PackSlotCleanTest(), ZoomTargetTest(),
         AlphaToCoverageTest(),
         IconCornersTest(), TextureBufferTest(), IconSmallSizesTest(), IconPasscodeTest(), IconCalendarTest(),
         CompileSharedTest(), CompileFirstDrawTest(), CompileStageLibraryTest(), CompileAnswerLatencyTest(),
@@ -32,8 +34,23 @@ public enum Registry {
         MPSControlFlowTest(),
         EventReleaseTest(), CoherenceRewriteTest(),
         FetchRungTest(id: "gpu.raw.fetch_rung2", rung: 2), BlendTwinTest(), ZetaColourTest(), PlanarConstexprTest(),
+        TessellationRootTableTest(),
         StripOverCompressedTest(), OpaqueBorderTest(), IndirectDispatchTest(), TileRefusedTest(),
-        SeparateDepthStencilTest(), VertexOnlyStateTest(), RenderReflectionTest(), ComputeReflectionTest(),
+        SeparateDepthStencilTest(), PixelMirrorSamplerTest(), DeferredZetaStoreTest(),
+        NanClearDepthTest(), Depth16ClearTest(), SeparateDepth16StencilTest(),
+        SamplerUnsupportedTest(), SeparateZetaLayeredTest(), VisibilityAccumulateTest(),
+        DepthBiasUnitsTest(), SeparateZetaSliceTest(), TextureViewsTest(), MipmapLayersTest(), DepthArraySampleTest(),
+        SeparateZetaResolveTest(), SeparateDepth16StencilMultisampleTest(), PackedPlaneLoadTest(),
+        WrittenXrTextureTest(), WrittenShadowedSurfaceTest(), WrittenXrPlanesTest(), YcbcrCornerTest(),
+        YcbcrOddSizeTest(), TurnedBoundTest(), TurnedOffSurfaceTest(), NonFiniteDepthBiasTest(),
+        UnalignedBufferOffsetsTest(), VertexCubicSamplerTest(), YcbcrLoadTest(), TurnedUnalignedPlanesTest(),
+        YcbcrP3MatrixTest(), YcbcrPastRowsTest(), YcbcrOnePlaneTest(), DrawErrorsTest(), DepthClipBoundsTest(),
+        TessellationArgumentTextureTest(), AmplificationWideOffsetTest(), TextureShapesTest(), FormatTargetTest(),
+        YcbcrBlendTargetTest(), TurnedSeparatePairTest(), IndirectIndexEndTest(), PatchCommandsWideSetTest(),
+        LayeredShaderTestsTest(), LayeredShaderStencilTest(), WideSetTest(), FarUniformTest(), WideTexturesTest(),
+        TextureShapesXRTest(),
+        TextureShapesDepthTest(), TextureShapesSrgbPairTest(), DepthShapesTest(),
+        VertexOnlyStateTest(), RenderReflectionTest(), ComputeReflectionTest(),
     ]
 
     static let video: [any HWTest] =
@@ -46,7 +63,8 @@ public enum Registry {
 
     static let images: [any HWTest] =
         ImageDecodeTest.all + [
-            JPEGAfterIdleTest(), HEICEncodeTest(), CoreImageTest(), PixelTransferTest(), PixelTransfer422Test(),
+            JPEGAfterIdleTest(), JPEGMappingLifetimeTest(), HEICEncodeTest(), CoreImageTest(), PixelTransferTest(),
+            PixelTransfer422Test(),
         ]
 
     static let audio: [any HWTest] = [

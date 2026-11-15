@@ -125,8 +125,11 @@ name_cbufs(const struct nvk_cbuf_map *map, struct switch_nvk_split *split)
 {
    const struct switch_nvk_split_layout *l = &split->layout;
    split->fs.cbuf_count = map->cbuf_count + 1;
-   for (uint32_t c = 0; c < map->cbuf_count; c++)
+   for (uint32_t c = 0; c < map->cbuf_count; c++) {
       split->fs.cbuf_types[c] = switch_nvk_cbuf_code(&map->cbufs[c]);
+      split->fs.cbuf_sets[c] = map->cbufs[c].desc_set;
+      split->fs.cbuf_offsets[c] = switch_nvk_cbuf_offset(&map->cbufs[c]);
+   }
    split->fs.cbuf_types[l->frontier_cbuf] = SWITCH_SPLIT_CBUF_FRONTIER;
 
    split->prologue.cbuf_count = l->prologue_cbufs;

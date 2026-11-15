@@ -194,6 +194,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_emit.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_push.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_sample_shading.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_slot_mask.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_target.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_pass.h",

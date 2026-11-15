@@ -45,6 +45,7 @@ struct ProbeTextures {
     uint32_t bindStride = 0;  // the attributeStride every vertex buffer is bound at (0: none)
     bool twoPlane = false;    // its RGB10A8_2P_XR10 colours in their two planes (raw_xr_pass.h: its " | xr2p" variant)
     uint16_t xrSlots = 0;     // fragment slots it samples two-plane RGB10A8_2P_XR10 at (its " | xrs=" variant)
+    uint8_t xrShadows = 0;    // colours whose half shadow its pass holds (raw_xr_shadow.h: its " | xrsh=" variant)
     // the formats of the textures it writes at these slots (raw_written_textures.h: its " | wtex=" variant)
     std::vector<WrittenTexture> written;
 };
@@ -92,6 +93,11 @@ public:
         variants_ = on;
     }
 
+    void selectorConfigs(const std::map<uint64_t, SelectorConfigs> *configs)
+    {
+        selectors_ = configs;
+    }
+
     // Why the last make's storage form was refused where it made the barrier form instead; empty where it made none
     const std::string &storageRefusal() const
     {
@@ -132,6 +138,7 @@ private:
     DirectTranslator translator_;
     StageCompile compile_;
     bool variants_ = false;
+    const std::map<uint64_t, SelectorConfigs> *selectors_ = nullptr;
     std::string storageRefusal_;
     bool splittable_ = false;
     bool keepBound_ = false;

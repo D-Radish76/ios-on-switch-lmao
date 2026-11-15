@@ -24,6 +24,11 @@
 extern "C" {
 #endif
 
+/* The words of a stage's two-plane binding mask: every set-0 binding of a
+ * record the raw path holds (raw_set_entries.h kSetEntriesMax, 378)
+ */
+#define SWITCH_XR_PLANE_WORDS 6
+
 /* raw/runtime/raw_direct_nvk.h copies these structs field for field (the
  * plugin has no Vulkan headers): a field added here goes into its copies too,
  * which switch_compile_abi's sizes hold them to
@@ -70,10 +75,17 @@ struct switch_nvk_stage_info {
    /* A fragment stage drawn into a turned plane (nvk_switch_turn.h) */
    bool turned;
    /* A fragment stage's set-0 bindings of two-plane RGB10A8_2P_XR10 textures
-    * (bit b: binding b), each read through its header pair
+    * (bit b % 64 of word b / 64: binding b), each read through its header pair
     * (nvk_switch_xr_planes.h)
     */
-   uint64_t xr_plane_bindings;
+   uint64_t xr_plane_bindings[SWITCH_XR_PLANE_WORDS];
+   /* The set-0 uniform buffer whose descriptor is at byte ubo_fold_desc of
+    * the set and its bytes held constant: bit i of ubo_fold_mask says byte i
+    * of its bind is ubo_fold_bytes[i] (nvk_switch_ubo_fold.h); mask 0: none
+    */
+   uint32_t ubo_fold_desc;
+   uint64_t ubo_fold_mask;
+   uint8_t ubo_fold_bytes[64];
 };
 
 struct switch_nvk_stage {
@@ -105,6 +117,12 @@ struct switch_nvk_stage {
    uint16_t smem_size;
    uint32_t slm_size, crs_size;
    uint8_t cbuf_sets[16];
+   /* Each NVK_CBUF_TYPE_UBO_DESC constant buffer's desc_offset (0 for any
+    * other type): the set-0 offset switch_nvk_cbuf_code names 7 past 496
+    * bytes, which the raw path's record keeps out of line
+    * (raw_pack.h PackProgram::farUbos)
+    */
+   uint32_t cbuf_offsets[16];
 };
 
 struct switch_nvk_stage_metrics {

@@ -12,15 +12,18 @@ template <typename List> uint32_t append(List &values, typename List::value_type
     return index;
 }
 
-void appendBindings(std::vector<raw::ResourceUse> &uses, const raw::BufferBindings &buffers,
-                    const raw::TextureSnapshots::Current &textures, uint8_t access)
+// The bound slots alone are visited: a slot never bound holds nil
+template <typename Textures>
+void appendBindings(std::vector<raw::ResourceUse> &uses, const raw::BufferBindings &buffers, const Textures &textures,
+                    uint8_t access)
 {
     for (const auto &binding : buffers)
         if (binding.source == raw::BufferBinding::Source::Buffer && binding.object)
             uses.push_back({binding.object, access});
-    for (void *texture : textures.objects)
-        if (texture)
+    raw::forEachSlot(textures.set, [&](uint32_t slot) {
+        if (void *texture = textures.objects[slot])
             uses.push_back({texture, uint8_t(access | raw::ResourceUse::Sample)});
+    });
 }
 
 }  // namespace
@@ -93,12 +96,12 @@ uint32_t RMCommandPlan::captureKernel()
         return currentKernel_;
     if (savedResources_[1] != resourceRevision_[1]) {
         mergeUses_.clear();
-        appendBindings(mergeUses_, buffers[2].current(), textures[2].current(),
+        appendBindings(mergeUses_, buffers[2].current(), kernelTextures.current(),
                        raw::ResourceUse::Read | raw::ResourceUse::Write);
         resourceUses_[1] = saveUses(mergeUses_);
         savedResources_[1] = resourceRevision_[1];
     }
-    currentKernel_ = append(kernelStates, {buffers[2].capture(), textures[2].capture(), samplers[2].capture(),
+    currentKernel_ = append(kernelStates, {buffers[2].capture(), kernelTextures.capture(), samplers[2].capture(),
                                            kernel.capture(), resourceUses_[1], stateEpoch_, resourceRevision_[1]});
     savedKernel_ = kernelGeneration_;
     return currentKernel_;
@@ -128,6 +131,7 @@ bool RMCommandPlan::record(const Cmd &c, const uint64_t *extra, size_t extraWord
             state.resetCurrent();
         for (auto &state : textures)
             state.resetCurrent();
+        kernelTextures.resetCurrent();
         for (auto &state : samplers)
             state.resetCurrent();
         raster.resetCurrent();
@@ -284,6 +288,7 @@ bool RMCommandPlan::record(const Cmd &c, const uint64_t *extra, size_t extraWord
                 state.resetCurrent();
             for (auto &state : textures)
                 state.resetCurrent();
+            kernelTextures.resetCurrent();
             for (auto &state : samplers)
                 state.resetCurrent();
             raster.resetCurrent();
@@ -449,6 +454,7 @@ size_t RMCommandPlan::storageBytes() const
         snapshots += state.storageBytes();
     for (const auto &state : textures)
         snapshots += state.storageBytes();
+    snapshots += kernelTextures.storageBytes();
     for (const auto &state : samplers)
         snapshots += state.storageBytes();
     snapshots +=
@@ -484,6 +490,7 @@ void RMCommandPlan::clear()
         state.clear();
     for (auto &state : textures)
         state.clear();
+    kernelTextures.clear();
     for (auto &state : samplers)
         state.clear();
     raster.clear();

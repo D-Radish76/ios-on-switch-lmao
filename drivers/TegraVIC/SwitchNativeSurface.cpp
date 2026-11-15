@@ -318,7 +318,7 @@ static int reserveSurface(const TegraVICSurface *surface, const switch_gpu_backi
                           switch_gpu_backing **logical, switch_gpu_cpu_lease **owned, const char **why)
 {
     *logical = switch_vic_surface_backing(surface);
-    *why = !*logical              ? "native export into a surface without a backing of its own"
+    *why = !*logical             ? "native export into a surface without a backing of its own"
            : *logical == picture ? "native export into a surface its picture already backs"
                                  : "native export into a surface whose backing would not reserve a conversion";
     if (!*logical)

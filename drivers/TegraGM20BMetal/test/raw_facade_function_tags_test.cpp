@@ -34,6 +34,7 @@ std::string constants(id<MTLFunction> f)
     std::string out;
     for (NSString *name in [f.functionConstantsDictionary.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
         MTLFunctionConstant *c = f.functionConstantsDictionary[name];
+        EXPECT_TRUE([c isKindOfClass:[MTLFunctionConstant class]]);
         out += std::string(c.name.UTF8String) + ":" + std::to_string(c.type) + ":" + std::to_string(c.index) +
                (c.required ? ":r " : ":o ");
     }
@@ -81,6 +82,10 @@ void measuredAnswers()
         EXPECT_EQ(constants(f), m.constants) << m.function;
         EXPECT_EQ(attributes(f.vertexAttributes), m.vertexAttributes) << m.function;
         EXPECT_EQ(attributes(f.stageInputAttributes), m.stageInputAttributes) << m.function;
+        for (id attribute in f.vertexAttributes)
+            EXPECT_TRUE([attribute isKindOfClass:[MTLVertexAttribute class]]) << m.function;
+        for (id attribute in f.stageInputAttributes)
+            EXPECT_TRUE([attribute isKindOfClass:[MTLAttribute class]]) << m.function;
     }
     MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
     const int mode = 2;

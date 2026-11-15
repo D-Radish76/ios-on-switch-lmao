@@ -11,7 +11,6 @@ enum RMNeed : uint8_t {
     NeedReplayQueue,
     NeedRawStateTwinAtReplay,
     // resources the raw path made no memory for or refused
-    NeedTextureNoMemory,
     NeedTextureShape,
     NeedHeapTextureSize,
     // what a library or function answers from its m2v twin
@@ -39,7 +38,6 @@ static constexpr const char *kNeedNames[] = {
     "a command buffer replayed on m2v",
     "a command queue for a command buffer replayed on it",
     "a raw state's twin, at its first m2v replay",
-    "a texture the raw path made no memory for",
     "a texture of a shape the raw path does not take",
     "a heap texture's size the raw path does not place",
     "a library's twin",

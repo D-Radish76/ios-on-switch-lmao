@@ -21,6 +21,7 @@
 #include "../raw/runtime/raw_compute_key.h"
 #include "../raw/runtime/raw_metallib.h"
 #include "../raw/runtime/raw_pack.h"
+#include "../raw/runtime/raw_set_entries.h"
 #include <algorithm>
 #include <dlfcn.h>
 #include <map>
@@ -190,8 +191,9 @@ inline std::string writePack(const std::string &key, std::vector<raw::PackKernel
         pp.vs = 0;
         pp.fs = hash != keyHash || pixelStage ? 1 : raw::kNoProgram;
         if (hash == keyHash) {
-            pp.entries = uint8_t(std::min<size_t>(entries.size(), raw::kPackEntries));
-            std::copy_n(entries.begin(), pp.entries, pp.entry);
+            const uint32_t count = uint32_t(std::min<size_t>(entries.size(), raw::kPackEntries));
+            raw::setEntryCount(pp, count);
+            std::copy_n(entries.begin(), count, pp.entry);
         }
         memcpy(file.data() + kPipelines + record++ * sizeof pp, &pp, sizeof pp);
     }

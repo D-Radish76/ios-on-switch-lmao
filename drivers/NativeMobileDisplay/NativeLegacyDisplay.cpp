@@ -34,6 +34,8 @@
 #include "../TegraDisplayFlip/SwitchDisplayPriority.h"
 #include "../TegraSMMU/TegraSMMU.h"
 #include "../TegraSMMU/TegraSMMUDomain.h"
+#include "../TegraSMMU/TegraSMMUPublish.h"
+#include "../TegraSMMU/TegraSMMUSpace.h"
 #include "DisplaySmmuProbe.h"
 #include "NativePlaneFence.h"
 #include "NativePlanes.h"
@@ -62,6 +64,7 @@
 #include "../TegraGM20B/SwitchGpuBridge.h"
 #include "../TegraGM20B/SwitchGpuReady.h"
 #include "../TegraHost1x/SwitchHost1xFence.h"
+#include "../TegraHost1x/SwitchHost1xDisplay.h"
 #include "../TegraHost1x/SwitchHost1xTokenFence.h"
 #include "../TegraHost1x/TegraHost1x.h"
 #include "SwitchNativePlane.h"
@@ -1030,15 +1033,19 @@ class NativeLegacyDisplay : public IOMobileFramebufferLegacy {
     uint32_t stDirect = 0;
     // --- Hardware planes (r18-planes; NativePlanes.h has the rules and their sources) ------------------------------------
     // Core Animation's detached layer (a video under the UI) is scanned by window B through the display's SMMU domain, from
-    // one of kPlaneSlots IOVA slots above the direct-scanout ones, while window A shows the composited UI blending over it
+    // one of kPlaneSlots slots mapped above the direct-scanout ones, while window A shows the composited UI blending over it
     // (premultiplied). The domain comes up at the start, before backboardd: the plane probe (DisplaySmmuProbe's stages on
     // window B, which covers the screen with a frozen copy of it for about 20 frames) proves window B reads through it; only
     // then are planes on (planesOn), and only then may XNU start backboardd without CA_DISABLE_DETACHED
     // (native_legacy_detach_ready below). Window B's register sets move through DC A as native_planes::PlaneLatch follows them;
     // a set is a slot index (kOff: window off). A swap retires when the latch that shows it (or a newer one) is seen.
-    static constexpr unsigned kPlaneSlots = 8;
+    static constexpr unsigned kPlaneSlots = switch_window_caps::kPlaneSlots;
     static constexpr uint64_t kPlaneSlotSpan = switch_window_caps::kPlaneSlotSpan,
+                              kPlaneSpace = switch_window_caps::kPlaneSpace,
                               kPlaneSlot0 = kProbeSlot + static_cast<uint64_t>(kSlots) * kSlotSpan;
+    static constexpr uint32_t kPlaneSpaceWords = TegraSMMUSpace::bitmapWords(kPlaneSpace);
+    static_assert(kPlaneSlots <= 64, "planeBuildingSlots has a bit a slot");
+    static_assert((kPlaneSlot0 | kPlaneSpace) % TegraSMMUSpace::kGranule == 0, "window B's space is whole granules");
     static constexpr unsigned kPlaneUnderflowFrames = 3;
     // An overlay's picture producer, a recorded turn's request waits (src and dst) and its surface's writer promises, for
     // each of two overlays.
@@ -1047,7 +1054,9 @@ class NativeLegacyDisplay : public IOMobileFramebufferLegacy {
 
     using PlaneSlot = switch_display::PlaneSlot;
 
-    PlaneSlot planeSlots[kPlaneSlots] = {};
+    // Made in start with planeSpace's bitmap: inside, they took the instance past the 16 KiB a kalloc_type class may have.
+    PlaneSlot *planeSlots = nullptr;
+    TegraSMMUSpace planeSpace;
     uint32_t planeSlotUses = 0;
 
     using PlaneSet = switch_display::Composition;
@@ -1070,10 +1079,11 @@ class NativeLegacyDisplay : public IOMobileFramebufferLegacy {
     unsigned planeUnderflowRun = 0;
     uint32_t planeBlendSaved[3] = {};
     // Stats (the pacing line): window B flips written, of them swaps that changed only window B (no UI composite at all),
-    // B sets seen latched, new slot mappings, detached layers not shown (planes off, or a layer more than window B takes),
-    // window B underflow frames, ready-mask mismatches at a kick, overlay sets VIC composited into one plane.
-    uint32_t stPlaneFlips = 0, stPlaneOnly = 0, stPlaneLatched = 0, stPlaneMaps = 0, stPlaneDropped = 0,
-             stPlaneUnderflows = 0, stPlaneUnready = 0, stPlaneComposited = 0;
+    // B sets seen latched, new slot mappings (of them, an engine allocation's mapped again after it was dropped for room),
+    // detached layers not shown (planes off, or a layer more than window B takes), window B underflow frames, ready-mask
+    // mismatches at a kick, overlay sets VIC composited into one plane.
+    uint32_t stPlaneFlips = 0, stPlaneOnly = 0, stPlaneLatched = 0, stPlaneMaps = 0, stPlaneRemaps = 0,
+             stPlaneDropped = 0, stPlaneUnderflows = 0, stPlaneUnready = 0, stPlaneComposited = 0;
     // Of the placements, a decoder's own block-linear picture (SwitchNativePlane.h): static, the instance is at the size
     // a kalloc_type class may have.
     static uint32_t stPlaneNative;
@@ -1823,10 +1833,10 @@ private:
         } else if (planesAttached) {
             planesState = "off";
         }
-        add("; planes %s: flips %u (b-only %u) latched %u, maps %u (native %u), dropped %u, underflow %u, unready %u, "
-            "composited %u",
-            planesState, stPlaneFlips, stPlaneOnly, stPlaneLatched, stPlaneMaps, stPlaneNative, stPlaneDropped,
-            stPlaneUnderflows, stPlaneUnready, stPlaneComposited);
+        add("; planes %s: flips %u (b-only %u) latched %u, maps %u (native %u, remaps %u), dropped %u, underflow %u, "
+            "unready %u, composited %u",
+            planesState, stPlaneFlips, stPlaneOnly, stPlaneLatched, stPlaneMaps, stPlaneNative, stPlaneRemaps,
+            stPlaneDropped, stPlaneUnderflows, stPlaneUnready, stPlaneComposited);
         add("; UFLOW_STATUS A %llu (%u frames) B %llu (%u) C %llu (%u)%s",
             static_cast<unsigned long long>(counted[0].counted), counted[0].frames,
             static_cast<unsigned long long>(counted[1].counted), counted[1].frames,
@@ -1834,7 +1844,7 @@ private:
             counted[0].overflowed || counted[1].overflowed || counted[2].overflowed ? " overflowed" : "");
         planeTotalsClose();
         stPlaneNative = 0;
-        stPlaneFlips = stPlaneOnly = stPlaneLatched = stPlaneMaps = stPlaneDropped = stPlaneComposited =
+        stPlaneFlips = stPlaneOnly = stPlaneLatched = stPlaneMaps = stPlaneRemaps = stPlaneDropped = stPlaneComposited =
             stPlaneUnderflows = stPlaneUnready = 0;
         add("; long %u: idle %u/%u ca %u/%u gpu %u/%u queue %u/%u latch %u/%u rate %u/%u",
             stLong[kLongIdle] + stLong[kLongCa] + stLong[kLongGpu] + stLong[kLongQueue] + stLong[kLongLatch] +
@@ -3274,6 +3284,7 @@ public:
         resumeLit = !scanoutStopped;
         setScanout(false);
         waitScanoutHalted();
+        mediaHostHeldSlots = 0;
         dc[kDcStateAccess] = dc[kDcStateAccess] & ~(kReadMuxActive | kWriteMuxActive);
         dc[kDcWindowHeader] = kWindowASelect;
         for (size_t i = 0; i < sizeof(kWindowAState) / sizeof(kWindowAState[0]); ++i)
@@ -3323,6 +3334,10 @@ public:
         releasePlaneUses();
         if (entryPlane)
             IODelete(entryPlane, PlaneSet, TegraScanoutRing::kMaxEntries);
+        if (planeSlots)
+            IODelete(planeSlots, PlaneSlot, kPlaneSlots);
+        if (planeSpace.used)
+            IODelete(planeSpace.used, uint32_t, kPlaneSpaceWords);
         if (intMaskLock)
             IOSimpleLockFree(intMaskLock);
         IOMobileFramebufferLegacy::free();
@@ -3371,8 +3386,14 @@ public:
     {
         planeSets = IONewZero(PlaneSet, PlaneCommits::kSlots + 1);
         entryPlane = IONewZero(PlaneSet, TegraScanoutRing::kMaxEntries);
-        if (!planeSets || !entryPlane)
+        planeSlots = IONewZero(PlaneSlot, kPlaneSlots);
+        if (!planeSets || !entryPlane || !planeSlots ||
+            !planeSpace.init(kPlaneSlot0, kPlaneSpace, IONewZero(uint32_t, kPlaneSpaceWords), kPlaneSpaceWords))
             return false;
+        if (const int error = switch_gpu_backing_register_forget(SWITCH_GPU_ENGINE_DISPLAY, planeForgotten)) {
+            IOLog("SwitchDisplay: window B cannot register allocation retirement (%d)\n", error);
+            return false;
+        }
         for (unsigned k = 0; k <= PlaneCommits::kSlots; ++k)
             planeSets[k] = {};
         for (unsigned k = 0; k < TegraScanoutRing::kMaxEntries; ++k)
@@ -3396,7 +3417,7 @@ public:
             if (!hists)
                 return false;
         }
-        if (!startDisplay(provider))
+        if (!startMediaHostFlip() || !startDisplay(provider))
             return false;
         startVsync();
         startHardwareRotation();
@@ -4700,11 +4721,7 @@ public:
     // The table entries just written, to memory, then the SMMU's caches for the display's ASID.
     void cleanDomain()
     {
-        uintptr_t low = 0;
-        uintptr_t high = 0;
-        if (probeDomain.takeDirty(&low, &high))
-            switch_dcache_clean_invalidate(reinterpret_cast<const void *>(low), high - low);
-        tegra_smmu_flush(TEGRA_SMMU_ASID_DISPLAY);
+        switch_smmu_publish(probeDomain, TEGRA_SMMU_ASID_DISPLAY, SWITCH_DCACHE_CLEAN_INVALIDATE);
     }
 
     // Under the gate, in the kick: the swap's surface into its slot, and a fence-only GPU present for it; its completion flips
@@ -4730,7 +4747,8 @@ public:
         copy.sourceBytes = allocation;
         // A tiled slot is the GPU's block-linear surface window A scans in 16-GOB blocks: the present maps it under the
         // block-linear kind it was written with, and the debug read-back copies it out of those blocks.
-        copy.flags = TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry) | (tiled ? TEGRA_SCANOUT_COPY_SOURCE_BLOCK : 0u);
+        copy.flags =
+            TEGRA_SCANOUT_COPY_FENCE_ONLY | producerWatch(entry) | (tiled ? TEGRA_SCANOUT_COPY_SOURCE_BLOCK : 0u);
         copy.sourceBlockHeightLog2 = tiled ? kScanBlockLog2 : 0u;
         copy.alsoWritten = planeNextAlsoWritten();
         switch_gpu_backing_token planeTokens[kPlaneDependencies] = {};
@@ -5451,6 +5469,8 @@ public:
     void platformRefreshRates() override
     {}
 };
+
+static_assert(sizeof(NativeLegacyDisplay) <= 16UL * 1024UL);
 
 // OSDefineMetaClassAndStructors(NativeLegacyDisplay, IOMobileFramebufferLegacy), registered under the class name of J120's
 // and J181's internal display (AppleMobileDispH9G's and AppleMobileDispH12P's IOClass). iPadOS finds the internal display

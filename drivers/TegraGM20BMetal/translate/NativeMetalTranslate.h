@@ -74,6 +74,8 @@ struct NmbVertexLayout {
     uint64_t linked_count;                                                                                      \
     Function *const *private_linked;                                                                            \
     uint64_t private_count;                                                                                     \
+    Function *const *binary_linked;                                                                             \
+    uint64_t binary_count;                                                                                      \
     uint64_t stage_inputs;                                                                                      \
     struct NmbVertexAttribute stage_attributes[31];                                                             \
     struct NmbVertexLayout stage_layouts[31];                                                                   \

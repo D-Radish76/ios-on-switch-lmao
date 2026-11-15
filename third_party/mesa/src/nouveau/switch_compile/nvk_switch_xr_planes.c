@@ -9,17 +9,18 @@
 
 #include "nir_builder.h"
 
-_Thread_local uint64_t switch_nvk_xr_plane_bindings_current;
+_Thread_local uint64_t switch_nvk_xr_plane_bindings_current[SWITCH_XR_PLANE_WORDS];
 
 static bool
-joined_binding(nir_tex_instr *tex, uint64_t bindings)
+joined_binding(nir_tex_instr *tex, const uint64_t *bindings)
 {
    const int at = nir_tex_instr_src_index(tex, nir_tex_src_texture_deref);
    if (at < 0)
       return false;
    nir_variable *var = nir_deref_instr_get_variable(nir_src_as_deref(tex->src[at].src));
-   return var != NULL && var->data.descriptor_set == 0 && var->data.binding < 64 &&
-          ((bindings >> var->data.binding) & 1);
+   return var != NULL && var->data.descriptor_set == 0 &&
+          var->data.binding < 64 * SWITCH_XR_PLANE_WORDS &&
+          ((bindings[var->data.binding / 64] >> (var->data.binding % 64)) & 1);
 }
 
 /* The half nearest `x`, at `bit_size` */
@@ -60,7 +61,7 @@ alpha_of(nir_builder *b, nir_def *v, unsigned bit_size)
 static bool
 join(nir_builder *b, nir_instr *instr, void *data)
 {
-   const uint64_t bindings = *(const uint64_t *)data;
+   const uint64_t *bindings = data;
    if (instr->type != nir_instr_type_tex)
       return false;
    nir_tex_instr *tex = nir_instr_as_tex(instr);
@@ -109,9 +110,12 @@ join(nir_builder *b, nir_instr *instr, void *data)
 }
 
 bool
-switch_nvk_xr_planes(nir_shader *nir, uint64_t bindings)
+switch_nvk_xr_planes(nir_shader *nir, const uint64_t *bindings)
 {
-   if (!bindings || nir->info.stage != MESA_SHADER_FRAGMENT)
+   uint64_t any = 0;
+   for (unsigned w = 0; w < SWITCH_XR_PLANE_WORDS; w++)
+      any |= bindings[w];
+   if (!any || nir->info.stage != MESA_SHADER_FRAGMENT)
       return false;
-   return nir_shader_instructions_pass(nir, join, nir_metadata_control_flow, &bindings);
+   return nir_shader_instructions_pass(nir, join, nir_metadata_control_flow, (void *)bindings);
 }

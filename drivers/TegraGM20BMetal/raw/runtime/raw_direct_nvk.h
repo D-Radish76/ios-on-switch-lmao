@@ -3,11 +3,16 @@
 // nvk_switch_offline.h), with Vulkan's handles as pointers (this build has no Vulkan headers), and its entry points, which
 // the image links (switch_compile.o).
 #pragma once
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include "raw_direct.h"
 
 namespace raw {
+
+// switch_compile.h SWITCH_XR_PLANE_WORDS: bit b % 64 of word b / 64, set-0 binding b
+constexpr uint32_t kXrPlaneWords = 6;
+using XrPlaneBindings = std::array<uint64_t, kXrPlaneWords>;
 
 struct NvkStageInfo {
     const uint32_t *spirv;
@@ -30,7 +35,12 @@ struct NvkStageInfo {
     bool (*portable)(const void *context, const uint32_t **words, size_t *bytes);
     bool texsF16 = false;
     bool turned = false;
-    uint64_t xrPlaneBindings = 0;  // nvk_switch_xr_planes.h: set-0 bindings read through a header pair
+    XrPlaneBindings xrPlaneBindings = {};  // nvk_switch_xr_planes.h: set-0 bindings read through a header pair
+    // nvk_switch_ubo_fold.h: the set-0 uniform buffer at descriptor byte uboFoldDesc, its bytes in uboFoldMask held as
+    // uboFoldBytes
+    uint32_t uboFoldDesc = 0;
+    uint64_t uboFoldMask = 0;
+    uint8_t uboFoldBytes[64] = {};
 };
 
 struct NvkStage {
@@ -54,6 +64,7 @@ struct NvkStage {
     uint16_t smemSize;
     uint32_t slmSize, crsSize;
     uint8_t cbufSets[16];
+    uint32_t cbufOffsets[16];  // a uniform buffer descriptor's offset in its set (cbuf_offsets)
 };
 
 struct NvkStageMetrics {

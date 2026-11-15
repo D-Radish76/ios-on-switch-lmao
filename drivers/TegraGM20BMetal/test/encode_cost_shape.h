@@ -144,13 +144,14 @@ inline std::map<std::string, unsigned> finish(NSArray<id<MTLCommandBuffer>> *buf
 // `count` command buffers at `draws` committed and completed, then destroyed: their recordings back with the runtime
 // (a command buffer's last reference can be the completion thread's, which it drops after waitUntilCompleted returns).
 // False where one did not complete on the raw path or outlived its completion by 5 s.
-inline bool settle(int draws, int count = kBuffers)
+template <typename Recorded> bool settle(int draws, int count, Recorded recorded)
 {
     static char goneKey;
     dispatch_semaphore_t gone = dispatch_semaphore_create(0);
     bool raw = true;
     @autoreleasepool {
         NSArray<id<MTLCommandBuffer>> *done = batch(draws, count);
+        recorded();
         const std::map<std::string, unsigned> paths = finish(done);
         raw = paths.size() == 1 && paths.begin()->first == "raw";
         for (id<MTLCommandBuffer> cb in done) {
@@ -163,6 +164,11 @@ inline bool settle(int draws, int count = kBuffers)
         if (dispatch_semaphore_wait(gone, dispatch_time(DISPATCH_TIME_NOW, 5 * NSEC_PER_SEC)))
             return false;
     return raw;
+}
+
+inline bool settle(int draws, int count = kBuffers)
+{
+    return settle(draws, count, [] {});
 }
 
 inline NSDictionary<NSString *, NSNumber *> *profile()

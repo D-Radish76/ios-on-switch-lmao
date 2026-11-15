@@ -139,7 +139,7 @@ raw::RuntimeRecord splitRecord(bool split = true)
     r.programs[1].cbufTypes = {raw::CbufRoot, ubo};
     raw::PackPipeline &pp = r.pipeline;
     pp.keyHash = split ? 0xb0 : 0xb1;
-    pp.entries = 1;
+    raw::setEntryCount(pp, 1);
     pp.entry[0] = {32, raw::EntryUbo, 2, 1, uint8_t(17 << 2), 0, 0};
     pp.vertexSlot = 0xff;
     pp.pushMask = 1u << 16;

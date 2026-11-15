@@ -6,6 +6,7 @@
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
 #include "../raw/runtime/raw_compute_key.h"
+#include "compiler_request_layout03.h"
 #include "../raw/runtime/raw_function_attributes.h"
 #include "made_metallib.h"
 
@@ -107,10 +108,12 @@ TEST(CompileRequest, RoundTripsWhole)
     r.variant.cubic.samplers.push_back({2, 1, 1, 0, 3, true});
     r.variant.cubic.textures.push_back({2, 80});
     r.variant.fragmentTests = 3;
+    r.variant.xrShadows = 5;
     r.key = "a key";
     raw::CompileRequest back;
     ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back));
     EXPECT_EQ(raw::encodeRequest(back), raw::encodeRequest(r));
+    EXPECT_EQ(back.variant.xrShadows, 5);
 
     raw::CompileRequest k;
     k.stack = kStack;
@@ -129,6 +132,112 @@ TEST(CompileRequest, RoundTripsWhole)
     ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(k), back));
     EXPECT_EQ(raw::encodeRequest(back), raw::encodeRequest(k));
     EXPECT_EQ(back.kernel.dispatch().memory[2], 1024u);
+}
+
+// A vertex stage's cubic binds keep their stage through the request (the sampler's flag byte's bit 1, the texture's
+// slot byte's top bit) and name their variant "vs" and "vt"; a fragment-only request's bytes and variant name are as
+// packed
+TEST(CompileRequest, AVertexCubicBindKeepsItsStage)
+{
+    raw::CompileRequest fragment = renderRequest();
+    fragment.key = "a key";
+    fragment.variant.cubic.samplers.push_back({0, 0, 0, 0, 0, true});
+    fragment.variant.cubic.textures.push_back({0, 80});
+    EXPECT_EQ(fragment.variant.cubic.key(), " | cubic s0:0000n t0:80");
+    raw::CompileRequest both = fragment;
+    both.variant.cubic.samplers.push_back({3, 2, 2, 0, 1, false, raw::kCubicVertex});
+    both.variant.cubic.textures.push_back({5, 70, raw::kCubicVertex});
+    EXPECT_EQ(both.variant.cubic.key(), " | cubic s0:0000n vs3:2201p t0:80 vt5:70");
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(both), back));
+    const raw::CubicBinds &cubic = back.variant.cubic;
+    ASSERT_EQ(cubic.samplers.size(), 2u);
+    ASSERT_EQ(cubic.textures.size(), 2u);
+    EXPECT_EQ(cubic.samplers[0].stage, raw::kCubicFragment);
+    EXPECT_TRUE(cubic.samplers[0].normalized);
+    EXPECT_EQ(cubic.samplers[1].stage, raw::kCubicVertex);
+    EXPECT_EQ(cubic.samplers[1].slot, 3u);
+    EXPECT_FALSE(cubic.samplers[1].normalized);
+    EXPECT_EQ(cubic.textures[1].stage, raw::kCubicVertex);
+    EXPECT_EQ(cubic.textures[1].slot, 5u);
+    EXPECT_EQ(cubic.key(), both.variant.cubic.key());
+    const std::string bytes = raw::encodeRequest(fragment);
+    const std::string flags = std::string("\0\0\0\0\0\1", 6);
+    EXPECT_NE(bytes.find(flags), std::string::npos) << "a fragment sampler's six bytes, its flags only normalized";
+}
+
+// A render request with every variant form layout 03 carried: a fragment cubic bind, a test class, two-plane colours,
+// sampled two-plane slots and a written texture
+raw::CompileRequest layout03Request()
+{
+    raw::CompileRequest r = renderRequest();
+    r.key = "a key";
+    r.variant.cubic.samplers.push_back({9, 2, 1, 2, 3, true});
+    r.variant.cubic.textures.push_back({9, 80});
+    r.variant.fragmentTests = 2;
+    r.variant.twoPlane = true;
+    r.variant.xrSlots = 4;
+    r.variant.written = {{2, 23}};
+    return r;
+}
+
+TEST(CompileRequest, ItsLayoutIsSWCREQ04)
+{
+    EXPECT_EQ(raw::encodeRequest(layout03Request()).substr(0, 8), "SWCREQ04");
+}
+
+// A request of layout 03, which a client of an older build sends or the compiler's request log (compiler_log.h) kept,
+// is refused whole by the reader and by prepare, which the log's replay runs: dropped, never read as layout 04
+TEST(CompileRequest, ARequestOfLayout03IsRefused)
+{
+    const raw::CompileRequest r = layout03Request();
+    const std::string bytes = layout03::encode(r);
+    raw::CompileRequest back;
+    EXPECT_FALSE(raw::decodeRequest(bytes, back));
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared p;
+    std::string why;
+    EXPECT_FALSE(switch_compiler::prepare(bytes, kStack, system, p, why));
+    EXPECT_EQ(why, "an unreadable request");
+
+    raw::CompileRequest merged = r;
+    merged.variant.cubic.samplers.push_back({3, 2, 2, 0, 1, false, raw::kCubicVertex});
+    merged.variant.cubic.textures.push_back({5, 70, raw::kCubicVertex});
+    merged.variant.xrShadows = 1;
+    EXPECT_FALSE(raw::decodeRequest(layout03::encode(merged, true), back));
+}
+
+TEST(CompileRequest, VertexCubicBindsAndShadowedColoursRoundTrip)
+{
+    raw::CompileRequest r = layout03Request();
+    r.variant.cubic.samplers.push_back({3, 2, 2, 0, 1, false, raw::kCubicVertex});
+    r.variant.cubic.textures.push_back({5, 70, raw::kCubicVertex});
+    r.variant.xrShadows = 0x81;
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(r), back));
+    EXPECT_EQ(raw::encodeRequest(back), raw::encodeRequest(r));
+    EXPECT_EQ(back.variant.name(), r.variant.name());
+    EXPECT_EQ(back.variant.xrShadows, 0x81);
+    ASSERT_EQ(back.variant.cubic.samplers.size(), 2u);
+    ASSERT_EQ(back.variant.cubic.textures.size(), 2u);
+    EXPECT_EQ(back.variant.cubic.samplers[1].stage, raw::kCubicVertex);
+    EXPECT_EQ(back.variant.cubic.textures[1].stage, raw::kCubicVertex);
+    EXPECT_EQ(back.variant.cubic.textures[1].slot, 5u);
+    EXPECT_EQ(back.variant.fragmentTests, 2);
+    EXPECT_TRUE(back.variant.twoPlane);
+    EXPECT_EQ(back.variant.xrSlots, 4);
+}
+
+// A cubic sampler's flag byte holds normalized (bit 0) and the vertex stage (bit 1), nothing else
+TEST(CompileRequest, ASamplerFlagThisLayoutDoesNotDefineIsRefused)
+{
+    std::string bytes = raw::encodeRequest(layout03Request());
+    const size_t at = bytes.find(std::string("\x09\x02\x01\x02\x03\x01", 6));
+    ASSERT_NE(at, std::string::npos);
+    raw::CompileRequest back;
+    ASSERT_TRUE(raw::decodeRequest(bytes, back));
+    bytes[at + 5] = 0x05;
+    EXPECT_FALSE(raw::decodeRequest(bytes, back));
 }
 
 TEST(CompileRequest, ItsFieldsKeyADescriptorAsTheDescriptorKeysItself)
@@ -154,6 +263,9 @@ TEST(CompileRequest, ItsPackKeyIsTheFacadesForFrameworkAndOwnLibraries)
     r.variant.fragmentTests = 2;
     EXPECT_EQ(raw::requestPackKey(r, own),
               raw::pipelineKey(descriptor(), &v, &f, "", "RenderBox") + r.variant.cubic.key() + " | tests=2");
+    r.variant.xrShadows = 1;
+    EXPECT_EQ(raw::requestPackKey(r, own),
+              raw::pipelineKey(descriptor(), &v, &f, "", "RenderBox") + r.variant.cubic.key() + " | tests=2 | xrsh=1");
     raw::CompileRequest data = renderRequest();
     EXPECT_EQ(raw::requestPackKey(data, own), raw::pipelineKey(descriptor(), &v, &f, "", ""));
     EXPECT_TRUE(own);
@@ -475,6 +587,36 @@ TEST(CompileRequest, AStageInputKernelsFactsAreKeyedWithItsStageInput)
     raw::CompileRequest other = r;
     other.kernel.stageIn.attributes[0].offset = 4;
     EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(other), kStack, system, p, why));
+}
+
+TEST(CompileRequest, BinaryFunctionKeysKeepTheirDefinitionAndSpecializedLinkName)
+{
+    raw::CompileRequest request;
+    request.stack = kStack;
+    request.kind = raw::RequestKind::Facts;
+    request.libraries = {data(made_metallib::universal({"kernel_fn"}, 0x30, 0xee, {2})),
+                         data(made_metallib::universal({"helper"}, 0x40, 0xee, {4}))};
+    request.stages = {stage("k", "kernel_fn"), stage("kb", "helper", 1)};
+    request.stages[1].name = "transform";
+    raw::AirHash kernel;
+    kernel.fill(0x30);
+    raw::LinkedComputeFunction linked;
+    linked.air.fill(0x40);
+    linked.binary = true;
+    linked.symbol = "helper";
+    linked.name = "transform";
+    request.key =
+        raw::factsCacheKey(kStack, raw::computeStateKey(kernel, raw::computeLinkedText({linked}), 0, false)).key;
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared prepared;
+    std::string why;
+    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(request), kStack, system, prepared, why)) << why;
+    raw::CompileRequest renamed = request;
+    renamed.stages[1].name = "another_transform";
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(renamed), kStack, system, prepared, why));
+    raw::CompileRequest ordinary = request;
+    ordinary.stages[1].tag = "kl";
+    EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(ordinary), kStack, system, prepared, why));
 }
 
 // A specialized function's attributes: one stage tagged "a", keyed by its AIR, constants and the name it was made under,

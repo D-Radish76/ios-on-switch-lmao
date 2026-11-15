@@ -38,7 +38,10 @@ double profileCount(NSDictionary<NSString *, NSNumber *> *before, NSDictionary<N
 Arm heldArm(timed_gpu::Gpu &gpu, int draws, bool gpuHeld)
 {
     Arm arm;
-    EXPECT_TRUE(encode_cost::settle(draws));
+    gpu.hold(true);
+    EXPECT_TRUE(encode_cost::settle(draws, kBuffers, [&] {
+        gpu.hold(false);
+    }));
     @autoreleasepool {
         NSMutableArray<id<MTLCommandBuffer>> *held = [[NSMutableArray alloc] initWithCapacity:kBuffers];
         if (gpuHeld)
@@ -117,9 +120,9 @@ TEST(RawFacadeHeldBlocks, ACommittedCommandBufferHoldsNoBlockOfTheRuntimePerDraw
             const Arm arm = heldArm(gpu, kDraws[a], gpuHeld);
             const held_sites::Window &w = arm.window;
             char label[160];
-            snprintf(label, sizeof label, "held_blocks d%d gpu %s: %.2f a command buffer (the log's %.2f, residual %.2f)",
-                     kDraws[a], gpuHeld ? "held" : "running", arm.heldBlocks,
-                     double(w.live - w.earlierFreed) / kBuffers,
+            snprintf(label, sizeof label,
+                     "held_blocks d%d gpu %s: %.2f a command buffer (the log's %.2f, residual %.2f)", kDraws[a],
+                     gpuHeld ? "held" : "running", arm.heldBlocks, double(w.live - w.earlierFreed) / kBuffers,
                      arm.heldBlocks - double(w.live - w.earlierFreed) / kBuffers);
             held_sites::print(w, label, kBuffers, 2);
             for (held_sites::Owner o : {held_sites::Owner::Runtime, held_sites::Owner::Model, held_sites::Owner::Test,
@@ -132,9 +135,8 @@ TEST(RawFacadeHeldBlocks, ACommittedCommandBufferHoldsNoBlockOfTheRuntimePerDraw
                 EXPECT_EQ(path, "raw") << n << " command buffers at " << kDraws[a] << " draws";
             EXPECT_FALSE(w.overflow);
             runtime[a] = double(w.held(held_sites::Owner::Runtime)) / kBuffers;
-            EXPECT_LE(runtime[a], kRuntimeHeldMost)
-                << "the runtime's blocks a command buffer holds at " << kDraws[a] << " draws, gpu "
-                << (gpuHeld ? "held" : "running");
+            EXPECT_LE(runtime[a], kRuntimeHeldMost) << "the runtime's blocks a command buffer holds at " << kDraws[a]
+                                                    << " draws, gpu " << (gpuHeld ? "held" : "running");
         }
         EXPECT_LT(runtime[1] - runtime[0], 0.5) << "the runtime's held blocks grow with the draws: " << runtime[0]
                                                 << " at " << kDraws[0] << ", " << runtime[1] << " at " << kDraws[1];
@@ -148,9 +150,10 @@ TEST(RawFacadeHeldBlocks, TheHwTestsSequenceHoldsAndAllocatesNoMoreWithItsDraws)
     timed_gpu::Gpu gpu;
     const Sequence s = hwTestSequence();
     for (int a = 0; a < 2; a++) {
-        printf("the HW Test's sequence d%d: held_blocks %.2f, runtime allocations %.2f, recording misses %.2f a command "
-               "buffer (the model's left out)\n",
-               kDraws[a], s.held[a], s.allocations[a], s.misses[a]);
+        printf(
+            "the HW Test's sequence d%d: held_blocks %.2f, runtime allocations %.2f, recording misses %.2f a command "
+            "buffer (the model's left out)\n",
+            kDraws[a], s.held[a], s.allocations[a], s.misses[a]);
         EXPECT_LE(s.held[a], kHeldMost) << kDraws[a] << " draws";
         EXPECT_LE(s.misses[a], 0.1) << kDraws[a] << " draws";
     }
@@ -164,18 +167,26 @@ TEST(RawFacadeHeldBlocks, ACommandBuffersAllocationsDoNotGrowWithItsDraws)
 {
     ASSERT_NE(scale_frames::opened().device, nil);
     timed_gpu::Gpu gpu;
+    // A zero-cost GPU's idle drains follow CPU encoding time; both arms use the same GPU work per job.
+    gpu.setPerJob(std::chrono::milliseconds(1));
+    const auto settle = [&](int draws) {
+        gpu.hold(true);
+        return encode_cost::settle(draws, kBuffers, [&] {
+            gpu.hold(false);
+        });
+    };
     double runtime[2] = {};
     for (int a = 0; a < 2; a++) {
-        EXPECT_TRUE(encode_cost::settle(kDraws[a]));
+        EXPECT_TRUE(settle(kDraws[a]));
         NSDictionary<NSString *, NSNumber *> *before = encode_cost::profile();
-        EXPECT_TRUE(encode_cost::settle(kDraws[a]));
+        EXPECT_TRUE(settle(kDraws[a]));
         NSDictionary<NSString *, NSNumber *> *after = encode_cost::profile();
         const double counted = std::max(1.0, profileCount(before, after, @"malloc_encodes"));
         printf("encode profile d%d: mallocs %.2f frees %.2f a command buffer (the model's records among them)\n",
                kDraws[a], profileCount(before, after, @"mallocs") / counted,
                profileCount(before, after, @"frees") / counted);
         held_sites_start();
-        EXPECT_TRUE(encode_cost::settle(kDraws[a]));
+        EXPECT_TRUE(settle(kDraws[a]));
         size_t events = 0;
         bool overflow = false;
         const held_sites_event *log = held_sites_stop(&events, &overflow);

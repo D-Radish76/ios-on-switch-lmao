@@ -419,7 +419,8 @@ TEST(GM20BPresentSource, OneL2FlushPerPresent)
 	EXPECT_TRUE(
 		Block(gpu(), "void tgm_present_push_copy(")
 			.before("NVB06F_MEM_OP_D_OPERATION_L2_FLUSH_DIRTY", "tgm_copy_texels("));
-	EXPECT_TRUE(copy.has("if (dst_va) chan_fence_volatile(chan); else chan_fence(chan);"));
+	EXPECT_TRUE(copy.has(
+		"switch_gpu_chan_fence_sealed(chan, dst_va ? TGM_FENCE_VOLATILE_WRITES : 1,"));
 	const CodeText fence = Block(gpu(), "static u32 chan_fence_job(");
 	EXPECT_TRUE(
 		fence.before("NVB06F_FB_FLUSH, 0); if (external != TGM_FENCE_VOLATILE_WRITES) {",
@@ -459,7 +460,8 @@ TEST(GM20BPresentSource, ReadbackRidesTheFramesPresent)
 	const CodeText copy = Block(gpu(), "static int present_copy(");
 	EXPECT_TRUE(copy.before("if (dst_va) tgm_present_push_copy(push);",
 				"present_push_reads(push, reads, nreads);"));
-	EXPECT_TRUE(copy.before("present_push_reads(push, reads, nreads);", "chan_fence(chan);"));
+	EXPECT_TRUE(copy.before("present_push_reads(push, reads, nreads);",
+				"switch_gpu_chan_fence_sealed("));
 	EXPECT_TRUE(copy.has("nreads * TGM_COPY_RECT_DWORDS"));
 	const CodeText reads = Block(gpu(), "static void present_push_reads(");
 	EXPECT_TRUE(reads.has("dst = {r->dst_va, r->dst_pitch, -1};"));  // pitch-linear
@@ -1584,9 +1586,9 @@ TEST(GM20BPresentSource, TypedProducerValidationAndReleaseNeverRunUnderTheIrqEve
 				    "&tgm_present.typed_pending, 0"));
 	const CodeText copy = Block(gpu(), "static int present_copy(");
 	EXPECT_TRUE(copy.before(
-		"tgm_backing_dependencies(chan, tgm_present.tokens.tokens, dependency_count, 1)",
+		"tgm_backing_dependencies(chan, tgm_present.tokens.tokens, dependency_count)",
 		"if (dst_va) tgm_present_push_copy(push);"));
-	EXPECT_TRUE(copy.before("&tgm_present.typed_pending, 1", "chan_fence(chan);"));
+	EXPECT_TRUE(copy.before("&tgm_present.typed_pending, 1", "switch_gpu_chan_fence_sealed("));
 	EXPECT_TRUE(copy.has("dependency_count * 5"));
 	EXPECT_TRUE(copy.has("push->cur = push_start"));
 }
@@ -1684,7 +1686,7 @@ TEST(GM20BVisibilitySource, InternalFenceKeepsExecutionOrderAndExternalFencePubl
 				"NVB06F_MEM_OP_D_OPERATION_L2_SYSMEM_INVALIDATE"));
 	EXPECT_TRUE(exec.has(
 		"*seqno = chan_fence_job(chan, external, chan->submitted + 1, last, quiet, "
-		"releases, release_count);"));
+		"releases, release_count, owned);"));
 	// A batch's internal fence orders execution only: no L2 flush, no visible release, no interrupt. Its kick is the
 	// GPFIFO entry that keeps it between the batches; the job's own kick writes GP_PUT.
 	const CodeText internal = Block(gpu(), "static void chan_job_fence(");

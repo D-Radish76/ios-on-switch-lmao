@@ -32,7 +32,8 @@ inline double processCpuSeconds()
 {
     rusage use = {};
     getrusage(RUSAGE_SELF, &use);
-    return double(use.ru_utime.tv_sec + use.ru_stime.tv_sec) + double(use.ru_utime.tv_usec + use.ru_stime.tv_usec) / 1e6;
+    return double(use.ru_utime.tv_sec + use.ru_stime.tv_sec) +
+           double(use.ru_utime.tv_usec + use.ru_stime.tv_usec) / 1e6;
 }
 
 inline bool readWord(uintptr_t at, uintptr_t &out)

@@ -15,7 +15,6 @@ enum RMPred : uint8_t {
     PredNone = 0,
     // textures the raw path does not keep, decided when made (a bind hits the texture's own predicate)
     PredTexShape,  // rawShape: a = failing term (1 type, 2 levels, 3 samples, 4 array/depth, 5 rotation, 6 format), b = format
-    PredTexPoolAlloc,   // no pool span or texture header
     PredTexSurfImport,  // the import or the header slot refused
     PredTexPlanar,      // the 4:4:4 two-plane texture refused
     PredTexBufOther,    // memoryless, past the buffer, header slot
@@ -32,8 +31,6 @@ enum RMPred : uint8_t {
     PredCallVisibility,
     PredCallBufForeign,      // a = stage << 8 | index (0xffff: an index buffer)
     PredCallSamplerForeign,  // a sampler the raw path does not express (its reason logged when it was made)
-    PredCallVertexSampler,
-    PredCallDepthBias,  // a = bias, b = slope (float bits)
     PredCallBlitOptions,
     PredCallBufCopyRange,
     PredBlitTexCopy,
@@ -45,7 +42,6 @@ enum RMPred : uint8_t {
     PredComputeKernel,     // no pack kernel at the dispatch's shape, memory, textures and samplers
     PredComputeImage,      // a texture sampled through an image of its own: a = slot
     PredComputePredicate,  // predication raw cannot run (a misused record, a word outside a raw buffer): the command buffer fails; a = kind or offset
-    PredMipmaps,
     PredMipmapsFormat,  // a mipmapped texture's generateMipmaps in a format neither the 2D engine nor a mip state filters: a = format
     PredEvent,
     // found while encoding (the raw encode ran up to here and was thrown away)
@@ -71,7 +67,6 @@ enum RMPred : uint8_t {
 static_assert(PredCount <= 64, "one mask word");
 static constexpr const char *kPredNames[] = {"-",
                                              "tex.shape",
-                                             "tex.pool",
                                              "tex.surf.imp",
                                              "tex.planar",
                                              "tex.buf.other",
@@ -86,8 +81,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "call.vis",
                                              "call.buf",
                                              "call.sampler",
-                                             "call.vsampler",
-                                             "call.dbias",
                                              "call.blitopt",
                                              "call.bufcopy",
                                              "blit.tex",
@@ -99,7 +92,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "compute.nokernel",
                                              "compute.image",
                                              "compute.predicate",
-                                             "mipmaps",
                                              "mipmaps.fmt",
                                              "event",
                                              "enc.planarcopy",

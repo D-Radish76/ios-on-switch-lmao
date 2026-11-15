@@ -25,6 +25,7 @@
 @property (nonatomic, copy) NSString *name;
 @property (nonatomic, copy) NSString *libraryFunctionName;
 @property (nonatomic) MTLFunctionType functionType;
+@property (nonatomic) MTLFunctionOptions options;
 + (instancetype)of:(NmbOfflineFunction *)handle
            library:(RawOfflineLibrary *)library
               name:(NSString *)name
@@ -188,15 +189,26 @@ NSError *refusal(NSString *why)
             *error = refusal(@"a function name is required");
         return nil;
     }
+    RawOfflineFunction *function = nil;
     if (d.constantValues || d.specializedName.length)
-        return [self newFunctionWithName:d.name
-                         specializedName:d.specializedName
-                          constantValues:d.constantValues ?: [MTLFunctionConstantValues new]
-                                   error:error];
-    id<MTLFunction> function = [self newFunctionWithName:d.name];
-    if (!function && error)
-        *error = refusal([NSString stringWithFormat:@"function %@: %s", d.name, nmb_last_error()]);
-    return function;
+        function = (RawOfflineFunction *)[self newFunctionWithName:d.name
+                                                   specializedName:d.specializedName
+                                                    constantValues:d.constantValues ?: [MTLFunctionConstantValues new]
+                                                             error:error];
+    else
+        function = (RawOfflineFunction *)[self newFunctionWithName:d.name];
+    if (!function) {
+        if (error)
+            *error = refusal([NSString stringWithFormat:@"function %@: %s", d.name, nmb_last_error()]);
+        return nil;
+    }
+    if ((d.options & MTLFunctionOptionCompileToBinary) && function.functionType != MTLFunctionTypeVisible) {
+        if (error)
+            *error = refusal(@"CompileToBinary requires a visible function");
+        return nil;
+    }
+    function.options = d.options;
+    return (id<MTLFunction>)function;
 }
 
 @end
@@ -370,18 +382,25 @@ bool computeDescriptor(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelin
         p.stage_index_buffer = stage.indexBufferIndex;
     }
     MTLLinkedFunctions *functions = d.linkedFunctions;
-    if (functions.binaryFunctions.count || functions.groups.count || d.preloadedLibraries.count ||
-        d.insertLibraries.count)
+    if (functions.groups.count || d.preloadedLibraries.count || d.insertLibraries.count)
         return false;
     if (!handles(functions.functions, linked))
         return false;
     const size_t visible = linked.size();
     if (!handles(functions.privateFunctions, linked))
         return false;
+    const size_t binary = linked.size();
+    if (!handles(functions.binaryFunctions, linked))
+        return false;
+    for (id<MTLFunction> function in functions.binaryFunctions)
+        if (!(function.options & MTLFunctionOptionCompileToBinary))
+            return false;
     p.linked = linked.data();
     p.linked_count = visible;
     p.private_linked = linked.data() + visible;
-    p.private_count = linked.size() - visible;
+    p.private_count = binary - visible;
+    p.binary_linked = linked.data() + binary;
+    p.binary_count = linked.size() - binary;
     p.function = ((RawOfflineFunction *)d.computeFunction).handle;
     p.max_threads = d.maxTotalThreadsPerThreadgroup;
     p.multiple_of_execution_width = d.threadGroupSizeIsMultipleOfThreadExecutionWidth;

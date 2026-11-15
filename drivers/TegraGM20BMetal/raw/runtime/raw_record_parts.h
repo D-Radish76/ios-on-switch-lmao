@@ -19,6 +19,7 @@ enum class Tex : uint8_t {
     Texture3D,
     DepthTest,
     StencilTest,
+    XrShadow,  // the pass's half shadow of extended-range colour texSlot (raw_xr_shadow.h)
     Unknown
 };
 
@@ -101,6 +102,9 @@ uint32_t targets(const std::string &key);
 // foreign)
 bool foreign(uint32_t method, uint32_t targets);
 
+// The state of pack key `key` as its functions name it: "v <vertex> + f <fragment>"
+std::string stateName(const std::string &key);
+
 // Whether its programs are known and bind only what the raw path binds (mkpack.py raw_bindable); false: why not
 bool programsBindable(const RecordParts &parts, std::string &why);
 // mkpack.py's record of `parts`, the state of pack key `key`; false: set aside (`why`)
@@ -108,8 +112,8 @@ bool assembleRecord(const RecordParts &parts, const std::string &key, const Pack
                     std::string &why);
 
 // The set-0 entries the record's final programs read: its two programs' (PackPipeline::memoryEntries), its variants'
-// and its split's
-uint32_t recordSetReads(const RuntimeRecord &rec);
+// and its split's (entryMaskWords of its entries)
+std::vector<uint32_t> recordSetReads(const RuntimeRecord &rec);
 // A fetch whose set-0 words none of the record's programs reads fetches nothing (the compiler removed every access):
 // it leaves the record with the colour's storage view and rung, and the record fetches only where another one stays.
 // Returns the colours dropped.

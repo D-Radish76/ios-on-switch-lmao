@@ -22,6 +22,7 @@
 
 static const nir_shader_compiler_options options = {0};
 static int failures;
+static const uint64_t joined_bindings[SWITCH_XR_PLANE_WORDS] = {1ull << JOINED};
 
 static void
 check(bool ok, const char *what)
@@ -164,7 +165,7 @@ test_reads(void)
    for (unsigned o = 0; o < 2; o++) {
       for (unsigned bits = 16; bits <= 32; bits += 16) {
          nir_shader *s = program(ops[o], JOINED, bits, 0);
-         check(switch_nvk_xr_planes(s, 1ull << JOINED), "a joined binding's read is joined");
+         check(switch_nvk_xr_planes(s, joined_bindings), "a joined binding's read is joined");
          const struct reads r = reads_of(s);
          char what[96];
          snprintf(what, sizeof(what), "%s at f%u reads plane 0 and plane 1 once each (%u, %u, %u)",
@@ -174,15 +175,22 @@ test_reads(void)
       }
    }
    nir_shader *other = program(nir_texop_tex, OTHER, 32, 0);
-   check(!switch_nvk_xr_planes(other, 1ull << JOINED), "another binding's sample is left");
+   check(!switch_nvk_xr_planes(other, joined_bindings), "another binding's sample is left");
    ralloc_free(other);
    nir_shader *size = program(nir_texop_txs, JOINED, 32, 0);
-   check(!switch_nvk_xr_planes(size, 1ull << JOINED), "a size query reads plane 0's header as it is");
+   check(!switch_nvk_xr_planes(size, joined_bindings), "a size query reads plane 0's header as it is");
    ralloc_free(size);
    nir_shader *vertex = program(nir_texop_tex, JOINED, 32, 0);
    vertex->info.stage = MESA_SHADER_VERTEX;
-   check(!switch_nvk_xr_planes(vertex, 1ull << JOINED), "a vertex stage is left");
+   check(!switch_nvk_xr_planes(vertex, joined_bindings), "a vertex stage is left");
    ralloc_free(vertex);
+   uint64_t high_bindings[SWITCH_XR_PLANE_WORDS] = {0};
+   high_bindings[1] = 1ull << JOINED;
+   nir_shader *high = program(nir_texop_tex, 64 + JOINED, 32, 0);
+   check(switch_nvk_xr_planes(high, high_bindings), "a binding past 63 reads both planes");
+   const struct reads rh = reads_of(high);
+   check(rh.plane0 == 1 && rh.plane1 == 1 && rh.other == 0, "the high binding reads each plane once");
+   ralloc_free(high);
 }
 
 static void
@@ -197,7 +205,7 @@ test_values(void)
          const float word[4] = {r / 1023.0f, g / 1023.0f, bl / 1023.0f, 1.0f};
          const float alpha[4] = {a / 255.0f, 0, 0, 1};
          nir_shader *s = program(nir_texop_tex, JOINED, bits, 0);
-         switch_nvk_xr_planes(s, 1ull << JOINED);
+         switch_nvk_xr_planes(s, joined_bindings);
          float got[4];
          joined_at(s, word, alpha, got);
          const float want[4] = {half_of((r - 384.0) / 510.0), half_of((g - 384.0) / 510.0),
@@ -215,7 +223,7 @@ static void
 test_gathers(void)
 {
    nir_shader *alpha = program(nir_texop_tg4, JOINED, 32, 3);
-   switch_nvk_xr_planes(alpha, 1ull << JOINED);
+   switch_nvk_xr_planes(alpha, joined_bindings);
    const struct reads ra = reads_of(alpha);
    check(ra.plane0 == 0 && ra.plane1 == 1, "an alpha gather reads plane 1 alone");
    nir_foreach_function_impl(impl, alpha) {
@@ -234,7 +242,7 @@ test_gathers(void)
    ralloc_free(alpha);
 
    nir_shader *green = program(nir_texop_tg4, JOINED, 32, 1);
-   switch_nvk_xr_planes(green, 1ull << JOINED);
+   switch_nvk_xr_planes(green, joined_bindings);
    const struct reads rg = reads_of(green);
    check(rg.plane0 == 1 && rg.plane1 == 0, "a colour gather reads plane 0 alone");
    const float codes[4] = {384 / 1023.0f, 894 / 1023.0f, 0, 1};

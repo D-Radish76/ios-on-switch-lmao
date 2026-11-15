@@ -13,6 +13,8 @@
 #include <vector>
 #include "../pack/probe_bind.h"
 #include "raw_pack.h"
+#include "raw_pack_selectors.h"
+#include "raw_set_entries.h"
 
 namespace nvdec {
 struct ProbeSubmission;
@@ -33,8 +35,26 @@ struct CapturedProgram {
     std::string id;  // nvdec's name: the FNV-1a of its header, code and data
     // header + code, NAK's shader data, each constant buffer's nvk_cbuf_type
     std::vector<uint8_t> image, data, cbufTypes;
+    // by constant buffer slot, a uniform buffer's set-0 byte / 16 past kInlineUboBytes (cbufType CbufUbo, its offset bits 0;
+    // PackProgram::farUbos), 0: none; empty: it reads none
+    std::vector<uint16_t> farUbos;
     uint8_t gprs = 0, boundTextures = 0;  // PackProgram's
 };
+
+// The far table `program` reads uniform buffers through (cbufUboOffset): nullptr where it names none
+inline const uint16_t *farUbosOf(const CapturedProgram &program)
+{
+    return program.farUbos.size() == program.cbufTypes.size() ? program.farUbos.data() : nullptr;
+}
+
+// What makes two of a program's heap slots one: its id, its constant buffer types and its far uniform buffers
+inline std::string programSlotKey(const CapturedProgram &p)
+{
+    std::string key = p.id + std::string(p.cbufTypes.begin(), p.cbufTypes.end());
+    for (uint16_t far : p.farUbos)
+        key += {char(far), char(far >> 8)};
+    return key;
+}
 
 // What every record of a pack shares
 struct PackRules {
@@ -74,13 +94,37 @@ struct RuntimeRecord {
     };
 
     std::vector<Variant> variants;
+
+    struct Selector {
+        uint32_t id = 0;
+        uint8_t value[kSelectorBytes] = {};
+        CapturedProgram program;
+    };
+
+    uint32_t selectorAssume = 0;
+    std::vector<Selector> selectors;
+    std::vector<uint32_t> selectorGeneric;
     // its argument tables' words (PackPipeline::spillWords), the vertex table's first: in a pack, its blob section's
     std::vector<uint32_t> spill;
+    // its far block (raw_set_entries.h farWords of its entries): in a pack, its blob section's at farEntriesAt
+    std::vector<uint32_t> far;
     // A state of bind-stride vertex streams: the same state with every per-bind layout pulled in the shader, made with it
     // at its creation (RawDirect.mm), which a draw of a bind stride past SET_VERTEX_STREAM_A_FORMAT's 12 bits takes. Its
     // keyHash is its own (strideTwinKey); it has no twin.
     std::shared_ptr<const RuntimeRecord> strideTwin;
 };
+
+// Entry k of a record whose far block is `far` (farWords of its entries)
+inline PackEntry &entryAt(PackPipeline &p, std::vector<uint32_t> &far, uint32_t k)
+{
+    return k < kPackEntries ? p.entry[k] : reinterpret_cast<PackEntry *>(far.data())[k - kPackEntries];
+}
+
+inline SetEntries entriesOf(const RuntimeRecord &r)
+{
+    return SetEntries(r.pipeline,
+                      r.far.size() == farWords(entryCount(r.pipeline)) && !r.far.empty() ? r.far.data() : nullptr);
+}
 
 // The key a stride twin of the state of key `key` is hashed by
 std::string strideTwinKey(const std::string &key);
@@ -104,12 +148,12 @@ bool makeRecord(const ProbeRuns &runs, const PackRules &rules, const ProgramLook
 // The record's constexpr entries renumbered as the device's samplers: `place(header, index)` gives a header's index (false:
 // no room). False when an entry names no header of the record, with `unknown` set, or when `place` fails.
 template <typename Place>
-bool placeConstexprSamplers(PackPipeline &pipeline, const std::vector<std::array<uint32_t, 8>> &headers, Place place,
-                            bool &unknown)
+bool placeConstexprSamplers(PackPipeline &pipeline, std::vector<uint32_t> &far,
+                            const std::vector<std::array<uint32_t, 8>> &headers, Place place, bool &unknown)
 {
     unknown = false;
-    for (uint32_t k = 0; k < pipeline.entries && k < kPackEntries; k++) {
-        PackEntry &e = pipeline.entry[k];
+    for (uint32_t k = 0; k < entryCount(pipeline); k++) {
+        PackEntry &e = entryAt(pipeline, far, k);
         if (e.kind == EntryUbo || e.samplerKind != SamplerConstexpr)
             continue;
         uint32_t index = 0;

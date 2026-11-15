@@ -76,6 +76,8 @@ struct switch_nvk_program {
    uint32_t data_bytes;
    uint8_t cbuf_types[16];
    uint32_t cbuf_count;
+   uint8_t cbuf_sets[16];      /* switch_nvk_stage's */
+   uint32_t cbuf_offsets[16];  /* switch_nvk_stage's */
 };
 
 struct switch_nvk_split_cost {
