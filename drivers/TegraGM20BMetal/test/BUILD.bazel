@@ -10412,6 +10412,7 @@ host_test(
     srcs = [
         "raw_arena_trim_test.cpp",
         "empty_pack.h",
+        "predication_model.h",
         "raw_frontend_absent.cpp",
         "raw_kernel_model.h",
     ] + RAW_HOST_HEADERS,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "raw_kernel_model.h"
 #include "empty_pack.h"
+#include "predication_model.h"
 #include "../raw/runtime/raw_arena_trim.h"
 #include "../raw/runtime/raw_gpu.h"
 
@@ -100,7 +101,36 @@ protected:
         });
         return out;
     }
+
+    bool submitCopies(raw::CommandBuffer *cb, uint32_t *completed = nullptr)
+    {
+        const size_t firstJob = kernel_model::model.jobs.size();
+        uint32_t seqno = 0;
+        if (!cb->commit(seqno)) {
+            cb->abandon();
+            return false;
+        }
+        if (completed)
+            *completed = seqno;
+        EXPECT_GT(kernel_model::model.jobs.size(), firstJob);
+        predication_model::Gpu gpu(0);
+        gpu.map = [](uint64_t va) {
+            return kernel_model::model.host(va);
+        };
+        for (size_t j = firstJob; j < kernel_model::model.jobs.size(); ++j)
+            for (const TegraGM20BAbiPush &push : kernel_model::model.jobs[j].pushes) {
+                const auto *words =
+                    reinterpret_cast<const uint32_t *>(kernel_model::model.host(push.va, uint64_t(push.dwords) * 4));
+                EXPECT_NE(words, nullptr);
+                if (!words)
+                    return false;
+                gpu.run(words, push.dwords, true);
+            }
+        return true;
+    }
 };
+
+class ArenaTrimParts : public ArenaTrim, public testing::WithParamInterface<bool> {};
 
 // A heap kept non-volatile gives back the ranges no resource is placed in: its other parts are imported again with their
 // contents, the holes' pages are no longer the process's (nothing wrote them), and a placement into a hole binds it again
@@ -154,6 +184,220 @@ TEST_F(ArenaTrim, TheUnplacedRangesGoBackAndComeBackWithAPlacement)
     dev.trimArenas(committed);
     EXPECT_EQ(importsIn(base, 4 * kQuarter).size(), 3u);
 }
+
+TEST_P(ArenaTrimParts, ALogicalBufferCrossesRetainedAndRestoredParts)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    const bool privateArena = GetParam();
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, privateArena, arena));
+    raw::Buffer a, b, c;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, a));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, c));
+    uint8_t *const base = a.cpu;
+    const uint64_t firstVa = a.va;
+    ASSERT_EQ(a.wc, !privateArena);
+    dev.arenaRelease(b);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    ASSERT_EQ(importsIn(base, 4 * kQuarter), (std::vector<raw::ArenaRange>{{0, kQuarter}, {2 * kQuarter, kQuarter}}));
+
+    dev.arenaRelease(a);
+    raw::Buffer d, destination;
+    ASSERT_TRUE(dev.arenaBuffer(arena, 2 * kQuarter, d));
+    ASSERT_EQ(d.cpu, base);
+    ASSERT_EQ(d.va, firstVa);
+    ASSERT_EQ(d.wc, !privateArena);
+    ASSERT_EQ(d.length, 2 * kQuarter);
+    std::vector<uint8_t> expected(2 * kQuarter);
+    for (size_t i = 0; i < expected.size(); ++i)
+        expected[i] = uint8_t((i * 13) ^ (i >> 12));
+    memcpy(d.cpu, expected.data(), expected.size());
+    ASSERT_TRUE(dev.createBuffer(expected.size(), destination));
+    memset(destination.cpu, 0xA5, expected.size());
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(d, false);
+    cb->use(destination, true);
+    raw::BlitEncoder *blit = cb->blit();
+    ASSERT_NE(blit, nullptr);
+    blit->copyBytes(d.va, destination.va, expected.size());
+    blit->end();
+    ASSERT_TRUE(submitCopies(cb)) << dev.kernel().error();
+    EXPECT_EQ(memcmp(destination.cpu, expected.data(), expected.size()), 0);
+    dev.destroyBuffer(destination);
+    dev.arenaRelease(d);
+    dev.arenaRelease(c);
+    dev.destroyArena(arena);
+}
+
+TEST_P(ArenaTrimParts, ARecordedLiveBufferSurvivesACrossPartPlacement)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    raw::Buffer a, gap, b, c, destination;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter / 2, a));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter / 2, gap));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, c));
+    uint8_t *const base = a.cpu;
+    memset(a.cpu, 0x3C, a.length);
+    memset(c.cpu, 0x5A, c.length);
+    dev.arenaRelease(b);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    ASSERT_EQ(importsIn(base, 4 * kQuarter), (std::vector<raw::ArenaRange>{{0, kQuarter}, {2 * kQuarter, kQuarter}}));
+    dev.arenaRelease(gap);
+    ASSERT_TRUE(dev.createBuffer(a.length + c.length, destination));
+    memset(destination.cpu, 0xA5, destination.length);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(a, false);
+    cb->use(c, false);
+    cb->use(destination, true);
+    raw::BlitEncoder *blit = cb->blit();
+    ASSERT_NE(blit, nullptr);
+    blit->copyBytes(a.va, destination.va, a.length);
+    blit->copyBytes(c.va, destination.va + a.length, c.length);
+    blit->end();
+
+    raw::Buffer d;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, d));
+    ASSERT_EQ(d.cpu, base + kQuarter / 2);
+    memset(d.cpu, 0xC3, d.length);
+    ASSERT_TRUE(submitCopies(cb)) << dev.kernel().error();
+    std::vector<uint8_t> expected(a.length, 0x3C);
+    expected.resize(a.length + c.length, 0x5A);
+    EXPECT_EQ(memcmp(destination.cpu, expected.data(), expected.size()), 0);
+    EXPECT_EQ(memcmp(a.cpu, expected.data(), a.length), 0);
+    EXPECT_EQ(memcmp(c.cpu, expected.data() + a.length, c.length), 0);
+    dev.destroyBuffer(destination);
+    dev.arenaRelease(d);
+    dev.arenaRelease(a);
+    dev.arenaRelease(c);
+    dev.destroyArena(arena);
+}
+
+TEST_P(ArenaTrimParts, AFailedCrossPartImportPreservesLiveBuffersAndTheirRecordedUse)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    raw::Buffer a, gap, b, c, destination;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter / 2, a));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter / 2, gap));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, c));
+    uint8_t *const base = a.cpu;
+    memset(a.cpu, 0x3C, a.length);
+    memset(c.cpu, 0x5A, c.length);
+    dev.arenaRelease(b);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    ASSERT_EQ(importsIn(base, 4 * kQuarter), (std::vector<raw::ArenaRange>{{0, kQuarter}, {2 * kQuarter, kQuarter}}));
+    dev.arenaRelease(gap);
+    ASSERT_TRUE(dev.createBuffer(a.length + c.length, destination));
+    memset(destination.cpu, 0xA5, destination.length);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(a, false);
+    cb->use(c, false);
+    cb->use(destination, true);
+    raw::BlitEncoder *blit = cb->blit();
+    ASSERT_NE(blit, nullptr);
+    blit->copyBytes(a.va, destination.va, a.length);
+    blit->copyBytes(c.va, destination.va + a.length, c.length);
+    blit->end();
+
+    raw::Buffer d;
+    kernel_model::model.refuseImports = 1;
+    EXPECT_FALSE(dev.arenaBuffer(arena, kQuarter, d));
+    EXPECT_EQ(kernel_model::model.refuseImports, 0u);
+    ASSERT_TRUE(submitCopies(cb)) << dev.kernel().error();
+    std::vector<uint8_t> expected(a.length, 0x3C);
+    expected.resize(a.length + c.length, 0x5A);
+    EXPECT_EQ(memcmp(destination.cpu, expected.data(), expected.size()), 0);
+    EXPECT_EQ(memcmp(a.cpu, expected.data(), a.length), 0);
+    EXPECT_EQ(memcmp(c.cpu, expected.data() + a.length, c.length), 0);
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, d));
+    EXPECT_EQ(d.cpu, base + kQuarter / 2);
+    dev.destroyBuffer(destination);
+    dev.arenaRelease(d);
+    dev.arenaRelease(a);
+    dev.arenaRelease(c);
+    dev.destroyArena(arena);
+}
+
+TEST_P(ArenaTrimParts, CpuConsumersFindALiveBufferInARetainedPart)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    raw::Buffer a, b, c, source;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, a));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, c));
+    a.hostVisible = true;
+    uint8_t *const base = a.cpu;
+    memset(a.cpu, 0x3C, a.length);
+    memset(c.cpu, 0x5A, c.length);
+    dev.arenaRelease(b);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    ASSERT_EQ(importsIn(base, 4 * kQuarter), (std::vector<raw::ArenaRange>{{0, kQuarter}, {2 * kQuarter, kQuarter}}));
+
+    raw::HostAccess writeLease;
+    const bool acquiredWrite = dev.hostAccess(a, a.cpu + 7, 2, true, writeLease);
+    EXPECT_TRUE(acquiredWrite);
+    if (acquiredWrite) {
+        a.cpu[7] = 0x31;
+        a.cpu[8] = 0x42;
+        ASSERT_TRUE(writeLease.finish());
+        EXPECT_EQ(a.cpu[6], 0x3C);
+        EXPECT_EQ(a.cpu[9], 0x3C);
+    }
+    ASSERT_TRUE(dev.createBuffer(a.length, source));
+    memset(source.cpu, 0xC3, source.length);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(source, false);
+    cb->use(a, true);
+    raw::BlitEncoder *blit = cb->blit();
+    ASSERT_NE(blit, nullptr);
+    blit->copyBytes(source.va, a.va, a.length);
+    blit->end();
+    uint32_t seqno = 0;
+    ASSERT_TRUE(submitCopies(cb, &seqno)) << dev.kernel().error();
+    const raw::CpuCompletion completion = dev.captureCpuCompletion(seqno, dev.channelGeneration(), {&a});
+    EXPECT_TRUE(completion.valid);
+    if (a.wc) {
+        EXPECT_TRUE(completion.ranges.empty());
+    } else {
+        EXPECT_FALSE(completion.ranges.empty());
+        for (const auto &range : completion.ranges)
+            EXPECT_NE(kernel_model::model.bos.find(range.handle), kernel_model::model.bos.end());
+    }
+    EXPECT_EQ(dev.completeCpu(completion), raw::CpuCompletionResult::Current);
+    raw::HostAccess readLease;
+    const bool acquiredRead = dev.hostAccess(a, false, readLease);
+    EXPECT_TRUE(acquiredRead);
+    if (acquiredRead) {
+        EXPECT_EQ(memcmp(a.cpu, source.cpu, a.length), 0);
+        EXPECT_TRUE(readLease.finish());
+    }
+    std::vector<uint8_t> untouched(c.length, 0x5A);
+    EXPECT_EQ(memcmp(c.cpu, untouched.data(), untouched.size()), 0);
+    dev.destroyBuffer(source);
+    dev.arenaRelease(a);
+    dev.arenaRelease(c);
+    dev.destroyArena(arena);
+}
+
+INSTANTIATE_TEST_SUITE_P(Storage, ArenaTrimParts, testing::Bool(), [](const testing::TestParamInfo<bool> &info) {
+    return info.param ? "Private" : "Shared";
+});
 
 // An arena trimmed to no part (nothing placed in it) has no BO left: freeing it counts none of its bytes out again
 // (boot 21's rates lines read pool=17592186044256MB in mediaanalysisd, the counter 160 MB below zero)
