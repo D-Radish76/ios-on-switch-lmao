@@ -3555,13 +3555,12 @@ bool Device::createBufferNoCopy(void *bytes, uint64_t length, Buffer &b)
     return true;
 }
 
-bool Device::createSurfaceBuffer(uint64_t id, void *base, uint64_t bytes, uint64_t length, const void *owner, Buffer &b,
-                                 bool &tiled)
+bool Device::createSurfaceBuffer(uint64_t id, void *base, uint64_t length, const void *owner, Buffer &b, bool &tiled)
 {
     b = {};
     tiled = false;
     std::lock_guard<raw::Mutex> l(lock_);
-    Import *i = importSurface(id, base, bytes, owner);
+    Import *i = importSurface(id, base, length, owner);
     if (!i)
         return false;
     if (i->kind == TGM_LAYOUT_KIND) {

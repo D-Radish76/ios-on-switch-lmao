@@ -346,15 +346,13 @@ int tgm_backing_dependencies(struct tgm_chan *chan, const struct switch_gpu_back
 			     u32 count)
 {
 	u32 unsettled[(TegraGM20BMaxJobDependencies + 31) / 32] = {0};
-	u32 channels;
-	int ret;
 
 	if (count > TegraGM20BMaxJobDependencies)
 		return -E2BIG;
-	channels = backing_unsettled(tokens, count, unsettled);
+	const u32 channels = backing_unsettled(tokens, count, unsettled);
 	if (channels)
 		mutex_lock(&tgm_live_lock);
-	ret = backing_waits(chan, tokens, count, unsettled, 0);
+	const int ret = backing_waits(chan, tokens, count, unsettled, 0);
 	if (!ret) {
 		backing_waits(chan, tokens, count, unsettled, 1);
 		switch_gpu_chan_park_promises_locked(chan, tokens, count, unsettled);

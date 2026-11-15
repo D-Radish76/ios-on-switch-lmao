@@ -166,10 +166,8 @@ int switch_gpu_order_waits_locked(struct tgm_chan *chan)
 
 int tgm_order_waits(struct tgm_chan *chan)
 {
-	int result;
-
 	mutex_lock(&tgm_live_lock);
-	result = switch_gpu_order_waits_locked(chan);
+	const int result = switch_gpu_order_waits_locked(chan);
 	mutex_unlock(&tgm_live_lock);
 	return result;
 }

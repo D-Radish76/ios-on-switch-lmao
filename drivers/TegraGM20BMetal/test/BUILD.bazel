@@ -2541,6 +2541,7 @@ host_test(
         "raw_device_harness.h",
         "raw_job_methods.h",
         "raw_kernel_model.h",
+        "predication_model.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",

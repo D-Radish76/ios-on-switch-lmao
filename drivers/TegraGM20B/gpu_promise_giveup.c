@@ -279,10 +279,9 @@ int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *
 int tgm_promise_park(uint32_t offset, uint32_t value, const char *waiter, const char *who,
 		     const struct switch_gpu_giveup_job *reader, int display)
 {
-	int result;
-
 	mutex_lock(&tgm_live_lock);
-	result = switch_gpu_promise_park_locked(offset, value, waiter, who, reader, display);
+	const int result =
+		switch_gpu_promise_park_locked(offset, value, waiter, who, reader, display);
 	mutex_unlock(&tgm_live_lock);
 	return result;
 }

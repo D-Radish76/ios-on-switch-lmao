@@ -323,8 +323,8 @@
     b->_device = self;
     b->_options = MTLResourceStorageModeShared;
     bool tiled = false;
-    if (!gRM->raw->createSurfaceBuffer(IOSurfaceGetID(s), base, allocation, (allocation + page - 1) & ~(page - 1), s,
-                                       b->_raw, tiled)) {
+    if (!gRM->raw->createSurfaceBuffer(IOSurfaceGetID(s), base, (allocation + page - 1) & ~(page - 1), s, b->_raw,
+                                       tiled)) {
         if (!tiled)
             os_log_error(rawLog(), "raw: %{public}s: the kernel imported no IOSurface %u: no buffer over it made",
                          getprogname(), IOSurfaceGetID(s));

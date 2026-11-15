@@ -268,18 +268,40 @@ void surfaceBufferAndLinearRow()
     const id<MTLDevice> device = opened.device;
     ASSERT_TRUE(device != nil);
     id<HarnessDeviceSPI> spi = (id<HarnessDeviceSPI>)device;
-    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
-        (id)kIOSurfaceWidth : @64,
-        (id)kIOSurfaceHeight : @64,
-        (id)kIOSurfaceBytesPerElement : @4,
-        (id)kIOSurfacePixelFormat : @(uint32_t('BGRA'))
-    });
-    ASSERT_TRUE(surface != nullptr);
-    id<MTLBuffer> buffer = [spi newBufferWithIOSurface:surface];
-    ASSERT_TRUE(buffer != nil);
-    EXPECT_EQ(buffer.contents, IOSurfaceGetBaseAddress(surface));
-    EXPECT_EQ(buffer.length % vm_page_size, 0u);
-    EXPECT_GE(buffer.length, IOSurfaceGetAllocSize(surface));
+    id<MTLCommandQueue> queue = [device newCommandQueue];
+    id<MTLBuffer> copy = [device newBufferWithLength:4 options:MTLResourceStorageModeShared];
+    ASSERT_TRUE(queue != nil && copy != nil);
+    for (NSUInteger height : {64u, 80u, 96u, 112u}) {
+        IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+            (id)kIOSurfaceWidth : @64,
+            (id)kIOSurfaceHeight : @(height),
+            (id)kIOSurfaceBytesPerElement : @4,
+            (id)kIOSurfaceBytesPerRow : @256,
+            (id)kIOSurfaceAllocSize : @(height * 256),
+            (id)kIOSurfacePixelFormat : @(uint32_t('BGRA'))
+        });
+        ASSERT_TRUE(surface != nullptr);
+        id<MTLBuffer> buffer = [spi newBufferWithIOSurface:surface];
+        ASSERT_TRUE(buffer != nil);
+        EXPECT_EQ(buffer.contents, IOSurfaceGetBaseAddress(surface));
+        EXPECT_EQ(buffer.length % vm_page_size, 0u);
+        EXPECT_GE(buffer.length, IOSurfaceGetAllocSize(surface));
+        id<MTLCommandBuffer> cb = [queue commandBuffer];
+        id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+        ASSERT_TRUE(blit != nil);
+        [blit copyFromBuffer:buffer sourceOffset:0 toBuffer:copy destinationOffset:0 size:4];
+        [blit endEncoding];
+        const size_t before = kernel_model::model.jobs.size();
+        const bool refused = kernel_model::model.unknownUsesRefused;
+        kernel_model::model.unknownUsesRefused = true;
+        [cb commit];
+        [cb waitUntilCompleted];
+        kernel_model::model.unknownUsesRefused = refused;
+        EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
+        EXPECT_GT(kernel_model::model.jobs.size(), before);
+        buffer = nil;
+        CFRelease(surface);
+    }
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
                                                                                  width:100
                                                                                 height:4
@@ -305,8 +327,6 @@ void surfaceBufferAndLinearRow()
     EXPECT_EQ(rowOf(MTLPixelFormatDepth32Float), 0u);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-    buffer = nil;
-    CFRelease(surface);
 }
 
 // A heap's block-compressed textures (a chain, an array, and a single level in a shared heap, block-linear as the device

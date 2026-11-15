@@ -233,7 +233,8 @@ struct Model {
         if (!(use.access & TegraGM20BSurfaceGpuAddress))
             return bos.count(use.handle) ? use.handle : 0;
         for (const auto &[va, bound] : binds)
-            if (use.handle >= va && use.handle - va < bound.second)
+            if (use.handle >= va && use.handle - va < bound.second &&
+                (!(use.access & TegraGM20BSurfaceRange) || use.reserved <= bound.second - (use.handle - va)))
                 return bound.first;
         return 0;
     }

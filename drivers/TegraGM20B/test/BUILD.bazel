@@ -119,6 +119,15 @@ host_shims(
     stubs = "switch_gpu_recovery_stubs.h",
 )
 
+host_shims(
+    name = "client_retirement_kernel",
+    headers = [
+        "IOKit/IOLib.h",
+        "kern/thread.h",
+    ],
+    stubs = "switch_gpu_client_fixture.h",
+)
+
 host_test(
     name = "switch_gpu_client_retirement_test",
     srcs = [
@@ -132,9 +141,11 @@ host_test(
         "//drivers/TegraGM20B:SwitchGpuBindings.h",
         "//drivers/TegraGM20B:TegraGM20BBindHistory.h",
         "//drivers/TegraGM20B:SwitchGpuBacking.h",
+        "//drivers/TegraGM20B:SwitchGpuSubmitGate.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "gm20b_gpu_memory.h",
     ],
+    deps = [":client_retirement_kernel"],
 )
 
 # SubmitJob's lock-free reads of BOs and bindings against the connection's changes and retirement, under ThreadSanitizer.
@@ -151,12 +162,14 @@ host_test(
         "//drivers/TegraGM20B:SwitchGpuBindings.h",
         "//drivers/TegraGM20B:TegraGM20BBindHistory.h",
         "//drivers/TegraGM20B:SwitchGpuBacking.h",
+        "//drivers/TegraGM20B:SwitchGpuSubmitGate.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "gm20b_gpu_memory.h",
     ],
     copts = ["-fsanitize=thread"],
     linkopts = ["-fsanitize=thread"],
     sanitize = False,
+    deps = [":client_retirement_kernel"],
 )
 
 host_library(

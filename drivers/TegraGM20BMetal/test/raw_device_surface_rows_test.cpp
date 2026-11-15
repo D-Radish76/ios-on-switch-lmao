@@ -5,6 +5,7 @@
 // header lays them out; and a one-plane 4:2:2 texture's plane, split by the copy engine into the luma and chroma images its
 // conversion reads.
 #include "raw_device_harness.h"
+#include "predication_model.h"
 #include "../raw/runtime/raw_pack.h"
 #include "../raw/runtime/raw_record.h"
 #include "../raw/runtime/raw_ycbcr.h"
@@ -21,9 +22,8 @@ struct Surface {
     void *base = nullptr;
     uint64_t alloc = 0, mapped = 0;
 
-    explicit Surface(uint64_t bytes) : alloc(bytes)
+    explicit Surface(uint64_t bytes, size_t page = size_t(getpagesize())) : alloc(bytes)
     {
-        const size_t page = size_t(getpagesize());
         mapped = (bytes + page - 1) / page * page;
         base = aligned_alloc(page, mapped);
         memset(base, 0x5a, mapped);
@@ -36,6 +36,63 @@ struct Surface {
 };
 
 class DeviceSurfaceRows : public harness::DeviceTest {};
+
+TEST_F(DeviceSurfaceRows, SurfaceBuffersMapTheirWholeRoundedMetalLength)
+{
+    constexpr uint64_t kMetalPage = 16384;
+    kernel_model::model.unknownUsesRefused = true;
+    for (const uint64_t bytes : {20480u, 24576u, 28672u}) {
+        Surface s(bytes, kMetalPage);
+        SCOPED_TRACE(bytes);
+        ASSERT_EQ(s.mapped, 32768u);
+        memset(static_cast<uint8_t *>(s.base) + s.alloc, 0xe7, s.mapped - s.alloc);
+        raw::Texture image;
+        ASSERT_TRUE(
+            dev.createSurfaceTexture(1, s.base, s.alloc, nullptr, 0, 64, uint32_t(bytes / 256), 256, 80, image));
+        raw::Buffer source, destination;
+        bool tiled = false;
+        ASSERT_TRUE(dev.createSurfaceBuffer(1, s.base, s.mapped, nullptr, source, tiled));
+        ASSERT_FALSE(tiled);
+        ASSERT_EQ(source.length, s.mapped);
+        EXPECT_EQ(source.import, image.import);
+        ASSERT_TRUE(dev.createBuffer(s.mapped, destination));
+        for (const uint64_t copied : {uint64_t(4), s.mapped}) {
+            SCOPED_TRACE(copied);
+            memset(destination.cpu, 0, destination.length);
+            raw::CommandBuffer *cb = dev.begin();
+            ASSERT_NE(cb, nullptr);
+            cb->use(source, false);
+            cb->use(destination, true);
+            const size_t first = kernel_model::model.jobs.size();
+            raw::BlitEncoder *blit = cb->blit();
+            ASSERT_NE(blit, nullptr);
+            blit->copyBytes(source.va, destination.va, copied);
+            blit->end();
+            uint32_t seqno = 0;
+            const bool committed = cb->commit(seqno);
+            EXPECT_TRUE(committed) << dev.kernel().error();
+            if (!committed) {
+                cb->abandon();
+                continue;
+            }
+            predication_model::Gpu gpu(0);
+            gpu.map = [](uint64_t va) {
+                return kernel_model::model.host(va);
+            };
+            for (size_t j = first; j < kernel_model::model.jobs.size(); ++j)
+                for (const TegraGM20BAbiPush &push : kernel_model::model.jobs[j].pushes) {
+                    const auto *words = reinterpret_cast<const uint32_t *>(
+                        kernel_model::model.host(push.va, uint64_t(push.dwords) * 4));
+                    ASSERT_NE(words, nullptr);
+                    gpu.run(words, push.dwords, true);
+                }
+            EXPECT_EQ(memcmp(destination.cpu, s.base, copied), 0);
+        }
+        dev.destroyBuffer(destination);
+        dev.destroyBuffer(source);
+        dev.destroyTexture(image);
+    }
+}
 
 TEST_F(DeviceSurfaceRows, RowsPastAPlaneAreReadWithinTheAllocationsLastPage)
 {
