@@ -44,7 +44,6 @@ struct CopyEngine {
 	{
 	}
 
-	// `texelBytes`: the remap's texel, bpp()
 	uint64_t blockLinear(const Side &s, uint32_t texelBytes, uint32_t xB, uint32_t y) const
 	{
 		const uint32_t yLog2 = (s.blockSize >> 4) & 0xf;
@@ -57,12 +56,6 @@ struct CopyEngine {
 		return (block << (9 + yLog2 + zLog2)) +
 		       (uint64_t(s.layer & ((1u << zLog2) - 1)) << (9 + yLog2)) +
 		       uint64_t((y % blockRows) / 8) * 512 + tgm_layout_gob_offset(xB, y);
-	}
-
-	uint32_t bpp() const
-	{
-		const uint32_t c = m.at(0x0708);
-		return (((c >> 16) & 3) + 1) * (((c >> 20) & 3) + 1);
 	}
 
 	void launch(uint32_t flags)
@@ -78,14 +71,15 @@ struct CopyEngine {
 		const uint64_t in = uint64_t(m[0x0400]) << 32 | m[0x0404],
 			       out = uint64_t(m[0x0408]) << 32 | m[0x040c];
 		const bool srcPitch = flags & (1u << 7), dstPitch = flags & (1u << 8);
-		const uint32_t b = remap ? bpp() : 1, w = m[0x0418], h = m[0x041c];
+		const uint32_t components = remap ? m.at(0x0708) : 0;
+		const uint32_t unit = remap ? ((components >> 16) & 3) + 1 : 1;
+		const uint32_t srcBytes = unit * (((components >> 20) & 3) + 1),
+			       dstBytes = unit * (((components >> 24) & 3) + 1), w = m[0x0418],
+			       h = m[0x041c];
 		ASSERT_TRUE(remap || (srcPitch && dstPitch))
 			<< "a block-linear side is addressed in texels: remapped";
 		if (remap &&
 		    (m.at(0x0708) & 7) == 4) {  // DST_X CONST_A: a fill of the constant, no source
-			const uint32_t components = m.at(0x0708),
-				       unit = ((components >> 16) & 3) + 1;
-			const uint32_t dstBytes = unit * (((components >> 24) & 3) + 1);
 			for (uint32_t y = 0; y < h; y++)
 				for (uint32_t x = 0; x < w * dstBytes; x++) {
 					const uint32_t source =
@@ -111,23 +105,39 @@ struct CopyEngine {
 		uint32_t copied = 0;
 		const uint32_t pitchIn = m[0x0410], pitchOut = m[0x0414];
 		for (uint32_t y = 0; y < h; y++)
-			for (uint32_t x = 0; x < w * b; x++) {
+			for (uint32_t x = 0; x < w * dstBytes; x++) {
+				const uint32_t source =
+					remap ? (components >> (4 * ((x % dstBytes) / unit))) & 7
+					      : 0;
+				if (source == 6)
+					continue;
+				ASSERT_LT(source, 7u);
+				const uint32_t sourceByte =
+					x / dstBytes * srcBytes + source * unit + x % unit;
 				const uint64_t s =
-					srcPitch ? in + uint64_t(y) * pitchIn + x
-						 : in + blockLinear(src, b,
-								    x + (src.origin & 0xffff) * b,
+					srcPitch ? in + uint64_t(y) * pitchIn + sourceByte
+						 : in + blockLinear(src, srcBytes,
+								    sourceByte +
+									    (src.origin & 0xffff) *
+										    srcBytes,
 								    y + (src.origin >> 16));
 				const uint64_t d =
 					dstPitch ? out + uint64_t(y) * pitchOut + x
-						 : out + blockLinear(dst, b,
-								     x + (dst.origin & 0xffff) * b,
+						 : out + blockLinear(dst, dstBytes,
+								     x + (dst.origin & 0xffff) *
+										     dstBytes,
 								     y + (dst.origin >> 16));
-				uint8_t *ps = memory.at(s), *pd = memory.at(d, true);
-				if (!ps || !pd) {
+				if (source < 4)
+					ASSERT_LT(source * unit, srcBytes);
+				uint8_t *ps = source < 4 ? memory.at(s) : nullptr,
+					*pd = memory.at(d, true);
+				if ((source < 4 && !ps) || !pd) {
 					fault = true;
 					return;
 				}
-				*pd = *ps;
+				*pd = ps ? *ps
+					 : uint8_t(m[source == 4 ? 0x0700 : 0x0704] >>
+						   (8 * (x % unit)));
 				if (launches == failLaunch && ++copied == failAfterBytes) {
 					fault = true;
 					return;

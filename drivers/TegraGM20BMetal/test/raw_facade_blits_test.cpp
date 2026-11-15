@@ -608,6 +608,162 @@ TEST_F(FacadeBlits, NestedViewsKeepTheParentMipAndArraySlice)
     EXPECT_EQ(memcmp(static_cast<uint8_t *>(in.contents) + 64, static_cast<uint8_t *>(out.contents) + 128, 64), 0);
 }
 
+TEST_F(FacadeBlits, X32StencilBufferCopiesKeepDepthAndNeighborSubresources)
+{
+    for (bool selected : {false, true}) {
+        SCOPED_TRACE(selected);
+        auto parent = texture(MTLPixelFormatDepth32Float_Stencil8, true);
+        ASSERT_NE(parent, nil);
+        id<MTLTexture> part = parent;
+        if (selected)
+            part = [parent newTextureViewWithPixelFormat:parent.pixelFormat
+                                             textureType:MTLTextureType2D
+                                                  levels:NSMakeRange(1, 3)
+                                                  slices:NSMakeRange(1, 1)];
+        ASSERT_NE(part, nil);
+        auto stencil = [part newTextureViewWithPixelFormat:MTLPixelFormatX32_Stencil8];
+        ASSERT_NE(stencil, nil);
+        ASSERT_TRUE(((RMTexture *)stencil)->_rawOk);
+        const auto &root = ((RMTexture *)parent)->_raw;
+        ASSERT_EQ(root.stencilTemp, nullptr);
+        const auto storage = root.storageRange();
+        auto *bytes = kernel_model::model.host(storage.va, storage.bytes);
+        ASSERT_NE(bytes, nullptr);
+        std::vector<uint8_t> expected(storage.bytes);
+        for (size_t i = 0; i < expected.size(); ++i)
+            expected[i] = uint8_t(i * 17 + i / 31);
+        memcpy(bytes, expected.data(), expected.size());
+        raw::Texture level;
+        ASSERT_TRUE(raw::chainLevelImage(root, 2, level));
+        const uint64_t base = level.va + level.layerBytes - storage.va;
+        auto in = buffer(), out = buffer();
+        std::vector<uint8_t> source(in.length, 0xb6), output(out.length, 0xc7);
+        constexpr uint32_t width = 5, height = 3, x0 = 1, y0 = 2, inOffset = 3, inPitch = 11, outOffset = 5,
+                           outPitch = 13;
+        for (uint32_t y = 0; y < height; ++y)
+            for (uint32_t x = 0; x < width; ++x) {
+                const uint8_t value = uint8_t(0x30 + y * 11 + x * 7);
+                source[inOffset + y * inPitch + x] = value;
+                output[outOffset + y * outPitch + x] = value;
+                const uint64_t at = base + tgm_layout_offset_of(level.pitch, level.blockHeight, (x0 + x) * 8, y0 + y);
+                ASSERT_LT(at + 7, storage.bytes);
+                expected[at + 4] = value;
+            }
+        memcpy(in.contents, source.data(), source.size());
+        memset(out.contents, 0xc7, out.length);
+        auto cb = [[device newCommandQueue] commandBuffer];
+        auto e = [cb blitCommandEncoder];
+        [e copyFromBuffer:in
+                   sourceOffset:inOffset
+              sourceBytesPerRow:inPitch
+            sourceBytesPerImage:inPitch * height
+                     sourceSize:MTLSizeMake(width, height, 1)
+                      toTexture:stencil
+               destinationSlice:selected ? 0 : 1
+               destinationLevel:selected ? 1 : 2
+              destinationOrigin:MTLOriginMake(x0, y0, 0)];
+        [e copyFromTexture:stencil
+                         sourceSlice:selected ? 0 : 1
+                         sourceLevel:selected ? 1 : 2
+                        sourceOrigin:MTLOriginMake(x0, y0, 0)
+                          sourceSize:MTLSizeMake(width, height, 1)
+                            toBuffer:out
+                   destinationOffset:outOffset
+              destinationBytesPerRow:outPitch
+            destinationBytesPerImage:outPitch * height];
+        [e endEncoding];
+        execute(cb);
+        EXPECT_EQ(memcmp(in.contents, source.data(), source.size()), 0);
+        EXPECT_EQ(memcmp(out.contents, output.data(), output.size()), 0);
+        for (uint32_t y = 0; y < height; ++y)
+            for (uint32_t x = 0; x < width; ++x) {
+                const uint64_t at = base + tgm_layout_offset_of(level.pitch, level.blockHeight, (x0 + x) * 8, y0 + y);
+                // Metal exposes depth and stencil; bytes 5–7 are undefined padding.
+                for (uint32_t pad = 5; pad < 8; ++pad)
+                    expected[at + pad] = bytes[at + pad];
+            }
+        EXPECT_EQ(memcmp(bytes, expected.data(), expected.size()), 0);
+    }
+}
+
+TEST_F(FacadeBlits, StencilCopyTemporaryLivesWithTheRootAcrossViews)
+{
+    auto out = buffer();
+    raw::Texture unrelated;
+    uint64_t temporary = 0;
+    __weak RMTexture *held = nil;
+    @autoreleasepool {
+        id<MTLTexture> parent = texture(MTLPixelFormatDepth32Float_Stencil8);
+        ASSERT_NE(parent, nil);
+        id<MTLTexture> first = [parent newTextureViewWithPixelFormat:MTLPixelFormatX32_Stencil8];
+        id<MTLTexture> second = [parent newTextureViewWithPixelFormat:MTLPixelFormatX32_Stencil8];
+        ASSERT_NE(first, nil);
+        ASSERT_NE(second, nil);
+        __unsafe_unretained RMTexture *root = (RMTexture *)parent;
+        held = root;
+        const auto storage = root->_raw.storageRange();
+        auto *bytes = kernel_model::model.host(storage.va, storage.bytes);
+        ASSERT_NE(bytes, nullptr);
+        memset(bytes, 0x5a, storage.bytes);
+        id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
+        id<MTLBlitCommandEncoder> e = [cb blitCommandEncoder];
+        [e copyFromTexture:first
+                         sourceSlice:0
+                         sourceLevel:0
+                        sourceOrigin:MTLOriginMake(2, 3, 0)
+                          sourceSize:MTLSizeMake(3, 2, 1)
+                            toBuffer:out
+                   destinationOffset:3
+              destinationBytesPerRow:11
+            destinationBytesPerImage:22
+                             options:MTLBlitOptionStencilFromDepthStencil];
+        [e endEncoding];
+        execute(cb);
+        ASSERT_NE(root->_raw.stencilTemp, nullptr);
+        EXPECT_EQ(((RMTexture *)first)->_raw.stencilTemp, nullptr);
+        EXPECT_EQ(((RMTexture *)second)->_raw.stencilTemp, nullptr);
+        temporary = root->_raw.stencilTemp->va;
+        ASSERT_TRUE(gRM->raw->createTexture(32, 32, 30, unrelated));
+        EXPECT_NE(unrelated.va, temporary);
+        e = nil;
+        cb = nil;
+        first = nil;
+        parent = nil;
+        {
+            RMTexture *retained = held;
+            ASSERT_NE(retained, nil);
+            EXPECT_EQ(retained->_raw.stencilTemp->va, temporary);
+        }
+        memset(out.contents, 0xc7, out.length);
+        cb = [[device newCommandQueue] commandBuffer];
+        e = [cb blitCommandEncoder];
+        [e copyFromTexture:second
+                         sourceSlice:0
+                         sourceLevel:0
+                        sourceOrigin:MTLOriginMake(2, 3, 0)
+                          sourceSize:MTLSizeMake(3, 2, 1)
+                            toBuffer:out
+                   destinationOffset:3
+              destinationBytesPerRow:11
+            destinationBytesPerImage:22];
+        [e endEncoding];
+        execute(cb);
+        for (NSUInteger i = 0; i < out.length; ++i)
+            EXPECT_EQ(static_cast<uint8_t *>(out.contents)[i],
+                      i >= 3 && (i - 3) / 11 < 2 && (i - 3) % 11 < 3 ? 0x5a : 0xc7)
+                << i;
+        e = nil;
+        cb = nil;
+        second = nil;
+    }
+    EXPECT_EQ(held, nil);
+    raw::Texture reused;
+    ASSERT_TRUE(gRM->raw->createTexture(32, 32, 30, reused));
+    EXPECT_EQ(reused.va, temporary);
+    gRM->raw->destroyTexture(reused);
+    gRM->raw->destroyTexture(unrelated);
+}
+
 TEST_F(FacadeBlits, BlitFillAdmitsArrayMipAndEmitsItsTarget)
 {
     auto t = texture(MTLPixelFormatRGBA8Unorm, true);
