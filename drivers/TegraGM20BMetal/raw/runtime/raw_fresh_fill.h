@@ -15,14 +15,18 @@ inline uint64_t fillFresh(BlitEncoder &b, const Texture &x, uint32_t patterned, 
     const uint32_t levels = x.chain ? x.chain->layout.levels : 1;
     uint64_t bytes = 0;
     for (uint32_t level = 0; level < levels; level++) {
-        Texture image;
+        Texture image = x;
         if (level && !chainLevelImage(x, level, image))
             continue;
-        const Texture &target = level ? image : x;
-        const uint32_t planes = target.type == fx::kTexThreeD ? target.depth : target.layers;
+        uint32_t sx, sy;
+        sampleGrid(image.samples, sx, sy);
+        image.width <<= sx;
+        image.height <<= sy;
+        image.samples = 1;
+        const uint32_t planes = image.type == fx::kTexThreeD ? image.depth : image.layers;
         for (uint32_t z = 0; z < planes; z++)
-            b.fillTexels(target, z, target.width, target.height, level < patterned ? pattern : zero);
-        bytes += uint64_t(target.width) * target.height * planes * x.bpp;
+            b.fillTexels(image, z, image.width, image.height, level < patterned ? pattern : zero);
+        bytes += uint64_t(image.width) * image.height * planes * x.bpp;
     }
     return bytes;
 }
