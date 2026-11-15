@@ -544,7 +544,7 @@ id<MTLCommandBuffer> replay(RMCommandBuffer *cb, size_t from, size_t to, bool pa
             break;
         case OpResetCommands:
         case OpCopyCommands:
-            encodeCommandsBlit(nullptr, c);
+            encodeCommandsBlit(nullptr, nullptr, c);
             break;
         default:  // a compute encoder's: replayKernel, above
             break;

@@ -153,11 +153,13 @@ TEST_F(SplitRecords, OnlyAWriteOfTheBoundUniformsKeepsTheWholeProgram)
         e->end();
     };
     raw::BlitEncoder *b = cb->blit();
+    cb->use(other, true, false);
     b->fillBytes(other.va, 0x1000, 0x5a);
     b->end();
     drawOnce(0x1040);
     EXPECT_EQ(cb->splitRecords().size(), 1u) << "another buffer's fill";
     b = cb->blit();
+    cb->use(uniforms, true, false);
     b->fillBytes(uniforms.va + 0x1000, 0x100, 0x5a);
     b->end();
     drawOnce(0x10c8);

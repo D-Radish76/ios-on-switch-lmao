@@ -146,6 +146,8 @@ void RMRangeEncode::shadowCopies(const std::vector<const void *> &back, const st
     raw::BlitEncoder *copy = rc_->blit();
     for (const void *o : back) {
         if (const raw::KernelWindows::Window *w = kernelWindows_.find(o)) {
+            rc_->use(((__bridge RMBuffer *)w->buffer)->_raw, true, false);
+            rc_->useAddress(w->va, w->span.bytes, false);
             copy->copyBytes(w->va, w->span.va, w->span.bytes);
             continue;
         }
@@ -154,6 +156,8 @@ void RMRangeEncode::shadowCopies(const std::vector<const void *> &back, const st
     }
     for (const void *o : fill) {
         if (const raw::KernelWindows::Window *w = kernelWindows_.find(o)) {
+            useBuffer(rc_, (__bridge RMBuffer *)w->buffer, false);
+            rc_->useAddress(w->va, w->span.bytes, true);
             copy->copyBytes(w->span.va, w->va, w->span.bytes);
             continue;
         }
@@ -360,7 +364,7 @@ bool RMRangeEncode::command(size_t at)
         break;
     case OpResetCommands:
     case OpCopyCommands:
-        encodeCommandsBlit(be_, c);
+        encodeCommandsBlit(rc, be_, c);
         break;
     case OpMipmaps: {
         RAW_ENCODE_SPAN(Blit);

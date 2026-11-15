@@ -8402,6 +8402,7 @@ objc_library(
         name + ".mm",
         "empty_pack.h",
         "made_metallib.h",
+        "predication_model.h",
         "raw_device_harness.h",
         "raw_facade_harness.h",
         "raw_job_methods.h",

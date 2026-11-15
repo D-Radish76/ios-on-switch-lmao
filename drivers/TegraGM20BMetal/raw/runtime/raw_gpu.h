@@ -231,11 +231,43 @@ struct LayoutAsk {
     bool writes = false;
 };
 
+struct StoragePiece {
+    uint64_t va, bytes;
+};
+
+// While its allocation is live, later trim/restoration cannot split these cuts.
+struct ArenaStorage {
+    uint32_t arena;
+    uint64_t offset;
+    uint8_t *cpu;
+    StoragePiece first = {};
+    std::vector<StoragePiece> rest{};
+
+    uint64_t va() const
+    {
+        return first.va;
+    }
+
+    uint64_t bytes() const
+    {
+        const StoragePiece &last = rest.empty() ? first : rest.back();
+        return last.va + last.bytes - va();
+    }
+
+    template <typename Each> void each(Each &&visit) const
+    {
+        visit(first);
+        for (const StoragePiece &piece : rest)
+            visit(piece);
+    }
+};
+
 // A page-aligned span of a pool chunk.
 struct Span {
     uint32_t chunk = ~0u;
     uint64_t offset = 0, bytes = 0, va = 0;
     uint8_t *cpu = nullptr;
+    const ArenaStorage *storage = nullptr;
 
     bool valid() const
     {
@@ -276,6 +308,7 @@ struct Texture {
     struct StorageRange {
         uint64_t va = 0, bytes = 0;
         bool hostVisible = false;
+        const ArenaStorage *arena = nullptr;
     } storage;
 
     StorageRange storageRange() const;
@@ -1533,6 +1566,7 @@ private:
 // Copy-engine work between passes (MAXWELL_DMA_COPY_A, as NVK's nouveau_copy_rect does it for pitch memory)
 class BlitEncoder {
 public:
+    // VA-only operands borrow backing owners already named by CommandBuffer::use/useAddress.
     // `bytes` bytes from `src` to `dst` (vkCmdCopyBuffer)
     void copyBytes(uint64_t src, uint64_t dst, uint64_t bytes);
     // `bytes` bytes at `dst` set to `value` (fillBuffer:range:value:): the copy engine writing a constant, its whole words as
@@ -1808,6 +1842,7 @@ public:
     }
 
     bool useMember(uint64_t va, uint64_t bytes, bool write, bool hostWritten);
+    void useStorage(uint64_t va, uint64_t bytes, bool write, bool hostWritten, const ArenaStorage *arena);
     // `noted`: a write the command buffer's later reads must see (bufferWrites_); false where the GPU may write the
     // memory but no program of the draw does
     void use(const Buffer &buffer, bool write, bool noted = true);
@@ -3119,6 +3154,10 @@ private:
     }
 
     Bo bufferBoLocked(const Buffer &buffer) const;
+    bool arenaCpuRangesLocked(const ArenaStorage &storage, const void *cpu, uint64_t bytes,
+                              std::vector<HostAccess::Range> &ranges) const;
+    bool hostArenaAccess(const ArenaStorage &storage, const void *cpu, uint64_t bytes, bool write, HostAccess &access);
+    static void releaseHostArena(void *owner, uint32_t arena);
     // the channel's fence word; before there is a channel a zero, which every seqno submitted so far (none) has passed
     const volatile uint32_t *fence_ = &kNoFence;
     static constexpr uint32_t kNoFence = 0;
@@ -3323,7 +3362,7 @@ private:
         uint8_t *cpu = nullptr;  // its host range, reserved for good; its pages wired and bound unless purged
         Bo bo;
         HeapPlacement place;
-        uint32_t leases = 0;  // m2v views of its resources (raw_alias.cpp): never purged or freed under one
+        uint32_t leases = 0;  // CPU access and m2v views keep its mappings and host range
         bool used = false, isVolatile = false, purged = false, dying = false;
         bool wc = false;  // its host pages are write-combined (raw_arena.cpp hostPages)
 
@@ -3352,6 +3391,8 @@ private:
     void purgeLocked(Arena &a, const std::atomic<uint32_t> &committed);
     void freeArena(Arena &a);  // lock_ held
     void arenaFree(Span &s);   // lock_ held
+    const ArenaStorage *arenaStorage(const Arena &arena, uint32_t index, uint64_t offset, uint64_t bytes,
+                                     uint64_t va) const;
     bool aliasArena(const Span &s, Lease *&lease, Alias &a);
     // lock_ held: the arena's mapping of `kind` (its own, its pitch view, or a view made now); 0: none
     uint64_t arenaView(Arena &a, uint32_t kind);

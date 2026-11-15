@@ -37,6 +37,8 @@ protected:
         raw::BlitEncoder *e = cb ? cb->blit() : nullptr;
         if (!e)
             return 0;
+        cb->use(from, false);
+        cb->use(to, true, false);
         e->copyBytes(from.va, to.va, 256);
         e->end();
         uint32_t seqno = 0;

@@ -103,6 +103,8 @@ protected:
         cb->internalCompletion();
         for (uint32_t i = 0; i < uses; i++)
             cb->useHeap(heap);
+        cb->use(from, false);
+        cb->use(to, true, false);
         raw::BlitEncoder *e = cb->blit();
         e->copyBytes(from.va, to.va, 64);
         e->end();

@@ -75,6 +75,7 @@ static void copyToCallerPages(raw::BlitEncoder *be, raw::CommandBuffer *rc, RMTe
     if (!x.callerPages)
         return;
     be->access(memoryOf(t), x.callerPages);
+    rc->use(x.callerPages, true);
     rc->clean(x.callerPages->bo.cpu, x.storage.bytes, true);
     be->copyBytes(x.imagePitchVa, x.callerPages->bo.va, x.storage.bytes);
 }

@@ -223,6 +223,9 @@ struct Model {
         slots[slot].error = 0;
         TegraGM20BAbiFence &f = fence(slot);
         f.killed_first = f.killed_last = f.error = 0;
+        auto *identity = reinterpret_cast<TegraGM20BAbiFenceIdentity *>(
+            fences + slot * kRecordBytes + sizeof(TegraGM20BAbiFence) + sizeof(TegraGM20BAbiFenceSemantic));
+        identity->channel_uid = slots[slot].uid;
         reply = {slot + 1, kFenceToken, slot * kRecordBytes, 0};
         return KERN_SUCCESS;
     }

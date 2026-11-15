@@ -301,6 +301,7 @@ TEST_F(DeviceZetaImage, ABlitOfADepthChainsLevelMovesItsAspect)
     raw::CommandBuffer *cb = dev.begin();
     ASSERT_NE(cb, nullptr);
     raw::BlitEncoder *be = cb->blit();
+    cb->use(rows, true, false);
     be->copyBufferTexels(rows.va, 16 * 4, level, 0, 0, 0, 16, 16, false, raw::kAspectDepth);
     be->end();
     uint32_t seqno = 0;

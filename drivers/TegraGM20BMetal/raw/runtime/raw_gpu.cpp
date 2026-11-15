@@ -2385,7 +2385,7 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
     if (compressed) {
         noteCompressed(ask, comp, bytes, t);
     } else if (zeta) {
-        t.storage = {span.va, bytes, false};
+        t.storage = {span.va, bytes, false, span.storage};
         if (!at)
             ownedZeta_[span.va] = {z, owned};
     } else {
@@ -2689,7 +2689,7 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     std::lock_guard<raw::Mutex> l(lock_);
     t.pitch = pitch;
     t.va = b.va + offset;
-    t.storage = {t.va, uint64_t(pitch) * height, b.hostVisible};
+    t.storage = {t.va, uint64_t(pitch) * height, b.hostVisible, b.span.storage};
     t.shadowTarget = t.renderable && !linearTarget(t);
     t.renderable = t.renderable && linearTarget(t);
     t.cpu = b.cpu + offset;
@@ -2722,7 +2722,7 @@ bool Device::createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elemen
     t.pitch = elements * f->bpp;
     t.type = fx::kTexOneDBuffer;
     t.va = b.va + offset;
-    t.storage = {t.va, uint64_t(t.pitch), b.hostVisible};
+    t.storage = {t.va, uint64_t(t.pitch), b.hostVisible, b.span.storage};
     t.cpu = b.cpu ? b.cpu + offset : nullptr;
     if (!(t.tic = allocTic()))
         return false;
@@ -5114,7 +5114,7 @@ Texture::StorageRange Texture::storageRange() const
     if (storage.bytes)
         return storage;
     if (span.bytes)
-        return {span.va, span.bytes, false};
+        return {span.va, span.bytes, false, span.storage};
     if (chain)
         return {chain->va, chain->layout.bytes, false};
     if ((blockLinear || nativeGeneration) && layerBytes && layers && layerBytes <= UINT64_MAX / layers)
@@ -9087,10 +9087,6 @@ void BlitEncoder::room(uint32_t words)
 
 void BlitEncoder::copyBytes(uint64_t src, uint64_t dst, uint64_t bytes)
 {
-    if (bytes) {
-        cb_->useAddress(src, bytes, false);
-        cb_->useAddress(dst, bytes, true);
-    }
     cb_->bufferWrites_.note(dst, bytes);
     for (uint64_t done = 0; done < bytes;) {
         room();
@@ -9125,8 +9121,6 @@ void BlitEncoder::fillRun(uint64_t at, uint32_t width, uint32_t height, [[maybe_
 
 void BlitEncoder::fillWords(uint64_t dst, uint64_t bytes, uint32_t word)
 {
-    if (bytes)
-        cb_->useAddress(dst, bytes, true);
     cb_->bufferWrites_.note(dst, bytes);
     if (bytes < 4)
         return;
@@ -9147,8 +9141,6 @@ void BlitEncoder::fillWords(uint64_t dst, uint64_t bytes, uint32_t word)
 
 void BlitEncoder::fillBytes(uint64_t dst, uint64_t bytes, uint8_t value)
 {
-    if (bytes)
-        cb_->useAddress(dst, bytes, true);
     cb_->bufferWrites_.note(dst, bytes);
     auto bytesOf = [&](uint64_t at, uint64_t n) {
         if (!n)
@@ -9172,8 +9164,6 @@ void BlitEncoder::copyRect(uint64_t src, uint32_t srcPitch, uint64_t dst, uint32
     cb_->bufferWrites_.note(dst, rowStorageBytes(dstPitch, width, lines, bpp));
     if (!width || !lines || !bpp)
         return;
-    cb_->useAddress(src, rowStorageBytes(srcPitch, width, lines, bpp), false);
-    cb_->useAddress(dst, rowStorageBytes(dstPitch, width, lines, bpp), true);
     room();
     copyRows(p_, src, srcPitch, dst, dstPitch, width, lines, bpp, dev_->stats);
 }
@@ -9219,11 +9209,6 @@ void BlitEncoder::copyBufferTexels(uint64_t va, uint32_t pitch, const Texture &t
         return copyBufferTexels(va, pitch, *t.luma, x, y, z, w, h, toTexture, aspect);
     if (!toTexture)
         cb_->bufferWrites_.note(va, uint64_t(pitch) * h + uint64_t(w) * 16);
-    const uint32_t element = t.zeta && aspect == kAspectStencil ? 1
-                             : t.zeta && aspect == kAspectDepth ? 4
-                                                                : bufferTexelBytes(t.format, t.bpp);
-    if (w && h)
-        cb_->useAddress(va, rowStorageBytes(pitch, w, h, element), !toTexture);
     cb_->use(t, toTexture);
 #if SWITCH_RAW_DIAGNOSTICS
     if (toTexture && !t.zeta)
@@ -9391,7 +9376,7 @@ void BlitEncoder::generate(Texture &t, uint32_t fmt2d, uint32_t first, uint32_t 
     Texture::Chain *c = t.chain;
     if (!c || !fmt2d || first >= last || last >= c->layout.levels)
         return;
-    cb_->useAddress(c->va, c->layout.bytes, true);
+    cb_->use(t, true);
     room(uint32_t(fx::generateWords(c->layout, first, last) * layers));
     fx::emitGenerateLayers(p_, c->layout, c->va, fmt2d, first, last, firstLayer, layers);
     RAW_DIAGNOSTIC(dev_->stats.chainGenerates++);

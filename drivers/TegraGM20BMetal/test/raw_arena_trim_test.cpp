@@ -210,6 +210,7 @@ TEST_P(ArenaTrimParts, ALogicalBufferCrossesRetainedAndRestoredParts)
     ASSERT_EQ(d.va, firstVa);
     ASSERT_EQ(d.wc, !privateArena);
     ASSERT_EQ(d.length, 2 * kQuarter);
+    d.hostVisible = true;
     std::vector<uint8_t> expected(2 * kQuarter);
     for (size_t i = 0; i < expected.size(); ++i)
         expected[i] = uint8_t((i * 13) ^ (i >> 12));
@@ -224,7 +225,17 @@ TEST_P(ArenaTrimParts, ALogicalBufferCrossesRetainedAndRestoredParts)
     ASSERT_NE(blit, nullptr);
     blit->copyBytes(d.va, destination.va, expected.size());
     blit->end();
-    ASSERT_TRUE(submitCopies(cb)) << dev.kernel().error();
+    uint32_t seqno = 0;
+    ASSERT_TRUE(submitCopies(cb, &seqno)) << dev.kernel().error();
+    const raw::CpuCompletion completion = dev.captureCpuCompletion(seqno, dev.channelGeneration(), {&d});
+    ASSERT_TRUE(completion.valid);
+    uint64_t completedBytes = 0;
+    for (const auto &range : completion.ranges) {
+        EXPECT_NE(kernel_model::model.bos.find(range.handle), kernel_model::model.bos.end());
+        completedBytes += range.bytes;
+    }
+    EXPECT_EQ(completedBytes, d.wc ? 0 : d.length);
+    EXPECT_EQ(dev.completeCpu(completion), raw::CpuCompletionResult::Current);
     EXPECT_EQ(memcmp(destination.cpu, expected.data(), expected.size()), 0);
     dev.destroyBuffer(destination);
     dev.arenaRelease(d);
@@ -392,6 +403,97 @@ TEST_P(ArenaTrimParts, CpuConsumersFindALiveBufferInARetainedPart)
     dev.destroyBuffer(source);
     dev.arenaRelease(a);
     dev.arenaRelease(c);
+    dev.destroyArena(arena);
+}
+
+TEST_P(ArenaTrimParts, ATextureViewKeepsItsOwnersAcrossACpuRangeAndGpuCopy)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    raw::Buffer a, b, c, destination;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, a));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, c));
+    uint8_t *const base = a.cpu;
+    dev.arenaRelease(b);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    dev.arenaRelease(a);
+    raw::Texture texture, view;
+    raw::TextureAsk ask;
+    ask.width = 512;
+    ask.height = 256;
+    ask.format = 80;
+    ask.tiled = false;
+    ASSERT_TRUE(dev.arenaTexture({arena, {}}, ask, texture));
+    ASSERT_EQ(texture.cpu, base);
+    ASSERT_EQ(texture.span.bytes, 2 * kQuarter);
+    ASSERT_TRUE(dev.createView(texture, 70, view));
+    std::vector<uint8_t> expected(texture.span.bytes, 0x3C);
+    memcpy(texture.cpu, expected.data(), expected.size());
+    raw::HostAccess write;
+    ASSERT_TRUE(dev.hostAccess(view, view.cpu + kQuarter - 8, 16, true, write));
+    memset(view.cpu + kQuarter - 8, 0xA7, 16);
+    const auto pinned = importsIn(base, 4 * kQuarter);
+    dev.arenaRelease(c);
+    dev.trimArenas(committed);
+    EXPECT_EQ(importsIn(base, 4 * kQuarter), pinned);
+    ASSERT_TRUE(write.finish());
+    dev.trimArenas(committed);
+    EXPECT_EQ(importsIn(base, 4 * kQuarter), (std::vector<raw::ArenaRange>{{0, 2 * kQuarter}}));
+    std::fill(expected.begin() + kQuarter - 8, expected.begin() + kQuarter + 8, 0xA7);
+    raw::HostAccess read;
+    ASSERT_TRUE(dev.hostAccess(view, view.cpu + kQuarter - 9, 18, false, read));
+    EXPECT_EQ(memcmp(view.cpu + kQuarter - 9, expected.data() + kQuarter - 9, 18), 0);
+    ASSERT_TRUE(read.finish());
+    ASSERT_TRUE(dev.createBuffer(expected.size(), destination));
+    memset(destination.cpu, 0xA5, destination.length);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(view, false);
+    cb->use(destination, true);
+    raw::BlitEncoder *blit = cb->blit();
+    ASSERT_NE(blit, nullptr);
+    blit->copyBytes(view.va, destination.va, expected.size());
+    blit->end();
+    ASSERT_TRUE(submitCopies(cb)) << dev.kernel().error();
+    EXPECT_EQ(memcmp(destination.cpu, expected.data(), expected.size()), 0);
+    dev.destroyBuffer(destination);
+    dev.destroyTexture(view);
+    dev.destroyTexture(texture);
+    dev.destroyArena(arena);
+}
+
+TEST_P(ArenaTrimParts, AnImportRefusalPreservesEveryUnattemptedHole)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    raw::Buffer a, b, c;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, a));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, c));
+    uint8_t *const base = a.cpu;
+    dev.arenaRelease(b);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    dev.arenaRelease(a);
+    dev.arenaRelease(c);
+    raw::Buffer whole;
+    kernel_model::model.refuseImports = 1;
+    ASSERT_FALSE(dev.arenaBuffer(arena, 4 * kQuarter, whole));
+    ASSERT_EQ(kernel_model::model.refuseImports, 0u);
+    ASSERT_TRUE(dev.arenaBuffer(arena, 4 * kQuarter, whole));
+    EXPECT_EQ(importsIn(base, 4 * kQuarter),
+              (std::vector<raw::ArenaRange>{
+                  {0, kQuarter}, {kQuarter, kQuarter}, {2 * kQuarter, kQuarter}, {3 * kQuarter, kQuarter}}));
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(whole, true);
+    uint32_t seqno = 0;
+    ASSERT_TRUE(cb->commit(seqno)) << dev.kernel().error();
+    dev.arenaRelease(whole);
     dev.destroyArena(arena);
 }
 
