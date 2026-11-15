@@ -1329,6 +1329,7 @@ gf100_gr_trap_mp(struct gf100_gr *gr, int gpc, int tpc)
 	struct nvkm_device *device = subdev->device;
 	u32 werr = nvkm_rd32(device, TPC_UNIT(gpc, tpc, 0x648));
 	u32 gerr = nvkm_rd32(device, TPC_UNIT(gpc, tpc, 0x650));
+	const u32 pc = nvkm_rd32(device, TPC_UNIT(gpc, tpc, 0x654));
 	const struct nvkm_enum *warp;
 	char glob[128];
 
@@ -1336,8 +1337,8 @@ gf100_gr_trap_mp(struct gf100_gr *gr, int gpc, int tpc)
 	warp = nvkm_enum_find(gf100_mp_warp_error, werr & 0xffff);
 
 	nvkm_error(subdev, "GPC%i/TPC%i/MP trap: "
-			   "global %08x [%s] warp %04x [%s]\n",
-		   gpc, tpc, gerr, glob, werr, warp ? warp->name : "");
+			   "global %08x [%s] warp %04x [%s] pc %08x\n",
+		   gpc, tpc, gerr, glob, werr, warp ? warp->name : "", pc);
 
 	nvkm_wr32(device, TPC_UNIT(gpc, tpc, 0x648), 0x00000000);
 	nvkm_wr32(device, TPC_UNIT(gpc, tpc, 0x650), gerr);

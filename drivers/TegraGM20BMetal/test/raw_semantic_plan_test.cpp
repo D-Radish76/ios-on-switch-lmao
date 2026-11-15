@@ -308,6 +308,46 @@ TEST(SemanticPlan, APointerMapKeepsItsStorageAcrossClears)
     EXPECT_EQ(map.storageBytes(), bytes);
 }
 
+TEST(SemanticPlan, PageSpacedPointerKeysKeepLookupProbesBounded)
+{
+    struct Key {
+        const void *pointer = nullptr;
+        uint32_t *comparisons = nullptr;
+
+        bool operator==(const Key &other) const
+        {
+            ++*comparisons;
+            return pointer == other.pointer;
+        }
+    };
+
+    struct Hash {
+        size_t operator()(const Key &key) const
+        {
+            return raw::PointerHash{}(key.pointer);
+        }
+    };
+
+    constexpr uint32_t count = 96;
+    for (uintptr_t stride : {16u, 64u, 256u, 4096u, 16384u})
+        for (uintptr_t base : {uintptr_t(0), uintptr_t(0x110), uintptr_t(0xffff000000000000ull)}) {
+            uint32_t comparisons = 0;
+            raw::StampMap<Key, uint32_t, Hash> map;
+            const auto key = [&](uint32_t i) {
+                return Key{object(base + i * stride), &comparisons};
+            };
+            for (uint32_t i = 0; i < count; ++i)
+                EXPECT_TRUE(map.insert(key(i), i).second);
+            comparisons = 0;
+            for (uint32_t i = 0; i < count; ++i) {
+                const uint32_t *value = map.find(key(i));
+                ASSERT_NE(value, nullptr);
+                EXPECT_EQ(*value, i);
+            }
+            EXPECT_LE(comparisons, 2 * count) << "stride " << stride << ", base " << base;
+        }
+}
+
 TEST(SemanticPlan, PassRasterGroupsSurviveBindingChangesAndSeparatePasses)
 {
     RMCommandPlan plan;
