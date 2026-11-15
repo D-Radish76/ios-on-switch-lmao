@@ -107,6 +107,7 @@ bool Device::bindArenaPart(Arena &a, uint64_t offset, uint64_t bytes)
 
 void Device::unbindArena(Arena &a)
 {
+    a.holes.clear();
     if (a.parts.empty()) {  // whole, or trimmed to no part at all: then its BO is already gone and counted out
         if (a.bo.handle) {
             RAW_DIAGNOSTIC(stats.poolBytes -= a.bytes);
@@ -119,7 +120,6 @@ void Device::unbindArena(Arena &a)
         k_.free(part);
     }
     a.parts.clear();
-    a.holes.clear();
 }
 
 bool Device::createArena(uint64_t bytes, bool blockLinear, uint32_t &arena, bool explicitPlacement)
