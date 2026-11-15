@@ -1,3 +1,4 @@
+#include <switch/app_code.h>
 #include "SwitchDiag.h"
 #include <kern/thread_call.h>
 /*
@@ -1434,6 +1435,14 @@ grade:
 	 * Set TPRO flags if enabled
 	 */
 
+	const bool switch_unsigned_app = switch_app_code_image(imgp->ip_vp);
+	if (switch_unsigned_app) {
+		load_result.csflags = SWITCH_APP_CODE_CS_FLAGS | (load_result.csflags & CS_NO_UNTRUSTED_HELPERS);
+		load_result.platform_binary = FALSE;
+		load_result.hardened_runtime_binary = FALSE;
+		imgp->ip_csflags = load_result.csflags;
+	}
+
 	/*
 	 * Set code-signing flags if this binary is signed, or if parent has
 	 * requested them on exec.
@@ -1469,6 +1478,8 @@ grade:
 			imgp->ip_csflags |= CS_NVRAM_UNRESTRICTED;
 		}
 	}
+
+	if (switch_unsigned_app) imgp->ip_csflags = load_result.csflags;
 
 #if __has_feature(ptrauth_calls) && defined(XNU_TARGET_OS_OSX)
 	/*
@@ -6710,6 +6721,8 @@ exec_check_permissions(struct image_params *imgp)
 	imgp->ip_arch_size = (user_size_t)vap->va_data_size;
 #endif
 
+	if (switch_app_code_image(vp)) vap->va_mode &= ~(VSUID | VSGID);
+
 	/* Disable setuid-ness for traced programs or if MNT_NOSUID */
 	if ((vp->v_mount->mnt_flag & MNT_NOSUID) || (p->p_lflag & P_LTRACED)) {
 		vap->va_mode &= ~(VSUID | VSGID);
@@ -9316,6 +9329,14 @@ process_signature(proc_t p, struct image_params *imgp)
 	proc_csflags_update(p, imgp->ip_csflags);
 	proc_unlock(p);
 
+	const bool switch_unsigned_app = switch_app_code_image(imgp->ip_vp);
+	if (switch_unsigned_app) {
+		proc_lock(p);
+		proc_csflags_update(p, SWITCH_APP_CODE_CS_FLAGS | (imgp->ip_csflags & CS_NO_UNTRUSTED_HELPERS));
+		proc_unlock(p);
+		imgp->ip_csflags = SWITCH_APP_CODE_CS_FLAGS | (imgp->ip_csflags & CS_NO_UNTRUSTED_HELPERS);
+	}
+
 	/* Set the switch_protect flag on the map */
 	if (proc_getcsflags(p) & (CS_HARD | CS_KILL)) {
 		vm_map_switch_protect(get_task_map(proc_task(p)), TRUE);
@@ -9400,7 +9421,7 @@ process_signature(proc_t p, struct image_params *imgp)
 
 	/* If the code signature came through the image activation path, we skip the
 	 * taskgated / externally attached path. */
-	if (imgp->ip_csflags & CS_SIGNED) {
+	if (switch_unsigned_app || (imgp->ip_csflags & CS_SIGNED)) {
 		error = 0;
 		goto done;
 	}
@@ -9514,6 +9535,8 @@ done:
 			signature_failure_reason = os_reason_create(OS_REASON_EXEC, EXEC_EXIT_REASON_MACHINE_THREAD);
 		}
 	}
+
+	if (0 == error) switch_app_code_exec(p, switch_unsigned_app);
 
 	if (0 == error) {
 		/* The process's code signature related properties are

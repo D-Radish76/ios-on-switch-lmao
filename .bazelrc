@@ -42,6 +42,7 @@ build --spawn_strategy=sandboxed
 # allows, so its two actions (install/translated.bzl) run here.
 build --strategy=Pretranslate=local
 build --strategy=TranslatedCryptex=local
+build --strategy=InstallPolicy=local
 # And rules_apple's actool (the HW Test apps' asset catalog), which asks CoreSimulator's services for its compile and is
 # marked no-sandbox.
 build --strategy=AssetCatalogCompile=local
