@@ -9668,11 +9668,11 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
-host_test(
-    name = "raw_facade_blits_test",
+[host_test(
+    name = name,
     srcs = [
         "made_metallib.h",
-        "raw_facade_blits_test.cpp",
+        name + ".cpp",
         "raw_facade_harness.h",
         "raw_job_methods.h",
         "raw_frontend_absent.cpp",
@@ -9717,7 +9717,10 @@ host_test(
         "//kits/SwitchRefusal:switch_refusal",
         "//kits/SwitchGM20BEmit/test:method_checks",
     ] + RAW_HOST_DEPS,
-)
+) for name in [
+    "raw_facade_blits_test",
+    "raw_facade_multisample_copy_test",
+]]
 
 host_test(
     name = "raw_facade_zeta_pass_test",
