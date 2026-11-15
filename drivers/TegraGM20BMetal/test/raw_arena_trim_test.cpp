@@ -132,6 +132,53 @@ protected:
 
 class ArenaTrimParts : public ArenaTrim, public testing::WithParamInterface<bool> {};
 
+TEST_P(ArenaTrimParts, AnEmptyTrimmedArenaRestoresWholeAndRetiresEveryImport)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kGranule, GetParam(), arena));
+    raw::Buffer initial;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kGranule, initial));
+    uint8_t *const base = initial.cpu;
+    const uint64_t va = initial.va;
+    dev.arenaRelease(initial);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    EXPECT_TRUE(importsIn(base, 4 * kGranule).empty());
+    dev.purgeArena(arena, committed);
+    ASSERT_TRUE(dev.arenaPurged(arena));
+    ASSERT_TRUE(dev.restoreArena(arena));
+    EXPECT_EQ(dev.arenaBytes(), 4 * kGranule);
+
+    raw::Buffer narrow;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kGranule, narrow));
+    EXPECT_EQ(narrow.va, va);
+    dev.arenaRelease(narrow);
+    raw::Buffer wide, destination;
+    ASSERT_TRUE(dev.arenaBuffer(arena, 2 * kGranule, wide));
+    ASSERT_EQ(wide.va, va);
+    std::vector<uint8_t> expected(2 * kGranule);
+    for (size_t i = 0; i < expected.size(); ++i)
+        expected[i] = uint8_t((i * 13) ^ (i >> 12));
+    memcpy(wide.cpu, expected.data(), expected.size());
+    ASSERT_TRUE(dev.createBuffer(expected.size(), destination));
+    memset(destination.cpu, 0xA5, expected.size());
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(wide, false);
+    cb->use(destination, true);
+    raw::BlitEncoder *blit = cb->blit();
+    ASSERT_NE(blit, nullptr);
+    blit->copyBytes(wide.va, destination.va, expected.size());
+    blit->end();
+    EXPECT_TRUE(submitCopies(cb)) << dev.kernel().error();
+    EXPECT_EQ(memcmp(destination.cpu, expected.data(), expected.size()), 0);
+    dev.destroyBuffer(destination);
+    dev.arenaRelease(wide);
+    dev.destroyArena(arena);
+    EXPECT_TRUE(importsIn(base, 4 * kGranule).empty());
+}
+
 // A heap kept non-volatile gives back the ranges no resource is placed in: its other parts are imported again with their
 // contents, the holes' pages are no longer the process's (nothing wrote them), and a placement into a hole binds it again
 TEST_F(ArenaTrim, TheUnplacedRangesGoBackAndComeBackWithAPlacement)
