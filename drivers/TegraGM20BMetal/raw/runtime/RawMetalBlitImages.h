@@ -16,6 +16,6 @@ inline bool blitImage(RMTexture *texture, uint32_t level, raw::Texture &image)
     image.layers = texture->_raw.layers;
     image.type = texture->_raw.type;
     image.format = texture->_raw.format;
-    image.stencilTemp = texture->_raw.stencilTemp;
+    image.stencilTemp = owner->_raw.stencilTemp;
     return true;
 }

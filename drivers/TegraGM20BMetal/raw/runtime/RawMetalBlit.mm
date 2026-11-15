@@ -58,12 +58,14 @@ static int blitAspect(id<MTLTexture> t, MTLBlitOption options)
                                                                     : MTLBlitOptionStencilFromDepthStencil;
         return options == MTLBlitOptionNone || options == own ? raw::kAspectWhole : -1;
     }
-    if (options == MTLBlitOptionDepthFromDepthStencil)
+    const bool stencilView = x->_descriptor.pixelFormat == MTLPixelFormatX32_Stencil8;
+    if (!stencilView && options == MTLBlitOptionDepthFromDepthStencil)
         return raw::kAspectDepth;
-    if (options != MTLBlitOptionStencilFromDepthStencil)
+    if (options != MTLBlitOptionStencilFromDepthStencil && !(stencilView && options == MTLBlitOptionNone))
         return -1;
-    @synchronized(x) {
-        return gRM->raw->stencilTemp(x->_raw) ? raw::kAspectStencil : -1;
+    RMTexture *owner = x->_levelsOwner ?: x;
+    @synchronized(owner) {
+        return gRM->raw->stencilTemp(owner->_raw) ? raw::kAspectStencil : -1;
     }
 }
 
