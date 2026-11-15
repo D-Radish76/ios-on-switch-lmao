@@ -8262,6 +8262,30 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
         return levelTic(t, level);
     // above every key viewTic keeps in views_ (word 0, a sample grid below bit 48)
     const uint64_t key = 1ull << 63 | uint64_t(part.format) << 32 | uint64_t(slice) << 4 | level;
+    if (part.zeta) {
+        uint32_t w[8];
+        const uint32_t z = zetaFormatIndex(part.format);
+        if (!t.zeta || part.format != t.format || z >= kZetaFormats ||
+            !attachmentHeader(part, kZetaFormatInfo[z].tic0, false, w))
+            return 0;
+        // Depth conversion headers are prepared by concurrent recording threads, outside the encode view cache.
+        std::lock_guard<raw::Mutex> l(lock_);
+        if (!t.tic) {
+            if (!(t.tic = allocTic()))
+                return 0;
+            writeTic(t);
+        }
+        const auto made = partTics_.equal_range(t.tic);
+        for (auto m = made.first; m != made.second; ++m)
+            if (m->second.first == key)
+                return m->second.second;
+        const uint32_t tic = allocTic();
+        if (!tic)
+            return 0;
+        memcpy(tic_.cpu + 32 * tic, w, 32);
+        partTics_.emplace(t.tic, std::make_pair(key, tic));
+        return tic;
+    }
     if (!t.tic)
         return 0;
     if (const uint32_t seen = views_.find(t.tic, key))
@@ -8288,8 +8312,10 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
 
 uint32_t Device::levelTic(Texture &t, uint32_t level, bool codes)
 {
-    const FormatInfo *f = formatInfo(t.format);
-    if (!t.chain || !f || level >= t.chain->layout.levels)
+    const FormatInfo *f = t.zeta ? nullptr : formatInfo(t.format);
+    const uint32_t z = t.zeta ? zetaFormatIndex(t.format) : kZetaFormats;
+    const bool zeta = t.zeta && z < kZetaFormats;
+    if (!t.chain || (!f && !zeta) || (zeta && codes) || level >= t.chain->layout.levels)
         return 0;
     uint32_t &slot = (codes ? t.chain->levelCodesTic : t.chain->levelTic)[level];
     if (const uint32_t made = __atomic_load_n(&slot, __ATOMIC_ACQUIRE))
@@ -8298,8 +8324,8 @@ uint32_t Device::levelTic(Texture &t, uint32_t level, bool codes)
     uint32_t tic = slot;
     if (!tic && (tic = allocTic())) {
         uint32_t w[8];
-        fx::mipChainTic(t.chain->layout, t.chain->va, f->tic0, f->srgb && !codes, level, 1, w,
-                        t.type == fx::kTexThreeD ? fx::kTexThreeD : fx::kTexTwoD);
+        fx::mipChainTic(t.chain->layout, t.chain->va, f ? f->tic0 : kZetaFormatInfo[z].tic0, f && f->srgb && !codes,
+                        level, 1, w, t.type == fx::kTexThreeD ? fx::kTexThreeD : fx::kTexTwoD);
         memcpy(tic_.cpu + 32 * tic, w, 32);  // visible at the next submission's header invalidate
         __atomic_store_n(&slot, tic, __ATOMIC_RELEASE);
     }

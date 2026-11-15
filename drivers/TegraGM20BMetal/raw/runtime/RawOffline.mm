@@ -359,9 +359,8 @@ bool renderDescriptor(MTLRenderPipelineDescriptor *d, NmbOfflineRenderPipelineDe
     return true;
 }
 
-// As the frontend's computeDescriptor: no binary functions, groups or libraries
 bool computeDescriptor(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelineDescriptor &p,
-                       std::vector<NmbOfflineFunction *> &linked)
+                       std::vector<NmbOfflineFunction *> &linked, std::vector<switch_linked_group_name> &groupNames)
 {
     if (!d || ![(id)d.computeFunction isKindOfClass:[RawOfflineFunction class]])
         return false;
@@ -382,7 +381,7 @@ bool computeDescriptor(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelin
         p.stage_index_buffer = stage.indexBufferIndex;
     }
     MTLLinkedFunctions *functions = d.linkedFunctions;
-    if (functions.groups.count || d.preloadedLibraries.count || d.insertLibraries.count)
+    if (d.preloadedLibraries.count || d.insertLibraries.count)
         return false;
     if (!handles(functions.functions, linked))
         return false;
@@ -395,12 +394,23 @@ bool computeDescriptor(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelin
     for (id<MTLFunction> function in functions.binaryFunctions)
         if (!(function.options & MTLFunctionOptionCompileToBinary))
             return false;
+    const size_t grouped = linked.size();
+    for (NSString *group in [functions.groups.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+        NSArray *members = functions.groups[group];
+        if (!handles(members, linked))
+            return false;
+        groupNames.insert(groupNames.end(), members.count,
+                          {group.UTF8String, [group lengthOfBytesUsingEncoding:NSUTF8StringEncoding]});
+    }
     p.linked = linked.data();
     p.linked_count = visible;
     p.private_linked = linked.data() + visible;
     p.private_count = binary - visible;
     p.binary_linked = linked.data() + binary;
-    p.binary_count = linked.size() - binary;
+    p.binary_count = grouped - binary;
+    p.group_linked = linked.data() + grouped;
+    p.group_names = groupNames.data();
+    p.group_count = groupNames.size();
     p.function = ((RawOfflineFunction *)d.computeFunction).handle;
     p.max_threads = d.maxTotalThreadsPerThreadgroup;
     p.multiple_of_execution_width = d.threadGroupSizeIsMultipleOfThreadExecutionWidth;
@@ -432,7 +442,8 @@ bool compute(id descriptor, const NmbDirectDispatch *dispatch, bool (*each)(cons
 {
     NmbOfflineComputePipelineDescriptor p = {};
     std::vector<NmbOfflineFunction *> linked;
-    if (!computeDescriptor((MTLComputePipelineDescriptor *)descriptor, p, linked)) {
+    std::vector<switch_linked_group_name> groupNames;
+    if (!computeDescriptor((MTLComputePipelineDescriptor *)descriptor, p, linked, groupNames)) {
         *why = "a function of another device, or what the frontend does not represent";
         return false;
     }
@@ -448,7 +459,8 @@ bool kernelMade(MTLComputePipelineDescriptor *descriptor, std::string &why)
 {
     NmbOfflineComputePipelineDescriptor p = {};
     std::vector<NmbOfflineFunction *> linked;
-    if (!computeDescriptor(descriptor, p, linked)) {
+    std::vector<switch_linked_group_name> groupNames;
+    if (!computeDescriptor(descriptor, p, linked, groupNames)) {
         why = "a function of another device, or what the frontend does not represent";
         return false;
     }
@@ -462,7 +474,8 @@ bool kernelFacts(MTLComputePipelineDescriptor *descriptor, uint32_t facts[3], st
 {
     NmbOfflineComputePipelineDescriptor p = {};
     std::vector<NmbOfflineFunction *> linked;
-    if (!computeDescriptor(descriptor, p, linked)) {
+    std::vector<switch_linked_group_name> groupNames;
+    if (!computeDescriptor(descriptor, p, linked, groupNames)) {
         why = "a function of another device, or what the frontend does not represent";
         return false;
     }
@@ -479,9 +492,9 @@ bool descriptorOf(MTLRenderPipelineDescriptor *d, NmbOfflineRenderPipelineDescri
 }
 
 bool descriptorOf(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelineDescriptor &p,
-                  std::vector<NmbOfflineFunction *> &linked)
+                  std::vector<NmbOfflineFunction *> &linked, std::vector<switch_linked_group_name> &groupNames)
 {
-    return computeDescriptor(d, p, linked);
+    return computeDescriptor(d, p, linked, groupNames);
 }
 
 raw::DirectTranslator translator()

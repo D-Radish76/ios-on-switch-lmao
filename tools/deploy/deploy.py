@@ -167,6 +167,9 @@ def _checked(args: argparse.Namespace, log: host.Log) -> tuple[cards.Card, dict,
     """Check the card and the build; return the card, the spec, its FAT and APFS partitions and its Data volume."""
     host.check_tools(log)
     spec = pull_logs.load_spec(args.spec)
+    source = deployed.provenance(Path(args.boot_package))
+    if source and source.get('build') and source['build'] != _ios_build(args.ipsw):
+        raise cards.RefusedError(f'{args.boot_package}: snapshot is for {source["build"]}, not {_ios_build(args.ipsw)}')
     card = cards.resolve(args.disk)
     fat, target = cards.check_layout_unprivileged(card, spec)
     if target.content != 'Apple_APFS':
@@ -279,7 +282,15 @@ def _write(
     steps = _Steps(log)
     apps = steps.run('system apps registration', system_apps.apps, data_root)
     cards.sync_overlay(data_root, args.boot_package, log)
-    steps.run('deployed.json', deployed.record, data_root, paths.workspace(), _ios_build(args.ipsw), log)
+    steps.run(
+        'deployed.json',
+        deployed.record,
+        data_root,
+        paths.workspace(),
+        _ios_build(args.ipsw),
+        log,
+        Path(args.boot_package),
+    )
     restaged = steps.run('system apps restage', _restage_system_apps, volumes.system, data_root, log)
     if apps is not None:
         next_boot = app_journal.NextBoot(_ios_version(args.ipsw), boot_args)

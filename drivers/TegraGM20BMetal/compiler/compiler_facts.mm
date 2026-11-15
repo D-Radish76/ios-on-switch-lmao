@@ -232,10 +232,14 @@ int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string 
         if (!stages.make(p.request, systemRoot, why))
             return TegraGM20BCompileUnavailable;
         std::vector<NmbOfflineFunction *> linked;
-        for (const char *tag : {"kl", "kp", "kb"})
+        std::vector<switch_linked_group_name> groupNames;
+        for (const char *tag : {"kl", "kp", "kb", "kg"})
             for (size_t i = 1; i < p.request.stages.size(); ++i)
-                if (p.request.stages[i].tag == tag)
+                if (p.request.stages[i].tag == tag) {
                     linked.push_back(stages.function(i));
+                    if (p.request.stages[i].tag == "kg")
+                        groupNames.push_back({p.request.stages[i].group.data(), p.request.stages[i].group.size()});
+                }
         const size_t visible =
             size_t(std::count_if(p.request.stages.begin() + 1, p.request.stages.end(), [](const raw::RequestStage &s) {
                 return s.tag == "kl";
@@ -253,7 +257,10 @@ int32_t makeFacts(const Prepared &p, const std::string &systemRoot, std::string 
         d.private_linked = linked.data() + visible;
         d.private_count = hidden;
         d.binary_linked = linked.data() + visible + hidden;
-        d.binary_count = linked.size() - visible - hidden;
+        d.binary_count = linked.size() - visible - hidden - groupNames.size();
+        d.group_linked = d.binary_linked + d.binary_count;
+        d.group_names = groupNames.data();
+        d.group_count = groupNames.size();
         stageInputOf(p.request.kernel.stageIn, d);
         uint32_t facts[3] = {};
         const bool made = nmb_offline_compute_pipeline_facts(&d, facts);

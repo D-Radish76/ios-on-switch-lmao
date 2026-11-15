@@ -120,7 +120,7 @@ int32_t render(const Prepared &p, const Libraries &libraries, raw::Direct &direc
 }
 
 // A compute request's state over `made`, its stages' functions: the kernel, its linked functions ("kl" visible, "kp"
-// private, "kb" binary), its stage input and limits
+// private, "kb" binary, "kg" grouped), its stage input and limits
 MTLComputePipelineDescriptor *computeDescriptor(const raw::CompileRequest &r, const std::vector<id<MTLFunction>> &made)
 {
     MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
@@ -131,12 +131,28 @@ MTLComputePipelineDescriptor *computeDescriptor(const raw::CompileRequest &r, co
     if (made.size() > 1) {
         NSMutableArray *visible = [NSMutableArray array], *hidden = [NSMutableArray array],
                        *binary = [NSMutableArray array];
-        for (size_t i = 1; i < made.size(); ++i)
-            [(r.stages[i].tag == "kb" ? binary : r.stages[i].tag == "kp" ? hidden : visible) addObject:made[i]];
+        NSMutableDictionary<NSString *, NSMutableArray *> *groups = [NSMutableDictionary dictionary];
+        for (size_t i = 1; i < made.size(); ++i) {
+            const raw::RequestStage &stage = r.stages[i];
+            if (stage.tag == "kg") {
+                NSString *name = [[NSString alloc] initWithBytes:stage.group.data()
+                                                          length:stage.group.size()
+                                                        encoding:NSUTF8StringEncoding];
+                if (!name)
+                    return nil;
+                NSMutableArray *members = groups[name];
+                if (!members)
+                    groups[name] = members = [NSMutableArray array];
+                [members addObject:made[i]];
+            } else {
+                [(stage.tag == "kb" ? binary : stage.tag == "kp" ? hidden : visible) addObject:made[i]];
+            }
+        }
         MTLLinkedFunctions *linked = [MTLLinkedFunctions linkedFunctions];
         linked.functions = visible;
         linked.privateFunctions = hidden;
         linked.binaryFunctions = binary;
+        linked.groups = groups;
         d.linkedFunctions = linked;
     }
     return d;

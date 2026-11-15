@@ -56,6 +56,7 @@ def main() -> None:
         (LINKED / 'caller.metal', 'linked-caller', []),
         (LINKED / 'callee.metal', 'linked-callee', []),
         (METAL / 'test/neutral_compute.metal', 'neutral', ['-fno-fast-math']),
+        (Path('drivers/TegraGM20BMetal/test/grouped_pointer.metal'), 'grouped-pointer', []),
     ):
         air = work / (name + '.air')
         run(['xcrun', '-sdk', 'macosx', 'metal', '-std=macos-metal2.3', *flags, '-c', source, '-o', air], env)

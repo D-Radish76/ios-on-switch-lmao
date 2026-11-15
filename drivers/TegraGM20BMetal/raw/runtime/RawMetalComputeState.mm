@@ -105,26 +105,34 @@ static bool airOf(id<MTLFunction> function, raw::AirHash &out, NSString *__stron
 }
 
 // The descriptor's linked functions as the compute key takes them (raw_compute_key.h computeLinkedText); false for any the
-// key cannot name: another device's or a function group
+// key cannot name: another device's
 static bool linkedText(MTLComputePipelineDescriptor *d, std::string &text)
 {
     MTLLinkedFunctions *l = d.linkedFunctions;
-    if (l.groups.count)
-        return false;
     std::vector<raw::LinkedComputeFunction> linked;
+    const auto add = [&](id function, uint32_t list, std::optional<std::string> group = std::nullopt) {
+        raw::LinkedComputeFunction f;
+        f.hidden = list == 1;
+        f.binary = list == 2;
+        f.group = std::move(group);
+        NSString *libraryName = nil;
+        if (![function isKindOfClass:[RMFunction class]] || !airOf(function, f.air, libraryName))
+            return false;
+        f.constants = ((RMFunction *)function)->_constants;
+        f.symbol = libraryName.UTF8String ?: "";
+        f.name = [function name].UTF8String ?: "";
+        linked.push_back(std::move(f));
+        return true;
+    };
     for (const uint32_t list : {0u, 1u, 2u})
-        for (id function in list == 2 ? l.binaryFunctions : list == 1 ? l.privateFunctions : l.functions) {
-            raw::LinkedComputeFunction f;
-            f.hidden = list == 1;
-            f.binary = list == 2;
-            NSString *libraryName = nil;
-            if (![function isKindOfClass:[RMFunction class]] || !airOf(function, f.air, libraryName))
+        for (id function in list == 2 ? l.binaryFunctions : list == 1 ? l.privateFunctions : l.functions)
+            if (!add(function, list))
                 return false;
-            f.constants = ((RMFunction *)function)->_constants;
-            f.symbol = libraryName.UTF8String ?: "";
-            f.name = [function name].UTF8String ?: "";
-            linked.push_back(std::move(f));
-        }
+    for (NSString *group in [l.groups.allKeys sortedArrayUsingSelector:@selector(compare:)])
+        for (id function in l.groups[group])
+            if (!add(function, 3,
+                     std::string(group.UTF8String ?: "", [group lengthOfBytesUsingEncoding:NSUTF8StringEncoding])))
+                return false;
     text = raw::computeLinkedText(linked);
     return true;
 }

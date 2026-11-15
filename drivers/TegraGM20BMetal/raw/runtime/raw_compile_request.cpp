@@ -13,7 +13,7 @@ namespace {
 
 // Any change to a field's bytes or meaning takes the next magic: the compiler's request log (compiler/compiler_log.h)
 // keeps requests across builds and replays them, so a request of another layout must be refused whole
-constexpr char kRequestMagic[8] = {'S', 'W', 'C', 'R', 'E', 'Q', '0', '4'};
+constexpr char kRequestMagic[8] = {'S', 'W', 'C', 'R', 'E', 'Q', '0', '5'};
 constexpr char kNameMagic[8] = {'S', 'W', 'R', 'A', 'W', 'N', 'M', '2'};
 // A cubic bind's sampler flag byte: bit 0 normalized, bit 1 the vertex stage, no other; its texture's slot byte's top
 // bit: the vertex stage. Each stage binds up to 16 samplers
@@ -127,7 +127,7 @@ bool knownTag(const CompileRequest &r, size_t index)
 {
     const std::string &tag = r.stages[index].tag;
     if (r.kind == RequestKind::Kernel || r.kind == RequestKind::Facts || computeReflection(r))
-        return index == 0 ? tag == "k" : tag == "kl" || tag == "kp" || tag == "kb";
+        return index == 0 ? tag == "k" : tag == "kl" || tag == "kp" || tag == "kb" || tag == "kg";
     if (functionAttributes(r))
         return tag == "a";
     if (bufferEncoders(r))
@@ -163,7 +163,8 @@ bool sane(const CompileRequest &r)
         ((kernel || r.kind == RequestKind::Reflection) && r.form != RequestForm::Primary))
         return false;
     for (size_t i = 0; i < r.stages.size(); ++i)
-        if (!knownTag(r, i) || r.stages[i].library >= r.libraries.size() || r.stages[i].function.empty())
+        if (!knownTag(r, i) || r.stages[i].library >= r.libraries.size() || r.stages[i].function.empty() ||
+            (r.stages[i].tag != "kg" && !r.stages[i].group.empty()))
             return false;
     for (const RequestLibrary &l : r.libraries)
         if (l.system ? !l.bytes.empty() || !systemLibraryPath(l.path) : l.bytes.empty())
@@ -225,6 +226,7 @@ std::string encodeRequest(const CompileRequest &r)
         w.text(s.name);
         w.value(uint8_t(s.specialized));
         w.value(s.library);
+        w.text(s.group);
     }
     w.value(uint32_t(r.libraries.size()));
     for (const RequestLibrary &l : r.libraries) {
@@ -267,6 +269,7 @@ bool decodeRequest(const std::string &bytes, CompileRequest &out)
         s.name = r.text();
         s.specialized = r.value<uint8_t>() != 0;
         s.library = r.value<uint32_t>();
+        s.group = r.text();
     }
     const uint32_t libraries = r.value<uint32_t>();
     if (!r.ok() || libraries > kRequestLibraryLimit)
@@ -346,6 +349,8 @@ Digest storeName(const CacheKey &k, const CompileRequest &r, const std::vector<L
         hashText(c, s.constants);
         hashText(c, s.name);
         hashValue(c, uint8_t(s.specialized));
+        if (s.tag == "kg")
+            hashText(c, s.group);
         const LibraryIdentity none;
         const LibraryIdentity &l = s.library < libraries.size() ? libraries[s.library] : none;
         hashValue(c, uint8_t(l.system));

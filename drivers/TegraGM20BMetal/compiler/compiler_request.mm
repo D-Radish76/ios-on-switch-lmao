@@ -67,6 +67,8 @@ bool stateKeyOf(const raw::CompileRequest &r, const std::vector<std::map<std::st
         raw::LinkedComputeFunction f;
         f.hidden = r.stages[i].tag == "kp";
         f.binary = r.stages[i].tag == "kb";
+        if (r.stages[i].tag == "kg")
+            f.group = r.stages[i].group;
         f.symbol = r.stages[i].function;
         f.name = r.stages[i].name;
         f.constants = r.stages[i].constants;

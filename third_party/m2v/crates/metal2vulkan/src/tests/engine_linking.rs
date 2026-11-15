@@ -13,6 +13,8 @@
 //!
 //! `llvm-as` assembles the fixtures; a missing tool skips visibly.
 
+mod groups;
+
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 

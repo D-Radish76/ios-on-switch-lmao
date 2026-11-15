@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "raw_lock.h"
 #import "RawMetalMultisample.h"
+#import "RawMetalPassCache.h"
 #include "NativeBridgeMetalFrontend.h"
 
 RMStoredSamples storedMultisampleKind(MTLTextureDescriptor *d)
@@ -71,6 +72,7 @@ static id storedZetaTwinExcluded(RMTexture *t, id<MTLDevice> m2v, const char **w
         if (!gRM->raw->moveOwnedZeta(t->_raw, z, why))
             return nil;
     }
+    rmPassInvalidate();
     gRM->rawSinceM2v = true;
     // published with submissions excluded, so a caller that waited on them finds this twin rather than moving again
     return twinPublish(t, t->_twin, twin);

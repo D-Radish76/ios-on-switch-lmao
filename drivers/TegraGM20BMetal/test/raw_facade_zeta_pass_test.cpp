@@ -2,15 +2,19 @@
 // Render passes of depth and stencil attachments as the raw facade records them (raw_facade_harness.h): a Depth32Float
 // texture beside a Stencil8 texture (array slices past 0 too), and an aspect whose store action the encoder decides
 // (MTLStoreActionUnknown, then setDepthStoreAction: / setStencilStoreAction:), are the raw path's (no pass.ds refusal), and
-// their command buffers complete on it, as does a depth cleared to NaN. A one-sample Depth16Unorm beside a Stencil8 is taken
-// (its depth converted through a Depth32Float_Stencil8 by the pack's turn depth states, which this harness's pack lacks: it
-// is not run here); a multisampled pair of them stays refused.
+// their command buffers complete on it, as does a depth cleared to NaN. A one-sample Depth16Unorm beside a Stencil8 is
+// converted through a Depth32Float_Stencil8; a multisampled pair of them stays refused without its conversion states.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/RawMetalInternal.h"
+#include "../raw/runtime/raw_record.h"
+#include "../raw/runtime/raw_turn_copy.h"
 #include "../../../kits/SwitchGM20B/SwitchGM20B3D.h"
+#include "../../../kits/SwitchGM20B/SwitchGM20BCopy.h"
 
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace {
 
@@ -27,13 +31,14 @@ id<MTLTexture> zeta(MTLPixelFormat format)
     return [gDevice newTextureWithDescriptor:d];
 }
 
-id<MTLTexture> zetaChain(MTLPixelFormat format)
+id<MTLTexture> zetaChain(MTLPixelFormat format, NSUInteger width = 100, NSUInteger height = 60, NSUInteger layers = 6,
+                         NSUInteger levels = 4)
 {
     MTLTextureDescriptor *d =
-        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:100 height:60 mipmapped:YES];
-    d.textureType = MTLTextureType2DArray;
-    d.arrayLength = 6;
-    d.mipmapLevelCount = 4;
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:width height:height mipmapped:YES];
+    d.textureType = layers > 1 ? MTLTextureType2DArray : MTLTextureType2D;
+    d.arrayLength = layers;
+    d.mipmapLevelCount = levels;
     d.storageMode = MTLStorageModePrivate;
     d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     return [gDevice newTextureWithDescriptor:d];
@@ -45,17 +50,33 @@ protected:
     {
         gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
         ASSERT_TRUE(gDevice != nil);
+        for (const uint32_t format : {250u, 260u}) {
+            raw::RuntimeRecord r;
+            r.keyString = "samples=1 ds=" + std::to_string(format) + (format == 260 ? "/260 " : "/0 ");
+            for (raw::CapturedProgram &p : r.programs) {
+                p.image.assign(80 + 64, 0);
+                p.gprs = 8;
+            }
+            const char *name = raw::turnDepthState(format);
+            r.pipeline.keyHash = raw::Pack::fnv(name, strlen(name));
+            r.blob = {0x1a00, 0x1111};
+            std::string why;
+            ASSERT_NE(gRM->raw->addRecord(r, false, why), nullptr) << why;
+        }
     }
 
     // One pass of `pass` and nothing drawn, its encoder deciding the stores `decide` names: whether the raw path took it,
     // and the path its command buffer ran
-    static std::pair<bool, std::string> run(MTLRenderPassDescriptor *pass, void (^decide)(id<MTLRenderCommandEncoder>))
+    static std::pair<bool, std::string> run(MTLRenderPassDescriptor *pass, void (^decide)(id<MTLRenderCommandEncoder>),
+                                            uint32_t *sourceTic = nullptr)
     {
         id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
         id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass];
         if (decide)
             decide(e);
         [e endEncoding];
+        if (sourceTic)
+            *sourceTic = ((RMCommandBuffer *)cb)->_passes.back().zeta[0].sourceTic;
         const bool taken = !(((RMCommandBuffer *)cb)->_preds & 1ull << PredPassDepthStencil);
         [cb commit];
         [cb waitUntilCompleted];
@@ -76,9 +97,27 @@ protected:
         return p;
     }
 
-    static std::map<uint32_t, uint32_t> methods(size_t first)
+    static std::map<uint32_t, uint32_t> methods(size_t first,
+                                                std::vector<std::pair<uint64_t, uint64_t>> *copies = nullptr)
     {
         std::map<uint32_t, uint32_t> out;
+        uint64_t from = 0, to = 0;
+        const auto write = [&](uint32_t subchannel, uint32_t method, uint32_t value) {
+            if (subchannel == raw::SUBC_3D)
+                out[method] = value;
+            else if (copies && subchannel == raw::SUBC_COPY) {
+                if (method == NVB0B5_OFFSET_IN_UPPER)
+                    from = (from & 0xffffffffull) | uint64_t(value) << 32;
+                else if (method == NVB0B5_OFFSET_IN_LOWER)
+                    from = (from & ~0xffffffffull) | value;
+                else if (method == NVB0B5_OFFSET_OUT_UPPER)
+                    to = (to & 0xffffffffull) | uint64_t(value) << 32;
+                else if (method == NVB0B5_OFFSET_OUT_LOWER)
+                    to = (to & ~0xffffffffull) | value;
+                else if (method == NVB0B5_LAUNCH_DMA && from && to)
+                    copies->emplace_back(from, to);
+            }
+        };
         const auto &jobs = kernel_model::model.jobs;
         for (size_t j = first; j < jobs.size(); ++j) {
             const auto &words = jobs[j].words;
@@ -86,13 +125,11 @@ protected:
                 const uint32_t header = words[i++], op = header >> 29, count = header >> 16 & 0x1fff,
                                subchannel = header >> 13 & 7, method = (header & 0xfff) << 2;
                 if (op == 4) {
-                    if (subchannel == raw::SUBC_3D)
-                        out[method] = count;
+                    write(subchannel, method, count);
                     continue;
                 }
                 for (uint32_t k = 0; k < count && i < words.size(); ++k, ++i)
-                    if (subchannel == raw::SUBC_3D)
-                        out[method + 4 * (op == 1 ? k : op == 5 && k ? 1 : 0)] = words[i];
+                    write(subchannel, method + 4 * (op == 1 ? k : op == 5 && k ? 1 : 0), words[i]);
             }
         }
         return out;
@@ -180,6 +217,95 @@ TEST_F(FacadeZetaPass, CombinedAspectsRequireTheSameMipAndSlice)
     }
 }
 
+TEST_F(FacadeZetaPass, SeparateMipAttachmentsCopyTheirOwnLevelsAndSlices)
+{
+    auto depth = zetaChain(MTLPixelFormatDepth32Float), stencil = zetaChain(MTLPixelFormatStencil8, 200, 120, 6, 5);
+    ASSERT_NE(depth, nil);
+    ASSERT_NE(stencil, nil);
+    ASSERT_NE(((RMTexture *)depth)->_raw.chain, nullptr);
+    ASSERT_NE(((RMTexture *)stencil)->_raw.chain, nullptr);
+    for (const bool view : {false, true}) {
+        id<MTLTexture> d = depth, s = stencil;
+        uint32_t depthLevel = 1, stencilLevel = 2, depthSlice = 1, stencilSlice = 3;
+        if (view) {
+            d = [depth newTextureViewWithPixelFormat:MTLPixelFormatDepth32Float
+                                         textureType:MTLTextureType2DArray
+                                              levels:NSMakeRange(1, 3)
+                                              slices:NSMakeRange(1, 5)];
+            ASSERT_NE(d, nil);
+            d = [d newTextureViewWithPixelFormat:MTLPixelFormatDepth32Float
+                                     textureType:MTLTextureType2DArray
+                                          levels:NSMakeRange(0, 2)
+                                          slices:NSMakeRange(0, 3)];
+            s = [stencil newTextureViewWithPixelFormat:MTLPixelFormatStencil8
+                                           textureType:MTLTextureType2DArray
+                                                levels:NSMakeRange(1, 4)
+                                                slices:NSMakeRange(2, 3)];
+            depthLevel = 1;
+            stencilLevel = 2;
+            depthSlice = 1;
+            stencilSlice = 0;
+        }
+        ASSERT_NE(d, nil);
+        ASSERT_NE(s, nil);
+        const auto &depthRaw = ((RMTexture *)depth)->_raw, &stencilRaw = ((RMTexture *)stencil)->_raw;
+        const uint32_t absoluteDepthLevel = depthLevel + (view ? 1 : 0);
+        const uint32_t absoluteStencilLevel = stencilLevel + (view ? 1 : 0);
+        const uint32_t absoluteDepthSlice = depthSlice + (view ? 1 : 0);
+        const uint32_t absoluteStencilSlice = stencilSlice + (view ? 2 : 0);
+        for (const auto load : {MTLLoadActionClear, MTLLoadActionLoad}) {
+            SCOPED_TRACE(::testing::Message() << view << '/' << load);
+            auto p = pass(d, s, load, MTLStoreActionStore);
+            p.depthAttachment.level = depthLevel;
+            p.depthAttachment.slice = depthSlice;
+            p.stencilAttachment.level = stencilLevel;
+            p.stencilAttachment.slice = stencilSlice;
+            p.renderTargetArrayLength = 2;
+            const size_t first = kernel_model::model.jobs.size();
+            const auto [taken, path] = run(p, nil);
+            EXPECT_TRUE(taken);
+            EXPECT_EQ(path, "raw");
+            std::vector<std::pair<uint64_t, uint64_t>> copies;
+            const auto emitted = methods(first, &copies);
+            ASSERT_FALSE(copies.empty());
+            if (load == MTLLoadActionClear) {
+                ASSERT_NE(emitted.find(NVB197_SET_CLEAR_RECT_HORIZONTAL), emitted.end());
+                ASSERT_NE(emitted.find(NVB197_SET_CLEAR_RECT_VERTICAL), emitted.end());
+                EXPECT_EQ(emitted.at(NVB197_SET_CLEAR_RECT_HORIZONTAL), (100u >> absoluteDepthLevel) << 16);
+                EXPECT_EQ(emitted.at(NVB197_SET_CLEAR_RECT_VERTICAL), (60u >> absoluteDepthLevel) << 16);
+            }
+
+            const struct {
+                const raw::Texture *texture;
+                uint32_t level, slice;
+            } selected[] = {{&depthRaw, absoluteDepthLevel, absoluteDepthSlice},
+                            {&stencilRaw, absoluteStencilLevel, absoluteStencilSlice}};
+
+            for (const auto &part : selected) {
+                const auto &chain = *part.texture->chain;
+                for (uint32_t layer = 0; layer < 6; ++layer) {
+                    const uint64_t address =
+                        chain.va + chain.layout.level[part.level].offset + uint64_t(layer) * chain.layout.arrayStride;
+                    const bool used = layer >= part.slice && layer < part.slice + 2;
+                    EXPECT_EQ(std::any_of(copies.begin(), copies.end(),
+                                          [&](const auto &copy) {
+                                              return copy.first == address;
+                                          }),
+                              used && load == MTLLoadActionLoad);
+                    EXPECT_EQ(std::any_of(copies.begin(), copies.end(),
+                                          [&](const auto &copy) {
+                                              return copy.second == address;
+                                          }),
+                              used);
+                }
+                EXPECT_FALSE(std::any_of(copies.begin(), copies.end(), [&](const auto &copy) {
+                    return copy.first == part.texture->va || copy.second == part.texture->va;
+                }));
+            }
+        }
+    }
+}
+
 TEST_F(FacadeZetaPass, MipAdmissionKeepsTheSeparateAspectAndChainBounds)
 {
     auto depth = zetaChain(MTLPixelFormatDepth32Float), stencil = zetaChain(MTLPixelFormatStencil8);
@@ -191,7 +317,10 @@ TEST_F(FacadeZetaPass, MipAdmissionKeepsTheSeparateAspectAndChainBounds)
         EXPECT_NE(((RMCommandBuffer *)cb)->_preds & 1ull << PredPassDepthStencil, 0u);
     };
     auto separate = pass(depth, stencil, MTLLoadActionClear, MTLStoreActionStore);
-    separate.depthAttachment.level = separate.stencilAttachment.level = 1;
+    separate.depthAttachment.level = 1;
+    separate.stencilAttachment.level = 2;
+    refused(separate);
+    separate.stencilAttachment.level = 4;
     refused(separate);
     auto past = pass(depth, nil, MTLLoadActionClear, MTLStoreActionStore);
     past.depthAttachment.level = 4;
@@ -199,6 +328,59 @@ TEST_F(FacadeZetaPass, MipAdmissionKeepsTheSeparateAspectAndChainBounds)
     auto whole = pass(zeta(MTLPixelFormatDepth32Float), nil, MTLLoadActionClear, MTLStoreActionStore);
     whole.depthAttachment.level = 1;
     refused(whole);
+}
+
+TEST_F(FacadeZetaPass, Depth16MipConversionKeepsItsPreparedHeaderAndSelectedStoreback)
+{
+    for (const bool view : {false, true}) {
+        auto depth = zetaChain(MTLPixelFormatDepth16Unorm, 100, 60, view ? 4 : 1);
+        auto stencil = zetaChain(MTLPixelFormatStencil8, 200, 120, 4, 5);
+        ASSERT_NE(depth, nil);
+        ASSERT_NE(stencil, nil);
+        const auto &root = ((RMTexture *)depth)->_raw;
+        ASSERT_NE(root.chain, nullptr);
+        id<MTLTexture> selected = depth;
+        if (view)
+            selected = [depth newTextureViewWithPixelFormat:MTLPixelFormatDepth16Unorm
+                                                textureType:MTLTextureType2D
+                                                     levels:NSMakeRange(1, 3)
+                                                     slices:NSMakeRange(2, 1)];
+        ASSERT_NE(selected, nil);
+        const uint32_t level = view ? 2 : 1, slice = view ? 2 : 0;
+        for (const auto load : {MTLLoadActionClear, MTLLoadActionLoad}) {
+            auto p = pass(selected, stencil, load, MTLStoreActionStore);
+            p.depthAttachment.level = 1;
+            p.stencilAttachment.level = level + 1;
+            p.stencilAttachment.slice = 2;
+            uint32_t prepared = 0;
+            for (unsigned repeat = 0; repeat < 2; ++repeat) {
+                SCOPED_TRACE(::testing::Message() << view << '/' << load << '/' << repeat);
+                const size_t first = kernel_model::model.jobs.size();
+                uint32_t tic = 0;
+                const auto [taken, path] = run(p, nil, &tic);
+                EXPECT_TRUE(taken);
+                EXPECT_EQ(path, "raw");
+                if (load == MTLLoadActionLoad) {
+                    EXPECT_NE(tic, 0u);
+                    if (repeat)
+                        EXPECT_EQ(tic, prepared);
+                    prepared = tic;
+                } else {
+                    EXPECT_EQ(tic, 0u);
+                }
+                const auto emitted = methods(first);
+                for (const auto method : {NVB197_SET_ZT_A, NVB197_SET_ZT_B, NVB197_SET_ZT_FORMAT, NVB197_SET_ZT_SIZE_A,
+                                          NVB197_SET_ZT_SIZE_B})
+                    ASSERT_NE(emitted.find(method), emitted.end());
+                const uint64_t address = uint64_t(emitted.at(NVB197_SET_ZT_A)) << 32 | emitted.at(NVB197_SET_ZT_B);
+                EXPECT_EQ(address, root.chain->va + root.chain->layout.level[level].offset +
+                                       uint64_t(slice) * root.chain->layout.arrayStride);
+                EXPECT_EQ(emitted.at(NVB197_SET_ZT_FORMAT), 0x13u);
+                EXPECT_EQ(emitted.at(NVB197_SET_ZT_SIZE_A), root.chain->layout.level[level].rowBytes / 2);
+                EXPECT_EQ(emitted.at(NVB197_SET_ZT_SIZE_B), 60u >> level);
+            }
+        }
+    }
 }
 
 TEST_F(FacadeZetaPass, ADepth32FloatBesideAStencil8IsTheRawPaths)

@@ -309,6 +309,7 @@ struct RMPass {
         MTLLoadAction load;
         MTLStoreAction store;
         bool resolve;
+        uint32_t sourceTic = 0;
     } zeta[2];
 
     __unsafe_unretained id depthResolve;    // its depth resolve's texture, nil for none

@@ -59,23 +59,38 @@ bool RMRangeEncode::storeFormatTargets()
     return true;
 }
 
-// A separate depth and stencil texture, each from its own slice: the pass renders a scratch zeta of the pair's, which loads
-// and stores each aspect, and stores an aspect a resolve reads back into its texture for the resolve to read there
+// A separate depth and stencil texture, each at its own level and slice: the pass renders a scratch zeta of the pair's,
+// which loads and stores each aspect, and stores an aspect a resolve reads back into its texture for the resolve to read there
 void RMRangeEncode::separateZeta(const RMPass &pass, RMTexture *depth, RMTexture *stencil, raw::PassDesc &p)
 {
-    const auto from = [](RMTexture *t, NSUInteger slice, raw::Texture &part) {
-        if (!slice)
-            return &t->_raw;
-        part = raw::layersFrom(t->_raw, uint32_t(slice));
+    const auto from = [](RMTexture *t, NSUInteger level, NSUInteger slice, raw::Texture &part, uint32_t tic) {
+        if (!level && !slice) {
+            if (t->_raw.format != MTLPixelFormatDepth16Unorm)
+                return &t->_raw;
+            part = t->_raw;
+            return &part;
+        }
+        if (level) {
+            __unsafe_unretained RMTexture *owner = t->_levelsOwner ?: t;
+            raw::chainLevelImage(owner->_raw, t->_levelsBase + uint32_t(level), part);
+            part = raw::layersFrom(part, t->_slicesBase + uint32_t(slice));
+            part.layers = t->_raw.layers - uint32_t(slice);
+        } else {
+            part = raw::layersFrom(t->_raw, uint32_t(slice));
+        }
+        part.tic = tic;
         return &part;
     };
     const bool resolvedDepth = depthResolve_.into && !depth->_raw.memoryless;
-    p.separate = {from(depth, pass.zeta[0].slice, separatePart_[0]),
-                  from(stencil, pass.zeta[1].slice, separatePart_[1]),
+    raw::Texture *depthFrom =
+        from(depth, pass.zeta[0].level, pass.zeta[0].slice, separatePart_[0], pass.zeta[0].sourceTic);
+    p.separate = {depthFrom,
+                  from(stencil, pass.zeta[1].level, pass.zeta[1].slice, separatePart_[1], pass.zeta[1].sourceTic),
                   pass.depthLoad == MTLLoadActionLoad,
                   pass.stencilLoad == MTLLoadActionLoad,
                   pass.zeta[0].store == MTLStoreActionStore || resolvedDepth,
                   pass.zeta[1].store == MTLStoreActionStore || stencilResolve_.into};
+    p.depthStencil.texture = depthFrom;
     separateResolved_[0] = resolvedDepth ? p.separate.depth : nullptr;
     separateResolved_[1] = stencilResolve_.into ? p.separate.stencil : nullptr;
     useTexture(rc_, depth, true);
@@ -84,9 +99,9 @@ void RMRangeEncode::separateZeta(const RMPass &pass, RMTexture *depth, RMTexture
 
 // A one-sample Depth16Unorm's depth beside a Stencil8 through a Depth32Float_Stencil8 of the command buffer's, converted in
 // by draws where the pass loads it and back at its end where it stores it; a depth bias counts in its 16-bit codes
-bool RMRangeEncode::depth16Zeta(const RMPass &pass, RMTexture *depth, raw::PassDesc &p)
+bool RMRangeEncode::depth16Zeta(const RMPass &pass, raw::PassDesc &p)
 {
-    raw::Texture &z = depth->_raw;
+    const raw::Texture &z = *p.separate.depth;
     if (z.format != MTLPixelFormatDepth16Unorm)
         return true;
     raw::Texture *scratch = rc_->turnScratch(raw::kZetaFormat, z.width, z.height, raw::kDepthConvertTag, z.samples);
@@ -98,19 +113,18 @@ bool RMRangeEncode::depth16Zeta(const RMPass &pass, RMTexture *depth, raw::PassD
     p.biasDepthBits = 16;
     p.separate.depth = nullptr;
     p.separate.loadDepth = p.separate.storeDepth = false;
-    depth16_ = pass.zeta[0].store == MTLStoreActionStore ? depth : nil;
-    depth16Scratch_ = scratch;
+    depth16Scratch_ = pass.zeta[0].store == MTLStoreActionStore ? scratch : nullptr;
     return true;
 }
 
 bool RMRangeEncode::depth16Back()
 {
-    if (!depth16_)
+    if (!depth16Scratch_)
         return true;
-    __unsafe_unretained RMTexture *depth = depth16_;
-    depth16_ = nil;
-    if (!rc_->depthConvert(depth->_raw, *depth16Scratch_, why_))
-        return fail(PredEncPassRender, *why_, depth->_raw.width);
+    const raw::Texture *scratch = depth16Scratch_;
+    depth16Scratch_ = nullptr;
+    if (!rc_->depthConvert(separatePart_[0], *scratch, why_))
+        return fail(PredEncPassRender, *why_, separatePart_[0].width);
     return true;
 }
 

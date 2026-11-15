@@ -150,15 +150,19 @@ bool RMRangeEncode::beginPass(size_t at)
         stencilResolve_ = {r, pass.stencilPick};
     separateResolved_[0] = separateResolved_[1] = nullptr;
     if (__unsafe_unretained RMTexture *z = (RMTexture *)pass.depth) {  // (rawDepthStencil: decided at record)
+        __unsafe_unretained RMTexture *s = (RMTexture *)pass.zeta[1].texture;
+        const bool separate = s && s != z;
         p.depthStencil.texture = &z->_raw;
-        const NSUInteger level = pass.zeta[0].texture ? pass.zeta[0].level : pass.zeta[1].level;
-        if (level) {
-            raw::chainLevelImage(z->_raw, uint32_t(level), zetaPart_);
-            p.depthStencil.texture = &zetaPart_;
-        }
-        if (pass.depthSlice && !z->_raw.memoryless) {  // a layer of a 2D array or cube: its layers from there
-            zetaPart_ = raw::layersFrom(*p.depthStencil.texture, uint32_t(pass.depthSlice));
-            p.depthStencil.texture = &zetaPart_;
+        if (!separate) {
+            const NSUInteger level = pass.zeta[0].texture ? pass.zeta[0].level : pass.zeta[1].level;
+            if (level) {
+                raw::chainLevelImage(z->_raw, uint32_t(level), zetaPart_);
+                p.depthStencil.texture = &zetaPart_;
+            }
+            if (pass.depthSlice && !z->_raw.memoryless) {  // a layer of a 2D array or cube: its layers from there
+                zetaPart_ = raw::layersFrom(*p.depthStencil.texture, uint32_t(pass.depthSlice));
+                p.depthStencil.texture = &zetaPart_;
+            }
         }
         p.depthStencil.clearDepth = pass.depthLoad == MTLLoadActionClear;
         p.depthStencil.clearStencil = pass.stencilLoad == MTLLoadActionClear;
@@ -172,9 +176,9 @@ bool RMRangeEncode::beginPass(size_t at)
             });
         p.depthStencil.depth = raw::metalClearDepth(pass.clearDepth, z->_raw.format);
         p.depthStencil.stencil = pass.clearStencil;
-        if (__unsafe_unretained RMTexture *s = (RMTexture *)pass.zeta[1].texture; s && s != z) {
+        if (separate) {
             separateZeta(pass, z, s, p);
-            if (!depth16Zeta(pass, z, p))
+            if (!depth16Zeta(pass, p))
                 return false;
         }
     }

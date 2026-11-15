@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <vector>
 #include "raw_metallib.h"
@@ -119,18 +120,21 @@ struct LinkedComputeFunction {
     std::string constants;
     bool binary = false;
     std::string symbol = {}, name = {};
+    std::optional<std::string> group = std::nullopt;
 };
 
-// Lists retain descriptor order. Names distinguish binaries and renamed imports; unchanged kl/kp entries keep their keys.
+// Lists retain descriptor order, groups by name. Names distinguish binaries, grouped functions and renamed imports;
+// unchanged kl/kp entries keep their keys.
 inline std::string computeLinkedText(const std::vector<LinkedComputeFunction> &linked)
 {
     std::string text;
     for (const LinkedComputeFunction &f : linked) {
-        text += (f.binary   ? " | kb "
+        text += (f.group    ? " | kg " + std::to_string(f.group->size()) + ":" + *f.group + " "
+                 : f.binary ? " | kb "
                  : f.hidden ? " | kp "
                             : " | kl ") +
                 airText(f.air) + (f.constants.empty() ? "" : " " + f.constants);
-        if (f.binary || (!f.name.empty() && f.name != f.symbol))
+        if (f.group || f.binary || (!f.name.empty() && f.name != f.symbol))
             text += " name=" + std::to_string(f.symbol.size()) + ":" + f.symbol + std::to_string(f.name.size()) + ":" +
                     f.name;
     }

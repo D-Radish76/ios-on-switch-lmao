@@ -36,6 +36,11 @@ struct NmbVertexLayout {
     uint64_t stride, step_function, step_rate;
 };
 
+struct switch_linked_group_name {
+    const char *bytes;
+    uint64_t length;
+};
+
 /* A render pipeline descriptor's fields over handles of `Function` (NmbFunction, or the offline compile's
  * NmbOfflineFunction below), as the bridge's NmbRenderPipelineDescriptorOf takes them. vertex_inputs 0: no
  * vertex descriptor. The linked arrays are vertexLinkedFunctions' and fragmentLinkedFunctions' functions and
@@ -65,7 +70,8 @@ struct NmbVertexLayout {
  * functions and privateFunctions, the external functions the kernel calls by name (counted arrays of live handles for
  * the duration of the call; none where the count is 0). The stage_ fields are the stageInputDescriptor (stage_inputs 0:
  * none): its attributes by index (format 0: none) and layouts by buffer index (stride UINT64_MAX:
- * MTLBufferLayoutStrideDynamic), its index type and index buffer. */
+ * MTLBufferLayoutStrideDynamic), its index type and index buffer. group_linked has group_count members; group_names
+ * names each member's call-site group, preserving member order within each group. */
 #define NMB_COMPUTE_PIPELINE_DESCRIPTOR_FIELDS(Function)                                                        \
     Function *function;                                                                                         \
     uint64_t max_threads, multiple_of_execution_width, indirect, max_call_stack_depth, adding_binary_functions; \
@@ -79,7 +85,10 @@ struct NmbVertexLayout {
     uint64_t stage_inputs;                                                                                      \
     struct NmbVertexAttribute stage_attributes[31];                                                             \
     struct NmbVertexLayout stage_layouts[31];                                                                   \
-    uint64_t stage_index_type, stage_index_buffer;
+    uint64_t stage_index_type, stage_index_buffer;                                                              \
+    Function *const *group_linked;                                                                              \
+    const struct switch_linked_group_name *group_names;                                                         \
+    uint64_t group_count;
 
 // The direct compile with no m2v runtime (NativeMetalOffline.rs): libraries and functions the translator makes alone, and
 // states and kernels of them made on the build's compile profile's devices, every Vulkan handle they hand over 0.

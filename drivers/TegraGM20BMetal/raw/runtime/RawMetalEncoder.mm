@@ -229,21 +229,25 @@ static bool separateZeta(MTLRenderPassDescriptor *pass)
         return false;
     const raw::Texture &x = d->_raw, &y = s->_raw;
     MTLRenderPassDepthAttachmentDescriptor *a = pass.depthAttachment;
+    const NSUInteger depthLevel = a.level, stencilLevel = pass.stencilAttachment.level;
+    if (depthLevel >= d->_descriptor.mipmapLevelCount || stencilLevel >= s->_descriptor.mipmapLevelCount)
+        return false;
     const bool transient = a.loadAction != MTLLoadActionLoad && keptStore(a.storeAction) == MTLStoreActionDontCare &&
                            !a.resolveTexture && !resolves(a.storeAction);
     const bool converts = x.samples == 1 || transient || gRM->raw->depthConvertible(x.samples);
     return x.zeta && y.zeta && (x.format == 252 || (x.format == 250 && converts && x.layers <= 1)) && y.format == 253 &&
-           x.width == y.width && x.height == y.height && x.samples == y.samples && !x.rotation && !y.rotation;
+           std::max(1u, x.width >> depthLevel) == std::max(1u, y.width >> stencilLevel) &&
+           std::max(1u, x.height >> depthLevel) == std::max(1u, y.height >> stencilLevel) && x.samples == y.samples &&
+           !x.rotation && !y.rotation;
 }
 
-static bool rawDepthStencil(MTLRenderPassDescriptor *pass)
+static bool rawDepthStencil(MTLRenderPassDescriptor *pass, bool separate)
 {
     MTLRenderPassDepthAttachmentDescriptor *d = pass.depthAttachment;
     MTLRenderPassStencilAttachmentDescriptor *s = pass.stencilAttachment;
     RMTexture *t = (RMTexture *)zetaAttachment(pass);
     if (!t || ![(id)t isKindOfClass:[RMTexture class]] || !t->_rawOk || !t->_raw.zeta)
         return false;
-    const bool separate = separateZeta(pass);
     const bool depth = separate || raw::zetaHasDepth(t->_raw.format),
                stencil = separate || raw::zetaHasStencil(t->_raw.format);
     if (!separate && ((RMTexture *)d.texture != (depth ? t : nil) || (RMTexture *)s.texture != (stencil ? t : nil)))
@@ -259,14 +263,15 @@ static bool rawDepthStencil(MTLRenderPassDescriptor *pass)
     MTLRenderPassAttachmentDescriptor *aspects[2] = {depth ? d : nil, stencil ? s : nil};
     const NSUInteger level = depth ? d.level : s.level;
     const NSUInteger slice = depth ? d.slice : s.slice;
-    if (level && (separate || !t->_raw.chain || level >= t->_raw.chain->layout.levels))
+    if (!separate && level && (!t->_raw.chain || level >= t->_raw.chain->layout.levels))
         return false;
     for (MTLRenderPassAttachmentDescriptor *a : aspects) {
         RMTexture *own = separate ? (RMTexture *)a.texture : t;
         const MTLStoreAction kept = keptStore(a.storeAction);
         const NSUInteger from = separate ? a.slice : slice;
         if (a &&
-            (a.level != level || a.slice != from || from >= std::max(own->_raw.layers, 1u) || a.depthPlane ||
+            ((!separate && a.level != level) || a.slice != from || from >= std::max(own->_raw.layers, 1u) ||
+             a.depthPlane ||
              (own->_raw.memoryless && (kept != MTLStoreActionDontCare || (a.loadAction != MTLLoadActionClear &&
                                                                           a.loadAction != MTLLoadActionDontCare))) ||
              (kept != MTLStoreActionDontCare && kept != MTLStoreActionStore && !deferredStore(a))))
@@ -540,11 +545,42 @@ void rmPoolEncoders()
         [self retain:pass.stencilAttachment.texture];
         // a turned pass moves a separate pair's textures through stand-ins of its plane (raw_turned_pass.h), before any
         // resolve of theirs would read them
-        if (rawDepthStencil(pass) &&
-            !(e->_turn && separateZeta(pass) && (facts.depthResolve || facts.stencilResolve))) {
-            e->_zeta = separateZeta(pass) ? raw::kZetaFormat : ((RMTexture *)facts.depth)->_raw.format;
+        const bool separate = separateZeta(pass);
+        if (rawDepthStencil(pass, separate) &&
+            !(e->_turn && separate && (facts.depthResolve || facts.stencilResolve))) {
+            e->_zeta = separate ? raw::kZetaFormat : ((RMTexture *)facts.depth)->_raw.format;
             if (!e->_count)
                 e->_samples = ((RMTexture *)facts.depth)->_raw.samples;
+            if (separate && (e->_turn || ((RMTexture *)depth.texture)->_raw.format == MTLPixelFormatDepth16Unorm)) {
+                for (unsigned i = 0; i < (e->_turn ? 2u : 1u); ++i) {
+                    RMPass::Zeta &aspect = facts.zeta[i];
+                    if (aspect.load != MTLLoadActionLoad)
+                        continue;
+                    __unsafe_unretained RMTexture *t = (RMTexture *)aspect.texture;
+                    bool prepared;
+                    if (!aspect.level && !aspect.slice) {
+                        prepared = gRM->raw->sampleable(t->_raw);
+                    } else {
+                        raw::Texture selected;
+                        if (aspect.level) {
+                            __unsafe_unretained RMTexture *owner = t->_levelsOwner ?: t;
+                            raw::chainLevelImage(owner->_raw, t->_levelsBase + uint32_t(aspect.level), selected);
+                            selected = raw::layersFrom(selected, t->_slicesBase + uint32_t(aspect.slice));
+                        } else {
+                            selected = raw::layersFrom(t->_raw, uint32_t(aspect.slice));
+                        }
+                        aspect.sourceTic =
+                            gRM->raw->attachmentTic(t->_raw, selected, uint32_t(aspect.level), uint32_t(aspect.slice));
+                        prepared = aspect.sourceTic != 0;
+                    }
+                    if (!prepared) {
+                        _encRefused = true;
+                        failCommandBuffer(self, @"no texture header for a depth/stencil load",
+                                          MTLCommandBufferErrorOutOfMemory);
+                        break;
+                    }
+                }
+            }
         } else {
             [self takeReason:WhyPass why:@"a depth/stencil attachment the raw path does not take"];
             hit(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,

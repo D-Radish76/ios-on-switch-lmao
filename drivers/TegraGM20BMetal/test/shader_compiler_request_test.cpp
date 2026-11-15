@@ -181,13 +181,26 @@ raw::CompileRequest layout03Request()
     return r;
 }
 
-TEST(CompileRequest, ItsLayoutIsSWCREQ04)
+TEST(CompileRequest, ItsLayoutIsSWCREQ05)
 {
-    EXPECT_EQ(raw::encodeRequest(layout03Request()).substr(0, 8), "SWCREQ04");
+    EXPECT_EQ(raw::encodeRequest(layout03Request()).substr(0, 8), "SWCREQ05");
+}
+
+TEST(CompileRequest, ARequestOfLayout04IsRefused)
+{
+    std::string bytes = layout03::encode(layout03Request(), true);
+    bytes.replace(0, 8, "SWCREQ04");
+    raw::CompileRequest back;
+    EXPECT_FALSE(raw::decodeRequest(bytes, back));
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared prepared;
+    std::string why;
+    EXPECT_FALSE(switch_compiler::prepare(bytes, kStack, system, prepared, why));
+    EXPECT_EQ(why, "an unreadable request");
 }
 
 // A request of layout 03, which a client of an older build sends or the compiler's request log (compiler_log.h) kept,
-// is refused whole by the reader and by prepare, which the log's replay runs: dropped, never read as layout 04
+// is refused whole by the reader and by prepare, which the log's replay runs
 TEST(CompileRequest, ARequestOfLayout03IsRefused)
 {
     const raw::CompileRequest r = layout03Request();
@@ -617,6 +630,67 @@ TEST(CompileRequest, BinaryFunctionKeysKeepTheirDefinitionAndSpecializedLinkName
     raw::CompileRequest ordinary = request;
     ordinary.stages[1].tag = "kl";
     EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(ordinary), kStack, system, prepared, why));
+}
+
+TEST(CompileRequest, GroupMembershipAndOrderAreKeptInEveryComputeRequest)
+{
+    raw::CompileRequest request;
+    request.stack = kStack;
+    request.kind = raw::RequestKind::Facts;
+    request.libraries = {data(made_metallib::universal({"kernel_fn"}, 0x30)),
+                         data(made_metallib::universal({"helper", "other"}, 0x40))};
+    request.stages = {stage("k", "kernel_fn"), stage("kg", "helper", 1, "#1:29:01"), stage("kg", "other", 1)};
+    request.stages[1].name = "transform";
+    request.stages[1].group = request.stages[2].group = std::string("choice\0other", 12) + " | kg :";
+    raw::AirHash kernel;
+    kernel.fill(0x30);
+    raw::LinkedComputeFunction first, second;
+    first.air.fill(0x40);
+    first.symbol = "helper";
+    first.name = "transform";
+    first.constants = "#1:29:01";
+    first.group = request.stages[1].group;
+    second.air.fill(0x41);
+    second.symbol = second.name = "other";
+    second.group = first.group;
+    const std::string state = raw::computeStateKey(kernel, raw::computeLinkedText({first, second}), 0, false);
+    raw::LinkedComputeFunction prefix = first;
+    prefix.group = "choice";
+    EXPECT_NE(raw::computeLinkedText({prefix, second}), raw::computeLinkedText({first, second}));
+    switch_compiler::SystemLibraries system;
+    switch_compiler::Prepared prepared;
+    std::string why;
+    for (const auto kind : {raw::RequestKind::Facts, raw::RequestKind::Reflection, raw::RequestKind::Kernel}) {
+        request.kind = kind;
+        request.key = kind == raw::RequestKind::Facts ? raw::factsCacheKey(kStack, state).key
+                      : kind == raw::RequestKind::Reflection
+                          ? raw::computeReflectionKey(kStack, state).key
+                          : "kernel | " + state + " | tg=0,0,0 | tgmem= | tex= | smp=";
+        raw::CompileRequest back;
+        ASSERT_TRUE(raw::decodeRequest(raw::encodeRequest(request), back));
+        EXPECT_EQ(back.stages[1].group, request.stages[1].group);
+        EXPECT_EQ(back.stages[1].name, "transform");
+        ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(back), kStack, system, prepared, why)) << why;
+        const raw::Digest original = prepared.name;
+        for (const unsigned mutation : {0u, 1u, 2u, 3u}) {
+            raw::CompileRequest changed = request;
+            if (mutation == 0)
+                changed.stages[1].group += "x";
+            else if (mutation == 1)
+                std::swap(changed.stages[1], changed.stages[2]);
+            else if (mutation == 2)
+                changed.stages[1].constants = "#1:29:00";
+            else {
+                changed.stages[1].tag = "kl";
+                changed.stages[1].group.clear();
+            }
+            EXPECT_NE(raw::storeName(prepared.key, changed, identities(changed)), original);
+            EXPECT_FALSE(switch_compiler::prepare(raw::encodeRequest(changed), kStack, system, prepared, why));
+        }
+    }
+    raw::CompileRequest misplaced = request, back;
+    misplaced.stages[0].group = "choice";
+    EXPECT_FALSE(raw::decodeRequest(raw::encodeRequest(misplaced), back));
 }
 
 // A specialized function's attributes: one stage tagged "a", keyed by its AIR, constants and the name it was made under,

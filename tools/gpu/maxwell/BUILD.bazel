@@ -288,6 +288,7 @@ direct_runner(
         "//drivers/TegraGM20BMetal:raw/test/linkcheck.mm",
         "//drivers/TegraGM20BMetal:raw/test/linked/caller.metal",
         "//drivers/TegraGM20BMetal:raw/test/linked/callee.metal",
+        "//drivers/TegraGM20BMetal/test:grouped_pointer.metal",
         "//drivers/NativeMetal/test:neutral_compute.mm",
         "//drivers/NativeMetal/test:neutral_compute.metal",
         "//drivers/TegraGM20BMetal:raw_runtime_headers",
@@ -298,6 +299,7 @@ direct_runner(
     metal_abi = "//drivers/NativeMetal/abi:MetalABI.h",
     tools = "//gpu/seed:local_raw_tools",
     translate = "//gpu:translate_host",
+    visibility = ["//drivers/TegraGM20BMetal/test:__pkg__"],
 )
 
 py_test(

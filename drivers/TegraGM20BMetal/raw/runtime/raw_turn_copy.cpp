@@ -12,6 +12,16 @@ namespace raw {
 bool CommandBuffer::turnCopy(const Texture &dst, Texture &src, const TurnMap &map, const char **why,
                              const TurnMask *mask, uint32_t width, uint32_t height)
 {
+    if (!dev_->sampleable(src)) {
+        *why = "no texture header for a turn copy's source";
+        return false;
+    }
+    return turnCopy(dst, static_cast<const Texture &>(src), map, why, mask, width, height);
+}
+
+bool CommandBuffer::turnCopy(const Texture &dst, const Texture &src, const TurnMap &map, const char **why,
+                             const TurnMask *mask, uint32_t width, uint32_t height)
+{
     TurnMap bounded = map;
     bounded.x0 = std::max(bounded.x0, 0);
     bounded.y0 = std::max(bounded.y0, 0);
@@ -19,10 +29,6 @@ bool CommandBuffer::turnCopy(const Texture &dst, Texture &src, const TurnMap &ma
     bounded.y1 = std::min(bounded.y1, int32_t(src.height));
     if (dst.zeta && zetaHasStencil(dst.format) && !mask && src.samples == 1 &&
         zetaColourTakes(dst, src, StencilSample::Zero)) {
-        if (!dev_->sampleable(src)) {
-            *why = "no texture header for a turn copy's source";
-            return false;
-        }
         return zetaColour(dst, src, StencilSample::Zero, bounded, 0, 0, why);
     }
     static const DepthStencilState depthWrites = [] {
@@ -42,10 +48,6 @@ bool CommandBuffer::turnCopy(const Texture &dst, Texture &src, const TurnMap &ma
     if ((copies && !pl) || (!dst.zeta && !f) || src.bpp != dst.bpp || src.zeta != dst.zeta ||
         (dst.zeta && src.format != dst.format)) {
         *why = "no turn copy state for the attachment's format";
-        return false;
-    }
-    if (!dev_->sampleable(src)) {
-        *why = "no texture header for a turn copy's source";
         return false;
     }
     Texture target = dst, source = src, stencilView;
@@ -91,7 +93,7 @@ bool CommandBuffer::turnCopy(const Texture &dst, Texture &src, const TurnMap &ma
     return true;
 }
 
-bool CommandBuffer::depthConvert(const Texture &dst, Texture &src, const char **why)
+bool CommandBuffer::depthConvert(const Texture &dst, const Texture &src, const char **why)
 {
     static const DepthStencilState depthWrites = [] {
         DepthStencilDesc desc;
@@ -108,7 +110,7 @@ bool CommandBuffer::depthConvert(const Texture &dst, Texture &src, const char **
         *why = "no depth conversion state for the formats";
         return false;
     }
-    if (!dev_->sampleable(src)) {
+    if (!src.tic) {
         *why = "no texture header for a depth conversion's source";
         return false;
     }

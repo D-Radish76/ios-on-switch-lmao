@@ -207,6 +207,12 @@ pub trait DescriptorFunction {
 }
 
 #[repr(C)]
+pub struct SwitchLinkedGroupName {
+    pub bytes: *const c_char,
+    pub length: u64,
+}
+
+#[repr(C)]
 pub struct NmbComputePipelineDescriptorOf<F> {
     pub function: *mut F,
     pub max_threads: u64,
@@ -226,6 +232,9 @@ pub struct NmbComputePipelineDescriptorOf<F> {
     pub stage_layouts: [NmbVertexLayout; 31],
     pub stage_index_type: u64,
     pub stage_index_buffer: u64,
+    pub group_linked: *const *mut F,
+    pub group_names: *const SwitchLinkedGroupName,
+    pub group_count: u64,
 }
 
 /// A compute descriptor's stage input (`stageInputDescriptor`): its set attributes, their layouts (a dynamic stride as
@@ -289,6 +298,28 @@ pub fn compute_descriptor<F: DescriptorFunction>(
         .into_iter()
         .map(|f| f.with_precompiled(true))
         .collect();
+    if d.group_count != 0 {
+        if d.group_names.is_null() {
+            return Err("null linked group names".into());
+        }
+        let functions = linked_functions(d.group_linked, d.group_count)?;
+        // SAFETY: the descriptor's counted array of names, one for each grouped function.
+        let names = unsafe { std::slice::from_raw_parts(d.group_names, functions.len()) };
+        for (name, function) in names.iter().zip(functions) {
+            if name.bytes.is_null() && name.length != 0 {
+                return Err("null linked group name".into());
+            }
+            let length = usize::try_from(name.length).map_err(e("group name length"))?;
+            let bytes = if length == 0 {
+                &[]
+            } else {
+                // SAFETY: the descriptor's group names have their declared byte lengths.
+                unsafe { std::slice::from_raw_parts(name.bytes.cast::<u8>(), length) }
+            };
+            let name = std::str::from_utf8(bytes).map_err(e("group name"))?;
+            linked.groups.entry(name.to_owned()).or_default().push(function);
+        }
+    }
     let mut out = ComputePipelineDescriptor::new(StageSource::Function(
         get(d.function)?.stage_function().with_linked(linked),
     ));

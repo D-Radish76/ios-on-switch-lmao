@@ -76,20 +76,20 @@ bool Device::createOwnedZeta(uint32_t width, uint32_t height, uint32_t format, u
 bool Device::moveOwnedZeta(Texture &t, const ZetaMemory &m, const char **why)
 {
     Texture over;
-    bool owned;
+    uint32_t layers;
     {
         std::lock_guard<raw::Mutex> l(lock_);
-        owned = ownedZeta_.count(t.va) != 0 || compZeta_.count(t.va) != 0;
+        const bool owned = ownedZeta_.count(t.va) != 0 || compZeta_.count(t.va) != 0;
+        if (!owned || t.samples > 1 || t.chain) {
+            *why = !owned    ? "it is in no zeta memory of its own"
+                   : t.chain ? "it is mipmapped (the copy moves level 0)"
+                             : "it is multisampled";
+            return false;
+        }
+        layers = std::max<uint32_t>(t.layers, 1);
+        if (!createZetaOver(m, t.width, t.height, t.format, true, over, why, layers))
+            return false;
     }
-    if (!owned || t.samples > 1 || t.chain) {
-        *why = !owned    ? "it is in no zeta memory of its own"
-               : t.chain ? "it is mipmapped (the copy moves level 0)"
-                         : "it is multisampled";
-        return false;
-    }
-    const uint32_t layers = std::max<uint32_t>(t.layers, 1);
-    if (!createZetaOver(m, t.width, t.height, t.format, t.tic != 0, over, why, layers))
-        return false;
     uint32_t seqno = 0;
     CommandBuffer *rc = begin();
     bool copied = rc != nullptr;

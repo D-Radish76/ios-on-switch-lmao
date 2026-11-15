@@ -40,7 +40,8 @@ bool computeReflection(MTLComputePipelineDescriptor *descriptor, std::string &bl
 {
     NmbOfflineComputePipelineDescriptor p = {};
     std::vector<NmbOfflineFunction *> linked;
-    if (!descriptorOf(descriptor, p, linked)) {
+    std::vector<switch_linked_group_name> groupNames;
+    if (!descriptorOf(descriptor, p, linked, groupNames)) {
         why = "a function of another device, or what the frontend does not represent";
         return false;
     }

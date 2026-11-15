@@ -109,7 +109,7 @@ private:
     bool formatStandIns(const RMPass &pass, raw::PassDesc &p);
     bool storeFormatTargets();
     void separateZeta(const RMPass &pass, RMTexture *depth, RMTexture *stencil, raw::PassDesc &p);
-    bool depth16Zeta(const RMPass &pass, RMTexture *depth, raw::PassDesc &p);
+    bool depth16Zeta(const RMPass &pass, raw::PassDesc &p);
     bool depth16Back();
     bool imagePlanes(size_t pass, raw::PassDesc &p);
     bool writtenBack();
@@ -186,7 +186,6 @@ private:
     // reads it
     const raw::Texture *separateResolved_[2] = {};
     // a stored Depth16Unorm beside a Stencil8, rendered through a Depth32Float_Stencil8 scratch: converted back at the end
-    __unsafe_unretained RMTexture *depth16_ = nil;
     raw::Texture *depth16Scratch_ = nullptr;
     // Textures the open pass's draws store into: through a sampled shadow, copied back after the pass; under a stand-in,
     // drawn again before later work samples it; two-plane RGB10A8_2P_XR10 ones through an image of their texels, merged

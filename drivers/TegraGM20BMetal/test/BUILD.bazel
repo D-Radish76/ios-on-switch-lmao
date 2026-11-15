@@ -367,6 +367,11 @@ exports_files(
     visibility = ["//drivers/TegraGM20BMetal/test/eq:__pkg__"],
 )
 
+exports_files(
+    ["grouped_pointer.metal"],
+    visibility = ["//tools/gpu/maxwell:__pkg__"],
+)
+
 host_test(
     name = "raw_fence_test",
     srcs = [
@@ -10706,17 +10711,12 @@ objcxx_units(
     srcs = COMPILER_ENGINE_HOST_SRCS,
 )
 
-host_test(
-    name = "compiler_footprint_test",
+[host_test(
+    name = name,
     size = "medium",
-    srcs = [
-        "compiler_footprint_test.cpp",
-        "compiler_requests.h",
-        "footprint_breakdown.h",
+    srcs = [name + ".cpp"] + headers + [
         ":compiler_engine_units",
         ":libmock_iokit.dylib",
-        "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
-        "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
         "//gpu:translate_host",
     ] + RAW_HOST_HEADERS,
     additional_compiler_inputs = COMPILER_ENGINE_HOST_SRCS,
@@ -10726,15 +10726,8 @@ host_test(
         "-fobjc-arc",
     ] + RAW_HOST_COPTS,
     cxx_std = "c++17",
-    data = [
-        "compiler_boot12.log",
-        "@ipsw//:crawl_qc",
-        "@ipsw//:crawl_tree",
-    ],
-    env = {
-        "SWITCH_BOOT12": "$(rootpath compiler_boot12.log)",
-        "SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)",
-    },
+    data = data,
+    env = env,
     linkopts = [
         "-framework",
         "Foundation",
@@ -10748,14 +10741,39 @@ host_test(
         "CoreFoundation",
         "-lobjc",
     ] + [
-        "-Wl,-U,_native_bridge_metal_" + name
-        for name in ("render_direct", "compute_direct", "function_metallib", "function_library_name")
+        "-Wl,-U,_native_bridge_metal_" + symbol
+        for symbol in ("render_direct", "compute_direct", "function_metallib", "function_library_name")
     ],
     sanitize = False,
     deps = [
         ":raw_runtime_plugin_host",
     ] + RAW_HOST_DEPS,
-)
+) for name, headers, data, env in [
+    (
+        "compiler_footprint_test",
+        [
+            "compiler_requests.h",
+            "footprint_breakdown.h",
+            "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
+            "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
+        ],
+        [
+            "compiler_boot12.log",
+            "@ipsw//:crawl_qc",
+            "@ipsw//:crawl_tree",
+        ],
+        {
+            "SWITCH_BOOT12": "$(rootpath compiler_boot12.log)",
+            "SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)",
+        },
+    ),
+    (
+        "compiler_groups_test",
+        ["empty_pack.h"],
+        ["//tools/gpu/maxwell:direct_runner"],
+        {"SWITCH_GROUPED_METALLIB": "$(rootpath //tools/gpu/maxwell:direct_runner)/grouped-pointer.metallib"},
+    ),
+]]
 
 # What one compile of the heaviest states costs at its peak (RenderBox's uber states, Core Animation's generic state), each
 # in a process of its own, and which part of the compile the heap peaks in (compiler_transient_test.cpp)

@@ -54,7 +54,8 @@ Texture *TurnedPass::standIn(CommandBuffer &rc, const Texture &t, uint32_t tag, 
     return s;
 }
 
-Texture *TurnedPass::moved(CommandBuffer &rc, Texture &t, uint32_t tag, const TurnMap *load, const TurnMap *store,
+template <typename Source>
+Texture *TurnedPass::moved(CommandBuffer &rc, Source &t, uint32_t tag, const TurnMap *load, const TurnMap *store,
                            const char **why, const TurnMap *reached)
 {
     Texture *s = standIn(rc, t, tag, why);
@@ -177,8 +178,7 @@ bool TurnedPass::begin(CommandBuffer &rc, PassDesc &p, DrawReplay &replay, const
         // Depth32Float_Stencil8 is laid out from and copies its aspects in from and out to (a Depth16Unorm's is the
         // pass's converted scratch, z, moved below)
         const auto movedAspect = [&](const Texture *t, uint32_t tag, bool loaded, bool stored) {
-            return moved(rc, *const_cast<Texture *>(t), tag, loaded ? &intoPlane : nullptr,
-                         stored ? &outOfPlane : nullptr, why);
+            return moved(rc, *t, tag, loaded ? &intoPlane : nullptr, stored ? &outOfPlane : nullptr, why);
         };
         if (!(pair.stencil = movedAspect(pair.stencil, kTurnTag + 17, pair.loadStencil, pair.storeStencil)))
             return false;
@@ -197,9 +197,11 @@ bool TurnedPass::begin(CommandBuffer &rc, PassDesc &p, DrawReplay &replay, const
 
 bool TurnedPass::end(CommandBuffer &rc, const char **why)
 {
-    for (const Back &b : backs_)
-        if (!rc.turnCopy(*b.into, *b.standIn, b.map, why))
+    for (const Back &b : backs_) {
+        const Texture &source = *b.standIn;
+        if (!rc.turnCopy(*b.into, source, b.map, why))
             return false;
+    }
     backs_.clear();
     held_.clear();
     return true;

@@ -149,7 +149,7 @@ protected:
         return events(methods(kernel_model::model.jobs.back().words));
     }
 
-    std::vector<Event> turnCopy(raw::Texture &into, raw::Texture &from, std::string *why)
+    template <class Source> std::vector<Event> turnCopy(raw::Texture &into, Source &from, std::string *why)
     {
         raw::Rotation r;
         r.turn = 1;
@@ -206,6 +206,44 @@ TEST_F(DeviceZetaColour, ATurnCopyRendersThroughAPoolImageTheCopyEngineMoves)
         const std::vector<Event> ev = turnCopy(into, from, &why);
         ASSERT_FALSE(ev.empty()) << format << ": " << why;
         expectPoolImage(ev, into.va, format == kS8 ? "s8 turn copy" : "d32s8 turn copy");
+    }
+}
+
+TEST_F(DeviceZetaColour, APreparedSourceKeepsTheOwnersTurnCopyCommandsAndHeader)
+{
+    const auto normalized = [](const std::vector<Event> &ev) {
+        uint64_t scratch = 0;
+        for (const Event &e : ev)
+            if (e.kind == Event::Target && e.a)
+                scratch = e.a;
+        std::vector<std::array<uint64_t, 3>> out;
+        for (const Event &e : ev)
+            out.push_back({uint64_t(e.kind), e.a == scratch ? UINT64_MAX : e.a, e.b == scratch ? UINT64_MAX : e.b});
+        return out;
+    };
+    for (uint32_t format : {kD32S8, kS8}) {
+        SCOPED_TRACE(format);
+        raw::Texture from, into = zeta(format, 1);
+        ASSERT_TRUE(dev.createOwnedZeta(kSide, kSide, format, 1, false, from));
+        ASSERT_EQ(from.tic, 0u);
+        std::string why;
+        const std::vector<Event> owned = turnCopy(into, from, &why);
+        ASSERT_FALSE(owned.empty()) << why;
+        const uint32_t tic = from.tic;
+        ASSERT_NE(tic, 0u);
+        const auto header = raw::DeviceHarness::header(dev, tic);
+        const raw::Texture prepared = from;
+        const std::vector<Event> ready = turnCopy(into, prepared, &why);
+        ASSERT_FALSE(ready.empty()) << why;
+        expectPoolImage(owned, into.va, "owned source");
+        expectPoolImage(ready, into.va, "prepared source");
+        EXPECT_EQ(normalized(owned), normalized(ready));
+        EXPECT_EQ(from.tic, tic);
+        EXPECT_EQ(prepared.tic, tic);
+        EXPECT_EQ(raw::DeviceHarness::header(dev, tic), header);
+        dev.destroyTexture(from);
+        EXPECT_EQ(raw::DeviceHarness::header(dev, tic), raw::DeviceHarness::header(dev, 0));
+        dev.destroyTexture(into);
     }
 }
 

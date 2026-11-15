@@ -282,9 +282,9 @@ rust_test(
     deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
 )
 
-rust_test(
-    name = "binary_linking_test",
-    args = ["tests::engine_linking::binary_functions_link_under_their_specialized_names_and_compute_exact_outputs"],
+[rust_test(
+    name = name,
+    args = [test_filter],
     compile_data = glob(["tests/**"]),
     crate = ":metal2vulkan",
     data = [
@@ -299,4 +299,7 @@ rust_test(
         "METAL2VULKAN_SPIRV_VAL": "$(rootpath @spirv_tools//:spirv-val)",
     },
     deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
-)
+) for name, test_filter in [
+    ("binary_linking_test", "tests::engine_linking::binary_functions_link_under_their_specialized_names_and_compute_exact_outputs"),
+    ("group_linking_test", "tests::engine_linking::groups::"),
+]]

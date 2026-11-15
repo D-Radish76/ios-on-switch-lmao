@@ -78,7 +78,10 @@ py_test(
 py_test(
     name = "deployed_test",
     size = "small",
-    srcs = ["deployed_test.py"],
+    srcs = [
+        "deployed_test.py",
+        "//tools/package:snapshot.py",
+    ],
     deps = [":lib"],
 )
 

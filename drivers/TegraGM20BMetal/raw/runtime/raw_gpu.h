@@ -1624,10 +1624,13 @@ public:
     // false: *why
     bool turnCopy(const Texture &dst, Texture &src, const TurnMap &map, const char **why,
                   const TurnMask *mask = nullptr, uint32_t width = 0, uint32_t height = 0);
+    // The source's resource-owned header was prepared at admission or with its scratch backing.
+    bool turnCopy(const Texture &dst, const Texture &src, const TurnMap &map, const char **why,
+                  const TurnMask *mask = nullptr, uint32_t width = 0, uint32_t height = 0);
     // `dst`'s depth from `src`'s of another depth format of one extent (a Depth16Unorm's and a Depth32Float_Stencil8's), each
     // texel the float the texture unit reads of the source written as the destination's depth by the pack's turn depth
-    // state of its format; its stencil kept. False: *why
-    bool depthConvert(const Texture &dst, Texture &src, const char **why);
+    // state of its format; its stencil kept. The source already has its resource-owned selected-level header. False: *why
+    bool depthConvert(const Texture &dst, const Texture &src, const char **why);
     // raw_reach.h: the tiles of the `width` x `height` frame of `pass` that its draws reach, drawn again from `draws`; false: *why
     bool reach(const PassDesc &pass, uint32_t width, uint32_t height, DrawReplay &draws, PassReach &out,
                const char **why);
@@ -2246,12 +2249,12 @@ public:
     }
 
     // The texture header of level `level` of mipmapped texture `t`'s chain alone, as NVK's view of that level (a pass into
-    // the level fetches its color through it); `codes`: an sRGB chain's level read as its codes, with no sRGB conversion
+    // the level fetches its color or depth through it); `codes`: an sRGB chain's level read as its codes, with no sRGB conversion
     // (pack/mip.metal decodes them); a 3D texture's level as a volume; 0: none
     uint32_t levelTic(Texture &t, uint32_t level, bool codes = false);
     // The header a fetch from `part` (raw::attachmentTarget of level `level`, slice `slice` of `t`, maybe in a format view's
     // format) reads: levelTic's for a 2D chain's level in t's format, else attachmentHeader's, made on first use and freed
-    // with t's header, kept in views_ as viewTic's are; 0: none
+    // with t's header. Color parts use the encode view cache; depth parts are prepared at pass admission. 0: none
     uint32_t attachmentTic(Texture &t, const Texture &part, uint32_t level, uint32_t slice);
     // A header of plain texture `t`'s memory whose word 0 is `word0` (raw_view.h: m2v's view of it in another format
     // of the same texel size; a storage view of a multisampled texture spans its sample grid), made on first use and freed

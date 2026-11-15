@@ -35,7 +35,7 @@ bool kernelFacts(MTLComputePipelineDescriptor *descriptor, uint32_t facts[3], st
 bool descriptorOf(MTLRenderPipelineDescriptor *d, NmbOfflineRenderPipelineDescriptor &p,
                   std::vector<NmbOfflineFunction *> &linked);
 bool descriptorOf(MTLComputePipelineDescriptor *d, NmbOfflineComputePipelineDescriptor &p,
-                  std::vector<NmbOfflineFunction *> &linked);
+                  std::vector<NmbOfflineFunction *> &linked, std::vector<switch_linked_group_name> &groupNames);
 
 // The reflection of `descriptor`'s state (of RawOfflineDevice's functions) as raw_reflection_blob.h lays it out
 // (RawOfflineReflection.mm): what the pack and the system shader compiler's store hold of it. False with `why`.

@@ -67,7 +67,8 @@ bool addStage(CompileRequest &r, std::vector<LibraryIdentity> &ids, std::map<con
 }
 
 // A compute state's kernel and its linked functions as its request's stages: "k", then "kl" for each visible and "kp" for
-// each private one, then "kb" for binary functions, in the order its key names them (raw_compute_key.h computeLinkedText)
+// each private one, then "kb" for binary functions and "kg" for groups by name, in the order its key names them
+// (raw_compute_key.h computeLinkedText)
 bool addKernelStages(CompileRequest &r, std::vector<LibraryIdentity> &ids,
                      std::map<const LibrarySource *, uint32_t> &seen, id kernel, MTLComputePipelineDescriptor *d,
                      bool bytes, bool every)
@@ -83,6 +84,13 @@ bool addKernelStages(CompileRequest &r, std::vector<LibraryIdentity> &ids,
     for (id f in d.linkedFunctions.binaryFunctions)
         if (!addStage(r, ids, seen, "kb", f, bytes, every))
             return false;
+    for (NSString *group in [d.linkedFunctions.groups.allKeys sortedArrayUsingSelector:@selector(compare:)])
+        for (id f in d.linkedFunctions.groups[group]) {
+            if (!addStage(r, ids, seen, "kg", f, bytes, every))
+                return false;
+            r.stages.back().group.assign(group.UTF8String ?: "",
+                                         [group lengthOfBytesUsingEncoding:NSUTF8StringEncoding]);
+        }
     return r.stages.size() <= kRequestStageLimit;
 }
 

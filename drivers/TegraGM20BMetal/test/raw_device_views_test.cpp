@@ -6,10 +6,12 @@
 #include "../raw/fx/fx_image.h"
 #include "../raw/runtime/raw_stencil_bits.h"
 #include "../raw/runtime/raw_zeta.h"
+#include <thread>
 
 namespace {
 
-constexpr uint32_t kRGBA8 = 70, kDepth32Float = 252, kDepth32FloatStencil8 = 260, kX32Stencil8 = 261, kASTC4x4 = 204;
+constexpr uint32_t kRGBA8 = 70, kDepth16Unorm = 250, kDepth32Float = 252, kDepth32FloatStencil8 = 260,
+                   kX32Stencil8 = 261, kASTC4x4 = 204;
 
 uint32_t field(const std::array<uint32_t, 8> &w, unsigned hi, unsigned lo)
 {
@@ -261,6 +263,119 @@ TEST_F(DeviceViews, ADepthArraysHeaderSurvivesItsMove)
     EXPECT_EQ(address(w), m.va);
     EXPECT_EQ(textureType(w), raw::fx::kTexTwoDArray);
     EXPECT_EQ(depthMinusOne(w), 3u);
+}
+
+TEST_F(DeviceViews, ADepthChainsSelectedLevelHeaderBelongsToTheChain)
+{
+    for (uint32_t format : {kDepth16Unorm, kDepth32Float, kDepth32FloatStencil8}) {
+        SCOPED_TRACE(format);
+        raw::Texture depth, part;
+        ASSERT_TRUE(dev.createOwnedZeta(64, 32, format, 1, false, depth, 1, raw::fx::kTexTwoD, 4));
+        ASSERT_EQ(depth.tic, 0u);
+        ASSERT_TRUE(raw::chainLevelImage(depth, 2, part));
+        const uint32_t tic = dev.attachmentTic(depth, part, 2, 0);
+        ASSERT_NE(tic, 0u);
+        const auto w = raw::DeviceHarness::header(dev, tic);
+        EXPECT_EQ(w[0], raw::kZetaFormatInfo[raw::zetaFormatIndex(format)].tic0);
+        EXPECT_EQ(address(w), depth.chain->va);
+        EXPECT_EQ(minLevel(w), 2u);
+        EXPECT_EQ(maxLevel(w), 2u);
+        EXPECT_EQ(textureType(w), raw::fx::kTexTwoD);
+        EXPECT_EQ(field(w, 143, 128) + 1, 64u);
+        EXPECT_EQ(field(w, 175, 160) + 1, 32u);
+        for (int i = 0; i < 16; ++i)
+            EXPECT_EQ(dev.attachmentTic(depth, part, 2, 0), tic);
+        EXPECT_EQ(depth.tic, 0u);
+        dev.destroyTexture(depth);
+        EXPECT_EQ(raw::DeviceHarness::header(dev, tic), raw::DeviceHarness::header(dev, 0));
+        raw::Texture replacement;
+        ASSERT_TRUE(dev.createOwnedZeta(32, 16, format, 1, false, replacement, 1, raw::fx::kTexTwoD, 3));
+        EXPECT_EQ(dev.levelTic(replacement, 1), tic);
+        const auto next = raw::DeviceHarness::header(dev, tic);
+        EXPECT_EQ(minLevel(next), 1u);
+        EXPECT_EQ(maxLevel(next), 1u);
+        EXPECT_EQ(field(next, 143, 128) + 1, 32u);
+        EXPECT_NE(next, w);
+        dev.destroyTexture(replacement);
+    }
+}
+
+TEST_F(DeviceViews, ASelectedDepthHeaderIsFreedWithItsArrayViewAndNeverAnswersForItsReplacement)
+{
+    raw::Texture parent, view, part;
+    ASSERT_TRUE(dev.createOwnedZeta(64, 32, kDepth16Unorm, 1, false, parent, 3, raw::fx::kTexTwoDArray, 4));
+    ASSERT_TRUE(dev.createPartView(parent, kDepth16Unorm, raw::fx::kTexTwoD, 1, 2, 2, 1, view));
+    const uint32_t own = view.tic;
+    const auto ownHeader = header(view);
+    ASSERT_TRUE(raw::chainLevelImage(parent, 2, part));
+    part = raw::layersFrom(part, 2);
+    part.layers = 1;
+    const uint32_t tic = dev.attachmentTic(view, part, 1, 0);
+    ASSERT_NE(tic, 0u);
+    EXPECT_NE(tic, own);
+    auto w = raw::DeviceHarness::header(dev, tic);
+    EXPECT_EQ(address(w),
+              parent.chain->va + 2 * parent.chain->layout.arrayStride + parent.chain->layout.level[2].offset);
+    EXPECT_EQ(w[0], raw::kZetaFormatInfo[raw::zetaFormatIndex(kDepth16Unorm)].tic0);
+    EXPECT_EQ(minLevel(w), 0u);
+    EXPECT_EQ(maxLevel(w), 0u);
+    EXPECT_EQ(field(w, 143, 128) + 1, part.width);
+    EXPECT_EQ(field(w, 175, 160) + 1, part.height);
+    EXPECT_EQ(field(w, 101, 99), part.blockHeight);
+    EXPECT_EQ(depthMinusOne(w), 0u);
+    EXPECT_EQ(textureType(w), raw::fx::kTexTwoD);
+    EXPECT_EQ(dev.attachmentTic(view, part, 1, 0), tic);
+    EXPECT_EQ(header(view), ownHeader);
+    EXPECT_EQ(parent.tic, 0u);
+    dev.destroyTexture(view);
+    EXPECT_EQ(raw::DeviceHarness::header(dev, own), raw::DeviceHarness::header(dev, 0));
+    EXPECT_EQ(raw::DeviceHarness::header(dev, tic), raw::DeviceHarness::header(dev, 0));
+    raw::Texture occupying, replacement;
+    ASSERT_TRUE(dev.createPartView(parent, kDepth16Unorm, raw::fx::kTexTwoD, 0, 1, 0, 1, occupying));
+    ASSERT_EQ(occupying.tic, tic);
+    ASSERT_TRUE(dev.createPartView(parent, kDepth16Unorm, raw::fx::kTexTwoD, 1, 2, 1, 1, replacement));
+    ASSERT_EQ(replacement.tic, own);
+    ASSERT_TRUE(raw::chainLevelImage(parent, 2, part));
+    part = raw::layersFrom(part, 1);
+    part.layers = 1;
+    const uint32_t next = dev.attachmentTic(replacement, part, 1, 0);
+    ASSERT_NE(next, 0u);
+    EXPECT_NE(next, tic);
+    w = raw::DeviceHarness::header(dev, next);
+    EXPECT_EQ(address(w), part.va);
+    EXPECT_EQ(dev.attachmentTic(replacement, part, 1, 0), next);
+    dev.destroyTexture(replacement);
+    dev.destroyTexture(occupying);
+    dev.destroyTexture(parent);
+}
+
+TEST_F(DeviceViews, ConcurrentDepthPartAdmissionPublishesOneResourceOwnedHeader)
+{
+    raw::Texture depth, part;
+    ASSERT_TRUE(dev.createOwnedZeta(64, 32, kDepth16Unorm, 1, false, depth, 1, raw::fx::kTexTwoD, 4));
+    ASSERT_EQ(depth.tic, 0u);
+    part = raw::layersFrom(depth, 0);
+    std::array<uint32_t, 8> tics = {};
+    std::array<std::thread, 8> threads;
+    for (size_t i = 0; i < threads.size(); ++i)
+        threads[i] = std::thread([&, i] {
+            tics[i] = dev.attachmentTic(depth, part, 0, 0);
+        });
+    for (auto &thread : threads)
+        thread.join();
+    ASSERT_NE(depth.tic, 0u);
+    ASSERT_NE(tics[0], 0u);
+    EXPECT_NE(tics[0], depth.tic);
+    for (uint32_t tic : tics)
+        EXPECT_EQ(tic, tics[0]);
+    const auto w = raw::DeviceHarness::header(dev, tics[0]);
+    EXPECT_EQ(address(w), part.va);
+    EXPECT_EQ(minLevel(w), 0u);
+    EXPECT_EQ(maxLevel(w), 0u);
+    const uint32_t own = depth.tic;
+    dev.destroyTexture(depth);
+    EXPECT_EQ(raw::DeviceHarness::header(dev, own), raw::DeviceHarness::header(dev, 0));
+    EXPECT_EQ(raw::DeviceHarness::header(dev, tics[0]), raw::DeviceHarness::header(dev, 0));
 }
 
 }  // namespace

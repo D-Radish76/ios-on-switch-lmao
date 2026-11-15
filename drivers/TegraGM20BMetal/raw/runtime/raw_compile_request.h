@@ -59,7 +59,7 @@ struct RequestLibrary {
 
 // A stage's function: for a render state the vertex function, the fragment function, then the linked ones (tags "vl",
 // "vp", "fl", "fp" as RawMetalLibrary.mm's linkedKey lists them); for a kernel its function (tag "k"), then its linked
-// ones (tags "kl", "kp": raw_compute_key.h computeLinkedText)
+// ones (tags "kl", "kp", "kb", "kg": raw_compute_key.h computeLinkedText)
 struct RequestStage {
     std::string tag;
     std::string function;      // the library function it was made from
@@ -67,6 +67,7 @@ struct RequestStage {
     std::string name;          // the name it was made under (its specialized name, else `function`)
     bool specialized = false;  // made with constant values (newFunctionWithName:constantValues:, even with none)
     uint32_t library = 0;
+    std::string group;  // "kg" only: the call-site group's name
 };
 
 // A kernel at one dispatch shape and its bindings (RawDirect.h KernelDispatch), and its descriptor's stage input

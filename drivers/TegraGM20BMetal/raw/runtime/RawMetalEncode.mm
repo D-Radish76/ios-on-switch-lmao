@@ -480,7 +480,6 @@ void RMRangeEncode::reset()
     zetaPart_ = {};
     separatePart_[0] = separatePart_[1] = {};
     separateResolved_[0] = separateResolved_[1] = nullptr;
-    depth16_ = nil;
     depth16Scratch_ = nullptr;
     shadowsWritten_.clear();
     standInsWritten_.clear();

@@ -298,6 +298,51 @@ TEST_F(DeviceSeparateZeta, APairFromASliceMovesItsLayersAlone)
         }
 }
 
+TEST_F(DeviceSeparateZeta, SelectedMipPartsKeepTheChainsArrayStrideAndCopyOrdering)
+{
+    dev.destroyTexture(target);
+    dev.destroyTexture(depth);
+    dev.destroyTexture(stencil);
+    ASSERT_TRUE(dev.createArray(50, 30, 2, kRGBA8, raw::fx::kTexTwoDArray, target));
+    ASSERT_TRUE(dev.createOwnedZeta(100, 60, kDepth32Float, 1, false, depth, 4, raw::fx::kTexTwoDArray, 4));
+    ASSERT_TRUE(dev.createOwnedZeta(200, 120, kStencil8, 1, false, stencil, 4, raw::fx::kTexTwoDArray, 5));
+    const raw::Texture depthOwner = depth, stencilOwner = stencil;
+    ASSERT_TRUE(raw::chainLevelImage(depthOwner, 1, depth));
+    ASSERT_TRUE(raw::chainLevelImage(stencilOwner, 2, stencil));
+    slice = 1;
+    Submitted submitted;
+    const std::string why = draw(true, true, true, true, submitted, 2);
+    depth = depthOwner;
+    stencil = stencilOwner;
+    ASSERT_EQ(why, "");
+    const auto firstDraw = std::find_if(submitted.events.begin(), submitted.events.end(), [](const Event &event) {
+        return event.draw;
+    });
+    ASSERT_NE(firstDraw, submitted.events.end());
+    for (const auto &image : {std::pair{&depth, 1u}, std::pair{&stencil, 2u}}) {
+        const auto *owner = image.first;
+        const auto level = image.second;
+        for (uint32_t layer = 0; layer < owner->layers; ++layer) {
+            const uint64_t address = owner->chain->va + owner->chain->layout.level[level].offset +
+                                     uint64_t(layer) * owner->chain->layout.arrayStride;
+            const bool selected = layer == 1 || layer == 2;
+            EXPECT_EQ(std::any_of(submitted.events.begin(), firstDraw,
+                                  [&](const Event &event) {
+                                      return !event.draw && event.from == address;
+                                  }),
+                      selected);
+            EXPECT_EQ(std::any_of(firstDraw, submitted.events.end(),
+                                  [&](const Event &event) {
+                                      return !event.draw && event.to == address;
+                                  }),
+                      selected);
+            EXPECT_FALSE(std::any_of(submitted.events.begin(), submitted.events.end(), [&](const Event &event) {
+                return !event.draw && (event.from == owner->va || event.to == owner->va);
+            }));
+        }
+    }
+}
+
 // A depth bias in a pass whose zeta stands in for a Depth16Unorm counts 16-bit codes, as Metal's does: the float zeta's
 // constant 2^-24 units (SET_DEPTH_BIAS_CONTROL's FORCE_UNORM) times 2^24 / 65535, written again after each state's
 // registers, which may hold the control; a pass of its own zeta counts that format's units
