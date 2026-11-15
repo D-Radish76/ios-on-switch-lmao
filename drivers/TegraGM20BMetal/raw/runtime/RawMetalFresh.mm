@@ -22,9 +22,7 @@ std::atomic<uint64_t> gEarlyReads{0};
 
 RMTexture *ownerOf(RMTexture *t)
 {
-    while (t && t->_kind == RMTextureView && t->_parent)
-        t = t->_parent;
-    return t;
+    return t ? (t->_levelsOwner ?: t) : nil;
 }
 
 uint64_t writeFresh(raw::BlitEncoder &b, RMTexture *t)
@@ -91,10 +89,11 @@ FirstUse firstUse(RMCommandBuffer *cb, size_t from, size_t to, RMTexture *t)
                        areaHeight = raw::renderAreaSide(uint32_t(pass.height), smallestHeight);
         for (const RMPass::Color &c : pass.color)
             if (c.texture == t && c.level == 0 &&
-                raw::firstPassWritesAll(x.width, x.height, x.chain ? x.chain->layout.levels : 1,
-                                        x.type == raw::fx::kTexThreeD ? x.depth : x.layers,
-                                        c.load == MTLLoadActionClear, c.store == MTLStoreActionStore,
-                                        access & raw::ResourceUse::Sample, areaWidth, areaHeight))
+                raw::firstPassWritesAll(
+                    x.width, x.height, x.chain ? x.chain->layout.levels : 1,
+                    x.type == raw::fx::kTexThreeD ? x.depth : x.layers, c.load == MTLLoadActionClear,
+                    c.store == MTLStoreActionStore || c.store == MTLStoreActionStoreAndMultisampleResolve,
+                    access & raw::ResourceUse::Sample, areaWidth, areaHeight))
                 return FirstUse::ClearsAll;
         return FirstUse::Other;
     }
@@ -294,8 +293,7 @@ void traceFreshUses(RMCommandBuffer *cb, size_t begin)
     bool unwritten = false;
     cb->_plan.forEachResource(begin, end, RMResourceKind::Texture, [&](const RMRangeResource &use) {
         RMTexture *__unsafe_unretained t = (__bridge RMTexture *)use.object;
-        while (t && t->_kind == RMTextureView && t->_parent)
-            t = t->_parent;
+        t = t ? (t->_levelsOwner ?: t) : nil;
         unwritten |= t && t->_freshUnwritten.load(std::memory_order_relaxed);
     });
     if (!unwritten)

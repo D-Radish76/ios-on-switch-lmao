@@ -215,7 +215,10 @@ TEST_F(FacadeMultisampleCopies, FirstUseInitializesEverySampleAndPreservesPaddin
                             }
                 auto cb = [[device newCommandQueue] commandBuffer];
                 auto e = [cb blitCommandEncoder];
-                [e copyFromTexture:source toTexture:destination];
+                auto view = [source newTextureViewWithPixelFormat:format];
+                auto nested = [view newTextureViewWithPixelFormat:format];
+                ASSERT_NE(nested, nil);
+                [e copyFromTexture:nested toTexture:destination];
                 [e endEncoding];
                 execute(cb);
                 EXPECT_EQ(memcmp(from, expectedSource.data(), expectedSource.size()), 0);
