@@ -2431,7 +2431,7 @@ public:
     // texture. A placement heap's offset is aligned to `align`.
     static bool footprint(const TextureAsk &ask, uint64_t &bytes, uint64_t &align);
     bool arenaBuffer(uint32_t arena, uint64_t length, Buffer &b, std::optional<uint64_t> offset = {});
-    // makeAliasable: the range goes back for later placements (at an m2v view's last drop, if one aliases it)
+    void makeArenaAliasable(Span &span, Lease *&lease);
     void arenaRelease(Texture &t);
     void arenaRelease(Buffer &b);
     uint64_t arenaUsed(uint32_t arena);

@@ -130,7 +130,7 @@
         return;
     _aliasable = true;
     if (_raw.arena)
-        gRM->raw->arenaRelease(_raw);
+        gRM->raw->makeArenaAliasable(_raw.span, _raw.lease);
     _heap->_used -= _heapBytes;
     _heapBytes = 0;
 }

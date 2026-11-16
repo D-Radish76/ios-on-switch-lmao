@@ -544,6 +544,33 @@ TEST_P(ArenaTrimParts, AnImportRefusalPreservesEveryUnattemptedHole)
     dev.destroyArena(arena);
 }
 
+TEST_P(ArenaTrimParts, AliasableStorageOutlivesPlacementAndRetiresWithItsLastOwner)
+{
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    raw::Buffer a, b, c, replacement;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, a));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, c));
+    uint8_t *const base = a.cpu;
+    const uint64_t va = b.va;
+    dev.makeArenaAliasable(b.span, b.lease);
+    EXPECT_EQ(dev.arenaUsed(arena), 2 * kQuarter);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    EXPECT_EQ(importsIn(base, 4 * kQuarter), (std::vector<raw::ArenaRange>{{0, 4 * kQuarter}}));
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, replacement));
+    EXPECT_EQ(replacement.va, va);
+    dev.destroyBuffer(b);
+    EXPECT_EQ(dev.arenaUsed(arena), 3 * kQuarter);
+    dev.destroyBuffer(replacement);
+    dev.destroyBuffer(a);
+    dev.destroyBuffer(c);
+    dev.trimArenas(committed);
+    EXPECT_TRUE(importsIn(base, 4 * kQuarter).empty());
+    dev.destroyArena(arena);
+}
+
 INSTANTIATE_TEST_SUITE_P(Storage, ArenaTrimParts, testing::Bool(), [](const testing::TestParamInfo<bool> &info) {
     return info.param ? "Private" : "Shared";
 });

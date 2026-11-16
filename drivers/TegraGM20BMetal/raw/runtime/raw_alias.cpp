@@ -228,6 +228,16 @@ Lease *Device::leaseSpan(Lease *&lease, const Span &span, Memory from)
     return lease;
 }
 
+void Device::makeArenaAliasable(Span &span, Lease *&lease)
+{
+    std::lock_guard<raw::Mutex> l(lock_);
+    Lease *hold = leaseSpan(lease, span, Memory::Arena);
+    arenas_[span.chunk].place.release(span.offset, span.bytes);
+    // Aliasing returns placement, while recorded uses still own the mappings and their storage cuts.
+    hold->placed = false;
+    dropLocked(hold);
+}
+
 void Device::dropLocked(Lease *lease)
 {
     if (--lease->refs)
@@ -249,8 +259,11 @@ void Device::dropLocked(Lease *lease)
         arenas_[lease->span.chunk].leases--;
         if (lease->placed)
             arenaFree(lease->span);
-        else if (arenas_[lease->span.chunk].dying && !arenas_[lease->span.chunk].leases)
-            freeArena(arenas_[lease->span.chunk]);
+        else {
+            delete lease->span.storage;
+            if (arenas_[lease->span.chunk].dying && !arenas_[lease->span.chunk].leases)
+                freeArena(arenas_[lease->span.chunk]);
+        }
         break;
     }
     delete lease;
