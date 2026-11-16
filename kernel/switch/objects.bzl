@@ -31,6 +31,7 @@ SWITCH_OBJECTS = {
         ("bsd/kern/kern_exec.c", "boot/prefs.c", []),
         ("bsd/kern/kern_exec.c", "security/app_code.c", []),
         ("bsd/kern/kern_exec.c", "security/entitlements_factory.c", []),
+        ("bsd/kern/kern_exec.c", "boot/icon_cache.c", []),
         ("bsd/kern/kern_exit.c", "diag/exit.c", []),
         ("bsd/kern/kern_event.c", "diag/workloop.c", []),
         ("bsd/kern/lockdown_mode.c", "sysctl/lockdown.c", [], ["12377.121.6"]),
