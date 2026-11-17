@@ -63,6 +63,9 @@
 #include "../TegraVIC/SwitchNativeScanout.h"
 #include "../TegraGM20B/SwitchGpuBridge.h"
 #include "../TegraGM20B/SwitchGpuReady.h"
+#if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
+#include "../TegraGM20B/SwitchGpuRefusalSites.h"
+#endif
 #include "../TegraHost1x/SwitchHost1xFence.h"
 #include "../TegraHost1x/SwitchHost1xDisplay.h"
 #include "../TegraHost1x/SwitchHost1xTokenFence.h"
@@ -4792,6 +4795,9 @@ public:
         noteTaken(request, kickAt);
         if (stats)
             ++stDirect;
+#if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
+        noteDirectShown(entry, request);
+#endif
         return true;
     }
 

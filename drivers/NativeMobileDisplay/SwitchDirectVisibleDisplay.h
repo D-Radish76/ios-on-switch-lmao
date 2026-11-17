@@ -15,6 +15,17 @@ switch_gpu_backing *scanoutHeld[kSlots] = {};
 uint64_t scanoutHeldUse[kSlots] = {};
 #if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
 bool directVisibleLogged = false;
+// directSlotFor's: what this swap's own snapshot found, also when the slot keeps an earlier frame's lease instead.
+switch_gpu_scanout_look directLook = {};
+
+// A slot's last frame shown (taken: its take sequence, 0 for none) and its surface's allocation and contents then.
+struct DirectShown {
+    uint64_t allocation, content, taken;
+    uint32_t swap;
+};
+
+DirectShown directShown[kSlots] = {};
+uint32_t directFailedFlips = 0, directAgainFlips = 0;
 #endif
 
 void holdScanoutBacking(unsigned k)
@@ -62,6 +73,10 @@ bool presentDirectVisible(const OriginalLegacySwapRequest *request, int entry, u
 {
     if (!directFrameVisible(entry))
         return false;
+#if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
+    const int scanned = ring.front;
+    const bool planeChange = planeNextSet;
+#endif
     noteTaken(request, kickAt);
     gpuLength = static_cast<uint64_t>(width) * height * 4;
     flipRequest = request;
@@ -74,6 +89,50 @@ bool presentDirectVisible(const OriginalLegacySwapRequest *request, int entry, u
         directVisibleLogged = true;
         IOLog("SwitchDisplay: first direct frame flipped with no present job: its producer's writes were in DRAM\n");
     }
+    logDirectFlip(entry, request, scanned, planeChange);
 #endif
     return true;
 }
+
+#if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
+static uint32_t swapOf(const OriginalLegacySwapRequest *request)
+{
+    uint32_t id = 0;
+    memcpy(&id, reinterpret_cast<const unsigned char *>(request) + swapId, sizeof(id));
+    return id;
+}
+
+// request, already taken, shows entry's surface as directLook found it: by this flip or by an accepted present.
+void noteDirectShown(int entry, const OriginalLegacySwapRequest *request)
+{
+    directShown[entry - kSlot0] = {directLook.allocation, directLook.content, seqOf(request), swapOf(request)};
+}
+
+// The GPU driver's present lines (TegraGM20BUserClientPresent.cpp) for a frame that never reaches its present. scanned:
+// the entry the UI window scanned before this flip. A pending writer promise is a write still to come, whatever the
+// generation.
+void logDirectFlip(int entry, const OriginalLegacySwapRequest *request, int scanned, bool planeChange)
+{
+    const switch_gpu_scanout_look &look = directLook;
+    const DirectShown before = directShown[entry - kSlot0];
+    noteDirectShown(entry, request);
+    const DirectShown &now = directShown[entry - kSlot0];
+    if (look.failed_status < 0 && switch_gpu_refusal::logged(directFailedFlips++)) {
+        IOLog("SwitchDisplay: swap %u (taken %llu) flips to surface %u (allocation %llu) in slot %d with no present "
+              "job, over a failed writer: engine %u queue %u reset %llu job %llu failed (%d); its contents are "
+              "undefined (%u so far)\n",
+              now.swap, now.taken, look.surface, look.allocation, entry, look.failed.engine, look.failed.queue,
+              look.failed.reset_generation, look.failed.value, look.failed_status, directFailedFlips);
+    }
+    if (!before.taken || before.allocation != look.allocation || before.content != look.content || look.promised ||
+        !switch_gpu_refusal::logged(directAgainFlips++))
+        return;
+    IOLog("SwitchDisplay: swap %u (taken %llu) flips from slot %d to surface %u (allocation %llu) in slot %d with no "
+          "present job, again with nothing written since swap %u (taken %llu), %lld frames ago (generation %llu, "
+          "writer engine %u queue %u job %llu); %s (%u so far)\n",
+          now.swap, now.taken, scanned, look.surface, look.allocation, entry, before.swap, before.taken,
+          static_cast<long long>(now.taken - before.taken), look.content, look.writer.engine, look.writer.queue,
+          look.writer.value, planeChange ? "a window B change goes with it" : "nothing else changes with it",
+          directAgainFlips);
+}
+#endif
