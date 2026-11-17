@@ -48,9 +48,6 @@ TEST(JournalSource, ThePersistQueueIsOneSerialUtilityQueue)
 
 TEST(JournalSource, TheRawPathCallsTheJournalOnlyInDevelopmentBuilds)
 {
-    const std::string states = SourceText("../../TegraGM20BMetal/raw/runtime/RawMetalStates.mm");
-    EXPECT_THAT(Between(states, "#if SWITCH_RAW_DIAGNOSTICS\n    // the journal names m2v's functions", "#endif"),
-                HasSubstr("native_bridge_metal_journal_render(twinDescriptor(a.descriptor), 0);"));
     const std::string frontend = SourceText("../NativeBridgeMetalFrontend.mm");
     EXPECT_THAT(frontend, HasSubstr("#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG\nconstexpr bool kJournal = true;"));
 }

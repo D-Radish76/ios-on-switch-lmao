@@ -45,9 +45,9 @@
 // (<Extensions>/TegraGM20BMetal.raw/pack.bin, build-tegra-gm20b-metal.py makes it, stage-tegra-gm20b-metal.py copies it) and the
 // process's sandbox lets it read it, the device every process gets is the raw facade: its command buffers go straight to
 // MAXWELL_B methods, and any the raw path cannot draw exactly as m2v (a state not in the pack, an extended-range format,
-// compute, mipmaps...) are replayed on m2v whole, its m2v device opened at the first such need (RawM2V). The render server's
-// raw device is made beside the m2v device's open, every other process's memory, channel and shader heap at their first use
-// (raw_gpu.h Device::Role). A pack of another build is
+// compute, mipmaps...) are replayed on m2v whole, its m2v device opened at the first such need (RawM2V), the render server's
+// too. The render server's raw device is set up on a thread of its own while the plugin opens, every other process's memory,
+// channel and shader heap at their first use (raw_gpu.h Device::Role). A pack of another build is
 // refused (its stack key, TEGRA_RAW_STACK, differs). Off for a boot: remove or rename <Data>/ngpu/addons/TegraGM20BMetal.raw
 // (stage-tegra-gm20b-metal.py --no-raw does); for a process: TEGRA_RAW_METAL=0 in its environment.
 #import <Foundation/Foundation.h>
@@ -56,7 +56,6 @@
 #include <atomic>
 #include <initializer_list>
 #include <mutex>
-#include <thread>
 #include <dlfcn.h>
 #include <mach-o/dyld.h>
 #include <notify.h>
@@ -64,7 +63,6 @@
 #include <fcntl.h>
 #include <objc/runtime.h>
 #include <os/log.h>
-#include <pthread.h>
 #include <sys/stat.h>
 #include <string.h>
 #include <unistd.h>
@@ -660,8 +658,8 @@ void answeredZero(const char *cls, const char *selector)
 }
 
 // The m2v device (the frontend over the bridge: NVK's device and m2v's runtime), opened once by its first user: the raw
-// device's first need, the render server's open, or a process the raw path is off in. The runtime keeps its shader cache
-// across reboots where the directory lasts: the first candidate (cacheCandidates) that takes a write, or
+// device's first need, or a process the raw path is off in. The runtime keeps its shader cache across reboots where the
+// directory lasts: the first candidate (cacheCandidates) that takes a write, or
 // TEGRA_M2V_CACHE_DIR, which the raw path's records share. A device that does not open for another reason than its cache is
 // not tried again with the next one. With none writable the cache is the runtime's memory alone (a bridge without that
 // mode refuses, and the process gets no device as before).
@@ -683,16 +681,6 @@ public:
     const char *cacheDir() const
     {
         return first_ < count_ ? candidates_[first_] : nullptr;
-    }
-
-    // Opens it now on a thread of its own: device() then waits for that open
-    void start()
-    {
-        std::thread([this] {
-            pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
-            pthread_setname_np("com.brunostjohn.switch.m2v.open");
-            device();
-        }).detach();
     }
 
     id device()
@@ -836,21 +824,21 @@ id openOnce(unsigned port, raw::OpenFailure &failure)
         setenv("NMB_SHADOW_LOG", "0",
                0);  // the bridge's shadow.log and its every-texture announcements: nothing reads them
 #endif
-        // NVK holds the process's one GPU connection, which the raw path shares: loaded here, once, with the
-        // environment set, before the raw path's setup looks for it on its own thread, so that lookup never races
-        // the m2v device's load of the same image.
+        // NVK holds the process's one GPU connection, which the raw path takes, so an m2v device a later need opens draws
+        // in the same GPU VM: loaded here, once, with the environment set, before the raw path's setup looks for it on its
+        // own thread.
         if (!dlopen(loader, RTLD_NOW | RTLD_LOCAL)) {
             os_log_error(logger(), "TegraGM20BMetal: no device in %{public}s: %{public}s", getprogname(), dlerror());
             return nil;
         }
-        // The render server's raw GM20B path's own setup (its pack, channel and context, the first pool chunk) starts now, beside
-        // the m2v device's open below; raw_metal_device_open_lazy takes what it made, so its first frame waits for neither twice.
+        // The render server's raw GM20B path's own setup (its pack, channel and context, the first pool chunk) starts now on a
+        // thread of its own, beside the cache directory search below; raw_metal_device_open_lazy takes what it made.
         if (renderServer && rawWanted && !packRefusal)
             raw_metal_prepare(pack, uint64_t(TEGRA_RAW_STACK));
         M2VOpening &m2v = *new M2VOpening(loader, registryID);
         // Every process draws through the raw GM20B path when the build's pack is staged and readable (above). Its m2v device is
-        // opened at the first thing only m2v does, so a process that draws only packed states never has one; the render server's
-        // opens beside the raw path's setup, as before, so no first need of its waits for it on Core Animation's render thread.
+        // opened at the first thing only m2v does, so a process that draws only packed states never has one; in the render server
+        // too, where a first need waits for the open on the thread that asks it.
         // One line either way, so a boot shows which device each process got.
         if (!rawWanted) {
             os_log(logger(), "TegraGM20BMetal: raw GM20B path off in %{public}s (TEGRA_RAW_METAL=0): m2v device kept",
@@ -860,8 +848,6 @@ id openOnce(unsigned port, raw::OpenFailure &failure)
                    "TegraGM20BMetal: raw GM20B path off in %{public}s (%{public}s at %{public}s): m2v device kept",
                    getprogname(), packRefusal, pack);
         } else {
-            if (renderServer)
-                m2v.start();
             RawM2V lazy;
             lazy.open = ^{
                 return m2v.device();

@@ -318,6 +318,36 @@ void madeTestClasses()
     EXPECT_EQ(gOpens, 0);
 }
 
+// A state this process makes at its creation once its m2v device is open (here by a method only m2v's device class has)
+// asks m2v for nothing, as in a process that never opened it
+void madeWithM2VOpen()
+{
+    RenderCompiler compiler;
+    const std::string directory = dir() + "/variant-m2v-open-" + std::to_string(getpid());
+    mkdir(directory.c_str(), 0700);
+    ASSERT_TRUE(compiler.serve(directory));
+    id<MTLDevice> device = harness::open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
+    ASSERT_TRUE(device != nil);
+    const std::string cache = directory + "/cache";
+    mkdir(cache.c_str(), 0700);
+    raw_metal_complete_states(cache.c_str(), nullptr);
+    id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(writeMetallib().c_str())] error:nil];
+    ASSERT_TRUE(library != nil);
+    EXPECT_EQ([(HarnessM2VMethods *)device harnessSelfRegistry], kRegistryID);
+    ASSERT_EQ(gOpens, 1);
+    NSDictionary *before = m2vRecord(device)[@"needs"];
+    MTLRenderPipelineDescriptor *d = descriptor(library, MTLPixelFormatBGRA8Unorm);
+    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+    id<MTLRenderPipelineState> state = [device newRenderPipelineStateWithDescriptor:d error:nil];
+    ASSERT_TRUE(state != nil);
+    __unsafe_unretained RMPipeline *pipeline = (RMPipeline *)state;
+    ASSERT_TRUE(pipeline->_raw && !pipeline->_packed) << "the shader compiler makes the state at its creation";
+    NSDictionary *after = m2vRecord(device)[@"needs"];
+    EXPECT_EQ(after[@"a function's twin"], nil) << after.description.UTF8String;
+    EXPECT_TRUE([after isEqualToDictionary:before]) << after.description.UTF8String;
+    EXPECT_EQ(gOpens, 1);
+}
+
 }  // namespace
 
 TEST(RawFacadeVariant, AVariantNoCompilerMadeIsAskedOnceAndNamedOnce)
@@ -343,4 +373,9 @@ TEST(RawFacadeVariant, APackedStatesTestClassThePackLacksIsCompiledAndDrawn)
 TEST(RawFacadeVariant, AMadeStatesTestClassesAreMadeWithIt)
 {
     switch_ios::test::ExpectPassesInFreshProcess(madeTestClasses);
+}
+
+TEST(RawFacadeVariant, AStateMadeWhileM2VIsOpenAsksM2VForNothing)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(madeWithM2VOpen);
 }

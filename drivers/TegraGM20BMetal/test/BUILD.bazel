@@ -4964,6 +4964,8 @@ host_test(
         "-fobjc-arc",
     ] + RAW_HOST_COPTS,
     cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
     linkopts = FACADE_LINKOPTS,
     sanitize = False,
     deps = [

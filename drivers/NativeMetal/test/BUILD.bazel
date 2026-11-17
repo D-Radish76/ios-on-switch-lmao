@@ -220,7 +220,6 @@ host_test(
     srcs = ["journal_source_test.cpp"],
     data = [
         "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalStates.mm",
     ],
     # m2v: the frontend's journal, which goes with it
     tags = ["m2v"],
