@@ -247,10 +247,8 @@ constexpr uint32_t kIteratedProgram[] = {0x10003201, 0x30006001, 0x0000ca19, 0x3
                                          0x1000ca11, 0x00509031, 0x30384201, 0x00609029};
 
 // A pack of one state whose fragment program has a variant for a residual-0 uniform buffer (raw_pack.h
-// AssumeUniformAligned), the generic program and the variant both reading the fragment buffer at constant buffer 1.
-// Iterated: the state's fetch-free form blends colour 0 on rung 3, both states made for two colours, or for colour 0
-// alone where `oneColour`.
-std::string variantPack(bool requiredTurned = false, bool iterated = false, bool oneColour = false)
+// AssumeUniformAligned), the generic program and the variant both reading the fragment buffer at constant buffer 1
+std::string variantPack(bool requiredTurned = false, bool iterated = false)
 {
     constexpr uint32_t kPrograms = 0x400, kPipelines = 0x500,
                        kVariants = (kPipelines + 2 * sizeof(raw::PackPipeline) + 0xff) & ~0xffu,
@@ -292,7 +290,6 @@ std::string variantPack(bool requiredTurned = false, bool iterated = false, bool
     }
     const char strings[] = "\0samples=1 c0=70 ds=0/0 variant";
     const char iteratedStrings[] = "\0samples=1 c0=70:15:0 c1=70:0:0 ds=0/0 variant";
-    const char oneColourStrings[] = "\0samples=1 c0=70:15:0 ds=0/0 variant";
     const uint32_t blob[] = {0x1a00, 0x1111, 0x1a04, 0};
     const auto put = [&](raw::PackSectionId id, uint32_t at, const void *bytes, size_t n) {
         h.section[id] = {at, n};
@@ -301,12 +298,8 @@ std::string variantPack(bool requiredTurned = false, bool iterated = false, bool
     put(raw::PackPrograms, kPrograms, programs, sizeof programs);
     put(raw::PackPipelines, kPipelines, pipelines, sizeof pipelines);
     put(raw::PackVariants, kVariants, &variant, sizeof variant);
-    if (!iterated)
-        put(raw::PackStrings, kStrings, strings, sizeof strings);
-    else if (oneColour)
-        put(raw::PackStrings, kStrings, oneColourStrings, sizeof oneColourStrings);
-    else
-        put(raw::PackStrings, kStrings, iteratedStrings, sizeof iteratedStrings);
+    put(raw::PackStrings, kStrings, iterated ? iteratedStrings : strings,
+        iterated ? sizeof iteratedStrings : sizeof strings);
     put(raw::PackBlob, kBlob, blob, sizeof blob);
     if (iterated) {
         raw::PackIteratedBlend blend = {};
@@ -496,172 +489,61 @@ TEST(PreparedIteratedBlend, ResidentAndInlineBaseAndDerivedProgramsEnableAndRest
     }
 }
 
-struct Step {
-    uint64_t push = 0;  // where a push begins, its GPU address; else 0, and one method
-    uint32_t subc = 0, method = 0, value = 0;
-};
-
-// Every subchannel's methods the jobs from `first` ran, in order, each push's address ahead of its own
-std::vector<Step> ran(size_t first = 0)
-{
-    std::vector<Step> out;
-    const std::vector<kernel_model::Job> &jobs = kernel_model::model.jobs;
-    for (size_t j = first; j < jobs.size(); j++) {
-        const std::vector<uint32_t> &w = jobs[j].words;
-        size_t i = 0;
-        for (const TegraGM20BAbiPush &push : jobs[j].pushes) {
-            out.push_back({push.va, 0, 0, 0});
-            for (const size_t end = std::min(w.size(), i + push.dwords); i < end;) {
-                const uint32_t h = w[i++], op = h >> 29, count = (h >> 16) & 0x1fff, subc = (h >> 13) & 7,
-                               method = (h & 0xfff) << 2;
-                if (op == 4) {
-                    out.push_back({0, subc, method, count});
-                    continue;
-                }
-                if (op != 1 && op != 3 && op != 5)
-                    continue;
-                for (uint32_t k = 0; k < count && i < end; k++, i++)
-                    out.push_back({0, subc, method + 4 * (op == 1 ? k : op == 5 && k ? 1 : 0), w[i]});
-            }
-        }
-        EXPECT_EQ(i, w.size()) << "job " << j << ": its words are not its pushes'";
-    }
-    return out;
-}
-
-bool isDraw(const Step &s)
-{
-    return !s.push && !s.subc && drawMacro(s.method);
-}
-
-bool writesBlend(const Step &s)
-{
-    return !s.push && !s.subc &&
-           (s.method == NVB197_SET_ITERATED_BLEND || s.method == NVB197_SET_BLEND_STATE_PER_TARGET);
-}
-
-// The 3D registers the steps so far left
-struct Registers {
-    std::map<uint32_t, uint32_t> held;
-
-    void take(const Step &s)
-    {
-        if (!s.push && !s.subc)
-            held[s.method] = s.value;
-    }
-
-    // a rung-3 draw's: the iterated blend on, the per-target blend off
-    bool iterated()
-    {
-        return (held[NVB197_SET_ITERATED_BLEND] & 1) && held[NVB197_SET_BLEND_STATE_PER_TARGET] == 0;
-    }
-
-    // every other state's and a clear's: the iterated blend off, the per-target blend on
-    bool setBack()
-    {
-        return !(held[NVB197_SET_ITERATED_BLEND] & 1) && held[NVB197_SET_BLEND_STATE_PER_TARGET] == 1;
-    }
-};
-
-// The iterated pack's device (variantPack: of two colours, or of colour 0 alone), its rung-3 state and its plain one, three
-// targets of the colours' format, and its command buffer, whose draws bind the fragment uniforms at 16 (unaligned: the
-// base program, not its residual-0 variant)
-struct Rung3 {
-    raw::Device dev;
-    raw::Pipeline *state = nullptr, *plain = nullptr;
-    raw::Texture target[3];
-    raw::Buffer buffer, from, to;
-    raw::CommandBuffer *cb = nullptr;
-
-    void open(bool oneColour)
-    {
-        kernel_model::model = {};
-        std::string error;
-        ASSERT_TRUE(dev.open(variantPack(false, true, oneColour).c_str(), 0, error, raw::Device::Role::Client))
-            << error;
-        state = dev.pipeline(kVariantKey, raw::PackForm::FetchFree);
-        plain = dev.pipeline(kVariantKey + 1);
-        ASSERT_NE(state, nullptr);
-        ASSERT_NE(plain, nullptr);
-        ASSERT_TRUE(bool(state->segment));
-        ASSERT_TRUE(state->segment.keptAcrossPasses);
-        ASSERT_TRUE(bool(plain->segment));
-        for (raw::Texture &t : target)
-            ASSERT_TRUE(dev.createTexture(64, 64, kRGBA8, t));
-        for (raw::Buffer *b : {&buffer, &from, &to})
-            ASSERT_TRUE(dev.createBuffer(4096, *b));
-        cb = dev.begin();
-        ASSERT_NE(cb, nullptr);
-    }
-
-    // A pass into the first `colours` targets, each loaded as `load` says
-    raw::RenderEncoder *render(uint32_t colours = 1,
-                               decltype(raw::ColorAttachment::load) load = raw::ColorAttachment::Load)
-    {
-        raw::PassDesc pass;
-        pass.count = colours;
-        for (uint32_t i = 0; i < colours; i++) {
-            pass.color[i].texture = &target[i];
-            pass.color[i].load = load;
-        }
-        return cb->render(pass);
-    }
-
-    // Such a pass of `draws` draws of `pl`
-    void pass(raw::Pipeline *pl, uint32_t draws = 1, uint32_t colours = 1,
-              decltype(raw::ColorAttachment::load) load = raw::ColorAttachment::Load)
-    {
-        raw::RenderEncoder *e = render(colours, load);
-        ASSERT_NE(e, nullptr);
-        e->setPipeline(pl);
-        e->setBuffer(kFragment, kSlot, &buffer, 16);
-        for (uint32_t i = 0; i < draws; i++) {
-            const char *why = nullptr;
-            ASSERT_TRUE(e->draw(kTriangle, 0, 3, 1, 0, &why)) << (why ? why : "");
-        }
-        e->end();
-    }
-
-    void commit()
-    {
-        uint32_t seqno = 0;
-        ASSERT_TRUE(cb->commit(seqno));
-    }
-
-    void next()
-    {
-        ASSERT_NO_FATAL_FAILURE(commit());
-        cb = dev.begin();
-        ASSERT_NE(cb, nullptr);
-    }
-};
-
-// A rung-3 state drawn last in one pass and first in the next of two targets, the next in the same command buffer or the
-// one after: its iterated blend takes one target, so the next pass sets it back ahead of its two and its draw runs the
-// state's segment again
+// A rung-3 state drawn last in one pass and first in the next, the next in the same command buffer or the one after: the
+// first pass's end set its iterated blend back, so the next pass's draw runs its segment again
 void drawRung3InTwoPasses(bool acrossCommandBuffers)
 {
-    Rung3 r;
-    ASSERT_NO_FATAL_FAILURE(r.open(false));
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state, 1, 2, raw::ColorAttachment::DontCare));
-    if (acrossCommandBuffers)
-        ASSERT_NO_FATAL_FAILURE(r.next());
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state, 1, 2, raw::ColorAttachment::DontCare));
-    ASSERT_NO_FATAL_FAILURE(r.commit());
-    Registers regs;
-    uint32_t segmentRuns = 0, draws = 0;
-    for (const Step &s : ran()) {
-        segmentRuns += s.push == r.state->segment.va;
-        if (draws && !s.push && !s.subc && s.method == NVB197_SET_CT_SELECT && (s.value & 0xf) > 1)
-            EXPECT_EQ(regs.held[NVB197_SET_ITERATED_BLEND] & 1, 0u) << "two targets selected under the iterated blend";
-        regs.take(s);
-        if (!isDraw(s))
+    kernel_model::model = {};
+    raw::Device dev;
+    std::string error;
+    ASSERT_TRUE(dev.open(variantPack(false, true).c_str(), 0, error, raw::Device::Role::Client)) << error;
+    raw::Pipeline *base = dev.pipeline(kVariantKey, raw::PackForm::FetchFree);
+    ASSERT_NE(base, nullptr);
+    ASSERT_TRUE(bool(base->segment));
+    ASSERT_TRUE(base->segment.keptAcrossPasses);
+    raw::Texture target[2];
+    for (auto &texture : target)
+        ASSERT_TRUE(dev.createTexture(64, 64, kRGBA8, texture));
+    raw::Buffer buffer;
+    ASSERT_TRUE(dev.createBuffer(4096, buffer));
+    ASSERT_EQ(buffer.va % 256, 0u);
+    raw::PassDesc pass;
+    pass.count = 2;
+    for (uint32_t i = 0; i < 2; i++)
+        pass.color[i].texture = &target[i];
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    uint32_t sequence = 0;
+    for (int k = 0; k < 2; k++) {
+        if (k && acrossCommandBuffers) {
+            ASSERT_TRUE(cb->commit(sequence));
+            cb = dev.begin();
+            ASSERT_NE(cb, nullptr);
+        }
+        raw::RenderEncoder *encoder = cb->render(pass);
+        ASSERT_NE(encoder, nullptr);
+        encoder->setPipeline(base);
+        encoder->setBuffer(kFragment, kSlot, &buffer, 16);  // unaligned: the base program, not its residual-0 variant
+        const char *why = nullptr;
+        ASSERT_TRUE(encoder->draw(kTriangle, 0, 3, 1, 0, &why)) << (why ? why : "");
+        encoder->end();
+    }
+    ASSERT_TRUE(cb->commit(sequence));
+    uint32_t segmentRuns = 0;
+    for (const kernel_model::Job &job : kernel_model::model.jobs)
+        for (const auto &push : job.pushes)
+            segmentRuns += push.va == base->segment.va;
+    EXPECT_EQ(segmentRuns, 2u);
+    std::map<uint32_t, uint32_t> state;
+    uint32_t draws = 0;
+    for (const Method &method : submitted()) {
+        state[method.method] = method.value;
+        if (!drawMacro(method.method))
             continue;
         draws++;
-        EXPECT_TRUE(regs.iterated()) << "draw " << draws;
-        EXPECT_EQ(regs.held[NVB197_SET_CT_SELECT] & 0xf, 1u) << "draw " << draws;
+        EXPECT_EQ(state[NVB197_SET_ITERATED_BLEND] & 1, 1u) << "draw " << draws;
+        EXPECT_EQ(state[NVB197_SET_BLEND_STATE_PER_TARGET], 0u) << "draw " << draws;
     }
-    EXPECT_EQ(segmentRuns, 2u);
     EXPECT_EQ(draws, 2u);
 }
 
@@ -673,178 +555,6 @@ TEST(PreparedIteratedBlend, TheNextPassAfterOneEndingInARung3StateBindsItsSegmen
 TEST(PreparedIteratedBlend, TheNextCommandBufferAfterOneEndingInARung3StateBindsItsSegmentAgain)
 {
     drawRung3InTwoPasses(true);
-}
-
-// The same rung-3 state drawn last in one pass and first in the next, of one target of its colour's format: the pass
-// boundary runs neither its restore nor its segment, and both draws blend by it
-void keptIntoTheNextPass(bool acrossCommandBuffers)
-{
-    Rung3 r;
-    ASSERT_NO_FATAL_FAILURE(r.open(true));
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state));
-    if (acrossCommandBuffers)
-        ASSERT_NO_FATAL_FAILURE(r.next());
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state));
-    ASSERT_NO_FATAL_FAILURE(r.commit());
-    Registers regs;
-    uint32_t segmentRuns = 0, draws = 0, between = 0;
-    for (const Step &s : ran()) {
-        segmentRuns += s.push == r.state->segment.va;
-        between += draws == 1 && writesBlend(s);
-        regs.take(s);
-        if (!isDraw(s))
-            continue;
-        draws++;
-        EXPECT_TRUE(regs.iterated()) << "draw " << draws;
-    }
-    EXPECT_EQ(draws, 2u);
-    EXPECT_EQ(segmentRuns, 1u) << "the next pass ran the state's segment again";
-    EXPECT_EQ(between, 0u) << "the pass boundary set the blend back";
-}
-
-TEST(PreparedIteratedBlend, TheNextPassOfTheSameStateKeepsItsBlendOnAndItsSegment)
-{
-    keptIntoTheNextPass(false);
-}
-
-TEST(PreparedIteratedBlend, TheNextCommandBufferOfTheSameStateKeepsItsBlendOnAndItsSegment)
-{
-    keptIntoTheNextPass(true);
-}
-
-// The pass after a rung-3 state's draws another state first: the blend is set back ahead of that state's segment
-TEST(PreparedIteratedBlend, ANextPassOfAnotherStateSetsTheBlendBackBeforeItsBind)
-{
-    Rung3 r;
-    ASSERT_NO_FATAL_FAILURE(r.open(true));
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state));
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.plain));
-    ASSERT_NO_FATAL_FAILURE(r.commit());
-    Registers regs;
-    uint32_t draws = 0, plainBinds = 0;
-    for (const Step &s : ran()) {
-        if (draws == 1 && s.push == r.plain->segment.va) {
-            plainBinds++;
-            EXPECT_TRUE(regs.setBack()) << "the plain state bound under the iterated blend";
-        }
-        regs.take(s);
-        if (!isDraw(s))
-            continue;
-        draws++;
-        EXPECT_EQ(regs.iterated(), draws == 1) << "draw " << draws;
-    }
-    EXPECT_EQ(draws, 2u);
-    EXPECT_EQ(plainBinds, 1u);
-}
-
-// A pass of the rung-3 state, then `work` that is no draw of it, then a pass of the state loaded as `load`: the method of
-// subchannel `subc` that does the work runs with the blend set back, and the state's segment runs again after it for
-// the last pass's draw
-template <class Work>
-void setBackFor(uint32_t subc, uint32_t method, Work work,
-                decltype(raw::ColorAttachment::load) load = raw::ColorAttachment::Load)
-{
-    Rung3 r;
-    ASSERT_NO_FATAL_FAILURE(r.open(true));
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state));
-    ASSERT_NO_FATAL_FAILURE(work(r));
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state, 1, 1, load));
-    ASSERT_NO_FATAL_FAILURE(r.commit());
-    Registers regs;
-    uint32_t draws = 0, events = 0, segmentRuns = 0, runsAfter = 0;
-    for (const Step &s : ran()) {
-        if (s.push == r.state->segment.va) {
-            segmentRuns++;
-            runsAfter += events > 0;
-        }
-        regs.take(s);
-        if (draws == 1 && !s.push && s.subc == subc && s.method == method) {
-            events++;
-            EXPECT_TRUE(regs.setBack()) << "the work after the pass met the iterated blend";
-        }
-        if (!isDraw(s))
-            continue;
-        draws++;
-        EXPECT_TRUE(regs.iterated()) << "draw " << draws;
-    }
-    EXPECT_EQ(draws, 2u);
-    EXPECT_GE(events, 1u);
-    EXPECT_EQ(segmentRuns, 2u);
-    EXPECT_EQ(runsAfter, 1u) << "the state's segment did not run after the work";
-}
-
-// The next pass clears its target first: its prologue sets the blend back for the clear and runs the state's segment
-// after it, and the pass's draw of the state skips its own bind
-TEST(PreparedIteratedBlend, ANextPassThatClearsSetsTheBlendBackForItsClearAndOnAgainForItsDraw)
-{
-    setBackFor(0, NVB197_CLEAR_SURFACE, [](Rung3 &) {}, raw::ColorAttachment::Clear);
-}
-
-TEST(PreparedIteratedBlend, ABlitAfterARung3PassCopiesWithTheBlendSetBack)
-{
-    setBackFor(raw::SUBC_COPY, NVB0B5_LAUNCH_DMA, [](Rung3 &r) {
-        raw::BlitEncoder *b = r.cb->blit();
-        ASSERT_NE(b, nullptr);
-        r.cb->use(r.from, false);
-        r.cb->use(r.to, true, false);
-        b->copyBytes(r.from.va, r.to.va, 256);
-        b->end();
-    });
-}
-
-TEST(PreparedIteratedBlend, AClearRegionAfterARung3PassClearsWithTheBlendSetBack)
-{
-    setBackFor(0, NVB197_CLEAR_SURFACE, [](Rung3 &r) {
-        raw::RenderEncoder *e = r.render();
-        ASSERT_NE(e, nullptr);
-        const float red[4] = {1, 0, 0, 1};
-        e->clearRegion(0, 0, 16, 16, red);
-        e->end();
-    });
-}
-
-// The submission after the model holds this many jobs is refused, once (0: none), and each job completes as it is added
-size_t refuseAfterJobs = 0;
-
-void completeEachJob()
-{
-    kernel_model::Model &m = kernel_model::model;
-    m.fence(m.jobs.back().channel - 1).completed = m.jobs.back().seqno;
-    if (m.jobs.size() == refuseAfterJobs)
-        m.refuse = 1;
-}
-
-// A command buffer whose second job the kernel refuses once its first ran: the next command buffer runs on a channel made
-// again, whose context holds no state's extras, so its first state sets none back
-TEST(PreparedIteratedBlend, AChannelMadeAgainAfterAPartlyRunCommitHoldsNoStatesExtras)
-{
-    Rung3 r;
-    ASSERT_NO_FATAL_FAILURE(r.open(true));
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state));
-    ASSERT_NO_FATAL_FAILURE(r.next());
-    // a batch's operations and one more (raw_batch.h): a command buffer of two jobs
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.state, raw::BatchWork::kOperations + 1));
-    refuseAfterJobs = kernel_model::model.jobs.size() + 1;
-    kernel_model::model.jobAdded = completeEachJob;
-    uint32_t seqno = 0;
-    const bool committed = r.cb->commit(seqno), partial = r.cb->partial;
-    refuseAfterJobs = 0;
-    r.cb->abandon();
-    EXPECT_FALSE(committed);
-    ASSERT_TRUE(partial) << "not a commit whose first job ran and second was refused";
-    r.cb = r.dev.begin();
-    ASSERT_NE(r.cb, nullptr);
-    const size_t first = kernel_model::model.jobs.size();
-    ASSERT_NO_FATAL_FAILURE(r.pass(r.plain));
-    ASSERT_NO_FATAL_FAILURE(r.commit());
-    kernel_model::model.jobAdded = nullptr;
-    uint32_t draws = 0, blendWrites = 0;
-    for (const Step &s : ran(first)) {
-        draws += isDraw(s);
-        blendWrites += writesBlend(s);
-    }
-    EXPECT_EQ(draws, 1u);
-    EXPECT_EQ(blendWrites, 0u) << "the new channel's first state set back extras the dead channel held";
 }
 
 }  // namespace

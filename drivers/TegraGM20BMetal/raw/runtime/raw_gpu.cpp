@@ -573,7 +573,6 @@ void Device::emitContext(Push &p)
         ds_ = unknown;
     }
     heldSegment_.lose();
-    extrasLive_ = nullptr;
     // root table selected for LOAD_CONSTANT_BUFFER from here on (draws reselect it after binding set 0 as a cbuf); NVK's init
     // above zeroed it, so one sample's layout goes in now, as every pass but a multisampled one leaves it
     sampleWords(p, 1, root_.va);
@@ -5046,15 +5045,13 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass, const char **why)
     e.setViewport(0, 0, e.areaW_, e.areaH_, 0, 1);
     e.setScissor(0, 0, e.areaW_, e.areaH_);
     e.extrasAtBegin_ = extrasLive_;
-    e.extrasKept_ = extrasLive_ && e.keepsExtras(*extrasLive_);
-    if (extrasLive_ && !e.extrasKept_) {
+    if (extrasLive_) {
         heldSegment_.lose();
-        extrasLive_ = nullptr;
         RAW_DIAGNOSTIC(dev_->stats.segmentExtrasLosses++);
     } else {
         heldSegment_.passBoundary();
-        e.extrasHeld_ = extrasLive_ && heldSegment_.holds(extrasLive_->segment);
     }
+    extrasLive_ = nullptr;
     // a target the pass does not load starts over: no earlier rung-2 blend is under what it draws (rule fetch.blend)
     for (uint32_t j = 0; j < pass.count && j < 8; j++)
         if (pass.color[j].texture && pass.color[j].load != ColorAttachment::Load)
@@ -5098,12 +5095,6 @@ BlitEncoder *CommandBuffer::blit()
     e.start_ = reinterpret_cast<uint32_t *>(dev_->alloc(dev_->push_, 1 << 14, 256, va));
     e.p_ = Push{e.start_, e.start_ + (1 << 12)};
     loops_.openSegment(e.stream());
-    // its copies and 2D work meet no state's extras; inside a loop a copy may not run, which leaves them on
-    if (extrasLive_) {
-        e.p_.raw(extrasLive_->restore.data(), uint32_t(extrasLive_->restore.size()));
-        if (!loops_.open())
-            extrasLive_ = nullptr;
-    }
     // what the render work before wrote is complete before the copy engine reads it (NVK: a WFI on the 3D subchannel; the
     // switch to the copy subchannel then waits for the 3D engine anyway)
     const BarrierForms forms = barrierForms();
@@ -6105,18 +6096,6 @@ uint32_t RenderEncoder::colorTargets() const
         if (pass_.color[j].texture)
             count = j + 1;
     return count;
-}
-
-// Whether the extras of `live`, the channel's as the pass begins, stay on through its prologue: its segment writes none
-// of the registers a pass boundary does, and a rung-3 form's iterated blend meets what its own draws do, the one target
-// of its colour's format
-bool RenderEncoder::keepsExtras(const Pipeline &live) const
-{
-    if (!live.segment.keptAcrossPasses)
-        return false;
-    if (live.freeForm.rung != FetchIteratedBlend)
-        return true;
-    return live.freeForm.colour == 0 && colorTargets() == 1 && pass_.color[0].texture->format == live.colorFormats[0];
 }
 
 // The state's fetch-free form where this draw takes it (raw_fetch_free.h): the blended colour's target in the pass,
@@ -7394,8 +7373,6 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
                 p.raw(cb_->extrasLive_->restore.data(), uint32_t(cb_->extrasLive_->restore.size()));
                 cb_->extrasLive_ = nullptr;
                 cb_->heldSegment_.lose();
-                if (!emitted_)
-                    extrasHeld_ = false;
             }
             // the iterated blend unit refuses a draw binding more than one colour target (class error 0x59)
             const uint32_t targets = colorTargets();
@@ -8250,17 +8227,8 @@ void RenderEncoder::clearRegion(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t 
     uint32_t v[4] = {};
     clearWords(t.format, rgba, v, t.compressed);
     dev_->clearZbc(t, !x0 && !y0 && x1 >= t.width && y1 >= t.height, v);
-    const Pipeline *live = cb_->extrasLive_;
-    if (p_.room() < 64 + (live ? uint32_t(live->restore.size()) : 0))
+    if (p_.room() < 64)
         reserve();
-    if (live) {
-        p_.raw(live->restore.data(), uint32_t(live->restore.size()));
-        cb_->extrasLive_ = nullptr;
-        cb_->heldSegment_.lose();
-        if (!emitted_)
-            extrasHeld_ = false;
-        emitted_ = nullptr;
-    }
     clearRect(p_, x0, y0, x1, y1, v, 0, 0, std::max(pass_.layers, 1u));
     called_ = true;
 }
@@ -8751,16 +8719,15 @@ void RenderEncoder::end()
     }
     if (samples_ > 1)
         sampleWords(p_, 1, d.root_.va);
-    // A state's extras stay on past the pass, for a next pass that starts with the same state (keepsExtras); what needs
-    // them off sets them back first: another state's bind, a prologue's clears, a clear region, a blit. Whatever runs
-    // after the pass meets the pixel stage and rasteriser on.
-    if (const Pipeline *live = cb_->extrasLive_; live && live->stagesOff) {
+    // the 3D engine's work outside the pass (the blit encoder's draws) meets no iterated blend and the pass's
+    // targets, and the pixel stage and rasteriser on; the state's segment, run again at its next bind, turns them off
+    if (const Pipeline *live = cb_->extrasLive_;
+        live && (live->freeForm.rung == FetchIteratedBlend || live->stagesOff)) {
         p_.raw(live->restore.data(), uint32_t(live->restore.size()));
         cb_->extrasLive_ = nullptr;
         cb_->heldSegment_.lose();
     }
-    // a rung-3 form's iterated blend still on keeps its one target
-    if (narrowed_ && !cb_->extrasLive_) {
+    if (narrowed_) {
         p_.m(CT_SELECT, targetSelect(colorTargets()));
         narrowed_ = false;
     }
@@ -8793,27 +8760,15 @@ void RenderEncoder::end()
 #if SWITCH_RAW_DIAGNOSTICS
     probeEdges();
 #endif
-    const DepthStencilAttachment &zs = pass_.depthStencil;
-    uint32_t zsBits = zs.texture ? zetaClearBits(zs.clearDepth && zetaHasDepth(zs.texture->format),
-                                                 zs.clearStencil && zetaHasStencil(zs.texture->format))
-                                 : 0;
-    // the extras the pass began with: set back first where it did not keep them, else ahead of its clears, and then their
-    // state's segment runs again after the prologue where the body began on it
-    const Pipeline *live = extrasAtBegin_;
-    const bool setsBack = live && (!extrasKept_ || !cl.empty() || zsBits);
-    const Pipeline *again = setsBack && extrasHeld_ ? live : nullptr;
-    const bool againInline = again && !bindsBySegment();
-    const uint32_t restoreWords = setsBack ? uint32_t(live->restore.size()) : 0;
+    const std::vector<uint32_t> &restore = extrasAtBegin_ ? extrasAtBegin_->restore : std::vector<uint32_t>();
     const uint32_t room = 160 + 8 * 32 + uint32_t(cl.size()) * 48 + kZetaTargetWords + kZcullRegionWords +
-                          kZetaClearWords + 16 + kSampleWords + kTurnWordsMethods + restoreWords +
-                          (againInline ? uint32_t(again->methods.size()) : 0) + kSpanMarkWords +
-                          startStampCount_ * counters::kTimestampWords + kDrawStampWords +
+                          kZetaClearWords + 16 + kSampleWords + kTurnWordsMethods + uint32_t(restore.size()) +
+                          kSpanMarkWords + startStampCount_ * counters::kTimestampWords + kDrawStampWords +
                           (separate_.stencil ? 64 + 128 * layers : 0);
     uint64_t va;
     uint32_t *start = reinterpret_cast<uint32_t *>(d.alloc(d.push_, room * 4, 256, va));
     Push p{start, start + room};
-    if (setsBack)
-        p.raw(live->restore.data(), restoreWords);
+    p.raw(restore.data(), uint32_t(restore.size()));
     const BarrierEngine before = cb_->lastEngine_;
     const BarrierForms forms = cb_->barrierForms();
     const PassUses uses = passUses();
@@ -8888,6 +8843,7 @@ void RenderEncoder::end()
     // targets map to themselves (NVK writes all eight slots of the map; the hardware reads the first `count`), drawn from
     // (0, 0) over the render area
     kit(p, switch_gm20b_render_area, count, planeArea().x1, planeArea().y1);
+    const DepthStencilAttachment &zs = pass_.depthStencil;
     zetaTargetWords(p, zs.texture, layers);
     // ahead of the depth clear, which sets the region, or the load of a stored one; over the plane the pass renders (a
     // turned drawable's own axes, zcullBegin)
@@ -8900,6 +8856,9 @@ void RenderEncoder::end()
         zcullOffWords(p);
     }
     // NVK clears depth and stencil with the first color the pass clears over its render area, else on their own
+    uint32_t zsBits = zs.texture ? zetaClearBits(zs.clearDepth && zetaHasDepth(zs.texture->format),
+                                                 zs.clearStencil && zetaHasStencil(zs.texture->format))
+                                 : 0;
     zetaClearValues(p, zsBits & 1, zs.depth, zsBits & 2, zs.stencil);
     if (zsBits & 1)
         d.clearZbcDepth(*zs.texture, areaW_ >= zs.texture->width && areaH_ >= zs.texture->height, zs.depth);
@@ -8928,17 +8887,9 @@ void RenderEncoder::end()
     }
     if (measured)
         emitDrawStamp(p, d.stamps_.va, candidate_.slot, false, candidate_.payload);
-    if (againInline)
-        p.raw(again->methods.data(), uint32_t(again->methods.size()));
     RAW_DIAGNOSTIC(markSpan(p, prologueMark_, SpanKind::Prologue));
     checkRoom(p, "a pass prologue");
     cb_->segment(start, p.at);
-    if (again && !againInline) {
-        cb_->segments_.append({again->segment.va, again->segment.words, 0}, false);
-        cb_->segmentBinds_++;
-        RAW_DIAGNOSTIC(cb_->counts_.segmentBinds++);
-        RAW_DIAGNOSTIC(cb_->counts_.segmentWords += again->segment.words);
-    }
     d.push_.head = uint64_t(reinterpret_cast<uint8_t *>(p.at) - d.push_.bo.cpu);
     RAW_ENCODE_END(prologueSpan);
     [[maybe_unused]] const uint64_t bodyWords = appendBodies(cb_->segments_, bodies_, d.push_.bo.cpu, d.push_.bo.va);

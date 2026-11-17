@@ -1172,12 +1172,7 @@ private:
     const char *reachWhy_ = nullptr;
     const Pipeline *reachTwin_ = nullptr;  // the twin takeReachTwin set
     bool reachCover_ = false;
-    // the state whose extras (Pipeline::restore) the channel held as the pass began. Kept: the body begins with them on,
-    // and the prologue sets them back only ahead of its clears, running the state's segment again after them where the
-    // body began on it (held), unless the body set them back itself before its first draw. Else the prologue sets them
-    // back first.
-    const Pipeline *extrasAtBegin_ = nullptr;
-    bool extrasKept_ = false, extrasHeld_ = false;
+    const Pipeline *extrasAtBegin_ = nullptr;  // set back by the pass's prologue, before its clears
     uint32_t *bodyStart_ = nullptr;
     std::array<counters::Stamp, 8> startStamps_{};
     uint8_t startStampCount_ = 0;
@@ -1290,7 +1285,6 @@ private:
     void bindState(Push &p, const Pipeline &pl);
     bool measuringInline() const;
     bool bindsBySegment() const;
-    bool keepsExtras(const Pipeline &live) const;
     const Pipeline *compatible_ = nullptr;
     uint32_t compatibleSampleMasks_[4]{}, compatibleRasterMask_ = kSampleMaskAll;
     // prepare() found a draw Apple's driver draws nothing defined for (raw_client_errors.h): its caller draws nothing
