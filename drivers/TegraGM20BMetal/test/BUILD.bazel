@@ -2485,7 +2485,6 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_lock.h",
     ],
     cxx_std = "c++17",
-    data = ["//drivers/TegraGM20BMetal:raw/runtime/RawMetalCubic.mm"],
 )
 
 host_test(
@@ -4914,8 +4913,40 @@ host_test(
         "empty_pack.h",
         "made_metallib.h",
         "raw_facade_harness.h",
+        "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_cubic_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# A state's variants: each key asked once, a packed state's test class asked as any form, a made state's test classes
+# made with it, a pass switching among its states without the state's map
+host_test(
+    name = "raw_facade_variant_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_variant_test.cpp",
         "raw_frontend_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",

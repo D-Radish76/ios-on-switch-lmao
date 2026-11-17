@@ -120,7 +120,13 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
     // bicubic.rs runtime_cubic_measured); a header the pool has no slot for is the same answer
     const bool rawOk = raw::takeSampler(m, s);
     if (!rawOk || !gRM->raw->createSampler(s, r->_raw)) {
-        SWITCH_REFUSE_DETAIL("raw", "sampler.unsupported", rawOk,
+        // each descriptor the device has no form of is named once, a full table once (the fields before the flag hold
+        // no padding)
+        const uint64_t detail =
+            rawOk ? 0
+                  : raw::Pack::fnv(&m, offsetof(raw::MetalSamplerFields, normalizedCoordinates)) ^
+                        uint64_t(m.normalizedCoordinates);
+        SWITCH_REFUSE_DETAIL("raw", "sampler.unsupported", detail,
                              "no sampler (%s): min %lu mag %lu mip %lu address %lu/%lu/%lu anisotropy %lu compare %lu "
                              "border %lu lod %g..%g "
                              "normalized %d",
@@ -440,6 +446,8 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
     if (reflection)
         *reflection = rmRenderReflection(p, d, o);
     if (p->_raw && p->_madeFrom) {
+        if (!p->_packed && gRM->completion)
+            rmMadeVariants(p, d);
         p->_twinOptions = o;
         p->_twinLater = true;
         if (error)

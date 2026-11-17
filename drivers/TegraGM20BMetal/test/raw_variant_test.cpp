@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
-#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "../raw/runtime/raw_variant.h"
-#include "bazel/testing/source_text.h"
 #include <memory>
 #include <thread>
 
@@ -83,30 +81,6 @@ TEST(Variant, PendingProducerRetainsCellAfterRecordingOwnerReleasesIt)
     EXPECT_EQ(wakes, 1u);
     complete = {};
     EXPECT_TRUE(weak.expired());
-}
-
-// A packed state's two-plane or shadowed variant the pack lacks is made at the draw that needs it,
-// as every other form is, and only a test class alone draws the state's own record
-TEST(VariantRoute, APackedStatesFormsThePackLacksAreMadeAtTheDraw)
-{
-    EXPECT_TRUE(raw::variantMadeAtDraw(true, false, true, false, false, false)) << "two-plane";
-    EXPECT_TRUE(raw::variantMadeAtDraw(true, true, false, false, false, false)) << "cubic";
-    EXPECT_TRUE(raw::variantMadeAtDraw(true, false, false, true, false, false)) << "sampled";
-    EXPECT_TRUE(raw::variantMadeAtDraw(true, false, false, false, true, false)) << "written";
-    EXPECT_TRUE(raw::variantMadeAtDraw(true, false, false, false, false, true)) << "shadowed";
-    EXPECT_FALSE(raw::variantMadeAtDraw(true, false, false, false, false, false)) << "a test class alone";
-    EXPECT_TRUE(raw::variantMadeAtDraw(false, false, false, false, false, false)) << "a state of no pack";
-}
-
-// A variant no compiler made fails that draw's command buffer alone; the next draw that needs it asks afresh: no count
-TEST(VariantAsks, TheDrawThatMeetsAFailedVariantAsksItAfresh)
-{
-    const std::string cubic = switch_ios::test::SourceText("../raw/runtime/RawMetalCubic.mm");
-    const std::string made = switch_ios::test::Body(cubic, "static raw::Variant<raw::Pipeline> *renderVariant(");
-    EXPECT_THAT(made, testing::HasSubstr("found->second->state() != raw::Variant<raw::Pipeline>::State::Failed"));
-    EXPECT_THAT(made, testing::Not(testing::HasSubstr("_variantAsks")));
-    EXPECT_THAT(made, testing::HasSubstr("p->_replacedVariants.push_back(std::move(found->second));"));
-    EXPECT_THAT(made, testing::HasSubstr("completion->askVariant("));
 }
 
 }  // namespace

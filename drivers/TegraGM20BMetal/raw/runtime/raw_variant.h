@@ -52,8 +52,28 @@ public:
         return settle(nullptr, State::Failed);
     }
 
+    // Failed with no compiler to ask (none serves yet, or none this boot): no answer about the variant, so reopen()
+    // lets the next ask make it
+    bool failUnserved()
+    {
+        return settle(nullptr, State::Failed, true);
+    }
+
+    // Pending again after failUnserved(): true for the one caller that is to ask for it
+    bool reopen()
+    {
+        if (!unserved_.load(std::memory_order_acquire))
+            return false;
+        std::lock_guard<raw::Mutex> lock(lock_);
+        if (!unserved_.load(std::memory_order_relaxed))
+            return false;
+        unserved_.store(false, std::memory_order_relaxed);
+        state_.store(State::Pending, std::memory_order_release);
+        return true;
+    }
+
 private:
-    bool settle(T *value, State settled)
+    bool settle(T *value, State settled, bool unserved = false)
     {
         std::vector<std::function<void()>> observers;
         {
@@ -61,6 +81,7 @@ private:
             if (state() != State::Pending)
                 return false;
             value_ = value;
+            unserved_.store(unserved, std::memory_order_release);
             state_.store(settled, std::memory_order_release);
             observers.swap(observers_);
         }
@@ -71,16 +92,9 @@ private:
 
     mutable raw::Mutex lock_;
     std::atomic<State> state_{State::Pending};
+    std::atomic<bool> unserved_{false};
     T *value_ = nullptr;
     std::vector<std::function<void()>> observers_;
 };
-
-// Whether a packed state's variant its pack lacks is made at a draw that needs it (RawMetalCubic.mm renderVariant):
-// every form of one, a cubic, two-plane, sampled, written or shadowed (raw_xr_shadow.h) one; a test class alone is
-// drawn by the state's own record instead
-inline bool variantMadeAtDraw(bool packed, bool cubic, bool twoPlane, bool sampled, bool written, bool shadowed)
-{
-    return !packed || cubic || twoPlane || sampled || written || shadowed;
-}
 
 }  // namespace raw

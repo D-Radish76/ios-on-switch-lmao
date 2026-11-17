@@ -115,6 +115,10 @@ public:
     // The buffer encoders blob (raw_buffer_encoders.h) of `function` (this facade's), keyed by its bufferEncodersKey
     bool bufferEncoders(id function, const std::string &functionKey, std::string &blob, std::string &why);
 
+    // A failure that is no answer about the state: no compiler serves to ask (an ask's `failure`, makeNow's)
+    static constexpr const char kNoCompilerComes[] =
+        "no shader compiler comes this boot: it declined, or its launcher stopped starting it";
+
     // What the calling thread's last makeNow got its record by
     static Obtained lastObtained();
     static void noteObtained(const Obtained &o);
@@ -157,8 +161,6 @@ private:
     bool functionReflection(const char *tag, id function, const CacheKey &k, std::string &blob, std::string &why);
     RecordCache::Found fromStore(const Digest &name, const CacheKey &k, RuntimeRecord &record, std::string &why);
     // Why a state's creation fails where no compiler makes it (makeNow's `failure`)
-    static constexpr const char kNoCompilerComes[] =
-        "no shader compiler comes this boot: it declined, or its launcher stopped starting it";
     static constexpr const char kInexpressible[] = "a function no compile request can name: another device's";
     static constexpr const char kNotTaken[] = "the shader compiler did not take the state";
     static constexpr const char kNotStored[] = "the shader compiler's store does not keep the state";

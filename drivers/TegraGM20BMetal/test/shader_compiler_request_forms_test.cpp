@@ -499,13 +499,6 @@ TEST(CompileRequestForms, TheClientsRequestsCarryWhatItsKeysAreMadeOf)
     EXPECT_NE(Body(remote, "Compiler::Outcome Completion::remoteKernel(")
                   .find("q.stageIn = stageInFieldsOf(descriptor.stageInputDescriptor);"),
               std::string::npos);
-    const std::string cubic = Body(SourceText("../raw/runtime/RawMetalCubic.mm"), "renderVariant(RMPipeline *p,");
-    EXPECT_NE(cubic.find("const std::string suffix = forms.untested().name(), name = forms.name();"),
-              std::string::npos);
-    EXPECT_NE(cubic.find("request.key = p->_key + name;"), std::string::npos);
-    EXPECT_NE(cubic.find("request.variant = forms;"), std::string::npos);
-    EXPECT_NE(cubic.find("fallback.key = p->_key + suffix;"), std::string::npos);
-    EXPECT_NE(cubic.find("fallback.variant = forms.untested();"), std::string::npos);
     const std::string computeState = SourceText("../raw/runtime/RawMetalComputeState.mm");
     EXPECT_NE(
         computeState.find(

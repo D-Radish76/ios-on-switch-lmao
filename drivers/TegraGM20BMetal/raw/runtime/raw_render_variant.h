@@ -34,14 +34,6 @@ struct RenderVariant {
                xrShadowVariant(xrShadows) + (twoPlane ? std::string(kXrPlanesVariant) : std::string()) +
                (xrSlots ? xrSampledVariant(xrSlots) : std::string()) + writtenVariant(written);
     }
-
-    // The same variant without its test class: what draws where no record holds the class
-    RenderVariant untested() const
-    {
-        RenderVariant v = *this;
-        v.fragmentTests = 0;
-        return v;
-    }
 };
 
 }  // namespace raw

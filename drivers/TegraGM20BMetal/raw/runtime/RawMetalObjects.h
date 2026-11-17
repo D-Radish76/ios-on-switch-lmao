@@ -262,9 +262,8 @@ enum class RMShareable : uint8_t {
     MTLPipelineOption _twinOptions;  // a state raw draws from its creation: its twin is made at its first m2v
     bool _twinLater;                 // replay (rmTwin), with these options
     raw::Mutex _variantLock;
+    // every variant asked of it, by name, for its life: plans and encoders name each by address
     std::map<std::string, std::shared_ptr<raw::Variant<raw::Pipeline>>> _variants;
-    // a failed variant asked afresh by a later draw: the one it replaced stays alive for the plans that name it
-    std::vector<std::shared_ptr<raw::Variant<raw::Pipeline>>> _replacedVariants;
     raw::Obtained _obtained;  // debug builds: how its creation got its record
 }
 @end
@@ -654,6 +653,13 @@ static inline void rmPipelineVeto(RMCommandBuffer *cb, uint32_t reason)
 // (RawMetalEncoder.mm)
 uint64_t nextTraceId();
 
+// A variant a render encoder's prepare found for a state and its forms (RawMetalCubic.mm preparedVariant)
+struct RMPreparedVariant {
+    __unsafe_unretained RMPipeline *pipe = nil;
+    raw::RenderVariant forms;
+    raw::Variant<raw::Pipeline> *variant = nullptr;
+};
+
 // A render encoder keeps what its draws need to decide, as they are recorded, whether the raw path draws them exactly as m2v
 // would: the state, each bound buffer's address, the textures, the pass's formats. A draw it would not is the command buffer's
 // reason then, so encodeRaw never meets it (a fallback costs no encoding).
@@ -674,6 +680,9 @@ uint64_t nextTraceId();
     uint64_t _sampEpoch;
     raw::RenderVariant _forms;
     raw::Variant<raw::Pipeline> *_formVariant, *_sampledVariant;
+    // the variants its prepares found: a pass switching among its states asks a state's map once for each forms
+    std::array<RMPreparedVariant, 8> _prepared;
+    uint8_t _preparedNext;
     uint16_t _formSamplers[2];  // populated when a cubic binding first needs this pipeline's sampler slots
     raw::StageTextureMask _cubicTextures[2];
     std::array<raw::StageTextureMask, 2> _sampledSlots;

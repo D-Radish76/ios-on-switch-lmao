@@ -358,6 +358,9 @@ MTLComputePipelineDescriptor *twinComputeDescriptor(MTLComputePipelineDescriptor
 
 // A packed state's variants placed with its own record at creation (RawMetalCubic.mm)
 void packedVariants(RMPipeline *p, uint64_t keyHash);
+// A state this process made: the variants its creation already names (its test classes, its two-plane form), made and
+// waited for before the creation returns, as the pack builder makes a packed state's
+void rmMadeVariants(RMPipeline *p, MTLRenderPipelineDescriptor *d);
 // The state's variant for a draw's cubic binds, test class, two-plane colours, sampled two-plane slots, written textures and
 // the colours whose half shadow its pass holds (raw_xr_shadow.h), asked of the compiler where no pack holds it
 raw::Variant<raw::Pipeline> *rmRenderVariant(RMPipeline *p, const raw::CubicBinds &binds, uint8_t tests, bool planes,

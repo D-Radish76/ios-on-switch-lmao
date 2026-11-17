@@ -53,77 +53,130 @@ void packedVariants(RMPipeline *p, uint64_t keyHash)
     }
 }
 
-// A packed state's test class the pack does not hold (its builder could not make it, and no other form is asked): the
-// state's own record draws it, as a refused device compile leaves it, and says so
-static raw::Pipeline *untestedVariant(RMPipeline *p, const std::string &name)
+// A variant the compiler refused (`failure` empty) or no compiler made: the command buffers that draw it fail, and its
+// key is named once. A shadowed variant's is named by its pass (RawMetalXrShadow.mm reportTwin).
+static void settleUnmade(raw::Variant<raw::Pipeline> &variant, const std::string &key, bool shadowed,
+                         const std::string &failure)
 {
-    const std::string key = p->_key + name;
-    SWITCH_REFUSE_DETAIL("raw", "state.tests_unpacked", raw::Pack::fnv(key.data(), key.size()),
-                         "a packed state's test class the pack builder could not make: drawn without it: %s",
-                         key.c_str());
-    return p->_raw;
+    if (!shadowed) {
+        SWITCH_REFUSE_DETAIL("raw", "state.variant", raw::Pack::fnv(key.data(), key.size()),
+                             "the shader compiler %s the variant %s%s%s: the command buffers that draw it fail",
+                             failure.empty() ? "refused" : "made none of", key.c_str(), failure.empty() ? "" : ": ",
+                             failure.c_str());
+    }
+    if (failure.empty())
+        variant.publish(nullptr);
+    else
+        variant.fail();
 }
 
 // Binding and pass preparation starts asynchronous variant work. Sampled variants can use stand-ins while
 // pending; other variants hold the queue head until they publish or fail (RawMetalSchedule.mm variantReadiness).
-static raw::Variant<raw::Pipeline> *renderVariant(RMPipeline *p, const raw::CubicBinds &binds, uint8_t tests,
-                                                  bool planes, uint16_t xrSlots,
-                                                  const std::vector<raw::WrittenTexture> &written,
-                                                  uint8_t xrShadows = 0)
+// A compiler's answer about a key holds for the process: refused or not made, the variant stays so, and keeps the
+// object plans name. An ask that found no compiler to ask is no answer: the next pass that needs the variant asks
+// again, and that ask checks the compiler as a state's creation does (RawComplete.mm Completion::request).
+static raw::Variant<raw::Pipeline> *renderVariant(RMPipeline *p, const raw::RenderVariant &forms)
 {
-    const raw::RenderVariant forms = {binds, tests, planes, xrSlots, written, xrShadows};
-    const std::string suffix = forms.untested().name(), name = forms.name();
+    const std::string name = forms.name();
     std::shared_ptr<raw::Variant<raw::Pipeline>> variant;
     {
         std::lock_guard<raw::Mutex> lock(p->_variantLock);
-        if (const auto found = p->_variants.find(name); found != p->_variants.end()) {
-            if (found->second->state() != raw::Variant<raw::Pipeline>::State::Failed || !gRM->completion)
-                return found->second.get();
-            p->_replacedVariants.push_back(std::move(found->second));
-            p->_variants.erase(found);
-        }
-        variant = std::make_shared<raw::Variant<raw::Pipeline>>();
-        p->_variants.emplace(name, variant);
+        auto [at, inserted] = p->_variants.try_emplace(name);
+        if (inserted)
+            at->second = std::make_shared<raw::Variant<raw::Pipeline>>();
+        else if (!at->second->reopen())
+            return at->second.get();
+        variant = at->second;
     }
-    if (!raw::variantMadeAtDraw(p->_packed, !binds.empty(), planes, xrSlots != 0, !written.empty(), xrShadows != 0)) {
-        variant->publish(untestedVariant(p, name));
+    const std::string key = p->_key + name;
+    const bool shadowed = forms.xrShadows != 0;
+    raw::Completion *completion = gRM->completion.get();
+    if (!completion) {
+        variant->failUnserved();
         return variant.get();
     }
     raw::Completion::Ask request;
     request.descriptor = p->_madeFrom;
     request.facade = p->_madeFrom;
-    request.key = p->_key + name;
+    request.key = key;
     request.caTransform = p->_caTransform;
     request.own = !p->_packable;
     request.variant = forms;
     request.resolveDescriptor = true;
-    // the state's own record draws a test class's draws it could not be made for, never a cubic, two-plane, written or
-    // shadowed variant's
-    raw::Pipeline *base = binds.empty() && !planes && !xrSlots && written.empty() && !xrShadows ? p->_raw : nullptr;
-    raw::Completion *completion = gRM->completion.get();
-    if (!request.descriptor || !completion) {
-        variant->publish(base);
-        return variant.get();
-    }
-    raw::Completion::Ask fallback = request;
-    fallback.key = p->_key + suffix;
-    fallback.variant = forms.untested();
-    completion->askVariant(std::move(request), [variant, base, fallback, tests,
-                                                completion](raw::Pipeline *made, const std::string &failure) {
-        if (!made && !failure.empty()) {
-            variant->fail();
-        } else if (!made && tests && !base) {
-            completion->askVariant(fallback, [variant](raw::Pipeline *untested, const std::string &failed) {
-                if (untested || failed.empty())
-                    variant->publish(untested);
-                else
-                    variant->fail();
-            });
-        } else {
-            variant->publish(made ? made : base);
-        }
-    });
+    completion->askVariant(std::move(request),
+                           [variant, key, shadowed](raw::Pipeline *made, const std::string &failure) {
+                               if (made)
+                                   variant->publish(made);
+                               else if (failure == raw::Completion::kNoCompilerComes)
+                                   variant->failUnserved();
+                               else
+                                   settleUnmade(*variant, key, shadowed, failure);
+                           });
     return variant.get();
+}
+
+static void awaitSettled(const std::vector<raw::Variant<raw::Pipeline> *> &variants)
+{
+    if (variants.empty())
+        return;
+    dispatch_semaphore_t settled = dispatch_semaphore_create(0);
+    size_t pending = 0;
+    for (raw::Variant<raw::Pipeline> *variant : variants) {
+        const auto state = variant->observe([settled] {
+            dispatch_semaphore_signal(settled);
+        });
+        if (state == raw::Variant<raw::Pipeline>::State::Pending)
+            pending++;
+    }
+    for (; pending; pending--)
+        dispatch_semaphore_wait(settled, DISPATCH_TIME_FOREVER);
+}
+
+// The test classes drawnTests (raw_shader_test_push.h) can give a draw of `pl` in a pass of the creation's depth and
+// stencil formats, whatever its depth/stencil state
+static std::vector<uint8_t> testClasses(const raw::Pipeline &pl, uint32_t depth, uint32_t stencil)
+{
+    using raw::FragmentTests;
+    const bool hasDepth = raw::zetaHasDepth(depth) || raw::zetaHasDepth(stencil);
+    const bool hasStencil = raw::zetaHasStencil(depth) || raw::zetaHasStencil(stencil);
+    if (pl.fetchBits && pl.depthFormat && !pl.storageBits) {
+        std::vector<uint8_t> classes = {uint8_t(FragmentTests::Pass), uint8_t(FragmentTests::ReadOnly)};
+        if (hasDepth)
+            classes.push_back(uint8_t(FragmentTests::DepthWrite));
+        if (hasStencil)
+            classes.push_back(uint8_t(FragmentTests::StencilWrite));
+        return classes;
+    }
+    if (raw::shadowStencil(pl.rec->shaderTests) && hasDepth)
+        return {uint8_t(FragmentTests::StencilWrite)};
+    return {};
+}
+
+// Every test class a draw can take, and its two-plane form with theirs: a packed state's are the pack's
+// (directpack.mm makeState, which leaves out a shader-side stencil's). Asked together and waited for as the state's
+// own record was, so no draw of them waits on a compile at its queue's head.
+void rmMadeVariants(RMPipeline *p, MTLRenderPipelineDescriptor *d)
+{
+    const std::vector<uint8_t> classes =
+        testClasses(*p->_raw, uint32_t(d.depthAttachmentPixelFormat), uint32_t(d.stencilAttachmentPixelFormat));
+    const bool twoPlane =
+        std::any_of(std::begin(p->_raw->colorFormats), std::end(p->_raw->colorFormats), [](uint32_t format) {
+            return raw::xrForm(format) == raw::XrForm::Planes;
+        });
+    std::vector<raw::Variant<raw::Pipeline> *> made;
+    for (const bool planes : {false, true}) {
+        if (planes && !twoPlane)
+            break;
+        raw::RenderVariant forms;
+        forms.twoPlane = planes;
+        if (planes)
+            made.push_back(renderVariant(p, forms));
+        for (const uint8_t tests : classes) {
+            forms.fragmentTests = tests;
+            made.push_back(renderVariant(p, forms));
+        }
+    }
+    awaitSettled(made);
 }
 
 // The textures a draw of `pl` writes in other formats than its record's programs store (raw_written_textures.h)
@@ -159,7 +212,39 @@ raw::Variant<raw::Pipeline> *rmRenderVariant(RMPipeline *p, const raw::CubicBind
                                              uint16_t xrSlots, const std::vector<raw::WrittenTexture> &written,
                                              uint8_t xrShadows)
 {
-    return renderVariant(p, binds, tests, planes, xrSlots, written, xrShadows);
+    return renderVariant(p, {binds, tests, planes, xrSlots, written, xrShadows});
+}
+
+static bool sameForms(const raw::RenderVariant &a, const raw::RenderVariant &b)
+{
+    const auto sameSampler = [](const raw::CubicBinds::Sampler &x, const raw::CubicBinds::Sampler &y) {
+        return x.slot == y.slot && x.s == y.s && x.t == y.t && x.r == y.r && x.border == y.border &&
+               x.normalized == y.normalized && x.stage == y.stage;
+    };
+    const auto sameTexture = [](const raw::CubicBinds::Texture &x, const raw::CubicBinds::Texture &y) {
+        return x.slot == y.slot && x.format == y.format && x.stage == y.stage;
+    };
+    return a.fragmentTests == b.fragmentTests && a.twoPlane == b.twoPlane && a.xrSlots == b.xrSlots &&
+           a.xrShadows == b.xrShadows && a.written == b.written &&
+           std::equal(a.cubic.samplers.begin(), a.cubic.samplers.end(), b.cubic.samplers.begin(),
+                      b.cubic.samplers.end(), sameSampler) &&
+           std::equal(a.cubic.textures.begin(), a.cubic.textures.end(), b.cubic.textures.begin(),
+                      b.cubic.textures.end(), sameTexture);
+}
+
+// The state's variant for `forms` as this encoder found it before, else from the state's map. The encoder's command
+// buffer retains each state it set, and a state's map never drops a variant, so what it found holds for its pass.
+static raw::Variant<raw::Pipeline> *preparedVariant(__unsafe_unretained RMRenderEncoder *e,
+                                                    const raw::RenderVariant &forms)
+{
+    for (const RMPreparedVariant &prepared : e->_prepared)
+        if (prepared.pipe == e->_pipe && sameForms(prepared.forms, forms))
+            return prepared.variant;
+    RMPreparedVariant &slot = e->_prepared[e->_preparedNext++ % e->_prepared.size()];
+    slot.pipe = e->_pipe;
+    slot.forms = forms;
+    slot.variant = renderVariant(e->_pipe, forms);
+    return slot.variant;
 }
 
 @implementation RMRenderEncoder (Cubic)
@@ -189,13 +274,12 @@ raw::Variant<raw::Pipeline> *rmRenderVariant(RMPipeline *p, const raw::CubicBind
         raw::drawnTests(base->fetchBits && base->depthFormat && !base->storageBits, base->rec->shaderTests, _ds, _zeta);
     reboundTextures(*base, _tex[1], _forms.written);
     if (!_forms.cubic.empty() || _forms.fragmentTests || _forms.twoPlane || !_forms.written.empty())
-        _formVariant = renderVariant(_pipe, _forms.cubic, _forms.fragmentTests, _forms.twoPlane, 0, _forms.written);
+        _formVariant = preparedVariant(self, _forms);
     if (_cb->_passes[_passAt].xrPlaneBinds)
         _sampledSlots = xrSampledSlots(*base, _tex);
     _forms.xrSlots = raw::xrPairSlots(_sampledSlots[1]);
     if (_forms.xrSlots)
-        _sampledVariant =
-            renderVariant(_pipe, _forms.cubic, _forms.fragmentTests, _forms.twoPlane, _forms.xrSlots, _forms.written);
+        _sampledVariant = preparedVariant(self, _forms);
 }
 
 - (const raw::Pipeline *)drawnRecord

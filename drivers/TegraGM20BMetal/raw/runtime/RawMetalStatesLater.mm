@@ -2,7 +2,8 @@
 // Metal's completion-handler creations of render states. They may complete later, so a state the pack lacks is asked of
 // the runtime without a waiting thread (Completion::create: the shader compiler's answer arrives on the runtime's queue),
 // and the handler runs once it is there, on a global queue of the caller's class, as Metal calls it. No thread sleeps on
-// the compiler for a record; a reflection the pack lacks is asked on that queue's worker before the handler runs
+// the compiler for a record; a reflection the pack lacks, and the variants a made state's creation names
+// (RawMetalCubic.mm rmMadeVariants), are waited for on that queue's worker before the handler runs
 // (RawMetalReflection.h). A creation that fails gets the synchronous form's error and no m2v state.
 #import "RawMetalInternal.h"
 

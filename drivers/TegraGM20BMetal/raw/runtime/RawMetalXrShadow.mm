@@ -74,7 +74,7 @@ void rmXrShadowBlock(RMCommandBuffer *cb)
     cb->_xrShadowOpen.pass.blocked = true;
 }
 
-// A failed variant is made again as a new object, so its refusal line is keyed by what it is made of
+// A shadowed variant's refusal line, keyed by what it is made of
 static uint64_t refusalKey(const RMXrShadowDraw &d, uint8_t colours)
 {
     uint64_t key = switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw", "xr.shadow_twin"), d.pipe->_packKey);
