@@ -364,14 +364,6 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
             }
             if (cb->_resourceReady || waitsOnRetiredProducer(cb))
                 return false;
-            if (cb->_partial) {
-                // raw::CommandBuffer::commit drains its published prefix before reporting a partial failure.
-                markWrittenRange(cb, range.from, range.to);
-                finish(cb, [NSError errorWithDomain:MTLCommandBufferErrorDomain
-                                               code:MTLCommandBufferErrorInternal
-                                           userInfo:nil]);
-                return true;
-            }
             cb->_reason = WhyEncode;
             cb->_why = [NSString stringWithUTF8String:why ?: "?"];
             if (cb->_predicates.recorded()) {

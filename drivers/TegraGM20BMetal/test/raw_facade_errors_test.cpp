@@ -5,8 +5,10 @@
 // four-channel 8-bit order or another sample count than its pass, sample positions past the pass's samples, and a state
 // whose colour Apple writes as reinterpreted bits (its draw skipped). The kernel refusing a submission or the channel
 // fails the command buffer Internal naming the kernel's answer (RawMetalPredicates.h predFailure), as a visibility result
-// mode Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis).
+// mode Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis). A command buffer whose later job the kernel
+// refused after earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words.
 #include "raw_facade_harness.h"
+#include "../raw/runtime/raw_batch.h"
 #include "bazel/testing/fresh_process.h"
 
 #include <gtest/gtest.h>
@@ -261,6 +263,74 @@ void kernelRefusesTheChannel()
     expectFailed(o.device, cb, "enc.nochannel", MTLCommandBufferErrorInternal);
 }
 
+// The submission after the model holds this many jobs is refused, once; each job completes as the model takes it
+size_t gRefuseAfterJobs = 0;
+
+void completeAndRefuseAfter()
+{
+    kernel_model::Model &m = kernel_model::model;
+    m.fence(m.jobs.back().channel - 1).completed = m.jobs.back().seqno;
+    if (m.jobs.size() == gRefuseAfterJobs)
+        m.refuse = 1;
+}
+
+// A pass of a batch's draws (raw_batch.h) into `first`, then a pass of one draw into `second`: a job after the first's
+id<MTLCommandBuffer> twoJobs(id<MTLCommandQueue> queue, const Opened &o, id<MTLTexture> first, id<MTLTexture> second)
+{
+    id<MTLCommandBuffer> cb = [queue commandBuffer];
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass(first)];
+    [e setRenderPipelineState:o.state];
+    [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
+    for (uint32_t i = 0; i < raw::BatchWork::kOperations; i++)
+        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [e endEncoding];
+    drawInto(cb, pass(second), o.state);
+    return cb;
+}
+
+MTLRenderPassDescriptor *loading(id<MTLTexture> t)
+{
+    MTLRenderPassDescriptor *p = pass(t);
+    p.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    return p;
+}
+
+// The kernel refuses the second job once the first ran: the command buffer fails once and its range counts as not run,
+// so neither new target is marked written and each, its clear given back, is written to its first contents ahead of its
+// next use
+void kernelRefusesTheSecondJob()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    id<MTLCommandQueue> queue = [o.device newCommandQueue];
+    drawnOnce(queue, o);
+    id<MTLTexture> first = target(o.device, kPacked), second = target(o.device, kPacked);
+    id<MTLCommandBuffer> cb = twoJobs(queue, o, first, second);
+    __block int completions = 0;
+    [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+        completions++;
+    }];
+    kernel_model::Model &m = kernel_model::model;
+    const size_t jobs = m.jobs.size();
+    gRefuseAfterJobs = jobs + 1;
+    m.jobAdded = completeAndRefuseAfter;
+    expectFailed(o.device, cb, "enc.kernel", MTLCommandBufferErrorInternal);
+    m.jobAdded = nullptr;
+    EXPECT_EQ(m.jobs.size(), jobs + 1) << "not a command buffer whose first job ran";
+    EXPECT_EQ(m.refuse, 0u) << "no second job was submitted to refuse";
+    EXPECT_EQ(completions, 1);
+    EXPECT_FALSE(((RMTexture *)first)->_gpuDirty.load());
+    EXPECT_FALSE(((RMTexture *)second)->_gpuDirty.load());
+    NSDictionary *before = ask(o.device, "switchRawFresh");
+    ASSERT_NE(before[@"filled"], nil);
+    id<MTLCommandBuffer> next = [queue commandBuffer];
+    drawInto(next, loading(first), o.state);
+    drawInto(next, loading(second), o.state);
+    expectCompleted(o.device, next);
+    NSDictionary *after = ask(o.device, "switchRawFresh");
+    EXPECT_EQ([after[@"filled"] unsignedLongLongValue] - [before[@"filled"] unsignedLongLongValue], 2u);
+}
+
 }  // namespace
 
 TEST(RawFacadeErrors, ABufferCopyPastItsBufferCompletes)
@@ -312,3 +382,9 @@ TEST(RawFacadeErrors, TheKernelRefusingTheChannelFails)
 {
     switch_ios::test::ExpectPassesInFreshProcess(kernelRefusesTheChannel);
 }
+
+TEST(RawFacadeErrors, TheKernelRefusingTheSecondJobLeavesTheRangeNotRun)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(kernelRefusesTheSecondJob);
+}
+

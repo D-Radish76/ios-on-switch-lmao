@@ -539,8 +539,6 @@ struct RMSharedEventWait {
 #endif
     // its event signals are in m2v work (replayed whole, or in its last segment): finish() makes none
     bool _signalsOnM2v;
-    bool
-        _partial;  // the kernel refused its raw submission after part of it ran (raw::CommandBuffer::partial): never replayed
     // scheduled() and finish() ran (their handlers taken): a handler added after goes at once, and scheduled() runs once (a
     // command buffer held for a shared event is scheduled at its commit, eventHeld). A handler is added under _lock after its
     // list's flag is set, and the lists are taken under _lock only where the flag says one was added: taking exchanges the

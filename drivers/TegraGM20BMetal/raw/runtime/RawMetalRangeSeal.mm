@@ -246,9 +246,6 @@ bool RMRangeEncode::seal(size_t to)
     const bool committed = rc->commit(seq);
     cb->_rangeQuiet = rc->quietEnd;
     if (!committed) {
-        cb->_partial = rc->partial;
-        if (rc->partial)
-            firstContents_->submitted(cb);
         if (rc->admissionBlocked) {
             RMQueue *queue = cb->_queue;
             int armed = KERN_SUCCESS;
