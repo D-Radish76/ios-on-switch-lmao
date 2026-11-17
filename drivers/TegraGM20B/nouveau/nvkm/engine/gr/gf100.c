@@ -1732,7 +1732,7 @@ gf100_gr_intr(struct nvkm_inth *inth)
 				   "subc %d class %04x mthd %04x data %08x\n",
 				   chid, inst << 12, name, subc,
 				   class, mthd, data);
-			switch_gpu_gr_fault_stop(device, &gr->fault_fifo_held, chan, chid);
+			switch_gpu_gr_fault_stop(chan, chid);
 		}
 		nvkm_wr32(device, 0x400100, 0x00000010);
 		stat &= ~0x00000010;
@@ -1742,7 +1742,7 @@ gf100_gr_intr(struct nvkm_inth *inth)
 		nvkm_error(subdev, "ILLEGAL_CLASS ch %d [%010llx %s] "
 			   "subc %d class %04x mthd %04x data %08x\n",
 			   chid, inst << 12, name, subc, class, mthd, data);
-		switch_gpu_gr_fault_stop(device, &gr->fault_fifo_held, chan, chid);
+		switch_gpu_gr_fault_stop(chan, chid);
 		nvkm_wr32(device, 0x400100, 0x00000020);
 		stat &= ~0x00000020;
 	}
@@ -1754,7 +1754,7 @@ gf100_gr_intr(struct nvkm_inth *inth)
 				   "subc %d class %04x mthd %04x data %08x\n",
 			   code, en ? en->name : "", chid, inst << 12,
 			   name, subc, class, mthd, data);
-		switch_gpu_gr_fault_stop(device, &gr->fault_fifo_held, chan, chid);
+		switch_gpu_gr_fault_stop(chan, chid);
 		nvkm_wr32(device, 0x400100, 0x00100000);
 		stat &= ~0x00100000;
 	}
@@ -1763,7 +1763,7 @@ gf100_gr_intr(struct nvkm_inth *inth)
 		if (!gf100_gr_trap_tex(gr, chid, name)) {
 			nvkm_error(subdev, "TRAP ch %d [%010llx %s]\n",
 				   chid, inst << 12, name);
-			switch_gpu_gr_fault_stop(device, &gr->fault_fifo_held, chan, chid);
+			switch_gpu_gr_fault_stop(chan, chid);
 			gf100_gr_trap_intr(gr);
 		}
 		nvkm_wr32(device, 0x400100, 0x00200000);
@@ -1781,29 +1781,9 @@ gf100_gr_intr(struct nvkm_inth *inth)
 		nvkm_wr32(device, 0x400100, stat);
 	}
 
-	switch_gpu_gr_fault_access(device, gr->fault_fifo_held);
+	nvkm_wr32(device, 0x400500, 0x00010001);
 	nvkm_chan_put(&chan, flags);
 	return IRQ_HANDLED;
-}
-
-void
-switch_gpu_gr_fault_recovered(struct nvkm_runl *runl)
-{
-	struct nvkm_device *device = runl->fifo->engine.subdev.device;
-	struct gf100_gr *gr = device->gr ? gf100_gr(device->gr) : NULL;
-	struct nvkm_engn *engn;
-	unsigned long flags;
-	bool serves = false;
-
-	if (!gr)
-		return;
-	nvkm_runl_foreach_engn(engn, runl)
-		serves |= engn->engine == &device->gr->engine;
-	if (!serves)
-		return;
-	spin_lock_irqsave(&device->intr.lock, flags);
-	switch_gpu_gr_fault_release(device, &gr->fault_fifo_held, &runl->rc_pending);
-	spin_unlock_irqrestore(&device->intr.lock, flags);
 }
 
 static void
