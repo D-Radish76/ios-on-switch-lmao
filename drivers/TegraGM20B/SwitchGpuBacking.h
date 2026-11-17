@@ -331,6 +331,21 @@ int switch_gpu_backing_snapshot_read_promises(struct switch_gpu_backing *backing
 					      struct switch_gpu_cpu_lease **lease,
 					      struct switch_gpu_backing_token *promises,
 					      uint32_t capacity);
+#if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
+/* Debug kernels: the surface as a snapshot lease's snapshot found it. content is the generation its reader sees: its
+ * newest recorded write's (an engine job's or a CPU lease's), or past the `promised` writer promises still pending, as
+ * a read ordered behind them sees it; writer the current writer it took (zero: none, the CPU's bytes); failed a current
+ * writer whose job had already failed, which it left out. */
+struct switch_gpu_scanout_look {
+	uint64_t allocation, content;
+	struct switch_gpu_backing_token writer, failed;
+	uint32_t surface;
+	int failed_status, promised;
+};
+
+void switch_gpu_cpu_lease_look(const struct switch_gpu_cpu_lease *lease,
+			       struct switch_gpu_scanout_look *look);
+#endif
 /* Writer promises (SwitchGpuWriterPromise.h): the engine registered once; a surface's ref to one added (-28: it has
  * SWITCH_GPU_BACKING_PROMISES pending) or dropped by the word's fence-pool offset; the tokens of the ones pending but
  * the asking connection's own (fence-pool offsets [own_first, own_end)), the count or -28; and how many are pending. */

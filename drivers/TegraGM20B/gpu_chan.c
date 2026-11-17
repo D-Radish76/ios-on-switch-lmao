@@ -255,6 +255,9 @@ static int chan_new(struct tgm_vm *vm, const void *vm_owner, volatile uint32_t *
 	}
 	mutex_lock(&tgm_live_lock);
 	chan->id = ++tgm_live_ids;
+#if DEVELOPMENT || DEBUG
+	switch_gpu_chan_named(chan);
+#endif
 	chan->timeline = switch_gpu_timeline_create(chan->id, chan->fence_cpu);
 	if (!chan->timeline) {
 		mutex_unlock(&tgm_live_lock);

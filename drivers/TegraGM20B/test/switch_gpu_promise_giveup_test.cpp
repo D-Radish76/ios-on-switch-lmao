@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // A writer promise nobody keeps, given up once (SwitchGpuPromiseGiveUp.h), run as the kernel builds it:
-// gpu_promise_giveup.c whole (:promise_giveup_source) and gpu_promise.c's GPU-reader park (:promise_note_source),
+// gpu_promise_giveup.c whole (:promise_giveup_source) and gpu_promise.c's GPU-reader park (:promise_park_source),
 // under switch_gpu_promise_giveup_stubs.h's clock, call, fence pool and channels. Each GPU reader kind parks the way
-// its submission does (tgm_chan_note_promise after the acquires are kicked); every one is given up about a second after
-// it parked, with one line, and its reader goes on with the frame before the promised one.
+// its submission does (switch_gpu_chan_park_promises_locked after the acquires are kicked); every one is given up
+// about a second after it parked, with one line, and its reader goes on with the frame before the promised one.
 #include "switch_gpu_promise_giveup_fixture.h"
 
 namespace

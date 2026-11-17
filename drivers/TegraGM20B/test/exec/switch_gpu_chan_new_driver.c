@@ -373,6 +373,10 @@ void tgm_fault_unpublish(struct tgm_chan *chan)
 {
 }
 
+void switch_gpu_chan_named(const struct tgm_chan *chan)
+{
+}
+
 void tgm_stats_gr_bind(struct tgm_chan *chan)
 {
 }

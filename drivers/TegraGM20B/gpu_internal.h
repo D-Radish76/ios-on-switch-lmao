@@ -402,6 +402,10 @@ int tgm_nonstall_init(struct nvkm_device *device);
 extern struct mutex tgm_live_lock;
 extern u64 tgm_live_ids;
 void tgm_chan_describe(struct tgm_chan *chan, char *buf, unsigned int len);
+#if DEVELOPMENT || DEBUG
+/* gpu_describe.c, tgm_live_lock held: the channel's process under its new uid (switch_gpu_writer_process) */
+void switch_gpu_chan_named(const struct tgm_chan *chan);
+#endif
 /* GR's, FECS's and PBDMA0's state for a context switch that timed out (TegraGM20BHangDecode.h tgm_engine_format) */
 void tgm_engine_state(char *buf, unsigned int len);
 
@@ -638,7 +642,6 @@ void tgm_clock_anchors_fill(u32 page);
 extern u64 tgm_fences_pas[];
 extern struct tgm_mem *tgm_fences_mem;
 int tgm_fences_map(struct tgm_vm *vm);
-int tgm_order_waits(struct tgm_chan *chan);
 int switch_gpu_order_waits_locked(struct tgm_chan *chan);
 
 /* CPU readers of GPU-written memory:
@@ -680,15 +683,12 @@ void tgm_chan_wake_push(struct tgm_chan *chan);
 void tgm_idle_settle(void *arg);
 /* gpu_promise.c: a GPU job whose acquires include pending writer promises parks on them (SwitchGpuPromiseGiveUp.h),
  * once those acquires are pushed and nothing rolls them back */
-int tgm_chan_note_promise(struct tgm_chan *chan, uint32_t offset, uint32_t value);
 int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *waiter,
 				   const char *who, const struct switch_gpu_giveup_job *reader,
 				   int display);
 void switch_gpu_chan_park_promises_locked(struct tgm_chan *chan,
 					  const struct switch_gpu_backing_token *tokens, u32 count,
 					  const u32 *unsettled);
-void tgm_chan_park_promises(struct tgm_chan *chan, const struct switch_gpu_backing_token *tokens,
-			    u32 count);
 /* tgm_live_lock held: the process whose fence page holds the word at `offset` */
 const char *tgm_promise_maker(uint32_t offset);
 void tgm_promise_kept_first(uint32_t offset, uint32_t value);

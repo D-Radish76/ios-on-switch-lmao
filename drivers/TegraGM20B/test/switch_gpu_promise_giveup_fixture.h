@@ -7,7 +7,7 @@
 #include <vector>
 #include "switch_gpu_promise_giveup_stubs.h"
 #include "drivers/TegraGM20B/test/promise_giveup_source.h"
-#include "drivers/TegraGM20B/test/promise_note_source.h"
+#include "drivers/TegraGM20B/test/promise_park_source.h"
 
 namespace promise_giveup
 {
@@ -94,13 +94,27 @@ protected:
 		switch_gpu_jobs_init(&chan.jobs, done);
 	}
 
+	// A job's acquires kicked on `chan`: chan_exec parks it on the promises among them still pending, under
+	// tgm_live_lock when any is
+	static void parkPromises(fake_tgm_chan *chan, const switch_gpu_backing_token *tokens,
+				 uint32_t count)
+	{
+		uint32_t unsettled[(TegraGM20BMaxJobDependencies + 31) / 32] = {};
+		const bool locked = backing_unsettled(tokens, count, unsettled) != 0;
+		if (locked)
+			mutex_lock(&tgm_live_lock);
+		switch_gpu_chan_park_promises_locked(chan, tokens, count, unsettled);
+		if (locked)
+			mutex_unlock(&tgm_live_lock);
+	}
+
 	// The reader's job, its acquire on the promise kicked: chan_exec parks it, then fences the job
 	void readerSubmits()
 	{
 		readerFirst = reader.submitted + 1;
 		const switch_gpu_backing_token promise = {kValue, 0, SWITCH_GPU_ENGINE_PROMISE,
 							  kOffset};
-		tgm_chan_park_promises(&reader, &promise, 1);
+		parkPromises(&reader, &promise, 1);
 		reader.submitted = readerFirst;
 	}
 

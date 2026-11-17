@@ -475,6 +475,16 @@ int tgm_present_outstanding(const void *arg);
 int tgm_present_watch_dependencies(void (*done)(void *, int), void *arg,
 				   const struct switch_gpu_backing_token *dependencies,
 				   uint32_t dependency_count);
+#if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
+/* Debug kernels (TegraGM20BUserClientPresent.cpp): a present job just queued, of whose dependencies its tokens held
+ * `held`. Fewer: it left out writers whose jobs had failed, and each dependency failed by now is logged. */
+void switch_gpu_present_failed_writers(const struct switch_gpu_backing_token *dependencies,
+				       uint32_t dependency_count, uint32_t held);
+/* Debug kernels (gpu_describe.c): the process whose channel a GM20B token names (its queue is the channel's uid), as
+ * named at the channel's creation; "-" for another engine's token or a channel no longer known. Takes no lock. */
+void switch_gpu_writer_process(const struct switch_gpu_backing_token *token, char *process,
+			       size_t size);
+#endif
 void tgm_present_pass(void);
 /* SwitchGpuPresentFilter.cpp: the armed watch's token, read by the nonstall interrupt's primary filter
  * (tgm_present_filter); attached once armed, detached at its claim before its tokens drop and before done runs. */

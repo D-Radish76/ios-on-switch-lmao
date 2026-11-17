@@ -190,7 +190,8 @@ TEST(GM20BPromiseSource, PresentsAndJobsOrderBehindWriterPromises)
 	// a give-up armed for a push that was not submitted would drop a later frame whose writes did arrive.
 	const CodeText acquire = Block(exec, "static int backing_dependency(");
 	EXPECT_TRUE(acquire.has("token->engine == SWITCH_GPU_ENGINE_PROMISE"));
-	EXPECT_FALSE(acquire.has("tgm_chan_note_promise("));
+	EXPECT_FALSE(acquire.has("switch_gpu_chan_park_promises_locked("));
+	EXPECT_FALSE(acquire.has("switch_gpu_promise_park_locked("));
 	const CodeText kick =
 		Block(exec, "static inline __attribute__((always_inline)) int chan_exec_body(");
 	EXPECT_TRUE(

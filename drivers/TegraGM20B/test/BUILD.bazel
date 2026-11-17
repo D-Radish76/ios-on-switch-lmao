@@ -587,8 +587,9 @@ host_test(
     cxx_std = "c++17",
 )
 
-# The give-up as the kernel builds it: gpu_promise_giveup.c whole and gpu_promise.c's GPU-reader park, with only their
-# #include lines left out for switch_gpu_promise_giveup_stubs.h's stand-ins.
+# The give-up as the kernel builds it: gpu_promise_giveup.c whole, and gpu_promise.c's GPU-reader park with gpu_exec.c's
+# pick of the tokens it parks on, with only their #include lines left out for switch_gpu_promise_giveup_stubs.h's
+# stand-ins.
 genrule(
     name = "promise_giveup_source",
     testonly = True,
@@ -602,14 +603,16 @@ grep -q '^void tgm_promise_pass(void)' $@
 )
 
 genrule(
-    name = "promise_note_source",
+    name = "promise_park_source",
     testonly = True,
-    srcs = ["//drivers/TegraGM20B:gpu_promise.c"],
-    outs = ["promise_note_source.h"],
+    srcs = [
+        "//drivers/TegraGM20B:gpu_exec.c",
+        "//drivers/TegraGM20B:gpu_promise.c",
+    ],
+    outs = ["promise_park_source.h"],
     cmd = """
 set -e
-awk '/^int tgm_chan_note_promise\\(/ || /^void tgm_chan_park_promises\\(/ { on = 1 } on { print } on && /^}/ { on = 0 }' $< > $@
-grep -q tgm_promise_park $@
+awk '/^static u32 backing_unsettled\\(/ || /^void switch_gpu_chan_park_promises_locked\\(/ { on = 1; count++ } on { print } on && /^}/ { on = 0 } END { if (count != 2) exit 1 }' $(SRCS) > $@
 """,
 )
 
@@ -651,7 +654,7 @@ PROMISE_GIVEUP_SRCS = [
     "switch_gpu_promise_giveup_fixture.h",
     "switch_gpu_promise_giveup_stubs.h",
     ":promise_giveup_source",
-    ":promise_note_source",
+    ":promise_park_source",
     "//drivers/TegraGM20B:SwitchGpuBacking.h",
     "//drivers/TegraGM20B:SwitchGpuJobFences.h",
     "//drivers/TegraGM20B:SwitchGpuPathStats.h",

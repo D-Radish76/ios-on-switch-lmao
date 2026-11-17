@@ -79,6 +79,10 @@ struct switch_gpu_cpu_lease {
 	uint64_t offset, bytes;
 	uint32_t access;
 	switch_gpu_backing_token producer;
+#if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
+	// a snapshot's (snapshot_read); initialized here so the leases' positional brace inits need not name it
+	switch_gpu_scanout_look look = {};
+#endif
 };
 
 // The ownership order (SwitchGpuBackingOrder.cpp): one lock under which every party reads and changes the backings'

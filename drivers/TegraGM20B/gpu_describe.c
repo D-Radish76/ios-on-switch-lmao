@@ -86,6 +86,45 @@ void tgm_engine_state(char *buf, unsigned int len)
 	tgm_engine_format(buf, len, &r);
 }
 
+#if DEVELOPMENT || DEBUG
+/* Channels' processes by uid, for lines that name a writer by its token alone where no lock may be taken. A later
+ * channel whose uid lands on the same slot takes it over; the earlier one then reads as unknown. */
+#define CHAN_NAMES 512
+
+static struct chan_name {
+	u32 uid;
+	char owner[17];
+} chan_names[CHAN_NAMES];
+
+void switch_gpu_chan_named(const struct tgm_chan *chan)
+{
+	struct chan_name *name = &chan_names[(u32)chan->id % CHAN_NAMES];
+
+	__atomic_store_n(&name->uid, 0, __ATOMIC_RELAXED);
+	__atomic_thread_fence(__ATOMIC_RELEASE);
+	memcpy(name->owner, chan->owner, sizeof(name->owner));
+	__atomic_store_n(&name->uid, (u32)chan->id, __ATOMIC_RELEASE);
+}
+
+void switch_gpu_writer_process(const struct switch_gpu_backing_token *token, char *process,
+			       size_t size)
+{
+	const struct chan_name *name = &chan_names[token->queue % CHAN_NAMES];
+	char owner[sizeof(name->owner)];
+
+	if (token->engine == SWITCH_GPU_ENGINE_GM20B &&
+	    __atomic_load_n(&name->uid, __ATOMIC_ACQUIRE) == token->queue) {
+		memcpy(owner, name->owner, sizeof(owner));
+		__atomic_thread_fence(__ATOMIC_ACQUIRE);
+		if (__atomic_load_n(&name->uid, __ATOMIC_RELAXED) == token->queue) {
+			scnprintf(process, size, "%.16s", owner);
+			return;
+		}
+	}
+	scnprintf(process, size, "-");
+}
+#endif
+
 static const char *chid_owner(int chid)
 {
 	const struct tgm_chan *chan = live_by(0, chid);

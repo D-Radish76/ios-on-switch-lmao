@@ -297,6 +297,9 @@ static int present_copy(uint64_t src_va, uint64_t stride, int32_t src_block_log2
 		mutex_unlock(&tgm_present.lock);
 		return ret;
 	}
+#if DEVELOPMENT || DEBUG
+	const u32 held = tgm_present.tokens.count;
+#endif
 #if TGM_STATS
 	cut = dst_va && tgm_copy_reset_armed();
 #endif
@@ -396,6 +399,9 @@ static int present_copy(uint64_t src_va, uint64_t stride, int32_t src_block_log2
 		__atomic_fetch_add(dependency_count ? &tgm_stats.writer : &tgm_stats.idle, 1,
 				   __ATOMIC_RELAXED);
 	mutex_unlock(&tgm_present.lock);
+#if DEVELOPMENT || DEBUG
+	switch_gpu_present_failed_writers(dependencies, dependency_count, held);
+#endif
 	return 0;
 }
 

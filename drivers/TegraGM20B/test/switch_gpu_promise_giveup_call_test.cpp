@@ -63,7 +63,7 @@ TEST_P(Call, EveryDropOfAMovedWordTheDirectPresentWaitsOnHandsItOver)
 	fake::pool[(kOffset + 4) / 4] = kValue - 1;
 	tgm_fence_pages.made[0][(kOffset + 4) / 4 - TGM_FENCE_PROMISE_WORD] = kValue;
 	const switch_gpu_backing_token other = {kValue, 0, SWITCH_GPU_ENGINE_PROMISE, kOffset + 4};
-	tgm_chan_park_promises(&reader, &other, 1);
+	parkPromises(&reader, &other, 1);
 	EXPECT_EQ(presentReleased, 1u);
 }
 
@@ -83,7 +83,7 @@ TEST_P(Call, EveryPromiseSlotWaitedOnAtOnceIsGivenUpAtOneSecond)
 				    [offset % TGM_FENCE_SLOT / 4 - TGM_FENCE_PROMISE_WORD] = kValue;
 		const switch_gpu_backing_token promise = {kValue, 0, SWITCH_GPU_ENGINE_PROMISE,
 							  offset};
-		tgm_chan_park_promises(&reader, &promise, 1);
+		parkPromises(&reader, &promise, 1);
 	}
 	reader.submitted += 1;
 	EXPECT_EQ(readerSetsTaken(), unsigned(SWITCH_GPU_GIVEUP_READER_SETS))
@@ -114,10 +114,10 @@ TEST_P(Call, SixGpuReaderChannelsAreAllLetGoAtOneSecond)
 		fake::chans.push_back(&more[i]);
 	}
 	for (auto &chan : more) {
-		tgm_chan_park_promises(&chan, &promise, 1);
+		parkPromises(&chan, &promise, 1);
 		chan.submitted += 1;
 	}
-	tgm_chan_park_promises(&more[0], &promise, 1);
+	parkPromises(&more[0], &promise, 1);
 	more[0].submitted += 1;
 	until(fake::now + 999 * kMs);
 	EXPECT_TRUE(lines.empty());
@@ -140,7 +140,7 @@ TEST_P(Call, ReadersBeyondTheRecordNeverPinThePromise)
 	for (int i = 0; i < 5; ++i) {
 		setChan(more[i], 0x40 + i, names[i], 10);
 		fake::chans.push_back(&more[i]);
-		tgm_chan_park_promises(&more[i], &promise, 1);
+		parkPromises(&more[i], &promise, 1);
 		more[i].submitted += 1;
 	}
 	reader.error = 1;
@@ -165,11 +165,11 @@ TEST_P(Call, AFifthChannelTakesTheRoomOfAReaderThatWentOn)
 		fake::chans.push_back(&more[i]);
 	}
 	for (int i = 0; i < 3; ++i) {
-		tgm_chan_park_promises(&more[i], &promise, 1);
+		parkPromises(&more[i], &promise, 1);
 		more[i].submitted += 1;
 	}
 	reader.error = 1;
-	tgm_chan_park_promises(&more[3], &promise, 1);
+	parkPromises(&more[3], &promise, 1);
 	more[3].submitted += 1;
 	for (auto &chan : more)
 		chan.error = 1;
@@ -190,7 +190,7 @@ TEST_P(Call, ASlotMadeAgainHasItsRecordForTheNewPromise)
 	tgm_fence_pages.made[0][kOffset / 4 - TGM_FENCE_PROMISE_WORD] = kValue + 1;
 	const switch_gpu_backing_token next = {kValue + 1, 0, SWITCH_GPU_ENGINE_PROMISE, kOffset};
 	const uint64_t parked = fake::now;
-	tgm_chan_park_promises(&reader, &next, 1);
+	parkPromises(&reader, &next, 1);
 	reader.submitted += 1;
 	until(parked + 999 * kMs);
 	EXPECT_TRUE(lines.empty());
@@ -228,7 +228,7 @@ TEST_P(Call, ReadersBeyondTheRecordThatAllDiedAreGivenUpAtTheSecond)
 	for (int i = 0; i < 5; ++i) {
 		setChan(more[i], 0x40 + i, names[i], 10);
 		fake::chans.push_back(&more[i]);
-		tgm_chan_park_promises(&more[i], &promise, 1);
+		parkPromises(&more[i], &promise, 1);
 		more[i].submitted += 1;
 	}
 	reader.error = 1;
@@ -251,7 +251,7 @@ TEST_P(Call, EveryWayARecordEndsGivesItsReaderSetBack)
 		fake::pool[kOffset / 4] = v - 1;
 		tgm_fence_pages.made[0][kOffset / 4 - TGM_FENCE_PROMISE_WORD] = v;
 		const switch_gpu_backing_token promise = {v, 0, SWITCH_GPU_ENGINE_PROMISE, kOffset};
-		tgm_chan_park_promises(&reader, &promise, 1);
+		parkPromises(&reader, &promise, 1);
 		reader.submitted += 1;
 	};
 	for (int i = 0; i < kRounds; ++i, ++value) {

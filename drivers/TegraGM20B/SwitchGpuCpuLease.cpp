@@ -139,6 +139,9 @@ static int snapshot_read(switch_gpu_backing *backing, switch_gpu_backing_token *
 	}
 	const switch_gpu_backing_access *writer = nullptr;
 	bool failed_writer = false;
+#if DEVELOPMENT || DEBUG
+	switch_gpu_scanout_look look = {};
+#endif
 	for (uint32_t i = 0; !result && i < backing->access_count; ++i) {
 		auto &access = backing->accesses[i];
 		if (!(access.access & SWITCH_GPU_BACKING_WRITE) ||
@@ -149,6 +152,10 @@ static int snapshot_read(switch_gpu_backing *backing, switch_gpu_backing_token *
 		if (status < 0) {
 			switch_gpu_backing_note_failure_locked(backing, access, status);
 			failed_writer = true;
+#if DEVELOPMENT || DEBUG
+			look.failed = access.token;
+			look.failed_status = status;
+#endif
 		} else {
 			writer = &access;
 		}
@@ -175,6 +182,14 @@ static int snapshot_read(switch_gpu_backing *backing, switch_gpu_backing_token *
 			  SWITCH_GPU_BACKING_READ | SWITCH_GPU_BACKING_CPU_NO_CACHE |
 				  (pending > 0 ? uint32_t(SWITCH_GPU_BACKING_PROMISED) : 0u),
 			  writer ? writer->token : switch_gpu_backing_token{}};
+#if DEVELOPMENT || DEBUG
+		look.allocation = backing->id;
+		look.content = backing->content + uint64_t(pending);
+		look.writer = lease->producer;
+		look.surface = backing->surface_id;
+		look.promised = pending;
+		lease->look = look;
+#endif
 		backing->cpu_leases = lease;
 		*producer = lease->producer;
 		*out = lease;
@@ -214,6 +229,14 @@ extern "C" int switch_gpu_backing_snapshot_read_promises(switch_gpu_backing *bac
 					 capacity, &promised);
 	return result ? result : int(promised);
 }
+
+#if DEVELOPMENT || DEBUG
+extern "C" void switch_gpu_cpu_lease_look(const switch_gpu_cpu_lease *lease,
+					  switch_gpu_scanout_look *look)
+{
+	*look = lease->look;
+}
+#endif
 
 extern "C" int switch_gpu_backing_snapshot_read_wait(switch_gpu_backing *backing,
 						     switch_gpu_backing_token *producer,

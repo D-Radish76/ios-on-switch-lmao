@@ -164,14 +164,6 @@ int switch_gpu_order_waits_locked(struct tgm_chan *chan)
 	return kicked != 0;
 }
 
-int tgm_order_waits(struct tgm_chan *chan)
-{
-	mutex_lock(&tgm_live_lock);
-	const int result = switch_gpu_order_waits_locked(chan);
-	mutex_unlock(&tgm_live_lock);
-	return result;
-}
-
 static int sync_wait(u64 id, u32 seqno, u64 end)
 {
 	const u32 waiter = (u32)(id % TGM_WAITERS);
