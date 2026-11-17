@@ -22,9 +22,10 @@ namespace {
 // of engine the change itself
 TEST(RawMetalFenceSource, EveryRawEncoderOpensWithADrainOrAnEngineChange)
 {
-    const std::string gpu = SourceText("../raw/runtime/raw_gpu.cpp");
-    EXPECT_THAT(Body(gpu, "BlitEncoder *CommandBuffer::blit()"), HasSubstr("blitOpening("));
-    EXPECT_THAT(Between(Body(gpu, "void RenderEncoder::end()"), "// pass prologue:", "for (uint32_t j = 0;"),
+    EXPECT_THAT(Body(SourceText("../raw/runtime/raw_blit.cpp"), "BlitEncoder *CommandBuffer::blit()"),
+                HasSubstr("blitOpening("));
+    EXPECT_THAT(Between(Body(SourceText("../raw/runtime/raw_pass_end.cpp"), "void RenderEncoder::end()"),
+                        "// pass prologue:", "for (uint32_t j = 0;"),
                 HasSubstr("passOpening("));
     // the compute encoder drains through the waiting INVALIDATE_SHADER_CACHES (raw_compute_opening_test pins its methods)
     const std::string compute = SourceText("../raw/runtime/raw_compute.cpp");

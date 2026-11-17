@@ -156,7 +156,7 @@ TEST(RawPrivateComp, EveryLaidOutShapeMovesWholeAndKeepsWhatWorkSubmittedReads)
     EXPECT_THAT(copy, HasSubstr("layer < std::max(from.layers, 1u)")) << "every layer";
     EXPECT_THAT(copy, HasSubstr("sampleGrid(from.samples, sx, sy)")) << "every sample";
     EXPECT_THAT(Body(source, "void Device::releasePrivateCompressed("), HasSubstr("delete stale;"));
-    const std::string laid = Body(SourceText("../raw/runtime/raw_gpu.cpp"), "bool Device::createLaidOut(");
+    const std::string laid = Body(SourceText("../raw/runtime/raw_textures.cpp"), "bool Device::createLaidOut(");
     EXPECT_THAT(laid, HasSubstr("ask.compressKind && !at && !zeta && takeCompressed(bytes, ask.compressKind, comp)"));
     EXPECT_THAT(laid, HasSubstr("noteCompressed(ask, comp, bytes, t);"));
 }

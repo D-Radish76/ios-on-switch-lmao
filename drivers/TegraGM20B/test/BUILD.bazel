@@ -1042,7 +1042,9 @@ host_test(
     data = [
         "//drivers/TegraGM20BMetal:raw/runtime/raw_amplification.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_vertex_streams.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_command_buffer.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_gpu.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_gpu_internal.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_tessellation.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_multisample.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_pack.cpp",

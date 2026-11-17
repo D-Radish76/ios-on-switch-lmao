@@ -58,7 +58,7 @@ TEST(RawStamps, ACommandBuffersTwoReleasesTimeIt)
         ASSERT_TRUE(stampedNanoseconds(slot, stamp, ns)) << stamp;
         EXPECT_EQ(ns, 1'000'000u) << stamp;
     }
-    const std::string raw = SourceText("../raw/runtime/raw_gpu.cpp");
+    const std::string raw = SourceText("../raw/runtime/raw_command_buffer.cpp");
     EXPECT_THAT(Body(raw, "CommandBuffer *Device::begin()"), HasSubstr("emitStartStamp(p, stamps_.va, cb.stamp);"));
     EXPECT_THAT(Body(raw, "bool CommandBuffer::commit(uint32_t &seqno)"),
                 HasSubstr("emitEndStamp(p, d.stamps_.va, stamp);"));
@@ -180,7 +180,7 @@ TEST(RawStamps, TheEndReleaseWaitsNoLongerThanTheKernelsFence)
         Body(gpu, "static u32 chan_fence_job(struct tgm_chan *chan, int external, u32 first, u32 next, int quiet");
     EXPECT_THAT(fence, HasSubstr("PUSH_NVSQ(push, NV906F, NVB06F_WFI, 0);"));
     EXPECT_THAT(fence, HasSubstr("NVDEF(NV906F, SEMAPHORED, RELEASE_WFI, EN)"));
-    const std::string raw = SourceText("../raw/runtime/raw_gpu.cpp");
+    const std::string raw = SourceText("../raw/runtime/raw_command_buffer.cpp");
     const std::string commit = Body(raw, "bool CommandBuffer::commit(uint32_t &seqno)");
     const size_t flush = commit.find("tiledCacheFlush(p.at)"), stamp = commit.find("emitEndStamp(");
     ASSERT_NE(flush, std::string::npos);

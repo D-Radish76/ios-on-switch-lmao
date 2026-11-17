@@ -33,7 +33,8 @@ TEST(RawCbuf, BindsAreWhole256ByteUnits)
 TEST(RawCbuf, EveryBindSiteSizesThroughTheHelper)
 {
     const std::regex bind(R"(CB_SELECTOR_A,\s*\{([^,]+),)");
-    for (const char *file : {"../raw/runtime/raw_gpu.cpp", "../raw/runtime/raw_split.cpp"}) {
+    for (const char *file :
+         {"../raw/runtime/raw_pipelines.cpp", "../raw/runtime/raw_draw_prepare.cpp", "../raw/runtime/raw_split.cpp"}) {
         const std::string text = SourceText(file);
         int sites = 0;
         for (auto it = std::sregex_iterator(text.begin(), text.end(), bind); it != std::sregex_iterator(); ++it) {

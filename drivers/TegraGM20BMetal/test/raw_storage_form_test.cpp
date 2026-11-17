@@ -116,7 +116,7 @@ TEST(KeyTally, AFullTableCountsTheRestAsOverflow)
 // Rule storage.compressed: a shadow a storage form views, like a memoryless backing it views, takes compressed memory
 TEST(StorageForm, StorageBoundBackingsAndShadowsCompressUnderTheRule)
 {
-    const std::string encoder = switch_ios::test::SourceText("../raw/runtime/raw_gpu.cpp");
+    const std::string encoder = switch_ios::test::SourceText("../raw/runtime/raw_pass_begin.cpp");
     EXPECT_EQ(switch_ios::test::Count(encoder, "dev_->storageCompressedOk() || !(pass.storageMask >> j & 1)"), 2u)
         << "the shadow's backing and the memoryless one's";
 }

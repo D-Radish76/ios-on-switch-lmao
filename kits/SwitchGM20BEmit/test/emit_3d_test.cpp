@@ -23,7 +23,7 @@
 
 namespace {
 
-namespace g = driver::raw_gpu_cpp;
+namespace g = driver::raw_gpu_internal_h;
 using switch_gm20b_test::Method;
 using switch_gm20b_test::Methods;
 using switch_gm20b_test::Words;
@@ -32,7 +32,9 @@ using testing::HasSubstr;
 const std::string &rawGpu()
 {
     static const std::string text =
-        switch_ios::test::SourceText("../../../drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp");
+        switch_ios::test::SourceText("../../../drivers/TegraGM20BMetal/raw/runtime/raw_draw.cpp") +
+        switch_ios::test::SourceText("../../../drivers/TegraGM20BMetal/raw/runtime/raw_draw_prepare.cpp") +
+        switch_ios::test::SourceText("../../../drivers/TegraGM20BMetal/raw/runtime/raw_pass_end.cpp");
     return text;
 }
 

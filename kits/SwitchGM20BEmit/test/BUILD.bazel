@@ -201,7 +201,11 @@ host_test(
         "//kits/SwitchGM20B/test:driver_constants_h",
     ],
     copts = ["-Idrivers/TegraGM20B"],
-    data = ["//drivers/TegraGM20BMetal:raw/runtime/raw_gpu.cpp"],
+    data = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_draw.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_draw_prepare.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_pass_end.cpp",
+    ],
     deps = [
         ":emit",
         "//kits/SwitchGM20B:classes",

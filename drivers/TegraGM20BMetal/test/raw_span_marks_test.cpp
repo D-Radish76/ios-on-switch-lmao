@@ -183,12 +183,15 @@ TEST(RawSpanMarks, OnlyTheRenderServerMarksAndEveryDrawAndPrologueIsMarked)
 {
     const std::string gpu = SourceText("../raw/runtime/raw_gpu.cpp");
     EXPECT_NE(gpu.find("if (role_ == Role::RenderServer && k_.allocControl(SpanMarks::kBytes"), std::string::npos);
-    const std::string finish = Body(gpu, "void RenderEncoder::finishDraw(");
+    const std::string finish = Body(SourceText("../raw/runtime/raw_draw.cpp"), "void RenderEncoder::finishDraw(");
     EXPECT_NE(finish.find("markSpan(p_, dev_->spans_.reserve(), SpanKind::Draws)"), std::string::npos);
-    const std::string end = Body(gpu, "void RenderEncoder::end()");
+    const std::string end = Body(SourceText("../raw/runtime/raw_pass_end.cpp"), "void RenderEncoder::end()");
     EXPECT_NE(end.find("markSpan(p, prologueMark_, SpanKind::Prologue)"), std::string::npos);
-    EXPECT_NE(Body(gpu, "RenderEncoder *CommandBuffer::render(").find("e.prologueMark_ = dev_->spans_.reserve()"),
+    EXPECT_NE(Body(SourceText("../raw/runtime/raw_pass_begin.cpp"), "RenderEncoder *CommandBuffer::render(")
+                  .find("e.prologueMark_ = dev_->spans_.reserve()"),
               std::string::npos);
-    EXPECT_NE(Body(gpu, "CommandBuffer *Device::begin()").find("spans_.begin(cb.stamp)"), std::string::npos);
+    EXPECT_NE(Body(SourceText("../raw/runtime/raw_command_buffer.cpp"), "CommandBuffer *Device::begin()")
+                  .find("spans_.begin(cb.stamp)"),
+              std::string::npos);
 }
 }  // namespace

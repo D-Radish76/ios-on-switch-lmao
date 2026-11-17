@@ -53,7 +53,7 @@ TEST(RawWriterPromiseSource, TheLastRangeCarriesThemAndFinishGivesBackTheRest)
                  "unhold(cb);");
     const std::string events = SourceText("../raw/runtime/RawMetalEvents.mm");
     EXPECT_THAT(Between(events, "void unhold(RMCommandBuffer *cb)\n{", "\n}\n"), Not(HasSubstr("Promise")));
-    const std::string gpu = SourceText("../raw/runtime/raw_gpu.cpp");
+    const std::string gpu = SourceText("../raw/runtime/raw_command_buffer.cpp");
     EXPECT_THAT(gpu, HasSubstr("last && !promises.empty() ? &promises : nullptr"));
     expectBefore(gpu, "published = true;", "promisesKept |= last && !promises.empty();");
 }

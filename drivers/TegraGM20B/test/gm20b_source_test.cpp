@@ -628,10 +628,12 @@ TEST(GM20BKillSource, AKilledChannelLeavesItsConnectionWorking)
 TEST(GM20BRawReopenSource, ReopenKeepsTheHeapAndReplaysTheContext)
 {
 	const std::string raw = SourceText("../../TegraGM20BMetal/raw/runtime/raw_gpu.cpp");
+	const std::string channel =
+		SourceText("../../TegraGM20BMetal/raw/runtime/raw_command_buffer.cpp");
 	// raw_channel_recovery.h makeChannel makes the channel, then runs newContext on it
 	const CodeText reopen =
-		Block(raw, "bool Device::reopen()") +
-		Block(raw, "bool Device::newContext(uint32_t channel, uint32_t &seq)");
+		Block(channel, "bool Device::reopen()") +
+		Block(channel, "bool Device::newContext(uint32_t channel, uint32_t &seq)");
 	EXPECT_FALSE(reopen.has("placed_"));
 	EXPECT_FALSE(reopen.has("heapPlaced_"));
 	EXPECT_FALSE(reopen.has("pipelines_"));
@@ -662,12 +664,13 @@ TEST(GM20BRawReopenSource, ReopenKeepsTheHeapAndReplaysTheContext)
 	      "case RelocTicketsLo:", "case RelocTicketsHi:"})
 		EXPECT_TRUE(relocated.has(reloc));
 	EXPECT_TRUE(context.has("sampleWords(p, 1, root_.va);"));
-	EXPECT_TRUE(Block(raw, "void sampleWords(Push &p, uint32_t samples, uint64_t root,")
+	EXPECT_TRUE(Block(SourceText("../../TegraGM20BMetal/raw/runtime/raw_gpu_internal.h"),
+			  "void sampleWords(Push &p, uint32_t samples, uint64_t root,")
 			    .has("sampleLayoutMethods(p, l, kRootBytes, root);"));
 	EXPECT_TRUE(Block(SourceText("../../TegraGM20BMetal/raw/runtime/raw_multisample.h"),
 			  "inline void sampleLayoutMethods(")
 			    .has("p.inc(NVB197_SET_CONSTANT_BUFFER_SELECTOR_A,"));
-	const CodeText begin = Block(raw, "CommandBuffer *Device::begin()");
+	const CodeText begin = Block(channel, "CommandBuffer *Device::begin()");
 	EXPECT_TRUE(begin.before("!reopen())", "p.m(INVALIDATE_SHADER_CACHES_NO_WFI,"));
 }
 

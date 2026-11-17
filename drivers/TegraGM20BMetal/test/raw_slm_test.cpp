@@ -154,7 +154,7 @@ size_t at(const std::string &text, const std::string &what)
 // the area ahead of its prologue; a pack made before the methods were the runtime's has them dropped at the bind.
 TEST(SlmOwned, EveryPlacedProgramGetsTheAreaBeforeItsBind)
 {
-    const std::string gpu = SourceText("../raw/runtime/raw_gpu.cpp");
+    const std::string gpu = SourceText("../raw/runtime/raw_pipelines.cpp");
     const std::string pack = Body(gpu, "Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)");
     // a tessellation state's control and evaluation programs count too
     EXPECT_LT(at(pack, "uint64_t slm = std::max(slmPerWarpOfHeader(vs.header), slmPerWarpOfHeader(fs.header));"),
@@ -176,7 +176,8 @@ TEST(SlmOwned, EveryPlacedProgramGetsTheAreaBeforeItsBind)
                 HasSubstr("dev.slmNeed(slmPerWarpOfQmd(k->qmd))"));
     EXPECT_THAT(Body(compute, "const ComputeState *placeCompute(Device &dev, const ComputeRecord &r)"),
                 HasSubstr("dev.slmNeed(slmPerWarpOfQmd(r.kernel.qmd))"));
-    const std::string commit = Body(gpu, "bool CommandBuffer::commit(uint32_t &seqno)");
+    const std::string commit =
+        Body(SourceText("../raw/runtime/raw_command_buffer.cpp"), "bool CommandBuffer::commit(uint32_t &seqno)");
     EXPECT_THAT(commit, HasSubstr("segments_.insert(0,"));
     EXPECT_LT(at(commit, "emitSlm(p, slmVa,"), at(commit, "d.job(d.setView_, d.channel_,"));
     const std::string build = Body(gpu, "void Device::build(Pipeline &pl, const PackPipeline &pp,");
