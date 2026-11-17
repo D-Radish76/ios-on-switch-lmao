@@ -32,12 +32,8 @@ TEST(GM20BSubmitLocksSource, ProducerChannelsResolveUnderOneLiveLock)
 	EXPECT_EQ(all.count("mutex_lock(&tgm_live_lock)"), 1u);
 	EXPECT_TRUE(all.before("backing_unsettled(dependencies, dependency_count, unsettled)",
 			       "mutex_lock(&tgm_live_lock)"));
-	EXPECT_TRUE(
-		all.before("mutex_lock(&tgm_live_lock)",
-			   "backing_waits(chan, dependencies, dependency_count, unsettled, 0)"));
-	EXPECT_TRUE(
-		all.before("backing_waits(chan, dependencies, dependency_count, unsettled, 0)",
-			   "backing_waits(chan, dependencies, dependency_count, unsettled, 1)"));
+	EXPECT_TRUE(all.before("mutex_lock(&tgm_live_lock)",
+			       "backing_waits(chan, dependencies, dependency_count, unsettled)"));
 	const CodeText one = Block(exec, "static int backing_dependency(");
 	EXPECT_TRUE(one.has("live_by_uid(token->queue)"));
 	EXPECT_FALSE(one.has("mutex_lock("));
@@ -62,17 +58,14 @@ TEST(GM20BSubmitLocksSource, AJobsRecordsGoUpBeforeItsKick)
 	EXPECT_EQ(body.count("chan->chan.gpfifo.cur = ring_cur;"), 1u);
 	EXPECT_TRUE(
 		body.before("chan->chan.defer_kick = true;",
-			    "backing_waits(chan, dependencies, dependency_count, unsettled, 1)"));
+			    "backing_waits(chan, dependencies, dependency_count, unsettled)"));
 	EXPECT_TRUE(
-		body.afterLast("backing_waits(chan, dependencies, dependency_count, unsettled, 1)")
+		body.afterLast("backing_waits(chan, dependencies, dependency_count, unsettled)")
 			.before("mutex_unlock(&tgm_live_lock);",
 				"switch_gpu_backing_publish(owned);"));
 	const CodeText published = body.afterLast("switch_gpu_backing_publish(owned);");
 	EXPECT_FALSE(published.has("goto rollback;"));
 	EXPECT_TRUE(published.has("*seqno = chan_fence_job("));
-	const CodeText fence = Block(exec, "static u32 chan_fence_job(");
-	EXPECT_TRUE(fence.before("chan_doorbell(chan);", "switch_gpu_backing_finish(owned);"));
-	EXPECT_TRUE(fence.before("switch_gpu_backing_finish(owned);", "tgm_sched_kicked("));
 	const CodeText job = Block(unit("TegraGM20BUserClientJobSubmit.cpp"),
 				   "IOReturn AGXDeviceUserClient::runJobUses(");
 	EXPECT_TRUE(job.has("jobVisibility, releases, keptCount, &transaction);"));

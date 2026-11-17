@@ -195,7 +195,7 @@ TEST(GM20BPromiseSource, PresentsAndJobsOrderBehindWriterPromises)
 	const CodeText kick =
 		Block(exec, "static inline __attribute__((always_inline)) int chan_exec_body(");
 	EXPECT_TRUE(
-		kick.before("backing_waits(chan, dependencies, dependency_count, unsettled, 1);",
+		kick.before("backing_waits(chan, dependencies, dependency_count, unsettled);",
 			    "PUSH_KICK(&chan->chan.push);"));
 	EXPECT_TRUE(kick.before("PUSH_KICK(&chan->chan.push);",
 				"switch_gpu_chan_park_promises_locked(chan, dependencies, "
@@ -206,7 +206,7 @@ TEST(GM20BPromiseSource, PresentsAndJobsOrderBehindWriterPromises)
 				"switch_gpu_chan_fence_sealed("));
 	const CodeText copiedDependencies = Block(exec, "int tgm_backing_dependencies(");
 	EXPECT_TRUE(copiedDependencies.before(
-		"backing_waits(chan, tokens, count, unsettled, 1);",
+		"backing_waits(chan, tokens, count, unsettled);",
 		"switch_gpu_chan_park_promises_locked(chan, tokens, count, unsettled);"));
 	// the hang rule raises no promise: a reader parked on one is a victim it spares, and the give-up is the one place
 	EXPECT_FALSE(Block(unit("gpu_hang.c"), "enum tgm_hang tgm_hang_recover(").has("promise"));

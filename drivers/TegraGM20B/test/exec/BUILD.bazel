@@ -103,7 +103,8 @@ MUTANTS = [
     "after_doorbell",
     "before_checks",
     "no_empty_commit",
-    "before_finish",
+    "finish_after_doorbell",
+    "finish_at_publish",
 ]
 
 py_binary(
