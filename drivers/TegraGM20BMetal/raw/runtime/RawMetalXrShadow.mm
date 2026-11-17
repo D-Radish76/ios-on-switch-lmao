@@ -74,6 +74,23 @@ void rmXrShadowBlock(RMCommandBuffer *cb)
     cb->_xrShadowOpen.pass.blocked = true;
 }
 
+// A failed variant is made again as a new object, so its refusal line is keyed by what it is made of
+static uint64_t refusalKey(const RMXrShadowDraw &d, uint8_t colours)
+{
+    uint64_t key = switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw", "xr.shadow_twin"), d.pipe->_packKey);
+    key = switch_refusal_key_with(key, uint64_t(colours) | uint64_t(d.tests) << 8 | uint64_t(d.planes) << 16 |
+                                           uint64_t(d.xrSlots) << 32);
+    for (const raw::CubicBinds::Sampler &s : d.binds.samplers)
+        key = switch_refusal_key_with(key, uint64_t(s.slot) | uint64_t(s.s) << 8 | uint64_t(s.t) << 16 |
+                                               uint64_t(s.r) << 24 | uint64_t(s.border) << 32 |
+                                               uint64_t(s.normalized) << 40 | uint64_t(s.stage) << 48);
+    for (const raw::CubicBinds::Texture &t : d.binds.textures)
+        key = switch_refusal_key_with(key, uint64_t(t.slot) | uint64_t(t.format) << 8 | uint64_t(t.stage) << 40);
+    for (const raw::WrittenTexture &w : d.written)
+        key = switch_refusal_key_with(key, uint64_t(w.slot) | uint64_t(w.format) << 8);
+    return key;
+}
+
 // The shadowed variant of each state that touches a held colour, asked now so the queue head finds it made
 void rmXrShadowEnd(RMCommandBuffer *cb)
 {
@@ -91,13 +108,36 @@ void rmXrShadowEnd(RMCommandBuffer *cb)
     twins.passAt = o.passAt;
     for (const RMXrShadowDraw &d : o.draws)
         if (const uint8_t mask = d.touched & held)
-            twins.twins.push_back({d.base ? static_cast<const void *>(d.base) : (__bridge const void *)d.pipe,
-                                   rmRenderVariant(d.pipe, d.binds, d.tests, d.planes, d.xrSlots, d.written, mask)});
+            twins.twins.push_back({d.base ? static_cast<const void *>(d.base) : (__bridge const void *)d.pipe, d.pipe,
+                                   rmRenderVariant(d.pipe, d.binds, d.tests, d.planes, d.xrSlots, d.written, mask),
+                                   refusalKey(d, mask)});
     o.draws.clear();
     cb->_passes.own(o.passAt).xrShadows = held;
     cb->_xrShadowPasses.push_back(std::move(twins));
     // the queue head may still drop these shadows (rmXrShadowReadiness): only an encode after the commit can follow
     rmPipelineVeto(cb, VetoShadows);
+}
+
+// Every state that draws into a held colour has a shadowed variant, so one the compiler refused or failed is a defect,
+// its key named once per process. The line's own key gates the name's lookup: a pass drawn every frame costs a relaxed
+// load
+static void reportTwin(const RMXrShadowTwin &twin, bool failed, uint8_t colours)
+{
+    if (!switch_refusal_first(twin.refusal))
+        return;
+    std::string key = twin.pipe->_key;
+    {
+        std::lock_guard<raw::Mutex> lock(twin.pipe->_variantLock);
+        for (const auto &[name, variant] : twin.pipe->_variants)
+            if (variant.get() == twin.shadowed) {
+                key += name;
+                break;
+            }
+    }
+    SWITCH_REFUSE_DETAIL("raw", "xr.shadow_twin", raw::Pack::fnv(key.data(), key.size()),
+                         "the shader compiler %s the shadowed variant %s: its pass's extended-range colours %#x are drawn "
+                         "from their codes, without their half shadow",
+                         failed ? "failed" : "refused", key.c_str(), unsigned(colours));
 }
 
 // A pass whose shadowed variants are not all made holds no shadow: its draws read the codes, as before
@@ -119,15 +159,12 @@ int rmXrShadowReadiness(RMCommandBuffer *cb, size_t from, size_t to)
             }
             const Variant::State state = twin.shadowed->observe(std::move(observer));
             pending |= state == Variant::State::Pending;
-            given |= state == Variant::State::Refused || state == Variant::State::Failed;
+            if (state == Variant::State::Refused || state == Variant::State::Failed) {
+                reportTwin(twin, state == Variant::State::Failed, cb->_passes[t.passAt].xrShadows);
+                given = true;
+            }
         }
         if (given) {
-            static std::atomic<bool> said{false};
-            if (!said.exchange(true, std::memory_order_relaxed))
-                os_log_error(rawLog(),
-                             "raw: a pass's extended-range colours %#x are drawn without their half shadow, from the "
-                             "codes: a draw's state has no shadowed variant (once per process)",
-                             unsigned(cb->_passes[t.passAt].xrShadows));
             cb->_passes[t.passAt].xrShadows = 0;
             t.twins.clear();
         }
@@ -146,8 +183,10 @@ const RMXrShadowTwins *rmXrShadowTwinsOf(const RMCommandBuffer *cb, uint32_t pas
 }
 
 // Each held colour's shadow, set before the pass: a Clear's halves, else the tile of the attachment's codes as the pass
-// begins (the pack's tile state)
-bool rmXrShadowFill(raw::CommandBuffer *rc, const RMPass &pass, raw::PassDesc &p, const char **why)
+// begins (the pack's tile state). The codes' header it reads goes in `codes`, which lives as long as `rc`: rc caches a
+// texture's reads by its address
+bool rmXrShadowFill(raw::CommandBuffer *rc, const RMPass &pass, raw::PassDesc &p, std::deque<raw::Texture> &codes,
+                    const char **why)
 {
     raw::Device &d = *gRM->raw;
     for (uint8_t held = pass.xrShadows; held; held &= uint8_t(held - 1)) {
@@ -175,21 +214,25 @@ bool rmXrShadowFill(raw::CommandBuffer *rc, const RMPass &pass, raw::PassDesc &p
         } else {
             q.color[0].load = raw::ColorAttachment::DontCare;
         }
-        raw::Texture codes = *target;
-        codes.standIn = nullptr;
-        if (!cleared && codes.sampled && rc->readTexture(&t->_raw) == &t->_raw) {
-            raw::BlitEncoder *b = rc->blit();
-            b->copyTexels(codes, 0, 0, 0, *codes.sampled, 0, 0, 0, codes.width, codes.height);
-            b->end();
+        const raw::Texture *tile = nullptr;
+        if (!cleared) {
+            raw::Texture &own = codes.emplace_back(*target);
+            own.standIn = nullptr;
+            if (own.sampled && rc->readTexture(&t->_raw) == &t->_raw) {
+                raw::BlitEncoder *b = rc->blit();
+                b->copyTexels(own, 0, 0, 0, *own.sampled, 0, 0, 0, own.width, own.height);
+                b->end();
+            }
+            tile = &own;
         }
         raw::RenderEncoder *e = rc->render(q);
         if (!e) {
             *why = "an extended-range colour's half shadow the raw path cannot render";
             return false;
         }
-        if (!cleared) {
+        if (tile) {
             e->setPipeline(d.pipeline(raw::Pack::fnv(raw::xrTileState(form), strlen(raw::xrTileState(form)))));
-            e->setTexture(0, &codes);
+            e->setTexture(0, tile);
             e->setViewport(0, 0, shadow->width, shadow->height, 0, 1);
             e->setScissor(0, 0, shadow->width, shadow->height);
             if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))

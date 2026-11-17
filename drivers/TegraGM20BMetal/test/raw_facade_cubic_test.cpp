@@ -14,6 +14,7 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <future>
 #include <mutex>
 #include <unistd.h>
@@ -68,6 +69,7 @@ struct Compiler {
     std::mutex mutex;
     std::condition_variable answered;
     std::vector<raw::CompileRequest> requests;
+    std::function<bool(const raw::CompileRequest &)> refuses;
 
     bool serve(const std::string &directory)
     {
@@ -123,13 +125,16 @@ struct Compiler {
                         program.image[81] = uint8_t(texture.format);
                 program.image[82] = request.variant.fragmentTests;
                 program.image[83] = request.variant.twoPlane;
+                program.image[84] = request.variant.xrShadows;
                 program.id = std::to_string(raw::Pack::fnv(program.image.data(), program.image.size()));
                 program.gprs = 8;
                 program.cbufTypes = {raw::CbufRoot, raw::CbufSet};
             }
             record.blob = {0x1a00, 0x1111};
             record.splitTried = true;
-            const std::string entry = raw::encodeEntry(cache, &record, "");
+            const bool refused = refuses && refuses(request);
+            const std::string entry = refused ? raw::encodeEntry(cache, nullptr, "refused by the test's compiler")
+                                              : raw::encodeEntry(cache, &record, "");
             std::vector<raw::LibraryIdentity> ids;
             for (const auto &source : request.libraries)
                 ids.push_back(raw::identityOf(source));
@@ -140,7 +145,7 @@ struct Compiler {
                 requests.push_back(std::move(request));
             }
             answered.notify_all();
-            return int32_t(TegraGM20BCompileMade);
+            return int32_t(refused ? TegraGM20BCompileRefused : TegraGM20BCompileMade);
         };
         return true;
     }
@@ -503,6 +508,98 @@ void composedForms()
     EXPECT_EQ(gOpens, 0);
 }
 
+// A BGRA10_XR colour written unblended by one state and then blended into by another in the same pass: the pass holds the
+// colour's half shadow (raw_xr_shadow.h) and asks the shader compiler for both states' " | xrsh=1" variants. Made, both
+// draws take them; with `refused` the compiler refuses both, both draws take their states' own records, and each refused
+// variant's key has a refusal line of its own.
+void shadowedPass(bool refused)
+{
+    constexpr MTLPixelFormat colour = MTLPixelFormat(552);
+    const std::string directory =
+        dir() + "/xr-shadow-" + (refused ? "refused-" : "made-") + std::to_string(getpid());
+    mkdir(directory.c_str(), 0700);
+    Compiler compiler;
+    if (refused)
+        compiler.refuses = [](const raw::CompileRequest &request) {
+            return request.variant.xrShadows != 0;
+        };
+    ASSERT_TRUE(compiler.serve(directory));
+    const std::string pack = writePack(packKey(MTLPixelFormatBGRA8Unorm));
+    NSString *why = nil;
+    id<MTLDevice> device = raw_metal_device_open(pack.c_str(), 0, nil, &why);
+    ASSERT_TRUE(device != nil) << (why ? why.UTF8String : "");
+    const std::string cache = directory + "/cache";
+    mkdir(cache.c_str(), 0700);
+    raw_metal_complete_states(cache.c_str(), nullptr);
+    id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(writeMetallib().c_str())] error:nil];
+    ASSERT_TRUE(library != nil);
+    MTLRenderPipelineDescriptor *blending = descriptor(library, colour);
+    MTLRenderPipelineColorAttachmentDescriptor *over = blending.colorAttachments[0];
+    over.blendingEnabled = YES;
+    over.sourceRGBBlendFactor = over.sourceAlphaBlendFactor = MTLBlendFactorOne;
+    over.destinationRGBBlendFactor = over.destinationAlphaBlendFactor = MTLBlendFactorOneMinusSourceAlpha;
+    id<MTLRenderPipelineState> writer = [device newRenderPipelineStateWithDescriptor:descriptor(library, colour)
+                                                                               error:nil];
+    id<MTLRenderPipelineState> blender = [device newRenderPipelineStateWithDescriptor:blending error:nil];
+    ASSERT_TRUE(writer != nil && blender != nil);
+    __unsafe_unretained RMPipeline *states[2] = {(RMPipeline *)writer, (RMPipeline *)blender};
+    ASSERT_TRUE(states[0]->_raw && states[1]->_raw) << "the shader compiler makes both states at their creation";
+    MTLTextureDescriptor *td =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:colour width:64 height:64 mipmapped:NO];
+    td.storageMode = MTLStorageModeShared;
+    td.usage = MTLTextureUsageRenderTarget;
+    id<MTLTexture> target = [device newTextureWithDescriptor:td];
+    id<MTLTexture> sampled = image(device, MTLTextureUsageShaderRead);
+    id<MTLSamplerState> nearest = [device newSamplerStateWithDescriptor:[MTLSamplerDescriptor new]];
+    ASSERT_TRUE(target != nil && sampled != nil && nearest != nil);
+    const size_t firstJob = kernel_model::model.jobs.size();
+    id<MTLCommandBuffer> commands = [[device newCommandQueue] commandBuffer];
+    MTLRenderPassDescriptor *pass = [MTLRenderPassDescriptor renderPassDescriptor];
+    pass.colorAttachments[0].texture = target;
+    pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+    pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+    id<MTLRenderCommandEncoder> encoder = [commands renderCommandEncoderWithDescriptor:pass];
+    for (uint32_t stage : {1u, 2u}) {
+        texture(encoder, stage, sampled);
+        sampler(encoder, stage, nearest);
+    }
+    for (id<MTLRenderPipelineState> state in @[ writer, blender ]) {
+        [encoder setRenderPipelineState:state];
+        [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
+    [encoder endEncoding];
+    ASSERT_TRUE(compiler.wait(4)) << "each state, then each state's shadowed variant at the pass's end";
+    size_t asked = 0;
+    for (const auto &request : compiler.captured())
+        asked += request.variant.xrShadows == 1;
+    EXPECT_EQ(asked, 2u);
+    raw::RenderVariant shadowed;
+    shadowed.xrShadows = 1;
+    std::vector<uint32_t> expected;
+    for (__unsafe_unretained RMPipeline *state : states) {
+        const auto twin = state->_variants.find(shadowed.name());
+        ASSERT_NE(twin, state->_variants.end()) << state->_key;
+        ASSERT_EQ(ready(*twin->second), !refused) << state->_key;
+        const uint32_t own = program(state->_raw->methods, 2);
+        if (!refused)
+            ASSERT_NE(program(twin->second->value()->methods, 2), own) << state->_key;
+        expected.push_back(refused ? own : program(twin->second->value()->methods, 2));
+    }
+    [commands commit];
+    [commands waitUntilCompleted];
+    EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
+    EXPECT_EQ(drawnPrograms(firstJob, 2), expected);
+    for (__unsafe_unretained RMPipeline *state : states) {
+        const std::string key = state->_key + shadowed.name();
+        const uint64_t line = switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw", "xr.shadow_twin"),
+                                                      raw::Pack::fnv(key.data(), key.size()));
+        EXPECT_EQ(switch_refusal_first(line), !refused) << (refused ? "no refusal line for " : "a refusal line for ")
+                                                         << key;
+    }
+    EXPECT_EQ(gOpens, 0);
+}
+
 }  // namespace
 
 TEST(RawFacadeCubic, FragmentPreparationPrecedesDrawAndSameFormatRebindsReuseIt)
@@ -536,4 +633,18 @@ TEST(RawFacadeCubic, FragmentBindingsBeforePipelineSelectThePreparedProgram)
 TEST(RawFacadeCubic, VertexCubicComposesWithDepthTestsAndTwoPlaneTargetsAtSetup)
 {
     switch_ios::test::ExpectPassesInFreshProcess(composedForms);
+}
+
+TEST(RawFacadeCubic, APassWithAnUnblendedWriterAndABlendKeepsItsHalfShadow)
+{
+    switch_ios::test::ExpectPassesInFreshProcess([] {
+        shadowedPass(false);
+    });
+}
+
+TEST(RawFacadeCubic, EachRefusedShadowedVariantHasItsOwnRefusalLine)
+{
+    switch_ios::test::ExpectPassesInFreshProcess([] {
+        shadowedPass(true);
+    });
 }

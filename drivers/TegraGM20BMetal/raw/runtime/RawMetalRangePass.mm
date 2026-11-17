@@ -199,7 +199,7 @@ bool RMRangeEncode::beginPass(size_t at)
         return fail(PredEncPassRender, refusal);
     if (!turned_.begin(*rc, p, draws, why_))
         return fail(PredPassRotated, *why_);
-    if (pass.xrShadows && !rmXrShadowFill(rc, pass, p, why_))
+    if (pass.xrShadows && !rmXrShadowFill(rc, pass, p, codes_, why_))
         return fail(PredEncPassRender, *why_, pass.xrShadows);
     cb->_xrShadowCurrent = rmXrShadowTwinsOf(cb, uint32_t(c.x));
     p.metalDepth = true;

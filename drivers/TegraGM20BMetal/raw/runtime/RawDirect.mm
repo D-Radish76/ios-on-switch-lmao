@@ -160,18 +160,22 @@ CompileOutcome Direct::make(MTLRenderPipelineDescriptor *descriptor, const std::
     };
     if (requested == PackForm::Barrier)
         return barrierForm(true);
+    // A shadowed variant stores each colour's half shadow beside its codes as a storage image, which has no ROP form: only
+    // the interlock orders those stores, so it keeps the interlocked form even where its program loads no colour (an
+    // unblended writer), and m2v cannot translate it without the interlock (its plan asks again for the shadowed variant)
+    const bool shadowed = textures.xrShadows != 0;
     CompileOutcome outcome = form(descriptor, false, textures, key, attributes, out, why, registers, split);
     if (outcome == CompileOutcome::Made) {
         const bool storage = out.pipeline.flags & PipelineStorageMetadata;
         dropUnreadFetches(out);
-        if (!storage || (out.pipeline.storageMask && loadsSurface(out)))
+        if (!storage || shadowed || (out.pipeline.storageMask && loadsSurface(out)))
             return strideTwin(descriptor, textures, key, attributes, out, why, split);
         // its program holds the pixel interlock around no load of a colour: made again without the interlock
         storageRefusal_ = out.pipeline.storageMask ? "storage form: its program loads no colour"
                                                    : "storage form: its program reads and writes no colour";
         return barrierForm(false);
     }
-    if (outcome != CompileOutcome::Refused || why.rfind("storage form", 0) != 0)
+    if (outcome != CompileOutcome::Refused || shadowed || why.rfind("storage form", 0) != 0)
         return outcome;
     storageRefusal_ = why;
     return barrierForm(false);

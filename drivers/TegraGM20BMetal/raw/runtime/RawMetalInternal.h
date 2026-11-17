@@ -377,7 +377,8 @@ void rmXrShadowBlock(RMCommandBuffer *cb);
 void rmXrShadowEnd(RMCommandBuffer *cb);
 int rmXrShadowReadiness(RMCommandBuffer *cb, size_t from, size_t to);
 const RMXrShadowTwins *rmXrShadowTwinsOf(const RMCommandBuffer *cb, uint32_t passAt);
-bool rmXrShadowFill(raw::CommandBuffer *rc, const RMPass &pass, raw::PassDesc &p, const char **why);
+bool rmXrShadowFill(raw::CommandBuffer *rc, const RMPass &pass, raw::PassDesc &p, std::deque<raw::Texture> &codes,
+                    const char **why);
 
 // RawMetalHeap.mm: the purged heaps a committed command buffer's resources lie in, given their pages back before it is encoded
 // (it counts as committed already, so no purge runs meanwhile)

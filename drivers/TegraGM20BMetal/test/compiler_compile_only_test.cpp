@@ -54,7 +54,9 @@ void environment()
 // state's cubic and test-class variants as the device asked for them, the written-format variants the corpus names, Core
 // Animation states into b3a8 drawn in its two planes and one amplified, multisampled VectorKit ground states, kernels at
 // an edge of their grid, Core Animation states that may fetch their attachment over a depth attachment and multisampled
-// (their storage forms), and a state of the function the build's libraries refuse (SWITCH_REFUSED_FRAGMENT_FUNCTION).
+// (their storage forms), RenderBox's plane_color writing an extended-range colour unblended in a pass that holds the
+// colour's half shadow (its " | xrsh=1" variant, a writer that reads no colour) into each extended-range format, and a
+// state of the function the build's libraries refuse (SWITCH_REFUSED_FRAGMENT_FUNCTION).
 // Each kind is drawn from lines both crawls' libraries hold, but for the private linked functions, which only iOS 27's
 // libraries have.
 std::vector<std::string> sample()
@@ -69,7 +71,8 @@ std::vector<std::string> sample()
         }
     };
     const std::regex linked(R"( \| (fp|vp|fl|vl) )"), msaa("samples=[24] "), depth("ds=(252|260)/"),
-        samplers(R"( smp=\S)"), quartzKernel("^D .*QuartzCore"), atOrigin("edge=0,0,0 threads=0");
+        samplers(R"( smp=\S)"), quartzKernel("^D .*QuartzCore"), atOrigin("edge=0,0,0 threads=0"),
+        unblendedXr(" c0=55[024]:15:0:");
     const auto atAnEdge = [&](const std::string &l) {
         return std::regex_replace(l, atOrigin, "edge=7,3,0 threads=1");
     };
@@ -113,6 +116,11 @@ std::vector<std::string> sample()
         }
         if (l[0] == 'R' && l.find(" | wtex=") != std::string::npos)
             take("written", l, 2);
+        if (l[0] == 'R' && l.find("| f plane_color_fragment lib=") != std::string::npos &&
+            std::regex_search(l, unblendedXr))
+            for (const char *format : {"550", "552", "554"})
+                take("shadowed writer",
+                     std::regex_replace(l, unblendedXr, std::string(" c0=") + format + ":15:0:") + " | xrsh=1", 6);
         if (l[0] == 'R' && l.find(" c0=550:") != std::string::npos && l.find("QuartzCore") != std::string::npos) {
             take("two planes", l + " | xr2p", 2);
             const std::string amplified =
@@ -276,6 +284,9 @@ TEST(CompilerCompileOnly, ItsRecordsAreTheDevicesByteForByte)
         EXPECT_TRUE(engine[i].entry == device[i].entry) << "entry " << i << " differs: " << r.key.substr(0, 300);
         if (engine[i].result == TegraGM20BCompileRefused)
             covered["refused"]++;
+        if (r.variant.xrShadows)
+            EXPECT_EQ(engine[i].result, TegraGM20BCompileMade)
+                << "a shadowed variant, which every state drawn into a held colour needs: " << r.key.substr(0, 300);
         if (engine[i].result != TegraGM20BCompileMade)
             continue;
         switch_compiler::Prepared p;
@@ -296,6 +307,17 @@ TEST(CompilerCompileOnly, ItsRecordsAreTheDevicesByteForByte)
         covered["test class"] += r.variant.fragmentTests != 0;
         covered["two planes"] += r.variant.twoPlane;
         covered["written"] += !r.variant.written.empty();
+        covered["shadowed writer"] += r.variant.xrShadows != 0;
+        if (r.variant.xrShadows) {
+            const raw::SetEntries set = raw::entriesOf(record);
+            uint8_t bound = 0;
+            for (uint32_t k = 0; k < set.size(); k++)
+                if (set[k].kind == raw::EntryXrShadow && set[k].slot < 8)
+                    bound |= uint8_t(1u << set[k].slot);
+            EXPECT_FALSE(record.pipeline.flags & raw::PipelineBarrierForm) << r.key.substr(0, 300);
+            EXPECT_EQ(record.pipeline.storageMask & r.variant.xrShadows, r.variant.xrShadows) << r.key.substr(0, 300);
+            EXPECT_EQ(bound, r.variant.xrShadows) << r.key.substr(0, 300);
+        }
         covered["amplified"] += r.fields.amplification > 1;
         covered["multisampled"] += r.fields.samples > 1;
         covered["specialized"] += std::any_of(r.stages.begin(), r.stages.end(), [](const raw::RequestStage &s) {
@@ -307,7 +329,8 @@ TEST(CompilerCompileOnly, ItsRecordsAreTheDevicesByteForByte)
     }
     for (const char *kind :
          {"render", "constexpr samplers", "storage form", "cubic", "test class", "two planes", "written",
-          "multisampled", "specialized", "kernel", "kernel with textures and samplers", "region kernel"})
+          "shadowed writer", "multisampled", "specialized", "kernel", "kernel with textures and samplers",
+          "region kernel"})
         EXPECT_GT(covered[kind], 0u) << "the sample made no " << kind << " record";
 #if SWITCH_LIBRARIES_LINK_PRIVATE_FUNCTIONS
     EXPECT_GT(covered["private linked"], 0u) << "the sample made no private linked record";

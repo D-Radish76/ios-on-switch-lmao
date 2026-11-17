@@ -38,7 +38,9 @@ struct RMXrShadowOpen {
 
 struct RMXrShadowTwin {
     const void *base;  // its draws' variant, or its RMPipeline where they record none
+    __unsafe_unretained RMPipeline *pipe;  // the command buffer retains it with its tape
     raw::Variant<raw::Pipeline> *shadowed;
+    uint64_t refusal;  // its refusal line's key: the state's and the variant's forms, kept by a variant made again
 };
 
 // A pass that holds shadows: its OpRender in the plan, its RMPass, and the shadowed variant of each state it draws
