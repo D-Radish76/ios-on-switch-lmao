@@ -53,24 +53,29 @@ protected:
     }
 };
 
+// The compiler's refusal reaches the first dispatch at its submission, or as it is recorded where the compiler answered
+// first; the second's always as it is recorded, the state keeping the refused kernel. Each names compute.nokernel.
 TEST_F(FacadeKernelRefusal, ADispatchOfARefusedKernelNamesComputeNoKernel)
 {
-    id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
-    id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
-    [e setComputePipelineState:gState];
-    [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(kRefusedThreads, 1, 1)];
-    [e endEncoding];
-    [cb commit];
-    [cb waitUntilCompleted];
-    NSString *path = [(id)cb valueForKey:@"switchRawPath"];
-    ASSERT_TRUE(path != nil);
-    EXPECT_TRUE([path isEqualToString:@"error:compute.nokernel"]) << path.UTF8String;
-    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
-    ASSERT_TRUE(cb.error != nil);
-    EXPECT_TRUE([cb.error.domain isEqualToString:MTLCommandBufferErrorDomain]);
-    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(gDevice)[@"needs"] count], 0u);
+    for (int dispatch = 0; dispatch < 2; dispatch++) {
+        SCOPED_TRACE(dispatch);
+        id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
+        id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
+        [e setComputePipelineState:gState];
+        [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(kRefusedThreads, 1, 1)];
+        [e endEncoding];
+        [cb commit];
+        [cb waitUntilCompleted];
+        NSString *path = [(id)cb valueForKey:@"switchRawPath"];
+        ASSERT_TRUE(path != nil);
+        EXPECT_TRUE([path isEqualToString:@"error:compute.nokernel"]) << path.UTF8String;
+        EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+        ASSERT_TRUE(cb.error != nil);
+        EXPECT_TRUE([cb.error.domain isEqualToString:MTLCommandBufferErrorDomain]);
+        EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
+        EXPECT_EQ(gOpens, 0);
+        EXPECT_EQ([m2vRecord(gDevice)[@"needs"] count], 0u);
+    }
 }
 
 }  // namespace
