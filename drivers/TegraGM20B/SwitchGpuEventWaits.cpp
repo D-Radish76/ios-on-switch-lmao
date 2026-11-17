@@ -138,10 +138,11 @@ int switch_gpu_event_waits_query_locked(switch_gpu_event_waits *batch)
 	return consumer <= 0 ? consumer : switch_gpu_event_waits_producers_locked(batch);
 }
 
+// A producer that failed or is gone ends the wait as its completion does: the waiter runs on what it left behind. Only
+// the waiter's own failure fails it (switch_gpu_event_waits_query_locked).
 int switch_gpu_event_waits_producers_locked(const switch_gpu_event_waits *batch)
 {
 	bool pending = batch->previous && !batch->previous->result;
-	int failure = batch->previous && batch->previous->result < 0 ? batch->previous->result : 0;
 	for (uint32_t i = 0; i < batch->count; ++i) {
 		const auto *use = batch->uses[i];
 		const int result = use->authority ? use->authority->result
@@ -149,10 +150,8 @@ int switch_gpu_event_waits_producers_locked(const switch_gpu_event_waits *batch)
 					   ? use->batchAuthority->result
 					   : switch_gpu_backing_token_status(&use->token);
 		pending |= result == 0;
-		if (result < 0)
-			failure = result;
 	}
-	return failure ? failure : pending ? 0 : 1;
+	return pending ? 0 : 1;
 }
 
 extern "C" int switch_gpu_event_waits_completion(switch_gpu_event_waits *batch,
@@ -244,12 +243,7 @@ extern "C" int switch_gpu_event_waits_prepare_dependencies(const switch_gpu_back
 	int error = 0;
 	for (uint32_t i = 0; i < count && !error; ++i) {
 		switch_gpu_event_waits *authority = nullptr;
-		const int result = switch_gpu_backing_semantic_snapshot(&tokens[i], &authority);
-		if (result < 0) {
-			error = result;
-			break;
-		}
-		if (!result)
+		if (switch_gpu_backing_semantic_snapshot(&tokens[i], &authority) <= 0)
 			continue;
 		bool duplicate = false;
 		for (uint32_t j = 0; j < used; ++j)
@@ -353,13 +347,11 @@ extern "C" int switch_gpu_event_waits_covers(switch_gpu_event_waits *batch,
 	if (!token)
 		return -22;
 	switch_gpu_event_waits *authority = nullptr;
-	const int captured = switch_gpu_backing_semantic_snapshot(token, &authority);
-	if (captured <= 0)
-		return captured ? captured : 1;
+	if (switch_gpu_backing_semantic_snapshot(token, &authority) <= 0)
+		return 1;
 	auto *s = switch_gpu_events_state();
 	IOLockLock(s->lock);
-	bool covered = authority->result == 1;
-	const int failure = authority->result < 0 ? authority->result : 0;
+	bool covered = authority->result != 0;
 	if (batch) {
 		covered |= batch->previous == authority;
 		for (uint32_t i = 0; i < batch->count && !covered; ++i) {
@@ -370,7 +362,7 @@ extern "C" int switch_gpu_event_waits_covers(switch_gpu_event_waits *batch,
 	}
 	IOLockUnlock(s->lock);
 	switch_gpu_event_waits_release(&authority);
-	return failure ? failure : covered ? 1 : 0;
+	return covered ? 1 : 0;
 }
 
 extern "C" int switch_gpu_event_waits_cached_status(const switch_gpu_event_waits *batch)
@@ -408,13 +400,8 @@ extern "C" int switch_gpu_event_waits_prepare_tokens(const switch_gpu_backing_to
 	uint32_t used = 0;
 	int error = 0;
 	for (uint32_t i = 0; i < count && !error; ++i) {
-		const int status = switch_gpu_backing_token_status(&tokens[i]);
-		if (status == 1)
+		if (switch_gpu_backing_token_status(&tokens[i]))
 			continue;
-		if (status < 0) {
-			error = status;
-			break;
-		}
 		if (!switch_gpu_events_reserve()) {
 			error = -16;
 			break;
@@ -449,9 +436,8 @@ extern "C" int switch_gpu_event_waits_covers_token(switch_gpu_event_waits *batch
 {
 	if (!token || !token->engine)
 		return -22;
-	const int status = switch_gpu_backing_token_status(token);
-	if (status)
-		return status;
+	if (switch_gpu_backing_token_status(token))
+		return 1;
 	if (!batch)
 		return 0;
 	auto *s = switch_gpu_events_state();

@@ -43,6 +43,16 @@ TEST(GpuChanNew, EveryChannelKeepsItsAcquireTimeout)
 	}
 }
 
+// A channel still running when its owner is gone is killed as a dead client's (its work WRITER_GONE), the compositor's
+// too: a compositor's own kill is LOST, which only a live compositor's may be. The teardown's bounded wait takes 1 s.
+TEST(GpuChanNew, AnAbandonedCompositorChannelIsKilledAsADeadClients)
+{
+	ASSERT_EQ(switch_chan_new_make(5, 1), 0);
+	switch_chan_new_leave_running();
+	switch_chan_new_delete();
+	EXPECT_EQ(switch_chan_new_isolated_critical(), 0);
+}
+
 TEST(GpuChanNew, AnOrdinaryChannelKeepsTheDefaultTimeslice)
 {
 	const Made made = makeAndRun(4, 0);

@@ -4,12 +4,15 @@
 // with no error, and withdraws the writes it was to make (TegraGM20BJobABI.h method 34 Withdraw): its writer promises
 // where it was held on a shared event, else the writes themselves, so a present of one of those surfaces from elsewhere
 // is refused instead of showing the frame before. One that was submitted presents once and calls method 34 for nothing.
+// In the render server such a command buffer ends the process with its cause (RawMetalFinish.mm withholdPresents).
 #include "raw_facade_harness.h"
 #include "bazel/testing/fresh_process.h"
 
 #include <gtest/gtest.h>
+#include <unistd.h>
 #include <atomic>
 #include <chrono>
+#include <cstdio>
 #include <future>
 #include <string>
 #include <thread>
@@ -63,6 +66,15 @@
 
 @end
 
+// libsyscall's abort_with_reason, stood in for as the kernel model stands in for IOKit: its reason on stderr, and the
+// process ends as the real one ends it
+extern "C" void abort_with_reason(uint32_t, uint64_t, const char *reason, uint64_t)
+{
+    fprintf(stderr, "abort_with_reason: %s\n", reason ? reason : "");
+    fflush(stderr);
+    _exit(70);
+}
+
 namespace {
 
 using namespace harness;
@@ -80,11 +92,15 @@ struct Opened {
     id<MTLRenderPipelineState> state;
 };
 
-// The facade over the pack of the BGRA8 state, and that state
-Opened openPacked()
+// The facade over the pack of the BGRA8 state, and that state; the render server's device when `renderServer`
+// (raw_metal_prepare's), else another process's
+Opened openPacked(bool renderServer = false)
 {
     const std::string metallib = writeMetallib();
-    id<MTLDevice> device = open(writePack(packKey(kPacked)));
+    const std::string pack = writePack(packKey(kPacked));
+    if (renderServer)
+        raw_metal_prepare(pack.c_str(), 0);
+    id<MTLDevice> device = open(pack);
     if (!device)
         return {};
     NSError *error = nil;
@@ -282,7 +298,64 @@ void failedWaitReturnsOnceItsWriteIsWithdrawn()
     EXPECT_EQ(m.promiseCalls[0].handles.size(), 1u);
 }
 
+// A presenting command buffer that fails as it is recorded (a pass with no visibility buffer, which Metal's validation
+// stops): `drawable` is never presented
+void commitFailedFrame(const Opened &o, CountingDrawable *drawable, bool wait)
+{
+    id<MTLCommandQueue> queue = [o.device newCommandQueue];
+    id<MTLTexture> frame = surfaceTarget(o.device);
+    ASSERT_TRUE(frame != nil);
+    id<MTLCommandBuffer> cb = [queue commandBuffer];
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = frame;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
+    [e setVisibilityResultMode:MTLVisibilityResultModeBoolean offset:0];
+    [e setRenderPipelineState:o.state];
+    [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
+    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [e endEncoding];
+    [cb presentDrawable:drawable];
+    [cb commit];
+    if (!wait)
+        return;
+    [cb waitUntilCompleted];
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(drawable.presents, 0);
+}
+
+// The render server's failed frame ends the process, the cause in its reason; the stand-in exits 70 with it
+void renderServerFailedFrameEndsTheProcess()
+{
+    const Opened o = openPacked(true);
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    commitFailedFrame(o, [CountingDrawable new], false);
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    ADD_FAILURE() << "the render server's failed frame did not end the process";
+}
+
+// Any other process's failed frame presents nothing and carries Metal's error; the process goes on
+void clientFailedFrameCarriesMetalsError()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    commitFailedFrame(o, [CountingDrawable new], true);
+}
+
 }  // namespace
+
+TEST(RawFacadePresent, TheRenderServersFailedFrameEndsItsProcessWithTheCause)
+{
+    switch_ios::test::ExpectExitInFreshProcess(
+        renderServerFailedFrameEndsTheProcess, 70,
+        "abort_with_reason: raw: the compositor's frame failed in the driver: .+");
+}
+
+TEST(RawFacadePresent, AnotherProcesssFailedFrameEndsNoProcess)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(clientFailedFrameCarriesMetalsError);
+}
 
 TEST(RawFacadePresent, ACommandBufferTheKernelRefusedPresentsNothingAndWithdrawsItsWrite)
 {

@@ -59,14 +59,15 @@ TEST_F(Events, ExecutionCompletionDoesNotPublishUntilExternallyVisible)
 	EXPECT_EQ(native->value, 55u);
 }
 
-TEST_F(Events, FailedProducerNeverSignalsNativeValue)
+// A failed producer ends the wait on its value, but the event's value stays what was signalled
+TEST_F(Events, FailedProducerEndsTheWaitWithoutSignallingTheNativeValue)
 {
 	auto t = token();
 	signal(55, t);
 	finish(t, -5);
 	switch_gpu_backing_token out{};
 	EXPECT_EQ(native->value, 0u);
-	EXPECT_EQ(switch_gpu_event_resolve(event, 55, &out), -5);
+	EXPECT_EQ(switch_gpu_event_resolve(event, 55, &out), 1);
 	switch_gpu_event_native_signal(native, 56, true);
 	EXPECT_EQ(switch_gpu_event_resolve(event, 55, &out), 1);
 }
@@ -154,7 +155,7 @@ TEST_F(Events, ConsumerPinsProducerAfterProducerCompletes)
 	EXPECT_EQ(tokens[key(a)].refs, 0);
 }
 
-TEST_F(Events, FailedAuthorityPropagatesAcrossAlreadyAcceptedThreeStageChain)
+TEST_F(Events, FailedAuthorityEndsTheWaitsOfAnAlreadyAcceptedThreeStageChain)
 {
 	auto a = token(), b = token(), c = token();
 	signal(1, a);
@@ -176,15 +177,15 @@ TEST_F(Events, FailedAuthorityPropagatesAcrossAlreadyAcceptedThreeStageChain)
 	finish(b);
 	EXPECT_EQ(native->value, 0u);
 	finish(a, -5);
-	EXPECT_EQ(switch_gpu_event_waits_status(wb), -5);
-	EXPECT_EQ(switch_gpu_event_waits_status(wc), -5);
-	EXPECT_EQ(native->value, 0u);
+	EXPECT_EQ(switch_gpu_event_waits_status(wb), 1);
+	EXPECT_EQ(switch_gpu_event_waits_status(wc), 1);
+	EXPECT_EQ(native->value, 3u) << "the jobs that waited ran and signalled";
 	switch_gpu_event_waits_release(&wb);
 	switch_gpu_event_waits_release(&wc);
 	pump();
 }
 
-TEST_F(Events, SplitPrefixFailureFlowsIntoLaterSignalWithoutRepeatedWaits)
+TEST_F(Events, SplitPrefixFailureEndsTheLaterSignalsWaitWithoutRepeatedWaits)
 {
 	auto a = token(), b = token(), c = token();
 	signal(1, a);
@@ -201,8 +202,8 @@ TEST_F(Events, SplitPrefixFailureFlowsIntoLaterSignalWithoutRepeatedWaits)
 	finish(b);
 	finish(c);
 	finish(a, -5);
-	EXPECT_EQ(switch_gpu_event_waits_status(last), -5);
-	EXPECT_EQ(native->value, 0u);
+	EXPECT_EQ(switch_gpu_event_waits_status(last), 1);
+	EXPECT_EQ(native->value, 2u);
 	switch_gpu_event_waits_release(&first);
 	switch_gpu_event_waits_release(&last);
 	pump();
@@ -319,7 +320,7 @@ TEST_F(Events, ReleasingPreparedRecordDoesNotCancelOwnersReservation)
 	pump();
 }
 
-TEST_F(Events, PlainBackingConsumerInheritsFailedEventAuthority)
+TEST_F(Events, PlainBackingConsumerOfAFailedEventAuthorityRuns)
 {
 	auto a = token(), b = token(), c = token();
 	signal(1, a);
@@ -340,8 +341,8 @@ TEST_F(Events, PlainBackingConsumerInheritsFailedEventAuthority)
 	finish(c);
 	finish(b);
 	finish(a, -5);
-	EXPECT_EQ(native->value, 0u);
-	EXPECT_EQ(switch_gpu_event_waits_status(consumer), -5);
+	EXPECT_EQ(native->value, 2u);
+	EXPECT_EQ(switch_gpu_event_waits_status(consumer), 1);
 	semantics.clear();
 	switch_gpu_event_waits_release(&prefix);
 	switch_gpu_event_waits_release(&consumer);
@@ -432,8 +433,8 @@ TEST_F(Events, RetryMergesIntoBoundBatchWithoutWaitingOnUncommittedSource)
 	finish(c);
 	finish(b);
 	finish(a, -5);
-	EXPECT_EQ(switch_gpu_event_waits_status(consumer), -5);
-	EXPECT_EQ(native->value, 0u);
+	EXPECT_EQ(switch_gpu_event_waits_status(consumer), 1);
+	EXPECT_EQ(native->value, 2u);
 	semantics.clear();
 	switch_gpu_event_waits_release(&prefix);
 	switch_gpu_event_waits_release(&consumer);
@@ -472,7 +473,8 @@ TEST_F(Events, CoversTracksAuthorityReplacementRatherThanPhysicalPrefix)
 	semantics[key(a)] = second;
 	EXPECT_EQ(switch_gpu_event_waits_covers(captured, &a), 0);
 	finish(b, -5);
-	EXPECT_EQ(switch_gpu_event_waits_covers(captured, &a), -5);
+	EXPECT_EQ(switch_gpu_event_waits_covers(captured, &a), 1)
+		<< "a failed authority leaves nothing to wait for";
 	semantics.clear();
 	switch_gpu_event_waits_abort(&captured);
 	finish(a);
@@ -512,7 +514,7 @@ TEST_F(Events, CachedTerminalStatusPrecedesDeferredEngineNodeCallback)
 	pump();
 }
 
-TEST_F(Events, PlainProducerFailureSurvivesHardwareConsumerCompletion)
+TEST_F(Events, PlainProducerFailureEndsTheWaitAfterHardwareConsumerCompletion)
 {
 	auto source = token(), consumer = token();
 	switch_gpu_event_waits *work = nullptr;
@@ -523,7 +525,7 @@ TEST_F(Events, PlainProducerFailureSurvivesHardwareConsumerCompletion)
 	finish(consumer);
 	EXPECT_EQ(switch_gpu_event_waits_status(work), 0);
 	finish(source, -5);
-	EXPECT_EQ(switch_gpu_event_waits_status(work), -5);
+	EXPECT_EQ(switch_gpu_event_waits_status(work), 1);
 	switch_gpu_event_waits_release(&work);
 	pump();
 }
@@ -544,12 +546,12 @@ TEST_F(Events, MergedPlainTokensKeepEachIndependentProducer)
 	finish(first);
 	EXPECT_EQ(switch_gpu_event_waits_status(a), 0);
 	finish(second, -125);
-	EXPECT_EQ(switch_gpu_event_waits_status(a), -125);
+	EXPECT_EQ(switch_gpu_event_waits_status(a), 1);
 	switch_gpu_event_waits_release(&a);
 	pump();
 }
 
-TEST_F(Events, PlainTokenCoverageRejectsReplacementAndFailedProducer)
+TEST_F(Events, PlainTokenCoverageRejectsReplacementAndEndsAtAFailedProducer)
 {
 	auto source = token(), replacement = source;
 	++replacement.value;
@@ -559,7 +561,7 @@ TEST_F(Events, PlainTokenCoverageRejectsReplacementAndFailedProducer)
 	EXPECT_EQ(switch_gpu_event_waits_covers_token(work, &source), 1);
 	EXPECT_EQ(switch_gpu_event_waits_covers_token(work, &replacement), 0);
 	finish(source, -5);
-	EXPECT_EQ(switch_gpu_event_waits_covers_token(work, &source), -5);
+	EXPECT_EQ(switch_gpu_event_waits_covers_token(work, &source), 1);
 	switch_gpu_event_waits_abort(&work);
 	pump();
 }
@@ -593,7 +595,7 @@ TEST_F(Events, TerminalObserverDoesNotTreatPendingPublishedProducerAsCompleted)
 	EXPECT_EQ(switch_gpu_event_terminal(event, 55), 1);
 }
 
-TEST_F(Events, TerminalObserverRetainsFailureDespiteHigherNativeSignal)
+TEST_F(Events, TerminalObserverWaitsForItsFailingProducerDespiteHigherNativeSignal)
 {
 	auto producer = token();
 	signal(55, producer);
@@ -604,7 +606,7 @@ TEST_F(Events, TerminalObserverRetainsFailureDespiteHigherNativeSignal)
 	EXPECT_EQ(n.count, 0);
 	finish(producer, -5);
 	EXPECT_EQ(n.count, 1);
-	EXPECT_EQ(n.result, -5);
+	EXPECT_EQ(n.result, 0);
 }
 
 TEST_F(Events, FutureTerminalObserverPinsAuthorityAtCommitBeforeWorkerRuns)
@@ -617,10 +619,10 @@ TEST_F(Events, FutureTerminalObserverPinsAuthorityAtCommitBeforeWorkerRuns)
 	finish(producer, -5);
 	nativePump();
 	EXPECT_EQ(n.count, 1);
-	EXPECT_EQ(n.result, -5);
+	EXPECT_EQ(n.result, 0);
 }
 
-TEST_F(Events, TerminalObserverJoinsLogicalDependencyFailureAfterPhysicalSuccess)
+TEST_F(Events, TerminalObserverSeesTheJobEndWhenItsInputFailsAfterPhysicalSuccess)
 {
 	auto source = token(), consumer = token();
 	signal(1, source);
@@ -637,8 +639,8 @@ TEST_F(Events, TerminalObserverJoinsLogicalDependencyFailureAfterPhysicalSuccess
 	EXPECT_EQ(n.count, 0);
 	finish(source, -5);
 	EXPECT_EQ(n.count, 1);
-	EXPECT_EQ(n.result, -5);
-	EXPECT_EQ(switch_gpu_event_terminal(event, 2), -5);
+	EXPECT_EQ(n.result, 0);
+	EXPECT_EQ(switch_gpu_event_terminal(event, 2), 1);
 	switch_gpu_event_waits_release(&work);
 	pump();
 }
@@ -660,7 +662,7 @@ TEST_F(Events, TerminalNativeCpuSignalAndQueuedCancellationRemainOneShot)
 	EXPECT_EQ(switch_gpu_event_terminal(event, value), 1);
 }
 
-TEST_F(Events, TerminalObserverKeepsAlreadyRetiredFailureChosenAtArm)
+TEST_F(Events, TerminalObserverOfAnAlreadyFailedProducerEndsOnce)
 {
 	auto producer = token();
 	signal(55, producer);
@@ -670,5 +672,5 @@ TEST_F(Events, TerminalObserverKeepsAlreadyRetiredFailureChosenAtArm)
 	switch_gpu_event_native_signal(native, 100, true);
 	nativePump();
 	EXPECT_EQ(n.count, 1);
-	EXPECT_EQ(n.result, -5);
+	EXPECT_EQ(n.result, 0);
 }

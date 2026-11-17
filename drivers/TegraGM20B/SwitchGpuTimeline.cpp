@@ -232,7 +232,8 @@ int retain(const switch_gpu_backing_token *token)
 }
 
 // Why a failed token failed (switch_gpu_backing_register_failure). A compositor channel's kill is the kernel's own
-// failure; any other kill, a teardown and a failed event wait (another client's failure) end that client's frame.
+// failure; any other kill and a teardown end that client's frame. A producer's failure never fails its waiters' work
+// (switch_gpu_event_waits_producers_locked).
 int failure(const switch_gpu_backing_token *token)
 {
 	IOLockLock(lock);

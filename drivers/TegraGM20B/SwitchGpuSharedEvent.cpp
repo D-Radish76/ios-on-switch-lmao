@@ -227,6 +227,7 @@ extern "C" uint64_t switch_gpu_event_value(switch_gpu_event *event)
 	return event ? switch_gpu_event_native_value(event->native) : 0;
 }
 
+// A producer that failed or is gone ends the wait as its completion does: the waiter runs on what it left behind.
 int switch_gpu_event_resolve_locked(switch_gpu_event *event, uint64_t value,
 				    switch_gpu_backing_token *token)
 {
@@ -237,12 +238,12 @@ int switch_gpu_event_resolve_locked(switch_gpu_event *event, uint64_t value,
 		if (signal->value >= value && (!chosen || signal->value < chosen->value))
 			chosen = signal;
 	if (!chosen)
-		return event->failure && value <= event->failedThrough ? event->failure : 0;
+		return event->failure && value <= event->failedThrough ? 1 : 0;
 	const int result = chosen->result
 				   ? chosen->result
 				   : switch_gpu_backing_token_external_status(&chosen->token);
 	if (result < 0)
-		return result;
+		return 1;
 	if (token) {
 		const int retained = switch_gpu_backing_token_retain(&chosen->token);
 		if (retained)

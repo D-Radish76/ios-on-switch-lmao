@@ -32,6 +32,7 @@ static struct tgm_chan *made;
 static u32 push_words[1024];
 static u32 userd[128];
 static int timeline;
+static int isolated_critical = -1;
 
 __attribute__((constructor)) static void switch_chan_new_device(void)
 {
@@ -59,6 +60,16 @@ uint32_t switch_chan_new_recorded_timeslice(void)
 void switch_chan_new_delete(void)
 {
 	tgm_chan_del(&made);
+}
+
+void switch_chan_new_leave_running(void)
+{
+	made->submitted = tgm_chan_completed(made) + 1;
+}
+
+int switch_chan_new_isolated_critical(void)
+{
+	return isolated_critical;
 }
 
 static void host_save(void)
@@ -442,8 +453,11 @@ void tgm_chan_hung(struct tgm_chan *chan, const char *who, uint32_t seqno, uint6
 	nvxnu_panic("tgm_chan_hung: %s", who);
 }
 
+/* nvkm's kill reads the channel's criticality (tgm_chan_killed); the model's kill is immediate */
 void tgm_chan_isolate(struct tgm_chan *chan, const char *report, u64 now)
 {
+	isolated_critical = chan->critical;
+	chan->error = 4;
 }
 
 int tgm_chan_killed(struct nvif_event *event, void *repv, u32 repc)

@@ -64,6 +64,27 @@ TEST(SwitchGpuRefusalSites, OnlyTheTwoFlowControlAnswersAreSilent)
 	EXPECT_EQ(line(note(SwitchGpuRefusal::Busy), kCannotLock), "(silent)");
 }
 
+// The compositor's (a critical client's) refused job loses its frame, which panics at the refusal: every site but the
+// two the runtime resubmits, and neither Aborted (a -5 at admission) nor NotOpen (the process closing). No other
+// client's refusal does.
+TEST(SwitchGpuRefusalSites, OnlyTheCompositorsRefusalsLoseItsFrame)
+{
+	constexpr int32_t kAborted = kIOReturnAborted, kNotOpen = kIOReturnNotOpen;
+	for (size_t i = 0; i < size_t(SwitchGpuRefusal::Count); ++i) {
+		const auto site = SwitchGpuRefusal(i);
+		const bool resubmitted =
+			site == SwitchGpuRefusal::StaleSet || site == SwitchGpuRefusal::Busy;
+		for (const int32_t ret : {kBadArgument, kNotReady, kCannotLock, kNotResponding}) {
+			EXPECT_EQ(switch_gpu_refusal_loses_frame(true, site, ret), !resubmitted)
+				<< "site " << i << " ret " << std::hex << ret;
+			EXPECT_FALSE(switch_gpu_refusal_loses_frame(false, site, ret))
+				<< "site " << i;
+		}
+		EXPECT_FALSE(switch_gpu_refusal_loses_frame(true, site, kAborted)) << "site " << i;
+		EXPECT_FALSE(switch_gpu_refusal_loses_frame(true, site, kNotOpen)) << "site " << i;
+	}
+}
+
 // metal.native.counters' refusal as the next boot's line reads it, and a dead channel's
 TEST(SwitchGpuRefusalSites, ALineNamesTheProcessChannelSiteAndValues)
 {

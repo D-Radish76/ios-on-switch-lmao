@@ -154,9 +154,18 @@ static void noteHeldReturn(RMCommandBuffer *cb, uint64_t returnedUs, const char 
 }
 #endif
 
+// libsyscall's, declared by XNU's bsd/sys/reason.h (both kernel trees), not by the iOS SDK; its string is the crash
+// report's termination reason
+extern "C" void abort_with_reason(uint32_t reason_namespace, uint64_t reason_code, const char *reason_string,
+                                  uint64_t reason_flags) __attribute__((noreturn));
+static constexpr uint32_t kOsReasonLibsystem = 18;        // OS_REASON_LIBSYSTEM
+static constexpr uint64_t kOsReasonCrashReport = 0x2;     // OS_REASON_FLAG_GENERATE_CRASH_REPORT
+
 // It failed before all its work was submitted, so what it was to present was never wholly rendered: its drawables are
 // not presented, as Metal's presentDrawable handler presents only from a command buffer with no error. Dropped, a
-// drawable is its own to give back (a CAMetalDrawable's last release returns it to its layer's pool).
+// drawable is its own to give back (a CAMetalDrawable's last release returns it to its layer's pool). In the render
+// server that is a compositor frame never shown, which no frame may hide: the process ends with the cause (a compositor
+// that dies leaves its outstanding frames unshown, and launchd starts it again).
 static void withholdPresents(RMCommandBuffer *cb)
 {
     NSError *error = nil;
@@ -165,10 +174,16 @@ static void withholdPresents(RMCommandBuffer *cb)
         error = cb->_segError;
     }
     cb->_presents = false;
+    const char *cause = error.localizedDescription.UTF8String ?: "";
     os_log_error(rawLog(),
                  "raw: a command buffer failed before all its work was submitted, so its drawable is not presented: "
                  "%{public}s",
-                 error.localizedDescription.UTF8String ?: "");
+                 cause);
+    if (gRM->raw->role() != raw::Device::Role::RenderServer)
+        return;
+    char reason[256];
+    snprintf(reason, sizeof reason, "raw: the compositor's frame failed in the driver: %s", cause);
+    abort_with_reason(kOsReasonLibsystem, 0, reason, kOsReasonCrashReport);
 }
 
 // A queue's command buffers' scheduled handlers run in its order, on its own serial queue: one that waits for another queue's

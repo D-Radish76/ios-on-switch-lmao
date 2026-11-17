@@ -13,8 +13,14 @@ IOReturn AGXDeviceUserClient::submitJob(const TegraGM20BAbiSubmitAddress *in,
 	SwitchGpuRefusalNote why;
 	uint32_t channel = 0;
 	const IOReturn result = takeJob(in, out, why, channel);
-	if (result != kIOReturnSuccess)
-		logRefusal("SubmitJob", channel, result, why);
+	if (result == kIOReturnSuccess)
+		return result;
+	logRefusal("SubmitJob", channel, result, why);
+	char line[320];
+	if (switch_gpu_refusal_loses_frame(critical_, why.site, result) &&
+	    switch_gpu_refusal_line(line, sizeof(line), owner_, ownerPid_, "SubmitJob", channel,
+				    result, why, 0))
+		panic("%s: the compositor's frame is lost", line);
 	return result;
 }
 

@@ -309,6 +309,8 @@ static void chan_abandon(struct tgm_chan *chan)
 
 	if (chan->kernel)
 		tgm_chan_hung(chan, "channel destroy", chan->submitted, NSEC_PER_SEC);
+	/* its owner is gone: the kill fails a dead client's work (WRITER_GONE), the compositor's too */
+	WRITE_ONCE(chan->critical, 0);
 	mutex_lock(&tgm_live_lock);
 	tgm_chan_isolate(chan, HANG_REPORT "destroyed with its work still running 1 s later", now);
 	mutex_unlock(&tgm_live_lock);

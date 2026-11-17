@@ -19,10 +19,16 @@ void switch_gpu_event_watch::free()
 
 namespace
 {
+// A producer that failed or is gone ends the wait (switch_gpu_event_resolve_locked)
+int ended(int result)
+{
+	return result < 0 ? 1 : result;
+}
+
 int terminalLocked(switch_gpu_event *event, uint64_t value, switch_gpu_event_signal **authority)
 {
 	if (authority && *authority)
-		return (*authority)->result;
+		return ended((*authority)->result);
 	if (switch_gpu_event_native_value(event->native) >= value || event->readyThrough >= value)
 		return 1;
 	switch_gpu_event_signal *chosen = nullptr;
@@ -30,12 +36,12 @@ int terminalLocked(switch_gpu_event *event, uint64_t value, switch_gpu_event_sig
 		if (signal->value >= value && (!chosen || signal->value < chosen->value))
 			chosen = signal;
 	if (!chosen)
-		return event->failure && value <= event->failedThrough ? event->failure : 0;
+		return event->failure && value <= event->failedThrough ? 1 : 0;
 	if (authority) {
 		__atomic_add_fetch(&chosen->refs, 1u, __ATOMIC_RELAXED);
 		*authority = chosen;
 	}
-	return chosen->result;
+	return ended(chosen->result);
 }
 
 void nativeReady(OSObject *, OSObject *, uint64_t, void *)
