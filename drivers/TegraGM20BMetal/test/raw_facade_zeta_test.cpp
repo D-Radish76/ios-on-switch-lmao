@@ -386,11 +386,16 @@ TEST_F(FacadeStoredZeta, ARecordedDepth16PassAndItsCachedCopyUseTheMovedImage)
     const uint32_t oldTic = depth->_raw.tic;
     ASSERT_NE(oldTic, 0u);
     const uint64_t oldAddress = depth->_raw.va;
-    const uint64_t epoch = rmPassCacheReturned(recorded->_passCache.get());
+    @autoreleasepool {
+        RMCommandBuffer *idle = (RMCommandBuffer *)[queue commandBuffer];
+        [[(id<MTLCommandBuffer>)idle renderCommandEncoderWithDescriptor:pass] endEncoding];
+        rmRecordingDone(idle);
+    }
+    ASSERT_GE(rmPassHeld().passes, 1u) << "the idle command buffer's bank kept its pass";
     ASSERT_NE([depth rmTwin], nil);
     ASSERT_NE(depth->_raw.tic, oldTic);
     ASSERT_NE(depth->_raw.va, oldAddress);
-    EXPECT_FALSE(rmPassCachePublished(epoch));
+    EXPECT_EQ(rmPassHeld().passes, 0u) << "a kept pass's depth source header outlived the move";
     auto seam = [cb blitCommandEncoder];
     [seam endEncoding];
     auto cachedEncoder = [cb renderCommandEncoderWithDescriptor:pass];

@@ -2,8 +2,9 @@
 #import "RawMetalPassCache.h"
 #include <objc/runtime.h>
 #include <algorithm>
-#include <atomic>
+#include <cstdlib>
 #include <cstring>
+#include <string_view>
 #include "raw_objc_layout.h"
 
 namespace {
@@ -11,14 +12,25 @@ namespace {
 constexpr size_t kAttachments = 10;  // 8 colour, depth, stencil
 // a compositor frame's passes, each its own shape (boot 21: 29-40 render targets a command buffer), kept to the next
 constexpr size_t kEntries = 64;
-// A shape no pass took for this many lookups is let go, with the textures its copy holds: a frame's passes take theirs
-// within a few
+// A shape no pass took for this many lookups is let go: a frame's passes take theirs within a few
 constexpr uint64_t kIdleLookups = 4 * kEntries;
+static_assert(kEntries <= 64, "RMPassCache::bound has a bit an entry");
+
+constexpr size_t kObjects = 8;
+
+// The objects an instance of one of Metal's descriptor classes holds, in its ivars or its `_private` struct: a client's
+// (a texture, resolve texture or visibility buffer), which a key names by its identity, or another, which must be nil
+struct Objects {
+    ptrdiff_t at[kObjects] = {};
+    bool client[kObjects] = {};
+    size_t count = 0;
+};
 
 // Where Metal's descriptor classes keep what a pass reads, from their ivars' names and encodings
 struct Layout {
     bool ok = false;
-    Class descriptor = nil, array = nil, attachment[3] = {}, samples = nil, sample = nil;
+    Class descriptor = nil, array = nil, attachment[3] = {}, samples = nil, sample = nil, texture = nil, buffer = nil;
+    Objects head, objects[3];  // the descriptor's but its two arrays, and each attachment kind's
     size_t descriptorBytes = 0, attachmentBytes[3] = {};
     ptrdiff_t attachmentsAt = 0, sampleBuffersAt = 0;  // in the descriptor
     ptrdiff_t slotAt[kAttachments] = {};               // each attachment's object in the attachment array
@@ -26,18 +38,75 @@ struct Layout {
     ptrdiff_t samplesAt = 0, sampleBufferAt = 0;       // the sample buffer attachments in their array, a buffer in one
 };
 
-bool privateField(Class cls, const char *field, char kind, ptrdiff_t &at, size_t instance)
+bool privateFields(Class cls, size_t instance, std::vector<raw::objc::Field> &fields, ptrdiff_t &base)
 {
     Ivar ivar = class_getInstanceVariable(cls, "_private");
     const char *type = ivar ? ivar_getTypeEncoding(ivar) : nullptr;
-    std::vector<raw::objc::Field> fields;
     size_t size = 0;
     if (!type || !raw::objc::structFields(type, fields, size) || size_t(ivar_getOffset(ivar)) + size > instance)
+        return false;
+    base = ivar_getOffset(ivar);
+    return true;
+}
+
+bool privateField(Class cls, const char *field, char kind, ptrdiff_t &at, size_t instance)
+{
+    std::vector<raw::objc::Field> fields;
+    ptrdiff_t base = 0;
+    if (!privateFields(cls, instance, fields, base))
         return false;
     const raw::objc::Field *f = raw::objc::field(fields, field, kind);
     if (!f)
         return false;
-    at = ivar_getOffset(ivar) + ptrdiff_t(f->offset);
+    at = base + ptrdiff_t(f->offset);
+    return true;
+}
+
+bool objectsOf(Class cls, size_t instance, std::string_view skip0, std::string_view skip1, Objects &o)
+{
+    const auto add = [&](std::string_view name, ptrdiff_t at) {
+        if (!name.empty() && name.front() == '_')
+            name.remove_prefix(1);
+        if ((!skip0.empty() && name == skip0) || (!skip1.empty() && name == skip1))
+            return true;
+        if (o.count == kObjects)
+            return false;
+        o.at[o.count] = at;
+        o.client[o.count++] = name == "texture" || name == "resolveTexture" || name == "visibilityResultBuffer";
+        return true;
+    };
+    for (Class c = cls; c && c != [NSObject class]; c = class_getSuperclass(c)) {
+        unsigned n = 0;
+        Ivar *ivars = class_copyIvarList(c, &n);
+        bool ok = true;
+        for (unsigned i = 0; i < n && ok; i++) {
+            const char *type = ivar_getTypeEncoding(ivars[i]);
+            if (type && type[0] == '@')
+                ok = add(ivar_getName(ivars[i]), ivar_getOffset(ivars[i]));
+        }
+        free(ivars);
+        if (!ok)
+            return false;
+    }
+    std::vector<raw::objc::Field> fields;
+    ptrdiff_t base = 0;
+    if (!privateFields(cls, instance, fields, base))
+        return false;
+    for (const raw::objc::Field &f : fields)
+        if (f.kind == '@' && !add(f.name, base + ptrdiff_t(f.offset)))
+            return false;
+    return true;
+}
+
+// Whether `object` holds no object but, where `clients`, its clients'
+bool holdsOnly(const void *object, const Objects &o, bool clients)
+{
+    for (size_t i = 0; i < o.count; i++) {
+        void *p = nullptr;
+        memcpy(&p, static_cast<const uint8_t *>(object) + o.at[i], sizeof p);
+        if (p && (!o.client[i] || !clients))
+            return false;
+    }
     return true;
 }
 
@@ -59,8 +128,12 @@ Layout makeLayout()
         id sample = d.sampleBufferAttachments[0];
         l.descriptor = object_getClass(d);
         l.descriptorBytes = class_getInstanceSize(l.descriptor);
+        l.texture = [RMTexture class];
+        l.buffer = [RMBuffer class];
         if (!privateField(l.descriptor, "attachments", '@', l.attachmentsAt, l.descriptorBytes) ||
-            !privateField(l.descriptor, "sampleBufferAttachments", '@', l.sampleBuffersAt, l.descriptorBytes))
+            !privateField(l.descriptor, "sampleBufferAttachments", '@', l.sampleBuffersAt, l.descriptorBytes) ||
+            !objectsOf(l.descriptor, l.descriptorBytes, "attachments", "sampleBufferAttachments", l.head) ||
+            !holdsOnly((__bridge const void *)d, l.head, true))
             return l;
         void *array = nullptr;
         memcpy(&array, reinterpret_cast<const uint8_t *>((__bridge const void *)d) + l.attachmentsAt, sizeof array);
@@ -80,7 +153,9 @@ Layout makeLayout()
                 return l;  // the array holds its attachments elsewhere than its ivars say
             l.attachment[k] = object_getClass(kinds[k]);
             l.attachmentBytes[k] = class_getInstanceSize(l.attachment[k]);
-            if (!privateField(l.attachment[k], "texture", '@', l.textureAt[k], l.attachmentBytes[k]))
+            if (!privateField(l.attachment[k], "texture", '@', l.textureAt[k], l.attachmentBytes[k]) ||
+                !objectsOf(l.attachment[k], l.attachmentBytes[k], {}, {}, l.objects[k]) ||
+                !holdsOnly(slot, l.objects[k], true))
                 return l;
         }
         void *samples = nullptr, *first = nullptr;
@@ -137,15 +212,36 @@ uint64_t hashBytes(const uint8_t *p, size_t n)
     return a ^ (b * 0x9e3779b97f4a7c15ull);
 }
 
-std::atomic<uint64_t> gCacheGeneration{0};
+// `object`'s objects where its key holds them (`out` at `object` past its class pointer): none as 0, a client's texture or
+// buffer of this device as its identity; false where it holds anything else
+bool keyObjects(const Layout &l, const uint8_t *object, const Objects &o, uint8_t *out)
+{
+    for (size_t i = 0; i < o.count; i++) {
+        void *p = nullptr;
+        memcpy(&p, object + o.at[i], sizeof p);
+        uint64_t identity = 0;
+        if (p) {
+            const Class c = object_getClass((__bridge id)p);
+            if (!o.client[i] || (c != l.texture && c != l.buffer))
+                return false;
+            __unsafe_unretained RMObject *named = (__bridge RMObject *)p;
+            identity = named->_identity;
+            if (!identity)
+                return false;
+        }
+        memcpy(out + o.at[i] - ptrdiff_t(sizeof(void *)), &identity, sizeof identity);
+    }
+    return true;
+}
 
 }  // namespace
 
 struct RMPassCache {
     std::array<RMPassEntry, kEntries> entries{};
     std::array<uint64_t, kEntries> hashes{}, used{};
-    uint64_t clock = 0, generation = gCacheGeneration.load(std::memory_order_acquire);
-    size_t keyBytes = 0, passes = 0, textures = 0;
+    uint64_t clock = 0, since = 0;  // since: the clock its last command buffer returned it at
+    uint64_t bound = 0;  // the entries whose copies name their textures: those its command buffer kept or rmPassBind named
+    size_t keyBytes = 0, passes = 0, textures = 0;  // textures: the bound entries'
 
     ~RMPassCache()
     {
@@ -167,12 +263,56 @@ size_t texturesOf(const RMPass &facts)
     return n + (facts.depthResolve != nil) + (facts.stencilResolve != nil);
 }
 
+// The client objects `e`'s copy holds, named again for its command buffer (each alive: that command buffer holds what its
+// pass names) or let go: one message each, its attachments' objects read where rmPassKey reads them. Named again, a depth
+// or stencil resolve is only one the pass resolves into, as the command buffer holds no other.
+void name(const RMPassEntry &e, bool named)
+{
+    const Layout &l = layout();
+    const uint8_t *array = nullptr;
+    memcpy(&array, reinterpret_cast<const uint8_t *>((__bridge const void *)e.pass) + l.attachmentsAt, sizeof array);
+    const auto attachment = [&](size_t slot) {
+        void *object = nullptr;
+        memcpy(&object, array + l.slotAt[slot], sizeof object);
+        return object;
+    };
+    for (unsigned c = 0; c < 8; c++)
+        if (e.facts.color[c].texture)
+            [(__bridge MTLRenderPassAttachmentDescriptor *)attachment(c)
+                setTexture:named ? e.facts.color[c].texture : nil];
+    for (unsigned i = 0; i < 2; i++) {
+        if (e.facts.zeta[i].texture)
+            [(__bridge MTLRenderPassAttachmentDescriptor *)attachment(8 + i)
+                setTexture:named ? e.facts.zeta[i].texture : nil];
+        __unsafe_unretained id resolve = i ? e.facts.stencilResolve : e.facts.depthResolve;
+        if (named ? resolve != nil : e.zetaResolve[i] != nil)
+            [(__bridge MTLRenderPassAttachmentDescriptor *)attachment(8 + i) setResolveTexture:named ? resolve : nil];
+    }
+    if (e.visibility)
+        [e.pass setVisibilityResultBuffer:named ? e.visibility : nil];
+}
+
+void bind(RMPassCache &c, size_t i)
+{
+    if (c.bound >> i & 1)
+        return;
+    name(c.entries[i], true);
+    c.bound |= uint64_t(1) << i;
+    c.textures += texturesOf(c.entries[i].facts);
+}
+
+// Let go by the bank. A copy its command buffer found goes on as that command buffer's pass, which m2v's replay may read
+// past rmPassBind's reach: it names its textures again first.
 CFTypeRef take(RMPassCache &c, size_t i)
 {
     RMPassEntry &e = c.entries[i];
+    if (c.used[i] > c.since)
+        bind(c, i);
     CFTypeRef gone = (__bridge CFTypeRef)e.pass;
     --c.passes;
-    c.textures -= texturesOf(e.facts);
+    if (c.bound >> i & 1)
+        c.textures -= texturesOf(e.facts);
+    c.bound &= ~(uint64_t(1) << i);
     e.pass = nil;
     c.hashes[i] = 0;
     return gone;
@@ -239,8 +379,11 @@ bool rmPassKey(MTLRenderPassDescriptor *d, std::vector<uint8_t> &key, uint64_t &
         if (object_getClass((__bridge id)object) != l.attachment[kind])
             return false;
         memcpy(&texture, static_cast<const uint8_t *>(object) + l.textureAt[kind], sizeof texture);
-        if (!texture)
+        if (!texture) {
+            if (!holdsOnly(object, l.objects[kind], false))
+                return false;  // a resolve texture with no texture, which a kept copy would hold past its command buffer
             continue;
+        }
         present |= uint64_t(1) << slot;
         attachments[slot] = static_cast<const uint8_t *>(object);
         bytes += (l.attachmentBytes[kind] - sizeof(void *) + 7) & ~size_t(7);
@@ -254,6 +397,8 @@ bool rmPassKey(MTLRenderPassDescriptor *d, std::vector<uint8_t> &key, uint64_t &
     memset(out + l.attachmentsAt - sizeof(void *), 0, sizeof(void *));
     memset(out + l.sampleBuffersAt - sizeof(void *), 0, sizeof(void *));
     memset(out + head, 0, headPadded - head);
+    if (!keyObjects(l, base, l.head, out))
+        return false;
     out += headPadded;
     for (size_t slot = 0; slot < kAttachments; slot++) {
         if (!attachments[slot])
@@ -262,6 +407,8 @@ bool rmPassKey(MTLRenderPassDescriptor *d, std::vector<uint8_t> &key, uint64_t &
         const size_t taken = l.attachmentBytes[kind] - sizeof(void *), padded = (taken + 7) & ~size_t(7);
         memcpy(out, attachments[slot] + sizeof(void *), taken);
         memset(out + taken, 0, padded - taken);
+        if (!keyObjects(l, attachments[slot], l.objects[kind], out))
+            return false;
         out += padded;
     }
     hash = hashBytes(key.data(), key.size());
@@ -304,12 +451,15 @@ void rmPassKeep(RMCommandBuffer *cb, const std::vector<uint8_t> &key, uint64_t h
     slot->samples = e->_samples;
     slot->turn = e->_turn;
     slot->visibility = copy.visibilityResultBuffer;
+    slot->zetaResolve[0] = copy.depthAttachment.resolveTexture;
+    slot->zetaResolve[1] = copy.stencilAttachment.resolveTexture;
     c.keyBytes -= slot->key.capacity();
     slot->key = key;
     c.keyBytes += slot->key.capacity();
     c.hashes[at] = hash;
     c.used[at] = c.clock;
     ++c.passes;
+    c.bound |= uint64_t(1) << at;
     c.textures += texturesOf(facts);
     if (gone)
         CFRelease(gone);
@@ -325,9 +475,34 @@ RMPassCachePtr rmNewPassCache()
     return RMPassCachePtr(new RMPassCache);
 }
 
-void rmPassInvalidate()
+void rmPassCacheUnbind(RMPassCache *cache)
 {
-    gCacheGeneration.fetch_add(1, std::memory_order_seq_cst);
+    if (!cache)
+        return;
+    for (uint64_t bound = cache->bound; bound; bound &= bound - 1)
+        name(cache->entries[size_t(__builtin_ctzll(bound))], false);
+    cache->bound = 0;
+    cache->textures = 0;
+    cache->since = cache->clock;
+}
+
+void rmPassBind(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass)
+{
+    RMPassCache *c = cb->_passCache.get();
+    if (!c || !pass)
+        return;
+    for (size_t i = 0; i < kEntries; i++)
+        if (c->entries[i].pass == pass) {
+            bind(*c, i);
+            return;
+        }
+}
+
+void rmPassBind(RMCommandBuffer *cb, size_t from, size_t to)
+{
+    for (size_t at = from; at < to; at++)
+        if (cb->_plan.operation(at).op == OpRender)
+            rmPassBind(cb, (__bridge MTLRenderPassDescriptor *)cb->_plan.legacy(at).obj);
 }
 
 RMPassTrim rmPassCacheHeld(const RMPassCache *cache)
@@ -343,22 +518,9 @@ RMPassTrim rmPassCacheTrim(RMPassCache *cache)
         for (size_t i = 0; i < kEntries; i++)
             if (cache->entries[i].pass)
                 gone[i] = take(*cache, i);
-        cache->generation = gCacheGeneration.load(std::memory_order_acquire);
         release(gone);
     }
     return held;
-}
-
-uint64_t rmPassCacheReturned(RMPassCache *cache)
-{
-    if (cache && cache->generation != gCacheGeneration.load(std::memory_order_acquire))
-        rmPassCacheTrim(cache);
-    return cache ? cache->generation : gCacheGeneration.load(std::memory_order_acquire);
-}
-
-bool rmPassCachePublished(uint64_t generation)
-{
-    return gCacheGeneration.fetch_add(0, std::memory_order_seq_cst) == generation;
 }
 
 size_t rmPassCacheBytes(const RMPassCache *cache)

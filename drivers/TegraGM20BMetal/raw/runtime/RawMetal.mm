@@ -389,7 +389,6 @@ id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, u
         [](void *) {
             gRM->orphanCheck.store(true, std::memory_order_release);
             gRM->schedule.wake();
-            // the textures only kept pass copies hold go first, so trim gives back the chunks they held
             const RMPassTrim passes = rmPassTrim();
             const raw::Device::Trimmed kept = gRM->raw->trim();
             gRM->raw->purgeArenas(gRM->committed);

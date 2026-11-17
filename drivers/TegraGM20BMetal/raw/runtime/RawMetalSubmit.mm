@@ -3,6 +3,7 @@
 #import "RawMetalFresh.h"
 #include "RawMetalPlanExecution.h"
 #import "RawMetalEventJobs.h"
+#import "RawMetalPassCache.h"
 #include "raw_encode_mallocs.h"
 #include "raw_loop_ranges.h"
 #include "raw_order.h"
@@ -400,6 +401,7 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
             return false;
         }
         cb->_gpuPrefixEligible = false;
+        rmPassBind(cb, range.from, range.to);
         rmRangePlain(cb, range.from, range.to);
         writeFreshAhead(cb, range.from, range.to);
         if (r.gpuOrder && r.rawSinceM2v) {

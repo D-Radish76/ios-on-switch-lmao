@@ -4,6 +4,13 @@
 
 @implementation RMBuffer
 
+- (instancetype)init
+{
+    if ((self = [super init]))
+        _identity = rmNewIdentity();
+    return self;
+}
+
 + (Class)twinClass
 {
     return NSClassFromString(@"NBBuffer");

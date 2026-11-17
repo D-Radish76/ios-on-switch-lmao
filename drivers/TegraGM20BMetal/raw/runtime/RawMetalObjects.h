@@ -64,12 +64,20 @@ static inline id twinPublish(id object, __strong id &slot, id made)
 }
 
 // ---- the common base: an m2v twin and the selectors this facade does not answer itself ----
+inline uint64_t rmNewIdentity()
+{
+    static std::atomic<uint64_t> next{1};
+    return next.fetch_add(1, std::memory_order_relaxed);
+}
+
 @interface RMObject : NSObject {
 @public
     // the raw device, which gRM holds for the life of the process (raw_metal_device_open_lazy: one per process): no weak
     // reference, whose side-table lock every object's creation, dealloc and encoder begin took
     __unsafe_unretained id _device;
     id _twin;  // the m2v object over the same memory (made on first need)
+    // a texture's or buffer's number, never another object's in this process (rmNewIdentity); 0 otherwise
+    uint64_t _identity;
 }
 @property (nonatomic, copy) NSString *label;
 - (id)rmTwin;  // made now if needed; nil if it cannot be

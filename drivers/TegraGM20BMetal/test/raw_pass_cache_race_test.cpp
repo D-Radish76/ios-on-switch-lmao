@@ -1,33 +1,14 @@
 // SPDX-License-Identifier: MIT
-// A recording owns its pass-cache bank while idle/pressure release reclaims only banks the recording pool owns.
+// A command buffer owns its pass bank until it returns its recording, and the bank's copies name its textures no longer;
+// pressure and idle release reclaim only the banks of the recordings kept.
 #import <Metal/Metal.h>
 #include "../raw/runtime/RawMetalPassCache.h"
 #include <gtest/gtest.h>
+#include <atomic>
 #include <condition_variable>
-#include <future>
 #include <mutex>
 #include <thread>
 #include <vector>
-
-struct SwitchPassReturnGate {
-    std::promise<void> entered, released;
-};
-
-@interface SwitchPassReturnObject : NSObject {
-@public
-    SwitchPassReturnGate *_gate;
-}
-@end
-
-@implementation SwitchPassReturnObject
-
-- (void)dealloc
-{
-    _gate->entered.set_value();
-    _gate->released.get_future().wait();
-}
-
-@end
 
 namespace {
 
@@ -46,37 +27,33 @@ protected:
     }
 };
 
-MTLTextureDescriptor *targetDescriptor()
+MTLRenderPassDescriptor *colourPass(RMTexture *target, MTLLoadAction load = MTLLoadActionClear)
 {
-    MTLTextureDescriptor *t = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                                 width:64
-                                                                                height:64
-                                                                             mipmapped:NO];
-    t.storageMode = MTLStorageModePrivate;
-    t.usage = MTLTextureUsageRenderTarget;
-    return t;
+    MTLRenderPassDescriptor *d = [MTLRenderPassDescriptor renderPassDescriptor];
+    d.colorAttachments[0].texture = (id<MTLTexture>)target;
+    d.colorAttachments[0].loadAction = load;
+    d.colorAttachments[0].storeAction = MTLStoreActionStore;
+    return d;
+}
+
+void keepPass(RMCommandBuffer *cb, MTLRenderPassDescriptor *d, const std::vector<uint8_t> &key, uint64_t hash)
+{
+    RMPass facts{};
+    facts.color[0].texture = d.colorAttachments[0].texture;
+    rmPassKeep(cb, key, hash, [d copy], facts, [RMRenderEncoder new]);
 }
 
 TEST_F(RawPassCacheRace, ATrimKeepsTheBorrowedEntryValidUntilItsRecordingReturns)
 {
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    if (!device)
-        GTEST_SKIP() << "no Metal device on this host";
     std::mutex lock;
     std::condition_variable changed;
     bool stop = false, borrowed = false, trimmedBorrow = false;
     int looked = 0, hits = 0, read = 0;
     std::thread encoder([&] {
         @autoreleasepool {
-            RMRenderEncoder *e = [RMRenderEncoder new];
             std::vector<MTLRenderPassDescriptor *> passes;
-            for (int i = 0; i < kShapes; i++) {
-                MTLRenderPassDescriptor *d = [MTLRenderPassDescriptor renderPassDescriptor];
-                d.colorAttachments[0].texture = [device newTextureWithDescriptor:targetDescriptor()];
-                d.colorAttachments[0].loadAction = i % 2 ? MTLLoadActionLoad : MTLLoadActionClear;
-                d.colorAttachments[0].storeAction = MTLStoreActionStore;
-                passes.push_back(d);
-            }
+            for (int i = 0; i < kShapes; i++)
+                passes.push_back(colourPass([RMTexture new], i % 2 ? MTLLoadActionLoad : MTLLoadActionClear));
             std::vector<uint8_t> key;
             uint64_t hash = 0;
             for (int base = 0; base < kLookups; base += 8 * kShapes) {
@@ -97,12 +74,11 @@ TEST_F(RawPassCacheRace, ATrimKeepsTheBorrowedEntryValidUntilItsRecordingReturns
                                 return trimmedBorrow;
                             });
                         }
+                        rmPassBind(cb, kept->pass);
                         read += kept->pass.colorAttachments[0].texture == d.colorAttachments[0].texture;
                         hits++;
                     } else {
-                        RMPass facts{};
-                        facts.color[0].texture = d.colorAttachments[0].texture;
-                        rmPassKeep(cb, key, hash, [d copy], facts, e);
+                        keepPass(cb, d, key, hash);
                     }
                     if ((n + 1) % (2 * kShapes) == 0) {
                         std::lock_guard<std::mutex> held(lock);
@@ -111,8 +87,6 @@ TEST_F(RawPassCacheRace, ATrimKeepsTheBorrowedEntryValidUntilItsRecordingReturns
                     }
                 }
                 rmRecordingDone(cb);
-                if (!base)
-                    EXPECT_EQ(rmPassHeld().passes, 0u) << "the borrowed bank retires pressure's copies on return";
             }
         }
         std::lock_guard<std::mutex> held(lock);
@@ -143,71 +117,43 @@ TEST_F(RawPassCacheRace, ATrimKeepsTheBorrowedEntryValidUntilItsRecordingReturns
     EXPECT_EQ(rmPassHeld().passes, 0u);
 }
 
-TEST_F(RawPassCacheRace, AnIdleBankReleasesItsTexturesWithoutAnotherRecording)
+// Recordings pass between two threads through the pool alone: each names the pass's texture in the kept copy it finds, as a
+// replay asks, and lets it go as it returns, with no other ordering between the threads
+TEST_F(RawPassCacheRace, BanksPassedBetweenThreadsNameTheirTexturesOnlyWhileTaken)
 {
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    if (!device)
-        GTEST_SKIP() << "no Metal device on this host";
-    __weak id<MTLTexture> texture;
+    constexpr int kRounds = 512;
+    __weak RMTexture *gone;
+    std::atomic<int> hits{0}, read{0};
     @autoreleasepool {
-        RMCommandBuffer *cb = [RMCommandBuffer new];
-        rmTakeRecording(cb);
-        RMRenderEncoder *e = [RMRenderEncoder new];
-        MTLRenderPassDescriptor *d = [MTLRenderPassDescriptor renderPassDescriptor];
-        d.colorAttachments[0].texture = [device newTextureWithDescriptor:targetDescriptor()];
-        texture = d.colorAttachments[0].texture;
-        std::vector<uint8_t> key;
-        uint64_t hash = 0;
-        ASSERT_TRUE(rmPassKey(d, key, hash));
-        RMPass facts{};
-        facts.color[0].texture = texture;
-        rmPassKeep(cb, key, hash, [d copy], facts, e);
-        rmRecordingDone(cb);
-    }
-    ASSERT_NE(texture, nil);
-    EXPECT_GE(rmPassHeld().passes, 1u);
-    EXPECT_GE(rmPassTrim().passes, 1u);
-    EXPECT_EQ(texture, nil);
-    EXPECT_EQ(rmPassHeld().passes, 0u);
-}
-
-TEST_F(RawPassCacheRace, ATrimBeforeARacingReturnPublishesStillReleasesItsTextures)
-{
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    if (!device)
-        GTEST_SKIP() << "no Metal device on this host";
-    SwitchPassReturnGate gate;
-    __weak id<MTLTexture> texture;
-    std::thread returning([&] {
-        @autoreleasepool {
-            RMCommandBuffer *cb = [RMCommandBuffer new];
-            rmTakeRecording(cb);
-            @autoreleasepool {
-                MTLRenderPassDescriptor *d = [MTLRenderPassDescriptor renderPassDescriptor];
-                d.colorAttachments[0].texture = [device newTextureWithDescriptor:targetDescriptor()];
-                texture = d.colorAttachments[0].texture;
-                std::vector<uint8_t> key;
-                uint64_t hash = 0;
-                EXPECT_TRUE(rmPassKey(d, key, hash));
-                RMPass facts{};
-                facts.color[0].texture = texture;
-                rmPassKeep(cb, key, hash, [d copy], facts, [RMRenderEncoder new]);
+        RMTexture *target = [RMTexture new];
+        gone = target;
+        const auto run = [&](MTLRenderPassDescriptor *d) {
+            std::vector<uint8_t> key;
+            uint64_t hash = 0;
+            for (int n = 0; n < kRounds; n++) {
+                @autoreleasepool {
+                    RMCommandBuffer *cb = [RMCommandBuffer new];
+                    rmTakeRecording(cb);
+                    EXPECT_TRUE(rmPassKey(d, key, hash));
+                    if (const RMPassEntry *kept = rmPassFind(cb, key, hash)) {
+                        rmPassBind(cb, kept->pass);
+                        read += kept->pass.colorAttachments[0].texture == (id<MTLTexture>)target;
+                        hits++;
+                    } else {
+                        keepPass(cb, d, key, hash);
+                    }
+                    rmRecordingDone(cb);
+                }
             }
-            SwitchPassReturnObject *object = [SwitchPassReturnObject new];
-            object->_gate = &gate;
-            cb->_owners.push_back(object);
-            object = nil;
-            rmRecordingDone(cb);
-        }
-    });
-    gate.entered.get_future().wait();
-    EXPECT_NE(texture, nil);
-    rmPassTrim();
-    EXPECT_NE(texture, nil) << "the return still owns the unpublished bank";
-    gate.released.set_value();
-    returning.join();
-    EXPECT_EQ(texture, nil) << "the raced publication escaped pressure's idle-bank drain";
-    EXPECT_EQ(rmPassHeld().passes, 0u);
+        };
+        MTLRenderPassDescriptor *mine = colourPass(target), *theirs = colourPass(target);
+        std::thread other(run, theirs);
+        run(mine);
+        other.join();
+    }
+    EXPECT_GT(hits.load(), 0);
+    EXPECT_EQ(read.load(), hits.load()) << "a found copy named no texture or another";
+    EXPECT_EQ(gone, nil) << "a returned recording's copy outlived its command buffer with the texture";
 }
 
 }  // namespace

@@ -72,7 +72,8 @@ static id storedZetaTwinExcluded(RMTexture *t, id<MTLDevice> m2v, const char **w
         if (!gRM->raw->moveOwnedZeta(t->_raw, z, why))
             return nil;
     }
-    rmPassInvalidate();
+    // a kept pass's depth/stencil source header (RMPass::Zeta::sourceTic) is over the memory this moved from
+    rmPassTrim();
     gRM->rawSinceM2v = true;
     // published with submissions excluded, so a caller that waited on them finds this twin rather than moving again
     return twinPublish(t, t->_twin, twin);

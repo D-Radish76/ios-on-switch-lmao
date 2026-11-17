@@ -396,6 +396,7 @@ void rmOwnPass(RMRenderEncoder *e)
 {
     if (!e->_passShared)
         return;
+    rmPassBind(e->_cb, e->_pass);
     MTLRenderPassDescriptor *own = [e->_pass copy];
     [e->_cb retain:own];
     e->_pass = own;

@@ -36,21 +36,6 @@ static constexpr uint32_t kKeptMost = 64;
 static raw::TakePool<RMRecording, kKeptMost> &gRecordings = *new raw::TakePool<RMRecording, kKeptMost>;
 static std::atomic<size_t> gRecordingBytes{0};
 
-static RMPassTrim reclaimIdlePassCaches();
-
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-static std::atomic<size_t> gIdlePasses{0}, gIdlePassTextures{0};
-
-static void countIdlePasses(const RMPassCache *cache, bool held)
-{
-    const RMPassTrim counts = rmPassCacheHeld(cache);
-    gIdlePasses.fetch_add(held ? counts.passes : -counts.passes, std::memory_order_relaxed);
-    gIdlePassTextures.fetch_add(held ? counts.textures : -counts.textures, std::memory_order_relaxed);
-}
-#else
-#define countIdlePasses(cache, held)
-#endif
-
 static void swapRecording(RMCommandBuffer *b, RMRecording &r)
 {
     std::swap(b->_plan, r.plan);
@@ -88,12 +73,10 @@ void rmTakeRecording(RMCommandBuffer *b)
         b->_passCache = rmNewPassCache();
         return;
     }
-    countIdlePasses(r->passCache.get(), false);
     swapRecording(b, *r);
     gRecordingBytes.fetch_sub(r->kept, std::memory_order_relaxed);
     r->kept = 0;
     gRecordings.giveBack(node);
-    rmPassCacheReturned(b->_passCache.get());
 }
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
@@ -231,7 +214,7 @@ void rmRecordingDone(RMCommandBuffer *b)
     if (b->_recordingReturned)
         return;
     b->_recordingReturned = true;
-    const uint64_t generation = rmPassCacheReturned(b->_passCache.get());
+    rmPassCacheUnbind(b->_passCache.get());
     constexpr size_t kKeptBytes = 1 << 20;  // (a command buffer of a few megabytes of setBytes: its own, freed)
     uint64_t bytes = 0;
     for (const raw::Buffer &k : b->_bytes.chunks)
@@ -267,44 +250,37 @@ void rmRecordingDone(RMCommandBuffer *b)
     r->owners.clear();
     r->ownerKeys.clear();
     coalesceBytes(r->bytes);
-    countIdlePasses(r->passCache.get(), true);
     gRecordings.keep(node);
-    // The epoch RMW and trim's increment order publication against its drain. If trim advanced first, this return
-    // reclaims idle banks; otherwise trim acquires this publication through that RMW before draining them.
-    if (!rmPassCachePublished(generation))
-        reclaimIdlePassCaches();
 }
 
-static RMPassTrim reclaimIdlePassCaches()
+// `count` of each kept recording's pass bank, owned while it is read and kept again in the order it had: the next command
+// buffer takes the recording returned last
+template <typename Count> static RMPassTrim sumKeptBanks(Count &&count)
 {
     RMPassTrim total{};
-    uint32_t nodes[kKeptMost], count = 0;
-    while (count < kKeptMost) {
-        uint32_t node;
-        RMRecording *r = gRecordings.take(node);
+    uint32_t nodes[kKeptMost], taken = 0;
+    for (; taken < kKeptMost; taken++) {
+        RMRecording *r = gRecordings.take(nodes[taken]);
         if (!r)
             break;
-        nodes[count++] = node;
-        countIdlePasses(r->passCache.get(), false);
-        const RMPassTrim part = rmPassCacheTrim(r->passCache.get());
+        const RMPassTrim part = count(r->passCache.get());
         total.passes += part.passes;
         total.textures += part.textures;
     }
-    for (uint32_t i = 0; i < count; i++)
-        gRecordings.keep(nodes[i]);
+    while (taken)
+        gRecordings.keep(nodes[--taken]);
     return total;
 }
 
 RMPassTrim rmPassTrim()
 {
-    rmPassInvalidate();
-    return reclaimIdlePassCaches();
+    return sumKeptBanks(rmPassCacheTrim);
 }
 
 RMPassTrim rmPassHeld()
 {
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-    return {gIdlePasses.load(std::memory_order_relaxed), gIdlePassTextures.load(std::memory_order_relaxed)};
+    return sumKeptBanks(rmPassCacheHeld);
 #else
     return {};
 #endif
@@ -329,7 +305,6 @@ void releaseRecordings()
         RMRecording *r = gRecordings.take(node);
         if (!r)
             break;
-        countIdlePasses(r->passCache.get(), false);
         gRecordingBytes.fetch_sub(r->kept, std::memory_order_relaxed);
         dropBytes(r->bytes);
         *r = RMRecording();
@@ -388,9 +363,7 @@ void rmPoolCommandBuffers()
         __unsafe_unretained RMTexture *texture = (RMTexture *)object;
         facts.roles = uint8_t((texture->_raw.converted() ? RMResourceFacts::Converted : 0) |
                               (texture->_raw.planarStandIn ? RMResourceFacts::PlanarTarget : 0));
-        __unsafe_unretained RMTexture *root = texture;
-        while (root->_kind == RMTextureView && root->_parent)
-            root = root->_parent;
+        __unsafe_unretained RMTexture *root = texture->_levelsOwner ?: texture;
         facts.surfaceWrites = root->_surfaceWrites;
         facts.cpuBuffer = (__bridge void *)root->_buffer;
     } else if ([object isKindOfClass:[RMBuffer class]]) {

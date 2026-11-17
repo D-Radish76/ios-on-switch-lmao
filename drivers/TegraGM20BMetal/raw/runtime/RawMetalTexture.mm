@@ -132,6 +132,13 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
 
 @implementation RMTexture
 
+- (instancetype)init
+{
+    if ((self = [super init]))
+        _identity = rmNewIdentity();
+    return self;
+}
+
 + (Class)twinClass
 {
     return NSClassFromString(@"NBTexture");
