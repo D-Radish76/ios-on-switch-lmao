@@ -31,9 +31,12 @@ bool planeConversionUses(int slot) const
     return planeConversionQueued && planeConversion->sourceSlot == slot;
 }
 
+// A submission refused behind a failed source reports that source's plain failure: its producer says why.
 void planeConversionFinished()
 {
     auto &work = *planeConversion;
+    const int status =
+        work.status ? producerFailure(work.status, &planeSlots[work.sourceSlot].native->view.producer, 1) : 0;
     auto &target = convertedPlanes[work.target];
     if (target.backing)
         switch_gpu_backing_release(target.backing);
@@ -48,10 +51,10 @@ void planeConversionFinished()
     if (!work.status) {
         kickSwapQueue();
     } else if ((latchRetire ? firstUntaken() : pendingSwapRequest()) == work.request) {
-        if (work.status == TEGRA_SCANOUT_SOURCE_LOST) {
+        if (sourceUnshown(status, work.request, "overlay conversion")) {
             noteTaken(work.request, mach_absolute_time());
             planeNextSet = false;
-            dropLostFrame(work.request, kNoBuffer);
+            retireSwapUnshown(work.request, kNoBuffer);
         } else {
             native_legacy_transfer_observed(kIOReturnNotReady, work.request, 0);
         }

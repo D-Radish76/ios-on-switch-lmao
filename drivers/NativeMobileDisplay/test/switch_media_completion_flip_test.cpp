@@ -149,7 +149,25 @@ TEST_F(MediaFlip, AFailedProducerLeavesTheLatchAsItWas)
     EXPECT_EQ(d.model.assembly[kStartB], address(1));
 }
 
-TEST_F(MediaFlip, APartiallyWrittenStreamKeepsItsCandidateSlotsUntilTheRestoreLatches)
+// A completed stream leaves nothing to stop: the gate's writers of windows B and C, every overlay frame's planeStage
+// among them, never take host1x's channel lock for it.
+TEST_F(MediaFlip, ACompletedStreamIsNeverCancelled)
+{
+    shownByGate(video(1));
+    ASSERT_TRUE(armed(2));
+    d.complete(0);
+    d.donePass();
+    frame();
+    ASSERT_EQ(d.model.active[kStartB], address(2));
+    const unsigned cancels = gHost.cancels;
+    d.mediaFlipFromGate();
+    EXPECT_EQ(gHost.cancels, cancels);
+}
+
+// A stream SC7 stops before host1x counts it done may already have stored its addresses and request, and a boundary
+// taken them: the scanout halts there, and the resume writes the latch's set over them before its own request, so
+// nothing of the stopped stream is written back or held at the stop.
+TEST_F(MediaFlip, AStreamStoppedPartWayIsOverwrittenByTheResume)
 {
     shownByGate(video(1));
     ASSERT_TRUE(armed(2));
@@ -159,16 +177,16 @@ TEST_F(MediaFlip, APartiallyWrittenStreamKeepsItsCandidateSlotsUntilTheRestoreLa
     d.model.write(Display::kDcStateControl, gHost.request);
     d.model.boundary();
     ASSERT_EQ(d.model.active[kStartB], address(2));
-    d.mediaFlipFromGate();
-    EXPECT_EQ(d.mediaHostHeldSlots, uint64_t(1) << 2);
-    EXPECT_EQ(d.model.assembly[kStartB], address(1));
+    d.model.written.clear();
+    d.suspend();
+    EXPECT_TRUE(d.mediaFlipIdle());
+    EXPECT_TRUE(d.model.written.empty());
     d.complete(0);
     d.donePass();
-    EXPECT_EQ(d.mediaHostHeldSlots, uint64_t(1) << 2);
     EXPECT_EQ(d.notShown, 1u);
+    d.resume();
     frame();
     EXPECT_EQ(d.model.active[kStartB], address(1));
-    EXPECT_EQ(d.mediaHostHeldSlots, 0u);
     EXPECT_EQ(d.completions(seq), 1u);
 }
 

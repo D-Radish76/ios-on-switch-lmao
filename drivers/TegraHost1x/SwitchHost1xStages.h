@@ -191,6 +191,17 @@ public:
         return true;
     }
 
+    // Engine::physical's, for a failed result, before it releases the job's bridge: the first of the job's inputs that
+    // failed says why (its GPU producers through the bridge, its host1x producers); none did, the job's own failure.
+    static int why(uint32_t slot, const switch_gpu_bridge *bridge)
+    {
+        const int input = bridge ? switch_gpu_bridge_why(bridge) : 0;
+        if (input)
+            return input;
+        const int host1x = switch_gpu_backing_tokens_failure(stages[slot].producers.tokens, SwitchHost1xProducers::kMax);
+        return host1x ? host1x : SWITCH_GPU_BACKING_WRITER_FAILED;
+    }
+
     static bool producerCancelled(uint32_t slot, uint32_t syncpt, uint32_t reached, bool sourceFailed = false)
     {
         auto &stage = stages[slot];

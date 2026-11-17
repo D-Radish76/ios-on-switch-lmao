@@ -147,19 +147,22 @@ static int snapshot_read(switch_gpu_backing *backing, switch_gpu_backing_token *
 		if (!(access.access & SWITCH_GPU_BACKING_WRITE) ||
 		    access.content != backing->content)
 			continue;
-		// A failed producer leaves undefined bytes and nothing to wait for: the snapshot goes on without it.
 		const int status = switch_gpu_backing_token_status(&access.token);
-		if (status < 0) {
-			switch_gpu_backing_note_failure_locked(backing, access, status);
-			failed_writer = true;
-#if DEVELOPMENT || DEBUG
-			look.failed = access.token;
-			look.failed_status = status;
-#endif
-		} else {
+		if (status >= 0) {
 			writer = &access;
+			continue;
 		}
+		// A writer that failed left no frame. A read ordered behind a promised write still to come reads past it; any
+		// other is refused with why.
+		switch_gpu_backing_note_failure_locked(backing, access, status);
+		failed_writer = true;
+		if (!pending)
+			result = switch_gpu_backing_token_failure(&access.token);
 	}
+	if (!result && !pending &&
+	    (switch_gpu_backing_write_refused_locked(backing) ||
+	     (backing->promise_count && switch_gpu_backing_promise_given_up_locked(backing))))
+		result = SWITCH_GPU_BACKING_WRITE_REFUSED;
 	if (!result && !writer && !failed_writer && !allow_cpu)
 		result = SWITCH_GPU_BACKING_STALE;
 	if (!result && writer)

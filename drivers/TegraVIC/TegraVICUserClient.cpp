@@ -159,7 +159,9 @@ IOReturn ioreturn(int err)
     case -19:
         return kIOReturnNotReady;
     case -125:
-    case -5:
+    case SWITCH_GPU_BACKING_WRITER_GONE:
+    case SWITCH_GPU_BACKING_WRITER_FAILED:
+    case SWITCH_GPU_BACKING_WRITE_REFUSED:
         return kIOReturnAborted;
     case -95:
         return kIOReturnUnsupported;

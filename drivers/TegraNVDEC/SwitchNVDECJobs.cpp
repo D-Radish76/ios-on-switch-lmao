@@ -49,6 +49,11 @@ int status(const switch_gpu_backing_token *token)
     return Results::status(token);
 }
 
+int tokenFailure(const switch_gpu_backing_token *token)
+{
+    return Results::why(token);
+}
+
 int waitSequence(uint64_t sequence)
 {
     return Results::waitLegacy(sequence);
@@ -106,7 +111,7 @@ struct Retirement {
     static void physical(uint32_t slot, int result)
     {
         auto &job = gQueue.jobs[slot];
-        Results::physical(job.outcome, result);
+        Results::physical(job.outcome, result, result < 0 ? Stages::why(slot, job.bridge) : 0);
         switch_gpu_bridge_release(&job.bridge);
         switch_nvdec_semantics_physical(0);
     }
@@ -445,6 +450,7 @@ bool switch_nvdec_jobs_start(const switch_dma_buffer &setup, uint32_t syncpt, ui
         return false;
     }
     (void)switch_gpu_backing_register_filter_status(SWITCH_GPU_ENGINE_NVDEC, switch_nvdec_token_filter_status);
+    (void)switch_gpu_backing_register_failure(SWITCH_GPU_ENGINE_NVDEC, tokenFailure);
     switch_nvdec_semantics_physical(completed);
     return true;
 }
@@ -594,7 +600,7 @@ extern "C" bool switch_nvdec_host1x_cancelled(uint32_t syncpt, uint32_t reached)
         const auto &job = gQueue.jobs[slot];
         const int source = Results::sourceFailure(job.outcome, &job.bridge, switch_gpu_bridge_source_failure);
         if (Stages::producerCancelled(slot, syncpt, reached, source < 0))
-            changed |= Results::physical(job.outcome, Stages::kCancelled);
+            changed |= Results::physical(job.outcome, Stages::kCancelled, Stages::why(slot, job.bridge));
     }
     IOLockUnlock(gLock);
     return changed;

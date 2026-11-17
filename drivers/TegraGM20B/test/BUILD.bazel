@@ -1508,6 +1508,7 @@ host_test(
     srcs = [
         "switch_gpu_backing_failure_test.cpp",
         "switch_gpu_backing_fixture.h",
+        "//drivers/TegraGM20B:SwitchGpuPresentTokens.h",
     ],
     deps = [
         ":backing",

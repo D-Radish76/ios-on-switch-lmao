@@ -143,8 +143,6 @@ struct NativeLegacyDisplay {
     }
 
 #if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
-    static constexpr size_t swapId = offsetof(OriginalLegacySwapRequest, swap);
-
     struct {
         int front = 0;
     } ring;
@@ -152,6 +150,11 @@ struct NativeLegacyDisplay {
     uint64_t seqOf(const OriginalLegacySwapRequest *) const
     {
         return taken;
+    }
+
+    static uint32_t swapOf(const OriginalLegacySwapRequest *request)
+    {
+        return request->swap;
     }
 #endif
 
@@ -275,20 +278,6 @@ switch_gpu_scanout_look drawn(uint64_t content)
     return look;
 }
 
-TEST_F(DirectVisible, AFlipOverAFailedWriterLogsTheWriter)
-{
-    display.directLook = drawn(4);
-    display.directLook.failed = {77, 2, SWITCH_GPU_ENGINE_GM20B, 6};
-    display.directLook.failed_status = -5;
-    request.swap = 41;
-    EXPECT_TRUE(display.presentDirectVisible(&request, NativeLegacyDisplay::kSlot0 + 1, 1280, 720, 5));
-    EXPECT_EQ(linesWith("swap 41 (taken 1) flips to surface 33 (allocation 9) in slot 5 with no present job, over a "
-                        "failed writer"),
-              1u);
-    EXPECT_EQ(linesWith("queue 6 reset 2 job 77 failed (-5); its contents are undefined (1 so far)"), 1u);
-    EXPECT_EQ(linesWith("again with nothing written"), 0u);
-}
-
 TEST_F(DirectVisible, AFlipToContentsAlreadyShownNamesTheFrameThatShowedThem)
 {
     display.directLook = drawn(4);
@@ -300,7 +289,6 @@ TEST_F(DirectVisible, AFlipToContentsAlreadyShownNamesTheFrameThatShowedThem)
                         "job, again with nothing written since swap 41 (taken 1), 1 frames ago (generation 4,"),
               1u);
     EXPECT_EQ(linesWith("nothing else changes with it (1 so far)"), 1u);
-    EXPECT_EQ(linesWith("failed writer"), 0u);
 }
 
 // A pending writer promise is a write still to come, whatever the generation.
@@ -312,7 +300,6 @@ TEST_F(DirectVisible, AFlipToNewOrPromisedContentsLogsNothing)
     EXPECT_TRUE(display.presentDirectVisible(&request, NativeLegacyDisplay::kSlot0 + 1, 1280, 720, 5));
     display.directLook.promised = 1;
     EXPECT_TRUE(display.presentDirectVisible(&request, NativeLegacyDisplay::kSlot0 + 1, 1280, 720, 5));
-    EXPECT_EQ(linesWith("failed writer"), 0u);
     EXPECT_EQ(linesWith("again with nothing written"), 0u);
 }
 #endif

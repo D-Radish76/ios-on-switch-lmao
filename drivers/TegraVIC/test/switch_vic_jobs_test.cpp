@@ -97,6 +97,22 @@ int switch_gpu_backing_register_filter_status(uint32_t, switch_gpu_backing_filte
     return 0;
 }
 
+int switch_gpu_backing_register_failure(uint32_t, switch_gpu_backing_failure)
+{
+    return 0;
+}
+
+// A job's why (SwitchHost1xStages why): none of its producers failed
+int switch_gpu_backing_tokens_failure(const switch_gpu_backing_token *, uint32_t)
+{
+    return 0;
+}
+
+int switch_gpu_bridge_why(const switch_gpu_bridge *)
+{
+    return 0;
+}
+
 void switch_gpu_backing_completed()
 {}
 

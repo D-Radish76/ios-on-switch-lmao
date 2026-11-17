@@ -727,7 +727,7 @@ u32 switch_gpu_chan_fence_sealed(struct tgm_chan *chan, int external,
  *    column-scans (NativeScanout.h native_legacy_block_copy);
  *  - the kernel fence (chan_fence: WFI, the L2 flush, semaphore release, NON_STALL_INTERRUPT).
  * The fence's nonstall interrupt completes it: the caller's callback (native_legacy_gpu_complete, which any context may
- * call) runs from the completion work item, with TEGRA_SCANOUT_SOURCE_LOST when a producer it waited for failed (the
+ * call) runs from the completion work item, with why (TEGRA_SCANOUT_SOURCE_*) when a producer it waited for failed (the
  * acquire passed on the kill's release, over a partial frame). A present that has not completed 1 s
  * after it was queued panics, naming what it waits for. Every mapping is volatile: the source was written by work whose
  * fence flushed the L2 (or bypassed it), the destination is read by the display controller only. The copy is
@@ -761,7 +761,7 @@ struct present_state {
 	int fenced_due;
 	void (*done)(void *, int);
 	void *arg;
-	u32 completing; /* completions claimed whose callback has not returned yet */
+	u32 completing; /* completions claimed and not yet handed to their callback */
 	u32 stamped;    /* stats: seqno of the present in flight, whose copy is stamped */
 	u32 presents;   /* stats */
 	u64 lat_sum, lat_max;

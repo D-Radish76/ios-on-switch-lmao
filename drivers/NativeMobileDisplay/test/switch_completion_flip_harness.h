@@ -498,7 +498,7 @@ struct Display : OSObject {
     IOTimerEventSource *flipTimer = &flipTimerStore, *gpuDeadline = &gpuDeadlineStore;
     IOWorkLoop loop;
     bool settleArmed = false, planeHeldSet = false;
-    unsigned gpuDeadlines = 0, donePasses = 0;
+    unsigned donePasses = 0;
     uint64_t gpuDoneAt = 0, gpuSequence = 0;
 
     IOWorkLoop *getWorkLoop()

@@ -807,6 +807,8 @@ host_test(
     name = "switch_source_wait_test",
     srcs = [
         "switch_source_wait_test.cpp",
+        "//drivers/NativeMobileDisplay:SwitchUnshownSource.h",
+        "//drivers/TegraDisplayFlip:TegraScanoutCopy.h",
         "//drivers/NativeMobileDisplay:SwitchSourceWaitDisplay.h",
         "//drivers/TegraVIC:SwitchNativeScanout.h",
         "//drivers/TegraVIC:SwitchNativeSurface.h",
@@ -883,6 +885,8 @@ host_test(
     name = "switch_plane_conversion_test",
     srcs = [
         "switch_plane_conversion_test.cpp",
+        "//drivers/NativeMobileDisplay:SwitchUnshownSource.h",
+        "//drivers/TegraDisplayFlip:TegraScanoutCopy.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneConversionDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchScanoutBuffer.h",
         "//drivers/NativeMobileDisplay:NativePlanes.h",
@@ -1221,6 +1225,8 @@ host_test(
     name = "switch_vic_scanout_test",
     srcs = [
         "switch_vic_scanout_test.cpp",
+        "//drivers/NativeMobileDisplay:SwitchUnshownSource.h",
+        "//drivers/TegraDisplayFlip:TegraScanoutCopy.h",
         "//drivers/NativeMobileDisplay:SwitchVICScanoutDisplay.h",
         "//drivers/TegraVIC:SwitchVICScanoutConvert.h",
         "//drivers/TegraVIC:SwitchNativeScanout.h",

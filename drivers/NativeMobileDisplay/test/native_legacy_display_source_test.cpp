@@ -61,7 +61,7 @@ TEST(DirectScanoutSource, FenceOnlyPresentNoRetireAtTheOffer)
 {
     const CodeText offer = method("bool offerDirect(");
     EXPECT_TRUE(offer.has("TEGRA_SCANOUT_COPY_FENCE_ONLY"));
-    EXPECT_FALSE(offer.has("retireSwap"));
+    EXPECT_FALSE(offer.has("retireSwap("));
 }
 
 TEST(DirectScanoutSource, RetireAtTheLatchInQueueOrder)
@@ -93,19 +93,13 @@ TEST(DirectScanoutSource, NoEarlyRetireOrCollapseOnceRetiringAtTheLatch)
     EXPECT_TRUE(method("void finishTransfer(").before("if (latchRetire)", "retireSwap"));
 }
 
-// The GPU driver owns an accepted offer's deadline (TegraScanoutCopy.h): the display waits while the driver holds it, and a
-// frame whose rendering was lost is neither flipped to nor copied on the CPU.
-TEST(DirectScanoutSource, LateOffersAreTheDriversAndLostFramesAreNotShown)
+// The GPU driver owns an accepted offer's deadline (TegraScanoutCopy.h): the display's one deadline names whether the driver
+// still holds it.
+TEST(DirectScanoutSource, LateOffersAreTheDrivers)
 {
     const CodeText deadline = method("void gpuDeadlineCheck()");
     EXPECT_TRUE(deadline.before("tegra_gm20b_scanout_outstanding(this)", "panic("));
     EXPECT_TRUE(deadline.has("fence only, direct slot"));
-    EXPECT_TRUE(method("void finishGpuCopy(int status)")
-                    .before("if (status == TEGRA_SCANOUT_SOURCE_LOST) {", "gpuBypass = true;"));
-    const CodeText drop = method("void dropLostFrame(");
-    EXPECT_TRUE(drop.has("retireUnshown(seqOf(request));"));
-    EXPECT_FALSE(drop.has("gpuBypass"));
-    EXPECT_FALSE(drop.has("presentEntry"));
 }
 
 // A direct slot keeps what window A may scan from it until the slot is dropped: the surface, its wired memory and its
@@ -426,11 +420,11 @@ TEST(LegacyFramebufferTable, ContractSlotsOverridden)
 TEST(DirectScanoutSource, FailedExactProducerNeverFallsThroughToCpuCopy)
 {
     for (const char *name : {"bool offerDirect(", "bool offerGpuCopy("}) {
-        const CodeText lost = method(name).between("if (offered == TEGRA_SCANOUT_SOURCE_LOST)", "if (stats)");
+        const CodeText lost = method(name).between("if (sourceUnshown(offered, request,", "if (stats)");
         EXPECT_TRUE(lost.has("noteTaken(request, kickAt);"));
         EXPECT_TRUE(lost.has("planeNextSet = false;"));
         EXPECT_TRUE(lost.has("kIOReturnAborted"));
-        EXPECT_TRUE(lost.has("dropLostFrame(request,"));
+        EXPECT_TRUE(lost.has("retireSwapUnshown(request,"));
         EXPECT_TRUE(lost.has("return true;"));
     }
 }

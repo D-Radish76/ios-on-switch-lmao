@@ -116,10 +116,16 @@ enum {
  * CPU lock of one waits for the job that keeps it. Make:
  * `uses_address`/`count`, `channel` the channel whose job will keep it; the reply names the promise. Cancel: `promise`,
  * released at once. A job that names it (TegraGM20BJobFulfills) releases it at its end; a kill of the channel it was
- * kept on and the connection's close release it too. */
+ * kept on and the connection's close release it too.
+ * Withdraw: the command buffer failed before its jobs all reached the kernel, so its writes never come. With `count`
+ * zero, `promise` is given up (a reader parked on it goes on without it) and released as Cancel releases it; otherwise
+ * `uses_address`/`count` name, as Make does, IOSurfaces it wrote under no promise. Either way each surface's frame is
+ * refused until its next write (SWITCH_GPU_BACKING_WRITE_REFUSED), so a present of it is not shown with the frame before
+ * in its place. */
 enum {
 	TegraGM20BPromiseMake = 0,
 	TegraGM20BPromiseCancel = 1,
+	TegraGM20BPromiseWithdraw = 2,
 };
 
 struct TegraGM20BAbiWriterPromise {

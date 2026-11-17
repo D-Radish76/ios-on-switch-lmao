@@ -25,7 +25,7 @@ struct DirectShown {
 };
 
 DirectShown directShown[kSlots] = {};
-uint32_t directFailedFlips = 0, directAgainFlips = 0;
+uint32_t directAgainFlips = 0;
 #endif
 
 void holdScanoutBacking(unsigned k)
@@ -95,13 +95,6 @@ bool presentDirectVisible(const OriginalLegacySwapRequest *request, int entry, u
 }
 
 #if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
-static uint32_t swapOf(const OriginalLegacySwapRequest *request)
-{
-    uint32_t id = 0;
-    memcpy(&id, reinterpret_cast<const unsigned char *>(request) + swapId, sizeof(id));
-    return id;
-}
-
 // request, already taken, shows entry's surface as directLook found it: by this flip or by an accepted present.
 void noteDirectShown(int entry, const OriginalLegacySwapRequest *request)
 {
@@ -117,13 +110,6 @@ void logDirectFlip(int entry, const OriginalLegacySwapRequest *request, int scan
     const DirectShown before = directShown[entry - kSlot0];
     noteDirectShown(entry, request);
     const DirectShown &now = directShown[entry - kSlot0];
-    if (look.failed_status < 0 && switch_gpu_refusal::logged(directFailedFlips++)) {
-        IOLog("SwitchDisplay: swap %u (taken %llu) flips to surface %u (allocation %llu) in slot %d with no present "
-              "job, over a failed writer: engine %u queue %u reset %llu job %llu failed (%d); its contents are "
-              "undefined (%u so far)\n",
-              now.swap, now.taken, look.surface, look.allocation, entry, look.failed.engine, look.failed.queue,
-              look.failed.reset_generation, look.failed.value, look.failed_status, directFailedFlips);
-    }
     if (!before.taken || before.allocation != look.allocation || before.content != look.content || look.promised ||
         !switch_gpu_refusal::logged(directAgainFlips++))
         return;

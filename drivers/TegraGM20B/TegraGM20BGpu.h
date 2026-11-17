@@ -276,7 +276,8 @@ int switch_gpu_chan_exec_job(struct tgm_chan *chan, const struct tgm_push *push,
 			     const struct switch_gpu_release *releases, uint32_t release_count);
 /* switch_gpu_chan_exec_job with acquires on event words as well (SwitchGpuWordWait.h). `owned`, the job's ownership
  * ordered transaction (SwitchGpuBacking.h) or NULL, is published once nothing can fail the job. Its backing locks are
- * released before GP_PUT, and the ownership order after it. A return of 0 finished it; an error leaves it for abort. */
+ * released then, and the ownership order once the channel's submitted seqno names the job, before GP_PUT. A return of 0
+ * finished it; an error leaves it for abort. */
 struct switch_gpu_word_wait;
 struct switch_gpu_backing_transaction;
 int switch_gpu_chan_exec_events(struct tgm_chan *chan, const struct tgm_push *push, uint32_t count,
@@ -459,7 +460,7 @@ void tgm_fence_kill_clear(volatile uint32_t *fence);
  * given, and returns at once: 0, or -EBUSY (one in flight), -EINVAL, -ENODEV. done(arg, status) runs exactly once for an
  * accepted present, from its completion work item, when its bytes are in DRAM: status 0, or the producers' failure.
  * One not done in 1 s is the present's deadline's (gpu_present_deadline.c).
- * tgm_present_outstanding: whether the copy accepted with `arg` is not completed yet (its callback not returned). */
+ * tgm_present_outstanding: whether the copy accepted with `arg` is not completed yet (its callback not called). */
 int tgm_present_open(struct tgm_vm **pvm);
 int tgm_present_map(uint64_t va, struct tgm_mem *mem, uint64_t bytes, uint8_t kind);
 int tgm_present_unmap(uint64_t va, uint64_t bytes);
@@ -476,10 +477,6 @@ int tgm_present_watch_dependencies(void (*done)(void *, int), void *arg,
 				   const struct switch_gpu_backing_token *dependencies,
 				   uint32_t dependency_count);
 #if (defined(DEVELOPMENT) && DEVELOPMENT) || (defined(DEBUG) && DEBUG)
-/* Debug kernels (TegraGM20BUserClientPresent.cpp): a present job just queued, of whose dependencies its tokens held
- * `held`. Fewer: it left out writers whose jobs had failed, and each dependency failed by now is logged. */
-void switch_gpu_present_failed_writers(const struct switch_gpu_backing_token *dependencies,
-				       uint32_t dependency_count, uint32_t held);
 /* Debug kernels (gpu_describe.c): the process whose channel a GM20B token names (its queue is the channel's uid), as
  * named at the channel's creation; "-" for another engine's token or a channel no longer known. Takes no lock. */
 void switch_gpu_writer_process(const struct switch_gpu_backing_token *token, char *process,

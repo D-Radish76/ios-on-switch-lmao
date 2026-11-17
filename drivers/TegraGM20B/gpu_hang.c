@@ -102,7 +102,7 @@ int tgm_chan_killed(struct nvif_event *event, void *repv, u32 repc)
 		WRITE_ONCE(chan->fault_va, tgm_fault_va(report, (int)chan->chid));
 	WRITE_ONCE(chan->error, fault_code(report));
 	first = tgm_kill_first(chan->faulted, chan->fault_seqno, READ_ONCE(*chan->fence_cpu));
-	switch_gpu_timeline_failed(chan->timeline, first - 1);
+	switch_gpu_timeline_failed(chan->timeline, first - 1, chan->critical);
 	tgm_fence_kill_record(chan->fence_cpu, first, chan->submitted, chan->error);
 	__atomic_store_n(chan->fence_cpu, chan->submitted, __ATOMIC_RELEASE);
 	__asm__ volatile("dsb sy" ::: "memory");

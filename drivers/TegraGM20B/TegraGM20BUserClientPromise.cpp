@@ -57,12 +57,36 @@ IOReturn AGXDeviceUserClient::writerPromise(const TegraGM20BAbiWriterPromise *in
 					    TegraGM20BAbiWriterPromiseReply *out)
 {
 	*out = {};
-	if (in->op == TegraGM20BPromiseCancel) {
+	if (in->op == TegraGM20BPromiseWithdraw && in->count) {
+		TegraGM20BAbiSurfaceUse uses[TegraGM20BMaxPromiseUses];
+		switch_gpu_backing *refused[TegraGM20BMaxPromiseUses];
+		if (in->count > TegraGM20BMaxPromiseUses ||
+		    copyin(in->uses_address, uses, in->count * sizeof(uses[0])))
+			return kIOReturnBadArgument;
+		for (uint32_t i = 0; i < in->count; ++i) {
+			const Bo *bo = findBo(uses[i].handle);
+			if (!bo || !bo->backing || !bo->surface ||
+			    uses[i].access != TegraGM20BSurfaceWrite || uses[i].reserved)
+				return kIOReturnBadArgument;
+			refused[i] = bo->backing;
+		}
+		for (uint32_t i = 0; i < in->count; ++i)
+			switch_gpu_backing_write_refused(refused[i]);
+		return kIOReturnSuccess;
+	}
+	if (in->op == TegraGM20BPromiseCancel || in->op == TegraGM20BPromiseWithdraw) {
 		if (in->promise >= TegraGM20BMaxPromises ||
 		    promises_[in->promise].state != SWITCH_GPU_PROMISE_MADE)
 			return kIOReturnBadArgument;
+		const bool withdrawn = in->op == TegraGM20BPromiseWithdraw;
+		// withdrawn, or given up on before this cancel: its surfaces never got the promised frame, past the ref this
+		// drops. A withdrawn promise is marked abandoned before its word moves, so a reader it lets go is refused.
+		if (withdrawn || tgm_promise_abandoned(tgm_fence_offset(promiseWord(in->promise)),
+						       promises_[in->promise].value))
+			for (uint32_t i = 0; i < promiseSurfaceCount_[in->promise]; ++i)
+				switch_gpu_backing_write_refused(promiseSurfaces_[in->promise][i]);
 		dropPromiseSurfaces(in->promise);
-		releasePromise(in->promise, false);
+		releasePromise(in->promise, withdrawn);
 		return kIOReturnSuccess;
 	}
 	if (in->op != TegraGM20BPromiseMake || !in->count || in->count > TegraGM20BMaxPromiseUses ||

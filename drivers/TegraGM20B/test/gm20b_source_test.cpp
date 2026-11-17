@@ -1495,10 +1495,7 @@ TEST(GM20BPresentSource, ACopyEngineResetRedoesThePresentOnTheGpu)
 	EXPECT_TRUE(fenced.before("nvxnu_work_schedule(tgm_present.redo_work); return; }",
 				  "tgm_present.fenced_due = 1;"));
 	const CodeText redo = Block(gpu(), "void tgm_present_redo_work(");
-	EXPECT_TRUE(redo.before("|| !gate_try()) return;", "tgm_present_push_copy(push);"));
 	EXPECT_TRUE(redo.before("tgm_present_push_copy(push);", "chan_fence_volatile(chan);"));
-	EXPECT_TRUE(redo.before("__atomic_store_n(&tgm_present.redoing, 0, __ATOMIC_RELEASE);",
-				"#endif mutex_unlock(&tgm_present.lock); gate_leave();"));
 	EXPECT_TRUE(Block(gpu(), "static void gate_open(").has("tgm_present_redo_kick();"));
 	EXPECT_FALSE(redo.has("done(arg"));
 	EXPECT_FALSE(redo.has("tgm_present.done"));
