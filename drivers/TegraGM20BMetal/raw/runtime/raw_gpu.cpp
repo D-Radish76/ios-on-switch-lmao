@@ -8725,8 +8725,7 @@ void RenderEncoder::end()
         live && (live->freeForm.rung == FetchIteratedBlend || live->stagesOff)) {
         p_.raw(live->restore.data(), uint32_t(live->restore.size()));
         cb_->extrasLive_ = nullptr;
-        if (live->stagesOff)
-            cb_->heldSegment_.lose();
+        cb_->heldSegment_.lose();
     }
     if (narrowed_) {
         p_.m(CT_SELECT, targetSelect(colorTargets()));

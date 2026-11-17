@@ -489,4 +489,72 @@ TEST(PreparedIteratedBlend, ResidentAndInlineBaseAndDerivedProgramsEnableAndRest
     }
 }
 
+// A rung-3 state drawn last in one pass and first in the next, the next in the same command buffer or the one after: the
+// first pass's end set its iterated blend back, so the next pass's draw runs its segment again
+void drawRung3InTwoPasses(bool acrossCommandBuffers)
+{
+    kernel_model::model = {};
+    raw::Device dev;
+    std::string error;
+    ASSERT_TRUE(dev.open(variantPack(false, true).c_str(), 0, error, raw::Device::Role::Client)) << error;
+    raw::Pipeline *base = dev.pipeline(kVariantKey, raw::PackForm::FetchFree);
+    ASSERT_NE(base, nullptr);
+    ASSERT_TRUE(bool(base->segment));
+    ASSERT_TRUE(base->segment.keptAcrossPasses);
+    raw::Texture target[2];
+    for (auto &texture : target)
+        ASSERT_TRUE(dev.createTexture(64, 64, kRGBA8, texture));
+    raw::Buffer buffer;
+    ASSERT_TRUE(dev.createBuffer(4096, buffer));
+    ASSERT_EQ(buffer.va % 256, 0u);
+    raw::PassDesc pass;
+    pass.count = 2;
+    for (uint32_t i = 0; i < 2; i++)
+        pass.color[i].texture = &target[i];
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    uint32_t sequence = 0;
+    for (int k = 0; k < 2; k++) {
+        if (k && acrossCommandBuffers) {
+            ASSERT_TRUE(cb->commit(sequence));
+            cb = dev.begin();
+            ASSERT_NE(cb, nullptr);
+        }
+        raw::RenderEncoder *encoder = cb->render(pass);
+        ASSERT_NE(encoder, nullptr);
+        encoder->setPipeline(base);
+        encoder->setBuffer(kFragment, kSlot, &buffer, 16);  // unaligned: the base program, not its residual-0 variant
+        const char *why = nullptr;
+        ASSERT_TRUE(encoder->draw(kTriangle, 0, 3, 1, 0, &why)) << (why ? why : "");
+        encoder->end();
+    }
+    ASSERT_TRUE(cb->commit(sequence));
+    uint32_t segmentRuns = 0;
+    for (const kernel_model::Job &job : kernel_model::model.jobs)
+        for (const auto &push : job.pushes)
+            segmentRuns += push.va == base->segment.va;
+    EXPECT_EQ(segmentRuns, 2u);
+    std::map<uint32_t, uint32_t> state;
+    uint32_t draws = 0;
+    for (const Method &method : submitted()) {
+        state[method.method] = method.value;
+        if (!drawMacro(method.method))
+            continue;
+        draws++;
+        EXPECT_EQ(state[NVB197_SET_ITERATED_BLEND] & 1, 1u) << "draw " << draws;
+        EXPECT_EQ(state[NVB197_SET_BLEND_STATE_PER_TARGET], 0u) << "draw " << draws;
+    }
+    EXPECT_EQ(draws, 2u);
+}
+
+TEST(PreparedIteratedBlend, TheNextPassAfterOneEndingInARung3StateBindsItsSegmentAgain)
+{
+    drawRung3InTwoPasses(false);
+}
+
+TEST(PreparedIteratedBlend, TheNextCommandBufferAfterOneEndingInARung3StateBindsItsSegmentAgain)
+{
+    drawRung3InTwoPasses(true);
+}
+
 }  // namespace
