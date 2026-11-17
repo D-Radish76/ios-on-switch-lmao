@@ -463,10 +463,12 @@ TEST(RawRecordCost, ChangedStateDrawByCall)
     printf("record cost by call %-26s %8.0f instr a draw\n", "all", total);
     EXPECT_GT(draws, 0u);
     // Core Animation's texture and sampler with the sampler bound already, and a draw whose bindings leave its check as
-    // it was (measured 745 and 1,924 a draw in a release build, 926 and 2,023 in a debug one; all calls 3,959 and 4,666)
+    // it was (measured 745 and 1,924 a draw in a release build, 926 and 2,023 in a debug one; all calls 3,959 and 4,666).
+    // Each encoder here ends in an iterated-blend state, whose segment the next pass has to bind again once the
+    // pass end has set its extras back: 1,077 and 2,308 a draw in a debug build, all calls 5,286
     EXPECT_LT(sums[TextureSampler] / draws, 1100);
-    EXPECT_LT(sums[Draw] / draws, 2300);
-    EXPECT_LT(total, 5200);
+    EXPECT_LT(sums[Draw] / draws, 2400);
+    EXPECT_LT(total, 5500);
 }
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
