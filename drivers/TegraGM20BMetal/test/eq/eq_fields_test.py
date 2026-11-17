@@ -50,33 +50,5 @@ class Runs(unittest.TestCase):
         self.assertEqual(len(f.draws), 2)
 
 
-class IteratedState(unittest.TestCase):
-    def fields(self, registers: str) -> dict[str, str]:
-        return eq_fields.digest_fields(frame('SUBMIT 1\n' + draw(0, '-', '900', registers) + 'SUBMIT 2\n').draws[0])
-
-    def test_a_disabled_iterated_program_leaves_the_draws_live_state_unchanged(self):
-        mode = ' dd0=0 12e4=1'
-        residue = ' dd4=9 df0=0 df4=c811 1480=34cd 1340=8006 1344=4001 1358=4303'
-        self.assertEqual(self.fields(mode), self.fields(mode + residue))
-
-    def test_active_programs_and_common_blend_equations_still_change_the_draw(self):
-        for mode, changed in (
-            (' dd0=1 12e4=0', ' dd4=9 df4=c811'),
-            (' dd0=1 12e4=0', ' 1480=34cd'),
-            (' dd0=1 12e4=1', ' 1480=34cd'),
-            (' dd0=2 12e4=1', ' 1480=34cd'),
-            (' dd0=3 12e4=1', ' df4=c811'),
-            (' dd0=0 12e4=0', ' 1340=8006 1344=4001 1358=4303'),
-            (' 12e4=1', ' dd4=9 df4=c811'),
-            (' dd0=0', ' 1340=8006'),
-        ):
-            with self.subTest(mode=mode, changed=changed):
-                self.assertNotEqual(self.fields(mode), self.fields(mode + changed))
-
-    def test_global_colour_key_remains_live_when_iterated_blend_is_disabled(self):
-        mode = ' dd0=0 12e4=1'
-        self.assertNotEqual(self.fields(mode), self.fields(mode + ' 1354=12345678'))
-
-
 if __name__ == '__main__':
     unittest.main()

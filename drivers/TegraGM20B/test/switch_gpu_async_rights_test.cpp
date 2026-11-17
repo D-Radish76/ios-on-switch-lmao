@@ -172,12 +172,6 @@ static bool switch_gpu_binding_offset(const AGXDeviceUserClient::Binding &, uint
 }
 
 #include "SwitchGpuUserEvents.h"
-
-static uint64_t nvxnu_ram_bytes()
-{
-	return 4ULL << 30;
-}
-
 #include "SwitchGpuUserResources.h"
 
 namespace
@@ -310,17 +304,6 @@ TEST_F(AsyncRights, AnArmedResourceObserveReleasesTheRightWhenItFires)
 	client_->resources_.fire(-5);
 	ASSERT_EQ(gRights.replies.size(), 1u);
 	EXPECT_EQ(gRights.replies[0].result, kIOReturnAborted);
-	EXPECT_EQ(gRights.rights[kPort], 0);
-}
-
-TEST_F(AsyncRights, ImpossibleUseStorageFailsBeforeReadingTheUserAddress)
-{
-	const TegraGM20BAbiResourceObserve request{12, 1, UINT32_MAX / 2, 0, 0};
-	EXPECT_EQ(
-		asyncCall([&](IOExternalMethodArguments *arguments, SwitchGpuAsyncReference &held) {
-			return client_->resourceObserve(&request, arguments, held);
-		}),
-		kIOReturnNoMemory);
 	EXPECT_EQ(gRights.rights[kPort], 0);
 }
 

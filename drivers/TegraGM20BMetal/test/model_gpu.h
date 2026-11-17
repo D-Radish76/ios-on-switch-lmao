@@ -22,9 +22,9 @@ public:
     explicit Gpu(Launch launch)
     {
         using kernel_model::model;
-        gpu_.map = [](uint64_t va, uint64_t bytes) {
+        gpu_.map = [](uint64_t va) {
             std::lock_guard<std::mutex> l(kernel_model::callLock);
-            return kernel_model::model.host(va, bytes);
+            return kernel_model::model.host(va);
         };
         gpu_.onLaunch = [this, launch](uint32_t pcas) {
             launch(reinterpret_cast<uint32_t *>(gpu_.at(uint64_t(pcas) << 8)), gpu_);

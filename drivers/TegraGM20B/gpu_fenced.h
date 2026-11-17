@@ -2,6 +2,7 @@
 // What the nonstall pass (SwitchGpuChannelCompletion.h) inlines of the present, the scrubber, the idle clock and the
 // statistics on every fence.
 #pragma once
+#include "gpu_inline.h"
 
 /* push profile (stats):
  * What each push of a submission costs the GPU, sampled: one submission in 64 of each connection (the user client's

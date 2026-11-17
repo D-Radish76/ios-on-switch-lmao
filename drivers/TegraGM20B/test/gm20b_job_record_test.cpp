@@ -71,17 +71,7 @@ TEST(JobRecord, MalformedRecordsAreRefused)
 	Record events({1, 0, 0, 0, 0, TegraGM20BJobHasEvents}, 1, 0);
 	EXPECT_TRUE(events.parse().valid());
 	EXPECT_FALSE(events.parse(events.bytes - sizeof(TegraGM20BAbiEventUse)).valid());
-	EXPECT_EQ(SwitchGpuJobRecord::kMaxBytes, size_t(UINT32_MAX));
-}
-
-TEST(JobRecord, CountedSharedUsesAreBoundedByTheCopiedRecord)
-{
-	Record record({1, 1, 0, 0, 4097, TegraGM20BJobExternal});
-	ASSERT_TRUE(record.parse().valid());
-	EXPECT_FALSE(record.parse(record.bytes - sizeof(TegraGM20BAbiSurfaceUse)).valid());
-	auto *header = reinterpret_cast<TegraGM20BAbiJob *>(record.words.data());
-	header->shared_count = UINT32_MAX;
-	EXPECT_FALSE(record.parse().valid());
+	EXPECT_LE(SwitchGpuJobRecord::kMaxBytes, size_t(1) << 16);
 }
 
 // A command buffer's admission: its cookie follows the shared uses, before the events; Cancel carries no work

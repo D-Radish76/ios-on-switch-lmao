@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Exact backing uses for one job.
+// Exact backing uses for one job: an oversized list is refused, never cut short.
 #pragma once
 #include <algorithm>
 #include <array>
@@ -22,10 +22,7 @@ public:
         uses_.clear();
         ranges_.clear();
         extents_.clear();
-        if (largeIndex_.empty())
-            index_.fill(0);
-        else
-            std::fill(largeIndex_.begin(), largeIndex_.end(), 0);
+        index_.fill(0);
         overflow_ = false;
         last_ = 0;
     }
@@ -44,8 +41,8 @@ public:
         const uint32_t access =
             TegraGM20BSurfaceGpuAddress | (write ? TegraGM20BSurfaceWrite : TegraGM20BSurfaceRead) | metadata;
         const size_t slot = findSlot(va, TegraGM20BSurfaceGpuAddress);
-        if (indexAt(slot)) {
-            last_ = indexAt(slot) - 1;
+        if (index_[slot]) {
+            last_ = index_[slot] - 1;
             const uint64_t previous = extents_[last_];
             mergeAddress(last_, access, bytes);
             if (bytes <= previous)
@@ -84,9 +81,9 @@ public:
             uses_[last_].access |= access;
             return;
         }
-        size_t slot = findSlot(handle, kind);
-        if (indexAt(slot)) {
-            last_ = indexAt(slot) - 1;
+        const size_t slot = findSlot(handle, kind);
+        if (index_[slot]) {
+            last_ = index_[slot] - 1;
             if ((access & TegraGM20BSurfaceWrite) && !(access & TegraGM20BSurfaceRange)) {
                 uses_[last_].access &= ~uint32_t(TegraGM20BSurfaceRange);
                 uses_[last_].reserved = 0;
@@ -94,23 +91,14 @@ public:
             uses_[last_].access |= access;
             return;
         }
-        if (uses_.size() == UINT32_MAX) {
+        if (uses_.size() == TegraGM20BMaxJobUses) {
             overflow_ = true;
             return;
-        }
-        if (uses_.size() >= indexSize() / 2) {
-            largeIndex_.assign(indexSize() * 2, 0);
-            for (size_t i = 0; i < uses_.size(); ++i)
-                largeIndex_[findSlot(uses_[i].handle, uses_[i].access & TegraGM20BSurfaceGpuAddress)] = uint32_t(i + 1);
-            slot = findSlot(handle, kind);
         }
         last_ = uses_.size();
         uses_.push_back({handle, access, 0});
         extents_.push_back(0);
-        if (largeIndex_.empty())
-            index_[slot] = uint16_t(last_ + 1);
-        else
-            largeIndex_[slot] = uint32_t(last_ + 1);
+        index_[slot] = uint16_t(last_ + 1);
     }
 
     bool valid() const
@@ -166,6 +154,9 @@ private:
         }
     }
 
+    static constexpr size_t kIndexSize = 2 * TegraGM20BMaxJobUses;
+    static_assert((kIndexSize & (kIndexSize - 1)) == 0 && TegraGM20BMaxJobUses < UINT16_MAX);
+
     size_t findSlot(uint64_t handle, uint32_t kind) const
     {
         uint64_t hash = handle ^ (uint64_t(kind) << 61);
@@ -174,12 +165,12 @@ private:
         hash ^= hash >> 33;
         hash *= 0xc4ceb9fe1a85ec53ULL;
         hash ^= hash >> 33;
-        size_t slot = hash & (indexSize() - 1);
-        while (indexAt(slot)) {
-            const auto &use = uses_[indexAt(slot) - 1];
+        size_t slot = hash & (kIndexSize - 1);
+        while (index_[slot]) {
+            const auto &use = uses_[index_[slot] - 1];
             if (use.handle == handle && (use.access & TegraGM20BSurfaceGpuAddress) == kind)
                 break;
-            slot = (slot + 1) & (indexSize() - 1);
+            slot = (slot + 1) & (kIndexSize - 1);
         }
         return slot;
     }
@@ -189,18 +180,7 @@ private:
         size_t index;
     };
 
-    size_t indexSize() const
-    {
-        return largeIndex_.empty() ? index_.size() : largeIndex_.size();
-    }
-
-    uint32_t indexAt(size_t slot) const
-    {
-        return largeIndex_.empty() ? index_[slot] : largeIndex_[slot];
-    }
-
-    std::array<uint16_t, 2048> index_{};
-    std::vector<uint32_t> largeIndex_;
+    std::array<uint16_t, kIndexSize> index_{};
     std::vector<uint64_t> extents_;
     std::vector<Range> ranges_;
     std::vector<TegraGM20BAbiSurfaceUse> uses_;

@@ -27,20 +27,17 @@ public:
 
     int grow(uint32_t needed)
     {
+        if (needed > SWITCH_GPU_BRIDGE_MAX_TOKENS)
+            return -28;
         if (needed <= capacity)
             return 0;
-        uint32_t grown = capacity;
-        while (grown < needed && grown <= UINT32_MAX / 2)
-            grown *= 2;
-        if (grown < needed)
-            grown = needed;
-        auto *replacement = IONew(switch_gpu_backing_token, grown);
+        auto *replacement = IONew(switch_gpu_backing_token, needed);
         if (!replacement)
             return -12;
         if (tokens != inlineTokens)
             IODelete(tokens, switch_gpu_backing_token, capacity);
         tokens = replacement;
-        capacity = grown;
+        capacity = needed;
         return 0;
     }
 

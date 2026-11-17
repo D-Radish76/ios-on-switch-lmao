@@ -76,25 +76,3 @@ void retireThrough(uint64_t seq, uint64_t shownAt)
     if (retired)
         kickSwapQueue();
 }
-
-// Retiring at the latch, a taken swap (take sequence seq) whose frame no window A flip carries: it retires with whatever is
-// still out (the window B set written or held, the window A frame held or asked for), or now.
-// NOLINTNEXTLINE(misc-no-recursion): kickSwapQueue's kicking flag stops re-entry; a nested kick only loops
-void retireUnshown(uint64_t seq)
-{
-    if (!latchRetire)
-        return;
-    if (planeRecoveryWaits()) {
-        planeRecoveryTarget.seq = seq;
-    } else if (!planeRecoveryStuck && planeLatch.requested()) {
-        planeSetOf(planeLatch.armed).seq = seq;
-    } else if (!planeRecoveryStuck && planeHeldSet) {
-        planeHeld.seq = seq;
-    } else if (ring.held != kNoBuffer) {
-        entrySeq[ring.held] = seq;
-    } else if (ring.pending != kNoBuffer) {
-        entrySeq[ring.pending] = seq;
-    } else {
-        retireThrough(seq, mach_absolute_time());
-    }
-}

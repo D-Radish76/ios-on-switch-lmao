@@ -359,50 +359,6 @@ TEST_F(ResourceSetTest, ACpuLockBetweenACommandBuffersJobsOrdersAfterIt)
     EXPECT_EQ(result, kIOReturnCannotLock);
 }
 
-TEST_F(ResourceSetTest, LargeAdmissionKeepsEveryResourceUntilEndOrCancelledPrefix)
-{
-    std::vector<raw::Bo> buffers(1025);
-    std::vector<TegraGM20BAbiSurfaceUse> uses;
-    for (auto &buffer : buffers) {
-        ASSERT_TRUE(kernel.alloc(0x1000, false, buffer));
-        uses.push_back({buffer.handle, kWrite, 0});
-    }
-    const auto submit = [&](uint64_t cookie, uint32_t flags, bool cancel, int &result) {
-        raw::KernelJob job;
-        job.channel = channel;
-        job.uses = cancel ? nullptr : uses.data();
-        job.useCount = cancel ? 0 : uint32_t(uses.size());
-        job.admission = cookie;
-        job.admissionFlags = flags;
-        uint32_t seqno = 0;
-        return kernel.submitJob(job, seqno, &result);
-    };
-    for (const bool refused : {false, true}) {
-        const uint64_t cookie = kernel.nextAdmission();
-        int result = KERN_SUCCESS;
-        ASSERT_TRUE(submit(cookie, TegraGM20BJobAdmissionBegin, false, result));
-        for (const size_t i : {size_t(0), buffers.size() - 1})
-            EXPECT_EQ(model.cpuLock(buffers[i].handle), kIOReturnBusy);
-        const size_t accepted = model.jobs.size();
-        if (refused) {
-            model.refuse = 1;
-            EXPECT_FALSE(submit(cookie, TegraGM20BJobAdmissionContinue, false, result));
-            EXPECT_EQ(model.jobs.size(), accepted);
-            EXPECT_EQ(model.cpuLock(buffers.back().handle), kIOReturnBusy);
-            ASSERT_TRUE(submit(cookie, TegraGM20BJobAdmissionCancel, true, result));
-        } else {
-            ASSERT_TRUE(submit(cookie, TegraGM20BJobAdmissionContinue | TegraGM20BJobAdmissionEnd, false, result));
-            EXPECT_EQ(model.jobs.back().uses.size(), uses.size());
-        }
-        EXPECT_TRUE(model.admitted.empty());
-        for (const size_t i : {size_t(0), buffers.size() - 1})
-            EXPECT_EQ(model.cpuLock(buffers[i].handle), KERN_SUCCESS);
-        model.cpuLocked.clear();
-    }
-    for (auto &buffer : buffers)
-        kernel.free(buffer);
-}
-
 TEST(SetView, HoldsOnlyRangesInsideOneMember)
 {
     raw::SetView view;

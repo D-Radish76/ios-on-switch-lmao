@@ -7,6 +7,10 @@ extern "C" {
 
 struct switch_gpu_bridge;
 
+enum {
+	SWITCH_GPU_BRIDGE_MAX_TOKENS = 1024
+};
+
 /* Call outside backing/engine queue locks. The caller retains each token through this call; the returned bridge
  * retains them independently until its GPU work and the consumer have both retired. No producer is waited on by CPU. */
 int switch_gpu_bridge_submit(const struct switch_gpu_backing_token *tokens, uint32_t count,

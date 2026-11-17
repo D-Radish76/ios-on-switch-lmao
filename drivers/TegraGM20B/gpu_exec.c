@@ -330,28 +330,6 @@ static u32 backing_unsettled(const struct switch_gpu_backing_token *tokens, u32 
 	return channels;
 }
 
-static int backing_bits(struct tgm_chan *chan, u32 count, u32 **bits)
-{
-	const u32 words = (u32)(((u64)count + 31) / 32);
-	const u32 capacityBefore = chan->dependency_words ? chan->dependency_words
-							  : ARRAY_SIZE(chan->dependency_inline);
-	if (words > capacityBefore) {
-		u32 capacity = chan->dependency_words ? chan->dependency_words : 64;
-		while (capacity < words)
-			capacity *= 2;
-		u32 *made = kmalloc_array(capacity, sizeof(*made), GFP_KERNEL);
-		if (!made)
-			return -ENOMEM;
-		kfree(chan->dependency_bits);
-		chan->dependency_bits = made;
-		chan->dependency_words = capacity;
-	}
-	*bits = chan->dependency_bits ? chan->dependency_bits : chan->dependency_inline;
-	if (words)
-		memset(*bits, 0, words * sizeof(**bits));
-	return 0;
-}
-
 static int backing_waits(struct tgm_chan *chan, const struct switch_gpu_backing_token *tokens,
 			 u32 count, const u32 *unsettled, int emit)
 {
@@ -367,10 +345,10 @@ static int backing_waits(struct tgm_chan *chan, const struct switch_gpu_backing_
 int tgm_backing_dependencies(struct tgm_chan *chan, const struct switch_gpu_backing_token *tokens,
 			     u32 count)
 {
-	u32 *unsettled;
-	const int reserved = backing_bits(chan, count, &unsettled);
-	if (reserved)
-		return reserved;
+	u32 unsettled[(TegraGM20BMaxJobDependencies + 31) / 32] = {0};
+
+	if (count > TegraGM20BMaxJobDependencies)
+		return -E2BIG;
 	const u32 channels = backing_unsettled(tokens, count, unsettled);
 	if (channels)
 		mutex_lock(&tgm_live_lock);
@@ -542,7 +520,7 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 	int ret = 0;
 	int tlb = 0;
 	u32 waits = 0;
-	u32 *unsettled;
+	u32 unsettled[(TegraGM20BMaxJobDependencies + 31) / 32] = {0};
 	u32 channels = 0;
 	struct switch_gpu_backing_transaction seal;
 	u32 ring_cur;
@@ -577,19 +555,9 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 		*seqno = chan->submitted;
 		return 0;
 	}
-	if (count > TegraGM20BMaxJobPushes || sibling_count > SWITCH_GPU_MAX_SIBLINGS ||
-	    release_count > SWITCH_GPU_MAX_RELEASES)
+	if (count > TegraGM20BMaxJobPushes || dependency_count > TegraGM20BMaxJobDependencies ||
+	    sibling_count > SWITCH_GPU_MAX_SIBLINGS || release_count > SWITCH_GPU_MAX_RELEASES)
 		return -E2BIG;
-	if (dependency_count > chan->chan.push.hw.max / 5)
-		return -E2BIG;
-	if (owned && owned->count &&
-	    ((u64)dependency_count + 31) / 32 > (chan->dependency_words
-							 ? chan->dependency_words
-							 : ARRAY_SIZE(chan->dependency_inline)))
-		return -EAGAIN;
-	ret = backing_bits(chan, dependency_count, &unsettled);
-	if (ret)
-		return ret;
 	if (!words_valid(chan, word_waits, word_wait_count))
 		return -ENODEV;
 	if (may_wait) {
@@ -612,8 +580,6 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 	chan_submission_room(chan, pushes, count,
 			     dependency_count + sibling_count + word_wait_count, fences, &prof,
 			     &entries, &words);
-	if (words >= chan->chan.push.hw.max)
-		return -E2BIG;
 	if (!may_wait && !chan_room(chan, entries, words))
 		return -EAGAIN;
 	ret = may_wait ? tgm_chan_wait_ready(chan, entries, words) : 0;
@@ -798,20 +764,6 @@ void switch_gpu_chan_submit_leave(void)
 	gate_leave();
 }
 
-uint32_t switch_gpu_chan_dependency_capacity(struct tgm_chan *chan, const struct tgm_push *pushes,
-					     u32 count, const struct tgm_prof *prof)
-{
-	u32 fences = 0, entries = 0, words = 0;
-	if (count > TegraGM20BMaxJobPushes || switch_gpu_job_fences(pushes, count, &fences))
-		return 0;
-	chan_submission_room(chan, pushes, count, 0, fences, &prof, &entries, &words);
-	/* A drained ring can be split at GET. Either side must fit the batch and nvif's two post reservations. */
-	const u32 post = chan->chan.func->gpfifo.post ? chan->chan.func->gpfifo.post_size : 0;
-	const u32 limit = (chan->chan.push.hw.max - 1) / 2;
-	words += 2 * post;
-	return words < limit ? (limit - words) / 5 : 0;
-}
-
 int switch_gpu_chan_wait_submission_room(struct tgm_chan *chan, const struct tgm_push *pushes,
 					 u32 count, u32 dependency_count,
 					 const struct tgm_prof *prof)
@@ -820,18 +772,12 @@ int switch_gpu_chan_wait_submission_room(struct tgm_chan *chan, const struct tgm
 	u32 entries = 0;
 	u32 words = 0;
 	int ret;
-	if (count > TegraGM20BMaxJobPushes || dependency_count > chan->chan.push.hw.max / 5)
+	if (count > TegraGM20BMaxJobPushes || dependency_count > TegraGM20BMaxJobDependencies)
 		return -E2BIG;
-	u32 *unsettled;
-	ret = backing_bits(chan, dependency_count, &unsettled);
-	if (ret)
-		return ret;
 	if (switch_gpu_job_fences(pushes, count, &fences))
 		return -EINVAL;
 	chan_submission_room(chan, pushes, count, dependency_count, fences, &prof, &entries,
 			     &words);
-	if (words >= chan->chan.push.hw.max)
-		return -E2BIG;
 	ret = tgm_chan_wait_ready(chan, entries, words);
 	if (ret == -ETIMEDOUT && tgm_gpu.stage >= 3)
 		tgm_chan_stalled(chan, "exec: GPFIFO still full after 1 s", chan->submitted,

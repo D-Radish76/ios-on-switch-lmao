@@ -108,6 +108,8 @@ int SwitchGpuEventJob::captureDependencies(switch_gpu_backing_token *tokens, uin
 			return covered;
 		if (covered)
 			continue;
+		if (capturedCount_ == TegraGM20BMaxJobDependencies)
+			return -28;
 		const int result = switch_gpu_backing_token_retain(&tokens[i]);
 		if (result)
 			return result;
@@ -177,12 +179,8 @@ int SwitchGpuEventJob::bind(const switch_gpu_backing_token *completion)
 int SwitchGpuEventJob::append(switch_gpu_backing_token *dependencies, uint32_t capacity,
 			      uint32_t *count) const
 {
-	if (tokenCount_ > UINT32_MAX - *count)
-		return -75;
-	if (*count > capacity || tokenCount_ > capacity - *count) {
-		*count += tokenCount_;
+	if (*count > capacity || tokenCount_ > capacity - *count)
 		return -28;
-	}
 	for (uint32_t i = 0; i < tokenCount_; ++i)
 		if (!onWord_[i])
 			dependencies[(*count)++] = tokens_[i];

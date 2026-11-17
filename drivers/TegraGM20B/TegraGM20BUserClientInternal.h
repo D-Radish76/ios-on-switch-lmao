@@ -65,7 +65,6 @@
 
 #include "SwitchGpuSurfaceGeometry.h"
 #include "shim/include/switch_tiled_cache.h"
-#include "shim/include/nvxnu.h"
 using tgm_scan::PushCounts;
 using tgm_scan::PushParse;
 using tgm_scan::scanPush;
@@ -387,7 +386,6 @@ class AGXDeviceUserClient : public IOUserClient
 		tgm_coh **
 			written;  // the listed uses' imports a job writes, as its uses resolved them
 		uint32_t capacity;
-		uint32_t recordWords, dependencyCapacity;
 		SwitchGpuEventJob *events;
 		SubmitPhases phases;
 	};
@@ -584,8 +582,7 @@ class AGXDeviceUserClient : public IOUserClient
 	IOReturn cpuComplete(const TegraGM20BAbiCpuComplete *, TegraGM20BAbiCpuCompleteReply *);
 	IOReturn cpuAccess(const TegraGM20BAbiCpuAccess *in, bool release);
 	void releaseCpuLeases();
-	static bool reserveJob(JobScratch &job, uint32_t uses, uint32_t bytes = kJobBytes);
-	static bool reserveDependencies(JobScratch &job, uint32_t count);
+	static bool reserveJob(JobScratch &job, uint32_t uses);
 	static void freeJob(JobScratch &job);
 	IOReturn submitAddress(const TegraGM20BAbiSubmitAddress *in, TegraGM20BAbiExecReply *out);
 	IOReturn vmBind(const TegraGM20BAbiVmBind *in, uint32_t count);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // The small helpers the gpu_*.c units inline: each has its own copy, so the submit and interrupt paths call none.
 #pragma once
+#include "gpu_internal.h"
 
 static inline int badf(u32 v)
 {

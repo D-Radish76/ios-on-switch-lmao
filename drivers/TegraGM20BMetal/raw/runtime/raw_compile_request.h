@@ -42,7 +42,7 @@ enum class RequestKind : uint8_t {
 };
 
 // MTLCodeGenServiceBuildRequest's request types a Library request carries (ImageFilterLink.h's is the filter link's)
-constexpr uint32_t kCodeGenImageFilters = 5, kCodeGenSource = 13, kCodeGenStitch = 14, kCodeGenSpecialize = 15;
+constexpr uint32_t kCodeGenImageFilters = 5, kCodeGenSource = 13, kCodeGenStitch = 14;
 
 // Primary: the state's record; Split: the same with its fragment program's split, which the compiler makes after the
 // primary record is published and nobody waits for

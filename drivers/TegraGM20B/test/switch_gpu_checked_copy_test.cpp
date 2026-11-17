@@ -15,11 +15,6 @@ inline void IOLog(const char *, ...)
 #include "drivers/TegraGM20B/TegraGM20BCopy.cpp"
 #include "gm20b_ce_model.h"
 
-extern "C" nvxnu_u64 nvxnu_ram_bytes()
-{
-	return 4ULL << 30;
-}
-
 struct tgm_vm {};
 
 struct tgm_mem {

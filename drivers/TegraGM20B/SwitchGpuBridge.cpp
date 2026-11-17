@@ -13,9 +13,9 @@
 #include "../TegraHost1x/TegraHost1x.h"
 
 struct switch_gpu_bridge {
-	switch_gpu_backing_token inlineTokens[32], *tokens;
-	uint32_t capacity, count, refs, syncpoint, threshold, sequence, waiters;
-	bool active, notified, prefixOnly;
+	switch_gpu_backing_token tokens[SWITCH_GPU_BRIDGE_MAX_TOKENS];
+	uint32_t count, refs, syncpoint, threshold, sequence, waiters;
+	bool active, notified;
 	int result;
 	void (*completed)(void *, int);
 	void *context;
@@ -37,29 +37,6 @@ struct BridgeQueue {
 	uint32_t waitingSources;
 	switch_gpu_bridge jobs[kSlots];
 } queue;
-
-bool reserveTokens(switch_gpu_bridge &job, uint32_t count)
-{
-	if (!job.tokens) {
-		job.tokens = job.inlineTokens;
-		job.capacity = uint32_t(sizeof(job.inlineTokens) / sizeof(job.inlineTokens[0]));
-	}
-	if (count <= job.capacity)
-		return true;
-	uint32_t capacity = job.capacity;
-	while (capacity < count && capacity <= UINT32_MAX / 2)
-		capacity *= 2;
-	if (capacity < count)
-		capacity = count;
-	auto *made = IONew(switch_gpu_backing_token, capacity);
-	if (!made)
-		return false;
-	if (job.tokens != job.inlineTokens)
-		IODelete(job.tokens, switch_gpu_backing_token, job.capacity);
-	job.tokens = made;
-	job.capacity = capacity;
-	return true;
-}
 
 void releaseLocked(switch_gpu_bridge &job)
 {
@@ -87,7 +64,7 @@ switch_gpu_bridge *oldestWaited()
 {
 	switch_gpu_bridge *oldest = nullptr;
 	for (auto &job : queue.jobs)
-		if (job.active && (job.waiters || job.prefixOnly) &&
+		if (job.active && job.waiters &&
 		    (!oldest || int32_t(job.sequence - oldest->sequence) < 0))
 			oldest = &job;
 	return oldest;
@@ -144,14 +121,13 @@ void retire(thread_call_param_t, thread_call_param_t)
 	for (auto &job : queue.jobs) {
 		if (!job.active || (!failed && int32_t(completed - job.sequence) < 0))
 			continue;
-		const int source = job.prefixOnly ? 1 : producers(job);
+		const int source = producers(job);
 		if (!failed && !source) {
 			pendingSources = true;
 			continue;
 		}
-		if (!job.prefixOnly)
-			job.result = failed ? -5 : source == 1 ? 1 : source < 0 ? source : -5;
-		if (failed && !job.prefixOnly) {
+		job.result = failed ? -5 : source == 1 ? 1 : source < 0 ? source : -5;
+		if (failed) {
 			const int released = tegra_host1x_syncpt_release_failed(
 				job.syncpoint, job.threshold, TGM_SYNCPT_INCRS);
 			// Whatever waits on the old syncpoint fails or times out on its own engine; this slot no longer shares it.
@@ -169,7 +145,6 @@ void retire(thread_call_param_t, thread_call_param_t)
 				if (job.tokens[i].engine == SWITCH_GPU_ENGINE_GM20B)
 					(void)switch_gpu_timeline_promote(&job.tokens[i]);
 		job.active = false;
-		job.prefixOnly = false;
 		if (job.notified) {
 			job.notified = false;
 			--job.waiters;
@@ -262,7 +237,7 @@ int channel()
 extern "C" int switch_gpu_bridge_submit(const switch_gpu_backing_token *tokens, uint32_t count,
 					switch_gpu_bridge **out)
 {
-	if (!out || !tokens || !count)
+	if (!out || !tokens || !count || count > SWITCH_GPU_BRIDGE_MAX_TOKENS)
 		return -22;
 	*out = nullptr;
 	for (uint32_t i = 0; i < count; ++i) {
@@ -293,13 +268,8 @@ extern "C" int switch_gpu_bridge_submit(const switch_gpu_backing_token *tokens, 
 		return error ? error : -16;
 	}
 	auto &job = queue.jobs[slot];
-	if (!reserveTokens(job, count)) {
-		IOLockUnlock(queue.lock);
-		return -12;
-	}
 	job.refs = 1;
 	job.result = 0;
-	bool accepted = false;
 	for (uint32_t i = 0; i < count; ++i) {
 		error = switch_gpu_backing_token_retain(&tokens[i]);
 		if (error)
@@ -322,55 +292,29 @@ extern "C" int switch_gpu_bridge_submit(const switch_gpu_backing_token *tokens, 
 			0};
 		tgm_chan *const chan = queue.space.channel;
 		switch_gpu_chan_submit_enter(chan);
-		const uint32_t capacity =
-			switch_gpu_chan_dependency_capacity(chan, &push, 1, nullptr);
-		if (!capacity)
-			error = -7;
-		for (uint32_t at = 0; !error && at < job.count;) {
-			const uint32_t left = job.count - at;
-			const uint32_t count = left < capacity ? left : capacity;
-			const bool final = count == left;
-			const auto *entry = final ? &push : nullptr;
-			const uint32_t entries = final ? 1 : 0;
+		for (;;) {
 			// No L2 invalidate ahead of it: the job reads no memory, its push slots are volatile, and the push's own
 			// flush (tgm_syncpt_incr) puts the producers' writes in DRAM before host1x sees the increment.
-			for (;;) {
-				error = switch_gpu_chan_exec_visibility(
-					chan, entry, entries, job.tokens + at, count, &job.sequence,
-					nullptr,
-					SWITCH_GPU_SUBMIT_VISIBILITY_EXPLICIT |
-						SWITCH_GPU_SUBMIT_EXTERNAL_VISIBILITY |
-						(final ? 0u
-						       : uint32_t(SWITCH_GPU_SUBMIT_FORCE_FENCE)));
-				if (error != -11)
-					break;
-				error = queue.turn.waitForRoom(queue.lock, [&] {
+			error = switch_gpu_chan_exec_visibility(
+				chan, &push, 1, job.tokens, job.count, &job.sequence, nullptr,
+				SWITCH_GPU_SUBMIT_VISIBILITY_EXPLICIT |
+					SWITCH_GPU_SUBMIT_EXTERNAL_VISIBILITY);
+			if (error != -11)
+				break;
+			error = queue.turn.waitForRoom(queue.lock, [&] {
 #if TGM_STATS
-					tgm_stats_unlocked(TGM_UNLOCKED_BRIDGE_ROOM, 0);
+				tgm_stats_unlocked(TGM_UNLOCKED_BRIDGE_ROOM, 0);
 #endif
-					return switch_gpu_chan_wait_submission_room(
-						chan, entry, entries, count, nullptr);
-				});
-				if (error)
-					break;
-			}
-			if (!error) {
-				accepted = true;
-				at += count;
-			}
+				return switch_gpu_chan_wait_submission_room(chan, &push, 1,
+									    job.count, nullptr);
+			});
+			if (error)
+				break;
 		}
 		switch_gpu_chan_submit_leave();
 	}
 	if (error) {
-		if (accepted) {
-			job.result = error;
-			job.prefixOnly = job.active = true;
-			thread_call_enter(queue.retirement);
-			if (!queue.checkAt)
-				armHangCheck(kHangCheckNs);
-		} else {
-			releaseLocked(job);
-		}
+		releaseLocked(job);
 	} else {
 		job.active = true;
 		++job.refs;

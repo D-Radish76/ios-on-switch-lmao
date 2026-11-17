@@ -2542,9 +2542,6 @@ host_test(
         "gm20b_gpu_memory.h",
     ],
     additional_compiler_inputs = [
-        "//drivers/TegraGM20B:shim/include/nvxnu.h",
-        "//kits/SwitchLinux:SwitchLinux.h",
-        "//kits/SwitchLinux:SwitchLinuxLock.h",
         "//drivers/TegraGM20B:TegraGM20BLayout.h",
         "//drivers/TegraGM20B:TegraGM20BCopy.cpp",
         "//drivers/TegraGM20B:TegraGM20BCopy.h",
@@ -2615,9 +2612,6 @@ host_test(
         "gm20b_gpu_memory.h",
     ],
     additional_compiler_inputs = [
-        "//drivers/TegraGM20B:shim/include/nvxnu.h",
-        "//kits/SwitchLinux:SwitchLinux.h",
-        "//kits/SwitchLinux:SwitchLinuxLock.h",
         "//drivers/TegraGM20B:TegraGM20BLayout.h",
         "//drivers/TegraGM20B:TegraGM20BCopy.cpp",
         "//drivers/TegraGM20B:TegraGM20BCopy.h",

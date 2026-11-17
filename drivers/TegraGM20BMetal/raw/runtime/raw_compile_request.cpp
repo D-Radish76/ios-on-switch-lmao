@@ -141,8 +141,7 @@ bool knownTag(const CompileRequest &r, size_t index)
 
 bool knownCodeGen(uint32_t type)
 {
-    return type == kCodeGenSource || type == kCodeGenStitch || type == kCodeGenImageFilters ||
-           type == kCodeGenSpecialize;
+    return type == kCodeGenSource || type == kCodeGenStitch || type == kCodeGenImageFilters;
 }
 
 bool saneLibrary(const CompileRequest &r)

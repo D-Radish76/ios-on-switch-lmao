@@ -856,15 +856,12 @@ TEST_F(SwitchVICJobsTest, MoreThanInlineDependenciesGrowAndPublishWithoutCpuProd
     EXPECT_EQ(gQueue.jobs[0].bridge->tokens.size(), 65u);
 }
 
-TEST_F(SwitchVICJobsTest, LargeGpuDependenciesCollapseToOneBridgeCommand)
+TEST_F(SwitchVICJobsTest, TooManyDependenciesRefuseBeforeHardwarePublication)
 {
-    gpu(4097);
-    ASSERT_EQ(submit(), 0);
-    EXPECT_EQ(commits, 1u);
-    EXPECT_EQ(bridges, 1u);
-    ASSERT_NE(gQueue.jobs[0].bridge, nullptr);
-    EXPECT_EQ(gQueue.jobs[0].bridge->tokens.size(), sourceTokens.size());
-    EXPECT_LT(publishedWords.size(), 32u);
+    gpu(SWITCH_GPU_BRIDGE_MAX_TOKENS + 1);
+    EXPECT_EQ(submit(), -28);
+    EXPECT_EQ(submits, 0u);
+    EXPECT_EQ(bridges, 0u);
 }
 
 TEST_F(SwitchVICJobsTest, ChangedGenerationAfterBridgeSubmissionRefusesStaleRepresentation)

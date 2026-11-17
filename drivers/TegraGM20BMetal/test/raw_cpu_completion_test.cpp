@@ -38,7 +38,7 @@ TEST(CpuCompletion, AliasedAndAdjacentRangesMergeWithoutWideningGaps)
     EXPECT_EQ(batch.ranges[2].offset, 256u);
 }
 
-TEST(CpuCompletion, LogicalJobsKeepExactIdentityInOneCountedCallIncludingWrappedZero)
+TEST(CpuCompletion, LogicalJobsKeepExactIdentityAcrossBoundedCallsIncludingWrappedZero)
 {
     auto batch = completion();
     for (uint64_t handle = 1; handle <= 2 * TegraGM20BMaxJobUses + 1; ++handle)
@@ -51,7 +51,7 @@ TEST(CpuCompletion, LogicalJobsKeepExactIdentityInOneCountedCallIncludingWrapped
                                          EXPECT_EQ(request.channel, 9u);
                                          EXPECT_EQ(request.seqno, 0u);
                                          EXPECT_EQ(request.reserved, 0u);
-                                         EXPECT_EQ(request.range_count, batch.ranges.size());
+                                         EXPECT_LE(request.range_count, uint32_t(TegraGM20BMaxJobUses));
                                          const auto *ranges = reinterpret_cast<const TegraGM20BAbiCpuRange *>(
                                              uintptr_t(request.ranges_address));
                                          for (uint32_t i = 0; i < request.range_count; ++i) {
@@ -65,7 +65,7 @@ TEST(CpuCompletion, LogicalJobsKeepExactIdentityInOneCountedCallIncludingWrapped
                                      }),
               raw::CpuCompletionResult::Current);
     EXPECT_EQ(observed, batch.ranges.size());
-    EXPECT_EQ(calls, 1u);
+    EXPECT_EQ(calls, 3u);
 }
 
 TEST(CpuCompletion, NewerWritersNeverBecomeCpuCurrent)

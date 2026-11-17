@@ -1,6 +1,4 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-#include "SwitchWindowOffDisplay.h"
-
 bool planeRecovering = false, planeRecoveryStuck = false;
 uint64_t planeRecoveryAt = 0;
 PlaneSet planeRecoveryTarget = {};
@@ -32,7 +30,11 @@ void holdPlaneRecovery(const PlaneSet &p)
 
 void writePlaneRecoveryOff()
 {
-    requestWindowsOff(kWinBActReq | kWinCActReq);
+    dc[kWinBBase + native_planes::kOptions] = 0;
+    dc[kWinCBase + native_planes::kOptions] = 0;
+    scanoutMemoryBarrier();
+    dc[kDcStateControl] = kGeneralUpdate | kWinBUpdate | kWinCUpdate;
+    dc[kDcStateControl] = kGeneralActReq | kWinBActReq | kWinCActReq;
     planeRecoveryAt = frameEnds;
     armFlipDeadline();
 }
@@ -105,7 +107,12 @@ bool planeRecoveryFrameEnd()
 {
     if (!planeRecovering)
         return false;
-    if (!windowsOffTaken(kWinBActReq | kWinCActReq)) {
+    const uint32_t access = dc[kDcStateAccess] & ~(kReadMuxActive | kWriteMuxActive);
+    dc[kDcStateAccess] = access | kReadMuxActive;
+    const bool disabled = !(dc[kWinBBase + native_planes::kOptions] & native_planes::kWinEnable) &&
+                          !(dc[kWinCBase + native_planes::kOptions] & native_planes::kWinEnable);
+    dc[kDcStateAccess] = access;
+    if (!disabled || (dc[kDcStateControl] & (kWinBActReq | kWinCActReq))) {
         if (!planeRecoveryStuck && frameEnds - planeRecoveryAt >= kLatchFrames)
             planeRecoveryNotStopped();
         return true;

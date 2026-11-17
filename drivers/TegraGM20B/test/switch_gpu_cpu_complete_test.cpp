@@ -79,11 +79,6 @@ public:
 	IOReturn cpuComplete(const TegraGM20BAbiCpuComplete *, TegraGM20BAbiCpuCompleteReply *);
 };
 
-static uint64_t nvxnu_ram_bytes()
-{
-	return 4ULL << 30;
-}
-
 #include "drivers/TegraGM20B/SwitchGpuUserCpuComplete.h"
 
 #if SWITCH_GPU_PATH_STATS
@@ -408,15 +403,6 @@ TEST_F(CpuComplete, AdapterValidatesEveryHandleAndExtentBeforeMaintenance)
 	EXPECT_EQ(reply.current_count, 2u);
 	EXPECT_EQ(cache.size(), 2u);
 	switch_gpu_backing_release(b);
-}
-
-TEST_F(CpuComplete, ImpossibleRangeStorageFailsBeforeReadingTheUserAddress)
-{
-	AGXDeviceUserClient client;
-	const TegraGM20BAbiCpuComplete request{1, 1, 1, 0, UINT32_MAX, 0};
-	TegraGM20BAbiCpuCompleteReply reply{};
-	EXPECT_EQ(client.cpuComplete(&request, &reply), kIOReturnNoMemory);
-	EXPECT_TRUE(cache.empty());
 }
 
 TEST_F(CpuComplete, AdapterRejectsRecycledIncarnationAndFutureSequence)

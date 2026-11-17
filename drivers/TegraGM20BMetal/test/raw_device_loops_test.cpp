@@ -40,8 +40,8 @@ protected:
         }
         ASSERT_NE(programs[0]->program, programs[1]->program);
         ASSERT_TRUE(dev.createBuffer(4096, words));
-        gpu.map = [](uint64_t va, uint64_t bytes) {
-            return kernel_model::model.host(va, bytes);
+        gpu.map = [](uint64_t va) {
+            return kernel_model::model.host(va);
         };
     }
 

@@ -104,7 +104,6 @@ void switch_exec_reset(const struct switch_exec_hooks *with)
 		struct switch_exec_chan *chan = chans[--chan_count];
 
 		list_del(&chan->tgm.live);
-		kfree(chan->tgm.dependency_bits);
 		switch_exec_host_free(chan->tgm.ring);
 		switch_exec_host_free(chan);
 	}

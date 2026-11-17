@@ -28,18 +28,6 @@ void switch_exec_host_free(void *block)
 	std::free(block);
 }
 
-void *switch_linux_malloc(uint64_t bytes, int zero)
-{
-	if (bytes > (uint64_t(1) << 30))
-		return nullptr;
-	return zero ? std::calloc(1, bytes) : std::malloc(bytes);
-}
-
-void switch_linux_free(const void *block)
-{
-	std::free(const_cast<void *>(block));
-}
-
 void *switch_linux_mutex_alloc(void)
 {
 	return new std::mutex;

@@ -35,37 +35,30 @@ struct Gpu {
     std::function<void(uint32_t)> onLaunch;  // what a launch's program does to memory
     // A device's memory instead of `memory` (a raw::Device over the kernel model), with only the compute class and the
     // copy engine modelled: other subchannels' methods (3D, 2D, host semaphores the stamps release) do nothing
-    std::function<uint8_t *(uint64_t, uint64_t)> map;
+    std::function<uint8_t *(uint64_t)> map;
     bool enabled = true;
     // false: the fetcher reads a segment's words as they were when the CPU wrote them (a GPU-written head unseen)
     bool seesHeads = true;
     uint64_t enableVa = 0, ceIn = 0, ceOut = 0, ceSemaphore = 0, i2mOut = 0;
     uint32_t ceLength = 0, cePayload = 0, i2mLength = 0, i2mAt = 0, pcas = 0;
-    uint32_t ceRows = 1, cePitchIn = 0, cePitchOut = 0, ceConstA = 0, ceRemap = 0;
     uint64_t decoded = 0;  // GP entries decoded past their first word
 
-    uint8_t *at(uint64_t va, uint64_t bytes = 1)
+    uint8_t *at(uint64_t va)
     {
         if (map) {
-            uint8_t *mapped = map(va, bytes);
+            uint8_t *mapped = map(va);
             EXPECT_NE(mapped, nullptr) << std::hex << va;
             return mapped;
         }
         EXPECT_GE(va, kBase);
         EXPECT_LT(va - kBase, memory.size());
-        EXPECT_LE(bytes, memory.size() - std::min<uint64_t>(va - kBase, memory.size()));
-        if (va < kBase || va - kBase >= memory.size() || bytes > memory.size() - (va - kBase))
-            return nullptr;
         return memory.data() + (va - kBase);
     }
 
     uint32_t word(uint64_t va)
     {
         uint32_t v;
-        const auto *from = at(va, 4);
-        if (!from)
-            return 0;
-        memcpy(&v, from, 4);
+        memcpy(&v, at(va), 4);
         return v;
     }
 
@@ -76,8 +69,7 @@ struct Gpu {
 
     void put(uint64_t va, uint32_t v)
     {
-        if (auto *to = at(va, 4))
-            memcpy(to, &v, 4);
+        memcpy(at(va), &v, 4);
     }
 
     void copyEngine(uint32_t m, uint32_t v)
@@ -98,21 +90,6 @@ struct Gpu {
         case NVB0B5_LINE_LENGTH_IN:
             ceLength = v;
             break;
-        case NVB0B5_LINE_COUNT:
-            ceRows = v;
-            break;
-        case NVB0B5_PITCH_IN:
-            cePitchIn = v;
-            break;
-        case NVB0B5_PITCH_OUT:
-            cePitchOut = v;
-            break;
-        case NVB0B5_SET_REMAP_CONST_A:
-            ceConstA = v;
-            break;
-        case NVB0B5_SET_REMAP_COMPONENTS:
-            ceRemap = v;
-            break;
         case NVB0B5_SET_SEMAPHORE_A:
             ceSemaphore = uint64_t(v) << 32 | (ceSemaphore & 0xffffffff);
             break;
@@ -123,30 +100,8 @@ struct Gpu {
             cePayload = v;
             break;
         case NVB0B5_LAUNCH_DMA: {
-            if (bits(v, 1, 0) != NVB0B5_LAUNCH_DMA_DATA_TRANSFER_TYPE_NONE) {
-                const bool fill = bits(v, 10, 10);
-                const uint32_t unit = fill ? bits(ceRemap, 17, 16) + 1 : 1;
-                if (fill && ((ceRemap & 0xff00ffff) != 0x4444 || (unit != 1 && unit != 4))) {
-                    ADD_FAILURE() << "unsupported CE remap " << std::hex << ceRemap;
-                    return;
-                }
-                const uint64_t bytes = uint64_t(ceLength) * unit;
-                const uint32_t rows = bits(v, 9, 9) ? ceRows : 1;
-                for (uint32_t row = 0; row < rows; ++row) {
-                    auto *to = at(ceOut + uint64_t(row) * cePitchOut, bytes);
-                    if (!to)
-                        return;
-                    if (fill) {
-                        for (uint64_t i = 0; i < bytes; i += unit)
-                            memcpy(to + i, &ceConstA, unit);
-                    } else {
-                        const auto *from = at(ceIn + uint64_t(row) * cePitchIn, bytes);
-                        if (!from)
-                            return;
-                        memmove(to, from, bytes);
-                    }
-                }
-            }
+            if (bits(v, 1, 0) != NVB0B5_LAUNCH_DMA_DATA_TRANSFER_TYPE_NONE)
+                memmove(at(ceOut), at(ceIn), ceLength);
             if (bits(v, 4, 3) != NVB0B5_LAUNCH_DMA_SEMAPHORE_TYPE_NONE) {
                 uint32_t next = cePayload;
                 if (bits(v, 19, 19)) {
@@ -277,10 +232,7 @@ struct Gpu {
     {
         for (size_t e = 0; e < entries.size(); ++e) {
             std::vector<uint32_t> words(entries[e].dwords);
-            const auto *from = at(entries[e].va, words.size() * 4);
-            if (!from)
-                return;
-            memcpy(words.data(), from, words.size() * 4);
+            memcpy(words.data(), at(entries[e].va), words.size() * 4);
             if (run(words.data(), words.size(), true) > 1)
                 ++decoded;
         }
