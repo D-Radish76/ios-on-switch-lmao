@@ -134,6 +134,64 @@ static NSUInteger sliceCount(id<MTLTexture> t)
     return raw::textureLayers(uint32_t(t.textureType), uint32_t(std::min<NSUInteger>(t.arrayLength, 2048)));
 }
 
+// A blit Metal's validation stops (MTLBlitCommandEncoder.h): recorded as nothing, as the planner's client errors are
+// (raw/plan/plan_validate.h ClientError), one error line a process
+static void skipInvalidBlit(const char *call, const char *why)
+{
+    SWITCH_REFUSE("raw", "blit.invalid", "%s %s: Metal's validation error (MTLBlitCommandEncoder.h), nothing copied",
+                  call, why);
+}
+
+// Why one side of a copy breaks MTLBlitCommandEncoder.h's rules (a memoryless texture, a level or slice past the
+// texture's, a region past its level), null where it keeps them
+static const char *copySideInvalid(RMTexture *t, NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size)
+{
+    if (t->_descriptor.storageMode == MTLStorageModeMemoryless)
+        return "of a memoryless texture";
+    if (level >= t->_descriptor.mipmapLevelCount || slice >= sliceCount((id<MTLTexture>)t))
+        return "of a level or slice past the texture's";
+    const MTLSize at = levelSize((id<MTLTexture>)t, level);
+    if (o.x > at.width || size.width > at.width - o.x || o.y > at.height || size.height > at.height - o.y ||
+        o.z > at.depth || size.depth > at.depth - o.z)
+        return "of a region past its level";
+    return nullptr;
+}
+
+// Why a texture-to-texture copy breaks the rules: its destination of the source's sample count and pixel format (texel
+// sizes as the raw path holds them), each side inside its texture
+static const char *textureCopyInvalid(RMTexture *a, NSUInteger ss, NSUInteger sl, MTLOrigin so, MTLSize size,
+                                      RMTexture *b, NSUInteger ds, NSUInteger dl, MTLOrigin dorg)
+{
+    if (a->_descriptor.sampleCount != b->_descriptor.sampleCount)
+        return "between textures of other sample counts";
+    if (a->_rawOk && b->_rawOk &&
+        (a->_raw.bpp != b->_raw.bpp || a->_raw.blockW != b->_raw.blockW || a->_raw.blockH != b->_raw.blockH))
+        return "between textures of other texel sizes";
+    if (const char *side = copySideInvalid(a, ss, sl, so, size))
+        return side;
+    return copySideInvalid(b, ds, dl, dorg, size);
+}
+
+// Why a copy between texture `t` and a buffer of `length` bytes breaks the rules: its texture side, an origin off the
+// format's blocks, or rows, images or an offset of part texels or past the buffer (bufferPlanes); null where it keeps
+// them or the raw path cannot tell (a texture it does not hold, blit options it does not take)
+static const char *bufferCopyInvalid(RMTexture *t, NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size,
+                                     uint64_t offset, uint64_t row, uint64_t image, uint64_t length, int aspect,
+                                     bool intoTexture)
+{
+    if (const char *side = copySideInvalid(t, slice, level, o, size))
+        return side;
+    if (!t->_rawOk || !t->_raw.bpp || t->_raw.samples != 1 || aspect < 0)
+        return nullptr;
+    MTLSize elements = size;
+    if (!inElements(t, o, elements))
+        return "from an origin off the format's blocks";
+    const uint32_t unit = raw::bufferUnit(t->_raw, uint8_t(aspect));
+    if (unit && !bufferPlanes(offset, row, image, elements, unit, length, intoTexture))
+        return "of buffer rows, images or an offset of part texels or past the buffer";
+    return nullptr;
+}
+
 // The levels a whole-texture copy starts at: the smaller's first, and the larger's of its size. False: neither has a level
 // of the other's size.
 static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, NSUInteger &dl)
@@ -182,6 +240,8 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
                     a->_raw.blockH == b->_raw.blockH && copySideOk(a, ss, sl, so, size) &&
                     copySideOk(b, ds, dl, dorg, size);
     if (!ok) {
+        if (const char *invalid = both ? textureCopyInvalid(a, ss, sl, so, size, b, ds, dl, dorg) : nullptr)
+            return skipInvalidBlit("copyFromTexture:toTexture:", invalid);
         [_cb takeReason:WhyTexture why:@"a texture copy the raw path does not do (levels, slices, formats)"];
         hit(_cb, PredBlitTexCopy, ss | sl << 8 | ds << 16 | dl << 24,
             uint64_t(size.width) << 32 | uint32_t(size.height));
@@ -354,18 +414,22 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
                 options:(MTLBlitOption)options
 {
     const int aspect = blitAspect(d, options);
+    RMBuffer *a = (RMBuffer *)s;
+    RMTexture *b = (RMTexture *)d;
+    const bool ours = [(id)a isKindOfClass:[RMBuffer class]] && [(id)b isKindOfClass:[RMTexture class]];
+    MTLOrigin eo = dorg;
+    MTLSize es = size;
+    const bool ok =
+        ours && b->_raw.samples == 1 && copySideOk(b, ds, dl, dorg, size) && b->_raw.bpp && inElements(b, eo, es) &&
+        bufferPlanes(so, row, image, es, raw::bufferUnit(b->_raw, uint8_t(std::max(aspect, 0))), a->_raw.length, true);
+    if (const char *invalid =
+            ok || !ours ? nullptr
+                        : bufferCopyInvalid(b, ds, dl, dorg, size, so, row, image, a->_raw.length, aspect, true))
+        return skipInvalidBlit("copyFromBuffer:toTexture:", invalid);
     if (aspect < 0) {
         [_cb takeReason:WhyCall why:@"a copy with blit options"];
         hit(_cb, PredCallBlitOptions, options);
     }
-    RMBuffer *a = (RMBuffer *)s;
-    RMTexture *b = (RMTexture *)d;
-    MTLOrigin eo = dorg;
-    MTLSize es = size;
-    const bool ok =
-        [(id)a isKindOfClass:[RMBuffer class]] && [(id)b isKindOfClass:[RMTexture class]] && b->_raw.samples == 1 &&
-        copySideOk(b, ds, dl, dorg, size) && b->_raw.bpp && inElements(b, eo, es) &&
-        bufferPlanes(so, row, image, es, raw::bufferUnit(b->_raw, uint8_t(std::max(aspect, 0))), a->_raw.length, true);
     if (!ok) {
         [_cb takeReason:WhyTexture why:@"a buffer-to-texture copy the raw path does not do"];
         hit(_cb, PredBlitBufToTex, row, uint64_t(ds) | uint64_t(dl) << 8 | uint64_t(size.depth) << 16);
@@ -422,18 +486,23 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
                      options:(MTLBlitOption)options
 {
     const int aspect = blitAspect(s, options);
+    RMTexture *a = (RMTexture *)s;
+    RMBuffer *b = (RMBuffer *)d;
+    const bool ours = [(id)a isKindOfClass:[RMTexture class]] && [(id)b isKindOfClass:[RMBuffer class]];
+    MTLOrigin eo = so;
+    MTLSize es = size;
+    const bool ok = ours && a->_raw.samples == 1 && copySideOk(a, ss, sl, so, size) && a->_raw.bpp &&
+                    inElements(a, eo, es) &&
+                    bufferPlanes(dof, row, image, es, raw::bufferUnit(a->_raw, uint8_t(std::max(aspect, 0))),
+                                 b->_raw.length, false);
+    if (const char *invalid =
+            ok || !ours ? nullptr
+                        : bufferCopyInvalid(a, ss, sl, so, size, dof, row, image, b->_raw.length, aspect, false))
+        return skipInvalidBlit("copyFromTexture:toBuffer:", invalid);
     if (aspect < 0) {
         [_cb takeReason:WhyCall why:@"a copy with blit options"];
         hit(_cb, PredCallBlitOptions, options);
     }
-    RMTexture *a = (RMTexture *)s;
-    RMBuffer *b = (RMBuffer *)d;
-    MTLOrigin eo = so;
-    MTLSize es = size;
-    const bool ok = [(id)a isKindOfClass:[RMTexture class]] && [(id)b isKindOfClass:[RMBuffer class]] &&
-                    a->_raw.samples == 1 && copySideOk(a, ss, sl, so, size) && a->_raw.bpp && inElements(a, eo, es) &&
-                    bufferPlanes(dof, row, image, es, raw::bufferUnit(a->_raw, uint8_t(std::max(aspect, 0))),
-                                 b->_raw.length, false);
     if (!ok) {
         [_cb takeReason:WhyTexture why:@"a texture-to-buffer copy the raw path does not do"];
         hit(_cb, PredBlitTexToBuf, row, uint64_t(ss) | uint64_t(sl) << 8 | uint64_t(size.depth) << 16);
@@ -550,6 +619,12 @@ static bool sameSizeLevels(id<MTLTexture> s, id<MTLTexture> d, NSUInteger &sl, N
         pixelFormat:(MTLPixelFormat)format
 {
     if (format != t.pixelFormat) {
+        // a texel size no view of the texture can have (MTLTexture.h newTextureViewWithPixelFormat:)
+        const raw::FormatInfo *view = raw::formatInfo(uint32_t(format)),
+                              *own = raw::formatInfo(uint32_t(t.pixelFormat));
+        if (view && own && (view->bpp != own->bpp || view->blockW != own->blockW || view->blockH != own->blockH))
+            return skipInvalidBlit("fillTexture:level:slice:region:color:pixelFormat:",
+                                   "through a pixel format of another texel size");
         [_cb takeReason:WhyTexture why:@"a texture fill through another pixel format"];
         hit(_cb, PredBlitTexFill, format, t.pixelFormat);
     }

@@ -6,6 +6,7 @@
 #include "../raw/runtime/RawMetalInternal.h"
 #include "../raw/runtime/RawMetalPassCache.h"
 #include "../raw/runtime/raw_record.h"
+#include "../raw/runtime/raw_samples.h"
 #include "../raw/runtime/raw_turn_copy.h"
 #include "NativeBridgeMetalFrontend.h"
 
@@ -329,28 +330,38 @@ std::vector<Sample> conversionSamples(size_t first)
     return out;
 }
 
+// The pack's state `name` (key fields `fields`) as a record whose fragment program reads set 0, which holds its texture
+// 0: each of its draws is a conversionSamples sample
+void addSamplingRecord(const char *name, const std::string &fields)
+{
+    raw::RuntimeRecord r;
+    r.keyString = fields;
+    for (raw::CapturedProgram &p : r.programs) {
+        p.image.assign(80 + 64, 0);
+        p.gprs = 8;
+        p.cbufTypes = {raw::CbufRoot, raw::CbufSet};
+    }
+    const uint64_t readSet = 0x4c98ull << 48 | 1ull << 34;
+    memcpy(r.programs[1].image.data() + 88, &readSet, sizeof readSet);
+    raw::setEntryCount(r.pipeline, 1);
+    r.pipeline.entry[0] = {0, raw::EntryTexture, 2, 0, raw::SamplerNone, 0, 0};
+    r.pipeline.setBytes = 32;
+    r.pipeline.memoryEntries = 1;
+    r.pipeline.keyHash = raw::Pack::fnv(name, strlen(name));
+    r.blob = {0x1a00, 0x1111};
+    std::string why;
+    ASSERT_NE(gRM->raw->addRecord(r, false, why), nullptr) << why;
+}
+
+std::string depthFields(uint32_t format, uint32_t samples)
+{
+    return "samples=" + std::to_string(samples) + " ds=" + std::to_string(format) + (format == 260 ? "/260 " : "/0 ");
+}
+
 TEST_F(FacadeStoredZeta, ARecordedDepth16PassAndItsCachedCopyUseTheMovedImage)
 {
-    for (const uint32_t format : {250u, 260u}) {
-        raw::RuntimeRecord r;
-        r.keyString = "samples=1 ds=" + std::to_string(format) + (format == 260 ? "/260 " : "/0 ");
-        for (raw::CapturedProgram &p : r.programs) {
-            p.image.assign(80 + 64, 0);
-            p.gprs = 8;
-            p.cbufTypes = {raw::CbufRoot, raw::CbufSet};
-        }
-        const uint64_t readSet = 0x4c98ull << 48 | 1ull << 34;
-        memcpy(r.programs[1].image.data() + 88, &readSet, sizeof readSet);
-        raw::setEntryCount(r.pipeline, 1);
-        r.pipeline.entry[0] = {0, raw::EntryTexture, 2, 0, raw::SamplerNone, 0, 0};
-        r.pipeline.setBytes = 32;
-        r.pipeline.memoryEntries = 1;
-        const char *name = raw::turnDepthState(format);
-        r.pipeline.keyHash = raw::Pack::fnv(name, strlen(name));
-        r.blob = {0x1a00, 0x1111};
-        std::string why;
-        ASSERT_NE(gRM->raw->addRecord(r, false, why), nullptr) << why;
-    }
+    for (const uint32_t format : {250u, 260u})
+        ASSERT_NO_FATAL_FAILURE(addSamplingRecord(raw::turnDepthState(format), depthFields(format, 1)));
     auto d = stored(MTLPixelFormatDepth16Unorm);
     d.usage = MTLTextureUsageRenderTarget;
     RMTexture *depth = (RMTexture *)[gDevice newTextureWithDescriptor:d];
@@ -401,6 +412,60 @@ TEST_F(FacadeStoredZeta, ARecordedDepth16PassAndItsCachedCopyUseTheMovedImage)
         EXPECT_NE(samples[i].address, oldAddress);
         EXPECT_EQ(samples[i + 1].address, samples[i].target);
         EXPECT_EQ(samples[i + 1].target, depth->_raw.va);
+    }
+}
+
+MTLTextureDescriptor *multisampled(MTLPixelFormat format)
+{
+    MTLTextureDescriptor *d = stored(format);
+    d.textureType = MTLTextureType2DMultisample;
+    d.sampleCount = 4;
+    d.usage = MTLTextureUsageRenderTarget;
+    return d;
+}
+
+// A multisampled Depth16Unorm beside a Stencil8 renders a Depth32Float_Stencil8 of the command buffer's, its depth
+// converted in from the Depth16Unorm: the depth's resolve reads that zeta, whether the pass discards its depth
+// (MultisampleResolve: nothing converts it back) or keeps it (StoreAndMultisampleResolve: converted back after the resolve)
+TEST_F(FacadeStoredZeta, AMultisampledDepth16ResolvesTheDepthItsPassRendered)
+{
+    for (const uint32_t format : {250u, 260u})
+        ASSERT_NO_FATAL_FAILURE(addSamplingRecord(raw::turnDepthState(format, 4), depthFields(format, 4)));
+    ASSERT_NO_FATAL_FAILURE(addSamplingRecord(raw::depthResolveState(250, 0), depthFields(250, 1)));
+    RMTexture *depth = (RMTexture *)[gDevice newTextureWithDescriptor:multisampled(MTLPixelFormatDepth16Unorm)];
+    id<MTLTexture> stencil = [gDevice newTextureWithDescriptor:multisampled(MTLPixelFormatStencil8)];
+    RMTexture *resolve = (RMTexture *)[gDevice newTextureWithDescriptor:stored(MTLPixelFormatDepth16Unorm)];
+    ASSERT_TRUE(depth != nil && stencil != nil && resolve != nil);
+    ASSERT_TRUE(depth->_rawOk && resolve->_rawOk);
+    for (const MTLStoreAction store : {MTLStoreActionMultisampleResolve, MTLStoreActionStoreAndMultisampleResolve}) {
+        SCOPED_TRACE(store);
+        auto pass = [MTLRenderPassDescriptor renderPassDescriptor];
+        pass.depthAttachment.texture = (id<MTLTexture>)depth;
+        pass.depthAttachment.loadAction = MTLLoadActionLoad;
+        pass.depthAttachment.storeAction = store;
+        pass.depthAttachment.resolveTexture = (id<MTLTexture>)resolve;
+        pass.stencilAttachment.texture = stencil;
+        pass.stencilAttachment.loadAction = MTLLoadActionClear;
+        pass.stencilAttachment.storeAction = MTLStoreActionDontCare;
+        auto cb = [[gDevice newCommandQueue] commandBuffer];
+        [[cb renderCommandEncoderWithDescriptor:pass] endEncoding];
+        ASSERT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+        const size_t first = kernel_model::model.jobs.size();
+        [cb commit];
+        [cb waitUntilCompleted];
+        ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error;
+        const bool kept = store == MTLStoreActionStoreAndMultisampleResolve;
+        const auto samples = conversionSamples(first);
+        ASSERT_EQ(samples.size(), kept ? 3u : 2u);
+        const Sample &in = samples[0], &resolved = samples[1];
+        EXPECT_EQ(in.address, depth->_raw.va);
+        EXPECT_NE(in.target, depth->_raw.va);
+        EXPECT_EQ(resolved.target, resolve->_raw.va);
+        EXPECT_EQ(resolved.address, in.target) << "a resolve of the Depth16Unorm, which holds none of the pass's depth";
+        if (kept) {
+            EXPECT_EQ(samples[2].address, in.target);
+            EXPECT_EQ(samples[2].target, depth->_raw.va);
+        }
     }
 }
 

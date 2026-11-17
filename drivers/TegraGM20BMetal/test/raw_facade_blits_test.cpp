@@ -13,6 +13,12 @@
               slice:(NSUInteger)slice
              region:(MTLRegion)region
               color:(MTLClearColor)color;
+- (void)fillTexture:(id<MTLTexture>)texture
+              level:(NSUInteger)level
+              slice:(NSUInteger)slice
+             region:(MTLRegion)region
+              color:(MTLClearColor)color
+        pixelFormat:(MTLPixelFormat)format;
 @end
 
 namespace {
@@ -503,6 +509,97 @@ TEST_F(FacadeBlits, BlitTexCopiesTheViewMipAtAnOddOrigin)
                     << x << ',' << y << ',' << c;
 }
 
+// Texture copies Metal's validation stops (MTLBlitCommandEncoder.h: a region past its level, a level past the texture's,
+// a destination of another texel size) copy nothing, on the raw path, beside the copies that land
+TEST_F(FacadeBlits, TextureCopiesMetalStopsCopyNothing)
+{
+    auto a = texture(), b = texture(), narrow = texture(MTLPixelFormatR8Unorm);
+    ASSERT_TRUE(((RMTexture *)a)->_rawOk && ((RMTexture *)narrow)->_rawOk);
+    auto in = buffer(), before = buffer(), out = buffer();
+    memset(in.contents, 0x3b, 1024);
+    memset(before.contents, 0xa6, 1024);
+    auto cb = [[device newCommandQueue] commandBuffer];
+    auto e = [cb blitCommandEncoder];
+    upload(e, in, a);
+    upload(e, before, b);
+    const auto copyFromA = [&](NSUInteger level, MTLOrigin origin, MTLSize size, id<MTLTexture> into) {
+        [e copyFromTexture:a
+                  sourceSlice:0
+                  sourceLevel:level
+                 sourceOrigin:origin
+                   sourceSize:size
+                    toTexture:into
+             destinationSlice:0
+             destinationLevel:1
+            destinationOrigin:MTLOriginMake(0, 0, 0)];
+    };
+    const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
+    const int opens = harness::gOpens;
+    copyFromA(1, MTLOriginMake(10, 0, 0), MTLSizeMake(8, 8, 1), b);
+    copyFromA(6, MTLOriginMake(0, 0, 0), MTLSizeMake(1, 1, 1), b);
+    copyFromA(1, MTLOriginMake(0, 0, 0), MTLSizeMake(4, 4, 1), narrow);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
+    read(e, b, out);
+    [e endEncoding];
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds & (1ull << PredBlitTexCopy), 0u);
+    execute(cb);
+    EXPECT_EQ(memcmp(before.contents, out.contents, 1024), 0);
+    EXPECT_EQ(harness::gOpens, opens);
+}
+
+// Buffer copies Metal's validation stops (rows past the buffer, a region past the level, rows shorter than the copy's,
+// a slice past the texture's) copy nothing, on the raw path, beside the copies that land
+TEST_F(FacadeBlits, BufferCopiesMetalStopsCopyNothing)
+{
+    auto t = texture();
+    auto in = buffer(), junk = buffer(), out = buffer(), untouched = buffer();
+    memset(in.contents, 0x3b, 1024);
+    memset(junk.contents, 0xee, 32768);
+    memset(untouched.contents, 0x5c, 32768);
+    auto cb = [[device newCommandQueue] commandBuffer];
+    auto e = [cb blitCommandEncoder];
+    upload(e, in, t);
+    const auto intoLevel1 = [&](NSUInteger offset, NSUInteger row, MTLSize size) {
+        [e copyFromBuffer:junk
+                   sourceOffset:offset
+              sourceBytesPerRow:row
+            sourceBytesPerImage:0
+                     sourceSize:size
+                      toTexture:t
+               destinationSlice:0
+               destinationLevel:1
+              destinationOrigin:MTLOriginMake(0, 0, 0)];
+    };
+    const auto fromLevel1 = [&](NSUInteger slice, NSUInteger row) {
+        [e copyFromTexture:t
+                         sourceSlice:slice
+                         sourceLevel:1
+                        sourceOrigin:MTLOriginMake(0, 0, 0)
+                          sourceSize:MTLSizeMake(16, 16, 1)
+                            toBuffer:untouched
+                   destinationOffset:0
+              destinationBytesPerRow:row
+            destinationBytesPerImage:0];
+    };
+    const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
+    const int opens = harness::gOpens;
+    intoLevel1(32768 - 512, 64, MTLSizeMake(16, 16, 1));
+    intoLevel1(0, 128, MTLSizeMake(32, 32, 1));
+    fromLevel1(0, 32);
+    fromLevel1(1, 64);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
+    read(e, t, out);
+    [e endEncoding];
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds & (1ull << PredBlitBufToTex | 1ull << PredBlitTexToBuf), 0u);
+    execute(cb);
+    EXPECT_EQ(harness::gOpens, opens);
+    EXPECT_EQ(memcmp(in.contents, out.contents, 1024), 0);
+    const auto *kept = static_cast<const uint8_t *>(untouched.contents);
+    EXPECT_TRUE(std::all_of(kept, kept + 32768, [](uint8_t v) {
+        return v == 0x5c;
+    }));
+}
+
 TEST_F(FacadeBlits, BlitWholeCopiesAllViewLevels)
 {
     auto a = texture(), b = texture(), alias = view(b);
@@ -849,6 +946,39 @@ TEST_F(FacadeBlits, FillPartViewUsesTheParentLevel)
         }
     }
     EXPECT_EQ(fills, 1u);
+}
+
+// A fill through a pixel format of another texel size than the texture's, which no view of it can have, fills nothing,
+// on the raw path; one through another format of its texel size is not the raw path's yet
+TEST_F(FacadeBlits, AFillThroughAFormatOfAnotherTexelSizeFillsNothing)
+{
+    auto t = texture();
+    auto in = buffer(), out = buffer();
+    memset(in.contents, 0x3b, 1024);
+    const auto fill = [&](id<MTLBlitCommandEncoder> e, MTLPixelFormat format) {
+        [(id)e fillTexture:t
+                     level:1
+                     slice:0
+                    region:MTLRegionMake2D(0, 0, 8, 8)
+                     color:MTLClearColorMake(1, 0, 0, 1)
+               pixelFormat:format];
+    };
+    auto cb = [[device newCommandQueue] commandBuffer];
+    auto e = [cb blitCommandEncoder];
+    upload(e, in, t);
+    const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
+    fill(e, MTLPixelFormatRGBA16Float);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
+    read(e, t, out);
+    [e endEncoding];
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds & (1ull << PredBlitTexFill), 0u);
+    execute(cb);
+    EXPECT_EQ(memcmp(in.contents, out.contents, 1024), 0);
+    auto other = [[device newCommandQueue] commandBuffer];
+    auto f = [other blitCommandEncoder];
+    fill(f, MTLPixelFormatBGRA8Unorm);
+    [f endEncoding];
+    EXPECT_NE(((RMCommandBuffer *)other)->_preds & (1ull << PredBlitTexFill), 0u);
 }
 
 }  // namespace

@@ -58,29 +58,37 @@ static void checkFetch(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
     }
 }
 
-// A depth or stencil store the pass left Unknown, decided now: Store or DontCare, kept as the pass's; a resolve there names
-// no resolve texture (the pass took Unknown only without one), Metal's validation error
-static void decideZetaStore(RMRenderEncoder *e, uint32_t aspect, MTLStoreAction action)
+// A depth or stencil store the pass left Unknown, decided now and kept as the pass's. A resolve there names no resolve
+// texture (the pass took Unknown only without one), Metal's validation error: with nothing to resolve into, the aspect
+// keeps the store the action names besides, as a colour attachment's does (RawMetalRangePass.mm)
+static MTLStoreAction decideZetaStore(RMRenderEncoder *e, uint32_t aspect, MTLStoreAction action)
 {
+    if (e->_zeta &&
+        (action == MTLStoreActionMultisampleResolve || action == MTLStoreActionStoreAndMultisampleResolve)) {
+        SWITCH_REFUSE("raw", "pass.resolve_store",
+                      "a depth or stencil store action %lu resolving with no resolve texture: Metal's validation error "
+                      "(MTLRenderPass.h resolveTexture), nothing resolved",
+                      (unsigned long)action);
+        action = action == MTLStoreActionMultisampleResolve ? MTLStoreActionDontCare : MTLStoreActionStore;
+    }
     e->_cb->_passes[e->_passAt].zeta[aspect].store = action;
     if (e->_zeta && action != MTLStoreActionDontCare && action != MTLStoreActionStore) {
-        [e->_cb takeReason:WhyPass why:@"a depth or stencil store action that resolves with no resolve texture"];
+        [e->_cb takeReason:WhyPass why:@"a depth or stencil store action the raw path does not take"];
         hit(e->_cb, PredPassDepthStencil, e->_zeta, action);
     }
+    return action;
 }
 
 - (void)setDepthStoreAction:(MTLStoreAction)action
 {
     rmOwnPass(self);
-    _pass.depthAttachment.storeAction = action;
-    decideZetaStore(self, 0, action);
+    _pass.depthAttachment.storeAction = decideZetaStore(self, 0, action);
 }
 
 - (void)setStencilStoreAction:(MTLStoreAction)action
 {
     rmOwnPass(self);
-    _pass.stencilAttachment.storeAction = action;
-    decideZetaStore(self, 1, action);
+    _pass.stencilAttachment.storeAction = decideZetaStore(self, 1, action);
 }
 
 void visibilityError(RMCommandBuffer *cb, uint64_t mode, uint64_t offset, const char *why)
@@ -127,8 +135,9 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 }
 
 // Core Animation sets the mode Disabled when its encoder state changes (update_encoder_state); a counting mode is the 3D
-// engine's sample counter (raw_visibility.h). What the raw path refuses here Metal's validation stops
-// (MTLRenderCommandEncoder.h setVisibilityResultMode:offset: and MTLVisibilityResultMode).
+// engine's sample counter (raw_visibility.h). What Metal's validation stops here (MTLRenderCommandEncoder.h
+// setVisibilityResultMode:offset: and MTLVisibilityResultMode: a mode it lacks, no result buffer, an offset past it) fails
+// the command buffer; a result buffer of another device's goes to m2v.
 - (void)setVisibilityResultMode:(MTLVisibilityResultMode)mode offset:(NSUInteger)offset
 {
     id<MTLBuffer> results = _visibility;
@@ -142,8 +151,14 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
         accumulate = [_pass respondsToSelector:@selector(visibilityResultType)] &&
                      [[(id)_pass valueForKey:@"visibilityResultType"] integerValue] != 0;
         if (const char *why = raw::visibilityRefusal(ask)) {
-            [_cb takeReason:WhyCall why:@(why)];
             visibilityError(_cb, mode, offset, why);
+            const bool known = mode == MTLVisibilityResultModeBoolean || mode == MTLVisibilityResultModeCounting;
+            if (!known || !results || ask.rawBuffer)
+                return failCommandBuffer(_cb,
+                                         [NSString stringWithFormat:@"setVisibilityResultMode:offset: %s: Metal's "
+                                                                    @"validation error (MTLRenderCommandEncoder.h)",
+                                                                    why]);
+            [_cb takeReason:WhyCall why:@(why)];
         }
     }
     Cmd m = cmd(OpVisibility);

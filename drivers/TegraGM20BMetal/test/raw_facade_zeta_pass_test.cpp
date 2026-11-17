@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Render passes of depth and stencil attachments as the raw facade records them (raw_facade_harness.h): a Depth32Float
 // texture beside a Stencil8 texture (array slices past 0 too), and an aspect whose store action the encoder decides
-// (MTLStoreActionUnknown, then setDepthStoreAction: / setStencilStoreAction:), are the raw path's (no pass.ds refusal), and
-// their command buffers complete on it, as does a depth cleared to NaN. A one-sample Depth16Unorm beside a Stencil8 is
-// converted through a Depth32Float_Stencil8; a multisampled pair of them stays refused without its conversion states.
+// (MTLStoreActionUnknown, then setDepthStoreAction: / setStencilStoreAction:, a resolve there with no resolve texture
+// keeping its store part), are the raw path's (no pass.ds refusal), and their command buffers complete on it, as does a
+// depth cleared to NaN. A one-sample Depth16Unorm beside a Stencil8 is converted through a Depth32Float_Stencil8; a
+// multisampled pair of them stays refused without its conversion states.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/RawMetalInternal.h"
 #include "../raw/runtime/raw_record.h"
@@ -456,6 +457,31 @@ TEST_F(FacadeZetaPass, AStoreTheEncoderDecidesIsTheRawPaths)
             });
         EXPECT_TRUE(taken) << decided;
         EXPECT_EQ(path, "raw") << decided;
+    }
+}
+
+// A resolve the encoder decides where the pass names no resolve texture, Metal's validation error: nothing to resolve
+// into, so the aspect keeps the store the action names besides, as a colour attachment does, on the raw path
+TEST_F(FacadeZetaPass, AResolveTheEncoderDecidesWithNoResolveTextureKeepsItsStore)
+{
+    id<MTLTexture> combined = zeta(MTLPixelFormatDepth32Float_Stencil8);
+    ASSERT_TRUE(combined != nil);
+    for (MTLStoreAction decided : {MTLStoreActionMultisampleResolve, MTLStoreActionStoreAndMultisampleResolve}) {
+        __block MTLStoreAction depthKept = MTLStoreActionUnknown, stencilKept = MTLStoreActionUnknown;
+        const auto [taken, path] =
+            run(pass(combined, combined, MTLLoadActionClear, MTLStoreActionUnknown), ^(id<MTLRenderCommandEncoder> e) {
+                [e setDepthStoreAction:decided];
+                [e setStencilStoreAction:decided];
+                RMRenderEncoder *r = (RMRenderEncoder *)e;
+                depthKept = r->_cb->_passes[r->_passAt].zeta[0].store;
+                stencilKept = r->_cb->_passes[r->_passAt].zeta[1].store;
+            });
+        const MTLStoreAction kept =
+            decided == MTLStoreActionMultisampleResolve ? MTLStoreActionDontCare : MTLStoreActionStore;
+        EXPECT_TRUE(taken) << decided;
+        EXPECT_EQ(path, "raw") << decided;
+        EXPECT_EQ(depthKept, kept) << decided;
+        EXPECT_EQ(stencilKept, kept) << decided;
     }
 }
 

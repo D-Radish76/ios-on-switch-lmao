@@ -97,8 +97,11 @@ void RMRangeEncode::separateZeta(const RMPass &pass, RMTexture *depth, RMTexture
     useTexture(rc_, stencil, true);
 }
 
-// A one-sample Depth16Unorm's depth beside a Stencil8 through a Depth32Float_Stencil8 of the command buffer's, converted in
-// by draws where the pass loads it and back at its end where it stores it; a depth bias counts in its 16-bit codes
+// A Depth16Unorm's depth beside a Stencil8 through a Depth32Float_Stencil8 of the command buffer's, converted in by draws
+// where the pass loads it and back at its end where it stores it; a depth bias counts in its 16-bit codes. Its resolve
+// reads that zeta, the pass's depth target, since the conversion back runs after the resolve and a discarded depth has
+// none: the pack's Depth16Unorm resolve state reads any depth and rounds the sample it picks once, as picking among
+// rounded samples would
 bool RMRangeEncode::depth16Zeta(const RMPass &pass, raw::PassDesc &p)
 {
     const raw::Texture &z = *p.separate.depth;
@@ -113,6 +116,7 @@ bool RMRangeEncode::depth16Zeta(const RMPass &pass, raw::PassDesc &p)
     p.biasDepthBits = 16;
     p.separate.depth = nullptr;
     p.separate.loadDepth = p.separate.storeDepth = false;
+    separateResolved_[0] = nullptr;
     depth16Scratch_ = pass.zeta[0].store == MTLStoreActionStore ? scratch : nullptr;
     return true;
 }

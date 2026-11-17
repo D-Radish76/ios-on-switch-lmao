@@ -4,7 +4,8 @@
 // completed with no error): a copy or fill past its buffer, indirect arguments past theirs, a state of the other
 // four-channel 8-bit order or another sample count than its pass, sample positions past the pass's samples, and a state
 // whose colour Apple writes as reinterpreted bits (its draw skipped). The kernel refusing a submission or the channel
-// fails the command buffer Internal naming the kernel's answer (RawMetalPredicates.h predFailure).
+// fails the command buffer Internal naming the kernel's answer (RawMetalPredicates.h predFailure), as a visibility result
+// mode Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis).
 #include "raw_facade_harness.h"
 #include "bazel/testing/fresh_process.h"
 
@@ -78,8 +79,8 @@ NSString *path(id<MTLCommandBuffer> cb)
     return ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));
 }
 
-// `cb` committed failed with `code` for predicate `pred`, its failed count one, and m2v never opened or asked
-void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code)
+// `cb` committed failed with `code` for predicate `pred`, and m2v never opened or asked
+void expectError(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code)
 {
     [cb commit];
     [cb waitUntilCompleted];
@@ -88,11 +89,18 @@ void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pre
     EXPECT_EQ(cb.error.code, code) << text(cb.error);
     EXPECT_EQ(std::string(path(cb).UTF8String ?: ""), std::string("error:") + pred);
     NSDictionary *counts = counters(device);
-    NSString *failed = [NSString stringWithFormat:@"failed.%s", pred];
-    EXPECT_EQ([counts[failed] intValue], 1) << text(counts);
     EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
+}
+
+// As expectError, the command buffer one its predicate failed (RawMetalPredicates.h predFailure)
+void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code)
+{
+    expectError(device, cb, pred, code);
+    NSDictionary *counts = counters(device);
+    NSString *failed = [NSString stringWithFormat:@"failed.%s", pred];
+    EXPECT_EQ([counts[failed] intValue], 1) << text(counts);
 }
 
 // `cb` committed completed on the raw path, no error, m2v never opened or asked
@@ -187,6 +195,31 @@ void samplePositionsPastThePasssSamples()
     expectCompleted(o.device, cb);
 }
 
+// Metal's validation stops each (MTLRenderCommandEncoder.h setVisibilityResultMode:offset:): a mode set in a pass of no
+// visibility result buffer, an offset past the buffer, a mode MTLVisibilityResultMode lacks
+void visibilityModesMetalStops()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil);
+    id<MTLBuffer> results = [o.device newBufferWithLength:64 options:0];
+
+    const struct {
+        bool buffer;
+        NSUInteger mode, offset;
+    } stopped[] = {
+        {false, MTLVisibilityResultModeBoolean, 0}, {true, MTLVisibilityResultModeCounting, 64}, {true, 7, 0}};
+
+    for (const auto &s : stopped) {
+        MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
+        p.visibilityResultBuffer = s.buffer ? results : nil;
+        id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+        id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
+        [e setVisibilityResultMode:MTLVisibilityResultMode(s.mode) offset:s.offset];
+        [e endEncoding];
+        expectError(o.device, cb, "call.vis", MTLCommandBufferErrorInternal);
+    }
+}
+
 // One command buffer completes first, so the channel is made before the kernel refuses the next submission
 void drawnOnce(id<MTLCommandQueue> queue, const Opened &o)
 {
@@ -263,6 +296,11 @@ TEST(RawFacadeErrors, AStateOfOtherSamplesCompletes)
 TEST(RawFacadeErrors, SamplePositionsPastThePasssSamplesComplete)
 {
     switch_ios::test::ExpectPassesInFreshProcess(samplePositionsPastThePasssSamples);
+}
+
+TEST(RawFacadeErrors, VisibilityModesMetalStopsFail)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(visibilityModesMetalStops);
 }
 
 TEST(RawFacadeErrors, TheKernelRefusingTheSubmissionFails)
