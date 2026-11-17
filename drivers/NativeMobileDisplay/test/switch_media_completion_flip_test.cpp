@@ -178,7 +178,7 @@ TEST_F(MediaFlip, AProducerSetBeyondTheExistingFenceCapacityNeverArmsAController
     switch_gpu_backing_token producers[5] = {};
     EXPECT_EQ(d.planeFenceWithMediaFlip(video(2), producers, 5), -22);
     EXPECT_TRUE(d.mediaFlipIdle());
-    EXPECT_FALSE(d.mediaHostStream.queued);
+    EXPECT_EQ(media_flip_test::gHost.owner, nullptr);
     EXPECT_EQ(d.planeLatch.armed, Display::PlaneCommits::kNone);
 }
 

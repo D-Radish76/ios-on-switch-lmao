@@ -69,7 +69,6 @@ inline int switch_host1x_display_submit(SwitchHost1xDisplayStream *stream, const
     gHost.executed = false;
     stream->status = 0;
     stream->restore = false;
-    stream->queued = true;
     stream->completed = completed;
     stream->context = context;
     stream->fence.threshold = ++gHost.sequence;
@@ -78,7 +77,7 @@ inline int switch_host1x_display_submit(SwitchHost1xDisplayStream *stream, const
 
 inline int switch_host1x_display_cancel(SwitchHost1xDisplayStream *stream)
 {
-    if (stream->queued && !media_flip_test::gHost.executed) {
+    if (media_flip_test::gHost.owner == stream && !media_flip_test::gHost.executed) {
         stream->restore = true;
         stream->status = SwitchHost1xDisplayStream::kCancelled;
     }
@@ -506,7 +505,7 @@ struct Display {
 
     void complete(int status)
     {
-        if (gHost.owner && gHost.owner->queued) {
+        if (gHost.owner) {
             auto *stream = gHost.owner;
             if (status && !gHost.executed)
                 stream->status = status;
@@ -518,7 +517,6 @@ struct Display {
                 model.completing = false;
             }
             gWaiters.clear();
-            stream->queued = false;
             gHost.owner = nullptr;
             stream->completed(stream->context, stream->status ? stream->status : status);
         } else {

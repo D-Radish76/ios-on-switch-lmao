@@ -5,6 +5,8 @@
 #include <kern/thread.h>
 #include "../TegraGM20B/SwitchGpuBacking.h"
 
+struct switch_gpu_bridge;
+
 struct SwitchHost1xResult {
     SwitchHost1xResult *next = nullptr;
     uint64_t first = 0, last = 0, generation = 0;
@@ -218,15 +220,15 @@ public:
         return failed;
     }
 
-    // Physical completion publishes before releasing this source; inspection excludes that publication.
-    template <class Source>
-    static int sourceFailure(SwitchHost1xResult *record, Source *const *source, int (*inspect)(const Source *))
+    // Physical completion publishes before releasing the job's bridge; inspection excludes that publication.
+    static int sourceFailure(SwitchHost1xResult *record, switch_gpu_bridge *const *bridge,
+                             int (*inspect)(const switch_gpu_bridge *))
     {
         if (!record)
             return 0;
         IOLockLock(State.lock);
         const int physical = record->physicalResult;
-        const int result = physical ? physical : *source ? inspect(*source) : 0;
+        const int result = physical ? physical : *bridge ? inspect(*bridge) : 0;
         IOLockUnlock(State.lock);
         return result < 0 ? result : 0;
     }

@@ -215,7 +215,7 @@ int prepare(const TegraNVDECSubmit &submit, TegraNVDECResolve resolve, void *con
     return 0;
 }
 
-static_assert(SWITCH_HOST1X_WAIT_WORDS * (SWITCH_GPU_BRIDGE_MAX_TOKENS + 1) + 3 * (TEGRA_NVDEC_MAX_ENTRIES + 1) + 2 <=
+static_assert(SWITCH_HOST1X_WAIT_WORDS * (SwitchHost1xProducers::kMax + 1) + 3 * (TEGRA_NVDEC_MAX_ENTRIES + 1) + 2 <=
               SWITCH_HOST1X_ARENA_WORDS);
 
 int publish(const TegraNVDECSubmit &submit, Submission &work, const SwitchNVDECCompletion &completion, uint32_t *fence,
@@ -313,6 +313,7 @@ int publish(const TegraNVDECSubmit &submit, Submission &work, const SwitchNVDECC
             continue;
         }
         bool bridgeRequired = false;
+        SwitchHost1xProducers producers;
         for (uint32_t i = 0; i < needed && !error; ++i) {
             auto &dependency = dependencies.tokens[i];
             const int physical = switch_gpu_backing_token_physical_status(&dependency, 0);
@@ -321,8 +322,7 @@ int publish(const TegraNVDECSubmit &submit, Submission &work, const SwitchNVDECC
                 dependency = {};
                 continue;
             }
-            if (!ready && (dependency.engine == SWITCH_GPU_ENGINE_NVDEC || dependency.engine == SWITCH_GPU_ENGINE_VIC ||
-                           dependency.engine == SWITCH_GPU_ENGINE_NVENC))
+            if (!ready && producers.add(dependency))
                 continue;
             if (!ready &&
                 (dependency.engine == SWITCH_GPU_ENGINE_GM20B || dependency.engine == SWITCH_GPU_ENGINE_PROMISE)) {
@@ -350,7 +350,10 @@ int publish(const TegraNVDECSubmit &submit, Submission &work, const SwitchNVDECC
                 return submitted;
             continue;
         }
-        const uint32_t capacity = SWITCH_HOST1X_WAIT_WORDS * (needed + 1) + 3 * (submit.entry_count + 1) + 2;
+        uint32_t bridgeSyncpoint = 0, bridgeThreshold = 0;
+        const bool bridged = dependencies.acquire(&bridgeSyncpoint, &bridgeThreshold);
+        const uint32_t waits = (bridged ? 1 : 0) + producers.foreignCount(gSyncpt);
+        const uint32_t capacity = SWITCH_HOST1X_WAIT_WORDS * waits + 3 * (submit.entry_count + 1) + 2;
         if (const int reserved = switch_host1x_job_reserve(TEGRA_HOST1X_CHANNEL_DEFAULT, capacity, &work.words)) {
             switch_gpu_backing_abort(&transaction);
             IOLockUnlock(gLock);
@@ -368,21 +371,13 @@ int publish(const TegraNVDECSubmit &submit, Submission &work, const SwitchNVDECC
             IOLockUnlock(gLock);
             return error;
         }
-        uint32_t n = 0, bridgeSyncpoint = 0, bridgeThreshold = 0;
-        if (dependencies.acquire(&bridgeSyncpoint, &bridgeThreshold))
+        uint32_t n = 0;
+        if (bridged)
             n += tegra_host1x_op_wait_syncpt(work.words + n, bridgeSyncpoint, bridgeThreshold);
-        SwitchHost1xProducers producers;
-        for (uint32_t i = 0; i < needed; ++i) {
-            if (dependencies.tokens[i].engine == SWITCH_GPU_ENGINE_VIC ||
-                dependencies.tokens[i].engine == SWITCH_GPU_ENGINE_NVENC ||
-                dependencies.tokens[i].engine == SWITCH_GPU_ENGINE_NVDEC) {
-                if (dependencies.tokens[i].engine != SWITCH_GPU_ENGINE_NVDEC) {
-                    n += tegra_host1x_op_wait_syncpt(work.words + n, dependencies.tokens[i].queue,
-                                                     static_cast<uint32_t>(dependencies.tokens[i].value));
-                }
-                producers.add(dependencies.tokens[i]);
-            }
-        }
+        for (uint32_t i = 0; i < SwitchHost1xProducers::kMax; ++i)
+            if (producers.foreign(i, gSyncpt))
+                n += tegra_host1x_op_wait_syncpt(work.words + n, producers.tokens[i].queue,
+                                                 static_cast<uint32_t>(producers.tokens[i].value));
         const uint64_t slot = static_cast<uint64_t>(gQueue.tail()) * kSetupStride;
         memcpy(gSetup.va + slot, submit.setup, submit.setup_bytes);
         switch_dcache_clean(gSetup.va + slot, submit.setup_bytes);
