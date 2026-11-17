@@ -81,19 +81,40 @@ static void promiseWrites(RMCommandBuffer *cb, const std::vector<uint64_t> &hand
             gRM->raw->cancelPromise(id);
 }
 
-// finish(): what its last raw range did not carry to the kernel, after all its work completed
+// finish(): what its last raw range did not carry to the kernel, after all its work completed. One that failed before its
+// last range was submitted never makes the IOSurface writes it was to make, and is settled where its failure is decided,
+// before its queue goes on to a command buffer that may write the same surfaces: its promises are withdrawn, or with
+// none its writes themselves, so a present of one of those surfaces is refused instead of showing the frame before.
+// _promised marks it settled: a promise already holds presents off, and unpromised writes set it once withdrawn.
 void cancelPromises(RMCommandBuffer *cb)
 {
-    if (!cb->_promised.load(std::memory_order_acquire))
+    const bool failed = cb->_segError.set() && !cb->_scheduledSent.load(std::memory_order_acquire);
+    if (!failed && !cb->_promised.load(std::memory_order_acquire))
         return;
     std::vector<uint32_t> left;
+    bool promised;
     {
         std::lock_guard<raw::Mutex> l(cb->_lock);
+        promised = cb->_promised.load(std::memory_order_relaxed);
         cb->_promisesTaken = true;
         left.swap(cb->_promises);
     }
+    int refusal = KERN_SUCCESS;
     for (uint32_t id : left)
-        gRM->raw->cancelPromise(id);
+        if (const int kr = gRM->raw->cancelPromise(id, failed))
+            refusal = kr;
+    if (failed && !promised) {
+        const std::vector<uint64_t> written = writtenSurfaces(cb);
+        const int kr = written.empty() ? KERN_SUCCESS : gRM->raw->withdrawWrites(written);
+        if (kr != KERN_SUCCESS)
+            refusal = kr;
+        cb->_promised.store(true, std::memory_order_release);
+    }
+    if (failed && refusal != KERN_SUCCESS)
+        os_log_error(rawLog(),
+                     "raw: the kernel refused to withdraw the IOSurface writes of a failed command buffer (0x%x): a "
+                     "present of one may show the frame before",
+                     unsigned(refusal));
 }
 
 void commitBuffer(RMCommandBuffer *cb)

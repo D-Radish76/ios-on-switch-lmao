@@ -154,6 +154,23 @@ static void noteHeldReturn(RMCommandBuffer *cb, uint64_t returnedUs, const char 
 }
 #endif
 
+// It failed before all its work was submitted, so what it was to present was never wholly rendered: its drawables are
+// not presented, as Metal's presentDrawable handler presents only from a command buffer with no error. Dropped, a
+// drawable is its own to give back (a CAMetalDrawable's last release returns it to its layer's pool).
+static void withholdPresents(RMCommandBuffer *cb)
+{
+    NSError *error = nil;
+    {
+        std::lock_guard<raw::Mutex> l(cb->_lock);
+        error = cb->_segError;
+    }
+    cb->_presents = false;
+    os_log_error(rawLog(),
+                 "raw: a command buffer failed before all its work was submitted, so its drawable is not presented: "
+                 "%{public}s",
+                 error.localizedDescription.UTF8String ?: "");
+}
+
 // A queue's command buffers' scheduled handlers run in its order, on its own serial queue: one that waits for another queue's
 // command buffer holds up none of that queue's handlers.
 void scheduled(RMCommandBuffer *cb)
@@ -161,6 +178,9 @@ void scheduled(RMCommandBuffer *cb)
     unhold(cb);
     if (cb->_scheduledSent.exchange(true))
         return;  // once (eventHeld: at its commit; then its submission's)
+    // an earlier range's failure came in while its last range was submitted
+    if (cb->_presents && cb->_segError.set())
+        withholdPresents(cb);
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     const uint64_t heldReturnUs = cb->_heldReturnUs.exchange(0);
 #endif
@@ -292,9 +312,12 @@ void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferEr
 void finish(RMCommandBuffer *cb, NSError *error)
 {
     if (error) {
-        std::lock_guard<raw::Mutex> l(cb->_lock);
-        if (!cb->_segError)
-            cb->_segError = error;
+        {
+            std::lock_guard<raw::Mutex> l(cb->_lock);
+            if (!cb->_segError)
+                cb->_segError = error;
+        }
+        cancelPromises(cb);
     }
     if (cb->_finishState.ready()) {
         finished(cb);
@@ -317,6 +340,8 @@ static void finished(RMCommandBuffer *cb)
     cancelPromises(cb);
     releaseEventWaits(cb);
     unhold(cb);
+    if (error && cb->_presents && !cb->_scheduledSent.load(std::memory_order_acquire))
+        withholdPresents(cb);
     // A completed command buffer is scheduled. Its scheduled handlers scheduled() never took run here, before the completed ones:
     // one whose fence passed before its submitting thread's scheduled() (the completion thread wakes on work it was just handed),
     // one that never reached a GPU. Ones scheduled() already queued run first, the completed ones queued behind them on the

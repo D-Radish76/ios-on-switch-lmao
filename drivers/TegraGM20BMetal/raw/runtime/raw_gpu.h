@@ -2666,9 +2666,18 @@ public:
         return ensureChannel() && k_.promise(channel_, handles, id) == KERN_SUCCESS;
     }
 
-    void cancelPromise(uint32_t id)
+    // withdrawn: its command buffer failed, so the promised writes never come (TegraGM20BPromiseWithdraw). The
+    // kern_return_t.
+    int cancelPromise(uint32_t id, bool withdrawn = false)
     {
-        (void)k_.cancelPromise(id);
+        return k_.cancelPromise(id, withdrawn);
+    }
+
+    // A failed command buffer's writes of the IOSurface imports `handles` that no promise names, withdrawn: the
+    // kern_return_t
+    int withdrawWrites(const std::vector<uint64_t> &handles)
+    {
+        return k_.withdrawWrites(handles);
     }
 
     // TegraGM20BJobABI.h method 40 on this device's channel: the kern_return_t

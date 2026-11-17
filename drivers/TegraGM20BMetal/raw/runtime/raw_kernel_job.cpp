@@ -6,6 +6,7 @@
 
 #include <IOKit/IOReturn.h>
 #include <mach/kern_return.h>
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -157,11 +158,29 @@ int Kernel::promise(uint32_t channel, const std::vector<uint64_t> &handles, uint
     return kr;
 }
 
-int Kernel::cancelPromise(uint32_t promise)
+int Kernel::cancelPromise(uint32_t promise, bool withdrawn)
 {
-    const TegraGM20BAbiWriterPromise in = {0, TegraGM20BPromiseCancel, 0, promise, 0};
+    const TegraGM20BAbiWriterPromise in = {
+        0, uint32_t(withdrawn ? TegraGM20BPromiseWithdraw : TegraGM20BPromiseCancel), 0, promise, 0};
     TegraGM20BAbiWriterPromiseReply reply = {};
     return call(TegraGM20BMethodWriterPromise, &in, sizeof in, &reply, sizeof reply);
+}
+
+int Kernel::withdrawWrites(const std::vector<uint64_t> &handles)
+{
+    int result = KERN_SUCCESS;
+    for (size_t at = 0; at < handles.size(); at += TegraGM20BMaxPromiseUses) {
+        TegraGM20BAbiSurfaceUse uses[TegraGM20BMaxPromiseUses];
+        const uint32_t count = uint32_t(std::min<size_t>(handles.size() - at, TegraGM20BMaxPromiseUses));
+        for (uint32_t i = 0; i < count; ++i)
+            uses[i] = {handles[at + i], TegraGM20BSurfaceWrite, 0};
+        const TegraGM20BAbiWriterPromise in = {uint64_t(reinterpret_cast<uintptr_t>(uses)), TegraGM20BPromiseWithdraw,
+                                               count, 0, 0};
+        TegraGM20BAbiWriterPromiseReply reply = {};
+        if (const int kr = call(TegraGM20BMethodWriterPromise, &in, sizeof in, &reply, sizeof reply))
+            result = kr;
+    }
+    return result;
 }
 
 int Kernel::eventWord(uint64_t handle, uint32_t channel, uint64_t &address, uint64_t &base, uint32_t &floor)

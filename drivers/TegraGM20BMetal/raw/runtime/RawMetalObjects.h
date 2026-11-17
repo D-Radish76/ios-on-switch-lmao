@@ -455,12 +455,14 @@ struct RMSharedEventWait {
     std::shared_ptr<raw::ResourceReadyCompletion> _resourceReady;
     void *_nativeWaitEvent;
     bool _submittedM2v;
-    // a drawable present was added (its completion is observed); the range being submitted ends quiet
+    // a drawable present was added (its completion is observed), cleared once it failed before all its work was
+    // submitted (none is made, RawMetalFinish.mm withholdPresents); the range being submitted ends quiet
     // (raw_completion_source.h)
     bool _presents, _rangeQuiet, _rangeHeld;
     // writer promises (Device::promise) made when it counted as scheduled before its work reached the kernel, under
-    // _lock; taken once its last raw range carries them to the kernel or finish() cancels them. _promised: any were
-    // asked for, read without the lock by the frame path
+    // _lock; taken once its last raw range carries them to the kernel or finish() cancels or withdraws them. _promised:
+    // any were asked for, or its failure's unpromised writes were withdrawn (cancelPromises); read without the lock
+    // by the frame path and a failed command buffer's waitUntilScheduled
     std::vector<uint32_t> _promises;
     std::atomic<bool> _promised;
     bool _promisesTaken;

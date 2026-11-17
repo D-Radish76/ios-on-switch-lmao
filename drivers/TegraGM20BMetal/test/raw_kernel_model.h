@@ -174,6 +174,13 @@ struct Model {
     std::map<uint64_t, uint32_t> events;  // handle: the port imported
     uint64_t nextEvent = 1;
     std::vector<uint64_t> eventWords;  // EventWord's handles, in order
+    // WriterPromise's calls, in order; a Make is answered with the next promise, which its record's `promise` holds
+    struct PromiseCall {
+        uint32_t op = 0, promise = 0;
+        std::vector<uint64_t> handles;
+    };
+    std::vector<PromiseCall> promiseCalls;
+    uint32_t nextPromise = 0;
 
     TegraGM20BAbiFence &fence(uint32_t slot)
     {
@@ -703,6 +710,18 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
             return KERN_SUCCESS;
         }
         reply.result = model.compileResults[at];
+        return KERN_SUCCESS;
+    }
+    case TegraGM20BMethodWriterPromise: {
+        const auto &in = *static_cast<const TegraGM20BAbiWriterPromise *>(input);
+        const auto *uses = reinterpret_cast<const TegraGM20BAbiSurfaceUse *>(uintptr_t(in.uses_address));
+        kernel_model::Model::PromiseCall call{in.op, in.promise, {}};
+        for (uint32_t i = 0; i < in.count; i++)
+            call.handles.push_back(uses[i].handle);
+        if (in.op == TegraGM20BPromiseMake)
+            call.promise = model.nextPromise++ % TegraGM20BMaxPromises;
+        *static_cast<TegraGM20BAbiWriterPromiseReply *>(output) = {call.promise, 0};
+        model.promiseCalls.push_back(std::move(call));
         return KERN_SUCCESS;
     }
     default:

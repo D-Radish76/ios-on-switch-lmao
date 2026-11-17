@@ -233,10 +233,12 @@ public:
                     const volatile uint32_t *&mirror);
     // Method 32
     int releaseSet(uint32_t set);
-    // Method 34: a writer promise of `channel`'s job for the IOSurface imports `handles` (Make), or its release (Cancel).
+    // Method 34: a writer promise of `channel`'s job for the IOSurface imports `handles` (Make), or its release (Cancel;
+    // withdrawn: its command buffer failed, Withdraw). withdrawWrites: Withdraw of writes of `handles` no promise names.
     // The kern_return_t.
     int promise(uint32_t channel, const std::vector<uint64_t> &handles, uint32_t &promise);
-    int cancelPromise(uint32_t promise);
+    int cancelPromise(uint32_t promise, bool withdrawn = false);
+    int withdrawWrites(const std::vector<uint64_t> &handles);
 
     std::shared_ptr<SharedEvents> sharedEvents();
     // TegraGM20BJobABI.h method 40: where `channel` releases the event of `handle` mid-job, and the payloads it may release.

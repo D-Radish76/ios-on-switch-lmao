@@ -327,6 +327,13 @@ NSArray *rmTakeHandlers(RMCommandBuffer *cb, NSMutableArray *__strong &list, std
     return taken;
 }
 
+// Decided where its scheduled handlers are sent, not where they run: one the GPU fails after its submission still
+// presents (the kernel ends that present), one that failed before presents nothing (RawMetalFinish.mm withholdPresents)
+static bool presents(id<MTLCommandBuffer> cb)
+{
+    return ((RMCommandBuffer *)cb)->_presents;
+}
+
 template <typename Done> static void waitFor(RMCommandBuffer *cb, Done &&done)
 {
     cb->_changes.waitFor(done);
@@ -716,24 +723,27 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 - (void)presentDrawable:(id<MTLDrawable>)drawable
 {
     _presents = true;
-    [self addScheduledHandler:^(id<MTLCommandBuffer>) {
-        [drawable present];
+    [self addScheduledHandler:^(id<MTLCommandBuffer> cb) {
+        if (presents(cb))
+            [drawable present];
     }];
 }
 
 - (void)presentDrawable:(id<MTLDrawable>)drawable atTime:(CFTimeInterval)t
 {
     _presents = true;
-    [self addScheduledHandler:^(id<MTLCommandBuffer>) {
-        [drawable presentAtTime:t];
+    [self addScheduledHandler:^(id<MTLCommandBuffer> cb) {
+        if (presents(cb))
+            [drawable presentAtTime:t];
     }];
 }
 
 - (void)presentDrawable:(id<MTLDrawable>)drawable afterMinimumDuration:(CFTimeInterval)d
 {
     _presents = true;
-    [self addScheduledHandler:^(id<MTLCommandBuffer>) {
-        [drawable presentAfterMinimumDuration:d];
+    [self addScheduledHandler:^(id<MTLCommandBuffer> cb) {
+        if (presents(cb))
+            [drawable presentAfterMinimumDuration:d];
     }];
 }
 
@@ -781,8 +791,11 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 
 - (void)waitUntilScheduled
 {
+    // A failed one returns once finish() withdrew the writes it will never make (RawMetalSchedule.mm cancelPromises), so
+    // a present its caller makes next of a surface it was to write is refused, never shown with the frame before
     auto returns = [&] {
-        return raw::scheduledWaitReturns(_scheduledDone, _held, _segError.set());
+        return raw::scheduledWaitReturns(_scheduledDone, _held,
+                                         _segError.set() && _promised.load(std::memory_order_acquire));
     };
     if (_committed && !returns()) {
 #if SWITCH_RAW_DIAGNOSTICS
