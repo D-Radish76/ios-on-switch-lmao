@@ -24,7 +24,7 @@ extern "C" {
 // XNU's VM modified bit of a physical page (osfmk/vm/pmap.h): clearing it write-protects the page's every mapping
 void pmap_clear_modify(ppnum_t pn);
 boolean_t pmap_is_modified(ppnum_t pn);
-LIBKERN_RETURNS_NOT_RETAINED IOMemoryDescriptor *tegra_gm20b_ios_memory(OSObject *surface);
+IOMemoryDescriptor *tegra_gm20b_ios_memory(OSObject *surface);
 uint64_t tegra_gm20b_ios_alloc_size(OSObject *surface);
 // XNU's vm_pressure_level_t: 0 normal
 extern int memorystatus_vm_pressure_level;

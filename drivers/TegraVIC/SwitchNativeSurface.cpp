@@ -14,7 +14,7 @@
 #include "../TegraGM20B/TegraGM20BViews.h"
 #include "../TegraGM20B/SwitchGpuAdmission.h"
 
-extern "C" LIBKERN_RETURNS_NOT_RETAINED IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
+extern "C" IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
 
 OSDefineMetaClassAndStructors(SwitchNativeSurface, OSObject)
 
