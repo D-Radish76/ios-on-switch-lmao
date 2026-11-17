@@ -11,7 +11,11 @@
     "_MTLLibrary": [],
     "_MTLObjectWithLabel": [],
     "_MTLParallelRenderCommandEncoder": [],
-    "MTLFunctionConstantValuesInternal": ["newIndexedConstantArray", "newNamedConstantArray"],
+    "MTLFunctionConstantValuesInternal": [
+      "newIndexedConstantArray",
+      "newNamedConstantArray",
+      "serializedConstantDataForFunction:dataSize:errorMessage:"
+    ],
     "MTLFunctionStitchingGraph": [],
     "MTLIndexedConstantValue": ["data", "dataType", "index"],
     "MTLNamedConstantValue": ["data", "dataType", "name"]

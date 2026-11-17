@@ -10,6 +10,7 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -27,6 +28,7 @@
 #include "raw_retirement.h"
 #include "raw_variant.h"
 #include "raw_library_source.h"
+#include "raw_metallib.h"
 #include "raw_metallib_functions.h"
 #include "raw_render_variant.h"
 #include "raw_obtained.h"
@@ -88,6 +90,7 @@ static inline id twinPublish(id object, __strong id &slot, id made)
     std::string _framework;  // "QuartzCore", "RenderBox"...; empty: not a framework's default library (never looked up)
     std::shared_ptr<raw::LibrarySource> _source;
     raw::MetallibFunctions _functions;  // none listed: an m2v library from its creation
+    std::map<std::string, raw::AirHash> _airHashes;  // each listed function's HASH tag, read with the library
 }
 - (id)twinOn:(id<MTLDevice>)m2v;
 @end
@@ -103,6 +106,7 @@ static inline id twinPublish(id object, __strong id &slot, id made)
     MTLFunctionConstantValues *_values;  // what a specialized twin is made with
     uint32_t _type;                      // MTLFunctionType from the metallib; 0: the twin's
     MTLFunctionOptions _options;
+    std::optional<raw::AirHash> _air;  // its library function's HASH tag; none where its library lists none
 }
 @property (nonatomic, copy) NSString *name;
 - (id)twinOn:(id<MTLDevice>)m2v;

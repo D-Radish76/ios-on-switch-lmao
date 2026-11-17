@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // A library the system's Metal front end makes (raw/runtime/raw_compile_request.h RequestKind::Library) as the client
 // asks for it and the compiler takes it (compiler/compiler_request.h): keyed by its code generation request
-// (raw_codegen_request.h), which the compiler takes only exactly as a client's builder writes it, its source options
+// (raw_codegen_request.h), which the compiler takes only framed as a client's builder writes it, its source options
 // only what Metal passes, run with the compiler's own module cache.
 #include "../raw/runtime/RawCompileRequest.mm"
 #include "../compiler/compiler_request.mm"
@@ -10,6 +10,8 @@
 #include "made_metallib.h"
 
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <utility>
 
 namespace {
 
@@ -147,6 +149,172 @@ TEST(LibraryRequest, AStitchingRequestIsTakenOnlyAsTheBuilderWritesIt)
     more[4 + dag.size() + 1 + 4] = 3;
     EXPECT_FALSE(raw::codegen::requestOk(raw::kCodeGenStitch, more));
     EXPECT_FALSE(prepared(libraryRequest(raw::kCodeGenStitch, more), why));
+}
+
+const uint8_t *bytesOf(const std::string &s)
+{
+    return reinterpret_cast<const uint8_t *>(s.data());
+}
+
+// One value as MTLFunctionConstantValues serializes it for a function: the count, then its index, type and bytes
+std::string serialized(uint16_t index, MTLDataType type, const void *value, size_t bytes)
+{
+    std::string constants;
+    raw::codegen::word(constants, 1);
+    constants.append(reinterpret_cast<const char *>(&index), sizeof index);
+    constants.push_back(char(type));
+    constants.append(static_cast<const char *>(value), bytes);
+    return constants;
+}
+
+std::string gain(uint32_t value)
+{
+    return serialized(3, MTLDataTypeUInt, &value, sizeof value);
+}
+
+uint32_t wordOf(const std::string &r, size_t at)
+{
+    uint32_t v = 0;
+    EXPECT_TRUE(raw::codegen::wordAt(r, at, v)) << at;
+    return v;
+}
+
+uint16_t halfOf(const std::string &r, size_t at)
+{
+    uint16_t v = 0;
+    memcpy(&v, r.data() + at, sizeof v);
+    return v;
+}
+
+// A specialization request holds each field where this kind's table (MetalABI.h kSpecializeRequest) says its Metal writes
+// it and its front end reads it: the constants right after the header, the source name with its byte count and an AIR
+// bitcode kind, the bitcode, the specialized name NUL-padded to 8 bytes, the request type twice and the source's hash
+TEST(LibraryRequest, ASpecializationRequestHoldsEachFieldWhereThisKindsTableSays)
+{
+    const SpecializeRequestLayout &l = kSpecializeRequest;
+    const std::string air = made_metallib::wrappedBitcode(0x41, 52), constants = gain(7);
+    raw::Digest hash;
+    hash.fill(0xB0);
+    const std::string r =
+        raw::codegen::specializationRequest("add", "add_one", {bytesOf(air), air.size()}, hash, constants);
+    ASSERT_GT(r.size(), l.headerBytes);
+    EXPECT_EQ(wordOf(r, l.constants), l.headerBytes);
+    EXPECT_EQ(wordOf(r, l.constants + 4), constants.size());
+    EXPECT_EQ(r.substr(l.headerBytes, constants.size()), constants);
+    EXPECT_STREQ(r.data() + wordOf(r, l.name), "add");
+    EXPECT_EQ(halfOf(r, l.name + 4), 4u);
+    EXPECT_EQ(halfOf(r, l.name + 6), 0u);
+    EXPECT_EQ(r.substr(wordOf(r, l.air), wordOf(r, l.air + 4)), air);
+    EXPECT_EQ(r.substr(wordOf(r, l.specializedName), wordOf(r, l.specializedName + 4)), std::string("add_one\0", 8));
+    EXPECT_EQ(wordOf(r, l.requestType), raw::kCodeGenSpecialize);
+    EXPECT_EQ(wordOf(r, l.requestType + 4), raw::kCodeGenSpecialize);
+    EXPECT_EQ(memcmp(r.data() + l.hash, hash.data(), hash.size()), 0);
+    for (const size_t field : {l.constants, l.name, l.air, l.specializedName})
+        EXPECT_EQ(wordOf(r, field) % 8, 0u) << field;
+    EXPECT_TRUE(raw::codegen::requestOk(raw::kCodeGenSpecialize, r));
+    std::string why;
+    EXPECT_TRUE(prepared(libraryRequest(raw::kCodeGenSpecialize, r), why)) << why;
+
+    const std::string own = raw::codegen::specializationRequest("add", "", {bytesOf(air), air.size()}, hash, constants);
+    EXPECT_EQ(wordOf(own, l.specializedName), 0u);
+    EXPECT_EQ(wordOf(own, l.specializedName + 4), 0u);
+    EXPECT_TRUE(raw::codegen::requestOk(raw::kCodeGenSpecialize, own));
+    const std::string other = raw::codegen::specializationRequest("add", "", {bytesOf(air), air.size()}, hash, gain(8));
+    EXPECT_NE(libraryRequest(raw::kCodeGenSpecialize, own).key, libraryRequest(raw::kCodeGenSpecialize, other).key);
+
+    EXPECT_TRUE(raw::codegen::specializationRequest("", "", {bytesOf(air), air.size()}, hash, constants).empty());
+    EXPECT_TRUE(raw::codegen::specializationRequest(std::string_view("a\0d", 3), "", {bytesOf(air), air.size()}, hash,
+                                                    constants)
+                    .empty());
+    EXPECT_TRUE(
+        raw::codegen::specializationRequest("add", "", {bytesOf(air), air.size()}, hash, constants + "x").empty());
+    const std::string bare(64, 'b');
+    EXPECT_TRUE(raw::codegen::specializationRequest("add", "", {bytesOf(bare), bare.size()}, hash, constants).empty());
+}
+
+// The compiler takes a specialization request only with every field in place and inside it, and every other header byte
+// zero: one set would ask the front end to insert into an archive, run its loader or read a path
+TEST(LibraryRequest, ASpecializationRequestIsTakenOnlyWithEachFieldInPlace)
+{
+    const SpecializeRequestLayout &l = kSpecializeRequest;
+    const std::string air = made_metallib::wrappedBitcode(0x41, 52);
+    raw::Digest hash;
+    hash.fill(0xB0);
+    const std::string r =
+        raw::codegen::specializationRequest("add", "add_one", {bytesOf(air), air.size()}, hash, gain(7));
+    ASSERT_TRUE(raw::codegen::requestOk(raw::kCodeGenSpecialize, r));
+    const auto taken = [](const std::string &request) {
+        return raw::codegen::requestOk(raw::kCodeGenSpecialize, request);
+    };
+    std::vector<bool> written(l.headerBytes);
+    for (const auto &[field, bytes] : {std::pair<size_t, size_t>{l.constants, 8},
+                                       {l.name, 6},
+                                       {l.air, 8},
+                                       {l.specializedName, 8},
+                                       {l.requestType, 8},
+                                       {l.hash, sizeof(raw::Digest)}})
+        std::fill_n(written.begin() + ptrdiff_t(field), bytes, true);
+    for (size_t at = 0; at < l.headerBytes; at++)
+        if (!written[at]) {
+            std::string flagged = r;
+            flagged[at] = 1;
+            EXPECT_FALSE(taken(flagged)) << at;
+        }
+    const auto with = [&](size_t at, uint32_t v) {
+        std::string changed = r;
+        memcpy(changed.data() + at, &v, sizeof v);
+        return changed;
+    };
+    EXPECT_FALSE(taken(r.substr(0, l.headerBytes)));
+    EXPECT_FALSE(taken(r.substr(0, r.size() - 8)));
+    EXPECT_FALSE(taken(with(l.constants, l.headerBytes + 8)));
+    EXPECT_FALSE(taken(with(l.constants + 4, wordOf(r, l.constants + 4) + 1)));
+    EXPECT_FALSE(taken(with(l.air + 4, uint32_t(r.size()))));
+    EXPECT_FALSE(taken(with(l.requestType, raw::kCodeGenStitch)));
+    EXPECT_FALSE(taken(with(l.requestType + 4, 0)));
+    EXPECT_FALSE(taken(with(l.specializedName + 4, 0)));
+    std::string unterminated = r;
+    unterminated[wordOf(r, l.name) + 3] = 'x';
+    EXPECT_FALSE(taken(unterminated));
+    std::string longer = r;
+    const uint16_t nameBytes = 5;
+    memcpy(longer.data() + l.name + 4, &nameBytes, sizeof nameBytes);
+    EXPECT_FALSE(taken(longer));
+    std::string unwrapped = r;
+    unwrapped[wordOf(r, l.air)] ^= 0x7f;
+    EXPECT_FALSE(taken(unwrapped));
+    std::string unnamed = r;
+    std::fill_n(unnamed.begin() + ptrdiff_t(wordOf(r, l.specializedName)), 8, 'x');
+    EXPECT_FALSE(taken(unnamed));
+    std::string counted = r;
+    counted[l.headerBytes] = 2;
+    EXPECT_FALSE(taken(counted));
+    std::string untyped = r;
+    untyped[l.headerBytes + 6] = char(MTLDataTypeNone);
+    EXPECT_FALSE(taken(untyped));
+    std::string why;
+    EXPECT_FALSE(prepared(libraryRequest(raw::kCodeGenSpecialize, untyped), why));
+    EXPECT_FALSE(raw::codegen::requestOk(raw::kCodeGenStitch, r));
+}
+
+// Constant values are taken as Metal serializes them, each value as many bytes as Metal stores its type in
+TEST(LibraryRequest, ConstantValuesAreTakenAsMetalSerializesThem)
+{
+    EXPECT_TRUE(raw::codegen::constantDataOk(std::string(4, '\0')));
+    const float tint[4] = {1, 0, 0, 1};
+    const bool on = true;
+    std::string three = gain(2);
+    three[0] = 3;
+    three += serialized(0, MTLDataTypeFloat4, tint, sizeof tint).substr(4);
+    three += serialized(9, MTLDataTypeBool, &on, sizeof on).substr(4);
+    EXPECT_TRUE(raw::codegen::constantDataOk(three));
+    EXPECT_FALSE(raw::codegen::constantDataOk(three + "x"));
+    EXPECT_FALSE(raw::codegen::constantDataOk(three.substr(0, three.size() - 1)));
+    std::string four = three;
+    four[0] = 4;
+    EXPECT_FALSE(raw::codegen::constantDataOk(four));
+    EXPECT_FALSE(raw::codegen::constantDataOk(serialized(1, MTLDataTypeNone, tint, 4)));
+    EXPECT_FALSE(raw::codegen::constantDataOk(std::string(3, '\0')));
 }
 
 // A filter link request is taken only as ImageFilterLink.h writes it: its functions, their infos and each module once

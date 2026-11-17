@@ -1,5 +1,6 @@
 """The readers' decoding on known values, and every committed kind's table against itself and its header."""
 
+import itertools
 import json
 import re
 import unittest
@@ -68,6 +69,25 @@ class Tables(unittest.TestCase):
             self.assertIn(f'kMTLDeviceInstanceSize = {table["MTLDevice"]["instance_size"]};', text)
             self.assertIn(f'kMTLDeviceLimitsBytes = {table["MTLDevice"]["limits_bytes"]};', text)
             self.assertIn(f'#define SWITCH_METAL_COMPILER "{table["compiler"]}"', text)
+
+    def test_each_kinds_specialize_request_fields_sit_apart_inside_its_header(self):
+        widths = {'constants': 8, 'name': 8, 'air': 8, 'specialized_name': 8, 'request_type': 8, 'hash': 32}
+        for path in KINDS:
+            table = json.loads(path.read_text())
+            layout = table['specialize_request']
+            size = layout['header_bytes']
+            self.assertEqual(size % 8, 0, path.stem)
+            spans = sorted((layout[name], layout[name] + width, name) for name, width in widths.items())
+            for (_, end, name), (start, _, after) in itertools.pairwise(spans):
+                self.assertLessEqual(end, start, f'{path.stem}: {name} runs into {after}')
+            self.assertLessEqual(spans[-1][1], size, path.stem)
+            written = re.search(r'kSpecializeRequest = \{([^}]*)\};', header(table))
+            self.assertIsNotNone(written, path.stem)
+            self.assertEqual(
+                [int(v, 16) for v in written.group(1).split(', ')],
+                [size] + [layout[name] for name in widths],
+                path.stem,
+            )
 
 
 if __name__ == '__main__':

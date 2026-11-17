@@ -9,6 +9,9 @@ into the base class's limits table, so the table holds _MTLDevice's instance siz
 limits table's layout from the _limits ivar's own type encoding. It also holds the other base classes' sizes, the
 private methods the frontend calls (interface.json), and, per Metal object, the protocol methods the system's own
 code sends (sends.py): the contract a device of this kind is held to. The same cache always gives the same JSON.
+
+PINNED sections are read by hand out of the kind's disassembly rather than its metadata. A rewrite keeps them as the
+committed table has them, so a new kind's table gets them by hand before anything reads them.
 """
 
 import argparse
@@ -37,6 +40,7 @@ SCALARS = {'c': 1, 'C': 1, 'B': 1, 's': 2, 'S': 2, 'i': 4, 'I': 4, 'f': 4, 'q': 
 COMPILER = re.compile(r'/System/Library/PrivateFrameworks/MTLCompiler\.framework/(?:Versions/(\d+)/)?MTLCompiler')
 INTEGER_FIELDS = ('I', 'Q')
 INTEGER_RETURNS = ('Q', 'I', 'L')
+PINNED = ('specialize_request',)
 JsonObject = dict[str, object]
 
 
@@ -175,7 +179,7 @@ def compiler_image(cache: DyldCache) -> str:
     return found[max(found)]
 
 
-def extract(cache_path: Path, kind: str) -> str:
+def extract(cache_path: Path, kind: str, pinned: JsonObject) -> str:
     interface = json.loads((HERE / 'interface.json').read_text())
     cache = DyldCache(cache_path)
     reader = ObjcReader(cache)
@@ -187,6 +191,7 @@ def extract(cache_path: Path, kind: str) -> str:
         'MTLDevice': device_table(reader, classes, interface['device']),
         'classes': class_tables(reader, classes, interface['classes']),
         'compiler': compiler_image(cache),
+        **{name: pinned[name] for name in PINNED if name in pinned},
         'sent': {
             name: {s: t for s, t in sorted(closure(found, names).items()) if s in sent}
             for name, names in sorted(interface['objects'].items())
@@ -197,6 +202,9 @@ def extract(cache_path: Path, kind: str) -> str:
             'instance_size': "_MTLDevice's class_ro_t instanceSize",
             'limits': "the _limits ivar's offset, size and type encoding; the integer fields with an accessor in "
             "_MTLDevice or a Metal class below it (maxBufferLength: MTLIOAccelDevice's only)",
+            'specialize_request': "MTLSpecializeFunctionToArchive's request (MTLBuildRequestType 15) as Metal's "
+            "MTLCompilerFunctionRequest::serializedRequest writes it and MTLCompiler's buildSpecializedFunctionRequest "
+            'reads it, pinned by hand from their disassembly and kept by extract.py',
             'sent': "each object's protocols' methods that some image's code sends (sends.py), Metal's own and the GPU "
             "drivers' and tools' aside (interface.json not_senders)",
         },
@@ -259,8 +267,8 @@ def main() -> None:
             raise SystemExit('--cache needs --kind')
         else:
             cache = args.cache
-        text = extract(cache, args.kind)
-    path = args.tables / f'{args.kind}.json'
+        path = args.tables / f'{args.kind}.json'
+        text = extract(cache, args.kind, json.loads(path.read_text()) if path.exists() else {})
     if not args.check:
         path.write_text(text)
     elif not path.exists() or path.read_text() != text:

@@ -16,6 +16,10 @@
 - (NSString *)newDagStringWithGraphs:(NSArray<MTLFunctionStitchingGraph *> *)graphs;
 @end
 
+@protocol HarnessFunctionConstants
+- (NSArray<MTLFunctionConstant *> *)functionConstants;
+@end
+
 namespace {
 
 using namespace harness;
@@ -323,6 +327,87 @@ void kernelDagLibrary()
     expectNoM2V(device);
 }
 
+// MPS makes its DAG's functions with constant values and a specialized name (MPSLibrary's function constructor), and
+// Metal's own function holds the front end's specialization of the AIR, which is what gets stitched. The device asks the
+// front end for that first: the source's AIR and HASH, its values as Metal serializes them against its functionConstants
+// and the specialized name. The stitch then carries the specialization's bitcode. Other values are another library; the
+// same values again are the store's
+void specializedDagLibrary()
+{
+    LibraryCompiler compiler;
+    ASSERT_TRUE(compiler.serve());
+    id<MTLDevice> device = completing();
+    ASSERT_TRUE(device != nil);
+    const std::vector<uint8_t> required = {1, 0, 'g', 'a', 'i', 'n', 0, uint8_t(MTLDataTypeUInt), 3, 0, 1};
+    std::vector<uint8_t> tags;
+    made_metallib::tag(tags, "CNST", required.data(), uint16_t(required.size()));
+    const std::string bytes = made_metallib::thin({"add"}, {4}, {kAdd}, {tags});
+    dispatch_data_t data = dispatch_data_create(bytes.data(), bytes.size(), nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    NSError *error = nil;
+    id<MTLLibrary> functions = [device newLibraryWithData:data error:&error];
+    ASSERT_TRUE(functions != nil) << text(error);
+    NSArray<MTLFunctionConstant *> *listed =
+        [(id<HarnessFunctionConstants>)[functions newFunctionWithName:@"add"] functionConstants];
+    ASSERT_EQ(listed.count, 1u);
+    EXPECT_EQ(text(listed[0].name), "gain");
+    EXPECT_EQ(listed[0].index, 3u);
+    EXPECT_EQ(listed[0].type, MTLDataTypeUInt);
+    EXPECT_TRUE(listed[0].required);
+
+    raw::Digest hash;
+    hash.fill(0xB0);
+    const raw::codegen::Bitcode source = {reinterpret_cast<const uint8_t *>(kAdd.data()), kAdd.size()};
+    const SEL selector = sel_registerName("newLibraryWithDAG:functions:error:");
+
+    struct Ask {
+        uint32_t gain;
+        std::string specializedName;
+        bool asks;
+    };
+
+    for (const Ask &ask : {Ask{1, "", true}, Ask{2, "add_g2", true}, Ask{1, "", false}}) {
+        const std::string called = ask.specializedName.empty() ? "add" : ask.specializedName;
+        const std::string specializedAir = made_metallib::wrappedBitcode(uint8_t(0x60 + ask.gain));
+        compiler.made.metallib =
+            made_metallib::thin({called, "stitched"}, {4, 4}, {specializedAir, made_metallib::wrappedBitcode(0x7f)});
+        MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
+        [values setConstantValue:&ask.gain type:MTLDataTypeUInt atIndex:3];
+        MTLFunctionDescriptor *d = [MTLFunctionDescriptor functionDescriptor];
+        d.name = @"add";
+        d.specializedName = ask.specializedName.empty() ? nil : @(ask.specializedName.c_str());
+        d.constantValues = values;
+        id<MTLFunction> function = [functions newFunctionWithDescriptor:d error:&error];
+        ASSERT_TRUE(function != nil) << text(error);
+        NSString *dag =
+            [NSString stringWithFormat:@"DAGS {\nstitched {\nOUTPUT(value) : FUNCTION(%s), INPUT(0), INPUT(1);\n}\n}\n",
+                                       called.c_str()];
+        const size_t before = compiler.asked.size();
+        id<MTLLibrary> library = ((id<MTLLibrary> (*)(id, SEL, NSString *, NSArray *, NSError **))objc_msgSend)(
+            device, selector, dag, @[ function ], &error);
+        ASSERT_TRUE(library != nil) << text(error);
+        EXPECT_EQ([library newFunctionWithName:@"stitched"].functionType, MTLFunctionTypeVisible);
+        if (!ask.asks) {
+            EXPECT_EQ(compiler.asked.size(), before) << "the same values again are the store's";
+            continue;
+        }
+        ASSERT_EQ(compiler.asked.size(), before + 2);
+        std::string constants;
+        raw::codegen::word(constants, 1);
+        const uint16_t index = 3;
+        constants.append(reinterpret_cast<const char *>(&index), sizeof index);
+        constants.push_back(char(MTLDataTypeUInt));
+        raw::codegen::word(constants, ask.gain);
+        EXPECT_EQ(compiler.asked[before].codeGenType, raw::kCodeGenSpecialize);
+        EXPECT_EQ(compiler.asked[before].codeGen,
+                  raw::codegen::specializationRequest("add", ask.specializedName, source, hash, constants));
+        EXPECT_EQ(compiler.asked[before + 1].codeGenType, raw::kCodeGenStitch);
+        const raw::codegen::Bitcode specialized = {reinterpret_cast<const uint8_t *>(specializedAir.data()),
+                                                   specializedAir.size()};
+        EXPECT_EQ(compiler.asked[before + 1].codeGen, raw::codegen::stitchRequest(dag.UTF8String, {specialized}));
+    }
+    expectNoM2V(device);
+}
+
 // Core Image's filter-function link is ImageFilterLink.h's request of the functions' bitcode and infos
 void filterLibrary()
 {
@@ -376,6 +461,11 @@ TEST(RawFacadeCompiledLibraries, AStitchedLibraryIsTheShaderCompilers)
 TEST(RawFacadeCompiledLibraries, AnMpsKernelDagLibraryIsTheShaderCompilers)
 {
     switch_ios::test::ExpectPassesInFreshProcess(kernelDagLibrary);
+}
+
+TEST(RawFacadeCompiledLibraries, ASpecializedDagFunctionIsStitchedAsTheFrontEndsSpecialization)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(specializedDagLibrary);
 }
 
 TEST(RawFacadeCompiledLibraries, ACoreImageFilterLibraryIsTheShaderCompilers)

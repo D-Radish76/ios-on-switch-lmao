@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
-// Libraries the system's Metal front end makes at run time: Metal source, stitched functions and Core Image's
-// filter-function link. The device writes the front end's request from its own functions' metallibs
-// (raw_codegen_request.h), the system shader compiler answers it with a metallib (compiler/compiler_codegen.mm), and the
-// library is read as any other (readLibrary), so its functions are this device's own.
+// Libraries the system's Metal front end makes at run time: Metal source, stitched functions, Core Image's
+// filter-function link and the specializations of the functions those take. The device writes the front end's request
+// from its own functions' metallibs (raw_codegen_request.h), the system shader compiler answers it with a metallib
+// (compiler/compiler_codegen.mm), and the library is read as any other (readLibrary), so its functions are this device's
+// own.
 #import "RawMetalInternal.h"
 
+#include <cstdlib>
 #include <os/log.h>
 #include "ImageFilterLink.h"
 #include "raw_codegen_request.h"
@@ -13,6 +15,15 @@
 // _MTLDevice's own writer of stitching graphs as the DAG text Metal's front end reads (the device class's base)
 @protocol RMDagWriter
 - (NSString *)newDagStringWithGraphs:(NSArray<MTLFunctionStitchingGraph *> *)graphs;
+@end
+
+// Metal's serialization of the values for `function`'s functionConstants, which a specialization request carries; nil
+// with Metal's message for a required constant left out or a value of another type. The buffer is malloc'd: Metal's own
+// caller frees it (DISPATCH_DATA_DESTRUCTOR_FREE).
+@interface MTLFunctionConstantValues (RMSpecialization)
+- (void *)serializedConstantDataForFunction:(id<MTLFunction>)function
+                                   dataSize:(NSUInteger *)size
+                               errorMessage:(NSString **)message;
 @end
 
 static NSError *libraryError(MTLLibraryError code, const std::string &why)
@@ -28,6 +39,12 @@ static id<MTLLibrary> failed(MTLLibraryError code, const std::string &why, NSErr
     if (error)
         *error = libraryError(code, why);
     return nil;
+}
+
+static bool refused(MTLLibraryError code, const std::string &why, NSError **error)
+{
+    failed(code, why, error);
+    return false;
 }
 
 // The front end's arguments for `options`, as Metal passes them (nil: Metal's default options): the language standard,
@@ -94,6 +111,43 @@ static id<MTLLibrary> compiled(id device, uint32_t type, const std::string &requ
     return (id<MTLLibrary>)library;
 }
 
+// `function`'s bitcode as Metal's own function holds it for the front end: its library's AIR, or for one made with constant
+// values or under a specialized name, the front end's specialization of that AIR (MTLSpecializeFunctionToArchive), named
+// as the function is. `kept` holds the specialization's library, whose bytes the bitcode is in.
+static bool frontEndBitcode(id device, id function, raw::codegen::Bitcode &out, NSMutableArray *kept, NSError **error)
+{
+    const std::string called = [function name].UTF8String ?: "?";
+    if (!bitcodeOf(function, out))
+        return refused(MTLLibraryErrorFunctionNotFound, "function " + called + " has no bitcode here", error);
+    RMFunction *f = function;
+    const std::string name = libraryName(f);
+    if (!f->_specialized && name == called)
+        return true;
+    id<MTLFunction> source = [(id<MTLLibrary>)f->_library newFunctionWithName:@(name.c_str())];
+    if (!source || !f->_air)
+        return refused(MTLLibraryErrorInternal, "function " + called + " has no AIR hash to specialize", error);
+    MTLFunctionConstantValues *values = f->_values ?: [MTLFunctionConstantValues new];
+    NSUInteger size = 0;
+    NSString *message = nil;
+    void *data = [values serializedConstantDataForFunction:source dataSize:&size errorMessage:&message];
+    if (!data)
+        return refused(MTLLibraryErrorCompileFailure, message.UTF8String ?: "its constant values do not serialize",
+                       error);
+    const std::string constants(static_cast<const char *>(data), size);
+    free(data);
+    const std::string request =
+        raw::codegen::specializationRequest(name, name == called ? "" : called, out, *f->_air, constants);
+    if (request.empty())
+        return refused(MTLLibraryErrorCompileFailure, "function " + called + " has no specialization request", error);
+    id<MTLLibrary> library = compiled(device, raw::kCodeGenSpecialize, request, "a specialized function", error);
+    if (!library)
+        return false;
+    [kept addObject:library];
+    if (!bitcodeOf([library newFunctionWithName:@(called.c_str())], out))
+        return refused(MTLLibraryErrorInternal, "the front end's specialization holds no " + called, error);
+    return true;
+}
+
 @interface RMDevice (CompiledLibraries)
 @end
 @implementation RMDevice (CompiledLibraries)
@@ -135,13 +189,11 @@ static id<MTLLibrary> compiled(id device, uint32_t type, const std::string &requ
     if (!functions.count)
         return failed(MTLLibraryErrorCompileFailure, "a stitched library needs the functions its DAG names", error);
     std::vector<raw::codegen::Bitcode> bitcodes;
+    __attribute__((objc_precise_lifetime)) NSMutableArray *kept = [NSMutableArray array];
     for (id function in functions) {
         raw::codegen::Bitcode b;
-        if (!bitcodeOf(function, b))
-            return failed(MTLLibraryErrorFunctionNotFound,
-                          std::string("stitched function ") + ([function name].UTF8String ?: "?") +
-                              " has no bitcode here",
-                          error);
+        if (!frontEndBitcode(self, function, b, kept, error))
+            return nil;
         bitcodes.push_back(b);
     }
     return compiled(self, raw::kCodeGenStitch, raw::codegen::stitchRequest(text, bitcodes), "a stitched library",
@@ -157,13 +209,11 @@ static id<MTLLibrary> compiled(id device, uint32_t type, const std::string &requ
     if (!functions.count || !infos)
         return failed(MTLLibraryErrorCompileFailure, "filter-function linking needs functions and their infos", error);
     std::vector<switch_metal::ImageFilterFunction> linked(functions.count);
+    __attribute__((objc_precise_lifetime)) NSMutableArray *kept = [NSMutableArray array];
     for (NSUInteger i = 0; i < functions.count; i++) {
         raw::codegen::Bitcode b;
-        if (!bitcodeOf(functions[i], b))
-            return failed(MTLLibraryErrorFunctionNotFound,
-                          std::string("filter function ") + ([functions[i] name].UTF8String ?: "?") +
-                              " has no bitcode here",
-                          error);
+        if (!frontEndBitcode(self, functions[i], b, kept, error))
+            return nil;
         switch_metal::ImageFilterFunction &f = linked[i];
         f.name = [functions[i] name].UTF8String ?: "";
         f.bitcode = b.bytes;

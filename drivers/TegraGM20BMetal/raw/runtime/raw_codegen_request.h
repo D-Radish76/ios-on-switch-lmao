@@ -1,21 +1,25 @@
 // SPDX-License-Identifier: MIT
 // The code generation requests MTLCompiler.framework's front end takes for a library made at run time
 // (MTLCodeGenServiceBuildRequest; raw_compile_request.h's kCodeGen types), laid out as this IPSW kind's front end reads
-// them: Metal source, a stitched library's DAG and Core Image's filter-function link (ImageFilterLink.h). A GPU client
-// builds them from its own functions' metallibs; the system shader compiler takes only a request that is exactly what
-// these builders make of what it names, as a request the front end cannot frame aborts it, and source options that would
-// run anything in its process are refused.
+// them: Metal source, a stitched library's DAG, Core Image's filter-function link (ImageFilterLink.h) and a function's
+// specialization. A GPU client builds them from its own functions' metallibs; the system shader compiler takes only a
+// request framed as these builders frame it, as a request the front end cannot frame aborts it, and source options or
+// header flags that would run anything else in its process are refused.
 #pragma once
 #include <cstdint>
 #include <cstring>
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 #include "ImageFilterLink.h"
 #include "MetalABI.h"
 #include "MetallibEntries.h"
 #include "raw_compile_request.h"
+
+// The bytes Metal stores a function constant of MTLDataType `type` in (0: a type no constant takes)
+extern "C" size_t _MTLConstantDataSize(uint64_t type);
 
 namespace raw::codegen {
 
@@ -285,6 +289,117 @@ inline bool stitchRequestOk(const std::string &r)
     return stitchRequest(std::string_view(r.data() + 4, end - 4), functions) == r;
 }
 
+// Constant values as MTLFunctionConstantValues serializes them for a function (MTLConstantStorage): a u32 count, then
+// each value's u16 index, u8 MTLDataType and the bytes Metal stores that type in
+inline bool constantDataOk(std::string_view constants)
+{
+    uint32_t count = 0;
+    if (constants.size() < sizeof count)
+        return false;
+    memcpy(&count, constants.data(), sizeof count);
+    size_t at = sizeof count;
+    for (uint32_t i = 0; i < count; i++) {
+        if (constants.size() - at < 3)
+            return false;
+        const size_t bytes = _MTLConstantDataSize(uint8_t(constants[at + 2]));
+        if (!bytes || bytes > constants.size() - at - 3)
+            return false;
+        at += 3 + bytes;
+    }
+    return at == constants.size();
+}
+
+inline constexpr size_t aligned8(size_t bytes)
+{
+    return (bytes + 7) & ~size_t(7);
+}
+
+// MTLSpecializeFunctionToArchive, laid out as MetalABI.h's kSpecializeRequest: the header, then the serialized constant
+// values, the source function's name with its NUL, its wrapped bitcode and the specialized name NUL-padded to 8 bytes,
+// each block 8-byte aligned. No specialized name keeps the function's own. `hash` is the source function's bitcode hash
+// (its metallib HASH), which Metal writes there from -[_MTLFunction bitCodeHash]. The front end answers a metallib of the
+// specialized function. Every other header field stays zero: no forced AIR version or target triple, the front end's own
+// iOS target check, and the archive path rather than its loader.
+inline std::string specializationRequest(std::string_view name, std::string_view specializedName, const Bitcode &air,
+                                         const Digest &hash, std::string_view constants)
+{
+    const SpecializeRequestLayout &l = kSpecializeRequest;
+    if (name.empty() || name.size() >= UINT16_MAX || constants.size() > kRequestLimit || air.size > kRequestLimit ||
+        specializedName.size() > kRequestLimit ||
+        l.headerBytes + aligned8(constants.size()) + aligned8(name.size() + 1) + aligned8(air.size) +
+                aligned8(specializedName.size() + 1) >
+            kRequestLimit)
+        return {};
+    if (name.find('\0') != std::string_view::npos || specializedName.find('\0') != std::string_view::npos ||
+        !constantDataOk(constants) || !air.bytes || air.size < sizeof kWrappedBitcode ||
+        memcmp(air.bytes, kWrappedBitcode, sizeof kWrappedBitcode))
+        return {};
+    std::string r(l.headerBytes, '\0');
+    const auto put = [&](size_t field, uint32_t v) {
+        memcpy(r.data() + field, &v, sizeof v);
+    };
+    const auto append = [&](const void *bytes, size_t size, size_t block) {
+        const uint32_t at = uint32_t(r.size());
+        r.append(static_cast<const char *>(bytes), size);
+        r.resize(at + block, '\0');
+        return at;
+    };
+    put(l.constants, append(constants.data(), constants.size(), aligned8(constants.size())));
+    put(l.constants + 4, uint32_t(constants.size()));
+    put(l.name, append(name.data(), name.size(), aligned8(name.size() + 1)));
+    const uint16_t nameBytes = uint16_t(name.size() + 1);
+    memcpy(r.data() + l.name + 4, &nameBytes, sizeof nameBytes);
+    put(l.air, append(air.bytes, air.size, aligned8(air.size)));
+    put(l.air + 4, uint32_t(air.size));
+    if (!specializedName.empty()) {
+        const size_t block = aligned8(specializedName.size() + 1);
+        put(l.specializedName, append(specializedName.data(), specializedName.size(), block));
+        put(l.specializedName + 4, uint32_t(block));
+    }
+    put(l.requestType, kCodeGenSpecialize);
+    put(l.requestType + 4, kCodeGenSpecialize);
+    memcpy(r.data() + l.hash, hash.data(), hash.size());
+    return r;
+}
+
+// A specialization request's fields where kSpecializeRequest puts them, each inside the request: the constants Metal's
+// serialization right after the header, the name NUL-terminated at its stated length, the bitcode wrapped, a specialized
+// name (if any) NUL-terminated inside its block, the request type twice, and every other header byte zero
+inline bool specializationRequestOk(const std::string &r)
+{
+    const SpecializeRequestLayout &l = kSpecializeRequest;
+    if (r.size() < l.headerBytes || r.size() > kRequestLimit)
+        return false;
+    const auto block = [&](size_t field, uint32_t &at, uint32_t &size) {
+        return wordAt(r, field, at) && wordAt(r, field + 4, size) && at >= l.headerBytes && at <= r.size() &&
+               size <= r.size() - at;
+    };
+    uint32_t constantsAt = 0, constantsBytes = 0, airAt = 0, airBytes = 0, nameAt = 0, specializedAt = 0,
+             specializedBytes = 0, type = 0, downgraded = 0;
+    uint16_t nameBytes = 0;
+    memcpy(&nameBytes, r.data() + l.name + 4, sizeof nameBytes);
+    if (!block(l.constants, constantsAt, constantsBytes) || constantsAt != l.headerBytes ||
+        !block(l.air, airAt, airBytes) || airBytes < sizeof kWrappedBitcode ||
+        memcmp(r.data() + airAt, kWrappedBitcode, sizeof kWrappedBitcode) || !wordAt(r, l.name, nameAt) ||
+        nameAt < l.headerBytes || nameAt > r.size() || nameBytes < 2 || nameBytes > r.size() - nameAt ||
+        r[nameAt + nameBytes - 1] != '\0' || memchr(r.data() + nameAt, 0, nameBytes - 1u) ||
+        !wordAt(r, l.requestType, type) || !wordAt(r, l.requestType + 4, downgraded) || type != kCodeGenSpecialize ||
+        downgraded != kCodeGenSpecialize || !constantDataOk(std::string_view(r.data() + constantsAt, constantsBytes)))
+        return false;
+    if (!wordAt(r, l.specializedName, specializedAt) || !wordAt(r, l.specializedName + 4, specializedBytes))
+        return false;
+    if ((specializedAt || specializedBytes) &&
+        (!block(l.specializedName, specializedAt, specializedBytes) || specializedBytes < 2 || !r[specializedAt] ||
+         !memchr(r.data() + specializedAt, 0, specializedBytes)))
+        return false;
+    const std::pair<size_t, size_t> written[] = {{l.constants, 8},       {l.name, 6},        {l.air, 8},
+                                                 {l.specializedName, 8}, {l.requestType, 8}, {l.hash, sizeof(Digest)}};
+    std::string header = r.substr(0, l.headerBytes);
+    for (const auto &[field, bytes] : written)
+        memset(header.data() + field, 0, bytes);
+    return header.find_first_not_of('\0') == std::string::npos;
+}
+
 // ImageFilterLink.h's layout read back: its functions, each module's bytes in place
 inline bool readImageFilters(const std::string &r, std::vector<switch_metal::ImageFilterFunction> &functions)
 {
@@ -347,6 +462,8 @@ inline bool requestOk(uint32_t type, const std::string &request)
         return stitchRequestOk(request);
     case kCodeGenImageFilters:
         return imageFilterRequestOk(request);
+    case kCodeGenSpecialize:
+        return specializationRequestOk(request);
     default:
         return false;
     }

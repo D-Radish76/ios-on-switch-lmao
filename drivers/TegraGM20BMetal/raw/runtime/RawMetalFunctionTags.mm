@@ -52,12 +52,13 @@ static bool tagsOf(RMFunction *f, raw::FunctionTags &tags)
     return false;
 }
 
-NSDictionary<NSString *, MTLFunctionConstant *> *rmFunctionConstants(RMFunction *f)
+// The function's constants in its metallib's order; none for a specialized function, whose constants have their values
+static NSArray<MTLFunctionConstant *> *constantList(RMFunction *f)
 {
-    NSMutableDictionary *out = [NSMutableDictionary dictionary];
+    NSMutableArray *out = [NSMutableArray array];
     raw::FunctionTags tags;
     if (f->_specialized || !tagsOf(f, tags))
-        return (NSDictionary<NSString *, MTLFunctionConstant *> *)out;
+        return out;
     if (!tags.constants)
         os_log_error(rawLog(),
                      "raw: %{public}s: function %{public}s lists a constant of a type or flag Metal's answer was "
@@ -69,10 +70,32 @@ NSDictionary<NSString *, MTLFunctionConstant *> *rmFunctionConstants(RMFunction 
         constant.type = MTLDataType(c.type);
         constant.index = c.index;
         constant.required = c.required;
-        out[constant.name] = constant;
+        [out addObject:constant];
     }
+    return out;
+}
+
+NSDictionary<NSString *, MTLFunctionConstant *> *rmFunctionConstants(RMFunction *f)
+{
+    NSMutableDictionary *out = [NSMutableDictionary dictionary];
+    for (MTLFunctionConstant *constant in constantList(f))
+        out[constant.name] = constant;
     return (NSDictionary<NSString *, MTLFunctionConstant *> *)out;
 }
+
+// -[_MTLFunctionInternal functionConstants], the list functionConstantsDictionary is made of: MTLFunctionConstantValues
+// serializes a function's values in its order, and Metal's tools and VFX read it of any function
+@interface RMFunction (FunctionConstants)
+- (NSArray<MTLFunctionConstant *> *)functionConstants;
+@end
+@implementation RMFunction (FunctionConstants)
+
+- (NSArray<MTLFunctionConstant *> *)functionConstants
+{
+    return constantList(self);
+}
+
+@end
 
 static NSArray *attributeObjects(const std::vector<raw::FunctionAttributeTag> &list, bool stageInput)
 {
@@ -93,15 +116,9 @@ static NSArray *attributeObjects(const std::vector<raw::FunctionAttributeTag> &l
 // The AIR hash of the library function `f` was made from; false with `why`
 static bool airHashOf(RMFunction *f, raw::AirHash &out, std::string &why)
 {
-    const void *bytes = nullptr;
-    size_t length = 0;
-    NSString *libraryFunction = nil;
-    std::map<std::string, raw::AirHash> hashes;
-    if (!rmFunctionSource((id<MTLFunction>)f, &bytes, &length, &libraryFunction) ||
-        !raw::metallibAirHashes(static_cast<const uint8_t *>(bytes), length, hashes) ||
-        !hashes.count(libraryFunction.UTF8String ?: ""))
+    if (!f->_air)
         return why = "the function's library has no AIR of it", false;
-    out = hashes[libraryFunction.UTF8String];
+    out = *f->_air;
     return true;
 }
 

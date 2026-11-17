@@ -3,6 +3,7 @@
 #import "RawMetalInternal.h"
 #import "RawPipelineKey.h"
 #include "NativeBridgeMetalFrontend.h"
+#include "raw_metallib.h"
 
 // The function's m2v twin, made of its library's at the first ask for one: `need` names what asked
 #define RM_FUNCTION_TWIN(f, need) ((f)->_twin ?: [(f) twinOn:RM_M2V(need)])
@@ -171,6 +172,8 @@ static id functionNotFound(NSString *name, NSError **error)
     f->_values = [values copy];
     f->_libraryName = libraryName.UTF8String ?: "";
     f->_type = _functions.type(f->_libraryName);
+    if (const auto air = _airHashes.find(f->_libraryName); air != _airHashes.end())
+        f->_air = air->second;
     f.name = specializedName.length ? specializedName : libraryName;
     return f;
 }
@@ -303,6 +306,7 @@ RMLibrary *readLibrary(id device, NSString *path, NSData *bytes)
                                                       }));
     l->_framework = raw::frameworkOf(l->_source->path);
     l->_functions = std::move(functions);
+    raw::metallibAirHashes(static_cast<const uint8_t *>(bytes.bytes), bytes.length, l->_airHashes);
     return l;
 }
 

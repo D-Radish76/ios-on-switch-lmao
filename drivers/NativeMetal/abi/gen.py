@@ -33,7 +33,19 @@ struct LimitField {{
 inline constexpr LimitField kLimitFields[] = {{
 {fields}
 }};
+
+// MTLSpecializeFunctionToArchive's request (MTLBuildRequestType 15) as this kind's Metal writes it and its MTLCompiler
+// reads it (specialize_request): the header's size, which is where the data starts, and where each field sits in the
+// header. constants, air and specializedName are a u32 offset and u32 size, name a u32 offset and u16 size with its
+// NUL, requestType the type twice (asked, downgraded to) and hash the source function's 32-byte bitcode hash.
+struct SpecializeRequestLayout {{
+    uint16_t headerBytes, constants, name, air, specializedName, requestType, hash;
+}};
+
+inline constexpr SpecializeRequestLayout kSpecializeRequest = {{{specialize}}};
 """
+
+SPECIALIZE_FIELDS = ('header_bytes', 'constants', 'name', 'air', 'specialized_name', 'request_type', 'hash')
 
 
 def header(table: dict) -> str:
@@ -46,6 +58,7 @@ def header(table: dict) -> str:
         instance_size=device['instance_size'],
         limits_bytes=device['limits_bytes'],
         fields=fields,
+        specialize=', '.join(f'0x{table["specialize_request"][name]:x}' for name in SPECIALIZE_FIELDS),
     )
 
 

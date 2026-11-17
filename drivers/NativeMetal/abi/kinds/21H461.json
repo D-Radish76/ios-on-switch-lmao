@@ -916,7 +916,8 @@
       "instance_size": 16,
       "methods": {
         "newIndexedConstantArray": "@16@0:8",
-        "newNamedConstantArray": "@16@0:8"
+        "newNamedConstantArray": "@16@0:8",
+        "serializedConstantDataForFunction:dataSize:errorMessage:": "^v40@0:8@16^Q24^@32"
       }
     },
     "MTLFunctionStitchingGraph": {
@@ -971,6 +972,15 @@
     }
   },
   "compiler": "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler",
+  "specialize_request": {
+    "header_bytes": 256,
+    "constants": 8,
+    "name": 88,
+    "air": 96,
+    "specialized_name": 136,
+    "request_type": 184,
+    "hash": 200
+  },
   "sent": {
     "MTLArgumentEncoder": {
       "alignment": "Q16@0:8",
@@ -1659,6 +1669,7 @@
     "compiler": "the MTLCompiler image Metal loads: the highest Versions/<n> the cache holds (getMaxSupportedLLVMVersion), else the unversioned one",
     "instance_size": "_MTLDevice's class_ro_t instanceSize",
     "limits": "the _limits ivar's offset, size and type encoding; the integer fields with an accessor in _MTLDevice or a Metal class below it (maxBufferLength: MTLIOAccelDevice's only)",
+    "specialize_request": "MTLSpecializeFunctionToArchive's request (MTLBuildRequestType 15) as Metal's MTLCompilerFunctionRequest::serializedRequest writes it and MTLCompiler's buildSpecializedFunctionRequest reads it, pinned by hand from their disassembly and kept by extract.py",
     "sent": "each object's protocols' methods that some image's code sends (sends.py), Metal's own and the GPU drivers' and tools' aside (interface.json not_senders)"
   }
 }

@@ -88,19 +88,14 @@ MTLComputePipelineDescriptor *twinComputeDescriptor(MTLComputePipelineDescriptor
     return t;
 }
 
-// The function's AIR hash and its library function's name, from the AIR slice the facade's library read
-static bool airOf(id<MTLFunction> function, raw::AirHash &out, NSString *__strong &libraryName)
+// The function's AIR hash and its library function's name, as the facade's library read them
+static bool airOf(id<MTLFunction> function, raw::AirHash &out, NSString *__strong &name)
 {
-    const void *bytes = nullptr;
-    size_t length = 0;
-    std::map<std::string, raw::AirHash> hashes;
-    if (!rmFunctionSource(function, &bytes, &length, &libraryName) ||
-        !raw::metallibAirHashes(static_cast<const uint8_t *>(bytes), length, hashes))
+    if (![(id)function isKindOfClass:[RMFunction class]] || !((RMFunction *)function)->_air)
         return false;
-    const auto f = hashes.find(libraryName.UTF8String ?: "");
-    if (f == hashes.end())
-        return false;
-    out = f->second;
+    RMFunction *f = (RMFunction *)function;
+    out = *f->_air;
+    name = @(libraryName(f).c_str());
     return true;
 }
 
