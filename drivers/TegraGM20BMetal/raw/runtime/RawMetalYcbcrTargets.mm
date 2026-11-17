@@ -18,7 +18,7 @@
 
 static raw::Pipeline *packState(const char *name)
 {
-    return name ? gRM->raw->pipeline(raw::Pack::fnv(name, strlen(name))) : nullptr;
+    return name ? gRM->raw->ownPipeline(name) : nullptr;
 }
 
 static raw::Pipeline *loadState(const raw::Texture &t)

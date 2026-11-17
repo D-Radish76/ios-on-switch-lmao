@@ -54,8 +54,6 @@ inline bool usableShaderTests(const PackPipeline &pipeline, const SetEntries &en
 
 inline bool usableStorage(const PackPipeline &pipeline, const SetEntries &entries, uint32_t control)
 {
-    if (!entries.complete())
-        return false;
     const auto &tests = pipeline.shaderTests;
     if (!(pipeline.flags & PipelineStorageMetadata)) {
         if (pipeline.storageMask || pipeline.storageWriteMask || pipeline.storageSamples)
@@ -105,11 +103,13 @@ inline bool usableStorage(const PackPipeline &pipeline, const SetEntries &entrie
     return true;
 }
 
-// `far`: the record's far block (raw_set_entries.h), null where it has kPackEntries entries or fewer
+// `far`: the record's far block (raw_set_entries.h), null where it has kPackEntries entries or fewer. Every record is
+// qualified here once as it enters (usableRecord, addRecord, directRecord) and its draws read its entries unchecked, so
+// one past kPackEntries with no far block is refused here
 inline bool usableStorageMetadata(const PackPipeline &pipeline, const uint32_t *blob, uint32_t dwords,
                                   const uint32_t *far)
 {
-    if ((dwords & 1) || (dwords && !blob))
+    if ((dwords & 1) || (dwords && !blob) || (entryCount(pipeline) > kPackEntries && !far))
         return false;
     uint32_t control = 0;
     uint8_t explicitStorageWrites = 0;

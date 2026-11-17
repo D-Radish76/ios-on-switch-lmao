@@ -237,6 +237,26 @@ TEST(RawCache, KeepsRecordsAcrossProcessesAndMakesEachStateOnce)
     EXPECT_EQ(cachechecks::failures, 0);
 }
 
+// A cached record is read where its draws index by its entries: one of an entry no draw can write comes back as none,
+// so its state is made afresh rather than drawn from it
+TEST(RawCache, ARecordOfAnEntryNoDrawCanWriteComesBackAsNone)
+{
+    raw::CacheKey k;
+    k.stack = 0x51;
+    k.key = "entries";
+    raw::RuntimeRecord back;
+    std::string refusal;
+    const raw::RuntimeRecord intact = madeUp(2);
+    EXPECT_EQ(raw::decodeEntry(raw::encodeEntry(k, &intact, ""), k, back, refusal), raw::RecordCache::Found::Record);
+    raw::RuntimeRecord slot = madeUp(2), kind = madeUp(2), stage = madeUp(2), offset = madeUp(2);
+    slot.pipeline.entry[0].slot = raw::kStageBufferArguments;
+    kind.pipeline.entry[0].kind = uint8_t(raw::EntryXrShadow + 1);
+    stage.pipeline.entry[0].stage = 3;
+    offset.pipeline.entry[0].offset = 256;
+    for (const raw::RuntimeRecord *broken : {&slot, &kind, &stage, &offset})
+        EXPECT_EQ(raw::decodeEntry(raw::encodeEntry(k, broken, ""), k, back, refusal), raw::RecordCache::Found::None);
+}
+
 TEST(RawCache, KeepsKernelsAndTheirRefusals)
 {
     const std::string dir = std::string(getenv("TEST_TMPDIR") ?: "/tmp") + "/kernels";

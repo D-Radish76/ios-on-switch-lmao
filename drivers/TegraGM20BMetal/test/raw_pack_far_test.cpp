@@ -140,7 +140,6 @@ TEST(PackFar, ARecordOfThirtyTwoEntriesOrFewerHasNoFarBlock)
     const raw::PackPipeline &pp = *pack.section<raw::PackPipeline>(raw::PackPipelines);
     EXPECT_EQ(pack.far(pp), nullptr);
     EXPECT_FALSE(raw::SetEntries(pp, nullptr).wide());
-    EXPECT_TRUE(raw::SetEntries(pp, nullptr).complete());
 }
 
 }  // namespace

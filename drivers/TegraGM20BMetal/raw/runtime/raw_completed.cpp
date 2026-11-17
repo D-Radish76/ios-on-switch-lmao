@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 // Device::addRecord (raw_gpu.h): a state the runtime made a record of (raw_record.h), drawn from then on as the pack's states are.
+// Device::ownPipeline: one of the raw path's own states (raw_own_states.h) by its name.
 #include <algorithm>
+#include <array>
 #include <cstring>
+#include <string_view>
 #include <os/log.h>
 #include "raw_gpu.h"
 #include "raw_dynamic_push.h"
@@ -237,6 +240,59 @@ Pipeline *Device::makeTurned(Pipeline &pl)
     turned.strideTwin = pl.strideTwin;
     __atomic_store_n(&pl.turnedTwin, &turned, __ATOMIC_RELEASE);
     return &turned;
+}
+
+namespace {
+
+// Pack::fnv of `text` continued from `h`
+constexpr uint64_t fnvMore(uint64_t h, std::string_view text)
+{
+    for (const char c : text)
+        h = (h ^ uint8_t(c)) * 0x100000001b3ull;
+    return h;
+}
+
+// The key a pack holds own state `pair` under (packKeyHash): its name, raw.<its vertex function's name less its last
+// word>.<its fragment's>
+constexpr uint64_t ownStateKey(std::string_view pair)
+{
+    const size_t fragmentAt = pair.find(" | f ");
+    const uint64_t prefix = fnvMore(0xcbf29ce484222325ull, "raw.");
+    const uint64_t family = fnvMore(prefix, pair.substr(0, pair.rfind('_', fragmentAt)));
+    return fnvMore(fnvMore(family, "."), pair.substr(fragmentAt + 5));
+}
+
+constexpr std::array<uint64_t, std::size(kOwnStates)> ownStateKeys()
+{
+    std::array<uint64_t, std::size(kOwnStates)> keys{};
+    for (size_t i = 0; i < keys.size(); i++) {
+        const uint64_t key = ownStateKey(kOwnStates[i]);
+        size_t at = i;
+        for (; at && keys[at - 1] > key; at--)
+            keys[at] = keys[at - 1];
+        keys[at] = key;
+    }
+    return keys;
+}
+
+// ascending, as own_ holds their states
+constexpr std::array<uint64_t, std::size(kOwnStates)> kOwnStateKeys = ownStateKeys();
+
+}  // namespace
+
+Pipeline *Device::ownPipeline(const char *name)
+{
+    if (!name)
+        return nullptr;
+    const uint64_t key = Pack::fnv(name, strlen(name));
+    const auto at = std::lower_bound(kOwnStateKeys.begin(), kOwnStateKeys.end(), key);
+    if (at == kOwnStateKeys.end() || *at != key)
+        return nullptr;
+    std::atomic<Pipeline *> &own = own_[size_t(at - kOwnStateKeys.begin())];
+    Pipeline *pl = own.load(std::memory_order_acquire);
+    if (!pl && (pl = pipeline(key)))
+        own.store(pl, std::memory_order_release);
+    return pl;
 }
 
 }  // namespace raw

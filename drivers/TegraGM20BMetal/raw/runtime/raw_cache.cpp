@@ -248,7 +248,8 @@ bool readRecord(Reader &r, RuntimeRecord &rec, bool twinned)
     if (rec.spill.size() != 0u + rec.pipeline.spillWords[0] + rec.pipeline.spillWords[1])
         return false;
     rec.far = r.list<uint32_t>();
-    if (entryCount(rec.pipeline) > kSetEntriesMax || rec.far.size() != farWords(entryCount(rec.pipeline)))
+    if (entryCount(rec.pipeline) > kSetEntriesMax || rec.far.size() != farWords(entryCount(rec.pipeline)) ||
+        entriesRefusal(rec.pipeline, rec.far.empty() ? nullptr : rec.far.data(), uint32_t(rec.samplers.size())))
         return false;
     for (const CapturedProgram *p : {&rec.programs[0], &rec.programs[1], &rec.tessPrograms[0], &rec.tessPrograms[1]})
         if (!p->farUbos.empty() && p->farUbos.size() != p->cbufTypes.size())

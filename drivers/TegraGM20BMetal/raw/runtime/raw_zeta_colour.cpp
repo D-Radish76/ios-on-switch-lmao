@@ -12,7 +12,7 @@ namespace raw {
 Pipeline *Device::stencilColourPipeline(uint32_t format, uint32_t samples, StencilSample pick)
 {
     const char *name = stencilColourState(format, samples, pick);
-    return name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+    return name ? ownPipeline(name) : nullptr;
 }
 
 bool CommandBuffer::zetaColourTakes(const Texture &into, const Texture &src, StencilSample pick)

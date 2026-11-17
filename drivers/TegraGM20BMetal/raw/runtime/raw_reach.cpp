@@ -56,7 +56,7 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
         *why = "a draw of no pixel stage or no rasterisation, which reaches no pixel";
         return nullptr;
     }
-    const Pipeline *reach = pipeline(Pack::fnv(kReachState, strlen(kReachState)));
+    const Pipeline *reach = ownPipeline(kReachState);
     std::lock_guard<raw::Mutex> l(lock_);
     if (pl.reachTwin)
         return pl.reachTwin;
@@ -128,7 +128,7 @@ void RenderEncoder::takeReachTwin()
         return;
     const char *why = "no reach state in the pack";
     reachCover_ = pipeline_->vertexStores;
-    Pipeline *drawn = reachCover_ ? dev_->pipeline(Pack::fnv(kReachState, strlen(kReachState))) : pipeline_;
+    Pipeline *drawn = reachCover_ ? dev_->ownPipeline(kReachState) : pipeline_;
     reachTwin_ = pipeline_ = drawn ? dev_->reachTwin(*drawn, &why) : nullptr;
     if (!pipeline_ && !reachWhy_)
         reachWhy_ = why;
@@ -188,7 +188,7 @@ bool CommandBuffer::reach(const PassDesc &pass, uint32_t width, uint32_t height,
     }
     e->end();
     if (reduced) {
-        Pipeline *reduce = dev_->pipeline(Pack::fnv(kReachReduceState, strlen(kReachReduceState)));
+        Pipeline *reduce = dev_->ownPipeline(kReachReduceState);
         q.color[0].texture = mask;
         if (!reduce || !(e = render(q))) {
             *why = "no reach reduction state in the pack, or no pass for it";

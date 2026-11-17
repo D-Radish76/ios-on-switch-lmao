@@ -555,6 +555,7 @@ raw_device_test(
     name = "raw_device_wide_set_test",
     srcs = [
         "raw_device_wide_set_test.cpp",
+        "raw_record_pack.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_cache.cpp",

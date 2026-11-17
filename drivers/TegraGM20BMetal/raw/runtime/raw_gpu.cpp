@@ -1297,8 +1297,14 @@ std::vector<uint32_t> restoreWords(const uint32_t *pairs, uint32_t dwords)
 Pipeline *Device::placeRecord(const PackPipeline &pp, bool caTransform)
 {
     Pipeline &pl = pipelines_[&pp - pack_.section<PackPipeline>(PackPipelines)];
-    if (pl.rec)
-        return &pl;
+    if (pl.rec || pl.malformed)
+        return pl.rec ? &pl : nullptr;
+    if (const char *why = entriesRefusal(pp, pack_.far(pp), pack_.header()->samplers)) {
+        pl.malformed = true;
+        os_log_error(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
+                     "raw: pack state %016llx refused: %{public}s", (unsigned long long)pp.keyHash, why);
+        return nullptr;
+    }
     const bool tess = tessellates(pp);
     PlacedProgram vs, fs = noPixelProgram(), tessPlaced[2];
     if (!placePackProgram(pp.vs, vs) || (pixelStage(pp) && !placePackProgram(pp.fs, fs)) ||
@@ -2638,8 +2644,7 @@ bool Device::createPlanarTexture(uint64_t surfaceId, void *base, uint64_t allocB
 
 Pipeline *Device::standInPipeline(bool store)
 {
-    static const char load[] = "raw.two_plane.two_plane_load", stored[] = "raw.two_plane.two_plane_store";
-    return store ? pipeline(Pack::fnv(stored, sizeof stored - 1)) : pipeline(Pack::fnv(load, sizeof load - 1));
+    return ownPipeline(store ? "raw.two_plane.two_plane_store" : "raw.two_plane.two_plane_load");
 }
 
 bool Device::createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, Texture &t)
@@ -3865,7 +3870,7 @@ Pipeline *Device::ycbcrPipeline(uint8_t output)
                                         "raw.ycbcr.ycbcr_packed_codes10_frag"};
     if (!output || output >= sizeof names / sizeof *names)
         return nullptr;
-    return pipeline(Pack::fnv(names[output], strlen(names[output])));
+    return ownPipeline(names[output]);
 }
 
 Pipeline *Device::ycbcrStorePipeline(bool chroma, const YcbcrStoreShape &store)
@@ -3881,63 +3886,52 @@ Pipeline *Device::ycbcrStorePipeline(bool chroma, const YcbcrStoreShape &store)
     const char *name = store.plane    ? "raw.ycbcr_store.ycbcr_store_plane_packed_frag"
                        : store.packed ? packed[store.srgb != 0][chroma]
                                       : names[store.srgb != 0][chroma][store.max > 255];
-    return pipeline(Pack::fnv(name, strlen(name)));
+    return ownPipeline(name);
 }
 
 Pipeline *Device::ycbcrLoadPipeline(uint32_t channels)
 {
-    const char *name = channels == 1   ? "raw.ycbcr.ycbcr_load_plane_packed_r_frag"
+    return ownPipeline(channels == 1   ? "raw.ycbcr.ycbcr_load_plane_packed_r_frag"
                        : channels == 2 ? "raw.ycbcr.ycbcr_load_plane_packed_rg_frag"
-                                       : nullptr;
-    return name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+                                       : nullptr);
 }
 
 Pipeline *Device::xrPlanesImagePipeline(bool split)
 {
-    static const char merge[] = "raw.xr.xr_planes_merge_frag", splitBack[] = "raw.xr.xr_planes_split_frag";
-    return split ? pipeline(Pack::fnv(splitBack, strlen(splitBack))) : pipeline(Pack::fnv(merge, strlen(merge)));
+    return ownPipeline(split ? "raw.xr.xr_planes_split_frag" : "raw.xr.xr_planes_merge_frag");
 }
 
 Pipeline *Device::xrPipeline(XrForm form, bool twoPlanes)
 {
-    const char *name = xrConversion(form, twoPlanes);
-    return name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+    return ownPipeline(xrConversion(form, twoPlanes));
 }
 
 Pipeline *Device::resolvePipeline(uint32_t format, uint32_t samples)
 {
     const char *name = resolveState(format, samples);
-    Pipeline *pl = name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+    Pipeline *pl = ownPipeline(name);
     RAW_DIAGNOSTIC(if (pl) pl->spanName = name);
     return pl;
 }
 
 Pipeline *Device::depthResolvePipeline(uint32_t format, uint32_t filter)
 {
-    const char *name = depthResolveState(format, filter);
-    return name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+    return ownPipeline(depthResolveState(format, filter));
 }
 
 bool Device::depthConvertible(uint32_t samples)
 {
-    for (uint32_t format : {250u, 260u}) {
-        const char *name = turnDepthState(format, samples);
-        if (!name || !pipeline(Pack::fnv(name, strlen(name))))
-            return false;
-    }
-    return true;
+    return ownPipeline(turnDepthState(250, samples)) && ownPipeline(turnDepthState(260, samples));
 }
 
 Pipeline *Device::mipPipeline(uint32_t format)
 {
-    const char *name = mipState(format);
-    return name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+    return ownPipeline(mipState(format));
 }
 
 Pipeline *Device::mip3dPipeline(uint32_t format)
 {
-    const char *name = mip3dState(format);
-    return name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+    return ownPipeline(mip3dState(format));
 }
 
 bool Device::createStandIn(Texture &t, const ArenaAt *at)
@@ -7024,7 +7018,7 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
             }
         }
     } else if (e.kind == EntryXrShadow) {
-        const Texture *shadow = e.slot < 8 ? pass_.xrShadow[e.slot] : nullptr;
+        const Texture *shadow = pass_.xrShadow[e.slot];
         if (!shadow || !shadow->tic) {
             *why = "an extended-range shadow's variant drawn in a pass that holds no shadow of the colour";
             cb_->refusal = {RefStorageView, e.slot, 0, 0};
@@ -7283,11 +7277,6 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         return false;
     }
     const SetEntries &entries = pl->entries;
-    if (!entries.complete()) {
-        *why = "a record of more set-0 entries than its far block holds";
-        cb_->refusal = {RefSetBytes, entries.size()};
-        return false;
-    }
     if ((spillEntryOf(r, 0) && !pl->spill[0]) || (spillEntryOf(r, 1) && !pl->spill[1])) {
         *why = "an argument table whose words its record does not hold";
         cb_->refusal = {RefSpillTable, spillEntryOf(r, 0) && !pl->spill[0] ? 1u : 2u};
@@ -7635,13 +7624,12 @@ bool RenderEncoder::matrixConstants(const Pipeline &pl, const char **why)
 // of one instance, with its matrix, positions and indices where the CPU maps them; anything else is its scissor alone
 bool RenderEncoder::entryMoved(const PackEntry &e) const
 {
-    const bool buffer = e.kind == EntryUbo && e.stage < 3 && e.slot < 32 && (moved_.buffers[e.stage] >> e.slot & 1);
+    const bool buffer = e.kind == EntryUbo && (moved_.buffers[e.stage] >> e.slot & 1);
     const bool texture = (e.kind == EntryTexture || e.kind == EntryTexture3d) && e.slot < kStageTextures &&
                          hasSlot(moved_.textures[handleStage(e)], e.slot);
-    const bool sampler = e.kind != EntryUbo && e.samplerKind == SamplerSlot && e.sampler < kStageSamplers &&
-                         (moved_.samplers[handleStage(e)] >> e.sampler & 1);
-    const bool spill =
-        e.kind == EntrySpillTable && e.stage < 3 && (moved_.buffers[e.stage] || (e.stage == 2 && spillDirty_));
+    const bool sampler =
+        e.kind != EntryUbo && e.samplerKind == SamplerSlot && (moved_.samplers[handleStage(e)] >> e.sampler & 1);
+    const bool spill = e.kind == EntrySpillTable && (moved_.buffers[e.stage] || (e.stage == 2 && spillDirty_));
     return buffer || texture || sampler || spill;
 }
 
@@ -7687,7 +7675,7 @@ bool RenderEncoder::fillSpills(const Pipeline &pl, uint32_t moved, bool all, Set
     Device &d = *dev_;
     for (uint32_t k = 0; k < 2; k++) {
         const uint32_t entry = spillEntryOf(r, k), count = r.spillWords[k];
-        if (!entry || entry > pl.entries.size() || !(all || (entry <= 32 && moved >> (entry - 1) & 1)))
+        if (!entry || !(all || (entry <= 32 && moved >> (entry - 1) & 1)))
             continue;
         uint32_t words[kSpillWordsMax];
         composeSpill(pl.spill[k], count, prepared.spilled[k], words);

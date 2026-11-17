@@ -12,7 +12,7 @@ namespace raw {
 Pipeline *Device::stencilBitsPipeline(uint32_t format, uint32_t samples, StencilSample pick)
 {
     const char *name = stencilBitsState(format, samples, pick);
-    return name ? pipeline(Pack::fnv(name, strlen(name))) : nullptr;
+    return name ? ownPipeline(name) : nullptr;
 }
 
 bool CommandBuffer::bindStencilSource(RenderEncoder &e, const Texture &src, Texture &view, uint32_t format, bool depth,

@@ -390,7 +390,9 @@ TEST(RawRecordCost, SteadyFramesTakeTheirChunksFromThePool)
     EXPECT_EQ(misses() - before, 0u);
 }
 
-// Each call of a compositor draw, its instructions apart (less what two counter reads cost), over a frame's 90 draws
+// Each call of a compositor draw, its instructions apart (less what two counter reads cost) over a frame's 90 draws,
+// the fewest of any measured round: the thread's counter (thread_selfcounts THSC_CPI) sums its user and kernel
+// instructions, so preemption, interrupts and refills on a busy host only ever add to a round
 TEST(RawRecordCost, ChangedStateDrawByCall)
 {
     Bench &b = bench();
@@ -408,17 +410,21 @@ TEST(RawRecordCost, ChangedStateDrawByCall)
 
     const char *names[Calls] = {"setVertexBytes vertices", "setVertexBytes transform", "setFragmentBytes colour",
                                 "texture and sampler",     "setScissorRect",           "drawPrimitives"};
-    double sums[Calls] = {};
     double calibration = 1e30;
     for (int i = 0; i < 64; i++) {
         const Counts a = counts(), c = counts();
         calibration = std::min(calibration, double(c.instructions - a.instructions));
     }
-    uint32_t draws = 0;
+    constexpr int draws = kEncoders * (kDraws / kEncoders);
+    // by call, then all of them: a round's instructions, the fewest of the measured rounds
+    double fewest[Calls + 1];
+    for (double &f : fewest)
+        f = 1e30;
     for (int round = 0; round < kWarm + kRounds; round++)
         @autoreleasepool {
             id<MTLCommandBuffer> cb = [b.queue commandBuffer];
             const std::vector<MTLRenderPassDescriptor *> into = passes(b, kEncoders);
+            double spent[Calls + 1] = {};
             int drawn = 0;
             for (int p = 0; p < kEncoders; p++) {
                 id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:into[size_t(p)]];
@@ -444,29 +450,28 @@ TEST(RawRecordCost, ChangedStateDrawByCall)
                     at[5] = counts();
                     [e drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
                     at[6] = counts();
-                    if (round >= kWarm) {
-                        for (int k = 0; k < Calls; k++)
-                            sums[k] += double(at[k + 1].instructions - at[k].instructions) - calibration;
-                        draws += 1;
+                    for (int k = 0; k < Calls; k++) {
+                        const double instructions = double(at[k + 1].instructions - at[k].instructions) - calibration;
+                        spent[k] += instructions;
+                        spent[Calls] += instructions;
                     }
                 }
                 [e endEncoding];
             }
             [cb commit];
             [cb waitUntilCompleted];
+            if (round >= kWarm)
+                for (int k = 0; k <= Calls; k++)
+                    fewest[k] = std::min(fewest[k], spent[k]);
         }
-    double total = 0;
-    for (int k = 0; k < Calls; k++) {
-        printf("record cost by call %-26s %8.0f instr a draw\n", names[k], sums[k] / draws);
-        total += sums[k] / draws;
-    }
-    printf("record cost by call %-26s %8.0f instr a draw\n", "all", total);
-    EXPECT_GT(draws, 0u);
+    for (int k = 0; k < Calls; k++)
+        printf("record cost by call %-26s %8.0f instr a draw\n", names[k], fewest[k] / draws);
+    printf("record cost by call %-26s %8.0f instr a draw\n", "all", fewest[Calls] / draws);
     // Core Animation's texture and sampler with the sampler bound already, and a draw whose bindings leave its check as
     // it was (measured 745 and 1,924 a draw in a release build, 926 and 2,023 in a debug one; all calls 3,959 and 4,666)
-    EXPECT_LT(sums[TextureSampler] / draws, 1100);
-    EXPECT_LT(sums[Draw] / draws, 2300);
-    EXPECT_LT(total, 5200);
+    EXPECT_LT(fewest[TextureSampler] / draws, 1100);
+    EXPECT_LT(fewest[Draw] / draws, 2300);
+    EXPECT_LT(fewest[Calls] / draws, 5200);
 }
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG

@@ -88,12 +88,6 @@ public:
         return count_;
     }
 
-    // False: a record past kPackEntries given no far block, whose entries past them no reader may take
-    bool complete() const
-    {
-        return far_ || count_ <= kPackEntries;
-    }
-
     bool wide() const
     {
         return count_ > kPackEntries;
@@ -131,5 +125,63 @@ private:
     const uint32_t *far_ = nullptr;
     uint32_t count_ = 0;
 };
+
+// The words of a record's set as the encoder builds and uploads it (raw_descriptors.h renderSetBytes)
+constexpr uint32_t setWords(uint32_t setBytes)
+{
+    return (setBytes <= 256 ? 256 : (setBytes + 255) & ~255u) / 4;
+}
+
+// The set words an entry's descriptor takes: a buffer's or a table's four, a handle's one
+constexpr uint32_t entryWords(uint8_t kind)
+{
+    return kind == EntryUbo || kind == EntryTessBuffer || kind == EntryColorTable || kind == EntryTextureTable ||
+                   kind == EntrySamplerTable || kind == EntrySpillTable
+               ? 4
+               : 1;
+}
+
+// Why a record's entries are not ones its draws can write, null where they are: each of a kind the encoder writes,
+// inside the set it uploads, a buffer at a stage and slot it binds, a colour of the pass's eight, a tessellation
+// buffer of the three, a sampler of the stage's or one of the record's `constexprSamplers`, and each argument table
+// and uniform range naming such an entry. A record from outside the process (a pack, the record cache) is held to
+// this once, where it enters; a draw indexes by its entries unchecked. A texture slot's bound is the identity's
+// (raw_stage_textures.h), which the draw keeps: a texture3d entry of kNoSlot binds no texture.
+inline const char *entriesRefusal(const PackPipeline &p, const uint32_t *far, uint32_t constexprSamplers)
+{
+    const SetEntries entries(p, far);
+    const uint32_t words = setWords(p.setBytes);
+    for (uint32_t k = 0; k < entries.size(); k++) {
+        const PackEntry &e = entries[k];
+        if (e.kind > EntryXrShadow)
+            return "an entry of a kind no draw writes";
+        if (e.offset / 4 + entryWords(e.kind) > words)
+            return "an entry past its record's set";
+        if ((e.kind == EntryUbo || e.kind == EntrySpillTable) && e.stage > 2)
+            return "a buffer entry of no stage";
+        if (e.kind == EntryUbo && e.slot >= kStageBufferArguments)
+            return "a buffer entry past its stage's buffers";
+        if (e.kind == EntryTessBuffer && e.slot >= TessBufferCount)
+            return "a tessellation buffer entry past the three";
+        if ((e.kind == EntryFetch || e.kind == EntryXrShadow) && e.slot >= 8)
+            return "a colour entry past the pass's eight";
+        if (e.kind == EntryUbo)
+            continue;
+        if (e.samplerKind == SamplerSlot && e.sampler >= kStageSamplers)
+            return "a sampler entry past its stage's samplers";
+        if (entryWords(e.kind) == 1 && (e.samplerKind > SamplerConstexpr ||
+                                        (e.samplerKind == SamplerConstexpr && e.sampler >= constexprSamplers)))
+            return "a handle entry of no sampler the record holds";
+    }
+    for (uint32_t k = 0; k < 2; k++)
+        if (const uint32_t table = spillEntryOf(p, k);
+            table > entries.size() || (table && entries[table - 1].offset / 4 + 4 > words))
+            return "an argument table past its record's entries";
+    for (const PackUniformRange &u : p.uniform)
+        if (u.entry != kNoUniform && u.entry < entries.size() &&
+            (entries[u.entry].stage > 2 || entries[u.entry].slot >= kStageBufferArguments))
+            return "a uniform range of an entry past its stage's buffers";
+    return nullptr;
+}
 
 }  // namespace raw

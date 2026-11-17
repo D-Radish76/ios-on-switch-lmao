@@ -8,11 +8,6 @@
 namespace raw {
 namespace {
 
-Pipeline *packState(Device &d, const char *name)
-{
-    return name ? d.pipeline(Pack::fnv(name, strlen(name))) : nullptr;
-}
-
 // `t`'s words as texels of integer format `format`, read through a header of their own; false where none can be made
 bool wordsView(Device &d, Texture &t, Texture &view, uint32_t format = 53 /* R32Uint */)
 {
@@ -51,8 +46,8 @@ bool drawAll(CommandBuffer &rc, Pipeline *state, Texture &target, Texture &sourc
 Texture *formatStandInFor(Device &d, CommandBuffer &rc, Texture &t, uint32_t slot, bool fill, const char **why)
 {
     const uint32_t format = formatStandIn(t.format);
-    if (!format || (t.format != kR8UnormSrgb &&
-                    (!packState(d, formatLoadState(t.format)) || !packState(d, formatStoreState(t.format))))) {
+    Pipeline *load = d.ownPipeline(formatLoadState(t.format));
+    if (!format || (t.format != kR8UnormSrgb && (!load || !d.ownPipeline(formatStoreState(t.format))))) {
         *why = "a target of a format the GM20B renders none of, with no stand-in route (the pack has no load or store "
                "state for it)";
         return nullptr;
@@ -81,9 +76,7 @@ Texture *formatStandInFor(Device &d, CommandBuffer &rc, Texture &t, uint32_t slo
         *why = "no texture header for a stand-in's fill";
         return nullptr;
     }
-    return drawAll(rc, packState(d, formatLoadState(t.format)), *s, t.format == kRgb9e5Float ? words : t, why)
-               ? s
-               : nullptr;
+    return drawAll(rc, load, *s, t.format == kRgb9e5Float ? words : t, why) ? s : nullptr;
 }
 
 bool storeFormatStandIn(Device &d, CommandBuffer &rc, Texture &t, Texture &standIn, const char **why)
@@ -106,14 +99,13 @@ bool storeFormatStandIn(Device &d, CommandBuffer &rc, Texture &t, Texture &stand
         *why = "no texture header for a stand-in's store";
         return false;
     }
-    return drawAll(rc, packState(d, formatStoreState(t.format)), words, standIn, why);
+    return drawAll(rc, d.ownPipeline(formatStoreState(t.format)), words, standIn, why);
 }
 
 bool formatMipPasses(Device &d, CommandBuffer &rc, Texture &t, uint32_t first, uint32_t last, uint32_t firstLayer,
                      uint32_t layers, uint32_t format, const char **why)
 {
-    const char *state = formatMipState(format);
-    Pipeline *mip = state ? d.pipeline(Pack::fnv(state, strlen(state))) : nullptr;
+    Pipeline *mip = d.ownPipeline(formatMipState(format));
     if (!mip || !t.chain || t.type == fx::kTexThreeD || last >= t.chain->layout.levels) {
         *why = "a chain of a format the GM20B renders none of with no mip state, or a 3D one";
         return false;

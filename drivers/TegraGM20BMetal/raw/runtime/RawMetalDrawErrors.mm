@@ -125,12 +125,6 @@ bool drawFailed(RMCommandBuffer *cb, const raw::Refusal &f, const char *why)
                       "come with it, and a state with them is offered no split",
                       why, f.a);
         break;
-    case raw::RefSetBytes:
-        SWITCH_REFUSE("raw", "draw.set_bytes",
-                      "%s (%u entries): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); Pack::load and addRecord "
-                      "refuse a record whose far block does not hold its entries",
-                      why, f.a);
-        break;
     case raw::RefViewports:
         SWITCH_REFUSE("raw", "draw.viewports",
                       "%s (%u viewports): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); records since pack v21 "

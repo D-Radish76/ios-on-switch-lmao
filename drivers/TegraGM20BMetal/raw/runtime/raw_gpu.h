@@ -67,6 +67,7 @@
 #include "raw_comp.h"
 #include "raw_counters.h"
 #include "raw_attachment_lifetime.h"
+#include "raw_own_states.h"
 #include "raw_stats.h"
 #if SWITCH_RAW_DIAGNOSTICS
 #include "raw_glass_mem.h"
@@ -681,6 +682,7 @@ struct Pipeline {
     // raw_rotation.h: its fragment program has a turned variant (AssumeTurned), or reads a turned plane's axes with none; a
     // runtime record's turned variant's pipeline (a pack record's is one of `chosen`)
     bool turnedVariant = false, turnRefused = false;
+    bool malformed = false;  // a pack record whose entries its draws cannot write (entriesRefusal): never placed
     // the fragment slots its programs read two-plane RGB10A8_2P_XR10 textures at through their header pairs (PackPipeline)
     uint16_t xrSlots = 0;
     uint16_t writtenSlots = 0;  // the fragment slots its programs write textures at (raw_written_textures.h)
@@ -901,7 +903,6 @@ enum RefusalId : uint8_t {
     RefHeapMemory,          // no memory for the tables the state reads argument buffers through
     RefUnnamedUniform,
     RefSpillTable,     // a: the stage (1 vertex, 2 fragment) whose argument table words the record lacks
-    RefSetBytes,       // a: the record's set-0 entries, more than its far block holds
     RefWrittenPlanes,  // a: the slot of a written two-plane texture the pass holds no image of
     RefTessellationScale,
     RefControlPointOffset,   // a: the control-point index buffer's offset, b: its index size
@@ -1345,7 +1346,7 @@ private:
 
     const Sampler *boundSampler(const PackEntry &e) const
     {
-        return e.sampler < kStageSamplers ? samplers_[handleStage(e)][e.sampler] : nullptr;
+        return samplers_[handleStage(e)][e.sampler];
     }
 
     // what each vertex stream's location and limit registers hold (raw_vertex_streams.cpp)
@@ -2032,6 +2033,9 @@ public:
     // key (completed_; packHolds says which); null: neither.
     // caTransform: its vertex function is Core Animation's fixed_vert_l?h_spc (Pipeline::caTransform)
     Pipeline *pipeline(uint64_t keyHash, PackForm form = PackForm::Default, bool caTransform = false);
+    // One of the raw path's own states by its name (raw_own_states.h: raw.<family>.<fragment>): pipeline()'s, taken
+    // with no lock once a lookup placed it; null: no name, no such state in the pack, or one that could not be placed
+    Pipeline *ownPipeline(const char *name);
 
     // A new depth/stencil state's registers into the segment heap
     void placeSegments(DepthStencilState &state)
@@ -3201,6 +3205,9 @@ private:
     // the pack's, by record index, each made at its first lookup (a process uses a few of the pack's thousands); a node
     // container, so the pointers pipeline() hands out stay valid
     std::unordered_map<uint32_t, Pipeline> pipelines_;
+    // each own state's (ownPipeline) once a lookup placed it: any recording thread may place it first, the others read
+    // it without lock_ after
+    std::array<std::atomic<Pipeline *>, std::size(kOwnStates)> own_{};
     std::vector<uint32_t> placed_;  // each pack program's heap offset, ~0u: not placed
     uint64_t heapPlaced_ = 0;
     // Programs placed so far, in place or copied, and that count as of the last submission whose prologue invalidated the
@@ -3462,12 +3469,19 @@ private:
         bool retired = false;
     };
 
-    static constexpr uint32_t kMemorylessTag = kTransientColorTag;
-    static constexpr uint32_t kShaderDepthTag = kMemorylessTag + 8;
-    static constexpr uint32_t kShaderStencilTag = kShaderDepthTag + 1;
-    static constexpr uint32_t kShaderStencilTempTag = kShaderDepthTag + 2;
-    static constexpr uint32_t kSeparateZetaTag = kShaderDepthTag + 3, kSeparateTempTag = kShaderDepthTag + 4;
-    std::array<Backing *, kSeparateTempTag + 1> lastBackings_{};
+    // backing()'s tags, each kind of backing its own, and the backing it last answered each with: the device's below,
+    // then the command buffer's scratch ranges (turnScratch), from kTurnTag's (raw_turned_pass.cpp) to
+    // kFormatStandInTag's eight colours, the last
+    enum BackingTag : uint32_t {
+        kMemorylessTag = kTransientColorTag,
+        kShaderDepthTag = kMemorylessTag + 8,
+        kShaderStencilTag,
+        kShaderStencilTempTag,
+        kSeparateZetaTag,
+        kSeparateTempTag,
+        kBackingTags = kFormatStandInTag + 8
+    };
+    std::array<Backing *, kBackingTags> lastBackings_{};
 
     static constexpr uint32_t kPlainPool = 0, kPlainBl = 1, kPlainZeta = 2;
     std::vector<std::unique_ptr<PlainMem>> plainMems_;

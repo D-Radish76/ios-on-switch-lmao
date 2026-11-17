@@ -120,10 +120,10 @@ inline PackEntry &entryAt(PackPipeline &p, std::vector<uint32_t> &far, uint32_t 
     return k < kPackEntries ? p.entry[k] : reinterpret_cast<PackEntry *>(far.data())[k - kPackEntries];
 }
 
+// Every record holds its far block whole: assembleRecord makes it so, and decodeEntry and addRecord refuse one that is not
 inline SetEntries entriesOf(const RuntimeRecord &r)
 {
-    return SetEntries(r.pipeline,
-                      r.far.size() == farWords(entryCount(r.pipeline)) && !r.far.empty() ? r.far.data() : nullptr);
+    return SetEntries(r.pipeline, r.far.empty() ? nullptr : r.far.data());
 }
 
 // The key a stride twin of the state of key `key` is hashed by

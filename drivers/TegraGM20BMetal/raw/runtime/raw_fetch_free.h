@@ -70,7 +70,7 @@ inline FetchFreeForm fetchFreeForm(const PackPipeline &pp, const PackIteratedBle
         f.rung = rung;
         f.colour = c;
         const SetEntries entries(pp, far);
-        for (uint32_t k = 0; k < entries.size() && entries.complete(); k++) {
+        for (uint32_t k = 0; k < entries.size(); k++) {
             const PackEntry &e = entries[k];
             if ((e.kind == EntryTexture || e.kind == EntryTexture3d) && handleStage(e) == 1) {
                 if (e.slot < 32)

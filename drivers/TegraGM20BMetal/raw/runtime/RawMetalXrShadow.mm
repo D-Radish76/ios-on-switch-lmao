@@ -23,7 +23,7 @@ void rmXrShadowBegin(RMCommandBuffer *cb, RMRenderEncoder *e, const RMPass &fact
         const raw::XrForm form = raw::xrShadowForm(x->_raw.format, e->_xrPlanes);
         const char *tile = raw::xrTileState(form);
         if (form == raw::XrForm::None ||
-            (a.load != MTLLoadActionClear && !gRM->raw->pipeline(raw::Pack::fnv(tile, strlen(tile)))))
+            (a.load != MTLLoadActionClear && !gRM->raw->ownPipeline(tile)))
             continue;
         o.pass.eligible |= uint8_t(1u << c);
         const double clear[4] = {a.clear.red, a.clear.green, a.clear.blue, a.clear.alpha};
@@ -231,7 +231,7 @@ bool rmXrShadowFill(raw::CommandBuffer *rc, const RMPass &pass, raw::PassDesc &p
             return false;
         }
         if (tile) {
-            e->setPipeline(d.pipeline(raw::Pack::fnv(raw::xrTileState(form), strlen(raw::xrTileState(form)))));
+            e->setPipeline(d.ownPipeline(raw::xrTileState(form)));
             e->setTexture(0, tile);
             e->setViewport(0, 0, shadow->width, shadow->height, 0, 1);
             e->setScissor(0, 0, shadow->width, shadow->height);

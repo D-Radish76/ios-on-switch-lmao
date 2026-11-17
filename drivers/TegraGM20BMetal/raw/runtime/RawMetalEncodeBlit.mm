@@ -235,7 +235,7 @@ bool fillTexturePass(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc)
 bool rmFormatMips(uint32_t format)
 {
     const char *state = raw::formatMipState(format);
-    return state && gRM->raw->pipeline(raw::Pack::fnv(state, strlen(state)));
+    return state && gRM->raw->ownPipeline(state);
 }
 
 // Levels first + 1 .. last of a view's layers by the pack's mip state (raw_mip.h, raw_mip_passes.cpp), or a format

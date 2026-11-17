@@ -44,7 +44,7 @@ bool uniformTuple(const PackPipeline &rec, BoundAt boundAt, uint64_t &tuple, con
     const SetEntries entries(rec, far);
     for (uint32_t k = 0; k < kUniformRanges; k++) {
         const PackUniformRange &u = rec.uniform[k];
-        if (u.entry >= entries.size() || !entries.complete())
+        if (u.entry >= entries.size())
             continue;
         const PackEntry &e = entries[u.entry];
         const BoundBytes b = boundAt(e.stage, e.slot);

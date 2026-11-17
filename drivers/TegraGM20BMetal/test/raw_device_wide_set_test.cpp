@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
 // A set 0 of more than kPackEntries entries and past the encoder's 512 bytes (RenderEncoder::prepare's wide path,
 // raw_descriptors.h WideDescriptors), on raw::Device: each entry's descriptor names its own buffer in the set the draw
-// uploads, a draw whose bindings moved uploads a set naming the new ones, one whose bindings did not keeps the set, and a
-// record of more entries than its far block holds is refused as the driver's error.
+// uploads, a draw whose bindings moved uploads a set naming the new ones, one whose bindings did not keeps the set, a
+// runtime record of more entries than its far block holds is not added, and a pack record whose entries no draw can
+// write is not placed.
 #include "raw_device_harness.h"
+#include "raw_record_pack.h"
 #include "../raw/runtime/raw_record.h"
 #include "../../../kits/SwitchGM20B/SwitchGM20B3D.h"
 #include <cstring>
@@ -190,21 +192,6 @@ TEST_F(DeviceWideSet, ABindingMovedBeforeANarrowStatesDrawIsInTheWideStatesNextS
     EXPECT_EQ(named(sets[2])[kEntries - 1], buffer.va + 256 * kEntries);
 }
 
-TEST_F(DeviceWideSet, ARecordOfMoreEntriesThanItsFarBlockHoldsIsTheDriversError)
-{
-    raw::RuntimeRecord r = wideRecord(0x3a2);
-    std::string why;
-    raw::Pipeline *pl = dev.addRecord(r, false, why);
-    ASSERT_NE(pl, nullptr) << why;
-    pl->entries = raw::SetEntries(*pl->rec, nullptr);
-    begin(pl);
-    EXPECT_EQ(draw(), "a record of more set-0 entries than its far block holds");
-    EXPECT_EQ(cb->refusal.id, raw::RefSetBytes);
-    EXPECT_EQ(cb->refusal.a, kEntries);
-    e->end();
-    cb->abandon();
-}
-
 TEST_F(DeviceWideSet, ARuntimeRecordWhoseFarBlockIsNotItsEntriesIsNotAdded)
 {
     raw::RuntimeRecord r = wideRecord(0x3a3);
@@ -212,6 +199,37 @@ TEST_F(DeviceWideSet, ARuntimeRecordWhoseFarBlockIsNotItsEntriesIsNotAdded)
     std::string why;
     EXPECT_EQ(dev.addRecord(r, false, why), nullptr);
     EXPECT_EQ(why, "a record whose far entries are not its entries'");
+}
+
+// Two buffer entries at set-0 bytes 0 and 16 of a 32-byte set
+raw::RuntimeRecord narrowRecord(uint64_t key)
+{
+    raw::RuntimeRecord r = wideRecord(key);
+    raw::setEntryCount(r.pipeline, 2);
+    r.pipeline.setBytes = 32;
+    r.far.clear();
+    return r;
+}
+
+// A pack is read where its records' draws index by their entries: a record of an entry no draw can write is refused
+// where it is placed, and its state is no state of the device's
+TEST(DevicePackEntries, ARecordOfAnEntryNoDrawCanWriteIsNotPlaced)
+{
+    raw::RuntimeRecord slot = narrowRecord(0x3c1), kind = narrowRecord(0x3c2), stage = narrowRecord(0x3c3),
+                       offset = narrowRecord(0x3c4);
+    slot.pipeline.entry[1].slot = raw::kStageBufferArguments;
+    kind.pipeline.entry[1].kind = uint8_t(raw::EntryXrShadow + 1);
+    stage.pipeline.entry[1].stage = 3;
+    offset.pipeline.entry[1].offset = 256;
+    const std::vector<raw::RuntimeRecord> records = {narrowRecord(0x3c0), slot, kind, stage, offset};
+    kernel_model::model = {};
+    raw::Device dev;
+    std::string err;
+    ASSERT_TRUE(dev.open(harness::recordPack(records, "pack-entries.bin").c_str(), 0, err, raw::Device::Role::Client))
+        << err;
+    EXPECT_NE(dev.pipeline(0x3c0), nullptr);
+    for (const raw::RuntimeRecord *bad : {&slot, &kind, &stage, &offset})
+        EXPECT_EQ(dev.pipeline(bad->pipeline.keyHash), nullptr) << std::hex << bad->pipeline.keyHash;
 }
 
 }  // namespace

@@ -58,7 +58,7 @@ TEST(RecordFar, ARecordPastThirtyTwoEntriesKeepsTheRestInItsFarBlock)
     ASSERT_EQ(out.far.size(), raw::farWords(40));
     EXPECT_EQ(out.far.size(), 2u * 8 + 2);
     const raw::SetEntries entries = raw::entriesOf(out);
-    ASSERT_TRUE(entries.complete());
+    ASSERT_NE(entries.far(), nullptr);
     for (uint32_t k = 0; k < 40; k++) {
         EXPECT_EQ(entries[k].offset, 16 * k) << k;
         EXPECT_EQ(entries[k].kind, raw::EntryUbo) << k;

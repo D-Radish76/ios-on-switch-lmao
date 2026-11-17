@@ -3,7 +3,6 @@
 #include "raw_turn_copy.h"
 
 #include <algorithm>
-#include <cstring>
 
 #include "raw_gpu.h"
 
@@ -44,7 +43,7 @@ bool CommandBuffer::turnCopy(const Texture &dst, const Texture &src, const TurnM
                         : mask     ? turnMaskedState(dst.bpp)
                                    : turnCopyState(dst.bpp);
     const FormatInfo *f = dst.zeta ? nullptr : formatInfo(format);
-    Pipeline *pl = state ? dev_->pipeline(Pack::fnv(state, strlen(state))) : nullptr;
+    Pipeline *pl = dev_->ownPipeline(state);
     if ((copies && !pl) || (!dst.zeta && !f) || src.bpp != dst.bpp || src.zeta != dst.zeta ||
         (dst.zeta && src.format != dst.format)) {
         *why = "no turn copy state for the attachment's format";
@@ -101,10 +100,9 @@ bool CommandBuffer::depthConvert(const Texture &dst, const Texture &src, const c
         desc.depthWrite = true;
         return DepthStencilState(desc);
     }();
-    const char *state = turnDepthState(dst.format, dst.samples);
-    Pipeline *pl = state && dst.zeta && src.zeta && zetaHasDepth(src.format) && src.width == dst.width &&
+    Pipeline *pl = dst.zeta && src.zeta && zetaHasDepth(src.format) && src.width == dst.width &&
                            src.height == dst.height && src.samples == dst.samples
-                       ? dev_->pipeline(Pack::fnv(state, strlen(state)))
+                       ? dev_->ownPipeline(turnDepthState(dst.format, dst.samples))
                        : nullptr;
     if (!pl) {
         *why = "no depth conversion state for the formats";
