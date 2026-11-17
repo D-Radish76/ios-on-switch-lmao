@@ -15,6 +15,7 @@ nothing else of the generator, so an edit to the corpus, split, link or stamp re
 import argparse
 import hashlib
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -22,6 +23,7 @@ from pathlib import Path
 
 # What the link reads of a bucket (directlink.py)
 KEPT = ('records.bin', 'context.log')
+CONTENT_NAME = re.compile(r'[0-9a-f]{64}\.metallib')
 
 
 def fresh(path: Path) -> Path:
@@ -31,11 +33,26 @@ def fresh(path: Path) -> Path:
     return path
 
 
-def library_view(libraries: list[Path], destination: Path) -> Path:
+def content_name(library: Path) -> str:
+    return hashlib.sha256(library.read_bytes()).hexdigest() + '.metallib'
+
+
+def crawled_name(library: Path) -> str:
+    if not CONTENT_NAME.fullmatch(library.name):
+        raise ValueError(f'{library}: a --data-dir library is named <SHA-256>.metallib')
+    return library.name
+
+
+def library_view(libraries: list[Path], crawled: list[Path], destination: Path) -> Path:
+    """Link every library into `destination` as <SHA-256>.metallib, the first of each name.
+
+    `crawled` are a --data-dir's, which the crawl already names so (tools/gpu/shaders/crawl.py, inputs.py embedded).
+    """
     destination.mkdir()
-    for source in libraries:
-        digest = hashlib.sha256(source.read_bytes()).hexdigest()
-        target = destination / (digest + '.metallib')
+    named = [(content_name(source), source) for source in libraries]
+    named += [(crawled_name(source), source) for source in crawled]
+    for name, source in named:
+        target = destination / name
         if not target.exists():
             target.symlink_to(source.resolve())
     return destination
@@ -44,10 +61,8 @@ def library_view(libraries: list[Path], destination: Path) -> Path:
 def probe(args: argparse.Namespace, work: Path) -> None:
     out = fresh(Path(args.out).resolve())
     shutil.copyfile(args.lines, out / 'corpus.log')
-    libraries = [Path(p) for p in args.data]
-    if args.data_dir:
-        libraries += sorted(Path(args.data_dir).glob('*.metallib'))
-    data = library_view(libraries, work / 'data')
+    crawled = sorted(Path(args.data_dir).glob('*.metallib')) if args.data_dir else []
+    data = library_view([Path(p) for p in args.data], crawled, work / 'data')
     arguments = ['--probe-bucket', out, '--prebuilt', Path(args.raw).resolve(), '--data-libs', data]
     arguments += ['--root', Path(args.root).resolve()] if args.root else []
     arguments += ['--qc', Path(args.qc).resolve()]

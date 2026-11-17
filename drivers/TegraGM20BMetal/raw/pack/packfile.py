@@ -25,7 +25,7 @@ MAGIC = b'GM20BPK1'
 # (NO_PROGRAM), the reflections section; 26: the texture slots a kernel's sampler entry samples (its window); 27: set-0
 # entries past 32 (the count's high byte, the rest of the entries and their bound and memory bits in a far block in the
 # blob section, an argument table's entry past 254), programs' uniform buffers past set-0 byte 496 (a far table in the
-# blob section)
+# blob section); 28: the selector section (PackSelectors), a state's shader-side stencil push word (shadow_stencil_word)
 VERSION = 28
 SECTIONS = 16  # runtime/raw_pack.h PackSectionCount
 ENTRY_COMPARES = 1  # runtime/raw_pack.h kEntryCompares: a handle's sampler slot the state samples by comparison

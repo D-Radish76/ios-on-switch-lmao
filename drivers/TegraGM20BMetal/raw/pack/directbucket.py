@@ -89,16 +89,10 @@ def probe_env() -> dict[str, str]:
             ('NAK_', 'NVK_', 'MESA_', 'NMB_', 'M2V_', 'METAL2VULKAN_', 'TEGRA_', 'MTL_', 'NVDEC_', 'RAWCAP_', 'PROBE_')
         )
     }
-    # NMB_CACHE_MB: the m2v cache directory holds every state's NVK driver record until mkprograms reads them (the
-    # bridge's 256 MiB cap evicts the oldest past ~7000 states, which then bind programs no record names)
     env.update(
-        MESA_SHADER_CACHE_DISABLE='true',
         NVDEC_PROBE='1',
         NVDEC_SCRUB='1',
         NVDEC_TRACE='3',
-        NMB_ASYNC_PSO='0',
-        NMB_ASYNC_PSO_API='0',
-        NMB_CACHE_MB='65536',
     )
     if option('--root', False):
         env['PROBE_LIB_ROOT'] = str(Path(option('--root')).resolve())
