@@ -16,15 +16,16 @@ void eventError(RMCommandBuffer *cb, bool signal, const char *why)
 // `milliseconds`: a wait's own limit (encodeWaitForEvent:value:timeout:), 0 for none
 - (void)event:(id<MTLEvent>)event value:(uint64_t)value signal:(bool)signal timeout:(uint32_t)milliseconds
 {
-    // Plain compatibility events expose this observation contract too. Kernel-backed shared events additionally carry
-    // their native capability through the atomic job; opaque events retain a compatibility boundary.
+    // Every event this device makes answers these (RawMetalEventObjects.mm), plain ones too, as a shared event of any
+    // device does: one that does not is a plain event of another device, which Metal's validation stops ("event is
+    // associated with a different device")
     if (![(id)event respondsToSelector:@selector(signaledValue)] ||
         ![(id)event respondsToSelector:@selector(setSignaledValue:)] ||
         ![(id)event respondsToSelector:@selector(notifyListener:atValue:block:)]) {
-        [self takeWholeReason:WhyEvent why:@"an event the raw path cannot read, set or be notified of"];
-        eventError(self, signal,
-                   "an event of another device (MTLEvent.h: the device this event can be used with), not a shared "
-                   "event");
+        const char *foreign = "an event of another device (MTLEvent.h: the device this event can be used with), not a "
+                              "shared event: Metal's validation error";
+        eventError(self, signal, foreign);
+        return failCommandBuffer(self, @(foreign));
     }
     [self retain:event];
     Cmd m = cmd(signal ? OpSignalEvent : OpWaitEvent);

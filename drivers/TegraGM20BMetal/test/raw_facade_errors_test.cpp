@@ -5,14 +5,28 @@
 // four-channel 8-bit order or another sample count than its pass, sample positions past the pass's samples, and a state
 // whose colour Apple writes as reinterpreted bits (its draw skipped). The kernel refusing a submission or the channel
 // fails the command buffer Internal naming the kernel's answer (RawMetalPredicates.h predFailure), as a visibility result
-// mode Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis). A command buffer whose later job the kernel
-// refused after earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words.
+// mode or an event Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis, event), and a visibility mode
+// the device has no report page for fails it OutOfMemory. A command buffer whose later job the kernel refused after
+// earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_batch.h"
 #include "bazel/testing/fresh_process.h"
 
 #include <gtest/gtest.h>
 #include <string>
+
+// A plain event this device did not make: none of a shared event's selectors
+@interface ForeignEvent : NSObject <MTLEvent>
+@end
+
+@implementation ForeignEvent
+@synthesize label;
+
+- (id<MTLDevice>)device
+{
+    return nil;
+}
+@end
 
 namespace {
 
@@ -222,6 +236,43 @@ void visibilityModesMetalStops()
     }
 }
 
+// The same offset set twice in one encoder, which Metal's validation stops ("Using the same offset (8) in the
+// visibility buffer twice in the same command encoder is not allowed."): the recording takes both, the encode fails it
+void visibilityOffsetSetTwice()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
+    p.visibilityResultBuffer = [o.device newBufferWithLength:64 options:0];
+    id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
+    [e setRenderPipelineState:o.state];
+    [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
+    for (MTLVisibilityResultMode mode : {MTLVisibilityResultModeCounting, MTLVisibilityResultModeBoolean}) {
+        [e setVisibilityResultMode:mode offset:8];
+        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    }
+    [e endEncoding];
+    expectError(o.device, cb, "call.vis", MTLCommandBufferErrorInternal);
+}
+
+// Metal's validation stops a plain event of another device ("event is associated with a different device."): the
+// command buffer fails at its recording, its draw submitted nowhere
+void eventOfAnotherDevice()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    for (const bool signal : {true, false}) {
+        id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+        drawInto(cb, pass(target(o.device, kPacked)), o.state);
+        if (signal)
+            [cb encodeSignalEvent:[ForeignEvent new] value:1];
+        else
+            [cb encodeWaitForEvent:[ForeignEvent new] value:1];
+        expectError(o.device, cb, "event", MTLCommandBufferErrorInternal);
+    }
+}
+
 // One command buffer completes first, so the channel is made before the kernel refuses the next submission
 void drawnOnce(id<MTLCommandQueue> queue, const Opened &o)
 {
@@ -230,6 +281,23 @@ void drawnOnce(id<MTLCommandQueue> queue, const Opened &o)
     [first commit];
     [first waitUntilCompleted];
     ASSERT_EQ(first.status, MTLCommandBufferStatusCompleted) << text(first.error);
+}
+
+// The kernel has no control memory for the device's visibility report page, made at the first mode set
+void visibilityWithNoReportPage()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    id<MTLCommandQueue> queue = [o.device newCommandQueue];
+    drawnOnce(queue, o);
+    MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
+    p.visibilityResultBuffer = [o.device newBufferWithLength:64 options:0];
+    kernel_model::model.refuseControl = true;
+    id<MTLCommandBuffer> cb = [queue commandBuffer];
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
+    [e setVisibilityResultMode:MTLVisibilityResultModeCounting offset:0];
+    [e endEncoding];
+    expectError(o.device, cb, "call.vis", MTLCommandBufferErrorOutOfMemory);
 }
 
 void kernelRefusesTheSubmission()
@@ -371,6 +439,21 @@ TEST(RawFacadeErrors, SamplePositionsPastThePasssSamplesComplete)
 TEST(RawFacadeErrors, VisibilityModesMetalStopsFail)
 {
     switch_ios::test::ExpectPassesInFreshProcess(visibilityModesMetalStops);
+}
+
+TEST(RawFacadeErrors, AVisibilityOffsetSetTwiceInAnEncoderFails)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(visibilityOffsetSetTwice);
+}
+
+TEST(RawFacadeErrors, AVisibilityModeWithNoReportPageFailsOutOfMemory)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(visibilityWithNoReportPage);
+}
+
+TEST(RawFacadeErrors, AnEventOfAnotherDeviceFails)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(eventOfAnotherDevice);
 }
 
 TEST(RawFacadeErrors, TheKernelRefusingTheSubmissionFails)

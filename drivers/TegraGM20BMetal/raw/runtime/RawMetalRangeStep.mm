@@ -199,6 +199,32 @@ void RMRangeEncode::endKernelShadows()
     encoderShadows_ = false;
 }
 
+// setVisibility refuses a mode set at a result word its Metal encoder set before (Metal's validation: "Using the same
+// offset in the visibility buffer twice in the same command encoder is not allowed"; an offset past
+// maxVisibilityQueryOffset lands on one) and any mode once the device could not make its report page
+// (raw_visibility_pass.cpp, made once): a mode the encoder set before took a slot, so the page was there
+static bool modeSetBefore(RMCommandBuffer *cb, size_t at)
+{
+    for (size_t k = at; k-- > 0 && cb->_plan.operation(k).op != OpRender;)
+        if (cb->_plan.operation(k).op == OpVisibility && cb->_plan.legacy(k).a != MTLVisibilityResultModeDisabled)
+            return true;
+    return false;
+}
+
+static void visibilityFails(RMCommandBuffer *cb, const Cmd &c, const char *why, bool twice)
+{
+    if (twice) {
+        visibilityError(cb, c.a, c.c, why);
+        return failCommandBuffer(cb, [NSString stringWithFormat:@"setVisibilityResultMode:offset: %s: Metal's "
+                                                                @"validation error (MTLRenderCommandEncoder.h)",
+                                                                why]);
+    }
+    if (!predLogged(PredCallVisibility))
+        logPred(PredCallVisibility, c.a, c.c,
+                [NSString stringWithFormat:@"%s: MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h)", why]);
+    failCommandBuffer(cb, @(why), MTLCommandBufferErrorOutOfMemory);
+}
+
 bool RMRangeEncode::command(size_t at)
 {
     RMCommandBuffer *cb = cb_;
@@ -247,8 +273,14 @@ bool RMRangeEncode::command(size_t at)
         ce_->setStageInRegionIndirect(dispatch.stageInBuffer ? &((__bridge RMBuffer *)dispatch.stageInBuffer)->_raw
                                                              : nullptr,
                                       dispatch.stageInOffset);
-        if (!kernels || kernels->count != regions.count)
-            return fail(PredCompute, "a dispatch with an incomplete region plan", c.op);
+        // the recording fails a dispatch of no region plan (RawMetalCompute.mm), and readiness resolves its kernels
+        if (!kernels || kernels->count != regions.count) {
+            constexpr const char *incomplete =
+                "a dispatch whose kernels are not its region plan's: the driver's error, MTLCommandBufferErrorInternal";
+            if (!ahead_)
+                failCommandBuffer(cb, @(incomplete));
+            return fail(PredCompute, incomplete, c.op, 0, incomplete);
+        }
         if (dispatch.arguments) {
             ce_->setState(kernels->jobs[0]->value());
             if (const char *w = nullptr; !ce_->dispatchIndirect(&((__bridge RMBuffer *)dispatch.arguments)->_raw,
@@ -322,10 +354,12 @@ bool RMRangeEncode::command(size_t at)
                 c.a,
                 [(__bridge id)c.obj isKindOfClass:[RMBuffer class]] ? &((__bridge RMBuffer *)c.obj)->_raw : nullptr,
                 c.c, c.b != 0)) {
-            const char *taken = "an offset set twice in an encoder or past maxVisibilityQueryOffset, or no report page";
+            const bool twice = modeSetBefore(cb, at);
+            const char *why = twice ? "an offset its encoder set before, or one past maxVisibilityQueryOffset onto it"
+                                    : "no memory for the device's visibility report page";
             if (!ahead_)
-                visibilityError(cb, c.a, c.c, taken);
-            return fail(PredCallVisibility, taken, c.a, c.c);
+                visibilityFails(cb, c, why, twice);
+            return fail(PredCallVisibility, why, c.a, c.c);
         }
         break;
     case OpDrawIndexed: {
@@ -375,9 +409,22 @@ bool RMRangeEncode::command(size_t at)
     case OpFillTexture: {
         RAW_ENCODE_SPAN(Blit);
         be_->end();
-        if (!fillTexturePass(cb, c, rc))
-            return fail(PredBlitTexFill, "a texture fill into a target the raw path cannot render",
-                        ((__bridge RMTexture *)c.obj)->_descriptor.pixelFormat);
+        if (!fillTexturePass(cb, c, rc)) {
+            __unsafe_unretained RMTexture *t = (__bridge RMTexture *)c.obj;
+            // the fill's pass loads its one target, which render() refuses only as a rotation-4 plane (loaded
+            // transposed, raw_rotated_pass.h) or for want of memory for the target's backing
+            if ((t->_levelsOwner ?: t)->_raw.rotation == 4)
+                return fail(PredBlitTexFill, "a texture fill into a rotation-4 plane, which a pass loads transposed",
+                            t->_descriptor.pixelFormat);
+            constexpr const char *memory = "no memory for a texture fill's target backing";
+            if (!ahead_) {
+                SWITCH_REFUSE("raw", "blit.fill_memory",
+                              "%s (format %lu): MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h)", memory,
+                              (unsigned long)t->_descriptor.pixelFormat);
+                failCommandBuffer(cb, @(memory), MTLCommandBufferErrorOutOfMemory);
+            }
+            return fail(PredBlitTexFill, memory, t->_descriptor.pixelFormat);
+        }
         be_ = rc->blit();
         break;
     }
@@ -397,10 +444,12 @@ bool RMRangeEncode::command(size_t at)
         rc->endPredicationUnit();
         if (!releaseInlineSignal(cb, at, rc)) {
             encoder_ = SIZE_MAX;
-            const char *lost =
-                "a signal whose shared event the kernel refused to import (EventImport): the command buffer fails";
-            if (!ahead_)
+            const char *lost = "an inlined signal whose shared event holds no kernel lease, which its commit took "
+                               "(inlineSignals): the driver's error, MTLCommandBufferErrorInternal";
+            if (!ahead_) {
                 eventError(cb, true, lost);
+                failCommandBuffer(cb, @(lost));
+            }
             return fail(PredEvent, lost);
         }
         break;
