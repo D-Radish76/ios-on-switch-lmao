@@ -15,6 +15,7 @@ int test_failures;
 void test_native_main(void);  // test_native.c
 void test_owl_main(void);     // test_owl.c
 void test_sched_main(void);   // test_sched.c
+void test_radio_main(void);
 #define CHECK(x)                                                         \
     do {                                                                 \
         if (!(x)) {                                                      \
@@ -628,13 +629,13 @@ static void test_ring(void)
 
 // awdl0's requests as wifip2pd sends them, and the PEER_PRESENCE events the stack produces.
 static struct a80211_ring facade_ring;
-static int started, stopped;
+static int started, stopped, start_error;
 
 static int f_start(void *ctx)
 {
     (void)ctx;
     started++;
-    return 0;
+    return start_error;
 }
 
 static void f_stop(void *ctx)
@@ -659,7 +660,7 @@ static void test_facade(void)
     sim_node(1, 0x0b, 60, 4242, 0);
     static struct a80211_awdl f;
     const uint8_t caps[12] = {0x4c, 0x46, 0x0a, 0, 0x01};
-    const struct a80211_awdl_ops ops = {NULL, f_start, f_stop, f_post, NULL};
+    const struct a80211_awdl_ops ops = {NULL, f_start, f_stop, f_post, NULL, NULL};
     a80211_awdl_init(&f, nodes[1].core, &ops, "awdl0", "en0", caps);
     nodes[1].facade = &f;
     uint8_t data[512];
@@ -672,6 +673,23 @@ static void test_facade(void)
     CHECK(a80211_awdl_request(&f, 0, A80211_IOC_CARD_CAPABILITIES, &val, data, &len, 16, 0) == 0 && (data[4] & 1));
     CHECK(a80211_awdl_request(&f, 0, A80211_IOC_SSID, &val, data, &len, 32, 0) == ENOENT);
     CHECK(a80211_awdl_request(&f, 0, A80211_IOC_DRIVER_VERSION, &val, data, &len, 256, 0) == 0 && data[0] == 'S');
+    started = stopped = start_error = 0;
+    struct a80211_awdl_sync_enabled invalid = {1, 0, 1};
+    len = sizeof invalid - 1;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_SYNC_ENABLED, &val, &invalid, &len, sizeof invalid, 0) == EINVAL);
+    len = sizeof invalid;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_SYNC_ENABLED, &val, NULL, &len, len, 0) == EINVAL);
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_SYNC_ENABLED, &val, &invalid, &len, len - 1, 0) == EINVAL);
+    invalid.version = 0;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_SYNC_ENABLED, &val, &invalid, &len, len, 0) == EINVAL);
+    invalid.version = 1;
+    invalid.enabled = 2;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_SYNC_ENABLED, &val, &invalid, &len, len, 0) == EINVAL);
+    CHECK(!started && !f.enabled && !awdl_core_running(f.core));
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_CTL, &val, &invalid, &len, len, 0) == EOPNOTSUPP);
+    data[0] = 0xa5;
+    CHECK(a80211_awdl_request(&f, 0, A80211_IOC_AWDL_STATISTICS, &val, data, &len, 1, 0) == EOPNOTSUPP &&
+          data[0] == 0xa5);
     // wifip2pd turns AWDL on: {version 1, flags 0, enabled 1}
     const struct a80211_awdl_sync_enabled on = {1, 0, 1};
     memcpy(data, &on, sizeof on);
@@ -690,7 +708,9 @@ static void test_facade(void)
     // traffic registration (AirDrop's), strategy, unknown type
     struct a80211_awdl_peer_traffic_registration t;
     memset(&t, 0, sizeof t);
+    t.version = 1;
     t.active = 1;
+    t.unique_id_length = 17;
     memcpy(t.unique_id, "com.apple.airdrop", 17);
     len = sizeof t;
     CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_TRAFFIC_REGISTRATION, &val, &t, &len, sizeof t, 0) == 0 &&
@@ -729,6 +749,472 @@ static void test_facade(void)
     awdl_core_stop(nodes[0].core);
 }
 
+static void test_virtual_interface_state(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    static struct a80211_awdl f;
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {NULL, f_start, f_stop, NULL, NULL, NULL};
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+    started = stopped = start_error = 0;
+    struct switch_a80211_virtual_if_state state = {0, A80211_VIF_ROLE_AWDL, {1, 0, 0}};
+    uint32_t len = sizeof state;
+    int32_t val = 0;
+#if defined(SWITCH_IPSW_KIND_24B119)
+    CHECK(sizeof state == 20);
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == 0);
+    CHECK(!f.enabled && !awdl_core_running(f.core) && started == 0 && stopped == 0);
+    state.active = 1;
+    CHECK(a80211_awdl_request(&f, 0, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EOPNOTSUPP);
+    len--;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EINVAL);
+    len = sizeof state;
+    state.active = 2;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EINVAL);
+    state.active = 1;
+    state.role = A80211_VIF_ROLE_NAN;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EOPNOTSUPP);
+    state.role = A80211_VIF_ROLE_AWDL;
+    state.channel.version = 0;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EINVAL);
+    state.channel.version = 1;
+    state.channel.channel = 149;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EOPNOTSUPP);
+    state.channel.channel = 0;
+    state.channel.flags = 0x10;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EOPNOTSUPP);
+    state.channel.flags = 0;
+    CHECK(started == 0 && stopped == 0 && !f.enabled);
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == 0);
+    CHECK(f.enabled && awdl_core_running(f.core) && started == 1);
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == 0);
+    CHECK(started == 1);
+    state.active = 0;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == 0);
+    CHECK(!f.enabled && !awdl_core_running(f.core) && stopped == 1);
+    state.active = 1;
+    start_error = EIO;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EIO);
+    CHECK(!f.enabled && !awdl_core_running(f.core) && started == 2);
+    start_error = 0;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == 0);
+    CHECK(f.enabled && awdl_core_running(f.core) && started == 3);
+    const struct a80211_awdl_sync_enabled off = {1, 0, 0};
+    len = sizeof off;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_SYNC_ENABLED, &val, (void *)&off, &len, sizeof off, 0) == 0);
+    CHECK(!f.enabled && !awdl_core_running(f.core) && stopped == 2);
+#else
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == EOPNOTSUPP);
+    CHECK(started == 0 && stopped == 0 && !awdl_core_running(f.core));
+#endif
+}
+
+static void test_peer_service_clear(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    struct a80211_awdl f;
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {0};
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+    uint8_t data[21] = {[0] = 1, [10] = 1};
+    uint32_t len = 20;
+    int32_t val = 0;
+#if defined(SWITCH_IPSW_KIND_24B119)
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) == 0);
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) == 0);
+    CHECK(!f.enabled && !awdl_core_running(f.core));
+    for (unsigned i = 19; i <= 21; i += 2) {
+        len = i;
+        CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) == EINVAL);
+    }
+    len = 20;
+    data[0] = 2;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) == EINVAL);
+    data[0] = 1;
+    data[10] = 2;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) == EINVAL);
+    data[10] = 0;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) ==
+          EOPNOTSUPP);
+    data[10] = 1;
+    for (unsigned i = 4; i < 19; i++) {
+        if (i == 10 || i == 16 || i == 17)
+            continue;
+        data[i] = 1;
+        CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) ==
+              EOPNOTSUPP);
+        data[i] = 0;
+    }
+    data[16] = 1;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) == EINVAL);
+    len++;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) == EINVAL);
+#else
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &val, data, &len, sizeof data, 0) ==
+          EOPNOTSUPP);
+#endif
+}
+
+#if defined(SWITCH_IPSW_KIND_24B119)
+static void test_service_action_event(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    uint8_t frame[64] = {
+        [0] = 0xd0, [4] = 0xff, [5] = 0xff, [6] = 0xff, [7] = 0xff, [8] = 0xff, [9] = 0xff,
+        [10] = 0x02, [15] = 0xab, [24] = 0x7f, [26] = 0x17, [27] = 0xf2, [28] = 0x08,
+        [29] = 0x10, [30] = 3, [40] = AWDL_TLV_SERVICE_REQUEST, [41] = 5, [47] = 0x01,
+    };
+    memcpy(frame + 16, awdl_bssid, 6);
+    const struct awdl_rx_meta meta = {0x0807060504030201ull, 5220, -58};
+    const size_t length = 48;
+    CHECK(awdl_core_rx(nodes[0].core, frame, length, &meta) == 0);
+    awdl_core_start(nodes[0].core, 0);
+    CHECK(awdl_core_rx(nodes[0].core, frame, length, &meta) == 1);
+    CHECK(awdl_core_rx(nodes[0].core, frame, length - 1, &meta) == 0);
+    frame[4] = 0x02;
+    CHECK(awdl_core_rx(nodes[0].core, frame, length, &meta) == 0);
+    frame[4] = 0xff;
+
+    uint8_t event[96];
+    memset(event, 0xcc, sizeof event);
+    CHECK(switch_a80211_awdl_action_rx(event, sizeof event - 1, frame, length, &meta) == 0);
+    CHECK(switch_a80211_awdl_action_rx(event, sizeof event, frame, length, &meta) == sizeof event);
+    const uint8_t fields[72] = {
+        [0] = 2, [5] = 0xab, [6] = 0x00, [7] = 0x25, [9] = 0xff, [10] = 0x94, [11] = 0x73,
+        [12] = 1, [16] = 44, [20] = 0x12, [44] = 0xc6, [45] = 0xff, [46] = 0xff, [47] = 0xff,
+        [56] = 1, [57] = 2, [58] = 3, [59] = 4, [60] = 5, [61] = 6, [62] = 7, [63] = 8,
+    };
+    CHECK(memcmp(event, fields, sizeof fields) == 0);
+    CHECK(memcmp(event + sizeof fields, frame + 24, length - 24) == 0);
+    awdl_core_stop(nodes[0].core);
+}
+#endif
+
+static int switch_test_peer_service(struct a80211_awdl *f, const uint8_t *tlv, uint16_t bytes, uint8_t remove)
+{
+    uint8_t data[sizeof(struct a80211_peer_service_request) + AWDL_MAX_FRAME];
+    const struct a80211_peer_service_request request = {.version = 1, .delete_request = remove, .data_len = bytes};
+    memcpy(data, &request, sizeof request);
+    if (bytes)
+        memcpy(data + sizeof request, tlv, bytes);
+    uint32_t length = (uint32_t)sizeof request + bytes;
+    int32_t value = 0;
+    return a80211_awdl_request(f, 1, A80211_IOC_AWDL_PEER_SERVICE_REQUEST, &value, data, &length, sizeof data, 0);
+}
+
+static void test_airdrop_srv_on_scheduled_mif(void)
+{
+    sim_reset(2);
+    sim_node(0, 0x0a, 200, 0, 0);
+    sim_node(1, 0x0b, 100, 0, 0);
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {0};
+    struct a80211_awdl f;
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+
+    // Selector 120 encodes a DNS key, length, offset and SRV RDATA for 0123456789ab._airdrop._tcp.local.
+    static const uint8_t response[] = {
+        2, 49, 0, 25, 0, 12, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b',
+        8, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p', 0xc0, 0x0c, 33, 18, 0, 0, 0,
+        0, 0, 0, 0, 0x22, 0x42, 4, 'p', 'e', 'e', 'r', 5, 'l', 'o', 'c', 'a', 'l', 0,
+    };
+    const int result = switch_test_peer_service(&f, response, sizeof response, 0);
+#if defined(SWITCH_IPSW_KIND_24B119)
+    CHECK(result == 0);
+    CHECK(f.enabled && awdl_core_running(f.core));
+    awdl_core_start(nodes[1].core, 0);
+    const uint64_t deadline = awdl_core_timer(f.core, 0);
+    CHECK(deadline != UINT64_MAX);
+    if (deadline == UINT64_MAX)
+        return;
+    awdl_core_timer(f.core, deadline);
+    int mifs = 0;
+    for (int i = 0; i < nair; ++i) {
+        const struct frame *frame = &air[i];
+        struct awdl_af af;
+        if (awdl_af_parse(frame->data, frame->len, &af) || af.subtype != AWDL_SUBTYPE_MIF)
+            continue;
+        ++mifs;
+        CHECK(frame->from == 0 && frame->freq == 5745);
+        CHECK(af.present & awdl_tlv_bit(AWDL_TLV_SERVICE_RESPONSE));
+        CHECK(frame->len >= sizeof response &&
+              !memcmp(frame->data + frame->len - sizeof response, response, sizeof response));
+        const struct awdl_rx_meta meta = {deadline, frame->freq, -48};
+        CHECK(awdl_core_rx(nodes[1].core, frame->data, frame->len, &meta) == 1);
+        const struct awdl_peer *peer = awdl_core_find(nodes[1].core, af.src);
+        CHECK(peer && peer->reachable);
+        uint8_t event[72 + AWDL_MAX_FRAME];
+        const size_t bytes = switch_a80211_awdl_action_rx(event, sizeof event, frame->data, frame->len, &meta);
+        CHECK(bytes == 72 + frame->len - 24);
+        if (bytes) {
+            CHECK(!memcmp(event, af.src, 6));
+            CHECK(!memcmp(event + 72, frame->data + 24, frame->len - 24));
+        }
+    }
+    CHECK(mifs == 1);
+#else
+    CHECK(result == EOPNOTSUPP && !f.enabled && !awdl_core_running(f.core));
+    CHECK(nair == 0);
+#endif
+}
+
+#if defined(SWITCH_IPSW_KIND_24B119)
+static void test_peer_service_mif(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    struct a80211_awdl f;
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {0};
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+    uint8_t request[] = {1, 7, 0, 0, 0, 0, 0, 0xc0, 0x07, 12};
+    uint8_t response[] = {2, 13, 0, 3, 0, 0xc0, 0x07, 12, 4, 0, 0, 0, 1, 'X', 0xc0, 0x07};
+    uint8_t frame[AWDL_MAX_FRAME];
+    const size_t base_mif = awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
+    const size_t base_psf = awdl_core_build_af(f.core, AWDL_SUBTYPE_PSF, 0, frame, sizeof frame);
+    CHECK(base_mif > 0 && base_psf > 0);
+    CHECK(switch_test_peer_service(&f, request, sizeof request - 1, 0) == EINVAL);
+    request[3] = 1;
+    CHECK(switch_test_peer_service(&f, request, sizeof request, 0) == EOPNOTSUPP);
+    request[3] = 0;
+    response[4] = 1;
+    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == EINVAL);
+    response[4] = 0;
+    response[8]++;
+    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == EINVAL);
+    response[8]--;
+    response[10] = 1;
+    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == EOPNOTSUPP);
+    response[10] = 0;
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif);
+
+    CHECK(switch_test_peer_service(&f, request, sizeof request, 0) == 0);
+    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == 0);
+    CHECK(switch_test_peer_service(&f, response, sizeof response, 0) == 0);
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_PSF, 0, frame, sizeof frame) == base_psf);
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) ==
+          base_mif + sizeof request + sizeof response);
+    CHECK(!memcmp(frame + base_mif, request, sizeof request));
+    CHECK(!memcmp(frame + base_mif + sizeof request, response, sizeof response));
+    CHECK(f.enabled && awdl_core_running(f.core));
+
+    response[13] = 'Y';
+    CHECK(switch_test_peer_service(&f, response, sizeof response, 1) == 0);
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) ==
+          base_mif + sizeof request + sizeof response);
+    response[13] = 'X';
+    CHECK(switch_test_peer_service(&f, response, sizeof response, 1) == 0);
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif + sizeof request);
+    CHECK(!memcmp(frame + base_mif, request, sizeof request));
+    CHECK(switch_test_peer_service(&f, NULL, 0, 1) == 0);
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif);
+
+    uint8_t large[AWDL_MAX_FRAME - 320u] = {1};
+    const uint16_t body = sizeof large - 3;
+    large[1] = (uint8_t)body;
+    large[2] = (uint8_t)(body >> 8);
+    large[7] = 0x22;
+    CHECK(switch_test_peer_service(&f, large, sizeof large, 0) == 0);
+    CHECK(switch_test_peer_service(&f, request, sizeof request, 0) == ENOSPC);
+    CHECK(switch_test_peer_service(&f, large, sizeof large, 0) == 0);
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif + sizeof large);
+    CHECK(!memcmp(frame + base_mif, large, sizeof large));
+    awdl_core_stop(f.core);
+    a80211_awdl_init(&f, f.core, &ops, "awdl0", "en0", caps);
+    CHECK(awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame) == base_mif);
+}
+
+static void test_discovery_demand(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    struct a80211_awdl f;
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {NULL, f_start, f_stop, NULL, NULL, NULL};
+    const uint8_t browse[] = {1, 18, 0, 0, 0, 0, 0, 8, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p', 0xc0, 0x0c, 0, 12, 1};
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+    started = stopped = 0;
+    start_error = EIO;
+    CHECK(switch_test_peer_service(&f, browse, sizeof browse - 1, 0) == EINVAL && !started);
+    CHECK(switch_test_peer_service(&f, browse, sizeof browse, 0) == EIO && !f.enabled && started == 1);
+    uint8_t frame[AWDL_MAX_FRAME];
+    struct awdl_af action;
+    size_t bytes = awdl_core_build_af(f.core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
+    CHECK(!awdl_af_parse(frame, bytes, &action) && !(action.present & awdl_tlv_bit(AWDL_TLV_SERVICE_REQUEST)));
+
+    start_error = EINPROGRESS;
+    CHECK(switch_test_peer_service(&f, browse, sizeof browse, 0) == 0 && f.enabled && started == 2);
+    CHECK(!awdl_core_running(f.core));
+    CHECK(switch_test_peer_service(&f, browse, sizeof browse, 0) == 0 && started == 2);
+    CHECK(switch_test_peer_service(&f, NULL, 0, 1) == 0 && !f.enabled && stopped == 1);
+    CHECK(switch_a80211_awdl_resume(&f, 0) == 0 && started == 2);
+
+    start_error = 0;
+    CHECK(switch_test_peer_service(&f, browse, sizeof browse, 0) == 0 && awdl_core_running(f.core) && started == 3);
+    struct a80211_awdl_peer_traffic_registration traffic = {.version = 1, .active = 1};
+    uint32_t len = sizeof traffic;
+    int32_t val = 0;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_TRAFFIC_REGISTRATION, &val, &traffic, &len,
+                              sizeof traffic, 0) == 0 && started == 3);
+    CHECK(switch_test_peer_service(&f, browse, sizeof browse, 1) == 0 && f.enabled && stopped == 1);
+    traffic.active = 0;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_TRAFFIC_REGISTRATION, &val, &traffic, &len,
+                              sizeof traffic, 0) == 0 && !f.enabled && stopped == 2);
+
+    struct switch_a80211_virtual_if_state state = {0, A80211_VIF_ROLE_AWDL, {1, 0, 0}};
+    len = sizeof state;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == 0);
+    CHECK(switch_test_peer_service(&f, browse, sizeof browse, 0) == 0 && !f.enabled && started == 3);
+    state.active = 1;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_VIRTUAL_IF_STATE, &val, &state, &len, sizeof state, 0) == 0);
+    CHECK(switch_test_peer_service(&f, NULL, 0, 1) == 0 && f.enabled && started == 4 && stopped == 2);
+    switch_a80211_awdl_suspend(&f);
+    CHECK(f.enabled && !awdl_core_running(f.core));
+    CHECK(switch_a80211_awdl_resume(&f, 0) == 0 && awdl_core_running(f.core) && started == 5);
+    awdl_core_stop(f.core);
+}
+
+static void test_parent_state_feedback(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    struct a80211_awdl f;
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {NULL, f_start, f_stop, NULL, NULL, NULL};
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+    started = stopped = start_error = 0;
+    struct switch_a80211_virtual_if_state state = {1, A80211_VIF_ROLE_AWDL, {1, 0, 0}};
+    CHECK(switch_a80211_awdl_parent_state(&f, &state, sizeof state - 1) == EINVAL);
+    CHECK(switch_a80211_awdl_parent_state(&f, &state, sizeof state) == 0 && !f.enabled && !started);
+
+    struct a80211_awdl_peer_traffic_registration traffic = {.version = 1, .active = 1};
+    uint32_t len = sizeof traffic;
+    int32_t val = 0;
+    switch_awdl_core_radio_ready(f.core, 0);
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_TRAFFIC_REGISTRATION, &val, &traffic, &len,
+                              sizeof traffic, 0) == 0 && f.enabled && started == 1);
+    struct a80211_awdl_sync_enabled sync;
+    len = 0;
+    CHECK(a80211_awdl_request(&f, 0, A80211_IOC_AWDL_SYNC_ENABLED, &val, &sync, &len, sizeof sync, 0) == 0 &&
+          !sync.enabled);
+    switch_awdl_core_radio_ready(f.core, 1);
+    CHECK(switch_a80211_awdl_parent_state(&f, &state, sizeof state) == 0 && started == 1);
+
+    switch_a80211_awdl_suspend(&f);
+    state.active = 0;
+    CHECK(switch_a80211_awdl_parent_state(&f, &state, sizeof state) == 0 && f.enabled && !stopped);
+    len = 0;
+    CHECK(a80211_awdl_request(&f, 0, A80211_IOC_AWDL_SYNC_ENABLED, &val, &sync, &len, sizeof sync, 0) == 0 &&
+          !sync.enabled);
+    CHECK(switch_a80211_awdl_resume(&f, 0) == 0 && awdl_core_running(f.core) && started == 2);
+    traffic.active = 0;
+    len = sizeof traffic;
+    CHECK(a80211_awdl_request(&f, 1, A80211_IOC_AWDL_PEER_TRAFFIC_REGISTRATION, &val, &traffic, &len,
+                              sizeof traffic, 0) == 0 && !f.enabled && stopped == 1);
+}
+#endif
+
+static unsigned switch_ready_events;
+
+static void switch_ready_post(void *ctx, uint32_t event, const void *payload, uint32_t len)
+{
+    (void)ctx;
+    CHECK(event == A80211_M_AWDL_SYNC_STATE_CHANGED && !payload && !len);
+    switch_ready_events++;
+}
+
+static void test_facade_readiness(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    static struct a80211_awdl f;
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {NULL, NULL, NULL, switch_ready_post, NULL, NULL};
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+    switch_ready_events = 0;
+    switch_a80211_awdl_refresh(&f);
+    f.enabled = 1;
+    switch_a80211_awdl_refresh(&f);
+    CHECK(switch_ready_events == 0 && !f.published_ready);
+    awdl_core_start(f.core, 0);
+    switch_a80211_awdl_refresh(&f);
+    switch_a80211_awdl_refresh(&f);
+    CHECK(switch_ready_events == 1 && f.published_ready);
+    awdl_core_stop(f.core);
+    switch_a80211_awdl_refresh(&f);
+    switch_a80211_awdl_refresh(&f);
+    CHECK(switch_ready_events == 2 && !f.published_ready && f.enabled);
+    awdl_core_start(f.core, 0);
+    switch_a80211_awdl_refresh(&f);
+    f.enabled = 0;
+    switch_a80211_awdl_refresh(&f);
+    CHECK(switch_ready_events == 4 && !f.published_ready);
+    awdl_core_stop(f.core);
+}
+
+static int switch_committed_active(void *ctx)
+{
+    return *(const int *)ctx;
+}
+
+static void test_facade_committed_activation(void)
+{
+    sim_reset(1);
+    sim_node(0, 0x0a, 200, 0, 0);
+    struct a80211_awdl f;
+    int committed = 0;
+    const uint8_t caps[12] = {0};
+    const struct a80211_awdl_ops ops = {&committed, NULL, NULL, switch_ready_post, NULL, switch_committed_active};
+    a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
+    switch_ready_events = 0;
+    f.enabled = 1;
+    awdl_core_start(f.core, 1000);
+    switch_a80211_awdl_refresh(&f);
+    CHECK(!switch_a80211_awdl_active(&f) && switch_ready_events == 0);
+
+    committed = 1;
+    switch_a80211_awdl_refresh(&f);
+    CHECK(switch_a80211_awdl_active(&f) && switch_ready_events == 1);
+    switch_awdl_core_radio_ready(f.core, 0);
+    switch_a80211_awdl_refresh(&f);
+    CHECK(!switch_awdl_core_ready(f.core) && switch_a80211_awdl_active(&f) && switch_ready_events == 1);
+    struct a80211_awdl_sync_enabled response;
+    uint32_t length = 0;
+    int32_t val = 0;
+    CHECK(!a80211_awdl_request(&f, 0, A80211_IOC_AWDL_SYNC_ENABLED, &val, &response, &length, sizeof response, 0));
+    CHECK(response.enabled == 1 && length == sizeof response);
+    uint32_t state[2];
+    length = 0;
+    CHECK(!a80211_awdl_request(&f, 0, A80211_IOC_STATE, &val, &state, &length, sizeof state, 0));
+    CHECK(state[0] == 1 && state[1] == 4);
+    CHECK(awdl_core_timer(f.core, 2000) == UINT64_MAX);
+    switch_awdl_core_radio_ready(f.core, 1);
+    switch_a80211_awdl_refresh(&f);
+    CHECK(switch_ready_events == 1);
+
+    committed = 0;
+    switch_a80211_awdl_refresh(&f);
+    switch_a80211_awdl_suspend(&f);
+    CHECK(f.enabled && !switch_a80211_awdl_active(&f) && switch_ready_events == 2);
+    committed = 1;
+    switch_a80211_awdl_refresh(&f);
+    CHECK(!switch_a80211_awdl_active(&f) && switch_ready_events == 2);
+    committed = 0;
+    CHECK(!switch_a80211_awdl_resume(&f, 3000));
+    switch_a80211_awdl_refresh(&f);
+    CHECK(!switch_a80211_awdl_active(&f) && switch_ready_events == 2);
+    committed = 1;
+    switch_a80211_awdl_refresh(&f);
+    CHECK(switch_a80211_awdl_active(&f) && switch_ready_events == 3);
+    f.enabled = 0;
+    switch_a80211_awdl_refresh(&f);
+    CHECK(!switch_a80211_awdl_active(&f) && switch_ready_events == 4);
+    awdl_core_stop(f.core);
+}
+
 int main(int argc, char **argv)
 {
     verbose = argc > 1 && !strcmp(argv[1], "-v");
@@ -741,9 +1227,23 @@ int main(int argc, char **argv)
     test_tsf_clock();
     test_ring();
     test_facade();
+    test_virtual_interface_state();
+    test_peer_service_clear();
+    test_airdrop_srv_on_scheduled_mif();
+#if defined(SWITCH_IPSW_KIND_24B119)
+    test_peer_service_mif();
+    test_discovery_demand();
+    test_parent_state_feedback();
+#endif
+#if defined(SWITCH_IPSW_KIND_24B119)
+    test_service_action_event();
+#endif
+    test_facade_readiness();
+    test_facade_committed_activation();
     test_native_main();
     test_owl_main();
     test_sched_main();
+    test_radio_main();
     sim_reset(0);
     if (failures) {
         fprintf(stderr, "%d check(s) failed\n", failures);

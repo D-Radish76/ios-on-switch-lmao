@@ -1,0 +1,52 @@
+load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//bazel/lint:defs.bzl", "lint_files")
+
+lint_files()
+
+py_library(
+    name = "a3_cpu_harness",
+    srcs = ["a3_rx_cpu_test.py"],
+    visibility = ["//drivers/SwitchWLAN/firmware/a3:__pkg__"],
+)
+
+py_library(
+    name = "rom_capture_lib",
+    srcs = ["rom_capture.py"],
+    data = ["//drivers/SwitchWLAN:firmware/rom_capture.h"],
+)
+
+py_binary(
+    name = "rom_capture",
+    srcs = ["rom_capture.py"],
+    data = ["//drivers/SwitchWLAN:firmware/rom_capture.h"],
+)
+
+py_test(
+    name = "rom_capture_test",
+    srcs = ["rom_capture_test.py"],
+    data = ["//drivers/SwitchWLAN:firmware/brcm/brcmfmac4356A3-pcie.bin"],
+    deps = [":rom_capture_lib"],
+)
+
+py_test(
+    name = "rom_capture_cpu_test",
+    srcs = ["rom_capture_cpu_test.py"],
+    data = ["rom_capture.S"],
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
+    deps = [":rom_capture_lib"],
+)
+
+py_test(
+    name = "a3_rx_cpu_test",
+    srcs = ["a3_rx_cpu_test.py"],
+    data = ["//drivers/SwitchWLAN/firmware/a3:rx_test_sources"],
+    tags = [
+        "manual",
+        "no-sandbox",
+    ],
+)

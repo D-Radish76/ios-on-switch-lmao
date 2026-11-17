@@ -3,60 +3,151 @@
 // (now, or queued for its next slot), and AWDL data frames in, A-MSDUs included, as Ethernet frames.
 #include "awdl_internal.h"
 
-static unsigned slot_at(const struct awdl_core *c, uint64_t t)
+struct channel_window {
+    uint64_t open, close, boundary;
+    uint8_t channel;
+};
+
+static struct channel_window channel_window(const struct awdl_chan *seq, unsigned count, uint64_t phase, uint64_t now)
 {
-    return (awdl_core_aw_seq(c, t) / AWDL_EAW_AWS) % AWDL_SEQ_SLOTS;
+    const unsigned slot = (unsigned)((phase / AWDL_EAW_US) % AWDL_SEQ_SLOTS);
+    const uint64_t elapsed = phase % AWDL_EAW_US;
+    const uint8_t current = awdl_chan_primary(seq[slot % count]);
+    const uint64_t boundary = now + AWDL_EAW_US - elapsed;
+    struct channel_window w = {now, boundary, boundary, current};
+    if (current != awdl_chan_primary(seq[((slot + AWDL_SEQ_SLOTS - 1) % AWDL_SEQ_SLOTS) % count]) &&
+        elapsed < AWDL_SLOT_GUARD_US)
+        w.open += AWDL_SLOT_GUARD_US - elapsed;
+    if (current != awdl_chan_primary(seq[((slot + 1) % AWDL_SEQ_SLOTS) % count]))
+        w.close = boundary - now > AWDL_SLOT_GUARD_US ? boundary - AWDL_SLOT_GUARD_US : now;
+    return w;
 }
 
-// Is `dst` (a peer, or any group address) on our channel in the slot containing `t`?
-static int listening(const struct awdl_core *c, const uint8_t *dst, uint64_t t)
+// Both phases are expressed in local radio TSF. Their slot boundaries may fall at different times.
+static uint64_t common_window(const struct awdl_core *c, const struct awdl_peer *p, uint64_t now, uint64_t *next)
 {
-    const struct awdl_chan ours = awdl_core_channel_at(c, t);
-    if (!awdl_chan_freq(ours))
-        return 0;
-    if (awdl_is_group(dst))
-        return 1;
-    const struct awdl_peer *p = awdl_core_find(c, dst);
-    if (!p || !p->reachable)
-        return 0;
-    if (!p->has_seq || !p->seq.count)
-        return 1;
-    return awdl_chan_primary(p->seq.chan[slot_at(c, t) % p->seq.count]) == awdl_chan_primary(ours);
+    for (uint64_t at = now; at - now < AWDL_SEQ_US;) {
+        const uint64_t phase = at - c->base_tsf + (uint64_t)c->base_seq * AWDL_AW_US;
+        struct channel_window w = channel_window(c->cfg.seq, AWDL_SEQ_SLOTS, phase, at);
+        if (p) {
+            const uint64_t peer_phase = at - p->next_aw_tsf + (uint64_t)p->next_aw_seq * AWDL_AW_US;
+            const struct channel_window other = channel_window(p->seq.chan, p->seq.count, peer_phase, at);
+            if (other.channel != w.channel)
+                w.channel = 0;
+            if (other.open > w.open)
+                w.open = other.open;
+            if (other.close < w.close)
+                w.close = other.close;
+            if (other.boundary < w.boundary)
+                w.boundary = other.boundary;
+        }
+        if (w.channel && w.open < w.close) {
+            if (w.open == now)
+                return w.close;
+            if (w.open < *next)
+                *next = w.open;
+            break;
+        }
+        at = w.boundary;
+    }
+    return 0;
 }
 
-static int send(struct awdl_core *c, const uint8_t *frame, size_t len, int group, uint64_t now)
+static uint64_t transmit_window(struct awdl_core *c, const uint8_t *dst, const struct awdl_peer *p, uint64_t now)
+{
+    const uint8_t mdns6[6] = {0x33, 0x33, 0, 0, 0, 0xfb};
+    const uint8_t mdns4[6] = {1, 0, 0x5e, 0, 0, 0xfb};
+    if (p || (!awdl_addr_eq(dst, mdns6) && !awdl_addr_eq(dst, mdns4)))
+        return common_window(c, p, now, &c->next_data);
+    uint64_t next = UINT64_MAX;
+    for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i) {
+        const struct awdl_peer *peer = &c->peers[i];
+        if (peer->used && peer->reachable && peer->seq.count) {
+            const uint64_t end = common_window(c, peer, now, &next);
+            if (end)
+                return end;
+        }
+    }
+    if (next == UINT64_MAX)
+        return common_window(c, NULL, now, &c->next_data);
+    if (next < c->next_data)
+        c->next_data = next;
+    return 0;
+}
+
+static int send(struct awdl_core *c, const uint8_t *frame, size_t len, int group, uint64_t now, uint64_t stay)
 {
     const uint16_t freq = awdl_chan_freq(awdl_core_channel_at(c, now));
-    const uint64_t stay = freq != c->infra_mhz ? awdl_eaw_start(c, now) + AWDL_EAW_US : 0;
-    if (c->host.tx(c->host.ctx, frame, len, freq, stay, group)) {
+    const int result = c->host.tx(c->host.ctx, frame, len, freq, stay, group);
+    if (result) {
         c->stats.tx_refused++;
-        return -3;
+        return result;
     }
     c->stats.data_tx++;
     return 0;
 }
 
-void awdl_data_flush(struct awdl_core *c, uint64_t now)
+void awdl_data_forget(struct awdl_core *c, const uint8_t peer[6])
 {
     unsigned kept = 0;
+    for (unsigned i = 0; i < c->txq_count; ++i) {
+        struct awdl_txq_entry *e = &c->txq[(c->txq_head + i) % AWDL_TXQ_FRAMES];
+        if (awdl_addr_eq(e->dst, peer)) {
+            ++c->stats.data_drop;
+            continue;
+        }
+        if (kept != i)
+            c->txq[(c->txq_head + kept) % AWDL_TXQ_FRAMES] = *e;
+        ++kept;
+    }
+    c->txq_count = kept;
+}
+
+void awdl_data_flush(struct awdl_core *c, uint64_t now)
+{
+    if (!switch_awdl_core_ready(c))
+        return;
+    c->waiting_credit = 0;
+    c->next_data = UINT64_MAX;
+    unsigned kept = 0;
+    int blocked = 0;
     const unsigned n = c->txq_count;
     for (unsigned i = 0; i < n; ++i) {
         struct awdl_txq_entry *e = &c->txq[(c->txq_head + i) % AWDL_TXQ_FRAMES];
-        if (listening(c, e->dst, now)) {
-            if (!send(c, e->frame, e->len, e->group, now) && e->transfer)
-                awdl_sched_transfer(c, e->dst, 1, now);
+        const struct awdl_peer *p = e->group ? NULL : awdl_core_find(c, e->dst);
+        if (now >= e->expires || (!e->group && (!p || !p->reachable || !p->seq.count))) {
+            c->stats.data_drop++;
             continue;
         }
-        if (!e->group && !awdl_core_find(c, e->dst)) {
-            c->stats.data_drop++;  // the peer went away
-            continue;
+        uint64_t stay = blocked ? 0 : transmit_window(c, e->dst, p, now);
+        if (stay) {
+            const int change = e->transfer && c->mode != AWDL_MODE_TRANSFER;
+            if (e->transfer)
+                awdl_sched_transfer(c, e->dst, 1, now);
+            if (!switch_awdl_core_ready(c)) {
+                blocked = 1;
+            } else if (!change || (stay = transmit_window(c, e->dst, p, now)) != 0) {
+                const int result = send(c, e->frame, e->len, e->group, now, stay);
+                if (!result)
+                    continue;
+                if (result != AWDL_TX_BUSY) {
+                    c->stats.data_drop++;
+                    continue;
+                }
+                c->waiting_credit = 1;
+                blocked = 1;
+            }
         }
         struct awdl_txq_entry *k = &c->txq[(c->txq_head + kept) % AWDL_TXQ_FRAMES];
         if (k != e)
             *k = *e;
+        if (k->expires < c->next_data)
+            c->next_data = k->expires;
         kept++;
     }
     c->txq_count = kept;
+    if (!kept)
+        c->next_data = UINT64_MAX;
 }
 
 int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64_t now)
@@ -73,27 +164,42 @@ int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64
     }
     if (awdl_native(c))
         return awdl_native_output(c, eth, len, now);
-    const uint16_t seq = c->data_seq++;
-    if (listening(c, eth, now) && !c->txq_count) {
-        const size_t n = awdl_data_encap(eth, len, c->cfg.addr, seq, c->scratch, sizeof c->scratch);
-        const int e = n ? send(c, c->scratch, n, group, now) : -3;
-        if (!e)
-            awdl_sched_traffic(c, eth, len, 1, now);
-        return e;
-    }
+    if (p && !p->seq.count)
+        return -2;
     if (c->txq_count == AWDL_TXQ_FRAMES) {
         c->stats.data_drop++;
         return -4;
     }
     struct awdl_txq_entry *e = &c->txq[(c->txq_head + c->txq_count) % AWDL_TXQ_FRAMES];
-    const size_t n = awdl_data_encap(eth, len, c->cfg.addr, seq, e->frame, sizeof e->frame);
+    const size_t n = awdl_data_encap(eth, len, c->cfg.addr, c->data_seq, e->frame, sizeof e->frame);
     if (!n)
         return -5;
     e->len = (uint16_t)n;
+    e->expires = (now > c->last_observation ? now : c->last_observation) + AWDL_TXQ_LIFETIME_US;
     e->group = (uint8_t)group;
     e->transfer = (uint8_t)awdl_transfer_frame(eth, len);
     memcpy(e->dst, eth, 6);
+    if (now || c->radio_ready)
+        awdl_sched_traffic(c, eth, len, 1, now);
+    const uint64_t stay = switch_awdl_core_ready(c) ? transmit_window(c, eth, p, now) : 0;
+    if (!c->txq_count && stay) {
+        const int result = send(c, e->frame, e->len, group, now, stay);
+        if (!result) {
+            c->data_seq++;
+            return 0;
+        }
+        if (result != AWDL_TX_BUSY) {
+            c->stats.data_drop++;
+            return result;
+        }
+        c->waiting_credit = 1;
+    } else if (stay && !c->waiting_credit) {
+        c->next_data = now;
+    }
+    c->data_seq++;
     c->txq_count++;
+    if (e->expires < c->next_data)
+        c->next_data = e->expires;
     return 0;
 }
 
@@ -115,7 +221,8 @@ void awdl_data_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struc
             p = &c->peers[i];
     }
     if (p) {
-        p->last_seen = m->tsf;
+        if (m->tsf > p->last_seen)
+            p->last_seen = m->tsf;
         if (retry && p->has_data_seq && p->last_data_seq == seq)
             return;  // a retransmission we already took
         p->last_data_seq = seq;
@@ -130,6 +237,7 @@ void awdl_data_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struc
         c->stats.data_rx++;
         if (c->host.deliver)
             c->host.deliver(c->host.ctx, c->scratch, l);
-        awdl_sched_traffic(c, c->scratch, l, 0, m->tsf);
+        if (c->last_observation - m->tsf < AWDL_TRANSFER_HOLD_US)
+            awdl_sched_traffic(c, c->scratch, l, 0, m->tsf);
     }
 }

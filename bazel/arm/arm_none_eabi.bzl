@@ -17,6 +17,7 @@ MEMBERS = [
     "libexec/gcc/arm-none-eabi/{gcc}/cc1",
     "libexec/gcc/arm-none-eabi/{gcc}/collect2",
     "libexec/gcc/arm-none-eabi/{gcc}/lto-wrapper",
+    "libexec/gcc/arm-none-eabi/{gcc}/lto1",
     "libexec/gcc/arm-none-eabi/{gcc}/liblto_plugin.so",
     "lib/gcc/arm-none-eabi/{gcc}/include",
     "lib/gcc/arm-none-eabi/{gcc}/include-fixed",

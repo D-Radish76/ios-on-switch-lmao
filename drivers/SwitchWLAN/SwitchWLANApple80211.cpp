@@ -17,6 +17,7 @@
 #include <sys/systm.h>
 #include "SwitchWLANApple80211.h"
 #include "SwitchWLANAwdlRadio.h"
+#include "awdl/awdl_apple80211.h"
 #include "SwitchWLANNet.h"
 #include "SwitchWLANStation.h"
 
@@ -314,6 +315,16 @@ int answer(bool set, apple80211req &rq)
                 return EFAULT;
             return r;
         }
+#if defined(SWITCH_IPSW_KIND_24B119)
+        case A80211_IOC_VIRTUAL_IF_STATE: {
+            if (rq.req_len != sizeof(switch_a80211_virtual_if_state))
+                return EINVAL;
+            switch_a80211_virtual_if_state state;
+            if (copy_in(rq, &state, sizeof state))
+                return EFAULT;
+            return switch_wlan_awdl_vif_state(&state, sizeof state);
+        }
+#endif
         case kBtCoexFlags:
         case kBtPower:
             // What Bluetooth does, for the radio's coexistence handling and its stats line (SwitchWLANCoex.h); wifid

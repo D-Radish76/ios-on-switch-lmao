@@ -166,5 +166,9 @@ size_t awdl_core_build_af(struct awdl_core *c, uint8_t subtype, uint64_t now, ui
     write_sync_params(c, &w, now);
     write_election(c, &w);
     awdl_write_extras(c, &w, subtype == AWDL_SUBTYPE_MIF);
+#if defined(SWITCH_IPSW_KIND_24B119)
+    if (subtype == AWDL_SUBTYPE_MIF && !awdl_native(c) && c->switch_service_bytes)
+        awdl_w_bytes(&w, c->switch_services, c->switch_service_bytes);
+#endif
     return w.overflow ? 0 : w.at;
 }

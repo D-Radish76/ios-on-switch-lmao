@@ -20,6 +20,8 @@ extern "C" {
 #define AWDL_AW_US             ((uint64_t)AWDL_AW_TU * AWDL_TU_US)            // 16384
 #define AWDL_EAW_US            (AWDL_AW_US * AWDL_EAW_AWS)                    // 65536
 #define AWDL_SEQ_US            (AWDL_EAW_US * AWDL_SEQ_SLOTS)                 // 1048576
+// Give an admitted datagram a full rendezvous cycle after transfer priority expires.
+#define AWDL_TXQ_LIFETIME_US   (AWDL_TRANSFER_HOLD_US + AWDL_SEQ_US)
 #define AWDL_PSF_US            ((uint64_t)AWDL_PSF_INTERVAL_TU * AWDL_TU_US)  // 112640
 #define AWDL_PSF_FOLLOWER_US   ((uint64_t)440 * AWDL_TU_US)  // Apple's other action frame period (Stute et al. §7.4)
 #define AWDL_ROOT_COUNTER_US   3140000u  // a root's self counter ticks every π s (OWL's reading of IO80211Family)
@@ -28,6 +30,11 @@ extern "C" {
 // An away slot opens this far in: the peers synchronised to the same master switch channel at the slot boundary too,
 // and on a radio without hops that first send is what takes it to the slot's channel (host.tx).
 #define AWDL_SLOT_GUARD_US 2048u
+
+#if defined(SWITCH_IPSW_KIND_24B119)
+// Reserve room for the management header and all mandatory MIF attributes.
+#define SWITCH_AWDL_SERVICE_BYTES (AWDL_MAX_FRAME - 320u)
+#endif
 
 struct awdl_writer {
     uint8_t *buf;
@@ -46,6 +53,7 @@ void awdl_w_u32(struct awdl_writer *w, uint32_t v);
 void awdl_w_chanseq(struct awdl_writer *w, const struct awdl_chan seq[AWDL_SEQ_SLOTS]);
 
 struct awdl_txq_entry {
+    uint64_t expires;
     uint16_t len;
     uint8_t group, transfer;
     uint8_t dst[6];
@@ -63,13 +71,17 @@ static inline int awdl_is_group(const uint8_t *a)
 }
 
 struct awdl_core {
+    uint8_t radio_ready;
+    uint8_t receiving, schedule_pending, waiting_credit;
     struct awdl_host host;
     struct awdl_config cfg;
     int running;
+    uint32_t switch_generation;
     // timing: AW number base_seq starts at local TSF base_tsf
     uint64_t base_tsf;
     uint16_t base_seq;
     uint64_t next_psf, next_slot, next_mif, last_counter_tick, anchor;
+    uint64_t next_data, last_observation;
     // election
     enum awdl_role role;
     struct awdl_election_v2 adv;  // what we advertise (root, parent, hops, metrics, counters)
@@ -79,7 +91,17 @@ struct awdl_core {
     struct awdl_txq_entry txq[AWDL_TXQ_FRAMES];
     unsigned txq_head, txq_count;
     uint16_t data_seq, mgmt_seq, service_update_indicator;
+#if defined(SWITCH_IPSW_KIND_24B119)
+    uint16_t switch_service_bytes;
+    uint8_t switch_services[SWITCH_AWDL_SERVICE_BYTES];
+#endif
     uint8_t seq_fixed;  // awdl_core_set_sequence named the sequence: no schedule rebuilds
+#if DEVELOPMENT || DEBUG
+    uint8_t switch_home_trial_channel;
+#endif
+    struct awdl_chan switch_requested_seq[AWDL_SEQ_SLOTS];
+    uint8_t switch_channels_limited;
+    uint16_t switch_legal_channels;
     struct awdl_stats stats;
     // native backend: the firmware's AWDL interface and its bring-up
     uint8_t nstate;        // AWDL_N_*
@@ -92,6 +114,10 @@ struct awdl_core {
     uint8_t social5;          // 5 GHz social channel learnt from the master's sequence (44 or 149), 0 before
     int16_t fw_ifidx;         // the AWDL interface's firmware index (WLC_E_IF add), -1 before
     uint8_t fw_bsscfg;
+    uint16_t switch_fw_pending;
+    // Ordered completions can still belong to the old format after a retry has been queued.
+    uint16_t switch_payload_original_pending, switch_empty_seq_pending;
+    uint32_t switch_fw_unsupported;
     uint16_t infra_mhz;
     uint64_t create_deadline, aftx_at, settle_at;  // 0: not pending
     uint8_t pushed_role, pushed_parent[6], pushed_root[6];
@@ -101,6 +127,8 @@ struct awdl_core {
 enum {
     AWDL_N_OFF,
     AWDL_N_CREATING,
+    SWITCH_AWDL_N_CONFIGURING,
+    SWITCH_AWDL_N_STOPPING,
     AWDL_N_UP
 };
 
@@ -152,6 +180,7 @@ int awdl_native_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint
 
 // awdl_data.c: the soft backend's data path.
 void awdl_data_flush(struct awdl_core *c, uint64_t now);
+void awdl_data_forget(struct awdl_core *c, const uint8_t peer[6]);
 void awdl_data_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struct awdl_rx_meta *m);
 
 // awdl_core.c: the soft backend's sequence changed (mode, infra, social channel): install it on the radio.

@@ -77,12 +77,18 @@ struct fw_call {
 };
 static struct fw_call calls[96];
 static int ncalls, presents, absents, eths, delivered;
+static int switch_completed;
+static uint32_t switch_mock_unsupported;
+static const char *switch_fail_name, *switch_reject_name;
+static int switch_fail_status, switch_fail_count;
 static uint8_t last_presence[6], last_eth[1600], last_rx[1600];
 static size_t last_eth_len, last_rx_len;
 
 static int mock_iovar(void *ctx, int32_t ifidx, int get, const char *name, const void *buf, size_t len)
 {
     (void)ctx;
+    if (switch_reject_name && !strcmp(name, switch_reject_name))
+        return -1;
     if (ncalls == 96 || len > sizeof calls[0].buf)
         return -1;
     struct fw_call *c = &calls[ncalls++];
@@ -142,6 +148,10 @@ static const struct fw_call *find_call(const char *name, int nth)
 static void reset_calls(void)
 {
     ncalls = presents = absents = eths = delivered = 0;
+    switch_completed = 0;
+    switch_mock_unsupported = 0;
+    switch_fail_name = switch_reject_name = NULL;
+    switch_fail_status = switch_fail_count = 0;
 }
 
 // ---- encoders against the series' traced bytes and the 2014 layouts ------------------------------------------------------
@@ -304,6 +314,16 @@ static void test_encoders(void)
     enc[19] ^= 1;
     NCHECK(bcm_awdl_decap(enc, 34, dec, sizeof dec, &sq) == 0);  // another LLC/SNAP
     NCHECK(bcm_awdl_encap(eth, 13, 0, enc, sizeof enc) == 0 && bcm_awdl_encap(eth, sizeof eth, 0, enc, 33) == 0);
+    uint8_t maximum[SWITCH_AWDL_NATIVE_FRAME_MAX + 1] = {0}, wire[1515], restored[1500];
+    NCHECK(bcm_awdl_encap(maximum, SWITCH_AWDL_NATIVE_FRAME_MAX, 9, wire, sizeof wire) == 1514);
+    NCHECK(bcm_awdl_decap(wire, 1514, restored, sizeof restored, &sq) == SWITCH_AWDL_NATIVE_FRAME_MAX && sq == 9);
+    NCHECK(!bcm_awdl_encap(maximum, sizeof maximum, 0, wire, sizeof wire));
+    wire[12] = 5;
+    wire[13] = 0xdd;
+    NCHECK(!bcm_awdl_decap(wire, sizeof wire, restored, sizeof restored, NULL));
+    NCHECK(bcm_awdl_encap(eth, sizeof eth, 0, enc, sizeof enc) == 34);
+    memset(enc + 34, 0, sizeof enc - 34);
+    NCHECK(bcm_awdl_decap(enc, 60, dec, sizeof dec, NULL) == sizeof eth && !memcmp(dec, eth, sizeof eth));
 
     // received frames: the be16-versioned header, big-endian fields, then the frame from its category
     uint8_t ev[64] = {0x00, 0x01, 0xe0, 0x9b, 0xff, 0xff, 0xff, 0xc4, 0,    0,    0,    1,
@@ -333,6 +353,22 @@ static void test_encoders(void)
 static void test_probe(void)
 {
     uint8_t b[64];
+    NCHECK(switch_awdl_probe_reply_size(BCM_PROBE_INTERFACE_CREATE) == 4 &&
+           switch_awdl_probe_reply_size(BCM_PROBE_AWDL_CONFIG) == 256 &&
+           !switch_awdl_probe_reply_size(BCM_PROBE_COUNT));
+    uint8_t echo[64] = "sta_monitor";
+    NCHECK(switch_awdl_reply_is_echo(echo, 12, echo, sizeof echo));
+    NCHECK(switch_awdl_reply_is_echo(echo, 12, echo, 4));
+    NCHECK(switch_awdl_reply_is_echo(echo, 12, echo, 0));
+    const uint8_t version[4] = {3, 0, 0, 0};
+    NCHECK(!switch_awdl_reply_is_echo((const uint8_t *)"interface_create", 17, version, sizeof version));
+    uint8_t changed[64];
+    memcpy(changed, echo, sizeof changed);
+    changed[63] = 1;
+    NCHECK(switch_awdl_reply_is_echo(echo, 12, changed, sizeof changed));
+    changed[0] ^= 1;
+    NCHECK(!switch_awdl_reply_is_echo(echo, 12, changed, sizeof changed));
+    NCHECK(!switch_awdl_reply_is_echo(NULL, 0, version, sizeof version));
     NCHECK(bcm_probe_request(BCM_PROBE_INTERFACE_CREATE, b, sizeof b) == 21 &&
            !memcmp(b, "interface_create\0\0\0\0\0", 21));
     NCHECK(bcm_probe_request(BCM_PROBE_AWDL_PEER_OP, b, sizeof b) == 13 + 9 && !memcmp(b, "awdl_peer_op", 13) &&
@@ -353,6 +389,8 @@ static void test_probe(void)
            !bcm_probe_has(&p, BCM_PROBE_SLOT_BSS) && !(bcm_probe_absent(&p) & (1u << BCM_PROBE_AWDL_IF)));
     // interface_create answering version 3 (the series' condition)
     const uint8_t v3[4] = {3, 0, 0, 0};
+    bcm_probe_record(&p, BCM_PROBE_INTERFACE_CREATE, 0, v3, 3);
+    NCHECK(!p.ifc_version);
     bcm_probe_record(&p, BCM_PROBE_INTERFACE_CREATE, 0, v3, 4);
     NCHECK(p.ifc_version == 3 && bcm_awdl_api_of(&p) == BCM_AWDL_API_IFC_V3);
     const uint8_t v2[4] = {2, 0, 0, 0};
@@ -535,10 +573,11 @@ static struct awdl_core *make_native(const uint8_t me[6], uint8_t api, uint32_t 
     cfg.backend = AWDL_BACKEND_NATIVE;
     cfg.fw_api = api;
     cfg.fw_absent = absent;
+    switch_mock_unsupported = absent;
     const struct awdl_host h = {NULL, mock_tx, NULL, mock_peer, mock_deliver, NULL, mock_iovar, mock_tx_eth};
     NCHECK(awdl_core_init(core, &h, &cfg) == 0);
     const uint8_t caps[12] = {0x4c, 0x46, 0x0a, 0, 0x01};
-    const struct a80211_awdl_ops ops = {NULL, NULL, NULL, NULL, NULL};
+    const struct a80211_awdl_ops ops = {NULL, NULL, NULL, NULL, NULL, NULL};
     a80211_awdl_init(f, core, &ops, "awdl0", "en0", caps);
     facade = f;
     return core;
@@ -552,7 +591,8 @@ static void sync_enabled(struct a80211_awdl *f, int on, uint64_t now)
     NCHECK(a80211_awdl_request(f, 1, A80211_IOC_AWDL_SYNC_ENABLED, &val, &s, &len, sizeof s, now) == 0);
 }
 
-static void if_event(struct awdl_core *core, const uint8_t addr[6], uint8_t ifidx, uint8_t opcode, uint64_t now)
+static void switch_if_event_pending(struct awdl_core *core, const uint8_t addr[6], uint8_t ifidx, uint8_t opcode,
+                                    uint64_t now)
 {
     struct awdl_fw_event ev;
     memset(&ev, 0, sizeof ev);
@@ -560,6 +600,29 @@ static void if_event(struct awdl_core *core, const uint8_t addr[6], uint8_t ifid
     memcpy(ev.addr, addr, 6);
     const uint8_t d[5] = {ifidx, opcode, 0, ifidx, 9};
     awdl_core_fw_event(core, &ev, d, sizeof d, now);
+}
+
+static void switch_complete_calls(struct awdl_core *core, uint64_t now)
+{
+    while (switch_completed < ncalls && awdl_core_running(core)) {
+        const struct fw_call *call = &calls[switch_completed++];
+        int status = 0;
+        for (unsigned i = 0; i < BCM_PROBE_COUNT; ++i) {
+            if (!strcmp(bcm_probe_names[i], call->name) && ((switch_mock_unsupported >> i) & 1u))
+                status = BCME_UNSUPPORTED;
+        }
+        if (switch_fail_count && switch_fail_name && !strcmp(call->name, switch_fail_name)) {
+            status = switch_fail_status;
+            switch_fail_count--;
+        }
+        awdl_core_fw_result(core, call->name, status, now);
+    }
+}
+
+static void if_event(struct awdl_core *core, const uint8_t addr[6], uint8_t ifidx, uint8_t opcode, uint64_t now)
+{
+    switch_if_event_pending(core, addr, ifidx, opcode, now);
+    switch_complete_calls(core, now);
 }
 
 // The phone's frame as WLC_E_ACTION_FRAME_RX: the v1 header (rssi -60, big endian), then the frame from its category
@@ -783,26 +846,16 @@ static void test_flow_awdl_if(void)
            bytes_eq(calls[0].buf, 20, "02000000 01000000 002500ff9473 02aabbccddee"));
     if_event(core, me, 1, 1, 1100000);
     NCHECK(awdl_core_fw_ifidx(core) == 1);
-    // the series' order with the 7.x forms and without what the table lacks
-    static const char *const order[] = {"awdl_payload",
-                                        "awdl_sync_params",
-                                        "awdl_config",
-                                        "awdl_chan_seq",
-                                        "awdl_payload",
-                                        "awdl_election_tree",
-                                        "awdl",
-                                        "awdl_presencemode",
-                                        "awdl_chan_seq",
-                                        "awdl_payload",
-                                        "awdl_sync_params",
-                                        "awdl_opmode",
-                                        "awdl_election_tree",
-                                        "awdl_sync_params"};
+    static const char *const order[] = {
+        "awdl_payload",      "awdl_aftxmode",      "awdl_sync_params", "awdl_osoc_chan",     "awdl_config",
+        "awdl_psf_dwell",    "awdl_chan_seq",      "awdl_payload",     "awdl_election_tree", "awdl",
+        "awdl_presencemode", "awdl_chan_seq",      "awdl_oob_af_auto", "awdl_payload",       "awdl_sync_params",
+        "awdl_opmode",       "awdl_election_tree", "awdl_sync_params"};
     const int n = (int)(sizeof order / sizeof order[0]);
     NCHECK(ncalls == 1 + n);
     for (int i = 0; i < n && 1 + i < ncalls; ++i)
         NCHECK(!strcmp(calls[1 + i].name, order[i]) && calls[1 + i].ifidx == 1);
-    NCHECK(awdl_core_stats(core)->iovar_skipped == 4);  // aftxmode, osoc_chan, psf_dwell, oob_af_auto
+    NCHECK(awdl_core_stats(core)->iovar_skipped == 0 && awdl_core_stats(core)->iovar_refused == 4);
     const struct fw_call *cfg = find_call("awdl_config", 0);
     NCHECK(cfg->len == 28 && rd32(cfg->buf) == 1 && cfg->buf[4] == 149 && cfg->buf[20] == 2);
     const struct fw_call *pl = find_call("awdl_payload", 0);
@@ -879,7 +932,7 @@ static void test_flow_awdl_if(void)
     awdl_core_fw_result(core, "awdl_payload", BCME_BADLEN, 1700000);
     NCHECK(ncalls == before + 1 && !strcmp(calls[before].name, "awdl_payload") &&
            (uint32_t)(calls[before].buf[0] | calls[before].buf[1] << 8) + 2 == calls[before].len);
-    awdl_core_fw_result(core, "awdl_payload", BCME_BADLEN, 1700000);
+    awdl_core_fw_result(core, "awdl_payload", 0, 1700000);
     NCHECK(ncalls == before + 1 && awdl_core_running(core));
     // off: awdl 0 on the AWDL interface, then awdl_if down on the station's
     before = ncalls;
@@ -892,6 +945,113 @@ static void test_flow_awdl_if(void)
     awdl_core_stop(phone);
     free(core);
     free(phone);
+}
+
+static void switch_test_configuration(void)
+{
+    const uint8_t me[6] = {0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee};
+    static struct a80211_awdl f;
+    reset_calls();
+    struct awdl_core *core =
+        make_native(me, BCM_AWDL_API_IFC_V3, ((1u << BCM_PROBE_COUNT) - 1) & ~(1u << BCM_PROBE_INTERFACE_CREATE), &f);
+    switch_mock_unsupported = 0;
+    sync_enabled(&f, 1, 1000000);
+    const uint32_t generation = switch_awdl_core_generation(core);
+    NCHECK(!switch_awdl_core_ready(core));
+    switch_if_event_pending(core, me, 2, 1, 1100000);
+    NCHECK(!switch_awdl_core_ready(core) && awdl_core_fw_ifidx(core) == -1 && ncalls == 19);
+    uint32_t state[2] = {99, 99}, len = sizeof state;
+    int32_t value = 0;
+    NCHECK(!a80211_awdl_request(&f, 0, A80211_IOC_STATE, &value, state, &len, sizeof state, 1100000) && state[0] == 1 &&
+           !state[1]);
+    while (switch_completed < ncalls - 1) {
+        const struct fw_call *call = &calls[switch_completed++];
+        awdl_core_fw_result(core, call->name, 0, 1100000);
+        NCHECK(!switch_awdl_core_ready(core));
+    }
+    switch_complete_calls(core, 1100000);
+    NCHECK(switch_awdl_core_ready(core) && awdl_core_fw_ifidx(core) == 2 && !awdl_core_stats(core)->iovar_skipped);
+    awdl_core_stop(core);
+    NCHECK(!switch_awdl_core_ready(core) && switch_awdl_core_generation(core) != generation);
+    sync_enabled(&f, 1, 1200000);
+    NCHECK(awdl_core_running(core) && !switch_awdl_core_ready(core) &&
+           switch_awdl_core_generation(core) > generation + 1);
+    awdl_core_stop(core);
+    free(core);
+
+    static const char *const required[] = {"awdl", "awdl_config", "slot_bss"};
+    for (unsigned i = 0; i < sizeof required / sizeof required[0]; ++i) {
+        reset_calls();
+        core = make_native(me, BCM_AWDL_API_IFC_V3, 0, &f);
+        switch_fail_name = required[i];
+        switch_fail_status = BCME_BADARG;
+        switch_fail_count = 1;
+        sync_enabled(&f, 1, 1000000);
+        if_event(core, me, 2, 1, 1100000);
+        NCHECK(!awdl_core_running(core) && !switch_awdl_core_ready(core));
+        NCHECK(find_call("interface_remove", 0));
+        free(core);
+    }
+    reset_calls();
+    core = make_native(me, BCM_AWDL_API_IFC_V3, 0, &f);
+    switch_reject_name = "awdl_config";
+    sync_enabled(&f, 1, 1000000);
+    if_event(core, me, 2, 1, 1100000);
+    NCHECK(!awdl_core_running(core) && !switch_awdl_core_ready(core));
+    free(core);
+
+    for (int failures = 3; failures <= 4; ++failures) {
+        reset_calls();
+        core = make_native(me, BCM_AWDL_API_IFC_V3, 0, &f);
+        switch_fail_name = "awdl_payload";
+        switch_fail_status = BCME_BADLEN;
+        switch_fail_count = failures;
+        sync_enabled(&f, 1, 1000000);
+        if_event(core, me, 2, 1, 1100000);
+        NCHECK(switch_awdl_core_ready(core) == (failures == 3));
+        awdl_core_stop(core);
+        free(core);
+    }
+    reset_calls();
+    core = make_native(me, BCM_AWDL_API_IFC_V3, 0, &f);
+    sync_enabled(&f, 1, 1000000);
+    switch_if_event_pending(core, me, 2, 1, 1100000);
+    awdl_core_timer(core, 3100000);
+    NCHECK(!awdl_core_running(core) && !switch_awdl_core_ready(core));
+    free(core);
+
+    reset_calls();
+    core = make_native(me, BCM_AWDL_API_IFC_V3, 0, &f);
+    sync_enabled(&f, 1, 1000000);
+    if_event(core, me, 2, 1, 1100000);
+    const uint8_t peer[6] = {0x0a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f};
+    struct awdl_core *phone = make_phone(peer, 200);
+    phone_frame(core, phone, peer, AWDL_SUBTYPE_MIF, 5100000, 1200000);
+    NCHECK(presents == 1 && find_call("awdl_peer_op", 0));
+    awdl_core_fw_result(core, "awdl_peer_op", BCME_BADARG, 1250000);
+    NCHECK(!awdl_core_running(core) && !switch_awdl_core_ready(core) && absents == 1);
+    awdl_core_stop(phone);
+    free(phone);
+    free(core);
+    for (int deleting = 0; deleting < 2; ++deleting) {
+        reset_calls();
+        core = make_native(me, BCM_AWDL_API_IFC_V3, 0, &f);
+        sync_enabled(&f, 1, 1000000);
+        if_event(core, me, 2, 1, 1100000);
+        phone = make_phone(peer, 200);
+        if (!deleting)
+            switch_reject_name = "awdl_peer_op";
+        phone_frame(core, phone, peer, AWDL_SUBTYPE_MIF, 5100000, 1200000);
+        if (deleting) {
+            switch_reject_name = "awdl_peer_op";
+            awdl_core_timer(core, 5000000);
+        }
+        NCHECK(!awdl_core_running(core) && presents == deleting && absents == 1 && !memcmp(last_presence, peer, 6));
+        awdl_core_stop(phone);
+        free(phone);
+        free(core);
+    }
+    facade = NULL;
 }
 
 static void test_create_failures(void)
@@ -927,15 +1087,15 @@ static void test_create_failures(void)
     reset_calls();
     core = make_native(me, BCM_AWDL_API_AWDL_IF, 1u << BCM_PROBE_INTERFACE_CREATE | 1u << BCM_PROBE_SLOT_BSS, &f);
     sync_enabled(&f, 1, 1000000);
+    switch_fail_name = "awdl_chan_seq";
+    switch_fail_status = BCME_BADCHAN;
+    switch_fail_count = 2;
     if_event(core, me, 1, 1, 1100000);
     const struct fw_call *seq0 = find_call("awdl_chan_seq", 0);
     NCHECK(seq0 && seq0->buf[6 + 2 * 5] == 0 && seq0->buf[6 + 2 * 15] == 0);
-    int was = ncalls;
-    awdl_core_fw_result(core, "awdl_chan_seq", BCME_BADCHAN, 1200000);
-    NCHECK(ncalls == was + 1 && !strcmp(calls[was].name, "awdl_chan_seq") && calls[was].buf[6 + 2 * 5] == 149 &&
-           calls[was].buf[7 + 2 * 5] == 0x80 && count_primary(awdl_core_sequence(core), 0) == 0);
-    awdl_core_fw_result(core, "awdl_chan_seq", BCME_BADCHAN, 1200000);
-    NCHECK(ncalls == was + 1 && awdl_core_running(core));
+    const struct fw_call *retry = find_call("awdl_chan_seq", 2);
+    NCHECK(retry && retry->buf[6 + 2 * 5] == 149 && retry->buf[7 + 2 * 5] == 0x80 &&
+           count_primary(awdl_core_sequence(core), 0) == 0 && switch_awdl_core_ready(core));
     free(core);
     // only awdl_if2 in the table: that name, same 20 bytes
     reset_calls();
@@ -965,5 +1125,6 @@ void test_native_main(void)
     test_schedule();
     test_flow_ifc_v3();
     test_flow_awdl_if();
+    switch_test_configuration();
     test_create_failures();
 }

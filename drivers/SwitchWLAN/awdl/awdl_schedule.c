@@ -71,16 +71,69 @@ uint16_t awdl_social_map(const struct awdl_chan seq[AWDL_SEQ_SLOTS])
     return map;
 }
 
+static uint16_t social_bit(uint8_t channel)
+{
+    return channel == 6 ? 1u : channel == 44 ? 2u : channel == 149 ? 4u : 0u;
+}
+
 static void build(struct awdl_core *c)
 {
-    if (c->seq_fixed)
-        return;
-    if (awdl_native(c)) {
-        awdl_native_build_seq(c);
-        return;
+#if DEVELOPMENT || DEBUG
+    if (c->switch_home_trial_channel) {
+        const uint8_t home = awdl_chan_of_freq(c->infra_mhz).number;
+        if (home == c->switch_home_trial_channel && (social_bit(home) & c->switch_legal_channels)) {
+            for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+                c->cfg.seq[i] = (struct awdl_chan){home, awdl_opclass_20mhz(home)};
+            return;
+        }
+        c->switch_home_trial_channel = 0;
     }
-    awdl_schedule(c->cfg.seq, c->infra_mhz, c->social5, (enum awdl_mode)c->mode);
+#endif
+    if (c->seq_fixed) {
+        memcpy(c->cfg.seq, c->switch_requested_seq, sizeof c->cfg.seq);
+    } else if (awdl_native(c)) {
+        awdl_native_build_seq(c);
+    } else if (c->switch_channels_limited) {
+        const struct awdl_chan home = awdl_chan_of_freq(c->infra_mhz);
+        uint8_t first = (c->switch_legal_channels & 4u) ? 149 : 44;
+        uint8_t second = (c->switch_legal_channels & 2u) ? 44 : first;
+        uint8_t preferred = c->social5;
+        if ((home.number == 44 && (c->switch_legal_channels & 2u)) ||
+            (home.number == 149 && (c->switch_legal_channels & 4u)))
+            preferred = home.number;
+        if ((preferred == 44 && (c->switch_legal_channels & 2u)) ||
+            (preferred == 149 && (c->switch_legal_channels & 4u)))
+            first = second = preferred;
+        awdl_schedule_from(c->cfg.seq, awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode), home, first, second);
+    } else {
+        awdl_schedule(c->cfg.seq, c->infra_mhz, c->social5, (enum awdl_mode)c->mode);
+    }
+    if (!awdl_native(c) && c->switch_channels_limited) {
+        for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
+            const uint8_t channel = awdl_chan_primary(c->cfg.seq[i]);
+            const uint16_t bit = social_bit(channel);
+            c->cfg.seq[i] = (bit & c->switch_legal_channels)
+                               ? (struct awdl_chan){channel, awdl_opclass_20mhz(channel)}
+                               : (struct awdl_chan){0, 0};
+        }
+    }
 }
+
+#if DEVELOPMENT || DEBUG
+uint8_t switch_awdl_core_home_trial(struct awdl_core *c, int enable, uint64_t now)
+{
+    const uint8_t home = enable ? awdl_chan_of_freq(c->infra_mhz).number : 0;
+    if (enable && (!c->running || awdl_native(c) || !c->switch_channels_limited ||
+                   !(social_bit(home) & c->switch_legal_channels)))
+        return 0;
+    if (home != c->switch_home_trial_channel) {
+        c->switch_home_trial_channel = home;
+        build(c);
+        awdl_soft_install(c, now ? now : c->last_observation);
+    }
+    return home;
+}
+#endif
 
 static void apply(struct awdl_core *c, uint16_t old_map, uint64_t now)
 {
@@ -89,6 +142,28 @@ static void apply(struct awdl_core *c, uint16_t old_map, uint64_t now)
     } else {
         awdl_soft_install(c, now);
     }
+}
+
+void awdl_core_set_sequence(struct awdl_core *c, const struct awdl_chan seq[AWDL_SEQ_SLOTS], uint64_t now)
+{
+    memcpy(c->switch_requested_seq, seq, sizeof c->switch_requested_seq);
+    c->seq_fixed = 1;
+    build(c);
+    awdl_soft_install(c, now);
+}
+
+void switch_awdl_core_set_channels(struct awdl_core *c, uint16_t mask, uint64_t now)
+{
+    mask &= 7u;
+    if (awdl_native(c) || (c->switch_channels_limited && c->switch_legal_channels == mask))
+        return;
+    struct awdl_chan was[AWDL_SEQ_SLOTS];
+    memcpy(was, c->cfg.seq, sizeof was);
+    c->switch_channels_limited = 1;
+    c->switch_legal_channels = mask;
+    build(c);
+    if (c->running && memcmp(was, c->cfg.seq, sizeof was))
+        awdl_soft_install(c, now);
 }
 
 // One line per schedule: the mode, why, and how many slots leave the access point's channel.
@@ -176,7 +251,8 @@ int awdl_transfer_frame(const uint8_t *eth, size_t len)
 
 void awdl_sched_transfer(struct awdl_core *c, const uint8_t peer[6], int out, uint64_t now)
 {
-    c->transfer_until = now + AWDL_TRANSFER_HOLD_US;
+    if (now + AWDL_TRANSFER_HOLD_US > c->transfer_until)
+        c->transfer_until = now + AWDL_TRANSFER_HOLD_US;
     if (c->mode == AWDL_MODE_TRANSFER)
         return;
     const uint8_t *p = peer;
@@ -225,7 +301,8 @@ void awdl_core_set_infra(struct awdl_core *c, uint16_t infra_mhz, uint64_t now)
     struct awdl_chan was[AWDL_SEQ_SLOTS];
     memcpy(was, c->cfg.seq, sizeof was);
     build(c);
-    if (!memcmp(was, c->cfg.seq, sizeof was))
+    // Raw empty slots still depend on the current home channel.
+    if (!memcmp(was, c->cfg.seq, sizeof was) && !c->switch_channels_limited)
         return;  // (v3: only association on/off changes its slots)
     awdl_sched_log(c, "%s", infra_mhz ? "infra channel changed" : "infra lost");
     apply(c, map, now);

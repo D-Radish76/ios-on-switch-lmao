@@ -76,6 +76,41 @@ swlan_frame_kind kind(const std::vector<uint8_t> &f)
     return swlan_frame_classify(f.data(), f.size()).kind;
 }
 
+TEST(SwitchWLANTrace, DirectIcmpv6Echo)
+{
+    std::vector<uint8_t> frame(SWITCH_WLAN_ECHO6_PREFIX, 0);
+    put16(frame, 12, 0x86dd);
+    frame[14] = 0x60;
+    put16(frame, 18, 64);
+    frame[20] = 58;
+    put16(frame, 58, 0x1234);
+    put16(frame, 60, 0xabcd);
+    put16(frame, 56, 0x3210);
+    frame[22] = frame[38] = 0xfe;
+    frame[37] = 19;
+    frame[53] = 83;
+    constexpr size_t length = 14 + 40 + 64;
+    for (const uint8_t type : {uint8_t{128}, uint8_t{129}}) {
+        frame[54] = type;
+        const auto echo = switch_wlan_echo6_read(frame.data(), frame.size(), length);
+        EXPECT_EQ(echo.type, type);
+        EXPECT_EQ(echo.id, 0x1234);
+        EXPECT_EQ(echo.sequence, 0xabcd);
+        EXPECT_EQ(echo.checksum, 0x3210);
+        EXPECT_EQ(echo.source[15], 19);
+        EXPECT_EQ(echo.destination[15], 83);
+        EXPECT_EQ(echo.payload, 64);
+        EXPECT_EQ(switch_wlan_echo6_ip(frame.data() + 14, frame.size() - 14, length - 14).id, echo.id);
+    }
+    EXPECT_EQ(switch_wlan_echo6_read(frame.data(), frame.size() - 1, length).type, 0);
+    EXPECT_EQ(switch_wlan_echo6_read(frame.data(), frame.size(), length - 1).type, 0);
+    frame[20] = 17;
+    EXPECT_EQ(switch_wlan_echo6_read(frame.data(), frame.size(), length).type, 0);
+    frame[20] = 58;
+    frame[54] = 135;
+    EXPECT_EQ(switch_wlan_echo6_read(frame.data(), frame.size(), length).type, 0);
+}
+
 TEST(SwitchWlanTrace, ClassifiesDnsAndArp)
 {
     EXPECT_EQ(kind(query(50000, 7)), SWLAN_FRAME_DNS_QUERY);

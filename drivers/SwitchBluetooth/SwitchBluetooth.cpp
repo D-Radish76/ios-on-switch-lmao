@@ -136,6 +136,9 @@
 #include <miscfs/devfs/devfs.h>
 #include <string.h>
 #include "SwitchBluetooth.h"
+#ifndef SWITCH_IPSW_BUILD
+#error "SwitchBluetooth requires the selected IPSW build"
+#endif
 #include "SwitchBluetoothLeFilter.h"
 #include "../../kits/SwitchDMA/SwitchDcache.h"
 #include "../../kits/SwitchDT/SwitchDTProperty.h"
@@ -1812,7 +1815,7 @@ bool SwitchBluetooth::clientRoom(size_t need)
 //   in the host; so 0xFCE9 sub-operations 1, 5 and 7 (and the UUID filter's later forms 0x50, 0x61) are answered here
 //   with that status and never reach the controller, which keeps its default of reporting every advert
 //   (answerHere: a Command Complete with the controller's last credit count, passed on between its packets).
-//   A controller that has Android's APCF (0xFD53 at bring-up) takes the filtering after all: bluetoothd's UUIDs,
+//   On 21H461 a controller with Android's APCF (0xFD53 at bring-up) takes the filtering: bluetoothd's UUIDs,
 //   Apple matching rules, address list and duplicate bypass become three APCF filters (SwitchBluetoothLeFilter.h),
 //   programmed by injected commands before the scan that uses them, and each of those commands is answered here
 //   with success and its sub-operation; the rest stay refused, one SwitchRefusal line per sub-operation.
@@ -2137,7 +2140,10 @@ errno_t SwitchBluetooth::clientCommand(uint8_t *packet, size_t size)
             programLeFilter();
         switch_le_filter_scan_enable(&leFilter, params, length);
     }
-    if (answerHere(opcode, params, length)) {
+    const bool hostFilter = switch_le_filter_host_command(opcode, params, length);
+    if (hostFilter && !answer(opcode, kUnknownCommand, -1))
+        return ENOBUFS;
+    if (hostFilter || answerHere(opcode, params, length)) {
 #if DEVELOPMENT || DEBUG
         traceCommand(opcode, params, length, true);
 #endif
@@ -2170,9 +2176,11 @@ bool SwitchBluetooth::answerHere(uint16_t opcode, const uint8_t *params, uint8_t
         return false;
     uint8_t sub = 0;
     if (switch_le_filter_take(&leFilter, opcode, params, length, &sub)) {
-        leDirty = true;
-        if (leScanning && !programLeFilter())
-            return answer(opcode, kUnknownCommand, -1);
+        if (leFilter.apcf) {
+            leDirty = true;
+            if (leScanning && !programLeFilter())
+                return answer(opcode, kUnknownCommand, -1);
+        }
         return answer(opcode, 0, sub);
     }
     if (opcode != OP_BCM_LE_META)
@@ -2366,7 +2374,7 @@ void SwitchBluetooth::traceCommand(uint16_t opcode, const uint8_t *params, uint8
         return;
     char p[2 * kTraceParams + 1];
     hex(p, sizeof(p), entry.params, entry.length < kTraceParams ? entry.length : kTraceParams);
-    os_log(OS_LOG_DEFAULT, "SwitchBluetooth: HCI %04x/%02x %u bytes [%s] -> answered here: Unknown HCI Command", opcode,
+    os_log(OS_LOG_DEFAULT, "SwitchBluetooth: HCI %04x/%02x %u bytes [%s] -> answered here", opcode,
            sub, entry.length, p);
 }
 #endif

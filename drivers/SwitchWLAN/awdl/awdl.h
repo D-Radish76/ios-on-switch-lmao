@@ -180,7 +180,7 @@ struct awdl_host {
     // One 802.11 frame (no FCS) to send on freq_mhz as soon as the radio can (its timing fields are stamped for the
     // moment it was built); the radio then stays on freq_mhz until local TSF `stay_until` (0: no need) so the peers'
     // frames of that slot reach us. A radio that cannot hop makes each such stay one excursion from its home channel.
-    // no_ack: group/action frames. Returns 0 when queued.
+    // no_ack: group/action frames. Returns 0 when queued, AWDL_TX_BUSY without taking ownership, negative on failure.
     int (*tx)(void *ctx, const uint8_t *frame, size_t len, uint16_t freq_mhz, uint64_t stay_until, int no_ack);
     // The radio runs this sequence of 16 slots of 64 TU, slot 0 starting at anchor_tsf (a multiple of 1024 TU after
     // it). Called when the sequence or the synchronisation changes.
@@ -200,6 +200,10 @@ struct awdl_host {
     int (*tx_eth)(void *ctx, const uint8_t *eth, size_t len);
 };
 
+enum {
+    AWDL_TX_BUSY = 1
+};
+
 struct awdl_config {
     uint8_t addr[6];    // our AWDL address (awdl0's link-layer address)
     char hostname[32];  // for the arpa TLV, without ".local"
@@ -213,8 +217,7 @@ struct awdl_config {
     // and the AWDL data encapsulation; the core configures it with iovars, learns peers from the action frames the
     // firmware forwards and adds them for data. SOFT: the core does everything over monitor + injection.
     uint8_t backend;
-    // Native: which firmware generation the bring-up probe found (enum bcm_awdl_api) and the probe items it lacks
-    // (bit n: bcm_probe_item n answered UNSUPPORTED; those iovars are not sent).
+    // Native: creation API and station-context probe results; interface-specific support is learned after creation.
     uint8_t fw_api;
     uint32_t fw_absent;
 };
@@ -235,7 +238,7 @@ enum awdl_role {
 struct awdl_peer {
     uint8_t addr[6];
     uint8_t used, reachable, has_v2, has_seq;
-    uint64_t first_seen, last_seen;  // local TSF
+    uint64_t first_seen, last_seen, last_action;  // local TSF
     int8_t rssi;
     uint8_t awdl_version, device_class;
     struct awdl_election_v2 election;
@@ -265,11 +268,17 @@ int awdl_core_init(struct awdl_core *c, const struct awdl_host *host, const stru
 // Start at local TSF `now` (we are root until we hear a better one), stop (every reachable peer reported lost).
 void awdl_core_start(struct awdl_core *c, uint64_t now);
 void awdl_core_stop(struct awdl_core *c);
+// Running includes asynchronous firmware setup; ready requires its successful completion.
 int awdl_core_running(const struct awdl_core *c);
+void switch_awdl_core_radio_ready(struct awdl_core *c, int ready);
+void switch_awdl_core_tx_ready(struct awdl_core *c, uint64_t now);
+int switch_awdl_core_ready(const struct awdl_core *c);
+uint32_t switch_awdl_core_generation(const struct awdl_core *c);
 void awdl_core_set_addr(struct awdl_core *c, const uint8_t addr[6]);
 void awdl_core_set_sequence(struct awdl_core *c, const struct awdl_chan seq[AWDL_SEQ_SLOTS], uint64_t now);
 // A received 802.11 frame (action or data).
-void awdl_core_rx(struct awdl_core *c, const uint8_t *frame, size_t len, const struct awdl_rx_meta *m);
+// Returns 1 for an AWDL service action addressed to this interface or a group.
+int awdl_core_rx(struct awdl_core *c, const uint8_t *frame, size_t len, const struct awdl_rx_meta *m);
 // An Ethernet frame from awdl0. 0: sent or queued for the next availability window; negative: dropped.
 int awdl_core_output(struct awdl_core *c, const uint8_t *eth, size_t len, uint64_t now);
 // Run what is due at `now`; returns the local TSF of the next deadline (the caller arms one timer for it).
@@ -279,8 +288,7 @@ struct awdl_fw_event;
 void awdl_core_fw_event(struct awdl_core *c, const struct awdl_fw_event *e, const uint8_t *data, size_t len,
                         uint64_t now);
 // Native backend: the firmware's answer to a request the host queued (0, or its BCME code; AWDL_FW_NO_ANSWER when the
-// request never reached it). A refused interface creation ends the session (one log line); a refused awdl_payload
-// is resent once with the other length form.
+// request never reached it). Mandatory failures end the session; payload and channel formats have bounded retries.
 #define AWDL_FW_NO_ANSWER (-32768)
 void awdl_core_fw_result(struct awdl_core *c, const char *name, int status, uint64_t now);
 // Native backend: a frame the firmware delivered on its AWDL interface. AWDL data (802.3 with the AWDL LLC/SNAP
@@ -289,7 +297,12 @@ void awdl_core_rx_eth(struct awdl_core *c, const uint8_t *frame, size_t len, uin
 // The access point's frequency while the station is associated (0 otherwise). The schedule interleaves it
 // (awdl_schedule); a change while running re-sends the schedule (native) or re-installs it (soft).
 void awdl_core_set_infra(struct awdl_core *c, uint16_t infra_mhz, uint64_t now);
-// The AWDL interface's firmware index once its WLC_E_IF arrived, -1 before.
+// Restrict raw-radio admission to legal 20 MHz social channels; bits 0, 1, 2 mean 6, 44, 149.
+#if DEVELOPMENT || DEBUG
+uint8_t switch_awdl_core_home_trial(struct awdl_core *c, int enable, uint64_t now);
+#endif
+void switch_awdl_core_set_channels(struct awdl_core *c, uint16_t mask, uint64_t now);
+// The operational AWDL interface's firmware index, -1 while absent or being configured.
 int awdl_core_fw_ifidx(const struct awdl_core *c);
 
 // Both backends' schedule follows the AWDL states macOS was measured in (Stute, Kreitschmann, Hollick, MobiCom 2018,

@@ -6,6 +6,7 @@
 // catch in our AWDL slots, our EAW boundaries against the master's (AWDL accepts 3 ms, Stute et al. §6.2), whether the
 // master sees us, and how often our core wakes and transmits.
 #include "../awdl.h"
+#include "../awdl_apple80211.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -295,10 +296,175 @@ static void test_shared_radio(void)
     free(u_core);
 }
 
+static unsigned switch_installs;
+static struct awdl_chan switch_installed[AWDL_SEQ_SLOTS];
+
+static void switch_schedule(void *ctx, const struct awdl_chan seq[AWDL_SEQ_SLOTS], uint64_t anchor)
+{
+    (void)ctx;
+    (void)anchor;
+    ++switch_installs;
+    memcpy(switch_installed, seq, sizeof switch_installed);
+}
+
+static void switch_test_legal_channels(void)
+{
+    struct awdl_core *core = make(0x0c, 60, m_tx, switch_schedule);
+    awdl_core_set_infra(core, 5260, 0);
+    switch_awdl_core_set_channels(core, 3, 0);
+    switch_installs = 0;
+    awdl_core_start(core, 0);
+    SCHECK(switch_installs == 1);
+    SCHECK(awdl_slots_away(switch_installed, 5260) == 4);
+    SCHECK(awdl_social_map(switch_installed) == 3);
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        SCHECK(switch_installed[i].number == 0 || switch_installed[i].opclass ==
+               awdl_opclass_20mhz(switch_installed[i].number));
+    SCHECK(!switch_installed[1].number && switch_installed[0].number == 44);
+    uint8_t frame[AWDL_MAX_FRAME];
+    const size_t length = awdl_core_build_af(core, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
+    struct awdl_af parsed;
+    SCHECK(length && !awdl_af_parse(frame, length, &parsed));
+    SCHECK(!memcmp(parsed.chanseq.chan, switch_installed, sizeof switch_installed));
+    switch_awdl_core_set_channels(core, 3, 0);
+    SCHECK(switch_installs == 1);
+    awdl_core_set_infra(core, 5180, 0);
+    SCHECK(switch_installs == 2 && !memcmp(parsed.chanseq.chan, switch_installed, sizeof switch_installed));
+    awdl_core_set_infra(core, 5745, 0);
+    SCHECK(switch_installed[0].number == 44 && !switch_installed[1].number);
+    struct awdl_core *peer = make(0x0d, 520, m_tx, NULL);
+    struct awdl_chan peer_seq[AWDL_SEQ_SLOTS];
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        peer_seq[i] = (struct awdl_chan){149, 0x80};
+    awdl_core_set_sequence(peer, peer_seq, 0);
+    awdl_core_start(peer, 0);
+    const size_t peer_length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
+    const struct awdl_rx_meta meta = {0, 5745, -55};
+    awdl_core_rx(core, frame, peer_length, &meta);
+    SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER && awdl_social_map(switch_installed) == 3);
+    awdl_core_stop(peer);
+    free(peer);
+    awdl_core_traffic_registered(core, "com.apple.airdrop", 0);
+    SCHECK(awdl_slots_away(switch_installed, 5745) == 12);
+    switch_awdl_core_set_channels(core, 0, 0);
+    SCHECK(!awdl_social_map(switch_installed));
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        SCHECK(!switch_installed[i].number);
+    switch_awdl_core_set_channels(core, 7, 0);
+    SCHECK(switch_installed[0].number == 149 && switch_installed[1].number == 149);
+    struct awdl_chan requested[AWDL_SEQ_SLOTS];
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        requested[i] = (struct awdl_chan){149, 0x80};
+    awdl_core_set_sequence(core, requested, 0);
+    switch_awdl_core_set_channels(core, 3, 0);
+    SCHECK(!awdl_social_map(switch_installed));
+    switch_awdl_core_set_channels(core, 7, 0);
+    SCHECK(switch_installed[0].number == 149 && switch_installed[0].opclass == 124);
+    awdl_core_stop(core);
+    free(core);
+}
+
+#if DEVELOPMENT || DEBUG
+static unsigned switch_mac_overlap(unsigned offset)
+{
+    const uint8_t mac[] = {44, 44, 149, 0, 0, 0, 0, 0, 6, 149, 44, 0, 0, 0, 0, 0};
+    unsigned overlap = 0;
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        if (mac[i] && mac[i] == switch_installed[(i + offset) % AWDL_SEQ_SLOTS].number)
+            ++overlap;
+    return overlap;
+}
+
+static void switch_test_home_trial(void)
+{
+    struct awdl_core *core = make(0x0d, 60, m_tx, switch_schedule);
+    switch_awdl_core_set_channels(core, 7, 0);
+    awdl_core_set_infra(core, 2437, 0);
+    SCHECK(!switch_awdl_core_home_trial(core, 1, 0));
+    awdl_core_start(core, 0);
+    SCHECK(!switch_mac_overlap(1) && !switch_mac_overlap(2));
+    SCHECK(switch_awdl_core_home_trial(core, 1, 1000) == 6);
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
+        SCHECK(switch_installed[i].number == 6 && switch_installed[i].opclass == 81);
+        SCHECK(switch_mac_overlap(i) == 1);
+    }
+    uint8_t frame[AWDL_MAX_FRAME];
+    const uint8_t subtypes[] = {AWDL_SUBTYPE_PSF, AWDL_SUBTYPE_MIF};
+    for (unsigned i = 0; i < sizeof subtypes; ++i) {
+        const size_t bytes = awdl_core_build_af(core, subtypes[i], 1000, frame, sizeof frame);
+        struct awdl_af action;
+        SCHECK(bytes && !awdl_af_parse(frame, bytes, &action));
+        SCHECK(action.sync.has_seq && !memcmp(action.sync.seq.chan, switch_installed, sizeof switch_installed));
+        SCHECK(!memcmp(action.chanseq.chan, switch_installed, sizeof switch_installed));
+    }
+
+    struct awdl_chan desired[AWDL_SEQ_SLOTS] = {{44, 115}};
+    awdl_core_set_sequence(core, desired, 2000);
+    awdl_core_traffic_registered(core, "com.apple.airdrop", 2100);
+    SCHECK(switch_installed[0].number == 6 && switch_installed[15].number == 6);
+    switch_awdl_core_home_trial(core, 0, 3000);
+    SCHECK(!memcmp(switch_installed, desired, sizeof desired));
+
+    SCHECK(switch_awdl_core_home_trial(core, 1, 4000) == 6);
+    switch_awdl_core_set_channels(core, 2, 4100);
+    SCHECK(!memcmp(switch_installed, desired, sizeof desired));
+    SCHECK(!switch_awdl_core_home_trial(core, 1, 4200));
+    awdl_core_set_infra(core, 5220, 4300);
+    SCHECK(switch_awdl_core_home_trial(core, 1, 4400) == 44);
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        SCHECK(switch_installed[i].number == 44 && switch_installed[i].opclass == 115);
+    awdl_core_set_infra(core, 5180, 4500);
+    SCHECK(!memcmp(switch_installed, desired, sizeof desired));
+    SCHECK(!switch_awdl_core_home_trial(core, 1, 4600));
+    awdl_core_set_infra(core, 5220, 4700);
+    SCHECK(switch_awdl_core_home_trial(core, 1, 4800) == 44);
+    awdl_core_stop(core);
+    awdl_core_start(core, 5000);
+    SCHECK(!memcmp(switch_installed, desired, sizeof desired));
+    awdl_core_stop(core);
+    free(core);
+}
+#if defined(SWITCH_IPSW_KIND_24B119)
+static void switch_test_trial_registration(void)
+{
+    const uint8_t compact[] = {1, 'X', 0xc0, 7, 33};
+    const uint8_t label[] = {1, 'X', 8, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p', 0xc0, 0x0c, 33};
+    const uint8_t *names[] = {compact, label};
+    const size_t sizes[] = {sizeof compact, sizeof label};
+    uint8_t request[64] = {0};
+    uint8_t *tlv = request + sizeof(struct a80211_peer_service_request);
+    for (unsigned i = 0; i < 2; ++i) {
+        const size_t size = sizes[i], length = 9 + size;
+        struct a80211_peer_service_request hdr = {.version = 1, .data_len = (uint16_t)length};
+        memcpy(request, &hdr, sizeof hdr);
+        tlv[0] = AWDL_TLV_SERVICE_RESPONSE;
+        tlv[1] = (uint8_t)(length - 3);
+        tlv[3] = (uint8_t)size;
+        memcpy(tlv + 5, names[i], size);
+        SCHECK(switch_a80211_trial_airdrop_srv(request, sizeof hdr + length));
+        SCHECK(!switch_a80211_trial_airdrop_srv(request, sizeof hdr + length - 1));
+        tlv[5 + size - 1] = 16;
+        SCHECK(!switch_a80211_trial_airdrop_srv(request, sizeof hdr + length));
+        tlv[5 + size - 1] = 33;
+        hdr.delete_request = 1;
+        memcpy(request, &hdr, sizeof hdr);
+        SCHECK(!switch_a80211_trial_airdrop_srv(request, sizeof hdr + length));
+    }
+}
+#endif
+#endif
+
 void test_sched_main(void)
 {
     const int before = test_failures;
     test_shared_radio();
+    switch_test_legal_channels();
+#if DEVELOPMENT || DEBUG
+    switch_test_home_trial();
+#if defined(SWITCH_IPSW_KIND_24B119)
+    switch_test_trial_registration();
+#endif
+#endif
     printf("shared radio: idle and transfer schedules beside the access point: %s\n",
            test_failures == before ? "ok" : "FAILED");
 }

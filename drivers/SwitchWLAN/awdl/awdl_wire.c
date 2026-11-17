@@ -115,8 +115,16 @@ static int parse_chanseq(const uint8_t *p, size_t n, struct awdl_chanseq *s)
         const uint8_t *e = p + 6 + (size_t)i * width;
         if (s->encoding == AWDL_CHAN_ENC_SIMPLE) {
             s->chan[i] = (struct awdl_chan){e[0], awdl_opclass_20mhz(e[0])};
-        } else if (s->encoding == AWDL_CHAN_ENC_LEGACY) {  // {flags, channel}
-            s->chan[i] = (struct awdl_chan){e[1], awdl_opclass_20mhz(e[1])};
+        } else if (s->encoding == AWDL_CHAN_ENC_LEGACY) {
+            int primary = e[1];
+            if ((e[0] & 0x0c) == 0x0c) {  // Legacy 40 MHz entries name the centre and encode the primary sideband.
+                if ((e[0] & 3) == 1)
+                    primary -= 2;
+                else if ((e[0] & 3) == 2)
+                    primary += 2;
+            }
+            const uint8_t channel = primary > 0 && primary <= 255 ? (uint8_t)primary : 0;
+            s->chan[i] = (struct awdl_chan){channel, awdl_opclass_20mhz(channel)};
         } else {
             s->chan[i] = (struct awdl_chan){e[0], e[1]};
         }
