@@ -337,6 +337,7 @@ struct Display {
     uint64_t planeRequestedAt = 0, frameEnds = 10;
     unsigned stPlaneFlips = 0, stPlaneDropped = 0, deadlines = 0, releases = 0, planeUnderflowRun = 0;
     unsigned notShown = 0;
+    int offered = 0;  // planeFenceWithMediaFlip's result at the last offer
     bool flipStarted = false;
     std::vector<uint64_t> shown;  // the take sequence of every set the latch saw taken
     std::function<void()> midFrameEnd;
@@ -466,7 +467,8 @@ struct Display {
         planeTarget = p;
         const switch_gpu_backing_token producer[2] = {{seq, 1, SWITCH_GPU_ENGINE_VIC, 161},
                                                       {seq + kSecond, 1, SWITCH_GPU_ENGINE_NVDEC, 162}};
-        if (planeFenceWithMediaFlip(p, producer, producers) == 0)
+        offered = planeFenceWithMediaFlip(p, producer, producers);
+        if (offered == 0)
             return true;
         planeFencePending = gpuScanout = transferred = false;
         planeNotShown();

@@ -192,6 +192,30 @@ TEST_F(MediaFlip, ARefusedFenceWithdrawsItsSet)
     EXPECT_TRUE(d.planeLatch.armedRequested);
 }
 
+// planeMediaFence sends -22 and -16 to the bridge fence and completes any other error as the set's failure, so an armed
+// stream host1x refuses returns host1x's error, named in a line.
+TEST_F(MediaFlip, AnArmedStreamHost1xRefusesReturnsAndNamesItsError)
+{
+    shownByGate(video(1));
+    gFenceResult = -22;
+    EXPECT_FALSE(d.offer(video(2), ++seq));
+    EXPECT_EQ(d.offered, -22);
+    ASSERT_EQ(gLog.size(), 1u);
+    EXPECT_NE(gLog[0].find("host1x refused windows B and C's controller stream (-22)"), std::string::npos) << gLog[0];
+    EXPECT_TRUE(d.mediaFlipIdle());
+    EXPECT_EQ(d.planeLatch.armed, Display::PlaneCommits::kNone);
+}
+
+TEST_F(MediaFlip, AnArmedStreamRefusedAsBusyReturnsItsOwnError)
+{
+    shownByGate(video(1));
+    gFenceResult = -16;
+    EXPECT_FALSE(d.offer(video(2), ++seq));
+    EXPECT_EQ(d.offered, -16);
+    ASSERT_EQ(gLog.size(), 1u);
+    EXPECT_NE(gLog[0].find("(-16)"), std::string::npos) << gLog[0];
+}
+
 // Any other gate write of windows B and C withdraws an armed set first; that set goes out from the gate after it.
 TEST_F(MediaFlip, AGateWriteOfWindowsBAndCWithdrawsAnArmedSet)
 {
