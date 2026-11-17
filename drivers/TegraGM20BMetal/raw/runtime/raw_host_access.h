@@ -73,18 +73,18 @@ public:
         if (!kernel_)
             return true;
         if (!ranges_.empty()) {
-            while (acquired_) {
+            // The arena lease goes whatever the kernel answers: nothing would release it later
+            bool released = true;
+            for (; acquired_; --acquired_) {
                 const Range &range = ranges_[acquired_ - 1];
-                if (!kernel_->cpuAccess(range.bo, range.offset, range.bytes, access_, false))
-                    return false;
-                --acquired_;
+                released = kernel_->cpuAccess(range.bo, range.offset, range.bytes, access_, false) && released;
             }
             kernel_ = nullptr;
             ranges_.clear();
             release_(owner_, arena_);
             release_ = nullptr;
             owner_ = nullptr;
-            return true;
+            return released;
         }
         if (!kernel_->cpuAccess(bo_, offset_, bytes_, access_, false))
             return false;

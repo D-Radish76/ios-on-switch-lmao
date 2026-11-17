@@ -347,4 +347,45 @@ TEST_F(FacadeHeapUse, ARecordedHeapViewKeepsItsAliasableOwnersMappings)
     }
 }
 
+// A command buffer that uses a purged heap's texture through a view of a view, or over a heap buffer, names neither the
+// heap nor its root: its commit brings the arena back all the same
+TEST_F(FacadeHeapUse, ACommitBringsBackAPurgedHeapItReachesThroughViewsAndBufferTextures)
+{
+    kernel_model::model.unknownUsesRefused = true;
+    @autoreleasepool {
+        id<MTLTexture> root = facade::texture(MTLStorageModeShared, heap);
+        ASSERT_NE(root, nil);
+        id<MTLTexture> view = [[root newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm]
+            newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm];
+        id<MTLBuffer> bytes = [heap newBufferWithLength:4096 options:MTLResourceStorageModeShared];
+        ASSERT_NE(bytes, nil);
+        MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                     width:16
+                                                                                    height:16
+                                                                                 mipmapped:NO];
+        d.storageMode = MTLStorageModeShared;
+        d.usage = MTLTextureUsageShaderRead;
+        id<MTLTexture> overBytes = [bytes newTextureWithDescriptor:d offset:0 bytesPerRow:64];
+        ASSERT_NE(overBytes, nil);
+        id<MTLTexture> viewOverBytes = [overBytes newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm];
+        const uint32_t index = ((RMHeap *)heap)->_arena - 1;
+        const id<MTLTexture> reaching[3] = {view, overBytes, viewOverBytes};
+        for (size_t k = 0; k < 3; k++) {
+            SCOPED_TRACE(k);
+            id<MTLTexture> used = reaching[k];
+            ASSERT_NE(used, nil);
+            ASSERT_TRUE(((RMTexture *)used)->_rawOk);
+            std::atomic<uint32_t> idle{0};
+            gRM->raw->purgeArena(index, idle);
+            ASSERT_TRUE(gRM->raw->arenaPurged(index));
+            id<MTLCommandBuffer> cb = [[facade::device() newCommandQueue] commandBuffer];
+            id<MTLRenderCommandEncoder> render = pass(cb);
+            [render useResource:used usage:MTLResourceUsageRead stages:MTLRenderStageFragment];
+            [render endEncoding];
+            commit(cb);
+            EXPECT_FALSE(gRM->raw->arenaPurged(index));
+        }
+    }
+}
+
 }  // namespace

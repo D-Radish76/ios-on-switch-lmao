@@ -78,6 +78,7 @@ bool Device::bindArena(Arena &a)
             addAlias(set_, k_, a.bo, v.va);
     }
     RAW_DIAGNOSTIC(stats.poolBytes += a.bytes);
+    RAW_DIAGNOSTIC(if (a.purged) glassMemEvent("heap restored", a.bytes));
     return true;
 }
 
@@ -230,8 +231,6 @@ uint64_t Device::arenaView(Arena &a, uint32_t kind)
     for (const Arena::View &v : a.views)
         if (v.kind == kind)
             return v.va;
-    if (a.purged)
-        return 0;
     const uint64_t va = k_.reserveVa(a.bytes);
     if (!va)
         return 0;
@@ -278,6 +277,11 @@ bool Device::arenaSpan(const ArenaAt &at, uint64_t bytes, uint64_t align, uint32
     if (at.arena >= arenas_.size() || !arenas_[at.arena].used || arenas_[at.arena].dying)
         return false;
     Arena &a = arenas_[at.arena];
+    const auto bind = [this](Arena &x) {
+        return bindArena(x);
+    };
+    if (!arenaRestore(a, purgedArenas_, bind))
+        return false;
     uint64_t offset = at.offset.value_or(0);
     const uint64_t view = arenaView(a, kind);
     if (!view || !(at.offset ? a.place.placeAt(bytes, align, offset) : a.place.place(bytes, align, offset)))
@@ -343,6 +347,11 @@ bool Device::arenaBuffer(uint32_t arena, uint64_t length, Buffer &b, std::option
         length > UINT64_MAX - (kArenaPitchAlign - 1))
         return false;
     Arena &a = arenas_[arena];
+    const auto bind = [this](Arena &x) {
+        return bindArena(x);
+    };
+    if (!arenaRestore(a, purgedArenas_, bind))
+        return false;
     const uint64_t bytes = (std::max<uint64_t>(length, 16) + kArenaPitchAlign - 1) & ~(kArenaPitchAlign - 1);
     uint64_t offset = requestedOffset.value_or(0);
     if (!(requestedOffset ? a.place.placeAt(bytes, kArenaPitchAlign, offset)
@@ -552,16 +561,11 @@ const ArenaStorage *Device::arenaStorage(const Arena &arena, uint32_t index, uin
 
 bool Device::restoreArena(uint32_t arena)
 {
+    const auto bind = [this](Arena &a) {
+        return bindArena(a);
+    };
     std::lock_guard<raw::Mutex> l(lock_);
-    if (arena >= arenas_.size() || !arenas_[arena].purged)
-        return true;
-    Arena &a = arenas_[arena];
-    if (!bindArena(a))
-        return false;
-    RAW_DIAGNOSTIC(glassMemEvent("heap restored", a.bytes));
-    a.purged = false;
-    purgedArenas_--;
-    return true;
+    return arena >= arenas_.size() || arenaRestore(arenas_[arena], purgedArenas_, bind);
 }
 
 }  // namespace raw

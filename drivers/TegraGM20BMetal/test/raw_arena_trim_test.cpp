@@ -4,6 +4,7 @@
 #include "predication_model.h"
 #include "../raw/runtime/raw_arena_trim.h"
 #include "../raw/runtime/raw_gpu.h"
+#include "../raw/runtime/raw_srgb_pair.h"
 
 #include <gtest/gtest.h>
 #include <sys/mman.h>
@@ -568,6 +569,74 @@ TEST_P(ArenaTrimParts, AliasableStorageOutlivesPlacementAndRetiresWithItsLastOwn
     dev.destroyBuffer(c);
     dev.trimArenas(committed);
     EXPECT_TRUE(importsIn(base, 4 * kQuarter).empty());
+    dev.destroyArena(arena);
+}
+
+// A placement into a purged arena binds it whole first, under the device's lock, so what it places has storage the CPU
+// and a job reach, a texture's new view kind included
+TEST_P(ArenaTrimParts, APlacementIntoAPurgedArenaBindsItFirst)
+{
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    std::atomic<uint32_t> committed{0};
+    dev.setArenaVolatile(arena, true);
+    dev.purgeArena(arena, committed);
+    ASSERT_TRUE(dev.arenaPurged(arena));
+    raw::Buffer b;
+    ASSERT_TRUE(dev.arenaBuffer(arena, kQuarter, b));
+    EXPECT_FALSE(dev.arenaPurged(arena));
+    EXPECT_EQ(dev.purgedArenas(), 0u);
+    ASSERT_TRUE(dev.restoreArena(arena));
+    b.hostVisible = true;
+    raw::HostAccess write;
+    EXPECT_TRUE(dev.hostAccess(b, true, write));
+    EXPECT_TRUE(write.finish());
+
+    dev.purgeArena(arena, committed);
+    ASSERT_TRUE(dev.arenaPurged(arena));
+    raw::TextureAsk mips;
+    mips.kind = raw::TextureAsk::Mips;
+    mips.width = mips.height = 64;
+    mips.levels = 4;
+    mips.format = 70;
+    raw::Texture t;
+    ASSERT_TRUE(dev.arenaTexture({arena, std::nullopt}, mips, t));
+    EXPECT_FALSE(dev.arenaPurged(arena));
+    EXPECT_EQ(dev.purgedArenas(), 0u);
+    raw::HostAccess read;
+    EXPECT_TRUE(dev.hostAccess(t, t.cpu, 64, false, read));
+    EXPECT_TRUE(read.finish());
+    dev.destroyTexture(t);
+    dev.arenaRelease(b);
+    dev.destroyArena(arena);
+}
+
+// makeAliasable gives back the whole footprint the heap answered for a texture, the stand-in placed beside it included.
+// The empty pack holds no extended-range conversion state, so an RG8Unorm_sRGB texture's stand-in, placed in the arena as
+// arenaTexture places an extended-range one's, stands in for it.
+TEST_P(ArenaTrimParts, MakingATextureAliasableGivesBackItsStandInsPlacementToo)
+{
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(4 * kQuarter, GetParam(), arena));
+    raw::TextureAsk ask;
+    ask.width = ask.height = 128;
+    ask.format = raw::kRG8Srgb;
+    ask.tiled = GetParam();
+    raw::Texture t;
+    ASSERT_TRUE(dev.arenaTexture({arena, std::nullopt}, ask, t));
+    const raw::ArenaAt at{arena, std::nullopt};
+    ASSERT_TRUE(dev.createStandIn(t, &at));
+    ASSERT_NE(t.standIn, nullptr);
+    ASSERT_TRUE(t.standIn->arena);
+    ASSERT_EQ(dev.arenaUsed(arena), t.span.bytes + t.standIn->span.bytes);
+    dev.makeArenaAliasable(t);
+    EXPECT_EQ(dev.arenaUsed(arena), 0u);
+    raw::Buffer whole;
+    ASSERT_TRUE(dev.arenaBuffer(arena, 4 * kQuarter, whole)) << "the stand-in's range is free again";
+    dev.destroyTexture(t);
+    EXPECT_EQ(dev.arenaUsed(arena), 4 * kQuarter) << "the texture's last drop gives back no placement it had given";
+    dev.arenaRelease(whole);
+    EXPECT_EQ(dev.arenaUsed(arena), 0u);
     dev.destroyArena(arena);
 }
 

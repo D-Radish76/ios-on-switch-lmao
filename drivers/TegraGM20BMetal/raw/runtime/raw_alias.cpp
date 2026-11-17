@@ -238,6 +238,14 @@ void Device::makeArenaAliasable(Span &span, Lease *&lease)
     dropLocked(hold);
 }
 
+// An extended-range texture's stand-in was placed in the arena beside it (arenaTexture), counted in its footprint
+void Device::makeArenaAliasable(Texture &t)
+{
+    for (Texture *placed : {&t, t.standIn})
+        if (placed && placed->arena)
+            makeArenaAliasable(placed->span, placed->lease);
+}
+
 void Device::dropLocked(Lease *lease)
 {
     if (--lease->refs)

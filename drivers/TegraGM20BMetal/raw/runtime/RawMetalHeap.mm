@@ -18,7 +18,8 @@ bool arenaKind(MTLStorageMode mode, bool &blockLinear)
     return blockLinear || mode == MTLStorageModeShared;
 }
 
-// The arena's pages, back if it was purged: before anything is placed in it or a command buffer reaches it
+// The arena's pages, back if it was purged, before a command buffer or m2v reaches it (a placement brings them back under
+// the device's lock: raw_arena.cpp)
 bool resident(RMHeap *h)
 {
     if (!h || !h->_arena || gRM->raw->restoreArena(h->_arena - 1))
@@ -37,7 +38,7 @@ bool matchingOptions(RMHeap *h, MTLResourceOptions options)
 id<MTLBuffer> makeArenaBuffer(RMHeap *h, NSUInteger length, MTLResourceOptions options,
                               std::optional<uint64_t> offset = {})
 {
-    if (!matchingOptions(h, options) || !resident(h))
+    if (!matchingOptions(h, options))
         return nil;
     RMBuffer *b = [RMBuffer new];
     b->_device = h->_device;
@@ -58,7 +59,7 @@ id<MTLBuffer> makeArenaBuffer(RMHeap *h, NSUInteger length, MTLResourceOptions o
 id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::TextureAsk &ask,
                                 std::optional<uint64_t> offset = {})
 {
-    if (!matchingOptions(h, d.resourceOptions) || !resident(h))
+    if (!matchingOptions(h, d.resourceOptions))
         return nil;
     RMTexture *t = [RMTexture new];
     t->_device = h->_device;
@@ -358,9 +359,10 @@ void restoreArenas(RMCommandBuffer *cb)
 {
     for (id o : cb->_owners) {
         RMHeap *h = nil;
-        if ([o isKindOfClass:[RMTexture class]])
-            h = ((RMTexture *)o)->_heap ?: (((RMTexture *)o)->_parent ? ((RMTexture *)o)->_parent->_heap : nil);
-        else if ([o isKindOfClass:[RMBuffer class]])
+        if ([o isKindOfClass:[RMTexture class]]) {
+            __unsafe_unretained RMTexture *owner = ((RMTexture *)o)->_levelsOwner ?: (RMTexture *)o;
+            h = owner->_heap ?: (owner->_buffer ? owner->_buffer->_heap : nil);
+        } else if ([o isKindOfClass:[RMBuffer class]])
             h = ((RMBuffer *)o)->_heap;
         else if ([o isKindOfClass:[RMHeap class]])
             h = (RMHeap *)o;

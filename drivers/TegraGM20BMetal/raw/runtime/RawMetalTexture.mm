@@ -433,7 +433,7 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
         return;
     _aliasable = true;
     if (_raw.arena)
-        gRM->raw->makeArenaAliasable(_raw.span, _raw.lease);
+        gRM->raw->makeArenaAliasable(_raw);
     _heap->_used -= _heapBytes;
     _heapBytes = 0;
 }

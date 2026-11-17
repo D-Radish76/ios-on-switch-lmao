@@ -28,4 +28,18 @@ template <class Arena> bool arenaSetVolatile(Arena &a, bool keep)
     return a.purged;
 }
 
+// A purged arena bound whole again by `bind`, under the device's lock, before a command buffer reaches it or anything is
+// placed in it: a placement's storage is cut from the arena's bound pages as they are then. False: no memory for it, it
+// stays purged.
+template <class Arena, class Count, class Bind> bool arenaRestore(Arena &a, Count &purgedArenas, Bind &&bind)
+{
+    if (!a.purged)
+        return true;
+    if (!bind(a))
+        return false;
+    a.purged = false;
+    purgedArenas--;
+    return true;
+}
+
 }  // namespace raw

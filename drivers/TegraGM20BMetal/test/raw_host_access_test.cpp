@@ -186,7 +186,32 @@ TEST_F(RawHostAccess, MultipartAcquireFailureUnwindsBeforeReleasingTheArena)
     EXPECT_EQ(unpins.size(), 1u);
 }
 
-TEST_F(RawHostAccess, MultipartReleaseKeepsTheArenaUntilEveryLeaseIsReleased)
+TEST_F(RawHostAccess, MultipartReleaseReleasesTheArenaAfterEveryRange)
+{
+    raw::Bo second = bo, third = bo;
+    second.handle = 8;
+    third.handle = 9;
+    std::vector<size_t> unpins;
+    raw::HostAccess access;
+    ASSERT_TRUE(access.acquire(kernel, {{bo, 1, 1}, {second, 2, 1}, {third, 3, 1}}, false, &unpins, 9,
+                               [](void *owner, uint32_t arena) {
+                                   EXPECT_EQ(arena, 9u);
+                                   static_cast<std::vector<size_t> *>(owner)->push_back(calls.size());
+                               }));
+    ASSERT_TRUE(access.finish());
+    ASSERT_EQ(calls.size(), 6u);
+    EXPECT_EQ(calls[3].handle, third.handle);
+    EXPECT_EQ(calls[4].handle, second.handle);
+    EXPECT_EQ(calls[5].handle, bo.handle);
+    for (size_t i = 3; i < calls.size(); ++i)
+        EXPECT_FALSE(calls[i].acquire);
+    EXPECT_EQ(unpins, (std::vector<size_t>{6}));
+    EXPECT_TRUE(access.finish());
+    EXPECT_EQ(unpins.size(), 1u);
+}
+
+// A refused release leaves nothing to come back for the arena: every range is still released, then the arena once
+TEST_F(RawHostAccess, AFailedMultipartReleaseStillReleasesEveryRangeAndTheArena)
 {
     raw::Bo second = bo, third = bo;
     second.handle = 8;
@@ -200,19 +225,50 @@ TEST_F(RawHostAccess, MultipartReleaseKeepsTheArenaUntilEveryLeaseIsReleased)
                                }));
     releaseFails = true;
     EXPECT_FALSE(access.finish());
-    EXPECT_TRUE(unpins.empty());
-    ASSERT_EQ(calls.size(), 4u);
-    EXPECT_EQ(calls.back().handle, third.handle);
-    EXPECT_FALSE(calls.back().acquire);
+    ASSERT_EQ(calls.size(), 6u);
+    EXPECT_EQ(calls[3].handle, third.handle);
+    EXPECT_EQ(calls[4].handle, second.handle);
+    EXPECT_EQ(calls[5].handle, bo.handle);
+    EXPECT_EQ(unpins, (std::vector<size_t>{6}));
     releaseFails = false;
-    ASSERT_TRUE(access.finish());
-    ASSERT_EQ(calls.size(), 7u);
-    EXPECT_EQ(calls[4].handle, third.handle);
-    EXPECT_EQ(calls[5].handle, second.handle);
-    EXPECT_EQ(calls[6].handle, bo.handle);
-    for (size_t i = 3; i < calls.size(); ++i)
-        EXPECT_FALSE(calls[i].acquire);
-    EXPECT_EQ(unpins, (std::vector<size_t>{7}));
+    EXPECT_TRUE(access.finish());
+    EXPECT_EQ(calls.size(), 6u);
+    EXPECT_EQ(unpins.size(), 1u);
+}
+
+TEST_F(RawHostAccess, TheDestructorReleasesTheArenaAfterAFailedMultipartRelease)
+{
+    std::vector<size_t> unpins;
+    {
+        raw::HostAccess access;
+        raw::Bo second = bo;
+        second.handle = 8;
+        ASSERT_TRUE(access.acquire(kernel, {{bo, 1, 1}, {second, 2, 1}}, true, &unpins, 9,
+                                   [](void *owner, uint32_t) {
+                                       static_cast<std::vector<size_t> *>(owner)->push_back(calls.size());
+                                   }));
+        releaseFails = true;
+    }
+    EXPECT_EQ(reports, 1u);
+    EXPECT_EQ(unpins, (std::vector<size_t>{4}));
+}
+
+TEST_F(RawHostAccess, AFailedUnwindStillReleasesTheArena)
+{
+    raw::Bo second = bo;
+    second.handle = 8;
+    refusedAcquireHandle = second.handle;
+    releaseFails = true;
+    std::vector<size_t> unpins;
+    raw::HostAccess access;
+    EXPECT_FALSE(access.acquire(kernel, {{bo, 1, 1}, {second, 2, 1}}, true, &unpins, 9,
+                                [](void *owner, uint32_t) {
+                                    static_cast<std::vector<size_t> *>(owner)->push_back(calls.size());
+                                }));
+    ASSERT_EQ(calls.size(), 3u);
+    EXPECT_FALSE(calls[2].acquire);
+    EXPECT_EQ(unpins, (std::vector<size_t>{3}));
+    releaseFails = false;
     EXPECT_TRUE(access.finish());
     EXPECT_EQ(unpins.size(), 1u);
 }

@@ -2432,6 +2432,7 @@ public:
     static bool footprint(const TextureAsk &ask, uint64_t &bytes, uint64_t &align);
     bool arenaBuffer(uint32_t arena, uint64_t length, Buffer &b, std::optional<uint64_t> offset = {});
     void makeArenaAliasable(Span &span, Lease *&lease);
+    void makeArenaAliasable(Texture &t);
     void arenaRelease(Texture &t);
     void arenaRelease(Buffer &b);
     uint64_t arenaUsed(uint32_t arena);
