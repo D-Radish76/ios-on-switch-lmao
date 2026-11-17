@@ -8,8 +8,9 @@ import Metal
 /// against the same chain by the shipping route (the 2D engine at the proven steps of fx::twodChainFormat's formats, the
 /// format's mip state at the others). `candidates=<fmt>:<proven steps>/<odd steps>/<level 1 against the route>`, each
 /// exact, near (within one code) or wrong: a format near or exact at the proven steps chains on the 2D engine there.
-/// cand_<fmt>_route_* and cand_<fmt>_route_odd_* hold the shipping route's steps against MipReference. It reports; it fails only when the work
-/// left the raw path.
+/// cand_<fmt>_route_* and cand_<fmt>_route_odd_* hold the shipping route's steps against MipReference. It reports; it
+/// fails when the work left the raw path or when a candidate's command buffer failed or threw (`<fmt>:error`, the
+/// formats and the first error in the detail).
 struct MipCandidatesTest: HWTest {
     let id = "gpu.raw.mip_twod_candidates"
     let name =
@@ -27,6 +28,8 @@ struct MipCandidatesTest: HWTest {
         var detail = Metrics()
         var cells: [String] = []
         var paths: Set<String> = []
+        var failed: [String] = []
+        var firstError: String?
         let before = RawFacade.counters(of: gpu.device)
         for f in MipFormats.candidates {
             let chains = MipChains(gpu: gpu, format: f)
@@ -44,6 +47,8 @@ struct MipCandidatesTest: HWTest {
                 }
             } catch {
                 cells.append("\(f.name):error")
+                failed.append(f.name)
+                firstError = firstError ?? "\(f.name): \(error)"
                 continue
             }
             cells.append("\(f.name):\(proven.verdict)/\(odd.verdict)/\(level1.verdict)")
@@ -59,6 +64,11 @@ struct MipCandidatesTest: HWTest {
         metrics.set("mip_twod_levels", (after["mip_twod_levels"] ?? 0) - (before["mip_twod_levels"] ?? 0))
         metrics.set("paths", paths.sorted().joined(separator: ","))
         metrics.merge(detail)
-        return paths == ["raw"] ? .pass(metrics) : .fail("paths", metrics)
+        var wrong: [String] = []
+        if paths != ["raw"] { wrong.append("paths") }
+        if let firstError {
+            wrong.append("failed or threw: \(failed.joined(separator: ",")) (first \(firstError))")
+        }
+        return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: "; "), metrics)
     }
 }

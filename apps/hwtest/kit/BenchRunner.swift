@@ -5,7 +5,7 @@ import Metal
 import SwitchBench
 
 /// The bench's raw device (apps/hwtest/bench/switch_bench.h): one experiment at a time, on its caller's thread.
-final class BenchRunner {
+public final class BenchRunner {
     private let bench: OpaquePointer
     private var rival: BenchRunner?
 
@@ -14,7 +14,7 @@ final class BenchRunner {
     deinit { switch_bench_close(bench) }
 
     /// The Metal device is made first: it loads the GPU plugin, beside which the bench finds the raw pack.
-    static func open() throws -> BenchRunner {
+    public static func open() throws -> BenchRunner {
         _ = MTLCreateSystemDefaultDevice()
         var why = [CChar](repeating: 0, count: 256)
         guard let bench = switch_bench_open(&why, why.count) else { throw BenchInvalid(String(cString: why)) }
@@ -69,7 +69,7 @@ final class BenchRunner {
         return status == "ok" ? status : "\(status):\(Self.text(&r.why))"
     }
 
-    func run(_ e: BenchExperiment) -> BenchOutcome {
+    public func run(_ e: BenchExperiment) -> BenchOutcome {
         let started = DispatchTime.now().uptimeNanoseconds
         let pinned = Pinned()
         let program = e.program ?? BenchProgram(sph: Data(), code: Data(), data: Data(), gprs: 0)

@@ -520,6 +520,7 @@ BY_IOS: dict[str, dict[str, bool]] = {
         'gpu.x1.vic_compose': False,
         'gpu.x1.vic_odd_size': False,
         'gpu.x1.index_past_limit': False,
+        'gpu.x1.iadd3_forms': False,
     },
 }
 
