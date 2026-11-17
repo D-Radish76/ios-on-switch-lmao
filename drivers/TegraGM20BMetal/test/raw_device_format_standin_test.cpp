@@ -5,7 +5,8 @@
 // passes raw::Device submits: R8Unorm_sRGB's first byte moved by the copy engine into an RGBA8Unorm_sRGB stand-in and back;
 // A1BGR5Unorm, ABGR4Unorm and RGB9E5Float filled by the load state into an RGBA32Float stand-in and stored by their store
 // state into the texture's words viewed as R16Uint or R32Uint; a level of a chain rendered through its own stand-in; and
-// generateMipmapsForTexture: of each, a pass of the format's mip state a level into the level's words.
+// generateMipmapsForTexture: of each, a pass of the format's mip state a level into the level's words; BGR10_XR_sRGB's
+// passes through an RGBA16Float stand-in into its codes.
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_attachment_target.h"
 #include "../raw/runtime/raw_format_standin.h"
@@ -344,6 +345,40 @@ TEST_F(DeviceFormatStandIn, APackedTargetIsFilledByTheLoadStateAndStoredIntoItsW
         EXPECT_EQ(passes[1].first, t.va) << "the store state's pass into the texture's words";
         EXPECT_EQ(passes[1].second, rt) << format;
     }
+}
+
+// BGR10_XR_sRGB: a texture of its codes, which the 3D engine renders none of; a pass renders into an RGBA16Float stand-in
+// the texture's own sampling conversion fills from the codes, and the store state writes the stand-in back into them
+TEST_F(DeviceFormatStandIn, AnSrgbExtendedRangeTargetRendersThroughAHalfStandInIntoItsCodes)
+{
+    addState(raw::formatLoadState(raw::kBgr10XrSrgb), 115);
+    addState(raw::formatStoreState(raw::kBgr10XrSrgb), raw::formatStoreView(raw::kBgr10XrSrgb));
+    raw::Texture t, words;
+    ASSERT_TRUE(dev.createTexture(64, 32, raw::kBgr10XrSrgb, t, true, true));
+    ASSERT_TRUE(dev.createTexture(64, 32, 53, words, true, true));
+    EXPECT_FALSE(t.renderable || t.shadowTarget) << "no render target format of the GM20B's";
+    EXPECT_EQ(raw::DeviceHarness::header(dev, t.tic)[0], raw::DeviceHarness::header(dev, words.tic)[0])
+        << "its codes, read as R32Uint's are";
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    const size_t first = kernel_model::model.jobs.size();
+    const char *why = nullptr;
+    raw::Texture *s = raw::formatStandInFor(dev, *cb, t, 0, true, &why);
+    ASSERT_NE(s, nullptr) << why;
+    EXPECT_EQ(s->format, 115u) << "RGBA16Float: Metal's tile holds the pass in halves";
+    const uint64_t standIn = s->va;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, t, *s, &why)) << why;
+    uint32_t seq = 0;
+    ASSERT_TRUE(cb->commit(seq));
+    std::vector<Launch> launches;
+    std::vector<Method> methods;
+    decode(first, launches, methods);
+    const auto passes = targets(methods);
+    ASSERT_EQ(passes.size(), 2u);
+    EXPECT_EQ(passes[0].first, standIn) << "the load state's pass into the stand-in";
+    EXPECT_EQ(passes[0].second, raw::formatInfo(115)->rt) << "RGBA16Float's target";
+    EXPECT_EQ(passes[1].first, t.va) << "the store state's pass into the codes";
+    EXPECT_EQ(passes[1].second, raw::formatInfo(53)->rt) << "R32Uint's target";
 }
 
 TEST_F(DeviceFormatStandIn, ALevelOfAChainRendersThroughItsOwnStandIn)

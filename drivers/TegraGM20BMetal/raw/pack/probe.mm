@@ -155,6 +155,7 @@ int main(int argc, char **argv)
         const std::vector<id<MTLTexture>> textures = tagged(MTLPixelFormatBGRA8Unorm);
         const std::map<std::string, std::vector<id<MTLTexture>>> codeTextures = {
             {"f xr_bgr10_frag", tagged(MTLPixelFormatR32Uint)},
+            {"f xr_bgr10_srgb_frag", tagged(MTLPixelFormatR32Uint)},
             {"f xr_bgra10_frag", tagged(MTLPixelFormatRGBA16Uint)},
             {"f xr_planes_frag", tagged(MTLPixelFormatRG32Uint)},
             {"f xr_two_planes_frag", tagged(MTLPixelFormatR32Uint)},

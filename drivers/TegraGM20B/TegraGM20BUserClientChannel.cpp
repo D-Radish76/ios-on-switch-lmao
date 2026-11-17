@@ -3,6 +3,7 @@
 #include "TegraGM20BUserClientInternal.h"
 #include "TegraGM20BLayoutAsk.h"
 #include "TegraGM20BRecord.h"
+#include "../../kits/SwitchRefusal/SwitchRefusal.h"
 
 // lock_ held. A Map into VA no binding holds publishes its binding with the submit gate open: no job in flight can have
 // resolved that VA. A cut (an Unmap, or a Map over a live binding) closes the gate first: its retirement snapshot and the
@@ -140,8 +141,13 @@ IOReturn AGXDeviceUserClient::surfaceLayoutInfo(const TegraGM20BAbiSurfaceLayout
 	bo->layoutAsked = true;
 	SwitchGpuSurfaceGeometry surface = {};
 	if (switch_gpu_surface_geometry(tgm_coh_surface_id(bo->coh), task_, bo->pas, bo->npages,
-					&surface))
+					&surface)) {
+		switch_refusal(
+			"iosurface-layout", "geometry",
+			"IOSurface %u: import %llu of %u pages is not its memory in this task",
+			tgm_coh_surface_id(bo->coh), in->handle, bo->npages);
 		return kIOReturnBadArgument;
+	}
 	tgm_coh *coh = bo->coh;
 	OSObject *object = bo->surface;
 	const uint64_t first = bo->pas[0];

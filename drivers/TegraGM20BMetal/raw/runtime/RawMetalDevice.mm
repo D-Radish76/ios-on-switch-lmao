@@ -710,8 +710,15 @@ static void noteCompositorTarget(MTLTextureDescriptor *d, const void *frame)
                 "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
                 getprogname(), IOSurfaceGetID(s), (unsigned long)d.height, pitch, IOSurfaceGetAllocSize(s), extra);
             return nil;
-        } else
-            refuseTexture(t, PredTexSurfImport, 1, 0, @"surface", extra);
+        } else {
+            SWITCH_REFUSE_DETAIL(
+                "raw", "tex.surf.imp", 0,
+                "no texture over IOSurface %u: its import, layout or texture header was refused (a kernel refusal "
+                "logs its bo-import or iosurface-layout step): nil (MTLDevice.h "
+                "newTextureWithDescriptor:iosurface:plane:, nullable): %s",
+                IOSurfaceGetID(s), extra.UTF8String);
+            return nil;
+        }
         if (![t rmTwin])
             return nil;
     }

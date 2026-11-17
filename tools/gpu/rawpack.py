@@ -80,7 +80,7 @@ YCBCR_STAND_IN = 125
 STAND_INS = {588: 55, 589: 105}
 # raw/runtime/raw_format_standin.h formatStandIn: the formats the GM20B renders none of that a stand-in of another
 # format renders, and those of them that hold alpha (formatHoldsAlpha)
-FORMAT_STAND_INS = {11: 71, 41: 125, 42: 125, 93: 125}
+FORMAT_STAND_INS = {11: 71, 41: 125, 42: 125, 93: 125, 555: 115}
 HOLDS_ALPHA = frozenset({41, 42})
 # raw/runtime/raw_standin_blend.h alphaOneFactor: MTLBlendFactorDestinationAlpha, OneMinusDestinationAlpha and
 # SourceAlphaSaturated where the destination alpha is 1, of a colour blend and of an alpha blend

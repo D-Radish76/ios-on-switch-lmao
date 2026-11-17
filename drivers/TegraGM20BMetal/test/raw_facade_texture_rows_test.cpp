@@ -181,7 +181,60 @@ void surfaceOffAPage()
     expectNoM2V(device);
 }
 
+// A texture over a surface whose import the kernel refuses is nil, with no m2v device asked for one: m2v's NVK imports the
+// same pages through the same BoImport (boot C32's mediaanalysisd: a 360x360 BGRA surface it reads and writes)
+void aRefusedImportIsNil()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @360,
+        (id)kIOSurfaceHeight : @360,
+        (id)kIOSurfaceBytesPerElement : @4,
+        (id)kIOSurfaceBytesPerRow : @1472,
+        (id)kIOSurfacePixelFormat : @(uint32_t('BGRA'))
+    });
+    ASSERT_TRUE(surface != nullptr);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                 width:360
+                                                                                height:360
+                                                                             mipmapped:NO];
+    d.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+    kernel_model::model.refuseImports = 1;
+    EXPECT_EQ([device newTextureWithDescriptor:d iosurface:surface plane:0], nil);
+    EXPECT_EQ(kernel_model::model.refuseImports, 0u) << "the kernel was asked";
+    EXPECT_TRUE([device newTextureWithDescriptor:d iosurface:surface plane:0] != nil) << "the next import is taken";
+    CFRelease(surface);
+    expectNoM2V(device);
+}
+
+// BGR10_XR_sRGB is raw's: AegirPoster's 720x1280 shared target that it samples (boot C32 made it on m2v and replayed every
+// pass into it there)
+void anSrgbExtendedRangeTextureIsRaws()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
+    ASSERT_TRUE(device != nil);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGR10_XR_sRGB
+                                                                                 width:720
+                                                                                height:1280
+                                                                             mipmapped:NO];
+    d.storageMode = MTLStorageModeShared;
+    d.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+    EXPECT_TRUE([device newTextureWithDescriptor:d] != nil);
+    expectNoM2V(device);
+}
+
 }  // namespace
+
+TEST(RawFacadeTextureRows, ARefusedSurfaceImportIsNilWithNoM2V)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(aRefusedImportIsNil);
+}
+
+TEST(RawFacadeTextureRows, AnSrgbExtendedRangeTextureIsRawsWithNoM2V)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(anSrgbExtendedRangeTextureIsRaws);
+}
 
 TEST(RawFacadeTextureRows, ATexturePastItsMemoryOrOffItsRowsIsNil)
 {

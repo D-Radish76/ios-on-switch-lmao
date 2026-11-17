@@ -6052,3 +6052,15 @@ host_test(
     gtest_main = False,
     deps = ["//kits/SwitchGM20B:classes"],
 )
+
+host_test(
+    name = "raw_xr_srgb_test",
+    srcs = [
+        "raw_xr_srgb_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/pack/xr_srgb_decode.h",
+        "//drivers/TegraGM20BMetal:raw/pack/xr_srgb_encode.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_srgb.h",
+    ],
+    cxx_std = "c++17",
+)

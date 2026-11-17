@@ -403,6 +403,7 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "13 | v turn_vert | f turn_reach_frag",
                             "13 | v turn_vert | f turn_reach_reduce_frag",
                             "115 | v xr_vert | f xr_bgr10_frag",
+                            "115 | v xr_vert | f xr_bgr10_srgb_frag",
                             "115 | v xr_vert | f xr_bgra10_frag",
                             "115 | v xr_vert | f xr_planes_frag",
                             "115 | v xr_vert | f xr_two_planes_frag",
@@ -484,11 +485,12 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
     }
     // the formats the GM20B renders none of (runtime/raw_format_standin.h): their stand-ins' load and store states and their
     // mip states, each into its words' integer view
-    for (const char *out : {"125 | v fmt_vert | f fmt_load_frag", "125 | v fmt_vert | f fmt_load_rgb9e5_frag",
-                            "23 | v fmt_vert | f fmt_store_abgr4_frag", "23 | v fmt_vert | f fmt_store_a1bgr5_frag",
-                            "53 | v fmt_vert | f fmt_store_rgb9e5_frag", "23 | v fmt_vert | f fmt_mip_abgr4_frag",
-                            "23 | v fmt_vert | f fmt_mip_a1bgr5_frag", "53 | v fmt_vert | f fmt_mip_rgb9e5_frag",
-                            "13 | v fmt_vert | f fmt_mip_srgb8_frag"}) {
+    for (const char *out :
+         {"125 | v fmt_vert | f fmt_load_frag", "125 | v fmt_vert | f fmt_load_rgb9e5_frag",
+          "23 | v fmt_vert | f fmt_store_abgr4_frag", "23 | v fmt_vert | f fmt_store_a1bgr5_frag",
+          "53 | v fmt_vert | f fmt_store_rgb9e5_frag", "53 | v fmt_vert | f fmt_store_bgr10_xr_srgb_frag",
+          "23 | v fmt_vert | f fmt_mip_abgr4_frag", "23 | v fmt_vert | f fmt_mip_a1bgr5_frag",
+          "53 | v fmt_vert | f fmt_mip_rgb9e5_frag", "13 | v fmt_vert | f fmt_mip_srgb8_frag"}) {
         std::string o = out;
         const size_t bar = o.find(' ');
         lines.push_back("@O R ok=1 label=raw.own samples=1 topo=0 ds=0/0 c0=" + o.substr(0, bar) + ":15:0:1:0:0:1:0:0" +

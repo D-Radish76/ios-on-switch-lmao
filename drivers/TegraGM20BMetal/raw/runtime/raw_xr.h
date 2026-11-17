@@ -12,7 +12,9 @@
 // encode, measured against Apple's GPUs). A draw samples a stand-in instead (Texture::standIn): an RGBA16Float image of the codes'
 // values, which a pass of the pack's conversion state (pack/xr.metal) draws before the work that samples it. Core Animation's
 // functions read these textures as half, and each code's value rounded to half is what Metal's nearest read returns.
-// The _sRGB twins (551, 553, 555) read through Metal's own tables and are not kept here.
+// BGR10_XR_sRGB (555) is BGR10_XR's word with each colour code read and written through Metal's own sRGB tables: its stand-in
+// holds those reads, and a pass renders it through its format's stand-in (raw_format_standin.h), never its codes. The other
+// _sRGB twins (551, 553) are not kept here.
 #pragma once
 
 #include <algorithm>
@@ -23,9 +25,10 @@ namespace raw {
 
 enum class XrForm : uint8_t {
     None,
-    Planes,  // RGB10A8_2P_XR10
-    Bgra10,  // BGRA10_XR
-    Bgr10    // BGR10_XR
+    Planes,    // RGB10A8_2P_XR10
+    Bgra10,    // BGRA10_XR
+    Bgr10,     // BGR10_XR
+    Bgr10Srgb  // BGR10_XR_sRGB
 };
 
 inline XrForm xrForm(uint32_t mtlPixelFormat)
@@ -37,6 +40,8 @@ inline XrForm xrForm(uint32_t mtlPixelFormat)
         return XrForm::Bgra10;
     case 554:
         return XrForm::Bgr10;
+    case 555:
+        return XrForm::Bgr10Srgb;
     default:
         return XrForm::None;
     }
@@ -53,6 +58,8 @@ inline const char *xrConversion(XrForm f, bool twoPlanes = false)
         return "raw.xr.xr_bgra10_frag";
     case XrForm::Bgr10:
         return "raw.xr.xr_bgr10_frag";
+    case XrForm::Bgr10Srgb:
+        return "raw.xr.xr_bgr10_srgb_frag";
     case XrForm::None:
         break;
     }
@@ -134,6 +141,7 @@ inline void xrClearTexel(XrForm f, const float color[4], bool straight, uint32_t
         out[2] = code[0] << 6;
         out[3] = code[3] << 6;
         break;
+    case XrForm::Bgr10Srgb:  // cleared in its stand-in (formatStandInClear), never through the clear registers
     case XrForm::None:
         break;
     }

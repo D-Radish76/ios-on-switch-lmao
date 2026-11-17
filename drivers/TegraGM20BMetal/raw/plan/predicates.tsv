@@ -7,7 +7,6 @@
 # reached raw: gone with m2v), growth (a pool grows or the GPU work waits; never a refusal).
 # tag	fires	fate	covered_by	note
 tex.shape	create	gap	rotated_target,stored_multisample,two_plane_extended_range,planar_target	terms 5 rotation (R1, probe gpu.x1.rotated_target), 3 samples (R3), 6 format 550 over two planes (R2) and planar YCbCr (R4); terms 1, 2, 4 (type, levels, arrays) are L3 layouts from NIL
-tex.surf.imp	create	layer	L3	the kernel refused the import or the header slot: a resource failure at creation
 tex.planar	create	rule	planar.codes	the 4:4:4 two-plane code texture: copy-engine remaps from its planes when stale
 tex.buf.other	create	nil	-	memoryless, or past the buffer: newTextureWithDescriptor:offset:bytesPerRow: answers nil
 tex.view	create	layer	L3	views of another texel size or of a part of a 3D texture: TIC views made at view creation

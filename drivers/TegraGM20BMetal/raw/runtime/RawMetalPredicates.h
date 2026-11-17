@@ -15,9 +15,8 @@ enum RMPred : uint8_t {
     PredNone = 0,
     // textures the raw path does not keep, decided when made (a bind hits the texture's own predicate)
     PredTexShape,  // rawShape: a = failing term (1 type, 2 levels, 3 samples, 4 array/depth, 5 rotation, 6 format), b = format
-    PredTexSurfImport,  // the import or the header slot refused
-    PredTexPlanar,      // the 4:4:4 two-plane texture refused
-    PredTexBufOther,    // memoryless, past the buffer, header slot
+    PredTexPlanar,    // the 4:4:4 two-plane texture refused
+    PredTexBufOther,  // memoryless, past the buffer, header slot
     PredTexView,  // a view of a texture the raw path does not keep, or of another texel size: a = format, b = parent raw
     PredTexForeign,  // not an RMTexture (m2v's own: over an m2v buffer, or a creation selector the facade does not answer)
     // passes
@@ -67,7 +66,6 @@ enum RMPred : uint8_t {
 static_assert(PredCount <= 64, "one mask word");
 static constexpr const char *kPredNames[] = {"-",
                                              "tex.shape",
-                                             "tex.surf.imp",
                                              "tex.planar",
                                              "tex.buf.other",
                                              "tex.view",

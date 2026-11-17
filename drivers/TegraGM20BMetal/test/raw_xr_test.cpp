@@ -33,14 +33,19 @@ void expectTexel(const Texel &t, uint32_t w0, uint32_t w1, uint32_t w2, uint32_t
     EXPECT_EQ(t.w[3], w3);
 }
 
-TEST(RawXr, TheLinearFormsAreKeptAndTheirSrgbTwinsAreNot)
+// The linear forms and BGR10_XR_sRGB (BGR10_XR's word, its colour codes read and written through Metal's sRGB tables:
+// raw_xr_srgb.h) are kept. RGB10A8_2P_XR10_sRGB (551) and BGRA10_XR_sRGB (553) have no form built: no FormatInfo holds
+// them, so their textures are still left to m2v (tex.shape term 6)
+TEST(RawXr, TheLinearFormsAndBgr10XrSrgbAreKeptAndTheOtherSrgbTwinsAreNot)
 {
     EXPECT_EQ(raw::xrForm(550), raw::XrForm::Planes);
     EXPECT_EQ(raw::xrForm(552), raw::XrForm::Bgra10);
     EXPECT_EQ(raw::xrForm(554), raw::XrForm::Bgr10);
-    for (uint32_t srgb : {551u, 553u, 555u, 80u, 115u})
-        EXPECT_EQ(raw::xrForm(srgb), raw::XrForm::None);
+    EXPECT_EQ(raw::xrForm(555), raw::XrForm::Bgr10Srgb);
+    for (uint32_t other : {551u, 553u, 80u, 115u})
+        EXPECT_EQ(raw::xrForm(other), raw::XrForm::None);
     EXPECT_STREQ(raw::xrConversion(raw::XrForm::Planes), "raw.xr.xr_planes_frag");
+    EXPECT_STREQ(raw::xrConversion(raw::XrForm::Bgr10Srgb), "raw.xr.xr_bgr10_srgb_frag");
     EXPECT_EQ(raw::xrConversion(raw::XrForm::None), nullptr);
 }
 

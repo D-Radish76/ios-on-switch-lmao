@@ -4,6 +4,7 @@
 // over 255, as the half nearest that quotient. No quotient is a midpoint between two halves, so the rounding has no ties, and its
 // float lies nowhere near one, so Metal's read through float rounds to the same half. BGRA10_XR's alpha code is clamped to
 // [384, 894], the codes of [0, 1]; BGR10_XR's alpha is 1.
+// BGR10_XR_sRGB's word is BGR10_XR's, its colour codes read through Metal's sRGB table instead (xr_bgr10_srgb_frag).
 // Texture 0 is the codes through the raw path's integer header (raw_gpu.cpp kFormats): R32Uint (BGR10_XR), RGBA16Uint
 // (BGRA10_XR: blue's field first) or RG32Uint (RGB10A8_2P_XR10: the color word, then the alpha byte); an RGB10A8_2P_XR10
 // texture held in Metal's two planes (runtime/raw_xr_pass.h) is plane 0's words as R32Uint and plane 1's bytes, texture 1, as
@@ -57,6 +58,28 @@ static half3 word(uint w)
 fragment half4 xr_bgr10_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
 {
     return half4(word(codes.read(uint2(in.position.xy)).r), 1.0h);
+}
+
+constant ushort kSrgbDecode[640] = {
+#include "xr_srgb_decode.h"
+};
+
+// BGR10_XR_sRGB's read of a colour code (runtime/raw_xr_srgb.h bgr10XrSrgbValue): its decode step s / 8192, signed,
+// as the half nearest it with a tie away from zero (Metal's rounding of these steps). s is below 2^14: rounded to the half
+// step of its binade in integers, the quotient is exact in a half.
+static half srgbColor(uint code)
+{
+    const uint s = kSrgbDecode[code < 384 ? 384 - code : code - 384];
+    const uint k = s < 2048 ? 1 : s < 4096 ? 2 : s < 8192 ? 4 : 8;
+    const half v = half(float((s + k / 2) / k * k) * (1.0f / 8192.0f));
+    return code < 384 ? -v : v;
+}
+
+// Also the load state of a BGR10_XR_sRGB target's stand-in (runtime/raw_format_standin.h formatLoadState)
+fragment half4 xr_bgr10_srgb_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
+{
+    const uint w = codes.read(uint2(in.position.xy)).r;
+    return half4(srgbColor(w >> 20 & 0x3ff), srgbColor(w >> 10 & 0x3ff), srgbColor(w & 0x3ff), 1.0h);
 }
 
 fragment half4 xr_bgra10_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])

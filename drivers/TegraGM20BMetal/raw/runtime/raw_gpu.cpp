@@ -362,6 +362,7 @@ const FormatInfo kFormats[] = {
     {550, 0xcd, 0x60d49204, 8, false},  // RGB10A8_2P_XR10
     {552, 0xc9, 0x58d49203, 8, false},  // BGRA10_XR
     {554, 0xe4, 0x6014920f, 4, false},  // BGR10_XR
+    {555, 0, 0x6014920f, 4, false},  // BGR10_XR_sRGB (its codes; a pass renders it through its stand-in)
 };
 
 // bits [lo, hi] of the 256-bit header
@@ -2125,13 +2126,13 @@ static void blockLayout(const Texture &t, tgm_layout &bl)
     bl.bytes = (uint64_t(bl.row_bytes) * bl.rows + bl.align - 1) / bl.align * bl.align;
 }
 
-// createTexture's block-linear layout of shaped `t`, where it is asked tiled: a colour format's (the chunks are bound under
-// colour kind 0xFE, which a depth/stencil format's zeta is not) or a block-compressed one's (NVK's optimal image, never
-// pitch), of a shape that tiles
+// createTexture's block-linear layout of shaped `t`, where it is asked tiled and its shape tiles: every kFormats format, a
+// colour one under colour kind 0xFE (one the GM20B renders none of too, as its chains are) or a block-compressed one
+// (NVK's optimal image)
 static bool plainTiled(const Texture &t, bool tiled, tgm_layout &bl)
 {
     const bool blocks = t.blockW > 1 || t.blockH > 1;
-    if (!tiled || !(t.renderable || blocks) || !tgm_layout_tiled(t.width, t.height, t.bpp, &bl))
+    if (!tiled || !tgm_layout_tiled(t.width, t.height, t.bpp, &bl))
         return false;
     if (blocks)
         blockLayout(t, bl);

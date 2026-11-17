@@ -297,6 +297,9 @@ TEST_F(DeviceShapes, ExtendedRangeStandInsConvertTexelForTexel)
         {552, raw::kType2DMultisample, raw::shapes::kShared, 13, 9, 1, 1, 2, 1, 5},
         {550, raw::kType1D, raw::shapes::kShared, 70, 1, 1, 1, 1, 1, 1},
         {554, raw::kType1DArray, raw::shapes::kPrivate, 70, 1, 1, 1, 1, 4, 1},
+        {555, raw::kType2D, raw::shapes::kPrivate, 37, 21, 1, 3, 1, 1, 5},
+        {555, raw::kTypeCube, raw::shapes::kShared, 16, 16, 1, 2, 1, 1, 1},
+        {555, raw::kType3D, raw::shapes::kPrivate, 20, 12, 5, 1, 1, 1, 1},
     };
     for (const Case &k : cases) {
         TextureShape s;
@@ -341,6 +344,26 @@ TEST_F(DeviceShapes, ExtendedRangeStandInsConvertTexelForTexel)
         dev.destroyTexture(standIn);
         dev.destroyTexture(codes);
     }
+}
+
+// A one-level 2D BGR10_XR_sRGB texture is raw's codes in block-linear memory of its own, rendered through its format's
+// stand-in (raw_format_standin.h), as AegirPoster's 720x1280 shared target that it samples is (boot C32 made it on m2v)
+TEST_F(DeviceShapes, AnSrgbExtendedRangeTextureIsRawsOwn)
+{
+    TextureShape s;
+    s.format = 555;
+    s.storage = raw::shapes::kShared;
+    s.width = 720;
+    s.height = 1280;
+    s.usage = raw::shapes::kUsageRead | raw::shapes::kUsageTarget;
+    s.ownMemory = true;
+    EXPECT_EQ(raw::shapes::rawShapeTerm(s), 0u);
+    ASSERT_EQ(raw::shapes::route(s), raw::shapes::Route::Plain);
+    raw::Texture t;
+    ASSERT_TRUE(raw::shapes::create(dev, s, raw::shapes::Route::Plain, true, 0, t));
+    EXPECT_TRUE(t.blockLinear);
+    EXPECT_EQ(t.bpp, 4u);
+    dev.destroyTexture(t);
 }
 
 // A pass into a level and slice of an extended-range array renders its codes there (attachmentTarget), as a pass into a

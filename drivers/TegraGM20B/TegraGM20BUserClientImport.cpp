@@ -3,6 +3,7 @@
 #include "TegraGM20BUserClientInternal.h"
 #include "TegraGM20BRecord.h"
 #include "TegraGM20BSurfacePrefault.h"
+#include "../../kits/SwitchRefusal/SwitchRefusal.h"
 
 extern "C" IOMemoryDescriptor *tegra_gm20b_prefault_take(OSObject *surface);
 
@@ -204,8 +205,17 @@ IOReturn AGXDeviceUserClient::boImport(const TegraGM20BAbiBoImport *in,
 				    : 0;
 	const int tracked = !pinned && !adopted ? switch_gpu_backing_cpu_track(bo->backing) : 0;
 	if (pinned || adopted || tracked) {
+		// backing: its pages registered for no backing; pin: the coherency entry holds another backing; adopt: the
+		// surface's CPU leases hold another; track: no room to track its CPU writes
+		const char *step = !bo->backing ? "backing"
+				   : pinned     ? "pin"
+				   : adopted    ? "adopt"
+						: "track";
+		const int refused = pinned ? pinned : adopted ? adopted : tracked;
+		switch_refusal("bo-import", step, "IOSurface %u: %llu bytes at %#llx refused (%d)",
+			       in->surface_id, in->bytes, in->address, refused);
 		releaseBo(bo);
-		return ioreturn(pinned ? pinned : adopted ? adopted : tracked);
+		return ioreturn(refused);
 	}
 	int fresh = 0;
 	if (bo->surface) {

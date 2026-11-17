@@ -8,7 +8,8 @@
 namespace raw {
 namespace {
 
-// `t`'s words as texels of integer format `format`, read through a header of their own; false where none can be made
+// `t`'s words as texels of integer format `format`, read through a header of their own (not its sampled stand-in, which a
+// bind takes in their place); false where none can be made
 bool wordsView(Device &d, Texture &t, Texture &view, uint32_t format = 53 /* R32Uint */)
 {
     if (!d.sampleable(t))
@@ -16,6 +17,7 @@ bool wordsView(Device &d, Texture &t, Texture &view, uint32_t format = 53 /* R32
     view = t;
     view.format = format;
     view.sampled = nullptr;
+    view.standIn = nullptr;
     view.tic = d.viewTic(t, formatInfo(format)->tic0);
     return view.tic != 0;
 }
@@ -72,11 +74,12 @@ Texture *formatStandInFor(Device &d, CommandBuffer &rc, Texture &t, uint32_t slo
         b->end();
     }
     Texture words;
-    if (t.format == kRgb9e5Float ? !wordsView(d, t, words) : !d.sampleable(t)) {
+    const bool loadsWords = formatLoadsWords(t.format);
+    if (loadsWords ? !wordsView(d, t, words) : !d.sampleable(t)) {
         *why = "no texture header for a stand-in's fill";
         return nullptr;
     }
-    return drawAll(rc, load, *s, t.format == kRgb9e5Float ? words : t, why) ? s : nullptr;
+    return drawAll(rc, load, *s, loadsWords ? words : t, why) ? s : nullptr;
 }
 
 bool storeFormatStandIn(Device &d, CommandBuffer &rc, Texture &t, Texture &standIn, const char **why)

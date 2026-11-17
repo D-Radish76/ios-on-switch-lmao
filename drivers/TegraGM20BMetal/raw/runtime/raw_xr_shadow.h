@@ -35,11 +35,12 @@ inline uint8_t xrShadowColours(const std::string &key)
     return at == std::string::npos ? 0 : uint8_t(strtoul(key.c_str() + at + sizeof kXrShadowVariant - 1, nullptr, 10));
 }
 
-// The form whose tile a shadow holds; None for any other attachment
+// The form whose tile a shadow holds; None for any other attachment (BGR10_XR_sRGB's stand-in holds its pass's halves
+// itself: raw_format_standin.h)
 inline XrForm xrShadowForm(uint32_t mtlPixelFormat, bool twoPlanes)
 {
     const XrForm f = xrForm(mtlPixelFormat);
-    return f == XrForm::Planes && twoPlanes ? XrForm::None : f;
+    return (f == XrForm::Planes && twoPlanes) || f == XrForm::Bgr10Srgb ? XrForm::None : f;
 }
 
 // The pack's state that draws a shadow of the codes (pack/xr.metal): each colour code past 1022 read as 1022, as the tile holds
@@ -53,6 +54,7 @@ inline const char *xrTileState(XrForm f)
         return "raw.xr.xr_tile_bgra10_frag";
     case XrForm::Planes:
         return "raw.xr.xr_tile_planes_frag";
+    case XrForm::Bgr10Srgb:
     case XrForm::None:
         break;
     }

@@ -3,8 +3,9 @@
 // RGBA32Float stand-in. The load states fill the stand-in with the texture's texels as floats (RGB9E5Float's decoded from
 // its words); each store state writes the stand-in's texels into the texture's words, as an M4 Max stores a drawn texel:
 // A1BGR5Unorm and ABGR4Unorm each channel's nearest half, a tie to even, clamped to [0, 1] (a NaN 0), then its nearest code;
-// RGB9E5Float each channel clamped to [0, 65408] (a NaN 0), the largest's exponent shared, every mantissa truncated. A clear
-// goes into the stand-in as floats these give back (formatStandInClear).
+// RGB9E5Float each channel clamped to [0, 65408] (a NaN 0), the largest's exponent shared, every mantissa truncated;
+// BGR10_XR_sRGB (an RGBA16Float stand-in, filled by pack/xr.metal xr_bgr10_srgb_frag) each colour through Metal's sRGB
+// encode table. A clear goes into the stand-in as floats these give back (formatStandInClear).
 #include <metal_stdlib>
 using namespace metal;
 
@@ -67,6 +68,32 @@ fragment uint fmt_store_rgb9e5_frag(Out in [[stage_in]], texture2d<float, access
     const int e = m > 0.0f ? max(0, int(as_type<uint>(m) >> 23 & 255) - 127 + 16) : 0;
     const uint3 mantissa = uint3(floor(ldexp(c, int3(24 - e))));
     return mantissa.r | mantissa.g << 9 | mantissa.b << 18 | uint(e) << 27;
+}
+
+constant ushort kSrgbFirst[640] = {
+#include "xr_srgb_encode.h"
+};
+
+// Metal's write code of a BGR10_XR_sRGB colour value (runtime/raw_xr_srgb.h bgr10XrSrgbCode): a NaN 0, |v| below
+// 2 to the nearest 2^-13 (ties even; exact in a float), the largest offset whose first index is at most that, toward the
+// sign of v, at most 384 below code 384
+static uint xrSrgbCode(float v)
+{
+    if (isnan(v))
+        v = 0.0f;
+    const uint i = uint(rint(min(fabs(v), 2.0f) * 8192.0f));
+    uint n = 0;
+    for (uint step = 512; step; step >>= 1)
+        if (n + step < 640 && kSrgbFirst[n + step] <= i)
+            n += step;
+    return v < 0.0f ? 384 - min(n, 384u) : 384 + n;
+}
+
+// BGR10_XR_sRGB's stand-in (halves, its tile's) into its words, bits 30 and 31 set as Metal's write sets them
+fragment uint fmt_store_bgr10_xr_srgb_frag(Out in [[stage_in]], texture2d<float, access::read> s [[texture(0)]])
+{
+    const float4 v = texel(in, s);
+    return 0xC0000000u | xrSrgbCode(v.r) << 20 | xrSrgbCode(v.g) << 10 | xrSrgbCode(v.b);
 }
 
 // generateMipmapsForTexture: of such a chain (formatMipPasses): each texel Metal's step (pack/mip.metal's taps: one bilinear
