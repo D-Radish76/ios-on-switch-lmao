@@ -31,8 +31,8 @@ public:
     bool step(size_t until);
     // An encode opened ahead goes on after its command buffer's commit, up to `to` where its range ends; false: as open()
     bool resume(size_t to, const char **why, size_t *refusedEncoder);
-    // False: *why, or `stale` (a native surface changed: encode it again)
-    bool seal(size_t to, bool &stale);
+    // False: *why
+    bool seal(size_t to);
     // What open() took that no seal() submitted goes back (the raw command buffer abandoned where it is still open)
     void reset();
 

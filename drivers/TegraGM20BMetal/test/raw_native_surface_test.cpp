@@ -3,6 +3,7 @@
 #include "../raw/runtime/raw_native_plane.h"
 #include <gtest/gtest.h>
 #include <IOKit/IOReturn.h>
+#include <IOSurface/IOSurfaceRef.h>
 #include <algorithm>
 #include <atomic>
 #include <cstring>
@@ -24,6 +25,7 @@ struct Bo {
 
 struct Import {
     Bo bo;
+    const void *owner = nullptr;
     NativeSurface *native = nullptr;
 };
 
@@ -44,15 +46,19 @@ struct NativeSurface {
     using Key = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t>;
     std::map<Key, Texture> textures;
     uint64_t channelGeneration = 0, generation = 0;
-    uint32_t lastUse = 0, encodingReferences = 0;
+    uint32_t lastUse = 0, encodingReferences = 0, seed = 0;
     bool cached = true;
 };
 
+// A view's guard is the surface's representation word as the kernel made the view (nativeSurfaceView), which the reply
+// carries; a job reading through it is refused once the word moved
 struct Kernel {
     TegraGM20BAbiNativeSurfaceViewReply next = {};
     int result = KERN_SUCCESS;
-    unsigned queries = 0, frees = 0;
+    unsigned queries = 0, frees = 0, jobs = 0, refused = 0;
     bool views = true;
+    IOSurfaceRef surface = nullptr;
+    uint64_t representation = 1;
 
     bool exactJobs() const
     {
@@ -63,8 +69,18 @@ struct Kernel {
     {
         ++queries;
         layout = next;
+        layout.representation_generation = representation;
         bo = {next.handle, next.handle << 24, next.bytes};
         return result;
+    }
+
+    // The decoder's next picture published into the surface (switch_native_surface_publish): the guards move, then the
+    // engine's write end moves the seed (tegra_vic_surface_written), as a write lock does here
+    void publish()
+    {
+        ++representation;
+        IOSurfaceLock(surface, 0, nullptr);
+        IOSurfaceUnlock(surface, 0, nullptr);
     }
 
     void free(Bo &bo)
@@ -128,8 +144,9 @@ struct CommandBuffer {
     std::map<const Texture *, const Texture *> nativeReads_;
     std::vector<NativeSurface *> nativeSurfaces_;
     std::vector<const Import *> pitchImports_;
-    void requirePitch(const Import *);
+    void requirePitch(const Import *, bool);
     bool pitchAfterNativeRead() const;
+    bool nativeReadsCurrent() const;
     const Texture *readTexture(const Texture *);
     void invalidateNativeReads();
     void releaseNativeReads();
@@ -169,6 +186,42 @@ TegraGM20BAbiNativeSurfaceViewReply layout(uint32_t kind = TGM_LAYOUT_KIND)
     return out;
 }
 
+IOSurfaceRef makeSurface()
+{
+    int width = 1280, height = 720, bytes = 1;
+    CFNumberRef w = CFNumberCreate(nullptr, kCFNumberIntType, &width);
+    CFNumberRef h = CFNumberCreate(nullptr, kCFNumberIntType, &height);
+    CFNumberRef b = CFNumberCreate(nullptr, kCFNumberIntType, &bytes);
+    const void *keys[] = {kIOSurfaceWidth, kIOSurfaceHeight, kIOSurfaceBytesPerElement};
+    const void *values[] = {w, h, b};
+    CFDictionaryRef d =
+        CFDictionaryCreate(nullptr, keys, values, 3, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+    IOSurfaceRef s = IOSurfaceCreate(d);
+    CFRelease(d);
+    for (CFNumberRef n : {w, h, b})
+        CFRelease(n);
+    return s;
+}
+
+// SubmitJob over what `cb` read and wrote: refused kIOReturnNotReady where a native view's guard moved (runJob's backings);
+// a write of the surface prepares it mutably, which moves the guard and not the seed (SwitchGpuSurfaceRefresh)
+int submit(raw::Device &device, raw::CommandBuffer &cb)
+{
+    raw::Kernel &k = device.k_;
+    const bool stale =
+        std::any_of(cb.nativeSurfaces_.begin(), cb.nativeSurfaces_.end(), [&](const raw::NativeSurface *s) {
+            return s->layout.representation_generation != k.representation;
+        });
+    cb.releaseNativeReads();
+    if (stale) {
+        ++k.refused;
+        return kIOReturnNotReady;
+    }
+    ++k.jobs;
+    k.representation += !cb.pitchImports_.empty();
+    return KERN_SUCCESS;
+}
+
 class RawNativeSurface : public ::testing::Test {
 protected:
     raw::Device device;
@@ -179,6 +232,9 @@ protected:
     void SetUp() override
     {
         device.k_.next = layout();
+        device.k_.surface = makeSurface();
+        ASSERT_NE(device.k_.surface, nullptr);
+        source.owner = device.k_.surface;
         device.surfaces_[1] = &source;
         y.import = &source;
         y.nativePlane = 0;
@@ -186,7 +242,87 @@ protected:
         y.tic = 9;
         cb.dev_ = &device;
     }
+
+    void TearDown() override
+    {
+        if (device.k_.surface)
+            CFRelease(device.k_.surface);
+    }
 };
+
+// The decoder publishes its next picture into the surface between two command buffers: the second reads it through a view
+// the kernel made after the publication, and its job is not refused
+TEST_F(RawNativeSurface, ARepublishedSurfaceIsReadThroughAFreshView)
+{
+    ASSERT_NE(cb.readTexture(&y), &y);
+    ASSERT_EQ(submit(device, cb), KERN_SUCCESS);
+    device.k_.publish();
+    raw::CommandBuffer next;
+    next.dev_ = &device;
+    ASSERT_NE(next.readTexture(&y), &y);
+    EXPECT_EQ(submit(device, next), KERN_SUCCESS);
+    EXPECT_EQ(device.k_.queries, 2u);
+    EXPECT_EQ(device.k_.jobs, 2u);
+    EXPECT_EQ(device.k_.refused, 0u);
+    device.reapNativeSurfaces();
+    EXPECT_EQ(device.k_.frees, 1u);
+    EXPECT_EQ(device.nativeSurfaces_.size(), 1u);
+}
+
+// The view made after a publication stays the surface's while nothing writes it: a CPU lock that only reads leaves the
+// seed, and later command buffers read through that view without a new one
+TEST_F(RawNativeSurface, AnUnchangedSurfaceKeepsTheViewMadeAfterItsPublication)
+{
+    ASSERT_NE(cb.readTexture(&y), &y);
+    ASSERT_EQ(submit(device, cb), KERN_SUCCESS);
+    device.k_.publish();
+    raw::CommandBuffer fresh;
+    fresh.dev_ = &device;
+    const raw::Texture *view = fresh.readTexture(&y);
+    ASSERT_EQ(submit(device, fresh), KERN_SUCCESS);
+    IOSurfaceLock(device.k_.surface, kIOSurfaceLockReadOnly, nullptr);
+    IOSurfaceUnlock(device.k_.surface, kIOSurfaceLockReadOnly, nullptr);
+    for (int i = 0; i < 3; ++i) {
+        raw::CommandBuffer later;
+        later.dev_ = &device;
+        EXPECT_EQ(later.readTexture(&y), view);
+        EXPECT_EQ(submit(device, later), KERN_SUCCESS);
+    }
+    EXPECT_EQ(device.k_.queries, 2u);
+    EXPECT_EQ(device.k_.refused, 0u);
+}
+
+// A write of the surface this process submits invalidates its publication and leaves its seed: the next read is through a
+// new view, not refused
+TEST_F(RawNativeSurface, ASurfaceThisProcessWroteIsReadThroughAFreshView)
+{
+    ASSERT_NE(cb.readTexture(&y), &y);
+    ASSERT_EQ(submit(device, cb), KERN_SUCCESS);
+    raw::CommandBuffer writes;
+    writes.dev_ = &device;
+    writes.requirePitch(&source, true);
+    EXPECT_EQ(writes.readTexture(&y), &y);
+    ASSERT_EQ(submit(device, writes), KERN_SUCCESS);
+    raw::CommandBuffer reads;
+    reads.dev_ = &device;
+    ASSERT_NE(reads.readTexture(&y), &y);
+    EXPECT_EQ(submit(device, reads), KERN_SUCCESS);
+    EXPECT_EQ(device.k_.queries, 2u);
+    EXPECT_EQ(device.k_.refused, 0u);
+}
+
+// An encode ahead reads the surface through its view before the commit: at the commit the view is current while the
+// surface is unchanged, a CPU lock that only reads included, and not once the decoder published into it meanwhile
+TEST_F(RawNativeSurface, AnEncodeAheadsViewsAreCurrentOnlyWhileTheSurfaceIsUnchanged)
+{
+    ASSERT_NE(cb.readTexture(&y), &y);
+    EXPECT_TRUE(cb.nativeReadsCurrent());
+    IOSurfaceLock(device.k_.surface, kIOSurfaceLockReadOnly, nullptr);
+    IOSurfaceUnlock(device.k_.surface, kIOSurfaceLockReadOnly, nullptr);
+    EXPECT_TRUE(cb.nativeReadsCurrent());
+    device.k_.publish();
+    EXPECT_FALSE(cb.nativeReadsCurrent());
+}
 
 TEST_F(RawNativeSurface, UnchangedReadsReuseOneMappingAndHeader)
 {
@@ -251,7 +387,7 @@ TEST_F(RawNativeSurface, StaleReplacementKeepsOldDescriptorsUntilExactRetirement
 
 TEST_F(RawNativeSurface, WritesAndExplicitPitchAliasesPreventNativeSelection)
 {
-    cb.requirePitch(&source);
+    cb.requirePitch(&source, true);
     EXPECT_EQ(cb.readTexture(&y), &y);
     EXPECT_EQ(device.k_.queries, 0u);
     EXPECT_FALSE(cb.pitchAfterNativeRead());
@@ -259,7 +395,7 @@ TEST_F(RawNativeSurface, WritesAndExplicitPitchAliasesPreventNativeSelection)
     other.dev_ = &device;
     ASSERT_NE(other.readTexture(&y), &y);
     EXPECT_FALSE(other.pitchAfterNativeRead());
-    other.requirePitch(&source);
+    other.requirePitch(&source, false);
     EXPECT_EQ(other.readTexture(&y), &y);
     EXPECT_TRUE(other.pitchAfterNativeRead());
 }

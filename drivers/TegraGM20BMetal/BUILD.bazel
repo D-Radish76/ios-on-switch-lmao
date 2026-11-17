@@ -353,6 +353,8 @@ ios_binary(
         "CoreFoundation",
         "-framework",
         "IOKit",
+        "-framework",
+        "IOSurface",
     ],
     # debug builds only (Device::fetchBarrier): //boot:package depends on it in the debug profile
     tags = ["manual"],

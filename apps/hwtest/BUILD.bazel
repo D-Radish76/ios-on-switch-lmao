@@ -664,6 +664,8 @@ cc_library(
         "CoreFoundation",
         "-framework",
         "IOKit",
+        "-framework",
+        "IOSurface",
     ],
     target_compatible_with = ["@platforms//os:ios"],
     deps = [

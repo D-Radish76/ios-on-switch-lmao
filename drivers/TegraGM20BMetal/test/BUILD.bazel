@@ -2278,6 +2278,12 @@ host_test(
     ],
     copts = ["-Idrivers/TegraGM20B"],
     cxx_std = "c++17",
+    linkopts = [
+        "-framework",
+        "IOSurface",
+        "-framework",
+        "CoreFoundation",
+    ],
 )
 
 host_test(

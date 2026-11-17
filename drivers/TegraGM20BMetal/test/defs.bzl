@@ -85,6 +85,8 @@ def raw_device_test(name, srcs, copts = [], linkopts = [], deps = [], **kwargs):
             "-framework",
             "IOKit",
             "-framework",
+            "IOSurface",
+            "-framework",
             "CoreFoundation",
         ],
         deps = [":raw_device_runtime"] + deps,

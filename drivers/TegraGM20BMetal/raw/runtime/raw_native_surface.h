@@ -2,10 +2,25 @@
 #pragma once
 #include "raw_lock.h"
 #include "raw_native_plane.h"
+#include <IOSurface/IOSurfaceRef.h>
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 
 namespace raw {
+
+// Under the device's lock: the import's view leaves the cache, and is freed once no job or encode holds it
+inline void uncacheNative(Import &import, std::atomic<bool> &stale)
+{
+    import.native->cached = false;
+    stale.store(true, std::memory_order_release);
+    import.native = nullptr;
+}
+
+inline uint32_t surfaceSeed(const Import &import)
+{
+    return IOSurfaceGetSeed(static_cast<IOSurfaceRef>(const_cast<void *>(import.owner)));
+}
 
 const Texture *Device::nativeRead(const Texture &source, NativeSurface *&owner, int &error)
 {
@@ -18,9 +33,12 @@ const Texture *Device::nativeRead(const Texture &source, NativeSurface *&owner, 
     memcpy(&swizzle, source.swizzle, sizeof swizzle);
     const NativeSurface::Key key{source.nativePlane, source.width, source.height, source.format, swizzle};
     Import &import = *source.import;
+    // The kernel fixes a view's guards when it makes it (SwitchGpuNativeImport.h). The seed, read before the view is made,
+    // moves with each decoder publication and CPU write lock that stales them; a GPU write does not move it (requirePitch).
+    const uint32_t seed = surfaceSeed(import);
     NativeSurface *surface = import.native;
     // The submit worker alone changes this cache; the retained source prevents final import release.
-    if (surface) {
+    if (surface && surface->seed == seed) {
         const auto found = surface->textures.find(key);
         if (found != surface->textures.end()) {
             owner = surface;
@@ -28,8 +46,13 @@ const Texture *Device::nativeRead(const Texture &source, NativeSurface *&owner, 
         }
     }
     std::lock_guard<raw::Mutex> lock(lock_);
+    if (surface && surface->seed != seed) {
+        uncacheNative(import, nativeStale_);
+        surface = nullptr;
+    }
     if (!surface) {
         auto made = std::make_unique<NativeSurface>();
+        made->seed = seed;
         const int result = k_.nativeSurfaceView(import.bo, made->bo, made->layout);
         if (result != KERN_SUCCESS) {
             error = result;
@@ -44,9 +67,7 @@ const Texture *Device::nativeRead(const Texture &source, NativeSurface *&owner, 
     }
     if (!nativePlaneFits(surface->layout, source.nativePlane, source.width, source.height, source.bpp)) {
         // No submitted guard can invalidate a view we did not use. Requery after an unsupported representation.
-        surface->cached = false;
-        nativeStale_.store(true, std::memory_order_release);
-        import.native = nullptr;
+        uncacheNative(import, nativeStale_);
         return &source;
     }
     auto found = surface->textures.find(key);
@@ -92,10 +113,30 @@ void Device::reapNativeSurfaces(bool all)
     }
 }
 
-void CommandBuffer::requirePitch(const Import *source)
+void CommandBuffer::requirePitch(const Import *source, bool writes)
 {
-    if (source && std::find(pitchImports_.begin(), pitchImports_.end(), source) == pitchImports_.end())
+    if (!source)
+        return;
+    if (std::find(pitchImports_.begin(), pitchImports_.end(), source) == pitchImports_.end())
         pitchImports_.push_back(source);
+    // A GPU write of the surface invalidates its native publication in the kernel without moving its seed
+    if (writes && source->native) {
+        std::lock_guard<raw::Mutex> lock(dev_->lock_);
+        uncacheNative(*const_cast<Import *>(source), dev_->nativeStale_);
+    }
+}
+
+bool CommandBuffer::nativeReadsCurrent() const
+{
+    for (const auto &[source, view] : nativeReads_) {
+        if (view == source)
+            continue;
+        const Import &import = *source->import;
+        if (!import.native || import.native->generation != view->nativeGeneration ||
+            import.native->seed != surfaceSeed(import))
+            return false;
+    }
+    return true;
 }
 
 bool CommandBuffer::pitchAfterNativeRead() const

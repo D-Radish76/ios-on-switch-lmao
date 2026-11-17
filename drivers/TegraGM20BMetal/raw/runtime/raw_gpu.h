@@ -467,7 +467,7 @@ struct NativeSurface {
     using Key = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t, uint32_t>;
     std::map<Key, Texture> textures;
     uint64_t channelGeneration = 0, generation = 0;
-    uint32_t lastUse = 0, encodingReferences = 0;
+    uint32_t lastUse = 0, encodingReferences = 0, seed = 0;
     bool cached = true;
 };
 
@@ -1748,9 +1748,10 @@ public:
     std::string setRefused;
     std::shared_ptr<ResourceReadyCompletion> resourceReadiness(std::function<void()> ready, int &result);
     const Texture *readTexture(const Texture *texture);
-    void requirePitch(const Import *source);
+    void requirePitch(const Import *source, bool writes);
     // An import required pitch after a texture over it was read through its native image
     bool pitchAfterNativeRead() const;
+    bool nativeReadsCurrent() const;
     // Encoded before its command buffer's commit (RawMetalRangeEncode.h): the CPU may still write a buffer, so the encode
     // reads no buffer's contents; one that would have is `contentsDeferred` (the encode then stops, and goes again at the
     // commit)

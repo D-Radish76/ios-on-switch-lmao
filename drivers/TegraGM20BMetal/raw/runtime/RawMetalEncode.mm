@@ -156,18 +156,18 @@ bool RMRangeEncode::resources(size_t from, size_t to)
     };
     const auto pitchBuffer = [&](const RMRangeResource &use) {
         if (__unsafe_unretained RMBuffer *buffer = (__bridge RMBuffer *)use.facts.cpuBuffer)
-            rc->requirePitch(buffer->_raw.import);
+            rc->requirePitch(buffer->_raw.import, use.access & raw::ResourceUse::Write);
     };
     buffers(pitchBuffer);
     textures([&](const RMRangeResource &use) {
         pitchBuffer(use);
         __unsafe_unretained RMTexture *texture = (__bridge RMTexture *)use.object;
-        if ((use.access & (raw::ResourceUse::Write | raw::ResourceUse::Explicit)) ||
-            !(use.access & raw::ResourceUse::Sample)) {
-            rc->requirePitch(texture->_raw.import);
+        const bool writes = use.access & raw::ResourceUse::Write;
+        if (writes || (use.access & raw::ResourceUse::Explicit) || !(use.access & raw::ResourceUse::Sample)) {
+            rc->requirePitch(texture->_raw.import, writes);
             for (const raw::Texture *plane : {texture->_raw.luma, texture->_raw.chroma})
                 if (plane)
-                    rc->requirePitch(plane->import);
+                    rc->requirePitch(plane->import, writes);
         }
     });
     textures([&](const RMRangeResource &use) {
@@ -176,7 +176,7 @@ bool RMRangeEncode::resources(size_t from, size_t to)
         __unsafe_unretained RMTexture *texture = (__bridge RMTexture *)use.object;
         for (const raw::Texture *plane : {&texture->_raw, texture->_raw.luma, texture->_raw.chroma})
             if (plane && plane->nativePlane != ~0u && rc->readTexture(plane) == plane)
-                rc->requirePitch(plane->import);
+                rc->requirePitch(plane->import, false);
     });
     const auto cleanBuffer = [&](const RMRangeResource &use) {
         const bool write = use.access & raw::ResourceUse::Write;
@@ -436,6 +436,13 @@ bool RMRangeEncode::resume(size_t to, const char **why, size_t *refusedEncoder)
         *why = "an event producer failed or is pending on a channel made again since";
         return false;
     }
+    // a surface it read through its native view before the commit, published or written since: the whole encode reads it
+    // again
+    if (!rc_->nativeReadsCurrent()) {
+        rc_->abandon();
+        abandoned_ = true;
+        return stop(VetoNative);
+    }
     return true;
 }
 
@@ -500,11 +507,11 @@ bool encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why, si
         return false;
     }
     RMRangeEncode &encode = rmRangeEncode();
-    // what was encoded ahead of the commit goes on: the rest of the range, then the seal
+    // what was encoded ahead of the commit goes on: the rest of the range, then the seal; one that stopped submitted
+    // nothing, and the range is encoded whole
     if (rmPipelineTake(cb, from)) {
-        bool stale = false;
         cb->_xrShadowCurrent = nullptr;
-        const bool encoded = encode.resume(to, why, refusedEncoder) && encode.step(to) && encode.seal(to, stale);
+        const bool encoded = encode.resume(to, why, refusedEncoder) && encode.step(to) && encode.seal(to);
         const bool stopped = !encoded && encode.vetoed();
         encode.reset();
         if (encoded) {
@@ -512,24 +519,16 @@ bool encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why, si
             return true;
         }
         cb->_released.clear();
-        if (!stopped && !stale)
+        if (!stopped)
             return false;
     }
-    for (unsigned attempt = 0; attempt < 3; ++attempt) {
-        bool stale = false;
-        cb->_xrShadowCurrent = nullptr;
-        const bool encoded =
-            encode.open(cb, from, to, true, why, refusedEncoder) && encode.step(to) && encode.seal(to, stale);
-        encode.reset();
-        if (encoded) {
-            rmPipelineSealed(cb, to);
-            return true;
-        }
+    cb->_xrShadowCurrent = nullptr;
+    const bool encoded = encode.open(cb, from, to, true, why, refusedEncoder) && encode.step(to) && encode.seal(to);
+    encode.reset();
+    if (!encoded) {
         cb->_released.clear();
-        if (!stale)
-            return false;
+        return false;
     }
-    *why = "the native surface changed repeatedly before submission";
-    failCommandBuffer(cb, @"Native surface changed during submission");
-    return false;
+    rmPipelineSealed(cb, to);
+    return true;
 }

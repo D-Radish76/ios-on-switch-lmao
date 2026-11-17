@@ -220,7 +220,7 @@ bool RMRangeEncode::closeEncoders()
     return storeStandIns() && storeFormatTargets() && depth16Back() && writtenBack();
 }
 
-bool RMRangeEncode::seal(size_t to, bool &stale)
+bool RMRangeEncode::seal(size_t to)
 {
     const Encoding encoding;
     RMCommandBuffer *cb = cb_;
@@ -274,15 +274,14 @@ bool RMRangeEncode::seal(size_t to, bool &stale)
             rc->abandon();
             return false;
         }
-        stale = rc->nativeError == kIOReturnNotReady && !rc->partial;
-        if (stale)
+        // A view the kernel found stale stays stale for every later command buffer, and one whose seed did not move (another
+        // process's GPU write of its surface) would be refused again
+        if (rc->nativeError == kIOReturnNotReady)
             rc->invalidateNativeReads();
-        else if (rc->nativeError && !rc->partial)
-            failCommandBuffer(cb, @"Native ownership or event dependency failed");
-        if (stale) {
-            rc->abandon();
-            return false;
-        }
+        if (rc->nativeError && !rc->partial)
+            failCommandBuffer(cb, rc->nativeError == kIOReturnNotReady
+                                      ? @"A surface it reads changed while it was submitted"
+                                      : @"Native ownership or event dependency failed");
         char reason[192];
         rc->describeRefusal(reason, sizeof reason);
         // as Metal fails a command buffer its driver could not submit: nothing of it runs elsewhere
