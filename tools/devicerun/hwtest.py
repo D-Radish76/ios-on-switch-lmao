@@ -250,6 +250,9 @@ TESTS: dict[str, bool] = {
             'gpu.raw.vertex_only_state',
             'gpu.raw.render_reflection',
             'gpu.raw.compute_reflection',
+            'gpu.raw.depth16_ms_resolve',
+            'gpu.raw.invalid_requests',
+            'gpu.heap.aliasable_used',
             'gpu.path.job_visibility',
             'gpu.path.lean_copy',
             'gpu.path.control_reserve',
@@ -462,6 +465,7 @@ TESTS: dict[str, bool] = {
     'system.snapshot_purgeable': False,
     'ui.launch_hitch': False,
     'system.compiler_alive': False,
+    'gpu.raw.iterated_blend_passes': False,
     'gpu.raw.fetch_rung3': False,
 }
 

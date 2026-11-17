@@ -11,7 +11,8 @@ import UIKit
 /// every frame the PBDMA is often on its channel when that reset comes: a reset that leaves the compositor's context
 /// load stuck shows as a frame waiting a context-switch timeout tick or more. Each kill fails only its own command
 /// buffer, the raw channel comes back once each time, the copy-engine bystander sees no error or kill, and no frame
-/// waits past the bound.
+/// waits past the bound. kill_ms_max= the longest of the rounds from the fill's end to the poisoned command buffer's
+/// failed end (gpu.recover.kill_one's kill_ms).
 struct RecoverKillUnderCompositorTest: HWTest {
     let id = "gpu.recover.kill_under_compositor"
     let name = "Raw channel kills while the compositor presents every frame: each fails only itself, no frame waits"
@@ -87,6 +88,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
         let delta = { (key: String) in (end[key] ?? 0) - (start[key] ?? 0) }
         let shown = Pacing(times: presented.sorted(), period: 1.0 / 60)
         let presentGapMs = shown.intervals.max() ?? 0
+        let killMs = zip(fills, poisoned).map { ends.millisecondsBetween($0, $1) }.max() ?? 0
 
         var metrics = Metrics()
         metrics.set("rounds", Self.rounds)
@@ -97,6 +99,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
         metrics.set("cpu_ordered", delta("cpu_ordered"))
         metrics.set("present_gap_ms", presentGapMs, digits: 1)
         metrics.set("gap_bound_ms", Self.gapBoundMs, digits: 0)
+        metrics.set("kill_ms_max", killMs, digits: 1)
         metrics.set("present_frames", shown.frames)
         metrics.set("probe_fill_errors", fillErrors)
         metrics.set("ce_bystander_errors", copier.errors)

@@ -50,7 +50,8 @@ public enum Registry {
         LayeredShaderTestsTest(), LayeredShaderStencilTest(), WideSetTest(), FarUniformTest(), WideTexturesTest(),
         TextureShapesXRTest(),
         TextureShapesDepthTest(), TextureShapesSrgbPairTest(), DepthShapesTest(),
-        VertexOnlyStateTest(), RenderReflectionTest(), ComputeReflectionTest(),
+        VertexOnlyStateTest(), RenderReflectionTest(), ComputeReflectionTest(), Depth16MultisampleResolveTest(),
+        InvalidRequestsTest(), HeapAliasableUsedTest(),
     ]
 
     static let video: [any HWTest] =
@@ -127,9 +128,11 @@ public enum Registry {
         + [LaunchHitchTest()]
 
     /// Takes the GPU pool's compressed memory down to its floor, which refuses every other process's compressed asks
-    /// while it runs; then programs a unit no other driver here drives, which kills the channel when its setup is
-    /// wrong: each app's last.
-    public static let last: [any HWTest] = [CompressedFloorTest(), FetchRungTest(id: "gpu.raw.fetch_rung3", rung: 3)]
+    /// while it runs; then programs a unit no other driver here drives (across pass boundaries, then each program
+    /// forced), which kills the channel when its setup is wrong: each app's last.
+    public static let last: [any HWTest] = [
+        CompressedFloorTest(), IteratedBlendPassesTest(), FetchRungTest(id: "gpu.raw.fetch_rung3", rung: 3),
+    ]
     /// Reset the copy engine under the present, then kill the app's raw channel: each app runs them after all its other
     /// tests, so a failed recovery spoils none of them.
     public static let recovery: [any HWTest] = [

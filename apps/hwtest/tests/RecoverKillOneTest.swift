@@ -12,7 +12,8 @@ import UIKit
 /// device fills shows that the compositor kept presenting. Exactly the poisoned command buffer fails, the eight before
 /// it keep their completion and bytes, the eight after it complete on the channel made again, neither bystander sees an
 /// error or a kill (its reopen), the GR one no gap past the bound, this channel one reopen, and the drivers stay ordered
-/// on the GPU (no CPU-ordered line).
+/// on the GPU (no CPU-ordered line). kill_ms= from the end of the command buffer before the poisoned one to the
+/// poisoned one's failed end: the app's view of GR's error to the kernel's "channel killed" line.
 struct RecoverKillOneTest: HWTest {
     let id = "gpu.recover.kill_one"
     let name = "A killed raw channel: others render on, raw comes back, only the poisoned command buffer fails"
@@ -91,6 +92,7 @@ struct RecoverKillOneTest: HWTest {
         let presentGapMs = shown.intervals.max() ?? 0
         let bystanderGapMs = Double(bystander.longestNs) / 1e6
         let recoverMs = ends.millisecondsBetween(poisoned, after.last)
+        let killMs = ends.millisecondsBetween(before.last ?? poisoned, poisoned)
         let paths = Set((before + after).map(RawFacade.path(of:)))
         let poisonedRaw = RawFacade.path(of: poisoned) == "raw"
 
@@ -112,6 +114,7 @@ struct RecoverKillOneTest: HWTest {
         metrics.set("gpu_order", end["gpu_order"] ?? 0)
         metrics.set("reopen_us", end["reopen_us"] ?? 0)
         metrics.set("recover_ms", recoverMs, digits: 1)
+        metrics.set("kill_ms", killMs, digits: 1)
         metrics.set("poisoned_path", RawFacade.path(of: poisoned))
         metrics.set("poisoned_error", (poisoned.error as NSError?).map { "\($0.code)" } ?? "none")
         metrics.set("before_bytes", beforeKept)
