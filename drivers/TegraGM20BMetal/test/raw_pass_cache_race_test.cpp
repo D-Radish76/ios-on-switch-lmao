@@ -4,7 +4,6 @@
 #include "../raw/runtime/RawMetalPassCache.h"
 #include <gtest/gtest.h>
 #include <condition_variable>
-#include <cstdio>
 #include <future>
 #include <mutex>
 #include <thread>
@@ -142,7 +141,6 @@ TEST_F(RawPassCacheRace, ATrimKeepsTheBorrowedEntryValidUntilItsRecordingReturns
     EXPECT_GT(trims, 0u);
     rmPassTrim();
     EXPECT_EQ(rmPassHeld().passes, 0u);
-    printf("lookups %d hits %d trims %zu\n", kLookups, hits, trims);
 }
 
 TEST_F(RawPassCacheRace, AnIdleBankReleasesItsTexturesWithoutAnotherRecording)

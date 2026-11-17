@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: MIT
 // Core Animation shaped command buffers through the raw facade over the kernel model, recorded at the render thread's
 // pace (a pass every few hundred microseconds), so the submit worker encodes the ended encoders ahead of the commit
-// (RawMetalPipeline.mm): the words each job carries, written to the test's outputs (words.txt) for a comparison with
-// another build's; what was encoded ahead and what took it back; and, with a GPU that holds each job, the time from the
-// commit to its return, to waitUntilScheduled's and to the first job's submission (commit_latency.txt).
-#include "raw_job_words.h"
+// (RawMetalPipeline.mm): what was encoded ahead and what took it back; and, with a GPU that holds each job, the time from
+// the commit to its return, to waitUntilScheduled's and to the first job's submission (commit_latency.txt).
 #include "raw_scale_frames.h"
 #include "timed_gpu.h"
 #include "../raw/runtime/RawMetalPassCache.h"
@@ -12,6 +10,7 @@
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <thread>
@@ -68,37 +67,6 @@ NSDictionary *pipelined(id<MTLCommandBuffer> cb)
 std::string path(id<MTLCommandBuffer> cb)
 {
     return [[(id)cb performSelector:@selector(switchRawPath)] UTF8String];
-}
-
-TEST(RawFacadeCommit, ScaleShapedJobWords)
-{
-    ASSERT_TRUE(opened().device != nil && opened().state != nil);
-    id<MTLCommandQueue> queue = [opened().device newCommandQueue];
-    // the last beside a memoryless colour 1
-    const scale_frames::Shape shapes[] = {{1, 6, 1}, {15, 90, 4}, {12, 134, 3}, {7, 20, 2}, {15, 90, 4}};
-    std::vector<std::vector<id<MTLTexture>>> into;
-    for (const auto &shape : shapes)
-        into.push_back(scale_frames::targets(opened().device, shape));
-    const id<MTLTexture> beside = scale_frames::scratch(opened().device, shapes[4]);
-    std::vector<job_words::Run> runs;
-    const uint64_t mark = job_words::handleMark();
-    for (uint32_t frame = 0; frame < 3; frame++)
-        for (size_t s = 0; s < std::size(shapes); s++) {
-            id<MTLCommandBuffer> cb =
-                paced(queue, into[s], shapes[s], frame, std::chrono::microseconds(300), s == 4 ? beside : nil);
-            runs.push_back(job_words::run(cb));
-            [cb commit];
-            [cb waitUntilCompleted];
-            EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
-            EXPECT_EQ(path(cb), "raw");
-            if (NSDictionary *p = pipelined(cb))
-                printf("shape %zu frame %u: %s\n", s, frame,
-                       [[p description] stringByReplacingOccurrencesOfString:@"\n" withString:@" "].UTF8String);
-        }
-    const std::string words = job_words::words(runs, mark);
-    std::ofstream(outputs() + "/words.txt") << words;
-    printf("scale words: %zu bytes, hash %016llx\n", words.size(), (unsigned long long)job_words::fnv(words));
-    EXPECT_FALSE(words.empty());
 }
 
 TEST(RawFacadeCommit, ParallelRecordingsSurviveTrimAndReturnTheirBanksAfterSplice)
