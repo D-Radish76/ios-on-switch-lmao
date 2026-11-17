@@ -264,16 +264,6 @@ void dma_free_attrs(struct device *dev, size_t size, void *va, dma_addr_t handle
 	switch_exec_host_free(va);
 }
 
-void *switch_linux_malloc(uint64_t size, int zero)
-{
-	return switch_exec_host_alloc(size);
-}
-
-void switch_linux_free(const void *block)
-{
-	switch_exec_host_free((void *)block);
-}
-
 bool switch_linux_call_enter(void *call)
 {
 	return false;

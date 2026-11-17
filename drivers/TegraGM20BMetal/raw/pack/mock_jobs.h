@@ -49,8 +49,8 @@ static kern_return_t mock_job(mach_port_t connection, const void *input, size_t 
         address->bytes < sizeof(struct TegraGM20BAbiJob))
         return kIOReturnBadArgument;
     const struct TegraGM20BAbiJob *job = (const void *)(uintptr_t)address->address;
-    if (job->channel >= 16 || job->push_count > TegraGM20BMaxJobPushes || job->shared_count > TegraGM20BMaxJobUses ||
-        job->set > TegraGM20BMaxResourceSets || !job->set != !job->set_generation ||
+    if (job->channel >= 16 || job->push_count > TegraGM20BMaxJobPushes || job->set > TegraGM20BMaxResourceSets ||
+        !job->set != !job->set_generation ||
         address->bytes < sizeof *job + job->push_count * sizeof(struct TegraGM20BAbiPush) +
                              job->shared_count * sizeof(struct TegraGM20BAbiSurfaceUse))
         return kIOReturnBadArgument;

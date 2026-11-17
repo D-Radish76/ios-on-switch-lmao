@@ -74,7 +74,7 @@ struct VertexCubicSamplerTest: HWTest {
             }.path
             paths.append(path)
             let pixels = try await gpu.read(out, bytesPerPixel: 4)
-            return (0..<n).map { pixels.pixel($0, 0, width: n)[0] }
+            return (0..<n).map { pixels[4 * $0] }
         }
         let vertexCubic = try await draw(vertexStage: true, cubic)
         let fragmentCubic = try await draw(vertexStage: false, cubic)

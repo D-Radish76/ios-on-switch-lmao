@@ -6,6 +6,7 @@
 // these builders make of what it names, as a request the front end cannot frame aborts it, and source options that would
 // run anything in its process are refused.
 #pragma once
+#include <bitset>
 #include <cstdint>
 #include <cstring>
 #include <iterator>
@@ -17,6 +18,8 @@
 #include "MetallibEntries.h"
 #include "raw_compile_request.h"
 
+extern "C" size_t _MTLConstantDataSize(uint64_t type);
+
 namespace raw::codegen {
 
 static_assert(kCodeGenImageFilters == switch_metal::kImageFilterLinkRequest, "the filter link's request type");
@@ -27,11 +30,12 @@ static_assert(kCodeGenImageFilters == switch_metal::kImageFilterLinkRequest, "th
 struct Kind {
     std::string_view kind;
     bool stitchTail;
+    uint16_t functionHeader, specializationHash, specializedName, functionType;
 };
 
 inline constexpr Kind kKinds[] = {
-    {"21H461", true},
-    {"24B119", true},
+    {"21H461", true, 0x100, 0xc8, 0x88, 0xb8},
+    {"24B119", true, 0x120, 0xec, 0xa8, 0xd8},
 };
 
 inline constexpr size_t kindIndex()
@@ -261,6 +265,107 @@ inline std::string stitchRequest(std::string_view dag, const std::vector<Bitcode
 // LLVM's bitcode wrapper (0x0B17C0DE), which every metallib entry's bitcode starts with
 inline constexpr char kWrappedBitcode[4] = {char(0xde), char(0xc0), 0x17, 0x0b};
 
+inline bool constantDataOk(std::string_view constants)
+{
+    if (constants.size() < 4)
+        return false;
+    uint32_t count = 0;
+    memcpy(&count, constants.data(), 4);
+    if (count > (constants.size() - 4) / 4)
+        return false;
+    std::bitset<size_t(UINT16_MAX) + 1> indices;
+    size_t at = 4;
+    for (uint32_t i = 0; i < count; i++) {
+        if (constants.size() - at < 3)
+            return false;
+        uint16_t index = 0;
+        memcpy(&index, constants.data() + at, 2);
+        const size_t bytes = _MTLConstantDataSize(uint8_t(constants[at + 2]));
+        if (!bytes || bytes > constants.size() - at - 3 || indices[index])
+            return false;
+        indices[index] = true;
+        at += 3 + bytes;
+    }
+    return at == constants.size();
+}
+
+// MTLCompilerFunctionRequest type 15: its kind's header, packed constant values, the source function name and wrapped
+// AIR, then an optional specialized name, each block aligned to eight bytes. The specialization hash is the source
+// function's HASH, as both pinned writers pass to MTLGPUCompilerSpecializeFunction.
+inline std::string specializationRequest(std::string_view name, std::string_view specializedName, const Bitcode &air,
+                                         const Digest &hash, std::string_view constants)
+{
+    size_t remaining = kRequestLimit - kThisKind.functionHeader;
+    const auto fits = [&](size_t bytes, bool nul) {
+        if (bytes > remaining || (nul && bytes == remaining))
+            return false;
+        bytes += nul;
+        const size_t padding = (8 - bytes % 8) % 8;
+        if (padding > remaining - bytes)
+            return false;
+        remaining -= bytes + padding;
+        return true;
+    };
+    if (!fits(constants.size(), false) || !fits(name.size(), true) || !fits(air.size, false) ||
+        (!specializedName.empty() && !fits(specializedName.size(), true)))
+        return {};
+    if (name.empty() || name.size() >= UINT16_MAX || name.find('\0') != std::string_view::npos ||
+        specializedName.find('\0') != std::string_view::npos || !constantDataOk(constants) || !air.bytes ||
+        air.size < sizeof kWrappedBitcode || memcmp(air.bytes, kWrappedBitcode, sizeof kWrappedBitcode))
+        return {};
+    std::string r(kThisKind.functionHeader, '\0');
+    const auto put = [&](size_t at, uint32_t v) {
+        memcpy(r.data() + at, &v, 4);
+    };
+    const auto append = [&](std::string_view bytes, bool nul) {
+        const uint32_t at = uint32_t(r.size());
+        r.append(bytes);
+        if (nul)
+            r.push_back('\0');
+        r.resize((r.size() + 7) & ~size_t(7), '\0');
+        return at;
+    };
+    put(8, append(constants, false));
+    put(12, uint32_t(constants.size()));
+    put(0x58, append(name, true));
+    const uint16_t nameBytes = uint16_t(name.size() + 1);
+    memcpy(r.data() + 0x5c, &nameBytes, 2);
+    put(0x60, append({reinterpret_cast<const char *>(air.bytes), air.size}, false));
+    put(0x64, uint32_t(air.size));
+    if (!specializedName.empty()) {
+        put(kThisKind.specializedName, append(specializedName, true));
+        put(kThisKind.specializedName + 4, uint32_t((specializedName.size() + 8) & ~size_t(7)));
+    }
+    put(kThisKind.functionType, kCodeGenSpecialize);
+    put(kThisKind.functionType + 4, kCodeGenSpecialize);
+    memcpy(r.data() + kThisKind.specializationHash, hash.data(), hash.size());
+    return r;
+}
+
+inline bool specializationRequestOk(const std::string &r)
+{
+    uint32_t constantsAt = 0, constantsBytes = 0, nameAt = 0, airAt = 0, airBytes = 0, specializedAt = 0,
+             specializedBytes = 0;
+    if (r.size() < kThisKind.functionHeader || !wordAt(r, 8, constantsAt) || !wordAt(r, 12, constantsBytes) ||
+        constantsAt != kThisKind.functionHeader || constantsBytes > r.size() - constantsAt ||
+        !wordAt(r, 0x58, nameAt) || nameAt >= r.size() || !wordAt(r, 0x60, airAt) || airAt > r.size() ||
+        !wordAt(r, 0x64, airBytes) || airBytes > r.size() - airAt ||
+        !wordAt(r, kThisKind.specializedName, specializedAt) ||
+        !wordAt(r, kThisKind.specializedName + 4, specializedBytes) || specializedAt > r.size() ||
+        specializedBytes > r.size() - specializedAt)
+        return false;
+    const size_t end = r.find('\0', nameAt), specializedEnd = specializedBytes ? r.find('\0', specializedAt) : 0;
+    if (end == std::string::npos || (specializedBytes && specializedEnd >= specializedAt + specializedBytes))
+        return false;
+    Digest hash;
+    memcpy(hash.data(), r.data() + kThisKind.specializationHash, hash.size());
+    return specializationRequest(
+               std::string_view(r.data() + nameAt, end - nameAt),
+               specializedBytes ? std::string_view(r.data() + specializedAt, specializedEnd - specializedAt) : "",
+               {reinterpret_cast<const uint8_t *>(r.data() + airAt), airBytes}, hash,
+               std::string_view(r.data() + constantsAt, constantsBytes)) == r;
+}
+
 inline bool stitchRequestOk(const std::string &r)
 {
     uint32_t tag = 0, count = 0;
@@ -345,6 +450,8 @@ inline bool requestOk(uint32_t type, const std::string &request)
                clientOptions(options);
     case kCodeGenStitch:
         return stitchRequestOk(request);
+    case kCodeGenSpecialize:
+        return specializationRequestOk(request);
     case kCodeGenImageFilters:
         return imageFilterRequestOk(request);
     default:

@@ -50,29 +50,24 @@ template <class Submit> CpuCompletionResult completeCpuRanges(const CpuCompletio
         return CpuCompletionResult::Failed;
     if (completion.ranges.empty())
         return CpuCompletionResult::Current;
-    if (!completion.channelUid || !completion.channel)
+    if (!completion.channelUid || !completion.channel || completion.ranges.size() > UINT32_MAX)
         return CpuCompletionResult::Failed;
     for (const auto &range : completion.ranges)
         if (!range.handle || !range.bytes || range.bytes > UINT64_MAX - range.offset)
             return CpuCompletionResult::Failed;
-    bool stale = false;
-    for (size_t at = 0; at < completion.ranges.size();) {
-        const uint32_t count = uint32_t(std::min<size_t>(TegraGM20BMaxJobUses, completion.ranges.size() - at));
-        const TegraGM20BAbiCpuComplete request = {completion.channelUid,
-                                                  uint64_t(uintptr_t(completion.ranges.data() + at)),
-                                                  completion.channel,
-                                                  completion.seqno,
-                                                  count,
-                                                  0};
-        TegraGM20BAbiCpuCompleteReply reply = {};
-        if (!submit(request, reply) || reply.reserved ||
-            uint64_t(reply.current_count) + reply.stale + reply.pending + reply.failed != count || reply.pending ||
-            reply.failed || reply.first_error)
-            return CpuCompletionResult::Failed;
-        stale |= reply.stale != 0;
-        at += count;
-    }
-    return stale ? CpuCompletionResult::Stale : CpuCompletionResult::Current;
+    const uint32_t count = uint32_t(completion.ranges.size());
+    const TegraGM20BAbiCpuComplete request = {completion.channelUid,
+                                              uint64_t(uintptr_t(completion.ranges.data())),
+                                              completion.channel,
+                                              completion.seqno,
+                                              count,
+                                              0};
+    TegraGM20BAbiCpuCompleteReply reply = {};
+    if (!submit(request, reply) || reply.reserved ||
+        uint64_t(reply.current_count) + reply.stale + reply.pending + reply.failed != count || reply.pending ||
+        reply.failed || reply.first_error)
+        return CpuCompletionResult::Failed;
+    return reply.stale ? CpuCompletionResult::Stale : CpuCompletionResult::Current;
 }
 
 }  // namespace raw

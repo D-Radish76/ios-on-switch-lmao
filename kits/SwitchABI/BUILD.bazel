@@ -9,6 +9,7 @@ load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel/lint:defs.bzl", "lint_files")
+load("//kernel/rules:kernel.bzl", "kernel_driver")
 load(":defs.bzl", "switch_abi_class")
 
 package(default_visibility = ["//visibility:public"])
@@ -129,6 +130,35 @@ py_test(
     name = "subclass_test",
     srcs = ["test/subclass_test.py"],
     deps = [":subclass_lib"],
+)
+
+kernel_driver(
+    name = "framebuffer_completion_fixture",
+    srcs = ["test/framebuffer_completion.cpp"],
+    abi = ["IOMobileFramebufferLegacy"],
+    hdr_deps = [],
+    tags = ["manual"],
+)
+
+py_test(
+    name = "framebuffer_completion_test",
+    srcs = ["test/framebuffer_completion_test.py"],
+    args = [
+        "--object",
+        "$(rootpath :framebuffer_completion_fixture)",
+        "--table",
+    ] + select({
+        "//ipsw:21H461": ["$(rootpath kinds/21H461/IOMobileFramebufferLegacy.json)"],
+        "//ipsw:24B119": ["$(rootpath kinds/24B119/IOMobileFramebufferLegacy.json)"],
+    }),
+    data = [
+        ":framebuffer_completion_fixture",
+        "interface/IOMobileFramebufferLegacy.json",
+    ] + select({
+        "//ipsw:21H461": ["kinds/21H461/IOMobileFramebufferLegacy.json"],
+        "//ipsw:24B119": ["kinds/24B119/IOMobileFramebufferLegacy.json"],
+    }),
+    deps = [":gen_lib"],
 )
 
 switch_abi_class(

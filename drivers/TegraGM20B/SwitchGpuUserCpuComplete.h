@@ -6,9 +6,12 @@ IOReturn AGXDeviceUserClient::cpuComplete(const TegraGM20BAbiCpuComplete *input,
 					  TegraGM20BAbiCpuCompleteReply *reply)
 {
 	if (!input->channel_uid || !input->channel || input->channel > kMaxChannels ||
-	    input->reserved || !input->ranges_address || !input->range_count ||
-	    input->range_count > TegraGM20BMaxJobUses)
+	    input->reserved || !input->ranges_address || !input->range_count)
 		return kIOReturnBadArgument;
+	if (uint64_t(input->range_count) *
+		    (sizeof(TegraGM20BAbiCpuRange) + sizeof(SwitchGpuCpuRange)) >
+	    nvxnu_ram_bytes())
+		return kIOReturnNoMemory;
 	auto *ranges = IONew(TegraGM20BAbiCpuRange, input->range_count);
 	auto *resolved = IONew(SwitchGpuCpuRange, input->range_count);
 	if (!ranges || !resolved) {

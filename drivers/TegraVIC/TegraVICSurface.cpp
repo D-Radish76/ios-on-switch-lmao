@@ -26,7 +26,7 @@
 extern "C" {
 OSObject *switch_surface_copy_value(OSObject *surface, const OSSymbol *key, uint32_t *seed);
 OSObject *tegra_vic_ios_lookup(IOService *root, uint32_t id, task_t task);
-IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
+LIBKERN_RETURNS_NOT_RETAINED IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
 uint32_t tegra_vic_ios_format(OSObject *surface);
 uint64_t tegra_vic_ios_width(OSObject *surface);
 uint64_t tegra_vic_ios_height(OSObject *surface);

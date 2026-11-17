@@ -4,9 +4,6 @@
 #include "SwitchGpuJobRecord.h"
 #include "SwitchGpuQuiet.h"
 
-static_assert(SwitchGpuJobRecord::kMaxBytes <= kJobBytes,
-	      "a channel's job scratch holds a SubmitJob record");
-
 IOReturn AGXDeviceUserClient::submitJob(const TegraGM20BAbiSubmitAddress *in,
 					TegraGM20BAbiExecReply *out)
 {
@@ -29,7 +26,7 @@ IOReturn AGXDeviceUserClient::takeJob(const TegraGM20BAbiSubmitAddress *in,
 					 in->reserved, in->bytes, in->address);
 	TegraGM20BAbiJob header = {};
 	if (copyin(in->address, &header, sizeof(header)) || !header.channel ||
-	    header.channel > kMaxChannels)
+	    header.channel > kMaxChannels || !SwitchGpuJobRecord::fitsHeader(header, in->bytes))
 		return switch_gpu_refuse(why, SwitchGpuRefusal::JobHeader, kIOReturnBadArgument,
 					 in->address);
 	channel = header.channel;
@@ -38,7 +35,9 @@ IOReturn AGXDeviceUserClient::takeJob(const TegraGM20BAbiSubmitAddress *in,
 	auto &job = channelJobs_[slot];
 	job.phases.start(entered);
 	IOReturn result = switch_gpu_refuse(why, SwitchGpuRefusal::JobScratch, kIOReturnNoMemory);
-	if (reserveJob(job, TegraGM20BMaxJobUses + TegraGM20BMaxJobPushes)) {
+	const uint32_t maximumUses = uint32_t((uint64_t(in->bytes) - sizeof(TegraGM20BAbiJob)) /
+					      sizeof(TegraGM20BAbiSurfaceUse));
+	if (reserveJob(job, maximumUses * 2, in->bytes)) {
 		why = {};
 		const auto record = copyin(in->address, job.bytes, in->bytes)
 					    ? SwitchGpuJobRecord{}
@@ -361,13 +360,13 @@ refresh:
 			if (!error) {
 				stage = SwitchGpuRefusal::Dependencies;
 				error = switch_gpu_backing_dependencies(
-					&transaction, job.dependencies, TegraGM20BMaxJobUses,
+					&transaction, job.dependencies, job.dependencyCapacity,
 					&dependencies);
 			}
 		}
 		if (!error) {
 			stage = SwitchGpuRefusal::EventAppend;
-			error = events->append(job.dependencies, TegraGM20BMaxJobDependencies,
+			error = events->append(job.dependencies, job.dependencyCapacity,
 					       &dependencies);
 		}
 		if (!error) {
@@ -390,17 +389,26 @@ refresh:
 			stage = SwitchGpuRefusal::PromiseDependencies;
 			const uint32_t ownPromises = tgm_fence_offset(promiseWord(0));
 			error = switch_gpu_backing_promise_dependencies(
-				&transaction, job.dependencies, TegraGM20BMaxJobDependencies,
+				&transaction, job.dependencies, job.dependencyCapacity,
 				&dependencies, ownPromises,
 				ownPromises + TegraGM20BMaxPromises * 4);
+		}
+		if (error == -28 && dependencies > job.dependencyCapacity) {
+			switch_gpu_backing_abort(&transaction);
+			if (!reserveDependencies(job, dependencies)) {
+				error = -12;
+				break;
+			}
+			error = 0;
+			continue;
 		}
 		if (!error) {
 			stage = SwitchGpuRefusal::EventBind;
 			error = events->bind(&completion);
 		}
 		ownershipFailed = error == -5;
-		if (!error && dependencies + siblingCount + events->wordCount() >
-				      TegraGM20BMaxJobDependencies) {
+		if (!error &&
+		    uint64_t(dependencies) + siblingCount + events->wordCount() > UINT32_MAX) {
 			stage = SwitchGpuRefusal::DependencyRoom;
 			error = -28;
 		}
@@ -458,7 +466,7 @@ refresh:
 		if (stage == SwitchGpuRefusal::DependencyRoom)
 			return switch_gpu_refuse(why, stage, ret,
 						 dependencies + siblingCount + events->wordCount(),
-						 TegraGM20BMaxJobDependencies);
+						 UINT32_MAX);
 		const uint64_t counted =
 			stage == SwitchGpuRefusal::Refresh       ? surfaceCount
 			: stage == SwitchGpuRefusal::WriteRanges ? writeCount

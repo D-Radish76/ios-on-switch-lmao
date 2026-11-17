@@ -13,10 +13,14 @@ IOReturn AGXDeviceUserClient::resourceObserve(const TegraGM20BAbiResourceObserve
 			return kIOReturnBadArgument;
 		return ioreturn(resources_.cancel(input->cookie));
 	}
-	if (!input->uses_address || !input->use_count || input->use_count > TegraGM20BMaxJobUses ||
+	if (!input->uses_address || !input->use_count || input->use_count > UINT32_MAX / 2 ||
 	    !arguments->asyncReference || arguments->asyncReferenceCount < 3 ||
 	    arguments->asyncReferenceCount > kOSAsyncRef64Count || !arguments->asyncWakePort)
 		return kIOReturnBadArgument;
+	if (uint64_t(input->use_count) *
+		    (sizeof(TegraGM20BAbiSurfaceUse) + 2 * sizeof(SwitchGpuResourceUse)) >
+	    nvxnu_ram_bytes())
+		return kIOReturnNoMemory;
 	auto *uses = IONew(TegraGM20BAbiSurfaceUse, input->use_count);
 	auto *resolved = IONew(SwitchGpuResourceUse, input->use_count * 2);
 	auto *notification = IONew(EventNotification, 1);

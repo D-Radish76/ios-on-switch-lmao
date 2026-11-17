@@ -20,8 +20,7 @@ std::string refused(const char *what, int kr)
 
 bool fits(const KernelJob &job, uint32_t maxFences)
 {
-    if (job.pushCount > TegraGM20BMaxJobPushes || job.useCount > TegraGM20BMaxJobUses ||
-        (job.pushCount && !job.pushes) || (job.useCount && !job.uses) ||
+    if (job.pushCount > TegraGM20BMaxJobPushes || (job.pushCount && !job.pushes) || (job.useCount && !job.uses) ||
         job.events.waitCount > TegraGM20BMaxJobEvents ||
         job.events.signalCount > TegraGM20BMaxJobEvents - job.events.waitCount ||
         (job.events.waitCount && !job.events.waits) || (job.events.signalCount && !job.events.signals) ||
@@ -73,6 +72,12 @@ bool Kernel::submitJob(const KernelJob &job, uint32_t &seqno, int *result)
     const size_t admissionBytes = job.admission ? sizeof(TegraGM20BAbiSubmitAdmission) : 0;
     const size_t promiseBytes = job.promiseCount ? sizeof(TegraGM20BAbiJobPromises) : 0;
     const size_t bytes = sizeof(TegraGM20BAbiJob) + pushBytes + useBytes + admissionBytes + promiseBytes + eventBytes;
+    if (bytes > UINT32_MAX) {
+        if (result)
+            *result = kIOReturnBadArgument;
+        setError("The job exceeds the addressed record size");
+        return false;
+    }
     // Reused per submitting thread: a steady stream of jobs allocates nothing.
     thread_local std::vector<uint64_t> storage;
     storage.resize((bytes + sizeof(uint64_t) - 1) / sizeof(uint64_t));

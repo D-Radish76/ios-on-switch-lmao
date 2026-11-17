@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "switch_gpu_backing_fixture.h"
 #include "drivers/TegraGM20B/SwitchGpuAdmission.h"
+#include <algorithm>
 
 namespace
 {
@@ -126,11 +127,12 @@ TEST_F(Backing, AdmissionStaleGuardRefusesBeforeReservationAndFailedContentDoesN
 TEST_F(Backing, AdmissionOrdersLargeAliasedUseSetAndRejectsGrowthWhileHeld)
 {
 	std::vector<switch_gpu_backing *> allocations;
-	for (unsigned i = 0; i < 256; ++i)
+	for (unsigned i = 0; i < 1025; ++i)
 		allocations.push_back(backing());
 	std::vector<switch_gpu_backing_use> uses;
-	for (unsigned i = 0; i < 1024; ++i)
-		uses.push_back({allocations[(1023 - i) % 256], i & 1 ? kRead : kWrite, 0});
+	for (unsigned i = 0; i < 4097; ++i)
+		uses.push_back(
+			{allocations[(4096 - i) % allocations.size()], i & 1 ? kRead : kWrite, 0});
 	SwitchGpuAdmission admission;
 	ASSERT_EQ(admission.begin(uses.data(), uint32_t(uses.size()), nullptr, 0, nullptr, 0), 0);
 	EXPECT_TRUE(admission.covers(uses.data(), uint32_t(uses.size())));
@@ -140,7 +142,51 @@ TEST_F(Backing, AdmissionOrdersLargeAliasedUseSetAndRejectsGrowthWhileHeld)
 	pages[0] = info.pages[0];
 	pages[1] = pages[0] + 4096;
 	EXPECT_EQ(switch_gpu_backing_register(pages.data(), 2, 0, nullptr, nullptr), nullptr);
+	for (auto *allocation : allocations)
+		EXPECT_EQ(switch_gpu_backing_cpu_acquire(allocation, 0, 4096, kWrite | avoid), -16);
 	admission.end();
+	for (auto *allocation : allocations) {
+		EXPECT_EQ(switch_gpu_backing_cpu_acquire(allocation, 0, 4096, kWrite | avoid), 0);
+		EXPECT_EQ(switch_gpu_backing_cpu_release(allocation, 0, 4096, kWrite | avoid), 0);
+		switch_gpu_backing_release(allocation);
+	}
+}
+
+TEST_F(Backing, LargeAdmissionKeepsTheTailExternalProducer)
+{
+	std::vector<switch_gpu_backing *> allocations;
+	std::vector<switch_gpu_backing_use> uses;
+	for (unsigned i = 0; i < 1025; ++i) {
+		allocations.push_back(backing());
+		uses.push_back({allocations.back(), kRead, 0});
+	}
+	const auto gpu = token(7, 1);
+	const auto media = token(9, 3, SWITCH_GPU_ENGINE_VIC);
+	ASSERT_EQ(publish(allocations.front(), kWrite, gpu), 0);
+	ASSERT_EQ(publish(allocations.back(), kWrite, media), 0);
+	SwitchGpuAdmission admission;
+	ASSERT_EQ(admission.begin(uses.data(), uint32_t(uses.size()), nullptr, 0, nullptr, 0), 0);
+	switch_gpu_backing_transaction transaction = {};
+	const auto consumer = token(11, 2);
+	ASSERT_EQ(switch_gpu_backing_begin(uses.data(), uint32_t(uses.size()), &consumer,
+					   &transaction),
+		  0);
+	std::array<switch_gpu_backing_token, 2> dependencies;
+	uint32_t needed = 0;
+	ASSERT_EQ(switch_gpu_backing_dependencies(&transaction, dependencies.data(),
+						  uint32_t(dependencies.size()), &needed),
+		  0);
+	ASSERT_EQ(needed, dependencies.size());
+	EXPECT_TRUE(
+		std::any_of(dependencies.begin(), dependencies.end(), [&](const auto &dependency) {
+			return dependency.engine == media.engine &&
+			       dependency.queue == media.queue && dependency.value == media.value;
+		}));
+	switch_gpu_backing_abort(&transaction);
+	EXPECT_EQ(switch_gpu_backing_cpu_acquire(allocations.back(), 0, 4096, kWrite | avoid), -16);
+	admission.end();
+	complete(gpu);
+	complete(media);
 	for (auto *allocation : allocations)
 		switch_gpu_backing_release(allocation);
 }

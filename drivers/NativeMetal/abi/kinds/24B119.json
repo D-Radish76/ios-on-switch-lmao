@@ -1026,7 +1026,8 @@
       "instance_size": 16,
       "methods": {
         "newIndexedConstantArray": "@16@0:8",
-        "newNamedConstantArray": "@16@0:8"
+        "newNamedConstantArray": "@16@0:8",
+        "serializedConstantDataForFunction:dataSize:errorMessage:": "^v40@0:8@16^Q24^@32"
       }
     },
     "MTLFunctionStitchingGraph": {

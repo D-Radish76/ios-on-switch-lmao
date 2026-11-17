@@ -4,15 +4,39 @@
 // (raw_codegen_request.h), the system shader compiler answers it with a metallib (compiler/compiler_codegen.mm), and the
 // library is read as any other (readLibrary), so its functions are this device's own.
 #import "RawMetalInternal.h"
+#import "RawMetalFunctionTags.h"
 
+#include <cstdlib>
 #include <os/log.h>
 #include "ImageFilterLink.h"
 #include "raw_codegen_request.h"
 #include "raw_library_entry.h"
+#include "raw_metallib.h"
 
 // _MTLDevice's own writer of stitching graphs as the DAG text Metal's front end reads (the device class's base)
 @protocol RMDagWriter
 - (NSString *)newDagStringWithGraphs:(NSArray<MTLFunctionStitchingGraph *> *)graphs;
+@end
+
+@interface MTLFunctionConstantValues (RMCompilerConstants)
+- (void *)serializedConstantDataForFunction:(id<MTLFunction>)function
+                                   dataSize:(NSUInteger *)size
+                               errorMessage:(NSString **)message;
+@end
+
+@interface RMFunction (CompilerConstants)
+- (NSArray<MTLFunctionConstant *> *)functionConstants;
+@end
+@implementation RMFunction (CompilerConstants)
+
+- (NSArray<MTLFunctionConstant *> *)functionConstants
+{
+    return [rmFunctionConstants(self).allValues
+        sortedArrayUsingComparator:^NSComparisonResult(MTLFunctionConstant *a, MTLFunctionConstant *b) {
+            return a.index < b.index ? NSOrderedAscending : a.index > b.index ? NSOrderedDescending : NSOrderedSame;
+        }];
+}
+
 @end
 
 static NSError *libraryError(MTLLibraryError code, const std::string &why)
@@ -135,6 +159,7 @@ static id<MTLLibrary> compiled(id device, uint32_t type, const std::string &requ
     if (!functions.count)
         return failed(MTLLibraryErrorCompileFailure, "a stitched library needs the functions its DAG names", error);
     std::vector<raw::codegen::Bitcode> bitcodes;
+    __attribute__((objc_precise_lifetime)) NSMutableArray<id<MTLLibrary>> *specialized = [NSMutableArray array];
     for (id function in functions) {
         raw::codegen::Bitcode b;
         if (!bitcodeOf(function, b))
@@ -142,6 +167,33 @@ static id<MTLLibrary> compiled(id device, uint32_t type, const std::string &requ
                           std::string("stitched function ") + ([function name].UTF8String ?: "?") +
                               " has no bitcode here",
                           error);
+        RMFunction *f = function;
+        const std::string name = libraryName(f), specializedName = f.name.UTF8String ?: "";
+        if (f->_specialized || name != specializedName) {
+            std::map<std::string, raw::AirHash> hashes;
+            if (!raw::metallibAirHashes(f->_source->bytes, f->_source->size, hashes) || !hashes.count(name))
+                return failed(MTLLibraryErrorFunctionNotFound, "the stitched function has no AIR hash", error);
+            id<MTLFunction> original = [(id<MTLLibrary>)f->_library newFunctionWithName:@(name.c_str())];
+            MTLFunctionConstantValues *values = f->_values ?: [MTLFunctionConstantValues new];
+            NSUInteger size = 0;
+            NSString *message = nil;
+            void *data = [values serializedConstantDataForFunction:original dataSize:&size errorMessage:&message];
+            if (!data)
+                return failed(MTLLibraryErrorCompileFailure, message.UTF8String ?: "invalid function constants", error);
+            const std::string constants(static_cast<const char *>(data), size);
+            free(data);
+            const std::string request = raw::codegen::specializationRequest(
+                name, name == specializedName ? "" : specializedName, b, hashes[name], constants);
+            if (request.empty())
+                return failed(MTLLibraryErrorCompileFailure, "the stitched function's specialization is malformed",
+                              error);
+            id<MTLLibrary> library = compiled(self, raw::kCodeGenSpecialize, request, "a specialized function", error);
+            if (!library)
+                return nil;
+            [specialized addObject:library];
+            if (!bitcodeOf([library newFunctionWithName:f.name], b))
+                return failed(MTLLibraryErrorInternal, "the specialized library has no bitcode of its function", error);
+        }
         bitcodes.push_back(b);
     }
     return compiled(self, raw::kCodeGenStitch, raw::codegen::stitchRequest(text, bitcodes), "a stitched library",

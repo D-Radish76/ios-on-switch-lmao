@@ -875,7 +875,9 @@ host_test(
     srcs = [
         "switch_display_retirement_test.cpp",
         "//drivers/NativeMobileDisplay:SwitchDisplayRetirement.h",
+        "//drivers/NativeMobileDisplay:SwitchLostFrameDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchRetireDisplay.h",
+        "//drivers/TegraDisplayFlip:TegraScanoutRing.h",
     ],
 )
 
@@ -915,6 +917,14 @@ host_test(
 )
 
 host_test(
+    name = "switch_window_off_test",
+    srcs = [
+        "switch_window_off_test.cpp",
+        "//drivers/NativeMobileDisplay:SwitchWindowOffDisplay.h",
+    ],
+)
+
+host_test(
     name = "switch_overlay_registers_test",
     srcs = [
         "//drivers/NativeMobileDisplay:SwitchLandscapeWindows.h",
@@ -925,6 +935,7 @@ host_test(
         "//drivers/NativeMobileDisplay:SwitchPlaneAdmissionDrop.h",
         "//drivers/NativeMobileDisplay:SwitchOverlayRecovery.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneSelection.h",
+        "//drivers/NativeMobileDisplay:SwitchWindowOffDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchDisplayBandwidthDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchDisplayMemoryEnvelope.h",
         "//drivers/SwitchPower:SwitchDisplayMemory.h",
@@ -960,6 +971,7 @@ host_test(
         "//drivers/NativeMobileDisplay:SwitchOverlayRecovery.h",
         "//drivers/NativeMobileDisplay:SwitchOverlayRegisters.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneAdmissionDrop.h",
+        "//drivers/NativeMobileDisplay:SwitchWindowOffDisplay.h",
         "//drivers/SwitchPower:SwitchDisplayBandwidth.h",
         "//drivers/SwitchPower:SwitchDisplayMemory.h",
         "//drivers/TegraGM20B:SwitchGpuBacking.h",
@@ -1023,6 +1035,7 @@ host_test(
         "//drivers/NativeMobileDisplay:SwitchMediaCompletionFlipDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchHostMediaFlipDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchOverlayRecovery.h",
+        "//drivers/NativeMobileDisplay:SwitchWindowOffDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchOverlayRegisters.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneAdmissionDrop.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneSelection.h",
@@ -1070,6 +1083,7 @@ host_test(
         "//drivers/NativeMobileDisplay:SwitchMediaCompletionFlipDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchHostMediaFlipDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchOverlayRecovery.h",
+        "//drivers/NativeMobileDisplay:SwitchWindowOffDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchOverlayRegisters.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneAdmissionDrop.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneSelection.h",
@@ -1099,6 +1113,7 @@ host_test(
         "//drivers/NativeMobileDisplay:SwitchOverlayRegisters.h",
         "//drivers/NativeMobileDisplay:SwitchPlaneAdmissionDrop.h",
         "//drivers/NativeMobileDisplay:SwitchOverlayRecovery.h",
+        "//drivers/NativeMobileDisplay:SwitchWindowOffDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchDisplayBandwidthDisplay.h",
         "//drivers/NativeMobileDisplay:SwitchDisplayMemoryEnvelope.h",
         "//drivers/SwitchPower:SwitchDisplayMemory.h",

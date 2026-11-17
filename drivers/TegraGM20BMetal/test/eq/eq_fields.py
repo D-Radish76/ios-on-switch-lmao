@@ -30,6 +30,9 @@ EQCHECK_RUN_STATE = eqcheck.run_state
 
 # SET_PIPELINE_REGISTER_COUNT(i) and SET_BINDLESS_TEXTURE: each driver's compiler decides them
 PROGRAM_DERIVED = {f'{0x200C + 0x40 * i:x}' for i in range(6)} | {'2608'}
+ITERATED_RESIDUE = {'dd4', 'df0', 'df4', '1340', '1344', '1348', '134c', '1350', '1358'} | {
+    f'{0x1480 + 16 * j + 4 * lane:x}' for j in range(8) for lane in range(3)
+}
 CONTENT = re.compile(r'(?:data=|ptr\{)([0-9a-f]+:[0-9a-f]+)')
 HANDLE = re.compile(r'handle\{[^}]*\}')
 
@@ -104,6 +107,10 @@ def draw_of(event: dict) -> Draw:
     f = eqcheck.fields(event)
     kept = {k: v for k, v in f.items() if re.match(r'(draw|vb\d+|ib|tsc\d+|tic\d+|rt\d+|zt)$', k)}
     registers = {m: v for m, v in f.get('R', {}).items() if m not in eqcheck.POOL_LIMITS | PROGRAM_DERIVED}
+    if registers.get('dd0') == '0' and registers.get('12e4') == '1':
+        # Disabling iterated blend leaves its pass count, loader and constants in place; per-target mode ignores the
+        # common blend equations too (SwitchGM20BEmitIterated.c). They describe no work in this mode.
+        registers = {m: v for m, v in registers.items() if m not in ITERATED_RESIDUE}
     return Draw(kept, registers, stages(event['lines']), f['barriers'])
 
 

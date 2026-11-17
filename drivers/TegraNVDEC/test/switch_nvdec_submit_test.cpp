@@ -899,16 +899,19 @@ TEST_F(SwitchNVDECSubmitTest, LargeVicDependencySetHasEnoughCommandStorage)
     for (uint32_t i = 0; i < 100; ++i)
         sourceTokens.push_back({0x181234567ULL + i, 1, SWITCH_GPU_ENGINE_VIC, 161});
     ASSERT_EQ(submit(), 0);
-    EXPECT_EQ(publishedWords.size(), 308u);
-    EXPECT_EQ(publishedWords[298], 0x812345cau);
+    ASSERT_EQ(publishedWords.size(), 11u);
+    EXPECT_EQ(publishedWords[1], 0x812345cau);
 }
 
-TEST_F(SwitchNVDECSubmitTest, TooManyDependenciesRejectBeforeHardware)
+TEST_F(SwitchNVDECSubmitTest, LargeGpuDependenciesCollapseToOneBridgeCommand)
 {
-    gpu(SWITCH_GPU_BRIDGE_MAX_TOKENS + 1);
-    EXPECT_EQ(submit(), -28);
-    EXPECT_EQ(submits, 0u);
-    EXPECT_EQ(commits, 0u);
+    gpu(4097);
+    ASSERT_EQ(submit(), 0);
+    EXPECT_EQ(commits, 1u);
+    EXPECT_EQ(bridges, 1u);
+    ASSERT_NE(gQueue.jobs[0].bridge, nullptr);
+    EXPECT_EQ(gQueue.jobs[0].bridge->tokens.size(), sourceTokens.size());
+    EXPECT_LT(publishedWords.size(), 32u);
 }
 
 TEST_F(SwitchNVDECSubmitTest, ChangedProducerDuringBridgeSetupRequiresFreshBridge)

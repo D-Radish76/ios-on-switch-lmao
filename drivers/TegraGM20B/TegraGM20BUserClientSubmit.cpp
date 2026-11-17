@@ -93,12 +93,66 @@ IOReturn AGXDeviceUserClient::cpuAccess(const TegraGM20BAbiCpuAccess *in, bool r
 	return ioreturn(result);
 }
 
-bool AGXDeviceUserClient::reserveJob(JobScratch &job, uint32_t uses)
+bool AGXDeviceUserClient::reserveDependencies(JobScratch &job, uint32_t count)
 {
-	if (!job.bytes)
-		job.bytes = IONew(uint64_t, (kJobBytes + 7) / 8);
-	if (!job.dependencies)
-		job.dependencies = IONew(switch_gpu_backing_token, TegraGM20BMaxJobDependencies);
+	if (count <= job.dependencyCapacity)
+		return true;
+	uint32_t capacity = job.dependencyCapacity ? job.dependencyCapacity : 64;
+	while (capacity < count && capacity <= UINT32_MAX / 2)
+		capacity *= 2;
+	if (capacity < count)
+		capacity = count;
+	if (uint64_t(capacity) * sizeof(switch_gpu_backing_token) > nvxnu_ram_bytes())
+		return false;
+	auto *made = IONew(switch_gpu_backing_token, capacity);
+	if (!made)
+		return false;
+	IODelete(job.dependencies, switch_gpu_backing_token, job.dependencyCapacity);
+	job.dependencies = made;
+	job.dependencyCapacity = capacity;
+	return true;
+}
+
+bool AGXDeviceUserClient::reserveJob(JobScratch &job, uint32_t uses, uint32_t bytes)
+{
+	const uint32_t words = uint32_t((uint64_t(bytes) + 7) / 8);
+	if (uses > UINT32_MAX - TegraGM20BMaxJobEvents)
+		return false;
+	if (words > job.recordWords || uses > job.capacity ||
+	    uses + TegraGM20BMaxJobEvents > job.dependencyCapacity) {
+		uint64_t record = job.recordWords ? job.recordWords : 64;
+		uint64_t entries = job.capacity ? job.capacity : 64;
+		uint64_t dependencies = job.dependencyCapacity ? job.dependencyCapacity : 64;
+		while (record < words)
+			record *= 2;
+		while (entries < uses)
+			entries *= 2;
+		while (dependencies < uint64_t(uses) + TegraGM20BMaxJobEvents)
+			dependencies *= 2;
+		const uint64_t footprint =
+			record * sizeof(uint64_t) +
+			dependencies * sizeof(switch_gpu_backing_token) +
+			entries * (sizeof(switch_gpu_backing_use) +
+				   sizeof(switch_gpu_backing_write_range) +
+				   sizeof(switch_gpu_backing_guard) +
+				   sizeof(SwitchGpuSurfaceRefresh) +
+				   sizeof(switch_gpu_cpu_lease *) + sizeof(tgm_coh *));
+		if (footprint > nvxnu_ram_bytes())
+			return false;
+	}
+	if (words > job.recordWords) {
+		uint32_t capacity = job.recordWords ? job.recordWords : 64;
+		while (capacity < words)
+			capacity *= 2;
+		auto *made = IONew(uint64_t, capacity);
+		if (!made)
+			return false;
+		IODelete(job.bytes, uint64_t, job.recordWords);
+		job.bytes = made;
+		job.recordWords = capacity;
+	}
+	if (!reserveDependencies(job, uses + TegraGM20BMaxJobEvents))
+		return false;
 	if (!job.events) {
 		job.events = IONew(SwitchGpuEventJob, 1);
 		if (job.events)
@@ -146,8 +200,8 @@ bool AGXDeviceUserClient::reserveJob(JobScratch &job, uint32_t uses)
 
 void AGXDeviceUserClient::freeJob(JobScratch &job)
 {
-	IODelete(job.bytes, uint64_t, (kJobBytes + 7) / 8);
-	IODelete(job.dependencies, switch_gpu_backing_token, TegraGM20BMaxJobDependencies);
+	IODelete(job.bytes, uint64_t, job.recordWords);
+	IODelete(job.dependencies, switch_gpu_backing_token, job.dependencyCapacity);
 	if (job.events) {
 		job.events->clear();
 		IODelete(job.events, SwitchGpuEventJob, 1);
@@ -500,11 +554,11 @@ refresh:
 									writeCount);
 			if (!error)
 				error = switch_gpu_backing_dependencies(
-					&transaction, job.dependencies, TegraGM20BMaxJobUses,
+					&transaction, job.dependencies, job.dependencyCapacity,
 					&dependencies);
 		}
 		if (!error && events)
-			error = events->append(job.dependencies, TegraGM20BMaxJobDependencies,
+			error = events->append(job.dependencies, job.dependencyCapacity,
 					       &dependencies);
 		if (!error) {
 			const int captured =
@@ -518,6 +572,15 @@ refresh:
 				continue;
 			}
 			error = captured;
+		}
+		if (error == -28 && dependencies > job.dependencyCapacity) {
+			switch_gpu_backing_abort(&transaction);
+			if (!reserveDependencies(job, dependencies)) {
+				error = -12;
+				break;
+			}
+			error = 0;
+			continue;
 		}
 		if (!error)
 			error = events->bind(&completion);

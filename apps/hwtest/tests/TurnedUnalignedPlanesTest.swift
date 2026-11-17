@@ -27,7 +27,7 @@ struct TurnedUnalignedPlanesTest: HWTest {
                 return .fail("the device makes no texture with the rotation SPI", metrics, proof: gpu.proof)
             }
             for cell in [RotatedCell.besideR4, .turns, .frames] {
-                let key = "r\(turn)_\(cell.rawValue)"
+                let key = "r\(turn)_\(cell.rawValue.lowercased())"
                 let result = try await cells.run(cell, into: plane)
                 metrics.set("wrong_\(key)", result.wrong)
                 if result.wrong != 0 { failures.append("\(key): \(result.wrong) pixels off") }

@@ -1,10 +1,28 @@
 // SPDX-License-Identifier: MIT
 #pragma once
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <mutex>
 #include <vector>
+
+inline std::atomic<uint64_t> switch_bridge_allocations;
+inline size_t switch_bridge_largest_allocation;
+inline bool switch_bridge_refuse_allocation;
+
+template <class T> T *switchBridgeNew(size_t count)
+{
+	++switch_bridge_allocations;
+	if (switch_bridge_refuse_allocation)
+		return nullptr;
+	switch_bridge_largest_allocation = std::max(switch_bridge_largest_allocation, count);
+	return static_cast<T *>(std::calloc(count, sizeof(T)));
+}
+
+#define IONew(type, count) switchBridgeNew<type>(count)
+#define IODelete(pointer, type, count) std::free(pointer)
 
 struct IOLock {
 	std::mutex mutex;

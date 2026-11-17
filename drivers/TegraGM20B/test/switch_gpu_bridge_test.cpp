@@ -50,6 +50,9 @@ uint32_t submittedWords[TGM_SYNCPT_INCR_DWORDS];
 int nextExecError;
 bool pushVolatile;
 uint32_t submittedFlags;
+uint32_t dependencyBudget = 64, failAtExec;
+int failAtExecError = -22;
+std::vector<std::pair<uint32_t, uint32_t>> submittedBatches;
 switch_gpu_mapping pushWindow;
 void (*fenceCallback)(void *);
 void *fenceContext;
@@ -99,8 +102,13 @@ protected:
 	void SetUp() override
 	{
 		nextExecError = 0;
+		dependencyBudget = 64;
+		failAtExec = 0;
+		failAtExecError = -22;
+		switch_bridge_refuse_allocation = false;
 		roomWaits = 0;
 		submittedTokens.clear();
+		submittedBatches.clear();
 	}
 
 	void TearDown() override
@@ -138,6 +146,16 @@ protected:
 		uint32_t id, threshold;
 		switch_gpu_bridge_syncpoint(bridge, &id, &threshold);
 		syncpoints[id] = threshold;
+	}
+
+	std::vector<switch_gpu_backing_token> pendingTokens(uint32_t count)
+	{
+		std::vector<switch_gpu_backing_token> tokens(count);
+		for (uint32_t i = 0; i < count; ++i) {
+			tokens[i] = token(0x10000 + i, 1, 127);
+			statuses[key(tokens[i])] = 0;
+		}
+		return tokens;
 	}
 };
 }
@@ -324,6 +342,12 @@ extern "C" int switch_gpu_chan_wait_submission_room(tgm_chan *, const tgm_push *
 	return roomWait ? roomWait() : 0;
 }
 
+extern "C" uint32_t switch_gpu_chan_dependency_capacity(tgm_chan *, const tgm_push *, uint32_t,
+							const tgm_prof *)
+{
+	return dependencyBudget;
+}
+
 extern "C" int switch_gpu_chan_exec_visibility(tgm_chan *chan, const tgm_push *push, uint32_t count,
 					       const switch_gpu_backing_token *dependencies,
 					       uint32_t dependencyCount, uint32_t *sequence,
@@ -331,17 +355,26 @@ extern "C" int switch_gpu_chan_exec_visibility(tgm_chan *chan, const tgm_push *p
 {
 	++execs;
 	submittedFlags = flags;
+	if (failAtExec && execs == failAtExec)
+		return failAtExecError;
 	if (nextExecError) {
 		const int error = nextExecError;
 		nextExecError = 0;
 		return error;
 	}
-	EXPECT_EQ(count, 1u);
-	EXPECT_EQ(push->dwords, TGM_SYNCPT_INCR_DWORDS);
-	std::copy_n(pushWords.data() + (push->va - (1ULL << 20)) / 4, TGM_SYNCPT_INCR_DWORDS,
-		    submittedWords);
-	submittedTokens.assign(dependencies, dependencies + dependencyCount);
-	execOrder.push_back(dependencies[0].value);
+	EXPECT_LE(dependencyCount, dependencyBudget);
+	if (count) {
+		EXPECT_EQ(count, 1u);
+		EXPECT_EQ(push->dwords, TGM_SYNCPT_INCR_DWORDS);
+		std::copy_n(pushWords.data() + (push->va - (1ULL << 20)) / 4,
+			    TGM_SYNCPT_INCR_DWORDS, submittedWords);
+	} else {
+		EXPECT_TRUE(flags & SWITCH_GPU_SUBMIT_FORCE_FENCE);
+	}
+	submittedBatches.emplace_back(count, dependencyCount);
+	submittedTokens.insert(submittedTokens.end(), dependencies, dependencies + dependencyCount);
+	if (dependencyCount)
+		execOrder.push_back(dependencies[0].value);
 	*sequence = ++chan->submitted;
 	return 0;
 }
@@ -516,6 +549,130 @@ TEST_F(Bridge, FailedSubmissionReleasesEveryRetainedToken)
 	EXPECT_EQ(switch_gpu_bridge_submit(&source, 1, &bridge), -22);
 	EXPECT_EQ(bridge, nullptr);
 	EXPECT_EQ(refs[key(source)], 0);
+}
+
+TEST_F(Bridge, LargeWaitsKeepEveryProducerAndReuseSlotStorage)
+{
+	auto tokens = pendingTokens(4097);
+	for (uint32_t round = 0; round < 2; ++round) {
+		for (const auto &source : tokens)
+			statuses[key(source)] = 0;
+		const uint64_t allocations = switch_bridge_allocations.load();
+		submittedBatches.clear();
+		submittedTokens.clear();
+		switch_gpu_bridge *bridge = nullptr;
+		ASSERT_EQ(switch_gpu_bridge_submit(tokens.data(), uint32_t(tokens.size()), &bridge),
+			  0);
+		ASSERT_NE(bridge, nullptr);
+		held.push_back(bridge);
+		EXPECT_EQ(submittedTokens.size(), tokens.size());
+		ASSERT_GT(submittedBatches.size(), 1u);
+		for (size_t i = 0; i < submittedBatches.size(); ++i) {
+			EXPECT_EQ(submittedBatches[i].first,
+				  uint32_t(i + 1 == submittedBatches.size()));
+			EXPECT_LE(submittedBatches[i].second, dependencyBudget);
+		}
+		for (size_t i = 0; i < tokens.size(); ++i) {
+			EXPECT_TRUE(key(submittedTokens[i]) == key(tokens[i]));
+			EXPECT_EQ(refs[key(tokens[i])], 1);
+			EXPECT_EQ(switch_gpu_bridge_covers(bridge, &tokens[i]), 1);
+			statuses[key(tokens[i])] = 1;
+		}
+		releaseSyncpoint(bridge);
+		finish();
+		EXPECT_EQ(switch_gpu_bridge_status(bridge), 1);
+		release(bridge);
+		if (round)
+			EXPECT_EQ(switch_bridge_allocations.load(), allocations);
+	}
+}
+
+TEST_F(Bridge, LaterBatchFailureRetainsTheAcceptedPrefixUntilItsInterrupt)
+{
+	auto tokens = pendingTokens(1025);
+	const uint32_t submitted = gpu.submitted, releases = failureReleases;
+	failAtExec = execs + 2;
+	switch_gpu_bridge *bridge = nullptr;
+	EXPECT_EQ(switch_gpu_bridge_submit(tokens.data(), uint32_t(tokens.size()), &bridge), -22);
+	EXPECT_EQ(bridge, nullptr);
+	ASSERT_EQ(submittedBatches.size(), 1u);
+	EXPECT_EQ(submittedBatches[0].first, 0u);
+	EXPECT_EQ(gpu.submitted, submitted + 1);
+	EXPECT_NE(hangCheck()->deadline, 0u);
+	pump();
+	for (const auto &source : tokens)
+		EXPECT_EQ(refs[key(source)], 1);
+	finish();
+	for (const auto &source : tokens)
+		EXPECT_EQ(refs[key(source)], 0);
+	EXPECT_EQ(hangCheck()->deadline, 0u);
+	EXPECT_EQ(failureReleases, releases);
+}
+
+TEST_F(Bridge, EarlierInterruptCannotRetireTheLastAcceptedPrefix)
+{
+	auto tokens = pendingTokens(130);
+	for (const bool killed : {false, true}) {
+		SCOPED_TRACE(killed);
+		submittedBatches.clear();
+		const uint32_t submitted = gpu.submitted, releases = failureReleases;
+		failAtExec = execs + 3;
+		switch_gpu_bridge *bridge = nullptr;
+		EXPECT_EQ(switch_gpu_bridge_submit(tokens.data(), uint32_t(tokens.size()), &bridge),
+			  -22);
+		EXPECT_EQ(bridge, nullptr);
+		ASSERT_EQ(submittedBatches.size(), 2u);
+		for (const auto &batch : submittedBatches)
+			EXPECT_EQ(batch.first, 0u);
+		EXPECT_EQ(gpu.submitted, submitted + 2);
+		gpu.completed = submitted + 1;
+		fenceCallback(fenceContext);
+		pump();
+		for (const auto &source : tokens)
+			EXPECT_EQ(refs[key(source)], 1);
+		finish(killed);
+		for (const auto &source : tokens)
+			EXPECT_EQ(refs[key(source)], 0);
+		EXPECT_EQ(hangCheck()->deadline, 0u);
+		EXPECT_EQ(failureReleases, releases);
+	}
+}
+
+TEST_F(Bridge, RingPressureBetweenBatchesKeepsEveryRetainedProducer)
+{
+	auto tokens = pendingTokens(130);
+	failAtExec = execs + 2;
+	failAtExecError = -11;
+	switch_gpu_bridge *bridge = nullptr;
+	ASSERT_EQ(switch_gpu_bridge_submit(tokens.data(), uint32_t(tokens.size()), &bridge), 0);
+	ASSERT_NE(bridge, nullptr);
+	held.push_back(bridge);
+	EXPECT_EQ(roomWaits, 1u);
+	ASSERT_EQ(submittedBatches.size(), 3u);
+	EXPECT_EQ(submittedBatches[0].first, 0u);
+	EXPECT_EQ(submittedBatches[1].first, 0u);
+	EXPECT_EQ(submittedBatches[2].first, 1u);
+	ASSERT_EQ(submittedTokens.size(), tokens.size());
+	for (size_t i = 0; i < tokens.size(); ++i) {
+		EXPECT_TRUE(key(submittedTokens[i]) == key(tokens[i]));
+		EXPECT_EQ(refs[key(tokens[i])], 1);
+	}
+}
+
+TEST_F(Bridge, FailedGrowthPublishesNothingAndRetainsNoProducer)
+{
+	auto tokens =
+		pendingTokens(uint32_t(std::max<size_t>(33, switch_bridge_largest_allocation + 1)));
+	switch_bridge_refuse_allocation = true;
+	switch_gpu_bridge *bridge = nullptr;
+	EXPECT_EQ(switch_gpu_bridge_submit(tokens.data(), uint32_t(tokens.size()), &bridge), -12);
+	switch_bridge_refuse_allocation = false;
+	if (bridge)
+		held.push_back(bridge);
+	EXPECT_EQ(bridge, nullptr);
+	EXPECT_TRUE(submittedBatches.empty());
+	for (const auto &source : tokens)
+		EXPECT_EQ(refs[key(source)], 0);
 }
 
 TEST_F(Bridge, RingCapacityWaitDoesNotDropOrReplaceDependencies)

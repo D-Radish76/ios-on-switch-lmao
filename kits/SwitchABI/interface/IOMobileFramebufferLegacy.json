@@ -104,6 +104,11 @@
       "mangled": "__ZN25IOMobileFramebufferLegacy19completeCurrentSwapEv",
       "doc": "Retires the current swap (swapQueueCurrent) and moves the queue on."
     },
+    "completeQueuedSwap": {
+      "decl": "virtual void completeQueuedSwap(const OriginalLegacySwapRequest *request, bool presented)",
+      "mangled": "__ZN25IOMobileFramebufferLegacy18completeQueuedSwapEPK25OriginalLegacySwapRequestb",
+      "doc": "Unlinks and consumes a queued request. Caller holds the work-loop gate with no current request. False completion releases the request's updated layers without adopting them for display; it does not prove that scanout stopped reading an older front."
+    },
     "validateSwap": {
       "decl": "virtual bool validateSwap(const OriginalLegacySwapRequest *request)",
       "pac": "_ZN25IOMobileFramebufferLegacy12validateSwapEPK25OriginalLegacySwapRequest",

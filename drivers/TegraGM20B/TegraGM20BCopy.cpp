@@ -9,6 +9,7 @@
 #include "SwitchGpuEventClient.h"
 #include "SwitchGpuKqueue.h"
 #include "SwitchGpuSubmitTurn.h"
+#include "shim/include/nvxnu.h"
 
 namespace
 {
@@ -40,6 +41,7 @@ struct Copier {
 	SwitchGpuEventChannel authority;
 	SwitchGpuEventJob events;
 	switch_gpu_backing_token *dependencies;
+	uint32_t dependencyCapacity;
 } queue;
 
 void fenced(void *)
@@ -50,15 +52,35 @@ void fenced(void *)
 void discardSpace()
 {
 	queue.space.discardSpace(kShape);
-	IODelete(queue.dependencies, switch_gpu_backing_token, TegraGM20BMaxJobDependencies);
+	IODelete(queue.dependencies, switch_gpu_backing_token, queue.dependencyCapacity);
 	queue.dependencies = nullptr;
+	queue.dependencyCapacity = 0;
 	queue.authority.destroy();
+}
+
+bool reserveDependencies(uint32_t count)
+{
+	if (count <= queue.dependencyCapacity)
+		return true;
+	uint32_t capacity = queue.dependencyCapacity ? queue.dependencyCapacity : 64;
+	while (capacity < count && capacity <= UINT32_MAX / 2)
+		capacity *= 2;
+	if (capacity < count)
+		capacity = count;
+	if (uint64_t(capacity) * sizeof(switch_gpu_backing_token) > nvxnu_ram_bytes())
+		return false;
+	auto *made = IONew(switch_gpu_backing_token, capacity);
+	if (!made)
+		return false;
+	IODelete(queue.dependencies, switch_gpu_backing_token, queue.dependencyCapacity);
+	queue.dependencies = made;
+	queue.dependencyCapacity = capacity;
+	return true;
 }
 
 bool openSpace()
 {
-	queue.dependencies = IONew(switch_gpu_backing_token, TegraGM20BMaxJobDependencies);
-	if (!queue.dependencies || !queue.authority.initialize() ||
+	if (!reserveDependencies(TegraGM20BMaxJobEvents) || !queue.authority.initialize() ||
 	    !queue.space.openSpace(kShape, &queue)) {
 		discardSpace();
 		return false;
@@ -260,11 +282,15 @@ int submit(Job &job, const tgm_push &push, switch_gpu_backing *source,
 		uint32_t count = 0;
 		if (!result)
 			result = switch_gpu_backing_dependencies(&transaction, queue.dependencies,
-								 TegraGM20BMaxJobDependencies,
-								 &count);
+								 queue.dependencyCapacity, &count);
 		if (!result)
-			result = queue.events.append(queue.dependencies,
-						     TegraGM20BMaxJobDependencies, &count);
+			result = queue.events.append(queue.dependencies, queue.dependencyCapacity,
+						     &count);
+		if (result == -28 && count > queue.dependencyCapacity) {
+			switch_gpu_backing_abort(&transaction);
+			result = reserveDependencies(count) ? 0 : -12;
+			continue;
+		}
 		if (!result) {
 			const int captured =
 				queue.events.captureDependencies(queue.dependencies, count);

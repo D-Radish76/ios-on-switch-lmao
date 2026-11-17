@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -17,6 +18,27 @@
 namespace {
 
 constexpr uint64_t kGranule = 0x10000, kQuarter = 0x40000;
+
+TEST(KernelMappedRanges, EveryFragmentMustCoverContiguousHostMemory)
+{
+    kernel_model::Model model;
+    std::array<uint8_t, 48> memory{};
+    const uint64_t base = uint64_t(uintptr_t(memory.data()));
+    for (uint64_t i = 0; i < 3; ++i) {
+        model.imports[i + 1] = {base + i * 16, 16};
+        model.binds[0x1000 + i * 16] = {i + 1, 16};
+    }
+    EXPECT_EQ(model.host(0x1008, 32), memory.data() + 8);
+    EXPECT_EQ(model.host(0x1008, 41), nullptr);
+    model.binds.erase(0x1010);
+    EXPECT_EQ(model.host(0x1008, 32), nullptr);
+    model.binds[0x1010] = {2, 16};
+    model.imports[2].second = 15;
+    EXPECT_EQ(model.host(0x1008, 32), nullptr);
+    model.imports[2] = {base + 17, 16};
+    EXPECT_EQ(model.host(0x1008, 32), nullptr);
+    EXPECT_EQ(model.host(UINT64_MAX - 15, 32), nullptr);
+}
 
 TEST(ArenaHoles, FreeRangesShrinkToWholeGranules)
 {
@@ -114,8 +136,8 @@ protected:
             *completed = seqno;
         EXPECT_GT(kernel_model::model.jobs.size(), firstJob);
         predication_model::Gpu gpu(0);
-        gpu.map = [](uint64_t va) {
-            return kernel_model::model.host(va);
+        gpu.map = [](uint64_t va, uint64_t bytes) {
+            return kernel_model::model.host(va, bytes);
         };
         for (size_t j = firstJob; j < kernel_model::model.jobs.size(); ++j)
             for (const TegraGM20BAbiPush &push : kernel_model::model.jobs[j].pushes) {
@@ -131,6 +153,61 @@ protected:
 };
 
 class ArenaTrimParts : public ArenaTrim, public testing::WithParamInterface<bool> {};
+
+TEST_F(ArenaTrim, OneCopyKeepsEveryFragmentOfALargeSharedAllocation)
+{
+    constexpr uint32_t count = 1025;
+    constexpr uint64_t bytes = count * kGranule;
+    kernel_model::model.unknownUsesRefused = true;
+    uint32_t arena = 0;
+    ASSERT_TRUE(dev.createArena(bytes, false, arena));
+    std::vector<raw::Buffer> slices(count);
+    for (auto &slice : slices)
+        ASSERT_TRUE(dev.arenaBuffer(arena, kGranule, slice));
+    uint8_t *const base = slices.front().cpu;
+    for (uint32_t i = 1; i < count; i += 2)
+        dev.arenaRelease(slices[i]);
+    std::atomic<uint32_t> committed{0};
+    dev.trimArenas(committed);
+    ASSERT_EQ(importsIn(base, bytes).size(), (count + 1) / 2);
+    for (uint32_t i = 0; i < count; i += 2)
+        dev.arenaRelease(slices[i]);
+    raw::Buffer whole, destination;
+    ASSERT_TRUE(dev.arenaBuffer(arena, bytes, whole));
+    ASSERT_EQ(importsIn(base, bytes).size(), count);
+    ASSERT_TRUE(dev.createBuffer(bytes, destination));
+    memset(whole.cpu, 0x3C, bytes);
+    memset(destination.cpu, 0xA5, bytes);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    cb->use(whole, false);
+    cb->use(whole, true);
+    cb->use(destination, true);
+    raw::BlitEncoder *blit = cb->blit();
+    ASSERT_NE(blit, nullptr);
+    blit->fillBytes(whole.va + bytes - 256, 256, 0x67);
+    blit->copyBytes(whole.va, destination.va, bytes);
+    blit->end();
+    ASSERT_TRUE(submitCopies(cb)) << dev.kernel().error();
+    ASSERT_FALSE(kernel_model::model.jobs.empty());
+    const auto &uses = kernel_model::model.jobs.back().uses;
+    for (const auto &[handle, imported] : kernel_model::model.imports)
+        if (imported.first >= uintptr_t(base) && imported.first < uintptr_t(base) + bytes) {
+            const uint64_t held = handle;
+            const auto at = std::find_if(uses.begin(), uses.end(), [&](const auto &use) {
+                return use.handle == held;
+            });
+            ASSERT_NE(at, uses.end());
+            EXPECT_EQ(at->access & (TegraGM20BSurfaceRead | TegraGM20BSurfaceWrite),
+                      uint32_t(TegraGM20BSurfaceRead | TegraGM20BSurfaceWrite));
+        }
+    EXPECT_EQ(memcmp(whole.cpu, destination.cpu, bytes), 0);
+    EXPECT_EQ(destination.cpu[bytes - 1], 0x67);
+    dev.destroyBuffer(destination);
+    dev.arenaRelease(whole);
+    dev.destroyArena(arena);
+    EXPECT_TRUE(importsIn(base, bytes).empty());
+}
 
 TEST_P(ArenaTrimParts, AnEmptyTrimmedArenaRestoresWholeAndRetiresEveryImport)
 {

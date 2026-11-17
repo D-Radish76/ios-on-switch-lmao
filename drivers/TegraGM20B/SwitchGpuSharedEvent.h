@@ -21,10 +21,7 @@ struct switch_gpu_event_submission {
 };
 
 enum {
-	SWITCH_GPU_EVENT_MAX_JOB_USES = 32,
-	SWITCH_GPU_EVENT_MAX_DEPENDENCIES = 1024,
-	SWITCH_GPU_EVENT_MAX_SOURCES = SWITCH_GPU_EVENT_MAX_DEPENDENCIES +
-		SWITCH_GPU_EVENT_MAX_JOB_USES
+	SWITCH_GPU_EVENT_MAX_JOB_USES = 32
 };
 
 int switch_gpu_event_acquire(void *task, uint32_t port, struct switch_gpu_event **event);

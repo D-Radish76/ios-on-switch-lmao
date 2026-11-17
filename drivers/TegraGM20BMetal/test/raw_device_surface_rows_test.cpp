@@ -76,8 +76,8 @@ TEST_F(DeviceSurfaceRows, SurfaceBuffersMapTheirWholeRoundedMetalLength)
                 continue;
             }
             predication_model::Gpu gpu(0);
-            gpu.map = [](uint64_t va) {
-                return kernel_model::model.host(va);
+            gpu.map = [](uint64_t va, uint64_t bytes) {
+                return kernel_model::model.host(va, bytes);
             };
             for (size_t j = first; j < kernel_model::model.jobs.size(); ++j)
                 for (const TegraGM20BAbiPush &push : kernel_model::model.jobs[j].pushes) {

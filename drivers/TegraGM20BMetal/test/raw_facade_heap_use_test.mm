@@ -242,8 +242,8 @@ TEST_F(FacadeHeapUse, ABlitReadsAHeapBufferAcrossRestoredMappings)
             [cb waitUntilCompleted];
             ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error.description.UTF8String;
             predication_model::Gpu gpu(0);
-            gpu.map = [](uint64_t va) {
-                return kernel_model::model.host(va);
+            gpu.map = [](uint64_t va, uint64_t length) {
+                return kernel_model::model.host(va, length);
             };
             for (size_t j = firstJob; j < kernel_model::model.jobs.size(); ++j)
                 for (const auto &push : kernel_model::model.jobs[j].pushes) {
@@ -290,8 +290,8 @@ TEST_F(FacadeHeapUse, ARecordedHeapUseOutlivesMakeAliasableAndIdleTrim)
             [cb waitUntilCompleted];
             ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error.description.UTF8String;
             predication_model::Gpu gpu(0);
-            gpu.map = [](uint64_t va) {
-                return kernel_model::model.host(va);
+            gpu.map = [](uint64_t va, uint64_t length) {
+                return kernel_model::model.host(va, length);
             };
             for (size_t j = firstJob; j < kernel_model::model.jobs.size(); ++j)
                 for (const auto &push : kernel_model::model.jobs[j].pushes) {

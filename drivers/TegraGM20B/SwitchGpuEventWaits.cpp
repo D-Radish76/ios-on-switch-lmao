@@ -20,7 +20,7 @@ bool sameUse(const switch_gpu_event_use *a, const switch_gpu_event_use *b)
 extern "C" int switch_gpu_event_waits_prepare(switch_gpu_event_use *const *uses, uint32_t count,
 					      switch_gpu_event_waits **out)
 {
-	if (!out || count > SWITCH_GPU_EVENT_MAX_SOURCES || (count && !uses))
+	if (!out || (count && !uses))
 		return -22;
 	*out = nullptr;
 	if (!switch_gpu_events_state())
@@ -232,7 +232,7 @@ extern "C" int switch_gpu_event_waits_prepare_dependencies(const switch_gpu_back
 							   uint32_t count,
 							   switch_gpu_event_waits **out)
 {
-	if (!out || count > SWITCH_GPU_EVENT_MAX_SOURCES || (count && !tokens))
+	if (!out || (count && !tokens))
 		return -22;
 	*out = nullptr;
 	if (!count || !switch_gpu_backing_has_semantics())
@@ -300,7 +300,7 @@ extern "C" int switch_gpu_event_waits_merge_uncommitted(switch_gpu_event_waits *
 	IOLockLock(s->lock);
 	const bool invalid = destination->committed || source->committed || destination->result ||
 			     source->result || source->previous;
-	uint32_t capacity = destination->count;
+	uint64_t capacity = destination->count;
 	for (uint32_t i = 0; !invalid && i < source->count; ++i) {
 		bool duplicate = false;
 		for (uint32_t j = 0; j < destination->count; ++j)
@@ -310,7 +310,7 @@ extern "C" int switch_gpu_event_waits_merge_uncommitted(switch_gpu_event_waits *
 		capacity += !duplicate;
 	}
 	IOLockUnlock(s->lock);
-	if (invalid || capacity > SWITCH_GPU_EVENT_MAX_SOURCES)
+	if (invalid || capacity > UINT32_MAX)
 		return invalid ? -22 : -28;
 	if (capacity == destination->count)
 		return 0;
@@ -340,7 +340,7 @@ extern "C" int switch_gpu_event_waits_merge_uncommitted(switch_gpu_event_waits *
 	const uint32_t oldCapacity = destination->capacity;
 	destination->uses = replacement;
 	destination->count = count;
-	destination->capacity = capacity;
+	destination->capacity = uint32_t(capacity);
 	IOLockUnlock(s->lock);
 	if (old != destination->inlineUses)
 		IODelete(old, switch_gpu_event_use *, oldCapacity);
@@ -397,7 +397,7 @@ extern "C" int switch_gpu_event_waits_settled_status(const switch_gpu_event_wait
 extern "C" int switch_gpu_event_waits_prepare_tokens(const switch_gpu_backing_token *tokens,
 						     uint32_t count, switch_gpu_event_waits **out)
 {
-	if (!out || count > SWITCH_GPU_EVENT_MAX_SOURCES || (count && !tokens))
+	if (!out || (count && !tokens))
 		return -22;
 	*out = nullptr;
 	if (!count)

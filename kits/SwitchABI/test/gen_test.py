@@ -91,6 +91,39 @@ class TablesTest(unittest.TestCase):
                 self.assertLessEqual(added, set(table['layout'].values()))
 
 
+class FramebufferCompletionTest(unittest.TestCase):
+    def test_queued_completion_reuses_the_original_slot_and_binding(self):
+        interface = gen.load(ROOT / 'interface/IOMobileFramebufferLegacy.json')
+        method = 'completeQueuedSwap'
+        symbol = '__ZN25IOMobileFramebufferLegacy18completeQueuedSwapEPK25OriginalLegacySwapRequestb'
+        for kind, slot, address in (
+            ('21H461', 312, 0xFFFFFFF00679CF6C),
+            ('24B119', 330, 0xFFFFFFF0099800D0),
+        ):
+            with self.subTest(kind=kind):
+                table = gen.load(ROOT / f'kinds/{kind}/IOMobileFramebufferLegacy.json')
+                self.assertEqual(table['layout'].get(str(slot)), method)
+                if 'hints' in table:
+                    self.assertEqual(table['hints']['layout'].get(str(slot)), method)
+                self.assertEqual(gen.number(table['addresses'][method]), address)
+                self.assertNotIn(f'opaque{slot}', table['addresses'])
+                declarations = gen.slot_declarations(interface, table)
+                virtuals = [line for line in declarations if line.startswith(('    virtual ', '    SWITCH_ABI_OPAQUE('))]
+                self.assertEqual(
+                    virtuals[slot - table['first_slot']],
+                    '    virtual void completeQueuedSwap(const OriginalLegacySwapRequest *request, bool presented);',
+                )
+                self.assertEqual(len(virtuals), table['slots'] - table['first_slot'])
+                with tempfile.TemporaryDirectory() as tmp:
+                    obj = Path(tmp) / 'completion.o'
+                    obj.write_bytes(macho_object([symbol]))
+                    bindings = gen.bindings([(interface, table, kind)], [str(obj)])
+                slid = (address + gen.number(table['slide'])) & gen.M64
+                self.assertIn(f'.set {symbol}, {slid:#x}', bindings)
+                self.assertNotIn('completeCurrentSwap', bindings)
+                self.assertNotIn(f'opaque{slot}', bindings)
+
+
 class HeaderTest(unittest.TestCase):
     def test_slots_in_order_with_opaque_fillers(self):
         text = gen.header(INTERFACE, TABLE, 'kinds/TEST/Base.json')

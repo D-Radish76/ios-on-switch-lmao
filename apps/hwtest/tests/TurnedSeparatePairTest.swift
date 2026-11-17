@@ -29,7 +29,7 @@ struct TurnedSeparatePairTest: HWTest {
                 return .fail("the device makes no texture with the rotation SPI", metrics, proof: gpu.proof)
             }
             for cell in RotatedCell.pairCells {
-                let key = "r\(turn)_\(cell.rawValue)"
+                let key = "r\(turn)_\(cell.rawValue.lowercased())"
                 let result = try await cells.run(cell, into: plane)
                 metrics.set("wrong_" + key, result.wrong)
                 metrics.set("path_" + key, result.path)

@@ -6,7 +6,7 @@
 #include "TegraGM20BRecord.h"
 #include "TegraGM20BViews.h"
 
-extern "C" IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
+extern "C" LIBKERN_RETURNS_NOT_RETAINED IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): OSDefineMetaClassAndStructors needs the class's external linkage
 class SwitchGpuSurfaceRecord : public OSObject

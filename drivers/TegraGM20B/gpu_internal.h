@@ -27,6 +27,7 @@
 // What the gpu_*.c units share: types, macros and the statics more than one unit uses. Private to them. What it
 // declares is hidden, so the units reach each other's variables directly, not through the GOT.
 #pragma once
+#include "TegraGM20BABI.h"
 #include <core/device.h>
 #include <core/tegra.h>
 #include <engine/device/priv.h> /* nvkm_device_fini: system sleep */
@@ -266,6 +267,9 @@ struct tgm_chan {
 	u64 visible_gpu;
 	u64 fence_gpu;
 	u32 submitted;
+	u32 *dependency_bits;
+	u32 dependency_words;
+	u32 dependency_inline[(TegraGM20BMaxJobDependencies + 31) / 32];
 	u32 event_through; /* its jobs through this seqno release event signals mid-job (SwitchGpuEventWord.h) */
 	u32 error;
 	u32 chid;

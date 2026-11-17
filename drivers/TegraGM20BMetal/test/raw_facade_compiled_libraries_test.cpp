@@ -323,6 +323,68 @@ void kernelDagLibrary()
     expectNoM2V(device);
 }
 
+void specializedKernelDagLibrary()
+{
+    LibraryCompiler compiler;
+    ASSERT_TRUE(compiler.serve());
+    id<MTLDevice> device = completing();
+    ASSERT_TRUE(device != nil);
+    const std::vector<uint8_t> constant = {1, 0, 'g', 'a', 'i', 'n', 0, 33, 3, 0, 1};
+    std::vector<uint8_t> tags;
+    made_metallib::tag(tags, "CNST", constant.data(), uint16_t(constant.size()));
+    const std::string bytes = made_metallib::thin({"add"}, {4}, {kAdd}, {tags});
+    dispatch_data_t data = dispatch_data_create(bytes.data(), bytes.size(), nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    NSError *error = nil;
+    id<MTLLibrary> functions = [device newLibraryWithData:data error:&error];
+    ASSERT_TRUE(functions != nil) << text(error);
+    MTLFunctionConstant *gain = [functions newFunctionWithName:@"add"].functionConstantsDictionary[@"gain"];
+    ASSERT_TRUE(gain != nil);
+    ASSERT_EQ(gain.type, MTLDataTypeUInt);
+    ASSERT_EQ(gain.index, 3u);
+    ASSERT_TRUE(gain.required);
+    NSString *dag = @"DAGS {\nstitched {\nOUTPUT(value) : FUNCTION(add), INPUT(0), INPUT(1);\n}\n}\n";
+    const SEL selector = sel_registerName("newLibraryWithDAG:functions:error:");
+    size_t iteration = 0;
+    for (const uint32_t value : {1u, 2u, 1u}) {
+        const std::string specializedAir = made_metallib::wrappedBitcode(uint8_t(0x60 + value)),
+                          outputAir = made_metallib::wrappedBitcode(uint8_t(0x70 + value));
+        compiler.made.metallib = made_metallib::thin({"add", "stitched"}, {4, 4}, {specializedAir, outputAir});
+        MTLFunctionConstantValues *values = [MTLFunctionConstantValues new];
+        [values setConstantValue:&value type:MTLDataTypeUInt atIndex:gain.index];
+        id<MTLFunction> function = [functions newFunctionWithName:@"add" constantValues:values error:&error];
+        ASSERT_TRUE(function != nil) << text(error);
+        id<MTLLibrary> library = ((id<MTLLibrary> (*)(id, SEL, NSString *, NSArray *, NSError **))objc_msgSend)(
+            device, selector, dag, @[ function ], &error);
+        ASSERT_TRUE(library != nil) << text(error);
+        ASSERT_EQ(compiler.asked.size(), iteration == 0 ? 2u : 4u);
+        if (iteration < 2) {
+            const raw::CompileRequest &specialization = compiler.asked[2 * iteration];
+            EXPECT_EQ(specialization.codeGenType, raw::kCodeGenSpecialize);
+            uint32_t constantValue = 0;
+            ASSERT_TRUE(raw::codegen::wordAt(specialization.codeGen, raw::codegen::kThisKind.functionHeader + 7,
+                                             constantValue));
+            EXPECT_EQ(constantValue, value);
+            EXPECT_EQ(compiler.asked[2 * iteration + 1].codeGenType, raw::kCodeGenStitch);
+            const raw::codegen::Bitcode specialized{reinterpret_cast<const uint8_t *>(specializedAir.data()),
+                                                    specializedAir.size()};
+            EXPECT_EQ(compiler.asked[2 * iteration + 1].codeGen,
+                      raw::codegen::stitchRequest(dag.UTF8String, {specialized}));
+        }
+        const void *result = nullptr;
+        size_t resultBytes = 0;
+        NSString *resultName = nil;
+        ASSERT_TRUE(rmFunctionSource([library newFunctionWithName:@"stitched"], &result, &resultBytes, &resultName));
+        raw::codegen::Bitcode output;
+        ASSERT_TRUE(raw::codegen::functionBitcode(static_cast<const uint8_t *>(result), resultBytes,
+                                                  resultName.UTF8String, output));
+        EXPECT_EQ(std::string(reinterpret_cast<const char *>(output.bytes), output.size), outputAir);
+        ++iteration;
+    }
+    EXPECT_NE(compiler.asked[0].codeGen, compiler.asked[2].codeGen);
+    EXPECT_NE(compiler.asked[1].codeGen, compiler.asked[3].codeGen);
+    expectNoM2V(device);
+}
+
 // Core Image's filter-function link is ImageFilterLink.h's request of the functions' bitcode and infos
 void filterLibrary()
 {
@@ -376,6 +438,11 @@ TEST(RawFacadeCompiledLibraries, AStitchedLibraryIsTheShaderCompilers)
 TEST(RawFacadeCompiledLibraries, AnMpsKernelDagLibraryIsTheShaderCompilers)
 {
     switch_ios::test::ExpectPassesInFreshProcess(kernelDagLibrary);
+}
+
+TEST(RawFacadeCompiledLibraries, SpecializedDagFunctionsKeepTheirConstantsAndCacheIdentity)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(specializedKernelDagLibrary);
 }
 
 TEST(RawFacadeCompiledLibraries, ACoreImageFilterLibraryIsTheShaderCompilers)

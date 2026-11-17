@@ -175,8 +175,8 @@ void switch_gpu_backing_cpu_current_written_locked(switch_gpu_backing *backing, 
 int switch_gpu_cpu_complete(const switch_gpu_backing_token &prefix, const SwitchGpuCpuRange *ranges,
 			    uint32_t count, TegraGM20BAbiCpuCompleteReply *out)
 {
-	if (!out || !ranges || !count || count > TegraGM20BMaxJobUses ||
-	    prefix.engine != SWITCH_GPU_ENGINE_GM20B || prefix.value > UINT32_MAX)
+	if (!out || !ranges || !count || prefix.engine != SWITCH_GPU_ENGINE_GM20B ||
+	    prefix.value > UINT32_MAX)
 		return -22;
 	*out = {};
 	for (uint32_t i = 0; i < count; ++i) {

@@ -224,6 +224,8 @@ void switch_gpu_chan_job_token(struct tgm_chan *chan, uint32_t fences,
 /* Enter before taking backing locks; leave after commit/abort. Room waits require those locks released. */
 void switch_gpu_chan_submit_enter(struct tgm_chan *chan);
 void switch_gpu_chan_submit_leave(void);
+uint32_t switch_gpu_chan_dependency_capacity(struct tgm_chan *chan, const struct tgm_push *push,
+					     uint32_t count, const struct tgm_prof *prof);
 int switch_gpu_chan_wait_submission_room(struct tgm_chan *chan, const struct tgm_push *push,
 					 uint32_t count, uint32_t dependency_count,
 					 const struct tgm_prof *prof);

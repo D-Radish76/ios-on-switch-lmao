@@ -3,6 +3,7 @@ import json
 import os
 import re
 import struct
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 import selector_section
@@ -660,13 +661,45 @@ def name(program: dict) -> str:
     return program.get('name', program['id'])
 
 
+def layout_pairs(rec: dict, facts: int) -> Iterator[tuple[int, int]]:
+    stages = [
+        [v for v in rec.get('variants', []) if v['stage'] == stage] + [{'assume': 0, 'program': rec[key]}]
+        for stage, key in enumerate(('vs', 'fs'))
+    ]
+
+    def chosen(stage: list[dict], held: int) -> int:
+        return next(i for i, variant in enumerate(stage) if not variant['assume'] & ~held)
+
+    yield rec['vs'], rec['fs']
+    for vi, vertex in enumerate(stages[0]):
+        for fi, fragment in enumerate(stages[1]):
+            held = facts | vertex['assume'] | fragment['assume']
+            if chosen(stages[0], held) == vi and chosen(stages[1], held) == fi:
+                yield vertex['program'], fragment['program']
+        selectors = rec.get('selectors')
+        held = facts | vertex['assume'] | (selectors['assume'] if selectors else 0)
+        if selectors and not held & (1 << 26) and chosen(stages[0], held) == vi:
+            for _, program in selectors['configs']:
+                yield vertex['program'], program
+
+
 def write_layouts(path: str, pack: Pack) -> None:
     # decoder table: pipeline set-0 layouts by program pair, so nvdec compares only the bytes a layout defines
     split = {s['whole']: s['fs'] for s in pack.splits}
+    facts, rows = chip_facts(), {}
+    for rec in pack.pipes:
+        slots = ' '.join(f'{e["off"]}:{entry_kind(e)}' for e in rec['entries'])
+        layout = f'{rec["set_size"]:x} {slots}'
+        for vs, whole in layout_pairs(rec, facts):
+            for fs in (whole, split.get(whole)):
+                if fs is None or fs == NO_PROGRAM:
+                    continue
+                pair = name(pack.programs[vs]), name(pack.programs[fs])
+                if pair not in rows:
+                    rows[pair] = layout
+                elif rows[pair] != layout:
+                    rows[pair] = None
     with open(path, 'w') as f:
-        for rec in pack.pipes:
-            slots = ' '.join(f'{e["off"]}:{entry_kind(e)}' for e in rec['entries'])
-            vs = name(pack.programs[rec['vs']])
-            for fs in (rec['fs'], split.get(rec['fs'])):
-                if fs is not None and fs != NO_PROGRAM:
-                    f.write(f'{vs} {name(pack.programs[fs])} {rec["set_size"]:x} {slots}\n')
+        for (vs, fs), layout in rows.items():
+            if layout is not None:
+                f.write(f'{vs} {fs} {layout}\n')

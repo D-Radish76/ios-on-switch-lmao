@@ -202,6 +202,37 @@ TEST_F(CompletionFlipFilter, AFilterFlipWhoseCompletionFailsIsShownWithOneLine)
     EXPECT_EQ(d.ring.pending, kSlot);
 }
 
+TEST_F(CompletionFlipFilter, ProducerLossAfterAnEarlyFlipIsNotConvertedToSuccess)
+{
+    ASSERT_EQ(d.offer(kSlot), 0);
+    d.gpuFilter();
+    ASSERT_EQ(d.completionFlip.state(), SwitchCompletionFlip::kEarly);
+    d.complete(TEGRA_SCANOUT_SOURCE_LOST);
+    EXPECT_EQ(d.gpuStatus, TEGRA_SCANOUT_SOURCE_LOST);
+}
+
+TEST_F(CompletionFlipFilter, ProducerLossAfterAnAdoptedFlipIsNotConvertedToSuccess)
+{
+    ASSERT_EQ(d.offer(kSlot), 0);
+    d.gpuFilter();
+    frame();
+    ASSERT_EQ(d.completionFlip.state(), SwitchCompletionFlip::kAdopted);
+    ASSERT_TRUE(d.retired.empty());
+    d.complete(TEGRA_SCANOUT_SOURCE_LOST);
+    EXPECT_EQ(d.gpuStatus, TEGRA_SCANOUT_SOURCE_LOST);
+}
+
+TEST_F(CompletionFlipFilter, ProducerLossAfterSuspendAdoptionIsNotConvertedToSuccess)
+{
+    ASSERT_EQ(d.offer(kSlot), 0);
+    d.gpuFilter();
+    d.suspend();
+    ASSERT_EQ(d.completionFlip.state(), SwitchCompletionFlip::kAdopted);
+    ASSERT_TRUE(d.retired.empty());
+    d.complete(TEGRA_SCANOUT_SOURCE_LOST);
+    EXPECT_EQ(d.gpuStatus, TEGRA_SCANOUT_SOURCE_LOST);
+}
+
 // After the failed one, the next armed flip's filter writes it as usual: nothing is held.
 TEST_F(CompletionFlipFilter, TheNextFlipsFilterWritesAsUsual)
 {

@@ -5608,6 +5608,12 @@ py_test(
 )
 
 py_test(
+    name = "pack_layouts_test",
+    srcs = ["pack_layouts_test.py"],
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
+py_test(
     name = "rawpack_split_test",
     srcs = ["rawpack_split_test.py"],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],

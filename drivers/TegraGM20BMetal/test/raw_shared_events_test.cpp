@@ -197,8 +197,7 @@ extern "C" kern_return_t IOConnectCallAsyncStructMethod(mach_port_t connection, 
     check(referenceCount == kOSAsyncRef64Count, "async reference ABI");
     if (method == TegraGM20BMethodResourceObserve) {
         const auto &r = request<TegraGM20BAbiResourceObserve>(input, size);
-        check(r.cookie && r.uses_address && r.use_count && r.use_count <= TegraGM20BMaxJobUses && !r.flags &&
-                  !r.reserved,
+        check(r.cookie && r.uses_address && r.use_count && !r.flags && !r.reserved,
               "addressed resource observer framing");
         const auto *uses = reinterpret_cast<const TegraGM20BAbiSurfaceUse *>(uintptr_t(r.uses_address));
         model.resourceUses.assign(uses, uses + r.use_count);
@@ -542,7 +541,7 @@ static void resourceReadiness(bool tunnel)
     model.tunnel = tunnel;
     auto transport = raw::SharedEvents::create(42, tunnel, model.selector);
     std::vector<TegraGM20BAbiSurfaceUse> uses;
-    for (uint32_t i = 0; i < TegraGM20BMaxJobUses; ++i)
+    for (uint32_t i = 0; i < 4097; ++i)
         uses.push_back({uint64_t(i) + 1, i & 1 ? TegraGM20BSurfaceRead : TegraGM20BSurfaceWrite, 0});
     int result = 0;
     unsigned wakes = 0;
@@ -556,7 +555,7 @@ static void resourceReadiness(bool tunnel)
           "resource observer never waits for CPU admission");
     check(model.resourceUses.size() == uses.size() &&
               !memcmp(uses.data(), model.resourceUses.data(), uses.size() * sizeof uses[0]),
-          "all 1024 resource identities and access intents cross fixed-size transport");
+          "all resource identities and access intents cross counted transport");
     Notification ready = model.notifications.back();
     fire(ready, KERN_SUCCESS);
     fire(ready, kIOReturnAborted);
@@ -590,10 +589,10 @@ static void resourceReadiness(bool tunnel)
               result == kIOReturnBadArgument,
           "empty resource observation refused");
     uses.push_back({0xffff, TegraGM20BSurfaceRead, 0});
-    check(!transport->resources(
-              uses, [] {}, result) &&
-              result == kIOReturnBadArgument,
-          "oversized resource observation refused");
+    completion = transport->resources(uses, [] {}, result);
+    check(completion && !result && model.resourceUses.size() == uses.size(),
+          "a further resource retains the full counted observation");
+    completion.reset();
     uses.pop_back();
     completion = transport->resources(
         uses,

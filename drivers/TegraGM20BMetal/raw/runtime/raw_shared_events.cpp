@@ -189,7 +189,7 @@ std::shared_ptr<ResourceReadyCompletion> SharedEvents::resources(const std::vect
     std::function<void(int)> failedReady;
     std::lock_guard<raw::Mutex> lock(s.lock);
     result = kIOReturnBadArgument;
-    if (!ready || uses.empty() || uses.size() > TegraGM20BMaxJobUses || s.closed)
+    if (!ready || uses.empty() || uses.size() > UINT32_MAX || s.closed)
         return nullptr;
     if (!s.preparePort()) {
         result = kIOReturnNoResources;

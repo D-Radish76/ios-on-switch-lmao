@@ -84,24 +84,46 @@ struct Model {
         return host(va, 1);
     }
 
-    // [va, va + bytes) in the host memory of the one bind that holds all of it; null where it does not
+    // Every byte must be bound, and adjacent bindings must reach contiguous host memory.
     uint8_t *host(uint64_t va, uint64_t bytes)
     {
+        if (!bytes || bytes > UINT64_MAX - va)
+            return nullptr;
         auto bound = binds.upper_bound(va);
         if (bound == binds.begin())
             return nullptr;
         --bound;
-        const uint64_t offset = va - bound->first, handle = bound->second.first;
-        const auto within = [&](uint64_t size) {
-            return offset < size && bytes <= size - offset;
-        };
-        if (!within(bound->second.second))
-            return nullptr;
-        if (const auto held = memory.find(uint32_t(handle)); held != memory.end() && within(held->second.size()))
-            return held->second.data() + offset;
-        if (const auto pages = imports.find(handle); pages != imports.end() && within(pages->second.second))
-            return reinterpret_cast<uint8_t *>(uintptr_t(pages->second.first)) + offset;
-        return nullptr;
+        uint8_t *first = nullptr;
+        uintptr_t expected = 0;
+        for (;;) {
+            const uint64_t offset = va - bound->first, handle = bound->second.first;
+            uint64_t available = bound->second.second;
+            uint8_t *base = nullptr;
+            if (const auto held = memory.find(uint32_t(handle)); held != memory.end()) {
+                available = std::min<uint64_t>(available, held->second.size());
+                base = held->second.data();
+            } else if (const auto pages = imports.find(handle); pages != imports.end()) {
+                available = std::min(available, pages->second.second);
+                base = reinterpret_cast<uint8_t *>(uintptr_t(pages->second.first));
+            }
+            if (!base || offset >= available || offset > UINTPTR_MAX - uintptr_t(base))
+                return nullptr;
+            auto *mapped = reinterpret_cast<uint8_t *>(uintptr_t(base) + offset);
+            if (first && uintptr_t(mapped) != expected)
+                return nullptr;
+            if (!first)
+                first = mapped;
+            const uint64_t span = std::min(bytes, available - offset);
+            if (span == bytes)
+                return first;
+            if (span > UINTPTR_MAX - uintptr_t(mapped))
+                return nullptr;
+            expected = uintptr_t(mapped) + span;
+            bytes -= span;
+            va += span;
+            if (++bound == binds.end() || bound->first != va)
+                return nullptr;
+        }
     }
 
     SetState sets[TegraGM20BMaxResourceSets];

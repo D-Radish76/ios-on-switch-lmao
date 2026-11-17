@@ -14,22 +14,25 @@ TEST(RawSurfaces, PreservesEveryDependencyBeyondTheOldExecSurfacesLimit)
     EXPECT_EQ(uses.uses()[2].access, uint32_t(TegraGM20BSurfaceRead | TegraGM20BSurfaceWrite));
 }
 
-TEST(RawSurfaces, CapacityFailureSticksUntilANewJob)
+TEST(RawSurfaces, GrowingJobsKeepEveryUseAndReuseTheirStorage)
 {
     raw::SurfaceList uses;
-    for (uint64_t handle = 1; handle <= TegraGM20BMaxJobUses; ++handle)
+    constexpr uint64_t count = 4097;
+    for (uint64_t handle = 1; handle <= count; ++handle)
         uses.add(handle, false);
     uses.add(1, true);
-    EXPECT_TRUE(uses.valid());
-    uses.add(TegraGM20BMaxJobUses + 1, false);
-    EXPECT_FALSE(uses.valid());
-    uses.add(1, true);
-    EXPECT_FALSE(uses.valid());
+    ASSERT_TRUE(uses.valid());
+    ASSERT_EQ(uses.uses().size(), count);
+    EXPECT_EQ(uses.uses().front().access, uint32_t(TegraGM20BSurfaceRead | TegraGM20BSurfaceWrite));
+    const auto *storage = uses.uses().data();
     uses.clear();
-    uses.add(7, false);
-    EXPECT_TRUE(uses.valid());
-    ASSERT_EQ(uses.uses().size(), 1u);
-    EXPECT_EQ(uses.uses()[0].access, uint32_t(TegraGM20BSurfaceRead));
+    for (uint64_t handle = count; handle; --handle)
+        uses.add(handle, true);
+    ASSERT_TRUE(uses.valid());
+    ASSERT_EQ(uses.uses().size(), count);
+    EXPECT_EQ(uses.uses().data(), storage);
+    EXPECT_EQ(uses.uses().front().handle, count);
+    EXPECT_EQ(uses.uses().back().handle, 1u);
 }
 
 TEST(RawSurfaces, AddressAndHandleNamespacesStayDistinct)

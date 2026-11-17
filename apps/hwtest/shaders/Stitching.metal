@@ -9,3 +9,15 @@ using namespace metal;
 [[stitchable]] float stitch_mul(float a, float b) {
     return a * b;
 }
+
+constant uint stitch_gain [[function_constant(3)]];
+
+[[stitchable]] float stitch_scaled_add(float a, float b) {
+    return a * float(stitch_gain) + b;
+}
+
+[[visible]] float stitch_scaled(float a, float b);
+
+kernel void stitch_consumer(device float *out [[buffer(0)]], uint tid [[thread_position_in_grid]]) {
+    out[tid] = stitch_scaled(float(tid), 3.0f);
+}

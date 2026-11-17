@@ -77,6 +77,7 @@ static void chan_free(struct tgm_chan *chan)
 	if (chan->ring)
 		dma_free_attrs(&tgm_gpu_pdev.dev, CHAN_BYTES, chan->ring, chan->ring_pa, 0);
 	kfree(chan->ring_pas);
+	kfree(chan->dependency_bits);
 	kfree(chan);
 }
 

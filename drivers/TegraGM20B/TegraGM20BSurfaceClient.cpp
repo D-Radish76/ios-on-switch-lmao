@@ -25,7 +25,7 @@
 
 // IOSurfaceRoot::lookupSurface(id, task), by address (kits/SwitchABI IOSurface, bound through TegraVIC's bindings)
 extern "C" OSObject *tegra_gm20b_ios_lookup(IOService *root, uint32_t id, task_t task);
-extern "C" IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
+extern "C" LIBKERN_RETURNS_NOT_RETAINED IOMemoryDescriptor *tegra_vic_ios_memory(OSObject *surface);
 extern "C" uint64_t tegra_vic_ios_alloc_size(OSObject *surface);
 extern "C" uint64_t tegra_vic_ios_width(OSObject *surface);
 extern "C" uint64_t tegra_vic_ios_height(OSObject *surface);

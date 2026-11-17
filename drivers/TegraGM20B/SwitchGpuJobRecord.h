@@ -18,13 +18,43 @@ struct SwitchGpuJobRecord {
 					   TegraGM20BJobHasEvents | TegraGM20BJobQuiet |
 					   TegraGM20BJobAdmission | TegraGM20BJobFulfills |
 					   TegraGM20BJobEventReleases;
-	static constexpr size_t kMaxBytes =
-		sizeof(TegraGM20BAbiJob) + TegraGM20BMaxJobPushes * sizeof(TegraGM20BAbiPush) +
-		TegraGM20BMaxJobUses * sizeof(TegraGM20BAbiSurfaceUse) +
-		sizeof(TegraGM20BAbiSubmitAdmission) + sizeof(TegraGM20BAbiJobPromises) +
-		sizeof(TegraGM20BAbiSubmitEvents) +
-		TegraGM20BMaxJobEvents *
-			(sizeof(TegraGM20BAbiEventUse) + sizeof(TegraGM20BAbiSignalRelease));
+	static constexpr size_t kMaxBytes = UINT32_MAX;
+
+	static bool fitsHeader(const TegraGM20BAbiJob &job, size_t size)
+	{
+		if (size > kMaxBytes || !job.channel || (job.flags & ~kFlags) ||
+		    job.set > TegraGM20BMaxResourceSets || (!job.set != !job.set_generation) ||
+		    job.push_count > TegraGM20BMaxJobPushes)
+			return false;
+		const uint32_t admitted = job.flags & TegraGM20BJobAdmission;
+		const bool begins = admitted & TegraGM20BJobAdmissionBegin;
+		const bool continues = admitted & TegraGM20BJobAdmissionContinue;
+		if ((begins && continues) ||
+		    ((admitted & TegraGM20BJobAdmissionEnd) && !begins && !continues) ||
+		    ((admitted & TegraGM20BJobAdmissionCancel) &&
+		     (admitted != TegraGM20BJobAdmissionCancel || job.push_count ||
+		      job.shared_count)) ||
+		    ((job.flags & TegraGM20BJobEventReleases) &&
+		     !(job.flags & TegraGM20BJobHasEvents)))
+			return false;
+		const size_t prefix =
+			sizeof(job) + size_t(job.push_count) * sizeof(TegraGM20BAbiPush) +
+			size_t(job.shared_count) * sizeof(TegraGM20BAbiSurfaceUse) +
+			(admitted ? sizeof(TegraGM20BAbiSubmitAdmission) : 0) +
+			((job.flags & TegraGM20BJobFulfills) ? sizeof(TegraGM20BAbiJobPromises)
+							     : 0) +
+			((job.flags & TegraGM20BJobHasEvents) ? sizeof(TegraGM20BAbiSubmitEvents)
+							      : 0);
+		const size_t events =
+			(job.flags & TegraGM20BJobHasEvents)
+				? TegraGM20BMaxJobEvents *
+					  (sizeof(TegraGM20BAbiEventUse) +
+					   ((job.flags & TegraGM20BJobEventReleases)
+						    ? sizeof(TegraGM20BAbiSignalRelease)
+						    : 0))
+				: 0;
+		return prefix <= size && size - prefix <= events;
+	}
 
 	static SwitchGpuJobRecord parse(void *bytes, size_t size)
 	{
@@ -32,23 +62,13 @@ struct SwitchGpuJobRecord {
 		if (!bytes || size < sizeof(TegraGM20BAbiJob) || size > kMaxBytes)
 			return record;
 		auto *job = static_cast<TegraGM20BAbiJob *>(bytes);
-		if (!job->channel || (job->flags & ~kFlags) ||
-		    job->set > TegraGM20BMaxResourceSets || (job->set && !job->set_generation) ||
-		    (!job->set && job->set_generation) ||
-		    job->push_count > TegraGM20BMaxJobPushes ||
-		    job->shared_count > TegraGM20BMaxJobUses)
+		if (!fitsHeader(*job, size))
 			return record;
 		const uint32_t admitted = job->flags & TegraGM20BJobAdmission;
-		const bool begins = admitted & TegraGM20BJobAdmissionBegin,
-			   continues = admitted & TegraGM20BJobAdmissionContinue;
-		if ((begins && continues) ||
-		    ((admitted & TegraGM20BJobAdmissionEnd) && !begins && !continues) ||
-		    ((admitted & TegraGM20BJobAdmissionCancel) &&
-		     (admitted != TegraGM20BJobAdmissionCancel || job->push_count ||
-		      job->shared_count)))
-			return record;
 		size_t expected = sizeof(*job) + job->push_count * sizeof(TegraGM20BAbiPush) +
 				  job->shared_count * sizeof(TegraGM20BAbiSurfaceUse);
+		if (expected > size)
+			return record;
 		auto *pushes = reinterpret_cast<TegraGM20BAbiPush *>(job + 1);
 		const auto *uses =
 			reinterpret_cast<const TegraGM20BAbiSurfaceUse *>(pushes + job->push_count);
