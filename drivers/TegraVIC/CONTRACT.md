@@ -100,10 +100,18 @@ and HDR/backward-DM paths (gated by `IOSurfaceAcceleratorCapabilitiesHDR`, publi
 
 **AirPlay mirroring:** the same clone path, landscape (Transform 4/3/7) when the receiver does not rotate.
 
-**VideoToolbox [V]:** `FigRegisterIOSurfacePixelTransferCapabilityOnce` registers ~19 baseline pairs as soon as Create
-succeeds (420v/420f/BGRA among themselves, 422/444 ↔ BGRA, L565, l10r→BGRA, RGhA→BGRA) and gated ones by capability
-keys (published 0). A failed hardware transfer makes `VTPixelTransferSessionTransferImage` fall back to its
-blitter/vImage/Metal path for that call (one wasted kernel round trip, refused before any work).
+**VideoToolbox [V, 21H461 and 24B119]:** `FigRegisterIOSurfacePixelTransferCapabilityOnce`, once per process, opens
+the service and registers the scaler's pairs: the baseline (420v/420f/BGRA among themselves, 422/444 ↔ BGRA, L565,
+l10r→BGRA, RGhA→BGRA) and pairs gated by capability keys (`LumaOnlyL008` in and out gives L008→L008 and L008→BGRA
+only; BGRA→L008 is never a scaler pair). Its flags are 0xd (bit 3: a hardware node), | 2 when the service exists, |
+0x10 with `kSurfaceAcceleratorCapabilitiesColorManager`. A session takes the scaler unless the client or a preference
+turns hardware off, a buffer is not IOSurface-backed, `ValidateM2` refuses (either side under 16 pixels, or over the
+published maxima), or the CGColorSpaces of source and destination differ (needs flag 0x10) or a PQ/HLG transfer
+function changes. 24B119 builds a graph first (`sAllowPixelTransferGraph` 1): the scaler costs 1000 + 100 + 100 per
+pixel unit, Metal 1000 + 200 + 200, so the scaler wins any edge it is offered; 21H461 (graph off by default) asks
+`vtCreateDynamicSession` before any blitter. A failed hardware transfer falls back for that call. The session property
+`kVTPixelTransferPropertyKey_MostRecentConversionType` (both builds) answers Hardware, Metal, Software or
+HardwareAndSoftware for the last transfer.
 **Others [V]:** CMPhoto and ImageIO/AppleJPEG (thumbnails, HEIF/JPEG scaling), WebCore (`IOSurface::convertToFormat`,
 null-checks the accelerator), VectorKit (Maps), MediaToolbox's FigVideoRenderPipeline (BlitSurface), CMCapture and
 camera frameworks (no camera here). ReplayKit, AVFoundation, CoreImage, CoreVideo do not link it.
@@ -158,7 +166,7 @@ Apple's code that still runs: the classes' constructors, `getMetaClass`, the ser
    are used; quality hints (dither, enhance, noise estimation, directional scaling, pixel averaging, edge mirroring,
    pseudo-linear, fix-upscaling, fractional precision, blit clip, lock-in, read-only, unwire, power, coalescing, Comm
    records) are accepted and ignored. Refused as **kIOReturnUnsupported** (callers fall back): histogram, HDR, film
-   grain, colour remap, shared events, formats other than BGRA/RGBA/420v/420f/422v/422f/2vuy/yuvs,
+   grain, colour remap, shared events, formats outside `TegraVICFormats.h`, a transfer function or primaries change,
    protected-to-less-protected, and any shape the checker refuses (pitch the unit cannot address, a 4:2:0 rect or 4:2:2
    columns starting odd or ending odd short of the surface's edge, >16x scaling, sizes outside 2..8192, a destination
    sub-rectangle under a transform other than 0 and 6, whose placement is not in place on the unit). An odd-sized
@@ -190,6 +198,10 @@ are generated in its encoding (`tegra_vic_matrix_*`) and checked on the host aga
   `V8_Y8__U8_Y8` (60) and 'yuvs' as `Y8_V8__Y8_U8` (58): probe gpu.x1.vic_packed422 read the U-first codes (59, 57) with
   Cb and Cr exchanged [T], and that the V-first codes are their exact mirror is NVIDIA's naming [I]. L008,
   L565, l10r, NV24 and three-plane 4:2:0 are table rows that have not run on the unit.
+- L008 is luminance (T_L8, TRM Table 51 index 1). VIC reads L8 as L in R, G and B and writes it as (5R + 9G + 2B) / 16
+  (TRM 15.3.14, p.711-712, read). Into L008 the slot matrix puts the source's luma in all three channels (an RGB source
+  by the destination's YCbCrMatrix tag, untagged BT.601; a Y'CbCr source's Y' at full range), so either law writes the
+  luma itself. Not yet run on the unit.
 - 4:2:2 biplanar (`Y8___U8V8_N422`, NVB0B6 code 63): a transposed 4:2:2 output is described as `Y8___U8V8_N422`
   too, its siting as its memory lies (`ChromaLocHoriz` across memory rows) [T: probe gpu.x1.vic_transpose422 on boots
   19 and 21 turned a '422v' exactly that way, and as `Y8___U8V8_N422R` (65) with the siting exchanged misplaced every

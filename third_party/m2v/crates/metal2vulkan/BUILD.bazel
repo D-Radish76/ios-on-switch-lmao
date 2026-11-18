@@ -206,11 +206,13 @@ rust_test(
 )
 
 # ios-on-switch-lmao: two-plane YCbCr reads converted from their surfaces (bind/ycbcr_convert.rs), the packed 10-bit
-# code formats with them. The profile sweep runs in validation; this target checks the native conversion.
+# code formats with them, and the formats the crate holds a texture of. The profile sweep runs in validation; this
+# target checks the native conversion.
 rust_test(
     name = "ycbcr_convert_test",
     args = [
         "bind::ycbcr_convert::",
+        "metal::format::tests::ycbcr_formats_are_the_two_plane_family_as_named",
         "--skip",
         "the_ycbcr_conversion_kernels_are_valid_on_every_committed_profile",
     ],

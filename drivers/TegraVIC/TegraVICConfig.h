@@ -318,6 +318,27 @@ static inline void tegra_vic_matrix_ycc_to_rgb(uint32_t standard, bool full, con
     m->c[2][3] = tegra_vic_fix(-(gy * y0 + bCb * 512), 256) + 512;
 }
 
+// A luminance-only destination ('L008'): the source's full-range luma in every channel. VIC writes L8 from the pipeline
+// with fixed weights, (5 R + 9 G + 2 B) / 16 (TRM 15.3.14 "Luminance Conversion", p.711-712), which give back any
+// value held in all three channels. An RGB source's luma is the destination's standard's; a Y'CbCr source's is its Y'.
+static inline void tegra_vic_matrix_luma(uint32_t standard, bool ycc, bool full, TegraVICMatrix *m)
+{
+    int64_t w[3] = {full ? 1000000 : 1000000 * 255 / 219, 0, 0};
+    const int64_t y0 = ycc && !full ? 64 : 0;
+    if (!ycc) {
+        tegra_vic_kr_kb(standard, &w[0], &w[2]);
+        w[1] = 1000000 - w[0] - w[2];
+    }
+    const int64_t one = (int64_t)(1ULL << (TEGRA_VIC_MATRIX_SHIFT + 8));
+    memset(m, 0, sizeof(*m));
+    m->shift = TEGRA_VIC_MATRIX_SHIFT;
+    for (int r = 0; r < 3; r++) {
+        for (int i = 0; i < 3; i++)
+            m->c[r][i] = tegra_vic_fix(w[i], one);
+        m->c[r][3] = tegra_vic_fix(-w[0] * y0, 256) + 512;
+    }
+}
+
 // The full-range BT.709 RGB of an 8-bit Y'CbCr sample: the float conversion in integer millionths, rounded and clamped
 // (the reference for reading 4:2:0; the host test checks it against the float formula).
 static inline void tegra_vic_ideal_rgb709_full(const uint32_t ycc[3], uint32_t rgb[3])
@@ -603,7 +624,10 @@ static inline const char *tegra_vic_build(const TegraVICImage *src, const TegraV
     const bool copyYcc = !op->fill && src->format->kind != TEGRA_VIC_KIND_RGB &&
                          src->format->kind == dst->format->kind && src->standard == dst->standard &&
                          t->in.cbChannel == t->out.cbChannel;
+    const bool lumaOut = dst->format->vic == TEGRA_VIC_T_L8 && (op->fill || src->format->vic != TEGRA_VIC_T_L8);
+    const bool rgbLuma = lumaOut && (op->fill || src->format->kind == TEGRA_VIC_KIND_RGB);
     if (!copyYcc && ((dst->format->kind != TEGRA_VIC_KIND_RGB && dst->standard > TEGRA_VIC_YCC_2020) ||
+                     (rgbLuma && dst->standard > TEGRA_VIC_YCC_2020) ||
                      (!op->fill && src->format->kind != TEGRA_VIC_KIND_RGB && src->standard > TEGRA_VIC_YCC_2020)))
         return "YCbCr matrix requires color conversion outside VIC's contract";
 
@@ -651,7 +675,12 @@ static inline const char *tegra_vic_build(const TegraVICImage *src, const TegraV
         // A Y'CbCr destination: the background goes through the output matrix if the engine does that (a trait the
         // unit measured), else it is converted here, through the same arithmetic, into the output channels.
         uint32_t bg[3] = {op->fill10[0] & 1023, op->fill10[1] & 1023, op->fill10[2] & 1023};
-        if (dst->format->kind != TEGRA_VIC_KIND_RGB) {
+        if (lumaOut) {
+            TegraVICMatrix m;
+            tegra_vic_matrix_luma(dst->standard, false, true, &m);
+            const uint32_t rgb[3] = {bg[0], bg[1], bg[2]};
+            tegra_vic_matrix_apply(&m, rgb, bg);
+        } else if (dst->format->kind != TEGRA_VIC_KIND_RGB) {
             TegraVICMatrix m;
             tegra_vic_matrix_rgb_to_ycc(dst->standard, dst->format->kind == TEGRA_VIC_KIND_YCC_FULL, &t->out, &m);
             if (t->fillThroughMatrix) {
@@ -743,7 +772,10 @@ static inline const char *tegra_vic_build(const TegraVICImage *src, const TegraV
         TegraVICMatrix m;
         const bool sameYcc = srcYcc && dstYcc && sf->kind == df->kind && src->standard == dst->standard &&
                              t->in.cbChannel == t->out.cbChannel;
-        if (srcYcc && !sameYcc) {
+        if (lumaOut) {
+            tegra_vic_matrix_luma(dst->standard, srcYcc, sf->kind == TEGRA_VIC_KIND_YCC_FULL, &m);
+            tegra_vic_matrix_put(s, slot + TEGRA_VIC_SLOT_MATRIX, &m);
+        } else if (srcYcc && !sameYcc) {
             tegra_vic_matrix_ycc_to_rgb(src->standard, sf->kind == TEGRA_VIC_KIND_YCC_FULL, &t->in, &m);
             tegra_vic_matrix_put(s, slot + TEGRA_VIC_SLOT_MATRIX, &m);
         }
