@@ -55,6 +55,7 @@ extern "C" int switch_awdl_echo_mark(mbuf_t);
 #endif
 #if DEVELOPMENT || DEBUG
 #include "SwitchWLANA3Diagnostic.h"
+#include "SwitchWLANAwdlRxTrace.h"
 #include "SwitchWLANTrace.h"
 #endif
 #include "awdl/awdl.h"
@@ -109,6 +110,7 @@ unsigned gEchoRxCount;
 #if DEVELOPMENT || DEBUG
 unsigned gActivationTransitions;
 uint32_t gRawPsf, gRawMif, gRawData, gRawRxGated;
+swlan::SwitchAwdlRxActionBudget gA3RxActionBudget;
 #endif
 bool gSoft;  // the soft backend (actframe excursions) rather than the firmware's own AWDL
 thread_call_t gTimer, gDeferred, gCreate, gIovarWork, gRadioWork;
@@ -1100,6 +1102,39 @@ void timerFired(thread_call_param_t, thread_call_param_t)
 }
 
 // ---- the radio's callbacks -------------------------------------------------------------------------------------------
+#if DEVELOPMENT || DEBUG
+enum class ActionDisposition { Gated, Stopped, Ignored, Malformed, Accepted };
+
+void logA3RxAction(const uint8_t *frame, size_t length, const swlan_rx_meta &meta,
+                   const swlan::SwitchAwdlRxAction &action, ActionDisposition disposition)
+{
+    const char *const names[] = {"gated", "stopped", "ignored", "malformed", "accepted"};
+    int parseResult = 1;  // awdl_af_parse returns zero or a negative error. One marks a skipped parse.
+    if (disposition == ActionDisposition::Accepted)
+        parseResult = 0;
+    else if (disposition == ActionDisposition::Ignored || disposition == ActionDisposition::Malformed) {
+        awdl_af decoded;
+        parseResult = awdl_af_parse(frame, length, &decoded);
+    }
+
+    char oui[7] = "-";
+    if (action.oui >= 0)
+        snprintf(oui, sizeof oui, "%06x", static_cast<unsigned>(action.oui));
+    IOLog("SwitchWLAN: A3 action RX fc %#x order %u retry %u seq %u frag %u "
+          "src %02x:%02x:%02x:%02x:%02x:%02x dst %02x:%02x:%02x:%02x:%02x:%02x "
+          "bssid %02x:%02x:%02x:%02x:%02x:%02x no-fcs-bytes %zu channel %u freq %u MHz TSF %llu "
+          "session %u epoch %u applied %u body-offset %u category %d BA-action %d OUI %s Apple-type %d "
+          "version %d subtype %d core %s parse %d\n",
+          action.fc, action.fc >> 15, (action.fc >> 11) & 1u, action.sequenceControl >> 4, action.sequenceControl & 15u,
+          frame[10], frame[11], frame[12], frame[13], frame[14], frame[15], frame[4], frame[5], frame[6], frame[7],
+          frame[8], frame[9], frame[16], frame[17], frame[18], frame[19], frame[20], frame[21], length,
+          awdl_chan_of_freq(meta.freq_mhz).number, meta.freq_mhz, static_cast<unsigned long long>(meta.tsf),
+          meta.generation, meta.clock_epoch, meta.applied_generation, action.headerBytes, action.category,
+          action.blockAckAction, oui, action.appleType, action.version, action.subtype,
+          names[static_cast<unsigned>(disposition)], parseResult);
+}
+#endif
+
 void radioRx(void *, const uint8_t *frame, size_t length, const struct swlan_rx_meta *meta)
 {
     if (meta && (meta->flags & SWLAN_RX_FCS_PRESENT)) {
@@ -1115,9 +1150,20 @@ void radioRx(void *, const uint8_t *frame, size_t length, const struct swlan_rx_
                                       meta->clock_epoch == gRadioState.clock.epoch &&
                                       meta->applied_generation == gRadioState.applied_generation
                                   : gCore && switch_awdl_core_ready(gCore);
+#if DEVELOPMENT || DEBUG
+    swlan::SwitchAwdlRxAction sample{};
+    const bool candidate = stamped && gCaps->requires_radio_ready && meta && meta->tsf && meta->generation &&
+                           meta->clock_epoch && meta->applied_generation &&
+                           swlan::switch_awdl_rx_action(frame, length, sample);
+    auto disposition = ActionDisposition::Gated;
+#endif
     if (gCore && admitted) {
         const bool action = length >= 24 && (frame[0] & 0xfc) == 0xd0;
         const uint32_t parsed = action ? awdl_core_stats(gCore)->af_rx : 0;
+#if DEVELOPMENT || DEBUG
+        const uint32_t bad = candidate ? awdl_core_stats(gCore)->af_bad : 0;
+        const bool canParse = candidate && awdl_core_running(gCore);
+#endif
         const struct awdl_rx_meta m = {meta && meta->tsf ? meta->tsf : nowTsf(),
                                        meta ? meta->freq_mhz : static_cast<uint16_t>(0),
                                        meta ? meta->rssi_dbm : static_cast<int8_t>(-90)};
@@ -1148,6 +1194,17 @@ void radioRx(void *, const uint8_t *frame, size_t length, const struct swlan_rx_
 #endif
         }
 #if DEVELOPMENT || DEBUG
+        if (candidate) {
+            const awdl_stats *stats = awdl_core_stats(gCore);
+            if (!canParse)
+                disposition = ActionDisposition::Stopped;
+            else if (stats->af_rx != parsed)
+                disposition = ActionDisposition::Accepted;
+            else if (stats->af_bad != bad)
+                disposition = ActionDisposition::Malformed;
+            else
+                disposition = ActionDisposition::Ignored;
+        }
         gRawData += length >= 24 && (frame[0] & 0x0c) == 8;
 #endif
         rearm();
@@ -1156,8 +1213,18 @@ void radioRx(void *, const uint8_t *frame, size_t length, const struct swlan_rx_
     else if (stamped) {
         ++gRawRxGated;
     }
+    const bool discovery = sample.kind == swlan::SwitchAwdlRxActionKind::Psf ||
+                           sample.kind == swlan::SwitchAwdlRxActionKind::Mif;
+    const bool unexpected = disposition == ActionDisposition::Malformed || disposition == ActionDisposition::Gated ||
+                            disposition == ActionDisposition::Stopped ||
+                            (discovery && disposition != ActionDisposition::Accepted);
+    const bool selected = candidate && gA3RxActionBudget.take(sample, unexpected);
 #endif
     IOLockUnlock(gLock);
+#if DEVELOPMENT || DEBUG
+    if (selected)
+        logA3RxAction(frame, length, *meta, sample, disposition);
+#endif
     drain();
 }
 

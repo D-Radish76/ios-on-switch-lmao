@@ -245,7 +245,10 @@ host_test(
 
 host_library(
     name = "trace",
-    hdrs = ["//drivers/SwitchWLAN:SwitchWLANTrace.h"],
+    hdrs = [
+        "//drivers/SwitchWLAN:SwitchWLANAwdlRxTrace.h",
+        "//drivers/SwitchWLAN:SwitchWLANTrace.h",
+    ],
 )
 
 host_test(

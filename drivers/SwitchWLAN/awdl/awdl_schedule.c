@@ -122,8 +122,41 @@ static void search_away(struct awdl_core *c, const uint8_t channels[3], unsigned
     c->cfg.seq[second].number = channels[(channel + 1) % count];
 }
 
+static void search_from_channel_six(struct awdl_core *c, struct awdl_chan home)
+{
+    const unsigned away = c->switch_legal_channels & 6u;
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        c->cfg.seq[i] = home;
+    if (away & 4u)
+        c->cfg.seq[2].number = 149;
+    if (away & 2u)
+        c->cfg.seq[10].number = 44;
+
+    unsigned phase = c->switch_search_pass;
+    if (away == 6u) {
+        // Two extra visits every third pass preserve the average of eight away slots per three passes.
+        if (phase % 3u != 2u)
+            return;
+        phase /= 3u;
+    }
+    phase %= AWDL_SEQ_SLOTS;
+    if (away & 4u)
+        c->cfg.seq[phase].number = 149;
+    if (away & 2u)
+        c->cfg.seq[phase ^ 8u].number = 44;
+    if (away == 6u && phase == 10u && !(c->switch_legal_channels & 1u)) {
+        // Both anchors are exchanged. These 44 slots reach the captured idle and infrastructure-priority profiles.
+        c->cfg.seq[0].number = 44;
+        c->cfg.seq[5].number = 44;
+    }
+}
+
 static void search_sequence(struct awdl_core *c, struct awdl_chan home)
 {
+    if (c->infra_mhz && home.number == 6) {
+        search_from_channel_six(c, home);
+        return;
+    }
     const uint8_t candidates[] = {home.number, 44, 149, 6};
     uint8_t channels[3];
     unsigned count = 0;
@@ -402,7 +435,7 @@ void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
     if (search_moves(c) && now >= c->switch_next_search) {
         const uint64_t passes = 1 + (now - c->switch_next_search) / SWITCH_AWDL_SEARCH_US;
         c->switch_next_search += passes * SWITCH_AWDL_SEARCH_US;
-        // Eight positions on one, two or three legal channels repeat within 48 passes.
+        // Both split-band searches and the channel-6 sweep repeat within 48 passes.
         c->switch_search_pass = (uint8_t)((c->switch_search_pass + passes) % 48u);
         struct awdl_chan previous[AWDL_SEQ_SLOTS];
         memcpy(previous, c->cfg.seq, sizeof previous);
