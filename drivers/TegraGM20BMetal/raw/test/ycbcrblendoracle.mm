@@ -10,6 +10,7 @@
 #include <random>
 
 #include "../runtime/raw_standin_blend.h"
+#include "pack_source.h"
 #include "ycbcr_oracle.h"
 
 namespace {
@@ -107,10 +108,7 @@ int main(int argc, char **argv)
         g.q = [g.dev newCommandQueue];
         NSError *e = nil;
         g.lib = [g.dev newLibraryWithSource:kDraws options:nil error:&e];
-        NSString *src =
-            [NSString stringWithContentsOfFile:[@(argv[1]) stringByAppendingPathComponent:@"ycbcr_store.metal"]
-                                      encoding:NSUTF8StringEncoding
-                                         error:nil];
+        NSString *src = packSource(@(argv[1]), @"ycbcr_store.metal");
         MTLCompileOptions *exact = [MTLCompileOptions new];
         exact.mathMode = MTLMathModeSafe;
         g.store = src ? [g.dev newLibraryWithSource:src options:exact error:&e] : nil;

@@ -5,7 +5,7 @@
 // row of a pair after the odd one (a 4:2:0 chroma row holds a pair's luma rows). Tiles are stored concurrently: runs of one
 // shape differ wherever two tiles share a byte. The order here takes the tiles from the last tile row up, each row from its
 // last tile back: every run of the shapes whose runs agree followed it (6 shapes), and the most runs of the rest (56%; the
-// next best order 53%). pack/ycbcr_store.metal draws each byte by it (raw_overlap_rows.h).
+// next best order 53%). pack/ycbcr_store_overlap.h draws each byte by it (raw_overlap_rows.h).
 #pragma once
 
 #include <cstdint>
@@ -14,7 +14,7 @@
 
 namespace raw {
 
-// The overlap states' fragment buffer 0 (pack/ycbcr_store.metal OverlapRows)
+// The overlap states' fragment buffer 0 (pack/ycbcr_store_overlap.h OverlapRows)
 struct OverlapRows {
     uint32_t pitch = 0, row = 0, rows = 0;  // the plane's bytes between rows, bytes a row stores, rows
     uint32_t element = 0;                   // bytes a texel of the source and of the target
@@ -27,9 +27,9 @@ struct OverlapRows {
     TileMap tiles;        // each luma texel's frame tile, a turned target's in its frame
 };
 
-static_assert(sizeof(OverlapRows) == 76, "pack/ycbcr_store.metal OverlapRows");
+static_assert(sizeof(OverlapRows) == 76, "pack/ycbcr_store_overlap.h OverlapRows");
 
-// Where the store of luma texel (x, y) lands in the order, later stores higher (pack/ycbcr_store.metal overlapOrder)
+// Where the store of luma texel (x, y) lands in the order, later stores higher (pack/ycbcr_store_overlap.h overlapOrder)
 inline uint32_t overlapOrder(uint32_t x, uint32_t y)
 {
     const uint32_t tileRow = y / 32, tileColumn = x / 64;
@@ -37,7 +37,7 @@ inline uint32_t overlapOrder(uint32_t x, uint32_t y)
            ((y & 1) == 0 ? 1u : 0u);
 }
 
-// The row whose store of plane byte `a` lands last and that row's byte, as pack/ycbcr_store.metal overlapWinner picks them;
+// The row whose store of plane byte `a` lands last and that row's byte, as pack/ycbcr_store_overlap.h overlapWinner picks them;
 // false where no store writes it (every row there kept or unreached). `reached(x, y)` names a reached luma texel.
 template <typename Reached>
 inline bool overlapWinner(const OverlapRows &s, uint32_t a, Reached reached, uint32_t &row, uint32_t &offset)
@@ -61,7 +61,7 @@ inline bool overlapWinner(const OverlapRows &s, uint32_t a, Reached reached, uin
 }
 
 // RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (raw_xr_pools.h xrPlanesCross): the overlap planes
-// state's fragment buffer 0 (pack/ycbcr_store.metal OverlapPlanes). Its target is the planes' span `pitch` bytes a row from
+// state's fragment buffer 0 (pack/ycbcr_store_overlap.h OverlapPlanes). Its target is the planes' span `pitch` bytes a row from
 // `base`; each plane's first byte (from the span's), pitch, bytes a row and rows
 struct OverlapPlanes {
     uint32_t base = 0, pitch = 0;
@@ -69,7 +69,7 @@ struct OverlapPlanes {
     uint32_t alpha = 0, alphaPitch = 0, alphaRow = 0, alphaRows = 0;
 };
 
-static_assert(sizeof(OverlapPlanes) == 40, "pack/ycbcr_store.metal OverlapPlanes");
+static_assert(sizeof(OverlapPlanes) == 40, "pack/ycbcr_store_overlap.h OverlapPlanes");
 
 // The texel whose store of span byte `a` lands last, of either plane, as an M4 Max's pass stores both: overlapOrder's key
 // of each plane's texel, and between a word and an alpha byte of one key the texel further right, at one x the word (a
@@ -122,7 +122,7 @@ inline OverlapRows overlapRowsOf(uint32_t pitch, uint32_t rowBytes, uint32_t row
 // The pack's state drawing two planes that reach one another's bytes into their span, a byte a texel (R8Uint)
 constexpr const char *kOverlapPlanesState = "raw.ycbcr_store.ycbcr_overlap_planes_frag";
 
-// The pack's overlap state of a target format (pack/ycbcr_store.metal), null for none
+// The pack's overlap state of a target format (pack/ycbcr_store_overlap.h), null for none
 inline const char *overlapState(uint32_t format)
 {
     switch (format) {

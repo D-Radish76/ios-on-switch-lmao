@@ -26,6 +26,7 @@ namespace {
 
 const uint16_t kKnots[513] = {
 #include "../pack/srgb_knots.h"
+#include "pack_source.h"
 };
 
 NSString *const kValues = @"#include <metal_stdlib>\nusing namespace metal;\n"
@@ -37,15 +38,9 @@ NSString *const kValues = @"#include <metal_stdlib>\nusing namespace metal;\n"
 
 id<MTLLibrary> packLibrary(id<MTLDevice> dev, NSString *dir, NSString *file)
 {
-    NSString *metal = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:file]
-                                                encoding:NSUTF8StringEncoding
-                                                   error:nil];
-    NSString *knots = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"srgb_knots.h"]
-                                                encoding:NSUTF8StringEncoding
-                                                   error:nil];
-    if (!metal || !knots)
+    NSString *metal = packSource(dir, file);
+    if (!metal)
         return nil;
-    metal = [metal stringByReplacingOccurrencesOfString:@"#include \"srgb_knots.h\"" withString:knots];
     MTLCompileOptions *exact = [MTLCompileOptions new];
     exact.mathMode = MTLMathModeSafe;
     NSError *e = nil;

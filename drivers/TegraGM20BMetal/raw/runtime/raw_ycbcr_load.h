@@ -26,7 +26,7 @@ namespace raw {
 
 constexpr uint32_t kYcbcrLoadTag = 96;
 
-// The masked store states' buffer(2): pack/ycbcr_store.metal Tiles, the reach mask's TileMap of each plane texel's frame tile
+// The masked store states' buffer(2): pack/ycbcr_store_masked.h Tiles, the reach mask's TileMap of each plane texel's frame tile
 constexpr uint32_t kYcbcrTilesSlot = 2;
 
 template <typename Texture> TurnMask ycbcrStoreMask(const Texture &t, const PassReach &reach)

@@ -21,6 +21,7 @@ namespace {
 
 const uint16_t kKnots[513] = {
 #include "../pack/srgb_knots.h"
+#include "pack_source.h"
 };
 
 NSString *const kValues = @"#include <metal_stdlib>\nusing namespace metal;\n"
@@ -133,9 +134,7 @@ struct Gpu {
 
 id<MTLLibrary> packLibrary(id<MTLDevice> dev, NSString *dir, NSString *file)
 {
-    NSString *metal = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:file]
-                                                encoding:NSUTF8StringEncoding
-                                                   error:nil];
+    NSString *metal = packSource(dir, file);
     if (!metal)
         return nil;
     MTLCompileOptions *exact = [MTLCompileOptions new];

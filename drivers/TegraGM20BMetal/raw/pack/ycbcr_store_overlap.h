@@ -1,0 +1,156 @@
+// SPDX-License-Identifier: MIT
+// Part of ycbcr_store.metal, included in place after its one-plane word store functions, whose shapes and helpers it uses
+#pragma once
+
+// A target whose plane rows overlap (runtime/raw_overlap_rows.h OverlapRows, overlapOrder and overlapWinner step for step):
+// each plane byte from the pool image of its rows' own texels, the row whose store lands last as an M4 Max stores a pass:
+// tiles of 64x32 luma texels from the last tile row up and each row's last tile back, a tile by 32-texel column, then row
+// pair, the even row of a pair after the odd one. The target is the plane's bytes `pitch` apart from `base`; a texel of the
+// source is a texel of the target, its bits moved as the unorm it is. A one-plane 4:2:2 target's bytes come from its luma
+// (texture 0) and chroma (texture 2) images.
+struct OverlapRows {
+    uint pitch, row, rows;
+    uint element;
+    uint base;
+    uint texelBytes, across, down;
+    uint masked;
+    uint kept;
+    uint pairs;
+    Tiles tiles;
+};
+
+static bool overlapReached(Reach reach, constant OverlapRows &s, uint2 pixel)
+{
+    return reached(reach, s.tiles, pixel);
+}
+
+static uint overlapOrder(uint x, uint y)
+{
+    const uint tileRow = y / 32, tileColumn = x / 64;
+    return (0xffffu - tileRow) << 14 | (0xffu - tileColumn) << 6 | (x % 64 / 32) << 5 | (y % 32 / 2) << 1 |
+           ((y & 1) == 0 ? 1u : 0u);
+}
+
+static bool overlapWinner(constant OverlapRows &s, Reach reach, uint a, thread uint &row, thread uint &offset)
+{
+    const uint last = min(a / s.pitch, s.rows - 1);
+    const uint first = a >= s.row ? (a - s.row) / s.pitch + 1 : 0;
+    bool found = false;
+    uint best = 0;
+    for (uint r = first; r <= last; r++) {
+        const uint off = a - r * s.pitch, x = off * s.across / s.texelBytes, y = r * s.down;
+        if (off == s.kept || (s.masked != 0 && !overlapReached(reach, s, uint2(x, y))))
+            continue;
+        const uint order = overlapOrder(x, y);
+        if (!found || order > best) {
+            found = true;
+            best = order;
+            row = r;
+            offset = off;
+        }
+    }
+    return found;
+}
+
+static float4 overlapTexel(StandIn source, Reach reach, StandIn chroma, constant OverlapRows &s, uint2 at)
+{
+    uint row = 0, off = 0;
+    if (!overlapWinner(s, reach, s.base + at.y * s.pitch + at.x * s.element, row, off)) {
+        discard_fragment();
+        return float4(0.0f);
+    }
+    if (s.pairs == 0)
+        return source.read(uint2(off / s.element, row));
+    const uint pair = off / 4, k = off % 4;
+    const bool luma = s.pairs == 1 ? (k & 1) == 0 : (k & 1) == 1;
+    if (luma)
+        return float4(source.read(uint2(2 * pair + k / 2, row)).r);
+    const float4 c = chroma.read(uint2(pair, row));
+    return float4(k / 2 == 0 ? c.r : c.g);
+}
+
+fragment float4 ycbcr_overlap_r8_frag(Out in [[stage_in]], StandIn source [[texture(0)]], Reach reach [[texture(1)]],
+                                      StandIn chroma [[texture(2)]], constant OverlapRows &s [[buffer(0)]])
+{
+    return overlapTexel(source, reach, chroma, s, uint2(in.position.xy));
+}
+
+fragment float4 ycbcr_overlap_r16_frag(Out in [[stage_in]], StandIn source [[texture(0)]], Reach reach [[texture(1)]],
+                                       constant OverlapRows &s [[buffer(0)]])
+{
+    return overlapTexel(source, reach, source, s, uint2(in.position.xy));
+}
+
+fragment float4 ycbcr_overlap_rg8_frag(Out in [[stage_in]], StandIn source [[texture(0)]], Reach reach [[texture(1)]],
+                                       constant OverlapRows &s [[buffer(0)]])
+{
+    return overlapTexel(source, reach, source, s, uint2(in.position.xy));
+}
+
+fragment float4 ycbcr_overlap_rg16_frag(Out in [[stage_in]], StandIn source [[texture(0)]], Reach reach [[texture(1)]],
+                                        constant OverlapRows &s [[buffer(0)]])
+{
+    return overlapTexel(source, reach, source, s, uint2(in.position.xy));
+}
+
+fragment float4 ycbcr_overlap_rgb10a2_frag(Out in [[stage_in]], StandIn source [[texture(0)]],
+                                           Reach reach [[texture(1)]], constant OverlapRows &s [[buffer(0)]])
+{
+    return overlapTexel(source, reach, source, s, uint2(in.position.xy));
+}
+
+fragment uint ycbcr_overlap_r32ui_frag(Out in [[stage_in]], texture2d<uint, access::read> source [[texture(0)]],
+                                       Reach reach [[texture(1)]], constant OverlapRows &s [[buffer(0)]])
+{
+    const uint2 at = uint2(in.position.xy);
+    uint row = 0, off = 0;
+    if (!overlapWinner(s, reach, s.base + at.y * s.pitch + at.x * s.element, row, off)) {
+        discard_fragment();
+        return 0;
+    }
+    return source.read(uint2(off / s.element, row)).r;
+}
+
+// RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (runtime/raw_xr_pools.h xrPlanesCross,
+// runtime/raw_overlap_order.h overlapPlanesWinner step for step): each byte of the planes' span from the texel, of either
+// plane's pool, whose store lands last as an M4 Max stores a pass, by overlapOrder and then the texel further right, the word
+// at one x. The target is the span's bytes `pitch` apart from `base`, a byte a texel.
+struct OverlapPlanes {
+    uint base, pitch;
+    uint words, wordPitch, wordRow, wordRows;
+    uint alpha, alphaPitch, alphaRow, alphaRows;
+};
+
+fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> words [[texture(0)]],
+                                        texture2d<uint, access::read> alpha [[texture(1)]],
+                                        constant OverlapPlanes &s [[buffer(0)]])
+{
+    const uint a = s.base + uint(in.position.y) * s.pitch + uint(in.position.x);
+    bool found = false;
+    uint best = 0, bestX = 0;
+    uint3 won = uint3(0);
+    for (uint plane = 0; plane < 2; plane++) {
+        const bool word = plane == 0;
+        const uint at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
+        const uint row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
+        if (a < at)
+            continue;
+        const uint off = a - at;
+        const uint last = min(off / pitch, rows - 1), first = off >= row ? (off - row) / pitch + 1 : 0;
+        for (uint r = first; r <= last; r++) {
+            const uint b = off - r * pitch, x = word ? b / 4 : b, order = overlapOrder(x, r);
+            const uint key = x << 1 | (word ? 1u : 0u);
+            if (!found || order > best || (order == best && key > bestX)) {
+                found = true;
+                best = order;
+                bestX = key;
+                won = uint3(x, r, word ? b % 4 : 4);
+            }
+        }
+    }
+    if (!found)
+        discard_fragment();
+    if (won.z == 4)
+        return alpha.read(won.xy).r;
+    return (words.read(won.xy).r >> (8 * won.z)) & 0xffu;
+}

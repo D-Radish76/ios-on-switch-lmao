@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "../runtime/raw_packed_plane.h"
+#include "pack_source.h"
 
 namespace {
 
@@ -185,13 +186,7 @@ int main(int argc, char **argv)
         g.q = [g.dev newCommandQueue];
         NSString *dir = @(argv[1]);
         auto source = [&](NSString *name) {
-            NSString *text = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:name]
-                                                       encoding:NSUTF8StringEncoding
-                                                          error:nil];
-            NSString *knots = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"srgb_knots.h"]
-                                                        encoding:NSUTF8StringEncoding
-                                                           error:nil];
-            return [text stringByReplacingOccurrencesOfString:@"#include \"srgb_knots.h\"" withString:knots ?: @""];
+            return packSource(dir, name);
         };
         MTLCompileOptions *exact = [MTLCompileOptions new];
         exact.mathMode = MTLMathModeSafe;

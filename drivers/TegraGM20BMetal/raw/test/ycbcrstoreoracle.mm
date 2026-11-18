@@ -16,6 +16,7 @@
 #include <random>
 #include <vector>
 
+#include "pack_source.h"
 #include "ycbcr_oracle.h"
 
 namespace {
@@ -146,9 +147,7 @@ int main(int argc, char **argv)
         NSError *e = nil;
         g.lib = [g.dev newLibraryWithSource:kValues options:nil error:&e];
         NSString *dir = @(argv[1]);
-        NSString *src = [NSString stringWithContentsOfFile:[dir stringByAppendingPathComponent:@"ycbcr_store.metal"]
-                                                  encoding:NSUTF8StringEncoding
-                                                     error:nil];
+        NSString *src = packSource(dir, @"ycbcr_store.metal");
         MTLCompileOptions *exact = [MTLCompileOptions new];
         exact.mathMode = MTLMathModeSafe;
         g.store = src ? [g.dev newLibraryWithSource:src options:exact error:&e] : nil;
