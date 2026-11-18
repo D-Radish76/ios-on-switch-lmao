@@ -603,3 +603,47 @@ fragment uint ycbcr_overlap_r32ui_frag(Out in [[stage_in]], texture2d<uint, acce
     }
     return source.read(uint2(off / s.element, row)).r;
 }
+
+// RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (runtime/raw_xr_pools.h xrPlanesCross,
+// runtime/raw_overlap_order.h overlapPlanesWinner step for step): each byte of the planes' span from the texel, of either
+// plane's pool, whose store lands last as an M4 Max stores a pass, by overlapOrder and then the texel further right, the word
+// at one x. The target is the span's bytes `pitch` apart from `base`, a byte a texel.
+struct OverlapPlanes {
+    uint base, pitch;
+    uint words, wordPitch, wordRow, wordRows;
+    uint alpha, alphaPitch, alphaRow, alphaRows;
+};
+
+fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> words [[texture(0)]],
+                                        texture2d<uint, access::read> alpha [[texture(1)]],
+                                        constant OverlapPlanes &s [[buffer(0)]])
+{
+    const uint a = s.base + uint(in.position.y) * s.pitch + uint(in.position.x);
+    bool found = false;
+    uint best = 0, bestX = 0;
+    uint3 won = uint3(0);
+    for (uint plane = 0; plane < 2; plane++) {
+        const bool word = plane == 0;
+        const uint at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
+        const uint row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
+        if (a < at)
+            continue;
+        const uint off = a - at;
+        const uint last = min(off / pitch, rows - 1), first = off >= row ? (off - row) / pitch + 1 : 0;
+        for (uint r = first; r <= last; r++) {
+            const uint b = off - r * pitch, x = word ? b / 4 : b, order = overlapOrder(x, r);
+            const uint key = x << 1 | (word ? 1u : 0u);
+            if (!found || order > best || (order == best && key > bestX)) {
+                found = true;
+                best = order;
+                bestX = key;
+                won = uint3(x, r, word ? b % 4 : 4);
+            }
+        }
+    }
+    if (!found)
+        discard_fragment();
+    if (won.z == 4)
+        return alpha.read(won.xy).r;
+    return (words.read(won.xy).r >> (8 * won.z)) & 0xffu;
+}

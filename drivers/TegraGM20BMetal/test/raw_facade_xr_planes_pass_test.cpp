@@ -5,6 +5,7 @@
 // on the raw path, nothing of it on m2v.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_samples.h"
+#include "../raw/runtime/raw_xr_pools.h"
 #include "bazel/testing/fresh_process.h"
 
 #import <IOSurface/IOSurface.h>
@@ -185,11 +186,13 @@ void planesWhoseRowsOverlapAreStoredFromTheirPools()
                                            {"raw.ycbcr_store.ycbcr_overlap_r8_frag", MTLPixelFormatR8Unorm}}));
     ASSERT_TRUE(device != nil);
     NSMutableArray *planes = [NSMutableArray array];
+    // IOSurfaceCreate makes no plane of 32 four-byte elements in rows of 64: the words' plane is declared of two-byte
+    // elements, as the M4 Max was probed over it, and Metal and the raw path read 550's words at the plane's rows
     for (unsigned bytes : {4u, 1u})
         [planes addObject:@{
             (id)kIOSurfacePlaneWidth : @(bytes == 4 ? 32 : 16),
             (id)kIOSurfacePlaneHeight : @8,
-            (id)kIOSurfacePlaneBytesPerElement : @(bytes),
+            (id)kIOSurfacePlaneBytesPerElement : @(bytes == 4 ? 2 : 1),
             (id)kIOSurfacePlaneBytesPerRow : @(bytes == 4 ? 64 : 16),
             (id)kIOSurfacePlaneOffset : @(bytes == 4 ? 0 : 1024),
             (id)kIOSurfacePlaneSize : @(bytes == 4 ? 512 : 128)
@@ -225,7 +228,73 @@ void planesWhoseRowsOverlapAreStoredFromTheirPools()
     CFRelease(surface);
 }
 
+// RGB10A8_2P_XR10 32x8 over words of rows 128 at 0 and alpha bytes of rows 32 at 512, so that word rows 4 to 7 lie in the
+// alpha plane: an M4 Max makes it and its pass gives each byte both planes reach to the later store across both planes. It is
+// held through both pools, and a Clear pass's planes are drawn into their span by the pack's overlap planes state: a pack
+// without that state fails the command buffer
+void crossingPlanesCleared(bool state)
+{
+    std::vector<std::pair<std::string, MTLPixelFormat>> states = {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float}};
+    if (state)
+        states.push_back({raw::kOverlapPlanesState, MTLPixelFormatR8Uint});
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", states));
+    ASSERT_TRUE(device != nil);
+    NSMutableArray *planes = [NSMutableArray array];
+    for (unsigned bytes : {4u, 1u})
+        [planes addObject:@{
+            (id)kIOSurfacePlaneWidth : @32,
+            (id)kIOSurfacePlaneHeight : @4,
+            (id)kIOSurfacePlaneBytesPerElement : @(bytes),
+            (id)kIOSurfacePlaneBytesPerRow : @(32 * bytes),
+            (id)kIOSurfacePlaneOffset : @(bytes == 4 ? 0 : 512),
+            (id)kIOSurfacePlaneSize : @(128 * bytes)
+        }];
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @32,
+        (id)kIOSurfaceHeight : @4,
+        (id)kIOSurfacePixelFormat : @(uint32_t('b3a8')),
+        (id)kIOSurfaceAllocSize : @1024,
+        (id)kIOSurfacePlaneInfo : planes
+    });
+    ASSERT_TRUE(surface);
+    MTLTextureDescriptor *d =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(550) width:32 height:8 mipmapped:NO];
+    d.storageMode = MTLStorageModeShared;
+    d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:surface plane:0];
+    ASSERT_TRUE(t != nil && t->_rawOk) << "Metal makes it";
+    ASSERT_TRUE(t->_raw.xrPlanes && t->_raw.luma->sampled && t->_raw.chroma->sampled);
+    EXPECT_TRUE(raw::xrPlanesCross(*t->_raw.luma, *t->_raw.chroma));
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = (id<MTLTexture>)t;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    p.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.25, -0.25, 0.75);
+    id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
+    [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    EXPECT_EQ(cb.status, state ? MTLCommandBufferStatusCompleted : MTLCommandBufferStatusError);
+    CFRelease(surface);
+}
+
+void crossingPlanesStoredTogether()
+{
+    crossingPlanesCleared(true);
+}
+
+void crossingPlanesWithNoStateFail()
+{
+    crossingPlanesCleared(false);
+}
+
 }  // namespace
+
+TEST(RawFacadeXrPlanesPass, PlanesWhoseWordsRunIntoTheAlphaPlaneAreStoredTogether)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(crossingPlanesStoredTogether);
+    switch_ios::test::ExpectPassesInFreshProcess(crossingPlanesWithNoStateFail);
+}
 
 TEST(RawFacadeXrPlanesPass, PlanesWhoseRowsOverlapAreStoredFromTheirPools)
 {

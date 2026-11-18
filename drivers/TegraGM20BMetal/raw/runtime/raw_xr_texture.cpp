@@ -77,7 +77,7 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
         plane.tic = image->tic;
         return true;
     };
-    if ((overlapsRows(*w) || (!alone && overlapsRows(*a))) && (!pooled(*w) || !pooled(*a)))
+    if ((overlapsRows(*w) || (!alone && (overlapsRows(*a) || xrPlanesCross(*w, *a)))) && (!pooled(*w) || !pooled(*a)))
         return undo("no memory for the pool images planes that overlap are read and stored through");
     const uint32_t sinkPitch = (width + 31) & ~31u;
     if (alone && !openSparseSink(t, uint64_t(sinkPitch) * height))

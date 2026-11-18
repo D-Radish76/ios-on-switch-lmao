@@ -60,6 +60,50 @@ inline bool overlapWinner(const OverlapRows &s, uint32_t a, Reached reached, uin
     return found;
 }
 
+// RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (raw_xr_pools.h xrPlanesCross): the overlap planes
+// state's fragment buffer 0 (pack/ycbcr_store.metal OverlapPlanes). Its target is the planes' span `pitch` bytes a row from
+// `base`; each plane's first byte (from the span's), pitch, bytes a row and rows
+struct OverlapPlanes {
+    uint32_t base = 0, pitch = 0;
+    uint32_t words = 0, wordPitch = 0, wordRow = 0, wordRows = 0;
+    uint32_t alpha = 0, alphaPitch = 0, alphaRow = 0, alphaRows = 0;
+};
+
+static_assert(sizeof(OverlapPlanes) == 40, "pack/ycbcr_store.metal OverlapPlanes");
+
+// The texel whose store of span byte `a` lands last, of either plane, as an M4 Max's pass stores both: overlapOrder's key
+// of each plane's texel, and between a word and an alpha byte of one key the texel further right, at one x the word (a
+// 32x8 RGB10A8_2P_XR10 of words 128 bytes a row at 0 and alpha 32 at 512, cleared: alpha rows 0 to 3 keep word row 4,
+// rows 4, 6 and 7 their own, row 5 word row 5's bytes up to its 11th); false where no row stores it. `byte`: the byte of
+// a word texel, 4 for an alpha one
+inline bool overlapPlanesWinner(const OverlapPlanes &s, uint32_t a, uint32_t &x, uint32_t &y, uint32_t &byte)
+{
+    bool found = false;
+    uint32_t best = 0, bestX = 0;
+    for (const bool word : {true, false}) {
+        const uint32_t at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
+        const uint32_t row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
+        if (a < at)
+            continue;
+        const uint32_t off = a - at;
+        const uint32_t last = off / pitch < rows - 1 ? off / pitch : rows - 1;
+        const uint32_t first = off >= row ? (off - row) / pitch + 1 : 0;
+        for (uint32_t r = first; r <= last; r++) {
+            const uint32_t b = off - r * pitch, tx = word ? b / 4 : b, order = overlapOrder(tx, r);
+            const uint32_t key = tx << 1 | (word ? 1u : 0u);
+            if (!found || order > best || (order == best && key > bestX)) {
+                found = true;
+                best = order;
+                bestX = key;
+                x = tx;
+                y = r;
+                byte = word ? b % 4 : 4;
+            }
+        }
+    }
+    return found;
+}
+
 // A plane of `rows` rows of `rowBytes`, `pitch` apart, drawn `elementBytes` a texel
 inline OverlapRows overlapRowsOf(uint32_t pitch, uint32_t rowBytes, uint32_t rows, uint32_t elementBytes,
                                  uint32_t texelBytes, uint32_t across, uint32_t down)
@@ -74,6 +118,9 @@ inline OverlapRows overlapRowsOf(uint32_t pitch, uint32_t rowBytes, uint32_t row
     s.down = down;
     return s;
 }
+
+// The pack's state drawing two planes that reach one another's bytes into their span, a byte a texel (R8Uint)
+constexpr const char *kOverlapPlanesState = "raw.ycbcr_store.ycbcr_overlap_planes_frag";
 
 // The pack's overlap state of a target format (pack/ycbcr_store.metal), null for none
 inline const char *overlapState(uint32_t format)

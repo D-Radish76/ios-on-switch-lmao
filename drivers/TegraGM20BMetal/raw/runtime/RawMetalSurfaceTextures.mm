@@ -304,9 +304,8 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     else if (xr && !xrTaken && !xrPlanesStorable(d))
         form = "RGB10A8_2P_XR10 a fragment program may store to, with no pack state merging and splitting its planes";
     else if (xr && !xrTaken)
-        form = "RGB10A8_2P_XR10 over planes of rows under 16 bytes (an M4 Max reads YCbCr planes of such rows 1 MiB "
-               "apart), or written over planes whose words run on into its alpha plane (an M4 Max's pass orders the "
-               "stores of both planes together)";
+        form = "RGB10A8_2P_XR10 over planes of rows under 16 bytes (an M4 Max reads such rows 1 MiB apart and "
+               "stores them 16 bytes apart)";
     if (form) {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.form", uintptr_t(form),
                              "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: %s: nil until the "

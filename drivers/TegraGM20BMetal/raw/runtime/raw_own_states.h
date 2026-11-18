@@ -60,6 +60,7 @@ inline constexpr const char *kOwnStates[] = {
     "ycbcr_store_vert | f ycbcr_overlap_rg16_frag",
     "ycbcr_store_vert | f ycbcr_overlap_rgb10a2_frag",
     "ycbcr_store_vert | f ycbcr_overlap_r32ui_frag",
+    "ycbcr_store_vert | f ycbcr_overlap_planes_frag",
     "turn_vert | f turn_copy8_frag",
     "turn_vert | f turn_copy16_frag",
     "turn_vert | f turn_copy32_frag",

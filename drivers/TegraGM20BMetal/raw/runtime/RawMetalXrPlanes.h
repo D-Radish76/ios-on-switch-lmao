@@ -11,10 +11,9 @@ bool xrLastPlane(IOSurfaceRef s, NSUInteger plane);
 // A plane's rows as Metal's GPU reads and writes them, rounded down to 16 (probes/xr.txt 5a-5m)
 size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane);
 // 550 or 551 over a plane followed by another, both of rows of 16 bytes or more: a 2D texture, one level, one sample, no
-// rotation, of any usage, its words ending before the alpha plane where it may be written. An M4 Max reads words that run
-// on into the alpha plane at their pitch, but its pass gives a byte both planes' rows reach to whichever store comes later
-// in raw_overlap_order.h's order taken across both planes (clear passes over words of rows 128 for 32x8 texels whose last
-// 4 rows lie in the alpha plane: alpha rows 0-3 keep the words, rows 4, 6 and 7 the alpha), which no overlap state draws. Metal reads the planes so whatever their elements (an M4 Max over 4+1, 4+2, 8+1, 2+1,
+// rotation, of any usage. An M4 Max reads words that run on into the alpha plane at their pitch, and its pass gives a byte
+// both planes' rows reach to whichever store comes later, taken across both planes (raw_xr_pools.h xrPlanesCross). Metal
+// reads the planes so whatever their elements (an M4 Max over 4+1, 4+2, 8+1, 2+1,
 // 4+4 and '420v' planes: m2v-textures5 probes/xrplane0.mm), their top-left corner, each row at its plane's pitch where rows
 // overlap or run on past the plane (raw_xr_pools.h)
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane);

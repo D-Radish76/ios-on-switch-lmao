@@ -38,13 +38,7 @@ size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane)
 
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    if (!planesForm(d) || plane + 1 >= IOSurfaceGetPlaneCount(s) || !xrGpuRows(s, plane) || !xrGpuRows(s, plane + 1))
-        return false;
-    const bool writes =
-        d.usage == MTLTextureUsageUnknown || (d.usage & (MTLTextureUsageRenderTarget | MTLTextureUsageShaderWrite));
-    const uintptr_t word = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) & ~uintptr_t(15),
-                    alpha = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane + 1)) & ~uintptr_t(15);
-    return !writes || alpha < word || word + xrGpuRows(s, plane) * (d.height - 1) + 4 * d.width <= alpha;
+    return planesForm(d) && plane + 1 < IOSurfaceGetPlaneCount(s) && xrGpuRows(s, plane) && xrGpuRows(s, plane + 1);
 }
 
 bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)

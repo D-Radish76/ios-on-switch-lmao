@@ -10,6 +10,8 @@
 // last in an M4 Max's pass (raw_overlap_order.h, which its 550 passes follow too), a kernel's in row order (an M4 Max's
 // kernel stores race: five runs of one shape differ).
 #pragma once
+#include <algorithm>
+
 #include "raw_gpu.h"
 #include "raw_overlap_rows.h"
 #include "raw_xr_pass.h"
@@ -21,12 +23,79 @@ inline bool xrPlanesPooled(const Texture &t)
     return t.xrPlanes && ((t.luma && t.luma->sampled) || (t.chroma && t.chroma->sampled));
 }
 
-// Held in planes whose rows overlap: stored through both pools
+// Whether the rows of a texture's two planes reach one another's bytes (words that run on into the alpha plane): an M4 Max's
+// pass gives such a byte to whichever store lands later, taken across both planes (raw_overlap_order.h overlapPlanesWinner).
+// Both planes lie in one import, a surface's by its ID (Device::importSurface), or in the window both were moved into
+inline bool xrPlanesCross(const Texture &w, const Texture &a)
+{
+    const uint64_t wordsEnd = w.va + uint64_t(w.pitch) * (w.height - 1) + uint64_t(w.width) * w.bpp;
+    const uint64_t alphaEnd = a.va + uint64_t(a.pitch) * (a.height - 1) + uint64_t(a.width) * a.bpp;
+    return !a.memoryless && w.va < alphaEnd && a.va < wordsEnd;
+}
+
+// Held in planes whose rows overlap, their own or one another's: stored through both pools
 inline bool xrPlanesOverlap(const Texture &t)
 {
     if (!t.xrPlanes || !t.luma || !t.chroma || !t.luma->sampled)
         return false;
-    return overlapsRows(*t.luma) || (!t.chroma->memoryless && overlapsRows(*t.chroma));
+    return overlapsRows(*t.luma) ||
+           (!t.chroma->memoryless && (overlapsRows(*t.chroma) || xrPlanesCross(*t.luma, *t.chroma)));
+}
+
+// Planes whose rows reach one another's bytes, from their pools after work rendered them there: their span drawn a byte a
+// texel by the pack's overlap planes state, rows `pitch` bytes long, then the bytes past them; 0, or 1 a target the raw path
+// cannot render, 2 a draw the encoder refused (*why)
+inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t, const char **why)
+{
+    constexpr uint32_t kR8Uint = 13;
+    const Texture &w = *t.luma, &a = *t.chroma;
+    Pipeline *state = d.ownPipeline(kOverlapPlanesState);
+    if (!state) {
+        *why = "the pack has no state storing RGB10A8_2P_XR10 planes whose rows reach one another's";
+        return 1;
+    }
+    const uint64_t lo = std::min(w.va, a.va);
+    const uint64_t hi = std::max(w.va + uint64_t(w.pitch) * (w.height - 1) + uint64_t(w.width) * w.bpp,
+                                 a.va + uint64_t(a.pitch) * (a.height - 1) + uint64_t(a.width) * a.bpp);
+    OverlapPlanes s;
+    s.pitch = w.pitch;
+    s.words = uint32_t(w.va - lo);
+    s.wordPitch = w.pitch;
+    s.wordRow = w.width * w.bpp;
+    s.wordRows = w.height;
+    s.alpha = uint32_t(a.va - lo);
+    s.alphaPitch = a.pitch;
+    s.alphaRow = a.width * a.bpp;
+    s.alphaRows = a.height;
+    const uint32_t span = uint32_t(hi - lo), whole = span / s.pitch, tail = span - whole * s.pitch;
+    for (const bool part : {false, true}) {
+        const uint32_t width = part ? tail : s.pitch, height = part ? 1 : whole;
+        if (!width || !height)
+            continue;
+        s.base = part ? whole * s.pitch : 0;
+        Texture target;
+        overlapTarget(w, lo + s.base, s.pitch, width, height, kR8Uint, target);
+        PassDesc p;
+        p.color[0].texture = &target;
+        p.color[0].load = ColorAttachment::Load;
+        p.color[0].store = true;
+        p.count = 1;
+        p.width = width;
+        p.height = height;
+        RenderEncoder *e = rc.render(p);
+        if (!e) {
+            *why = "RGB10A8_2P_XR10 planes whose rows reach one another's the raw path cannot render";
+            return 1;
+        }
+        e->setPipeline(state);
+        e->setTexture(0, w.sampled);
+        e->setTexture(1, a.sampled);
+        e->setBytes(2, 0, &s, sizeof s);
+        if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
+            return 2;
+        e->end();
+    }
+    return 0;
 }
 
 // Planes that overlap from their pools after work rendered them there, each byte from the row whose store an M4 Max's
@@ -35,6 +104,8 @@ inline bool xrPlanesOverlap(const Texture &t)
 inline int storeXrPlaneRows(Device &d, CommandBuffer &rc, const Texture &t, const char **why)
 {
     constexpr uint32_t kR8Unorm = 10;
+    if (xrPlanesCross(*t.luma, *t.chroma))
+        return storeXrCrossingPlanes(d, rc, t, why);
     for (const Texture *plane : {t.chroma, t.luma}) {
         if (!plane->sampled)
             continue;

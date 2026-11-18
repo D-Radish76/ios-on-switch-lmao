@@ -9,6 +9,7 @@
 #include <cstring>
 #include <limits>
 #include <random>
+#include <utility>
 #include <vector>
 
 #include "../raw/runtime/raw_overlap_order.h"
@@ -390,6 +391,29 @@ TEST(RawYcbcrStore, RowsThatOverlapStoreOnlyFromReachedTiles)
     s.masked = 0;
     s.kept = 0;
     EXPECT_FALSE(raw::overlapWinner(s, 0, upperHalf, row, offset)) << "a kept byte no row stores";
+}
+
+// RGB10A8_2P_XR10 words whose rows run on into its alpha plane: a byte both planes reach keeps the store that lands later,
+// taken across both planes, as an M4 Max's clear pass stored a 32x8 texture of words 128 bytes a row at 0 and alpha 32 a row
+// at 512 in each of 3 runs: alpha rows 0 to 3 keep word row 4, rows 4, 6 and 7 their alpha, row 5 the words to its 11th byte
+TEST(RawYcbcrStore, WordsRunningIntoTheAlphaPlaneKeepTheStoreAppleLandsLast)
+{
+    raw::OverlapPlanes s;
+    s.pitch = s.wordPitch = s.wordRow = 128;
+    s.wordRows = s.alphaRows = 8;
+    s.alpha = 512;
+    s.alphaPitch = s.alphaRow = 32;
+    for (uint32_t a = 0; a < 1024; a++) {
+        uint32_t x = 0, y = 0, byte = 0;
+        ASSERT_TRUE(raw::overlapPlanesWinner(s, a, x, y, byte)) << a;
+        const uint32_t r = (a - 512) / 32, b = (a - 512) % 32;
+        const bool apple = a < 512 || a >= 768 || r < 4 || (r == 5 && b < 11);
+        ASSERT_EQ(byte < 4, apple) << "byte " << a;
+        if (byte < 4)
+            EXPECT_EQ(y * 128 + 4 * x + byte, a);
+        else
+            EXPECT_EQ(std::make_pair(x, y), std::make_pair(b, r)) << "byte " << a;
+    }
 }
 
 }  // namespace
