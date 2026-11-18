@@ -14,6 +14,8 @@ public final class GPU: @unchecked Sendable {
     public let startCounters: [String: Int]
     private let lock = NSLock()
     private var recorded = PathTally()
+    /// `commit`'s command buffers no `finish` has recorded: their paths count once they complete.
+    private var unfinished: [MTLCommandBuffer] = []
     private var failures: [String] = []
     private var hostClocked = 0
 
@@ -55,8 +57,19 @@ public final class GPU: @unchecked Sendable {
         public var gpuTimed: Bool { gpuMilliseconds > 0 }
     }
 
-    /// Every command buffer `run` committed, by the path the raw facade reports for it ("device" elsewhere).
-    public var paths: PathTally { locked { recorded } }
+    /// Every command buffer `run` and `commit` committed and `finish` waited for, by the path the raw facade reports
+    /// for it ("device" elsewhere): the test's own command buffers (FailedAttribution). `commit`'s count once they
+    /// complete, whoever waited for them. No completed handler records them: a handler makes the facade ask for the
+    /// interrupt at the end of their range, which the path tests count.
+    public var paths: PathTally {
+        locked {
+            var all = recorded
+            for buffer in unfinished where buffer.status == .completed || buffer.status == .error {
+                all.add(RawFacade.path(of: buffer))
+            }
+            return all
+        }
+    }
 
     /// Runs whose GPU time on the raw facade is the host's window, for want of a GPU stamp (RawFacade.gpuClock).
     public var hostClockedRuns: Int { locked { hostClocked } }
@@ -124,6 +137,7 @@ public final class GPU: @unchecked Sendable {
     public func commit(_ encode: (MTLCommandBuffer) throws -> Void) throws -> MTLCommandBuffer {
         guard let buffer = queue.makeCommandBuffer() else { throw TestFailure("makeCommandBuffer returned nil") }
         try encode(buffer)
+        locked { unfinished.append(buffer) }
         buffer.commit()
         return buffer
     }
@@ -133,7 +147,10 @@ public final class GPU: @unchecked Sendable {
         for buffer in buffers {
             buffer.waitUntilCompleted()
             let path = RawFacade.path(of: buffer)
-            locked { recorded.add(path) }
+            locked {
+                unfinished.removeAll { $0 === buffer }
+                recorded.add(path)
+            }
             if buffer.status == .error { errors.append(buffer.error.map(Self.describe) ?? "no error") }
         }
         locked { failures += errors }

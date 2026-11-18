@@ -73,14 +73,15 @@ struct ComputeFactsTest: HWTest {
         metrics.set("words_off", off)
         metrics.set("path", path)
         metrics.set("stage_input_max_threads", staged.maxTotalThreadsPerThreadgroup)
-        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         var wrong: [String] = []
         if state.maxTotalThreadsPerThreadgroup < 1 || state.maxTotalThreadsPerThreadgroup > 192 { wrong.append("max") }
         if state.threadExecutionWidth != 32 { wrong.append("width") }
         if staged.maxTotalThreadsPerThreadgroup < 1 || staged.threadExecutionWidth != 32 { wrong.append("stage_input") }
         if off > 0 { wrong.append("words") }
         if path != "raw" { wrong.append("path") }
-        if !failed.1 { wrong.append("failed") }
+        if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

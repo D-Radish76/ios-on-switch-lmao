@@ -42,7 +42,7 @@ struct CompileStageLibraryTest: HWTest {
         metrics.set("packed", packed.map { $0 ? 1 : 0 } ?? -1)
         metrics.set("kernel_wrong", wrong)
         metrics.set("compiled_here", here)
-        let failed = FailedCounts.judged(before: before, after: after, &metrics)
+        let failed = FailedCounts.judged(before: before, after: after, own: gpu.paths, &metrics)
         return .judged(
             [
                 ("the plugin image exports switch_compile_stage", export == "plugin"),

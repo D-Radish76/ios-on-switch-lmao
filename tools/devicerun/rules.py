@@ -42,7 +42,11 @@ class Check:
     lines must come within `within` seconds of each of this check's (with the same `key` value, when `key` is set),
     counted from the line's time less its `since` field in milliseconds: the rule then counts the lines without one.
     `boot` limits the check to one of the morning's boot labels (A, B tiled cache, K kprof). `unless` names a check
-    whose lines excuse this one's in the same boot.
+    whose lines excuse this one's in the same boot. `during` names a check whose lines are tests that kill this check's
+    subjects on purpose, each test's window its line's time less its `ms` field up to its time: this check's lines in a
+    window of the same boot that match `excusable` (searched; every line when empty) are that test's, listed as expected
+    ("killed by <its id>") and left out of the rule. A `process` of '!<name>' matches every process whose name does not
+    begin with <name>.
     """
 
     name: str
@@ -66,6 +70,8 @@ class Check:
     note: str = ''
     boot: str = ''
     unless: str = ''
+    during: str = ''
+    excusable: str = ''
 
     def literals(self) -> tuple[str, ...]:
         return (self.contains,) if isinstance(self.contains, str) else self.contains
@@ -105,6 +111,8 @@ class Result:
 def process_matches(check: Check, process: str) -> bool:
     if not check.process:
         return True
+    if check.process.startswith('!'):
+        return not process.startswith(check.process[1:])
     if check.process == 'kernel':
         return process.startswith('kernel')
     return process == check.process
@@ -284,12 +292,51 @@ def informational(check: Check, matches: list[dict], minutes: float, by_name: di
     return Result(check, INFO if matches else NO_DATA, observed, matches)
 
 
+def killed_during(check: Check, matches: list[dict], tests: list[dict]) -> tuple[list[dict], list[dict]]:
+    """Split `matches` into those `check.during`'s tests do not account for and those they do (each with `killer`)."""
+    windows = [
+        (t['boot'], t['time'] - timedelta(milliseconds=number(t['ms'])), t['time'], t.get('id', check.during))
+        for t in tests
+        if 'ms' in t
+    ]
+    excusable = re.compile(check.excusable) if check.excusable else None
+    kept, excused = [], []
+    for fields in matches:
+        killer = next((i for boot, a, b, i in windows if boot == fields['boot'] and a <= fields['time'] <= b), None)
+        if killer and (not excusable or excusable.search(fields['message'])):
+            excused.append({**fields, 'killer': killer})
+        else:
+            kept.append(fields)
+    return kept, excused
+
+
+def expected_kills(check: Check, excused: list[dict]) -> str:
+    by_test: dict[str, list[dict]] = {}
+    for fields in excused:
+        by_test.setdefault(fields['killer'], []).append(fields)
+    return '; '.join(
+        f'expected: killed by {test}: ' + (grouped(check, lines, 0) if check.show else f'{len(lines)} lines')
+        for test, lines in by_test.items()
+    )
+
+
 def evaluate(check: Check, matches: list[dict], minutes: float, by_name: dict[str, list[dict]]) -> Result:
     """Return the check's verdict over the events it matched."""
     matches = filtered(check, matches)
     if check.unless:
         excused = {fields['boot'] for fields in by_name.get(check.unless, [])}
         matches = [fields for fields in matches if fields['boot'] not in excused]
+    killed: list[dict] = []
+    if check.during:
+        matches, killed = killed_during(check, matches, by_name.get(check.during, []))
+    result = judge(check, matches, minutes, by_name)
+    if killed:
+        result.observed += '; ' + expected_kills(check, killed)
+    return result
+
+
+def judge(check: Check, matches: list[dict], minutes: float, by_name: dict[str, list[dict]]) -> Result:
+    """Return the check's verdict over the lines it judges."""
     if check.needs and not by_name.get(check.needs):
         return Result(check, NO_DATA, f'no {check.needs} line', matches)
     if check.applies and not applicable(check.applies, by_name):

@@ -17,6 +17,7 @@ import Metal
 /// path. Any such texel fails the scene, naming the chain and level.
 struct CAVariableBlurChainScene: GPUScene {
     let id = "gpu.blur_chain_nan"
+    let framework = true
     let name = "CA variable blur chain, 776x24 in 10 levels: NaN, magenta and stale texels per level"
 
     static let width = 776

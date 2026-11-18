@@ -58,6 +58,12 @@ process's default Metal device, the raw GM20B facade, alone. `raw_paths=` lists 
 `error:<predicate>` (`error:none`) for one that failed. `failed_cbs` and `failed_why` count every command buffer of the
 process that failed over the run, framework work included. A scene fails on any of them it does not expect
 (`GPUScene.expectedFailures`), naming the predicate. Tests that call `onRawPath` or `FailedCounts` judge the same way.
+The red also says whose command buffer failed. An `own failure` (`own_why=`) is one the test committed itself, so the
+test or the path it checks is wrong. A `foreign failure` (`foreign_failed=`, `foreign_why=`) is one it didn't commit,
+such as a framework's or another thread's. Framework work (Core Animation scenes, MPS, Core Image, RenderBox) also fails
+when the facade counts a call as skipped (`skipped_calls=`, `skipped_why=`). Before its summary, Run All logs one
+`HWTEST suite.reds` line: each predicate with the number of tests it reddened and the first of them (`failed_reds=`), and
+each skipped call's predicate with the tests that hit it (`skipped_tests=`).
 The counters come from `switchRawCounters` in `RawMetalDevice.mm` and the paths from `switchRawPath` in
 `RawMetalCommandBuffer.mm`. Only debug builds have them. A failed comparison
 names the first wrong pixel, both values, the bounding box, an 8x8 hex map of the wrong area and any streak columns, and

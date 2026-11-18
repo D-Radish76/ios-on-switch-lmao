@@ -11,6 +11,7 @@ import Metal
 /// the Mac's (round0).
 struct CADrawThenCopyScene: GPUScene {
     let id = "gpu.ca.draw_then_copy"
+    let framework = true
     let name = "CA fill draws then a blit copy in one command buffer: the copy reads every draw"
 
     static let (width, height, rounds, draws) = (720, 1280, 20, 64)

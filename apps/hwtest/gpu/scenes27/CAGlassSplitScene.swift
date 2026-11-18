@@ -14,6 +14,7 @@ import simd
 // fetch routes are in its metrics.
 struct CAGlassSplitScene: GPUScene {
     let id = "gpu.ca.glass_split"
+    let framework = true
     let name = "CA 27 Liquid Glass over content: one draw on its split twin against tiles on its whole program"
 
     static let size = 256

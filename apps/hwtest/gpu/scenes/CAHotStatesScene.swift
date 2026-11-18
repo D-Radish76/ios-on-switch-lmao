@@ -23,6 +23,7 @@ import Metal
 /// the regdump metrics.
 struct CAHotStatesScene: GPUScene {
     let id = "gpu.ca.hot_states"
+    let framework = true
     let name = "Core Animation's costliest states: GPU and host time per full-screen draw"
 
     static let width = 1280

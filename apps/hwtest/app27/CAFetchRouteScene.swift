@@ -12,6 +12,7 @@ import Metal
 /// (sequential) or on the CPU's proof (whole). A pass that moves none of them did not fetch its own colour.
 struct CAFetchRouteScene: GPUScene {
     let id = "gpu.ca.fetch_routes"
+    let framework = true
     let name = "Draws fetching their own colour: instanced, folded strip, depth and multisample routes and pixels"
 
     static let size = 64

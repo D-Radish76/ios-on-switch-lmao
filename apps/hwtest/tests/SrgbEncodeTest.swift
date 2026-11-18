@@ -76,7 +76,7 @@ struct SrgbEncodeTest: HWTest {
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(FailedCounts(before: before, after: counted).check())
+        checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         checks.append(("every byte within one code of Metal's", tally.delta <= 1))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
         return .judged(checks, metrics, proof: gpu.proof)

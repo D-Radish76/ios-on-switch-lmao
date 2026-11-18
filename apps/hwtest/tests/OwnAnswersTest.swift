@@ -11,7 +11,7 @@ import Metal
 /// error; a buffer the kernel has no memory for, and one over pages it cannot wire, as nil; an uncompressed texture's
 /// plain layout (RawMetalPlainLayout.mm), none for a heap's; a two-plane YCbCr target's state drawn by raw; and a Core
 /// Image filter chain, whose linked program's extern functions the library makes from its own list. No command buffer
-/// may fail, Core Image's included (failed_cbs=, failed_why=).
+/// may fail, Core Image's included (failed_cbs=, failed_why=), nor any call be skipped (skipped_calls=).
 struct OwnAnswersTest: HWTest {
     let id = "gpu.raw.own_answers"
     let name = "Library names, unloadable libraries, no memory and a YCbCr target state, answered by the facade"
@@ -77,8 +77,9 @@ struct OwnAnswersTest: HWTest {
         // inverted in Core Image's linear working space: 1 - linear(0.2, 0.4, 0.6), back to sRGB
         if !zip(pixel.prefix(3), [251, 239, 215]).allSatisfy({ abs(Int($0) - $1) <= 2 }) { wrong.append("core_image") }
 
-        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
-        if !failed.1 { wrong.append("failed") }
+        let after = RawFacade.counters(of: gpu.device)
+        let checks = FailedCounts.judgedFramework(before: before, after: after, own: gpu.paths, &metrics)
+        wrong += checks.filter { !$0.1 }.map(\.0)
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

@@ -16,6 +16,17 @@ SUBSYSTEM = 'com.brunostjohn.switch.hwtest'
 SOURCE = 'apps/hwtest/core/LogLine.swift'
 SUITE = 'hwtest.suite'
 LITERAL = 'HWTEST '
+# A test's FAIL line naming the failed command buffers that reddened it, and any line naming calls skipped
+# (core/FailedAttribution.swift, core/FailedCounts.swift): reports.py rolls them up per predicate
+REDS = 'hwtest.reds'
+SKIPS = 'hwtest.skips'
+# The tests that kill other processes' GPU work on purpose, each test's window its HWTEST line's time less its ms=:
+# TegraGM20BCopyResetABI.h ArmAgain's second cut kills every client context the GPU holds (gpu_reload.c kill_clients).
+# gpu.recover.kill_one, kill_under_compositor and busy_engine kill channels of HW Test's own alone (an illegal method,
+# a context GR cannot save), and gpu.present.copy_reset's single cut kills none, so a failure of another process in
+# their windows stays a finding.
+KILLS_OTHERS = ('gpu.recover.kernel_second_timeout',)
+KILL_WINDOWS = 'hwtest.kill-windows'
 
 CODECS = ('h264', 'hevc', 'hevc_main10', 'vp9')
 SIZES = ('720p', '1080p', '4k')
@@ -636,6 +647,51 @@ HWTEST = [
         show=('pass', 'fail', 'skip', 'ios'),
         source=SOURCE,
         note='the last full run (Run All, or the launch run)',
+    ),
+    Check(
+        KILL_WINDOWS,
+        OWNER,
+        LITERAL,
+        REPORT,
+        subsystem=SUBSYSTEM,
+        regex=(
+            rf'^HWTEST (?P<id>{"|".join(map(re.escape, KILLS_OTHERS))}) (?:PASS|FAIL|SKIP) '
+            r'.*\bkilled=(?P<killed>[1-9]\d*)\b.* ms=(?P<ms>[\d.]+)(?: why=|$)'
+        ),
+        show=('id',),
+        source=SOURCE,
+        note='runs that killed clients (killed= above 0): raw.failed and raw.killed lines in a window are its kills',
+    ),
+    Check(
+        'hwtest.suite-reds',
+        OWNER,
+        LITERAL,
+        REPORT,
+        subsystem=SUBSYSTEM,
+        regex=r'^HWTEST suite\.reds (?:PASS|FAIL) failed_reds=(?P<reds>\S+) skipped_tests=(?P<skips>\S+)',
+        show=('reds', 'skips'),
+        source='apps/hwtest/core/FailedRollUp.swift',
+        note="the app's own roll-up of a Run All, from its records (a test line os_log cut keeps its fields there)",
+    ),
+    Check(
+        REDS,
+        OWNER,
+        LITERAL,
+        REPORT,
+        subsystem=SUBSYSTEM,
+        regex=r'^HWTEST (?P<id>\S+) FAIL .*\b(?:own|foreign)_why=',
+        source='apps/hwtest/core/FailedAttribution.swift',
+        note='per predicate: the tests a failed command buffer reddened, the first of them, its own or foreign',
+    ),
+    Check(
+        SKIPS,
+        OWNER,
+        LITERAL,
+        REPORT,
+        subsystem=SUBSYSTEM,
+        regex=r'^HWTEST (?P<id>\S+) (?:PASS|FAIL|SKIP) .*\bskipped_why=',
+        source='apps/hwtest/core/FailedCounts.swift',
+        note="per predicate: the tests during which a call Metal's validation stops was run as Apple's driver runs it",
     ),
     Check(
         'hwtest.skipped',

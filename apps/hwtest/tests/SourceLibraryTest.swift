@@ -64,13 +64,14 @@ struct SourceLibraryTest: HWTest {
         metrics.set("path", path)
         metrics.set("refused_code", refusedCode)
         metrics.set("refused_log", refusedLog.isEmpty ? "-" : refusedLog)
-        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         var wrong: [String] = []
         if off > 0 { wrong.append("words") }
         if path != "raw" { wrong.append("path") }
         let compileFailure = MTLLibraryError.Code.compileFailure.rawValue
         if refusedCode != compileFailure || refusedLog.isEmpty { wrong.append("refusal") }
-        if !failed.1 { wrong.append("failed") }
+        if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

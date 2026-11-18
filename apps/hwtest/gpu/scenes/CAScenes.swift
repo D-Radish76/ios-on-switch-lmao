@@ -12,6 +12,7 @@ import Metal
 /// the Mac's (fill), and the other rounds must draw the same bytes.
 struct FirstTiledSurfaceScene: GPUScene {
     let id = "gpu.ca.first_tiled_surface"
+    let framework = true
     let name = "First command buffer: CA fill into a block-linear 720x1280 surface"
 
     static let (width, height, rowBytes) = (720, 1280, 3072)

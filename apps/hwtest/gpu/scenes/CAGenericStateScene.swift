@@ -13,6 +13,7 @@ import Metal
 /// state, so the scene draws nothing there.
 struct CAGenericStateScene: GPUScene {
     let id = "gpu.ca.generic_texture3d"
+    let framework = true
     let name = "Core Animation's generic state with its colour cubes bound, unbound and mistyped"
 
     static let line = PipelineLine(

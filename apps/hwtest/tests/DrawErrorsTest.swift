@@ -8,7 +8,8 @@ import Metal
 /// maxVertexAmplificationCount (1 for a state that sets none) and patches at a tessellation factor scale of 0. An M4
 /// Max's validation layer stops each of these draws. Each arm's command buffer is the one that fails, under the
 /// encoder's refusal predicate enc.pass (raw/runtime/RawMetalEncode.mm refusalPred): its path error:enc.pass and
-/// failed.enc.pass one more (<arm>_failed_cbs=, <arm>_failed_why=).
+/// failed.enc.pass one more (<arm>_failed_cbs=, <arm>_failed_why=); failed_why= and skipped_why= are the whole run's,
+/// own_why= and foreign_why= the arms' failures past their one, by whose they were (FailedAttribution).
 struct DrawErrorsTest: HWTest {
     let id = "gpu.raw.draw_errors"
     let name = "Draws Metal's validation stops fail their command buffer with the raw path's reason"
@@ -34,6 +35,7 @@ struct DrawErrorsTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let start = RawFacade.counters(of: gpu.device)
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         func state(_ vertex: String) throws -> MTLRenderPipelineState {
             let descriptor = MTLRenderPipelineDescriptor()
@@ -89,6 +91,7 @@ struct DrawErrorsTest: HWTest {
         ]
         var metrics = Metrics()
         var wrong: [String] = []
+        var attributions: [FailedAttribution] = []
         for (label, why, draw) in arms {
             let before = RawFacade.counters(of: gpu.device)
             let timing = try await gpu.run(tolerateError: true) { commands in
@@ -104,10 +107,14 @@ struct DrawErrorsTest: HWTest {
             var own = PathTally()
             own.add(timing.facadePath)
             let failed = FailedCounts(before: before, after: RawFacade.counters(of: gpu.device))
+            let attribution = failed.attributed(expecting: ["enc.pass": 1], own: own)
             metrics.merge(failed.metrics, prefix: label + "_")
-            let counted = failed.check(expecting: ["enc.pass": 1], offRaw: own.offRaw).1
-            if timing.path != "error:" + Self.internalError + why || !counted { wrong.append(label) }
+            attributions.append(attribution)
+            if timing.path != "error:" + Self.internalError + why { wrong.append(label) }
+            if !attribution.holds { wrong.append("\(label): \(attribution.check.0)") }
         }
+        metrics.merge(FailedCounts(before: start, after: RawFacade.counters(of: gpu.device)).metrics)
+        metrics.merge(FailedAttribution.metrics(attributions))
         return wrong.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

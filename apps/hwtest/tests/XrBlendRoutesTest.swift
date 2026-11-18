@@ -122,7 +122,7 @@ struct XrBlendRoutesTest: HWTest {
         return .judged(
             [
                 ("a route drew a format", ran > 0), ("every command buffer on the raw path", gpu.paths.offRaw.isEmpty),
-                FailedCounts(before: before, after: counted).check(),
+                FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
             ], metrics, proof: gpu.proof)
     }
 

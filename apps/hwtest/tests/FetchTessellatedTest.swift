@@ -53,7 +53,7 @@ struct FetchTessellatedTest: HWTest {
         metrics.set("readback_paths", gpu.paths.isEmpty ? "-" : String(gpu.paths.text.prefix(80)))
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(FailedCounts(before: before, after: counted).check())
+        checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: Self.kept)
         return .judged(checks, metrics, proof: gpu.proof)
     }

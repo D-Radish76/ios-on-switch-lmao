@@ -21,6 +21,12 @@ feature wasn't exercised (no USB 3 device plugged in, for example), or a release
 Use `--start` and `--end` to scope the launchd rates to the idle minutes. `--boot-label` (A, B tiled cache, K kprof)
 prints that boot's manual steps first and drops the checks that only apply to another boot.
 
+The line above the table is HW Test's first red caused by a failed command buffer, and how many tests each predicate
+reddened, read from the latest boot's HWTEST lines (`hwtest.first-red`, `hwtest.red.<predicate>`). Some HW Test tests
+kill other clients' GPU work on purpose (`KILLS_OTHERS` in `hwtest.py`). When such a run reports `killed=` above 0,
+`raw.failed` and `raw.killed` list another process's kill inside it (predicate `none`, code 1 to 3, no description)
+as expected and leave it out of the verdict.
+
 ## Frame weights
 
 `frame_weights` lists the compiled states a captured frame spent its GPU time in, most first, beside their static

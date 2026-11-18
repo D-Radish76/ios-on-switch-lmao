@@ -30,7 +30,7 @@ struct StencilByteCopiesTest: HWTest {
                 ("R8Uint into X32_Stencil8 keeps every byte", result.inWrong == 0),
                 ("the copy in keeps the depth", result.depthChanged == 0),
                 ("both copies on the raw path", result.paths.allSatisfy { $0 == "raw" }),
-                FailedCounts(before: before, after: counted).check(),
+                FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
             ], metrics, proof: gpu.proof)
     }
 }

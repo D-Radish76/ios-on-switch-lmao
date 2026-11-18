@@ -132,31 +132,6 @@ final class GPUReferenceTests: XCTestCase {
         XCTAssertEqual(metrics["failed_why"], .text("pass.fmt/2,none/1"))
     }
 
-    func testFailedCountsJudgeExactlyTheExpectedFailures() {
-        let before = ["failed": 2, "failed.call.buf": 2]
-        let quiet = FailedCounts(before: before, after: ["failed": 2, "failed.call.buf": 2])
-        XCTAssertTrue(quiet.check().1)
-        XCTAssertEqual(quiet.metrics["failed_cbs"], .integer(0))
-        let framework = FailedCounts(before: before, after: ["failed": 3, "failed.call.buf": 2, "failed.none": 1])
-        XCTAssertEqual(framework.check().0, "no command buffer failed, not failed none/1")
-        XCTAssertFalse(framework.check().1)
-        XCTAssertTrue(framework.check(expecting: ["none": 1]).1)
-        XCTAssertFalse(framework.check(expecting: ["pass.fmt": 1]).1)
-        var own = PathTally()
-        own.add("error:none")
-        XCTAssertTrue(framework.check(expecting: ["none": 1], offRaw: own.offRaw).1)
-        own.add("error:pass.fmt")
-        XCTAssertEqual(
-            framework.check(expecting: ["none": 1], offRaw: own.offRaw).0,
-            "exactly none/1 failed, not off the raw path error:none/1,error:pass.fmt/1")
-        let unanswered = FailedCounts(before: [:], after: ["raw": 4])
-        XCTAssertFalse(unanswered.check().1)
-        XCTAssertEqual(unanswered.metrics["failed_cbs"], .text("unanswered"))
-        let outcome = Outcome.pass(Metrics(), detail: "d").failing(unless: framework.check())
-        XCTAssertEqual(outcome.verdict, .fail)
-        XCTAssertEqual(outcome.detail, "no command buffer failed, not failed none/1; d")
-    }
-
     func testFittedReasonsKeepTheFirstAndCountTheRest() {
         XCTAssertEqual(LogLine.fitted(["a", "bb", "ccc"], budget: 10), "a; bb; ccc")
         XCTAssertEqual(

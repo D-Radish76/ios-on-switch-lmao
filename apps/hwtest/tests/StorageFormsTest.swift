@@ -73,7 +73,7 @@ struct StorageFormsTest: HWTest {
         await Self.time(scene, &metrics)
         let after = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: after))
-        checks.append(FailedCounts(before: before, after: after).check())
+        checks.append(FailedCounts.judged(before: before, after: after, own: gpu.paths, &metrics))
         metrics.set("timing_twins", (after["fetch_blend_twin"] ?? 0) - (judged["fetch_blend_twin"] ?? 0))
         metrics.set("host_clocked", gpu.hostClockedRuns)
         metrics.fitLog(within: 720, keeping: Self.kept)

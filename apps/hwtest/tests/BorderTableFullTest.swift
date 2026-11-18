@@ -103,7 +103,9 @@ struct BorderTableFullTest: HWTest {
         checks.append(("the texture and its border read Metal's texels", wrong == 0))
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(FailedCounts(before: before, after: counted).check(expecting: ["call.sampler": 1]))
+        checks.append(
+            FailedCounts.judged(
+                before: before, after: counted, expecting: ["call.sampler": 1], own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

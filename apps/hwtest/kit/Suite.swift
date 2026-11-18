@@ -220,7 +220,10 @@ public final class Suite: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         settle()
         if summarize {
-            let records = rows.compactMap(\.record)
+            let ran = Dictionary(
+                (report?.results ?? []).enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
+            let records = rows.compactMap(\.record).sorted { (ran[$0.id] ?? .max) < (ran[$1.id] ?? .max) }
+            logger.notice("\(LogLine.rollUp(records, milliseconds: milliseconds), privacy: .public)")
             logger.notice("\(LogLine.summary(records, ios: self.ios, milliseconds: milliseconds), privacy: .public)")
         }
     }

@@ -50,7 +50,7 @@ struct Bgra10XrSrgbEmptyPassTest: HWTest {
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(FailedCounts(before: before, after: counted).check())
+        checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: ["alpha_load", "alpha_dontcare", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }

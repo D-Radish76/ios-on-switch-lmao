@@ -11,7 +11,9 @@ struct MPSBlurTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard MPSSupportsMTLDevice(gpu.device) else { return .fail("MPSSupportsMTLDevice is false").onRawPath(gpu) }
+        guard MPSSupportsMTLDevice(gpu.device) else {
+            return .fail("MPSSupportsMTLDevice is false").onRawPath(gpu, framework: true)
+        }
         let size = 64
         // Mid grey with one white texel in the middle: the blur keeps flat grey flat and spreads the spike evenly.
         var bytes = [UInt8](repeating: 128, count: size * size * 4)
@@ -41,7 +43,7 @@ struct MPSBlurTest: HWTest {
                 ("the spike spreads (128 < peak < 255)", peak > 128 && peak < 255),
                 ("the kernel is symmetric", symmetric),
             ], metrics, proof: gpu.proof
-        ).onRawPath(gpu)
+        ).onRawPath(gpu, framework: true)
     }
 }
 
@@ -52,7 +54,9 @@ struct MPSMatrixTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard MPSSupportsMTLDevice(gpu.device) else { return .fail("MPSSupportsMTLDevice is false").onRawPath(gpu) }
+        guard MPSSupportsMTLDevice(gpu.device) else {
+            return .fail("MPSSupportsMTLDevice is false").onRawPath(gpu, framework: true)
+        }
         let n = 256
         // Small integers: every product and sum is exact in float32, whatever order the GPU adds them in.
         let a = (0..<(n * n)).map { Float($0 % 9 - 4) }
@@ -92,6 +96,6 @@ struct MPSMatrixTest: HWTest {
         metrics.set("wrong", wrong)
         metrics.set("gpu_ms", timing.gpuMilliseconds, digits: 3)
         metrics.set("gflops", timing.gpuTimed ? 2 * Double(n * n * n) / timing.gpuMilliseconds / 1e6 : 0, digits: 1)
-        return .judged([("every element exact", wrong == 0)], metrics, proof: gpu.proof).onRawPath(gpu)
+        return .judged([("every element exact", wrong == 0)], metrics, proof: gpu.proof).onRawPath(gpu, framework: true)
     }
 }

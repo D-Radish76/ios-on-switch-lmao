@@ -67,7 +67,7 @@ struct StandInResolveTest: HWTest {
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(FailedCounts(before: before, after: counted).check())
+        checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: ["far_total", "samples_off_total", "paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }

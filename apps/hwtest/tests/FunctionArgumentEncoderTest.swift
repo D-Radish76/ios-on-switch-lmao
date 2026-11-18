@@ -83,8 +83,8 @@ struct FunctionArgumentEncoderTest: HWTest {
         }
 
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), &metrics)
-        if !failed.1 { wrong.append("failed") }
+            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+        if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

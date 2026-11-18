@@ -6,11 +6,12 @@ import MetalPerformanceShaders
 import MetalPerformanceShadersGraph
 
 /// The callers of the predication SPI on the raw path (drivers/TegraGM20BMetal/raw/runtime/raw_predication.h), with
-/// supportsCommandBufferJump YES: MPSGraph's while, for and if, alone and nested as MPSGraph nests them (a while inside an
-/// if, a for inside a while, an if inside a for, a for three loops deep), each count past its loop's copies at that depth
-/// (1024 outermost, 128 inside one loop, 16 inside two), so the submission lays it again (loop_continuations), one
-/// MPSCommandBuffer each; and MPSImageCanny's hysteresis on a square. PASS: every command buffer completes on the raw path
-/// with MPSGraph's answers and Canny's edges, and a diagnostic build counted continuations; SKIP while the device answers
+/// supportsCommandBufferJump YES: MPSGraph's while, for and if, alone and nested as MPSGraph nests them (a while inside
+/// an if, a for inside a while, an if inside a for, a for three loops deep), each count past its loop's copies at that
+/// depth (1024 outermost, 128 inside one loop, 16 inside two), so the submission lays it again (loop_continuations),
+/// one MPSCommandBuffer each; and MPSImageCanny's hysteresis on a square. PASS: every command buffer completes on the
+/// raw path with MPSGraph's answers and Canny's edges, no call MPS records is one Metal's validation stops
+/// (skipped_calls=), and a diagnostic build counted continuations; SKIP while the device answers
 /// supportsCommandBufferJump NO.
 struct MPSControlFlowTest: HWTest {
     let id = "gpu.raw.mps_control_flow"
@@ -93,7 +94,8 @@ struct MPSControlFlowTest: HWTest {
             if continued == 0 { wrong.append("no loop continued") }
         }
         for path in paths + [canny.path] where path != "raw" { wrong.append("path:\(path)") }
-        if !FailedCounts.judged(before: before, after: after, &metrics).1 { wrong.append("failed") }
+        let checks = FailedCounts.judgedFramework(before: before, after: after, own: gpu.paths, &metrics)
+        wrong += checks.filter { !$0.1 }.map(\.0)
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

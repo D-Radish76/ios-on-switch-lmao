@@ -13,6 +13,7 @@ import Metal
 /// draws over a picture uploaded first, and its result (lub_xr) is held to the Mac's.
 struct CABlurChainScene: GPUScene {
     let id = "gpu.ca.blur_chain"
+    let framework = true
     let name = "CA backdrop blur chain on b3a8 and BGR10_XR: timing and path"
 
     static let size = 256

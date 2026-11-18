@@ -3,18 +3,22 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Requests Metal's validation layer stops complete on the raw path, never taking their command buffer to m2v: a blit
-/// recording nothing (one raw:blit.invalid line a process) and a depth resolve with no resolve texture keeping its
-/// store part (one raw:pass.resolve_store line). Each blit sits in a command buffer of its own between two buffer
-/// copies that land: a copy from a 4x texture (samples), into an R8 level from an RGBA8 one (texel_size), from a region
-/// past its level (past_level), into a texture from buffer rows shorter than its rows (rows_short_in), into a buffer
-/// the same way (rows_short_out). Every byte each would touch, done as asked, lies inside what the test made: a level
-/// past the texture's, a slice past it, a memoryless side and rows past a buffer are left out. The resolves decide the depth's
-/// store in the encoder (MTLStoreActionUnknown, then setDepthStoreAction:): StoreAndMultisampleResolve keeps the store,
-/// read by a later pass whose depth test shows the left half drawn at 0.25 (resolve_store); MultisampleResolve discards
-/// it (resolve_discard). Per case: <case>_path, <case>_neighbours (the two copies' bytes off, or the pass's resolved
-/// colour texels off), <case>_untouched (the request's destination as it was; resolve_store: the later pass saw the
-/// kept depth), resolve_store_load_path (that later pass's).
+/// Requests Metal's validation layer stops complete on the raw path: each blit fails nothing and is counted as one
+/// skipped call (skipped.call.blit; one raw:blit.invalid line a process per call and rule), and a depth resolve with no
+/// resolve texture keeps its store part (one raw:pass.resolve_store line). Each blit sits in a command buffer of its
+/// own between two buffer copies that land: a copy from a 4x texture (samples), into an R8 level from an RGBA8 one
+/// (texel_size), into a texture from buffer rows shorter than its rows (rows_short_in) and into a buffer the same way
+/// (rows_short_out) record nothing; a copy from a region past its level (past_level) lands the part inside the level,
+/// as an M4 Max under macOS 27.2.1 copies it with validation off, and leaves the rest of its destination as it was,
+/// where the M4 Max writes bytes of no texel. Every byte each would touch, done as asked, lies inside what the test
+/// made: a level past the texture's, a slice past it, a memoryless side and rows past a buffer are left out. The
+/// resolves decide the depth's store in the encoder (MTLStoreActionUnknown, then setDepthStoreAction:):
+/// StoreAndMultisampleResolve keeps the store, read by a later pass whose depth test shows the left half drawn at 0.25
+/// (resolve_store); MultisampleResolve discards it (resolve_discard). Per case: <case>_path, <case>_neighbours (the two
+/// copies' bytes off, or the pass's resolved colour texels off), <case>_untouched (the request's destination as it must
+/// be left; resolve_store: the later pass saw the kept depth), <case>_skipped_why (the calls counted skipped),
+/// resolve_store_load_path (that later pass's); the run's failed_cbs=, skipped_why= and, for a failure, whose it was
+/// (own_why=, foreign_why=).
 struct InvalidRequestsTest: HWTest {
     let id = "gpu.raw.invalid_requests"
     let name = "Blits and a resolve store Metal's validation stops complete on raw, their neighbours intact"
@@ -22,6 +26,8 @@ struct InvalidRequestsTest: HWTest {
     var timeout: TimeInterval { 60 }
 
     static let side = 64, level = 1, levelSide = 32, bytes = 4096
+    /// past_level's source region: from column 28 of level 1, 8x8, of which columns 28 to 31 lie inside the level
+    static let pastX = 28, pastSize = 8
 
     /// What a request must leave as it was: level 1 of a texture, or a shared buffer
     enum Destination {
@@ -33,9 +39,12 @@ struct InvalidRequestsTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let start = RawFacade.counters(of: gpu.device)
         let pattern = try gpu.buffer((0..<Self.bytes).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) })
         let junk = try gpu.buffer([UInt8](repeating: 0xee, count: Self.bytes))
         let source = try gpu.texture(.rgba8Unorm, Self.side, Self.side, mipmaps: 7)
+        let sourceLevel = (0..<Self.levelSide * Self.levelSide * 4).map { UInt8(truncatingIfNeeded: $0 &* 29 &+ 5) }
+        try await gpu.upload(sourceLevel, to: source, bytesPerRow: Self.levelSide * 4, level: Self.level)
         let chain = try gpu.texture(.rgba8Unorm, Self.side, Self.side, mipmaps: 7)
         let narrow = try gpu.texture(.r8Unorm, Self.side, Self.side, mipmaps: 7)
         let multisampled = try gpu.texture(.rgba8Unorm, 16, 16, samples: 4)
@@ -64,9 +73,9 @@ struct InvalidRequestsTest: HWTest {
                 "past_level", .level(chain, bytesPerPixel: 4),
                 {
                     $0.copy(
-                        from: source, sourceSlice: 0, sourceLevel: level, sourceOrigin: MTLOrigin(x: 28, y: 0, z: 0),
-                        sourceSize: size(8, 8), to: chain, destinationSlice: 0, destinationLevel: level,
-                        destinationOrigin: o)
+                        from: source, sourceSlice: 0, sourceLevel: level,
+                        sourceOrigin: MTLOrigin(x: Self.pastX, y: 0, z: 0), sourceSize: size(Self.pastSize, Self.pastSize),
+                        to: chain, destinationSlice: 0, destinationLevel: level, destinationOrigin: o)
                 }
             ),
             (
@@ -89,27 +98,44 @@ struct InvalidRequestsTest: HWTest {
         ]
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
+        var attributions: [FailedAttribution] = []
         for (key, destination, request) in requests {
             let kept = try await Self.fill(destination, gpu)
-            let before = try gpu.buffer(Self.bytes), after = try gpu.buffer(Self.bytes)
-            let path = try await gpu.run(tolerateError: true) { commands in
+            let first = try gpu.buffer(Self.bytes), last = try gpu.buffer(Self.bytes)
+            let counters = RawFacade.counters(of: gpu.device)
+            let timing = try await gpu.run(tolerateError: true) { commands in
                 let blit = commands.makeBlitCommandEncoder()!
-                blit.copy(from: pattern, sourceOffset: 0, to: before, destinationOffset: 0, size: Self.bytes)
+                blit.copy(from: pattern, sourceOffset: 0, to: first, destinationOffset: 0, size: Self.bytes)
                 request(blit)
-                blit.copy(from: pattern, sourceOffset: 0, to: after, destinationOffset: 0, size: Self.bytes)
+                blit.copy(from: pattern, sourceOffset: 0, to: last, destinationOffset: 0, size: Self.bytes)
                 blit.endEncoding()
-            }.path
-            let neighbours = Self.off(before, pattern) + Self.off(after, pattern)
-            let untouched = try await Self.read(destination, gpu) == kept
-            Self.report(key, path: path, neighbours: neighbours, untouched: untouched, &metrics, &checks)
+            }
+            let counts = FailedCounts(before: counters, after: RawFacade.counters(of: gpu.device))
+            let neighbours = Self.off(first, pattern) + Self.off(last, pattern)
+            let past = key == "past_level"
+            let left = past ? Self.insideCopied(kept, from: sourceLevel) : kept
+            let untouched = try await Self.read(destination, gpu) == left
+            let label = past ? "the part inside its level copied, the rest as it was" : "its destination as it was"
+            Self.report(
+                key, path: timing.path, neighbours: neighbours, untouched: untouched, label: label, &metrics, &checks)
+            var own = PathTally()
+            own.add(timing.facadePath)
+            attributions.append(Self.judge(key, counts, own: own, skipped: ["call.blit": 1], &metrics, &checks))
         }
+        let resolveCounters = RawFacade.counters(of: gpu.device)
+        let resolvePaths = gpu.paths
         try await resolveStores(gpu, &metrics, &checks)
+        let resolved = FailedCounts(before: resolveCounters, after: RawFacade.counters(of: gpu.device))
+        attributions.append(
+            Self.judge("resolves", resolved, own: gpu.paths.since(resolvePaths), skipped: nil, &metrics, &checks))
+        metrics.merge(FailedCounts(before: start, after: RawFacade.counters(of: gpu.device)).metrics)
+        metrics.merge(FailedAttribution.metrics(attributions))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
     static func report(
-        _ key: String, path: String, neighbours: Int, untouched: Bool?, _ metrics: inout Metrics,
-        _ checks: inout [(String, Bool)]
+        _ key: String, path: String, neighbours: Int, untouched: Bool?, label: String = "its destination as it was",
+        _ metrics: inout Metrics, _ checks: inout [(String, Bool)]
     ) {
         metrics.set("\(key)_path", String(path.prefix(80)))
         metrics.set("\(key)_neighbours", neighbours)
@@ -117,8 +143,40 @@ struct InvalidRequestsTest: HWTest {
         checks.append(("\(key): its neighbours landed", neighbours == 0))
         if let untouched {
             metrics.set("\(key)_untouched", untouched)
-            checks.append(("\(key): its destination as it was", untouched))
+            checks.append(("\(key): \(label)", untouched))
         }
+    }
+
+    /// No command buffer failed while `key` ran (its own: `own`), and exactly `skipped` calls were counted skipped
+    /// (nil: not judged)
+    static func judge(
+        _ key: String, _ counts: FailedCounts, own: PathTally, skipped: [String: Int]?, _ metrics: inout Metrics,
+        _ checks: inout [(String, Bool)]
+    ) -> FailedAttribution {
+        let attribution = counts.attributed(own: own)
+        checks.append(("\(key): \(attribution.check.0)", attribution.holds))
+        if !counts.skippedPredicates.isEmpty {
+            metrics.set("\(key)_skipped_why", FailedCounts.text(counts.skippedPredicates))
+        }
+        if let skipped {
+            let skip = counts.skipCheck(expecting: skipped)
+            checks.append(("\(key): \(skip.0)", skip.1))
+        }
+        return attribution
+    }
+
+    /// Level 1 of past_level's destination, `kept`, with the part of the source region inside the source's level
+    /// (`source`, level 1's bytes) at (0, 0)
+    static func insideCopied(_ kept: [UInt8], from source: [UInt8]) -> [UInt8] {
+        var left = kept
+        let row = levelSide * 4
+        for y in 0..<pastSize {
+            for x in pastX..<levelSide {
+                let to = y * row + (x - pastX) * 4, from = y * row + x * 4
+                left.replaceSubrange(to..<(to + 4), with: source[from..<(from + 4)])
+            }
+        }
+        return left
     }
 
     /// The destination's contents before the request: a pattern of its own

@@ -55,7 +55,7 @@ struct UncheckedBufferLoadsTest: HWTest {
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         checks.append(
             FailedCounts.judged(
-                before: before, after: after, expecting: ["none": 1], offRaw: gpu.paths.offRaw, &metrics))
+                before: before, after: after, expecting: ["none": 1], own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

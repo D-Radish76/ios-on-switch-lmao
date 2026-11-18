@@ -11,7 +11,10 @@ import Metal
 /// buffers included. <prefix>_gpu_clock=host: some of the run's GPU times are the host's window, the facade having read
 /// no GPU stamp for them. On the facade no command buffer of the run may fail, Core Animation's, MPS's and Core Image's
 /// included, but those the scene expects (GPUScene.expectedFailures, each its own error:<predicate> path); one that did
-/// fails the scene, named by its predicate. Failed comparisons leave got, want and diff PNGs in Documents/gpu/<id>/.
+/// fails the scene, named by its predicate and by whose it was, the scene's own or one it did not commit
+/// (FailedAttribution: own_why=, foreign_why=). A framework's scene (GPUScene.framework) also fails on any call skipped
+/// as one Metal's validation stops (skipped_calls=, skipped_why=). Failed comparisons leave got, want and diff PNGs in
+/// Documents/gpu/<id>/.
 public struct GPUSceneTest: HWTest {
     let scene: any GPUScene
     public let subsystem = Subsystem.metal
@@ -45,13 +48,15 @@ public struct GPUSceneTest: HWTest {
             metrics.set(kind + "_threw", true)
         }
         let after = RawFacade.counters(of: primary.device)
-        let offRaw = primary.paths.offRaw
+        let own = primary.paths
         if kind == "raw" && !after.isEmpty {
-            let failed = FailedCounts(before: before, after: after)
-                .check(expecting: scene.expectedFailures, offRaw: offRaw)
-            if !failed.1 { reasons.insert("raw: \(failed.0)", at: 0) }
-        } else if kind == "raw" && !offRaw.isEmpty {
-            reasons.insert("raw: command buffers off the raw path: \(offRaw.text)", at: 0)
+            let failed = FailedCounts.judged(
+                before: before, after: after, expecting: scene.expectedFailures, own: own, &metrics)
+            var checks = [failed]
+            if scene.framework { checks.append(FailedCounts(before: before, after: after).skipCheck()) }
+            reasons.insert(contentsOf: checks.filter { !$0.1 }.map { "raw: \($0.0)" }, at: 0)
+        } else if kind == "raw" && !own.offRaw.isEmpty {
+            reasons.insert("raw: command buffers off the raw path: \(own.offRaw.text)", at: 0)
         }
         reasons += scene.judge(&metrics)
         if saved > 0 { metrics.set("pngs", saved) }

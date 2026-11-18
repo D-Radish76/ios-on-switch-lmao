@@ -96,7 +96,10 @@ struct RecoverKillUnderCompositorTest: HWTest {
         metrics.set("fills_ok", "\(fillsOK)/\(Self.rounds + 1)")
         metrics.set("fill_bytes", kept)
         metrics.set("reopens", delta("reopens"))
-        let failed = FailedCounts.judged(before: start, after: end, expecting: ["none": Self.rounds], &metrics)
+        var own = PathTally()
+        for buffer in fills + poisoned + [last] { own.add(RawFacade.path(of: buffer)) }
+        let failed = FailedCounts.judged(
+            before: start, after: end, expecting: ["none": Self.rounds], own: own, &metrics)
         metrics.set("present_gap_ms", presentGapMs, digits: 1)
         metrics.set("gap_bound_ms", Self.gapBoundMs, digits: 0)
         metrics.set("kill_ms_max", killMs, digits: 1)

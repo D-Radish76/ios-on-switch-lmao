@@ -181,7 +181,7 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every code Metal's", tally.codes > 0 && tally.off == 0))
         checks.append(("every pass on the raw path", !tally.paths.isEmpty && tally.paths.allSatisfy { $0 == "raw" }))
-        checks.append(FailedCounts(before: before, after: counted).check())
+        checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

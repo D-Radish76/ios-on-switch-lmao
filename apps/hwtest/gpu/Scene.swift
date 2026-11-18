@@ -17,12 +17,16 @@ public protocol GPUScene: Sendable {
     /// The command buffers the scene's own work fails on the raw facade, by predicate ("none": an error no predicate
     /// gave); every other command buffer of the run, a framework's included, must complete (FailedCounts).
     var expectedFailures: [String: Int] { get }
+    /// The scene's work is a framework's (Core Animation's shaders and states, MPS, Core Image): no call of the run may
+    /// be one Metal's validation stops (FailedCounts.skipCheck).
+    var framework: Bool { get }
 }
 
 extension GPUScene {
     public var timeout: TimeInterval { 60 }
     public func judge(_ metrics: inout Metrics) -> [String] { [] }
     public var expectedFailures: [String: Int] { [:] }
+    public var framework: Bool { false }
 }
 
 public struct SceneCheck: Sendable {

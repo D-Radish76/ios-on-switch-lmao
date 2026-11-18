@@ -7,7 +7,7 @@
 from tools.devicerun.apps import APPS
 from tools.devicerun.audio import AUDIO
 from tools.devicerun.dispatch import DISPATCH
-from tools.devicerun.hwtest import HWTEST
+from tools.devicerun.hwtest import HWTEST, KILL_WINDOWS
 from tools.devicerun.joycon import JOYCON
 from tools.devicerun.lockscreen import LOCKSCREEN
 from tools.devicerun.morning import MORNING
@@ -26,6 +26,12 @@ FAILED_LINE = (
     r'\(MTLCommandBufferErrorDomain (?P<code>\d+)\)'
 )
 FAILED_SOURCE = 'drivers/TegraGM20BMetal/raw/runtime (c38-audit/failed-counts/CONTRACT.md)'
+# What a kill gives a command buffer of the killed channel (RawMetalFinish.mm killError: 3 a fault, 2 a hang, else 1,
+# no description, so Foundation's text for its code)
+KILLED_FAILURE = (
+    r'^[^\[]+\[\d+\] none: a command buffer failed \(MTLCommandBufferErrorDomain (?P<code>[123])\): '
+    r'The operation couldn.t be completed\. \(MTLCommandBufferErrorDomain error (?P=code)\.\)'
+)
 GPU_METAL_SUBSYSTEM = 'com.brunostjohn.switch.TegraGM20BMetal'
 
 GROUPS: dict[str, list[Check]] = {
@@ -737,13 +743,32 @@ GROUPS: dict[str, list[Check]] = {
             'a command buffer failed',
             subsystem=REFUSAL_SUBSYSTEM,
             level='error',
-            regex=FAILED_LINE.format(who=r'(?!SwitchHWTest\[)[^\[]+'),
+            regex=FAILED_LINE.format(who=r'(?!SwitchHWTest\w*\[)[^\[]+'),
             show=('who', 'predicate', 'code'),
+            during=KILL_WINDOWS,
+            excusable=KILLED_FAILURE,
             source=FAILED_SOURCE,
             note='every predicate that failed a command buffer, per process (one line a process and predicate, '
             "category raw.failed): SpringBoard, backboardd, WebKit's GPU process and every other app or daemon; HW "
-            "Test's own are raw.failed-hwtest. hwtest.gpu.recover.kernel_second_timeout kills the contexts the GPU "
-            "holds on purpose: a resident client failing in its window is that test's",
+            "Test's own (SwitchHWTest, SwitchHWTest27e) are raw.failed-hwtest. A kill's line (none, code 1-3, no "
+            'description) inside the window of a HW Test test that killed resident clients on purpose '
+            "(hwtest.kill-windows) is that test's",
+        ),
+        Check(
+            'raw.killed',
+            'hwtests6',
+            'failed: the kernel killed its channel',
+            process='!SwitchHWTest',
+            subsystem=GPU_METAL_SUBSYSTEM,
+            level='error',
+            regex=r'^raw: command buffer \d+ failed: the kernel killed its channel \(error (?P<error>\d+), ',
+            show=('process', 'error'),
+            during=KILL_WINDOWS,
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalFinish.mm completionLoop',
+            note='each command buffer of another process the kernel killed in flight, one line each in every build '
+            "(raw.failed logs a process's first failure of each code alone, so a kill after an excused one shows "
+            'here); inside the window of a HW Test test that kills resident clients on purpose (hwtest.kill-windows): '
+            "that test's",
         ),
         Check(
             'raw.failed-hwtest',
@@ -792,11 +817,11 @@ GROUPS: dict[str, list[Check]] = {
             'count >= 1',
             process='SwitchHWTest',
             subsystem=REFUSAL_SUBSYSTEM,
-            regex=r'^SwitchHWTest\[(?P<pid>\d+)\] (?P<reason>blit\.(?:invalid|undefined)): ',
-            show=('pid', 'reason'),
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalBlit.mm',
-            note='once a process each (the guard keys domain and reason per process image; the first such line wins '
-            'whoever caused it): every pid/reason group must read x1, after gpu.raw.planes_blits and invalid_requests',
+            regex=r'^SwitchHWTest\[(?P<pid>\d+)\] (?P<reason>blit\.(?:invalid|undefined)): (?P<call>\S+) (?P<rule>.+)$',
+            show=('pid', 'call', 'rule'),
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalBlitRules.mm',
+            note='once a process per call and rule (the line names the call, then the rule): every pid/call/rule '
+            'group must read x1, after gpu.raw.planes_blits and invalid_requests',
         ),
         Check(
             'refusal.compute-view',

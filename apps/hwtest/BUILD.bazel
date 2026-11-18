@@ -589,7 +589,7 @@ swift_interop_hint(
 )
 
 # The bench loop's GPU side (bench/switch_bench.h, tools/benchloop): the raw runtime compiled in again, as fetchform
-# links it, with SWITCH_RAW_OWN_CONNECTION so its device opens a connection and GPU VM of its own beside the facade's.
+# links it; its device opens a connection and GPU VM of its own beside the facade's, as every raw device does.
 # Hidden visibility keeps this copy's inline functions from being coalesced with the plugin's.
 # bench_completed.cpp compiles raw_completed.cpp in place of the runtime's unit, so this copy alone takes a record that
 # sets the pixel interlock without a storage form, in debug builds only; the raw stack key hashes raw_completed.cpp.
@@ -682,7 +682,6 @@ cc_library(
         "-fvisibility=hidden",
         "-fvisibility-inlines-hidden",
         "-DSWITCH_RAW_HARNESS_MARKS",
-        "-DSWITCH_RAW_OWN_CONNECTION",
         "-Idrivers/TegraGM20B",
     ],
     linkopts = [

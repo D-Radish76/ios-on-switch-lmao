@@ -106,9 +106,10 @@ public struct Metrics: Equatable, Sendable {
     /// The fields the log line carries, in order.
     public var logged: [(String, MetricValue)] { keys.filter { !reportOnly.contains($0) }.map { ($0, values[$0]!) } }
 
-    /// Moves the longest fields but `kept` to the report until the line's fields fit in `budget` characters, and
-    /// counts them in report_only=.
+    /// Moves the longest fields but `kept` and a failure's cause (FailedCounts.causeKeys) to the report until the
+    /// line's fields fit in `budget` characters, and counts them in report_only=.
     public mutating func fitLog(within budget: Int, keeping kept: Set<String>) {
+        let kept = kept.union(FailedCounts.causeKeys)
         let width = { (field: (String, MetricValue)) in field.0.count + field.1.logText.count + 2 }
         var total = logged.map(width).reduce(0, +)
         while total > budget, let longest = logged.filter({ !kept.contains($0.0) }).max(by: { width($0) < width($1) }) {

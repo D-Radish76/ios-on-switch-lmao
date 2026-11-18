@@ -17,8 +17,9 @@ import OSLog
 /// an M4 Max moves plane 1 at plane 0's region in bytes and rows, past the plane's rows, a defect not copied. D of
 /// another texel size (Apple lands it transposed) and G past the page (Apple reads zeros there) expect nothing written
 /// and raw:blit.invalid; F (Apple writes plane 0 with a value that ignores the colour) nothing and raw:blit.undefined.
-/// Each line is logged once a process, so the process's log must hold each exactly once afterwards (invalid_lines=,
-/// undefined_lines=). cases= and cases_off=; for a case off its rule or the raw path only (a line of every case would
+/// Each rule's line is logged once a process (blit.invalid once per call and rule), so the process's log must hold
+/// those lines and none of them twice afterwards (invalid_lines=, invalid_repeats=, undefined_lines=,
+/// undefined_repeats=). cases= and cases_off=; for a case off its rule or the raw path only (a line of every case would
 /// pass os_log's limit), <case>_changed= (bytes off the rule) and <case>_path=; failed_cbs=.
 struct PlanesBlitsTest: HWTest {
     let id = "gpu.raw.planes_blits"
@@ -52,22 +53,25 @@ struct PlanesBlitsTest: HWTest {
         }
         metrics.set("cases", cases.count)
         metrics.set("cases_off", off)
-        for (field, reason) in [("invalid_lines", "blit.invalid"), ("undefined_lines", "blit.undefined")] {
+        for (field, reason) in [("invalid", "blit.invalid"), ("undefined", "blit.undefined")] {
             let lines = Self.refusalLines(reason)
-            metrics.set(field, lines ?? -1)
+            let repeats = lines.map { $0.count - Set($0).count }
+            metrics.set(field + "_lines", lines?.count ?? -1)
+            metrics.set(field + "_repeats", repeats ?? -1)
+            let seen = lines.map { "\($0.count) lines, \($0.count - Set($0).count) repeated" } ?? "no log"
             checks.append(
-                ("raw:\(reason) once in the process's log (\(lines.map(String.init) ?? "no log"))", lines == 1))
+                ("raw:\(reason) logged, no rule's line twice (\(seen))", (lines?.count ?? 0) > 0 && repeats == 0))
         }
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(FailedCounts(before: before, after: counted).check())
+        checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
     /// The process's raw:<reason> lines (kits/SwitchRefusal: subsystem com.brunostjohn.switch.refusal, category raw,
     /// "<process>[<pid>] <reason>: <text>"); nil when its log cannot be read
-    static func refusalLines(_ reason: String) -> Int? {
+    static func refusalLines(_ reason: String) -> [String]? {
         let subsystem = "com.brunostjohn.switch.refusal", text = " \(reason): "
         guard let store = try? OSLogStore(scope: .currentProcessIdentifier),
             let entries = try? store.getEntries(
@@ -77,6 +81,6 @@ struct PlanesBlitsTest: HWTest {
         else { return nil }
         return entries.compactMap { $0 as? OSLogEntryLog }.filter {
             $0.subsystem == subsystem && $0.category == "raw" && $0.composedMessage.contains(text)
-        }.count
+        }.map(\.composedMessage)
     }
 }

@@ -48,7 +48,7 @@ struct TextureBufferTargetTest: HWTest {
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
-            FailedCounts(before: before, after: counted).check(expecting: ["pass.fmt": 1], offRaw: gpu.paths.offRaw))
+            FailedCounts.judged(before: before, after: counted, expecting: ["pass.fmt": 1], own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

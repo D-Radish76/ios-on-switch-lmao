@@ -4,6 +4,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
+from tools.devicerun.hwtest import OWNER, REDS, SKIPS, SUBSYSTEM
 from tools.devicerun.rules import FAIL, INFO, NO_DATA, PASS, Check, Result
 from tools.frames import frames
 
@@ -72,6 +73,92 @@ def frame_rows(timed_messages: list[str]) -> list[Result]:
     )
     rows.append(row('frames.interaction', owner, 'p99 == 1 period', PASS if pct[1] == 1 else FAIL, observed))
     return rows
+
+
+def line_fields(message: str) -> dict[str, str]:
+    """Return a HWTEST line's fields before why= (apps/hwtest/core/LogLine.swift: one space apart, why= last)."""
+    fields = {}
+    for part in message.split(' ')[3:]:
+        key, _, value = part.partition('=')
+        if key == 'why':
+            break
+        fields[key] = value
+    return fields
+
+
+def predicates(text: str) -> list[str]:
+    """Return the predicates of a "pred/n,pred/n" field (FailedCounts.text)."""
+    return [item.rpartition('/')[0] for item in text.split(',') if '/' in item]
+
+
+def red_rows(matches: list[dict], boot: str) -> list[Result]:
+    """Return the first test a failed command buffer reddened and the tests each predicate reddened, in `boot`.
+
+    The first test with its cause, and per predicate the first of its tests, own or foreign.
+    """
+    lines = [f for f in matches if f['boot'] == boot]
+    if not lines:
+        observed = f'boot {boot or "-"}: no test reddened by a failed command buffer'
+        return [row('hwtest.first-red', OWNER, 'report', NO_DATA, observed)]
+    reds: dict[str, tuple[str, str, set[str]]] = {}
+    for fields in lines:
+        named = line_fields(fields['message'])
+        for whose in ('own', 'foreign'):
+            for predicate in predicates(named.get(f'{whose}_why', '')):
+                reds.setdefault(predicate, (fields['id'], whose, set()))[2].add(fields['id'])
+    first = line_fields(lines[0]['message'])
+    cause = ', '.join(f'{whose} {first[whose + "_why"]}' for whose in ('own', 'foreign') if whose + '_why' in first)
+    rows = [row('hwtest.first-red', OWNER, 'report', INFO, f'boot {boot}: {lines[0]["id"]} ({cause})')]
+    for predicate, (test, whose, tests) in reds.items():
+        observed = f'{len(tests)} test{"s" * (len(tests) != 1)} reddened, first {test} ({whose})'
+        rows.append(row(f'hwtest.red.{predicate}', OWNER, 'report', INFO, observed))
+    return rows
+
+
+def skip_rows(matches: list[dict], boot: str) -> list[Result]:
+    """Return per predicate of a skipped call its tests and the first, in `boot`."""
+    lines = [f for f in matches if f['boot'] == boot]
+    if not lines:
+        return [row('hwtest.skipped-calls', OWNER, 'report', NO_DATA, f'boot {boot or "-"}: no skipped call')]
+    skips: dict[str, tuple[str, set[str]]] = {}
+    for fields in lines:
+        for predicate in predicates(line_fields(fields['message']).get('skipped_why', '')):
+            skips.setdefault(predicate, (fields['id'], set()))[1].add(fields['id'])
+    rows = []
+    for predicate, (test, tests) in skips.items():
+        observed = f'boot {boot}: {len(tests)} test{"s" * (len(tests) != 1)}, first {test}'
+        rows.append(row(f'hwtest.skipped-calls.{predicate}', OWNER, 'report', INFO, observed))
+    return rows
+
+
+def rolled_up(results: list[Result]) -> list[Result]:
+    """Return `results` with HW Test's red and skip lines replaced by their roll-up rows.
+
+    The rows read the newest boot with any HW Test line, so a clean boot after a red one rolls up clean.
+    """
+    lines = [f for r in results if r.check.subsystem == SUBSYSTEM for f in r.matches]
+    boot = max(lines, key=lambda f: f['time'])['boot'] if lines else ''
+    rows = []
+    for result in results:
+        if result.check.name == REDS:
+            rows += red_rows(result.matches, boot)
+        elif result.check.name == SKIPS:
+            rows += skip_rows(result.matches, boot)
+        else:
+            rows.append(result)
+    return rows
+
+
+def headline(groups: list[tuple[str, list[Result]]]) -> str:
+    """Return HW Test's first red from a failed command buffer and each predicate's reds, for the table's top."""
+    rows = [
+        r
+        for _, results in groups
+        for r in results
+        if r.check.name == 'hwtest.first-red' or r.check.name.startswith('hwtest.red.')
+    ]
+    parts = [f'{r.check.name.removeprefix("hwtest.")}: {r.observed}' for r in rows]
+    return 'HW Test reds from failed command buffers: ' + ('; '.join(parts) or 'no HW Test lines') + '\n'
 
 
 def ips_header(path: Path) -> tuple[str, str]:

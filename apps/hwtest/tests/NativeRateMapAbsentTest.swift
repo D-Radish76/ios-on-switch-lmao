@@ -34,7 +34,7 @@ struct NativeRateMapAbsentTest: NativeObjectTest {
             commands.addCompletedHandler { status = $0.status }
         }
         work.paths.append(timing.path)
-        ClientErrors.record(gpu, before, status, &work, &metrics)
+        ClientErrors.record(gpu, before, timing, status, &work, &metrics)
         try await ClientErrors.texel(gpu, target, want: ClientErrors.colour, slack: 1, field: "texel", &work, &metrics)
         return work
     }

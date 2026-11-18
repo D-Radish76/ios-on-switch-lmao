@@ -221,7 +221,8 @@ struct ImageDecodeTest: HWTest {
 }
 
 /// A Metal-backed CIContext: a blur of a flat colour stays flat (exact), and a 1080p blur chain is timed. On the raw
-/// facade none of Core Image's command buffers may fail (failed_cbs=, failed_why=).
+/// facade none of Core Image's command buffers may fail (failed_cbs=, failed_why=; foreign_why=: Core Image's are none
+/// of the test's own) and none of its calls be skipped (skipped_calls=, skipped_why=).
 struct CoreImageTest: HWTest {
     let id = "image.coreimage"
     let name = "Core Image filters on the GPU"
@@ -267,7 +268,8 @@ struct CoreImageTest: HWTest {
             ),
         ]
         if RawFacade.kind(of: device) == "raw" {
-            checks.append(FailedCounts.judged(before: before, after: RawFacade.counters(of: device), &metrics))
+            checks += FailedCounts.judgedFramework(
+                before: before, after: RawFacade.counters(of: device), own: PathTally(), &metrics)
         }
         return .judged(checks, metrics, proof: "CIContext(mtlDevice: \(device.name))")
     }

@@ -50,7 +50,7 @@ struct KernelYcbcrOnePlaneTest: HWTest {
             [
                 ("read() of 501 is 502's", readOff == 0), ("a linear sample of 501 is 502's", linearOff == 0),
                 ("every command buffer raw", gpu.paths.offRaw.isEmpty),
-                FailedCounts(before: before, after: counted).check(),
+                FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
             ], metrics, proof: gpu.proof)
     }
 }

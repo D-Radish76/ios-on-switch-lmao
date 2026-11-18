@@ -30,6 +30,7 @@ class Checks(unittest.TestCase):
                     re.compile(c.regex)
                 self.assertTrue(not c.needs or c.needs in names, c.name)
                 self.assertTrue(not c.against or c.against in names, c.name)
+                self.assertTrue(not c.during or c.during in names, c.name)
 
     def test_predicate_escapes_and_covers_every_check(self):
         check = Check('q', 'o', 'say "hi" \\ there', process='kernel', subsystem='a.b', level='error')
@@ -39,6 +40,8 @@ class Checks(unittest.TestCase):
             'AND subsystem CONTAINS "a.b" AND messageType == error)',
         )
         self.assertIn('BEGINSWITH "SwitchFrame"', devicerun.predicate([check]))
+        negated = devicerun.clause(Check('n', 'o', 'x', process='!SwitchHWTest'))
+        self.assertIn('NOT (process BEGINSWITH "SwitchHWTest")', negated)
         self.assertIn('messageType == error', devicerun.clause(Check('l', 'o', 'x', level='Error')))
 
 
@@ -163,6 +166,70 @@ class Rules(unittest.TestCase):
         got = {r.check.name: r for r in results}
         self.assertEqual(got['raw.failed'].verdict, FAIL)
         self.assertIn('SpringBoard/none/1', got['raw.failed'].observed)
+
+    def test_kills_in_a_kill_tests_window_are_that_tests(self):
+        judged = [c for c in checks.GROUPS['refusals'] if c.name in {'raw.failed', 'raw.killed'}]
+        windows = [c for c in checks.GROUPS['hwtest'] if c.name == 'hwtest.kill-windows']
+
+        def record(second: int, process: str, message: str, boot: str = 'B00T') -> dict:
+            subsystem = 'com.brunostjohn.switch.hwtest' if message.startswith('HWTEST') else checks.REFUSAL_SUBSYSTEM
+            if message.startswith('raw: '):
+                subsystem = checks.GPU_METAL_SUBSYSTEM
+            return {
+                'timestamp': f'2026-11-18 15:51:{second:02d}.000000+0000',
+                'bootUUID': boot,
+                'processImagePath': '/usr/libexec/' + process,
+                'subsystem': subsystem,
+                'category': 'raw',
+                'messageType': 'Error',
+                'eventMessage': message,
+            }
+
+        killed = (
+            'SpringBoard[88] none: a command buffer failed (MTLCommandBufferErrorDomain 2): The operation '
+            'couldn\u2019t be completed. (MTLCommandBufferErrorDomain error 2.)'
+        )
+        unexplained = 'backboardd[61] none: a command buffer failed (MTLCommandBufferErrorDomain 1): A render pipeline'
+        refused = 'backboardd[61] enc.pass: a command buffer failed (MTLCommandBufferErrorDomain 1): a refusal'
+        kill = 'raw: command buffer 7 failed: the kernel killed its channel (error 4, fault VA 0x0)'
+        stall = 'HWTEST gpu.recover.kernel_second_timeout PASS state=4 killed=2 ms=10000.0'
+        inside = [record(20, 'SpringBoard', killed), record(21, 'backboardd', refused), record(22, 'PosterBoard', kill)]
+        results, _ = devicerun.run_checks([*inside, record(30, 'SwitchHWTest', stall)], judged + windows)
+        got = {r.check.name: r for r in results}
+        self.assertEqual(got['raw.failed'].verdict, FAIL)
+        self.assertIn('backboardd/enc.pass/1', got['raw.failed'].observed)
+        self.assertIn(
+            'expected: killed by gpu.recover.kernel_second_timeout: SpringBoard/none/2', got['raw.failed'].observed
+        )
+        self.assertEqual(got['raw.killed'].verdict, PASS)
+        self.assertIn(
+            'expected: killed by gpu.recover.kernel_second_timeout: PosterBoard/4', got['raw.killed'].observed
+        )
+        own = [
+            record(21, 'SwitchHWTest27e', kill),
+            record(22, 'SwitchHWTest27e', killed.replace('SpringBoard', 'SwitchHWTest27e')),
+        ]
+        results, _ = devicerun.run_checks(own, judged)
+        self.assertEqual([r.verdict for r in results], [PASS, PASS])
+        for line in (
+            'HWTEST gpu.recover.kill_one PASS killed=1 ms=10000.0',
+            'HWTEST gpu.recover.kernel_second_timeout SKIP state=1 killed=0 ms=10000.0',
+        ):
+            results, _ = devicerun.run_checks([*inside[::2], record(30, 'SwitchHWTest', line)], judged + windows)
+            got = {r.check.name: r for r in results}
+            self.assertEqual((got['raw.failed'].verdict, got['raw.killed'].verdict), (FAIL, FAIL), line)
+            self.assertNotIn('expected', got['raw.killed'].observed)
+        lines = [record(20, 'backboardd', unexplained), record(30, 'SwitchHWTest', stall)]
+        results, _ = devicerun.run_checks(lines, judged + windows)
+        self.assertEqual(results[0].verdict, FAIL)
+        late = [record(41, 'SpringBoard', killed), record(42, 'PosterBoard', kill)]
+        results, _ = devicerun.run_checks([record(30, 'SwitchHWTest', stall), *late], judged + windows)
+        self.assertEqual(
+            {r.check.name: r.verdict for r in results if r.check in judged}, {'raw.failed': FAIL, 'raw.killed': FAIL}
+        )
+        other = [record(20, 'SpringBoard', killed, 'B00T2'), record(30, 'SwitchHWTest', stall)]
+        results, _ = devicerun.run_checks(other, judged + windows)
+        self.assertEqual(results[0].verdict, FAIL)
 
     def test_wifi_join_boot16(self):
         events = devicerun.read_ndjson(str(TEST / 'wifi.ndjson'))

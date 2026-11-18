@@ -94,7 +94,7 @@ struct FetchShapeTest: HWTest {
                 ("fetch_sequential rose by \(draws.count), one a draw", moved("fetch_sequential") == draws.count))
             checks.append(("fetch_triangles rose by \(counted)", moved("fetch_triangles") == counted))
         }
-        checks.append(FailedCounts(before: before, after: after).check())
+        checks.append(FailedCounts.judged(before: before, after: after, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

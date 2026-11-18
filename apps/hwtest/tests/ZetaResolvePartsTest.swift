@@ -58,7 +58,7 @@ struct ZetaResolvePartsTest: HWTest {
         let counted = RawFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
-            FailedCounts(before: before, after: counted).check(expecting: ["pass.ds": 2], offRaw: gpu.paths.offRaw))
+            FailedCounts.judged(before: before, after: counted, expecting: ["pass.ds": 2], own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

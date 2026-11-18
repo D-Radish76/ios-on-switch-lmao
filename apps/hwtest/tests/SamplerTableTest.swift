@@ -143,8 +143,9 @@ struct SamplerTableTest: HWTest {
         withExtendedLifetime(pixels) {}
 
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), expecting: ["enc.planarclamp": 1], &metrics)
-        if !failed.1 { wrong.append("failed") }
+            before: before, after: RawFacade.counters(of: gpu.device), expecting: ["enc.planarclamp": 1],
+            own: gpu.paths, &metrics)
+        if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

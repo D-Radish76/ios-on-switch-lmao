@@ -8,13 +8,22 @@ public struct PathTally: Equatable, Sendable {
 
     public init() {}
 
-    public mutating func add(_ path: String) { paths[path, default: 0] += 1 }
+    public mutating func add(_ path: String, _ count: Int = 1) { paths[path, default: 0] += count }
 
     public mutating func merge(_ other: PathTally) {
         for (path, count) in other.paths { paths[path, default: 0] += count }
     }
 
     public var isEmpty: Bool { paths.isEmpty }
+
+    /// The paths added since `earlier`, a tally this one grew from.
+    public func since(_ earlier: PathTally) -> PathTally {
+        var added = PathTally()
+        for (path, count) in paths where count > earlier.paths[path] ?? 0 {
+            added.paths[path] = count - (earlier.paths[path] ?? 0)
+        }
+        return added
+    }
 
     /// "raw/4,error:call.sampler/1": most frequent first.
     public var text: String {
@@ -30,8 +39,8 @@ public struct PathTally: Equatable, Sendable {
         return off
     }
 
-    /// Counter deltas (the facade's switchRawCounters) as log fields: raw_cbs, and failed_cbs and failed_why
-    /// (FailedCounts).
+    /// Counter deltas (the facade's switchRawCounters) as log fields: raw_cbs, and failed_cbs, failed_why,
+    /// skipped_calls and skipped_why (FailedCounts).
     public static func counterMetrics(before: [String: Int], after: [String: Int]) -> Metrics {
         var metrics = Metrics()
         metrics.set("raw_cbs", (after["raw"] ?? 0) - (before["raw"] ?? 0))

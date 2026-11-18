@@ -175,7 +175,8 @@ struct UIListTest: HWTest {
 
 /// The same SwiftUI picture twice: once through .drawingGroup(), which RenderBox renders with Metal in this process
 /// (its pack states draw on the raw path), once as plain Core Animation layers. Their composited pictures must agree to
-/// within anti-aliasing, and none of RenderBox's command buffers may fail (failed_cbs=, failed_why=).
+/// within anti-aliasing, none of RenderBox's command buffers may fail (failed_cbs=, failed_why=; foreign_why=:
+/// RenderBox's are none of the test's own) and none of its calls be skipped (skipped_calls=, skipped_why=).
 struct UIRenderBoxTest: HWTest {
     let id = "ui.renderbox"
     let name = "SwiftUI drawingGroup (RenderBox in process) against plain layers"
@@ -201,11 +202,14 @@ struct UIRenderBoxTest: HWTest {
                 label: "drawingGroup", composited: Snapshots.composited(views[0]), cpu: Snapshots.composited(views[1]))
         }
         var metrics = Metrics()
-        var failed = ("no command buffer failed", true)
+        var checks: [(String, Bool)] = []
         if let device, RawFacade.kind(of: device) == "raw" {
-            failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: device), &metrics)
+            checks = FailedCounts.judgedFramework(
+                before: before, after: RawFacade.counters(of: device), own: PathTally(), &metrics)
         }
-        return UISceneTests.outcome([("group", check)], context, id: id, metrics: metrics).failing(unless: failed)
+        return checks.reduce(UISceneTests.outcome([("group", check)], context, id: id, metrics: metrics)) {
+            $0.failing(unless: $1)
+        }
     }
 }
 

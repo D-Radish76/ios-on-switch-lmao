@@ -14,7 +14,7 @@ from collections.abc import Iterable, Iterator
 
 from tools.devicerun.checks import FRAME_PREFIX, GROUPS
 from tools.devicerun.morning import CHECKLIST
-from tools.devicerun.reports import crash_rows, frame_rows
+from tools.devicerun.reports import crash_rows, frame_rows, headline, rolled_up
 from tools.devicerun.rules import FAIL, Check, Event, Result, evaluate, match
 
 OBSERVED_WIDTH = 110
@@ -29,6 +29,8 @@ def clause(check: Check) -> str:
     parts = [f'({literals})']
     if check.process == 'kernel':
         parts.append('process BEGINSWITH "kernel"')
+    elif check.process.startswith('!'):
+        parts.append(f'NOT (process BEGINSWITH {quote(check.process[1:])})')
     elif check.process:
         parts.append(f'process == {quote(check.process)}')
     if check.subsystem:
@@ -134,7 +136,7 @@ def evaluate_all(
     groups_in = selected(label)
     results, frame_lines = run_checks(records, all_checks(label))
     by_check = {r.check.name: r for r in results}
-    groups = [(name, [by_check[c.name] for c in group]) for name, group in groups_in.items()]
+    groups = [(name, rolled_up([by_check[c.name] for c in group])) for name, group in groups_in.items()]
     groups.append(('frames', frame_rows(frame_lines)))
     groups.append(('crashes', crash_rows(crashes)))
     return groups
@@ -162,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
         records = log_show(args.archive, predicate(checks), args.start, args.end)
     print(checklist(args.boot_label))
     groups = evaluate_all(records, args.crashes, args.boot_label)
+    print(headline(groups))
     print(table(groups))
     if args.tsv:
         write_tsv(args.tsv, groups)

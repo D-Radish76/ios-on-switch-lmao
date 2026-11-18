@@ -110,7 +110,9 @@ struct RecoverKillOneTest: HWTest {
         metrics.set("present_gap_ms", presentGapMs, digits: 1)
         metrics.set("gap_bound_ms", Self.gapBoundMs, digits: 0)
         metrics.set("reopens", delta("reopens"))
-        let failed = FailedCounts.judged(before: start, after: end, expecting: ["none": 1], &metrics)
+        var own = PathTally()
+        for buffer in before + [poisoned] + after { own.add(RawFacade.path(of: buffer)) }
+        let failed = FailedCounts.judged(before: start, after: end, expecting: ["none": 1], own: own, &metrics)
         metrics.set("gpu_order", end["gpu_order"] ?? 0)
         metrics.set("reopen_us", end["reopen_us"] ?? 0)
         metrics.set("recover_ms", recoverMs, digits: 1)

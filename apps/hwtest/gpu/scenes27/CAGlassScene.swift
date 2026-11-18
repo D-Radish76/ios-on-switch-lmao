@@ -12,6 +12,7 @@ import Metal
 /// t_<pass>= is the GPU time in ms (the median of three). iOS 27's app runs it (Scenes.glass).
 struct CAGlassScene: GPUScene {
     let id = "gpu.ca.glass"
+    let framework = true
     let name = "CA 27 Liquid Glass background and RGBA16Float downsample: path and pixels"
 
     static let size = 256

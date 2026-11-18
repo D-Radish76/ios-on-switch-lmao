@@ -87,7 +87,8 @@ struct VertexOnlyStateTest: HWTest {
         metrics.set("wrong_stencil", wrongStencil)
         metrics.set("corner_color", Array(pixels.pixel(0, 0, width: size)).map(String.init).joined(separator: ","))
         metrics.set("path", path)
-        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         return .judged(
             [
                 ("colour untouched (0,255,0,255)", wrongColor == 0), ("depth 0.5 | 1", wrongDepth == 0),

@@ -6,7 +6,7 @@ import Metal
 /// What Metal's validation layer would stop completes on the raw path as Apple's driver completes it
 /// (drivers/TegraGM20BMetal/raw/runtime/raw_client_errors.h). Every expected value is what an M-series Mac did with API
 /// validation off (x1-m2v-errors' probes), each command buffer completed with no error; the raw path logs one refusal
-/// line a process and reason. Each case: status=completed, paths=raw, failed_cbs=0 and its contents.
+/// line a process and rule. Each case: status=completed, paths=raw, failed_cbs=0 and its contents.
 enum ClientErrors {
     /// client_colour_fragment's (0.2, 0.4, 0.6, 0.8) as a BGRA8 texel's bytes, as Apple's driver stored it
     static let colour: [UInt8] = [0x99, 0x66, 0x33, 0xcc]
@@ -41,16 +41,18 @@ enum ClientErrors {
             commands.addCompletedHandler { status = $0.status }
         }
         work.paths.append(timing.path)
-        record(gpu, before, status, &work, &metrics)
+        record(gpu, before, timing, status, &work, &metrics)
     }
 
     static func record(
-        _ gpu: GPU, _ before: [String: Int], _ status: MTLCommandBufferStatus, _ work: inout NativeWork,
-        _ metrics: inout Metrics
+        _ gpu: GPU, _ before: [String: Int], _ timing: GPU.Timing, _ status: MTLCommandBufferStatus,
+        _ work: inout NativeWork, _ metrics: inout Metrics
     ) {
         metrics.set("status", status == .completed ? "completed" : "\(status.rawValue)")
         if status != .completed { work.failures.append("the command buffer did not complete") }
-        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        var own = PathTally()
+        own.add(timing.facadePath)
+        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), own: own, &metrics)
         if !failed.1 { work.failures.append(failed.0) }
     }
 
@@ -90,7 +92,7 @@ struct NativeErrorBufferCopyTest: NativeObjectTest {
             commands.addCompletedHandler { status = $0.status }
         }
         work.paths.append(timing.path)
-        ClientErrors.record(gpu, before, status, &work, &metrics)
+        ClientErrors.record(gpu, before, timing, status, &work, &metrics)
         let copied = b.contents().bindMemory(to: UInt8.self, capacity: 8192)
         let filled = c.contents().bindMemory(to: UInt8.self, capacity: 4096)
         let copyWrong = (0..<8192).filter { copied[$0] != ($0 < 2048 ? 0xAA : 0x55) }.count
@@ -125,7 +127,7 @@ struct NativeErrorIndexRangeTest: NativeObjectTest {
             commands.addCompletedHandler { status = $0.status }
         }
         work.paths.append(timing.path)
-        ClientErrors.record(gpu, before, status, &work, &metrics)
+        ClientErrors.record(gpu, before, timing, status, &work, &metrics)
         try await ClientErrors.texel(gpu, target, want: ClientErrors.colour, field: "texel", &work, &metrics)
         return work
     }

@@ -26,8 +26,8 @@ public enum RawFacade {
         ((ask(state, "switchRawObject") as? [String: Any])?["entries"] as? NSNumber)?.intValue
     }
 
-    /// The facade's cumulative command buffer counters (empty off the facade): "raw", "failed", "failed.<predicate>"
-    /// (FailedCounts) and the raw path's own.
+    /// The facade's cumulative command buffer counters (empty off the facade): "raw", "failed", "failed.<predicate>",
+    /// "skipped", "skipped.<predicate>" (FailedCounts) and the raw path's own.
     public static func counters(of device: MTLDevice) -> [String: Int] {
         guard let counters = ask(device, "switchRawCounters") as? [String: NSNumber] else { return [:] }
         return counters.mapValues(\.intValue)
@@ -126,19 +126,23 @@ public enum RawFacade {
 }
 
 extension Outcome {
-    /// On the facade, FAIL naming the command buffers `gpu` ran off the raw path and every command buffer of the
-    /// process that failed since `gpu` was made, a framework's included, but the `expected` ones (FailedCounts.check),
-    /// ahead of whatever else the test found; unchanged off the facade. paths=, failed_cbs= and failed_why= on the
-    /// line.
-    public func onRawPath(_ gpu: GPU, expecting expected: [String: Int] = [:]) -> Outcome {
+    /// On the facade, FAIL naming each command buffer of the process that failed since `gpu` was made, a framework's
+    /// included, but the `expected` ones, and whose it was: one of `gpu`'s own or one the test did not commit
+    /// (FailedAttribution.check); with `framework` (work MPS or Core Image records), also each call skipped meanwhile
+    /// (FailedCounts.skipCheck). Ahead of whatever else the test found; unchanged off the facade. paths=, failed_cbs=,
+    /// failed_why= and the cause fields on the line.
+    public func onRawPath(_ gpu: GPU, expecting expected: [String: Int] = [:], framework: Bool = false) -> Outcome {
         guard RawFacade.kind(of: gpu.device) == "raw" else { return self }
         var marked = self
-        marked.metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
+        let own = gpu.paths
+        marked.metrics.set("paths", own.isEmpty ? "-" : own.text)
         let after = RawFacade.counters(of: gpu.device)
-        guard !after.isEmpty else { return marked.failing(offRaw: gpu.paths.offRaw) }
+        guard !after.isEmpty else { return marked.failing(offRaw: own.offRaw) }
         let failed = FailedCounts.judged(
-            before: gpu.startCounters, after: after, expecting: expected, offRaw: gpu.paths.offRaw, &marked.metrics)
-        return marked.failing(unless: failed)
+            before: gpu.startCounters, after: after, expecting: expected, own: own, &marked.metrics)
+        marked = marked.failing(unless: failed)
+        guard framework else { return marked }
+        return marked.failing(unless: FailedCounts(before: gpu.startCounters, after: after).skipCheck())
     }
 }
 

@@ -10,6 +10,7 @@ import MetalPerformanceShaders
 /// compute.view, whose replay over the twins came back as zeros).
 struct MPSBlurScene: GPUScene {
     let id = "gpu.blur.mps"
+    let framework = true
     let name = "MPS Gaussian blur against a CPU Gaussian"
 
     func run(_ gpu: GPU) async throws -> SceneResult {
@@ -51,6 +52,7 @@ struct MPSBlurScene: GPUScene {
 /// Image's downsampled pyramid, so they get a wider tolerance.
 struct CoreImageBlurScene: GPUScene {
     let id = "gpu.blur.coreimage"
+    let framework = true
     let name = "Core Image Gaussian blur against a CPU Gaussian"
 
     func run(_ gpu: GPU) async throws -> SceneResult {

@@ -119,12 +119,13 @@ struct StitchedLibraryTest: HWTest {
         metrics.set("specialized_words_off", specialized.wrong)
         metrics.set("specialized_last", specialized.last.map { String($0) }.joined(separator: ","))
         metrics.set("specialized_failure", specializedFailure)
-        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         var wrong: [String] = []
         if made == nil { wrong.append("library") }
         if stitched?.functionType != .visible { wrong.append("function") }
         if specialized.wrong != 0 { wrong.append("specialized_words") }
-        if !failed.1 { wrong.append("failed") }
+        if !failed.1 { wrong.append(failed.0) }
         let outcome: Outcome = wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
         return outcome.onRawPath(gpu)
     }
