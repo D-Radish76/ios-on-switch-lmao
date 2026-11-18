@@ -2,7 +2,9 @@
 // RGB10A8_2P_XR10 and RGB10A8_2P_XR10_sRGB textures held in Metal's two planes (raw_xr_pass.h): the texture's own
 // Texture has no memory, its planes are luma (the words, R32Uint) and chroma (the alpha bytes, R8Uint), each read
 // through its pool image where its rows are off 32 bytes (raw_xr_pools.h). One written over a plane alone has no alpha
-// plane: chroma is a memoryless target, its header (the pair's second) header 0's null descriptor.
+// plane: chroma is a memoryless target, its header (the pair's second) over a sparse range of the texture's own
+// (Texture::window), which the GMMU reads as 0 and whose stores it drops, as an M4 Max reads alpha 0 there and stores none
+// (m2v-textures9 probes/xr.txt 6a-6c).
 #include "raw_xr_pass.h"
 
 #include "raw_gpu.h"
@@ -41,6 +43,9 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
         return undo("a plane the raw path cannot import");
     if (w->blockLinear || a->blockLinear || !(w->renderable || w->shadowTarget) || !(a->renderable || a->shadowTarget))
         return undo("a plane the kernel lays out block-linear");
+    const uint32_t sinkPitch = (width + 31) & ~31u;
+    if (alone && !openSparseSink(t, uint64_t(sinkPitch) * height))
+        return undo("no sparse range for the alpha it keeps none of (a kernel without TegraGM20BInfoSparse, or no VA)");
     uint32_t pair = 0;
     {
         std::lock_guard<raw::Mutex> l(lock_);
@@ -52,14 +57,18 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
             alpha0.format = kR8Unorm;
             alpha0.tic = pair + 1;
             writeTic(word0);
-            if (alone)
-                memcpy(tic_.cpu + 32 * alpha0.tic, tic_.cpu, 32);
-            else
-                writeTic(alpha0);
+            if (alone) {
+                alpha0.va = t.window.va;
+                alpha0.pitch = sinkPitch;
+                alpha0.memoryless = alpha0.blockLinear = false;
+            }
+            writeTic(alpha0);
         }
     }
-    if (!pair)
+    if (!pair) {
+        closeSparseWindow(t);
         return undo("no room for its headers");
+    }
     if (alone)  // freed with the pair (destroyTexture)
         a->tic = pair + 1;
     t.tic = pair;

@@ -2198,6 +2198,9 @@ public:
     // closeSparseWindow unbinds and releases it (destroyTexture)
     bool openSparseWindow(Texture &t, uint64_t end);
     void closeSparseWindow(Texture &t);
+    // `t`'s window a sparse range of `bytes` alone, which reads 0 and drops every store; false: the kernel maps no VA sparse,
+    // no VA is left or the bind was refused. closeSparseWindow releases it too
+    bool openSparseSink(Texture &t, uint64_t bytes);
     // The pack's conversion state of a YCbCr texture's output (Texture::ycbcr), null if the pack has none
     Pipeline *ycbcrPipeline(uint8_t output);
     // An extended-range texture's stand-in (Texture::standIn), made if the pack has its conversion state
@@ -2242,8 +2245,8 @@ public:
     bool createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, Texture &t);
     // RGB10A8_2P_XR10 or its sRGB twin (`format`, raw_xr.h twoPlaneXr) over a two-plane surface, its planes at `word` and
     // `alpha` (offsets in the allocation, with their pitches), held in them (Texture::xrPlanes): the planes imported as
-    // luma and chroma; `alphaPitch` 0: over a plane alone, chroma a memoryless target whose header reads 0
-    // (raw_xr_texture.cpp); false with *why where a plane cannot be one
+    // luma and chroma; `alphaPitch` 0: over a plane alone, chroma a memoryless target whose header is over a sparse range
+    // that reads 0 and drops a kernel's stores (raw_xr_texture.cpp); false with *why where a plane cannot be one
     bool createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t word,
                               uint32_t wordPitch, uint64_t alpha, uint32_t alphaPitch, uint32_t width, uint32_t height,
                               uint32_t format, Texture &t, const char **why);

@@ -337,11 +337,12 @@ MTLTextureDescriptor *rendered(uint32_t format, NSUInteger side)
 }
 
 // RGB10A8_2P_XR10 and its sRGB twin written over one plane alone, a 'w30r' surface's or plane 1 of a b3a8 one: held in
-// that plane as one over two planes is, its words the plane's rows, its alpha a memoryless target whose header is
-// header 0's null descriptor (an M4 Max stores no alpha there and reads it 0). A pass into one renders its words into
-// the rows.
+// that plane as one over two planes is, its words the plane's rows, its alpha a memoryless target whose header is over a
+// sparse range of the texture's own, which reads 0 and drops stores (an M4 Max stores no alpha there and reads it 0). A
+// pass into one renders its words into the rows.
 void writtenOverOnePlaneIsHeldInIt()
 {
+    kernel_model::model.infoFlags = TegraGM20BInfoSparse;
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
                                           {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
                                            {"raw.xr.xr_two_planes_srgb_frag", MTLPixelFormatRGBA16Float}}));
@@ -371,7 +372,9 @@ void writtenOverOnePlaneIsHeldInIt()
         const size_t rows = IOSurfaceGetPlaneCount(c.s) ? IOSurfaceGetBytesPerRowOfPlane(c.s, c.plane)
                                                          : IOSurfaceGetBytesPerRow(c.s);
         EXPECT_EQ(x.luma->pitch, uint32_t(rows)) << c.format;
-        EXPECT_EQ(memcmp(gRM->raw->headerWords(x.tic + 1), gRM->raw->headerWords(0), 32), 0) << "alpha reads 0";
+        const uint32_t *alpha = gRM->raw->headerWords(x.tic + 1);
+        ASSERT_GE(x.window.bytes, uint64_t(c.side) * c.side) << c.format;
+        EXPECT_EQ(uint64_t(alpha[1] & ~31u) | uint64_t(alpha[2] & 0xffff) << 32, x.window.va) << "alpha over its sink";
         EXPECT_NE(x.standIn, nullptr) << c.format;
         if (!target)
             target = (id<MTLTexture>)t;

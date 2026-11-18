@@ -174,6 +174,8 @@ public:
     // One VmBind: `bo` whole at `va`, a reservation's granule, and [va + bo.bytes, va + bytes) sparse (whole pages). BoFree
     // unbinds only the BO's own binding: unbind [va, va + bytes) before releasing the reservation
     bool bindWindow(const Bo &bo, uint64_t va, uint32_t kind, uint64_t bytes);
+    // One VmBind: [va, va + bytes) of a reservation sparse (whole pages)
+    bool bindSparse(uint64_t va, uint64_t bytes);
     void unbind(uint64_t va, uint64_t range);
     // BoFree (the kernel unbinds it at once and releases the pages after the channels complete what they had); the VA goes
     // back to the free list at once: call it only once no submission that uses the BO is still running (raw::Device does).

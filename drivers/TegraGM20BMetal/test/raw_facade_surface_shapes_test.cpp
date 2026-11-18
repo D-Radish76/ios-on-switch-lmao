@@ -225,6 +225,7 @@ void planarFormatsTurn()
     states.insert(states.end(), {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float},
                                  {"raw.ycbcr_store.ycbcr_store_luma8_frag", MTLPixelFormatR8Unorm},
                                  {"raw.ycbcr_store.ycbcr_store_chroma8_frag", MTLPixelFormatRG8Unorm}});
+    kernel_model::model.infoFlags = TegraGM20BInfoSparse;  // a plane alone's alpha is a sparse range
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", states));
     ASSERT_TRUE(device != nil);
     IOSurfaceRef planes = twoPlanes(), words = chunky('w30r', 4), video = fourTwoZero();

@@ -102,6 +102,22 @@ TEST_F(DeviceXrKernel, ALoadBindsEachPlanesOwnHeaderToo)
     EXPECT_EQ(set[4] & 0xfffff, alphas.tic);
 }
 
+// Over a plane alone the alpha is memoryless and its header the pair's second, over a sparse range (raw_xr_texture.cpp): a
+// kernel's store binds that header, where the GMMU drops it as an M4 Max drops the store (m2v-textures9 probes/xr.txt 6a-6c)
+TEST_F(DeviceXrKernel, AStoreIntoAPlaneAlonesAlphaBindsItsSink)
+{
+    const raw::ComputeState *k = kernel(0x2a504, true, 0);
+    ASSERT_NE(k, nullptr);
+    raw::Texture sink;
+    ASSERT_TRUE(dev.createMemoryless(kSide, kSide, raw::kXrAlphaFormat, sink));
+    sink.tic = alphas.tic;
+    planes.chroma = &sink;
+    uint32_t set[8] = {};
+    ASSERT_EQ(dispatch(k, &planes, set), "");
+    EXPECT_EQ(set[0] & 0xfffff, words.tic);
+    EXPECT_EQ(set[4] & 0xfffff, alphas.tic);
+}
+
 TEST_F(DeviceXrKernel, APlaneEntryAtATextureOfOneImageFailsTheDispatch)
 {
     const raw::ComputeState *k = kernel(0x2a503, true, 0);

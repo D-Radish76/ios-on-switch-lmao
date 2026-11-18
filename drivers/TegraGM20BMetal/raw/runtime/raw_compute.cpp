@@ -422,11 +422,6 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             // a two-plane texture's color words at the slot's own entry, its alpha bytes at its plane entry
             if (t && t->xrPlanes && t->luma && t->chroma) {
                 t = e.kind == KernelTexturePlane ? t->chroma : t->luma;
-                // its header is header 0's null descriptor, over the zero page every unbound read takes
-                if (writes && t->memoryless) {
-                    *why = "a kernel store into the alpha of RGB10A8_2P_XR10 over a plane alone, which keeps none";
-                    return false;
-                }
             } else if (t && e.kind == KernelTexturePlane) {
                 *why = "a kernel record's alpha plane at a texture held in one image";
                 return false;

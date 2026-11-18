@@ -374,6 +374,21 @@ bool Kernel::bindWindow(const Bo &bo, uint64_t va, uint32_t kind, uint64_t bytes
     return true;
 }
 
+bool Kernel::bindSparse(uint64_t va, uint64_t bytes)
+{
+    TegraGM20BAbiVmBind b = {};
+    b.count = 1;
+    b.ops[0] = {TegraGM20BBindMapSparse, 0, 0, 0, va, bytes};
+    const size_t in = offsetof(TegraGM20BAbiVmBind, ops) + sizeof(b.ops[0]);
+    if (const int kr = call(TegraGM20BMethodVmBind, &b, in, nullptr, 0); kr != KERN_SUCCESS) {
+        os_log_error(OS_LOG_DEFAULT, "raw: VmBind of %llu sparse bytes at VA %#llx failed: 0x%x",
+                     (unsigned long long)bytes, (unsigned long long)va, kr);
+        setError("VmBind of a sparse range failed");
+        return false;
+    }
+    return true;
+}
+
 void Kernel::unbind(uint64_t va, uint64_t range)
 {
     TegraGM20BAbiVmBind b = {};

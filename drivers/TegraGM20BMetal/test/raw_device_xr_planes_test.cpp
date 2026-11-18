@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
 // RGB10A8_2P_XR10 held in a surface's planes (createXrPlaneTexture): over two planes whose rows are off 32 bytes, its
-// header pair reads the planes' pool images; over a plane alone, its alpha a memoryless target whose header reads 0 and
-// is freed with the pair; turned, a pass into it draws its planes turned.
+// header pair reads the planes' pool images; over a plane alone, its alpha a memoryless target whose header, freed with the
+// pair, is over a sparse range of its own (reads 0, stores dropped); turned, a pass into it draws its planes turned.
 #include "raw_device_views_harness.h"
 #include "../raw/runtime/raw_rotated_pass.h"
 #include "../raw/runtime/raw_turned_planes.h"
 #include "../raw/runtime/raw_xr_pass.h"
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -48,7 +50,30 @@ TEST_F(DeviceViews, PlanesOfRowsOff32AreReadThroughTheirPools)
     dev.destroyTexture(t);
 }
 
-TEST_F(DeviceViews, APlaneAlonesAlphaReadsZeroAndIsFreedWithItsPair)
+class DeviceXrSink : public DeviceViews {
+protected:
+    std::vector<TegraGM20BAbiBindOp> ops;
+
+    void SetUp() override
+    {
+        kernel_model::model = {};
+        kernel_model::model.infoFlags = TegraGM20BInfoSparse;
+        kernel_model::model.bound = [this](const TegraGM20BAbiBindOp &op) {
+            ops.push_back(op);
+        };
+        std::string err;
+        ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
+    }
+
+    void TearDown() override
+    {
+        kernel_model::model.bound = nullptr;
+    }
+};
+
+// An M4 Max reads a plane alone's alpha as 0 and stores none of it (m2v-textures9 probes/xr.txt 6a-6c): its header is over
+// a sparse range of the texture's own, one VmBind MapSparse at creation, unbound with the texture
+TEST_F(DeviceXrSink, APlaneAlonesAlphaIsASparseSinkFreedWithItsPair)
 {
     Surface s;
     raw::Texture t, other, plain;
@@ -57,14 +82,34 @@ TEST_F(DeviceViews, APlaneAlonesAlphaReadsZeroAndIsFreedWithItsPair)
     ASSERT_TRUE(t.xrPlanes && t.luma && t.chroma);
     EXPECT_TRUE(t.chroma->memoryless);
     EXPECT_EQ(t.chroma->tic, t.tic + 1);
-    EXPECT_EQ(memcmp(dev.headerWords(t.tic + 1), dev.headerWords(0), 32), 0) << "header 0's null descriptor";
+    const uint64_t va = t.window.va, bytes = t.window.bytes;
+    ASSERT_GE(bytes, 64u * 64u);
+    const auto sparse = [&](uint32_t op) {
+        size_t n = 0;
+        for (const TegraGM20BAbiBindOp &o : ops)
+            n += o.op == op && o.va == va && o.range == bytes;
+        return n;
+    };
+    EXPECT_EQ(sparse(TegraGM20BBindMapSparse), 1u);
+    const uint32_t *alpha = dev.headerWords(t.tic + 1);
+    EXPECT_EQ(uint64_t(alpha[1] & ~31u) | uint64_t(alpha[2] & 0xffff) << 32, va) << "a pitch header over it";
     dev.destroyTexture(t);
+    EXPECT_EQ(sparse(TegraGM20BBindUnmap), 1u) << "unbound with the texture";
     ASSERT_TRUE(dev.createTexture(16, 16, kRGBA8, plain));
     ASSERT_TRUE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 256, 0, 0, 64, 64, 550, other, &why)) << why;
     EXPECT_NE(plain.tic, other.tic);
     EXPECT_NE(plain.tic, other.tic + 1) << "the alpha's header went back with the pair alone";
     dev.destroyTexture(other);
     dev.destroyTexture(plain);
+}
+
+TEST_F(DeviceViews, APlaneAlonesAlphaNeedsSparseVa)
+{
+    Surface s;
+    raw::Texture t;
+    const char *why = "";
+    EXPECT_FALSE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 256, 0, 0, 64, 64, 550, t, &why));
+    EXPECT_NE(std::string(why).find("TegraGM20BInfoSparse"), std::string::npos) << why;
 }
 
 TEST_F(DeviceViews, ATurnedTwoPlaneTargetDrawsItsPlanesTurned)

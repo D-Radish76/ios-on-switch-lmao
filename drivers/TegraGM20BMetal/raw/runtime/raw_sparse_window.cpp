@@ -52,6 +52,20 @@ bool Device::openSparseWindow(Texture &t, uint64_t end)
     return true;
 }
 
+bool Device::openSparseSink(Texture &t, uint64_t bytes)
+{
+    const uint64_t page = k_.info().page_size, size = (bytes + page - 1) & ~(page - 1);
+    const uint64_t va = k_.sparse() && size ? k_.reserveVa(size) : 0;
+    if (!va)
+        return false;
+    if (!k_.bindSparse(va, size)) {
+        k_.releaseVa(va, size);
+        return false;
+    }
+    t.window = {va, size, 0};
+    return true;
+}
+
 void Device::closeSparseWindow(Texture &t)
 {
     if (!t.window.bytes)
