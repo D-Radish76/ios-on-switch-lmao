@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // R10Unorm_PACKED (588) and RG10Unorm_PACKED (589): Metal's views of a packed 10-bit two-plane surface's planes ('p420',
-// 'pf20', 'p422', 'pf22', 'p444', 'pf44'), plane 0 a code a texel, plane 1 a pair. A row holds three codes to a
+// 'pf20', 'p422', 'pf22', 'p444', 'pf44'), plane 0 a code a texel, plane 1 a pair; Metal reads any plane so, by the
+// format. A row holds three codes to a
 // little-endian 32-bit word, at bits 0, 10 and 20: code n of a row is channel n % k of texel n / k (k codes a texel), and
 // a texel reads (code / 1023, the second code / 1023 or 0, 0, 1), bits 30 and 31 unread (an M4 Max's reads of random
 // words over each of those surfaces: raw/test/packedplaneoracle.mm). The raw path samples an RGB10A2Unorm image of the
@@ -15,6 +16,7 @@
 // surface store one code. Bits 30-31 and a row's slots past its last code are 0, as ycbcrPackRow writes them.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include "raw_ycbcr.h"
@@ -39,49 +41,34 @@ inline YcbcrStoreShape packedPlaneShape(uint32_t channels)
     return s;
 }
 
-// The surfaces Metal's reads were measured over, by fourcc: the chroma halved across, and down
-struct PackedSurface {
-    uint32_t fourcc;
-    bool across, down;
-};
-
-constexpr PackedSurface kPackedSurfaces[] = {
-    {0x70343230, true, true},   {0x70663230, true, true},    // 'p420', 'pf20'
-    {0x70343232, true, false},  {0x70663232, true, false},   // 'p422', 'pf22'
-    {0x70343434, false, false}, {0x70663434, false, false},  // 'p444', 'pf44'
-};
-
 // Null when the raw path takes a texture of R10Unorm_PACKED or RG10Unorm_PACKED over a surface plane (`out` its plan: the
-// plane's words its luma, the image RGB10A2Unorm), else why not
+// plane's words its luma, the image RGB10A2Unorm), else why not. Metal reads one over any surface's plane of any size so (an
+// M4 Max, validation on and off, over 'p420', '420v', 'x420', 'v210', one-plane and planeless 'BGRA', a made-up code, either
+// plane and plane 2 of three, sizes smaller and larger than the plane): its codes a texel by the format alone, the plane's
+// offset and rows rounded down to 16, rows of fewer bytes than their codes overlapping, the bytes past the allocation in its
+// last page read, 0 past the mapping
 inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
 {
     const uint32_t channels = packedPlaneChannels(f.pixelFormat);
-    const PackedSurface *surface = nullptr;
-    for (const PackedSurface &s : kPackedSurfaces)
-        if (s.fourcc == f.fourcc)
-            surface = &s;
     if (!channels)
         return "not a packed 10-bit plane format";
-    if (!surface || f.planes != 2)
-        return "pixel format";
-    if (f.plane != channels - 1)
-        return "R10Unorm_PACKED over a plane but 0, or RG10Unorm_PACKED over one but 1";
     if (!f.simple)
         return "shape";
-    const bool chroma = f.plane == 1;
-    const uint32_t width = chroma && surface->across ? (f.surfaceWidth + 1) / 2 : f.surfaceWidth;
-    const uint32_t height = chroma && surface->down ? (f.surfaceHeight + 1) / 2 : f.surfaceHeight;
-    if (f.width != width || f.height != height || !width || !height)
-        return "texture size not its plane's";
-    const uint64_t offset = f.offset[f.plane];
-    const uint32_t pitch = f.pitch[f.plane], words = packedPlaneWords(width * channels);
-    if ((offset & 15) || (pitch & 15))
-        return "plane offset or row not 16-byte";
-    if (pitch < uint64_t(words) * 4)
-        return "row shorter than its codes";
-    if (offset + uint64_t(pitch) * (height - 1) + uint64_t(words) * 4 > f.allocBytes)
-        return "plane past the allocation";
+    const uint32_t width = f.width, height = f.height;
+    if (!width || !height)
+        return "an empty texture";
+    const uint64_t offset = f.offset[f.plane] & ~uint64_t(15);
+    const uint32_t pitch = f.pitch[f.plane] & ~15u, words = packedPlaneWords(width * channels);
+    if (!pitch && height > 1)
+        return "a plane of rows under 16 bytes";
+    const uint64_t rowsEnd = offset + uint64_t(pitch) * (height - 1) + uint64_t(words) * 4;
+    const uint64_t mapped = std::max(f.allocBytes, f.mappedBytes);
+    const bool window = rowsEnd > mapped;
+    if (window && !f.sparseTail)
+        return "rows past the allocation's last page (an M4 Max reads 0 there)";
     out = {};
+    out.readable = window ? rowsEnd : mapped;
+    out.window = window;
     out.target = f.target;
     out.output = YcbcrPackedPlane;
     out.image = 90;       // RGB10A2Unorm

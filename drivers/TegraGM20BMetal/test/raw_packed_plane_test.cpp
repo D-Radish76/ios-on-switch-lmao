@@ -77,36 +77,65 @@ TEST(RawPackedPlane, ChromaPairsOfEachSubsampling)
     }
 }
 
-TEST(RawPackedPlane, ViewsMetalReadsAreTakenOnly)
+// Metal makes each over any surface's plane at any size and reads it by the format's codes a texel, at the plane's offset
+// and rows rounded down to 16 (an M4 Max, validation on and off: 588 over plane 1 and 589 over plane 0 of 'p420', 588 over
+// 'x420', a 32x4 over a 64x4 plane, rows 88 read at 80, plane 1 at 1544 read at 1536, rows of 56 for 22 words overlapping)
+TEST(RawPackedPlane, MetalReadsEveryPlaneAtItsRoundedLayout)
 {
+    struct Case {
+        uint32_t format, plane, fourcc, width, height, pitch;
+        uint64_t offset;
+        uint32_t words, readPitch;
+        uint64_t readOffset;
+    } cases[] = {
+        {588, 1, kP420, 32, 2, 128, 512, 11, 128, 512},  // R10Unorm_PACKED over the chroma plane
+        {589, 0, kP420, 64, 4, 128, 0, 43, 128, 0},      // RG10Unorm_PACKED over the luma plane
+        {588, 0, kX420, 64, 4, 128, 0, 22, 128, 0},      // a surface of 16-bit codes
+        {588, 0, kP420, 32, 4, 128, 0, 11, 128, 0},      // smaller than its plane
+        {588, 0, kP420, 64, 4, 88, 0, 22, 80, 0},        // rows off 16
+        {588, 1, kP420, 32, 2, 128, 1544, 11, 128, 1536},  // an offset off 16
+        {588, 0, kP420, 64, 4, 56, 0, 22, 48, 0},        // rows that overlap
+    };
+    for (const Case &c : cases) {
+        raw::YcbcrFacts f = surface(c.format, c.plane, c.fourcc, 64, 4, 128, 2);
+        f.pitch[c.plane] = c.pitch;
+        f.offset[c.plane] = c.offset;
+        f.allocBytes = 2048;
+        f.width = c.width;
+        f.height = c.height;
+        raw::YcbcrPlan p;
+        ASSERT_EQ(raw::planPackedPlane(f, p), nullptr) << c.format << " plane " << c.plane << " rows " << c.pitch;
+        EXPECT_EQ(p.lumaWidth, c.words) << c.format << " rows " << c.pitch;
+        EXPECT_EQ(p.lumaPitch, c.readPitch) << c.format << " rows " << c.pitch;
+        EXPECT_EQ(p.luma, c.readOffset) << c.format << " rows " << c.pitch;
+        EXPECT_EQ(p.shape[2], c.format == 589 ? 2u : 1u);
+        EXPECT_EQ(p.readable, 2048u) << "to the allocation's end";
+        EXPECT_FALSE(p.window);
+    }
     raw::YcbcrPlan p;
-    raw::YcbcrFacts f = surface(588, 1, kP420, 64, 4, 128, 2);
-    f.width = 32;
-    f.height = 2;
-    EXPECT_NE(raw::planPackedPlane(f, p), nullptr);  // R10Unorm_PACKED over the chroma plane
-    f = surface(589, 0, kP420, 64, 4, 128, 2);
+    raw::YcbcrFacts f = surface(588, 0, kP420, 64, 4, 128, 2);
     f.width = 64;
     f.height = 4;
-    EXPECT_NE(raw::planPackedPlane(f, p), nullptr);  // RG10Unorm_PACKED over the luma plane
-    f = surface(588, 0, kX420, 64, 4, 128, 2);
-    f.width = 64;
-    f.height = 4;
-    EXPECT_NE(raw::planPackedPlane(f, p), nullptr);  // a surface of 16-bit codes
-    f = surface(588, 0, kP420, 64, 4, 128, 2);
-    f.width = 32;
-    f.height = 4;
-    EXPECT_NE(raw::planPackedPlane(f, p), nullptr);  // not the plane's size
-    f.width = 64;
-    f.pitch[0] = 80;  // 22 words need 88 bytes
-    EXPECT_NE(raw::planPackedPlane(f, p), nullptr);
-    f.pitch[0] = 128;
-    f.offset[0] = 8;
-    EXPECT_NE(raw::planPackedPlane(f, p), nullptr);
-    f.offset[0] = 0;
     f.simple = false;
-    EXPECT_NE(raw::planPackedPlane(f, p), nullptr);
-    f.simple = true;
-    EXPECT_EQ(raw::planPackedPlane(f, p), nullptr);
+    EXPECT_STREQ(raw::planPackedPlane(f, p), "shape");
+}
+
+// Rows past the allocation's last page read 0 (an M4 Max over a 589 whose rows end past the mapping): through a sparse
+// window where the kernel maps VA sparse, else not taken
+TEST(RawPackedPlane, RowsPastTheLastPageReadThroughAWindow)
+{
+    raw::YcbcrFacts f = surface(589, 1, kP420, 64, 64, 128, 32);
+    f.offset[1] = 16384 - 128;
+    f.allocBytes = 16384;
+    f.mappedBytes = 16384;
+    f.width = 32;
+    f.height = 4;
+    raw::YcbcrPlan p;
+    EXPECT_STREQ(raw::planPackedPlane(f, p), "rows past the allocation's last page (an M4 Max reads 0 there)");
+    f.sparseTail = true;
+    ASSERT_EQ(raw::planPackedPlane(f, p), nullptr);
+    EXPECT_TRUE(p.window);
+    EXPECT_EQ(p.readable, 16384u - 128 + 3 * 128 + 22 * 4);
 }
 
 TEST(RawPackedPlane, TheYcbcrPlannerRoutesThem)
