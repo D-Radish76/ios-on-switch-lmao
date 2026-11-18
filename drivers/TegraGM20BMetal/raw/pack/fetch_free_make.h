@@ -47,14 +47,15 @@ inline bool writesNone(const std::string &line, uint32_t colours)
     return true;
 }
 
-// `barrier`: the form reads its other colours behind a barrier (a barrier form's record)
-inline FreeOutcome makeFetchFree(raw::Direct &direct, id<MTLLibrary> qc, const std::string &line,
+// `barrier`: the form reads its other colours behind a barrier (a barrier form's record). `state`: the line's own,
+// whose library and framework the form's functions are made from
+inline FreeOutcome makeFetchFree(raw::Direct &direct, const State &state, const std::string &line,
                                  raw::ProbeTextures textures, FetchFree &form, raw::RuntimeRecord &rec,
                                  std::map<uint32_t, uint32_t> *registers, std::string &why, bool &barrier)
 {
     State s;
     barrier = false;
-    if (!fetchFree(line, form) || !parseState(qc, form.line, s) || form.colour >= 8)
+    if (!fetchFree(line, form) || !parseState(state.library, form.line, s, state.framework) || form.colour >= 8)
         return FreeOutcome::None;
     // made under its own key, whose colour fields give its registers their blend, and filed under the state's
     raw::CompileOutcome outcome = direct.make(s.d, s.key, rec, why, textures, registers, true, raw::PackForm::Default);

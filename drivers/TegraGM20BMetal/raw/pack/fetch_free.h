@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // A Core Animation state's fetch-free form (runtime/raw_pack.h PipelineFetchFreeForm) as its corpus line names it:
-// " free=<rung>:<colour>:<program>;<edit>,<edit>..." after the label (ca/fetchfree.py tag). Each edit replaces a fragment
-// constant (name:type:value) or a colour attachment's field (c<n>=...) of the line; the edited line is the form's state.
+// " free=<rung>:<colour>:<program>;<edit>,<edit>..." after the label (ca/fetchfree.py and rb/rbfree.py tag). Each edit
+// replaces a constant (name:type:value; "f/name:type:value" the fragment stage's, where the vertex stage has one
+// too) or a colour attachment's field (c<n>=...) of the line; the edited line is the form's state.
 #pragma once
 #include <algorithm>
 #include <cctype>
@@ -29,13 +30,15 @@ inline void applyEdit(std::string &line, const std::string &edit)
         line.replace(at + 1, end - at - 1, edit);
         return;
     }
-    const size_t colon = edit.find(':');
-    const std::string name = " " + edit.substr(0, edit.find(':', colon + 1) + 1);
-    const size_t at = line.find(name, bar);
+    const bool fragment = edit.compare(0, 2, "f/") == 0;
+    const std::string constant = fragment ? edit.substr(2) : edit;
+    const size_t colon = constant.find(':');
+    const std::string name = " " + constant.substr(0, constant.find(':', colon + 1) + 1);
+    const size_t at = line.find(name, fragment ? line.find(" | f ") : bar);
     if (at == std::string::npos)
         return;
     const size_t end = line.find(' ', at + 1);
-    line.replace(at + 1, (end == std::string::npos ? line.size() : end) - at - 1, edit);
+    line.replace(at + 1, (end == std::string::npos ? line.size() : end) - at - 1, constant);
 }
 
 // False: the line names no fetch-free form

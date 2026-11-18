@@ -224,16 +224,17 @@ void reflection(Writer &w, bool compute, const std::string &key, bool made, cons
 }
 
 // The state's fetch-free form (fetch_free_make.h), under the state's key
-void makeFetchFree(raw::Direct &direct, Writer &w, id<MTLLibrary> qc, const std::string &line, const std::string &key,
+void makeFetchFree(raw::Direct &direct, Writer &w, const probe::State &s, const std::string &line,
                    raw::ProbeTextures textures, Counts &n)
 {
+    const std::string &key = s.key;
     probe::FetchFree form;
     raw::RuntimeRecord rec;
     std::map<uint32_t, uint32_t> registers;
     std::string why;
     bool barrier = false;
     const probe::FreeOutcome outcome =
-        probe::makeFetchFree(direct, qc, line, textures, form, rec, &registers, why, barrier);
+        probe::makeFetchFree(direct, s, line, textures, form, rec, &registers, why, barrier);
     if (outcome == probe::FreeOutcome::None)
         return;
     if (outcome != probe::FreeOutcome::Made) {
@@ -283,7 +284,7 @@ void makeState(raw::Direct &direct, Writer &w, id<MTLLibrary> qc, const std::str
         // under a variant's name it would be the variant's own record to Pack::variantRecord, which tells only barrier
         // forms apart
         if (!*suffix && (rec.pipeline.flags & raw::PipelineFetches))
-            makeFetchFree(direct, w, qc, line, s.key, t, n);
+            makeFetchFree(direct, w, s, line, t, n);
         for (const uint8_t tests : testClasses(rec.pipeline, s.key)) {
             raw::RuntimeRecord variant;
             t.fragmentTests = tests;

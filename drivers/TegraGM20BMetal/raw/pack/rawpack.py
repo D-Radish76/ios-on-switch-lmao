@@ -62,6 +62,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
 from typing import NamedTuple
 
@@ -150,12 +151,30 @@ def ca_corpus(qc: Path, corpus: Path, work: Path, names: list[str] = (), prefere
 
     cif10 = deepcolour.cif10(preferences)
     print(f'rawpack: CADeviceUseCIF10 as {preferences.name} leaves it: {"MobileGestalt" if cif10 is None else cif10}')
+    renderbox, why = renderbox_tagger(digest)
     with open(out, 'w') as dst:
-        dst.writelines(line for line in lines if not caspec.corpus_fields(line)[0])
+        dst.writelines(renderbox(line) for line in lines if not caspec.corpus_fields(line)[0])
         for tier, made in ca_states(path, corpus, names, cif10):
             dst.writelines(line + '\n' for line in made)
             print(f'rawpack: Core Animation states, {tier}: {len(made)}')
+    for reason, count in sorted(why.items()):
+        print(f'rawpack: RenderBox fetching states, {reason}: {count}')
     return out
+
+
+def renderbox_tagger(digest: str) -> tuple[Callable[[str], str], dict[str, int]]:
+    """Give the function tagging RenderBox's lines with their fetch-free forms (rb/rbfree.py), and its counts.
+
+    For the IPSW whose QuartzCore library has SHA-256 `digest`; the lines as they are where rb/ has no tables for it.
+    """
+    sys.path.insert(0, str(HERE / 'rb'))
+    import rbfree  # noqa: PLC0415 (rb/ is only on the path here)
+
+    made = rbfree.tagger(HERE / 'rb', digest)
+    if made is None:
+        print(f'rawpack: no RenderBox tables for QuartzCore {digest[:16]}: its states as they are')
+        return (lambda line: line), {}
+    return made
 
 
 def ca_states(

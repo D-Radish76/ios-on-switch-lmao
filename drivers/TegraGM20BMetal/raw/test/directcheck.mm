@@ -152,14 +152,14 @@ std::string selectorDifferences(const raw::Pack &pack, const raw::PackPipeline &
 }
 
 // The state's fetch-free form, made as directpack.mm makes it (fetch_free_make.h)
-void dumpFetchFree(raw::Direct &direct, id<MTLLibrary> qc, const std::string &line, const std::string &key,
+void dumpFetchFree(raw::Direct &direct, const probe::State &s, const std::string &line, const std::string &key,
                    raw::ProbeTextures textures, const char *dir)
 {
     probe::FetchFree form;
     raw::RuntimeRecord rec;
     std::string why;
     bool barrier = false;
-    if (probe::makeFetchFree(direct, qc, line, textures, form, rec, nullptr, why, barrier) == probe::FreeOutcome::Made)
+    if (probe::makeFetchFree(direct, s, line, textures, form, rec, nullptr, why, barrier) == probe::FreeOutcome::Made)
         dumpRecord(dir, key, rec, &form);
 }
 
@@ -246,7 +246,7 @@ int main(int argc, char **argv)
                 dir && *dir && outcome == raw::CompileOutcome::Made && !textures.twoPlane) {
                 const auto found = selectors.find(keyHash);
                 dumpRecord(dir, key, rec, nullptr, found == selectors.end() ? nullptr : &found->second);
-                dumpFetchFree(direct, qc, line, key, textures, dir);
+                dumpFetchFree(direct, s, line, key, textures, dir);
             }
             std::string verdict;
             if (outcome == raw::CompileOutcome::Failed) {

@@ -78,6 +78,8 @@ void eachState(id<MTLDevice> dev, id<MTLLibrary> qc, id<MTLLibrary> own, id<MTLL
             drop(line, why);
             continue;
         }
+        s.library = library;
+        s.framework = name;
         raw::CacheKey airKeyed;
         if (framework && name.empty()) {
             const std::string cubic = s.cubic.empty() ? std::string() : s.cubic.key();

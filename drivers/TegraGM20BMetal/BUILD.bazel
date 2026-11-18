@@ -167,6 +167,7 @@ filegroup(
         ["raw/pack/**"],
         exclude = [
             "raw/pack/ca/**",
+            "raw/pack/rb/**",
             "**/*_test.py",
             "**/__pycache__/**",
             "**/*.pyc",
@@ -396,15 +397,19 @@ py_library(
             "raw/pack/*.py",
             "raw/pack/ca/*.py",
             "raw/pack/iterated/*.py",
+            "raw/pack/rb/*.py",
         ],
         exclude = [
             "raw/pack/ca/*_test.py",
             "raw/pack/iterated/*_test.py",
+            "raw/pack/rb/*_test.py",
         ],
     ),
     data = [
         "raw/pack/ca/qc-21H461.json",
         "raw/pack/ca/qc-24B119.json",
+        "raw/pack/rb/rb-21H461.json",
+        "raw/pack/rb/rb-24B119.json",
         "raw/runtime/raw_srgb_table.h",  # pack/layouts.py reads it at import
         "raw/runtime/raw_own_states.h",  # pack/packfile.py reads it at import
     ],
@@ -460,6 +465,19 @@ py_test(
         "stage-tegra-gm20b-metal.py",
     ],
     main = "raw/pack/ca/deepcolour_test.py",
+    deps = [":raw_pack"],
+)
+
+# raw/pack/rb/rbfree.py: the fetch-free forms the pack makes of RenderBox's states that blend by fetching, on both
+# IPSWs' tables.
+py_test(
+    name = "rbfree_test",
+    srcs = ["raw/pack/rb/rbfree_test.py"],
+    data = [
+        "raw/pack/rb/rb-21H461.json",
+        "raw/pack/rb/rb-24B119.json",
+    ],
+    main = "raw/pack/rb/rbfree_test.py",
     deps = [":raw_pack"],
 )
 

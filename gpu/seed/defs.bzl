@@ -371,6 +371,8 @@ _RAW_SPLIT = _RAW_STAMP + [
     "iterated/programs_long.py",
     "iterated/table.py",
     "iterated/ucode.py",
+    "rb/rbfree.py",
+    "rb/rbspec.py",
 ]
 
 # A bucket runs directbucket.py alone (it imports none of the other modules), with directpack and the mock it loads;
@@ -489,8 +491,13 @@ def _seed_raw_pack_impl(ctx):
         progress_message = "Picking the raw pack's corpus lines",
     )
 
-    # QuartzCore's tables (ca/qc-<build>.json) make Core Animation's states from their names.
-    tables = [f for f in ctx.files.srcs if f.dirname.endswith("/ca") and f.extension == "json"]
+    # QuartzCore's tables (ca/qc-<build>.json) make Core Animation's states from their names; RenderBox's
+    # (rb/rb-<build>.json) give its states their fetch-free forms.
+    tables = [
+        f
+        for f in ctx.files.srcs
+        if (f.dirname.endswith("/ca") or f.dirname.endswith("/rb")) and f.extension == "json"
+    ]
     corpora = [ctx.actions.declare_file(named(ctx, "_work/split/bucket{}.log".format(i))) for i in range(_RAW_BUCKETS + 1)]
     args = ctx.actions.args()
     names = [f for f in ctx.files.ca_names if f.basename == kind + ".txt"]

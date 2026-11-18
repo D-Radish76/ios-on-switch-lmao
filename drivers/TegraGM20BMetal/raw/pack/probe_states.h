@@ -110,6 +110,8 @@ inline bool linkedFunction(MTLRenderPipelineDescriptor *d, id<MTLLibrary> own, c
 struct State {
     std::string key, label;
     MTLRenderPipelineDescriptor *d;
+    id<MTLLibrary> library = nil;  // the library its functions are made from
+    std::string framework;         // that library's framework (parseState), "" for QuartzCore's and a bundle's
     unsigned vertexBuffer = 99, vertexStride = 0;
     raw::CubicBinds cubic;  // a line naming the state's cubic variant (" | cubic ...", raw_cubic.h): its binds
     // a line naming the state's sampled two-plane variant (" | xrs=<slots>", raw_xr_pass.h): its slots, which its key
