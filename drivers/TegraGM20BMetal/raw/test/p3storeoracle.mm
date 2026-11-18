@@ -16,12 +16,12 @@
 
 #include "../../test/raw_ycbcr_load_cases.h"
 #include "../runtime/raw_ycbcr_load.h"
+#include "pack_source.h"
 
 namespace {
 
 const uint16_t kKnots[513] = {
 #include "../pack/srgb_knots.h"
-#include "pack_source.h"
 };
 
 NSString *const kValues = @"#include <metal_stdlib>\nusing namespace metal;\n"
