@@ -101,6 +101,7 @@ struct switch_gpu_mapping_entry {
 
 struct switch_gpu_mapping {
 	u32 count;
+	u8 sparse; /* switch_gpu_vm_sparse's: no memory behind any entry */
 	struct switch_gpu_mapping_entry entries[];
 };
 
@@ -305,6 +306,7 @@ void tgm_mem_del(struct tgm_mem **pmem)
 }
 
 #include "SwitchGpuVmMap.h"
+#include "SwitchGpuVmSparse.h"
 
 /* Every user channel, so a CPU reader outside the GPU client can wait for all GPU work (tegra_gm20b_sync_for_cpu). */
 /* An empty list head points at itself. */

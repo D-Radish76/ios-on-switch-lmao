@@ -563,6 +563,7 @@ class AGXDeviceUserClient : public IOUserClient
 	static void releaseWork(thread_call_param_t, thread_call_param_t);
 	IOReturn publishBo(Bo *bo, bool mapped);
 	bool bindCuts(const TegraGM20BAbiVmBind *in, uint32_t count);
+	static bool bindingIs(const Binding &binding, const TegraGM20BAbiBindOp &op, const Bo *bo);
 	IOReturn bindOp(const TegraGM20BAbiBindOp &op, bool &changed);
 	void scanPushes(const tgm_push *pushes, uint32_t count, tgm_prof *prof, bool rawMacros);
 	void deferScan(uint32_t slot, uint32_t fences, const tgm_push *pushes, uint32_t count,

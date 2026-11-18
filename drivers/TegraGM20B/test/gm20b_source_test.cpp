@@ -107,7 +107,7 @@ TEST(GM20BPoolPolicySource, SystemBosGoAsCachedBosDo)
 	EXPECT_FALSE(Block(client(), "void releaseOrphans()").has("spareKeep"));
 	// The kernel's mapping of a system BO is write-combined as its task's is: pushView reads it as a cached BO's.
 	EXPECT_TRUE(Block(client(), "const uint32_t *AGXDeviceUserClient::pushView(")
-			    .has("if (hit) { if (hit->bo->pool_va) {"));
+			    .has("if (hit && hit->bo) { if (hit->bo->pool_va) {"));
 	EXPECT_TRUE(Block(client(), "void AGXDeviceUserClient::scanPushes(")
 			    .has("pushView(pushes[i].va, static_cast<uint64_t>(pushes[i].dwords) * "
 				 "4, hit)"));

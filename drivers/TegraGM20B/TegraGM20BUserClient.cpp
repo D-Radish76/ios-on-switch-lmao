@@ -460,7 +460,8 @@ extern "C" uint32_t switch_gpu_info_flags(void)
 {
 	tgm_info info;
 	tgm_get_info(&info);
-	uint32_t flags = static_cast<uint32_t>(TegraGM20BInfoHostImport) | TegraGM20BInfoKernelMap |
+	uint32_t flags = static_cast<uint32_t>(TegraGM20BInfoSparse) | TegraGM20BInfoHostImport |
+			 TegraGM20BInfoKernelMap |
 			 TegraGM20BInfoOrder | TegraGM20BInfoSurfaceWrites |
 			 TegraGM20BInfoSurfaceLayout | TegraGM20BInfoExecSurfaces |
 			 TegraGM20BInfoPriority | TegraGM20BInfoKillRecord | TegraGM20BInfoSubmit |

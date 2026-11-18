@@ -140,6 +140,11 @@ int switch_gpu_vm_split(struct tgm_vm *vm, struct switch_gpu_mapping **mapping, 
 /* switch_gpu_vm_map_volatile's runs, every entry pending: no PTE is written until switch_gpu_vm_install. */
 int switch_gpu_vm_prepare(struct tgm_vm *vm, uint64_t va, uint64_t range, struct tgm_mem *mem,
 			  uint64_t offset, uint8_t kind, struct switch_gpu_mapping **mapping);
+/* MapSparse: [va, va + range) gets the sparse PTE, so every page reads 0 and drops writes with no fault; 128 KiB pages
+ * where the VA allows. now: written GPU-ordered, as a map; else every entry pending, as switch_gpu_vm_prepare's. It is
+ * split, installed and unmapped as any mapping, with no memory (mem NULL) or kind. */
+int switch_gpu_vm_sparse(struct tgm_vm *vm, uint64_t va, uint64_t range, int now,
+			 struct switch_gpu_mapping **mapping);
 /* Maps a mapping's pending entries (GPU-ordered, as switch_gpu_vm_map_volatile). One that cannot be mapped leaves the
  * mapping, unmapped; -ENOMEM then. switch_gpu_vm_unmap skips pending entries. */
 int switch_gpu_vm_install(struct tgm_vm *vm, struct switch_gpu_mapping *mapping,

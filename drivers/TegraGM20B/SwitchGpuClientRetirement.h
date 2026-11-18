@@ -116,8 +116,10 @@ void AGXDeviceUserClient::retireBatch()
 	while (ready) {
 		auto *next = ready->next;
 		noteBind(TGM_BIND_GONE, ready->va, ready->range, ready->bo, 0, ready->kind);
-		--ready->bo->bindings;
-		readyBo(ready->bo);
+		if (ready->bo) {
+			--ready->bo->bindings;
+			readyBo(ready->bo);
+		}
 		IODelete(ready, RetiredBinding, 1);
 		ready = next;
 	}
@@ -268,8 +270,10 @@ void AGXDeviceUserClient::reap(bool force)
 		auto *record = retired_;
 		retired_ = record->next;
 		switch_gpu_vm_unmap(vm_, &record->mapping);
-		--record->bo->bindings;
-		readyBo(record->bo);
+		if (record->bo) {
+			--record->bo->bindings;
+			readyBo(record->bo);
+		}
 		IODelete(record, RetiredBinding, 1);
 	}
 	retiredTail_ = &retired_;

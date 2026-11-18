@@ -43,11 +43,9 @@ bool AGXDeviceUserClient::bindCuts(const TegraGM20BAbiVmBind *in, uint32_t count
 		const Binding *b = after ? &binds_[after - 1] : nullptr;
 		if (!b || b->va + b->range <= op.va)
 			continue;
-		const bool same = op.op != TegraGM20BBindUnmap && b->va == op.va &&
-				  b->range == op.range && b->bo == findBo(op.handle) &&
-				  b->bo_offset == op.bo_offset && b->retirement->kind == op.kind &&
-				  b->retirement->vol == (op.op == TegraGM20BBindMapVolatile);
-		if (!same)
+		const bool mapsBo =
+			op.op == TegraGM20BBindMap || op.op == TegraGM20BBindMapVolatile;
+		if (!bindingIs(*b, op, mapsBo ? findBo(op.handle) : nullptr))
 			return true;
 	}
 	return false;
@@ -63,28 +61,23 @@ IOReturn AGXDeviceUserClient::bindOp(const TegraGM20BAbiBindOp &op, bool &change
 			       op.op, op.va, op.range, op.handle, op.bo_offset, op.kind);
 		return kIOReturnBadArgument;
 	}
-	if (op.op == TegraGM20BBindMapSparse) {
-		switch_refusal("vm-bind", "sparse", "a sparse map of VA %#llx+%#llx: InfoSparse is not advertised",
-			       op.va, op.range);
-		return kIOReturnUnsupported;
-	}
 	const uint64_t start = statsNowNs();
-	const bool unmap = op.op == TegraGM20BBindUnmap;
-	if (!unmap && op.op != TegraGM20BBindMap && op.op != TegraGM20BBindMapVolatile) {
+	const bool unmap = op.op == TegraGM20BBindUnmap, sparse = op.op == TegraGM20BBindMapSparse;
+	if (!unmap && !sparse && op.op != TegraGM20BBindMap &&
+	    op.op != TegraGM20BBindMapVolatile) {
 		switch_refusal("vm-bind", "op", "op %u of VA %#llx+%#llx: no such bind op", op.op, op.va, op.range);
 		return kIOReturnBadArgument;
 	}
-	Bo *bo = unmap ? nullptr : findBo(op.handle);
-	if (!unmap && (!bo || op.bo_offset > bo->bytes || op.range > bo->bytes - op.bo_offset)) {
+	Bo *bo = unmap || sparse ? nullptr : findBo(op.handle);
+	if (!unmap && !sparse &&
+	    (!bo || op.bo_offset > bo->bytes || op.range > bo->bytes - op.bo_offset)) {
 		noteBind(TGM_BIND_REFUSED, op.va, op.range, bo, op.bo_offset, uint8_t(op.kind));
 		switch_refusal("vm-bind", "bo", "a map of VA %#llx+%#llx from BO %llu at %#llx: %s", op.va, op.range,
 			       op.handle, op.bo_offset, !bo ? "no such BO" : "past the BO's end");
 		return kIOReturnBadArgument;
 	}
 	const Binding *same = switch_gpu_binding_find(binds_, nbinds_, op.va, op.range);
-	if (!unmap && same && same->va == op.va && same->range == op.range && same->bo == bo &&
-	    same->bo_offset == op.bo_offset && same->retirement->kind == op.kind &&
-	    same->retirement->vol == (op.op == TegraGM20BBindMapVolatile))
+	if (same && bindingIs(*same, op, bo))
 		return kIOReturnSuccess;
 	// Everything a cut and the new binding need, before any binding changes.
 	if (nbinds_ + 2 > cap_binds_) {
@@ -133,8 +126,8 @@ IOReturn AGXDeviceUserClient::bindOp(const TegraGM20BAbiBindOp &op, bool &change
 		return cut;
 	}
 	if (const IOReturn mapped = mapRange(op, bo, record, queued)) {
-		switch_refusal("vm-bind", "map", "a map of VA %#llx+%#llx from BO %llu, kind %#x: no PTEs made (%#x)",
-			       op.va, op.range, op.handle, op.kind, mapped);
+		switch_refusal("vm-bind", "map", "op %u of VA %#llx+%#llx, BO %llu, kind %#x: no PTEs made (%#x)",
+			       op.op, op.va, op.range, op.handle, op.kind, mapped);
 		return mapped;
 	}
 	changed = true;
@@ -365,7 +358,8 @@ IOReturn AGXDeviceUserClient::channelDestroy(const TegraGM20BAbiChannel *in)
 }
 
 // The kernel's view of the push at [va, va + bytes) through the binding that holds it (`hit`: the last one found, tried
-// first): pool BOs write-combined, cached and system BOs their kernel mapping. Null for a host import (no kernel mapping).
+// first): pool BOs write-combined, cached and system BOs their kernel mapping. Null for a host import (no kernel
+// mapping) and a sparse binding (no BO).
 // lock_ held, or a channel's submit lock: it reads the published bindings.
 const uint32_t *AGXDeviceUserClient::pushView(uint64_t va, uint64_t bytes,
 					      const BindingTable::Entry *&hit) const
@@ -373,7 +367,7 @@ const uint32_t *AGXDeviceUserClient::pushView(uint64_t va, uint64_t bytes,
 	if (!hit || !switch_gpu_binding_contains(*hit, va, bytes))
 		hit = bindTable_.find(va, bytes);
 	const void *base = nullptr;
-	if (hit) {
+	if (hit && hit->bo) {
 		if (hit->bo->pool_va) {
 			base = hit->bo->pool_va;
 		} else {
