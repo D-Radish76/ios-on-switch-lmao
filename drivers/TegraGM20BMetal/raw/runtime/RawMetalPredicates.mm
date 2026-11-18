@@ -89,8 +89,8 @@ void logFailure(RMPred p, NSError *error)
     switch_refusal_log("raw.failed", failedName(p), text);
 }
 
-// The type encoding of a selector some MTL* protocol declares (the plugin's answerUnimplemented uses the same lookup), walked
-// once per selector: objc_copyProtocolList copies the shared cache's protocols (the frontend's forwardSignature, r14-maps)
+// The type encoding of a selector some MTL* protocol declares, walked once per selector: objc_copyProtocolList copies the
+// shared cache's protocols (the frontend's forwardSignature, r14-maps)
 const char *metalTypes(SEL selector)
 {
     static raw::Mutex lock;
@@ -118,11 +118,6 @@ const char *metalTypes(SEL selector)
     return types;
 }
 
-bool twinAnswers(Class twinClass, SEL selector)
-{
-    return twinClass && [twinClass instancesRespondToSelector:selector];
-}
-
 static void returnZero(NSInvocation *invocation)
 {
     if (const NSUInteger length = invocation.methodSignature.methodReturnLength) {
@@ -138,32 +133,11 @@ void answerZero(id object, NSInvocation *invocation)
 {
     Class cls = object_getClass(object);
     SWITCH_REFUSE_DETAIL("raw", "selector.zero", uintptr_t(invocation.selector) * 31 + uintptr_t(cls),
-                         "-[%s %s] answered zero, as m2v's object answers it", class_getName(cls),
+                         "-[%s %s] answered zero", class_getName(cls),
                          sel_getName(invocation.selector));
 #if SWITCH_FRAME_TIMELINE
     if (gRM)
         RAW_DIAGNOSTIC(gRM->stats.zeroAnswers.fetch_add(1, std::memory_order_relaxed));
-#endif
-    returnZero(invocation);
-}
-
-void answerMissing(id object, NSInvocation *invocation)
-{
-    Class cls = object_getClass(object);
-    const uint64_t key = switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw", "selector.missing"),
-                                                 uintptr_t(invocation.selector) * 31 + uintptr_t(cls));
-    if (switch_refusal_first(key)) {
-        char text[256];
-        snprintf(text, sizeof text, "-[%s %s] has no raw method (m2v's object has one): answered zero",
-                 class_getName(cls), sel_getName(invocation.selector));
-        switch_refusal_log("raw", "selector.missing", text);
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-        os_log_fault(rawLog(), "raw: %{public}s", text);
-#endif
-    }
-#if SWITCH_FRAME_TIMELINE
-    if (gRM)
-        RAW_DIAGNOSTIC(gRM->stats.twinForwards.fetch_add(1, std::memory_order_relaxed));
 #endif
     returnZero(invocation);
 }

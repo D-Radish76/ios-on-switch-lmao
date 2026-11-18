@@ -261,44 +261,13 @@ bool RMCommandPlan::record(const Cmd &c, const uint64_t *extra, size_t extraWord
         encoder_ = OpEnd;
         break;
     default: {
-        RMPlanControl control{c.obj, c.c, c.a, uint32_t(c.c), c.b, raw::kNoSnapshot, raw::kNoSnapshot, c.stage};
-        if (c.op == OpInvocation) {
-            if (encoder_ == OpRender)
-                control.render = captureRender();
-            if (encoder_ == OpCompute)
-                control.compute = captureKernel();
-        }
+        RMPlanControl control{c.obj, c.c, c.a, uint32_t(c.c), c.b, raw::kNoSnapshot, c.stage};
         // what a buffer of dispatches inherits: the encoder's pipeline and buffers
         if (c.op == OpExecuteKernels && encoder_ == OpCompute) {
             control.compute = captureKernel();
             operation.uses = kernelStates.own(control.compute).uses;
         }
         operation.payload = append(controls_, control);
-        if (c.op == OpInvocation) {
-            const uint32_t before = control.render != raw::kNoSnapshot    ? renderStates.own(control.render).uses
-                                    : control.compute != raw::kNoSnapshot ? kernelStates.own(control.compute).uses
-                                                                          : 0;
-            const UseSpan span = useSpan(before);
-            mergeUses_.assign(uses_.ownData() + span.begin, uses_.ownData() + span.begin + span.count);
-            for (auto &use : mergeUses_)
-                use.access |= raw::ResourceUse::Read | raw::ResourceUse::Write;
-            operation.uses = saveUses(mergeUses_);
-            for (auto &state : buffers)
-                state.resetCurrent();
-            for (auto &state : textures)
-                state.resetCurrent();
-            kernelTextures.resetCurrent();
-            for (auto &state : samplers)
-                state.resetCurrent();
-            raster.resetCurrent();
-            kernel.resetCurrent();
-            ++renderGeneration_;
-            ++kernelGeneration_;
-            ++stateEpoch_;
-            ++eligibilityGeneration_;
-            ++resourceRevision_[0];
-            ++resourceRevision_[1];
-        }
         if (c.op == OpUse || c.op == OpKernelUse) {
             const uint32_t usage = c.op == OpUse ? c.a : uint32_t(c.c);
             operation.uses = saveUses(

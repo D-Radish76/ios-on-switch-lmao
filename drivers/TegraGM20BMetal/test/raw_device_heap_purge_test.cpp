@@ -151,7 +151,7 @@ TEST_F(DeviceHeapPurge, NoPurgeWhileAJobAViewOrACommittedCommandBufferMayReachIt
 
     raw::DeviceHarness::holdArena(dev, arena, true);
     dev.purgeArena(arena, committed);
-    EXPECT_FALSE(dev.arenaPurged(arena)) << "an m2v view's lease";
+    EXPECT_FALSE(dev.arenaPurged(arena)) << "a lease (a CPU access, or a placement made aliasable)";
     raw::DeviceHarness::holdArena(dev, arena, false);
 
     committed = 1;

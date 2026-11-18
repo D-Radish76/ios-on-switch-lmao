@@ -82,7 +82,7 @@ struct RMPlanControl {
     void *object = nullptr;
     uint64_t value = 0;
     uint32_t scope = 0, before = 0, after = 0;
-    uint32_t render = raw::kNoSnapshot, compute = raw::kNoSnapshot;
+    uint32_t compute = raw::kNoSnapshot;
     uint8_t stage = 0;
 };
 

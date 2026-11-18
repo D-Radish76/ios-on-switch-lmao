@@ -40,11 +40,10 @@ std::string needName(RMNeed need, SEL selector)
 }
 #endif
 
-// Inside gOpenLock, before any other thread can see `m2v`: the frontend's surface imports become the raw path's, and each
-// forwarder runs m2v's own method on the raw device from now on, as the subclass of m2v's class did
+// Inside gOpenLock, before any other thread can see `m2v`: each forwarder runs m2v's own method on the raw device from now
+// on, as the subclass of m2v's class did
 void adopt(RawState &r, id<MTLDevice> m2v)
 {
-    rawAliasSurfaces(r.raw);
     Class from = object_getClass(m2v);
     for (SEL sel : *gForwarded) {
         const IMP imp = class_getMethodImplementation(from, sel);

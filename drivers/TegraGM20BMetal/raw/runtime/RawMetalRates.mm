@@ -81,8 +81,8 @@ size_t raw_metal_rates(char *out, size_t size)
     {
         const size_t used = strlen(diag);
         snprintf(diag + used, sizeof diag - used,
-                 " tw=f%llu sbf=%llu fb=%llu/%llu/%llu/%llu(%s) clr=%llu/%llu zero=%llu",
-                 (unsigned long long)s.twinForwards.exchange(0), (unsigned long long)s.scheduledByFinish.exchange(0),
+                 " sbf=%llu fb=%llu/%llu/%llu/%llu(%s) clr=%llu/%llu zero=%llu",
+                 (unsigned long long)s.scheduledByFinish.exchange(0),
                  (unsigned long long)k.fetchBarriers.exchange(0), (unsigned long long)k.fetchBarriersElided.exchange(0),
                  (unsigned long long)k.fetchBarriersAnyColor.exchange(0),
                  (unsigned long long)k.fetchBarriersInterlocked.exchange(0),

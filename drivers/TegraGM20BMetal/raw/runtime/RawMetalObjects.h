@@ -49,20 +49,7 @@ struct RMPassCacheDelete {
 
 using RMPassCachePtr = std::unique_ptr<RMPassCache, RMPassCacheDelete>;
 
-// An m2v twin made outside its object's lock, kept if no other thread kept one first (theirs is returned, this one dropped). The
-// object's lock is never held across a call into m2v: a thread inside m2v holding one of its locks (its handlers run Core
-// Animation's, which may ask for a twin) and a thread here holding the object's lock asking m2v for one of its own would wait for
-// each other for good (r7p8's freeze: a wait with no bound).
-static inline id twinPublish(id object, __strong id &slot, id made)
-{
-    @synchronized(object) {
-        if (!slot)
-            slot = made;
-        return slot;
-    }
-}
-
-// ---- the common base: an m2v twin and the selectors this facade does not answer itself ----
+// ---- the common base: the selectors this facade does not answer itself ----
 inline uint64_t rmNewIdentity()
 {
     static std::atomic<uint64_t> next{1};
@@ -74,13 +61,10 @@ inline uint64_t rmNewIdentity()
     // the raw device, which gRM holds for the life of the process (raw_metal_device_open_lazy: one per process): no weak
     // reference, whose side-table lock every object's creation, dealloc and encoder begin took
     __unsafe_unretained id _device;
-    id _twin;  // the m2v object over the same memory (made on first need)
     // a texture's or buffer's number, never another object's in this process (rmNewIdentity); 0 otherwise
     uint64_t _identity;
 }
 @property (nonatomic, copy) NSString *label;
-- (id)rmTwin;  // made now if needed; nil if it cannot be
-- (Class)rmTwinClass;
 @end
 
 @interface RMDevice : NSObject  // the methods the device class gets (raw_metal_device_open); no state of its own
@@ -88,18 +72,16 @@ inline uint64_t rmNewIdentity()
 - (id<MTLTexture>)rmNewTexture:(MTLTextureDescriptor *)d tiled:(bool)tiled;
 @end
 
-// ---- functions and libraries: the name and constants text the pack keys by, and m2v's objects once something needs them ----
+// ---- functions and libraries: the name and constants text the pack keys by ----
 // The libraries the pack's states come from are frameworks' default.metallib (QuartzCore's, RenderBox's): a state of their
-// functions is looked up by its key, which names the framework but QuartzCore's (raw_metal_pipeline_key). A library the
-// facade read itself (_functions listed) makes its m2v twin, and each function its own, only when one is asked for.
+// functions is looked up by its key, which names the framework but QuartzCore's (raw_metal_pipeline_key).
 @interface RMLibrary : RMObject {
 @public
     std::string _framework;  // "QuartzCore", "RenderBox"...; empty: not a framework's default library (never looked up)
     std::shared_ptr<raw::LibrarySource> _source;
-    raw::MetallibFunctions _functions;  // none listed: an m2v library from its creation
+    raw::MetallibFunctions _functions;
     std::map<std::string, raw::AirHash> _airHashes;  // each listed function's HASH tag, read with the library
 }
-- (id)twinOn:(id<MTLDevice>)m2v;
 @end
 @interface RMFunction : RMObject {
 @public
@@ -109,14 +91,13 @@ inline uint64_t rmNewIdentity()
     std::shared_ptr<raw::LibrarySource> _source;
     bool _specialized;         // made with constant values (even none)
     std::string _libraryName;  // the library function it was made from (its name unless specialized under another)
-    RMLibrary *_library;       // the library a twin is made of, while none is
-    MTLFunctionConstantValues *_values;  // what a specialized twin is made with
-    uint32_t _type;                      // MTLFunctionType from the metallib; 0: the twin's
+    RMLibrary *_library;       // the library it was made of
+    MTLFunctionConstantValues *_values;  // what it was specialized with
+    uint32_t _type;                      // MTLFunctionType from the metallib; 0: none listed (a Core Image extern)
     MTLFunctionOptions _options;
     std::optional<raw::AirHash> _air;  // its library function's HASH tag; none where its library lists none
 }
 @property (nonatomic, copy) NSString *name;
-- (id)twinOn:(id<MTLDevice>)m2v;
 @end
 
 // ---- resources ----
@@ -143,8 +124,6 @@ inline uint64_t rmNewIdentity()
     uint64_t _heapBytes;  // what it counts against its heap outside the arena
     bool _aliasable;
     MTLPurgeableState _purgeable;
-    // an argument encoder wrote into it: the raw device's resource IDs and addresses, which no m2v twin reads
-    bool _rawArguments;
 }
 @end
 @interface RMBuffer (Textures)
@@ -158,8 +137,7 @@ typedef NS_ENUM(uint8_t, RMTextureKind) {
     RMTextureSurface,
     RMTextureBuffer,
     RMTextureView,
-    RMTextureMemoryless,
-    RMTextureTwinOnly
+    RMTextureMemoryless
 };
 
 enum class RMShareable : uint8_t {
@@ -190,8 +168,8 @@ enum class RMShareable : uint8_t {
     uint64_t _imageWrites;  // and its surface's writes the seed does not show (surfaceWrites)
     bool _imageCurrent;
     RMTexture *_parent;  // a view's
-    // a view of part of its parent (newTextureViewWithPixelFormat:textureType:levels:slices:): those of the parent, which its
-    // twin views too; the view's type is its descriptor's
+    // a view of part of its parent (newTextureViewWithPixelFormat:textureType:levels:slices:): those of the parent; the
+    // view's type is its descriptor's
     NSRange _viewLevels, _viewSlices;
     bool _viewPart;
     // The parent chain keeps this owner alive; absolute subresources are prepared when a view is made.
@@ -257,10 +235,7 @@ enum class RMShareable : uint8_t {
     std::string _failure;  // why its creation failed (Completion::makeNow), as Metal's would
     std::string _key;      // its pack key (completable states')
     uint64_t _packKey;     // the hash the pack finds its records and reflection by (its key's, or its key and AIR's)
-    MTLRenderPipelineDescriptor
-        *_madeFrom;                  // completable states': what its cubic variants and a later twin are made of
-    MTLPipelineOption _twinOptions;  // a state raw draws from its creation: its twin is made at its first m2v
-    bool _twinLater;                 // replay (rmTwin), with these options
+    MTLRenderPipelineDescriptor *_madeFrom;  // completable states': what its cubic variants are made of
     raw::Mutex _variantLock;
     // every variant asked of it, by name, for its life: plans and encoders name each by address
     std::map<std::string, std::shared_ptr<raw::Variant<raw::Pipeline>>> _variants;
@@ -268,13 +243,9 @@ enum class RMShareable : uint8_t {
 }
 @end
 
-@interface RMTwinObject : RMObject  // compute states, and any m2v object the facade only carries
-@end
-
 @interface RMDepthStencil : RMObject {
 @public
     raw::DepthStencilState _raw;
-    MTLDepthStencilDescriptor *_descriptor;
 }
 @end
 
@@ -628,7 +599,7 @@ enum RMPipelineVeto : uint32_t {
     VetoVariant = 1u << 3,     // a binding of a state variant still being made, which an encode ahead would drop
     VetoProbes = 1u << 4,      // HW Test's probes
     VetoParallel = 1u << 5,    // a parallel render encoder's sub-encoders
-    VetoOps = 1u << 6,         // an event, a compute encoder, an indirect command buffer, patches, an invocation
+    VetoOps = 1u << 6,         // an event, a compute encoder, an indirect command buffer, patches
     VetoRefused = 1u << 7,     // an encoder whose recording failed the command buffer (rmPassFailed)
     VetoPlanar = 1u << 8,      // a planar texture converted for its draws
     VetoContents = 1u << 9,    // the encode read buffer contents the CPU may write until the commit
@@ -669,9 +640,8 @@ struct RMPreparedVariant {
     raw::Variant<raw::Pipeline> *variant = nullptr;
 };
 
-// A render encoder keeps what its draws need to decide, as they are recorded, whether the raw path draws them exactly as m2v
-// would: the state, each bound buffer's address, the textures, the pass's formats. A draw it would not is the command buffer's
-// reason then, so encodeRaw never meets it (a fallback costs no encoding).
+// A render encoder keeps what its draws need to decide, as they are recorded, whether the raw path draws them: the state, each
+// bound buffer's address, the textures, the pass's formats. A draw it refuses is decided then, so encodeRaw never meets it.
 @interface RMRenderEncoder : RMEncoder {
 @public
     // Unretained, as the bound objects below: the command buffer retains each (setBinding), so a bind stores no
@@ -804,23 +774,8 @@ bool rmBindSampler(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
 @end
 
 #if SWITCH_FRAME_TIMELINE
-extern std::atomic<uint64_t> gSurfaceTextures, gTwinsMade;
+extern std::atomic<uint64_t> gSurfaceTextures;
 #endif
-static inline id twinOf(id object)
-{
-    if (!object)
-        return nil;
-    if (![object isKindOfClass:[RMObject class]])
-        return object;  // an m2v object already (events, fences, anything the device forwarded)
-#if SWITCH_FRAME_TIMELINE
-    if (!((RMObject *)object)->_twin) {
-        id twin = [(RMObject *)object rmTwin];
-        gTwinsMade.fetch_add(1, std::memory_order_relaxed);
-        return twin;
-    }
-#endif
-    return [(RMObject *)object rmTwin];
-}
 
 static inline uint64_t extra(RMCommandBuffer *cb, uint64_t i)
 {

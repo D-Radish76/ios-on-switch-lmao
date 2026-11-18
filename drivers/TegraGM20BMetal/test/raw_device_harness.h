@@ -73,7 +73,7 @@ struct DeviceHarness {
         return v.holds(va, bytes);
     }
 
-    // An m2v view's hold on an arena (raw_alias.cpp's lease), which the harness's own connection never makes
+    // A lease's hold on an arena (raw_alias.cpp: a CPU access, or a placement made aliasable)
     static void holdArena(Device &d, uint32_t arena, bool hold)
     {
         auto &leases = d.arenas_[arena].leases;

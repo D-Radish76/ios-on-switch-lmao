@@ -62,13 +62,10 @@ TEST(RawPrivateComp, ShaderWriteUsageIsTakenWithStorageReadingCompressed)
     EXPECT_TRUE(raw::storageReadsCompressed());
 }
 
-TEST(RawPrivateComp, OnlyAnM2vTwinMovesACompressedTextureToPlainMemory)
+TEST(RawPrivateComp, AResourceIdLeavesACompressedTextureOnItsMemory)
 {
     EXPECT_THAT(Body(SourceText("../raw/runtime/RawMetalResourceIds.mm"), "- (MTLResourceID)gpuResourceID"),
                 Not(HasSubstr("rmTexturePlain")));
-    const std::string texture = SourceText("../raw/runtime/RawMetalTexture.mm");
-    EXPECT_EQ(texture.find("rmTexturePlain(self);"), texture.rfind("rmTexturePlain(self);")) << "rmTwin's alone";
-    EXPECT_THAT(Body(texture, "- (id)rmTwin"), HasSubstr("rmTexturePlain(self);"));
 }
 
 TEST(RawPrivateComp, AMipChainTakesItsKind)
@@ -134,14 +131,12 @@ TEST(RawPrivateComp, EveryLaidOutShapeMovesWholeAndKeepsWhatWorkSubmittedReads)
     EXPECT_THAT(laid, HasSubstr("noteCompressed(ask, comp, bytes, t);"));
 }
 
-TEST(RawPrivateComp, AStoredZetaTakesCompressedMemoryInEveryBuildAndKeepsItsTwinMove)
+TEST(RawPrivateComp, AStoredZetaTakesCompressedMemoryInEveryBuild)
 {
     const std::string zeta = Body(SourceText("../raw/runtime/raw_multisample.cpp"), "bool Device::createOwnedZeta(");
     EXPECT_THAT(zeta, HasSubstr("storedZetaKind("));
     EXPECT_THAT(zeta, HasSubstr("createCompressedZeta(bytes, kind, t)"));
     EXPECT_THAT(zeta, Not(HasSubstr("#if"))) << "the compressed route is the release one, not a probe's";
-    const std::string move = Body(SourceText("../raw/runtime/raw_multisample.cpp"), "bool Device::moveOwnedZeta(");
-    EXPECT_THAT(move, HasSubstr("compZeta_.count(t.va)")) << "a compressed zeta still moves into its m2v twin's image";
     const std::string made =
         Body(SourceText("../raw/runtime/raw_private_comp.cpp"), "bool Device::createCompressedZeta(");
     EXPECT_THAT(made, HasSubstr("takeCompressed(bytes, kind, bo)")) << "memory made off the render thread, as colour's";

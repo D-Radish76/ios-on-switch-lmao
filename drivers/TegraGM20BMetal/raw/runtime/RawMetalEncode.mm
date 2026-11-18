@@ -232,7 +232,7 @@ uint32_t RMRangeEncode::ineligible(size_t from, size_t until)
     for (size_t at = from; at < until; ++at) {
         const Op op = plan.operation(at).op;
         if (op == OpSignalEvent || op == OpWaitEvent || op == OpCompute || op == OpDispatch || isKernelCommand(op) ||
-            op == OpExecuteCommands || op == OpDrawPatches || op == OpDrawPatchesIndirect || op == OpInvocation ||
+            op == OpExecuteCommands || op == OpDrawPatches || op == OpDrawPatchesIndirect ||
             op == OpPredicate || op == OpResetCommands || op == OpCopyCommands)
             return VetoOps;
         if (!RMCommandPlan::isEncoderBegin(op))

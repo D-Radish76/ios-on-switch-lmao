@@ -21,33 +21,6 @@ uint64_t nextTraceId()
     return _traceId;
 }
 
-- (id)rmTwin
-{
-    return nil;
-}
-
-// What the m2v encoder of the same kind answers (respondsToSelector: as Core Animation's optional paths ask it today)
-- (BOOL)respondsToSelector:(SEL)selector
-{
-    if ([super respondsToSelector:selector])
-        return YES;
-    Class c = [[self class] twinClass];
-    return c && [c instancesRespondToSelector:selector];
-}
-
-// A selector no method of this encoder answers: the signature its caller expects, so the invocation reaches
-// forwardInvocation: and is answered zero there
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
-{
-    if (NSMethodSignature *s = [super methodSignatureForSelector:selector])
-        return s;
-    Class c = [[self class] twinClass];
-    if (NSMethodSignature *s = c ? [c instanceMethodSignatureForSelector:selector] : nil)
-        return s;
-    const char *types = metalTypes(selector);
-    return types ? [NSMethodSignature signatureWithObjCTypes:types] : nil;
-}
-
 - (id)forwardingTargetForSelector:(SEL)selector
 {
     (void)selector;
@@ -57,7 +30,7 @@ uint64_t nextTraceId()
 // Tile shading and imageblocks (tile dispatches, tile bindings, imageblock sizes) are Apple4's (Metal feature set tables),
 // a family the device does not claim (raw_device_answers.h supportsFamily:, raw/test/refused.txt); every other Metal
 // selector of the claimed families is a method of the encoder. One that reaches here is the caller's error past a NO:
-// answered zero, as m2v's encoder answered it, with an error line
+// answered zero, with an error line
 static bool tileShading(const char *selector)
 {
     for (const char *prefix :
@@ -79,11 +52,6 @@ static bool tileShading(const char *selector)
                              "-[%s %s]: no method of this device's encoder: answered zero",
                              class_getName(object_getClass(self)), selector);
     answerZero(self, inv);
-}
-
-+ (Class)twinClass
-{
-    return nil;
 }
 
 // One its caller dropped without ending it is ended here, so the tape's encoders stay closed: a check with no message

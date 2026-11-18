@@ -97,11 +97,6 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
 
 @implementation RMBlitEncoder
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBBlitEncoder");
-}
-
 - (void)copyFromTexture:(id<MTLTexture>)s
             sourceSlice:(NSUInteger)ss
             sourceLevel:(NSUInteger)sl

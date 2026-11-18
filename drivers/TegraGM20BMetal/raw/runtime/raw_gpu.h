@@ -4,14 +4,13 @@
 // Core Animation state, read off this build's own m2v + NVK at bundle build time). This file turns Metal-shaped calls into
 // MAXWELL_B / MAXWELL_DMA_COPY_A methods in a push buffer and submits them through the TegraGM20B user client (raw_kernel.h).
 //
-// Memory. Everything the raw path draws with is memory this task can also hand to m2v (RawMetal.mm's fallback makes m2v
-// objects over the same BOs at the same VAs, never a copy or a second import: Alias):
+// Memory. Everything the raw path draws with is imported once and bound at one VA:
 //  - textures Core Animation makes, and buffers: pool spans, page-aligned anonymous memory imported once in big chunks;
 //  - IOSurface textures: the surface's pages, imported once per surface while a texture over it lives;
 //  - no-copy buffers: the caller's pages.
-// So every raw texture is pitch-linear (as m2v renders Core Animation's surfaces in place), and CPU-cached: what the CPU wrote
-// is cleaned to memory before the GPU reads it (CommandBuffer::clean, replaceRegion), what the GPU wrote is invalidated before
-// the CPU reads it (RawMetal.mm, lazily). The raw path's own rings (push, upload, headers, root table) are write-combined.
+// What the CPU wrote is cleaned to memory before the GPU reads it (CommandBuffer::clean, replaceRegion), what the GPU wrote
+// is invalidated before the CPU reads it (RawMetal.mm, lazily). The raw path's own rings (push, upload, headers, root table)
+// are write-combined.
 //
 // Lifetime. A texture, buffer or sampler is destroyed only once no submission that uses it can still run: RawMetal.mm's command
 // buffers retain what they use until they complete, as Metal's do. Destroying it frees its header slot, pool span or import at
@@ -164,16 +163,6 @@ enum : uint8_t {
     kAspectWhole = 0,
     kAspectDepth = 1,
     kAspectStencil = 2
-};
-
-// Memory of the raw path an m2v view uses in place (RawMetal.mm's twins), as NVK takes it (switch_nvk_import_foreign): the BO
-// it lies in, bound already in the GPU VM the two drivers share (raw_kernel.h), and a lease the view holds (Device::holdLease,
-// dropLease, any thread) so the memory outlives the view's last use. One hold of it is the caller's to drop.
-struct Alias {
-    const uint8_t *cpu = nullptr;  // the BO's first byte for the CPU
-    uint64_t bytes = 0, handle = 0, va = 0;
-    uint32_t kind = 0;  // the PTE kind of its binding
-    Lease *lease = nullptr;
 };
 
 // MTLPixelFormat -> NV formats: the texture header's word 0 NVK writes (read off the twin: pack/mkformats.py), its render target
@@ -335,7 +324,7 @@ struct Texture {
     uint64_t nativeGeneration = 0;
     Import *import = nullptr;  // surface or no-copy pages, else
     Span span;                 // pool memory, else a view (memory of the texture it views)
-    Lease *lease = nullptr;    // span's, once an m2v view aliases it (Device::alias): span is freed at its last drop
+    Lease *lease = nullptr;    // span's, once it was made aliasable (makeArenaAliasable): span is freed at its last drop
 
     // A two-plane 4:4:4 surface's texture (RGB8_444_2P, Metal format 542): the image sampled is span (RGBA8, the codes as Metal
     // reads them: red Cr, green Y, blue Cb, alpha 1), which BlitEncoder::convertPlanar writes from the surface's planes (import)
@@ -2318,19 +2307,13 @@ public:
                                  const ArenaAt *at = nullptr, uint32_t compressKind = 0);
     // A stored depth/stencil texture of `samples` samples in zeta memory of its own (raw_multisample.cpp), with its header,
     // made here (`sampled`: a 2D array, cube or cube array of one sample laid out as that header names its layers). One of
-    // `levels` levels is NIL's chain of them in the same zeta memory (its chain; a pass renders level 0). NVK views no zeta
-    // memory it did not make: a multisampled one never has an m2v twin, a one-sample one only once a range replays on m2v
-    // (moveOwnedZeta), a mipmapped one never.
+    // `levels` levels is NIL's chain of them in the same zeta memory (its chain; a pass renders level 0).
     bool createOwnedZeta(uint32_t width, uint32_t height, uint32_t format, uint32_t samples, bool sampled, Texture &t,
                          uint32_t layers = 1, uint8_t type = fx::kTexTwoD, uint32_t levels = 1);
     // The same, laid out to be sampled (texture2d_ms reads it, and a depth resolve's pass samples it): a multisampled one,
     // or one of a single sample in an arena (an MTLHeap's, whose depth is not NVK's image)
     bool createOwnedZeta(uint32_t width, uint32_t height, uint32_t format, uint32_t samples, Texture &t,
                          const ArenaAt *at = nullptr);
-    // A one-sample owned zeta's texels, every layer, copied into NVK's image `m` (its m2v twin's, made for a replay), the
-    // texture over that image from then on. Its own memory and header stay until it is destroyed: the copy and the work before it may
-    // still use them. False (*why): the texture keeps its own memory.
-    bool moveOwnedZeta(Texture &t, const ZetaMemory &m, const char **why);
     // A Depth32Float_Stencil8 texture's stencil temp (Texture::stencilTemp), made on its first stencil copy
     bool stencilTemp(Texture &t);
     // A 1D texture: NIL's 1D image, one block-linear row (y_log2 0) under a ONE_D header, in block-linear memory the CPU
@@ -2561,17 +2544,6 @@ public:
         return purgedArenas_.load();
     }
 
-    // The memory an m2v view of t (a pool or write-combined texture) or b uses in place, one hold taken for the caller (raw_alias.cpp).
-    // False: nothing to alias (memoryless, a view's memory), or the connection is not NVK's.
-    bool alias(Texture &t, Alias &a);
-    bool alias(Buffer &b, Alias &a);
-    // [va, va + bytes) of an arena whose placement there was given back (makeAliasable): the lease holds the arena, never the
-    // placement, which a resource placed since may own
-    bool aliasArenaRange(uint32_t arena, uint64_t va, uint64_t bytes, Alias &a);
-    // The surface's import, made now if no texture of the raw path holds one: an m2v import of the surface is this one, aliased.
-    bool aliasSurface(uint64_t surfaceId, void *base, uint64_t bytes, const void *surface, Alias &a);
-    static void holdLease(void *lease);
-    static void dropLease(void *lease);
     bool createSampler(const SamplerDesc &d, Sampler &s);
     void destroySampler(Sampler &s);
 
@@ -3483,11 +3455,8 @@ private:
     void arenaFree(Span &s);   // lock_ held
     const ArenaStorage *arenaStorage(const Arena &arena, uint32_t index, uint64_t offset, uint64_t bytes,
                                      uint64_t va) const;
-    bool aliasArena(const Span &s, Lease *&lease, Alias &a);
     // lock_ held: the arena's mapping of `kind` (its own, its pitch view, or a view made now); 0: none
     uint64_t arenaView(Arena &a, uint32_t kind);
-    // The kind of the arena's mapping `va` lies in; false: none of its
-    static bool arenaKindAt(const Arena &a, uint64_t va, uint64_t &base, uint32_t &kind);
     // The layout every create* but createTexture's own memory gives its kind of texture: t's shape, rows and kind fields
     // with no memory or header, what its memory takes and the PTE kind it is bound with, `chain` a Mips, Volume or Array
     // one's levels. False: the device makes no such texture.
@@ -3582,22 +3551,8 @@ private:
     std::map<uint64_t, Bo> compZeta_;
     void freeCompressedZeta(uint64_t va);  // lock_ held
 
-    // moveOwnedZeta's textures by their new address: their own memory's address and their header before the move
-    struct MovedZeta {
-        uint64_t ownedVa;
-        uint32_t staleTic;
-    };
-
-    std::map<uint64_t, MovedZeta> movedZeta_;
-
     void freeOwnedZeta(uint64_t va)  // lock_ held
     {
-        if (const auto moved = movedZeta_.find(va); moved != movedZeta_.end()) {
-            if (moved->second.staleTic)
-                freeTic(moved->second.staleTic);
-            va = moved->second.ownedVa;
-            movedZeta_.erase(moved);
-        }
         freeCompressedZeta(va);
         const auto at = ownedZeta_.find(va);
         if (at == ownedZeta_.end())

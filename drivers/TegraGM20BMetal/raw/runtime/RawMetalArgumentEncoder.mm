@@ -216,11 +216,6 @@ static bool refused(const char *call, raw::ArgumentRefusal why, NSUInteger index
 @implementation RMArgumentEncoder
 @dynamic device;  // RMObject's
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBArgumentEncoder");
-}
-
 - (NSUInteger)encodedLength
 {
     return NSUInteger(_encoder.layout().encodedLength);
@@ -240,10 +235,8 @@ static bool refused(const char *call, raw::ArgumentRefusal why, NSUInteger index
     if (![(id)buffer isKindOfClass:[RMBuffer class]])
         return refuse("setArgumentBuffer", @"an argument buffer of another device");
     uint8_t *cpu = buffer.storageMode == MTLStorageModePrivate ? nullptr : static_cast<uint8_t *>(buffer.contents);
-    if (!refused("setArgumentBuffer", _encoder.setBuffer(cpu, buffer.length, start, element))) {
+    if (!refused("setArgumentBuffer", _encoder.setBuffer(cpu, buffer.length, start, element)))
         _buffer = buffer;
-        ((RMBuffer *)buffer)->_rawArguments = true;
-    }
 }
 
 - (void)setArgumentBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset

@@ -437,11 +437,6 @@ inline id<MTLCommandBuffer> draw(id<MTLDevice> device, id<MTLRenderPipelineState
 inline const char *const kAsksM2V[] = {
     "RawFacadeLazy.InheritedMethodOpensM2VAtItsFirstCall",                    // S4
     "RawFacadeVariant.AStateMadeWhileM2VIsOpenAsksM2VForNothing",             // S4
-    "FacadeStoredZeta.AReplaysTwinIsNvksImageWithTheTexelsMovedIntoIt",       // S4
-    "FacadeStoredZeta.TwoAsksAtOnceMoveItOnce",                               // S4
-    "FacadeStoredZeta.ArraysAndCubesAreHeldAndMoveEveryLayer",                // S4
-    "FacadeStoredZeta.ARecordedDepth16PassAndItsCachedCopyUseTheMovedImage",  // S4
-    "FacadeStoredZeta.AMipChainCannotMoveOutFromUnderItsPreparedHeaders",     // S4
 };
 
 // What this process has asked its m2v device for (switchRawM2V's needs, counted whether or not it opened), in all

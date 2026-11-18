@@ -137,9 +137,7 @@ void RMCommandPlan::prepareRange(size_t from, size_t to)
             const auto &state = raster.own(renderStates.own(draws_.own(operation.payload).state).raster);
             pipeline(state.pipeline);
             variant(state.nativeVariant);
-        } else if (operation.op == OpInvocation && controls_.own(operation.payload).render != raw::kNoSnapshot)
-            pipeline(raster.own(renderStates.own(controls_.own(operation.payload).render).raster).pipeline);
-        else if (operation.op == OpDispatch && dispatches_.own(operation.payload).pending)
+        } else if (operation.op == OpDispatch && dispatches_.own(operation.payload).pending)
             mergedComputes_.push_back(at);
         ++at;
     }

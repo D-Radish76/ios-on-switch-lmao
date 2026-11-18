@@ -1,22 +1,14 @@
 // SPDX-License-Identifier: MIT
-// See RawMetal.h. r7-raw wrote the first facade (render encoder, pipeline key); r8-rawca made it the render server's device: the
-// m2v twins, the recorded command buffer and its replay on m2v, the order between the two drivers, the copies, the events,
-// the lifetimes.
+// See RawMetal.h.
 //
 // A command buffer here is a tape: each encoder call appends a record (the bytes of setBytes copied in, every object retained by
-// the command buffer until it completes). A call the raw path cannot draw exactly as m2v marks the command buffer for m2v, with a
-// reason. At commit, under the device's submit lock and in commit order:
-//  - raw: the tape is encoded into the raw rings (raw_gpu.cpp) and submitted, one Exec. The encoder can still refuse a draw (a
-//    uniform buffer at an unaligned offset, a texture without a header); the raw work is then abandoned (the rings rewound)
-//    and the command buffer goes to m2v. The completion thread sleeps in the kernel on each fence (the interrupt), then
-//    runs the handlers.
-//  - m2v: the tape is replayed into a command buffer of the m2v device with every object's twin, CPU lines of the buffers it
-//    reads cleaned, and committed once the raw work committed before it has completed (raw's fence, a kernel wait on the
-//    interrupt). Its completion handler runs ours.
-//  - a raw command buffer waits for the m2v ones committed before it, and for the shared events it waits on: such a command
-//    buffer, and every one committed after it while it waits, goes to the submit thread, which submits them in order once
-//    they may run; the render thread never blocks for it. waitUntilScheduled waits for the submission, so the display's
-//    copy (which waits on the GPU for every channel that imports the surface) never runs before the frame's work is submitted.
+// the command buffer until it completes). A call Metal's validation stops fails the command buffer as it is recorded. At commit,
+// in commit order, the tape is encoded into the raw rings (raw_gpu.cpp) and submitted; a refusal at encode fails the command
+// buffer with its error. The completion thread sleeps in the kernel on each fence (the interrupt), then runs the handlers. A
+// command buffer that waits on shared events goes to the submit thread with every one committed after it while it waits, which
+// submits them in order once they may run; the render thread never blocks for it. waitUntilScheduled waits for the
+// submission, so the display's copy (which waits on the GPU for every channel that imports the surface) never runs before the
+// frame's work is submitted.
 #include "raw_lock.h"
 #import "RawMetalIndirect.h"
 #import "RawMetalPassCache.h"
@@ -27,7 +19,7 @@
 #include <malloc/malloc.h>
 
 #if SWITCH_FRAME_TIMELINE
-std::atomic<uint64_t> gSurfaceTextures{0}, gTwinsMade{0};  // the frame timeline's churn counts (SwitchFrameTimeline.h)
+std::atomic<uint64_t> gSurfaceTextures{0};  // the frame timeline's churn count (SwitchFrameTimeline.h)
 #endif
 
 os_log_t rawLog()
@@ -81,62 +73,36 @@ RawState *gRM;
 
 @implementation RMObject
 
-- (id)rmTwin
-{
-    return _twin;
-}
-
 - (id<MTLDevice>)device
 {
     return (id<MTLDevice>)_device;
 }
 
-// The m2v class this object stands in for: its twin's, or the one it would make
-- (Class)rmTwinClass
-{
-    id twin = _twin;
-    return twin ? object_getClass(twin) : [[self class] twinClass];
-}
-
-// A selector this class does not answer is never forwarded to an m2v twin: it is answered zero here (forwardInvocation:). When
-// m2v's class does answer it, raw is missing a method (raw/test/selcover finds none any kind sends): answerMissing says so. An
-// RMTwinObject is the exception: it stands for the m2v object it carries.
+// A selector a Metal protocol declares that this class has no method for is answered zero (forwardInvocation:)
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
 {
     if (NSMethodSignature *s = [super methodSignatureForSelector:selector])
         return s;
-    if (const char *types = metalTypes(selector))
-        return [NSMethodSignature signatureWithObjCTypes:types];
-    return [[self rmTwinClass] instanceMethodSignatureForSelector:selector];
+    const char *types = metalTypes(selector);
+    return types ? [NSMethodSignature signatureWithObjCTypes:types] : nil;
 }
 
 - (void)forwardInvocation:(NSInvocation *)invocation
 {
-    if (twinAnswers([self rmTwinClass], invocation.selector))
-        answerMissing(self, invocation);
-    else
-        answerZero(self, invocation);
-}
-
-+ (Class)twinClass
-{
-    return nil;
+    answerZero(self, invocation);
 }
 
 @end
 
-// Resource calls Core Animation makes on every texture and buffer that need no m2v twin (forwarding them would make one, an m2v
-// import of memory the raw path draws from). Ownership is accounting only (the twin's, when it has one); no content is protected
-// on this device; waitUntilComplete waits for the raw work submitted so far (the kernel's fence interrupt) and the twin's.
+// Resource calls Core Animation makes on every texture and buffer. Ownership is accounting only: no content is protected on
+// this device; waitUntilComplete waits for the raw work submitted so far (the kernel's fence interrupt).
 @interface RMObject (Resource)
 @end
 @implementation RMObject (Resource)
 
 - (kern_return_t)setOwnerWithIdentity:(mach_port_t)identity
 {
-    id twin = _twin;
-    if (twin && [twin respondsToSelector:_cmd])
-        return ((kern_return_t (*)(id, SEL, mach_port_t))objc_msgSend)(twin, _cmd, identity);
+    (void)identity;
     return KERN_SUCCESS;
 }
 
@@ -149,9 +115,6 @@ RawState *gRM;
 {
     if (gRM && gRM->raw)
         gRM->raw->wait(gRM->raw->submitted());
-    id twin = _twin;
-    if (twin && [twin respondsToSelector:_cmd])
-        ((void (*)(id, SEL))objc_msgSend)(twin, _cmd);
 }
 
 @end

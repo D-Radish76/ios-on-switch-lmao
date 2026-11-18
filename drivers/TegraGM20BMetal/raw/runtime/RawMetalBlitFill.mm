@@ -174,8 +174,6 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
     // Plain Metal leaves these bytes unchanged (mipmap_plan.rs leaves_as_is), despite API validation's assertions.
     if (raw::zetaFormatIndex(format) < raw::kZetaFormats || format == MTLPixelFormatX32_Stencil8)
         return skipInvalidBlit("generateMipmapsForTexture:", "of a depth or stencil format");
-    if (!x->_rawOk)
-        return notRawTexture(_cb, t);
     __unsafe_unretained RMTexture *owner = x->_levelsOwner ?: x;
     if (!owner->_raw.chain) {
         failCommandBuffer(_cb, @"generateMipmapsForTexture: a native mipmapped texture has no mip chain",

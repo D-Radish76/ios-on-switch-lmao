@@ -502,11 +502,6 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
             uses.push_back({cmd.obj, raw::ResourceUse::Write});
         } else if (cmd.op == OpPredicate && cmd.obj) {
             uses.push_back({cmd.obj, raw::ResourceUse::Read});
-        } else if (cmd.op == OpInvocation) {
-            raw::forEachObject((__bridge NSInvocation *)cmd.obj, [&](id object) {
-                uses.push_back({(__bridge void *)object, raw::ResourceUse::Read | raw::ResourceUse::Write});
-                [self retain:object];
-            });
         }
         if (!uses.empty())
             _plan.addUses(_plan.size() - 1, uses);
@@ -567,11 +562,6 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 {
     (void)sets;
     (void)count;
-}
-
-- (id)rmTwin
-{
-    return nil;
 }
 
 - (MTLCommandBufferStatus)status
@@ -749,7 +739,7 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     switch_frame::committed(_frame, since,
                             {gSurfaceTextures.load(std::memory_order_relaxed),
                              k.importsMade.load(std::memory_order_relaxed),
-                             k.importHits.load(std::memory_order_relaxed), gTwinsMade.load(std::memory_order_relaxed)},
+                             k.importHits.load(std::memory_order_relaxed)},
                             __builtin_frame_address(0));
 #endif
     if (_active)
@@ -911,31 +901,10 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 }
 #endif
 
-// A selector a command buffer does not answer here: recorded for m2v (the command buffer goes there), answered zero; when m2v's
-// command buffer has no method for it either, only answered zero.
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
-{
-    if (NSMethodSignature *s = [super methodSignatureForSelector:selector])
-        return s;
-    Class c = NSClassFromString(@"NBCommandBuffer");
-    if (NSMethodSignature *s = c ? [c instanceMethodSignatureForSelector:selector] : nil)
-        return s;
-    const char *types = metalTypes(selector);
-    return types ? [NSMethodSignature signatureWithObjCTypes:types] : nil;
-}
-
 - (id)forwardingTargetForSelector:(SEL)selector
 {
     (void)selector;
     return nil;
-}
-
-- (BOOL)respondsToSelector:(SEL)selector
-{
-    if ([super respondsToSelector:selector])
-        return YES;
-    Class c = NSClassFromString(@"NBCommandBuffer");
-    return c && [c instancesRespondToSelector:selector];
 }
 
 // Every MTLCommandBuffer selector is a method of the command buffer: one that reaches here is no Metal selector, answered zero
@@ -952,11 +921,6 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 
 @implementation RMQueue
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBQueue");
-}
-
 - (instancetype)init
 {
     if ((self = [super init])) {
@@ -969,15 +933,6 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 - (void)dealloc
 {
     queuePriorityRemove(self);
-}
-
-- (id)rmTwin
-{
-    @synchronized(self) {
-        if (_twin)
-            return _twin;
-    }
-    return twinPublish(self, _twin, [RM_M2V(NeedReplayQueue) newCommandQueue]);
 }
 
 - (id<MTLCommandBuffer>)commandBuffer

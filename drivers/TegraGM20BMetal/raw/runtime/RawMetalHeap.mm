@@ -20,7 +20,7 @@ bool arenaKind(MTLStorageMode mode, bool &blockLinear)
     return blockLinear || mode == MTLStorageModeShared;
 }
 
-// The arena's pages, back if it was purged, before a command buffer or m2v reaches it (a placement brings them back under
+// The arena's pages, back if it was purged, before a command buffer reaches it (a placement brings them back under
 // the device's lock: raw_arena.cpp)
 bool resident(RMHeap *h)
 {
@@ -97,10 +97,10 @@ id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::T
 }  // namespace
 
 // The ask rmNewTexture (RawMetalDevice.mm) makes `d` with, in its order of kinds; false: a texture the raw path keeps
-// none of (m2v's alone, which no job of the raw path names), or one the arena's storage mode does not hold. An
-// extended-range one is a one-level 2D texture's alone: the arena lays a stand-in out beside its codes for that one
-// (Device::arenaTexture); an RG8Unorm_sRGB one none. `placed`: false for a size asked of one the device makes outside
-// the arena, which every extended-range and RG8Unorm_sRGB shape it keeps is, with the stand-in a draw samples
+// none of, or one the arena's storage mode does not hold. An extended-range one is a one-level 2D texture's alone: the arena
+// lays a stand-in out beside its codes for that one (Device::arenaTexture); an RG8Unorm_sRGB one none. `placed`: false for
+// a size asked of one the device makes outside the arena, which every extended-range and RG8Unorm_sRGB shape it keeps is,
+// with the stand-in a draw samples
 static bool textureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask, bool placed)
 {
     d = heldDescriptor(d);
@@ -186,11 +186,6 @@ static uint64_t noTextureAlignment(const raw::shapes::TextureShape &s)
     }
 }
 
-bool heapResident(RMHeap *h)
-{
-    return resident(h);
-}
-
 void rmHeapHold(RMHeap *heap, const raw::HeapMember &member)
 {
     if (heap && heap->_members)
@@ -204,11 +199,6 @@ void rmHeapForget(RMHeap *heap, uint64_t va)
 }
 
 @implementation RMHeap
-
-- (id)rmTwin
-{
-    return nil;  // the facade's heap is its own: its buffers and textures are ordinary facade resources
-}
 
 - (void)dealloc
 {

@@ -197,31 +197,6 @@ void Device::arenaFree(Span &s)
         freeArena(a);
 }
 
-bool Device::aliasArena(const Span &s, Lease *&lease, Alias &a)
-{
-    const Arena &ar = arenas_[s.chunk];
-    if (ar.purged)
-        return false;
-    uint64_t base = 0;
-    if (!arenaKindAt(ar, s.va, base, a.kind))
-        return false;
-    uint64_t from = 0, bytes = ar.bytes, handle = ar.bo.handle;
-    for (const auto &[offset, part] : ar.parts)
-        if (s.offset >= offset && s.offset + s.bytes <= offset + part.bytes) {
-            from = offset;
-            bytes = part.bytes;
-            handle = part.handle;
-        }
-    if (!handle)
-        return false;  // a trimmed arena's span across two parts: no one BO holds it
-    a.cpu = ar.cpu + from;
-    a.bytes = bytes;
-    a.handle = handle;
-    a.va = base + from;
-    a.lease = leaseSpan(lease, s, Memory::Arena);
-    return true;
-}
-
 uint64_t Device::arenaView(Arena &a, uint32_t kind)
 {
     if (kind == a.kind)
@@ -253,23 +228,6 @@ uint64_t Device::arenaView(Arena &a, uint32_t kind)
     }
     a.views.push_back({va, kind});
     return va;
-}
-
-bool Device::arenaKindAt(const Arena &a, uint64_t va, uint64_t &base, uint32_t &kind)
-{
-    const auto in = [&](uint64_t start, uint32_t k) {
-        if (va < start || va - start >= a.bytes)
-            return false;
-        base = start;
-        kind = k;
-        return true;
-    };
-    if (in(a.va, a.kind) || in(a.bufferVa, kPteKindPitch))
-        return true;
-    for (const Arena::View &v : a.views)
-        if (in(v.va, v.kind))
-            return true;
-    return false;
 }
 
 bool Device::arenaSpan(const ArenaAt &at, uint64_t bytes, uint64_t align, uint32_t kind, Texture &t)

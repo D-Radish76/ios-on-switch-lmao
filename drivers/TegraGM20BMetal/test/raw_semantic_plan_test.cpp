@@ -512,17 +512,14 @@ TEST(SemanticPlan, NativeResourceIdentityTracksObjectsSamplersPipelinesAndEncode
     plan.record(bytes, {});
     capture(90);
     EXPECT_EQ(builds, 6u);
-    plan.record(cmd(OpInvocation), {});
-    capture(90);
-    EXPECT_EQ(builds, 7u);
     plan.record(cmd(OpEnd), {});
     plan.record(cmd(OpRender), {});
     capture(90);
-    EXPECT_EQ(builds, 8u);
+    EXPECT_EQ(builds, 7u);
     plan.clear();
     plan.record(cmd(OpRender), {});
     capture(90);
-    EXPECT_EQ(builds, 9u);
+    EXPECT_EQ(builds, 8u);
 }
 
 TEST(SemanticPlan, KernelResourcePlansSurviveOffsetAndDispatchChanges)
@@ -629,50 +626,6 @@ TEST(SemanticPlan, EventsKeepTheirExactSemanticPositions)
     EXPECT_EQ(plan.events()[1].timeout, 17u);
     EXPECT_EQ(plan.legacy(3).c, 12u);
     EXPECT_EQ(plan.encoderEnd(0), 3u);
-}
-
-TEST(SemanticPlan, OpaqueCallsPreservePositionAndUnknownState)
-{
-    RMCommandPlan plan;
-    plan.record(cmd(OpRender), {});
-    Cmd cull = cmd(OpCull);
-    cull.a = 1;
-    plan.record(cull, {});
-    plan.record(binding(OpBuffer, 1, 0, 10), {});
-    draw(plan);
-    plan.record(binding(OpInvocation, 0, 0, 500), {});
-    plan.record(binding(OpBufferOffset, 1, 0, 0, 128), {});
-    draw(plan);
-    ASSERT_EQ(plan.size(), 4u);
-    const auto &call = plan.control(2);
-    EXPECT_EQ(call.render, plan.draw(1).state);
-    Sink sink;
-    raw::StateCursor cursor;
-    raw::applyRenderState(plan, call.render, cursor, sink);
-    sink.cull = 2;
-    sink.bindings[{1, 0}].object = object(11);
-    raw::applyRenderState(plan, plan.draw(3).state, cursor, sink);
-    EXPECT_EQ(sink.cull, 2u);
-    EXPECT_EQ(sink.bindings[std::make_pair(1u, 0u)].object, object(11));
-    EXPECT_EQ(sink.bindings[std::make_pair(1u, 0u)].offset, 128u);
-}
-
-TEST(SemanticPlan, ExplicitStateAfterOpaqueCallOverridesUnknownState)
-{
-    RMCommandPlan plan;
-    plan.record(cmd(OpRender), {});
-    Cmd cull = cmd(OpCull);
-    cull.a = 1;
-    plan.record(cull, {});
-    plan.record(binding(OpInvocation, 0, 0, 500), {});
-    plan.record(cull, {});
-    draw(plan);
-    Sink sink;
-    raw::StateCursor cursor;
-    raw::applyRenderState(plan, plan.control(1).render, cursor, sink);
-    sink.cull = 2;
-    raw::applyRenderState(plan, plan.draw(2).state, cursor, sink);
-    EXPECT_EQ(sink.cull, 1u);
 }
 
 // A depth clip mode is its encoder's: the next encoder names none (the raw encoder starts each at Metal's Clip), and one
@@ -859,7 +812,7 @@ TEST(SemanticPlan, RecycledStorageDropsAllSemanticState)
     EXPECT_EQ(plan.renderStates.size(), 1u);
 }
 
-TEST(SemanticPlan, EligibilityIgnoresRasterChangesButTracksBindingsAndOpaqueCalls)
+TEST(SemanticPlan, EligibilityIgnoresRasterChangesButTracksBindings)
 {
     RMCommandPlan plan;
     plan.record(cmd(OpRender), {});
@@ -875,8 +828,6 @@ TEST(SemanticPlan, EligibilityIgnoresRasterChangesButTracksBindingsAndOpaqueCall
     EXPECT_GT(bound, initial);
     plan.record(binding(OpTexture, 2, 0, 7), {});
     EXPECT_EQ(plan.eligibilityGeneration(), bound);
-    plan.record(cmd(OpInvocation), {});
-    EXPECT_GT(plan.eligibilityGeneration(), bound);
 }
 
 TEST(SemanticPlan, PreparedRangeCachesDistinctPipelinesAcrossEncoderSummaries)
@@ -915,7 +866,6 @@ TEST(SemanticPlan, TextureSamplingAndAttachmentLoadsRemainDistinct)
     plan.addUses(0, {{object(1), raw::ResourceUse::Read | raw::ResourceUse::Write}});
     plan.record(binding(OpTexture, 2, 0, 2), {});
     draw(plan);
-    plan.record(cmd(OpInvocation), {});
     plan.record(cmd(OpEnd), {});
     plan.prepareRange(0, plan.size());
     std::map<void *, uint8_t> uses;
@@ -923,7 +873,7 @@ TEST(SemanticPlan, TextureSamplingAndAttachmentLoadsRemainDistinct)
         uses[object] = access;
     });
     EXPECT_EQ(uses[object(1)], raw::ResourceUse::Read | raw::ResourceUse::Write);
-    EXPECT_EQ(uses[object(2)], raw::ResourceUse::Read | raw::ResourceUse::Write | raw::ResourceUse::Sample);
+    EXPECT_EQ(uses[object(2)], raw::ResourceUse::Read | raw::ResourceUse::Sample);
 }
 
 TEST(SemanticPlan, ComputeAccessIsCachedPerNativeKernelAndPreservesEarlierDispatches)

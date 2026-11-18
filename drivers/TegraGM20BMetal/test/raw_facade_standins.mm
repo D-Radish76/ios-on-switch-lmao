@@ -92,11 +92,6 @@ void nmb_reflection_blob_release(NmbReflectionBlob *)
 {}
 }
 
-id native_bridge_metal_buffer_over_foreign(const struct switch_foreign_memory *, void *, NSUInteger, NSUInteger)
-{
-    return nil;
-}
-
 bool native_bridge_metal_compute_direct(id, const struct NmbDirectDispatch *,
                                         bool (*)(const struct NmbDirectKernel *, void *), void *, const char **why)
 {
@@ -141,27 +136,4 @@ bool native_bridge_metal_render_direct(id, bool, NSUInteger, NSUInteger, const s
 {
     *why = "no frontend on this host";
     return false;
-}
-
-id native_bridge_metal_render_pipeline_lazy(id, id, NSUInteger)
-{
-    return nil;
-}
-
-void native_bridge_metal_set_surface_importer(switch_surface_importer)
-{}
-
-id native_bridge_metal_texture_in_place(id, id, NSUInteger, NSUInteger)
-{
-    return nil;
-}
-
-int native_bridge_metal_texture_memory(id, struct switch_nvk_image_memory *)
-{
-    return -1;
-}
-
-id native_bridge_metal_texture_tiled_in_place(id, id, NSUInteger)
-{
-    return nil;
 }

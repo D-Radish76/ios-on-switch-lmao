@@ -6,11 +6,6 @@
 
 @implementation RMRenderEncoder
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBRenderEncoder");
-}
-
 // Core Animation's texture-and-sampler SPI (CA::OGL::MetalContext::draw, every textured draw), as the frontend answers it
 - (void)setFragmentTexture:(__unsafe_unretained id<MTLTexture>)t
             atTextureIndex:(NSUInteger)ti
@@ -84,7 +79,8 @@ void visibilityError(RMCommandBuffer *cb, uint64_t mode, uint64_t offset, const 
 }
 
 // Apple's encoder SPI as metal2vulkan answers it (metal2vulkan-runtime apple_only.rs, render/restart.rs, from Metal's measured
-// answers): at Metal's default each changes nothing a draw does; any other value goes to m2v as the call it is
+// answers): at Metal's default each changes nothing a draw does; any other value is answered zero with its error line
+// (forwardInvocation:)
 static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 {
     NSInvocation *inv = [NSInvocation invocationWithMethodSignature:[e methodSignatureForSelector:selector]];
@@ -327,7 +323,7 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
         [self prepareDrawnRecord];
 }
 
-// SPI: lines one pixel wide are what the raw path draws (its default); any other width goes to m2v with the call
+// SPI: lines one pixel wide are what the raw path draws (its default); any other width is answered zero with its error line
 - (void)setLineWidth:(float)width
 {
     if (width == 1.0f)
@@ -338,7 +334,7 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     [self forwardInvocation:inv];
 }
 
-// No tile shaders (as m2v: the device says so); their calls stay m2v's, which refuses them
+// No tile shaders: tile shading is Apple4's, a family the device does not claim; their calls are answered zero
 - (NSUInteger)tileWidth
 {
     return 0;

@@ -107,7 +107,7 @@ void logImport(const void *bytes, NSUInteger length, MTLTextureDescriptor *d, co
 
 }  // namespace
 
-// A selector it lacks is answered zero (RMObject's forwardInvocation:), with the m2v frontend's layout class as the one asked
+// A selector it lacks is answered zero (RMObject's forwardInvocation:)
 @interface RMBlockLayout : RMObject {
 @public
     raw::fx::MipChain _layout;
@@ -116,11 +116,6 @@ void logImport(const void *bytes, NSUInteger length, MTLTextureDescriptor *d, co
 @end
 
 @implementation RMBlockLayout
-
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBTextureLayout");
-}
 
 - (NSUInteger)size
 {
@@ -296,12 +291,6 @@ static void wroteThroughLayout(const void *memory)
     _rawOk = false;
     if (_deallocator)
         _deallocator(_bytes, _length);
-}
-
-// No m2v texture over these pages: a command buffer that goes to m2v for another reason samples nothing here
-- (id)rmTwin
-{
-    return nil;
 }
 
 - (void)replaceRegion:(MTLRegion)r

@@ -11,33 +11,6 @@
 
 @implementation RMComputeState
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBComputePipeline");
-}
-
-- (Class)rmTwinClass
-{
-    return [[self class] twinClass];
-}
-
-- (id)rmTwin
-{
-    std::call_once(_twinOnce, [self] {
-        if (!_compatibility) {
-            NSError *error = nil;
-            _compatibility =
-                [RM_M2V(NeedComputeStateTwin) newComputePipelineStateWithDescriptor:twinComputeDescriptor(_direct)
-                                                                            options:MTLPipelineOptionNone
-                                                                         reflection:nil
-                                                                              error:&error];
-            if (!_compatibility)
-                once([NSString stringWithFormat:@"a deferred compute pipeline could not be created: %@", error]);
-        }
-    });
-    return _compatibility;
-}
-
 - (BOOL)conformsToProtocol:(Protocol *)protocol
 {
     return protocol == @protocol(MTLComputePipelineState) || [super conformsToProtocol:protocol];
@@ -58,24 +31,13 @@
     return _facts.staticMemory;
 }
 
-// The descriptor's, as Metal's state answers it, without making m2v's twin
+// The descriptor's, as Metal's state answers it
 - (BOOL)supportIndirectCommandBuffers
 {
     return _direct.supportIndirectCommandBuffers;
 }
 
 @end
-
-MTLComputePipelineDescriptor *twinComputeDescriptor(MTLComputePipelineDescriptor *d)
-{
-    id<MTLFunction> twin = twinOf(d.computeFunction);
-    if (!twin)
-        return nil;
-    MTLComputePipelineDescriptor *t = [d copy];
-    t.binaryArchives = nil;  // this device's (RawMetalBinaryArchive.mm), which m2v cannot read
-    t.computeFunction = twin;
-    return t;
-}
 
 // The function's AIR hash and its library function's name, as the facade's library read them
 static bool airOf(id<MTLFunction> function, raw::AirHash &out, NSString *__strong &name)

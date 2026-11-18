@@ -117,15 +117,12 @@ uint32_t blitUnit(RMTexture *t, int aspect)
 
 RMTexture *rawTexture(id<MTLTexture> t)
 {
-    RMTexture *x = [(id)t isKindOfClass:[RMTexture class]] ? (RMTexture *)t : nil;
-    return x && x->_rawOk ? x : nil;
+    return [(id)t isKindOfClass:[RMTexture class]] ? (RMTexture *)t : nil;
 }
 
 void notRawTexture(RMCommandBuffer *cb, id<MTLTexture> t)
 {
-    RMTexture *x = [(id)t isKindOfClass:[RMTexture class]] ? (RMTexture *)t : nil;
-    rmCallInvalid(cb, PredTexForeign, uint64_t(t.pixelFormat), x ? x->_kind : 0,
-                  "a blit of a texture not made by this device");
+    rmCallInvalid(cb, PredTexForeign, uint64_t(t.pixelFormat), 0, "a blit of a texture not made by this device");
 }
 
 static constexpr const char *kMemorylessSide = "of a memoryless texture";

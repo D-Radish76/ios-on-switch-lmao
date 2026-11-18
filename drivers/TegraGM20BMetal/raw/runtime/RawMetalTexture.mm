@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
-// A raw texture: its memory's lifetime, its m2v twin, and what Metal answers of it
+// A raw texture: its memory's lifetime, and what Metal answers of it
 #import "RawMetalInternal.h"
 #import "RawMetalFresh.h"
-#import "RawMetalMultisample.h"
 
 // Before the raw path first renders into a surface texture: the kernel takes the surface's imports as only sampled until
 // then, so a CPU lock of a surface the GPU never writes invalidates nothing.
@@ -46,11 +45,6 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
     return self;
 }
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBTexture");
-}
-
 // SPI: the descriptor's (0 for every texture the raw path keeps, rawShape)
 - (NSUInteger)rotation
 {
@@ -61,7 +55,6 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
 
 - (void)dealloc
 {
-    _twin = nil;
     if (_heap && !_raw.arena) {
         _heap->_used -= _heapBytes;
         const raw::Texture::StorageRange storage = _raw.storageRange();
@@ -79,104 +72,7 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
     }
 }
 
-- (id)rmTwin
-{
-    @synchronized(self) {
-        if (_twin)
-            return _twin;
-    }
-    id<MTLDevice> m2v = RM_M2V(NeedTextureTwin);
-    id made = nil;  // outside this object's lock (twinPublish)
-    const char *why = "m2v made none";
-    {
-        switch (_kind) {
-        case RMTextureSurface:
-            made = [m2v newTextureWithDescriptor:_descriptor iosurface:_surface plane:_plane];
-            break;
-        case RMTexturePool: {  // m2v's in-place texture over the same pool memory (as an IOSurface's)
-            rmTexturePlain(self);
-            // zeta memory of its own (raw::Device::createOwnedZeta): only a range that keeps none of it replays (ownedZetaIn)
-            if (_raw.zeta && (_raw.samples > 1 || _raw.arena)) {
-                made = [m2v newTextureWithDescriptor:_descriptor];
-                break;
-            }
-            if (zetaDescriptor(
-                    _descriptor)) {  // a stored one-sample zeta, moved into the twin's image (storedZetaTwin)
-                made = _rawOk ? storedZetaTwin(self, m2v, &why) : [m2v newTextureWithDescriptor:_descriptor];
-                break;
-            }
-            const size_t page = size_t(getpagesize());
-            raw::Alias a;
-            // Made aliasable before its first replay: its placement is given back, its address and its heap's arena kept
-            const bool released = _raw.arena && !_raw.span.valid() && _heap && _heap->_arena;
-            uint8_t *cpu = released ? _raw.cpu : _raw.span.cpu;
-            uint64_t bytes = _raw.span.bytes, align;
-            const auto releasedBytes = [&] {
-                raw::TextureAsk ask;
-                if (!heapTextureAsk(_descriptor, _heap->_descriptor.storageMode == MTLStorageModePrivate, ask))
-                    return false;
-                ask.standIn = false;
-                return raw::Device::footprint(ask, bytes, align);
-            };
-            const bool shared =
-                heapResident(_heap) &&
-                (released ? releasedBytes() && gRM->raw->aliasArenaRange(_heap->_arena - 1, _raw.va, bytes, a)
-                          : gRM->raw->alias(_raw, a));
-            id<MTLBuffer> pages = shared ? rawAliasBuffer(a, cpu, (NSUInteger(bytes) + page - 1) & ~(page - 1),
-                                                          MTLResourceStorageModeShared)
-                                         : nil;
-            why = _raw.zeta && _raw.samples > 1     ? "NVK views no multisampled zeta memory the raw path owns"
-                  : !_raw.span.valid() && !released ? "it has no memory of its own"
-                  : !shared ? "its memory could not be aliased (a purged heap's that did not come back)"
-                  : !pages  ? "m2v did not take its memory"
-                            : "m2v made no texture over its memory";
-            MTLTextureDescriptor *d = _descriptor;
-            if (_raw.chain && d.storageMode == MTLStorageModeMemoryless) {  // every level, in place (memory here)
-                d = [_descriptor copy];
-                d.storageMode = MTLStorageModePrivate;
-            }
-            if (pages && _raw.blockLinear && native_bridge_metal_texture_tiled_in_place)
-                made = native_bridge_metal_texture_tiled_in_place(pages, d, 0);
-            else if (pages && !_raw.blockLinear && native_bridge_metal_texture_in_place)
-                made = native_bridge_metal_texture_in_place(pages, d, 0, _raw.pitch);
-            break;
-        }
-        case RMTextureBuffer:
-            if (id<MTLBuffer> b = [_buffer rmTwin]) {
-                made = native_bridge_metal_texture_in_place
-                           ? native_bridge_metal_texture_in_place(b, _descriptor, _offset, _rowBytes)
-                           : [b newTextureWithDescriptor:_descriptor offset:_offset bytesPerRow:_rowBytes];
-            }
-            break;
-        case RMTextureView:
-            made = _viewPart ? [(id<MTLTexture>)[_parent rmTwin] newTextureViewWithPixelFormat:_descriptor.pixelFormat
-                                                                                   textureType:_descriptor.textureType
-                                                                                        levels:_viewLevels
-                                                                                        slices:_viewSlices]
-                             : [(id<MTLTexture>)[_parent rmTwin] newTextureViewWithPixelFormat:_descriptor.pixelFormat];
-            if (made && !identitySwizzle(_descriptor.swizzle))  // m2v's texture makes no swizzled view
-                SWITCH_REFUSE_DETAIL("raw", "tex.swizzle", _descriptor.pixelFormat,
-                                     "a swizzled view of format %lu: m2v's work samples it unswizzled",
-                                     (unsigned long)_descriptor.pixelFormat);
-            break;
-        case RMTextureMemoryless:
-            made = [m2v newTextureWithDescriptor:_descriptor];
-            break;
-        case RMTextureTwinOnly:
-            break;
-        }
-    }
-    const char *error = !made && nmb_last_error ? nmb_last_error() : nullptr;
-    id twin = twinPublish(self, _twin, made);
-    if (!twin)
-        SWITCH_REFUSE_DETAIL("raw", "twin.texture", _descriptor.pixelFormat,
-                             "no m2v twin for a %ux%u texture of format %lu (kind %u%s): %s (%s)", _raw.width,
-                             _raw.height, (unsigned long)_descriptor.pixelFormat, unsigned(_kind),
-                             _raw.arena ? ", in a heap" : "", why, error && *error ? error : "-");
-    return twin;
-}
-
-// Answered here, not by the twin (forwarded, each would make one): as m2v answers them
+// Answered here: as Metal answers them
 - (MTLTextureCompressionType)compressionType
 {
     return _descriptor.compressionType;
@@ -202,8 +98,8 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
     return _raw.arena && _raw.span.valid() ? NSUInteger(_raw.span.offset) : 0;
 }
 
-// Answered here, not by the twin (a residency set's allocatedSize sums its allocations'): the memory this texture owns. A view and
-// a texture over a buffer own none; a twin-only texture's is its twin's.
+// The memory this texture owns (a residency set's allocatedSize sums its allocations'). A view and a texture over a buffer own
+// none.
 - (NSUInteger)allocatedSize
 {
     if (_kind == RMTextureView || _kind == RMTextureBuffer || _raw.memoryless)
@@ -212,8 +108,7 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
         return IOSurfaceGetAllocSize(_surface);
     if (_raw.span.valid())
         return NSUInteger(_raw.span.bytes);
-    id twin = _twin;
-    return twin ? [(id<MTLTexture>)twin allocatedSize] : NSUInteger(_raw.storage.bytes);
+    return NSUInteger(_raw.storage.bytes);
 }
 
 - (MTLTextureType)textureType

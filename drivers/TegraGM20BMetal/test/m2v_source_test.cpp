@@ -6,8 +6,7 @@
 //  - NVK's root table opens with cs.base_group then cs.group_count (nvk_cmd_buffer.h) and every compute shader is compiled
 //    with its workgroup id based there (nvk_shader.c has_base_workgroup_id, nvk_nir_lower_descriptors.c), where
 //    raw_dispatch_bands_test's launch writes a piece's base;
-//  - m2v takes only its own functions and archives, and the facade's twins (archives dropped, linked functions twinned)
-//    never hand it the device's own objects;
+//  - m2v takes only its own functions and archives;
 //  - the frontend hands each stage's linked functions to the bridge under the specialized name it was made under.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -58,15 +57,6 @@ TEST(M2VSource, M2VsArchiveTakesOnlyItsOwnFunctions)
                 HasSubstr("isKindOfClass:[NBFunction class]"));
 }
 
-TEST(M2VSource, M2vsTwinsAreMadeWithoutTheDevicesArchives)
-{
-    const std::string states = SourceText("../raw/runtime/RawMetalStates.mm");
-    EXPECT_THAT(Body(states, "MTLRenderPipelineDescriptor *twinDescriptor(MTLRenderPipelineDescriptor *d)"),
-                HasSubstr("t.binaryArchives = nil;"));
-    const std::string compute = SourceText("../raw/runtime/RawMetalComputeState.mm");
-    EXPECT_THAT(Body(compute, "static bool archivesAnswer("), HasSubstr("s->_direct.binaryArchives = nil;"));
-}
-
 TEST(M2VSource, TheFrontendHandsEachStagesLinkedFunctionsToTheBridge)
 {
     const std::string frontend = SourceText("../../NativeMetal/NativeBridgeMetalFrontend.mm");
@@ -101,40 +91,6 @@ TEST(M2VSource, AFunctionKeepsTheSpecializedNameItWasMadeUnder)
     const std::string bridge = SourceText("../../NativeMetal/bridge/NativeMetalObjects.rs");
     EXPECT_THAT(Body(bridge, "impl DescriptorFunction for NmbFunction {"),
                 HasSubstr("self.0.linked_function().with_link_name(self.1.clone())"));
-}
-
-// A state the pack holds is this device's archive hit: every way the facade asks m2v for its twin (at once or later; a
-// completion handler's creation finishes as the synchronous one does) drops the creation's archives and
-// FailOnBinaryArchiveMiss, so a command buffer that falls back never meets a twin m2v refused (device boot 10: "foreign
-// render pipeline", 833 failed frames). A state made with reflection has it from the raw path, not a twin.
-TEST(M2VSource, APackedStatesTwinNeverFailsOnTheArchive)
-{
-    const std::string states = SourceText("../raw/runtime/RawMetalStates.mm");
-    EXPECT_THAT(Body(states, "static MTLRenderPipelineDescriptor *packedTwinDescriptor("),
-                HasSubstr("t.binaryArchives = nil;"));
-    EXPECT_THAT(Body(states, "static MTLPipelineOption packedTwinOptions("),
-                HasSubstr("o & ~MTLPipelineOptionFailOnBinaryArchiveMiss"));
-    EXPECT_THAT(Body(states, "id<MTLRenderPipelineState> rmFinishState("), HasSubstr("rmRenderReflection(p, d, o)"));
-    EXPECT_THAT(Body(states, "static id<MTLRenderPipelineState> makeState("), HasSubstr("rmFinishState(p, d, o"));
-    const std::string later = SourceText("../raw/runtime/RawMetalStatesLater.mm");
-    EXPECT_THAT(Body(later, "static void finishState("), HasSubstr("rmFinishState(p, d, o"));
-    for (const char *handlerType : {"(MTLNewRenderPipelineStateCompletionHandler)handler",
-                                    "(MTLNewRenderPipelineStateWithReflectionCompletionHandler)handler"}) {
-        const std::string handler = Between(later, std::string("completionHandler:") + handlerType, "\n}\n");
-        EXPECT_THAT(handler, HasSubstr("createLater("));
-        EXPECT_THAT(handler, HasSubstr("self, [d copy]"));
-    }
-}
-
-TEST(M2VSource, TheTwinLinksTheTwinsOfItsLinkedFunctions)
-{
-    const std::string twin =
-        Body(SourceText("../raw/runtime/RawMetalStates.mm"), "MTLRenderPipelineDescriptor *twinDescriptor(");
-    EXPECT_THAT(twin, HasSubstr("t.vertexLinkedFunctions = twinLinked(d.vertexLinkedFunctions);"));
-    EXPECT_THAT(twin, HasSubstr("t.fragmentLinkedFunctions = twinLinked(d.fragmentLinkedFunctions);"));
-    // a specialized function's AIR is its library function's entry, named by its m2v twin
-    EXPECT_THAT(SourceText("../raw/runtime/RawRenderKey.mm"),
-                HasSubstr("native_bridge_metal_function_library_name(function)"));
 }
 
 }  // namespace

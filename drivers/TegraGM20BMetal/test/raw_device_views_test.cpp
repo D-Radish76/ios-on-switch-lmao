@@ -220,26 +220,14 @@ TEST_F(DeviceViews, NoTextureIsMadeWithNoHeaderLeft)
     dev.destroyTexture(t);
 }
 
-// The array header is writeTic's for an owned depth array: one over NVK's image the texels moved into (moveOwnedZeta)
-// is the array's too
-TEST_F(DeviceViews, ADepthArraysHeaderSurvivesItsMove)
+// The array header is writeTic's for an owned depth array
+TEST_F(DeviceViews, AnOwnedDepthArraysHeaderIsAnArrays)
 {
     raw::Texture array;
     ASSERT_TRUE(dev.createOwnedZeta(32, 32, kDepth32Float, 1, true, array, 4, raw::fx::kTexTwoDArray));
-    EXPECT_EQ(textureType(header(array)), raw::fx::kTexTwoDArray);
-    raw::ZetaMemory m;
-    m.va = 0x7000000000;
-    m.bytes = array.layerBytes * 4;
-    m.layerBytes = array.layerBytes;
-    m.pitch = array.pitch;
-    m.bpp = array.bpp;
-    m.blockHeight = array.blockHeight;
-    m.tiled = true;
-    const char *why = nullptr;
-    ASSERT_TRUE(dev.moveOwnedZeta(array, m, &why)) << why;
     ASSERT_NE(array.tic, 0u);
     const auto w = header(array);
-    EXPECT_EQ(address(w), m.va);
+    EXPECT_EQ(address(w), array.va);
     EXPECT_EQ(textureType(w), raw::fx::kTexTwoDArray);
     EXPECT_EQ(depthMinusOne(w), 3u);
 }

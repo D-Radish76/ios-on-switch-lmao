@@ -21,22 +21,6 @@ static bool faceWritesStencil(const raw::StencilFace &f)
 
 @implementation RMDepthStencil
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBDepthStencil");
-}
-
-// Only m2v's replay of a command buffer the raw path refused asks for it
-- (id)rmTwin
-{
-    @synchronized(self) {
-        if (_twin)
-            return _twin;
-    }
-    id<MTLDevice> m2v = RM_M2V(NeedDepthStencilTwin);
-    return twinPublish(self, _twin, [m2v newDepthStencilStateWithDescriptor:_descriptor]);
-}
-
 - (BOOL)readsDepth
 {
     return _raw.desc().depthCompare != MTLCompareFunctionAlways;
@@ -77,7 +61,6 @@ static bool faceWritesStencil(const raw::StencilFace &f)
     o->_device = self;
     o->_raw = raw::DepthStencilState(desc);
     gRM->raw->placeSegments(o->_raw);
-    o->_descriptor = [d copy];
     o.label = d.label;
     return (id<MTLDepthStencilState>)o;
 }

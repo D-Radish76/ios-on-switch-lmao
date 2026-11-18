@@ -11,14 +11,8 @@
     return self;
 }
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBBuffer");
-}
-
 - (void)dealloc
 {
-    _twin = nil;  // m2v's import over these pages goes first
     void *bytes = _raw.cpu;
     const NSUInteger length = NSUInteger(_raw.length);
     if (_heap && !_raw.arena) {
@@ -29,26 +23,6 @@
         gRM->raw->destroyBuffer(_raw);
     if (_deallocator)
         _deallocator(bytes, length);
-}
-
-- (id)rmTwin
-{
-    @synchronized(self) {
-        if (_twin)
-            return _twin;
-    }
-    // made outside this object's lock (twinPublish): in place over the same memory (a pool span or the caller's no-copy pages),
-    // Shared whatever this buffer's storage mode (the memory is CPU-visible; m2v makes no Private buffer over host memory)
-    // (a no-copy buffer's own length: its pages are the kernel's around it, the twin's no more than the import holds)
-    const size_t page = size_t(getpagesize());
-    const MTLResourceOptions options = (_options & ~MTLResourceStorageModeMask) | MTLResourceStorageModeShared;
-    const NSUInteger length =
-        _raw.import ? NSUInteger(_raw.length) : (NSUInteger(_raw.length) + page - 1) & ~(page - 1);
-    raw::Alias a;
-    return twinPublish(self, _twin,
-                       RM_M2V(NeedBufferTwin) && heapResident(_heap) && gRM->raw->alias(_raw, a)
-                           ? rawAliasBuffer(a, _raw.cpu, length, options)
-                           : nil);
 }
 
 - (BOOL)invalidateForCpu

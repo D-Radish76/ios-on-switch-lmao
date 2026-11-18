@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT
-// See raw_gpu.h (Alias). A lease keeps memory an m2v view aliases: a span's lease is made at its first alias and holds one for
-// the raw object (dropped by destroyTexture/destroyBuffer), an import's is made per alias; NVK's foreign memory holds one from
-// its import to its free. The last drop gives the span back or releases the import, under the device's lock, on whichever
-// thread drops it: the raw object's destroy (its command buffers completed) or NVK's free (m2v's use of the view ended), so the
-// VA is never reused while either driver's work can still reach it.
+// CPU access to the raw path's memory, and leases: a heap resource made aliasable (makeArenaAliasable) gives its placement
+// back and keeps its arena by a lease, dropped by destroyTexture/destroyBuffer, so the arena is freed only once no work of it
+// can still reach it.
 #include "raw_lock.h"
 #include "raw_gpu.h"
 #include <os/log.h>
@@ -202,20 +200,8 @@ struct Lease {
     Memory from;
     Span span;
     Import *import;
-    bool placed = true;  // an arena lease's span is its own placement (aliasArenaRange's is not)
+    bool placed = true;  // an arena lease's span is its own placement (makeArenaAliasable's is not)
 };
-
-namespace {
-void describe(const Bo &bo, uint32_t kind, Lease *lease, Alias &a)
-{
-    a.cpu = bo.cpu - (bo.va - bo.vaBase);
-    a.bytes = bo.bytes;
-    a.handle = bo.handle;
-    a.va = bo.vaBase;
-    a.kind = kind;
-    a.lease = lease;
-}
-}  // namespace
 
 Lease *Device::leaseSpan(Lease *&lease, const Span &span, Memory from)
 {
@@ -301,95 +287,6 @@ void Device::freeSpan(Span &span, Memory from, Lease *&lease)
     }
     span = {};
     lease = nullptr;
-}
-
-bool Device::alias(Texture &t, Alias &a)
-{
-    if (!k_.shared() || !t.span.valid())
-        return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    const Memory from = memoryOf(t);
-    if (from == Memory::Arena)
-        return aliasArena(t.span, t.lease, a);
-    const Chunk &ch = (from == Memory::Bl ? blChunks_ : from == Memory::Wc ? wcChunks_ : chunks_)[t.span.chunk];
-    describe(ch.bo, from == Memory::Bl ? uint32_t(TGM_LAYOUT_KIND) : kPteKindPitch, leaseSpan(t.lease, t.span, from),
-             a);
-    return true;
-}
-
-bool Device::alias(Buffer &b, Alias &a)
-{
-    if (!k_.shared())
-        return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    if (b.import) {
-        b.import->refs++;
-        describe(b.import->bo, b.import->kind, new Lease{this, 1, Memory::Import, {}, b.import}, a);
-        return true;
-    }
-    if (!b.span.valid())
-        return false;
-    if (b.arena)
-        return aliasArena(b.span, b.lease, a);
-    const Chunk &ch = (b.wc ? wcChunks_ : chunks_)[b.span.chunk];
-    describe(ch.bo, kPteKindPitch, leaseSpan(b.lease, b.span, b.wc ? Memory::Wc : Memory::Pool), a);
-    return true;
-}
-
-bool Device::aliasArenaRange(uint32_t arena, uint64_t va, uint64_t bytes, Alias &a)
-{
-    if (!k_.shared())
-        return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    if (arena >= arenas_.size() || !arenas_[arena].used || arenas_[arena].dying || arenas_[arena].purged)
-        return false;
-    Arena &ar = arenas_[arena];
-    uint64_t base = 0;
-    if (!bytes || !arenaKindAt(ar, va, base, a.kind) || bytes > ar.bytes || va - base > ar.bytes - bytes)
-        return false;
-    uint64_t from = 0, held = ar.bytes, handle = ar.bo.handle;
-    for (const auto &[offset, part] : ar.parts)
-        if (va - base >= offset && va - base + bytes <= offset + part.bytes) {
-            from = offset;
-            held = part.bytes;
-            handle = part.handle;
-        }
-    if (!handle)
-        return false;  // a trimmed arena's range across two parts: no one BO holds it
-    a.cpu = ar.cpu + from;
-    a.bytes = held;
-    a.handle = handle;
-    a.va = base + from;
-    a.lease = new Lease{this, 1, Memory::Arena, {arena, va - base, bytes, va, ar.cpu + (va - base)}, nullptr, false};
-    ar.leases++;
-    return true;
-}
-
-bool Device::aliasSurface(uint64_t surfaceId, void *base, uint64_t bytes, const void *surface, Alias &a)
-{
-    if (!k_.shared() || !surfaceId)
-        return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    Import *i = importSurface(surfaceId, base, bytes, surface);
-    if (!i)
-        return false;
-    describe(i->bo, i->kind, new Lease{this, 1, Memory::Import, {}, i}, a);
-    return true;
-}
-
-void Device::holdLease(void *lease)
-{
-    Lease *l = static_cast<Lease *>(lease);
-    std::lock_guard<raw::Mutex> g(l->dev->lock_);
-    l->refs++;
-}
-
-void Device::dropLease(void *lease)
-{
-    Lease *l = static_cast<Lease *>(lease);
-    Device *dev = l->dev;
-    std::lock_guard<raw::Mutex> g(dev->lock_);
-    dev->dropLocked(l);
 }
 
 }  // namespace raw

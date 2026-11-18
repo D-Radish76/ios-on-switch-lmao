@@ -292,15 +292,12 @@ uint32_t standInTargetFormat(MTLRenderPipelineDescriptor *d)
             *error = [NSError errorWithDomain:MTLLibraryErrorDomain
                                          code:MTLLibraryErrorCompileFailure
                                      userInfo:@{
-                                         NSLocalizedDescriptionKey : @"the raw path made no state for a "
-                                                                     @"stand-in's target, and m2v renders none"
+                                         NSLocalizedDescriptionKey : @"the raw path made no state for a stand-in's target"
                                      }];
         return nil;
     }
     if (reflection)
         *reflection = rmRenderReflection(p, made, o);
-    p->_twinOptions = o;
-    p->_twinLater = true;
     if (error)
         *error = nil;
     return (id<MTLRenderPipelineState>)p;

@@ -81,8 +81,7 @@ static raw::ProbeSurface probeSurface(const raw::Texture &t, uint32_t fmt2d)
     return nil;
 }
 
-// `texture` moved off compressed memory now, as an m2v twin moves it (rmTexturePlain): @YES where it was compressed and
-// moved
+// `texture` moved off compressed memory now (rmTexturePlain): @YES where it was compressed and moved
 - (NSNumber *)switchRawProbeMovePlain:(id<MTLTexture>)texture
 {
     RMTexture *t = [(id)texture isKindOfClass:[RMTexture class]] ? (RMTexture *)texture : nil;
@@ -159,16 +158,9 @@ static raw::ProbeSurface probeSurface(const raw::Texture &t, uint32_t fmt2d)
 {
     const uint32_t flags = gRM->raw->kernelInfo().flags;
     RMTexture *t = rawTexture(texture);
-    id twin = nil;
-    if (t)
-        @synchronized(t) {
-            twin = t->_twin;
-        }
-    return
-        [NSString stringWithFormat:@"raw=%d comptags=%d block_linear=%d pitch=%u tiled_cache=%d compression=%d twin=%d",
-                                   t != nil, t && t->_raw.comptags, t && t->_raw.blockLinear, t ? t->_raw.pitch : 0,
-                                   (flags & TegraGM20BInfoTiledCache) != 0, (flags & TegraGM20BInfoCompression) != 0,
-                                   twin != nil];
+    return [NSString stringWithFormat:@"raw=%d comptags=%d block_linear=%d pitch=%u tiled_cache=%d compression=%d", t != nil,
+                                      t && t->_raw.comptags, t && t->_raw.blockLinear, t ? t->_raw.pitch : 0,
+                                      (flags & TegraGM20BInfoTiledCache) != 0, (flags & TegraGM20BInfoCompression) != 0];
 }
 
 @end

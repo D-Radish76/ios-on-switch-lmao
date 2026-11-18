@@ -64,11 +64,6 @@ static RMFunction *own(id<MTLFunction> function)
 @implementation RMBinaryArchive
 @dynamic device;  // RMObject's
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBBinaryArchive");
-}
-
 - (bool)holds:(uint64_t)key
 {
     std::lock_guard<raw::Mutex> l(_lock);

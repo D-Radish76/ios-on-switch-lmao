@@ -32,7 +32,6 @@ enum Op : uint8_t {
     OpCopyBufferToTexture,
     OpCopyTextureToBuffer,
     OpMipmaps,
-    OpInvocation,
     OpSignalEvent,
     OpWaitEvent,
     OpDrawIndexed,

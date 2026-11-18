@@ -40,11 +40,6 @@ static bool heldInPlanes(RMTexture *t)
 
 @implementation RMComputeEncoder
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBComputeEncoder");
-}
-
 - (MTLDispatchType)dispatchType
 {
     return _type;

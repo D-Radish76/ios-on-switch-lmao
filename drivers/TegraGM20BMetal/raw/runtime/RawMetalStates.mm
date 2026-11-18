@@ -7,11 +7,6 @@
 
 @implementation RMSampler
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBSampler");
-}
-
 - (NSUInteger)pixelFormat
 {
     return MTLPixelFormatInvalid;  // (SPI) a sampler of a plain descriptor names no format, as m2v answers
@@ -24,34 +19,9 @@
         gRM->raw->destroySampler(_raw);
 }
 
-- (id)rmTwin
-{
-    @synchronized(self) {
-        if (_twin)
-            return _twin;
-    }
-    return twinPublish(self, _twin, [RM_M2V(NeedSamplerTwin) newSamplerStateWithDescriptor:_descriptor]);
-}
-
 @end
 
-static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLPipelineOption o);
-
 @implementation RMPipeline
-
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBRenderPipeline");
-}
-
-- (id)rmTwin
-{
-    @synchronized(self) {
-        if (_twin || !_twinLater)
-            return _twin;
-    }
-    return twinPublish(self, _twin, laterTwin(_madeFrom, _twinOptions));
-}
 
 - (NSUInteger)maxTotalThreadsPerThreadgroup
 {
@@ -66,28 +36,6 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
     return @(_packed);
 }
 #endif
-
-@end
-
-@implementation RMTwinObject
-
-- (BOOL)conformsToProtocol:(Protocol *)protocol
-{
-    return [super conformsToProtocol:protocol] || [_twin conformsToProtocol:protocol];
-}
-
-// The m2v object it carries (made with it, never for a selector) answers what this class does not: to its callers it is that
-// object (a buffer the raw pool had no room for, a sampler or tile state the raw path cannot draw with)
-- (id)forwardingTargetForSelector:(SEL)selector
-{
-    (void)selector;
-    return _twin;
-}
-
-- (BOOL)respondsToSelector:(SEL)selector
-{
-    return [super respondsToSelector:selector] || [_twin respondsToSelector:selector];
-}
 
 @end
 
@@ -139,43 +87,6 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
         return nil;
     }
     return (id<MTLSamplerState>)r;
-}
-
-// A stage's linked functions as their twins; `l` itself while one has none (m2v then refuses it as another device's)
-static MTLLinkedFunctions *twinLinked(MTLLinkedFunctions *l)
-{
-    if (!l.functions.count && !l.privateFunctions.count)
-        return l;
-    NSMutableArray *functions = [NSMutableArray array], *hidden = [NSMutableArray array];
-    for (id f in l.functions) {
-        id twin = twinOf(f);
-        if (!twin)
-            return l;
-        [functions addObject:twin];
-    }
-    for (id f in l.privateFunctions) {
-        id twin = twinOf(f);
-        if (!twin)
-            return l;
-        [hidden addObject:twin];
-    }
-    MTLLinkedFunctions *t = [MTLLinkedFunctions linkedFunctions];
-    t.functions = functions;
-    t.privateFunctions = hidden;
-    t.binaryFunctions = l.binaryFunctions;
-    t.groups = l.groups;
-    return t;
-}
-
-MTLRenderPipelineDescriptor *twinDescriptor(MTLRenderPipelineDescriptor *d)
-{
-    MTLRenderPipelineDescriptor *t = [d copy];
-    t.binaryArchives = nil;  // this device's (RawMetalBinaryArchive.mm), which m2v cannot read
-    t.vertexFunction = twinOf(d.vertexFunction);
-    t.fragmentFunction = twinOf(d.fragmentFunction);
-    t.vertexLinkedFunctions = twinLinked(d.vertexLinkedFunctions);
-    t.fragmentLinkedFunctions = twinLinked(d.fragmentLinkedFunctions);
-    return t;
 }
 
 // What Core Animation's name for a state says its draws are (raw_ca_route.h), for the draw shortcuts' rules: the state and
@@ -365,34 +276,6 @@ NSError *rmCreationError(const std::string &failure)
                            }];
 }
 
-// A packed state is the device's archive hit, so its twin goes without the archives the creation listed (Core Animation's
-// own, which holds nothing for this GPU) and without FailOnBinaryArchiveMiss
-static MTLRenderPipelineDescriptor *packedTwinDescriptor(MTLRenderPipelineDescriptor *d, bool packed)
-{
-    MTLRenderPipelineDescriptor *t = twinDescriptor(d);
-    if (packed)
-        t.binaryArchives = nil;
-    return t;
-}
-
-static MTLPipelineOption packedTwinOptions(MTLPipelineOption o, bool packed)
-{
-    (void)packed;  // the facade answers every archive miss (RawMetalBinaryArchive.mm)
-    return o & ~MTLPipelineOptionFailOnBinaryArchiveMiss;
-}
-
-// The twin of a state raw drew from its creation, made when a command buffer that sets it first goes to m2v
-static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLPipelineOption o)
-{
-    id<MTLDevice> m2v = RM_M2V(NeedRawStateTwinAtReplay);
-    if (native_bridge_metal_render_pipeline_lazy)
-        return native_bridge_metal_render_pipeline_lazy(m2v, packedTwinDescriptor(d, true), packedTwinOptions(o, true));
-    return [m2v newRenderPipelineStateWithDescriptor:packedTwinDescriptor(d, true)
-                                             options:packedTwinOptions(o, true)
-                                          reflection:nil
-                                               error:nil];
-}
-
 // A state of `d` under `o`: its record the pack's, or made at once, unless the archives it lists miss it as Metal's would;
 // nil with Metal's error where it has none, its functions another device's or no vertex function among them (Metal's
 // validation error); its reflection is raw's (RawMetalReflection.h).
@@ -415,8 +298,6 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
     }
     if (!p->_packed && gRM->completion)
         rmMadeVariants(p, d);
-    p->_twinOptions = o;
-    p->_twinLater = true;
     if (error)
         *error = nil;
     return (id<MTLRenderPipelineState>)p;
@@ -447,16 +328,6 @@ static id<MTLRenderPipelineState> makeState(RMDevice *device, MTLRenderPipelineD
     if (standInTargetFormat(d))
         return [self standInTargetState:d options:o reflection:reflection error:error];
     return makeState(self, d, o, reflection, error);
-}
-
-- (id)wrapCarried:(id)twin
-{
-    if (!twin)
-        return nil;
-    RMTwinObject *o = [RMTwinObject new];
-    o->_device = self;
-    o->_twin = twin;
-    return o;
 }
 
 - (id<MTLComputePipelineState>)newComputePipelineStateWithFunction:(id<MTLFunction>)f error:(NSError **)error

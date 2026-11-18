@@ -28,10 +28,8 @@
 #include "LimitsTable.h"
 #include "raw_kernel_shadow.h"
 #include "raw_submit_gate.h"
-#include "raw_invocation.h"
 #include "SwitchFrameTimeline.h"
 #include "../../../../kits/SwitchRefusal/SwitchRefusalSite.h"
-#include "RawAlias.h"
 #include "RawComplete.h"
 #include "raw_follow.h"
 #include "raw_gpu.h"
@@ -56,21 +54,6 @@ static inline RMBuffer *cpuBufferOfResource(id object)
         texture = texture->_parent;
     return texture->_buffer;
 }
-
-// The m2v frontend's in-place textures over a buffer, of rows or the device's optimal layout (NativeBridgeMetalFrontend.mm):
-// weak, so the host benchmark links without them.
-extern "C" id native_bridge_metal_texture_in_place(id buffer, id descriptor, NSUInteger offset, NSUInteger bytesPerRow)
-    __attribute__((weak_import));
-extern "C" id native_bridge_metal_texture_tiled_in_place(id buffer, id descriptor, NSUInteger offset)
-    __attribute__((weak_import));
-extern "C" id native_bridge_metal_render_pipeline_lazy(id device, id descriptor, NSUInteger options)
-    __attribute__((weak_import));
-// Where NVK keeps a texture's texels (a stored depth/stencil texture the raw path renders and copies in place)
-struct switch_nvk_image_memory;
-extern "C" int native_bridge_metal_texture_memory(id texture, struct switch_nvk_image_memory *out)
-    __attribute__((weak_import));
-// Why the bridge's last call on this thread failed (bridge/NativeMetalObjects.h)
-extern "C" const char *nmb_last_error(void) __attribute__((weak_import));
 
 // A wait the plugin bounds (r9-hang: r7n's and r7o's freezes were a userland wait with no end in backboardd's render thread):
 // past kWaitLimit, one line naming the wait and the object, then abort(), for a crash report with the stack instead of a silent
@@ -116,9 +99,7 @@ struct Stats {
 #if SWITCH_FRAME_TIMELINE
     // command buffers completed before their submitting thread scheduled them (finish() ran their scheduled handlers)
     std::atomic<uint64_t> scheduledByFinish{0};
-    std::atomic<uint64_t> twinForwards{
-        0};  // selectors m2v's object answers that a facade object has no method for (answerMissing)
-    std::atomic<uint64_t> zeroAnswers{0};  // selectors answered zero, as m2v's objects answer them (answerZero)
+    std::atomic<uint64_t> zeroAnswers{0};  // selectors answered zero (answerZero)
 #endif
 #endif
 };
@@ -259,14 +240,10 @@ std::string rmM2VState();
 // its first use, then runs m2v's method (RawMetalM2V.mm)
 void installM2VForwarders(Class cls, const RawM2V &m2v);
 
-// RawMetalPredicates.mm
+// RawMetalPredicates.mm: the signature a Metal protocol declares for `selector` (null: none), and a selector the object has
+// no method for answered zero, with an error line
 const char *metalTypes(SEL selector);
-// m2v's object of `twinClass` has a method for `selector`: else it answers zero (the frontend's forwardZero), and so does the
-// facade's object, with no twin made and nothing sent to m2v (answerZero)
-bool twinAnswers(Class twinClass, SEL selector);
 void answerZero(id object, NSInvocation *invocation);
-// A selector m2v's object answers that raw has no method for: answered zero, a fault in debug builds and the rates line's tw=../f
-void answerMissing(id object, NSInvocation *invocation);
 raw::shapes::TextureShape textureShape(MTLTextureDescriptor *d);
 bool rawShape(MTLTextureDescriptor *d);
 bool chainShape(MTLTextureDescriptor *d);
@@ -311,23 +288,17 @@ bool bufferRows(uint64_t offset, uint64_t bytesPerRow, uint32_t rows, uint32_t r
 uint64_t bufferRow(const BufferRows &r, uint64_t offset, uint64_t bytesPerRow, uint32_t y);
 
 // RawMetalLibrary.mm
-// A library of the metallib `bytes` (a file's at `path`, or data) read by the facade, with no m2v twin; nil: bytes it does
-// not read (m2v's library answers then)
+// A library of the metallib `bytes` (a file's at `path`, or data) read by the facade; nil: bytes it does not read
 RMLibrary *readLibrary(id device, NSString *path, NSData *bytes);
-// raw::FunctionSource for the facade's functions (RawRenderKey.h): the AIR slice its library read, else its m2v twin's
+// raw::FunctionSource for the facade's functions (RawRenderKey.h): the AIR slice its library read
 bool rmFunctionSource(id<MTLFunction> function, const void **bytes, size_t *length, NSString **name);
 std::string libraryName(RMFunction *f);
 
-// RawMetalStates.mm: a descriptor whose functions are this device's, over their m2v twins
-MTLRenderPipelineDescriptor *twinDescriptor(MTLRenderPipelineDescriptor *d);
 // The device SPI m2v's device answers and the raw device answers too (RawMetalDevice.mm, RawMetalDeviceAnswers.mm)
 @protocol RMDeviceSPI
 - (id<MTLBuffer>)newBufferWithIOSurface:(IOSurfaceRef)surface;
 - (NSUInteger)requiredLinearTextureBytesPerRowForDescriptor:(MTLTextureDescriptor *)descriptor;
 @end
-
-// A compute descriptor over m2v's functions (RawMetalComputeState.mm): for m2v's state, or a kernel compiled in process
-MTLComputePipelineDescriptor *twinComputeDescriptor(MTLComputePipelineDescriptor *d);
 
 // A packed state's variants placed with its own record at creation (RawMetalCubic.mm)
 void packedVariants(RMPipeline *p, uint64_t keyHash);
@@ -363,8 +334,6 @@ void restoreArenas(RMCommandBuffer *cb);
 // DEVELOPMENT: the structure of the plan's operations [from, to) into the device's replay tally (raw_replay_shape.h)
 void noteReplayShape(RMCommandBuffer *cb, size_t from, size_t to);
 #endif
-// A heap's pages back if it was purged (an m2v twin aliases them); true without a heap or an arena
-bool heapResident(RMHeap *h);
 // The device's ask of `d` in an arena of `blockLinear` (a private heap's): every kind the raw path keeps; false: none
 bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask);
 // RawMetalPlainLayout.mm: the texture layout object of a texture no block-linear image of caller memory is made of, nil for
@@ -429,7 +398,7 @@ id rmRefuseUnsupported(const char *why, NSError **error);
 RMPipeline *rmPipelineFor(RMDevice *device, MTLRenderPipelineDescriptor *d, MTLPipelineOption o, NSError **error);
 bool rmRenderArchiveMissed(MTLRenderPipelineDescriptor *d, MTLPipelineOption o, NSError **error);
 // rmPipelineFor's parts: the state as the pack and the archives answer, whether its record is still to be made and what to
-// ask the runtime for, and the state handed to its creator once its record is there or refused (its m2v twin made then)
+// ask the runtime for, and the state handed to its creator once its record is there, or nil with its error
 RMPipeline *rmPipelineShell(RMDevice *device, MTLRenderPipelineDescriptor *d, MTLPipelineOption o, NSError **error);
 bool rmNeedsRecord(RMPipeline *p);
 raw::Completion::Ask rmRecordAsk(RMPipeline *p, MTLRenderPipelineDescriptor *d);
@@ -439,7 +408,7 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
 NSError *rmCreationError(const std::string &failure);
 
 // RawMetalYcbcrTargets.mm: two-plane YCbCr textures rendered into (raw_ycbcr_store.h). A target's stand-in and store shape
-// (Texture::planarStandIn, ycbcrStore), the reason a pass into one goes to m2v (null: none), its planes stored from its pass's
+// (Texture::planarStandIn, ycbcrStore), the reason a pass into one fails (null: none), its planes stored from its pass's
 // backing of the stand-in (0; 1 a pass it cannot render, 2 a draw the encoder refused: *why; `loaded`: the reach of a pass that
 // loaded it, whose store writes the tiles it reaches alone), and a descriptor's first attachment a stand-in renders (YCbCr or
 // raw_format_standin.h's formats; 0: none), whose state standInTargetState makes. A loaded target's pass at colour `j` renders into `loaded`, a stand-in of the command buffer's that a pass of the load state

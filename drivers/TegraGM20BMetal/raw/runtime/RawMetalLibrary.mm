@@ -5,12 +5,7 @@
 #include "NativeBridgeMetalFrontend.h"
 #include "raw_metallib.h"
 
-// The function's m2v twin, made of its library's at the first ask for one: `need` names what asked
-#define RM_FUNCTION_TWIN(f, need) ((f)->_twin ?: [(f) twinOn:RM_M2V(need)])
-
-// The function list entry's TESS tag in the AIR slice the facade read (MetallibEntries.h), as m2v's function answers it;
-// false where the facade read none. Every render state's creation asks it (its key, rmUnsupportedRenderState), so it
-// makes no twin.
+// The function list entry's TESS tag in the AIR slice the facade read (MetallibEntries.h); false where the facade read none
 static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 {
     return f->_source && f->_source->bytes &&
@@ -18,40 +13,6 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 }
 
 @implementation RMFunction
-
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBFunction");
-}
-
-// m2v's function of the same library function, name and constant values, of the library's twin
-- (id)twinOn:(id<MTLDevice>)m2v
-{
-    @synchronized(self) {
-        if (_twin || !_library)
-            return _twin;
-    }
-    id<MTLLibrary> library = [_library twinOn:m2v];
-    NSString *name = [NSString stringWithUTF8String:_libraryName.c_str()];
-    id made = nil;
-    if (_values || _options || ![self.name isEqualToString:name]) {
-        MTLFunctionDescriptor *d = [MTLFunctionDescriptor functionDescriptor];
-        d.name = name;
-        if (![self.name isEqualToString:name])
-            d.specializedName = self.name;
-        d.constantValues = _values;
-        d.options = _options;
-        made = [library newFunctionWithDescriptor:d error:nil];
-    } else {
-        made = [library newFunctionWithName:name];
-    }
-    return twinPublish(self, _twin, made);
-}
-
-- (id)rmTwin
-{
-    return RM_FUNCTION_TWIN(self, NeedFunctionTwin);
-}
 
 // 0 for a Core Image extern, as m2v's translator measured none for its TYPE (metallib_properties: Other(5))
 - (MTLFunctionType)functionType
@@ -82,13 +43,13 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 - (MTLPatchType)patchType
 {
     switch_metal::FunctionTess tess;
-    return ownTess(self, tess) ? MTLPatchType(tess.patchType) : [(id<MTLFunction>)_twin patchType];
+    return ownTess(self, tess) ? MTLPatchType(tess.patchType) : MTLPatchTypeNone;
 }
 
 - (NSInteger)patchControlPointCount
 {
     switch_metal::FunctionTess tess;
-    return ownTess(self, tess) ? tess.controlPoints : [(id<MTLFunction>)_twin patchControlPointCount];
+    return ownTess(self, tess) ? tess.controlPoints : 0;
 }
 
 - (id<MTLArgumentEncoder>)newArgumentEncoderWithBufferIndex:(NSUInteger)index
@@ -107,9 +68,6 @@ static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 
 @end
 
-// The library's m2v twin, made at the first ask for one: `need` names what asked
-#define RM_LIBRARY_TWIN(l, need) ((l)->_twin ?: [(l) twinOn:RM_M2V(need)])
-
 // Metal's answer to a name the library lacks (the frontend's functionNotFound)
 static id functionNotFound(NSString *name, NSError **error)
 {
@@ -125,38 +83,7 @@ static id functionNotFound(NSString *name, NSError **error)
 
 @implementation RMLibrary
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBLibrary");
-}
-
-// m2v's library of the same metallib: from its path, or from the bytes the facade holds
-- (id)twinOn:(id<MTLDevice>)m2v
-{
-    @synchronized(self) {
-        if (_twin || !_functions.listed)
-            return _twin;
-    }
-    std::shared_ptr<raw::LibrarySource> source = _source;
-    id made = nil;
-    if (!source->path.empty()) {
-        made = [m2v newLibraryWithURL:[NSURL fileURLWithPath:[NSString stringWithUTF8String:source->path.c_str()]]
-                                error:nil];
-    } else {
-        dispatch_data_t data = dispatch_data_create(source->bytes, source->size, nullptr, ^{
-            (void)source;
-        });
-        made = [m2v newLibraryWithData:data error:nil];
-    }
-    return twinPublish(self, _twin, made);
-}
-
-- (id)rmTwin
-{
-    return RM_LIBRARY_TWIN(self, NeedLibraryTwin);
-}
-
-// A function of a library the facade read, with no twin: `libraryName` is listed with a type the facade answers
+// A function of a library the facade read: `libraryName` is listed with a type the facade answers
 - (RMFunction *)function:(NSString *)libraryName
                       as:(NSString *)specializedName
                   values:(MTLFunctionConstantValues *)values
@@ -235,8 +162,7 @@ static id functionNotFound(NSString *name, NSError **error)
     return (id<MTLFunction>)function;
 }
 
-// Made at once, as m2v's library makes it: through the descriptor, so the function is this library's (its states keyed by
-// the pack), never m2v's own
+// Made at once, through the descriptor, so the function is this library's (its states keyed by the pack)
 - (void)newFunctionWithDescriptor:(MTLFunctionDescriptor *)d
                 completionHandler:(void (^)(id<MTLFunction>, NSError *))handler
 {

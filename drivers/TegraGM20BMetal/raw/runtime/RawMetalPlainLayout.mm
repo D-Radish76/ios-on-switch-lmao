@@ -82,11 +82,6 @@ void refusedCopy(NSUInteger slice, NSUInteger level, const MTLRegion &r)
 
 @implementation RMPlainLayout
 
-+ (Class)twinClass
-{
-    return NSClassFromString(@"NBTextureLayout");
-}
-
 - (NSUInteger)size
 {
     return NSUInteger(_layout.sliceBytes * _layout.slices);

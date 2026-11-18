@@ -16,8 +16,6 @@
     RMFunction *_function;         // the facade's, which a compile request names
     NSString *_libraryName;        // the library function it was made from, which an archive key names
     raw::PackComputeFacts _facts;  // the pack's answers, or the shader compiler's
-    id<MTLComputePipelineState> _compatibility;
-    std::once_flag _twinOnce;
     std::once_flag _writtenOnce;
     uint32_t _texturesWritten;
 }
