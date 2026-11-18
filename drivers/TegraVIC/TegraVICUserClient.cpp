@@ -863,6 +863,10 @@ OSDictionary *capabilities(const TegraVICTraits *t)
     putNumber(d, "IOSurfaceAcceleratorCapabilitiesHDR", 0);
     putNumber(d, "IOSurfaceAcceleratorCapabilitiesEnhancement", 0);
     putNumber(d, "IOSurfaceAcceleratorCapabilitiesFilmGrain", 0);
+    // 0 although VIC takes three gamut changes (TegraVICColor.h). With it, VideoToolbox (both builds) offers the scaler
+    // every colour-space change and rebuilds its chain to offer a refused one again on the next transfer, and Core
+    // Animation (both builds, AppleDisplay::detachable_layer_impl) detaches BT.2020-tagged layers on every display
+    // through a Display P3 copy that VIC cannot make.
     putNumber(d, "kSurfaceAcceleratorCapabilitiesColorManager", 0);
     putNumber(d, "kSurfaceAcceleratorCapabilitiesAccessibility", 0);
     putNumber(d, "kSurfaceAcceleratorCapabilitiesHistogram", 0);

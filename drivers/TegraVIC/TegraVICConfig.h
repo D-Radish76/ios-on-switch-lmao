@@ -27,6 +27,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include "TegraVICColor.h"
 #include "TegraVICFormats.h"
 
 #ifdef __cplusplus
@@ -207,6 +208,22 @@ static inline void tegra_vic_matrix_put(uint8_t *cfg, uint32_t base, const Tegra
     TEGRA_VIC_SET(cfg, base, MATRIX_C23, (uint32_t)m->c[2][3] & mask);
     TEGRA_VIC_SET(cfg, base, MATRIX_SHIFT, m->shift);
     TEGRA_VIC_SET(cfg, base, MATRIX_ENABLE, 1);
+}
+
+// A slot's gamut change: linearised by the sRGB curve, the gamut matrix with negative results clipped, the output
+// re-encoded by the same curve (TegraVICColor.h).
+static inline void tegra_vic_gamut_put(uint8_t *cfg, uint32_t slot, const TegraVICGamut *g)
+{
+    TegraVICMatrix m;
+    memset(&m, 0, sizeof(m));
+    m.shift = g->shift;
+    for (int r = 0; r < 3; r++)
+        for (int i = 0; i < 3; i++)
+            m.c[r][i] = g->c[r][i];
+    tegra_vic_matrix_put(cfg, slot + TEGRA_VIC_SLOT_GAMUT, &m);
+    TEGRA_VIC_SET(cfg, slot, SLOT_DEGAMMA, TEGRA_VIC_GAMMA_SRGB);
+    TEGRA_VIC_SET(cfg, slot, SLOT_CLIP_ENABLED, 1);
+    TEGRA_VIC_SET(cfg, TEGRA_VIC_OUTPUT, OUT_REGAMMA, TEGRA_VIC_GAMMA_SRGB);
 }
 
 static inline uint32_t tegra_vic_clamp(int64_t v, uint32_t max)
@@ -399,6 +416,7 @@ typedef struct {
     uint32_t fillAlpha10;             // and its alpha (10-bit)
     uint32_t alphaOverride;           // 1: every alpha written is alphaOverride8 (IOSurfaceAccelerator's AlphaOverride)
     uint32_t alphaOverride8;
+    const TegraVICGamut *gamut;       // the request path's primaries change (TegraVICRequest.h); null for other callers
 } TegraVICOp;
 
 // What this engine does with the configurations tegra_vic_build makes.
@@ -598,6 +616,11 @@ static inline const char *tegra_vic_build(const TegraVICImage *src, const TegraV
         if (sw > ((uint64_t)op->dstW << 16) * TEGRA_VIC_MAX_DOWNSCALE ||
             sh > ((uint64_t)op->dstH << 16) * TEGRA_VIC_MAX_DOWNSCALE)
             return "downscale past 16x";
+        // An RGB slot is linearised ahead of the scalers (TRM Figure 28), so VIC would filter in linear light where
+        // Metal filters in gamma space: a gamut change runs only where nothing is filtered.
+        if (op->gamut && (((op->srcX | op->srcY | op->srcW | op->srcH) & 0xffff) || sw != (uint64_t)op->dstW << 16 ||
+                          sh != (uint64_t)op->dstH << 16))
+            return "gamut change that scales or offsets by a fraction";
     }
     // A rectangle starts on a chroma pair and ends on one or at the surface's own odd edge.
     const bool oddRight = (op->dstW & 1) && op->dstX + op->dstW != dst->width;
@@ -631,11 +654,6 @@ static inline const char *tegra_vic_build(const TegraVICImage *src, const TegraV
                      (!op->fill && src->format->kind != TEGRA_VIC_KIND_RGB && src->standard > TEGRA_VIC_YCC_2020)))
         return "YCbCr matrix requires color conversion outside VIC's contract";
 
-    if (!op->fill && ((src->transfer && dst->transfer && src->transfer != dst->transfer) ||
-                      (src->primaries && dst->primaries && src->primaries != dst->primaries)))
-        return "transfer or gamut conversion requires a color shader";
-    if (!op->fill && ((src->transfer && !dst->transfer) || (src->primaries && !dst->primaries)))
-        return "explicit source encoding requires destination metadata";
 
     memset(job, 0, sizeof(*job));
     uint8_t *c = job->config;
@@ -783,6 +801,8 @@ static inline const char *tegra_vic_build(const TegraVICImage *src, const TegraV
             tegra_vic_matrix_rgb_to_ycc(dst->standard, df->kind == TEGRA_VIC_KIND_YCC_FULL, &t->out, &m);
             tegra_vic_matrix_put(c, TEGRA_VIC_OUT_MATRIX, &m);
         }
+        if (op->gamut)
+            tegra_vic_gamut_put(c, slot, op->gamut);
     }
 
     uint32_t n = 0;

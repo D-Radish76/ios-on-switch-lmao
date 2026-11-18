@@ -210,6 +210,7 @@ host_test(
         "//drivers/TegraVIC:SwitchSurfaceColor.h",
         "//drivers/TegraVIC:SwitchVICDecodeOutput.h",
         "//drivers/TegraVIC:TegraVIC.h",
+        "//drivers/TegraVIC:TegraVICColor.h",
         "//drivers/TegraVIC:TegraVICConfig.h",
         "//drivers/TegraVIC:TegraVICFormats.h",
         "//drivers/TegraVIC:TegraVICRequest.h",

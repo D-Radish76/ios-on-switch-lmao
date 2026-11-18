@@ -109,9 +109,11 @@ turns hardware off, a buffer is not IOSurface-backed, `ValidateM2` refuses (eith
 published maxima), or the CGColorSpaces of source and destination differ (needs flag 0x10) or a PQ/HLG transfer
 function changes. 24B119 builds a graph first (`sAllowPixelTransferGraph` 1): the scaler costs 1000 + 100 + 100 per
 pixel unit, Metal 1000 + 200 + 200, so the scaler wins any edge it is offered; 21H461 (graph off by default) asks
-`vtCreateDynamicSession` before any blitter. A failed hardware transfer falls back for that call. The session property
-`kVTPixelTransferPropertyKey_MostRecentConversionType` (both builds) answers Hardware, Metal, Software or
-HardwareAndSoftware for the last transfer.
+`vtCreateDynamicSession` before any blitter. A failed hardware transfer falls back for that call and is not
+remembered: the session drops its chain (`VTPixelTransferChainRemoveAllNodes` after `VTPixelTransferChainDoTransfer`
+fails, both builds) and rebuilds it, scaler first, on the next transfer; each failure also logs FigSignalErrorAt. The
+session property `kVTPixelTransferPropertyKey_MostRecentConversionType` (both builds) answers Hardware, Metal,
+Software or HardwareAndSoftware for the last transfer.
 **Others [V]:** CMPhoto and ImageIO/AppleJPEG (thumbnails, HEIF/JPEG scaling), WebCore (`IOSurface::convertToFormat`,
 null-checks the accelerator), VectorKit (Maps), MediaToolbox's FigVideoRenderPipeline (BlitSurface), CMCapture and
 camera frameworks (no camera here). ReplayKit, AVFoundation, CoreImage, CoreVideo do not link it.
@@ -125,9 +127,17 @@ min 4, max 16384 (dest height 16382), up 4x, down 8x H / 4x V, filter taps 9 V /
 coefficients), rotation iff all 8 transforms proved, IdentityCSC 1, FractionalXYOffsetsSupported 1 and
 FractionalDimensions 1 (16.16 source rectangles reach SourceRectLeft/Right/Top/Bottom; probe gpu.x1.vic_fractional
 judges both), formats ARGB8888, RGBA8888, 2Planes420,
-2Planes422, 2Planes444, LumaOnlyL008, ARGB2101010 and Interleaved422 ('2vuy', 'yuvs') in and out, and 0 for
-HDR, film grain, enhancement, directional scaling, colour manager, accessibility, histogram, tiling (Apple's GPU
-tiling), 10-bit YCbCr and compressed formats.
+2Planes422, 2Planes444, LumaOnlyL008, ARGB2101010 and Interleaved422 ('2vuy', 'yuvs') in and out, and 0 for colour
+manager, HDR, film grain, enhancement, directional scaling, accessibility, histogram, tiling (Apple's GPU tiling),
+10-bit YCbCr and compressed formats. Colour manager is the only key of its kind VideoToolbox reads (both builds); with it set,
+VideoToolbox offers the scaler every transfer whose colour spaces differ, including BT.709 video to sRGB, which VIC
+refuses (§8) and VideoToolbox would offer again on every transfer (§5). Core Animation reads it too, on both builds
+[V: QuartzCore 24B119 0x18443dfc0, 21H461 0x189556fc0], in `AppleDisplay::detachable_layer_impl` on any display that
+supports detaching, the panel included: a layer whose `IOSurface::color_primaries` (bulk primaries 9 is BT.2020, 12
+Display P3, anything else 709) is outside the display's set (709 and P3 here; BT.2020 only with
+`IOSurfaceAcceleratorCapabilitiesHDR`) is composited without it, and with it detached through a copy into a Display P3
+surface ('BGRA', or '422f' from 4:2:0 in copy mode) carrying the source's transfer function, which VIC cannot make.
+So colour manager stays 0 while VIC takes only part of what either caller would then send.
 Core Animation reads none of the format keys. On iPadOS 27 its detached-layer copy (`IOMFBDisplay::detach_layer`,
 QuartzCore 24B119) asks for '422v'/'422f' from a '420v'/'420f' layer regardless [V].
 
@@ -166,7 +176,9 @@ Apple's code that still runs: the classes' constructors, `getMetaClass`, the ser
    are used; quality hints (dither, enhance, noise estimation, directional scaling, pixel averaging, edge mirroring,
    pseudo-linear, fix-upscaling, fractional precision, blit clip, lock-in, read-only, unwire, power, coalescing, Comm
    records) are accepted and ignored. Refused as **kIOReturnUnsupported** (callers fall back): histogram, HDR, film
-   grain, colour remap, shared events, formats outside `TegraVICFormats.h`, a transfer function or primaries change,
+   grain, colour remap, shared events, formats outside `TegraVICFormats.h`, a transfer function change, a primaries
+   change other than the three in the colour management paragraph below, one of those three that scales or offsets the
+   source by a fraction,
    protected-to-less-protected, and any shape the checker refuses (pitch the unit cannot address, a 4:2:0 rect or 4:2:2
    columns starting odd or ending odd short of the surface's edge, >16x scaling, sizes outside 2..8192, a destination
    sub-rectangle under a transform other than 0 and 6, whose placement is not in place on the unit). An odd-sized
@@ -179,9 +191,28 @@ Apple's code that still runs: the classes' constructors, `getMetaClass`, the ser
    the source's cache lines and clean+invalidate the destination's, run each job (host1x OP_DONE syncpoint, by
    interrupt), invalidate the destination again, unmap, `IOSurface::complete`, release, reply.
 
-Colour: 4:2:0 surfaces of 1280 wide or 720 high and up are BT.709, smaller BT.601 (CoreVideo's default for untagged
-buffers) [I: attachments are not read]; '420v' video range, '420f' full range. VIC's pipeline is 10-bit: matrices
-are generated in its encoding (`tegra_vic_matrix_*`) and checked on the host against the float conversions (≤ 1 step).
+Colour: a surface's tags live in IOSurface's bulk attachments, which `IOSurface::getBulkAttachments` reads
+(kits/SwitchABI's IOSurface tables: 0x70 bytes on 21H461, 0x84 on 24B119). The YCbCr matrix, primaries, transfer
+function and top and bottom chroma locations sit at +0x3a..+0x3e as H.273 code points, 2 meaning none [V: both
+kernels' set and get; on macOS 27.2.1, IOSurface.framework stores IOSurfaceSetValue and CoreVideo's attachments for
+those keys there and leaves the property dictionary without them]. An untagged Y'CbCr surface is BT.601; '420v' is
+video range, '420f' full range. VIC's pipeline is 10-bit: matrices are generated in its encoding (`tegra_vic_matrix_*`)
+and checked on the host against the float conversions (≤ 1 step).
+
+Colour management (`TegraVICColor.h`): a side without a tag converts nothing for that tag, matching VideoToolbox, which
+clears an unset tag before it calls the scaler. VIC takes three primaries changes between sRGB-encoded 8-bit RGB
+surfaces when nothing is scaled: 709 to Display P3, 709 to BT.2020 and Display P3 to BT.2020. The job runs the slot's
+sRGB degamma, a gamut matrix that clips negative results, and the output's sRGB regamma (TRM Figure 28, Tables 64, 69,
+73, 74). The reference is VTPixelTransferSession on an M4 Max, scaler hardware and Metal each run alone over every
+8-bit value (c38-audit/vic-colour/probe). It decodes ITU_R_709_2 as a 1.961 power with a linear toe, a curve VIC lacks,
+so every transfer function change is refused. SMPTE C and EBU 3213 count as 709 (the hardware treats them so, Metal
+converts them), and any tag but Display P3 and BT.2020 into 709 converts nothing: Core Animation's detached-layer
+copies carry the source's primaries bucketed that way and written back as 709 (§6). The two backends also differ from
+each other out of BT.2020 (clipping), on Y'CbCr sides, and on scaling (the hardware filters colour-managed RGB in
+linear light, Metal in gamma space); all of those are refused. The host model (`test/vic_model_color.h`) writes the
+three taken pairs within one code of both backends over all 2^24 values, under each widening and rounding the model
+allows. Display P3 to 709 stays within one code only if VIC widens RGB as x << 2 and rounds the regamma, and reaches 3
+codes with bit replication and truncation, so it is refused as well.
 
 ## 9. Gaps and risks
 
@@ -193,7 +224,24 @@ are generated in its encoding (`tegra_vic_matrix_*`) and checked on the host aga
   (kits/SwitchRefusal, category TegraVIC: "shared events: IOSurfaceAccelerator transform refused (not on VIC), the
   caller falls back"). Supporting them needs the IOSurface kext's IOSurfaceSharedEvent lookup/listener/signal
   (0x5b974d8, 0x5b97400, 0x5b97718, 0x5b96c88 [V], semantics [I]).
-- Colour standard by size, not by the surfaces' YCbCrMatrix attachment.
+- Colour management has never run on the unit. In bisect order it rests on: getBulkAttachments, bound by address
+  (abi_check holds its words), returning the tags CoreVideo set, on iPadOS 17 as on 27 (QuartzCore 21H461 reads the
+  primaries at bulk +0x3b of 0x70 bytes too; the chroma location codes were not probed);
+  VIC's DegammaMode, ClipEnabled, RegammaMode and gamut matrix sitting where libdrm's vic40.h puts them; the gamut matrix
+  following the colour matrices' law at r_shift 11; the sRGB curves matching the standard to well under a code (the TRM
+  claims DirectX's srgb2linear accuracy); the output quantizing the regamma's result as the model does.
+- Colour manager is 0 (§6), so VideoToolbox never offers the scaler a colour-space change and the three gamut changes
+  reach VIC only from direct IOSurfaceAccelerator clients. Publishing it needs every change either caller then sends
+  taken: VideoToolbox's commonest, BT.709 video to sRGB, needs Apple's 709 decode, which no VIC stage has (Table 64's
+  fixed curves; the palette serves indexed formats, the histogram enhancement LUT is a multiplier table, soft clamping
+  three linear pieces: TRM 15.3.13-15.4.3), and Core Animation's BT.2020
+  copies need Y'CbCr and non-sRGB sides.
+- The colour tags are now real for every reader of `switch_vic_surface_color`, the display's planes and the GPU views
+  included: 709-tagged Y'CbCr gets BT.709, a siting other than Left or none goes through conversion, and an unsupported
+  matrix or siting is refused by IOSurfaceAccelerator requests where before every surface read as untagged. The
+  display follows its window instead: a siting VIC cannot convert (fields that differ) is scanned co-sited, and the
+  plane conversion shows a matrix VIC lacks (H.273 4, 7, 8, 10 and up) as BT.601, as window B does. The landscape turn
+  and the plane composite of a decoder picture still refuse both (`switch_native_vic_image`).
 - RGhA, 10-bit YCbCr: refused (VideoToolbox falls back per call). Packed 4:2:2 runs one element a pixel, '2vuy' as
   `V8_Y8__U8_Y8` (60) and 'yuvs' as `Y8_V8__Y8_U8` (58): probe gpu.x1.vic_packed422 read the U-first codes (59, 57) with
   Cb and Cr exchanged [T], and that the V-first codes are their exact mirror is NVIDIA's naming [I]. L008,

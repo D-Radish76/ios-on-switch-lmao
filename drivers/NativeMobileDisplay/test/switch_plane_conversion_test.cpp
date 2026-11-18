@@ -444,6 +444,16 @@ TEST_F(PlaneConversion, AcceptedConversionSurvivesTemporaryDisplayMappingPressur
     EXPECT_EQ(allocations, 1u);
 }
 
+TEST_F(PlaneConversion, AMatrixVICLacksConvertsAsWindowBShowsIt)
+{
+    layer.surface.colorMatrix = SWITCH_VIC_MATRIX_UNSUPPORTED;
+    layer.surface.chromaTop = layer.surface.chromaBottom = 2;
+    ASSERT_EQ(offer(), -115);
+    EXPECT_EQ(display->planeConversion->input.standard, uint32_t(TEGRA_VIC_YCC_601));
+    work();
+    EXPECT_GE(offer(), 0);
+}
+
 TEST_F(PlaneConversion, NewContentQueuesWithoutAllocationOrEngineAdmissionUnderTheDisplayGate)
 {
     EXPECT_EQ(offer(), -115);
