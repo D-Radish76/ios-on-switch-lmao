@@ -172,6 +172,8 @@ NSString *surfaceFacts(IOSurfaceRef s, NSUInteger plane)
 // Max's validation: "IOSurface texture: must be of type MTLTextureType2D", "cannot be mipmapped", "cannot create
 // compressed, depth, or stencil textures", "rotation is not a valid MTLTextureRotation"). RGB10A8_2P_XR10 and its sRGB twin
 // pass the level rule, and their mipmapped texture reads none of the surface's codes (probes/xrsurf.mm): no texture either.
+// R10Unorm_PACKED and RG10Unorm_PACKED pass it too, and an M4 Max makes them of 2 and 3 levels, every lod reading level 0
+// (m2v-textures11 probes/h4/mips.txt).
 const char *surfaceMetalRefusal(MTLTextureDescriptor *d)
 {
     const uint32_t format = uint32_t(d.pixelFormat);
@@ -179,7 +181,9 @@ const char *surfaceMetalRefusal(MTLTextureDescriptor *d)
         return "a texture of no width or height (its descriptor's validation stops it)";
     if (d.textureType != MTLTextureType2D && d.textureType != MTLTextureTypeTextureBuffer)
         return "an IOSurface texture is a 2D texture or a texture buffer";
-    if (d.mipmapLevelCount > 1 || d.sampleCount > 1 || d.arrayLength > 1 || d.depth > 1)
+    const uint32_t chain = 32u - uint32_t(__builtin_clz(uint32_t(std::max(d.width, d.height))));
+    const bool levels = raw::packedPlaneChannels(format) ? d.mipmapLevelCount > chain : d.mipmapLevelCount > 1;
+    if (levels || d.sampleCount > 1 || d.arrayLength > 1 || d.depth > 1)
         return "an IOSurface texture is of one level, sample, layer and plane";
     if (rotationOf(d) > 4)
         return "a rotation that is no MTLTextureRotation";
@@ -299,10 +303,21 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const bool xrTaken =
         xr && (raw::surfaceRefusal || xrPlanesShape(flat, s, plane) || xrWordPlaneShape(flat, s, plane));
     const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
-    if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
+    if (raw::surfaceRefusal == raw::kTiledTexelBuffer)
+        form = raw::kTiledTexelBuffer;
+    else if (raw::packedPlaneChannels(format) && d.mipmapLevelCount > 1 && !raw::surfaceRefusal)
+        form = "R10Unorm_PACKED or RG10Unorm_PACKED of several levels, which an M4 Max reads at level 0 at every lod";
+    else if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
         form = ycbcrPlan(flat, s, plane, unused);
-    else if (xr && !xrTaken && !xrPlanesStorable(d))
-        form = "RGB10A8_2P_XR10 a fragment program may store to, with no pack state merging and splitting its planes";
+    if (xr && !xrTaken && !xrPlanesStorable(d)) {
+        SWITCH_REFUSE_DETAIL("raw", "tex.surf.pack", uintptr_t(d.usage),
+                             "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: nil: the pack holds no "
+                             "state merging and splitting RGB10A8_2P_XR10 planes, which a fragment program may store to "
+                             "(a pack made without them): %s",
+                             (unsigned long)d.width, (unsigned long)d.height, (unsigned long)format,
+                             (unsigned long)d.usage, IOSurfaceGetID(s), shape);
+        return nil;
+    }
     if (form) {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.form", uintptr_t(form),
                              "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: %s: nil until the "

@@ -344,7 +344,7 @@ bool Device::createSurfaceTexelBuffer(uint64_t surfaceId, void *base, uint64_t a
         if (!i || i->kernelTiled()) {
             surfaceRefusal = !i ? "its import: the kernel's BoImport, SurfaceLayout or VmBind (their bo-import, "
                                   "iosurface-layout or vm-bind line), or no GPU VA left"
-                                : "a surface the kernel lays out block-linear, whose bytes are in no texel order";
+                                : kTiledTexelBuffer;
             if (i)
                 release(i);
             return false;
