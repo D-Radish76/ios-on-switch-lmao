@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// A process that draws only states the pack holds never opens its m2v device (RawM2V); each thing only m2v does opens it
-// once, at its first use, naming it. Each scenario is a process of its own: one raw device and one m2v device a process.
+// States, reflections, samplers and resources a process makes on the raw device, each answered by the raw path alone. Each
+// scenario is a process of its own: one raw device a process.
 #include "raw_facade_harness.h"
 #include "reflection_blob_writer.h"
 #include "MetalABI.h"

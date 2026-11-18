@@ -98,7 +98,6 @@ struct LibraryCompiler {
 inline id<MTLDevice> completing()
 {
     id<MTLDevice> device = facade::device();
-    EXPECT_FALSE(gRM->m2v.open);
     const std::string cache = dir() + "/cache";
     mkdir(cache.c_str(), 0700);
     raw_metal_complete_states(cache.c_str(), nullptr);

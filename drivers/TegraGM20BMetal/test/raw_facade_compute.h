@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Compute on the raw facade over the kernel model (raw_facade_harness.h): a library of `kKernels` kernel functions, each
-// in the pack for one threadgroup shape of its own (kernel i: i + 1 threads wide), and an m2v stand-in that makes the
-// library's twin of the same metallib, so the facade names each function's AIR and keys its states as on the device.
+// in the pack for one threadgroup shape of its own (kernel i: i + 1 threads wide), so the facade names each function's AIR
+// and keys its states as on the device.
 #pragma once
 #include "raw_facade_harness.h"
 #include "made_metallib.h"
@@ -9,34 +9,6 @@
 #include "../raw/runtime/raw_metallib.h"
 #include <string>
 #include <vector>
-
-// A compute state as m2v reports it: every MTLComputePipelineState selector answers zero but these
-@interface HarnessComputeState : HarnessM2V
-@end
-@implementation HarnessComputeState
-
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
-{
-    for (BOOL required : {YES, NO}) {
-        const objc_method_description d =
-            protocol_getMethodDescription(@protocol(MTLComputePipelineState), selector, required, YES);
-        if (d.types)
-            return [NSMethodSignature signatureWithObjCTypes:d.types];
-    }
-    return [super methodSignatureForSelector:selector];
-}
-
-- (NSUInteger)maxTotalThreadsPerThreadgroup
-{
-    return 1024;
-}
-
-- (NSUInteger)threadExecutionWidth
-{
-    return 32;
-}
-
-@end
 
 @interface HarnessFunction : NSObject {
 @public
@@ -56,11 +28,6 @@
     return _metallib;
 }
 
-- (id)harnessComputeState
-{
-    return [HarnessComputeState new];
-}
-
 - (NSString *)name
 {
     return _name;
@@ -69,43 +36,6 @@
 - (MTLFunctionType)functionType
 {
     return MTLFunctionTypeKernel;
-}
-
-@end
-
-@interface HarnessLibrary : NSObject {
-@public
-    NSData *_metallib;
-}
-@end
-@implementation HarnessLibrary
-
-- (id)newFunctionWithName:(NSString *)name
-{
-    HarnessFunction *f = [HarnessFunction new];
-    f->_name = name;
-    f->_metallib = _metallib;
-    return f;
-}
-
-@end
-
-// m2v with libraries of what it is given
-@interface HarnessComputeM2V : HarnessM2V
-@end
-@implementation HarnessComputeM2V
-
-- (id)newLibraryWithData:(dispatch_data_t)data error:(NSError **)error
-{
-    const void *bytes = nullptr;
-    size_t size = 0;
-    dispatch_data_t mapped = dispatch_data_create_map(data, &bytes, &size);
-    HarnessLibrary *l = [HarnessLibrary new];
-    l->_metallib = [NSData dataWithBytes:bytes length:size];
-    (void)mapped;
-    if (error)
-        *error = nil;
-    return l;
 }
 
 @end
@@ -147,8 +77,7 @@ inline raw::PackKernel kernelRecord(uint32_t i, uint32_t maxThreads)
     return k;
 }
 
-// Kernel `i`'s compute state's answers as the pack holds them (PackComputeFacts), so its creation asks no compiler: those
-// HarnessComputeState gives as m2v's
+// Kernel `i`'s compute state's answers as the pack holds them (PackComputeFacts), so its creation asks no compiler
 inline raw::PackComputeFacts kernelFacts(uint32_t i, uint32_t maxThreads)
 {
     raw::AirHash air;

@@ -76,7 +76,7 @@ void aPendingVariantIsNotEncodedAhead()
     };
     NSString *why = nil;
     id<MTLDevice> device = raw_metal_device_open(
-        writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, kSampled).c_str(), 0, nil, &why);
+        writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, kSampled).c_str(), 0, 0, &why);
     ASSERT_TRUE(device != nil) << (why ? why.UTF8String : "");
     const std::string cache = directory + "/cache";
     mkdir(cache.c_str(), 0700);

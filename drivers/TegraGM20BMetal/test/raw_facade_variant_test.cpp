@@ -29,7 +29,7 @@ id<MTLLibrary> served(RenderCompiler &compiler, const std::string &name, const s
     if (!serving)
         kernel_model::model.compilerFlags = TegraGM20BCompilerCapable;
     NSString *why = nil;
-    device = raw_metal_device_open(pack.c_str(), 0, nil, &why);
+    device = raw_metal_device_open(pack.c_str(), 0, 0, &why);
     if (!device)
         return nil;
     const std::string cache = directory + "/cache";

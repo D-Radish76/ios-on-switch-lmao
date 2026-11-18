@@ -38,7 +38,6 @@
 #include "raw_texture_shape.h"
 #include "TegraGM20BLayout.h"
 #include "../../../../kits/SwitchRefusal/SwitchRefusal.h"
-#include "RawMetalNeeds.h"
 #include "RawMetalObjects.h"
 #include "raw_retirement.h"
 
@@ -134,9 +133,8 @@ private:
 };
 
 // The process's one raw device (the render server's): its state. The device object Core Animation holds is an instance of a
-// subclass of _MTLDevice (raw_metal_device_open_lazy) that conforms to Metal's protocols as the m2v device does; a selector
-// only m2v's device class has a method for opens the m2v device at its first use (RawMetalM2V.mm). It has no instance
-// variables of its own (the base class's ABI is fixed), so its state lives here.
+// subclass of _MTLDevice (raw_metal_device_open) that conforms to Metal's protocols. It has no instance variables of its own
+// (the base class's ABI is fixed), so its state lives here.
 struct RMNativeEventSignal {
     void *event;
     raw::EventTimeline::Promise promise;
@@ -175,9 +173,6 @@ struct RawState {
     raw::Device *raw = nullptr;
     std::shared_ptr<raw::SharedEvents> sharedEvents;
     std::atomic<bool> eventWords{true};  // the kernel has TegraGM20BJobABI.h method 40 (kernel events' words)
-    RawM2V m2v;                          // how the m2v device is opened (RawMetalM2V.mm)
-    id<MTLDevice> fallback;              // the m2v device, once opened: read it through rmM2V or rmM2VIfOpen
-    std::atomic<bool> m2vOpened{false};
     uint64_t registryID = 0;
     id device;  // the raw device object
     // The submit worker's own: every command buffer's place in its queue's order (RawMetalSchedule.mm). Other threads
@@ -216,29 +211,6 @@ struct RawState {
 };
 
 extern RawState *gRM;
-
-// RawMetalM2V.mm: the m2v device, for something the raw path has no own for (`need`; `selector` names a forwarded
-// device selector's), opened now if this is the process's first need (nil: none can be had). Debug builds name each
-// need once a process and keep their count (switchRawM2V): what made its m2v device open.
-id<MTLDevice> rmM2V(RMNeed need, SEL selector = nullptr);
-// The m2v device if something opened it already, else nil: what holds no need of its own (a twin made already, the
-// counters)
-id<MTLDevice> rmM2VIfOpen();
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-id<MTLDevice> rmM2VFor(RMNeed need, std::atomic<bool> &said);
-// "m2v device never opened", or what opened it and in how long: the give-back line's
-std::string rmM2VState();
-#define RM_M2V(need)                          \
-    ([]() -> id<MTLDevice> {                  \
-        static std::atomic<bool> said{false}; \
-        return rmM2VFor(need, said);          \
-    }())
-#else
-#define RM_M2V(need) rmM2V(need)
-#endif
-// The device class's selectors m2v's device class has a method for and the raw path has none: each opens the m2v device at
-// its first use, then runs m2v's method (RawMetalM2V.mm)
-void installM2VForwarders(Class cls, const RawM2V &m2v);
 
 // RawMetalPredicates.mm: the signature a Metal protocol declares for `selector` (null: none), and a selector the object has
 // no method for answered zero, with an error line
@@ -294,7 +266,7 @@ RMLibrary *readLibrary(id device, NSString *path, NSData *bytes);
 bool rmFunctionSource(id<MTLFunction> function, const void **bytes, size_t *length, NSString **name);
 std::string libraryName(RMFunction *f);
 
-// The device SPI m2v's device answers and the raw device answers too (RawMetalDevice.mm, RawMetalDeviceAnswers.mm)
+// The device SPI the raw device answers (RawMetalDevice.mm, RawMetalDeviceAnswers.mm)
 @protocol RMDeviceSPI
 - (id<MTLBuffer>)newBufferWithIOSurface:(IOSurfaceRef)surface;
 - (NSUInteger)requiredLinearTextureBytesPerRowForDescriptor:(MTLTextureDescriptor *)descriptor;

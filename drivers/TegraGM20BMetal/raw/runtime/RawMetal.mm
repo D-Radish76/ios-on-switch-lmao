@@ -131,7 +131,7 @@ static struct {
     bool started = false;
 } gPrepared;
 
-static raw::OpenFailure gOpenFailure = raw::OpenFailure::Structural;  // raw_metal_device_open_lazy's last nil
+static raw::OpenFailure gOpenFailure = raw::OpenFailure::Structural;  // raw_metal_device_open's last nil
 
 static raw::Device *openDevice(const char *packPath, uint64_t stack, raw::Device::Role role, std::string &err,
                                raw::OpenFailure &failure)
@@ -208,10 +208,9 @@ dispatch_queue_t followingSerialQueue(const char *label)
     return queue;
 }
 
-// The device class: a subclass of _MTLDevice, as the frontend's m2v device class is (conforming to MTLDevice and MTLDeviceSPI,
-// with no instance variables of its own: the base class's ABI is the IPSW kind's), with the facade's methods, the kind's
-// capability answers and a forwarder for each method only m2v's device class has
-static Class deviceClass(const RawM2V &m2v, NSString **error)
+// The device class: a subclass of _MTLDevice (conforming to MTLDevice and MTLDeviceSPI, with no instance variables of its own:
+// the base class's ABI is the IPSW kind's), with the facade's methods and the kind's capability answers
+static Class deviceClass(NSString **error)
 {
     Class base = NSClassFromString(@"_MTLDevice") ?: [NSObject class];
 #if TARGET_OS_IPHONE
@@ -235,7 +234,6 @@ static Class deviceClass(const RawM2V &m2v, NSString **error)
     free(methods);
     installDeviceAnswers(cls);
     installSharedTextureMethods(cls);
-    installM2VForwarders(cls, m2v);
     class_addProtocol(cls, @protocol(MTLDevice));
     // _MTLAddDevice asserts the private device protocol too, which the target's own drivers get from their IOGPU base class
     if (Protocol *spi = objc_getProtocol("MTLDeviceSPI"))
@@ -244,26 +242,12 @@ static Class deviceClass(const RawM2V &m2v, NSString **error)
     return cls;
 }
 
-id<MTLDevice> raw_metal_device_open(const char *packPath, uint64_t stack, id<MTLDevice> fallback, NSString **error)
-{
-    RawM2V m2v;
-    if (fallback)
-        m2v.open = ^{
-            return fallback;
-        };
-    m2v.methods = NSClassFromString(@"NBDeviceMethods");
-    static const SEL registry = NSSelectorFromString(@"registryID");
-    const uint64_t registryID = [fallback respondsToSelector:registry] ? [fallback registryID] : 0;
-    return raw_metal_device_open_lazy(packPath, stack, registryID, m2v, error);
-}
-
 raw::OpenFailure raw_metal_open_failure(void)
 {
     return gOpenFailure;
 }
 
-id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, uint64_t registryID, RawM2V m2v,
-                                         NSString **error)
+id<MTLDevice> raw_metal_device_open(const char *packPath, uint64_t stack, uint64_t registryID, NSString **error)
 {
     static raw::Mutex once;
     std::lock_guard<raw::Mutex> l(once);
@@ -293,27 +277,19 @@ id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, u
     }
     if (!prepared)
         dev = openDevice(packPath, stack, raw::Device::Role::Client, err, failure);
-    // m2v's views of the raw path's memory are made in the GPU VM the two drivers share: NVK's connection, whichever opens it
-    // first (raw_kernel.h)
-    if (dev && m2v.open && !dev->shared()) {
-        err = "the kernel connection is not NVK's, so m2v cannot alias the raw path's memory";
-        failure = raw::OpenFailure::Structural;
-        delete dev;
-        dev = nullptr;
-    }
     if (!dev) {
         gOpenFailure = failure;
         if (error)
             *error = [NSString stringWithUTF8String:err.c_str()];
         return nil;
     }
-    Class cls = deviceClass(m2v, error);
+    Class cls = deviceClass(error);
     if (!cls) {
         gOpenFailure = raw::OpenFailure::Structural;
         delete dev;
         return nil;
     }
-    // Each facade class conforms to its Metal protocol, as the m2v objects it stands in for do (the frontend's adoptMetalProtocols).
+    // Each facade class conforms to its Metal protocol
     const std::pair<Class, Protocol *> classes[] = {
         {[RMBuffer class], @protocol(MTLBuffer)},
         {[RMTexture class], @protocol(MTLTexture)},
@@ -338,7 +314,6 @@ id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, u
     RawState *r = new RawState;
     r->raw = dev;
     r->sharedEvents = dev->sharedEvents();
-    r->m2v = m2v;
     r->registryID = registryID;
     // Before the device object: RMDevice's answers (name, maxBufferLength) read the kernel's info through gRM, and its init
     // may ask them

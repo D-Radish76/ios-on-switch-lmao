@@ -21,7 +21,7 @@ void preparedCubic(uint32_t stage, bool pipelineFirst)
                                                  {16, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0}};
     const std::string pack = writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, entries);
     NSString *why = nil;
-    id<MTLDevice> device = raw_metal_device_open(pack.c_str(), 0, nil, &why);
+    id<MTLDevice> device = raw_metal_device_open(pack.c_str(), 0, 0, &why);
     ASSERT_TRUE(device != nil) << (why ? why.UTF8String : "");
     const std::string cache = directory + "/cache";
     mkdir(cache.c_str(), 0700);
@@ -187,7 +187,7 @@ void composedForms()
                                                  {32, raw::EntryFetch, 2, 0, raw::SamplerNone, 0, 0}};
     const std::string pack = writePack(key, {}, {}, true, "", {}, entries);
     NSString *why = nil;
-    id<MTLDevice> device = raw_metal_device_open(pack.c_str(), 0, nil, &why);
+    id<MTLDevice> device = raw_metal_device_open(pack.c_str(), 0, 0, &why);
     ASSERT_TRUE(device != nil) << (why ? why.UTF8String : "");
     const std::string cache = directory + "/cache";
     mkdir(cache.c_str(), 0700);
@@ -293,7 +293,7 @@ void shadowedPass(bool refused)
     ASSERT_TRUE(compiler.serve(directory));
     const std::string pack = writePack(packKey(MTLPixelFormatBGRA8Unorm));
     NSString *why = nil;
-    id<MTLDevice> device = raw_metal_device_open(pack.c_str(), 0, nil, &why);
+    id<MTLDevice> device = raw_metal_device_open(pack.c_str(), 0, 0, &why);
     ASSERT_TRUE(device != nil) << (why ? why.UTF8String : "");
     const std::string cache = directory + "/cache";
     mkdir(cache.c_str(), 0700);

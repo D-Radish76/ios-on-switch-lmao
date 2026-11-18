@@ -2383,12 +2383,6 @@ public:
     // The texture headers not held: 0 names why a creation that found its memory made nothing
     uint32_t headersLeft();
 
-    // Whether the connection is NVK's (raw_kernel.h): m2v's views alias this path's memory
-    bool shared() const
-    {
-        return k_.shared();
-    }
-
     // The memory no resource holds goes back to the kernel: empty chunks of the pool, of images and of buffers, the kept
     // dedicated ones (the kernel keeps their pages until the work submitted before has completed) and the kept surface
     // imports, which it counts

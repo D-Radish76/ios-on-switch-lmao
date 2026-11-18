@@ -58,7 +58,7 @@ inline uint64_t rmNewIdentity()
 
 @interface RMObject : NSObject {
 @public
-    // the raw device, which gRM holds for the life of the process (raw_metal_device_open_lazy: one per process): no weak
+    // the raw device, which gRM holds for the life of the process (raw_metal_device_open: one per process): no weak
     // reference, whose side-table lock every object's creation, dealloc and encoder begin took
     __unsafe_unretained id _device;
     // a texture's or buffer's number, never another object's in this process (rmNewIdentity); 0 otherwise

@@ -146,7 +146,7 @@ void logGivenBack(size_t relieved, const RMPassTrim &passes, const raw::Device::
         "GPU memory %llu KB, no owner %llu KB; %llu KB of it internal too) + purgeable %llu KB + page tables %llu "
         "KB%s; shader heap in place %llu KB (file pages: no footprint); compiler store mapped %llu KB (external pager "
         "%d, resident %llu KB); malloc gave back %llu KB; trim let go %zu kept surface imports (%llu KB) and %zu pass "
-        "copies naming %zu textures; %{public}s",
+        "copies naming %zu textures",
         kb(f.footprint), kb(f.internal - f.alternate), kb(int64_t(heap.size_in_use)), kb(int64_t(heap.size_allocated)),
         kb(pool), (unsigned long long)d.stats.poolChunks.load(), kb(int64_t(d.arenaBytes())), kb(int64_t(arenaPlaced)),
         kb(int64_t(arenaVolatile)), kb(int64_t(arenaGiven)), kb(copies), kb(rest),
@@ -155,6 +155,6 @@ void logGivenBack(size_t relieved, const RMPassTrim &passes, const raw::Device::
         kb(f.alternate + f.alternateCompressed), kb(f.purgeable), kb(f.pageTable),
         ledgered ? "" : " (no ledger: IOKit counts page tables too)", kb(int64_t(d.heapInPlaceBytes())),
         kb(int64_t(store.mapped)), int(store.external), kb(int64_t(store.resident)), kb(int64_t(relieved)),
-        kept.keptImports, kb(int64_t(kept.keptImportBytes)), passes.passes, passes.textures, rmM2VState().c_str());
+        kept.keptImports, kb(int64_t(kept.keptImportBytes)), passes.passes, passes.textures);
 }
 #endif

@@ -19,7 +19,7 @@ TEST(RawDeviceOpen, TheRawDeviceCarriesTheClassOfWhatItMetToThePluginsLine)
 {
     const std::string facade = SourceText("../raw/runtime/RawMetal.mm");
     EXPECT_THAT(facade, HasSubstr("failure = dev->openFailure();"));
-    EXPECT_THAT(Body(facade, "id<MTLDevice> raw_metal_device_open_lazy("), HasSubstr("gOpenFailure = failure;"));
+    EXPECT_THAT(Body(facade, "id<MTLDevice> raw_metal_device_open("), HasSubstr("gOpenFailure = failure;"));
     const std::string gpu = SourceText("../raw/runtime/raw_gpu.cpp");
     const std::string open =
         Body(gpu, "bool Device::open(const char *packPath, uint64_t stack, std::string &err, Role role)");
@@ -46,9 +46,9 @@ TEST(RawDeviceOpen, EveryAskOfAProcessWithNoDeviceOpensAfresh)
 TEST(RawDeviceOpen, APreparedRawDeviceThatDidNotOpenIsPreparedAgain)
 {
     const std::string facade = SourceText("../raw/runtime/RawMetal.mm");
-    const std::string lazy = Body(facade, "id<MTLDevice> raw_metal_device_open_lazy(");
-    EXPECT_THAT(lazy, HasSubstr("gPrepared.started = dev != nullptr;"));
-    EXPECT_THAT(lazy, HasSubstr("gOpenFailure = failure;"));
+    const std::string open = Body(facade, "id<MTLDevice> raw_metal_device_open(");
+    EXPECT_THAT(open, HasSubstr("gPrepared.started = dev != nullptr;"));
+    EXPECT_THAT(open, HasSubstr("gOpenFailure = failure;"));
 }
 
 }  // namespace

@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: MIT
-// What the raw device class inherited from m2v's device class (the frontend's NBDeviceMethods) and answers itself now that it
-// is an _MTLDevice of its own: the four calls Metal's registration makes, the identity and memory queries, a residency set,
-// and the library forms the frontend sent back to the device (to the facade's own methods: RawMetalCompiledLibraries.mm).
+// What the raw device class answers as an _MTLDevice of its own: the four calls Metal's registration makes, the identity and
+// memory queries, a residency set, the library forms the base class sends back to the device (to the facade's own methods:
+// RawMetalCompiledLibraries.mm), and a selector it has no method for.
 #import "RawMetalInternal.h"
 #include "raw_limits_fill.h"
 
 // The base class's limits table (LimitsTable.h): _MTLDevice's own accessors read it, and frameworks read it past them
 // (PhotosUICore's 2D texture size, CoreRE's no-copy alignment); each field the raw device answers with a method of its own
 // is written, as the frontend's fillLimits writes m2v's. Every field m2v's device answered the raw device answers too
-// (raw/test/selcover's capability check; RawMetalM2V.mm opens m2v for any it has none for). The host's _MTLDevice has a
-// layout of its own.
+// (raw/test/selcover's capability check). The host's _MTLDevice has a layout of its own.
 void fillDeviceLimits(id device)
 {
 #if TARGET_OS_IPHONE
@@ -68,13 +67,10 @@ API_AVAILABLE(ios(18.0), macos(15.0))
     return gRM->registryID;
 }
 
-// The GPU memory this device's objects hold: the raw path's allocations and, once it is open, the m2v device's
+// The GPU memory this device's objects hold
 - (NSUInteger)currentAllocatedSize
 {
-    uint64_t m2v = 0;
-    if (rmM2VIfOpen())
-        m2v = [rmM2VIfOpen() currentAllocatedSize];
-    return NSUInteger(gRM->raw->allocatedBytes() + m2v);
+    return NSUInteger(gRM->raw->allocatedBytes());
 }
 
 // Every allocation is resident from its creation to its release (one GPU address space, no paging): a residency set keeps
@@ -125,6 +121,30 @@ API_AVAILABLE(ios(18.0), macos(15.0))
         if (handler)
             handler(library, error);
     });
+}
+
+
+// Any other selector a Metal protocol declares is answered zero; anything else is not recognized
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
+{
+    if (Method m = class_getInstanceMethod(object_getClass(self), selector))
+        return [NSMethodSignature signatureWithObjCTypes:method_getTypeEncoding(m)];
+    if (const char *types = metalTypes(selector))
+        return [NSMethodSignature signatureWithObjCTypes:types];
+    return nil;
+}
+
+- (void)forwardInvocation:(NSInvocation *)invocation
+{
+    answerZero(self, invocation);
+}
+
+- (void)doesNotRecognizeSelector:(SEL)selector
+{
+    SWITCH_REFUSE_DETAIL("raw", "device.selector", uintptr_t(selector), "-[MTLDevice %s]: no method",
+                         sel_getName(selector));
+    const IMP base = class_getMethodImplementation(class_getSuperclass(object_getClass(self)), _cmd);
+    reinterpret_cast<void (*)(id, SEL, SEL)>(base)(self, _cmd, selector);
 }
 
 @end

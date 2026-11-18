@@ -197,12 +197,6 @@
     };
 }
 
-// The m2v device this one wraps (the one TEGRA_RAW_METAL=0 gives the process): hw_test_app draws each scene on both
-- (id<MTLDevice>)switchM2VDevice
-{
-    return RM_M2V(NeedHwTestDevice);
-}
-
 // hw_test_app's gpu.raw.texel_buffer_reach: a texel buffer of `n` texels from `b`'s first byte past the device's
 // maxTextureBufferWidth answer (NVK's 2^27; the header's width field holds 32 bits), nil where none is made
 - (id<MTLTexture>)switchRawTexelBuffer:(id<MTLBuffer>)b format:(MTLPixelFormat)f width:(NSUInteger)n
@@ -223,15 +217,14 @@
 }
 #endif
 
-// Alignments Core Animation lays its memory out by (QuartzCore 21H461), answered for what the raw path takes as it is; m2v takes
-// any multiple of 16 (its own answers), so the m2v twins of the same memory are unchanged in what they hold:
+// Alignments Core Animation lays its memory out by (QuartzCore 21H461), answered for what the raw path takes as it is:
 //  - its buffer pool's suballocations (CA::OGL::MetalBufferPool::get_buffer: max(this, the argument's)): the A10X's 4, a
 //    uniform buffer the raw path binds at the multiple of 256 below it with m2v's residual in its push word (raw::PackEntry);
 //  (not iosurfaceReadOnlyTextureAlignmentBytes: QuartzCore makes it the render server's needed IOSurface row alignment,
 //  CADeviceSetMinimumAlignment, and hands it to every client, CA::Context::connect_remote; MetalContext::update_surface then
 //  refuses every surface whose rows miss it, "Row bytes (N) not 128 aligned", and the layer draws nothing (r7p5: 3347 refusals
-//  in backboardd, Safari images and widgets blank). The m2v device's answer, 16, stands; rows the raw path cannot take stay
-//  m2v's: its texture header takes rows of 32, a pitch render target rows of 128.)
+//  in backboardd, Safari images and widgets blank). Its answer stays 16 (raw_device_answers.h), though the texture
+//  header takes rows of 32 and a pitch render target rows of 128.)
 //  - the image memory it samples in place (CA::OGL::MetalContext::copy_image_to_texture: offset and rows a multiple of
 //    deviceLinearReadOnlyTextureAlignmentBytes, else it copies them into a texture of its own): the texture header's 32,
 //    raw_device_answers.h's row;
@@ -247,7 +240,6 @@
     return a ? std::max<NSUInteger>(a, 32) : a;
 }
 
-// (a selector only m2v's device class has a method for opens the m2v device at its first use: RawMetalM2V.mm)
 - (id<MTLCommandQueue>)newCommandQueue
 {
     RMQueue *q = [RMQueue new];
@@ -426,13 +418,13 @@ static void announceTexture(raw::shapes::Route route, const raw::shapes::Texture
                    "raw: stored %llux multisampled %{public}s on (first %llux%llu format %u: %llu bytes of %{public}s)",
                    (unsigned long long)s.samples, zeta ? "depth/stencil" : "colour", (unsigned long long)s.width,
                    (unsigned long long)s.height, s.format, (unsigned long long)(zeta ? t.storage.bytes : t.span.bytes),
-                   zeta ? "zeta memory, no m2v twin" : "block-linear memory, m2v's twin NVK's image over it");
+                   zeta ? "zeta memory" : "block-linear memory");
     } else if (route == Route::StoredZeta) {
         static std::atomic<bool> said{false};
         if (!said.exchange(true))
             os_log(rawLog(),
                    "raw: stored one-sample depth/stencil on (first %llux%llu format %u, %u layers: %llu bytes of "
-                   "%{public}s zeta memory, no m2v twin)",
+                   "%{public}s zeta memory)",
                    (unsigned long long)s.width, (unsigned long long)s.height, s.format, unsigned(t.layers),
                    (unsigned long long)t.storage.bytes, t.comptags ? "compressed" : "plain");
     }

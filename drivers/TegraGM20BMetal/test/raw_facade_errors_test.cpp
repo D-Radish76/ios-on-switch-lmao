@@ -115,10 +115,13 @@ NSString *path(id<MTLCommandBuffer> cb)
     return ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));
 }
 
-// `cb` committed failed with `code` for predicate `pred`, counted once under it, and m2v never opened or asked
-void expectError(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code)
+// Each helper below judges what `cb` moved from `before`, the counters read before its recording began
+// (raw_facade_harness.h countersMoved)
+
+// `cb` committed failed with `code` for predicate `pred`, counted once under it, nothing skipped
+void expectError(id<MTLDevice> device, NSDictionary *before, id<MTLCommandBuffer> cb, const char *pred,
+                 MTLCommandBufferError code)
 {
-    NSDictionary *before = counters(device);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
@@ -128,23 +131,22 @@ void expectError(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred
     NSDictionary *counts = counters(device);
     EXPECT_EQ(failedMoved(before, counts), failedOnce(pred)) << text(counts);
     EXPECT_TRUE(skippedMoved(before, counts).empty()) << text(counts);
-    EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
 }
 
 // As expectError, the command buffer one its predicate failed (RawMetalPredicates.h predFailure)
-void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code)
+void expectFailed(id<MTLDevice> device, NSDictionary *before, id<MTLCommandBuffer> cb, const char *pred,
+                  MTLCommandBufferError code)
 {
-    expectError(device, cb, pred, code);
+    expectError(device, before, cb, pred, code);
     NSDictionary *counts = counters(device);
     NSString *failed = [NSString stringWithFormat:@"failed.%s", pred];
     EXPECT_EQ([counts[failed] intValue], 1) << text(counts);
 }
 
-// `cb` committed completed on the raw path, no error, no failure counted, the skips `skipped` counted, m2v never opened
-// or asked
-void expectRan(id<MTLDevice> device, id<MTLCommandBuffer> cb, const std::map<std::string, long long> &skipped)
+// `cb` committed completed on the raw path, no error, no failure counted, the skips `skipped` counted
+void expectRan(id<MTLDevice> device, NSDictionary *before, id<MTLCommandBuffer> cb,
+               const std::map<std::string, long long> &skipped)
 {
-    NSDictionary *before = counters(device);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
@@ -154,18 +156,17 @@ void expectRan(id<MTLDevice> device, id<MTLCommandBuffer> cb, const std::map<std
     EXPECT_NE(counts[@"failed"], nil) << text(counts);
     EXPECT_EQ(skippedMoved(before, counts), skipped) << text(counts);
     EXPECT_NE(counts[@"skipped"], nil) << text(counts);
-    EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
 }
 
-void expectCompleted(id<MTLDevice> device, id<MTLCommandBuffer> cb)
+void expectCompleted(id<MTLDevice> device, NSDictionary *before, id<MTLCommandBuffer> cb)
 {
-    expectRan(device, cb, {});
+    expectRan(device, before, cb, {});
 }
 
 // ... a call of it skipped as `pred` (Metal's validation stops it, the raw path runs it as Apple's driver does)
-void expectSkipped(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred)
+void expectSkipped(id<MTLDevice> device, NSDictionary *before, id<MTLCommandBuffer> cb, const char *pred)
 {
-    expectRan(device, cb, skippedOnce(pred));
+    expectRan(device, before, cb, skippedOnce(pred));
 }
 
 void bufferCopyPastItsBuffer()
@@ -173,11 +174,12 @@ void bufferCopyPastItsBuffer()
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil);
     id<MTLBuffer> a = [o.device newBufferWithLength:4096 options:0], b = [o.device newBufferWithLength:4096 options:0];
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     [blit copyFromBuffer:a sourceOffset:0 toBuffer:b destinationOffset:0 size:1 << 20];
     [blit endEncoding];
-    expectSkipped(o.device, cb, "call.bufcopy");
+    expectSkipped(o.device, before, cb, "call.bufcopy");
 }
 
 void bufferFillPastItsBuffer()
@@ -185,11 +187,12 @@ void bufferFillPastItsBuffer()
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil);
     id<MTLBuffer> a = [o.device newBufferWithLength:4096 options:0];
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     [blit fillBuffer:a range:NSMakeRange(0, 1 << 22) value:7];
     [blit endEncoding];
-    expectSkipped(o.device, cb, "call.bufcopy");
+    expectSkipped(o.device, before, cb, "call.bufcopy");
 }
 
 void indirectArgumentsPastTheirBuffer()
@@ -197,13 +200,14 @@ void indirectArgumentsPastTheirBuffer()
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil && o.state != nil);
     id<MTLBuffer> arguments = [o.device newBufferWithLength:16 options:0];
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass(target(o.device, kPacked))];
     [e setRenderPipelineState:o.state];
     [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
     [e drawPrimitives:MTLPrimitiveTypeTriangle indirectBuffer:arguments indirectBufferOffset:4];
     [e endEncoding];
-    expectSkipped(o.device, cb, "enc.idxrange");
+    expectSkipped(o.device, before, cb, "enc.idxrange");
 }
 
 // Apple's driver draws the right colour (the target orders the channels)
@@ -211,9 +215,10 @@ void stateOfTheOtherChannelOrder()
 {
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil && o.state != nil);
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     drawInto(cb, pass(target(o.device, MTLPixelFormatRGBA8Unorm)), o.state);
-    expectCompleted(o.device, cb);
+    expectCompleted(o.device, before, cb);
 }
 
 // Apple's driver writes the other format's bits: the draw is skipped, the command buffer completed
@@ -221,18 +226,20 @@ void stateOfAnotherColourFormat()
 {
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil && o.state != nil);
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     drawInto(cb, pass(target(o.device, MTLPixelFormatRGBA16Float)), o.state);
-    expectSkipped(o.device, cb, "enc.colorfmt");
+    expectSkipped(o.device, before, cb, "enc.colorfmt");
 }
 
 void stateSamplesNotThePasss()
 {
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil && o.state != nil);
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     drawInto(cb, pass(target(o.device, kPacked, 4)), o.state);
-    expectCompleted(o.device, cb);
+    expectCompleted(o.device, before, cb);
 }
 
 void samplePositionsPastThePasssSamples()
@@ -242,9 +249,10 @@ void samplePositionsPastThePasssSamples()
     MTLRenderPassDescriptor *p = pass(target(o.device, kPacked, 2));
     const MTLSamplePosition positions[4] = {{0.25, 0.25}, {0.75, 0.25}, {0.25, 0.75}, {0.75, 0.75}};
     [p setSamplePositions:positions count:4];
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
-    expectSkipped(o.device, cb, "pass.positions");
+    expectSkipped(o.device, before, cb, "pass.positions");
 }
 
 // Metal's validation stops each (MTLRenderCommandEncoder.h setVisibilityResultMode:offset:): a mode set in a pass of no
@@ -264,11 +272,12 @@ void visibilityModesMetalStops()
     for (const auto &s : stopped) {
         MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
         p.visibilityResultBuffer = s.buffer ? results : nil;
+        NSDictionary *before = counters(o.device);
         id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
         id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
         [e setVisibilityResultMode:MTLVisibilityResultMode(s.mode) offset:s.offset];
         [e endEncoding];
-        expectError(o.device, cb, "call.vis", MTLCommandBufferErrorInternal);
+        expectError(o.device, before, cb, "call.vis", MTLCommandBufferErrorInternal);
     }
 }
 
@@ -279,11 +288,12 @@ void visibilityBufferOfAnotherDevice()
     ASSERT_TRUE(o.device != nil);
     MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
     p.visibilityResultBuffer = (id<MTLBuffer>)[ForeignBuffer new];
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
     [e setVisibilityResultMode:MTLVisibilityResultModeCounting offset:0];
     [e endEncoding];
-    expectError(o.device, cb, "call.vis", MTLCommandBufferErrorInternal);
+    expectError(o.device, before, cb, "call.vis", MTLCommandBufferErrorInternal);
 }
 
 // The draw macro calls the kernel model's jobs from `firstJob` on hold
@@ -316,9 +326,10 @@ void stateOfAnotherDepthFormat()
         p.depthAttachment.loadAction = MTLLoadActionClear;
         p.depthAttachment.storeAction = MTLStoreActionDontCare;
         const size_t firstJob = kernel_model::model.jobs.size();
+        NSDictionary *before = counters(o.device);
         id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
         drawInto(cb, p, o.state);
-        expectCompleted(o.device, cb);
+        expectCompleted(o.device, before, cb);
         EXPECT_EQ(drawsSince(firstJob), 1u) << format;
     }
 }
@@ -331,6 +342,7 @@ void visibilityOffsetSetTwice()
     ASSERT_TRUE(o.device != nil && o.state != nil);
     MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
     p.visibilityResultBuffer = [o.device newBufferWithLength:64 options:0];
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
     [e setRenderPipelineState:o.state];
@@ -340,7 +352,7 @@ void visibilityOffsetSetTwice()
         [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     }
     [e endEncoding];
-    expectError(o.device, cb, "call.vis", MTLCommandBufferErrorInternal);
+    expectError(o.device, before, cb, "call.vis", MTLCommandBufferErrorInternal);
 }
 
 // Metal's validation stops a plain event of another device ("event is associated with a different device."): the
@@ -350,13 +362,14 @@ void eventOfAnotherDevice()
     const Opened o = openPacked();
     ASSERT_TRUE(o.device != nil && o.state != nil);
     for (const bool signal : {true, false}) {
+        NSDictionary *before = counters(o.device);
         id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
         drawInto(cb, pass(target(o.device, kPacked)), o.state);
         if (signal)
             [cb encodeSignalEvent:[ForeignEvent new] value:1];
         else
             [cb encodeWaitForEvent:[ForeignEvent new] value:1];
-        expectError(o.device, cb, "event", MTLCommandBufferErrorInternal);
+        expectError(o.device, before, cb, "event", MTLCommandBufferErrorInternal);
     }
 }
 
@@ -380,11 +393,12 @@ void visibilityWithNoReportPage()
     MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
     p.visibilityResultBuffer = [o.device newBufferWithLength:64 options:0];
     kernel_model::model.refuseControl = true;
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
     [e setVisibilityResultMode:MTLVisibilityResultModeCounting offset:0];
     [e endEncoding];
-    expectError(o.device, cb, "call.vis", MTLCommandBufferErrorOutOfMemory);
+    expectError(o.device, before, cb, "call.vis", MTLCommandBufferErrorOutOfMemory);
 }
 
 void kernelRefusesTheSubmission()
@@ -394,9 +408,10 @@ void kernelRefusesTheSubmission()
     id<MTLCommandQueue> queue = [o.device newCommandQueue];
     drawnOnce(queue, o);
     kernel_model::model.refuse = 1;
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     drawInto(cb, pass(target(o.device, kPacked)), o.state);
-    expectFailed(o.device, cb, "enc.kernel", MTLCommandBufferErrorInternal);
+    expectFailed(o.device, before, cb, "enc.kernel", MTLCommandBufferErrorInternal);
     EXPECT_NE(text(cb.error).find("the kernel refused its job (0x"), std::string::npos) << text(cb.error);
 }
 
@@ -413,9 +428,10 @@ void kernelRefusesTheChannel()
     for (uint32_t s = 0; s < kernel_model::kSlots; s++)
         if (kernel_model::model.slots[s].uid && !kernel_model::model.slots[s].foreign)
             kernel_model::model.kill(s + 1, 0x1f);
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     drawInto(cb, pass(target(o.device, kPacked)), o.state);
-    expectFailed(o.device, cb, "enc.nochannel", MTLCommandBufferErrorInternal);
+    expectFailed(o.device, before, cb, "enc.nochannel", MTLCommandBufferErrorInternal);
 }
 
 // The submission after the model holds this many jobs is refused, once; each job completes as the model takes it
@@ -460,6 +476,7 @@ void kernelRefusesTheSecondJob()
     id<MTLCommandQueue> queue = [o.device newCommandQueue];
     drawnOnce(queue, o);
     id<MTLTexture> first = target(o.device, kPacked), second = target(o.device, kPacked);
+    NSDictionary *counted = counters(o.device);
     id<MTLCommandBuffer> cb = twoJobs(queue, o, first, second);
     __block int completions = 0;
     [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
@@ -469,7 +486,7 @@ void kernelRefusesTheSecondJob()
     const size_t jobs = m.jobs.size();
     gRefuseAfterJobs = jobs + 1;
     m.jobAdded = completeAndRefuseAfter;
-    expectFailed(o.device, cb, "enc.kernel", MTLCommandBufferErrorInternal);
+    expectFailed(o.device, counted, cb, "enc.kernel", MTLCommandBufferErrorInternal);
     m.jobAdded = nullptr;
     EXPECT_EQ(m.jobs.size(), jobs + 1) << "not a command buffer whose first job ran";
     EXPECT_EQ(m.refuse, 0u) << "no second job was submitted to refuse";
@@ -478,10 +495,11 @@ void kernelRefusesTheSecondJob()
     EXPECT_FALSE(((RMTexture *)second)->_gpuDirty.load());
     NSDictionary *before = ask(o.device, "switchRawFresh");
     ASSERT_NE(before[@"filled"], nil);
+    counted = counters(o.device);
     id<MTLCommandBuffer> next = [queue commandBuffer];
     drawInto(next, loading(first), o.state);
     drawInto(next, loading(second), o.state);
-    expectCompleted(o.device, next);
+    expectCompleted(o.device, counted, next);
     NSDictionary *after = ask(o.device, "switchRawFresh");
     EXPECT_EQ([after[@"filled"] unsignedLongLongValue] - [before[@"filled"] unsignedLongLongValue], 2u);
 }
@@ -553,11 +571,12 @@ void blitsAnM4MaxCrashesOnFail()
          }},
     };
     for (const auto &c : calls) {
+        NSDictionary *before = counters(o.device);
         id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
         id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
         c.encode(b);
         [b endEncoding];
-        expectError(o.device, cb, c.pred, MTLCommandBufferErrorInvalidResource);
+        expectError(o.device, before, cb, c.pred, MTLCommandBufferErrorInvalidResource);
     }
 }
 
@@ -569,6 +588,7 @@ void blitsAnM4MaxRunsToNoRuleOrInPartAreSkipped()
     ASSERT_TRUE(o.device != nil);
     id<MTLTexture> from = target(o.device, kPacked), into = target(o.device, kPacked);
     id<MTLBuffer> rows = [o.device newBufferWithLength:65536 options:0];
+    NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> past = [[o.device newCommandQueue] commandBuffer];
     id<MTLBlitCommandEncoder> b = [past blitCommandEncoder];
     [b copyFromTexture:from
@@ -581,8 +601,9 @@ void blitsAnM4MaxRunsToNoRuleOrInPartAreSkipped()
          destinationLevel:0
         destinationOrigin:MTLOriginMake(0, 0, 0)];
     [b endEncoding];
-    expectSkipped(o.device, past, "call.blit");
+    expectSkipped(o.device, before, past, "call.blit");
     const size_t firstJob = kernel_model::model.jobs.size();
+    before = counters(o.device);
     id<MTLCommandBuffer> cut = [[o.device newCommandQueue] commandBuffer];
     b = [cut blitCommandEncoder];
     [b copyFromBuffer:rows
@@ -595,7 +616,7 @@ void blitsAnM4MaxRunsToNoRuleOrInPartAreSkipped()
            destinationLevel:0
           destinationOrigin:MTLOriginMake(56, 0, 0)];
     [b endEncoding];
-    expectSkipped(o.device, cut, "call.blit");
+    expectSkipped(o.device, before, cut, "call.blit");
     EXPECT_GT(kernel_model::model.jobs.size(), firstJob) << "the part inside the level was copied";
 }
 

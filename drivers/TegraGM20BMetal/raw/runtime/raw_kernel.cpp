@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: MIT
 // See raw_kernel.h. The transport (direct call, or tunnel {magic, method} + record through the selector that answers the tunnel
-// probe) is nvkmd_darwin's (out/gpu/nvk/nvk-darwin.patch, MIT), so whatever the kext admits for NVK it admits here.
+// probe) is nvkmd_darwin's (out/gpu/nvk/nvk-darwin.patch, MIT).
 #include "raw_lock.h"
 #include "raw_kernel.h"
 #include "TegraGM20BClockABI.h"
 #include "raw_encode_profile.h"
 
 #include <IOKit/IOKitLib.h>
-#include <dlfcn.h>
 #include <os/log.h>
-#include <mach-o/dyld.h>
 #include <mach/mach.h>
 #include <cstdio>
 #include <cstdlib>
@@ -19,40 +17,13 @@ namespace raw {
 namespace {
 constexpr uint64_t kVaGranule = 0x10000;
 constexpr uint64_t kBigPageAlignment = 0x20000;
-constexpr char kNvk[] = "libvulkan_nouveau.dylib";
-
-// NVK's image: the one this process loaded already, else the one beside this image (the plugin's bundle, which the m2v device's
-// open loads NVK from: the same image then). Null: none (a host tool of the raw path alone). A listed image is opened, never
-// looked up with RTLD_NOLOAD: a null for an image another thread is still loading would give the raw path a connection of
-// its own beside NVK's.
-void *nvkImage()
-{
-    const size_t suffix = strlen(kNvk);
-    for (uint32_t i = 0, n = _dyld_image_count(); i < n; i++) {
-        const char *name = _dyld_get_image_name(i);
-        const size_t length = name ? strlen(name) : 0;
-        if (length > suffix && name[length - suffix - 1] == '/' && !strcmp(name + length - suffix, kNvk))
-            return dlopen(name, RTLD_NOW | RTLD_LOCAL);
-    }
-    Dl_info info = {};
-    if (!dladdr(reinterpret_cast<const void *>(&nvkImage), &info) || !info.dli_fname)
-        return nullptr;
-    std::string path(info.dli_fname);
-    const size_t slash = path.rfind('/');
-    if (slash == std::string::npos)
-        return nullptr;
-    path.replace(slash + 1, std::string::npos, kNvk);
-    return dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-}
 }  // namespace
 
 Kernel::~Kernel()
 {
     if (events_)
         events_->shutdown();
-    if (release_)
-        release_();
-    else if (conn_)
+    if (conn_)
         IOServiceClose(conn_);
 }
 
@@ -93,50 +64,11 @@ int Kernel::call(uint32_t method, const void *in, size_t inSize, void *out, size
 
 bool Kernel::open(std::string &err)
 {
-    using Connection = bool (*)(uint32_t *, bool *, uint32_t *, uint64_t *, uint64_t *);
-#ifdef SWITCH_RAW_OWN_CONNECTION
-    // HW Test's bench loop (debug images only): a second raw device in a process whose facade already holds NVK's VA
-    // window, so it needs a GPU VM of its own; its experiments' channel kills stay away from the app's Metal device too
-    void *nvk = nullptr;
-#else
-    void *nvk = nvkImage();
-#endif
-    if (!nvk)
-        return openOwn(err);
-    const auto connection = reinterpret_cast<Connection>(dlsym(nvk, "switch_nvk_connection"));
-    const auto release = reinterpret_cast<void (*)()>(dlsym(nvk, "switch_nvk_connection_release"));
-    if (!connection || !release) {
-        // No fallback to a connection of our own: beside NVK's it would split the process's GPU VM in two
-        err = "the loaded NVK has no switch_nvk_connection, so it is older than this tree (rebuild //gpu/nvk:host)";
-        return false;
-    }
-    // [vaStart, vaEnd) is the whole window NVK leaves out, handed to every caller: one Kernel per process may take it (the
-    // render server's one raw device), or two free lists would hand out the same VAs.
-    uint64_t vaStart = 0, vaEnd = 0;
-    if (!connection(&conn_, &tunnel_, &selector_, &vaStart, &vaEnd)) {
-        err = "NVK's connection did not open";
-        return false;
-    }
-    release_ = release;
-    shared_ = true;
-    if (call(TegraGM20BMethodGetInfo, nullptr, 0, &info_, sizeof info_) != KERN_SUCCESS ||
-        info_.abi_version != TegraGM20BAbiVersion) {
-        err = "GetInfo failed";
-        return false;
-    }
-    vaStart = (vaStart + kVaGranule - 1) & ~(kVaGranule - 1);
-    vaFree_[vaStart] = (vaEnd & ~(kVaGranule - 1)) - vaStart;
-    return true;
-}
-
-bool Kernel::openOwn(std::string &err)
-{
-    const char *name = getenv("NVK_DARWIN_SERVICE");
-    if (!name || !*name)
-        name = "IOAcceleratorES";
-    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(name));
+    // ours (drivers/TegraGM20B); the first IOAcceleratorES is the stub that only ends QuartzCore's accelerator poll
+    // (drivers/SwitchAccelStub)
+    io_service_t service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AGXAccelerator"));
     if (!service) {
-        err = std::string("no ") + name;
+        err = "no AGXAccelerator";
         return false;
     }
     io_connect_t c = 0;
@@ -162,9 +94,7 @@ bool Kernel::openOwn(std::string &err)
         err = "GetInfo failed";
         return false;
     }
-    // the top quarter of the client range
-    const uint64_t start =
-        (info_.va_start + (info_.va_end - info_.va_start) / 4 * 3 + kVaGranule - 1) & ~(kVaGranule - 1);
+    const uint64_t start = (info_.va_start + kVaGranule - 1) & ~(kVaGranule - 1);
     vaFree_[start] = (info_.va_end & ~(kVaGranule - 1)) - start;
     return true;
 }

@@ -1,10 +1,9 @@
 """Every way the plugin's own code reaches m2v, read from its sources (m2v_routes.tsv's product rows are this set).
 
-A route is (route, name) with the files that raise it. The m2v device comes only from rmM2V (an RMNeed) or
-rmM2VIfOpen, its objects only from that device, from a client's foreign object (a predicate) or from a twin field, and
-its code only through a bridge symbol, an NB class looked up by name, an NVK export or a header of the m2v tree, so
-these detectors close the set together with the no-m2v link lists (gpu/m2v_link): a call the sources hide behind a
-pointer is a link edge.
+A route is (route, name) with the files that raise it. The raw device has no m2v device (an rmM2V, RM_M2V or RMNeed
+would be a route), m2v's objects come only from a client's foreign object (a predicate) or a twin field, and its code only
+through a bridge symbol, an NB class looked up by name, an NVK export or a header of the m2v tree, so these detectors close
+the set together with the no-m2v link lists (gpu/m2v_link): a call the sources hide behind a pointer is a link edge.
 """
 
 import re
@@ -21,7 +20,7 @@ SUFFIXES = {'.mm', '.cpp', '.h', '.c'}
 # The fields that hold an m2v object or the device, the functions that hand one over or replay onto it, and the
 # forwarding machinery, each by the code (strings and comments blanked) that names it
 M2V_IDENTS = {
-    'rmM2VIfOpen': r'\brmM2VIfOpen\b',
+    'rmM2V': r'\brmM2V\w*|\bRM_M2V\b|\bRMNeed\b',
     'fallback': r'(?:->|\.)fallback\b|id<MTLDevice>\s+fallback\b',
     'twinOf': r'\btwinOf\b',
     'rmTwin': r'\brmTwin\b',
@@ -120,9 +119,7 @@ class Census:
         self.preds = enum_pairs(
             (RUNTIME / 'RawMetalPredicates.h').read_text(), 'RMPred', 'kPredNames', ('PredNone', 'PredCount')
         )
-        self.needs = enum_pairs((RUNTIME / 'RawMetalNeeds.h').read_text(), 'RMNeed', 'kNeedNames', ('NeedCount',))
         self._enumerators('pred', self.preds, 'RawMetalPredicates.h')
-        self._enumerators('need', self.needs, 'RawMetalNeeds.h')
         for path, text in self.texts.items():
             self._scan(path.name, text, self.code[path])
         self._selectors()

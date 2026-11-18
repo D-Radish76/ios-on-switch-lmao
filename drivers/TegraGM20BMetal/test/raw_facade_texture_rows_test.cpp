@@ -3,10 +3,12 @@
 // m2v device: rows past their memory, a buffer texture at 16 bytes (a pool image), and a surface plane off 16 (Metal's GPU
 // layout, its CPU rows its own).
 #include "raw_facade_harness.h"
+#include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
 #include "bazel/testing/fresh_process.h"
 
 #import <IOSurface/IOSurface.h>
 #include <gtest/gtest.h>
+#include <sstream>
 
 namespace {
 
@@ -239,29 +241,109 @@ void heapSizesOfStandInTextures()
     EXPECT_GE([device heapTextureSizeAndAlignWithDescriptor:d].size, NSUInteger(64 * 32 * (2 + 4)));
 }
 
-// A view's CPU copies are its texture's, at the view's level and slice (a view of levels 1 and 2 of a Shared mipmapped
-// texture, written and read at both), made on the raw path with no m2v twin asked
+size_t jobCount()
+{
+    std::lock_guard<std::mutex> l(kernel_model::callLock);
+    return kernel_model::model.jobs.size();
+}
+
+// The copy engine's methods of the jobs since `first`, but the address of their staging rows (OFFSET_IN of a write,
+// OFFSET_OUT of a read): the copy as it names the texture's memory. A write's staging rows hold `texel`.
+using CopyMethods = std::vector<std::pair<uint32_t, uint32_t>>;
+
+CopyMethods texelCopy(size_t first, bool write, const uint8_t *texel)
+{
+    constexpr uint32_t kOffsetInUpper = 0x0400, kOffsetOutUpper = 0x0408;  // NVB0B5_OFFSET_IN_UPPER, _OUT_UPPER
+    const uint32_t staging = write ? kOffsetInUpper : kOffsetOutUpper;
+    std::lock_guard<std::mutex> l(kernel_model::callLock);
+    const std::vector<kernel_model::Job> &jobs = kernel_model::model.jobs;
+    CopyMethods out;
+    uint64_t rows = 0;
+    for (size_t j = first; j < jobs.size(); j++) {
+        const std::vector<uint32_t> &w = jobs[j].words;
+        std::vector<switch_gm20b_method> m(w.size());
+        const long n = switch_gm20b_push_decode(w.data(), w.size(), m.data(), m.size());
+        EXPECT_GE(n, 0);
+        for (long i = 0; i < n; i++) {
+            if (m[i].method == staging || m[i].method == staging + 4)
+                rows = rows << 32 | m[i].value;
+            else
+                out.push_back({m[i].method, m[i].value});
+        }
+    }
+    if (write) {
+        const uint8_t *staged = kernel_model::model.host(rows, 4);
+        EXPECT_TRUE(staged && !memcmp(staged, texel, 4)) << "the rows the copy engine copies into the texture";
+    }
+    return out;
+}
+
+// `t`'s replaceRegion of `texel` at `at` of `level` and `slice`, then its getBytes there: their copies
+std::pair<CopyMethods, CopyMethods> texelCopies(id<MTLTexture> t, NSUInteger level, NSUInteger slice, MTLOrigin at,
+                                                const uint8_t *texel)
+{
+    const MTLRegion r = MTLRegionMake2D(at.x, at.y, 1, 1);
+    size_t first = jobCount();
+    [t replaceRegion:r mipmapLevel:level slice:slice withBytes:texel bytesPerRow:4 bytesPerImage:0];
+    const CopyMethods written = texelCopy(first, true, texel);
+    uint8_t back[4] = {};
+    first = jobCount();
+    [t getBytes:back bytesPerRow:4 bytesPerImage:0 fromRegion:r mipmapLevel:level slice:slice];
+    return {written, texelCopy(first, false, nullptr)};
+}
+
+// A view's CPU copies at its level and slice are its texture's at levels.location and slices.location on, as an M4 Max
+// takes them (stack-fix probe/viewcpu.mm): a view of levels 1 and 2 of a Shared mipmapped texture, and of slices 1 and 2
+// of an array's, of another format and of its own, written and read at two texels. The kernel model runs no copy engine,
+// so no bytes come back: the view's copy is the copy the texture's own makes there and no other level's or slice's.
 void aViewsCpuCopiesTakeItsTexturesPaths()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
     ASSERT_TRUE(device != nil);
-    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                                                                 width:64
-                                                                                height:32
-                                                                             mipmapped:YES];
-    d.storageMode = MTLStorageModeShared;
-    d.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
-    id<MTLTexture> texture = [device newTextureWithDescriptor:d];
-    ASSERT_TRUE(texture != nil);
-    RMTexture *view = (RMTexture *)[texture newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Uint
-                                                              textureType:MTLTextureType2D
-                                                                   levels:NSMakeRange(1, 2)
-                                                                   slices:NSMakeRange(0, 1)];
-    ASSERT_TRUE(view != nil && view->_rawOk);
-    uint8_t texel[4] = {1, 2, 3, 4};
-    for (NSUInteger level : {0u, 1u}) {
-        [(id<MTLTexture>)view replaceRegion:MTLRegionMake2D(1, 1, 1, 1) mipmapLevel:level withBytes:texel bytesPerRow:4];
-        [(id<MTLTexture>)view getBytes:texel bytesPerRow:4 fromRegion:MTLRegionMake2D(1, 1, 1, 1) mipmapLevel:level];
+    for (const NSUInteger layers : {1u, 3u}) {
+        MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                     width:64
+                                                                                    height:32
+                                                                                 mipmapped:YES];
+        if (layers > 1) {
+            d.textureType = MTLTextureType2DArray;
+            d.arrayLength = layers;
+        }
+        d.storageMode = MTLStorageModeShared;
+        d.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
+        id<MTLTexture> texture = [device newTextureWithDescriptor:d];
+        ASSERT_TRUE(texture != nil) << layers;
+        const NSRange slices = layers > 1 ? NSMakeRange(1, 2) : NSMakeRange(0, 1);
+        for (const MTLPixelFormat format : {MTLPixelFormatRGBA8Uint, MTLPixelFormatRGBA8Unorm}) {
+            RMTexture *view = (RMTexture *)[texture newTextureViewWithPixelFormat:format
+                                                                      textureType:d.textureType
+                                                                           levels:NSMakeRange(1, 2)
+                                                                           slices:slices];
+            ASSERT_TRUE(view != nil && view->_rawOk) << format << " layers " << layers;
+            for (NSUInteger slice = 0; slice < slices.length; slice++)
+                for (NSUInteger level : {0u, 1u})
+                    for (const MTLOrigin at :
+                         {MTLOriginMake(1, 1, 0), MTLOriginMake(level ? 13 : 29, level ? 6 : 14, 0)}) {
+                        const NSUInteger ownSlice = slices.location + slice;
+                        const uint8_t texel[4] = {uint8_t(1 + level), uint8_t(format), uint8_t(at.x), uint8_t(at.y)};
+                        const auto viewed = texelCopies((id<MTLTexture>)view, level, slice, at, texel);
+                        const auto own = texelCopies(texture, 1 + level, ownSlice, at, texel);
+                        const auto levelNumber = texelCopies(texture, level, ownSlice, at, texel);
+                        std::ostringstream where;
+                        where << "format " << format << " layers " << layers << " level " << level << " slice "
+                              << slice << " at " << at.x << "," << at.y;
+                        EXPECT_FALSE(viewed.first.empty() || viewed.second.empty()) << where.str();
+                        EXPECT_EQ(viewed.first, own.first) << where.str();
+                        EXPECT_EQ(viewed.second, own.second) << where.str();
+                        EXPECT_NE(viewed.first, levelNumber.first) << where.str() << ": the texture's level " << level;
+                        EXPECT_NE(viewed.second, levelNumber.second) << where.str();
+                        if (ownSlice == slice)
+                            continue;
+                        const auto sliceNumber = texelCopies(texture, 1 + level, slice, at, texel);
+                        EXPECT_NE(viewed.first, sliceNumber.first) << where.str() << ": the texture's slice " << slice;
+                        EXPECT_NE(viewed.second, sliceNumber.second) << where.str();
+                    }
+        }
     }
 }
 

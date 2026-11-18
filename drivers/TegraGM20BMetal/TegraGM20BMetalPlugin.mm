@@ -3,7 +3,7 @@
 // IOServiceMatching("IOAcceleratorES") -> AGXAccelerator (drivers/TegraGM20B, published unless switch-no-gpu) -> MetalPluginName
 // TegraGM20BMetal -> /System/Library/Extensions/TegraGM20BMetal.bundle -> MetalPluginClassName TegraGM20BMetalDevice ->
 // -initWithAcceleratorPort:. That returns the raw facade (raw/runtime/RawMetal.h) over the accelerator's
-// AGXDeviceUserClient, on a connection of its own (raw_kernel.cpp Kernel::openOwn).
+// AGXDeviceUserClient, on a connection of its own (raw_kernel.cpp Kernel::open).
 //
 // Adapted from UniXNU-sheng's drivers/NativeMetal/NativeAdrenoMetalPlugin.mm (published mode): the same device open, cache
 // directory search and render-server preferences, without the Adreno user test, the marker stream, the scanout hand-off
@@ -26,7 +26,7 @@
 // The raw GM20B path (raw/runtime/RawMetal.h): when the build's pipeline pack is staged beside the bundle
 // (<Extensions>/TegraGM20BMetal.raw/pack.bin, build-tegra-gm20b-metal.py makes it, stage-tegra-gm20b-metal.py copies it) and the
 // process's sandbox lets it read it, the device every process gets is the raw facade: its command buffers go straight to
-// MAXWELL_B methods, and one the raw path cannot run fails with Metal's error: the raw device has no m2v opener. The render
+// MAXWELL_B methods, and one the raw path cannot run fails with Metal's error. The render
 // server's raw device is set up on a thread of its own while the plugin opens, every other process's memory, channel and
 // shader heap at their first use (raw_gpu.h Device::Role). A pack of another build is
 // refused (its stack key, TEGRA_RAW_STACK, differs). A process that cannot read the pack gets no device.
@@ -557,9 +557,6 @@ id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)
         why = @"left out (TEGRA_GPU_ALL_CLIENTS=0)";
         return nil;
     }
-    // The raw device opens the first service of this class (raw_kernel.cpp Kernel::openOwn): ours, never the IOAcceleratorES
-    // stub (drivers/SwitchAccelStub) that only ends QuartzCore's accelerator poll. Set before the raw path's setup below.
-    setenv("NVK_DARWIN_SERVICE", "AGXAccelerator", 0);
     char pack[1100] = "";
     if (const char *refusal = rawPackRefusal(pack, sizeof pack)) {
         why = [NSString stringWithFormat:@"%s at %s", refusal, pack];
@@ -581,11 +578,11 @@ id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)
     }
     const uint64_t openBegan = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     // The render server's raw GM20B path's own setup (its pack, channel and context, the first pool chunk) starts now on a
-    // thread of its own, beside the cache directory search below; raw_metal_device_open_lazy takes what it made.
+    // thread of its own, beside the cache directory search below; raw_metal_device_open takes what it made.
     if (renderServer)
         raw_metal_prepare(pack, uint64_t(TEGRA_RAW_STACK));
     const char *records = recordCacheDir();
-    id device = raw_metal_device_open_lazy(pack, uint64_t(TEGRA_RAW_STACK), registryID, RawM2V{}, &why);
+    id device = raw_metal_device_open(pack, uint64_t(TEGRA_RAW_STACK), registryID, &why);
     if (!device) {
         failure = raw_metal_open_failure();
         return nil;

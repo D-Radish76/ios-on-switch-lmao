@@ -2,8 +2,7 @@
 // A call Metal's validation stops for an object another device made, or nil where Metal takes none, fails its command
 // buffer InvalidResource as it is recorded (RawMetalObjects.h rmCallInvalid), its predicate in its path and its failed
 // counter; a command on an encoder that had ended fails it at its commit (RawMetalPlanExecution.h), naming no predicate
-// (error:none, failed.none). Nothing of either reaches m2v
-// (raw_facade_harness.h's zero-m2v gate judges each test).
+// (error:none, failed.none).
 #include "raw_scale_frames.h"
 
 #include <gtest/gtest.h>

@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: MIT
 // The raw facade (RawMetal.h) on the host over the kernel model (raw_kernel_model.h, whose IOKit calls replace the
-// framework's: include this in one unit of a test) and NVK's shared connection (fake_nvk_connection.c, loaded first). A
-// pack of one state is written for each process: its two programs a page or more, so they run in place from the pack's
-// pages, and a metallib at <dir>/QuartzCore.framework/default.metallib listing the state's functions, so the state is the
-// framework's and looked up in the pack. The m2v device is a stand-in that answers zero: what a test reads is whether, and
-// for what, the facade opened it. facade::device() is instead opened once per process over a pack of no states with no m2v
-// device, the frontend and the bridge answered by raw_facade_standins.mm.
+// framework's: include this in one unit of a test). A pack of one state is written for each process: its two programs a
+// page or more, so they run in place from the pack's pages, and a metallib at <dir>/QuartzCore.framework/default.metallib
+// listing the state's functions, so the state is the framework's and looked up in the pack. facade::device() is instead
+// opened once per process over a pack of no states, the frontend and the bridge answered by raw_facade_standins.mm.
 #pragma once
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
@@ -36,48 +34,6 @@
 #include <string>
 #include <vector>
 #include <gtest/gtest.h>
-
-// The m2v device: no object of its own, every Metal selector answered zero; harnessSelfRegistry is m2v's device class's
-// method the raw device has none of, run on whichever device it was sent to (RawM2V.methods)
-@interface HarnessM2V : NSObject
-@end
-@implementation HarnessM2V
-
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
-{
-    for (BOOL required : {YES, NO}) {
-        const objc_method_description d = protocol_getMethodDescription(@protocol(MTLDevice), selector, required, YES);
-        if (d.types)
-            return [NSMethodSignature signatureWithObjCTypes:d.types];
-    }
-    return [super methodSignatureForSelector:selector];
-}
-
-- (void)forwardInvocation:(NSInvocation *)invocation
-{
-    uint64_t zero[4] = {};
-    if (invocation.methodSignature.methodReturnLength)
-        [invocation setReturnValue:zero];
-}
-
-- (uint64_t)harnessSelfRegistry
-{
-    return [(id<MTLDevice>)self registryID];
-}
-
-@end
-
-@interface HarnessM2VMethods : NSObject
-- (uint64_t)harnessSelfRegistry;
-@end
-@implementation HarnessM2VMethods
-
-- (uint64_t)harnessSelfRegistry
-{
-    return 0;
-}
-
-@end
 
 namespace harness {
 
@@ -229,40 +185,16 @@ inline uint64_t computeStateHash(const std::string &metallib, const std::string 
     return raw::Pack::fnv(key.data(), key.size());
 }
 
-// What the opener was asked: each process's m2v device opens once, at most
-inline int gOpens = 0;
-
-// The stand-in NVK, whose connection the raw path takes when it is loaded before the raw device looks for it
-// (raw_kernel.cpp nvkImage), as the plugin loads NVK before raw_metal_prepare
-inline bool loadNvk()
+// A raw device over the pack of the BGRA8 state; nil and in `why` the open's reason when it did not open
+inline id<MTLDevice> open(const std::string &pack, NSString **why)
 {
-    const char *nvk = getenv("SWITCH_FAKE_NVK");
-    return nvk && dlopen(nvk, RTLD_NOW | RTLD_LOCAL);
+    return raw_metal_device_open(pack.c_str(), 0, kRegistryID, why);
 }
 
-// A raw device over the pack of the BGRA8 state, NVK's connection the fake's, the m2v device the stand-in
-// (`standIn`'s); nil and in `why` the open's reason when it did not open
-inline id<MTLDevice> open(const std::string &pack, Class methods, Class standIn, NSString **why)
-{
-    if (!loadNvk()) {
-        *why = @"no stand-in NVK (SWITCH_FAKE_NVK)";
-        return nil;
-    }
-    RawM2V m2v;
-    m2v.open = ^id<MTLDevice>
-    {
-        gOpens++;
-        return (id<MTLDevice>)[standIn new];
-    };
-    m2v.methods = methods;
-    return raw_metal_device_open_lazy(pack.c_str(), 0, kRegistryID, m2v, why);
-}
-
-inline id<MTLDevice> open(const std::string &pack, Class methods = [HarnessM2VMethods class],
-                          Class standIn = [HarnessM2V class])
+inline id<MTLDevice> open(const std::string &pack)
 {
     NSString *why = nil;
-    id<MTLDevice> device = open(pack, methods, standIn, &why);
+    id<MTLDevice> device = open(pack, &why);
     if (!device)
         fprintf(stderr, "open: %s\n", why.UTF8String ?: "?");
     return device;
@@ -301,12 +233,6 @@ inline NSDictionary *ask(id<MTLDevice> device, const char *selector)
     return ((NSDictionary * (*)(id, SEL)) objc_msgSend)(device, sel_registerName(selector));
 }
 
-// The device's record of its m2v device (RawMetalM2V.mm switchRawM2V)
-inline NSDictionary *m2vRecord(id<MTLDevice> device)
-{
-    return ask(device, "switchRawM2V");
-}
-
 inline NSDictionary *memory(id<MTLDevice> device)
 {
     return ask(device, "switchRawMemory");
@@ -318,7 +244,8 @@ inline NSDictionary *counters(id<MTLDevice> device)
 }
 
 // The counters of `family` (switchRawCounters failed and failed.<predicate>, or skipped and skipped.<predicate>) that
-// moved from `before` to `after`
+// moved from `before` to `after`. Most skips are counted at the call, as it is recorded: `before` is read before the
+// recording of the work judged begins.
 inline std::map<std::string, long long> countersMoved(NSDictionary *before, NSDictionary *after, NSString *family)
 {
     std::map<std::string, long long> moved;
@@ -431,93 +358,6 @@ inline id<MTLCommandBuffer> draw(id<MTLDevice> device, id<MTLRenderPipelineState
     return cb;
 }
 
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-// The tests that ask the m2v device for something on purpose, each until the slice of the m2v cut that deletes or
-// retargets it
-inline const char *const kAsksM2V[] = {
-    "RawFacadeLazy.InheritedMethodOpensM2VAtItsFirstCall",                    // S4
-    "RawFacadeVariant.AStateMadeWhileM2VIsOpenAsksM2VForNothing",             // S4
-};
-
-// What this process has asked its m2v device for (switchRawM2V's needs, counted whether or not it opened), in all
-inline uint64_t m2vAsked(std::string *named = nullptr)
-{
-    if (!gRM || !gRM->device)
-        return 0;
-    NSDictionary *needs = ask(gRM->device, "switchRawM2V")[@"needs"];
-    uint64_t asked = 0;
-    for (NSNumber *times in needs.allValues)
-        asked += times.unsignedLongLongValue;
-    if (named)
-        *named = needs.description.UTF8String ?: "";
-    return asked;
-}
-
-// Each test is judged as it ends, or, run in a fresh process (fresh_process.h), as that process exits inside it: one
-// that asked the m2v device for anything and is not in kAsksM2V is printed at the process's exit, which then exits 1.
-// A fresh process is a death test's child, where GoogleTest forwards no test events: its one test is the one running
-// at the exit, and nothing before it asked.
-class ZeroM2VGate : public ::testing::EmptyTestEventListener {
-public:
-    void OnTestStart(const ::testing::TestInfo &test) override
-    {
-        running_ = std::string(test.test_suite_name()) + "." + test.name();
-        before_ = m2vAsked();
-    }
-
-    void OnTestEnd(const ::testing::TestInfo &) override
-    {
-        judge();
-    }
-
-    void exiting()
-    {
-        if (const ::testing::TestInfo *test = ::testing::UnitTest::GetInstance()->current_test_info();
-            test && running_.empty()) {
-            running_ = std::string(test->test_suite_name()) + "." + test->name();
-            before_ = 0;
-        }
-        judge();
-        for (const std::string &line : asked_)
-            fprintf(stderr, "zero-m2v gate: %s\n", line.c_str());
-        if (asked_.empty())
-            return;
-        fflush(stderr);
-        _exit(1);
-    }
-
-private:
-    void judge()
-    {
-        const std::string test = std::exchange(running_, std::string());
-        std::string named;
-        if (test.empty() || m2vAsked(&named) == before_ ||
-            std::find(std::begin(kAsksM2V), std::end(kAsksM2V), test) != std::end(kAsksM2V))
-            return;
-        asked_.push_back(test + " asked the m2v device: " + named);
-    }
-
-    std::string running_;
-    uint64_t before_ = 0;
-    std::vector<std::string> asked_;
-};
-
-// GoogleTest owns the listener and deletes it with its own statics, which end after this one
-inline struct ZeroM2VExit {
-    ZeroM2VGate *gate = new ZeroM2VGate;
-
-    ZeroM2VExit()
-    {
-        ::testing::UnitTest::GetInstance()->listeners().Append(gate);
-    }
-
-    ~ZeroM2VExit()
-    {
-        gate->exiting();
-    }
-} gZeroM2VExit;
-#endif
-
 }  // namespace harness
 
 namespace facade {
@@ -526,7 +366,7 @@ inline id<MTLDevice> device()
 {
     static id<MTLDevice> opened = [] {
         NSString *why = nil;
-        id<MTLDevice> made = raw_metal_device_open(emptyPack().c_str(), 0, nil, &why);
+        id<MTLDevice> made = raw_metal_device_open(emptyPack().c_str(), 0, 0, &why);
         EXPECT_NE(made, nil) << (why ? why.UTF8String : "");
         return made;
     }();

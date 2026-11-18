@@ -51,8 +51,6 @@ RAW_DEVICE_COPTS = [
     "-DSWITCH_RAW_HARNESS_MARKS",
 ]
 
-_FAKE_NVK = ":fake_nvk/libvulkan_nouveau.dylib"
-
 FACADE_LINKOPTS = [
     "-framework",
     "Foundation",
@@ -94,7 +92,7 @@ def raw_device_test(name, srcs, copts = [], linkopts = [], deps = [], **kwargs):
     )
 
 def facade_test(name, srcs, plugin = "_host", copts = [], linkopts = [], data = [], env = {}, deps = [], **kwargs):
-    """A host_test of the raw facade over the kernel model and the stand-in NVK (raw_facade_harness.h).
+    """A host_test of the raw facade over the kernel model (raw_facade_harness.h).
 
     It links :raw_facade_plugin<plugin> and :raw_runtime_plugin<plugin>; the frontend is raw_frontend_absent.cpp's.
     """
@@ -114,8 +112,8 @@ def facade_test(name, srcs, plugin = "_host", copts = [], linkopts = [], data = 
             "-fobjc-arc",
         ] + RAW_HOST_COPTS + copts,
         cxx_std = "c++17",
-        data = [_FAKE_NVK] + data,
-        env = dict({"SWITCH_FAKE_NVK": "$(rootpath %s)" % _FAKE_NVK}, **env),
+        data = data,
+        env = env,
         linkopts = FACADE_LINKOPTS + linkopts,
         sanitize = False,
         deps = [

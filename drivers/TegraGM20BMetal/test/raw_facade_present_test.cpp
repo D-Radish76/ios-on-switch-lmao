@@ -94,19 +94,15 @@ struct Opened {
 };
 
 // The facade over the pack of the BGRA8 state, and that state; the render server's device when `renderServer`
-// (raw_metal_prepare's, NVK loaded first as the plugin loads it: a prepared open that finds no NVK yet opens a
-// connection of its own, which the device open then refuses), else another process's
+// (raw_metal_prepare's), else another process's
 Opened openPacked(bool renderServer = false)
 {
     const std::string metallib = writeMetallib();
     const std::string pack = writePack(packKey(kPacked));
-    if (renderServer) {
-        if (!loadNvk())
-            return {nil, nil, "no stand-in NVK (SWITCH_FAKE_NVK)"};
+    if (renderServer)
         raw_metal_prepare(pack.c_str(), 0);
-    }
     NSString *why = nil;
-    id<MTLDevice> device = open(pack, [HarnessM2VMethods class], [HarnessM2V class], &why);
+    id<MTLDevice> device = open(pack, &why);
     if (!device)
         return {nil, nil, std::string("no device: ") + (why.UTF8String ?: "?")};
     NSError *error = nil;

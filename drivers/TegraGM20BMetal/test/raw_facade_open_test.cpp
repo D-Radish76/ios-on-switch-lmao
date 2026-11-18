@@ -164,7 +164,6 @@ void ycbcrTargetState()
     id<MTLRenderPipelineState> state =
         [device newRenderPipelineStateWithDescriptor:descriptor(library, MTLPixelFormat(500)) error:&error];
     ASSERT_TRUE(state != nil) << text(error);
-    EXPECT_TRUE([ask(device, "switchRawM2V") isKindOfClass:[NSDictionary class]]);
     EXPECT_TRUE([((NSNumber * (*)(id, SEL)) objc_msgSend)(state, sel_registerName("switchPackHit")) boolValue])
         << "drawn from the pack";
 }
