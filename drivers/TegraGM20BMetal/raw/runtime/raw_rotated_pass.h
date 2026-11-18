@@ -39,16 +39,6 @@ inline const char *rotatedRefusalText(RotatedRefusal r)
     return "";
 }
 
-template <typename Texture> Rotation frameOf(const Texture &t)
-{
-    Rotation r;
-    r.turn = t.rotation;
-    const bool quarter = r.quarter();
-    r.width = quarter ? t.height : t.width;
-    r.height = quarter ? t.width : t.height;
-    return r;
-}
-
 // The pass's rotation (`out`): one turn and one frame shared by every turned colour attachment, every other attachment
 // memoryless or neither loaded nor stored (transient: a backing laid out as the plane stands in for it, planeShaped), or a
 // depth stand-in laid out as the plane already (raw_turned_pass.h: its rotation set)

@@ -131,6 +131,17 @@ struct Rotation {
     }
 };
 
+// The frame of a texture turned by `t.rotation` at its plane's extent (`t.width` x `t.height`)
+template <typename Texture> Rotation frameOf(const Texture &t)
+{
+    Rotation r;
+    r.turn = t.rotation;
+    const bool quarter = r.quarter();
+    r.width = quarter ? t.height : t.width;
+    r.height = quarter ? t.width : t.height;
+    return r;
+}
+
 // The root table's turn words (NVK's nvk_root_descriptor_table::switch_turn, nvk_switch_turn.h): a fragment program's turned
 // variant reads the frame through them, f.x = sx (swap ? p.y : p.x) + tx and f.y = sy (swap ? p.x : p.y) + ty of the plane's p,
 // a derivative the same without the offsets, a point coordinate with ox, oy (1 where an axis's sign is negative)

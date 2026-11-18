@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -343,6 +344,68 @@ TEST(RawYcbcrLoad, ALumaOnlyDrawOverALoadStoresTheLoadedChromasMean)
     EXPECT_EQ(lumaOut[W * H - 1], uint16_t(std::floor(double(_Float16(15.5f * 0.0123f)) * 255 + 0.5)));
     EXPECT_FALSE(raw::ycbcrStoreOverLoad({255, true}, luma.data(), chroma.data(), green.data(), W - 1, H,
                                          lumaOut.data(), chromaOut.data()));
+}
+
+
+// A target turned by `rotation`, made at its plane's extent, and the pass a reach takes it in (raw_reach.h reachArea)
+struct TurnedPlane {
+    uint8_t rotation = 0;
+    uint32_t width = 0, height = 0;
+    bool memoryless = false;
+    const TurnedPlane *luma = nullptr;
+};
+
+struct TurnedPass {
+    struct Color {
+        const TurnedPlane *texture = nullptr;
+    } color[8];
+    struct {
+        const TurnedPlane *texture = nullptr;
+    } depthStencil;
+    uint32_t count = 1;
+};
+
+// A turned target's loaded pass re-stores the 32x32 tiles of its frame a draw reaches, from the frame's origin, turned into
+// the plane. An M4 Max over a 128x64 plane: a draw over frame rectangle (0, 0)-(4, 4) reaches frame tile (0, 0), one over
+// (40, 40)-(44, 44) tile (1, 1), and each re-stores the plane box below (a frame of no whole tiles lands off the plane's
+// 32-texel grid; rotation 4 stores as rotation 1). The reach's render area is the frame
+TEST(RawYcbcrLoad, ATurnedTargetStoresItsFramesTilesTurnedIntoThePlane)
+{
+    const struct {
+        uint8_t rotation;
+        uint32_t frameW, frameH, tile;
+        uint32_t x0, y0, x1, y1;
+    } kCases[] = {
+        {0, 128, 64, 0, 0, 0, 31, 31},    {0, 120, 56, 1, 32, 32, 63, 55}, {1, 64, 128, 0, 96, 0, 127, 31},
+        {1, 56, 120, 0, 88, 0, 119, 31},  {1, 56, 120, 1, 56, 32, 87, 55}, {2, 128, 64, 0, 96, 32, 127, 63},
+        {2, 120, 56, 0, 88, 24, 119, 55}, {2, 120, 56, 1, 56, 0, 87, 23},  {3, 64, 128, 0, 0, 32, 31, 63},
+        {3, 56, 120, 0, 0, 24, 31, 55},   {3, 56, 120, 1, 32, 0, 63, 23},  {4, 128, 64, 0, 32, 0, 63, 31},
+        {4, 120, 56, 0, 24, 0, 55, 31},   {4, 120, 56, 1, 0, 32, 23, 63},
+    };
+    for (const auto &c : kCases) {
+        const bool quarter = c.rotation == 1 || c.rotation == 3 || c.rotation == 4;
+        const TurnedPlane luma{0, quarter ? c.frameH : c.frameW, quarter ? c.frameW : c.frameH};
+        const TurnedPlane t{c.rotation, luma.width, luma.height, false, &luma};
+        TurnedPass pass;
+        const TurnedPlane reached = raw::ycbcrReachAttachment(t);
+        pass.color[0].texture = &reached;
+        const raw::Rect area = raw::reachArea(pass, 0, 0);
+        EXPECT_EQ(area, (raw::Rect{0, 0, c.frameW, c.frameH})) << int(c.rotation) << " " << c.frameW;
+        raw::PassReach reach;
+        reach.tilesX = raw::reachTiles(c.frameW);
+        reach.tilesY = raw::reachTiles(c.frameH);
+        std::vector<uint8_t> mask(size_t(reach.tilesX) * reach.tilesY);
+        mask[size_t(c.tile) * reach.tilesX + c.tile] = 1;
+        const raw::TurnMask stored = raw::ycbcrStoreMask(t, reach);
+        uint32_t x0 = UINT32_MAX, y0 = UINT32_MAX, x1 = 0, y1 = 0;
+        for (uint32_t y = 0; y < t.height; y++)
+            for (uint32_t x = 0; x < t.width; x++)
+                if (raw::tileReached(stored.tiles, mask.data(), int32_t(x), int32_t(y))) {
+                    x0 = std::min(x0, x), y0 = std::min(y0, y), x1 = std::max(x1, x), y1 = std::max(y1, y);
+                }
+        EXPECT_EQ((raw::Rect{x0, y0, x1, y1}), (raw::Rect{c.x0, c.y0, c.x1, c.y1}))
+            << int(c.rotation) << " " << c.frameW << "x" << c.frameH << " tile " << c.tile;
+    }
 }
 
 }  // namespace

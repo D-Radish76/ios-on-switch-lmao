@@ -10,6 +10,8 @@
 
 #include <cstdint>
 
+#include "raw_reach.h"
+
 namespace raw {
 
 // The overlap states' fragment buffer 0 (pack/ycbcr_store.metal OverlapRows)
@@ -19,12 +21,13 @@ struct OverlapRows {
     uint32_t base = 0;                      // the plane byte of the target's first texel; its rows `pitch` apart
     // a row's byte b lies at luma texel b * across / texelBytes, its row at row * down
     uint32_t texelBytes = 0, across = 1, down = 1;
-    uint32_t masked = 0, tilesX = 0, tilesY = 0;  // a loaded pass: only rows in the 32x32 tiles its draws reach store
+    uint32_t masked = 0;  // a loaded pass: only rows in the 32x32 frame tiles its draws reach store (tiles)
     uint32_t kept = ~0u;  // a row's byte no store writes (an odd-width one-plane target's last Y1), ~0u: none
     uint32_t pairs = 0;   // a one-plane target's pairs from its luma and chroma images: 1 Y0 Cb Y1 Cr, 2 Cb Y0 Cr Y1
+    TileMap tiles;        // each luma texel's frame tile, a turned target's in its frame
 };
 
-static_assert(sizeof(OverlapRows) == 52, "pack/ycbcr_store.metal OverlapRows");
+static_assert(sizeof(OverlapRows) == 76, "pack/ycbcr_store.metal OverlapRows");
 
 // Where the store of luma texel (x, y) lands in the order, later stores higher (pack/ycbcr_store.metal overlapOrder)
 inline uint32_t overlapOrder(uint32_t x, uint32_t y)

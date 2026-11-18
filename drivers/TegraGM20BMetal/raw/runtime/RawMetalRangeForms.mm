@@ -26,6 +26,11 @@ bool RMRangeEncode::loadPlanes(raw::PassDesc &p)
             return fail(PredEncPlanarRT, *why_, j);
         }
         p.color[j].texture = loaded;
+        if (t->_raw.rotation) {  // laid out as its plane, drawn turned (beginPass)
+            levelTargets_[j] = *loaded;
+            levelTargets_[j].rotation = t->_raw.rotation;
+            p.color[j].texture = &levelTargets_[j];
+        }
     }
     planeLoads_.clear();
     return true;

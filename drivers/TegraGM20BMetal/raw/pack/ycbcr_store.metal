@@ -281,19 +281,27 @@ fragment uint ycbcr_store_plane_packed_frag(Out in [[stage_in]], StandIn stand_i
 
 // A loaded pass's store (runtime/raw_ycbcr_load.h): Metal stores only the 32x32 tiles of the pass's frame its draws reach, the
 // rest of each plane keeping its bytes. `reach` holds a texel a tile, nonzero where a draw reaches it (runtime/raw_reach.h); a
-// chroma block lies in the tile of its first luma texel. A packed word's codes each keep the plane's code where their tile is
-// not reached, read from the word the plane holds (`kept`, the target itself: each fragment reads its own word alone).
+// chroma block lies in the tile of its first luma texel. Luma texel (x, y) of the plane is frame pixel (ax x + ay y + cx,
+// bx x + by y + cy): a turned target's tiles are its frame's, from the frame's origin (runtime/raw_reach.h TileMap). A packed
+// word's codes each keep the plane's code where their tile is not reached, read from the word the plane holds (`kept`, the
+// target itself: each fragment reads its own word alone).
 struct Tiles {
-    uint x, y;  // the mask's tiles across and down
+    int ax, ay, cx, bx, by, cy;
+    int tilesX, tilesY;
 };
 
 typedef texture2d<uint, access::read> Reach;
 
 static bool reached(Reach reach, constant Tiles &t, uint2 pixel)
 {
-    const uint2 tile = pixel / 32;
-    return tile.x < t.x && tile.y < t.y && reach.read(tile).r != 0;
+    const int2 p = int2(pixel);
+    const int2 f = int2(t.ax * p.x + t.ay * p.y + t.cx, t.bx * p.x + t.by * p.y + t.cy);
+    if (f.x < 0 || f.y < 0)
+        return false;
+    const int2 tile = f / 32;
+    return tile.x < t.tilesX && tile.y < t.tilesY && reach.read(uint2(tile)).r != 0;
 }
+
 
 static uint2 blockPixel(constant StoreShape &s, uint2 block)
 {
@@ -498,15 +506,15 @@ struct OverlapRows {
     uint element;
     uint base;
     uint texelBytes, across, down;
-    uint masked, tilesX, tilesY;
+    uint masked;
     uint kept;
     uint pairs;
+    Tiles tiles;
 };
 
 static bool overlapReached(Reach reach, constant OverlapRows &s, uint2 pixel)
 {
-    const uint2 tile = pixel / 32;
-    return tile.x < s.tilesX && tile.y < s.tilesY && reach.read(tile).r != 0;
+    return reached(reach, s.tiles, pixel);
 }
 
 static uint overlapOrder(uint x, uint y)

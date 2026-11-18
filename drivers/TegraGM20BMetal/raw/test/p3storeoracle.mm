@@ -105,14 +105,14 @@ struct Gpu {
     bool stored(id<MTLTexture> plane, NSString *name, id<MTLTexture> standIn, const raw::YcbcrStoreShape &shape)
     {
         id<MTLRenderPipelineState> s = state(store, @"ycbcr_store_vert", name, plane.pixelFormat);
-        const raw::YcbcrStoreTiles tiles = {raw::reachTiles(uint32_t(standIn.width)),
-                                            raw::reachTiles(uint32_t(standIn.height))};
-        id<MTLTexture> reach = texture(MTLPixelFormatR8Uint, tiles.x, tiles.y);
-        const std::vector<uint8_t> every(size_t(tiles.x) * tiles.y, 1);
-        [reach replaceRegion:MTLRegionMake2D(0, 0, tiles.x, tiles.y)
+        const raw::TileMap tiles =
+            raw::tileMap({}, raw::reachTiles(uint32_t(standIn.width)), raw::reachTiles(uint32_t(standIn.height)));
+        id<MTLTexture> reach = texture(MTLPixelFormatR8Uint, tiles.tilesX, tiles.tilesY);
+        const std::vector<uint8_t> every(size_t(tiles.tilesX) * tiles.tilesY, 1);
+        [reach replaceRegion:MTLRegionMake2D(0, 0, tiles.tilesX, tiles.tilesY)
                  mipmapLevel:0
                    withBytes:every.data()
-                 bytesPerRow:tiles.x];
+                 bytesPerRow:tiles.tilesX];
         return s && run(^(id<MTLCommandBuffer> cb) {
                    MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
                    rp.colorAttachments[0].texture = plane;

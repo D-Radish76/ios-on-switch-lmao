@@ -82,11 +82,9 @@ void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStor
 // stand-in or store states the device could not make; a loaded one draws the pack's own load and tile-masked store states
 const char *ycbcrTargetPassRefusal(const raw::Texture &t, MTLRenderPassColorAttachmentDescriptor *a)
 {
-    // a turned one's draws reach tiles of its frame, which its tile-masked store would read as its planes'
     const char *why = !t.planarStandIn || !t.ycbcrStore   ? "a YCbCr texture with no stand-in as a render target"
                       : a.loadAction != MTLLoadActionLoad ? nullptr
-                      : t.rotation ? "a turned YCbCr target loaded: no tile mask of its planes' tiles"
-                      : loadable(t) ? nullptr
+                      : loadable(t)                       ? nullptr
                                     : "a YCbCr target loaded: the pack has no load or tile-masked store state for it";
     if (why)
         SWITCH_REFUSE_DETAIL("raw", "pass.ycbcr", a.loadAction, "%ux%u format %u: %s: the command buffer fails",
@@ -101,6 +99,7 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
     const bool masked = loaded && !t.ycbcrStore->plane;
     if (masked && !loaded->mask)
         return 0;
+    const raw::TurnMask mask = masked ? raw::ycbcrStoreMask(t, *loaded) : raw::TurnMask{};
     for (const bool chroma : {false, true}) {
         if (chroma && (!t.chroma || t.ycbcrStore->words))
             continue;
@@ -121,9 +120,8 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         e->setTexture(0, &standIn);
         e->setBytes(2, 0, t.ycbcrStore, sizeof *t.ycbcrStore);
         if (masked) {
-            const raw::YcbcrStoreTiles tiles{loaded->tilesX, loaded->tilesY};
-            e->setTexture(1, loaded->mask);
-            e->setBytes(2, raw::kYcbcrTilesSlot, &tiles, sizeof tiles);
+            e->setTexture(1, mask.mask);
+            e->setBytes(2, raw::kYcbcrTilesSlot, &mask.tiles, sizeof mask.tiles);
             if (t.ycbcrStore->packed)
                 e->setTexture(2, overlap ? plane->sampled : plane);
         }
@@ -138,13 +136,13 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
             if (const int failed = raw::storeOverlapRows(
                     *rc, packState(raw::overlapState(plane->format)), plane->format, plane->va, *plane,
                     *plane->sampled, nullptr, raw::overlapPlaneRows(*plane, chroma, *t.ycbcrStore),
-                    masked ? loaded : nullptr, why))
+                    masked ? &mask : nullptr, why))
                 return failed;
     }
     if (pairsOverlap(t)) {
         if (const int failed =
                 raw::storeOverlapRows(*rc, packState(raw::overlapState(10)), 10, t.planes.luma, t, *t.luma, t.chroma,
-                                      raw::overlapPairsOf(t), masked ? loaded : nullptr, why))
+                                      raw::overlapPairsOf(t), masked ? &mask : nullptr, why))
             return failed;
     } else if (t.onePlane) {
         raw::BlitEncoder *merge = rc->blit();
@@ -221,14 +219,18 @@ int loadYcbcrStandIn(raw::CommandBuffer *rc, const raw::Texture &t, uint32_t j, 
     return 0;
 }
 
-// The tiles a pass's draws reach (raw_reach.h), a YCbCr target cleared and stored counting as any other attachment does
+// The tiles of its frame a pass's draws reach (raw_reach.h), a YCbCr target cleared and stored counting as any other
+// attachment does
 bool reachOfLoadedTargets(const RMPass &pass, const raw::PassDesc &p, raw::DrawReplay &draws, raw::CommandBuffer &rc,
                           raw::PassReach &out, const char **why)
 {
     raw::PassDesc q = p;
+    raw::Texture targets[8];
     for (uint32_t k = 0; k < p.count && k < 8; k++)
-        if (__unsafe_unretained RMTexture *t = (RMTexture *)pass.color[k].texture; t && t->_raw.planarStandIn)
-            q.color[k].texture = t->_raw.luma;
+        if (__unsafe_unretained RMTexture *t = (RMTexture *)pass.color[k].texture; t && t->_raw.planarStandIn) {
+            targets[k] = raw::ycbcrReachAttachment(t->_raw);
+            q.color[k].texture = &targets[k];
+        }
     return rc.reach(q, p.width, p.height, draws, out, why);
 }
 

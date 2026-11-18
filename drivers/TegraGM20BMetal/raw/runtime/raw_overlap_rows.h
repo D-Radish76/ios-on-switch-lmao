@@ -61,17 +61,16 @@ inline void overlapTarget(const Texture &plane, uint64_t va, uint32_t pitch, uin
 }
 
 // The plane's bytes from `planeVa` drawn from `source` by `state`: the run of its whole pitches, then the bytes past it.
-// `chroma`: a one-plane target's chroma image (s.pairs). 0, or 1 a target the raw path cannot render, 2 a draw the encoder
-// refused (*why)
+// `chroma`: a one-plane target's chroma image (s.pairs); `loaded`: a loaded pass's reach and each luma texel's frame tile.
+// 0, or 1 a target the raw path cannot render, 2 a draw the encoder refused (*why)
 inline int storeOverlapRows(CommandBuffer &rc, Pipeline *state, uint32_t format, uint64_t planeVa,
                             const Texture &plane, const Texture &source, const Texture *chroma, OverlapRows s,
-                            const PassReach *loaded, const char **why)
+                            const TurnMask *loaded, const char **why)
 {
     const uint32_t span = s.pitch * (s.rows - 1) + s.row, whole = span / s.pitch, tail = span - whole * s.pitch;
     if (loaded) {
         s.masked = 1;
-        s.tilesX = loaded->tilesX;
-        s.tilesY = loaded->tilesY;
+        s.tiles = loaded->tiles;
     }
     // a byte no row stores keeps its value: the target is loaded (a shadow's backing filled first)
     const bool keeps = s.masked || s.kept != ~0u;

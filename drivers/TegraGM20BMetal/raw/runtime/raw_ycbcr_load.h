@@ -4,7 +4,9 @@
 //    code format's quotient is never a tie, an sRGB step can be, a converted channel's v / 2048 is a half already);
 //  - the store writes only the 32x32 tiles of the pass's frame a draw reaches, by raw_reach.h's rule (nothing in a pass
 //    without a draw, every tile beside another attachment cleared and stored), each from its texels by the store rule
-//    (raw_ycbcr_store.h); a chroma block lies in its first luma texel's tile, and every other byte keeps its value;
+//    (raw_ycbcr_store.h); a chroma block lies in its first luma texel's tile, and every other byte keeps its value. A
+//    turned target's tiles are its frame's, from the frame's origin, turned into the plane (an M4 Max: rotation 1 over a
+//    56x120 frame of a 128x64 plane re-stores frame tile (0, 0) at plane x 88 to 119, y 0 to 31);
 //  - its passes into a packed target fault, so a packed target's words are its unpacked twin's codes, three to a word, each
 //    code of a tile no draw reaches the word's own.
 // The raw path draws the load state's values into a block-linear stand-in of the command buffer's (backing tag kYcbcrLoadTag +
@@ -24,12 +26,24 @@ namespace raw {
 
 constexpr uint32_t kYcbcrLoadTag = 96;
 
-// pack/ycbcr_store.metal Tiles: the reach mask's tiles across and down, bound at the masked states' buffer(2)
-struct YcbcrStoreTiles {
-    uint32_t x = 0, y = 0;
-};
-
+// The masked store states' buffer(2): pack/ycbcr_store.metal Tiles, the reach mask's TileMap of each plane texel's frame tile
 constexpr uint32_t kYcbcrTilesSlot = 2;
+
+template <typename Texture> TurnMask ycbcrStoreMask(const Texture &t, const PassReach &reach)
+{
+    return turnMask(reach, frameToPlane(frameOf(t)));
+}
+
+// What a loaded target counts as in its pass's reach (CommandBuffer::reach): its luma plane's memory, cleared and stored as
+// any other attachment's, at the texture's turn and extent, so that the render area is the target's frame
+template <typename Texture> Texture ycbcrReachAttachment(const Texture &t)
+{
+    Texture a = *t.luma;
+    a.rotation = t.rotation;
+    a.width = t.width;
+    a.height = t.height;
+    return a;
+}
 
 // The pack's load state of a texture read as `output` (YcbcrOutput); null for none (a packed 10-bit plane's is
 // ycbcrLoadPipeline's). A target under a P3 matrix (planYcbcr: the unpacked 4:2:0 and 4:2:2 converted formats) loads in

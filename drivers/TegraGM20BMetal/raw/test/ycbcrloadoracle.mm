@@ -127,7 +127,7 @@ struct Gpu {
 
     // A pass of `s` into `target` over the whole of it, `load` kept where it discards
     bool full(id<MTLTexture> target, id<MTLRenderPipelineState> s, NSArray<id<MTLTexture>> *textures, const void *shape,
-              size_t bytes, const raw::YcbcrStoreTiles *tiles, bool srgb)
+              size_t bytes, const raw::TileMap *tiles, bool srgb)
     {
         return run(^(id<MTLCommandBuffer> cb) {
             MTLRenderPassDescriptor *rp = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -258,13 +258,13 @@ void arm(Gpu &g, const ycbcrload::Case &c, const Surface &s, const raw::YcbcrPla
     ok = ok && g.drawn(standIn, MTLLoadActionLoad, g.state(g.values, @"strip", @"floats", MTLPixelFormatRGBA32Float),
                        valueBuffer, w, a.draws ? &rect : nullptr, false);
     const std::vector<uint8_t> mask = ycbcrload::tileMask(l, a);
-    const raw::YcbcrStoreTiles tiles = {raw::reachTiles(w), raw::reachTiles(h)};
+    const raw::TileMap tiles = raw::tileMap({}, raw::reachTiles(w), raw::reachTiles(h));
     if (ok && a.draws) {
-        id<MTLTexture> reach = g.texture(MTLPixelFormatR8Uint, tiles.x, tiles.y);
-        [reach replaceRegion:MTLRegionMake2D(0, 0, tiles.x, tiles.y)
+        id<MTLTexture> reach = g.texture(MTLPixelFormatR8Uint, tiles.tilesX, tiles.tilesY);
+        [reach replaceRegion:MTLRegionMake2D(0, 0, tiles.tilesX, tiles.tilesY)
                  mipmapLevel:0
                    withBytes:mask.data()
-                 bytesPerRow:tiles.x];
+                 bytesPerRow:tiles.tilesX];
         for (const bool c2 : {false, true}) {
             id<MTLTexture> plane = c2 ? chroma : luma;
             NSMutableArray<id<MTLTexture>> *bound = [NSMutableArray arrayWithObjects:standIn, reach, nil];
