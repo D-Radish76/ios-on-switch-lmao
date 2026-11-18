@@ -32,12 +32,13 @@ bool Device::createOwnedZeta(uint32_t width, uint32_t height, uint32_t format, u
     if (const uint32_t kind =
             levels == 1 ? storedZetaKind((k_.info().flags & TegraGM20BInfoCompression) != 0, format, samples, layers)
                         : 0;
-        kind && createCompressedZeta(bytes, kind, sampled, t))
+        kind && createCompressedZeta(bytes, kind, t))
         return true;
     Span span;
     if (!tiledAlloc(zChunks_[z], kZetaFormatInfo[z].kind, bytes, std::max(align, kBlAlign), span))
         return false;
-    if (sampled && !(t.tic = allocTic())) {
+    // made here whatever `sampled` says: recording threads read t.tic unlocked, so nothing may set it later
+    if (!(t.tic = allocTic())) {
         tiledFree(zChunks_[z], span);
         return false;
     }
@@ -50,9 +51,8 @@ bool Device::createOwnedZeta(uint32_t width, uint32_t height, uint32_t format, u
         t.chain->va = t.va;
         uint32_t w[8];
         fx::mipChainTic(chain, t.va, kZetaFormatInfo[z].tic0, false, 0, levels, w, type);
-        if (t.tic)
-            memcpy(tic_.cpu + 32 * t.tic, w, 32);  // visible at the next submission's header invalidate
-    } else if (t.tic) {
+        memcpy(tic_.cpu + 32 * t.tic, w, 32);  // visible at the next submission's header invalidate
+    } else {
         writeTic(t);
     }
     return true;

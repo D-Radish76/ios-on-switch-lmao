@@ -8,7 +8,7 @@
 // rotation and frame); false for any other
 bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out);
 // Such a texture over the plane's own memory, its rotation kept (Texture::rotation)
-bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, const raw::Rotation &r);
+bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r);
 // Whether `d` asks a rotation of a texture over no surface plane, which Metal makes none of: its line logged
 bool refuseTurnedOffSurface(MTLTextureDescriptor *d);
 

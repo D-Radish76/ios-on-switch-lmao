@@ -67,7 +67,7 @@ const char *sharedImage(MTLTextureDescriptor *d, raw::SurfaceImage &image)
     facts.blockW = f ? f->blockW : 1;
     facts.blockH = f ? f->blockH : 1;
     facts.target = f && f->rt;
-    facts.extended = raw::xrForm(uint32_t(d.pixelFormat)) != raw::XrForm::None;
+    facts.extended = raw::xrSampled(uint32_t(d.pixelFormat));
     facts.rendered = volumeRendered(d);
     if (const char *why = raw::surfaceImage(facts, image))
         return why;
@@ -75,7 +75,7 @@ const char *sharedImage(MTLTextureDescriptor *d, raw::SurfaceImage &image)
         return nullptr;
     if (!rawShape(d))
         return "a one-level 2D texture of a format the raw path keeps no IOSurface texture of";
-    if (raw::xrForm(uint32_t(d.pixelFormat)) == raw::XrForm::Planes)
+    if (raw::twoPlaneXr(uint32_t(d.pixelFormat)))
         return "an extended-range format, which a surface holds in two planes";
     return nullptr;
 }

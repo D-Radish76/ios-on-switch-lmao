@@ -174,10 +174,13 @@ Device::Backing *Device::compBacking(const Texture &m, uint32_t tag, uint32_t ki
     t.va = mem->bo.va;
     t.storage = {t.va, bytes, false};
     t.comptags = true;
-    if (!m.zeta) {
+    // a zeta's too: a depth resolve or a turn copy samples it, and recording threads read t.tic unlocked
+    if (!(t.tic = allocTic()))
+        return nullptr;
+    if (m.zeta) {
+        writeTic(t);
+    } else {
         const FormatInfo *f = formatInfo(m.format);
-        if (!(t.tic = allocTic()))
-            return nullptr;
         uint32_t w[8];
         fx::mipChainTic(c, t.va, f->tic0, f->srgb, 0, 1, w);
         memcpy(tic_.cpu + 32 * t.tic, w, 32);  // visible at the next submission's header invalidate

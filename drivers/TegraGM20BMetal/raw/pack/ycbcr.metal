@@ -287,6 +287,15 @@ fragment float4 ycbcr_load_codes_frag(Out in [[stage_in]], texture2d<float, acce
     return loadedCodes(luma, chroma, s, uint2(in.position.xy));
 }
 
+// A target under a P3 matrix, whose shape is its codes format's: the read's order, red Y, green Cb, blue Cr (an M4 Max)
+fragment float4 ycbcr_load_luma_first_frag(Out in [[stage_in]], texture2d<float, access::read> luma [[texture(0)]],
+                                           texture2d<float, access::read> chroma [[texture(1)]],
+                                           constant Shape &s [[buffer(0)]])
+{
+    const uint3 c = codes(luma, chroma, s, uint2(in.position.xy));
+    return float4(loadHalf(c.x, s.max), loadHalf(c.y, s.max), loadHalf(c.z, s.max), 1.0f);
+}
+
 fragment float4 ycbcr_load_packed_converted_frag(Out in [[stage_in]], PackedPlane luma [[texture(0)]],
                                                  PackedPlane chroma [[texture(1)]], constant Shape &s [[buffer(0)]])
 {
@@ -297,6 +306,13 @@ fragment float4 ycbcr_load_packed_srgb_frag(Out in [[stage_in]], PackedPlane lum
                                             PackedPlane chroma [[texture(1)]], constant Shape &s [[buffer(0)]])
 {
     return loadedSrgb(sums(codes(luma, chroma, s, uint2(in.position.xy)), s));
+}
+
+fragment float4 ycbcr_load_packed_luma_first_frag(Out in [[stage_in]], PackedPlane luma [[texture(0)]],
+                                                  PackedPlane chroma [[texture(1)]], constant Shape &s [[buffer(0)]])
+{
+    const uint3 c = codes(luma, chroma, s, uint2(in.position.xy));
+    return float4(loadHalf(c.x, s.max), loadHalf(c.y, s.max), loadHalf(c.z, s.max), 1.0f);
 }
 
 fragment float4 ycbcr_load_packed_codes10_frag(Out in [[stage_in]], PackedPlane luma [[texture(0)]],

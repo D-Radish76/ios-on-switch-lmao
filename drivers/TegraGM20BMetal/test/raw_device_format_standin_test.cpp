@@ -7,17 +7,13 @@
 // state into the texture's words viewed as R16Uint or R32Uint; a level of a chain rendered through its own stand-in; and
 // generateMipmapsForTexture: of each, a pass of the format's mip state a level into the level's words; BGR10_XR_sRGB's
 // passes through an RGBA16Float stand-in into its codes.
-#include "raw_device_harness.h"
+#include "raw_format_standin_harness.h"
 #include "../raw/runtime/raw_attachment_target.h"
-#include "../raw/runtime/raw_format_standin.h"
-#include "../raw/runtime/raw_pack.h"
-#include "../raw/runtime/raw_record.h"
-#include "../../../kits/SwitchGM20B/SwitchGM20B3D.h"
-#include <cstring>
 #include <map>
-#include <vector>
 
 namespace {
+
+using namespace standin;
 
 float asFloat(uint32_t bits)
 {
@@ -150,108 +146,6 @@ TEST(FormatStandIn, EachFormatsStandIn)
     EXPECT_FALSE(raw::formatHoldsAlpha(11) || raw::formatHoldsAlpha(93));
 }
 
-// The copy engine's launches the command buffer submitted: (source, destination, SET_REMAP_COMPONENTS) each
-struct Launch {
-    uint64_t from, to;
-    uint32_t remap;
-};
-
-struct Method {
-    uint32_t method, value;
-};
-
-// Every job's words from `first` decoded: the copy engine's launches, and the 3D subchannel's methods in order
-void decode(size_t first, std::vector<Launch> &launches, std::vector<Method> &methods)
-{
-    constexpr uint32_t kLaunch = 0x0300, kInUpper = 0x0400, kInLower = 0x0404, kOutUpper = 0x0408, kOutLower = 0x040c,
-                       kRemap = 0x0708;
-    uint64_t in = 0, to = 0;
-    uint32_t remap = 0;
-    const auto &jobs = kernel_model::model.jobs;
-    for (size_t j = first; j < jobs.size(); j++) {
-        uint32_t op = 0, subc = 0, m = 0, left = 0;
-        auto method = [&](uint32_t v) {
-            if (subc == 0)
-                methods.push_back({m, v});
-            if (subc != raw::SUBC_COPY)
-                return;
-            if (m == kInUpper)
-                in = (in & 0xffffffffull) | uint64_t(v) << 32;
-            else if (m == kInLower)
-                in = (in & ~0xffffffffull) | v;
-            else if (m == kOutUpper)
-                to = (to & 0xffffffffull) | uint64_t(v) << 32;
-            else if (m == kOutLower)
-                to = (to & ~0xffffffffull) | v;
-            else if (m == kRemap)
-                remap = v;
-            else if (m == kLaunch)
-                launches.push_back({in, to, remap});
-        };
-        for (const uint32_t w : jobs[j].words) {
-            if (left) {
-                method(w);
-                left--;
-                if (op == 1 || op == 5)
-                    m += 4;
-                if (op == 5)
-                    op = 3;
-                continue;
-            }
-            if (!w)
-                continue;
-            op = w >> 29;
-            subc = w >> 13 & 7;
-            m = (w & 0xfff) << 2;
-            if (op == 4)
-                method(w >> 16 & 0x1fff);
-            else
-                left = w >> 16 & 0x1fff;
-        }
-    }
-}
-
-// The colour target 0 each pass set: its address and format
-std::vector<std::pair<uint64_t, uint32_t>> targets(const std::vector<Method> &methods)
-{
-    std::vector<std::pair<uint64_t, uint32_t>> out;
-    uint64_t va = 0;
-    for (const Method &m : methods) {
-        if (m.method == NVB197_SET_COLOR_TARGET_A(0))
-            va = uint64_t(m.value) << 32;
-        else if (m.method == NVB197_SET_COLOR_TARGET_B(0))
-            va |= m.value;
-        else if (m.method == NVB197_SET_COLOR_TARGET_FORMAT(0) && m.value)
-            out.push_back({va, m.value});
-    }
-    return out;
-}
-
-class DeviceFormatStandIn : public harness::DeviceTest {
-protected:
-    void addState(const char *name, uint32_t format)
-    {
-        raw::RuntimeRecord r;
-        r.keyString = "samples=1 c0=" + std::to_string(format) + " ";
-        for (raw::CapturedProgram &p : r.programs) {
-            p.image.assign(80 + 64, 0);
-            p.gprs = 8;
-        }
-        r.programs[0].id = std::string(name) + "-vs";
-        r.programs[1].id = std::string(name) + "-fs";
-        r.pipeline.keyHash = raw::Pack::fnv(name, strlen(name));
-        r.blob = {0x1a00, 0x1111};
-        std::string why;
-        ASSERT_NE(dev.addRecord(r, false, why), nullptr) << why;
-    }
-};
-
-// remapOf: DST_X..W each a source component or NO_WRITE (6), one-byte components, the source's and destination's counts
-constexpr uint32_t remap(uint32_t sources, uint32_t destinations)
-{
-    return 0 | 6u << 4 | 6u << 8 | 6u << 12 | (sources - 1) << 20 | (destinations - 1) << 24;
-}
-
 TEST_F(DeviceFormatStandIn, AnSrgbR8TargetsFirstByteGoesIntoItsStandInAndBack)
 {
     raw::Texture t;
@@ -261,14 +155,14 @@ TEST_F(DeviceFormatStandIn, AnSrgbR8TargetsFirstByteGoesIntoItsStandInAndBack)
     ASSERT_NE(cb, nullptr);
     const size_t first = kernel_model::model.jobs.size();
     const char *why = nullptr;
-    raw::Texture *s = raw::formatStandInFor(dev, *cb, t, 3, true, &why);
+    raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 3, true, &why);
     ASSERT_NE(s, nullptr) << why;
     EXPECT_EQ(s->format, 71u) << "RGBA8Unorm_sRGB";
     EXPECT_TRUE(s->renderable && s->blockLinear);
     EXPECT_EQ(s->width, 40u);
     EXPECT_EQ(s->height, 12u);
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, t, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -283,6 +177,37 @@ TEST_F(DeviceFormatStandIn, AnSrgbR8TargetsFirstByteGoesIntoItsStandInAndBack)
     EXPECT_EQ(launches[1].remap, remap(4, 1)) << "red back into the byte";
 }
 
+// RG8Unorm_sRGB alike, its two bytes (the GM20B has no two-component sRGB target): red and green of the stand-in, blue and
+// alpha left, and back
+TEST_F(DeviceFormatStandIn, AnSrgbRg8TargetsTwoBytesGoIntoItsStandInAndBack)
+{
+    raw::Texture t;
+    ASSERT_TRUE(dev.createTexture(40, 12, raw::kRg8UnormSrgb, t));
+    EXPECT_FALSE(t.renderable || t.shadowTarget) << "no render target format of the GM20B's";
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    const size_t first = kernel_model::model.jobs.size();
+    const char *why = nullptr;
+    raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 2, true, &why);
+    ASSERT_NE(s, nullptr) << why;
+    EXPECT_EQ(s->format, 71u) << "RGBA8Unorm_sRGB";
+    const uint64_t standIn = s->va;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    uint32_t seq = 0;
+    ASSERT_TRUE(cb->commit(seq));
+    std::vector<Launch> launches;
+    std::vector<Method> methods;
+    decode(first, launches, methods);
+    ASSERT_EQ(launches.size(), 2u);
+    constexpr uint32_t kTwoOfOne = 1u << 4 | 6u << 8 | 6u << 12;  // DST_X from 0, DST_Y from 1, Z and W not written
+    EXPECT_EQ(launches[0].from, t.va);
+    EXPECT_EQ(launches[0].to, standIn);
+    EXPECT_EQ(launches[0].remap, kTwoOfOne | 1u << 20 | 3u << 24) << "two bytes into red and green";
+    EXPECT_EQ(launches[1].from, standIn);
+    EXPECT_EQ(launches[1].to, t.va);
+    EXPECT_EQ(launches[1].remap, kTwoOfOne | 3u << 20 | 1u << 24) << "red and green back into the two bytes";
+}
+
 TEST_F(DeviceFormatStandIn, AClearedTargetsStandInIsNotFilled)
 {
     raw::Texture t;
@@ -291,7 +216,7 @@ TEST_F(DeviceFormatStandIn, AClearedTargetsStandInIsNotFilled)
     ASSERT_NE(cb, nullptr);
     const size_t first = kernel_model::model.jobs.size();
     const char *why = nullptr;
-    ASSERT_NE(raw::formatStandInFor(dev, *cb, t, 0, false, &why), nullptr) << why;
+    ASSERT_NE(raw::formatStandInFor(dev, *cb, whole(t), 1, 0, false, &why), nullptr) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -307,7 +232,7 @@ TEST_F(DeviceFormatStandIn, WithoutThePacksStatesAPackedFormatHasNoStandIn)
     raw::CommandBuffer *cb = dev.begin();
     ASSERT_NE(cb, nullptr);
     const char *why = nullptr;
-    EXPECT_EQ(raw::formatStandInFor(dev, *cb, t, 0, true, &why), nullptr);
+    EXPECT_EQ(raw::formatStandInFor(dev, *cb, whole(t), 1, 0, true, &why), nullptr);
     ASSERT_NE(why, nullptr);
     EXPECT_NE(strstr(why, "no load or store state"), nullptr) << why;
     cb->abandon();
@@ -328,11 +253,11 @@ TEST_F(DeviceFormatStandIn, APackedTargetIsFilledByTheLoadStateAndStoredIntoItsW
         ASSERT_NE(cb, nullptr);
         const size_t first = kernel_model::model.jobs.size();
         const char *why = nullptr;
-        raw::Texture *s = raw::formatStandInFor(dev, *cb, t, 1, true, &why);
+        raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 1, true, &why);
         ASSERT_NE(s, nullptr) << why;
         EXPECT_EQ(s->format, 125u) << "RGBA32Float";
         const uint64_t standIn = s->va;
-        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, t, *s, &why)) << why;
+        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
         uint32_t seq = 0;
         ASSERT_TRUE(cb->commit(seq));
         std::vector<Launch> launches;
@@ -363,11 +288,11 @@ TEST_F(DeviceFormatStandIn, AnSrgbExtendedRangeTargetRendersThroughAHalfStandInI
     ASSERT_NE(cb, nullptr);
     const size_t first = kernel_model::model.jobs.size();
     const char *why = nullptr;
-    raw::Texture *s = raw::formatStandInFor(dev, *cb, t, 0, true, &why);
+    raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 0, true, &why);
     ASSERT_NE(s, nullptr) << why;
     EXPECT_EQ(s->format, 115u) << "RGBA16Float: Metal's tile holds the pass in halves";
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, t, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -379,6 +304,95 @@ TEST_F(DeviceFormatStandIn, AnSrgbExtendedRangeTargetRendersThroughAHalfStandInI
     EXPECT_EQ(passes[0].second, raw::formatInfo(115)->rt) << "RGBA16Float's target";
     EXPECT_EQ(passes[1].first, t.va) << "the store state's pass into the codes";
     EXPECT_EQ(passes[1].second, raw::formatInfo(53)->rt) << "R32Uint's target";
+}
+
+// BGRA10_XR_sRGB alike, over its fields: the load reads them through an RGBA16Uint header of its own (not the sampled
+// stand-in a bind takes), and the store state writes the stand-in back into them viewed as RGBA16Uint
+TEST_F(DeviceFormatStandIn, AnSrgbExtendedRangeTargetWithAlphaRendersThroughAHalfStandInIntoItsFields)
+{
+    addState(raw::formatLoadState(raw::kBgra10XrSrgb), 115);
+    addState(raw::formatStoreState(raw::kBgra10XrSrgb), raw::formatStoreView(raw::kBgra10XrSrgb));
+    raw::Texture t;
+    ASSERT_TRUE(dev.createTexture(64, 32, raw::kBgra10XrSrgb, t, true, true));
+    EXPECT_FALSE(t.renderable || t.shadowTarget) << "no render target format of the GM20B's";
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    const size_t first = kernel_model::model.jobs.size();
+    const char *why = nullptr;
+    raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 0, true, &why);
+    ASSERT_NE(s, nullptr) << why;
+    EXPECT_EQ(s->format, 115u) << "RGBA16Float: Metal's tile holds the pass in halves";
+    const uint64_t standIn = s->va;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    uint32_t seq = 0;
+    ASSERT_TRUE(cb->commit(seq));
+    std::vector<Launch> launches;
+    std::vector<Method> methods;
+    decode(first, launches, methods);
+    const auto passes = targets(methods);
+    ASSERT_EQ(passes.size(), 2u);
+    EXPECT_EQ(passes[0].first, standIn) << "the load state's pass into the stand-in";
+    EXPECT_EQ(passes[1].first, t.va) << "the store state's pass into the fields";
+    EXPECT_EQ(passes[1].second, raw::formatInfo(113)->rt) << "RGBA16Uint's target";
+}
+
+// RGB10A8_2P_XR10_sRGB of a descriptor keeps its texels, as an M4 Max keeps a one-level one's (m2v-textures3
+// probes/keeps.mm): a pass fills its stand-in from its texels viewed as RG32Uint and stores it back into them
+TEST_F(DeviceFormatStandIn, AnSrgbTwoPlaneFormatOfADescriptorKeepsItsTexels)
+{
+    addState(raw::formatLoadState(raw::kRgb10A8XrSrgb), 115);
+    addState(raw::formatStoreState(raw::kRgb10A8XrSrgb), raw::formatStoreView(raw::kRgb10A8XrSrgb));
+    raw::Texture t;
+    ASSERT_TRUE(dev.createTexture(64, 32, raw::kRgb10A8XrSrgb, t, true, true));
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    const size_t first = kernel_model::model.jobs.size();
+    const char *why = nullptr;
+    raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 0, true, &why);
+    ASSERT_NE(s, nullptr) << why;
+    EXPECT_EQ(s->format, 115u);
+    const uint64_t standIn = s->va;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    uint32_t seq = 0;
+    ASSERT_TRUE(cb->commit(seq));
+    std::vector<Launch> launches;
+    std::vector<Method> methods;
+    decode(first, launches, methods);
+    const auto passes = targets(methods);
+    ASSERT_EQ(passes.size(), 2u);
+    EXPECT_EQ(passes[0].first, standIn) << "the load state's pass into the stand-in";
+    EXPECT_EQ(passes[1].first, t.va) << "the store state's pass into its texels";
+    EXPECT_EQ(passes[1].second, raw::formatInfo(103)->rt) << "RG32Uint's target";
+}
+
+// A turned target's stand-in is laid out as its plane (the pass draws into it turned: TurnedPass), so its fill and store are
+// passes of the plane as it lies: no turned viewport, no coordinate swizzle
+TEST_F(DeviceFormatStandIn, ATurnedTargetsStandInIsStoredAsThePlaneLies)
+{
+    addState(raw::formatLoadState(raw::kBgr10XrSrgb), 115);
+    addState(raw::formatStoreState(raw::kBgr10XrSrgb), raw::formatStoreView(raw::kBgr10XrSrgb));
+    raw::Texture t;
+    ASSERT_TRUE(dev.createTexture(64, 32, raw::kBgr10XrSrgb, t, true, true));
+    t.rotation = 1;
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    const size_t first = kernel_model::model.jobs.size();
+    const char *why = nullptr;
+    raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 0, true, &why);
+    ASSERT_NE(s, nullptr) << why;
+    EXPECT_EQ(s->width, 64u) << "the plane's";
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    uint32_t seq = 0;
+    ASSERT_TRUE(cb->commit(seq));
+    std::vector<Launch> launches;
+    std::vector<Method> methods;
+    decode(first, launches, methods);
+    const auto passes = targets(methods);
+    ASSERT_EQ(passes.size(), 2u);
+    EXPECT_EQ(passes[1].first, t.va) << "the store state's pass into the codes";
+    for (const Method &m : methods)
+        if (m.method == NVB197_SET_VIEWPORT_COORDINATE_SWIZZLE(0))
+            EXPECT_NE(m.value, raw::kSwizzleExchange) << "a store drawn turned";
 }
 
 TEST_F(DeviceFormatStandIn, ALevelOfAChainRendersThroughItsOwnStandIn)
@@ -394,15 +408,19 @@ TEST_F(DeviceFormatStandIn, ALevelOfAChainRendersThroughItsOwnStandIn)
         EXPECT_FALSE(level.renderable) << "no render target format of the GM20B's";
         EXPECT_EQ(level.width, 16u);
         level.tic = dev.attachmentTic(t, level, 2, 0);
+        raw::ColorAttachment part;
+        part.texture = &level;
+        part.image = &t;
+        part.level = 2;
         raw::CommandBuffer *cb = dev.begin();
         ASSERT_NE(cb, nullptr);
         const size_t first = kernel_model::model.jobs.size();
         const char *why = nullptr;
-        raw::Texture *s = raw::formatStandInFor(dev, *cb, level, 0, true, &why);
+        raw::Texture *s = raw::formatStandInFor(dev, *cb, part, 1, 0, true, &why);
         ASSERT_NE(s, nullptr) << why;
         EXPECT_EQ(s->width, 16u);
         EXPECT_EQ(s->height, 8u);
-        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, level, *s, &why)) << why;
+        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, part, 1, *s, &why)) << why;
         uint32_t seq = 0;
         ASSERT_TRUE(cb->commit(seq));
         std::vector<Launch> launches;
@@ -453,24 +471,6 @@ TEST_F(DeviceFormatStandIn, EachFormatsLevelsAreItsMipStatesPasses)
             EXPECT_EQ(passes[l - 1].first, level.va) << format << " level " << l;
             EXPECT_EQ(passes[l - 1].second, rt) << format;
         }
-    }
-}
-
-// Metal's mip steps of A1BGR5Unorm and ABGR4Unorm (probe/fmt/mipq.mm): a texel's codes weighted exactly by its taps, the
-// mean held as the nearest float and then rounded to its code, ties even, as an M4 Max stores them on 2:1 steps (0 of
-// 1365 texels off each); RGB9E5Float's the taps' blend held as a half, mantissas truncated
-TEST(FormatStandIn, AMipStepsCodeIsTheExactMeansNearestFloatRounded)
-{
-    // four codes of one channel at weights of one half: their mean's code, a tie as the float the mean is held as
-    const struct {
-        uint32_t max, sum, code;
-    } kSteps[] = {{15, 6, 2},  {15, 30, 8},  {15, 34, 8},  {15, 38, 9},  {15, 54, 13}, {31, 18, 4},   {31, 30, 7},
-                  {31, 34, 9}, {31, 66, 17}, {31, 70, 17}, {31, 78, 19}, {31, 82, 21}, {31, 114, 29}, {31, 61, 15}};
-
-    for (const auto &s : kSteps) {
-        const uint32_t codes[4] = {s.sum / 4 + (s.sum % 4 > 0), s.sum / 4 + (s.sum % 4 > 1),
-                                   s.sum / 4 + (s.sum % 4 > 2), s.sum / 4};
-        EXPECT_EQ(raw::formatMipCode(codes, 128, 128, s.max), s.code) << s.max << " " << s.sum;
     }
 }
 

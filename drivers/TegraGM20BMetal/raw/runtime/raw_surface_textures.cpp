@@ -2,7 +2,9 @@
 // See raw_gpu.h (textures over surfaces, buffers and YCbCr planes).
 #include "raw_lock.h"
 #include "raw_gpu.h"
+#include "raw_surface_refusal.h"
 #include "raw_surface_view.h"
+#include "raw_xr_pass.h"
 #include "TegraGM20BLayout.h"
 
 #include <algorithm>
@@ -12,6 +14,8 @@
 
 namespace raw {
 
+static_assert(kTexelBufferType == fx::kTexOneDBuffer);
+
 // A texture over a block-linear surface's import: TegraGM20BLayout.h's image from the surface's first byte, at the shape the
 // kernel decided (a view of another format of the same texel size reads it as its own), under the import's
 // TGM_LAYOUT_KIND binding, which the 3D and 2D engines, the copy engine and the texture unit all address so
@@ -20,7 +24,10 @@ bool Device::tiledSurfaceTexture(uint64_t offset, uint32_t width, uint32_t heigh
 {
     const tgm_layout &l = t.import->layout;
     SurfaceView view;
-    if (!surfaceView(l, offset, width, height, t.bpp, pitch, view) || (!view.direct && !sampled)) {
+    const bool viewed = surfaceView(l, offset, width, height, t.bpp, pitch, view);
+    if (!viewed || (!view.direct && !sampled)) {
+        surfaceRefusal = !viewed ? "a crop the kernel's block-linear layout of the surface does not hold"
+                                 : "no memory for the pool image a crop of a block-linear surface is sampled through";
         release(t.import);
         t.import = nullptr;
         return false;
@@ -42,6 +49,7 @@ bool Device::tiledSurfaceTexture(uint64_t offset, uint32_t width, uint32_t heigh
         return true;
     }
     if (!(t.tic = allocTic())) {
+        surfaceRefusal = "no texture header left";
         release(t.import);
         t.import = nullptr;
         return false;
@@ -61,26 +69,37 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
     // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`.
     // A plane read past its rows' ends (readsPast: a YCbCr plane read with more codes a row than its pitch holds) has rows
     // that overlap, which no header lays out: the copy engine gathers them into `sampled` too. A base off a page (a surface
-    // over the client's memory) is imported from its page, its VA as far into it (bindImport).
+    // over the client's memory) is imported from its page, its VA as far into it (bindImport). A block-compressed format's
+    // rows are rows of blocks under a pitch header, as NVK offers a linear image of blocks for sampling (nvk_image.c: a
+    // linear image of any texture format, 2D, one level and layer; HW Test gpu.raw.astc_surface proves the GM20B samples
+    // one), never laid out block-linear by the kernel.
     const bool offPage = uintptr_t(base) & (page - 1);
     if (!shape(width, height, format, t) || (pitch & 15) || ((uintptr_t(base) + offset) & 15) ||
-        (pitch < width * t.bpp && !readsPast) || offset > readable ||
-        uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp > readable - offset)
+        (pitch < t.width * t.bpp && !readsPast) || offset > readable ||
+        uint64_t(pitch) * (t.height - 1) + uint64_t(t.width) * t.bpp > readable - offset) {
+        surfaceRefusal = "a format, size, offset or rows its texture header does not take, or rows past the surface";
         return false;
-    const bool unaligned = ((pitch | (uintptr_t(base) + offset)) & 31) || pitch < width * t.bpp;
+    }
+    const bool unaligned = ((pitch | (uintptr_t(base) + offset)) & 31) || pitch < t.width * t.bpp;
+    const bool blocks = t.blockW > 1 || t.blockH > 1;
     Texture *sampled = nullptr;
     if (unaligned) {
         sampled = new Texture;
         if (!createTexture(width, height, format, *sampled, false, true)) {
             delete sampled;
+            surfaceRefusal = "no memory or texture header for the pool image rows off 32 bytes are sampled through";
             return false;
         }
     }
     std::unique_lock<raw::Mutex> l(lock_);
     t.pitch = pitch;
-    const LayoutAsk ask = {width, height, t.bpp, pitch, writes && !offset && !sampled};
+    const LayoutAsk ask = {t.width, t.height, t.bpp, pitch, writes && !offset && !sampled && !blocks};
     t.import = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface, &ask);
+    if (!t.import)
+        surfaceRefusal = "its import: the kernel's BoImport, SurfaceLayout or VmBind (their bo-import, "
+                         "iosurface-layout or vm-bind line), or no GPU VA left";
     if (t.import && offPage && t.import->kernelTiled()) {
+        surfaceRefusal = "a surface over memory off a page that the kernel lays out block-linear";
         release(t.import);
         t.import = nullptr;
     }
@@ -116,7 +135,7 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
     }
     t.va = t.import->bo.va + offset;
     const uint64_t extent =
-        std::max(uint64_t(pitch) * height, uint64_t(pitch) * (height - 1) + uint64_t(width) * t.bpp);
+        std::max(uint64_t(pitch) * t.height, uint64_t(pitch) * (t.height - 1) + uint64_t(t.width) * t.bpp);
     t.storage = {t.va, std::min(extent, readable - offset), !t.import->id};
     t.cpu = static_cast<uint8_t *>(base) + offset;
     t.shadowTarget = t.renderable && !linearTarget(t);
@@ -127,6 +146,7 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
         return true;
     }
     if (!(t.tic = allocTic())) {
+        surfaceRefusal = "no texture header left";
         release(t.import);
         t.import = nullptr;
         return false;
@@ -195,17 +215,20 @@ bool Device::createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBy
 }
 
 bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
-                                 uint32_t format, Texture &t)
+                                 uint32_t format, Texture &t, uint32_t layers)
 {
     // rows and address a multiple of 16, as a surface's (createSurfaceTexture): the texture header's 32 through `sampled`
+    const uint64_t image = uint64_t(pitch) * height;
     if (!shape(width, height, format, t) || blockCompressed(formatInfo(format)) || (pitch & 15) ||
-        pitch < width * t.bpp || offset > b.length || uint64_t(pitch) * height > b.length - offset ||
+        pitch < width * t.bpp || !layers || offset > b.length || image > (b.length - offset) / layers ||
         offset > UINT64_MAX - b.va || ((b.va + offset) & 15))
         return false;
     // rows or a start 16 bytes off 32, which the texture header cannot address: sampled through a pool image of its
-    // texels, as a surface texture's are (createSurfaceTexture)
+    // texels, as a surface texture's are (createSurfaceTexture); a layered one's pitch header has no such image
     Texture *sampled = nullptr;
     if ((pitch | (b.va + offset)) & 31) {
+        if (layers > 1)
+            return false;
         sampled = new Texture;
         if (!createTexture(width, height, format, *sampled, false, true)) {
             delete sampled;
@@ -215,7 +238,11 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
     std::lock_guard<raw::Mutex> l(lock_);
     t.pitch = pitch;
     t.va = b.va + offset;
-    t.storage = {t.va, uint64_t(pitch) * height, b.hostVisible, b.span.storage};
+    t.storage = {t.va, image * layers, b.hostVisible, b.span.storage};
+    if (layers > 1) {
+        t.layers = layers;
+        t.layerBytes = image;
+    }
     t.shadowTarget = t.renderable && !linearTarget(t);
     t.renderable = t.renderable && linearTarget(t);
     t.cpu = b.cpu + offset;
@@ -231,28 +258,121 @@ bool Device::createBufferTexture(const Buffer &b, uint64_t offset, uint32_t widt
 }
 
 // NVK's texel buffer views start on 16 bytes (NVK_MIN_TEXEL_BUFFER_ALIGNMENT, its minTexelBufferOffsetAlignment) and hold
-// at most 2^27 texels (maxTexelBufferElements); the header itself takes a byte address
-bool Device::createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t)
+// at most 2^27 texels (maxTexelBufferElements, the device's maxTextureBufferWidth answer: raw_texture_shape.cpp
+// identityRefusal); the header itself takes a byte address and 32 bits of width (clb097tex.h TEXHEAD_1D_WIDTH_MINUS_ONE)
+bool Device::createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t,
+                               uint32_t limit)
+{
+    constexpr uint64_t kTexelBufferAlign = 16;
+    const FormatInfo *f = formatInfo(format);
+    const uint64_t bytes = f ? texelBufferBytes(format, elements, f->bpp) : 0;
+    if (!f || blockCompressed(f) || !elements || elements > limit || offset > b.length || bytes > b.length - offset ||
+        ((b.va + offset) % kTexelBufferAlign))
+        return false;
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        t = {};
+        t.format = format;
+        t.bpp = twoPlaneXr(format) ? kXrTexelBufferWordBytes : f->bpp;
+        t.width = t.texelWidth = elements;
+        t.height = t.texelHeight = 1;
+        t.pitch = elements * t.bpp;
+        t.type = fx::kTexOneDBuffer;
+        t.va = b.va + offset;
+        t.storage = {t.va, bytes, b.hostVisible, b.span.storage};
+        t.cpu = b.cpu ? b.cpu + offset : nullptr;
+        if (!(t.tic = allocTic()))
+            return false;
+        writeTic(t);
+    }
+    return !xrSampled(format) || createTexelStandIn(t);
+}
+
+// An extended-range texel buffer's stand-in (raw_xr.h): its RGBA16Float texels in order under a texel buffer header of
+// their own, drawn by the format's conversion state as a pitch target of rows of `row` texels from the codes copied, in
+// order, into images of the same rows (luma: the codes, chroma: a two-plane one's alpha bytes; RawMetalRangeStep.mm
+// standIns). Rows of a whole multiple of 256 texels make every image's rows its texels' bytes back to back. A pack with no
+// conversion state makes the buffer without one, which a draw binding it refuses (keepExtendedRange's rule).
+bool Device::createTexelStandIn(Texture &t)
+{
+    const bool planes = twoPlaneXr(t.format);
+    if (!ownPipeline(xrConversionOf(t.format, planes)))
+        return true;
+    const uint32_t row = std::min<uint32_t>(16384, (t.width + 255) & ~255u), rows = (t.width + row - 1) / row;
+    Texture *s = new Texture, *codes = new Texture, *alpha = planes ? new Texture : nullptr;
+    const bool made = createTexture(row, rows, kXrStandInFormat, *s, false, false) &&
+                      createTexture(row, rows, planes ? kXrWordFormat : t.format, *codes, false, false) &&
+                      (!alpha || createTexture(row, rows, kXrAlphaFormat, *alpha, false, false));
+    if (!made) {
+        for (Texture *x : {s, codes, alpha})
+            if (x) {
+                destroyTexture(*x);
+                delete x;
+            }
+        destroyTexture(t);
+        return false;
+    }
+    uint32_t w[8];
+    fx::bufferTic(s->va, formatInfo(kXrStandInFormat)->tic0, false, t.width, w);
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        memcpy(tic_.cpu + 32 * s->tic, w, 32);
+    }
+    s->luma = codes;
+    s->chroma = alpha;
+    t.standIn = s;
+    return true;
+}
+
+// A texel buffer over a surface plane's bytes in order: its import (pitch, as the kernel lays out a surface it is not
+// asked to render) under a texel buffer header from `offset`
+bool Device::createSurfaceTexelBuffer(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
+                                      uint64_t offset, uint32_t elements, uint32_t format, Texture &t)
 {
     constexpr uint64_t kTexelBufferAlign = 16, kMaxElements = 1u << 27;
     const FormatInfo *f = formatInfo(format);
-    if (!f || blockCompressed(f) || xrForm(format) != XrForm::None || !elements || elements > kMaxElements ||
-        offset > b.length || uint64_t(elements) * f->bpp > b.length - offset || ((b.va + offset) % kTexelBufferAlign))
+    if (!f || blockCompressed(f) || twoPlaneXr(format) || !elements || elements > kMaxElements || offset > allocBytes ||
+        uint64_t(elements) * f->bpp > allocBytes - offset || ((uintptr_t(base) + offset) % kTexelBufferAlign) ||
+        (uintptr_t(base) & (pageSize() - 1))) {
+        surfaceRefusal = "a format, count or offset a texel buffer header does not take, or texels past the surface";
         return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    t = {};
-    t.format = format;
-    t.bpp = f->bpp;
-    t.width = t.texelWidth = elements;
-    t.height = t.texelHeight = 1;
-    t.pitch = elements * f->bpp;
-    t.type = fx::kTexOneDBuffer;
-    t.va = b.va + offset;
-    t.storage = {t.va, uint64_t(t.pitch), b.hostVisible, b.span.storage};
-    t.cpu = b.cpu ? b.cpu + offset : nullptr;
-    if (!(t.tic = allocTic()))
+    }
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        Import *i = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface);
+        if (!i || i->kernelTiled()) {
+            surfaceRefusal = !i ? "its import: the kernel's BoImport, SurfaceLayout or VmBind (their bo-import, "
+                                  "iosurface-layout or vm-bind line), or no GPU VA left"
+                                : "a surface the kernel lays out block-linear, whose bytes are in no texel order";
+            if (i)
+                release(i);
+            return false;
+        }
+        t = {};
+        t.import = i;
+        t.format = format;
+        t.bpp = f->bpp;
+        t.width = t.texelWidth = elements;
+        t.height = t.texelHeight = 1;
+        t.pitch = elements * f->bpp;
+        t.type = fx::kTexOneDBuffer;
+        t.va = i->bo.va + offset;
+        t.storage = {t.va, uint64_t(t.pitch), !i->id};
+        t.cpu = static_cast<uint8_t *>(base) + offset;
+        if (!(t.tic = allocTic())) {
+            surfaceRefusal = "no texture header left";
+            release(i);
+            t.import = nullptr;
+            return false;
+        }
+        writeTic(t);
+    }
+    // an extended-range one reads and stores the plane's texels as one over a buffer of the same bytes does (an M4 Max:
+    // m2v-textures4 probes/reads.mm buffers), sampled through the same stand-in
+    if (xrSampled(format) && !createTexelStandIn(t)) {
+        surfaceRefusal = "no memory or texture header for the stand-in it is sampled through";
         return false;
-    writeTic(t);
+    }
     return true;
 }
 
@@ -289,6 +409,7 @@ bool Device::createOnePlaneYcbcr(uint64_t surfaceId, void *base, uint64_t allocB
     t.import = planes;
     t.planes = {planes->bo.va + plan.luma, 0, plan.lumaPitch, 0};
     t.onePlane = true;
+    t.pairsReversed = plan.pairsReversed;
     t.luma = y;
     t.chroma = c;
     memcpy(t.shape, plan.shape, sizeof t.shape);
@@ -320,6 +441,9 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
     if (c && !createSurfaceTexture(surfaceId, base, allocBytes, surface, plan.chroma, plan.chromaWidth,
                                    plan.chromaHeight, plan.chromaPitch, plan.chromaFormat, *c, false, plan.readable))
         return undo();
+    constexpr uint8_t kGreenBlue[4] = {3, 4, 0, 1};  // MTLTextureSwizzle Green, Blue, Zero, One
+    if (c && plan.chromaGreenBlue)
+        swizzle(c->sampled ? *c->sampled : *c, kGreenBlue);
     if (!createTexture(width, height, plan.image, t, false, true))  // block-linear, as NVK makes m2v's converted image
         return undo();
     if (plan.nativePlanes) {

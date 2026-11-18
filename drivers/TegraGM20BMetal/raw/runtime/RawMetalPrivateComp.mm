@@ -4,17 +4,11 @@
 #import "RawMetalInternal.h"
 #import "RawMetalMultisample.h"
 #include <algorithm>
-#include <mutex>
-#include "raw_storage_form.h"
 #include "raw_submit_gate.h"
 #include "raw_view.h"
 #include "raw_xr.h"
 
 thread_local bool tRawEncoding = false;
-
-// The process's shapes a storage form needed plain (rmStorageTargetsPlain): textures of them are made plain
-static raw::Mutex gPlainShapesLock;
-static raw::PlainShapes gPlainShapes;
 
 static raw::SubmitGate gSubmitGate;
 static thread_local bool tSubmitting = false;
@@ -62,13 +56,7 @@ uint32_t privateCompressedKind(MTLTextureDescriptor *d)
         f && f->rt && !raw::blockCompressed(f) && raw::xrForm(uint32_t(d.pixelFormat)) == raw::XrForm::None;
     facts.bpp = f ? f->bpp : 0;
     facts.compression = (gRM->raw->kernelInfo().flags & TegraGM20BInfoCompression) != 0;
-    const uint32_t kind = raw::privateCompressedKind(facts);
-    if (!kind)
-        return 0;
-    std::lock_guard<raw::Mutex> l(gPlainShapesLock);
-    return gPlainShapes.holds({uint64_t(d.pixelFormat), uint64_t(d.width), uint64_t(d.height), uint64_t(d.usage)})
-               ? 0
-               : kind;
+    return raw::privateCompressedKind(facts);
 }
 
 bool rmTexturePlain(RMTexture *t)
@@ -109,119 +97,4 @@ void rmRangePlain(RMCommandBuffer *cb, size_t from, size_t to)
                 if ([(id)zeta isKindOfClass:[RMTexture class]])
                     rmStoredZetaForM2v((RMTexture *)zeta);
         }
-}
-
-// A pipeline binding's raw pipeline (raster.pipeline, .nativePipeline, .nativeVariant as OpPipeline sets them); `pending`:
-// a variant still being made, whose storage form is not known yet
-static raw::Pipeline *boundPipeline(void *pipeline, void *native, void *variant, bool &pending)
-{
-    pending = false;
-    if (auto *v = static_cast<raw::Variant<raw::Pipeline> *>(variant)) {
-        raw::Pipeline *made = v->value();
-        pending = !made && v->state() == raw::Variant<raw::Pipeline>::State::Pending;
-        return made;
-    }
-    if (native)
-        return static_cast<raw::Pipeline *>(native);
-    id state = (__bridge id)pipeline;
-    return [state isKindOfClass:[RMPipeline class]] ? ((RMPipeline *)state)->_raw : nullptr;
-}
-
-// The storage view's facts of an attachment once it is plain, read without copying the texture another submission may
-// be moving
-struct PlainView {
-    uint32_t bpp, samples;
-    bool comptags = false;
-};
-
-static bool fitsOncePlain(const raw::Pipeline &pl, uint32_t slot, const raw::Texture &t)
-{
-    return raw::storageViewMismatch(raw::texelBytes(pl.storageTic[slot]), pl.rec->storageSamples,
-                                    PlainView{t.bpp, t.samples}) == raw::StorageFallback::None;
-}
-
-// `draw`: the shape of a draw of `pl` the pass holds, null where none is known yet (its binding)
-static void notePipeline(RMCommandBuffer *cb, const RMPass &pass, const raw::Pipeline *pl, bool pending,
-                         const raw::FetchDraw *draw)
-{
-    if (pending) {
-        rmPipelineVeto(cb, VetoStorage);
-        cb->_scanStorageTargets = true;
-        return;
-    }
-    if (!pl || !pl->rec)
-        return;
-    const raw::Pipeline *twin = pl->barrierTwin;
-    // an iterated-blend form the device proved draws the state whatever its target (RenderEncoder::formFor), which
-    // then needs neither the storage form nor the barrier form
-    const raw::FetchFreeForm *free = pl->fetchFree ? &pl->fetchFree->freeForm : nullptr;
-    const bool fetchFree = free && free->rung == raw::FetchIteratedBlend && raw::fetchFreeTaken(*free, {});
-    const bool twinDraws =
-        !twin || !draw || fetchFree ||
-        raw::barrierFormDraws(twin->fetchBits, twin->writeBits, twin->storageBits, twin->primitiveId, *draw);
-    const uint8_t slots =
-        raw::storageSlotsToPlain(pl->storageBits, twin != nullptr, twinDraws, gRM->raw->storageCompressedOk()) &
-        pass.compressed;
-    for (uint32_t slot = 0; slots >> slot; ++slot) {
-        RMTexture *t = (RMTexture *)pass.color[slot].texture;
-        if ((slots >> slot & 1) && fitsOncePlain(*pl, slot, t->_raw) &&
-            std::find(cb->_plainForStorage.begin(), cb->_plainForStorage.end(), t) == cb->_plainForStorage.end()) {
-            rmPipelineVeto(cb, VetoStorage);
-            cb->_plainForStorage.push_back(t);
-        }
-    }
-}
-
-void rmNoteStorageTargets(RMCommandBuffer *cb, const RMPass &pass, const Cmd &binding)
-{
-    bool pending;
-    const raw::Pipeline *pl =
-        boundPipeline(binding.obj, reinterpret_cast<void *>(uintptr_t(binding.c)), binding.obj2, pending);
-    notePipeline(cb, pass, pl, pending, nullptr);
-}
-
-void rmNoteStorageDraw(RMCommandBuffer *cb, const RMPass &pass, raw::Pipeline *pl, raw::Variant<raw::Pipeline> *variant,
-                       const raw::FetchDraw &draw)
-{
-    bool pending;
-    const raw::Pipeline *drawn = boundPipeline(nullptr, pl, variant, pending);
-    notePipeline(cb, pass, drawn, pending, &draw);
-}
-
-// The draws of [from, to) whose pipeline binding was a variant still being made where it was recorded: ready now, as the
-// submission waits for its variants before it encodes
-static void noteRangeDraws(RMCommandBuffer *cb, size_t from, size_t to)
-{
-    const RMPass *pass = nullptr;
-    for (size_t at = from; at < to; ++at) {
-        const Cmd c = cb->_plan.legacy(at);
-        if (c.op == OpRender)
-            pass = &cb->_passes[c.x];
-        else if (c.op == OpCompute || c.op == OpBlit)
-            pass = nullptr;
-        if (!pass || !pass->compressed || !isPlanDraw(c.op))
-            continue;
-        const RMPlanDraw &d = cb->_plan.draw(at);
-        const raw::RasterState &raster = cb->_plan.raster[cb->_plan.renderStates[d.state].raster];
-        const raw::FetchDraw shape = {d.primitive, d.count, d.instances, c.op != OpDraw && c.op != OpDrawIndexed,
-                                      d.indices != nullptr};
-        bool pending;
-        notePipeline(cb, *pass, boundPipeline(raster.pipeline, raster.nativePipeline, raster.nativeVariant, pending),
-                     false, &shape);
-    }
-}
-
-void rmStorageTargetsPlain(RMCommandBuffer *cb, size_t from, size_t to)
-{
-    if (cb->_scanStorageTargets)
-        noteRangeDraws(cb, from, to);
-    for (RMTexture *t : cb->_plainForStorage) {
-        MTLTextureDescriptor *d = t->_descriptor;
-        {
-            std::lock_guard<raw::Mutex> l(gPlainShapesLock);
-            gPlainShapes.add({uint64_t(d.pixelFormat), uint64_t(d.width), uint64_t(d.height), uint64_t(d.usage)});
-        }
-        rmTexturePlain(t);
-    }
-    cb->_plainForStorage.clear();
 }

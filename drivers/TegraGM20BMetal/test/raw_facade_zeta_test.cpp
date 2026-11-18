@@ -194,7 +194,7 @@ TEST_F(FacadeStoredZeta, AReplaysTwinIsNvksImageWithTheTexelsMovedIntoIt)
         ASSERT_TRUE(t->_rawOk);
         const uint64_t owned = t->_raw.va;
         const uint32_t ownedTic = t->_raw.tic;
-        EXPECT_EQ(ownedTic != 0, sampled);
+        EXPECT_NE(ownedTic, 0u) << "its header is made with it, ShaderRead or not";
         const size_t first = kernel_model::model.jobs.size();
         id twin = ((id (*)(id, SEL))objc_msgSend)(texture, sel_registerName("rmTwin"));
         ASSERT_TRUE([twin isKindOfClass:[HarnessZetaImage class]]);
@@ -368,7 +368,6 @@ TEST_F(FacadeStoredZeta, ARecordedDepth16PassAndItsCachedCopyUseTheMovedImage)
     id<MTLTexture> stencil = [gDevice newTextureWithDescriptor:stored(MTLPixelFormatStencil8)];
     ASSERT_NE(depth, nil);
     ASSERT_NE(stencil, nil);
-    ASSERT_EQ(depth->_raw.tic, 0u);
     auto pass = [MTLRenderPassDescriptor renderPassDescriptor];
     pass.depthAttachment.texture = (id<MTLTexture>)depth;
     pass.depthAttachment.loadAction = MTLLoadActionLoad;

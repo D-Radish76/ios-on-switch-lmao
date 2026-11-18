@@ -19,6 +19,7 @@
 41	A1BGR5Unorm	A1B5G5R5_UNORM	-	-	-	chip	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp:212	metal.formats
 42	ABGR4Unorm	A4B4G4R4_UNORM	-	-	-	chip	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp:212	metal.formats
 43	BGR5A1Unorm	B5G5R5A1_UNORM	-	-	-	chip	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp:212	metal.formats
+44	BGRA4Unorm	B4G4R4A4_UNORM	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
 53	R32Uint	R32_UINT	0xdb	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp:212; drivers/TegraGM20BMetal/raw/runtime/raw_comp.h:33	gpu.raw.integer_targets
 54	R32Sint	R32_SINT	0xdb	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp:212; drivers/TegraGM20BMetal/raw/runtime/raw_comp.h:33	gpu.raw.integer_targets
 55	R32Float	R32_FLOAT	0xdb	-	-	chip	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp:212; drivers/TegraGM20BMetal/raw/runtime/raw_comp.h:33	metal.formats
@@ -133,6 +134,17 @@
 260	Depth32Float_Stencil8	Z32_FLOAT_S8X24_UINT	0xce	-	-	chip	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_zeta.h:24	metal.render.depth_stencil
 261	X32_Stencil8	X32_S8X24_UINT	-	-	-	chip	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_zeta.h:24	metal.render.depth_stencil
 262	X24_Stencil8	X24S8_UINT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv	planned:gpu.x1.formats
+300	RGBX8Unorm	R8G8B8X8_UNORM	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+301	RGBX8Unorm_sRGB	R8G8B8X8_SRGB	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+302	RGBX8Snorm	R8G8B8X8_SNORM	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+303	RGBX8Uint	R8G8B8X8_UINT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+304	RGBX8Sint	R8G8B8X8_SINT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+313	RGBX16Uint	R16G16B16X16_UINT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+314	RGBX16Sint	R16G16B16X16_SINT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+315	RGBX16Float	R16G16B16X16_FLOAT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+323	RGBX32Uint	R32G32B32X32_UINT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+324	RGBX32Sint	R32G32B32X32_SINT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
+325	RGBX32Float	R32G32B32X32_FLOAT	-	-	-	source	third_party/mesa/src/nouveau/nil/nil_formats.csv; drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp	gpu.raw.texture_shapes
 500	YCBCR8_420_2P	-	-	Y8___U8V8_N420	YCbCr420SP	chip	drivers/TegraVIC/TegraVICConfig.h:354; drivers/NativeMobileDisplay/NativePlanes.h:243; drivers/TegraGM20BMetal/raw/runtime/raw_ycbcr.h:1	metal.formats
 505	YCBCR10_420_2P	-	-	-	-	source	drivers/TegraGM20BMetal/raw/runtime/raw_ycbcr.h:1	planned:gpu.x1.yuv420
 550	RGB10A8_2P_XR10	-	-	-	-	source	drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp:212; drivers/TegraGM20BMetal/raw/runtime/raw_xr.h:1	gpu.xr_blend

@@ -1,337 +1,22 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalCounters.h"
-#include "raw_object_pool.h"
 #import "RawMetalMultisample.h"
+#import "RawMetalPassAttachments.h"
 #import "RawMetalPassCache.h"
+#import "RawMetalPassErrors.h"
 #import "RawMetalRotated.h"
 #import "RawMetalTargetViews.h"
 #include "raw_format_standin.h"
+#include "raw_planar_target.h"
+#include "raw_zeta_colour.h"
 
-// One count for every kind, as IOAccelDeviceGetNextGlobalTraceID is the device's
-uint64_t nextTraceId()
-{
-    static std::atomic<uint64_t> ids{0};
-    return ids.fetch_add(1, std::memory_order_relaxed) + 1;
-}
-
-@implementation RMEncoder
-
-- (uint64_t)globalTraceObjectID
-{
-    if (!_traceId)
-        _traceId = nextTraceId();
-    return _traceId;
-}
-
-- (id)rmTwin
-{
-    return nil;
-}
-
-// What the m2v encoder of the same kind answers (respondsToSelector: as Core Animation's optional paths ask it today)
-- (BOOL)respondsToSelector:(SEL)selector
-{
-    if ([super respondsToSelector:selector])
-        return YES;
-    Class c = [[self class] twinClass];
-    return c && [c instancesRespondToSelector:selector];
-}
-
-// A selector no method of this encoder answers: the signature its caller expects, so the invocation reaches
-// forwardInvocation: and is answered zero there
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
-{
-    if (NSMethodSignature *s = [super methodSignatureForSelector:selector])
-        return s;
-    Class c = [[self class] twinClass];
-    if (NSMethodSignature *s = c ? [c instanceMethodSignatureForSelector:selector] : nil)
-        return s;
-    const char *types = metalTypes(selector);
-    return types ? [NSMethodSignature signatureWithObjCTypes:types] : nil;
-}
-
-- (id)forwardingTargetForSelector:(SEL)selector
-{
-    (void)selector;
-    return nil;
-}
-
-// Tile shading and imageblocks (tile dispatches, tile bindings, imageblock sizes) are Apple4's (Metal feature set tables),
-// a family the device does not claim (raw_device_answers.h supportsFamily:, raw/test/refused.txt); every other Metal
-// selector of the claimed families is a method of the encoder. One that reaches here is the caller's error past a NO:
-// answered zero, as m2v's encoder answered it, with an error line
-static bool tileShading(const char *selector)
-{
-    for (const char *prefix :
-         {"dispatchThreadsPerTile", "setTile", "setImageblockWidth", "setThreadgroupMemoryLength:offset:"})
-        if (!strncmp(selector, prefix, strlen(prefix)))
-            return true;
-    return false;
-}
-
-- (void)forwardInvocation:(NSInvocation *)inv
-{
-    const char *selector = sel_getName(inv.selector);
-    if (tileShading(selector))
-        SWITCH_REFUSE_DETAIL("raw", "call.tile", uintptr_t(inv.selector),
-                             "-[%s %s]: tile shading is Apple4's, a family this device does not claim: answered zero",
-                             class_getName(object_getClass(self)), selector);
-    else
-        SWITCH_REFUSE_DETAIL("raw", "call.invocation", uintptr_t(inv.selector),
-                             "-[%s %s]: no method of this device's encoder: answered zero",
-                             class_getName(object_getClass(self)), selector);
-    answerZero(self, inv);
-}
-
-+ (Class)twinClass
-{
-    return nil;
-}
-
-// One its caller dropped without ending it is ended here, so the tape's encoders stay closed: a check with no message
-// (an ended one, every pass's, sends none)
-static void endDropped(void *object)
-{
-    RMEncoder *__unsafe_unretained e = (__bridge RMEncoder *)object;
-    if (!e->_ended && e->_cb)
-        [e endEncoding];
-}
-
-- (void)dealloc
-{
-    endDropped((__bridge void *)self);
-}
-
-- (void)endEncoding
-{
-    SWITCH_API(ApiEncoder);
-    if (_ended || !_cb)
-        return;
-    _ended = true;
-    if (!_counterPending.empty())
-        rmPlaceCounterMarks(_cb, self, _cb->_plan.size(), false);
-    rmXrShadowEnd(_cb);
-    [_cb record:cmd(OpEnd)];
-    _cb->_active = nil;
-}
-
-- (void)pushDebugGroup:(NSString *)s
-{
-    (void)s;
-}
-
-- (void)popDebugGroup
-{}
-
-- (void)insertDebugSignpost:(NSString *)s
-{
-    (void)s;
-}
-
-// (RawResidency.h: everything is resident; m2v's encoders take them as no-ops too)
-- (void)useResidencySet:(id)set
-{
-    (void)set;
-}
-
-- (void)useResidencySets:(const __unsafe_unretained id *)sets count:(NSUInteger)count
-{
-    (void)sets;
-    (void)count;
-}
-
-- (void)updateFence:(id<MTLFence>)fence
-{
-    [_cb retain:fence];
-    Cmd c = cmd(OpUpdateFence);
-    c.obj = (__bridge void *)fence;
-    [_cb record:c];
-}
-
-- (void)waitForFence:(id<MTLFence>)fence
-{
-    [_cb retain:fence];
-    Cmd c = cmd(OpWaitFence);
-    c.obj = (__bridge void *)fence;
-    [_cb record:c];
-}
-
-@end
-
-// The pass's depth/stencil texture: its depth attachment's, else its stencil attachment's
-static id<MTLTexture> zetaAttachment(MTLRenderPassDescriptor *pass)
-{
-    return pass.depthAttachment.texture ?: pass.stencilAttachment.texture;
-}
-
-// A depth/stencil attachment the raw path renders (raw::DepthStencilAttachment): one zeta texture (raw_zeta.h) as each aspect its
-// format has and no other (Stencil8 a stencil attachment alone), a stored level and slice or a memoryless texture
-// cleared or not loaded and not stored, a stored one loaded and stored as asked, each aspect's resolve one the raw path draws
-static bool resolves(MTLStoreAction a)
-{
-    return a == MTLStoreActionMultisampleResolve || a == MTLStoreActionStoreAndMultisampleResolve;
-}
-
-// What a store action keeps of the attachment itself: a resolve's as DontCare (MultisampleResolve) or Store
-static MTLStoreAction keptStore(MTLStoreAction a)
-{
-    return !resolves(a) ? a : a == MTLStoreActionMultisampleResolve ? MTLStoreActionDontCare : MTLStoreActionStore;
-}
-
-// An aspect's resolve into level, slice and depth plane 0 of a one-sample texture of the attachment's format
-static bool zetaResolveTarget(MTLRenderPassAttachmentDescriptor *a, RMTexture *from)
-{
-    RMTexture *r = (RMTexture *)a.resolveTexture;
-    return from->_raw.samples > 1 && [(id)r isKindOfClass:[RMTexture class]] && r->_rawOk && r->_raw.zeta &&
-           r->_raw.samples == 1 && !r->_raw.memoryless && r->_raw.format == from->_raw.format && !a.resolveLevel &&
-           !a.resolveSlice && !a.resolveDepthPlane;
-}
-
-static raw::StencilSample stencilPick(MTLRenderPassDescriptor *pass)
-{
-    MTLRenderPassDepthAttachmentDescriptor *d = pass.depthAttachment;
-    return raw::stencilResolveSample(uint32_t(pass.stencilAttachment.stencilResolveFilter),
-                                     uint32_t(d.depthResolveFilter), d.texture != nil, resolves(d.storeAction));
-}
-
-// A depth resolve the raw path draws after the pass (the pack's depth resolve state of its format and filter), and a stencil
-// resolve (raw_stencil_bits.h: a draw a bit of the pack's stencil bits state)
-static bool rawDepthResolve(MTLRenderPassDepthAttachmentDescriptor *d, RMTexture *from)
-{
-    return zetaResolveTarget(d, from) &&
-           gRM->raw->depthResolvePipeline(from->_raw.format, uint32_t(d.depthResolveFilter));
-}
-
-static bool rawStencilResolve(MTLRenderPassDescriptor *pass, RMTexture *from)
-{
-    return zetaResolveTarget(pass.stencilAttachment, from) &&
-           gRM->raw->stencilBitsPipeline(from->_raw.format, from->_raw.samples, stencilPick(pass));
-}
-
-// An aspect whose store the encoder decides (MTLStoreActionUnknown: setDepthStoreAction:, setStencilStoreAction:), which
-// can only be Store or DontCare where the aspect names no resolve texture (a resolve without one is Metal's validation error)
-static bool deferredStore(MTLRenderPassAttachmentDescriptor *a)
-{
-    return a.storeAction == MTLStoreActionUnknown && !a.resolveTexture;
-}
-
-// A Depth32Float or Depth16Unorm texture and a Stencil8 texture as the depth and stencil attachments, of one extent and
-// sample count and not turned: the pass renders a Depth32Float_Stencil8 of theirs (raw::PassDesc::separate), every layer of
-// a layered pass from each texture's own slice, each resolved aspect from its own texture after the pass stores it there.
-// GM20B's zeta formats pair stencil only with a 24-bit or 32-bit float depth (SET_ZT_FORMAT), so a Depth16Unorm's depth
-// goes through it converted by draws (raw::CommandBuffer::depthConvert), of one layer, a multisampled one's a sample at a
-// time where the pack has those states; a multisampled one's depth neither loaded nor kept needs no conversion
-static bool separateZeta(MTLRenderPassDescriptor *pass)
-{
-    RMTexture *d = (RMTexture *)pass.depthAttachment.texture, *s = (RMTexture *)pass.stencilAttachment.texture;
-    if (!d || !s || d == s || ![(id)d isKindOfClass:[RMTexture class]] || ![(id)s isKindOfClass:[RMTexture class]] ||
-        !d->_rawOk || !s->_rawOk)
-        return false;
-    const raw::Texture &x = d->_raw, &y = s->_raw;
-    MTLRenderPassDepthAttachmentDescriptor *a = pass.depthAttachment;
-    const NSUInteger depthLevel = a.level, stencilLevel = pass.stencilAttachment.level;
-    if (depthLevel >= d->_descriptor.mipmapLevelCount || stencilLevel >= s->_descriptor.mipmapLevelCount)
-        return false;
-    const bool transient = a.loadAction != MTLLoadActionLoad && keptStore(a.storeAction) == MTLStoreActionDontCare &&
-                           !a.resolveTexture && !resolves(a.storeAction);
-    const bool converts = x.samples == 1 || transient || gRM->raw->depthConvertible(x.samples);
-    return x.zeta && y.zeta && (x.format == 252 || (x.format == 250 && converts && x.layers <= 1)) && y.format == 253 &&
-           std::max(1u, x.width >> depthLevel) == std::max(1u, y.width >> stencilLevel) &&
-           std::max(1u, x.height >> depthLevel) == std::max(1u, y.height >> stencilLevel) && x.samples == y.samples &&
-           !x.rotation && !y.rotation;
-}
-
-static bool rawDepthStencil(MTLRenderPassDescriptor *pass, bool separate)
-{
-    MTLRenderPassDepthAttachmentDescriptor *d = pass.depthAttachment;
-    MTLRenderPassStencilAttachmentDescriptor *s = pass.stencilAttachment;
-    RMTexture *t = (RMTexture *)zetaAttachment(pass);
-    if (!t || ![(id)t isKindOfClass:[RMTexture class]] || !t->_rawOk || !t->_raw.zeta)
-        return false;
-    const bool depth = separate || raw::zetaHasDepth(t->_raw.format),
-               stencil = separate || raw::zetaHasStencil(t->_raw.format);
-    if (!separate && ((RMTexture *)d.texture != (depth ? t : nil) || (RMTexture *)s.texture != (stencil ? t : nil)))
-        return false;
-    // a separate pair's resolved aspect is stored back into its own texture, which the resolve reads; a memoryless depth is
-    // resolved from the pass's Depth32Float_Stencil8 itself
-    RMTexture *depthOwn = separate ? (RMTexture *)d.texture : t, *stencilOwn = separate ? (RMTexture *)s.texture : t;
-    if (depth && (d.resolveTexture || resolves(d.storeAction)) && !rawDepthResolve(d, depthOwn))
-        return false;
-    if (stencil && (s.resolveTexture || resolves(s.storeAction)) &&
-        (!rawStencilResolve(pass, stencilOwn) || (separate && stencilOwn->_raw.memoryless)))
-        return false;
-    MTLRenderPassAttachmentDescriptor *aspects[2] = {depth ? d : nil, stencil ? s : nil};
-    const NSUInteger level = depth ? d.level : s.level;
-    const NSUInteger slice = depth ? d.slice : s.slice;
-    if (!separate && level && (!t->_raw.chain || level >= t->_raw.chain->layout.levels))
-        return false;
-    for (MTLRenderPassAttachmentDescriptor *a : aspects) {
-        RMTexture *own = separate ? (RMTexture *)a.texture : t;
-        const MTLStoreAction kept = keptStore(a.storeAction);
-        const NSUInteger from = separate ? a.slice : slice;
-        if (a &&
-            ((!separate && a.level != level) || a.slice != from || from >= std::max(own->_raw.layers, 1u) ||
-             a.depthPlane ||
-             (own->_raw.memoryless && (kept != MTLStoreActionDontCare || (a.loadAction != MTLLoadActionClear &&
-                                                                          a.loadAction != MTLLoadActionDontCare))) ||
-             (kept != MTLStoreActionDontCare && kept != MTLStoreActionStore && !deferredStore(a))))
-            return false;
-    }
-    return true;
-}
-
-// A resolve the raw path draws after the pass (the pack's resolve state of its format, RawMetalEncode.mm): of a multisampled
-// attachment into a level, slice or depth plane of a one-sample texture of its format the raw path renders to (the
-// attachment's own target, raw_attachment_target.h)
-// A probe's command buffer that resolves by the 2D engine (hw_test_app gpu.x1.twod_resolve) needs no resolve state
-static bool resolvesByTwoD(RMCommandBuffer *cb, uint32_t format)
-{
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-    return cb->_probeForms.resolveTwoD && raw::probeTwodFormat(format);
-#else
-    (void)cb, (void)format;
-    return false;
-#endif
-}
-
-static bool rawResolve(RMCommandBuffer *cb, MTLRenderPassColorAttachmentDescriptor *a, RMTexture *from,
-                       RMPass::Color &facts)
-{
-    RMTexture *r = (RMTexture *)a.resolveTexture;
-    if (from->_raw.samples <= 1 || ![(id)r isKindOfClass:[RMTexture class]] || !r->_rawOk ||
-        !(r->_raw.renderable || r->_raw.shadowTarget) || r->_raw.planar || r->_raw.ycbcr || r->_raw.samples != 1 ||
-        r->_raw.format != from->_raw.format ||
-        !(gRM->raw->resolvePipeline(from->_raw.format, from->_raw.samples) || resolvesByTwoD(cb, from->_raw.format)))
-        return false;
-    const bool volume = r->_raw.type == raw::fx::kTexThreeD;
-    facts.resolveLevel = a.resolveLevel;
-    facts.resolveSlice = volume ? a.resolveDepthPlane : a.resolveSlice;
-    raw::Texture part;
-    return !(volume ? a.resolveSlice : a.resolveDepthPlane) && facts.resolveLevel < raw::fx::kMaxLevels &&
-           facts.resolveSlice <= UINT32_MAX &&
-           (raw::wholeAttachment(r->_raw, uint32_t(facts.resolveLevel), uint32_t(facts.resolveSlice)) ||
-            rawAttachmentPart(r, uint32_t(facts.resolveLevel), uint32_t(facts.resolveSlice), part));
-}
-
-// A colour target of a format the GM20B renders none of, through a stand-in (raw_format_standin.h): one sample, not turned;
-// a level, slice or 3D plane of it is taken as any target's part is (rawAttachmentPart), and a resolve into it is refused
-static bool formatTarget(RMTexture *x)
-{
-    const raw::Texture &t = x->_raw;
-    return x->_rawOk && raw::formatStandIn(t.format) && t.samples <= 1 && !t.rotation;
-}
-
-// Whether the pass draws RGB10A8_2P_XR10 in its two planes (raw_xr_pass.h); a pass of a 550 beside one it cannot draw so is
-// refused (pass.fmt, b 0x550 << 8 | attachment)
-static void xrPlanesPassOf(RMCommandBuffer *cb, RMRenderEncoder *e, const raw::Texture *const colors[8])
+// Whether the pass draws RGB10A8_2P_XR10 in its two planes (raw_xr_pass.h). Where one cannot take them beside the pass's
+// other colours (no free index for its alpha plane, or a 550 of one image beside it), every 550 of the pass is drawn in one
+// image, its states' plain form (RawMetalRangePass.mm beginPass)
+static void xrPlanesPassOf(RMRenderEncoder *e, const raw::Texture *const colors[8])
 {
     bool planes = false;
-    if (const char *refused = raw::xrPlanesPass(colors, planes)) {
-        [cb takeReason:WhyPass why:@(refused)];
-        SWITCH_REFUSE_DETAIL("raw", "xr.planes_pass", 0, "%s: m2v's", refused);
-        hit(cb, PredPassAttFormat, 550, uint64_t(0x550) << 8);
-    }
-    e->_xrPlanes = planes;
+    e->_xrPlanes = !raw::xrPlanesPass(colors, planes) && planes;
 }
 
 // A pass of the contents of one opened before (RawMetalPassCache.h): its copy and facts, and what each pass of a command
@@ -374,7 +59,7 @@ static id<MTLRenderCommandEncoder> openKeptPass(RMCommandBuffer *cb, RMRenderEnc
         if ([(id)r isKindOfClass:[RMTexture class]])
             declareGpuWrites(r);
     }
-    xrPlanesPassOf(cb, e, colors);
+    xrPlanesPassOf(e, colors);
     e->_visibility = kept.visibility;
     [cb retain:kept.visibility];
     std::copy(kept.formats.begin(), kept.formats.end(), e->_formats);
@@ -404,13 +89,6 @@ void rmOwnPass(RMRenderEncoder *e)
     e->_cb->_plan.setDescriptor(e->_renderAt, (__bridge void *)own);
 }
 
-void rmPoolEncoders()
-{
-    for (Class cls : {[RMRenderEncoder class], [RMBlitEncoder class], [RMComputeEncoder class]})
-        if (!rawPoolInstances(cls, endDropped))
-            os_log_error(rawLog(), "raw: %{public}s instances are not pooled", class_getName(cls));
-}
-
 @implementation RMCommandBuffer (Encoders)
 
 - (void)begin:(RMEncoder *)e
@@ -438,11 +116,14 @@ void rmPoolEncoders()
         if (const RMPassEntry *kept = rmPassFind(self, key, hash))
             return openKeptPass(self, e, *kept);
     MTLRenderPassDescriptor *pass = [d copy];
+    rmPassAsApple(self, pass);
     [self retain:pass];
     e->_pass = pass;
     e->_passAt = uint32_t(_passes.size());
     RMPass &facts = _passes.emplace_back();
     e->_samples = 1;
+    if (const char *rule = rmPassShapeInvalid(pass))
+        rmPassInvalid(self, PredPassAttLevel, pass.renderTargetArrayLength, 0, rule);
     const raw::Texture *colors[8] = {};
     for (unsigned c = 0; c < 8; c++) {
         MTLRenderPassColorAttachmentDescriptor *a = pass.colorAttachments[c];
@@ -465,48 +146,46 @@ void rmPoolEncoders()
         }
         if (RMTexture *r = (RMTexture *)resolve; [(id)r isKindOfClass:[RMTexture class]])
             declareGpuWrites(r);
-        const bool standsIn = [(id)x isKindOfClass:[RMTexture class]] && formatTarget(x);
-        if (![(id)x isKindOfClass:[RMTexture class]] || !x->_rawOk ||
-            !(x->_raw.renderable || x->_raw.shadowTarget || standsIn)) {
-            [self takeReason:WhyPass why:@"a color attachment the raw path does not render to"];
-            const bool own = [(id)x isKindOfClass:[RMTexture class]];
-            // a = format; b = attachment | kind << 8 | the texture's own predicate << 16 (0: kept, not renderable)
-            const uint64_t b = c | (own ? uint64_t(x->_kind) : 0xff) << 8 | (own ? uint64_t(x->_pred) : 0) << 16;
-            if (own && x->_rawOk &&
-                !predLogged(PredPassAttFormat)) {  // kept, not a target: which term (raw_gpu.cpp linearTarget)
-                const raw::FormatInfo *f = raw::formatInfo(x->_raw.format);
-                logPred(PredPassAttFormat, t.pixelFormat, b,
-                        f && f->rt
-                            ? [NSString stringWithFormat:@"(kept, not a target: %ux%u pitch %u va&127 %llu, a pitch "
-                                                         @"target needs both multiples of 128)",
-                                                         x->_raw.width, x->_raw.height, x->_raw.pitch,
-                                                         (unsigned long long)(x->_raw.va & 127)]
-                            : @"(kept, of a format m2v's NVK renders none of)");
-            }
-            hit(self, PredPassAttFormat, t.pixelFormat, b);
-        } else if ((x->_raw.planar && !x->_raw.planarStandIn) ||
-                   (x->_raw.ycbcr && ycbcrTargetPassRefusal(x->_raw, a))) {
-            [self takeReason:WhyPass why:@"a planar texture as a render target"];
-            hit(self, PredEncPlanarRT, t.pixelFormat, c | uint64_t(a.loadAction) << 8);
-        } else if (raw::Texture part; (volume ? a.slice : a.depthPlane) || a.level >= raw::fx::kMaxLevels ||
-                                      slice > UINT32_MAX ||
-                                      (resolve && (!raw::wholeAttachment(x->_raw, uint32_t(a.level), uint32_t(slice)) ||
-                                                   !rawResolve(self, a, x, facts.color[c]))) ||
-                                      (!raw::wholeAttachment(x->_raw, uint32_t(a.level), uint32_t(slice)) &&
-                                       !rawAttachmentPart(x, uint32_t(a.level), uint32_t(slice), part))) {
-            // a level, slice or depth plane is a block-linear image's (raw_attachment_target.h), resolved from no layer
-            [self takeReason:WhyPass why:@"a color attachment level, slice, depth plane or resolve"];
-            hit(self, PredPassAttLevel, a.level | slice << 8, resolve != nil);
+        const bool standsIn = [(id)x isKindOfClass:[RMTexture class]] && rmFormatTarget(x);
+        const bool resolving = resolve && (rmResolvesStore(a.storeAction) || a.storeAction == MTLStoreActionUnknown);
+        // a whole one-sample Depth32Float or Depth16Unorm draws as its colour twin (raw_zeta_colour.h)
+        const uint32_t depthColour = [(id)x isKindOfClass:[RMTexture class]] && x->_rawOk && x->_raw.zeta &&
+                                             x->_raw.samples <= 1 && !a.level && !slice
+                                         ? raw::depthAsColourFormat(x->_raw.format)
+                                         : 0;
+        if (const char *rule = rmColorTargetInvalid(a)) {
+            rmPassInvalid(self, PredPassAttFormat, t.pixelFormat, c, rule);
+        } else if (const char *part = rmColorPartInvalid(a)) {
+            rmPassInvalid(self, PredPassAttLevel, a.level | slice << 8, resolve != nil, part);
+        } else if (!x->_rawOk) {
+            // no creator hands out a texture the raw path holds no texels of (each answers nil)
+            rmPassFailed(self, PredPassAttFormat, t.pixelFormat, c,
+                         @"a colour attachment of a texture the raw path holds no texels of");
+        } else if (x->_raw.zeta && !depthColour) {
+            rmPassFailed(self, PredPassAttFormat, t.pixelFormat, c,
+                         @"a level or slice of a depth texture as a colour attachment: no form built");
+        } else if (const char *missing = depthColour ? nullptr : rmColorTargetMissing(x, a.level, slice)) {
+            rmPassFailed(self, PredPassAttFormat, t.pixelFormat, c, @(missing));
+        } else if (const char *why = rmPlanarTargetRefusal(x, a)) {
+            rmPassFailed(self, PredEncPlanarRT, t.pixelFormat, c | uint64_t(a.loadAction) << 8, @(why));
+        } else if (resolving && !rmRawResolve(self, a, x, facts.color[c])) {
+            rmPassFailed(self, PredPassAttLevel, a.level | slice << 8, 1,
+                         @"a resolve with no form built: no resolve state for its format and samples, a one-sample "
+                         @"one of a turned or stand-in target, or one into a turned texture");
+        } else if (const char *unbound = rmColorPartMissing(x, a.level, slice, resolving)) {
+            rmPassFailed(self, PredPassAttLevel, a.level | slice << 8, resolve != nil, @(unbound));
         } else {
-            e->_formats[c] = x->_raw.planarStandIn ? x->_raw.planarStandIn->format
-                             : standsIn            ? raw::formatStandIn(x->_raw.format)
-                                                   : x->_raw.format;
+            e->_formats[c] = depthColour              ? depthColour
+                             : x->_raw.planarStandIn ? x->_raw.planarStandIn->format
+                             : x->_raw.planar        ? raw::kPlanarStandInFormat
+                             : standsIn              ? raw::formatStandIn(x->_raw.format)
+                                                     : x->_raw.format;
             e->_count = c + 1;
             e->_samples = x->_raw.samples;
         }
     }
-    xrPlanesPassOf(self, e, colors);
-    facts.depth = zetaAttachment(pass);
+    xrPlanesPassOf(e, colors);
+    facts.depth = rmZetaAttachment(pass);
     facts.depthSlice = pass.depthAttachment.texture ? pass.depthAttachment.slice : pass.stencilAttachment.slice;
     facts.depthLoad = pass.depthAttachment.loadAction;
     facts.stencilLoad = pass.stencilAttachment.loadAction;
@@ -517,22 +196,28 @@ void rmPoolEncoders()
     facts.zeta[1] = {stencil.texture,    stencil.level,       stencil.slice,
                      stencil.loadAction, stencil.storeAction, stencil.resolveTexture != nil};
     e->_turn = passTurn(facts);
-    if (const raw::RotatedRefusal turned = rotatedPassRefusal(facts); turned != raw::RotatedRefusal::None) {
-        [self takeReason:WhyPass why:@(raw::rotatedRefusalText(turned))];
-        hit(self, PredPassRotated, uint64_t(turned));
-    }
-    if (depth.texture && resolves(depth.storeAction) && depth.resolveTexture) {
+    const char *zetaInvalid = rmZetaAttachmentInvalid(pass);
+    // every attachment of a format Metal renders, or depth/stencil of one Metal takes, moves through a turn copy state
+    // (raw_turn_copy.h, raw_stencil_bits.h turnMovesZeta): a refusal is a state the driver's pack lacks
+    if (const raw::RotatedRefusal turned = zetaInvalid ? raw::RotatedRefusal::None : rotatedPassRefusal(facts);
+        turned != raw::RotatedRefusal::None)
+        rmPassFailed(self, PredPassRotated, uint64_t(turned), 0, @(raw::rotatedRefusalText(turned)));
+    if (depth.texture && rmResolvesStore(depth.storeAction) && depth.resolveTexture) {
         facts.depthResolve = depth.resolveTexture;
         facts.depthFilter = uint32_t(depth.depthResolveFilter);
-        facts.zeta[0].store = keptStore(depth.storeAction);
+        facts.depthResolveLevel = depth.resolveLevel;
+        facts.depthResolveSlice = depth.resolveSlice;
+        facts.zeta[0].store = rmKeptStore(depth.storeAction);
         [self retain:facts.depthResolve];
         if (RMTexture *r = (RMTexture *)facts.depthResolve; [(id)r isKindOfClass:[RMTexture class]])
             declareGpuWrites(r);
     }
-    if (stencil.texture && resolves(stencil.storeAction) && stencil.resolveTexture) {
+    if (stencil.texture && rmResolvesStore(stencil.storeAction) && stencil.resolveTexture) {
         facts.stencilResolve = stencil.resolveTexture;
-        facts.stencilPick = stencilPick(pass);
-        facts.zeta[1].store = keptStore(stencil.storeAction);
+        facts.stencilPick = rmStencilPick(pass);
+        facts.stencilResolveLevel = stencil.resolveLevel;
+        facts.stencilResolveSlice = stencil.resolveSlice;
+        facts.zeta[1].store = rmKeptStore(stencil.storeAction);
         [self retain:facts.stencilResolve];
         if (RMTexture *r = (RMTexture *)facts.stencilResolve; [(id)r isKindOfClass:[RMTexture class]])
             declareGpuWrites(r);
@@ -544,12 +229,29 @@ void rmPoolEncoders()
     if (pass.depthAttachment.texture || pass.stencilAttachment.texture) {
         [self retain:pass.depthAttachment.texture];
         [self retain:pass.stencilAttachment.texture];
-        // a turned pass moves a separate pair's textures through stand-ins of its plane (raw_turned_pass.h), before any
-        // resolve of theirs would read them
-        const bool separate = separateZeta(pass);
-        if (rawDepthStencil(pass, separate) &&
-            !(e->_turn && separate && (facts.depthResolve || facts.stencilResolve))) {
-            e->_zeta = separate ? raw::kZetaFormat : ((RMTexture *)facts.depth)->_raw.format;
+        // a resolved aspect is multisampled, so its pass is never a turned plane's (one sample, rmPassShapeInvalid): no
+        // turned stand-in of a separate pair is in place when a resolve reads it
+        const bool separate = rmSeparateZeta(pass);
+        const char *unbuilt = nullptr;
+        const RMZetaForm form =
+            zetaInvalid || _encRefused ? RMZetaForm::Raw : rmRawDepthStencil(pass, separate, &unbuilt);
+        if (zetaInvalid) {
+            rmPassInvalid(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,
+                          pass.stencilAttachment.texture.pixelFormat, zetaInvalid);
+        } else if (_encRefused) {
+            // failed already: nothing of the pass is encoded
+        } else if (rmZetaResolvesIntoMemoryless(pass)) {
+            rmPassFailed(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,
+                         pass.stencilAttachment.texture.pixelFormat,
+                         @"a depth or stencil resolve into a memoryless texture, which Apple's GPU fails",
+                         MTLCommandBufferErrorInvalidResource);
+        } else if (form == RMZetaForm::Unbuilt) {
+            rmPassFailed(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,
+                         pass.stencilAttachment.texture.pixelFormat, @(unbuilt));
+        } else if (form == RMZetaForm::Raw) {
+            e->_zeta = separate                                               ? raw::kZetaFormat
+                       : raw::colourAsDepth(((RMTexture *)facts.depth)->_raw) ? raw::kColourAsDepthFormat
+                                                                               : ((RMTexture *)facts.depth)->_raw.format;
             if (!e->_count)
                 e->_samples = ((RMTexture *)facts.depth)->_raw.samples;
             if (separate && (e->_turn || ((RMTexture *)depth.texture)->_raw.format == MTLPixelFormatDepth16Unorm)) {
@@ -583,9 +285,10 @@ void rmPoolEncoders()
                 }
             }
         } else {
-            [self takeReason:WhyPass why:@"a depth/stencil attachment the raw path does not take"];
-            hit(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,
-                pass.stencilAttachment.texture.pixelFormat);
+            // no creator hands out a texture of a depth/stencil format without its raw zeta
+            rmPassFailed(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,
+                         pass.stencilAttachment.texture.pixelFormat,
+                         @"a depth/stencil attachment of a texture the raw path holds no zeta of");
         }
     }
     // renderTargetWidth / renderTargetHeight: the render area's bounds (raw::PassDesc width, height)

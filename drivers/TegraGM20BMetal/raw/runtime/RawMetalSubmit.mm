@@ -172,8 +172,7 @@ void planSegments(RMCommandBuffer *cb)
     }
     for (const auto &range : plan.ranges()) {
         cb->_plan.prepareRange(range.from, range.to);
-        const bool native =
-            range.kind == raw::ExecutionKind::native && !cb->_plan.nativeRangeRefusal(range.from, range.to);
+        const bool native = range.kind == raw::ExecutionKind::native;
         cb->_segs.push_back({uint32_t(range.from), uint32_t(range.to), native,
                              range.kind == raw::ExecutionKind::wait || range.kind == raw::ExecutionKind::signal, false,
                              range.gpuWait});
@@ -339,7 +338,6 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
         const raw::RangeEnd end = rangeEnd(cb, last, followed, handlers);
         cb->_rangeQuiet = raw::quietEnd(end);
         cb->_rangeHeld = raw::frameHeld(end);
-        rmStorageTargetsPlain(cb, range.from, range.to);
         const bool encoded = encodeRaw(cb, range.from, range.to, &why, &refusedEncoder);
 #if SWITCH_FRAME_TIMELINE
         const uint64_t wallTicks = raw::encodeTicks() - profileTicks;

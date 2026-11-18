@@ -204,8 +204,9 @@ TEST_P(DeviceStageIn, AnIndirectDispatchCommandOfASpilledBindOffsetIsRefused)
     EXPECT_EQ(std::count(block.begin(), block.end(), uint8_t(0xa5)), ptrdiff_t(block.size()));
     std::vector<raw::icb::ComputeBind> descriptors;
     std::vector<raw::icb::ComputeStride> strides;
+    std::vector<raw::icb::ComputeRoot> roots;
     why = nullptr;
-    EXPECT_FALSE(raw::ComputeEncoder::icbBinds(*k, 0x123400, descriptors, strides, &why));
+    EXPECT_FALSE(raw::ComputeEncoder::icbBinds(*k, 0x123400, descriptors, strides, roots, &why));
     EXPECT_NE(why, nullptr);
     EXPECT_TRUE(descriptors.empty());
 }
@@ -318,13 +319,13 @@ TEST_P(DeviceStageIn, AnInheritingCommandTakesEachExecutesBindStride)
         << (why ? why : "");
     std::vector<raw::icb::ComputeBind> descriptors;
     std::vector<raw::icb::ComputeStride> strides;
-    ASSERT_TRUE(raw::ComputeEncoder::icbBinds(*k, block.va, descriptors, strides, &why)) << (why ? why : "");
+    std::vector<raw::icb::ComputeRoot> roots;
+    ASSERT_TRUE(raw::ComputeEncoder::icbBinds(*k, block.va, descriptors, strides, roots, &why)) << (why ? why : "");
     ASSERT_EQ(strides.size(), 1u);
     const uint64_t word = block.va + raw::icb::kComputeQmdBytes + kRootPush + 4 * (kStrideWord - 1);
     EXPECT_EQ(strides[0].word, word);
     raw::icb::ComputeCommand command{};
-    command.qmd[0] = block.va;
-    command.regions = 1;
+    command.qmd = {block.va};
     raw::icb::dispatch(reinterpret_cast<uint32_t *>(slots.cpu), 0, command);
     ASSERT_TRUE(raw::icb::binds(reinterpret_cast<uint32_t *>(binds.cpu), descriptors.data(),
                                 uint32_t(descriptors.size()), strides.data(), uint32_t(strides.size())));

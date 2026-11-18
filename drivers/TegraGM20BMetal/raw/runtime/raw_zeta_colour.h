@@ -67,16 +67,62 @@ template <typename Texture> bool zetaColourWrites(const Texture &z)
     return zetaColourFormat(z.format) && z.samples == 1 && !z.comptags;
 }
 
-// Zeta `z`'s memory as the route's colour target, rendered through a pool image
-template <typename Texture> Texture zetaColourView(const Texture &z)
+// Zeta `z`'s memory as a colour target of `format`, rendered through a pool image
+template <typename Texture> Texture zetaColourView(const Texture &z, uint32_t format)
 {
     Texture c = z;
     c.zeta = false;
-    c.format = zetaColourFormat(z.format);
+    c.format = format;
     c.renderable = true;
     c.zetaPages = true;
     c.tic = 0;
     return c;
+}
+
+// Zeta `z`'s memory as the route's colour target, rendered through a pool image
+template <typename Texture> Texture zetaColourView(const Texture &z)
+{
+    return zetaColourView(z, zetaColourFormat(z.format));
+}
+
+// Same-bits attachments, which Metal's validation layer stops and Apple's GPU renders (an M4 Max, validation off,
+// c38-audit/m2v-pass-forms/probe/bitsprobe.mm): a one-sample Depth32Float or Depth16Unorm texture as a colour attachment
+// takes the R32Float or R16Unorm bits of a clear and of a state of that format; a one-sample colour texture of 4-byte texels
+// as the depth attachment holds Depth32Float bits (a Load reads its bytes as the float, a clear and a draw store floats).
+// Each renders through a backing of the other class that the copy engine fills from the texture's memory and drains back
+// into it: the colour ROP's writes through a zeta's PTE kind never reach memory (above), and the zeta ROP's through a
+// colour kind are unmeasured (hw_test_app gpu.raw.same_bits). Other texel sizes as depth do not keep their bits: not
+// mirrored.
+inline uint32_t depthAsColourFormat(uint32_t format)
+{
+    switch (format) {
+    case 252:
+        return 55;  // R32Float
+    case 250:
+        return 20;  // R16Unorm
+    default:
+        return 0;
+    }
+}
+
+constexpr uint32_t kColourAsDepthFormat = 252;  // Depth32Float
+
+template <typename Texture> bool colourAsDepth(const Texture &t)
+{
+    return !t.zeta && !t.converted() && t.bpp == 4 && t.samples <= 1;
+}
+
+// The zeta backing's shape of colour texture `t` as the depth attachment
+template <typename Texture> Texture colourAsDepthShape(const Texture &t)
+{
+    Texture z;
+    z.width = t.width;
+    z.height = t.height;
+    z.layers = t.layers;
+    z.samples = 1;
+    z.format = kColourAsDepthFormat;
+    z.zeta = true;
+    return z;
 }
 
 // The route's pass into `view` over (0, 0, width, height) (0: the whole target), no zeta bound. Loaded, never DontCare: the

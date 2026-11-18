@@ -318,6 +318,87 @@ void madeTestClasses()
     EXPECT_EQ(gOpens, 0);
 }
 
+// A fetching state whose own record has no storage form and whose test classes are made with one (RenderBox's
+// accumulator_coverage, HW Test gpu.raw.layered_shader_tests): a draw of two instances, which one triangle at a time
+// cannot keep in raster order, is drawn by its DepthWrite variant inside the pixel interlock, on the raw path
+void instancedDrawOfAStorageTestClass()
+{
+    RenderCompiler compiler;
+    compiler.shapes = [](const raw::CompileRequest &request, raw::RuntimeRecord &record) {
+        if (!request.variant.fragmentTests)
+            return;
+        raw::PackPipeline &pp = record.pipeline;
+        pp.flags |= raw::PipelineStorageMetadata;
+        pp.storageMask = pp.storageWriteMask = 1;
+        pp.storageSamples = 1;
+        pp.storageTic[0] = raw::formatInfo(MTLPixelFormatBGRA8Unorm)->tic0;
+        record.blob = {0x1224, 1, 0x1a00, 0};
+    };
+    const std::string pack = writePack(packKey(MTLPixelFormatBGRA8Unorm));
+    id<MTLDevice> device = nil;
+    id<MTLLibrary> library = served(compiler, "variant-storage-tests", pack, device);
+    ASSERT_TRUE(library != nil);
+    MTLRenderPipelineDescriptor *d = descriptor(library, MTLPixelFormatBGRA8Unorm);
+    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+    id<MTLRenderPipelineState> state = [device newRenderPipelineStateWithDescriptor:d error:nil];
+    ASSERT_TRUE(state != nil);
+    __unsafe_unretained RMPipeline *pipeline = (RMPipeline *)state;
+    ASSERT_TRUE(pipeline->_raw);
+    ASSERT_EQ(pipeline->_raw->storageBits, 0) << "the state's own record fetches through the texture unit";
+    raw::RenderVariant forms;
+    forms.fragmentTests = uint8_t(raw::FragmentTests::DepthWrite);
+    raw::Variant<raw::Pipeline> *variant = variantOf(pipeline, forms);
+    ASSERT_NE(variant, nullptr);
+    ASSERT_TRUE(ready(*variant));
+    ASSERT_EQ(variant->value()->storageBits, 1);
+    const size_t firstJob = kernel_model::model.jobs.size();
+    id<MTLCommandBuffer> commands = [[device newCommandQueue] commandBuffer];
+    id<MTLRenderCommandEncoder> encoder = [commands renderCommandEncoderWithDescriptor:colourPass(device, true)];
+    [encoder setRenderPipelineState:state];
+    [encoder setDepthStencilState:depthWrite(device)];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3 instanceCount:2];
+    [encoder endEncoding];
+    [commands commit];
+    [commands waitUntilCompleted];
+    EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
+    EXPECT_EQ(drawnPrograms(firstJob, 2), (std::vector<uint32_t>{program(variant->value()->methods, 2)}));
+    EXPECT_EQ(gOpens, 0);
+}
+
+// A fetching state made for a Depth32Float attachment, drawn with a depth test that writes in a pass of none: the pass is
+// given its hidden depth/stencil attachment, which Apple's GPU tests depth against too, and the draw takes the test
+// class of that attachment (DepthWrite), never the class of a pass with none
+void hiddenDepthTestClass()
+{
+    RenderCompiler compiler;
+    const std::string pack = writePack(packKey(MTLPixelFormatBGRA8Unorm));
+    id<MTLDevice> device = nil;
+    id<MTLLibrary> library = served(compiler, "variant-hidden-depth", pack, device);
+    ASSERT_TRUE(library != nil);
+    MTLRenderPipelineDescriptor *d = descriptor(library, MTLPixelFormatBGRA8Unorm);
+    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
+    id<MTLRenderPipelineState> state = [device newRenderPipelineStateWithDescriptor:d error:nil];
+    ASSERT_TRUE(state != nil);
+    raw::RenderVariant forms;
+    forms.fragmentTests = uint8_t(raw::FragmentTests::DepthWrite);
+    raw::Variant<raw::Pipeline> *variant = variantOf((RMPipeline *)state, forms);
+    ASSERT_NE(variant, nullptr);
+    ASSERT_TRUE(ready(*variant));
+    const uint32_t expected = program(variant->value()->methods, 2);
+    const size_t firstJob = kernel_model::model.jobs.size();
+    id<MTLCommandBuffer> commands = [[device newCommandQueue] commandBuffer];
+    id<MTLRenderCommandEncoder> encoder = [commands renderCommandEncoderWithDescriptor:colourPass(device, false)];
+    [encoder setRenderPipelineState:state];
+    [encoder setDepthStencilState:depthWrite(device)];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    [encoder endEncoding];
+    [commands commit];
+    [commands waitUntilCompleted];
+    EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
+    EXPECT_EQ(drawnPrograms(firstJob, 2), (std::vector<uint32_t>{expected}));
+    EXPECT_EQ(gOpens, 0);
+}
+
 // A state this process makes at its creation once its m2v device is open (here by a method only m2v's device class has)
 // asks m2v for nothing, as in a process that never opened it
 void madeWithM2VOpen()
@@ -373,6 +454,16 @@ TEST(RawFacadeVariant, APackedStatesTestClassThePackLacksIsCompiledAndDrawn)
 TEST(RawFacadeVariant, AMadeStatesTestClassesAreMadeWithIt)
 {
     switch_ios::test::ExpectPassesInFreshProcess(madeTestClasses);
+}
+
+TEST(RawFacadeVariant, AnInstancedDrawOfAStorageTestClassStaysRaw)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(instancedDrawOfAStorageTestClass);
+}
+
+TEST(RawFacadeVariant, ADrawInAPassOfNoDepthTakesItsHiddenAttachmentsTestClass)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(hiddenDepthTestClass);
 }
 
 TEST(RawFacadeVariant, AStateMadeWhileM2VIsOpenAsksM2VForNothing)

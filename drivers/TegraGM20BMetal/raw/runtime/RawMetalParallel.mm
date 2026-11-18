@@ -46,15 +46,13 @@ static void seam(RMSubRecorder *s, MTLRenderPassDescriptor *parallel, size_t at,
     pass.continues = at > 0;
 }
 
-// `s`'s objects, setBytes chunks and shadow, storage targets to move plain, passes and refusals into `cb`, then its
-// commands as one encoder of `cb`'s
+// `s`'s objects, setBytes chunks and shadow, passes and refusals into `cb`, then its commands as one encoder of `cb`'s
 static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
 {
     for (id object : s->_owners)
         [cb retain:object];
     const size_t chunkBase = cb->_bytes.chunks.size(), passBase = cb->_passes.size(), shadowBase = cb->_shadow.size();
     cb->_shadow.append(s->_shadow.ownData(), s->_shadow.ownData() + s->_shadow.size());
-    cb->_plainForStorage.insert(cb->_plainForStorage.end(), s->_plainForStorage.begin(), s->_plainForStorage.end());
     cb->_borderSamplers |= s->_borderSamplers;
     if (!s->_bytes.chunks.empty()) {
         cb->_bytes.chunks.append(s->_bytes.chunks.ownData(), s->_bytes.chunks.ownData() + s->_bytes.chunks.size());

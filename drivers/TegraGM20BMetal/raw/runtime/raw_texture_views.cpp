@@ -4,12 +4,14 @@
 #include "../fx/fx_image.h"
 #include "raw_attachment_target.h"
 #include "raw_gpu.h"
+#include "raw_multisample.h"
 #include "raw_srgb_pair.h"
 #include "raw_target.h"
 #include "raw_view.h"
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
 
 #include "raw_gpu_internal.h"
 
@@ -101,42 +103,93 @@ bool zetaImageLayout(uint32_t width, uint32_t height, uint32_t format, uint32_t 
     return true;
 }
 
+// The images view `t` of `of` in `format` samples beside its own header, each the same part of a texture of `of`'s layout
+// (`like` makes it): over `of`'s pool image where `of` is sampled through one (its rows off 32); over `of`'s stand-in where
+// the view reads `of`'s transfer; over a stand-in of its own of `of`'s whole layout where it reads another transfer of the
+// same codes (BGR10_XR <-> BGR10_XR_sRGB, BGRA10_XR <-> BGRA10_XR_sRGB, a plain format's bits as an extended-range or
+// RG8Unorm_sRGB one), which that header object owns. A view in a plain format reads the codes themselves. False: no memory
+// or header for one; a pack with no conversion state for the transfer makes the view without a stand-in.
+static bool viewCompanions(Device &d, const Texture &of, uint32_t format, Texture &t,
+                           const std::function<bool(const Texture &, uint32_t, Texture &)> &like)
+{
+    const auto made = [&](const Texture &over, Texture *&out) {
+        out = new Texture;
+        if (like(over, over.format == of.format ? format : over.format, *out))
+            return true;
+        delete out;
+        out = nullptr;
+        return false;
+    };
+    if (of.sampled) {
+        if (!made(*of.sampled, t.sampled))
+            return false;
+        t.tic = t.sampled->tic;
+    }
+    if (!xrSampled(format) && !srgbPair(format))
+        return true;
+    if (of.standIn && format == of.format)
+        return made(*of.standIn, t.standIn);
+    Texture codes = of;
+    codes.format = format;
+    codes.standIn = codes.sampled = nullptr;
+    if (!d.createStandIn(codes))
+        return !srgbPair(format) && !d.ownPipeline(xrConversionOf(format, codes.xrPlanes));
+    Texture *own = codes.standIn;
+    if (!made(*own, t.standIn)) {
+        d.destroyTexture(*own);
+        delete own;
+        return false;
+    }
+    t.standIn->standIn = own;
+    return true;
+}
+
 bool Device::createView(const Texture &of, uint32_t format, Texture &t)
 {
-    // Metal views a converted image (planar, YCbCr) only in its own format or that format's sRGB twin (m2v view_plan.rs),
-    // neither of which has a header here.
-    if (of.converted())
-        return false;
     if (of.zeta)
         return createZetaView(of, format, t);
+    // Metal views a converted image (planar, YCbCr) in its own format, which the image's header reads with its conversion's
+    // channels (ycbcrImageHeader); a two-plane extended-range one held in its planes in its own format or its sRGB twin's,
+    // through a header pair as its own (the twin's sampled through a stand-in of its own: viewCompanions)
     const FormatInfo *f = formatInfo(format);
-    if (!f || f->bpp != of.bpp || f->blockW != of.blockW || f->blockH != of.blockH || of.memoryless || of.sampled ||
-        xrForm(format) != XrForm::None || xrForm(of.format) != XrForm::None || srgbPair(format) || srgbPair(of.format))
+    if (!f || f->bpp != of.bpp || f->blockW != of.blockW || f->blockH != of.blockH || of.memoryless ||
+        (of.converted() && format != of.format) || (of.xrPlanes && !twoPlaneXr(format)))
         return false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    t = of;
-    t.storage = of.storageRange();
-    memcpy(t.swizzle, kIdentitySwizzle, 4);
-    t.view = true;
-    t.format = format;
-    t.renderable = f->rt != 0 && (t.blockLinear || linearTarget(t));
-    t.shadowTarget = f->rt != 0 && !t.blockLinear && !linearTarget(t);
-    // Native-plane lookup needs the parent import; a view never releases its non-owning reference.
-    t.import = of.nativePlane != ~0u ? of.import : nullptr;
-    t.span = {};
-    t.lease = nullptr;
-    t.chain = nullptr;  // a mipmapped texture's view: every level sampled, level 0 rendered and copied
-    if (!(t.tic = allocTic()))
-        return false;
-    noteView(of, t);
-    if (of.chain) {
-        uint32_t w[8];
-        chainViewHeader(of, of.chain->layout, of.va, *f, 0, of.chain->layout.levels, of.type, w);
-        memcpy(tic_.cpu + 32 * t.tic, w, 32);
-        return true;
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        t = of;
+        t.storage = of.storageRange();
+        memcpy(t.swizzle, kIdentitySwizzle, 4);
+        t.view = true;
+        t.format = format;
+        t.renderable = f->rt != 0 && (t.blockLinear || linearTarget(t));
+        t.shadowTarget = f->rt != 0 && !t.blockLinear && !linearTarget(t);
+        // Native-plane lookup needs the parent import; a view never releases its non-owning reference.
+        t.import = of.nativePlane != ~0u ? of.import : nullptr;
+        t.span = {};
+        t.lease = nullptr;
+        t.chain = nullptr;  // a mipmapped texture's view: every level sampled, level 0 rendered and copied
+        t.standIn = t.sampled = nullptr;
+        t.tic = 0;
+        if (!of.sampled && !(t.tic = of.xrPlanes ? allocTicPair() : allocTic()))
+            return false;
+        noteView(of, t);
+        if (of.xrPlanes || of.converted()) {
+            memcpy(tic_.cpu + 32 * t.tic, tic_.cpu + 32 * of.tic, of.xrPlanes ? 64 : 32);
+        } else if (of.chain) {
+            uint32_t w[8];
+            chainViewHeader(of, of.chain->layout, of.va, *f, 0, of.chain->layout.levels, of.type, w);
+            memcpy(tic_.cpu + 32 * t.tic, w, 32);
+        } else if (!of.sampled) {
+            writeTic(t);
+        }
     }
-    writeTic(t);
-    return true;
+    if (viewCompanions(*this, of, format, t, [&](const Texture &over, uint32_t overFormat, Texture &out) {
+            return createView(over, overFormat, out);
+        }))
+        return true;
+    destroyTexture(t);
+    return false;
 }
 
 bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, uint32_t baseLevel, uint32_t levels,
@@ -147,15 +200,17 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
     const FormatInfo *f = of.zeta ? nullptr : formatInfo(format);
     const bool sameTexels =
         of.zeta ? format == of.format : f && f->bpp == of.bpp && f->blockW == of.blockW && f->blockH == of.blockH;
-    // A pitch image, or a multisampled one, is viewed whole, as 2D or a one-layer 2D array (NIL's pitch header is
-    // TWO_D_NO_MIPMAP for either)
-    const bool whole = !baseLevel && levels == 1 && !baseLayer && layers == 1 && !of.chain &&
-                       (type == fx::kTexTwoD || type == fx::kTexTwoDArray);
-    if (of.converted() || ((!of.blockLinear || of.samples > 1) && !whole) || !sameTexels || of.memoryless ||
-        of.sampled || xrForm(format) != XrForm::None || xrForm(of.format) != XrForm::None || srgbPair(format) ||
-        srgbPair(of.format) || !levels || !layers || (of.type == fx::kTexThreeD) != volume ||
-        (oneLayer && layers != 1) || (cube && (layers % 6 || of.width != of.height)) ||
-        (of.zeta && type == fx::kTexOneD))
+    // A multisampled image is viewed whole, as 2D or a one-layer 2D array (NIL's pitch header is TWO_D_NO_MIPMAP for
+    // either); a pitch one as its slices too (a linear 2D array's, layerBytes apart); a two-plane extended-range or converted
+    // one whole, as createView views it (its header pair or image header copied, the type asked written), its stand-in
+    // viewed as the type asked
+    const bool flat = levels == 1 && !of.chain && (type == fx::kTexTwoD || type == fx::kTexTwoDArray);
+    const bool whole = flat && !baseLevel && !baseLayer && layers == 1;
+    if (((of.converted() || of.xrPlanes) && (!whole || (of.xrPlanes && !twoPlaneXr(format)) ||
+                                             (of.converted() && format != of.format))) ||
+        (of.samples > 1 && !whole) || (!of.blockLinear && !flat) || !sameTexels || of.memoryless || !levels ||
+        !layers || (of.type == fx::kTexThreeD) != volume || (oneLayer && layers != 1) ||
+        (cube && (layers % 6 || of.width != of.height)) || (of.zeta && type == fx::kTexOneD))
         return false;
     Texture image;
     uint64_t layerBytes = 0;
@@ -188,38 +243,51 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
     } else if (of.zeta && type != fx::kTexTwoD && !zetaArrayHeader(image, type, zetaHeader)) {
         return false;
     }
-    std::lock_guard<raw::Mutex> l(lock_);
-    t = image;
-    t.storage = of.storageRange();
-    memcpy(t.swizzle, kIdentitySwizzle, 4);
-    t.view = true;
-    t.format = format;
-    t.type = uint8_t(type);
-    t.renderable = (f ? f->rt != 0 : of.renderable) && type == fx::kTexTwoD && levels == 1;
-    t.shadowTarget = false;
-    t.import = nullptr;
-    t.span = {};
-    t.lease = nullptr;
-    t.chain = nullptr;
-    if (!(t.tic = allocTic()))
-        return false;
-    noteView(of, t);
-    if (of.zeta && (of.chain || type != fx::kTexTwoD)) {
-        memcpy(tic_.cpu + 32 * t.tic, zetaHeader, 32);
-        return true;
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        t = image;
+        t.storage = of.storageRange();
+        memcpy(t.swizzle, kIdentitySwizzle, 4);
+        t.view = true;
+        t.format = format;
+        t.type = uint8_t(type);
+        t.renderable = (f ? f->rt != 0 : of.renderable) && type == fx::kTexTwoD && levels == 1;
+        t.shadowTarget = false;
+        t.import = nullptr;
+        t.span = {};
+        t.lease = nullptr;
+        t.chain = nullptr;
+        t.standIn = t.sampled = nullptr;
+        t.tic = 0;
+        if (!of.sampled && !(t.tic = of.xrPlanes ? allocTicPair() : allocTic()))
+            return false;
+        noteView(of, t);
+        if (of.xrPlanes || of.converted()) {
+            memcpy(tic_.cpu + 32 * t.tic, tic_.cpu + 32 * of.tic, of.xrPlanes ? 64 : 32);
+            if (of.converted() && type != fx::kTexTwoD)  // a block-linear image's header (the planes' are pitch)
+                setField(reinterpret_cast<uint32_t *>(tic_.cpu + 32 * t.tic), 154, 151, type);
+        } else if (of.zeta && (of.chain || type != fx::kTexTwoD)) {
+            memcpy(tic_.cpu + 32 * t.tic, zetaHeader, 32);
+        } else if (of.sampled) {
+            // sampled through a view of its texture's pool image (viewCompanions)
+        } else if (!of.chain) {
+            writeTic(t);
+            if (of.samples > 1)
+                setField(reinterpret_cast<uint32_t *>(tic_.cpu + 32 * t.tic), 154, 151, type);
+        } else {
+            fx::MipChain c = of.chain->layout;
+            c.layers = layers;
+            uint32_t w[8];
+            chainViewHeader(of, c, of.chain->va + baseLayer * layerBytes, *f, baseLevel, levels, type, w);
+            memcpy(tic_.cpu + 32 * t.tic, w, 32);
+        }
     }
-    if (!of.chain) {
-        writeTic(t);
-        if (of.samples > 1)
-            setField(reinterpret_cast<uint32_t *>(tic_.cpu + 32 * t.tic), 154, 151, type);
+    if (of.zeta || viewCompanions(*this, of, format, t, [&](const Texture &over, uint32_t overFormat, Texture &out) {
+            return createPartView(over, overFormat, type, baseLevel, levels, baseLayer, layers, out);
+        }))
         return true;
-    }
-    fx::MipChain c = of.chain->layout;
-    c.layers = layers;
-    uint32_t w[8];
-    chainViewHeader(of, c, of.chain->va + baseLayer * layerBytes, *f, baseLevel, levels, type, w);
-    memcpy(tic_.cpu + 32 * t.tic, w, 32);
-    return true;
+    destroyTexture(t);
+    return false;
 }
 
 bool Device::createZetaOver(const ZetaMemory &m, uint32_t width, uint32_t height, uint32_t format, bool sampled,
@@ -289,7 +357,7 @@ bool Device::createMemoryless(uint32_t width, uint32_t height, uint32_t format, 
     return true;
 }
 
-uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, uint32_t slice)
+uint32_t Device::attachmentTic(const Texture &t, const Texture &part, uint32_t level, uint32_t slice)
 {
     if (level && !slice && t.chain && t.type == fx::kTexTwoD && part.format == t.format)
         return levelTic(t, level);
@@ -298,16 +366,11 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
     if (part.zeta) {
         uint32_t w[8];
         const uint32_t z = zetaFormatIndex(part.format);
-        if (!t.zeta || part.format != t.format || z >= kZetaFormats ||
+        if (!t.zeta || !t.tic || part.format != t.format || z >= kZetaFormats ||
             !attachmentHeader(part, kZetaFormatInfo[z].tic0, false, w))
             return 0;
         // Depth conversion headers are prepared by concurrent recording threads, outside the encode view cache.
         std::lock_guard<raw::Mutex> l(lock_);
-        if (!t.tic) {
-            if (!(t.tic = allocTic()))
-                return 0;
-            writeTic(t);
-        }
         const auto made = partTics_.equal_range(t.tic);
         for (auto m = made.first; m != made.second; ++m)
             if (m->second.first == key)
@@ -325,7 +388,9 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
         return seen;
     const FormatInfo *f = formatInfo(part.format);
     uint32_t w[8];
-    if (!f || !attachmentHeader(part, f->tic0, f->srgb, w))
+    if (!f || !(part.samples > 1 ? multisampleHeader(part.width, part.height, part.samples, part.bpp, part.va, f->tic0,
+                                                     f->srgb, w)
+                                 : attachmentHeader(part, f->tic0, f->srgb, w)))
         return 0;
     RAW_ENCODE_LOCK(l, lock_);
     const auto made = partTics_.equal_range(t.tic);
@@ -343,7 +408,7 @@ uint32_t Device::attachmentTic(Texture &t, const Texture &part, uint32_t level, 
     return tic;
 }
 
-uint32_t Device::levelTic(Texture &t, uint32_t level, bool codes)
+uint32_t Device::levelTic(const Texture &t, uint32_t level, bool codes)
 {
     const FormatInfo *f = t.zeta ? nullptr : formatInfo(t.format);
     const uint32_t z = t.zeta ? zetaFormatIndex(t.format) : kZetaFormats;

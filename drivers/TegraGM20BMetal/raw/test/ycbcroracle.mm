@@ -97,6 +97,7 @@ std::vector<uint32_t> ourTexels(id<MTLDevice> dev, id<MTLCommandQueue> q, id<MTL
                                                                                      width:pw
                                                                                     height:ph
                                                                                  mipmapped:NO];
+        d.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
         id<MTLTexture> t = [dev newTextureWithDescriptor:d];
         // each row's bytes from its pitch on, a row longer than the pitch running on into the next, as the copy engine
         // gathers such a plane on the GM20B
@@ -108,15 +109,16 @@ std::vector<uint32_t> ourTexels(id<MTLDevice> dev, id<MTLCommandQueue> q, id<MTL
         return t;
     };
     id<MTLTexture> luma, chroma;
-    if (p.onePlane) {  // Y0 Cb Y1 Cr pairs split into the two images, as BlitEncoder::splitPlane's copies do
+    if (p.onePlane) {  // Y0 Cb Y1 Cr (Cb Y0 Cr Y1) pairs split into the two images, as BlitEncoder::splitPlane's copies do
         std::vector<uint8_t> y(size_t(p.lumaWidth) * h), c(size_t(p.chromaWidth) * 2 * h);
+        const int lumaAt = p.pairsReversed ? 1 : 0, chromaAt = p.pairsReversed ? 0 : 1;
         for (uint32_t r = 0; r < h; r++)
             for (uint32_t k = 0; k < p.chromaWidth; k++) {
                 const uint8_t *q = base + p.luma + uint64_t(r) * p.lumaPitch + 4 * k;
-                y[r * p.lumaWidth + 2 * k] = q[0];
-                y[r * p.lumaWidth + 2 * k + 1] = q[2];
-                c[(r * p.chromaWidth + k) * 2] = q[1];
-                c[(r * p.chromaWidth + k) * 2 + 1] = q[3];
+                y[r * p.lumaWidth + 2 * k] = q[lumaAt];
+                y[r * p.lumaWidth + 2 * k + 1] = q[lumaAt + 2];
+                c[(r * p.chromaWidth + k) * 2] = q[chromaAt];
+                c[(r * p.chromaWidth + k) * 2 + 1] = q[chromaAt + 2];
             }
         auto image = [&](uint32_t format, uint32_t pw, const std::vector<uint8_t> &bytes, uint32_t bpp) {
             MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(format)
@@ -132,6 +134,15 @@ std::vector<uint32_t> ourTexels(id<MTLDevice> dev, id<MTLCommandQueue> q, id<MTL
     } else {
         luma = plane(p.lumaFormat, p.luma, p.lumaPitch, p.lumaWidth, h);
         chroma = p.chromaWidth ? plane(p.chromaFormat, p.chroma, p.chromaPitch, p.chromaWidth, p.chromaHeight) : luma;
+        if (p.chromaGreenBlue)  // the word plane's green and blue, as the raw path's chroma header swizzles them
+            chroma = [chroma newTextureViewWithPixelFormat:chroma.pixelFormat
+                                               textureType:MTLTextureType2D
+                                                    levels:NSMakeRange(0, 1)
+                                                    slices:NSMakeRange(0, 1)
+                                                   swizzle:MTLTextureSwizzleChannelsMake(MTLTextureSwizzleGreen,
+                                                                                         MTLTextureSwizzleBlue,
+                                                                                         MTLTextureSwizzleZero,
+                                                                                         MTLTextureSwizzleOne)];
     }
     static const char *const frags[] = {"",
                                         "ycbcr_converted_frag",
@@ -305,15 +316,21 @@ std::vector<Case> cases()
                         out.push_back({s.fourcc, format, 1, tall[0], tall[1] / 2, nullptr, 16, 8});
                 }
             }
-    // one-plane 4:2:2 formats over surfaces of no planes, Y0 Cb Y1 Cr whatever the surface's order
-    for (const OSType one : {OSType('2vuy'), OSType('yuvs'), OSType('yuvf')})
-        for (const uint32_t format : {501u, 521u})
+    // one-plane formats over surfaces of no planes, in their own layout whatever the surface's order: 4:2:2 Y0 Cb Y1 Cr
+    // (Cb Y0 Cr Y1 of 562), 4:4:4 a word a texel (504, 524), in the surface's range
+    for (const OSType one : {OSType('2vuy'), OSType('yuvs'), OSType('yuvf'), OSType('v410'), OSType('BGRA')})
+        for (const uint32_t format : {501u, 521u, 562u, 504u, 524u})
             for (const char *m : matrices) {
-                if (format == 521 && m && (!strcmp(m, "P3_D65") || !strcmp(m, "DCI_P3")))
+                if ((format == 521 || format == 524) && m && (!strcmp(m, "P3_D65") || !strcmp(m, "DCI_P3")))
                     continue;
                 const uint32_t *size = sizes[n++ % 3];
                 out.push_back({one, format, 0, size[0], size[1], m});
             }
+    // and over each plane of planar surfaces, in the surface's range (full over '420f' and 'xf44')
+    for (const OSType planar : {OSType('420v'), OSType('420f'), OSType('x444'), OSType('xf44')})
+        for (const uint32_t format : {501u, 562u, 504u})
+            for (const uint32_t plane : {0u, 1u})
+                out.push_back({planar, format, plane, 16, 8, nullptr, 32, 32});
     return out;
 }
 }  // namespace

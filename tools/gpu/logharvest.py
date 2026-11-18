@@ -127,13 +127,13 @@ class Boot:
     unnamed: Counter = field(default_factory=Counter)  # variant lines that name no state hash, by process
 
 
-def records(paths: list[str], ndjson: bool) -> Iterator[dict]:
+def records(paths: list[str], ndjson: bool, predicate: str = PREDICATE) -> Iterator[dict]:
     for path in paths:
         if ndjson:
             with open(path, errors='replace') as f:
                 yield from events(f)
             continue
-        cmd = ['/usr/bin/log', 'show', '--archive', path, '--info', '--style', 'ndjson', '--predicate', PREDICATE]
+        cmd = ['/usr/bin/log', 'show', '--archive', path, '--info', '--style', 'ndjson', '--predicate', predicate]
         with subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True, errors='replace') as proc:
             yield from events(proc.stdout)
         if proc.returncode:

@@ -86,8 +86,9 @@ struct Texture;
 struct PassReach;
 class CommandBuffer;
 
-// `t`'s texels moved as a pass of an areaW x areaH render area reaching `reach` loads and stores them; false: *why
-bool loadPastArea(CommandBuffer &rc, Texture &t, uint32_t areaW, uint32_t areaH, const PassReach &reach, uint32_t tag,
+// `t`'s texels moved as a pass of an areaW x areaH render area reaching `reach` loads and stores them; false: *why, and
+// reach.memory where there was no memory for the copy
+bool loadPastArea(CommandBuffer &rc, Texture &t, uint32_t areaW, uint32_t areaH, PassReach &reach, uint32_t tag,
                   const char **why);
 
 }  // namespace raw

@@ -84,46 +84,9 @@ constexpr void ticAt(uint32_t w[8], uint64_t va)
 // texture as, one sample a texel
 constexpr void sampleGrid(uint32_t samples, uint32_t &sxLog2, uint32_t &syLog2)
 {
-    sxLog2 = samples >= 2 ? 1 : 0;
+    sxLog2 = samples >= 8 ? 2 : samples >= 2 ? 1 : 0;
     syLog2 = samples >= 4 ? 1 : 0;
 }
-
-// The colour slots a draw binds as storage images where its state has no barrier form to take instead, or one that
-// cannot draw its geometry (`twinDraws`: raw_fetch_order.h barrierFormDraws; boot 21's RenderBox quads, indexed strips of
-// four): a compressed attachment there refuses the draw unless storage views may name compressed memory
-// (`compressedOk`: Device::storageCompressedOk, raw_storage_form.h), so it moves to plain memory before the range
-// encodes. A barrier form that draws it keeps the compressed attachment.
-constexpr uint8_t storageSlotsToPlain(uint8_t storageBits, bool barrierTwin, bool twinDraws, bool compressedOk)
-{
-    return (barrierTwin && twinDraws) || compressedOk ? 0 : storageBits;
-}
-
-// What a target is made for, by its descriptor: a target of the same shape as one a storage form needed plain is made
-// plain, so an owner that makes such a target again (a compositor's per-frame target) moves none
-struct PrivateShape {
-    uint64_t format = 0, width = 0, height = 0, usage = 0;
-
-    bool operator<(const PrivateShape &o) const
-    {
-        return std::tie(format, width, height, usage) < std::tie(o.format, o.width, o.height, o.usage);
-    }
-};
-
-class PlainShapes {
-public:
-    bool holds(const PrivateShape &s) const
-    {
-        return shapes_.count(s) != 0;
-    }
-
-    void add(const PrivateShape &s)
-    {
-        shapes_.insert(s);
-    }
-
-private:
-    std::set<PrivateShape> shapes_;
-};
 
 struct PrivateComp {
     Bo bo;

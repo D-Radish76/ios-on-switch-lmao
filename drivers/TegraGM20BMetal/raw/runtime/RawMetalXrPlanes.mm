@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalXrPlanes.h"
+#include "raw_format_standin.h"
+#include "raw_surface_refusal.h"
+
+#include <cstring>
+
+static_assert(kXrPlanesOverflowTag >= raw::kFormatStandInTag + 2 * 8, "an overflow image's tag shares a fixed tag's memory");
 
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
@@ -7,15 +13,13 @@ bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
     const NSUInteger turned =
         [d respondsToSelector:rotation] ? ((NSUInteger (*)(id, SEL))objc_msgSend)(d, rotation) : 0;
     // a draw stores into such a texture through the pack's merge and split states (mergeXrPlanes)
-    const bool unstorable = (d.usage & MTLTextureUsageShaderWrite) &&
-                            !(gRM->raw->xrPlanesImagePipeline(false) && gRM->raw->xrPlanesImagePipeline(true));
-    return raw::xrForm(uint32_t(d.pixelFormat)) == raw::XrForm::Planes && plane == 0 && !unstorable &&
+    const bool stores = d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderWrite);
+    const bool unstorable = stores && !(gRM->raw->xrPlanesImagePipeline(false) && gRM->raw->xrPlanesImagePipeline(true));
+    return raw::twoPlaneXr(uint32_t(d.pixelFormat)) && plane == 0 && !unstorable &&
            IOSurfaceGetPlaneCount(s) == 2 && d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 &&
-           d.sampleCount == 1 && !turned && d.usage &&
-           !(d.usage & ~(MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget)) &&
-           IOSurfaceGetWidthOfPlane(s, 0) == d.width && IOSurfaceGetHeightOfPlane(s, 0) == d.height &&
-           IOSurfaceGetWidthOfPlane(s, 1) == d.width && IOSurfaceGetHeightOfPlane(s, 1) == d.height &&
-           IOSurfaceGetBytesPerElementOfPlane(s, 0) == 4 && IOSurfaceGetBytesPerElementOfPlane(s, 1) == 1;
+           d.sampleCount == 1 && !turned && IOSurfaceGetBytesPerRowOfPlane(s, 0) >= 4 * d.width &&
+           IOSurfaceGetHeightOfPlane(s, 0) >= d.height && IOSurfaceGetBytesPerRowOfPlane(s, 1) >= d.width &&
+           IOSurfaceGetHeightOfPlane(s, 1) >= d.height;
 }
 
 bool makeXrPlanes(RMTexture *t, IOSurfaceRef s)
@@ -29,16 +33,16 @@ bool makeXrPlanes(RMTexture *t, IOSurfaceRef s)
                    alphaPitch = uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, 1));
     const char *why = "";
     if (!gRM->raw->createXrPlaneTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, word, wordPitch, alpha,
-                                        alphaPitch, uint32_t(d.width), uint32_t(d.height), t->_raw, &why)) {
-        SWITCH_REFUSE_DETAIL(
-            "raw", "xr.planes", 0,
-            "no raw texture over a %lux%lu two-plane surface (planes at %llu and %llu, rows %u and %u, "
-            "base&0xfff 0x%lx): %s: m2v's",
-            (unsigned long)d.width, (unsigned long)d.height, (unsigned long long)word, (unsigned long long)alpha,
-            wordPitch, alphaPitch, (unsigned long)(at & 0xfff), why);
+                                        alphaPitch, uint32_t(d.width), uint32_t(d.height), uint32_t(d.pixelFormat),
+                                        t->_raw, &why)) {
+        raw::surfaceRefusal = why;
         return false;
     }
-    keepExtendedRange(d, t->_raw, false);
+    if (!keepExtendedRange(d, t->_raw, false)) {
+        raw::surfaceRefusal = "no memory or texture header for the stand-in it is sampled through";
+        gRM->raw->destroyTexture(t->_raw);
+        return false;
+    }
     static std::atomic<bool> said{false};
     if (!said.exchange(true)) {
         const raw::Texture &w = *t->_raw.luma, &a = *t->_raw.chroma;
@@ -50,6 +54,45 @@ bool makeXrPlanes(RMTexture *t, IOSurfaceRef s)
                char(IOSurfaceGetPixelFormat(s)), w.pitch, a.pitch, (unsigned long long)(w.va & 127),
                (unsigned long long)(a.va & 127), w.renderable ? "direct" : "shadowed",
                a.renderable ? "direct" : "shadowed");
+    }
+    return true;
+}
+
+uint32_t xrWordsFormat(uint32_t format)
+{
+    constexpr uint32_t kBgr10Xr = 554, kBgr10XrSrgb = 555;
+    return format == raw::kRgb10A8XrSrgb ? kBgr10XrSrgb : kBgr10Xr;
+}
+
+bool xrWordsTexture(RMTexture *t)
+{
+    return t->_surface && t->_rawOk && raw::twoPlaneXr(uint32_t(t->_descriptor.pixelFormat)) && !t->_raw.xrPlanes;
+}
+
+void readAlphaZero(raw::Texture &standIn)
+{
+    constexpr uint8_t kNoAlpha[4] = {2, 3, 4, 0};  // MTLTextureSwizzle Red, Green, Blue, Zero
+    gRM->raw->swizzle(standIn, kNoAlpha);
+}
+
+bool xrPlaneWords(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, uint8_t *bytes, NSUInteger row,
+                  bool write)
+{
+    const raw::Texture *w = t->_rawOk && t->_raw.xrPlanes ? t->_raw.luma : nullptr;
+    if (!w || !w->cpu || level || slice || r.origin.z || r.size.depth != 1 || r.origin.x + r.size.width > w->width ||
+        r.origin.y + r.size.height > w->height)
+        return false;
+    const size_t line = r.size.width * raw::bufferTexelBytes(t->_raw.format, t->_raw.bpp);
+    uint8_t *first = w->cpu + r.origin.y * w->pitch + r.origin.x * w->bpp;
+    raw::HostAccess access;
+    if (!gRM->raw->hostAccess(*w, first, (r.size.height - 1) * w->pitch + line, write, access))
+        [NSException raise:NSInternalInconsistencyException format:@"GPU texture CPU ownership failed"];
+    for (NSUInteger y = 0; y < r.size.height; y++) {
+        uint8_t *words = first + y * w->pitch;
+        if (write)
+            memcpy(words, bytes + y * row, line);
+        else
+            memcpy(bytes + y * row, words, line);
     }
     return true;
 }
@@ -77,7 +120,7 @@ static int planesPass(raw::CommandBuffer *rc, const raw::PassDesc &p, raw::Pipel
 int mergeXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, uint32_t k, raw::Texture *&image, const char **why)
 {
     constexpr uint32_t kRG32Uint = 103;
-    image = rc->turnScratch(kRG32Uint, t.width, t.height, kXrPlanesImageTag + k);
+    image = rc->turnScratch(kRG32Uint, t.width, t.height, xrPlanesImageTag(k));
     raw::Pipeline *merge = gRM->raw->xrPlanesImagePipeline(false);
     if (!image || !merge) {
         *why = !image ? "no image for a written two-plane RGB10A8_2P_XR10 texture"

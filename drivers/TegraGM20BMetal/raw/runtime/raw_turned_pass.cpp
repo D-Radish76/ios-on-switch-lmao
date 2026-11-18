@@ -49,8 +49,10 @@ Rect renderArea(const PassDesc &p, const Rotation &rot)
 Texture *TurnedPass::standIn(CommandBuffer &rc, const Texture &t, uint32_t tag, const char **why)
 {
     Texture *s = rc.turnScratch(t.zeta ? t.format : turnCopyFormat(t.bpp), rot_.planeWidth(), rot_.planeHeight(), tag);
-    if (!s)
-        *why = "no plane-shaped stand-in for an attachment beside a turned one";
+    if (!s) {
+        *why = "no memory for a plane-shaped stand-in of an attachment beside a turned one";
+        memory_ = true;
+    }
     return s;
 }
 
@@ -87,7 +89,8 @@ bool TurnedPass::mirrored(CommandBuffer &rc, Texture &t, uint32_t tag, const cha
         return true;
     Texture *temp = rc.turnScratch(turnCopyFormat(t.bpp), t.width, t.height, tag);
     if (!temp) {
-        *why = "no scratch for a rotation-4 plane's load";
+        *why = "no memory for a rotation-4 plane's load";
+        memory_ = true;
         return false;
     }
     BlitEncoder *b = rc.blit();
@@ -107,7 +110,8 @@ bool TurnedPass::clearAhead(CommandBuffer &rc, const ColorAttachment &a, const R
     q.drawn = draws;
     RenderEncoder *e = rc.render(q);
     if (!e) {
-        *why = "no pass to clear an attachment beside a turned one ahead of it";
+        *why = "no memory for a pass clearing an attachment beside a turned one ahead of it";
+        memory_ = true;
         return false;
     }
     e->end();
@@ -120,6 +124,7 @@ bool TurnedPass::begin(CommandBuffer &rc, PassDesc &p, DrawReplay &replay, const
     held_.clear();
     rot_ = {};
     reach_ = {};
+    memory_ = false;
     for (uint32_t j = 0; j < p.count && j < 8 && !rot_.turned(); j++)
         if (const Texture *t = p.color[j].texture; t && t->rotation)
             rot_ = quarterFrame(*t);
@@ -135,6 +140,13 @@ bool TurnedPass::begin(CommandBuffer &rc, PassDesc &p, DrawReplay &replay, const
         !rc.reach(p, area.x1, area.y1, replay, reach_, why))
         return false;
     const TurnMap intoPlane = frameToPlane(rot_), outOfPlane = planeToFrame(rot_);
+    // a level's or slice's part (ColorAttachment::image) is the encoder's copy for one pass: its header is the
+    // texture's own of that part (Device::attachmentTic), freed with the texture, so a copy from it never makes one
+    const auto attachment = [&](const ColorAttachment &a, Texture &t, uint32_t tag, const TurnMap *load,
+                                const TurnMap *store, const TurnMap *reached = nullptr) {
+        return a.image ? moved(rc, static_cast<const Texture &>(t), tag, load, store, why, reached)
+                       : moved(rc, t, tag, load, store, why, reached);
+    };
     for (uint32_t j = 0; j < p.count && j < 8; j++) {
         ColorAttachment &a = p.color[j];
         Texture *t = a.texture;
@@ -161,15 +173,15 @@ bool TurnedPass::begin(CommandBuffer &rc, PassDesc &p, DrawReplay &replay, const
             const Rotation own = frameOf(*t);
             const TurnMap load = after(planeLoad(own, false), intoPlane), store = after(outOfPlane, frameToPlane(own)),
                           transposed = after(planeLoad(own, true), intoPlane);
-            if (!(a.texture = moved(rc, *t, kTurnTag + 8 + j, loaded ? &load : nullptr, a.store ? &store : nullptr, why,
-                                    loaded && own.turn == 4 ? &transposed : nullptr)))
+            if (!(a.texture = attachment(a, *t, kTurnTag + 8 + j, loaded ? &load : nullptr, a.store ? &store : nullptr,
+                                         loaded && own.turn == 4 ? &transposed : nullptr)))
                 return false;
             continue;
         }
         if (t->memoryless || (!loaded && !a.store))
             continue;
         if (!(a.texture =
-                  moved(rc, *t, kTurnTag + 8 + j, loaded ? &intoPlane : nullptr, a.store ? &outOfPlane : nullptr, why)))
+                  attachment(a, *t, kTurnTag + 8 + j, loaded ? &intoPlane : nullptr, a.store ? &outOfPlane : nullptr)))
             return false;
     }
     DepthStencilAttachment &z = p.depthStencil;

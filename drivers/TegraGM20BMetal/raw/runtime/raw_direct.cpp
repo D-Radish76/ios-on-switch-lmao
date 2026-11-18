@@ -480,7 +480,8 @@ bool drawnWords(const NmbDirectState &state, RecordParts &parts, std::string &wh
     parts.amplificationCountWord = uint8_t(d.amplificationCountWord);
     parts.arrayLengthWord = uint8_t(d.arrayLengthWord);
     parts.viewportCountWord = uint8_t(d.viewportCountWord);
-    for (size_t k = 0; k < 4; k++) {
+    static_assert(sizeof d.pulledStrides / sizeof d.pulledStrides[0] == kPulledStrides, "NmbDirectDraw's strides");
+    for (size_t k = 0; k < kPulledStrides; k++) {
         parts.pulledStride[k][0] = uint8_t(d.pulledStrides[k][0]);
         parts.pulledStride[k][1] = uint8_t(d.pulledStrides[k][1]);
     }

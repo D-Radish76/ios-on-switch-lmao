@@ -1,0 +1,228 @@
+// SPDX-License-Identifier: MIT
+// fillTexture:level:slice:region:color:[pixelFormat:] (Apple SPI) and generateMipmapsForTexture: as recorded. A fill is
+// placed, cut and packed here as plain Metal does it (m2v blit_fill.rs, fill_value.rs: EVs FRT-fil1 to fil4 and
+// XRR2-fill1 to fill4 on an Apple M4 under macOS 27.0.1), and written by the copy engine or the 2D engine
+// (RawMetalEncodeBlit.mm).
+#import "RawMetalInternal.h"
+#import "RawMetalBlitImages.h"
+#import "RawMetalBlitRules.h"
+#include "raw_fill_record.h"
+#include "raw_fill_texel.h"
+#include "raw_mip.h"
+#include "../fx/fx_mip_probe.h"
+
+#include <algorithm>
+
+namespace {
+
+// The units `from` .. `from + count` of an axis of `units`, cut there
+void cut(NSUInteger from, NSUInteger count, uint32_t units, uint32_t &first, uint32_t &end)
+{
+    first = uint32_t(std::min<NSUInteger>(from, units));
+    end = uint32_t(std::min<NSUInteger>(count > NSUIntegerMax - from ? NSUIntegerMax : from + count, units));
+}
+
+// The layer a fill of `slice` writes: a 1D, 2D or 3D texture ignores the slice, a cube takes it modulo 6, and an array (a
+// multisampled texture and a texture buffer as one of one slice) writes nothing past its slices
+bool fillLayer(RMTexture *t, NSUInteger slice, uint32_t &layer)
+{
+    switch (t->_descriptor.textureType) {
+    case MTLTextureType1D:
+    case MTLTextureType2D:
+    case MTLTextureType3D:
+        layer = 0;
+        return true;
+    case MTLTextureTypeCube:
+        layer = uint32_t(slice % 6);
+        return true;
+    default:
+        layer = uint32_t(std::min<NSUInteger>(slice, UINT32_MAX));
+        return slice < sliceCount((id<MTLTexture>)t);
+    }
+}
+
+// One unit of `t` as the fill leaves it, from the colour packed in `size` bytes (repeated from their start and cut at
+// the unit's bytes; none: zeros), and the words of it the fill writes: Depth32Float_Stencil8's depth word, its stencil
+// view's stencil byte (the word after the depth, whose other bytes are padding), a texel of RGB10A8_2P_XR10's colour
+// word (its alpha kept); every other format its texel or block
+void fillUnit(RMTexture *t, const uint8_t packed[16], uint32_t size, raw::FillRecord &f)
+{
+    const MTLPixelFormat format = t->_descriptor.pixelFormat;
+    uint32_t bytes = t->_raw.bpp, from = 0, unit = t->_raw.bpp;
+    if (format == MTLPixelFormatX32_Stencil8) {
+        from = 4, unit = 1, f.words = 2;
+    } else if (format == MTLPixelFormatDepth32Float_Stencil8) {
+        unit = 4, f.words = 1;
+    } else if (uint32_t(format) == 550 || uint32_t(format) == 551) {  // RGB10A8_2P_XR10 and its sRGB twin
+        unit = 4, f.words = 1;
+    }
+    f.bytes = uint8_t(std::min<uint32_t>(bytes, sizeof f.texel));
+    for (uint32_t k = 0; k < unit && from + k < sizeof f.texel; k++)
+        f.texel[from + k] = size ? packed[k % size] : 0;
+}
+
+// The integer formats, which Metal's validation stops generateMipmapsForTexture: of (m2v mipmap_plan.rs)
+bool integerFormat(uint32_t format)
+{
+    switch (format) {
+    case 13: case 14: case 23: case 24: case 33: case 34: case 53: case 54: case 63: case 64:
+    case 73: case 74: case 91: case 103: case 104: case 113: case 114: case 123: case 124:
+        return true;
+    default:
+        return false;
+    }
+}
+
+// Whether encodeMipmaps has an engine for every step of `t`'s chain: the 2D engine's surface format, or a pack state the
+// device's pack holds
+bool mipRouted(RMTexture *t)
+{
+    raw::Device &d = *gRM->raw;
+    RMTexture *owner = t->_levelsOwner ?: t;
+    const uint32_t format = t->_raw.format;
+    if (t->_raw.type == raw::fx::kTexThreeD)
+        return d.mip3dPipeline(format) || d.ownPipeline(raw::wordMip3dState(format));
+    const uint32_t fmt2d = format == owner->_raw.format ? owner->_raw.chain->fmt2d : raw::fx::twodChainFormat(format);
+    return fmt2d || d.mipPipeline(format) || rmFormatMips(format) || d.ownPipeline(raw::wordMipState(format));
+}
+
+void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUInteger level, NSUInteger slice,
+                MTLRegion region, MTLClearColor color, MTLPixelFormat packedIn)
+{
+    constexpr const char *call = "fillTexture:level:slice:region:color:";
+    if (!t)
+        return skipInvalidBlit(call, "of a nil texture");
+    raw::FillRecord f;
+    if (RMTexture *x = rawTexture(t)) {
+        if (x->_descriptor.storageMode == MTLStorageModeMemoryless)
+            return skipInvalidBlit(call, "of a memoryless texture");
+        if (level >= x->_descriptor.mipmapLevelCount)
+            return skipInvalidBlit(call, "of a level past the texture's");
+        if (!fillLayer(x, slice, f.layer))
+            return skipInvalidBlit(call, "of a slice past the array's");
+        if (x->_raw.converted() || x->_raw.xrPlanes)
+            return skipUndefinedFill(call);
+        raw::Texture image;
+        if (!blitImage(x, uint32_t(level), image))
+            return failNoImage(cb, call);
+        MTLSize at = levelSize(t, level);
+        if (t.textureType == MTLTextureTypeTextureBuffer && t.buffer && x->_raw.bpp) {
+            // an M4 Max fills a texture buffer's region along x alone, row 0 whatever its y, up to its buffer's end
+            // past the texture's own texels (macOS 27.2.1)
+            region.origin.y = 0;
+            region.size.height = 1;
+            at.width = (t.buffer.length - std::min(t.bufferOffset, t.buffer.length)) / x->_raw.bpp;
+        }
+        const uint32_t bw = x->_raw.blockW, bh = x->_raw.blockH;
+        // a compressed format's region counts blocks
+        cut(region.origin.x, region.size.width, uint32_t((at.width + bw - 1) / bw), f.x0, f.x1);
+        cut(region.origin.y, region.size.height, uint32_t((at.height + bh - 1) / bh), f.y0, f.y1);
+        if (t.textureType == MTLTextureType3D)
+            cut(region.origin.z, region.size.depth, uint32_t(at.depth), f.z0, f.z1);
+        if (f.x0 == f.x1 || f.y0 == f.y1 || f.z0 == f.z1)
+            return;
+        const double rgba[4] = {color.red, color.green, color.blue, color.alpha};
+        uint8_t packed[16];
+        fillUnit(x, packed, raw::fillTexel(uint32_t(packedIn), rgba, packed), f);
+    } else {
+        notRawTexture(cb, t);
+    }
+    [cb retain:t];
+    if ([(id)t isKindOfClass:[RMTexture class]])
+        declareGpuWrites((RMTexture *)t);
+    Cmd m = cmd(OpFillTexture);
+    m.obj = (__bridge void *)t;
+    m.c = uint64_t(level) | uint64_t(slice) << 32;
+    m.x = cb->_extra.size();
+    const uint64_t r[4] = {region.origin.x, region.origin.y, region.size.width, region.size.height};
+    cb->_extra.append(r, r + 4);
+    for (double v : {color.red, color.green, color.blue, color.alpha}) {
+        const float x = float(v);
+        uint32_t bits;
+        memcpy(&bits, &x, sizeof bits);
+        cb->_extra.push_back(bits);
+    }
+    uint64_t words[raw::kFillRecordWords];
+    raw::packFill(f, words);
+    cb->_extra.append(words, words + raw::kFillRecordWords);
+    [cb record:m];
+}
+
+}  // namespace
+
+@interface RMBlitEncoder (Fill)
+@end
+
+@implementation RMBlitEncoder (Fill)
+
+- (void)generateMipmapsForTexture:(id<MTLTexture>)t
+{
+    RMTexture *x = [(id)t isKindOfClass:[RMTexture class]] ? (RMTexture *)t : nil;
+    if (!x || x->_device != _cb->_queue->_device) {
+        failCommandBuffer(_cb, @"generateMipmapsForTexture: requires a texture of this device",
+                          MTLCommandBufferErrorInvalidResource);
+        return;
+    }
+    if (x->_descriptor.storageMode == MTLStorageModeMemoryless) {
+        failCommandBuffer(_cb, @"generateMipmapsForTexture: cannot access a memoryless texture",
+                          MTLCommandBufferErrorInvalidResource);
+        return;
+    }
+    const uint32_t format = uint32_t(x->_descriptor.pixelFormat);
+    // Plain Metal leaves these bytes unchanged (mipmap_plan.rs leaves_as_is), despite API validation's assertions.
+    if (x->_descriptor.mipmapLevelCount <= 1 || raw::zetaFormatIndex(format) < raw::kZetaFormats ||
+        format == MTLPixelFormatX32_Stencil8)
+        return;
+    if (!x->_rawOk) {
+        notRawTexture(_cb, t);
+        setBinding(_cb, OpMipmaps, 0, 0, t, 0);
+        return;
+    }
+    __unsafe_unretained RMTexture *owner = x->_levelsOwner ?: x;
+    if (!owner->_raw.chain) {
+        failCommandBuffer(_cb, @"generateMipmapsForTexture: a native mipmapped texture has no mip chain",
+                          MTLCommandBufferErrorInternal);
+        return;
+    }
+    if (integerFormat(x->_raw.format) || x->_raw.blockW > 1 || x->_raw.blockH > 1)
+        return skipInvalidBlit("generateMipmapsForTexture:",
+                               "of a format Metal does not filter (integer or compressed)");
+    if (!mipRouted(x)) {
+        SWITCH_REFUSE("raw", "mipmaps.state",
+                      "generateMipmapsForTexture: of format %u: the device's pack holds no mip state for it: "
+                      "MTLCommandBufferErrorInternal",
+                      x->_raw.format);
+        failCommandBuffer(_cb, @"generateMipmapsForTexture: the pack lacks this format's mip state",
+                          MTLCommandBufferErrorInternal);
+        return;
+    }
+    declareGpuWrites(x);
+    uint64_t probe2d = 0;
+#if SWITCH_RAW_DIAGNOSTICS
+    if (gRM->raw->probeMipCandidates.load(std::memory_order_acquire))
+        probe2d = raw::fx::twodCandidateFormat(x->_raw.format);
+#endif
+    setBinding(_cb, OpMipmaps, 0, 0, t, probe2d);
+}
+
+- (void)fillTexture:(id<MTLTexture>)t
+              level:(NSUInteger)level
+              slice:(NSUInteger)slice
+             region:(MTLRegion)region
+              color:(MTLClearColor)color
+{
+    recordFill(_cb, t, level, slice, region, color, t.pixelFormat);
+}
+
+// The colour packed in `format` instead of the texture's own, repeated or cut at its texel (EV FRT-fil4-m4)
+- (void)fillTexture:(id<MTLTexture>)t
+              level:(NSUInteger)level
+              slice:(NSUInteger)slice
+             region:(MTLRegion)region
+              color:(MTLClearColor)color
+        pixelFormat:(MTLPixelFormat)format
+{
+    recordFill(_cb, t, level, slice, region, color, format);
+}
+
+@end

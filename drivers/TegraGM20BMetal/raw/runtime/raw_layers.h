@@ -2,7 +2,10 @@
 // A layered pass (renderTargetArrayLength 2 or more): every color and zeta target bound with that many layers from its
 // attachment's slice on (raw_attachment_target.h), as nvk_CmdBeginRendering binds a view of layer_count layers, its clears
 // in every layer (CLEAR_SURFACE's RT_ARRAY_INDEX, NVK's layer loop macro). What it stores needs no work of its own: the
-// targets are the textures' own memory. Over raw::PassDesc and raw::Texture (raw_gpu.h), or any types shaped alike.
+// targets are the textures' own memory, or for an attachment of fewer layers than the pass (a linear one has one) a
+// backing of the pass's layers whose own layers the copy engine fills and drains (CommandBuffer::render): Apple's GPU
+// draws every layer an attachment has and drops the rest. Over raw::PassDesc and raw::Texture (raw_gpu.h), or any types
+// shaped alike.
 #pragma once
 #include <algorithm>
 #include <cstdint>
@@ -22,21 +25,6 @@ template <class Pass> const char *layeredRefusal(const Pass &pass, uint8_t sampl
     if (samples > 1)
         return "a layered multisampled pass, which has no attachment: the device makes no "
                "MTLTextureType2DMultisampleArray (MTLTexture.h)";
-    for (uint32_t j = 0; j < pass.count && j < 8; j++) {
-        const auto *t = pass.color[j].texture;
-        if (!t || t->memoryless)
-            continue;
-        if (!t->blockLinear || t->shadowTarget)
-            return "renderTargetArrayLength past a linear colour attachment's one layer, which Metal's validation "
-                   "layer stops (MTL4RenderPass.h renderTargetArrayLength: the layers all attachments have)";
-        if (t->layers < layers)
-            return "renderTargetArrayLength past a colour attachment's layers, which Metal's validation layer stops "
-                   "(MTL4RenderPass.h renderTargetArrayLength: the layers all attachments have)";
-    }
-    const auto *z = pass.depthStencil.texture;
-    if (z && !z->memoryless && z->layers < layers)
-        return "renderTargetArrayLength past the depth/stencil attachment's layers, which Metal's validation layer "
-               "stops (MTL4RenderPass.h renderTargetArrayLength: the layers all attachments have)";
     return nullptr;
 }
 

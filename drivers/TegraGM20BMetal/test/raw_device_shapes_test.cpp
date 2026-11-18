@@ -6,6 +6,8 @@
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_blend_kill.h"
 #include "../raw/runtime/raw_clear.h"
+#include "../raw/runtime/raw_format_standin.h"
+#include "../raw/runtime/raw_metal_formats.h"
 #include "../raw/runtime/raw_private_comp.h"
 #include "../raw/runtime/raw_resolve_rule.h"
 #include "../raw/runtime/raw_samples.h"
@@ -192,8 +194,8 @@ TEST_F(DeviceShapes, SignedNormalizedFormats)
 // renders and blends it (its row's target is NIL's: raw_tic_words_test; the blend kill takes its texels as finite); a
 // private one binds the compressed kind of its texel size as the unorm formats of that size do (NIL's
 // nvc0_choose_pte_kind picks colour kinds by element size alone), and only an all-zero clear writes ZBC tags; a turn
-// copy moves its texels as unsigned integers of their size; a resolve has no pack state, so a pass that resolves one is
-// refused (pass.level), never averaged as unorm.
+// copy moves its texels as unsigned integers of their size; a resolve is the 2D engine's of its codes
+// (raw_attachment_target.h codesResolvedByTwod), never averaged as unorm.
 TEST_F(DeviceShapes, SignedNormalizedTargetsReachTheirConsumers)
 {
     const std::pair<uint32_t, uint32_t> snormAndUnorm[] = {{12, 10}, {22, 20}, {32, 30},
@@ -204,6 +206,7 @@ TEST_F(DeviceShapes, SignedNormalizedTargetsReachTheirConsumers)
         EXPECT_NE(f->rt, 0u) << snorm;
         EXPECT_EQ(f->bpp, u->bpp) << snorm;
         EXPECT_TRUE(raw::normalizedFormat(snorm)) << snorm;
+        EXPECT_TRUE(raw::codesResolvedByTwod(snorm)) << snorm;
         raw::PrivateTextureFacts facts;
         facts.privateStorage = facts.compressibleUsage = true;
         facts.shape = raw::PrivateShape2D::Plain;
@@ -300,6 +303,9 @@ TEST_F(DeviceShapes, ExtendedRangeStandInsConvertTexelForTexel)
         {555, raw::kType2D, raw::shapes::kPrivate, 37, 21, 1, 3, 1, 1, 5},
         {555, raw::kTypeCube, raw::shapes::kShared, 16, 16, 1, 2, 1, 1, 1},
         {555, raw::kType3D, raw::shapes::kPrivate, 20, 12, 5, 1, 1, 1, 1},
+        {553, raw::kType2D, raw::shapes::kPrivate, 37, 21, 1, 3, 1, 1, 5},
+        {553, raw::kType2DArray, raw::shapes::kShared, 19, 11, 1, 1, 1, 3, 1},
+        {553, raw::kType2DMultisample, raw::shapes::kPrivate, 13, 9, 1, 1, 4, 1, 5},
     };
     for (const Case &k : cases) {
         TextureShape s;
@@ -346,24 +352,28 @@ TEST_F(DeviceShapes, ExtendedRangeStandInsConvertTexelForTexel)
     }
 }
 
-// A one-level 2D BGR10_XR_sRGB texture is raw's codes in block-linear memory of its own, rendered through its format's
-// stand-in (raw_format_standin.h), as AegirPoster's 720x1280 shared target that it samples is (boot C32 made it on m2v)
+// A one-level 2D BGR10_XR_sRGB or BGRA10_XR_sRGB texture is raw's codes in block-linear memory of its own, rendered through
+// its format's stand-in (raw_format_standin.h), as AegirPoster's 720x1280 shared target that it samples is (boot C32 made it
+// on m2v)
 TEST_F(DeviceShapes, AnSrgbExtendedRangeTextureIsRawsOwn)
 {
-    TextureShape s;
-    s.format = 555;
-    s.storage = raw::shapes::kShared;
-    s.width = 720;
-    s.height = 1280;
-    s.usage = raw::shapes::kUsageRead | raw::shapes::kUsageTarget;
-    s.ownMemory = true;
-    EXPECT_EQ(raw::shapes::rawShapeTerm(s), 0u);
-    ASSERT_EQ(raw::shapes::route(s), raw::shapes::Route::Plain);
-    raw::Texture t;
-    ASSERT_TRUE(raw::shapes::create(dev, s, raw::shapes::Route::Plain, true, 0, t));
-    EXPECT_TRUE(t.blockLinear);
-    EXPECT_EQ(t.bpp, 4u);
-    dev.destroyTexture(t);
+    for (const auto &[format, bpp] : {std::pair{555u, 4u}, std::pair{553u, 8u}}) {
+        TextureShape s;
+        s.format = format;
+        s.storage = raw::shapes::kShared;
+        s.width = 720;
+        s.height = 1280;
+        s.usage = raw::shapes::kUsageRead | raw::shapes::kUsageTarget;
+        s.ownMemory = true;
+        EXPECT_EQ(raw::shapes::rawShapeTerm(s), 0u) << format;
+        ASSERT_EQ(raw::shapes::route(s), raw::shapes::Route::Plain) << format;
+        raw::Texture t;
+        ASSERT_TRUE(raw::shapes::create(dev, s, raw::shapes::Route::Plain, true, 0, t)) << format;
+        EXPECT_TRUE(t.blockLinear) << format;
+        EXPECT_EQ(t.bpp, bpp) << format;
+        EXPECT_NE(raw::formatStandIn(format), 0u) << format;
+        dev.destroyTexture(t);
+    }
 }
 
 // A pass into a level and slice of an extended-range array renders its codes there (attachmentTarget), as a pass into a
@@ -617,9 +627,16 @@ TEST_F(DeviceShapes, SrgbRedGreenSamplesAWidenedStandIn)
     b->end();
     ASSERT_TRUE(cb->commit(seqno));
     EXPECT_EQ(copyLaunches(next).size(), 3u);
-    raw::Texture view;
-    EXPECT_FALSE(dev.createView(t, raw::kRG8Srgb, view)) << "a view would read its bytes without the stand-in";
-    EXPECT_FALSE(dev.createView(t, 30, view)) << "a view would read its bytes without the stand-in";
+    // a view in its own format samples a view of its stand-in, one as RG8Unorm its bytes
+    raw::Texture view, bytes;
+    ASSERT_TRUE(dev.createView(t, raw::kRG8Srgb, view));
+    ASSERT_NE(view.standIn, nullptr);
+    EXPECT_EQ(view.standIn->va, t.standIn->va);
+    ASSERT_TRUE(dev.createView(t, 30, bytes));
+    EXPECT_EQ(bytes.standIn, nullptr);
+    EXPECT_EQ(bytes.va, t.va);
+    dev.destroyTexture(bytes);
+    dev.destroyTexture(view);
     dev.destroyTexture(t);
 
     // a shared 2D one's pitch bytes, widened in one copy; a descriptor's swizzle (alpha, red, green, blue) lands on its
@@ -781,6 +798,104 @@ TEST(VolumeShapes, AMipmappedVolumeIsLaidOutAsARenderedOne)
     s.levels = 5;
     EXPECT_TRUE(raw::shapes::volumeRendered(s));
     EXPECT_TRUE(raw::shapes::volumeView2d(s));
+}
+
+// A format the GM20B renders none of is laid out so when mipmapped: its steps draw each plane as words (raw_mip.h)
+TEST(VolumeShapes, AMipmappedVolumeOfWordsIsLaidOutOnePlaneABlock)
+{
+    TextureShape s;
+    s.type = raw::kType3D;
+    s.format = 11;  // R8Unorm_sRGB
+    s.storage = raw::shapes::kPrivate;
+    s.usage = raw::shapes::kUsageRead;
+    s.width = s.height = 32;
+    s.depth = 4;
+    EXPECT_FALSE(raw::shapes::volumeView2d(s));
+    s.levels = 6;
+    EXPECT_TRUE(raw::shapes::volumeView2d(s));
+}
+
+// Every format Metal describes is answered without a twin: a header row of the raw path's (kFormats), a depth/stencil
+// one's zeta, or a named nil (Metal makes none from a descriptor alone, a YCbCr one is a surface plane's, or the GM20B has
+// no encoding of it); X32_Stencil8 is its combined format's texture seen through its stencil (RawMetalDevice.mm)
+TEST(TextureShapes, EveryFormatMetalDescribesHasAnAnswer)
+{
+    std::vector<uint32_t> left;
+    for (const raw::metal_formats::Described &f : raw::metal_formats::kDescribed) {
+        TextureShape s;
+        s.format = f.mtl;
+        s.width = s.height = 16;
+        s.ownMemory = true;
+        const bool answered = raw::formatInfo(f.mtl) || raw::zetaFormatIndex(f.mtl) < raw::kZetaFormats ||
+                              f.mtl == 261 || raw::shapes::metalRefusal(s) || raw::shapes::hardwareRefusal(s);
+        if (!answered)
+            left.push_back(f.mtl);
+    }
+    EXPECT_EQ(left, std::vector<uint32_t>{});
+}
+
+// The RGBX formats are NIL's X rows: made as their RGBA forms are, their fourth channel read as one
+TEST_F(DeviceShapes, RgbxFormatsAreLaidOutAsTheirRgbaForms)
+{
+    for (const auto &[rgbx, rgba] : {std::pair{300u, 70u}, std::pair{315u, 115u}, std::pair{325u, 125u}}) {
+        TextureShape s;
+        s.format = rgbx;
+        s.width = s.height = 16;
+        s.levels = 3;
+        s.storage = raw::shapes::kPrivate;
+        s.usage = raw::shapes::kUsageRead | raw::shapes::kUsageTarget;
+        s.ownMemory = true;
+        ASSERT_EQ(raw::shapes::route(s), raw::shapes::Route::Chain) << rgbx;
+        raw::Texture t;
+        ASSERT_TRUE(raw::shapes::create(dev, s, raw::shapes::Route::Chain, true, 0, t)) << rgbx;
+        EXPECT_EQ(t.bpp, raw::formatInfo(rgba)->bpp) << rgbx;
+        EXPECT_EQ(raw::DeviceHarness::header(dev, t.tic)[0] >> 28 & 7, 7u) << rgbx << ": W_SOURCE IN_ONE_FLOAT";
+        dev.destroyTexture(t);
+    }
+}
+
+// A format Metal describes none of (Invalid, a number between its formats) is Metal's nil, never a twin's to answer
+TEST(TextureShapes, AFormatMetalDescribesNoneOfIsMetalsNil)
+{
+    TextureShape s;
+    s.width = s.height = 16;
+    s.usage = raw::shapes::kUsageRead;
+    s.ownMemory = true;
+    for (const uint32_t format : {0u, 2u, 57u, 999u}) {
+        s.format = format;
+        EXPECT_NE(raw::shapes::metalRefusal(s), nullptr) << format;
+    }
+    s.format = 70;
+    EXPECT_EQ(raw::shapes::metalRefusal(s), nullptr);
+}
+
+// Apple silicon holds a Managed texture as a Shared one: every shape a Shared one of takes the same creator, where a
+// mipmapped, block-compressed, multisampled or depth one had none
+TEST_F(DeviceShapes, AManagedTextureIsASharedOnesShape)
+{
+    struct Case {
+        uint32_t format, type;
+        uint64_t levels, samples;
+    };
+    for (const Case &k : {Case{70, raw::kType2D, 4, 1}, Case{130, raw::kType2D, 1, 1},
+                          Case{70, raw::kType2DMultisample, 1, 4}, Case{252, raw::kType2D, 1, 1}}) {
+        TextureShape s;
+        s.format = k.format;
+        s.type = k.type;
+        s.levels = k.levels;
+        s.samples = k.samples;
+        s.width = s.height = 16;
+        s.usage = raw::shapes::kUsageRead | raw::shapes::kUsageTarget;
+        s.ownMemory = true;
+        s.storage = raw::shapes::kShared;
+        const raw::shapes::Route shared = raw::shapes::route(s);
+        s.storage = raw::shapes::kManaged;
+        EXPECT_NE(shared, raw::shapes::Route::None) << k.format;
+        EXPECT_EQ(raw::shapes::route(s), shared) << k.format;
+        raw::Texture t;
+        ASSERT_TRUE(raw::shapes::create(dev, s, shared, false, 0, t)) << k.format;
+        dev.destroyTexture(t);
+    }
 }
 
 }  // namespace

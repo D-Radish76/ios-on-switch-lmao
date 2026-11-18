@@ -14,7 +14,7 @@ namespace raw {
 // bound anyway.
 template <typename Texture> constexpr bool drawsBound(const Texture &t)
 {
-    return t.tic && (t.standIn || (xrForm(t.format) == XrForm::None && !srgbPair(t.format)));
+    return t.tic && (t.standIn || (!xrSampled(t.format) && !srgbPair(t.format)));
 }
 
 }  // namespace raw

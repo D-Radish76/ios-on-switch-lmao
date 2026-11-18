@@ -66,6 +66,7 @@ const FormatInfo kFormats[] = {
     {40, 0xe8, 0x74e24915, 2, false},    // B5G6R5Unorm
     {41, 0, 0x272a4913, 2, false},       // A1BGR5Unorm
     {42, 0, 0x272a4912, 2, false},       // ABGR4Unorm
+    {44, 0, 0x54e24912, 2, false},       // BGRA4Unorm: B4G4R4A4_UNORM (rendered through its stand-in)
     {43, 0xe9, 0x54e24914, 2, false},    // BGR5A1Unorm
     {53, 0xe4, 0x6014920f, 4, false},    // R32Uint
     {54, 0xe3, 0x60136d8f, 4, false},    // R32Sint
@@ -85,6 +86,8 @@ const FormatInfo kFormats[] = {
     {90, 0xd1, 0x58d24909, 4, false},    // RGB10A2Unorm (rendered: a 10-bit code texture's image)
     {91, 0xd2, 0x58d49209, 4, false},    // RGB10A2Uint
     {92, 0xe0, 0x78d7ffa1, 4, false},    // RG11B10Float
+    {84, 0, 0x2b1a4908, 4, false},       // ARGB8Unorm (A8B8G8R8's header read rotated, its alpha byte first; rendered
+    {85, 0, 0x2b1a4908, 4, true},        // through its stand-in) and ARGB8Unorm_sRGB
     {93, 0, 0x78d7ffa0, 4, false},       // RGB9E5Float
     {94, 0xdf, 0x54e24909, 4, false},    // BGR10A2Unorm
     {103, 0xcd, 0x60d49204, 8, false},   // RG32Uint
@@ -98,6 +101,19 @@ const FormatInfo kFormats[] = {
     {123, 0xc2, 0x58d49201, 16, false},  // RGBA32Uint
     {124, 0xc1, 0x58d36d81, 16, false},  // RGBA32Sint
     {125, 0xc0, 0x58d7ff81, 16, false},  // RGBA32Float (rendered: an sRGB 4:2:0 texture's image)
+    {263, 0, 0x6014920f, 4, false},      // Unspecialized (4-byte texels of no format of their own, held as R32Uint's)
+    // RGBX: NIL's X rows, the fourth channel read as one and rendered to targets that hold none
+    {300, 0xf9, 0x78d24908, 4, false},   // RGBX8Unorm: R8G8B8X8_UNORM
+    {301, 0xfa, 0x78d24908, 4, true},    // RGBX8Unorm_sRGB
+    {302, 0xd7, 0x78d12488, 4, false},   // RGBX8Snorm
+    {303, 0xd9, 0x68d49208, 4, false},   // RGBX8Uint
+    {304, 0xd8, 0x68d36d88, 4, false},   // RGBX8Sint
+    {313, 0xc9, 0x68d49203, 8, false},   // RGBX16Uint: R16G16B16X16_UINT
+    {314, 0xc8, 0x68d36d83, 8, false},   // RGBX16Sint
+    {315, 0xce, 0x78d7ff83, 8, false},   // RGBX16Float
+    {323, 0xc5, 0x68d49201, 16, false},  // RGBX32Uint: R32G32B32X32_UINT
+    {324, 0xc4, 0x68d36d81, 16, false},  // RGBX32Sint
+    {325, 0xc3, 0x78d7ff81, 16, false},  // RGBX32Float
     // block-compressed (sampled only: Metal's copies move whole blocks), word 0 NIL's row of NVK's format; ETC2 and EAC
     // NIL's MaxwellA rows, which the texture unit decodes as m2v's NVK twin does
     {130, 0, 0x58d24924, 8, false, 4, 4},     // BC1_RGBA: DXT1_RGBA
@@ -157,7 +173,9 @@ const FormatInfo kFormats[] = {
     {241, 0, 0x74e24922, 4, false, 2, 1},  // BGRG422: B8G8_R8G8_UNORM
     // the extended-range formats' codes (raw_xr.h), as m2v's NVK renders and fetches them: RG32_UINT, RGBA16_UINT, R32_UINT
     {550, 0xcd, 0x60d49204, 8, false},  // RGB10A8_2P_XR10
+    {551, 0, 0x60d49204, 8, false},     // RGB10A8_2P_XR10_sRGB (its codes; a pass renders it through its stand-in)
     {552, 0xc9, 0x58d49203, 8, false},  // BGRA10_XR
+    {553, 0, 0x58d49203, 8, false},     // BGRA10_XR_sRGB (its codes; a pass renders it through its stand-in)
     {554, 0xe4, 0x6014920f, 4, false},  // BGR10_XR
     {555, 0, 0x6014920f, 4, false},  // BGR10_XR_sRGB (its codes; a pass renders it through its stand-in)
 };

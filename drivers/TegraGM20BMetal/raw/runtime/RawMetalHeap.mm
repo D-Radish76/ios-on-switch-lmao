@@ -2,13 +2,15 @@
 // MTLHeaps as Metal has them (RenderBox's ResourceHeap: textures from heap newTextureWithDescriptor:, their room handed back
 // by makeAliasable, occupancy read off usedSize, the heap made volatile when recycled). Every texture the raw path keeps and
 // every buffer is placed in the heap's arena (raw::Device::createArena), laid out as the device lays its kind out, so what
-// the heap holds is its size, a job names it as one BO and a purged heap holds no pages. A texture the raw path keeps none
-// of is m2v's, counted against the heap's size. A heap resource's purgeable state is its heap's.
+// the heap holds is its size, a job names it as one BO and a purged heap holds no pages. A texture the arena lays out none
+// of (one with a stand-in, or of a shape it places none of) is the device's own, counted against the heap's size. A heap
+// resource's purgeable state is its heap's.
 #import "RawMetalInternal.h"
 #import "RawMetalMultisample.h"
 
 #include "raw_srgb_pair.h"
 #include "raw_xr.h"
+#include "raw_ycbcr.h"
 
 namespace {
 
@@ -56,19 +58,36 @@ id<MTLBuffer> makeArenaBuffer(RMHeap *h, NSUInteger length, MTLResourceOptions o
     return (id<MTLBuffer>)b;
 }
 
+// X32_Stencil8: a Depth32Float_Stencil8 texture's memory read through its stencil, as rmNewTexture makes one
+MTLTextureDescriptor *heldDescriptor(MTLTextureDescriptor *d)
+{
+    if (d.pixelFormat != MTLPixelFormatX32_Stencil8)
+        return d;
+    MTLTextureDescriptor *combined = [d copy];
+    combined.pixelFormat = MTLPixelFormatDepth32Float_Stencil8;
+    return combined;
+}
+
 id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::TextureAsk &ask,
                                 std::optional<uint64_t> offset = {})
 {
     if (!matchingOptions(h, d.resourceOptions))
         return nil;
+    if (MTLTextureDescriptor *held = heldDescriptor(d); held != d)
+        return [makeArenaTexture(h, held, ask, offset) newTextureViewWithPixelFormat:d.pixelFormat];
     RMTexture *t = [RMTexture new];
     t->_device = h->_device;
     t->_descriptor = [d copy];
     t->_kind = RMTexturePool;
     if (!gRM->raw->arenaTexture({h->_arena - 1, offset}, ask, t->_raw))
         return nil;
-    if (ask.kind == raw::TextureAsk::Plain)
-        keepExtendedRange(d, t->_raw, false);
+    if (ask.kind == raw::TextureAsk::Plain && !keepExtendedRange(d, t->_raw, false)) {
+        os_log_error(rawLog(), "raw: %{public}s: no memory or texture header for a heap's %lux%lu format %lu texture's "
+                               "stand-in: nil",
+                     getprogname(), (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.pixelFormat);
+        gRM->raw->destroyTexture(t->_raw);
+        return nil;
+    }
     t->_rawOk = true;
     t->_heap = h;
     t->_aliasable = offset.has_value();
@@ -80,18 +99,23 @@ id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::T
 // The ask rmNewTexture (RawMetalDevice.mm) makes `d` with, in its order of kinds; false: a texture the raw path keeps
 // none of (m2v's alone, which no job of the raw path names), or one the arena's storage mode does not hold. An
 // extended-range one is a one-level 2D texture's alone: the arena lays a stand-in out beside its codes for that one
-// (Device::arenaTexture); an RG8Unorm_sRGB one none
-bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask)
+// (Device::arenaTexture); an RG8Unorm_sRGB one none. `placed`: false for a size asked of one the device makes outside
+// the arena, which every extended-range and RG8Unorm_sRGB shape it keeps is, with the stand-in a draw samples
+static bool textureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask, bool placed)
 {
+    d = heldDescriptor(d);
     bool tiled;
+    const bool standIn = raw::xrConversionOf(uint32_t(d.pixelFormat)) || raw::srgbPair(uint32_t(d.pixelFormat));
     if (!arenaKind(d.storageMode, tiled) || tiled != blockLinear ||
-        (raw::xrForm(uint32_t(d.pixelFormat)) != raw::XrForm::None && !rawShape(d)) ||
-        raw::srgbPair(uint32_t(d.pixelFormat)))
+        (placed && raw::xrSampled(uint32_t(d.pixelFormat)) && !rawShape(d)) ||
+        (placed && raw::srgbPair(uint32_t(d.pixelFormat))))
         return false;
     ask = {};
     ask.width = uint32_t(d.width);
     ask.height = uint32_t(d.height);
     ask.format = uint32_t(d.pixelFormat);
+    raw::shapes::TextureShape plain = textureShape(d);
+    plain.ownMemory = !placed;
     const RMStoredSamples stored = storedMultisampleKind(d);
     const uint32_t array = arrayType(d);
     if (chainShape(d)) {
@@ -126,15 +150,40 @@ bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &
         ask.type = raw::shapes::headerType(s.type);
         ask.layers = raw::textureLayers(s.type, uint32_t(std::min<uint64_t>(s.array, 2048)));
         ask.levels = uint32_t(std::max<uint64_t>(s.levels, 1));
-    } else if (rawShape(d)) {
+    } else if (raw::shapes::rawShape(plain)) {
         ask.tiled = blockLinear || raw::blockCompressed(raw::formatInfo(ask.format));
-        ask.standIn = raw::xrForm(ask.format) != raw::XrForm::None &&
-                      (d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderRead));
     } else {
         return false;
     }
+    ask.standIn = standIn && (d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderRead)) &&
+                  (!placed || ask.kind == raw::TextureAsk::Plain);
     uint64_t bytes, align;
     return raw::Device::footprint(ask, bytes, align);
+}
+
+bool heapTextureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask)
+{
+    return textureAsk(d, blockLinear, ask, true);
+}
+
+// The alignment Metal's heap query answers, with 0 bytes, for a texture it makes none of (m2v texture/heap.rs
+// no_texture_alignment, measured on an M4 Max)
+static uint64_t noTextureAlignment(const raw::shapes::TextureShape &s)
+{
+    if (raw::isYcbcrFormat(s.format))
+        return s.type == raw::kType2DArray ? 128 : 16;
+    if (raw::twoPlaneXr(s.format))
+        return 16;
+    switch (s.type) {
+    case raw::kType1D:
+    case raw::kType2D:
+    case raw::kType2DMultisample:
+        return 128;
+    case 9:  // MTLTextureTypeTextureBuffer
+        return 16;
+    default:
+        return 16 << 10;
+    }
 }
 
 bool heapResident(RMHeap *h)
@@ -336,15 +385,45 @@ void rmHeapForget(RMHeap *heap, uint64_t va)
     return (id<MTLHeap>)h;
 }
 
+// A heap's size of a texture: the footprint of the one the device makes (Managed storage is Shared on Apple silicon); 0
+// bytes at Metal's alignment for it where Metal makes none (m2v texture/heap.rs no_texture_alignment, measured); 0 for a
+// Memoryless one, which no heap holds (Metal's validation stops the query)
 - (MTLSizeAndAlign)heapTextureSizeAndAlignWithDescriptor:(MTLTextureDescriptor *)d
 {
+    if (d.storageMode == MTLStorageModeMemoryless) {
+        SWITCH_REFUSE("raw", "heap.memoryless",
+                      "a heap's size of a Memoryless %lux%lu texture of format %lu: no heap holds one: 0 bytes",
+                      (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.pixelFormat);
+        return {0, 0};
+    }
+    raw::shapes::TextureShape s = textureShape(d);
+    s.ownMemory = true;
+    if (raw::shapes::metalRefusal(s) || raw::shapes::identityRefusal(s, raw::answers::kThisKind) ||
+        raw::shapes::hardwareRefusal(s))
+        return {0, NSUInteger(noTextureAlignment(s))};
+    // a texture buffer: its texels' bytes at 16 (m2v texture/heap.rs; an RGB10A8_2P_XR10 one's alpha bytes past its words,
+    // raw_xr.h texelBufferBytes: an M4 Max), the buffer the device makes it in
+    if (const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
+        f && d.textureType == MTLTextureTypeTextureBuffer)
+        return {NSUInteger((raw::texelBufferBytes(uint32_t(d.pixelFormat), d.width, f->bpp) + 15) & ~uint64_t(15)), 16};
+    MTLTextureDescriptor *asked = d;
+    if (uint32_t(d.storageMode) == raw::shapes::kManaged) {
+        asked = [d copy];
+        asked.storageMode = MTLStorageModeShared;
+    }
     bool blockLinear;
     raw::TextureAsk ask;
     uint64_t bytes, align;
-    if (arenaKind(d.storageMode, blockLinear) && heapTextureAsk(d, blockLinear, ask) &&
+    if (arenaKind(asked.storageMode, blockLinear) && textureAsk(asked, blockLinear, ask, false) &&
         raw::Device::footprint(ask, bytes, align))
         return {NSUInteger(bytes), NSUInteger(align)};
-    return [RM_M2V(NeedHeapTextureSize) heapTextureSizeAndAlignWithDescriptor:d];
+    // every shape the device makes has a footprint (textureAsk takes route()'s creators in its order): one with none is
+    // too large to lay out, which the device makes none of either
+    os_log_error(rawLog(), "raw: %{public}s: a heap's size of a %lux%lux%lu format %lu texture the device lays out none "
+                           "of: 0 bytes",
+                 getprogname(), (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.depth,
+                 (unsigned long)d.pixelFormat);
+    return {0, NSUInteger(noTextureAlignment(s))};
 }
 
 - (MTLSizeAndAlign)heapBufferSizeAndAlignWithLength:(NSUInteger)length options:(MTLResourceOptions)options

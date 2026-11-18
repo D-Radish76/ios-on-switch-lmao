@@ -37,7 +37,7 @@ enum PackSectionId {
     PackSectionCount
 };
 
-constexpr uint32_t kPackVersion = 28;
+constexpr uint32_t kPackVersion = 29;
 
 // What a record or a program variant (PackVariant) assumes, as bits of a mask: a draw takes a variant only where all of them
 // hold. Bits 0-15 are facts of the draw's bindings, bit 16 of its pipeline, bit 26 of its pass, bits 17-25 of the chip
@@ -386,6 +386,9 @@ constexpr uint32_t kPackVertexStreams = 8;
 constexpr uint8_t kStreamBindStride = 0x80;
 // The largest stride a fixed-function vertex stream fetches at: NVB197_SET_VERTEX_STREAM_A_FORMAT_STRIDE is bits 11:0
 constexpr uint32_t kStreamStrideField = 0xFFF;
+// The pulled layouts of a dynamic stride a record names: as many as its fixed-function streams, so a state's stride twin,
+// which pulls each of its bind-stride streams, names them all
+constexpr uint32_t kPulledStrides = kPackVertexStreams;
 
 // `reserved`: a shader-side stencil's ShadowStencilState push word + 1 (raw_shader_test_push.h shadowStencil), 0: none
 struct PackShaderTests {
@@ -468,7 +471,7 @@ struct PackPipeline {
     uint8_t arrayLengthWord;
     // A pulled vertex buffer layout's stride its binds set (m2v VertexBufferStride of a dynamic layout): its Metal buffer
     // index and push word + 1 (0: none)
-    uint8_t pulledStride[4][2];
+    uint8_t pulledStride[kPulledStrides][2];
     // The fixed-function vertex streams past stream 0, in stream order (raw_emit.cpp: densely, by Metal buffer index): each
     // its Metal buffer index + 1 (0: no more), with kStreamBindStride; their strides are the state's
     // SET_VERTEX_STREAM_A_FORMAT registers
@@ -608,7 +611,9 @@ struct PackKernel {
     // What m2v's reads through argument buffers take of a dispatch, as PackPipeline's for the kernel stage: the push word + 1
     // of the root table's address and of the ExecutionStatus buffer's (0: none), the buffer slots its root table holds, and
     // its set-1 heap arrays
-    uint8_t rootTableWord, statusWord, heapArrays, argumentsReserved;
+    // mapsStated: 1 where every sampler header it holds was made under the address maps its key's ":am" texture items
+    // state (raw_compute_key.h), 0 where its compile took each texture's map from its pixel format
+    uint8_t rootTableWord, statusWord, heapArrays, mapsStated;
     uint32_t rootSlots, heapBytes;
     PackHeapArray heap[kPackHeapArrays];
     // its ArgumentTable as PackPipeline's: the KernelSpillTable entry's index + 1, its words, their first in the blob
@@ -689,7 +694,7 @@ struct InitAddresses {
 uint32_t relocated(const PackInitMethod &m, const InitAddresses &a);
 static_assert(sizeof(PackShaderTests) == 16, "shader test layout");
 static_assert(sizeof(PackPipeline) ==
-                  40 + kPackEntries * 8 + 4 + 32 * 4 + 4 + 36 + 16 + 56 + 4 + 92 + 24 + 2 * kWrittenSlots + 4 + 24,
+                  40 + kPackEntries * 8 + 4 + 32 * 4 + 4 + 36 + 16 + 56 + 4 + 92 + 32 + 2 * kWrittenSlots + 4 + 24,
               "pack layout");
 static_assert(offsetof(PackPipeline, storageBlendMask) == 490 && offsetof(PackPipeline, fetchRung) == 528,
               "pack layout: packfile.py PIPELINE_V15");
@@ -697,15 +702,15 @@ static_assert(offsetof(PackPipeline, rootTableWord) == 544 && offsetof(PackPipel
                   offsetof(PackPipeline, spillEntry) == 628,
               "pack layout: packfile.py PIPELINE_V20");
 static_assert(offsetof(PackPipeline, controlWord) == 636 && offsetof(PackPipeline, arrayLengthWord) == 643 &&
-                  offsetof(PackPipeline, vertexStreams) == 652 && offsetof(PackPipeline, viewportCountWord) == 659,
+                  offsetof(PackPipeline, vertexStreams) == 660 && offsetof(PackPipeline, viewportCountWord) == 667,
               "pack layout: packfile.py PIPELINE_V21");
-static_assert(offsetof(PackPipeline, writtenFormat) == 660 && offsetof(PackPipeline, xrSlots) == 692,
+static_assert(offsetof(PackPipeline, writtenFormat) == 668 && offsetof(PackPipeline, xrSlots) == 700,
               "pack layout: packfile.py PIPELINE_V22");
-static_assert(offsetof(PackPipeline, tessPrograms) == 696 && offsetof(PackPipeline, strideTwin) == 704 &&
-                  offsetof(PackPipeline, restoreAt) == 716,
+static_assert(offsetof(PackPipeline, tessPrograms) == 704 && offsetof(PackPipeline, strideTwin) == 712 &&
+                  offsetof(PackPipeline, restoreAt) == 724,
               "pack layout: packfile.py PIPELINE_V24");
 static_assert(offsetof(PackPipeline, entriesHigh) == 31 && offsetof(PackPipeline, farEntriesAt) == 557 &&
-                  offsetof(PackPipeline, spillEntryHigh) == 694,
+                  offsetof(PackPipeline, spillEntryHigh) == 702,
               "pack layout: packfile.py PIPELINE_V27");
 static_assert(sizeof(PackProgram) == 44 && offsetof(PackProgram, farUbos) == 41, "pack layout");
 static_assert(sizeof(PackVariant) == 8, "pack layout");

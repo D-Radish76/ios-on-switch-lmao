@@ -213,7 +213,10 @@ enum class RMShareable : uint8_t {
     std::atomic<bool> _freshUnwritten;  // a fresh texture no command wrote yet (RawMetalFresh.mm traceFreshUses)
 #endif
 }
-// Metal's CPU copies as they move this texture's own texels (RawMetalTexture.mm): what replaceRegion and getBytes do
+@end
+
+@interface RMTexture (CpuCopies)
+// Metal's CPU copies as they move this texture's own texels (RawMetalTextureCopies.mm): what replaceRegion and getBytes do
 // past an RGB10A8_2P_XR10 texture's colour words (cpuXrWords)
 - (void)rmReplaceRegion:(MTLRegion)r
             mipmapLevel:(NSUInteger)level
@@ -327,6 +330,8 @@ struct RMPass {
     uint32_t depthFilter;                   // and MTLMultisampleDepthResolveFilter
     __unsafe_unretained id stencilResolve;  // its stencil resolve's texture, nil for none
     raw::StencilSample stencilPick;         // and the sample whose stencil it takes
+    // the level and slice of the texture each of them resolves into
+    NSUInteger depthResolveLevel = 0, depthResolveSlice = 0, stencilResolveLevel = 0, stencilResolveSlice = 0;
     double clearDepth;
     uint32_t clearStencil;
     NSUInteger width, height;
@@ -334,6 +339,9 @@ struct RMPass {
     raw::SamplePositions positions;
     uint8_t compressed = 0;        // colour attachments on compressed memory as the pass was made (raw_private_comp.h)
     bool testsHiddenZeta = false;  // a depth/stencil state set in it tests depth or stencil (raw::testsHiddenZeta)
+    // a draw in it tests depth in its shader (raw_shader_tests.h): a Depth16Unorm attachment renders converted
+    // (RawMetalRangeForms.mm depth16Tested)
+    bool shaderTestsDepth = false;
     bool xrPlaneBinds = false;     // it binds a two-plane RGB10A8_2P_XR10 texture, which a draw may store through
     bool continues =
         false;  // a parallel encoder's sub-encoder after its first: the pass before it goes on (raw_parallel.h)
@@ -482,9 +490,6 @@ struct RMSharedEventWait {
     RMXrShadowOpen _xrShadowOpen;
     std::vector<RMXrShadowTwins> _xrShadowPasses;
     const RMXrShadowTwins *_xrShadowCurrent;
-    // compressed attachments a recorded draw binds as storage images with no barrier form: plain before the raw encode
-    std::vector<RMTexture *> _plainForStorage;
-    bool _scanStorageTargets;  // a pipeline bound in such a pass was a variant still being made
     bool
         _borderSamplers;  // a sampler of an opaque border was bound: its headers for the range's textures before the encode
     std::vector<RMCounterMark> _counterMarks;  // in tape order
@@ -618,7 +623,7 @@ enum RMPipelineVeto : uint32_t {
     VetoWhole = 1u << 0,       // a refusal outside any encoder: all of it goes to m2v
     VetoCounters = 1u << 1,    // counter samples
     VetoShadows = 1u << 2,     // a texture sampled through a pool image, an extended-range stand-in or half shadow
-    VetoStorage = 1u << 3,     // compressed attachments bound as storage images (raw_private_comp.h)
+    VetoVariant = 1u << 3,     // a binding of a state variant still being made, which an encode ahead would drop
     VetoProbes = 1u << 4,      // HW Test's probes
     VetoParallel = 1u << 5,    // a parallel render encoder's sub-encoders
     VetoOps = 1u << 6,         // an event, a compute encoder, an indirect command buffer, patches, an invocation
@@ -734,7 +739,7 @@ struct RMPreparedVariant {
 @end
 
 // RawMetalComputeState.mm: a compute state with what the raw pack keys its kernels by, answered from the pack's facts of
-// it; m2v's state is made only for what the pack does not answer, a reflection or a replay
+// it or the shader compiler's; m2v's state is made only for a replay
 id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipelineOption options,
                   MTLAutoreleasedComputePipelineReflection *reflection, NSError **error);
 // m2v's replay and the raw encode of a compute encoder's commands (the Op*Kernel* ones and OpDispatch): false from the raw

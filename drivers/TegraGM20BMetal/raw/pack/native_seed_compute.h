@@ -5,6 +5,7 @@
 #include "native_seed_key.h"
 #include "native_seed_manifest.h"
 #include "../runtime/RawDirect.h"
+#include "../../translate/NativeMetalTranslate.h"
 
 namespace rawseed {
 
@@ -21,6 +22,7 @@ inline NSMutableDictionary *computeRow(const std::string &line, uint64_t stack, 
     }
     if (region)
         shape = *region;
+    probe::stateFormatMaps(shape, nmb_kernel_texture_map);
     const size_t start = line.find(" | k ") + 5, end = line.find(" | ", start);
     const auto stage = precompile::stage(line.substr(start, end - start));
     row[@"kernelLibrary"] = @(stage.library.c_str());

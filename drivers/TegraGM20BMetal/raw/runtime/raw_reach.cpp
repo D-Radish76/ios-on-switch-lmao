@@ -14,20 +14,26 @@
 #include "raw_blend_kill.h"
 #include "raw_clear.h"
 #include "raw_gpu.h"
+#include "raw_gpu_internal.h"
 #include "raw_record.h"
 #include "raw_sample_shading.h"
+#include "raw_set_entries.h"
+#include "raw_stage_switches.h"
 
 namespace raw {
 namespace {
 
 // The reach masks' and reach images' scratch backings (raw_turned_pass.cpp's start at 48)
 constexpr uint32_t kReachMaskTag = 72, kReachImageTag = 73;
+constexpr uint8_t kVertexStage = 1;
 
 // The registers a reach twin sets over its state's: its pixel program alone writes target 0, which nothing blends, tests or
-// covers by alpha, through the conservative rasteriser
+// covers by alpha, through the conservative rasteriser. The pixel stage is on for a state of no fragment function too, whose
+// draws reach as discarding ones do.
 std::vector<std::pair<uint32_t, uint32_t>> reachRegisters(const PlacedProgram &fs)
 {
     return {
+        {kPixelStageSwitch, kPixelStageOn},
         {NVB197_SET_PIPELINE_PROGRAM(NVB197_SET_PIPELINE_SHADER_TYPE_PIXEL), fs.program},
         {NVB197_SET_PIPELINE_REGISTER_COUNT(NVB197_SET_PIPELINE_SHADER_TYPE_PIXEL), fs.record->gprs},
         {NVB197_SET_CT_WRITE(0), 0x1111},
@@ -42,8 +48,36 @@ std::vector<std::pair<uint32_t, uint32_t>> reachRegisters(const PlacedProgram &f
     };
 }
 
+// Registers the reach's own words set back after its draws: the pixel stage is on in the channel's context and in every state
+// that names it not (raw_stage_switches.h), so its switch never goes back to a pack baseline
+bool restoredAfterReach(uint32_t m)
+{
+    return m != kPixelStageSwitch && m != NVB197_SET_PIPELINE_PROGRAM(NVB197_SET_PIPELINE_SHADER_TYPE_PIXEL) &&
+           m != NVB197_SET_PIPELINE_REGISTER_COUNT(NVB197_SET_PIPELINE_SHADER_TYPE_PIXEL);
+}
+
+// Whether a state's draws rasterise: one Metal makes with rasterization off turns the rasteriser off in its methods and
+// back on in its restore (raw_stage_switches.h), read as push words: a header's method in bits 11:0, its data words after
+// it but for an immediate one's (opcode 4), which carries its value in itself
+bool rasterises(const Pipeline &pl)
+{
+    if (!pl.stagesOff)
+        return true;
+    for (size_t i = 0; i < pl.restore.size(); i++) {
+        const uint32_t w = pl.restore[i];
+        if (((w & 0xfff) << 2) == kRasterSwitch)
+            return false;
+        if ((w >> 29) != 4)
+            i += (w >> 16) & 0x1fff;
+    }
+    return true;
+}
+
 }  // namespace
 
+// A state's reach form: its vertex and tessellation programs with every binding they read (set 0's vertex-stage entries,
+// argument tables, constant buffers and stream strides), the pack's reach program in place of its pixel stage's. Made once
+// a state, at its first reached draw.
 Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
 {
     if (Pipeline *made = __atomic_load_n(&pl.reachTwin, __ATOMIC_ACQUIRE))
@@ -52,17 +86,16 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
         *why = "a draw whose vertex program writes memory, which drawing its geometry again would write twice";
         return nullptr;
     }
-    if (pl.stagesOff) {
-        *why = "a draw of no pixel stage or no rasterisation, which reaches no pixel";
-        return nullptr;
-    }
     const Pipeline *reach = ownPipeline(kReachState);
+    Pipeline *strideReach = nullptr;
+    if (pl.strideTwin && !(strideReach = reachTwin(*pl.strideTwin, why)))
+        return nullptr;
     std::lock_guard<raw::Mutex> l(lock_);
     if (pl.reachTwin)
         return pl.reachTwin;
     PlacedProgram fs;
     if (!reach || !reach->rec || !placePackProgram(reach->rec->fs, fs)) {
-        *why = "no reach state in the pack, or no heap room for its program";
+        *why = "no reach state in the pack";
         return nullptr;
     }
     if (reachMethods_.empty()) {
@@ -78,8 +111,7 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
             const uint32_t expected = base != rules.baseline.end()     ? base->second
                                       : context != rules.context.end() ? context->second
                                                                        : 0;
-            if (v != expected && m != NVB197_SET_PIPELINE_PROGRAM(NVB197_SET_PIPELINE_SHADER_TYPE_PIXEL) &&
-                m != NVB197_SET_PIPELINE_REGISTER_COUNT(NVB197_SET_PIPELINE_SHADER_TYPE_PIXEL))
+            if (v != expected && restoredAfterReach(m))
                 r.m(m, expected);
         }
         reachMethods_.assign(words.data(), w.at);
@@ -90,7 +122,7 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
     if (pl.entries.far())
         far.assign(pl.entries.far(), pl.entries.far() + farWords(entryCount(rec)));
     for (uint32_t i = 0; i < pl.entries.size(); i++)
-        if (PackEntry &e = entryAt(rec, far, i); e.kind != EntryUbo || e.stage != 1) {
+        if (PackEntry &e = entryAt(rec, far, i); e.stage != kVertexStage) {
             e.kind = EntrySamplerOnly;
             e.samplerKind = SamplerNone;
         }
@@ -100,19 +132,34 @@ Pipeline *Device::reachTwin(Pipeline &pl, const char **why)
     rec.storageMask = rec.storageWriteMask = rec.storageTests = rec.storageBlendMask = 0;
     rec.shaderTests = {};
     rec.variantCount[0] = rec.variantCount[1] = 0;
+    setSpillEntry(rec, 1, 0);
     Pipeline &t = reachPipelines_.emplace_back();
     t.rec = &rec;
     t.entries = SetEntries(rec, far.empty() ? nullptr : far.data());
     t.vertexInstructions = pl.vertexInstructions;
+    t.writesMemory[0] = pl.writesMemory[0];
+    t.writesMemory[1] = false;
     t.methods = pl.methods;
     t.methods.insert(t.methods.end(), reachMethods_.begin(), reachMethods_.end());
+    t.viewportClip = pl.viewportClip;
+    t.namesViewportClip = pl.namesViewportClip;
+    t.namesViewportClipRange = pl.namesViewportClipRange;
     memcpy(t.push, pl.push, sizeof t.push);
     t.pushMask = pl.pushMask;
-    t.setSlot[0] = pl.setSlot[0];
+    memcpy(t.streamStride, pl.streamStride, sizeof t.streamStride);
+    for (const uint32_t k : {0u, 2u, 3u}) {
+        t.setSlot[k] = pl.setSlot[k];
+        t.heapSlot[k] = pl.heapSlot[k];
+    }
     for (uint8_t u = 0; u < pl.uboCount; u++)
-        if (!pl.ubos[u].group)
+        if (pl.ubos[u].group != kSetGroups[1])
             t.ubos[t.uboCount++] = pl.ubos[u];
     t.ubosNamed = pl.ubosNamed;
+    t.memoryEntries = pl.memoryEntries;
+    t.strideTwin = strideReach;
+    t.heapSet = pl.heapSet;
+    t.heapMissing = pl.heapMissing;
+    t.spill[0] = pl.spill[0];
     t.writeBits = 1;
     t.colorFormats[0] = kReachFormat;
     t.restore = pl.restore;
@@ -126,6 +173,11 @@ void RenderEncoder::takeReachTwin()
 {
     if (!pipeline_ || pipeline_ == reachTwin_)
         return;
+    if (!rasterises(*pipeline_)) {  // its draws reach nothing, its vertex stores aside
+        reachTwin_ = pipeline_ = nullptr;
+        reachCover_ = false;
+        return;
+    }
     const char *why = "no reach state in the pack";
     reachCover_ = pipeline_->vertexStores;
     Pipeline *drawn = reachCover_ ? dev_->ownPipeline(kReachState) : pipeline_;
@@ -152,8 +204,11 @@ bool CommandBuffer::reach(const PassDesc &pass, uint32_t width, uint32_t height,
                           const char **why)
 {
     out = {};
-    if (!draws.any() && !runsWithoutDraws(pass))
+    const Rect area = reachArea(pass, width, height);
+    if ((!draws.any() && !runsWithoutDraws(pass)) || !area.x1 || !area.y1)
         return true;
+    width = area.x1;
+    height = area.y1;
     const bool every = reachesEveryTile(pass);
     const uint32_t step = draws.atFrameResolution() ? 1 : reachStep(width, height);
     const uint32_t tilesX = reachTiles(width), tilesY = reachTiles(height);
@@ -161,7 +216,8 @@ bool CommandBuffer::reach(const PassDesc &pass, uint32_t width, uint32_t height,
     Texture *mask = turnScratch(kReachFormat, tilesX, tilesY, kReachMaskTag);
     Texture *image = reduced ? turnScratch(kReachFormat, width / step, height / step, kReachImageTag) : mask;
     if (!mask || !image) {
-        *why = "no scratch for a pass's reach";
+        *why = "no memory for a pass's reach target";
+        out.memory = true;
         return false;
     }
     PassDesc q;

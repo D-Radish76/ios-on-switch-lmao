@@ -31,11 +31,39 @@ template <typename Texture> constexpr KernelTextureForm kernelTextureForm(const 
     return KernelTextureForm::InPlace;
 }
 
-// The MTLPixelFormat a kernel is compiled to read texture `x` of `format` in: a two-plane RGB10A8_2P_XR10 texture's stand-in
-// (kXrStandInFormat), whose header admission binds where the record views the slot so; else its own
-template <typename Texture> constexpr uint32_t kernelTextureFormat(const Texture &x, uint32_t format)
+// The MTLPixelFormat a kernel is compiled to read texture `x` of `format` in: a two-plane RGB10A8_2P_XR10 texture's
+// stand-in (kXrStandInFormat), whose header admission binds where the record views the slot so. An extended-range
+// texture the kernel does not store (`storable` false: made without MTLTextureUsageShaderWrite, or at a slot its
+// state's reflection writes nothing to) is read through its stand-in too: the GM20B samples the RGBA16Float image with
+// every filter, where the translator takes no mip filter, anisotropy or mixed min and mag filters over the codes. Else
+// its own.
+template <typename Texture> uint32_t kernelTextureFormat(const Texture &x, uint32_t format, bool storable)
 {
-    return x.xrPlanes && x.standIn ? kXrStandInFormat : format;
+    if (!x.standIn)
+        return format;
+    const XrForm form = xrForm(format);
+    // a two-plane texel buffer's own header reads its words alone (raw_xr.h texelBufferBytes)
+    const bool planesBuffer = x.type == kTexelBufferType && twoPlaneXr(format);
+    return x.xrPlanes || planesBuffer || (!storable && form != XrForm::None && form != XrForm::Planes) ? kXrStandInFormat
+                                                                                                      : format;
+}
+
+// The texture slots a kernel's reflection (raw_reflection_blob.h ReflectionView) says it may store: each slot of a
+// texture binding (an array: each element's) whose access is not read-only. A binding node's values: 0 its
+// MTLBindingType, 1 its MTLBindingAccess, 2 its index, 7 its array length.
+template <typename View> uint32_t kernelTexturesWritten(const View &v)
+{
+    constexpr uint64_t kTextureBinding = 2, kReadOnly = 0;  // MTLBindingTypeTexture, MTLBindingAccessReadOnly
+    uint32_t mask = 0;
+    for (uint32_t e = 0; e < v.stages[0].count; e++) {
+        const auto &n = v.nodes[v.edges[v.stages[0].first + e]];
+        if (n.values[0] != kTextureBinding || n.values[1] == kReadOnly)
+            continue;
+        const uint64_t count = n.values[7] ? n.values[7] : 1;
+        for (uint64_t slot = n.values[2]; slot < n.values[2] + count && slot < 32; slot++)
+            mask |= 1u << slot;
+    }
+    return mask;
 }
 
 inline const char *kernelTextureFormName(KernelTextureForm f)

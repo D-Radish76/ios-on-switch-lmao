@@ -214,7 +214,6 @@ bool RMCommandPlan::record(const Cmd &c, const uint64_t *extra, size_t extraWord
         RMPlanDispatch dispatch;
         dispatch.state = captureKernel();
         dispatch.surfaceSlots = c.a;
-        dispatch.windowSlots = c.b;
         dispatch.kernel = c.obj2;
         dispatch.pending = c.obj;
         dispatch.encoderBegin = encoderBegin_;
@@ -401,7 +400,6 @@ Cmd RMCommandPlan::legacy(size_t at) const
     case OpDispatch: {
         const auto &dispatch = dispatches_[operation.payload];
         c.a = dispatch.surfaceSlots;
-        c.b = dispatch.windowSlots;
         c.index = dispatch.perThread;
         c.obj2 = const_cast<void *>(dispatch.kernel);
         c.x = operation.payload;

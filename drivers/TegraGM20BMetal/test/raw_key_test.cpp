@@ -54,7 +54,7 @@ TEST(RawKey, EveryMipStateIsAnOwnState)
             "samples=1 topo=0 ds=0/0 c0=" + std::to_string(format) + ":15:0:1:0:0:1:0:0  | v mip_vert  | f " + fragment;
         EXPECT_EQ(raw::packKeyHash(key), hash(name)) << format;
     }
-    EXPECT_EQ(states, 21);
+    EXPECT_EQ(states, 27);
 }
 
 // Every format raw_mip.h draws a 3D texture's planes for finds its pack state under the key the probe gives it
@@ -72,7 +72,7 @@ TEST(RawKey, EveryVolumeMipStateIsAnOwnState)
         EXPECT_EQ(raw::packKeyHash(key), hash(name)) << format;
         EXPECT_NE(raw::mipState(format), nullptr) << format;
     }
-    EXPECT_EQ(states, 21);
+    EXPECT_EQ(states, 27);
 }
 
 // Every depth conversion raw_turn_copy.h names, a multisampled one's at each sample count, finds its pack state
@@ -108,7 +108,7 @@ TEST(RawKey, EveryResolveStateIsAnOwnState)
                                     ":15:0:1:0:0:1:0:0  | v resolve_vert  | f " + fragment;
             EXPECT_EQ(raw::packKeyHash(key), hash(name)) << format << " x" << samples;
         }
-    EXPECT_EQ(names.size(), 23u);
+    EXPECT_EQ(names.size(), 24u);
 }
 
 TEST(RawKey, FrameworkResolveSpecializationsHaveDistinctKeys)

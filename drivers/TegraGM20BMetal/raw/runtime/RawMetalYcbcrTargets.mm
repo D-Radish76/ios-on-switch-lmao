@@ -41,14 +41,15 @@ void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStor
         return x && (x->renderable || x->shadowTarget);
     };
     raw::Texture *standIn = new raw::Texture;
-    const bool chroma = !store.plane;  // a packed plane's words are its one plane
+    // a packed plane's words are its one plane; a texture over plane 1 stores its luma codes alone
+    const bool chroma = !store.plane && t.chroma;
     if (!rendered(t.luma) || (chroma && !rendered(t.chroma)) || !d.ycbcrStorePipeline(false, store) ||
         (chroma && !d.ycbcrStorePipeline(true, store)) ||
         !d.createMemoryless(t.width, t.height, raw::ycbcrStandInFormat(pixelFormat), *standIn)) {
         delete standIn;
         SWITCH_REFUSE_DETAIL("raw", "ycbcr.target", pixelFormat,
-                             "no stand-in or store state for a %ux%u format %u render target: its passes go to m2v "
-                             "(enc.planarrt)",
+                             "no stand-in or store state for a %ux%u format %u render target: its passes fail their "
+                             "command buffers (enc.planarrt)",
                              t.width, t.height, pixelFormat);
         return;
     }
@@ -56,22 +57,17 @@ void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStor
     t.ycbcrStore = new raw::YcbcrStoreShape(store);
 }
 
+// A target without a stand-in is one made without render-target usage (Metal's validation stops the pass) or one whose
+// stand-in or store states the device could not make; a loaded one draws the pack's own load and tile-masked store states
 const char *ycbcrTargetPassRefusal(const raw::Texture &t, MTLRenderPassColorAttachmentDescriptor *a)
 {
-    // under a P3 matrix an M4 Max loads a converted target as red Y, green Cb, blue Cr, an order no load state draws
-    if (t.planarStandIn && t.ycbcrStore && a.loadAction == MTLLoadActionLoad && raw::ycbcrLumaFirst(t.ycbcr)) {
-        static const char *const kP3Load = "a YCbCr target under a P3 matrix loaded: no load state reads it luma first";
-        SWITCH_REFUSE_DETAIL("raw", "pass.ycbcr_p3", a.loadAction, "%ux%u format %u: %s", t.width, t.height,
-                             uint32_t(a.texture.pixelFormat), kP3Load);
-        return kP3Load;
-    }
     const char *why = !t.planarStandIn || !t.ycbcrStore   ? "a YCbCr texture with no stand-in as a render target"
                       : a.loadAction != MTLLoadActionLoad ? nullptr
                       : loadable(t) ? nullptr
                                     : "a YCbCr target loaded: the pack has no load or tile-masked store state for it";
     if (why)
-        SWITCH_REFUSE_DETAIL("raw", "pass.ycbcr", a.loadAction, "%ux%u format %u: %s", t.width, t.height,
-                             uint32_t(a.texture.pixelFormat), why);
+        SWITCH_REFUSE_DETAIL("raw", "pass.ycbcr", a.loadAction, "%ux%u format %u: %s: the command buffer fails",
+                             t.width, t.height, uint32_t(a.texture.pixelFormat), why);
     return why;
 }
 
@@ -127,7 +123,8 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         os_log(rawLog(),
                "raw: YCbCr target stored on the GPU (first: %ux%u, chroma %ux%u, %u-bit %{public}s): pass into a "
                "memoryless stand-in, luma and chroma blocks drawn by the pack's store states",
-               t.width, t.height, t.chroma->width, t.chroma->height, t.ycbcrStore->max > 255 ? 10u : 8u,
+               t.width, t.height, t.chroma ? t.chroma->width : 0, t.chroma ? t.chroma->height : 0,
+               t.ycbcrStore->max > 255 ? 10u : 8u,
                t.ycbcrStore->srgb        ? "sRGB"
                : t.ycbcrStore->converted ? "converted"
                                          : "codes");
@@ -209,14 +206,12 @@ uint32_t standInTargetFormat(MTLRenderPipelineDescriptor *d)
 @implementation RMDevice (YcbcrTargets)
 
 // A state of an attachment the raw path renders through a stand-in, YCbCr (raw_ycbcr_store.h) or of a format the GM20B renders
-// none of (raw_format_standin.h). Decided before any compile: the raw path renders no target ycbcrTargetRefusal names: such
-// a state is m2v's alone, as it was, without the raw path's translation (3-13 s in cameracaptured, then refused). Any other's
-// state is made for its stand-in format, blended and channel-masked ones too: the stand-in holds the pass's texels, the
-// channels a mask keeps as loaded or cleared, and a format without alpha blends by a destination alpha of 1
-// (raw_standin_blend.h). An M4 Max blends YCbCr in halves of its own rounding, so a blended store is within one code of
-// Metal's (raw/test/ycbcrblendoracle.mm); a masked one is Metal's. The m2v twin is of that format too: m2v renders no pass
-// into such a target, so it only answers for the state. The archives a creation under FailOnBinaryArchiveMiss lists answer
-// for the app's state, not its stand-in.
+// none of (raw_format_standin.h), made for its stand-in format, blended and channel-masked ones too: the stand-in holds the
+// pass's texels, the channels a mask keeps as loaded or cleared, and a format without alpha blends by a destination alpha of
+// 1 (raw_standin_blend.h). An M4 Max blends YCbCr in halves of its own rounding, so a blended store is within one code of
+// Metal's (raw/test/ycbcrblendoracle.mm); a masked one is Metal's. A format ycbcrTargetRefusal names has no target texture
+// (planYcbcr refuses its render-target usage), so its state draws no pass, as Metal makes it all the same. The archives a
+// creation under FailOnBinaryArchiveMiss lists answer for the app's state, not its stand-in.
 - (id<MTLRenderPipelineState>)standInTargetState:(MTLRenderPipelineDescriptor *)d
                                          options:(MTLPipelineOption)o
                                       reflection:(MTLAutoreleasedRenderPipelineReflection *)reflection
@@ -239,19 +234,6 @@ uint32_t standInTargetFormat(MTLRenderPipelineDescriptor *d)
         }
         if (!raw::ycbcrRenderedFormat(format))
             continue;
-        if (const char *why = raw::ycbcrTargetRefusal(format)) {
-            SWITCH_REFUSE_DETAIL("raw", "state.ycbcr", format,
-                                 "a state of a format %u color attachment, left to m2v without a raw compile: %s",
-                                 format, why);
-            RMPipeline *p = [RMPipeline new];
-            p->_device = self;
-            p.label = d.label;
-            p->_twin = [RM_M2V(NeedYcbcrStateTwin) newRenderPipelineStateWithDescriptor:twinDescriptor(d)
-                                                                                options:o
-                                                                             reflection:reflection
-                                                                                  error:error];
-            return p->_twin ? (id<MTLRenderPipelineState>)p : nil;
-        }
         MTLRenderPipelineColorAttachmentDescriptor *standIn = made.colorAttachments[c];
         standIn.pixelFormat = MTLPixelFormat(raw::ycbcrStandInFormat(format));
         rmAlphaOneBlend(standIn);

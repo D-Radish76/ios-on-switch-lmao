@@ -128,6 +128,8 @@ inline void rawMacro(PushCounts &c, PushParse &p, uint32_t slot, uint32_t first)
 		break;
 	case SWITCH_GM20B_MACRO_AMPLIFY:
 	case SWITCH_GM20B_MACRO_AMPLIFY_INDEXED:
+	case SWITCH_GM20B_MACRO_FETCH_DRAW:
+	case SWITCH_GM20B_MACRO_FETCH_DRAW_INDEXED:
 		countDraw(c, p);
 		break;
 	case SWITCH_GM20B_MACRO_CLEAR_LAYERS:

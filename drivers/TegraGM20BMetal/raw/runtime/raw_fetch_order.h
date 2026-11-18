@@ -1,9 +1,18 @@
 // SPDX-License-Identifier: MIT
 // A draw that fetches a color it writes takes its state's storage form, inside the pixel interlock, whole. Only a state
 // m2v gives no storage form, or a draw whose attachments its storage form cannot view (raw_storage_form.h), fetches
-// through the texture unit: it keeps Metal's raster order by drawing one triangle at a time behind the fetch barrier
-// (TriangleRuns::sequential), which reads no vertex, and the shapes that cannot be so drawn are refused by fetchRefusal as
-// each draw is recorded, so only their encoder goes to m2v.
+// through the texture unit: it keeps Metal's raster order by drawing one primitive at a time behind the fetch barrier, on
+// the GPU's macro engine (RenderEncoder::fetchDraw), whatever its shape but patches. fetchRefusal names the shapes that
+// cost more than a barrier a triangle of a short list or strip, which rule fetch.twin (raw_twin_rule.h) keeps in the
+// storage form.
+//
+// Patches: the tessellator makes all of a patch's triangles inside its one BEGIN, so PIXEL_SHADER_BARRIER, a method
+// between BEGINs, cannot order them, though Metal does (each fragment reads every earlier fragment of its pixel, a
+// patch's triangles in the tessellator's order: an M4 Max, c38-audit/m2v-tess-fetch/tess_probe.mm). The pixel interlock
+// orders them only for a program that reads and writes the colour as storage inside its ordering ticket: the program
+// waits for and releases the ticket (SPH READS_INTERLOCK_TICKET), SET_PIXEL_SHADER_INTERLOCK_CONTROL only sets how
+// tickets are handed out, and the ROP's write lands after the program has released it. So a patch draw is the storage
+// form's at any count, and one of a form that fetches through the texture unit is refused (RefGeometry).
 #pragma once
 #include <atomic>
 #include <cstddef>
@@ -21,9 +30,12 @@ enum class FetchRefusal : uint8_t {
     Restart,      // an indexed strip whose faces decide its pixels, which past a restart only its indices say
     Long,         // more triangles than a draw is split into (kSequentialTriangles)
     PrimitiveId,  // its fragments read the primitive ID, which each triangle's draw would restart
-    Geometry,     // a shape TriangleRuns::sequential does not split
+    Geometry,     // patches, whose triangles the barrier form cannot split
     Count
 };
+
+// The raw path's patch primitive (raw_icb.h icb::kPatchPrimitive)
+constexpr uint32_t kFetchPatch = 5;
 
 constexpr size_t kFetchRefusals = size_t(FetchRefusal::Count);
 constexpr const char *kFetchRefusalNames[kFetchRefusals] = {"-",       "indirect", "topology",    "instances",
@@ -32,9 +44,9 @@ constexpr const char *kFetchRefusalNames[kFetchRefusals] = {"-",       "indirect
 // The triangles a draw is split into at most, one draw and one fetch barrier each
 constexpr uint32_t kSequentialTriangles = 96;
 
-// Fetching draws by how they kept raster order since the device opened, counted in debug builds only: drawn a triangle
-// at a time (no vertex read) and those triangles; fetched inside the pixel interlock, and of those the draws whose shader
-// computes the fixed-function blend there; refused, by reason, as recorded (the encoder to m2v) and at encoding
+// Fetching draws by how they kept raster order since the device opened, counted in debug builds only: drawn a primitive
+// at a time (the fetch macro) and those primitives; fetched inside the pixel interlock, and of those the draws whose
+// shader computes the fixed-function blend there; refused at encoding, by reason
 struct FetchCounts {
     std::atomic<uint64_t> sequential{0}, sequentialTriangles{0}, interlocked{0}, interlockedBlends{0};
     // drawn by their state's fetch-free form instead: through the ROP's blend (rung 2), its iterated blend (rung 3)
@@ -42,11 +54,11 @@ struct FetchCounts {
     // drawn by a storage form's barrier twin where a debug build's probe forces it (raw_fetch_rungs.h), and where rule
     // fetch.twin took it (raw_twin_rule.h)
     std::atomic<uint64_t> blendTwin{0}, twinRule{0};
-    std::atomic<uint64_t> refusedAtRecord[kFetchRefusals]{}, refusedAtEncode[kFetchRefusals]{};
+    std::atomic<uint64_t> refusedAtEncode[kFetchRefusals]{};
     std::atomic<uint64_t> storageFallback[kStorageFallbacks]{};
-    // the pipeline key hashes behind refusedAtRecord, refusedAtEncode and storageFallback; and those of every draw in the
-    // pixel interlock and of every generic merge state draw, the glass frame's slowest kinds
-    KeyTally recordKeys, encodeKeys, fallbackKeys, interlockKeys, genericKeys;
+    // the pipeline key hashes behind refusedAtEncode and storageFallback; and those of every draw in the pixel interlock
+    // and of every generic merge state draw, the glass frame's slowest kinds
+    KeyTally encodeKeys, fallbackKeys, interlockKeys, genericKeys;
 };
 
 struct FetchDraw {
@@ -66,13 +78,34 @@ constexpr bool fetchesOwnColor(uint8_t fetchBits, uint8_t writeBits, uint8_t sto
 
 constexpr bool singlePrimitive(const FetchDraw &d)
 {
+    if (!d.count || !d.instances)
+        return true;
+    if (d.primitive == kFetchPatch)
+        return false;
     const uint32_t vertices = d.primitive == 0 ? 1 : d.primitive <= 2 ? 2 : 3;
-    return !d.count || !d.instances || (d.count <= vertices && d.instances == 1);
+    return d.count <= vertices && d.instances == 1;
 }
 
 constexpr uint32_t triangles(const FetchDraw &d)
 {
     return d.primitive == 4 ? (d.count > 2 ? d.count - 2 : 0) : d.count / 3;
+}
+
+// The primitives `count` vertices or indices of MTLPrimitiveType `primitive` make, none restarted
+constexpr uint32_t primitives(uint32_t primitive, uint32_t count)
+{
+    switch (primitive) {
+    case 0:
+        return count;
+    case 1:
+        return count / 2;
+    case 2:
+        return count > 1 ? count - 1 : 0;
+    case 3:
+        return count / 3;
+    default:
+        return count > 2 ? count - 2 : 0;
+    }
 }
 
 // What keeps a list or strip of one instance from being drawn a triangle at a time
@@ -89,6 +122,8 @@ constexpr FetchRefusal fetchRefusal(bool fetchesOwn, bool primitiveId, const Fet
 {
     if (!fetchesOwn)
         return FetchRefusal::None;
+    if (d.primitive == kFetchPatch && (d.indirect || !singlePrimitive(d)))
+        return FetchRefusal::Geometry;
     if (d.indirect)
         return FetchRefusal::Indirect;
     if (singlePrimitive(d))
@@ -98,14 +133,6 @@ constexpr FetchRefusal fetchRefusal(bool fetchesOwn, bool primitiveId, const Fet
     if (d.instances != 1)
         return FetchRefusal::Instances;
     return sequentialRefusal(primitiveId, d);
-}
-
-// Whether a state's barrier form, whose fetch bits these are, draws `d`: one that fetches a colour it writes keeps
-// Metal's raster order only for the shapes fetchRefusal admits, drawn a triangle at a time
-constexpr bool barrierFormDraws(uint8_t fetchBits, uint8_t writeBits, uint8_t storageBits, bool primitiveId,
-                                const FetchDraw &d)
-{
-    return fetchRefusal(fetchesOwnColor(fetchBits, writeBits, storageBits), primitiveId, d) == FetchRefusal::None;
 }
 
 constexpr const char *fetchRefusalWhy(FetchRefusal r)

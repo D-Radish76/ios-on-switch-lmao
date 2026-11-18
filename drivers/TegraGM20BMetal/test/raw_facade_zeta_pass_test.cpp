@@ -202,19 +202,42 @@ TEST_F(FacadeZetaPass, MipAttachmentsBindTheirOwnZetaAddressAndExtent)
     }
 }
 
-TEST_F(FacadeZetaPass, CombinedAspectsRequireTheSameMipAndSlice)
+// One Depth32Float_Stencil8 texture as the depth at one level and slice and as the stencil at another: an M4 Max keeps
+// each aspect in its own part (raw/test/passformsoracle.mm zeta_two_levels, zeta_two_slices), so each is loaded from its
+// part and stored back into it
+TEST_F(FacadeZetaPass, OneTexturesAspectsAtTwoPartsEachMoveInAndOutOfTheirOwnPart)
 {
     auto texture = zetaChain(MTLPixelFormatDepth32Float_Stencil8);
     ASSERT_NE(texture, nil);
-    for (const bool mismatchLevel : {false, true}) {
-        auto p = pass(texture, texture, MTLLoadActionClear, MTLStoreActionStore);
+    const auto &chain = *((RMTexture *)texture)->_raw.chain;
+    const auto address = [&](uint32_t level, uint32_t slice) {
+        return chain.va + chain.layout.level[level].offset + uint64_t(slice) * chain.layout.arrayStride;
+    };
+    for (const bool otherLevel : {false, true}) {
+        SCOPED_TRACE(otherLevel ? "levels 1 and 2" : "slices 1 and 2");
+        auto p = pass(texture, texture, MTLLoadActionLoad, MTLStoreActionStore);
         p.depthAttachment.level = 1;
-        p.stencilAttachment.level = mismatchLevel ? 2 : 1;
         p.depthAttachment.slice = 1;
-        p.stencilAttachment.slice = mismatchLevel ? 1 : 2;
-        auto cb = [[gDevice newCommandQueue] commandBuffer];
-        [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
-        EXPECT_NE(((RMCommandBuffer *)cb)->_preds & 1ull << PredPassDepthStencil, 0u);
+        p.stencilAttachment.level = otherLevel ? 2 : 1;
+        p.stencilAttachment.slice = otherLevel ? 1 : 2;
+        const size_t first = kernel_model::model.jobs.size();
+        const auto [taken, path] = run(p, nil);
+        EXPECT_TRUE(taken);
+        EXPECT_EQ(path, "raw");
+        std::vector<std::pair<uint64_t, uint64_t>> copies;
+        methods(first, &copies);
+        for (const uint64_t part : {address(1, 1), address(otherLevel ? 2 : 1, otherLevel ? 1 : 2)}) {
+            EXPECT_TRUE(std::any_of(copies.begin(), copies.end(),
+                                    [&](const auto &c) {
+                                        return c.first == part;
+                                    }))
+                << "loaded from " << std::hex << part;
+            EXPECT_TRUE(std::any_of(copies.begin(), copies.end(),
+                                    [&](const auto &c) {
+                                        return c.second == part;
+                                    }))
+                << "stored into " << std::hex << part;
+        }
     }
 }
 
@@ -307,7 +330,8 @@ TEST_F(FacadeZetaPass, SeparateMipAttachmentsCopyTheirOwnLevelsAndSlices)
     }
 }
 
-TEST_F(FacadeZetaPass, MipAdmissionKeepsTheSeparateAspectAndChainBounds)
+// A pair at levels of their own is the raw path's; a level past either chain, or of a texture of no chain, is Metal's error
+TEST_F(FacadeZetaPass, MipAdmissionTakesAspectsAtTheirOwnLevelsAndKeepsTheChainBounds)
 {
     auto depth = zetaChain(MTLPixelFormatDepth32Float), stencil = zetaChain(MTLPixelFormatStencil8);
     ASSERT_NE(depth, nil);
@@ -320,7 +344,9 @@ TEST_F(FacadeZetaPass, MipAdmissionKeepsTheSeparateAspectAndChainBounds)
     auto separate = pass(depth, stencil, MTLLoadActionClear, MTLStoreActionStore);
     separate.depthAttachment.level = 1;
     separate.stencilAttachment.level = 2;
-    refused(separate);
+    const auto [taken, path] = run(separate, nil);
+    EXPECT_TRUE(taken);
+    EXPECT_EQ(path, "raw");
     separate.stencilAttachment.level = 4;
     refused(separate);
     auto past = pass(depth, nil, MTLLoadActionClear, MTLStoreActionStore);
@@ -458,6 +484,38 @@ TEST_F(FacadeZetaPass, AStoreTheEncoderDecidesIsTheRawPaths)
         EXPECT_TRUE(taken) << decided;
         EXPECT_EQ(path, "raw") << decided;
     }
+}
+
+// The sample-position agnostic depth store the encoder decides is taken as the plain store, on the raw path
+TEST_F(FacadeZetaPass, ASamplePositionAgnosticStoreTheEncoderDecidesIsTheStore)
+{
+    id<MTLTexture> depth = zeta(MTLPixelFormatDepth32Float);
+    ASSERT_TRUE(depth != nil);
+    __block MTLStoreAction kept = MTLStoreActionUnknown;
+    const auto [taken, path] =
+        run(pass(depth, nil, MTLLoadActionClear, MTLStoreActionUnknown), ^(id<MTLRenderCommandEncoder> e) {
+            [e setDepthStoreAction:MTLStoreActionCustomSampleDepthStore];
+            RMRenderEncoder *r = (RMRenderEncoder *)e;
+            kept = r->_cb->_passes[r->_passAt].zeta[0].store;
+        });
+    EXPECT_TRUE(taken);
+    EXPECT_EQ(path, "raw");
+    EXPECT_EQ(kept, MTLStoreActionStore);
+}
+
+TEST_F(FacadeZetaPass, APassBegunWithASamplePositionAgnosticStoreStoresItsDepth)
+{
+    id<MTLTexture> depth = zeta(MTLPixelFormatDepth32Float);
+    ASSERT_TRUE(depth != nil);
+    __block MTLStoreAction kept = MTLStoreActionUnknown;
+    MTLRenderPassDescriptor *agnostic = pass(depth, nil, MTLLoadActionClear, MTLStoreActionCustomSampleDepthStore);
+    const auto [taken, path] = run(agnostic, ^(id<MTLRenderCommandEncoder> e) {
+        RMRenderEncoder *r = (RMRenderEncoder *)e;
+        kept = r->_cb->_passes[r->_passAt].zeta[0].store;
+    });
+    EXPECT_TRUE(taken);
+    EXPECT_EQ(path, "raw");
+    EXPECT_EQ(kept, MTLStoreActionStore);
 }
 
 // A resolve the encoder decides where the pass names no resolve texture, Metal's validation error: nothing to resolve

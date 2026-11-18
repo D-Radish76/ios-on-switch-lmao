@@ -13,11 +13,6 @@
 // when made, the resource's details). Hot path: an OR into the mask and a relaxed load; strings only on a predicate's first hit.
 enum RMPred : uint8_t {
     PredNone = 0,
-    // textures the raw path does not keep, decided when made (a bind hits the texture's own predicate)
-    PredTexShape,  // rawShape: a = failing term (1 type, 2 levels, 3 samples, 4 array/depth, 5 rotation, 6 format), b = format
-    PredTexPlanar,    // the 4:4:4 two-plane texture refused
-    PredTexBufOther,  // memoryless, past the buffer, header slot
-    PredTexView,  // a view of a texture the raw path does not keep, or of another texel size: a = format, b = parent raw
     PredTexForeign,  // not an RMTexture (m2v's own: over an m2v buffer, or a creation selector the facade does not answer)
     // passes
     PredPassAttFormat,  // a color attachment not kept or not renderable: a = format, b = attachment index | kind << 8
@@ -30,28 +25,19 @@ enum RMPred : uint8_t {
     PredCallVisibility,
     PredCallBufForeign,      // a = stage << 8 | index (0xffff: an index buffer)
     PredCallSamplerForeign,  // a sampler the raw path does not express (its reason logged when it was made)
-    PredCallBlitOptions,
     PredCallBufCopyRange,
-    PredBlitTexCopy,
-    PredBlitBufToTex,
-    PredBlitTexToBuf,
-    PredBlitWholeTexCopy,
-    PredBlitTexFill,       // a fillTexture: the raw path does not draw: a = pixel format, b = level or other format
     PredCompute,           // a kernel's buffer, texture or sampler not made by this device
     PredComputeKernel,     // no pack kernel at the dispatch's shape, memory, textures and samplers
     PredComputeImage,      // a texture sampled through an image of its own: a = slot
     PredComputePredicate,  // predication raw cannot run (a misused record, a word outside a raw buffer): the command buffer fails; a = kind or offset
-    PredMipmapsFormat,  // a mipmapped texture's generateMipmaps in a format neither the 2D engine nor a mip state filters: a = format
     PredEvent,
     // found while encoding (the raw encode ran up to here and was thrown away)
-    PredEncPlanarCopy,
     PredEncPlanarClamp,
     PredEncPlanarRT,
     PredEncPassRender,
     PredEncKernel,
     PredEncIndexedRange,  // a = offset, b = index size
     PredEncColorFormats,  // a = attachment, b = pass format, c in the line: state format
-    PredEncUboOffset,     // a = stage << 8 | slot, b = va & 255
     PredEncNoTic,
     PredEncDepthStencil,  // a = the state's depth format, b = the pass's | a state that tests without the attachment << 32
     PredEncSamples,       // a = the state's samples, b = the pass's | the state's shading passes << 32
@@ -65,10 +51,6 @@ enum RMPred : uint8_t {
 
 static_assert(PredCount <= 64, "one mask word");
 static constexpr const char *kPredNames[] = {"-",
-                                             "tex.shape",
-                                             "tex.planar",
-                                             "tex.buf.other",
-                                             "tex.view",
                                              "tex.foreign",
                                              "pass.fmt",
                                              "pass.level",
@@ -79,27 +61,18 @@ static constexpr const char *kPredNames[] = {"-",
                                              "call.vis",
                                              "call.buf",
                                              "call.sampler",
-                                             "call.blitopt",
                                              "call.bufcopy",
-                                             "blit.tex",
-                                             "blit.b2t",
-                                             "blit.t2b",
-                                             "blit.whole",
-                                             "blit.fill",
                                              "compute",
                                              "compute.nokernel",
                                              "compute.image",
                                              "compute.predicate",
-                                             "mipmaps.fmt",
                                              "event",
-                                             "enc.planarcopy",
                                              "enc.planarclamp",
                                              "enc.planarrt",
                                              "enc.pass",
                                              "enc.kernel",
                                              "enc.idxrange",
                                              "enc.colorfmt",
-                                             "enc.ubo",
                                              "enc.notic",
                                              "enc.ds",
                                              "enc.samples",
@@ -133,14 +106,13 @@ enum RMReason : uint8_t {
     WhyPass,
     WhyCall,
     WhyCompute,
-    WhyMipmaps,
     WhyEvent,
     WhyEncode,
     WhyCount
 };
 
-static const char *const kReasonNames[WhyCount] = {"raw",     "state",   "texture", "pass",  "call",
-                                                   "compute", "mipmaps", "event",   "encode"};
+static const char *const kReasonNames[WhyCount] = {"raw",     "state",   "texture", "pass",
+                                                   "call",    "compute", "event",   "encode"};
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
 extern std::atomic<uint64_t> gPredCbs[PredCount], gPredOnly[PredCount];

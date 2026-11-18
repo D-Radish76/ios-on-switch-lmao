@@ -362,9 +362,11 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "125 | v ycbcr_vert | f ycbcr_load_converted_frag",
                             "125 | v ycbcr_vert | f ycbcr_load_srgb_frag",
                             "125 | v ycbcr_vert | f ycbcr_load_codes_frag",
+                            "125 | v ycbcr_vert | f ycbcr_load_luma_first_frag",
                             "125 | v ycbcr_vert | f ycbcr_load_packed_converted_frag",
                             "125 | v ycbcr_vert | f ycbcr_load_packed_srgb_frag",
                             "125 | v ycbcr_vert | f ycbcr_load_packed_codes10_frag",
+                            "125 | v ycbcr_vert | f ycbcr_load_packed_luma_first_frag",
                             "10 | v ycbcr_store_vert | f ycbcr_store_luma8_frag",
                             "20 | v ycbcr_store_vert | f ycbcr_store_luma16_frag",
                             "30 | v ycbcr_store_vert | f ycbcr_store_chroma8_frag",
@@ -405,8 +407,11 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "115 | v xr_vert | f xr_bgr10_frag",
                             "115 | v xr_vert | f xr_bgr10_srgb_frag",
                             "115 | v xr_vert | f xr_bgra10_frag",
+                            "115 | v xr_vert | f xr_bgra10_srgb_frag",
                             "115 | v xr_vert | f xr_planes_frag",
+                            "115 | v xr_vert | f xr_planes_srgb_frag",
                             "115 | v xr_vert | f xr_two_planes_frag",
+                            "115 | v xr_vert | f xr_two_planes_srgb_frag",
                             "103 | v xr_vert | f xr_planes_merge_frag",
                             "115 | v xr_vert | f xr_tile_bgr10_frag",
                             "115 | v xr_vert | f xr_tile_bgra10_frag",
@@ -434,19 +439,25 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "55 | v resolve_vert | f resolve_r32f_frag",
                             "105 | v resolve_vert | f resolve_rg32f_frag",
                             "125 | v resolve_vert | f resolve_rgba32f_frag",
+                            "113 | v resolve_vert | f resolve_bgra10_xr_frag",
                             "40 | v resolve_vert | f resolve_b5g6r5_frag",
                             "43 | v resolve_vert | f resolve_bgr5a1_frag",
                             "1 | v mip_vert | f mip_a8_frag",
                             "10 | v mip_vert | f mip_r8_frag",
+                            "12 | v mip_vert | f mip_r8snorm_frag",
                             "20 | v mip_vert | f mip_r16_frag",
+                            "22 | v mip_vert | f mip_r16snorm_frag",
                             "25 | v mip_vert | f mip_r16f_frag",
                             "30 | v mip_vert | f mip_rg8_frag",
+                            "32 | v mip_vert | f mip_rg8snorm_frag",
                             "40 | v mip_vert | f mip_b5g6r5_frag",
                             "43 | v mip_vert | f mip_bgr5a1_frag",
                             "55 | v mip_vert | f mip_r32f_frag",
                             "60 | v mip_vert | f mip_rg16_frag",
+                            "62 | v mip_vert | f mip_rg16snorm_frag",
                             "65 | v mip_vert | f mip_rg16f_frag",
                             "70 | v mip_vert | f mip_rgba8_frag",
+                            "72 | v mip_vert | f mip_rgba8snorm_frag",
                             "71 | v mip_vert | f mip_rgba8_srgb_frag",
                             "80 | v mip_vert | f mip_bgra8_frag",
                             "81 | v mip_vert | f mip_bgra8_srgb_frag",
@@ -455,19 +466,25 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "94 | v mip_vert | f mip_bgr10a2_frag",
                             "105 | v mip_vert | f mip_rg32f_frag",
                             "110 | v mip_vert | f mip_rgba16_frag",
+                            "112 | v mip_vert | f mip_rgba16snorm_frag",
                             "115 | v mip_vert | f mip_rgba16f_frag",
                             "125 | v mip_vert | f mip_rgba32f_frag",
                             "1 | v mip_vert | f mip_3d_a8_frag",
                             "10 | v mip_vert | f mip_3d_r8_frag",
+                            "12 | v mip_vert | f mip_3d_r8snorm_frag",
                             "20 | v mip_vert | f mip_3d_r16_frag",
+                            "22 | v mip_vert | f mip_3d_r16snorm_frag",
                             "25 | v mip_vert | f mip_3d_r16f_frag",
                             "30 | v mip_vert | f mip_3d_rg8_frag",
+                            "32 | v mip_vert | f mip_3d_rg8snorm_frag",
                             "40 | v mip_vert | f mip_3d_b5g6r5_frag",
                             "43 | v mip_vert | f mip_3d_bgr5a1_frag",
                             "55 | v mip_vert | f mip_3d_r32f_frag",
                             "60 | v mip_vert | f mip_3d_rg16_frag",
+                            "62 | v mip_vert | f mip_3d_rg16snorm_frag",
                             "65 | v mip_vert | f mip_3d_rg16f_frag",
                             "70 | v mip_vert | f mip_3d_rgba8_frag",
+                            "72 | v mip_vert | f mip_3d_rgba8snorm_frag",
                             "71 | v mip_vert | f mip_3d_rgba8_srgb_frag",
                             "80 | v mip_vert | f mip_3d_bgra8_frag",
                             "81 | v mip_vert | f mip_3d_bgra8_srgb_frag",
@@ -476,6 +493,7 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "94 | v mip_vert | f mip_3d_bgr10a2_frag",
                             "105 | v mip_vert | f mip_3d_rg32f_frag",
                             "110 | v mip_vert | f mip_3d_rgba16_frag",
+                            "112 | v mip_vert | f mip_3d_rgba16snorm_frag",
                             "115 | v mip_vert | f mip_3d_rgba16f_frag",
                             "125 | v mip_vert | f mip_3d_rgba32f_frag"}) {
         std::string o = out;
@@ -488,9 +506,18 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
     for (const char *out :
          {"125 | v fmt_vert | f fmt_load_frag", "125 | v fmt_vert | f fmt_load_rgb9e5_frag",
           "23 | v fmt_vert | f fmt_store_abgr4_frag", "23 | v fmt_vert | f fmt_store_a1bgr5_frag",
+          "23 | v fmt_vert | f fmt_store_bgra4_frag",
           "53 | v fmt_vert | f fmt_store_rgb9e5_frag", "53 | v fmt_vert | f fmt_store_bgr10_xr_srgb_frag",
+          "113 | v fmt_vert | f fmt_store_bgra10_xr_srgb_frag",
+          "103 | v fmt_vert | f fmt_store_rgb10a8_xr_srgb_frag",
           "23 | v fmt_vert | f fmt_mip_abgr4_frag", "23 | v fmt_vert | f fmt_mip_a1bgr5_frag",
-          "53 | v fmt_vert | f fmt_mip_rgb9e5_frag", "13 | v fmt_vert | f fmt_mip_srgb8_frag"}) {
+          "53 | v fmt_vert | f fmt_mip_rgb9e5_frag", "13 | v fmt_vert | f fmt_mip_srgb8_frag",
+          "53 | v fmt_vert | f fmt_mip_bgr10_xr_frag", "53 | v fmt_vert | f fmt_mip_bgr10_xr_srgb_frag",
+          "113 | v fmt_vert | f fmt_mip_bgra10_xr_frag", "113 | v fmt_vert | f fmt_mip_bgra10_xr_srgb_frag",
+          "53 | v fmt_vert | f fmt_mip_3d_bgr10_xr_frag", "53 | v fmt_vert | f fmt_mip_3d_bgr10_xr_srgb_frag",
+          "113 | v fmt_vert | f fmt_mip_3d_bgra10_xr_frag", "113 | v fmt_vert | f fmt_mip_3d_bgra10_xr_srgb_frag",
+          "13 | v fmt_vert | f fmt_mip_3d_srgb8_frag", "23 | v fmt_vert | f fmt_mip_3d_abgr4_frag",
+          "23 | v fmt_vert | f fmt_mip_3d_a1bgr5_frag", "53 | v fmt_vert | f fmt_mip_3d_rgb9e5_frag"}) {
         std::string o = out;
         const size_t bar = o.find(' ');
         lines.push_back("@O R ok=1 label=raw.own samples=1 topo=0 ds=0/0 c0=" + o.substr(0, bar) + ":15:0:1:0:0:1:0:0" +
@@ -515,11 +542,29 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
              {"250/0 | v turn_vert | f turn_depth16_ms", "260/260 | v turn_vert | f turn_depth32fs8_ms"})
             lines.push_back(std::string("@O R ok=1 label=raw.own samples=") + samples + " topo=0 ds=" + depth +
                             samples + "_frag");
+    // a multisampled format stand-in's per-sample load and store states (runtime/raw_format_standin.h bySamples), drawn at
+    // the target's sample count; RGB9E5Float's resolve of one (runtime/raw_attachment_target.h formatResolveState)
+    for (const char *samples : {"2", "4"})
+        for (const char *out :
+             {"125 | v fmt_vert | f fmt_load_ms", "125 | v fmt_vert | f fmt_load_rgb9e5_ms",
+              "115 | v xr_vert | f xr_bgr10_srgb_ms", "115 | v xr_vert | f xr_bgra10_srgb_ms",
+              "23 | v fmt_vert | f fmt_store_abgr4_ms", "23 | v fmt_vert | f fmt_store_bgra4_ms",
+              "23 | v fmt_vert | f fmt_store_a1bgr5_ms", "53 | v fmt_vert | f fmt_store_rgb9e5_ms",
+              "53 | v fmt_vert | f fmt_store_bgr10_xr_srgb_ms", "113 | v fmt_vert | f fmt_store_bgra10_xr_srgb_ms"}) {
+            const std::string o = out;
+            const size_t bar = o.find(' ');
+            lines.push_back(std::string("@O R ok=1 label=raw.own samples=") + samples + " topo=0 ds=0/0 c0=" +
+                            o.substr(0, bar) + ":15:0:1:0:0:1:0:0" + o.substr(bar) + samples + "_frag");
+        }
+    lines.push_back("@O R ok=1 label=raw.own samples=1 topo=0 ds=0/0 c0=125:15:0:1:0:0:1:0:0 | v fmt_vert | f "
+                    "fmt_resolve_rgb9e5_frag");
     // and the one-draw stencil route's (runtime/raw_zeta_colour.h): a multisampled Depth32Float_Stencil8 source's through
     // write mask G alone (MTLColorWriteMaskGreen), its target's depth word kept
     for (const char *out : {"c0=115:15:0:1:0:0:1:0:0 | v two_plane_cover | f two_plane_load",
                             "c0=10:15:0:1:0:0:1:0:0 c1=30:15:0:1:0:0:1:0:0 | v two_plane_cover | f two_plane_store",
                             "c0=53:15:0:1:0:0:1:0:0 c1=13:15:0:1:0:0:1:0:0 | v xr_vert | f xr_planes_split_frag",
+                            "c0=53:15:0:1:0:0:1:0:0 c1=13:15:0:1:0:0:1:0:0 | v fmt_vert | f "
+                            "fmt_store_rgb10a8_xr_srgb_planes_frag",
                             "c0=13:15:0:1:0:0:1:0:0 | v stencil_bits_vert | f stencil_bits_s8_colour_frag",
                             "c0=103:15:0:1:0:0:1:0:0 | v stencil_bits_vert | f stencil_bits_d32fs8_colour_frag",
                             "c0=13:15:0:1:0:0:1:0:0 | v stencil_bits_vert | f stencil_bits_ms_s8_colour_frag",

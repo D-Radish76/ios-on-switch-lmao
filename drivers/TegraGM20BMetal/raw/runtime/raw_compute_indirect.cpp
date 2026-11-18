@@ -88,10 +88,8 @@ bool ComputeEncoder::dispatchIndirect(const Buffer *arguments, uint64_t offset, 
         *why = "an indirect dispatch's threadgroup size m2v's dispatch region cannot name";
         return false;
     }
-    if (state_->heapMissing) {
-        *why = "no memory for the tables a kernel reads argument buffers through";
+    if (!argumentTables(why))
         return false;
-    }
     if (!prepareDescriptors(why))
         return false;
     cb_.bufferWrites_.anything();

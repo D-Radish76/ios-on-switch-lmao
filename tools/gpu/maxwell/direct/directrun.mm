@@ -14,6 +14,7 @@
 #include "raw/runtime/RawDirect.h"
 #include "raw/runtime/RawOffline.h"
 #include "raw/runtime/RawPipelineKey.h"
+#include "raw/runtime/raw_compute_key.h"
 #include "raw/runtime/raw_counter_kernel.h"
 #include "raw/runtime/raw_emit.h"
 #include "raw/runtime/raw_fragment_tests.h"
@@ -135,6 +136,15 @@ NSDictionary *stateJson(const raw::RuntimeRecord &r)
     return out;
 }
 
+// A kernel record's sampler headers, word 0 first, as its sampler entries number them (CONSTEXPR | n)
+NSArray *samplerHeaders(const raw::ComputeRecord &r)
+{
+    NSMutableArray *out = [NSMutableArray array];
+    for (const auto &h : r.samplers)
+        [out addObject:words(h.data(), uint32_t(h.size()))];
+    return out;
+}
+
 NSDictionary *kernelJson(const raw::ComputeRecord &r)
 {
     const raw::PackKernel &k = r.kernel;
@@ -156,6 +166,8 @@ NSDictionary *kernelJson(const raw::ComputeRecord &r)
         @"stage_in_region_word" : @(k.stageInRegionWord),
         @"stage_in_stride" : strides,
         @"qmd" : words(k.qmd, 64),
+        @"samplers" : samplerHeaders(r),
+        @"maps_stated" : @(k.mapsStated),
     };
 }
 
@@ -222,20 +234,36 @@ public:
         refused_[name] = @(why.c_str());
     }
 
+    // `textures` and `samplers`: what the dispatch binds, which its key names (raw_compute_key.h ":am" with a map)
     void kernel(NSString *name, NSString *function, uint32_t threads, void (^setUp)(MTLComputePipelineDescriptor *),
-                const std::map<uint32_t, uint32_t> &memory = {})
+                const std::map<uint32_t, uint32_t> &memory = {}, const std::vector<raw::BoundTexture> &textures = {},
+                const std::vector<raw::BoundSampler> &samplers = {})
     {
         MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
         d.computeFunction = [library_ newFunctionWithName:function];
         setUp(d);
         const uint32_t shape[3] = {threads, 1, 1};
         raw::KernelDispatch dispatch(shape, memory);
+        for (const raw::BoundTexture &t : textures) {
+            MTLTextureDescriptor *td = [MTLTextureDescriptor new];
+            td.pixelFormat = MTLPixelFormat(t.pixelFormat);
+            td.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+            dispatch.texture(t.slot, td);
+        }
+        for (const raw::BoundSampler &s : samplers) {
+            MTLSamplerDescriptor *sd = [MTLSamplerDescriptor new];
+            sd.minFilter = MTLSamplerMinMagFilter(s.minFilter);
+            sd.magFilter = MTLSamplerMinMagFilter(s.magFilter);
+            sd.sAddressMode = sd.tAddressMode = sd.rAddressMode = MTLSamplerAddressMode(s.sAddress);
+            dispatch.sampler(s.slot, sd);
+        }
+        const std::string key = std::string("kernel ") + function.UTF8String + " | tex=" +
+                                raw::computeTextures(textures.data(), textures.size()) + " | smp=";
         raw::ComputeRecord record;
         std::string why;
         if (!d.computeFunction)
             why = "no function";
-        else if (direct_.kernel(d, dispatch.dispatch(), std::string("kernel ") + function.UTF8String, record, why) ==
-                 raw::CompileOutcome::Made) {
+        else if (direct_.kernel(d, dispatch.dispatch(), key, record, why) == raw::CompileOutcome::Made) {
             kernels_[name] = kernelJson(record);
             return;
         }
@@ -374,6 +402,12 @@ void make(Runner &run)
         layout(v, 0, MTLVertexFormatFloat2, 1, MTLBufferLayoutStrideDynamic);
         d.vertexDescriptor = v;
     });
+    run.state(@"five_dynamic", @"five_dynamic_vertex", @"wide_fragment", ^(MTLRenderPipelineDescriptor *d) {
+        MTLVertexDescriptor *v = [MTLVertexDescriptor vertexDescriptor];
+        for (uint32_t k = 0; k < 5; k++)
+            layout(v, k, MTLVertexFormatFloat2, k + 1, MTLBufferLayoutStrideDynamic);
+        d.vertexDescriptor = v;
+    });
     run.state(@"shadow_stencil", @"shadow_vertex", @"shadow_fragment", ^(MTLRenderPipelineDescriptor *d) {
         d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
         d.stencilAttachmentPixelFormat = MTLPixelFormatDepth32Float_Stencil8;
@@ -428,6 +462,24 @@ void make(Runner &run)
     run.kernel(@"counter_resolve", @(raw::counters::kResolveFunction), raw::counters::kResolveThreads,
                ^(MTLComputePipelineDescriptor *){
                });
+    // a texture raw samples through an image it converts (NativeMetalKernelTextures.rs), its sampler repeating and
+    // nearest (the translator emulates a converted texture's linear filter with fetches of its own)
+    constexpr uint64_t kRepeat = MTLSamplerAddressModeRepeat;
+    const std::vector<raw::BoundSampler> repeat = {{0, 0, 0, 0, kRepeat, kRepeat, kRepeat, 1, 0, 0, 0, 1000, true}};
+    const auto convertedAt = [&](NSString *name, NSString *function, uint64_t format, uint8_t map) {
+        raw::BoundTexture t = {0, format, MTLTextureType2D, 1, 1, {2, 3, 4, 5}};
+        t.addressMap = map;
+        run.kernel(
+            name, function, 32,
+            ^(MTLComputePipelineDescriptor *){
+            },
+            {}, {t}, repeat);
+    };
+    convertedAt(@"converted_r10_packed", @"converted_sample_kernel", 588, 0);
+    convertedAt(@"converted_rg10_packed", @"converted_sample_kernel", 589, 0);
+    convertedAt(@"converted_420", @"converted_sample_kernel", 500, 1);
+    convertedAt(@"converted_420_p3", @"converted_sample_kernel", 500, 3);
+    convertedAt(@"converted_r10_packed_write", @"converted_write_kernel", 588, 0);
 }
 
 }  // namespace

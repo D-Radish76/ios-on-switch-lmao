@@ -162,7 +162,7 @@ size_t raw_metal_rates(char *out, size_t size)
         "raw %.0fs c=%llu(%.1f/s) m2v=%llu%s%s%s sw=%llu cpu=%llu acq=%llu enc=%.0fus/c d=%.1f p=%.1f b=%.2f "
         "defer=%llu abort=%llu rw=%llu pool=%lluMB/%llu grow=%llu imp=%llu/%lluMB clean=%.1fKB/c ce=%llu/%.0fKB "
         "ev=%llu/%llu sig=%llu/%llu/%llu ws=%llu/%lluus wc=%llu/%lluus set_refusals=%u set_rebuilds=%u "
-        "kept=%zu/%lluKB passes=%zu/%zu%s",
+        "kept=%zu/%lluKB passes=%zu/%zu hdr=%u%s",
         secs, (unsigned long long)c, c / secs, (unsigned long long)f, *reasons ? "(" : "", reasons, *reasons ? ")" : "",
         (unsigned long long)(s.switches.load() - gRates.switches),
         (unsigned long long)(s.cpuOrdered.load() - gRates.cpuOrdered),
@@ -183,7 +183,8 @@ size_t raw_metal_rates(char *out, size_t size)
         (unsigned long long)(s.scheduledWaitUs.load() - gRates.scheduledWaitUs),
         (unsigned long long)(s.completedWaits.load() - gRates.completedWaits),
         (unsigned long long)(s.completedWaitUs.load() - gRates.completedWaitUs), sets.refusals, sets.rebuilds,
-        kept.keptImports, (unsigned long long)(kept.keptImportBytes >> 10), passes.passes, passes.textures, diag);
+        kept.keptImports, (unsigned long long)(kept.keptImportBytes >> 10), passes.passes, passes.textures,
+        gRM->raw->headersLeft(), diag);
     gRates.raw = raw;
     gRates.m2v = m2v;
     gRates.encodeUs = s.encodeUs.load();
@@ -226,16 +227,14 @@ size_t raw_metal_fetch_rates(char *out, size_t size)
     if (!gRM || !size)
         return 0;
     const raw::FetchCounts &k = gRM->raw->stats.fetch;
-    constexpr size_t kTotals = 6, kAll = kTotals + 2 * raw::kFetchRefusals + raw::kStorageFallbacks;
+    constexpr size_t kTotals = 6, kAll = kTotals + raw::kFetchRefusals + raw::kStorageFallbacks;
     static uint64_t last[kAll];
     uint64_t now[kAll] = {k.sequential.load(),        k.sequentialTriangles.load(), k.interlocked.load(),
                           k.interlockedBlends.load(), k.fetchFree[0].load(),        k.fetchFree[1].load()};
-    for (size_t r = 0; r < raw::kFetchRefusals; ++r) {
-        now[kTotals + r] = k.refusedAtRecord[r].load();
-        now[kTotals + raw::kFetchRefusals + r] = k.refusedAtEncode[r].load();
-    }
+    for (size_t r = 0; r < raw::kFetchRefusals; ++r)
+        now[kTotals + r] = k.refusedAtEncode[r].load();
     for (size_t r = 0; r < raw::kStorageFallbacks; ++r)
-        now[kTotals + 2 * raw::kFetchRefusals + r] = k.storageFallback[r].load();
+        now[kTotals + raw::kFetchRefusals + r] = k.storageFallback[r].load();
     uint64_t d[kAll];
     bool any = false;
     for (size_t i = 0; i < kAll; ++i) {
@@ -254,15 +253,14 @@ size_t raw_metal_fetch_rates(char *out, size_t size)
         if (!used)
             snprintf(at, room, "-");
     };
-    char record[96], encode[112], storage[112];
-    reasons(d + kTotals, raw::kFetchRefusals, raw::kFetchRefusalNames, record, sizeof record);
-    reasons(d + kTotals + raw::kFetchRefusals, raw::kFetchRefusals, raw::kFetchRefusalNames, encode, sizeof encode);
-    reasons(d + kTotals + 2 * raw::kFetchRefusals, raw::kStorageFallbacks, raw::kStorageFallbackNames, storage,
+    char encode[112], storage[112];
+    reasons(d + kTotals, raw::kFetchRefusals, raw::kFetchRefusalNames, encode, sizeof encode);
+    reasons(d + kTotals + raw::kFetchRefusals, raw::kStorageFallbacks, raw::kStorageFallbackNames, storage,
             sizeof storage);
     const int n =
-        snprintf(out, size, "fetch seq=%llu/%llut ilk=%llu/%llub r2=%llu r3=%llu rec=%s enc=%s sto=%s",
+        snprintf(out, size, "fetch seq=%llu/%llut ilk=%llu/%llub r2=%llu r3=%llu enc=%s sto=%s",
                  (unsigned long long)d[0], (unsigned long long)d[1], (unsigned long long)d[2], (unsigned long long)d[3],
-                 (unsigned long long)d[4], (unsigned long long)d[5], record, encode, storage);
+                 (unsigned long long)d[4], (unsigned long long)d[5], encode, storage);
     return n > 0 ? std::min(size_t(n), size - 1) : 0;
 }
 
@@ -423,7 +421,6 @@ size_t raw_metal_fetch_keys(char *out, size_t size)
         used = std::min(used, size - 1);
     };
     used = size_t(snprintf(out, size, "fetch keys"));
-    keys("rec", k.recordKeys);
     keys("enc", k.encodeKeys);
     keys("sto", k.fallbackKeys);
     keys("ilk", k.interlockKeys);

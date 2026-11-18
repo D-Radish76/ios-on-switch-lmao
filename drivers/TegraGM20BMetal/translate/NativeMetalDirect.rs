@@ -19,7 +19,7 @@ use metal2vulkan::cache::VariantKey;
 use metal2vulkan::error::{BindError, Retry};
 use metal2vulkan::metal::{
     PixelFormat, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, TextureType,
-    TextureUsage,
+    TextureUsage, VertexStepFunction,
 };
 use metal2vulkan::pipeline::{
     BindingSource, GraphicsState, PipelineLayout, PushField, RenderPipeline, RenderPipelineDescriptor, RuntimeFact,
@@ -220,7 +220,7 @@ pub struct NmbDirectDraw {
     pub vertex_slot: u32,
     pub vertex_stride: u32,
     pub vertex_stride_dynamic: u32,
-    pub pulled_strides: [[u32; 2]; 4],
+    pub pulled_strides: [[u32; 2]; 8],
     pub amplification_max: u32,
     pub amplification_id_word: u32,
     pub amplification_count_word: u32,
@@ -1357,7 +1357,7 @@ fn draw_of(
         vertex_slot: u32::MAX,
         vertex_stride: 0,
         vertex_stride_dynamic: 0,
-        pulled_strides: [[0; 2]; 4],
+        pulled_strides: [[0; 2]; 8],
         amplification_max: amplification,
         amplification_id_word: 0,
         amplification_count_word: 0,
@@ -1474,13 +1474,23 @@ fn dynamic_words(run: &Run, pipeline: &RenderPipeline, draw: &mut NmbDirectDraw)
                     .any(|a| a.buffer_index == layout && a.stride == VertexStride::PerBind) =>
             {
                 if pulled == draw.pulled_strides.len() {
-                    return Err("more than four pulled vertex buffers of a dynamic stride".into());
+                    return Err("more than eight pulled vertex buffers of a dynamic stride".into());
                 }
                 draw.pulled_strides[pulled] = [layout, word];
                 pulled += 1;
             }
             _ => {}
         }
+    }
+    let dynamic: std::collections::BTreeSet<u32> = pipeline
+        .vertex_input
+        .pulled
+        .iter()
+        .filter(|a| a.stride == VertexStride::PerBind && a.step_function != VertexStepFunction::Constant)
+        .map(|a| a.buffer_index)
+        .collect();
+    if pulled != dynamic.len() {
+        return Err("a pulled vertex buffer of a dynamic stride whose stride word is past the root push window".into());
     }
     Ok(())
 }

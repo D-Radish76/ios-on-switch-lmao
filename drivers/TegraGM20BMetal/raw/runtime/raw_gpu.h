@@ -47,6 +47,7 @@
 #include "raw_view.h"
 #include "raw_depth_bias.h"
 #include "raw_sampler_map.h"
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <thread>
@@ -61,6 +62,7 @@
 #include <map>
 #include <memory>
 #include <tuple>
+#include <utility>
 #include <vector>
 #include <IOKit/IOReturn.h>
 #include <mach/kern_return.h>
@@ -94,7 +96,7 @@
 #include "raw_stage_textures.h"
 #include "raw_program_pages.h"
 #include "raw_push.h"
-#include "raw_overlap.h"
+#include "raw_fetch_order.h"
 #include "raw_region.h"
 #include "raw_sampler.h"
 #include "raw_depth_stencil_state.h"
@@ -292,7 +294,7 @@ struct TextureAsk {
         Volume,       // createVolume: `view2d`, `levels`
         Array,        // createArray: `type` its header's, `layers` (six a cube), `levels`
         Multisample,  // createStoredMultisample
-        Zeta,         // createOwnedZeta: `sampled` (a multisampled one has a header either way)
+        Zeta,         // createOwnedZeta: `sampled` (its layers laid out as a texture header names them)
         Block         // createBlockTexture: `levels`, `layers`, `type` (its header's), `depth` (3D: planes)
     } kind = Plain;
 
@@ -359,8 +361,10 @@ struct Texture {
     // buffer 0)
     Texture *luma = nullptr, *chroma = nullptr;
     // A one-plane 4:2:2 YCbCr texture (YcbcrPlan::onePlane): luma and chroma are pool images BlitEncoder::splitPlane fills
-    // from planes.luma (the surface's plane, import) before each conversion
+    // from planes.luma (the surface's plane, import) before each conversion, its pairs Y0 Cb Y1 Cr or, pairsReversed,
+    // Cb Y0 Cr Y1
     bool onePlane = false;
+    bool pairsReversed = false;
     uint32_t shape[kYcbcrShapeWords] = {};
     uint8_t ycbcr = 0;  // YcbcrOutput, 0: none
     // m2v's address map of a planar texture's samplers (metal2vulkan texture/ycbcr_image.rs `ycbcr_modes`): 1 the wrapping modes
@@ -531,6 +535,8 @@ struct Sampler {
     // its headers under a planar texture's address map (Texture::addressMap 1 to 3): m2v samples those textures through the
     // sampler with the map applied (Device::samplerVariant makes them; the same header where the map changes nothing)
     uint32_t mapped[4] = {};
+    // and its compare header under those maps, which a state sampling a planar texture by comparison reads
+    uint32_t compareMapped[4] = {};
     // an opaque border's headers by the texel a texture reads at it (borderTexel), where that is not tsc's
     // (Device::borderVariant makes them before the work that samples the texture through the sampler)
     uint32_t bordered[32] = {};
@@ -851,14 +857,21 @@ struct PassDesc {
         const Texture *texture = nullptr, *image = nullptr;
     };
 
-    static constexpr uint32_t kWrittenPlanes = 4;
+    // the 8 colours' and one draw's 16 written slots' (raw_pack.h kWrittenSlots) inline, any more a pass's draws write in
+    // `morePlanes` (the range encode's, read through the pass); the images' scratch tags RawMetalXrPlanes.h xrPlanesImageTag
+    static constexpr uint32_t kWrittenPlanes = 24;
     WrittenPlanes writtenPlanes[kWrittenPlanes];
+    const WrittenPlanes *morePlanes = nullptr;
+    uint32_t morePlaneCount = 0;
 
     const Texture *writtenImage(const Texture &t) const
     {
         for (const WrittenPlanes &w : writtenPlanes)
             if (w.texture == &t)
                 return w.image;
+        for (uint32_t k = 0; k < morePlaneCount; k++)
+            if (morePlanes[k].texture == &t)
+                return morePlanes[k].image;
         return nullptr;
     }
 
@@ -887,17 +900,15 @@ enum RefusalId : uint8_t {
     RefNone,
     RefIndexedRange,
     RefColorFormats,
-    RefUboOffset,
     RefNoTic,
-    RefDepthStencil,  // a: the state's depth format, b: the pass's
+    RefDepthStencil,  // a shader test the pass's attachment lacks: a: its format, b: the record's tests, c: samples
     RefSamples,       // a: the state's samples, b: the pass's, c: the state's shading passes
-    RefGeometry,      // CPU ordering proof unavailable; requires an interlocked native program
+    RefGeometry,      // a patch draw of a form fetching through the texture unit: a primitive, b patches, c instances
     RefStorageView,   // a: the attachment, b: its format, c: its width (raw_storage_form.h)
     RefRotated,       // a: why (raw_rotated_pass.h RotatedRefusal), b: the rotation
     // from here on draws Metal fails too: their command buffer fails with Metal's error (RawMetalDrawErrors.mm drawFailed)
     RefViewports,           // a: the encoder's viewport count
     RefWrittenTexture,      // a: the slot, b: the bound format, c: the format the record's programs store
-    RefIndexMemory,         // an index buffer with no raw memory (its pool had no room): a: the offset, b: its length
     RefTessellationDraw,    // a: the draw's primitive (icb::kPatchPrimitive: patches), b: 1 where the state tessellates
     RefAmplificationCount,  // a: the encoder's amplification count, b: the state's maxVertexAmplificationCount
     RefHeapMemory,          // no memory for the tables the state reads argument buffers through
@@ -916,7 +927,18 @@ enum RefusalId : uint8_t {
     RefPatchCommands,        // patch commands of a state whose control stage reads set 0 by its address
     RefLayerDropped,         // a: the pass's layers
     // draws Metal takes that the raw path has no form of yet: their command buffer fails too
-    RefStrideTwin  // a bind stride past a stream's 12-bit field, of a state with no stride twin
+    RefStrideTwin,  // a bind stride past a stream's 12-bit field, of a state with no stride twin
+    // a shader depth/stencil test's: no memory for its stand-ins or no header for their view (OutOfMemory); a draw
+    // breaking what its variant's choice and its pass's hidden attachment guarantee (Internal). a, b, c: as RefDepthStencil
+    RefTestsMemory,
+    RefTestsInvariant,
+    RefViewHeader,  // no header left for a framebuffer fetch's view: a: the attachment, b: its format, c: its width
+    // a storage form drawn into an attachment of another sample count than its state's (Metal's validation error): a:
+    // the attachment, b: its format, c: its samples
+    RefStorageSamples,
+    RefXrShadow,       // a shadow variant drawn in a pass holding no shadow of colour a (the driver's error)
+    RefSamplerHeader,  // no header the range makes: a: the sampler, b: the address map, c: 1 compare, 2 constexpr
+    RefMatrixUniform   // a colour matrix form's uniform not bound whole: a: its buffer index, b: offset, c: bytes bound
 };
 
 struct Refusal {
@@ -1395,6 +1417,10 @@ private:
     SeparateZeta separate_;
     Texture *separateTemp_ = nullptr;
     void copySeparateZeta(Push &p, uint8_t aspects, bool toAttachment);
+    // a stored zeta the pass renders through a backing of its own (pass_.depthStencil.texture): one of fewer layers than
+    // the pass, or a colour texture as the depth attachment (raw_zeta_colour.h); its layers moved in and out by the copy engine
+    const Texture *zetaShadowOf_ = nullptr;
+    void copyZetaShadow(Push &p, bool toAttachment);
 
     // the encoder's culling, winding and fill, and what the registers hold: the context's (Metal's defaults: no culling,
     // clockwise, fill) at a pass's start, put back at its end
@@ -1434,6 +1460,7 @@ private:
     uint32_t topology_ = ~0u, restart_ = ~0u;
     uint32_t alphaWanted_ = 0;  // the bound Metal state's alpha to coverage and alpha to one (raw_alpha_control.h)
     uint32_t samplePasses_ = 1;
+    uint32_t tirControlHeld_ = ~0u;  // SET_TIR_CONTROL since the pass began (raw_mixed_samples.h), ~0: not written
     AttachmentWrites attachmentWrites_;
     bool memoryless_[8] = {};
     bool hiddenZeta_ = false;  // pass_.depthStencil.texture is PassDesc::hiddenZeta's backing: the pass declares none
@@ -1452,6 +1479,8 @@ private:
     uint64_t drawPixels_ = 0;
     PixelBox drawBox_;
     uint8_t samples_ = 1;  // its attachments' samples a pixel
+    // a mixed pass's (raw_mixed_samples.h): its zeta's samples, which it rasterises at; samples_ is its colour's
+    uint8_t rasterSamples_ = 1;
 #if SWITCH_RAW_DIAGNOSTICS
     uint32_t prologueMark_ = SpanMarks::kNone;  // raw_span_marks.h: its prologue's mark, taken ahead of its draws'
     void markSpan(Push &p, uint32_t index, SpanKind kind);
@@ -1464,17 +1493,9 @@ private:
     // indices of the indexed draw being prepared
     WrittenRegion written_;
     GeometryCache geometryCache_;
-    std::array<bool, TriangleRuns::kMaxTriangles> runWinding_ = {};
     // colors the pass's first draw overwrites whole and opaquely: their clears inside the render area are not needed
     uint8_t covered_ = 0;
-    using Runs = std::vector<std::pair<uint32_t, uint32_t>>;
 
-public:
-    // [x0, x1) x [y0, y1) of colour target 0 set to `rgba` (fillTexture:...): CLEAR_SURFACE over the region, with the ZBC
-    // table's value where the target is compressed
-    void clearRegion(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, const float rgba[4]);
-
-private:
     // what the pass reads and writes (raw_pass_hazard.h) as RawMetalEncode found it in its recording; never set: unknown
     PassUses planned_;
     bool vertexSamples_ = false;  // a texture bound to the vertex stage
@@ -1496,10 +1517,11 @@ private:
     void probeGlassDraw(const Pipeline &bound, const Pipeline &drawn, const PixelBox &limit);
     void glassMemSample(const Pipeline &bound, const Pipeline &drawn);
 #endif
-    const Runs *selfRuns(const Pipeline &pl, uint32_t primitive, uint32_t count, uint32_t instances, const char **why);
-    const Runs *sequentialRuns(const Pipeline &pl, const FetchDraw &shape, Runs &runs, const char **why);
-    const Runs *refuseFetch(const Pipeline &pl, FetchRefusal refusal, uint32_t primitive, uint32_t count,
-                            uint32_t instances, const char **why);
+    bool orderedFetch(const Pipeline &pl, const FetchDraw &shape) const;
+    void fetchDraw(uint32_t primitive, bool indexed, uint32_t first, uint32_t count, uint32_t instances, uint32_t root,
+                   uint32_t baseInstance);
+    void refuseFetch(const Pipeline &pl, FetchRefusal refusal, uint32_t primitive, uint32_t count, uint32_t instances,
+                     const char **why);
     const uint8_t *drawIndices_ = nullptr;
     const Buffer *drawIndexBuffer_ = nullptr;
     bool drawIndexCpuSafe_ = false;
@@ -1575,11 +1597,15 @@ public:
     void fillBytes(uint64_t dst, uint64_t bytes, uint8_t value);
     // `bytes` (whole words) at `dst` set to the 32-bit `word`
     void fillWords(uint64_t dst, uint64_t bytes, uint32_t word);
-    // `ms`'s sample grid (2^sxLog2 x 2^syLog2 samples a pixel) halved into `into` by the 2D engine (raw_resolve_twod.cpp);
-    // `complement`: through the grid's complement (the probe's, raw_resolve_rule.h), the grid complemented back after
-    // where `keep`
-    void resolveTwod(const Texture &ms, uint32_t sxLog2, uint32_t syLog2, const Texture &into, uint32_t fmt2d,
-                     bool complement, bool keep);
+    // `ms`'s sample grid (2^sxLog2 x 2^syLog2 samples a pixel) halved into [0, width) x [0, height) of `into` by the 2D
+    // engine (raw_resolve_twod.cpp); `complement`: through the grid's complement (the probe's, raw_resolve_rule.h), the
+    // grid complemented back after where `keep`
+    void resolveTwod(const Texture &ms, uint32_t sxLog2, uint32_t syLog2, const Texture &into, uint32_t width,
+                     uint32_t height, uint32_t fmt2d, bool complement, bool keep);
+    // One-sample image `one` into every sample of `ms`'s sample grid over [0, width) x [0, height) of its pixels, each
+    // sample its pixel's texel, by the 2D engine's point-sampled scale (raw_resolve_twod.cpp)
+    void spreadTwod(const Texture &one, const Texture &ms, uint32_t sxLog2, uint32_t syLog2, uint32_t width,
+                    uint32_t height, uint32_t fmt2d);
     // [x0, x1) x [y0, y1) of `t` set to `word` by the 2D engine's solid rectangle (rule clear.twod, raw_twod_fill.h)
     void fillTwod(const Texture &t, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, uint32_t word);
     // `lines` rows of `width` pixels of `bpp` bytes, from `src` (row stride srcPitch) to `dst` (dstPitch) (vkCmdCopyImage and the
@@ -1592,9 +1618,27 @@ public:
                     uint32_t dy, uint32_t dz, uint32_t w, uint32_t h, uint8_t aspect = kAspectWhole);
     // `w` x `h` texels from the origin of plane z of `t` (a chain level: chainLevelImage) each set to `fill`'s texel
     void fillTexels(const Texture &t, uint32_t z, uint32_t w, uint32_t h, const CopyFill &fill);
+    // `w` x `h` units at (x, y) of plane or layer z of `t` each set to `texel`'s `bytes` (1, 2, 4, 8 or 16), only its 4-byte
+    // words `words` names (bit k: word k; 0: every byte) where the rest is kept (a fill of Depth32Float_Stencil8's depth or
+    // its stencil view's stencil): the copy engine's constants, two values a launch (fillTexture:, raw_fill_record.h)
+    void fillRect(const Texture &t, uint32_t x, uint32_t y, uint32_t z, uint32_t w, uint32_t h, const uint8_t texel[16],
+                  uint32_t bytes, uint32_t words);
+    // `w` x `h` stencil bytes between (x, y) of plane z of Depth32Float_Stencil8 `zeta` (its stencilTemp made) and (bx, by)
+    // of plane bz of `bytes`, a texture of one-byte texels: into the zeta where `intoZeta`, else out of it. Through the
+    // temp, as copyBufferTexels moves a buffer's (NVK's stencil_copy_temp), a part of the temp's size at a time
+    void copyStencilTexels(const Texture &zeta, uint32_t x, uint32_t y, uint32_t z, const Texture &bytes, uint32_t bx,
+                           uint32_t by, uint32_t bz, uint32_t w, uint32_t h, bool intoZeta);
     // The first byte of each texel of `from` into the first byte of `to`'s, every other byte of `to` as it was: one remapped
     // copy of one-byte components over their common extent (an R8Unorm_sRGB target's stand-in, raw_format_standin.h)
     void copyFirstByte(const Texture &from, const Texture &to);
+    // The same of the first two bytes (an RG8Unorm_sRGB target's stand-in)
+    void copyFirstTwoBytes(const Texture &from, const Texture &to);
+    // An ARGB8Unorm texture's texels into its RGBA8 stand-in (`toStandIn`) or back, each texel's bytes rotated by one by
+    // the copy engine's component remap (raw_format_standin.h)
+    void copyArgb8(const Texture &from, const Texture &to, bool toStandIn);
+    // `w` x `h` texels of one RGBA8 or BGRA8 texture into one of the other order, each code kept (a one-sample
+    // attachment's resolve across the orders, as an M4 Max makes it: RawMetalRangeSeal.mm resolvePasses)
+    void copyRedBlueSwapped(const Texture &from, const Texture &to, uint32_t w, uint32_t h);
     // `w` x `h` texels between rows `pitch` bytes apart at `va` (both multiples of the texel's component, at most 4 bytes) and
     // (x, y) of plane z of `t`, pitch or block-linear: into `t` where `toTexture`, else out of it (vkCmdCopyBufferToImage,
     // vkCmdCopyImageToBuffer); the buffer's texels bufferUnit each. A Depth32Float_Stencil8 aspect's copy is NVK's
@@ -1666,13 +1710,15 @@ public:
     // texel the float the texture unit reads of the source written as the destination's depth by the pack's turn depth
     // state of its format; its stencil kept. The source already has its resource-owned selected-level header. False: *why
     bool depthConvert(const Texture &dst, const Texture &src, const char **why);
-    // raw_reach.h: the tiles of the `width` x `height` frame of `pass` that its draws reach, drawn again from `draws`; false: *why
+    // raw_reach.h: the tiles of `pass`'s render area (reachArea: within `width` x `height`, 0 where the pass names none) that
+    // its draws reach, drawn again from `draws`; false: *why, out.memory where there was no memory for the reach target
     bool reach(const PassDesc &pass, uint32_t width, uint32_t height, DrawReplay &draws, PassReach &out,
                const char **why);
-    // A block-linear image of `width` x `height` texels of `format` (turnCopyFormat's, or a depth format of `samples` samples),
-    // the device's backing of tag `tag` for this command buffer: what a turn copy moves texels through; null where none can be
-    // had
-    Texture *turnScratch(uint32_t format, uint32_t width, uint32_t height, uint32_t tag, uint32_t samples = 1);
+    // A block-linear image of `width` x `height` texels of `format` at `samples` samples, `layers` layers one layer's whole
+    // tiles apart (Texture::layerBytes), the device's backing of tag `tag` for this command buffer: what a turn copy moves
+    // texels through, a format stand-in's target (raw_format_standin.h); null where none can be had
+    Texture *turnScratch(uint32_t format, uint32_t width, uint32_t height, uint32_t tag, uint32_t samples = 1,
+                         uint32_t layers = 1);
     // raw_stencil_bits.h: `src`'s stencil drawn into `e`'s zeta of `format` (its stencil cleared to 0 at the pass's start, or
     // `zeroFirst`: zeroed by a draw where `map`'s source rectangle reaches, the rest kept), each pixel's from `src`'s texel at
     // `map` or its `pick` sample; `view` the stencil header's texture, read until e's end()
@@ -1705,9 +1751,14 @@ public:
         loops_ = {};
     }
 
-    // `multisampled` resolved into `into` by the 2D engine (rule resolve.twod, raw_resolve_rule.h);
-    // false: not a sample grid the engine reads at 2:1, nothing recorded
-    bool resolveTwod(const Texture &multisampled, const Texture &into, bool exact = false, bool keepSamples = false);
+    // `multisampled` resolved into `into` by the 2D engine (rule resolve.twod, raw_resolve_rule.h), all of it, or
+    // [0, width) x [0, height) of it, the render area, where those are given; false: not a sample grid the engine reads
+    // at 2:1, nothing recorded
+    bool resolveTwod(const Texture &multisampled, const Texture &into, bool exact = false, bool keepSamples = false,
+                     uint32_t width = 0, uint32_t height = 0);
+    // `resolved`, a one-sample image of `multisampled`'s format, into each sample of it over the render area by the 2D
+    // engine (BlitEncoder::spreadTwod); false: a format the 2D engine takes none of, nothing recorded
+    bool spreadSamples(const Texture &resolved, const Texture &multisampled, uint32_t width, uint32_t height);
     // Counter samples behind every encoder ended so far, each on its own engine, in a segment of their own
     void timestamps(const counters::Stamp *stamps, size_t count);
     // CPU lines the GPU reads in this submission (CPU-written cached memory): cleaned to memory before it is submitted.
@@ -2171,12 +2222,12 @@ public:
     // stand-in
     // states or a plane cannot be rendered
     bool createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, Texture &t);
-    // RGB10A8_2P_XR10 over a two-plane surface, its planes at `word` and `alpha` (offsets in the allocation, with their
-    // pitches), held in them (raw_xr_pass.h, Texture::xrPlanes): the planes imported as luma and chroma; false with *why
-    // where a plane cannot be one
+    // RGB10A8_2P_XR10 or its sRGB twin (`format`, raw_xr.h twoPlaneXr) over a two-plane surface, its planes at `word` and
+    // `alpha` (offsets in the allocation, with their pitches), held in them (Texture::xrPlanes): the planes imported as
+    // luma and chroma; false with *why where a plane cannot be one
     bool createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t word,
                               uint32_t wordPitch, uint64_t alpha, uint32_t alphaPitch, uint32_t width, uint32_t height,
-                              Texture &t, const char **why);
+                              uint32_t format, Texture &t, const char **why);
     // A memoryless RGB10A8_2P_XR10 texture's planes, memoryless too (Texture::xrPlanes)
     bool createXrMemoryless(Texture &t);
     // The pack's stand-in states: the planes' codes into the stand-in, or (`store`) the stand-in into the planes
@@ -2197,12 +2248,19 @@ public:
         return srgbEncode_;
     }
 
+    // Over a buffer's memory (t holds no reference: the caller keeps the buffer); `layers` > 1: a linear 2D array, its
+    // layers `pitch` x `height` apart under one pitch header of TWO_D_ARRAY
     bool createBufferTexture(const Buffer &b, uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch,
-                             uint32_t format,
-                             Texture &t);  // over a buffer's memory (t holds no reference: the caller keeps the buffer)
+                             uint32_t format, Texture &t, uint32_t layers = 1);
     // MTLTextureTypeTextureBuffer: `elements` texels of `format` from `offset` in a buffer, under a texel buffer header
-    // (fx::bufferTic), as createBufferTexture holds no reference
-    bool createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t);
+    // (fx::bufferTic), as createBufferTexture holds no reference; an extended-range one with its stand-in
+    // (createTexelStandIn). `limit`: the most texels taken (the device's maxTextureBufferWidth answer)
+    bool createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t,
+                           uint32_t limit = 1u << 27);
+    bool createTexelStandIn(Texture &t);
+    // A texel buffer over a surface plane's bytes in order (its import, a texel buffer header from `offset`)
+    bool createSurfaceTexelBuffer(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
+                                  uint64_t offset, uint32_t elements, uint32_t format, Texture &t);
     bool createView(const Texture &of, uint32_t format, Texture &t);  // the same memory as another format
     bool createZetaView(const Texture &of, uint32_t format, Texture &t);
     // Its header's sources read through `channels` (MTLTextureSwizzle each, Texture::swizzle), its header written as it is
@@ -2228,14 +2286,14 @@ public:
     // `compressKind`: compressed memory of that kind where some is ready (TextureAsk::compressKind)
     bool createStoredMultisample(uint32_t width, uint32_t height, uint32_t format, uint32_t samples, Texture &t,
                                  const ArenaAt *at = nullptr, uint32_t compressKind = 0);
-    // A stored depth/stencil texture of `samples` samples in zeta memory of its own (raw_multisample.cpp), with a
-    // header where `sampled`; a one-sample 2D array, cube or cube array of `layers` layers, layerBytes apart, has none
-    // (as createZetaOver's). One of `levels` levels is NIL's chain of them in the same zeta memory (its chain; a pass
-    // renders level 0). NVK views no zeta memory it did not make: a multisampled one never has an m2v twin, a
-    // one-sample one only once a range replays on m2v (moveOwnedZeta), a mipmapped one never.
+    // A stored depth/stencil texture of `samples` samples in zeta memory of its own (raw_multisample.cpp), with its header,
+    // made here (`sampled`: a 2D array, cube or cube array of one sample laid out as that header names its layers). One of
+    // `levels` levels is NIL's chain of them in the same zeta memory (its chain; a pass renders level 0). NVK views no zeta
+    // memory it did not make: a multisampled one never has an m2v twin, a one-sample one only once a range replays on m2v
+    // (moveOwnedZeta), a mipmapped one never.
     bool createOwnedZeta(uint32_t width, uint32_t height, uint32_t format, uint32_t samples, bool sampled, Texture &t,
                          uint32_t layers = 1, uint8_t type = fx::kTexTwoD, uint32_t levels = 1);
-    // The same with a header always (texture2d_ms reads it, and a depth resolve's pass samples it): a multisampled one,
+    // The same, laid out to be sampled (texture2d_ms reads it, and a depth resolve's pass samples it): a multisampled one,
     // or one of a single sample in an arena (an MTLHeap's, whose depth is not NVK's image)
     bool createOwnedZeta(uint32_t width, uint32_t height, uint32_t format, uint32_t samples, Texture &t,
                          const ArenaAt *at = nullptr);
@@ -2292,11 +2350,12 @@ public:
     // The texture header of level `level` of mipmapped texture `t`'s chain alone, as NVK's view of that level (a pass into
     // the level fetches its color or depth through it); `codes`: an sRGB chain's level read as its codes, with no sRGB conversion
     // (pack/mip.metal decodes them); a 3D texture's level as a volume; 0: none
-    uint32_t levelTic(Texture &t, uint32_t level, bool codes = false);
+    uint32_t levelTic(const Texture &t, uint32_t level, bool codes = false);
     // The header a fetch from `part` (raw::attachmentTarget of level `level`, slice `slice` of `t`, maybe in a format view's
-    // format) reads: levelTic's for a 2D chain's level in t's format, else attachmentHeader's, made on first use and freed
-    // with t's header. Color parts use the encode view cache; depth parts are prepared at pass admission. 0: none
-    uint32_t attachmentTic(Texture &t, const Texture &part, uint32_t level, uint32_t slice);
+    // format; or one layer of a multisampled texture, its sample grid's header) reads: levelTic's for a 2D chain's level in
+    // t's format, else attachmentHeader's, made on first use and freed with t's header. Color parts use the encode view
+    // cache; depth parts are prepared at pass admission. 0: none
+    uint32_t attachmentTic(const Texture &t, const Texture &part, uint32_t level, uint32_t slice);
     // A header of plain texture `t`'s memory whose word 0 is `word0` (raw_view.h: m2v's view of it in another format
     // of the same texel size; a storage view of a multisampled texture spans its sample grid), made on first use and freed
     // with t's header; 0: no header slot left. The encoding thread's: what it answered is kept there and answered again
@@ -2305,9 +2364,11 @@ public:
     // The header of view `v` of `owner`, an attachment's image (v.part) or the attachment itself (raw_attachment_view.h),
     // made on first use and freed with owner's header; 0: none (`why`)
     uint32_t attachmentViewTic(const Texture &owner, const AttachmentView &v, const char **why);
-    // `t` with a texture header (a depth/stencil texture made only to be rendered gets one, a turn copy reading it); false: no
-    // header slot left
+    // `t` with a texture header (every texture the device makes has its own from creation; a pass's part of one gets one
+    // here, a turn copy reading it); false: no header slot left
     bool sampleable(Texture &t);
+    // The texture headers not held: 0 names why a creation that found its memory made nothing
+    uint32_t headersLeft();
 
     // Whether the connection is NVK's (raw_kernel.h): m2v's views alias this path's memory
     bool shared() const
@@ -2340,7 +2401,7 @@ public:
     // and has no command buffer open)
     bool createCompressedTexture(uint32_t width, uint32_t height, uint32_t format, uint32_t kind, Texture &t);
     // createOwnedZeta's zeta of `bytes` on compressed memory of kind `kind` where some of its size is ready, lock_ held
-    bool createCompressedZeta(uint64_t bytes, uint32_t kind, bool sampled, Texture &t);
+    bool createCompressedZeta(uint64_t bytes, uint32_t kind, Texture &t);
     bool privateCompressed(const Texture &t);
     bool plainFromCompressed(Texture &t);
     // The plain twin of a one-level 2D texture on compressed memory: block-linear memory and a header of its own
@@ -2847,7 +2908,6 @@ public:
         std::atomic<uint64_t> bandedDraws{0}, bands{0};  // raw_draw_bands.h
         std::atomic<uint64_t> learnedDraws{0};           // raw_band_rates.h
         std::atomic<uint64_t> bandedDispatches{0};       // raw_dispatch_bands.h
-        std::atomic<uint64_t> kernelWindows{0};          // buffer slots bound through a window (raw_kernel_windows.h)
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
         std::atomic<uint64_t> splitLaunches{0};
         // split twins that found no room in the heap or local memory at a draw that took them
@@ -3482,7 +3542,7 @@ private:
 
     // backing()'s tags, each kind of backing its own, and the backing it last answered each with: the device's below,
     // then the command buffer's scratch ranges (turnScratch), from kTurnTag's (raw_turned_pass.cpp) to
-    // kFormatStandInTag's eight colours, the last
+    // kFormatStandInTag's eight colours and their eight resolve targets' (kFormatResolveSlot), the last
     enum BackingTag : uint32_t {
         kMemorylessTag = kTransientColorTag,
         kShaderDepthTag = kMemorylessTag + 8,
@@ -3490,7 +3550,7 @@ private:
         kShaderStencilTempTag,
         kSeparateZetaTag,
         kSeparateTempTag,
-        kBackingTags = kFormatStandInTag + 8
+        kBackingTags = kFormatStandInTag + 2 * 8
     };
     std::array<Backing *, kBackingTags> lastBackings_{};
 

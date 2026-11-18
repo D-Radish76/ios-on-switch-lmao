@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// The units raw's command predication drives, as a model the host tests run its words on: the copy engine's copies and
-// reducing semaphore releases, the compute class's render enable (two 64-bit operands, read when the mode is set), its
-// inline writes and launches gated by it, and the host fetching a GP entry's segment from memory when it reaches it
-// (NO_PREFETCH), so words the GPU wrote into a segment before are what it decodes.
+// The units raw's command predication drives, as a model the host tests run its words on: the copy engine's copies,
+// constant fills and reducing semaphore releases, the compute class's render enable (two 64-bit operands, read when the
+// mode is set), its inline writes and launches gated by it, and the host fetching a GP entry's segment from memory when
+// it reaches it (NO_PREFETCH), so words the GPU wrote into a segment before are what it decodes.
 #pragma once
 #include <cstdint>
 #include <cstring>
@@ -41,6 +41,7 @@ struct Gpu {
     bool seesHeads = true;
     uint64_t enableVa = 0, ceIn = 0, ceOut = 0, ceSemaphore = 0, i2mOut = 0;
     uint32_t ceLength = 0, cePayload = 0, i2mLength = 0, i2mAt = 0, pcas = 0;
+    uint32_t ceLines = 0, cePitchOut = 0, ceConstA = 0, ceRemap = 0;
     uint64_t decoded = 0;  // GP entries decoded past their first word
 
     uint8_t *at(uint64_t va)
@@ -72,6 +73,18 @@ struct Gpu {
         memcpy(at(va), &v, 4);
     }
 
+    // A remap of every destination component to CONST_A (BlitEncoder::fillWords, fillBytes): LINE_LENGTH_IN elements
+    // a line of NUM_DST_COMPONENTS components of COMPONENT_SIZE bytes each, `lines` lines PITCH_OUT apart
+    void constantFill(uint32_t lines)
+    {
+        const uint32_t size = bits(ceRemap, 17, 16) + 1, components = bits(ceRemap, 25, 24) + 1;
+        for (uint32_t l = 0; l < lines; ++l) {
+            uint8_t *line = at(ceOut + uint64_t(l) * cePitchOut);
+            for (uint64_t c = 0; line && c < uint64_t(ceLength) * components; ++c)
+                memcpy(line + c * size, &ceConstA, size);
+        }
+    }
+
     void copyEngine(uint32_t m, uint32_t v)
     {
         switch (m) {
@@ -90,6 +103,18 @@ struct Gpu {
         case NVB0B5_LINE_LENGTH_IN:
             ceLength = v;
             break;
+        case NVB0B5_LINE_COUNT:
+            ceLines = v;
+            break;
+        case NVB0B5_PITCH_OUT:
+            cePitchOut = v;
+            break;
+        case NVB0B5_SET_REMAP_CONST_A:
+            ceConstA = v;
+            break;
+        case NVB0B5_SET_REMAP_COMPONENTS:
+            ceRemap = v;
+            break;
         case NVB0B5_SET_SEMAPHORE_A:
             ceSemaphore = uint64_t(v) << 32 | (ceSemaphore & 0xffffffff);
             break;
@@ -100,8 +125,12 @@ struct Gpu {
             cePayload = v;
             break;
         case NVB0B5_LAUNCH_DMA: {
-            if (bits(v, 1, 0) != NVB0B5_LAUNCH_DMA_DATA_TRANSFER_TYPE_NONE)
-                memmove(at(ceOut), at(ceIn), ceLength);
+            if (bits(v, 1, 0) != NVB0B5_LAUNCH_DMA_DATA_TRANSFER_TYPE_NONE) {
+                if (bits(v, 10, 10) && bits(ceRemap, 2, 0) == NVB0B5_SET_REMAP_COMPONENTS_DST_X_CONST_A)
+                    constantFill(bits(v, 9, 9) ? ceLines : 1);  // REMAP_ENABLE, MULTI_LINE_ENABLE
+                else
+                    memmove(at(ceOut), at(ceIn), ceLength);
+            }
             if (bits(v, 4, 3) != NVB0B5_LAUNCH_DMA_SEMAPHORE_TYPE_NONE) {
                 uint32_t next = cePayload;
                 if (bits(v, 19, 19)) {

@@ -5,8 +5,8 @@
 
 // ---- the tape onto the raw path ----
 // false: something in it the raw path cannot do after all (*why); nothing of it was submitted then. A refusal inside one
-// encoder names that encoder's first command in *refusedEncoder; one no encoder owns (the channel's, the kernel's, a planar
-// texture sampled and rendered across the range) leaves it alone.
+// encoder names that encoder's first command in *refusedEncoder; one no encoder owns (the channel's, the kernel's) leaves
+// it alone.
 
 RMRangeEncode &rmRangeEncode()
 {
@@ -16,11 +16,10 @@ RMRangeEncode &rmRangeEncode()
 
 RMPred refusalPred(uint8_t id)
 {
-    static const RMPred map[] = {PredEncPassRender,  PredEncIndexedRange, PredEncColorFormats, PredEncUboOffset,
-                                 PredEncNoTic,       PredEncDepthStencil, PredEncSamples,      PredEncGeometry,
-                                 PredEncStorageView, PredPassRotated,     PredEncPassRender,   PredEncPassRender,
-                                 PredCallBufForeign};
-    static_assert(sizeof map / sizeof *map == raw::RefIndexMemory + 1, "a predicate for each refusal");
+    static const RMPred map[] = {PredEncPassRender, PredEncIndexedRange, PredEncColorFormats, PredEncNoTic,
+                                 PredEncDepthStencil, PredEncSamples, PredEncGeometry, PredEncStorageView,
+                                 PredPassRotated, PredEncPassRender, PredEncPassRender};
+    static_assert(sizeof map / sizeof *map == raw::RefWrittenTexture + 1, "a predicate for each refusal");
     return id < sizeof map / sizeof *map ? map[id] : PredEncPassRender;
 }
 
@@ -31,7 +30,7 @@ bool RMRangeEncode::fail(RMPred p, const char *w, uint64_t a, uint64_t b, const 
     *why_ = w;
     if (ahead_)
         veto_ = VetoFailed;
-    else if (!drawFailed(cb_, rc_->refusal, w))
+    else if (!rc_->refusal.id || !drawFailed(cb_, rc_->refusal, w))
         hit(cb_, p, a, b, detail);
     if (encoder_ != SIZE_MAX)
         *refusedEncoder_ = encoder_;
@@ -63,7 +62,7 @@ bool RMRangeEncode::refused()
     else if (ahead_)
         veto_ = VetoFailed;
     else if (!drawFailed(cb_, f, *why_))
-        hit(cb_, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32);
+        hit(cb_, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32, *why_);
     if (encoder_ != SIZE_MAX)
         *refusedEncoder_ = encoder_;
     rc_->abandon();
@@ -200,7 +199,9 @@ bool RMRangeEncode::resources(size_t from, size_t to)
     return true;
 }
 
-// opaque borders' headers for the textures [from, to) samples (Sampler::bordered), which the draws' handles take
+// opaque borders' headers for the textures [from, to) samples (Sampler::bordered), which the draws' handles take. With no
+// entry left in the sampler header table the command buffer fails OutOfMemory; encoded ahead, that is the commit's encode's
+// to meet (fail's veto).
 bool RMRangeEncode::borderHeaders(size_t from, size_t to)
 {
     bordered_.clear();
@@ -218,115 +219,14 @@ bool RMRangeEncode::borderHeaders(size_t from, size_t to)
     });
     if (!made) {
         encoder_ = SIZE_MAX;
-        return fail(PredCallSamplerForeign, "no sampler header for an opaque border");
-    }
-    return true;
-}
-
-// the planar textures its draws sample: their images from their planes first, once (m2v converts at each encoder that uses
-// one; nothing between this command buffer's passes writes the planes, refused below), then the passes, whose prologue's
-// full barrier orders the copies before their reads. A texture bound where no draw's state reads it is not converted: the
-// image is made when a draw samples it. Its samplers read it under its address map (Texture::addressMap): a sampler state
-// through its header made here, a constexpr sampler through the one placed with it (Device::constexprMapped_).
-bool RMRangeEncode::conversions()
-{
-    raw::Device &d = *d_;
-    raw::CommandBuffer *rc = rc_;
-    RMCommandBuffer *cb = cb_;
-    std::vector<__unsafe_unretained RMTexture *> planar;
-    std::vector<__unsafe_unretained RMSampler *> samplers;
-    cb->_plan.forEachResource(from_, to_, RMResourceKind::Texture, [&](const RMRangeResource &use) {
-        if ((use.access & raw::ResourceUse::Sample) && (use.facts.roles & RMResourceFacts::Converted))
-            planar.push_back((__bridge RMTexture *)use.object);
-    });
-    if (planar.empty())
-        return true;
-    cb->_plan.forEachResource(from_, to_, RMResourceKind::Sampler, [&](const RMRangeResource &use) {
-        samplers.push_back((__bridge RMSampler *)use.object);
-    });
-    // the samplers' headers under the planar textures' address maps (m2v's), which the draws' handles take
-    if (!d.constexprMapsPlaced())
-        return fail(PredEncPlanarClamp, "no constexpr sampler header for an address map");
-    for (__unsafe_unretained RMTexture *t : planar)
-        for (__unsafe_unretained RMSampler *sm : samplers)
-            if (t->_raw.addressMap && !d.samplerVariant(sm->_raw, t->_raw.addressMap)) {
-                failCommandBuffer(cb,
-                                  @"no sampler header left in the device's table for a planar texture's address modes",
-                                  MTLCommandBufferErrorOutOfMemory);
-                rc->abandon();
-                abandoned_ = true;
-                return false;
-            }
-    // an image converted already from its surface at the surface's seed now is not converted again: the work that
-    // converted it went before on this channel (the decoder and ImageIO write a surface under a write lock, which
-    // moves its seed). The new seeds take effect once this command buffer is submitted.
-    std::vector<__unsafe_unretained RMTexture *> stale;
-    for (__unsafe_unretained RMTexture *t : planar) {
-        const uint32_t seed = t->_surface ? IOSurfaceGetSeed(t->_surface) : 0;
-        const uint64_t writes = t->_surface ? surfaceWrites(t->_surfaceWrites) : 0;
-        const raw::Texture *luma = rc->readTexture(t->_raw.luma);
-        const uint64_t nativeGeneration = luma ? luma->nativeGeneration : 0;
-        if (!t->_surface || !t->_imageCurrent || t->_imageSeed != seed || t->_imageWrites != writes ||
-            t->_imageNativeGeneration != nativeGeneration) {
-            stale.push_back(t);
-            converted_.push_back({t, seed, writes, nativeGeneration});
-#if SWITCH_FRAME_TIMELINE
-            traceSurfaceImage(t, "converted", seed);
-#endif
-        }
-    }
-    planar.swap(stale);
-    // 4:4:4 code textures and one-plane 4:2:2 YCbCr textures' planes: two copy-engine remaps each
-    bool copies = false;
-    for (__unsafe_unretained RMTexture *t : planar)
-        copies |= t->_raw.planar || t->_raw.onePlane;
-    if (copies) {
-        raw::BlitEncoder *conv = rc->blit();
-        for (__unsafe_unretained RMTexture *t : planar) {
-            if (t->_raw.planar)
-                conv->convertPlanar(t->_raw);
-            if (t->_raw.onePlane)
-                conv->splitPlane(t->_raw);
-        }
-        conv->end();
-    }
-    // YCbCr textures' planes whose rows or offset are 16 bytes apart but not 32 (ImageIO's photo thumbnails, a width of
-    // 360: rows of 368) are sampled through pool images (raw::Texture::sampled, createSurfaceTexture): filled from the
-    // planes by the copy engine first, as refresh() fills a sampled surface's (r7u: without it the conversion read
-    // whatever the pool held, magenta and green stripes of older images)
-    raw::BlitEncoder *fill = nullptr;
-    for (__unsafe_unretained RMTexture *t : planar)
-        if (t->_raw.ycbcr)
-            for (const raw::Texture *x : {t->_raw.luma, t->_raw.chroma})
-                if (x && x->sampled && rc->readTexture(x) == x) {
-                    if (!fill)
-                        fill = rc->blit();
-                    fill->copyTexels(*x, 0, 0, 0, *x->sampled, 0, 0, 0, x->width, x->height);
-                }
-    if (fill)
-        fill->end();
-    // YCbCr textures: a pass of the pack's conversion state each, into the image the draws sample
-    for (__unsafe_unretained RMTexture *t : planar) {
-        raw::Texture &x = t->_raw;
-        if (!x.ycbcr)
-            continue;
-        raw::PassDesc p;
-        p.color[0].texture = &x;
-        p.color[0].load = raw::ColorAttachment::DontCare;
-        p.color[0].store = true;
-        p.count = 1;
-        raw::RenderEncoder *conv = rc->render(p);
-        if (!conv)
-            return fail(PredEncPassRender, "a YCbCr texture's image the raw path cannot render");
-        conv->setPipeline(d.ycbcrPipeline(x.ycbcr));
-        conv->setBytes(2, 0, x.shape, sizeof x.shape);
-        conv->setTexture(0, x.luma);
-        conv->setTexture(1, x.chroma ? x.chroma : x.luma);  // (over plane 1: chroma codes 0, none read)
-        conv->setViewport(0, 0, x.width, x.height, 0, 1);
-        conv->setScissor(0, 0, x.width, x.height);
-        if (!conv->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why_))
-            return refused();
-        conv->end();
+        if (ahead_)
+            return fail(PredCallSamplerForeign, "no sampler header for an opaque border");
+        hit(cb_, PredCallSamplerForeign, 0, 0, "no sampler header left in the device's table for an opaque border");
+        failCommandBuffer(cb_, @"no sampler header left in the device's table for an opaque border",
+                          MTLCommandBufferErrorOutOfMemory);
+        rc_->abandon();
+        abandoned_ = true;
+        return false;
     }
     return true;
 }
@@ -346,8 +246,7 @@ uint32_t RMRangeEncode::ineligible(size_t from, size_t until)
         const size_t end = plan.encoderEnd(at);
         if (plan.begin(at).refused)
             return VetoRefused;
-        if (plan.nativeRangeRefusal(at, end))
-            return VetoPlanar;
+        // its images are converted from their surfaces at the seeds the commit makes final (conversions)
         bool planar = false;
         plan.forEachResource(at, end, RMResourceKind::Texture, [&](const RMRangeResource &use) {
             planar |= (use.access & raw::ResourceUse::Sample) && (use.facts.roles & RMResourceFacts::Converted);
@@ -416,6 +315,8 @@ bool RMRangeEncode::step(size_t until)
             abandoned_ = true;
             return stop(VetoContents);
         }
+        if (!rewritten_.empty() && !continuing_ && cb_->_plan.operation(at_).op == OpEnd && !remakeImages(at_ + 1))
+            return false;
     }
     RAW_ENCODE_END(loopSpan);
     return true;
@@ -461,7 +362,6 @@ void RMRangeEncode::reset()
     cb_ = nil;
     serialCompute_ = computeUnit_ = continuing_ = encoderShadows_ = false;
     kernelShadows_ = {};
-    kernelWindows_ = {};
     stateCursor_ = {};
     fused_ = {};
     fusedAt_ = renderBegin_ = encoder_ = freshAt_ = SIZE_MAX;
@@ -475,12 +375,14 @@ void RMRangeEncode::reset()
     loadedTargets_ = 0;
     formatTargets_.clear();
     formatStores_.clear();
+    planeImages_.clear();
     resolves_.clear();
     resolveTargets_.clear();
     turned_ = {};
     depthResolve_ = {};
     stencilResolve_ = {};
     converted_.clear();
+    rewritten_.clear();
     fresh_.clear();
     for (raw::Texture &t : levelTargets_)
         t = {};
@@ -491,6 +393,7 @@ void RMRangeEncode::reset()
     shadowsWritten_.clear();
     standInsWritten_.clear();
     planesImaged_.clear();
+    morePlanes_.clear();
     standInFresh_.clear();
     codes_.clear();
     codeParts_.clear();
@@ -501,11 +404,6 @@ void RMRangeEncode::reset()
 
 bool encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why, size_t *refusedEncoder)
 {
-    if (RMTexture *feedback = (__bridge RMTexture *)cb->_plan.nativeRangeRefusal(from, to)) {
-        *why = "a planar texture sampled and rendered in one command buffer";
-        hit(cb, PredEncPlanarRT, feedback->_raw.width, feedback->_raw.height);
-        return false;
-    }
     RMRangeEncode &encode = rmRangeEncode();
     // what was encoded ahead of the commit goes on: the rest of the range, then the seal; one that stopped submitted
     // nothing, and the range is encoded whole

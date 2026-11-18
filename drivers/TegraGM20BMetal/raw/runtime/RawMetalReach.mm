@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalReach.h"
+#import "RawMetalIndirect.h"
+#import "RawMetalPassErrors.h"
 #import "RawMetalPlanAdapters.h"
 
 bool PlanDraws::any() const
@@ -11,20 +13,27 @@ bool PlanDraws::any() const
     return false;
 }
 
+// An execute's draw names the topology of its buffer's triangles where it holds any (RawMetalIndirect.mm execute:), so
+// points and lines beside them are asked of the buffer
 bool PlanDraws::atFrameResolution() const
 {
     const RMCommandPlan &plan = cb_->_plan;
     for (size_t at = from_; at < to_ && plan.operation(at).op != OpEnd; at++) {
-        if (!isPlanDraw(plan.operation(at).op))
+        const Op op = plan.operation(at).op;
+        if (!isPlanDraw(op))
             continue;
         const RMPlanDraw &draw = plan.draw(at);
         const raw::RasterState &raster = plan.raster[plan.renderStates[draw.state].raster];
         if (raw::reachedAtFrameResolution(draw.primitive, raster.set & raw::RasterState::Fill ? raster.fill : 0))
             return true;
+        if (op == OpExecuteCommands && ([(__bridge RMIndirectCommandBuffer *)draw.arguments kinds] & RMICBOthers))
+            return true;
     }
     return false;
 }
 
+// Each draw as the range encode draws it (RawMetalRangeStep.mm), under its state's reach twin: an execute's commands inherit
+// it, so the GPU draws them again by reference, and a patch draw runs the state's tessellation stages again
 bool PlanDraws::replay(raw::RenderEncoder &e, const char **why)
 {
     raw::StateCursor cursor;
@@ -64,12 +73,23 @@ bool PlanDraws::replay(raw::RenderEncoder &e, const char **why)
             drawn = e.drawIndexedIndirect(draw.primitive, indexSize, &indices->_raw, draw.indexOffset, &arguments->_raw,
                                           draw.argumentOffset, why);
             break;
-        default:
-            *why = "a turned pass's reach replays no indirect command buffer or patch draw";
-            return false;
+        case OpExecuteCommands:
+            drawn = encodeCommands(&e, &commands_, draw, why);
+            break;
+        default:  // the patch draws, isPlanDraw's last
+            drawn = encodePatches(&e, &commands_, draw, cb_->_plan.patches(at), op == OpDrawPatchesIndirect, why);
+            break;
         }
         if (!drawn)
             return false;
     }
     return true;
+}
+
+void rmReachFails(RMCommandBuffer *cb, bool ahead, const char *why, bool memory, const raw::Refusal &refusal)
+{
+    if (memory)
+        rmPassWorkFails(cb, ahead, why, MTLCommandBufferErrorOutOfMemory);
+    else
+        rmOwnDrawFails(cb, ahead, why, refusal);
 }

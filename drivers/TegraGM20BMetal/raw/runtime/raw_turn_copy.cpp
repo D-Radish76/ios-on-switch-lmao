@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include "../fx/fx_image.h"
 #include "raw_gpu.h"
 
 namespace raw {
@@ -112,23 +113,37 @@ bool CommandBuffer::depthConvert(const Texture &dst, const Texture &src, const c
         *why = "no texture header for a depth conversion's source";
         return false;
     }
-    Texture target = dst;
-    target.rotation = 0;
-    PassDesc p;
-    p.depthStencil.texture = &target;
-    RenderEncoder *e = render(p);
-    if (!e) {
-        *why = "a depth conversion's target the raw path cannot render";
-        return false;
+    // each layer by a pass of its own into that layer, read through a 2D header of the source's layer (the source's own
+    // texture's part header, freed with it): the conversion states choose no layer
+    const uint32_t layers = std::min(std::max(dst.layers, 1u), std::max(src.layers, 1u));
+    for (uint32_t layer = 0; layer < layers; layer++) {
+        Texture target = layersFrom(dst, layer), source = src;
+        target.layers = 1;
+        target.rotation = 0;
+        if (std::max(src.layers, 1u) > 1) {
+            source = layersFrom(src, layer);
+            source.layers = 1;
+            if (!(source.tic = dev_->attachmentTic(src, source, 0, layer))) {
+                *why = "no texture header for a layer of a depth conversion's source";
+                return false;
+            }
+        }
+        PassDesc p;
+        p.depthStencil.texture = &target;
+        RenderEncoder *e = render(p);
+        if (!e) {
+            *why = "a depth conversion's target the raw path cannot render";
+            return false;
+        }
+        const TurnMap identity;
+        e->setPipeline(pl);
+        e->setDepthStencil(&depthWrites);
+        e->setTexture(0, &source);
+        e->setBytes(2, 0, &identity, sizeof identity);
+        if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
+            return false;
+        e->end();
     }
-    const TurnMap identity;
-    e->setPipeline(pl);
-    e->setDepthStencil(&depthWrites);
-    e->setTexture(0, &src);
-    e->setBytes(2, 0, &identity, sizeof identity);
-    if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
-        return false;
-    e->end();
     return true;
 }
 
@@ -143,14 +158,18 @@ bool Device::sampleable(Texture &t)
     return true;
 }
 
-Texture *CommandBuffer::turnScratch(uint32_t format, uint32_t width, uint32_t height, uint32_t tag, uint32_t samples)
+Texture *CommandBuffer::turnScratch(uint32_t format, uint32_t width, uint32_t height, uint32_t tag, uint32_t samples,
+                                    uint32_t layers)
 {
     Texture m;
     uint64_t bytes = 0, align = 0;
+    fx::MipChain grid;
     const bool zeta = zetaFormatIndex(format) < kZetaFormats;
     if (zeta ? !zetaShape(width, height, format, samples, m, bytes, align)
-             : samples != 1 || !shape(width, height, format, m))
+             : !shape(width, height, format, m) || !fx::msLayout(width, height, samples, m.bpp, grid))
         return nullptr;
+    m.samples = uint8_t(samples);
+    m.layers = std::max(layers, 1u);
     m.memoryless = true;
     std::lock_guard<raw::Mutex> l(dev_->lock_);
     Texture *b = dev_->backing(m, tag, true, false);

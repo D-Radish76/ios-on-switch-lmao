@@ -63,13 +63,15 @@ extern "C" kern_return_t IOConnectCallAsyncStructMethod(mach_port_t connection, 
 namespace harness {
 
 // Each render request made into a record whose programs carry its forms, kept in the store; `refuses`: its refusal
-// stored instead; `fails`: nothing stored and the compile answered as one that could not run
+// stored instead; `fails`: nothing stored and the compile answered as one that could not run; `shapes`: the record
+// changed as the test's compiler makes it before it is stored
 struct RenderCompiler {
     switch_seed_pack::StoreWriter store;
     std::mutex mutex;
     std::condition_variable answered;
     std::vector<raw::CompileRequest> requests;
     std::function<bool(const raw::CompileRequest &)> refuses, fails;
+    std::function<void(const raw::CompileRequest &, raw::RuntimeRecord &)> shapes;
 
     bool serve(const std::string &directory)
     {
@@ -140,6 +142,8 @@ struct RenderCompiler {
             }
             record.blob = {0x1a00, 0x1111};
             record.splitTried = true;
+            if (shapes)
+                shapes(request, record);
             const bool refused = refuses && refuses(request);
             const std::string entry = refused ? raw::encodeEntry(cache, nullptr, "refused by the test's compiler")
                                               : raw::encodeEntry(cache, &record, "");

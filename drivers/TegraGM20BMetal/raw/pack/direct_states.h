@@ -27,8 +27,10 @@ inline raw::ProbeTextures probeTextures(const std::string &line, bool ours)
         return {MTLPixelFormatBGRA8Unorm, 4};
     const std::pair<const char *, raw::ProbeTextures> sets[] = {
         {"f xr_bgr10_frag", {MTLPixelFormatR32Uint, 1}},      {"f xr_bgr10_srgb_frag", {MTLPixelFormatR32Uint, 1}},
-        {"f xr_bgra10_frag", {MTLPixelFormatRGBA16Uint, 1}},  {"f xr_planes_frag", {MTLPixelFormatRG32Uint, 1}},
+        {"f xr_bgra10_frag", {MTLPixelFormatRGBA16Uint, 1}},  {"f xr_bgra10_srgb_frag", {MTLPixelFormatRGBA16Uint, 1}},
+        {"f xr_planes_frag", {MTLPixelFormatRG32Uint, 1}},    {"f xr_planes_srgb_frag", {MTLPixelFormatRG32Uint, 1}},
         {"f xr_two_planes_frag", {MTLPixelFormatR32Uint, 1}}, {"f two_plane_store", {MTLPixelFormatRGBA16Float, 1}},
+        {"f xr_two_planes_srgb_frag", {MTLPixelFormatR32Uint, 1}},
         {"f ycbcr_store_", {MTLPixelFormatRGBA32Float, 1}},   {"f ycbcr_packed_", {MTLPixelFormatR32Uint, 1}},
         {"f turn_copy", {MTLPixelFormatR32Uint, 1}},          {"f turn_masked", {MTLPixelFormatR32Uint, 1}},
         {"f turn_reach", {MTLPixelFormatR32Uint, 1}},         {"f turn_depth", {MTLPixelFormatDepth32Float, 1}},

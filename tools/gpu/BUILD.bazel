@@ -98,6 +98,7 @@ py_test(
     data = [
         "//drivers/TegraGM20BMetal:precompile/corpus.log",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_ycbcr_store.h",
     ],
     env = {
@@ -120,6 +121,29 @@ py_test(
         "logharvest.py",
         "logharvest_test.py",
     ],
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
+# Adds the compute kernels a device dispatched at run time to the precompile corpus, from pulled logarchives
+# (kernelharvest.py)
+py_binary(
+    name = "kernelharvest",
+    srcs = [
+        "kernelharvest.py",
+        "logharvest.py",
+    ],
+    data = ["//drivers/TegraGM20BMetal:precompile/libraries.py"],
+    deps = ["//drivers/TegraGM20BMetal:raw_pack"],
+)
+
+py_test(
+    name = "kernelharvest_test",
+    srcs = [
+        "kernelharvest.py",
+        "kernelharvest_test.py",
+        "logharvest.py",
+    ],
+    data = ["//drivers/TegraGM20BMetal:precompile/libraries.py"],
     deps = ["//drivers/TegraGM20BMetal:raw_pack"],
 )
 

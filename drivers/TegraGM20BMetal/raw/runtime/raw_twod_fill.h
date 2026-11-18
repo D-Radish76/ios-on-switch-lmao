@@ -4,10 +4,9 @@
 // per format, where gpu.x1.twod_clear's cells of that format read exact on the chip (RGBA8, BGRA8, their sRGB forms,
 // RGB10A2 and R8 on boots 19 and 21; R16 in the bench's own-format fills, BENCH3 g1). The colour is always one word in the
 // target's own 2D format: a float colour format into another format hung GR on the chip (BENCH3 section 9). Those cells
-// filled plain memory only, so a target with comptags keeps the 3D engine's CLEAR_SURFACE over the region in a pass of its
-// own (RenderEncoder::clearRegion), with the ZBC table's value; so does every other format.
+// filled plain memory only, so a target with comptags, and every other format, takes the copy engine's constants
+// (raw::BlitEncoder::fillRect).
 #pragma once
-#include <cmath>
 #include <cstdint>
 
 namespace raw {
@@ -37,33 +36,6 @@ constexpr uint32_t twodFillFormat(uint32_t format)
 constexpr bool twodFillHolds(uint32_t format, bool comptags)
 {
     return !comptags && twodFillFormat(format) != 0;
-}
-
-// The solid colour word of `format` in twodFillFormat's packing, the colour channels of an sRGB format encoded; Metal's
-// float-to-unorm rounding (nearest, ties away)
-inline uint32_t twodFillWord(uint32_t format, const float rgba[4])
-{
-    const bool srgb = format == 71 || format == 81;
-    auto code = [&](int c, uint32_t max) {
-        float v = std::fmin(std::fmax(rgba[c], 0.0f), 1.0f);
-        if (srgb && c < 3)
-            v = v <= 0.0031308f ? v * 12.92f : 1.055f * std::pow(v, 1 / 2.4f) - 0.055f;
-        return uint32_t(v * float(max) + 0.5f);
-    };
-    switch (twodFillFormat(format)) {
-    case 0xf3:
-        return code(0, 255);
-    case 0xee:
-        return code(0, 65535);
-    case 0xd5:
-        return code(3, 255) << 24 | code(2, 255) << 16 | code(1, 255) << 8 | code(0, 255);
-    case 0xcf:
-        return code(3, 255) << 24 | code(0, 255) << 16 | code(1, 255) << 8 | code(2, 255);
-    case 0xd1:
-        return code(3, 3) << 30 | code(2, 1023) << 20 | code(1, 1023) << 10 | code(0, 1023);
-    default:
-        return 0;
-    }
 }
 
 }  // namespace raw

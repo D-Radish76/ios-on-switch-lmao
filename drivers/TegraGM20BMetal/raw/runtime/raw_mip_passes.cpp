@@ -4,8 +4,85 @@
 // step. Each pass's prologue barrier orders its reads after the pass before wrote.
 #include "raw_attachment_target.h"
 #include "raw_gpu.h"
+#include "raw_mip.h"
 
 namespace raw {
+
+namespace {
+// Level `level` of chain `t` (a 2D chain's layer `layer` alone, a 3D chain's volume) read as words of integer format `view`
+bool wordLevel(Device &d, Texture &t, uint32_t level, uint32_t layer, uint32_t format, uint32_t view, Texture &out)
+{
+    const FormatInfo *f = formatInfo(format), *v = formatInfo(view);
+    if (!f || !v)
+        return false;
+    if (t.type == fx::kTexThreeD) {
+        out = t;
+        out.tic = d.levelTic(t, level, f->srgb);
+    } else {
+        if (!attachmentTarget(t, level, layer, out))
+            return false;
+        out.format = format;
+        out.tic = d.attachmentTic(t, out, level, layer);
+    }
+    if (!out.tic)
+        return false;
+    out.format = view;
+    out.sampled = nullptr;
+    out.standIn = nullptr;
+    out.tic = d.viewTic(out, v->tic0);
+    return out.tic != 0;
+}
+}  // namespace
+
+bool wordMipPasses(Device &d, CommandBuffer &rc, Texture &t, uint32_t first, uint32_t last, uint32_t firstLayer,
+                   uint32_t layers, uint32_t format, const char **why)
+{
+    const bool volume = t.type == fx::kTexThreeD;
+    Pipeline *mip = d.ownPipeline(volume ? wordMip3dState(format) : wordMipState(format));
+    if (!mip || !t.chain || last >= t.chain->layout.levels) {
+        *why = "a chain of words the pack has no mip state for, or levels past it";
+        return false;
+    }
+    const fx::MipChain &c = t.chain->layout;
+    const uint32_t view = wordMipView(format);
+    for (uint32_t layer = firstLayer; layer < firstLayer + (volume ? 1 : layers); layer++)
+        for (uint32_t l = first; l < last; l++) {
+            Texture above;
+            if (!wordLevel(d, t, l, layer, format, view, above)) {
+                *why = "no header for a mip step's level of words";
+                return false;
+            }
+            const fx::MipLevel &from = c.level[l], &into = c.level[l + 1];
+            for (uint32_t z = 0; z < (volume ? into.depth : 1u); z++) {
+                Texture to;
+                if (!attachmentTarget(t, l + 1, volume ? z : layer, to)) {
+                    *why = "a mip step's level of words the 3D engine cannot draw";
+                    return false;
+                }
+                to.format = view;
+                to.renderable = true;
+                to.layers = 1;
+                PassDesc p;
+                p.color[0].texture = &to;
+                p.color[0].load = ColorAttachment::DontCare;
+                p.color[0].store = true;
+                p.count = 1;
+                p.width = into.width;
+                p.height = into.height;
+                RenderEncoder *e = rc.render(p, why);
+                if (!e)
+                    return false;
+                e->setPipeline(mip);
+                e->setTexture(0, &above);
+                const uint32_t step[8] = {from.width, from.height, into.width, into.height, from.depth, into.depth, z, 0};
+                e->setBytes(2, 0, step, volume ? sizeof step : 4 * sizeof *step);
+                if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
+                    return false;
+                e->end();
+            }
+        }
+    return true;
+}
 
 bool CommandBuffer::mipPasses(Texture &t, Pipeline &mip, uint32_t first, uint32_t last, uint32_t firstLayer,
                               uint32_t layers, uint32_t format, const char **why)

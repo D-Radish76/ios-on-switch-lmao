@@ -25,10 +25,13 @@ STENCIL_ONLY = {'S8_UINT': 'S8_UINT', 'Z32_FLOAT_S8X24_UINT': 'X32_S8X24_UINT'}
 # The extended-range formats' codes as raw renders and fetches them (raw_xr.h; kFormats names them)
 XR_PIPES = {550: 'R32G32_UINT', 552: 'R16G16B16A16_UINT', 554: 'R32_UINT'}
 # Formats held as another format's texels, read through its header, with no target of their own: RG8Unorm_sRGB's bytes
-# as R8G8_UNORM's (raw_srgb_pair.h: no two-component sRGB target; a draw samples its RGBA8Unorm_sRGB stand-in) and
-# BGR10_XR_sRGB's codes as R32_UINT's (raw_format_standin.h: a pass renders it through an RGBA16Float stand-in, a draw
-# samples its extended-range stand-in)
-HEADER_PIPES = {31: 'R8G8_UNORM', 555: 'R32_UINT'}
+# as R8G8_UNORM's (raw_srgb_pair.h: no two-component sRGB target; a draw samples its RGBA8Unorm_sRGB stand-in), and
+# RGB10A8_2P_XR10_sRGB's, BGRA10_XR_sRGB's and BGR10_XR_sRGB's codes as R32G32_UINT's, R16G16B16A16_UINT's and R32_UINT's
+# (raw_format_standin.h: a pass renders each through an RGBA16Float stand-in, a draw samples its extended-range stand-in)
+HEADER_PIPES = {31: 'R8G8_UNORM', 263: 'R32_UINT', 551: 'R32G32_UINT', 553: 'R16G16B16A16_UINT', 555: 'R32_UINT'}
+# ARGB8Unorm and its sRGB form: RGBA8's header with its sources rotated (alpha the first byte), no target of their own
+# (raw_format_standin.h: an RGBA8 stand-in the copy engine fills and stores)
+ROTATED_PIPES = {84: 'R8G8B8A8_UNORM', 85: 'R8G8B8A8_SRGB'}
 
 
 def defines(path: Path) -> dict[str, int]:
@@ -77,7 +80,7 @@ class RawTicWordsTest(unittest.TestCase):
             if line and not line.startswith('#'):
                 metal, _, pipe, *_ = line.split('\t')
                 pipes[int(metal)] = pipe
-        pipes.update(XR_PIPES | HEADER_PIPES)
+        pipes.update(XR_PIPES | HEADER_PIPES | ROTATED_PIPES)
         rows = nil_rows()
         body = FORMATS.read_text().split('const FormatInfo kFormats[] = {', 1)[1].split('};', 1)[0]
         table = re.findall(
@@ -90,10 +93,11 @@ class RawTicWordsTest(unittest.TestCase):
         for metal, target, word, srgb in table:
             row = rows[pipes[int(metal)]]
             with self.subTest(metal=metal, pipe=row[0]):
-                none = row[1] == 'NONE' or int(metal) in HEADER_PIPES
+                none = row[1] == 'NONE' or int(metal) in HEADER_PIPES | ROTATED_PIPES.keys()
                 want = 0 if none else threed['NVB197_SET_COLOR_TARGET_FORMAT_V_' + row[1]]
                 self.assertEqual(int(target, 16), want)
-                self.assertEqual(int(word, 16), tic0(row, tex))
+                rotated = row[:5] + ['GBAR'] + row[6:] if int(metal) in ROTATED_PIPES else row
+                self.assertEqual(int(word, 16), tic0(rotated, tex))
                 self.assertEqual(srgb == 'true', 'SRGB' in row[0])
 
     def test_zeta_words_are_nils(self):

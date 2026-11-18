@@ -10,6 +10,7 @@
 #include <vector>
 #include <memory>
 #include "../runtime/RawDirect.h"
+#include "../../translate/NativeMetalTranslate.h"
 #include "kernel_shapes.h"
 
 namespace probe {
@@ -65,6 +66,7 @@ void eachKernel(id<MTLDevice> dev, NSString *text, Made made, Each each, Refused
             refused(k.line, why.empty() ? "no function " + k.shape.function : why);
             continue;
         }
+        stateFormatMaps(k.shape, nmb_kernel_texture_map);
         k.descriptor = descriptor(k.shape, f);
         k.textures = textures(k.shape.textures);
         if (!made(k, why)) {

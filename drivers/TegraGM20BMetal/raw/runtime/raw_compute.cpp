@@ -84,6 +84,18 @@ const ComputeState *computeState(Device &dev, uint64_t keyHash)
     return &gStates.emplace(std::make_pair(&dev, keyHash), c).first->second;
 }
 
+// as the bind macro makes an inherited buffer's (switch_gm20b_macros.c build_icb_bind): the range of a base off 16 bytes
+// runs from the rounded-down base, the residual word or none
+void kernelBufferDescriptor(const PackKernelEntry &e, uint64_t va, uint32_t size, BufferDescriptor &d)
+{
+    const int word = kernelResidualWord(e);
+    bufferDescriptor(true, kernelBufferWindow(e), word < 0 ? 0 : word, va, size, d);
+    if (word < 0) {
+        d.word = -1;
+        d.residual = 0;
+    }
+}
+
 const ComputeState *placeCompute(Device &dev, const ComputeRecord &r)
 {
     std::lock_guard<raw::Mutex> hold(gStatesLock);
@@ -310,24 +322,6 @@ void ComputeEncoder::setSampler(uint32_t slot, const Sampler *s)
     }
 }
 
-void ComputeEncoder::setBufferWindow(uint32_t slot, uint64_t va)
-{
-    if (slot < 31 && (!(windowMask_ >> slot & 1) || windows_[slot] != va)) {
-        windows_[slot] = va;
-        windowMask_ |= 1u << slot;
-        ++bindingRevision_;
-        RAW_DIAGNOSTIC(dev_.stats.kernelWindows++);
-    }
-}
-
-void ComputeEncoder::clearBufferWindows()
-{
-    if (windowMask_) {
-        windowMask_ = 0;
-        ++bindingRevision_;
-    }
-}
-
 void ComputeEncoder::bindBuffer(uint32_t slot, const Bound &binding)
 {
     if (!(bufs_[slot] == binding)) {
@@ -338,7 +332,7 @@ void ComputeEncoder::bindBuffer(uint32_t slot, const Bound &binding)
 
 const char *ComputeEncoder::pairedSamplerTsc(const Device &dev, const PackKernelEntry &e,
                                              const Texture *const (&textures)[31], const Sampler *const (&samplers)[16],
-                                             uint32_t &tsc)
+                                             bool mapsStated, uint32_t &tsc)
 {
     const bool constant = e.slot & kConstexprSampler;
     const uint32_t index = e.slot & ~kConstexprSampler;
@@ -353,7 +347,7 @@ const char *ComputeEncoder::pairedSamplerTsc(const Device &dev, const PackKernel
     const auto mapOf = [&](uint32_t slot) -> uint8_t {
         return slot < 31 && textures[slot] ? textures[slot]->addressMap : 0;
     };
-    if (!pairedSamplerKept(kernelSamplerPairs(e), leaves, mapOf))
+    if (!mapsStated && !pairedSamplerKept(kernelSamplerPairs(e), leaves, mapOf))
         return "a kernel sampler whose modes a converted texture's address map changes, compiled without that map";
     tsc = constant ? dev.constexprTsc_[index] : s ? s->tsc : dev.neutralTsc_;
     return nullptr;
@@ -395,10 +389,7 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             else if (!b.kernelMemory)
                 cb_.useAddress(b.va, b.size, writes);
             BufferDescriptor desc;
-            if (!bufferDescriptor(e, windowMask_ >> e.slot & 1 ? windows_[e.slot] : b.va, b.size, desc)) {
-                *why = "a buffer bound at an offset that is not a multiple of 16";
-                return false;
-            }
+            kernelBufferDescriptor(e, b.va, b.size, desc);
             if (spilledWord(desc.word)) {
                 spilled_.set(desc.word, desc.residual);
             } else if (desc.word >= 0) {
@@ -448,6 +439,7 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
                 }
                 if (view == SlotView::View && !(tic = dev_.viewTic(*t, e.window, ViewAccess::Texture))) {
                     *why = "no texture header left for a kernel's view of another format";
+                    failure_ = ComputeFailure::OutOfMemory;
                     return false;
                 }
             }
@@ -458,16 +450,10 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             *why = "a kernel record entry of a kind the raw path does not bind";
             return false;
         } else if (e.kind == KernelTextureTable || e.kind == KernelSamplerTable) {
-            const HeapTables &tables = dev_.heapTables_;
-            const bool textures = e.kind == KernelTextureTable;
-            const uint64_t va = textures ? tables.textureTableVa() : tables.samplerTableVa();
-            at[0] = uint32_t(va);
-            at[1] = uint32_t(va >> 32);
-            at[2] = textures ? tables.textureTableBytes() : tables.samplerTableBytes();
-            at[3] = 0;
+            tableDescriptor(dev_, e, at);
         } else if (kernelSamplerPairsKnown(e)) {
             uint32_t tsc = 0;
-            if (const char *refused = pairedSamplerTsc(dev_, e, textures_, samplers_, tsc)) {
+            if (const char *refused = pairedSamplerTsc(dev_, e, textures_, samplers_, r.mapsStated, tsc)) {
                 *why = refused;
                 return false;
             }
@@ -511,6 +497,16 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
     return true;
 }
 
+// A kernel placed while the device had no memory for its argument tables binds them at the dispatch that meets it
+bool ComputeEncoder::argumentTables(const char **why)
+{
+    if (!__atomic_load_n(&state_->heapMissing, __ATOMIC_ACQUIRE) || dev_.rebindKernelArguments(*state_))
+        return true;
+    *why = "no memory for the tables a kernel reads argument buffers through";
+    failure_ = ComputeFailure::OutOfMemory;
+    return false;
+}
+
 bool ComputeEncoder::dispatch(const uint32_t groups[3], const uint32_t threads[3], const char **why)
 {
     const auto plan = computeDispatch({groups[0], groups[1], groups[2]}, {threads[0], threads[1], threads[2]}, false);
@@ -542,26 +538,49 @@ void ComputeEncoder::rootWords(const PackKernel &r, const uint32_t base[3], cons
         memcpy(root + kRootPush / 4 + r.regionWord, region, std::min<size_t>(8 * 4, 4 * (32 - r.regionWord)));
 }
 
-// A command's root table and set 0 hold the record's 32 push words and the bound buffers and samplers: nothing a kernel
-// reads through argument buffers (argumentRoot's words, set 1, the handle tables, an argument table), and no residual of a
-// bind offset spilled past the push words
+// A command's region holds what a dispatch's uploads hold (icbRegionLayout): an argument table of bind offsets only
+// where its entry names it, as the dispatch's binds it (prepareDescriptors)
 const char *ComputeEncoder::icbRefusal(const ComputeState &k)
 {
     const PackKernel &r = *k.rec;
-    if (k.argumentMask || k.heapSet || k.heapMissing || r.rootSlots || r.spillEntry)
-        return "a kernel that reads argument buffers";
     for (uint32_t i = 0; i < r.entries; i++) {
         const PackKernelEntry &e = r.entry[i];
-        if (e.kind == KernelTextureTable || e.kind == KernelSamplerTable || e.kind == KernelSpillTable)
-            return "a kernel that reads argument buffers";
-        if (e.kind == KernelBuffer && spilledWord(kernelResidualWord(e)))
-            return "a kernel whose bind offset spills past its push window";
+        if (e.kind == KernelBuffer && spilledWord(kernelResidualWord(e)) && (!r.spillEntry || r.spillEntry > r.entries))
+            return "a kernel whose bind offset spills past its push window into no argument table";
     }
     return nullptr;
 }
 
+bool ComputeEncoder::icbArgumentTables(Device &dev, const ComputeState &k)
+{
+    return !__atomic_load_n(&k.heapMissing, __ATOMIC_ACQUIRE) || dev.rebindKernelArguments(k);
+}
+
+void ComputeEncoder::tableDescriptor(const Device &dev, const PackKernelEntry &e, uint32_t *at)
+{
+    const HeapTables &tables = dev.heapTables_;
+    const bool textures = e.kind == KernelTextureTable;
+    const uint64_t va = textures ? tables.textureTableVa() : tables.samplerTableVa();
+    at[0] = uint32_t(va);
+    at[1] = uint32_t(va >> 32);
+    at[2] = textures ? tables.textureTableBytes() : tables.samplerTableBytes();
+    at[3] = 0;
+}
+
+void ComputeEncoder::argumentWords(const ComputeState &k, const PackKernel &r, uint32_t *root)
+{
+    for (uint32_t m = k.argumentMask; m; m &= m - 1)
+        root[kRootPush / 4 + __builtin_ctz(m)] = k.argumentPush[__builtin_ctz(m)];
+    if (const HeapSet *heap = k.heapSet) {
+        root[kRootSets / 4 + 4] = uint32_t(heap->memory.va);
+        root[kRootSets / 4 + 5] = uint32_t(heap->memory.va >> 32);
+        root[kRootSets / 4 + 6] = r.heapBytes;
+    }
+}
+
 bool ComputeEncoder::icbBinds(const ComputeState &k, uint64_t va, std::vector<icb::ComputeBind> &out,
-                              std::vector<icb::ComputeStride> &strides, const char **why)
+                              std::vector<icb::ComputeStride> &strides, std::vector<icb::ComputeRoot> &roots,
+                              const char **why)
 {
     if (const char *refusal = icbRefusal(k)) {
         *why = refusal;
@@ -574,17 +593,32 @@ bool ComputeEncoder::icbBinds(const ComputeState &k, uint64_t va, std::vector<ic
         if (e.kind != KernelBuffer || e.slot >= 31)
             continue;
         const int word = kernelResidualWord(e);
-        // the macro writes the residual itself, 0 for a base on 16 bytes: the word the record leaves for it must be 0
-        if (word >= 0 && (r.pushMask >> word & 1) && r.pushWords[word]) {
-            *why = "a kernel whose residual push word the record fills";
-            return false;
-        }
-        out.push_back(
-            {setVa + e.offset, word >= 0 ? rootVa + kRootPush + 4 * uint32_t(word) : 0, e.slot, kernelBufferWindow(e)});
+        const bool spilled = spilledWord(word);
+        // a spilled residual goes to its word of the region's argument table (icbRegionLayout), as composeSpill places
+        // it: none past the table or the residuals it holds
+        const uint32_t spillAt = spilled ? uint32_t(word) - kRootPushWords : 0;
+        const bool inTable = spilled && k.spill && spillAt < r.spillWords && spillAt < kSpillResidualWords;
+        const uint64_t residual = word < 0 || (spilled && !inTable) ? 0
+                                  : spilled ? va + icbRegionLayout(r).spill + 4 * spillAt
+                                            : rootVa + kRootPush + 4 * uint32_t(word);
+        // what rootWords and composeSpill leave there for a base on 16 bytes, which the macro writes back at each
+        // execute since an earlier one's residual stays in the region's memory
+        const uint32_t recorded = !residual ? 0
+                                  : inTable ? k.spill[spillAt]
+                                  : (r.pushMask >> word & 1) ? r.pushWords[word]
+                                                             : 0;
+        out.push_back({setVa + e.offset, residual, e.slot, kernelBufferWindow(e), recorded});
     }
     for (const auto &stride : r.stageInStride)
         if (stride[1] && stride[1] <= 32 && stride[0] < 31)
             strides.push_back({rootVa + kRootPush + 4 * (stride[1] - 1u), stride[0]});
+    // icbRegion writes the slot table under the same condition
+    if (r.rootSlots && r.rootTableWord && r.rootTableWord <= 31) {
+        const uint64_t table = va + icbRegionLayout(r).slots;
+        for (uint32_t n = 0; n < 31; n++)
+            if (r.rootSlots >> n & 1)
+                roots.push_back({table + sizeof(RootEntry) * (kFirstSlotRoot + n), n});
+    }
     return true;
 }
 
@@ -641,10 +675,8 @@ bool ComputeEncoder::dispatchRegion(const ComputeRegion &part, const std::array<
         *why = "a threadgroup m2v's dispatch region cannot name";
         return false;
     }
-    if (__atomic_load_n(&state_->heapMissing, __ATOMIC_ACQUIRE) && !dev_.rebindKernelArguments(*state_)) {
-        *why = "no memory for the tables a kernel reads argument buffers through";
+    if (!argumentTables(why))
         return false;
-    }
     if (!prepareDescriptors(why))
         return false;
     const std::array<uint32_t, 3> grid{groups[0], groups[1], groups[2]};
@@ -770,13 +802,7 @@ void ComputeEncoder::noteDispatch(uint64_t units, bool looping)
 // dispatch's bound buffers in the upload ring (raw_heap_tables.h writeDrawRoots), each slot's buffer used as written
 void ComputeEncoder::argumentRoot(const PackKernel &r, uint32_t *root)
 {
-    for (uint32_t m = state_->argumentMask; m; m &= m - 1)
-        root[kRootPush / 4 + __builtin_ctz(m)] = state_->argumentPush[__builtin_ctz(m)];
-    if (const HeapSet *heap = state_->heapSet) {
-        root[kRootSets / 4 + 4] = uint32_t(heap->memory.va);
-        root[kRootSets / 4 + 5] = uint32_t(heap->memory.va >> 32);
-        root[kRootSets / 4 + 6] = r.heapBytes;
-    }
+    argumentWords(*state_, r, root);
     if (!r.rootSlots || !r.rootTableWord || r.rootTableWord > 31)
         return;
     if (slotTableVa_) {

@@ -499,14 +499,54 @@ TEST(CompileRequestForms, TheClientsRequestsCarryWhatItsKeysAreMadeOf)
     EXPECT_NE(Body(remote, "Compiler::Outcome Completion::remoteKernel(")
                   .find("q.stageIn = stageInFieldsOf(descriptor.stageInputDescriptor);"),
               std::string::npos);
-    const std::string computeState = SourceText("../raw/runtime/RawMetalComputeState.mm");
-    EXPECT_NE(
-        computeState.find(
-            "const std::string stageIn = raw::stageInText(raw::stageInFieldsOf(descriptor.stageInputDescriptor));"),
-        std::string::npos);
-    EXPECT_NE(computeState.find("s->_constants = (f ? f->_constants : \"\") + stageIn + linked;"), std::string::npos);
     EXPECT_NE(SourceText("../compiler/compiler_record.mm").find("raw::probeTexturesOf(p.request.variant)"),
               std::string::npos);
+}
+
+// A compute state's key carries its function's constants, its stage input and its linked functions in the order
+// RawMetalComputeState.mm keys it by (raw::computeStateConstants); the compiler remakes that key from a request holding
+// the three, and refuses a request missing any one of them
+TEST(CompileRequestForms, AComputeStatesConstantsStageInputAndLinkedFunctionsAreItsKey)
+{
+    MTLStageInputOutputDescriptor *in = [MTLStageInputOutputDescriptor stageInputOutputDescriptor];
+    in.attributes[0].format = MTLAttributeFormatFloat2;
+    in.attributes[0].bufferIndex = 1;
+    in.layouts[1].stride = 16;
+    in.layouts[1].stepFunction = MTLStepFunctionThreadPositionInGridX;
+    const std::string constants = "c0=29:0000803f", helperConstants = "c1=33:02000000";
+    raw::LinkedComputeFunction helper;
+    helper.air.fill(0x31);
+    helper.constants = helperConstants;
+    helper.symbol = helper.name = "helper";
+    raw::AirHash air;
+    air.fill(0x30);
+    raw::CompileRequest r;
+    r.stack = kStack;
+    r.kind = raw::RequestKind::Kernel;
+    r.libraries.push_back(data(made_metallib::universal({"stage_sum", "helper"}, 0x30)));
+    r.stages = {stage("k", "stage_sum"), stage("kl", "helper")};
+    r.stages[0].constants = constants;
+    r.stages[1].constants = helperConstants;
+    r.kernel.threads[0] = 65;
+    r.kernel.threads[1] = r.kernel.threads[2] = 1;
+    r.kernel.stageIn = raw::stageInFieldsOf(in);
+    const std::string state =
+        raw::computeStateConstants(constants, raw::stageInText(raw::stageInFieldsOf(in)), {helper});
+    r.key = "kernel | " + raw::computeKey(air, state, 0, false, r.kernel.threads, "", "", "");
+    std::string made;
+    ASSERT_EQ(taken(r, &made), "");
+    EXPECT_EQ(made, r.key);
+    raw::CompileRequest unconstant = r, bare = r, unlinked = r;
+    unconstant.stages[0].constants.clear();
+    bare.kernel.stageIn = {};
+    unlinked.stages.pop_back();
+    const std::pair<const char *, const raw::CompileRequest *> lacking[] = {
+        {"constants", &unconstant}, {"stage input", &bare}, {"linked function", &unlinked}};
+    for (const auto &[what, request] : lacking) {
+        const std::string why = taken(*request);
+        EXPECT_NE(why.find("a kernel request whose key is not its function's"), std::string::npos)
+            << what << ": " << why;
+    }
 }
 
 TEST(CompileRequestForms, TheRefusalNamesTheFirstFieldTheKeysPartAt)

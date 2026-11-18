@@ -273,6 +273,19 @@ fragment float4 resolve_bgr5a1_frag(Out in [[stage_in]], Samples s [[texture(0)]
     return packedOf(s, n, uint2(in.position.xy), uint4(5, 5, 5, 1));
 }
 
+// BGRA10_XR over its codes (blue, green, red and alpha fields, each code in its field's top 10 bits, the attachment's own
+// RGBA16Uint header): an M4 Max's colour code is the samples' codes' mean rounded half up, every channel; its alpha the
+// mean with a tie down, 88% of texels at 2x and 98% at 4x, the rest one code off (raw/test/resolvecodesoracle.mm)
+fragment uint4 resolve_bgra10_xr_frag(Out in [[stage_in]], texture2d_ms<uint, access::read> s [[texture(0)]],
+                                      constant uint &n [[buffer(0)]])
+{
+    const uint2 at = uint2(in.position.xy);
+    uint4 sum = 0;
+    for (uint k = 0; k < n; k++)
+        sum += s.read(at, k) >> 6;
+    return uint4((sum.xyz * 2 + n) / (2 * n), (sum.w * 2 + n - 1) / (2 * n)) << 6;
+}
+
 fragment float4 resolve_rgba8_frag(Out in [[stage_in]], Samples s [[texture(0)]], constant uint &n [[buffer(0)]])
 {
     return unorm8(s, n, uint2(in.position.xy));

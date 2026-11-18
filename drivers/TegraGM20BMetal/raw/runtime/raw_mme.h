@@ -16,7 +16,7 @@ namespace raw::mme {
 // root table's draw parameters and the base registers as the direct path wrote them. Past them the colour matrix
 // constants, the indirect command buffers', the amplified draws' and a layered pass's clear. They are NVK's pre-Pascal
 // draw loops, built with Mesa's MME builder (kits/SwitchGM20BEmit: gen/SwitchGM20BMacros.h).
-constexpr uint32_t kAbi = 6, kDraw = SWITCH_GM20B_MACRO_DRAW, kDrawIndexed = SWITCH_GM20B_MACRO_DRAW_INDEXED,
+constexpr uint32_t kDraw = SWITCH_GM20B_MACRO_DRAW, kDrawIndexed = SWITCH_GM20B_MACRO_DRAW_INDEXED,
                    kIndirect = SWITCH_GM20B_MACRO_INDIRECT, kIndexedIndirect = SWITCH_GM20B_MACRO_INDEXED_INDIRECT,
                    kDrawParams = SWITCH_GM20B_MACRO_DRAW_PARAMS,
                    kIndexedParams = SWITCH_GM20B_MACRO_DRAW_INDEXED_PARAMS, kMatrix = SWITCH_GM20B_MACRO_VCM_CONSTANTS,
@@ -24,7 +24,8 @@ constexpr uint32_t kAbi = 6, kDraw = SWITCH_GM20B_MACRO_DRAW, kDrawIndexed = SWI
                    kIcbDrawIndexed = SWITCH_GM20B_MACRO_ICB_DRAW_INDEXED, kIcbGate = SWITCH_GM20B_MACRO_ICB_GATE,
                    kIcbBind = SWITCH_GM20B_MACRO_ICB_BIND, kIcbPatches = SWITCH_GM20B_MACRO_ICB_PATCHES,
                    kAmplify = SWITCH_GM20B_MACRO_AMPLIFY, kAmplifyIndexed = SWITCH_GM20B_MACRO_AMPLIFY_INDEXED,
-                   kClearLayers = SWITCH_GM20B_MACRO_CLEAR_LAYERS;
+                   kClearLayers = SWITCH_GM20B_MACRO_CLEAR_LAYERS, kFetchDraw = SWITCH_GM20B_MACRO_FETCH_DRAW,
+                   kFetchDrawIndexed = SWITCH_GM20B_MACRO_FETCH_DRAW_INDEXED;
 
 constexpr bool countedAsDraw(uint32_t slot)
 {
@@ -38,10 +39,10 @@ static_assert(countedAsDraw(kIndirect) && countedAsDraw(kIndexedIndirect), "and 
 static_assert(!countedAsDraw(kMatrix) && !countedAsDraw(kIcbRange) && !countedAsDraw(kIcbDraw) &&
                   !countedAsDraw(kIcbDrawIndexed) && !countedAsDraw(kIcbGate) && !countedAsDraw(kIcbBind) &&
                   !countedAsDraw(kIcbPatches) && !countedAsDraw(kAmplify) && !countedAsDraw(kAmplifyIndexed) &&
-                  !countedAsDraw(kClearLayers),
+                  !countedAsDraw(kClearLayers) && !countedAsDraw(kFetchDraw) && !countedAsDraw(kFetchDrawIndexed),
               "no other macro sits in the draw range; the push scan's rawMacro() counts ICB, patch, amplify and "
               "layered-clear calls by slot");
-static_assert(kClearLayers < SWITCH_GM20B_MACRO_RAW_END && SWITCH_GM20B_MACRO_RAW_END <= SWITCH_GM20B_MACRO_SLOTS,
+static_assert(kFetchDrawIndexed < SWITCH_GM20B_MACRO_RAW_END && SWITCH_GM20B_MACRO_RAW_END <= SWITCH_GM20B_MACRO_SLOTS,
               "every raw slot is one CALL_MME_MACRO takes");
 static_assert(kDraw > SWITCH_GM20B_MACRO_NVK_SET_ANTI_ALIAS && kDraw > SWITCH_GM20B_MACRO_NVK_CLEAR,
               "no raw slot is one the profile reads as NVK's clear or anti-alias");
@@ -50,8 +51,8 @@ static_assert(kDraw > SWITCH_GM20B_MACRO_NVK_SET_ANTI_ALIAS && kDraw > SWITCH_GM
 // CPU's range, or by kIcbRange from the range buffer the GPU reads); a dispatch passes its index to kIcbGate, which lets the
 // launches after it run only inside that range. An execute of dispatches that inherit the encoder's buffers writes them to
 // scratch (three words a Metal buffer index from kScratchBuffers) and kIcbBind writes each command's set-0 descriptors
-// from them (raw_icb_compute.h). A patch command passes its control-stage words to kIcbPatches, which loads them where the
-// scratch words of its execute's layout (icbPatchLayout) say.
+// and root table slot entries from them (raw_icb_compute.h). A patch command passes its control-stage words to
+// kIcbPatches, which loads them where the scratch words of its execute's layout (icbPatchLayout) say.
 constexpr uint32_t kScratchLocation = SWITCH_GM20B_SCRATCH_ICB_LOCATION,
                    kScratchLength = SWITCH_GM20B_SCRATCH_ICB_LENGTH, kScratchBuffers = SWITCH_GM20B_SCRATCH_ICB_BUFFERS,
                    kScratchSetHi = SWITCH_GM20B_SCRATCH_ICB_SET_HI, kNoEntry = SWITCH_GM20B_ICB_NO_ENTRY,
@@ -87,7 +88,9 @@ constexpr Program kDrawProgram = program(switch_gm20b_macro_draw),
                   kIcbPatchesProgram = program(switch_gm20b_macro_icb_patches),
                   kAmplifyProgram = program(switch_gm20b_macro_amplify),
                   kAmplifyIndexedProgram = program(switch_gm20b_macro_amplify_indexed),
-                  kClearLayersProgram = program(switch_gm20b_macro_clear_layers);
+                  kClearLayersProgram = program(switch_gm20b_macro_clear_layers),
+                  kFetchDrawProgram = program(switch_gm20b_macro_fetch_draw),
+                  kFetchDrawIndexedProgram = program(switch_gm20b_macro_fetch_draw_indexed);
 constexpr size_t kProgramWords =
     std::size(switch_gm20b_macro_draw) + std::size(switch_gm20b_macro_draw_indexed) +
     std::size(switch_gm20b_macro_indirect) + std::size(switch_gm20b_macro_indexed_indirect) +
@@ -96,9 +99,10 @@ constexpr size_t kProgramWords =
     std::size(switch_gm20b_macro_icb_draw) + std::size(switch_gm20b_macro_icb_draw_indexed) +
     std::size(switch_gm20b_macro_icb_gate) + std::size(switch_gm20b_macro_icb_bind) +
     std::size(switch_gm20b_macro_icb_patches) + std::size(switch_gm20b_macro_amplify) +
-    std::size(switch_gm20b_macro_amplify_indexed) + std::size(switch_gm20b_macro_clear_layers);
+    std::size(switch_gm20b_macro_amplify_indexed) + std::size(switch_gm20b_macro_clear_layers) +
+    std::size(switch_gm20b_macro_fetch_draw) + std::size(switch_gm20b_macro_fetch_draw_indexed);
 static_assert(kProgramWords <= SWITCH_GM20B_MACRO_CODE_WORDS, "install() loads every program from code word 0");
-constexpr size_t kContextWords = 16 * 5 + kProgramWords + 3;  // each program's 5 load words, the root address's 3
+constexpr size_t kContextWords = 18 * 5 + kProgramWords + 3;  // each program's 5 load words, the root address's 3
 constexpr size_t kCallWords = 4, kParamsCallWords = 6;
 
 // Every program from code word 0, over NVK's, then the root table's address into the scratch words the patch macro
@@ -128,6 +132,8 @@ inline void install(Push &push, uint64_t root)
     load(kAmplify, kAmplifyProgram.words, kAmplifyProgram.size);
     load(kAmplifyIndexed, kAmplifyIndexedProgram.words, kAmplifyIndexedProgram.size);
     load(kClearLayers, kClearLayersProgram.words, kClearLayersProgram.size);
+    load(kFetchDraw, kFetchDrawProgram.words, kFetchDrawProgram.size);
+    load(kFetchDrawIndexed, kFetchDrawIndexedProgram.words, kFetchDrawIndexedProgram.size);
     push.inc(NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ROOT_HI), {uint32_t(root >> 32), uint32_t(root)});
 }
 
@@ -173,11 +179,13 @@ inline void icbGateHeader(Push &push)
     *push.at++ = Push::hdr(5, SUBC_3D, kMacroCall + 8 * kIcbGate, 1);
 }
 
-// A command's descriptors and bind strides to write from the inherited buffers in scratch: the call's data is the
-// descriptors' count, six words each, then the strides' count, three words each
-inline void icbBindHeader(Push &push, uint32_t descriptors, uint32_t strides)
+// A command's descriptors, bind strides and root table entries to write from the inherited buffers in scratch: the
+// call's data is the descriptors' count, seven words each, the strides' count, three words each, then the entries'
+// count, three words each
+inline void icbBindHeader(Push &push, uint32_t descriptors, uint32_t strides, uint32_t roots)
 {
-    *push.at++ = Push::hdr(5, SUBC_3D, kMacroCall + 8 * kIcbBind, SWITCH_GM20B_ICB_BIND_WORDS(descriptors, strides));
+    *push.at++ =
+        Push::hdr(5, SUBC_3D, kMacroCall + 8 * kIcbBind, SWITCH_GM20B_ICB_BIND_WORDS(descriptors, strides, roots));
 }
 
 // The range a CPU execute names, written as the scratch words themselves
@@ -235,6 +243,64 @@ inline void draw(Push &push, DrawParams &held, bool indexed, uint32_t first, uin
         *push.at++ = baseVertex;
     *push.at++ = baseInstance;
     held = {root, baseInstance, baseVertex, false};
+}
+
+// The fetch macros' BEGIN words (SwitchGM20BMacroSlots.h FETCH_BEGIN, NEXT, CONTINUED), by BEGIN's SPLIT_MODE (30:29),
+// INSTANCE_ID (27:26) and PRIMITIVE_ID (24:24) fields: an instance's first BEGIN opens its split draw, the first instance's
+// resetting the instance ID and a later one's stepping it; every BEGIN after it in the instance continues the split, the
+// primitive ID and the instance ID. The macro flips FETCH_BEGIN's bit to end one.
+constexpr uint32_t kBeginSplit = 29, kBeginInstance = 26, kBeginPrimitive = 24;
+constexpr uint32_t kFetchBeginFirst = NVB197_BEGIN_SPLIT_MODE_NORMAL_BEGIN_OPEN_END << kBeginSplit,
+                   kFetchBeginNext = kFetchBeginFirst | NVB197_BEGIN_INSTANCE_ID_SUBSEQUENT << kBeginInstance,
+                   kFetchBeginContinued = NVB197_BEGIN_SPLIT_MODE_OPEN_BEGIN_OPEN_END << kBeginSplit |
+                                          NVB197_BEGIN_INSTANCE_ID_UNCHANGED << kBeginInstance |
+                                          NVB197_BEGIN_PRIMITIVE_ID_UNCHANGED << kBeginPrimitive;
+static_assert((NVB197_BEGIN_SPLIT_MODE_NORMAL_BEGIN_OPEN_END ^ NVB197_BEGIN_SPLIT_MODE_NORMAL_BEGIN_NORMAL_END) ==
+                      NVB197_BEGIN_SPLIT_MODE_NORMAL_BEGIN_OPEN_END &&
+                  (NVB197_BEGIN_SPLIT_MODE_OPEN_BEGIN_OPEN_END ^ NVB197_BEGIN_SPLIT_MODE_OPEN_BEGIN_NORMAL_END) ==
+                      NVB197_BEGIN_SPLIT_MODE_NORMAL_BEGIN_OPEN_END,
+              "flipping FETCH_BEGIN's bit ends an open split draw");
+constexpr uint32_t kFetchShapeWords = 6, kFetchCallWords = 6;
+
+// The scratch words a fetch macro's call of MTLPrimitiveType `primitive` reads: the vertices of its first primitive, the
+// vertices that complete one more, the BEGIN words
+inline void fetchShape(Push &push, uint32_t primitive)
+{
+    static constexpr uint32_t first[5] = {1, 2, 2, 3, 3}, step[5] = {1, 2, 1, 3, 1};
+    const uint32_t k = primitive < 5 ? primitive : 3;
+    push.inc(NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_FETCH_FIRST),
+             {first[k], step[k], kFetchBeginFirst, kFetchBeginNext, kFetchBeginContinued});
+}
+
+// An indirect command buffer's execute of a state the fetch macros draw: its commands' draw macros draw a primitive at a
+// time (`on`), each command's sizes from the topology it sets, until the execute is over (`on` false)
+constexpr uint32_t kFetchCommandsWords = 7;
+inline void fetchCommands(Push &push, bool on)
+{
+    if (on)
+        push.inc(NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_FETCH_BEGIN),
+                 {kFetchBeginFirst, kFetchBeginNext, kFetchBeginContinued, 1});
+    else
+        push.m(NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_FETCH_ICB), 0);
+}
+
+// A fetch macro's call: its words, the call's data or the GPFIFO continuation the caller appends
+inline void fetchHeader(Push &push, bool indexed)
+{
+    *push.at++ = Push::hdr(5, SUBC_3D, kMacroCall + 8 * (indexed ? kFetchDrawIndexed : kFetchDraw), indexed ? 5 : 4);
+}
+
+inline void fetchDraw(Push &push, DrawParams &held, bool indexed, uint32_t first, uint32_t count, uint32_t instances,
+                      uint32_t root, uint32_t baseInstance)
+{
+    fetchHeader(push, indexed);
+    *push.at++ = count;
+    *push.at++ = instances;
+    *push.at++ = first;
+    if (indexed)
+        *push.at++ = root;
+    *push.at++ = baseInstance;
+    held = {root, baseInstance, indexed ? root : 0, false};
 }
 
 // Vertex amplification (raw_amplification.cpp): a draw under it is one call of an amplify macro, whose words are in

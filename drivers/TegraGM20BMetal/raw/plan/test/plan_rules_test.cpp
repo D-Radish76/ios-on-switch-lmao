@@ -11,9 +11,8 @@
 namespace raw::plan::test {
 namespace {
 
-const std::set<std::string> kTested = {"tex.planar", "call.blitopt",  "blit.tex",    "blit.b2t", "blit.t2b",
-                                       "blit.whole", "compute.image", "mipmaps.fmt", "event",    "enc.planarrt",
-                                       "enc.pass",   "enc.geometry",  "enc.storage"};
+const std::set<std::string> kTested = {"compute.image", "event", "enc.planarrt", "enc.pass", "enc.geometry",
+                                       "enc.storage"};
 
 bool has(const WorkGraph &g, Rule rule)
 {

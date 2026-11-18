@@ -12,6 +12,7 @@
 #include "raw_mme.h"
 #include "raw_cbuf.h"
 #include "raw_residual.h"
+#include "raw_mixed_samples.h"
 #include "raw_multisample.h"
 #include "raw_rotated_pass.h"
 #include "raw_fragment_tests.h"
@@ -117,33 +118,6 @@ static void probeUniforms(Pipeline &pl, uint32_t stage, uint32_t slot, const uin
 }
 #endif
 
-// Stage `k`'s (0 vertex, 1 fragment) root table for this draw, in the upload ring: m2v's {null, sink, an entry per buffer slot
-// it reaches through the table} over the identity resident set (raw_heap_tables.h). A buffer reached so may be written.
-uint64_t RenderEncoder::rootTable(const PackPipeline &r, uint32_t k, bool writes)
-{
-    Device &d = *dev_;
-    const uint32_t slots = r.rootSlots[k], entries = drawRootEntries(slots);
-    RootSlot slot[32];
-    for (uint32_t n = 0; kFirstSlotRoot + n < entries; n++) {
-        const Bound &b = bufs_[k + 1][n];
-        slot[n] = {};
-        if (!(slots >> n & 1) || !b.va)
-            continue;
-        if (b.buffer) {
-            cb_->use(*b.buffer, true, writes);
-            slot[n] = {b.buffer->va, b.buffer->length, b.offset};
-        } else {
-            cb_->useAddress(b.va, b.size, true);
-            slot[n] = {b.va, b.size, 0};
-        }
-    }
-    uint64_t va = 0;
-    auto *table = reinterpret_cast<RootEntry *>(d.alloc(d.upload_, entries * sizeof(RootEntry), 256, va));
-    writeDrawRoots(table, va, slots, slot, d.heapTables_.sinkVa(), d.heapTables_.identityVa());
-    RAW_DIAGNOSTIC(d.stats.uploadBytes += entries * sizeof(RootEntry));
-    return va;
-}
-
 // Set-0 entry `e` of `pl` into `set`, its buffer's bind residual into `prepared`; false: the draw is refused (`why`)
 __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline *pl, const PackEntry &e, uint32_t *set,
                                                                         SetResiduals &prepared, const char **why)
@@ -177,16 +151,13 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
             cb_->use(*b.buffer, bufferStorage(e));
         else if (!b.named || bufferStorage(e))
             cb_->useAddress(b.va, b.size, bufferStorage(e));
+        // A slot whose record names no residual word is one its programs read through the root table's address, never
+        // its descriptor: the translation gives each slot it reads through a view its SlotBindOffset residual
+        // (translate/NativeMetalDirect.rs residual_words; a slot read by address has none), and every record is the
+        // direct compile's, which places them. That descriptor takes the base aligned down.
         BufferDescriptor desc;
-        if (!bufferDescriptor(e, b.va, b.size, desc)) {
-            *why = bufferStorage(e) ? "a storage buffer bound at an offset that is not a multiple of 16, with no "
-                                      "residual push word"
-                                    : "a uniform buffer bound at an offset that is not a multiple of 256, with no "
-                                      "residual push word";
-            cb_->refusal = {RefUboOffset, uint32_t(e.stage) << 8 | e.slot, desc.residual,
-                            uint32_t(std::min<uint64_t>(b.offset, ~0u))};
-            return false;
-        }
+        if (!bufferDescriptor(e, b.va, b.size, desc))
+            desc.residual = 0;
         // a word that held a residual takes the slot's next one even where it is 0: the set keeps its
         // words from the draws before
         if (const int word = bufferResidualWord(e); spilledWord(word)) {
@@ -224,16 +195,21 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         } else if (t && texelBytes(view) == t->bpp) {
             tic = passViewTic(*t, view);
         }
-        if (!t || t->samples != samples_ || !tic) {
-            *why = "an unavailable native shader depth/stencil view";
-            cb_->refusal = {RefDepthStencil, e.kind, t ? t->format : 0, samples_};
+        if (!t || t->samples != samples_) {
+            *why = "a shader depth/stencil test's stand-in missing or of other samples than the pass's";
+            cb_->refusal = {RefTestsInvariant, e.kind, t ? t->format : 0, samples_};
+            return false;
+        }
+        if (!tic) {
+            *why = "no texture header left for a shader depth/stencil test's stand-in view";
+            cb_->refusal = {RefTestsMemory, e.kind, t->format, samples_};
             return false;
         }
         cb_->use(*t, true);
     } else if (e.kind == EntryTexture) {
         const Texture *t = boundTexture(e);
         if (t && !t->tic) {
-            *why = "a texture the raw path cannot sample";
+            *why = "a sampled texture with no header: memoryless, or made without MTLTextureUsageShaderRead";
             cb_->refusal = {RefNoTic, e.slot, t->format, t->width};
             return false;
         }
@@ -276,17 +252,23 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         const ColorAttachment &a = pass_.color[e.slot];
         const Texture *t = a.texture;
         const bool storage = t && (pl->storageBits >> e.slot & 1);
-        if (storage && storageViewMismatch(texelBytes(pl->storageTic[e.slot]), pl->rec->storageSamples, *t,
-                                           dev_->storageCompressedOk()) != StorageFallback::None) {
-            *why = "an incompatible framebuffer storage view";
-            cb_->refusal = {RefStorageView, e.slot, t->format, t->width};
+        if (const StorageFallback mismatch =
+                storage ? storageViewMismatch(texelBytes(pl->storageTic[e.slot]), pl->rec->storageSamples, *t,
+                                              dev_->storageCompressedOk())
+                        : StorageFallback::None;
+            mismatch != StorageFallback::None) {
+            const bool samples = mismatch == StorageFallback::Samples;
+            *why = samples ? "a fetching state's storage form drawn into an attachment of another sample count"
+                           : "a storage form whose view's texel size is not its attachment's";
+            cb_->refusal = {samples ? RefStorageSamples : RefStorageView, e.slot, t->format,
+                            samples ? uint32_t(t->samples) : t->width};
             return false;
         }
         if (t) {
             cb_->use(*t, pl->storageWriteBits >> e.slot & 1);
             tic = fetchTic(a, storage ? pl->storageTic[e.slot] : 0, layeredRecord(pl->rec->arrayLengthWord), why);
             if (!tic) {
-                cb_->refusal = {storage ? RefStorageView : RefNoTic, e.slot, t->format, t->width};
+                cb_->refusal = {RefViewHeader, e.slot, t->format, t->width};
                 return false;
             }
         }
@@ -294,7 +276,7 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         const Texture *shadow = pass_.xrShadow[e.slot];
         if (!shadow || !shadow->tic) {
             *why = "an extended-range shadow's variant drawn in a pass that holds no shadow of the colour";
-            cb_->refusal = {RefStorageView, e.slot, 0, 0};
+            cb_->refusal = {RefXrShadow, e.slot, 0, 0};
             return false;
         }
         cb_->use(*shadow, true);
@@ -304,7 +286,7 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         const Texture *bound = boundTexture(e);
         const Texture *t = bound && bound->type == fx::kTexThreeD ? bound : nullptr;
         if (t && !t->tic) {
-            *why = "a texture the raw path cannot sample";
+            *why = "a sampled texture with no header: memoryless, or made without MTLTextureUsageShaderRead";
             cb_->refusal = {RefNoTic, e.slot, t->format, t->width};
             return false;
         }
@@ -323,24 +305,24 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
     if (e.samplerKind == SamplerSlot) {
         const Sampler *s = boundSampler(e);
         const bool compares = entryCompares(e);
-        if (s && map && compares) {
-            *why = "a planar texture sampled by comparison";
-            return false;
-        }
-        tsc = s          ? (map        ? s->mapped[map]
+        tsc = s          ? (map        ? (compares ? s->compareMapped[map] : s->mapped[map])
                             : compares ? s->compareTsc
                                        : borderedTsc(*s, mapped))
               : compares ? d.neutralCompareTsc_
                          : d.neutralTsc_;
         if (s && !tsc) {
-            *why = map ? "a planar texture's sampler without its address map"
-                       : "a sampler without its opaque border's header for the texture";
+            *why = map        ? "a planar texture's sampler without its address map"
+                   : compares ? "a sampler without its compare header"
+                              : "a sampler without its opaque border's header for the texture";
+            cb_->refusal = {RefSamplerHeader, e.sampler, map, compares};
             return false;
         }
     } else if (e.samplerKind == SamplerConstexpr) {
         tsc = map ? d.constexprMapped_[e.sampler][map] : d.constexprTsc_[e.sampler];
         if (!tsc) {
-            *why = "a planar texture's constexpr sampler without its address map";
+            *why = map ? "a planar texture's constexpr sampler without its address map"
+                       : "a constexpr sampler the device placed no header of";
+            cb_->refusal = {RefSamplerHeader, e.sampler, map, 2};
             return false;
         }
     }
@@ -465,16 +447,20 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         }
         if (!fragmentTestsMatch(pl->rec->storageTests, ds_, zeta ? zeta->format : 0)) {
             *why = "an ordered storage variant whose depth/stencil tests differ from the draw";
-            cb_->refusal = {RefDepthStencil, pl->rec->storageTests,
+            cb_->refusal = {RefTestsInvariant, pl->rec->storageTests,
                             uint8_t(fragmentTests(ds_, zeta ? zeta->format : 0)), 0};
             return false;
         }
         // A pass that declares no attachment tests depth and stencil against its hidden one (PassDesc::hiddenZeta), which the
         // pass is given when its recorded states need it; the pipeline was made for the attachment the pass declares
         const Texture *declared = hiddenZeta_ ? nullptr : zeta;
-        if (!depthStencilFits(pl->depthFormat, declared ? declared->format : 0, zeta != nullptr, ds_)) {
-            *why = "a depth/stencil state or format the pass's depth/stencil attachment does not take";
-            cb_->refusal = {RefDepthStencil, pl->depthFormat, declared ? declared->format : 0, ds_.active()};
+        // Apple's GPU draws a state of another depth/stencil format than its pass's against the pass's attachment,
+        // depth tested and written as the pass's format holds it (an M4 Max, validation off, states of no depth,
+        // Depth16Unorm, Depth32Float, Depth32Float_Stencil8 and Stencil8 under passes of none, Depth32Float and
+        // Depth32Float_Stencil8): so does the raw path, the state's format choosing only its variant
+        if (!zeta && testsHiddenZeta(ds_)) {
+            *why = "a depth/stencil state testing a hidden attachment the pass was not given";
+            cb_->refusal = {RefTestsInvariant, pl->depthFormat, declared ? declared->format : 0, ds_.active()};
             return false;
         }
         if (!samplesDrawn(pl->samples, samples_, pl->samplePasses) ||
@@ -703,6 +689,10 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         p.inc(NVB197_SET_SAMPLE_MASK_X0_Y0, {m, m, m, m});
         cb_->sampleMaskHeld_ = m;
     }
+    if (rasterSamples_ > samples_ && tirControl(pl->samples) != tirControlHeld_) {
+        tirControlHeld_ = tirControl(pl->samples);
+        p.m(NVB197_SET_TIR_CONTROL, tirControlHeld_);
+    }
     RAW_ENCODE_END(bindSpan);
     if (!writeClipControl(p, *pl, raster, why))
         return false;
@@ -862,143 +852,6 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     return pl->freeForm.matrixSlot == kNoUniform || matrixConstants(*pl, why);
 }
 
-// A colour matrix form's draw: its iterated blend program and constants from the matrix uniform the draw binds, which
-// the GPU's macro reads through a non-prefetched GPFIFO entry over the uniform's bytes (the CPU reads none of them). A
-// uniform of the rows alone (a QuartzCore whose matrix has no clamp) is followed by a clamp pair of 0 in an entry of its
-// own: the macro's method data runs on across the entries, each but the last incomplete, which the kernel takes only
-// before a non-prefetched entry.
-bool RenderEncoder::matrixConstants(const Pipeline &pl, const char **why)
-{
-    static_assert(kMatrixWords == SWITCH_GM20B_MACRO_VCM_ARGUMENTS, "the colour matrix macro's arguments");
-    const Bound &b = bufs_[2][pl.freeForm.matrixSlot];
-    const uint32_t words = pl.freeForm.matrixWords;
-    if (!b.va || uint64_t(pl.freeForm.matrixOffset) + 4 * words > b.size || ((b.va + pl.freeForm.matrixOffset) & 3)) {
-        *why = "a colour matrix form's draw binds no uniform buffer that holds the matrix";
-        cb_->refusal = {};
-        return false;
-    }
-    if (b.buffer && b.buffer->hostVisible && !b.buffer->wc && b.cpu)
-        cb_->clean(b.cpu + pl.freeForm.matrixOffset, 4 * words);
-    mme::matrixHeader(p_);
-    dev_->push_.head = uint64_t(reinterpret_cast<uint8_t *>(p_.at) - dev_->push_.bo.cpu);
-    const uint32_t clampWords = kMatrixWords - words;
-    uint64_t clampVa = 0;
-    if (clampWords) {
-        auto *clamp = reinterpret_cast<uint32_t *>(dev_->alloc(dev_->push_, 4 * clampWords, 4, clampVa));
-        std::fill(clamp, clamp + clampWords, 0u);
-    }
-    matrixCall(bodies_, bodyStart_, p_.at, b.va + pl.freeForm.matrixOffset, words, clampVa, clampWords);
-    bodyStart_ = nullptr;
-    reserve();
-    return true;
-}
-
-// What the region test reads of a draw: Core Animation's transform (Pipeline::caTransform) over a triangle list or strip
-// of one instance, with its matrix, positions and indices where the CPU maps them; anything else is its scissor alone
-bool RenderEncoder::entryMoved(const PackEntry &e) const
-{
-    const bool buffer = e.kind == EntryUbo && (moved_.buffers[e.stage] >> e.slot & 1);
-    const bool texture = (e.kind == EntryTexture || e.kind == EntryTexture3d) && e.slot < kStageTextures &&
-                         hasSlot(moved_.textures[handleStage(e)], e.slot);
-    const bool sampler =
-        e.kind != EntryUbo && e.samplerKind == SamplerSlot && (moved_.samplers[handleStage(e)] >> e.sampler & 1);
-    const bool spill = e.kind == EntrySpillTable && (moved_.buffers[e.stage] || (e.stage == 2 && spillDirty_));
-    return buffer || texture || sampler || spill;
-}
-
-// The entries of a set of kPackEntries or fewer whose bindings moved since the last draw, bit k entry k
-uint32_t RenderEncoder::movedEntries(const SetEntries &entries) const
-{
-    if (moved_.all)
-        return ~0u;
-    uint32_t moved = 0;
-    for (uint32_t i = 0; i < entries.size(); i++)
-        moved |= uint32_t(entryMoved(entries[i])) << i;
-    return moved;
-}
-
-bool RenderEncoder::anyEntryMoved(const SetEntries &entries) const
-{
-    if (moved_.all)
-        return true;
-    for (uint32_t i = 0; i < entries.size(); i++)
-        if (entryMoved(entries[i]))
-            return true;
-    return false;
-}
-
-// The extended blend colour's words (raw_blend_color.h) where `r` reads them, made again after the colour moved
-bool RenderEncoder::blendWords(const PackPipeline &r, [[maybe_unused]] const char **why)
-{
-    if (!r.blendColorWord || !blendWordsDirty_)
-        return true;
-    float color[4];
-    memcpy(color, blendColor_, sizeof color);
-    blendColorWords(color, blendWords_);
-    blendWordsDirty_ = false;
-    return true;
-}
-
-// `pl`'s argument tables (raw_spill_table.h) whose entries moved: the record's words with the spilled bind offsets'
-// residuals and a fragment table's dynamic words, uploaded where they differ from the encoder's last upload, named in set 0
-bool RenderEncoder::fillSpills(const Pipeline &pl, uint32_t moved, bool all, SetResiduals &prepared, uint32_t *set,
-                               const char **why)
-{
-    const PackPipeline &r = *pl.rec;
-    Device &d = *dev_;
-    for (uint32_t k = 0; k < 2; k++) {
-        const uint32_t entry = spillEntryOf(r, k), count = r.spillWords[k];
-        if (!entry || !(all || (entry <= 32 && moved >> (entry - 1) & 1)))
-            continue;
-        uint32_t words[kSpillWordsMax];
-        composeSpill(pl.spill[k], count, prepared.spilled[k], words);
-        if (k == 1) {
-            if (!blendWords(r, why))
-                return false;
-            patchBlendPush(r, blendColor_, blendWords_, words, kRootPushWords, count);
-            patchShaderTestPush(r.shaderTests, ds_, stencilRef_, depthRange_, false, words, kRootPushWords, count);
-        }
-        const uint64_t va = spillUploads_[k].resolve(words, count, [&](const uint32_t *from, uint32_t n) {
-            RAW_ENCODE_COUNT(DescriptorUploads);
-            uint64_t address = 0;
-            uint8_t *upload = d.alloc(d.upload_, spillRange(n), 256, address);
-            memcpy(upload, from, n * sizeof(uint32_t));
-            return address;
-        });
-        spillDescriptor(va, count, set + pl.entries[entry - 1].offset / 4);
-    }
-    return true;
-}
-
-DrawGeometry RenderEncoder::geometry(const Pipeline &pl, uint32_t primitive, int32_t first, uint32_t count,
-                                     const PixelBox &limit)
-{
-    DrawGeometry g;
-    g.limit = limit;
-    g.viewport = {vp_[0], vp_[1], vp_[2], vp_[3]};
-    g.first = first;
-    g.count = count;
-    g.indices = drawIndices_;
-    g.indexSize = drawIndices_ ? drawIndexSize_ : 0;
-    g.strip = primitive == 4;
-    const Bound &m = bufs_[1][2];
-    const Bound &v = pl.rec->vertexSlot < 31 ? bufs_[1][pl.rec->vertexSlot] : bufs_[1][0];
-    g.bounded = !indirectGeometry_ && pl.caTransform && pl.positionComponents && (primitive == 3 || primitive == 4) &&
-                m.cpu && m.size >= 64 && v.cpu && pl.rec->vertexSlot < 31;
-    g.bounded &= !g.indices || drawIndexCpuSafe_ || drawIndexBuffer_;
-    g.owner = cb_;
-    g.inputs = {m.buffer, v.buffer, g.indices && !drawIndexCpuSafe_ ? drawIndexBuffer_ : nullptr};
-    g.acquire = [](void *owner, const void *input, const uint8_t *cpu, uint64_t bytes) {
-        return static_cast<CommandBuffer *>(owner)->acquireGeometry(*static_cast<const Buffer *>(input), cpu, bytes);
-    };
-    if (g.bounded) {
-        g.matrix = m.cpu;
-        g.positions = {v.cpu, pl.rec->vertexStride, pl.positionOffset, pl.positionComponents};
-        g.positionBytes = v.size;
-    }
-    return g;
-}
-
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
 const char *Device::fetchBarrierName(FetchBarrier b)
 {
@@ -1054,194 +907,5 @@ void RenderEncoder::countRules(const Pipeline &pl)
 }
 
 #endif
-
-bool RenderEncoder::prepareShaderTests(const Pipeline &pipeline, const char **why)
-{
-    const PackShaderTests &tests = pipeline.rec->shaderTests;
-    const uint8_t flags = tests.flags;
-    const bool shadow = shadowStencil(tests) && flags == kShaderTestStencil;
-    if (shadow != shadowStencil_) {
-        shadowStencil_ = shadow;
-        dsDirty_ = true;
-    }
-    if (!flags) {
-        endShaderTests();
-        return true;
-    }
-    const Texture *zeta = pass_.depthStencil.texture;
-    ShaderTestShape copy;
-    if (!zeta || !shaderTestShape(zeta->format, samples_, planeArea().x1, planeArea().y1, flags, copy)) {
-        *why = "a shader depth/stencil test whose attachment cannot be copied exactly";
-        cb_->refusal = {RefDepthStencil, zeta ? zeta->format : 0, flags, samples_};
-        return false;
-    }
-    if (shadow && shadowDependsOnDepth(ds_, zetaHasDepth(zeta->format))) {
-        *why = "a shader-side stencil whose stencil write depends on the depth test after its program";
-        cb_->refusal = {RefDepthStencil, zeta->format, flags, ds_.depthCompare};
-        return false;
-    }
-    // a shader-side stencil's depth test is the hardware's, against the attachment
-    if (shadow && (shaderTestsActive_ & kShaderTestDepth)) {
-        copyShaderTests(kShaderTestDepth, true);
-        shaderTestsActive_ &= uint8_t(~kShaderTestDepth);
-        dsDirty_ = true;
-    }
-    const uint8_t missing = flags & ~shaderTestsActive_;
-    if (!missing)
-        return true;
-    auto obtain = [&](Texture *&slot, uint32_t format, uint32_t tag) {
-        if (slot)
-            return true;
-        Texture shape;
-        shape.width = zeta->width;
-        shape.height = zeta->height;
-        shape.format = format;
-        shape.samples = samples_;
-        shape.layers = std::max(pass_.layers, 1u);
-        if (!(slot = dev_->lastBacking(shape, tag, true, false))) {
-            RAW_ENCODE_LOCK(lock, dev_->lock_);
-            slot = dev_->backing(shape, tag, true, false);
-        }
-        if (!slot)
-            return false;
-        cb_->backings_.push_back(slot);
-        cb_->use(*slot, true);
-        invalidateDescriptors();
-        return true;
-    };
-    constexpr uint32_t kR32Float = 55, kR8Uint = 13, kRG8Unorm = 30;
-    if (((missing & kShaderTestDepth) && !obtain(shaderDepth_, kR32Float, Device::kShaderDepthTag)) ||
-        ((missing & kShaderTestStencil) && !obtain(shaderStencil_, kR8Uint, Device::kShaderStencilTag)) ||
-        ((missing & kShaderTestStencil) && copy.packedStencil &&
-         !obtain(shaderStencilTemp_, kRG8Unorm, Device::kShaderStencilTempTag))) {
-        *why = "no native backing for shader depth/stencil tests";
-        cb_->refusal = {RefDepthStencil, zeta->format, flags, samples_};
-        return false;
-    }
-    copyShaderTests(missing, false);
-    shaderTestsActive_ |= missing;
-    dsDirty_ = true;
-    return true;
-}
-
-void RenderEncoder::copyShaderTests(uint8_t flags, bool toAttachment)
-{
-    if (p_.room() < 256)
-        reserve();
-    const Texture &zeta = *pass_.depthStencil.texture;
-    ShaderTestShape shape;
-    shaderTestShape(zeta.format, samples_, planeArea().x1, planeArea().y1, flags, shape);
-    auto side = [](const Texture &texture, uint32_t layer) {
-        auto result = sideOf(texture, 0, 0, layer);
-        result.height = sampleRows(texture);
-        return result;
-    };
-    cb_->use(zeta, toAttachment);
-    tiledCacheDrain(p_, dev_->k_.info());
-    p_.m(WAIT_FOR_IDLE, 0);
-    if (toAttachment)
-        p_.m(INVALIDATE_SHADER_CACHES, kFlushData | kInvalidateData);
-    const auto copies = shaderTestTransfers(flags, shape.packedStencil, toAttachment);
-    // every layer of a layered pass: a slice-choosing state's tests read the stand-ins' layers as a 2D array
-    for (uint32_t layer = 0; layer < std::max(pass_.layers, 1u); ++layer) {
-        const auto image = [&](ShaderTestImage which) {
-            switch (which) {
-            case ShaderTestImage::depth:
-                return side(*shaderDepth_, layer);
-            case ShaderTestImage::stencil:
-                return side(*shaderStencil_, layer);
-            case ShaderTestImage::temporary:
-                return side(*shaderStencilTemp_, layer);
-            case ShaderTestImage::attachment:
-                break;
-            }
-            return side(zeta, layer);
-        };
-        for (uint8_t at = 0; at < copies.count; ++at) {
-            const auto &copy = copies.transfers[at];
-            copyRemapped(p_, image(copy.source), image(copy.destination), shape.width, shape.height, copy.remap,
-                         copy.bytes, dev_->stats, copy.ordered);
-        }
-    }
-    RAW_DIAGNOSTIC(dev_->stats.compZetaCopies += zeta.comptags);
-    p_.inc(CE_LINE_LENGTH_IN, {0, 0}, SUBC_COPY);
-    p_.m(CE_LAUNCH_DMA, (kLaunchPitch & ~3u) | 2u | (1u << 10), SUBC_COPY);
-    p_.m(INVALIDATE_SHADER_CACHES, kInvalidateData);
-    p_.m(INVALIDATE_TEXTURE_DATA_CACHE_NO_WFI, 0);
-}
-
-void RenderEncoder::endShaderTests()
-{
-    if (!shaderTestsActive_)
-        return;
-    copyShaderTests(shaderTestsActive_, true);
-    shaderTestsActive_ = 0;
-    dsDirty_ = true;
-}
-
-uint32_t RenderEncoder::passViewTic(const Texture &t, uint32_t word0)
-{
-    AttachmentView v;
-    v.word0 = word0;
-    for (uint8_t i = 0; i < passViewCount_; ++i)
-        if (passViews_[i].ownTic == t.tic && passViews_[i].view == v)
-            return passViews_[i].tic;
-    const uint32_t tic = dev_->viewTic(t, word0, ViewAccess::Storage);
-    if (tic && passViewCount_ < passViews_.size())
-        passViews_[passViewCount_++] = {t.tic, v, tic};
-    return tic;
-}
-
-uint32_t RenderEncoder::passViewTic(const Texture &owner, const AttachmentView &v, const char **why)
-{
-    for (uint8_t i = 0; i < passViewCount_; ++i)
-        if (passViews_[i].ownTic == owner.tic && passViews_[i].view == v)
-            return passViews_[i].tic;
-    const uint32_t tic = dev_->attachmentViewTic(owner, v, why);
-    if (tic && passViewCount_ < passViews_.size())
-        passViews_[passViewCount_++] = {owner.tic, v, tic};
-    return tic;
-}
-
-uint32_t RenderEncoder::fetchTic(const ColorAttachment &a, uint32_t storage, bool layeredRecord, const char **why)
-{
-    const Texture &t = *a.texture;
-    const bool layered = pass_.layers > 1;
-    if (t.tic && (storage ? !layeredRecord : !layered))
-        return storage ? passViewTic(t, storage) : t.tic;
-    const FormatInfo *f = formatInfo(t.format);
-    if (!f) {
-        *why = "framebuffer fetch from a target the raw path cannot sample";
-        return 0;
-    }
-    AttachmentView v;
-    v.word0 = storage ? storage : f->tic0;
-    v.srgb = !storage && f->srgb;
-    v.arrayed = storage ? layeredRecord : layered;
-    v.layers = v.arrayed ? pass_.layers : 1;
-    v.part = a.image != nullptr;
-    v.level = uint8_t(a.level);
-    v.slice = a.slice;
-    return passViewTic(v.part ? *a.image : t, v, why);
-}
-
-// The rasterizer state of a draw of `primitive` (MTLPrimitiveType, or icb::kPatchPrimitive): the encoder's, with
-// Metal's depth bias for its topology: on, of Metal's factors, for triangles and the triangles of patches (an M4 Max
-// biases a tessellated quad patch as a triangle); off and zero for points and lines, and zero where both factors are
-RenderEncoder::Raster RenderEncoder::rasterFor(uint32_t primitive) const
-{
-    Raster r = raster_;
-    r.bias = icb::triangles(primitive);
-    if (r.bias && (depthBias_.constant != 0 || depthBias_.slope != 0)) {
-        // Metal's unit of an n-bit UNORM depth is one code, 1 / (2^n - 1) (an M4 Max's Depth16Unorm, macOS 27.2.1)
-        const uint32_t bits = depthBias_.unorm24 ? 0 : pass_.biasDepthBits;
-        r.units = bits || depthBias_.unorm24 ? Raster::Units::Unorm24 : Raster::Units::Format;
-        const double scale = bits ? 16777216.0 / double((1u << bits) - 1) : 1.0;
-        r.biasConstant = fbits(float(double(depthBias_.constant) * scale));
-        r.biasSlope = fbits(depthBias_.slope);
-        r.biasClamp = fbits(depthBias_.clamp);
-    }
-    return r;
-}
 
 }  // namespace raw

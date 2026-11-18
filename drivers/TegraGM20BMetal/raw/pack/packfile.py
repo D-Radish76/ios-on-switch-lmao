@@ -26,7 +26,7 @@ MAGIC = b'GM20BPK1'
 # entries past 32 (the count's high byte, the rest of the entries and their bound and memory bits in a far block in the
 # blob section, an argument table's entry past 254), programs' uniform buffers past set-0 byte 496 (a far table in the
 # blob section); 28: the selector section (PackSelectors), a state's shader-side stencil push word (shadow_stencil_word)
-VERSION = 28
+VERSION = 29
 SECTIONS = 16  # runtime/raw_pack.h PackSectionCount
 ENTRY_COMPARES = 1  # runtime/raw_pack.h kEntryCompares: a handle's sampler slot the state samples by comparison
 # PackIteratedBlend: count, enable, constants, uniformSlot, uniformOffset, uniformWords, reserved, alphaSource,
@@ -49,9 +49,9 @@ HEAP_ARRAYS = 8
 # spillEntry, spillWords, reserved, spillAt
 KERNEL_V20 = struct.Struct('<4B2I16IBBHI')
 # PackPipeline's record-v21 tail: its head (controlWord, controlPoints, controlPointIndexBytes, vertexStrideDynamic,
-# amplificationMax, amplificationIdWord, amplificationCountWord), arrayLengthWord, pulledStride[4][2], vertexStreams[7],
+# amplificationMax, amplificationIdWord, amplificationCountWord), arrayLengthWord, pulledStride[8][2], vertexStreams[7],
 # viewportCountWord
-PIPELINE_V21 = struct.Struct('<7sB8s7sB')
+PIPELINE_V21 = struct.Struct('<7sB16s7sB')
 VERTEX_STREAMS = 7  # PackPipeline.vertexStreams' length: the streams past stream 0
 STREAM_BIND_STRIDE = 0x80  # runtime/raw_pack.h kStreamBindStride
 # PackKernel's record-v21 tail: stageInRegionWord, stageInStride[4][2], reserved
@@ -313,7 +313,7 @@ def v21_tail(rec: dict) -> bytes:
     return PIPELINE_V21.pack(
         bytes(rec.get('runtime_head', bytes(7))),
         rec.get('array_length_word', 0),
-        bytes(rec.get('pulled_stride', bytes(8))),
+        bytes(rec.get('pulled_stride', bytes(16))),
         bytes(rec.get('vertex_streams', [])).ljust(VERTEX_STREAMS, b'\0'),
         rec.get('viewport_count_word', 0),
     )
@@ -360,7 +360,7 @@ def kernel_bytes(k: dict, key_offset: int, spill_at: int = 0) -> bytes:
         k.get('root_table_word', 0),
         k.get('status_word', 0),
         len(heap),
-        0,
+        k.get('maps_stated', 0),
         k.get('root_slots', 0),
         k.get('heap_bytes', 0),
         *pairs,

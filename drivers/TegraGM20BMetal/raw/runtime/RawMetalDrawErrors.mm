@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Draws raw::RenderEncoder refuses that go nowhere else: those Metal fails as well (each line names the Metal header or
 // error that defines the failure), records breaking what their making guarantees (the driver's error) and draws the raw
-// path has no form of yet. Each logs its own line and fails its command buffer, which then submits nothing
-// (RawMetalSubmit.mm finishes it with its error before anything could replay it elsewhere).
+// path has no form of yet; a refusal no case names is the driver's error too. Each logs its own line and fails its
+// command buffer, which then submits nothing (RawMetalSubmit.mm finishes it with its error before anything could replay
+// it elsewhere).
 #import "RawMetalInternal.h"
 
 // raw_direct.cpp turnedVariant sets PipelineTurnRefused where NVK's turned compile of the fragment stage failed, or
@@ -143,13 +144,113 @@ bool drawFailed(RMCommandBuffer *cb, const raw::Refusal &f, const char *why)
                       "two-plane texture its draws write",
                       why, f.a);
         break;
+    // every texture made for sampling has its header from its making (a stand-in's too, where it has
+    // MTLTextureUsageShaderRead): one a draw samples with none is memoryless or not made for reading; and a draw takes
+    // the variant made for the two-plane textures it binds
+    case raw::RefNoTic:
+        SWITCH_REFUSE("raw", "draw.no_header",
+                      "%s (slot %u, format %u): Metal's validation error (MTLTexture.h usage: a texture a function "
+                      "samples has MTLTextureUsageShaderRead and is not memoryless), or a variant without a two-plane "
+                      "texture's header pair",
+                      why, f.a, f.b);
+        break;
+    case raw::RefTestsInvariant:
+        SWITCH_REFUSE("raw", "draw.tests_variant",
+                      "%s (%u, %u, %u): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); a draw takes the variant "
+                      "made for its depth/stencil tests (RawMetalCubic.mm drawnTests), a pass the hidden "
+                      "depth/stencil attachment its recorded states test, and a Depth16Unorm its draws test in their "
+                      "shader renders converted (RawMetalRangeForms.mm depth16Tested)",
+                      why, f.a, f.b, f.c);
+        break;
+    case raw::RefDepthStencil:
+        SWITCH_REFUSE("raw", "draw.depth_stencil",
+                      "%s (format %u, tests %u, samples %u): Metal's validation error (an M4 Max's validation layer: "
+                      "\"For stencil attachment, the renderPipelineState pixelFormat must be MTLPixelFormatInvalid, as "
+                      "no texture is set\", \"the render pipeline's pixelFormat (MTLPixelFormatDepth32Float_Stencil8) "
+                      "does not match the framebuffer's pixelFormat (MTLPixelFormatDepth32Float)\"; MTLRenderPass.h "
+                      "attachments of one sample count)",
+                      why, f.a, f.b, f.c);
+        break;
+    case raw::RefStorageSamples:
+        SWITCH_REFUSE("raw", "draw.storage_samples",
+                      "%s (attachment %u, format %u, %u samples): Metal's validation error (an M4 Max's validation "
+                      "layer: \"For color attachment 0, the texture sample count (4) does not match the "
+                      "renderPipelineState colorSampleCount (1)\"; MTLRenderPipeline.h rasterSampleCount)",
+                      why, f.a, f.b, f.c);
+        break;
+    case raw::RefMatrixUniform:
+        SWITCH_REFUSE("raw", "draw.matrix_uniform",
+                      "%s (buffer %u, offset %u, %u bytes bound): Metal's validation error (an M4 Max's validation "
+                      "layer: \"missing Buffer binding at index 0\", \"has space for 16 bytes, but argument has a "
+                      "length(80)\", \"must be a multiple of 16 but was set to 2\"; MTLRenderCommandEncoder.h "
+                      "setFragmentBuffer:offset:atIndex:)",
+                      why, f.a, f.b, f.c);
+        break;
+    // a storage slot's attachment is of its state's colour format (RenderEncoder::prepare's format check), whose texel
+    // size the pack's storage view has, and a storage form views compressed memory (storageReadsCompressed)
+    case raw::RefStorageView:
+        SWITCH_REFUSE("raw", "draw.storage_view",
+                      "%s (attachment %u, format %u, width %u): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); "
+                      "a storage form's view is of its attachment's texel size",
+                      why, f.a, f.b, f.c);
+        break;
+    case raw::RefXrShadow:
+        SWITCH_REFUSE("raw", "draw.xr_shadow",
+                      "%s (attachment %u): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); a draw takes a shadow "
+                      "variant only in a pass that fills the colour's shadow (RawMetalCubic.mm rmXrShadowDraw, "
+                      "RawMetalRangePass.mm rmXrShadowFill)",
+                      why, f.a);
+        break;
+    case raw::RefSamplerHeader:
+        SWITCH_REFUSE("raw", "draw.sampler_header",
+                      "%s (sampler %u, address map %u, kind %u): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); "
+                      "a range makes every opaque border's and address map's header its draws sample through before "
+                      "them (RawMetalEncode.mm borderHeaders, conversions), a sampler's compare header is made with "
+                      "it and a record names only the constexpr samplers placed with it",
+                      why, f.a, f.b, f.c);
+        break;
+    case raw::RefRotated:
+        SWITCH_REFUSE("raw", "draw.turned_memory",
+                      "%s (rotation %u): MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h), no room in the shader "
+                      "heap or local memory for the state's turned fragment program",
+                      why, f.b);
+        code = MTLCommandBufferErrorOutOfMemory;
+        break;
+    case raw::RefTestsMemory:
+        SWITCH_REFUSE("raw", "draw.tests_memory", "%s: MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h)", why);
+        code = MTLCommandBufferErrorOutOfMemory;
+        break;
+    case raw::RefViewHeader:
+        SWITCH_REFUSE(
+            "raw", "draw.view_header",
+            "%s (attachment %u, format %u): MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h), no texture "
+            "header left for the view its fetch reads",
+            why, f.a, f.b);
+        code = MTLCommandBufferErrorOutOfMemory;
+        break;
     // draws Metal takes that the raw path has no form of yet: never handed to m2v either
     case raw::RefStrideTwin:
         SWITCH_REFUSE("raw", "draw.stride_twin", "%s: the raw path has no form of it yet; the command buffer fails",
                       why);
         break;
+    // the fetch barrier sits between BEGINs (clb197.h PIXEL_SHADER_BARRIER) and a patch's triangles come from one; the
+    // pixel interlock orders only inside a program's own ticket section (clb197.h SET_PIXEL_SHADER_INTERLOCK_CONTROL),
+    // which only a storage form has
+    case raw::RefGeometry:
+        SWITCH_REFUSE("raw", "draw.fetch_patches",
+                      "%s (primitive %u, %u patches, %u instances; 0: the GPU's): MTLCommandBufferErrorInternal "
+                      "(MTLCommandBuffer.h); a tessellated draw of a state that reads the colour it writes keeps "
+                      "Metal's order inside a patch only in the state's storage form (the pixel interlock), which "
+                      "this state has none of for this pass",
+                      why, f.a, f.b, f.c);
+        break;
     default:
-        return false;
+        why = why ? why : "a draw the encoder refused";
+        SWITCH_REFUSE("raw", "draw.unnamed",
+                      "%s (refusal %u: %u, %u, %u): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); every draw "
+                      "refusal names its ending here",
+                      why, unsigned(f.id), f.a, f.b, f.c);
+        break;
     }
     failCommandBuffer(cb, @(why), code);
     return true;

@@ -25,18 +25,22 @@
 #include "raw_dispatch_bands.h"
 #include "raw_dispatch_regions.h"
 #include "raw_gpu.h"
+#include "raw_icb_compute.h"
 #include "raw_loop_copies.h"
 #include "raw_spill_table.h"
 #include "raw_stage_in.h"
 
 namespace raw {
 
-namespace icb {
-struct ComputeBind;
-struct ComputeStride;
-}
-
 constexpr uint32_t kQmdWords = 64;
+
+struct BufferDescriptor;
+
+// Kernel buffer entry `e`'s descriptor (raw_residual.h bufferDescriptor). An entry with no residual word is a slot
+// its program never addresses: the translator places a bind offset for every slot the program reads, and a kernel
+// whose plan changes under a bind offset, whose record would hold no word at all, is refused at its compile
+// (raw_direct_compute.cpp attachResiduals). It binds at its base rounded down to 16 bytes.
+void kernelBufferDescriptor(const PackKernelEntry &e, uint64_t va, uint32_t size, BufferDescriptor &d);
 
 // A kernel ready to dispatch: its record and where its program lies in the heap
 struct ComputeState {
@@ -54,6 +58,15 @@ struct ComputeState {
     const HeapSet *heapSet = nullptr;
     bool heapMissing = false;
     const uint32_t *spill = nullptr;  // its argument table's words (raw_spill_table.h): the pack's or its record's
+};
+
+// What a refused compute command is to its command buffer: Metal's out-of-memory error where the device had no memory
+// or header left for it, Metal's validation error for a request Metal stops, else the driver's own error (a record or
+// plan breaking what its making guarantees, or a form the raw path has not)
+enum class ComputeFailure : uint8_t {
+    Internal,
+    OutOfMemory,
+    Invalid,
 };
 
 // The pack's kernel of key `keyHash` (computeKeyHash), its program placed at its first use; null: not in the pack, or no
@@ -91,10 +104,6 @@ public:
     void setStageInRegion(const std::array<uint32_t, 6> &region);
     void setTexture(uint32_t slot, const Texture *t);
     void setSampler(uint32_t slot, const Sampler *s);
-    // The bytes bound at buffer slot `slot` reached through a copy of them at `va`, on 16: a buffer bound off 16 bytes
-    // whose record names no residual word (raw_kernel_shadow.h KernelUse::windowSlot); clearBufferWindows: all in place
-    void setBufferWindow(uint32_t slot, uint64_t va);
-    void clearBufferWindows();
 
     // dispatchThreadgroups: `groups` threadgroups of `threads` threads, the shape the kernel's record was made at. False:
     // refused (*why), nothing encoded
@@ -126,6 +135,18 @@ public:
     // A counter sample on the compute class now: right after the encoder's opening wait for idle, its start
     void timestamp(uint64_t va);
     void end();
+
+    // What the refusal that ended this encoder's work is to its command buffer (no encoder goes on past one); a command
+    // encoded through it from outside sets its own with fails()
+    ComputeFailure failure() const
+    {
+        return failure_;
+    }
+
+    void fails(ComputeFailure failure)
+    {
+        failure_ = failure;
+    }
 #if defined(SWITCH_RAW_HARNESS_MARKS)
     // The bench's QMD chains (hw_test_app/bench qmdchain): each launch's QMD as built, before its upload, to patch;
     // false holds the launch back, the QMD then only a copy another QMD names dependent
@@ -139,37 +160,49 @@ public:
     };
 
     // One region of an indirect dispatch command of kernel `k` (raw_icb_compute.h): its QMD, root table and set 0 written at
-    // `block` (GPU address `va`, icb::computeRegionBytes(k.rec->setBytes) long), the command's stage-in words in its root
-    // table. False: refused (*why), as a dispatch is.
+    // `block` (GPU address `va`, icbRegionBytes(*k.rec) long), the command's stage-in words in its root table. False:
+    // refused (*why), as a dispatch is.
     static bool icbRegion(Device &dev, const ComputeState &k, const ComputeRegion &region,
                           const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
                           const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
                           const char **why);
+    // A region's block past icb::computeRegionBytes, each part 256-byte aligned: a kernel's root table of the dispatch's
+    // buffer slots (PackKernel::rootSlots), as a dispatch's (argumentRoot), at `slots`; its argument table of bind offsets
+    // (raw_spill_table.h) at `spill`; `bytes` in all
+    struct IcbRegionLayout {
+        uint32_t slots = 0, spill = 0, bytes = 0;
+    };
+    static IcbRegionLayout icbRegionLayout(const PackKernel &r);
+    static uint32_t icbRegionBytes(const PackKernel &r);
     // One launch of a region past the QMD's grid fields: its slice (raw_dispatch_bands.h qmdSlice)
     static bool icbRegion(Device &dev, const ComputeState &k, const ComputeRegion &region, const DispatchPiece &slice,
                           const std::array<uint32_t, 3> &grid, const std::array<uint32_t, 3> &nominal,
                           const IcbBuffer (&buffers)[31], const StageIn &stageIn, uint8_t *block, uint64_t va,
                           const char **why);
-    // The set-0 buffer descriptors and StageInStride root words of a region of kernel `k` written at `va` (icbRegion), as a
-    // buffer that inherits the encoder's buffers binds them at an execute (raw_icb_compute.h ComputeBind, ComputeStride).
-    // False: refused (*why).
+    // The set-0 buffer descriptors, StageInStride root words and root table slot entries of a region of kernel `k`
+    // written at `va` (icbRegion), as a buffer that inherits the encoder's buffers binds them at an execute
+    // (raw_icb_compute.h ComputeBind, ComputeStride, ComputeRoot). False: refused (*why).
     static bool icbBinds(const ComputeState &k, uint64_t va, std::vector<icb::ComputeBind> &out,
-                         std::vector<icb::ComputeStride> &strides, const char **why);
+                         std::vector<icb::ComputeStride> &strides, std::vector<icb::ComputeRoot> &roots,
+                         const char **why);
+    // A kernel placed while the device had no memory for its argument tables binds them now, as a dispatch that meets it
+    // does; false: still none
+    static bool icbArgumentTables(Device &dev, const ComputeState &k);
     // A command of a buffer that inherits the encoder's buffers takes the ones this encoder binds now, each used as written,
     // and their bind strides
     void inheritBuffers(IcbBuffer (&out)[31], std::array<uint32_t, 31> &strides);
 
     struct IcbExecute {
-        const Buffer *slots;  // the commands' words, icb::kComputeSlotWords each, command `first`'s at slot `at`
+        const Buffer *slots;  // the commands' words, slotWords each, command `first`'s at slot `at`
         uint32_t at, first, count;
         const Buffer *range;  // the execution range the GPU reads at rangeOffset; null: [first, first + count)
         uint64_t rangeOffset;
         bool written;  // a blit wrote the words on the GPU
-        // a buffer that inherits the encoder's buffers: its bind slots (icb::kComputeBindSlotWords each, as `slots`), the
-        // Metal buffer indices they read, those whose descriptors have no residual word (bound off 16 bytes: refused),
-        // and those whose bind stride a stage-in command reads
+        // a buffer that inherits the encoder's buffers: its bind slots (bindWords each, as `slots`), the Metal buffer
+        // indices they read, and those whose bind stride a stage-in command reads
         const Buffer *binds = nullptr;
-        uint32_t bindSlots = 0, alignedSlots = 0, strideSlots = 0;
+        uint32_t bindSlots = 0, strideSlots = 0;
+        uint32_t slotWords = icb::kComputeSlotWords, bindWords = icb::kComputeBindSlotWords;
     };
 
     // The commands by reference, ordered after this encoder's work before them as a dispatch is
@@ -180,6 +213,11 @@ private:
     friend struct DeviceHarness;
 #endif
     void argumentRoot(const PackKernel &r, uint32_t *root);
+    // The root words of kernel `k`'s reads through argument buffers that every dispatch of it takes alike: the device's
+    // root table and ExecutionStatus addresses, its set 1 (Device::bindKernelArguments)
+    static void argumentWords(const ComputeState &k, const PackKernel &r, uint32_t *root);
+    // A handle table entry's set-0 descriptor: the device's texture or sampler table (raw_heap_tables.h)
+    static void tableDescriptor(const Device &dev, const PackKernelEntry &e, uint32_t *at);
     static void rootWords(const PackKernel &r, const uint32_t base[3], const uint32_t groups[3], uint64_t setVa,
                           uint32_t residualMask, const std::array<uint32_t, 32> &residuals, const uint32_t region[8],
                           uint32_t *root);
@@ -188,10 +226,11 @@ private:
     // Why an indirect dispatch command cannot carry kernel `k`, null where it can
     static const char *icbRefusal(const ComputeState &k);
     // The header index sampler entry `e`, whose record holds its pairs, binds: its own, where the address maps of the
-    // textures it samples change none of its modes (raw_sampler_map.h); null, or why it has none
+    // textures it samples change none of its modes (raw_sampler_map.h) or where its record was made under the maps the
+    // dispatch's key states (`mapsStated`, PackKernel::mapsStated); null, or why it has none
     static const char *pairedSamplerTsc(const Device &dev, const PackKernelEntry &e,
                                         const Texture *const (&textures)[31], const Sampler *const (&samplers)[16],
-                                        uint32_t &tsc);
+                                        bool mapsStated, uint32_t &tsc);
 
     struct Bound {
         uint64_t va = 0;
@@ -214,8 +253,6 @@ private:
     uint32_t *start_ = nullptr;
     const ComputeState *state_ = nullptr;
     Bound bufs_[31];
-    uint64_t windows_[31] = {};
-    uint32_t windowMask_ = 0;
     const Texture *textures_[31] = {};
     const Sampler *samplers_[16] = {};
     bool serial_ = false, dispatched_ = false;
@@ -240,6 +277,7 @@ private:
     // `fetched`: the stream already waits for the writes before
     void stageInFromMemory(const PackKernel &r, uint64_t rootVa, bool fetched = false);
     void bindBuffer(uint32_t slot, const Bound &binding);
+    bool argumentTables(const char **why);
     bool prepareDescriptors(const char **why);
     void room(uint32_t words);
     bool launch(const std::array<uint32_t, 3> &grid, const DispatchPiece &piece, const std::array<uint32_t, 8> &region,
@@ -247,6 +285,7 @@ private:
     void cutBatch();
     void noteDispatch(uint64_t units, bool looping);
     uint32_t dispatches_ = 0;
+    ComputeFailure failure_ = ComputeFailure::Internal;
     DrawTiming candidate_;
     LoopStream stream();
     Predication::Answer startLoop(bool doWhile, uint64_t wordVa, const PredicateTest *test);

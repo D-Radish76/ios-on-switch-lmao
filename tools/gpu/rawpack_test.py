@@ -98,13 +98,13 @@ class YcbcrStandIn(unittest.TestCase):
         ):
             self.assertEqual(stand_in(self.HEAD + colors + self.TAIL), self.HEAD + want + self.TAIL)
 
-    def test_a_state_the_runtime_leaves_to_m2v_keeps_its_formats(self):
-        for colors in (
-            'c0=501:15:0:1:0:0:1:0:0',
-            'c0=540:15:0:1:0:0:1:0:0 c1=521:15:0:1:0:0:1:0:0',
-            'c0=542:15:0:1:0:0:1:0:0',
-            'c0=80:15:0:1:0:0:1:0:0',
+    def test_a_format_no_target_is_made_of_takes_the_stand_in_too(self):
+        for colors, want in (
+            ('c0=501:15:0:1:0:0:1:0:0', 'c0=125:15:0:1:0:0:1:0:0'),
+            ('c0=540:15:0:1:0:0:1:0:0 c1=521:15:0:1:0:0:1:0:0', 'c0=125:15:0:1:0:0:1:0:0 c1=125:15:0:1:0:0:1:0:0'),
         ):
+            self.assertEqual(stand_in(self.HEAD + colors + self.TAIL), self.HEAD + want + self.TAIL)
+        for colors in ('c0=542:15:0:1:0:0:1:0:0', 'c0=80:15:0:1:0:0:1:0:0'):
             line = f'{self.HEAD}{colors}' + self.TAIL
             self.assertEqual(stand_in(line), line)
 
@@ -126,16 +126,19 @@ class YcbcrStandIn(unittest.TestCase):
             ('c0=93:7:1:4:5:0:1:5:0', 'c0=125:7:1:4:5:0:1:5:0'),
             ('c0=41:15:1:8:9:0:8:9:0', 'c0=125:15:1:8:9:0:8:9:0'),
             ('c0=555:15:1:8:9:0:10:9:0 c1=10:15:0:1:0:0:1:0:0', 'c0=115:15:1:1:0:0:1:0:0 c1=10:15:0:1:0:0:1:0:0'),
+            ('c0=553:15:1:8:9:0:10:9:0 c1=10:15:0:1:0:0:1:0:0', 'c0=115:15:1:8:9:0:10:9:0 c1=10:15:0:1:0:0:1:0:0'),
             ('c0=42:15:0:1:0:0:1:0:0 c1=540:15:0:1:0:0:1:0:0', 'c0=125:15:0:1:0:0:1:0:0 c1=125:15:0:1:0:0:1:0:0'),
         ):
             line = f'{self.HEAD}{colors}' + self.TAIL
             self.assertEqual(stand_in(line), f'{self.HEAD}{stand_in_colors}' + self.TAIL)
         line = f'{self.HEAD}c0=11:15:0:1:0:0:1:0:0 c1=501:15:0:1:0:0:1:0:0' + self.TAIL
-        self.assertEqual(stand_in(line), line)
+        self.assertEqual(stand_in(line), f'{self.HEAD}c0=71:15:0:1:0:0:1:0:0 c1=125:15:0:1:0:0:1:0:0' + self.TAIL)
 
     def test_the_format_stand_ins_are_the_runtimes(self):
         header = Path('drivers/TegraGM20BMetal/raw/runtime/raw_format_standin.h').read_text()
         constants = dict(re.findall(r'(k\w+) = (\d+)', header[header.index('constexpr uint32_t kR8UnormSrgb') :]))
+        xr = Path('drivers/TegraGM20BMetal/raw/runtime/raw_xr.h').read_text()
+        constants.update(re.findall(r'constexpr uint32_t (kRgb10A8XrSrgb) = (\d+)', xr))
         body = header[header.index('constexpr uint32_t formatStandIn') :]
         body = body[: body.index('default:')]
         table, cases = {}, []

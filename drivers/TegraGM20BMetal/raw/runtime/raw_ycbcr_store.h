@@ -177,7 +177,7 @@ inline uint32_t ycbcrStoreCode(const YcbcrStoreShape &s, float v)
 
 // The store states' codes of a pass's stand-in (`rgba`, width x height texels): the luma plane's and each chroma block's Cb, Cr
 // as the pack's ycbcr_store.metal computes them, step for step. A converted channel's step is on the grid of 1/8192: 4 rint(h
-// 2048), or an sRGB target's E[rint(h 8192)] (`encode`).
+// 2048), or an sRGB target's E[rint(h 8192)] (`encode`); a codes shape of the _srgb states stores E[k] & max of each code k.
 inline bool ycbcrStoreDrawn(const YcbcrStoreShape &s, const uint16_t *encode, const float *rgba, uint32_t width,
                             uint32_t height, uint16_t *luma, uint16_t *chroma)
 {
@@ -188,7 +188,8 @@ inline bool ycbcrStoreDrawn(const YcbcrStoreShape &s, const uint16_t *encode, co
         return ycbcrHeldHalf(v, s.towardZero != 0);
     };
     const auto code = [&](float v) {
-        return ycbcrStoreCode(s, v);
+        const uint32_t k = ycbcrStoreCode(s, v);
+        return s.srgb ? encode[k] & s.max : k;
     };
     const auto step = [&](float v) {
         if (std::isnan(v) || v <= 0.0f)

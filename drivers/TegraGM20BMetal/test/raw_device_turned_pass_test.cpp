@@ -299,4 +299,40 @@ TEST_F(DeviceTurnedPass, ASeparateDepthAndStencilPairBesideATurnedTargetMovesInt
         << "the loaded depth's turn copy in and its stored turn copy back";
 }
 
+// A level's or slice's part beside a turned target is the encoder's copy for one pass (ColorAttachment::image): its turn
+// copy reads the texture's own header of that part, and a part without one is never given one, which nothing would free
+TEST_F(DeviceTurnedPass, ALoadedPartBesideATurnedTargetMakesNoHeaderOfItsOwn)
+{
+    Surface targetMemory(256, 96), besideMemory(512, 64);
+    raw::Texture target, beside;
+    ASSERT_TRUE(plane(targetMemory, 1, 96, 64, 256, target));
+    ASSERT_TRUE(plane(besideMemory, 0, 96, 64, 512, beside));
+    const auto began = [&] {
+        raw::Texture part = beside;
+        part.tic = 0;
+        raw::CommandBuffer *cb = dev.begin();
+        if (!cb)
+            return true;
+        raw::PassDesc p;
+        p.color[0].texture = &target;
+        p.color[0].load = raw::ColorAttachment::Clear;
+        p.color[0].store = true;
+        p.color[1].texture = &part;
+        p.color[1].image = &beside;
+        p.color[1].load = raw::ColorAttachment::Load;
+        p.color[1].store = true;
+        p.count = 2;
+        NoDraws draws;
+        raw::TurnedPass turned;
+        const char *why = "";
+        const bool begun = turned.begin(*cb, p, draws, &why);
+        cb->abandon();
+        return begun;
+    };
+    (void)began();  // the pass's stand-in backings, made once and kept
+    const uint32_t headers = dev.headersLeft();
+    EXPECT_FALSE(began()) << "a part with no header of its own";
+    EXPECT_EQ(dev.headersLeft(), headers) << "a header made for the pass's copy of the part";
+}
+
 }  // namespace

@@ -2,57 +2,18 @@
 // Texture views raw::Device makes (createView, createPartView): the header of each over the part of its texture's memory
 // Metal names, as NIL's image of that part reads it (fx_mip.cpp mipChainTic, fx_image.h), and the image a copy or pass
 // of the view addresses.
-#include "raw_device_harness.h"
+#include "raw_device_views_harness.h"
 #include "../raw/fx/fx_image.h"
 #include "../raw/runtime/raw_stencil_bits.h"
 #include "../raw/runtime/raw_zeta.h"
+#include <cstdlib>
+#include <cstring>
 #include <thread>
+#include <unistd.h>
 
 namespace {
 
-constexpr uint32_t kRGBA8 = 70, kDepth16Unorm = 250, kDepth32Float = 252, kDepth32FloatStencil8 = 260,
-                   kX32Stencil8 = 261, kASTC4x4 = 204;
-
-uint32_t field(const std::array<uint32_t, 8> &w, unsigned hi, unsigned lo)
-{
-    uint64_t v = 0;
-    for (unsigned b = lo; b <= hi; b++)
-        v |= uint64_t(w[b / 32] >> (b % 32) & 1) << (b - lo);
-    return uint32_t(v);
-}
-
-uint64_t address(const std::array<uint32_t, 8> &w)
-{
-    return uint64_t(field(w, 63, 41)) << 9 | uint64_t(field(w, 79, 64)) << 32;
-}
-
-uint32_t textureType(const std::array<uint32_t, 8> &w)
-{
-    return field(w, 154, 151);
-}
-
-uint32_t minLevel(const std::array<uint32_t, 8> &w)
-{
-    return field(w, 227, 224);
-}
-
-uint32_t maxLevel(const std::array<uint32_t, 8> &w)
-{
-    return field(w, 231, 228);
-}
-
-uint32_t depthMinusOne(const std::array<uint32_t, 8> &w)
-{
-    return field(w, 189, 176);
-}
-
-class DeviceViews : public harness::DeviceTest {
-protected:
-    std::array<uint32_t, 8> header(const raw::Texture &t) const
-    {
-        return raw::DeviceHarness::header(dev, t.tic);
-    }
-};
+using namespace views;
 
 // MetalResourceTests' view (boot 21's tex.view): level 1 of slice 1 of a mipmapped 2D array, as a 2D texture
 TEST_F(DeviceViews, ALevelOfASliceOfAMipmappedArrayIsItsOwnHeader)
@@ -222,7 +183,8 @@ TEST_F(DeviceViews, APitchOrMultisampledTextureIsAOneLayerArrayWhole)
     EXPECT_FALSE(dev.createPartView(pitch, kRGBA8, raw::fx::kTexTwoDArray, 0, 1, 0, 2, part)) << "one layer";
 }
 
-// A sampled depth array or cube has a header of its own (enc.notic: a draw that sampled one had none to bind)
+// A sampled depth array or cube has a header of its own (enc.notic: a draw that sampled one had none to bind), and so
+// has one of no ShaderRead usage, from its creation: nothing writes it later while recording threads read it unlocked
 TEST_F(DeviceViews, ASampledDepthArrayOrCubeHasItsOwnHeader)
 {
     raw::Texture array, cube, unsampled;
@@ -238,7 +200,24 @@ TEST_F(DeviceViews, ASampledDepthArrayOrCubeHasItsOwnHeader)
     EXPECT_EQ(textureType(w), raw::fx::kTexCube);
     EXPECT_EQ(depthMinusOne(w), 0u);
     ASSERT_TRUE(dev.createOwnedZeta(32, 32, kDepth32Float, 1, false, unsampled, 4));
-    EXPECT_EQ(unsampled.tic, 0u) << "no ShaderRead usage: nothing samples it";
+    EXPECT_NE(unsampled.tic, 0u) << "no ShaderRead usage: its header is made with it all the same";
+}
+
+// With every texture header held, a depth texture of no ShaderRead usage is not made either (no draw later finds it
+// headerless), headersLeft names why, and one is made again once headers are given back
+TEST_F(DeviceViews, NoTextureIsMadeWithNoHeaderLeft)
+{
+    std::vector<raw::Texture> held;
+    raw::Texture t;
+    while (dev.headersLeft() && dev.createTexture(4, 4, kRGBA8, t))
+        held.push_back(t);
+    ASSERT_EQ(dev.headersLeft(), 0u) << held.size() << " held";
+    EXPECT_FALSE(dev.createOwnedZeta(8, 8, kDepth32Float, 1, false, t));
+    for (raw::Texture &h : held)
+        dev.destroyTexture(h);
+    ASSERT_TRUE(dev.createOwnedZeta(8, 8, kDepth32Float, 1, false, t));
+    EXPECT_NE(t.tic, 0u);
+    dev.destroyTexture(t);
 }
 
 // The array header is writeTic's for an owned depth array: one over NVK's image the texels moved into (moveOwnedZeta)
@@ -271,7 +250,7 @@ TEST_F(DeviceViews, ADepthChainsSelectedLevelHeaderBelongsToTheChain)
         SCOPED_TRACE(format);
         raw::Texture depth, part;
         ASSERT_TRUE(dev.createOwnedZeta(64, 32, format, 1, false, depth, 1, raw::fx::kTexTwoD, 4));
-        ASSERT_EQ(depth.tic, 0u);
+        const uint32_t own = depth.tic;
         ASSERT_TRUE(raw::chainLevelImage(depth, 2, part));
         const uint32_t tic = dev.attachmentTic(depth, part, 2, 0);
         ASSERT_NE(tic, 0u);
@@ -285,17 +264,18 @@ TEST_F(DeviceViews, ADepthChainsSelectedLevelHeaderBelongsToTheChain)
         EXPECT_EQ(field(w, 175, 160) + 1, 32u);
         for (int i = 0; i < 16; ++i)
             EXPECT_EQ(dev.attachmentTic(depth, part, 2, 0), tic);
-        EXPECT_EQ(depth.tic, 0u);
+        EXPECT_EQ(depth.tic, own);
         dev.destroyTexture(depth);
         EXPECT_EQ(raw::DeviceHarness::header(dev, tic), raw::DeviceHarness::header(dev, 0));
         raw::Texture replacement;
         ASSERT_TRUE(dev.createOwnedZeta(32, 16, format, 1, false, replacement, 1, raw::fx::kTexTwoD, 3));
-        EXPECT_EQ(dev.levelTic(replacement, 1), tic);
-        const auto next = raw::DeviceHarness::header(dev, tic);
+        const uint32_t level = dev.levelTic(replacement, 1);
+        ASSERT_NE(level, 0u);
+        const auto next = raw::DeviceHarness::header(dev, level);
         EXPECT_EQ(minLevel(next), 1u);
         EXPECT_EQ(maxLevel(next), 1u);
         EXPECT_EQ(field(next, 143, 128) + 1, 32u);
-        EXPECT_NE(next, w);
+        EXPECT_NE(raw::DeviceHarness::header(dev, tic), w);
         dev.destroyTexture(replacement);
     }
 }
@@ -304,6 +284,7 @@ TEST_F(DeviceViews, ASelectedDepthHeaderIsFreedWithItsArrayViewAndNeverAnswersFo
 {
     raw::Texture parent, view, part;
     ASSERT_TRUE(dev.createOwnedZeta(64, 32, kDepth16Unorm, 1, false, parent, 3, raw::fx::kTexTwoDArray, 4));
+    const uint32_t parentTic = parent.tic;
     ASSERT_TRUE(dev.createPartView(parent, kDepth16Unorm, raw::fx::kTexTwoD, 1, 2, 2, 1, view));
     const uint32_t own = view.tic;
     const auto ownHeader = header(view);
@@ -326,7 +307,7 @@ TEST_F(DeviceViews, ASelectedDepthHeaderIsFreedWithItsArrayViewAndNeverAnswersFo
     EXPECT_EQ(textureType(w), raw::fx::kTexTwoD);
     EXPECT_EQ(dev.attachmentTic(view, part, 1, 0), tic);
     EXPECT_EQ(header(view), ownHeader);
-    EXPECT_EQ(parent.tic, 0u);
+    EXPECT_EQ(parent.tic, parentTic);
     dev.destroyTexture(view);
     EXPECT_EQ(raw::DeviceHarness::header(dev, own), raw::DeviceHarness::header(dev, 0));
     EXPECT_EQ(raw::DeviceHarness::header(dev, tic), raw::DeviceHarness::header(dev, 0));
@@ -353,7 +334,6 @@ TEST_F(DeviceViews, ConcurrentDepthPartAdmissionPublishesOneResourceOwnedHeader)
 {
     raw::Texture depth, part;
     ASSERT_TRUE(dev.createOwnedZeta(64, 32, kDepth16Unorm, 1, false, depth, 1, raw::fx::kTexTwoD, 4));
-    ASSERT_EQ(depth.tic, 0u);
     part = raw::layersFrom(depth, 0);
     std::array<uint32_t, 8> tics = {};
     std::array<std::thread, 8> threads;

@@ -318,7 +318,7 @@ TEST_F(DeviceShadowStencil, AStencilWriteThatFollowsTheDepthTestIsRefused)
     std::vector<Event> events;
     raw::Refusal refusal;
     EXPECT_NE(draw(zeta, {pl}, shadowState(true), events, nullptr, &refusal), "");
-    EXPECT_EQ(refusal.id, raw::RefDepthStencil);
+    EXPECT_EQ(refusal.id, raw::RefTestsInvariant);
     raw::DepthStencilDesc always = shadowState(true);
     always.depthCompare = 7;
     EXPECT_EQ(draw(zeta, {pl}, always, events), "") << "a depth test that passes every fragment decides nothing";
@@ -367,7 +367,7 @@ TEST_F(DeviceShadowStencil, ItsDepthDependentVariantRunsBothTestsOnTheStandIns)
     depthOnly.depthWrite = true;
     raw::Refusal refusal;
     EXPECT_NE(draw(zeta, {pl}, depthOnly, events, nullptr, &refusal), "") << "made for StencilWrite draws alone";
-    EXPECT_EQ(refusal.id, raw::RefDepthStencil);
+    EXPECT_EQ(refusal.id, raw::RefTestsInvariant);
 }
 
 }  // namespace

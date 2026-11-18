@@ -75,7 +75,7 @@ class RecordsTest(unittest.TestCase):
         }
         data = packfile.pipeline_bytes(rec, 0, 0)
         v21 = directlink.V21_AT
-        self.assertEqual(data[v21 : v21 + packfile.PIPELINE_V21.size], bytes(16) + bytes([5]) + bytes(7))
+        self.assertEqual(data[v21 : v21 + packfile.PIPELINE_V21.size], bytes(24) + bytes([5]) + bytes(7))
         programs = [{'image': bytes([i]), 'data': b'', 'cbufs': []} for i in range(2)]
         ids = {directlink.program_id(p): i for i, p in enumerate(programs)}
         record = {
@@ -107,7 +107,7 @@ class RecordsTest(unittest.TestCase):
         record['pipeline'] = packfile.pipeline_bytes(dict(rec, array_length_word=3, viewport_count_word=4), 0, 0)
         self.assertEqual(
             record['pipeline'][v21 : v21 + packfile.PIPELINE_V21.size],
-            bytes(7) + bytes([3]) + bytes(8) + bytes([5]) + bytes(6) + bytes([4]),
+            bytes(7) + bytes([3]) + bytes(16) + bytes([5]) + bytes(6) + bytes([4]),
         )
         back = directlink.pipeline_of(record, [], ids, [])
         self.assertEqual((back['array_length_word'], back['viewport_count_word']), (3, 4))

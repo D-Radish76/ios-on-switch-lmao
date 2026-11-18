@@ -13,11 +13,24 @@ inline RMTexture *rawLevelsOwner(RMTexture *t)
     return o->_raw.chain ? o : t;
 }
 
+// The texture whose chain holds level `level` of `t`, `level` and `slice` made its: t's levels owner, or for a level past
+// the first of a view of several levels (whose own image is its first level's) the texture it views, from the view's base
+// level and slice
+inline RMTexture *rawPartOwner(RMTexture *t, uint32_t &level, uint32_t &slice)
+{
+    if (level && t->_viewPart && t->_levelsOwner && t->_levelsOwner->_raw.chain) {
+        level += t->_levelsBase;
+        slice += t->_slicesBase;
+        return t->_levelsOwner;
+    }
+    return rawLevelsOwner(t);
+}
+
 // Level `level` of slice `slice` (a 3D texture's plane) of `t` as the target a pass binds (raw::attachmentTarget), in t's
 // format; false: no such part of a texture the raw path renders
 inline bool rawAttachmentPart(RMTexture *t, uint32_t level, uint32_t slice, raw::Texture &part)
 {
-    RMTexture *o = rawLevelsOwner(t);
+    RMTexture *o = rawPartOwner(t, level, slice);
     const raw::FormatInfo *f = raw::formatInfo(t->_raw.format);
     if (!f || !(f->rt || raw::formatStandIn(t->_raw.format)) || f->bpp != o->_raw.bpp ||
         !raw::attachmentTarget(o->_raw, level, slice, part))
@@ -35,6 +48,7 @@ inline raw::Texture *rawAttachmentTarget(RMTexture *t, uint32_t level, uint32_t 
         return &t->_raw;
     if (!rawAttachmentPart(t, level, slice, part))
         return nullptr;
-    part.tic = fetched ? gRM->raw->attachmentTic(rawLevelsOwner(t)->_raw, part, level, slice) : 0;
+    RMTexture *o = rawPartOwner(t, level, slice);
+    part.tic = fetched ? gRM->raw->attachmentTic(o->_raw, part, level, slice) : 0;
     return &part;
 }

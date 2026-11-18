@@ -27,6 +27,29 @@ const char *classText(uint32_t qos)
            : qos == QOS_CLASS_BACKGROUND     ? "BG"
                                              : "fixed";
 }
+
+// A kernel the shader compiler answered at run time, whole, for tools/gpu/kernelharvest.py: the function its library names,
+// that library (a system library's path, else data:<SHA-256 of its bytes>), " spec" where the function was made with
+// constant values, and its cache key, in parts of 700 characters
+void logKernelHarvest(const CacheKey &k, const CompileRequest &r, const std::vector<LibraryIdentity> &ids)
+{
+    const RequestStage &s = r.stages[0];
+    std::string lib = r.libraries[s.library].path;
+    if (!systemLibraryPath(lib)) {
+        lib = "data:";
+        char b[3];
+        for (uint8_t x : ids[s.library].digest) {
+            snprintf(b, sizeof b, "%02x", x);
+            lib += b;
+        }
+    }
+    const std::string text = "lib=" + lib + " function=" + s.function + (s.specialized ? " spec " : " ") + k.key;
+    constexpr size_t kPart = 700;
+    const size_t parts = (text.size() + kPart - 1) / kPart;
+    for (size_t i = 0; i < parts; i++)
+        os_log(rawLog(), "raw: kernel harvest %016llx %zu/%zu %{public}s", (unsigned long long)k.name(), i + 1, parts,
+               text.substr(i * kPart, kPart).c_str());
+}
 #endif
 
 // A function of this facade as a request's stage, its library added to `r` once (`ids` beside it); false: one no request
@@ -311,8 +334,10 @@ Compiler::Outcome Completion::remoteKernel(id facadeFunction, MTLComputePipeline
     taken = false;
     CompileRequest r;
     Digest name;
+    std::vector<LibraryIdentity> ids;
     const auto request = [&](bool every) {
         r = {};
+        ids.clear();
         r.stack = stack_;
         r.kind = RequestKind::Kernel;
         r.key = k.key;
@@ -325,7 +350,6 @@ Compiler::Outcome Completion::remoteKernel(id facadeFunction, MTLComputePipeline
         q.textures.assign(dispatch.textures, dispatch.textures + dispatch.textureCount);
         q.samplers.assign(dispatch.samplers, dispatch.samplers + dispatch.samplerCount);
         q.stageIn = stageInFieldsOf(descriptor.stageInputDescriptor);
-        std::vector<LibraryIdentity> ids;
         std::map<const LibrarySource *, uint32_t> seen;
         if (q.textures.size() > kRequestBindLimit || q.samplers.size() > kRequestBindLimit ||
             !addKernelStages(r, ids, seen, facadeFunction, descriptor, true, every))
@@ -365,6 +389,9 @@ Compiler::Outcome Completion::remoteKernel(id facadeFunction, MTLComputePipeline
         return Compiler::Outcome::Failed;
     }
     taken = true;
+#if SWITCH_RAW_DIAGNOSTICS
+    logKernelHarvest(k, r, ids);
+#endif
     return found == RecordCache::Found::Record ? Compiler::Outcome::Made : Compiler::Outcome::Refused;
 }
 

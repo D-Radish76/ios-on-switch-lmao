@@ -8,6 +8,7 @@
 #import <objc/runtime.h>
 #include <iterator>
 #include "raw_compute_key.h"
+#include "raw_kernel_texture.h"
 #include "raw_reflection_blob.h"
 
 @interface RMReflectionValue : NSObject {
@@ -372,19 +373,31 @@ MTLAutoreleasedRenderPipelineReflection rmRenderReflection(RMPipeline *p, MTLRen
     return nil;
 }
 
+uint32_t rmComputeTexturesWritten(RMComputeState *s)
+{
+    std::call_once(s->_writtenOnce, [s] {
+        s->_texturesWritten = ~0u;
+        const std::string key = raw::computeStateKey(s->_air, s->_constants, s->_maxThreads, s->_multipleOfWidth);
+        uint32_t length = 0;
+        std::string blob, why;
+        const void *bytes = gRM->raw->pack().reflection(raw::Pack::fnv(key.data(), key.size()), true, length);
+        if (!bytes && gRM->completion && gRM->completion->reflection(s->_function, s->_direct, key, blob, why)) {
+            bytes = blob.data();
+            length = uint32_t(blob.size());
+        }
+        raw::ReflectionView v;
+        if (bytes && raw::readReflection(bytes, length, raw::kReflectionComputeStages, v))
+            s->_texturesWritten = raw::kernelTexturesWritten(v);
+    });
+    return s->_texturesWritten;
+}
+
 bool rmComputeReflection(RMComputeState *s, MTLPipelineOption o, MTLAutoreleasedComputePipelineReflection *reflection,
                          NSError **error)
 {
     *reflection = nil;
     if (!reflectionAsked(o))
         return true;
-    if (!s->_keyed || !s->_function) {
-        os_log_error(rawLog(),
-                     "raw: %{public}s: no reflection of a compute state of functions not all raw's "
-                     "(%{public}s)",
-                     getprogname(), s->_direct.label.UTF8String ?: "-");
-        return true;
-    }
     const std::string key = raw::computeStateKey(s->_air, s->_constants, s->_maxThreads, s->_multipleOfWidth);
     uint32_t length = 0;
     std::string blob, why = "no completion";

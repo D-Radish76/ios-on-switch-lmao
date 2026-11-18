@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: MIT
 #include "raw_texture_shape.h"
 #include <algorithm>
+#include "raw_format_standin.h"
 #include "raw_gpu.h"
+#include "raw_metal_formats.h"
+#include "raw_mip.h"
 #include "raw_srgb_pair.h"
 #include "raw_xr.h"
 #include "raw_ycbcr.h"
@@ -13,7 +16,7 @@ namespace {
 
 bool extended(uint32_t format)
 {
-    return xrForm(format) != XrForm::None;
+    return xrSampled(format);
 }
 
 bool zetaFormat(uint32_t format)
@@ -37,6 +40,35 @@ bool flatBlocks(uint32_t format)
 bool astcHdr(uint32_t format)
 {
     return format >= 222 && format <= 236;
+}
+
+// Metal's private ASTC footprints of 4x2 and 8x4 texels (LDR, sRGB and the 4x2 HDR)
+bool astcNarrow(uint32_t format)
+{
+    return format == 185 || format == 191 || format == 203 || format == 209 || format == 221;
+}
+
+// R16Bfloat, RG16Bfloat, RGBA16Bfloat
+bool bfloat(uint32_t format)
+{
+    return format == 26 || format == 66 || format == 116;
+}
+
+// The YCbCr formats (m2v metal2vulkan generated.rs YCBCR*: one- and two-plane, PQ, HLG, XR, 12-bit) raw_ycbcr.cpp
+// converts none of, RGBA16Float_XR, AnyDepth and AnyStencil: Metal makes no texture of these from a descriptor alone (m2v
+// texture_descriptor.rs no_texture_alone, measured)
+bool noTextureAlone(uint32_t format)
+{
+    return format == 504 || format == 524 || format == 556 || format == 560 || (format >= 562 && format <= 575) ||
+           (format >= 580 && format <= 585) ||
+           (format >= 590 && format <= 602) || (format >= 607 && format <= 620) || format == 651 || format == 652;
+}
+
+// Formats whose texels hold 10 or 12 bits in 16, through a PQ or HLG transfer, through sRGB at 10 bits, or a word and
+// a byte apart (Metal's private HDR forms: R10Unorm_X6 to RGB10A8Uint_2P but the YCbCr ones)
+bool paddedOrTransferred(uint32_t format)
+{
+    return (format >= 576 && format <= 589) || (format >= 603 && format <= 606) || (format >= 621 && format <= 650);
 }
 
 bool compressed(uint32_t format)
@@ -82,10 +114,7 @@ uint64_t fullChain(const TextureShape &s)
 // buffer's or a surface's bytes; one over a two-plane surface's planes is taken before this (xrPlanesShape)
 bool keptFormat(const TextureShape &s)
 {
-    if (xrForm(s.format) == XrForm::Planes && !s.ownMemory && s.storage != kPrivate && s.storage != kMemoryless)
-        return false;
-    // RG8Unorm_sRGB samples through a stand-in, which a texture of a buffer's or a surface's bytes has none of
-    if (srgbPair(s.format) && !s.ownMemory)
+    if (twoPlaneXr(s.format) && !s.ownMemory && s.storage != kPrivate && s.storage != kMemoryless)
         return false;
     // a block-compressed texture is private: written and read by the copy engine in whole blocks, never by the CPU
     const FormatInfo *f = formatInfo(s.format);
@@ -143,12 +172,13 @@ bool volumeShape(const TextureShape &s)
     return s.type == kType3D && s.samples <= 1 && s.array <= 1 && s.storage != kMemoryless && f && !blockCompressed(f);
 }
 
-// Laid out one plane a block, as a render target: m2v's twin is 2D-array compatible exactly where NVK renders the
-// format
+// Laid out one plane a block, as a render target: the colour target names no plane inside a block of several. So is one
+// of a format the GM20B renders none of, a pass into a plane rendering its stand-in (raw_format_standin.h) and a mip step
+// each plane as words of an integer view (raw_mip.h wordMip3dState): no copy of a block's planes in and out around either
 bool volumeView2d(const TextureShape &s)
 {
     const FormatInfo *f = formatInfo(s.format);
-    return volumeRendered(s) && f && f->rt;
+    return volumeRendered(s) && f && (f->rt || formatStandIn(s.format) || (s.levels > 1 && wordMip3dState(s.format)));
 }
 
 // A 2D array, cube or cube array the raw path keeps (raw::Device::createArray): one sample, of a format it has a header
@@ -255,6 +285,13 @@ uint32_t rawShapeTerm(const TextureShape &s)
 
 Route route(const TextureShape &s)
 {
+    if (s.storage == kManaged) {
+        // Apple silicon holds a Managed texture as a Shared one (MTLResource.h: "Managed storage has no effect on Apple
+        // Silicon")
+        TextureShape shared = s;
+        shared.storage = kShared;
+        return route(shared);
+    }
     if (chainShape(s))
         return Route::Chain;
     if (blockShape(s))
@@ -340,10 +377,27 @@ bool create(Device &d, const TextureShape &s, Route route, bool tiled, uint32_t 
 // Metal's texture descriptor rules as an M4 Max applies them (newTextureWithDescriptor: of 16,884 shapes the raw path
 // left to m2v, m2vf-targets2's probe; metal2vulkan-runtime texture_descriptor.rs check_made, its EVs), validation's
 // stops first, then its nils
+const char *formatRefusal(uint32_t format)
+{
+    constexpr uint32_t kUnspecialized = 263;
+    if (!metal_formats::described(format))
+        return "a format Metal describes none of (its validation stops it as it stops Invalid: raw_metal_formats.h)";
+    // a pipeline's attachment format left open: both identities' Metal answer it as Invalid, and an M4 Max makes no texture
+    // of it by descriptor, view or buffer (raw/test/passformsoracle.mm unspecialized)
+    if (format == kUnspecialized)
+        return "nil: MTLPixelFormatUnspecialized is no texture's format";
+    return nullptr;
+}
+
 const char *metalRefusal(const TextureShape &s)
 {
     const bool ms = multisampled(s), line = oneDimensional(s), buffer = s.type == kTypeBuffer;
-    if (ms && (isYcbcrFormat(s.format) || xrForm(s.format) == XrForm::Planes))
+    if (const char *why = formatRefusal(s.format))
+        return why;
+    if (noTextureAlone(s.format))
+        return "nil: a format Metal makes no texture of from a descriptor alone (a YCbCr one, RGBA16Float_XR, AnyDepth, "
+               "AnyStencil: m2v texture_descriptor.rs no_texture_alone)";
+    if (ms && (isYcbcrFormat(s.format) || twoPlaneXr(s.format)))
         return "a two-plane format takes no multisampled texture";
     if (s.format == kX24S8)
         return "X24_Stencil8 is a view's format alone";
@@ -373,9 +427,8 @@ const char *metalRefusal(const TextureShape &s)
         return "a level count past the chain, or other than 1 of a multisampled, 1D or 4:2:2 texture";
     if (!s.samples || (ms ? s.samples == 1 : s.samples != 1))
         return "a sample count the type does not take";
-    if (xrForm(s.format) == XrForm::Planes && (s.type == kTypeCube || s.type == kTypeCubeArray) &&
-        s.storage != kMemoryless)
-        return "nil: RGB10A8_2P_XR10 makes a memoryless cube alone";
+    if (twoPlaneXr(s.format) && (s.type == kTypeCube || s.type == kTypeCubeArray) && s.storage != kMemoryless)
+        return "nil: RGB10A8_2P_XR10 and its sRGB twin make a memoryless cube alone";
     if (isYcbcrFormat(s.format))
         return "nil: a YCbCr format's texture is an IOSurface plane's alone";
     return nullptr;
@@ -383,6 +436,10 @@ const char *metalRefusal(const TextureShape &s)
 
 const char *identityRefusal(const TextureShape &s, const answers::Kind &k)
 {
+    // the device answers NVK's maxTexelBufferElements (kits/SwitchGM20B/caps/limits.tsv texture_buffer_texels), below
+    // Apple's 2^28: its 1D_BUFFER header's width is 32 bits, the texture unit's reach past 2^27 unproven
+    if (s.type == kTypeBuffer && s.width > answers::kindCount(k, "maxTextureBufferWidth"))
+        return "a texture buffer past maxTextureBufferWidth's answer";
     if (s.type == kType2DMultisampleArray && !answers::kindCount(k, "supportsTexture2DMultisampleArray"))
         return "supportsTexture2DMultisampleArray answers NO";
     if (multisampled(s) && !answers::kindAnswer(k, "supportsTextureSampleCount:", s.samples))
@@ -403,7 +460,29 @@ const char *hardwareRefusal(const TextureShape &s)
     if (astcHdr(s.format))
         return "GM20B's texture unit decodes ASTC LDR alone (clb097tex.h names no HDR form; nil_formats.csv's "
                "ASTC rows are UNORM and sRGB)";
+    if (astcNarrow(s.format))
+        return "GM20B's texture unit has no ASTC footprint of 4x2 or 8x4 texels (clb097tex.h COMPONENTS_SIZES ASTC_2D_4X4 "
+               "to 12X12, the Khronos footprints alone)";
+    if (bfloat(s.format))
+        return "GM20B's texture unit and colour targets have no bfloat16 component (clb097tex.h R_DATA_TYPE: SNORM, UNORM, "
+               "SINT, UINT, their FORCE_FP16 forms, FLOAT as IEEE half; clb197.h COLOR_TARGET_FORMAT has none)";
+    if (paddedOrTransferred(s.format))
+        return "GM20B's texture unit has no 10- or 12-bit component in a 16-bit field, no PQ or HLG transfer and sRGB for "
+               "8-bit components alone (clb097tex.h COMPONENTS_SIZES, S_R_G_B_CONVERSION), and no header over a word "
+               "and a byte apart";
     return nullptr;
+}
+
+// The formats no donor iPad's GPU driver samples (AGXMetalA10's texture format table, 21H461, and AGXMetalA13's, 24B119,
+// have no record of them), or 24B119's alone, which its Metal gates on a GPU family the device's answers never claim
+// (m2v-textures2 parity/formats_table.tsv): RGBA16Float_XR, the 4:4:4 YCbCr-with-alpha, PQ, HLG, 12-bit and XR YCbCr
+// families, the padded and transferred 10- and 12-bit forms, the RGB10A8_2P forms and AnyDepth and AnyStencil
+const char *surfaceFormatRefusal(uint32_t format)
+{
+    const bool none = format == 556 || format == 560 || (format >= 563 && format <= 587) || (format >= 590 && format <= 652);
+    return none ? "a format neither donor GPU's driver samples, or 24B119's on a GPU family the device's answers never "
+                  "claim (the AGX format tables of both identities)"
+                : nullptr;
 }
 
 }  // namespace raw::shapes

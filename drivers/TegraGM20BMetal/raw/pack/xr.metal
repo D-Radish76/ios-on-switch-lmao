@@ -4,7 +4,8 @@
 // over 255, as the half nearest that quotient. No quotient is a midpoint between two halves, so the rounding has no ties, and its
 // float lies nowhere near one, so Metal's read through float rounds to the same half. BGRA10_XR's alpha code is clamped to
 // [384, 894], the codes of [0, 1]; BGR10_XR's alpha is 1.
-// BGR10_XR_sRGB's word is BGR10_XR's, its colour codes read through Metal's sRGB table instead (xr_bgr10_srgb_frag).
+// BGR10_XR_sRGB's word and BGRA10_XR_sRGB's fields are BGR10_XR's and BGRA10_XR's, their colour codes read through Metal's
+// sRGB table instead, BGRA10_XR_sRGB's alpha as BGRA10_XR's (xr_bgr10_srgb_frag, xr_bgra10_srgb_frag).
 // Texture 0 is the codes through the raw path's integer header (raw_gpu.cpp kFormats): R32Uint (BGR10_XR), RGBA16Uint
 // (BGRA10_XR: blue's field first) or RG32Uint (RGB10A8_2P_XR10: the color word, then the alpha byte); an RGB10A8_2P_XR10
 // texture held in Metal's two planes (runtime/raw_xr_pass.h) is plane 0's words as R32Uint and plane 1's bytes, texture 1, as
@@ -75,11 +76,20 @@ static half srgbColor(uint code)
     return code < 384 ? -v : v;
 }
 
+static half4 bgr10Srgb(uint w)
+{
+    return half4(srgbColor(w >> 20 & 0x3ff), srgbColor(w >> 10 & 0x3ff), srgbColor(w & 0x3ff), 1.0h);
+}
+
+static half4 bgra10Srgb(uint4 f)
+{
+    return half4(srgbColor(f.z), srgbColor(f.y), srgbColor(f.x), color(clamp(f.w, 384u, 894u)));
+}
+
 // Also the load state of a BGR10_XR_sRGB target's stand-in (runtime/raw_format_standin.h formatLoadState)
 fragment half4 xr_bgr10_srgb_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
 {
-    const uint w = codes.read(uint2(in.position.xy)).r;
-    return half4(srgbColor(w >> 20 & 0x3ff), srgbColor(w >> 10 & 0x3ff), srgbColor(w & 0x3ff), 1.0h);
+    return bgr10Srgb(codes.read(uint2(in.position.xy)).r);
 }
 
 fragment half4 xr_bgra10_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
@@ -87,6 +97,28 @@ fragment half4 xr_bgra10_frag(Out in [[stage_in]], texture2d<uint, access::read>
     const uint4 f = codes.read(uint2(in.position.xy)) >> 6;
     return half4(color(f.z), color(f.y), color(f.x), color(clamp(f.w, 384u, 894u)));
 }
+
+// Also the load state of a BGRA10_XR_sRGB target's stand-in (runtime/raw_format_standin.h formatLoadState)
+fragment half4 xr_bgra10_srgb_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
+{
+    return bgra10Srgb(codes.read(uint2(in.position.xy)) >> 6);
+}
+
+// A multisampled target's stand-in's loads: each sample from that sample's codes, the fragment run once a sample
+#define XR_SRGB_PER_SAMPLE(count)                                                                                          \
+    fragment half4 xr_bgr10_srgb_ms##count##_frag(Out in [[stage_in]], uint k [[sample_id]],                             \
+                                                  texture2d_ms<uint, access::read> codes [[texture(0)]])                 \
+    {                                                                                                                      \
+        return bgr10Srgb(codes.read(uint2(in.position.xy), k).r);                                                          \
+    }                                                                                                                      \
+    fragment half4 xr_bgra10_srgb_ms##count##_frag(Out in [[stage_in]], uint k [[sample_id]],                            \
+                                                   texture2d_ms<uint, access::read> codes [[texture(0)]])                \
+    {                                                                                                                      \
+        return bgra10Srgb(codes.read(uint2(in.position.xy), k) >> 6);                                                      \
+    }
+
+XR_SRGB_PER_SAMPLE(2)
+XR_SRGB_PER_SAMPLE(4)
 
 fragment half4 xr_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
 {
@@ -99,6 +131,28 @@ fragment half4 xr_two_planes_frag(Out in [[stage_in]], texture2d<uint, access::r
 {
     const uint2 at = uint2(in.position.xy);
     return half4(word(words.read(at).r), quotient(int(alphas.read(at).r & 0xff), 255));
+}
+
+static half3 srgbWord(uint w)
+{
+    return half3(srgbColor(w >> 20 & 0x3ff), srgbColor(w >> 10 & 0x3ff), srgbColor(w & 0x3ff));
+}
+
+// RGB10A8_2P_XR10_sRGB over a surface's two planes (runtime/raw_xr.h xrConversionOf): its word through BGR10_XR_sRGB's
+// colour reads, its alpha byte linear. Also the load state of such a target's stand-in (runtime/raw_format_standin.h)
+fragment half4 xr_two_planes_srgb_frag(Out in [[stage_in]], texture2d<uint, access::read> words [[texture(0)]],
+                                       texture2d<uint, access::read> alphas [[texture(1)]])
+{
+    const uint2 at = uint2(in.position.xy);
+    return half4(srgbWord(words.read(at).r), quotient(int(alphas.read(at).r & 0xff), 255));
+}
+
+// RGB10A8_2P_XR10_sRGB of a descriptor (runtime/raw_xr.h xrConversionOf): a texel's word and alpha byte side by side, read
+// as xr_two_planes_srgb_frag reads them from two planes. Also the load state of such a target's stand-in
+fragment half4 xr_planes_srgb_frag(Out in [[stage_in]], texture2d<uint, access::read> codes [[texture(0)]])
+{
+    const uint2 t = codes.read(uint2(in.position.xy)).rg;
+    return half4(srgbWord(t.x), quotient(int(t.y & 0xff), 255));
 }
 
 // An RGB10A8_2P_XR10 texture held in its two planes that a fragment program stores into (runtime/raw_gpu.cpp, written

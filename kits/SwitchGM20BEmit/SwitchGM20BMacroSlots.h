@@ -32,7 +32,7 @@ enum {
     SWITCH_GM20B_MACRO_DRAW_INDEXED_PARAMS,
     SWITCH_GM20B_MACRO_VCM_CONSTANTS,
     // indirect command buffers': an execute's range, a gated draw of each kind, a dispatch command's gate, a command's
-    // bound buffers (x1-calls3's kIcbBind), a patch command's control-stage words and draw
+    // bound buffers and root table entries (x1-calls3's kIcbBind), a patch command's control-stage words and draw
     SWITCH_GM20B_MACRO_ICB_RANGE,
     SWITCH_GM20B_MACRO_ICB_DRAW,
     SWITCH_GM20B_MACRO_ICB_DRAW_INDEXED,
@@ -44,6 +44,10 @@ enum {
     SWITCH_GM20B_MACRO_AMPLIFY_INDEXED,
     // a layered pass's clear of its layers (NVK's nvk_mme_clear without a view mask)
     SWITCH_GM20B_MACRO_CLEAR_LAYERS,
+    // a draw of a state that fetches a colour it writes through the texture unit, a primitive at a time behind the fetch
+    // barrier, of vertices and of indices: its words in Vulkan's indirect order, the call's data or a GPFIFO continuation
+    SWITCH_GM20B_MACRO_FETCH_DRAW,
+    SWITCH_GM20B_MACRO_FETCH_DRAW_INDEXED,
     SWITCH_GM20B_MACRO_RAW_END,  // one past the raw path's last slot
 };
 
@@ -51,6 +55,18 @@ enum {
     SWITCH_GM20B_SCRATCH_WORDS = 128,   // SET_MME_SHADOW_SCRATCH(i): MME_FERMI_SCRATCH_COUNT
     SWITCH_GM20B_SCRATCH_FECS_END = 3,  // NVK_MME_SCRATCH_FALCON_2 + 1
     SWITCH_GM20B_SCRATCH_ROOT_HI = 26,  // NVK_MME_SCRATCH_CB0_ADDR_HI: the root table's address, high then low
+    // the fetch macros' (the raw path's RenderEncoder writes them before each call): the vertices or indices of an
+    // instance's first BEGIN and of each one after it, then the BEGIN words of an instance's first BEGIN, of a later
+    // instance's and of every one after the first in an instance (FETCH_BEGIN is also the bit an instance's last BEGIN
+    // flips to end its split draw); and whether an indirect command buffer's execute draws its commands so (1) or whole
+    // (0), each command's sizes then from the topology it sets
+    SWITCH_GM20B_SCRATCH_FETCH_FIRST = SWITCH_GM20B_SCRATCH_ROOT_HI + 2,
+    SWITCH_GM20B_SCRATCH_FETCH_STEP,
+    SWITCH_GM20B_SCRATCH_FETCH_BEGIN,
+    SWITCH_GM20B_SCRATCH_FETCH_NEXT,
+    SWITCH_GM20B_SCRATCH_FETCH_CONTINUED,
+    SWITCH_GM20B_SCRATCH_FETCH_ICB,
+    SWITCH_GM20B_SCRATCH_FETCH_END,
 
     // an indirect command buffer execute's range: location, length
     SWITCH_GM20B_SCRATCH_ICB_LOCATION = SWITCH_GM20B_SCRATCH_FECS_END,
@@ -95,16 +111,20 @@ enum {
 };
 
 // SWITCH_GM20B_MACRO_ICB_BIND's call data: the descriptors' count, then each descriptor's address (high, low), its
-// buffer's first scratch word, the kernel's window of it and its residual root word's address (high, low); then the
-// strides' count, then each StageInStride root word's address (high, low) and its buffer's first scratch word. The
-// macro reads exactly these words: a call that sends fewer leaves the MME waiting on the GPU for the rest.
+// buffer's first scratch word, the kernel's window of it, its residual root word's address (high, low) and the word the
+// record leaves there, which a base on 16 bytes keeps; then the strides' count, then each StageInStride root word's
+// address (high, low) and its buffer's first scratch word; then the root table entries' count, then each entry's
+// address (high, low) and its buffer's first scratch word. The macro reads exactly these words: a call that sends fewer
+// leaves the MME waiting on the GPU for the rest.
 enum {
-    SWITCH_GM20B_ICB_BIND_DESCRIPTOR_WORDS = 6,
+    SWITCH_GM20B_ICB_BIND_DESCRIPTOR_WORDS = 7,
     SWITCH_GM20B_ICB_BIND_STRIDE_WORDS = 3,
+    SWITCH_GM20B_ICB_BIND_ROOT_WORDS = 3,
 };
 
-#define SWITCH_GM20B_ICB_BIND_WORDS(descriptors, strides) \
-    (2 + SWITCH_GM20B_ICB_BIND_DESCRIPTOR_WORDS * (descriptors) + SWITCH_GM20B_ICB_BIND_STRIDE_WORDS * (strides))
+#define SWITCH_GM20B_ICB_BIND_WORDS(descriptors, strides, roots)                                                   \
+    (3 + SWITCH_GM20B_ICB_BIND_DESCRIPTOR_WORDS * (descriptors) + SWITCH_GM20B_ICB_BIND_STRIDE_WORDS * (strides) + \
+     SWITCH_GM20B_ICB_BIND_ROOT_WORDS * (roots))
 
 // SWITCH_GM20B_SCRATCH_AMP_LAYER's modes besides a word: the draws render the pass's first layer, or SET_RT_LAYER takes
 // each amplification's render target offset (V_SELECTS_LAYER). No root word lies at either byte offset. A mapping word
@@ -129,8 +149,8 @@ SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_MACRO_RAW_END <= SWITCH_GM20B_MACRO_SLOTS
 SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_ICB_LOCATION >= SWITCH_GM20B_SCRATCH_FECS_END &&
                               SWITCH_GM20B_SCRATCH_ICB_SET_BYTES < SWITCH_GM20B_SCRATCH_ROOT_HI,
                           "the raw path's words below the root table's address leave FECS's mailbox alone");
-SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_ICB_BUFFERS >= SWITCH_GM20B_SCRATCH_ROOT_HI + 2,
-                          "the inherited buffers lie past the root table's address");
+SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_ICB_BUFFERS >= SWITCH_GM20B_SCRATCH_FETCH_END,
+                          "the fetch macros' words and the inherited buffers lie past the root table's address");
 SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_ICB_ROOT_BYTES % 256 == 0,
                           "the patch macro binds whole 256-byte constant buffers, as NVK does before Turing");
 SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_AMP_END - SWITCH_GM20B_SCRATCH_AMP_MAPS == SWITCH_GM20B_AMP_MAX,

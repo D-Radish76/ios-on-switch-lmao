@@ -208,23 +208,148 @@ void aRefusedImportIsNil()
     expectNoM2V(device);
 }
 
-// BGR10_XR_sRGB is raw's: AegirPoster's 720x1280 shared target that it samples (boot C32 made it on m2v and replayed every
-// pass into it there)
+// BGR10_XR_sRGB and BGRA10_XR_sRGB are raw's: AegirPoster's 720x1280 shared target that it samples (boot C32 made it on m2v
+// and replayed every pass into it there), and the same of BGRA10_XR_sRGB, each with the stand-in a draw samples
 void anSrgbExtendedRangeTextureIsRaws()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_bgr10_srgb_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.xr.xr_bgra10_srgb_frag", MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    for (const MTLPixelFormat format : {MTLPixelFormatBGR10_XR_sRGB, MTLPixelFormatBGRA10_XR_sRGB}) {
+        MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                     width:720
+                                                                                    height:1280
+                                                                                 mipmapped:NO];
+        d.storageMode = MTLStorageModeShared;
+        d.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+        RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d];
+        ASSERT_TRUE(t != nil) << format;
+        EXPECT_TRUE(t->_rawOk && t->_raw.standIn) << format;
+    }
+    expectNoM2V(device);
+}
+
+// A heap's size for an extended-range array and an RG8Unorm_sRGB texture, which the device makes beside its arena, is the
+// raw path's footprint of the texture and the stand-in a draw samples, with no m2v device asked
+void heapSizesOfStandInTextures()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
     ASSERT_TRUE(device != nil);
-    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGR10_XR_sRGB
-                                                                                 width:720
-                                                                                height:1280
-                                                                             mipmapped:NO];
+    MTLTextureDescriptor *d = [MTLTextureDescriptor new];
+    d.textureType = MTLTextureType2DArray;
+    d.pixelFormat = MTLPixelFormatBGR10_XR;
+    d.width = 64;
+    d.height = 32;
+    d.arrayLength = 3;
+    d.storageMode = MTLStorageModePrivate;
+    d.usage = MTLTextureUsageShaderRead;
+    EXPECT_GE([device heapTextureSizeAndAlignWithDescriptor:d].size, NSUInteger(64 * 32 * 3 * (4 + 8)))
+        << "its codes and its half stand-in";
+    d.textureType = MTLTextureType2D;
+    d.arrayLength = 1;
+    d.pixelFormat = MTLPixelFormatRG8Unorm_sRGB;
+    EXPECT_GE([device heapTextureSizeAndAlignWithDescriptor:d].size, NSUInteger(64 * 32 * (2 + 4)));
+    expectNoM2V(device);
+}
+
+// A view's CPU copies are its texture's, at the view's level and slice (a view of levels 1 and 2 of a Shared mipmapped
+// texture, written and read at both), made on the raw path with no m2v twin asked
+void aViewsCpuCopiesTakeItsTexturesPaths()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
+    ASSERT_TRUE(device != nil);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                 width:64
+                                                                                height:32
+                                                                             mipmapped:YES];
     d.storageMode = MTLStorageModeShared;
-    d.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
-    EXPECT_TRUE([device newTextureWithDescriptor:d] != nil);
+    d.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
+    id<MTLTexture> texture = [device newTextureWithDescriptor:d];
+    ASSERT_TRUE(texture != nil);
+    RMTexture *view = (RMTexture *)[texture newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Uint
+                                                              textureType:MTLTextureType2D
+                                                                   levels:NSMakeRange(1, 2)
+                                                                   slices:NSMakeRange(0, 1)];
+    ASSERT_TRUE(view != nil && view->_rawOk);
+    uint8_t texel[4] = {1, 2, 3, 4};
+    for (NSUInteger level : {0u, 1u}) {
+        [(id<MTLTexture>)view replaceRegion:MTLRegionMake2D(1, 1, 1, 1) mipmapLevel:level withBytes:texel bytesPerRow:4];
+        [(id<MTLTexture>)view getBytes:texel bytesPerRow:4 fromRegion:MTLRegionMake2D(1, 1, 1, 1) mipmapLevel:level];
+    }
+    expectNoM2V(device);
+}
+
+// An extended-range texture views as its sRGB twin on the raw path, and as a format of its texel size not at all, as Metal
+// answers (m2v view_plan.rs, measured: plain Metal aborts the other pairs); a view of a part of an X32_Stencil8 texture,
+// a device texture buffer and a heap's sizes for shapes no heap holds are raw's answers too
+void viewsAndShapesAnsweredOnRaw()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_bgr10_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.xr.xr_bgr10_srgb_frag", MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGR10_XR
+                                                                                 width:64
+                                                                                height:32
+                                                                             mipmapped:YES];
+    d.storageMode = MTLStorageModePrivate;
+    d.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget | MTLTextureUsagePixelFormatView;
+    id<MTLTexture> texture = [device newTextureWithDescriptor:d];
+    ASSERT_TRUE(texture != nil);
+    RMTexture *srgb = (RMTexture *)[texture newTextureViewWithPixelFormat:MTLPixelFormatBGR10_XR_sRGB];
+    ASSERT_TRUE(srgb != nil && srgb->_rawOk);
+    EXPECT_TRUE(srgb->_raw.standIn != nullptr);
+    RMTexture *level = (RMTexture *)[texture newTextureViewWithPixelFormat:MTLPixelFormatBGR10_XR_sRGB
+                                                               textureType:MTLTextureType2D
+                                                                    levels:NSMakeRange(1, 1)
+                                                                    slices:NSMakeRange(0, 1)];
+    ASSERT_TRUE(level != nil && level->_rawOk);
+    EXPECT_EQ([texture newTextureViewWithPixelFormat:MTLPixelFormatR32Uint], nil) << "Metal aborts it";
+    MTLTextureDescriptor *stencil = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatX32_Stencil8
+                                                                                       width:32
+                                                                                      height:32
+                                                                                   mipmapped:NO];
+    stencil.storageMode = MTLStorageModePrivate;
+    stencil.usage = MTLTextureUsageShaderRead;
+    RMTexture *x32 = (RMTexture *)[device newTextureWithDescriptor:stencil];
+    ASSERT_TRUE(x32 != nil && x32->_rawOk);
+    EXPECT_EQ(((id<MTLTexture>)x32).pixelFormat, MTLPixelFormatX32_Stencil8);
+    MTLTextureDescriptor *line = [MTLTextureDescriptor textureBufferDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                       width:100
+                                                                             resourceOptions:0
+                                                                                       usage:MTLTextureUsageShaderRead];
+    RMTexture *buffer = (RMTexture *)[device newTextureWithDescriptor:line];
+    ASSERT_TRUE(buffer != nil && buffer->_rawOk);
+    EXPECT_EQ(buffer->_raw.type, raw::fx::kTexOneDBuffer);
+    EXPECT_EQ([device heapTextureSizeAndAlignWithDescriptor:line].size, 400u);
+    d.storageMode = MTLStorageModeMemoryless;
+    EXPECT_EQ([device heapTextureSizeAndAlignWithDescriptor:d].size, 0u) << "no heap holds a memoryless texture";
+    MTLTextureDescriptor *bfloat = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(116)
+                                                                                    width:16
+                                                                                   height:16
+                                                                                mipmapped:NO];
+    EXPECT_EQ([device newTextureWithDescriptor:bfloat], nil) << "no bfloat16 component in the GM20B";
+    EXPECT_EQ([device heapTextureSizeAndAlignWithDescriptor:bfloat].size, 0u);
     expectNoM2V(device);
 }
 
 }  // namespace
+
+TEST(RawFacadeTextureRows, ViewsAndShapesAreAnsweredOnRawWithNoM2V)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(viewsAndShapesAnsweredOnRaw);
+}
+
+TEST(RawFacadeTextureRows, AViewsCpuCopiesTakeItsTexturesPathsWithNoM2V)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(aViewsCpuCopiesTakeItsTexturesPaths);
+}
+
+TEST(RawFacadeTextureRows, AHeapSizesAStandInTextureWithNoM2V)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(heapSizesOfStandInTextures);
+}
 
 TEST(RawFacadeTextureRows, ARefusedSurfaceImportIsNilWithNoM2V)
 {

@@ -71,7 +71,7 @@ struct RecordParts {
     uint8_t vertexSlot = 0xFF;
     uint16_t vertexStride = 0;
     bool vertexStrideDynamic = false;
-    uint8_t pulledStride[4][2] = {};                     // PackPipeline's
+    uint8_t pulledStride[kPulledStrides][2] = {};                     // PackPipeline's
     uint8_t vertexStreams[kPackVertexStreams - 1] = {};  // PackPipeline's
     uint8_t amplificationMax = 0, amplificationIdWord = 0, amplificationCountWord = 0;
     uint8_t arrayLengthWord = 0, viewportCountWord = 0;

@@ -58,7 +58,6 @@ struct RMPlanPatches {
 struct RMPlanDispatch {
     uint32_t state = 0;
     uint32_t surfaceSlots = 0;
-    uint32_t windowSlots = 0;  // buffer slots reached through a window on 16 (raw_kernel_shadow.h KernelUse)
     const void *kernel = nullptr;
     void *pending = nullptr;
     size_t encoderBegin = 0;
@@ -112,8 +111,7 @@ enum class RMResourceKind : uint8_t {
 
 struct RMResourceFacts {
     enum Role : uint8_t {
-        Converted = 1,
-        PlanarTarget = 2
+        Converted = 1
     };
 
     void *cpuBuffer = nullptr;
@@ -164,7 +162,6 @@ class RMCommandPlan {
         std::vector<size_t> computes;
         std::vector<RMRangeResource> resources;
         std::array<uint32_t, size_t(RMResourceKind::Count) + 1> first{};
-        void *planarFeedback = nullptr;
     };
 
     // the ranges prepared, the first rangeCount_ of them live: a cleared plan keeps them, their lists' capacity too, for
@@ -352,12 +349,11 @@ public:
         return dispatches_[operations_[at].payload];
     }
 
-    void resolveDispatch(size_t at, const void *kernel, uint32_t surfaceSlots, uint32_t windowSlots)
+    void resolveDispatch(size_t at, const void *kernel, uint32_t surfaceSlots)
     {
         auto &dispatch = dispatches_[operations_[at].payload];
         dispatch.kernel = kernel;
         dispatch.surfaceSlots = surfaceSlots;
-        dispatch.windowSlots = windowSlots;
         dispatch.pending = nullptr;
     }
 
@@ -386,8 +382,7 @@ public:
 
     void setRefused(size_t at, bool refused)
     {
-        auto &begin = begins_[operations_[at].payload];
-        begin.refused = refused || nativeRangeRefusal(at, begin.end);
+        begins_[operations_[at].payload].refused = refused;
     }
 
     void registerResource(void *object, RMResourceFacts facts);
@@ -396,8 +391,6 @@ public:
     {
         return resourceFacts_.find(object);
     }
-
-    void *nativeRangeRefusal(size_t from, size_t to) const;
 
     template <typename F> void forEachResource(size_t from, size_t to, RMResourceKind kind, F visit) const
     {

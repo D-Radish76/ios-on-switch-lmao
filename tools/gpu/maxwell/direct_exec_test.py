@@ -469,6 +469,37 @@ class WideStride(Records):
                 self.assertEqual(outputs(environment, ATTR_GENERIC, 4), [0.25, 0.5, 0.75, 1.0])
 
 
+class FiveDynamicStrides(Records):
+    """A state of five dynamic-stride layouts: its stride twin pulls each at its bind's stride, a push word each.
+
+    The twin names a VertexBufferStride word per layout (runtime/raw_pack.h kPulledStrides, as many as a record's
+    streams); with four words a record held, the translation's fifth had no word and the state no twin, so its draws of
+    a stride past 4095 bytes failed (raw:draw.stride_twin).
+    """
+
+    VERTICES = 3
+    STRIDE = 4112
+
+    def test_the_twin_pulls_each_layout_at_its_own_bind_stride(self):
+        record = self.state('five_dynamic')
+        self.assertIn('stride_twin', record)
+        twin = record['stride_twin']
+        pulled = [p for p in twin['pulled_stride'] if p[1]]
+        self.assertEqual(sorted(p[0] for p in pulled), [1, 2, 3, 4, 5])
+        binding = dr.Binding()
+        push = dr.record_push(twin)
+        for layout, word in pulled:
+            values = [(float(layout), float(vid * layout)) for vid in range(self.VERTICES)]
+            binding.bind((1, layout), WideStride.laid(values, self.STRIDE + 16 * layout))
+            push[word - 1] = self.STRIDE + 16 * layout
+        binding.tables(dr.root_table(push, twin['set_bytes']), dr.render_set(twin, binding))
+        program = twin['programs'][0]
+        for vid in range(self.VERTICES):
+            environment = dr.stage(program, binding, attributes({ATTR_VERTEX_ID: vid, ATTR_INSTANCE_ID: 0}), {})
+            dr.execute(program, environment)
+            self.assertEqual(outputs(environment, ATTR_POSITION, 4), [15.0, 15.0 * vid, 0.0, 1.0])
+
+
 class Interpolants(Records):
     """Run 32 float4 varyings, GM20B's 128 interpolated components.
 
@@ -1102,6 +1133,48 @@ class Kernels(Records):
         self.assertGreater(len(records), 64)
         expected = [(ns[n] + offset * self.NUM // self.DEN) & self.MASK for n, offset in samples]
         self.assertEqual(self.resolve(records, published, table), [*expected, self.ERROR, self.ERROR, self.ERROR, 0])
+
+
+
+class ConvertedTextures(Records):
+    """Kernels over textures the raw path samples through an image it converts (NativeMetalKernelTextures.rs).
+
+    A kernel binding an R10Unorm_PACKED or RG10Unorm_PACKED texture (588, 589) is compiled to read the RGB10A2Unorm
+    image of its codes, so its texture entry's header word 0 is RGB10A2Unorm's (runtime/raw_gpu.cpp kFormats) and the
+    device binds the image's own header there. A YCbCr texture's samplers are made under the map its key states: a
+    repeating sampler of a 4:2:0 texture clamps to the edge; under a P3 matrix (map 3) the slot reads the codes image
+    (RGBA8Unorm). A slot the kernel only writes stores nothing, as Metal's writes into such a texture store nothing.
+    """
+
+    TEXTURE, SAMPLER = 1, 2  # runtime/raw_pack.h PackKernelEntryKind
+    RGBA8, RGB10A2, RGBA16F = 0x58D24908, 0x58D24909, 0x58D7FF83  # kFormats' header word 0 of 70, 90 and 115
+    ADDRESS, WRAP, EDGE = 0x1FF, 0, 2 | 2 << 3 | 2 << 6  # TEXSAMP0 ADDRESS_U, _V and _P (clb197tex.h)
+
+    def entries(self, record: dict, kind: int) -> list[list[int]]:
+        return [e for e in record['entries'] if e[1] == kind]
+
+    def address(self, record: dict) -> int:
+        (sampler,) = self.entries(record, self.SAMPLER)
+        return record['samplers'][sampler[2] & 0x7F][0] & self.ADDRESS
+
+    def test_a_packed_planes_slot_views_the_rgb10a2_image(self):
+        for name in ('converted_r10_packed', 'converted_rg10_packed'):
+            record = self.kernel(name)
+            self.assertEqual([e[3] for e in self.entries(record, self.TEXTURE)], [self.RGB10A2], name)
+            self.assertEqual(self.address(record), self.WRAP, name)
+            self.assertEqual(record['maps_stated'], 1, name)
+
+    def test_a_ycbcr_slots_sampler_is_made_under_the_map_its_key_states(self):
+        record = self.kernel('converted_420')
+        self.assertEqual([e[3] for e in self.entries(record, self.TEXTURE)], [self.RGBA16F])
+        self.assertEqual(self.address(record), self.EDGE)
+        record = self.kernel('converted_420_p3')
+        self.assertEqual([e[3] for e in self.entries(record, self.TEXTURE)], [self.RGBA8])
+        self.assertEqual(self.address(record), self.EDGE)
+
+    def test_a_write_only_slot_of_a_packed_plane_stores_nothing(self):
+        record = self.kernel('converted_r10_packed_write')
+        self.assertEqual(self.entries(record, self.TEXTURE), [])
 
 
 if __name__ == '__main__':

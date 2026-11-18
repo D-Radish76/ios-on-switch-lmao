@@ -20,18 +20,21 @@
 namespace raw {
 
 // A texture bound at `slot`, as MTLTexture answers it; `planes`: an RGB10A8_2P_XR10 texture held in Metal's two planes
-// (raw_xr_pass.h), whose kernels read and write the planes apart
+// (raw_xr_pass.h), whose kernels read and write the planes apart; `addressMap`: the address map the raw path samples a
+// converted texture with (Texture::addressMap), which the kernel's samplers are compiled under
 struct BoundTexture {
     uint32_t slot;
     uint64_t pixelFormat, textureType, levels, arrayLength;
     uint8_t swizzle[4];
     bool planes = false;
+    uint8_t addressMap = 0;
 };
 
 constexpr char kTwoPlaneTexture[] = ":xr2p";
+constexpr char kAddressMap[] = ":am";
 
-// "<slot>:<pixelFormat>:<textureType>:<levels>:<arrayLength>:<swizzle, 4 hex bytes>[:xr2p],..." in slot order, ":xr2p"
-// after a texture held in two planes
+// "<slot>:<pixelFormat>:<textureType>:<levels>:<arrayLength>:<swizzle, 4 hex bytes>[:xr2p][:am<map>],..." in slot order,
+// ":xr2p" after a texture held in two planes, ":am<map>" after a converted one
 inline std::string computeTextures(const BoundTexture *t, size_t count)
 {
     std::string text;
@@ -42,6 +45,8 @@ inline std::string computeTextures(const BoundTexture *t, size_t count)
                  (unsigned long long)t[i].levels, (unsigned long long)t[i].arrayLength, t[i].swizzle[0],
                  t[i].swizzle[1], t[i].swizzle[2], t[i].swizzle[3], t[i].planes ? kTwoPlaneTexture : "");
         text += one;
+        if (t[i].addressMap)
+            text += kAddressMap + std::to_string(t[i].addressMap);
     }
     return text;
 }
@@ -52,14 +57,23 @@ inline bool parseComputeTexture(const std::string &one, BoundTexture &t)
     unsigned slot, swizzle;
     unsigned long long format, type, levels, array;
     int end = 0;
-    if (sscanf(one.c_str(), "%u:%llu:%llu:%llu:%llu:%x%n", &slot, &format, &type, &levels, &array, &swizzle, &end) !=
-            6 ||
-        (one[end] && one.compare(end, std::string::npos, kTwoPlaneTexture)))
+    if (sscanf(one.c_str(), "%u:%llu:%llu:%llu:%llu:%x%n", &slot, &format, &type, &levels, &array, &swizzle, &end) != 6)
         return false;
-    t = {slot,         format,
-         type,         levels,
-         array,        {uint8_t(swizzle >> 24), uint8_t(swizzle >> 16), uint8_t(swizzle >> 8), uint8_t(swizzle)},
-         one[end] != 0};
+    const bool planes = !one.compare(end, sizeof kTwoPlaneTexture - 1, kTwoPlaneTexture);
+    size_t at = size_t(end) + (planes ? sizeof kTwoPlaneTexture - 1 : 0);
+    uint8_t map = 0;
+    if (!one.compare(at, sizeof kAddressMap - 1, kAddressMap)) {
+        at += sizeof kAddressMap - 1;
+        if (at + 1 != one.size() || one[at] < '1' || one[at] > '3')
+            return false;
+        map = uint8_t(one[at++] - '0');
+    }
+    if (at != one.size())
+        return false;
+    t = {slot,  format,
+         type,  levels,
+         array, {uint8_t(swizzle >> 24), uint8_t(swizzle >> 16), uint8_t(swizzle >> 8), uint8_t(swizzle)},
+         planes, map};
     return true;
 }
 
@@ -139,6 +153,14 @@ inline std::string computeLinkedText(const std::vector<LinkedComputeFunction> &l
                     f.name;
     }
     return text;
+}
+
+// A compute state's constants as its keys carry them: its function's, its stage input's (stageInText), then its linked
+// functions'. The client keys a state by it and the compiler remakes that key from a request's fields by it.
+inline std::string computeStateConstants(const std::string &function, const std::string &stageIn,
+                                         const std::vector<LinkedComputeFunction> &linked)
+{
+    return function + stageIn + computeLinkedText(linked);
 }
 
 // A compute state as an archive inventory names it (pack/archives.py): its library function, not its AIR

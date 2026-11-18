@@ -126,4 +126,105 @@ TEST(Bgr10XrSrgb, ItStoresMetalsWritesAndHoldsAClearInHalves)
     EXPECT_EQ(held[3], 1.0f);
 }
 
+// BGRA10_XR_sRGB writes BGRA10_XR's fields, blue first, its colour through the sRGB tables and its alpha linear: m2v's fill
+// of 0.5 in every channel (metal2vulkan-runtime tests/fill_value.rs, "c0bdc0bdc0bdc09f") is colour offset 375, alpha 255
+TEST(Bgra10XrSrgb, ItsColourIsSrgbAndItsAlphaLinear)
+{
+    const float half[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+    uint16_t fields[4];
+    raw::bgra10XrSrgbFields(half, fields);
+    EXPECT_EQ(fields[0], 0xbdc0);
+    EXPECT_EQ(fields[1], 0xbdc0);
+    EXPECT_EQ(fields[2], 0xbdc0);
+    EXPECT_EQ(fields[3], 0x9fc0);
+}
+
+// A pass stores an alpha outside [0, 1] as its edge's code, 384 or 894, as an M4 Max's load and store pass over a 553
+// texture clamps alpha codes (hw_test_app gpu.raw.xr_srgb_alpha); the load reads codes past them as the edges too
+// (pack/xr.metal bgra10Srgb)
+TEST(Bgra10XrSrgb, AStoreClampsAlphaToItsEdges)
+{
+    for (const auto &[alpha, code] : {std::pair{-0.5f, 384u}, std::pair{1.7f, 894u}, std::pair{0.0f, 384u},
+                                      std::pair{1.0f, 894u}}) {
+        const float v[4] = {0.25f, 0.5f, 0.75f, alpha};
+        uint16_t fields[4];
+        raw::bgra10XrSrgbFields(v, fields);
+        EXPECT_EQ(fields[3], code << 6) << alpha;
+    }
+}
+
+// A pass that loads a texel and draws nothing over it stores its fields as they were: every colour code through the sRGB
+// read, every alpha code of [0, 1] through BGRA10_XR's read (pack/xr.metal color: the half nearest (code - 384) / 510)
+TEST(Bgra10XrSrgb, AStoreKeepsTheCodesALoadRead)
+{
+    for (uint32_t code = 0; code < 1024; code++) {
+        const uint32_t g = 1023 - code, b = code * 7 % 1024, a = 384 + code % 511;
+        const float v[4] = {raw::bgr10XrSrgbValue(code), raw::bgr10XrSrgbValue(g), raw::bgr10XrSrgbValue(b),
+                            float(_Float16((double(a) - 384.0) / 510.0))};
+        uint16_t fields[4];
+        raw::bgra10XrSrgbFields(v, fields);
+        EXPECT_EQ(fields[0], b << 6) << code;
+        EXPECT_EQ(fields[1], g << 6) << code;
+        EXPECT_EQ(fields[2], code << 6) << code;
+        EXPECT_EQ(fields[3], a << 6) << code;
+    }
+}
+
+// Its tile holds a clear's alpha as a half too, where BGR10_XR_sRGB's reads 1
+TEST(Bgra10XrSrgb, ItsStandInHoldsAClearsAlpha)
+{
+    const float clear[4] = {0.1f, -0.3f, 1.1f, 0.6f};
+    float held[4];
+    raw::formatStandInClear(raw::kBgra10XrSrgb, clear, held, true);
+    for (int k = 0; k < 4; k++)
+        EXPECT_EQ(held[k], float(_Float16(clear[k]))) << k;
+}
+
+// RGB10A8_2P_XR10_sRGB's planes store BGR10_XR_sRGB's colour codes in RGB10A8_2P_XR10's word (bits 30 and 31 clear) and its
+// alpha byte as RGB10A8_2P_XR10's write does: 0.5 is colour offset 375 and alpha byte 128 (127.5 to even)
+TEST(Rgb10A8XrSrgb, ItsColourIsSrgbAndItsAlphaByteLinear)
+{
+    const float half[4] = {0.5f, 0.5f, 0.5f, 0.5f};
+    uint32_t texel[2];
+    raw::rgb10a8XrSrgbTexel(half, texel);
+    EXPECT_EQ(texel[0], 759u << 20 | 759u << 10 | 759u);
+    EXPECT_EQ(texel[1], 128u);
+}
+
+// A pass that loads a texel and draws nothing over it stores it as it was: every colour code through the sRGB read, every
+// alpha byte through the load's read (pack/xr.metal: the half nearest byte / 255)
+TEST(Rgb10A8XrSrgb, AStoreKeepsTheTexelALoadRead)
+{
+    for (uint32_t code = 0; code < 1024; code++) {
+        const uint32_t g = 1023 - code, b = code * 7 % 1024, a = code % 256;
+        const float v[4] = {raw::bgr10XrSrgbValue(code), raw::bgr10XrSrgbValue(g), raw::bgr10XrSrgbValue(b),
+                            float(_Float16(double(a) / 255.0))};
+        uint32_t texel[2];
+        raw::rgb10a8XrSrgbTexel(v, texel);
+        EXPECT_EQ(texel[0], code << 20 | g << 10 | b) << code;
+        EXPECT_EQ(texel[1], a) << code;
+    }
+}
+
+// Its target renders through an RGBA16Float stand-in: over a surface's two planes loaded from both and stored into both; of
+// a descriptor loaded from and stored into its texels of a word and a byte (an M4 Max keeps a one-level one's texels:
+// m2v-textures3 probes/keeps.mm), which a draw samples through the same conversion; its tile holds a clear in halves, alpha too
+TEST(Rgb10A8XrSrgb, ItsTargetsStandIn)
+{
+    EXPECT_EQ(raw::formatStandIn(raw::kRgb10A8XrSrgb), 115u);
+    EXPECT_TRUE(raw::formatHoldsAlpha(raw::kRgb10A8XrSrgb));
+    EXPECT_STREQ(raw::xrConversionOf(raw::kRgb10A8XrSrgb, true), "raw.xr.xr_two_planes_srgb_frag");
+    EXPECT_STREQ(raw::kPlanesSrgbStoreState, "raw.fmt.fmt_store_rgb10a8_xr_srgb_planes_frag");
+    EXPECT_STREQ(raw::xrConversionOf(raw::kRgb10A8XrSrgb, false), raw::formatLoadState(raw::kRgb10A8XrSrgb));
+    EXPECT_STREQ(raw::formatStoreState(raw::kRgb10A8XrSrgb), "raw.fmt.fmt_store_rgb10a8_xr_srgb_frag");
+    EXPECT_TRUE(raw::formatLoadsWords(raw::kRgb10A8XrSrgb));
+    EXPECT_EQ(raw::formatStoreView(raw::kRgb10A8XrSrgb), 103u) << "RG32Uint: the word and the alpha byte's word";
+    EXPECT_EQ(raw::formatLoadState(raw::kRgb10A8XrSrgb, 4), nullptr);
+    const float clear[4] = {0.1f, -0.3f, 1.1f, 0.6f};
+    float held[4];
+    raw::formatStandInClear(raw::kRgb10A8XrSrgb, clear, held, true);
+    for (int k = 0; k < 4; k++)
+        EXPECT_EQ(held[k], float(_Float16(clear[k]))) << k;
+}
+
 }  // namespace

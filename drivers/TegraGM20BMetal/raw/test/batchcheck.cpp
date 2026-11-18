@@ -144,10 +144,11 @@ int main()
         auto [cb, encoder] = begin();
         expect(encoder && encoder->draw(3, 0, 3, 1, 0, &why), "compatible pass prepares successfully");
         raw::DepthStencilDesc desc;
+        desc.depthCompare = 1;
         desc.depthWrite = true;
         const raw::DepthStencilState depth(desc);
         encoder->setDepthStencil(&depth);
-        expect(!encoder->draw(3, 0, 3, 1, 0, &why) && cb->refusal.id == raw::RefDepthStencil,
+        expect(!encoder->draw(3, 0, 3, 1, 0, &why) && cb->refusal.id == raw::RefTestsInvariant,
                "changed depth state invalidates cached compatibility");
         cb->abandon();
     }

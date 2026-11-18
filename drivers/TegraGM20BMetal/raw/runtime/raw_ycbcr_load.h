@@ -32,7 +32,10 @@ struct YcbcrStoreTiles {
 constexpr uint32_t kYcbcrTilesSlot = 2;
 
 // The pack's load state of a texture read as `output` (YcbcrOutput); null for none (a packed 10-bit plane's is
-// ycbcrLoadPipeline's)
+// ycbcrLoadPipeline's). A target under a P3 matrix (planYcbcr: the unpacked 4:2:0 and 4:2:2 converted formats) loads in
+// its read's order, red Y, green Cb, blue Cr, and stores as its surface's codes format, red Cr, green Y, blue Cb (an M4
+// Max), so a kept texel's channels move round. An sRGB 4:2:0 or 4:2:2 one loads the same: what an M4 Max stores of its
+// loaded texels a draw misses differs from process to process (about half the luma codes of a stored tile)
 inline const char *ycbcrLoadState(uint8_t output)
 {
     switch (output) {
@@ -43,12 +46,17 @@ inline const char *ycbcrLoadState(uint8_t output)
     case YcbcrCodes8:
     case YcbcrCodes10:
         return "raw.ycbcr.ycbcr_load_codes_frag";
+    case YcbcrLumaFirst8:
+    case YcbcrLumaFirst10:
+        return "raw.ycbcr.ycbcr_load_luma_first_frag";
     case YcbcrConvertedPacked:
         return "raw.ycbcr.ycbcr_load_packed_converted_frag";
     case YcbcrSrgbPacked:
         return "raw.ycbcr.ycbcr_load_packed_srgb_frag";
     case YcbcrCodes10Packed:
         return "raw.ycbcr.ycbcr_load_packed_codes10_frag";
+    case YcbcrLumaFirst10Packed:
+        return "raw.ycbcr.ycbcr_load_packed_luma_first_frag";
     default:
         return nullptr;
     }
@@ -138,6 +146,11 @@ inline void ycbcrLoadTexel(uint8_t output, const uint32_t *shape, const YcbcrPla
         out[0] = ycbcrLoadHalf(c[2], shape[12]);
         out[1] = ycbcrLoadHalf(c[0], shape[12]);
         out[2] = ycbcrLoadHalf(c[1], shape[12]);
+        return;
+    }
+    if (ycbcrLumaFirst(output)) {
+        for (uint32_t ch = 0; ch < 3; ch++)
+            out[ch] = ycbcrLoadHalf(c[ch], shape[12]);
         return;
     }
     int32_t k[6];

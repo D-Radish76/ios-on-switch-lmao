@@ -8,9 +8,13 @@
 //    scissor in a tile the scissor touches reaches that tile); an empty scissor is tile (0, 0), and so is one wholly outside
 //    the viewport;
 //  - every tile when another colour attachment clears and stores, none in a pass without a draw call unless a turned colour
-//    attachment clears and stores (raw_area_load.h).
+//    attachment clears and stores (raw_area_load.h);
+//  - a draw of a state with no fragment function reaches as one whose fragments are discarded, one with rasterization off
+//    reaches nothing (measured as the tiles a loaded YCbCr target's store rewrites).
+// The frame is the pass's render area: from the origin, its smallest attachment, within the size it names (reachArea).
 // The raw path draws the pass's geometry again before the pass (CommandBuffer::reach) into an R8Uint mask of a texel a tile:
-// each draw's own vertex program and bindings, the pack's turn_reach_frag writing 1, conservative raster (NVB197
+// each draw's own vertex and tessellation programs and bindings, an executed indirect command buffer's commands by
+// reference as they inherit the state, the pack's turn_reach_frag writing 1, conservative raster (NVB197
 // SET_CONSERVATIVE_RASTER), the viewport scaled to the mask, its clip rectangle and the scissor rounded out to tiles. A pass
 // with point or line draws, whose size is in raster pixels, draws at the frame's resolution and is reduced to tiles. So that the
 // target's own edge clips a primitive past the frame where a tile overhangs it, a frame of no whole tiles draws at the largest
@@ -121,11 +125,32 @@ inline bool tileReached(const TileMap &t, const uint8_t *mask, int32_t x, int32_
     return tx < t.tilesX && ty < t.tilesY && mask[ty * t.tilesX + tx];
 }
 
-// A pass's reach (CommandBuffer::reach): null where no draw reaches anything
+// A pass's reach (CommandBuffer::reach): null where no draw reaches anything; `memory`: it, or a load it bounds
+// (loadPastArea), failed for want of memory
 struct PassReach {
     Texture *mask = nullptr;
     uint32_t tilesX = 0, tilesY = 0;
+    bool memory = false;
 };
+
+// Metal's render area of `pass` from the origin: its smallest attachment's frame (a turned one's), within the `width` x
+// `height` it names (0: none, renderTargetWidth and renderTargetHeight unset); empty with neither
+template <typename Pass> Rect reachArea(const Pass &pass, uint32_t width, uint32_t height)
+{
+    uint32_t w = width ? width : UINT32_MAX, h = height ? height : UINT32_MAX;
+    const auto consider = [&](const auto *t) {
+        if (!t)
+            return;
+        Rotation r;
+        r.turn = t->rotation;
+        w = std::min(w, r.quarter() ? t->height : t->width);
+        h = std::min(h, r.quarter() ? t->width : t->height);
+    };
+    for (uint32_t j = 0; j < pass.count && j < 8; j++)
+        consider(pass.color[j].texture);
+    consider(pass.depthStencil.texture);
+    return w == UINT32_MAX || h == UINT32_MAX ? Rect{} : Rect{0, 0, w, h};
+}
 
 // A masked turn copy's mask and map (CommandBuffer::turnCopy)
 struct TurnMask {
@@ -168,8 +193,9 @@ class DrawReplay {
 public:
     virtual bool any() const = 0;
     virtual bool atFrameResolution() const = 0;  // a draw of points or lines
-    // each draw with its state into `e`, the state's pipeline taken as its reach twin (RenderEncoder::takeReachTwin), a quad
-    // over its viewport where that covers it (reachCovers); false: *why
+    // each draw, indirect command buffer execute and patch draw with its state into `e`, the state's pipeline taken as its
+    // reach twin (RenderEncoder::takeReachTwin), a quad over its viewport where that covers it (reachCovers); false: *why,
+    // the draw's refusal in its command buffer's
     virtual bool replay(RenderEncoder &e, const char **why) = 0;
 
 protected:

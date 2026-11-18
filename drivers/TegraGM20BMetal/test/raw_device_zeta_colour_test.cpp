@@ -225,7 +225,6 @@ TEST_F(DeviceZetaColour, APreparedSourceKeepsTheOwnersTurnCopyCommandsAndHeader)
         SCOPED_TRACE(format);
         raw::Texture from, into = zeta(format, 1);
         ASSERT_TRUE(dev.createOwnedZeta(kSide, kSide, format, 1, false, from));
-        ASSERT_EQ(from.tic, 0u);
         std::string why;
         const std::vector<Event> owned = turnCopy(into, from, &why);
         ASSERT_FALSE(owned.empty()) << why;

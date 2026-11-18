@@ -20,6 +20,8 @@ namespace {
 constexpr uint32_t kInstanceWords = 6;
 }  // namespace
 
+static_assert(kFetchPatch == icb::kPatchPrimitive);
+
 uint64_t CommandBuffer::batchLimit() const
 {
     return dev_->role() == Device::Role::RenderServer ? BatchWork::kRenderServerLimit : BatchWork::kLimit;
@@ -117,34 +119,14 @@ bool RenderEncoder::draw(uint32_t primitive, uint32_t first, uint32_t count, uin
     readBits_ |= pl->fetchBits;
     if (!count || !instances)
         return true;
-    const Runs *ordered = selfRuns(*pl, primitive, count, instances, why);
-    if (!ordered)
-        return false;
-    const Runs &runs = *ordered;
-    if (!runs.empty()) {
-        size_t run = 0;
-        for (const auto &[begin, end] : runs) {
-#ifdef SWITCH_RAW_HARNESS_MARKS
-            // the host frame harness's builds only: nvdec names this mark SPLIT, and eqcheck folds the run into the one before
-            if (begin) {
-                if (p_.room() < 1024)
-                    reserve();
-                p_.m(NO_OPERATION, 0x5b1175);
-            }
-#endif
-            const bool reverse = runWinding_[run++];
-            raster_.winding ^= reverse;
-            const bool prepared = prepare(pl, primitive, first + begin, first + begin, end - begin, false, why);
-            raster_.winding ^= reverse;
-            if (!prepared)
-                return skippedDraw();
-            if (drawnWhole(*pl)) {
-                wholeDraw(*pl, false, first + begin, end - begin, 1, first + begin, baseInstance);
-                finishDraw(end - begin, 1);
-            } else {
-                emitDraw(false, first + begin, end - begin, 1, first + begin, baseInstance);
-            }
+    if (orderedFetch(*pl, {primitive, count, instances, false, false})) {
+        if (primitive == icb::kPatchPrimitive) {
+            refuseFetch(*pl, FetchRefusal::Geometry, primitive, count, instances, why);
+            return false;
         }
+        if (!prepare(pl, primitive, first, first, count, false, why))
+            return skippedDraw();
+        fetchDraw(primitive, false, first, count, instances, first, baseInstance);
         cb_->draws++;
         return true;
     }
@@ -175,47 +157,36 @@ bool RenderEncoder::draw(uint32_t primitive, uint32_t first, uint32_t count, uin
     return true;
 }
 
-// The runs a draw that fetches a color it writes through the texture unit is drawn as, one triangle each
-// (sequentialRuns); empty: it is drawn whole, as a draw that fetches inside the pixel interlock is. The indexed draw being
-// prepared sets drawIndices_ first
-const RenderEncoder::Runs *RenderEncoder::selfRuns(const Pipeline &pl, uint32_t primitive, uint32_t count,
-                                                   uint32_t instances, const char **why)
+// A draw of more than one primitive, or of a count only the GPU knows, whose state fetches a colour it writes through
+// the texture unit: the fetch barrier orders draws, not the primitives of one, so it is drawn a primitive at a time
+// (fetchDraw). Inside the pixel interlock (the storage form) it is drawn whole.
+bool RenderEncoder::orderedFetch(const Pipeline &pl, const FetchDraw &shape) const
 {
-    static thread_local Runs runs;
-    runs.clear();
-    runWinding_.fill(false);
-    const bool indexed = drawIndices_ != nullptr;
-    const FetchDraw shape = {primitive, count, instances, false, indexed};
-    const bool fetchesOwn = fetchesOwnColor(pl.fetchBits, pl.writeBits, pl.storageBits);
-    if (!fetchesOwn || singlePrimitive(shape))
-        return &runs;
+    if (!fetchesOwnColor(pl.fetchBits, pl.writeBits, pl.storageBits) || (!shape.indirect && singlePrimitive(shape)))
+        return false;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     if (dev_->probeFetchRung.load(std::memory_order_relaxed) == kProbeBlendTwinWhole)
-        return &runs;
+        return false;
 #endif
-    if (const FetchRefusal refusal = fetchRefusal(fetchesOwn, pl.primitiveId, shape); refusal != FetchRefusal::None)
-        return refuseFetch(pl, refusal, primitive, count, instances, why);
-    return sequentialRuns(pl, shape, runs, why);
+    return true;
 }
 
-// A draw whose own triangles may cover a pixel twice, one triangle a run: each is ordered after the one before by
-// prepare()'s framebuffer-fetch barrier, and no position or index byte is read
-const RenderEncoder::Runs *RenderEncoder::sequentialRuns(const Pipeline &pl, const FetchDraw &shape, Runs &runs,
-                                                         const char **why)
+// Such a draw, prepared, as one call of the fetch macro (raw_mme.h): the GPU draws each instance's primitives one BEGIN
+// at a time with the fetch barrier before each, the BEGINs of an instance one split draw (SPLIT_MODE open between them),
+// so primitive assembly, the strip's winding, primitive restart and the primitive and instance IDs are the whole draw's.
+// The CPU writes the same words whatever the primitive count.
+void RenderEncoder::fetchDraw(uint32_t primitive, bool indexed, uint32_t first, uint32_t count, uint32_t instances,
+                              uint32_t root, uint32_t baseInstance)
 {
-    FetchDraw draw = shape;
-    const Texture *zeta = pass_.depthStencil.texture;
-    draw.facing = facingDecides(raster_.cull, dsState_->desc(), stencilRef_, zeta && zetaHasStencil(zeta->format));
-    const FetchRefusal refusal = sequentialRefusal(pl.primitiveId, draw);
-    if (refusal != FetchRefusal::None ||
-        !TriangleRuns::sequential(shape.primitive, shape.count, shape.instances, runs, runWinding_))
-        return refuseFetch(pl, refusal != FetchRefusal::None ? refusal : FetchRefusal::Geometry, shape.primitive,
-                           shape.count, shape.instances, why);
+    if (p_.room() < mme::kFetchShapeWords + mme::kFetchCallWords)
+        reserve();
+    mme::fetchShape(p_, primitive);
+    mme::fetchDraw(p_, params_, indexed, first, count, instances, root, baseInstance);
+    finishDraw(count, instances);
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     dev_->stats.fetch.sequential++;
-    dev_->stats.fetch.sequentialTriangles += runs.size();
+    dev_->stats.fetch.sequentialTriangles += uint64_t(primitives(primitive, count)) * instances;
 #endif
-    return &runs;
 }
 
 StorageFallback RenderEncoder::storageFallback(const Pipeline &pl) const
@@ -302,8 +273,8 @@ Pipeline *RenderEncoder::formFor(Pipeline *pl, const FetchDraw &shape)
     return pl->barrierTwin ? pl->barrierTwin : pl;
 }
 
-const RenderEncoder::Runs *RenderEncoder::refuseFetch(const Pipeline &pl, FetchRefusal refusal, uint32_t primitive,
-                                                      uint32_t count, uint32_t instances, const char **why)
+void RenderEncoder::refuseFetch(const Pipeline &pl, FetchRefusal refusal, uint32_t primitive, uint32_t count,
+                                uint32_t instances, const char **why)
 {
     *why = fetchRefusalWhy(refusal);
     cb_->refusal = {RefGeometry, primitive, count, instances};
@@ -313,7 +284,6 @@ const RenderEncoder::Runs *RenderEncoder::refuseFetch(const Pipeline &pl, FetchR
 #else
     (void)pl;
 #endif
-    return nullptr;
 }
 
 // NVK's indexed draw on MAXWELL_B: the index buffer as NVK_MME_BIND_IB sets it (start, last byte, the restart index of the type,
@@ -340,11 +310,6 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
         cb_->skipped = {RefIndexedRange, uint32_t(offset), indexSize, 0};
         cb_->skips++;
         return true;
-    }
-    if (!ib->cpu) {
-        *why = "an index buffer with no raw memory";
-        cb_->refusal = {RefIndexMemory, uint32_t(offset), uint32_t(std::min<uint64_t>(ib->length, ~0u))};
-        return false;
     }
     // Metal's fetch (m2v render.rs draw_indexed_primitives, measured): the offset's low 32 bits rounded down to the index size,
     // indices read up to the length rounded up to 4 bytes, index 0 at every position past that
@@ -409,47 +374,31 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
     drawIndices_ = at;
     drawIndexSize_ = indexSize;
     drawIndexCount_ = count;
-    const Runs *ordered = selfRuns(*pl, primitive, count, instances, why);
-    if (!ordered) {
-        drawIndices_ = nullptr;
-        return false;
+    const bool ordered = orderedFetch(*pl, {primitive, count, instances, false, true});
+    const bool prepared = prepare(pl, primitive, baseVertex, 0, 0, true, why);
+    drawIndices_ = nullptr;
+    if (!prepared)
+        return skippedDraw();
+    const uint64_t va = ib->va + offset, last = va + indexLimit - 1;
+    if (va != ibVa_ || last != ibEnd_ || indexSize != ibSize_) {
+        p_.inc(INDEX_BUFFER_A, {uint32_t(va >> 32), uint32_t(va), uint32_t(last >> 32), uint32_t(last)});
+        p_.m(DA_PRIMITIVE_RESTART_INDEX, indexSize == 2 ? 0xffffu : 0xffffffffu);
+        cb_->restart_ = indexSize == 2 ? 0xffffu : 0xffffffffu;
+        p_.m(INDEX_BUFFER_E, indexSize == 2 ? 1 : 2);  // INDEX_SIZE TWO_BYTES / FOUR_BYTES
+        ibVa_ = va;
+        ibEnd_ = last;
+        ibSize_ = indexSize;
     }
-    const Runs &runs = *ordered;
-    const uint32_t parts = runs.empty() ? 1 : uint32_t(runs.size());
-    for (uint32_t r = 0; r < parts; r++) {
-        const uint32_t begin = runs.empty() ? 0 : runs[r].first, end = runs.empty() ? count : runs[r].second;
-        drawIndices_ = at + uint64_t(begin) * indexSize;
-        drawIndexCount_ = end - begin;
-#ifdef SWITCH_RAW_HARNESS_MARKS
-        if (r) {
-            if (p_.room() < 1024)
-                reserve();
-            p_.m(NO_OPERATION, 0x5b1175);
-        }
-#endif
-        const bool reverse = !runs.empty() && runWinding_[r];
-        raster_.winding ^= reverse;
-        const bool prepared = prepare(pl, primitive, baseVertex, 0, 0, true, why);
-        raster_.winding ^= reverse;
-        drawIndices_ = nullptr;
-        if (!prepared)
-            return skippedDraw();
-        const uint64_t va = ib->va + offset, last = va + indexLimit - 1;
-        if (va != ibVa_ || last != ibEnd_ || indexSize != ibSize_) {
-            p_.inc(INDEX_BUFFER_A, {uint32_t(va >> 32), uint32_t(va), uint32_t(last >> 32), uint32_t(last)});
-            p_.m(DA_PRIMITIVE_RESTART_INDEX, indexSize == 2 ? 0xffffu : 0xffffffffu);
-            cb_->restart_ = indexSize == 2 ? 0xffffu : 0xffffffffu;
-            p_.m(INDEX_BUFFER_E, indexSize == 2 ? 1 : 2);  // INDEX_SIZE TWO_BYTES / FOUR_BYTES
-            ibVa_ = va;
-            ibEnd_ = last;
-            ibSize_ = indexSize;
-        }
-        if (drawnWhole(*pl)) {
-            wholeDraw(*pl, true, begin, end - begin, instances, uint32_t(baseVertex), baseInstance);
-            finishDraw(end - begin, amplifies() ? instances * amplifications_ : instances);
-        } else {
-            emitDraw(true, begin, end - begin, instances, uint32_t(baseVertex), baseInstance);
-        }
+    if (ordered) {
+        fetchDraw(primitive, true, 0, count, instances, uint32_t(baseVertex), baseInstance);
+        cb_->draws++;
+        return true;
+    }
+    if (drawnWhole(*pl)) {
+        wholeDraw(*pl, true, 0, count, instances, uint32_t(baseVertex), baseInstance);
+        finishDraw(count, amplifies() ? instances * amplifications_ : instances);
+    } else {
+        emitDraw(true, 0, count, instances, uint32_t(baseVertex), baseInstance);
     }
     cb_->draws += amplifies() ? amplifications_ : 1;
     return true;
@@ -465,12 +414,15 @@ bool RenderEncoder::indirect(uint32_t primitive, bool indexed, const Buffer *arg
         return true;
     Pipeline *form = formFor(pipeline_, {primitive, 0, 1, true, indexed});
     const Pipeline &pl = *form;
-    const bool fetchesOwn = fetchesOwnColor(pl.fetchBits, pl.writeBits, pl.storageBits);
-    if (const FetchRefusal refusal = fetchRefusal(fetchesOwn, pl.primitiveId, {primitive, 0, 1, true});
-        refusal != FetchRefusal::None) {
-        refuseFetch(pl, refusal, primitive, 0, 0, why);
+    const bool ordered = orderedFetch(pl, {primitive, 0, 1, true, indexed});
+    if (ordered && primitive == icb::kPatchPrimitive) {
+        refuseFetch(pl, FetchRefusal::Geometry, primitive, 0, 0, why);
         return false;
     }
+    if (ordered && amplifies())
+        return amplified([&] {
+            return indirect(primitive, indexed, arguments, offset, why);
+        });
     const uint32_t bytes = indexed ? 20 : 16;
     if (!arguments || !arguments->va || (offset & 3)) {
         cb_->skipped = {RefIndexedRange, uint32_t(offset), bytes, 0};
@@ -490,13 +442,17 @@ bool RenderEncoder::indirect(uint32_t primitive, bool indexed, const Buffer *arg
         if (arguments->hostVisible && !arguments->wc && arguments->cpu)
             cb_->clean(arguments->cpu + offset, inside * 4);
     }
-    if (p_.room() < 8 + bytes / 4 + mme::kAmplificationScratchWords + mme::kAmplifyCallWords)
+    if (p_.room() < 8 + bytes / 4 + mme::kAmplificationScratchWords + mme::kAmplifyCallWords + mme::kFetchShapeWords)
         reserve();
     // Prior shader writes must reach the command fetcher; NO_PREFETCH on the argument entry prevents early fetch.
     p_.m(WAIT_FOR_IDLE, 0);
     p_.m(INVALIDATE_SHADER_CACHES, kFlushData | kInvalidateConstant);
     p_.m(0x0050, 0);  // NV906F_SET_REFERENCE: pre-Turing MME command-fetch visibility (NVK indirect-read barrier)
-    if (amplifies()) {
+    if (ordered) {
+        mme::fetchShape(p_, primitive);
+        mme::fetchHeader(p_, indexed);
+        RAW_DIAGNOSTIC(dev_->stats.fetch.sequential++);
+    } else if (amplifies()) {
         amplificationScratch(p_, pl);
         mme::amplifyHeader(p_, indexed);
         heldAmplifyWords(pl);
@@ -567,10 +523,9 @@ bool RenderEncoder::executeSlots(const IcbExecute &x, const char **why)
         return true;
     Pipeline *form = formFor(pipeline_, {x.primitive, 0, 1, true, true});
     const Pipeline &pl = *form;
-    const bool fetchesOwn = fetchesOwnColor(pl.fetchBits, pl.writeBits, pl.storageBits);
-    if (const FetchRefusal refusal = fetchRefusal(fetchesOwn, pl.primitiveId, {x.primitive, 0, 1, true});
-        refusal != FetchRefusal::None) {
-        refuseFetch(pl, refusal, x.primitive, 0, 0, why);
+    const bool ordered = orderedFetch(pl, {x.primitive, 0, 1, true, x.indexed});
+    if (ordered && x.primitive == icb::kPatchPrimitive) {
+        refuseFetch(pl, FetchRefusal::Geometry, x.primitive, 0, 0, why);
         return false;
     }
     const uint64_t slotBytes = uint64_t(x.slotWords) * 4, offset = x.first * slotBytes, bytes = x.count * slotBytes;
@@ -623,6 +578,11 @@ bool RenderEncoder::executeSlots(const IcbExecute &x, const char **why)
     } else {
         mme::icbRange(p_, x.first, x.count);
     }
+    if (ordered) {
+        if (p_.room() < mme::kFetchCommandsWords)
+            reserve();
+        mme::fetchCommands(p_, true);
+    }
     for (uint32_t a = 0; a < amplifications_; a++) {
         if (amplifications_ > 1)
             icbAmplification(a);
@@ -635,6 +595,8 @@ bool RenderEncoder::executeSlots(const IcbExecute &x, const char **why)
     }
     if (patches)
         icbPatchesDone();
+    if (ordered)
+        mme::fetchCommands(p_, false);
     // the commands set the polygon offset of their own kinds (icb::polygonOffset)
     p_.m(NVB197_SET_POLY_OFFSET_POINT, rasterHeld_.bias);
     p_.m(NVB197_SET_POLY_OFFSET_LINE, rasterHeld_.bias);

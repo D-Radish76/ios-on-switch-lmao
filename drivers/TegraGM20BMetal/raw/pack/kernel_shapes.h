@@ -353,6 +353,16 @@ inline NSArray<MTLTextureDescriptor *> *textures(const std::vector<raw::BoundTex
     return out;
 }
 
+// A shape's textures whose items state no address map (a frontend journal's line, written before keys stated them) with
+// `formatMap`'s map of their format: the map the device sampled them with under every YCbCr matrix but P3, so the
+// record is keyed and compiled as the device keys the dispatch (raw_compute_key.h ":am")
+inline void stateFormatMaps(Shape &s, uint8_t (*formatMap)(uint64_t))
+{
+    for (raw::BoundTexture &t : s.textures)
+        if (!t.addressMap)
+            t.addressMap = formatMap(t.pixelFormat);
+}
+
 inline std::string key(const Shape &s, const raw::AirHash &air)
 {
     return raw::computeKey(air, raw::constantsText(constantValues(s.constants)) + s.stageIn, s.maxThreads,

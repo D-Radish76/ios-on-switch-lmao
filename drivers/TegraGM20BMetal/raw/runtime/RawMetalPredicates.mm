@@ -202,89 +202,23 @@ uint32_t rawShapeTerm(MTLTextureDescriptor *d)
     return raw::shapes::rawShapeTerm(textureShape(d));
 }
 
-static NSString *describe(MTLTextureDescriptor *d)
-{
-    static const SEL rotation = NSSelectorFromString(@"rotation");
-    const NSUInteger turned =
-        [d respondsToSelector:rotation] ? ((NSUInteger (*)(id, SEL))objc_msgSend)(d, rotation) : 0;
-    return [NSString
-        stringWithFormat:@"%lux%lu format %lu type %lu levels %lu samples %lu array %lu rotation %lu usage 0x%lx "
-                         @"storage %lu",
-                         (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.pixelFormat,
-                         (unsigned long)d.textureType, (unsigned long)d.mipmapLevelCount, (unsigned long)d.sampleCount,
-                         (unsigned long)d.arrayLength, (unsigned long)turned, (unsigned long)d.usage,
-                         (unsigned long)d.storageMode];
-}
-
 // A kept extended-range texture's facts (raw_xr.h), or an RG8Unorm_sRGB one's stand-in (raw_srgb_pair.h). Metal keeps
 // it compressed with allowGPUOptimizedContents, 16 texels or more a side and no ShaderWrite, PixelFormatView or
 // ShaderAtomic usage, never over a buffer (m2v heap_tiled.rs metal_compresses); one draws may sample gets its stand-in.
-void keepExtendedRange(MTLTextureDescriptor *d, raw::Texture &t, bool overBuffer)
+// False: the memory or header of a stand-in it needs was refused, so no draw could sample it. A pack with no conversion
+// state for the form (a host test's) makes it without one, which a draw sampling it refuses at its bind.
+bool keepExtendedRange(MTLTextureDescriptor *d, raw::Texture &t, bool overBuffer)
 {
-    if (raw::srgbPair(t.format)) {
-        if (d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderRead))
-            gRM->raw->createStandIn(t);
-        return;
-    }
-    if (raw::xrForm(t.format) == raw::XrForm::None)
-        return;
+    const bool sampled = d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderRead);
+    if (raw::srgbPair(t.format))
+        return !sampled || gRM->raw->createStandIn(t);
+    if (!raw::xrSampled(t.format))
+        return true;
     const MTLTextureUsage plain =
         MTLTextureUsageShaderWrite | MTLTextureUsagePixelFormatView | MTLTextureUsageShaderAtomic;
     const bool every = d.usage == MTLTextureUsageUnknown;
     t.compressed =
         !overBuffer && d.allowGPUOptimizedContents && std::min(d.width, d.height) >= 16 && !every && !(d.usage & plain);
-    if (every || (d.usage & MTLTextureUsageShaderRead))
-        gRM->raw->createStandIn(t);
+    return !sampled || gRM->raw->createStandIn(t) || !gRM->raw->ownPipeline(raw::xrConversionOf(t.format, t.xrPlanes));
 }
 
-static NSString *surfaceShape(RMTexture *t)
-{
-    IOSurfaceRef s = t->_surface;
-    if (!s)
-        return @"";
-    const OSType fourcc = IOSurfaceGetPixelFormat(s);
-    const size_t planes = IOSurfaceGetPlaneCount(s);
-    NSMutableString *out =
-        [NSMutableString stringWithFormat:@" surface '%c%c%c%c' %zux%zu planes %zu plane %lu", char(fourcc >> 24),
-                                          char(fourcc >> 16), char(fourcc >> 8), char(fourcc), IOSurfaceGetWidth(s),
-                                          IOSurfaceGetHeight(s), planes, (unsigned long)t->_plane];
-    for (size_t k = 0; k < planes && k < 3; k++)
-        [out appendFormat:@" p%zu %zux%zu/%zuB row %zu", k, IOSurfaceGetWidthOfPlane(s, k),
-                          IOSurfaceGetHeightOfPlane(s, k), IOSurfaceGetBytesPerElementOfPlane(s, k),
-                          IOSurfaceGetBytesPerRowOfPlane(s, k)];
-    if (raw::isYcbcrFormat(uint32_t(t->_descriptor.pixelFormat))) {
-        raw::YcbcrPlan plan;
-        const char *why = ycbcrPlan(t->_descriptor, s, t->_plane, plan);
-        [out appendFormat:@" YCbCr not taken: %s", why ?: "taken (refused later: the import or the pool)"];
-    }
-    return out;
-}
-
-void refuseTexture(RMTexture *t, RMPred p, uint64_t a, uint64_t b, NSString *kind, NSString *extra)
-{
-    t->_pred = p;
-    if (!predLogged(p))
-        logPred(p, a, b,
-                [NSString
-                    stringWithFormat:@"(%@ %@%@%@)", kind, describe(t->_descriptor), extra ? @" " : @"", extra ?: @""]);
-    // and one line per new shape of texture the raw path leaves to m2v (the predicate's first line names only the first:
-    // r7r's Tips replays were tex.shape of textures no line described), up to 32 per process: the predicate, its term, the
-    // descriptor, and for a surface its pixel format, planes and what the 4:2:0 path did not take
-    static raw::Mutex lock;
-    static NSMutableSet<NSString *> *seen;
-    MTLTextureDescriptor *d = t->_descriptor;
-    NSString *shape = [NSString
-        stringWithFormat:@"%s %llu %@ %lux%lu f%lu t%lu l%lu s%lu u%lx m%lu%@", kPredNames[p], (unsigned long long)a,
-                         kind, (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.pixelFormat,
-                         (unsigned long)d.textureType, (unsigned long)d.mipmapLevelCount, (unsigned long)d.sampleCount,
-                         (unsigned long)d.usage, (unsigned long)d.storageMode, surfaceShape(t)];
-    {
-        std::lock_guard<raw::Mutex> l(lock);
-        if (!seen)
-            seen = [NSMutableSet set];
-        if (seen.count >= 32 || [seen containsObject:shape])
-            return;
-        [seen addObject:shape];
-    }
-    os_log(rawLog(), "raw: texture on m2v: %{public}@", shape);
-}

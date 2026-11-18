@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 // Metal's texture <-> buffer copies as the raw facade records them (raw_facade_harness.h): on every texture the raw path
 // holds, every layout Metal's validation takes (row lengths, image heights, offsets, origins, levels, slices, 3D depth,
-// block formats, a depth or stencil aspect) must be the raw path's, each direction in a command buffer of its own; only
-// what Metal refuses itself (a multisampled texture) is refused, as recorded and as encoded (the command buffer completes
-// on the raw path). The textures the raw path does not hold (their shape or format: rule tex.shape) are listed; their
-// copies are m2v's with them. A stored depth or stencil texture is held over m2v's memory, which the harness's stand-in
-// has none of: its aspects' copies are the device's to show.
-#include "raw_facade_harness.h"
+// block formats, a depth or stencil aspect) must be the raw path's, each direction in a command buffer of its own; what
+// Metal refuses itself (a multisampled texture) records nothing and completes on the raw path. The textures the raw path
+// does not hold (their shape or format: rule tex.shape) are listed; their copies are m2v's with them. Copies between
+// textures: raw_facade_texture_copies_test.cpp.
+#include "raw_facade_blit_engines.h"
 #include "../raw/runtime/RawMetalInternal.h"
 
 #include <gtest/gtest.h>
@@ -36,13 +35,6 @@ struct Layout {
 
 id<MTLDevice> gDevice;
 const std::string kNotHeld = "not held";
-
-bool rawTakes(uint64_t preds)
-{
-    constexpr uint64_t refused =
-        1ull << PredBlitBufToTex | 1ull << PredBlitTexToBuf | 1ull << PredCallBlitOptions | 1ull << PredEncPlanarCopy;
-    return !(preds & refused);
-}
 
 class FacadeCopies : public ::testing::Test {
 protected:
@@ -80,6 +72,7 @@ protected:
         for (bool intoTexture : {true, false}) {
             id<MTLCommandBuffer> cb = [queue commandBuffer];
             id<MTLBlitCommandEncoder> e = [cb blitCommandEncoder];
+            const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
             if (intoTexture)
                 [e copyFromBuffer:buffer
                            sourceOffset:l.offset
@@ -102,12 +95,14 @@ protected:
                       destinationBytesPerRow:row
                     destinationBytesPerImage:image
                                      options:l.options];
+            const bool skipped = ((RMCommandBuffer *)cb)->_plan.size() == recorded;
             [e endEncoding];
-            const bool recorded = rawTakes(((RMCommandBuffer *)cb)->_preds);
-            if (!recorded) {
+            if (((RMCommandBuffer *)cb)->_preds) {
                 refused += intoTexture ? " b2t" : " t2b";
                 continue;
             }
+            if (skipped)
+                refused += intoTexture ? " b2t@skipped" : " t2b@skipped";
             [cb commit];
             [cb waitUntilCompleted];
             NSString *path = ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));
@@ -309,7 +304,7 @@ TEST_F(FacadeCopies, EveryLayoutMetalTakesOnATextureTheRawPathHoldsIsItsToo)
             continue;
         }
         held.push_back(l.name);
-        if (r.empty() == l.metalRefuses)
+        if (l.metalRefuses ? r != " b2t@skipped t2b@skipped" : !r.empty())
             refused.push_back(l.name + ":" + (r.empty() ? " taken" : r));
     }
     std::string list, unheld;

@@ -196,11 +196,10 @@ TEST(RawFacadeRangeForms, ASeparateDepthAndStencilFromTheirSlicesAreEncodedAhead
     EXPECT_GE([p[@"pipelined"] intValue], 10) << [[p description] UTF8String];
 }
 
-// What an extended-range texture sampled in pass 9 of a paced CA frame takes off encode-ahead, printed per form: its
-// stand-in's bind vetoes the frame's encode ahead (VetoShadows, the stand-in drawn from the codes at the commit's encode),
-// or, where this harness's pack has no conversion state for it, the frame is taken whole (VetoWhole) or, with no m2v
-// behind it, fails; a two-plane
-// RGB10A8_2P_XR10 bind adds no veto of its own (RMPass::xrPlaneBinds).
+// What an extended-range texture bound in pass 9 of a paced CA frame takes off encode-ahead, printed per form: its
+// stand-in's bind vetoes the frame's encode ahead (VetoShadows, the stand-in drawn from the codes at the commit's encode);
+// one this harness's pack makes no stand-in for (no conversion state) vetoes nothing; a two-plane RGB10A8_2P_XR10 bind adds
+// no veto of its own (RMPass::xrPlaneBinds).
 TEST(RawFacadeRangeForms, ExtendedRangeSamplesAndTheEncodeAhead)
 {
     ASSERT_TRUE(opened().device != nil);
@@ -232,8 +231,10 @@ TEST(RawFacadeRangeForms, ExtendedRangeSamplesAndTheEncodeAhead)
                [p[@"pipelined"] intValue], [p[@"encoders"] intValue], [p[@"veto"] intValue], path(cb).c_str());
         if (!format)
             EXPECT_GE([p[@"pipelined"] intValue], 10);
-        else
-            EXPECT_NE([p[@"veto"] intValue] & int(VetoShadows | VetoWhole), 0) << format;
+        else if (((RMTexture *)sampled)->_raw.standIn)
+            EXPECT_NE([p[@"veto"] intValue] & int(VetoShadows), 0) << format;
+        else  // no conversion state in this harness's pack: no stand-in to draw at the commit
+            EXPECT_EQ([p[@"veto"] intValue] & int(VetoShadows | VetoWhole), 0) << format;
     }
 }
 

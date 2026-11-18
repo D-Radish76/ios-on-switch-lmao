@@ -96,14 +96,13 @@ TEST(PlanResources, RegistrationIsImmutableUntilTheRecordingIsRecycled)
     EXPECT_TRUE(resources(plan, 0, plan.size(), RMResourceKind::Texture).empty());
 }
 
-TEST(PlanResources, PlanarFeedbackRefusesAtEncoderCloseWithoutChangingReplay)
+TEST(PlanResources, APlanarTargetWrittenAndSampledInOneEncoderStaysNative)
 {
     RMCommandPlan plan;
-    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted | RMResourceFacts::PlanarTarget);
+    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted);
     pass(plan, {{object(1), write}, {object(1), read | sample}});
-    EXPECT_EQ(plan.nativeRangeRefusal(0, plan.size()), object(1));
     plan.setRefused(0, false);
-    EXPECT_TRUE(plan.begin(0).refused);
+    EXPECT_FALSE(plan.begin(0).refused);
     raw::ExecutionPlan execution;
     EXPECT_EQ(makeExecutionPlan(plan, false, execution,
                                 [](const auto &) {
@@ -111,30 +110,37 @@ TEST(PlanResources, PlanarFeedbackRefusesAtEncoderCloseWithoutChangingReplay)
                                 }),
               RMPlanError::None);
     ASSERT_EQ(execution.ranges().size(), 1u);
-    EXPECT_EQ(execution.ranges()[0].kind, raw::ExecutionKind::compatibility);
+    EXPECT_EQ(execution.ranges()[0].kind, raw::ExecutionKind::native);
     EXPECT_EQ(plan.size(), 2u);
     EXPECT_EQ(plan.legacy(0).op, OpRender);
     EXPECT_EQ(plan.legacy(1).op, OpEnd);
 }
 
-TEST(PlanResources, FeedbackInTheJoinedRangeDoesNotPoisonTheIndividualPasses)
+TEST(PlanResources, APlanarTargetWrittenThenSampledIsOneNativeRange)
 {
     RMCommandPlan plan;
-    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted | RMResourceFacts::PlanarTarget);
+    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted);
     pass(plan, {{object(1), write}});
     pass(plan, {{object(1), read | sample}});
-    EXPECT_EQ(plan.nativeRangeRefusal(0, 2), nullptr);
-    EXPECT_EQ(plan.nativeRangeRefusal(2, 4), nullptr);
-    plan.prepareRange(0, 4);
-    EXPECT_EQ(plan.nativeRangeRefusal(0, 4), object(1));
+    plan.setRefused(0, false);
+    plan.setRefused(2, false);
     EXPECT_FALSE(plan.begin(0).refused);
     EXPECT_FALSE(plan.begin(2).refused);
+    raw::ExecutionPlan execution;
+    ASSERT_EQ(makeExecutionPlan(plan, false, execution,
+                                [](const auto &) {
+                                    return true;
+                                }),
+              RMPlanError::None);
+    ASSERT_EQ(execution.ranges().size(), 1u);
+    EXPECT_EQ(execution.ranges()[0].kind, raw::ExecutionKind::native);
+    EXPECT_EQ(execution.ranges()[0].to, 4u);
 }
 
 TEST(PlanResources, EventsSeparateConversionEpochs)
 {
     RMCommandPlan plan;
-    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted | RMResourceFacts::PlanarTarget);
+    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted);
     pass(plan, {{object(1), write}});
     Cmd event = cmd(OpSignalEvent);
     event.obj = object(2);
@@ -150,26 +156,12 @@ TEST(PlanResources, EventsSeparateConversionEpochs)
     ASSERT_EQ(execution.ranges().size(), 3u);
     EXPECT_EQ(execution.ranges()[1].kind, raw::ExecutionKind::signal);
     EXPECT_EQ(plan.event(2).value, event.c);
-    for (const auto &range : execution.ranges()) {
-        plan.prepareRange(range.from, range.to);
-        EXPECT_EQ(plan.nativeRangeRefusal(range.from, range.to), nullptr);
-    }
 }
 
-TEST(PlanResources, OrdinaryFeedbackAndReadOnlyPlanarSamplingRemainEligible)
+TEST(PlanResources, APendingKernelsUsesAreItsAdmittedOnesOncePreparedAgain)
 {
     RMCommandPlan plan;
-    resource(plan, 1, RMResourceKind::Texture);
-    resource(plan, 2, RMResourceKind::Texture, RMResourceFacts::Converted);
-    resource(plan, 3, RMResourceKind::Texture, RMResourceFacts::Converted | RMResourceFacts::PlanarTarget);
-    pass(plan, {{object(1), write | sample}, {object(2), write | sample}, {object(3), read | sample}});
-    EXPECT_EQ(plan.nativeRangeRefusal(0, plan.size()), nullptr);
-}
-
-TEST(PlanResources, PendingComputeDoesNotRefuseItsConservativeWritableSummary)
-{
-    RMCommandPlan plan;
-    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted | RMResourceFacts::PlanarTarget);
+    resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted);
     plan.record(cmd(OpCompute), {});
     Cmd bind = cmd(OpKernelTexture, 3, 0);
     bind.obj = object(1);
@@ -181,16 +173,14 @@ TEST(PlanResources, PendingComputeDoesNotRefuseItsConservativeWritableSummary)
     plan.record(dispatch, dimensions);
     plan.record(cmd(OpEnd), {});
     plan.prepareRange(0, 3);
-    EXPECT_EQ(plan.nativeRangeRefusal(0, 3), nullptr);
     plan.setRefused(0, false);
     EXPECT_FALSE(plan.begin(0).refused);
     plan.setKernelUses(1, object(3), [](std::vector<raw::ResourceUse> &out) {
         out = std::vector<raw::ResourceUse>{{object(1), read | sample}};
     });
-    plan.resolveDispatch(1, object(3), 0, 0);
+    plan.resolveDispatch(1, object(3), 0);
     plan.invalidateUses();
     plan.prepareRange(0, 3);
-    EXPECT_EQ(plan.nativeRangeRefusal(0, 3), nullptr);
     const auto use = resources(plan, 0, 3, RMResourceKind::Texture);
     ASSERT_EQ(use.size(), 1u);
     EXPECT_EQ(use[0].access, read | sample);
@@ -199,7 +189,7 @@ TEST(PlanResources, PendingComputeDoesNotRefuseItsConservativeWritableSummary)
     });
     plan.invalidateUses();
     plan.prepareRange(0, 3);
-    EXPECT_EQ(plan.nativeRangeRefusal(0, 3), object(1));
+    EXPECT_EQ(resources(plan, 0, 3, RMResourceKind::Texture)[0].access, read | write | sample);
 }
 
 TEST(PlanResources, RebuildingACombinedRangeAlsoRestoresPerEncoderTypedResources)

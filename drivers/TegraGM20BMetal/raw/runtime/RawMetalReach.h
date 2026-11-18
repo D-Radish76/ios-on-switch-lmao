@@ -21,3 +21,8 @@ private:
     raw::CommandBuffer &commands_;
     size_t from_, to_;  // to_: the command buffer's range end; the pass ends at its OpEnd before it
 };
+
+// A reach, or the work of a pass it bounds, that failed (`why`, its command buffer's `refusal`): the command buffer fails
+// OutOfMemory where it had no memory for a target (`memory`: raw::PassReach's), else as the raw path's own draw the
+// encoder refused (RawMetalPassErrors.h rmOwnDrawFails), whose line fail() then logs
+void rmReachFails(RMCommandBuffer *cb, bool ahead, const char *why, bool memory, const raw::Refusal &refusal);

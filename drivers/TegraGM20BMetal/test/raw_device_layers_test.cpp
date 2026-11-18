@@ -213,17 +213,16 @@ TEST_F(DeviceLayers, A3DPlaneIsTheLevelsPlaneUnderDepthSize)
     EXPECT_FALSE(raw::attachmentTarget(deep, 0, 1, plane)) << "a plane inside a block of several is no base address";
 }
 
-TEST_F(DeviceLayers, PitchMemoryRendersOneLayerOnly)
+TEST_F(DeviceLayers, PitchMemoryRendersOneLayerAloneAndALayeredPassThroughABacking)
 {
     raw::Texture t, part;
     ASSERT_TRUE(dev.createTexture(64, 64, kRGBA8, t, false, false));
     ASSERT_FALSE(t.blockLinear);
     EXPECT_FALSE(raw::attachmentTarget(t, 0, 1, part));
-    std::string why;
-    EXPECT_TRUE(pass(onto(t, 2), none, &why).empty());
-    EXPECT_NE(why.find("which Metal's validation layer stops (MTL4RenderPass.h renderTargetArrayLength"),
-              std::string::npos)
-        << why;
+    const auto at = last(pass(onto(t, 2), none));
+    ASSERT_FALSE(at.empty());
+    EXPECT_NE(at.at(NVB197_SET_COLOR_TARGET_B(0)), uint32_t(t.va));
+    EXPECT_EQ(at.at(NVB197_SET_COLOR_TARGET_THIRD_DIMENSION(0)), 2u);
 }
 
 TEST_F(DeviceLayers, ALayeredPassBindsAndClearsEveryLayer)
@@ -247,17 +246,18 @@ TEST_F(DeviceLayers, ALayeredPassBindsAndClearsEveryLayer)
     EXPECT_TRUE(valuesOf(m, NVB197_CLEAR_SURFACE).empty());
 }
 
-TEST_F(DeviceLayers, ALayeredPassPastItsTargetsLayersIsRefused)
+TEST_F(DeviceLayers, ALayeredPassPastItsTargetsLayersRendersThroughABackingOfThePasss)
 {
     raw::Texture array, view;
     ASSERT_TRUE(dev.createArray(32, 32, 4, kRGBA8, raw::fx::kTexTwoDArray, array));
     ASSERT_TRUE(raw::attachmentTarget(array, 0, 1, view));
-    EXPECT_FALSE(pass(onto(view, 3), none).empty());
-    std::string why;
-    EXPECT_TRUE(pass(onto(view, 4), none, &why).empty());
-    EXPECT_NE(why.find("which Metal's validation layer stops (MTL4RenderPass.h renderTargetArrayLength"),
-              std::string::npos)
-        << why;
+    const auto within = last(pass(onto(view, 3), none));
+    ASSERT_FALSE(within.empty());
+    EXPECT_EQ(within.at(NVB197_SET_COLOR_TARGET_B(0)), uint32_t(view.va));
+    const auto past = last(pass(onto(view, 4), none));
+    ASSERT_FALSE(past.empty());
+    EXPECT_NE(past.at(NVB197_SET_COLOR_TARGET_B(0)), uint32_t(view.va));
+    EXPECT_EQ(past.at(NVB197_SET_COLOR_TARGET_THIRD_DIMENSION(0)), 4u);
 }
 
 // A pass of one-sample and four-sample attachments is Metal's validation error, named so (no m2v form of it either)
@@ -473,7 +473,10 @@ TEST_F(DeviceLayers, ALayerOfADepthArrayIsItsZetaFromThere)
     EXPECT_EQ(at.at(NVB197_SET_ZT_SIZE_C), 4u);
     EXPECT_EQ(at.at(NVB197_SET_ZT_LAYER), 0u);
     p.layers = 5;
-    EXPECT_TRUE(pass(p, none).empty()) << "past the zeta's layers";
+    const auto past = last(pass(p, none));
+    ASSERT_FALSE(past.empty()) << "past the zeta's layers: through a zeta backing of the pass's";
+    EXPECT_NE(past.at(NVB197_SET_ZT_B), uint32_t(m.va + 2 * zeta.layerBytes));
+    EXPECT_EQ(past.at(NVB197_SET_ZT_SIZE_C), 5u);
 }
 
 TEST_F(DeviceLayers, MemorylessArraysAreBackedWithThePassesLayers)

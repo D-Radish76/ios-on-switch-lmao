@@ -40,8 +40,6 @@ void inlineSignals(RMCommandBuffer *cb)
         if (!leased(cb, *join))
             continue;
         cb->_plan.prepareRange(from, to);
-        if (cb->_plan.nativeRangeRefusal(from, to))
-            continue;
         for (size_t k = join->first + 1; k < join->last; ++k)
             if (segs[k].event)
                 cb->_inlineSignals.push_back(segs[k].from);

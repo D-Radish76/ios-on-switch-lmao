@@ -174,14 +174,13 @@ private:
     }
 };
 
-// Each buffer entry's residual word as m2v's plan places it (NmbDirectKernel residualWord), where binding at an offset
-// keeps the plain dispatch's variant, region and layout
+// Each buffer entry's residual word + 1 as m2v's plan places it (NmbDirectKernel residualWord, 0: none), every one
+// named: a plan the bind offsets change, or a residual no record word names, is refused at its compile
+// (NativeMetalDirectCompute.rs record_residuals)
 void attachResiduals(const NmbDirectKernel &k, std::vector<PackKernelEntry> &entries)
 {
-    if (!k.boundSame)
-        return;
     for (PackKernelEntry &e : entries)
-        if (e.kind == KernelBuffer && e.slot < 32 && k.residualWord[e.slot] <= kRootPushWords + kSpillResidualWords)
+        if (e.kind == KernelBuffer && e.slot < 32)
             e.window |= uint32_t(k.residualWord[e.slot]) << 24;
 }
 

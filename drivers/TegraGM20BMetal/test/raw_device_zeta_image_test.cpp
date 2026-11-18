@@ -394,10 +394,11 @@ TEST(ZetaShapes, MultisampledOnesOfEveryUsageAndStoredStorage)
         }
 }
 
-// A stored depth/stencil texture a draw may sample (Unknown usage or ShaderRead) has a header; one without either has none
+// A stored depth/stencil texture has its header from its creation, whatever its usage: recording threads read it unlocked
+// (a turn copy, a depth load, a resolve sample one made only to be rendered), so nothing may make it later
 class ZetaHeaders : public harness::DeviceTest {};
 
-TEST_F(ZetaHeaders, AShapeThatMaySampleHasAHeader)
+TEST_F(ZetaHeaders, EveryShapeHasItsHeaderFromCreation)
 {
     for (const uint64_t usage : {0ull, 1ull, 3ull, 4ull, 5ull, 6ull}) {
         TextureShape s;
@@ -408,7 +409,7 @@ TEST_F(ZetaHeaders, AShapeThatMaySampleHasAHeader)
         s.usage = usage;
         raw::Texture t;
         ASSERT_TRUE(raw::shapes::create(dev, s, raw::shapes::route(s), true, 0, t)) << usage;
-        EXPECT_EQ(t.tic != 0, !usage || (usage & raw::shapes::kUsageRead)) << usage;
+        EXPECT_NE(t.tic, 0u) << usage;
         dev.destroyTexture(t);
     }
 }

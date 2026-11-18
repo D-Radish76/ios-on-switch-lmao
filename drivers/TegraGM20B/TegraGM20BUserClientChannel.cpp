@@ -11,10 +11,14 @@
 IOReturn AGXDeviceUserClient::vmBind(const TegraGM20BAbiVmBind *in, uint32_t count)
 {
 	const bool cuts = bindCuts(in, count);
-	if (cuts && !submitGate_.beginMutation(lock_))
+	if (cuts && !submitGate_.beginMutation(lock_)) {
+		switch_refusal("vm-bind", "shut", "%u bind ops: the connection's submissions are shut", count);
 		return kIOReturnNotOpen;
+	}
 	BindingTable::Snapshot *snapshot = BindingTable::prepare(nbinds_ + 2 * count);
 	IOReturn ret = snapshot ? kIOReturnSuccess : kIOReturnNoMemory;
+	if (!snapshot)
+		switch_refusal("vm-bind", "memory", "no memory for a binding table of %u", nbinds_ + 2 * count);
 	bool changed = false;
 	for (uint32_t i = 0; !ret && i < count; i++)
 		ret = bindOp(in->ops[i], changed);
@@ -52,17 +56,29 @@ bool AGXDeviceUserClient::bindCuts(const TegraGM20BAbiVmBind *in, uint32_t count
 IOReturn AGXDeviceUserClient::bindOp(const TegraGM20BAbiBindOp &op, bool &changed)
 {
 	if (((op.va | op.range | op.bo_offset) & 0xfff) || !op.range || op.va < TGM_USER_VA_START ||
-	    op.range > TGM_KERNEL_VA || op.va > TGM_KERNEL_VA - op.range || op.kind > 0xff)
+	    op.range > TGM_KERNEL_VA || op.va > TGM_KERNEL_VA - op.range || op.kind > 0xff) {
+		switch_refusal("vm-bind", "arguments",
+			       "op %u of VA %#llx+%#llx, BO %llu at %#llx, kind %#x: not whole pages, outside the "
+			       "client's VA, or no PTE kind",
+			       op.op, op.va, op.range, op.handle, op.bo_offset, op.kind);
 		return kIOReturnBadArgument;
-	if (op.op == TegraGM20BBindMapSparse)
-		return kIOReturnUnsupported;  // InfoSparse is not advertised in v1
+	}
+	if (op.op == TegraGM20BBindMapSparse) {
+		switch_refusal("vm-bind", "sparse", "a sparse map of VA %#llx+%#llx: InfoSparse is not advertised",
+			       op.va, op.range);
+		return kIOReturnUnsupported;
+	}
 	const uint64_t start = statsNowNs();
 	const bool unmap = op.op == TegraGM20BBindUnmap;
-	if (!unmap && op.op != TegraGM20BBindMap && op.op != TegraGM20BBindMapVolatile)
+	if (!unmap && op.op != TegraGM20BBindMap && op.op != TegraGM20BBindMapVolatile) {
+		switch_refusal("vm-bind", "op", "op %u of VA %#llx+%#llx: no such bind op", op.op, op.va, op.range);
 		return kIOReturnBadArgument;
+	}
 	Bo *bo = unmap ? nullptr : findBo(op.handle);
 	if (!unmap && (!bo || op.bo_offset > bo->bytes || op.range > bo->bytes - op.bo_offset)) {
 		noteBind(TGM_BIND_REFUSED, op.va, op.range, bo, op.bo_offset, uint8_t(op.kind));
+		switch_refusal("vm-bind", "bo", "a map of VA %#llx+%#llx from BO %llu at %#llx: %s", op.va, op.range,
+			       op.handle, op.bo_offset, !bo ? "no such BO" : "past the BO's end");
 		return kIOReturnBadArgument;
 	}
 	const Binding *same = switch_gpu_binding_find(binds_, nbinds_, op.va, op.range);
@@ -76,8 +92,11 @@ IOReturn AGXDeviceUserClient::bindOp(const TegraGM20BAbiBindOp &op, bool &change
 		while (cap < nbinds_ + 2)
 			cap *= 2;
 		Binding *grown = IONew(Binding, cap);
-		if (!grown)
+		if (!grown) {
+			switch_refusal("vm-bind", "memory", "no memory for %u bindings (VA %#llx+%#llx)", cap, op.va,
+				       op.range);
 			return kIOReturnNoMemory;
+		}
 		if (binds_) {
 			memcpy(grown, binds_, sizeof(Binding) * nbinds_);
 			IODelete(binds_, Binding, cap_binds_);
@@ -108,10 +127,16 @@ IOReturn AGXDeviceUserClient::bindOp(const TegraGM20BAbiBindOp &op, bool &change
 			IODelete(record, RetiredBinding, 1);
 		if (unmap && !cut)
 			tgm_stats_bind(0, op.range >> 12, statsNowNs() - start);
+		if (cut)
+			switch_refusal("vm-bind", "cut", "op %u of VA %#llx+%#llx: what it overlaps was not cut (%#x)",
+				       op.op, op.va, op.range, cut);
 		return cut;
 	}
-	if (const IOReturn mapped = mapRange(op, bo, record, queued))
+	if (const IOReturn mapped = mapRange(op, bo, record, queued)) {
+		switch_refusal("vm-bind", "map", "a map of VA %#llx+%#llx from BO %llu, kind %#x: no PTEs made (%#x)",
+			       op.va, op.range, op.handle, op.kind, mapped);
 		return mapped;
+	}
 	changed = true;
 	switch_gpu_path_taken(SWITCH_GPU_PATH_VOLATILE_BIND,
 			      op.op == TegraGM20BBindMapVolatile ? 1 : 0);
@@ -135,17 +160,21 @@ IOReturn AGXDeviceUserClient::surfaceLayoutInfo(const TegraGM20BAbiSurfaceLayout
 						TegraGM20BAbiSurfaceLayoutInfo *out, bool canonical)
 {
 	Bo *bo = findBo(in->handle);
-	if (!bo || !bo->wired || !bo->coh)
+	if (!bo || !bo->wired || !bo->coh) {
+		switch_refusal("iosurface-layout", "import",
+			       "BO %llu: %s: no surface layout asked of it", in->handle,
+			       !bo ? "no BO of this connection" : "not an imported IOSurface");
 		return kIOReturnBadArgument;
+	}
+	const uint32_t surfaceId = tgm_coh_surface_id(bo->coh);
 	const bool firstAsk = !bo->layoutAsked;
 	bo->layoutAsked = true;
 	SwitchGpuSurfaceGeometry surface = {};
-	if (switch_gpu_surface_geometry(tgm_coh_surface_id(bo->coh), task_, bo->pas, bo->npages,
-					&surface)) {
+	if (switch_gpu_surface_geometry(surfaceId, task_, bo->pas, bo->npages, &surface)) {
 		switch_refusal(
 			"iosurface-layout", "geometry",
 			"IOSurface %u: import %llu of %u pages is not its memory in this task",
-			tgm_coh_surface_id(bo->coh), in->handle, bo->npages);
+			surfaceId, in->handle, bo->npages);
 		return kIOReturnBadArgument;
 	}
 	tgm_coh *coh = bo->coh;
@@ -189,10 +218,18 @@ IOReturn AGXDeviceUserClient::surfaceLayoutInfo(const TegraGM20BAbiSurfaceLayout
 		out->align = 4096;
 	}
 	if (layout > 0) {
-		if (!described)
+		if (!described) {
+			switch_refusal("iosurface-layout", "undescribed",
+				       "IOSurface %u: decided block-linear, but no layout of it is described", surfaceId);
 			return kIOReturnNotReady;
+		}
 		// method 16's askers lay the shape out themselves, at NIL's block height
 		const bool readable = canonical || (same && tgm_layout_nil_height(&tiled));
+		if (!readable)
+			switch_refusal("iosurface-layout", "other-shape",
+				       "IOSurface %u: block-linear at %ux%u x%u, not the %ux%u x%u rows %u asked",
+				       surfaceId, tiled.width, tiled.height, tiled.bpp, in->width, in->height, in->bpp,
+				       in->bytes_per_row);
 		*out = {readable ? uint32_t(TegraGM20BLayoutTiled)
 				 : uint32_t(TegraGM20BLayoutOtherShape),
 			tiled.width,
@@ -205,6 +242,9 @@ IOReturn AGXDeviceUserClient::surfaceLayoutInfo(const TegraGM20BAbiSurfaceLayout
 			tiled.align,
 			tiled.bytes};
 	} else if (layout < 0) {
+		switch_refusal("iosurface-layout", "decided-other",
+			       "IOSurface %u: laid out for another shape than %ux%u x%u rows %u (%d)", surfaceId,
+			       in->width, in->height, in->bpp, in->bytes_per_row, layout);
 		out->layout = TegraGM20BLayoutOtherShape;
 	}
 	return kIOReturnSuccess;

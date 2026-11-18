@@ -56,12 +56,15 @@ bool CommandBuffer::stencilBits(RenderEncoder &e, const Texture &src, Texture &v
         d.front.writeMask = d.back.writeMask = 0xff;
         return DepthStencilState(d);
     }();
-    Pipeline *pl = src.format == format ? dev_->stencilBitsPipeline(format, src.samples, pick) : nullptr;
+    // the source's state, into any target holding stencil: a Stencil8 of a separate pair takes its pass's
+    // Depth32Float_Stencil8's stencil (RawMetalRangeForms.mm separateZeta), and an M4 Max resolves a Depth32Float_Stencil8's
+    // stencil into a Stencil8 (raw/test/passformsoracle.mm zeta_resolves)
+    Pipeline *pl = zetaHasStencil(format) ? dev_->stencilBitsPipeline(src.format, src.samples, pick) : nullptr;
     if (!pl) {
         *why = "no stencil bits state for the attachment's format";
         return false;
     }
-    if (!bindStencilSource(e, src, view, format,
+    if (!bindStencilSource(e, src, view, src.format,
                            pick == StencilSample::LeastDepth || pick == StencilSample::GreatestDepth, why))
         return false;
     e.setPipeline(pl);

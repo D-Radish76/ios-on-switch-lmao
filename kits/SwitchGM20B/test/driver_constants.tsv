@@ -59,7 +59,6 @@ raw_counters.h	kMaxBufferBytes	policy	the AGX driver's largest sample buffer (co
 raw_counters.h	kPayload	policy	a written record's payload
 raw_counters.h	kErrorValue	policy	Metal's MTLCounterErrorValue
 raw_counters.h	kTimestampWords	policy	push words of a sample's report
-raw_mme.h	kAbi	policy	raw macro ABI version
 raw_mme.h	kDraw	policy	raw macro slot
 raw_mme.h	kDrawIndexed	policy	raw macro slot
 raw_mme.h	kIndirect	policy	raw macro slot
@@ -73,6 +72,17 @@ raw_mme.h	kIcbDrawIndexed	policy	raw macro slot
 raw_mme.h	kIcbGate	policy	raw macro slot
 raw_mme.h	kIcbBind	policy	raw macro slot
 raw_mme.h	kClearLayers	policy	raw macro slot
+raw_mme.h	kFetchDraw	policy	raw macro slot
+raw_mme.h	kFetchDrawIndexed	policy	raw macro slot
+raw_mme.h	kBeginSplit	policy	BEGIN's SPLIT_MODE field position (clb197.h 30:29)
+raw_mme.h	kBeginInstance	policy	BEGIN's INSTANCE_ID field position (clb197.h 27:26)
+raw_mme.h	kBeginPrimitive	policy	BEGIN's PRIMITIVE_ID field position (clb197.h 24:24)
+raw_mme.h	kFetchBeginFirst	policy	the fetch macro's BEGIN word opening an instance's split draw
+raw_mme.h	kFetchBeginNext	policy	the fetch macro's BEGIN word opening a later instance's split draw
+raw_mme.h	kFetchBeginContinued	policy	the fetch macro's BEGIN word continuing a split draw
+raw_mme.h	kFetchShapeWords	policy	push words of a fetch macro call's scratch words
+raw_mme.h	kFetchCallWords	policy	push words of a fetch macro call
+raw_mme.h	kFetchCommandsWords	policy	push words of an ordered indirect command buffer execute's scratch words
 raw_mme.h	kScratchLocation	policy	MME shadow scratch word of an indirect command buffer range, past FECS's mailbox
 raw_mme.h	kScratchLength	policy	MME shadow scratch word of an indirect command buffer range, past FECS's mailbox
 raw_mme.h	kIcbPatches	policy	raw macro slot

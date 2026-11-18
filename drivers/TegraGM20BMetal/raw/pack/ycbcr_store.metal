@@ -6,7 +6,9 @@
 //  - converted (YCBCR*_2P, m2v bind/ycbcr_write.rs): a channel's step x of its held half on the grid of 1/8192, 4 rint(h * 2048),
 //    or through the sRGB encode E[rint(h * 8192)] (the _srgb functions, srgb_encode.h); a code's term
 //    t = floor(row . x * mul / 2^20) >> (8 - T), T its bits past a code (6 at 8 bits, 4 at 10); the code
-//    offset + ((sum t + 2^(T - 1 + k)) >> (T + k)) over a block of 2^k texels, clamped to [0, max].
+//    offset + ((sum t + 2^(T - 1 + k)) >> (T + k)) over a block of 2^k texels, clamped to [0, max];
+//  - codes through the encode (the _srgb functions over a codes shape: an sRGB 4:2:0 or 4:2:2 target under a P3 matrix,
+//    runtime/raw_ycbcr.cpp p3SrgbCodesShape): a texel's code k stored as E[k] & max, a block's code the mean of those.
 // The codes are written as code << shift over the target's whole range, so the ROP's unorm store of the exact quotient is the
 // code. A packed target's (the _packed functions, R32Uint planes) are its unpacked twin's codes, three to a little-endian
 // word at bits 0, 10 and 20, as Metal reads them (m2v bind/ycbcr_convert.rs): luma code x in word x / 3, chroma pair x as
@@ -93,6 +95,19 @@ template <bool Srgb> static int3 gridSteps(float3 rgb, constant StoreShape &s, E
     return int3(gridStep<Srgb>(rgb.r, s, e), gridStep<Srgb>(rgb.g, s, e), gridStep<Srgb>(rgb.b, s, e));
 }
 
+// A texel's code as the codes rule stores it, the _srgb functions' through the encode
+template <bool Srgb> static uint storedCode(uint code, constant StoreShape &s, Encode e);
+
+template <> uint storedCode<false>(uint code, constant StoreShape &, Encode)
+{
+    return code;
+}
+
+template <> uint storedCode<true>(uint code, constant StoreShape &s, Encode e)
+{
+    return uint(e[code]) & s.max;
+}
+
 // floor(S * mul / 2^20) in 32-bit steps: S = 4096 q + r, q mul = 256 s + u
 static int scaled(int sum, uint mul)
 {
@@ -117,14 +132,18 @@ static uint encoded(constant StoreShape &s, uint code, int sum, uint k)
 template <bool Srgb> static uint lumaCode(StandIn stand_in, constant StoreShape &s, uint2 at, Encode e)
 {
     const float4 v = stand_in.read(at);
-    return s.converted ? encoded(s, 0, term(s, 0, gridSteps<Srgb>(v.rgb, s, e)), 0) : texelCode(v.g, s);
+    return s.converted ? encoded(s, 0, term(s, 0, gridSteps<Srgb>(v.rgb, s, e)), 0)
+                       : storedCode<Srgb>(texelCode(v.g, s), s, e);
 }
 
-// The block's Cb and Cr codes
+// The block's Cb and Cr codes: one past an odd texture's last column or row holds the texels inside it alone, its code their
+// mean (an M4 Max over a 33x17 4:2:0 target, m2v-textures5 probes/edges.mm), 2^k of them
 template <bool Srgb> static uint2 chromaCodes(StandIn stand_in, constant StoreShape &s, uint2 block, Encode e)
 {
-    const uint w = s.across ? 2 : 1, h = s.down ? 2 : 1, n = w * h, k = (s.across ? 1 : 0) + (s.down ? 1 : 0);
-    const uint2 first = block * uint2(w, h);
+    const uint2 size = uint2(stand_in.get_width(), stand_in.get_height());
+    const uint2 first = block * uint2(s.across ? 2 : 1, s.down ? 2 : 1);
+    const uint2 inside = min(uint2(s.across ? 2 : 1, s.down ? 2 : 1), size - first);
+    const uint w = inside.x, h = inside.y, n = w * h, k = (w - 1) + (h - 1);
     int cb = 0, cr = 0;
     for (uint dy = 0; dy < h; dy++)
         for (uint dx = 0; dx < w; dx++) {
@@ -134,8 +153,8 @@ template <bool Srgb> static uint2 chromaCodes(StandIn stand_in, constant StoreSh
                 cb += term(s, 1, x);
                 cr += term(s, 2, x);
             } else {
-                cb += int(texelCode(v.b, s));
-                cr += int(texelCode(v.r, s));
+                cb += int(storedCode<Srgb>(texelCode(v.b, s), s, e));
+                cr += int(storedCode<Srgb>(texelCode(v.r, s), s, e));
             }
         }
     if (s.converted)
@@ -207,7 +226,7 @@ template <bool Srgb> static uint packedLuma(StandIn stand_in, constant StoreShap
 // Word `at` of a packed chroma row: codes 3 x .. 3 x + 2 of its pairs, the pairs of blocks 3 x / 2 and the one after it
 template <bool Srgb> static uint packedChroma(StandIn stand_in, constant StoreShape &s, uint2 at, Encode e)
 {
-    const uint blocks = stand_in.get_width() / (s.across ? 2 : 1), first = 3 * at.x;
+    const uint blocks = (stand_in.get_width() + (s.across ? 1 : 0)) / (s.across ? 2 : 1), first = 3 * at.x;
     const uint block = first / 2;
     const uint2 pairs[2] = {block < blocks ? chromaCodes<Srgb>(stand_in, s, uint2(block, at.y), e) : uint2(0),
                             block + 1 < blocks ? chromaCodes<Srgb>(stand_in, s, uint2(block + 1, at.y), e) : uint2(0)};
@@ -380,7 +399,7 @@ template <bool Srgb>
 static uint packedChromaMasked(StandIn stand_in, constant StoreShape &s, uint2 at, Encode e, Reach reach,
                                constant Tiles &tiles, Kept kept)
 {
-    const uint blocks = stand_in.get_width() / (s.across ? 2 : 1), first = 3 * at.x;
+    const uint blocks = (stand_in.get_width() + (s.across ? 1 : 0)) / (s.across ? 2 : 1), first = 3 * at.x;
     uint word = 0, mine = 0;
     for (uint i = 0; i < 3; i++) {
         const uint block = (first + i) / 2;

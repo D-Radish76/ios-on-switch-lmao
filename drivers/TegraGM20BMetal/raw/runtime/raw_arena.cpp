@@ -322,7 +322,7 @@ bool Device::arenaTexture(const ArenaAt &at, const TextureAsk &ask, Texture &t)
     const bool made = ask.kind == TextureAsk::Plain
                           ? createTexture(ask.width, ask.height, ask.format, t, false, ask.tiled, &at)
                           : createLaidOut(ask, t, &at);
-    if (!made || !ask.standIn || !xrPipeline(xrForm(t.format)))
+    if (!made || !ask.standIn || !ownPipeline(xrConversionOf(t.format)))
         return made;
     ArenaAt standIn = at;
     uint64_t bytes = 0, align = 0;

@@ -156,6 +156,9 @@ host_library(
         "raw_arena",
         "raw_binds",
         "raw_blit",
+        "raw_blit_convert",
+        "raw_blit_probe",
+        "raw_blit_texels",
         "raw_command_buffer",
         "raw_comp",
         "raw_completed",
@@ -164,10 +167,13 @@ host_library(
         "raw_compute_loops",
         "raw_draw",
         "raw_draw_bands",
+        "raw_draw_inputs",
         "raw_draw_prepare",
         "raw_draw_probes",
+        "raw_draw_shader_tests",
         "raw_encoder_state",
         "raw_gpu",
+        "raw_icb_compute",
         "raw_job_uses",
         "raw_kernel",
         "raw_kernel_job",
@@ -175,7 +181,9 @@ host_library(
         "raw_memory",
         "raw_multisample",
         "raw_pack",
+        "raw_pass_backings",
         "raw_pass_begin",
+        "raw_pass_clears",
         "raw_pass_end",
         "raw_pipelines",
         "raw_predicate_loops",
@@ -189,6 +197,8 @@ host_library(
         "raw_state_segment",
         "raw_surface_textures",
         "raw_tessellation",
+        "raw_texture_chains",
+        "raw_texture_headers",
         "raw_texture_views",
         "raw_textures",
         "raw_transfer",
@@ -228,6 +238,18 @@ raw_device_test(
     srcs = ["raw_device_arguments_test.cpp"],
 )
 
+# Compute dispatches on raw::Device: a kernel's argument tables bound at the dispatch that meets them, direct or
+# indirect, a refusal before that out of memory; indirect commands of argument-table and root-slot kernels; a record made
+# under its key's address maps
+raw_device_test(
+    name = "raw_device_compute_test",
+    srcs = [
+        "raw_device_compute_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+    ],
+    deps = [":raw_mme_simulator"],
+)
+
 rust_binary(
     name = "sampler_states",
     srcs = ["sampler_states.rs"],
@@ -245,6 +267,18 @@ genrule(
     outs = ["sampler_states.tsv"],
     cmd = "$(execpath :sampler_states) $(execpath //gpu:compile_profile) > $@",
     tools = [":sampler_states"],
+)
+
+# A resolve into a multisampled texture: the one-sample resolve written into each sample by the 2D engine's point-sampled
+# scale onto the sample grid
+raw_device_test(
+    name = "raw_device_resolve_twod_test",
+    srcs = [
+        "raw_device_resolve_twod_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_resolve_twod.cpp",
+    ],
+    deps = ["//kits/SwitchGM20B:classes"],
 )
 
 raw_device_test(
@@ -397,6 +431,26 @@ raw_device_test(
     srcs = ["raw_device_fetch_test.cpp"],
 )
 
+# Patch draws of a state that fetches the colour it writes (raw_fetch_order.h): its storage form draws each whole inside
+# the pixel interlock; a form that fetches through the texture unit is refused at any patch count, instanced, indirect
+# and as patch commands
+raw_device_test(
+    name = "raw_device_fetch_patches_test",
+    srcs = ["raw_device_fetch_patches_test.cpp"],
+)
+
+# The refusal raw::Device names for each draw ending of RawMetalDrawErrors.mm drawFailed: a storage form in a pass of
+# another sample count or texel size, a shadow variant with no shadow, a sampler header the range did not make, a shader
+# test of an aspect or sample count the pass lacks or of an unconverted Depth16Unorm; a planar texture sampled by
+# comparison draws through its sampler's compare header under the texture's map
+raw_device_test(
+    name = "raw_device_draw_ends_test",
+    srcs = [
+        "raw_device_draw_ends_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+    ],
+)
+
 # Rule barrier.pass_pixel on raw::Device (raw_pass_hazard.h): a pass whose recording samples a small target the pass before
 # rendered opens with PIXEL_SHADER_BARRIER and no drain; a full-size one, and an undescribed pass, keep the drain
 raw_device_test(
@@ -501,6 +555,66 @@ raw_device_test(
 )
 
 raw_device_test(
+    name = "raw_device_depth_forms_test",
+    srcs = [
+        "raw_device_depth_forms_test.cpp",
+        "raw_device_forms.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turned_pass.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
+    ],
+)
+
+raw_device_test(
+    name = "raw_device_mixed_samples_test",
+    srcs = [
+        "raw_device_mixed_samples_test.cpp",
+        "raw_device_forms.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turned_pass.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
+    ],
+)
+
+raw_device_test(
+    name = "raw_device_pass_layers_test",
+    srcs = [
+        "raw_device_pass_layers_test.cpp",
+        "raw_device_forms.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turned_pass.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
+    ],
+)
+
+raw_device_test(
+    name = "raw_device_same_bits_test",
+    srcs = [
+        "raw_device_same_bits_test.cpp",
+        "raw_device_forms.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turned_pass.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
+    ],
+)
+
+raw_device_test(
     name = "raw_device_turned_pass_test",
     srcs = [
         "raw_device_turned_pass_test.cpp",
@@ -515,9 +629,57 @@ raw_device_test(
 )
 
 raw_device_test(
+    name = "raw_device_reach_test",
+    srcs = [
+        "raw_device_reach_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turned_pass.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
+    ],
+)
+
+raw_device_test(
+    name = "raw_device_reach_forms_test",
+    srcs = [
+        "raw_device_reach_forms_test.cpp",
+        "raw_reach_calls.h",
+        "raw_record_pack.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turned_pass.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
+    ],
+)
+
+raw_device_test(
     name = "raw_device_format_standin_test",
     srcs = [
         "raw_device_format_standin_test.cpp",
+        "raw_format_standin_harness.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_turned_pass.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
+    ],
+)
+
+# Format stand-ins of layered and multisampled targets: a layer's fill and store each, a header a layer, per-sample states
+raw_device_test(
+    name = "raw_device_format_standin_layers_test",
+    srcs = [
+        "raw_device_format_standin_layers_test.cpp",
+        "raw_format_standin_harness.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.cpp",
@@ -608,6 +770,11 @@ raw_device_test(
 )
 
 raw_device_test(
+    name = "raw_device_pass_targets_test",
+    srcs = ["raw_device_pass_targets_test.cpp"],
+)
+
+raw_device_test(
     name = "raw_device_layered_tests_test",
     srcs = [
         "raw_device_layered_tests_test.cpp",
@@ -618,9 +785,37 @@ raw_device_test(
 raw_device_test(
     name = "raw_device_views_test",
     srcs = [
+        "raw_device_views_harness.h",
         "raw_device_views_test.cpp",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
+)
+
+# Textures over a buffer's or a surface's memory and their views: linear array slices, extended-range texel buffers and
+# their stand-ins, texel buffers over a surface, the one-plane YCbCr layouts, converted images as one-layer arrays
+raw_device_test(
+    name = "raw_device_surface_views_test",
+    srcs = [
+        "raw_device_surface_views_test.cpp",
+        "raw_device_views_harness.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_ycbcr.cpp",
+    ],
+)
+
+# Every descriptor shape Metal, an identity and GM20B make has a raw creator
+raw_device_test(
+    name = "raw_texture_routes_test",
+    srcs = [
+        "raw_texture_routes_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_mip_passes.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_texture_shape.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_texture.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_ycbcr.cpp",
+    ],
+    copts = ["-I$(GENDIR)/kits/SwitchGM20B"],
+    deps = ["//kits/SwitchGM20B:caps"],
 )
 
 raw_device_test(
@@ -689,7 +884,6 @@ raw_device_test(
     srcs = [
         "raw_device_stage_in_test.cpp",
         "raw_record_pack.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_icb_compute.cpp",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -698,7 +892,6 @@ raw_device_test(
     name = "raw_device_kernel_bytes_test",
     srcs = [
         "raw_device_kernel_bytes_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_icb_compute.cpp",
     ],
     data = [
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalCompute.mm",
@@ -711,7 +904,6 @@ raw_device_test(
     name = "raw_device_fresh_fill_test",
     srcs = [
         "raw_device_fresh_fill_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_icb_compute.cpp",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -721,7 +913,6 @@ raw_device_test(
     srcs = [
         "raw_device_indirect_dispatch_test.cpp",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_icb_compute.cpp",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -733,7 +924,6 @@ raw_device_test(
     srcs = [
         "raw_device_grid_test.cpp",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_icb_compute.cpp",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -743,7 +933,6 @@ raw_device_test(
     srcs = [
         "raw_device_kernel_pairs_test.cpp",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_icb_compute.cpp",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -1294,18 +1483,6 @@ host_test(
     srcs = [
         "raw_kernel_shadow_test.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_shadow.h",
-    ],
-    cxx_std = "c++17",
-)
-
-# raw_kernel_windows.h with the shadow planner: one window per buffer, address and length; a window written is copied back
-# before its bytes are reached in place and filled again after
-host_test(
-    name = "raw_kernel_windows_test",
-    srcs = [
-        "raw_kernel_windows_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_shadow.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_windows.h",
     ],
     cxx_std = "c++17",
 )
@@ -2479,13 +2656,23 @@ host_test(
     deps = ["//kits/SwitchGM20B:classes"],
 )
 
+# What Metal's blits move of a texture held through planes, as an M4 Max moves it (raw_blit_planes.h)
+host_test(
+    name = "raw_blit_planes_test",
+    srcs = ["raw_blit_planes_test.cpp"] + RAW_HOST_HEADERS,
+    copts = RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    deps = RAW_HOST_DEPS,
+)
+
 host_test(
     name = "raw_pass_fusion_test",
     srcs = [
-        "raw_pass_fusion_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_pass_fusion.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_attachment_lifetime.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_pass_fusion.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
+        "raw_pass_fusion_test.cpp",
     ],
     cxx_std = "c++17",
 )
@@ -2707,18 +2894,6 @@ host_test(
 )
 
 host_test(
-    name = "raw_overlap_test",
-    srcs = [
-        "raw_overlap_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_fetch_order.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_key_tally.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_overlap.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_storage_form.h",
-    ],
-    cxx_std = "c++17",
-)
-
-host_test(
     name = "raw_fetch_order_test",
     srcs = [
         "raw_fetch_order_test.cpp",
@@ -2732,10 +2907,11 @@ host_test(
 host_test(
     name = "raw_pass_hazard_test",
     srcs = [
-        "raw_pass_hazard_test.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_attachment_lifetime.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_pass_hazard.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
+        "raw_pass_hazard_test.cpp",
     ],
     cxx_std = "c++17",
 )
@@ -2746,7 +2922,6 @@ host_test(
         "raw_twin_rule_test.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_fetch_order.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_key_tally.h",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_overlap.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_storage_form.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_twin_rule.h",
     ],
@@ -2952,6 +3127,17 @@ host_test(
     srcs = [
         "raw_resolve_rule_test.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_resolve_rule.h",
+    ],
+    cxx_std = "c++17",
+)
+
+# The texels fillTexture:...color: writes, against an Apple M4's (m2v fill_value.rs)
+host_test(
+    name = "raw_fill_texel_test",
+    srcs = [
+        "raw_fill_texel_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_fill_texel.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_fill_texel_tables.h",
     ],
     cxx_std = "c++17",
 )
@@ -4211,7 +4397,6 @@ host_test(
         "//drivers/TegraGM20BMetal:compiler/compiler_record.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawComplete.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawCompleteRemote.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalComputeState.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalCubic.mm",
     ],
     linkopts = [
@@ -4350,6 +4535,9 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_arena",
     "raw_binds",
     "raw_blit",
+    "raw_blit_convert",
+    "raw_blit_probe",
+    "raw_blit_texels",
     "raw_cache",
     "raw_command_buffer",
     "raw_comp",
@@ -4363,8 +4551,10 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_direct_compute",
     "raw_draw",
     "raw_draw_bands",
+    "raw_draw_inputs",
     "raw_draw_prepare",
     "raw_draw_probes",
+    "raw_draw_shader_tests",
     "raw_emit",
     "raw_encoder_state",
     "raw_format_standin",
@@ -4381,7 +4571,9 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_multisample",
     "raw_object_pool",
     "raw_pack",
+    "raw_pass_backings",
     "raw_pass_begin",
+    "raw_pass_clears",
     "raw_pass_end",
     "raw_pipelines",
     "raw_predicate_loops",
@@ -4403,6 +4595,8 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_surface_image",
     "raw_surface_textures",
     "raw_tessellation",
+    "raw_texture_chains",
+    "raw_texture_headers",
     "raw_texture_shape",
     "raw_texture_views",
     "raw_textures",
@@ -4638,6 +4832,16 @@ facade_test(
 facade_test(
     name = "raw_facade_turned_test",
     srcs = ["raw_facade_turned_test.cpp"],
+)
+
+# The reach (raw_reach.h) of a pass loading a rotation-4 plane: one that fails fails its command buffer on raw, m2v never
+# opened or asked for; an executed indirect command buffer's draw is reached by its commands, run again by reference
+facade_test(
+    name = "raw_facade_reach_test",
+    srcs = [
+        "raw_facade_reach_test.cpp",
+        "raw_reach_calls.h",
+    ],
 )
 
 # The refusals that fail their command buffer with Metal's error (RawMetalPredicates.h predFailure) on the raw facade: each
@@ -4905,11 +5109,56 @@ facade_test(
     ],
 )
 
+# Render passes the facade fails instead of drawing, nothing of them on m2v: attachments Metal's validation layer stops, a
+# stand-in target whose states the pack lacks, a YCbCr texture with no stand-in; a YCbCr state with no target is raw's
+facade_test(
+    name = "raw_facade_pass_errors_test",
+    srcs = ["raw_facade_pass_errors_test.cpp"],
+    linkopts = [
+        "-framework",
+        "CoreVideo",
+    ],
+)
+
+# A 4:2:2 YCbCr texture written and sampled in one command buffer stays raw: its image is drawn from its planes between
+# the write (a pass into it, a copy into a plane) and the pass or kernel that samples it, as an M4 Max samples them
+facade_test(
+    name = "raw_facade_planar_sample_test",
+    srcs = [
+        "raw_facade_compute.h",
+        "raw_facade_planar_sample_test.cpp",
+    ],
+    linkopts = [
+        "-framework",
+        "CoreVideo",
+    ],
+)
+
+# Passes an M4 Max runs that the pass-begin sites sent to m2v (raw/test/passformsoracle.mm): a plane inside a block of several, an
+# RG8Unorm_sRGB target, a texture buffer's row, depth and stencil apart, zeta resolves into parts and other zeta formats
+facade_test(
+    name = "raw_facade_pass_forms_test",
+    srcs = ["raw_facade_pass_forms_test.cpp"],
+)
+
 # Textures over a buffer's or a surface's rows as Metal lays them out: rows past their memory nil, a buffer texture at 16
 # bytes sampled through a pool image, a surface plane off 16 at Metal's GPU layout with its own CPU rows
+# Passes into RGB10A8_2P_XR10 colours that cannot all take their two planes: drawn in an image of their planes, or a
+# device-made one dropped as an M4 Max keeps none of its texels
+facade_test(
+    name = "raw_facade_xr_planes_pass_test",
+    srcs = ["raw_facade_xr_planes_pass_test.cpp"],
+)
+
 facade_test(
     name = "raw_facade_texture_rows_test",
     srcs = ["raw_facade_texture_rows_test.cpp"],
+)
+
+# Every texture over a surface or a buffer ends on the raw path, made or Metal's, the identity's or GM20B's nil
+facade_test(
+    name = "raw_facade_surface_shapes_test",
+    srcs = ["raw_facade_surface_shapes_test.cpp"],
 )
 
 # A function's constants and attributes are read from its metallib's public metadata, as Metal answers them for a library
@@ -5013,24 +5262,316 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
-# Every texture <-> buffer copy layout Metal takes, recorded on the raw facade: none refused but what Metal refuses itself
-facade_test(
-    name = "raw_facade_copies_test",
-    srcs = ["raw_facade_copies_test.cpp"],
-    additional_compiler_inputs = [
-        "//drivers/TegraGM20BMetal:compiler_srcs",
-        "//drivers/TegraGM20BMetal:raw_facade_srcs",
-    ],
+# A shader-tested Depth16Unorm beside a turned plane, converted and moved into the plane, a turned pass's depth slice
+# read through its texture's own header, a shader-tested Depth16Unorm slice converted through it: each raw
+host_test(
+    name = "raw_facade_turned_depth_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_turned_depth_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
     copts = [
-        "-Wno-nullability-completeness",
-        "-Wno-nullability-completeness-on-arrays",
-    ],
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
 )
 
+# The raw path's own work around a pass failing as it is encoded (no turn copy or conversion state, no texture header
+# left, more two-plane XR textures written than a pass's images): the command buffer's error and line, m2v never opened
+host_test(
+    name = "raw_facade_pass_failures_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_pass_failures_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# A pass whose draws write more two-plane RGB10A8_2P_XR10 textures than raw::PassDesc holds inline renders on the raw path,
+# each image on a backing tag no other scratch of the pass holds
+host_test(
+    name = "raw_facade_xr_images_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_xr_images_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# An RGB8_444_2P surface texture made to be sampled alone holds no stand-in, and a pass into it renders through one of its
+# command buffer's
+host_test(
+    name = "raw_facade_planar_targets_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_planar_targets_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# Passes into a target of a format the GM20B renders none of: one that draws nothing and neither clears nor resolves it keeps
+# its codes (no fill, no store); a cleared one is stored
+host_test(
+    name = "raw_facade_format_targets_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_format_targets_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# Rule storage.compressed through the facade: a fetching state's storage form draws a private target on compressed memory
+# in place, on the raw path, and never moves it to plain memory
+host_test(
+    name = "raw_facade_storage_compressed_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_storage_compressed_test.cpp",
+        "raw_facade_variant_compiler.h",
+        "raw_frontend_absent.cpp",
+        "raw_job_methods.h",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# A binding of a state variant still being made vetoes the encode ahead of its command buffer (VetoVariant): every draw is
+# drawn at the commit, a pending variant's with its programs once it is made
+host_test(
+    name = "raw_facade_pending_variant_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pending_variant_test.cpp",
+        "raw_facade_variant_compiler.h",
+        "raw_frontend_absent.cpp",
+        "raw_job_methods.h",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# A layered fetching state's one-layer pass that loads a linear texture after a clear pass of it: drawn through a
+# block-linear backing, never fused into the clear's pitch-laid pass (HW Test metal.native.layered_fetch one_layer_linear)
+host_test(
+    name = "raw_facade_fused_storage_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_fused_storage_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# The draws the raw path refuses at encode fail their command buffer with Metal's error or the driver's and their
+# line, m2v never opened: patches of a state fetching through the texture unit, a shader-side stencil in a pass
+# with no stencil, every refusal id as drawFailed ends it
+host_test(
+    name = "raw_facade_draw_ends_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_draw_ends_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
+# Metal's blits on the raw facade, run on the copy engine's and the 2D engine's models (raw_facade_blit_engines.h): every
+# texture <-> buffer copy layout Metal takes, texture copies, fills and mipmaps
 [facade_test(
     name = name,
     srcs = [
         name + ".cpp",
+        "raw_facade_blit_engines.h",
         "//drivers/TegraGM20B/test:gm20b_ce_model.h",
         "//drivers/TegraGM20B/test:gm20b_gpu_memory.h",
         "//drivers/TegraGM20BMetal:raw/fx/test/twod_sim.cpp",
@@ -5046,8 +5587,28 @@ facade_test(
     ],
 ) for name in [
     "raw_facade_blits_test",
+    "raw_facade_copies_test",
+    "raw_facade_fills_test",
+    "raw_facade_mipmaps_test",
     "raw_facade_multisample_copy_test",
+    "raw_facade_plane_copies_test",
+    "raw_facade_texture_copies_test",
 ]]
+
+# A Depth32Float beside a Stencil8: its stencil resolve reads the pass's Depth32Float_Stencil8 (its stencil-bits state
+# alone packed), and a stored stencil is still copied back into its own texture
+facade_test(
+    name = "raw_facade_separate_stencil_test",
+    srcs = ["raw_facade_separate_stencil_test.cpp"],
+    additional_compiler_inputs = [
+        "//drivers/TegraGM20BMetal:compiler_srcs",
+        "//drivers/TegraGM20BMetal:raw_facade_srcs",
+    ],
+    copts = [
+        "-Wno-nullability-completeness",
+        "-Wno-nullability-completeness-on-arrays",
+    ],
+)
 
 facade_test(
     name = "raw_facade_zeta_pass_test",
@@ -5114,8 +5675,8 @@ facade_test(
     deps = ["//kits/SwitchGM20B:classes"],
 )
 
-# A kernel buffer bound off 16 bytes whose record names no residual word, through a window the copy engine fills and copies
-# back, copied back before the same buffer is reached in place; m2v never opened
+# A kernel buffer bound off 16 bytes whose record names no residual word, in place at its base rounded down to 16 with no
+# copy around its launch; a texture over a buffer of rows off 32 sampled through its pool image; m2v never opened
 facade_test(
     name = "raw_facade_kernel_window_test",
     srcs = [
@@ -5172,6 +5733,34 @@ host_test(
     deps = RAW_HOST_DEPS,
 )
 
+# The pack's mip states of words (pack/fmt.metal) on this Mac's GPU against an M4 Max's level words
+host_test(
+    name = "raw_word_mips_test",
+    srcs = [
+        "raw_word_mips_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_mip.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
+    ],
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ],
+    cxx_std = "c++17",
+    data = [
+        "//drivers/TegraGM20BMetal:raw/pack/fmt.metal",
+        "//drivers/TegraGM20BMetal:raw/pack/xr_srgb_decode.h",
+        "//drivers/TegraGM20BMetal:raw/pack/xr_srgb_encode.h",
+    ],
+    linkopts = [
+        "-framework",
+        "Foundation",
+        "-framework",
+        "Metal",
+    ],
+)
+
 # pack/direct_states.h: every corpus line makes a state or is handed back with why (directpack.mm records it refused)
 host_test(
     name = "direct_states_test",
@@ -5202,6 +5791,19 @@ facade_test(
     srcs = [
         "raw_facade_compute.h",
         "raw_facade_kernel_refusal_test.cpp",
+    ],
+    deps = ["//kits/SwitchGM20B:classes"],
+)
+
+# Indirect command buffers of dispatches: slots grown past eight launches, a blit's copy and reset run by the model GPU,
+# a pipeline variant made again once memory is back for a command outside an earlier execute
+facade_test(
+    name = "raw_facade_icb_compute_test",
+    srcs = [
+        "model_gpu.h",
+        "predication_model.h",
+        "raw_facade_compute.h",
+        "raw_facade_icb_compute_test.cpp",
     ],
     deps = ["//kits/SwitchGM20B:classes"],
 )
@@ -6097,6 +6699,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/pack/xr_srgb_decode.h",
         "//drivers/TegraGM20BMetal:raw/pack/xr_srgb_encode.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_srgb.h",
     ],
     cxx_std = "c++17",

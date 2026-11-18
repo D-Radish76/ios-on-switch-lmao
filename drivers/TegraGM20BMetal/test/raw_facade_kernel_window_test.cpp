@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
-// A kernel's buffer bound at an address off 16 bytes whose record names no residual word for it, on the raw facade over the
-// kernel model (raw_facade_compute.h): its bytes reach the kernel through a window of them on 16 that the copy engine
-// fills before the launch and copies back after it (raw_kernel_windows.h), where raw once refused it as compute.off16. The
-// same buffer bound in place by a later dispatch is another resource over those bytes: the window is copied back before
-// that dispatch. A texture over a buffer whose rows and start are 16 bytes off 32 is sampled through a pool image the copy
-// engine fills (raw_gpu.cpp createBufferTexture), where raw once refused to make it. None of it opens m2v.
+// A kernel's buffer bound at an address off 16 bytes whose record names no residual word for it, on the raw facade over
+// the kernel model (raw_facade_compute.h): a slot its program never addresses, bound in place at its base rounded down
+// to 16 bytes (raw::kernelBufferDescriptor) with no copy around the launch, where raw once refused it as compute.off16.
+// A texture over a buffer whose rows and start are 16 bytes off 32 is sampled through a pool image the copy engine
+// fills (raw_gpu.cpp createBufferTexture), where raw once refused to make it. None of it opens m2v.
 #include "raw_facade_compute.h"
 
 #include <gtest/gtest.h>
@@ -24,7 +23,7 @@ id<MTLDevice> gDevice;
 id<MTLComputePipelineState> gState, gTextureState;
 
 // Kernel 0's record with one buffer entry at slot 0 that it writes, its residual word none
-raw::PackKernel windowRecord(uint32_t maxThreads)
+raw::PackKernel noResidualRecord(uint32_t maxThreads)
 {
     raw::PackKernel k = kernelRecord(0, maxThreads);
     k.entries = 1;
@@ -101,7 +100,7 @@ protected:
     {
         const uint32_t maxThreads = uint32_t([MTLComputePipelineDescriptor new].maxTotalThreadsPerThreadgroup);
         gDevice =
-            open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {windowRecord(maxThreads), textureRecord(maxThreads)},
+            open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {noResidualRecord(maxThreads), textureRecord(maxThreads)},
                            {kernelFacts(0, maxThreads), kernelFacts(1, maxThreads)}),
                  [HarnessM2VMethods class], [HarnessComputeM2V class]);
         ASSERT_TRUE(gDevice != nil);
@@ -148,35 +147,19 @@ protected:
     }
 };
 
-TEST_F(FacadeKernelWindow, ABufferOffSixteenRunsRawThroughAWindowFilledAndCopiedBack)
+TEST_F(FacadeKernelWindow, ABufferOffSixteenWithNoResidualWordRunsRawInPlace)
 {
     id<MTLBuffer> buffer = [gDevice newBufferWithLength:kBytes options:MTLResourceStorageModeShared];
     ASSERT_TRUE(buffer != nil);
-    const uint64_t at = buffer.gpuAddress + kOffset;
-    ASSERT_NE(at & 15, 0u);
-    dispatch(buffer, {kOffset});  // the first finds the kernel in the pack off the encoding thread; the second has it
-    const Ran ran = dispatch(buffer, {kOffset});
-    EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
-    EXPECT_EQ(ran.opens, 0) << "m2v ran it";
-    ASSERT_EQ(ran.work.order, "CLC");
-    const Copy fill = ran.work.copies[0], back = ran.work.copies[1];
-    EXPECT_EQ(fill.in, at);
-    EXPECT_EQ(fill.out & 15, 0u) << "the window is on 16";
-    EXPECT_EQ(fill.bytes, kBytes - kOffset);
-    EXPECT_EQ(back.in, fill.out);
-    EXPECT_EQ(back.out, at);
-    EXPECT_EQ(back.bytes, kBytes - kOffset);
-}
-
-TEST_F(FacadeKernelWindow, TheWindowIsCopiedBackBeforeTheBufferIsReachedInPlace)
-{
-    id<MTLBuffer> buffer = [gDevice newBufferWithLength:kBytes options:MTLResourceStorageModeShared];
-    ASSERT_TRUE(buffer != nil);
-    dispatch(buffer, {kOffset, 0});
-    const Ran ran = dispatch(buffer, {kOffset, 0});
-    EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
-    EXPECT_EQ(ran.opens, 0);
-    EXPECT_EQ(ran.work.order, "CLCL") << "fill, the window's launch, its copy back, the in-place launch";
+    ASSERT_NE((buffer.gpuAddress + kOffset) & 15, 0u);
+    for (const NSUInteger offset : {NSUInteger(kOffset), NSUInteger(16)}) {
+        SCOPED_TRACE(offset);
+        dispatch(buffer, {offset});  // the first finds the kernel in the pack off the encoding thread
+        const Ran ran = dispatch(buffer, {offset});
+        EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
+        EXPECT_EQ(ran.opens, 0) << "m2v ran it";
+        EXPECT_EQ(ran.work.order, "L") << "no copy around the launch";
+    }
 }
 
 TEST_F(FacadeKernelWindow, ATextureOverABufferWithRowsOffThirtyTwoIsSampledThroughItsPoolImage)
@@ -235,16 +218,6 @@ TEST_F(FacadeKernelWindow, AGridPastAThreadsPositionFailsTheCommandBuffer)
         EXPECT_EQ(gOpens - opens, 0);
         EXPECT_EQ(submitted(jobs).order.find('L'), std::string::npos);
     }
-}
-
-TEST_F(FacadeKernelWindow, ABufferOnSixteenStaysInPlace)
-{
-    id<MTLBuffer> buffer = [gDevice newBufferWithLength:kBytes options:MTLResourceStorageModeShared];
-    ASSERT_TRUE(buffer != nil);
-    dispatch(buffer, {16});
-    const Ran ran = dispatch(buffer, {16});
-    EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
-    EXPECT_EQ(ran.work.order, "L");
 }
 
 }  // namespace

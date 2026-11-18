@@ -2,6 +2,13 @@
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_depth_stencil_state.h"
 #include "../raw/runtime/raw_record.h"
+#include "../../../kits/SwitchGM20B/SwitchGM20B3D.h"
+#include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
+#include "../raw/runtime/raw_mme.h"
+#include <algorithm>
+#include <functional>
+#include <iterator>
+#include <set>
 
 namespace {
 
@@ -148,6 +155,15 @@ protected:
         });
     }
 
+    // One triangle an instance, `instances` of them
+    Drawn eachInstance(raw::Pipeline *pl, bool indexed, uint32_t instances)
+    {
+        return drawOnce(pl, [this, indexed, instances](raw::RenderEncoder &e, const char **why) {
+            return indexed ? e.drawIndexed(kTriangle, 3, 2, &indices, 0, instances, 0, 0, why)
+                           : e.draw(kTriangle, 0, 3, instances, 0, why);
+        });
+    }
+
     Drawn indirect(raw::Pipeline *pl)
     {
         return drawOnce(pl, [this](raw::RenderEncoder &e, const char **why) {
@@ -243,8 +259,8 @@ TEST_F(DeviceFetch, APassThatDoesNotLoadItsTargetForgetsItsRung2Blends)
     }
 }
 
-// An indexed strip's runs are index ranges: the hardware's restart draws nothing in the runs holding 0xffff, as the
-// whole strip draws no triangle there
+// An indexed strip a triangle at a time: one split draw, so the hardware's restart draws no triangle across 0xffff, as
+// the whole strip draws none there
 TEST_F(DeviceFetch, TheBarrierFormDrawsAnIndexedStripATriangleAtATime)
 {
     raw::Pipeline *pl = pipeline(false);
@@ -260,34 +276,170 @@ TEST_F(DeviceFetch, TheBarrierFormDrawsAnIndexedStripATriangleAtATime)
     EXPECT_EQ(r.triangles, 7u);
 }
 
-// RenderBox's icon draw binds depth GreaterEqual with writes and an untouched stencil (traced on a Mac): its faces decide
-// nothing; a stencil whose back face alone increments would make them decide
-TEST_F(DeviceFetch, AnIndexedStripOverAStencilAttachmentIsRefusedOnlyWhereItsFacesDiffer)
+// The fetch macro calls of the last job's words: each call's slot and the words it was given
+std::vector<std::vector<uint32_t>> fetchCalls()
 {
-    raw::Pipeline *pl = pipeline(false);
-    ASSERT_NE(pl, nullptr);
-    raw::DepthStencilDesc renderBox;
-    renderBox.depthCompare = 6;
-    renderBox.depthWrite = true;
-    const raw::DepthStencilState untouched(renderBox);
-    const Drawn q = quad(pl, &untouched);
-    EXPECT_TRUE(q.ok) << q.why;
-    EXPECT_EQ(q.triangles, 2u);
-    raw::DepthStencilDesc winding = renderBox;
-    winding.back.pass = 6;
-    const raw::DepthStencilState twoSided(winding);
-    EXPECT_FALSE(quad(pl, &twoSided).ok);
+    std::vector<std::vector<uint32_t>> calls;
+    if (kernel_model::model.jobs.empty())
+        return calls;
+    const std::vector<uint32_t> &words = kernel_model::model.jobs.back().words;
+    std::vector<switch_gm20b_method> methods(words.size());
+    const long count = switch_gm20b_push_decode(words.data(), words.size(), methods.data(), methods.size());
+    EXPECT_GE(count, 0);
+    const uint32_t first = NVB197_CALL_MME_MACRO(0);
+    for (long i = 0; i < count; i++) {
+        const switch_gm20b_method &m = methods[i];
+        if (m.subchannel || m.method < first || (m.method - first) % 8)
+            continue;
+        const uint32_t slot = (m.method - first) / 8;
+        if (slot != raw::mme::kFetchDraw && slot != raw::mme::kFetchDrawIndexed)
+            continue;
+        std::vector<uint32_t> call = {slot, m.value};
+        for (long k = i + 1; k < count && methods[k].method == m.method + 4; k++)
+            call.push_back(methods[k].value);
+        calls.push_back(call);
+    }
+    return calls;
 }
 
-TEST_F(DeviceFetch, TheBarrierFormRefusesWhatOneTriangleADrawCannotKeep)
+// The 3D methods the last job writes, each as often as it writes it
+std::multiset<uint32_t> jobMethods()
+{
+    const std::vector<uint32_t> &words = kernel_model::model.jobs.back().words;
+    std::vector<switch_gm20b_method> methods(words.size());
+    const long count = switch_gm20b_push_decode(words.data(), words.size(), methods.data(), methods.size());
+    EXPECT_GE(count, 0);
+    std::multiset<uint32_t> out;
+    for (long i = 0; i < count; i++)
+        if (!methods[i].subchannel)
+            out.insert(methods[i].method);
+    return out;
+}
+
+// The fetch macro's scratch words the last job wrote last: the first and later BEGINs' sizes
+std::pair<uint32_t, uint32_t> fetchSizes()
+{
+    std::pair<uint32_t, uint32_t> sizes = {0, 0};
+    const std::vector<uint32_t> &words = kernel_model::model.jobs.back().words;
+    std::vector<switch_gm20b_method> methods(words.size());
+    const long count = switch_gm20b_push_decode(words.data(), words.size(), methods.data(), methods.size());
+    for (long i = 0; i < count; i++) {
+        if (methods[i].method == NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_FETCH_FIRST))
+            sizes.first = methods[i].value;
+        if (methods[i].method == NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_FETCH_STEP))
+            sizes.second = methods[i].value;
+    }
+    return sizes;
+}
+
+// Every shape of more than one primitive of a state that fetches the colour it writes through the texture unit: one
+// fetch macro call with the draw's own words, whatever its primitive count, culled or two-sided, restarted, instanced or
+// indirect (raw_mme.h fetchDraw; the GPU draws it a primitive at a time, kits/SwitchGM20BEmit/test/emit_fetch_test.cpp)
+TEST_F(DeviceFetch, TheBarrierFormDrawsEveryShapeAsOneFetchMacroCall)
 {
     raw::Pipeline *pl = pipeline(false);
     ASSERT_NE(pl, nullptr);
-    const Drawn culled = restart(pl, 1);
-    EXPECT_FALSE(culled.ok);
-    EXPECT_EQ(culled.why, "framebuffer-fetch ordering requires an interlocked program or available bounded geometry");
-    EXPECT_FALSE(instanced(pl).ok);
-    EXPECT_FALSE(indirect(pl).ok);
+    raw::DepthStencilDesc winding;
+    winding.depthCompare = 6;
+    winding.back.pass = 6;
+    const raw::DepthStencilState twoSided(winding);
+    const uint32_t args[5] = {9, 1, 0, 0, 0};
+    memcpy(static_cast<uint8_t *>(arguments.cpu) + 16, args, sizeof args);
+    const uint32_t fetch = raw::mme::kFetchDraw, indexed = raw::mme::kFetchDrawIndexed;
+    const struct {
+        const char *name;
+        std::function<Drawn()> draw;
+        std::vector<uint32_t> call;
+    } shapes[] = {
+        {"strip", [&] { return strip(pl); }, {fetch, 10, 1, 0, 0}},
+        {"culled restart", [&] { return restart(pl, 1); }, {indexed, 9, 1, 0, 0, 0}},
+        {"two-sided quad", [&] { return quad(pl, &twoSided); }, {indexed, 4, 1, 0, 0, 0}},
+        {"instanced", [&] { return instanced(pl); }, {fetch, 6, 24, 0, 0}},
+        {"one triangle an instance", [&] { return eachInstance(pl, false, 4); }, {fetch, 3, 4, 0, 0}},
+        {"one indexed triangle an instance", [&] { return eachInstance(pl, true, 4); }, {indexed, 3, 4, 0, 0, 0}},
+        {"indirect", [&] { return indirect(pl); }, {fetch, 6, 1, 0, 0}},
+        {"indexed indirect", [&] { return indexedIndirect(pl); }, {indexed, 9, 1, 0, 0, 0}},
+    };
+    for (const auto &s : shapes) {
+        const Drawn d = s.draw();
+        EXPECT_TRUE(d.ok) << s.name << ": " << d.why;
+        EXPECT_EQ(d.split, 1u) << s.name;
+        EXPECT_EQ(d.interlocked, 0u) << s.name;
+        EXPECT_EQ(fetchCalls(), (std::vector<std::vector<uint32_t>>{s.call})) << s.name;
+    }
+}
+
+// A long draw's words are a short one's: the CPU writes one call whatever the primitive count. The channel's first draw
+// also writes what its context leaves unknown (SET_RT_LAYER, SET_ANTI_ALIAS_ALPHA_CONTROL, SET_SAMPLE_MASK_X0_Y0..X1_Y1:
+// Device::newContext), so the draws compared come after one.
+TEST_F(DeviceFetch, AFetchDrawsWordsDoNotGrowWithItsPrimitives)
+{
+    raw::Pipeline *pl = pipeline(false);
+    ASSERT_NE(pl, nullptr);
+    size_t sizes[3] = {};
+    std::multiset<uint32_t> methods[3];
+    uint32_t k = 0;
+    for (const uint32_t count : {6u, 6u, 3000u}) {
+        const Drawn d = drawOnce(pl, [count](raw::RenderEncoder &e, const char **why) {
+            return e.draw(kTriangle, 0, count, 1, 0, why);
+        });
+        EXPECT_TRUE(d.ok) << d.why;
+        EXPECT_EQ(d.triangles, count / 3);
+        sizes[k] = kernel_model::model.jobs.back().words.size();
+        methods[k] = jobMethods();
+        EXPECT_EQ(methods[k].count(NVB197_SET_TIR_CONTROL) + methods[k].count(NVB197_SET_TIR), 0u)
+            << "a one-sample pass writes no TIR";
+        k++;
+        EXPECT_EQ(fetchSizes(), (std::pair<uint32_t, uint32_t>{3, 3}));
+    }
+    std::multiset<uint32_t> firstOnly;
+    std::set_difference(methods[0].begin(), methods[0].end(), methods[1].begin(), methods[1].end(),
+                        std::inserter(firstOnly, firstOnly.end()));
+    EXPECT_EQ(firstOnly, (std::multiset<uint32_t>{NVB197_SET_RT_LAYER, NVB197_SET_ANTI_ALIAS_ALPHA_CONTROL,
+                                                  NVB197_SET_SAMPLE_MASK_X0_Y0, NVB197_SET_SAMPLE_MASK_X1_Y0,
+                                                  NVB197_SET_SAMPLE_MASK_X0_Y1, NVB197_SET_SAMPLE_MASK_X1_Y1}));
+    EXPECT_TRUE(std::includes(methods[0].begin(), methods[0].end(), methods[1].begin(), methods[1].end()));
+    EXPECT_EQ(sizes[1], sizes[2]);
+}
+
+// Points, lines and line strips by their own sizes: a point or two-vertex line a BEGIN, a line strip's first BEGIN two
+// vertices and each later one the vertex that makes the next line
+TEST_F(DeviceFetch, PointsAndLinesTakeTheirRunSizes)
+{
+    raw::Pipeline *pl = pipeline(false);
+    ASSERT_NE(pl, nullptr);
+    const struct {
+        uint32_t primitive, count;
+        std::pair<uint32_t, uint32_t> sizes;
+    } shapes[] = {{0, 5, {1, 1}}, {1, 6, {2, 2}}, {2, 5, {2, 1}}, {4, 5, {3, 1}}};
+    for (const auto &s : shapes) {
+        const Drawn d = drawOnce(pl, [&s](raw::RenderEncoder &e, const char **why) {
+            return e.draw(s.primitive, 0, s.count, 1, 0, why);
+        });
+        EXPECT_TRUE(d.ok) << s.primitive << ": " << d.why;
+        EXPECT_EQ(fetchSizes(), s.sizes) << s.primitive;
+        EXPECT_EQ(fetchCalls(), (std::vector<std::vector<uint32_t>>{{raw::mme::kFetchDraw, s.count, 1, 0, 0}}))
+            << s.primitive;
+    }
+}
+
+// A storage slot whose record names no residual word is one its programs read through the root table's address, never
+// its descriptor (every slot read through a view has its word): bound off 16 bytes, it is drawn, its descriptor's base
+// aligned down
+TEST_F(DeviceFetch, ASlotWithNoResidualWordBoundOffItsAlignmentIsDrawn)
+{
+    raw::RuntimeRecord r = fetchingRecord(0xb0f, false);
+    r.pipeline.flags = 0;
+    r.pipeline.entry[0] = {0, raw::EntryUbo, 2, 0, 1, 0, 0};
+    std::string why;
+    raw::Pipeline *pl = dev.addRecord(r, false, why);
+    ASSERT_NE(pl, nullptr) << why;
+    ASSERT_LT(raw::bufferResidualWord(pl->entries[0]), 0);
+    const Drawn d = drawOnce(pl, [this](raw::RenderEncoder &e, const char **why) {
+        e.setBuffer(2, 0, &indices, 8);
+        return e.draw(kTriangle, 0, 3, 1, 0, why);
+    });
+    EXPECT_TRUE(d.ok) << d.why;
 }
 
 }  // namespace

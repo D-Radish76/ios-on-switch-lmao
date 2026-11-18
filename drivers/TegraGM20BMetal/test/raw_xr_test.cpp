@@ -33,25 +33,34 @@ void expectTexel(const Texel &t, uint32_t w0, uint32_t w1, uint32_t w2, uint32_t
     EXPECT_EQ(t.w[3], w3);
 }
 
-// The linear forms and BGR10_XR_sRGB (BGR10_XR's word, its colour codes read and written through Metal's sRGB tables:
-// raw_xr_srgb.h) are kept. RGB10A8_2P_XR10_sRGB (551) and BGRA10_XR_sRGB (553) have no form built: no FormatInfo holds
-// them, so their textures are still left to m2v (tex.shape term 6)
-TEST(RawXr, TheLinearFormsAndBgr10XrSrgbAreKeptAndTheOtherSrgbTwinsAreNot)
+// The linear forms, BGR10_XR_sRGB and BGRA10_XR_sRGB (their colour codes read and written through Metal's sRGB tables:
+// raw_xr_srgb.h) are kept, each sampled through its stand-in's conversion. RGB10A8_2P_XR10_sRGB (551) has no form a pass
+// renders in place (its format stand-in renders it); over a surface's two planes it is sampled through its own conversion,
+// and one of a descriptor, which holds nothing as Metal's does, through none
+TEST(RawXr, TheLinearFormsAndTheOneImageSrgbTwinsAreKept)
 {
     EXPECT_EQ(raw::xrForm(550), raw::XrForm::Planes);
     EXPECT_EQ(raw::xrForm(552), raw::XrForm::Bgra10);
+    EXPECT_EQ(raw::xrForm(553), raw::XrForm::Bgra10Srgb);
     EXPECT_EQ(raw::xrForm(554), raw::XrForm::Bgr10);
     EXPECT_EQ(raw::xrForm(555), raw::XrForm::Bgr10Srgb);
-    for (uint32_t other : {551u, 553u, 80u, 115u})
+    for (uint32_t other : {551u, 80u, 115u})
         EXPECT_EQ(raw::xrForm(other), raw::XrForm::None);
     EXPECT_STREQ(raw::xrConversion(raw::XrForm::Planes), "raw.xr.xr_planes_frag");
     EXPECT_STREQ(raw::xrConversion(raw::XrForm::Bgr10Srgb), "raw.xr.xr_bgr10_srgb_frag");
+    EXPECT_STREQ(raw::xrConversion(raw::XrForm::Bgra10Srgb), "raw.xr.xr_bgra10_srgb_frag");
     EXPECT_EQ(raw::xrConversion(raw::XrForm::None), nullptr);
+    EXPECT_TRUE(raw::xrSampled(551) && raw::twoPlaneXr(551) && raw::twoPlaneXr(550));
+    EXPECT_FALSE(raw::xrSampled(80) || raw::twoPlaneXr(552));
+    EXPECT_STREQ(raw::xrConversionOf(551), "raw.xr.xr_planes_srgb_frag") << "one of a descriptor keeps its texels";
+    EXPECT_STREQ(raw::xrConversionOf(551, true), "raw.xr.xr_two_planes_srgb_frag");
+    EXPECT_STREQ(raw::xrConversionOf(550, true), "raw.xr.xr_two_planes_frag");
 }
 
 TEST(RawXr, ABlitWithABufferMovesTheTwoPlaneFormsColorWordAlone)
 {
     EXPECT_EQ(raw::bufferTexelBytes(550, 8), 4u);
+    EXPECT_EQ(raw::bufferTexelBytes(551, 8), 4u);
     EXPECT_EQ(raw::bufferTexelBytes(552, 8), 8u);
     EXPECT_EQ(raw::bufferTexelBytes(554, 4), 4u);
     EXPECT_EQ(raw::bufferTexelBytes(115, 8), 8u);

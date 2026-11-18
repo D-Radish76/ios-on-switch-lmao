@@ -33,6 +33,7 @@ static bool heldInPlanes(RMTexture *t)
     // addresses (0: setBytes:, which the raw path uploads aligned)
     RMTexture *_textures[31];
     RMSampler *_samplers[16];
+    uint32_t _storableStandIns;  // slots of extended-range textures with a stand-in that a kernel may store
 }
 
 @end
@@ -49,18 +50,17 @@ static bool heldInPlanes(RMTexture *t)
     return _type;
 }
 
-- (void)refuse:(RMPred)pred value:(uint64_t)a why:(NSString *)why
-{
-    [_cb takeReason:WhyCompute why:why];
-    hit(_cb, pred, a);
-}
-
 - (void)setComputePipelineState:(id<MTLComputePipelineState>)state
 {
     RMComputeState *next = [(id)state isKindOfClass:[RMComputeState class]] ? (RMComputeState *)state : nil;
+    if (state && !next)
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, 0,
+                              "a compute pipeline state of another device");
     if (_state != next) {
         _state = next;
         _kernelCurrent = false;
+        for (uint32_t m = _storableStandIns; m; m &= m - 1)
+            [self keyTexture:uint32_t(__builtin_ctz(m))];
     }
     setBinding(_cb, OpKernelState, 3, 0, state, 0);
 }
@@ -73,7 +73,8 @@ static bool heldInPlanes(RMTexture *t)
 - (void)setBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index
 {
     if (buffer && ![(id)buffer isKindOfClass:[RMBuffer class]])
-        [self refuse:PredCompute value:index why:@"a kernel's buffer not made by this device"];
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, index,
+                              "a kernel's buffer of another device");
     setBinding(_cb, OpKernelBuffer, 3, index, buffer, offset);
 }
 
@@ -92,44 +93,70 @@ static bool heldInPlanes(RMTexture *t)
         [self setBuffer:buffers[k] offset:offsets[k] atIndex:range.location + k];
 }
 
-// The format a kernel is compiled to read `t` in: its own where the kernel reads and writes its two planes apart
-// (heldInPlanes, keyed :xr2p); else an RGB10A8_2P_XR10 texture with a stand-in as that stand-in, the RGBA16Float image of
-// its values drawn from the planes as the encoder begins. The two are never keyed together.
-static MTLPixelFormat kernelFormat(RMTexture *t)
+static bool storableStandIn(RMTexture *t)
+{
+    const raw::XrForm form = raw::xrForm(uint32_t(t->_descriptor.pixelFormat));
+    return !heldInPlanes(t) && t->_raw.standIn && form != raw::XrForm::None && form != raw::XrForm::Planes &&
+           (t->_descriptor.usage & MTLTextureUsageShaderWrite);
+}
+
+// The format a kernel of `state` is compiled to read `t` at `slot` in: its own where the kernel reads and writes its
+// two planes apart (heldInPlanes, keyed :xr2p); else an RGB10A8_2P_XR10 texture with a stand-in, or an extended-range
+// one the kernel does not store (made without ShaderWrite, or at a slot the state's reflection writes nothing to), as
+// that stand-in, the RGBA16Float image of its values drawn from its codes as the encoder begins. With no state yet a
+// slot is taken as stored, and keyed again when one is set. The two are never keyed together.
+static MTLPixelFormat kernelFormat(RMTexture *t, RMComputeState *state, uint32_t slot)
 {
     if (heldInPlanes(t))
         return t->_descriptor.pixelFormat;
-    return MTLPixelFormat(raw::kernelTextureFormat(t->_raw, uint32_t(t->_descriptor.pixelFormat)));
+    const bool storable = storableStandIn(t) ? !state || (rmComputeTexturesWritten(state) >> slot & 1)
+                                             : bool(t->_descriptor.usage & MTLTextureUsageShaderWrite);
+    return MTLPixelFormat(raw::kernelTextureFormat(t->_raw, uint32_t(t->_descriptor.pixelFormat), storable));
 }
 
-static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
+static MTLTextureDescriptor *kernelDescriptor(RMTexture *t, RMComputeState *state, uint32_t slot)
 {
     MTLTextureDescriptor *d = t->_descriptor;
-    if (kernelFormat(t) == d.pixelFormat)
+    const MTLPixelFormat format = kernelFormat(t, state, slot);
+    if (format == d.pixelFormat)
         return d;
     d = [d copy];
-    d.pixelFormat = kernelFormat(t);
+    d.pixelFormat = format;
     return d;
+}
+
+// Texture `index`'s item of the kernel key under the encoder's state
+- (void)keyTexture:(uint32_t)index
+{
+    RMTexture *t = _textures[index];
+    raw::BoundTexture bound = {};
+    if (t) {
+        MTLTextureDescriptor *d = t->_descriptor;
+        const MTLTextureSwizzleChannels w = d.swizzle;
+        bound = {index,
+                 kernelFormat(t, _state, index),
+                 d.textureType,
+                 d.mipmapLevelCount,
+                 d.arrayLength,
+                 {w.red, w.green, w.blue, w.alpha},
+                 heldInPlanes(t),
+                 t->_rawOk ? t->_raw.addressMap : uint8_t(0)};
+    }
+    if (_specialization.bindTexture(index, t ? &bound : nullptr))
+        _kernelCurrent = false;
 }
 
 - (void)setTexture:(id<MTLTexture>)texture atIndex:(NSUInteger)index
 {
     RMTexture *t = [(id)texture isKindOfClass:[RMTexture class]] ? (RMTexture *)texture : nil;
+    if (texture && !t)
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, index,
+                              "a kernel's texture of another device");
     if (index < 31 && _textures[index] != t) {
         _textures[index] = t;
-        raw::BoundTexture bound = {};
-        if (t) {
-            MTLTextureDescriptor *d = t->_descriptor;
-            const MTLTextureSwizzleChannels w = d.swizzle;
-            bound = {uint32_t(index),    kernelFormat(t), d.textureType,
-                     d.mipmapLevelCount, d.arrayLength,   {w.red, w.green, w.blue, w.alpha},
-                     heldInPlanes(t)};
-        }
-        if (_specialization.bindTexture(uint32_t(index), t ? &bound : nullptr))
-            _kernelCurrent = false;
+        _storableStandIns = (_storableStandIns & ~(1u << index)) | uint32_t(t && storableStandIn(t)) << index;
+        [self keyTexture:uint32_t(index)];
     }
-    if (texture && !t)
-        [self refuse:PredCompute value:index why:@"a kernel's texture not made by this device"];
     if (t)
         noteReadAsData(texture);
     setBinding(_cb, OpKernelTexture, 3, index, texture, 0);
@@ -143,9 +170,10 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
 
 - (void)setSamplerState:(id<MTLSamplerState>)sampler atIndex:(NSUInteger)index
 {
-    if (sampler && ![(id)sampler isKindOfClass:[RMSampler class]])
-        [self refuse:PredCompute value:index why:@"a kernel's sampler not made by this device"];
     RMSampler *s = [(id)sampler isKindOfClass:[RMSampler class]] ? (RMSampler *)sampler : nil;
+    if (sampler && !s)
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, index,
+                              "a kernel's sampler of another device");
     if (s && s->_raw.desc.border)
         _cb->_borderSamplers = true;
     if (index < 16 && _samplers[index] != s) {
@@ -228,9 +256,12 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
        arguments:(RMBuffer *)arguments
           offset:(NSUInteger)offset
 {
+    if (!_state)
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, 0,
+                              "a dispatch with no compute pipeline state set");
     const std::array<uint32_t, 3> t = {uint32_t(threads.width), uint32_t(threads.height), uint32_t(threads.depth)};
     const auto dispatch =
-        raw::computeDispatch({grid.width, grid.height, grid.depth}, t, perThread, _state ? _state->_threadLimit : 1024);
+        raw::computeDispatch({grid.width, grid.height, grid.depth}, t, perThread, _state->_threadLimit);
     const auto &groups = dispatch.groups;
     // threads per threadgroup past the state's maxTotalThreadsPerThreadgroup (or 1024), or none on an axis: a dispatch
     // Metal's API validation stops, which the command buffer fails with
@@ -241,8 +272,7 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
                           [NSString stringWithFormat:@"threadsPerThreadgroup %lux%lux%lu is not within the compute "
                                                      @"pipeline state's maxTotalThreadsPerThreadgroup %u",
                                                      (unsigned long)threads.width, (unsigned long)threads.height,
-                                                     (unsigned long)threads.depth,
-                                                     _state ? _state->_threadLimit : 1024u],
+                                                     (unsigned long)threads.depth, _state->_threadLimit],
                           MTLCommandBufferErrorInvalidResource);
     // threads past 2^32 - 1 on an axis have no thread_position_in_grid (a uint3); a grid past the QMD's fields is
     // launched in slices (raw_dispatch_bands.h kQmdGroups), past kMaxQmdSlices of them not at all
@@ -265,7 +295,7 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
     if (!sameShape)
         _kernelCurrent = false;
     std::shared_ptr<RMKernelSet> kernels;
-    if (!refused && _state && _state->_keyed) {
+    if (!refused) {
         if (!_kernelCurrent || (_kernel && _kernel->retryable())) {
             _kernel = std::make_shared<RMKernelSet>();
             _kernel->count = dispatch.count;
@@ -285,7 +315,8 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
                                                                      specialization.regionMode);
                     for (uint32_t slot = 0; slot < 31; ++slot)
                         if (_textures[slot])
-                            ask->texture(slot, kernelDescriptor(_textures[slot]), heldInPlanes(_textures[slot]));
+                            ask->texture(slot, kernelDescriptor(_textures[slot], _state, slot),
+                                         heldInPlanes(_textures[slot]));
                     for (uint32_t slot = 0; slot < 16; ++slot)
                         if (_samplers[slot])
                             ask->sampler(slot, _samplers[slot]->_descriptor);
@@ -317,11 +348,10 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
     // one the compiler refused fails it as Metal's does a pipeline it could not compile
     const bool pending = kernelState == RMKernelSet::State::Pending || kernelState == RMKernelSet::State::Failed;
     const bool ready = kernelState == RMKernelSet::State::Ready;
-    if (!refused && !ready && !pending && kernels) {
+    if (!refused && !ready && !pending) {
         hit(_cb, PredComputeKernel, groups[0]);
         failCommandBuffer(_cb, @"a compute kernel the shader compiler refused");
-    } else if (!refused && !ready && !pending)
-        [self refuse:PredComputeKernel value:groups[0] why:@"a dispatch the raw path has no kernel for"];
+    }
     Cmd m = cmd(OpDispatch, 3, perThread);
     m.c = uint64_t(t[0]) | uint64_t(t[1]) << 16 | uint64_t(t[2]) << 32;
     m.x = _cb->_extra.size();
@@ -351,14 +381,20 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
     const bool rawBuffer = [(id)buffer isKindOfClass:[RMBuffer class]];
     const bool readsWord = kind == raw::PredicateRecords::StartIf || kind == raw::PredicateRecords::StartWhile ||
                            kind == raw::PredicateRecords::EndDoWhile;
-    if (!buffer && (kind == raw::PredicateRecords::StartIf || kind == raw::PredicateRecords::StartWhile))
+    // a Start or an EndDoWhile naming no buffer withholds its compute unit's dispatches at the encode
+    // (RawMetalRangeStep.mm unitWithheld)
+    const bool noBuffer = !buffer && readsWord;
+    if (noBuffer)
         _predicateWithoutBuffer = true;
+    const bool wordOutside =
+        readsWord && !noBuffer && (!rawBuffer || (offset & ~3ull) + 4 > ((RMBuffer *)buffer)->_raw.length);
     if (_cb->_predicates.misused())
         hit(_cb, PredComputePredicate, kind);
-    else if (readsWord && (!rawBuffer || (offset & ~3ull) + 4 > ((RMBuffer *)buffer)->_raw.length))
-        [self refuse:PredComputePredicate value:offset why:@"a predicate word outside a raw buffer"];
+    else if (wordOutside)
+        rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredComputePredicate, offset,
+                       "a predicate word outside its buffer, or a buffer of another device");
     Cmd m = cmd(OpPredicate, uint8_t(kind));
-    m.obj = (__bridge void *)buffer;
+    m.obj = wordOutside ? nullptr : (__bridge void *)buffer;
     m.c = offset & ~3ull;
     m.a = uint32_t(raw::predicateCompare(comparison));
     m.b = reference;
@@ -437,12 +473,17 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
                          threadsPerThreadgroup:(MTLSize)threads
 {
     RMBuffer *arguments = [(id)buffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)buffer : nil;
-    if (!arguments || (offset & 3) || offset > arguments->_raw.length || arguments->_raw.length - offset < 12) {
-        [self refuse:PredCompute value:offset why:@"indirect dispatch arguments not this device's, or outside them"];
-        return;
-    }
+    if (!arguments)
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, offset,
+                              "indirect dispatch arguments of another device");
+    // as Apple's GPU reads them (an M4 Max, API validation off: c38-audit/m2v-compute/probe): at the offset rounded
+    // down to 4 bytes, a word past the buffer zero, so a grid whose last word lies past it launches nothing
+    const NSUInteger aligned = offset & ~NSUInteger(3);
+    if (aligned > arguments->_raw.length || arguments->_raw.length - aligned < 12)
+        return hit(_cb, PredCompute, offset, arguments->_raw.length,
+                   "indirect dispatch arguments past their buffer, whose grid reads a zero word: nothing launched");
     [_cb retain:buffer];
-    [self dispatch:MTLSizeMake(1, 1, 1) threads:threads perThread:false arguments:arguments offset:offset];
+    [self dispatch:MTLSizeMake(1, 1, 1) threads:threads perThread:false arguments:arguments offset:aligned];
 }
 
 @end
@@ -455,6 +496,21 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t)
 }
 
 @end
+
+void rmComputeFails(RMCommandBuffer *cb, raw::ComputeFailure failure, RMPred pred, uint64_t a, const char *why)
+{
+    hit(cb, pred, a, 0, why);
+    rmPipelineVeto(cb, VetoFailed);  // a failed command buffer submits nothing: no encode ahead of its commit
+    switch (failure) {
+    case raw::ComputeFailure::Invalid:
+        return failCommandBuffer(cb, [NSString stringWithFormat:@"%s: Metal's validation error", why],
+                                 MTLCommandBufferErrorInvalidResource);
+    case raw::ComputeFailure::OutOfMemory:
+        return failCommandBuffer(cb, @(why), MTLCommandBufferErrorOutOfMemory);
+    case raw::ComputeFailure::Internal:
+        return failCommandBuffer(cb, @(why), MTLCommandBufferErrorInternal);
+    }
+}
 
 bool isKernelCommand(Op op)
 {

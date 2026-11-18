@@ -85,8 +85,8 @@ def air_slice(data: bytes, build: str | None) -> bytes:
     return data[picked[0] : picked[0] + picked[1]] if picked else b''
 
 
-def names(data: bytes, build: str | None = None) -> list[str] | None:
-    """Return the function names of a metallib's bytes (air_slice of a fat one), or None if not a library."""
+def _entries(data: bytes, build: str | None) -> list[dict[bytes, bytes]] | None:
+    """Return each function entry's tags of a metallib's bytes (air_slice of a fat one), or None if not a library."""
     data = air_slice(data, build)
     if data[:4] != b'MTLB' or len(data) < 0x58:
         return None
@@ -99,14 +99,35 @@ def names(data: bytes, build: str | None = None) -> list[str] | None:
         if at + 4 > len(data):
             return None
         (size,) = struct.unpack_from('<I', data, at)
-        tag, end = at + 4, at + size
+        tag, end, tags = at + 4, at + size, {}
         while tag + 6 <= end and data[tag : tag + 4] != b'ENDT':
             (length,) = struct.unpack_from('<H', data, tag + 4)
-            if data[tag : tag + 4] == b'NAME':
-                found.append(data[tag + 6 : tag + 6 + length].split(b'\0')[0].decode('utf-8', 'replace'))
+            tags.setdefault(data[tag : tag + 4], data[tag + 6 : tag + 6 + length])
             tag += 6 + length
+        found.append(tags)
         at = end
     return found
+
+
+def names(data: bytes, build: str | None = None) -> list[str] | None:
+    """Return the function names of a metallib's bytes (air_slice of a fat one), or None if not a library."""
+    entries = _entries(data, build)
+    if entries is None:
+        return None
+    return [e[b'NAME'].split(b'\0')[0].decode('utf-8', 'replace') for e in entries if b'NAME' in e]
+
+
+def functions(data: bytes, build: str | None = None) -> dict[str, str] | None:
+    """Return each named function's AIR hash in hex (its HASH tag, which raw keys a function by: raw_metallib.cpp), or
+    None if not a library."""
+    entries = _entries(data, build)
+    if entries is None:
+        return None
+    return {
+        e[b'NAME'].split(b'\0')[0].decode('utf-8', 'replace'): e[b'HASH'].hex()
+        for e in entries
+        if b'NAME' in e and len(e.get(b'HASH', b'')) == 32
+    }
 
 
 def pins(volume: str) -> None:

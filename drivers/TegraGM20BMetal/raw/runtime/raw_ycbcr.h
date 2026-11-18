@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Two-plane YCbCr textures over IOSurfaces (Metal formats 500 to 548), one-plane 4:2:2 ones (501, 521), and the packed
-// 10-bit planes' (588, 589, raw_packed_plane.h): which ones the raw path takes and how its conversion state (pack/ycbcr.metal) draws their image.
+// Two-plane YCbCr textures over IOSurfaces (Metal formats 500 to 548), one-plane ones (4:2:2 501, 521, 562; 4:4:4 504,
+// 524), and the packed 10-bit planes' (588, 589, raw_packed_plane.h): which ones the raw path takes and how its conversion
+// state (pack/ycbcr.metal) draws their image.
 // The rules are m2v's (metal2vulkan-runtime ycbcr.rs `surface_planes`, metal2vulkan bind/ycbcr_convert.rs), whose texels
 // are an Apple M4's measured reads.
 #pragma once
@@ -25,7 +26,7 @@ struct YcbcrFacts {
     uint64_t allocBytes = 0;
     uint64_t mappedBytes = 0;      // the allocation's whole pages, which the GPU maps (0: allocBytes)
     bool simple = false;           // 2D, one level, one sample, not rotated
-    bool target = false;           // may be rendered into (ycbcrUsageRenders; raw_ycbcr_store.h)
+    bool target = false;           // may be rendered into (raw_ycbcr_store.h)
     const char *matrix = nullptr;  // kIOSurfaceYCbCrMatrix, null without one
 };
 
@@ -68,9 +69,14 @@ struct YcbcrPlan {
     uint64_t luma = 0, chroma = 0;              // offsets past the surface's base address
     uint32_t lumaPitch = 0, chromaPitch = 0;
     uint64_t readable = 0;  // the bytes past the surface's base the planes' rows may reach
-    // a one-plane 4:2:2 format's (501, 521): luma and lumaPitch its plane of Y0 Cb Y1 Cr texel pairs, which the copy engine
-    // splits into pool images of the luma and chroma textures' sizes (BlitEncoder::splitPlane) for a 4:2:2 conversion
+    // a one-plane 4:2:2 format's (501, 521, 562): luma and lumaPitch its plane of texel pairs, Y0 Cb Y1 Cr or, pairsReversed,
+    // Cb Y0 Cr Y1 (562), which the copy engine splits into pool images of the luma and chroma textures' sizes
+    // (BlitEncoder::splitPlane) for a 4:2:2 conversion
     bool onePlane = false;
+    bool pairsReversed = false;
+    // a one-plane 4:4:4 format's (504, 524): a word a texel, Y, Cb and Cr ten bits each from bit 0, which luma reads as
+    // RGB10A2Unorm's red and chroma, the same plane, as its green and blue (a header swizzle)
+    bool chromaGreenBlue = false;
     // the planes' textures' sizes: a texel a code (luma) or pair (chroma), or a word of three codes packed; chromaWidth 0:
     // no chroma plane read (a texture over plane 1: chroma codes 0)
     uint32_t lumaWidth = 0, chromaWidth = 0, chromaHeight = 0;
@@ -80,15 +86,6 @@ struct YcbcrPlan {
 
 // One of the two-plane YCbCr formats (Metal makes them over an IOSurface plane only)
 bool isYcbcrFormat(uint32_t pixelFormat);
-
-// Whether a texture of `usage` (MTLTextureUsage, Unknown every use) may be rendered into. Metal makes these textures of any
-// usage; binding one to a shader argument with write access is its validation error ("Non-writeable texture format ... with
-// write access enabled", validateComputeFunctionArguments), and an M4 Max without validation drops the writes.
-inline bool ycbcrUsageRenders(uint64_t usage)
-{
-    constexpr uint64_t kRenderTarget = 4;
-    return !usage || (usage & kRenderTarget);
-}
 
 // Whether Metal makes no texture of `usage` over a surface (MTLDevice.h newTextureWithDescriptor:iosurface:plane:, nullable): a
 // format of chroma halved across or down, of an odd width or height, that the GPU may write (render target, shader write or

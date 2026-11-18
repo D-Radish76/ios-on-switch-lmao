@@ -44,12 +44,6 @@ void RMCommandPlan::classifyRange(Range &range)
         const RMResourceFacts facts = found ? *found : RMResourceFacts{};
         range.resources.push_back({use.object, facts, use.access});
         range.first[size_t(facts.kind) + 1]++;
-        const uint8_t feedback = raw::ResourceUse::Sample | raw::ResourceUse::Write;
-        if (facts.kind == RMResourceKind::Texture &&
-            (facts.roles & (RMResourceFacts::Converted | RMResourceFacts::PlanarTarget)) ==
-                (RMResourceFacts::Converted | RMResourceFacts::PlanarTarget) &&
-            (use.access & feedback) == feedback)
-            range.planarFeedback = use.object;
     }
     for (size_t kind = 1; kind <= size_t(RMResourceKind::Count); ++kind)
         range.first[kind] += range.first[kind - 1];
@@ -63,12 +57,6 @@ void RMCommandPlan::classifyRange(Range &range)
         range.resources[count + next[size_t(range.resources[i].facts.kind)]++] = range.resources[i];
     std::copy(range.resources.begin() + count, range.resources.end(), range.resources.begin());
     range.resources.resize(count);
-}
-
-void *RMCommandPlan::nativeRangeRefusal(size_t from, size_t to) const
-{
-    const Range *found = findRange(from, to);
-    return found && found->computes.empty() ? found->planarFeedback : nullptr;
 }
 
 size_t RMCommandPlan::rangeStorageBytes() const
@@ -165,7 +153,6 @@ void RMCommandPlan::prepareRange(size_t from, size_t to)
     range.pipelines.assign(mergedPipelines_.begin(), mergedPipelines_.end());
     range.variants.assign(mergedVariants_.begin(), mergedVariants_.end());
     range.computes.assign(mergedComputes_.begin(), mergedComputes_.end());
-    range.planarFeedback = nullptr;
     classifyRange(range);
     rangeIndex_.push_back(&range);
     if (from < to && isEncoderBegin(operations_.own(from).op) && begins_.own(operations_.own(from).payload).end == to)

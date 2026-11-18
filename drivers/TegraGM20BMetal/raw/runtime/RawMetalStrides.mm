@@ -3,6 +3,7 @@
 // layout of MTLBufferLayoutStrideDynamic reads, and the compute encoder's stage-in region, which each dispatch records. Each records its binding command with the stride in its x (stride + 1; 0 is
 // MTLAttributeStrideStatic, no stride: raw_semantic_setters.cpp bindStride).
 #import "RawMetalInternal.h"
+#import "RawMetalIndirectCompute.h"
 
 static uint64_t strideWord(NSUInteger stride)
 {
@@ -93,11 +94,9 @@ static void stridedBinding(RMCommandBuffer *cb, Op op, int stage, NSUInteger ind
 - (void)setStageInRegionWithIndirectBuffer:(id<MTLBuffer>)buffer indirectBufferOffset:(NSUInteger)offset
 {
     RMBuffer *b = [(id)buffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)buffer : nil;
-    if (!b || (offset & 3) || offset > b->_raw.length || b->_raw.length - offset < 24) {
-        [_cb takeReason:WhyCompute why:@"a stage-in region buffer not this device's, or the region outside it"];
-        hit(_cb, PredCompute, offset);
-        return;
-    }
+    if (!b || (offset & 3) || offset > b->_raw.length || b->_raw.length - offset < 24)
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, offset,
+                              "a stage-in region buffer of another device, off 4 bytes or the region past it");
     [_cb retain:buffer];
     _stageInBuffer = b;
     _stageInOffset = offset;
@@ -108,10 +107,9 @@ static void stridedBinding(RMCommandBuffer *cb, Op op, int stage, NSUInteger ind
     attributeStride:(NSUInteger)stride
             atIndex:(NSUInteger)index
 {
-    if (buffer && ![(id)buffer isKindOfClass:[RMBuffer class]]) {
-        [_cb takeReason:WhyCompute why:@"a kernel's buffer not made by this device"];
-        hit(_cb, PredCompute, index);
-    }
+    if (buffer && ![(id)buffer isKindOfClass:[RMBuffer class]])
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, index,
+                              "a kernel's buffer of another device");
     stridedBinding(_cb, OpKernelBuffer, 3, index, buffer, offset, stride);
 }
 

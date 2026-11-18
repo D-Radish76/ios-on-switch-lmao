@@ -21,6 +21,11 @@ public:
     bool begin(CommandBuffer &rc, PassDesc &p, DrawReplay &draws, const char **why);
     // The stored stand-ins back, after the pass and its resolves
     bool end(CommandBuffer &rc, const char **why);
+    // Whether begin() failed for want of memory: for a stand-in, a mirror's scratch or the reach's (PassReach::memory)
+    bool failedForMemory() const
+    {
+        return memory_ || reach_.memory;
+    }
 
 private:
     struct Back {
@@ -41,6 +46,7 @@ private:
     Rotation rot_;
     Rect planeArea_;
     PassReach reach_;
+    bool memory_ = false;
     std::vector<Back> backs_;
     std::deque<Texture> held_;  // what the pass's attachments point at until it ends
 };

@@ -55,6 +55,22 @@ __attribute__((objc_externally_retained)) inline raw::FusionPass fusionPass(RMCo
     }
     if (!result.bodySafe)
         return result;
+    const auto overlapsTarget = [&](__unsafe_unretained RMTexture *texture, uint64_t va, uint64_t cpu, uint64_t bytes,
+                                    const raw::Import *import) {
+        for (__unsafe_unretained RMTexture *attachment : targets) {
+            if (!attachment)
+                continue;
+            const auto &t = attachment->_raw;
+            const uint64_t size = raw::fusionImageBytes(t);
+            if (texture == attachment || (import && import == t.import) ||
+                raw::fusionRangesOverlap(va, bytes, t.va, size) ||
+                raw::fusionRangesOverlap(cpu, bytes, uintptr_t(t.cpu), size) ||
+                (import && t.import &&
+                 raw::fusionRangesOverlap(import->base, import->bytes, t.import->base, t.import->bytes)))
+                return true;
+        }
+        return false;
+    };
     const bool cached = cb->_plan.forEachRangeResource(begin, end, [&](const RMRangeResource &use) {
         const bool isTexture = use.facts.kind == RMResourceKind::Texture,
                    isBuffer = use.facts.kind == RMResourceKind::Buffer;
@@ -71,18 +87,15 @@ __attribute__((objc_externally_retained)) inline raw::FusionPass fusionPass(RMCo
         const uint64_t cpu = uintptr_t(texture ? texture->_raw.cpu : buffer->_raw.cpu);
         const uint64_t bytes = texture ? raw::fusionImageBytes(texture->_raw) : buffer->_raw.length;
         const raw::Import *import = texture ? texture->_raw.import : buffer->_raw.import;
-        for (__unsafe_unretained RMTexture *attachment : targets) {
-            if (!attachment)
-                continue;
-            const auto &t = attachment->_raw;
-            const uint64_t size = raw::fusionImageBytes(t);
-            if (texture == attachment || (import && import == t.import) ||
-                raw::fusionRangesOverlap(va, bytes, t.va, size) ||
-                raw::fusionRangesOverlap(cpu, bytes, uintptr_t(t.cpu), size) ||
-                (import && t.import &&
-                 raw::fusionRangesOverlap(import->base, import->bytes, t.import->base, t.import->bytes)))
-                result.bodySafe = false;
-        }
+        if (overlapsTarget(texture, va, cpu, bytes, import))
+            result.bodySafe = false;
+        // a converted texture is sampled through an image drawn from its planes: a target over a plane writes what the
+        // image is drawn again from between the passes (RawMetalRangeConversions.mm remakeImages), which fusion removes
+        if (texture && texture->_raw.converted())
+            for (const raw::Texture *plane : {texture->_raw.luma, texture->_raw.chroma})
+                if (plane && overlapsTarget(nil, plane->va, uintptr_t(plane->cpu), raw::fusionImageBytes(*plane),
+                                            plane->import))
+                    result.bodySafe = false;
     });
     if (!cached)
         result.bodySafe = false;

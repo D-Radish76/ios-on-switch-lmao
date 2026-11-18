@@ -2,7 +2,7 @@
 // raw/runtime/raw_twin_rule.h: which draws of a storage form its barrier twin takes, a triangle at a time.
 #include <gtest/gtest.h>
 
-#include "drivers/TegraGM20BMetal/raw/runtime/raw_overlap.h"
+#include "drivers/TegraGM20BMetal/raw/runtime/raw_fetch_order.h"
 #include "drivers/TegraGM20BMetal/raw/runtime/raw_twin_rule.h"
 
 namespace {
@@ -47,8 +47,8 @@ TEST(RawTwinRule, MoreThanOneQuadTakesTheTwinOnlyOverASmallPass)
     EXPECT_FALSE(raw::twinTaken(measured(4, 12, 1280 * 720))) << "a strip of 10 triangles";
 }
 
-// Every shape the twin's per-triangle draw refuses (selfRuns, sequentialRuns) keeps the storage form, which draws it
-TEST(RawTwinRule, NoShapeTheTwinTakesIsOneSelfRunsRefuses)
+// Every shape the twin takes is one fetchRefusal calls cheap for the barrier form: a short list or strip of one instance
+TEST(RawTwinRule, EveryShapeTheTwinTakesIsACheapOne)
 {
     for (uint32_t primitive = 0; primitive <= 4; primitive++)
         for (uint32_t count = 0; count <= 3 * 40; count++)
@@ -62,11 +62,7 @@ TEST(RawTwinRule, NoShapeTheTwinTakesIsOneSelfRunsRefuses)
                             a.areaPixels = 640 * 360;
                             if (!raw::twinTaken(a))
                                 continue;
-                            EXPECT_EQ(raw::fetchRefusal(true, primitiveId, a.shape), raw::FetchRefusal::None);
-                            std::vector<std::pair<uint32_t, uint32_t>> runs;
-                            std::array<bool, raw::TriangleRuns::kMaxTriangles> winding;
-                            EXPECT_TRUE(raw::singlePrimitive(a.shape) ||
-                                        raw::TriangleRuns::sequential(primitive, count, instances, runs, winding))
+                            EXPECT_EQ(raw::fetchRefusal(true, primitiveId, a.shape), raw::FetchRefusal::None)
                                 << primitive << " " << count << " " << instances << " " << indexed;
                         }
 }

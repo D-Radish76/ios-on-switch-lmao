@@ -308,13 +308,11 @@ uint32_t rawShapeTerm(MTLTextureDescriptor *d);
 bool identitySwizzle(MTLTextureSwizzleChannels s);
 // `t` reading its channels through `s` (a descriptor's swizzle, or a swizzled view's): its raw header, its descriptor
 id<MTLTexture> swizzled(id<MTLTexture> t, MTLTextureSwizzleChannels s);
-// A texture the raw path does not keep: its predicate, and the predicate's first line with the texture's details
-void refuseTexture(RMTexture *t, RMPred p, uint64_t a, uint64_t b, NSString *kind, NSString *extra);
 // A visibility result mode Metal's validation stops (MTLRenderCommandEncoder.h setVisibilityResultMode:offset:): `why`,
 // in the predicate's first line
 void visibilityError(RMCommandBuffer *cb, uint64_t mode, uint64_t offset, const char *why);
 void eventError(RMCommandBuffer *cb, bool signal, const char *why);
-void keepExtendedRange(MTLTextureDescriptor *d, raw::Texture &t, bool overBuffer);
+bool keepExtendedRange(MTLTextureDescriptor *d, raw::Texture &t, bool overBuffer);
 // The header type (raw::fx::kTex*) of a texture or view of `type`; -1: one the raw path makes none of
 int viewHeaderType(MTLTextureType type);
 
@@ -331,7 +329,7 @@ struct BufferRows {
     uint32_t word;
 };
 
-// RawMetalBlit.mm
+// RawMetalBlitRules.mm
 bool bufferRows(uint64_t offset, uint64_t bytesPerRow, uint32_t rows, uint32_t rowBytes, uint32_t bpp, bool intoTexture,
                 BufferRows &out);
 uint64_t bufferRow(const BufferRows &r, uint64_t offset, uint64_t bytesPerRow, uint32_t y);
@@ -412,17 +410,18 @@ bool encodePatches(raw::RenderEncoder *re, raw::CommandBuffer *rc, const RMPlanD
 void replayPatches(id<MTLRenderCommandEncoder> encoder, const RMPlanDraw &draw, const RMPlanPatches &patches,
                    bool indirect, const std::function<id(void *)> &use);
 
-// RawMetalEncodeBlit.mm: a blit encoder's command of the tape onto the raw path's copy engine; a texture it writes leaves
-// `fresh` and `standInFresh` (its pool image and its stand-in are refreshed again before a sample)
+// RawMetalEncodeBlit.mm: a blit encoder's copy or fill of the tape onto the raw path's copy engine (a fill's rectangle on the
+// 2D engine where rule clear.twod holds); a texture it writes leaves `fresh` and `standInFresh` (its pool image and its
+// stand-in are refreshed again before a sample)
+class RMStandInFresh;
 void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::BlitEncoder *be,
-                std::set<RMTexture *> &fresh, std::set<RMTexture *> &standInFresh);
+                std::set<RMTexture *> &fresh, RMStandInFresh &standInFresh);
 // Levels first + 1 .. last of a chain by a pass of the pack's mip state a level (raw_mip.h); false where the pack has none or a
 // pass is refused (*why)
 bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t last, const char **why);
 // A chain's generateMipmapsForTexture: each step on the 2D engine or by mipPasses (raw/fx/fx_mip_route.h); `be` is the blit
 // encoder encoding goes on with; `probe2d` the command's probe format (fx_mip_probe.h), 0 for none
 bool encodeMipmaps(raw::CommandBuffer *rc, RMTexture *t, uint32_t probe2d, raw::BlitEncoder *&be, const char **why);
-bool fillTexturePass(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc);
 
 // RawMetalTextureCpu.mm: `bytes` from `from` cleaned to memory (or cleaned and invalidated), then a DSB
 void cacheLines(const uint8_t *from, uint64_t bytes, bool invalidate);
@@ -612,18 +611,6 @@ extern thread_local bool tRawEncoding;
 uint32_t privateCompressedKind(MTLTextureDescriptor *d);
 bool rmTexturePlain(RMTexture *t);
 void rmRangePlain(RMCommandBuffer *cb, size_t from, size_t to);
-// A pipeline bound (OpPipeline `binding`) in `pass`, which has compressed attachments: the attachments its pipeline binds
-// as storage images with no barrier form to take (raw_private_comp.h storageSlotsToPlain) join the command buffer's
-// _plainForStorage; a variant still being made marks the command buffer for a look at its draws before the encode
-void rmNoteStorageTargets(RMCommandBuffer *cb, const RMPass &pass, const Cmd &binding);
-// A draw of shape `draw` recorded in `pass`, which has compressed attachments, of `pl` (or of `variant`, the variant of it
-// the draw takes): the attachments its state binds as storage images join _plainForStorage where its barrier form cannot
-// draw that shape
-void rmNoteStorageDraw(RMCommandBuffer *cb, const RMPass &pass, raw::Pipeline *pl, raw::Variant<raw::Pipeline> *variant,
-                       const raw::FetchDraw &draw);
-// Before a raw range encodes, which may not ask for a move: those move to plain memory, and their shape is made plain
-// from then on
-void rmStorageTargetsPlain(RMCommandBuffer *cb, size_t from, size_t to);
 
 // RawMetalCommandBuffer.mm: the kept recordings and setBytes chunks past what steady frames take, given back
 void releaseRecordings();

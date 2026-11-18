@@ -2,8 +2,11 @@
 // See RawDirect.h.
 #import "RawDirect.h"
 
+#include <algorithm>
 #include <cstring>
+#include <map>
 #include "NativeBridgeMetalFrontend.h"
+#include "raw_compute_key.h"
 #include "raw_direct_compute.h"
 #include "raw_direct_abi.h"
 #include "raw_pack.h"
@@ -250,6 +253,33 @@ const NmbDirectDispatch &KernelDispatch::dispatch()
     return dispatch_;
 }
 
+// `textures` with the address map compute key `key`'s texture items state for each (raw_compute_key.h: an item without
+// ":am" states 0) in its `planes` (raw_direct_abi.h NMB_DIRECT_BOUND_MAP_*); false, and none stated, where the key names
+// no readable item at a bound texture's slot
+static bool stateKeyMaps(const std::string &key, std::vector<NmbDirectBoundTexture> &textures)
+{
+    const size_t tex = key.rfind(" | tex=");
+    if (tex == std::string::npos)
+        return false;
+    const size_t from = tex + 7, to = key.find(" | ", from);
+    const std::string items = key.substr(from, to == std::string::npos ? std::string::npos : to - from);
+    std::map<uint32_t, uint8_t> maps;
+    for (size_t at = 0; at < items.size();) {
+        const size_t comma = std::min(items.find(',', at), items.size());
+        BoundTexture item;
+        if (!parseComputeTexture(items.substr(at, comma - at), item))
+            return false;
+        maps[item.slot] = item.addressMap;
+        at = comma + 1;
+    }
+    for (const NmbDirectBoundTexture &t : textures)
+        if (!maps.count(t.slot))
+            return false;
+    for (NmbDirectBoundTexture &t : textures)
+        t.planes |= NMB_DIRECT_BOUND_MAP_STATED | uint32_t(maps[t.slot]) << NMB_DIRECT_BOUND_MAP_SHIFT;
+    return true;
+}
+
 CompileOutcome Direct::kernel(MTLComputePipelineDescriptor *descriptor, const NmbDirectDispatch &dispatch,
                               const std::string &key, ComputeRecord &out, std::string &why)
 {
@@ -258,9 +288,13 @@ CompileOutcome Direct::kernel(MTLComputePipelineDescriptor *descriptor, const Nm
             translator_.compute ? "the stage compile's structs are not raw_direct_nvk.h's" : "no translator of kernels";
         return CompileOutcome::Failed;
     }
+    std::vector<NmbDirectBoundTexture> textures(dispatch.textures, dispatch.textures + dispatch.textureCount);
+    const bool mapsStated = stateKeyMaps(key, textures);
+    NmbDirectDispatch stated = dispatch;
+    stated.textures = textures.data();
     AskedKernel a = {compile_, key, out, {}};
     const char *refused = nullptr;
-    if (!translator_.compute(descriptor, &dispatch, madeKernel, &a, &refused)) {
+    if (!translator_.compute(descriptor, mapsStated ? &stated : &dispatch, madeKernel, &a, &refused)) {
         why = std::string("m2v refused its translation: ") + (refused ? refused : "");
         // "fails: ", a dispatch Metal runs that m2v fails too (NativeMetalDirectCompute.rs mapped_samplers): its command
         // buffer fails, not a route to m2v
@@ -268,6 +302,8 @@ CompileOutcome Direct::kernel(MTLComputePipelineDescriptor *descriptor, const Nm
         return fails ? CompileOutcome::Failed : CompileOutcome::Refused;
     }
     why = a.why;
+    if (a.outcome == CompileOutcome::Made)
+        out.kernel.mapsStated = mapsStated;
     return a.outcome;
 }
 

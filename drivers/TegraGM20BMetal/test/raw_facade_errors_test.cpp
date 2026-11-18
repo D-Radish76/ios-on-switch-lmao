@@ -5,11 +5,14 @@
 // four-channel 8-bit order or another sample count than its pass, sample positions past the pass's samples, and a state
 // whose colour Apple writes as reinterpreted bits (its draw skipped). The kernel refusing a submission or the channel
 // fails the command buffer Internal naming the kernel's answer (RawMetalPredicates.h predFailure), as a visibility result
-// mode or an event Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis, event), and a visibility mode
-// the device has no report page for fails it OutOfMemory. A command buffer whose later job the kernel refused after
+// mode or buffer or an event Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis, event), and a visibility
+// mode the device has no report page for fails it OutOfMemory. A state of another depth format than its pass's is
+// drawn against the pass's attachment, as Apple's GPU draws it. A command buffer whose later job the kernel refused after
 // earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_batch.h"
+#include "../raw/runtime/raw_mme.h"
+#include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
 #include "bazel/testing/fresh_process.h"
 
 #include <gtest/gtest.h>
@@ -25,6 +28,22 @@
 - (id<MTLDevice>)device
 {
     return nil;
+}
+@end
+
+// A visibility result buffer this device did not make
+@interface ForeignBuffer : NSObject
+@end
+
+@implementation ForeignBuffer
+- (id<MTLDevice>)device
+{
+    return nil;
+}
+
+- (NSUInteger)length
+{
+    return 64;
 }
 @end
 
@@ -236,6 +255,57 @@ void visibilityModesMetalStops()
     }
 }
 
+// A visibility result buffer of another device, which Metal's validation stops: the command buffer fails at its recording
+void visibilityBufferOfAnotherDevice()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil);
+    MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
+    p.visibilityResultBuffer = (id<MTLBuffer>)[ForeignBuffer new];
+    id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
+    [e setVisibilityResultMode:MTLVisibilityResultModeCounting offset:0];
+    [e endEncoding];
+    expectError(o.device, cb, "call.vis", MTLCommandBufferErrorInternal);
+}
+
+// The draw macro calls the kernel model's jobs from `firstJob` on hold
+size_t drawsSince(size_t firstJob)
+{
+    size_t draws = 0;
+    const uint32_t first = NVB197_CALL_MME_MACRO(0);
+    for (size_t job = firstJob; job < kernel_model::model.jobs.size(); job++) {
+        const std::vector<uint32_t> &words = kernel_model::model.jobs[job].words;
+        std::vector<switch_gm20b_method> methods(words.size());
+        const long count = switch_gm20b_push_decode(words.data(), words.size(), methods.data(), methods.size());
+        EXPECT_GE(count, 0);
+        for (long i = 0; i < count; i++)
+            draws += !methods[i].subchannel && methods[i].method >= first && !((methods[i].method - first) % 8) &&
+                     raw::mme::countedAsDraw((methods[i].method - first) / 8);
+    }
+    return draws;
+}
+
+// A state of no depth drawn in a pass with a depth attachment: Apple's GPU draws it against the pass's attachment, depth
+// tested and written (an M4 Max with validation off, every pairing of states of no depth, Depth16Unorm, Depth32Float,
+// Depth32Float_Stencil8 and Stencil8 with passes of none, Depth32Float and Depth32Float_Stencil8), and so does the raw path
+void stateOfAnotherDepthFormat()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    for (MTLPixelFormat format : {MTLPixelFormatDepth32Float, MTLPixelFormatDepth32Float_Stencil8}) {
+        MTLRenderPassDescriptor *p = pass(target(o.device, kPacked));
+        p.depthAttachment.texture = target(o.device, format);
+        p.depthAttachment.loadAction = MTLLoadActionClear;
+        p.depthAttachment.storeAction = MTLStoreActionDontCare;
+        const size_t firstJob = kernel_model::model.jobs.size();
+        id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+        drawInto(cb, p, o.state);
+        expectCompleted(o.device, cb);
+        EXPECT_EQ(drawsSince(firstJob), 1u) << format;
+    }
+}
+
 // The same offset set twice in one encoder, which Metal's validation stops ("Using the same offset (8) in the
 // visibility buffer twice in the same command encoder is not allowed."): the recording takes both, the encode fails it
 void visibilityOffsetSetTwice()
@@ -439,6 +509,16 @@ TEST(RawFacadeErrors, SamplePositionsPastThePasssSamplesComplete)
 TEST(RawFacadeErrors, VisibilityModesMetalStopsFail)
 {
     switch_ios::test::ExpectPassesInFreshProcess(visibilityModesMetalStops);
+}
+
+TEST(RawFacadeErrors, AVisibilityBufferOfAnotherDeviceFails)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(visibilityBufferOfAnotherDevice);
+}
+
+TEST(RawFacadeErrors, AStateOfAnotherDepthFormatDrawsAgainstThePasssAttachment)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(stateOfAnotherDepthFormat);
 }
 
 TEST(RawFacadeErrors, AVisibilityOffsetSetTwiceInAnEncoderFails)

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// RGB10A8_2P_XR10 textures held in Metal's two planes (raw_xr_pass.h): the texture's own Texture has no memory, its planes are
-// luma (the words, R32Uint) and chroma (the alpha bytes, R8Uint).
+// RGB10A8_2P_XR10 and RGB10A8_2P_XR10_sRGB textures held in Metal's two planes (raw_xr_pass.h): the texture's own Texture
+// has no memory, its planes are luma (the words, R32Uint) and chroma (the alpha bytes, R8Uint).
 #include "raw_xr_pass.h"
 
 #include "raw_gpu.h"
@@ -17,7 +17,7 @@ constexpr uint32_t kRGB10A2Unorm = 90, kR8Unorm = 10;
 
 bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
                                   uint64_t word, uint32_t wordPitch, uint64_t alpha, uint32_t alphaPitch,
-                                  uint32_t width, uint32_t height, Texture &t, const char **why)
+                                  uint32_t width, uint32_t height, uint32_t format, Texture &t, const char **why)
 {
     Texture *w = new Texture, *a = new Texture;
     const auto undo = [&](const char *reason) {
@@ -28,8 +28,8 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
         *why = reason;
         return false;
     };
-    if (!shape(width, height, 550, t))
-        return undo("no 550 texture of its size");
+    if (!twoPlaneXr(format) || !shape(width, height, format, t))
+        return undo("no two-plane extended-range texture of its format and size");
     if (!createSurfaceTexture(surfaceId, base, allocBytes, surface, word, width, height, wordPitch, kXrWordFormat,
                               *w) ||
         !createSurfaceTexture(surfaceId, base, allocBytes, surface, alpha, width, height, alphaPitch, kXrAlphaFormat,
@@ -60,7 +60,7 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
     a->xrPlane = 2;
     t.luma = w;
     t.chroma = a;
-    t.cpu = nullptr;  // Metal's CPU access reads and writes the planes: the surface's texture on m2v
+    t.cpu = nullptr;  // its CPU copies move plane 0's words in the surface (RawMetalXrPlanes.mm xrPlaneWords)
     return true;
 }
 
@@ -88,7 +88,7 @@ const char *xrPlanesPass(const Texture *const color[8], bool &planes)
     for (uint32_t j = 0; j < 8; j++)
         if (const Texture *t = color[j]) {
             formats[j] = t->format;
-            planes |= t->xrPlanes && !t->memoryless;
+            planes |= t->xrPlanes && !t->memoryless && xrForm(t->format) == XrForm::Planes;
         }
     if (!planes)
         return nullptr;

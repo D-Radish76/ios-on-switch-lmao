@@ -193,16 +193,18 @@ static void reboundTextures(const raw::Pipeline &pl, RMTexture *const textures[r
 }
 
 // The slots of each stage (vertex, fragment: raw::handleStage) a draw of `pl` samples a two-plane RGB10A8_2P_XR10
-// texture at (raw_xr_pass.h)
+// texture at (raw_xr_pass.h), or (`srgb`) a two-plane RGB10A8_2P_XR10_sRGB one, which no variant reads in its planes: its
+// sRGB codes are read through its stand-in alone (raw_xr.h xrConversionOf)
 static std::array<raw::StageTextureMask, 2> xrSampledSlots(const raw::Pipeline &pl,
-                                                           RMTexture *const textures[2][raw::kStageTextures])
+                                                           RMTexture *const textures[2][raw::kStageTextures],
+                                                           bool srgb = false)
 {
     std::array<raw::StageTextureMask, 2> slots{};
     for (uint32_t i = 0; i < pl.entries.size(); i++) {
         const raw::PackEntry &e = pl.entries[i];
         __unsafe_unretained RMTexture *t =
             e.kind == raw::EntryTexture && e.slot < raw::kStageTextures ? textures[raw::handleStage(e)][e.slot] : nil;
-        if (t && t->_raw.xrPlanes && !t->_raw.memoryless)
+        if (t && t->_raw.xrPlanes && !t->_raw.memoryless && (t->_raw.format == raw::kRgb10A8XrSrgb) == srgb)
             raw::addSlot(slots[raw::handleStage(e)], e.slot);
     }
     return slots;
@@ -270,8 +272,14 @@ static raw::Variant<raw::Pipeline> *preparedVariant(__unsafe_unretained RMRender
         _formSamplers[0] = _formSamplers[1] = 0;
         return;
     }
+    // the pass's depth/stencil attachment the draw is tested against: its own, or the hidden one a pass of none is given
+    // where a state set in it tests depth or stencil (raw_depth_stencil_state.h testsHiddenZeta)
+    const uint32_t zeta = _zeta ? _zeta : _cb->_passes[_passAt].testsHiddenZeta ? raw::kZetaFormat : 0;
     _forms.fragmentTests =
-        raw::drawnTests(base->fetchBits && base->depthFormat && !base->storageBits, base->rec->shaderTests, _ds, _zeta);
+        raw::drawnTests(base->fetchBits && base->depthFormat && !base->storageBits, base->rec->shaderTests, _ds, zeta);
+    // a Depth16Unorm a draw tests in its shader renders converted (RawMetalRangeForms.mm depth16Tested)
+    if ((_forms.fragmentTests && raw::zetaHasDepth(zeta)) || (base->rec->shaderTests.flags & raw::kShaderTestDepth))
+        _cb->_passes[_passAt].shaderTestsDepth = true;
     reboundTextures(*base, _tex[1], _forms.written);
     if (!_forms.cubic.empty() || _forms.fragmentTests || _forms.twoPlane || !_forms.written.empty())
         _formVariant = preparedVariant(self, _forms);
@@ -287,6 +295,11 @@ static raw::Variant<raw::Pipeline> *preparedVariant(__unsafe_unretained RMRender
     raw::Pipeline *base = _pipe->_raw;
     auto *variant = _formVariant;
     std::array<raw::StageTextureMask, 2> standIns = {_sampledSlots[0], raw::pastXrPairSlots(_sampledSlots[1])};
+    if (_cb->_passes[_passAt].xrPlaneBinds) {
+        const std::array<raw::StageTextureMask, 2> srgb = xrSampledSlots(*base, _tex, true);
+        for (uint32_t stage = 0; stage < 2; stage++)
+            raw::forEachSlot(srgb[stage], [&](uint32_t slot) { raw::addSlot(standIns[stage], slot); });
+    }
     uint16_t drawnSlots = 0;
     if (_sampledVariant) {
         if (_sampledVariant->state() == raw::Variant<raw::Pipeline>::State::Ready) {

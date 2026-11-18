@@ -144,6 +144,11 @@ bool nmb_offline_compute_pipeline_compiles(const NmbOfflineComputePipelineDescri
 // `facts`: maxTotalThreadsPerThreadgroup, threadExecutionWidth, staticThreadgroupMemoryLength (false with nmb_last_error)
 bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescriptor *descriptor, uint32_t facts[3]);
 
+// The address map (Texture::addressMap) a kernel's compile takes for a texture of MTLPixelFormat `pixelFormat` whose
+// dispatch states none: the raw path's map of such a texture under every YCbCr matrix but P3
+// (NativeMetalKernelTextures.rs)
+uint8_t nmb_kernel_texture_map(uint64_t pixelFormat);
+
 // A state's reflection with no m2v runtime, as raw/runtime/raw_reflection_blob.h lays it out (NativeMetalReflection.rs):
 // a render state's as newRenderPipelineStateWithDescriptor:options:reflection:error: answers it with argument info, its
 // vertex, fragment, tile, object and mesh stages; a compute state's as the runtime's compute prepare gives it (its kernel's

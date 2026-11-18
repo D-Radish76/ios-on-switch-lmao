@@ -232,7 +232,7 @@ bool cpuXrWords(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, u
                 NSUInteger image, bool write)
 {
     if (!t->_rawOk || t->_kind != RMTexturePool || t->_raw.xrPlanes ||
-        raw::xrForm(t->_raw.format) != raw::XrForm::Planes || !r.size.width || !r.size.height || !r.size.depth)
+        !raw::twoPlaneXr(t->_raw.format) || !r.size.width || !r.size.height || !r.size.depth)
         return false;
     const uint32_t w = uint32_t(r.size.width), h = uint32_t(r.size.height), d = uint32_t(r.size.depth);
     const size_t texelRow = size_t(w) * raw::kXrTexelBytes, texelImage = texelRow * h;

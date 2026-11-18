@@ -99,6 +99,29 @@ TEST(RawComputeLookup, ATwoPlaneTexturesTextReadsBack)
     EXPECT_FALSE(raw::parseComputeTexture("2:550:2:1:1", t));
 }
 
+// A converted texture's address map (Texture::addressMap) selects the kernel compiled under it, named by ":am<map>"
+// after its slot's fields, and reads back for the compile; a texture of none keeps its key and text, byte for byte
+TEST(RawComputeLookup, AConvertedTexturesAddressMapSelectsItsOwnKernelAndReadsBack)
+{
+    raw::BoundTexture none = {1, 502, 2, 1, 1, {2, 3, 4, 5}};
+    raw::BoundTexture codes = none;
+    codes.addressMap = 3;
+    raw::ComputeSpecialization a, b;
+    a.bindTexture(1, &none);
+    b.bindTexture(1, &codes);
+    EXPECT_FALSE(a == b);
+    EXPECT_EQ(a.text().textures, "1:502:2:1:1:02030405");
+    EXPECT_EQ(b.text().textures, "1:502:2:1:1:02030405:am3");
+    raw::BoundTexture t = {};
+    ASSERT_TRUE(raw::parseComputeTexture("1:502:2:1:1:02030405:am3", t));
+    EXPECT_EQ(t.addressMap, 3);
+    EXPECT_FALSE(t.planes);
+    EXPECT_EQ(raw::computeTextures(&t, 1), "1:502:2:1:1:02030405:am3");
+    EXPECT_FALSE(raw::parseComputeTexture("1:502:2:1:1:02030405:am", t));
+    EXPECT_FALSE(raw::parseComputeTexture("1:502:2:1:1:02030405:am4", t));
+    EXPECT_FALSE(raw::parseComputeTexture("1:502:2:1:1:02030405:am31", t));
+}
+
 TEST(RawComputeLookup, EverySpecializationInputSelectsAnotherKernel)
 {
     raw::ComputeSpecialization key;

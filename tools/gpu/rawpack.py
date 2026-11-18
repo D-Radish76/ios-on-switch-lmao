@@ -80,8 +80,8 @@ YCBCR_STAND_IN = 125
 STAND_INS = {588: 55, 589: 105}
 # raw/runtime/raw_format_standin.h formatStandIn: the formats the GM20B renders none of that a stand-in of another
 # format renders, and those of them that hold alpha (formatHoldsAlpha)
-FORMAT_STAND_INS = {11: 71, 41: 125, 42: 125, 93: 125, 555: 115}
-HOLDS_ALPHA = frozenset({41, 42})
+FORMAT_STAND_INS = {11: 71, 31: 71, 41: 125, 42: 125, 44: 125, 84: 70, 85: 71, 93: 125, 551: 115, 553: 115, 555: 115}
+HOLDS_ALPHA = frozenset({41, 42, 44, 84, 85, 551, 553})
 # raw/runtime/raw_standin_blend.h alphaOneFactor: MTLBlendFactorDestinationAlpha, OneMinusDestinationAlpha and
 # SourceAlphaSaturated where the destination alpha is 1, of a colour blend and of an alpha blend
 ALPHA_ONE_RGB = {8: 1, 9: 0, 10: 0}
@@ -149,15 +149,14 @@ def stand_in(line: str) -> str:
     """Give the line of the state the runtime makes for a render state of attachments it renders through a stand-in.
 
     RawMetalYcbcrTargets.mm standInTargetState makes it with each such attachment's format the stand-in's: a two-plane
-    YCbCr attachment's where every one is a format it renders (codes, converted, sRGB or packed, 8- or 10-bit, or a
-    packed 10-bit plane), blended, channel-masked or not, and a format the GM20B renders none of (FORMAT_STAND_INS); the
-    blend factors of the destination alpha of a format that holds none become the constants they come to
-    (rmAlphaOneBlend). m2v alone answers a state of any other YCbCr attachment (it renders into no YCbCr target), so its
-    line stays the app's. The archives' declared keys stay the app's (raw/pack/archives.py).
+    YCbCr attachment's (codes, converted, sRGB or packed, 8- or 10-bit, or a packed 10-bit plane; one of a format no
+    target texture is made of too, whose state draws no pass), blended, channel-masked or not, and a format the GM20B
+    renders none of (FORMAT_STAND_INS); the blend factors of the destination alpha of a format that holds none become
+    the constants they come to (rmAlphaOneBlend). The archives' declared keys stay the app's (raw/pack/archives.py).
     """
     head, bar, tail = line.partition(' | ')
     targets = [m for m in COLOR_FIELDS.finditer(head) if int(m[2]) in YCBCR_TARGETS | FORMAT_STAND_INS.keys()]
-    if not targets or any(int(m[2]) in YCBCR_TARGETS and int(m[2]) not in YCBCR_RENDERED for m in targets):
+    if not targets:
         return line
     for m in reversed(targets):
         fmt = int(m[2])

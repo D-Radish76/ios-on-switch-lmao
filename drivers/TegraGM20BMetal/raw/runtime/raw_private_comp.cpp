@@ -95,12 +95,12 @@ bool Device::createCompressedTexture(uint32_t width, uint32_t height, uint32_t f
     return true;
 }
 
-bool Device::createCompressedZeta(uint64_t bytes, uint32_t kind, bool sampled, Texture &t)
+bool Device::createCompressedZeta(uint64_t bytes, uint32_t kind, Texture &t)
 {
     Bo bo;
     if (!takeCompressed(bytes, kind, bo))
         return false;
-    if (sampled && !(t.tic = allocTic())) {
+    if (!(t.tic = allocTic())) {
         comp_.ready.push_back({bo, kind, commits(), compClock()});
         return false;
     }
@@ -108,8 +108,7 @@ bool Device::createCompressedZeta(uint64_t bytes, uint32_t kind, bool sampled, T
     t.storage = {bo.va, bytes, false};
     t.comptags = true;
     compZeta_[bo.va] = bo;
-    if (t.tic)
-        writeTic(t);
+    writeTic(t);
     privateMade_.store(privateMade_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     return true;
 }

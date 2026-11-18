@@ -4,11 +4,13 @@
 // (the CPU's range as scratch words, or kIcbRange reading one from memory) and before its tail. The model of the compute
 // class keeps the global render enable the gate sets and counts the launches it lets through: exactly the regions of the
 // commands inside the range launch, a barrier flushes before its command whatever the range, an empty command is no-ops,
-// and the tail leaves launches enabled. A command's stage-in words (raw_stage_in.h) are its own region and bind strides. A
-// buffer that inherits the encoder's buffers: the execute's buffers in scratch and the commands' bind slots through
-// kIcbBind, whose inline-to-memory writes the model of the 3D class lands in memory, write every descriptor and residual
-// word as the CPU's raw_residual.h bufferDescriptor does for the same buffers, and each stage-in stride word the encoder's
-// bind stride.
+// and the tail leaves launches enabled; a slot grown past kComputeRegions launches launches them all. A command's
+// stage-in words (raw_stage_in.h) are its own region and bind strides. A buffer that inherits the encoder's buffers:
+// the execute's buffers in scratch and the commands' bind slots through kIcbBind, whose inline-to-memory writes the
+// model of the 3D class lands in memory, write every descriptor and residual word as the CPU's raw_residual.h
+// bufferDescriptor does for the same buffers (the record's word where the residual is 0), each stage-in stride word the
+// encoder's bind stride and each root table entry writeDrawRoots' of the buffer, in as many macro calls as a method
+// header's count needs.
 #include <gtest/gtest.h>
 #include "../../TegraGM20B/TegraGM20BGpu.h"
 #include "../raw/runtime/raw_icb_compute.h"
@@ -39,7 +41,7 @@ struct Channel {
     // the 3D class's inline-to-memory: its destination and length, then each LOAD_INLINE_DATA word into memory
     std::map<uint64_t, uint32_t> memory;
     uint64_t out = 0;
-    uint32_t lineBytes = 0, lines = 0, inlineLeft = 0, waits3d = 0;
+    uint32_t lineBytes = 0, lines = 0, inlineLeft = 0, waits3d = 0, macros = 0;
 
     static bool isScratch(uint16_t method)
     {
@@ -138,6 +140,7 @@ struct Channel {
         std::vector<mme_fermi_inst> decoded(p.size);
         mme_fermi_decode(decoded.data(), p.words, p.size);
         consumed = 0;
+        macros++;
         const mme_sim_state_ops ops = {load, state, emit, barrier, dram};
         mme_fermi_sim_core(uint32_t(decoded.size()), decoded.data(), &ops, this);
         EXPECT_EQ(consumed, arguments.size());
@@ -202,10 +205,9 @@ std::vector<uint32_t> commands(uint32_t n = 5)
     std::vector<uint32_t> slots(n * raw::icb::kComputeSlotWords);
     for (uint32_t i = 0; i < n; i++) {
         raw::icb::ComputeCommand c{};
-        c.regions = i % 3 + 1;
         c.barrier = i == 2;
-        for (uint32_t r = 0; r < c.regions; r++)
-            c.qmd[r] = 0x10000ull * (i + 1) + 0x100 * r;
+        for (uint32_t r = 0; r < i % 3 + 1; r++)
+            c.qmd.push_back(0x10000ull * (i + 1) + 0x100 * r);
         raw::icb::dispatch(slots.data() + i * raw::icb::kComputeSlotWords, i, c);
     }
     return slots;
@@ -297,10 +299,9 @@ TEST(RawIcbCompute, AnEmptyCommandIsNoOperations)
 TEST(RawIcbCompute, ACopyToAnotherIndexDiffersInItsIndexWordAlone)
 {
     raw::icb::ComputeCommand c{};
-    c.regions = raw::icb::kComputeRegions;
     c.barrier = true;
-    for (uint32_t r = 0; r < c.regions; r++)
-        c.qmd[r] = 0x7700000000ull + 0x100 * r;
+    for (uint32_t r = 0; r < raw::icb::kComputeRegions; r++)
+        c.qmd.push_back(0x7700000000ull + 0x100 * r);
     uint32_t at3[raw::icb::kComputeSlotWords], at9[raw::icb::kComputeSlotWords];
     raw::icb::dispatch(at3, 3, c);
     raw::icb::dispatch(at9, 9, c);
@@ -310,6 +311,41 @@ TEST(RawIcbCompute, ACopyToAnotherIndexDiffersInItsIndexWordAlone)
     all.head(false, false, 3, 1);
     all.run(at3, raw::icb::kComputeSlotWords);
     EXPECT_EQ(all.launched.size(), size_t(raw::icb::kComputeRegions));
+}
+
+// A command of more launches than the smallest slot holds (regions times a grid's slices past the QMD's 16-bit height
+// and depth): its buffer's slots grow to a size that holds them, each launched inside the range and none outside, its
+// gate's call and index at the same words, and a command of fewer launches in a slot of that size launches its own
+TEST(RawIcbCompute, AGrownSlotLaunchesEveryLaunchOfItsCommand)
+{
+    EXPECT_EQ(raw::icb::computeSlotWords(raw::icb::kComputeRegions), raw::icb::kComputeSlotWords);
+    for (const uint64_t launches : {9ull, 19ull, 20ull, 64ull, 1000ull}) {
+        const uint64_t words = raw::icb::computeSlotWords(launches);
+        ASSERT_GE(raw::icb::computeSlotLaunches(words), launches) << launches;
+        ASSERT_LT(raw::icb::computeSlotLaunches(words / 2), launches) << launches;
+        raw::icb::ComputeCommand c{};
+        for (uint64_t r = 0; r < launches; r++)
+            c.qmd.push_back(0x7700000000ull + 0x100 * r);
+        std::vector<uint32_t> slots(2 * words);
+        raw::icb::dispatch(slots.data(), 0, c, uint32_t(words));
+        raw::icb::ComputeCommand one{};
+        one.qmd = {0x6600000000ull};
+        raw::icb::dispatch(slots.data() + words, 1, one, uint32_t(words));
+        EXPECT_EQ(slots[raw::icb::kComputeIndexWord], 0u);
+        EXPECT_EQ(slots[words + raw::icb::kComputeIndexWord], 1u);
+        const std::pair<uint32_t, uint32_t> ranges[] = {{0, 2}, {1, 1}, {2, 1}};
+        for (const auto &[location, length] : ranges) {
+            Channel ch;
+            ch.head(false, false, location, length);
+            ch.run(slots.data(), slots.size());
+            std::vector<uint32_t> want;
+            for (uint64_t r = 0; location == 0 && r < launches; r++)
+                want.push_back(uint32_t((0x7700000000ull + 0x100 * r) >> 8));
+            if (location <= 1 && location + length > 1)
+                want.push_back(uint32_t(0x6600000000ull >> 8));
+            EXPECT_EQ(ch.launched, want) << launches << " launches, " << location << "+" << length;
+        }
+    }
 }
 
 TEST(RawIcbCompute, ARegionsBlockHoldsItsQmdRootTableAndSetOnTheirAlignment)
@@ -358,8 +394,9 @@ TEST(RawIcbCompute, AKernelOfNoStageInTakesNoStageInWords)
 
 }  // namespace
 
-// An execute of commands that inherit the encoder's buffers: each command's descriptors, as bufferDescriptor makes them for
-// the buffers bound now, land where the command's regions read them, and the residual of each base in its root word; a
+// An execute of commands that inherit the encoder's buffers: each command's descriptors, as kernelBufferDescriptor makes
+// them for the buffers bound now (a descriptor with no residual word at its base rounded down), land where the command's
+// regions read them, and in each residual word the residual of its base, or the record's own word where that is 0; a
 // buffer bound again between two executes takes its new descriptor at the second, through the same bind slots.
 TEST(RawIcbCompute, BindSlotsWriteTheCpusDescriptorsForTheEncodersBuffers)
 {
@@ -375,7 +412,8 @@ TEST(RawIcbCompute, BindSlotsWriteTheCpusDescriptorsForTheEncodersBuffers)
             const int word = (command + i) % 4 == 3 ? -1 : int((command * 7 + i) % 32);
             const uint64_t set = blocks + command * 0x2000 + 0x900;
             own.push_back({set + 16 * i, word < 0 ? 0 : set - 0x800 + 0x700 + 4 * uint32_t(word),
-                           uint32_t((command * 5 + i * 3) % 31), windows[(command + i) % 4]});
+                           uint32_t((command * 5 + i * 3) % 31), windows[(command + i) % 4],
+                           word < 0 ? 0u : 0x5ee0'0000u + command * 8 + i});
         }
         slots.emplace_back(raw::icb::kComputeBindSlotWords);
         ASSERT_TRUE(raw::icb::binds(slots.back().data(), own.data(), uint32_t(own.size())));
@@ -409,15 +447,13 @@ TEST(RawIcbCompute, BindSlotsWriteTheCpusDescriptorsForTheEncodersBuffers)
         for (const raw::icb::ComputeBind &b : binds) {
             raw::BufferDescriptor d;
             const int word = b.residual ? int((b.residual - (b.descriptor & ~0xfffull) - 0x100 - 0x700) / 4) : -1;
-            const bool cpu = raw::bufferDescriptor(true, b.window, word < 0 ? -1 : word, va[b.slot], size[b.slot], d);
-            if (!cpu)
-                continue;  // the execute refuses a binding off 16 bytes of a descriptor with no residual word
+            ASSERT_TRUE(raw::bufferDescriptor(true, b.window, word < 0 ? 0 : word, va[b.slot], size[b.slot], d));
             ASSERT_EQ(c.memory.at(b.descriptor), uint32_t(d.base)) << "slot " << b.slot << " pass " << pass;
             ASSERT_EQ(c.memory.at(b.descriptor + 4), uint32_t(d.base >> 32)) << "slot " << b.slot;
             ASSERT_EQ(c.memory.at(b.descriptor + 8), va[b.slot] ? d.range : 0u)
                 << "slot " << b.slot << " window " << b.window << " size " << size[b.slot] << " va " << va[b.slot];
             if (b.residual)
-                ASSERT_EQ(c.memory.at(b.residual), d.residual) << "slot " << b.slot;
+                ASSERT_EQ(c.memory.at(b.residual), d.residual ? d.residual : b.recorded) << "slot " << b.slot;
         }
     }
 }
@@ -432,7 +468,7 @@ TEST(RawIcbCompute, BindSlotsWriteTheEncodersBindStrides)
 {
     const uint64_t descriptor = 0xc0'0000'0900ull, word = 0xc0'0000'0100ull + 0x700 + 4 * 12,
                    other = 0xc0'0000'0100ull + 0x700 + 4 * 13;
-    const raw::icb::ComputeBind bind = {descriptor, 0, 1, 0};
+    const raw::icb::ComputeBind bind = {descriptor, 0, 1, 0, 0};  // no residual word: nothing recorded
     const raw::icb::ComputeStride strides[] = {{word, 1}, {other, 2}};
     std::vector<uint32_t> slot(raw::icb::kComputeBindSlotWords);
     ASSERT_TRUE(raw::icb::binds(slot.data(), &bind, 1, strides, 2));
@@ -455,19 +491,123 @@ TEST(RawIcbCompute, BindSlotsWriteTheEncodersBindStrides)
     }
 }
 
-TEST(RawIcbCompute, ABindSlotHoldsItsCommandsDescriptorsAlone)
+// A bind slot holds the calls bindWords counts and no more: binds refuses a slot shorter than them, a buffer's bind
+// slots grow to a size that holds them, and an empty slot is no-ops
+TEST(RawIcbCompute, ABindSlotHoldsTheCallsItsWordsCount)
 {
-    std::vector<raw::icb::ComputeBind> many(raw::icb::kComputeBindsMax + 1, {0xc0'0000'0100ull, 0, 1, 0});
+    const std::vector<raw::icb::ComputeBind> many(18, {0xc0'0000'0100ull, 0, 1, 0, 0});
+    EXPECT_EQ(raw::icb::bindWords(0, 0, 0), 0u);
+    EXPECT_EQ(raw::icb::bindWords(17, 0, 0), uint64_t(1 + SWITCH_GM20B_ICB_BIND_WORDS(17, 0, 0)));
     std::vector<uint32_t> slot(raw::icb::kComputeBindSlotWords);
-    EXPECT_FALSE(raw::icb::binds(slot.data(), many.data(), uint32_t(many.size())));
-    EXPECT_TRUE(raw::icb::binds(slot.data(), many.data(), raw::icb::kComputeBindsMax));
-    const std::vector<raw::icb::ComputeStride> strides((raw::icb::kComputeBindSlotWords - 3) / 3,
-                                                       {0xc0'0000'0700ull, 1});
-    EXPECT_TRUE(raw::icb::binds(slot.data(), nullptr, 0, strides.data(), uint32_t(strides.size())));
-    EXPECT_FALSE(raw::icb::binds(slot.data(), many.data(), 1, strides.data(), uint32_t(strides.size())));
+    EXPECT_TRUE(raw::icb::binds(slot.data(), many.data(), 17));
+    EXPECT_FALSE(raw::icb::binds(slot.data(), many.data(), 18));
+    EXPECT_EQ(raw::icb::computeBindSlotWords(17, 0, 0), uint64_t(raw::icb::kComputeBindSlotWords));
+    EXPECT_EQ(raw::icb::computeBindSlotWords(18, 0, 0), 2ull * raw::icb::kComputeBindSlotWords);
     raw::icb::bindsEmpty(slot.data());
     Channel c;
     c.run(slot.data(), slot.size());
     EXPECT_TRUE(c.memory.empty());
     EXPECT_TRUE(c.methods.empty());
+}
+
+// The execute's buffers in scratch as computeBindHead writes them, then each bind slot
+static void bindExecute(Channel &c, const uint64_t (&va)[31], const uint32_t (&size)[31], const uint32_t (&strides)[31],
+                 uint32_t slots, const std::vector<uint32_t> &bind)
+{
+    uint32_t head[8 + 3 * 31];
+    raw::Push p{head, head + std::size(head)};
+    raw::icb::computeBindHead(p, va, size, strides, slots);
+    c.run(head, size_t(p.at - head));
+    c.run(bind.data(), bind.size());
+}
+
+// A kernel whose record fills the root word its residual goes to: an execute of a base off 16 bytes writes the residual
+// there, and the next, of a base on 16 bytes, writes the record's word back, as the CPU's rootWords leaves it where the
+// residual is 0, over what the execute before left in the region's memory
+TEST(RawIcbCompute, AResidualWordTakesBackTheRecordsWordForABaseOn16Bytes)
+{
+    const uint64_t descriptor = 0xc0'0000'0900ull, word = 0xc0'0000'0100ull + 0x700 + 4 * 6;
+    const raw::icb::ComputeBind bind = {descriptor, word, 3, 0, 0x5eed};
+    std::vector<uint32_t> slot(raw::icb::kComputeBindSlotWords);
+    ASSERT_TRUE(raw::icb::binds(slot.data(), &bind, 1));
+    Channel c;
+    for (const uint64_t at : {0xd0'0000'1008ull, 0xd0'0000'2000ull, 0xd0'0000'300cull, 0xd0'0000'4010ull}) {
+        uint64_t va[31] = {};
+        uint32_t size[31] = {}, strides[31] = {};
+        va[3] = at;
+        size[3] = 0x100;
+        bindExecute(c, va, size, strides, 1u << 3, slot);
+        raw::BufferDescriptor d;
+        ASSERT_TRUE(raw::bufferDescriptor(true, 0, 6, at, 0x100, d));
+        EXPECT_EQ(c.memory.at(word), d.residual ? d.residual : 0x5eedu) << std::hex << at;
+        EXPECT_EQ(c.memory.at(descriptor), uint32_t(d.base)) << std::hex << at;
+    }
+}
+
+// A kernel that reads its buffer slots through its root table: each execute's bind slot writes the entry of each slot
+// the kernel reads, raw_heap_tables.h writeDrawRoots' {va, va, size rounded up to 16, 0} of the buffer bound now with
+// its bind stride left out, and all zero where none is bound, over what the execute before wrote
+TEST(RawIcbCompute, BindSlotsWriteTheRootTableEntriesOfTheEncodersBuffers)
+{
+    const uint64_t table = 0xc0'0000'0b00ull;
+    const uint32_t rootSlots = 1u << 0 | 1u << 4 | 1u << 30;
+    std::vector<raw::icb::ComputeRoot> roots;
+    for (uint32_t n = 0; n < 31; n++)
+        if (rootSlots >> n & 1)
+            roots.push_back({table + 32 * (2 + n), n});
+    std::vector<uint32_t> slot(raw::icb::kComputeBindSlotWords);
+    ASSERT_TRUE(raw::icb::binds(slot.data(), nullptr, 0, nullptr, 0, roots.data(), uint32_t(roots.size())));
+    Channel c;
+    for (int pass = 0; pass < 2; pass++) {
+        uint64_t va[31] = {};
+        uint32_t size[31] = {}, strides[31] = {};
+        va[0] = 0xd0'1234'5674ull;
+        size[0] = 0x31;
+        strides[0] = 40;
+        va[4] = pass ? 0 : 0xff'0000'0100ull;
+        size[4] = pass ? 7 : 0xfffffffau;
+        va[30] = 0xd0'0000'0000ull + 0x1000 * pass;
+        size[30] = 16;
+        bindExecute(c, va, size, strides, rootSlots, slot);
+        for (const raw::icb::ComputeRoot &r : roots) {
+            const uint64_t v = va[r.slot], bytes = v ? (uint64_t(size[r.slot]) + 15) & ~15ull : 0;
+            const uint32_t want[8] = {uint32_t(v),     uint32_t(v >> 32),     uint32_t(v), uint32_t(v >> 32),
+                                      uint32_t(bytes), uint32_t(bytes >> 32), 0,           0};
+            for (uint32_t w = 0; w < 8; w++)
+                EXPECT_EQ(c.memory.at(r.entry + 4 * w), want[w]) << "slot " << r.slot << " word " << w << " " << pass;
+        }
+    }
+}
+
+// A command of more binds than one macro call's 13-bit count holds: its bind slot, as long as computeBindSlotWords
+// says, is several calls, each of which the macro reads whole, and every descriptor, stride word and root entry lands
+TEST(RawIcbCompute, ABindSlotPastOneMacroCallIsSeveralCalls)
+{
+    std::vector<raw::icb::ComputeBind> binds;
+    for (uint32_t i = 0; i < 1300; i++)
+        binds.push_back({0xc0'0000'0000ull + 16 * i, 0, i % 31, 0, 0});
+    const raw::icb::ComputeStride stride = {0xc1'0000'0000ull, 2};
+    const raw::icb::ComputeRoot root = {0xc1'0000'0100ull, 5};
+    const uint64_t need = raw::icb::bindWords(binds.size(), 1, 1),
+                   words = raw::icb::computeBindSlotWords(binds.size(), 1, 1);
+    EXPECT_GT(need, uint64_t(raw::icb::kComputeBindCallWords));
+    std::vector<uint32_t> slot(words);
+    EXPECT_FALSE(raw::icb::binds(slot.data(), binds.data(), uint32_t(binds.size()), &stride, 1, &root, 1,
+                                 uint32_t(need - 1)));
+    ASSERT_TRUE(
+        raw::icb::binds(slot.data(), binds.data(), uint32_t(binds.size()), &stride, 1, &root, 1, uint32_t(words)));
+    uint64_t va[31] = {};
+    uint32_t size[31] = {}, strides[31] = {};
+    for (uint32_t s = 0; s < 31; s++) {
+        va[s] = 0xd0'0000'0000ull + 0x10000 * s;
+        size[s] = 0x100;
+    }
+    strides[2] = 24;
+    Channel c;
+    bindExecute(c, va, size, strides, 0x7fffffff, slot);
+    EXPECT_EQ(c.macros, 2u);
+    for (const raw::icb::ComputeBind &b : binds)
+        ASSERT_EQ(c.memory.at(b.descriptor), uint32_t(va[b.slot])) << b.slot;
+    EXPECT_EQ(c.memory.at(stride.word), 24u);
+    EXPECT_EQ(c.memory.at(root.entry), uint32_t(va[5]));
 }

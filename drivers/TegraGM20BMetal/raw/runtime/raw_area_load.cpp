@@ -7,7 +7,7 @@
 
 namespace raw {
 
-bool loadPastArea(CommandBuffer &rc, Texture &t, uint32_t areaW, uint32_t areaH, const PassReach &reach, uint32_t tag,
+bool loadPastArea(CommandBuffer &rc, Texture &t, uint32_t areaW, uint32_t areaH, PassReach &reach, uint32_t tag,
                   const char **why)
 {
     const Rotation own = frameOf(t);
@@ -16,7 +16,8 @@ bool loadPastArea(CommandBuffer &rc, Texture &t, uint32_t areaW, uint32_t areaH,
         return true;
     Texture *before = rc.turnScratch(turnCopyFormat(t.bpp), t.width, t.height, tag);
     if (!before) {
-        *why = "no scratch for a turned attachment loaded past the render area";
+        *why = "no memory for a turned attachment loaded past the render area";
+        reach.memory = true;
         return false;
     }
     BlitEncoder *b = rc.blit();

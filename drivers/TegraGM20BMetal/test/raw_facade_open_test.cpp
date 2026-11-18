@@ -338,6 +338,68 @@ void planarSamplerTableFull()
     expectNoM2V(device);
 }
 
+// A draw sampling an R8Unorm texture through an opaque white border reads the border as R8Unorm holds it, a header of its
+// own (Sampler::bordered); with the table full its command buffer fails out of memory, as the planar address map's does
+void borderSamplerTableFull()
+{
+    const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, {sampled}));
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];
+    id<MTLRenderPipelineState> state =
+        [device newRenderPipelineStateWithDescriptor:descriptor(library, MTLPixelFormatBGRA8Unorm) error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    MTLTextureDescriptor *td =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm width:16 height:16 mipmapped:NO];
+    td.usage = MTLTextureUsageShaderRead;
+    td.storageMode = MTLStorageModePrivate;
+    id<MTLTexture> red = [device newTextureWithDescriptor:td];
+    MTLSamplerDescriptor *border = [MTLSamplerDescriptor new];
+    border.sAddressMode = border.tAddressMode = MTLSamplerAddressModeClampToBorderColor;
+    border.borderColor = MTLSamplerBorderColorOpaqueWhite;
+    id<MTLSamplerState> bordered = [device newSamplerStateWithDescriptor:border];
+    ASSERT_TRUE(red != nil && bordered != nil);
+    NSMutableArray<id<MTLSamplerState>> *held = [NSMutableArray array];
+    for (NSUInteger i = 0; i < 4096; i++)
+        if (id<MTLSamplerState> s = [device newSamplerStateWithDescriptor:distinctSampler(i)])
+            [held addObject:s];
+        else
+            break;
+    while (id<MTLSamplerState> s = [device newSamplerStateWithDescriptor:distinctSampler(0)])
+        [held addObject:s];
+    ASSERT_LT(held.count, 4096u) << "the table is full";
+    id<MTLCommandBuffer> full = drawSampling(device, state, red, bordered);
+    EXPECT_EQ(full.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(full.error.code, MTLCommandBufferErrorOutOfMemory) << text(full.error);
+    [held removeAllObjects];
+    id<MTLCommandBuffer> freed = drawSampling(device, state, red, bordered);
+    EXPECT_EQ(freed.status, MTLCommandBufferStatusCompleted) << text(freed.error);
+    expectNoM2V(device);
+}
+
+// A sampler state of another device bound, which Metal's validation stops: the command buffer fails at its recording
+void foreignSampler()
+{
+    const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", {}, {sampled}));
+    ASSERT_TRUE(device != nil);
+    NSError *error = nil;
+    id<MTLLibrary> library = [device newLibraryWithURL:fileURL(writeMetallib()) error:&error];
+    id<MTLRenderPipelineState> state =
+        [device newRenderPipelineStateWithDescriptor:descriptor(library, MTLPixelFormatBGRA8Unorm) error:&error];
+    ASSERT_TRUE(state != nil) << text(error);
+    MTLTextureDescriptor *td =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:16 height:16 mipmapped:NO];
+    td.usage = MTLTextureUsageShaderRead;
+    id<MTLTexture> sampledTexture = [device newTextureWithDescriptor:td];
+    ASSERT_TRUE(sampledTexture != nil);
+    id<MTLCommandBuffer> cb = drawSampling(device, state, sampledTexture, (id<MTLSamplerState>)[NSObject new]);
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal) << text(cb.error);
+    expectNoM2V(device);
+}
+
 }  // namespace
 
 TEST(RawFacadeOpen, AnUncompressedTextureHasThePlainLayoutAndNoNoCopyTexture)
@@ -378,4 +440,14 @@ TEST(RawFacadeOpen, SamplersShareTheirCompareFormAndAFullTableIsNil)
 TEST(RawFacadeOpen, APlanarDrawWithTheHeaderTableFullFailsItsCommandBuffer)
 {
     switch_ios::test::ExpectPassesInFreshProcess(planarSamplerTableFull);
+}
+
+TEST(RawFacadeOpen, AnOpaqueBorderDrawWithTheHeaderTableFullFailsItsCommandBuffer)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(borderSamplerTableFull);
+}
+
+TEST(RawFacadeOpen, ASamplerOfAnotherDeviceFailsItsCommandBuffer)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(foreignSampler);
 }

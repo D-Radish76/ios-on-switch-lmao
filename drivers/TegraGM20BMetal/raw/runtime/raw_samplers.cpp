@@ -182,6 +182,9 @@ void Device::destroySampler(Sampler &s)
     for (uint32_t m : s.mapped)
         if (m && m != s.tsc)
             dropHeader(m);
+    for (uint32_t m : s.compareMapped)
+        if (m && m != s.compareTsc)
+            dropHeader(m);
     for (uint32_t b : s.bordered)
         if (b)
             dropHeader(b);
@@ -199,19 +202,27 @@ bool Device::samplerVariant(Sampler &s, uint8_t map)
         return false;
     if (s.mapped[map])
         return true;
-    uint32_t own[8], w[8];
+    uint32_t own[8], w[8], compared[8];
     samplerHeader(s.desc, own);
     memcpy(w, own, sizeof w);
     mapSamplerAddresses(w, map);
     if (!memcmp(w, own, sizeof w)) {
         s.mapped[map] = s.tsc;
+        s.compareMapped[map] = s.compareTsc;
         return true;
     }
+    memcpy(compared, w, sizeof compared);
+    compareHeader(compared, s.desc.compare);
     RAW_ENCODE_LOCK(l, lock_);
-    uint32_t tsc = 0;
+    uint32_t tsc = 0, compareTsc = 0;
     if (!takeHeader(w, tsc))
         return false;
+    if (!takeHeader(compared, compareTsc)) {
+        dropHeader(tsc);
+        return false;
+    }
     s.mapped[map] = tsc;
+    s.compareMapped[map] = compareTsc;
     return true;
 }
 

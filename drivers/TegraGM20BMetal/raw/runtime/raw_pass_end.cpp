@@ -7,6 +7,7 @@
 #include "raw_gpu.h"
 #include "raw_kit.h"
 #include "raw_mme.h"
+#include "raw_mixed_samples.h"
 #include "raw_multisample.h"
 #include "raw_rotated_pass.h"
 #include "raw_shader_tests.h"
@@ -29,6 +30,12 @@ namespace {
 // A turned pass's turn words into the root table (raw_rotation.h kRootTurn), which its fragment programs' turned variants read
 constexpr uint32_t kTurnWordsMethods = 16;
 
+// A zeta shadow's words: a compressed zeta's decompression, a copy a layer, the clear of the layers past its own
+constexpr uint32_t zetaShadowWords(uint32_t layers)
+{
+    return kZetaTargetWords + 24 + 32 * layers;
+}
+
 void turnWordsInto(Push &p, uint64_t root, const Rotation &r)
 {
     uint32_t w[kTurnWords];
@@ -39,35 +46,6 @@ void turnWordsInto(Push &p, uint64_t root, const Rotation &r)
 }
 }  // namespace
 
-#if SWITCH_RAW_DIAGNOSTICS
-// What this pass reached of each colour target it stores into (a shadow target's own image, not its pool image): its
-// load, the box of its draws' pixels (the render area where they were not counted), its render area and its clears'
-// extent from the origin
-void RenderEncoder::glassMemReached(const std::vector<Clear> &cl)
-{
-    uint32_t box[4] = {0, 0, areaW_, areaH_};
-    if (drew_ && !whole_ && !rects_.empty()) {
-        box[0] = box[1] = UINT32_MAX;
-        box[2] = box[3] = 0;
-        for (const auto &r : rects_)
-            for (int k = 0; k < 4; k++)
-                box[k] = k < 2 ? std::min(box[k], r[k]) : std::max(box[k], r[k]);
-    }
-    for (uint32_t j = 0; j < pass_.count && j < 8; j++) {
-        const Texture *t = shadowOf_[j] ? shadowOf_[j] : pass_.color[j].texture;
-        if (!t || memoryless_[j] || !pass_.color[j].store)
-            continue;
-        GlassMemReach reach{"dlc"[pass_.color[j].load], box[0], box[1], box[2], box[3], areaW_, areaH_, 0, 0};
-        for (const Clear &c : cl)
-            if (c.target == j && !c.x0 && !c.y0) {
-                reach.clearW = std::max(reach.clearW, c.x1);
-                reach.clearH = std::max(reach.clearH, c.y1);
-            }
-        dev_->glassMem->reached(t->va, reach, dev_->commitCount_);
-    }
-}
-#endif
-
 // The clear registers' words: an extended-range target's codes (raw_xr.h; `straight`: Metal's straight route), else m2v's
 // value for the format (raw_clear.h)
 static void clearWords(uint32_t format, const float in[4], uint32_t out[4], bool straight)
@@ -77,58 +55,6 @@ static void clearWords(uint32_t format, const float in[4], uint32_t out[4], bool
         return;
     }
     clearValue(format, in, out);
-}
-
-// The separate depth and stencil textures' aspects into the pass's Depth32Float_Stencil8 backing, or out of it, by
-// raw_shader_tests.h's copies (as a shader test's stand-ins are filled and drained): after the work before is done with them,
-// and done before the work after reads them
-void RenderEncoder::copySeparateZeta(Push &p, uint8_t aspects, bool toAttachment)
-{
-    const Texture &zeta = *pass_.depthStencil.texture;
-    ShaderTestShape shape;
-    if (!aspects || !shaderTestShape(zeta.format, samples_, planeArea().x1, planeArea().y1, aspects, shape))
-        return;
-    // a layered pass's every layer, each through the temporary's one
-    uint32_t layer = 0;
-    auto side = [&](const Texture &texture) {
-        auto result = sideOf(texture, 0, 0, &texture == separateTemp_ ? 0 : layer);
-        result.height = sampleRows(texture);
-        return result;
-    };
-    const auto image = [&](ShaderTestImage which) {
-        switch (which) {
-        case ShaderTestImage::depth:
-            return side(*separate_.depth);
-        case ShaderTestImage::stencil:
-            return side(*separate_.stencil);
-        case ShaderTestImage::temporary:
-            return side(*separateTemp_);
-        case ShaderTestImage::attachment:
-            break;
-        }
-        return side(zeta);
-    };
-    if (aspects & kShaderTestDepth)
-        cb_->use(*separate_.depth, !toAttachment);
-    if (aspects & kShaderTestStencil)
-        cb_->use(*separate_.stencil, !toAttachment);
-    cb_->use(zeta, toAttachment);
-    tiledCacheDrain(p, dev_->k_.info());
-    p.m(WAIT_FOR_IDLE, 0);
-    if (toAttachment)
-        p.m(INVALIDATE_SHADER_CACHES, kFlushData | kInvalidateData);
-    const auto copies = shaderTestTransfers(aspects, shape.packedStencil, toAttachment);
-    for (layer = 0; layer < std::max(pass_.layers, 1u); layer++)
-        for (uint8_t at = 0; at < copies.count; ++at) {
-            const auto &copy = copies.transfers[at];
-            copyRemapped(p, image(copy.source), image(copy.destination), shape.width, shape.height, copy.remap,
-                         copy.bytes, dev_->stats, copy.ordered || (layer && !at));
-        }
-    RAW_DIAGNOSTIC(dev_->stats.compZetaCopies += zeta.comptags);
-    p.inc(CE_LINE_LENGTH_IN, {0, 0}, SUBC_COPY);
-    p.m(CE_LAUNCH_DMA, (kLaunchPitch & ~3u) | 2u | (1u << 10), SUBC_COPY);
-    p.m(INVALIDATE_SHADER_CACHES, kInvalidateData);
-    p.m(INVALIDATE_TEXTURE_DATA_CACHE_NO_WFI, 0);
 }
 
 // Clear [x0, x1) x [y0, y1) of target `target` to `v` (its format's clear words), with depth (bit 0) and stencil (bit 1)
@@ -151,16 +77,18 @@ static void clearRect(Push &p, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y
     kit(p, switch_gm20b_clear, &s);
 }
 
-void RenderEncoder::clearRegion(uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1, const float rgba[4])
+// The depth and stencil of `layers` layers from `first` of [a.x0, a.x1) x [a.y0, a.y1), whatever the render enable says
+static void clearZeta(Push &p, const Rect &a, uint32_t zsBits, uint32_t first, uint32_t layers)
 {
-    const Texture &t = *pass_.color[0].texture;
-    uint32_t v[4] = {};
-    clearWords(t.format, rgba, v, t.compressed);
-    dev_->clearZbc(t, !x0 && !y0 && x1 >= t.width && y1 >= t.height, v);
-    if (p_.room() < 64)
-        reserve();
-    clearRect(p_, x0, y0, x1, y1, v, 0, 0, std::max(pass_.layers, 1u));
-    called_ = true;
+    const uint32_t payload = zsBits | first << 10;  // CLEAR_SURFACE RT_ARRAY_INDEX
+    p.inc(CLEAR_RECT_H, {a.x1 << 16 | a.x0, a.y1 << 16 | a.y0});
+    p.m(CLEAR_SURFACE_CONTROL, 0x10);
+    p.m(RENDER_ENABLE_OVERRIDE, 1);
+    if (layers > 1)
+        mme::clearLayers(p, payload, layers);
+    else
+        p.m(CLEAR_SURFACE, payload);
+    p.m(RENDER_ENABLE_OVERRIDE, 0);
 }
 
 // A pass of `layers` layers binds that many from the target's own (pitch memory: one)
@@ -201,101 +129,12 @@ void RenderEncoder::timestampAtStart(uint64_t va, counters::Point point)
     cb_->useAddress(va, counters::kRecordBytes, true);
 }
 
-void RenderEncoder::continuePass(uint8_t stores)
-{
-    // Clear reach is a Metal encoder property, including its empty-draw behavior.
-    // Later encoders must not enlarge or elide the first encoder's clear.
-    if (!clearsSealed_) {
-        clears(initialClears_, true);
-        clearsSealed_ = true;
-    }
-    for (uint32_t i = 0; i < 8; ++i)
-        pass_.color[i].store = stores & (1u << i);
-    pipeline_ = nullptr;
-    selectorId_ = 0;
-    for (auto &stage : bufs_)
-        for (auto &binding : stage)
-            binding = {};
-    for (auto &stage : textures_)
-        std::fill(std::begin(stage), std::end(stage), nullptr);
-    for (auto &stage : samplers_)
-        std::fill(std::begin(stage), std::end(stage), nullptr);
-    invalidateDescriptors();
-    setDepthStencil(nullptr);
-    setStencilReference(0, 0);
-    setViewport(0, 0, areaW_, areaH_, 0, 1);
-    setScissor(0, 0, areaW_, areaH_);
-    raster_ = {};
-    depthClamp_ = false;
-    setDepthBias(0, 0, 0);
-    const float blend[4] = {};
-    setBlendColor(blend);
-    RAW_DIAGNOSTIC(dev_->stats.fusedPasses++);
-}
-
-#if SWITCH_RAW_DIAGNOSTICS
-// The pass's stored colours that it leaves a row or two of (logEdgeMiss): outside its render area, or outside every one of its
-// draws' scissors within their viewports; a Clear load reaches past both
-void RenderEncoder::probeEdges() const
-{
-    PixelBox drawn{areaW_, areaH_, 0, 0};
-    for (const auto &r : rects_)
-        drawn = {std::min(drawn.x0, r[0]), std::min(drawn.y0, r[1]), std::max(drawn.x1, r[2]),
-                 std::max(drawn.y1, r[3])};
-    const bool drawnKnown = drew_ && !whole_ && !rects_.empty();
-    for (uint32_t j = 0; j < pass_.count && j < 8; j++) {
-        const ColorAttachment &a = pass_.color[j];
-        if (!a.texture || !a.store || memoryless_[j] || a.load == ColorAttachment::Clear)
-            continue;
-        char detail[96];
-        snprintf(detail, sizeof detail, " c%u of %u load %c area %ux%u drew %d", j, pass_.count, "dlc"[a.load], areaW_,
-                 areaH_, int(drew_));
-        logEdgeMiss("pass.area", *a.texture, {0, 0, areaW_, areaH_}, detail);
-        if (drawnKnown)
-            logEdgeMiss("pass.draws", *a.texture, drawn, detail);
-    }
-    noteLargePass(drawn, drawnKnown);
-}
-
-// A pass over a colour target of more pixels than the panel's (boot 21: Core Animation's 1792x1472 on every app open):
-// its render area and the box its draws reached, so a boot names what was drawn there; 20 lines a second a thread at most
-void RenderEncoder::noteLargePass(const PixelBox &drawn, bool drawnKnown) const
-{
-    constexpr uint64_t kPanelPixels = 1280 * 720;
-    const Texture *t = shadowOf_[0] ? shadowOf_[0] : pass_.color[0].texture;
-    if (!t || uint64_t(t->width) * t->height <= kPanelPixels)
-        return;
-    thread_local int64_t second = -1;
-    thread_local uint32_t inSecond = 0;
-    const int64_t now =
-        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-    if (now != second) {
-        second = now;
-        inSecond = 0;
-    }
-    if (inSecond++ >= 20)
-        return;
-    const Texture *c1 = pass_.count > 1 ? pass_.color[1].texture : nullptr;
-    uint64_t cleared[2] = {};
-    for (const Clear &c : initialClears_)
-        if (c.target < 2)
-            cleared[c.target] += uint64_t(c.x1 - c.x0) * (c.y1 - c.y0);
-    os_log(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
-           "raw: large target pass %ux%u f%u%{public}s area %ux%u box %{public}s%u,%u-%u,%u rects %zu load %c c1 "
-           "%u%{public}s%{public}s cleared c0 %llu c1 %llu px",
-           t->width, t->height, t->format, t->comptags ? " comp" : "", areaW_, areaH_, drawnKnown ? "" : "unknown ",
-           drawn.x0, drawn.y0, drawn.x1, drawn.y1, rects_.size(), "dlc"[pass_.color[0].load], c1 ? c1->format : 0u,
-           c1 && memoryless_[1] ? "+ml" : "", c1 && c1->comptags ? " comp" : "", (unsigned long long)cleared[0],
-           (unsigned long long)cleared[1]);
-}
-#endif
-
 void RenderEncoder::end()
 {
     RAW_ENCODE_SPAN(PassEnd);
     Device &d = *dev_;
     endShaderTests();
-    if (p_.room() < 64 + kSampleWords + 2 * kMaxViewports + kDrawStampWords)
+    if (p_.room() < 64 + kSampleWords + kTirWords + 2 * kMaxViewports + kDrawStampWords)
         reserve();
     if (zcull_.store && !zcull_.invalidated) {
         p_.m(kStoreZcull, 0);
@@ -321,7 +160,9 @@ void RenderEncoder::end()
         p_.m(GLOBAL_BASE_VERTEX_INDEX, 0);
         p_.m(VERTEX_ID_BASE, 0);
     }
-    if (samples_ > 1)
+    if (rasterSamples_ > samples_)
+        tirOff(p_);
+    if (std::max(samples_, rasterSamples_) > 1)
         sampleWords(p_, 1, d.root_.va);
     // the 3D engine's work outside the pass (the blit encoder's draws) meets no iterated blend and the pass's
     // targets, and the pixel stage and rasteriser on; the state's segment, run again at its next bind, turns them off
@@ -365,10 +206,11 @@ void RenderEncoder::end()
     probeEdges();
 #endif
     const std::vector<uint32_t> &restore = extrasAtBegin_ ? extrasAtBegin_->restore : std::vector<uint32_t>();
-    const uint32_t room = 160 + 8 * 32 + uint32_t(cl.size()) * 48 + kZetaTargetWords + kZcullRegionWords +
+    const uint32_t room = 160 + 8 * 32 * layers + uint32_t(cl.size()) * 48 + kZetaTargetWords + kZcullRegionWords +
                           kZetaClearWords + 16 + kSampleWords + kTurnWordsMethods + uint32_t(restore.size()) +
                           kSpanMarkWords + startStampCount_ * counters::kTimestampWords + kDrawStampWords +
-                          (separate_.stencil ? 64 + 128 * layers : 0);
+                          (separate_.stencil ? 64 + 128 * layers : 0) + (zetaShadowOf_ ? zetaShadowWords(layers) : 0) +
+                          (rasterSamples_ > samples_ ? kSampleWords + kTirWords + 16 : 0);
     uint64_t va;
     uint32_t *start = reinterpret_cast<uint32_t *>(d.alloc(d.push_, room * 4, 256, va));
     Push p{start, start + room};
@@ -393,6 +235,7 @@ void RenderEncoder::end()
         sampleWords(p, samples_, d.root_.va, pass_.positions, rot_);
     // shadow targets' pool images: their texels over the render area first, as NVK's tiled shadow loads them (a load that
     // keeps them: Load, and a DontCare the clears leave; a Clear clears it all), then the barrier to the pass
+    // (a target of fewer layers than the pass: its own layers alone)
     bool copied = false;
     for (uint32_t j = 0; j < pass_.count && j < 8; j++)
         if (const Texture *o = shadowOf_[j]) {
@@ -401,11 +244,16 @@ void RenderEncoder::end()
             cb_->use(*o, false);
             cb_->use(*pass_.color[j].texture, true);
             const Rect a = planeArea();
-            copySides(p, sideOf(*o, a.x0, a.y0, 0), sideOf(*pass_.color[j].texture, a.x0, a.y0, 0), a.x1 - a.x0,
-                      a.y1 - a.y0, o->bpp, d.stats);
+            for (uint32_t l = 0; l < std::min(std::max(o->layers, 1u), layers); l++)
+                copySides(p, sideOf(*o, a.x0, a.y0, l), sideOf(*pass_.color[j].texture, a.x0, a.y0, l), a.x1 - a.x0,
+                          a.y1 - a.y0, o->bpp, d.stats);
             RAW_DIAGNOSTIC(d.stats.compCopies += pass_.color[j].texture->comptags);
             copied = true;
         }
+    if (zetaShadowOf_ && (pass_.depthStencil.loaded || pass_.depthStencil.stored)) {
+        copyZetaShadow(p, true);
+        copied = true;
+    }
     if (copied) {
         p.m(WAIT_FOR_IDLE, 0);
         p.m(INVALIDATE_TEXTURE_DATA_CACHE_NO_WFI, 0);
@@ -459,6 +307,19 @@ void RenderEncoder::end()
     } else if (d.zcullOn_) {
         zcullOffWords(p);
     }
+    // the backing's layers past a shorter zeta's own, which no copy fills, hold what an M4 Max tests there
+    // (m2v-pass-forms/probe/layerprobe.mm): a loaded depth above 1.0 (a float zeta's 2.0) or Depth16Unorm's 1.0, a loaded
+    // stencil 0xff; a DontCare aspect its clear value, as Apple's DontCare depth and stencil test against
+    if (const uint32_t own = zetaShadowOf_ ? std::min(std::max(zetaShadowOf_->layers, 1u), layers) : layers;
+        own < layers) {
+        const bool depth = zetaHasDepth(zs.texture->format) && !zs.clearDepth,
+                   stencil = zetaHasStencil(zs.texture->format) && !zs.clearStencil;
+        constexpr uint32_t kDepth16Unorm = 250;
+        zetaClearValues(p, depth, !zs.loaded ? zs.depth : zs.texture->format == kDepth16Unorm ? 1.0f : 2.0f, stencil,
+                        zs.loaded ? 0xffu : zs.stencil);
+        if (depth || stencil)
+            clearZeta(p, planeArea(), zetaClearBits(depth, stencil), own, layers - own);
+    }
     // NVK clears depth and stencil with the first color the pass clears over its render area, else on their own
     uint32_t zsBits = zs.texture ? zetaClearBits(zs.clearDepth && zetaHasDepth(zs.texture->format),
                                                  zs.clearStencil && zetaHasStencil(zs.texture->format))
@@ -466,6 +327,14 @@ void RenderEncoder::end()
     zetaClearValues(p, zsBits & 1, zs.depth, zsBits & 2, zs.stencil);
     if (zsBits & 1)
         d.clearZbcDepth(*zs.texture, areaW_ >= zs.texture->width && areaH_ >= zs.texture->height, zs.depth);
+    // a mixed pass's zeta cleared in its own sample layout, then the colour's under target-independent rasterisation
+    if (rasterSamples_ > samples_) {
+        sampleWords(p, rasterSamples_, d.root_.va, pass_.positions, rot_);
+        if (zsBits)
+            clearZeta(p, planeArea(), zsBits, 0, layers);
+        zsBits = 0;
+        tirOn(p, rasterSamples_);
+    }
     for (const Clear &c : cl) {
         if (c.own)
             continue;
@@ -478,17 +347,8 @@ void RenderEncoder::end()
         clearRect(p, r.x0, r.y0, r.x1, r.y1, v, c.target, area ? zsBits : 0, layers);
         zsBits = area ? 0 : zsBits;
     }
-    if (zsBits) {
-        const Rect a = planeArea();
-        p.inc(CLEAR_RECT_H, {a.x1 << 16 | a.x0, a.y1 << 16 | a.y0});
-        p.m(CLEAR_SURFACE_CONTROL, 0x10);
-        p.m(RENDER_ENABLE_OVERRIDE, 1);
-        if (layers > 1)
-            mme::clearLayers(p, zsBits, layers);
-        else
-            p.m(CLEAR_SURFACE, zsBits);
-        p.m(RENDER_ENABLE_OVERRIDE, 0);
-    }
+    if (zsBits)
+        clearZeta(p, planeArea(), zsBits, 0, layers);
     if (measured)
         emitDrawStamp(p, d.stamps_.va, candidate_.slot, false, candidate_.payload);
     RAW_DIAGNOSTIC(markSpan(p, prologueMark_, SpanKind::Prologue));
@@ -501,11 +361,11 @@ void RenderEncoder::end()
     bodies_.clear();
     // shadow targets the pass stores: their pool images back over what it rendered (the render area; a Clear's reach past it),
     // after the 3D engine is done with them
-    bool stores = false;
+    bool stores = zetaShadowOf_ && pass_.depthStencil.stored;
     for (uint32_t j = 0; j < pass_.count && j < 8; j++)
         stores |= shadowOf_[j] && pass_.color[j].store;
     if (stores) {
-        const uint32_t room2 = 8 + 8 * 32;
+        const uint32_t room2 = 8 + 8 * 32 * layers + (zetaShadowOf_ ? zetaShadowWords(layers) : 0);
         uint32_t *at = reinterpret_cast<uint32_t *>(d.alloc(d.push_, room2 * 4, 256, va));
         Push q{at, at + room2};
         q.m(WAIT_FOR_IDLE, 0);
@@ -522,10 +382,13 @@ void RenderEncoder::end()
             cb_->use(*pass_.color[j].texture, false);
             cb_->use(*o, true);
             const Rect r = planeRect(0, 0, w, h);
-            copySides(q, sideOf(*pass_.color[j].texture, r.x0, r.y0, 0), sideOf(*o, r.x0, r.y0, 0), r.x1 - r.x0,
-                      r.y1 - r.y0, o->bpp, d.stats);
+            for (uint32_t l = 0; l < std::min(std::max(o->layers, 1u), layers); l++)
+                copySides(q, sideOf(*pass_.color[j].texture, r.x0, r.y0, l), sideOf(*o, r.x0, r.y0, l), r.x1 - r.x0,
+                          r.y1 - r.y0, o->bpp, d.stats);
             RAW_DIAGNOSTIC(d.stats.compCopies += pass_.color[j].texture->comptags);
         }
+        if (zetaShadowOf_ && pass_.depthStencil.stored)
+            copyZetaShadow(q, false);
         checkRoom(q, "a pass's shadow stores");
         cb_->segment(at, q.at);
         cb_->lastEngine_ = BarrierEngine::Copy;
@@ -544,129 +407,6 @@ void RenderEncoder::end()
         d.push_.head = uint64_t(reinterpret_cast<uint8_t *>(q.at) - d.push_.bo.cpu);
         RAW_DIAGNOSTIC(d.stats.pushBytes += uint64_t(q.at - at) * 4);
     }
-}
-
-// The pass's clears, before its draws: each Clear load, and each DontCare load m2v answers with a clear (metal2vulkan
-// clear_reach.rs, from Metal's measured behaviour). The pass reaches no tile without a draw call, every tile with one and a
-// stored Clear-loaded attachment, else the tiles (32 x 32 pixels) its drawing draws' scissors within their viewports touch. A
-// DontCare-loaded memoryless color some draw reads (or that is stored) clears to zero where the pass reaches anything; a stored
-// DontCare-loaded color some draw reads (blended into, written through a partial mask, fetched) clears to zero over what the
-// pass reaches: the whole render area, or the reached tiles' runs along each row of tiles. Any other DontCare load loads.
-void RenderEncoder::clears(std::vector<Clear> &out, bool fused)
-{
-    out.clear();
-
-    enum {
-        Nothing,
-        Every,
-        Draws
-    } reach = Nothing;
-
-    bool clearStored = false;
-    for (uint32_t j = 0; j < pass_.count && j < 8; j++) {
-        const ColorAttachment &a = pass_.color[j];
-        clearStored |= a.texture && a.load == ColorAttachment::Clear && a.store && !memoryless_[j];
-    }
-    if (called_)
-        reach = clearStored ? Every : drew_ ? Draws : Nothing;
-    // the reached tiles where that is not every tile (none: every tile)
-    constexpr uint32_t kTile = 32;
-    const uint32_t perRow = (areaW_ + kTile - 1) / kTile, rows = (areaH_ + kTile - 1) / kTile;
-    std::vector<bool> &tiles = tiles_;
-    tiles.clear();
-    if (reach == Draws && !whole_ && perRow && rows) {
-        bool every = false;
-        for (const auto &r : rects_)
-            every |= r[0] < kTile && r[1] < kTile && (r[2] + kTile - 1) / kTile >= perRow &&
-                     (r[3] + kTile - 1) / kTile >= rows;
-        if (!every) {
-            tiles.assign(size_t(perRow) * rows, false);
-            for (const auto &r : rects_)
-                for (uint32_t ty = r[1] / kTile; ty < std::min(rows, (r[3] + kTile - 1) / kTile); ty++)
-                    for (uint32_t tx = r[0] / kTile; tx < std::min(perRow, (r[2] + kTile - 1) / kTile); tx++)
-                        tiles[size_t(ty) * perRow + tx] = true;
-            if (std::find(tiles.begin(), tiles.end(), false) == tiles.end())
-                tiles.clear();  // every tile after all
-            else if (std::find(tiles.begin(), tiles.end(), true) == tiles.end())
-                reach = Nothing;
-        }
-    }
-    static const float zero[4] = {};
-    for (uint32_t j = 0; j < pass_.count && j < 8; j++) {
-        const ColorAttachment &a = pass_.color[j];
-        if (!a.texture)
-            continue;
-        const uint32_t w = areaW_, h = areaH_;  // NVK's clears cover the render area (nvk_CmdBeginRendering)
-        if (a.load == ColorAttachment::Clear) {
-            // Metal's Clear load of a stored attachment reaches past the render area: over it rounded up to whole 32-pixel
-            // tiles, clipped to the attachment, in a pass with a draw call; the whole attachment in one without (m2v
-            // clear_reach.rs `cleared`). Past the render area, m2v clears it by a pass of its own before this one
-            // (ReachClears), which the pass then loads.
-            uint32_t rw = w, rh = h;
-            if (a.store && !memoryless_[j]) {
-                const Rotation frame = rot_.turned() ? rot_ : frameOf(*a.texture);
-                const bool called = called_ || pass_.drawn;
-                rw = called ? std::min((w + kTile - 1) / kTile * kTile, frame.width) : frame.width;
-                rh = called ? std::min((h + kTile - 1) / kTile * kTile, frame.height) : frame.height;
-            }
-            Clear c{j, 0, 0, rw, rh, a.clear};
-            c.own = rw != w || rh != h;
-            RAW_DIAGNOSTIC(dev_->stats.clears++);
-            if (!c.own && (covered_ >> j & 1)) {
-                RAW_DIAGNOSTIC(dev_->stats.clearsElided++);
-                continue;
-            }
-            if (clearSeenOnlyByDraws(a.store, samples_, fused, pass_.drawn) && drawnClear(j, a.clear, out))
-                continue;
-            out.push_back(c);
-            continue;
-        }
-        if (a.load != ColorAttachment::DontCare || reach == Nothing || (covered_ >> j & 1))
-            continue;
-        const bool read = readBits_ >> j & 1;
-        if (memoryless_[j]) {
-            const bool narrowed =
-                clearSeenOnlyByDraws(a.store, samples_, fused, pass_.drawn) && drawnClear(j, zero, out);
-            if (!narrowed && (read || a.store))
-                out.push_back({j, 0, 0, w, h, zero});
-            continue;
-        }
-        if (!a.store || !read)
-            continue;
-        if (tiles.empty()) {
-            out.push_back({j, 0, 0, w, h, zero});
-            continue;
-        }
-        for (uint32_t ty = 0; ty < rows; ty++)
-            for (uint32_t tx = 0; tx < perRow;) {
-                if (!tiles[size_t(ty) * perRow + tx]) {
-                    tx++;
-                    continue;
-                }
-                const uint32_t first = tx;
-                while (tx < perRow && tiles[size_t(ty) * perRow + tx])
-                    tx++;
-                const uint32_t x0 = first * kTile, y0 = ty * kTile, x1 = std::min(tx * kTile, w),
-                               y1 = std::min((ty + 1) * kTile, h);
-                if (x0 < x1 && y0 < y1)
-                    out.push_back({j, x0, y0, x1, y1, zero});
-            }
-    }
-}
-
-// A clear of colour `j` that only the pass's draws see (raw_clear_box.h) into `out`, over their tiles' box: false where
-// that is the whole render area, which the caller clears as before
-bool RenderEncoder::drawnClear(uint32_t j, const float *value, std::vector<Clear> &out) const
-{
-    const PixelBox b = drawnClearBox(reached_, drew_, whole_, readBits_ >> j & 1, areaW_, areaH_);
-    if (!b.x0 && !b.y0 && b.x1 == areaW_ && b.y1 == areaH_)
-        return false;
-    if (!b.empty())
-        out.push_back({j, b.x0, b.y0, b.x1, b.y1, value});
-    RAW_DIAGNOSTIC(dev_->stats.clearsNarrowed++);
-    RAW_DIAGNOSTIC(dev_->stats.clearPixelsLeft +=
-                   uint64_t(areaW_) * areaH_ - (b.empty() ? 0 : uint64_t(b.x1 - b.x0) * (b.y1 - b.y0)));
-    return true;
 }
 
 }  // namespace raw

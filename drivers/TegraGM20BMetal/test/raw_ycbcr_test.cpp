@@ -150,9 +150,63 @@ TEST(RawYcbcr, RowsPastAPlaneAreReadWithinTheAllocationsPages)
     f.height = 12;
     f.mappedBytes = 16384;
     f.target = true;
-    EXPECT_NE(raw::planYcbcr(f, p), nullptr);
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "stored as read: rows on past each plane (m2v-textures5 probes/targets.mm)";
+    EXPECT_TRUE(p.target);
+    EXPECT_EQ(p.chromaHeight, 6u);
     f.target = false;
     EXPECT_EQ(raw::planYcbcr(f, p), nullptr);
+}
+
+// An M4 Max renders into each of these as it reads it (m2v-textures5 probes/targets.mm, Clear+Store over 420v and 422v): over
+// plane 1 its luma codes alone into that plane at its pitch; taller than its surface, or of chroma finer or coarser than the
+// surface's, each plane's rows at its pitch on past the plane's end, chroma over luma where they meet
+TEST(RawYcbcr, TargetsStoreAsTheyRead)
+{
+    raw::YcbcrPlan p;
+    raw::YcbcrFacts f = surface(540, "420v", 64, 64, 64, 32);
+    f.plane = 1;
+    f.width = f.height = 32;
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "over plane 1";
+    EXPECT_TRUE(p.target);
+    EXPECT_EQ(p.luma, f.offset[1]);
+    EXPECT_EQ(p.lumaPitch, 64u);
+    EXPECT_EQ(p.chromaWidth, 0u) << "no chroma stored";
+
+    f = surface(500, "420v", 64, 64, 64, 32);
+    f.height = 128;
+    f.mappedBytes = 16384;
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "taller";
+    EXPECT_EQ(p.chroma, f.offset[1]);
+    EXPECT_EQ(p.chromaHeight, 64u);
+
+    f = surface(502, "420v", 64, 64, 64, 32);
+    f.mappedBytes = 16384;
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "4:2:2 over 4:2:0";
+    EXPECT_EQ(p.chromaHeight, 64u);
+    EXPECT_EQ(p.store.down, 0u);
+
+    f = surface(500, "422v", 64, 64, 64, 64);
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "4:2:0 over 4:2:2";
+    EXPECT_EQ(p.chromaHeight, 32u);
+    EXPECT_EQ(p.store.down, 1u);
+
+    f = surface(540, "420v", 64, 64, 64, 32);
+    f.width = 33;
+    f.height = 17;
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "of an odd size, made to be read alone: its edge blocks partial";
+    EXPECT_EQ(p.chromaWidth, 17u);
+    EXPECT_EQ(p.chromaHeight, 9u);
+
+    f = surface(503, "420v", 64, 64, 64, 32);
+    f.mappedBytes = 16384;
+    f.target = true;
+    EXPECT_STREQ(raw::planYcbcr(f, p), "a render target of more codes a row than its plane's pitch holds")
+        << "4:4:4 chroma rows of 128 bytes at a 64-byte pitch";
 }
 
 TEST(RawYcbcr, PackedPlanesAreWordsOfThreeCodes)
@@ -199,7 +253,7 @@ TEST(RawYcbcr, ATextureSmallerThanItsSurfaceIsItsTopLeftCorner)
     for (const uint32_t format : {500u, 540u}) {
         raw::YcbcrFacts f = surface(format, "420f", 8, 8, 64, 4);
         f.width = f.height = 2;
-        f.target = raw::ycbcrUsageRenders(7);
+        f.target = true;
         raw::YcbcrPlan p;
         ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << format;
         EXPECT_TRUE(p.target);
@@ -262,33 +316,31 @@ TEST(RawYcbcr, MetalMakesNoWritableSubsampledTextureOfAnOddSize)
     EXPECT_FALSE(raw::ycbcrMetalRefuses(80, 3, 3, 5));
 }
 
-TEST(RawYcbcr, AnyUsageIsTakenAndUnknownRenders)
-{
-    EXPECT_TRUE(raw::ycbcrUsageRenders(0));
-    EXPECT_TRUE(raw::ycbcrUsageRenders(4));
-    EXPECT_TRUE(raw::ycbcrUsageRenders(7));
-    EXPECT_FALSE(raw::ycbcrUsageRenders(1));
-    EXPECT_FALSE(raw::ycbcrUsageRenders(3));
-}
-
 // Under the P3 matrices an M4 Max converts nothing (raw/test/ycbcroracle.mm): a converted or sRGB format reads its codes as
-// red Y, green Cb, blue Cr and samples as its surface's codes format, whose image it draws; an unpacked 4:2:0 or 4:2:2
-// converted target stores as that codes format (raw/test/ycbcrstoreoracle.mm), any other target is refused
+// red Y, green Cb, blue Cr and samples as its surface's codes format, whose image it draws. A 4:2:0 or 4:2:2 target stores
+// as that codes format (raw/test/ycbcrstoreoracle.mm), an sRGB one each code through the sRGB encode (raw/test/
+// p3storeoracle.mm), a packed one as its twin; a 4:4:4 one's stores are raw_ycbcr_load_test's
 TEST(RawYcbcr, AP3MatrixReadsTheCodesLumaFirst)
 {
+    enum Stores {
+        AsCodes,
+        AsCodesEncoded,
+        Own
+    };
+
     struct Case {
         uint32_t format, codes;
         char code[5];
         raw::YcbcrOutput output;
-        bool stored;
+        Stores stores;
     };
 
     const Case cases[] = {
-        {500, 540, "420v", raw::YcbcrLumaFirst8, true},        {502, 541, "422f", raw::YcbcrLumaFirst8, true},
-        {505, 543, "x420", raw::YcbcrLumaFirst10, true},       {506, 544, "x422", raw::YcbcrLumaFirst10, true},
-        {520, 540, "420f", raw::YcbcrLumaFirst8, false},       {503, 542, "444v", raw::YcbcrLumaFirst8, false},
-        {527, 545, "x444", raw::YcbcrLumaFirst10, false},      {508, 546, "p420", raw::YcbcrLumaFirst10Packed, false},
-        {529, 547, "p422", raw::YcbcrLumaFirst10Packed, false}};
+        {500, 540, "420v", raw::YcbcrLumaFirst8, AsCodes},     {502, 541, "422f", raw::YcbcrLumaFirst8, AsCodes},
+        {505, 543, "x420", raw::YcbcrLumaFirst10, AsCodes},    {506, 544, "x422", raw::YcbcrLumaFirst10, AsCodes},
+        {520, 540, "420f", raw::YcbcrLumaFirst8, AsCodesEncoded}, {503, 542, "444v", raw::YcbcrLumaFirst8, Own},
+        {527, 545, "x444", raw::YcbcrLumaFirst10, Own},        {508, 546, "p420", raw::YcbcrLumaFirst10Packed, AsCodes},
+        {529, 547, "p422", raw::YcbcrLumaFirst10Packed, AsCodesEncoded}};
     for (const char *matrix : {"P3_D65", "DCI_P3"})
         for (const Case &c : cases)
             for (const bool target : {false, true}) {
@@ -297,14 +349,9 @@ TEST(RawYcbcr, AP3MatrixReadsTheCodesLumaFirst)
                 f.matrix = matrix;
                 f.target = target;
                 raw::YcbcrPlan p, codes;
-                if (target && !c.stored) {
-                    EXPECT_STREQ(raw::planYcbcr(f, p), "a render target under a P3 matrix of an sRGB, packed or "
-                                                       "4:4:4 format, whose stores no rule gives")
-                        << c.format;
-                    continue;
-                }
                 ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << c.format << " " << matrix;
                 f.pixelFormat = c.codes;
+                f.target = target && c.stores != Own;  // RGB8_444_2P renders through the frontend's stand-in
                 ASSERT_EQ(raw::planYcbcr(f, codes), nullptr) << c.codes;
                 EXPECT_EQ(p.output, c.output) << c.format;
                 EXPECT_TRUE(raw::ycbcrLumaFirst(p.output));
@@ -312,7 +359,11 @@ TEST(RawYcbcr, AP3MatrixReadsTheCodesLumaFirst)
                 EXPECT_EQ(p.image, codes.image) << c.format;
                 EXPECT_EQ(p.addressMap, codes.addressMap) << c.format;
                 EXPECT_EQ(memcmp(p.shape, codes.shape, sizeof p.shape), 0) << c.format;
-                EXPECT_EQ(memcmp(&p.store, &codes.store, sizeof p.store), 0) << c.format;
+                if (c.stores == Own)
+                    continue;
+                raw::YcbcrStoreShape stored = codes.store;
+                stored.srgb = target && c.stores == AsCodesEncoded;
+                EXPECT_EQ(memcmp(&p.store, &stored, sizeof stored), 0) << c.format;
             }
 }
 
@@ -358,14 +409,24 @@ TEST(RawYcbcr, AOnePlaneFormatIsSplitIntoTwoPlanesOfFourTwoTwo)
             EXPECT_STREQ(raw::planYcbcr(f, p), "a one-plane YCbCr render target, whose stores no rule gives");
             f.target = false;
             f.planes = 2;
-            EXPECT_STREQ(raw::planYcbcr(f, p), "a one-plane format over a plane of a planar surface");
+            ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "over a plane of a planar surface: that plane's pairs";
+            EXPECT_EQ(p.luma, f.offset[0]);
+            EXPECT_EQ(p.lumaPitch, 80u);
         }
+    // any surface's plane, in video range where CoreVideo's format is not a full-range YCbCr one (m2v-textures3
+    // probes/onep.mm: video over '420v')
     raw::YcbcrFacts f;
     f.pixelFormat = 501;
     f.fourcc = fourcc("420v");
     f.planes = 0;
+    f.width = f.surfaceWidth = 32;
+    f.height = f.surfaceHeight = 8;
+    f.pitch[0] = 64;
+    f.allocBytes = 64 * 8;
+    f.simple = true;
     raw::YcbcrPlan p;
-    EXPECT_STREQ(raw::planYcbcr(f, p), "pixel format");
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
+    EXPECT_EQ(p.shape[2], 0u) << "video range";
 }
 
 TEST(RawYcbcr, RefusesWhatM2vRefuses)
@@ -384,7 +445,8 @@ TEST(RawYcbcr, RefusesWhatM2vRefuses)
     EXPECT_EQ(raw::planYcbcr(f, p), nullptr);
     EXPECT_EQ(p.shape[4], 14743u);
     f.matrix = "EBU_3213";
-    EXPECT_STREQ(raw::planYcbcr(f, p), "matrix");
+    EXPECT_EQ(raw::planYcbcr(f, p), nullptr) << "a matrix Metal names no coefficients for reads as none";
+    EXPECT_EQ(p.shape[4], 13123u) << "BT.601's";
 
     f = surface(505, "x420", 33, 17, 120, 9);
     EXPECT_STREQ(raw::planYcbcr(f, p), "plane offset or row not 16-byte");

@@ -147,7 +147,7 @@ typedef struct NmbDirectDraw {
     uint32_t vertexStride;
     uint32_t vertexStrideDynamic;  // that buffer's stride is its bind's (MTLBufferLayoutStrideDynamic)
     // a pulled vertex buffer layout of a dynamic stride: its Metal buffer index and m2v's VertexBufferStride push word + 1
-    uint32_t pulledStrides[4][2];
+    uint32_t pulledStrides[8][2];  // raw_pack.h kPulledStrides
     // vertex amplification: the count the draw was planned at (the descriptor's maxVertexAmplificationCount, one draw per
     // amplification), the push words + 1 of m2v's AmplificationId and AmplificationCount (0: none)
     uint32_t amplificationMax, amplificationIdWord, amplificationCountWord;
@@ -242,12 +242,19 @@ typedef struct NmbDirectBinds {
     uint32_t extendedShadows;
 } NmbDirectBinds;
 
-// A texture a kernel's dispatch binds at `slot`, as its MTLTextureDescriptor answers
+// A texture a kernel's dispatch binds at `slot`, as its MTLTextureDescriptor answers. `planes`: bit 0 an RGB10A8_2P_XR10
+// texture held in Metal's two planes (raw_xr_pass.h), bits 8-9 the address map the runtime samples it with
+// (Texture::addressMap) and bit 15 set where the compile states it from the kernel's key (RawDirect.mm stateKeyMaps,
+// translate/NativeMetalKernelTextures.rs)
 typedef struct NmbDirectBoundTexture {
     uint32_t slot;
-    uint32_t planes;  // 1: an RGB10A8_2P_XR10 texture held in Metal's two planes (raw_xr_pass.h), 0: one image
+    uint32_t planes;
     uint64_t pixelFormat, textureType, usage, levels, arrayLength, samples;
 } NmbDirectBoundTexture;
+
+#define NMB_DIRECT_BOUND_TWO_PLANES 1u
+#define NMB_DIRECT_BOUND_MAP_SHIFT 8u
+#define NMB_DIRECT_BOUND_MAP_STATED (1u << 15)
 
 typedef struct NmbDirectBoundSampler {
     uint32_t slot;
@@ -288,8 +295,9 @@ typedef struct NmbDirectKernel {
     uint32_t writeCount;
     // The push-constant words [0, 128) of the probe's three dispatches: inline bytes, buffers elsewhere, buffers off 16
     uint32_t pushMask, push[32], movedMask, moved[32], boundMask, bound[32];
-    // The buffers-elsewhere dispatch ran on the same variant, specialization and set-0 plan; the bind-offset one too
-    bool movedSame, boundSame;
+    // The buffers-elsewhere dispatch ran on the same variant, specialization and set-0 plan (a plan the bind offsets
+    // change is refused at its compile: NativeMetalDirectCompute.rs record_residuals)
+    bool movedSame;
     int32_t regionWord;  // the push word of m2v's DispatchRegion field, -1: none
     uint32_t regions;    // the plain dispatch's Vulkan dispatches
     uint32_t pushHoles;  // push words the consumer fills with addresses

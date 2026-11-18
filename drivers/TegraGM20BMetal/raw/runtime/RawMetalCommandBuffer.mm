@@ -368,8 +368,7 @@ void rmPoolCommandBuffers()
     if ([object isKindOfClass:[RMTexture class]]) {
         facts.kind = RMResourceKind::Texture;
         __unsafe_unretained RMTexture *texture = (RMTexture *)object;
-        facts.roles = uint8_t((texture->_raw.converted() ? RMResourceFacts::Converted : 0) |
-                              (texture->_raw.planarStandIn ? RMResourceFacts::PlanarTarget : 0));
+        facts.roles = uint8_t(texture->_raw.converted() ? RMResourceFacts::Converted : 0);
         __unsafe_unretained RMTexture *root = texture->_levelsOwner ?: texture;
         facts.surfaceWrites = root->_surfaceWrites;
         facts.cpuBuffer = (__bridge void *)root->_buffer;
@@ -381,6 +380,14 @@ void rmPoolCommandBuffers()
     else if ([object isKindOfClass:[RMHeap class]])
         facts.kind = RMResourceKind::Heap;
     _plan.registerResource((__bridge void *)object, facts);
+}
+
+// A binding's state variant still being made (OpPipeline's obj2): an encode ahead would draw its draws with no state, as
+// RenderEncoder::draw drops a draw without one; the commit's submission waits for it (RawMetalSchedule.mm variantReadiness)
+static bool bindsPendingVariant(const Cmd &binding)
+{
+    const auto *variant = static_cast<const raw::Variant<raw::Pipeline> *>(binding.obj2);
+    return variant && variant->state() == raw::Variant<raw::Pipeline>::State::Pending;
 }
 
 // The raw state a draw of this raster state runs
@@ -400,8 +407,8 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
             s.extra.assign(_extra.ownData() + cmd.x, _extra.ownData() + cmd.x + words);
         _commandLog->push_back(s);
     }
-    if (cmd.op == OpPipeline && _recordedPass < _passes.size() && _passes.own(_recordedPass).compressed)
-        rmNoteStorageTargets(self, _passes.own(_recordedPass), cmd);
+    if (cmd.op == OpPipeline && bindsPendingVariant(cmd))
+        rmPipelineVeto(self, VetoVariant);
     if (cmd.op == OpCompute)
         _predicates.computeEncoder(cmd.a);
     else if (cmd.op == OpRender || cmd.op == OpBlit || cmd.op == OpSignalEvent || cmd.op == OpWaitEvent)
@@ -465,10 +472,8 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
                 }
             }
         } else if (cmd.op == OpDispatch && cmd.obj2) {
-            const char *why = nullptr;
-            if (!admitComputeDispatch(self, _plan.size() - 1,
-                                      static_cast<const raw::ComputeKernelSet<raw::ComputeState> *>(cmd.obj2), &why))
-                [self takeReason:WhyCompute why:[NSString stringWithUTF8String:why]];
+            admitComputeDispatch(self, _plan.size() - 1,
+                                 static_cast<const raw::ComputeKernelSet<raw::ComputeState> *>(cmd.obj2), nullptr);
         } else if (cmd.op == OpRender) {
             _recordedPass = uint32_t(cmd.x);
             const RMPass &pass = _passes.own(cmd.x);

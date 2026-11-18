@@ -14,6 +14,7 @@ using raw::KernelTextureForm;
 
 struct Texture {
     unsigned tic = 7;
+    uint8_t type = 0;
     bool planar = false, ycbcr = false, surfaceView = false, memoryless = false, xrPlanes = false;
     const Texture *standIn = nullptr, *sampled = nullptr;
     const void *chain = nullptr;
@@ -33,13 +34,51 @@ TEST(KernelTexture, ATwoPlaneTextureIsCompiledForAsItsStandIn)
     Texture t;
     t.xrPlanes = true;
     t.standIn = &standIn;
-    EXPECT_EQ(raw::kernelTextureFormat(t, 550), raw::kXrStandInFormat);
+    EXPECT_EQ(raw::kernelTextureFormat(t, 550, true), raw::kXrStandInFormat);
     t.standIn = nullptr;
-    EXPECT_EQ(raw::kernelTextureFormat(t, 550), 550u) << "no stand-in: refused as it was";
+    EXPECT_EQ(raw::kernelTextureFormat(t, 550, false), 550u) << "no stand-in: refused as it was";
+    EXPECT_EQ(raw::kernelTextureFormat(Texture(), 80, false), 80u);
+}
+
+// A kernel sampling a BGR10_XR texture through a mip filter, anisotropy or mixed min and mag filters has no form over
+// the codes (the translator's NotImplemented(Format)): one no kernel can store is read through its RGBA16Float
+// stand-in, which the GM20B filters; one a kernel may store keeps its codes, which its stores write
+TEST(KernelTexture, AnExtendedRangeTextureNoKernelStoresIsCompiledForAsItsStandIn)
+{
+    const Texture standIn;
     Texture codes;
     codes.standIn = &standIn;
-    EXPECT_EQ(raw::kernelTextureFormat(codes, 554), 554u) << "BGR10_XR's codes are an image of their own";
-    EXPECT_EQ(raw::kernelTextureFormat(Texture(), 80), 80u);
+    for (const uint32_t format : {552u, 553u, 554u, 555u}) {
+        EXPECT_EQ(raw::kernelTextureFormat(codes, format, false), raw::kXrStandInFormat) << format;
+        EXPECT_EQ(raw::kernelTextureFormat(codes, format, true), format) << format;
+    }
+    EXPECT_EQ(raw::kernelTextureFormat(codes, 80, false), 80u) << "a stand-in of another kind (an sRGB pair's)";
+    codes.standIn = nullptr;
+    EXPECT_EQ(raw::kernelTextureFormat(codes, 554, false), 554u);
+}
+
+// A state's reflection names the texture slots its kernel may store: a read-write or write-only texture binding's
+// slots (an array's each), not a read-only one's nor a buffer's
+TEST(KernelTexture, TheSlotsAKernelStoresAreItsWritableTextureBindings)
+{
+    struct Node {
+        uint64_t values[8];
+    };
+    struct Range {
+        uint32_t first, count;
+    };
+    struct View {
+        const Range *stages;
+        const Node *nodes;
+        const uint32_t *edges;
+    };
+    const Node nodes[] = {{{2, 0, 0, 0, 0, 0, 0, 0}},   // texture 0, read-only
+                          {{2, 1, 3, 0, 0, 0, 0, 0}},   // texture 3, read-write
+                          {{2, 2, 5, 0, 0, 0, 0, 2}},   // textures 5 and 6, write-only
+                          {{0, 1, 1, 0, 0, 0, 0, 0}}};  // buffer 1, read-write
+    const uint32_t edges[] = {0, 1, 2, 3};
+    const Range kernel = {0, 4};
+    EXPECT_EQ(raw::kernelTexturesWritten(View{&kernel, nodes, edges}), 1u << 3 | 1u << 5 | 1u << 6);
 }
 
 TEST(KernelTexture, AMipmappedTextureIsSampledInPlace)

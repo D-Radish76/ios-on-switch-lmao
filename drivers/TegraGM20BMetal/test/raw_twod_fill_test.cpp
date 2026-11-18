@@ -1,29 +1,9 @@
 // SPDX-License-Identifier: MIT
-// Rule clear.twod's colour words: Metal's codes packed as the UNORM view's solid colour, sRGB channels encoded.
+// Rule clear.twod: the formats whose fills the 2D engine writes, on plain memory only.
 #include <gtest/gtest.h>
 #include "drivers/TegraGM20BMetal/raw/runtime/raw_twod_fill.h"
 
 namespace {
-
-TEST(TwodFill, WordsInTheUnormViewsPacking)
-{
-    const float rgba[4] = {1.0f, 0.5f, 0.0f, 0.25f};
-    EXPECT_EQ(raw::twodFillWord(80, rgba), 0x40ff8000u);  // A8R8G8B8: alpha, red, green, blue
-    EXPECT_EQ(raw::twodFillWord(70, rgba), 0x400080ffu);  // A8B8G8R8: alpha, blue, green, red
-    EXPECT_EQ(raw::twodFillWord(81, rgba), 0x40ffbc00u);  // green 0.5 encodes to 188
-    const float out[4] = {2.0f, -1.0f, 0.0f, 1.0f};
-    EXPECT_EQ(raw::twodFillWord(80, out), 0xffff0000u);
-}
-
-TEST(TwodFill, OwnFormatWordsOfTheOtherExactFormats)
-{
-    const float rgba[4] = {0.2f, 0.4f, 0.6f, 0.8f};
-    EXPECT_EQ(raw::twodFillWord(10, rgba), 51u);                                        // Y8: red 0.2
-    EXPECT_EQ(raw::twodFillWord(20, rgba), 13107u);                                     // Y16: red 0.2
-    EXPECT_EQ(raw::twodFillWord(90, rgba), 2u << 30 | 614u << 20 | 409u << 10 | 205u);  // A2B10G10R10
-    const float ends[4] = {1.0f, 0.0f, 1.0f, 1.0f};
-    EXPECT_EQ(raw::twodFillWord(90, ends), 0xfff003ffu);
-}
 
 TEST(TwodFill, TheChipsExactFormatsHoldOnPlainMemoryOnly)
 {

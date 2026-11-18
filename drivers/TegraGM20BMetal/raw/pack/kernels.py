@@ -124,7 +124,9 @@ def kernel(rec: dict, constexpr_tsc: list[list[int]]) -> dict:
     words = struct.unpack_from('<32I', k, HEAD.size + 256 + COUNTS.size)
     at = HEAD.size + 256 + COUNTS.size + 128
     entries = [entry(ENTRY.unpack_from(k, at + ENTRY.size * i), rec['samplers'], constexpr_tsc) for i in range(count)]
-    root, status, arrays, _, slots, heap_bytes, *pairs = packfile.KERNEL_V20.unpack_from(k, at + ENTRIES * ENTRY.size)
+    root, status, arrays, maps_stated, slots, heap_bytes, *pairs = packfile.KERNEL_V20.unpack_from(
+        k, at + ENTRIES * ENTRY.size
+    )
     pairs, (spill_entry, spill_words, _, _) = pairs[:16], pairs[16:]
     stage_in_region, stage_in_strides = packfile.KERNEL_V21.unpack_from(
         k, at + ENTRIES * ENTRY.size + packfile.KERNEL_V20.size
@@ -132,6 +134,7 @@ def kernel(rec: dict, constexpr_tsc: list[list[int]]) -> dict:
     return {
         'root_table_word': root,
         'status_word': status,
+        'maps_stated': maps_stated,
         'root_slots': slots,
         'heap': [{'class': pairs[2 * i], 'offset': pairs[2 * i + 1]} for i in range(arrays)],
         'heap_bytes': heap_bytes,

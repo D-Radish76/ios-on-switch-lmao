@@ -222,6 +222,7 @@ TEST(RawReach, AStandInOfAnotherFrameLoadsTransposedInTheReachedTilesAlone)
 struct FakeTexture {
     uint8_t rotation = 0;
     bool memoryless = false;
+    uint32_t width = 0, height = 0;
 };
 
 struct FakeAttachment {
@@ -235,9 +236,14 @@ struct FakeAttachment {
     bool store = true;
 };
 
+struct FakeDepthStencil {
+    FakeTexture *texture = nullptr;
+};
+
 struct FakePass {
     FakeAttachment color[8];
     uint32_t count = 0;
+    FakeDepthStencil depthStencil;
 };
 
 TEST(RawReach, WhichPassesReachEveryTileAndWhichLoadTransposed)
@@ -261,6 +267,27 @@ TEST(RawReach, WhichPassesReachEveryTileAndWhichLoadTransposed)
     EXPECT_TRUE(raw::reachedAtFrameResolution(2, 0));
     EXPECT_TRUE(raw::reachedAtFrameResolution(3, 1));
     EXPECT_FALSE(raw::reachedAtFrameResolution(4, 0));
+}
+
+// A render pass descriptor's renderTargetWidth and renderTargetHeight are 0 until the client sets them (an M4 Max under macOS
+// 27.2, with an attachment or without), and the range encode hands them on as such: the frame is then its attachments'
+TEST(RawReach, TheFrameOfAPassNamingNoSizeIsItsSmallestAttachments)
+{
+    FakeTexture luma{0, false, 64, 48}, larger{0, false, 96, 64}, plane{1, false, 48, 80}, depth{0, false, 128, 40};
+    FakePass p;
+    p.color[0] = {FakeAttachment::Load, &luma};
+    p.count = 1;
+    EXPECT_EQ(raw::reachArea(p, 0, 0), (Rect{0, 0, 64, 48})) << "gpu.raw.ycbcr_load's pass";
+    EXPECT_EQ(raw::reachArea(p, 40, 0), (Rect{0, 0, 40, 48})) << "a width it names bounds it";
+    p.color[1] = {FakeAttachment::Clear, &larger};
+    p.count = 2;
+    EXPECT_EQ(raw::reachArea(p, 0, 0), (Rect{0, 0, 64, 48}));
+    p.color[0].texture = &plane;
+    EXPECT_EQ(raw::reachArea(p, 0, 0), (Rect{0, 0, 80, 48})) << "a quarter-turned plane 48 x 80 is a frame 80 x 48";
+    p.depthStencil.texture = &depth;
+    EXPECT_EQ(raw::reachArea(p, 0, 0), (Rect{0, 0, 80, 40}));
+    EXPECT_EQ(raw::reachArea(FakePass{}, 32, 16), (Rect{0, 0, 32, 16}));
+    EXPECT_EQ(raw::reachArea(FakePass{}, 0, 0), Rect{}) << "no attachment and no size";
 }
 
 }  // namespace

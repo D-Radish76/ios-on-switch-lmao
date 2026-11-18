@@ -38,6 +38,8 @@ struct Channel {
     std::vector<uint32_t> arguments;
     size_t consumed = 0;
     std::vector<Draw> draws;
+    std::vector<uint32_t> begins;  // every BEGIN's word
+    uint32_t topology = 0;         // SET_PRIMITIVE_TOPOLOGY's, which a fetching execute's macro reads
     std::map<uint32_t, uint32_t> calls;  // macro slot: calls, for a failure's message
     size_t words = 0;
 
@@ -88,8 +90,13 @@ struct Channel {
             EXPECT_LT(offset, selector[0]) << "a constant buffer load inside the selected buffer";
             memory[selected + offset] = v;
             offset += 4;
-        } else if (m == NVB197_BEGIN && !(v >> 26 & 1))
-            began();
+        } else if (m == NVB197_SET_PRIMITIVE_TOPOLOGY) {
+            topology = v;
+        } else if (m == NVB197_BEGIN) {
+            begins.push_back(v);
+            if (!(v >> 26 & 1))
+                began();
+        }
     }
 
     // set 0's factor entry at byte factorAt (the record below), from the set's address the root table holds at 0x38
@@ -114,8 +121,11 @@ struct Channel {
 
     static uint32_t state(void *opaque, uint16_t m)
     {
+        auto &c = *static_cast<Channel *>(opaque);
+        if (m == NVB197_SET_PRIMITIVE_TOPOLOGY)
+            return c.topology;
         EXPECT_TRUE(isScratch(m));
-        return isScratch(m) ? static_cast<Channel *>(opaque)->scratch.method(m) : 0;
+        return isScratch(m) ? c.scratch.method(m) : 0;
     }
 
     static void emit(void *opaque, uint16_t m, uint32_t v)
@@ -469,6 +479,41 @@ TEST_F(DeviceIcb, AnExecuteUnderAmplificationDrawsItsRangeOncePerAmplification)
     const uint32_t ids[] = {0, 0, 1, 1, 0, 1};
     for (size_t i = 0; i < c.draws.size(); i++)
         EXPECT_EQ(c.draws[i].amplification, ids[i]) << i;
+}
+
+// An execute of a state that fetches the colour it writes through the texture unit: each command a primitive at a time
+// behind the fetch barrier, its sizes from the topology it sets (a triangle list of 6, a line strip of 3), one split draw
+// a command; the execute leaves the commands' macros whole for the executes after it
+TEST_F(DeviceIcb, AFetchingStatesCommandsAreDrawnAPrimitiveAtATime)
+{
+    raw::RuntimeRecord r = amplifying(0x1cb7);
+    r.pipeline.amplificationMax = 0;
+    r.pipeline.amplificationIdWord = 0;
+    r.pipeline.pushMask = 0;
+    raw::setEntryCount(r.pipeline, 1);
+    r.pipeline.entry[0] = {0, raw::EntryFetch, 2, 0, 0, 0, 0};
+    r.pipeline.flags = raw::PipelineFetches;
+    std::string why;
+    raw::Pipeline *pl = dev.addRecord(r, false, why);
+    ASSERT_NE(pl, nullptr) << why;
+    ASSERT_TRUE(raw::fetchesOwnColor(pl->fetchBits, pl->writeBits, pl->storageBits));
+    auto *words = reinterpret_cast<uint32_t *>(slots.cpu);
+    raw::icb::draw(words, 0, {kTriangle, 6, 1, 0, 0});
+    raw::icb::draw(words + raw::icb::kSlotWords, 1, {2, 3, 1, 0, 0});
+    const Channel c = pass(pl, [&](raw::RenderEncoder &e) {
+        const char *refused = nullptr;
+        EXPECT_TRUE(e.executeSlots(execute(0, 2, raw::icb::kSlotWords, kTriangle), &refused))
+            << (refused ? refused : "");
+    });
+    using raw::mme::kFetchBeginContinued, raw::mme::kFetchBeginFirst;
+    const uint32_t last = kFetchBeginContinued ^ kFetchBeginFirst, opNone = 0xffff;
+    std::vector<uint32_t> split;
+    for (const uint32_t v : c.begins)
+        split.push_back(v & ~opNone);
+    EXPECT_EQ(split, (std::vector<uint32_t>{kFetchBeginFirst, kFetchBeginContinued, last, kFetchBeginFirst,
+                                            kFetchBeginContinued, last}))
+        << c.summary();
+    EXPECT_EQ(c.scratch.words[SWITCH_GM20B_SCRATCH_FETCH_ICB], 0u) << "the executes after it draw whole";
 }
 
 // An execute under view mappings that offset the viewport: each pass of its range has its amplification's offset in the

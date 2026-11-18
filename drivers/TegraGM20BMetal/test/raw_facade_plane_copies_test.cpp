@@ -1,0 +1,309 @@
+// SPDX-License-Identifier: MIT
+// Blits of textures held through a surface's planes as the raw facade records them (raw_facade_harness.h), run on the
+// copy engine's model (raw_facade_blit_engines.h), against an M4 Max's bytes under macOS 27.2.1 with validation off
+// (raw_blit_planes.h): plane 0 counted in a wider texel runs on as one run of bytes, whatever its rows' padding, up to
+// its surface's last page; a one-plane 4:4:4 texture (504, 524) counts a word a texel and has no plane 1; a colour fill
+// of RGB10A8_2P_XR10 planes is undefined there and writes nothing
+#include "raw_facade_blit_engines.h"
+#include "../raw/runtime/RawMetalInternal.h"
+
+#import <IOSurface/IOSurface.h>
+#include <gtest/gtest.h>
+#include <random>
+#include <string>
+#include <vector>
+
+@interface NSObject (SwitchPlaneCopiesTest)
+- (void)fillTexture:(id<MTLTexture>)texture
+              level:(NSUInteger)level
+              slice:(NSUInteger)slice
+             region:(MTLRegion)region
+              color:(MTLClearColor)color;
+@end
+
+namespace {
+
+using namespace harness;
+
+constexpr NSUInteger kWidth = 16, kHeight = 8;
+
+id<MTLDevice> gDevice;
+
+class FacadePlaneCopies : public ::testing::Test {
+protected:
+    static void SetUpTestSuite()
+    {
+        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                 {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float},
+                                  {"raw.ycbcr.ycbcr_srgb_frag", MTLPixelFormatRGBA32Float}}));
+        ASSERT_TRUE(gDevice != nil);
+    }
+};
+
+// 'b3a8' of rows `pitch` bytes apart, its alpha plane's 64 (a two-plane XR plane's rows are 32-byte multiples)
+IOSurfaceRef xrSurface(NSUInteger pitch)
+{
+    NSDictionary *words = @{
+        (id)kIOSurfacePlaneWidth : @(kWidth),
+        (id)kIOSurfacePlaneHeight : @(kHeight),
+        (id)kIOSurfacePlaneBytesPerElement : @4,
+        (id)kIOSurfacePlaneBytesPerRow : @(pitch),
+        (id)kIOSurfacePlaneOffset : @0,
+        (id)kIOSurfacePlaneSize : @(pitch * kHeight)
+    };
+    NSDictionary *alphas = @{
+        (id)kIOSurfacePlaneWidth : @(kWidth),
+        (id)kIOSurfacePlaneHeight : @(kHeight),
+        (id)kIOSurfacePlaneBytesPerElement : @1,
+        (id)kIOSurfacePlaneBytesPerRow : @64,
+        (id)kIOSurfacePlaneOffset : @(pitch * kHeight),
+        (id)kIOSurfacePlaneSize : @(64 * kHeight)
+    };
+    return IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @(kWidth),
+        (id)kIOSurfaceHeight : @(kHeight),
+        (id)kIOSurfacePixelFormat : @(uint32_t('b3a8')),
+        (id)kIOSurfaceAllocSize : @((pitch + 64) * kHeight),
+        (id)kIOSurfacePlaneInfo : @[ words, alphas ]
+    });
+}
+
+// A surface of one plane, `pairs` ('2vuy': two pixels a four-byte element) or a word a pixel ('v410'), rows exactly as
+// long as its pixels
+IOSurfaceRef onePlaneSurface(uint32_t fourcc, NSUInteger rows)
+{
+    const bool pairs = fourcc == uint32_t('2vuy');
+    const NSUInteger pitch = kWidth * (pairs ? 2 : 4);
+    return IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @(kWidth),
+        (id)kIOSurfaceHeight : @(rows),
+        (id)kIOSurfacePixelFormat : @(fourcc),
+        (id)kIOSurfaceBytesPerRow : @(pitch),
+        (id)kIOSurfaceBytesPerElement : @4,
+        (id)kIOSurfaceElementWidth : @(pairs ? 2 : 1),
+        (id)kIOSurfaceAllocSize : @(pitch * rows)
+    });
+}
+
+id<MTLTexture> over(IOSurfaceRef s, uint32_t format)
+{
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(format)
+                                                                                 width:kWidth
+                                                                                height:IOSurfaceGetHeight(s)
+                                                                             mipmapped:NO];
+    d.usage = MTLTextureUsageShaderRead;
+    d.storageMode = MTLStorageModeShared;
+    id<MTLTexture> t = [gDevice newTextureWithDescriptor:d iosurface:s plane:0];
+    EXPECT_TRUE([(id)t isKindOfClass:[RMTexture class]] && ((RMTexture *)t)->_rawOk) << format << " not the raw path's";
+    return t;
+}
+
+// Every byte of the surface at random; those bytes
+std::vector<uint8_t> seeded(IOSurfaceRef s, uint32_t seed)
+{
+    std::mt19937 rng(seed);
+    auto *base = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(s));
+    for (size_t i = 0; i < IOSurfaceGetAllocSize(s); ++i)
+        base[i] = uint8_t(rng());
+    return std::vector<uint8_t>(base, base + IOSurfaceGetAllocSize(s));
+}
+
+std::vector<uint8_t> bytesOf(IOSurfaceRef s)
+{
+    auto *base = static_cast<const uint8_t *>(IOSurfaceGetBaseAddress(s));
+    return std::vector<uint8_t>(base, base + IOSurfaceGetAllocSize(s));
+}
+
+// A 16x8 texture of `format` (`bytes` a texel) over a buffer of 0xee, its rows the buffer's
+id<MTLTexture> plainOver(id<MTLBuffer> rows, MTLPixelFormat format, NSUInteger bytes)
+{
+    memset(rows.contents, 0xee, rows.length);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                 width:kWidth
+                                                                                height:kHeight
+                                                                             mipmapped:NO];
+    d.storageMode = MTLStorageModeShared;
+    d.usage = MTLTextureUsageShaderRead;
+    id<MTLTexture> t = [rows newTextureWithDescriptor:d offset:0 bytesPerRow:kWidth * bytes];
+    EXPECT_TRUE([(id)t isKindOfClass:[RMTexture class]] && ((RMTexture *)t)->_rawOk);
+    return t;
+}
+
+// `size` texels from `from` of one texture to `to` of another in a command buffer of its own; whether the copy was
+// recorded, its command buffer then committed on the raw path and its engines' work run
+bool copied(id<MTLTexture> a, MTLOrigin from, MTLSize size, id<MTLTexture> b, MTLOrigin to)
+{
+    const int opens = gOpens;
+    id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
+    id<MTLBlitCommandEncoder> e = [cb blitCommandEncoder];
+    const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
+    [e copyFromTexture:a
+               sourceSlice:0
+               sourceLevel:0
+              sourceOrigin:from
+                sourceSize:size
+                 toTexture:b
+          destinationSlice:0
+          destinationLevel:0
+         destinationOrigin:to];
+    const bool taken = ((RMCommandBuffer *)cb)->_plan.size() != recorded;
+    [e endEncoding];
+    EngineRun run;
+    commitOnRaw(cb, run);
+    EXPECT_EQ(gOpens, opens) << "the stand-in m2v device opened";
+    return taken;
+}
+
+// Each plain byte against plane 0 read as one run from (x0, y0) in the plain texture's texel of `bytes`:
+// plain(B + i, 1 + k) = p0(x0 * B + i, y0 + k) for i < 8B, k < 4, every other byte as it was (0xee)
+void expectOneRun(const std::vector<uint8_t> &before, NSUInteger pitch, NSUInteger x0, NSUInteger y0,
+                  id<MTLBuffer> rows, NSUInteger bytes, const std::string &what)
+{
+    const auto *got = static_cast<const uint8_t *>(rows.contents);
+    const NSUInteger row = kWidth * bytes;
+    size_t wrong = 0;
+    for (NSUInteger y = 0; y < kHeight; ++y)
+        for (NSUInteger x = 0; x < row; ++x) {
+            const bool in = y >= 1 && y < 5 && x >= bytes && x < 9 * bytes;
+            const uint8_t want = in ? before[(y0 + y - 1) * pitch + x0 * bytes + (x - bytes)] : 0xee;
+            wrong += got[y * row + x] != want;
+        }
+    EXPECT_EQ(wrong, 0u) << what;
+}
+
+}  // namespace
+
+// gpu.raw.planes_blits c_b3a8_rgba16u, and plane 0 counted in 16-byte texels: (2,2) 8x4 runs past a row of four or
+// eight such texels into the rows after it, where an M4 Max reads them, whether the rows are padded or not; from (8,4)
+// its last rows run on past plane 0 into the alpha plane
+TEST_F(FacadePlaneCopies, AWiderTexelReadsPlaneZeroAsOneRunWhateverItsPadding)
+{
+    struct Case {
+        NSUInteger pitch;
+        MTLPixelFormat format;
+        NSUInteger bytes, x, y;
+    };
+    for (const Case c : {Case{64, MTLPixelFormatRGBA16Uint, 8, 2, 2}, Case{64, MTLPixelFormatRGBA32Uint, 16, 2, 2},
+                         Case{128, MTLPixelFormatRGBA32Uint, 16, 2, 2}, Case{192, MTLPixelFormatRGBA32Uint, 16, 2, 2},
+                         Case{64, MTLPixelFormatRGBA32Uint, 16, 8, 4}}) {
+        const std::string what = "rows of " + std::to_string(c.pitch) + " into a texel of " + std::to_string(c.bytes) +
+                                 " from (" + std::to_string(c.x) + "," + std::to_string(c.y) + ")";
+        IOSurfaceRef s = xrSurface(c.pitch);
+        ASSERT_NE(s, nullptr);
+        id<MTLTexture> planes = over(s, 550);
+        id<MTLBuffer> rows = [gDevice newBufferWithLength:kWidth * c.bytes * kHeight
+                                                  options:MTLResourceStorageModeShared];
+        id<MTLTexture> plain = plainOver(rows, c.format, c.bytes);
+        const std::vector<uint8_t> before = seeded(s, uint32_t(c.pitch * c.bytes));
+        EXPECT_TRUE(copied(planes, MTLOriginMake(c.x, c.y, 0), MTLSizeMake(8, 4, 1), plain, MTLOriginMake(1, 1, 0)))
+            << what;
+        expectOneRun(before, c.pitch, c.x, c.y, rows, c.bytes, what);
+        EXPECT_EQ(bytesOf(s), before) << what << ": the planes are only read";
+        CFRelease(s);
+    }
+}
+
+// A region whose run of bytes ends past its surface's last page, where an M4 Max reads zeros, is Metal's validation
+// error (the formats differ) and copies nothing; one a few rows up, inside the page, is moved
+TEST_F(FacadePlaneCopies, ARunPastTheSurfacesLastPageCopiesNothing)
+{
+    IOSurfaceRef s = onePlaneSurface(uint32_t('2vuy'), 16384 / 32);  // one page of 32-byte rows
+    ASSERT_NE(s, nullptr);
+    ASSERT_EQ(IOSurfaceGetAllocSize(s), 16384u);
+    id<MTLTexture> planes = over(s, 501);
+    id<MTLBuffer> rows = [gDevice newBufferWithLength:kWidth * 16 * kHeight options:MTLResourceStorageModeShared];
+    id<MTLTexture> plain = plainOver(rows, MTLPixelFormatRGBA32Uint, 16);
+    const std::vector<uint8_t> before = seeded(s, 501);
+    EXPECT_FALSE(copied(planes, MTLOriginMake(8, 508, 0), MTLSizeMake(8, 4, 1), plain, MTLOriginMake(1, 1, 0)))
+        << "its run ends at byte 16608 of a 16384-byte surface";
+    for (NSUInteger i = 0; i < rows.length; ++i)
+        ASSERT_EQ(static_cast<const uint8_t *>(rows.contents)[i], 0xee) << i;
+    EXPECT_TRUE(copied(planes, MTLOriginMake(2, 500, 0), MTLSizeMake(8, 4, 1), plain, MTLOriginMake(1, 1, 0)));
+    expectOneRun(before, 32, 2, 500, rows, 16, "rows 500..503, the run inside the page");
+    CFRelease(s);
+}
+
+// YCBCR10_444_1P and its sRGB twin count a word a texel of their one plane, as RGB10A8_2P_XR10 does; YCBCR8_422_1P_REV
+// two bytes, as YCBCR8_422_1P does: a copy into a buffer, into a plain texture of a wider texel, and into a texture of
+// its own format, where a one-plane texture has no plane 1 to move
+TEST_F(FacadePlaneCopies, OnePlaneFormatsCountTheirOwnUnit)
+{
+    struct Kind {
+        uint32_t format, fourcc;
+        NSUInteger unit;
+    };
+    for (const Kind k : {Kind{504, uint32_t('v410'), 4}, Kind{524, uint32_t('v410'), 4}, Kind{562, uint32_t('2vuy'), 2},
+                         Kind{501, uint32_t('2vuy'), 2}}) {
+        const std::string what = std::to_string(k.format);
+        const NSUInteger pitch = kWidth * k.unit;
+        IOSurfaceRef s = onePlaneSurface(k.fourcc, kHeight), d = onePlaneSurface(k.fourcc, kHeight);
+        ASSERT_TRUE(s && d) << what;
+        id<MTLTexture> planes = over(s, k.format), into = over(d, k.format);
+        std::vector<uint8_t> before = seeded(s, k.format);
+
+        id<MTLBuffer> out = [gDevice newBufferWithLength:256 options:MTLResourceStorageModeShared];
+        memset(out.contents, 0xee, 256);
+        id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
+        id<MTLBlitCommandEncoder> e = [cb blitCommandEncoder];
+        [e copyFromTexture:planes
+                         sourceSlice:0
+                         sourceLevel:0
+                        sourceOrigin:MTLOriginMake(2, 1, 0)
+                          sourceSize:MTLSizeMake(4, 2, 1)
+                            toBuffer:out
+                   destinationOffset:0
+              destinationBytesPerRow:128
+            destinationBytesPerImage:256];
+        [e endEncoding];
+        EngineRun run;
+        ASSERT_NO_FATAL_FAILURE(commitOnRaw(cb, run)) << what;
+        const auto *got = static_cast<const uint8_t *>(out.contents);
+        for (NSUInteger y = 0; y < 2; ++y)
+            for (NSUInteger x = 0; x < 128; ++x)
+                ASSERT_EQ(got[y * 128 + x], x < 4 * k.unit ? before[(1 + y) * pitch + 2 * k.unit + x] : 0xee)
+                    << what << " into a buffer: byte " << x << " of row " << y;
+
+        id<MTLBuffer> rows = [gDevice newBufferWithLength:kWidth * 8 * kHeight options:MTLResourceStorageModeShared];
+        id<MTLTexture> plain = plainOver(rows, MTLPixelFormatRGBA16Uint, 8);
+        EXPECT_TRUE(copied(planes, MTLOriginMake(2, 2, 0), MTLSizeMake(8, 4, 1), plain, MTLOriginMake(1, 1, 0)))
+            << what;
+        expectOneRun(before, pitch, 2, 2, rows, 8, what + " into RGBA16Uint");
+
+        const std::vector<uint8_t> was = seeded(d, k.format + 1);
+        EXPECT_TRUE(copied(planes, MTLOriginMake(2, 2, 0), MTLSizeMake(8, 4, 1), into, MTLOriginMake(1, 1, 0))) << what;
+        const std::vector<uint8_t> now = bytesOf(d);
+        size_t wrong = 0;
+        for (NSUInteger at = 0; at < now.size(); ++at) {
+            const NSUInteger y = at / pitch, x = at % pitch;
+            const bool in = y >= 1 && y < 5 && x >= k.unit && x < 9 * k.unit;
+            wrong += now[at] != (in ? before[(y + 1) * pitch + x + k.unit] : was[at]);
+        }
+        EXPECT_EQ(wrong, 0u) << what << " into its own format: plane 0 in its unit, nothing else";
+        CFRelease(s);
+        CFRelease(d);
+    }
+}
+
+// An M4 Max fills RGB10A8_2P_XR10 planes with a word that ignores the colour and follows the process's earlier fills,
+// as it fills YCbCr planes (m2v-blits-fix probes/extra.mm): undefined, recorded as nothing
+TEST_F(FacadePlaneCopies, AColourFillOfTwoPlaneXrPlanesWritesNothing)
+{
+    IOSurfaceRef s = xrSurface(64);
+    ASSERT_NE(s, nullptr);
+    id<MTLTexture> planes = over(s, 550);
+    const std::vector<uint8_t> before = seeded(s, 550);
+    id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
+    id<MTLBlitCommandEncoder> e = [cb blitCommandEncoder];
+    const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
+    [(id)e fillTexture:planes
+                  level:0
+                  slice:0
+                 region:MTLRegionMake2D(5, 1, 6, 3)
+                  color:MTLClearColorMake(0.25, 0.5, 0.75, 1)];
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
+    [e endEncoding];
+    EngineRun run;
+    ASSERT_NO_FATAL_FAILURE(commitOnRaw(cb, run));
+    EXPECT_EQ(bytesOf(s), before);
+    CFRelease(s);
+}

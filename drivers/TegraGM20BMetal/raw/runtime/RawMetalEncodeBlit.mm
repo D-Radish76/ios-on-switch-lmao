@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: MIT
-// A blit encoder's commands of the tape onto the copy engine (and the 2D engine's mip chains): see encodeRaw.
+// A blit encoder's commands of the tape onto the copy engine (and the 2D engine's fills and mip chains): see encodeRaw.
 #import "RawMetalInternal.h"
 #import "RawMetalBlitImages.h"
+#import "RawMetalBlitRules.h"
+#import "RawMetalStandIns.h"
 #include "raw_format_standin.h"
 #include "../fx/fx_mip_probe.h"
 #include "../fx/fx_mip_route.h"
 #include "raw_attachment_target.h"
+#include "raw_blit_planes.h"
+#include "raw_fill_record.h"
+#include "raw_mip.h"
+#include "raw_rotated_pass.h"
 #include "raw_twod_fill.h"
 
 // What stands for a texture's memory in its blit encoder's order (raw::BlitEncoder::access): its surface, its buffer, or the
@@ -80,8 +86,94 @@ static void copyToCallerPages(raw::BlitEncoder *be, raw::CommandBuffer *rc, RMTe
     be->copyBytes(x.imagePitchVa, x.callerPages->bo.va, x.storage.bytes);
 }
 
+// The image a buffer copy moves of `t`'s level: a texture held through a surface's planes moves plane 0's bytes
+// (raw_blit_planes.h; RGB10A8_2P_XR10's colour words: BlitEncoder::copyBufferTexels)
+static void bufferCopyImage(RMTexture *t, uint32_t level, raw::Texture &image)
+{
+    blitImage(t, level, image);
+    if (t->_raw.converted())
+        raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), image);
+}
+
+// Plane 0's bytes of the side or sides held through planes, counted in the destination's texel (kCopyPlaneBytes): the
+// copy engine's lines `pitch` apart, each its texels' bytes in one run, which past a row's end are the next rows' (a
+// source's lines may overlap)
+static void copyPlaneBytes(raw::BlitEncoder *be, RMTexture *s, uint32_t sl, uint32_t ss, uint32_t sx, uint32_t sy,
+                           uint32_t sz, RMTexture *t, uint32_t dl, uint32_t ds, uint32_t dx, uint32_t dy, uint32_t dz,
+                           uint32_t w, uint32_t h)
+{
+    const bool fromPlanes = raw::heldInPlanes(s->_raw), intoPlanes = raw::heldInPlanes(t->_raw);
+    raw::Texture from, to;
+    if (intoPlanes)
+        raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), to);
+    else
+        blitImage(t, dl, to);
+    if (fromPlanes)
+        raw::planeBytesRead(s->_raw, to.bpp, sx, sy, w, h, from);
+    else
+        blitImage(s, sl, from);
+    be->copyTexels(from, sx, sy, fromPlanes ? 0 : layerOrPlane(from, ss, sz), to, dx, dy,
+                   intoPlanes ? 0 : layerOrPlane(to, ds, dz), w, h);
+}
+
+// Two textures held through planes (kCopyPlanes): plane 0's bytes in the destination's unit, and of each plane 1 they both
+// have the part the region covers (raw_blit_planes.h planeOneSpan), never past either plane's rows
+static void copyPlanePair(raw::BlitEncoder *be, const raw::Texture &s, uint32_t sx, uint32_t sy, const raw::Texture &d,
+                          uint32_t dx, uint32_t dy, uint32_t w, uint32_t h)
+{
+    const uint32_t unit = raw::planeUnit(d);
+    raw::Texture from, to;
+    if (raw::planeBytesRead(s, unit, sx, sy, w, h, from) && raw::planeBytes(d, unit, to))
+        be->copyTexels(from, sx, sy, 0, to, dx, dy, 0, w, h);
+    uint32_t fx, fy, fw, fh, tx, ty, tw, th;
+    if (raw::planeOneSpan(s, sx, sy, w, h, from, fx, fy, fw, fh) &&
+        raw::planeOneSpan(d, dx, dy, w, h, to, tx, ty, tw, th))
+        be->copyTexels(from, fx, fy, 0, to, tx, ty, 0, std::min(fw, tw), std::min(fh, th));
+}
+
+// A fill's units into each image of `image` (raw_fill_record.h): a turned plane's region turned as Metal stores it, a
+// multisampled one's every sample, a 3D level's planes; the 2D engine's solid rectangle where rule clear.twod holds for the
+// format and memory (raw_twod_fill.h), else the copy engine's constants
+static void fillImage(raw::BlitEncoder *be, raw::Texture image, const raw::FillRecord &f)
+{
+    uint32_t x0 = f.x0, y0 = f.y0, x1 = f.x1, y1 = f.y1;
+    if (image.rotation) {
+        const raw::Rect turned = raw::frameOf(image).rect({x0, y0, x1, y1});
+        x0 = turned.x0, y0 = turned.y0, x1 = turned.x1, y1 = turned.y1;
+    }
+    if (image.samples > 1) {
+        uint32_t gx, gy;
+        raw::sampleGrid(image.samples, gx, gy);
+        x0 <<= gx, x1 <<= gx, y0 <<= gy, y1 <<= gy;
+        image.width <<= gx;
+        image.height <<= gy;
+        image.samples = 1;
+    } else if (raw::twodFillHolds(image.format, image.comptags) && !f.words && f.bytes == image.bpp &&
+               image.type != raw::fx::kTexThreeD && (image.blockLinear || image.renderable) && !image.zeta) {
+        raw::Texture target = image;
+        target.va += uint64_t(f.layer) * target.layerBytes;
+        target.layers = 1;
+        target.type = raw::fx::kTexTwoD;
+        target.tic = 0;
+        target.renderable = true;
+        // a crop of the kernel's tiled surface, as raw::sideOf places it
+        if (image.import && image.import->kernelTiled()) {
+            x0 += image.surfaceX, x1 += image.surfaceX, y0 += image.surfaceY, y1 += image.surfaceY;
+            target.width = image.pitch / image.bpp;
+            target.height = image.import->layout.height;
+        }
+        uint32_t word = 0;
+        memcpy(&word, f.texel, std::min<uint32_t>(f.bytes, sizeof word));
+        be->fillTwod(target, x0, y0, x1, y1, word);
+        RAW_DIAGNOSTIC(gRM->raw->stats.fillTwod++);
+        return;
+    }
+    for (uint32_t z = f.z0; z < f.z1; z++)
+        be->fillRect(image, x0, y0, layerOrPlane(image, f.layer, z), x1 - x0, y1 - y0, f.texel, f.bytes, f.words);
+}
+
 void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::BlitEncoder *be,
-                std::set<RMTexture *> &fresh, std::set<RMTexture *> &standInFresh)
+                std::set<RMTexture *> &fresh, RMStandInFresh &standInFresh)
 {
     switch (c.op) {
     case OpCopyTexture: {
@@ -97,6 +189,16 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
                        sz = uint32_t(extra(cb, x + 4)), w = uint32_t(extra(cb, x + 5)), h = uint32_t(extra(cb, x + 6)),
                        d = uint32_t(extra(cb, x + 7)), dx = uint32_t(o), dy = uint32_t(o >> 32),
                        dz = uint32_t(extra(cb, x + 11)), ss = uint32_t(extra(cb, x)), ds = uint32_t(extra(cb, x + 8));
+        if (c.a == kCopyPlanes) {
+            copyPlanePair(be, s->_raw, sx, sy, t->_raw, dx, dy, w, h);
+            break;
+        }
+        if (c.a == kCopyPlaneBytes) {
+            copyPlaneBytes(be, s, uint32_t(sl), ss, sx, sy, sz, t, uint32_t(dl), ds, dx, dy, dz, w, h);
+            if (!raw::heldInPlanes(t->_raw))
+                copyToCallerPages(be, rc, t);
+            break;
+        }
         raw::Texture fromLevel, toLevel;
         blitImage(s, uint32_t(sl), fromLevel);
         blitImage(t, uint32_t(dl), toLevel);
@@ -118,9 +220,16 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
             fx <<= gx;
             fy <<= gy;
         }
-        for (uint32_t k = 0; k < std::max(d, 1u); k++)
-            be->copyTexels(fromLevel, ex, ey, layerOrPlane(fromLevel, ss, sz + k), toLevel, fx, fy,
-                           layerOrPlane(t->_raw, ds, dz + k), ew, eh, uint8_t(c.a));
+        const bool out = c.a == kCopyStencilOut;
+        const raw::Texture &zeta = out ? fromLevel : toLevel, &bytes = out ? toLevel : fromLevel;
+        for (uint32_t k = 0; k < std::max(d, 1u); k++) {
+            const uint32_t from = layerOrPlane(fromLevel, ss, sz + k), to = layerOrPlane(t->_raw, ds, dz + k);
+            if (out || c.a == kCopyStencilIn)
+                be->copyStencilTexels(zeta, out ? ex : fx, out ? ey : fy, out ? from : to, bytes, out ? fx : ex,
+                                      out ? fy : ey, out ? to : from, ew, eh, !out);
+            else
+                be->copyTexels(fromLevel, ex, ey, from, toLevel, fx, fy, to, ew, eh, uint8_t(c.a));
+        }
         copyToCallerPages(be, rc, t);
         break;
     }
@@ -147,6 +256,22 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         be->fillBytes(t->_raw.va + c.c, n, uint8_t(c.a));
         break;
     }
+    case OpFillTexture: {
+        RMTexture *t = (__bridge RMTexture *)c.obj;
+        useTexture(rc, t, true);
+        be->access(nullptr, memoryOf(t));
+        if (!fresh.empty())
+            fresh.erase(t);
+        standInFresh.erase(t);
+        uint64_t words[raw::kFillRecordWords];
+        for (uint32_t k = 0; k < raw::kFillRecordWords; k++)
+            words[k] = extra(cb, c.x + raw::kFillCallWords + k);
+        raw::Texture image;
+        blitImage(t, uint32_t(c.c), image);
+        fillImage(be, image, raw::unpackFill(words));
+        copyToCallerPages(be, rc, t);
+        break;
+    }
     case OpCopyBufferToTexture: {
         RMBuffer *s = (__bridge RMBuffer *)c.obj;
         RMTexture *t = (__bridge RMTexture *)c.obj2;
@@ -161,7 +286,7 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
             fresh.erase(t);
         standInFresh.erase(t);
         raw::Texture level;
-        blitImage(t, uint32_t(dl), level);
+        bufferCopyImage(t, uint32_t(dl), level);
         copyPlanes(be, rc, s->_raw, so, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(dz), uint32_t(w),
                    uint32_t(h), uint32_t(d), true, uint8_t(c.a));
         copyToCallerPages(be, rc, t);
@@ -178,7 +303,7 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
                        w = extra(cb, x + 4), h = extra(cb, x + 5), d = extra(cb, x + 6), dof = extra(cb, x + 7),
                        row = extra(cb, x + 8), image = extra(cb, x + 9), sl = extra(cb, x + 1);
         raw::Texture level;
-        blitImage(s, uint32_t(sl), level);
+        bufferCopyImage(s, uint32_t(sl), level);
         copyPlanes(be, rc, t->_raw, dof, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(sz), uint32_t(w),
                    uint32_t(h), uint32_t(d), false, uint8_t(c.a));
         break;
@@ -188,62 +313,22 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
     }
 }
 
-// fillTexture:level:slice:region:color: (OpFillTexture): the 2D engine's solid rectangle where rule clear.twod holds for the
-// format and memory (raw_twod_fill.h), else CLEAR_SURFACE over the region in a pass of its own that loads the rest
-bool fillTexturePass(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc)
-{
-    RMTexture *t = (__bridge RMTexture *)c.obj;
-    const uint32_t x0 = uint32_t(extra(cb, c.x)), y0 = uint32_t(extra(cb, c.x + 1));
-    const uint32_t x1 = x0 + uint32_t(extra(cb, c.x + 2)), y1 = y0 + uint32_t(extra(cb, c.x + 3));
-    float rgba[4];
-    for (int k = 0; k < 4; k++) {
-        const uint32_t bits = uint32_t(extra(cb, c.x + 4 + k));
-        memcpy(&rgba[k], &bits, sizeof bits);
-    }
-    useTexture(rc, t, true);
-    if (x0 >= x1 || y0 >= y1)
-        return true;
-    raw::Texture target;
-    blitImage(t, uint32_t(c.c), target);
-    target.va += uint64_t(uint32_t(c.c >> 32)) * target.layerBytes;
-    target.layers = 1;
-    target.type = raw::fx::kTexTwoD;
-    target.tic = 0;
-    target.renderable = true;
-    if (raw::twodFillHolds(target.format, target.comptags)) {
-        raw::BlitEncoder *b = rc->blit();
-        b->fillTwod(target, x0, y0, x1, y1, raw::twodFillWord(target.format, rgba));
-        b->end();
-        RAW_DIAGNOSTIC(gRM->raw->stats.fillTwod++);
-        return true;
-    }
-    raw::PassDesc p;
-    p.color[0].texture = &target;
-    p.color[0].load = raw::ColorAttachment::Load;
-    p.color[0].store = true;
-    p.count = 1;
-    p.width = target.width;
-    p.height = target.height;
-    raw::RenderEncoder *e = rc->render(p);
-    if (!e)
-        return false;
-    e->clearRegion(x0, y0, x1, y1, rgba);
-    e->end();
-    return true;
-}
-
 bool rmFormatMips(uint32_t format)
 {
     const char *state = raw::formatMipState(format);
     return state && gRM->raw->ownPipeline(state);
 }
 
-// Levels first + 1 .. last of a view's layers by the pack's mip state (raw_mip.h, raw_mip_passes.cpp), or a format
-// the GM20B renders none of by its own (raw_format_standin.h)
+// Levels first + 1 .. last of a view's layers by the pack's mip state (raw_mip.h, raw_mip_passes.cpp): a format whose
+// words the GM20B cannot filter by its word mip state, one the GM20B renders none of by its own (raw_format_standin.h)
 bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t last, const char **why)
 {
     __unsafe_unretained RMTexture *owner = t->_levelsOwner ?: t;
     const uint32_t format = t->_raw.format, firstLayer = t->_slicesBase, layers = t->_raw.layers;
+    if (raw::wordMipState(format)) {
+        useTexture(rc, t, true);
+        return raw::wordMipPasses(*gRM->raw, *rc, owner->_raw, first, last, firstLayer, layers, format, why);
+    }
     if (raw::formatStandIn(t->_raw.format)) {
         useTexture(rc, t, true);
         return raw::formatMipPasses(*gRM->raw, *rc, owner->_raw, first, last, firstLayer, layers, format, why);
@@ -259,13 +344,18 @@ bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t la
 }
 
 // Levels first + 1 .. last of a 3D texture's chain by the pack's volume mip state (raw_mip.h mip3dState): one pass a plane of
-// each level, drawn from a volume header of the level above, its step the two levels' sizes, depths and the plane
+// each level, drawn from a volume header of the level above, its step the two levels' sizes, depths and the plane; a format
+// with no such state by its word mip state
 static bool mipVolumePasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t last, const char **why)
 {
     raw::Device &d = *gRM->raw;
     __unsafe_unretained RMTexture *owner = t->_levelsOwner ?: t;
     raw::Pipeline *mip = d.mip3dPipeline(t->_raw.format);
     const raw::fx::MipChain &c = owner->_raw.chain->layout;
+    if (!mip && raw::wordMip3dState(t->_raw.format)) {
+        useTexture(rc, t, true);
+        return raw::wordMipPasses(d, *rc, owner->_raw, first, last, 0, 1, t->_raw.format, why);
+    }
     if (!mip || last >= c.levels)
         return false;
     const raw::FormatInfo *f = raw::formatInfo(t->_raw.format);
@@ -328,10 +418,12 @@ bool encodeMipmaps(raw::CommandBuffer *rc, RMTexture *t, uint32_t probe2d, raw::
     const uint32_t fmt2d = probe2d                                ? probe2d
                            : t->_raw.format == owner->_raw.format ? chain.fmt2d
                                                                   : raw::fx::twodChainFormat(t->_raw.format);
+    raw::Device &d = *gRM->raw;
     bool ok = true;
     const bool routed = raw::fx::eachMipRun(
         chain.layout, first, last, fmt2d != 0,
-        !probe2d && (gRM->raw->mipPipeline(t->_raw.format) || rmFormatMips(t->_raw.format)),
+        !probe2d && (d.mipPipeline(t->_raw.format) || rmFormatMips(t->_raw.format) ||
+                     d.ownPipeline(raw::wordMipState(t->_raw.format))),
         [&](const raw::fx::MipRun &run) {
             if (!ok)
                 return;

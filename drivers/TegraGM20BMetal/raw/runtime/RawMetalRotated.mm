@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalRotated.h"
+#include "raw_format_standin.h"
 
 static NSUInteger descriptorRotation(MTLTextureDescriptor *d)
 {
@@ -33,30 +34,36 @@ bool refuseTurnedOffSurface(MTLTextureDescriptor *d)
     return true;
 }
 
+// Every format Metal renders turns alike, the plane of several of a planar surface as one plane alone (an M4 Max, each
+// rotation: m2v-textures4 probes/reads.mm and more.mm landings). A format the GM20B renders none of is drawn turned into its
+// stand-in (raw_format_standin.h); a block-compressed one Metal makes no rotated texture of
 bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out)
 {
     const NSUInteger turn = descriptorRotation(d);
-    const raw::FormatInfo *f = raw::formatInfo(uint32_t(d.pixelFormat));
+    const uint32_t format = uint32_t(d.pixelFormat);
+    const raw::FormatInfo *f = raw::formatInfo(format);
+    const size_t planes = IOSurfaceGetPlaneCount(s);
     if (!turn || turn > 4 || d.textureType != MTLTextureType2D || d.mipmapLevelCount > 1 || d.sampleCount > 1 ||
-        d.arrayLength > 1 || d.depth > 1 || !f || !f->rt || raw::blockCompressed(f) ||
-        raw::xrForm(uint32_t(d.pixelFormat)) != raw::XrForm::None || plane || IOSurfaceGetPlaneCount(s) > 1)
+        d.arrayLength > 1 || d.depth > 1 || !f || !(f->rt || raw::formatStandIn(format)) || raw::blockCompressed(f) ||
+        raw::xrForm(format) == raw::XrForm::Planes || (planes > 1 ? plane >= planes : plane != 0))
         return false;
     out.turn = uint8_t(turn);
     out.width = uint32_t(d.width);
     out.height = uint32_t(d.height);
-    const bool one = IOSurfaceGetPlaneCount(s) == 1;
-    return (one ? IOSurfaceGetWidthOfPlane(s, 0) : IOSurfaceGetWidth(s)) >= out.planeWidth() &&
-           (one ? IOSurfaceGetHeightOfPlane(s, 0) : IOSurfaceGetHeight(s)) >= out.planeHeight();
+    return (planes ? IOSurfaceGetWidthOfPlane(s, plane) : IOSurfaceGetWidth(s)) >= out.planeWidth() &&
+           (planes ? IOSurfaceGetHeightOfPlane(s, plane) : IOSurfaceGetHeight(s)) >= out.planeHeight();
 }
 
-bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, const raw::Rotation &r)
+bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)
 {
-    const bool one = IOSurfaceGetPlaneCount(s) == 1;
+    const size_t planes = IOSurfaceGetPlaneCount(s);
     void *base = IOSurfaceGetBaseAddress(s);
-    const uint64_t offset = one ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 0)) - uintptr_t(base) : 0;
-    const size_t pitch = one ? IOSurfaceGetBytesPerRowOfPlane(s, 0) : IOSurfaceGetBytesPerRow(s);
+    const uint64_t offset = planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - uintptr_t(base) : 0;
+    const size_t pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
+    // a planar surface's planes stay rows (TegraGM20BLayout.h), so only a surface of one plane asks to be laid out tiled
     if (!gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset, r.planeWidth(),
-                                        r.planeHeight(), uint32_t(pitch), uint32_t(d.pixelFormat), t->_raw, true))
+                                        r.planeHeight(), uint32_t(pitch), uint32_t(d.pixelFormat), t->_raw,
+                                        planes <= 1))
         return false;
     t->_raw.rotation = r.turn;
     reportFirst(t, d);

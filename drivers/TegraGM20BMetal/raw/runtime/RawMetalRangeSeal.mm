@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
-// The range encode's encoders as they end, the resolves and stand-in stores after them, and the range's commit
+// The range encode's encoders as they end, the stand-in stores after them (the resolves: RawMetalRangeResolve.mm), and the
+// range's commit
 #import "RawMetalRangeEncode.h"
+#import "RawMetalPassErrors.h"
 #import "RawMetalPassFusion.h"
-#import "RawMetalResolveAsk.h"
+#import "RawMetalSplitPlan.h"
 #import "RawMetalTargetViews.h"
-#include "raw_samples.h"
 
 // The pass's backings of its YCbCr targets' stand-ins, read before the resolve passes take the encoder over, then the
 // stand-ins stored into the planes
@@ -20,15 +21,24 @@ bool RMRangeEncode::storeStandIns()
 {
     for (const auto &[t, j] : standInStores_) {
         if (!t->_raw.ycbcrStore) {
-            if (standInPass(t, true))
+            if (standInPass(t, j, true))
                 return false;
             continue;
         }
-        if (!backings_[j])
-            return fail(PredEncPlanarRT, "a YCbCr texture's pass left no stand-in backing", j);
-        if (const int failed =
-                storeYcbcrPlanes(rc_, t->_raw, *backings_[j], why_, loadedTargets_ >> j & 1 ? &loadedReach_ : nullptr))
-            return failed == 1 ? fail(PredEncPlanarRT, *why_, j) : refused();
+        if (!backings_[j]) {
+            constexpr const char *kNoBacking = "a YCbCr texture's pass left no stand-in backing";
+            rmPassWorkFails(cb_, ahead_, kNoBacking, MTLCommandBufferErrorInternal);
+            return fail(PredEncPlanarRT, kNoBacking, j);
+        }
+        const raw::PassReach *reach = loadedTargets_ >> j & 1 ? &loadedReach_ : nullptr;
+        if (const int failed = storeYcbcrPlanes(rc_, t->_raw, *backings_[j], why_, reach)) {
+            if (failed == 2) {
+                rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
+                return refused();
+            }
+            rmPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorOutOfMemory);
+            return fail(PredEncPlanarRT, *why_, j);
+        }
         planesWritten_.push_back(t);
     }
     standInStores_.clear();
@@ -36,120 +46,26 @@ bool RMRangeEncode::storeStandIns()
     return true;
 }
 
-static const raw::DepthStencilState &depthWrites()
+// A pass fused into the open one (beginPass's continuing_) draws on the targets that one's begin laid out: a colour
+// its draws bind as storage takes its backing's compression from that use, and one bound as a 2D array a block-linear
+// backing (raw::CommandBuffer::render; a pitch target is no array). The pass after `open` binds no colour so that
+// `open` did not.
+static bool storageLaidOut(RMCommandBuffer *cb, size_t open, size_t next)
 {
-    static const raw::DepthStencilState state = [] {
-        raw::DepthStencilDesc desc;
-        desc.depthCompare = 7;  // MTLCompareFunctionAlways
-        desc.depthWrite = true;
-        return raw::DepthStencilState(desc);
-    }();
-    return state;
+    raw::PassDesc a, b;
+    passStorageMasks(cb, next, b);
+    if (!b.storageMask)
+        return true;
+    passStorageMasks(cb, open, a);
+    return !(b.storageMask & ~a.storageMask) && !(b.arrayedStorageMask & ~a.arrayedStorageMask);
 }
 
-// Multisampled attachments' resolves (MTLStoreActionMultisampleResolve): after their pass, a pass of the pack's resolve state
-// of the format each, into the resolve texture over the pass's render area (an 8-bit sRGB one as its UNORM twin, whose codes
-// the state writes), sampling what the pass rendered (the resolve pass's prologue barrier orders its reads after those
-// writes)
-bool RMRangeEncode::resolvePasses()
+// A Depth16Unorm a draw of the pass after `open` tests in its shader is the converted zeta only where `open` began it so
+// (RawMetalRangeForms.mm depth16Tested)
+static bool testedLaidOut(RMCommandBuffer *cb, size_t open, size_t next)
 {
-    raw::Device &d = *d_;
-    raw::CommandBuffer *rc = rc_;
-    const raw::Texture *from[8] = {};
-    for (const Resolve &r : resolves_)
-        from[r.attachment] = re_->target(r.attachment);
-    const raw::Texture *depthFrom =
-        depthResolve_.into ? (separateResolved_[0] ? separateResolved_[0] : re_->depthTarget()) : nullptr;
-    const raw::Texture *stencilFrom =
-        stencilResolve_.into ? (separateResolved_[1] ? separateResolved_[1] : re_->depthTarget()) : nullptr;
-    // a memoryless zeta's compressed backing is made without a texture header (Device::compBacking)
-    if (const raw::Texture *z = depthFrom ? depthFrom : stencilFrom; z && !d.sampleable(*const_cast<raw::Texture *>(z)))
-        return fail(PredEncDepthStencil, "no texture header for a multisampled zeta's resolve", z->format);
-    const uint32_t width = re_->areaWidth(), height = re_->areaHeight();
-    for (const Resolve &r : resolves_) {
-        raw::Texture part;
-        const raw::Texture *into = rawAttachmentTarget(r.into, r.level, r.slice, false, part);
-        if (!into)
-            return fail(PredEncPassRender, "a resolve level, slice or plane the raw path cannot render", r.attachment);
-        const raw::ResolveAsk ask = resolveAsk(r.into, *into, *from[r.attachment], width, height);
-        raw::ResolveRoute route = raw::resolveRoute(ask);
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-        if (d.probeResolveDraw.load(std::memory_order_relaxed))
-            route = raw::ResolveByPass;
-        else if (raw::twodResolveComplementShape(ask) && d.probeResolveExact.load(std::memory_order_relaxed))
-            route = raw::ResolveByComplement;
-#endif
-        // a turned target's resolve is its state's turned variant, which reads the frame's position
-        const bool turned = r.into->_raw.rotation;
-        if (turned)
-            route = raw::ResolveByPass;
-        const bool twod = route != raw::ResolveByPass, exact = route == raw::ResolveByComplement;
-        if (twod) {
-            useTexture(rc, r.into, true);
-            if (rc->resolveTwod(*from[r.attachment], *into, exact, r.keepSamples))
-                continue;
-        }
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-        if (!turned && rc->probeForms().resolveTwoD) {
-            useTexture(rc, r.into, true);
-            if (rc->probeResolve(*from[r.attachment], *into))
-                continue;
-        }
-#endif
-        resolveTargets_.push_back(*into);
-        resolveTargets_.back().format = raw::resolveTargetFormat(into->format);
-        raw::PassDesc p;
-        p.color[0].texture = &resolveTargets_.back();
-        p.color[0].load = raw::ColorAttachment::DontCare;
-        p.color[0].store = true;
-        p.count = 1;
-        p.width = width;
-        p.height = height;
-        useTexture(rc, r.into, true);
-        const uint32_t samples = from[r.attachment]->samples;
-        raw::Pipeline *resolve = d.resolvePipeline(r.into->_raw.format, samples);
-        if (!resolve)
-            return fail(PredEncPassRender, "a resolve format with no resolve state", r.attachment);
-        raw::RenderEncoder *e = rc->render(p, why_);
-        if (!e)
-            return passRefused(r.attachment);
-        e->setPipeline(resolve);
-        e->setTexture(0, from[r.attachment]);
-        e->setBytes(2, 0, &samples, sizeof samples);
-        if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why_))
-            return refused();
-        e->end();
-        RAW_DIAGNOSTIC(d.stats.resolveRoute[raw::ResolveByPass][raw::resolveSampleSlot(samples)]++);
-    }
-    resolves_.clear();
-    if (__unsafe_unretained RMTexture *into = depthResolve_.into) {
-        raw::PassDesc p;
-        p.depthStencil.texture = &into->_raw;
-        p.width = width;
-        p.height = height;
-        useTexture(rc, into, true);
-        raw::RenderEncoder *e = depthFrom ? rc->render(p) : nullptr;
-        if (!e)
-            return fail(PredEncDepthStencil, "a depth resolve texture the raw path cannot render", into->_raw.format);
-        const uint32_t samples = depthFrom->samples;
-        e->setPipeline(d.depthResolvePipeline(into->_raw.format, depthResolve_.filter));
-        e->setDepthStencil(&depthWrites());
-        e->setTexture(0, depthFrom);
-        e->setBytes(2, 0, &samples, sizeof samples);
-        if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why_))
-            return refused();
-        e->end();
-        depthResolve_ = {};
-    }
-    if (__unsafe_unretained RMTexture *into = stencilResolve_.into) {
-        useTexture(rc, into, true);
-        if (!stencilFrom)
-            return fail(PredEncDepthStencil, "a stencil resolve without its source", into->_raw.format);
-        if (!rc->stencilResolve(into->_raw, *stencilFrom, stencilResolve_.pick, width, height, why_))
-            return fail(PredEncDepthStencil, *why_, into->_raw.format);
-        stencilResolve_ = {};
-    }
-    return true;
+    return !cb->_passes[cb->_plan.legacy(next).x].shaderTestsDepth ||
+           cb->_passes[cb->_plan.legacy(open).x].shaderTestsDepth;
 }
 
 bool RMRangeEncode::endEncoder(size_t at)
@@ -175,7 +91,8 @@ bool RMRangeEncode::endEncoder(size_t at)
             const raw::FusionPass first = fusedAt_ == renderBegin_ ? fused_ : fusionPass(cb, renderBegin_, shadows);
             fused_ = fusionPass(cb, at + 1, shadows);
             fusedAt_ = at + 1;
-            if (raw::canFusePasses(first, fused_)) {
+            if (raw::canFusePasses(first, fused_) && storageLaidOut(cb, renderBegin_, at + 1) &&
+                testedLaidOut(cb, renderBegin_, at + 1)) {
                 continuing_ = true;
                 return true;
             }
@@ -215,9 +132,14 @@ bool RMRangeEncode::closeEncoders()
         ce_.reset();
         endKernelShadows();
     }
-    if (!turned_.end(*rc_, why_))
+    if (!turned_.end(*rc_, why_)) {
+        rmPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorInternal);
         return fail(PredPassRotated, *why_);
-    return storeStandIns() && storeFormatTargets() && depth16Back() && writtenBack();
+    }
+    if (!storeStandIns() || !storeFormatTargets())
+        return false;
+    planesBack();
+    return depth16Back() && writtenBack();
 }
 
 bool RMRangeEncode::seal(size_t to)
@@ -286,6 +208,11 @@ bool RMRangeEncode::seal(size_t to)
             failCommandBuffer(
                 cb, [NSString stringWithFormat:@"The GPU driver did not submit the command buffer: %s", reason],
                 MTLCommandBufferErrorInternal);
+        // a refusal after part of it ran: nothing of it may run again elsewhere
+        if (!ahead_ && rc->partial)
+            failCommandBuffer(cb, [NSString stringWithFormat:@"The GPU driver ran part of the command buffer and the "
+                                                             @"kernel refused the rest: %s", reason],
+                              MTLCommandBufferErrorInternal);
         return fail(PredEncKernel, "the kernel refused the submission", uint32_t(rc->kernelResult), 0, reason);
     }
     firstContents_->submitted(cb);

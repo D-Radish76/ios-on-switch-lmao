@@ -12,9 +12,14 @@
 // encode, measured against Apple's GPUs). A draw samples a stand-in instead (Texture::standIn): an RGBA16Float image of the codes'
 // values, which a pass of the pack's conversion state (pack/xr.metal) draws before the work that samples it. Core Animation's
 // functions read these textures as half, and each code's value rounded to half is what Metal's nearest read returns.
-// BGR10_XR_sRGB (555) is BGR10_XR's word with each colour code read and written through Metal's own sRGB tables: its stand-in
-// holds those reads, and a pass renders it through its format's stand-in (raw_format_standin.h), never its codes. The other
-// _sRGB twins (551, 553) are not kept here.
+// BGR10_XR_sRGB (555) and BGRA10_XR_sRGB (553) are BGR10_XR's word and BGRA10_XR's fields with each colour code read and
+// written through Metal's own sRGB tables (raw_xr_srgb.h), BGRA10_XR_sRGB's alpha as BGRA10_XR's: their stand-ins hold those
+// reads, and a pass renders them through their format's stand-in (raw_format_standin.h), never their codes.
+// RGB10A8_2P_XR10_sRGB (551) is RGB10A8_2P_XR10's planes, blits and CPU copies (twoPlaneXr), each colour code read and written
+// through those sRGB tables and its alpha byte linear (m2v ExtendedRange::Planes { srgb }). xrForm answers None for it: a pass
+// renders it through its format stand-in, never in its planes as RGB10A8_2P_XR10 (raw_xr_pass.h); a draw samples its stand-in
+// (xrSampled, xrConversionOf). One of a descriptor keeps its texels as RGB10A8_2P_XR10's does (an M4 Max, one level: uploads,
+// CPU copies, passes and kernel writes all read back; m2v-textures3 probes/keeps.mm).
 #pragma once
 
 #include <algorithm>
@@ -25,10 +30,11 @@ namespace raw {
 
 enum class XrForm : uint8_t {
     None,
-    Planes,    // RGB10A8_2P_XR10
-    Bgra10,    // BGRA10_XR
-    Bgr10,     // BGR10_XR
-    Bgr10Srgb  // BGR10_XR_sRGB
+    Planes,     // RGB10A8_2P_XR10
+    Bgra10,     // BGRA10_XR
+    Bgr10,      // BGR10_XR
+    Bgr10Srgb,  // BGR10_XR_sRGB
+    Bgra10Srgb  // BGRA10_XR_sRGB
 };
 
 inline XrForm xrForm(uint32_t mtlPixelFormat)
@@ -38,6 +44,8 @@ inline XrForm xrForm(uint32_t mtlPixelFormat)
         return XrForm::Planes;
     case 552:
         return XrForm::Bgra10;
+    case 553:
+        return XrForm::Bgra10Srgb;
     case 554:
         return XrForm::Bgr10;
     case 555:
@@ -45,6 +53,20 @@ inline XrForm xrForm(uint32_t mtlPixelFormat)
     default:
         return XrForm::None;
     }
+}
+
+constexpr uint32_t kRgb10A8XrSrgb = 551;
+
+// RGB10A8_2P_XR10 or its sRGB twin: a texel of a colour word and an alpha byte, Metal's two planes
+inline bool twoPlaneXr(uint32_t format)
+{
+    return format == 550 || format == kRgb10A8XrSrgb;
+}
+
+// Whether a draw samples a texture of `format` through an extended-range stand-in (Texture::standIn)
+inline bool xrSampled(uint32_t format)
+{
+    return xrForm(format) != XrForm::None || format == kRgb10A8XrSrgb;
 }
 
 // The pack's conversion state of a form (pack/xr.metal, keyed "raw.xr.<fragment function>"), null for none; `twoPlanes`:
@@ -60,19 +82,47 @@ inline const char *xrConversion(XrForm f, bool twoPlanes = false)
         return "raw.xr.xr_bgr10_frag";
     case XrForm::Bgr10Srgb:
         return "raw.xr.xr_bgr10_srgb_frag";
+    case XrForm::Bgra10Srgb:
+        return "raw.xr.xr_bgra10_srgb_frag";
     case XrForm::None:
         break;
     }
     return nullptr;
 }
 
+// The conversion state a draw samples a texture of `format` through (its stand-in's)
+inline const char *xrConversionOf(uint32_t format, bool twoPlanes = false)
+{
+    if (format == kRgb10A8XrSrgb)
+        return twoPlanes ? "raw.xr.xr_two_planes_srgb_frag" : "raw.xr.xr_planes_srgb_frag";
+    return xrConversion(xrForm(format), twoPlanes);
+}
+
 // The bytes of each texel a blit between a texture of `mtlPixelFormat` (`bpp` bytes a texel) and a buffer moves in the buffer
 inline uint32_t bufferTexelBytes(uint32_t mtlPixelFormat, uint32_t bpp)
 {
-    return xrForm(mtlPixelFormat) == XrForm::Planes ? 4 : bpp;
+    return twoPlaneXr(mtlPixelFormat) ? 4 : bpp;
 }
 
 constexpr uint32_t kXrStandInFormat = 115;  // RGBA16Float
+
+// An RGB10A8_2P_XR10 or RGB10A8_2P_XR10_sRGB texel buffer as an M4 Max lays one in its buffer (m2v-textures3
+// probes/xrbuf.mm): each texel's colour word in order, then each alpha byte in order from the words' bytes rounded up to
+// 16 KiB. Its own header reads the words (R32Uint); a draw or kernel samples its stand-in.
+constexpr uint32_t kXrTexelBufferWordBytes = 4, kXrTexelBufferWordFormat = 53;
+// A texel buffer's header type (fx::kTexOneDBuffer, clb097tex.h TEXTURE_TYPE ONE_D_BUFFER), for the headers that see no fx
+constexpr uint8_t kTexelBufferType = 6;
+
+constexpr uint64_t texelBufferAlphaOffset(uint64_t elements)
+{
+    return (elements * kXrTexelBufferWordBytes + 16383) & ~uint64_t(16383);
+}
+
+// The bytes a texel buffer of `elements` texels of `format` (`bpp` bytes a texel) spans in its buffer
+constexpr uint64_t texelBufferBytes(uint32_t format, uint64_t elements, uint32_t bpp)
+{
+    return twoPlaneXr(format) ? texelBufferAlphaOffset(elements) + elements : elements * bpp;
+}
 
 namespace xr_detail {
 
@@ -141,7 +191,8 @@ inline void xrClearTexel(XrForm f, const float color[4], bool straight, uint32_t
         out[2] = code[0] << 6;
         out[3] = code[3] << 6;
         break;
-    case XrForm::Bgr10Srgb:  // cleared in its stand-in (formatStandInClear), never through the clear registers
+    case XrForm::Bgr10Srgb:  // cleared in their stand-ins (formatStandInClear), never through the clear registers
+    case XrForm::Bgra10Srgb:
     case XrForm::None:
         break;
     }

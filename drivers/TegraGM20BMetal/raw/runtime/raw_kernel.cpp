@@ -220,7 +220,9 @@ bool Kernel::bind(uint64_t va, uint64_t handle, uint64_t range, uint32_t kind, b
     b.count = 1;
     b.ops[0] = {gpuVolatile && exactJobs() ? TegraGM20BBindMapVolatile : TegraGM20BBindMap, kind, handle, 0, va, range};
     const size_t in = offsetof(TegraGM20BAbiVmBind, ops) + sizeof(b.ops[0]);
-    if (call(TegraGM20BMethodVmBind, &b, in, nullptr, 0) != KERN_SUCCESS) {
+    if (const int kr = call(TegraGM20BMethodVmBind, &b, in, nullptr, 0); kr != KERN_SUCCESS) {
+        os_log_error(OS_LOG_DEFAULT, "raw: VmBind of BO %llu, %llu bytes at VA %#llx kind %#x, failed: 0x%x",
+                     (unsigned long long)handle, (unsigned long long)range, (unsigned long long)va, kind, kr);
         setError("VmBind failed");
         return false;
     }
@@ -285,8 +287,11 @@ bool Kernel::importPages(void *addr, uint64_t bytes, Bo &bo, uint32_t surfaceId,
     TegraGM20BAbiBoImport in = {base, span, surfaceId, gpuReads ? uint32_t(TegraGM20BImportGpuReads) : 0};
     TegraGM20BAbiBoAllocReply r = {};
     bo = {};
-    if (call(TegraGM20BMethodBoImport, &in, sizeof in, &r, sizeof r) != KERN_SUCCESS)
+    if (const int kr = call(TegraGM20BMethodBoImport, &in, sizeof in, &r, sizeof r); kr != KERN_SUCCESS) {
+        os_log_error(OS_LOG_DEFAULT, "raw: BoImport of %llu bytes at %p (IOSurface %u) failed: 0x%x",
+                     (unsigned long long)span, (void *)base, surfaceId, kr);
         return false;
+    }
     bo.handle = r.handle;
     bo.bytes = span;
     return true;
@@ -316,33 +321,44 @@ uint32_t Kernel::surfaceLayout(const Bo &bo, uint32_t width, uint32_t height, ui
         bo.handle, width, height, bpp, bytesPerRow, writes ? uint32_t(TegraGM20BLayoutWrites) : 0, 0};
     if (canonical && (info_.flags & TegraGM20BInfoCanonicalSurfaceLayout)) {
         TegraGM20BAbiSurfaceLayoutInfo out = {};
-        if (call(TegraGM20BMethodSurfaceLayoutInfo, &in, sizeof in, &out, sizeof out) != KERN_SUCCESS)
+        const int kr = call(TegraGM20BMethodSurfaceLayoutInfo, &in, sizeof in, &out, sizeof out);
+        if (kr != KERN_SUCCESS) {
+            os_log_error(OS_LOG_DEFAULT,
+                         "raw: SurfaceLayoutInfo of import %llu (%ux%u x%u, rows %u) failed: 0x%x: no texture over it",
+                         (unsigned long long)bo.handle, width, height, bpp, bytesPerRow, kr);
             return TegraGM20BLayoutOtherShape;
+        }
         if (out.layout == TegraGM20BLayoutTiled)
             *canonical = {out.width, out.height,          out.bpp,   out.pitch,
                           out.rows,  uint8_t(out.y_log2), out.align, out.bytes};
+        else if (out.layout == TegraGM20BLayoutOtherShape)
+            os_log_error(OS_LOG_DEFAULT,
+                         "raw: SurfaceLayoutInfo of import %llu (%ux%u x%u, rows %u): laid out for another shape: no "
+                         "texture over it",
+                         (unsigned long long)bo.handle, width, height, bpp, bytesPerRow);
         return out.layout;
     }
     if (!(info_.flags & TegraGM20BInfoSurfaceLayout))
         return 0;
     TegraGM20BAbiSurfaceLayoutReply out = {};
     if (const int kr = call(TegraGM20BMethodSurfaceLayout, &in, sizeof in, &out, sizeof out); kr != KERN_SUCCESS) {
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
         os_log_error(OS_LOG_DEFAULT,
                      "raw: SurfaceLayout of import %llu (%ux%u x%u, rows %u, %s) failed: 0x%x: no texture over it",
                      (unsigned long long)bo.handle, width, height, bpp, bytesPerRow, writes ? "writes" : "reads", kr);
-#endif
         return TegraGM20BLayoutOtherShape;
     }
-    if (canonical && out.layout == TegraGM20BLayoutTiled && !tgm_layout_tiled(width, height, bpp, canonical))
+    if (canonical && out.layout == TegraGM20BLayoutTiled && !tgm_layout_tiled(width, height, bpp, canonical)) {
+        os_log_error(OS_LOG_DEFAULT,
+                     "raw: SurfaceLayout of import %llu (%ux%u x%u): tiled at a shape NIL lays out none of: no texture "
+                     "over it",
+                     (unsigned long long)bo.handle, width, height, bpp);
         return TegraGM20BLayoutOtherShape;
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+    }
     if (out.layout == TegraGM20BLayoutOtherShape)
         os_log_error(OS_LOG_DEFAULT,
                      "raw: SurfaceLayout of import %llu (%ux%u x%u, rows %u, %s): tiled at another shape: no texture "
                      "over it",
                      (unsigned long long)bo.handle, width, height, bpp, bytesPerRow, writes ? "writes" : "reads");
-#endif
     return out.layout;
 }
 
@@ -368,6 +384,9 @@ bool Kernel::bindImport(void *addr, Bo &bo, uint32_t kind)
     const uintptr_t base = uintptr_t(addr) & ~uintptr_t(info_.page_size - 1);
     bo.vaBase = allocVa(bo.bytes, kVaGranule);
     if (!bo.vaBase) {
+        os_log_error(OS_LOG_DEFAULT, "raw: no GPU VA left for an import of %llu bytes (%llu held): no texture over it",
+                     (unsigned long long)bo.bytes,
+                     (unsigned long long)vaUsed_.load(std::memory_order_relaxed));
         setError("out of GPU VA");
         free(bo);
         return false;

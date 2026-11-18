@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalRangeEncode.h"
 #import "RawMetalPlanAdapters.h"
+#import "RawMetalPassErrors.h"
 #import "RawMetalPassFusion.h"
 #import "RawMetalReach.h"
 #import "RawMetalSplitPlan.h"
 #import "RawMetalIndirect.h"
+#import "RawMetalIndirectCompute.h"
 #import "RawMetalTargetViews.h"
 #include "raw_compute_lookup.h"
 #include "raw_clear.h"
@@ -41,6 +43,18 @@ void RMRangeEncode::refresh(size_t pass)
                                });
 }
 
+// A stand-in's conversion that failed: the stand-in and its pass are the driver's own, so the command buffer fails with
+// the driver's error or for want of memory, its line naming the step
+static void standInFails(RMCommandBuffer *cb, bool ahead, const char *why, MTLCommandBufferError code)
+{
+    if (ahead)
+        return;
+    SWITCH_REFUSE_DETAIL("raw", "standin.conversion", uintptr_t(why), "%s: %s (MTLCommandBuffer.h)", why,
+                         code == MTLCommandBufferErrorOutOfMemory ? "MTLCommandBufferErrorOutOfMemory"
+                                                                  : "MTLCommandBufferErrorInternal");
+    failCommandBuffer(cb, @(why), code);
+}
+
 // extended-range textures (raw_xr.h): a draw samples the stand-in, drawn from the codes by the pack's conversion state
 // before the first pass whose draws sample it, and again after work here writes the codes. Their passes' prologue barrier
 // orders the conversion between the codes' writes and the samples.
@@ -52,11 +66,13 @@ bool RMRangeEncode::standIns(size_t pass)
                                    if (!(use.access & raw::ResourceUse::Sample))
                                        return;
                                    __unsafe_unretained RMTexture *texture = (__bridge RMTexture *)use.object;
-                                   if ((use.access & raw::ResourceUse::Write) && texture->_raw.standIn)
+                                   if ((use.access & raw::ResourceUse::Write) && rmStandInBacked(texture))
                                        noteWritten(standInsWritten_, texture);
-                                   if (texture->_raw.standIn && !standInFresh_.count(texture) &&
-                                       (!texture->_raw.xrPlanes || cb_->_xrStandIns.count(texture)))
-                                       stale.push_back(texture);
+                                   __unsafe_unretained RMTexture *holder = rmStandInHolder(texture);
+                                   if (texture->_raw.standIn && !standInFresh_.count(holder) &&
+                                       (!texture->_raw.xrPlanes || cb_->_xrStandIns.count(texture)) &&
+                                       std::find(stale.begin(), stale.end(), holder) == stale.end())
+                                       stale.push_back(holder);
                                });
     // one pass of the conversion state from `from` into `into`, `width` x `height` of each; false: refused
     auto convert = [&](raw::Texture *into, const raw::Texture *from, const raw::Texture &x, uint32_t width,
@@ -68,23 +84,28 @@ bool RMRangeEncode::standIns(size_t pass)
         p.count = 1;
         p.width = width;
         p.height = height;
-        raw::RenderEncoder *conv = rc_->render(p);
-        if (!conv)
-            return fail(PredEncPassRender, "an extended-range texture's stand-in the raw path cannot render");
-        conv->setPipeline(d_->xrPipeline(raw::xrForm(x.format), x.xrPlanes));
+        // a pass into one stand-in the device made as a target: render() refuses it only for want of a backing
+        raw::RenderEncoder *conv = rc_->render(p, why_);
+        if (!conv) {
+            standInFails(cb_, ahead_, *why_, MTLCommandBufferErrorOutOfMemory);
+            return fail(PredEncPassRender, *why_);
+        }
+        conv->setPipeline(d_->ownPipeline(raw::xrConversionOf(x.format, x.xrPlanes)));
         conv->setTexture(0, from);
         if (x.xrPlanes)
             conv->setTexture(1, x.chroma);
         conv->setViewport(0, 0, width, height, 0, 1);
         conv->setScissor(0, 0, width, height);
-        if (!conv->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why_))
+        if (!conv->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why_)) {
+            rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
             return refused();
+        }
         conv->end();
         return true;
     };
     for (__unsafe_unretained RMTexture *t : stale) {
-        raw::Texture &x = t->_raw;
-        codes_.push_back(x);
+        codes_.push_back(rmStandInCodes(t));
+        raw::Texture x = codes_.back();
         raw::Texture &own = codes_.back();
         own.standIn = nullptr;
         useTexture(rc_, t, false);
@@ -92,8 +113,30 @@ bool RMRangeEncode::standIns(size_t pass)
             raw::BlitEncoder *b = rc_->blit();
             const bool widened = b->widenSrgbPair(x);
             b->end();
-            if (!widened)
-                return fail(PredEncPassRender, "an RG8Unorm_sRGB texture whose stand-in is not of its texels");
+            if (!widened) {
+                constexpr const char *kUnlike = "an RG8Unorm_sRGB texture whose stand-in is not of its texels";
+                standInFails(cb_, ahead_, kUnlike, MTLCommandBufferErrorInternal);
+                return fail(PredEncPassRender, kUnlike);
+            }
+            standInFresh_.insert(t);
+            continue;
+        }
+        if (x.type == raw::fx::kTexOneDBuffer) {
+            // a texel buffer's codes copied in order into images of its stand-in's rows (Device::createTexelStandIn),
+            // a two-plane one's alpha bytes beside its words, then converted as a 2D image
+            raw::Texture &words = *x.standIn->luma;
+            raw::BlitEncoder *b = rc_->blit();
+            rc_->use(words, true);
+            b->copyBytes(x.va, words.va, uint64_t(x.width) * x.bpp);
+            if (raw::twoPlaneXr(x.format)) {
+                rc_->use(*x.standIn->chroma, true);
+                b->copyBytes(x.va + raw::texelBufferAlphaOffset(x.width), x.standIn->chroma->va, x.width);
+                x.xrPlanes = true;
+                x.chroma = x.standIn->chroma;
+            }
+            b->end();
+            if (!convert(x.standIn, &words, x, x.standIn->width, x.standIn->height))
+                return false;
             standInFresh_.insert(t);
             continue;
         }
@@ -106,15 +149,21 @@ bool RMRangeEncode::standIns(size_t pass)
         }
         // a layered, mipmapped, 3D or multisampled one: a pass a pair of 2D images over the same texels (raw_xr_parts.h)
         std::vector<raw::XrPart> parts;
-        if (!raw::xrParts(own, *x.standIn, parts))
-            return fail(PredEncPassRender, "an extended-range texture whose stand-in is not of its texels");
+        if (!raw::xrParts(own, *x.standIn, parts)) {
+            constexpr const char *kUnlike = "an extended-range texture whose stand-in is not of its texels";
+            standInFails(cb_, ahead_, kUnlike, MTLCommandBufferErrorInternal);
+            return fail(PredEncPassRender, kUnlike);
+        }
         for (raw::XrPart &part : parts) {
             codeParts_.push_back(part);
             raw::XrPart &held = codeParts_.back();
             held.codes.tic = d_->attachmentTic(own, held.codes, held.level, held.key);
             held.standIn.tic = d_->attachmentTic(*x.standIn, held.standIn, held.level, held.key);
-            if (!held.codes.tic || !held.standIn.tic)
-                return fail(PredEncPassRender, "no header left for an extended-range texture's conversion");
+            if (!held.codes.tic || !held.standIn.tic) {
+                constexpr const char *kNoHeader = "no header left for an extended-range texture's conversion";
+                standInFails(cb_, ahead_, kNoHeader, MTLCommandBufferErrorOutOfMemory);
+                return fail(PredEncPassRender, kNoHeader);
+            }
             if (!convert(&held.standIn, &held.codes, x, held.codes.width, held.codes.height))
                 return false;
         }
@@ -128,11 +177,8 @@ bool RMRangeEncode::standIns(size_t pass)
 // command buffer's native view of a decoder's plane answers (readTexture) reads in place.
 void RMRangeEncode::localShadows(std::vector<raw::KernelUse> &list)
 {
-    kernelWindows_.name(list, [&](uint64_t bytes) {
-        return rc_->transient(uint32_t(std::min<uint64_t>(bytes, UINT32_MAX)));
-    });
     for (raw::KernelUse &u : list)
-        if (u.shadowed && !u.writes && u.windowSlot < 0) {
+        if (u.shadowed && !u.writes) {
             const raw::Texture &x = ((__bridge RMTexture *)u.object)->_raw;
             if (const raw::Texture *native = rc_->readTexture(&x); native != &x) {
                 u.shadowed = false;
@@ -145,22 +191,10 @@ void RMRangeEncode::shadowCopies(const std::vector<const void *> &back, const st
 {
     raw::BlitEncoder *copy = rc_->blit();
     for (const void *o : back) {
-        if (const raw::KernelWindows::Window *w = kernelWindows_.find(o)) {
-            rc_->use(((__bridge RMBuffer *)w->buffer)->_raw, true, false);
-            rc_->useAddress(w->va, w->span.bytes, false);
-            copy->copyBytes(w->va, w->span.va, w->span.bytes);
-            continue;
-        }
         const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
         copy->copyTexels(*x.sampled, 0, 0, 0, x, 0, 0, 0, x.width, x.height);
     }
     for (const void *o : fill) {
-        if (const raw::KernelWindows::Window *w = kernelWindows_.find(o)) {
-            useBuffer(rc_, (__bridge RMBuffer *)w->buffer, false);
-            rc_->useAddress(w->va, w->span.bytes, true);
-            copy->copyBytes(w->span.va, w->va, w->span.bytes);
-            continue;
-        }
         const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
         copy->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
     }
@@ -171,8 +205,7 @@ void RMRangeEncode::beginKernelShadows(size_t encoderAt)
 {
     encoderUses_.clear();
     for (size_t at = encoderAt; at < cb_->_plan.encoderEnd(encoderAt); ++at) {
-        if (cb_->_plan.operation(at).op != OpDispatch ||
-            !(cb_->_plan.dispatch(at).surfaceSlots | cb_->_plan.dispatch(at).windowSlots))
+        if (cb_->_plan.operation(at).op != OpDispatch || !cb_->_plan.dispatch(at).surfaceSlots)
             continue;
         kernelUses(cb_, at, dispatchUses_);
         localShadows(dispatchUses_);
@@ -230,12 +263,26 @@ bool RMRangeEncode::command(size_t at)
     RMCommandBuffer *cb = cb_;
     raw::CommandBuffer *rc = rc_;
     const Cmd c = cb->_plan.legacy(at);
+    // a compute command the encode refused fails its command buffer as its encoder names it (raw::ComputeFailure);
+    // predication records the recording found misused are the client's
+    const auto computeRefused = [&](RMPred p, const char *w, uint64_t a) {
+        if (!ahead_)
+            rmComputeFails(cb,
+                           p == PredComputePredicate && cb->_predicates.misused() ? raw::ComputeFailure::Invalid
+                                                                                 : ce_->failure(),
+                           p, a, w);
+        return fail(p, w, a);
+    };
+    if (at == from_)  // a range begun inside a compute encoder (open) is inside that encoder's unit
+        unitWithheld_ = computeUnit_ && cb->_predicates.recorded() && rmComputeUnitWithheld(cb, at, serialCompute_);
     if ((c.op == OpRender && !rmContinuesPass(cb, at)) || c.op == OpCompute || c.op == OpBlit) {
         encoder_ = at;
 #if SWITCH_RAW_DIAGNOSTICS
         traceFreshUses(cb, at);
 #endif
     }
+    if (c.op == OpDispatch && unitWithheld_)
+        return true;
     if (c.op == OpDispatch) {
         RAW_ENCODE_SPAN(Compute);
         const auto &dispatch = cb->_plan.dispatch(at);
@@ -243,7 +290,7 @@ bool RMRangeEncode::command(size_t at)
         const auto &state = cb->_plan.kernelStates[dispatch.state];
         const auto &textures = cb->_plan.kernelTextures[state.textures].objects;
         dispatchUses_.clear();
-        if ((dispatch.surfaceSlots | dispatch.windowSlots) && !encoderShadows_) {  // a range begun inside its encoder
+        if (dispatch.surfaceSlots && !encoderShadows_) {  // a range begun inside its encoder
             ce_->end();
             ce_.reset();
             beginKernelShadows(dispatch.encoderBegin);
@@ -264,10 +311,6 @@ bool RMRangeEncode::command(size_t at)
             stateCursor_.reset();
         }
         encodePlannedState(cb, at, *rc, re_, &*ce_, stateCursor_);
-        ce_->clearBufferWindows();
-        for (const raw::KernelUse &u : dispatchUses_)
-            if (u.windowSlot >= 0)
-                ce_->setBufferWindow(uint32_t(u.windowSlot), kernelWindows_.find(u.object)->va);
         const auto &regions = dispatch.regions;
         ce_->setStageInRegion(dispatch.stageIn);
         ce_->setStageInRegionIndirect(dispatch.stageInBuffer ? &((__bridge RMBuffer *)dispatch.stageInBuffer)->_raw
@@ -285,13 +328,13 @@ bool RMRangeEncode::command(size_t at)
             ce_->setState(kernels->jobs[0]->value());
             if (const char *w = nullptr; !ce_->dispatchIndirect(&((__bridge RMBuffer *)dispatch.arguments)->_raw,
                                                                 dispatch.argumentsOffset, regions.nominal, &w))
-                return fail(PredCompute, w, c.op);
+                return computeRefused(PredCompute, w, c.op);
         }
         for (uint8_t region = 0; region < regions.count && !dispatch.arguments; ++region) {
             ce_->setState(kernels->jobs[region]->value());
             if (const char *w = nullptr; !ce_->dispatchRegion(regions.regions[region], regions.grid, regions.nominal,
                                                               !region, region + 1 == regions.count, &w))
-                return fail(PredCompute, w, c.op);
+                return computeRefused(PredCompute, w, c.op);
         }
         kernelShadows_.after(dispatchUses_.data(), dispatchUses_.size());
         if (standIns_ && !standInFresh_.empty())
@@ -310,14 +353,22 @@ bool RMRangeEncode::command(size_t at)
     }
     if (isKernelCommand(c.op)) {
         RAW_ENCODE_SPAN(Compute);
+        if (unitWithheld_ && (c.op == OpExecuteKernels || c.op == OpPredicate))
+            return true;
         if (const char *w = nullptr; !encodeKernel(*ce_, *rc, cb, c, at, &w))
-            return fail(PredCompute, w, c.op);
+            return computeRefused(c.op == OpPredicate        ? PredComputePredicate
+                                  : c.op == OpExecuteKernels ? PredComputeKernel
+                                                             : PredCompute,
+                                  w, c.op);
         return true;
     }
     switch (c.op) {
     case OpCompute:
-        if (!computeUnit_ || serialCompute_ != (c.a == MTLDispatchTypeSerial))
+        if (!computeUnit_ || serialCompute_ != (c.a == MTLDispatchTypeSerial)) {
             rc->endPredicationUnit();
+            unitWithheld_ = cb->_predicates.recorded() &&
+                            rmComputeUnitWithheld(cb, at, c.a == MTLDispatchTypeSerial);
+        }
         computeUnit_ = true;
         beginKernelShadows(at);
         if (standIns_ && !standIns(at))
@@ -402,35 +453,26 @@ bool RMRangeEncode::command(size_t at)
         break;
     case OpMipmaps: {
         RAW_ENCODE_SPAN(Blit);
-        if (!encodeMipmaps(rc, (__bridge RMTexture *)c.obj, uint32_t(c.c), be_, why_))
-            return refused();
-        break;
-    }
-    case OpFillTexture: {
-        RAW_ENCODE_SPAN(Blit);
-        be_->end();
-        if (!fillTexturePass(cb, c, rc)) {
-            __unsafe_unretained RMTexture *t = (__bridge RMTexture *)c.obj;
-            // the fill's pass loads its one target, which render() refuses only as a rotation-4 plane (loaded
-            // transposed, raw_rotated_pass.h) or for want of memory for the target's backing
-            if ((t->_levelsOwner ?: t)->_raw.rotation == 4)
-                return fail(PredBlitTexFill, "a texture fill into a rotation-4 plane, which a pass loads transposed",
-                            t->_descriptor.pixelFormat);
-            constexpr const char *memory = "no memory for a texture fill's target backing";
+        __unsafe_unretained RMTexture *t = (__bridge RMTexture *)c.obj;
+        if (!encodeMipmaps(rc, t, uint32_t(c.c), be_, why_)) {
+            // every step was routed at record: what fails here is a header or a backing the device had no room for
+            constexpr const char *memory = "no texture header or memory for a generateMipmapsForTexture: step";
             if (!ahead_) {
-                SWITCH_REFUSE("raw", "blit.fill_memory",
-                              "%s (format %lu): MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h)", memory,
-                              (unsigned long)t->_descriptor.pixelFormat);
+                SWITCH_REFUSE("raw", "mipmaps.memory", "%s (%s): MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h)",
+                              memory, *why_ ? *why_ : "");
                 failCommandBuffer(cb, @(memory), MTLCommandBufferErrorOutOfMemory);
             }
-            return fail(PredBlitTexFill, memory, t->_descriptor.pixelFormat);
+            return fail(PredEncPassRender, memory, t->_descriptor.pixelFormat);
         }
-        be_ = rc->blit();
+        if (!fresh_.empty())
+            fresh_.erase(t);  // its levels written: its pool image and stand-in are refreshed again before a sample
+        standInFresh_.erase(t);
         break;
     }
     case OpCopyTexture:
     case OpCopyBuffer:
     case OpFillBuffer:
+    case OpFillTexture:
     case OpCopyBufferToTexture:
     case OpCopyTextureToBuffer: {
         RAW_ENCODE_SPAN(Blit);

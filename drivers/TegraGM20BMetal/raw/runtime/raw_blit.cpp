@@ -5,15 +5,13 @@
 #include "raw_gpu.h"
 #include "raw_kit.h"
 #include "raw_zeta_cpu.h"
-#include "raw_srgb_pair.h"
-#include "raw_xr_parts.h"
 #include "../fx/fx_mip_route.h"
-#include "raw_tiled_cache.h"
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 
-#include "raw_gpu_internal.h"
+#include "raw_blit_remap.h"
 
 namespace raw {
 
@@ -47,24 +45,7 @@ BlitEncoder *CommandBuffer::blit()
     return &e;
 }
 
-static uint64_t rowStorageBytes(uint32_t pitch, uint32_t width, uint32_t height, uint32_t element)
-{
-    if (!width || !height || !element)
-        return 0;
-    const uint64_t rows = uint64_t(pitch) * (height - 1), last = uint64_t(width) * element;
-    return last <= UINT64_MAX - rows ? rows + last : 0;
-}
-
 namespace {
-// SET_REMAP_COMPONENTS of one-, two- or four-byte components (`size`): DST_X..W each SRC_X..W (0..3) or NO_WRITE (6), the
-// source's and destination's component counts (clb0b5)
-constexpr uint32_t kRemapNoWrite = NVB0B5_SET_REMAP_COMPONENTS_DST_X_NO_WRITE;
-
-constexpr uint32_t remapOf(uint32_t x, uint32_t y, uint32_t z, uint32_t w, uint32_t size, uint32_t src, uint32_t dst)
-{
-    return x | y << 4 | z << 8 | w << 12 | (size - 1) << 16 | (src - 1) << 20 | (dst - 1) << 24;
-}
-
 // `lines` rows of `width` texels of `bpp` bytes, pitch to pitch
 void copyRows(Push &p, uint64_t src, uint32_t srcPitch, uint64_t dst, uint32_t dstPitch, uint32_t width, uint32_t lines,
               uint32_t bpp, Device::Stats &stats)
@@ -135,8 +116,6 @@ bool Device::copyCallerPages(const Texture &t, std::shared_ptr<void> owner)
     RAW_DIAGNOSTIC(stats.textureUploads.fetch_add(1, std::memory_order_relaxed));
     return true;
 }
-
-// ---- blit encoder ----
 
 // NVK's copies of pitch memory: a byte copy (vkCmdCopyBuffer, nvk_cmd_copy_memory_ce: 128 KiB per launch, no remap) or a
 // rectangle of pitch rows (vkCmdCopyImage of linear images, nouveau_copy_rect: remap of min(bpp, 4)-byte components, so the line
@@ -238,23 +217,6 @@ void BlitEncoder::copyRect(uint64_t src, uint32_t srcPitch, uint64_t dst, uint32
     copyRows(p_, src, srcPitch, dst, dstPitch, width, lines, bpp, dev_->stats);
 }
 
-void BlitEncoder::copyTexels(const Texture &src, uint32_t sx, uint32_t sy, uint32_t sz, const Texture &dst, uint32_t dx,
-                             uint32_t dy, uint32_t dz, uint32_t w, uint32_t h, uint8_t aspect)
-{
-    cb_->use(src, false);
-    cb_->use(dst, true);
-    room(32);
-    const uint32_t remap = aspect == kAspectStencil ? remapOf(kRemapNoWrite, 1, kRemapNoWrite, kRemapNoWrite, 4, 2, 2)
-                                                    : texelRemap(src.bpp);
-    copyRemapped(p_, sideOf(src, sx, sy, sz), sideOf(dst, dx, dy, dz), w, h, remap,
-                 aspect == kAspectStencil ? 4 : src.bpp, dev_->stats);
-#if SWITCH_RAW_DIAGNOSTICS
-    char detail[64];
-    snprintf(detail, sizeof detail, " from %ux%u f%u at %u,%u", src.width, src.height, src.format, sx, sy);
-    logEdgeMiss("copy", dst, {dx, dy, dx + w, dy + h}, detail);
-#endif
-}
-
 void BlitEncoder::fillTexels(const Texture &t, uint32_t z, uint32_t w, uint32_t h, const CopyFill &fill)
 {
     cb_->use(t, true);
@@ -265,149 +227,43 @@ void BlitEncoder::fillTexels(const Texture &t, uint32_t z, uint32_t w, uint32_t 
     copyRemapped(p_, side, side, w, h, fill.remap, uint32_t(fill.componentBytes) * fill.components, dev_->stats);
 }
 
-void BlitEncoder::copyFirstByte(const Texture &from, const Texture &to)
+void BlitEncoder::fillRect(const Texture &t, uint32_t x, uint32_t y, uint32_t z, uint32_t w, uint32_t h,
+                           const uint8_t texel[16], uint32_t bytes, uint32_t words)
 {
-    cb_->use(from, false);
-    cb_->use(to, true);
-    room(32);
-    copyRemapped(p_, sideOf(from, 0, 0, 0), sideOf(to, 0, 0, 0), std::min(from.width, to.width),
-                 std::min(from.height, to.height),
-                 remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 1, from.bpp, to.bpp), 1, dev_->stats);
-}
-
-void BlitEncoder::copyBufferTexels(uint64_t va, uint32_t pitch, const Texture &t, uint32_t x, uint32_t y, uint32_t z,
-                                   uint32_t w, uint32_t h, bool toTexture, uint8_t aspect)
-{
-    if (t.xrPlanes && t.luma)  // plane 0's words alone (raw_xr.h bufferTexelBytes): the alpha plane stays as it is
-        return copyBufferTexels(va, pitch, *t.luma, x, y, z, w, h, toTexture, aspect);
-    if (!toTexture)
-        cb_->bufferWrites_.note(va, uint64_t(pitch) * h + uint64_t(w) * 16);
-    cb_->use(t, toTexture);
-#if SWITCH_RAW_DIAGNOSTICS
-    if (toTexture && !t.zeta)
-        logEdgeMiss("upload", t, {x, y, x + w, y + h}, "");
-#endif
-    room(48);
-    const CopySide rows{va, pitch}, texels = sideOf(t, x, y, z);
-    const CopySide &from = toTexture ? rows : texels, &to = toTexture ? texels : rows;
-    if (t.zeta && t.format == kZetaFormat && aspect == kAspectDepth) {
-        // the texel's first word: depth
-        copyRemapped(p_, from, to, w, h,
-                     toTexture ? remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 4, 1, 2)
-                               : remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 4, 2, 1),
-                     4, dev_->stats);
+    if (!w || !h || !bytes || bytes > 16)
         return;
-    }
-    if (t.zeta && t.format == kZetaFormat && aspect == kAspectStencil && t.stencilTemp) {
-        // its fifth byte, stencil: as the third of its two-byte components to or from the temp's two bytes a texel, and those
-        // two bytes' first to or from the buffer's byte
-        const Texture &s = *t.stencilTemp;
-        cb_->use(s, true);
-        const CopySide temp{s.va + uint64_t(y) * s.pitch + 2ull * x, s.pitch};
-        if (toTexture) {
-            copyRemapped(p_, rows, temp, w, h, remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 1, 1, 2), 1,
-                         dev_->stats);
-            copyRemapped(p_, temp, texels, w, h, remapOf(kRemapNoWrite, kRemapNoWrite, 0, kRemapNoWrite, 2, 1, 4), 2,
-                         dev_->stats, true);
-        } else {
-            copyRemapped(p_, texels, temp, w, h, remapOf(2, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 2, 4, 1), 2,
-                         dev_->stats);
-            copyRemapped(p_, temp, rows, w, h, remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 1, 2, 1), 1,
-                         dev_->stats, true);
-        }
-        return;
-    }
-    if (xrForm(t.format) == XrForm::Planes) {
-        // four-byte components: the texel's color word to the buffer's word, or into the texel with its alpha word NO_WRITE (6)
-        constexpr uint32_t kOut = 3u << 16 | 1u << 20, kIn = 6u << 4 | 3u << 16 | 1u << 24;
-        copyRemapped(p_, from, to, w, h, toTexture ? kIn : kOut, bufferTexelBytes(t.format, t.bpp), dev_->stats);
-        return;
-    }
-    copySides(p_, from, to, w, h, t.bpp, dev_->stats);
-}
-
-bool BlitEncoder::widenSrgbPair(const Texture &t)
-{
-    if (!srgbPair(t.format) || !t.standIn)
-        return false;
-    std::vector<XrPart> parts;
-    if (!t.blockLinear) {
-        XrPart whole;
-        whole.codes = t;
-        whole.standIn = *t.standIn;
-        parts.push_back(whole);
-    } else {
-        Texture codes = t;
-        codes.standIn = nullptr;
-        if (!xrParts(codes, *t.standIn, parts))
-            return false;
-    }
-    cb_->use(t, false);
-    cb_->use(*t.standIn, true);
-    // each texel's red and green bytes into the stand-in's first two, its blue and alpha NO_WRITE (the swizzle reads
-    // zero and one there)
-    const uint32_t widen = remapOf(0, 1, kRemapNoWrite, kRemapNoWrite, 1, 2, 4);
-    for (const XrPart &part : parts) {
-        room();
-        copyRemapped(p_, sideOf(part.codes, 0, 0, 0), sideOf(part.standIn, 0, 0, 0), part.codes.width,
-                     part.codes.height, widen, 2, dev_->stats);
-    }
-    return true;
-}
-
-// The codes Metal reads of RGB8_444_2P (pack/../m2v ycbcr_convert.rs: "Codes"): red Cr, green Y, blue Cb, each code / 255, alpha
-// 1, an RGBA8Unorm texel of the codes, as m2v's image holds them. Remap per destination component: SRC_X..W 0..3, CONST_A 4,
-// NO_WRITE 6 (clb0b5 SET_REMAP_COMPONENTS); one byte a component, four destination components.
-void BlitEncoder::convertPlanar(const Texture &t)
-{
-    if (!t.planar || !t.width || !t.height)
-        return;
-    cb_->useAddress(t.planes.luma, rowStorageBytes(t.planes.lumaPitch, t.width, t.height, 1), false);
-    cb_->useAddress(t.planes.chroma, rowStorageBytes(t.planes.chromaPitch, t.width, t.height, 2), false);
     cb_->use(t, true);
-    RAW_DIAGNOSTIC(dev_->stats.ceOps += 2);
-    RAW_DIAGNOSTIC(dev_->stats.ceBytes +=
-                   uint64_t(t.width) * t.height * 4 * 2);  // (each launch writes the image's rows, through NO_WRITE)
-    room();
-    constexpr uint32_t A = 4, W = 6, one = 0 << 16, dst4 = 3u << 24;
-    p_.m(CE_SET_REMAP_CONST_A, 0xff, SUBC_COPY);
-    // the luma plane, one component a texel: green Y, alpha 255
-    p_.m(CE_SET_REMAP_COMPONENTS, W | 0 << 4 | W << 8 | A << 12 | one | 0u << 20 | dst4, SUBC_COPY);
-    p_.inc(CE_OFFSET_IN_UPPER,
-           {uint32_t(t.planes.luma >> 32), uint32_t(t.planes.luma), uint32_t(t.va >> 32), uint32_t(t.va),
-            t.planes.lumaPitch, t.pitch, t.width, t.height},
-           SUBC_COPY);
-    p_.m(CE_LAUNCH_DMA, kLaunchPitch | 1u << 10, SUBC_COPY);
-    room();
-    // the chroma plane, two components a texel (Cb, Cr): red Cr, blue Cb
-    p_.m(CE_SET_REMAP_COMPONENTS, 1 | W << 4 | 0 << 8 | W << 12 | one | 1u << 20 | dst4, SUBC_COPY);
-    p_.inc(CE_OFFSET_IN_UPPER,
-           {uint32_t(t.planes.chroma >> 32), uint32_t(t.planes.chroma), uint32_t(t.va >> 32), uint32_t(t.va),
-            t.planes.chromaPitch, t.pitch, t.width, t.height},
-           SUBC_COPY);
-    p_.m(CE_LAUNCH_DMA, kLaunchPitch | 1u << 10, SUBC_COPY);
-}
-
-void BlitEncoder::splitPlane(const Texture &t)
-{
-    if (!t.onePlane || !t.luma || !t.chroma || !t.chroma->width || !t.height)
-        return;
-    const uint32_t pairs = t.chroma->width;
-    cb_->useAddress(t.planes.luma, rowStorageBytes(t.planes.lumaPitch, pairs, t.height, 4), false);
-    cb_->use(*t.luma, true);
-    cb_->use(*t.chroma, true);
-    RAW_DIAGNOSTIC(dev_->stats.ceOps += 2);
-    RAW_DIAGNOSTIC(dev_->stats.ceBytes += uint64_t(pairs) * t.height * 4);
-    constexpr uint32_t one = 0 << 16, src4 = 3u << 20, dst2 = 1u << 24;
-    for (const Texture *to : {t.luma, t.chroma}) {
-        const uint32_t remap = to == t.luma ? 0 | 2 << 4 : 1 | 3 << 4;  // Y0, Y1 or Cb, Cr of Y0 Cb Y1 Cr
-        room();
-        p_.m(CE_SET_REMAP_COMPONENTS, remap | one | src4 | dst2, SUBC_COPY);
-        p_.inc(CE_OFFSET_IN_UPPER,
-               {uint32_t(t.planes.luma >> 32), uint32_t(t.planes.luma), uint32_t(to->va >> 32), uint32_t(to->va),
-                t.planes.lumaPitch, to->pitch, pairs, t.height},
-               SUBC_COPY);
-        p_.m(CE_LAUNCH_DMA, kLaunchPitch | 1u << 10, SUBC_COPY);
+    const CopySide side = sideOf(t, x, y, z);
+    const uint32_t size = std::min(bytes, 4u), count = bytes / size;
+    uint32_t value[4] = {};
+    for (uint32_t k = 0; k < count; k++)
+        memcpy(&value[k], texel + k * size, size);
+    // Two constants a launch: a component of a third value waits for the next launch, whose NO_WRITE components keep what
+    // the one before wrote. The first written component takes CONST_B, as either constant fills alike: the copy engine's
+    // model (drivers/TegraGM20B/test/gm20b_ce_model.h) reads DST_X CONST_A as a fill of every component.
+    bool first = true;
+    for (uint32_t left = words ? words : (1u << count) - 1; left; first = false) {
+        uint32_t remap = 0, a = 0, b = 0, done = 0;
+        bool haveA = false, haveB = false;
+        for (uint32_t k = 0; k < 4; k++) {
+            uint32_t source = kRemapNoWrite;
+            if (k < count && (left >> k & 1)) {
+                if (!haveB || value[k] == b) {
+                    b = value[k], haveB = true, source = kRemapConstB;
+                } else if (!haveA || value[k] == a) {
+                    a = value[k], haveA = true, source = kRemapConstA;
+                }
+            }
+            if (source != kRemapNoWrite)
+                done |= 1u << k;
+            remap |= source << (4 * k);
+        }
+        remap |= (size - 1) << 16 | (count - 1) << 20 | (count - 1) << 24;
+        room(40);
+        p_.m(CE_SET_REMAP_CONST_A, a, SUBC_COPY);
+        p_.m(CE_SET_REMAP_CONST_B, b, SUBC_COPY);
+        copyRemapped(p_, side, side, w, h, remap, bytes, dev_->stats, !first);
+        left &= ~done;
     }
 }
 
@@ -466,62 +322,5 @@ void BlitEncoder::end()
     dev_->push_.head = uint64_t(reinterpret_cast<uint8_t *>(p_.at) - dev_->push_.bo.cpu);
     RAW_DIAGNOSTIC(dev_->stats.pushBytes += uint64_t(p_.at - start_) * 4);
 }
-
-#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-static ProbeSurface probeSurface(const Texture &t, uint32_t fmt2d, uint32_t width, uint32_t height)
-{
-    ProbeSurface s;
-    s.va = t.va;
-    s.fmt2d = fmt2d;
-    s.pitch = t.pitch;
-    s.width = width;
-    s.height = height;
-    s.blockLinear = t.blockLinear;
-    s.blockHeight = t.blockHeight;
-    return s;
-}
-
-// The op's surfaces from the textures' memory at encode, which a private texture's move to plain memory may have changed
-// since the op was recorded; its formats and sizes as recorded
-void BlitEncoder::probe(const ProbeOp &recorded, const Texture *read, const Texture &written)
-{
-    ProbeOp op = recorded;
-    if (op.kind != ProbeOpKind::Method) {
-        op.dst = probeSurface(written, op.dst.fmt2d, op.dst.width, op.dst.height);
-        if (read)
-            op.src = probeSurface(*read, op.src.fmt2d, op.src.width, op.src.height);
-    }
-    room(uint32_t(probeOpWords(op)) + kProbeBracketWords);
-    if (read)
-        cb_->use(*read, false);
-    cb_->use(written, true);
-    if (op.bracketed) {
-        tiledCacheDrain(p_, dev_->k_.info());
-        p_.m(WAIT_FOR_IDLE, 0);
-    }
-    emitProbeOp(p_, op);
-    if (op.bracketed)
-        probeOpAfter(p_);
-    cb_->taken_.ops++;
-}
-
-bool CommandBuffer::probeResolve(const Texture &multisampled, const Texture &into)
-{
-    fx::MipChain grid;
-    const uint32_t fmt2d = probeTwodFormat(into.format);
-    ProbeOp op;
-    if (!fmt2d ||
-        !fx::msLayout(multisampled.width, multisampled.height, multisampled.samples, multisampled.bpp, grid) ||
-        !probeResolveOp(
-            probeSurface(multisampled, fmt2d, multisampled.width << grid.sxLog2, multisampled.height << grid.syLog2),
-            grid.sxLog2, grid.syLog2, probeSurface(into, fmt2d, into.width, into.height), op))
-        return false;
-    BlitEncoder *b = blit();
-    b->probe(op, &multisampled, into);
-    b->end();
-    taken_.resolves++;
-    return true;
-}
-#endif
 
 }  // namespace raw

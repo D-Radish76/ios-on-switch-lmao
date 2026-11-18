@@ -153,16 +153,13 @@ bool rmBindTexture(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
                       "a %ux%u plane of rotation %u bound as a texture argument, read as it lies (MTLTexture.h "
                       "framebufferOnly: no texture argument)",
                       x->_raw.width, x->_raw.height, unsigned(x->_raw.rotation));
-    if (t && (!x || !x->_rawOk || !raw::drawsBound(x->_raw))) {
-        [e->_cb takeReason:WhyTexture why:@"a texture the raw path does not keep"];
-        if (!x) {
-            if (!predLogged(PredTexForeign))
-                logPred(PredTexForeign, t.pixelFormat, 0,
-                        [NSString stringWithFormat:@"class %s", class_getName(object_getClass(t))]);
-            hit(e->_cb, PredTexForeign, t.pixelFormat);
-        } else
-            hit(e->_cb, RMPred(x->_pred ?: (x->_rawOk ? PredEncNoTic : PredTexShape)), x->_descriptor.pixelFormat,
-                x->_kind);
+    if (t && !x) {
+        if (!predLogged(PredTexForeign))
+            logPred(PredTexForeign, t.pixelFormat, 0,
+                    [NSString stringWithFormat:@"class %s", class_getName(object_getClass(t))]);
+        hit(e->_cb, PredTexForeign, t.pixelFormat);
+        failCommandBuffer(e->_cb, @"A texture not made by this device was bound: Metal's validation error");
+        return false;
     }
     bool formsChanged = false;
     if ((stage == 1 || stage == 2) && index < raw::kStageTextures) {
@@ -252,8 +249,9 @@ bool rmBindSampler(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
             return false;
     }
     if (s && !r) {
-        [e->_cb takeReason:WhyCall why:@"a sampler not made by this device"];
-        hit(e->_cb, PredCallSamplerForeign, index);
+        hit(e->_cb, PredCallSamplerForeign, index, 0, "a sampler state of another device: Metal's validation error");
+        failCommandBuffer(e->_cb, @"A sampler state not made by this device was bound: Metal's validation error");
+        return false;
     }
     if (r && r->_raw.desc.border)
         e->_cb->_borderSamplers = true;

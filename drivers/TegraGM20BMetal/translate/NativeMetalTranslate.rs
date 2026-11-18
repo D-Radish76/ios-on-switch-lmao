@@ -16,6 +16,8 @@ pub mod direct;
 pub mod direct_compute;
 #[path = "NativeMetalDirectTess.rs"]
 mod direct_tess;
+#[path = "NativeMetalKernelTextures.rs"]
+mod kernel_textures;
 #[path = "NativeMetalOffline.rs"]
 pub mod offline;
 #[path = "NativeMetalReflection.rs"]

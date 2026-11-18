@@ -254,9 +254,15 @@ TEST(RawYcbcrStore, TargetsAreTakenOverTheirOwnChroma)
     EXPECT_EQ(p.chromaHeight, 540u);
     EXPECT_EQ(raw::planYcbcr(target(541, k422v, 1280, 720, 720), p), nullptr);
     EXPECT_EQ(p.chromaHeight, 720u);
-    EXPECT_NE(raw::planYcbcr(target(540, k420v, 1919, 1080, 540), p), nullptr);
-    EXPECT_NE(raw::planYcbcr(target(540, k420v, 1920, 1079, 540), p), nullptr);
-    EXPECT_NE(raw::planYcbcr(target(540, k422v, 1920, 1080, 1080), p), nullptr);
+    // an odd size (a texture made to be read alone, which an M4 Max renders all the same) and chroma coarser than the
+    // surface's are targets too (m2v-textures5 probes/targets.mm, edges.mm)
+    EXPECT_EQ(raw::planYcbcr(target(540, k420v, 1919, 1080, 540), p), nullptr);
+    EXPECT_TRUE(p.target);
+    EXPECT_EQ(p.chromaWidth, 960u);
+    EXPECT_EQ(raw::planYcbcr(target(540, k420v, 1920, 1079, 540), p), nullptr);
+    EXPECT_EQ(p.chromaHeight, 540u);
+    EXPECT_EQ(raw::planYcbcr(target(540, k422v, 1920, 1080, 1080), p), nullptr);
+    EXPECT_EQ(p.chromaHeight, 540u) << "4:2:0 codes stored into the first half of a 4:2:2 surface's chroma rows";
     raw::YcbcrFacts ten = target(543, kX420, 1920, 1080, 540);
     ten.pitch[0] = ten.pitch[1] = 3840;
     ten.offset[1] = uint64_t(ten.pitch[0]) * 1080;

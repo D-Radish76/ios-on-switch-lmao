@@ -9,9 +9,8 @@ A draw is the same GPU work when every field matches: the live 3D registers (R l
 first-appearance name), the vertex data, each stage's program and register count, and the bytes each program's constant
 buffers hold (pointers replaced by what they point to, handles by their texture/sampler headers). Barriers are compared
 as sets: the raw path must cover what NVK emitted before each draw that reads memory written earlier (PSB + TEXINV
-before a framebuffer fetch), but for a fetch barrier its harness build marks as left out (ELIDED). A draw the raw path
-drew in runs (SPLIT marks) is folded back into one draw first, and a draw of a split fragment program (--splits, the
-pack's pack.json: eqsplit.py) into NVK's draw of the whole program.
+before a framebuffer fetch), but for a fetch barrier its harness build marks as left out (ELIDED). A draw of a split
+fragment program (--splits, the pack's pack.json: eqsplit.py) is folded into NVK's draw of the whole program.
 
 usage: eqcheck.py <nvk.log> <raw.log> [--show N] [--flat] [--layouts] [--own] [--splits <pack.json>]
 """
@@ -48,97 +47,11 @@ def frames(path: str) -> list[list[dict]]:
             elif line.startswith('  ') and ev is not None:
                 ev['lines'].append(line.strip())
         if any(e['head'].startswith(('DRAW', 'DISPATCH')) for e in events):
-            out.append(fold_runs(events))
+            out.append(events)
     # --flat: every submission's events as one stream (a command buffer the raw path submits in segments is several
     # submissions, each of its driver, where m2v makes one)
     if FLAT and out:
         out = [[e for events in out for e in events]]
-    return out
-
-
-DRAW_HEAD = re.compile(r'(DRAW(?:-INDEXED)?) first=(\d+) count=(\d+) begin=(\w+) barriers=(.*)')
-# A draw the raw path drew in runs (raw_overlap.h: its own triangles may cover a pixel twice), each run after the first
-# marked by its harness build (SWITCH_RAW_HARNESS_MARKS); and what a run's state differs in from the run before: the
-# vertex bytes a non-indexed draw reads, up to its own last vertex (the last run's are the whole draw's), and the root
-# table's draw parameters, its first vertex (the first run's are the whole draw's)
-SPLIT = 'SPLIT'
-LAST_RUN = ('vb',)
-FIRST_RUN = ('cb0 root draw=',)
-
-
-def run_state(lines: list[str]) -> list[str]:
-    return [x for x in lines if not x.startswith((*LAST_RUN, *FIRST_RUN, 'ib '))]
-
-
-# An indexed draw's index buffer line (nvdec.cpp), its indices by value
-IB = re.compile(r'ib size=(\d+) first=(\d+) count=(\d+) idx=([0-9a-f,]+) restart=(\w+) end=(\w+)$')
-
-
-def ib_line(lines: list[str]) -> re.Match[str] | None:
-    return next((m for m in map(IB.match, lines) if m), None)
-
-
-def fold_indexed(prev: dict, ev: dict) -> dict | None:
-    """Give indexed run `ev` folded into the indexed draw `prev`, or None where it is no run of it.
-
-    A run's indices follow the draw's in the same index buffer; the draw then reads the vertices up to the largest index
-    of either (the vertex bytes of the run that reaches further).
-    """
-    a, b = ib_line(prev['lines']), ib_line(ev['lines'])
-    if not a or not b or (a[1], a[5], a[6]) != (b[1], b[5], b[6]) or int(b[2]) != int(a[2]) + int(a[3]):
-        return None
-    pm, em = DRAW_HEAD.match(prev['head']), DRAW_HEAD.match(ev['head'])
-    further = ev if int(em[3]) >= int(pm[3]) else prev
-    vertices = {x.split()[0]: x for x in further['lines'] if x.startswith(LAST_RUN)}
-    ib = f'ib size={a[1]} first={a[2]} count={int(a[3]) + int(b[3])} idx={a[4]},{b[4]} restart={a[5]} end={a[6]}'
-    lines = []
-    for line in prev['lines']:
-        if line.startswith('ib '):
-            lines.append(ib)
-        elif line.startswith(LAST_RUN):
-            lines.append(vertices.get(line.split()[0], line))
-        else:
-            lines.append(line)
-    count = max(int(pm[3]), int(em[3]))
-    return {'head': f'{pm[1]} first={pm[2]} count={count} begin={pm[4]} barriers={pm[5]}', 'lines': lines}
-
-
-def fold_runs(events: list[dict]) -> list[dict]:
-    """Give the events with each split draw's runs folded into one draw of the vertices they cover.
-
-    A run folds into the draw before it when that is a draw of the same kind and state and the run continues it: a
-    non-indexed run's vertices begin no later than the draw's end (a list's runs partition its vertices, a strip's share
-    the two that join their triangles), an indexed run's indices follow the draw's (fold_indexed). Any other run stays a
-    draw of its own, so the comparison fails on it.
-    """
-    out: list[dict] = []
-    for ev in events:
-        m = DRAW_HEAD.match(ev['head'])
-        barriers = set(m.group(5).split(',')) - {''} if m else set()
-        prev = DRAW_HEAD.match(out[-1]['head']) if m and SPLIT in barriers and out else None
-        if not prev or prev.group(1) != m.group(1) or prev.group(4) != m.group(4):
-            out.append(ev)
-            continue
-        if run_state(out[-1]['lines']) != run_state(ev['lines']):
-            out.append(ev)
-            continue
-        if m.group(1) == 'DRAW-INDEXED':
-            folded = fold_indexed(out[-1], ev)
-            if folded is None:
-                out.append(ev)
-            else:
-                out[-1] = folded
-            continue
-        first, end, start = int(prev.group(2)), int(prev.group(2)) + int(prev.group(3)), int(m.group(2))
-        if not first <= start <= end:
-            out.append(ev)
-            continue
-        end = max(end, start + int(m.group(3)))
-        last = {x.split()[0]: x for x in ev['lines'] if x.startswith(LAST_RUN)}
-        out[-1] = {
-            'head': f'{prev.group(1)} first={first} count={end - first} begin={prev.group(4)} barriers={prev.group(5)}',
-            'lines': [last.get(x.split()[0], x) if x.startswith(LAST_RUN) else x for x in out[-1]['lines']],
-        }
     return out
 
 

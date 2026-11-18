@@ -77,11 +77,15 @@ uint8_t headerType(uint32_t type);
 // (raw_private_comp.h) of a private plain texture, mip chain, 2D array or stored multisampled one, 0 for none
 bool create(Device &d, const TextureShape &s, Route route, bool tiled, uint32_t compressedKind, Texture &t);
 
+// Why Metal makes no texture of `format` by any route (descriptor, view, buffer or surface), null where its format allows one
+const char *formatRefusal(uint32_t format);
 // The rule by which Metal makes no texture of `s` on any device (its validation's stop or its nil), null where it makes one
 const char *metalRefusal(const TextureShape &s);
 // The rule by which identity `k`'s Metal makes none (its answers in raw_device_answers.h), null where it makes one
 const char *identityRefusal(const TextureShape &s, const answers::Kind &k);
 // Why GM20B holds no texture of `s` that the identity makes, null where it holds one
 const char *hardwareRefusal(const TextureShape &s);
+// Why neither identity's Metal makes a texture of `format` over an IOSurface, null where one does
+const char *surfaceFormatRefusal(uint32_t format);
 
 }  // namespace raw::shapes

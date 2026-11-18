@@ -147,6 +147,147 @@ TEST(RawYcbcrLoad, EveryLoadedFormatHasALoadStateAndAMaskedStore)
     }
 }
 
+// An unpacked converted or sRGB target under a P3 matrix (planYcbcr takes every one) loads through a state of its own and
+// stores through tile-masked states; a codes format (RGB*_2P) reads its codes under any matrix
+TEST(RawYcbcrLoad, AP3TargetHasALoadStateAndAMaskedStore)
+{
+    uint32_t targets = 0;
+    for (ycbcrload::Case c : ycbcrload::cases()) {
+        if (c.matrix)
+            continue;
+        raw::YcbcrPlan plain;
+        if (raw::planYcbcr(factsOf(c, 64, 32), plain) ||
+            (plain.output != raw::YcbcrConverted && plain.output != raw::YcbcrSrgb))
+            continue;
+        c.matrix = "P3_D65";
+        raw::YcbcrPlan plan;
+        if (raw::planYcbcr(factsOf(c, 64, 32), plan))
+            continue;
+        targets++;
+        ASSERT_TRUE(raw::ycbcrLumaFirst(plan.output)) << c.format;
+        EXPECT_STREQ(raw::ycbcrLoadState(plan.output), "raw.ycbcr.ycbcr_load_luma_first_frag") << c.format;
+        EXPECT_NE(raw::ycbcrMaskedStoreState(false, plan.store), nullptr) << c.format;
+        EXPECT_NE(raw::ycbcrMaskedStoreState(true, plan.store), nullptr) << c.format;
+    }
+    EXPECT_GT(targets, 0u);
+}
+
+// Under a P3 matrix an M4 Max stores an sRGB 4:4:4 target as one code everywhere, whatever is drawn (128 at 8 bits, 384
+// at 10: raw/test/p3storeoracle.mm)
+TEST(RawYcbcrLoad, AnSrgbFourFourFourTargetUnderP3StoresOneCode)
+{
+    for (const ycbcrload::Case &c : {ycbcrload::Case{523, ycbcrload::fourcc("444v"), "P3_D65"},
+                                     ycbcrload::Case{527, ycbcrload::fourcc("x444"), "DCI_P3"}}) {
+        raw::YcbcrPlan plan;
+        ASSERT_EQ(raw::planYcbcr(factsOf(c, 64, 32), plan), nullptr) << c.format;
+        const int32_t code = c.format == 523 ? 128 : 384;
+        for (int k = 0; k < 3; k++) {
+            EXPECT_EQ(plan.store.offset[k], code) << c.format;
+            for (int ch = 0; ch < 3; ch++)
+                EXPECT_EQ(plan.store.row[k][ch], 0) << c.format;
+        }
+        EXPECT_NE(raw::ycbcrMaskedStoreState(false, plan.store), nullptr) << c.format;
+        EXPECT_STREQ(raw::ycbcrLoadState(plan.output), "raw.ycbcr.ycbcr_load_luma_first_frag") << c.format;
+    }
+}
+
+// and a 4:2:0 or 4:2:2 one as its codes format, each texel's code k first taken to the low bits of the sRGB encode E[k]
+// (green 0.5: code 128, E 1078, stored 54): one block of four texels as an M4 Max stored it (raw/test/p3storeoracle.mm)
+TEST(RawYcbcrLoad, AnSubsampledSrgbTargetUnderP3StoresEachCodeEncoded)
+{
+    static uint16_t encode[raw::kYcbcrSrgbSteps + 1];
+    raw::ycbcrSrgbEncodeTable(kKnots, encode);
+    const float rgba[16] = {1.0f, 0.5f, 0.25f, 1, 0, 1.0f, 0.75f, 1, 0.5f, 0, 1.0f, 1, 0.25f, 0.75f, 0, 1};
+
+    struct Stored {
+        ycbcrload::Case c;
+        uint16_t luma[4], chroma[2];
+    };
+
+    const Stored stored[] = {{{520, ycbcrload::fourcc("420v"), "P3_D65"}, {54, 48, 0, 76}, {77, 72}},
+                             {{525, ycbcrload::fourcc("x420"), "P3_D65"}, {224, 109, 0, 724}, {349, 224}}};
+    for (const Stored &s : stored) {
+        raw::YcbcrPlan plan;
+        ASSERT_EQ(raw::planYcbcr(factsOf(s.c, 2, 2), plan), nullptr) << s.c.format;
+        uint16_t luma[4], chroma[2];
+        ASSERT_TRUE(raw::ycbcrStoreDrawn(plan.store, encode, rgba, 2, 2, luma, chroma));
+        for (int i = 0; i < 4; i++)
+            EXPECT_EQ(luma[i], s.luma[i]) << s.c.format << " texel " << i;
+        EXPECT_EQ(chroma[0], s.chroma[0]) << s.c.format;
+        EXPECT_EQ(chroma[1], s.chroma[1]) << s.c.format;
+    }
+}
+
+// A packed one stores its unpacked twin's codes three to a word, as every packed target does (Metal's passes into one
+// fault on an M4 Max)
+TEST(RawYcbcrLoad, APackedSrgbTargetUnderP3StoresItsTwinsEncodedCodes)
+{
+    const ycbcrload::Case pairs[][2] = {
+        {{528, ycbcrload::fourcc("pf20"), "P3_D65"}, {525, ycbcrload::fourcc("xf20"), "P3_D65"}},
+        {{529, ycbcrload::fourcc("p422"), "DCI_P3"}, {526, ycbcrload::fourcc("x422"), "DCI_P3"}}};
+    for (const auto &pair : pairs) {
+        raw::YcbcrPlan packed, twin;
+        ASSERT_EQ(raw::planYcbcr(factsOf(pair[0], 48, 32), packed), nullptr) << pair[0].format;
+        ASSERT_EQ(raw::planYcbcr(factsOf(pair[1], 48, 32), twin), nullptr) << pair[1].format;
+        const raw::YcbcrStoreShape words = raw::ycbcrPackedShape(twin.store);
+        EXPECT_EQ(twin.store.srgb, 1u) << pair[1].format;
+        EXPECT_EQ(memcmp(&packed.store, &words, sizeof words), 0) << pair[0].format;
+    }
+}
+
+// The raw path's route of a pass drawing floats over the whole frame (no texel loaded), against the hash of Metal's planes
+// after the same pass on an M4 Max (raw/test/p3storeoracle.mm golden; both ranges and both P3 matrices store alike)
+TEST(RawYcbcrLoad, AnSubsampledSrgbTargetUnderP3StoresAWholeFrameAsMetalDoes)
+{
+    const Golden golden[] = {{{520, ycbcrload::fourcc("420v"), "P3_D65"}, 0x9d81a93082ec22adull},
+                             {{522, ycbcrload::fourcc("422f"), "DCI_P3"}, 0x09d405b060535d24ull},
+                             {{525, ycbcrload::fourcc("xf20"), "P3_D65"}, 0x941d8115c2c4b0c6ull},
+                             {{526, ycbcrload::fourcc("x422"), "DCI_P3"}, 0x6ba10df57f1f4da0ull}};
+    for (const Golden &g : golden) {
+        const ycbcrload::Size size = ycbcrload::sizes(true)[0];
+        raw::YcbcrPlan plan;
+        ASSERT_EQ(raw::planYcbcr(factsOf(g.c, size[0], size[1]), plan), nullptr) << g.c.format;
+        const Pass p = goldenPass(g.c);
+        const ycbcrload::Arm whole = {0, 0, size[0], size[1], true, false, "whole"};
+        EXPECT_EQ(ycbcrload::hash(ycbcrload::modelPass(g.c, p.plan, p.layout, p.before, p.values, whole, kKnots)),
+                  g.metal)
+            << g.c.format;
+    }
+}
+
+// A 4:4:4 converted target under P3 stores as its codes format (raw/test/p3storeoracle.mm: 503 and 507, every code)
+TEST(RawYcbcrLoad, AFourFourFourConvertedTargetUnderP3StoresItsCodes)
+{
+    raw::YcbcrPlan plan;
+    ASSERT_EQ(raw::planYcbcr(factsOf({507, ycbcrload::fourcc("x444"), "P3_D65"}, 64, 32), plan), nullptr);
+    EXPECT_EQ(plan.store.converted, 0u);
+    EXPECT_EQ(plan.store.max, 1023u);
+    EXPECT_EQ(plan.store.across, 0u);
+    EXPECT_EQ(plan.store.down, 0u);
+}
+
+// Its Load holds the codes in the read's order, red Y, green Cb, blue Cr, where a codes format's holds red Cr, green Y,
+// blue Cb, each the nearest half of code / max
+TEST(RawYcbcrLoad, AP3TargetsLoadHoldsLumaThenCbThenCr)
+{
+    uint32_t shape[raw::kYcbcrShapeWords] = {2, 2};
+    shape[12] = 255;
+    shape[13] = 3;
+    shape[14] = 1;
+    const uint16_t luma[4] = {16, 100, 200, 235}, chroma[2] = {60, 190};
+    const raw::YcbcrPlaneCodes codes = {luma, chroma, 1};
+    float lumaFirst[4], codesOrder[4];
+    raw::ycbcrLoadTexel(raw::YcbcrLumaFirst8, shape, codes, nullptr, 1, 0, lumaFirst);
+    raw::ycbcrLoadTexel(raw::YcbcrCodes8, shape, codes, nullptr, 1, 0, codesOrder);
+    EXPECT_EQ(lumaFirst[0], raw::ycbcrLoadHalf(100, 255));
+    EXPECT_EQ(lumaFirst[1], raw::ycbcrLoadHalf(60, 255));
+    EXPECT_EQ(lumaFirst[2], raw::ycbcrLoadHalf(190, 255));
+    EXPECT_EQ(lumaFirst[3], 1.0f);
+    EXPECT_EQ(lumaFirst[0], codesOrder[1]);
+    EXPECT_EQ(lumaFirst[1], codesOrder[2]);
+    EXPECT_EQ(lumaFirst[2], codesOrder[0]);
+}
+
 // A Load of a 420v target's planes as the M4 Max's tile held them (raw/test/ycbcrloadoracle.mm's probe of 16 x 8 texels):
 // red Cr, green luma, blue Cb, the chroma between blocks rounded once, half up
 TEST(RawYcbcrLoad, ALoadHoldsTheChromaBetweenBlocksRoundedOnce)

@@ -287,6 +287,146 @@ static void build_amplify(struct mme_builder *b, bool indexed)
     }
 }
 
+#define FETCH_SCRATCH(word) NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_FETCH_##word)
+
+/* The fetch barrier: the pixels after it read what the ROP wrote before it (raw_draw_prepare.cpp fetchBarrier) */
+static void fetch_barrier(struct mme_builder *b)
+{
+    mme_mthd(b, NVB197_PIXEL_SHADER_BARRIER);
+    mme_emit(b, mme_imm(NVB197_PIXEL_SHADER_BARRIER_SYSMEMBAR_ENABLE_FALSE));
+    mme_mthd(b, SWITCH_NVB197_INVALIDATE_TEXTURE_DATA_CACHE_PIXEL_ORDERED);
+    mme_emit(b, mme_zero());
+}
+
+/* One BEGIN of the fields `begin` holds over `count` vertices or indices from `at` */
+static void fetch_begin(struct mme_builder *b, uint16_t first_mthd, struct mme_value begin, struct mme_value at,
+                        struct mme_value count)
+{
+    mme_mthd(b, NVB197_BEGIN);
+    mme_emit(b, begin);
+    mme_mthd(b, first_mthd);
+    mme_emit(b, at);
+    mme_emit(b, count);
+    mme_mthd(b, NVB197_END);
+    mme_emit(b, mme_zero());
+}
+
+/* `t`: 1 where `left` is below `size`, else 0. Metal's counts stay below 2^31, so the difference's sign says it. */
+static void fetch_short(struct mme_builder *b, struct mme_value t, struct mme_value left, struct mme_value size)
+{
+    mme_sub_to(b, t, left, size);
+    mme_merge_to(b, t, mme_zero(), t, 0, 1, 31);
+}
+
+/* The vertices of an instance's first BEGIN, and of each later one, of each SET_PRIMITIVE_TOPOLOGY (point list 1, line
+ * list 2, line strip 3, triangle list 4, triangle strip 5): two bits a topology */
+#define FETCH_FIRST_TABLE (1u << 2 | 2u << 4 | 2u << 6 | 3u << 8 | 3u << 10)
+#define FETCH_STEP_TABLE  (1u << 2 | 2u << 4 | 1u << 6 | 3u << 8 | 1u << 10)
+
+/* `size`: the vertices of an instance's first BEGIN (`first`) or of each later one, from the call's scratch words or,
+ * for an indirect command buffer's commands, whose topologies differ, from the topology the command set (`t` spare) */
+static void fetch_size(struct mme_builder *b, struct mme_value size, struct mme_value t, bool first, bool topology)
+{
+    if (!topology) {
+        mme_state_to(b, size, first ? FETCH_SCRATCH(FIRST) : FETCH_SCRATCH(STEP));
+        return;
+    }
+    mme_state_to(b, t, NVB197_SET_PRIMITIVE_TOPOLOGY);
+    mme_add_to(b, t, t, t);
+    mme_srl_to(b, size, mme_imm(first ? FETCH_FIRST_TABLE : FETCH_STEP_TABLE), t);
+    mme_merge_to(b, size, mme_zero(), size, 0, 2, 0);
+}
+
+/* A draw of a state that fetches a colour it writes through the texture unit, whose primitives the fetch barrier must
+ * order: after its count and instances, its words in Vulkan's indirect order (first, an indexed draw's vertex offset,
+ * the first instance). The draw parameters once, then each instance as one split draw: its first BEGIN over the
+ * vertices of its first primitive, each later BEGIN over the vertices that make one more with SPLIT_MODE open at both
+ * ends and the primitive and instance IDs unchanged, and a last BEGIN over what is left that ends the split, each after
+ * the fetch barrier. The hardware assembles the primitives across the BEGINs as one draw, its strips' winding and
+ * primitive restart included, so every BEGIN completes at most one primitive. Fermi's seven registers: count, the
+ * position, the BEGIN word, the instance loop's, what is left of the instance, the BEGIN's size and the test. Frees
+ * every register it is given or takes. */
+static void build_fetch_body(struct mme_builder *b, bool indexed, struct mme_value count, struct mme_value instances,
+                             bool topology)
+{
+    const uint16_t first_mthd = indexed ? NVB197_SET_INDEX_BUFFER_F : NVB197_SET_VERTEX_ARRAY_START;
+    struct mme_value at = mme_load(b);
+    struct mme_value base = mme_load(b);
+    struct mme_value base_instance = indexed ? mme_load(b) : base;
+    struct mme_value base_vertex = indexed ? base : mme_zero();
+
+    mme_mthd(b, NVB197_LOAD_CONSTANT_BUFFER_OFFSET);
+    mme_emit(b, mme_zero());
+    mme_mthd(b, NVB197_LOAD_CONSTANT_BUFFER(0));
+    mme_emit(b, indexed ? base_vertex : at);
+    mme_emit(b, base_instance);
+    mme_mthd(b, NVB197_SET_GLOBAL_BASE_INSTANCE_INDEX);
+    mme_emit(b, base_instance);
+    mme_mthd(b, NVB197_SET_GLOBAL_BASE_VERTEX_INDEX);
+    mme_emit(b, base_vertex);
+    mme_mthd(b, NVB197_SET_VERTEX_ID_BASE);
+    mme_emit(b, base_vertex);
+    mme_free_reg(b, base);
+    if (indexed)
+        mme_free_reg(b, base_instance);
+
+    mme_if(b, ine, count, mme_zero())
+    {
+        mme_if(b, ine, instances, mme_zero())
+        {
+            struct mme_value begin = mme_state(b, FETCH_SCRATCH(BEGIN));
+            mme_start_loop(b, instances);
+            mme_free_reg(b, instances);
+            {
+                struct mme_value left = mme_mov(b, count);
+                struct mme_value size = mme_alloc_reg(b);
+                struct mme_value t = mme_alloc_reg(b);
+                fetch_size(b, size, t, true, topology);
+                fetch_short(b, t, left, size);
+                mme_if(b, ieq, t, mme_zero())
+                {
+                    mme_while(b, ieq, t, mme_zero())
+                    {
+                        fetch_barrier(b);
+                        fetch_begin(b, first_mthd, begin, at, size);
+                        mme_add_to(b, at, at, size);
+                        mme_sub_to(b, left, left, size);
+                        mme_state_to(b, begin, FETCH_SCRATCH(CONTINUED));
+                        fetch_size(b, size, t, false, topology);
+                        fetch_short(b, t, left, size);
+                    }
+                }
+                mme_if(b, ine, left, mme_zero())
+                {
+                    fetch_barrier(b);
+                }
+                mme_state_to(b, t, FETCH_SCRATCH(BEGIN));
+                mme_xor_to(b, begin, begin, t);
+                fetch_begin(b, first_mthd, begin, at, left);
+                /* the next instance from the first vertex again: at - (count - left) */
+                mme_add_to(b, at, at, left);
+                mme_sub_to(b, at, at, count);
+                mme_state_to(b, begin, FETCH_SCRATCH(NEXT));
+                mme_free_reg(b, t);
+                mme_free_reg(b, size);
+                mme_free_reg(b, left);
+            }
+            mme_end_loop(b);
+            mme_free_reg(b, begin);
+        }
+    }
+    mme_free_reg(b, at);
+    mme_free_reg(b, count);
+}
+
+/* The fetch draw's call: its count, its instances, then build_fetch_body's words */
+static void build_fetch_draw(struct mme_builder *b, bool indexed)
+{
+    struct mme_value count = mme_load(b);
+    struct mme_value instances = mme_load(b);
+    build_fetch_body(b, indexed, count, instances, false);
+}
+
 static void build_indirect(struct mme_builder *b, bool indexed)
 {
     struct mme_value count = mme_load(b);
@@ -463,7 +603,22 @@ static void build_icb_draw(struct mme_builder *b, bool indexed)
     struct mme_value instances = mme_load(b);
     mme_and_to(b, instances, instances, inside);
     mme_free_reg(b, inside);
-    build_indirect_body(b, indexed, count, instances);
+    /* an execute of a state that fetches a colour it writes through the texture unit (FETCH_ICB): a primitive at a time */
+    struct mme_value ordered = mme_state(b, FETCH_SCRATCH(ICB));
+    mme_if(b, ine, ordered, mme_zero())
+    {
+        mme_free_reg(b, ordered);
+        build_fetch_body(b, indexed, count, instances, true);
+    }
+    /* the fetch body's registers are free after it as it is built, but hold the arguments where it did not run */
+    mme_realloc_reg(b, count);
+    mme_realloc_reg(b, instances);
+    ordered = mme_state(b, FETCH_SCRATCH(ICB));
+    mme_if(b, ieq, ordered, mme_zero())
+    {
+        mme_free_reg(b, ordered);
+        build_indirect_body(b, indexed, count, instances);
+    }
 }
 
 /* The constant buffer at the two scratch words' address, `bytes` long, selected for the loads after it */
@@ -578,14 +733,51 @@ static void build_inline_word(struct mme_builder *b, struct mme_value word)
     mme_emit(b, word);
 }
 
+/* A root table entry of the buffer whose scratch words start at the loaded word, at the loaded address:
+ * raw_heap_tables.h writeDrawRoots' {va, va, size rounded up to 16, 0}, all zero for no buffer (computeBindHead writes
+ * its size 0) */
+static void build_icb_root_entry(struct mme_builder *b)
+{
+    struct mme_value hi = mme_load(b);
+    struct mme_value lo = mme_load(b);
+    build_i2m_head(b, hi, lo, 32);
+    mme_free_reg(b, hi);
+    mme_free_reg(b, lo);
+
+    struct mme_value at = mme_load(b);
+    struct mme_value va = mme_state_arr(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_BUFFERS), at);
+    struct mme_value upper = mme_state_arr(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 1), at);
+    mme_and_to(b, upper, upper, mme_imm((1u << SWITCH_GM20B_ICB_STRIDE_SHIFT) - 1));
+    build_inline_word(b, va);
+    build_inline_word(b, upper);
+    build_inline_word(b, va);
+    build_inline_word(b, upper);
+    mme_free_reg(b, va);
+    mme_free_reg(b, upper);
+
+    struct mme_value size = mme_state_arr(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 2), at);
+    mme_free_reg(b, at);
+    struct mme_value64 bytes = mme_add64(b, mme_value64(size, mme_zero()), mme_value64(mme_imm(15), mme_zero()));
+    mme_free_reg(b, size);
+    mme_and_not_to(b, bytes.lo, bytes.lo, mme_imm(15));
+    build_inline_word(b, bytes.lo);
+    build_inline_word(b, bytes.hi);
+    build_inline_word(b, mme_zero());
+    build_inline_word(b, mme_zero());
+    mme_free_reg64(b, bytes);
+}
+
 /* An execute's inherited buffers into the set-0 descriptors of an indirect command buffer's dispatches, on the GPU: the
  * count of descriptors, then for each the descriptor's address (high, low word), its buffer's first scratch word, the
- * kernel's window of it in bytes (0 the whole buffer) and the address of its root push word for the base's residual (high
- * word 0: none). The descriptor is raw_residual.h's storage buffer descriptor of the scratch's binding: the base aligned
- * down to 16 bytes, the range from it to the end of the buffer or of the window rounded up to 16 (an X1 buffer is far
- * below the 0xfffffff0 the CPU's clamps it to), 0 for no buffer. Then the count of a stage-in kernel's bind strides, and
- * for each the address of its StageInStride root word (high, low) and its buffer's first scratch word: the stride the
- * address-high scratch word holds above its address. Written with the 3D class's inline-to-memory methods. */
+ * kernel's window of it in bytes (0 the whole buffer), the address of its root push word for the base's residual (high
+ * word 0: none) and the word the record leaves there. The descriptor is raw_residual.h's storage buffer descriptor of
+ * the scratch's binding: the base aligned down to 16 bytes, the range from it to the end of the buffer or of the window
+ * rounded up to 16 (an X1 buffer is far below the 0xfffffff0 the CPU's clamps it to), 0 for no buffer. The residual
+ * word takes the base's residual, or the record's word where that is 0, as the CPU's rootWords and composeSpill leave
+ * it. Then the count of a stage-in kernel's bind strides, and for each the address of its StageInStride root word
+ * (high, low) and its buffer's first scratch word: the stride the address-high scratch word holds above its address.
+ * Then the count of root table entries of the kernel's buffer slots, each build_icb_root_entry's words. Written with
+ * the 3D class's inline-to-memory methods. */
 static void build_icb_bind(struct mme_builder *b, bool unused)
 {
     (void)unused;
@@ -645,13 +837,19 @@ static void build_icb_bind(struct mme_builder *b, bool unused)
 
             hi = mme_load(b);
             lo = mme_load(b);
+            struct mme_value recorded = mme_load(b);
             mme_if(b, ine, hi, mme_zero())
             {
                 build_i2m_head(b, hi, lo, 4);
+                mme_if(b, ieq, residual, mme_zero())
+                {
+                    mme_mov_to(b, residual, recorded);
+                }
                 build_inline_word(b, residual);
             }
             mme_free_reg(b, hi);
             mme_free_reg(b, lo);
+            mme_free_reg(b, recorded);
             mme_free_reg(b, residual);
         }
         mme_end_loop(b);
@@ -675,6 +873,14 @@ static void build_icb_bind(struct mme_builder *b, bool unused)
             build_inline_word(b, stride);
             mme_free_reg(b, stride);
         }
+        mme_end_loop(b);
+    }
+    struct mme_value roots = mme_load(b);
+    mme_if(b, ine, roots, mme_zero())
+    {
+        mme_start_loop(b, roots);
+        mme_free_reg(b, roots);
+        build_icb_root_entry(b);
         mme_end_loop(b);
     }
 }
@@ -733,6 +939,8 @@ int main(int argc, char **argv)
     write_macro(out, "amplify", build_amplify, false, &dev);
     write_macro(out, "amplify_indexed", build_amplify, true, &dev);
     write_macro(out, "clear_layers", build_clear_layers, false, &dev);
+    write_macro(out, "fetch_draw", build_fetch_draw, false, &dev);
+    write_macro(out, "fetch_draw_indexed", build_fetch_draw, true, &dev);
     fprintf(out, "\n#endif\n");
     return fclose(out) ? 1 : 0;
 }
