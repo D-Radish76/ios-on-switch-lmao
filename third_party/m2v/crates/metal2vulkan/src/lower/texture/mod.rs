@@ -3086,10 +3086,13 @@ fn select_image(
     observe(cx, image, shape, texel.map(|(_, c)| c))?;
     if let Some(form) = extended_range(cx, image)? {
         // Metal binds an extended-range texture only to a `float` or `half` parameter; a read or
-        // write of a whole texel of a texture (not a texel buffer) is built.
+        // write of a whole texel of a texture, or of a two-plane format's texel buffer (its words
+        // alone: `slot::words_alone`), is built.
         let whole = texel
             .is_none_or(|(f, _)| matches!(f.conv, TexelConv::F32 | TexelConv::F16) && f.lanes == 4);
-        if !whole || shape.dim == ImageDim::Buffer || matches!(t.op, TexOp::Atomic(_)) {
+        let other_buffer = shape.dim == ImageDim::Buffer
+            && !matches!(form, crate::metal::format::ExtendedRange::Planes { .. });
+        if !whole || other_buffer || matches!(t.op, TexOp::Atomic(_)) {
             return Err(Unsupported::not_implemented(Feature::Format).into());
         }
         if matches!(t.op, TexOp::Read | TexOp::Write) {

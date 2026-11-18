@@ -124,8 +124,9 @@ bool makeXrWords(RMTexture *t, IOSurfaceRef s)
 }
 
 // A texture buffer over the plane's bytes in order, an M4 Max's read of one (its rows play no part). RGB10A8_2P_XR10's and
-// its sRGB twin's read BGR10_XR's words, alpha 0, and store them with bits 30 and 31 clear (probes/tb.mm), which BGR10_XR's
-// write sets: one sampled alone
+// its sRGB twin's are BGR10_XR's words, which an M4 Max reads with alpha 0 and whose kernels and fragment functions store
+// them with bits 30 and 31 clear and nothing else: a program that stores one is compiled for its format, whose texel
+// buffer the translator holds as the words alone, and samples read its stand-in, alpha 0
 bool makeSurfaceTexelBuffer(RMTexture *t, IOSurfaceRef s, uint64_t offset)
 {
     MTLTextureDescriptor *d = t->_descriptor;
@@ -300,9 +301,6 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
     if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
         form = ycbcrPlan(flat, s, plane, unused);
-    else if (xr && !xrTaken && writesTexture(d) && d.textureType == MTLTextureTypeTextureBuffer)
-        form = "an RGB10A8_2P_XR10 texel buffer written over a surface, whose stores leave bits 30 and 31 of "
-               "BGR10_XR's words clear and drop alpha";
     else if (xr && !xrTaken && !xrPlanesStorable(d))
         form = "RGB10A8_2P_XR10 a fragment program may store to, with no pack state merging and splitting its planes";
     else if (xr && !xrTaken)
@@ -421,8 +419,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
         t->_rawOk = gRM->raw->createSurfaceImage(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, image,
                                                  uint32_t(d.width), uint32_t(d.height), uint32_t(d.pixelFormat),
                                                  t->_raw);
-    } else if (d.textureType == MTLTextureTypeTextureBuffer &&
-               !(raw::twoPlaneXr(uint32_t(d.pixelFormat)) && writesTexture(d))) {
+    } else if (d.textureType == MTLTextureTypeTextureBuffer) {
         t->_rawOk = makeSurfaceTexelBuffer(t, s, offset);
     } else if (blockSurface(d, s, plane)) {
         // its blocks in place under a pitch header (raw_surface_textures.cpp createSurfaceTexture), rows off 32 bytes

@@ -51,6 +51,16 @@ switch_gm20b_viewport_state viewportState(const uint32_t w[8])
 }
 
 constexpr uint32_t kRtLayerFromShader = NVDEF(NVB197, SET_RT_LAYER, CONTROL, GEOMETRY_SHADER_SELECTS_LAYER);
+
+// Whether a draw may store into `t` through a record whose programs were compiled for `compiled`: its own format, or an
+// RGB10A8_2P_XR10 (_sRGB) texel buffer over a surface's plane, held as BGR10_XR's (BGR10_XR_sRGB's) words, which its
+// format's programs store alone
+bool storesAs(const Texture &t, uint32_t compiled)
+{
+    constexpr uint32_t kBgr10Xr = 554, kBgr10XrSrgb = 555;
+    return t.format == compiled || (t.type == kTexelBufferType && twoPlaneXr(compiled) &&
+                                    t.format == (compiled == kRgb10A8XrSrgb ? kBgr10XrSrgb : kBgr10Xr));
+}
 }  // namespace
 
 uint32_t nvTopology(uint32_t mtl)
@@ -231,7 +241,7 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
             cb_->refusal = {RefWrittenPlanes, e.slot};
             return false;
         }
-        if (written && t && t->format != pl->rec->writtenFormat[e.slot]) {
+        if (written && t && !storesAs(*t, pl->rec->writtenFormat[e.slot])) {
             *why = "a written texture of another format than its program stores";
             cb_->refusal = {RefWrittenTexture, e.slot, t->format, pl->rec->writtenFormat[e.slot]};
             return false;

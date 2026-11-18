@@ -42,8 +42,10 @@ template <typename Texture> uint32_t kernelTextureFormat(const Texture &x, uint3
     if (!x.standIn)
         return format;
     const XrForm form = xrForm(format);
-    // a two-plane texel buffer's own header reads its words alone (raw_xr.h texelBufferBytes)
-    const bool planesBuffer = x.type == kTexelBufferType && twoPlaneXr(format);
+    // a two-plane texel buffer over a buffer keeps its alpha bytes past its words (raw_xr.h texelBufferBytes), which its
+    // stand-in alone reads; one over a surface's plane is BGR10_XR's words, which a kernel that may store it reads and
+    // stores through its format's texel buffer of words alone, alpha 0, as an M4 Max does
+    const bool planesBuffer = x.type == kTexelBufferType && twoPlaneXr(format) && (twoPlaneXr(x.format) || !storable);
     return x.xrPlanes || planesBuffer || (!storable && form != XrForm::None && form != XrForm::Planes) ? kXrStandInFormat
                                                                                                       : format;
 }

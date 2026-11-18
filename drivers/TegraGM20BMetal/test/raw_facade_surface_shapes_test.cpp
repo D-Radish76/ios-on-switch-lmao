@@ -270,8 +270,8 @@ IOSurfaceRef row(NSUInteger texels, NSUInteger bytes)
 }
 
 // An extended-range texel buffer over a surface reads and stores as one over a buffer of the same bytes, through the same
-// stand-in; RGB10A8_2P_XR10's and its sRGB twin's read BGR10_XR's words, alpha 0, and one written is nil (an M4 Max stores
-// those words with bits 30 and 31 clear: m2v-textures4 probes/tb.mm)
+// stand-in; RGB10A8_2P_XR10's and its sRGB twin's read BGR10_XR's words, alpha 0, and one written holds the same words,
+// which an M4 Max's kernels and fragment functions store alone, bits 30 and 31 clear
 void extendedRangeTexelBuffersOverASurface()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", conversions()));
@@ -294,7 +294,11 @@ void extendedRangeTexelBuffersOverASurface()
         EXPECT_EQ(t->_raw.format, words ? format + 4 : format) << format;
         if (words) {
             EXPECT_EQ(t->_raw.standIn->swizzle[3], uint8_t(MTLTextureSwizzleZero)) << "alpha 0";
-            EXPECT_EQ([device newTextureWithDescriptor:buffer(format, MTLTextureUsageShaderWrite) iosurface:s plane:0], nil);
+            RMTexture *w = (RMTexture *)[device newTextureWithDescriptor:buffer(format, MTLTextureUsageShaderWrite)
+                                                               iosurface:s
+                                                                   plane:0];
+            ASSERT_TRUE(w != nil && w->_rawOk) << format;
+            EXPECT_EQ(w->_raw.format, format + 4) << format;
         }
         CFRelease(s);
     }

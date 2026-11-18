@@ -284,6 +284,26 @@ rust_test(
     deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
 )
 
+# An RGB10A8_2P_XR10 texture buffer as its colour words alone: the binder's R32_UINT view, and stores and reads against
+# Apple's bytes (src/tests/engine_extended_range/planes_m4.txt)
+rust_test(
+    name = "texel_buffer_words_test",
+    args = ["tests::engine_extended_range::texel_buffer_words::"],
+    compile_data = glob(["tests/**"]),
+    crate = ":metal2vulkan",
+    data = [
+        "@gpu_llvm_as//:bin/llvm-as",
+        "@spirv_tools//:spirv-dis",
+        "@spirv_tools//:spirv-val",
+    ],
+    env = {
+        "METAL2VULKAN_LLVM_AS": "$(rootpath @gpu_llvm_as//:bin/llvm-as)",
+        "METAL2VULKAN_SPIRV_DIS": "$(rootpath @spirv_tools//:spirv-dis)",
+        "METAL2VULKAN_SPIRV_VAL": "$(rootpath @spirv_tools//:spirv-val)",
+    },
+    deps = ["//third_party/m2v/crates/metal2vulkan-devtools"],
+)
+
 [rust_test(
     name = name,
     args = [test_filter],

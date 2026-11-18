@@ -265,12 +265,14 @@ bool layout(const NmbDirectDraw &d, std::vector<LayoutEntry> &out, std::string &
             continue;
         }
         // without the interlock m2v reads such an attachment as a storage image, which the probe saw as a fetch of the target;
-        // a storage image's word names its texture's header as a sampled image's does
+        // a storage image's word names its texture's header as a sampled image's does, and so does a texel buffer view's
+        // (the texture buffer's own header, as a kernel's: raw_direct_compute.cpp)
         const bool attachment = w.source == NmbDirectAttachment || w.source == NmbDirectStorageAttachment;
         const bool testImage = w.source == NmbDirectDepthStandIn || w.source == NmbDirectStencilStandIn;
         const bool shadow = w.source == NmbDirectExtendedShadow;
+        const bool texelBuffer = w.type == UniformTexelBuffer || w.type == StorageTexelBuffer;
         if (w.type != Sampler && w.type != CombinedImageSampler && w.type != SampledImage &&
-            w.type != InputAttachment &&
+            w.type != InputAttachment && !(texelBuffer && w.source == NmbDirectTexture) &&
             !(w.type == StorageImage && (attachment || testImage || shadow || w.source == NmbDirectTexture))) {
             why = "a set-0 descriptor of type " + std::to_string(w.type) + " (source " + std::to_string(w.source) +
                   ", slot " + std::to_string(w.slot) + ")";
@@ -301,7 +303,7 @@ bool layout(const NmbDirectDraw &d, std::vector<LayoutEntry> &out, std::string &
                 // the direct compile binds a texture of each argument's declared type (NativeMetalDirect.rs declared_slots)
                 e.tex = w.viewType == kViewType3D ? Tex::Texture3D : Tex::Slot;
                 e.texSlot = uint8_t(w.slot);
-                if (w.type == StorageImage && w.stage == 2) {
+                if ((w.type == StorageImage || w.type == StorageTexelBuffer) && w.stage == 2) {
                     if (!w.format) {
                         why = "a storage texture at fragment slot " + std::to_string(w.slot) + " of no format";
                         return false;

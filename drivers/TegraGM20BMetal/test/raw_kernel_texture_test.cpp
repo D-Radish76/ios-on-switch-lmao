@@ -14,6 +14,7 @@ using raw::KernelTextureForm;
 
 struct Texture {
     unsigned tic = 7;
+    uint32_t format = 0;
     uint8_t type = 0;
     bool planar = false, ycbcr = false, surfaceView = false, memoryless = false, xrPlanes = false;
     const Texture *standIn = nullptr, *sampled = nullptr;
@@ -55,6 +56,26 @@ TEST(KernelTexture, AnExtendedRangeTextureNoKernelStoresIsCompiledForAsItsStandI
     EXPECT_EQ(raw::kernelTextureFormat(codes, 80, false), 80u) << "a stand-in of another kind (an sRGB pair's)";
     codes.standIn = nullptr;
     EXPECT_EQ(raw::kernelTextureFormat(codes, 554, false), 554u);
+}
+
+// An RGB10A8_2P_XR10 texel buffer over a surface's plane, held as BGR10_XR's words: an M4 Max's kernel stores
+// 0x27f80100 for (0.5, 0.25, -0.25, 0.75) into each word, bits 30 and 31 clear, and nothing else, and reads alpha 0. A
+// kernel that may store it is compiled for its format, whose texel buffer the translator holds as the words alone; one
+// over a buffer keeps its alpha bytes past the words, read through its stand-in
+TEST(KernelTexture, ATwoPlaneTexelBufferOverASurfaceIsCompiledForItsWordsWhereStored)
+{
+    const Texture standIn;
+    Texture words;
+    words.type = raw::kTexelBufferType;
+    words.standIn = &standIn;
+    for (const uint32_t format : {550u, 551u}) {
+        words.format = format + 4;
+        EXPECT_EQ(raw::kernelTextureFormat(words, format, true), format) << format;
+        EXPECT_EQ(raw::kernelTextureFormat(words, format, false), raw::kXrStandInFormat) << format;
+        Texture buffer = words;
+        buffer.format = format;
+        EXPECT_EQ(raw::kernelTextureFormat(buffer, format, true), raw::kXrStandInFormat) << format;
+    }
 }
 
 // A state's reflection names the texture slots its kernel may store: a read-write or write-only texture binding's

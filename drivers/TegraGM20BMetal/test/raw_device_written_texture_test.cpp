@@ -136,6 +136,35 @@ TEST_F(DeviceWrittenTexture, ATwoPlaneTextureIsStoredThroughThePassImageOfItsTex
     xr.xrPlanes = false;
 }
 
+// An RGB10A8_2P_XR10 texel buffer over a surface's plane is held as BGR10_XR's words (RawMetalSurfaceTextures.mm
+// makeSurfaceTexelBuffer): a record compiled for RGB10A8_2P_XR10 stores through that header, as an M4 Max's fragment
+// function stores the words alone, while a sample reads the stand-in. A 2D BGR10_XR texture is no such buffer
+TEST_F(DeviceWrittenTexture, ATwoPlaneTexelBufferIsStoredThroughItsWordsHeader)
+{
+    constexpr uint32_t kBGR10XR = 554;
+    raw::Buffer b;
+    ASSERT_TRUE(dev.createBuffer(1 << 16, b));
+    raw::Texture words, standIn, plain;
+    ASSERT_TRUE(dev.createTexelBuffer(b, 0, 64, kBGR10XR, words));
+    ASSERT_TRUE(dev.createTexture(64, 1, kRGBA16Float, standIn));
+    ASSERT_TRUE(dev.createTexture(32, 32, kBGR10XR, plain));
+    words.standIn = &standIn;
+    raw::Pipeline *written = record(0x77e7, kRGB10A8XR), *sampled = record(0x77e8, 0);
+    ASSERT_NE(written, nullptr);
+    ASSERT_NE(sampled, nullptr);
+    uint32_t header = 0;
+    ASSERT_EQ(draw(written, words, header), "");
+    EXPECT_EQ(header, words.tic) << "the words, which the program stores alone";
+    ASSERT_EQ(draw(sampled, words, header), "");
+    EXPECT_EQ(header, standIn.tic);
+    raw::Refusal refusal;
+    EXPECT_EQ(draw(written, plain, header, &refusal), "a written texture of another format than its program stores");
+    EXPECT_EQ(refusal.id, raw::RefWrittenTexture);
+    words.standIn = nullptr;
+    dev.destroyTexture(words);
+    dev.destroyBuffer(b);
+}
+
 // A draw takes the variant made for the formats its written textures have (RawMetalCubic.mm reboundTextures): a record
 // made for the bound format stores through it, the state's own of another format is refused as its own kind (the
 // driver's error, RawMetalDrawErrors.mm)

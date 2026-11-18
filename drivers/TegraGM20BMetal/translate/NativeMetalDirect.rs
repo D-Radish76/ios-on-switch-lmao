@@ -18,8 +18,8 @@ use metal2vulkan::bind::{
 use metal2vulkan::cache::VariantKey;
 use metal2vulkan::error::{BindError, Retry};
 use metal2vulkan::metal::{
-    PixelFormat, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, TextureType,
-    TextureUsage, VertexStepFunction,
+    PixelFormat, SamplerAddressMode, SamplerBorderColor, SamplerMinMagFilter, SamplerMipFilter, TextureSwizzleChannels,
+    TextureType, TextureUsage, VertexStepFunction,
 };
 use metal2vulkan::pipeline::{
     BindingSource, GraphicsState, PipelineLayout, PushField, RenderPipeline, RenderPipelineDescriptor, RuntimeFact,
@@ -579,6 +579,25 @@ fn declared_facts(t: &TextureSlot, own: Option<PixelFormat>, format: PixelFormat
     facts
 }
 
+/// What the probe binds at a slot of `texture_type` whose facts are `facts` (`declared_facts`): a texture buffer at a
+/// texture-buffer slot, whose view raw binds is the texture's own header (Device::createTexelBuffer), not this range
+fn declared_texture(texture_type: TextureType, facts: TextureFacts) -> BoundTexture {
+    match texture_type {
+        TextureType::TextureBuffer => BoundTexture::Buffer {
+            pixel_format: facts.pixel_format,
+            offset: 0,
+            length: 4096,
+            bytes_per_row: 4096,
+            resource_id: None,
+            swizzle: TextureSwizzleChannels::default(),
+        },
+        _ => BoundTexture::Texture {
+            facts,
+            resource_id: None,
+        },
+    }
+}
+
 /// The probe's address of a buffer at slot `slot` of `stage` (1 vertex, 2 fragment)
 fn probe_address(stage: u32, slot: u32) -> u64 {
     0x1_0000_0000u64 + (u64::from(stage) << 24) + (u64::from(slot) << 16)
@@ -669,10 +688,7 @@ fn probe_state(
         {
             table.textures.insert(
                 *t,
-                BoundTexture::Texture {
-                    facts: declared_facts(d, own_format(*t), format, samples),
-                    resource_id: None,
-                },
+                declared_texture(d.texture_type, declared_facts(d, own_format(*t), format, samples)),
             );
         }
         if stage == Stage::Vertex {
@@ -692,13 +708,7 @@ fn probe_state(
                     facts.sample_count = samples;
                     facts.usage |= TextureUsage::RENDER_TARGET;
                 }
-                table.textures.insert(
-                    t,
-                    BoundTexture::Texture {
-                        facts,
-                        resource_id: None,
-                    },
-                );
+                table.textures.insert(t, declared_texture(facts.texture_type, facts));
                 let cubic = binds.cubic_at(Stage::Fragment, t);
                 table
                     .samplers
@@ -722,6 +732,7 @@ fn probed_format(state: &BindState, w: &NmbDirectWrite) -> u32 {
         .and_then(|table| table.textures.get(&w.slot))
     {
         Some(BoundTexture::Texture { facts, .. }) => facts.pixel_format.as_raw(),
+        Some(BoundTexture::Buffer { pixel_format, .. }) => pixel_format.as_raw(),
         _ => 0,
     }
 }
@@ -1872,7 +1883,42 @@ pub fn translate(
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_WRITES, STAGE_TEXTURES, hole_stages, set0_writes_fit};
+    use super::{
+        BindState, BoundTexture, MAX_WRITES, NmbDirectSource, NmbDirectWrite, PixelFormat, STAGE_TEXTURES, Stage,
+        StageTable, TextureFacts, TextureType, declared_texture, hole_stages, probed_format, set0_writes_fit,
+    };
+
+    // A fragment function's texture-buffer argument is probed as a texture buffer of its format, whose view the binder
+    // plans (a texture of the TextureBuffer type has none: "no view type"), and a storage write into it keeps the format
+    // its stores are compiled for (PackPipeline::writtenFormat); a 2D argument stays a texture
+    #[test]
+    fn a_texture_buffer_argument_is_probed_as_a_texture_buffer_of_its_format() {
+        let xr = PixelFormat::RGB10A82PXR10;
+        let mut table = StageTable::default();
+        for (slot, ty) in [(3, TextureType::TextureBuffer), (4, TextureType::Type2D)] {
+            table.textures.insert(slot, declared_texture(ty, TextureFacts::new(ty, xr)));
+        }
+        assert!(matches!(table.textures[&3], BoundTexture::Buffer { pixel_format, .. } if pixel_format == xr));
+        assert!(matches!(table.textures[&4], BoundTexture::Texture { .. }));
+        let mut state = BindState::default();
+        state.stages.insert(Stage::Fragment, table);
+        let write = |slot| NmbDirectWrite {
+            set: 0,
+            binding: 0,
+            element: 0,
+            ty: 5,
+            source: NmbDirectSource::Texture,
+            stage: 2,
+            slot,
+            sampler: 0,
+            range: 0,
+            view_type: 0,
+            format: 0,
+            compare: 0,
+        };
+        assert_eq!(probed_format(&state, &write(3)), 550);
+        assert_eq!(probed_format(&state, &write(4)), 550);
+    }
 
     #[test]
     fn a_states_writes_reach_every_argument_of_its_identity_and_its_synthetic_entries() {
