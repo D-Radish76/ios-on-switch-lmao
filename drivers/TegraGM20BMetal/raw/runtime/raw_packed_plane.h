@@ -58,9 +58,7 @@ inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
     if (!width || !height)
         return "an empty texture";
     const uint64_t offset = f.offset[f.plane] & ~uint64_t(15);
-    const uint32_t pitch = f.pitch[f.plane] & ~15u, words = packedPlaneWords(width * channels);
-    if (!pitch && height > 1)
-        return "a plane of rows under 16 bytes";
+    const uint32_t pitch = ycbcrPlaneStride(f.pitch[f.plane]), words = packedPlaneWords(width * channels);
     const uint64_t rowsEnd = offset + uint64_t(pitch) * (height - 1) + uint64_t(words) * 4;
     const uint64_t mapped = std::max(f.allocBytes, f.mappedBytes);
     const bool window = rowsEnd > mapped;

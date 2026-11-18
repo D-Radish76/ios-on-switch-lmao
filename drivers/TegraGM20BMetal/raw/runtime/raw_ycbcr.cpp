@@ -303,10 +303,10 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     // Metal's GPU reads and stores each plane at its offset and rows rounded down to 16 bytes (an M4 Max, two-plane and
     // one-plane formats: probes/ycbcr.txt 3m-3r, 3x, 3y, 3ak-3am)
     const uint64_t luma = f.offset[f.plane] & ~uint64_t(15), chroma = onePlane ? luma : f.offset[1] & ~uint64_t(15);
-    const uint32_t lumaPitch = f.pitch[f.plane] & ~15u, chromaPitch = onePlane ? lumaPitch : f.pitch[1] & ~15u;
-    // which rows an M4 Max reads there follows none of its pitch, 16 or 32 (m2v-textures9 probes/ycbcr3.txt 3an)
-    if ((!lumaPitch && f.height > 1) || (!lumaAlone && !chromaPitch && ch > 1))
-        return "a plane of rows under 16 bytes";
+    // rows under 16 bytes 1 MiB apart: past the allocation's last page they read 0 through the sparse window below, as an
+    // M4 Max reads them where nothing else is mapped there
+    const uint32_t lumaPitch = ycbcrPlaneStride(f.pitch[f.plane]),
+                   chromaPitch = onePlane ? lumaPitch : ycbcrPlaneStride(f.pitch[1]);
     // a row of more codes than its plane's pitch holds runs on into the next (Metal reads each row at the pitch); a target
     // stores each byte from the row whose store lands last (raw_overlap_rows.h)
     const uint64_t lumaRow = onePlane ? 4ull * cw : rowBytes(*format, f.width),

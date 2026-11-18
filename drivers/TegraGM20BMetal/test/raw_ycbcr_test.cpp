@@ -615,8 +615,30 @@ TEST(RawYcbcr, PlanesOffSixteenAreReadRoundedDown)
     f.offset[1] = 0;
     ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "a one-plane format, rows of 72";
     EXPECT_EQ(p.lumaPitch, 64u);
-    f = surface(500, "420v", 8, 8, 8, 4);
-    EXPECT_STREQ(raw::planYcbcr(f, p), "a plane of rows under 16 bytes") << "read by no rule probed";
+}
+
+// Metal's GPU reads a plane's rows its bytesPerRow in 16-byte units less one apart, kept to 16 bits: rows under 16 bytes 1 MiB
+// apart, read 0 past the allocation's last page where nothing else is mapped, and rows past 1 MiB wrapped (an M4 Max over
+// '420v' 8x8 of rows 8 at 0 and 64, alloc 96: its rows 1-7 read at 1 MiB steps; rows 1 MiB + 32 read at 32)
+TEST(RawYcbcr, RowsUnderSixteenBytesAreAMebibyteApart)
+{
+    EXPECT_EQ(raw::ycbcrPlaneStride(8), 1u << 20);
+    EXPECT_EQ(raw::ycbcrPlaneStride(40), 32u);
+    EXPECT_EQ(raw::ycbcrPlaneStride((1u << 20) + 16), 16u);
+    EXPECT_EQ(raw::ycbcrPlaneStride((1u << 20) + 32), 32u);
+    EXPECT_EQ(raw::ycbcrPlaneStride(1u << 20), 1u << 20);
+    EXPECT_EQ(raw::ycbcrPlaneStride((2u << 20) + 48), 48u);
+    raw::YcbcrPlan p;
+    raw::YcbcrFacts f = surface(500, "420v", 8, 8, 8, 4);
+    f.mappedBytes = 16384;
+    EXPECT_STREQ(raw::planYcbcr(f, p), "rows past the allocation's last page (an M4 Max reads 0 there)");
+    f.sparseTail = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
+    EXPECT_EQ(p.lumaPitch, 1u << 20);
+    EXPECT_EQ(p.chromaPitch, 1u << 20);
+    EXPECT_EQ(p.chroma, 64u);
+    EXPECT_TRUE(p.window);
+    EXPECT_EQ(p.readable, 7ull * (1u << 20) + 8) << "the last luma row's 8 bytes 7 MiB on";
 }
 
 }  // namespace

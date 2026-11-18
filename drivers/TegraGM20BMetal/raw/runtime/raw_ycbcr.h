@@ -93,6 +93,14 @@ struct YcbcrPlan {
 };
 
 // One of the two-plane YCbCr formats (Metal makes them over an IOSurface plane only)
+// The bytes between a plane's rows as Metal's GPU reads them: its bytesPerRow in 16-byte units less one, kept to 16 bits.
+// An M4 Max reads YCbCr planes of rows 16 or more at their rows rounded down to 16, of rows under 16 1 MiB apart, of rows
+// 1 MiB + 16 and 1 MiB + 32 at 16 and 32, of rows 2 MiB + 48 at 48 (two-plane and one-plane formats, plane by plane)
+constexpr uint32_t ycbcrPlaneStride(uint32_t bytesPerRow)
+{
+    return 16u * ((((bytesPerRow >> 4) - 1u) & 0xffffu) + 1u);
+}
+
 bool isYcbcrFormat(uint32_t pixelFormat);
 
 // Whether Metal makes no texture of `usage` over a surface (MTLDevice.h newTextureWithDescriptor:iosurface:plane:, nullable): a
