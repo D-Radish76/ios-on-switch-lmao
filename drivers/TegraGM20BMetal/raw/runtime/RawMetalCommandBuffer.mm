@@ -538,27 +538,6 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     _encOpen = false;
 }
 
-- (void)takeReason:(RMReason)reason why:(NSString *)why
-{
-    if (_active)
-        _encRefused = true;  // this encoder goes to m2v
-    else
-        _whole = true;
-    rmPipelineVeto(self, _active ? VetoRefused : VetoWhole);
-    if (_reason != WhyRaw)
-        return;
-    _reason = reason;
-    _why = why;
-}
-
-// A refusal of the command buffer's own (an event m2v must see, a call on the command buffer): the whole of it goes to m2v
-- (void)takeWholeReason:(RMReason)reason why:(NSString *)why
-{
-    rmPipelineVeto(self, VetoWhole);
-    _whole = true;
-    [self takeReason:reason why:why];
-}
-
 // Answered here, not recorded as invocations (each one sent the whole command buffer to m2v)
 - (NSMutableDictionary *)userDictionary
 {

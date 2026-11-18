@@ -28,8 +28,7 @@ uint32_t blitUnit(RMTexture *t, int aspect);
 
 // The texture of this device the raw path holds, else nil
 RMTexture *rawTexture(id<MTLTexture> t);
-// A texture the raw path does not hold (not this device's, or refused when made): the command buffer goes where its texels
-// are, under the texture's own route
+// A blit of a texture another device made: Metal's validation error, the command buffer fails (rmCallInvalid)
 void notRawTexture(RMCommandBuffer *cb, id<MTLTexture> t);
 
 // A blit Metal's validation stops, recorded as nothing, one line a process (raw:blit.invalid)

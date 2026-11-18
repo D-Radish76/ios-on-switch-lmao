@@ -6,16 +6,18 @@
 #include <functional>
 #include "raw_icb.h"
 
+static bool foreignBuffer(RMCommandBuffer *cb, id<MTLBuffer> buffer)
+{
+    if (!buffer || [(id)buffer isKindOfClass:[RMBuffer class]])
+        return false;
+    rmCallInvalid(cb, PredCallBufForeign, 0xffff, 0, "a patch draw's buffer not made by this device");
+    return true;
+}
+
 static RMBuffer *ownBuffer(RMCommandBuffer *cb, id<MTLBuffer> buffer)
 {
-    if (!buffer)
-        return nil;
-    if (![(id)buffer isKindOfClass:[RMBuffer class]]) {
-        [cb takeReason:WhyCall why:@"a patch draw's buffer not made by this device"];
-        hit(cb, PredCallBufForeign, 0xffff, 0);
-        return nil;
-    }
-    [cb retain:buffer];
+    if (buffer)
+        [cb retain:buffer];
     return (RMBuffer *)buffer;
 }
 
@@ -25,11 +27,10 @@ static RMBuffer *ownBuffer(RMCommandBuffer *cb, id<MTLBuffer> buffer)
 
 - (void)setTessellationFactorBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset instanceStride:(NSUInteger)stride
 {
-    _tessFactors = [(id)buffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)buffer : nil;
-    if (buffer && !_tessFactors) {
-        [_cb takeReason:WhyCall why:@"a tessellation factor buffer not made by this device"];
-        hit(_cb, PredCallBufForeign, 0xffff, 0);
-    }
+    if (buffer && ![(id)buffer isKindOfClass:[RMBuffer class]])
+        return rmCallInvalid(_cb, PredCallBufForeign, 0xffff, 0,
+                             "a tessellation factor buffer not made by this device");
+    _tessFactors = (RMBuffer *)buffer;
     _tessFactorOffset = offset;
     _tessFactorStride = stride;
 }
@@ -54,6 +55,8 @@ static RMBuffer *ownBuffer(RMCommandBuffer *cb, id<MTLBuffer> buffer)
        argumentOffset:(NSUInteger)argumentOffset
 {
     SWITCH_API(ApiDraw);
+    if (foreignBuffer(_cb, patchIndices) || foreignBuffer(_cb, pointIndices) || foreignBuffer(_cb, arguments))
+        return;
     if (![self checkDraw])
         return;
     if (_tessFactors)

@@ -33,10 +33,9 @@ static void stridedBinding(RMCommandBuffer *cb, Op op, int stage, NSUInteger ind
 {
     SWITCH_API(ApiBind);
     RMBuffer *x = [(id)b isKindOfClass:[RMBuffer class]] ? (RMBuffer *)b : nil;
-    if (b && !x) {
-        [_cb takeReason:WhyCall why:@"a buffer not made by this device"];
-        hit(_cb, PredCallBufForeign, uint64_t(1) << 8 | index, b.length);
-    }
+    if (b && !x)
+        return rmCallInvalid(_cb, PredCallBufForeign, uint64_t(1) << 8 | index, b.length,
+                             "a buffer not made by this device");
     if (index < 31) {
         _buf[1][index] = x;
         _bufVa[1][index] = x ? x->_raw.va + offset : 0;

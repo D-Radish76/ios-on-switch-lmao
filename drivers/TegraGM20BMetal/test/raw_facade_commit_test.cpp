@@ -15,6 +15,17 @@
 #include <fstream>
 #include <thread>
 
+// A buffer this device did not make
+@interface ForeignBuffer : NSObject
+@end
+
+@implementation ForeignBuffer
+- (NSUInteger)length
+{
+    return 64;
+}
+@end
+
 namespace {
 
 using namespace harness;
@@ -164,11 +175,10 @@ TEST(RawFacadeCommit, PassesBesideAMemorylessColourAreEncodedAhead)
     }
 }
 
-// Pass 9 of 15 refused as it records, by the harness through the facade's own refusal (takeReason, as a pass the raw
-// path cannot draw is refused), so the test holds whatever raw comes to draw: that encoder goes to m2v, after the worker
-// was handed (and may be encoding) the ones before it. The device comes back whole: the next command buffer is encoded
-// ahead as any other.
-TEST(RawFacadeCommit, AnEncoderRefusedAfterTheHandOffsGivesTheDeviceBack)
+// Pass 9 of 15 binds a buffer of another device, which Metal's validation stops, after the worker was handed (and may be
+// encoding) the ones before it: the command buffer fails InvalidResource as it records, nothing of it runs, and the
+// device comes back whole: the next command buffer is encoded ahead as any other.
+TEST(RawFacadeCommit, AnEncoderFailedAfterTheHandOffsGivesTheDeviceBack)
 {
     ASSERT_TRUE(opened().device != nil);
     id<MTLCommandQueue> queue = [opened().device newCommandQueue];
@@ -177,8 +187,8 @@ TEST(RawFacadeCommit, AnEncoderRefusedAfterTheHandOffsGivesTheDeviceBack)
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     for (int p = 0; p < shape.passes; p++) {
         if (p == 9)
-            scale_frames::pass(cb, opened().state, into, shape, p, 0, nil, ^(id<MTLRenderCommandEncoder>) {
-                [(RMCommandBuffer *)cb takeReason:WhyPass why:@"refused by the harness"];
+            scale_frames::pass(cb, opened().state, into, shape, p, 0, nil, ^(id<MTLRenderCommandEncoder> e) {
+                [e setVertexBuffer:(id<MTLBuffer>)[ForeignBuffer new] offset:0 atIndex:5];
             });
         else
             scale_frames::pass(cb, opened().state, into, shape, p, 0);
@@ -188,8 +198,11 @@ TEST(RawFacadeCommit, AnEncoderRefusedAfterTheHandOffsGivesTheDeviceBack)
     [cb waitUntilCompleted];
     NSDictionary *p = pipelined(cb);
     ASSERT_NE(p, nil);
-    printf("refused at pass 9: %s, path %s\n",
+    printf("failed at pass 9: %s, path %s\n",
            [[p description] stringByReplacingOccurrencesOfString:@"\n" withString:@" "].UTF8String, path(cb).c_str());
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInvalidResource);
+    EXPECT_EQ(path(cb), "error:call.buf");
     EXPECT_NE([p[@"veto"] intValue] & int(VetoRefused), 0);
     EXPECT_EQ([p[@"pipelined"] intValue], 0);
     EXPECT_LE([p[@"abandons"] intValue], 1);

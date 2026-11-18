@@ -79,7 +79,7 @@ TEST(Predicates, EveryPredicateOnce)
 
 TEST(Predicates, FatesPointAtWhatExists)
 {
-    const std::set<std::string> fates = {"rule", "client", "query", "cb-error", "gap", "layer", "nil", "m2v", "growth"};
+    const std::set<std::string> fates = {"rule", "client", "query", "cb-error", "gap", "layer", "nil", "growth"};
     for (const Row &r : table()) {
         EXPECT_TRUE(fates.count(r.fate)) << r.tag << ": " << r.fate;
         EXPECT_TRUE(r.fires == "create" || r.fires == "record" || r.fires == "encode") << r.tag;

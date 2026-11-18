@@ -48,14 +48,13 @@ const char *planesCopyForm(RMTexture *a, MTLOrigin so, MTLSize size, RMTexture *
 }
 
 // Whether a copy between texture `d` and buffer `s` is the raw path's (`aspect` the aspect it moves); false: the copy was
-// skipped or its command buffer failed, or `notRaw`: the texture's own route takes the command buffer
+// skipped or its command buffer failed
 bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MTLBuffer> s, id<MTLTexture> d,
                 NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size, NSUInteger offset, NSUInteger row,
-                NSUInteger image, MTLBlitOption options, bool intoTexture, int &aspect, bool &notRaw)
+                NSUInteger image, MTLBlitOption options, bool intoTexture, int &aspect)
 {
     RMBuffer *a = [(id)s isKindOfClass:[RMBuffer class]] ? (RMBuffer *)s : nil;
     aspect = raw::kAspectWhole;
-    notRaw = false;
     if (!a || !d) {
         skipInvalidBlit(call, "of a nil texture or a buffer not this device's");
         return false;
@@ -63,7 +62,6 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
     RMTexture *t = rawTexture(d);
     if (!t) {
         notRawTexture(cb, d);
-        notRaw = true;
         return false;
     }
     raw::Texture plane;
@@ -110,9 +108,9 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
         return skipInvalidBlit(call, "of a nil texture");
     RMTexture *a = rawTexture(s), *b = rawTexture(d);
     uint32_t form = raw::kAspectWhole;
-    if (!a || !b) {
-        notRawTexture(_cb, a ? d : s);
-    } else if (raw::heldInPlanes(a->_raw) || raw::heldInPlanes(b->_raw)) {
+    if (!a || !b)
+        return notRawTexture(_cb, a ? d : s);
+    if (raw::heldInPlanes(a->_raw) || raw::heldInPlanes(b->_raw)) {
         if (const char *invalid = copySideInvalid(a, ss, sl, so, size) ?: copySideInvalid(b, ds, dl, dorg, size)
                                                                      ?: planesCopyForm(a, so, size, b, dorg, form))
             return skipInvalidBlit(call, invalid);
@@ -278,10 +276,7 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
                 options:(MTLBlitOption)options
 {
     int aspect;
-    bool notRaw;
-    if (!bufferCopy(_cb, "copyFromBuffer:toTexture:", s, d, ds, dl, dorg, size, so, row, image, options, true, aspect,
-                    notRaw) &&
-        !notRaw)
+    if (!bufferCopy(_cb, "copyFromBuffer:toTexture:", s, d, ds, dl, dorg, size, so, row, image, options, true, aspect))
         return;
     [_cb retain:s];
     [_cb retain:d];
@@ -332,10 +327,7 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
                      options:(MTLBlitOption)options
 {
     int aspect;
-    bool notRaw;
-    if (!bufferCopy(_cb, "copyFromTexture:toBuffer:", d, s, ss, sl, so, size, dof, row, image, options, false, aspect,
-                    notRaw) &&
-        !notRaw)
+    if (!bufferCopy(_cb, "copyFromTexture:toBuffer:", d, s, ss, sl, so, size, dof, row, image, options, false, aspect))
         return;
     [_cb retain:s];
     [_cb retain:d];

@@ -124,8 +124,8 @@ RMTexture *rawTexture(id<MTLTexture> t)
 void notRawTexture(RMCommandBuffer *cb, id<MTLTexture> t)
 {
     RMTexture *x = [(id)t isKindOfClass:[RMTexture class]] ? (RMTexture *)t : nil;
-    [cb takeReason:WhyTexture why:@"a blit of a texture the raw path does not hold"];
-    hit(cb, PredTexForeign, uint64_t(t.pixelFormat), x ? x->_kind : 0);
+    rmCallInvalid(cb, PredTexForeign, uint64_t(t.pixelFormat), x ? x->_kind : 0,
+                  "a blit of a texture not made by this device");
 }
 
 void skipInvalidBlit(const char *call, const char *why)

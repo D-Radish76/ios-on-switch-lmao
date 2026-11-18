@@ -585,8 +585,6 @@ struct RMSharedEventWait {
     switch_frame::Stamps _frame;
 #endif
 }
-- (void)takeReason:(RMReason)reason why:(NSString *)why;
-- (void)takeWholeReason:(RMReason)reason why:(NSString *)why;
 - (void)closeEncoder __attribute__((objc_direct));
 // direct (no message): every recorded command and every object a command names goes through them
 - (void)record:(const Cmd &)cmd __attribute__((objc_direct));
@@ -599,6 +597,12 @@ struct RMSharedEventWait {
 // `cb` fails with predicate `p`'s error (predFailure): one error line a process and reason, kept in release, naming
 // `detail` where given (RawMetalPredicates.mm)
 void predFails(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *detail);
+// A call Metal's validation stops (`rule`) as it is recorded: an object another device made, or nil where Metal takes
+// none. Apple's driver dereferences what it is handed (a nil state or index buffer is EXC_BAD_ACCESS on an M4 Max with
+// validation off: c38-audit/m2v-cut2/probe); here the call records nothing and the command buffer fails
+// MTLCommandBufferErrorInvalidResource, its predicate named in its path, the first of each logged with `rule`
+// (RawMetalPassErrors.mm)
+void rmCallInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule);
 
 // A refusal predicate hit while recording (or encoding) `cb`: into its mask; the first one's values kept; the process's first hit
 // of `p` logged with them; a predicate of predFailure fails the command buffer

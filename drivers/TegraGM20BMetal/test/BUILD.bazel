@@ -4848,6 +4848,16 @@ facade_test(
     srcs = ["raw_facade_errors_test.cpp"],
 )
 
+# A call Metal's validation stops for an object another device made, or nil where Metal takes none, fails its command
+# buffer InvalidResource as it is recorded, a parallel pass's sub-encoder's too; m2v never asked
+facade_test(
+    name = "raw_facade_foreign_test",
+    srcs = [
+        "raw_facade_foreign_test.cpp",
+        "raw_scale_frames.h",
+    ],
+)
+
 # A command buffer that failed before it was submitted presents none of its drawables and withdraws its IOSurface writes
 # (method 34 Withdraw: its promises where it was held, else the writes); one submitted presents once
 facade_test(

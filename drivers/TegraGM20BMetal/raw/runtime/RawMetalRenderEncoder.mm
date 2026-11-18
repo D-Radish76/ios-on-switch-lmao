@@ -157,16 +157,14 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
                  baseInstance:(NSUInteger)baseInstance
 {
     SWITCH_API(ApiDraw);
-    if (![(id)buffer isKindOfClass:[RMBuffer class]]) {
-        [_cb takeReason:WhyCall why:@"an index buffer not made by this device"];
-        hit(_cb, PredCallBufForeign, 0xffff, 0);
-    } else if (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) {
+    if (![(id)buffer isKindOfClass:[RMBuffer class]])
+        return rmCallInvalid(_cb, PredCallBufForeign, 0xffff, 0,
+                             buffer ? "an index buffer not made by this device" : "a nil index buffer");
+    if (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32)
         return hit(_cb, PredEncIndexedRange, offset, indexType, "an index type Metal has none of: the draw skipped");
-    }
     if (![self checkDraw])
         return;
-    if (buffer)
-        [_cb retain:buffer];
+    [_cb retain:buffer];
     Cmd m = cmd(OpDrawIndexed, uint8_t(type));
     m.a = uint32_t(count);
     m.b = uint32_t(indexType);
@@ -218,14 +216,13 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 {
     SWITCH_API(ApiState);
     RMPipeline *p = (RMPipeline *)state;
-    if (![(id)p isKindOfClass:[RMPipeline class]]) {
-        [_cb takeReason:WhyState why:@"a render state not made by this device"];
-        hit(_cb, PredStateForeign);
-    } else if (!p->_raw) {
-        [_cb takeReason:WhyState why:@"a state not in the pack (its label: the line it was made with)"];
-        hit(_cb, !p->_completable ? PredStateNotPackable : PredStateNotInPack);
-    }
-    __unsafe_unretained RMPipeline *next = [(id)p isKindOfClass:[RMPipeline class]] ? p : nil;
+    if (![(id)p isKindOfClass:[RMPipeline class]])
+        return rmCallInvalid(_cb, PredStateForeign, 0, 0,
+                             state ? "a render state not made by this device" : "a nil render state");
+    if (!p->_raw)
+        return rmCallInvalid(_cb, !p->_completable ? PredStateNotPackable : PredStateNotInPack, 0, 0,
+                             "a render state of functions not made by this device");
+    __unsafe_unretained RMPipeline *next = p;
     const bool changed = _pipe != next;
     if (changed)
         _formSamplers[0] = _formSamplers[1] = 0;
@@ -317,11 +314,9 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 
 - (void)setDepthStencilState:(id<MTLDepthStencilState>)s
 {
-    if (s && ![(id)s isKindOfClass:[RMDepthStencil class]]) {
-        [_cb takeReason:WhyCall why:@"a depth/stencil state not made by this device"];
-        hit(_cb, PredStateForeign);
-    }
-    _ds = [(id)s isKindOfClass:[RMDepthStencil class]] ? ((RMDepthStencil *)s)->_raw.desc() : raw::DepthStencilDesc();
+    if (s && ![(id)s isKindOfClass:[RMDepthStencil class]])
+        return rmCallInvalid(_cb, PredStateForeign, 0, 0, "a depth/stencil state not made by this device");
+    _ds = s ? ((RMDepthStencil *)s)->_raw.desc() : raw::DepthStencilDesc();
     _eligibility++;
     if (raw::testsHiddenZeta(_ds))
         _cb->_passes[_passAt].testsHiddenZeta = true;

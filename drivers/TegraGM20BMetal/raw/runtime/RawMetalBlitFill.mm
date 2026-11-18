@@ -125,7 +125,7 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
         uint8_t packed[16];
         fillUnit(x, packed, raw::fillTexel(uint32_t(packedIn), rgba, packed), f);
     } else {
-        notRawTexture(cb, t);
+        return notRawTexture(cb, t);
     }
     [cb retain:t];
     if ([(id)t isKindOfClass:[RMTexture class]])
@@ -173,11 +173,8 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
     if (x->_descriptor.mipmapLevelCount <= 1 || raw::zetaFormatIndex(format) < raw::kZetaFormats ||
         format == MTLPixelFormatX32_Stencil8)
         return;
-    if (!x->_rawOk) {
-        notRawTexture(_cb, t);
-        setBinding(_cb, OpMipmaps, 0, 0, t, 0);
-        return;
-    }
+    if (!x->_rawOk)
+        return notRawTexture(_cb, t);
     __unsafe_unretained RMTexture *owner = x->_levelsOwner ?: x;
     if (!owner->_raw.chain) {
         failCommandBuffer(_cb, @"generateMipmapsForTexture: a native mipmapped texture has no mip chain",

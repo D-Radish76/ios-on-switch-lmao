@@ -81,12 +81,11 @@ static void bindBytes(__unsafe_unretained RMRenderEncoder *e, int stage, const v
 - (void)buffer:(int)stage object:(id<MTLBuffer>)b offset:(NSUInteger)offset index:(NSUInteger)index
 {
     SWITCH_API(ApiBind);
-    if (b && ![(id)b isKindOfClass:[RMBuffer class]]) {
-        [_cb takeReason:WhyCall why:@"a buffer not made by this device"];
-        hit(_cb, PredCallBufForeign, uint64_t(stage) << 8 | index, b.length);
-    }
+    if (b && ![(id)b isKindOfClass:[RMBuffer class]])
+        return rmCallInvalid(_cb, PredCallBufForeign, uint64_t(stage) << 8 | index, b.length,
+                             "a buffer not made by this device");
     if (stage >= 1 && stage <= 2 && index < 31) {
-        __unsafe_unretained RMBuffer *x = [(id)b isKindOfClass:[RMBuffer class]] ? (RMBuffer *)b : nil;
+        __unsafe_unretained RMBuffer *x = (RMBuffer *)b;
         _buf[stage][index] = x;
         _bufVa[stage][index] = x ? x->_raw.va + offset : 0;
         _eligibility++;

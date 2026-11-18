@@ -397,7 +397,6 @@ inline id<MTLCommandBuffer> draw(id<MTLDevice> device, id<MTLRenderPipelineState
 inline const char *const kAsksM2V[] = {
     "RawFacadeLazy.InheritedMethodOpensM2VAtItsFirstCall",                    // S4
     "RawFacadeVariant.AStateMadeWhileM2VIsOpenAsksM2VForNothing",             // S4
-    "RawFacadeCommit.AnEncoderRefusedAfterTheHandOffsGivesTheDeviceBack",     // S3
     "FacadeStoredZeta.AReplaysTwinIsNvksImageWithTheTexelsMovedIntoIt",       // S4
     "FacadeStoredZeta.TwoAsksAtOnceMoveItOnce",                               // S4
     "FacadeStoredZeta.ArraysAndCubesAreHeldAndMoveEveryLayer",                // S4
