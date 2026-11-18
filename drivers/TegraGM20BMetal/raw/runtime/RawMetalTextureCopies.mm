@@ -176,12 +176,12 @@ RMTexture *cpuOwner(RMTexture *t)
     if (_surfaceWrites)
         noteSurfaceWrite(_surfaceWrites);
     freshBeforeTransfer(self);
+    if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, true))
+        return;
     if (_cpuRows) {
         planeRows(self, r, level, slice, (uint8_t *)bytes, row, true);
         return;
     }
-    if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, true))
-        return;
     if (transferTexture(self, r, level, slice, const_cast<void *>(bytes), row, image, true) ||
         refuseZetaCpu(self, r, level, slice, true))
         return;
@@ -264,12 +264,12 @@ RMTexture *cpuOwner(RMTexture *t)
         return;
     }
     freshBeforeTransfer(self);
+    if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, false))
+        return;
     if (_cpuRows) {
         planeRows(self, r, level, slice, (uint8_t *)bytes, row, false);
         return;
     }
-    if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, false))
-        return;
     if (transferTexture(self, r, level, slice, bytes, row, image, false) || refuseZetaCpu(self, r, level, slice, false))
         return;
     if (_rawOk && _raw.blockW * _raw.blockH > 1 && _raw.blockLinear) {

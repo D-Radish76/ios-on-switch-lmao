@@ -30,11 +30,15 @@ bool xrLastPlane(IOSurfaceRef s, NSUInteger plane)
     return plane + 1 == std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
 }
 
+size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane)
+{
+    return (IOSurfaceGetPlaneCount(s) ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s)) & ~size_t(15);
+}
+
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    return planesForm(d) && plane + 1 < IOSurfaceGetPlaneCount(s) &&
-           IOSurfaceGetBytesPerRowOfPlane(s, plane) >= 4 * d.width && IOSurfaceGetHeightOfPlane(s, plane) >= d.height &&
-           IOSurfaceGetBytesPerRowOfPlane(s, plane + 1) >= d.width &&
+    return planesForm(d) && plane + 1 < IOSurfaceGetPlaneCount(s) && xrGpuRows(s, plane) >= 4 * d.width &&
+           IOSurfaceGetHeightOfPlane(s, plane) >= d.height && xrGpuRows(s, plane + 1) >= d.width &&
            IOSurfaceGetHeightOfPlane(s, plane + 1) >= d.height;
 }
 
@@ -45,14 +49,20 @@ bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
     return planesForm(d) && writes && xrLastPlane(s, plane);
 }
 
+// The planes at Metal's GPU layout, each offset and rows rounded down to 16, and plane `word`'s own rows kept for the CPU
+// copies, which an M4 Max makes at the plane's layout (m2v-textures9 probes/xr.txt 5a-5n)
 static bool holdInPlanes(RMTexture *t, IOSurfaceRef s, uint64_t word, uint32_t wordPitch, uint64_t alpha,
                          uint32_t alphaPitch, uint32_t width, uint32_t height)
 {
     MTLTextureDescriptor *d = t->_descriptor;
     const char *why = "";
+    if ((word | wordPitch) & 15) {
+        t->_cpuRows = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(s)) + word;
+        t->_cpuPitch = wordPitch;
+    }
     if (!gRM->raw->createXrPlaneTexture(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s,
-                                        word, wordPitch, alpha, alphaPitch, width, height, uint32_t(d.pixelFormat),
-                                        t->_raw, &why)) {
+                                        word & ~uint64_t(15), wordPitch & ~15u, alpha & ~uint64_t(15),
+                                        alphaPitch & ~15u, width, height, uint32_t(d.pixelFormat), t->_raw, &why)) {
         raw::surfaceRefusal = why;
         return false;
     }
@@ -122,13 +132,15 @@ bool xrPlaneWords(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice,
     if (!w || !w->cpu || level || slice || r.origin.z || r.size.depth != 1 || r.origin.x + r.size.width > w->width ||
         r.origin.y + r.size.height > w->height)
         return false;
+    uint8_t *const rows = t->_cpuRows ? t->_cpuRows : w->cpu;
+    const size_t pitch = t->_cpuRows ? t->_cpuPitch : w->pitch;
     const size_t line = r.size.width * raw::bufferTexelBytes(t->_raw.format, t->_raw.bpp);
-    uint8_t *first = w->cpu + r.origin.y * w->pitch + r.origin.x * w->bpp;
+    uint8_t *first = rows + r.origin.y * pitch + r.origin.x * w->bpp;
     raw::HostAccess access;
-    if (!gRM->raw->hostAccess(*w, first, (r.size.height - 1) * w->pitch + line, write, access))
+    if (!gRM->raw->hostAccess(*w, first, (r.size.height - 1) * pitch + line, write, access))
         [NSException raise:NSInternalInconsistencyException format:@"GPU texture CPU ownership failed"];
     for (NSUInteger y = 0; y < r.size.height; y++) {
-        uint8_t *words = first + y * w->pitch;
+        uint8_t *words = first + y * pitch;
         if (write)
             memcpy(words, bytes + y * row, line);
         else

@@ -88,7 +88,7 @@ void ycbcrReadsItsPlaneAndTheNext()
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
                                           {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float}}));
     ASSERT_TRUE(device != nil);
-    IOSurfaceRef three = planesSurface({{1, 64}, {1, 64}, {2, 64}});
+    IOSurfaceRef three = planesSurface({{1, 64}, {1, 64}, {2, 128}});
     IOSurfaceRef one = planesSurface({{4, 256}});
     ASSERT_TRUE(three && one);
     RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:sampled(500, 32) iosurface:three plane:1];
@@ -110,6 +110,39 @@ void ycbcrReadsItsPlaneAndTheNext()
     CFRelease(one);
 }
 
+// RGB10A8_2P_XR10 over planes whose offsets or rows are off 16: Metal's GPU reads, writes and blits them at both rounded down
+// to 16, and its CPU copies take the word plane's own rows (an M4 Max: probes/xr.txt 5a-5n)
+void planesOffSixteenAreRoundedForTheGpu()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
+                                           {raw::xrConversionOf(554), MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef two = planesSurface({{4, 264}, {1, 72}});
+    IOSurfaceRef one = planesSurface({{4, 264}});
+    ASSERT_TRUE(two && one);
+    const uint32_t word = 0x2abcdef1;
+    for (IOSurfaceRef s : {two, one}) {
+        RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:sampled(550, 64) iosurface:s plane:0];
+        ASSERT_TRUE(t != nil && t->_rawOk) << IOSurfaceGetPlaneCount(s) << " planes";
+        const raw::Texture &words = t->_raw.xrPlanes ? *t->_raw.luma : t->_raw;
+        EXPECT_EQ(words.pitch, 256u) << "rows of 264 as 256";
+        if (s == two) {
+            ASSERT_TRUE(t->_raw.xrPlanes);
+            EXPECT_EQ(t->_raw.chroma->pitch, 64u) << "rows of 72 as 64";
+        }
+        EXPECT_EQ(t->_cpuRows, planeBytes(s, 0));
+        EXPECT_EQ(t->_cpuPitch, 264u);
+        [(id<MTLTexture>)t replaceRegion:MTLRegionMake2D(5, 3, 1, 1) mipmapLevel:0 withBytes:&word bytesPerRow:4];
+        EXPECT_EQ(memcmp(planeBytes(s, 0) + 3 * 264 + 5 * 4, &word, 4), 0) << "the CPU writes the plane's own rows";
+        uint32_t back = 0;
+        [(id<MTLTexture>)t getBytes:&back bytesPerRow:4 fromRegion:MTLRegionMake2D(5, 3, 1, 1) mipmapLevel:0];
+        EXPECT_EQ(back, word);
+    }
+    CFRelease(two);
+    CFRelease(one);
+}
+
 }  // namespace
 
 TEST(RawFacadeSurfaceForms, RGB10A8XrReadsItsPlaneAndTheNext)
@@ -120,4 +153,9 @@ TEST(RawFacadeSurfaceForms, RGB10A8XrReadsItsPlaneAndTheNext)
 TEST(RawFacadeSurfaceForms, YcbcrReadsItsPlaneAndTheNext)
 {
     switch_ios::test::ExpectPassesInFreshProcess(ycbcrReadsItsPlaneAndTheNext);
+}
+
+TEST(RawFacadeSurfaceForms, RGB10A8XrPlanesOffSixteenAreRoundedForTheGpu)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(planesOffSixteenAreRoundedForTheGpu);
 }

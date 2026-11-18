@@ -8,6 +8,8 @@
 // the last plane (or a surface of none) as the words alone (an M4 Max over planes 0, 1 and 2 of three and plane 0 of four, read
 // and written: m2v-textures9 probes/xr.txt 1g-1k, 1n-1p)
 bool xrLastPlane(IOSurfaceRef s, NSUInteger plane);
+// A plane's rows as Metal's GPU reads and writes them, rounded down to 16 (probes/xr.txt 5a-5m)
+size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane);
 // 550 or 551 over a plane followed by another, whose rows hold its words and its alpha bytes and which are no shorter than it:
 // a 2D texture, one level, one sample, no rotation, of any usage. Metal reads the planes so whatever their elements (an M4 Max
 // over 4+1, 4+2, 8+1, 2+1, 4+4 and '420v' planes: m2v-textures5 probes/xrplane0.mm), their top-left corner
@@ -30,8 +32,9 @@ bool makeXrWordPlane(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t heig
 uint32_t xrWordsFormat(uint32_t format);
 bool xrWordsTexture(RMTexture *t);
 void readAlphaZero(raw::Texture &standIn);
-// replaceRegion/getBytes of a texture held in its planes: plane 0's colour words alone, as Metal's CPU copies and blits move
-// them (raw_xr.h), the alpha plane as it is. False: not such a texture, or a region off its one level and slice
+// replaceRegion/getBytes of a texture held in its planes: its word plane's colour words alone, at the plane's own rows (RMTexture
+// _cpuRows where they are off 16), as Metal's CPU copies move them (raw_xr.h), the alpha plane as it is. False: not such a
+// texture, or a region off its one level and slice
 bool xrPlaneWords(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, uint8_t *bytes, NSUInteger row,
                   bool write);
 // A pass that stores into `t` (held in its planes) through an RG32Uint image of its texels: the image, a block-linear scratch of

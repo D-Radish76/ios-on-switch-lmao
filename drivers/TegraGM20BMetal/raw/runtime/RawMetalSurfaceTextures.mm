@@ -101,10 +101,15 @@ bool makeXrWords(RMTexture *t, IOSurfaceRef s)
     uint64_t offset;
     size_t pitch;
     planeAt(s, t->_plane, offset, pitch);
+    // at Metal's GPU layout, offset and rows rounded down to 16, its CPU copies at the plane's (probes/xr.txt 5k-5n)
     if (!gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s,
-                                        offset, uint32_t(d.width), uint32_t(d.height), uint32_t(pitch),
+                                        offset & ~15ull, uint32_t(d.width), uint32_t(d.height), uint32_t(pitch & ~15ul),
                                         xrWordsFormat(uint32_t(d.pixelFormat)), t->_raw, false))
         return false;
+    if (!t->_raw.blockLinear && ((offset | pitch) & 15)) {
+        t->_cpuRows = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(s)) + offset;
+        t->_cpuPitch = pitch;
+    }
     if (!keepExtendedRange(d, t->_raw, false) || !t->_raw.standIn) {
         raw::surfaceRefusal = "no memory or texture header for the stand-in it is sampled through";
         gRM->raw->destroyTexture(t->_raw);

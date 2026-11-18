@@ -51,8 +51,7 @@ static bool turnedXrShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger pl
         return false;
     if (xrLastPlane(s, plane))
         return true;
-    return IOSurfaceGetBytesPerRowOfPlane(s, plane) >= 4 * r.planeWidth() &&
-           IOSurfaceGetBytesPerRowOfPlane(s, plane + 1) >= r.planeWidth() &&
+    return xrGpuRows(s, plane) >= 4 * r.planeWidth() && xrGpuRows(s, plane + 1) >= r.planeWidth() &&
            IOSurfaceGetHeightOfPlane(s, plane + 1) >= r.planeHeight();
 }
 
