@@ -38,7 +38,7 @@ const char *planesCopyForm(RMTexture *a, MTLOrigin so, MTLSize size, RMTexture *
         return "into a texture held through planes from one of another texel size than its plane 0's";
     raw::Texture from, to;
     if (fromPlanes && (!raw::planeBytes(s, unit, from) ||
-                       raw::planeReach(from, so.x, so.y, size.width, size.height) > raw::planeReadable(from)))
+                       !raw::planeRegionReadable(from, so.x, so.y, size.width, size.height)))
         return "of a region that reads past the end of its surface's last page";
     if (intoPlanes &&
         (!raw::planeBytes(d, unit, to) || dorg.x + size.width > to.width || dorg.y + size.height > to.height))

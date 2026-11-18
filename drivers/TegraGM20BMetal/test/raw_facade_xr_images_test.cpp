@@ -391,11 +391,77 @@ void writtenOverOnePlaneIsHeldInIt()
         CFRelease(s);
 }
 
+// RGB10A8_2P_XR10 written over a surface of no planes the kernel laid out block-linear for a BGR10_XR target made over it
+// first: Metal makes it and reads and stores the surface's words (an M4 Max over a 'w30r' a BGR10_XR target cleared to
+// 0xe009fefe: the 550 reads (0.2510, 0.5, 0.7490, 0), a kernel's store leaves 0x27f80100), so the raw path holds its words
+// in the kernel's layout: its header pair's words a block-linear header, its CPU copies and its blits with another such
+// texture in that layout
+void writtenOverATiledSurfaceIsHeldInItsLayout()
+{
+    kernel_model::model.infoFlags = TegraGM20BInfoSparse | TegraGM20BInfoSurfaceLayout;
+    kernel_model::model.surfaceLayout = TegraGM20BLayoutTiled;
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
+                                           {raw::xrConversionOf(554), MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef surfaces[2];
+    RMTexture *xr[2];
+    for (IOSurfaceRef &s : surfaces) {
+        s = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+            (id)kIOSurfaceWidth : @64,
+            (id)kIOSurfaceHeight : @64,
+            (id)kIOSurfaceBytesPerElement : @4,
+            (id)kIOSurfacePixelFormat : @(uint32_t('w30r'))
+        });
+        ASSERT_TRUE(s);
+        RMTexture *first = (RMTexture *)[device newTextureWithDescriptor:rendered(554, 64) iosurface:s plane:0];
+        ASSERT_TRUE(first != nil && first->_rawOk && first->_raw.blockLinear) << "the kernel tiled it for the target";
+        RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:rendered(550, 64) iosurface:s plane:0];
+        ASSERT_TRUE(t != nil && t->_rawOk) << "Metal makes it";
+        ASSERT_TRUE(t->_raw.xrPlanes && t->_raw.luma && t->_raw.chroma);
+        const raw::Texture &words = *t->_raw.luma;
+        EXPECT_TRUE(words.blockLinear);
+        EXPECT_EQ(words.va, first->_raw.va) << "the surface's own words";
+        EXPECT_TRUE(t->_raw.chroma->memoryless) << "no alpha plane";
+        const uint32_t *pair = gRM->raw->headerWords(t->_raw.tic);
+        EXPECT_EQ(pair[2] >> 21 & 7, 3u) << "HEADER_VERSION SELECT_BLOCKLINEAR";
+        xr[&s - surfaces] = t;
+    }
+    const raw::Texture &words = *xr[0]->_raw.luma;
+    const uint32_t word = 0x2abcdef1;
+    const uint8_t *base = static_cast<const uint8_t *>(IOSurfaceGetBaseAddress(surfaces[0]));
+    [(id<MTLTexture>)xr[0] replaceRegion:MTLRegionMake2D(5, 3, 1, 1) mipmapLevel:0 withBytes:&word bytesPerRow:4];
+    EXPECT_EQ(memcmp(base + tgm_layout_offset(&words.import->layout, 5 * 4, 3), &word, 4), 0)
+        << "the CPU writes the word where the layout holds texel (5, 3)";
+    uint32_t back = 0;
+    [(id<MTLTexture>)xr[0] getBytes:&back bytesPerRow:4 fromRegion:MTLRegionMake2D(5, 3, 1, 1) mipmapLevel:0];
+    EXPECT_EQ(back, word);
+    const size_t first = kernel_model::model.jobs.size();
+    id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
+    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+    [b copyFromTexture:(id<MTLTexture>)xr[0] sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(8, 0, 0)
+            sourceSize:MTLSizeMake(16, 8, 1) toTexture:(id<MTLTexture>)xr[1] destinationSlice:0 destinationLevel:0
+     destinationOrigin:MTLOriginMake(0, 0, 0)];
+    [b endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    expectRaw(device, cb);
+    EXPECT_NE(indexOf(events(first), true, xr[1]->_raw.luma->va), SIZE_MAX)
+        << "the words copied, block-linear to block-linear";
+    for (IOSurfaceRef s : surfaces)
+        CFRelease(s);
+}
+
 }  // namespace
 
 TEST(RawFacadeXrImages, WrittenOverOnePlaneIsHeldInIt)
 {
     switch_ios::test::ExpectPassesInFreshProcess(writtenOverOnePlaneIsHeldInIt);
+}
+
+TEST(RawFacadeXrImages, WrittenOverATiledSurfaceIsHeldInItsLayout)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(writtenOverATiledSurfaceIsHeldInItsLayout);
 }
 
 TEST(RawFacadeXrImages, ATwoPlaneTextureOfRowsOff32IsReadThroughItsPools)

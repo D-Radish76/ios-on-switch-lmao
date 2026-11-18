@@ -56,15 +56,15 @@ static bool holdInPlanes(RMTexture *t, IOSurfaceRef s, uint64_t word, uint32_t w
 {
     MTLTextureDescriptor *d = t->_descriptor;
     const char *why = "";
-    if ((word | wordPitch) & 15) {
-        t->_cpuRows = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(s)) + word;
-        t->_cpuPitch = wordPitch;
-    }
     if (!gRM->raw->createXrPlaneTexture(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s,
                                         word & ~uint64_t(15), wordPitch & ~15u, alpha & ~uint64_t(15),
                                         alphaPitch & ~15u, width, height, uint32_t(d.pixelFormat), t->_raw, &why)) {
         raw::surfaceRefusal = why;
         return false;
+    }
+    if (((word | wordPitch) & 15) && !t->_raw.luma->blockLinear) {
+        t->_cpuRows = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(s)) + word;
+        t->_cpuPitch = wordPitch;
     }
     if (!keepExtendedRange(d, t->_raw, false)) {
         raw::surfaceRefusal = "no memory or texture header for the stand-in it is sampled through";
@@ -132,11 +132,22 @@ bool xrPlaneWords(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice,
     if (!w || !w->cpu || level || slice || r.origin.z || r.size.depth != 1 || r.origin.x + r.size.width > w->width ||
         r.origin.y + r.size.height > w->height)
         return false;
+    raw::HostAccess access;
+    if (w->blockLinear) {  // the kernel's layout of the surface (cpuTiled)
+        if (!gRM->raw->hostAccess(*w, write, access))
+            [NSException raise:NSInternalInconsistencyException format:@"GPU texture CPU ownership failed"];
+        const tgm_layout &l = w->import->layout;
+        const uint32_t x = uint32_t(r.origin.x) + w->surfaceX, y = uint32_t(r.origin.y) + w->surfaceY;
+        if (write)
+            tgm_layout_write(&l, w->cpu, x, y, uint32_t(r.size.width), uint32_t(r.size.height), bytes, row);
+        else
+            tgm_layout_read(&l, w->cpu, x, y, uint32_t(r.size.width), uint32_t(r.size.height), bytes, row);
+        return true;
+    }
     uint8_t *const rows = t->_cpuRows ? t->_cpuRows : w->cpu;
     const size_t pitch = t->_cpuRows ? t->_cpuPitch : w->pitch;
     const size_t line = r.size.width * raw::bufferTexelBytes(t->_raw.format, t->_raw.bpp);
     uint8_t *first = rows + r.origin.y * pitch + r.origin.x * w->bpp;
-    raw::HostAccess access;
     if (!gRM->raw->hostAccess(*w, first, (r.size.height - 1) * pitch + line, write, access))
         [NSException raise:NSInternalInconsistencyException format:@"GPU texture CPU ownership failed"];
     for (NSUInteger y = 0; y < r.size.height; y++) {

@@ -163,6 +163,9 @@ struct Model {
     // GetInfo's client VA end: a raw::Device's shader heap reserves a 4 GiB program window in its quarter
     uint64_t vaEnd = uint64_t(1) << 40;
     uint32_t infoFlags = 0;  // GetInfo's flags beyond the model's own (TegraGM20BInfoTiledCache)
+    // SurfaceLayout's answer to every import that asks (TegraGM20BInfoSurfaceLayout in infoFlags): 0 pitch, or
+    // TegraGM20BLayoutTiled, the kernel's block-linear decision for the surface
+    uint32_t surfaceLayout = 0;
     int refusal = kIOReturnNoResources;
     unsigned notResponding = 0;  // WaitFences answered kIOReturnNotResponding while GetStatus calls the channel healthy
     bool foreignTakesFreedSlot = false;
@@ -715,6 +718,9 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         reply.result = model.compileResults[at];
         return KERN_SUCCESS;
     }
+    case TegraGM20BMethodSurfaceLayout:
+        *static_cast<TegraGM20BAbiSurfaceLayoutReply *>(output) = {model.surfaceLayout, 0};
+        return KERN_SUCCESS;
     case TegraGM20BMethodWriterPromise: {
         const auto &in = *static_cast<const TegraGM20BAbiWriterPromise *>(input);
         const auto *uses = reinterpret_cast<const TegraGM20BAbiSurfaceUse *>(uintptr_t(in.uses_address));

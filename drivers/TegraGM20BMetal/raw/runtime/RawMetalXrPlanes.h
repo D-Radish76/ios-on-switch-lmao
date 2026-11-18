@@ -33,8 +33,8 @@ uint32_t xrWordsFormat(uint32_t format);
 bool xrWordsTexture(RMTexture *t);
 void readAlphaZero(raw::Texture &standIn);
 // replaceRegion/getBytes of a texture held in its planes: its word plane's colour words alone, at the plane's own rows (RMTexture
-// _cpuRows where they are off 16), as Metal's CPU copies move them (raw_xr.h), the alpha plane as it is. False: not such a
-// texture, or a region off its one level and slice
+// _cpuRows where they are off 16) or in the kernel's block-linear layout of the surface, as Metal's CPU copies move them
+// (raw_xr.h), the alpha plane as it is. False: not such a texture, or a region off its one level and slice
 bool xrPlaneWords(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, uint8_t *bytes, NSUInteger row,
                   bool write);
 // A pass that stores into `t` (held in its planes) through an RG32Uint image of its texels: the image, a block-linear scratch of

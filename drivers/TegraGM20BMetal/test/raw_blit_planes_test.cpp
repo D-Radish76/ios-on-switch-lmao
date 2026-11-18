@@ -69,8 +69,40 @@ TEST(BlitPlanes, EachKindCountsPlaneZeroInItsUnit)
     EXPECT_EQ(out.storage.bytes, 64u * 7 + 64u);
     EXPECT_FALSE(raw::planeBytes(xr.t, 3, out));
     EXPECT_FALSE(raw::planeBytes(xr.t, 128, out));
+}
+
+// RGB10A8_2P_XR10's words over a surface the kernel laid out block-linear (an M4 Max makes 550 over a planeless 'w30r' a
+// BGR10_XR target was cleared in, and Metal's validation stops a texture copy of 550 with any other format): plane 0 is
+// its own texels in that layout, a region inside them
+TEST(BlitPlanes, ABlockLinearWordPlaneIsItsTexelsInItsLayout)
+{
+    Planes xr;
+    xr.t.xrPlanes = true;
+    xr.t.luma = &xr.luma;
+    xr.luma.width = 16;
+    xr.luma.bpp = 4;
     xr.luma.blockLinear = true;
-    EXPECT_FALSE(raw::planeBytes(xr.t, 4, out));
+    xr.luma.blockHeight = 1;
+    xr.luma.layerBytes = 4096;
+    xr.luma.surfaceX = 2;
+    xr.luma.surfaceY = 3;
+    raw::Texture out;
+    ASSERT_TRUE(raw::planeBytes(xr.t, 4, out));
+    EXPECT_TRUE(out.blockLinear);
+    EXPECT_EQ(out.va, 0x10000u);
+    EXPECT_EQ(out.pitch, 64u);
+    EXPECT_EQ(out.width, 16u);
+    EXPECT_EQ(out.height, 8u);
+    EXPECT_EQ(out.format, 53u);
+    EXPECT_EQ(out.blockHeight, 1u);
+    EXPECT_EQ(out.surfaceX, 2u);
+    EXPECT_EQ(out.surfaceY, 3u);
+    EXPECT_TRUE(raw::planeRegionReadable(out, 8, 0, 8, 8));
+    EXPECT_FALSE(raw::planeRegionReadable(out, 9, 0, 8, 8)) << "past its row's texels: no bytes of the layout";
+    ASSERT_TRUE(raw::planeBytes(xr.t, 1, out));
+    EXPECT_EQ(out.width, 64u);
+    EXPECT_EQ(out.surfaceX, 8u);
+    EXPECT_FALSE(raw::planeBytes(xr.t, 16, out)) << "its first texel off a 16-byte unit";
 }
 
 // Plane 1 by its own geometry: the pairs a region's texels fall in, a packed plane's whole words of them, never past its

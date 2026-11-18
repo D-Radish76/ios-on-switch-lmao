@@ -48,8 +48,9 @@ inline uint64_t windowBound(const Texture &plane, uint64_t bytes)
     return plane.window.bytes ? std::min(bytes, plane.window.va + plane.window.pages - plane.va) : bytes;
 }
 
-// Plane 0 of `t`'s rows as texels of `unit` bytes (1, 2, 4, 8 or 16), pitch memory: what Metal's blits of a texture held
-// through planes move; false: no such plane
+// Plane 0 of `t`'s rows as texels of `unit` bytes (1, 2, 4, 8 or 16), pitch memory, or the texels of RGB10A8_2P_XR10's
+// words over a surface the kernel laid out block-linear, in that layout: what Metal's blits of a texture held through
+// planes move; false: no such plane
 inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out)
 {
     constexpr uint32_t kUnitFormats[5] = {10, 23, 53, 103, 123};  // R8Unorm, R16Uint, R32Uint, RG32Uint, RGBA32Uint
@@ -58,9 +59,27 @@ inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out)
     const uint32_t pitch = luma ? luma->pitch : t.planes.lumaPitch, rows = luma ? luma->height : t.height;
     Import *import = luma ? luma->import : t.import;
     const uint32_t log2 = unit ? uint32_t(__builtin_ctz(unit)) : 5;
-    if (!va || !pitch || !rows || !import || log2 > 4 || unit != 1u << log2 || pitch < unit ||
-        (luma && luma->blockLinear))
+    if (!va || !pitch || !rows || !import || log2 > 4 || unit != 1u << log2 || pitch < unit)
         return false;
+    if (luma && luma->blockLinear) {
+        if (!luma->width || (luma->width * luma->bpp) % unit || (luma->surfaceX * luma->bpp) % unit)
+            return false;
+        out = Texture();
+        out.import = import;
+        out.va = va;
+        out.pitch = pitch;
+        out.bpp = unit;
+        out.format = kUnitFormats[log2];
+        out.width = out.texelWidth = luma->width * luma->bpp / unit;
+        out.height = out.texelHeight = rows;
+        out.blockLinear = true;
+        out.blockHeight = luma->blockHeight;
+        out.layerBytes = luma->layerBytes;
+        out.surfaceX = luma->surfaceX * luma->bpp / unit;
+        out.surfaceY = luma->surfaceY;
+        out.storage = luma->storage;
+        return true;
+    }
     out = Texture();
     out.import = import;
     out.va = va;
@@ -89,13 +108,23 @@ inline uint64_t planeReadable(const Texture &plane)
     return (bo.vaBase ? bo.vaBase : bo.va) + bo.bytes - plane.va;
 }
 
+// Whether a blit of `w` x `h` of `plane`'s texels from (x, y) reads its surface's bytes alone: a block-linear plane's
+// region inside its texels, a pitch plane's run up to the end of its surface's last page
+inline bool planeRegionReadable(const Texture &plane, uint64_t x, uint64_t y, uint64_t w, uint64_t h)
+{
+    if (plane.blockLinear)
+        return x + w <= plane.width && y + h <= plane.height;
+    return planeReach(plane, x, y, w, h) <= planeReadable(plane);
+}
+
 // planeBytes, its storage what a blit of `w` x `h` of its texels from (x, y) reads of the surface (planeReach)
 inline bool planeBytesRead(const Texture &t, uint32_t unit, uint32_t x, uint32_t y, uint32_t w, uint32_t h,
                            Texture &out)
 {
     if (!planeBytes(t, unit, out))
         return false;
-    out.storage.bytes = windowBound(out, std::max(out.storage.bytes, planeReach(out, x, y, w, h)));
+    if (!out.blockLinear)
+        out.storage.bytes = windowBound(out, std::max(out.storage.bytes, planeReach(out, x, y, w, h)));
     return true;
 }
 
