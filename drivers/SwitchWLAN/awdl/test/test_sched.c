@@ -424,34 +424,6 @@ static void switch_test_home_trial(void)
     awdl_core_stop(core);
     free(core);
 }
-#if defined(SWITCH_IPSW_KIND_24B119)
-static void switch_test_trial_registration(void)
-{
-    const uint8_t compact[] = {1, 'X', 0xc0, 7, 33};
-    const uint8_t label[] = {1, 'X', 8, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p', 0xc0, 0x0c, 33};
-    const uint8_t *names[] = {compact, label};
-    const size_t sizes[] = {sizeof compact, sizeof label};
-    uint8_t request[64] = {0};
-    uint8_t *tlv = request + sizeof(struct a80211_peer_service_request);
-    for (unsigned i = 0; i < 2; ++i) {
-        const size_t size = sizes[i], length = 9 + size;
-        struct a80211_peer_service_request hdr = {.version = 1, .data_len = (uint16_t)length};
-        memcpy(request, &hdr, sizeof hdr);
-        tlv[0] = AWDL_TLV_SERVICE_RESPONSE;
-        tlv[1] = (uint8_t)(length - 3);
-        tlv[3] = (uint8_t)size;
-        memcpy(tlv + 5, names[i], size);
-        SCHECK(switch_a80211_trial_airdrop_srv(request, sizeof hdr + length));
-        SCHECK(!switch_a80211_trial_airdrop_srv(request, sizeof hdr + length - 1));
-        tlv[5 + size - 1] = 16;
-        SCHECK(!switch_a80211_trial_airdrop_srv(request, sizeof hdr + length));
-        tlv[5 + size - 1] = 33;
-        hdr.delete_request = 1;
-        memcpy(request, &hdr, sizeof hdr);
-        SCHECK(!switch_a80211_trial_airdrop_srv(request, sizeof hdr + length));
-    }
-}
-#endif
 #endif
 
 void test_sched_main(void)
@@ -461,9 +433,6 @@ void test_sched_main(void)
     switch_test_legal_channels();
 #if DEVELOPMENT || DEBUG
     switch_test_home_trial();
-#if defined(SWITCH_IPSW_KIND_24B119)
-    switch_test_trial_registration();
-#endif
 #endif
     printf("shared radio: idle and transfer schedules beside the access point: %s\n",
            test_failures == before ? "ok" : "FAILED");

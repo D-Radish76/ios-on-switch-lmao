@@ -23,7 +23,7 @@ struct SwitchWLANA3Diagnostics {
 };
 
 void switch_wlan_a3_discovery_trial();
-bool switch_wlan_a3_trial_applied(uint16_t channel);
+bool switch_wlan_a3_trial_applied(uint16_t channel, const char **blocked = nullptr);
 void switch_wlan_a3_trial_boundary(bool started, uint16_t channel);
 
 static inline bool switch_a3_diagnostic_due(const SwitchWLANA3Diagnostics &state, uint64_t now)

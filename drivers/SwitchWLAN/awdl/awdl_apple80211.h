@@ -252,9 +252,6 @@ void a80211_awdl_init(struct a80211_awdl *f, struct awdl_core *core, const struc
                       const char *ifname, const char *parent, const uint8_t caps[12]);
 // One request. `data` holds `*len` bytes (copied in for a set; room for `capacity` bytes for a get, *len updated);
 // *val is req_val. Returns 0 or an errno (EOPNOTSUPP for what awdl0 does not do).
-#if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
-int switch_a80211_trial_airdrop_srv(const void *data, size_t length);
-#endif
 int a80211_awdl_request(struct a80211_awdl *f, int set, int32_t type, int32_t *val, void *data, uint32_t *len,
                         uint32_t capacity, uint64_t now);
 // The core's peer callback lands here: posts PEER_PRESENCE to wifip2pd.

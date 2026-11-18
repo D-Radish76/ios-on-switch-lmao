@@ -1412,8 +1412,11 @@ TEST_F(SwitchA3Radio, DiagnosticClockSuffixIsBoundedWithoutExtraControls)
     ASSERT_EQ(switch_wlan_a3_radio_clock(), 0);
     switch_drain();
     EXPECT_EQ(switch_firmware.diagnostic_calls, 5u);
-    ASSERT_TRUE(switch_wlan_a3_trial_applied(6));
-    EXPECT_FALSE(switch_wlan_a3_trial_applied(44));
+    const char *blocked = nullptr;
+    EXPECT_FALSE(switch_wlan_a3_trial_applied(44, &blocked));
+    EXPECT_STREQ(blocked, "firmware home channel differs");
+    ASSERT_TRUE(switch_wlan_a3_trial_applied(6, &blocked));
+    EXPECT_EQ(blocked, nullptr);
     switch_wlan_a3_trial_boundary(true, 6);
     switch_wlan_a3_trial_boundary(true, 6);
     switch_drain();
@@ -1426,9 +1429,11 @@ TEST_F(SwitchA3Radio, DiagnosticClockSuffixIsBoundedWithoutExtraControls)
     switch_wlan_a3_trial_boundary(false, 6);
     switch_wlan_a3_trial_boundary(false, 6);
     ASSERT_EQ(switch_schedule(true), 0);
-    EXPECT_FALSE(switch_wlan_a3_trial_applied(6));
+    EXPECT_FALSE(switch_wlan_a3_trial_applied(6, &blocked));
+    EXPECT_STREQ(blocked, "firmware schedule commit pending");
     switch_drain();
-    EXPECT_FALSE(switch_wlan_a3_trial_applied(6));
+    EXPECT_FALSE(switch_wlan_a3_trial_applied(6, &blocked));
+    EXPECT_STREQ(blocked, "firmware has an away or inactive slot");
     EXPECT_EQ(switch_firmware.diagnostic_calls, 7u);
     unsigned matched = 0;
     for (const auto &line : switch_test_log)

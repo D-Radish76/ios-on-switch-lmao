@@ -10,33 +10,49 @@ SwitchWLANA3Diagnostics gDiagnostics;
 }
 
 namespace {
-bool trialAppliedLocked(uint16_t channel)
+const char *trialBlockerLocked(uint16_t channel)
 {
     using namespace switch_a3_host;
     if (channel != 6 && channel != 44 && channel != 149)
-        return false;
+        return "non-social home channel";
+    if (!gAttached || !gPowered)
+        return "radio detached or unpowered";
+    if (gClosing || gRecoveryRequired || gDrainPending)
+        return "radio closing, recovering or draining";
+    if (gStationPaused)
+        return "station owns the radio";
+    if (!gState.ready)
+        return "firmware resources not ready";
+    if (gScheduleUpdatePending)
+        return "firmware schedule commit pending";
+    if (!gApplied || gApplied != gBound || gApplied != gSchedule)
+        return "firmware generations disagree";
+    if (!gKnownEpoch || gKnownEpoch != gObservedEpoch)
+        return "firmware clock epoch mismatch";
     const uint16_t chanspec = bcm_chanspec20(static_cast<uint8_t>(channel), gD11n);
-    if (!gAttached || !gPowered || !gState.ready || gStationPaused || gDrainPending || gClosing ||
-        gRecoveryRequired || gScheduleUpdatePending || !gApplied || gApplied != gBound || gApplied != gSchedule ||
-        !gKnownEpoch || gKnownEpoch != gObservedEpoch || gAppliedSchedule.infra_chanspec != chanspec ||
-        gAppliedSchedule.slot_count != SWITCH_A3_MAX_SLOTS)
-        return false;
+    if (gAppliedSchedule.infra_chanspec != chanspec)
+        return "firmware home channel differs";
+    if (gAppliedSchedule.slot_count != SWITCH_A3_MAX_SLOTS)
+        return "firmware slot count differs";
     for (const auto &slot : gAppliedSchedule.slots)
         if (slot.chanspec != chanspec || !slot.dwell_us)
-            return false;
-    return true;
+            return "firmware has an away or inactive slot";
+    return nullptr;
 }
 }
 
-bool switch_wlan_a3_trial_applied(uint16_t channel)
+bool switch_wlan_a3_trial_applied(uint16_t channel, const char **blocked)
 {
     using namespace switch_a3_host;
-    if (!gLock)
-        return false;
-    IOLockLock(gLock);
-    const bool applied = trialAppliedLocked(channel);
-    IOLockUnlock(gLock);
-    return applied;
+    const char *reason = "radio lock unavailable";
+    if (gLock) {
+        IOLockLock(gLock);
+        reason = trialBlockerLocked(channel);
+        IOLockUnlock(gLock);
+    }
+    if (blocked)
+        *blocked = reason;
+    return !reason;
 }
 
 void switch_wlan_a3_trial_boundary(bool started, uint16_t channel)
@@ -45,7 +61,7 @@ void switch_wlan_a3_trial_boundary(bool started, uint16_t channel)
     if (!gLock)
         return;
     IOLockLock(gLock);
-    const bool applied = trialAppliedLocked(channel);
+    const bool applied = !trialBlockerLocked(channel);
     if (started ? gDiagnostics.trial_generation != 0 : (!gDiagnostics.trial_generation || gDiagnostics.fixed_trial_ended)) {
         IOLockUnlock(gLock);
         return;

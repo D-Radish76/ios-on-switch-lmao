@@ -298,32 +298,6 @@ static int switch_awdl_service_validate(const uint8_t *tlv, size_t length)
     }
 }
 
-#if DEVELOPMENT || DEBUG
-int switch_a80211_trial_airdrop_srv(const void *data, size_t length)
-{
-    struct a80211_peer_service_request request;
-    if (!data || length < sizeof request)
-        return 0;
-    memcpy(&request, data, sizeof request);
-    if (request.delete_request || request.data_len != length - sizeof request || request.data_len < 11)
-        return 0;
-    const uint8_t *tlv = (const uint8_t *)data + sizeof request;
-    if (tlv[0] != AWDL_TLV_SERVICE_RESPONSE || switch_awdl_service_validate(tlv, request.data_len))
-        return 0;
-    const uint8_t *key = tlv + 5;
-    const size_t bytes = switch_awdl_service_le16(tlv + 3);
-    const size_t instance = 1u + key[0];
-    if (key[0] == 0 || key[0] > 63 || instance > bytes || key[bytes - 1] != 33)
-        return 0;
-    // Match the compact Apple key and the explicit _airdrop label used by selector 120.
-    const uint8_t short_name[] = {0xc0, 0x07, 33};
-    const uint8_t long_name[] = {8, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p', 0xc0, 0x0c, 33};
-    const size_t suffix = bytes - instance;
-    return (suffix == sizeof short_name && !memcmp(key + instance, short_name, suffix)) ||
-           (suffix == sizeof long_name && !memcmp(key + instance, long_name, suffix));
-}
-#endif
-
 static int switch_awdl_service_request(struct a80211_awdl *f, const void *data, size_t length, uint64_t now)
 {
     struct awdl_core *const c = f->core;

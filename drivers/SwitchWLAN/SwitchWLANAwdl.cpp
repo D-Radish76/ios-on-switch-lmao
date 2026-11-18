@@ -50,6 +50,7 @@ extern "C" {
 #include "SwitchWLANStation.h"
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
 #include <pexpert/pexpert.h>
+#include "SwitchWLANAwdlHomeTrial.h"
 #endif
 #if DEVELOPMENT || DEBUG
 #include "SwitchWLANA3Diagnostic.h"
@@ -95,11 +96,12 @@ int gRadioError;
 bool gRestorePending, gRestoring, gRadioLost;
 bool gActivationCommitted;
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
-enum class HomeTrial { Off, Armed, Requested, Applying, Active };
+using HomeTrial = swlan::SwitchAwdlHomeTrial;
 HomeTrial gHomeTrial;
 thread_call_t gHomeTrialTimer;
 uint16_t gHomeTrialChannel;
-uint64_t gHomeTrialDeadline;
+const char *gHomeTrialBlocker;
+unsigned gHomeTrialBlockLogs;
 #endif
 #if DEVELOPMENT || DEBUG
 unsigned gActivationTransitions;
@@ -217,20 +219,23 @@ void armTimer(uint64_t tsf)
 }
 
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
-void armHomeTrial(unsigned seconds)
+void advanceHomeTrial();
+
+void armHomeTrialTimer()
 {
-    clock_interval_to_deadline(seconds, NSEC_PER_SEC, &gHomeTrialDeadline);
-    thread_call_enter_delayed(gHomeTrialTimer, gHomeTrialDeadline);
+    uint64_t deadline;
+    nanoseconds_to_absolutetime(gHomeTrial.deadlineNs, &deadline);
+    thread_call_enter_delayed(gHomeTrialTimer, deadline);
 }
 
 void endHomeTrial(const char *reason)
 {
-    if (gHomeTrial == HomeTrial::Off || gHomeTrial == HomeTrial::Armed)
+    if (gHomeTrial.phase == HomeTrial::Phase::Off || gHomeTrial.phase == HomeTrial::Phase::Armed)
         return;
-    const bool applied = gHomeTrial == HomeTrial::Active;
+    const bool applied = gHomeTrial.phase == HomeTrial::Phase::Active;
     if (applied)
         switch_wlan_a3_trial_boundary(false, gHomeTrialChannel);
-    gHomeTrial = HomeTrial::Off;
+    gHomeTrial.cancel();
     thread_call_cancel(gHomeTrialTimer);
     switch_awdl_core_home_trial(gCore, 0, nowTsf());
     IOLog("SwitchWLAN: AWDL: home trial ended (%s), applied %u channel %u gen %u, restoring normal scheduling\n",
@@ -240,8 +245,10 @@ void endHomeTrial(const char *reason)
 void homeTrialTimeout(thread_call_param_t, thread_call_param_t)
 {
     IOLockLock(gLock);
-    if (mach_absolute_time() >= gHomeTrialDeadline)
-        endHomeTrial(gHomeTrial == HomeTrial::Active ? "60 seconds" : "setup timeout");
+    if (gHomeTrial.deadlineNs && hostNs() < gHomeTrial.deadlineNs)
+        armHomeTrialTimer();
+    else
+        advanceHomeTrial();
     IOLockUnlock(gLock);
 }
 #endif
@@ -292,33 +299,89 @@ uint16_t radioInfraFreq()
 }
 
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
+const char *homeTrialBlocker(uint16_t station, uint16_t radio, uint64_t tsf)
+{
+    if (!gFacade.enabled)
+        return "waiting for Apple AWDL enable";
+    if (gRadioLost || gRadioError || gRadioState.error)
+        return "radio recovery or error";
+    if (gAddressChanging)
+        return "AWDL address changing";
+    if (!radioChannelsReady())
+        return "no legal social channels";
+    if (!tsf)
+        return "radio clock unavailable";
+    if (!gRxStarted)
+        return "receive registration pending";
+    if (!gRadioState.ready || !gRadioState.applied_generation)
+        return "mandatory radio resources pending";
+    if (!awdl_core_running(gCore))
+        return "AWDL core not running";
+    if (!gActivationCommitted)
+        return "activation not committed";
+    if (!station)
+        return "station not associated";
+    if (station != radio)
+        return "station and firmware channels differ";
+    return nullptr;
+}
+
 void advanceHomeTrial()
 {
-    if (gHomeTrial != HomeTrial::Requested && gHomeTrial != HomeTrial::Applying)
-        return;
-    if (mach_absolute_time() >= gHomeTrialDeadline) {
-        endHomeTrial("setup timeout");
-        return;
-    }
-    if (gHomeTrial == HomeTrial::Requested) {
-        const uint64_t tsf = nowTsf();
-        const uint16_t station = swlan_awdl_infra_freq();
-        if (!gActivationCommitted || !gFacade.enabled || !tsf || !radioChannelsReady() ||
-            !station || station != radioInfraFreq())
+    for (;;) {
+        if (gHomeTrial.phase == HomeTrial::Phase::Off)
             return;
-        gHomeTrialChannel = switch_awdl_core_home_trial(gCore, 1, tsf);
-        if (!gHomeTrialChannel) {
-            endHomeTrial("unavailable social home");
+        const uint64_t now = hostNs();
+        if (gHomeTrial.phase == HomeTrial::Phase::Active && now < gHomeTrial.deadlineNs)
+            return;
+        const uint16_t station = swlan_awdl_infra_freq(), radio = radioInfraFreq();
+        const uint64_t tsf = nowTsf();
+        const char *reason = homeTrialBlocker(station, radio, tsf);
+        const bool applying = gHomeTrial.phase == HomeTrial::Phase::Applying;
+        const bool applied = applying && gFacade.enabled && gActivationCommitted &&
+                             switch_wlan_a3_trial_applied(gHomeTrialChannel, &reason);
+        const auto action = gHomeTrial.advance(now, gFacade.enabled, gActivationCommitted, !reason, applied);
+        if (reason && gHomeTrialBlocker != reason && gHomeTrialBlockLogs < 10) {
+            ++gHomeTrialBlockLogs;
+            IOLog("SwitchWLAN: AWDL: home trial blocked (%s) station/radio MHz %u/%u legal %#x "
+                  "enabled %u committed %u ready %u error %d/%d session %u epoch %u config %u\n",
+                  reason, station, radio, gRadioState.social_channels, gFacade.enabled, gActivationCommitted,
+                  gRadioState.ready, gRadioError, gRadioState.error, gRadioState.generation,
+                  gRadioClock.epoch, gRadioState.applied_generation);
+        }
+        gHomeTrialBlocker = reason;
+        switch (action) {
+        case HomeTrial::Action::Request:
+            IOLog("SwitchWLAN: AWDL: home trial requested by committed AWDL activation\n");
+            armHomeTrialTimer();
+            break;
+        case HomeTrial::Action::Install:
+            gHomeTrialChannel = switch_awdl_core_home_trial(gCore, 1, tsf);
+            if (!gHomeTrialChannel) {
+                IOLog("SwitchWLAN: AWDL: home trial blocked (core rejected home) station/radio MHz %u/%u legal %#x\n",
+                      station, radio, gRadioState.social_channels);
+                endHomeTrial("core rejected home channel");
+                return;
+            }
+            break;
+        case HomeTrial::Action::Start:
+            armHomeTrialTimer();
+            switch_wlan_a3_trial_boundary(true, gHomeTrialChannel);
+            IOLog("SwitchWLAN: AWDL: home trial started channel %u duration 60s session %u epoch %u config %u\n",
+                  gHomeTrialChannel, gRadioState.generation, gRadioClock.epoch, gRadioState.applied_generation);
+            return;
+        case HomeTrial::Action::Timeout:
+            IOLog("SwitchWLAN: AWDL: home trial setup timed out (%s) station/radio MHz %u/%u config %u\n",
+                  reason ? reason : "deadline elapsed before commit was observed", station, radio,
+                  gRadioState.applied_generation);
+            endHomeTrial("setup timeout");
+            return;
+        case HomeTrial::Action::Finish:
+            endHomeTrial("60 seconds");
+            return;
+        case HomeTrial::Action::None:
             return;
         }
-        gHomeTrial = HomeTrial::Applying;
-    }
-    if (switch_wlan_a3_trial_applied(gHomeTrialChannel)) {
-        gHomeTrial = HomeTrial::Active;
-        armHomeTrial(60);
-        switch_wlan_a3_trial_boundary(true, gHomeTrialChannel);
-        IOLog("SwitchWLAN: AWDL: home trial started channel %u duration 60s session %u epoch %u config %u\n",
-              gHomeTrialChannel, gRadioState.generation, gRadioClock.epoch, gRadioState.applied_generation);
     }
 }
 #endif
@@ -360,7 +423,7 @@ void refreshRadio()
             const uint16_t social = state.social_channels_valid ? state.social_channels : 0;
             const uint16_t infra = radioInfraFreq();
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
-            if ((gHomeTrial == HomeTrial::Applying || gHomeTrial == HomeTrial::Active) &&
+            if ((gHomeTrial.phase == HomeTrial::Phase::Applying || gHomeTrial.phase == HomeTrial::Phase::Active) &&
                 (awdl_chan_of_freq(infra).number != gHomeTrialChannel || social != oldSocial))
                 endHomeTrial("home or regulatory change");
 #endif
@@ -1429,13 +1492,6 @@ int awdlRequest(ifnet_t ifp, bool set, apple80211req &rq)
                 if (rq.req_type == A80211_IOC_AWDL_PEER_SERVICE_REQUEST && capacity > sizeof(a80211_peer_service_request) &&
                     !reinterpret_cast<const a80211_peer_service_request *>(data)->delete_request) {
                     switch_wlan_a3_discovery_trial();
-#if defined(SWITCH_IPSW_KIND_24B119)
-                    if (gHomeTrial == HomeTrial::Armed && switch_a80211_trial_airdrop_srv(data, capacity)) {
-                        gHomeTrial = HomeTrial::Requested;
-                        armHomeTrial(10);
-                        IOLog("SwitchWLAN: AWDL: home trial requested by AirDrop SRV registration\n");
-                    }
-#endif
                 } else if (rq.req_type == A80211_IOC_AWDL_PEER_TRAFFIC_REGISTRATION &&
                          capacity == sizeof(a80211_awdl_peer_traffic_registration) &&
                          reinterpret_cast<const a80211_awdl_peer_traffic_registration *>(data)->active)
@@ -2069,12 +2125,21 @@ void startStack(const awdl_radio_verdict &v, const struct swlan_awdl_caps *caps)
     gSoft = v.mode == AWDL_RADIO_SOFT;
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
     unsigned homeTrial = 0;
-    if (gSoft && caps->requires_radio_ready && caps->has_tsf_clock &&
-        PE_parse_boot_argn("switch-awdl-home-trial", &homeTrial, sizeof homeTrial) && homeTrial == 1) {
+    const bool option = PE_parse_boot_argn("switch-awdl-home-trial", &homeTrial, sizeof homeTrial);
+    if (!option || homeTrial != 1) {
+        IOLog("SwitchWLAN: AWDL: home trial disabled by boot argument (present %u value %u)\n", option, homeTrial);
+    } else if (!gSoft || !caps->requires_radio_ready || !caps->has_tsf_clock) {
+        IOLog("SwitchWLAN: AWDL: home trial blocked (backend) soft %u needs-ready %u has-TSF %u\n",
+              gSoft, caps->requires_radio_ready, caps->has_tsf_clock);
+    } else {
         gHomeTrialTimer = thread_call_allocate_with_options(homeTrialTimeout, nullptr, THREAD_CALL_PRIORITY_HIGH,
                                                            THREAD_CALL_OPTIONS_ONCE);
-        if (gHomeTrialTimer)
-            gHomeTrial = HomeTrial::Armed;
+        if (gHomeTrialTimer) {
+            gHomeTrial.arm();
+            IOLog("SwitchWLAN: AWDL: home trial armed, waiting for committed AWDL activation\n");
+        } else {
+            IOLog("SwitchWLAN: AWDL: home trial blocked (timer allocation failed)\n");
+        }
     }
 #endif
     memcpy(gMac, caps->self_mac, 6);

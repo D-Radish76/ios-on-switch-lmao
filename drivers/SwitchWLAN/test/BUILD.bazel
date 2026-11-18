@@ -44,6 +44,7 @@ host_test(
 host_library(
     name = "awdl_role_abi",
     hdrs = [
+        "//drivers/SwitchWLAN:SwitchWLANAwdlHomeTrial.h",
         "//drivers/SwitchWLAN:awdl/awdl.h",
         "//drivers/SwitchWLAN:awdl/awdl_apple80211.h",
     ],
@@ -55,9 +56,9 @@ host_library(
         srcs = [
             "switch_wlan_awdl_role_test.cpp",
             "switch_wlan_awdl_role_fixture.h",
-        ],
+        ] + (["switch_wlan_awdl_home_trial_test.cpp"] if kind == "24B119" else []),
         data = ["//drivers/SwitchWLAN:SwitchWLANAwdl.cpp"],
-        defines = ["SWITCH_IPSW_KIND_{}=1".format(kind)],
+        defines = ["DEVELOPMENT=1", "SWITCH_IPSW_KIND_{}=1".format(kind)],
         deps = [":awdl_role_abi"],
     )
     for kind in ("21H461", "24B119")

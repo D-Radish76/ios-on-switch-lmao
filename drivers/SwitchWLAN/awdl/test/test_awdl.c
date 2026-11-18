@@ -915,10 +915,10 @@ static void test_airdrop_srv_on_scheduled_mif(void)
     struct a80211_awdl f;
     a80211_awdl_init(&f, nodes[0].core, &ops, "awdl0", "en0", caps);
 
-    // Selector 120 encodes a DNS key, length, offset and SRV RDATA for 0123456789ab._airdrop._tcp.local.
+    // The D2D key ends with the big-endian SRV type and compression version.
     static const uint8_t response[] = {
-        2, 49, 0, 25, 0, 12, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b',
-        8, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p', 0xc0, 0x0c, 33, 18, 0, 0, 0,
+        2, 51, 0, 27, 0, 12, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b',
+        8, '_', 'a', 'i', 'r', 'd', 'r', 'o', 'p', 0xc0, 0x0c, 0, 33, 1, 18, 0, 0, 0,
         0, 0, 0, 0, 0x22, 0x42, 4, 'p', 'e', 'e', 'r', 5, 'l', 'o', 'c', 'a', 'l', 0,
     };
     const int result = switch_test_peer_service(&f, response, sizeof response, 0);
