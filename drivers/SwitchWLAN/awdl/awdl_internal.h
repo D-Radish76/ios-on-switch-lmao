@@ -22,8 +22,7 @@ extern "C" {
 #define AWDL_SEQ_US            (AWDL_EAW_US * AWDL_SEQ_SLOTS)                 // 1048576
 // Give an admitted datagram a full rendezvous cycle after transfer priority expires.
 #define AWDL_TXQ_LIFETIME_US   (AWDL_TRANSFER_HOLD_US + AWDL_SEQ_US)
-#define AWDL_PSF_US            ((uint64_t)AWDL_PSF_INTERVAL_TU * AWDL_TU_US)  // 112640
-#define AWDL_PSF_FOLLOWER_US   ((uint64_t)440 * AWDL_TU_US)  // Apple's other action frame period (Stute et al. §7.4)
+#define AWDL_PSF_FOLLOWER_TU   440u  // Stute et al. §7.4
 #define AWDL_ROOT_COUNTER_US   3140000u  // a root's self counter ticks every π s (OWL's reading of IO80211Family)
 #define AWDL_ELECTION_FRESH_US 2000000u  // election parameters older than this are ignored
 #define AWDL_RESYNC_US         256       // re-install the radio schedule beyond this error
@@ -42,6 +41,7 @@ struct awdl_writer {
     int overflow;
 };
 
+uint16_t awdl_psf_period_tu(enum awdl_role role);
 void awdl_put16(uint8_t *p, uint16_t v);
 void awdl_put32(uint8_t *p, uint32_t v);
 int awdl_w_begin(struct awdl_writer *w, uint8_t type);
@@ -102,6 +102,8 @@ struct awdl_core {
     struct awdl_chan switch_requested_seq[AWDL_SEQ_SLOTS];
     uint8_t switch_channels_limited;
     uint16_t switch_legal_channels;
+    uint8_t switch_timed_peer, switch_search_pass;
+    uint64_t switch_next_search;
     struct awdl_stats stats;
     // native backend: the firmware's AWDL interface and its bring-up
     uint8_t nstate;        // AWDL_N_*
@@ -155,6 +157,7 @@ void awdl_write_extras(struct awdl_core *c, struct awdl_writer *w, int mif);
 
 // awdl_schedule.c: the sequence for the mode, the infra channel and the learnt social channel, shared by both backends.
 void awdl_sched_start(struct awdl_core *c);
+void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *p, uint64_t now);
 void awdl_sched_learn_social(struct awdl_core *c, const struct awdl_peer *p, uint64_t now);
 void awdl_schedule_from(struct awdl_chan out[AWDL_SEQ_SLOTS], uint16_t mask, struct awdl_chan free_chan, uint8_t first,
                         uint8_t second);

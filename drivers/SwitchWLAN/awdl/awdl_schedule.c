@@ -76,6 +76,71 @@ static uint16_t social_bit(uint8_t channel)
     return channel == 6 ? 1u : channel == 44 ? 2u : channel == 149 ? 4u : 0u;
 }
 
+// A full advertised sequence takes 1.048576 s. Two cycles leave a full peer cycle after schedule installation.
+#define SWITCH_AWDL_SEARCH_US (2 * AWDL_SEQ_US)
+
+static void reset_search(struct awdl_core *c, uint64_t now)
+{
+    c->switch_search_pass = 0;
+    c->switch_next_search = now + SWITCH_AWDL_SEARCH_US;
+}
+
+static int searching(const struct awdl_core *c)
+{
+#if DEVELOPMENT || DEBUG
+    if (c->switch_home_trial_channel)
+        return 0;
+#endif
+    return c->switch_channels_limited && c->switch_legal_channels && !c->seq_fixed && !c->switch_timed_peer;
+}
+
+static int search_moves(const struct awdl_core *c)
+{
+    const uint16_t mask = c->switch_legal_channels;
+    return searching(c) && ((mask & (mask - 1u)) ||
+                            (c->infra_mhz && mask != social_bit(awdl_chan_of_freq(c->infra_mhz).number)));
+}
+
+static void search_sequence(struct awdl_core *c, struct awdl_chan home)
+{
+    const uint8_t candidates[] = {home.number, 44, 149, 6};
+    uint8_t channels[3];
+    unsigned count = 0;
+    uint16_t remaining = c->switch_legal_channels;
+    for (unsigned i = 0; i < sizeof candidates; ++i) {
+        const uint16_t bit = social_bit(candidates[i]);
+        if (remaining & bit) {
+            channels[count++] = candidates[i];
+            remaining &= (uint16_t)~bit;
+        }
+    }
+    const uint8_t channel = channels[c->switch_search_pass % count];
+    const struct awdl_chan listen = {channel, awdl_opclass_20mhz(channel)};
+    // With a station, a visiting channel gets one EAW in four. Moving that EAW on each sweep covers every peer phase.
+    const unsigned offset = (c->switch_search_pass / count) % 4u;
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        c->cfg.seq[i] = !c->infra_mhz || i % 4 == offset ? listen : home;
+}
+
+static int usable_timing(const struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
+{
+    if (!p || !p->used || !(p->has_v2 || p->reachable) || !p->has_seq || !p->next_aw_tsf ||
+        (now > p->next_aw_tsf && now - p->next_aw_tsf > AWDL_PEER_TIMEOUT_US))
+        return 0;
+    for (unsigned i = 0; i < p->seq.count; ++i)
+        if (c->switch_legal_channels & social_bit(awdl_chan_primary(p->seq.chan[i])))
+            return 1;
+    return 0;
+}
+
+static int any_timed_peer(const struct awdl_core *c, uint64_t now)
+{
+    for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i)
+        if (usable_timing(c, &c->peers[i], now))
+            return 1;
+    return 0;
+}
+
 static void build(struct awdl_core *c)
 {
 #if DEVELOPMENT || DEBUG
@@ -98,13 +163,21 @@ static void build(struct awdl_core *c)
         uint8_t first = (c->switch_legal_channels & 4u) ? 149 : 44;
         uint8_t second = (c->switch_legal_channels & 2u) ? 44 : first;
         uint8_t preferred = c->social5;
-        if ((home.number == 44 && (c->switch_legal_channels & 2u)) ||
-            (home.number == 149 && (c->switch_legal_channels & 4u)))
+        if (!(c->switch_legal_channels & social_bit(preferred)))
             preferred = home.number;
         if ((preferred == 44 && (c->switch_legal_channels & 2u)) ||
             (preferred == 149 && (c->switch_legal_channels & 4u)))
             first = second = preferred;
-        awdl_schedule_from(c->cfg.seq, awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode), home, first, second);
+        if (searching(c)) {
+            search_sequence(c, home);
+        } else {
+            const uint16_t mask = awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode);
+            awdl_schedule_from(c->cfg.seq, mask, home, first, second);
+            if (c->switch_legal_channels == social_bit(6))
+                for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+                    if (mask & (1u << i))
+                        c->cfg.seq[i] = (struct awdl_chan){6, 81};
+        }
     } else {
         awdl_schedule(c->cfg.seq, c->infra_mhz, c->social5, (enum awdl_mode)c->mode);
     }
@@ -161,6 +234,9 @@ void switch_awdl_core_set_channels(struct awdl_core *c, uint16_t mask, uint64_t 
     memcpy(was, c->cfg.seq, sizeof was);
     c->switch_channels_limited = 1;
     c->switch_legal_channels = mask;
+    now = now ? now : c->last_observation;
+    c->switch_timed_peer = (uint8_t)any_timed_peer(c, now);
+    reset_search(c, now);
     build(c);
     if (c->running && memcmp(was, c->cfg.seq, sizeof was))
         awdl_soft_install(c, now);
@@ -186,6 +262,8 @@ void awdl_sched_log(struct awdl_core *c, const char *fmt, ...)
 void awdl_sched_start(struct awdl_core *c)
 {
     c->social5 = 0;
+    c->switch_timed_peer = 0;
+    reset_search(c, c->last_observation);
     c->mode = AWDL_MODE_IDLE;  // discoverable with the least presence until AirDrop data flows
     c->transfer_until = 0;
     build(c);
@@ -209,6 +287,24 @@ static void set_mode(struct awdl_core *c, enum awdl_mode mode, uint64_t now, con
     build(c);
     awdl_sched_log(c, "%s", why);
     apply(c, map, now);
+}
+
+void switch_awdl_sched_peer_timing(struct awdl_core *c, const struct awdl_peer *p, uint64_t now)
+{
+    if (!c->running || !c->switch_channels_limited)
+        return;
+    const int present = usable_timing(c, p, now) || (c->switch_timed_peer && any_timed_peer(c, now));
+    if (present == c->switch_timed_peer)
+        return;
+    c->switch_timed_peer = (uint8_t)present;
+    if (!present)
+        c->social5 = 0;
+    reset_search(c, now);
+    struct awdl_chan previous[AWDL_SEQ_SLOTS];
+    memcpy(previous, c->cfg.seq, sizeof previous);
+    build(c);
+    if (memcmp(previous, c->cfg.seq, sizeof previous))
+        awdl_soft_install(c, now);
 }
 
 // Our 5 GHz social channel follows the master's: the one of 44/149 most of its slots are on.
@@ -278,11 +374,23 @@ void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
 {
     if (c->mode == AWDL_MODE_TRANSFER && now >= c->transfer_until)
         set_mode(c, AWDL_MODE_IDLE, now, "no AirDrop data for %u s", AWDL_TRANSFER_HOLD_US / 1000000);
+    if (search_moves(c) && now >= c->switch_next_search) {
+        const uint64_t passes = 1 + (now - c->switch_next_search) / SWITCH_AWDL_SEARCH_US;
+        c->switch_next_search += passes * SWITCH_AWDL_SEARCH_US;
+        // Four offsets for each of one, two or three legal channels all repeat within 24 passes.
+        c->switch_search_pass = (uint8_t)((c->switch_search_pass + passes) % 24u);
+        struct awdl_chan previous[AWDL_SEQ_SLOTS];
+        memcpy(previous, c->cfg.seq, sizeof previous);
+        build(c);
+        if (memcmp(previous, c->cfg.seq, sizeof previous))
+            awdl_soft_install(c, now);
+    }
 }
 
 uint64_t awdl_sched_next(const struct awdl_core *c)
 {
-    return c->mode == AWDL_MODE_TRANSFER ? c->transfer_until : UINT64_MAX;
+    const uint64_t mode = c->mode == AWDL_MODE_TRANSFER ? c->transfer_until : UINT64_MAX;
+    return search_moves(c) && c->switch_next_search < mode ? c->switch_next_search : mode;
 }
 
 enum awdl_mode awdl_core_mode(const struct awdl_core *c)
@@ -295,6 +403,7 @@ void awdl_core_set_infra(struct awdl_core *c, uint16_t infra_mhz, uint64_t now)
     if (infra_mhz == c->infra_mhz)
         return;
     c->infra_mhz = infra_mhz;
+    reset_search(c, now ? now : c->last_observation);
     if (!c->running)
         return;
     const uint16_t map = awdl_social_map(c->cfg.seq);

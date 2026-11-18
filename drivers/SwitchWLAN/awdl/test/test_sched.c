@@ -316,7 +316,7 @@ static void switch_test_legal_channels(void)
     awdl_core_start(core, 0);
     SCHECK(switch_installs == 1);
     SCHECK(awdl_slots_away(switch_installed, 5260) == 4);
-    SCHECK(awdl_social_map(switch_installed) == 3);
+    SCHECK(awdl_social_map(switch_installed) == 2);
     for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
         SCHECK(switch_installed[i].number == 0 || switch_installed[i].opclass ==
                awdl_opclass_20mhz(switch_installed[i].number));
@@ -341,11 +341,11 @@ static void switch_test_legal_channels(void)
     const size_t peer_length = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, 0, frame, sizeof frame);
     const struct awdl_rx_meta meta = {0, 5745, -55};
     awdl_core_rx(core, frame, peer_length, &meta);
-    SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER && awdl_social_map(switch_installed) == 3);
+    SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER && awdl_social_map(switch_installed) == 2);
     awdl_core_stop(peer);
     free(peer);
     awdl_core_traffic_registered(core, "com.apple.airdrop", 0);
-    SCHECK(awdl_slots_away(switch_installed, 5745) == 12);
+    SCHECK(awdl_slots_away(switch_installed, 5745) == 4);
     switch_awdl_core_set_channels(core, 0, 0);
     SCHECK(!awdl_social_map(switch_installed));
     for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
@@ -364,7 +364,6 @@ static void switch_test_legal_channels(void)
     free(core);
 }
 
-#if DEVELOPMENT || DEBUG
 static unsigned switch_mac_overlap(unsigned offset)
 {
     const uint8_t mac[] = {44, 44, 149, 0, 0, 0, 0, 0, 6, 149, 44, 0, 0, 0, 0, 0};
@@ -375,6 +374,96 @@ static unsigned switch_mac_overlap(unsigned offset)
     return overlap;
 }
 
+static void switch_test_acquisition(void)
+{
+    struct awdl_core *core = make(0x0d, 60, m_tx, switch_schedule);
+    const uint64_t period = 2 * AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US;
+    awdl_core_set_infra(core, 2437, 0);
+    switch_awdl_core_set_channels(core, 7, 0);
+    awdl_core_start(core, 0);
+    for (unsigned offset = 0; offset < AWDL_SEQ_SLOTS; ++offset)
+        SCHECK(switch_mac_overlap(offset) == 1);
+    for (unsigned slot = 0; slot < AWDL_SEQ_SLOTS; ++slot)
+        awdl_core_timer(core, slot * (period / 32) + period / 64);
+    SCHECK(awdl_core_stats(core)->mif_tx == AWDL_SEQ_SLOTS);
+    awdl_core_set_infra(core, 5180, period);
+    unsigned visits[3] = {0};
+    for (unsigned pass = 0; pass < 12; ++pass) {
+        awdl_core_timer(core, period * (1 + pass));
+        SCHECK(awdl_slots_away(switch_installed, 5180) == 4);
+        for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
+            const uint8_t ch = switch_installed[i].number;
+            if (ch) {
+                SCHECK(ch == 44 || ch == 149 || ch == 6);
+                visits[ch == 44 ? 0 : ch == 149 ? 1 : 2] |= 1u << i;
+            }
+        }
+    }
+    for (unsigned i = 0; i < 3; ++i)
+        SCHECK(visits[i] == 0xffffu);
+
+    struct awdl_core *peer = make(0x0e, 520, m_tx, NULL);
+    struct awdl_chan seq[AWDL_SEQ_SLOTS];
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        seq[i] = (struct awdl_chan){44, 115};
+    const uint64_t now = 12 * period;
+    awdl_core_set_sequence(peer, seq, 0);
+    awdl_core_start(peer, 0);
+    awdl_core_timer(peer, now);
+    uint8_t frame[AWDL_MAX_FRAME];
+    const size_t bytes = awdl_core_build_af(peer, AWDL_SUBTYPE_PSF, now, frame, sizeof frame);
+    const struct awdl_rx_meta meta = {now, 5220, -45};
+    const unsigned before = switch_installs;
+    awdl_core_rx(core, frame, bytes, &meta);
+    SCHECK(switch_installs == before + 1);
+    SCHECK(awdl_core_role(core) == AWDL_ROLE_FOLLOWER);
+    awdl_core_set_infra(core, 5745, now);
+    SCHECK(switch_installed[0].number == 44 && switch_installed[1].number == 149);
+    unsigned installed = switch_installs;
+    awdl_core_timer(core, now + period / 2);
+    SCHECK(switch_installs == installed);
+    switch_awdl_core_set_channels(core, 1, now + period / 2);
+    SCHECK(awdl_slots_away(switch_installed, 5745) == 4 && !switch_installed[10].number);
+    for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+        seq[i] = (struct awdl_chan){6, 81};
+    awdl_core_set_sequence(peer, seq, now + period);
+    const size_t six = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, now + period, frame, sizeof frame);
+    const struct awdl_rx_meta ch6 = {now + period, 2437, -45};
+    awdl_core_rx(core, frame, six, &ch6);
+    SCHECK(switch_installed[0].number == 6 && switch_installed[10].number == 6 && !switch_installed[1].number);
+
+    const uint8_t src[] = {2, 0x11, 0x22, 0x33, 0x44, 0x0e};
+    uint8_t eth[54] = {2, 0x11, 0x22, 0x33, 0x44, 0x0d};
+    memcpy(eth + 6, src, sizeof src);
+    eth[12] = 0x86;
+    eth[13] = 0xdd;
+    const size_t data = awdl_data_encap(eth, sizeof eth, src, 1, frame, sizeof frame);
+    const struct awdl_rx_meta late = {ch6.tsf + AWDL_PEER_TIMEOUT_US + period / 2, 2437, -45};
+    SCHECK(data != 0);
+    awdl_core_rx(core, frame, data, &late);
+    awdl_core_timer(core, late.tsf);
+    const struct awdl_peer *known = awdl_core_find(core, src);
+    SCHECK(known && known->last_seen == late.tsf);
+    SCHECK(awdl_slots_away(switch_installed, 5745) == 4 && !switch_installed[10].number);
+    const size_t fresh = awdl_core_build_af(peer, AWDL_SUBTYPE_MIF, late.tsf, frame, sizeof frame);
+    awdl_core_rx(core, frame, fresh, &late);
+    SCHECK(switch_installed[10].number == 6);
+
+    awdl_core_set_addr(core, (const uint8_t[6]){2, 1, 2, 3, 4, 5});
+    awdl_core_set_infra(core, 0, late.tsf);
+    switch_awdl_core_set_channels(core, 3, late.tsf);
+    for (unsigned pass = 0; pass < 2; ++pass) {
+        awdl_core_timer(core, late.tsf + period * pass);
+        for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i)
+            SCHECK(switch_installed[i].number == (pass ? 6 : 44));
+    }
+    awdl_core_stop(peer);
+    awdl_core_stop(core);
+    free(peer);
+    free(core);
+}
+
+#if DEVELOPMENT || DEBUG
 static void switch_test_home_trial(void)
 {
     struct awdl_core *core = make(0x0d, 60, m_tx, switch_schedule);
@@ -382,7 +471,7 @@ static void switch_test_home_trial(void)
     awdl_core_set_infra(core, 2437, 0);
     SCHECK(!switch_awdl_core_home_trial(core, 1, 0));
     awdl_core_start(core, 0);
-    SCHECK(!switch_mac_overlap(1) && !switch_mac_overlap(2));
+    SCHECK(switch_mac_overlap(1) && switch_mac_overlap(2));
     SCHECK(switch_awdl_core_home_trial(core, 1, 1000) == 6);
     for (unsigned i = 0; i < AWDL_SEQ_SLOTS; ++i) {
         SCHECK(switch_installed[i].number == 6 && switch_installed[i].opclass == 81);
@@ -431,6 +520,7 @@ void test_sched_main(void)
     const int before = test_failures;
     test_shared_radio();
     switch_test_legal_channels();
+    switch_test_acquisition();
 #if DEVELOPMENT || DEBUG
     switch_test_home_trial();
 #endif

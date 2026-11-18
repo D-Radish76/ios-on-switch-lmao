@@ -389,9 +389,10 @@ static void test_build_roundtrip(void)
     CHECK(a.phy_tx_time == (uint32_t)now && a.sync.aw_seq == awdl_core_aw_seq(nodes[0].core, now));
     CHECK(awdl_core_aw_start(nodes[0].core, (uint16_t)((a.sync.aw_seq & ~3u) + 4), now) == next);
     CHECK(target <= now && now - target < AWDL_TU_US && a.sync.tx_counter >= 1 && a.sync.tx_counter <= 64);
-    CHECK(a.sync.presence_mode == 4 && a.sync.ap_beacon_delta == (int16_t)a.sync.aw_seq);
+    CHECK(a.sync.presence_mode == 4 && a.sync.aw_seq != 0 && a.sync.ap_beacon_delta == 0);
     const size_t p = awdl_core_build_af(nodes[0].core, AWDL_SUBTYPE_PSF, now, buf, sizeof buf);
     CHECK(awdl_af_parse(buf, p, &a) == 0 && a.subtype == AWDL_SUBTYPE_PSF && !(a.present & (1u << AWDL_TLV_ARPA)));
+    CHECK(a.sync.aw_seq != 0 && a.sync.ap_beacon_delta == 0);
     CHECK(awdl_core_build_af(nodes[0].core, AWDL_SUBTYPE_MIF, now, buf, 80) == 0);  // too small: nothing
 }
 
@@ -470,6 +471,9 @@ static void test_sync_two_nodes(void)
     CHECK(nodes[1].schedules >= 2);  // resynchronised at least once after starting on its own
     const struct awdl_peer *p = awdl_core_find(nodes[1].core, (const uint8_t[6]){0x02, 0x11, 0x22, 0x33, 0x44, 0x0a});
     CHECK(p && p->reachable && !strcmp(p->hostname, "node0") && p->awdl_version == 0x34);
+    CHECK(p && p->sync.af_period == 110);
+    const struct awdl_peer *follower = awdl_core_find(nodes[0].core, nodes[0].last_peer);
+    CHECK(follower && follower->sync.af_period == 440);
     const struct awdl_stats *st = awdl_core_stats(nodes[0].core);
     CHECK(st->psf_tx > 20 && st->mif_tx > 40);
 
@@ -487,7 +491,7 @@ static void test_sync_two_nodes(void)
           !memcmp(nodes[0].delivered, eth, sizeof eth));
     memcpy(eth, (const uint8_t[6]){0x33, 0x33, 0, 0, 0, 0xfb}, 6);
     CHECK(awdl_core_output(nodes[0].core, eth, sizeof eth, local_of(0, sim_now)) == 0);  // (source rewritten)
-    sim_run(sim_now + 200000);
+    sim_run(sim_now + AWDL_SEQ_SLOTS * AWDL_EAW_TU * AWDL_TU_US);
     CHECK(nodes[1].deliveries == 1 && !memcmp(nodes[1].delivered, eth, 6));
     CHECK(!memcmp(nodes[1].delivered + 6, (const uint8_t[6]){0x02, 0x11, 0x22, 0x33, 0x44, 0x0a}, 6));
     // to a peer nobody knows: refused (no route)

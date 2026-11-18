@@ -243,14 +243,12 @@ static void switch_test_peer_window(uint64_t start, int rephase)
     awdl_core_set_infra(core, 2437, start);
     awdl_core_start(core, start);
     uint8_t eth[64] = {2, 1, 2, 3, 4, 7, 2, 1, 2, 3, 4, 5, 0x86, 0xdd, 0x60};
-    const uint8_t mdns[6] = {0x33, 0x33, 0, 0, 0, 0xfb};
     struct awdl_core *peer = switch_timed_peer(eth, 10, start + 81920);
     const uint64_t now = start + 83000;
     switch_receive_mif(core, peer, now);
     RCHECK(awdl_core_role(core) == AWDL_ROLE_ROOT);
     RCHECK(!awdl_core_output(core, eth, sizeof eth, now));
     const uint8_t peer_address[6] = {2, 1, 2, 3, 4, 7};
-    memcpy(eth, mdns, sizeof mdns);
     RCHECK(!awdl_core_output(core, eth, sizeof eth, now));
     uint64_t t = awdl_core_timer(core, now);
     const uint64_t shift = rephase ? 16384 : 0;
@@ -260,17 +258,47 @@ static void switch_test_peer_window(uint64_t start, int rephase)
         switch_receive_mif(core, peer, start + 100000);
         t = awdl_core_timer(core, start + 100000);
     }
-    const uint64_t open = start + 147456 + shift + 2048;
+    const uint64_t open = start + 147456 + shift + 3 * AWDL_TU_US;
     for (unsigned i = 0; i < 8 && t < open; ++i)
         t = awdl_core_timer(core, t);
     RCHECK(t == open && switch_radio_test.accepted == 0);
     awdl_core_timer(core, open);
     RCHECK(switch_radio_test.accepted == 2 && switch_radio_test.sequence[0] == 0 && switch_radio_test.sequence[1] == 1);
     RCHECK(!awdl_core_output(core, eth, sizeof eth, start + 205000));
-    RCHECK(switch_radio_test.accepted == 3 && switch_radio_test.data_deadline == start + 212992 + shift - 2048);
+    RCHECK(switch_radio_test.accepted == 3 && switch_radio_test.data_deadline == start + 212992 + shift - 3 * AWDL_TU_US);
     awdl_core_stop(core);
     free(core);
     free(peer);
+}
+
+static void switch_test_bonjour_windows(void)
+{
+    memset(&switch_radio_test, 0, sizeof switch_radio_test);
+    struct awdl_core *core = switch_radio_core();
+    awdl_core_start(core, 0);
+    uint8_t frame[64] = {0x33, 0x33, 0, 0, 0, 0xfb, 2, 1, 2, 3, 4, 5, 0x86, 0xdd};
+    const uint64_t guard = 16 * AWDL_TU_US, slot = AWDL_EAW_TU * AWDL_TU_US;
+    RCHECK(!awdl_core_output(core, frame, sizeof frame, 0));
+    RCHECK(awdl_core_timer(core, guard - 1) == guard && !switch_radio_test.accepted);
+    awdl_core_timer(core, guard);
+    RCHECK(switch_radio_test.accepted == 1 && switch_radio_test.data_deadline == slot - guard);
+    memcpy(frame, (const uint8_t[6]){1, 0, 0x5e, 0, 0, 0xfb}, 6);
+    RCHECK(!awdl_core_output(core, frame, sizeof frame, slot - guard));
+    RCHECK(awdl_core_timer(core, 10 * slot + guard - 1) == 10 * slot + guard && switch_radio_test.accepted == 1);
+    awdl_core_timer(core, 10 * slot + guard);
+    RCHECK(switch_radio_test.accepted == 2 && switch_radio_test.data_deadline == 11 * slot - guard);
+
+    struct awdl_chan seq[AWDL_SEQ_SLOTS] = {0};
+    seq[8] = (struct awdl_chan){6, 81};
+    const uint64_t now = 11 * slot;
+    awdl_core_set_sequence(core, seq, now);
+    RCHECK(!awdl_core_output(core, frame, sizeof frame, now));
+    awdl_core_timer(core, (AWDL_SEQ_SLOTS + 8) * slot + guard);
+    RCHECK(switch_radio_test.accepted == 2);
+    awdl_core_timer(core, now + AWDL_TRANSFER_HOLD_US + slot * AWDL_SEQ_SLOTS);
+    RCHECK(switch_radio_test.accepted == 2 && awdl_core_stats(core)->data_drop == 1);
+    awdl_core_stop(core);
+    free(core);
 }
 
 static void switch_test_queued_expiry(void)
@@ -543,6 +571,7 @@ void test_radio_main(void)
 {
     switch_test_legacy_channels();
     switch_test_home_discovery();
+    switch_test_bonjour_windows();
     switch_test_peer_window(0, 0);
     switch_test_peer_window(0xffff0000u, 1);
     switch_test_queued_expiry();

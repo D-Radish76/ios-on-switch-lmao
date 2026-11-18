@@ -3,35 +3,45 @@
 // (now, or queued for its next slot), and AWDL data frames in, A-MSDUs included, as Ethernet frames.
 #include "awdl_internal.h"
 
+enum { SWITCH_AWDL_UNICAST_GUARD_US = 3u * AWDL_TU_US, SWITCH_AWDL_MULTICAST_GUARD_US = 16u * AWDL_TU_US };
+
 struct channel_window {
     uint64_t open, close, boundary;
     uint8_t channel;
 };
 
-static struct channel_window channel_window(const struct awdl_chan *seq, unsigned count, uint64_t phase, uint64_t now)
+static struct channel_window channel_window(const struct awdl_chan *seq, unsigned count, uint64_t phase, uint64_t now,
+                                            unsigned guard, int bonjour)
 {
     const unsigned slot = (unsigned)((phase / AWDL_EAW_US) % AWDL_SEQ_SLOTS);
     const uint64_t elapsed = phase % AWDL_EAW_US;
     const uint8_t current = awdl_chan_primary(seq[slot % count]);
     const uint64_t boundary = now + AWDL_EAW_US - elapsed;
     struct channel_window w = {now, boundary, boundary, current};
-    if (current != awdl_chan_primary(seq[((slot + AWDL_SEQ_SLOTS - 1) % AWDL_SEQ_SLOTS) % count]) &&
-        elapsed < AWDL_SLOT_GUARD_US)
-        w.open += AWDL_SLOT_GUARD_US - elapsed;
-    if (current != awdl_chan_primary(seq[((slot + 1) % AWDL_SEQ_SLOTS) % count]))
-        w.close = boundary - now > AWDL_SLOT_GUARD_US ? boundary - AWDL_SLOT_GUARD_US : now;
+    if (bonjour && slot != 0 && slot != 10)
+        w.channel = 0;
+    if (elapsed < guard &&
+        (bonjour || current != awdl_chan_primary(seq[((slot + AWDL_SEQ_SLOTS - 1) % AWDL_SEQ_SLOTS) % count])))
+        w.open += guard - elapsed;
+    if (bonjour || current != awdl_chan_primary(seq[((slot + 1) % AWDL_SEQ_SLOTS) % count]))
+        w.close = boundary - now > guard ? boundary - guard : now;
     return w;
 }
 
 // Both phases are expressed in local radio TSF. Their slot boundaries may fall at different times.
-static uint64_t common_window(const struct awdl_core *c, const struct awdl_peer *p, uint64_t now, uint64_t *next)
+static uint64_t transmit_window(struct awdl_core *c, const uint8_t *dst, const struct awdl_peer *p, uint64_t now)
 {
+    const uint8_t mdns6[6] = {0x33, 0x33, 0, 0, 0, 0xfb};
+    const uint8_t mdns4[6] = {1, 0, 0x5e, 0, 0, 0xfb};
+    const int bonjour = !p && (awdl_addr_eq(dst, mdns6) || awdl_addr_eq(dst, mdns4));
+    const unsigned guard =
+        bonjour ? SWITCH_AWDL_MULTICAST_GUARD_US : (p ? SWITCH_AWDL_UNICAST_GUARD_US : AWDL_SLOT_GUARD_US);
     for (uint64_t at = now; at - now < AWDL_SEQ_US;) {
         const uint64_t phase = at - c->base_tsf + (uint64_t)c->base_seq * AWDL_AW_US;
-        struct channel_window w = channel_window(c->cfg.seq, AWDL_SEQ_SLOTS, phase, at);
+        struct channel_window w = channel_window(c->cfg.seq, AWDL_SEQ_SLOTS, phase, at, guard, bonjour);
         if (p) {
             const uint64_t peer_phase = at - p->next_aw_tsf + (uint64_t)p->next_aw_seq * AWDL_AW_US;
-            const struct channel_window other = channel_window(p->seq.chan, p->seq.count, peer_phase, at);
+            const struct channel_window other = channel_window(p->seq.chan, p->seq.count, peer_phase, at, guard, 0);
             if (other.channel != w.channel)
                 w.channel = 0;
             if (other.open > w.open)
@@ -44,34 +54,12 @@ static uint64_t common_window(const struct awdl_core *c, const struct awdl_peer 
         if (w.channel && w.open < w.close) {
             if (w.open == now)
                 return w.close;
-            if (w.open < *next)
-                *next = w.open;
+            if (w.open < c->next_data)
+                c->next_data = w.open;
             break;
         }
         at = w.boundary;
     }
-    return 0;
-}
-
-static uint64_t transmit_window(struct awdl_core *c, const uint8_t *dst, const struct awdl_peer *p, uint64_t now)
-{
-    const uint8_t mdns6[6] = {0x33, 0x33, 0, 0, 0, 0xfb};
-    const uint8_t mdns4[6] = {1, 0, 0x5e, 0, 0, 0xfb};
-    if (p || (!awdl_addr_eq(dst, mdns6) && !awdl_addr_eq(dst, mdns4)))
-        return common_window(c, p, now, &c->next_data);
-    uint64_t next = UINT64_MAX;
-    for (unsigned i = 0; i < AWDL_MAX_PEERS; ++i) {
-        const struct awdl_peer *peer = &c->peers[i];
-        if (peer->used && peer->reachable && peer->seq.count) {
-            const uint64_t end = common_window(c, peer, now, &next);
-            if (end)
-                return end;
-        }
-    }
-    if (next == UINT64_MAX)
-        return common_window(c, NULL, now, &c->next_data);
-    if (next < c->next_data)
-        c->next_data = next;
     return 0;
 }
 

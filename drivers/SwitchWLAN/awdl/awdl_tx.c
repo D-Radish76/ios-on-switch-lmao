@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: BSD-2-Clause-Patent
-// Our PSFs and MIFs, field for field as OWL sends them (src/tx.c awdl_init_full_action_frame), which Apple devices
-// synchronise to and elect with. The constant fields are OWL's values, which it took from Apple's frames.
+// PSF and MIF layout follows OWL's awdl_init_full_action_frame and captured Apple action frames.
 #include "awdl_internal.h"
 
 #define AWDL_ACTION_VERSION 0x10  // AWDL 1.0, the only action frame version (OWL AWDL_VERSION_COMPAT)
@@ -98,7 +97,7 @@ static void write_sync_params(struct awdl_core *c, struct awdl_writer *w, uint64
     awdl_w_u8(w, awdl_master_chan(c));
     awdl_w_u8(w, 0);  // guard time
     awdl_w_u16(w, AWDL_AW_TU);
-    awdl_w_u16(w, AWDL_PSF_INTERVAL_TU);
+    awdl_w_u16(w, awdl_psf_period_tu(c->role));
     awdl_w_u16(w, AWDL_SYNC_FLAGS);
     awdl_w_u16(w, AWDL_AW_TU);  // AW extension length
     awdl_w_u16(w, AWDL_AW_TU);  // AW common length
@@ -109,7 +108,7 @@ static void write_sync_params(struct awdl_core *c, struct awdl_writer *w, uint64
     awdl_w_u8(w, AWDL_PRESENCE_MODE);
     awdl_w_u8(w, 0);
     awdl_w_u16(w, aw);
-    awdl_w_u16(w, aw);  // AP beacon alignment: Apple puts the AW number here too (OWL)
+    awdl_w_u16(w, 0);  // No AP beacon alignment is advertised.
     awdl_w_chanseq(w, c->cfg.seq);
     awdl_w_u16(w, 0);
     awdl_w_end(w);

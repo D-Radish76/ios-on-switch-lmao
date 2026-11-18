@@ -336,10 +336,10 @@ static void test_apple_discovery(void)
         size_t length;
         uint64_t received;
         uint8_t subtype;
-        uint16_t counter;
+        uint16_t counter, aw_seq;
     } recorded[] = {
-        {switch_apple_psf, sizeof switch_apple_psf - 4, 1084690, AWDL_SUBTYPE_PSF, 6},
-        {switch_apple_mif, sizeof switch_apple_mif - 4, 1379390, AWDL_SUBTYPE_MIF, 38},
+        {switch_apple_psf, sizeof switch_apple_psf - 4, 1084690, AWDL_SUBTYPE_PSF, 6, 0x09d3},
+        {switch_apple_mif, sizeof switch_apple_mif - 4, 1379390, AWDL_SUBTYPE_MIF, 38, 0x09e5},
     };
     for (size_t i = 0; i < sizeof recorded / sizeof recorded[0]; ++i) {
         struct awdl_af af;
@@ -350,6 +350,7 @@ static void test_apple_discovery(void)
             continue;
         OCHECK(af.subtype == recorded[i].subtype && !memcmp(af.src, peer, sizeof peer));
         OCHECK(af.sync.tx_counter == recorded[i].counter && af.sync.tx_channel == 44);
+        OCHECK(af.sync.aw_seq == recorded[i].aw_seq && af.sync.ap_beacon_delta == 0);
         OCHECK(af.chanseq.count == 16 && awdl_chan_primary(af.chanseq.chan[0]) == 44);
         OCHECK(af.sync.has_seq && awdl_chan_primary(af.sync.seq.chan[0]) == 44);
         struct awdl_rx_meta meta = {recorded[i].received, 5220, -42};

@@ -78,10 +78,8 @@ uint64_t awdl_eaw_start(const struct awdl_core *c, uint64_t now)
 
 static int discovery_slot(const struct awdl_core *c, unsigned slot)
 {
-#if DEVELOPMENT || DEBUG
-    if (c->switch_home_trial_channel)
-        return c->cfg.seq[slot].number == c->switch_home_trial_channel;
-#endif
+    if (c->switch_channels_limited)
+        return awdl_chan_freq(c->cfg.seq[slot]) != 0;
     const unsigned mask = awdl_slot_mask(c->infra_mhz, (enum awdl_mode)c->mode) | (1u << 8);
     return awdl_chan_freq(c->cfg.seq[slot]) && (c->seq_fixed || (mask & (1u << slot)));
 }
@@ -106,7 +104,7 @@ void awdl_soft_install(struct awdl_core *c, uint64_t now)
 {
     if (!c->running || awdl_native(c))
         return;
-    if (c->receiving && !c->radio_ready) {
+    if (c->receiving) {
         c->schedule_pending = 1;
         return;
     }
@@ -273,6 +271,8 @@ void awdl_expire_peers(struct awdl_core *c, uint64_t now)
         if (c->peers[i].used && now >= c->peers[i].last_seen && now - c->peers[i].last_seen > AWDL_PEER_TIMEOUT_US)
             peer_lost(c, &c->peers[i], "timeout");
     }
+    if (c->switch_timed_peer)
+        switch_awdl_sched_peer_timing(c, NULL, now);
 }
 
 const struct awdl_peer *awdl_core_peer(const struct awdl_core *c, unsigned i)
@@ -394,6 +394,7 @@ void awdl_handle_af(struct awdl_core *c, const struct awdl_af *a, const struct a
         if (c->host.peer)
             c->host.peer(c->host.ctx, p->addr, 1, p->rssi);
     }
+    switch_awdl_sched_peer_timing(c, p, now);
 }
 
 // ---- the soft backend's frames --------------------------------------------------------------------------------------
@@ -422,9 +423,9 @@ static void send_af(struct awdl_core *c, uint8_t subtype, uint64_t now)
     }
 }
 
-static uint64_t psf_period(const struct awdl_core *c)
+uint16_t awdl_psf_period_tu(enum awdl_role role)
 {
-    return c->role == AWDL_ROLE_FOLLOWER ? AWDL_PSF_FOLLOWER_US : AWDL_PSF_US;
+    return role == AWDL_ROLE_FOLLOWER ? AWDL_PSF_FOLLOWER_TU : AWDL_PSF_INTERVAL_TU;
 }
 
 // ---- entry points -------------------------------------------------------------------------------------------------
@@ -462,7 +463,7 @@ void awdl_core_start(struct awdl_core *c, uint64_t now)
     c->role = AWDL_ROLE_ROOT;
     awdl_run_election(c, now);
     awdl_sched_start(c);
-    c->next_psf = now + psf_period(c);
+    c->next_psf = now + awdl_psf_period_tu(c->role) * AWDL_TU_US;
     awdl_soft_install(c, now);
     awdl_sched_log(c, "%s", "start");
 }
@@ -552,6 +553,7 @@ void awdl_core_set_addr(struct awdl_core *c, const uint8_t addr[6])
         if (c->peers[i].used)
             peer_lost(c, &c->peers[i], "address changed");
     }
+    switch_awdl_sched_peer_timing(c, NULL, c->last_observation);
     memcpy(c->cfg.addr, addr, 6);
     if (c->running)
         awdl_run_election(c, c->last_observation);
@@ -567,6 +569,8 @@ int awdl_core_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struct
         c->receiving = 1;
         awdl_data_rx(c, f, len, m);
         c->receiving = 0;
+        if (c->schedule_pending && c->radio_ready)
+            awdl_soft_install(c, c->last_observation);
         return 0;
     }
     if ((f[0] & 0xfc) != 0xd0)
@@ -582,6 +586,8 @@ int awdl_core_rx(struct awdl_core *c, const uint8_t *f, size_t len, const struct
     c->receiving = 1;
     awdl_handle_af(c, &a, m);
     c->receiving = 0;
+    if (c->schedule_pending && c->radio_ready)
+        awdl_soft_install(c, c->last_observation);
     const uint32_t services = awdl_tlv_bit(AWDL_TLV_SERVICE_REQUEST) | awdl_tlv_bit(AWDL_TLV_SERVICE_RESPONSE);
     return (a.present & services) && !awdl_is_group(a.src) && !awdl_addr_eq(a.src, c->cfg.addr) &&
            (awdl_is_group(a.dst) || awdl_addr_eq(a.dst, c->cfg.addr));
@@ -621,7 +627,7 @@ uint64_t awdl_core_timer(struct awdl_core *c, uint64_t now)
     if (now >= c->next_psf) {
         if (awdl_chan_freq(awdl_core_channel_at(c, now))) {
             send_af(c, AWDL_SUBTYPE_PSF, now);
-            c->next_psf = now + psf_period(c);
+            c->next_psf = now + awdl_psf_period_tu(c->role) * AWDL_TU_US;
         } else {
             c->next_psf = c->next_slot;
         }
