@@ -6,6 +6,7 @@
 
 from tools.devicerun.apps import APPS
 from tools.devicerun.audio import AUDIO
+from tools.devicerun.cut import CUT
 from tools.devicerun.dispatch import DISPATCH
 from tools.devicerun.hwtest import HWTEST, KILL_WINDOWS
 from tools.devicerun.joycon import JOYCON
@@ -1042,6 +1043,7 @@ GROUPS: dict[str, list[Check]] = {
         ),
     ],
     'audio': AUDIO,
+    'm2v-cut': CUT,
     'dispatch': DISPATCH,
     'gpu-morning': MORNING,
     'hwtest': HWTEST,

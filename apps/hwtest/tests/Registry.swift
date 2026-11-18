@@ -79,6 +79,14 @@ public enum Registry {
             ExactRoundTest(),
             X1GpuVicSyncTest(),
             FrameWeightsTest(),
+            YcbcrOnePlaneTargetsTest(),
+            YcbcrRowsPastPageTest(),
+            SM53LayoutTest(),
+            FloatTestsTest(),
+            YcbcrOverlapRowsTest(), YcbcrOverlapWordsTest(), XrCopyClampTest(),
+            XrPlanesRowsOff32Test(), XrWrittenOnePlaneTest(),
+            XrNextPlaneTest(), YcbcrAnySurfaceTest(), XrPlanesOff16Test(), XrAlphaSinkTest(),
+            XrTiledSurfaceTest(), YcbcrRowsUnder16Test(),
         ]
 
     static let video: [any HWTest] =
@@ -93,6 +101,9 @@ public enum Registry {
         ImageDecodeTest.all + [
             JPEGAfterIdleTest(), JPEGMappingLifetimeTest(), HEICEncodeTest(), CoreImageTest(), PixelTransferTest(),
             PixelTransfer422Test(),
+            PixelTransferRouteTest(),
+            VICLumaTest(),
+            VICGamutTest(), VICTagsTest(),
         ]
 
     static let audio: [any HWTest] = [
@@ -166,6 +177,6 @@ public enum Registry {
     public static let recovery: [any HWTest] = [
         PresentCopyResetTest(), RecoverKillOneTest(), RecoverKillUnderCompositorTest(), RecoverBusyEngineTest(),
         RecoverKernelStallTest(),
-        UncheckedBufferLoadsTest(),
+        UncheckedBufferLoadsTest(), KernelSparseMapTest(), EndedEncoderTest(),
     ]
 }

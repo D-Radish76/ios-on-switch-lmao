@@ -173,7 +173,8 @@ struct MetalPixelFormatTest: HWTest {
 }
 
 /// The RGBA16Float render target's float-to-half conversion must round toward zero, as Apple's GPU stores a float output
-/// at the default textureWriteRoundingMode (an M4 Max: every one of 14,341 floats whose two roundings differ): 0.5 is
+/// at the default textureWriteRoundingMode (an M4 Max: all 47,613 floats whose nearest-even and toward-zero halves
+/// differ, the point 3/4 of the way past every positive finite half and the midpoint past every odd one): 0.5 is
 /// exact; 0.5 + 2^-12 lies between 0x3800 and 0x3801 and goes to 0x3800; 0.5 - 3·2^-14 and 0.5 - 2^-13 lie between
 /// 0x37ff and 0x3800 and go to 0x37ff (nearest even would give 0x3800 for the last).
 struct MetalHalfRoundingTest: HWTest {

@@ -7,13 +7,14 @@ import Metal
 /// one-sample depth target get a zcull region. A near quad over the left half, then far quads over everything: the left
 /// half keeps the near colour, the right the far one, with LESS and with reversed depth (GREATER from a 0 clear); a
 /// GREATER draw after LESS ones invalidates the region and still draws where it passes. The facade counts the regions
-/// and the invalidation; the same far quads with the region invalidated before every draw give the GPU time zcull saves.
-/// Then the multisampled, layered and loaded arms (ZcullArms.swift).
+/// and the invalidation; the same far quads with the region invalidated before every draw give the GPU time zcull saves
+/// (reported). Then the multisampled, layered and loaded arms (ZcullArms.swift), and the info and side_effects arms
+/// (ZcullProbeArms.swift).
 struct ZcullTest: HWTest {
     let id = "gpu.raw.zcull"
     let name = "Zcull rejects hidden quads; a direction flip invalidates it; pixels exact"
     let subsystem = Subsystem.metal
-    var timeout: TimeInterval { 60 }
+    var timeout: TimeInterval { 120 }
 
     static let width = 1280
     static let height = 720
@@ -118,6 +119,13 @@ struct ZcullTest: HWTest {
         if invalidations < 1 { wrong.append("zcull_invalidations") }
         await arms(
             ArmContext(gpu: gpu, target: target, width: w, height: h, state: { state($0) }), &metrics, &wrong, &paths)
+        info(&metrics, &wrong)
+        do {
+            try await sideEffects(gpu, target, &metrics, &wrong, &paths)
+        } catch {
+            metrics.set("side_effects_error", GPU.describe(error))
+            wrong.append("side_effects")
+        }
         var onMs = 0.0, offMs = 0.0, emitted = 0
         for _ in 0..<Self.rounds {
             let on = try await gpu.run(less)

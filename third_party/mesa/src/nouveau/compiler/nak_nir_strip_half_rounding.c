@@ -7,8 +7,8 @@
  * attachment j) arrives as f2f32(f2f16_rtz(x)) (NVK's nvk_switch_round.c).
  * The late rules fold the pair into x where x was a half all along; where
  * they did not, it goes, as GM20B's ROP converts x toward zero itself, which
- * is what Apple's GPU stores at textureWriteRoundingMode 0 (an M4 Max, every
- * one of 14,341 floats whose two roundings differ; metal2vulkan's
+ * is what Apple's GPU stores at textureWriteRoundingMode 0 (an M4 Max, all
+ * 47,613 floats whose two roundings differ; metal2vulkan's
  * pipeline/color_writes.rs has the same of an M3 Max and an M4).
  */
 

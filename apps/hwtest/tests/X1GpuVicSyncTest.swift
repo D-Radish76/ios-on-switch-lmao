@@ -14,8 +14,9 @@ import VideoToolbox
 /// draw's commit to the sample's completion; draw_gpu_ms: the draw's GPU time. The transfer orders behind the draw only
 /// through the kernel (a writer promise or the job's own dependencies: which one a plain commit takes is not read here),
 /// so the path counters' writer_promises, promise_waits and promise_cpu_releases deltas are reported beside it. An M4
-/// Max's transfer waits for the draw too: no sample off, vt_ms 14.2 behind a 7.5 ms draw. A command buffer of the
-/// test's own off the raw path fails it.
+/// Max's transfer does not wait for the draw: six runs in one process, the first transfer (13 ms, its session starting)
+/// saw the draw, each later one (0.7 to 0.9 ms) read the CPU fill at all 230,400 samples; the raw path orders it
+/// through the kernel, which Apple's does not. A command buffer of the test's own off the raw path fails it.
 struct X1GpuVicSyncTest: HWTest {
     let id = "gpu.x1.gpu_vic_sync"
     let name = "GPU draw, VIC scale and GPU sample in one go: no stale, unwritten or torn sample"

@@ -11,6 +11,7 @@ py_library(
         "apps.py",
         "audio.py",
         "checks.py",
+        "cut.py",
         "devicerun.py",
         "dispatch.py",
         "hwtest.py",
@@ -83,6 +84,14 @@ py_test(
     name = "protection_test",
     size = "small",
     srcs = ["protection_test.py"],
+    deps = [":lib"],
+)
+
+# cut.py's checks and reports.py's cut rows over lines and crash reports as the m2v cut's sources write them.
+py_test(
+    name = "cut_test",
+    size = "small",
+    srcs = ["cut_test.py"],
     deps = [":lib"],
 )
 

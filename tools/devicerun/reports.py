@@ -1,6 +1,7 @@
 """The rows that come from tools/frames and from a directory of crash reports rather than from one check's lines."""
 
 import json
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -201,6 +202,33 @@ def stale_sync_waiter(path: Path) -> bool:
     return symbols[1:] == ['_dispatch_lane_serial_drain'] and '__AUTH_CONST' in region
 
 
+# A raw Metal object's selector that no Metal protocol declares and only the old front end answered: it raises now
+RAW_SELECTOR = re.compile(r'-\[(RM\w+) ([^\]]+)\]: unrecognized selector sent to')
+
+
+def ips_body(path: Path) -> dict:
+    """Return an .ips file's second JSON part ({} where it has none)."""
+    with path.open(errors='replace') as f:
+        f.readline()
+        try:
+            body = json.loads(f.read())
+        except json.JSONDecodeError:
+            return {}
+    return body if isinstance(body, dict) else {}
+
+
+def raised_selector(body: dict) -> str:
+    """Return the '-[RMClass selector]' an uncaught unrecognized-selector exception names, '' for none."""
+    asi = ' '.join(' '.join(lines) for lines in (body.get('asi') or {}).values())
+    m = RAW_SELECTOR.search(asi)
+    return f'-[{m[1]} {m[2]}]' if m else ''
+
+
+def loads_nvk(body: dict) -> bool:
+    """Whether a report's image list holds NVK's Vulkan driver."""
+    return any('libvulkan_nouveau' in (i.get('name', '') + i.get('path', '')) for i in body.get('usedImages') or [])
+
+
 def crash_rows(directory: str | None) -> list[Result]:
     """Return the crash budget rows: crashes and panics fail, jetsam and the rest are counted per process."""
     owner = 'main'
@@ -208,11 +236,18 @@ def crash_rows(directory: str | None) -> list[Result]:
         return [row('crash.reports', owner, 'count == 0', NO_DATA, 'no --crashes directory')]
     kinds: dict[str, Counter] = {}
     stale: list[Path] = []
+    raised: list[str] = []
+    nvk: list[str] = []
     for path in sorted(Path(directory).rglob('*.ips')):
         bug_type, process = ips_header(path)
         kinds.setdefault(bug_type, Counter())[process] += 1
         if bug_type == CRASH and stale_sync_waiter(path):
             stale.append(path)
+        body = ips_body(path)
+        if bug_type == CRASH and raised_selector(body):
+            raised.append(f'{process} {raised_selector(body)}')
+        if loads_nvk(body):
+            nvk.append(process)
 
     def listed(bug_type: str) -> str:
         counts = kinds.get(bug_type, Counter())
@@ -234,6 +269,18 @@ def crash_rows(directory: str | None) -> list[Result]:
             FAIL if stale else PASS,
             f'{len(stale)}' + (f', newest {newest}' if stale else ''),
         )
+    )
+    rows.append(
+        row(
+            'crash.raw-selector',
+            'm2v-cut3',
+            'count == 0',
+            FAIL if raised else PASS,
+            f'{len(raised)}: ' + ', '.join(raised[:6]),
+        )
+    )
+    rows.append(
+        row('crash.nvk-image', 'm2v-cut1', 'count == 0', FAIL if nvk else PASS, f'{len(nvk)}: ' + ', '.join(nvk[:6]))
     )
     rows.append(row('crash.jetsam', owner, 'report', INFO, listed(JETSAM)))
     other = {k: v for k, v in kinds.items() if k not in {CRASH, PANIC, JETSAM}}

@@ -205,6 +205,27 @@ void switch_bench_run(struct switch_bench *bench, const struct switch_bench_expe
 void switch_bench_fill_surface(struct switch_bench *bench, const void *surface, uint32_t format, uint32_t color,
                                struct switch_bench_result *r);
 
+// gpu.kernel.sparse_map's readings (bench_sparse.cpp): 1 where a step held, 0 where it did not, -1 where an earlier
+// failure stopped the run (`why` says which)
+struct switch_bench_sparse {
+    int32_t info_bit;
+    int32_t head_bytes_kept, tail_read_zero, big_read_zero, beside_big_read_zero, write_dropped;
+    int32_t replaces_map, map_replaces, bad_args_refused, faults, unmapped_read_faults;
+    int32_t bad_args_kr[2];  // the two VmBinds' kern_return_t
+    uint32_t fault_error;    // the throwaway channel's TegraGM20BAbiStatus.error after its read
+    uint64_t fault_va, unmapped_va;  // its fault VA, and the VA it read
+    char why[256];
+};
+
+// Every step on a TegraGM20B connection of its own (no Metal device), on the caller's thread; the last kills a
+// throwaway channel of that connection with an MMU fault
+void switch_bench_sparse_map(struct switch_bench_sparse *r);
+// GetInfo's flags (TegraGM20BInfo*) on a connection of its own; 0 where no connection opened
+uint32_t switch_bench_kernel_flags(void);
+// GetInfo's flags and zcull[12], and method 'ZC''s reply (zcull's layout), on a connection of its own: ZC's
+// kern_return_t, -1 where no connection opened
+int32_t switch_bench_zcull_info(uint32_t *flags, uint32_t info[12], uint32_t zc[12]);
+
 #ifdef __cplusplus
 }
 #endif
