@@ -4,6 +4,7 @@
 #include "../raw/runtime/raw_blit_planes.h"
 
 #include <gtest/gtest.h>
+#include <vector>
 
 namespace {
 
@@ -105,72 +106,83 @@ TEST(BlitPlanes, ABlockLinearWordPlaneIsItsTexelsInItsLayout)
     EXPECT_FALSE(raw::planeBytes(xr.t, 16, out)) << "its first texel off a 16-byte unit";
 }
 
-// Plane 1 by its own geometry: the pairs a region's texels fall in, a packed plane's whole words of them, never past its
-// rows; RGB10A8_2P_XR10's alpha bytes texel for texel
-TEST(BlitPlanes, PlaneOneSpansThePairsTheRegionCovers)
+// Plane 1 as a blit between two textures held through planes moves it: its bytes from its first at the rows of plane 0
+// the caller names, to the end of its surface's last page; none for a one-plane format or a plane alone's alpha
+TEST(BlitPlanes, PlaneOneIsItsBytesAtPlaneZerosRows)
 {
     raw::Import import;
     import.id = 7;
+    import.bo.va = 0x10000;
+    import.bo.bytes = 0x4000;
     raw::Texture luma, chroma, t;
     luma.import = chroma.import = &import;
     luma.va = 0x10000;
-    luma.pitch = 64;
+    luma.pitch = 48;
     luma.height = 8;
     luma.format = 10;
-    chroma.va = 0x20000;
-    chroma.pitch = 64;
-    chroma.width = 8;  // 4:2:0 pairs of a 16x8 texture
+    chroma.va = 0x10400;
+    chroma.pitch = 32;
+    chroma.width = 8;
     chroma.height = 4;
     chroma.bpp = 2;
-    chroma.format = 30;
     t.ycbcr = 1;
     t.luma = &luma;
     t.chroma = &chroma;
-    t.width = 16;
-    t.height = 8;
     raw::Texture out;
-    uint32_t bx, by, bw, bh;
-    ASSERT_TRUE(raw::planeOneSpan(t, 2, 2, 8, 4, out, bx, by, bw, bh));
-    EXPECT_EQ(out.va, 0x20000u);
+    ASSERT_TRUE(raw::planeOneRows(t, luma.pitch, out));
+    EXPECT_EQ(out.va, 0x10400u);
+    EXPECT_EQ(out.pitch, 48u) << "plane 0's rows, never its own";
     EXPECT_EQ(out.bpp, 1u);
-    EXPECT_EQ(bx, 2u);
-    EXPECT_EQ(bw, 8u);
-    EXPECT_EQ(by, 1u);
-    EXPECT_EQ(bh, 2u);
-    ASSERT_TRUE(raw::planeOneSpan(t, 1, 1, 8, 7, out, bx, by, bw, bh));
-    EXPECT_EQ(bx, 0u);
-    EXPECT_EQ(bw, 10u);
-    EXPECT_EQ(by, 0u);
-    EXPECT_EQ(bh, 4u) << "never past the plane's rows";
+    EXPECT_EQ(out.storage.va, 0x10400u);
+    EXPECT_EQ(out.storage.bytes, 0x4000u - 0x400u) << "on through the plane's end to its surface's last page";
 
-    chroma.format = 53;  // packed: 16 codes a row, 6 words
-    chroma.width = 6;
-    t.shape[13] = 3;  // halved across and down
-    ASSERT_TRUE(raw::planeOneSpan(t, 2, 2, 8, 4, out, bx, by, bw, bh));
-    EXPECT_EQ(bx, 0u);
-    EXPECT_EQ(bw, 16u);  // pairs 1..4: codes 2..9, words 0..3
+    chroma.format = 53;  // a packed plane: bytes too, never whole words
+    ASSERT_TRUE(raw::planeOneRows(t, luma.pitch, out));
+    EXPECT_EQ(out.bpp, 1u);
 
-    raw::Texture xr, alpha;
-    alpha = luma;
-    alpha.va = 0x30000;
-    alpha.width = 16;
+    raw::Texture xr, alpha = chroma;
     alpha.bpp = 1;
     xr.xrPlanes = true;
     xr.luma = &luma;
     xr.chroma = &alpha;
-    xr.width = 16;
-    xr.height = 8;
-    ASSERT_TRUE(raw::planeOneSpan(xr, 2, 2, 8, 4, out, bx, by, bw, bh));
-    EXPECT_EQ(bx, 2u);
-    EXPECT_EQ(bw, 8u);
-    EXPECT_EQ(by, 2u);
-    EXPECT_EQ(bh, 4u);
+    ASSERT_TRUE(raw::planeOneRows(xr, 128, out));
+    EXPECT_EQ(out.pitch, 128u);
+    alpha.memoryless = true;
+    EXPECT_FALSE(raw::planeOneRows(xr, 128, out)) << "a plane alone's alpha";
 
     raw::Texture one;
     one.ycbcr = 1;
     one.onePlane = true;
     one.import = &import;
-    EXPECT_FALSE(raw::planeOneSpan(one, 0, 0, 2, 2, out, bx, by, bw, bh));
+    EXPECT_FALSE(raw::planeOneRows(one, 64, out));
+}
+
+// The runs of a plane-1 copy whose rows end past either side's last page: an M4 Max moves the rows inside both, reads 0
+// past the source's page and lands nothing past the destination's (probes/f1.txt A7), a row an end cuts byte by byte
+TEST(BlitPlanes, PlaneOneRunsReadZeroPastTheSourceAndDropPastTheDestination)
+{
+    struct Run {
+        uint32_t row, rows, copied, zeroed;
+        bool operator==(const Run &o) const
+        {
+            return row == o.row && rows == o.rows && copied == o.copied && zeroed == o.zeroed;
+        }
+    };
+    const auto runs = [](uint64_t readable, uint64_t writable) {
+        std::vector<Run> out;
+        // 16 x 8 from (8, 0) at rows 128 apart into (6, 0) at rows 128 apart
+        raw::planeOneRuns(readable, 128, 8, 0, writable, 128, 6, 0, 16, 8, [&](const raw::PlaneOneRun &r) {
+            out.push_back({r.row, r.rows, r.copied, r.zeroed});
+        });
+        return out;
+    };
+    EXPECT_EQ(runs(4096, 4096), (std::vector<Run>{{0, 8, 16, 0}}));
+    EXPECT_EQ(runs(256, 256), (std::vector<Run>{{0, 2, 16, 0}})) << "plane 1's 256 bytes end the page";
+    EXPECT_EQ(runs(200, 4096), (std::vector<Run>{{0, 2, 16, 0}, {2, 6, 0, 16}}));
+    EXPECT_EQ(runs(140, 4096), (std::vector<Run>{{0, 1, 16, 0}, {1, 1, 4, 12}, {2, 6, 0, 16}}));
+    EXPECT_EQ(runs(0, 4096), (std::vector<Run>{{0, 8, 0, 16}})) << "a source of no plane 1";
+    EXPECT_EQ(runs(4096, 400), (std::vector<Run>{{0, 3, 16, 0}, {3, 1, 10, 0}})) << "row 3 runs from 390 to 406";
+    EXPECT_EQ(runs(4096, 395), (std::vector<Run>{{0, 3, 16, 0}, {3, 1, 5, 0}}));
 }
 
 }  // namespace

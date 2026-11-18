@@ -117,19 +117,29 @@ static void copyPlaneBytes(raw::BlitEncoder *be, RMTexture *s, uint32_t sl, uint
                    intoPlanes ? 0 : layerOrPlane(to, ds, dz), w, h);
 }
 
-// Two textures held through planes (kCopyPlanes): plane 0's bytes in the destination's unit, and of each plane 1 they both
-// have the part the region covers (raw_blit_planes.h planeOneSpan), never past either plane's rows
+// Two textures held through planes (kCopyPlanes): plane 0's bytes in the destination's unit, and plane 1 a byte a texel
+// at each side's plane-0 rows on through its end (raw_blit_planes.h planeOneRows), zeros past the source's last page
+// (or from a source of no plane 1), nothing past the destination's
 static void copyPlanePair(raw::BlitEncoder *be, const raw::Texture &s, uint32_t sx, uint32_t sy, const raw::Texture &d,
                           uint32_t dx, uint32_t dy, uint32_t w, uint32_t h)
 {
     const uint32_t unit = raw::planeUnit(d);
     raw::Texture from, to;
-    if (raw::planeBytesRead(s, unit, sx, sy, w, h, from) && raw::planeBytes(d, unit, to))
-        be->copyTexels(from, sx, sy, 0, to, dx, dy, 0, w, h);
-    uint32_t fx, fy, fw, fh, tx, ty, tw, th;
-    if (raw::planeOneSpan(s, sx, sy, w, h, from, fx, fy, fw, fh) &&
-        raw::planeOneSpan(d, dx, dy, w, h, to, tx, ty, tw, th))
-        be->copyTexels(from, fx, fy, 0, to, tx, ty, 0, std::min(fw, tw), std::min(fh, th));
+    if (!raw::planeBytesRead(s, unit, sx, sy, w, h, from) || !raw::planeBytes(d, unit, to))
+        return;
+    be->copyTexels(from, sx, sy, 0, to, dx, dy, 0, w, h);
+    raw::Texture fromOne, toOne;
+    if (!raw::planeOneRows(d, to.pitch, toOne))
+        return;
+    const bool source = raw::planeOneRows(s, from.pitch, fromOne);
+    constexpr uint8_t kZero[16] = {};
+    raw::planeOneRuns(source ? fromOne.storage.bytes : 0, source ? fromOne.pitch : 1, sx, sy, toOne.storage.bytes,
+                      toOne.pitch, dx, dy, w, h, [&](const raw::PlaneOneRun &r) {
+                          if (r.copied)
+                              be->copyTexels(fromOne, sx, sy + r.row, 0, toOne, dx, dy + r.row, 0, r.copied, r.rows);
+                          if (r.zeroed)
+                              be->fillRect(toOne, dx + r.copied, dy + r.row, 0, r.zeroed, r.rows, kZero, 1, 0);
+                      });
 }
 
 // A fill's units into each image of `image` (raw_fill_record.h): a turned plane's region turned as Metal stores it, a

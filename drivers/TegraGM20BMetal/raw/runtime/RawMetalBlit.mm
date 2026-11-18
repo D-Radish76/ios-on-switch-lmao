@@ -22,7 +22,7 @@ uint32_t textureCopyForm(RMTexture *a, RMTexture *b)
 
 // A copy one of whose sides is held through planes, as an M4 Max moves it with validation off (raw_blit_planes.h):
 // plane 0's bytes counted in the destination's texel (a plain texture's, or plane 0's unit), and between two such
-// textures each plane 1 they both have, by its own pairs (kCopyPlanes). Each side's region is inside its texture
+// textures plane 1 too, a byte a texel at each side's plane-0 rows (kCopyPlanes). Each side's region is inside its texture
 // (copySideInvalid). Null: the form; else why Metal's validation stops the copy, which past it lands the bytes of a
 // texture of another texel size than plane 0's unit transposed into the planes, or reads zeros past the source
 // surface's last page

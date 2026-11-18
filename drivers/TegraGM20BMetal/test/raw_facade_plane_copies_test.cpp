@@ -2,13 +2,15 @@
 // Blits of textures held through a surface's planes as the raw facade records them (raw_facade_harness.h), run on the
 // copy engine's model (raw_facade_blit_engines.h), against an M4 Max's bytes under macOS 27.2.1 with validation off
 // (raw_blit_planes.h): plane 0 counted in a wider texel runs on as one run of bytes, whatever its rows' padding, up to
-// its surface's last page; a one-plane 4:4:4 texture (504, 524) counts a word a texel and has no plane 1; a colour fill
-// of RGB10A8_2P_XR10 planes is undefined there and writes nothing
+// its surface's last page; between two such textures plane 1 moves a byte a texel at plane 0's rows; a one-plane 4:4:4
+// texture (504, 524) counts a word a texel and has no plane 1; a colour fill of RGB10A8_2P_XR10 planes is undefined
+// there and writes nothing
 #include "raw_facade_blit_engines.h"
 #include "../raw/runtime/RawMetalInternal.h"
 
 #import <IOSurface/IOSurface.h>
 #include <gtest/gtest.h>
+#include <algorithm>
 #include <random>
 #include <string>
 #include <vector>
@@ -169,7 +171,106 @@ void expectOneRun(const std::vector<uint8_t> &before, NSUInteger pitch, NSUInteg
     EXPECT_EQ(wrong, 0u) << what;
 }
 
+// A one-page surface of two planes: plane 0 `rows0` bytes a row at 0 (`unit0` bytes a texel), plane 1 at `off1`,
+// `rows1` bytes a row of `w1` x `h1` elements of `unit1` bytes
+struct TwoPlanes {
+    uint32_t fourcc, unit0, rows0, off1, unit1, w1, h1, rows1;
+
+    IOSurfaceRef make() const
+    {
+        NSDictionary *zero = @{
+            (id)kIOSurfacePlaneWidth : @(kWidth),
+            (id)kIOSurfacePlaneHeight : @(kHeight),
+            (id)kIOSurfacePlaneBytesPerElement : @(unit0),
+            (id)kIOSurfacePlaneBytesPerRow : @(rows0),
+            (id)kIOSurfacePlaneOffset : @0,
+            (id)kIOSurfacePlaneSize : @(rows0 * kHeight)
+        };
+        NSDictionary *one = @{
+            (id)kIOSurfacePlaneWidth : @(w1),
+            (id)kIOSurfacePlaneHeight : @(h1),
+            (id)kIOSurfacePlaneBytesPerElement : @(unit1),
+            (id)kIOSurfacePlaneBytesPerRow : @(rows1),
+            (id)kIOSurfacePlaneOffset : @(off1),
+            (id)kIOSurfacePlaneSize : @(rows1 * h1)
+        };
+        return IOSurfaceCreate((__bridge CFDictionaryRef) @{
+            (id)kIOSurfaceWidth : @(kWidth),
+            (id)kIOSurfaceHeight : @(kHeight),
+            (id)kIOSurfacePixelFormat : @(fourcc),
+            (id)kIOSurfaceAllocSize : @16384,
+            (id)kIOSurfacePlaneInfo : @[ zero, one ]
+        });
+    }
+};
+
+// The destination's bytes after a copy of `size` texels from `from` to `to` between textures over plane 0 of `s` and of
+// `d`, as an M4 Max moves them (m2v-textures12 probes/f1.txt): plane 0 in its unit at its rows; plane 1 a byte a texel
+// at plane 0's rows, on through its end, source bytes past its page read as 0, destination bytes past its page dropped
+std::vector<uint8_t> applesCopy(const TwoPlanes &s, const std::vector<uint8_t> &src, const TwoPlanes &d,
+                                std::vector<uint8_t> dst, MTLOrigin from, MTLSize size, MTLOrigin to)
+{
+    for (NSUInteger y = 0; y < size.height; ++y) {
+        for (NSUInteger b = 0; b < size.width * s.unit0; ++b)
+            dst[(to.y + y) * d.rows0 + to.x * s.unit0 + b] = src[(from.y + y) * s.rows0 + from.x * s.unit0 + b];
+        for (NSUInteger b = 0; b < size.width; ++b) {
+            const size_t at = d.off1 + (to.y + y) * d.rows0 + to.x + b;
+            const size_t of = s.off1 + (from.y + y) * s.rows0 + from.x + b;
+            if (at < dst.size())
+                dst[at] = of < src.size() ? src[of] : 0;
+        }
+    }
+    return dst;
+}
+
 }  // namespace
+
+// Planes into planes of their format: plane 1 a byte a texel of the region at each side's plane-0 rows, on through the
+// plane's end into the bytes after it; its rows past the source's last page read as 0 and past the destination's are
+// dropped (an M4 Max under macOS 27.2.1, validation off; probes/f1.txt A1-A8, Y1-Y2, A7)
+TEST_F(FacadePlaneCopies, PlaneOneMovesAtPlaneZerosRowsOnThroughItsEnd)
+{
+    struct Case {
+        uint32_t format;
+        TwoPlanes s, d;
+        MTLOrigin from;
+        MTLSize size;
+        MTLOrigin to;
+    };
+    const uint32_t b3a8 = 'b3a8', yuv = '420v';
+    const TwoPlanes alpha32{b3a8, 4, 128, 1024, 1, kWidth, kHeight, 32};
+    const TwoPlanes alpha48{b3a8, 4, 160, 2048, 1, kWidth, kHeight, 48};
+    const TwoPlanes alphaAtEnd{b3a8, 4, 128, 16384 - 16 * kHeight, 1, kWidth, kHeight, 16};
+    const TwoPlanes chroma32{yuv, 1, 48, 1024, 2, kWidth / 2, kHeight / 2, 32};
+    const TwoPlanes chroma48{yuv, 1, 32, 512, 2, kWidth / 2, kHeight / 2, 48};
+    for (const Case &c : {Case{550, alpha32, alpha48, {5, 3, 0}, {8, 4, 1}, {3, 1, 0}},
+                          Case{550, alpha48, alpha32, {0, 0, 0}, {kWidth, kHeight, 1}, {0, 0, 0}},
+                          Case{551, alpha32, alpha48, {2, 1, 0}, {12, 6, 1}, {1, 2, 0}},
+                          Case{550, alpha32, alphaAtEnd, {0, 0, 0}, {kWidth, kHeight, 1}, {0, 0, 0}},
+                          Case{550, alphaAtEnd, alpha32, {3, 0, 0}, {10, 8, 1}, {2, 0, 0}},
+                          Case{500, chroma32, chroma48, {4, 2, 0}, {8, 4, 1}, {2, 4, 0}},
+                          Case{500, chroma48, chroma32, {0, 0, 0}, {kWidth, kHeight, 1}, {0, 0, 0}}}) {
+        const std::string what = std::to_string(c.format) + " rows " + std::to_string(c.s.rows0) + "/" +
+                                 std::to_string(c.s.rows1) + " into " + std::to_string(c.d.rows0) + "/" +
+                                 std::to_string(c.d.rows1) + ", plane 1 at " + std::to_string(c.d.off1);
+        IOSurfaceRef s = c.s.make(), d = c.d.make();
+        ASSERT_TRUE(s && d) << what;
+        id<MTLTexture> a = over(s, c.format), b = over(d, c.format);
+        const std::vector<uint8_t> src = seeded(s, c.format), before = seeded(d, c.format + 1);
+        EXPECT_TRUE(copied(a, c.from, c.size, b, c.to)) << what;
+        const std::vector<uint8_t> want = applesCopy(c.s, src, c.d, before, c.from, c.size, c.to), got = bytesOf(d);
+        size_t wrong = 0, first = SIZE_MAX;
+        for (size_t i = 0; i < got.size(); ++i)
+            if (got[i] != want[i]) {
+                ++wrong;
+                first = std::min(first, i);
+            }
+        EXPECT_EQ(wrong, 0u) << what << ": first wrong byte " << first;
+        EXPECT_EQ(bytesOf(s), src) << what << ": the source is only read";
+        CFRelease(s);
+        CFRelease(d);
+    }
+}
 
 // gpu.raw.planes_blits c_b3a8_rgba16u, and plane 0 counted in 16-byte texels: (2,2) 8x4 runs past a row of four or
 // eight such texels into the rows after it, where an M4 Max reads them, whether the rows are padded or not; from (8,4)

@@ -3,12 +3,11 @@
 // EVs XRR2-ycc2-m4, TXN2-ycr2-m4 and XRR2-xrs1-m4 on an Apple M4 under macOS 27.0.1; an M4 Max under macOS 27.2.1,
 // validation off): plane 0's bytes, planeUnit of them a texel, which a blit with a buffer moves, and a blit with a
 // texture of another format counts in the destination's texel (into the planes: only when the two match). A blit
-// between two such textures moves plane 0 so and, where both have one, plane 1 too, which Metal moves at plane 0's
-// region in bytes and rows, past the plane's rows: the raw path moves the part of each plane 1 the region covers
-// instead (planeOneSpan). Counted in a texel wider than plane 0's unit, a region runs along plane 0 as one run of
-// bytes, texel x of row y at y * pitch + x * texel, through each row's padding into the next rows and past plane 0 into
-// the surface's bytes after it, up to the end of its last page, past which an M4 Max reads 0 (planeReach; m2v-blits-fix
-// probes/bound.mm, macOS 27.2.1).
+// between two such textures moves plane 0 so and plane 1 a byte a texel of the region at plane 0's rows, through plane
+// 1's end into the surface's bytes after it (planeOneRows). Counted in a texel wider than plane 0's unit, a region runs
+// along plane 0 as one run of bytes, texel x of row y at y * pitch + x * texel, through each row's padding into the
+// next rows and past plane 0 into the surface's bytes after it, up to the end of its last page, past which an M4 Max
+// reads 0 (planeReach; m2v-blits-fix probes/bound.mm, macOS 27.2.1).
 #pragma once
 #include <algorithm>
 #include <cstdint>
@@ -129,58 +128,78 @@ inline bool planeBytesRead(const Texture &t, uint32_t unit, uint32_t x, uint32_t
     return true;
 }
 
-// The span of plane 1 (`size` of plane 0's units from `origin`) the same region covers: a subsampled chroma plane's
-// pairs, rounded out to the pairs the region's texels fall in
-inline void chromaSpan(uint32_t lumaSide, uint32_t chromaSide, uint32_t origin, uint32_t size, uint32_t &from,
-                       uint32_t &count)
+// Plane 1 of `t` (its chroma, its alpha bytes, a planar texture's second plane) as a blit between two textures held
+// through planes moves it (an M4 Max under macOS 27.2.1, validation off, formats 550, 551, 500, 502, 503, 505, 508 and
+// 542: m2v-textures12 probes/f1.txt): its bytes from its first, a byte a texel of the region, rows `pitch` apart (plane
+// 0's, as planeBytes has them), running on through the plane's end into the surface's bytes after it, up to the end of
+// its last page; false: no plane 1 (a one-plane format's, a plane alone's alpha), which such a blit reads as zeros and
+// writes nothing into
+inline bool planeOneRows(const Texture &t, uint32_t pitch, Texture &out)
 {
-    const uint32_t step = chromaSide && chromaSide < lumaSide ? (lumaSide + chromaSide - 1) / chromaSide : 1;
-    from = origin / step;
-    count = std::min((origin + size + step - 1) / step, chromaSide) - std::min(from, chromaSide);
-}
-
-// Plane 1 of `t` (its chroma pairs, or RGB10A8_2P_XR10's alpha bytes) as bytes over its rows, and the bytes
-// [bx, bx + bw) of rows [by, by + bh) of it that plane 0's [x, x + w) x [y, y + h) covers: the pairs its texels fall in
-// (chromaSpan), a packed plane's whole words of them (three codes a word), the alpha bytes texel for texel; false: no
-// plane 1 (a one-plane format's chroma reads plane 0)
-inline bool planeOneSpan(const Texture &t, uint32_t x, uint32_t y, uint32_t w, uint32_t h, Texture &out, uint32_t &bx,
-                         uint32_t &by, uint32_t &bw, uint32_t &bh)
-{
-    constexpr uint32_t kPackedWords = 53;  // R32Uint: a packed plane's texture counts words
     const Texture *c = (t.xrPlanes || (t.ycbcr && !t.onePlane && t.luma && !planeOfWords(t))) ? t.chroma : nullptr;
-    uint64_t va = c ? c->va : t.planes.chroma;
-    uint32_t pitch = c ? c->pitch : t.planes.chromaPitch, rows = c ? c->height : t.height,
-             pairs = c ? c->width : t.width, pairBytes = c ? c->bpp : 2;
+    const uint64_t va = c ? c->va : t.planes.chroma;
     Import *import = c ? c->import : t.import;
-    const bool packed = c && !t.xrPlanes && c->format == kPackedWords;
-    if (packed) {  // the YCbCr shape's halved axes (raw_ycbcr.h): bit 0 across
-        pairs = t.shape[13] & 1 ? (t.width + 1) / 2 : t.width;
-        pairBytes = 0;
-    }
-    if ((!c && !t.planar) || !va || !pitch || !rows || !pairs || !import || (c && c->blockLinear))
+    if ((!c && !t.planar) || !va || !pitch || !import || (c && (c->memoryless || c->blockLinear)))
         return false;
-    uint32_t px, pw;
-    chromaSpan(t.width, pairs, x, w, px, pw);
-    chromaSpan(t.height, rows, y, h, by, bh);
-    if (packed) {
-        const uint32_t first = 2 * px / 3, end = std::min((2 * (px + pw) + 2) / 3, c->width);
-        bx = 4 * first;
-        bw = end > first ? 4 * (end - first) : 0;
-    } else {
-        bx = px * pairBytes;
-        bw = pw * pairBytes;
-    }
     out = Texture();
     out.import = import;
     out.va = va;
     out.pitch = pitch;
     out.bpp = 1;
     out.format = 10;  // R8Unorm
-    out.width = out.texelWidth = pitch;
-    out.height = out.texelHeight = rows;
     out.window = t.window;
-    out.storage = {va, windowBound(out, uint64_t(pitch) * rows), !import->id};
+    const uint64_t readable = planeReadable(out);
+    out.width = out.texelWidth = pitch;
+    out.height = out.texelHeight = uint32_t(std::min<uint64_t>(readable / pitch, UINT32_MAX));
+    out.storage = {va, readable, !import->id};
     return true;
+}
+
+// Rows [row, row + rows) of a plane-1 copy (planeOneRuns): each moves `copied` bytes from the source and sets the
+// `zeroed` bytes after them to 0
+struct PlaneOneRun {
+    uint32_t row, rows, copied, zeroed;
+};
+
+// The runs of a `w` x `h` plane-1 copy from (sx, sy) of rows `sPitch` apart, `readable` bytes from the source's first
+// (0: a source with no plane 1), into (dx, dy) of rows `dPitch` apart, `writable` bytes from the destination's first:
+// an M4 Max reads 0 past the source's last page and lands nothing past the destination's (probes/f1.txt A7). Rows
+// wholly on one side of each end go in one run, a row an end cuts in a run of its own; emit(run) for each run that
+// writes
+template <typename Emit>
+inline void planeOneRuns(uint64_t readable, uint64_t sPitch, uint32_t sx, uint32_t sy, uint64_t writable,
+                         uint64_t dPitch, uint32_t dx, uint32_t dy, uint32_t w, uint32_t h, Emit &&emit)
+{
+    // of the region's rows from `y`, how many run wholly inside `limit`, and the first that starts past it
+    const auto bounds = [w, h](uint64_t limit, uint64_t pitch, uint64_t x, uint64_t y, uint32_t &whole,
+                               uint32_t &none) {
+        const uint64_t wholeRows = limit >= x + w ? (limit - x - w) / pitch + 1 : 0;
+        const uint64_t firstNone = limit > x ? (limit - x + pitch - 1) / pitch : 0;
+        whole = uint32_t(std::min<uint64_t>(wholeRows > y ? wholeRows - y : 0, h));
+        none = uint32_t(std::min<uint64_t>(firstNone > y ? firstNone - y : 0, h));
+    };
+    const auto part = [w](uint64_t limit, uint64_t pitch, uint64_t x, uint64_t row) {
+        const uint64_t start = row * pitch + x;
+        return start >= limit ? 0u : uint32_t(std::min<uint64_t>(limit - start, w));
+    };
+    uint32_t sWhole, sNone, dWhole, dNone;
+    bounds(readable, sPitch, sx, sy, sWhole, sNone);
+    bounds(writable, dPitch, dx, dy, dWhole, dNone);
+    for (uint32_t k = 0; k < dNone;) {
+        if (k < std::min(sWhole, dWhole)) {
+            const uint32_t end = std::min(sWhole, dWhole);
+            emit(PlaneOneRun{k, end - k, w, 0});
+            k = end;
+        } else if (k >= sNone && k < dWhole) {
+            emit(PlaneOneRun{k, dWhole - k, 0, w});
+            k = dWhole;
+        } else {
+            const uint32_t written = part(writable, dPitch, dx, uint64_t(dy) + k);
+            const uint32_t copied = std::min(written, part(readable, sPitch, sx, uint64_t(sy) + k));
+            emit(PlaneOneRun{k, 1, copied, written - copied});
+            k++;
+        }
+    }
 }
 
 // Whether a blit moves `t`'s planes: one held through a surface's planes or through its two extended-range planes
