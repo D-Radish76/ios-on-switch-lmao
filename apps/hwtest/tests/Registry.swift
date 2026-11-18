@@ -70,6 +70,15 @@ public enum Registry {
             SameBitsTest(), Depth16LayeredTestsTest(), LayersPastTest(), LayersPastDepthTest(), TexelBufferReachTest(),
             FetchTessellatedTest(), PlanarRenderThenSampleTest(), XrTexelBufferStoresTest(),
             XrTexelBufferSurfaceTest(), TurnedStandInTargetsTest(), Bgra10XrSrgbEmptyPassTest(), StorageFormsTest(),
+            XrBlendRoutesTest(),
+            PlanarSampledTargetTest(),
+            YcbcrTargetShapesTest(),
+            XrTwoPlanesAnyElementsTest(),
+            XrImagesManyTest(),
+            SrgbEncodeTest(),
+            ExactRoundTest(),
+            X1GpuVicSyncTest(),
+            FrameWeightsTest(),
         ]
 
     static let video: [any HWTest] =
@@ -157,5 +166,6 @@ public enum Registry {
     public static let recovery: [any HWTest] = [
         PresentCopyResetTest(), RecoverKillOneTest(), RecoverKillUnderCompositorTest(), RecoverBusyEngineTest(),
         RecoverKernelStallTest(),
+        UncheckedBufferLoadsTest(),
     ]
 }

@@ -55,6 +55,8 @@ final class X1ProbeTests: XCTestCase {
         try await check("blend_exact", X1BlendProbes.exact)
         try await check("f32_filter", X1FilterProbes.f32Filter)
         try await check("mip_filter", X1FilterProbes.mipFilter)
+        try await check("filter_weight_bits", X1FilterProbes.filterWeights)
+        try await check("rop_unorm10_rounding", X1Unorm10Probe.rounding)
         try await check("visibility", X1PassProbes.visibility)
     }
 }

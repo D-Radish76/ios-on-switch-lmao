@@ -175,7 +175,8 @@ struct XRTwoPlaneTest: HWTest {
     }
 
     static func surfaceTexture(
-        _ gpu: GPU, width: Int = XRTwoPlaneTest.width, height: Int = XRTwoPlaneTest.height
+        _ gpu: GPU, width: Int = XRTwoPlaneTest.width, height: Int = XRTwoPlaneTest.height,
+        usage: MTLTextureUsage = [.renderTarget, .shaderRead]
     ) throws -> (CVPixelBuffer, MTLTexture) {
         var made: CVPixelBuffer?
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
@@ -187,7 +188,7 @@ struct XRTwoPlaneTest: HWTest {
         else { throw TestFailure("no b3a8 pixel buffer") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: format, width: width, height: height, mipmapped: false)
-        descriptor.usage = [.renderTarget, .shaderRead]
+        descriptor.usage = usage
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no 550 texture over the b3a8 surface")

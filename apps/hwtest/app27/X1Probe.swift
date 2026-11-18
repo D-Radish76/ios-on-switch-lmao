@@ -91,12 +91,20 @@ enum X1Probes {
             id: "gpu.x1.mip_filter", name: "generateMipmaps' first level against an exact 2x2 box, five formats",
             probe: "G13/d4", body: X1FilterProbes.mipFilter),
         X1Probe(
+            id: "gpu.x1.filter_weight_bits",
+            name: "Linear filter sub-texel weights: a two-texel ramp in 1/65,536 steps, BGRA8, RGBA16F, R32F",
+            probe: "ffs2", body: { try await X1FilterProbes.filterWeights($0) }),
+        X1Probe(
+            id: "gpu.x1.rop_unorm10_rounding",
+            name: "Float to RGB10A2 and BGR10A2 codes at every code boundary: unblended, source-over, max",
+            probe: "d23", body: { try await X1Unorm10Probe.rounding($0) }),
+        X1Probe(
             id: "gpu.x1.visibility", name: "Visibility results: counting within and across passes, boolean",
             probe: "d17", body: X1PassProbes.visibility),
         X1PassBarrierProbe.probe, X1JobBoundaryProbe.probe, X1SwitchDrainProbe.probe,
         X1RawProbes.blendKills, X1RawProbes.viewportSwizzle, X1PrecisionProbe.probe, X1IteratedBlendProbe.probe,
         X1CompressedCopyProbe.probe, X1CompressedDepthProbe.probe, X1TwodProbes.scale, X1TwodProbes.clear,
-        X1TwodProbes.resolve, X1ConstantColourProbe.probe, X1FillBoxProbe.probe,
+        X1TwodProbes.resolve, X1TwodProbes.floatConvert, X1ConstantColourProbe.probe, X1FillBoxProbe.probe,
         X1VICPitchProbe.probe, X1VICLayoutProbe.probe, X1VICFractionProbe.probe,
         X1VICPackedProbe.probe, X1VICTransposeProbe.probe, X1VICLargeProbe.probe, X1VICComposeProbe.probe,
         X1VICComposeProbe.display,

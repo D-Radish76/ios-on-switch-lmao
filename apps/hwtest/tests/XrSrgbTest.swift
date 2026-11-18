@@ -14,6 +14,9 @@ import Metal
 /// blended: source-over over Metal's drawn words, within one code of Metal's (blended_off texels past it,
 /// blended_worst). cleared: four clears store Metal's codes (cleared_off; cleared= the words where one is off). 555's
 /// drawn_pad= and cleared_pad= the values of the two bits above its codes (Metal writes 3), reported, not judged.
+/// compressed_upload (553 alone, reported): a blit from a buffer into a 64x64 ShaderRead|RenderTarget texture of alpha
+/// codes i % 1024, read back by a blit; an M4 Max keeps such a texture compressed and clamps its alpha to 384..894 in
+/// the copy (compressed_upload_kept 2044, compressed_upload_clamped 2052), which the raw path's copies do not.
 /// Every command buffer raw, and none failed (failed_cbs=).
 struct XrSrgbTest: HWTest {
     let id: String
@@ -37,9 +40,10 @@ struct XrSrgbTest: HWTest {
         let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        let sections: [(String, (GPU, inout Metrics, inout [(String, Bool)]) async throws -> Void)] = [
+        var sections: [(String, (GPU, inout Metrics, inout [(String, Bool)]) async throws -> Void)] = [
             ("decode", decodeAndKeep), ("drawn", drawn), ("blended", blended), ("cleared", cleared),
         ]
+        if format.alpha { sections.append(("compressed_upload", compressedUpload)) }
         for (section, body) in sections {
             do {
                 try await body(gpu, &metrics, &checks)
@@ -189,6 +193,21 @@ struct XrSrgbTest: HWTest {
         if off > 0 { metrics.set("cleared", got.map { String($0, radix: 16) }.joined(separator: ",")) }
         if !format.alpha { metrics.set("cleared_pad", pads(got)) }
         checks.append(("each clear stores Metal's codes in every texel", off == 0))
+    }
+
+    func compressedUpload(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
+        let side = 64
+        let texture = try gpu.texture(format.format, side, side, usage: [.shaderRead, .renderTarget])
+        let bytes = (0..<(side * side)).flatMap { format.texel([500, 500, 500, $0 % 1024]) }
+        try await gpu.upload(bytes, to: texture, bytesPerRow: side * format.bytes)
+        let codes = format.codes(try await gpu.read(texture, bytesPerPixel: format.bytes))
+        var kept = 0, clamped = 0
+        for (i, c) in codes.enumerated() {
+            let alpha = i % 1024
+            if c[3] == alpha { kept += 1 } else if c[3] == min(max(alpha, 384), 894) { clamped += 1 }
+        }
+        metrics.set("compressed_upload_kept", kept)
+        metrics.set("compressed_upload_clamped", clamped)
     }
 
     /// BGR10_XR_sRGB's two bits above the codes, each value seen (Metal writes 3)
