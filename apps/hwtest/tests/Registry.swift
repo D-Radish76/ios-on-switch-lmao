@@ -87,6 +87,11 @@ public enum Registry {
             XrPlanesRowsOff32Test(), XrWrittenOnePlaneTest(),
             XrNextPlaneTest(), YcbcrAnySurfaceTest(), XrPlanesOff16Test(), XrAlphaSinkTest(),
             XrTiledSurfaceTest(), YcbcrRowsUnder16Test(),
+            XrTexelBufferWrittenTest(), YcbcrTurnedLoadTest(), XrWordsIntoAlphaTest(), XrIntoAlphaTieTest(),
+            XrAlonePastLastPageTest(),
+            PlanesPlaneOneRowsTest(), PlanesAcrossFormatsTest(), XrRowsUnder16Test(), YcbcrRowsUnder16StoresTest(),
+            PlanesCopiesOpenTest(), XrTexelBufferTiledTest(), PackedMipsTest(), XrTurnedRowsUnder16Test(),
+            XrOverlapRowsTest(), PackedPlaneAnySurfaceTest(), PlanarTurnedTest(), YcbcrTurnedOverlapOrderTest(),
         ]
 
     static let video: [any HWTest] =
@@ -118,7 +123,7 @@ public enum Registry {
             ColourPipelineTest(), PlanesTest(), SmallDrawableTest(), PresentAtTimeTest(), DisplayRefreshTest(),
             PlaneInUseTest(),
             ScanoutRoutesTest(), PlainSurfacesTest(), DisplaySnapshotTest(), WakeTest(),
-            PlanesCroppedTest(),
+            PlanesCroppedTest(), PlaneTagsTest(),
         ] + DisplayWindowProbeTest.all + [LandscapeVideoTest(), LandscapeDownscaleTest()]
         // Holds the swaps for a second each; the forced producer failure last.
         + [Host1xFlipTest.trial, Host1xFlipTest.teardown]
@@ -177,6 +182,6 @@ public enum Registry {
     public static let recovery: [any HWTest] = [
         PresentCopyResetTest(), RecoverKillOneTest(), RecoverKillUnderCompositorTest(), RecoverBusyEngineTest(),
         RecoverKernelStallTest(),
-        UncheckedBufferLoadsTest(), KernelSparseMapTest(), EndedEncoderTest(),
+        UncheckedBufferLoadsTest(), KernelSparseMapTest(), EndedEncoderTest(), AheadFailuresTest(),
     ]
 }

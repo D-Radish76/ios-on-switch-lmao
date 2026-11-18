@@ -22,6 +22,8 @@ enum PlanesBlitCases {
         /// Made with CVPixelBufferCreate unless the case asks for an exact pitch
         let pixelBuffer: Bool
 
+        var twoPlanes: Bool { elementWidth == 0 }
+
         init(
             _ key: String, _ fourcc: OSType, _ format: UInt, unit: Int, elementWidth: Int = 0, pixelBuffer: Bool = true
         ) {
@@ -36,21 +38,20 @@ enum PlanesBlitCases {
         let bytes: Int
     }
 
-    /// Plane 1 between two planes' textures: p1d(dx + j, dy + r) = p1s(sx + j, sy + r) for j < width, r < rows
-    struct Span {
-        let sx: Int, sy: Int, dx: Int, dy: Int, width: Int, rows: Int
-    }
-
     struct Result {
         var path = "-"
         /// Bytes off the rule's, by the memory they lie in
         var off: [(String, Int)] = []
+        /// Bytes of a region the rule leaves unjudged that changed
+        var unjudged = 0
 
         var changed: Int { off.reduce(0) { $0 + $1.1 } }
         var text: String { off.map { "\($0.0) \($0.1)" }.joined(separator: ", ") }
     }
 
-    typealias Case = (key: String, run: (GPU) async throws -> Result)
+    /// `skips`: the calls the raw path counts skipped (skipped.call.blit): a copy between two pixel formats, a fill of
+    /// planes, a region past its surface's last page
+    typealias Case = (key: String, skips: Int, run: (GPU) async throws -> Result)
 
     static let yuv420 = Planes("420v", kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, 500, unit: 1)
     static let x420 = Planes("x420", YcbcrPackedTargetTest.x420, 505, unit: 2)
@@ -71,41 +72,37 @@ enum PlanesBlitCases {
     static let rgba32u = Plain(key: "rgba32u", format: .rgba32Uint, bytes: 16)
     static let xrPlains = plains + [Plain(key: "r32u", format: .r32Uint, bytes: 4), rgba16u]
 
-    static let pairs: [(Planes, Planes, Span?)] = [
-        (yuv420, yuv420, Span(sx: 2, sy: 1, dx: 0, dy: 0, width: 8, rows: 2)),
-        (x420, x420, Span(sx: 4, sy: 1, dx: 0, dy: 0, width: 16, rows: 2)),
-        (p420, p420, Span(sx: 0, sy: 1, dx: 0, dy: 0, width: 16, rows: 2)),
-        (yuv420, x420, Span(sx: 2, sy: 1, dx: 0, dy: 0, width: 8, rows: 2)),
-        (xr, xr, Span(sx: 2, sy: 2, dx: 1, dy: 1, width: 8, rows: 4)),
-        (xr, yuv420, Span(sx: 2, sy: 2, dx: 0, dy: 0, width: 8, rows: 3)),
-        (vuy, vuy, nil), (yuv420, vuy, nil), (v504, v504, nil), (v562, v562, nil), (v562, vuy, nil), (vuy, v562, nil),
-        (v504, xr, nil), (xr, v504, nil),
+    static let pairs: [(Planes, Planes)] = [
+        (yuv420, yuv420), (x420, x420), (p420, p420), (yuv420, x420), (xr, xr), (xr, yuv420), (vuy, vuy), (yuv420, vuy),
+        (v504, v504), (v562, v562), (v562, vuy), (vuy, v562), (xr, v504),
     ]
 
     static var all: [Case] {
         var cases: [Case] = []
-        for p in planes { cases.append(("a_\(p.key)", { try await fromBuffer($0, p) })) }
-        for p in planes { cases.append(("b_\(p.key)", { try await toBuffer($0, p) })) }
+        for p in planes { cases.append(("a_\(p.key)", 0, { try await fromBuffer($0, p) })) }
+        for p in planes { cases.append(("b_\(p.key)", 0, { try await toBuffer($0, p) })) }
         for p in planes {
             for q in p.key == xr.key ? xrPlains : plains {
-                cases.append(("c_\(p.key)_\(q.key)", { try await outOf($0, Surface($0, p, 16, 8), q) }))
+                cases.append(("c_\(p.key)_\(q.key)", 1, { try await outOf($0, Surface($0, p, 16, 8), q) }))
             }
         }
         for p in exactPitch {
             for q in [rgba16u, rgba32u] {
                 cases.append(
-                    ("c_\(p.key)_exact_\(q.key)", { try await outOf($0, Surface($0, p, 16, 8, exact: true), q) }))
+                    ("c_\(p.key)_exact_\(q.key)", 1, { try await outOf($0, Surface($0, p, 16, 8, exact: true), q) }))
             }
         }
         for p in planes {
             for q in p.key == xr.key ? xrPlains : plains {
-                cases.append(("d_\(p.key)_\(q.key)", { try await into($0, p, q) }))
+                cases.append(("d_\(p.key)_\(q.key)", 1, { try await into($0, p, q) }))
             }
         }
-        for (s, d, span) in pairs { cases.append(("e_\(s.key)_\(d.key)", { try await between($0, s, d, span) })) }
-        for p in planes { cases.append(("f_\(p.key)", { try await fill($0, p) })) }
-        cases.append(("g_past_page", { try await outOf($0, lastPage($0), rgba32u, from: (8, 508), lands: false) }))
-        cases.append(("g_in_page", { try await outOf($0, lastPage($0), rgba32u, from: (2, 500)) }))
+        for (s, d) in pairs {
+            cases.append(("e_\(s.key)_\(d.key)", s.format == d.format ? 0 : 1, { try await between($0, s, d) }))
+        }
+        for p in planes { cases.append(("f_\(p.key)", 1, { try await fill($0, p) })) }
+        cases.append(("g_past_page", 1, { try await outOf($0, lastPage($0), rgba32u, from: (8, 508), lands: false) }))
+        cases.append(("g_in_page", 1, { try await outOf($0, lastPage($0), rgba32u, from: (2, 500)) }))
         return cases
     }
 
@@ -163,32 +160,44 @@ enum PlanesBlitCases {
     /// G's surface: '2vuy' 16x512 of exactly one 16 KiB page, rows 32 bytes apart
     static func lastPage(_ gpu: GPU) throws -> Surface { try Surface(gpu, vuy, 16, 512, exact: true) }
 
-    /// D: a plain texture's 8x4 texels from (2,2) into plane 0 at (1,1) where its texel is plane 0's unit:
-    /// p0(u + i, 1 + k) = plain(2u + i, 2 + k) for i < 8u, plane 1 as it was; of another texel size, nothing
+    /// D: a plain texture's 8x4 texels from (2,2) into plane 0 at (1,1): where its texel is plane 0's unit,
+    /// p0(u + i, 1 + k) = plain(2u + i, 2 + k) for i < 8u, plane 1 as it was; of another texel size its bytes are read
+    /// in plane 0's unit in its own memory layout, which on Apple's GPU is not GM20B's, so those 8u x 4 bytes are
+    /// reported, not judged, and every other byte must hold
     static func into(_ gpu: GPU, _ p: Planes, _ q: Plain) async throws -> Result {
         let s = try Surface(gpu, p, 16, 8)
         let before = s.seeded(104_729)
         let (plain, seeded) = try await plainTexture(gpu, q)
         let path = try await copied(gpu, plain, s.texture)
         let u = p.unit, row = 16 * q.bytes
-        let writes =
-            q.bytes == u ? rect(8 * u, 4) { i, k in (s.p0(u + i, 1 + k), seeded[(2 + k) * row + 2 * u + i]) } : []
+        let region = rect(8 * u, 4) { i, k in (s.p0(u + i, 1 + k), seeded[(2 + k) * row + 2 * u + i]) }
         let got = try await gpu.read(plain, bytesPerPixel: q.bytes)
-        return Result(path: path, off: s.off(before, writes) + [("plain", wrong(got, seeded))])
+        guard q.bytes != u else {
+            return Result(path: path, off: s.off(before, region) + [("plain", wrong(got, seeded))])
+        }
+        let unjudged = Set(region.map(\.0)), after = s.bytes
+        return Result(
+            path: path, off: s.off(before, [], ignoring: unjudged) + [("plain", wrong(got, seeded))],
+            unjudged: unjudged.filter { after[$0] != before[$0] }.count)
     }
 
     /// E: 8x4 texels from (2,2) to (1,1) between two planes' textures, plane 0 in the destination's unit:
-    /// p0d(ud + i, 1 + k) = p0s(2ud + i, 2 + k) for i < 8ud; plane 1 by `span` where both have one
-    static func between(_ gpu: GPU, _ a: Planes, _ b: Planes, _ span: Span?) async throws -> Result {
+    /// p0d(ud + i, 1 + k) = p0s(2ud + i, 2 + k) for i < 8ud; between two with a plane 1, 8 bytes of it, one a texel,
+    /// for 4 rows from each side's plane-1 offset & ~15 at its plane-0 rows & ~15, on through plane 1's end, 0 read past
+    /// the source's last page, none written past the destination's
+    static func between(_ gpu: GPU, _ a: Planes, _ b: Planes) async throws -> Result {
         let src = try Surface(gpu, a, 16, 8), dst = try Surface(gpu, b, 16, 8)
         let from = src.seeded(3_571), before = dst.seeded(104_729)
         let path = try await copied(gpu, src.texture, dst.texture)
         let u = b.unit
         var writes = rect(8 * u, 4) { i, k in (dst.p0(u + i, 1 + k), from[src.p0(2 * u + i, 2 + k)]) }
-        if let span {
-            writes += rect(span.width, span.rows) { j, r in
-                (dst.p1(span.dx + j, span.dy + r), from[src.p1(span.sx + j, span.sy + r)])
+        if a.twoPlanes && b.twoPlanes {
+            let read = { (j: Int, r: Int) -> UInt8 in
+                let at = (src.offset[1] & ~15) + (2 + r) * (src.pitch[0] & ~15) + 2 + j
+                return at < src.mapped ? from[at] : 0
             }
+            let at = { (j: Int, r: Int) in (dst.offset[1] & ~15) + (1 + r) * (dst.pitch[0] & ~15) + 1 + j }
+            writes += rect(8, 4) { j, r in (at(j, r), read(j, r)) }.filter { $0.0 < dst.mapped }
         }
         return Result(path: path, off: dst.off(before, writes) + [("source", wrong(src.bytes, from))])
     }
@@ -307,11 +316,11 @@ extension PlanesBlitCases {
             return bytes
         }
 
-        /// Bytes off `before` with `writes` in: plane 0's (with whatever precedes plane 1), plane 1's, and the last
-        /// page's past the allocation
-        func off(_ before: [UInt8], _ writes: [(Int, UInt8)]) -> [(String, Int)] {
+        /// Bytes off `before` with `writes` in, but those `ignoring`: plane 0's (with whatever precedes plane 1), plane
+        /// 1's, and the last page's past the allocation
+        func off(_ before: [UInt8], _ writes: [(Int, UInt8)], ignoring: Set<Int> = []) -> [(String, Int)] {
             let split = offset.count > 1 ? offset[1] : allocated
-            let at = wrongAt(bytes, patched(before, writes))
+            let at = wrongAt(bytes, patched(before, writes)).filter { !ignoring.contains($0) }
             return [
                 ("p0", at.filter { $0 < split }.count), ("p1", at.filter { $0 >= split && $0 < allocated }.count),
                 ("tail", at.filter { $0 >= allocated }.count),

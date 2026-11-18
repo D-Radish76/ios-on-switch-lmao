@@ -22,6 +22,7 @@ py_library(
         "reports.py",
         "rules.py",
         "stutter.py",
+        "textures.py",
     ],
     deps = ["//tools/frames:lib"],
 )
@@ -92,6 +93,14 @@ py_test(
     name = "cut_test",
     size = "small",
     srcs = ["cut_test.py"],
+    deps = [":lib"],
+)
+
+# textures.py's checks over refusal lines as kits/SwitchRefusal writes them.
+py_test(
+    name = "textures_test",
+    size = "small",
+    srcs = ["textures_test.py"],
     deps = [":lib"],
 )
 

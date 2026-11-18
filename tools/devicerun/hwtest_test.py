@@ -103,6 +103,16 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(results['hwtest.metal.compute'].verdict, PASS)
 
 
+class OpenCases(unittest.TestCase):
+    def test_every_open_id_is_a_test_whose_row_names_its_gap(self):
+        ids = set(hwtest.TESTS) | {test_id for tests in hwtest.BY_IOS.values() for test_id in tests}
+        self.assertLessEqual(set(hwtest.OPEN), ids)
+        notes = {check.name: check.note for check in hwtest.HWTEST}
+        for test_id, gap in hwtest.OPEN.items():
+            self.assertIn(f'open: {gap}', notes[f'hwtest.{test_id}'])
+        self.assertNotIn('open:', notes['hwtest.gpu.raw.planes_blits'])
+
+
 class RollUp(unittest.TestCase):
     def rows(self, *messages: str) -> dict:
         records = [line(m, i) for i, m in enumerate(messages)]

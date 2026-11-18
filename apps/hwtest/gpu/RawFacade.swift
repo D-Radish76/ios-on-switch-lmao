@@ -108,7 +108,8 @@ public enum RawFacade {
     }
 
     /// What the submit worker encoded of a completed buffer ahead of its commit (debug builds; empty elsewhere):
-    /// "encoders", "pipelined", "abandons", "veto" (RMPipelineVeto bits) and "commit_to_gpu_start_us".
+    /// "encoders", "pipelined", "abandons", "veto" and "given_back" (RMPipelineVeto bits: the vetoes recorded, and the
+    /// reasons its encodes ahead were given back) and "commit_to_gpu_start_us".
     public static func pipelined(_ buffer: MTLCommandBuffer) -> [String: NSNumber] {
         ask(buffer, "switchRawPipelined") as? [String: NSNumber] ?? [:]
     }

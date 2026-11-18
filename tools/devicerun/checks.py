@@ -15,6 +15,7 @@ from tools.devicerun.morning import MORNING
 from tools.devicerun.protection import PROTECTION
 from tools.devicerun.rules import REPORT, TIMELINE, Check
 from tools.devicerun.stutter import STUTTER
+from tools.devicerun.textures import TEXTURES
 
 LAUNCHD = 'launchd'
 KERNEL = 'kernel'
@@ -129,29 +130,11 @@ GROUPS: dict[str, list[Check]] = {
         Check('mg.ssdevice-dt', 'r32-hwaudit', "Couldn't get dt for user agent", REPORT, note='was x57'),
     ],
     'metal': [
-        Check(
-            'metal.no-device-answer',
-            'r32-gpucaps',
-            'native-metal: no device answer',
-            show=('process',),
-            source='drivers/NativeMetal/NativeBridgeMetalFrontend.mm',
-        ),
         Check('metal.ioacceldevice', 'r32-gpucaps', 'Failed to create an IOAccelDevice', process='backboardd'),
         Check('metal.fig-histogram', 'r32-gpucaps', 'FigMetalHistogram', process='mediaserverd', level='error'),
         Check('metal.fig-colorcube', 'r32-gpucaps', 'FigColorCube', process='mediaserverd', level='error'),
         Check('metal.affine-gpu', 'r32-gpucaps', 'affineGPUMetalV2', process='mediaserverd', level='error'),
         Check('metal.gles-context', 'r32-gpucaps', 'glContext != ', process='mediaserverd'),
-        Check(
-            'metal.no-copy-refused',
-            'r32-gpufixed',
-            'native-metal: no-copy buffer refused',
-            REPORT,
-            regex=r'page offset (?P<offset>0x[0-9a-f]+); region (?P<region>-?\d+): prot (?P<prot>\d+) '
-            r'share (?P<share>\d+)',
-            show=('process', 'offset', 'prot', 'share'),
-            source='drivers/NativeMetal/NativeBridgeMetalFrontend.mm',
-            note='was 32 per 10-minute boot',
-        ),
         Check('metal.boimport-refused', 'r32-gpufixed', 'BoImport', REPORT, process=KERNEL, regex='refused'),
         Check(
             'metal.gpu-role',
@@ -422,6 +405,18 @@ GROUPS: dict[str, list[Check]] = {
             process=KERNEL,
             regex='pitch',
             source='drivers/TegraVIC/TegraVICUserClient.cpp',
+        ),
+        Check(
+            'media.vic-colour-refusals',
+            'r32-media',
+            'TegraVIC: ',
+            REPORT,
+            process=KERNEL,
+            regex=r'^TegraVIC: (?P<who>[^\[]+)\[\d+\] (?P<why>(?:gamut|primaries|transfer function) change[^:]*): ',
+            show=('who', 'why'),
+            source='drivers/TegraVIC/TegraVICColor.h',
+            note='a colour change VIC refuses, which its caller then converts some other way: a detached or cloned '
+            'copy Core Animation asks for every frame shows here by its process',
         ),
         Check(
             'media.vic-stats',
@@ -1044,6 +1039,7 @@ GROUPS: dict[str, list[Check]] = {
     ],
     'audio': AUDIO,
     'm2v-cut': CUT,
+    'textures': TEXTURES,
     'dispatch': DISPATCH,
     'gpu-morning': MORNING,
     'hwtest': HWTEST,

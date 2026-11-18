@@ -12,15 +12,18 @@ import OSLog
 /// pitch, so no padding answers for it), D a 16x8 plain texture into plane 0 where its texel is plane 0's unit, E
 /// planes into planes, F a colour fill, G a run from a surface of exactly one page, within it and past it.
 ///
-/// A to D, E's plane 0 and G within the page are an M4 Max's bytes under macOS 27.2.1, validation off (probes
-/// blitgroups.mm, bound.mm, units.mm). E's plane 1 is the raw path's rule (raw_blit_planes.h planeOneSpan), not Apple's:
-/// an M4 Max moves plane 1 at plane 0's region in bytes and rows, past the plane's rows, a defect not copied. D of
-/// another texel size (Apple lands it transposed) and G past the page (Apple reads zeros there) expect nothing written
-/// and raw:blit.invalid; F (Apple writes plane 0 with a value that ignores the colour) nothing and raw:blit.undefined.
-/// Each rule's line is logged once a process (blit.invalid once per call and rule), so the process's log must hold
-/// those lines and none of them twice afterwards (invalid_lines=, invalid_repeats=, undefined_lines=,
-/// undefined_repeats=). cases= and cases_off=; for a case off its rule or the raw path only (a line of every case would
-/// pass os_log's limit), <case>_changed= (bytes off the rule) and <case>_path=; failed_cbs=.
+/// A to E and G within the page are an M4 Max's bytes under macOS 27.2.1, validation off (probes blitgroups.mm,
+/// bound.mm, units.mm; E and D's outside bytes this test's own cases on it, three runs): E moves plane 1 between two
+/// with one a byte a texel at plane 0's rows & ~15 for the region's rows, on through plane 1's end (a source with no
+/// plane 1 is gpu.raw.planes_copies_open's). D of another texel size reads the plain texture's own memory layout,
+/// Apple's not GM20B's: its 8u x 4 bytes are reported (<case>_unjudged=, unjudged_bytes=), the rest judged. G past the
+/// page (Apple reads zeros there) expects nothing written and raw:blit.invalid; F (Apple writes plane 0 with a value
+/// that ignores the colour) nothing and raw:blit.undefined. Every copy across two pixel formats (C, D, E's), fill (F)
+/// and G is counted skipped (skipped.call.blit, skipped_expected=). Each rule's line is logged once a process
+/// (blit.invalid once per call and rule), so the process's log must hold those lines and none of them twice afterwards
+/// (invalid_lines=, invalid_repeats=, undefined_lines=, undefined_repeats=). cases= and cases_off=; for a case off its
+/// rule or the raw path only (a line of every case would pass os_log's limit), <case>_changed= (bytes off the rule) and
+/// <case>_path=; failed_cbs=.
 struct PlanesBlitsTest: HWTest {
     let id = "gpu.raw.planes_blits"
     let name = "Blits of textures held through YCbCr and RGB10A8_2P_XR10 planes move only their rule's bytes, on raw"
@@ -34,11 +37,13 @@ struct PlanesBlitsTest: HWTest {
         let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        var off = 0
+        var off = 0, unjudged = 0
         let cases = PlanesBlitCases.all
-        for (key, run) in cases {
+        for (key, _, run) in cases {
             do {
                 let result = try await run(gpu)
+                unjudged += result.unjudged
+                if result.unjudged != 0 { metrics.set("\(key)_unjudged", result.unjudged) }
                 if result.changed != 0 || result.path != "raw" {
                     off += 1
                     metrics.set("\(key)_changed", result.changed)
@@ -53,6 +58,7 @@ struct PlanesBlitsTest: HWTest {
         }
         metrics.set("cases", cases.count)
         metrics.set("cases_off", off)
+        metrics.set("unjudged_bytes", unjudged)
         for (field, reason) in [("invalid", "blit.invalid"), ("undefined", "blit.undefined")] {
             let lines = Self.refusalLines(reason)
             let repeats = lines.map { $0.count - Set($0).count }
@@ -63,6 +69,9 @@ struct PlanesBlitsTest: HWTest {
                 ("raw:\(reason) logged, no rule's line twice (\(seen))", (lines?.count ?? 0) > 0 && repeats == 0))
         }
         let counted = RawFacade.counters(of: gpu.device)
+        let skips = cases.reduce(0) { $0 + $1.skips }
+        metrics.set("skipped_expected", skips)
+        checks.append(FailedCounts(before: before, after: counted).skipCheck(expecting: ["call.blit": skips]))
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))

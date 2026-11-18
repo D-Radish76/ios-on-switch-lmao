@@ -349,6 +349,23 @@ TESTS: dict[str, bool] = {
             'gpu.raw.xr_alpha_sink',
             'gpu.raw.xr_tiled_surface',
             'gpu.raw.ycbcr_rows_under16',
+            'gpu.raw.xr_texel_buffer_written',
+            'gpu.raw.ycbcr_turned_load',
+            'gpu.raw.xr_words_into_alpha',
+            'gpu.raw.xr_into_alpha_tie',
+            'gpu.raw.xr_alone_past_last_page',
+            'gpu.raw.planes_plane1_rows',
+            'gpu.raw.planes_across_formats',
+            'gpu.raw.xr_rows_under_16',
+            'gpu.raw.ycbcr_rows_under_16_stores',
+            'gpu.raw.planes_copies_open',
+            'gpu.raw.xr_texel_buffer_tiled',
+            'gpu.raw.packed_mips',
+            'gpu.raw.xr_turned_rows_under_16',
+            'gpu.raw.xr_overlap_rows',
+            'gpu.raw.packed_plane_any_surface',
+            'gpu.raw.planar_turned',
+            'gpu.raw.ycbcr_turned_overlap_order',
             'gpu.path.job_visibility',
             'gpu.path.lean_copy',
             'gpu.path.control_reserve',
@@ -480,6 +497,7 @@ TESTS: dict[str, bool] = {
     'display.snapshot': False,
     'display.wake_gpu': True,
     'display.planes_cropped': False,
+    'display.plane_tags': False,
     'display.x1.overlay_block_yuv': False,
     'display.x1.column_scan_yuv': False,
     'display.x1.offset_crop': False,
@@ -549,6 +567,7 @@ TESTS: dict[str, bool] = {
     'gpu.raw.unchecked_buffer_loads': False,
     'gpu.kernel.sparse_map': False,
     'gpu.raw.ended_encoder': False,
+    'gpu.raw.ahead_failures': False,
     'input.controllers': False,
     'input.joycon': False,
     'input.focus_idle': False,
@@ -636,6 +655,23 @@ BY_IOS: dict[str, dict[str, bool]] = {
     },
 }
 
+# Tests that judge Apple's value for a case the raw path does not handle yet, by what it lacks: red until that lands, so
+# a red there is the known gap, not a regression.
+OPEN: dict[str, str] = {
+    'gpu.raw.planes_copies_open': (
+        'plane 1 from a source with none is zeroed; descriptor-made and surface 550 copies are refused one way and '
+        'moved in 8-byte texels the other'
+    ),
+    'gpu.raw.xr_texel_buffer_tiled': 'no form for a texel buffer over a surface the kernel laid out block-linear',
+    'gpu.raw.packed_mips': 'no form for R10Unorm_PACKED or RG10Unorm_PACKED of several levels',
+    'gpu.raw.xr_turned_rows_under_16': 'no form for a turned RGB10A8_2P_XR10 over planes of rows under 16 bytes',
+    'gpu.raw.xr_into_alpha_tie': 'where a word byte and an alpha byte of one store meet, Metal ORs them; raw keeps one',
+    'gpu.raw.ycbcr_turned_overlap_order': (
+        "a turned YCbCr target's overlap store order is keyed on plane coordinates (raw_overlap_order.h); Metal "
+        "keys it on the frame's 32x32 tiles: rotations 1-3 red, rotation 0 green"
+    ),
+}
+
 
 def test_check(test_id: str, interactive: bool, ios: str) -> Check:
     return Check(
@@ -649,7 +685,9 @@ def test_check(test_id: str, interactive: bool, ios: str) -> Check:
         applies=f'{SUITE} ios={ios}' if ios else '',
         source=SOURCE,
         note='; '.join(
-            ([f'iOS {ios} only'] if ios else []) + (['interactive: SKIP without a person'] if interactive else [])
+            ([f'open: {OPEN[test_id]}'] if test_id in OPEN else [])
+            + ([f'iOS {ios} only'] if ios else [])
+            + (['interactive: SKIP without a person'] if interactive else [])
         ),
     )
 

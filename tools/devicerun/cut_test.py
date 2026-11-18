@@ -98,6 +98,13 @@ class Cut(unittest.TestCase):
         other = record('PosterBoard', line.format(who='PosterBoard'), REFUSAL_SUBSYSTEM)
         self.assertEqual(results(other)['cut.ended-encoder'].verdict, FAIL)
 
+    def test_a_front_end_line_names_a_front_end_loaded_again(self):
+        self.assertEqual(results(*clean_boot())['cut.frontend-line'].verdict, PASS)
+        line = 'native-metal: no-copy buffer refused: page offset 0x40; region 3: prot 3 share 1'
+        got = results(*clean_boot(), record('PosterBoard', line, '', 1))['cut.frontend-line']
+        self.assertEqual(got.verdict, FAIL)
+        self.assertIn('PosterBoard', got.observed)
+
     def test_rates_fields_need_a_rates_line(self):
         self.assertEqual(results()['cut.rates-fields'].verdict, NO_DATA)
 

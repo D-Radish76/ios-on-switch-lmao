@@ -105,6 +105,22 @@ class Rules(unittest.TestCase):
         refusal = next(c for c in checks.GROUPS['refusals'] if c.name == 'refusal.kernel')
         self.assertIn('kernel_task/SwitchVIC/pitch x1', run(refusal)['refusal.kernel'].observed)
 
+    def test_vic_colour_refusals_name_their_process_and_change(self):
+        vic = next(c for c in checks.GROUPS['media'] if c.name == 'media.vic-colour-refusals')
+        line = (
+            "TegraVIC: backboardd[63] transfer function change (VIC's curves are not Apple's): IOSurfaceAccelerator "
+            "transform refused (not on VIC), the caller falls back: '420v' 720x480 to 'BGRA' 1280x720"
+        )
+        record = {
+            'timestamp': '2026-11-19 09:12:00.000000-0800',
+            'processImagePath': '/kernel',
+            'messageType': 'Error',
+            'eventMessage': line,
+        }
+        results, _ = devicerun.run_checks([record], [vic])
+        self.assertEqual(results[0].verdict, INFO)
+        self.assertIn('backboardd/transfer function change', results[0].observed)
+
     def test_compute_view_refusals(self):
         view = next(c for c in checks.GROUPS['refusals'] if c.name == 'refusal.compute-view')
 

@@ -54,6 +54,14 @@ CUT = [
         "'no AGXAccelerator' or 'IOServiceOpen failed' here: the service match the raw device makes itself",
     ),
     Check('cut.path-off', 'm2v-cut1', 'raw GM20B path off', source=PLUGIN, note=OLD_PLUGIN),
+    Check(
+        'cut.frontend-line',
+        'm2v-cut4',
+        'native-metal: ',
+        show=('process',),
+        source='drivers/NativeMetal/NativeBridgeMetalFrontend.mm (out of the image)',
+        note='only the old front end logged these: any line is a front end loaded again',
+    ),
     Check('cut.m2v-device-line', 'm2v-cut1', 'TegraGM20BMetal: m2v device', source=PLUGIN, note=OLD_PLUGIN),
     Check(
         'cut.path-on',
