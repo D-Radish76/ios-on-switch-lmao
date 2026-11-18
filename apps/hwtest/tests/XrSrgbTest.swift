@@ -16,7 +16,7 @@ import Metal
 /// drawn_pad= and cleared_pad= the values of the two bits above its codes (Metal writes 3), reported, not judged.
 /// compressed_upload (553 alone, reported): a blit from a buffer into a 64x64 ShaderRead|RenderTarget texture of alpha
 /// codes i % 1024, read back by a blit; an M4 Max keeps such a texture compressed and clamps its alpha to 384..894 in
-/// the copy (compressed_upload_kept 2044, compressed_upload_clamped 2052), which the raw path's copies do not.
+/// the copy (compressed_upload_kept 2044, compressed_upload_clamped 2052), and the raw path's copies clamp it too.
 /// Every command buffer raw, and none failed (failed_cbs=).
 struct XrSrgbTest: HWTest {
     let id: String

@@ -2256,6 +2256,7 @@ host_test(
     name = "raw_ycbcr_store_test",
     srcs = [
         "raw_ycbcr_store_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_overlap_order.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_packed_plane.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_standin_blend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_ycbcr.cpp",
@@ -5381,6 +5382,40 @@ host_test(
 
 # An RGB8_444_2P surface texture made to be sampled alone holds no stand-in, and a pass into it renders through one of its
 # command buffer's
+# A GPU copy into or out of a BGRA10_XR texture Metal keeps compressed is drawn back clamped as an M4 Max leaves it; any
+# other copy is the copy engine's alone
+host_test(
+    name = "raw_facade_copy_clamp_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_job_methods.h",
+        "raw_facade_copy_clamp_test.cpp",
+        "raw_frontend_absent.cpp",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    data = [":fake_nvk/libvulkan_nouveau.dylib"],
+    env = {"SWITCH_FAKE_NVK": "$(rootpath :fake_nvk/libvulkan_nouveau.dylib)"},
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
 host_test(
     name = "raw_facade_planar_targets_test",
     srcs = [

@@ -204,3 +204,14 @@ fragment half4 xr_tile_planes_frag(Out in [[stage_in]], texture2d<uint, access::
     const uint2 t = codes.read(uint2(in.position.xy)).rg;
     return half4(tileWord(t.x), quotient(int(t.y & 0xff), 255));
 }
+
+// A GPU copy through a BGRA10_XR or BGRA10_XR_sRGB texture Metal keeps compressed (runtime/RawMetalCopyClamp.h): the copied
+// fields as an M4 Max leaves the copy's destination, each its 10-bit code alone (the low 6 bits 0) and the alpha code clamped
+// to 384..894 (m2v-textures7 probes/lowbits.mm); `origin` the destination's texel the scratch's (0, 0) holds
+fragment uint4 xr_copy_clamp_frag(Out in [[stage_in]], texture2d<uint, access::read> copied [[texture(0)]],
+                                  constant uint4 &origin [[buffer(0)]])
+{
+    uint4 v = copied.read(uint2(in.position.xy) - origin.xy) & 0xffc0u;
+    v.w = clamp(v.w, 384u << 6, 894u << 6);
+    return v;
+}

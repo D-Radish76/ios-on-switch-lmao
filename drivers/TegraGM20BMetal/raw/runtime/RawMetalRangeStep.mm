@@ -476,7 +476,16 @@ bool RMRangeEncode::command(size_t at)
     case OpCopyBufferToTexture:
     case OpCopyTextureToBuffer: {
         RAW_ENCODE_SPAN(Blit);
-        encodeBlit(cb, c, rc, be_, fresh_, standInFresh_);
+        if (!encodeBlit(cb, c, rc, be_, fresh_, standInFresh_, why_)) {
+            constexpr const char *clamp =
+                "no memory, header or pack state for a copy's alpha clamp (RawMetalCopyClamp.h)";
+            if (!ahead_) {
+                SWITCH_REFUSE("raw", "copy.clamp", "%s (%s): MTLCommandBufferErrorOutOfMemory (MTLCommandBuffer.h)",
+                              clamp, *why_ ? *why_ : "");
+                failCommandBuffer(cb, @(clamp), MTLCommandBufferErrorOutOfMemory);
+            }
+            return fail(PredEncPassRender, clamp, uint32_t(c.op));
+        }
         break;
     }
     case OpSignalEvent:

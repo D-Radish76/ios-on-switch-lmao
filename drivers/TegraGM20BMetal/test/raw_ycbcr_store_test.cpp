@@ -11,6 +11,7 @@
 #include <random>
 #include <vector>
 
+#include "../raw/runtime/raw_overlap_order.h"
 #include "../raw/runtime/raw_standin_blend.h"
 #include "../raw/runtime/raw_ycbcr.h"
 #include "../raw/runtime/raw_ycbcr_store.h"
@@ -309,6 +310,86 @@ TEST(RawYcbcrStore, TargetsAreTakenOverTheirOwnChroma)
     sampled.target = false;
     EXPECT_EQ(raw::planYcbcr(sampled, p), nullptr);
     EXPECT_FALSE(p.target);
+}
+
+// A plane's bytes from the first a run holds on, and the row each of those bytes holds after Apple's store
+struct Run {
+    uint32_t first, row;
+};
+
+// Every byte of a plane whose rows overlap holds the row the overlap states draw it from (raw_overlap_order.h), as an M4 Max
+// stored it in every one of 8 runs (m2v-textures7 probes/overlap.mm: 540 over a '420v' of rows `pitch` apart; the shapes whose
+// runs agree)
+void expectStoredAsApple(const raw::OverlapRows &s, const std::vector<Run> &runs, const char *what)
+{
+    const uint32_t span = s.pitch * (s.rows - 1) + s.row;
+    const auto every = [](uint32_t, uint32_t) {
+        return true;
+    };
+    for (uint32_t a = 0, k = 0; a < span; a += s.element) {
+        while (k + 1 < runs.size() && runs[k + 1].first <= a)
+            k++;
+        uint32_t row = ~0u, offset = 0;
+        ASSERT_TRUE(raw::overlapWinner(s, a, every, row, offset)) << what << " byte " << a;
+        EXPECT_EQ(row, runs[k].row) << what << " byte " << a;
+        EXPECT_EQ(offset, a - row * s.pitch) << what << " byte " << a;
+    }
+}
+
+TEST(RawYcbcrStore, RowsThatOverlapKeepTheRowAppleStoresLast)
+{
+    // 64x16, rows 16 apart: one tile across; by column, then row pair, the even row last
+    expectStoredAsApple(raw::overlapRowsOf(16, 64, 16, 1, 1, 1, 1),
+                        {{0, 0}, {64, 2}, {96, 4}, {128, 6}, {160, 8}, {192, 10}, {224, 12}, {256, 14}, {288, 15}},
+                        "64x16 luma");
+    expectStoredAsApple(raw::overlapRowsOf(16, 64, 8, 2, 2, 2, 2),
+                        {{0, 0}, {16, 1}, {32, 0}, {48, 1}, {64, 2}, {80, 3}, {96, 4}, {112, 5}, {128, 6}, {144, 7}},
+                        "64x16 chroma");
+    // 64x64: the upper tile row's stores land after the lower one's
+    const std::vector<::Run> luma = {
+        {0, 0},     {64, 2},    {96, 4},    {128, 6},   {160, 8},   {192, 10},  {224, 12},  {256, 14},  {288, 16},
+        {320, 18},  {352, 20},  {384, 22},  {416, 24},  {448, 26},  {480, 28},  {512, 30},  {544, 31},  {560, 32},
+        {576, 34},  {608, 36},  {640, 38},  {672, 40},  {704, 42},  {736, 44},  {768, 46},  {800, 48},  {832, 50},
+        {864, 52},  {896, 54},  {928, 56},  {960, 58},  {992, 60},  {1024, 62}, {1056, 63}};
+    expectStoredAsApple(raw::overlapRowsOf(16, 64, 64, 1, 1, 1, 1), luma, "64x64 luma");
+    const std::vector<::Run> chroma = {
+        {0, 0},    {16, 1},   {32, 0},   {48, 1},   {64, 2},   {80, 3},   {96, 4},   {112, 5},  {128, 6},
+        {144, 7},  {160, 8},  {176, 9},  {192, 10}, {208, 11}, {224, 12}, {240, 13}, {256, 14}, {272, 15},
+        {304, 17}, {320, 18}, {336, 19}, {352, 20}, {368, 21}, {384, 22}, {400, 23}, {416, 24}, {432, 25},
+        {448, 26}, {464, 27}, {480, 28}, {496, 29}, {512, 30}, {528, 31}};
+    expectStoredAsApple(raw::overlapRowsOf(16, 64, 32, 2, 2, 2, 2), chroma, "64x64 chroma");
+    // 128x17, rows 32 apart: the second tile's stores land before the first's
+    expectStoredAsApple(raw::overlapRowsOf(32, 128, 17, 1, 1, 1, 1),
+                        {{0, 0},    {64, 1},   {96, 2},   {128, 3},  {160, 4},  {192, 5},  {224, 6},
+                         {256, 7},  {288, 8},  {320, 9},  {352, 10}, {384, 11}, {416, 12}, {448, 13},
+                         {480, 14}, {512, 15}, {544, 16}, {576, 15}, {608, 16}},
+                        "128x17 luma");
+    expectStoredAsApple(raw::overlapRowsOf(32, 128, 9, 2, 2, 2, 2),
+                        {{0, 0}, {64, 1}, {96, 2}, {128, 3}, {160, 4}, {192, 5}, {224, 6}, {256, 7}, {288, 8}, {320, 7},
+                         {352, 8}},
+                        "128x17 chroma");
+}
+
+// A loaded pass stores only the rows in tiles its draws reach: a byte keeps the last of those, or no row where none reaches it
+TEST(RawYcbcrStore, RowsThatOverlapStoreOnlyFromReachedTiles)
+{
+    raw::OverlapRows s = raw::overlapRowsOf(16, 64, 64, 1, 1, 1, 1);
+    s.masked = 1;
+    const auto upperHalf = [](uint32_t, uint32_t y) {
+        return y < 32;
+    };
+    const auto lowerHalf = [](uint32_t, uint32_t y) {
+        return y >= 32;
+    };
+    uint32_t row = 0, offset = 0;
+    ASSERT_TRUE(raw::overlapWinner(s, 528, lowerHalf, row, offset));
+    EXPECT_EQ(row, 32u) << "rows 30 and 31, which land later, lie in an unreached tile";
+    EXPECT_EQ(offset, 16u);
+    EXPECT_FALSE(raw::overlapWinner(s, 560, upperHalf, row, offset)) << "rows 32 to 35 lie in an unreached tile";
+    EXPECT_FALSE(raw::overlapWinner(s, 0, lowerHalf, row, offset)) << "row 0's first byte is its alone";
+    s.masked = 0;
+    s.kept = 0;
+    EXPECT_FALSE(raw::overlapWinner(s, 0, upperHalf, row, offset)) << "a kept byte no row stores";
 }
 
 }  // namespace

@@ -287,7 +287,9 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     // them, BlitEncoder::mergePlane; an odd width's last pair keeps its second luma byte) or words with bits 30 and 31 clear
     // (an M4 Max over '2vuy', 'yuvs', 'v410': m2v-textures5 probes/targets.mm, m2v-textures6 probes/onep.mm)
     if (f.target) {
-        if (const char *why = onePlane ? nullptr : ycbcrTargetRefusal(f.pixelFormat))
+        // RGB8_444_2P (542) comes here where the planar path does not take it (rows that overlap, a texture taller than
+        // its planes, planes of other elements: RawMetalSurfaceTextures.mm planar444) and stores as the codes format it is
+        if (const char *why = onePlane || f.pixelFormat == 542 ? nullptr : ycbcrTargetRefusal(f.pixelFormat))
             return why;
         // an M4 Max's store into one changed words past the texture, and some of its passes faulted
         if (format->packed && (f.width != f.surfaceWidth || f.height != f.surfaceHeight))
@@ -301,12 +303,11 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     const uint32_t lumaPitch = f.pitch[f.plane], chromaPitch = onePlane ? lumaPitch : f.pitch[1];
     if (((luma | chroma) & 15) || ((lumaPitch | chromaPitch) & 15))
         return "plane offset or row not 16-byte";
-    // a row of more codes than its plane's pitch holds runs on into the next (Metal reads each row at the pitch)
+    // a row of more codes than its plane's pitch holds runs on into the next (Metal reads each row at the pitch); a target
+    // stores each byte from the row whose store lands last (raw_overlap_rows.h)
     const uint64_t lumaRow = onePlane ? 4ull * cw : rowBytes(*format, f.width),
                    chromaRow = onePlane ? lumaRow : rowBytes(*format, 2 * cw);
     const bool overlapping = lumaPitch < lumaRow || (!planeOne && chromaPitch < chromaRow);
-    if (f.target && overlapping)
-        return "a render target of more codes a row than its plane's pitch holds";
     const uint64_t lumaEnd = luma + uint64_t(lumaPitch) * (f.height - 1) + lumaRow;
     const uint64_t chromaEnd = chroma + uint64_t(chromaPitch) * (ch - 1) + chromaRow;
     const uint64_t mapped = std::max(f.allocBytes, f.mappedBytes), rowsEnd = std::max(lumaEnd, planeOne ? 0 : chromaEnd);

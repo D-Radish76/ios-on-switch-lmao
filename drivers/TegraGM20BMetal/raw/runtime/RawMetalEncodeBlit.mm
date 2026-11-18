@@ -3,6 +3,7 @@
 #import "RawMetalInternal.h"
 #import "RawMetalBlitImages.h"
 #import "RawMetalBlitRules.h"
+#import "RawMetalCopyClamp.h"
 #import "RawMetalStandIns.h"
 #include "raw_format_standin.h"
 #include "../fx/fx_mip_probe.h"
@@ -172,8 +173,8 @@ static void fillImage(raw::BlitEncoder *be, raw::Texture image, const raw::FillR
         be->fillRect(image, x0, y0, layerOrPlane(image, f.layer, z), x1 - x0, y1 - y0, f.texel, f.bytes, f.words);
 }
 
-void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::BlitEncoder *be,
-                std::set<RMTexture *> &fresh, RMStandInFresh &standInFresh)
+bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::BlitEncoder *&be,
+                std::set<RMTexture *> &fresh, RMStandInFresh &standInFresh, const char **why)
 {
     switch (c.op) {
     case OpCopyTexture: {
@@ -230,6 +231,9 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
             else
                 be->copyTexels(fromLevel, ex, ey, from, toLevel, fx, fy, to, ew, eh, uint8_t(c.a));
         }
+        if (rmCopyClamps(s, uint32_t(sl), t, uint32_t(dl)) &&
+            !rmClampCopiedTexture(rc, be, t, uint32_t(dl), ds, dz, d, dx, dy, w, h, why))
+            return false;
         copyToCallerPages(be, rc, t);
         break;
     }
@@ -289,6 +293,10 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         bufferCopyImage(t, uint32_t(dl), level);
         copyPlanes(be, rc, s->_raw, so, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(dz), uint32_t(w),
                    uint32_t(h), uint32_t(d), true, uint8_t(c.a));
+        if (rmCopyClamps(nil, 0, t, uint32_t(dl)) &&
+            !rmClampCopiedTexture(rc, be, t, uint32_t(dl), uint32_t(extra(cb, x + 6)), uint32_t(extra(cb, x + 9)),
+                                  uint32_t(d), uint32_t(o), uint32_t(o >> 32), uint32_t(w), uint32_t(h), why))
+            return false;
         copyToCallerPages(be, rc, t);
         break;
     }
@@ -306,11 +314,15 @@ void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         bufferCopyImage(s, uint32_t(sl), level);
         copyPlanes(be, rc, t->_raw, dof, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(sz), uint32_t(w),
                    uint32_t(h), uint32_t(d), false, uint8_t(c.a));
+        if (rmCopyClamps(s, uint32_t(sl), nil, 0) &&
+            !rmClampCopiedBuffer(rc, be, t, dof, row, image, uint32_t(w), uint32_t(h), uint32_t(d), why))
+            return false;
         break;
     }
     default:
         break;
     }
+    return true;
 }
 
 bool rmFormatMips(uint32_t format)

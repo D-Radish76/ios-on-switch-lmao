@@ -386,10 +386,11 @@ bool encodePatches(raw::RenderEncoder *re, raw::CommandBuffer *rc, const RMPlanD
 
 // RawMetalEncodeBlit.mm: a blit encoder's copy or fill of the tape onto the raw path's copy engine (a fill's rectangle on the
 // 2D engine where rule clear.twod holds); a texture it writes leaves `fresh` and `standInFresh` (its pool image and its
-// stand-in are refreshed again before a sample)
+// stand-in are refreshed again before a sample). A copy Apple leaves clamped is drawn back clamped (RawMetalCopyClamp.h):
+// false where that had no memory, header or pack state (*why); `be` the blit encoder encoding goes on with
 class RMStandInFresh;
-void encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::BlitEncoder *be,
-                std::set<RMTexture *> &fresh, RMStandInFresh &standInFresh);
+bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::BlitEncoder *&be,
+                std::set<RMTexture *> &fresh, RMStandInFresh &standInFresh, const char **why);
 // Levels first + 1 .. last of a chain by a pass of the pack's mip state a level (raw_mip.h); false where the pack has none or a
 // pass is refused (*why)
 bool mipPasses(raw::CommandBuffer *rc, RMTexture *t, uint32_t first, uint32_t last, const char **why);

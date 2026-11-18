@@ -232,8 +232,19 @@ TEST(RawYcbcr, TargetsStoreAsTheyRead)
     f = surface(503, "420v", 64, 64, 64, 32);
     f.mappedBytes = 16384;
     f.target = true;
-    EXPECT_STREQ(raw::planYcbcr(f, p), "a render target of more codes a row than its plane's pitch holds")
-        << "4:4:4 chroma rows of 128 bytes at a 64-byte pitch";
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "4:4:4 chroma rows of 128 bytes 64 apart (raw_overlap_rows.h)";
+    EXPECT_TRUE(p.target);
+    EXPECT_EQ(p.chromaWidth, 64u);
+    EXPECT_EQ(p.chromaPitch, 64u);
+
+    f = surface(542, "444v", 64, 64, 64, 64);
+    f.mappedBytes = 16384;
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "an RGB8_444_2P target the planar path leaves: its rows overlap";
+    EXPECT_TRUE(p.target);
+    EXPECT_EQ(p.output, raw::YcbcrCodes8);
+    EXPECT_EQ(p.store.across, 0u);
+    EXPECT_EQ(p.store.down, 0u);
 }
 
 TEST(RawYcbcr, PackedPlanesAreWordsOfThreeCodes)
@@ -265,7 +276,9 @@ TEST(RawYcbcr, PackedPlanesAreWordsOfThreeCodes)
     ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "chroma rows of 88 bytes at an 80-byte pitch: run on into the next";
     EXPECT_EQ(p.chromaWidth, 22u);
     f.target = true;
-    EXPECT_STREQ(raw::planYcbcr(f, p), "a render target of more codes a row than its plane's pitch holds");
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "a target whose chroma rows overlap (raw_overlap_rows.h)";
+    EXPECT_TRUE(p.target);
+    EXPECT_EQ(p.store.packed, 1u);
     f = surface(546, "x420", 33, 17, 128, 9);
     EXPECT_STREQ(raw::planYcbcr(f, p), "pixel format");
     f = surface(543, "p420", 33, 17, 128, 9);
@@ -311,7 +324,11 @@ TEST(RawYcbcr, ATextureWiderThanItsSurfaceReadsItsPlanesRows)
     EXPECT_EQ(p.chromaWidth, 16u);
     EXPECT_EQ(p.chromaHeight, 4u);
     f.width = 66;
-    EXPECT_STREQ(raw::planYcbcr(f, p), "a render target of more codes a row than its plane's pitch holds");
+    f.mappedBytes = 16384;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "rows of 66 codes 64 bytes apart: a target whose rows overlap";
+    EXPECT_TRUE(p.target);
+    EXPECT_EQ(p.lumaWidth, 66u);
+    EXPECT_EQ(p.lumaPitch, 64u);
 }
 
 TEST(RawYcbcr, APackedTargetSmallerThanItsSurfaceIsRefusedButSampled)

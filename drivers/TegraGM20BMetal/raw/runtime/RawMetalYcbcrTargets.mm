@@ -11,7 +11,9 @@
 #import "RawMetalInternal.h"
 #import "RawMetalReflection.h"
 #include "raw_format_standin.h"
+#include "raw_overlap_rows.h"
 #include "raw_packed_plane.h"
+#include "raw_planar_target.h"
 #include "raw_standin_blend.h"
 #include "raw_ycbcr_load.h"
 #include "raw_ycbcr_store.h"
@@ -25,6 +27,19 @@ static raw::Pipeline *loadState(const raw::Texture &t)
 {
     return t.ycbcrStore->plane ? gRM->raw->ycbcrLoadPipeline(t.ycbcrStore->plane)
                                : packState(raw::ycbcrLoadState(t.ycbcr));
+}
+
+// A one-plane 4:2:2 target whose pairs' rows overlap: its luma and chroma images are stored, then its pair bytes drawn from
+// them (raw_overlap_rows.h)
+static bool pairsOverlap(const raw::Texture &t)
+{
+    return t.onePlane && t.planes.lumaPitch < 4 * t.chroma->width;
+}
+
+// Where a plane's rows overlap, the pool image its rows are stored into and the pack's state that draws its bytes from it
+static bool overlapReady(const raw::Texture *plane)
+{
+    return !plane || !raw::overlapsRows(*plane) || (plane->sampled && packState(raw::overlapState(plane->format)));
 }
 
 static bool loadable(const raw::Texture &t)
@@ -44,9 +59,14 @@ void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStor
     // a packed plane's words are its one plane, as YCBCR10_444_1P's are (its luma header's); a texture over plane 1 stores
     // its luma codes alone
     const bool chroma = !store.plane && !store.words && t.chroma;
-    if (!rendered(t.luma) || (chroma && !rendered(t.chroma)) || !d.ycbcrStorePipeline(false, store) ||
+    const bool overlaps = t.onePlane ? !pairsOverlap(t) || packState(raw::overlapState(10))
+                                     : overlapReady(t.luma) && (!chroma || overlapReady(t.chroma));
+    // RGB8_444_2P's pipelines render into an RGBA16Float stand-in, as the planar path's targets do (RawOffline.mm)
+    const uint32_t standInFormat =
+        pixelFormat == 542 ? raw::kPlanarStandInFormat : raw::ycbcrStandInFormat(pixelFormat);
+    if (!rendered(t.luma) || (chroma && !rendered(t.chroma)) || !overlaps || !d.ycbcrStorePipeline(false, store) ||
         (chroma && !d.ycbcrStorePipeline(true, store)) ||
-        !d.createMemoryless(t.width, t.height, raw::ycbcrStandInFormat(pixelFormat), *standIn)) {
+        !d.createMemoryless(t.width, t.height, standInFormat, *standIn)) {
         delete standIn;
         SWITCH_REFUSE_DETAIL("raw", "ycbcr.target", pixelFormat,
                              "no stand-in or store state for a %ux%u format %u render target: its passes fail their "
@@ -83,8 +103,9 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         if (chroma && (!t.chroma || t.ycbcrStore->words))
             continue;
         raw::Texture *plane = chroma ? t.chroma : t.luma;
+        const bool overlap = !t.onePlane && raw::overlapsRows(*plane);
         raw::PassDesc p;
-        p.color[0].texture = plane;
+        p.color[0].texture = overlap ? plane->sampled : plane;
         p.color[0].load = masked ? raw::ColorAttachment::Load : raw::ColorAttachment::DontCare;
         p.color[0].store = true;
         p.count = 1;
@@ -102,7 +123,7 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
             e->setTexture(1, loaded->mask);
             e->setBytes(2, raw::kYcbcrTilesSlot, &tiles, sizeof tiles);
             if (t.ycbcrStore->packed)
-                e->setTexture(2, plane);
+                e->setTexture(2, overlap ? plane->sampled : plane);
         }
         if (t.ycbcrStore->srgb) {
             const raw::Bo &table = d.srgbEncodeTable();
@@ -111,8 +132,19 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
             return 2;
         e->end();
+        if (overlap)
+            if (const int failed = raw::storeOverlapRows(
+                    *rc, packState(raw::overlapState(plane->format)), plane->format, plane->va, *plane,
+                    *plane->sampled, nullptr, raw::overlapPlaneRows(*plane, chroma, *t.ycbcrStore),
+                    masked ? loaded : nullptr, why))
+                return failed;
     }
-    if (t.onePlane) {
+    if (pairsOverlap(t)) {
+        if (const int failed =
+                raw::storeOverlapRows(*rc, packState(raw::overlapState(10)), 10, t.planes.luma, t, *t.luma, t.chroma,
+                                      raw::overlapPairsOf(t), masked ? loaded : nullptr, why))
+            return failed;
+    } else if (t.onePlane) {
         raw::BlitEncoder *merge = rc->blit();
         merge->mergePlane(t);
         merge->end();
