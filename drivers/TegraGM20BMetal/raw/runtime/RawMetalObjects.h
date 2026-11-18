@@ -560,7 +560,7 @@ struct RMSharedEventWait {
     __unsafe_unretained id _active;
     uint64_t _predA, _predB;  // the first one's values
     uint8_t _pred0;           // the first one
-    uint8_t _failedBy;        // the predicate that failed it (predFailure), 0: none
+    uint8_t _failedBy;        // the predicate its failure named (failCommandBuffer, nameFailure), 0: none
 #if SWITCH_FRAME_TIMELINE
     switch_frame::Stamps _frame;
 #endif
@@ -574,8 +574,8 @@ struct RMSharedEventWait {
 - (void)recordBinding:(const Cmd &)cmd __attribute__((objc_direct));
 @end
 
-// `cb` fails with predicate `p`'s error (predFailure): one error line a process and reason, kept in release, naming
-// `detail` where given (RawMetalPredicates.mm)
+// `cb` fails with predicate `p`'s error (predFailure), naming `detail` where given; the process's first hit of `p` logs
+// its values (RawMetalPredicates.mm)
 void predFails(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *detail);
 // A call Metal's validation stops (`rule`) as it is recorded: an object another device made, or nil where Metal takes
 // none. Apple's driver dereferences what it is handed (a nil state or index buffer is EXC_BAD_ACCESS on an M4 Max with
@@ -598,6 +598,14 @@ static inline void hit(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64
         return predFails(cb, p, a, b, detail);
     if (!predLogged(p))
         logPred(p, a, b, detail ? @(detail) : nil);
+}
+
+// The predicate of the failure the submit worker found encoding or readying `cb`, committed and so written by no other
+// thread now: kept unless the failure named one already
+static inline void nameFailure(__unsafe_unretained RMCommandBuffer *cb, RMPred p)
+{
+    if (!cb->_failedBy)
+        cb->_failedBy = p;
 }
 
 // Why a command buffer's tape is encoded at its commit, not as its encoders end (RMCommandBuffer::_pipelineVeto, and the

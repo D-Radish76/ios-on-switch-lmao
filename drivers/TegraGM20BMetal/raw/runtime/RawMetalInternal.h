@@ -94,8 +94,8 @@ uint64_t nowUs();
 
 struct Stats {
 #if SWITCH_RAW_DIAGNOSTICS
-    std::atomic<uint64_t> raw{0}, deferred{0}, aborted{0}, encodeUs{0}, draws{0}, passes{0}, copies{0},
-        eventsReleased{0}, heldReturns{0};
+    std::atomic<uint64_t> raw{0}, deferred{0}, encodeUs{0}, draws{0}, passes{0}, copies{0}, eventsReleased{0},
+        heldReturns{0};
     // shared event signals published as their raw work completes (publishRawEventSignals), those the CPU set after the head
     // waited for its own work, and native event waits that went on a submitted command buffer's promise
     std::atomic<uint64_t> signalsPublished{0}, signalsAfterWork{0}, waitsOnPromise{0};
@@ -103,11 +103,6 @@ struct Stats {
     std::atomic<uint64_t> waitsHeldOnCpu{0};
     // predicated loops laid down again after their job, where they would have run past their copies
     std::atomic<uint64_t> loopContinuations{0};
-    // diagnostics (r10-rawsweep): the raw encode thrown away by aborted command buffers
-    std::atomic<uint64_t> abortUs{0};
-    // command buffers submitted in segments (planSegments); the ones split around their shared events, and the ones kept
-    // whole for an event wait or signal between encoders
-    std::atomic<uint64_t> splits{0}, eventSplits{0}, eventWhole{0};
     // command buffers completed (finish): with the commits, what the stall line (rawStall) watches
     std::atomic<uint64_t> finished{0};
     // waitUntilScheduled / waitUntilCompleted calls that blocked, and the time they blocked: CPU waits on the caller's thread
@@ -616,9 +611,10 @@ void scheduled(RMCommandBuffer *cb);
 dispatch_queue_t followingRootQueue();
 dispatch_queue_t followingSerialQueue(const char *label);
 void finish(RMCommandBuffer *cb, NSError *error);
-// The command buffer's error, unless it has one: under its lock, which waitUntilScheduled reads it under
-void failCommandBuffer(RMCommandBuffer *cb, NSString *reason,
-                       MTLCommandBufferError code = MTLCommandBufferErrorInternal);
+// The command buffer's error, unless it has one: under its lock, which waitUntilScheduled reads it under. `p`, the
+// predicate the failure names, goes with the error it sets (RMCommandBuffer::_failedBy).
+void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferError code = MTLCommandBufferErrorInternal,
+                       RMPred p = PredNone);
 void rmRangeHandedOff(RMCommandBuffer *cb);
 void segmentCompleted(RMCommandBuffer *cb, NSError *error, const raw::RetirementWrites &writes, uint32_t dependencies,
                       const std::vector<RMNativeEventSignal> &signals = {},

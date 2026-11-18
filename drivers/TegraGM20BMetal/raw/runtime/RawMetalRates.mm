@@ -7,9 +7,9 @@
 #if SWITCH_RAW_DIAGNOSTICS
 // ---- the rates line ----
 static struct {
-    uint64_t raw, encodeUs, draws, passes, copies, deferred, aborted, ringWaits, lastUs, poolStalls, eventsReleased,
-        heldReturns, signalsPublished, signalsAfterWork, waitsOnPromise, scheduledWaits, scheduledWaitUs,
-        completedWaits, completedWaitUs, abortUs, rtUnaligned, rtMixed, splits, eventSplits, eventWhole, levelPasses;
+    uint64_t raw, encodeUs, draws, passes, copies, deferred, ringWaits, lastUs, poolStalls, eventsReleased, heldReturns,
+        signalsPublished, signalsAfterWork, waitsOnPromise, scheduledWaits, scheduledWaitUs, completedWaits,
+        completedWaitUs, rtUnaligned, rtMixed, levelPasses;
 } gRates;
 
 #endif
@@ -43,26 +43,20 @@ size_t raw_metal_rates(char *out, size_t size)
         return 0;
     Stats &s = gRM->stats;
     const uint64_t raw = s.raw.load(), now = nowUs();
-    const uint64_t c = raw - gRates.raw, sp = s.splits.load() - gRates.splits;
-    if (!c && !sp)
+    const uint64_t c = raw - gRates.raw;
+    if (!c)
         return 0;
     const double secs = gRates.lastUs ? (now - gRates.lastUs) / 1e6 : 5.0;
     raw::Device::Stats &k = gRM->raw->stats;
-    const double per = c + sp ? double(c + sp) : 1.0;  // the raw path's command buffers, the split ones included
-    const uint64_t evSplits = s.eventSplits.load() - gRates.eventSplits,
-                   evWhole = s.eventWhole.load() - gRates.eventWhole;
-    const uint64_t aborts = s.aborted.load() - gRates.aborted;
+    const double per = double(c);
     const raw::Compiler::Stats made = gRM->completion ? gRM->completion->stats() : raw::Compiler::Stats();
     char diag[1024];
     snprintf(
         diag, sizeof diag,
-        " sp=%llu evsp=%llu/%llu abortenc=%.0fus/a "
-        "rt128=%llu(pitch %u va&255 %u) rtmix=%llu lvl=%llu states=%llu/%llu/%llu/%llu/%.0fms "
+        " rt128=%llu(pitch %u va&255 %u) rtmix=%llu lvl=%llu states=%llu/%llu/%llu/%llu/%.0fms "
         "atcreate=%llu/%.0fus/s%llu/o%llu swait=%.0fms comp=%llu/%lluKB/v%llu/m%llu/f%llu/x%llu bk=%llu/%lluMB/r%llu "
         "tfree=%lluMB zbc=%llu/%llu "
         "split=%llu rsv=t%llu/%llu,x%llu/%llu,p%llu/%llu/%llu",
-        (unsigned long long)sp, (unsigned long long)evSplits, (unsigned long long)evWhole,
-        (s.abortUs.load() - gRates.abortUs) / double(aborts ? aborts : 1),
         (unsigned long long)(k.rtUnaligned.load() - gRates.rtUnaligned), k.rtUnalignedPitch.load(),
         k.rtUnalignedVa.load(), (unsigned long long)(k.rtMixed.load() - gRates.rtMixed),
         (unsigned long long)(k.levelPasses.load() - gRates.levelPasses), (unsigned long long)made.hits,
@@ -97,10 +91,6 @@ size_t raw_metal_rates(char *out, size_t size)
                  (unsigned long long)s.zeroAnswers.exchange(0));
     }
 #endif
-    gRates.abortUs = s.abortUs.load();
-    gRates.splits = s.splits.load();
-    gRates.eventSplits = s.eventSplits.load();
-    gRates.eventWhole = s.eventWhole.load();
     gRates.rtUnaligned = k.rtUnaligned.load();
     gRates.rtMixed = k.rtMixed.load();
     gRates.levelPasses = k.levelPasses.load();
@@ -110,13 +100,12 @@ size_t raw_metal_rates(char *out, size_t size)
     const int n = snprintf(
         out, size,
         "raw %.0fs c=%llu(%.1f/s) enc=%.0fus/c d=%.1f p=%.1f b=%.2f "
-        "defer=%llu abort=%llu rw=%llu pool=%lluMB/%llu grow=%llu imp=%llu/%lluMB clean=%.1fKB/c ce=%llu/%.0fKB "
+        "defer=%llu rw=%llu pool=%lluMB/%llu grow=%llu imp=%llu/%lluMB clean=%.1fKB/c ce=%llu/%.0fKB "
         "ev=%llu/%llu sig=%llu/%llu/%llu ws=%llu/%lluus wc=%llu/%lluus set_refusals=%u set_rebuilds=%u "
         "kept=%zu/%lluKB passes=%zu/%zu hdr=%u%s",
         secs, (unsigned long long)c, c / secs, (s.encodeUs.load() - gRates.encodeUs) / per,
         (s.draws.load() - gRates.draws) / per, (s.passes.load() - gRates.passes) / per,
         (s.copies.load() - gRates.copies) / per, (unsigned long long)(s.deferred.load() - gRates.deferred),
-        (unsigned long long)(s.aborted.load() - gRates.aborted),
         (unsigned long long)(k.ringWaits.load() - gRates.ringWaits), (unsigned long long)(k.poolBytes.load() >> 20),
         (unsigned long long)k.poolChunks.load(), (unsigned long long)(k.poolStalls.load() - gRates.poolStalls),
         (unsigned long long)k.imports.load(), (unsigned long long)(k.importBytes.load() >> 20),
@@ -138,7 +127,6 @@ size_t raw_metal_rates(char *out, size_t size)
     gRates.passes = s.passes.load();
     gRates.copies = s.copies.load();
     gRates.deferred = s.deferred.load();
-    gRates.aborted = s.aborted.load();
     gRates.poolStalls = k.poolStalls.load();
     gRates.ringWaits = k.ringWaits.load();
     gRates.eventsReleased = s.eventsReleased.load();
@@ -407,7 +395,7 @@ void rawStallTick()
         return;
     RawState &r = *gRM;
     Stats &s = r.stats;
-    const uint64_t commits = s.raw.load() + s.splits.load(), done = s.finished.load();
+    const uint64_t commits = s.raw.load(), done = s.finished.load();
     const bool moved = commits != lastCommits || done != lastDone;
     lastCommits = commits;
     lastDone = done;

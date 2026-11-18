@@ -157,7 +157,8 @@ bool rmBindTexture(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
             logPred(PredTexForeign, t.pixelFormat, 0,
                     [NSString stringWithFormat:@"class %s", class_getName(object_getClass(t))]);
         hit(e->_cb, PredTexForeign, t.pixelFormat);
-        failCommandBuffer(e->_cb, @"A texture not made by this device was bound: Metal's validation error");
+        failCommandBuffer(e->_cb, @"A texture not made by this device was bound: Metal's validation error",
+                          MTLCommandBufferErrorInternal, PredTexForeign);
         return false;
     }
     bool formsChanged = false;
@@ -249,7 +250,8 @@ bool rmBindSampler(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
     }
     if (s && !r) {
         hit(e->_cb, PredCallSamplerForeign, index, 0, "a sampler state of another device: Metal's validation error");
-        failCommandBuffer(e->_cb, @"A sampler state not made by this device was bound: Metal's validation error");
+        failCommandBuffer(e->_cb, @"A sampler state not made by this device was bound: Metal's validation error",
+                          MTLCommandBufferErrorInternal, PredCallSamplerForeign);
         return false;
     }
     if (r && r->_raw.desc.border)

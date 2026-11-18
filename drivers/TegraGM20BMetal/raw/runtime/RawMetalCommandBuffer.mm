@@ -838,16 +838,17 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     return _gpuStamped ? @"ns" : @"host";
 }
 
-// hw_test_app's attribution, final once the command buffer completed (its completed handlers may ask): "raw", or
-// "error:<predicate>", the one that failed it or, for one that failed otherwise, the first it hit. With no lock: what it
-// reads is set before the completed mark this acquires.
+// hw_test_app's attribution, final once the command buffer completed (its completed handlers may ask): "raw", or for one
+// that completed with an error "error:<predicate>", the predicate its failure named, "error:none" where it named none (the
+// failed.* key switchRawCounters counted it under). With no lock: what it reads is set before the completed mark this
+// acquires.
 - (NSString *)switchRawPath
 {
     if (!_completedSent)
         return @"pending";
-    if (_failedBy)
-        return [NSString stringWithFormat:@"error:%s", kPredNames[_failedBy]];
-    return _error && _pred0 ? [NSString stringWithFormat:@"error:%s", kPredNames[_pred0]] : @"raw";
+    if (!_error)
+        return @"raw";
+    return [NSString stringWithFormat:@"error:%s", failedName(RMPred(_failedBy))];
 }
 
 // hw_test_app's gpu.path.commit_latency, final once it completed: of its raw ranges' encoders, those the worker encoded

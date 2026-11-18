@@ -124,6 +124,7 @@ void producerPendingOnAKilledChannel(bool producerRan)
     [first commit];
     [first waitUntilCompleted];
     ASSERT_EQ(first.status, MTLCommandBufferStatusCompleted) << text(first.error);
+    NSDictionary *before = counters(o.device);
 
     id<MTLSharedEvent> event = [o.device newSharedEvent];
     id<MTLCommandBuffer> producer = [producerQueue commandBuffer];
@@ -150,6 +151,7 @@ void producerPendingOnAKilledChannel(bool producerRan)
 
     EXPECT_TRUE(gpu.released.load()) << "no job after the new channel's context opened the gate";
     EXPECT_EQ(third.status, MTLCommandBufferStatusCompleted) << text(third.error);
+    NSDictionary *after = counters(o.device);
     if (producerRan) {
         EXPECT_EQ(producer.status, MTLCommandBufferStatusCompleted) << text(producer.error);
         EXPECT_EQ(event.signaledValue, 1u);
@@ -158,6 +160,11 @@ void producerPendingOnAKilledChannel(bool producerRan)
         EXPECT_EQ(producer.status, MTLCommandBufferStatusError);
         EXPECT_EQ(waiter.status, MTLCommandBufferStatusError);
         EXPECT_EQ(text(waiter.error.localizedDescription), "A GPU event producer failed") << text(waiter.error);
+        // the kill's error, from the completion thread, and the waiter's, from its readiness: neither names a predicate
+        EXPECT_EQ(rawPath(producer), "error:none");
+        EXPECT_EQ(rawPath(waiter), "error:none");
+        EXPECT_EQ(failedMoved(before, after), (std::map<std::string, long long>{{"failed", 2}, {"failed.none", 2}}))
+            << text(after);
     }
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(o.device)[@"needs"] count], 0u) << text(m2vRecord(o.device));

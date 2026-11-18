@@ -27,8 +27,11 @@ bool RMRangeEncode::fail(RMPred p, const char *w, uint64_t a, uint64_t b, const 
     *why_ = w;
     if (ahead_)
         veto_ = VetoFailed;
-    else if (!rc_->refusal.id || !drawFailed(cb_, rc_->refusal, w))
-        hit(cb_, p, a, b, detail);
+    else {
+        nameFailure(cb_, p);
+        if (!rc_->refusal.id || !drawFailed(cb_, rc_->refusal, w))
+            hit(cb_, p, a, b, detail);
+    }
     rc_->abandon();
     abandoned_ = true;
     return false;
@@ -56,8 +59,11 @@ bool RMRangeEncode::refused()
         veto_ = VetoContents;
     else if (ahead_)
         veto_ = VetoFailed;
-    else if (!drawFailed(cb_, f, *why_))
-        hit(cb_, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32, *why_);
+    else {
+        nameFailure(cb_, refusalPred(f.id));
+        if (!drawFailed(cb_, f, *why_))
+            hit(cb_, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32, *why_);
+    }
     rc_->abandon();
     abandoned_ = true;
     return false;
@@ -211,7 +217,7 @@ bool RMRangeEncode::borderHeaders(size_t from, size_t to)
             return fail(PredCallSamplerForeign, "no sampler header for an opaque border");
         hit(cb_, PredCallSamplerForeign, 0, 0, "no sampler header left in the device's table for an opaque border");
         failCommandBuffer(cb_, @"no sampler header left in the device's table for an opaque border",
-                          MTLCommandBufferErrorOutOfMemory);
+                          MTLCommandBufferErrorOutOfMemory, PredCallSamplerForeign);
         rc_->abandon();
         abandoned_ = true;
         return false;

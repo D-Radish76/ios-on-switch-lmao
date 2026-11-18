@@ -99,21 +99,24 @@ struct Ran {
     int opens;
     NSUInteger needs;
     uint32_t launched;
+    std::map<std::string, long long> failed;
 };
 
-// What `record` records into a command buffer, committed and waited for: how it ended, what of m2v it asked for and
-// how many compute launches it made
+// What `record` records into a command buffer, committed and waited for: how it ended, what of m2v it asked for, how
+// many compute launches it made and the failed counters it moved
 Ran ranCommands(const std::function<void(id<MTLCommandBuffer>)> &record)
 {
     const int opens = gOpens;
     const size_t jobs = kernel_model::model.jobs.size();
+    NSDictionary *before = counters(gDevice);
     id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
     record(cb);
     [cb commit];
     [cb waitUntilCompleted];
     NSString *path = [(id)cb valueForKey:@"switchRawPath"];
     const NSUInteger needs = [m2vRecord(gDevice)[@"needs"] count];
-    return {cb.status, cb.error.code, path.UTF8String ?: "", gOpens - opens, needs, launches(jobs)};
+    return {cb.status, cb.error.code, path.UTF8String ?: "", gOpens - opens, needs, launches(jobs),
+            failedMoved(before, counters(gDevice))};
 }
 
 // One compute encoder `encode` records
@@ -171,6 +174,7 @@ TEST_F(FacadeKernelRefusal, ADispatchOfARefusedKernelNamesComputeNoKernel)
 {
     for (int dispatch = 0; dispatch < 2; dispatch++) {
         SCOPED_TRACE(dispatch);
+        NSDictionary *before = counters(gDevice);
         id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
         id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
         [e setComputePipelineState:gState];
@@ -181,6 +185,7 @@ TEST_F(FacadeKernelRefusal, ADispatchOfARefusedKernelNamesComputeNoKernel)
         NSString *path = [(id)cb valueForKey:@"switchRawPath"];
         ASSERT_TRUE(path != nil);
         EXPECT_TRUE([path isEqualToString:@"error:compute.nokernel"]) << path.UTF8String;
+        EXPECT_EQ(failedMoved(before, counters(gDevice)), failedOnce("compute.nokernel"));
         EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
         ASSERT_TRUE(cb.error != nil);
         EXPECT_TRUE([cb.error.domain isEqualToString:MTLCommandBufferErrorDomain]);
@@ -199,6 +204,7 @@ TEST_F(FacadeKernelRefusal, AKernelRecordTheEncodeRefusesFailsItsCommandBufferOn
     EXPECT_EQ(r.status, MTLCommandBufferStatusError);
     EXPECT_EQ(r.code, MTLCommandBufferErrorInternal);
     EXPECT_EQ(r.path, "error:compute");
+    EXPECT_EQ(r.failed, failedOnce("compute"));
     EXPECT_EQ(r.opens, 0);
     EXPECT_EQ(r.needs, 0u);
 }
@@ -239,6 +245,7 @@ TEST_F(FacadeKernelRefusal, ACallMetalsValidationStopsFailsItsCommandBufferOnRaw
         EXPECT_EQ(r.status, MTLCommandBufferStatusError);
         EXPECT_EQ(r.code, MTLCommandBufferErrorInvalidResource);
         EXPECT_EQ(r.path, calls[i].second);
+        EXPECT_EQ(r.failed, failedOnce(calls[i].second.substr(std::strlen("error:"))));
         EXPECT_EQ(r.opens, 0);
         EXPECT_EQ(r.needs, 0u);
     }
@@ -382,6 +389,7 @@ TEST_F(FacadeKernelRefusal, AnIndirectCommandOfARefusedKernelFailsAndOneOfNoGrid
     EXPECT_EQ(failed.status, MTLCommandBufferStatusError);
     EXPECT_EQ(failed.code, MTLCommandBufferErrorInternal);
     EXPECT_EQ(failed.path, "error:compute.nokernel");
+    EXPECT_EQ(failed.failed, failedOnce("compute.nokernel"));
     EXPECT_EQ(failed.opens, 0);
     EXPECT_EQ(failed.needs, 0u);
     id<MTLIndirectCommandBuffer> empty = oneDispatch(MTLSizeMake(0, 1, 1), 1);

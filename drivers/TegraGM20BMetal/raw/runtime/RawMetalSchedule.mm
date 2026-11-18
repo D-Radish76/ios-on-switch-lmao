@@ -183,12 +183,9 @@ static void applyChanges(RawState &r)
 // A native variant this queue head waits for, made on the raw compiler's two bounded workers: refused, its command buffer
 // fails. No deadline.
 // Work the raw path cannot run: its command buffer fails, as Metal's does for a pipeline it could not compile, never handed
-// to another device. Logged for the first few a process meets.
+// to another device.
 static NSError *refusedAtReadiness(const char *why)
 {
-    static std::atomic<uint32_t> told{0};
-    if (told.fetch_add(1, std::memory_order_relaxed) < 8)
-        os_log_error(rawLog(), "raw: %{public}s: a command buffer failed: %{public}s", getprogname(), why ?: "");
     return [NSError errorWithDomain:MTLCommandBufferErrorDomain
                                code:MTLCommandBufferErrorInternal
                            userInfo:@{NSLocalizedDescriptionKey : [NSString stringWithFormat:@"%s", why ?: ""]}];

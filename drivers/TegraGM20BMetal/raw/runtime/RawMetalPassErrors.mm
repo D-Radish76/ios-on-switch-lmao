@@ -335,9 +335,7 @@ void rmPassFailed(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, NSStrin
     cb->_encFailed = true;
     rmPipelineVeto(cb, VetoRefused);
     hit(cb, p, a, b);
-    if (!cb->_failedBy)
-        cb->_failedBy = p;
-    failCommandBuffer(cb, why, code);
+    failCommandBuffer(cb, why, code, p);
 }
 
 void rmCallInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule)

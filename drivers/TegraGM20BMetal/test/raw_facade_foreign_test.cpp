@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // A call Metal's validation stops for an object another device made, or nil where Metal takes none, fails its command
-// buffer InvalidResource as it is recorded (RawMetalObjects.h rmCallInvalid), its predicate in its path; a command on an
-// encoder that had ended fails it at its commit (RawMetalPlanExecution.h). Nothing of either reaches m2v
+// buffer InvalidResource as it is recorded (RawMetalObjects.h rmCallInvalid), its predicate in its path and its failed
+// counter; a command on an encoder that had ended fails it at its commit (RawMetalPlanExecution.h), naming no predicate
+// (error:none, failed.none). Nothing of either reaches m2v
 // (raw_facade_harness.h's zero-m2v gate judges each test).
 #include "raw_scale_frames.h"
 
@@ -53,14 +54,16 @@ std::string path(id<MTLCommandBuffer> cb)
     return [[(id)cb performSelector:@selector(switchRawPath)] UTF8String];
 }
 
-// `cb` committed failed InvalidResource for predicate `pred`
+// `cb` committed failed InvalidResource for predicate `pred`, counted once under it
 void expectInvalid(id<MTLCommandBuffer> cb, const char *pred, const char *call)
 {
+    NSDictionary *before = harness::counters(opened().device);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError) << call;
     EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInvalidResource) << call << ": " << cb.error.description.UTF8String;
     EXPECT_EQ(path(cb), std::string("error:") + pred) << call;
+    EXPECT_EQ(harness::failedMoved(before, harness::counters(opened().device)), harness::failedOnce(pred)) << call;
 }
 
 // One pass of the BGRA8 state into a new target, `begun` run on its encoder before its draw
@@ -232,12 +235,15 @@ TEST(RawFacadeForeign, ACopyOnAnEncoderThatEndedFailsItsCommandBuffer)
     id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
     [b endEncoding];
     [b copyFromBuffer:from sourceOffset:0 toBuffer:to destinationOffset:0 size:64];
+    NSDictionary *before = harness::counters(opened().device);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
     EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
     EXPECT_NE([cb.error.localizedDescription rangeOfString:@"encoder that had ended"].location, NSNotFound)
         << cb.error.description.UTF8String;
+    EXPECT_EQ(path(cb), "error:none");
+    EXPECT_EQ(harness::failedMoved(before, harness::counters(opened().device)), harness::failedOnce("none"));
 }
 
 }  // namespace

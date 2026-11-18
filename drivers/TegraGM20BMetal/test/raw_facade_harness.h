@@ -317,6 +317,28 @@ inline NSDictionary *counters(id<MTLDevice> device)
     return ask(device, "switchRawCounters");
 }
 
+// The failed command buffer counters (switchRawCounters failed, failed.<predicate>) that moved from `before` to `after`
+inline std::map<std::string, long long> failedMoved(NSDictionary *before, NSDictionary *after)
+{
+    std::map<std::string, long long> moved;
+    for (NSString *key in after)
+        if ([key isEqualToString:@"failed"] || [key hasPrefix:@"failed."])
+            if (const long long n = [after[key] longLongValue] - [before[key] longLongValue])
+                moved[key.UTF8String] = n;
+    return moved;
+}
+
+// What one command buffer whose failure named `pred` ("none": no predicate) moves
+inline std::map<std::string, long long> failedOnce(const std::string &pred)
+{
+    return {{"failed", 1}, {"failed." + pred, 1}};
+}
+
+inline std::string rawPath(id<MTLCommandBuffer> cb)
+{
+    return ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath")).UTF8String ?: "";
+}
+
 inline uint64_t footprint()
 {
     task_vm_info_data_t vm = {};

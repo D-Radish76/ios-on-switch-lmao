@@ -214,7 +214,6 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                 NSString *reason =
                     [NSString stringWithFormat:@"A kernel loads an RGB10A8_2P_XR10 texture made without ShaderRead: %@",
                                                textureFacts(t)];
-                os_log_error(rawLog(), "raw: %{public}s", reason.UTF8String);
                 failCommandBuffer(cb, reason, MTLCommandBufferErrorInvalidResource);
                 if (why)
                     *why = "a kernel loads an RGB10A8_2P_XR10 texture made without ShaderRead";
@@ -244,7 +243,6 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                     [NSString stringWithFormat:@"Kernel %016llx's record views texture slot %u in "
                                                @"texels of another size (header word 0 %08x): %@",
                                                (unsigned long long)k->rec->keyHash, x.slot, x.window, textureFacts(t)];
-                os_log_error(rawLog(), "raw: %{public}s", reason.UTF8String);
                 failCommandBuffer(cb, reason, MTLCommandBufferErrorInternal);
                 if (why)
                     *why = "a kernel record that views a texture slot in texels of another size";
@@ -301,6 +299,7 @@ int computeReadiness(RMCommandBuffer *cb, const RMSegment &range, const char **w
             return -2;
         if (state == Job::State::Refused) {
             hit(cb, PredComputeKernel, at);
+            nameFailure(cb, PredComputeKernel);
             *why = "a compute kernel the shader compiler refused";
             return -1;
         }

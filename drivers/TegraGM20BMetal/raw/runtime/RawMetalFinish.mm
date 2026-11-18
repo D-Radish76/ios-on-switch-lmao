@@ -169,9 +169,11 @@ static constexpr uint64_t kOsReasonCrashReport = 0x2;     // OS_REASON_FLAG_GENE
 static void withholdPresents(RMCommandBuffer *cb)
 {
     NSError *error = nil;
+    RMPred failedBy = PredNone;
     {
         std::lock_guard<raw::Mutex> l(cb->_lock);
         error = cb->_segError;
+        failedBy = RMPred(cb->_failedBy);
     }
     cb->_presents = false;
     const char *cause = error.localizedDescription.UTF8String ?: "";
@@ -181,6 +183,7 @@ static void withholdPresents(RMCommandBuffer *cb)
                  cause);
     if (gRM->raw->role() != raw::Device::Role::RenderServer)
         return;
+    logFailure(failedBy, error);
     char reason[256];
     snprintf(reason, sizeof reason, "raw: the compositor's frame failed in the driver: %s", cause);
     abort_with_reason(kOsReasonLibsystem, 0, reason, kOsReasonCrashReport);
@@ -314,14 +317,17 @@ static void deliverCompletion(RMCommandBuffer *cb)
         dispatch_async_f(q ?: followingRootQueue(), context, completeHeld);
 }
 
-void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferError code)
+void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferError code, RMPred p)
 {
     NSError *error = [NSError errorWithDomain:MTLCommandBufferErrorDomain
                                          code:code
                                      userInfo:@{NSLocalizedDescriptionKey : reason}];
     std::lock_guard<raw::Mutex> l(cb->_lock);
-    if (!cb->_segError)
+    if (!cb->_segError) {
         cb->_segError = error;
+        if (p)
+            cb->_failedBy = p;
+    }
 }
 
 void finish(RMCommandBuffer *cb, NSError *error)
@@ -347,9 +353,11 @@ void finish(RMCommandBuffer *cb, NSError *error)
 static void finished(RMCommandBuffer *cb)
 {
     NSError *error = nil;
+    RMPred failedBy = PredNone;
     if (cb->_segError.set()) {
         std::lock_guard<raw::Mutex> l(cb->_lock);
         error = cb->_segError;
+        failedBy = RMPred(cb->_failedBy);
     }
     RAW_DIAGNOSTIC(gRM->stats.finished.fetch_add(1, std::memory_order_relaxed));
     cancelPromises(cb);
@@ -370,6 +378,9 @@ static void finished(RMCommandBuffer *cb)
         RAW_DIAGNOSTIC(gRM->stats.scheduledByFinish++);
 #endif
     }
+    // counted before its status is published: whoever sees the error sees the count
+    if (error)
+        commandBufferFailed(failedBy, error);
     {
         cb->_error = error;
         cb->_status = error ? MTLCommandBufferStatusError : MTLCommandBufferStatusCompleted;

@@ -8,7 +8,8 @@
 // mode or buffer or an event Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis, event), and a visibility
 // mode the device has no report page for fails it OutOfMemory. A state of another depth format than its pass's is
 // drawn against the pass's attachment, as Apple's GPU draws it. A command buffer whose later job the kernel refused after
-// earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words.
+// earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words. Each failed command
+// buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_batch.h"
 #include "../raw/runtime/raw_mme.h"
@@ -114,9 +115,10 @@ NSString *path(id<MTLCommandBuffer> cb)
     return ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));
 }
 
-// `cb` committed failed with `code` for predicate `pred`, and m2v never opened or asked
+// `cb` committed failed with `code` for predicate `pred`, counted once under it, and m2v never opened or asked
 void expectError(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code)
 {
+    NSDictionary *before = counters(device);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
@@ -124,6 +126,7 @@ void expectError(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred
     EXPECT_EQ(cb.error.code, code) << text(cb.error);
     EXPECT_EQ(std::string(path(cb).UTF8String ?: ""), std::string("error:") + pred);
     NSDictionary *counts = counters(device);
+    EXPECT_EQ(failedMoved(before, counts), failedOnce(pred)) << text(counts);
     EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
@@ -138,14 +141,17 @@ void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pre
     EXPECT_EQ([counts[failed] intValue], 1) << text(counts);
 }
 
-// `cb` committed completed on the raw path, no error, m2v never opened or asked
+// `cb` committed completed on the raw path, no error, no failure counted, m2v never opened or asked
 void expectCompleted(id<MTLDevice> device, id<MTLCommandBuffer> cb)
 {
+    NSDictionary *before = counters(device);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
     EXPECT_EQ(std::string(path(cb).UTF8String ?: ""), "raw");
     NSDictionary *counts = counters(device);
+    EXPECT_TRUE(failedMoved(before, counts).empty()) << text(counts);
+    EXPECT_NE(counts[@"failed"], nil) << text(counts);
     EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));

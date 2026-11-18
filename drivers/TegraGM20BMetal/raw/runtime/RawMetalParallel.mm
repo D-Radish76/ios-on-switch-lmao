@@ -75,10 +75,10 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s)
             error = s->_segError;
         }
         std::lock_guard<raw::Mutex> l(cb->_lock);
-        if (!cb->_segError.set())
+        if (!cb->_segError.set()) {
             cb->_segError = error;
-        if (!cb->_failedBy)
             cb->_failedBy = s->_failedBy;
+        }
     }
     [cb closeEncoder];
     cb->_encAt = cb->_plan.size();

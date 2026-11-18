@@ -96,10 +96,24 @@ constexpr NSInteger predFailure(RMPred p)
     }
 }
 
+// A failed command buffer's predicate as its counter, its path and its line name it
+constexpr const char *failedName(RMPred p)
+{
+    return p ? kPredNames[p] : "none";
+}
+
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-extern std::atomic<uint64_t> gPredFailed[PredCount];  // command buffers each predicate failed (predFailure)
+// command buffers that completed with an error, by the predicate the failure that set it named (PredNone: none)
+extern std::atomic<uint64_t> gPredFailed[PredCount];
 #endif
 extern std::atomic<uint64_t> gPredLogged;
+
+// A command buffer completed with `error`, failed by `p` (RawMetalFinish.mm finished, its one funnel): counted, and the
+// process's first of `p` logged (logFailure)
+void commandBufferFailed(RMPred p, NSError *error);
+// The process's first failure of `p` (of each description, for PredNone): one error line, kept in release, naming the
+// process, `p`, the error's code and its description (kits/SwitchRefusal, domain raw.failed)
+void logFailure(RMPred p, NSError *error);
 
 static inline bool predLogged(RMPred p)
 {

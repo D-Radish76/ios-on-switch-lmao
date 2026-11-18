@@ -18,20 +18,18 @@
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
 // hw_test_app's attribution: this process's command buffers since the device opened, never reset (the rates line's
-// windows stay its own). Keys: raw, split, aborted, reopens (channels the kernel killed and this process opened again),
+// windows stay its own). Keys: raw, reopens (channels the kernel killed and this process opened again),
 // reopen_us (the last one's time), set_refusals and set_rebuilds (resource set registrations the kernel refused, and
 // those it took once made again without what it refused), gpu_order (1: the kernel has Order), pipelined_encoders and
 // sealed_encoders (encoders the worker encoded ahead of their commit, of all it sealed), pipeline_handoffs and
 // pipeline_handoff_wakes (hand-offs to the worker as encoders ended, and those that found it asleep: a wake each),
-// pipeline_abandons.<reason>, and failed.<predicate> (the command buffers a predicate of predFailure failed; nonzero
-// only).
+// pipeline_abandons.<reason>, failed (the command buffers that completed with an error) and failed.<predicate> (those
+// by the predicate their failure named, failed.none where it named none; nonzero only, their sum `failed`).
 - (NSDictionary<NSString *, NSNumber *> *)switchRawCounters
 {
     const Stats &s = gRM->stats;
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     d[@"raw"] = @(s.raw.load());
-    d[@"split"] = @(s.splits.load());
-    d[@"aborted"] = @(s.aborted.load());
     d[@"reopens"] = @(gRM->raw->stats.reopens.load());
     const raw::ResourceSet::Counts sets = gRM->raw->setCounts();
     d[@"set_refusals"] = @(sets.refusals);
@@ -122,9 +120,13 @@
     for (size_t r = 1; r < raw::kStorageFallbacks; r++)
         if (const uint64_t n = fetch.storageFallback[r].load())
             d[[NSString stringWithFormat:@"fetch_fallback.%s", raw::kStorageFallbackNames[r]]] = @(n);
-    for (int p = 1; p < PredCount; p++)
-        if (const uint64_t n = gPredFailed[p].load(std::memory_order_relaxed))
-            d[[NSString stringWithFormat:@"failed.%s", kPredNames[p]]] = @(n);
+    uint64_t failed = 0;
+    for (int p = 0; p < PredCount; p++)
+        if (const uint64_t n = gPredFailed[p].load(std::memory_order_relaxed)) {
+            failed += n;
+            d[[NSString stringWithFormat:@"failed.%s", failedName(RMPred(p))]] = @(n);
+        }
+    d[@"failed"] = @(failed);
 #if SWITCH_RAW_DIAGNOSTICS
     // states created that the pack lacked: found in this build's record cache or compiled (states_compiled)
     if (gRM->completion) {

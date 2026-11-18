@@ -134,9 +134,11 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
                      [[(id)_pass valueForKey:@"visibilityResultType"] integerValue] != 0;
         if (const char *why = raw::visibilityRefusal(ask)) {
             visibilityError(_cb, mode, offset, why);
-            return failCommandBuffer(_cb, [NSString stringWithFormat:@"setVisibilityResultMode:offset: %s: Metal's "
-                                                                     @"validation error (MTLRenderCommandEncoder.h)",
-                                                                     why]);
+            return failCommandBuffer(_cb,
+                                     [NSString stringWithFormat:@"setVisibilityResultMode:offset: %s: Metal's "
+                                                                @"validation error (MTLRenderCommandEncoder.h)",
+                                                                why],
+                                     MTLCommandBufferErrorInternal, PredCallVisibility);
         }
     }
     Cmd m = cmd(OpVisibility);

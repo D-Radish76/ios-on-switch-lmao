@@ -74,7 +74,8 @@ raw::Variant<raw::Pipeline> *variantOf(__unsafe_unretained RMPipeline *state, co
 }
 
 // A cubic variant the compiler could not compile fails the command buffer that draws it. The next command buffer that
-// draws it meets the same variant and fails without asking again, and the variant's key has one refusal line.
+// draws it meets the same variant and fails without asking again, and the variant's key has one refusal line. Each
+// failure names no predicate (error:none, failed.none), and the process's first of its description is logged.
 void failedVariant()
 {
     RenderCompiler compiler;
@@ -96,6 +97,7 @@ void failedVariant()
     raw::Variant<raw::Pipeline> *first = nullptr;
     for (unsigned round = 0; round < 2; round++) {
         @autoreleasepool {
+            NSDictionary *before = counters(device);
             id<MTLCommandBuffer> commands = [queue commandBuffer];
             id<MTLRenderCommandEncoder> encoder = [commands renderCommandEncoderWithDescriptor:pass];
             [encoder setRenderPipelineState:state];
@@ -106,6 +108,9 @@ void failedVariant()
             [commands commit];
             [commands waitUntilCompleted];
             EXPECT_EQ(commands.status, MTLCommandBufferStatusError) << "round " << round;
+            EXPECT_EQ(commands.error.code, MTLCommandBufferErrorInternal) << "round " << round;
+            EXPECT_EQ(rawPath(commands), "error:none") << "round " << round;
+            EXPECT_EQ(failedMoved(before, counters(device)), failedOnce("none")) << "round " << round;
             const auto asked = compiler.captured();
             ASSERT_EQ(asked.size(), 1u) << "round " << round << ": a variant no compiler made is not asked again";
             raw::Variant<raw::Pipeline> *variant = variantOf(pipeline, asked[0].variant);
@@ -120,6 +125,9 @@ void failedVariant()
     const uint64_t line =
         switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw", "state.variant"), raw::Pack::fnv(key.data(), key.size()));
     EXPECT_FALSE(switch_refusal_first(line)) << "no refusal line for " << key;
+    const uint64_t failure = switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw.failed", "none"),
+                                                     switch_refusal_key("", "A render pipeline could not be compiled"));
+    EXPECT_FALSE(switch_refusal_first(failure)) << "no failure line";
     EXPECT_EQ(gOpens, 0);
 }
 

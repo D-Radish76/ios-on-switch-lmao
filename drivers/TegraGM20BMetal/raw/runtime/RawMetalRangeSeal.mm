@@ -198,9 +198,10 @@ bool RMRangeEncode::seal(size_t to)
         if (rc->nativeError == kIOReturnNotReady)
             rc->invalidateNativeReads();
         if (rc->nativeError && !rc->partial)
-            failCommandBuffer(cb, rc->nativeError == kIOReturnNotReady
-                                      ? @"A surface it reads changed while it was submitted"
-                                      : @"Native ownership or event dependency failed");
+            failCommandBuffer(cb,
+                              rc->nativeError == kIOReturnNotReady ? @"A surface it reads changed while it was submitted"
+                                                                   : @"Native ownership or event dependency failed",
+                              MTLCommandBufferErrorInternal, PredEncKernel);
         char reason[192];
         rc->describeRefusal(reason, sizeof reason);
         // as Metal fails a command buffer its driver could not submit: nothing of it runs elsewhere

@@ -81,19 +81,26 @@ void expectNoM2V(id<MTLDevice> device)
 
 void expectRaw(id<MTLDevice> device, MTLRenderPassDescriptor *p)
 {
+    NSDictionary *before = counters(device);
     id<MTLCommandBuffer> cb = run(device, p);
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
     EXPECT_EQ(path(cb), "raw");
+    NSDictionary *after = counters(device);
+    EXPECT_TRUE(failedMoved(before, after).empty()) << text(after);
+    EXPECT_NE(after[@"failed"], nil) << text(after);
     expectNoM2V(device);
 }
 
-// A pass of `p`, nothing drawn: its command buffer failed Internal on the raw path, `pred` named in its path
+// A pass of `p`, nothing drawn: its command buffer failed Internal on the raw path, `pred` named in its path and counted
+// once under it
 void expectFailed(id<MTLDevice> device, MTLRenderPassDescriptor *p, const char *pred)
 {
+    NSDictionary *before = counters(device);
     id<MTLCommandBuffer> cb = run(device, p);
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
     EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal) << text(cb.error);
     EXPECT_EQ(path(cb), std::string("error:") + pred);
+    EXPECT_EQ(failedMoved(before, counters(device)), failedOnce(pred)) << text(counters(device));
     expectNoM2V(device);
 }
 

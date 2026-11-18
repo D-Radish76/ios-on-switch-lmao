@@ -285,7 +285,6 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t, RMComputeState *stat
                                        (unsigned long)grid.width, (unsigned long)grid.height, (unsigned long)grid.depth,
                                        perThread ? @"threads" : @"threadgroups", (unsigned long)threads.width,
                                        (unsigned long)threads.height, (unsigned long)threads.depth];
-        os_log_error(rawLog(), "raw: %{public}s", reason.UTF8String);
         failCommandBuffer(_cb, reason, MTLCommandBufferErrorInvalidResource);
     }
     const bool refused = invalid || unaddressable;
@@ -350,7 +349,8 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t, RMComputeState *stat
     const bool ready = kernelState == RMKernelSet::State::Ready;
     if (!refused && !ready && !pending) {
         hit(_cb, PredComputeKernel, groups[0]);
-        failCommandBuffer(_cb, @"a compute kernel the shader compiler refused");
+        failCommandBuffer(_cb, @"a compute kernel the shader compiler refused", MTLCommandBufferErrorInternal,
+                          PredComputeKernel);
     }
     Cmd m = cmd(OpDispatch, 3, perThread);
     m.c = uint64_t(t[0]) | uint64_t(t[1]) << 16 | uint64_t(t[2]) << 32;
@@ -504,11 +504,11 @@ void rmComputeFails(RMCommandBuffer *cb, raw::ComputeFailure failure, RMPred pre
     switch (failure) {
     case raw::ComputeFailure::Invalid:
         return failCommandBuffer(cb, [NSString stringWithFormat:@"%s: Metal's validation error", why],
-                                 MTLCommandBufferErrorInvalidResource);
+                                 MTLCommandBufferErrorInvalidResource, pred);
     case raw::ComputeFailure::OutOfMemory:
-        return failCommandBuffer(cb, @(why), MTLCommandBufferErrorOutOfMemory);
+        return failCommandBuffer(cb, @(why), MTLCommandBufferErrorOutOfMemory, pred);
     case raw::ComputeFailure::Internal:
-        return failCommandBuffer(cb, @(why), MTLCommandBufferErrorInternal);
+        return failCommandBuffer(cb, @(why), MTLCommandBufferErrorInternal, pred);
     }
 }
 

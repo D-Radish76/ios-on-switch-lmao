@@ -102,7 +102,7 @@ bool RMRangeEncode::conversions()
     if (!placed) {
         hit(cb, PredEncPlanarClamp, 0, 0, "no sampler header left in the device's table for an address map");
         failCommandBuffer(cb, @"no sampler header left in the device's table for a planar texture's address modes",
-                          MTLCommandBufferErrorOutOfMemory);
+                          MTLCommandBufferErrorOutOfMemory, PredEncPlanarClamp);
         rc_->abandon();
         abandoned_ = true;
         return false;

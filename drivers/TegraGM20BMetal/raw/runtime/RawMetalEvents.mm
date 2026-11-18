@@ -25,7 +25,7 @@ void eventError(RMCommandBuffer *cb, bool signal, const char *why)
         const char *foreign = "an event of another device (MTLEvent.h: the device this event can be used with), not a "
                               "shared event: Metal's validation error";
         eventError(self, signal, foreign);
-        return failCommandBuffer(self, @(foreign));
+        return failCommandBuffer(self, @(foreign), MTLCommandBufferErrorInternal, PredEvent);
     }
     [self retain:event];
     Cmd m = cmd(signal ? OpSignalEvent : OpWaitEvent);

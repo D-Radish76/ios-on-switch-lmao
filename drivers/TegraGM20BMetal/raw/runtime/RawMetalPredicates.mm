@@ -12,6 +12,16 @@ static constexpr std::array<uint64_t, PredCount> predKeys()
 }
 
 static constexpr std::array<uint64_t, PredCount> kPredKeys = predKeys();
+
+static constexpr std::array<uint64_t, PredCount> failedKeys()
+{
+    std::array<uint64_t, PredCount> keys{};
+    for (int p = 0; p < PredCount; p++)
+        keys[p] = switch_refusal_key("raw.failed", failedName(RMPred(p)));
+    return keys;
+}
+
+static constexpr std::array<uint64_t, PredCount> kFailedKeys = failedKeys();
 #if SWITCH_RAW_DIAGNOSTICS
 std::atomic<uint64_t> gPredFailed[PredCount];
 #endif
@@ -35,18 +45,31 @@ void logPred(RMPred p, uint64_t a, uint64_t b, NSString *detail)
 
 void predFails(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *detail)
 {
-    const NSInteger code = predFailure(p);
-    gPredLogged.fetch_or(1ull << p, std::memory_order_relaxed);
-    switch_refusal_k(kPredKeys[p], "raw", kPredNames[p],
-                     "the command buffer fails (MTLCommandBufferErrorDomain %ld) a=%llu (0x%llx) b=%llu (0x%llx)%s%s",
-                     long(code), (unsigned long long)a, (unsigned long long)a, (unsigned long long)b,
-                     (unsigned long long)b, detail ? " " : "", detail ?: "");
-    RAW_DIAGNOSTIC(gPredFailed[p].fetch_add(1, std::memory_order_relaxed));
-    if (!cb->_failedBy)
-        cb->_failedBy = p;
+    if (!predLogged(p))
+        logPred(p, a, b, detail ? @(detail) : nil);
     failCommandBuffer(
         cb, [NSString stringWithFormat:@"The raw path refused %s%s%s", kPredNames[p], detail ? ": " : "", detail ?: ""],
-        MTLCommandBufferError(code));
+        MTLCommandBufferError(predFailure(p)), p);
+}
+
+void commandBufferFailed(RMPred p, NSError *error)
+{
+    RAW_DIAGNOSTIC(gPredFailed[p].fetch_add(1, std::memory_order_relaxed));
+    logFailure(p, error);
+}
+
+void logFailure(RMPred p, NSError *error)
+{
+    const char *description = error.localizedDescription.UTF8String ?: "";
+    // none gathers causes that have nothing else in common: each description is a line of its own
+    const uint64_t key =
+        p ? kFailedKeys[p] : switch_refusal_key_with(kFailedKeys[PredNone], switch_refusal_key("", description));
+    if (!switch_refusal_first(key))
+        return;
+    char text[512];
+    snprintf(text, sizeof text, "a command buffer failed (MTLCommandBufferErrorDomain %ld): %s", long(error.code),
+             description);
+    switch_refusal_log("raw.failed", failedName(p), text);
 }
 
 // The type encoding of a selector some MTL* protocol declares (the plugin's answerUnimplemented uses the same lookup), walked
