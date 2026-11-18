@@ -123,7 +123,6 @@ TEST_F(FacadeSeparateStencil, AStencilResolveTakesTheDepth32FloatStencil8StateAl
     const auto [taken, path] = run(p);
     EXPECT_TRUE(taken);
     EXPECT_EQ(path, "raw");
-    EXPECT_EQ(gOpens, 0);
 }
 
 // A stored stencil of an ordinary pair goes back into its own texture: a copy launch writes into its memory

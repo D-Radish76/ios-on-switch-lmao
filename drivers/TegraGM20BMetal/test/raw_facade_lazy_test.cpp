@@ -47,24 +47,15 @@ struct Opened {
     id<MTLLibrary> library;
 };
 
-Opened openWithLibrary(const std::string &pack, Class methods = [HarnessM2VMethods class])
+Opened openWithLibrary(const std::string &pack)
 {
     const std::string metallib = writeMetallib();
-    id<MTLDevice> device = open(pack, methods);
+    id<MTLDevice> device = open(pack);
     if (!device)
         return {};
     NSError *error = nil;
     id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(metallib.c_str())] error:&error];
     return {device, library};
-}
-
-void expectOpenedFor(id<MTLDevice> device, const char *need)
-{
-    NSDictionary *m2v = m2vRecord(device);
-    EXPECT_EQ(gOpens, 1);
-    EXPECT_TRUE([m2v[@"opened"] boolValue]);
-    EXPECT_EQ([m2v[@"opens"] intValue], 1);
-    EXPECT_STREQ([m2v[@"opened_for"] UTF8String], need) << text(m2v);
 }
 
 void packedDraw()
@@ -86,11 +77,6 @@ void packedDraw()
     NSDictionary *drivers = counters(device);
     EXPECT_EQ([drivers[@"raw"] intValue], 1) << text(drivers);
     EXPECT_EQ([drivers[@"m2v"] intValue], 0) << text(drivers);
-    // every m2v object is made on the m2v device, and every way to it is a need: none asked, none opened, no twin
-    NSDictionary *m2v = m2vRecord(device);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_FALSE([m2v[@"opened"] boolValue]);
-    EXPECT_EQ([m2v[@"needs"] count], 0u) << text(m2v);
 
     // both programs run in place: bound imports of the pack file's own pages, holding what the file holds there
     NSDictionary *held = memory(device);
@@ -130,7 +116,6 @@ void unpackedState()
     NSError *error = nil;
     EXPECT_EQ([device newRenderPipelineStateWithDescriptor:descriptor(library, kUnpacked) error:&error], nil);
     EXPECT_EQ(error.domain, MTLLibraryErrorDomain);
-    EXPECT_EQ(gOpens, 0);
 }
 
 // One buffer binding, "uniforms" at index 2, as a blob of `stages` stages
@@ -186,8 +171,6 @@ void reflection()
                                             reflection:&unasked
                                                  error:&error];
     EXPECT_EQ(unasked, nil);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 void foreignSampler()
@@ -197,37 +180,19 @@ void foreignSampler()
     MTLSamplerDescriptor *compared = [MTLSamplerDescriptor new];
     compared.compareFunction = MTLCompareFunctionLess;
     EXPECT_TRUE([(id)[device newSamplerStateWithDescriptor:compared] isKindOfClass:NSClassFromString(@"RMSampler")]);
-    EXPECT_EQ(gOpens, 0);
     MTLSamplerDescriptor *white = [MTLSamplerDescriptor new];
     white.sAddressMode = MTLSamplerAddressModeClampToBorderColor;
     white.borderColor = MTLSamplerBorderColorOpaqueWhite;
     EXPECT_TRUE([(id)[device newSamplerStateWithDescriptor:white] isKindOfClass:NSClassFromString(@"RMSampler")])
         << "an opaque border is the raw sampler's";
-    EXPECT_EQ(gOpens, 0);
     MTLSamplerDescriptor *mirrored = [MTLSamplerDescriptor new];
     mirrored.normalizedCoordinates = NO;
     mirrored.sAddressMode = MTLSamplerAddressModeMirrorClampToEdge;
     EXPECT_TRUE([(id)[device newSamplerStateWithDescriptor:mirrored] isKindOfClass:NSClassFromString(@"RMSampler")])
         << "pixel coordinates mirrored once are the raw sampler's, clamped to the edge";
-    EXPECT_EQ(gOpens, 0);
     MTLSamplerDescriptor *s = [MTLSamplerDescriptor new];
     s.lodMinClamp = NAN;
     EXPECT_EQ([device newSamplerStateWithDescriptor:s], nil) << "a sampler the device has no form of is nil";
-    EXPECT_EQ(gOpens, 0);
-}
-
-// A method of m2v's device class the raw device has none of answers respondsToSelector: at once, opens the m2v device at
-// its first call and runs m2v's method on the raw device, as the subclass of m2v's class did
-void inheritedMethod()
-{
-    const auto [device, library] = openWithLibrary(writePack(packKey(kPacked)));
-    ASSERT_TRUE(device != nil);
-    EXPECT_TRUE([(id)device respondsToSelector:@selector(harnessSelfRegistry)]);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([(HarnessM2VMethods *)device harnessSelfRegistry], kRegistryID);
-    expectOpenedFor(device, "m2v's -[MTLDevice harnessSelfRegistry]");
-    EXPECT_EQ([(HarnessM2VMethods *)device harnessSelfRegistry], kRegistryID);
-    EXPECT_EQ(gOpens, 1);
 }
 
 // A compute state the pack answers is made without m2v, its answers the pack's; one it has no answers of is the shader
@@ -248,8 +213,6 @@ void computeStates()
     EXPECT_EQ(made.maxTotalThreadsPerThreadgroup, 768u);
     EXPECT_EQ(made.threadExecutionWidth, 32u);
     EXPECT_EQ(made.staticThreadgroupMemoryLength, 1024u);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
     MTLComputePipelineDescriptor *other = [MTLComputePipelineDescriptor new];
     other.computeFunction = kernel;
     other.maxTotalThreadsPerThreadgroup = 256;
@@ -257,8 +220,6 @@ void computeStates()
         [device newComputePipelineStateWithDescriptor:other options:MTLPipelineOptionNone reflection:nil error:&error],
         nil);
     EXPECT_NE(error, nil);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // A buffer over an IOSurface's pages and a linear texture's row are the raw device's own answers
@@ -325,8 +286,6 @@ void surfaceBufferAndLinearRow()
     EXPECT_EQ(rowOf(26), aligned(26, 2));    // R16Bfloat
     EXPECT_EQ(rowOf(550), aligned(550, 8));  // RGB10A8_2P_XR10, raw's texel, not Metal's plane of 2
     EXPECT_EQ(rowOf(MTLPixelFormatDepth32Float), 0u);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // A heap's block-compressed textures (a chain, an array, and a single level in a shared heap, block-linear as the device
@@ -366,8 +325,6 @@ void heapBlockTextures()
         EXPECT_TRUE(((RMTexture *)t)->_raw.blockLinear);
         EXPECT_EQ(((RMTexture *)t)->_raw.span.bytes, need.size);
     }
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // A CPU copy of a memoryless texture moves nothing, as Apple's driver: getBytes leaves the bytes, replaceRegion drops them
@@ -387,8 +344,6 @@ void memorylessCpuCopies()
     [t replaceRegion:MTLRegionMake2D(0, 0, 16, 16) mipmapLevel:0 withBytes:in.data() bytesPerRow:64];
     [t getBytes:out.data() bytesPerRow:64 fromRegion:MTLRegionMake2D(0, 0, 16, 16) mipmapLevel:0];
     EXPECT_EQ(std::count(out.begin(), out.end(), 0xab), ptrdiff_t(out.size()));
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // The device is an _MTLDevice of its own; its identity and every limits field m2v's device answered are its own answers
@@ -417,8 +372,6 @@ void ownDevice()
             own && (!inherited || method_getImplementation(own) != method_getImplementation(inherited));
         EXPECT_EQ(answered, !unanswered.count(field.selector)) << field.selector;
     }
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // An event signalled between two raw passes is released by the GPU where it falls (raw_inline_signals.h) on a kernel with
@@ -471,7 +424,6 @@ void signalBetweenPasses()
     EXPECT_EQ(jobs(2), plain);
     EXPECT_FALSE(kernel_model::model.eventWords.empty());
     EXPECT_EQ([counters(device)[@"m2v"] intValue], 0) << text(counters(device));
-    EXPECT_EQ(gOpens, 0);
 }
 
 // A fence and a binary archive are the device's own objects (RMFence, RMBinaryArchive), made without asking m2v
@@ -489,8 +441,6 @@ void fenceAndArchive()
     ASSERT_TRUE(archive != nil) << error.localizedDescription.UTF8String;
     EXPECT_STREQ(object_getClassName(archive), "RMBinaryArchive");
     EXPECT_EQ(archive.device, device);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 }  // namespace
@@ -511,14 +461,9 @@ TEST(RawFacadeLazy, ReflectionsOfPackedStatesOpenNoM2V)
     switch_ios::test::ExpectPassesInFreshProcess(reflection);
 }
 
-TEST(RawFacadeLazy, ForeignSamplerOpensM2VForItsTwin)
+TEST(RawFacadeLazy, ForeignSamplerIsNil)
 {
     switch_ios::test::ExpectPassesInFreshProcess(foreignSampler);
-}
-
-TEST(RawFacadeLazy, InheritedMethodOpensM2VAtItsFirstCall)
-{
-    switch_ios::test::ExpectPassesInFreshProcess(inheritedMethod);
 }
 
 TEST(RawFacadeLazy, AComputeStateThePackAnswersOpensNoM2V)

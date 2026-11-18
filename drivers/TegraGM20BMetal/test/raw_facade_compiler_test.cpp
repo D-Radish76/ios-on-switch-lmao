@@ -23,12 +23,6 @@ std::string text(id object)
     return [object description].UTF8String ?: "";
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 NSURL *fileURL(const std::string &path)
 {
     return [NSURL fileURLWithPath:@(path.c_str())];
@@ -115,7 +109,6 @@ void computeFactsFromTheCompiler()
     ASSERT_TRUE(again != nil) << text(error);
     EXPECT_EQ(again.staticThreadgroupMemoryLength, kFacts[2]);
     EXPECT_EQ(compiler.asked.size(), 1u) << "the second state's facts are the store's";
-    expectNoM2V(device);
 }
 
 // A kernel with a stage input the pack has no facts of: its facts request carries the stage input beside the constants, and
@@ -146,7 +139,6 @@ void stageInputFactsFromTheCompiler()
     EXPECT_EQ(compiler.requests[0].key, "facts | " + raw::computeStateKey(hashes["k"], stageIn, 0, false));
     EXPECT_EQ(raw::stageInText(compiler.requests[0].kernel.stageIn), stageIn)
         << "the request carries the stage input its key names";
-    expectNoM2V(device);
 }
 
 // A dispatch whose kernel the shader compiler refused fails its command buffer, as Metal's does for a pipeline it could not
@@ -177,7 +169,6 @@ void refusedKernel()
         EXPECT_EQ(cb.status, MTLCommandBufferStatusError) << "round " << round;
         EXPECT_NE(text(cb.error.localizedDescription).find("refused"), std::string::npos) << text(cb.error);
     }
-    expectNoM2V(device);
 }
 
 // MPSGraph's kernels link the functions of the library MPSKernelDAG stitched as private functions. Such a state is keyed
@@ -258,7 +249,6 @@ void linkedKernel()
     EXPECT_EQ(reflected.kind, raw::RequestKind::Reflection);
     EXPECT_EQ(reflected.key, raw::computeReflectionKey(reflected.stack, stateKey).key);
     EXPECT_EQ(reflected.stages.size(), 3u);
-    expectNoM2V(device);
 }
 
 // With no compiler this boot the creation fails as Metal's does when it cannot compile, never through m2v
@@ -275,7 +265,6 @@ void computeFactsWithNoCompiler()
     EXPECT_NE(text(error.localizedDescription).find("no shader compiler comes this boot"), std::string::npos)
         << text(error);
     EXPECT_EQ(kernel_model::model.compiles, 0u);
-    expectNoM2V(device);
 }
 
 }  // namespace

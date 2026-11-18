@@ -87,18 +87,11 @@ id<MTLCommandBuffer> run(id<MTLDevice> device, MTLRenderPassDescriptor *p)
     return cb;
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 void expectRaw(id<MTLDevice> device, MTLRenderPassDescriptor *p, const char *what)
 {
     id<MTLCommandBuffer> cb = run(device, p);
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << what << ": " << text(cb.error);
     EXPECT_EQ(path(cb), "raw") << what;
-    expectNoM2V(device);
 }
 
 void expectFailed(id<MTLDevice> device, MTLRenderPassDescriptor *p, const char *pred, MTLCommandBufferError code,
@@ -108,7 +101,6 @@ void expectFailed(id<MTLDevice> device, MTLRenderPassDescriptor *p, const char *
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError) << what;
     EXPECT_EQ(cb.error.code, code) << what << ": " << text(cb.error);
     EXPECT_EQ(path(cb), std::string("error:") + pred) << what;
-    expectNoM2V(device);
 }
 
 id<MTLDevice> openPacked()

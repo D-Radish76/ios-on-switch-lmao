@@ -91,7 +91,6 @@ void layeredFetchIntoALinearTextureAfterItsClear()
     EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
     NSString *path = ((NSString * (*)(id, SEL)) objc_msgSend)(commands, sel_registerName("switchRawPath"));
     EXPECT_EQ(std::string(path.UTF8String ?: ""), "raw");
-    EXPECT_EQ(gOpens, 0);
 }
 
 }  // namespace

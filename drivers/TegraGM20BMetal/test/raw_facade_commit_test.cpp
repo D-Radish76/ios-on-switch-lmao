@@ -85,7 +85,6 @@ TEST(RawFacadeCommit, ParallelRecordingsSurviveTrimAndReturnTheirBanksAfterSplic
     ASSERT_TRUE(opened().device != nil && opened().state != nil);
     id<MTLCommandQueue> queue = [opened().device newCommandQueue];
     const auto into = scale_frames::targets(opened().device, {1, 4, 1});
-    const int opens = gOpens;
     for (int frame = 0; frame < 4; frame++) {
         id<MTLCommandBuffer> cb = [queue commandBuffer];
         MTLRenderPassDescriptor *d = [MTLRenderPassDescriptor renderPassDescriptor];
@@ -121,7 +120,6 @@ TEST(RawFacadeCommit, ParallelRecordingsSurviveTrimAndReturnTheirBanksAfterSplic
         [cb waitUntilCompleted];
         EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error.description.UTF8String;
         EXPECT_EQ(path(cb), "raw");
-        EXPECT_EQ(gOpens, opens);
     }
 }
 

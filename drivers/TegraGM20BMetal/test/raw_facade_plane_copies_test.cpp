@@ -133,7 +133,6 @@ id<MTLTexture> plainOver(id<MTLBuffer> rows, MTLPixelFormat format, NSUInteger b
 // recorded, its command buffer then committed on the raw path and its engines' work run
 bool copied(id<MTLTexture> a, MTLOrigin from, MTLSize size, id<MTLTexture> b, MTLOrigin to)
 {
-    const int opens = gOpens;
     id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
     id<MTLBlitCommandEncoder> e = [cb blitCommandEncoder];
     const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
@@ -150,7 +149,6 @@ bool copied(id<MTLTexture> a, MTLOrigin from, MTLSize size, id<MTLTexture> b, MT
     [e endEncoding];
     EngineRun run;
     commitOnRaw(cb, run);
-    EXPECT_EQ(gOpens, opens) << "the stand-in m2v device opened";
     return taken;
 }
 

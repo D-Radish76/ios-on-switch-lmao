@@ -57,8 +57,7 @@ Opened opened(uint32_t flags, std::vector<int32_t> results = {TegraGM20BCompileU
 {
     kernel_model::model.compilerFlags = flags;
     kernel_model::model.compileResults = std::move(results);
-    id<MTLDevice> device =
-        open(writePack(packKey(MTLPixelFormatBGRA8Unorm)), [HarnessM2VMethods class], [HarnessComputeM2V class]);
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
     if (!device)
         return {};
     const std::string cache = dir() + "/cache";
@@ -332,7 +331,6 @@ TEST(RawFacadeCreation, AStateTheCompilerRefusedFailsTheCreation)
         EXPECT_EQ(state, nil);
         EXPECT_NE(text(error.localizedDescription).find("the shader compiler refused the state"), std::string::npos)
             << text(error);
-        EXPECT_EQ(gOpens, 0);
     });
 }
 

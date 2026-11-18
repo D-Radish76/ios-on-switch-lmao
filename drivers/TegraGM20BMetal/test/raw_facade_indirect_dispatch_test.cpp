@@ -38,8 +38,7 @@ protected:
         }
         kernels[kGridKernel].regionWord = kGridRegionWord;
         kernels[kGridKernel].qmd[SWITCH_NVB1C0_QMD_WORD(NVB1C0_QMDV01_07_CONSTANT_BUFFER_VALID(0))] |= 1;
-        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts), [HarnessM2VMethods class],
-                       [HarnessComputeM2V class]);
+        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts));
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
         const std::string bytes = kernelLibrary();

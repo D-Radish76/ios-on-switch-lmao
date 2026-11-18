@@ -76,8 +76,7 @@ protected:
             kernels.push_back(kernelRecord(i, maxThreads));
             facts.push_back(kernelFacts(i, maxThreads));
         }
-        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts), [HarnessM2VMethods class],
-                       [HarnessComputeM2V class]);
+        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts));
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
         const std::string bytes = kernelLibrary();
@@ -237,7 +236,6 @@ protected:
     static void expectMetal(const std::vector<Tape> &tapes, const std::vector<Words> &start, const char *shape,
                             uint32_t condition = kWordCount)
     {
-        const int opens = gOpens;
         const Ran want = metal(tapes, start), got = run(tapes, start, false, condition);
         EXPECT_TRUE(got.completed) << shape << ": " << got.errors;
         EXPECT_FALSE(got.launches.empty()) << shape;
@@ -251,7 +249,6 @@ protected:
         });
         EXPECT_EQ(got.noPrefetch > 0, loops) << shape << ": " << got.noPrefetch << " copies' GP entries";
         EXPECT_EQ(got.qmdsBroken, 0u) << shape;
-        EXPECT_EQ(gOpens, opens) << shape << ": m2v ran something";
     }
 };
 

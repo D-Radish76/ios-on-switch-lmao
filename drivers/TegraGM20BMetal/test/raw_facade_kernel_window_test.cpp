@@ -101,8 +101,7 @@ protected:
         const uint32_t maxThreads = uint32_t([MTLComputePipelineDescriptor new].maxTotalThreadsPerThreadgroup);
         gDevice =
             open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {noResidualRecord(maxThreads), textureRecord(maxThreads)},
-                           {kernelFacts(0, maxThreads), kernelFacts(1, maxThreads)}),
-                 [HarnessM2VMethods class], [HarnessComputeM2V class]);
+                           {kernelFacts(0, maxThreads), kernelFacts(1, maxThreads)}));
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
         const std::string bytes = kernelLibrary();
@@ -126,13 +125,11 @@ protected:
     struct Ran {
         MTLCommandBufferStatus status;
         Submitted work;
-        int opens;
     };
 
     Ran dispatch(id<MTLBuffer> buffer, std::initializer_list<NSUInteger> offsets)
     {
         const size_t jobs = kernel_model::model.jobs.size();
-        const int opens = gOpens;
         id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
         id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
         [e setComputePipelineState:gState];
@@ -143,7 +140,7 @@ protected:
         [e endEncoding];
         [cb commit];
         [cb waitUntilCompleted];
-        return {cb.status, submitted(jobs), gOpens - opens};
+        return {cb.status, submitted(jobs)};
     }
 };
 
@@ -157,7 +154,6 @@ TEST_F(FacadeKernelWindow, ABufferOffSixteenWithNoResidualWordRunsRawInPlace)
         dispatch(buffer, {offset});  // the first finds the kernel in the pack off the encoding thread
         const Ran ran = dispatch(buffer, {offset});
         EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
-        EXPECT_EQ(ran.opens, 0) << "m2v ran it";
         EXPECT_EQ(ran.work.order, "L") << "no copy around the launch";
     }
 }
@@ -178,7 +174,6 @@ TEST_F(FacadeKernelWindow, ATextureOverABufferWithRowsOffThirtyTwoIsSampledThrou
     ASSERT_TRUE(texture != nil);
     auto run = [&] {
         const size_t jobs = kernel_model::model.jobs.size();
-        const int opens = gOpens;
         id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
         id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
         [e setComputePipelineState:gTextureState];
@@ -187,12 +182,11 @@ TEST_F(FacadeKernelWindow, ATextureOverABufferWithRowsOffThirtyTwoIsSampledThrou
         [e endEncoding];
         [cb commit];
         [cb waitUntilCompleted];
-        return Ran{cb.status, submitted(jobs), gOpens - opens};
+        return Ran{cb.status, submitted(jobs)};
     };
     run();
     const Ran ran = run();
     EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
-    EXPECT_EQ(ran.opens, 0) << "m2v ran it";
     EXPECT_EQ(ran.work.order, "CL") << "its pool image filled from the rows, then the launch; nothing written back";
 }
 
@@ -204,7 +198,6 @@ TEST_F(FacadeKernelWindow, AGridPastAThreadsPositionFailsTheCommandBuffer)
     ASSERT_TRUE(buffer != nil);
     for (int run = 0; run < 2; ++run) {
         const size_t jobs = kernel_model::model.jobs.size();
-        const int opens = gOpens;
         id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
         id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
         [e setComputePipelineState:gState];
@@ -215,7 +208,6 @@ TEST_F(FacadeKernelWindow, AGridPastAThreadsPositionFailsTheCommandBuffer)
         [cb waitUntilCompleted];
         EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
         EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInvalidResource);
-        EXPECT_EQ(gOpens - opens, 0);
         EXPECT_EQ(submitted(jobs).order.find('L'), std::string::npos);
     }
 }

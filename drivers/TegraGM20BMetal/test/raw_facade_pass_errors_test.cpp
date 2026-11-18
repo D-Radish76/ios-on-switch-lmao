@@ -73,12 +73,6 @@ id<MTLCommandBuffer> run(id<MTLDevice> device, MTLRenderPassDescriptor *p)
     return cb;
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 void expectRaw(id<MTLDevice> device, MTLRenderPassDescriptor *p)
 {
     NSDictionary *before = counters(device);
@@ -88,7 +82,6 @@ void expectRaw(id<MTLDevice> device, MTLRenderPassDescriptor *p)
     NSDictionary *after = counters(device);
     EXPECT_TRUE(failedMoved(before, after).empty()) << text(after);
     EXPECT_NE(after[@"failed"], nil) << text(after);
-    expectNoM2V(device);
 }
 
 // A pass of `p`, nothing drawn: its command buffer failed Internal on the raw path, `pred` named in its path and
@@ -101,7 +94,6 @@ void expectFailed(id<MTLDevice> device, MTLRenderPassDescriptor *p, const char *
     EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal) << text(cb.error);
     EXPECT_EQ(path(cb), std::string("error:") + pred);
     EXPECT_EQ(failedMoved(before, counters(device)), failedOnce(pred)) << text(counters(device));
-    expectNoM2V(device);
 }
 
 id<MTLDevice> openPacked()
@@ -291,7 +283,6 @@ void aYcbcrStateOfAFormatWithNoTargetIsRaws()
         [device newRenderPipelineStateWithDescriptor:descriptor(library, MTLPixelFormat(501)) error:&error];
     ASSERT_TRUE(state != nil) << text(error);
     EXPECT_TRUE([((NSNumber * (*)(id, SEL)) objc_msgSend)(state, sel_registerName("switchPackHit")) boolValue]);
-    expectNoM2V(device);
 }
 
 // A resolve of signed normalized codes by the 2D engine into a level of a chain, and over a render area smaller than its

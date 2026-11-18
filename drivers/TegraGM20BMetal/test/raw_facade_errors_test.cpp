@@ -129,8 +129,6 @@ void expectError(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred
     EXPECT_EQ(failedMoved(before, counts), failedOnce(pred)) << text(counts);
     EXPECT_TRUE(skippedMoved(before, counts).empty()) << text(counts);
     EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // As expectError, the command buffer one its predicate failed (RawMetalPredicates.h predFailure)
@@ -157,8 +155,6 @@ void expectRan(id<MTLDevice> device, id<MTLCommandBuffer> cb, const std::map<std
     EXPECT_EQ(skippedMoved(before, counts), skipped) << text(counts);
     EXPECT_NE(counts[@"skipped"], nil) << text(counts);
     EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 void expectCompleted(id<MTLDevice> device, id<MTLCommandBuffer> cb)

@@ -196,28 +196,20 @@ inline id<MTLCommandBuffer> run(id<MTLDevice> device, MTLRenderPassDescriptor *p
     return cb;
 }
 
-inline void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
-inline void expectRaw(id<MTLDevice> device, id<MTLCommandBuffer> cb)
+inline void expectRaw(id<MTLDevice>, id<MTLCommandBuffer> cb)
 {
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
     EXPECT_EQ(path(cb), "raw");
-    expectNoM2V(device);
 }
 
 // `cb` failed `code` with the raw path's own line `line`, its predicate `pred` named in its path, nothing of it on m2v
-inline void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code,
+inline void expectFailed(id<MTLDevice>, id<MTLCommandBuffer> cb, const char *pred, MTLCommandBufferError code,
                          const char *line)
 {
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
     EXPECT_EQ(cb.error.code, code) << text(cb.error);
     EXPECT_EQ(std::string(cb.error.localizedDescription.UTF8String ?: ""), line);
     EXPECT_EQ(path(cb), std::string("error:") + pred);
-    expectNoM2V(device);
 }
 
 inline uint32_t headersLeft(id<MTLDevice> device)

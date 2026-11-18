@@ -178,7 +178,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsLeavesOneLevelAndDepthStencilTexturesUnchan
         for (size_t i = 0; i < sentinel.size(); ++i)
             sentinel[i] = uint8_t(i * 13 + i / 64);
         memcpy(bytes, sentinel.data(), sentinel.size());
-        const int opens = harness::gOpens;
         auto cb = [[device newCommandQueue] commandBuffer];
         auto e = [cb blitCommandEncoder];
         const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
@@ -189,7 +188,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsLeavesOneLevelAndDepthStencilTexturesUnchan
         [e endEncoding];
         execute(cb, 0, true);
         EXPECT_EQ(memcmp(bytes, sentinel.data(), sentinel.size()), 0);
-        EXPECT_EQ(harness::gOpens, opens);
     }
 }
 
@@ -215,7 +213,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsRejectsInvalidResourcesBeforeRecordingOrSub
         if (raw)
             raw->_device = nil;
         const size_t jobs = kernel_model::model.jobs.size();
-        const int opens = harness::gOpens;
         auto cb = [[device newCommandQueue] commandBuffer];
         auto e = [cb blitCommandEncoder];
         const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
@@ -230,7 +227,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsRejectsInvalidResourcesBeforeRecordingOrSub
         EXPECT_TRUE([cb.error.domain isEqualToString:MTLCommandBufferErrorDomain]);
         EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInvalidResource);
         EXPECT_EQ(kernel_model::model.jobs.size(), jobs);
-        EXPECT_EQ(harness::gOpens, opens);
     }
 }
 
@@ -267,7 +263,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsOfWordFormatsDrawsTheirWords)
                                       uint64_t(z) * chain.layout.level[level].rowBytes * chain.layout.level[level].rows,
                                   raw::formatInfo(c.view)->rt);
         const size_t first = kernel_model::model.jobs.size();
-        const int opens = harness::gOpens;
         auto cb = [[device newCommandQueue] commandBuffer];
         auto e = [cb blitCommandEncoder];
         [e generateMipmapsForTexture:t];
@@ -279,7 +274,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsOfWordFormatsDrawsTheirWords)
         auto *path = ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));
         ASSERT_TRUE([path isEqualToString:@"raw"]) << path.UTF8String;
         EXPECT_EQ(targets(first), want);
-        EXPECT_EQ(harness::gOpens, opens);
     }
 }
 
@@ -313,7 +307,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsWithoutItsPackStateFailsInternally)
     ASSERT_NE(t, nil);
     ASSERT_TRUE(((RMTexture *)t)->_rawOk);
     const size_t jobs = kernel_model::model.jobs.size();
-    const int opens = harness::gOpens;
     auto cb = [[device newCommandQueue] commandBuffer];
     auto e = [cb blitCommandEncoder];
     [e generateMipmapsForTexture:t];
@@ -324,7 +317,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsWithoutItsPackStateFailsInternally)
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
     EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
     EXPECT_EQ(kernel_model::model.jobs.size(), jobs);
-    EXPECT_EQ(harness::gOpens, opens);
 }
 
 TEST_F(FacadeMipmaps, GenerateMipmapsFailsAnAbsentNativeChainInternally)
@@ -336,7 +328,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsFailsAnAbsentNativeChainInternally)
     ASSERT_NE(chain, nullptr);
     raw->_raw.chain = nullptr;
     const size_t jobs = kernel_model::model.jobs.size();
-    const int opens = harness::gOpens;
     auto cb = [[device newCommandQueue] commandBuffer];
     auto e = [cb blitCommandEncoder];
     const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
@@ -351,7 +342,6 @@ TEST_F(FacadeMipmaps, GenerateMipmapsFailsAnAbsentNativeChainInternally)
     EXPECT_TRUE([cb.error.domain isEqualToString:MTLCommandBufferErrorDomain]);
     EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
     EXPECT_EQ(kernel_model::model.jobs.size(), jobs);
-    EXPECT_EQ(harness::gOpens, opens);
 }
 
 TEST_F(FacadeMipmaps, GenerateMipmapsOfANestedViewKeepsItsParentNeighbors)

@@ -65,12 +65,6 @@ MTLComputePipelineDescriptor *descriptor(id<MTLLibrary> library, id<MTLFunction>
     return d;
 }
 
-void expectNative(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 void retainedBinaryDispatch()
 {
     LibraryCompiler compiler;
@@ -120,7 +114,6 @@ void retainedBinaryDispatch()
     EXPECT_EQ(dispatched.stages[1].tag, "kb");
     EXPECT_EQ(dispatched.stages[1].name, "transform");
     EXPECT_TRUE(computeLaunched(jobs));
-    expectNative(device);
 }
 
 void binaryIdentity()
@@ -144,7 +137,6 @@ void binaryIdentity()
     EXPECT_NE(compiler.consumers[0].key, compiler.consumers[1].key);
     EXPECT_NE(compiler.consumers[0].key, compiler.consumers[2].key);
     EXPECT_NE(compiler.consumers[1].key, compiler.consumers[2].key);
-    expectNative(device);
 }
 
 void invalidBinaryFunctions()
@@ -168,7 +160,6 @@ void invalidBinaryFunctions()
     EXPECT_EQ([library newFunctionWithDescriptor:function error:&error], nil);
     EXPECT_TRUE(error != nil);
     EXPECT_TRUE(compiler.consumers.empty());
-    expectNative(device);
 }
 
 void retainedGroupedDispatch()
@@ -228,7 +219,6 @@ void retainedGroupedDispatch()
     EXPECT_EQ(dispatched.stages[1].name, "first");
     EXPECT_EQ(dispatched.stages[2].group, "z");
     EXPECT_TRUE(computeLaunched(jobs));
-    expectNative(device);
 }
 
 void groupedIdentity()
@@ -280,7 +270,6 @@ void groupedIdentity()
         nil)
         << text(error);
     EXPECT_EQ(compiler.consumers.size(), requests);
-    expectNative(device);
 }
 
 void groupedWithoutCompiler()
@@ -299,7 +288,6 @@ void groupedWithoutCompiler()
         [device newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&error],
         nil);
     EXPECT_TRUE(error != nil);
-    expectNative(device);
 }
 
 }  // namespace

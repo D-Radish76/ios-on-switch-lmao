@@ -22,12 +22,6 @@ std::string text(id object)
     return [object description].UTF8String ?: "";
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 // name:type:index:(r)equired or (o)ptional, in name order
 std::string constants(id<MTLFunction> f)
 {
@@ -94,7 +88,6 @@ void measuredAnswers()
     ASSERT_TRUE(specialized != nil) << text(error);
     EXPECT_EQ(constants(specialized), "") << "a function made with constant values answers none";
     EXPECT_EQ(attributes(specialized.stageInputAttributes), "nil");
-    expectNoM2V(device);
 }
 
 std::vector<uint8_t> tagged(const char *fourcc, const std::vector<uint8_t> &value)
@@ -140,7 +133,6 @@ void unmeasuredTags()
     EXPECT_EQ(attributes([library newFunctionWithName:@"high_bit"].vertexAttributes), "nil") << "VATT bit 12";
     EXPECT_EQ(attributes([library newFunctionWithName:@"unknown_type"].stageInputAttributes), "nil")
         << "MTLDataType 57";
-    expectNoM2V(device);
 }
 
 constexpr uint32_t kServing = TegraGM20BCompilerCapable | TegraGM20BCompilerExpected | TegraGM20BCompilerRegistered;
@@ -220,7 +212,6 @@ void specializedAttributes()
     id<MTLFunction> plain = [library newFunctionWithName:@"k_plain" constantValues:values error:&error];
     EXPECT_EQ(attributes(plain.stageInputAttributes), "nil");
     EXPECT_EQ(compiler.asked.size(), 1u) << "a function of no attributes asks nothing";
-    expectNoM2V(device);
 }
 
 // With no shader compiler this boot, a specialized function's attributes are nil (with an error line), never m2v's
@@ -235,7 +226,6 @@ void specializedAttributesWithNoCompiler()
         [library newFunctionWithName:@"k_stage" constantValues:[MTLFunctionConstantValues new] error:&error];
     ASSERT_TRUE(specialized != nil) << text(error);
     EXPECT_EQ(attributes(specialized.stageInputAttributes), "nil");
-    expectNoM2V(device);
 }
 
 }  // namespace

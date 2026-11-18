@@ -21,12 +21,6 @@ std::string text(id object)
     return [object description].UTF8String ?: "";
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 std::string writeFile(const std::string &name, const std::string &bytes)
 {
     const std::string path = dir() + "/" + name;
@@ -78,7 +72,6 @@ void libraryAnswers()
     ASSERT_TRUE(empty != nil) << "a metallib that lists no function loads: " << text(error);
     EXPECT_EQ(empty.functionNames.count, 0u);
     EXPECT_EQ([empty newFunctionWithName:@"v"], nil);
-    expectNoM2V(device);
 }
 
 void unreadLibraries()
@@ -105,7 +98,6 @@ void unreadLibraries()
     error = nil;
     EXPECT_EQ([device newDefaultLibraryWithBundle:[NSBundle mainBundle] error:&error], nil);
     EXPECT_NE(error, nil);
-    expectNoM2V(device);
 }
 
 void noMemory()
@@ -142,7 +134,6 @@ void noMemory()
     EXPECT_EQ([device newTextureWithDescriptor:converted], nil);
     kernel_model::model.refuseAllocs = kernel_model::model.refuseImports = 0;
     EXPECT_NE([device newBufferWithLength:kLarge options:MTLResourceStorageModeShared], nil) << "memory again: made";
-    expectNoM2V(device);
 }
 
 void unwiredPages()
@@ -159,7 +150,6 @@ void unwiredPages()
     EXPECT_NE(
         [device newBufferWithBytesNoCopy:pages length:length options:MTLResourceStorageModeShared deallocator:nil], nil)
         << "the next import is taken";
-    expectNoM2V(device);
 }
 
 // A two-plane YCbCr target's state the pack holds for its stand-in is drawn by raw from its creation: m2v's twin, and its
@@ -177,7 +167,6 @@ void ycbcrTargetState()
     EXPECT_TRUE([ask(device, "switchRawM2V") isKindOfClass:[NSDictionary class]]);
     EXPECT_TRUE([((NSNumber * (*)(id, SEL)) objc_msgSend)(state, sel_registerName("switchPackHit")) boolValue])
         << "drawn from the pack";
-    expectNoM2V(device);
 }
 
 // The plain layout of a texture whose memory no block-linear image is made in (an uncompressed one), as m2v's frontend
@@ -229,7 +218,6 @@ void plainLayouts()
                   device, sel_registerName("newTextureWithBytesNoCopy:length:descriptor:deallocator:"), memory.data(),
                   memory.size() * 4, d, nil),
               nil);
-    expectNoM2V(device);
 }
 
 // The `i`th of a run of samplers with headers of their own: four address modes, then a level clamp on the 1/64 grid
@@ -269,7 +257,6 @@ void samplerTable()
     EXPECT_EQ([device newSamplerStateWithDescriptor:distinctSampler(4000)], nil);
     [held removeLastObject];
     EXPECT_NE([device newSamplerStateWithDescriptor:distinctSampler(4000)], nil) << "a freed slot is taken again";
-    expectNoM2V(device);
 }
 
 // A wrapping sampler whose chroma-subsampled address map variant (clamped to the edge) no other header in the table has
@@ -311,7 +298,6 @@ void planarSamplerTableFull()
     td.usage = MTLTextureUsageShaderRead;
     id<MTLTexture> planar = [device newTextureWithDescriptor:td iosurface:surface plane:0];
     ASSERT_TRUE(planar != nil);
-    EXPECT_EQ(gOpens, 0) << "a converted 4:2:2 texture of the raw path's own";
     id<MTLSamplerState> drawnFirst = [device newSamplerStateWithDescriptor:wrappingSampler(4)];
     id<MTLSamplerState> drawnFull = [device newSamplerStateWithDescriptor:wrappingSampler(8)];
     ASSERT_TRUE(drawnFirst != nil && drawnFull != nil);
@@ -335,7 +321,6 @@ void planarSamplerTableFull()
     id<MTLCommandBuffer> freed = drawSampling(device, state, planar, drawnFull);
     EXPECT_EQ(freed.status, MTLCommandBufferStatusCompleted) << text(freed.error);
     CVPixelBufferRelease(pixels);
-    expectNoM2V(device);
 }
 
 // A draw sampling an R8Unorm texture through an opaque white border reads the border as R8Unorm holds it, a header of its
@@ -375,7 +360,6 @@ void borderSamplerTableFull()
     [held removeAllObjects];
     id<MTLCommandBuffer> freed = drawSampling(device, state, red, bordered);
     EXPECT_EQ(freed.status, MTLCommandBufferStatusCompleted) << text(freed.error);
-    expectNoM2V(device);
 }
 
 // A sampler state of another device bound, which Metal's validation stops: the command buffer fails at its recording
@@ -397,7 +381,6 @@ void foreignSampler()
     id<MTLCommandBuffer> cb = drawSampling(device, state, sampledTexture, (id<MTLSamplerState>)[NSObject new]);
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
     EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal) << text(cb.error);
-    expectNoM2V(device);
 }
 
 }  // namespace

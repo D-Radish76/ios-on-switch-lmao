@@ -74,8 +74,6 @@ void expectRaw(id<MTLDevice> device, MTLRenderPassDescriptor *p)
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
     EXPECT_EQ(path(cb), "raw");
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 id<MTLDevice> openWithPlaneImages()

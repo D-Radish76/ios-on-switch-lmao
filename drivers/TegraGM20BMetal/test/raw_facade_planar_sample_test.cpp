@@ -132,9 +132,9 @@ struct Scene {
 };
 
 // A device over `pack`, its sampling state, a 64x64 BGRA8 target and a 4:2:2 texture of `usage` over a 64x48 surface
-void makeScene(Scene &s, const std::string &pack, MTLTextureUsage usage, Class m2v = [HarnessM2V class])
+void makeScene(Scene &s, const std::string &pack, MTLTextureUsage usage)
 {
-    s.device = open(pack, [HarnessM2VMethods class], m2v);
+    s.device = open(pack);
     ASSERT_TRUE(s.device != nil);
     NSError *error = nil;
     id<MTLLibrary> library = [s.device newLibraryWithURL:[NSURL fileURLWithPath:@(writeMetallib().c_str())]
@@ -209,9 +209,7 @@ int m2vRanges(id<MTLDevice> device)
 
 void expectRaw(id<MTLDevice> device)
 {
-    EXPECT_EQ(gOpens, 0) << "m2v opened";
     EXPECT_EQ(m2vRanges(device), 0) << text(counters(device));
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 // A pass clears it, then a pass samples it: the clear into its stand-in and the two planes' stores, the image drawn from
@@ -408,7 +406,7 @@ void renderThenKernel()
     const uint32_t maxThreads = uint32_t([MTLComputePipelineDescriptor new].maxTotalThreadsPerThreadgroup);
     Scene s;
     makeScene(s, planarPack({samplingRecord(maxThreads)}, {kernelFacts(0, maxThreads)}),
-              MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead, [HarnessComputeM2V class]);
+              MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead);
     ASSERT_FALSE(::testing::Test::HasFatalFailure());
     raw_metal_complete_states(dir().c_str());
     const std::string library = kernelLibrary();

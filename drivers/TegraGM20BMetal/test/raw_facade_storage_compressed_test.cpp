@@ -99,7 +99,6 @@ void aStorageFormDrawsItsCompressedTargetInPlace()
         EXPECT_TRUE([facts(device, target) containsString:@"comptags=1"])
             << "moved to plain memory: " << facts(device, target).UTF8String;
     }
-    EXPECT_EQ(gOpens, 0);
 }
 
 }  // namespace

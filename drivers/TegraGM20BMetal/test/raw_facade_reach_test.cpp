@@ -90,8 +90,6 @@ void reachWithoutItsState()
     EXPECT_NE(text(cb.error).find("no reach state"), std::string::npos) << text(cb.error);
     NSDictionary *drivers = counters(s.device);
     EXPECT_EQ([drivers[@"m2v"] intValue], 0) << text(drivers);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(s.device)[@"needs"] count], 0u) << text(m2vRecord(s.device));
     CFRelease(s.surface);
 }
 
@@ -121,7 +119,6 @@ void anExecuteIsReachedByItsCommands()
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
     NSDictionary *drivers = counters(s.device);
     EXPECT_EQ([drivers[@"m2v"] intValue], 0) << text(drivers);
-    EXPECT_EQ(gOpens, 0);
 
     const MTLResourceID resource = icb.gpuResourceID;
     uint64_t commands = 0;

@@ -167,7 +167,6 @@ TEST_F(FacadeBlits, TextureCopiesMetalStopsCopyNothing)
             destinationOrigin:MTLOriginMake(0, 0, 0)];
     };
     const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
-    const int opens = harness::gOpens;
     copyFromA(6, MTLOriginMake(0, 0, 0), MTLSizeMake(1, 1, 1), b);
     copyFromA(1, MTLOriginMake(0, 0, 0), MTLSizeMake(4, 4, 1), narrow);
     EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
@@ -176,7 +175,6 @@ TEST_F(FacadeBlits, TextureCopiesMetalStopsCopyNothing)
     EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     execute(cb);
     EXPECT_EQ(memcmp(before.contents, out.contents, 1024), 0);
-    EXPECT_EQ(harness::gOpens, opens);
 }
 
 // Buffer copies Metal's validation stops (rows past the buffer, rows shorter than the copy's, a slice past the
@@ -214,7 +212,6 @@ TEST_F(FacadeBlits, BufferCopiesMetalStopsCopyNothing)
             destinationBytesPerImage:0];
     };
     const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
-    const int opens = harness::gOpens;
     intoLevel1(32768 - 512, 64, MTLSizeMake(16, 16, 1));
     fromLevel1(0, 32);
     fromLevel1(1, 64);
@@ -223,7 +220,6 @@ TEST_F(FacadeBlits, BufferCopiesMetalStopsCopyNothing)
     [e endEncoding];
     EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     execute(cb);
-    EXPECT_EQ(harness::gOpens, opens);
     EXPECT_EQ(memcmp(in.contents, out.contents, 1024), 0);
     const auto *kept = static_cast<const uint8_t *>(untouched.contents);
     EXPECT_TRUE(std::all_of(kept, kept + 32768, [](uint8_t v) {

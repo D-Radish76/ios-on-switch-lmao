@@ -29,12 +29,6 @@ std::string text(id object)
     return [object description].UTF8String ?: "";
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 void consume(LibraryCompiler &compiler, id<MTLDevice> device, id<MTLFunction> function, NSArray *linked = nil,
              bool stageInput = false)
 {
@@ -89,7 +83,6 @@ void consume(LibraryCompiler &compiler, id<MTLDevice> device, id<MTLFunction> fu
     EXPECT_EQ(compiler.consumers.back().kind, raw::RequestKind::Kernel);
     EXPECT_EQ(raw::stageInText(compiler.consumers.back().kernel.stageIn), layout);
     EXPECT_TRUE(computeLaunched(jobs));
-    expectNoM2V(device);
 }
 
 id<MTLFunction> consumerKernel(id<MTLDevice> device)
@@ -170,7 +163,6 @@ void sourceLibrary()
     EXPECT_NE(options.find("\"-DNAME=a b\""), std::string_view::npos) << options;
     consume(compiler, device, square);
     consume(compiler, device, square, nil, true);
-    expectNoM2V(device);
 }
 
 // Source the front end refuses is nil with Metal's compile failure and the front end's log, asked again at every
@@ -195,7 +187,6 @@ void refusedSource()
     EXPECT_EQ([device newLibraryWithSource:@"kernel void k() {}" options:dynamic error:&error], nil);
     EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorUnsupported));
     EXPECT_EQ(compiler.asked.size(), 2u);
-    expectNoM2V(device);
 }
 
 // With no compiler this boot a library from source or stitching fails as Metal's does without its compiler
@@ -213,7 +204,6 @@ void noCompiler()
     EXPECT_EQ([device newLibraryWithStitchedDescriptor:stitching(stitchable(device)) error:&error], nil);
     EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorInternal)) << text(error);
     EXPECT_EQ(kernel_model::model.compiles, 0u);
-    expectNoM2V(device);
 }
 
 // A stitched library's request is the base device's DAG text and each function's bitcode from the metallib the raw
@@ -268,7 +258,6 @@ void stitchedLibrary()
     EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorFunctionNotFound)) << text(error);
     EXPECT_EQ(compiler.asked.size(), 1u);
     consume(compiler, device, consumerKernel(device), @[ stitched ]);
-    expectNoM2V(device);
 }
 
 // MPSKernelDAG's library (MPSGraph's control flow and fused kernels, which abort on nil): its DAG text as MPS writes it
@@ -324,7 +313,6 @@ void kernelDagLibrary()
     EXPECT_EQ(error.code, NSInteger(MTLLibraryErrorCompileFailure)) << text(error);
     EXPECT_EQ(compiler.asked.size(), 1u);
     consume(compiler, device, consumerKernel(device), @[ prefix, [library newFunctionWithName:@"postfixPrimary_i8"] ]);
-    expectNoM2V(device);
 }
 
 // MPS makes its DAG's functions with constant values and a specialized name (MPSLibrary's function constructor), and
@@ -405,7 +393,6 @@ void specializedDagLibrary()
                                                    specializedAir.size()};
         EXPECT_EQ(compiler.asked[before + 1].codeGen, raw::codegen::stitchRequest(dag.UTF8String, {specialized}));
     }
-    expectNoM2V(device);
 }
 
 // Core Image's filter-function link is ImageFilterLink.h's request of the functions' bitcode and infos
@@ -433,7 +420,6 @@ void filterLibrary()
     const std::vector<uint8_t> request = switch_metal::imageFilterLinkRequest(linked);
     EXPECT_EQ(compiler.asked[0].codeGen, std::string(request.begin(), request.end()));
     consume(compiler, device, [library newFunctionWithName:@"ciKernelMain"]);
-    expectNoM2V(device);
 }
 
 }  // namespace

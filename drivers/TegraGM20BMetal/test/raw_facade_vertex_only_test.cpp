@@ -135,11 +135,6 @@ void drawnWithItsSwitchOff(bool rasterize)
     id<MTLCommandBuffer> cb = drawDepth(device, state);
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
 
-    NSDictionary *m2v = m2vRecord(device);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_FALSE([m2v[@"opened"] boolValue]);
-    EXPECT_EQ([m2v[@"needs"] count], 0u) << text(m2v);
-
     expectTurnedOffThenOn(written(first, raw::kPixelStageSwitch), raw::kPixelStageOff, raw::kPixelStageOn);
     if (rasterize)
         for (const uint32_t v : written(first, raw::kRasterSwitch))

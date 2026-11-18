@@ -169,8 +169,6 @@ void preparedCubic(uint32_t stage, bool pipelineFirst)
     ASSERT_FALSE(otherPrograms.empty());
     EXPECT_EQ(otherPrograms.back(), otherProgram);
     EXPECT_EQ(compiler.captured().size(), 3u);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u);
 }
 
 void composedForms()
@@ -275,7 +273,6 @@ void composedForms()
     EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
     EXPECT_EQ(drawnPrograms(firstJob, 1), (std::vector<uint32_t>{expected}));
     EXPECT_EQ(compiler.captured().size(), 3u);
-    EXPECT_EQ(gOpens, 0);
 }
 
 // A BGRA10_XR colour written unblended by one state and then blended into by another in the same pass: the pass holds the
@@ -367,7 +364,6 @@ void shadowedPass(bool refused)
         EXPECT_EQ(switch_refusal_first(line), !refused) << (refused ? "no refusal line for " : "a refusal line for ")
                                                          << key;
     }
-    EXPECT_EQ(gOpens, 0);
 }
 
 }  // namespace

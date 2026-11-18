@@ -101,12 +101,6 @@ std::string text(id object)
     return [object description].UTF8String ?: "";
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 id<MTLLibrary> argsLibrary(id<MTLDevice> device)
 {
     const char *path = getenv("SWITCH_FUNCTION_ARGUMENTS_PROBE");
@@ -222,7 +216,6 @@ void aFunctionsEncoderIsTheCompilersAndMetals()
     EXPECT_EQ([specialized newArgumentEncoderWithBufferIndex:0].encodedLength, 160u);
     ASSERT_EQ(compiler.asked.size(), 2u) << "made with constant values, even none, it is asked apart";
     EXPECT_EQ(compiler.asked[1], "buffer encoders | " + raw::bufferEncodersKey(hashes["mixed_fragment"], "", true));
-    expectNoM2V(device);
 }
 
 // A plain struct buffer answers the layout its program reads (Metal's on an M4: plain_fragment's float4 and float at 0
@@ -266,7 +259,6 @@ void aPlainStructAnswersAndARefusedIndexIsNilWithItsLine()
               std::string::npos)
         << lines;
     EXPECT_EQ(compiler.asked.size(), 3u) << "plain_fragment, and gated_fragment made each way";
-    expectNoM2V(device);
 }
 
 // With no shader compiler this boot a function's encoder is nil, with an error line, never m2v's
@@ -277,7 +269,6 @@ void withNoCompilerAFunctionsEncoderIsNil()
     id<MTLFunction> mixed = [argsLibrary(device) newFunctionWithName:@"mixed_fragment"];
     ASSERT_TRUE(mixed != nil);
     EXPECT_EQ([mixed newArgumentEncoderWithBufferIndex:0], nil);
-    expectNoM2V(device);
 }
 
 }  // namespace

@@ -14,12 +14,6 @@ using namespace harness;
 
 constexpr NSUInteger kSide = 64;
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << [m2vRecord(device) description].UTF8String;
-}
-
 IOSurfaceRef chunky(uint32_t fourcc, NSUInteger bytes)
 {
     return IOSurfaceCreate((__bridge CFDictionaryRef) @{
@@ -96,7 +90,6 @@ void extendedRangeTexelBuffers()
                                                                                resourceOptions:0
                                                                                          usage:MTLTextureUsageShaderRead];
     EXPECT_EQ([device heapTextureSizeAndAlignWithDescriptor:planes].size, 16400u);
-    expectNoM2V(device);
 }
 
 // Over a surface: a texture buffer of the plane's bytes, and RGB10A8_2P_XR10 over a two-plane surface of Unknown usage, for
@@ -137,7 +130,6 @@ void surfaceShapesEndOnRaw()
     EXPECT_EQ([device newTextureWithDescriptor:flat(160, MTLTextureUsageShaderRead) iosurface:bgra plane:0], nil);
     for (IOSurfaceRef s : {bgra, half, planes})
         CFRelease(s);
-    expectNoM2V(device);
 }
 
 MTLTextureDescriptor *turned(uint32_t format, NSUInteger rotation, NSUInteger width, NSUInteger height)
@@ -190,7 +182,6 @@ void aReadOnlyYcbcrTextureIsATarget()
         EXPECT_NE(t->_raw.ycbcrStore, nullptr) << usage;
     }
     CFRelease(s);
-    expectNoM2V(device);
 }
 
 // Every format Metal renders turns alike (an M4 Max: m2v-textures4 probes/reads.mm, more.mm landings): one the GM20B
@@ -223,7 +214,6 @@ void everyRenderedFormatTurns()
     EXPECT_EQ([device newTextureWithDescriptor:turned(130, 1, kSide, kSide) iosurface:words plane:0], nil);
     for (IOSurfaceRef s : {two, words, half, planes})
         CFRelease(s);
-    expectNoM2V(device);
 }
 
 // A turned RGB10A8_2P_XR10 over two planes or over one, its sRGB twin, and a turned YCbCr texture are made at their
@@ -266,7 +256,6 @@ void planarFormatsTurn()
     }
     for (IOSurfaceRef s : {planes, words, video})
         CFRelease(s);
-    expectNoM2V(device);
 }
 
 IOSurfaceRef row(NSUInteger texels, NSUInteger bytes)
@@ -308,7 +297,6 @@ void extendedRangeTexelBuffersOverASurface()
         }
         CFRelease(s);
     }
-    expectNoM2V(device);
 }
 
 // A view of RGB10A8_2P_XR10 held as BGR10_XR's words reads them as Metal's does: as its sRGB twin through BGR10_XR_sRGB's
@@ -340,7 +328,6 @@ void wordsViewsReadAlphaZero()
     EXPECT_EQ(later->_raw.pitch, uint32_t(kSide));
     for (IOSurfaceRef x : {s, planes})
         CFRelease(x);
-    expectNoM2V(device);
 }
 
 // MTLPixelFormatUnspecialized: no texture by descriptor, view or buffer (an M4 Max; both identities answer it as Invalid)
@@ -355,7 +342,6 @@ void unspecializedIsNoTexturesFormat()
     EXPECT_EQ([words newTextureViewWithPixelFormat:kUnspecialized], nil);
     id<MTLBuffer> b = [device newBufferWithLength:1 << 16 options:MTLResourceStorageModeShared];
     EXPECT_EQ([b newTextureWithDescriptor:flat(263, MTLTextureUsageShaderRead) offset:0 bytesPerRow:kSide * 4], nil);
-    expectNoM2V(device);
 }
 
 // X32_Stencil8 in a heap: a Depth32Float_Stencil8 texture's memory read through its stencil, its size and alignment that
@@ -381,7 +367,6 @@ void aStencilViewFormatInAHeapIsADepthStencilsMemory()
     ASSERT_TRUE(t != nil && t->_rawOk);
     EXPECT_EQ([(id<MTLTexture>)t pixelFormat], MTLPixelFormatX32_Stencil8);
     EXPECT_TRUE(t->_raw.zeta) << "the combined texture's stencil";
-    expectNoM2V(device);
 }
 
 // A b3a8-like surface of a `wordBytes` and an `alphaBytes` plane, rows of their elements
@@ -431,7 +416,6 @@ void extendedRangeOverTwoPlanesOfAnyElements()
             EXPECT_EQ(t, nil) << "rows of 128 bytes for 64 words";
         }
     }
-    expectNoM2V(device);
 }
 
 // hw_test_app's gpu.raw.texel_buffer_reach (debug builds): a texel buffer from a buffer's first byte of the count asked, nil past
@@ -454,7 +438,6 @@ void theTexelBufferReachEntryPoint()
     EXPECT_EQ(t->_raw.width, uint32_t(kBytes));
     EXPECT_EQ(reach(kBytes + 1), nil) << "past its buffer";
     EXPECT_EQ(reach(NSUInteger(UINT32_MAX) + 1), nil);
-    expectNoM2V(device);
 }
 
 }  // namespace

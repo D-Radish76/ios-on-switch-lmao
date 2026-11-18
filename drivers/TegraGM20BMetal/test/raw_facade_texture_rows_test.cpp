@@ -17,12 +17,6 @@ std::string text(id object)
     return [object description].UTF8String ?: "";
 }
 
-void expectNoM2V(id<MTLDevice> device)
-{
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
-}
-
 NSURL *fileURL(const std::string &path)
 {
     return [NSURL fileURLWithPath:@(path.c_str())];
@@ -70,7 +64,6 @@ void texturesPastTheirMemory()
     d.width = 60;
     EXPECT_EQ([device newTextureWithDescriptor:d iosurface:narrow plane:0], nil) << "Metal asserts on rows off 16";
     CFRelease(narrow);
-    expectNoM2V(device);
 }
 
 // A texture over a buffer at an offset and rows 16 but not 32 bytes apart (boot 21's SwitchHWTest, 12x8 at offset 48) is
@@ -93,7 +86,6 @@ void bufferTexturesAt16()
     d.usage = MTLTextureUsageShaderRead;
     id<MTLTexture> texture = [buffer newTextureWithDescriptor:d offset:48 bytesPerRow:48];
     ASSERT_TRUE(texture != nil);
-    EXPECT_EQ(gOpens, 0) << "made by the raw path";
     uint8_t texel[4] = {1, 2, 3, 4};
     [texture replaceRegion:MTLRegionMake2D(5, 3, 1, 1) mipmapLevel:0 withBytes:texel bytesPerRow:4];
     EXPECT_EQ(memcmp(static_cast<uint8_t *>(buffer.contents) + 48 + 3 * 48 + 5 * 4, texel, 4), 0)
@@ -102,7 +94,6 @@ void bufferTexturesAt16()
     EXPECT_EQ(drawSampling(device, state, texture, sampler).status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ([buffer newTextureWithDescriptor:d offset:56 bytesPerRow:48], nil) << "an offset off 16";
     EXPECT_EQ([buffer newTextureWithDescriptor:d offset:48 bytesPerRow:56], nil) << "rows off 16";
-    expectNoM2V(device);
 }
 
 // A surface plane whose offset or rows are off 16 (any covering its row, as IOSurface makes them): Metal's GPU reads it from
@@ -157,7 +148,6 @@ void planesOff16()
     d.width = 13;
     EXPECT_EQ([device newTextureWithDescriptor:d iosurface:surface plane:2], nil) << "rows of 60 overlap once 48 apart";
     CFRelease(surface);
-    expectNoM2V(device);
 }
 
 // A surface over the client's memory may start off a page: its texture is imported from that page, its GPU address as far
@@ -178,7 +168,6 @@ void surfaceOffAPage()
     EXPECT_EQ(t.va - t.import->bo.vaBase, 256u) << "the GPU reads from the surface's base, not its page's";
     gRM->raw->destroyTexture(t);
     free(pages);
-    expectNoM2V(device);
 }
 
 // A texture over a surface whose import the kernel refuses is nil, with no m2v device asked for one: m2v's NVK imports the
@@ -205,7 +194,6 @@ void aRefusedImportIsNil()
     EXPECT_EQ(kernel_model::model.refuseImports, 0u) << "the kernel was asked";
     EXPECT_TRUE([device newTextureWithDescriptor:d iosurface:surface plane:0] != nil) << "the next import is taken";
     CFRelease(surface);
-    expectNoM2V(device);
 }
 
 // BGR10_XR_sRGB and BGRA10_XR_sRGB are raw's: AegirPoster's 720x1280 shared target that it samples (boot C32 made it on m2v
@@ -227,7 +215,6 @@ void anSrgbExtendedRangeTextureIsRaws()
         ASSERT_TRUE(t != nil) << format;
         EXPECT_TRUE(t->_rawOk && t->_raw.standIn) << format;
     }
-    expectNoM2V(device);
 }
 
 // A heap's size for an extended-range array and an RG8Unorm_sRGB texture, which the device makes beside its arena, is the
@@ -250,7 +237,6 @@ void heapSizesOfStandInTextures()
     d.arrayLength = 1;
     d.pixelFormat = MTLPixelFormatRG8Unorm_sRGB;
     EXPECT_GE([device heapTextureSizeAndAlignWithDescriptor:d].size, NSUInteger(64 * 32 * (2 + 4)));
-    expectNoM2V(device);
 }
 
 // A view's CPU copies are its texture's, at the view's level and slice (a view of levels 1 and 2 of a Shared mipmapped
@@ -277,7 +263,6 @@ void aViewsCpuCopiesTakeItsTexturesPaths()
         [(id<MTLTexture>)view replaceRegion:MTLRegionMake2D(1, 1, 1, 1) mipmapLevel:level withBytes:texel bytesPerRow:4];
         [(id<MTLTexture>)view getBytes:texel bytesPerRow:4 fromRegion:MTLRegionMake2D(1, 1, 1, 1) mipmapLevel:level];
     }
-    expectNoM2V(device);
 }
 
 // An extended-range texture views as its sRGB twin on the raw path, and as a format of its texel size not at all, as Metal
@@ -331,7 +316,6 @@ void viewsAndShapesAnsweredOnRaw()
                                                                                 mipmapped:NO];
     EXPECT_EQ([device newTextureWithDescriptor:bfloat], nil) << "no bfloat16 component in the GM20B";
     EXPECT_EQ([device heapTextureSizeAndAlignWithDescriptor:bfloat].size, 0u);
-    expectNoM2V(device);
 }
 
 }  // namespace

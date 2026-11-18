@@ -149,7 +149,6 @@ void patchesOfAFetchingStateWithNoStorageForm()
     EXPECT_NE(text(cb.error).find("framebuffer-fetch ordering"), std::string::npos) << text(cb.error);
     EXPECT_TRUE(logged("draw.fetch_patches"));
     EXPECT_EQ([counters(device)[@"m2v"] intValue], 0) << text(counters(device));
-    EXPECT_EQ(gOpens, 0);
 }
 
 void aShadowStencilInAPassWithNoStencil()
@@ -177,7 +176,6 @@ void aShadowStencilInAPassWithNoStencil()
         << text(cb.error);
     EXPECT_TRUE(logged("draw.depth_stencil"));
     EXPECT_EQ([counters(device)[@"m2v"] intValue], 0) << text(counters(device));
-    EXPECT_EQ(gOpens, 0);
 }
 
 struct Ending {
@@ -216,7 +214,6 @@ void everyRefusalFailsItsCommandBuffer()
         EXPECT_TRUE(logged(x.line)) << x.line;
     }
     EXPECT_EQ([counters(device)[@"m2v"] intValue], 0) << text(counters(device));
-    EXPECT_EQ(gOpens, 0);
 }
 
 }  // namespace

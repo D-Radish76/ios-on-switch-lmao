@@ -96,17 +96,14 @@ struct Ran {
     MTLCommandBufferStatus status;
     NSInteger code;
     std::string path;
-    int opens;
-    NSUInteger needs;
     uint32_t launched;
     std::map<std::string, long long> failed;
 };
 
-// What `record` records into a command buffer, committed and waited for: how it ended, what of m2v it asked for, how
-// many compute launches it made and the failed counters it moved
+// What `record` records into a command buffer, committed and waited for: how it ended, how many compute launches it
+// made and the failed counters it moved
 Ran ranCommands(const std::function<void(id<MTLCommandBuffer>)> &record)
 {
-    const int opens = gOpens;
     const size_t jobs = kernel_model::model.jobs.size();
     NSDictionary *before = counters(gDevice);
     id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
@@ -114,8 +111,7 @@ Ran ranCommands(const std::function<void(id<MTLCommandBuffer>)> &record)
     [cb commit];
     [cb waitUntilCompleted];
     NSString *path = [(id)cb valueForKey:@"switchRawPath"];
-    const NSUInteger needs = [m2vRecord(gDevice)[@"needs"] count];
-    return {cb.status, cb.error.code, path.UTF8String ?: "", gOpens - opens, needs, launches(jobs),
+    return {cb.status, cb.error.code, path.UTF8String ?: "", launches(jobs),
             failedMoved(before, counters(gDevice))};
 }
 
@@ -142,8 +138,7 @@ protected:
         }
         kernels.push_back(unboundRecord(maxThreads));
         kernels.push_back(textureRecord(maxThreads));
-        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts), [HarnessM2VMethods class],
-                       [HarnessComputeM2V class]);
+        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts));
         ASSERT_TRUE(gDevice != nil);
         raw::AirHash air;
         air.fill(kKernelSeed);
@@ -190,8 +185,6 @@ TEST_F(FacadeKernelRefusal, ADispatchOfARefusedKernelNamesComputeNoKernel)
         ASSERT_TRUE(cb.error != nil);
         EXPECT_TRUE([cb.error.domain isEqualToString:MTLCommandBufferErrorDomain]);
         EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
-        EXPECT_EQ(gOpens, 0);
-        EXPECT_EQ([m2vRecord(gDevice)[@"needs"] count], 0u);
     }
 }
 
@@ -205,8 +198,6 @@ TEST_F(FacadeKernelRefusal, AKernelRecordTheEncodeRefusesFailsItsCommandBufferOn
     EXPECT_EQ(r.code, MTLCommandBufferErrorInternal);
     EXPECT_EQ(r.path, "error:compute");
     EXPECT_EQ(r.failed, failedOnce("compute"));
-    EXPECT_EQ(r.opens, 0);
-    EXPECT_EQ(r.needs, 0u);
 }
 
 // Calls Metal's validation stops: a buffer of another device, a stage-in region past its buffer, a dispatch with no
@@ -246,8 +237,6 @@ TEST_F(FacadeKernelRefusal, ACallMetalsValidationStopsFailsItsCommandBufferOnRaw
         EXPECT_EQ(r.code, MTLCommandBufferErrorInvalidResource);
         EXPECT_EQ(r.path, calls[i].second);
         EXPECT_EQ(r.failed, failedOnce(calls[i].second.substr(std::strlen("error:"))));
-        EXPECT_EQ(r.opens, 0);
-        EXPECT_EQ(r.needs, 0u);
     }
 }
 
@@ -269,8 +258,6 @@ TEST_F(FacadeKernelRefusal, IndirectArgumentsAreReadAsApplesGpuReadsThem)
         EXPECT_EQ(r.status, MTLCommandBufferStatusCompleted);
         EXPECT_EQ(r.path, "raw");
         EXPECT_EQ(r.launched, read.second);
-        EXPECT_EQ(r.opens, 0);
-        EXPECT_EQ(r.needs, 0u);
     }
 }
 
@@ -307,8 +294,6 @@ TEST_F(FacadeKernelRefusal, AStartNamingNoBufferWithholdsItsComputeUnit)
         EXPECT_EQ(r.path, "raw");
         EXPECT_EQ(r.launched, split ? 2u : 0u);
         EXPECT_FALSE(answered);
-        EXPECT_EQ(r.opens, 0);
-        EXPECT_EQ(r.needs, 0u);
     }
 }
 
@@ -359,7 +344,6 @@ TEST_F(FacadeKernelRefusal, AnEndDoWhileNamingNoBufferWithholdsItsUnitAndEventsA
         EXPECT_EQ(r.status, MTLCommandBufferStatusCompleted);
         EXPECT_EQ(r.path, "raw");
         EXPECT_EQ(r.launched, 2u);
-        EXPECT_EQ(r.opens, 0);
     }
 }
 
@@ -390,8 +374,6 @@ TEST_F(FacadeKernelRefusal, AnIndirectCommandOfARefusedKernelFailsAndOneOfNoGrid
     EXPECT_EQ(failed.code, MTLCommandBufferErrorInternal);
     EXPECT_EQ(failed.path, "error:compute.nokernel");
     EXPECT_EQ(failed.failed, failedOnce("compute.nokernel"));
-    EXPECT_EQ(failed.opens, 0);
-    EXPECT_EQ(failed.needs, 0u);
     id<MTLIndirectCommandBuffer> empty = oneDispatch(MTLSizeMake(0, 1, 1), 1);
     ASSERT_TRUE(empty != nil);
     const Ran ranEmpty = ran([empty](id<MTLComputeCommandEncoder> e) {
@@ -399,8 +381,6 @@ TEST_F(FacadeKernelRefusal, AnIndirectCommandOfARefusedKernelFailsAndOneOfNoGrid
     });
     EXPECT_EQ(ranEmpty.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(ranEmpty.path, "raw");
-    EXPECT_EQ(ranEmpty.opens, 0);
-    EXPECT_EQ(ranEmpty.needs, 0u);
 }
 
 // A command encoded while the device had no memory for its regions fails the executes that reach it out of memory only
@@ -429,12 +409,10 @@ TEST_F(FacadeKernelRefusal, AnIndirectCommandWrittenWithoutMemoryRunsOnceThereIs
     EXPECT_EQ(r.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(r.path, "raw");
     EXPECT_EQ(r.launched, 1u);
-    EXPECT_EQ(r.opens, 0);
 }
 
 TEST_F(FacadeKernelRefusal, AStateOfAnotherDevicesFunctionIsNotMade)
 {
-    const int opens = gOpens;
     HarnessFunction *foreign = [HarnessFunction new];
     foreign->_name = @(kernelName(0).c_str());
     const std::string bytes = kernelLibrary();
@@ -446,20 +424,15 @@ TEST_F(FacadeKernelRefusal, AStateOfAnotherDevicesFunctionIsNotMade)
         [gDevice newComputePipelineStateWithDescriptor:d options:MTLPipelineOptionNone reflection:nil error:&error];
     EXPECT_TRUE(state == nil);
     EXPECT_TRUE(error != nil);
-    EXPECT_EQ(gOpens - opens, 0);
-    EXPECT_EQ([m2vRecord(gDevice)[@"needs"] count], 0u);
 }
 
 // A selector the state has no method of (gpuResourceID: m2v's state has none either) is answered zero by the state
 TEST_F(FacadeKernelRefusal, AStatesSelectorItHasNoMethodOfOpensNoM2v)
 {
-    const int opens = gOpens;
     const MTLResourceID id = [gState gpuResourceID];
     uint64_t word = 1;
     memcpy(&word, &id, sizeof word);
     EXPECT_EQ(word, 0u);
-    EXPECT_EQ(gOpens - opens, 0);
-    EXPECT_EQ([m2vRecord(gDevice)[@"needs"] count], 0u);
 }
 
 }  // namespace

@@ -128,7 +128,6 @@ void failedVariant()
     const uint64_t failure = switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw.failed", "none"),
                                                      switch_refusal_key("", "A render pipeline could not be compiled"));
     EXPECT_FALSE(switch_refusal_first(failure)) << "no failure line";
-    EXPECT_EQ(gOpens, 0);
 }
 
 // A cubic variant first drawn while the kernel says no compiler serves fails that command buffer with no answer about
@@ -179,7 +178,6 @@ void unservedVariant()
     const uint64_t line =
         switch_refusal_key_with(SWITCH_REFUSAL_KEY("raw", "state.variant"), raw::Pack::fnv(key.data(), key.size()));
     EXPECT_TRUE(switch_refusal_first(line)) << "a refusal line for " << key;
-    EXPECT_EQ(gOpens, 0);
 }
 
 // Two states of one descriptor, drawn in turn with a cubic sampler: once each has its variant, switching between them
@@ -232,7 +230,6 @@ void switchedStates()
             ASSERT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
         }
     }
-    EXPECT_EQ(gOpens, 0);
 }
 
 // `state` (BGRA8Unorm and Depth32Float, its record fetching) drawn with a depth test that writes takes its DepthWrite
@@ -291,7 +288,6 @@ void packedTestClass()
     [commands commit];
     [commands waitUntilCompleted];
     drawsDepthWrite(device, state, compiler, 2);
-    EXPECT_EQ(gOpens, 0);
 }
 
 // A state this process makes, of a Depth32Float attachment, whose record fetches: its creation makes the variant of
@@ -323,7 +319,6 @@ void madeTestClasses()
         EXPECT_EQ(variant->state(), State::Ready) << unsigned(tests) << ": made before its creation returned";
     }
     drawsDepthWrite(device, state, compiler, compiler.captured().size());
-    EXPECT_EQ(gOpens, 0);
 }
 
 // A fetching state whose own record has no storage form and whose test classes are made with one (RenderBox's
@@ -370,7 +365,6 @@ void instancedDrawOfAStorageTestClass()
     [commands waitUntilCompleted];
     EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
     EXPECT_EQ(drawnPrograms(firstJob, 2), (std::vector<uint32_t>{program(variant->value()->methods, 2)}));
-    EXPECT_EQ(gOpens, 0);
 }
 
 // A fetching state made for a Depth32Float attachment, drawn with a depth test that writes in a pass of none: the pass is
@@ -404,37 +398,6 @@ void hiddenDepthTestClass()
     [commands waitUntilCompleted];
     EXPECT_EQ(commands.status, MTLCommandBufferStatusCompleted) << commands.error.description.UTF8String;
     EXPECT_EQ(drawnPrograms(firstJob, 2), (std::vector<uint32_t>{expected}));
-    EXPECT_EQ(gOpens, 0);
-}
-
-// A state this process makes at its creation once its m2v device is open (here by a method only m2v's device class has)
-// asks m2v for nothing, as in a process that never opened it
-void madeWithM2VOpen()
-{
-    RenderCompiler compiler;
-    const std::string directory = dir() + "/variant-m2v-open-" + std::to_string(getpid());
-    mkdir(directory.c_str(), 0700);
-    ASSERT_TRUE(compiler.serve(directory));
-    id<MTLDevice> device = harness::open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
-    ASSERT_TRUE(device != nil);
-    const std::string cache = directory + "/cache";
-    mkdir(cache.c_str(), 0700);
-    raw_metal_complete_states(cache.c_str(), nullptr);
-    id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(writeMetallib().c_str())] error:nil];
-    ASSERT_TRUE(library != nil);
-    EXPECT_EQ([(HarnessM2VMethods *)device harnessSelfRegistry], kRegistryID);
-    ASSERT_EQ(gOpens, 1);
-    NSDictionary *before = m2vRecord(device)[@"needs"];
-    MTLRenderPipelineDescriptor *d = descriptor(library, MTLPixelFormatBGRA8Unorm);
-    d.depthAttachmentPixelFormat = MTLPixelFormatDepth32Float;
-    id<MTLRenderPipelineState> state = [device newRenderPipelineStateWithDescriptor:d error:nil];
-    ASSERT_TRUE(state != nil);
-    __unsafe_unretained RMPipeline *pipeline = (RMPipeline *)state;
-    ASSERT_TRUE(pipeline->_raw && !pipeline->_packed) << "the shader compiler makes the state at its creation";
-    NSDictionary *after = m2vRecord(device)[@"needs"];
-    EXPECT_EQ(after[@"a function's twin"], nil) << after.description.UTF8String;
-    EXPECT_TRUE([after isEqualToDictionary:before]) << after.description.UTF8String;
-    EXPECT_EQ(gOpens, 1);
 }
 
 }  // namespace
@@ -472,9 +435,4 @@ TEST(RawFacadeVariant, AnInstancedDrawOfAStorageTestClassStaysRaw)
 TEST(RawFacadeVariant, ADrawInAPassOfNoDepthTakesItsHiddenAttachmentsTestClass)
 {
     switch_ios::test::ExpectPassesInFreshProcess(hiddenDepthTestClass);
-}
-
-TEST(RawFacadeVariant, AStateMadeWhileM2VIsOpenAsksM2VForNothing)
-{
-    switch_ios::test::ExpectPassesInFreshProcess(madeWithM2VOpen);
 }

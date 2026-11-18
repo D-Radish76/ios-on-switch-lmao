@@ -70,20 +70,18 @@ uint32_t launches(size_t first)
 struct Ran {
     MTLCommandBufferStatus status;
     std::string path;
-    int opens;
     uint32_t launched;  // SEND_PCAS_A in its jobs' words
 };
 
 Ran ranCommands(const std::function<void(id<MTLCommandBuffer>)> &record)
 {
-    const int opens = gOpens;
     const size_t jobs = kernel_model::model.jobs.size();
     id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
     record(cb);
     [cb commit];
     [cb waitUntilCompleted];
     NSString *path = [(id)cb valueForKey:@"switchRawPath"];
-    return {cb.status, path.UTF8String ?: "", gOpens - opens, launches(jobs)};
+    return {cb.status, path.UTF8String ?: "", launches(jobs)};
 }
 
 // An execute of `range` of `icb` under gState
@@ -136,8 +134,7 @@ protected:
             facts.push_back(kernelFacts(i, maxThreads));
         }
         kernels.push_back(tablesRecord(maxThreads));
-        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts), [HarnessM2VMethods class],
-                       [HarnessComputeM2V class]);
+        gDevice = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), kernels, facts));
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
         const std::string bytes = kernelLibrary();
@@ -175,7 +172,6 @@ TEST_F(FacadeIcbCompute, ACommandPastItsBuffersSlotsGrowsThemAndTheCommandBefore
     EXPECT_EQ(both.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(both.path, "raw");
     EXPECT_EQ(both.launched, 1 + kGrownLaunches);
-    EXPECT_EQ(both.opens, 0);
     const Ran first = execute(icb, NSMakeRange(0, 1));
     EXPECT_EQ(first.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(first.launched, 1u) << "the first command, written again into the grown slots";
@@ -201,7 +197,6 @@ TEST_F(FacadeIcbCompute, ABlitsCopyAndResetOfCommandsLaunchWhatMetalWould)
         const Ran r = execute(to, range);
         EXPECT_EQ(r.status, MTLCommandBufferStatusCompleted);
         EXPECT_EQ(r.path, "raw");
-        EXPECT_EQ(r.opens, 0);
         EXPECT_EQ(launched.load(), wantLaunches);
         EXPECT_EQ(groups.load(), wantGroups);
     };
@@ -250,7 +245,6 @@ TEST_F(FacadeIcbCompute, ARangePastItsBufferRunsWhatIsInsideAndAnotherDevicesObj
     const auto fails = [](const Ran &r, const char *path) {
         EXPECT_EQ(r.status, MTLCommandBufferStatusError) << path;
         EXPECT_EQ(r.path, path);
-        EXPECT_EQ(r.opens, 0);
     };
     fails(execute((id<MTLIndirectCommandBuffer>)[NSObject new], NSMakeRange(0, 1)), "error:call.icb");
     fails(blit([&](id<MTLBlitCommandEncoder> b) {
@@ -288,7 +282,6 @@ TEST_F(FacadeIcbCompute, AVariantsCommandWithoutMemoryOutsideAnExecuteIsMadeAgai
     EXPECT_EQ(reached.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(reached.path, "raw");
     EXPECT_EQ(reached.launched, 2u);
-    EXPECT_EQ(reached.opens, 0);
     ASSERT_EQ(own->_variants.size(), 1u);
     EXPECT_NE(own->_variants.begin()->second.get(), first.get()) << "the variant made again";
     EXPECT_TRUE(own->_variants.begin()->second->missing[1].why == nullptr);

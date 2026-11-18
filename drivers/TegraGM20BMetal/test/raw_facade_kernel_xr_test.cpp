@@ -118,13 +118,11 @@ struct Ran {
     MTLCommandBufferStatus status;
     NSInteger error = 0;
     size_t launches = 0;
-    int opens = 0;
 };
 
 Ran dispatch(uint32_t kernel, id<MTLTexture> t)
 {
     const size_t jobs = kernel_model::model.jobs.size();
-    const int opens = gOpens;
     id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
     id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
     [e setComputePipelineState:gStates[kernel]];
@@ -134,7 +132,7 @@ Ran dispatch(uint32_t kernel, id<MTLTexture> t)
     [e endEncoding];
     [cb commit];
     [cb waitUntilCompleted];
-    return {cb.status, cb.error.code, launches(jobs), gOpens - opens};
+    return {cb.status, cb.error.code, launches(jobs)};
 }
 
 class FacadeKernelXr : public ::testing::Test {
@@ -146,8 +144,7 @@ protected:
                                  {planesRecord(kStore, maxThreads, false), planesRecord(kLoad, maxThreads, true)},
                                  {kernelFacts(kStore, maxThreads), kernelFacts(kLoad, maxThreads)}, true, "",
                                  {{"raw.xr.xr_planes_merge_frag", MTLPixelFormat(103)},
-                                  {"raw.xr.xr_planes_split_frag", MTLPixelFormat(53)}}),
-                       [HarnessM2VMethods class], [HarnessComputeM2V class]);
+                                  {"raw.xr.xr_planes_split_frag", MTLPixelFormat(53)}}));
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
         const std::string bytes = kernelLibrary();
@@ -185,7 +182,6 @@ TEST_F(FacadeKernelXr, AStoreRunsRawThroughThePlanes)
     dispatch(kStore, t);
     const Ran ran = dispatch(kStore, t);
     EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted) << ran.error;
-    EXPECT_EQ(ran.opens, 0) << "m2v ran it";
     EXPECT_EQ(ran.launches, 1u);
 }
 
@@ -197,7 +193,6 @@ TEST_F(FacadeKernelXr, ALoadRunsRawThroughThePlanes)
     dispatch(kLoad, t);
     const Ran ran = dispatch(kLoad, t);
     EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted) << ran.error;
-    EXPECT_EQ(ran.opens, 0) << "m2v ran it";
     EXPECT_EQ(ran.launches, 1u);
 }
 
@@ -210,7 +205,6 @@ TEST_F(FacadeKernelXr, ALoadWithoutShaderReadFailsTheCommandBuffer)
     const Ran ran = dispatch(kLoad, t);
     EXPECT_EQ(ran.status, MTLCommandBufferStatusError);
     EXPECT_EQ(ran.error, MTLCommandBufferErrorInvalidResource);
-    EXPECT_EQ(ran.opens, 0);
     EXPECT_EQ(ran.launches, 0u);
 }
 

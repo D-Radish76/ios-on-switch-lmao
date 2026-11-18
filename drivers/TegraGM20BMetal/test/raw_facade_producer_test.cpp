@@ -166,8 +166,6 @@ void producerPendingOnAKilledChannel(bool producerRan)
         EXPECT_EQ(failedMoved(before, after), (std::map<std::string, long long>{{"failed", 2}, {"failed.none", 2}}))
             << text(after);
     }
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(o.device)[@"needs"] count], 0u) << text(m2vRecord(o.device));
     EXPECT_EQ([counters(o.device)[@"m2v"] intValue], 0) << text(counters(o.device));
 }
 

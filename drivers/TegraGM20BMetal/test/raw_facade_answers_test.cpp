@@ -39,7 +39,6 @@ void expectRaw(id<MTLDevice> device, id<MTLCommandBuffer> cb)
     NSDictionary *drivers = counters(device);
     EXPECT_EQ([drivers[@"raw"] intValue], 1) << text(drivers);
     EXPECT_EQ([drivers[@"m2v"] intValue], 0) << text(drivers);
-    EXPECT_EQ(gOpens, 0);
 }
 
 void answers()

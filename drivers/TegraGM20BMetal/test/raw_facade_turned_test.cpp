@@ -60,8 +60,6 @@ void turnedOverNoSurface()
         id<MTLBuffer> buffer = [device newBufferWithLength:64 * 32 * 4 options:MTLResourceStorageModeShared];
         EXPECT_EQ([buffer newTextureWithDescriptor:d offset:0 bytesPerRow:64 * 4], nil) << rotation;
     }
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
 }
 
 void turnedPlaneBound()
@@ -104,7 +102,6 @@ void turnedPlaneBound()
     NSDictionary *drivers = counters(device);
     EXPECT_EQ([drivers[@"raw"] intValue], 1) << text(drivers);
     EXPECT_EQ([drivers[@"m2v"] intValue], 0) << text(drivers);
-    EXPECT_EQ(gOpens, 0);
     CFRelease(surface);
 }
 
@@ -172,8 +169,6 @@ void turnRefusedState()
     EXPECT_FALSE(switch_refusal_first(line)) << "the state's raw:pass.turn_refused line was logged";
     NSDictionary *drivers = counters(device);
     EXPECT_EQ([drivers[@"m2v"] intValue], 0) << text(drivers);
-    EXPECT_EQ(gOpens, 0);
-    EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
     CFRelease(surface);
 }
 

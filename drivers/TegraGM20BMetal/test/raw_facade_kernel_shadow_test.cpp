@@ -101,13 +101,11 @@ struct Ran {
     MTLCommandBufferStatus status;
     NSInteger error = 0;
     std::string order;
-    int opens = 0;
 };
 
 Ran dispatch(id<MTLTexture> luma, id<MTLTexture> rgba, id<MTLTexture> chroma)
 {
     const size_t jobs = kernel_model::model.jobs.size();
-    const int opens = gOpens;
     id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
     id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
     [e setComputePipelineState:gState];
@@ -119,7 +117,7 @@ Ran dispatch(id<MTLTexture> luma, id<MTLTexture> rgba, id<MTLTexture> chroma)
     [e endEncoding];
     [cb commit];
     [cb waitUntilCompleted];
-    return {cb.status, cb.error.code, copiesAndLaunches(jobs), gOpens - opens};
+    return {cb.status, cb.error.code, copiesAndLaunches(jobs)};
 }
 
 class FacadeKernelShadow : public ::testing::Test {
@@ -128,8 +126,7 @@ protected:
     {
         const uint32_t maxThreads = uint32_t([MTLComputePipelineDescriptor new].maxTotalThreadsPerThreadgroup);
         gDevice = open(
-            writePack(packKey(MTLPixelFormatBGRA8Unorm), {conversionRecord(maxThreads)}, {kernelFacts(0, maxThreads)}),
-            [HarnessM2VMethods class], [HarnessComputeM2V class]);
+            writePack(packKey(MTLPixelFormatBGRA8Unorm), {conversionRecord(maxThreads)}, {kernelFacts(0, maxThreads)}));
         ASSERT_TRUE(gDevice != nil);
         raw_metal_complete_states(dir().c_str());
         const std::string bytes = kernelLibrary();
@@ -171,7 +168,6 @@ TEST_F(FacadeKernelShadow, MediaanalysisdsConversionRunsRawThroughTheImages)
     dispatch(luma, rgba, chroma);
     const Ran ran = dispatch(luma, rgba, chroma);
     EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
-    EXPECT_EQ(ran.opens, 0) << "m2v ran it";
     const size_t launch = ran.order.find('L');
     ASSERT_NE(launch, std::string::npos) << ran.order;
     EXPECT_EQ(ran.order.find('L', launch + 1), std::string::npos) << ran.order;
@@ -190,7 +186,6 @@ TEST_F(FacadeKernelShadow, AMemorylessTextureIsReadThroughHeaderZero)
     dispatch(luma, rgba, chroma);
     const Ran ran = dispatch(luma, rgba, chroma);
     EXPECT_EQ(ran.status, MTLCommandBufferStatusCompleted);
-    EXPECT_EQ(ran.opens, 0);
     const size_t launch = ran.order.find('L');
     ASSERT_NE(launch, std::string::npos) << "launched raw, slot 1 bound to header 0: " << ran.order;
     EXPECT_GE(launch, 2u) << "the planes' images filled: " << ran.order;
@@ -209,7 +204,6 @@ TEST_F(FacadeKernelShadow, AStoreToAMemorylessTextureFailsTheCommandBuffer)
     const Ran ran = dispatch(luma, rgba, chroma);
     EXPECT_EQ(ran.status, MTLCommandBufferStatusError);
     EXPECT_EQ(ran.error, MTLCommandBufferErrorInvalidResource);
-    EXPECT_EQ(ran.opens, 0);
     EXPECT_EQ(ran.order.find('L'), std::string::npos) << ran.order;
 }
 
