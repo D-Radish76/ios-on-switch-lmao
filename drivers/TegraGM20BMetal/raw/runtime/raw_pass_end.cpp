@@ -210,10 +210,11 @@ void RenderEncoder::end()
                           kZetaClearWords + 16 + kSampleWords + kTurnWordsMethods + uint32_t(restore.size()) +
                           kSpanMarkWords + startStampCount_ * counters::kTimestampWords + kDrawStampWords +
                           (separate_.stencil ? 64 + 128 * layers : 0) + (zetaShadowOf_ ? zetaShadowWords(layers) : 0) +
-                          (rasterSamples_ > samples_ ? kSampleWords + kTirWords + 16 : 0);
+                          (rasterSamples_ > samples_ ? kSampleWords + kTirWords + 16 : 0) + kTimedPassWords;
     uint64_t va;
     uint32_t *start = reinterpret_cast<uint32_t *>(d.alloc(d.push_, room * 4, 256, va));
     Push p{start, start + room};
+    RAW_DIAGNOSTIC(if (cb_->drawTimes_) d.emitDrawTime(p, betweenTime_));
     p.raw(restore.data(), uint32_t(restore.size()));
     const BarrierEngine before = cb_->lastEngine_;
     const BarrierForms forms = cb_->barrierForms();
@@ -352,6 +353,7 @@ void RenderEncoder::end()
     if (measured)
         emitDrawStamp(p, d.stamps_.va, candidate_.slot, false, candidate_.payload);
     RAW_DIAGNOSTIC(markSpan(p, prologueMark_, SpanKind::Prologue));
+    RAW_DIAGNOSTIC(if (cb_->drawTimes_) d.emitDrawTime(p, prologueTime_));
     checkRoom(p, "a pass prologue");
     cb_->segment(start, p.at);
     d.push_.head = uint64_t(reinterpret_cast<uint8_t *>(p.at) - d.push_.bo.cpu);

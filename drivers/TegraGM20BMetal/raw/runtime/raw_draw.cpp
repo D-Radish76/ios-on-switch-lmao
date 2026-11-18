@@ -54,6 +54,7 @@ void RenderEncoder::finishDraw(uint32_t vertices, uint32_t instances, bool indir
         markSpan(p_, dev_->spans_.reserve(), SpanKind::Draws);
     }
 #endif
+    RAW_DIAGNOSTIC(if (cb_->drawTimes_) timeDraw(vertices, instances, indirect));
     const uint64_t vertexWork = BatchWork::product(BatchWork::product(vertices, instances), pl.vertexInstructions);
     const uint64_t fragmentWork = BatchWork::product(BatchWork::product(drawPixels_, instances),
                                                      uint64_t(pl.fragmentInstructions) * pl.samplePasses);

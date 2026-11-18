@@ -284,6 +284,7 @@ PLUGIN_CC_SRCS = [
     GM20B_METAL + ":raw/runtime/raw_draw.cpp",
     GM20B_METAL + ":raw/runtime/raw_draw_prepare.cpp",
     GM20B_METAL + ":raw/runtime/raw_draw_probes.cpp",
+    GM20B_METAL + ":raw/runtime/raw_draw_times.cpp",
     GM20B_METAL + ":raw/runtime/raw_draw_inputs.cpp",
     GM20B_METAL + ":raw/runtime/raw_draw_shader_tests.cpp",
     GM20B_METAL + ":raw/runtime/raw_memory.cpp",

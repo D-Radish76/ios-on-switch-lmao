@@ -80,6 +80,7 @@ void RenderEncoder::emitDraw(bool indexed, uint32_t first, uint32_t count, uint3
             cutBatch();
         });
     cb_->bands += bands;
+    RAW_DIAGNOSTIC(if (cb_->drawTimes_) timeDraw(count, instances, false));
     RAW_DIAGNOSTIC(dev_->stats.bandedDraws++; dev_->stats.bands += bands);
 }
 
@@ -97,6 +98,7 @@ void Device::noteCommittedTimings(std::vector<DrawTiming> &timings)
 // draw whose two stamps the GPU wrote teaches its state, one whose slot a later draw took is dropped, the rest wait
 void Device::learnCompleted()
 {
+    RAW_DIAGNOSTIC(reportDrawTimes());
     if (!committedTimingCount_.load(std::memory_order_acquire))
         return;
     std::lock_guard<std::mutex> l(timingsLock_);

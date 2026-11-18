@@ -309,6 +309,7 @@ ios_binary(
         "raw/runtime/raw_draw.cpp",
         "raw/runtime/raw_draw_prepare.cpp",
         "raw/runtime/raw_draw_probes.cpp",
+        "raw/runtime/raw_draw_times.cpp",
         "raw/runtime/raw_draw_inputs.cpp",
         "raw/runtime/raw_draw_shader_tests.cpp",
         "raw/runtime/raw_memory.cpp",

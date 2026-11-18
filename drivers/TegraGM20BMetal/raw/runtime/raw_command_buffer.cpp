@@ -452,6 +452,7 @@ CommandBuffer *Device::begin()
         p.m(INVALIDATE_TEXTURE_DATA_CACHE_NO_WFI, 0);
         p.m(INVALIDATE_SHADER_CACHES_NO_WFI, kInvalidateData);
     }
+    RAW_DIAGNOSTIC(beginDrawTimes(cb, p));
     checkRoom(p, "a submission prologue");
     cb.segment(start, p.at);
     cb.prologueDwords_ = uint32_t(p.at - start);
@@ -948,6 +949,7 @@ bool CommandBuffer::commit(uint32_t &seqno)
     d.commitCount_.fetch_add(1, std::memory_order_relaxed);
     d.closedCount_.fetch_add(1, std::memory_order_release);
     d.noteCommittedTimings(timings);
+    RAW_DIAGNOSTIC(if (drawTimes_) d.committedDrawTimes(*this, seq));
     releaseNativeReads();
     RAW_DIAGNOSTIC(d.stats.commits++);
     notSubmittedLine.submitted = true;

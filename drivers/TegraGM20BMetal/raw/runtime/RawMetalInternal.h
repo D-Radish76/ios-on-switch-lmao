@@ -678,4 +678,6 @@ void watchKeylineProbe();
 void watchGlassProbe(raw::Device *dev);
 void glassProbeCommitted(RMCommandBuffer *cb);
 void splitCaptureCommitted(raw::CommandBuffer &rc);
+// RawMetalDrawTimes.mm
+void watchFrameWeights(raw::Device *dev);
 #endif

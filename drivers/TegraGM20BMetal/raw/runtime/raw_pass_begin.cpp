@@ -52,6 +52,7 @@ RenderEncoder *CommandBuffer::render(const PassDesc &pass, const char **why)
     e.dev_ = dev_;
     e.pass_ = pass;
     RAW_DIAGNOSTIC(e.prologueMark_ = dev_->spans_.reserve());
+    RAW_DIAGNOSTIC(if (drawTimes_) e.timePassBegin());
     // the render hardware takes one memory layout for all of a pass's color targets (nvk_rendering_linear): block-linear when
     // one of them is, or is a pitch target the hardware cannot take (rendered through a shadow either way), or beside a zeta,
     // its pitch ones then rendered through block-linear shadows as NVK does, or when every one is memoryless; memoryless ones

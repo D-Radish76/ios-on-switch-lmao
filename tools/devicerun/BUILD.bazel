@@ -109,3 +109,27 @@ py_test(
     srcs = ["joycon_test.py"],
     deps = [":lib"],
 )
+
+# bazel run //tools/devicerun:frame_weights -- <absolute .logarchive> --pack <pack.bin>: the frame-weights capture's table
+# (drivers/TegraGM20BMetal/raw/runtime/raw_draw_times.h, tools/devicerun/README.md)
+py_library(
+    name = "frame_weights_lib",
+    srcs = ["frame_weights.py"],
+    deps = [
+        ":lib",
+        "//tools/gpu/maxwell:nakstat",
+    ],
+)
+
+py_binary(
+    name = "frame_weights",
+    srcs = ["frame_weights.py"],
+    deps = [":frame_weights_lib"],
+)
+
+py_test(
+    name = "frame_weights_test",
+    size = "small",
+    srcs = ["frame_weights_test.py"],
+    deps = [":frame_weights_lib"],
+)

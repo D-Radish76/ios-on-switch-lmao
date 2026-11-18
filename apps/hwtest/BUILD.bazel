@@ -635,6 +635,7 @@ cc_library(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_draw.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_draw_prepare.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_draw_probes.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_draw_times.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_draw_inputs.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_draw_shader_tests.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_memory.cpp",

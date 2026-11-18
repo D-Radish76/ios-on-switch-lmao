@@ -428,6 +428,7 @@ id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, u
     watchFetchBarrierWay(dev);
     watchKeylineProbe();
     watchGlassProbe(dev);
+    watchFrameWeights(dev);
 #endif
     // what both threads hold up is the frame: they follow its committing threads (raw_follow.h)
     std::thread([] {

@@ -115,6 +115,7 @@
 #include "raw_draw_bands.h"
 #include "raw_band_rates.h"
 #include "raw_span_marks.h"
+#include "raw_draw_capture.h"
 #include "raw_view_cache.h"
 #include "raw_viewports.h"
 #include "../fx/fx_mip.h"
@@ -1484,6 +1485,12 @@ private:
 #if SWITCH_RAW_DIAGNOSTICS
     uint32_t prologueMark_ = SpanMarks::kNone;  // raw_span_marks.h: its prologue's mark, taken ahead of its draws'
     void markSpan(Push &p, uint32_t index, SpanKind kind);
+    // raw_draw_times.h: its prologue's two marks, taken ahead of its draws', and its pass in the capture
+    uint32_t betweenTime_ = kNoMark, prologueTime_ = kNoMark;
+    uint16_t timedPass_ = kNoPass;
+    void timePassBegin();
+    void timeDraw(uint32_t vertices, uint32_t instances, bool indirect);
+    TimedState timedState(const Pipeline &drawn) const;
 #endif
     double vp_[4] = {};
     uint32_t sc_[4] = {};
@@ -1971,6 +1978,7 @@ private:
     const Texture *glassMemSources_[kGlassMemItems] = {};  // and the texture a draw bound (alive until completion)
     int glassMemSlot_ = -1;                                // its ring slot once its reads are encoded
     void glassMemTail();
+    TimedBuffer *drawTimes_ = nullptr;  // its slot in a frame-weights capture (raw_draw_capture.h); null: none
 #endif
     std::map<const Texture *, const Texture *> nativeReads_;
     std::vector<NativeSurface *> nativeSurfaces_;
@@ -2638,6 +2646,18 @@ public:
     // The render server's completed command buffer's spans of kLongSpanNs or more (raw_span_marks.h), which the facade logs
     // and notes to the kernel for HW Test ui.launch_hitch
     std::vector<StateSpan> longSpans(uint32_t stamp);
+    // The frame-weights capture (raw_draw_capture.h): asked for from any thread, its command buffers taken at begin() and
+    // handed over at commit, read back by every completer (learnCompleted)
+    DrawTimes drawTimes_;
+    Bo drawTimeMarks_;
+    bool countingInvocations_ = false;  // a capture's counter still runs: the next begin() stops it
+    void askDrawTimes(uint32_t buffers);
+    bool openDrawTimes();
+    void beginDrawTimes(CommandBuffer &cb, Push &p);
+    void emitDrawTime(Push &p, uint32_t index);
+    void committedDrawTimes(CommandBuffer &cb, uint32_t seqno);
+    void reportDrawTimes();
+    DrawTimesTaken drawTimesTaken();
 
     int kernelDebugCall(uint32_t method, const void *in, size_t inSize, void *out, size_t outSize)
     {

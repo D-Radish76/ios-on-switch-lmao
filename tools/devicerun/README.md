@@ -20,3 +20,19 @@ their counts are the baseline for the next fix. NO-DATA means the line never app
 feature wasn't exercised (no USB 3 device plugged in, for example), or a release kernel compiled the debug line out.
 Use `--start` and `--end` to scope the launchd rates to the idle minutes. `--boot-label` (A, B tiled cache, K kprof)
 prints that boot's manual steps first and drops the checks that only apply to another boot.
+
+## Frame weights
+
+`frame_weights` lists the compiled states a captured frame spent its GPU time in, most first, beside their static
+instruction counts. When the Mac posts `com.brunostjohn.switch.debug.frame-weights.<process>`, a debug build captures
+that process's next four command buffers. The compositor is backboardd:
+
+```sh
+idevicenotificationproxy -u <udid> post com.brunostjohn.switch.debug.frame-weights.backboardd   # while the screen moves
+# pull the archive as above, then:
+bazel run //tools/devicerun:frame_weights -- "$PWD/a.logarchive" --pack <the build's pack.bin>
+```
+
+The capture runs each draw alone, starting from an idle GPU, so a state's time is its cost on its own, and states rank
+by that number. Captured frames take longer than normal ones, so the report prints both times. Without `--pack`, or with
+a pack `nakstat` can't read yet, the instruction columns are estimates marked `~`.
