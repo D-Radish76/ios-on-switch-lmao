@@ -232,13 +232,22 @@ inline uint64_t computeStateHash(const std::string &metallib, const std::string 
 // What the opener was asked: each process's m2v device opens once, at most
 inline int gOpens = 0;
 
-// A raw device over the pack of the BGRA8 state, NVK's connection the fake's, the m2v device the stand-in (`standIn`'s)
-inline id<MTLDevice> open(const std::string &pack, Class methods = [HarnessM2VMethods class],
-                          Class standIn = [HarnessM2V class])
+// The stand-in NVK, whose connection the raw path takes when it is loaded before the raw device looks for it
+// (raw_kernel.cpp nvkImage), as the plugin loads NVK before raw_metal_prepare
+inline bool loadNvk()
 {
     const char *nvk = getenv("SWITCH_FAKE_NVK");
-    if (!nvk || !dlopen(nvk, RTLD_NOW | RTLD_LOCAL))
+    return nvk && dlopen(nvk, RTLD_NOW | RTLD_LOCAL);
+}
+
+// A raw device over the pack of the BGRA8 state, NVK's connection the fake's, the m2v device the stand-in
+// (`standIn`'s); nil and in `why` the open's reason when it did not open
+inline id<MTLDevice> open(const std::string &pack, Class methods, Class standIn, NSString **why)
+{
+    if (!loadNvk()) {
+        *why = @"no stand-in NVK (SWITCH_FAKE_NVK)";
         return nil;
+    }
     RawM2V m2v;
     m2v.open = ^id<MTLDevice>
     {
@@ -246,8 +255,14 @@ inline id<MTLDevice> open(const std::string &pack, Class methods = [HarnessM2VMe
         return (id<MTLDevice>)[standIn new];
     };
     m2v.methods = methods;
+    return raw_metal_device_open_lazy(pack.c_str(), 0, kRegistryID, m2v, why);
+}
+
+inline id<MTLDevice> open(const std::string &pack, Class methods = [HarnessM2VMethods class],
+                          Class standIn = [HarnessM2V class])
+{
     NSString *why = nil;
-    id<MTLDevice> device = raw_metal_device_open_lazy(pack.c_str(), 0, kRegistryID, m2v, &why);
+    id<MTLDevice> device = open(pack, methods, standIn, &why);
     if (!device)
         fprintf(stderr, "open: %s\n", why.UTF8String ?: "?");
     return device;

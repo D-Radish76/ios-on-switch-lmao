@@ -90,24 +90,34 @@ std::string text(id object)
 struct Opened {
     id<MTLDevice> device;
     id<MTLRenderPipelineState> state;
+    std::string why;  // which was not made, and its own error
 };
 
 // The facade over the pack of the BGRA8 state, and that state; the render server's device when `renderServer`
-// (raw_metal_prepare's), else another process's
+// (raw_metal_prepare's, NVK loaded first as the plugin loads it: a prepared open that finds no NVK yet opens a
+// connection of its own, which the device open then refuses), else another process's
 Opened openPacked(bool renderServer = false)
 {
     const std::string metallib = writeMetallib();
     const std::string pack = writePack(packKey(kPacked));
-    if (renderServer)
+    if (renderServer) {
+        if (!loadNvk())
+            return {nil, nil, "no stand-in NVK (SWITCH_FAKE_NVK)"};
         raw_metal_prepare(pack.c_str(), 0);
-    id<MTLDevice> device = open(pack);
+    }
+    NSString *why = nil;
+    id<MTLDevice> device = open(pack, [HarnessM2VMethods class], [HarnessM2V class], &why);
     if (!device)
-        return {};
+        return {nil, nil, std::string("no device: ") + (why.UTF8String ?: "?")};
     NSError *error = nil;
     id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(metallib.c_str())] error:&error];
+    if (!library)
+        return {device, nil, "no library: " + text(error)};
     id<MTLRenderPipelineState> state =
         [device newRenderPipelineStateWithDescriptor:descriptor(library, kPacked) error:&error];
-    return {device, state};
+    if (!state)
+        return {device, nil, "no state: " + text(error)};
+    return {device, state, ""};
 }
 
 // A render target over an IOSurface, as a CAMetalLayer drawable's texture is
@@ -170,7 +180,7 @@ size_t jobsOfDrawn(id<MTLCommandQueue> queue, id<MTLTexture> t, id<MTLRenderPipe
 void refusedCommandBufferPresentsNothing()
 {
     const Opened o = openPacked();
-    ASSERT_TRUE(o.device != nil && o.state != nil);
+    ASSERT_TRUE(o.device != nil && o.state != nil) << o.why;
     id<MTLCommandQueue> queue = [o.device newCommandQueue];
     id<MTLTexture> frame = surfaceTarget(o.device);
     ASSERT_TRUE(frame != nil);
@@ -205,7 +215,7 @@ void refusedCommandBufferPresentsNothing()
 void heldCommandBufferWithdrawsItsPromise()
 {
     const Opened o = openPacked();
-    ASSERT_TRUE(o.device != nil && o.state != nil);
+    ASSERT_TRUE(o.device != nil && o.state != nil) << o.why;
     id<MTLCommandQueue> queue = [o.device newCommandQueue];
     id<MTLTexture> frame = surfaceTarget(o.device);
     ASSERT_TRUE(frame != nil);
@@ -241,7 +251,7 @@ void heldCommandBufferWithdrawsItsPromise()
 void failedWaitReturnsOnceItsWriteIsWithdrawn()
 {
     const Opened o = openPacked();
-    ASSERT_TRUE(o.device != nil && o.state != nil);
+    ASSERT_TRUE(o.device != nil && o.state != nil) << o.why;
     id<MTLCommandQueue> queue = [o.device newCommandQueue];
     id<MTLTexture> frame = surfaceTarget(o.device);
     ASSERT_TRUE(frame != nil);
@@ -299,12 +309,15 @@ void failedWaitReturnsOnceItsWriteIsWithdrawn()
 }
 
 // A presenting command buffer that fails as it is recorded (a pass with no visibility buffer, which Metal's validation
-// stops): `drawable` is never presented
-void commitFailedFrame(const Opened &o, CountingDrawable *drawable, bool wait)
+// stops), committed: `drawable` is never presented
+id<MTLCommandBuffer> commitFailedFrame(const Opened &o, CountingDrawable *drawable)
 {
     id<MTLCommandQueue> queue = [o.device newCommandQueue];
     id<MTLTexture> frame = surfaceTarget(o.device);
-    ASSERT_TRUE(frame != nil);
+    if (!frame) {
+        ADD_FAILURE() << "no IOSurface render target";
+        return nil;
+    }
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
     p.colorAttachments[0].texture = frame;
@@ -318,29 +331,32 @@ void commitFailedFrame(const Opened &o, CountingDrawable *drawable, bool wait)
     [e endEncoding];
     [cb presentDrawable:drawable];
     [cb commit];
-    if (!wait)
-        return;
-    [cb waitUntilCompleted];
-    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
-    EXPECT_EQ(drawable.presents, 0);
+    return cb;
 }
 
-// The render server's failed frame ends the process, the cause in its reason; the stand-in exits 70 with it
+// The render server's failed frame ends the process, the cause in its reason; the stand-in exits 70 with it. The end
+// comes before the command buffer completes (RawMetalFinish.mm: withholdPresents, then the status).
 void renderServerFailedFrameEndsTheProcess()
 {
     const Opened o = openPacked(true);
-    ASSERT_TRUE(o.device != nil && o.state != nil);
-    commitFailedFrame(o, [CountingDrawable new], false);
-    std::this_thread::sleep_for(std::chrono::seconds(5));
-    ADD_FAILURE() << "the render server's failed frame did not end the process";
+    ASSERT_TRUE(o.device != nil && o.state != nil) << o.why;
+    id<MTLCommandBuffer> cb = commitFailedFrame(o, [CountingDrawable new]);
+    ASSERT_TRUE(cb != nil);
+    [cb waitUntilCompleted];
+    ADD_FAILURE() << "the render server's failed frame completed and did not end the process";
 }
 
 // Any other process's failed frame presents nothing and carries Metal's error; the process goes on
 void clientFailedFrameCarriesMetalsError()
 {
     const Opened o = openPacked();
-    ASSERT_TRUE(o.device != nil && o.state != nil);
-    commitFailedFrame(o, [CountingDrawable new], true);
+    ASSERT_TRUE(o.device != nil && o.state != nil) << o.why;
+    CountingDrawable *drawable = [CountingDrawable new];
+    id<MTLCommandBuffer> cb = commitFailedFrame(o, drawable);
+    ASSERT_TRUE(cb != nil);
+    [cb waitUntilCompleted];
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(drawable.presents, 0);
 }
 
 }  // namespace
