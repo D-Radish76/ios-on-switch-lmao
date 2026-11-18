@@ -89,9 +89,15 @@ bool RMRangeEncode::endEncoder(size_t at)
     RMCommandBuffer *cb = cb_;
     if (re_)
         re_->finishVisibility();
-    // encoded ahead, the fresh textures the next encoder uses first are written between the two, so it fuses with none
+    // encoded ahead, the fresh textures the next encoder uses first are written between the two, so it fuses with none;
+    // what follows an end there and begins no encoder was recorded on the ended one, which its commit moves inside it
     bool fresh = false;
-    if (!whole_ && at + 1 < to_ && RMCommandPlan::isEncoderBegin(cb->_plan.operation(at + 1).op)) {
+    if (!whole_ && at + 1 < to_) {
+        if (!RMCommandPlan::isEncoderBegin(cb->_plan.operation(at + 1).op)) {
+            rc_->abandon();
+            abandoned_ = true;
+            return stop(VetoOps);
+        }
         freshAt_ = at + 1;
         fresh = firstContents_->claim(cb, at + 1, cb->_plan.encoderEnd(at + 1));
     }

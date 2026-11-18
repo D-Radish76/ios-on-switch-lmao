@@ -5624,6 +5624,29 @@ host_test(
     "raw_facade_texture_copies_test",
 ]]
 
+# A command recorded on an encoder after its endEncoding: moved inside the encoder that ended last, or its command
+# buffer failed InvalidResource where an M4 Max crashes; its blits run on the copy engine's model
+facade_test(
+    name = "raw_facade_ended_encoder_test",
+    srcs = [
+        "raw_facade_blit_engines.h",
+        "raw_facade_ended_encoder_test.cpp",
+        "raw_scale_frames.h",
+        "//drivers/TegraGM20B/test:gm20b_ce_model.h",
+        "//drivers/TegraGM20B/test:gm20b_gpu_memory.h",
+        "//drivers/TegraGM20BMetal:raw/fx/test/twod_sim.cpp",
+        "//drivers/TegraGM20BMetal:raw/fx/test/twod_sim.h",
+    ],
+    additional_compiler_inputs = [
+        "//drivers/TegraGM20BMetal:compiler_srcs",
+        "//drivers/TegraGM20BMetal:raw_facade_srcs",
+    ],
+    copts = [
+        "-Wno-nullability-completeness",
+        "-Wno-nullability-completeness-on-arrays",
+    ],
+)
+
 # A Depth32Float beside a Stencil8: its stencil resolve reads the pass's Depth32Float_Stencil8 (its stencil-bits state
 # alone packed), and a stored stencil is still copied back into its own texture
 facade_test(

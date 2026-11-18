@@ -68,11 +68,28 @@ static void endDropped(void *object)
     endDropped((__bridge void *)self);
 }
 
+// An end of an encoder that had ended, by its own end or by the begin of the next encoder (RMCommandBuffer begin:), is
+// Metal's validation error, which an M4 Max with validation off stops the process on (AGX's "endEncoding has already
+// been called", "A command encoder is already encoding to this command buffer"): its command buffer fails instead,
+// unless it was committed already
+static void endedTwice(RMCommandBuffer *cb)
+{
+    if (cb->_committed.load(std::memory_order_relaxed))
+        return;
+    SWITCH_REFUSE("raw", "encoder.ended_twice",
+                  "endEncoding on an encoder that had ended, by its own end or by the next encoder's begin: Metal's "
+                  "validation error, its command buffer fails MTLCommandBufferErrorInvalidResource");
+    failCommandBuffer(cb, @"endEncoding was called on an encoder that had ended", MTLCommandBufferErrorInvalidResource);
+}
+
 - (void)endEncoding
 {
     SWITCH_API(ApiEncoder);
-    if (_ended || !_cb)
+    if (_ended || !_cb) {
+        if (_ended && _cb)
+            endedTwice(_cb);
         return;
+    }
     _ended = true;
     if (!_counterPending.empty())
         rmPlaceCounterMarks(_cb, self, _cb->_plan.size(), false);

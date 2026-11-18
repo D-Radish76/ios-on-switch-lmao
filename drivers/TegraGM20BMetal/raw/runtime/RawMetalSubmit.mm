@@ -69,9 +69,60 @@ static NSString *planErrorText(RMPlanError error)
         return @"An encoder began before the previous encoder ended";
     case RMPlanError::CommandAfterEnd:
         return @"A command was encoded on an encoder that had ended";
+    case RMPlanError::CommandAfterOtherWork:
+        return @"A command was encoded on an encoder that had ended, after an encoder of another kind or an event "
+               @"began";
     default:
         return @"An encoder did not end before commit";
     }
+}
+
+// The commands recorded on an encoder after it ended, before anything else began, moved inside it before its OpEnd,
+// where an M4 Max with validation off runs them; then the tape planned again. Commands after an event, or of another
+// kind than the encoder whose end they follow, are the command buffer's error (InvalidResource). The submit worker
+// encodes ahead only the tape before the position `_published` names and reads the encoder that begins there
+// (RawMetalPipeline.h): an encoder past that position is the recording's alone and its end moves with nothing taken
+// back from the worker; at or before it, the run fails the command buffer.
+static RMPlanError joinEndedEncoders(RMCommandBuffer *cb, raw::ExecutionPlan &plan)
+{
+    RMCommandPlan &commands = cb->_plan;
+    const size_t ahead = cb->_handedOnce ? size_t(cb->_published.load(std::memory_order_relaxed) >> 32) : 0;
+    RMPlanError error = RMPlanError::None;
+    const char *blocked = nullptr;
+    forEachLateRun(commands, [&](size_t encoder, size_t from, size_t to) {
+        bool draws = false;
+        for (size_t at = from; at < to; ++at) {
+            const Op op = commands.operation(at).op;
+            if (encoder == SIZE_MAX || !recordedBy(commands.operation(encoder).op, op)) {
+                error = RMPlanError::CommandAfterOtherWork;
+                return false;
+            }
+            draws |= isPlanDraw(op);
+        }
+        if (ahead && ahead >= encoder)
+            blocked = "the encode ahead of its commit may have read that encoder's end";
+        else if (draws && cb->_passes.own(commands.begin(encoder).pass).xrShadows)
+            blocked = "its pass holds extended-range shadows, asked for the draws recorded before its end";
+        if (blocked) {
+            error = RMPlanError::CommandAfterEnd;
+            return false;
+        }
+        const size_t end = commands.encoderEnd(encoder);
+        commands.joinEnded(encoder, to);
+        for (RMCounterMark &mark : cb->_counterMarks)
+            if (mark.at == end - 1)
+                mark.at = uint32_t(to - 1);
+        return true;
+    });
+    if (blocked)
+        SWITCH_REFUSE("raw", "plan.ended_encoder",
+                      "a command encoded on an encoder that had ended, not moved inside it (%s): its command buffer "
+                      "fails MTLCommandBufferErrorInternal",
+                      blocked);
+    if (error != RMPlanError::None)
+        return error;
+    plan.clear();
+    return makeExecutionPlan(commands, plan);
 }
 
 void planSegments(RMCommandBuffer *cb)
@@ -89,15 +140,21 @@ void planSegments(RMCommandBuffer *cb)
                               @"unit ends)");
         return;
     }
-    const auto error = makeExecutionPlan(cb->_plan, plan);
+    auto error = makeExecutionPlan(cb->_plan, plan);
     if (error != RMPlanError::None) {
         if (error == RMPlanError::CommandAfterEnd)
-            SWITCH_REFUSE(
-                "raw", "plan.ended_encoder",
-                "a command encoded on an encoder that had ended: Metal's validation error, its command buffer "
-                "fails MTLCommandBufferErrorInternal");
-        failCommandBuffer(cb, planErrorText(error));
-        return;
+            error = joinEndedEncoders(cb, plan);
+        if (error == RMPlanError::CommandAfterOtherWork)
+            SWITCH_REFUSE("raw", "plan.ended_kind",
+                          "a command encoded on an encoder that had ended, after an encoder of another kind or an "
+                          "event began: Metal's validation error, which an M4 Max crashes on; its command buffer "
+                          "fails MTLCommandBufferErrorInvalidResource");
+        if (error != RMPlanError::None) {
+            failCommandBuffer(cb, planErrorText(error),
+                              error == RMPlanError::CommandAfterOtherWork ? MTLCommandBufferErrorInvalidResource
+                                                                          : MTLCommandBufferErrorInternal);
+            return;
+        }
     }
     for (const auto &range : plan.ranges()) {
         cb->_plan.prepareRange(range.from, range.to);

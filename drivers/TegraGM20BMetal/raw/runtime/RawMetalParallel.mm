@@ -165,7 +165,8 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s)
     }
     for (RMSubRecorder *s : subs) {
         RMRenderEncoder *e = s->_encoder;  // nil: its caller let it go, which ended it
-        [e endEncoding];
+        if (e && !e->_ended)
+            [e endEncoding];
     }
     RMCommandBuffer *cb = _cb;
     const size_t first = cb->_plan.size();

@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // A call Metal's validation stops for an object another device made, or nil where Metal takes none, fails its command
 // buffer InvalidResource as it is recorded (RawMetalObjects.h rmCallInvalid), its predicate in its path and its failed
-// counter; a command on an encoder that had ended fails it at its commit (RawMetalPlanExecution.h), naming no predicate
-// (error:none, failed.none).
+// counter. A command on an encoder that had ended: raw_facade_ended_encoder_test.cpp.
 #include "raw_scale_frames.h"
 
 #include <gtest/gtest.h>
@@ -283,28 +282,6 @@ TEST(RawFacadeForeign, AParallelSubEncodersBufferOfAnotherDeviceFailsItsCommandB
     }
     [parallel endEncoding];
     expectInvalid(cb, "call.buf", "a parallel sub-encoder's setVertexBuffer");
-}
-
-// An M4 Max with validation off runs such a copy in the ended encoder (c38-audit/m2v-cut2/probe ended_copy); the raw
-// path, which has no encoder left to run it in, fails the command buffer
-TEST(RawFacadeForeign, ACopyOnAnEncoderThatEndedFailsItsCommandBuffer)
-{
-    ASSERT_TRUE(opened().device != nil);
-    id<MTLBuffer> from = [opened().device newBufferWithLength:256 options:MTLResourceStorageModeShared];
-    id<MTLBuffer> to = [opened().device newBufferWithLength:256 options:MTLResourceStorageModeShared];
-    id<MTLCommandBuffer> cb = [[opened().device newCommandQueue] commandBuffer];
-    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-    [b endEncoding];
-    [b copyFromBuffer:from sourceOffset:0 toBuffer:to destinationOffset:0 size:64];
-    NSDictionary *before = harness::counters(opened().device);
-    [cb commit];
-    [cb waitUntilCompleted];
-    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
-    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInternal);
-    EXPECT_NE([cb.error.localizedDescription rangeOfString:@"encoder that had ended"].location, NSNotFound)
-        << cb.error.description.UTF8String;
-    EXPECT_EQ(path(cb), "error:none");
-    EXPECT_EQ(harness::failedMoved(before, harness::counters(opened().device)), harness::failedOnce("none"));
 }
 
 }  // namespace

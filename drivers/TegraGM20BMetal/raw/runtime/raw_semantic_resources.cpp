@@ -156,3 +156,36 @@ void RMCommandPlan::prepareRange(size_t from, size_t to)
     if (from < to && isEncoderBegin(operations_.own(from).op) && begins_.own(operations_.own(from).payload).end == to)
         begins_.own(operations_.own(from).payload).range = uint32_t(rangeIndex_.size() - 1);
 }
+
+// The commands [end, to) recorded on the encoder at `begin` after it ended (its OpEnd at end - 1) moved inside it,
+// before its OpEnd, which now ends it at `to`. A render encoder's raster groups are listed again at the list's end, its
+// late draws' after its own: a pass begun after it holds the groups that followed.
+void RMCommandPlan::joinEnded(size_t begin, size_t to)
+{
+    RMPlanBegin &encoder = begins_.own(operations_.own(begin).payload);
+    const size_t end = encoder.end;
+    std::rotate(operations_.ownData() + end - 1, operations_.ownData() + end, operations_.ownData() + to);
+    encoder.end = to;
+    if (operations_.own(begin).op != OpRender)
+        return;
+    const uint32_t own = encoder.rasterBegin;
+    encoder.rasterBegin = uint32_t(rasterGroups_.size());
+    for (uint32_t i = 0; i < encoder.rasterCount; ++i) {
+        const RMPlanRasterGroup group = rasterGroups_.own(own + i);
+        rasterGroups_.push_back(group);
+    }
+    for (size_t at = end - 1; at + 1 < to; ++at) {
+        const RMPlanOperation &operation = operations_.own(at);
+        if (!isPlanDraw(operation.op))
+            continue;
+        const RMPlanDraw &draw = draws_.own(operation.payload);
+        if (!draw.count || !draw.instances)
+            continue;
+        const uint32_t state = renderStates.own(draw.state).raster;
+        if (!encoder.rasterCount || rasterGroups_.own(rasterGroups_.size() - 1).state != state) {
+            rasterGroups_.push_back({state, 0});
+            ++encoder.rasterCount;
+        }
+        ++rasterGroups_.own(rasterGroups_.size() - 1).draws;
+    }
+}

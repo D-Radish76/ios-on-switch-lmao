@@ -487,7 +487,9 @@ struct RMSharedEventWait {
     // What the submit worker may encode before the commit (RawMetalPipeline.mm). `_published`: where the worker may encode
     // up to (the first command of the encoder ended before the last one: an encoder's end looks at the two encoders after
     // it) << 32 | the tape's length, stored as each encoder ends; everything of the tape before that length is written for
-    // good. `_pipelineVeto`: why it is encoded at its commit instead (RMPipelineVeto), set as the reason is recorded.
+    // good, but the end of an encoder past the first position, which a command recorded on it after its end moves at
+    // the commit (RawMetalSubmit.mm joinEndedEncoders). `_pipelineVeto`: why it is encoded at its commit instead
+    // (RMPipelineVeto), set as the reason is recorded.
     // `_endedAt`: the last ended encoder's first command; `_handedCommands`: commands since the worker was last handed it.
     std::atomic<uint64_t> _published;
     std::atomic<uint32_t> _pipelineVeto;
@@ -599,7 +601,7 @@ enum RMPipelineVeto : uint32_t {
     VetoVariant = 1u << 3,     // a binding of a state variant still being made, which an encode ahead would drop
     VetoProbes = 1u << 4,      // HW Test's probes
     VetoParallel = 1u << 5,    // a parallel render encoder's sub-encoders
-    VetoOps = 1u << 6,         // an event, a compute encoder, an indirect command buffer, patches
+    VetoOps = 1u << 6,         // an event, a compute encoder, an indirect command buffer, patches, a late command
     VetoRefused = 1u << 7,     // an encoder whose recording failed the command buffer (rmPassFailed)
     VetoPlanar = 1u << 8,      // a planar texture converted for its draws
     VetoContents = 1u << 9,    // the encode read buffer contents the CPU may write until the commit

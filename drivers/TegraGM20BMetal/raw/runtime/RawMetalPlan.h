@@ -97,7 +97,10 @@ enum class RMPlanError : uint8_t {
     NestedEncoder,
     EventInsideEncoder,
     UnclosedEncoder,
-    CommandAfterEnd
+    CommandAfterEnd,
+    // a command recorded on an encoder that had ended once other work began (an encoder of another kind, an event),
+    // which an M4 Max with validation off crashes on
+    CommandAfterOtherWork
 };
 
 enum class RMResourceKind : uint8_t {
@@ -409,6 +412,7 @@ public:
     void addUses(size_t at, const std::vector<raw::ResourceUse> &uses);
     void setRenderUses(uint32_t state, const std::vector<raw::ResourceUse> &uses);
     void prepareRange(size_t from, size_t to);
+    void joinEnded(size_t begin, size_t to);
 
     size_t encoderEnd(size_t begin) const
     {

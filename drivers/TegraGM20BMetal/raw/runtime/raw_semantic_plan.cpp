@@ -197,15 +197,20 @@ bool RMCommandPlan::record(const Cmd &c, const uint64_t *extra, size_t extraWord
                 draw.first = c.b;  // the range buffer's offset (RawMetalIndirect.mm)
         }
         operation.uses = renderStates.own(draw.state).uses;
-        if (encoder_ == OpRender && draw.count && draw.instances) {
-            const uint32_t state = renderStates.own(draw.state).raster;
-            // a raster snapshot is captured after every one before it: a state other than the last group's is new
-            if (lastRasterGroup_ == raw::kNoSnapshot || rasterGroups_.own(lastRasterGroup_).state != state) {
-                lastRasterGroup_ = uint32_t(rasterGroups_.size());
-                rasterGroups_.push_back({state, 0});
-                ++begins_.own(operations_.own(encoderBegin_).payload).rasterCount;
+        if (encoder_ == OpRender) {
+            if (draw.count && draw.instances) {
+                const uint32_t state = renderStates.own(draw.state).raster;
+                // a raster snapshot is captured after every one before it: a state other than the last group's is new
+                if (lastRasterGroup_ == raw::kNoSnapshot || rasterGroups_.own(lastRasterGroup_).state != state) {
+                    lastRasterGroup_ = uint32_t(rasterGroups_.size());
+                    rasterGroups_.push_back({state, 0});
+                    ++begins_.own(operations_.own(encoderBegin_).payload).rasterCount;
+                }
+                ++rasterGroups_.own(lastRasterGroup_).draws;
             }
-            ++rasterGroups_.own(lastRasterGroup_).draws;
+        } else if (encoder_ != OpEnd && recordingError_ == RMPlanError::None) {
+            // a draw of a render encoder that had ended, recorded inside the blit or compute encoder begun since
+            recordingError_ = RMPlanError::CommandAfterOtherWork;
         }
         operation.payload = append(draws_, draw);
         break;
