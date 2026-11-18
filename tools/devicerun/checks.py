@@ -725,12 +725,44 @@ GROUPS: dict[str, list[Check]] = {
             source='kits/SwitchRefusal/SwitchRefusal.c (kernel default log)',
         ),
         Check(
-            'refusal.mipmaps-format',
+            'refusal.mipmaps-state',
             'r119-rawgaps',
-            'mipmaps.fmt',
+            'mipmaps.state',
             subsystem=REFUSAL_SUBSYSTEM,
-            note='generateMipmaps of a format no engine filters sends its command buffer to m2v',
-            source='drivers/TegraGM20BMetal/raw/runtime/raw_mip.h',
+            note="generateMipmaps of a format the device's pack holds no mip state for (a stale pack) fails its "
+            'command buffer, MTLCommandBufferErrorInternal; was mipmaps.fmt, which sent it to m2v',
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalBlitFill.mm',
+        ),
+        Check(
+            'refusal.hwtest-m2v',
+            'r119-rawgaps',
+            (
+                'compute.nokernel',
+                'm2v refused its translation',
+                'a compute kernel the shader compiler refused',
+                'draw.stride_twin',
+                'enc.planarrt',
+                'needs its m2v device',
+            ),
+            process='SwitchHWTest',
+            source='drivers/TegraGM20BMetal/raw/runtime/RawComplete.mm, RawDirect.mm, RawMetalDrawErrors.mm',
+            note='HW Test work the raw path refused or sent to m2v: gpu.packed_spare_bits (Core Image over a 98x8 '
+            "'p420' surface, 32,8,1 and 32,32,1), gpu.raw.kernel_ycbcr_one_plane and gpu.raw.draw_five_dynamic_strides "
+            '(draw.stride_twin), none after the compile-path fix; gpu.raw.ycbcr_load and gpu.raw.reach_shapes '
+            '(enc.planarrt, needs its m2v device), none after the reach fix',
+        ),
+        Check(
+            'refusal.hwtest-blit-once',
+            'r119-rawgaps',
+            ('blit.invalid', 'blit.undefined'),
+            'count >= 1',
+            process='SwitchHWTest',
+            subsystem=REFUSAL_SUBSYSTEM,
+            regex=r'^SwitchHWTest\[(?P<pid>\d+)\] (?P<reason>blit\.(?:invalid|undefined)): ',
+            show=('pid', 'reason'),
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalBlit.mm',
+            note='once a process each (the guard keys domain and reason per process image; the first such line wins '
+            'whoever caused it): every pid/reason group must read x1, after gpu.raw.planes_blits and invalid_requests',
         ),
         Check(
             'refusal.compute-view',

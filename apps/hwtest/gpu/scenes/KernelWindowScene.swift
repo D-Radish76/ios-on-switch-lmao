@@ -3,13 +3,12 @@ import HWTestCore
 import Metal
 
 /// Kernels whose buffers are bound at addresses off 16 bytes, by element: floats at 4, float2s at 8, packed float3s at
-/// 4. Where a kernel's record names a residual word the descriptor starts 16 below and the word holds the rest; where it
-/// names none (raw once refused that as compute.off16) the bytes reach the kernel through a window of them on 16 that
-/// the copy engine fills before the dispatch and copies back after it (raw/runtime/raw_kernel_windows.h). Every element
-/// written is the source's doubled plus one, every byte around it untouched, and every dispatch raw.
+/// 4. The descriptor starts 16 below and the record's residual word holds the rest; a slot whose record names none is
+/// one its program never addresses (raw once refused that as compute.off16). Every element written is the source's
+/// doubled plus one, every byte around it untouched, and every dispatch raw.
 struct KernelWindowScene: GPUScene {
     let id = "gpu.raw.kernel_window"
-    let name = "Kernel buffers bound at addresses off 16 bytes, through a window where the record has no residual"
+    let name = "Kernel buffers bound at addresses off 16 bytes"
 
     static let count = 37
     static let sentinel: UInt8 = 0xA5
@@ -19,7 +18,6 @@ struct KernelWindowScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let before = RawFacade.counters(of: gpu.device)["kernel_windows"] ?? 0
         var paths: [String] = []
         for (function, floats, offset) in Self.cases {
             let pipeline = try gpu.compute(function)
@@ -51,8 +49,6 @@ struct KernelWindowScene: GPUScene {
             result.metrics.set("\(function)_wrong", wrong)
             result.expect(wrong == 0, "\(function) at \(offset): \(wrong) values or bytes around them wrong")
         }
-        let windows = (RawFacade.counters(of: gpu.device)["kernel_windows"] ?? 0) - before
-        result.metrics.set("windows", windows)
         result.metrics.set("paths", paths.joined(separator: ","))
         if RawFacade.kind(of: gpu.device) == "raw" {
             result.expect(paths.allSatisfy { $0 == "raw" }, "the dispatches took \(paths), not raw")

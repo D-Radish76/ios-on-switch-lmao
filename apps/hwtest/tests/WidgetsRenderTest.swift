@@ -13,6 +13,7 @@ import Metal
 ///   is no larger than what the device already held, its first size (a sixteenth of the render server's 4 MiB) or the
 ///   target (raw_gpu.cpp chunkSize). A fixed 4 MiB chunk breaks that while the app holds less; once it holds 4 MiB the
 ///   bound holds either way, so the boot's jetsam lines for widget extensions remain the check of what they hold.
+/// headers_left= the app's raw device's texture headers not held (of 8191) once every GPU test before this one has run.
 struct WidgetsRenderTest: HWTest {
     let id = "system.widgets_render"
     let name = "Widgets archive 2x images and draw on raw in proportion"
@@ -65,7 +66,9 @@ struct WidgetsRenderTest: HWTest {
         if RawFacade.kind(of: gpu.device) == "raw" && timing.path != "raw" {
             failures.append("the widget's draw went \(timing.path)")
         }
-        if let pool = held["pool"], let now = RawFacade.memory(of: gpu.device)["pool"] {
+        let memory = RawFacade.memory(of: gpu.device)
+        if let left = memory["headers_left"] { metrics.set("headers_left", left) }
+        if let pool = held["pool"], let now = memory["pool"] {
             let bound = max(Self.firstChunk, pool, Self.targetBound)
             metrics.set("pool_kb", now >> 10)
             metrics.set("pool_grown_kb", (now - pool) >> 10)

@@ -8,9 +8,8 @@ import Metal
 /// store part (one raw:pass.resolve_store line). Each blit sits in a command buffer of its own between two buffer
 /// copies that land: a copy from a 4x texture (samples), into an R8 level from an RGBA8 one (texel_size), from a region
 /// past its level (past_level), into a texture from buffer rows shorter than its rows (rows_short_in), into a buffer
-/// the same way (rows_short_out), and fillTexture:...pixelFormat: (SPI) through RGBA16Float on an RGBA8 level
-/// (fill_texel_size). Every byte each would touch, done as asked, lies inside what the test made: a level past the
-/// texture's, a slice past it, a memoryless side and rows past a buffer are left out. The resolves decide the depth's
+/// the same way (rows_short_out). Every byte each would touch, done as asked, lies inside what the test made: a level
+/// past the texture's, a slice past it, a memoryless side and rows past a buffer are left out. The resolves decide the depth's
 /// store in the encoder (MTLStoreActionUnknown, then setDepthStoreAction:): StoreAndMultisampleResolve keeps the store,
 /// read by a later pass whose depth test shows the left half drawn at 0.25 (resolve_store); MultisampleResolve discards
 /// it (resolve_discard). Per case: <case>_path, <case>_neighbours (the two copies' bytes off, or the pass's resolved
@@ -22,10 +21,6 @@ struct InvalidRequestsTest: HWTest {
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
-    typealias FillAs = @convention(c) (
-        AnyObject, Selector, MTLTexture, Int, Int, MTLRegion, MTLClearColor, MTLPixelFormat
-    ) -> Void
-    static let fillAs = NSSelectorFromString("fillTexture:level:slice:region:color:pixelFormat:")
     static let side = 64, level = 1, levelSide = 32, bytes = 4096
 
     /// What a request must leave as it was: level 1 of a texture, or a shared buffer
@@ -48,14 +43,13 @@ struct InvalidRequestsTest: HWTest {
         let o = MTLOrigin()
         let size = { (w: Int, h: Int) in MTLSize(width: w, height: h, depth: 1) }
         let level = Self.level
-        let requests: [(String, Destination, (MTLBlitCommandEncoder) -> Bool)] = [
+        let requests: [(String, Destination, (MTLBlitCommandEncoder) -> Void)] = [
             (
                 "samples", .level(chain, bytesPerPixel: 4),
                 {
                     $0.copy(
                         from: multisampled, sourceSlice: 0, sourceLevel: 0, sourceOrigin: o, sourceSize: size(8, 8),
                         to: chain, destinationSlice: 0, destinationLevel: level, destinationOrigin: o)
-                    return true
                 }
             ),
             (
@@ -64,7 +58,6 @@ struct InvalidRequestsTest: HWTest {
                     $0.copy(
                         from: source, sourceSlice: 0, sourceLevel: level, sourceOrigin: o, sourceSize: size(4, 4),
                         to: narrow, destinationSlice: 0, destinationLevel: level, destinationOrigin: o)
-                    return true
                 }
             ),
             (
@@ -74,7 +67,6 @@ struct InvalidRequestsTest: HWTest {
                         from: source, sourceSlice: 0, sourceLevel: level, sourceOrigin: MTLOrigin(x: 28, y: 0, z: 0),
                         sourceSize: size(8, 8), to: chain, destinationSlice: 0, destinationLevel: level,
                         destinationOrigin: o)
-                    return true
                 }
             ),
             (
@@ -84,7 +76,6 @@ struct InvalidRequestsTest: HWTest {
                         from: junk, sourceOffset: 0, sourceBytesPerRow: 32, sourceBytesPerImage: 0,
                         sourceSize: size(16, 16), to: chain, destinationSlice: 0, destinationLevel: level,
                         destinationOrigin: o)
-                    return true
                 }
             ),
             (
@@ -93,17 +84,6 @@ struct InvalidRequestsTest: HWTest {
                     $0.copy(
                         from: source, sourceSlice: 0, sourceLevel: level, sourceOrigin: o, sourceSize: size(16, 16),
                         to: out, destinationOffset: 0, destinationBytesPerRow: 32, destinationBytesPerImage: 0)
-                    return true
-                }
-            ),
-            (
-                "fill_texel_size", .level(chain, bytesPerPixel: 4),
-                { blit in
-                    guard let object = blit as AnyObject?, object.responds(to: Self.fillAs) else { return false }
-                    unsafeBitCast(object.method(for: Self.fillAs), to: FillAs.self)(
-                        object, Self.fillAs, chain, level, 0, MTLRegionMake2D(0, 0, 8, 8),
-                        MTLClearColor(red: 1, green: 0, blue: 0, alpha: 1), .rgba16Float)
-                    return true
                 }
             ),
         ]
@@ -112,18 +92,13 @@ struct InvalidRequestsTest: HWTest {
         for (key, destination, request) in requests {
             let kept = try await Self.fill(destination, gpu)
             let before = try gpu.buffer(Self.bytes), after = try gpu.buffer(Self.bytes)
-            var issued = true
             let path = try await gpu.run(tolerateError: true) { commands in
                 let blit = commands.makeBlitCommandEncoder()!
                 blit.copy(from: pattern, sourceOffset: 0, to: before, destinationOffset: 0, size: Self.bytes)
-                issued = request(blit)
+                request(blit)
                 blit.copy(from: pattern, sourceOffset: 0, to: after, destinationOffset: 0, size: Self.bytes)
                 blit.endEncoding()
             }.path
-            guard issued else {
-                metrics.set("\(key)_path", "no SPI")
-                continue
-            }
             let neighbours = Self.off(before, pattern) + Self.off(after, pattern)
             let untouched = try await Self.read(destination, gpu) == kept
             Self.report(key, path: path, neighbours: neighbours, untouched: untouched, &metrics, &checks)

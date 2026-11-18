@@ -54,6 +54,24 @@ public enum Registry {
         InvalidRequestsTest(), HeapAliasableUsedTest(),
     ]
 
+    /// Routes the m2v removal moved onto the raw path, each against Apple's GPU
+    static let rawRoutes: [any HWTest] =
+        FetchShapeTest.all + [
+            DepthFormatMismatchTest.attached, DepthFormatMismatchTest.unattached, HiddenDepthTest(),
+            BorderTableFullTest(), XrSrgbTest.bgr, XrSrgbTest.bgra, ComputeInvalidTest(), FillShapesTest(),
+            WordMipmapsTest(), StencilByteCopiesTest(), KernelYcbcrOnePlaneTest(), KernelConvertedWriteTest(),
+            DynamicStridesTest(), ReachShapesTest(), ResolveCodesTest(), ResolveOneSampleSwapTest(),
+            SeparateStencilResolveTest(), P3YcbcrStoreTest(), Depth16ShaderTestsTest(), PlanesBlitsTest(),
+            IcbComputeFormsTest(), StandInResolveTest(), StandInLayeredTest(), ResolveOtherCountTest(),
+            ResolveCodesPartsTest(), RtalPastLayersTest(), XrPlanesImagesTest(), Bgra10XrResolveTest(),
+            ViewSliceTargetTest(), NoRenderUsageTest(), P3YcbcrStoreSubsampledTest(), PlaneInBlocksTest(),
+            Rg8SrgbTargetTest(), TextureBufferTargetTest(), ZetaApartTest(), ZetaResolvePartsTest(),
+            YcbcrNoRenderUsageTest(), MixedSamplesTest(),
+            SameBitsTest(), Depth16LayeredTestsTest(), LayersPastTest(), LayersPastDepthTest(), TexelBufferReachTest(),
+            FetchTessellatedTest(), PlanarRenderThenSampleTest(), XrTexelBufferStoresTest(),
+            XrTexelBufferSurfaceTest(), TurnedStandInTargetsTest(), Bgra10XrSrgbEmptyPassTest(), StorageFormsTest(),
+        ]
+
     static let video: [any HWTest] =
         VideoDecodeTest.all + [
             NativeExportTest.h264, NativeExportTest.main10, NativeExportTest.main10To8, HEVCAlphaTest(),
@@ -110,7 +128,8 @@ public enum Registry {
         UISceneTests.all + [VideoAlphaTest()] + PacingTests.all + [ScalePacingTest()]
 
     public static let all: [any HWTest] =
-        [CPUAsyncTimersTest(), RegDumpQuietTest()] + gpuScenes + metal + GPUPathTests.all + NativeObjectTests.all
+        [CPUAsyncTimersTest(), RegDumpQuietTest()] + gpuScenes + metal + rawRoutes + GPUPathTests.all
+        + NativeObjectTests.all
         + NativeCallTests.all + video + images + audio
         + display + compositor + sensorsAndInput + connectivityAndStorage
         + cpuAndSystem

@@ -87,7 +87,7 @@ bool fill(id<MTLDevice> device, id<MTLCommandBuffer> cb, id<MTLTexture> t)
     const bool blocks = t.pixelFormat == kBlocks, volume = t.textureType == MTLTextureType3D;
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     for (uint32_t level = 0; level < t.mipmapLevelCount; level++) {
-        if (switch_texpeer_rendered(uint32_t(t.textureType), uint32_t(t.mipmapLevelCount), level))
+        if (switch_texpeer_rendered(uint32_t(t.textureType), uint32_t(t.mipmapLevelCount), level, blocks))
             continue;
         const NSUInteger w = std::max<NSUInteger>(t.width >> level, 1), h = std::max<NSUInteger>(t.height >> level, 1);
         const NSUInteger d = volume ? std::max<NSUInteger>(t.depth >> level, 1) : 1;
@@ -157,7 +157,8 @@ NSString *footprint()
         clear(cb, t, 0);
     } else {
         for (uint32_t level = 0; level < t.mipmapLevelCount; level++)
-            if (switch_texpeer_rendered(uint32_t(t.textureType), uint32_t(t.mipmapLevelCount), level))
+            if (switch_texpeer_rendered(uint32_t(t.textureType), uint32_t(t.mipmapLevelCount), level,
+                                        t.pixelFormat == kBlocks))
                 clear(cb, t, level);
         if (!fill(self.device, cb, t)) {
             reply([NSString stringWithFormat:@"fail=no_buffer pid=%d", getpid()]);

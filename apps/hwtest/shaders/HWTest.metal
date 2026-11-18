@@ -466,3 +466,30 @@ kernel void argument_spill_kernel(constant ColourArguments &arguments [[buffer(0
                                        b21[0] + b22[0] + b23[0] + b24[0] + b25[0] + b26[0] + b27[0] + b28[0] + b29[0],
                                    0, 0, 0);
 }
+
+/// tests/KernelYcbcrOnePlaneTest.swift: a linear sample a quarter texel left of each texel's centre, so chroma pairs
+/// mix
+kernel void sample_texture_linear(texture2d<float> texture [[texture(0)]], device float4 *out [[buffer(0)]],
+                                  uint2 id [[thread_position_in_grid]])
+{
+    constexpr sampler linear(filter::linear, address::clamp_to_edge);
+    const float2 size = float2(texture.get_width(), texture.get_height());
+    const float2 at = (float2(id) + float2(0.25f, 0.5f)) / size;
+    if (id.x < texture.get_width() && id.y < texture.get_height())
+        out[id.y * texture.get_width() + id.x] = texture.sample(linear, at, level(0));
+}
+
+/// tests/KernelConvertedWriteTest.swift: a store into every texel of a converted YCbCr view, which Metal drops
+kernel void write_converted_texture(texture2d<float, access::write> texture [[texture(0)]],
+                                    uint2 id [[thread_position_in_grid]])
+{
+    if (id.x < texture.get_width() && id.y < texture.get_height())
+        texture.write(float4(0.25f, 0.5f, 0.75f, 1), id);
+}
+
+/// tests/KernelConvertedWriteTest.swift: reads of whatever texture is bound, its size unchecked (none bound reads 0)
+kernel void read_bound_texture(texture2d<float, access::read> texture [[texture(0)]], device float4 *out [[buffer(0)]],
+                               uint id [[thread_position_in_grid]])
+{
+    out[id] = texture.read(uint2(id % 4, id / 4));
+}

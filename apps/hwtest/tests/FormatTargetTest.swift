@@ -198,10 +198,7 @@ struct FormatTargetTest: HWTest {
         switch format {
         case 42: return [0, 4, 8, 12].reduce(0) { $0 | code($1, 15, 0xff) << $1 }
         case 41: return [1, 6, 11].reduce(code(0, 1, 0)) { $0 | code($1, 31, 0x5555_ff00) << $1 }
-        case 93:
-            let decoded = taps.map { rgb9e5Floats($0) }
-            let v = SIMD3<Float>((0..<3).map { k in Float(Float16(blend(decoded.map { $0[k] }))) })
-            return rgb9e5(v)
+        case 93: return Rgb9e5MipModel.step(taps, qx: wx, qy: wy)
         default:
             let linear = taps.map { c -> Float in
                 let s = Float(c) / 255

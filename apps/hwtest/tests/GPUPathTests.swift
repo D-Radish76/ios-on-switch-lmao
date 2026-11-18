@@ -357,12 +357,27 @@ struct NativeSurfaceViewPathTest: GPUPathTest {
             throw TestFailure("no 720p \(codec) clip")
         }
         let frame = try Self.decodeFirst(try await Demux.load(clip, from: context.media), clip)
-        let sampleBytes = codec.bitDepth > 8 ? 2 : 1
-        let scale = sampleBytes == 2 ? 65535.0 : 255.0
         var made: CVMetalTextureCache?
         guard CVMetalTextureCacheCreate(nil, nil, gpu.device, nil, &made) == kCVReturnSuccess, let cache = made else {
             throw TestFailure("CVMetalTextureCacheCreate failed")
         }
+        let wrong = try await Self.planesWrong(frame, through: cache, gpu, bitDepth: codec.bitDepth)
+        var failures: [String] = []
+        for (plane, count) in wrong.enumerated() {
+            metrics.set("plane\(plane)_wrong_bytes", count)
+            if count != 0 { failures.append("plane \(plane): \(count) bytes differ from the CPU's rows") }
+        }
+        metrics.set("textures", wrong.count)
+        return failures
+    }
+
+    /// Per plane, the bytes a compute kernel samples from `frame` through `cache` that differ from its CPU rows; the GPU
+    /// reads both planes before the CPU's lock
+    static func planesWrong(
+        _ frame: CVPixelBuffer, through cache: CVMetalTextureCache, _ gpu: GPU, bitDepth: Int
+    ) async throws -> [Int] {
+        let sampleBytes = bitDepth > 8 ? 2 : 1
+        let scale = sampleBytes == 2 ? 65535.0 : 255.0
         let planes: [(format: MTLPixelFormat, channels: Int)] =
             sampleBytes == 2 ? [(.r16Unorm, 1), (.rg16Unorm, 2)] : [(.r8Unorm, 1), (.rg8Unorm, 2)]
         var sampled: [[UInt8]] = []
@@ -385,15 +400,9 @@ struct NativeSurfaceViewPathTest: GPUPathTest {
                     }
                 })
         }
-        var failures: [String] = []
-        for (plane, shape) in planes.enumerated() {
-            let wrong = Self.wrong(
-                sampled[plane], Self.rows(frame, plane: plane, bytesPerPixel: shape.channels * sampleBytes))
-            metrics.set("plane\(plane)_wrong_bytes", wrong)
-            if wrong != 0 { failures.append("plane \(plane): \(wrong) bytes differ from the CPU's rows") }
+        return planes.enumerated().map { plane, shape in
+            wrong(sampled[plane], rows(frame, plane: plane, bytesPerPixel: shape.channels * sampleBytes))
         }
-        metrics.set("textures", held.count)
-        return failures
     }
 
     final class Decoded: @unchecked Sendable {
@@ -594,6 +603,7 @@ enum GPUPathTests {
         EncodeCostPathTest(), PromiseVICPathTest(), PromiseUnkeptPathTest(), PromiseReleaseOrderPathTest(),
         SetSurvivesTrimPathTest(), SurfaceLocksSideBySideTest.blockLinear, SurfaceLocksSideBySideTest.pitchLinear,
         ImportBesideSubmitsTest(), CommitLatencyPathTest(), FreshSurfaceImportPathTest(),
+        NativeSurfaceRepublishedPathTest(),
     ]
 }
 

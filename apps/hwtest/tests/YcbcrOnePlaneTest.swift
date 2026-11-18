@@ -55,6 +55,13 @@ struct YcbcrOnePlaneTest: HWTest {
     }
 
     func armOff(_ gpu: GPU, _ arm: Arm) async throws -> Int? {
+        guard let (a, b) = Self.textures(gpu, arm) else { return nil }
+        let ta = try await YcbcrP3MatrixTest.drawnTexels(gpu, a), tb = try await YcbcrP3MatrixTest.drawnTexels(gpu, b)
+        return zip(ta, tb).filter { $0.0 != $0.1 }.count
+    }
+
+    /// The arm's one-plane texture over a 34x9 surface of codes, and the two-plane one over the same codes split
+    static func textures(_ gpu: GPU, _ arm: Arm) -> (one: MTLTexture, two: MTLTexture)? {
         let (w, h) = (34, 9)
         guard let oneBuffer = YcbcrCornerTest.pixelBuffer(w, h, arm.one),
             let one = CVPixelBufferGetIOSurface(oneBuffer)?.takeUnretainedValue(),
@@ -88,7 +95,6 @@ struct YcbcrOnePlaneTest: HWTest {
             return gpu.device.makeTexture(descriptor: d, iosurface: s, plane: 0)
         }
         guard let a = make(one, arm.format), let b = make(two, arm.format + 1) else { return nil }
-        let ta = try await YcbcrP3MatrixTest.drawnTexels(gpu, a), tb = try await YcbcrP3MatrixTest.drawnTexels(gpu, b)
-        return zip(ta, tb).filter { $0.0 != $0.1 }.count
+        return (a, b)
     }
 }

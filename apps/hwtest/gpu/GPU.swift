@@ -141,6 +141,7 @@ public final class GPU: @unchecked Sendable {
 
     /// An error as "domain/code text", short enough for a log field.
     public static func describe(_ error: Error) -> String {
+        if let failure = error as? TestFailure { return failure.description }
         let ns = error as NSError
         return "\(ns.domain)/\(ns.code) \(ns.localizedDescription)"
     }

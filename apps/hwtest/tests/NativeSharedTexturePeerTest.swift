@@ -63,11 +63,12 @@ final class TexturePeerAcceptor: NSObject, NSXPCListenerDelegate, SharedTextureP
 
 /// Shared textures across two processes: the app makes one of each shape the raw path now shares (a mipmapped 2D
 /// texture, a 2D array, a cube and a cube array, a 3D texture, a 4-sample texture, a 1D texture and a mipmapped ASTC
-/// one and a one-level ASTC one, each where the device makes the private texture of its descriptor) and sends each handle to the texture peer, a
-/// process of its own with its own device and raw channel, which opens it with newSharedTextureWithHandle: and writes
-/// every level, slice and sample on the GPU (blits; a render pass into a mipmapped one's level 1 and into the
-/// multisampled one). The app then reads every texel back in its own texture of the same pages: no texel was copied
-/// between the processes. iOS 17 has the BlueTool stand-in start the peer, iOS 27 launchd for its Mach service.
+/// one and a one-level ASTC one, each where the device makes the private texture of its descriptor) and sends each
+/// handle to the texture peer, a process of its own with its own device and raw channel, which opens it with
+/// newSharedTextureWithHandle: and writes every level, slice and sample on the GPU (blits; a render pass into the
+/// mipmapped RGBA8 one's level 1 and into the multisampled one; every ASTC level by a blit, as Metal renders into no
+/// block-compressed format). The app then reads every texel back in its own texture of the same pages: no texel was
+/// copied between the processes. iOS 17 has the BlueTool stand-in start the peer, iOS 27 launchd for its Mach service.
 struct NativeSharedTexturePeerTest: NativeObjectTest {
     let id = "metal.native.shared_texture_peer"
     let name = "Shared textures of every shape written by a second process and read back by the app"
@@ -198,7 +199,8 @@ struct NativeSharedTexturePeerTest: NativeObjectTest {
         let across = blocks ? (w + 3) / 4 : w, down = blocks ? (h + 3) / 4 : h, unit = blocks ? 16 : 4
         let uniform =
             t.sampleCount > 1
-            || switch_texpeer_rendered(UInt32(t.textureType.rawValue), UInt32(t.mipmapLevelCount), UInt32(level))
+            || switch_texpeer_rendered(
+                UInt32(t.textureType.rawValue), UInt32(t.mipmapLevelCount), UInt32(level), blocks)
         var out: [UInt8] = []
         out.reserveCapacity(across * down * d * unit)
         for z in 0..<d {

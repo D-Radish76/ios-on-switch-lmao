@@ -5,9 +5,11 @@ import Metal
 
 /// fillTexture:level:slice:region:color: (SPI) on the raw path: a region of a 64x64 texture set to one colour, drawn by
 /// the 2D engine's solid rectangle in the target's own format where rule clear.twod holds for it (raw_twod_fill.h: plain
-/// memory, the formats whose gpu.x1.twod_clear cells read exact), else as CLEAR_SURFACE over the region in a pass of its
-/// own. Each format's target is made on plain memory (switchRawProbePlainPrivate:, where the facade has it) so the 2D
-/// route is the one judged. PASS: every format's fill on the raw path, the region at Metal's codes of the colour (sRGB
+/// memory, the formats whose gpu.x1.twod_clear cells read exact), else the copy engine's constant fill over the region
+/// (raw::BlitEncoder::fillRect), which a compressed target takes through its own compressible binding. Each format's
+/// target is made on plain memory (switchRawProbePlainPrivate:, where the facade has it) so the 2D route is the one
+/// judged; without it the targets are compressed, which judges the copy engine's partial-tile writes and NO_WRITE
+/// components (device-only). PASS: every format's fill on the raw path, the region at Metal's codes of the colour (sRGB
 /// channels encoded), the texels around it as uploaded, and each 2D format's fill by the 2D engine (`<fmt>_twod`, the
 /// facade's fill_twod counter).
 struct FillTextureTest: HWTest {

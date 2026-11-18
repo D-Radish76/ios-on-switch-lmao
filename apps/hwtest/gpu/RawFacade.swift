@@ -64,7 +64,8 @@ public enum RawFacade {
     }
 
     /// The bytes the facade's raw device holds now (empty off the facade): "pool" (its pool, block-linear and depth
-    /// chunks), "wc" (write-combined chunks) and "heap" (the shader heap's bound parts).
+    /// chunks), "wc" (write-combined chunks), "heap" (the shader heap's bound parts) and "headers_left" (texture headers
+    /// not held).
     public static func memory(of device: MTLDevice) -> [String: Int] {
         guard let memory = ask(device, "switchRawMemory") as? [String: NSNumber] else { return [:] }
         return memory.mapValues(\.intValue)

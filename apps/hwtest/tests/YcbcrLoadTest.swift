@@ -10,7 +10,8 @@ import Metal
 /// start as random codes and take one draw into the scissor (13, 9, 30, 20) of a 64x48 surface: their bytes hash to what an
 /// M4 Max's Metal stored (raw/test/ycbcrloadoracle.mm golden; wrong= the cases that do not), no byte of the untouched tiles
 /// changes (untouched_changed), a loaded pass without a draw changes nothing (undrawn_changed), and every command buffer is
-/// raw.
+/// raw. 500_p3 is the '420f' surface under the P3_D65 matrix (raw:pass.ycbcr_p3), its hash this scene's own on an M4 Max
+/// (the oracle's golden cases hold no P3 one).
 struct YcbcrLoadTest: HWTest {
     let id = "gpu.raw.ycbcr_load"
     let name = "Loaded passes into two-plane YCbCr targets store the tiles their draws reach, as Metal does, on raw"
@@ -23,6 +24,7 @@ struct YcbcrLoadTest: HWTest {
         let matrix: CFString?
         let metal: UInt64
 
+        var key: String { matrix.map { $0 as String } == "P3_D65" ? "\(format)_p3" : "\(format)" }
         var tenBit: Bool { [505, 506, 507, 525, 526, 527, 543, 544, 545].contains(format) }
         var across: Bool { ![503, 507, 523, 527, 542, 545].contains(format) }
         var down: Bool { [500, 505, 520, 525, 540, 543].contains(format) }
@@ -59,6 +61,9 @@ struct YcbcrLoadTest: HWTest {
         Case(
             format: 506, fourcc: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange,
             matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2, metal: 0x31e8_3eb4_5b2f_622b),
+        Case(
+            format: 500, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+            matrix: "P3_D65" as CFString, metal: 0x9a23_3bc3_a4df_4bdd),
     ]
     static let width = 64, height = 48
     static let rect = MTLScissorRect(x: 13, y: 9, width: 30, height: 20)
@@ -90,10 +95,10 @@ struct YcbcrLoadTest: HWTest {
             }
             for (path, count) in gpu.paths.paths { paths[path, default: 0] += count }
             let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
-            if !result.hashOk { wrong.append("\(c.format)") }
+            if !result.hashOk { wrong.append(c.key) }
             untouched += result.untouched
             undrawn += result.undrawn
-            var check = "\(c.format): Metal's bytes, untouched tiles kept, a pass without a draw stores nothing, raw"
+            var check = "\(c.key): Metal's bytes, untouched tiles kept, a pass without a draw stores nothing, raw"
             if let note { check += " (\(note))" }
             checks.append((check, note == nil && result.hashOk && result.untouched + result.undrawn == 0 && raw))
         }
