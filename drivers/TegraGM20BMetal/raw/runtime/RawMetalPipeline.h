@@ -21,6 +21,10 @@ bool rmPipelinePublished();
 // The worker's, before it submits a range of `cb` (null: before other work): the encode ahead of another command buffer,
 // or of this one where the range is not the one it began, given back
 void rmPipelineYield(RMCommandBuffer *cb, size_t from, bool nativeRange);
+// The worker's, before it finishes `cb` on an error found before any range of it was submitted: the encode ahead of `cb`
+// given back first, as rmPipelineYield gives it back before a range. That finish may complete `cb`, and its completion
+// returns the recording the encode reads to the pool for another command buffer to take.
+void rmPipelineFailed(RMCommandBuffer *cb);
 // The worker's, in encodeRaw: the encode ahead of `cb`'s range from `from` taken over by the commit's encode (resumed);
 // false: none, or it is no longer good (abandoned)
 bool rmPipelineTake(RMCommandBuffer *cb, size_t from);

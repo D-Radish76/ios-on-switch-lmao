@@ -357,9 +357,10 @@ void submitLoop()
                 continue;
             }
             bool submitted = true;
-            if (error)
+            if (error) {
+                rmPipelineFailed(cb);
                 finish(cb, error);
-            else {
+            } else {
                 submitted = submitRangeExclusive(cb, followed);
             }
             r.waiting.release(ticket.key, marked);

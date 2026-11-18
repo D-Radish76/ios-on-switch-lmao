@@ -9,7 +9,9 @@ namespace {
 // wake the worker, and what was not handed is left for the commit to encode
 constexpr uint32_t kHandOff = 24;
 
-// The command buffer encoded ahead (the worker's alone): handed and not begun, or open on the device
+// The command buffer encoded ahead (the worker's alone): handed and not begun, or open on the device. The worker gives it
+// back or takes it before it finishes that command buffer (rmPipelineYield, rmPipelineFailed): once its completion is
+// sent, nothing of it is the worker's, and the counts giveBack wrote on it are final.
 struct Ahead {
     RMCommandBuffer *cb = nil;
     bool open = false;
@@ -144,6 +146,12 @@ void rmPipelineYield(RMCommandBuffer *cb, size_t from, bool nativeRange)
     Ahead &a = ahead();
     if (a.cb && !(a.cb == cb && nativeRange && from == 0))
         giveBack(VetoOtherWork);
+}
+
+void rmPipelineFailed(RMCommandBuffer *cb)
+{
+    if (ahead().cb == cb)
+        giveBack(cb->_pipelineVeto.load(std::memory_order_acquire) ?: uint32_t(VetoFailed));
 }
 
 bool rmPipelineTake(RMCommandBuffer *cb, size_t from)
