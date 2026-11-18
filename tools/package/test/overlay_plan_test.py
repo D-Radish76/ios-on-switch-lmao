@@ -78,6 +78,24 @@ class KindTest(unittest.TestCase):
             kinded = {e['path'] for e in self.manifest['files'] if e.get('kind') == kind}
             self.assertEqual({f['path'] for f in files} - kinded, unkinded, kind)
 
+    def test_managed_packages_are_readable_at_the_workers_paths_in_both_profiles(self):
+        names = {'sileo.deb', 'ellekit.deb', 'uikittools.deb', 'launchctl.deb'}
+        expected = {
+            f'/usr/share/Switch/bootstrap/packages/{name}': f'build/switch-bootstrap/packages/{name}' for name in names
+        }
+        for kind in KINDS:
+            for release in (False, True):
+                with self.subTest(kind=kind, release=release):
+                    plan = self.overlay.plan(self.manifest, False, kind, release=release)
+                    packages = [
+                        entry
+                        for entry in plan['files']
+                        if entry['path'].startswith('/usr/share/Switch/bootstrap/packages/')
+                    ]
+                    self.assertEqual({entry['path']: entry['source'] for entry in packages}, expected)
+                    self.assertTrue(all(entry['mode'] == 0o644 and not entry['trust'] for entry in packages))
+                    self.assertIn(['/usr/share', ''], plan['dirs'])
+
     def test_install_policy_is_trusted_in_both_profiles_and_kinds(self):
         expected = {
             '/usr/libexec/installd': 'build/switch-apps/installd',

@@ -9,7 +9,13 @@ OVERLAY_BINARIES = {
     "//drivers/TegraGM20BMetal:SwitchShaderCompiler": "build/switch-gpu/SwitchShaderCompiler",
     "//drivers/SwitchAppRegistration:switch-appregd": "build/switch-apps/switch-appregd",
     "//drivers/SwitchInstallPolicy:SwitchInstallPolicy": "build/switch-apps/libSwitchInstallPolicy.dylib",
+    "//drivers/SwitchBootstrap:switch-bootstrap": "build/switch-bootstrap/switch-bootstrap",
     "//drivers/SwitchVideoDecoders:HEVCH8": "build/switch-video/HEVCH8.videodecoder",
     "//drivers/SwitchVideoDecoders:AVD": "build/switch-video/AVD.videodecoder",
     "//drivers/SwitchVideoEncoders:AVE": "build/switch-video/H264H7.videoencoder",
+}
+
+BOOTSTRAP_PACKAGES = {
+    package: "build/switch-bootstrap/packages/" + package + ".deb"
+    for package in ["sileo", "ellekit", "uikittools", "launchctl"]
 }

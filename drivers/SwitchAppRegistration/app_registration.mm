@@ -13,12 +13,14 @@
 // com.apple.private.coreservices.can-register-install-results (-[_LSDModifyClient
 // clientIsEntitledForPostInstallationOperations], 24B119's clientIsEntitledForEmbeddedRegistrationOperations).
 #import "app_registration.h"
+#import "package_records.h"
 
 #include <dlfcn.h>
 #include <unistd.h>
 
 @protocol SwitchLSApplicationWorkspace <NSObject>
 + (id)defaultWorkspace;
+- (NSArray *)allInstalledApplications;
 - (id)registerContainerizedApplicationWithInfoDictionaries:(NSArray *)infos
                                              operationUUID:(NSUUID *)uuid
                                             requestContext:(id)context
@@ -48,6 +50,7 @@
 @protocol SwitchLSApplicationProxy <NSObject>
 + (id)applicationProxyForIdentifier:(NSString *)identifier;
 - (BOOL)isInstalled;
+- (NSString *)applicationIdentifier;
 - (NSURL *)bundleURL;
 @end
 
@@ -132,6 +135,24 @@ BOOL switch_app_registered_at_path(NSString *path, NSString *identifier)
     return [proxy.bundleURL.path.stringByStandardizingPath isEqualToString:path.stringByStandardizingPath];
 }
 
+NSDictionary<NSString *, NSString *> *switch_registered_app_paths(void)
+{
+    NSMutableDictionary *paths = [NSMutableDictionary new];
+    for (id<SwitchLSApplicationProxy> app in [[workspaceClass defaultWorkspace] allInstalledApplications]) {
+        NSString *path = app.bundleURL.path;
+        NSString *identifier = app.applicationIdentifier;
+        if (path.length && identifier.length && app.isInstalled)
+            paths[path] = identifier;
+    }
+    return paths;
+}
+
+NSString *switch_registered_app_path(NSString *identifier)
+{
+    id<SwitchLSApplicationProxy> app = [proxyClass applicationProxyForIdentifier:identifier];
+    return app.isInstalled ? app.bundleURL.path : nil;
+}
+
 static id requestContext(void)
 {
     id<SwitchLSOperationRequestContext> context = [contextClass new];
@@ -172,14 +193,30 @@ static NSArray *gathered(NSString *path, NSError **error)
     return records.count ? records : nil;
 }
 
+static BOOL switch_register_info_records(NSArray *records, NSUUID *uuid, id<LSOperationSaveObserver> observer,
+                                         NSError **error)
+{
+    id<SwitchLSApplicationWorkspace> workspace = [workspaceClass defaultWorkspace];
+    id context = requestContext();
+    return retrying(
+        ^BOOL(NSError **last) {
+            return [workspace registerContainerizedApplicationWithInfoDictionaries:records
+                                                                     operationUUID:uuid
+                                                                    requestContext:context
+                                                                      saveObserver:observer
+                                                                 registrationError:last] != nil;
+        },
+        error);
+}
+
 BOOL switch_register_builtin_app(NSString *path, NSUUID *uuid, id<LSOperationSaveObserver> observer, NSError **error)
 {
     NSArray *records = gathered(path, error);
     if (!records)
         return NO;
+#if SWITCH_APPREGD_INSTALLATION_RECORDS
     id<SwitchLSApplicationWorkspace> workspace = [workspaceClass defaultWorkspace];
     id context = requestContext();
-#if SWITCH_APPREGD_INSTALLATION_RECORDS
     NSArray *extensions = [records subarrayWithRange:NSMakeRange(1, records.count - 1)];
     return retrying(
         ^BOOL(NSError **last) {
@@ -193,16 +230,8 @@ BOOL switch_register_builtin_app(NSString *path, NSUUID *uuid, id<LSOperationSav
         },
         error);
 #else
-    NSArray *infos = [recordClass bundleRecordArrayToInfoDictionaryArray:records];
-    return retrying(
-        ^BOOL(NSError **last) {
-            return [workspace registerContainerizedApplicationWithInfoDictionaries:infos
-                                                                     operationUUID:uuid
-                                                                    requestContext:context
-                                                                      saveObserver:observer
-                                                                 registrationError:last] != nil;
-        },
-        error);
+    return switch_register_info_records([recordClass bundleRecordArrayToInfoDictionaryArray:records], uuid, observer,
+                                        error);
 #endif
 }
 
@@ -238,4 +267,30 @@ BOOL switch_unregister_builtin_app(NSString *path, NSString *identifier, NSUUID 
                                                                  unregistrationError:last];
         },
         error);
+}
+
+BOOL switch_unregister_package_app(NSString *identifier, NSUUID *uuid, id<LSOperationSaveObserver> observer,
+                                   NSError **error)
+{
+    id<SwitchLSApplicationWorkspace> workspace = [workspaceClass defaultWorkspace];
+    id context = requestContext();
+    return retrying(
+        ^BOOL(NSError **last) {
+            return [workspace unregisterContainerizedApplicationWithBundleIdentifier:identifier
+                                                                       operationUUID:uuid
+                                                             unregistrationOperation:3
+                                                                        precondition:nil
+                                                                      requestContext:context
+                                                                        saveObserver:observer
+                                                                 unregistrationError:last];
+        },
+        error);
+}
+
+BOOL switch_register_package_app(NSArray<NSDictionary *> *bundles, NSUUID *uuid, id<LSOperationSaveObserver> observer,
+                                 NSError **error)
+{
+    // 21H461 groups the flat plugin records in lsd. The 24B119 workspace converts them to ICL records before IPC.
+    NSArray<NSDictionary *> *records = switch_package_install_info(bundles, error);
+    return records.count && switch_register_info_records(records, uuid, observer, error);
 }

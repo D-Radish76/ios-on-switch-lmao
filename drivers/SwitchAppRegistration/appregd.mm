@@ -13,11 +13,22 @@
 // this when launchd starts it (../SwitchBluetooth/BlueTool/BlueTool.c).
 #import <Foundation/Foundation.h>
 
+#include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
+#include <mach/message.h>
 #include <os/log.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sysexits.h>
+#include <unistd.h>
+#include <xpc/xpc.h>
 
 #import "app_registration.h"
 #import "installer_handler.h"
+#include "build_configuration.h"
+#import "bootstrap_registration.h"
 
 static NSString *const kJournalPath = @"/private/var/Switch/app-registration.plist";
 static NSString *const kAppliedPath =
@@ -102,6 +113,28 @@ static os_log_t logger;
 }
 
 @end
+
+int switch_apply_package_registration(NSString *path, NSString *identifier, NSArray<NSDictionary *> *bundles)
+{
+    const BOOL remove = !bundles;
+    NSUUID *uuid = [NSUUID UUID];
+    SwitchSaveObserver *observer = [SwitchSaveObserver new];
+    [observer expect:uuid token:identifier];
+    NSError *error = nil;
+    const BOOL applied = remove ? switch_unregister_package_app(identifier, uuid, observer, &error)
+                                : switch_register_package_app(bundles, uuid, observer, &error);
+    if (!applied) {
+        [observer cancel:uuid];
+        os_log_error(logger, "SwitchAppRegistration: %{public}s %{public}@ (%{public}@): %{public}@",
+                     remove ? "remove" : "register", identifier, path, error);
+        return EX_SOFTWARE;
+    }
+    const BOOL saved = [[observer savedBy:dispatch_time(DISPATCH_TIME_NOW, kSaveTimeout)] containsObject:identifier];
+    if (saved)
+        os_log(logger, "SwitchAppRegistration: %{public}s %{public}@ (%{public}@)", remove ? "removed" : "registered",
+               identifier, path);
+    return saved ? EX_OK : EX_TEMPFAIL;
+}
 
 // The stage's well-formed entries, by path; the deploy writes paths of /Applications/<name>.app only.
 static NSArray<NSDictionary *> *entries(NSDictionary *journal, NSString *stage)
@@ -244,9 +277,21 @@ static int applyJournal(void)
     return failed ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     logger = os_log_create("com.brunostjohn.switch.appregd", "registration");
+    if (argc == 2 && !strcmp(argv[1], "--bootstrap-service"))
+        return switch_registration_serve();
+    if (argc == 2 && !strcmp(argv[1], "--finish-migration"))
+        return switch_registration_request(@[ @"--finish-migration" ]);
+    if (argc == 2 && !strcmp(argv[1], "--refresh-bootstrap-apps"))
+        return switch_registration_request(@[ @"-a" ]);
+    if (argc == 2 && !strcmp(argv[1], "--register-sileo"))
+        return switch_registration_request(@[ @"--register-sileo" ]);
+    if (!strcmp(strrchr(argv[0], '/') ? strrchr(argv[0], '/') + 1 : argv[0], "uicache"))
+        return switch_uicache_main(argc, argv);
+    if (argc != 1)
+        return EX_USAGE;
     // LaunchServices reports saves on queues of its own; the main queue stays free for any it targets there.
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         int status;

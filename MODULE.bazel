@@ -10,6 +10,30 @@ module(
     version = "0.1.0",
 )
 
+bootstrap = use_extension("//bootstrap:repositories.bzl", "bootstrap_dependencies")
+use_repo(
+    bootstrap,
+    "bootstrap_ellekit",
+    "bootstrap_launchctl",
+    "bootstrap_procursus_bootstrap",
+    "bootstrap_sileo",
+    "bootstrap_sileo_alderis",
+    "bootstrap_sileo_cosmos",
+    "bootstrap_sileo_depictionkit",
+    "bootstrap_sileo_down",
+    "bootstrap_sileo_evander",
+    "bootstrap_sileo_jjliso8601dateformatter",
+    "bootstrap_sileo_lnpopupcontroller",
+    "bootstrap_sileo_lnztreeview",
+    "bootstrap_sileo_onboarding",
+    "bootstrap_sileo_release",
+    "bootstrap_sileo_sqlite_swift",
+    "bootstrap_sileo_swipecellkit",
+    "bootstrap_sileo_zippyjson",
+    "bootstrap_sileo_zippyjsoncfamily",
+    "bootstrap_zstd",
+)
+
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "bazel_skylib", version = "1.9.2")
 bazel_dep(name = "rules_cc", version = "0.2.27")

@@ -68,6 +68,7 @@ from tools.deploy import (
     system_apps,
 )
 from tools.install import (
+    bootstrap,
     card as cards,
     host,
     progress,
@@ -283,6 +284,8 @@ def _write(
     steps = _Steps(log)
     apps = steps.run('system apps registration', system_apps.apps, data_root)
     cards.sync_overlay(data_root, args.boot_package, log)
+    pins = json.loads(Path(args.ipsw).read_text()) if args.ipsw else {}
+    steps.run('bootstrap migration', bootstrap.stage, data_root, args.boot_package, pins, log)
     steps.run(
         'deployed.json',
         deployed.record,

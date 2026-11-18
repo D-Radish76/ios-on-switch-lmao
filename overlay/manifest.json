@@ -65,6 +65,57 @@
       "union": "/Applications"
     },
     {
+      "path": "/usr/libexec/switch-bootstrap",
+      "source": "build/switch-bootstrap/switch-bootstrap",
+      "trust": true
+    },
+    {
+      "path": "/System/Library/xpc/launchd.plist",
+      "source": "build/switch-bootstrap/launchd.plist",
+      "kind": "21H461"
+    },
+    {
+      "path": "/System/Library/xpc/launchd.plist.sig",
+      "source": "build/switch-bootstrap/launchd.plist.sig",
+      "kind": "21H461"
+    },
+    {
+      "path": "/private/preboot/Cryptexes/Supplemental/System/Library/LaunchDaemons/com.brunostjohn.switch.bootstrap.plist",
+      "source": "drivers/SwitchBootstrap/com.brunostjohn.switch.bootstrap.plist",
+      "union": "/private/preboot/Cryptexes/Supplemental",
+      "kind": "24B119"
+    },
+    {
+      "path": "/usr/share/Switch/bootstrap/payload.tar",
+      "source": "build/switch-bootstrap/payload.tar",
+      "union": "/usr/share"
+    },
+    {
+      "path": "/usr/share/Switch/bootstrap/manifest.json",
+      "source": "build/switch-bootstrap/manifest.json",
+      "union": "/usr/share"
+    },
+    {
+      "path": "/usr/share/Switch/bootstrap/packages/sileo.deb",
+      "source": "build/switch-bootstrap/packages/sileo.deb",
+      "union": "/usr/share"
+    },
+    {
+      "path": "/usr/share/Switch/bootstrap/packages/ellekit.deb",
+      "source": "build/switch-bootstrap/packages/ellekit.deb",
+      "union": "/usr/share"
+    },
+    {
+      "path": "/usr/share/Switch/bootstrap/packages/uikittools.deb",
+      "source": "build/switch-bootstrap/packages/uikittools.deb",
+      "union": "/usr/share"
+    },
+    {
+      "path": "/usr/share/Switch/bootstrap/packages/launchctl.deb",
+      "source": "build/switch-bootstrap/packages/launchctl.deb",
+      "union": "/usr/share"
+    },
+    {
       "path": "/usr/lib/libSwitchInstallPolicy.dylib",
       "source": "build/switch-apps/libSwitchInstallPolicy.dylib",
       "trust": true
@@ -133,6 +184,12 @@
     {
       "path": "/private/preboot/Cryptexes/Supplemental/System/Library/LaunchDaemons/com.brunostjohn.switch.appregd.plist",
       "source": "drivers/SwitchAppRegistration/com.brunostjohn.switch.appregd.plist",
+      "union": "/private/preboot/Cryptexes/Supplemental",
+      "kind": "24B119"
+    },
+    {
+      "path": "/private/preboot/Cryptexes/Supplemental/System/Library/LaunchDaemons/com.brunostjohn.switch.bootstrap-apps.plist",
+      "source": "drivers/SwitchAppRegistration/com.brunostjohn.switch.bootstrap-apps.plist",
       "union": "/private/preboot/Cryptexes/Supplemental",
       "kind": "24B119"
     },

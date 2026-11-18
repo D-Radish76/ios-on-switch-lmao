@@ -88,6 +88,22 @@ static BOOL switch_set_ipa_handler(id<SwitchContainerRecord> record, NSError **e
     return succeeded;
 }
 
+id switch_installed_record(NSString *path, NSString *identifier, NSError **error)
+{
+    Class recordClass = NSClassFromString(@"LSApplicationRecord");
+    NSURL *url = [NSURL fileURLWithPath:path isDirectory:YES];
+    id<SwitchContainerRecord> record = [(id<SwitchContainerRecord>)[recordClass alloc] initWithURL:url
+                                                                                  allowPlaceholder:NO
+                                                                                             error:error];
+    if (!record)
+        return nil;
+    if (![record.bundleIdentifier isEqualToString:identifier]) {
+        switch_container_failure(error, @"Unexpected bundle identity in LaunchServices record");
+        return nil;
+    }
+    return record;
+}
+
 BOOL switch_register_installer_handler(NSError **error)
 {
     NSString *path = @"/Applications/SwitchInstaller.app";
@@ -96,14 +112,6 @@ BOOL switch_register_installer_handler(NSError **error)
         return YES;
     if (!switch_app_registered_at_path(path, identifier))
         return switch_container_failure(error, @"Installer's saved record does not point to its built-in bundle");
-    Class recordClass = NSClassFromString(@"LSApplicationRecord");
-    NSURL *url = [NSURL fileURLWithPath:path isDirectory:YES];
-    id<SwitchContainerRecord> record = [(id<SwitchContainerRecord>)[recordClass alloc] initWithURL:url
-                                                                                  allowPlaceholder:NO
-                                                                                             error:error];
-    if (!record)
-        return NO;
-    if (![record.bundleIdentifier isEqualToString:identifier])
-        return switch_container_failure(error, @"Unexpected bundle identity in Installer's LaunchServices record");
-    return switch_set_ipa_handler(record, error);
+    id record = switch_installed_record(path, identifier, error);
+    return record && switch_set_ipa_handler(record, error);
 }

@@ -4,5 +4,6 @@
 #import <Foundation/Foundation.h>
 
 BOOL switch_register_installer_handler(NSError **error);
+id switch_installed_record(NSString *path, NSString *identifier, NSError **error);
 
 #endif
