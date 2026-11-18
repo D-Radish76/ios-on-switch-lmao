@@ -20,8 +20,6 @@ load("@rules_rust//rust:defs.bzl", "rust_test")
 #   native_address_maps_test  NativeMetalAddressMaps.rs: the address-mode map of each two-plane format raw converts, as raw's
 #                           Texture::addressMap, and the map each runtime sampler takes of the textures it samples, a
 #                           sampler two maps give two sets of modes named
-#   journal_source_test     NativeBridgeMetalFrontend.mm: a raw-made state's journal line is written on the persist queue,
-#                           not on its creating thread
 #
 #   bazel test //drivers/NativeMetal/test:all
 load("//bazel/lint:defs.bzl", "lint_files")
@@ -213,14 +211,4 @@ host_test(
         "//drivers/TegraGM20BMetal:translate/NativeMetalReflection.rs",
         "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.rs",
     ],
-)
-
-host_test(
-    name = "journal_source_test",
-    srcs = ["journal_source_test.cpp"],
-    data = [
-        "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
-    ],
-    # m2v: the frontend's journal, which goes with it
-    tags = ["m2v"],
 )

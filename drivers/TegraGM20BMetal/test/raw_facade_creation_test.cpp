@@ -165,7 +165,6 @@ TEST(RawFacadeCreation, AnotherDevicesLinkedFunctionFailsTheCreation)
         MTLRenderPipelineDescriptor *d = unpacked(library);
         HarnessFunction *foreign = [HarnessFunction new];
         foreign->_name = @"f";
-        foreign->_metallib = [NSData dataWithBytes:"" length:0];
         MTLLinkedFunctions *linked = [MTLLinkedFunctions linkedFunctions];
         linked.functions = @[ (id<MTLFunction>)foreign ];
         d.fragmentLinkedFunctions = linked;

@@ -415,8 +415,6 @@ TEST_F(FacadeKernelRefusal, AStateOfAnotherDevicesFunctionIsNotMade)
 {
     HarnessFunction *foreign = [HarnessFunction new];
     foreign->_name = @(kernelName(0).c_str());
-    const std::string bytes = kernelLibrary();
-    foreign->_metallib = [NSData dataWithBytes:bytes.data() length:bytes.size()];
     MTLComputePipelineDescriptor *d = [MTLComputePipelineDescriptor new];
     d.computeFunction = (id<MTLFunction>)foreign;
     NSError *error = nil;

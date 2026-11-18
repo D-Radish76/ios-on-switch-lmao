@@ -4594,9 +4594,9 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_zeta_colour",
 ]] + ["//drivers/TegraGM20BMetal:compiler_cc_srcs"]
 
-# The raw facade and runtime with the host tests' sanitizers and the harness marks, the frontend and the bridge answered by
-# raw_facade_standins.mm (no m2v device): what raw_facade_arguments_test and raw_facade_heap_use_test open the facade over
-# the kernel model with
+# The raw facade and runtime with the host tests' sanitizers and the harness marks, the translation answered by
+# raw_translate_absent.cpp: what raw_facade_arguments_test and raw_facade_heap_use_test open the facade over the kernel
+# model with
 FACADE_HOST_COPTS = RAW_HOST_COPTS + ["-DSWITCH_RAW_HARNESS_MARKS"]
 
 FACADE_HOST_DEPS = RAW_HOST_DEPS + [
@@ -4607,7 +4607,7 @@ FACADE_HOST_DEPS = RAW_HOST_DEPS + [
 
 # The same facade and runtime as //gpu:plugin builds them, with no sanitizers or harness marks (raw_facade_harness.h's m2v
 # and footprint tests): the facade's Objective-C++ units through .cpp units of their own (defs.bzl) beside the shader
-# compiler's, the frontend answered by each test's raw_frontend_absent.cpp
+# compiler's, the translation answered by each test's raw_translate_absent.cpp
 objcxx_units(
     name = "raw_facade_units",
     testonly = True,
@@ -4663,7 +4663,7 @@ objc_library(
     name = "raw_facade_host",
     testonly = True,
     srcs = RAW_HOST_HEADERS + [
-        "raw_facade_standins.mm",
+        "raw_translate_absent.cpp",
         "//drivers/TegraGM20BMetal:raw_facade_srcs",
     ],
     copts = FACADE_OBJC_COPTS,
@@ -5222,7 +5222,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_cubic_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5253,7 +5253,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_variant_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5285,7 +5285,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_turned_depth_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5317,7 +5317,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_pass_failures_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5349,7 +5349,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_xr_images_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5379,7 +5379,7 @@ host_test(
         "raw_facade_pass_scene.h",
         "raw_facade_surface_forms_test.cpp",
         "raw_facade_variant_compiler.h",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_job_methods.h",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
@@ -5414,7 +5414,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_copy_clamp_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5444,7 +5444,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_planar_targets_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5476,7 +5476,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_format_targets_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5506,7 +5506,7 @@ host_test(
         "raw_facade_harness.h",
         "raw_facade_storage_compressed_test.cpp",
         "raw_facade_variant_compiler.h",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_job_methods.h",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
@@ -5537,7 +5537,7 @@ host_test(
         "raw_facade_harness.h",
         "raw_facade_pending_variant_test.cpp",
         "raw_facade_variant_compiler.h",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_job_methods.h",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
@@ -5569,7 +5569,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_fused_storage_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5601,7 +5601,7 @@ host_test(
         "raw_facade_variant_compiler.h",
         "raw_job_methods.h",
         "raw_facade_draw_ends_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         ":librecord_count.dylib",
     ] + RAW_HOST_HEADERS,
@@ -5987,42 +5987,6 @@ host_test(
     deps = [":frontend_host"] + RAW_HOST_DEPS,
 )
 
-# What the m2v device's open costs a client process (the frontend, the host bridge, NVK's host twin over the mock GM20B)
-host_test(
-    name = "m2v_open_footprint_test",
-    size = "medium",
-    srcs = [
-        "m2v_open_footprint_test.cpp",
-        ":libmock_iokit.dylib",
-        "//drivers/TegraGM20BMetal:hostsim/mock_iokit.h",
-        "//gpu:bridge_darwin",
-    ] + RAW_HOST_HEADERS,
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-    ] + RAW_HOST_COPTS,
-    cxx_std = "c++17",
-    data = ["//gpu/nvk:host_dylib"],
-    env = {"SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)"},
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
-    sanitize = False,
-    tags = ["m2v"],
-    deps = [":frontend_host"],
-)
-
 # A CPU write the next job reads drops the GPU L2's lines first only when it was made under a CPU lease (raw::HostAccess):
 # raw::Device over the kernel model, which takes jobs as host-written as the kernel does
 host_test(
@@ -6030,7 +5994,7 @@ host_test(
     srcs = [
         "raw_device_harness.h",
         "raw_job_methods.h",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_host_written_test.cpp",
         "raw_kernel_model.h",
     ] + RAW_HOST_HEADERS,
@@ -6070,7 +6034,7 @@ host_test(
         "raw_arena_trim_test.cpp",
         "empty_pack.h",
         "predication_model.h",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
     ] + RAW_HOST_HEADERS,
     copts = [
@@ -6105,7 +6069,7 @@ host_test(
     srcs = [
         "raw_seed_slot_test.cpp",
         "empty_pack.h",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_program_pages.h",
         "//kits/SwitchSeedPack:SwitchSeedPack.h",
@@ -6142,7 +6106,7 @@ host_test(
 host_test(
     name = "raw_native_seed_output_test",
     srcs = [
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         "raw_native_seed_output_test.cpp",
         "//drivers/TegraGM20BMetal:raw/pack/native_seed_manifest.h",
@@ -6171,59 +6135,6 @@ host_test(
         ":raw_runtime_plugin_host",
         "//kits/SwitchRefusal:switch_refusal",
     ] + RAW_HOST_DEPS,
-)
-
-# What the shader compiler's open costs (compiler_engine.mm openDevice), a step a process over the mock GM20B: NVK's image,
-# a bare NVK device, and the m2v device it opens; each step's growth by image and VM tag
-host_test(
-    name = "compiler_open_footprint_test",
-    size = "medium",
-    srcs = [
-        "compiler_open_footprint_test.cpp",
-        "footprint_breakdown.h",
-        ":libmock_iokit.dylib",
-        "//gpu:bridge_darwin",
-        "//third_party/mesa:include/vulkan/vk_platform.h",
-        "//third_party/mesa:include/vulkan/vulkan_core.h",
-        "//third_party/mesa:include/vk_video/vulkan_video_codecs_common.h",
-    ] + ["//third_party/mesa:include/vk_video/vulkan_video_codec_%s.h" % c for c in [
-        "av1std_decode",
-        "av1std_encode",
-        "av1std",
-        "h264std_decode",
-        "h264std_encode",
-        "h264std",
-        "h265std_decode",
-        "h265std_encode",
-        "h265std",
-        "vp9std_decode",
-        "vp9std",
-    ]] + RAW_HOST_HEADERS,
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-        "-Ithird_party/mesa/include",
-    ] + RAW_HOST_COPTS,
-    cxx_std = "c++17",
-    data = ["//gpu/nvk:host_dylib"],
-    env = {"SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)"},
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
-    sanitize = False,
-    tags = ["m2v"],
-    deps = [":frontend_host"],
 )
 
 # The system shader compiler's engine (compiler/compiler_engine.mm, the translator alone: raw/runtime/RawOffline.h)
@@ -6509,7 +6420,7 @@ host_test(
     srcs = [
         "raw_device_submitted_tsan_test.cpp",
         "empty_pack.h",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
     ] + RAW_HOST_HEADERS,
     copts = [
@@ -6547,7 +6458,7 @@ host_test(
     size = "medium",
     srcs = [
         "raw_pass_cache_race_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
     ] + RAW_HOST_HEADERS,
     copts = [
@@ -6585,7 +6496,7 @@ host_test(
     name = "raw_slot_clean_test",
     srcs = [
         "raw_slot_clean_test.cpp",
-        "raw_frontend_absent.cpp",
+        "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_program_pages.h",
     ] + RAW_HOST_HEADERS,

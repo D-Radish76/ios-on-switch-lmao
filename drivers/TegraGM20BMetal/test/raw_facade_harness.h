@@ -3,7 +3,7 @@
 // framework's: include this in one unit of a test). A pack of one state is written for each process: its two programs a
 // page or more, so they run in place from the pack's pages, and a metallib at <dir>/QuartzCore.framework/default.metallib
 // listing the state's functions, so the state is the framework's and looked up in the pack. facade::device() is instead
-// opened once per process over a pack of no states, the frontend and the bridge answered by raw_facade_standins.mm.
+// opened once per process over a pack of no states, the translation answered by raw_translate_absent.cpp.
 #pragma once
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>

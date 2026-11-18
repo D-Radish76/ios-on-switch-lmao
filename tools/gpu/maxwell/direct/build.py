@@ -111,10 +111,6 @@ def main() -> None:
                 out,
                 '-lmock_iokit',
                 '-Wl,-rpath,@executable_path',
-                *[
-                    f'-Wl,-U,_native_bridge_metal_{symbol}'
-                    for symbol in ('render_direct', 'compute_direct', 'function_metallib', 'function_library_name')
-                ],
                 '-lobjc',
                 *frameworks,
                 '-o',

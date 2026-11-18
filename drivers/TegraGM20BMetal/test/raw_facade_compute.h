@@ -10,23 +10,13 @@
 #include <string>
 #include <vector>
 
+// A function of no device's library: what another device's function is to the facade
 @interface HarnessFunction : NSObject {
 @public
     NSString *_name;
-    NSData *_metallib;
 }
 @end
 @implementation HarnessFunction
-
-- (NSString *)harnessName
-{
-    return _name;
-}
-
-- (NSData *)harnessMetallib
-{
-    return _metallib;
-}
 
 - (NSString *)name
 {

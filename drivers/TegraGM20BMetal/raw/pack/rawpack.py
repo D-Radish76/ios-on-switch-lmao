@@ -226,8 +226,6 @@ def drawn_here(line: str, build: str) -> bool:
 
 # The raw runtime's sources directpack.mm makes its records with (RawDirect.mm beside them)
 DIRECT_RUNTIME = ('raw_direct', 'raw_direct_compute', 'raw_record_parts', 'raw_emit', 'raw_pack', 'raw_metallib')
-# The frontend's exports raw refers to weakly (native_bridge_metal_<name>), unbound in directpack
-FRONTEND_WEAK = ('render_direct', 'compute_direct', 'function_metallib', 'function_library_name')
 
 
 class Links(NamedTuple):
@@ -302,9 +300,8 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
     def tool(name: str, objcxx: list[Path], cxx: tuple[Path, ...] = (), frontend: bool = True) -> None:
         """Link one of the generator's tools over the host bridge and the frontend, beside the mock GPU (rpath).
 
-        Without the frontend, a tool links the translation alone (no m2v runtime) and raw's weak references to the
-        frontend (RawDirect.mm, RawRenderKey.mm) stay unbound. A tool of the direct compile (raw_direct.cpp among `cxx`)
-        links the stage compile's object.
+        Without the frontend, a tool links the translation alone (no m2v runtime). A tool of the direct compile
+        (raw_direct.cpp among `cxx`) links the stage compile's object.
         """
         compiles = any(p.name == 'raw_direct.cpp' for p in cxx)
         frameworks = [
@@ -342,7 +339,6 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
                 work,
                 '-lmock_iokit',
                 '-Wl,-rpath,@executable_path',
-                *([] if frontend else [f'-Wl,-U,_native_bridge_metal_{weak}' for weak in FRONTEND_WEAK]),
                 # No debug map: its paths name the build's sandbox or worker slot, so every link made other bytes and
                 # every bucket keyed on the tool ran again
                 '-Wl,-S',

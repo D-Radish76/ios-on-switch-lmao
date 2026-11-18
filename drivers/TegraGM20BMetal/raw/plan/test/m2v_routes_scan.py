@@ -1,9 +1,10 @@
 """Every way the plugin's own code reaches m2v, read from its sources (m2v_routes.tsv's product rows are this set).
 
 A route is (route, name) with the files that raise it. The raw device has no m2v device (an rmM2V, RM_M2V or RMNeed
-would be a route), m2v's objects come only from a client's foreign object (a predicate) or a twin field, and its code only
-through a bridge symbol, an NB class looked up by name, an NVK export or a header of the m2v tree, so these detectors close
-the set together with the no-m2v link lists (gpu/m2v_link): a call the sources hide behind a pointer is a link edge.
+would be a route), m2v's objects come only from a client's foreign object (a predicate) or a twin field, and its code
+only through a bridge symbol, an NB class looked up by name, an NVK export, a header of the frontend or the bridge, or a
+type only the frontend declares (ident frontend), so these detectors close the set together with the plugin's link,
+which holds the translation alone (gpu/m2v_link, tools/gpu/bundle.py): a call hidden behind a pointer fails that link.
 """
 
 import re
@@ -13,6 +14,7 @@ from pathlib import Path
 ROOT = Path(__file__).parents[5]
 METAL = ROOT / 'drivers/TegraGM20BMetal'
 RUNTIME = METAL / 'raw/runtime'
+TRANSLATE = METAL / 'translate/NativeMetalTranslate.h'
 KERNEL = ROOT / 'drivers/TegraGM20B'
 INVENTORY = METAL / 'raw/test/inventory.tsv'
 SUFFIXES = {'.mm', '.cpp', '.h', '.c'}
@@ -40,6 +42,16 @@ M2V_IDENTS = {
     'rmM2vMissingState': r'\brmM2vMissing(?:State|Kernel)\b',
     'range.raw=false': r'\brange\.raw\s*=\s*false\b',
     'takeReason': r'\btake(?:Whole)?Reason\b',
+    'frontend': r'\bswitch_(?:foreign_memory|nvk_image_memory|surface_importer)\b|\bNmbShaderCacheStats\b',
+}
+# The headers only the frontend and the bridge compile (drivers/NativeMetal), besides bridge/'s
+FRONTEND_HEADERS = {
+    'AsyncPipelines.h',
+    'NativeBridgeMetalFrontend.h',
+    'NativeComputeArtifactStorage.h',
+    'NativeComputeReflection.h',
+    'NativeMetalArtifactCache.h',
+    'TwoPlaneStandIn.h',
 }
 # The kernel's submission entries only NVK calls (TegraGM20BABI.h)
 KERNEL_LEGACY = ('Exec', 'ExecSurfaces', 'Submit', 'SubmitAddress')
@@ -95,6 +107,11 @@ def product_units() -> list[Path]:
     return [*units, METAL / 'TegraGM20BMetalPlugin.mm']
 
 
+def translation_entries() -> set[str]:
+    """Give the nmb_ functions the translation declares: the only bridge symbols the plugin may name."""
+    return set(re.findall(r'\b(nmb_\w+)\s*\(', strip_comments(TRANSLATE.read_text(), strings=False)))
+
+
 def kernel_units() -> list[Path]:
     return [p for p in sorted(KERNEL.iterdir()) if p.suffix in SUFFIXES]
 
@@ -145,7 +162,7 @@ class Census:
         for cls in NB_CLASS.findall(text):
             self.add('class', cls, file)
         for header in INCLUDE.findall(text):
-            if header.startswith('bridge/') or Path(header).name == 'NativeBridgeMetalFrontend.h':
+            if header.startswith('bridge/') or Path(header).name in FRONTEND_HEADERS:
                 self.add('include', header, file)
         self._names(file, text, code)
         for ident, pattern in M2V_IDENTS.items():

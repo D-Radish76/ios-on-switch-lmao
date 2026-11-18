@@ -6,14 +6,16 @@ raise it; a route with no row, a row whose route is gone and a row whose files m
 kind are pinned here and may only be lowered. A row that, once m2v is gone, returns Metal's error names the refusal line
 it logs (an error line kept in release, kits/SwitchRefusal); a row main already closes must raise that line in its
 files. The identifiers that name an m2v twin are counted and pinned too: after the cut the count is 0, and every twin
-row left is raw's own form, which the rename step (S4) renames.
+row left is raw's own form, which the rename step (S4) renames. The frontend and the bridge left the plugin (S5): an
+include of their headers, an NB class, a type only the frontend declares or an nmb_ symbol the translation does not
+declare fails whether or not a row names it.
 """
 
 import csv
 import unittest
 from collections import Counter
 
-from m2v_routes_scan import ROOT, Census
+from m2v_routes_scan import ROOT, Census, translation_entries
 
 TABLE = ROOT / 'drivers/TegraGM20BMetal/raw/plan/m2v_routes.tsv'
 COLUMNS = ('kind', 'route', 'name', 'raised_in', 'gone', 'logs', 'owner', 'status', 'boot21', 'note')
@@ -72,6 +74,17 @@ class Routes(unittest.TestCase):
     def test_open_rows_pinned(self) -> None:
         open_rows = Counter(row['kind'] for row in self.rows if row['status'] == 'open')
         self.assertEqual({kind: open_rows.get(kind, 0) for kind in KINDS}, OPEN)
+
+    def test_the_frontend_and_the_bridge_stay_out(self) -> None:
+        translation = translation_entries()
+        back = sorted(
+            f'{route} {name}'
+            for route, name in self.census.routes
+            if route in ('include', 'class')
+            or (route, name) == ('ident', 'frontend')
+            or (route == 'bridge' and name not in translation)
+        )
+        self.assertEqual(back, [], 'the plugin names the frontend or the bridge again')
 
     def test_m2v_twins_pinned(self) -> None:
         product = [r for r in self.rows if r['kind'] == 'product' and r['route'] == 'twin']

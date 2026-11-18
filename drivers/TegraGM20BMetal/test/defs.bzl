@@ -94,7 +94,7 @@ def raw_device_test(name, srcs, copts = [], linkopts = [], deps = [], **kwargs):
 def facade_test(name, srcs, plugin = "_host", copts = [], linkopts = [], data = [], env = {}, deps = [], **kwargs):
     """A host_test of the raw facade over the kernel model (raw_facade_harness.h).
 
-    It links :raw_facade_plugin<plugin> and :raw_runtime_plugin<plugin>; the frontend is raw_frontend_absent.cpp's.
+    It links :raw_facade_plugin<plugin> and :raw_runtime_plugin<plugin>; the translation is raw_translate_absent.cpp's.
     """
     host_test(
         name = name,
@@ -103,7 +103,7 @@ def facade_test(name, srcs, plugin = "_host", copts = [], linkopts = [], data = 
             "made_metallib.h",
             "raw_facade_harness.h",
             "raw_job_methods.h",
-            "raw_frontend_absent.cpp",
+            "raw_translate_absent.cpp",
             "raw_kernel_model.h",
         ] + RAW_HOST_HEADERS,
         copts = [

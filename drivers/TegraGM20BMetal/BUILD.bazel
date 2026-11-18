@@ -258,7 +258,8 @@ filegroup(
     ],
 )
 
-# The plugin's own sources and the selector inventory: what raw/plan/test/m2v_routes_test.py reads every way into m2v from
+# The plugin's own sources, the selector inventory and the translation's entry points: what
+# raw/plan/test/m2v_routes_test.py reads every way into m2v from
 filegroup(
     name = "m2v_route_sources",
     srcs = glob([
@@ -269,6 +270,7 @@ filegroup(
     ]) + [
         "TegraGM20BMetalPlugin.mm",
         "raw/test/inventory.tsv",
+        "translate/NativeMetalTranslate.h",
     ],
 )
 
