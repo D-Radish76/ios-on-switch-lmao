@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: MIT
 // GpuMemoryRelease.h: the idle release waits for the caller's command buffers in flight and comes at the deadline its drain
-// sets, a second after it, in every process; without a count (m2v's) it comes at the deadline; a release asked for, memory
-// pressure's, runs with work in flight.
+// sets, a second after it (after the last of a stream of drains), in every process; without a count (m2v's) it comes at
+// the deadline; a release asked for, memory pressure's, runs with work in flight.
 #include <gtest/gtest.h>
 #include <stdlib.h>
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 #include "drivers/NativeMetal/GpuMemoryRelease.h"
 
 namespace {
 
 using namespace std::chrono_literals;
+using Clock = std::chrono::steady_clock;
 
 struct Released {
     std::atomic<int> count{0};
+    std::atomic<Clock::rep> at{0};
 
     static void release(void *self)
     {
-        static_cast<Released *>(self)->count++;
+        auto *released = static_cast<Released *>(self);
+        released->at = Clock::now().time_since_epoch().count();
+        released->count++;
     }
 };
 
@@ -50,6 +55,65 @@ TEST_F(GpuMemoryReleaseTest, ACommandBufferInFlightHoldsTheIdleReleaseUntilItsDr
     release->drained();
     EXPECT_TRUE(releasedWithin(*released, 3000ms));
     EXPECT_EQ(released->count, 1);
+}
+
+// Drains every 50 ms, past the first one's deadline: the deadline that releases is the last drain's before it
+TEST_F(GpuMemoryReleaseTest, AStreamOfDrainsReleasesASecondAfterItsLast)
+{
+    struct Drain {
+        Clock::time_point before, after;
+    };
+    auto *released = new Released;
+    auto *inFlight = new std::atomic<uint32_t>{0};
+    auto *release = new GpuMemoryRelease;
+    std::vector<Drain> drains;
+    drains.reserve(64);
+    drains.push_back({Clock::now(), {}});
+    release->start(&Released::release, released, inFlight);
+    drains.back().after = Clock::now();
+    const Clock::time_point until = drains.front().before + 1600ms;
+    while (Clock::now() < until && !released->count) {
+        std::this_thread::sleep_for(50ms);
+        drains.push_back({Clock::now(), {}});
+        release->drained();
+        drains.back().after = Clock::now();
+    }
+    ASSERT_TRUE(releasedWithin(*released, 3000ms));
+    const Clock::time_point at{Clock::duration(released->at.load())};
+    Clock::time_point last = drains.front().before;
+    for (const Drain &d : drains)
+        if (d.after <= at)
+            last = d.before;
+    EXPECT_GE(at - last, 990ms) << "released "
+                                << std::chrono::duration_cast<std::chrono::milliseconds>(at - last).count()
+                                << " ms after the last drain before it";
+}
+
+constexpr uint64_t kIdle = uint64_t(GpuMemoryRelease::kIdleNs);
+
+// The deadline a thread's own wait carries: a second after the last drain, given back once
+TEST_F(GpuMemoryReleaseTest, AWaitsIdleDeadlineIsTheLastDrainsAndClaimedOnce)
+{
+    IdleDeadline idle;
+    EXPECT_EQ(idle.due(0), 0u) << "a deadline with no drain";
+    idle.drained(100);
+    const uint64_t first = idle.due(0);
+    EXPECT_EQ(first, 100 + kIdle);
+    idle.drained(700);
+    EXPECT_EQ(idle.due(0), 700 + kIdle);
+    EXPECT_FALSE(idle.claim(first)) << "claimed a deadline a later drain moved";
+    EXPECT_TRUE(idle.claim(700 + kIdle));
+    EXPECT_EQ(idle.due(0), 0u) << "due again with no drain since its release";
+    EXPECT_FALSE(idle.claim(700 + kIdle));
+}
+
+TEST_F(GpuMemoryReleaseTest, WorkInFlightHoldsAWaitsIdleDeadlineUntilTheNextDrain)
+{
+    IdleDeadline idle;
+    idle.drained(100);
+    EXPECT_EQ(idle.due(1), 0u);
+    idle.drained(5000);
+    EXPECT_EQ(idle.due(0), 5000 + kIdle);
 }
 
 TEST_F(GpuMemoryReleaseTest, WithoutAnInFlightCountTheDeadlineReleases)

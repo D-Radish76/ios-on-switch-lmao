@@ -385,7 +385,7 @@ id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, u
     r->gpuOrder = dev->canOrder();
     r->handlers = followingSerialQueue("com.brunostjohn.switch.raw.handlers");
     r->listener = [[MTLSharedEventListener alloc] initWithDispatchQueue:r->handlers];
-    gRawRelease.start(
+    gRawRelease.startOnPressure(
         [](void *) {
             gRM->orphanCheck.store(true, std::memory_order_release);
             gRM->schedule.wake();
@@ -405,7 +405,9 @@ id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, u
             (void)kept;
 #endif
         },
-        nullptr, &r->rangesInFlight);
+        nullptr);
+    // A process that opens the device and draws nothing gives back the room its first queue kept.
+    r->idle.drained(clock_gettime_nsec_np(CLOCK_UPTIME_RAW));
     const bool renderServer = dev->role() == raw::Device::Role::RenderServer;
     if (renderServer)
         os_log(rawLog(), "raw: shader heap %llu KB, each program placed at its state's first use",

@@ -442,6 +442,9 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
                 --gRM->m2vPending;
             }
             segmentCompleted(cb, done.error, *writes, RMCompatibilityProgress);
+            // a drain here sets the idle deadline the completion thread may be sleeping past
+            if (!gRM->rangesInFlight.load(std::memory_order_acquire))
+                gRM->inflight.wake();
         }];
         cb->_submittedM2v = true;
         [m commit];

@@ -216,7 +216,7 @@ void scheduled(RMCommandBuffer *cb)
 // Completed: CPU-signalled events, written resources marked, handlers (on the queue's completion queue when it has one), the
 // objects released, waiters woken.
 // The raw path's empty chunks go back as m2v's blocks do: on memory pressure, and once nothing completed for a second (each
-// completion moves the deadline)
+// drain moves the deadline, which the completion thread's own wait carries: RawState::idle)
 GpuMemoryRelease &gRawRelease = *new GpuMemoryRelease;
 
 static void finished(RMCommandBuffer *cb);
@@ -247,7 +247,7 @@ void segmentCompleted(RMCommandBuffer *cb, NSError *error, const raw::Retirement
     }
     const bool last = cb->_finishState.completed();
     if (gRM->rangesInFlight.fetch_sub(1, std::memory_order_acq_rel) == 1)
-        gRawRelease.drained();
+        gRM->idle.drained(clock_gettime_nsec_np(CLOCK_UPTIME_RAW));
     if (gRM->progress.progressed())  // a queue head is parked: it is judged again (raw_progress_gate.h)
         wakeSubmit((__bridge void *)cb->_queue, dependencies);
     if (last)
@@ -429,6 +429,7 @@ static NSError *killError(uint32_t kernelError)
 
 // The completion thread: one source per device (raw_completion_source.h). It sleeps in the kernel on the first raw range
 // in flight whose job interrupts, then retires each range up to it in order, those finding their fence already passed.
+// With nothing in flight it sleeps for the next range no later than the idle release's deadline, and gives back there.
 void completionLoop()
 {
     RawState &r = *gRM;
@@ -437,18 +438,23 @@ void completionLoop()
             std::optional<size_t> target;
             for (;;) {
                 raw::CompletionLook look;
+                uint64_t idleDue = 0;
                 r.inflight.waitFor([&](const auto &taken) {
                     look = raw::completionLook(taken, r.submitPromised.load(std::memory_order_acquire),
                                                r.completionWaiters.load(std::memory_order_acquire) != 0,
                                                clock_gettime_nsec_np(CLOCK_UPTIME_RAW));
-                    return look.target.has_value() || look.heldUntil;
+                    idleDue = r.idle.due(r.rangesInFlight.load(std::memory_order_acquire));
+                    return look.target.has_value() || look.heldUntil || idleDue;
                 });
                 target = look.target;
                 if (target)
                     break;
                 const uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-                if (look.heldUntil > now)
-                    r.inflight.sleep(dispatch_time(DISPATCH_TIME_NOW, int64_t(look.heldUntil - now)));
+                const uint64_t until = look.heldUntil ? look.heldUntil : idleDue;
+                if (until > now)
+                    r.inflight.sleep(dispatch_time(DISPATCH_TIME_NOW, int64_t(until - now)));
+                else if (!look.heldUntil && r.idle.claim(idleDue))
+                    gRawRelease.releaseSoon();
             }
             if (*target) {
                 const RMRawRetirement &cover = r.inflight.at(*target);

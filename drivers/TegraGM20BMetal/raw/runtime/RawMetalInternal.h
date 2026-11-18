@@ -251,9 +251,11 @@ struct RawState {
     // the submit worker is about to wait or waits for a change: a command buffer's hand-offs after its first wake it only
     // then (rmPublishEncoder; with its _published, a store then a load on each side, both sequentially consistent)
     std::atomic<bool> submitAsleep{false};
-    // ranges handed to the kernel or m2v and not completed (rmRangeHandedOff): gRawRelease's drain and its idle rule's
+    // ranges handed to the kernel or m2v and not completed (rmRangeHandedOff): the idle deadline's drain and its
     // in-flight count, which a command buffer parked on an event the CPU has not signalled holds no part of
     std::atomic<uint32_t> rangesInFlight{0};
+    // gRawRelease's idle release: the completion thread's wait for its next range carries it (completionLoop)
+    IdleDeadline idle;
     Stats stats;
     std::unique_ptr<raw::Completion> completion;  // the states the pack lacks (raw_metal_complete_states)
 };
