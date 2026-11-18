@@ -2194,9 +2194,10 @@ public:
     bool createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
                             const YcbcrPlan &plan, uint32_t width, uint32_t height, Texture &t);
     // Its planes moved into a VA window of `end` bytes past the surface's base, the pages past its import sparse
-    // (raw_sparse_window.cpp); false: the kernel maps no VA sparse, the import is tiled, no VA is left or a bind was refused.
-    // closeSparseWindow unbinds and releases it (destroyTexture)
-    bool openSparseWindow(Texture &t, uint64_t end);
+    // (raw_sparse_window.cpp), and `sink` sparse bytes more at its end, from a page of their own; false: the kernel maps no VA
+    // sparse, the import is tiled, no VA is left or a bind was refused. closeSparseWindow unbinds and releases it
+    // (destroyTexture)
+    bool openSparseWindow(Texture &t, uint64_t end, uint64_t sink = 0);
     void closeSparseWindow(Texture &t);
     // `t`'s window a sparse range of `bytes` alone, which reads 0 and drops every store; false: the kernel maps no VA sparse,
     // no VA is left or the bind was refused. closeSparseWindow releases it too

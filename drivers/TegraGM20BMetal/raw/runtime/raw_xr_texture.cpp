@@ -50,7 +50,7 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
     const uint64_t end = std::max(word + uint64_t(wordPitch) * (height - 1) + 4ull * width,
                                   alone ? 0 : alpha + uint64_t(alphaPitch) * (height - 1) + width);
     const bool reaches = wordPitch < 4 * width || (!alone && alphaPitch < width) || end > allocBytes;
-    const bool window = end > mapped && !alone;
+    const bool window = end > mapped;
     const uint64_t readable = !reaches ? 0 : window ? end : mapped;
     if (!createSurfaceTexture(surfaceId, base, allocBytes, surface, word, width, height, wordPitch, kXrWordFormat, *w,
                               false, readable) ||
@@ -79,12 +79,16 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
     };
     if ((overlapsRows(*w) || (!alone && (overlapsRows(*a) || xrPlanesCross(*w, *a)))) && (!pooled(*w) || !pooled(*a)))
         return undo("no memory for the pool images planes that overlap are read and stored through");
+    // a plane alone's alpha sink: a sparse range of its own, or the end of the window its words' rows past the last page
+    // are read through
     const uint32_t sinkPitch = (width + 31) & ~31u;
-    if (alone && !openSparseSink(t, uint64_t(sinkPitch) * height))
+    const uint64_t gpuPage = k_.info().page_size, sinkBytes = uint64_t(sinkPitch) * height,
+                   sinkSpan = (sinkBytes + gpuPage - 1) & ~(gpuPage - 1);
+    if (alone && !window && !openSparseSink(t, sinkBytes))
         return undo("no sparse range for the alpha it keeps none of (a kernel without TegraGM20BInfoSparse, or no VA)");
     t.luma = w;
     t.chroma = a;
-    if (window && !openSparseWindow(t, end))
+    if (window && !openSparseWindow(t, end, alone ? sinkBytes : 0))
         return undo("rows past its surface's last page with no sparse window (a kernel without "
                     "TegraGM20BInfoSparse, or no VA)");
     uint32_t pair = 0;
@@ -99,7 +103,7 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
             alpha0.tic = pair + 1;
             writeTic(word0);
             if (alone) {
-                alpha0.va = t.window.va;
+                alpha0.va = window ? t.window.va + t.window.bytes - sinkSpan : t.window.va;
                 alpha0.pitch = sinkPitch;
                 alpha0.memoryless = alpha0.blockLinear = false;
             }

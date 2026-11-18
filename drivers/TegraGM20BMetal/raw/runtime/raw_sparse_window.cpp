@@ -13,13 +13,15 @@
 
 namespace raw {
 
-bool Device::openSparseWindow(Texture &t, uint64_t end)
+bool Device::openSparseWindow(Texture &t, uint64_t end, uint64_t sink)
 {
     Import *import = t.onePlane ? t.import : t.luma ? t.luma->import : nullptr;
     if (!import || import->kernelTiled() || !k_.sparse())
         return false;
     const uint64_t page = k_.info().page_size, pages = import->bo.bytes, into = import->bo.va - import->bo.vaBase;
-    const uint64_t bytes = (into + end + page - 1) & ~(page - 1);
+    // a sink starts past both the bytes read and the import's pages, so that it is sparse from its first byte
+    const uint64_t reach = (into + end + page - 1) & ~(page - 1), sinkSpan = (sink + page - 1) & ~(page - 1);
+    const uint64_t bytes = sink ? std::max(reach, (pages + page - 1) & ~(page - 1)) + sinkSpan : reach;
     if (bytes <= pages)
         return true;
     const uint64_t va = k_.reserveVa(bytes);
@@ -41,7 +43,7 @@ bool Device::openSparseWindow(Texture &t, uint64_t end)
     }
     std::lock_guard<raw::Mutex> l(lock_);
     for (Texture *plane : {t.luma, t.chroma}) {
-        if (!plane)
+        if (!plane || plane->memoryless)
             continue;
         plane->va = moved(plane->va, *plane->import);
         plane->storage.va = plane->va;

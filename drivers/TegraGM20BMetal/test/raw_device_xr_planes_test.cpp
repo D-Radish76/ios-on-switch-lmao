@@ -179,6 +179,25 @@ TEST_F(DeviceViews, ATurnedTwoPlaneTargetDrawsItsPlanesTurned)
 }
 
 // A plane alone of rows that hold its words keeps no pool: only rows that overlap are read and stored through one
+// A plane alone whose rows overlap and run on past the surface's last page: its words are read through a window of the
+// surface's pages and a sparse tail (reads 0, as an M4 Max reads past a surface's last page where nothing else is mapped),
+// and its alpha's header is over a sparse range at the window's end, past every word row
+TEST_F(DeviceXrSink, APlaneAloneWhoseRowsRunPastTheLastPageReadsThroughAWindow)
+{
+    Surface s;
+    raw::Texture t;
+    const char *why = "";
+    const uint64_t word = s.bytes - 256;
+    ASSERT_TRUE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, word, 64, 0, 0, 32, 8, 550, t, &why)) << why;
+    ASSERT_TRUE(t.xrPlanes && t.luma->sampled && t.chroma->memoryless);
+    ASSERT_GT(t.window.bytes, t.window.pages);
+    EXPECT_GE(t.luma->va, t.window.va) << "the words read in the window";
+    const uint64_t alpha = headerAddress(dev.headerWords(t.tic + 1));
+    EXPECT_GE(alpha, t.luma->va + 64 * 7 + 4 * 32) << "the sink past every word row";
+    EXPECT_LT(alpha, t.window.va + t.window.bytes);
+    dev.destroyTexture(t);
+}
+
 TEST_F(DeviceXrSink, APlaneAloneOfWholeRowsHasNoPool)
 {
     Surface s;
