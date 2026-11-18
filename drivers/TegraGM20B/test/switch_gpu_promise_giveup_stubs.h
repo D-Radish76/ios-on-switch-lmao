@@ -63,6 +63,8 @@ struct Chan {
 	switch_gpu_jobs jobs = {};
 	char owner[17] = {};
 	uint32_t submitted = 0;
+	int critical = 0;  // the compositor's or a kernel queue's
+	int kernel = 0;
 	// the hang rule's bookkeeping as the deferred call's checks see it (tgm_chan_check_progress_locked)
 	uint64_t stall_ns = 0;
 	uint32_t stall_done = 0, strikes = 0;

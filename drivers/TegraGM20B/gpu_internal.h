@@ -271,7 +271,7 @@ struct tgm_chan {
 	u32 chid;
 	int nobj;
 	int kernel; /* a kernel channel, no client waits on it and the present does not wait for it: CHAN_PRESENT, CHAN_SCRUB */
-	int critical; /* the compositor's or the kernel's: the high timeslice */
+	int critical; /* the compositor's or the kernel's (tgm_chan_set_level) */
 	int high; /* the compositor's or the present's: high on the runlist (TegraGM20BSched.h) */
 	int isolating; /* client fault isolation: its error or hang was taken as its own, the kill is under way */
 	u64 isolated_ns;
@@ -686,6 +686,8 @@ void tgm_idle_settle(void *arg);
 int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *waiter,
 				   const char *who, const struct switch_gpu_giveup_job *reader,
 				   int display);
+/* tgm_live_lock held: the reader parked on the promise is the compositor's (switch_gpu_giveup_compositor) */
+void switch_gpu_promise_compositor_locked(uint32_t offset, uint32_t value);
 void switch_gpu_chan_park_promises_locked(struct tgm_chan *chan,
 					  const struct switch_gpu_backing_token *tokens, u32 count,
 					  const u32 *unsettled);

@@ -1104,6 +1104,8 @@ host_test(
     srcs = [
         "switch_gpu_refusal_sites_test.cpp",
         "//drivers/TegraGM20B:SwitchGpuRefusalSites.h",
+        "//drivers/TegraGM20B:TegraGM20BHost.h",
+        "//drivers/TegraGM20B:TegraGM20BSchedPolicy.h",
     ],
     data = [
         "//drivers/TegraGM20B:TegraGM20BUserClientJob.cpp",

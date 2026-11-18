@@ -210,16 +210,26 @@ IOReturn AGXDeviceUserClient::surfaceLayoutInfo(const TegraGM20BAbiSurfaceLayout
 	return kIOReturnSuccess;
 }
 
-// lock_ held. The connection's level from its priority and GPU denial (TegraGM20BSchedPolicy.h), for every channel it has.
+// lock_ held. The connection's level from its priority and GPU denial (TegraGM20BSchedPolicy.h), for every channel
+// it has, and whether it is the compositor (tgm_compositor).
 void AGXDeviceUserClient::applyLevel(bool allChannels)
 {
 	level_ = tgm_priority_level(priority_, backgroundPriority_,
 				    static_cast<int>(backgroundRole_));
-	critical_ = level_ == TGM_LEVEL_HIGH;
+	const bool wasCritical = critical_;
+	critical_ = tgm_compositor(static_cast<enum tgm_level>(level_), static_cast<int>(restartNoKill_));
+	if (critical_ != wasCritical) {
+		const bool reserved = events_.compositor(ownerPid_, critical_);
+		if (critical_ && !compositorLogged_) {
+			compositorLogged_ = true;
+			IOLog("tegra-gm20b: %s[%d] is the compositor%s\n", owner_, ownerPid_,
+			      reserved ? "" : ", its event records counted as an app's");
+		}
+	}
 	if (allChannels)
 		for (uint32_t i = 0; i < kMaxChannels; ++i)
 			if (chans_[i]) {
-				tgm_chan_set_level(chans_[i], level_);
+				tgm_chan_set_level(chans_[i], level_, static_cast<int>(critical_));
 				channelLevels_[i] = level_;
 			}
 }
@@ -253,7 +263,7 @@ IOReturn AGXDeviceUserClient::channelCreate(const TegraGM20BAbiChannelCreate *in
 			 __ATOMIC_RELEASE);
 	tgm_chan_set_group(chans_[slot], task_);  // Order relates the channels of one task
 	if (level_ != TGM_LEVEL_FOREGROUND && !critical_)
-		tgm_chan_set_level(chans_[slot], level_);
+		tgm_chan_set_level(chans_[slot], level_, 0);
 	channelLevels_[slot] = level_;
 	leanChannels_[slot] = copyOnly != 0;
 	faultLogged_[slot] = false;

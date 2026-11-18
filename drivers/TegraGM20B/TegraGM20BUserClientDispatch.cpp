@@ -17,6 +17,49 @@ static IOReturn zbcAdd(const TegraGM20BAbiZbc *in, TegraGM20BAbiZbcReply *out)
 	return kIOReturnSuccess;
 }
 
+// IOGPUFamily's (the same strings in 21H461's and 24B119's): a queue's MTLGPUPriorityRealTime, and a UI-critical GPU
+// client no GPU restart kills (backboardd; on 24B119 SpringBoard and the WidgetRenderer apps too)
+static constexpr char kRealTimeEntitlement[] = "com.apple.private.agx.rt-priority-spi";
+static constexpr char kCompositorEntitlement[] = "com.apple.private.graphics-restart-no-kill";
+
+static bool entitled(task_t task, const char *entitlement)
+{
+	OSObject *value = IOUserClient::copyClientEntitlement(task, entitlement);
+	const bool yes = value == kOSBooleanTrue;
+	OSSafeReleaseNULL(value);
+	return yes;
+}
+
+// lock_ held. Method 18: the asked priority schedules the connection's channels as IOGPUFamily's setter would; the
+// compositor is the one at the top that also holds the UI-critical marker (applyLevel).
+IOReturn AGXDeviceUserClient::setPriority(const TegraGM20BAbiPriority &asked)
+{
+	const int granted = tgm_priority_granted(asked.priority);
+	if (granted < 0)
+		return kIOReturnBadArgument;
+	if (!entitlementsRead_) {
+		entitlementsRead_ = true;
+		realTimeEntitled_ = entitled(task_, kRealTimeEntitlement);
+		restartNoKill_ = entitled(task_, kCompositorEntitlement);
+	}
+	if (asked.priority == 5 && !realTimeEntitled_ && !realTimeLogged_) {
+		realTimeLogged_ = true;
+		IOLog("tegra-gm20b: %s[%d] does not have the entitlement to use "
+		      "MTLGPUPriorityRealTime, using MTLGPUPriorityHigh instead\n",
+		      owner_, ownerPid_);
+	}
+	if (granted == 0 && !restartNoKill_ && !highLogged_) {
+		highLogged_ = true;
+		IOLog("tegra-gm20b: %s[%d] asked for GPU priority 0: scheduled high, not the "
+		      "compositor\n",
+		      owner_, ownerPid_);
+	}
+	priority_ = uint32_t(granted);
+	backgroundPriority_ = asked.background_priority;
+	applyLevel();
+	return kIOReturnSuccess;
+}
+
 static const char *jobCall(uint32_t method)
 {
 	if (method == TegraGM20BMethodSubmitJob)
@@ -493,11 +536,7 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 		ret = resourceSetRelease(static_cast<const TegraGM20BAbiResourceSetRelease *>(in));
 		break;
 	case TegraGM20BMethodPriority:
-		priority_ = static_cast<const TegraGM20BAbiPriority *>(in)->priority;
-		backgroundPriority_ =
-			static_cast<const TegraGM20BAbiPriority *>(in)->background_priority;
-		applyLevel();
-		ret = kIOReturnSuccess;
+		ret = setPriority(*static_cast<const TegraGM20BAbiPriority *>(in));
 		break;
 	default:
 		ret = kIOReturnUnsupported;

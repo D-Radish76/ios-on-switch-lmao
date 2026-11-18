@@ -171,7 +171,7 @@ int tgm_vm_kmap(struct tgm_vm *vm, struct tgm_mem *mem, uint64_t bytes, uint64_t
 /* Channels: GPFIFO on the GR runlist, subchannels 0..4 = 3D, compute, M2MF, 2D, copy. The channel releases
  * its seqno (4 bytes) to fence_gpu_va; fence_cpu is the kernel's write-combined view of the same word. owner (the
   * creating process) names it in nvkm's reports and our panic lines. critical: the compositor's (with a vm_owner: its
- * connection asked for the top GPU priority, tgm_chan_set_level) or the
+ * connection is high and its task holds the UI-critical marker, TegraGM20BSchedPolicy.h tgm_compositor) or the
  * kernel's; the compositor's get its GPU priority (TegraGM20BSched.h). A GPU error nvkm pins on a client's channel, or a
  * hang the GPU is stuck on, kills only that channel (tgm_chan_error then non-zero, its fence released) instead of
  * panicking. */
@@ -180,10 +180,11 @@ int tgm_chan_new(struct tgm_vm *vm, const void *vm_owner, volatile uint32_t *fen
 int tgm_chan_new_copy(struct tgm_vm *vm, const void *vm_owner, volatile uint32_t *fence_cpu,
 		      uint64_t fence_gpu_va, const char *owner, int critical,
 		      struct tgm_chan **pchan);
-/* The channel's runlist level (TegraGM20BSchedPolicy.h enum tgm_level), from its connection's GPU priority: high makes it
- * the compositor's (its kicks preempt app work, the deadline's holds leave it, the compositor's timeslice). Serialized
- * with the channel's submissions. */
-void tgm_chan_set_level(struct tgm_chan *chan, unsigned int level);
+/* The channel's runlist level (TegraGM20BSchedPolicy.h enum tgm_level), from its connection's GPU priority: high,
+ * its kicks preempt app work, the deadline's holds leave it and it has the compositor's timeslice. `critical` apart:
+ * whether it is the compositor's (tgm_compositor: its kill fails its work as LOST, its jobs are the frame's).
+ * Serialized with the channel's submissions. */
+void tgm_chan_set_level(struct tgm_chan *chan, unsigned int level, int critical);
 /* GPU for every process (client fault isolation, 64 connections, client pool quota) */
 int tgm_all_clients(void);
 /* pool bytes not allocated */

@@ -395,6 +395,28 @@ TEST_F(Backing, AJobTakesThePromisesUnderItsOwnTransaction)
 	switch_gpu_backing_release(b);
 }
 
+// One promise names every surface its job writes, as many as its maker chooses: a reader of them all waits for its word
+// once, so no maker fills another connection's dependency list (DependencyRoom refuses the compositor's job).
+TEST_F(Backing, AReaderWaitsOnceForAPromiseOnManySurfaces)
+{
+	auto *a = promised(), *b = promised();
+	switch_gpu_backing_use reads[] = {{a, kRead, 0}, {b, kRead, 0}};
+	switch_gpu_backing_transaction transaction = {};
+	const auto job = token(9, 2);
+	ASSERT_EQ(switch_gpu_backing_begin(reads, 2, &job, &transaction), 0);
+	switch_gpu_backing_token tokens[2] = {};
+	uint32_t needed = 0;
+	ASSERT_EQ(switch_gpu_backing_promise_dependencies(&transaction, tokens, 2, &needed, 0, 0),
+		  0);
+	EXPECT_EQ(needed, 1u);
+	EXPECT_EQ(tokens[0].queue, kOffset);
+	switch_gpu_backing_abort(&transaction);
+	for (auto *backing : {a, b}) {
+		switch_gpu_backing_promise_drop(backing, kOffset);
+		switch_gpu_backing_release(backing);
+	}
+}
+
 // The surface-level read takes the surface's lock, which the transaction already holds: XNU's lock never returns, and
 // the model aborts. This is the read SubmitJob made before, from inside its transaction.
 TEST_F(Backing, ASurfacesOwnPromiseReadInsideATransactionTakesItsLockTwice)

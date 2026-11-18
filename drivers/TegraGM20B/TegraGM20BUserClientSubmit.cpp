@@ -284,7 +284,7 @@ IOReturn AGXDeviceUserClient::exec(uint32_t channel, TegraGM20BAbiPush *input, u
 		applyLevel(scratch == nullptr);
 	}
 	if (scratch && channelLevels_[channel - 1] != level_) {
-		tgm_chan_set_level(chan, level_);
+		tgm_chan_set_level(chan, level_, static_cast<int>(critical_));
 		channelLevels_[channel - 1] = level_;
 	}
 	// Taken whatever happens to the Exec. The writers' acquires are queued for this submission's stream before it is made

@@ -25,13 +25,15 @@ extern "C" int switch_gpu_event_waits_prepare(switch_gpu_event_use *const *uses,
 	*out = nullptr;
 	if (!switch_gpu_events_state())
 		return -12;
-	if (!switch_gpu_events_reserve())
+	uint32_t quota = 0;
+	if (!switch_gpu_events_reserve(&quota))
 		return -16;
 	auto *batch = IONewZero(switch_gpu_event_waits, 1);
 	if (!batch) {
-		switch_gpu_events_unreserve();
+		switch_gpu_events_unreserve(quota);
 		return -12;
 	}
+	batch->quota = quota;
 	batch->refs = 1;
 	batch->kind = SwitchEventWaits;
 	batch->capacity = count;
@@ -252,14 +254,15 @@ extern "C" int switch_gpu_event_waits_prepare_dependencies(const switch_gpu_back
 			switch_gpu_event_waits_release(&authority);
 			continue;
 		}
-		if (!switch_gpu_events_reserve()) {
+		uint32_t quota = 0;
+		if (!switch_gpu_events_reserve(&quota)) {
 			switch_gpu_event_waits_release(&authority);
 			error = -16;
 			break;
 		}
 		auto *use = IONewZero(switch_gpu_event_use, 1);
 		if (!use) {
-			switch_gpu_events_unreserve();
+			switch_gpu_events_unreserve(quota);
 			switch_gpu_event_waits_release(&authority);
 			error = -12;
 			break;
@@ -267,10 +270,11 @@ extern "C" int switch_gpu_event_waits_prepare_dependencies(const switch_gpu_back
 		error = switch_gpu_backing_token_retain(&tokens[i]);
 		if (error) {
 			IODelete(use, switch_gpu_event_use, 1);
-			switch_gpu_events_unreserve();
+			switch_gpu_events_unreserve(quota);
 			switch_gpu_event_waits_release(&authority);
 			break;
 		}
+		use->quota = quota;
 		use->refs = 1;
 		use->kind = SwitchEventUse;
 		use->token = tokens[i];
@@ -402,22 +406,24 @@ extern "C" int switch_gpu_event_waits_prepare_tokens(const switch_gpu_backing_to
 	for (uint32_t i = 0; i < count && !error; ++i) {
 		if (switch_gpu_backing_token_status(&tokens[i]))
 			continue;
-		if (!switch_gpu_events_reserve()) {
+		uint32_t quota = 0;
+		if (!switch_gpu_events_reserve(&quota)) {
 			error = -16;
 			break;
 		}
 		auto *use = IONewZero(switch_gpu_event_use, 1);
 		if (!use) {
-			switch_gpu_events_unreserve();
+			switch_gpu_events_unreserve(quota);
 			error = -12;
 			break;
 		}
 		error = switch_gpu_backing_token_retain(&tokens[i]);
 		if (error) {
 			IODelete(use, switch_gpu_event_use, 1);
-			switch_gpu_events_unreserve();
+			switch_gpu_events_unreserve(quota);
 			break;
 		}
+		use->quota = quota;
 		use->refs = 1;
 		use->kind = SwitchEventUse;
 		use->token = tokens[i];

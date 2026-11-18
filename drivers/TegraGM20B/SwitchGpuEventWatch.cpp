@@ -13,7 +13,7 @@ void switch_gpu_event_watch::free()
 	if (authority)
 		switch_gpu_event_signal_drop(authority);
 	switch_gpu_event_release(&event);
-	switch_gpu_events_unreserve();
+	switch_gpu_events_unreserve(quota);
 	OSObject::free();
 }
 
@@ -81,14 +81,17 @@ static int observe(switch_gpu_event *event, uint64_t value, uint64_t cookie,
 	if (!event || !completed || !out)
 		return -22;
 	*out = nullptr;
-	if (!switch_gpu_events_reserve())
+	uint32_t quota = 0;
+	if (!switch_gpu_events_reserve(&quota))
 		return -16;
 	auto *watch = new switch_gpu_event_watch;
+	if (watch)
+		watch->quota = quota;
 	if (!watch || !watch->initialize()) {
 		if (watch)
 			watch->release();
 		else
-			switch_gpu_events_unreserve();
+			switch_gpu_events_unreserve(quota);
 		return -12;
 	}
 	switch_gpu_event_retain(event);
@@ -106,7 +109,7 @@ static int observe(switch_gpu_event *event, uint64_t value, uint64_t cookie,
 		return -12;
 	}
 	IOLockLock(s->lock);
-	if (event->observers >= 256) {
+	if (quota && event->observers >= 256) {
 		IOLockUnlock(s->lock);
 		watch->waiter->release();
 		watch->waiter = nullptr;

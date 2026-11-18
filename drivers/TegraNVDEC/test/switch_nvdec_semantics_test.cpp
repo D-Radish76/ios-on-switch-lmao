@@ -72,7 +72,7 @@ TEST_F(Events, AProducersFailureEndsTheDecodesWaitAcrossHardwareCompletedConsume
     switch_gpu_event_waits *captured = nullptr;
     EXPECT_EQ(adapter.snapshot(&first, &captured), 0);
     EXPECT_EQ(adapter.snapshot(&independent, &captured), 0);
-    EXPECT_EQ(native->value, 0u);
+    EXPECT_EQ(native->value, 19u) << "the failed signal moved the value";
     EXPECT_EQ(std::count(retired.begin(), retired.end(), a), 1);
     EXPECT_EQ(std::count(retired.begin(), retired.end(), b), 1);
     EXPECT_EQ(std::count(retired.begin(), retired.end(), c), 1);

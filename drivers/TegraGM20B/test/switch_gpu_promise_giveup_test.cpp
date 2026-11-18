@@ -164,6 +164,31 @@ TEST_P(GiveUp, AStuckJobAheadIsTheHangRulesAndThePromisedJobIsJudgedFromItsOwnSt
 	EXPECT_EQ(shown(), kPrevious);
 }
 
+// The compositor's job is never held behind the maker's channel: its promised job queued behind a stuck one is given up
+// at the second, the maker's frame missing, without the hang rule's seconds.
+TEST_F(Fixture, ACompositorsReaderIsNotHeldBehindTheMakersStuckJob)
+{
+	reader.critical = 1;
+	readerSubmits();
+	makerKeeps(1);
+	until(fake::now + 1000 * kMs);
+	ASSERT_EQ(lines.size(), 1u) << "given up at the second";
+	EXPECT_EQ(fake::hangLooks, 0u);
+	EXPECT_EQ(reader.fence, reader.submitted) << "the compositor's acquire passed";
+	EXPECT_EQ(shown(), kPrevious);
+}
+
+// A kernel queue's critical channel (the scrubber's, a copy queue's) is no compositor: its reader waits as an app's
+TEST_F(Fixture, AKernelQueuesReaderStillWaitsForTheMakersQueue)
+{
+	reader.critical = 1;
+	reader.kernel = 1;
+	readerSubmits();
+	makerKeeps(1);
+	until(fake::now + 1000 * kMs);
+	EXPECT_TRUE(lines.empty());
+}
+
 // The hang rule's recovery kills the maker's channel: the promised job died with it, and the promise is given up at the
 // next look.
 TEST_P(GiveUp, AJobAheadWhoseChannelTheHangRuleKillsGivesThePromiseUp)

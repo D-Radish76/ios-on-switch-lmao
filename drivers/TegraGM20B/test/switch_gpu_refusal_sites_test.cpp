@@ -11,6 +11,7 @@
 
 #include "bazel/testing/source_text.h"
 #include "drivers/TegraGM20B/SwitchGpuRefusalSites.h"
+#include "drivers/TegraGM20B/TegraGM20BSchedPolicy.h"
 
 using switch_ios::test::Block;
 using switch_ios::test::CodeText;
@@ -83,6 +84,17 @@ TEST(SwitchGpuRefusalSites, OnlyTheCompositorsRefusalsLoseItsFrame)
 		EXPECT_FALSE(switch_gpu_refusal_loses_frame(true, site, kAborted)) << "site " << i;
 		EXPECT_FALSE(switch_gpu_refusal_loses_frame(true, site, kNotOpen)) << "site " << i;
 	}
+}
+
+// An app that asks for priority 0 is scheduled high but is not the compositor (tgm_compositor): its refused job loses
+// no frame; the compositor's, which also holds graphics-restart-no-kill, does
+TEST(SwitchGpuRefusalSites, AnAppAtTheTopPriorityLosesNoFrame)
+{
+	const enum tgm_level top = tgm_priority_level(uint32_t(tgm_priority_granted(0)), 4, 0);
+	EXPECT_FALSE(switch_gpu_refusal_loses_frame(tgm_compositor(top, 0) != 0,
+						    SwitchGpuRefusal::Push, kBadArgument));
+	EXPECT_TRUE(switch_gpu_refusal_loses_frame(tgm_compositor(top, 1) != 0,
+						   SwitchGpuRefusal::Push, kBadArgument));
 }
 
 // metal.native.counters' refusal as the next boot's line reads it, and a dead channel's

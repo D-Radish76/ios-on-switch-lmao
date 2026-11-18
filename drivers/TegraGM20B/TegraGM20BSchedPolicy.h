@@ -33,6 +33,23 @@ static inline enum tgm_level tgm_priority_level(uint32_t priority, uint32_t back
 	return p <= 2 ? TGM_LEVEL_FOREGROUND : TGM_LEVEL_BACKGROUND;
 }
 
+/* The priority a queue's ask is scheduled at, as IOGPUFamily's setter answers it (21H461 and 24B119): 0-2 and 4
+ * from any process, 5 (MTLGPUPriorityRealTime) as High (0) here whether or not the process holds
+ * com.apple.private.agx.rt-priority-spi (one level is above every app's), 3 and above 5 refused (-1). */
+static inline int tgm_priority_granted(uint32_t asked)
+{
+	if (asked == 3 || asked > 5)
+		return -1;
+	return asked == 5 ? 0 : (int)asked;
+}
+
+/* The compositor: a connection at the high level whose task holds IOGPUFamily's UI-critical marker
+ * (com.apple.private.graphics-restart-no-kill). Apple grants priority 0 to any process: asking for it alone is not. */
+static inline int tgm_compositor(enum tgm_level level, int restart_no_kill)
+{
+	return level == TGM_LEVEL_HIGH && restart_no_kill;
+}
+
 /* What a high channel's kick should preempt, from engine 0's (GR's) status, whether its resident channel is high, and the
  * PBDMA's: the app channel holding GR, else the one holding the PBDMA; TGM_VICTIM_SWITCHING while GR is mid-switch (the
  * host already leaves a channel, and with the runlist interleaved goes to a high one next). A TSG id names no channel. */

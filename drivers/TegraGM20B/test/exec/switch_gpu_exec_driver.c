@@ -39,6 +39,10 @@ int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *
 	return 1;
 }
 
+void switch_gpu_promise_compositor_locked(uint32_t offset, uint32_t value)
+{
+}
+
 uint32_t switch_exec_parked_promises(void)
 {
 	return parked;

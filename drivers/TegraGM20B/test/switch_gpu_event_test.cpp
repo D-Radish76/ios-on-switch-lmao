@@ -59,14 +59,31 @@ TEST_F(Events, ExecutionCompletionDoesNotPublishUntilExternallyVisible)
 	EXPECT_EQ(native->value, 55u);
 }
 
-// A failed producer ends the wait on its value, but the event's value stays what was signalled
-TEST_F(Events, FailedProducerEndsTheWaitWithoutSignallingTheNativeValue)
+// A failed producer ends the wait on its value, and the value: a native listener armed below it, one the kernel's
+// waits never see, fires once
+TEST_F(Events, FailedProducerEndsTheWaitAndMovesTheNativeValue)
 {
+	unsigned heard = 0;
+	auto *listener = new OSObject, *owner = new OSObject;
+	const SwitchGpuEventNativeCallback heardOnce = [](OSObject *, OSObject *, uint64_t,
+							  void *context) {
+		++*static_cast<unsigned *>(context);
+	};
+	OSObject *below = switch_gpu_event_native_waiter_create(native, listener, 50, &heard, owner,
+								heardOnce);
+	switch_gpu_event_native_waiter_arm(native, below);
 	auto t = token();
 	signal(55, t);
 	finish(t, -5);
+	nativePump();
 	switch_gpu_backing_token out{};
-	EXPECT_EQ(native->value, 0u);
+	EXPECT_EQ(native->value, 55u);
+	EXPECT_EQ(heard, 1u);
+	nativePump();
+	EXPECT_EQ(heard, 1u);
+	below->release();
+	listener->release();
+	owner->release();
 	EXPECT_EQ(switch_gpu_event_resolve(event, 55, &out), 1);
 	switch_gpu_event_native_signal(native, 56, true);
 	EXPECT_EQ(switch_gpu_event_resolve(event, 55, &out), 1);

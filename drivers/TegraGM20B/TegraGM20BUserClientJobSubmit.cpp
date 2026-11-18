@@ -77,8 +77,7 @@ IOReturn AGXDeviceUserClient::takeJob(const TegraGM20BAbiSubmitAddress *in,
 								 record.releases, header.channel);
 			if (prepared)
 				result = switch_gpu_refuse(why, SwitchGpuRefusal::EventPrepare,
-							   prepared == -5 ? kIOReturnAborted
-									  : ioreturn(prepared),
+							   ioreturn(prepared),
 							   switch_gpu_refusal_errno(prepared));
 		}
 		if (!result) {
@@ -137,7 +136,7 @@ IOReturn AGXDeviceUserClient::runJob(const SwitchGpuJobRecord &record, JobScratc
 			applyLevel(false);
 		}
 		if (channelLevels_[slot] != level_) {
-			tgm_chan_set_level(chan, level_);
+			tgm_chan_set_level(chan, level_, static_cast<int>(critical_));
 			channelLevels_[slot] = level_;
 		}
 		IOLockUnlock(lock_);
@@ -301,10 +300,9 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 	SwitchGpuEventJob *events = job.events;
 	int error = events->sequence(eventChannels_[slot]);
 	if (error)
-		return refuseWrites(switch_gpu_refuse(
-			why, SwitchGpuRefusal::EventSequence,
-			error == -5 ? kIOReturnAborted : ioreturn(error),
-			switch_gpu_refusal_errno(error)));
+		return refuseWrites(switch_gpu_refuse(why, SwitchGpuRefusal::EventSequence,
+						      ioreturn(error),
+						      switch_gpu_refusal_errno(error)));
 	// an event's waiters are woken by the interrupt at its signal; the job's semantic fence and scanout writes are
 	// known below (switch_gpu_quiet_end)
 	const bool quiet =

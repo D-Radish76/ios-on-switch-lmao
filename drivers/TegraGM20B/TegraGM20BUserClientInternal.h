@@ -488,12 +488,16 @@ class AGXDeviceUserClient : public IOUserClient
 		0;  // the stats: its submissions, every kScanEvery-th read (scanPushes)
 	uint32_t pushScans_ =
 		0;  // the ones read, every kProfileEvery-th also profiled (gpu_fenced.h "push profile")
-	// the compositor's: its queues asked for the top GPU priority (method 18); its channels are high, it has no pool quota
+	// the compositor's (TegraGM20BSchedPolicy.h tgm_compositor): its channels are critical, it has no pool quota
 	bool critical_ = false;
 	// what the connection's queues asked for (method 18), whether runningboardd denies it the GPU (then the background
 	// priority counts) and the runlist level they give its channels
 	uint32_t priority_ = 2, backgroundPriority_ = 2;
 	bool backgroundRole_ = false;
+	// its task's IOGPUFamily entitlements, read at its first method 18; one line each, once: an ask for RealTime
+	// without rt-priority-spi, an ask for 0 without graphics-restart-no-kill, becoming the compositor
+	bool entitlementsRead_ = false, realTimeEntitled_ = false, restartNoKill_ = false;
+	bool realTimeLogged_ = false, highLogged_ = false, compositorLogged_ = false;
 	uint32_t level_ = TGM_LEVEL_FOREGROUND;
 	bool importsWritten_ =
 		false;  // TegraGM20BPushImportsWritten: every submission marks every writable import
@@ -605,6 +609,7 @@ class AGXDeviceUserClient : public IOUserClient
 	IOReturn surfaceLayoutInfo(const TegraGM20BAbiSurfaceLayout *in,
 				   TegraGM20BAbiSurfaceLayoutInfo *out, bool canonical);
 	void applyLevel(bool allChannels = true);
+	IOReturn setPriority(const TegraGM20BAbiPriority &asked);
 	IOReturn execSurfaces(const TegraGM20BAbiExecSurfaces *in);
 	IOReturn resourceSetCreate(const TegraGM20BAbiResourceSetCreate *in,
 				   TegraGM20BAbiResourceSetCreateReply *out);

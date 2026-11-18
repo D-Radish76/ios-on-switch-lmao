@@ -72,6 +72,21 @@ int switch_chan_new_isolated_critical(void)
 	return isolated_critical;
 }
 
+void switch_chan_new_set_level(int high, int critical)
+{
+	tgm_chan_set_level(made, high ? TGM_LEVEL_HIGH : TGM_LEVEL_FOREGROUND, critical);
+}
+
+int switch_chan_new_high(void)
+{
+	return made->high;
+}
+
+int switch_chan_new_critical(void)
+{
+	return made->critical;
+}
+
 static void host_save(void)
 {
 	if (host.loaded) {

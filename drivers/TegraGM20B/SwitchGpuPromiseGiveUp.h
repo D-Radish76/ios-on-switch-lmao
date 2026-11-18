@@ -57,8 +57,9 @@ struct switch_gpu_giveup {
 	uint16_t readers; /* 1 + its reader set, 0: none */
 	/* a GPU reader beyond what a reader set tells apart: taken as parked until the give-up */
 	uint8_t overflow;
-	uint8_t kept;    /* job is the promised job */
-	uint8_t display; /* the direct present is a waiter */
+	uint8_t kept;       /* job is the promised job */
+	uint8_t display;    /* the direct present is a waiter */
+	uint8_t compositor; /* a compositor's GPU job reads (switch_gpu_giveup_compositor) */
 	char waiter[17];
 };
 
@@ -315,6 +316,20 @@ static inline int switch_gpu_giveup_park(struct switch_gpu_giveups *g,
 	return slot;
 }
 
+/* The reader that parked on the promise is the compositor's: the promise is given up at its second wherever its job is,
+ * so an app's job that runs or waits forever ahead of its promised one costs the app its frame, not the compositor its
+ * screen (the hang rule takes seconds to end the job ahead). */
+static inline void switch_gpu_giveup_compositor(struct switch_gpu_giveups *g,
+						const struct switch_gpu_giveup_ops *ops,
+						uint32_t offset, uint32_t value)
+{
+	const int slot = ops->slot(offset);
+	struct switch_gpu_giveup *e = slot < 0 ? 0 : &g->entry[slot];
+
+	if (e && e->offset == offset && e->value == value)
+		e->compositor = 1;
+}
+
 /* A waiter that parked without a GPU job goes on. The entry is dropped once no reader is left. */
 static inline void switch_gpu_giveup_leave(struct switch_gpu_giveups *g,
 					   const struct switch_gpu_giveup_ops *ops, uint32_t offset,
@@ -420,7 +435,7 @@ static inline int switch_gpu_giveup_judge(const struct switch_gpu_giveup_ops *op
 	}
 	if ((int64_t)(now - e->due_ns) < 0)
 		return 0;
-	if (!e->kept)
+	if (!e->kept || e->compositor)
 		return 1;
 	where = ops->job_ahead(&e->job, &fence, &seqno, &check);
 	if (where == SWITCH_GPU_GIVEUP_BEHIND) {

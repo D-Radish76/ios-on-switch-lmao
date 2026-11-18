@@ -276,6 +276,11 @@ int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *
 	return at >= 0;
 }
 
+void switch_gpu_promise_compositor_locked(uint32_t offset, uint32_t value)
+{
+	switch_gpu_giveup_compositor(&giveups, &giveup_ops, offset, value);
+}
+
 int tgm_promise_park(uint32_t offset, uint32_t value, const char *waiter, const char *who,
 		     const struct switch_gpu_giveup_job *reader, int display)
 {

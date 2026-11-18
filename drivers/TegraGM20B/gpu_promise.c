@@ -19,6 +19,11 @@ void switch_gpu_chan_park_promises_locked(struct tgm_chan *chan,
 				tokens[i].queue, (u32)tokens[i].value, chan->owner,
 				chan == tgm_present.chan ? "a present job" : "a GPU job", &reader,
 				0);
+			/* the compositor's own channels and the present's, not the kernel's other queues */
+			if (READ_ONCE(chan->critical) &&
+			    (!chan->kernel || chan == tgm_present.chan))
+				switch_gpu_promise_compositor_locked(tokens[i].queue,
+								     (u32)tokens[i].value);
 		}
 }
 

@@ -124,19 +124,34 @@ extern "C" int switch_gpu_backing_promise_dependencies(switch_gpu_backing_transa
 	transaction->promised = 1;
 	transaction->promise_first = own_first;
 	transaction->promise_end = own_end;
+	const uint32_t first = *needed;
 	uint32_t extra = 0;
 	for (uint32_t i = 0; i < transaction->count; ++i) {
 		const auto *backing = transaction->uses[i].backing;
 		if (!backing->promise_count)
 			continue;
-		const uint32_t at = *needed + extra;
+		switch_gpu_backing_token found[SWITCH_GPU_BACKING_PROMISES];
 		const int pending = switch_gpu_backing_promises_locked(
-			backing, own_first, own_end, at < capacity ? out + at : nullptr,
-			at < capacity ? capacity - at : 0);
-		// past the room, the count alone: the caller grows by it, as for switch_gpu_backing_dependencies
-		extra += pending >= 0 ? uint32_t(pending)
-				      : uint32_t(switch_gpu_backing_promises_locked(
-						backing, own_first, own_end, nullptr, 0));
+			backing, own_first, own_end, found, SWITCH_GPU_BACKING_PROMISES);
+		if (pending < 0)
+			return pending;
+		// One promise names every surface its job writes, as many as its maker chooses: its word is waited
+		// for once, at the later value. Past the room, the count alone: the caller grows by it, as for
+		// switch_gpu_backing_dependencies.
+		for (int k = 0; k < pending; ++k) {
+			const uint32_t kept = first + extra < capacity ? first + extra : capacity;
+			uint32_t j = first;
+			while (j < kept && out[j].queue != found[k].queue)
+				++j;
+			if (j < kept) {
+				if (switch_gpu_backing_later(found[k], out[j]))
+					out[j] = found[k];
+				continue;
+			}
+			if (first + extra < capacity)
+				out[first + extra] = found[k];
+			++extra;
+		}
 	}
 	*needed += extra;
 	if (*needed > capacity)
