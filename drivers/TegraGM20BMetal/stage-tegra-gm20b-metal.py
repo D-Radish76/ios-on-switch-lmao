@@ -51,7 +51,7 @@ OWNED = (BUNDLE, SEED, RAW)
 STATE = 'ngpu/stage.tsv.gz'
 PENDING = 'ngpu/stage.pending'
 MANIFEST_HEADER = '# gpu stage 1 '
-EXECUTABLES = ('TegraGM20BMetal', 'libvulkan_nouveau.dylib')
+EXECUTABLES = ('TegraGM20BMetal',)
 PREFS = {
     'CAEnableDeepFramebuffer': False,
     'CAEnableFramebufferCompression': False,

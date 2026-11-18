@@ -348,7 +348,6 @@ def _metal_bundle_impl(ctx):
     args = ctx.actions.args()
     args.add("--xcode-env", ctx.file._xcode_env)
     args.add("--plugin", ctx.file.plugin)
-    args.add("--nvk", ctx.file.nvk)
     args.add("--stack", ctx.file.stack)
     args.add("--bundle", bundle.path)
     args.add("--trustcache", trustcache)
@@ -356,7 +355,7 @@ def _metal_bundle_impl(ctx):
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = [ctx.file.plugin, ctx.file.nvk, ctx.file.stack, ctx.file._xcode_env, ctx.file._xcode_identity],
+        inputs = [ctx.file.plugin, ctx.file.stack, ctx.file._xcode_env, ctx.file._xcode_identity],
         outputs = [bundle, trustcache, trust_json],
         mnemonic = "MetalBundle",
         progress_message = "Signing TegraGM20BMetal.bundle and writing its trust cache",
@@ -370,7 +369,6 @@ metal_bundle = rule(
     implementation = _metal_bundle_impl,
     attrs = _XCODE | {
         "plugin": attr.label(mandatory = True, allow_single_file = True),
-        "nvk": attr.label(mandatory = True, allow_single_file = True),
         "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the raw path's stack key, into Info.plist"),
         "_tool": attr.label(default = "//tools/gpu:bundle", executable = True, cfg = "exec"),
     },

@@ -28,7 +28,7 @@ from tools.gpu import seed_pack
 HEADER = '# gpu stage 1 '
 SEED = 'ngpu/addons/TegraGM20BMetal.m2v-seed/shared'
 RAW = 'ngpu/addons/TegraGM20BMetal.raw'
-EXECUTABLES = ('TegraGM20BMetal', 'libvulkan_nouveau.dylib')
+EXECUTABLES = ('TegraGM20BMetal',)
 
 
 def line(path: Path, digest: str, target: str, rlocation: str) -> str:

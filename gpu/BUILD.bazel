@@ -34,8 +34,6 @@ GM20B_ABI = "//drivers/TegraGM20B:TegraGM20BABI.h"
 
 GM20B_LAYOUT = "//drivers/TegraGM20B:TegraGM20BLayout.h"
 
-NVK = "//gpu/nvk:dylib"
-
 # The stage compile (NAK, with no Vulkan device) the raw path makes records with: one object, its entry points its only
 # global symbols (third_party/mesa/src/nouveau/switch_compile).
 COMPILE = "//third_party/mesa/src/nouveau/switch_compile:ios"
@@ -414,7 +412,6 @@ plugin_m2v_edges(
 
 metal_bundle(
     name = "signed",
-    nvk = NVK,
     plugin = ":plugin",
     stack = ":raw_stack",
 )

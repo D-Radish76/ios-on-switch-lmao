@@ -3,15 +3,15 @@
 
 The bundle half of the old build-tegra-gm20b-metal.py:
 
-    bundle.py --xcode-env F --plugin <linked plugin> --nvk <libvulkan_nouveau.dylib> --stack <raw_stack.txt>
-              --bundle <out dir> --trustcache <out> --trust-json <out>
+    bundle.py --xcode-env F --plugin <linked plugin> --stack <raw_stack.txt> --bundle <out dir> --trustcache <out>
+              --trust-json <out>
 
 Info.plist's SwitchShaderStack is the stack key the plugin is built with, which the shader seed checks its tools
-against. The plugin and NVK are stripped (-x) and must be plain arm64 Mach-Os. NVK is signed first, then the bundle (so
-the bundle's seal covers the final dylib), both ad hoc with 4 KiB pages (this kernel's page size) and SHA-256: no team,
-no entitlements, no signing time, so the CDHashes are a function of the bytes. The trust cache is one version-2
-module (vendor/unixnu/scripts/make-owner-trust-bundle.py): u32 version, uuid5 of the CDHashes, u32 count, then per
-entry the 20-byte CDHash, hash type 2 (SHA-256), flags 0, constraint category 0, reserved 0, in ascending order.
+against. The plugin is stripped (-x) and must be a plain arm64 Mach-O. The bundle is signed ad hoc with 4 KiB pages
+(this kernel's page size) and SHA-256: no team, no entitlements, no signing time, so the CDHash is a function of the
+bytes. The trust cache is one version-2 module (vendor/unixnu/scripts/make-owner-trust-bundle.py): u32 version, uuid5
+of the CDHashes, u32 count, then per entry the 20-byte CDHash, hash type 2 (SHA-256), flags 0, constraint category 0,
+reserved 0, in ascending order.
 """
 
 import argparse
@@ -82,7 +82,7 @@ def trust_module(cdhashes: list[str]) -> bytes:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    for name in ('xcode-env', 'plugin', 'nvk', 'stack', 'bundle', 'trustcache', 'trust-json'):
+    for name in ('xcode-env', 'plugin', 'stack', 'bundle', 'trustcache', 'trust-json'):
         parser.add_argument('--' + name, required=True)
     args = parser.parse_args()
     xcode = Xcode(args.xcode_env)
@@ -96,13 +96,6 @@ def main() -> None:
     exe.chmod(0o755)
     xcode.run('strip', '-x', exe)
     arm64(exe)
-
-    dylib = bundle / 'libvulkan_nouveau.dylib'
-    shutil.copyfile(args.nvk, dylib)
-    dylib.chmod(0o755)
-    xcode.run('strip', '-x', dylib)
-    arm64(dylib)
-    nvk_cdhash = sign(xcode, dylib, 'com.brunostjohn.switch.nvk')
     (bundle / 'Info.plist').write_bytes(
         plistlib.dumps(
             {
@@ -120,22 +113,13 @@ def main() -> None:
     )
     plugin_cdhash = sign(xcode, bundle, 'com.brunostjohn.switch.' + NAME)
     for path in [bundle, *bundle.rglob('*')]:
-        path.chmod(0o755 if path.is_dir() or path in (exe, dylib) else 0o644)
+        path.chmod(0o755 if path.is_dir() or path == exe else 0o644)
 
-    Path(args.trustcache).write_bytes(trust_module([plugin_cdhash, nvk_cdhash]))
+    Path(args.trustcache).write_bytes(trust_module([plugin_cdhash]))
     Path(args.trust_json).write_text(
-        json.dumps(
-            {
-                'plugin_cdhash': plugin_cdhash,
-                'nvk_cdhash': nvk_cdhash,
-                'plugin_bytes': exe.stat().st_size,
-                'nvk_bytes': dylib.stat().st_size,
-            },
-            indent=2,
-        )
-        + '\n'
+        json.dumps({'plugin_cdhash': plugin_cdhash, 'plugin_bytes': exe.stat().st_size}, indent=2) + '\n'
     )
-    print(f'bundle: plugin {plugin_cdhash} nvk {nvk_cdhash}')
+    print(f'bundle: plugin {plugin_cdhash}')
 
 
 if __name__ == '__main__':

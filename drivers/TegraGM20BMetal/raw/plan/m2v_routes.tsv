@@ -282,7 +282,7 @@ product	twin	plainTiledTwin	raw_gpu.h,raw_private_comp.cpp	none	-	S4 rename	main
 product	twin	splitTwins	RawMetalSplitRates.mm,raw_command_buffer.cpp,raw_gpu.h,raw_split.cpp	none	-	S4 rename	main	-	raw's own split-plan counters (draws whose split took the split program), not m2v: rename to splitPrograms (S4)
 product	twin	twinRule	RawMetalDevice.mm,raw_command_buffer.cpp,raw_draw.cpp,raw_fetch_order.h,raw_gpu.h	none	-	S4 rename	main	-	raw's own fetch.twin rule (barrier form over storage form), not m2v: rename to barrierFormRule (S4)
 product	twin	twinTaken	raw_draw.cpp,raw_twin_rule.h	none	-	S4 rename	main	-	raw's own fetch.twin verdict, not m2v: rename to barrierFormTaken (S4)
-product	nvk	libvulkan_nouveau.dylib	TegraGM20BMetalPlugin.mm,raw_kernel.cpp	dead	-	cut	cut	-	the plugin loads NVK for m2v's open and raw_kernel.cpp shares its connection while it is loaded: both go with the cut; the compiler daemon and the direct compile link NAK's stage compile (third_party/mesa/src/nouveau/switch_compile) and load no NVK (x1-naklib)
+product	nvk	libvulkan_nouveau.dylib	raw_kernel.cpp	dead	-	cut	cut	-	the plugin loads NVK for m2v's open and raw_kernel.cpp shares its connection while it is loaded: both go with the cut; the compiler daemon and the direct compile link NAK's stage compile (third_party/mesa/src/nouveau/switch_compile) and load no NVK (x1-naklib)
 product	nvk	switch_nvk_connection	raw_kernel.cpp	native	-	cut	cut	-	as dlsym switch_nvk_connection
 product	nvk	switch_nvk_connection_release	raw_kernel.cpp	native	-	cut	cut	-	as dlsym switch_nvk_connection
 product	dlsym	/System/Library/Frameworks/IOKit.framework/IOKit	TegraGM20BMetalPlugin.mm	none	-	-	main	-	not an m2v route (the registry entry ID)

@@ -3,7 +3,7 @@
 usage: merge.py join --index <bucket index>... --report <bucket report>... [--records <driver record store>]
                      [--replies <compile reply store>] --ipsw <build> --plan <plan.json> --inventory <inventory.json>
                      --out <dir>
-       merge.py check --tools-manifest <MANIFEST.json> --twin <tools' libvulkan_nouveau.dylib> --base <path>... --out F
+       merge.py check --tools-manifest <MANIFEST.json> --base <path>... --out F
        merge.py tree --seed <join's dir> --pack <bucket pack>... [--raw <raw pack dir>] [--native <packed native dir>]
                      --out <tree dir> --size F
 
@@ -16,10 +16,8 @@ NVK's identity; the stack key, which every raw/ edit changes, is no part of the 
 index and packs/<the records' pack> into <out>. The device's Metal compiler replies (the frontend's msl/<name>.reply:
 Core Image's kernel sources compiled to AIR by the OS's MTLCompiler, named by its LC_UUID and the request) whose
 envelope holds go to <out>/msl/ as they are, where the frontend reads one its own cache lacks.
-check: refuses tools that are not the GPU bundle's (--base: its tree or files): their NVK twin must have the bundle
-NVK's LC_UUID (nvk_twin.py gives the twin the iOS dylib's), and the bundle's Info.plist must name the tools' stack key
-(NVK, m2v, the bridge and the frontend); a seed of other tools would never be hit. A validation action: the seed does
-not wait for it.
+check: refuses tools that are not the GPU bundle's (--base: its tree or files): the bundle's Info.plist must name the
+tools' stack key; a seed of other tools would never be hit. A validation action: the seed does not wait for it.
 tree: ngpu/addons/TegraGM20BMetal.m2v-seed/shared (the join's files and packs/<NNN>, and the packed native seed's
 native-analysis/) and ngpu/addons/TegraGM20BMetal.raw (with the packed native seed's raw-<stack>/ in native/; of the
 packed native seed, only each index and its observed packs go: tools/gpu/seed_pack.py), directories 0755 and files
@@ -40,7 +38,6 @@ from collections import Counter
 from pathlib import Path
 
 from tools.gpu import seed_pack
-from tools.gpu.nvk_twin import lc_uuid
 from tools.gpu.shaders import replies as compiler_replies
 
 CONTENT = '529a20fd270ababa3e5ec2fe4d1674d93739ba5bcd61861674b4fb6db349af9f'
@@ -244,11 +241,8 @@ def check(args: argparse.Namespace) -> None:
     manifest = json.loads(args.tools_manifest.read_text())
     files = [p for b in args.base for p in ([b] if b.is_file() else b.rglob('*')) if p.is_file()]
     info = [p for p in files if p.name == 'Info.plist' and p.parent.name == 'TegraGM20BMetal.bundle']
-    nvk = [p for p in files if p.name == 'libvulkan_nouveau.dylib' and p.parent.name == 'TegraGM20BMetal.bundle']
-    if len(info) != 1 or len(nvk) != 1:
-        sys.exit('--base has no single TegraGM20BMetal.bundle (Info.plist and libvulkan_nouveau.dylib)')
-    if lc_uuid(args.twin) != lc_uuid(nvk[0]):
-        sys.exit("the shader tools' NVK twin is not the GPU bundle's NVK: tools and bundle come from different builds")
+    if len(info) != 1:
+        sys.exit('--base has no single TegraGM20BMetal.bundle (Info.plist)')
     stack = plistlib.loads(info[0].read_bytes()).get('SwitchShaderStack')
     if stack != manifest['stack']:
         sys.exit(f"the GPU bundle's stack is {stack}, the shader tools' {manifest['stack']}: different builds")
@@ -329,7 +323,7 @@ def main() -> None:
         j.add_argument('--' + name, type=Path, required=True)
     j.add_argument('--ipsw', required=True)
     c = steps.add_parser('check')
-    for name in ('tools-manifest', 'twin', 'out'):
+    for name in ('tools-manifest', 'out'):
         c.add_argument('--' + name, type=Path, required=True)
     c.add_argument('--base', type=Path, action='append', required=True)
     t = steps.add_parser('tree')

@@ -3,7 +3,7 @@
 // IOServiceMatching("IOAcceleratorES") -> AGXAccelerator (drivers/TegraGM20B, published unless switch-no-gpu) -> MetalPluginName
 // TegraGM20BMetal -> /System/Library/Extensions/TegraGM20BMetal.bundle -> MetalPluginClassName TegraGM20BMetalDevice ->
 // -initWithAcceleratorPort:. That returns the raw facade (raw/runtime/RawMetal.h) over the accelerator's
-// AGXDeviceUserClient, its connection opened through Mesa NVK (libvulkan_nouveau.dylib beside this executable).
+// AGXDeviceUserClient, on a connection of its own (raw_kernel.cpp Kernel::openOwn).
 //
 // Adapted from UniXNU-sheng's drivers/NativeMetal/NativeAdrenoMetalPlugin.mm (published mode): the same device open, cache
 // directory search and render-server preferences, without the Adreno user test, the marker stream, the scanout hand-off
@@ -102,20 +102,6 @@ bool sandboxMayCreate(const char *dir)
         *slash = 0;
     }
     return sandboxAllows("file-write-create", kSandboxFilterPath, path);
-}
-
-// <bundle>/libvulkan_nouveau.dylib, beside this executable (<bundle>/TegraGM20BMetal).
-bool libraryPath(char *path, size_t size)
-{
-    Dl_info info = {};
-    if (!dladdr(reinterpret_cast<const void *>(&libraryPath), &info) || !info.dli_fname)
-        return false;
-    snprintf(path, size, "%s", info.dli_fname);
-    char *slash = strrchr(path, '/');
-    if (!slash)
-        return false;
-    snprintf(slash + 1, size - size_t(slash + 1 - path), "libvulkan_nouveau.dylib");
-    return access(path, R_OK) == 0;
 }
 
 // `path` and its missing parents, owner-only.
@@ -571,18 +557,12 @@ id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)
         why = @"left out (TEGRA_GPU_ALL_CLIENTS=0)";
         return nil;
     }
-    // NVK opens the first service of this class (nvkmd_darwin.c darwin_open): ours, never the IOAcceleratorES stub
-    // (drivers/SwitchAccelStub) that only ends QuartzCore's accelerator poll. Set before the raw path's setup below, which
-    // may be the first to open NVK's connection.
+    // The raw device opens the first service of this class (raw_kernel.cpp Kernel::openOwn): ours, never the IOAcceleratorES
+    // stub (drivers/SwitchAccelStub) that only ends QuartzCore's accelerator poll. Set before the raw path's setup below.
     setenv("NVK_DARWIN_SERVICE", "AGXAccelerator", 0);
     char pack[1100] = "";
     if (const char *refusal = rawPackRefusal(pack, sizeof pack)) {
         why = [NSString stringWithFormat:@"%s at %s", refusal, pack];
-        return nil;
-    }
-    char loader[1024];
-    if (!libraryPath(loader, sizeof loader)) {
-        why = @"libvulkan_nouveau.dylib missing beside the plugin";
         return nil;
     }
     uint64_t registryID = 0;
@@ -600,12 +580,6 @@ id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)
                                  kCFPreferencesCurrentApplication);
     }
     const uint64_t openBegan = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-    // NVK holds the process's one GPU connection, which the raw path takes: loaded here, once, with the environment set,
-    // before the raw path's setup looks for it on its own thread.
-    if (!dlopen(loader, RTLD_NOW | RTLD_LOCAL)) {
-        why = [NSString stringWithUTF8String:dlerror() ?: "NVK did not load"];
-        return nil;
-    }
     // The render server's raw GM20B path's own setup (its pack, channel and context, the first pool chunk) starts now on a
     // thread of its own, beside the cache directory search below; raw_metal_device_open_lazy takes what it made.
     if (renderServer)

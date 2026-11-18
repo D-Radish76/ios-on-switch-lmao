@@ -21,7 +21,7 @@ def gpu_bundle(out: Path) -> None:
     """//gpu:bundle's layout with dummy files (deploy --stage-gpu tests)."""
     bundle = out / 'ngpu/addons/TegraGM20BMetal.bundle'
     bundle.mkdir(parents=True)
-    for name in ('TegraGM20BMetal', 'libvulkan_nouveau.dylib', 'Info.plist'):
+    for name in ('TegraGM20BMetal', 'Info.plist'):
         (bundle / name).write_bytes(b'fake ' + name.encode())
     seed = out / 'ngpu/addons/TegraGM20BMetal.m2v-seed/shared/v1'
     seed.mkdir(parents=True)

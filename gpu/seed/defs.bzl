@@ -288,13 +288,12 @@ def _metal_seed_impl(ctx):
     args = ctx.actions.args()
     args.add("check")
     args.add("--tools-manifest", tools.manifest)
-    args.add("--twin", tools.twin)
     args.add_all(ctx.files.base, before_each = "--base", expand_directories = False)
     args.add("--out", checked)
     ctx.actions.run(
         executable = ctx.executable._merge,
         arguments = [args],
-        inputs = [tools.manifest, tools.twin] + ctx.files.base,
+        inputs = [tools.manifest] + ctx.files.base,
         outputs = [checked],
         mnemonic = "MetalSeedCheck",
         progress_message = "Checking the shader tools are the GPU bundle's",
