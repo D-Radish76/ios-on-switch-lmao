@@ -121,6 +121,10 @@ private:
     bool loadPlanes(raw::PassDesc &p);
     bool formatStandIns(const RMPass &pass, raw::PassDesc &p, const PlanDraws &draws, bool continued);
     bool storeFormatTargets();
+    // The open pass's RGB10A8_2P_XR10 targets held in planes that overlap (raw_xr_pools.h xrPlanesOverlap): rendered in their
+    // pools, filled first where loaded, and stored into their rows after the pass
+    void overlappingPlanes(const RMPass &pass, const raw::PassDesc &p);
+    bool storeOverlappingPlanes();
     // Colour j's planes `plane` .. + `layers` of `t`, laid out several planes a block (raw::planeInBlocks), as a
     // one-plane-a-block image the copy engine fills from them where `filled` and drains into them after the pass where
     // `stored` (planesBack); null: no memory for it (*why_)
@@ -184,7 +188,7 @@ private:
     // took of the command buffer's for a texture that holds none
     std::vector<std::pair<__unsafe_unretained RMTexture *, uint32_t>> standInLoads_, standInStores_;
     std::array<raw::Texture *, 8> planarScratch_{};
-    std::vector<__unsafe_unretained RMTexture *> planesWritten_;
+    std::vector<__unsafe_unretained RMTexture *> planesWritten_, overlapStores_;
     std::array<const raw::Texture *, 8> backings_{};
     // The open pass's loaded two-plane YCbCr targets and their slots, the tiles its draws reach (raw_ycbcr_load.h) and the
     // targets whose stores write those tiles alone

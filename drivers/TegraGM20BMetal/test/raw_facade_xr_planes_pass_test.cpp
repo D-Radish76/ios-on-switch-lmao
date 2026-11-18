@@ -8,8 +8,10 @@
 #include "bazel/testing/fresh_process.h"
 
 #import <IOSurface/IOSurface.h>
+#include <algorithm>
 #include <gtest/gtest.h>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -142,7 +144,93 @@ void aMultisampledBgra10XrResolvesByItsState()
     expectRaw(device, p);
 }
 
+// The copy engine's launches' destinations in the jobs from `first` on, in push order
+std::vector<uint64_t> copiesInto(size_t first)
+{
+    constexpr uint32_t kCopySubchannel = 4, kOutUpper = 0x0408, kOutLower = 0x040c, kLaunchDma = 0x0300;
+    std::vector<uint64_t> out;
+    uint64_t to = 0;
+    for (size_t j = first; j < kernel_model::model.jobs.size(); ++j) {
+        const std::vector<uint32_t> &w = kernel_model::model.jobs[j].words;
+        for (size_t i = 0; i < w.size();) {
+            const uint32_t h = w[i++], op = h >> 29, count = (h >> 16) & 0x1fff, subc = (h >> 13) & 7,
+                           m = (h & 0xfff) << 2;
+            for (uint32_t k = 0; op != 4 && k < count && i < w.size(); ++k, ++i) {
+                const uint32_t method = op == 1 ? m + 4 * k : op == 5 && k ? m + 4 : m;
+                if (subc != kCopySubchannel)
+                    continue;
+                if (method == kOutUpper)
+                    to = (to & 0xffffffffull) | uint64_t(w[i]) << 32;
+                else if (method == kOutLower)
+                    to = (to & ~0xffffffffull) | w[i];
+                else if (method == kLaunchDma)
+                    out.push_back(to);
+            }
+            if (op == 4 && subc == kCopySubchannel && m == kLaunchDma)
+                out.push_back(to);
+        }
+    }
+    return out;
+}
+
+// RGB10A8_2P_XR10 over words of rows 64 for 32 texels and alpha bytes of rows 16 for 32: an M4 Max makes it, reads each
+// row at its plane's pitch, and its pass stores each byte from the row raw_overlap_order.h names (five runs alike). A
+// Clear pass renders both planes in their pools, then each plane's bytes are drawn from its pool by the pack's overlap
+// state into a backing the copy engine drains into the rows (rows 64 and 16 bytes apart are no linear render target)
+void planesWhoseRowsOverlapAreStoredFromTheirPools()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.ycbcr_store.ycbcr_overlap_r32ui_frag", MTLPixelFormatR32Uint},
+                                           {"raw.ycbcr_store.ycbcr_overlap_r8_frag", MTLPixelFormatR8Unorm}}));
+    ASSERT_TRUE(device != nil);
+    NSMutableArray *planes = [NSMutableArray array];
+    for (unsigned bytes : {4u, 1u})
+        [planes addObject:@{
+            (id)kIOSurfacePlaneWidth : @(bytes == 4 ? 32 : 16),
+            (id)kIOSurfacePlaneHeight : @8,
+            (id)kIOSurfacePlaneBytesPerElement : @(bytes),
+            (id)kIOSurfacePlaneBytesPerRow : @(bytes == 4 ? 64 : 16),
+            (id)kIOSurfacePlaneOffset : @(bytes == 4 ? 0 : 1024),
+            (id)kIOSurfacePlaneSize : @(bytes == 4 ? 512 : 128)
+        }];
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @32,
+        (id)kIOSurfaceHeight : @8,
+        (id)kIOSurfacePixelFormat : @(uint32_t('b3a8')),
+        (id)kIOSurfaceAllocSize : @2048,
+        (id)kIOSurfacePlaneInfo : planes
+    });
+    ASSERT_TRUE(surface);
+    MTLTextureDescriptor *d =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(550) width:32 height:8 mipmapped:NO];
+    d.storageMode = MTLStorageModeShared;
+    d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:surface plane:0];
+    ASSERT_TRUE(t != nil && t->_rawOk) << "Metal makes it";
+    ASSERT_TRUE(t->_raw.xrPlanes && t->_raw.luma->sampled && t->_raw.chroma->sampled);
+    EXPECT_EQ(t->_raw.luma->pitch, 64u);
+    EXPECT_EQ(t->_raw.chroma->pitch, 16u);
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = (id<MTLTexture>)t;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    p.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.25, -0.25, 0.75);
+    const size_t first = kernel_model::model.jobs.size();
+    expectRaw(device, p);
+    const std::vector<uint64_t> copies = copiesInto(first);
+    for (const raw::Texture *plane : {t->_raw.luma, t->_raw.chroma})
+        EXPECT_NE(std::find(copies.begin(), copies.end(), plane->va), copies.end())
+            << "plane of rows " << plane->pitch << " drawn into its rows after the pass";
+    CFRelease(surface);
+}
+
 }  // namespace
+
+TEST(RawFacadeXrPlanesPass, PlanesWhoseRowsOverlapAreStoredFromTheirPools)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(planesWhoseRowsOverlapAreStoredFromTheirPools);
+}
 
 TEST(RawFacadeXrPlanesPass, AMultisampledBgra10XrResolvesByItsState)
 {

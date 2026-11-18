@@ -1,15 +1,17 @@
 // SPDX-License-Identifier: MIT
 // RGB10A8_2P_XR10 and RGB10A8_2P_XR10_sRGB textures held in Metal's two planes (raw_xr_pass.h): the texture's own
 // Texture has no memory, its planes are luma (the words, R32Uint) and chroma (the alpha bytes, R8Uint), each read
-// through its pool image where its rows are off 32 bytes (raw_xr_pools.h). Words over a surface the kernel laid out
-// block-linear for an earlier texture are read and stored in that layout (an M4 Max makes 550 over a planeless 'w30r' a
-// BGR10_XR target was cleared in, reads its words with alpha 0 and stores them with bits 30 and 31 clear). One written
-// over a plane alone has no alpha plane: chroma is a memoryless target, its header (the pair's second) over a sparse range of the texture's own
-// (Texture::window), which the GMMU reads as 0 and whose stores it drops, as an M4 Max reads alpha 0 there and stores none
-// (m2v-textures9 probes/xr.txt 6a-6c).
+// through its pool image where its rows are off 32 bytes or overlap (raw_xr_pools.h). Words over a surface the kernel
+// laid out block-linear for an earlier texture are read and stored in that layout (an M4 Max makes 550 over a planeless
+// 'w30r' a BGR10_XR target was cleared in, reads its words with alpha 0 and stores them with bits 30 and 31 clear). One
+// written over a plane alone has no alpha plane: chroma is a memoryless target, its header (the pair's second) over a
+// sparse range of the texture's own (Texture::window), which the GMMU reads as 0 and whose stores it drops, as an M4 Max
+// reads alpha 0 there and stores none (m2v-textures9 probes/xr.txt 6a-6c).
 #include "raw_xr_pass.h"
+#include "raw_xr_pools.h"
 
 #include "raw_gpu.h"
+#include "raw_gpu_internal.h"
 
 #include <algorithm>
 #include <array>
@@ -27,6 +29,7 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
 {
     Texture *w = new Texture, *a = new Texture;
     const auto undo = [&](const char *reason) {
+        t.luma = t.chroma = nullptr;
         for (Texture *x : {w, a}) {
             destroyTexture(*x);
             delete x;
@@ -36,20 +39,54 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
     };
     if (!twoPlaneXr(format) || !shape(width, height, format, t))
         return undo("no two-plane extended-range texture of its format and size");
+    if (!wordPitch)
+        return undo("words of rows under 16 bytes");
     const bool alone = !alphaPitch;
-    if (!createSurfaceTexture(surfaceId, base, allocBytes, surface, word, width, height, wordPitch, kXrWordFormat,
-                              *w) ||
+    // rows read at their pitch past their row's or their plane's end (raw_xr_pools.h) are imported to the bytes they
+    // reach: to the surface's last page, past it through a sparse window (reads 0, stores dropped, as an M4 Max reads 0
+    // past a surface's last page where nothing else is mapped)
+    const uint64_t page = pageSize(),
+                   mapped = ((uintptr_t(base) + allocBytes + page - 1) & ~(page - 1)) - uintptr_t(base);
+    const uint64_t end = std::max(word + uint64_t(wordPitch) * (height - 1) + 4ull * width,
+                                  alone ? 0 : alpha + uint64_t(alphaPitch) * (height - 1) + width);
+    const bool reaches = wordPitch < 4 * width || (!alone && alphaPitch < width) || end > allocBytes;
+    const bool window = end > mapped && !alone;
+    const uint64_t readable = !reaches ? 0 : window ? end : mapped;
+    if (!createSurfaceTexture(surfaceId, base, allocBytes, surface, word, width, height, wordPitch, kXrWordFormat, *w,
+                              false, readable) ||
         (alone ? !createMemoryless(width, height, kXrAlphaFormat, *a)
                : !createSurfaceTexture(surfaceId, base, allocBytes, surface, alpha, width, height, alphaPitch,
-                                       kXrAlphaFormat, *a)))
+                                       kXrAlphaFormat, *a, false, readable)))
         return undo("a plane the raw path cannot import");
     // the kernel tiles only a surface of no planes (SwitchGpuSurfaceGeometry.h switch_gpu_surface_packed), whose words
     // have no alpha plane
     if (a->blockLinear || !(w->renderable || w->shadowTarget) || !(a->renderable || a->shadowTarget))
         return undo("a plane the raw path cannot render, or an alpha plane laid out block-linear");
+    // stored through both pools (raw_xr_pools.h xrPlanesOverlap): a plane whose rows do not overlap takes one too
+    const auto pooled = [&](Texture &plane) {
+        if (plane.sampled || plane.memoryless)
+            return true;
+        Texture *image = new Texture;
+        if (!createTexture(width, height, plane.format, *image, false, true)) {
+            delete image;
+            return false;
+        }
+        std::lock_guard<raw::Mutex> l(lock_);
+        freeTic(plane.tic);
+        plane.sampled = image;
+        plane.tic = image->tic;
+        return true;
+    };
+    if ((overlapsRows(*w) || (!alone && overlapsRows(*a))) && (!pooled(*w) || !pooled(*a)))
+        return undo("no memory for the pool images planes that overlap are read and stored through");
     const uint32_t sinkPitch = (width + 31) & ~31u;
     if (alone && !openSparseSink(t, uint64_t(sinkPitch) * height))
         return undo("no sparse range for the alpha it keeps none of (a kernel without TegraGM20BInfoSparse, or no VA)");
+    t.luma = w;
+    t.chroma = a;
+    if (window && !openSparseWindow(t, end))
+        return undo("rows past its surface's last page with no sparse window (a kernel without "
+                    "TegraGM20BInfoSparse, or no VA)");
     uint32_t pair = 0;
     {
         std::lock_guard<raw::Mutex> l(lock_);
@@ -143,8 +180,10 @@ const char *expandXrPlanes(PassDesc &p, [[maybe_unused]] Device &d)
         const std::array<uint32_t, 2> clears = xrPlaneClears(a.clear);
         ColorAttachment &word = p.color[j], &byte = p.color[alpha[j]];
         word = byte = a;
-        word.texture = a.texture->luma;
-        byte.texture = a.texture->chroma;
+        // planes that overlap are rendered in their pools, then stored into their rows (raw_xr_pools.h)
+        const bool pools = xrPlanesOverlap(*a.texture);
+        word.texture = pools ? a.texture->luma->sampled : a.texture->luma;
+        byte.texture = pools && a.texture->chroma->sampled ? a.texture->chroma->sampled : a.texture->chroma;
         // a plane alone keeps no alpha, which a texture read takes as 0: so does a pass that loads it
         const bool dropped = byte.texture->memoryless && a.load == ColorAttachment::Load;
         if (dropped)

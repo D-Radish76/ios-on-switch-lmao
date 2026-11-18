@@ -12,6 +12,10 @@
 #include "raw_format_standin.h"
 #include "raw_planar_target.h"
 #include "raw_turned_planes.h"
+#include "raw_xr_pools.h"
+
+#include <algorithm>
+#include <iterator>
 
 // A planar render target's stand-in passes (raw_planar_target.h), the frontend's: the planes' codes into the stand-in before a
 // pass that loads it (its code image from the planes first, the copy engine's remaps), the stand-in into the planes after one
@@ -268,6 +272,7 @@ bool RMRangeEncode::beginPass(size_t at)
         rmPassWorkFails(cb, ahead_, refusal, MTLCommandBufferErrorInternal);
         return fail(PredEncPassRender, refusal);
     }
+    overlappingPlanes(pass, p);
     for (const RMPass::Color &a : pass.color)
         if (__unsafe_unretained RMTexture *t = (RMTexture *)a.texture)
             raw::turnXrPlaneTargets(t->_raw, p, levelTargets_);
@@ -294,4 +299,22 @@ bool RMRangeEncode::beginPass(size_t at)
     planned_.known = !sampledShadows_ && !standIns_;
     planPassUses(cb, at, planned_);
     return true;
+}
+
+void RMRangeEncode::overlappingPlanes(const RMPass &pass, const raw::PassDesc &p)
+{
+    for (const RMPass::Color &a : pass.color) {
+        __unsafe_unretained RMTexture *t = (RMTexture *)a.texture;
+        if (!t || !raw::xrPlanesOverlap(t->_raw))
+            continue;
+        // drawn in an image of its planes, or through its format's stand-in, it is stored there
+        if (std::none_of(std::begin(p.color), std::end(p.color), [&](const raw::ColorAttachment &c) {
+                return c.texture == t->_raw.luma->sampled;
+            }))
+            continue;
+        if (a.load == MTLLoadActionLoad)
+            raw::fillXrPools(*rc_, t->_raw);
+        if (a.store != MTLStoreActionDontCare)
+            overlapStores_.push_back(t);
+    }
 }

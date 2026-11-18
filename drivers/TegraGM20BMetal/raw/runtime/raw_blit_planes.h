@@ -86,7 +86,8 @@ inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out)
     out.pitch = pitch;
     out.bpp = unit;
     out.format = kUnitFormats[log2];
-    out.width = out.texelWidth = pitch / unit;
+    // rows that overlap (a pitch below the plane's row) run each row to its own end, through the next rows' bytes
+    out.width = out.texelWidth = std::max(pitch, luma ? luma->width * luma->bpp : 0u) / unit;
     out.height = out.texelHeight = rows;
     out.window = t.window;
     out.storage = {va, windowBound(out, uint64_t(pitch) * (rows - 1) + uint64_t(out.width) * unit), !import->id};

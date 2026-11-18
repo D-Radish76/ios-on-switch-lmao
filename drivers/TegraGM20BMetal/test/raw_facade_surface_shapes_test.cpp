@@ -395,27 +395,22 @@ IOSurfaceRef twoPlanesOf(unsigned wordBytes, unsigned alphaBytes)
 }
 
 // An M4 Max reads RGB10A8_2P_XR10 over plane 0 of any two-plane surface by the two planes' rows, whatever their elements
-// (m2v-textures5 probes/xrplane0.mm): held in its planes wherever the rows hold its words and alpha bytes; rows of fewer bytes,
-// which Metal reads overlapping, have no form yet
+// (m2v-textures5 probes/xrplane0.mm): held in its planes, rows of fewer bytes than its words read overlapping, at their
+// pitch, through pools
 void extendedRangeOverTwoPlanesOfAnyElements()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", conversions()));
     ASSERT_TRUE(device != nil);
     const struct {
         unsigned word, alpha;
-        bool held;
-    } kPlanes[] = {{4, 1, true}, {4, 2, true}, {8, 1, true}, {4, 4, true}, {2, 1, false}};
+    } kPlanes[] = {{4, 1}, {4, 2}, {8, 1}, {4, 4}, {2, 1}};
     for (const auto &c : kPlanes) {
         IOSurfaceRef s = twoPlanesOf(c.word, c.alpha);
         ASSERT_TRUE(s);
         RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:flat(550, MTLTextureUsageShaderRead) iosurface:s plane:0];
         CFRelease(s);
-        if (c.held) {
-            ASSERT_TRUE(t != nil && t->_rawOk) << c.word << "+" << c.alpha;
-            EXPECT_TRUE(t->_raw.xrPlanes) << c.word << "+" << c.alpha;
-        } else {
-            EXPECT_EQ(t, nil) << "rows of 128 bytes for 64 words";
-        }
+        ASSERT_TRUE(t != nil && t->_rawOk) << c.word << "+" << c.alpha;
+        EXPECT_TRUE(t->_raw.xrPlanes) << c.word << "+" << c.alpha;
     }
 }
 

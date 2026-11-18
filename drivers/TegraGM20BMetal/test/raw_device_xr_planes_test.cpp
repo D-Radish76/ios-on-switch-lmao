@@ -6,6 +6,7 @@
 #include "../raw/runtime/raw_rotated_pass.h"
 #include "../raw/runtime/raw_turned_planes.h"
 #include "../raw/runtime/raw_xr_pass.h"
+#include "../raw/runtime/raw_xr_pools.h"
 #include <cstdlib>
 #include <cstring>
 #include <string>
@@ -48,6 +49,43 @@ TEST_F(DeviceViews, PlanesOfRowsOff32AreReadThroughTheirPools)
         EXPECT_EQ(headerAddress(dev.headerWords(t.tic + k)), pool.va & ~uint64_t(511)) << "plane " << k;
     }
     dev.destroyTexture(t);
+}
+
+// Words of rows 64 for 32 texels and alpha bytes of rows 16 for 32 (an M4 Max reads each at its plane's pitch, the rows
+// overlapping, and its passes store each byte from the row raw_overlap_order.h names): both planes read and rendered
+// through pools, the header pair over them
+TEST_F(DeviceViews, PlanesThatOverlapAreHeldThroughPools)
+{
+    Surface s;
+    raw::Texture t;
+    const char *why = "";
+    ASSERT_TRUE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 64, 1024, 16, 32, 8, 550, t, &why)) << why;
+    ASSERT_TRUE(t.xrPlanes && t.luma->sampled && t.chroma->sampled);
+    EXPECT_EQ(t.luma->pitch, 64u) << "each row at its plane's pitch";
+    EXPECT_EQ(t.chroma->pitch, 16u);
+    EXPECT_TRUE(raw::xrPlanesOverlap(t));
+    for (uint32_t k = 0; k < 2; k++) {
+        const raw::Texture &pool = *(k ? t.chroma : t.luma)->sampled;
+        EXPECT_EQ(headerAddress(dev.headerWords(t.tic + k)), pool.va & ~uint64_t(511)) << "plane " << k;
+    }
+    raw::PassDesc p;
+    p.color[0].texture = &t;
+    p.color[0].load = raw::ColorAttachment::Clear;
+    p.color[0].store = true;
+    p.count = 1;
+    ASSERT_EQ(raw::expandXrPlanes(p, dev), nullptr);
+    EXPECT_EQ(p.color[0].texture, t.luma->sampled) << "the words rendered in their pool";
+    EXPECT_EQ(p.color[1].texture, t.chroma->sampled);
+    dev.destroyTexture(t);
+}
+
+TEST_F(DeviceViews, WordsOfRowsUnderSixteenBytesAreNotTaken)
+{
+    Surface s;
+    raw::Texture t;
+    const char *why = "";
+    EXPECT_FALSE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 0, 512, 32, 2, 8, 550, t, &why));
+    EXPECT_STREQ(why, "words of rows under 16 bytes");
 }
 
 class DeviceXrSink : public DeviceViews {
@@ -137,6 +175,18 @@ TEST_F(DeviceViews, ATurnedTwoPlaneTargetDrawsItsPlanesTurned)
     ASSERT_EQ(p.count, 2u);
     EXPECT_EQ(p.color[0].texture->va, t.luma->va) << "the words drawn straight into plane 0's rows";
     EXPECT_EQ(p.color[1].texture->format, raw::kXrAlphaFormat);
+    dev.destroyTexture(t);
+}
+
+// A plane alone of rows that hold its words keeps no pool: only rows that overlap are read and stored through one
+TEST_F(DeviceXrSink, APlaneAloneOfWholeRowsHasNoPool)
+{
+    Surface s;
+    raw::Texture t;
+    const char *why = "";
+    ASSERT_TRUE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 256, 0, 0, 64, 64, 550, t, &why)) << why;
+    EXPECT_EQ(t.luma->sampled, nullptr);
+    EXPECT_FALSE(raw::xrPlanesOverlap(t));
     dev.destroyTexture(t);
 }
 

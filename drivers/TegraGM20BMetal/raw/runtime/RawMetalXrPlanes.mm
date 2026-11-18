@@ -2,6 +2,7 @@
 #import "RawMetalXrPlanes.h"
 #include "raw_format_standin.h"
 #include "raw_surface_refusal.h"
+#include "raw_xr_pass.h"
 #include "raw_xr_pools.h"
 
 #include <algorithm>
@@ -37,9 +38,13 @@ size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane)
 
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    return planesForm(d) && plane + 1 < IOSurfaceGetPlaneCount(s) && xrGpuRows(s, plane) >= 4 * d.width &&
-           IOSurfaceGetHeightOfPlane(s, plane) >= d.height && xrGpuRows(s, plane + 1) >= d.width &&
-           IOSurfaceGetHeightOfPlane(s, plane + 1) >= d.height;
+    if (!planesForm(d) || plane + 1 >= IOSurfaceGetPlaneCount(s) || !xrGpuRows(s, plane) || !xrGpuRows(s, plane + 1))
+        return false;
+    const bool writes =
+        d.usage == MTLTextureUsageUnknown || (d.usage & (MTLTextureUsageRenderTarget | MTLTextureUsageShaderWrite));
+    const uintptr_t word = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) & ~uintptr_t(15),
+                    alpha = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane + 1)) & ~uintptr_t(15);
+    return !writes || alpha < word || word + xrGpuRows(s, plane) * (d.height - 1) + 4 * d.width <= alpha;
 }
 
 bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
@@ -206,13 +211,16 @@ int splitXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::Text
         *why = "the pack has no state splitting a two-plane RGB10A8_2P_XR10 texture's image";
         return 1;
     }
+    const bool pools = raw::xrPlanesOverlap(t);
     raw::PassDesc p;
-    p.color[0].texture = t.luma;
-    p.color[1].texture = t.chroma;
+    p.color[0].texture = pools ? t.luma->sampled : t.luma;
+    p.color[1].texture = pools && t.chroma->sampled ? t.chroma->sampled : t.chroma;
     for (raw::ColorAttachment &a : p.color) {
         a.load = raw::ColorAttachment::DontCare;
         a.store = true;
     }
     p.count = 2;
-    return planesPass(rc, p, split, image, nullptr, t.width, t.height, why);
+    if (const int failed = planesPass(rc, p, split, image, nullptr, t.width, t.height, why))
+        return failed;
+    return pools ? raw::storeXrPlaneRows(*gRM->raw, *rc, t, why) : 0;
 }

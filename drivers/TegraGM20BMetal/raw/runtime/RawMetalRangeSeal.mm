@@ -6,6 +6,7 @@
 #import "RawMetalPassFusion.h"
 #import "RawMetalSplitPlan.h"
 #import "RawMetalTargetViews.h"
+#include "raw_xr_pools.h"
 
 // The pass's backings of its YCbCr targets' stand-ins, read before the resolve passes take the encoder over, then the
 // stand-ins stored into the planes
@@ -43,6 +44,21 @@ bool RMRangeEncode::storeStandIns()
     }
     standInStores_.clear();
     loadedTargets_ = 0;
+    return true;
+}
+
+bool RMRangeEncode::storeOverlappingPlanes()
+{
+    for (RMTexture *t : overlapStores_)
+        if (const int failed = raw::storeXrPlaneRows(*d_, *rc_, t->_raw, why_)) {
+            if (failed == 2) {
+                rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
+                return refused();
+            }
+            rmPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorInternal);
+            return fail(PredEncPlanarRT, *why_);
+        }
+    overlapStores_.clear();
     return true;
 }
 
@@ -136,7 +152,7 @@ bool RMRangeEncode::closeEncoders()
         rmPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorInternal);
         return fail(PredPassRotated, *why_);
     }
-    if (!storeStandIns() || !storeFormatTargets())
+    if (!storeStandIns() || !storeOverlappingPlanes() || !storeFormatTargets())
         return false;
     planesBack();
     return depth16Back() && writtenBack();

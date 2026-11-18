@@ -369,6 +369,7 @@ void RMRangeEncode::reset()
     planned_ = {};
     standInLoads_.clear();
     planesWritten_.clear();
+    overlapStores_.clear();
     standInStores_.clear();
     backings_ = {};
     planeLoads_.clear();

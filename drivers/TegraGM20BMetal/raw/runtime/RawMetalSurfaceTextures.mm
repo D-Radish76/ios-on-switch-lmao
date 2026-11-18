@@ -101,10 +101,14 @@ bool makeXrWords(RMTexture *t, IOSurfaceRef s)
     uint64_t offset;
     size_t pitch;
     planeAt(s, t->_plane, offset, pitch);
-    // at Metal's GPU layout, offset and rows rounded down to 16, its CPU copies at the plane's (probes/xr.txt 5k-5n)
+    // at Metal's GPU layout, offset and rows rounded down to 16, its CPU copies at the plane's (probes/xr.txt 5k-5n); rows
+    // that overlap are read at that pitch through a pool the copy engine gathers, to the surface's last page
+    const size_t page = vm_page_size, mapped = (IOSurfaceGetAllocSize(s) + page - 1) & ~(page - 1);
+    const bool overlaps = (pitch & ~15ul) < 4 * d.width;
     if (!gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s,
                                         offset & ~15ull, uint32_t(d.width), uint32_t(d.height), uint32_t(pitch & ~15ul),
-                                        xrWordsFormat(uint32_t(d.pixelFormat)), t->_raw, false))
+                                        xrWordsFormat(uint32_t(d.pixelFormat)), t->_raw, false,
+                                        overlaps && (pitch & ~15ul) ? mapped : 0))
         return false;
     if (!t->_raw.blockLinear && ((offset | pitch) & 15)) {
         t->_cpuRows = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(s)) + offset;
@@ -302,8 +306,9 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     else if (xr && !xrTaken && !xrPlanesStorable(d))
         form = "RGB10A8_2P_XR10 a fragment program may store to, with no pack state merging and splitting its planes";
     else if (xr && !xrTaken)
-        form = "RGB10A8_2P_XR10 over a plane followed by another, of rows that hold fewer bytes than its words or alpha "
-               "bytes (rows Metal reads overlapping), or shorter than it";
+        form = "RGB10A8_2P_XR10 over planes of rows under 16 bytes (an M4 Max reads YCbCr planes of such rows 1 MiB "
+               "apart), or written over planes whose words run on into its alpha plane (an M4 Max's pass orders the "
+               "stores of both planes together)";
     if (form) {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.form", uintptr_t(form),
                              "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: %s: nil until the "

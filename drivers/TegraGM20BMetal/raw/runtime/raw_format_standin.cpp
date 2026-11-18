@@ -202,8 +202,13 @@ bool storeFormatStandIn(Device &d, CommandBuffer &rc, const ColorAttachment &a, 
         *why = "no texture header for a stand-in's store";
         return false;
     }
-    if (t.xrPlanes)
-        return drawAll(rc, d.ownPipeline(kPlanesSrgbStoreState), *t.luma, standIn, why, t.chroma);
+    if (t.xrPlanes) {  // planes that overlap through their pools, then into their rows (raw_xr_pools.h)
+        const bool pools = xrPlanesOverlap(t);
+        Texture &words = pools ? *t.luma->sampled : *t.luma;
+        Texture *alpha = pools && t.chroma->sampled ? t.chroma->sampled : t.chroma;
+        return drawAll(rc, d.ownPipeline(kPlanesSrgbStoreState), words, standIn, why, alpha) &&
+               (!pools || !storeXrPlaneRows(d, rc, t, why));
+    }
     Pipeline *store = d.ownPipeline(formatStoreState(t.format, t.samples));
     for (uint32_t l = 0; l < layers; l++) {
         // the texture's words as the store state writes them: rendered as they lie where NVK's linear-render rule takes
