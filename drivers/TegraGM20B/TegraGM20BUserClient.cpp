@@ -11,6 +11,7 @@
 #include "SwitchGpuConnectionQuota.h"
 #include "SwitchGpuShaderCompiler.h"
 #include "TegraGM20BCompilerABI.h"
+#include "TegraGM20BZcullABI.h"
 
 namespace
 {
@@ -472,6 +473,9 @@ extern "C" uint32_t switch_gpu_info_flags(void)
 		flags |= TegraGM20BInfoCompression;
 	if (switch_tiled_cache_on())
 		flags |= TegraGM20BInfoTiledCache;
+	TegraGM20BAbiZcullInfo zcull = {};
+	if (!tgm_zcull_info(&zcull))
+		flags |= TegraGM20BInfoZcull;
 	return flags;
 }
 
@@ -497,6 +501,11 @@ IOReturn AGXDeviceUserClient::getInfo(TegraGM20BAbiInfo *out)
 	out->page_size = 4096;
 	out->big_page_size = 0x20000;
 	out->max_bo_bytes = kMaxBoBytes;
+	static_assert(sizeof(out->zcull) == sizeof(TegraGM20BAbiZcullInfo),
+		      "zcull[] is method 'ZC's record");
+	TegraGM20BAbiZcullInfo zcull = {};
+	if (!tgm_zcull_info(&zcull))
+		memcpy(out->zcull, &zcull, sizeof(out->zcull));
 	strlcpy(out->chip_name, "GM20B", sizeof(out->chip_name));
 	strlcpy(out->device_name, "NVIDIA Tegra X1 (GM20B)", sizeof(out->device_name));
 	return kIOReturnSuccess;
