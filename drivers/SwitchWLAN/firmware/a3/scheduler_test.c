@@ -22,7 +22,7 @@ static struct switch_a3_timer *switch_due;
 static struct switch_a3_excursion_request switch_request;
 static switch_a3_excursion_callback switch_callback;
 static void *switch_context;
-uint32_t switch_control_test_results[36];
+uint32_t switch_control_test_results[37];
 volatile uint32_t switch_control_test_done;
 
 #define SWITCH_REQUIRE(condition) \
@@ -520,6 +520,42 @@ static uint32_t switch_test_phase(void)
     return 0;
 }
 
+static uint32_t switch_test_adjacent_windows(void)
+{
+    for (unsigned which = 0; which < 3; ++which) {
+        struct switch_a3_schedule schedule = switch_reset();
+        schedule.slots[0].chanspec = 0x1006;
+        schedule.slots[1].chanspec = which == 1 ? switch_home : 0xd02c;
+        if (which == 2) {
+            *((uint8_t *)switch_bsscfg + 16) = 1;
+            switch_tbtt = 30000;
+        }
+        SWITCH_REQUIRE(!switch_start(&schedule) && switch_starts == 1);
+        const struct switch_a3_excursion_result entered = {
+            .session = switch_request.session,
+            .clock_epoch = switch_request.clock_epoch,
+            .generation = switch_request.generation,
+        };
+        switch_phy = switch_request.target_chanspec;
+        switch_callback(switch_context, SWITCH_A3_EXCURSION_ENTERED, &entered);
+        switch_now = switch_request.expiry_tsf + 7;
+        switch_complete(SWITCH_A3_EXCURSION_EXPIRED);
+        SWITCH_REQUIRE(switch_due && switch_due->snapshot.armed);
+        if (which == 2) {
+            SWITCH_REQUIRE(switch_now < 30000 && switch_timer_due == 33768 && switch_starts == 1);
+        } else {
+            SWITCH_REQUIRE(switch_timer_due == switch_now + 1);
+            switch_fire(switch_timer_due);
+            uint64_t until;
+            if (which == 1)
+                SWITCH_REQUIRE(!switch_a3_scheduler_admit(switch_wlc, switch_home, &until) && until == 66536);
+            else
+                SWITCH_REQUIRE(switch_starts == 2 && switch_request.target_chanspec == 0xd02c);
+        }
+    }
+    return 0;
+}
+
 void switch_control_test_run(void)
 {
     for (unsigned index = 0; index < 29; ++index)
@@ -527,6 +563,7 @@ void switch_control_test_run(void)
     for (unsigned index = 30; index < 35; ++index)
         switch_control_test_results[index - 1] = switch_test(index);
     switch_control_test_results[34] = switch_test_phase();
-    switch_control_test_results[35] = switch_test(29);
+    switch_control_test_results[35] = switch_test_adjacent_windows();
+    switch_control_test_results[36] = switch_test(29);
     switch_control_test_done = 0x53574133;
 }

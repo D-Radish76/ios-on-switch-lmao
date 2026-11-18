@@ -33,6 +33,7 @@ void switch_wlan_a3_radio_attach(const switch_a3_caps *caps, const uint8_t mac[6
     gDiagnostics = {};
 #endif
     gStationPaused = gPauseReady = false;
+    gScheduleRejected = false;
     resetScheduleUpdate();
     gAttached = true;
     gRecoveryRequired = false;

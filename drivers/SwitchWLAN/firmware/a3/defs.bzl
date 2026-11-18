@@ -34,6 +34,7 @@ def _payload_impl(ctx):
             "-fno-tree-loop-optimize",
             "-fno-optimize-sibling-calls",
             "-fno-ipa-bit-cp",
+            "-fno-tree-vrp",
         ])
     for symbol in ctx.attr.retain_symbols:
         args.add("-Wl,--undefined=" + symbol)

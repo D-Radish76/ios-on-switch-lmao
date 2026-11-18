@@ -535,16 +535,16 @@ void hostSchedule(void *, const struct awdl_chan seq[AWDL_SEQ_SLOTS], uint64_t a
     const struct swlan_chan_seq s = {anchorTsf, AWDL_EAW_TU * AWDL_TU_US * AWDL_SEQ_SLOTS, AWDL_SEQ_SLOTS,
                                      radioInfraFreq(), slots};
     const int e = swlan_awdl_chanseq_set(&s);
-    if (gCaps && gCaps->requires_radio_ready)
+    const bool rejectedUpdate = e == -EINVAL && gCaps && gCaps->requires_radio_ready && gActivationCommitted;
+    if (!rejectedUpdate && ((gCaps && gCaps->requires_radio_ready) || e < 0))
         switch_awdl_core_radio_ready(gCore, 0);
-    if (e < 0) {
+    if (e < 0 && !rejectedUpdate) {
         if (radioPending(e)) {
             gRestorePending = true;
             requestClock();
         } else {
             gRadioError = e;
         }
-        switch_awdl_core_radio_ready(gCore, 0);
     }
     static unsigned said;
     if (e < 0 && said++ < 2)

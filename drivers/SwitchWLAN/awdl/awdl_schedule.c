@@ -101,6 +101,27 @@ static int search_moves(const struct awdl_core *c)
                             (c->infra_mhz && mask != social_bit(awdl_chan_of_freq(c->infra_mhz).number)));
 }
 
+static void search_away(struct awdl_core *c, const uint8_t channels[3], unsigned count)
+{
+    const unsigned pass = c->switch_search_pass;
+    const unsigned first = pass % 8u;
+    const unsigned second = 8u + (first + 4u) % 8u;
+    const unsigned channel = (first + pass / 8u) % count;
+    const unsigned legal = c->switch_legal_channels;
+    const uint8_t primary = (legal & 4u) ? 149 : (legal & 2u) ? 44 : 6;
+    const uint8_t secondary = (legal & 1u) ? 6 : (legal & 2u) ? 44 : primary;
+    unsigned anchor = primary == 44 ? 10u : 2u;
+    if (first == anchor || second == anchor)
+        anchor ^= 8u;
+
+    // The captured Mac schedules use 2/10 for 5 GHz and 8/0 for 2.4 GHz. Stagger the searches to keep an anchor in each pair.
+    memset(c->cfg.seq, 0, sizeof c->cfg.seq);
+    c->cfg.seq[anchor].number = primary;
+    c->cfg.seq[second == 8 ? 0 : 8].number = secondary;
+    c->cfg.seq[first].number = channels[channel];
+    c->cfg.seq[second].number = channels[(channel + 1) % count];
+}
+
 static void search_sequence(struct awdl_core *c, struct awdl_chan home)
 {
     const uint8_t candidates[] = {home.number, 44, 149, 6};
@@ -113,6 +134,10 @@ static void search_sequence(struct awdl_core *c, struct awdl_chan home)
             channels[count++] = candidates[i];
             remaining &= (uint16_t)~bit;
         }
+    }
+    if (c->infra_mhz && !social_bit(home.number)) {
+        search_away(c, channels, count);
+        return;
     }
     const uint8_t channel = channels[c->switch_search_pass % count];
     const struct awdl_chan listen = {channel, awdl_opclass_20mhz(channel)};
@@ -377,8 +402,8 @@ void awdl_sched_deadline(struct awdl_core *c, uint64_t now)
     if (search_moves(c) && now >= c->switch_next_search) {
         const uint64_t passes = 1 + (now - c->switch_next_search) / SWITCH_AWDL_SEARCH_US;
         c->switch_next_search += passes * SWITCH_AWDL_SEARCH_US;
-        // Four offsets for each of one, two or three legal channels all repeat within 24 passes.
-        c->switch_search_pass = (uint8_t)((c->switch_search_pass + passes) % 24u);
+        // Eight positions on one, two or three legal channels repeat within 48 passes.
+        c->switch_search_pass = (uint8_t)((c->switch_search_pass + passes) % 48u);
         struct awdl_chan previous[AWDL_SEQ_SLOTS];
         memcpy(previous, c->cfg.seq, sizeof previous);
         build(c);

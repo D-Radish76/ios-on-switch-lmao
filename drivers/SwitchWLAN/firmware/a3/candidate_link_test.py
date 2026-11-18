@@ -62,6 +62,7 @@ def switch_candidate_command(gcc: str, source: Path, elf: Path, development: int
         '-fno-tree-loop-optimize',
         '-fno-optimize-sibling-calls',
         '-fno-ipa-bit-cp',
+        '-fno-tree-vrp',
         '-ffreestanding',
         '-fno-builtin',
         '-fno-stack-protector',

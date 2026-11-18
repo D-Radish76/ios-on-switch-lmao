@@ -2,7 +2,7 @@
 #include "SwitchWLANA3State.h"
 
 namespace switch_a3_host {
-bool gScheduleUpdatePending, gScheduleWaitEvent;
+bool gScheduleUpdatePending, gScheduleWaitEvent, gScheduleRejected;
 uint32_t gScheduleRequest, gScheduleEvent;
 switch_a3_schedule gAppliedSchedule;
 
@@ -82,6 +82,7 @@ void finishScheduleUpdate(const Job &job, const switch_a3_reply &reply, int erro
         if (job.control.config_generation == gConfiguration) {
             gDesiredSchedule = gAppliedSchedule;
             gScheduleUpdatePending = false;
+            gScheduleRejected = true;
         }
         gScheduleWaitEvent = false;
         updateCredits(reply.tx_credits);

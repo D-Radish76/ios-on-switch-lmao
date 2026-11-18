@@ -19,7 +19,7 @@ static int switch_a3_timer_owned(const struct switch_a3_timer *timer, void *wlc)
            *((uint8_t *)timer->queue + 52);
 }
 
-static int switch_a3_timer_lost(struct switch_a3_timer *timer)
+static __attribute__((noinline, noclone)) int switch_a3_timer_lost(struct switch_a3_timer *timer)
 {
     timer->snapshot.armed = 0;
     timer->callback = 0;

@@ -54,7 +54,7 @@ unsigned pendingCount()
 
 uint32_t creditRoom()
 {
-    if (gScheduleUpdatePending || gStationPaused)
+    if (gScheduleUpdatePending || gScheduleRejected || gStationPaused)
         return 0;
     const unsigned pending = pendingCount();
     return pending < gCreditLimit ? gCreditLimit - pending : 0;
@@ -473,7 +473,7 @@ void work(thread_call_param_t, thread_call_param_t)
                 if (entry.id == tx.id && error) {
                     entry.transport = false;
                     entry.expires_ns = entry.submit_deadline_ns;
-                    if (gScheduleUpdatePending && !entry.notified && gCancelCount < kJobs) {
+                    if ((gScheduleUpdatePending || gScheduleRejected) && !entry.notified && gCancelCount < kJobs) {
                         gCancelled[gCancelCount++] = {SWLAN_AWDL_TXDONE, entry.id, ECANCELED, 0, gSession, entry.epoch};
                         entry.notified = true;
                     }
@@ -772,18 +772,10 @@ int switch_wlan_a3_radio_filter(const uint8_t address[6], const uint8_t bssid[6]
     return 0;
 }
 
-int switch_wlan_a3_radio_schedule(const swlan_chan_seq *schedule)
+static int encodeSchedule(const swlan_chan_seq *schedule, int d11n, switch_a3_schedule &wire)
 {
-    if (!schedule)
-        return switch_wlan_a3_radio_close();
     if (!schedule->slots || !schedule->n_slots || schedule->n_slots > SWITCH_A3_MAX_SLOTS || !schedule->period_us)
         return -EINVAL;
-    if (!gLock)
-        return -ENXIO;
-    IOLockLock(gLock);
-    const int d11n = gD11n;
-    IOLockUnlock(gLock);
-    switch_a3_schedule wire = {};
     wire.anchor_tsf = schedule->anchor_tsf;
     wire.period_us = schedule->period_us;
     wire.infra_chanspec = bcm_chanspec20(awdl_chan_of_freq(schedule->infra_freq_mhz).number, d11n);
@@ -798,18 +790,29 @@ int switch_wlan_a3_radio_schedule(const swlan_chan_seq *schedule)
             return -EINVAL;
         period += wire.slots[i].dwell_us;
     }
-    if (period != wire.period_us)
-        return -EINVAL;
+    return period == wire.period_us ? 0 : -EINVAL;
+}
+
+int switch_wlan_a3_radio_schedule(const swlan_chan_seq *schedule)
+{
+    if (!schedule)
+        return switch_wlan_a3_radio_close();
     if (!gLock)
         return -ENXIO;
     IOLockLock(gLock);
-    int error = 0;
-    if (!gAttached || !gPowered || gRecoveryRequired)
+    switch_a3_schedule wire = {};
+    int error = encodeSchedule(schedule, gD11n, wire);
+    if (error) {
+        gScheduleRejected = true;
+        cancelTx(true);
+    } else if (!gAttached || !gPowered || gRecoveryRequired)
         error = -ENXIO;
     else if (!gRings.ring_count)
         error = -EOPNOTSUPP;
-    else if (!gHaveSchedule || memcmp(&wire, &gDesiredSchedule, sizeof wire) || gClosing || gState.error) {
+    else if (gScheduleRejected || !gHaveSchedule || memcmp(&wire, &gDesiredSchedule, sizeof wire) ||
+             gClosing || gState.error) {
         const bool replace = gState.ready && gConfigured && gApplied && !gDrainPending && !gClosing;
+        gScheduleRejected = false;
         gDesiredSchedule = wire;
         gHaveSchedule = true;
         gClosing = false;
@@ -822,7 +825,7 @@ int switch_wlan_a3_radio_schedule(const swlan_chan_seq *schedule)
         }
     }
     IOLockUnlock(gLock);
-    if (!error)
+    if (!error || error == -EINVAL)
         thread_call_enter(gWorker);
     return error;
 }

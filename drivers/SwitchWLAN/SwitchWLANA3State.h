@@ -50,7 +50,7 @@ extern unsigned gCancelCount, gHead, gCount, gTxHead, gTxCount;
 extern bool gBusy, gAttached, gClockQueued, gPowered, gRecoveryRequired, gDmaBlocked;
 extern bool gDrainDmaWait, gDrainPending, gDrainWaitEvent, gClosing, gHaveConfiguration, gHaveSchedule, gStopped;
 extern bool gStationPaused, gPauseReady;
-extern bool gScheduleUpdatePending, gScheduleWaitEvent;
+extern bool gScheduleUpdatePending, gScheduleWaitEvent, gScheduleRejected;
 extern uint32_t gScheduleRequest, gScheduleEvent;
 extern bool gVerifyState;
 extern uint32_t gOwnershipEvent, gDrainEvent;

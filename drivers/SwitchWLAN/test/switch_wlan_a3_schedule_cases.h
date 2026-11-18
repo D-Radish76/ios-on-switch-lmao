@@ -160,6 +160,10 @@ TEST_F(SwitchA3Radio, InvalidLiveScheduleLeavesAppliedResourcesAndScheduleIntact
 {
     switch_ready();
     const auto before = switch_state();
+    const int outstanding = switch_send();
+    ASSERT_GT(outstanding, 0);
+    switch_drain();
+    ASSERT_EQ(switch_firmware.dma.size(), 1u);
     switch_firmware.controls.clear();
     switch_firmware.schedule_failure = -2;
     ASSERT_EQ(switch_replace_schedule(2000000), 0);
@@ -169,7 +173,56 @@ TEST_F(SwitchA3Radio, InvalidLiveScheduleLeavesAppliedResourcesAndScheduleIntact
     EXPECT_EQ(switch_state().applied_generation, before.applied_generation);
     EXPECT_TRUE(switch_state().ready);
     EXPECT_EQ(switch_state().error, 0);
+    EXPECT_EQ(switch_send(), -EAGAIN);
+    switch_complete(switch_firmware.dma.front());
+    switch_state_notice();
+    switch_drain();
+    unsigned completions = 0;
+    for (const auto &event : switch_firmware.events)
+        if (event.type == SWLAN_AWDL_TXDONE && event.id == static_cast<uint32_t>(outstanding)) {
+            ++completions;
+            EXPECT_EQ(event.status, 0u);
+        }
+    EXPECT_EQ(completions, 1u);
+    EXPECT_EQ(switch_state().tx_credits, 0u);
+    EXPECT_EQ(switch_send(), -EAGAIN);
+    EXPECT_EQ(switch_firmware.controls.size(), 1u);
+    switch_firmware.schedule_failure = 0;
+    ASSERT_EQ(switch_replace_schedule(2000000), 0);
+    EXPECT_EQ(switch_send(), -EAGAIN);
+    switch_drain();
+    EXPECT_GT(switch_state().applied_generation, before.applied_generation);
+    EXPECT_GT(switch_state().tx_credits, 0u);
     EXPECT_GE(switch_send(), 0);
+}
+
+TEST_F(SwitchA3Radio, SynchronouslyRefusedScheduleSurvivesEarlierCommit)
+{
+    switch_ready();
+    switch_firmware.controls.clear();
+    bool refused = false;
+    switch_firmware.during_control = [&](const switch_a3_control &control) {
+        if (refused || control.operation != SWITCH_A3_INSTALL_SCHEDULE)
+            return;
+        const swlan_chan_slot slot = {2437, 0};
+        const swlan_chan_seq invalid = {3000000, 1048576, 1, 2437, &slot};
+        EXPECT_EQ(switch_wlan_a3_radio_schedule(&invalid), -EINVAL);
+        refused = true;
+    };
+    ASSERT_EQ(switch_replace_schedule(2000000), 0);
+    switch_drain();
+    ASSERT_TRUE(refused);
+    ASSERT_EQ(switch_firmware.controls.size(), 1u);
+    const auto applied = switch_state().applied_generation;
+    EXPECT_EQ(applied, switch_firmware.controls.back().config_generation);
+    EXPECT_TRUE(switch_state().ready);
+    EXPECT_EQ(switch_state().error, 0);
+    EXPECT_EQ(switch_state().tx_credits, 0u);
+    EXPECT_EQ(switch_send(), -EAGAIN);
+    ASSERT_EQ(switch_replace_schedule(2000000), 0);
+    switch_drain();
+    EXPECT_GT(switch_state().applied_generation, applied);
+    EXPECT_GT(switch_send(), 0);
 }
 
 TEST_F(SwitchA3Radio, StationParkAndResumeKeepTheCommittedSession)

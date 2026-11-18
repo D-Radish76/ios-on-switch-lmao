@@ -128,7 +128,8 @@ int switch_wlan_a3_radio_tx(const swlan_tx_req *request)
         IOLockUnlock(gLock);
         return -EINVAL;
     }
-    if (!gAttached || !gPowered || !gState.ready || gScheduleUpdatePending || gStationPaused || !switch_wlan_a3_clock_valid(gState.clock, now) ||
+    if (!gAttached || !gPowered || !gState.ready || gScheduleUpdatePending || gScheduleRejected || gStationPaused ||
+        !switch_wlan_a3_clock_valid(gState.clock, now) ||
         request->generation != gSession || request->clock_epoch != gState.clock.epoch) {
         IOLockUnlock(gLock);
         return -EAGAIN;
@@ -203,7 +204,8 @@ bool switch_wlan_a3_radio_tx_allowed(const uint8_t *envelope, size_t length)
         return false;
     IOLockLock(gLock);
     switch_a3_tx_header header = {};
-    bool valid = gAttached && gPowered && !gRecoveryRequired && gState.ready && !gScheduleUpdatePending && !gStationPaused &&
+    bool valid = gAttached && gPowered && !gRecoveryRequired && gState.ready && !gScheduleUpdatePending &&
+                 !gScheduleRejected && !gStationPaused &&
                  switch_wlan_a3_clock_valid(gState.clock, hostNs()) &&
                  switch_a3_tx_decode(envelope, length, gSession, gState.clock.epoch, &header) &&
                  header.schedule_generation == gSchedule;

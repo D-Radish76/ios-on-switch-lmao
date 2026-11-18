@@ -12,7 +12,7 @@ static struct {
     uint8_t dtim_period, dtim_count, multicast;
 } switch_a3_beacon;
 
-static uint16_t switch_a3_beacon_read16(const void *address)
+static __attribute__((noinline, noclone)) uint16_t switch_a3_beacon_read16(const void *address)
 {
     const uint8_t *bytes = address;
     return (uint16_t)(bytes[0] | ((uint16_t)bytes[1] << 8));

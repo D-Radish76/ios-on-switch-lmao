@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-2-Clause-Patent */
 #include "tx_timing.h"
 
-static uint16_t switch_a3_timing_read16(const uint8_t *bytes)
+static __attribute__((noinline, noclone)) uint16_t switch_a3_timing_read16(const uint8_t *bytes)
 {
     return bytes[0] | ((uint16_t)bytes[1] << 8);
 }
@@ -27,7 +27,7 @@ int switch_a3_tx_timing(uint8_t *frame, uint32_t bytes, uint64_t now, uint64_t e
     for (unsigned index = 0; index < 6; ++index)
         if (frame[24 + index] != prefix[index] || frame[16 + index] != bssid[index])
             return 0;
-    if (bytes < 40 || frame[31] || (uint32_t)now - switch_a3_timing_read32(frame + 36) > 65536u)
+    if (bytes < 40 || frame[31])
         return -1;
     uint32_t sync = 0, counter = 0;
     for (uint32_t at = 40; at < bytes;) {
@@ -54,10 +54,19 @@ int switch_a3_tx_timing(uint8_t *frame, uint32_t bytes, uint64_t now, uint64_t e
         return -2;
     if (boundary < expiry)
         *lifetime = (uint32_t)boundary;
+    /* Legacy peers use the countdown directly at RX. Keep its fractional TU in PHY minus target. */
+    counter -= elapsed >> 10;
+    frame[sync + 1] = (uint8_t)counter;
+    frame[sync + 15] = counter > 48 ? (uint8_t)(counter - 48) : 0;
+    frame[sync + 16] = 0;
+    frame[sync + 29] = (uint8_t)((frame[sync + 29] & 0xfcu) | ((64 - counter) >> 4));
     uint32_t timestamp = (uint32_t)now;
+    uint32_t target = timestamp - (elapsed & 1023u);
     for (unsigned index = 0; index < 4; ++index) {
         frame[32 + index] = (uint8_t)timestamp;
+        frame[36 + index] = (uint8_t)target;
         timestamp >>= 8;
+        target >>= 8;
     }
     return 1;
 }

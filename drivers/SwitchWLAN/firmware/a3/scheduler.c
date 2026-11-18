@@ -17,7 +17,7 @@ static struct {
     struct switch_a3_schedule schedule;
     struct switch_a3_timer timer;
     void (*changed)(void *, int);
-    uint64_t until, observed_tsf;
+    uint64_t until, window_end, observed_tsf;
     union {
         struct switch_a3_owner owner;
         struct { uint32_t session, epoch, generation; };
@@ -120,13 +120,14 @@ static uint16_t switch_a3_scheduler_window(uint64_t now, uint64_t *boundary, int
     }
     const uint16_t requested = schedule->slots[slot].chanspec;
     *allowed = requested != 0;
-    *boundary = now + end - phase;
+    uint32_t remaining = end - phase;
     for (unsigned count = 1; count < schedule->slot_count; ++count) {
         slot = (slot + 1u) % schedule->slot_count;
         if (schedule->slots[slot].chanspec != requested)
             break;
-        *boundary += schedule->slots[slot].dwell_us;
+        remaining += schedule->slots[slot].dwell_us;
     }
+    *boundary = now + remaining;
     return !requested || requested == switch_a3_channel_control(switch_a3_scheduler.home) ? switch_a3_scheduler.home
                                                                                           : requested;
 }
@@ -163,15 +164,10 @@ static void switch_a3_scheduler_excursion(void *context, uint32_t event,
                                                                                     : SWITCH_A3_FAULT_CHANNEL_RETURN;
         switch_a3_scheduler_fault(reason == SWITCH_A3_FAULT_CLOCK_BACKWARD ? -35 : -1, reason);
     } else if (switch_a3_scheduler.running && !switch_a3_scheduler.stepping) {
-        uint64_t now, boundary;
-        int allowed;
-        if (switch_a3_clock_read(switch_a3_scheduler.wlc, &now))
-            switch_a3_scheduler_fault(-1, SWITCH_A3_FAULT_CLOCK_UNSTABLE);
-        else if (result->reason != SWITCH_A3_EXCURSION_OK) {
-            switch_a3_scheduler_window(now, &boundary, &allowed);
-            switch_a3_scheduler_arm(boundary);
-        } else
+        if (result->reason == SWITCH_A3_EXCURSION_OK)
             switch_a3_scheduler_step();
+        else
+            switch_a3_scheduler_arm(switch_a3_scheduler.window_end);
     } else if (!switch_a3_scheduler.running && switch_a3_scheduler.changed) {
         switch_a3_scheduler.changed(switch_a3_scheduler.context, 0);
     }
@@ -221,6 +217,7 @@ static void switch_a3_scheduler_step(void)
         return;
     }
     switch_a3_scheduler.target = target;
+    switch_a3_scheduler.window_end = boundary;
     switch_a3_scheduler.until = boundary;
     if (target == switch_a3_scheduler.home) {
         const int status = switch_a3_ack_reconcile(switch_a3_scheduler.wlc);
