@@ -3,6 +3,8 @@
 #                            every plausible CBC_PARAM, which page lists and binds may compress, a compressed bind's PTEs
 #   gm20b_zcull_test         TegraGM20BZcull.h against nvgpu's zcull report for the X1's GR; its record is
 #                            drm_nouveau_get_zcull_info's
+#   gm20b_zcull_context_test TegraGM20BZcullContext.h: each GR context's own zcull image and the context words
+#                            pointing FECS at it (nvgpu's separate buffer mode), released at teardown
 #   gm20b_tiled_cache_test   TegraGM20BTiledCache.h: the tile coalescer's table in the golden context is deko3d's masked
 #                            writes folded over sw_ctx's zero
 #   gm20b_coherency_test     TegraGM20BCoherency.cpp: which IOSurface lock/unlock traps clean or invalidate an import,
@@ -308,6 +310,28 @@ host_test(
         "//drivers/TegraGM20B:TegraGM20BZcull.h",
         "//drivers/TegraGM20B:TegraGM20BZcullABI.h",
     ],
+)
+
+host_shims(
+    name = "zcull_context_kernel",
+    headers = [
+        "core/gpuobj.h",
+        "core/memory.h",
+        "subdev/mmu.h",
+    ],
+    stubs = "gm20b_zcull_context_fixture.h",
+)
+
+host_test(
+    name = "gm20b_zcull_context_test",
+    srcs = [
+        "gm20b_zcull_context_fixture.h",
+        "gm20b_zcull_context_test.cpp",
+        "//drivers/TegraGM20B:TegraGM20BZcull.h",
+        "//drivers/TegraGM20B:TegraGM20BZcullABI.h",
+        "//drivers/TegraGM20B:TegraGM20BZcullContext.h",
+    ],
+    deps = [":zcull_context_kernel"],
 )
 
 host_test(

@@ -35,6 +35,7 @@
 
 #include "TegraGM20BGrFault.h"
 #include "TegraGM20BTexTrap.h"
+#include "TegraGM20BZcullContext.h"
 #include <subdev/therm.h>
 #include <subdev/timer.h>
 #include <engine/fifo.h>
@@ -345,9 +346,7 @@ gf100_gr_chan_bind(struct nvkm_object *object, struct nvkm_gpuobj *parent,
 		nvkm_wo32(*pgpuobj, 0x10, chan->mmio_nr / 2);
 		nvkm_wo32(*pgpuobj, 0x14, lower_32_bits(chan->mmio_vma->addr));
 		nvkm_wo32(*pgpuobj, 0x18, upper_32_bits(chan->mmio_vma->addr));
-		/* zcull ctxsw mode: separate buffer (2) at the context's own zcull image, else no ctxsw (1) */
-		nvkm_wo32(*pgpuobj, 0x1c, chan->zcull ? 2 : 1);
-		nvkm_wo32(*pgpuobj, 0x20, chan->zcull ? lower_32_bits(chan->zcull_vma->addr >> 8) : 0);
+		tgm_zcull_image_bind(*pgpuobj, chan->zcull_vma);
 		nvkm_wo32(*pgpuobj, 0x28, 0);
 		nvkm_wo32(*pgpuobj, 0x2c, 0);
 	}
@@ -360,8 +359,7 @@ gf100_gr_chan_dtor(struct nvkm_object *object)
 {
 	struct gf100_gr_chan *chan = gf100_gr_chan(object);
 
-	nvkm_vmm_put(chan->vmm, &chan->zcull_vma);
-	nvkm_memory_unref(&chan->zcull);
+	tgm_zcull_image_del(chan->vmm, &chan->zcull, &chan->zcull_vma);
 	nvkm_vmm_put(chan->vmm, &chan->mmio_vma);
 	nvkm_memory_unref(&chan->mmio);
 
@@ -473,22 +471,10 @@ gf100_gr_chan_new(struct nvkm_gr *base, struct nvkm_chan *fifoch,
 	if (ret)
 		return ret;
 
-	/* the context's zcull RAM, which FECS saves and restores at each switch (nvgpu gr_gk20a_ctx_zcull_setup's
-	 * separate buffer, for every channel at its creation): zcull regions a channel programs hold across switches */
-	if (gr->firmware && gr->size_zcull) {
-		ret = nvkm_memory_new(device, NVKM_MEM_TARGET_INST, gr->size_zcull, 0x1000, true,
-				      &chan->zcull);
-		if (ret)
-			return ret;
-
-		ret = nvkm_vmm_get(fifoch->vmm, 12, nvkm_memory_size(chan->zcull), &chan->zcull_vma);
-		if (ret)
-			return ret;
-
-		ret = nvkm_memory_map(chan->zcull, 0, fifoch->vmm, chan->zcull_vma, &args, sizeof(args));
-		if (ret)
-			return ret;
-	}
+	ret = tgm_zcull_image_new(device, fifoch->vmm, gr->firmware ? gr->size_zcull : 0, &args,
+				  sizeof(args), &chan->zcull, &chan->zcull_vma);
+	if (ret)
+		return ret;
 
 	/* finally, fill in the mmio list and point the context at it */
 	nvkm_kmap(chan->mmio);
