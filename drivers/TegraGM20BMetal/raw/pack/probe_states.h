@@ -214,6 +214,8 @@ inline bool parseState(id<MTLLibrary> qc, const std::string &line, State &s, con
             d.tessellationFactorScaleEnabled = scale != 0;
         } else if (h.rfind("amp=", 0) == 0) {
             d.maxVertexAmplificationCount = strtoul(h.c_str() + 4, nullptr, 10);
+        } else if (h == "twr=2") {
+            [d setValue:@2 forKey:@"textureWriteRoundingMode"];
         } else if (h[0] == 'a' && isdigit(h[1])) {
             unsigned i, x[6] = {};
             unsigned long long stride = 0;

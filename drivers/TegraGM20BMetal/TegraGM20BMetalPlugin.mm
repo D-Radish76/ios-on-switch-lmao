@@ -402,8 +402,8 @@ void observeRedrawCauses()
     }
 }
 
-// r31-rawds: how this GPU rounds a float fragment into an RGBA16Float target (the frontend's RGB8_444_2P stand-in, whose store
-// takes Metal's round-to-nearest-even half of each channel). On com.brunostjohn.switch.debug.rf16-rounding a WidgetRenderer_*
+// How this GPU rounds a float fragment into an RGBA16Float target, which Apple's GPU stores rounded toward zero at
+// textureWriteRoundingMode 0 and 1, the default. On com.brunostjohn.switch.debug.rf16-rounding a WidgetRenderer_*
 // process draws four floats into a 4x1 RGBA16Float target through its device and logs the halves it holds ("rf16" category):
 // just above, on and just below the midpoint of 0x37ff and 0x3800, and on the midpoint of 0x3800 and 0x3801. Nearest even:
 // 3800 3800 37ff 3800; toward zero: 37ff 37ff 37ff 3800; ties away: 3800 3800 37ff 3801.
@@ -467,7 +467,7 @@ void checkRf16Rounding()
     [cb commit];
     [cb waitUntilCompleted];
     const uint16_t *h = static_cast<const uint16_t *>(out.contents);
-    os_log(log, "TegraGM20BMetal: %{public}s rf16 rounding: %04x %04x %04x %04x (nearest even 3800 3800 37ff 3800)",
+    os_log(log, "TegraGM20BMetal: %{public}s rf16 rounding: %04x %04x %04x %04x (toward zero 37ff 37ff 37ff 3800)",
            getprogname(), h[0], h[4], h[8], h[12]);
 }
 

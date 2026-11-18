@@ -344,6 +344,7 @@ bool renderDescriptor(MTLRenderPipelineDescriptor *d, NmbOfflineRenderPipelineDe
         p.factor_scale_enabled = d.tessellationFactorScaleEnabled;
     }
     p.max_amplification = d.maxVertexAmplificationCount;
+    p.texture_write_rounding = raw::textureWriteRoundingOf(d);
     if (MTLVertexDescriptor *v = d.vertexDescriptor)
         for (unsigned i = 0; i < 31; i++) {
             MTLVertexAttributeDescriptor *a = v.attributes[i];

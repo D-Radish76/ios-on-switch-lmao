@@ -172,17 +172,17 @@ struct MetalPixelFormatTest: HWTest {
     }
 }
 
-/// The RGBA16Float render target's float-to-half conversion must round to nearest even, like Apple GPUs:
-/// 0.5 is exact; 0.5 + 2^-12 is a tie between 0x3800 and 0x3801 and goes to the even 0x3800; 0.5 - 3·2^-14 is
-/// nearest to 0x37ff; 0.5 - 2^-13 is a tie between 0x37ff and 0x3800 and goes to 0x3800 (truncation would give
-/// 0x37ff, round-half-up 0x3801 for the second).
+/// The RGBA16Float render target's float-to-half conversion must round toward zero, as Apple's GPU stores a float output
+/// at the default textureWriteRoundingMode (an M4 Max: every one of 14,341 floats whose two roundings differ): 0.5 is
+/// exact; 0.5 + 2^-12 lies between 0x3800 and 0x3801 and goes to 0x3800; 0.5 - 3·2^-14 and 0.5 - 2^-13 lie between
+/// 0x37ff and 0x3800 and go to 0x37ff (nearest even would give 0x3800 for the last).
 struct MetalHalfRoundingTest: HWTest {
     let id = "metal.rgba16f_rounding"
-    let name = "RGBA16Float output rounds to nearest even"
+    let name = "RGBA16Float output rounds toward zero"
     let subsystem = Subsystem.metal
 
     static let inputs: SIMD4<Float> = SIMD4(0.5, 0.5 + 0x1p-12, 0.5 - 3 * 0x1p-14, 0.5 - 0x1p-13)
-    static let expected: [UInt16] = [0x3800, 0x3800, 0x37FF, 0x3800]
+    static let expected: [UInt16] = [0x3800, 0x3800, 0x37FF, 0x37FF]
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -203,7 +203,7 @@ struct MetalHalfRoundingTest: HWTest {
         let text = halves.map { String(format: "%04x", $0) }.joined(separator: "_")
         var metrics = Metrics()
         metrics.set("halves", text)
-        return .judged([("reads 3800_3800_37ff_3800", halves == Self.expected)], metrics, proof: gpu.proof).onRawPath(
+        return .judged([("reads 3800_3800_37ff_37ff", halves == Self.expected)], metrics, proof: gpu.proof).onRawPath(
             gpu)
     }
 }

@@ -119,6 +119,15 @@ inline std::string linkedSegment(const char *tag, const StageKey &f, const std::
     return std::string(" | ") + tag + " " + f.function + (name != f.function ? " as=" + name : "") + " " + f.constants;
 }
 
+// MTLRenderPipelineDescriptor's textureWriteRoundingMode (Apple SPI; 0 where Metal has none): 0 and 1 store a float
+// colour output to a half-float target rounded toward zero, 2 to nearest even
+inline uint64_t textureWriteRoundingOf(MTLRenderPipelineDescriptor *d)
+{
+    return [d respondsToSelector:NSSelectorFromString(@"textureWriteRoundingMode")]
+               ? [[d valueForKey:@"textureWriteRoundingMode"] unsignedLongLongValue]
+               : 0;
+}
+
 // The descriptor's fields a key names (raw_pipeline_fields.h): what a compile request carries of it, so the shader compiler
 // keys a request with the same pipelineKey the client keyed its descriptor with
 inline PipelineFields fieldsOf(MTLRenderPipelineDescriptor *d)
@@ -130,6 +139,7 @@ inline PipelineFields fieldsOf(MTLRenderPipelineDescriptor *d)
     f.stencilFormat = d.stencilAttachmentPixelFormat;
     f.rasterization = d.rasterizationEnabled ? 1 : 0;
     f.amplification = d.maxVertexAmplificationCount;
+    f.textureWriteRounding = textureWriteRoundingOf(d);
     f.patchType = d.vertexFunction.patchType;
     f.tessellation = {d.tessellationPartitionMode,
                       d.tessellationFactorFormat,
@@ -204,6 +214,8 @@ inline std::string pipelineKey(const PipelineFields &f, const StageKey *vertex, 
         snprintf(head, sizeof head, "amp=%llu ", (unsigned long long)f.amplification);
         key += head;
     }
+    if (f.textureWriteRounding == 2)
+        key += "twr=2 ";
     // a state Metal does not rasterize: the raw path draws it with the rasteriser off (raw_stage_switches.h)
     if (!f.rasterization)
         key += "rast=0 ";
