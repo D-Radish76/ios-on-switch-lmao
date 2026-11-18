@@ -7,7 +7,13 @@
 #include "firmware/a3/diagnostic.h"
 #include "firmware/a3/wire.h"
 
+struct SwitchWLANA3EchoSnapshot {
+    uint32_t lifetime, epoch;
+    uint16_t id, sequence;
+};
+
 struct SwitchWLANA3Diagnostics {
+    SwitchWLANA3EchoSnapshot echo;
     uint64_t requested_ns;
     uint32_t requests, routine_requests;
     uint32_t trial_generation, trial_epoch, trial_lifetime;
@@ -23,6 +29,7 @@ struct SwitchWLANA3Diagnostics {
 };
 
 void switch_wlan_a3_discovery_trial();
+void switch_wlan_a3_echo_snapshot(uint32_t session, uint32_t epoch, uint16_t id, uint16_t sequence);
 bool switch_wlan_a3_trial_applied(uint16_t channel, const char **blocked = nullptr);
 void switch_wlan_a3_trial_boundary(bool started, uint16_t channel);
 

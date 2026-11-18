@@ -91,6 +91,17 @@ void switch_wlan_a3_trial_boundary(bool started, uint16_t channel)
         IOLog("SwitchWLAN: A3 trial %s snapshot unavailable for config %u\n", started ? "start" : "end", generation);
 }
 
+void switch_wlan_a3_echo_snapshot(uint32_t session, uint32_t epoch, uint16_t id, uint16_t sequence)
+{
+    using namespace switch_a3_host;
+    if (!gLock)
+        return;
+    IOLockLock(gLock);
+    if (gAttached && gPowered && gState.ready && session == gSession && epoch && epoch == gKnownEpoch)
+        gDiagnostics.echo = {gLifetime, epoch, id, sequence};
+    IOLockUnlock(gLock);
+}
+
 void switch_wlan_a3_discovery_trial()
 {
     using namespace switch_a3_host;
@@ -108,7 +119,7 @@ void switch_wlan_a3_discovery_trial()
 
 namespace {
 #if DEVELOPMENT || DEBUG
-bool diagnosticRequest(const SwitchWLANA3Job &job, uint64_t now)
+bool diagnosticRequest(const SwitchWLANA3Job &job, uint64_t now, SwitchWLANA3EchoSnapshot &echo)
 {
     using namespace switch_a3_host;
     const bool stateRequest = job.control.operation == SWITCH_A3_GET_STATE;
@@ -119,16 +130,22 @@ bool diagnosticRequest(const SwitchWLANA3Job &job, uint64_t now)
                        (gDiagnostics.fault_pending || gState.error || gRetireError || gRecoveryRequired);
     const bool trial = gState.ready && gDiagnostics.trial_pending && !gDiagnostics.trial_requested;
     const bool boundary = job.trial_boundary != 0;
+    const auto &pending = gDiagnostics.echo;
+    const bool measured = gState.ready && pending.epoch && pending.epoch == gKnownEpoch && pending.lifetime == gLifetime;
     const bool capture = gAttached && gPowered && job.control.session == gSession && job.lifetime == gLifetime &&
-                         (boundary || trial || fault || (gState.ready && switch_a3_diagnostic_due(gDiagnostics, now)));
+                         (measured || boundary || trial || fault || (gState.ready && switch_a3_diagnostic_due(gDiagnostics, now)));
     if (capture) {
         ++gDiagnostics.requests;
+        if (measured) {
+            echo = pending;
+            gDiagnostics.echo = {};
+        }
         if (!boundary) {
             gDiagnostics.trial_requested |= trial;
             if (trial)
                 gDiagnostics.trial_pending = false;
             gDiagnostics.fault_requested |= fault;
-            if (!trial && !fault)
+            if (!trial && !fault && !measured)
                 ++gDiagnostics.routine_requests;
         }
         gDiagnostics.requested_ns = now;
@@ -148,7 +165,8 @@ void diagnosticFault(const char *which, const switch_a3_fault_record &fault)
           static_cast<unsigned long long>(fault.actual_tsf), fault.target_chanspec, fault.actual_chanspec);
 }
 
-void diagnosticReply(const SwitchWLANA3Job &job, const switch_a3_reply &reply, const void *data, size_t bytes)
+void diagnosticReply(const SwitchWLANA3Job &job, const switch_a3_reply &reply, const void *data, size_t bytes,
+                     const SwitchWLANA3EchoSnapshot &echo)
 {
     using namespace switch_a3_host;
     struct switch_a3_diagnostic snapshot = {};
@@ -159,6 +177,12 @@ void diagnosticReply(const SwitchWLANA3Job &job, const switch_a3_reply &reply, c
     const bool stationActive = gState.ready && !gStationPaused && !gClosing && !gDrainPending;
     const SwitchWLANA3Diagnostics host = gDiagnostics;
     IOLockUnlock(gLock);
+    if (echo.epoch) {
+        const bool matched = current && valid && !reply.status && echo.epoch == reply.clock_epoch;
+        IOLog("SwitchWLAN: A3 echo snapshot id %u seq %u %s request %u session %u epoch %u applied %u TSF %llu\n",
+              echo.id, echo.sequence, matched ? "matched" : "unavailable", job.control.request_id, reply.session,
+              reply.clock_epoch, reply.applied_generation, static_cast<unsigned long long>(reply.tsf));
+    }
     if (job.trial_boundary) {
         const bool matched = current && valid && reply.state == SWITCH_A3_RUNNING && !reply.fault_status &&
                              reply.applied_generation == job.control.config_generation && reply.clock_epoch == job.trial_epoch;
@@ -302,7 +326,8 @@ int switch_wlan_a3_exchange(const SwitchWLANA3Job &job, switch_a3_reply &reply, 
 {
 #if DEVELOPMENT || DEBUG
     uint8_t response[sizeof(reply) + sizeof(struct switch_a3_diagnostic)] = {};
-    const bool diagnostic = diagnosticRequest(job, hostNs());
+    SwitchWLANA3EchoSnapshot echo = {};
+    const bool diagnostic = diagnosticRequest(job, hostNs(), echo);
     const size_t capacity = diagnostic ? sizeof response : sizeof reply;
 #else
     uint8_t response[sizeof(reply)] = {};
@@ -328,7 +353,10 @@ int switch_wlan_a3_exchange(const SwitchWLANA3Job &job, switch_a3_reply &reply, 
     }
 #if DEVELOPMENT || DEBUG
     if (diagnostic && decoded)
-        diagnosticReply(job, reply, response + sizeof reply, returned - sizeof reply);
+        diagnosticReply(job, reply, response + sizeof reply, returned - sizeof reply, echo);
+    else if (echo.epoch)
+        IOLog("SwitchWLAN: A3 echo snapshot id %u seq %u unavailable request %u session %u epoch %u error %d\n",
+              echo.id, echo.sequence, job.control.request_id, job.control.session, echo.epoch, error);
     if (error)
         IOLog("SwitchWLAN: A3 control failed: operation %u request %u session %u epoch %u generation %u, result %d "
               "after %llu us (%u reply bytes)\n",

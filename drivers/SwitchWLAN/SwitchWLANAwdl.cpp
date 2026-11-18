@@ -51,6 +51,7 @@ extern "C" {
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
 #include <pexpert/pexpert.h>
 #include "SwitchWLANAwdlHomeTrial.h"
+extern "C" int switch_awdl_echo_mark(mbuf_t);
 #endif
 #if DEVELOPMENT || DEBUG
 #include "SwitchWLANA3Diagnostic.h"
@@ -102,6 +103,8 @@ thread_call_t gHomeTrialTimer;
 uint16_t gHomeTrialChannel;
 const char *gHomeTrialBlocker;
 unsigned gHomeTrialBlockLogs;
+const swlan_rx_meta *gEchoRxMeta;
+unsigned gEchoRxCount;
 #endif
 #if DEVELOPMENT || DEBUG
 unsigned gActivationTransitions;
@@ -448,8 +451,13 @@ void refreshRadio()
                            (!gCaps->requires_radio_ready || (gRxStarted && state.ready && state.applied_generation));
     if (!resources || !awdl_core_running(gCore))
         gActivationCommitted = false;
-    else if (clockValid)
+    else if (clockValid) {
+#if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
+        if (!gActivationCommitted)
+            gEchoRxCount = 0;
+#endif
         gActivationCommitted = true;
+    }
     switch_awdl_core_radio_ready(gCore, resources && clockValid);
     if (gRadioError && awdl_core_running(gCore)) {
         suspendRadio();
@@ -595,10 +603,35 @@ void clearPeerInput(PeerSlot &slot)
     slot.count = 0;
 }
 
+#if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
+void logRadioEcho(const uint8_t *eth, size_t length)
+{
+    static uint16_t ids[8];
+    if (!gEchoRxMeta || gEchoRxCount == sizeof ids / sizeof ids[0] || (eth[0] & 1))
+        return;
+    const auto echo = switch_wlan_echo6_read(eth, length, length);
+    if (echo.type != 128 || echo.destination[0] == 0xff)
+        return;
+    for (unsigned i = 0; i < gEchoRxCount; ++i)
+        if (ids[i] == echo.id)
+            return;
+    ids[gEchoRxCount++] = echo.id;
+    char source[SWITCH_WLAN_IPV6_TEXT_LEN], destination[SWITCH_WLAN_IPV6_TEXT_LEN];
+    IOLog("SwitchWLAN: AWDL radio RX echo id %u seq %u src %s dst %s freq %u MHz TSF %llu us session %u epoch %u applied %u\n",
+          echo.id, echo.sequence, switch_wlan_awdl_ipv6_text(echo.source, source),
+          switch_wlan_awdl_ipv6_text(echo.destination, destination), gEchoRxMeta->freq_mhz,
+          static_cast<unsigned long long>(gEchoRxMeta->tsf), gEchoRxMeta->generation,
+          gEchoRxMeta->clock_epoch, gEchoRxMeta->applied_generation);
+}
+#endif
+
 void hostDeliver(void *, const uint8_t *eth, size_t length)
 {
     if (!gIf || length < ETHER_HDR_LEN)
         return;
+#if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
+    logRadioEcho(eth, length);
+#endif
     mbuf_t m = nullptr;
     if (mbuf_allocpacket(MBUF_DONTWAIT, length, nullptr, &m) || !m)
         return;
@@ -803,6 +836,8 @@ bool stageEcho(ifnet_t ifp, mbuf_t packet, const switch_wlan_echo6 &echo)
         gLastEchoId = echo.id;
         gLastEchoStart = now;
         ++gEchoTrials;
+        if (gCaps && gCaps->requires_radio_ready)
+            switch_wlan_a3_echo_snapshot(gRadioState.generation, gRadioState.clock.epoch, echo.id, echo.sequence);
         thread_call_enter(gDeferred);
     }
     IOLockUnlock(gLock);
@@ -883,6 +918,11 @@ void deliverPackets(ifnet_t ifp, mbuf_t input)
             const auto error = mbuf_len(m) < 40 ? EMSGSIZE : mbuf_inet6_cksum(m, IPPROTO_ICMPV6, 40, echo.payload, &sum);
             IOLog("SwitchWLAN: AWDL echo checksum id %u seq %u residue %#x error %d\n",
                   echo.id, echo.sequence, sum, error);
+#if defined(SWITCH_IPSW_KIND_24B119)
+            const int tagError = switch_awdl_echo_mark(m);
+            if (tagError)
+                IOLog("SwitchWLAN: XNU echo tag failed id %u seq %u errno %d\n", echo.id, echo.sequence, tagError);
+#endif
         }
 #endif
         struct ifnet_stat_increment_param inc = {};
@@ -1082,7 +1122,13 @@ void radioRx(void *, const uint8_t *frame, size_t length, const struct swlan_rx_
                                        meta ? meta->freq_mhz : static_cast<uint16_t>(0),
                                        meta ? meta->rssi_dbm : static_cast<int8_t>(-90)};
 #if defined(SWITCH_IPSW_KIND_24B119)
+#if DEVELOPMENT || DEBUG
+        gEchoRxMeta = stamped ? meta : nullptr;
+#endif
         const bool service = awdl_core_rx(gCore, frame, length, &m);
+#if DEVELOPMENT || DEBUG
+        gEchoRxMeta = nullptr;
+#endif
         if (service && gMonitoring) {
             static uint8_t event[A80211_RING_MAX_PAYLOAD];
             const auto size = switch_a80211_awdl_action_rx(event, sizeof event, frame, length, &m);
