@@ -593,12 +593,14 @@ struct TegraGM20BAbiOrder {
 };
 
 /* Method 18. The GPU priority the process's Metal command queues asked for (-[MTLCommandQueue setGPUPriority:] and
- * setBackgroundGPUPriority:), Metal's values, the lower the more urgent: Core Animation's render server asks for 0 (its
- * window server renderer: CA::OGL::new_metal_context's MetalPriority 4), its asynchronous dispatcher 1, its other
- * contexts 2 and 4. It sets the runlist level of every channel of the connection, made before the call or after:
-  * 0 the compositor's, the highest, 1 and 2 an app's, 3 and above background. background_priority is the one for while
- * runningboardd denies the process the GPU (task_is_gpu_denied, IOKit's "foreground" privilege). Values above
- * TegraGM20BMaxPriority are refused. */
+ * setBackgroundGPUPriority:), Metal's values as IOGPUFamily's setter takes them (21H461, 24B119): 0-2 and 4 open, 0 the
+ * most urgent of them; 5 RealTime, scheduled as 0 (com.apple.private.agx.rt-priority-spi held or not); 3 refused. Core
+ * Animation's render server asks for 0 (its window server renderer: CA::OGL::new_metal_context's MetalPriority 4), its
+ * asynchronous dispatcher 1, its other contexts 2 and 4. It sets the runlist level of every channel of the connection,
+ * made before the call or after: 0 the highest, 1 and 2 an app's, 4 background; the compositor is a connection at 0
+ * whose task holds com.apple.private.graphics-restart-no-kill. background_priority is the one for while runningboardd
+ * denies the process the GPU (task_is_gpu_denied, IOKit's "foreground" privilege). Values above TegraGM20BMaxPriority
+ * are refused. */
 enum {
 	TegraGM20BMaxPriority = 5,
 };

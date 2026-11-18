@@ -17,18 +17,8 @@ static IOReturn zbcAdd(const TegraGM20BAbiZbc *in, TegraGM20BAbiZbcReply *out)
 	return kIOReturnSuccess;
 }
 
-// IOGPUFamily's (the same strings in 21H461's and 24B119's): a queue's MTLGPUPriorityRealTime, and a UI-critical GPU
-// client no GPU restart kills (backboardd; on 24B119 SpringBoard and the WidgetRenderer apps too)
+// IOGPUFamily's for a queue's MTLGPUPriorityRealTime (the same string in 21H461's and 24B119's)
 static constexpr char kRealTimeEntitlement[] = "com.apple.private.agx.rt-priority-spi";
-static constexpr char kCompositorEntitlement[] = "com.apple.private.graphics-restart-no-kill";
-
-static bool entitled(task_t task, const char *entitlement)
-{
-	OSObject *value = IOUserClient::copyClientEntitlement(task, entitlement);
-	const bool yes = value == kOSBooleanTrue;
-	OSSafeReleaseNULL(value);
-	return yes;
-}
 
 // lock_ held. Method 18: the asked priority schedules the connection's channels as IOGPUFamily's setter would; the
 // compositor is the one at the top that also holds the UI-critical marker (applyLevel).
@@ -39,8 +29,8 @@ IOReturn AGXDeviceUserClient::setPriority(const TegraGM20BAbiPriority &asked)
 		return kIOReturnBadArgument;
 	if (!entitlementsRead_) {
 		entitlementsRead_ = true;
-		realTimeEntitled_ = entitled(task_, kRealTimeEntitlement);
-		restartNoKill_ = entitled(task_, kCompositorEntitlement);
+		realTimeEntitled_ = switch_gpu_task_entitled(task_, kRealTimeEntitlement);
+		restartNoKill_ = switch_gpu_task_entitled(task_, kSwitchGpuUiCriticalEntitlement);
 	}
 	if (asked.priority == 5 && !realTimeEntitled_ && !realTimeLogged_) {
 		realTimeLogged_ = true;

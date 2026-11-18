@@ -8,6 +8,7 @@
 // so does one that never completes.
 #include <IOKit/IOKitKeys.h>
 #include "TegraGM20BUserClientInternal.h"
+#include "SwitchGpuConnectionQuota.h"
 #include "SwitchGpuShaderCompiler.h"
 #include "TegraGM20BCompilerABI.h"
 
@@ -15,7 +16,44 @@ namespace
 {
 // Connections system-wide: 16, or 64 with every process on the GPU (gpu_internal.h TGM_FENCE_USER_PAGES: one fence page each).
 constexpr uint32_t kMaxConnections = 16, kMaxConnectionsAll = 64;
-volatile uint32_t gConnections;
+static_assert(kMaxConnectionsAll <= SwitchGpuConnectionQuota::kTasks, "an entry per connection");
+IOLock *gConnectionLock;
+SwitchGpuConnectionQuota gConnections;  // under gConnectionLock
+
+IOLock *connectionLock()
+{
+	if (IOLock *lock = __atomic_load_n(&gConnectionLock, __ATOMIC_ACQUIRE))
+		return lock;
+	IOLock *made = IOLockAlloc();
+	IOLock *none = nullptr;
+	if (made && !__atomic_compare_exchange_n(&gConnectionLock, &none, made, false,
+						  __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+		IOLockFree(made);
+		return none;
+	}
+	return made;
+}
+
+bool takeConnection(task_t task, int pid)
+{
+	const bool critical = switch_gpu_task_entitled(task, kSwitchGpuUiCriticalEntitlement);
+	IOLock *lock = connectionLock();
+	if (!lock)
+		return false;
+	IOLockLock(lock);
+	const bool taken = gConnections.take(
+		pid, critical, tgm_all_clients() ? kMaxConnectionsAll : kMaxConnections);
+	IOLockUnlock(lock);
+	return taken;
+}
+
+void giveConnection(int pid)
+{
+	IOLock *lock = __atomic_load_n(&gConnectionLock, __ATOMIC_ACQUIRE);
+	IOLockLock(lock);
+	gConnections.give(pid);
+	IOLockUnlock(lock);
+}
 
 // A cached BO's view up to this size is mapped into its task with every page entered at once (kIOMapPrefault: one
 // vm_map_enter_mem_object_prefault over the wired page list), not one page fault per 4 KiB page as the task first touches
@@ -130,7 +168,7 @@ void AGXDeviceUserClient::free()
 #endif
 	methods_.destroy();
 	if (counted_)
-		__atomic_sub_fetch(&gConnections, 1, __ATOMIC_SEQ_CST);
+		giveConnection(ownerPid_);
 	IOUserClient::free();
 }
 
@@ -618,19 +656,17 @@ extern "C" IOReturn tegra_gm20b_new_user_client(IOService *provider, task_t task
 		return kIOReturnBadArgument;
 	if (tgm_stage() < 2)
 		return kIOReturnNotReady;
-	if (__atomic_add_fetch(&gConnections, 1, __ATOMIC_SEQ_CST) >
-	    (tgm_all_clients() ? kMaxConnectionsAll : kMaxConnections)) {
-		__atomic_sub_fetch(&gConnections, 1, __ATOMIC_SEQ_CST);
+	const int pid = proc_selfpid();
+	if (!takeConnection(task, pid))
 		return kIOReturnNoResources;
-	}
 	AGXDeviceUserClient *client = OSTypeAlloc(AGXDeviceUserClient);
 	if (!client) {
-		__atomic_sub_fetch(&gConnections, 1, __ATOMIC_SEQ_CST);
+		giveConnection(pid);
 		return kIOReturnNoMemory;
 	}
 	if (!client->initWithTask(task, securityID, type, properties)) {
 		client->release();
-		__atomic_sub_fetch(&gConnections, 1, __ATOMIC_SEQ_CST);
+		giveConnection(pid);
 		return kIOReturnError;
 	}
 	client->countConnection();  // from here free() gives the connection slot back

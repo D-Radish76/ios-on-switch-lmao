@@ -19,12 +19,15 @@ struct Kind {
 	const char *name;
 	const char *owner;  // the reader's channel
 	bool present;       // the GPU present's own channel
+	bool compositor;    // critical: the compositor's (entitled, priority 0) or the present's
 };
 
 const Kind kKinds[] = {
-	{"RawUntimedWaitFence", "Camera", false},   {"WriterWaitIOSurfaceLock", "Photos", false},
-	{"FenceOnlyPresent", "present", true},      {"Composite", "backboardd", false},
-	{"BridgeVicNvdec", "host1x-bridge", false},
+	{"RawUntimedWaitFence", "Camera", false, false},
+	{"WriterWaitIOSurfaceLock", "Photos", false, false},
+	{"FenceOnlyPresent", "present", true, true},
+	{"Composite", "backboardd", false, true},
+	{"BridgeVicNvdec", "host1x-bridge", false, false},
 };
 
 class Fixture : public testing::Test
@@ -36,6 +39,11 @@ protected:
 	}
 
 	virtual bool readerPresent() const
+	{
+		return false;
+	}
+
+	virtual bool readerCompositor() const
 	{
 		return false;
 	}
@@ -68,6 +76,7 @@ protected:
 		setChan(reader, 0x10, readerOwner(), 40);
 		setChan(maker, 0x30, "maker-app", 20);
 		tgm_present.chan = readerPresent() ? &reader : nullptr;
+		reader.critical = readerCompositor();
 		interrupts_off::logged = &lines;
 		ASSERT_EQ(tgm_promise_giveup_open(), 0);
 	}
@@ -192,6 +201,22 @@ protected:
 	bool readerPresent() const override
 	{
 		return GetParam().present;
+	}
+
+	bool readerCompositor() const override
+	{
+		return GetParam().compositor;
+	}
+
+	// A compositor's reader of a promised job queued behind another of its maker's: given up at the second
+	bool givenUpAtTheSecond()
+	{
+		if (!GetParam().compositor)
+			return false;
+		until(fake::now + 1000 * kMs);
+		EXPECT_EQ(lines.size(), 1u) << "a compositor's reader is not held behind the maker";
+		EXPECT_EQ(shown(), kPrevious);
+		return true;
 	}
 };
 }  // namespace promise_giveup

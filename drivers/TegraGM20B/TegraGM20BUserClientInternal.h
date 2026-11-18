@@ -270,6 +270,18 @@ extern "C" int switch_native_surface_gpu_acquire(void *, switch_gpu_native_surfa
 extern "C" void switch_native_surface_gpu_release(switch_gpu_native_surface_view *)
 	__attribute__((weak));
 
+// IOGPUFamily's marker of a UI-critical GPU client, which no GPU restart kills (the same string in 21H461's and
+// 24B119's): backboardd; on 24B119 SpringBoard and the WidgetRenderer apps too
+constexpr char kSwitchGpuUiCriticalEntitlement[] = "com.apple.private.graphics-restart-no-kill";
+
+static inline bool switch_gpu_task_entitled(task_t task, const char *entitlement)
+{
+	OSObject *value = IOUserClient::copyClientEntitlement(task, entitlement);
+	const bool yes = value == kOSBooleanTrue;
+	OSSafeReleaseNULL(value);
+	return yes;
+}
+
 // NOLINTNEXTLINE(misc-use-internal-linkage): OSDefineMetaClassAndStructors needs the class's external linkage
 class AGXDeviceUserClient : public IOUserClient
 {

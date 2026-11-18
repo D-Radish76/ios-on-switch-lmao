@@ -267,10 +267,12 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 					why, SwitchGpuRefusal::NativeRead, ioreturn(error), i,
 					switch_gpu_refusal_errno(error)));
 			for (uint32_t u = first; u < useTotal; ++u)
-				job.uses[u].access |= claim;
+				job.uses[u].access |=
+					switch_gpu_claim_use(claim, job.uses[u].access);
 			continue;
 		}
-		job.uses[useTotal++] = {bo->backing, access | claim, 0};
+		job.uses[useTotal++] = {bo->backing, access | switch_gpu_claim_use(claim, access),
+					0};
 		if (access & TegraGM20BSurfaceWrite) {
 			job.writes[writeCount++] = {bo->backing, bo->representation ? 0 : offset,
 						    bo->representation ? 0 : bytes};

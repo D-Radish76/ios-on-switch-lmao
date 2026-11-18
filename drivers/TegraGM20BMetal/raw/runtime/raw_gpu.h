@@ -2084,7 +2084,8 @@ public:
     {
         if (!k_.priority(priority, background))
             return false;
-        highPriority_.store(priority == 0, std::memory_order_relaxed);
+        // 5, RealTime, is scheduled as 0 (TegraGM20BABI.h method 18)
+        highPriority_.store(priority == 0 || priority == 5, std::memory_order_relaxed);
         return true;
     }
 

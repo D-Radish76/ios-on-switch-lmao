@@ -4,8 +4,8 @@
  * names, and a listed legacy job touches no import it did not list (TegraGM20BABI.h method 17). No CPU owner refuses a
  * claim: no submission ABI has such a refusal, NVK and raw take one as fatal and Busy would make NVK abort or spin.
  * A submission that took an admission (TegraGM20BSubmitAdmission*) was ordered behind CPU owners by its readiness
- * observer and keeps begin's exclusion. Everything else a legacy job may touch is UNLISTED: CPU access still orders
- * after the job. An import is listable once it has a coherency entry, as in ExecSurfaces' index. */
+ * observer and keeps begin's exclusion for its writes. Everything else a legacy job may touch is UNLISTED: CPU access
+ * still orders after the job. An import is listable once it has a coherency entry, as in ExecSurfaces' index. */
 #pragma once
 #include <stdint.h>
 #include "SwitchGpuBacking.h"
@@ -15,6 +15,14 @@
 static inline uint32_t switch_gpu_claim_flags(bool admitted)
 {
 	return admitted ? 0u : uint32_t(SWITCH_GPU_BACKING_NO_CPU_EXCLUSION);
+}
+
+/* One use's, from its submission's `claim`: a read goes on beside CPU owners even in an admission, as an IOSurface lock
+ * lets any reader (IOSurfaceRef.h: the lock only bounds CPU access); an admitted write keeps begin's exclusion. */
+static inline uint32_t switch_gpu_claim_use(uint32_t claim, uint32_t access)
+{
+	return access & SWITCH_GPU_BACKING_WRITE ? claim
+						 : uint32_t(SWITCH_GPU_BACKING_NO_CPU_EXCLUSION);
 }
 
 static inline uint32_t switch_gpu_legacy_access(bool listable, bool read_only, bool listed,

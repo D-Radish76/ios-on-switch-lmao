@@ -323,6 +323,22 @@ TEST(LegacyAccess, NativeUsesAreClaimsNoCpuOwnerRefusesUnlessAdmitted)
 	EXPECT_EQ(switch_gpu_claim_flags(true), 0u);
 }
 
+// An admitted job's read goes on beside CPU owners as any job's does; only its write keeps the exclusion
+TEST_F(Backing, AnAdmittedReadGoesOnBesideACpuWriter)
+{
+	auto *vertices = backing();
+	ASSERT_EQ(switch_gpu_backing_cpu_acquire(vertices, 0, 4096, kWrite), 0);
+	const uint32_t admitted = switch_gpu_claim_flags(true);
+	EXPECT_EQ(switch_gpu_claim_use(admitted, kWrite), 0u);
+	switch_gpu_backing_use use = {vertices, kRead | switch_gpu_claim_use(admitted, kRead), 0};
+	switch_gpu_backing_transaction transaction = {};
+	const auto job = token(1);
+	EXPECT_EQ(switch_gpu_backing_begin(&use, 1, &job, &transaction), 0);
+	switch_gpu_backing_abort(&transaction);
+	EXPECT_EQ(switch_gpu_backing_cpu_release(vertices, 0, 4096, kWrite), 0);
+	switch_gpu_backing_release(vertices);
+}
+
 // A submission that took an admission was ordered behind CPU owners by readiness: begin keeps refusing a holder.
 TEST_F(Backing, AdmittedNativeSubmitKeepsCpuExclusion)
 {

@@ -122,6 +122,8 @@ TEST_P(GiveUp, AJobQueuedBehindAnotherIsJudgedFromThatJobsCompletion)
 {
 	readerSubmits();
 	makerKeeps(1);
+	if (givenUpAtTheSecond())
+		return;
 	until(fake::now + 1000 * kMs);
 	EXPECT_TRUE(lines.empty());
 	ASSERT_FALSE(maker.asked.empty());
@@ -149,6 +151,8 @@ TEST_P(GiveUp, AStuckJobAheadIsTheHangRulesAndThePromisedJobIsJudgedFromItsOwnSt
 {
 	readerSubmits();
 	makerKeeps(1);
+	if (givenUpAtTheSecond())
+		return;
 	maker.recovery = 2;
 	until(fake::now + 1000 * kMs);
 	const uint64_t deferred = fake::now;
@@ -195,6 +199,8 @@ TEST_P(GiveUp, AJobAheadWhoseChannelTheHangRuleKillsGivesThePromiseUp)
 {
 	readerSubmits();
 	makerKeeps(1);
+	if (givenUpAtTheSecond())
+		return;
 	maker.recovery = 1;
 	until(fake::now + 1000 * kMs + 6000 * kMs);
 	ASSERT_EQ(lines.size(), 1u);

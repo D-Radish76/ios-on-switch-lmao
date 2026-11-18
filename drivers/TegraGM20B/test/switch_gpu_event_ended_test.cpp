@@ -151,3 +151,29 @@ TEST_F(Events, AnEventsObserversLeaveTheCompositorsWatch)
 	watches.push_back(w);
 	EXPECT_EQ(switch_gpu_events_compositor(302, 0), 0);
 }
+
+// Each task has a count of its own: two whose pids are 256 apart once shared one
+TEST_F(Events, TwoTasksNeverShareARecordCount)
+{
+	auto first = reserveUpTo(501, 1000);
+	auto second = reserveUpTo(501 + 256, 1000);
+	EXPECT_EQ(first.size(), 512u);
+	EXPECT_EQ(second.size(), 512u);
+	releaseAll(first);
+	releaseAll(second);
+}
+
+// The VIC's engine thread runs a process's jobs: their records are that process's, not the kernel threads' 512
+TEST_F(Events, AKernelThreadsRecordsCountAsTheProcessItWorksFor)
+{
+	switch_gpu_events_charge(601);
+	auto charged = reserveUpTo(0, 1000);
+	EXPECT_EQ(charged.size(), 512u) << "the process's quota";
+	switch_gpu_events_charge(0);
+	auto kernel = reserveUpTo(0, 1);
+	EXPECT_EQ(kernel.size(), 1u) << "the kernel threads' own count untouched";
+	auto process = reserveUpTo(601, 1);
+	EXPECT_TRUE(process.empty()) << "the process's own threads share its count";
+	releaseAll(charged);
+	releaseAll(kernel);
+}

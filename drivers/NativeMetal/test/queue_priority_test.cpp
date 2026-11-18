@@ -28,6 +28,17 @@ TEST(QueuePriority, TheRenderServerKeepsItsMostUrgentQueue)
     EXPECT_EQ(q.priority(), QueuePriorities::kDefault);
 }
 
+// RealTime (5) is above High (0), as IOGPUFamily ranks it
+TEST(QueuePriority, RealTimeIsTheMostUrgent)
+{
+    QueuePriorities q;
+    q.add(0, QueuePriorities::kDefaultBackground);
+    q.add(5, QueuePriorities::kDefaultBackground);
+    EXPECT_EQ(q.priority(), 5u);
+    q.remove(5, QueuePriorities::kDefaultBackground);
+    EXPECT_EQ(q.priority(), 0u);
+}
+
 // an app's background context (setBackgroundGPUPriority: 2) keeps it at the normal priority in the background
 TEST(QueuePriority, BackgroundPriorityIsCombinedOnItsOwn)
 {

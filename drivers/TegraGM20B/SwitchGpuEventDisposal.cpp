@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: MIT
+#include <kern/thread.h>
 #include "SwitchGpuEventInternal.h"
 #include "SwitchGpuEventWord.h"
 #include "TegraGM20BABI.h"
@@ -12,15 +13,21 @@ SwitchGpuEventRecord *disposals;
 // Event records, kRecords in all. A compositor's process takes any; every other task at most kTaskRecords, and
 // together they leave the last kCompositorRecords. A compositor job with events holds up to TegraGM20BMaxJobEvents + 1
 // records until it retires and its connection's watches up to 128: the reserve covers the watches and 27 such jobs in
-// flight. Tasks are counted by pid in kBuckets buckets (two that share one share its quota); kernel threads, the VIC's
-// engine thread among them (it prepares apps' jobs), count as pid 0.
+// flight. A task's count is a slot of its own (pid-tagged, found from its pid in a few probes); a kernel thread counts
+// as the process it works for (switch_gpu_events_charge), else as pid 0.
 constexpr uint32_t kRecords = 4096, kCompositorRecords = 1024, kTaskRecords = 512;
-constexpr uint32_t kBuckets = 256, kCompositors = 16;
+constexpr uint32_t kTasks = 256, kProbes = 8, kCompositors = 16, kCharges = 8;
 static_assert(kCompositorRecords >= 128 + 27 * (TegraGM20BMaxJobEvents + 1),
 	      "the compositor's reserve");
 static_assert(kRecords - kCompositorRecords > kTaskRecords, "one task leaves the others room");
-uint32_t records, buckets[kBuckets];
+uint32_t records;
+uint64_t tasks[kTasks];              // (pid << 32) | its records, 0 a free slot
 uint64_t compositors[kCompositors];  // (pid << 32) | its compositor connections, 0 a free entry
+
+struct Charge {
+	uintptr_t thread;  // 0: free; written by its own thread alone once claimed
+	int pid;
+} charges[kCharges];
 
 bool take(uint32_t *counter, uint32_t limit)
 {
@@ -30,6 +37,55 @@ bool take(uint32_t *counter, uint32_t limit)
 						__ATOMIC_RELAXED))
 			return true;
 	return false;
+}
+
+// One more record on `pid`'s slot: its index + 1, or 0 when the task holds kTaskRecords, or when it has no slot
+// (`claim` false)
+uint32_t countTask(uint32_t pid, bool claim)
+{
+	for (uint32_t k = 0; k < kProbes; ++k) {
+		const uint32_t at = (pid + k) % kTasks;
+		uint64_t word = __atomic_load_n(&tasks[at], __ATOMIC_RELAXED);
+		// a free slot is pid 0's with no records: pid 0 takes it only by a claim
+		while (word && word >> 32 == pid) {
+			if (uint32_t(word) >= kTaskRecords)
+				return 0;
+			if (__atomic_compare_exchange_n(&tasks[at], &word, word + 1, false,
+							__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+				return at + 1;
+		}
+	}
+	for (uint32_t k = 0; claim && k < kProbes; ++k) {
+		const uint32_t at = (pid + k) % kTasks;
+		uint64_t empty = 0;
+		if (__atomic_compare_exchange_n(&tasks[at], &empty, uint64_t(pid) << 32 | 1, false,
+						__ATOMIC_RELAXED, __ATOMIC_RELAXED))
+			return at + 1;
+	}
+	return 0;
+}
+
+// The task's slot, claimed under the events lock when it has none, so two of its threads never claim two
+uint32_t chargeTask(uint32_t pid)
+{
+	if (const uint32_t slot = countTask(pid, false))
+		return slot;
+	auto *s = switch_gpu_events_state();
+	if (!s)
+		return 0;
+	IOLockLock(s->lock);
+	const uint32_t slot = countTask(pid, true);
+	IOLockUnlock(s->lock);
+	return slot;
+}
+
+int chargedPid()
+{
+	const auto self = uintptr_t(current_thread());
+	for (const auto &charge : charges)
+		if (__atomic_load_n(&charge.thread, __ATOMIC_ACQUIRE) == self)
+			return charge.pid;
+	return 0;
 }
 
 uint64_t *compositorEntry(uint32_t pid)
@@ -83,27 +139,50 @@ void uncountCompositor(uint32_t pid)
 
 bool switch_gpu_events_reserve(uint32_t *quota)
 {
-	const int pid = proc_selfpid();
+	int pid = proc_selfpid();
+	if (!pid)
+		pid = chargedPid();
 	const bool compositor = pid > 0 && compositorEntry(uint32_t(pid));
 	if (!take(&records, compositor ? kRecords : kRecords - kCompositorRecords))
 		return false;
-	*quota = 0;
-	if (compositor)
+	*quota = compositor ? 0 : chargeTask(uint32_t(pid));
+	if (compositor || *quota)
 		return true;
-	const uint32_t bucket = uint32_t(pid) % kBuckets;
-	if (take(&buckets[bucket], kTaskRecords)) {
-		*quota = bucket + 1;
-		return true;
-	}
 	__atomic_sub_fetch(&records, 1u, __ATOMIC_RELAXED);
 	return false;
 }
 
 void switch_gpu_events_unreserve(uint32_t quota)
 {
-	if (quota)
-		__atomic_sub_fetch(&buckets[quota - 1], 1u, __ATOMIC_RELAXED);
+	if (quota) {
+		uint64_t *slot = &tasks[quota - 1];
+		uint64_t word = __atomic_load_n(slot, __ATOMIC_RELAXED);
+		while (!__atomic_compare_exchange_n(slot, &word, uint32_t(word) == 1 ? 0 : word - 1,
+						    false, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
+		}
+	}
 	__atomic_sub_fetch(&records, 1u, __ATOMIC_RELAXED);
+}
+
+extern "C" void switch_gpu_events_charge(int pid)
+{
+	const auto self = uintptr_t(current_thread());
+	for (auto &charge : charges)
+		if (__atomic_load_n(&charge.thread, __ATOMIC_RELAXED) == self) {
+			if (pid)
+				charge.pid = pid;
+			else
+				__atomic_store_n(&charge.thread, uintptr_t(0), __ATOMIC_RELEASE);
+			return;
+		}
+	for (auto &charge : charges) {
+		uintptr_t free = 0;
+		if (pid && __atomic_compare_exchange_n(&charge.thread, &free, self, false,
+						       __ATOMIC_ACQUIRE, __ATOMIC_RELAXED)) {
+			charge.pid = pid;
+			return;
+		}
+	}
 }
 
 extern "C" int switch_gpu_events_compositor(int pid, int on)

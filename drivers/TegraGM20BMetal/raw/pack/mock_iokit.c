@@ -867,7 +867,8 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
     }
     case TegraGM20BMethodPriority: {
         const struct TegraGM20BAbiPriority *p = in;
-        if (insz != sizeof(*p) || p->priority > TegraGM20BMaxPriority || p->background_priority > TegraGM20BMaxPriority)
+        if (insz != sizeof(*p) || p->priority == 3 || p->priority > TegraGM20BMaxPriority ||
+            p->background_priority > TegraGM20BMaxPriority)
             return kIOReturnBadArgument;
         atomic_store(&priority_now[0], p->priority);
         atomic_store(&priority_now[1], p->background_priority);

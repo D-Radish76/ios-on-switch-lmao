@@ -1098,6 +1098,15 @@ host_test(
     ],
 )
 
+# SwitchGpuConnectionQuota.h: GPU connections shared out by process, the last eighth the UI-critical processes'
+host_test(
+    name = "switch_gpu_connection_quota_test",
+    srcs = [
+        "switch_gpu_connection_quota_test.cpp",
+        "//drivers/TegraGM20B:SwitchGpuConnectionQuota.h",
+    ],
+)
+
 # SwitchGpuRefusalSites.h's sites, line and rate bound, and every SubmitJob and ResourceSetCreate refusal going through one
 host_test(
     name = "switch_gpu_refusal_sites_test",
