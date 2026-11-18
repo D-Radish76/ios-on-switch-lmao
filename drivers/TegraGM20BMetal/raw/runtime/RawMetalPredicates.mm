@@ -24,8 +24,25 @@ static constexpr std::array<uint64_t, PredCount> failedKeys()
 static constexpr std::array<uint64_t, PredCount> kFailedKeys = failedKeys();
 #if SWITCH_RAW_DIAGNOSTICS
 std::atomic<uint64_t> gPredFailed[PredCount];
+std::atomic<uint64_t> gPredSkipped[PredCount];
 #endif
 std::atomic<uint64_t> gPredLogged{0};
+
+void rmSkipped(RMPred p, uint64_t n)
+{
+    RAW_DIAGNOSTIC(gPredSkipped[p].fetch_add(n, std::memory_order_relaxed));
+#if !SWITCH_RAW_DIAGNOSTICS
+    (void)p, (void)n;
+#endif
+}
+
+void predSkipped(RMPred p, uint64_t a, uint64_t b, const char *rule, uint64_t n)
+{
+    rmSkipped(p, n);
+    switch_refusal_k(switch_refusal_key_with(kPredKeys[p], uintptr_t(rule)), "raw", kPredNames[p],
+                     "a=%llu (0x%llx) b=%llu (0x%llx) %s", (unsigned long long)a, (unsigned long long)a,
+                     (unsigned long long)b, (unsigned long long)b, rule);
+}
 
 // Each predicate's first hit in this process, through kits/SwitchRefusal (domain raw-metal, the predicate's name as the
 // reason)

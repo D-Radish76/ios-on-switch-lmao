@@ -838,10 +838,10 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     return _gpuStamped ? @"ns" : @"host";
 }
 
-// hw_test_app's attribution, final once the command buffer completed (its completed handlers may ask): "raw", or for one
-// that completed with an error "error:<predicate>", the predicate its failure named, "error:none" where it named none (the
-// failed.* key switchRawCounters counted it under). With no lock: what it reads is set before the completed mark this
-// acquires.
+// hw_test_app's attribution, final once the command buffer completed (its completed handlers may ask): "raw", or for
+// one that completed with an error "error:<predicate>", the predicate its failure named, "error:none" where it named
+// none (the failed.* key switchRawCounters counted it under). With no lock: what it reads is set before the completed
+// mark this acquires.
 - (NSString *)switchRawPath
 {
     if (!_completedSent)

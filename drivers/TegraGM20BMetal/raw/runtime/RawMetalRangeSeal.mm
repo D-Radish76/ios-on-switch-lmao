@@ -199,8 +199,9 @@ bool RMRangeEncode::seal(size_t to)
             rc->invalidateNativeReads();
         if (rc->nativeError && !rc->partial)
             failCommandBuffer(cb,
-                              rc->nativeError == kIOReturnNotReady ? @"A surface it reads changed while it was submitted"
-                                                                   : @"Native ownership or event dependency failed",
+                              rc->nativeError == kIOReturnNotReady
+                                  ? @"A surface it reads changed while it was submitted"
+                                  : @"Native ownership or event dependency failed",
                               MTLCommandBufferErrorInternal, PredEncKernel);
         char reason[192];
         rc->describeRefusal(reason, sizeof reason);
@@ -218,8 +219,8 @@ bool RMRangeEncode::seal(size_t to)
     }
     firstContents_->submitted(cb);
     if (rc->skips)
-        hit(cb, refusalPred(rc->skipped.id), rc->skipped.a, uint64_t(rc->skipped.b) | uint64_t(rc->skipped.c) << 32,
-            "a draw Apple's driver draws nothing defined for: skipped");
+        skip(cb, refusalPred(rc->skipped.id), rc->skipped.a, uint64_t(rc->skipped.b) | uint64_t(rc->skipped.c) << 32,
+             "a draw Apple's driver draws nothing defined for: skipped", rc->skips);
     publishSharedEvents(cb);
     if (rc->promisesKept) {
         std::lock_guard<raw::Mutex> l(cb->_lock);

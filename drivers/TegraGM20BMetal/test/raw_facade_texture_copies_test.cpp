@@ -174,8 +174,9 @@ TEST_F(FacadeTextureCopies, ACombinedDepthStencilsCopyWithNoOptionMovesItsDepth)
     EXPECT_EQ(memcmp(in.contents, out.contents, side * side * 4), 0);
 }
 
-// MTLBlitCommandEncoder.h's whole-texture copy: every level of a size both textures have, whatever their types; none where
-// neither has a level of the other's first level's size
+// MTLBlitCommandEncoder.h's whole-texture copy: every level of a size both textures have, whatever their types; where
+// neither has a level of the other's first level's size, which an M4 Max's driver aborts on
+// (c38-audit/failed-counts/probe, tex2tex_whole_nolevel), the command buffer fails InvalidResource as it is recorded
 TEST_F(FacadeTextureCopies, AWholeTextureCopyTakesTheLevelsOfOneSize)
 {
     auto make = [&](MTLTextureType type, NSUInteger side, bool mipmapped) {
@@ -211,9 +212,6 @@ TEST_F(FacadeTextureCopies, AWholeTextureCopyTakesTheLevelsOfOneSize)
               destinationOrigin:MTLOriginMake(0, 0, 0)];
     }
     [e copyFromTexture:array toTexture:flat];
-    const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
-    [e copyFromTexture:array toTexture:odd];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded) << "no level of 24 x 24 texels";
     for (NSUInteger level = 0; level < 2; ++level) {
         const NSUInteger w = 16 >> level;
         [e copyFromTexture:flat
@@ -235,6 +233,17 @@ TEST_F(FacadeTextureCopies, AWholeTextureCopyTakesTheLevelsOfOneSize)
         EXPECT_EQ(memcmp(bytes + level * 1024, static_cast<uint8_t *>(out.contents) + level * 1024, w * w * 4), 0)
             << level;
     }
+    id<MTLCommandBuffer> none = [[gDevice newCommandQueue] commandBuffer];
+    e = [none blitCommandEncoder];
+    const size_t recorded = ((RMCommandBuffer *)none)->_plan.size();
+    [e copyFromTexture:array toTexture:odd];
+    EXPECT_EQ(((RMCommandBuffer *)none)->_plan.size(), recorded) << "no level of 24 x 24 texels";
+    [e endEncoding];
+    [none commit];
+    [none waitUntilCompleted];
+    EXPECT_EQ(none.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(none.error.code, MTLCommandBufferErrorInvalidResource);
+    EXPECT_EQ(rawPath(none), "error:call.blit");
 }
 
 }  // namespace

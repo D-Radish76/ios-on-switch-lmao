@@ -8,8 +8,8 @@
 // mode or buffer or an event Metal's validation stops fails it (raw/plan/m2v_routes.tsv call.vis, event), and a visibility
 // mode the device has no report page for fails it OutOfMemory. A state of another depth format than its pass's is
 // drawn against the pass's attachment, as Apple's GPU draws it. A command buffer whose later job the kernel refused after
-// earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words. Each failed command
-// buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither.
+// earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words. Each failed
+// command buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_batch.h"
 #include "../raw/runtime/raw_mme.h"
@@ -127,6 +127,7 @@ void expectError(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred
     EXPECT_EQ(std::string(path(cb).UTF8String ?: ""), std::string("error:") + pred);
     NSDictionary *counts = counters(device);
     EXPECT_EQ(failedMoved(before, counts), failedOnce(pred)) << text(counts);
+    EXPECT_TRUE(skippedMoved(before, counts).empty()) << text(counts);
     EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
@@ -141,8 +142,9 @@ void expectFailed(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pre
     EXPECT_EQ([counts[failed] intValue], 1) << text(counts);
 }
 
-// `cb` committed completed on the raw path, no error, no failure counted, m2v never opened or asked
-void expectCompleted(id<MTLDevice> device, id<MTLCommandBuffer> cb)
+// `cb` committed completed on the raw path, no error, no failure counted, the skips `skipped` counted, m2v never opened
+// or asked
+void expectRan(id<MTLDevice> device, id<MTLCommandBuffer> cb, const std::map<std::string, long long> &skipped)
 {
     NSDictionary *before = counters(device);
     [cb commit];
@@ -152,9 +154,22 @@ void expectCompleted(id<MTLDevice> device, id<MTLCommandBuffer> cb)
     NSDictionary *counts = counters(device);
     EXPECT_TRUE(failedMoved(before, counts).empty()) << text(counts);
     EXPECT_NE(counts[@"failed"], nil) << text(counts);
+    EXPECT_EQ(skippedMoved(before, counts), skipped) << text(counts);
+    EXPECT_NE(counts[@"skipped"], nil) << text(counts);
     EXPECT_EQ([counts[@"m2v"] intValue], 0) << text(counts);
     EXPECT_EQ(gOpens, 0);
     EXPECT_EQ([m2vRecord(device)[@"needs"] count], 0u) << text(m2vRecord(device));
+}
+
+void expectCompleted(id<MTLDevice> device, id<MTLCommandBuffer> cb)
+{
+    expectRan(device, cb, {});
+}
+
+// ... a call of it skipped as `pred` (Metal's validation stops it, the raw path runs it as Apple's driver does)
+void expectSkipped(id<MTLDevice> device, id<MTLCommandBuffer> cb, const char *pred)
+{
+    expectRan(device, cb, skippedOnce(pred));
 }
 
 void bufferCopyPastItsBuffer()
@@ -166,7 +181,7 @@ void bufferCopyPastItsBuffer()
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     [blit copyFromBuffer:a sourceOffset:0 toBuffer:b destinationOffset:0 size:1 << 20];
     [blit endEncoding];
-    expectCompleted(o.device, cb);
+    expectSkipped(o.device, cb, "call.bufcopy");
 }
 
 void bufferFillPastItsBuffer()
@@ -178,7 +193,7 @@ void bufferFillPastItsBuffer()
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     [blit fillBuffer:a range:NSMakeRange(0, 1 << 22) value:7];
     [blit endEncoding];
-    expectCompleted(o.device, cb);
+    expectSkipped(o.device, cb, "call.bufcopy");
 }
 
 void indirectArgumentsPastTheirBuffer()
@@ -192,7 +207,7 @@ void indirectArgumentsPastTheirBuffer()
     [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
     [e drawPrimitives:MTLPrimitiveTypeTriangle indirectBuffer:arguments indirectBufferOffset:4];
     [e endEncoding];
-    expectCompleted(o.device, cb);
+    expectSkipped(o.device, cb, "enc.idxrange");
 }
 
 // Apple's driver draws the right colour (the target orders the channels)
@@ -212,7 +227,7 @@ void stateOfAnotherColourFormat()
     ASSERT_TRUE(o.device != nil && o.state != nil);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     drawInto(cb, pass(target(o.device, MTLPixelFormatRGBA16Float)), o.state);
-    expectCompleted(o.device, cb);
+    expectSkipped(o.device, cb, "enc.colorfmt");
 }
 
 void stateSamplesNotThePasss()
@@ -233,7 +248,7 @@ void samplePositionsPastThePasssSamples()
     [p setSamplePositions:positions count:4];
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
-    expectCompleted(o.device, cb);
+    expectSkipped(o.device, cb, "pass.positions");
 }
 
 // Metal's validation stops each (MTLRenderCommandEncoder.h setVisibilityResultMode:offset:): a mode set in a pass of no
@@ -475,7 +490,130 @@ void kernelRefusesTheSecondJob()
     EXPECT_EQ([after[@"filled"] unsignedLongLongValue] - [before[@"filled"] unsignedLongLongValue], 2u);
 }
 
+id nothing()
+{
+    return nil;
+}
+
+// Calls Metal's validation stops that an M4 Max's driver crashes on or fails (c38-audit/failed-counts/probe), each of
+// this device's own objects or of none: the command buffer fails InvalidResource as it is recorded
+void blitsAnM4MaxCrashesOnFail()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil);
+    id<MTLBuffer> a = [o.device newBufferWithLength:4096 options:0];
+    MTLTextureDescriptor *d =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:kPacked width:64 height:64 mipmapped:NO];
+    d.storageMode = MTLStorageModeMemoryless;
+    d.usage = MTLTextureUsageRenderTarget;
+    id<MTLTexture> memoryless = [o.device newTextureWithDescriptor:d];
+    d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:kPacked width:48 height:48 mipmapped:NO];
+    d.storageMode = MTLStorageModePrivate;
+    id<MTLTexture> large = target(o.device, kPacked), small = [o.device newTextureWithDescriptor:d];
+    ASSERT_TRUE(memoryless != nil && small != nil);
+    const struct {
+        const char *pred;
+        void (^encode)(id<MTLBlitCommandEncoder>);
+    } calls[] = {
+        {"call.buf",
+         ^(id<MTLBlitCommandEncoder> b) {
+             [b fillBuffer:nothing() range:NSMakeRange(0, 64) value:7];
+         }},
+        {"call.buf",
+         ^(id<MTLBlitCommandEncoder> b) {
+             [b copyFromBuffer:nothing() sourceOffset:0 toBuffer:a destinationOffset:0 size:64];
+         }},
+        {"tex.foreign",
+         ^(id<MTLBlitCommandEncoder> b) {
+             [b copyFromTexture:nothing()
+                       sourceSlice:0
+                       sourceLevel:0
+                      sourceOrigin:MTLOriginMake(0, 0, 0)
+                        sourceSize:MTLSizeMake(16, 16, 1)
+                         toTexture:large
+                  destinationSlice:0
+                  destinationLevel:0
+                 destinationOrigin:MTLOriginMake(0, 0, 0)];
+         }},
+        {"call.blit",
+         ^(id<MTLBlitCommandEncoder> b) {
+             [b copyFromTexture:memoryless
+                       sourceSlice:0
+                       sourceLevel:0
+                      sourceOrigin:MTLOriginMake(0, 0, 0)
+                        sourceSize:MTLSizeMake(16, 16, 1)
+                         toTexture:large
+                  destinationSlice:0
+                  destinationLevel:0
+                 destinationOrigin:MTLOriginMake(0, 0, 0)];
+         }},
+        {"call.blit",
+         ^(id<MTLBlitCommandEncoder> b) {
+             [b copyFromTexture:large toTexture:small];
+         }},
+        {"call.counter",
+         ^(id<MTLBlitCommandEncoder> b) {
+             [b sampleCountersInBuffer:nothing() atSampleIndex:0 withBarrier:YES];
+         }},
+    };
+    for (const auto &c : calls) {
+        id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+        c.encode(b);
+        [b endEncoding];
+        expectError(o.device, cb, c.pred, MTLCommandBufferErrorInvalidResource);
+    }
+}
+
+// A copy out of a level past its texture, which an M4 Max copies to no rule: nothing recorded, skipped as call.blit;
+// one into a region past its texture's level writes the part inside, as an M4 Max does, skipped as call.blit too
+void blitsAnM4MaxRunsToNoRuleOrInPartAreSkipped()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil);
+    id<MTLTexture> from = target(o.device, kPacked), into = target(o.device, kPacked);
+    id<MTLBuffer> rows = [o.device newBufferWithLength:65536 options:0];
+    id<MTLCommandBuffer> past = [[o.device newCommandQueue] commandBuffer];
+    id<MTLBlitCommandEncoder> b = [past blitCommandEncoder];
+    [b copyFromTexture:from
+              sourceSlice:0
+              sourceLevel:3
+             sourceOrigin:MTLOriginMake(0, 0, 0)
+               sourceSize:MTLSizeMake(8, 8, 1)
+                toTexture:into
+         destinationSlice:0
+         destinationLevel:0
+        destinationOrigin:MTLOriginMake(0, 0, 0)];
+    [b endEncoding];
+    expectSkipped(o.device, past, "call.blit");
+    const size_t firstJob = kernel_model::model.jobs.size();
+    id<MTLCommandBuffer> cut = [[o.device newCommandQueue] commandBuffer];
+    b = [cut blitCommandEncoder];
+    [b copyFromBuffer:rows
+               sourceOffset:0
+          sourceBytesPerRow:256
+        sourceBytesPerImage:65536
+                 sourceSize:MTLSizeMake(16, 16, 1)
+                  toTexture:into
+           destinationSlice:0
+           destinationLevel:0
+          destinationOrigin:MTLOriginMake(56, 0, 0)];
+    [b endEncoding];
+    expectSkipped(o.device, cut, "call.blit");
+    EXPECT_GT(kernel_model::model.jobs.size(), firstJob) << "the part inside the level was copied";
+}
+
 }  // namespace
+
+TEST(RawFacadeErrors, CallsAnM4MaxCrashesOnFailInvalidResource)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(blitsAnM4MaxCrashesOnFail);
+}
+
+TEST(RawFacadeErrors, CallsAnM4MaxRunsToNoRuleOrInPartAreSkipped)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(blitsAnM4MaxRunsToNoRuleOrInPartAreSkipped);
+}
 
 TEST(RawFacadeErrors, ABufferCopyPastItsBufferCompletes)
 {

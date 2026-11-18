@@ -613,8 +613,8 @@ dispatch_queue_t followingSerialQueue(const char *label);
 void finish(RMCommandBuffer *cb, NSError *error);
 // The command buffer's error, unless it has one: under its lock, which waitUntilScheduled reads it under. `p`, the
 // predicate the failure names, goes with the error it sets (RMCommandBuffer::_failedBy).
-void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferError code = MTLCommandBufferErrorInternal,
-                       RMPred p = PredNone);
+void failCommandBuffer(RMCommandBuffer *cb, NSString *reason,
+                       MTLCommandBufferError code = MTLCommandBufferErrorInternal, RMPred p = PredNone);
 void rmRangeHandedOff(RMCommandBuffer *cb);
 void segmentCompleted(RMCommandBuffer *cb, NSError *error, const raw::RetirementWrites &writes, uint32_t dependencies,
                       const std::vector<RMNativeEventSignal> &signals = {},

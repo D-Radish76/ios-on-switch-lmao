@@ -23,6 +23,7 @@ struct RMICBBlock {
 struct RMICBUnmade {
     const char *why = nullptr;
     raw::ComputeFailure failure = raw::ComputeFailure::Internal;
+    RMPred pred = PredComputeKernel;  // what the execute that reaches it fails as
 };
 
 // A dispatch command as the CPU encoded it
@@ -47,6 +48,10 @@ struct RMICBDispatch {
     uint32_t bindSlots = 0, strideSlots = 0;
     bool raw = false;  // its slot launches it (a buffer that inherits no pipeline)
     RMICBUnmade unmade;
+    // what the CPU encoded that Metal's validation stops and that has no form: an object of another device, or what its
+    // buffer inherits; it launches nothing and an execute that reaches it fails InvalidResource, until a reset of it
+    RMPred invalid = PredNone;
+    const char *invalidWhy = nullptr;
 };
 
 // A buffer that inherits the pipeline: its commands written once for one pipeline of the encoder's, as they were at

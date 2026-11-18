@@ -91,11 +91,11 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
 {
     constexpr const char *call = "fillTexture:level:slice:region:color:";
     if (!t)
-        return skipInvalidBlit(call, "of a nil texture");
+        return rmCallInvalid(cb, PredTexForeign, 0, 0, "a fill of a nil texture");
     raw::FillRecord f;
     if (RMTexture *x = rawTexture(t)) {
         if (x->_descriptor.storageMode == MTLStorageModeMemoryless)
-            return skipInvalidBlit(call, "of a memoryless texture");
+            return rmCallInvalid(cb, PredCallBlit, level, slice, "a fill of a memoryless texture");
         if (level >= x->_descriptor.mipmapLevelCount)
             return skipInvalidBlit(call, "of a level past the texture's");
         if (!fillLayer(x, slice, f.layer))
@@ -160,19 +160,20 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
     RMTexture *x = [(id)t isKindOfClass:[RMTexture class]] ? (RMTexture *)t : nil;
     if (!x || x->_device != _cb->_queue->_device) {
         failCommandBuffer(_cb, @"generateMipmapsForTexture: requires a texture of this device",
-                          MTLCommandBufferErrorInvalidResource);
+                          MTLCommandBufferErrorInvalidResource, PredTexForeign);
         return;
     }
     if (x->_descriptor.storageMode == MTLStorageModeMemoryless) {
         failCommandBuffer(_cb, @"generateMipmapsForTexture: cannot access a memoryless texture",
-                          MTLCommandBufferErrorInvalidResource);
+                          MTLCommandBufferErrorInvalidResource, PredCallBlit);
         return;
     }
     const uint32_t format = uint32_t(x->_descriptor.pixelFormat);
-    // Plain Metal leaves these bytes unchanged (mipmap_plan.rs leaves_as_is), despite API validation's assertions.
-    if (x->_descriptor.mipmapLevelCount <= 1 || raw::zetaFormatIndex(format) < raw::kZetaFormats ||
-        format == MTLPixelFormatX32_Stencil8)
+    if (x->_descriptor.mipmapLevelCount <= 1)
         return;
+    // Plain Metal leaves these bytes unchanged (mipmap_plan.rs leaves_as_is), despite API validation's assertions.
+    if (raw::zetaFormatIndex(format) < raw::kZetaFormats || format == MTLPixelFormatX32_Stencil8)
+        return skipInvalidBlit("generateMipmapsForTexture:", "of a depth or stencil format");
     if (!x->_rawOk)
         return notRawTexture(_cb, t);
     __unsafe_unretained RMTexture *owner = x->_levelsOwner ?: x;

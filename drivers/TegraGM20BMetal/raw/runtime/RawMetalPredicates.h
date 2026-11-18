@@ -44,6 +44,11 @@ enum RMPred : uint8_t {
     PredEncStorageView,  // a = attachment, b = format | width << 32: no storage view and no barrier form to take
     PredPassRotated,     // a = raw::RotatedRefusal, b = the rotation (a pass's, or the state's at encode)
     PredPassPositions,   // sample positions Metal takes and draws nothing defined for: a = their count, b = the samples
+    // calls Metal's validation stops on this device's own objects (c38-audit/failed-counts/probe/RESULTS.txt): a blit,
+    // an indirect command buffer's encode, reset, copy or execute, a counter sample or its resolve
+    PredCallBlit,
+    PredCallIcb,
+    PredCallCounter,  // a counter sample buffer of another device too
     PredCount
 };
 
@@ -78,13 +83,16 @@ static constexpr const char *kPredNames[] = {"-",
                                              "enc.geometry",
                                              "enc.storage",
                                              "pass.rotated",
-                                             "pass.positions"};
+                                             "pass.positions",
+                                             "call.blit",
+                                             "call.icb",
+                                             "call.counter"};
 static_assert(sizeof kPredNames / sizeof *kPredNames == PredCount, "a name for each predicate");
 
 // The predicates whose command buffer fails, its work run nowhere, with MTLCommandBufferErrorDomain's code (0: not one):
 // the kernel refusing a submission or the channel (raw/plan/predicates.tsv cb-error). The client's errors (call.bufcopy,
 // enc.idxrange, enc.colorfmt, enc.samples, pass.positions) complete as Apple's driver completes them
-// (raw_client_errors.h), each logged once.
+// (raw_client_errors.h), skipped (rmSkipped), each rule logged once.
 constexpr NSInteger predFailure(RMPred p)
 {
     switch (p) {
@@ -105,8 +113,18 @@ constexpr const char *failedName(RMPred p)
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
 // command buffers that completed with an error, by the predicate the failure that set it named (PredNone: none)
 extern std::atomic<uint64_t> gPredFailed[PredCount];
+// calls Metal's validation stops that the raw path ran as Apple's driver runs them, by predicate (rmSkipped)
+extern std::atomic<uint64_t> gPredSkipped[PredCount];
 #endif
 extern std::atomic<uint64_t> gPredLogged;
+
+// `n` calls Metal's validation stops, run as Apple's driver runs them with validation off (nothing, or the part it
+// runs: c38-audit/failed-counts/probe/RESULTS.txt): counted under `p` (switchRawCounters skipped.<predicate>), never a
+// failure. Each site logs its own rule once a process (a SWITCH_REFUSE_DETAIL keyed by the rule, or predSkipped()).
+void rmSkipped(RMPred p, uint64_t n = 1);
+// ... a skip whose line is the predicate's: counted, and the process's first of each `rule` (a literal) logged with
+// `a` and `b`
+void predSkipped(RMPred p, uint64_t a, uint64_t b, const char *rule, uint64_t n = 1);
 
 // A command buffer completed with `error`, failed by `p` (RawMetalFinish.mm finished, its one funnel): counted, and the
 // process's first of `p` logged (logFailure)

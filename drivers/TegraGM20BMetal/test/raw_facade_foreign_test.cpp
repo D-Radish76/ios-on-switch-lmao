@@ -200,6 +200,68 @@ TEST(RawFacadeForeign, ABlitOfATextureOfAnotherDeviceFails)
                   "tex.foreign", "copyFromTexture:toBuffer:");
 }
 
+// A blit's buffer of another device, filled, copied or copied into a texture, and a counter sample buffer of another
+// device resolved: each fails its command buffer as it is recorded, as every object of another device does
+TEST(RawFacadeForeign, ABlitOfABufferOrCounterSampleBufferOfAnotherDeviceFails)
+{
+    ASSERT_TRUE(opened().device != nil);
+    id<MTLBuffer> own = [opened().device newBufferWithLength:65536 options:MTLResourceStorageModeShared];
+    id<MTLTexture> texture = scale_frames::targets(opened().device, kOnePass)[0];
+    id<MTLCommandQueue> queue = [opened().device newCommandQueue];
+    const auto blit = [&](void (^copy)(id<MTLBlitCommandEncoder>)) {
+        id<MTLCommandBuffer> cb = [queue commandBuffer];
+        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+        copy(b);
+        [b endEncoding];
+        return cb;
+    };
+    expectInvalid(blit(^(id<MTLBlitCommandEncoder> b) {
+                      [b fillBuffer:foreignBuffer() range:NSMakeRange(0, 64) value:7];
+                  }),
+                  "call.buf", "fillBuffer:");
+    expectInvalid(blit(^(id<MTLBlitCommandEncoder> b) {
+                      [b copyFromBuffer:foreignBuffer() sourceOffset:0 toBuffer:own destinationOffset:0 size:64];
+                  }),
+                  "call.buf", "copyFromBuffer:toBuffer:");
+    expectInvalid(blit(^(id<MTLBlitCommandEncoder> b) {
+                      [b copyFromBuffer:foreignBuffer()
+                                 sourceOffset:0
+                            sourceBytesPerRow:256
+                          sourceBytesPerImage:256 * 64
+                                   sourceSize:MTLSizeMake(16, 16, 1)
+                                    toTexture:texture
+                             destinationSlice:0
+                             destinationLevel:0
+                            destinationOrigin:MTLOriginMake(0, 0, 0)];
+                  }),
+                  "call.buf", "copyFromBuffer:toTexture:");
+    expectInvalid(blit(^(id<MTLBlitCommandEncoder> b) {
+                      [b resolveCounters:(id<MTLCounterSampleBuffer>)[ForeignState new]
+                                    inRange:NSMakeRange(0, 1)
+                          destinationBuffer:own
+                          destinationOffset:0];
+                  }),
+                  "call.counter", "resolveCounters:");
+}
+
+// A resource or heap used, or a fence waited for, of another device: the command buffer fails as it is recorded
+TEST(RawFacadeForeign, AUseOrFenceOfAnotherDevicesObjectFails)
+{
+    ASSERT_TRUE(opened().device != nil && opened().state != nil);
+    expectInvalid(passWith(^(id<MTLRenderCommandEncoder> e) {
+                      [e useResource:(id<MTLResource>)foreignBuffer() usage:MTLResourceUsageRead];
+                  }),
+                  "call.buf", "useResource:");
+    expectInvalid(passWith(^(id<MTLRenderCommandEncoder> e) {
+                      [e useHeap:(id<MTLHeap>)[ForeignState new]];
+                  }),
+                  "call.buf", "useHeap:");
+    expectInvalid(passWith(^(id<MTLRenderCommandEncoder> e) {
+                      [e waitForFence:(id<MTLFence>)[ForeignState new] beforeStages:MTLRenderStageVertex];
+                  }),
+                  "event", "waitForFence:beforeStages:");
+}
+
 // One sub-encoder's call fails the parallel pass's command buffer, the other sub-encoders' passes run nowhere
 TEST(RawFacadeForeign, AParallelSubEncodersBufferOfAnotherDeviceFailsItsCommandBuffer)
 {

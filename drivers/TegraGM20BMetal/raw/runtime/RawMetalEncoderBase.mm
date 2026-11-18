@@ -140,6 +140,8 @@ static void endDropped(void *object)
 
 - (void)updateFence:(id<MTLFence>)fence
 {
+    if (fence && ![(id)fence isKindOfClass:[RMObject class]])
+        return rmCallInvalid(_cb, PredEvent, 0, 0, "updateFence: a fence not made by this device");
     [_cb retain:fence];
     Cmd c = cmd(OpUpdateFence);
     c.obj = (__bridge void *)fence;
@@ -148,6 +150,8 @@ static void endDropped(void *object)
 
 - (void)waitForFence:(id<MTLFence>)fence
 {
+    if (fence && ![(id)fence isKindOfClass:[RMObject class]])
+        return rmCallInvalid(_cb, PredEvent, 0, 0, "waitForFence: a fence not made by this device");
     [_cb retain:fence];
     Cmd c = cmd(OpWaitFence);
     c.obj = (__bridge void *)fence;

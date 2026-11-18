@@ -25,14 +25,13 @@ RMBuffer *own(id<MTLBuffer> buffer)
         indices:(RMBuffer *)patchIndices
          points:(RMBuffer *)pointIndices
 {
-    if (!_buffer->_patches) {
-        SWITCH_REFUSE("raw", "icb.patches", "indirect command %lu: patches on a buffer of no patch commands",
-                      (unsigned long)_index);
-        return;
-    }
+    // an M4 Max's driver faults encoding them
+    if (!_buffer->_patches)
+        return [self invalidate:PredCallIcb why:"an indirect command of patches on a buffer of no patch commands"];
     RMICBCommand c;
     const char *why = nullptr;
     if (!raw::RenderEncoder::icbPatchDraw(*gRM->raw, in, c.patches, &why)) {
+        rmSkipped(PredCallIcb);
         SWITCH_REFUSE_DETAIL("raw", "icb.patches", uintptr_t(why), "indirect command %lu: %s: none drawn",
                              (unsigned long)_index, why);
         [self reset];
@@ -61,12 +60,9 @@ RMBuffer *own(id<MTLBuffer> buffer)
                scale:(float)scale
 {
     RMBuffer *f = own(factors), *p = own(patchIndices), *q = own(pointIndices);
-    if ((factors && !f) || (patchIndices && !p) || (pointIndices && !q)) {
-        SWITCH_REFUSE("raw", "icb.patches", "indirect command %lu: a buffer not this device's: none drawn",
-                      (unsigned long)_index);
-        [self reset];
-        return;
-    }
+    if ((factors && !f) || (patchIndices && !p) || (pointIndices && !q))
+        return [self invalidate:PredCallBufForeign
+                            why:"an indirect command of patches' buffer not made by this device"];
     const raw::RenderEncoder::IcbPatches in = {
         uint32_t(start),        uint32_t(count),  uint32_t(instances),    uint32_t(baseInstance),
         f ? &f->_raw : nullptr, factorOffset,     factorStride,           scale,

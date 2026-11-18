@@ -219,6 +219,9 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t, RMComputeState *stat
 
 - (void)useResource:(id<MTLResource>)resource usage:(MTLResourceUsage)usage
 {
+    if (resource && ![(id)resource isKindOfClass:[RMObject class]])
+        return rmComputeFails(_cb, raw::ComputeFailure::Invalid, PredCompute, usage,
+                              "a resource used (useResource:) not made by this device");
     setBinding(_cb, OpKernelUse, 3, 0, resource, usage);
 }
 
@@ -480,8 +483,8 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t, RMComputeState *stat
     // down to 4 bytes, a word past the buffer zero, so a grid whose last word lies past it launches nothing
     const NSUInteger aligned = offset & ~NSUInteger(3);
     if (aligned > arguments->_raw.length || arguments->_raw.length - aligned < 12)
-        return hit(_cb, PredCompute, offset, arguments->_raw.length,
-                   "indirect dispatch arguments past their buffer, whose grid reads a zero word: nothing launched");
+        return skip(_cb, PredCompute, offset, arguments->_raw.length,
+                    "indirect dispatch arguments past their buffer, whose grid reads a zero word: nothing launched");
     [_cb retain:buffer];
     [self dispatch:MTLSizeMake(1, 1, 1) threads:threads perThread:false arguments:arguments offset:aligned];
 }

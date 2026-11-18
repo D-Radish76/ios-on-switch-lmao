@@ -16,9 +16,9 @@ state.foreign	record	cb-error	-	a render or depth/stencil state of another devic
 state.notpack	record	cb-error	-	a render state of another device's functions set: the command buffer fails InvalidResource as it is recorded (rmCallInvalid); no creation hands one out
 state.pack	record	layer	L4	a state the pack lacks: made at creation (compiler daemon) or the archive-miss error FailOnBinaryArchiveMiss asks for
 call.vis	record	cb-error	-	Counting and Boolean results, reset or accumulated (raw_visibility.h); left: what Metal's validation stops (no visibility buffer, an offset past it or taken twice in an encoder, a mode MTLVisibilityResultMode lacks)
-call.buf	record	cb-error	-	a buffer of another device bound or drawn with, or no index buffer: the command buffer fails InvalidResource as it is recorded (rmCallInvalid)
+call.buf	record	cb-error	-	a buffer of another device, or none, bound, drawn with, blitted, filled, copied, resolved into or executed with: the command buffer fails InvalidResource as it is recorded (rmCallInvalid; an indirect command's at its execute)
 call.sampler	record	cb-error	-	every sampler the device makes is raw's (opaque borders per sampled texture, Sampler::bordered); one it has no form of is nil at creation (raw:sampler.unsupported); left: a sampler of another device bound, and an opaque border header the pool has no slot for (the full-pool answer)
-call.bufcopy	record	client	buffer_range	a copy or fill past its buffer: clamped to the bytes inside both, as Apple's driver copies (raw_client_errors.h), logged once
+call.bufcopy	record	client	buffer_range	a copy or fill past its buffer: clamped to the bytes inside both, as Apple's driver copies (raw_client_errors.h), skipped (counted), logged once a rule
 compute	record	cb-error	-	a kernel's state, buffer, texture or sampler of another device: the command buffer fails InvalidResource as it is recorded (rmComputeFails)
 compute.nokernel	record	layer	L4	no pack kernel at the dispatch's shape: a kernel record per shape
 compute.image	record	rule	compute.shadow_load,compute.shadow_store	a texture sampled through an image of its own; the cropped-surface-view alias case is not tested
@@ -36,3 +36,6 @@ enc.samples	encode	client	pipeline_sample_count	a one-sample state in a pass of 
 enc.nochannel	encode	cb-error	channel_lost	MTLCommandBufferErrorInternal
 enc.geometry	encode	rule	fetch.interlock	fetch ladder rung 4 for any geometry; the states with no storage form stay gap fetch_without_storage_form (11 on iOS 27, 53 on iOS 17 per x1-f1)
 enc.storage	encode	rule	fetch.barrier,fetch.interlock	a fetched colour with neither form stays gap fetch_without_storage_form
+call.blit	record	cb-error	-	a blit of this device's own objects Metal's validation stops: one an M4 Max crashes on or fails fails InvalidResource as it is recorded; one it runs nothing of or runs to no rule is skipped (counted, logged once a rule: c38-audit/failed-counts/probe/RESULTS.txt)
+call.icb	record	cb-error	-	an indirect command buffer call Metal's validation stops: another device's or none executed, reset or copied, a reset past it, a render range read past its buffer, a command that sets a pipeline its buffer inherits or patches on a buffer of none (an M4 Max faults encoding it; at the execute that reaches it) fail InvalidResource; ranges past a buffer are cut to it, as an M4 Max runs them (skipped)
+call.counter	record	cb-error	-	a counter sample buffer of another device, or a counter sample at an encoder's boundaries (an M4 Max aborts): InvalidResource as recorded; an invalid sample index, a nil sample buffer or a resolve range past the samples skipped, a resolve past its destination cut to it

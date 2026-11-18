@@ -129,11 +129,16 @@ std::vector<RMBuffer *> commandBuffers(RMKernelExecute *x)
            indirectBufferOffset:(NSUInteger)offset
 {
     RMBuffer *r = [(id)rangeBuffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)rangeBuffer : nil;
-    if (!r || (offset & 3) || offset > r->_raw.length || r->_raw.length - offset < 8) {
-        SWITCH_REFUSE(
-            "raw", "icb.range",
-            "executeCommandsInBuffer:indirectBuffer: on a compute encoder: a range buffer not this device's or "
-            "outside it: none run");
+    if (!r)
+        return rmCallInvalid(_cb, PredCallBufForeign, offset, 0,
+                             rangeBuffer ? "an execute's range buffer not made by this device"
+                                         : "an execute's nil range buffer");
+    // an M4 Max launches none of a range read past its buffer
+    if ((offset & 3) || offset > r->_raw.length || r->_raw.length - offset < 8) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 5,
+                             "executeCommandsInBuffer:indirectBuffer: on a compute encoder: a range read off 4 bytes "
+                             "or past its buffer: none run");
         return;
     }
     RMIndirectCommandBuffer *b =
@@ -149,13 +154,25 @@ std::vector<RMBuffer *> commandBuffers(RMKernelExecute *x)
 {
     RMIndirectComputeBuffer *b =
         [(id)buffer isKindOfClass:[RMIndirectComputeBuffer class]] ? (RMIndirectComputeBuffer *)buffer : nil;
-    if (!b || !count || first + count > b->_count) {
-        SWITCH_REFUSE(
-            "raw", "icb.range",
-            "executeCommandsInBuffer: on a compute encoder: a buffer of dispatches not this device's or a range "
-            "past it: none run");
+    if (!b && ![(id)buffer isKindOfClass:[RMIndirectCommandBuffer class]])
+        return rmCallInvalid(_cb, PredCallIcb, first, count,
+                             buffer ? "an execute of an indirect command buffer not made by this device"
+                                    : "an execute of a nil indirect command buffer");
+    if (!b) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 6, "executeCommandsInBuffer: a buffer of draws on a compute encoder: "
+                                                    "none run");
         return;
     }
+    // an M4 Max launches the commands of the range inside the buffer
+    if (first + count > b->_count) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 7,
+                             "executeCommandsInBuffer: on a compute encoder: a range past its buffer: cut to it");
+        count = first < b->_count ? b->_count - first : 0;
+    }
+    if (!count)
+        return;
     RMKernelExecute *x = [RMKernelExecute new];
     x->_buffer = b;
     x->_range = rangeBuffer;
@@ -164,7 +181,7 @@ std::vector<RMBuffer *> commandBuffers(RMKernelExecute *x)
     x->_count = uint32_t(count);
     x->_pipeline = [self rmState];
     if (const RMICBUnmade unmade = admit(x); unmade.why)
-        return rmComputeFails(_cb, unmade.failure, PredComputeKernel, first, unmade.why);
+        return rmComputeFails(_cb, unmade.failure, unmade.pred, first, unmade.why);
     std::vector<raw::ResourceUse> uses;
     [_cb retain:b];
     [_cb retain:x];

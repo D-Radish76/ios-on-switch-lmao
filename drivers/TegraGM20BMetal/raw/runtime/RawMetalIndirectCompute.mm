@@ -127,12 +127,21 @@
     raw::icb::dispatch(rmComputeSlot(_buffer, _index), uint32_t(_index), c.words, _buffer->_slotWords);
 }
 
+// Marked invalid with `p` and `why` (RMICBDispatch::invalid)
+- (void)invalidate:(RMPred)p why:(const char *)why
+{
+    [self edit:^(RMICBDispatch &c) {
+        c.invalid = p;
+        c.invalidWhy = why;
+    }];
+}
+
+// What the buffer inherits is Metal's validation error: an M4 Max's driver faults setting a pipeline, and takes a
+// buffer
 - (void)setComputePipelineState:(id<MTLComputePipelineState>)state
 {
-    if (_buffer->_inheritPipeline) {
-        SWITCH_REFUSE("raw", "icb.inherited", "an indirect dispatch command set a pipeline its buffer inherits");
-        return;
-    }
+    if (_buffer->_inheritPipeline)
+        return [self invalidate:PredCallIcb why:"an indirect dispatch command set a pipeline its buffer inherits"];
     RMComputeState *s = [(id)state isKindOfClass:[RMComputeState class]] ? (RMComputeState *)state : nil;
     [self edit:^(RMICBDispatch &c) {
         c.pipeline = s;
@@ -151,11 +160,14 @@
                 atIndex:(NSUInteger)index
 {
     if (_buffer->_inheritBuffers || index >= 31) {
+        rmSkipped(PredCallIcb);
         SWITCH_REFUSE("raw", "icb.inherited",
-                      "an indirect dispatch command set a buffer its buffer inherits or past 30");
+                      "an indirect dispatch command set a buffer its buffer inherits or past 30: ignored");
         return;
     }
     RMBuffer *b = [(id)buffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)buffer : nil;
+    if (buffer && !b)
+        return [self invalidate:PredCompute why:"an indirect dispatch command's buffer not made by this device"];
     [self edit:^(RMICBDispatch &c) {
         c.buffers[index] = b;
         c.offsets[index] = offset;
@@ -185,6 +197,7 @@
 - (void)setImageblockWidth:(NSUInteger)width height:(NSUInteger)height
 {
     (void)width, (void)height;
+    rmSkipped(PredCallIcb);
     SWITCH_REFUSE("raw", "icb.imageblock",
                   "setImageblockWidth:height: on an indirect dispatch command: no imageblocks");
 }

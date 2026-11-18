@@ -33,10 +33,14 @@ void copySlots(raw::BlitEncoder *be, RMIndirectCommandBuffer *from, RMIndirectCo
 {
     RMIndirectCommandBuffer *b =
         [(id)buffer isKindOfClass:[RMIndirectCommandBuffer class]] ? (RMIndirectCommandBuffer *)buffer : nil;
-    if (!b || NSMaxRange(range) > b->_count) {
-        SWITCH_REFUSE("raw", "icb.range", "resetCommandsInBuffer: a buffer not this device's or a range past it");
-        return;
-    }
+    if (!b)
+        return rmCallInvalid(_cb, PredCallIcb, range.location, range.length,
+                             buffer ? "resetCommandsInBuffer: an indirect command buffer not made by this device"
+                                    : "resetCommandsInBuffer: a nil indirect command buffer");
+    // an M4 Max writes past the buffer: its next execute fails MTLCommandBufferErrorTimeout
+    if (NSMaxRange(range) > b->_count)
+        return rmCallInvalid(_cb, PredCallIcb, range.location, range.length,
+                             "resetCommandsInBuffer: a range past its buffer");
     [_cb retain:b];
     Cmd m = cmd(OpResetCommands);
     m.obj = m.obj2 = (__bridge void *)b;
@@ -56,14 +60,29 @@ void copySlots(raw::BlitEncoder *be, RMIndirectCommandBuffer *from, RMIndirectCo
         [(id)source isKindOfClass:[RMIndirectCommandBuffer class]] ? (RMIndirectCommandBuffer *)source : nil;
     RMIndirectCommandBuffer *to =
         [(id)destination isKindOfClass:[RMIndirectCommandBuffer class]] ? (RMIndirectCommandBuffer *)destination : nil;
-    if (!from || !to || NSMaxRange(range) > from->_count || index + range.length > to->_count ||
-        [(id)from isKindOfClass:[RMIndirectComputeBuffer class]] !=
+    if (!from || !to)
+        return rmCallInvalid(_cb, PredCallIcb, range.location, index,
+                             source && destination
+                                 ? "copyIndirectCommandBuffer: an indirect command buffer not made by this device"
+                                 : "copyIndirectCommandBuffer: a nil indirect command buffer");
+    if ([(id)from isKindOfClass:[RMIndirectComputeBuffer class]] !=
             [(id)to isKindOfClass:[RMIndirectComputeBuffer class]] ||
         (from->_patches && !to->_patches)) {
-        SWITCH_REFUSE("raw", "icb.range",
-                      "copyIndirectCommandBuffer: a buffer not this device's, a range past one, or patch commands into "
-                      "a buffer of none");
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 3,
+                             "copyIndirectCommandBuffer: between buffers of draws and dispatches, or patch commands "
+                             "into a buffer of none: none copied");
         return;
+    }
+    // an M4 Max copies the commands of the range inside both buffers
+    if (NSMaxRange(range) > from->_count || index + range.length > to->_count) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 4, "copyIndirectCommandBuffer: a range past a buffer: cut to both");
+        const NSUInteger fromLeft = range.location < from->_count ? from->_count - range.location : 0,
+                         toLeft = index < to->_count ? to->_count - index : 0;
+        range.length = std::min({range.length, fromLeft, toLeft});
+        if (!range.length)
+            return;
     }
     [_cb retain:from];
     [_cb retain:to];

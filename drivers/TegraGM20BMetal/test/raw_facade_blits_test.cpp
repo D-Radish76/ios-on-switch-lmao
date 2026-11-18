@@ -142,8 +142,8 @@ TEST_F(FacadeBlits, BlitTexCopiesTheViewMipAtAnOddOrigin)
                     << x << ',' << y << ',' << c;
 }
 
-// Texture copies Metal's validation stops (MTLBlitCommandEncoder.h: a region past its level, a level past the texture's,
-// a destination of another texel size) copy nothing, on the raw path, beside the copies that land
+// Texture copies Metal's validation stops (MTLBlitCommandEncoder.h: a level past the texture's, a destination of
+// another texel size) copy nothing, on the raw path, beside the copies that land
 TEST_F(FacadeBlits, TextureCopiesMetalStopsCopyNothing)
 {
     auto a = texture(), b = texture(), narrow = texture(MTLPixelFormatR8Unorm);
@@ -168,7 +168,6 @@ TEST_F(FacadeBlits, TextureCopiesMetalStopsCopyNothing)
     };
     const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
     const int opens = harness::gOpens;
-    copyFromA(1, MTLOriginMake(10, 0, 0), MTLSizeMake(8, 8, 1), b);
     copyFromA(6, MTLOriginMake(0, 0, 0), MTLSizeMake(1, 1, 1), b);
     copyFromA(1, MTLOriginMake(0, 0, 0), MTLSizeMake(4, 4, 1), narrow);
     EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
@@ -180,8 +179,8 @@ TEST_F(FacadeBlits, TextureCopiesMetalStopsCopyNothing)
     EXPECT_EQ(harness::gOpens, opens);
 }
 
-// Buffer copies Metal's validation stops (rows past the buffer, a region past the level, rows shorter than the copy's,
-// a slice past the texture's) copy nothing, on the raw path, beside the copies that land
+// Buffer copies Metal's validation stops (rows past the buffer, rows shorter than the copy's, a slice past the
+// texture's) copy nothing, on the raw path, beside the copies that land
 TEST_F(FacadeBlits, BufferCopiesMetalStopsCopyNothing)
 {
     auto t = texture();
@@ -217,7 +216,6 @@ TEST_F(FacadeBlits, BufferCopiesMetalStopsCopyNothing)
     const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
     const int opens = harness::gOpens;
     intoLevel1(32768 - 512, 64, MTLSizeMake(16, 16, 1));
-    intoLevel1(0, 128, MTLSizeMake(32, 32, 1));
     fromLevel1(0, 32);
     fromLevel1(1, 64);
     EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
@@ -231,6 +229,73 @@ TEST_F(FacadeBlits, BufferCopiesMetalStopsCopyNothing)
     EXPECT_TRUE(std::all_of(kept, kept + 32768, [](uint8_t v) {
         return v == 0x5c;
     }));
+}
+
+// A texture copy from a region past its level, which Metal's validation stops, copies the part inside, as an M4 Max
+// does (the rest it writes is no texel's: c38-audit/failed-counts/probe pat_region), skipped as call.blit
+TEST_F(FacadeBlits, ATextureCopyFromARegionPastItsLevelCopiesThePartInside)
+{
+    auto a = texture(), b = texture();
+    auto in = buffer(), before = buffer(), out = buffer();
+    auto *bytes = static_cast<uint8_t *>(in.contents);
+    for (NSUInteger i = 0; i < 1024; ++i)
+        bytes[i] = uint8_t(i * 7 + 3);
+    memset(before.contents, 0xa6, 1024);
+    NSDictionary *counted = harness::counters(device);
+    auto cb = [[device newCommandQueue] commandBuffer];
+    auto e = [cb blitCommandEncoder];
+    upload(e, in, a);
+    upload(e, before, b);
+    [e copyFromTexture:a
+              sourceSlice:0
+              sourceLevel:1
+             sourceOrigin:MTLOriginMake(10, 0, 0)
+               sourceSize:MTLSizeMake(8, 8, 1)
+                toTexture:b
+         destinationSlice:0
+         destinationLevel:1
+        destinationOrigin:MTLOriginMake(0, 0, 0)];
+    read(e, b, out);
+    [e endEncoding];
+    execute(cb);
+    EXPECT_EQ(harness::skippedMoved(counted, harness::counters(device)), harness::skippedOnce("call.blit"));
+    const auto *got = static_cast<const uint8_t *>(out.contents);
+    for (NSUInteger y = 0; y < 16; ++y)
+        for (NSUInteger x = 0; x < 16; ++x)
+            for (NSUInteger c = 0; c < 4; ++c)
+                EXPECT_EQ(got[(y * 16 + x) * 4 + c], x < 6 && y < 8 ? bytes[(y * 16 + x + 10) * 4 + c] : 0xa6)
+                    << x << ',' << y << ',' << c;
+}
+
+// A buffer copy into a region past its level, which Metal's validation stops, writes the part inside the level, as an
+// M4 Max writes it (c38-audit/failed-counts/probe buf2tex_region_past), skipped as call.blit
+TEST_F(FacadeBlits, ABufferCopyIntoARegionPastItsLevelWritesThePartInside)
+{
+    auto t = texture();
+    auto in = buffer(), junk = buffer(), out = buffer();
+    memset(in.contents, 0x3b, 1024);
+    memset(junk.contents, 0xee, 32768);
+    NSDictionary *before = harness::counters(device);
+    auto cb = [[device newCommandQueue] commandBuffer];
+    auto e = [cb blitCommandEncoder];
+    upload(e, in, t);
+    [e copyFromBuffer:junk
+               sourceOffset:0
+          sourceBytesPerRow:128
+        sourceBytesPerImage:0
+                 sourceSize:MTLSizeMake(32, 32, 1)
+                  toTexture:t
+           destinationSlice:0
+           destinationLevel:1
+          destinationOrigin:MTLOriginMake(4, 0, 0)];
+    read(e, t, out);
+    [e endEncoding];
+    execute(cb);
+    EXPECT_EQ(harness::skippedMoved(before, harness::counters(device)), harness::skippedOnce("call.blit"));
+    const auto *got = static_cast<const uint8_t *>(out.contents);
+    for (NSUInteger y = 0; y < 16; ++y)
+        for (NSUInteger x = 0; x < 16; ++x)
+            EXPECT_EQ(got[(y * 16 + x) * 4], x >= 4 ? 0xee : 0x3b) << x << ',' << y;
 }
 
 TEST_F(FacadeBlits, BlitWholeCopiesAllViewLevels)

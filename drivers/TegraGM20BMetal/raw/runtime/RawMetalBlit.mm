@@ -47,16 +47,21 @@ const char *planesCopyForm(RMTexture *a, MTLOrigin so, MTLSize size, RMTexture *
     return nullptr;
 }
 
-// Whether a copy between texture `d` and buffer `s` is the raw path's (`aspect` the aspect it moves); false: the copy was
-// skipped or its command buffer failed
+// Whether a copy between texture `d` and buffer `s` is the raw path's (`aspect` the aspect it moves, `o` and `size`
+// placed in the level where it writes the texture); false: the copy was skipped or its command buffer failed
 bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MTLBuffer> s, id<MTLTexture> d,
-                NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size, NSUInteger offset, NSUInteger row,
+                NSUInteger slice, NSUInteger level, MTLOrigin &o, MTLSize &size, NSUInteger offset, NSUInteger row,
                 NSUInteger image, MTLBlitOption options, bool intoTexture, int &aspect)
 {
     RMBuffer *a = [(id)s isKindOfClass:[RMBuffer class]] ? (RMBuffer *)s : nil;
     aspect = raw::kAspectWhole;
-    if (!a || !d) {
-        skipInvalidBlit(call, "of a nil texture or a buffer not this device's");
+    if (!a) {
+        rmCallInvalid(cb, PredCallBufForeign, offset, 0,
+                      s ? "a blit of a buffer not made by this device" : "a blit of a nil buffer");
+        return false;
+    }
+    if (!d) {
+        rmCallInvalid(cb, PredTexForeign, 0, 0, "a blit of a nil texture");
         return false;
     }
     RMTexture *t = rawTexture(d);
@@ -73,9 +78,13 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
         failNoStencilTemp(cb, call);
         return false;
     }
+    if (intoTexture) {
+        roundToBlocks(call, t, o);
+        cutToLevel(call, t, level, o, size);
+    }
     if (const char *invalid =
             bufferCopyInvalid(t, slice, level, o, size, offset, row, image, a->_raw.length, aspect, intoTexture)) {
-        skipInvalidBlit(call, invalid);
+        invalidBlit(cb, call, invalid);
         return false;
     }
     if (!copySideOk(t, slice, level, o, size)) {
@@ -105,21 +114,23 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
 {
     constexpr const char *call = "copyFromTexture:toTexture:";
     if (!s || !d)
-        return skipInvalidBlit(call, "of a nil texture");
+        return rmCallInvalid(_cb, PredTexForeign, 0, 0, "a blit of a nil texture");
     RMTexture *a = rawTexture(s), *b = rawTexture(d);
     uint32_t form = raw::kAspectWhole;
     if (!a || !b)
         return notRawTexture(_cb, a ? d : s);
+    flatSlice(call, a, ss);
     if (raw::heldInPlanes(a->_raw) || raw::heldInPlanes(b->_raw)) {
         if (const char *invalid = copySideInvalid(a, ss, sl, so, size) ?: copySideInvalid(b, ds, dl, dorg, size)
                                                                      ?: planesCopyForm(a, so, size, b, dorg, form))
-            return skipInvalidBlit(call, invalid);
+            return invalidBlit(_cb, call, invalid);
         if ((!raw::heldInPlanes(a->_raw) && !copySideOk(a, ss, sl, so, size)) ||
             (!raw::heldInPlanes(b->_raw) && !copySideOk(b, ds, dl, dorg, size)))
             return failNoImage(_cb, call);
     } else {
+        cutToLevel(call, a, sl, so, size);
         if (const char *invalid = textureCopyInvalid(a, ss, sl, so, size, b, ds, dl, dorg))
-            return skipInvalidBlit(call, invalid);
+            return invalidBlit(_cb, call, invalid);
         form = textureCopyForm(a, b);
         if ((form == kCopyStencilOut || form == kCopyStencilIn) &&
             blitAspect(form == kCopyStencilOut ? a : b, MTLBlitOptionNone) == kAspectNoMemory)
@@ -181,8 +192,9 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
 {
     NSUInteger sl = 0, dl = 0;
     if (!sameSizeLevels(s, d, sl, dl))
-        return skipInvalidBlit("copyFromTexture:toTexture:",
-                               "between textures neither of which has a level of the other's first level's size");
+        return rmCallInvalid(_cb, PredCallBlit, 0, 0,
+                             "copyFromTexture:toTexture: between textures neither of which has a level of the other's "
+                             "first level's size");
     [self copyFromTexture:s
               sourceSlice:0
               sourceLevel:sl
@@ -197,9 +209,10 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
 {
     RMBuffer *t = (RMBuffer *)b;
     if (![(id)t isKindOfClass:[RMBuffer class]])
-        return hit(_cb, PredCallBufCopyRange, NSMaxRange(r), 0, "a fill of a buffer not this device's: none filled");
+        return rmCallInvalid(_cb, PredCallBufForeign, NSMaxRange(r), 0,
+                             b ? "a fill of a buffer not made by this device" : "a fill of a nil buffer");
     if (NSMaxRange(r) > t->_raw.length) {
-        hit(_cb, PredCallBufCopyRange, NSMaxRange(r), t->_raw.length, "a fill past its buffer, clamped to it");
+        skip(_cb, PredCallBufCopyRange, NSMaxRange(r), t->_raw.length, "a fill past its buffer, clamped to it");
         r.length = NSUInteger(raw::clampedCopy(t->_raw.length, r.location, t->_raw.length, r.location, r.length));
         if (!r.length)
             return;
@@ -222,9 +235,10 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
 {
     RMBuffer *a = (RMBuffer *)s, *b = (RMBuffer *)d;
     if (![(id)a isKindOfClass:[RMBuffer class]] || ![(id)b isKindOfClass:[RMBuffer class]])
-        return hit(_cb, PredCallBufCopyRange, so + n, dof + n, "a copy of a buffer not this device's: none copied");
+        return rmCallInvalid(_cb, PredCallBufForeign, so + n, dof + n,
+                             s && d ? "a copy of a buffer not made by this device" : "a copy of a nil buffer");
     if (so + n > a->_raw.length || dof + n > b->_raw.length) {
-        hit(_cb, PredCallBufCopyRange, so + n, dof + n, "a copy past its buffers, clamped to both");
+        skip(_cb, PredCallBufCopyRange, so + n, dof + n, "a copy past its buffers, clamped to both");
         n = NSUInteger(raw::clampedCopy(a->_raw.length, so, b->_raw.length, dof, n));
         if (!n)
             return;

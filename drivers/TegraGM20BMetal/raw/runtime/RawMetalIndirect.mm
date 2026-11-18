@@ -58,6 +58,12 @@ uint8_t kindsOf(const RMICBCommand &c)
 {
     std::lock_guard<raw::Mutex> hold(_lock);
     RMICBCommand &was = _commands[index];
+    if (command.kind != RMICBCommand::None && !command.invalid) {
+        command.invalid = was.invalid;
+        command.invalidWhy = was.invalidWhy;
+    }
+    if (bool(was.invalid) != bool(command.invalid))
+        _invalid.fetch_add(command.invalid ? 1 : uint32_t(-1), std::memory_order_relaxed);
     for (RMBuffer *read : {was.indices, was.factors, was.patchIndices, was.pointIndices})
         if (read && --_buffers[(__bridge void *)read] == 0)
             _buffers.erase((__bridge void *)read);
@@ -78,6 +84,17 @@ uint8_t kindsOf(const RMICBCommand &c)
     for (uint32_t bit = 0; bit < 4; bit++)
         kinds |= uint8_t((_kinds[bit] ? 1 : 0) << bit);
     return kinds;
+}
+
+- (RMPred)invalidIn:(NSUInteger)first count:(NSUInteger)count why:(const char **)why
+{
+    std::lock_guard<raw::Mutex> hold(_lock);
+    for (NSUInteger i = first; i < std::min<NSUInteger>(first + count, _count); i++)
+        if (_commands[i].invalid) {
+            *why = _commands[i].invalidWhy;
+            return _commands[i].invalid;
+        }
+    return PredNone;
 }
 
 - (std::vector<RMBuffer *>)buffers
@@ -191,9 +208,13 @@ uint8_t kindsOf(const RMICBCommand &c)
 {
     RMBuffer *b = [(id)buffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)buffer : nil;
     const uint32_t size = indexType == MTLIndexTypeUInt16 ? 2 : 4;
-    if (!b || !b->_raw.va || offset % size || offset >= b->_raw.length) {
-        SWITCH_REFUSE("raw", "icb.indices",
-                      "indirect command %lu: an index buffer not this device's or off its type (offset %lu)",
+    if (!b)
+        return [self invalidate:PredCallBufForeign
+                            why:buffer ? "an indirect command's index buffer not made by this device"
+                                       : "an indirect command's nil index buffer"];
+    if (!b->_raw.va || offset % size || offset >= b->_raw.length) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE("raw", "icb.indices", "indirect command %lu: an index buffer offset %lu off its type or past it",
                       (unsigned long)_index, (unsigned long)offset);
         [self reset];
         return;
@@ -221,23 +242,35 @@ uint8_t kindsOf(const RMICBCommand &c)
     [_buffer take:RMICBCommand {} at:_index];
 }
 
-// The buffer inherits these from the encoder (its descriptor's creation said so): Metal's validation refuses them
+- (void)invalidate:(RMPred)p why:(const char *)why
+{
+    raw::icb::empty(rmCommandSlot(_buffer, _index), _buffer->_slotWords);
+    RMICBCommand c;
+    c.invalid = p;
+    c.invalidWhy = why;
+    [_buffer take:c at:_index];
+}
+
+// The buffer inherits these from the encoder (its descriptor's creation said so): Metal's validation refuses them. An
+// M4 Max's driver faults setting a pipeline, and takes a buffer
 - (void)setRenderPipelineState:(id<MTLRenderPipelineState>)state
 {
     (void)state;
-    SWITCH_REFUSE("raw", "icb.inherited", "an indirect command set a pipeline its buffer inherits");
+    [self invalidate:PredCallIcb why:"an indirect command set a pipeline its buffer inherits"];
 }
 
 - (void)setVertexBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index
 {
     (void)buffer, (void)offset, (void)index;
-    SWITCH_REFUSE("raw", "icb.inherited", "an indirect command set a buffer its buffer inherits");
+    rmSkipped(PredCallIcb);
+    SWITCH_REFUSE_DETAIL("raw", "icb.inherited", 1, "an indirect command set a buffer its buffer inherits: ignored");
 }
 
 - (void)setFragmentBuffer:(id<MTLBuffer>)buffer offset:(NSUInteger)offset atIndex:(NSUInteger)index
 {
     (void)buffer, (void)offset, (void)index;
-    SWITCH_REFUSE("raw", "icb.inherited", "an indirect command set a buffer its buffer inherits");
+    rmSkipped(PredCallIcb);
+    SWITCH_REFUSE_DETAIL("raw", "icb.inherited", 1, "an indirect command set a buffer its buffer inherits: ignored");
 }
 
 @end
@@ -289,12 +322,14 @@ uint8_t kindsOf(const RMICBCommand &c)
            indirectBufferOffset:(NSUInteger)offset
 {
     RMBuffer *r = [(id)rangeBuffer isKindOfClass:[RMBuffer class]] ? (RMBuffer *)rangeBuffer : nil;
-    if (!r || (offset & 3) || offset > r->_raw.length || r->_raw.length - offset < 8) {
-        SWITCH_REFUSE("raw", "icb.range",
-                      "executeCommandsInBuffer:indirectBuffer: a range buffer not this device's or "
-                      "outside it: none run");
-        return;
-    }
+    if (!r)
+        return rmCallInvalid(_cb, PredCallBufForeign, offset, 0,
+                             rangeBuffer ? "an execute's range buffer not made by this device"
+                                         : "an execute's nil range buffer");
+    // an M4 Max's GPU faults reading such a range (MTLCommandBufferErrorPageFault)
+    if ((offset & 3) || offset > r->_raw.length || r->_raw.length - offset < 8)
+        return rmCallInvalid(_cb, PredCallIcb, offset, r->_raw.length,
+                             "executeCommandsInBuffer:indirectBuffer: a range read off 4 bytes or past its buffer");
     RMIndirectCommandBuffer *b =
         [(id)buffer isKindOfClass:[RMIndirectCommandBuffer class]] ? (RMIndirectCommandBuffer *)buffer : nil;
     [self execute:buffer first:0 count:b ? b->_count : 0 range:r offset:offset];
@@ -310,10 +345,28 @@ uint8_t kindsOf(const RMICBCommand &c)
     rmXrShadowBlock(_cb);
     RMIndirectCommandBuffer *b =
         [(id)buffer isKindOfClass:[RMIndirectCommandBuffer class]] ? (RMIndirectCommandBuffer *)buffer : nil;
-    if (!b || [(id)b isKindOfClass:[RMIndirectComputeBuffer class]] || !count || first + count > b->_count) {
-        SWITCH_REFUSE("raw", "icb.range",
-                      "executeCommandsInBuffer: a buffer of draws not this device's or a range past it: none run");
+    if (!b)
+        return rmCallInvalid(_cb, PredCallIcb, first, count,
+                             buffer ? "an execute of an indirect command buffer not made by this device"
+                                    : "an execute of a nil indirect command buffer");
+    if ([(id)b isKindOfClass:[RMIndirectComputeBuffer class]]) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 1, "executeCommandsInBuffer: a buffer of dispatches on a render "
+                                                    "encoder: none run");
         return;
+    }
+    // an M4 Max runs the commands of the range inside the buffer
+    if (first + count > b->_count) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 2, "executeCommandsInBuffer: a range past its buffer: cut to it");
+        count = first < b->_count ? b->_count - first : 0;
+    }
+    if (!count)
+        return;
+    if (b->_invalid.load(std::memory_order_relaxed)) {
+        const char *why = nullptr;
+        if (const RMPred p = [b invalidIn:first count:count why:&why])
+            return rmCallInvalid(_cb, p, first, count, why);
     }
     const uint8_t kinds = [b kinds];
     const std::vector<RMBuffer *> reads = [b buffers];

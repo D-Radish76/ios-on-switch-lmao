@@ -306,8 +306,8 @@ void rmOwnPass(RMRenderEncoder *e)
                       "a pass with a rasterization rate map: drawn at full rate, as Metal draws it on "
                       "a device without rate maps");
     if (positions && !passSamplePositions(pass, positions, e->_samples, facts.positions))
-        hit(self, PredPassPositions, positions, e->_samples,
-            "sample positions past the pass's samples: drawn at the standard ones");
+        skip(self, PredPassPositions, positions, e->_samples,
+             "sample positions past the pass's samples: drawn at the standard ones");
     e->_renderAt = _plan.size();
     Cmd m = cmd(OpRender);
     m.obj = (__bridge void *)pass;

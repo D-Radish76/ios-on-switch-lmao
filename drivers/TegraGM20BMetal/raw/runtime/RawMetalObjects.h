@@ -600,6 +600,19 @@ static inline void hit(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64
         logPred(p, a, b, detail ? @(detail) : nil);
 }
 
+// A call Metal's validation stops that the raw path runs as Apple's driver runs it (rmSkipped): a hit as `p`, its
+// `rule` (a literal) logged once a process
+static inline void skip(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule,
+                        uint64_t n = 1)
+{
+    if (!cb->_pred0) {
+        cb->_pred0 = p;
+        cb->_predA = a;
+        cb->_predB = b;
+    }
+    predSkipped(p, a, b, rule, n);
+}
+
 // The predicate of the failure the submit worker found encoding or readying `cb`, committed and so written by no other
 // thread now: kept unless the failure named one already
 static inline void nameFailure(__unsafe_unretained RMCommandBuffer *cb, RMPred p)

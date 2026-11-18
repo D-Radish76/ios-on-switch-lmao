@@ -91,8 +91,8 @@ void expectRaw(id<MTLDevice> device, MTLRenderPassDescriptor *p)
     expectNoM2V(device);
 }
 
-// A pass of `p`, nothing drawn: its command buffer failed Internal on the raw path, `pred` named in its path and counted
-// once under it
+// A pass of `p`, nothing drawn: its command buffer failed Internal on the raw path, `pred` named in its path and
+// counted once under it
 void expectFailed(id<MTLDevice> device, MTLRenderPassDescriptor *p, const char *pred)
 {
     NSDictionary *before = counters(device);

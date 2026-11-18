@@ -163,7 +163,7 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
         return rmCallInvalid(_cb, PredCallBufForeign, 0xffff, 0,
                              buffer ? "an index buffer not made by this device" : "a nil index buffer");
     if (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32)
-        return hit(_cb, PredEncIndexedRange, offset, indexType, "an index type Metal has none of: the draw skipped");
+        return skip(_cb, PredEncIndexedRange, offset, indexType, "an index type Metal has none of: the draw skipped");
     if (![self checkDraw])
         return;
     [_cb retain:buffer];
@@ -254,7 +254,7 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
         const uint32_t f = j < _count ? _formats[j] : 0;
         if (f != pl.colorFormats[j] && !(f && pl.colorFormats[j] == 0) &&
             !(raw::targetOrdersChannels(pl.colorFormats[j], f) && !(pl.storageBits >> j & 1))) {
-            hit(_cb, PredEncColorFormats, j, f, "a state's colour format another than its pass's: the draw skipped");
+            skip(_cb, PredEncColorFormats, j, f, "a state's colour format another than its pass's: the draw skipped");
             return NO;
         }
     }
@@ -265,8 +265,8 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     uint32_t sampleMasks[4];
     if (!raw::samplesDrawn(pl.samples, _samples, pl.samplePasses) ||
         !raw::sampleShadingMasks(_samples, pl.samples == _samples ? pl.samplePasses : 1, sampleMasks)) {
-        hit(_cb, PredEncSamples, pl.samples, _samples | uint64_t(pl.samplePasses) << 32,
-            "a state's samples its pass draws nothing defined for: the draw skipped");
+        skip(_cb, PredEncSamples, pl.samples, _samples | uint64_t(pl.samplePasses) << 32,
+             "a state's samples its pass draws nothing defined for: the draw skipped");
         return NO;
     }
     [self drawnRecord];
@@ -477,13 +477,20 @@ static void recordDraw(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
     const uint64_t bytes = indexed ? 20 : 16;
     RMBuffer *buffer = [(id)arguments isKindOfClass:[RMBuffer class]] ? (RMBuffer *)arguments : nil;
     RMBuffer *index = [(id)indices isKindOfClass:[RMBuffer class]] ? (RMBuffer *)indices : nil;
-    if (!buffer || (offset & 3) ||
-        (indexed && (!index || (indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
+    if (!buffer)
+        return rmCallInvalid(_cb, PredCallBufForeign, offset, bytes,
+                             arguments ? "indirect arguments of a buffer not made by this device"
+                                       : "indirect arguments of a nil buffer");
+    if (indexed && !index)
+        return rmCallInvalid(_cb, PredCallBufForeign, 0xffff, indexOffset,
+                             indices ? "an index buffer not made by this device" : "a nil index buffer");
+    if ((offset & 3) ||
+        (indexed && ((indexType != MTLIndexTypeUInt16 && indexType != MTLIndexTypeUInt32) ||
                      indexOffset % (indexType == MTLIndexTypeUInt16 ? 2 : 4))))
-        return hit(_cb, PredEncIndexedRange, offset, bytes,
-                   "indirect arguments or indices Metal reads nothing of: the draw skipped");
+        return skip(_cb, PredEncIndexedRange, offset, bytes,
+                    "indirect arguments or indices Metal reads nothing of: the draw skipped");
     if (offset > buffer->_raw.length || bytes > buffer->_raw.length - offset)
-        hit(_cb, PredEncIndexedRange, offset, bytes, "indirect arguments past their buffer read as zeros");
+        skip(_cb, PredEncIndexedRange, offset, bytes, "indirect arguments past their buffer read as zeros");
     if (![self checkDraw])
         return;
     [_cb retain:arguments];
@@ -512,6 +519,10 @@ static void recordDraw(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
 {
     if (!resource)
         return;
+    if (![(id)resource isKindOfClass:[RMObject class]])
+        return rmCallInvalid(_cb, [(id)resource conformsToProtocol:@protocol(MTLTexture)] ? PredTexForeign
+                                                                                          : PredCallBufForeign,
+                             usage, stages, "a resource used (useResource:) not made by this device");
     [_cb retain:resource];
     Cmd m = cmd(OpUse);
     m.obj = (__bridge void *)resource;
@@ -536,6 +547,8 @@ static void recordDraw(__unsafe_unretained RMRenderEncoder *e, MTLPrimitiveType 
 {
     if ([(id)heap isKindOfClass:[RMHeap class]])
         [self useResource:(id<MTLResource>)heap usage:MTLResourceUsageRead stages:stages];
+    else if (heap)
+        rmCallInvalid(_cb, PredCallBufForeign, 0, stages, "a heap used (useHeap:) not made by this device");
 }
 
 - (void)useResources:(const id<MTLResource> __unsafe_unretained[])resources

@@ -24,7 +24,9 @@
 // sealed_encoders (encoders the worker encoded ahead of their commit, of all it sealed), pipeline_handoffs and
 // pipeline_handoff_wakes (hand-offs to the worker as encoders ended, and those that found it asleep: a wake each),
 // pipeline_abandons.<reason>, failed (the command buffers that completed with an error) and failed.<predicate> (those
-// by the predicate their failure named, failed.none where it named none; nonzero only, their sum `failed`).
+// by the predicate their failure named, failed.none where it named none; nonzero only, their sum `failed`), skipped
+// (the calls Metal's validation stops that ran as Apple's driver runs them, not failures) and skipped.<predicate>
+// (nonzero only, their sum `skipped`).
 - (NSDictionary<NSString *, NSNumber *> *)switchRawCounters
 {
     const Stats &s = gRM->stats;
@@ -127,6 +129,13 @@
             d[[NSString stringWithFormat:@"failed.%s", failedName(RMPred(p))]] = @(n);
         }
     d[@"failed"] = @(failed);
+    uint64_t skippedCalls = 0;
+    for (int p = 1; p < PredCount; p++)
+        if (const uint64_t n = gPredSkipped[p].load(std::memory_order_relaxed)) {
+            skippedCalls += n;
+            d[[NSString stringWithFormat:@"skipped.%s", kPredNames[p]]] = @(n);
+        }
+    d[@"skipped"] = @(skippedCalls);
 #if SWITCH_RAW_DIAGNOSTICS
     // states created that the pack lacked: found in this build's record cache or compiled (states_compiled)
     if (gRM->completion) {

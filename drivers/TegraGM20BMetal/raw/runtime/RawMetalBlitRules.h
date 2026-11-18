@@ -31,8 +31,20 @@ RMTexture *rawTexture(id<MTLTexture> t);
 // A blit of a texture another device made: Metal's validation error, the command buffer fails (rmCallInvalid)
 void notRawTexture(RMCommandBuffer *cb, id<MTLTexture> t);
 
-// A blit Metal's validation stops, recorded as nothing, one line a process (raw:blit.invalid)
+// A blit Metal's validation stops, recorded as nothing, as an M4 Max's driver runs it or where what it writes follows
+// no rule (c38-audit/failed-counts/probe/RESULTS.txt): skipped as call.blit (rmSkipped), one line a process for each
+// call and rule (raw:blit.invalid)
 void skipInvalidBlit(const char *call, const char *why);
+// ... of `cb`, or, a side memoryless (which an M4 Max fails InvalidResource), its command buffer fails InvalidResource
+void invalidBlit(RMCommandBuffer *cb, const char *call, const char *why);
+// Where a copy's region in texture `t` runs past its `level`: cut to the level, as an M4 Max copies the part inside
+// (c38-audit/failed-counts/probe: buf2tex_region_past, pat_region); skipped as call.blit, its line once
+void cutToLevel(const char *call, RMTexture *t, NSUInteger level, MTLOrigin o, MTLSize &size);
+// ... a copy into `t` at an origin off its format's blocks: rounded down to the block, as an M4 Max writes it
+// (pat_block)
+void roundToBlocks(const char *call, RMTexture *t, MTLOrigin &o);
+// ... a copy from slice `slice` of a 2D texture, which has one: slice 0, as an M4 Max copies it (pat_slice2d)
+void flatSlice(const char *call, RMTexture *t, NSUInteger &slice);
 // A colour fill of a texture held through planes: undefined on Apple's GPU (an M4 Max writes plane 0's region with a value
 // that ignores the colour and follows the process's earlier fills), recorded as nothing, one line a process
 // (raw:blit.undefined)

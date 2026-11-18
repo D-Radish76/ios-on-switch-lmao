@@ -52,11 +52,15 @@ std::shared_ptr<RMKernelSet> rmCommandKernels(RMComputeState *pipeline, const RM
                                               raw::ComputeDispatch &shape, RMICBUnmade &unmade)
 {
     unmade = {};
+    if (c.invalid) {
+        unmade = {c.invalidWhy, raw::ComputeFailure::Invalid, c.invalid};
+        return nullptr;
+    }
     if (!c.dispatched)
         return nullptr;
     if (!pipeline) {
         unmade = {"an indirect dispatch command with no compute pipeline state of this device",
-                  raw::ComputeFailure::Invalid};
+                  raw::ComputeFailure::Invalid, PredCompute};
         return nullptr;
     }
     shape = raw::computeDispatch(c.grid, c.threads, c.perThread, pipeline->_threadLimit);

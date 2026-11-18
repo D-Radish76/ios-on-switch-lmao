@@ -8,13 +8,13 @@
 
 using CounterPoint = raw::counters::Point;
 
-// The driver takes only its own buffer class (AGX::CounterSamplingContextGen1::setCounterSampleBuffer)
-static RMCounterSampleBuffer *ownBuffer(id<MTLCounterSampleBuffer> b, const char *what)
+// The driver takes only its own buffer class (AGX::CounterSamplingContextGen1::setCounterSampleBuffer): another
+// device's fails the command buffer InvalidResource, as every object of another device does
+static RMCounterSampleBuffer *ownBuffer(RMCommandBuffer *cb, id<MTLCounterSampleBuffer> b, const char *what)
 {
     if (!b || [(id)b isKindOfClass:[RMCounterSampleBuffer class]])
         return (RMCounterSampleBuffer *)b;
-    SWITCH_REFUSE("raw", "counter.buffer", "%s: a counter sample buffer of %s, not this device's: not sampled", what,
-                  class_getName(object_getClass(b)));
+    rmCallInvalid(cb, PredCallCounter, 0, 0, what);
     return nil;
 }
 
@@ -24,8 +24,9 @@ static void pend(RMCommandBuffer *cb, RMEncoder *e, RMCounterSampleBuffer *b, NS
     case raw::counters::Index::None:
         return;
     case raw::counters::Index::Invalid:
-        SWITCH_REFUSE_DETAIL("raw", "counter.index", index, "Invalid sample index: %lu > %lu: not sampled",
-                             (unsigned long)index, (unsigned long)b->_sampleCount);
+        rmSkipped(PredCallCounter);
+        SWITCH_REFUSE("raw", "counter.index", "Invalid sample index: %lu > %lu: not sampled", (unsigned long)index,
+                      (unsigned long)b->_sampleCount);
         return;
     case raw::counters::Index::Sample:
         break;
@@ -41,7 +42,8 @@ void rmCounterMarks(RMCommandBuffer *cb, RMEncoder *e, MTLRenderPassDescriptor *
         return;
     for (NSUInteger i = 0; i < 4; i++) {
         MTLRenderPassSampleBufferAttachmentDescriptor *a = pass.sampleBufferAttachments[i];
-        if (RMCounterSampleBuffer *b = ownBuffer(a.sampleBuffer, "a render pass")) {
+        if (RMCounterSampleBuffer *b =
+                ownBuffer(cb, a.sampleBuffer, "a render pass's counter sample buffer not made by this device")) {
             pend(cb, e, b, a.startOfVertexSampleIndex, CounterPoint::VertexStart);
             pend(cb, e, b, a.startOfFragmentSampleIndex, CounterPoint::FragmentStart);
             pend(cb, e, b, a.endOfVertexSampleIndex, CounterPoint::VertexEnd);
@@ -57,7 +59,8 @@ void rmCounterMarks(RMCommandBuffer *cb, RMEncoder *e, MTLComputePassDescriptor 
         return;
     for (NSUInteger i = 0; i < 4; i++) {
         MTLComputePassSampleBufferAttachmentDescriptor *a = pass.sampleBufferAttachments[i];
-        if (RMCounterSampleBuffer *b = ownBuffer(a.sampleBuffer, "a compute pass")) {
+        if (RMCounterSampleBuffer *b =
+                ownBuffer(cb, a.sampleBuffer, "a compute pass's counter sample buffer not made by this device")) {
             pend(cb, e, b, a.startOfEncoderSampleIndex, CounterPoint::ComputeStart);
             pend(cb, e, b, a.endOfEncoderSampleIndex, CounterPoint::ComputeEnd);
         }
@@ -70,7 +73,8 @@ void rmCounterMarks(RMCommandBuffer *cb, RMEncoder *e, MTLBlitPassDescriptor *pa
         return;
     for (NSUInteger i = 0; i < 4; i++) {
         MTLBlitPassSampleBufferAttachmentDescriptor *a = pass.sampleBufferAttachments[i];
-        if (RMCounterSampleBuffer *b = ownBuffer(a.sampleBuffer, "a blit pass")) {
+        if (RMCounterSampleBuffer *b =
+                ownBuffer(cb, a.sampleBuffer, "a blit pass's counter sample buffer not made by this device")) {
             pend(cb, e, b, a.startOfEncoderSampleIndex, CounterPoint::BlitStart);
             pend(cb, e, b, a.endOfEncoderSampleIndex, CounterPoint::BlitEnd);
         }
@@ -189,24 +193,46 @@ id<MTLComputePipelineState> rmCounterResolveState()
       destinationBuffer:(id<MTLBuffer>)destination
       destinationOffset:(NSUInteger)offset
 {
-    RMCounterSampleBuffer *b = ownBuffer(sampleBuffer, "resolveCounters");
+    RMCounterSampleBuffer *b =
+        ownBuffer(_cb, sampleBuffer, "resolveCounters: a counter sample buffer not made by this device");
+    // an M4 Max resolves nothing of a nil one
+    if (!sampleBuffer) {
+        rmSkipped(PredCallCounter);
+        SWITCH_REFUSE_DETAIL("raw", "counter.resolve", 1, "resolveCounters: a nil counter sample buffer: nothing");
+    }
     if (!b)
         return;
     if (!raw::counters::withinSamples(range.location, range.length, b->_sampleCount)) {
-        SWITCH_REFUSE_DETAIL("raw", "counter.resolve", NSMaxRange(range),
-                             "Cannot resolve MTLCounter data: out of bounds access (%lu of %lu samples)",
-                             (unsigned long)NSMaxRange(range), (unsigned long)b->_sampleCount);
+        rmSkipped(PredCallCounter);
+        SWITCH_REFUSE("raw", "counter.resolve",
+                      "Cannot resolve MTLCounter data: out of bounds access (%lu of %lu samples)",
+                      (unsigned long)NSMaxRange(range), (unsigned long)b->_sampleCount);
         return;
     }
     if (!range.length)
         return;
     RMBuffer *into = (RMBuffer *)destination;
-    if (![(id)into isKindOfClass:[RMBuffer class]] || offset % 4 ||
-        offset + range.length * raw::counters::kSampleBytes > into->_raw.length) {
-        SWITCH_REFUSE_DETAIL("raw", "counter.resolve_into", offset,
-                             "resolveCounters: into %lu bytes at %lu of a destination it does not fit, or off 4 bytes",
-                             (unsigned long)(range.length * raw::counters::kSampleBytes), (unsigned long)offset);
+    if (![(id)into isKindOfClass:[RMBuffer class]])
+        return rmCallInvalid(_cb, PredCallBufForeign, offset, 0,
+                             destination ? "resolveCounters: a destination buffer not made by this device"
+                                         : "resolveCounters: a nil destination buffer");
+    if (offset % 4) {
+        rmSkipped(PredCallCounter);
+        SWITCH_REFUSE("raw", "counter.resolve_into", "resolveCounters: into offset %lu, off 4 bytes: not resolved",
+                      (unsigned long)offset);
         return;
+    }
+    // an M4 Max resolves the samples the destination holds past the offset
+    const uint64_t fits = offset < into->_raw.length ? (into->_raw.length - offset) / raw::counters::kSampleBytes : 0;
+    if (range.length > fits) {
+        rmSkipped(PredCallCounter);
+        SWITCH_REFUSE_DETAIL("raw", "counter.resolve_into", 1,
+                             "resolveCounters: %lu samples into %llu bytes at %lu: the %llu it holds resolved",
+                             (unsigned long)range.length, (unsigned long long)into->_raw.length, (unsigned long)offset,
+                             (unsigned long long)fits);
+        range.length = NSUInteger(fits);
+        if (!range.length)
+            return;
     }
     id<MTLComputePipelineState> state = rmCounterResolveState();
     if (!state)
@@ -246,16 +272,15 @@ id<MTLComputePipelineState> rmCounterResolveState()
 @implementation RMEncoder (Counters)
 
 // The driver reports it unsupported (MTLReportFailure) on every encoder: supportsCounterSampling: answers NO for draw,
-// dispatch and blit boundaries
+// dispatch and blit boundaries, and an M4 Max's driver aborts the process
 - (void)sampleCountersInBuffer:(id<MTLCounterSampleBuffer>)sampleBuffer
                  atSampleIndex:(NSUInteger)index
                    withBarrier:(BOOL)barrier
 {
-    (void)sampleBuffer, (void)index, (void)barrier;
-    SWITCH_REFUSE("raw", "call.counter_sample",
-                  "-[%s sampleCountersInBuffer:atSampleIndex:withBarrier:] not supported on "
-                  "this device",
-                  class_getName(object_getClass(self)));
+    (void)sampleBuffer, (void)barrier;
+    rmCallInvalid(_cb, PredCallCounter, index, 0,
+                  "sampleCountersInBuffer:atSampleIndex:withBarrier: on an encoder, a sampling point this device has "
+                  "none of");
 }
 
 @end

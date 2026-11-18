@@ -103,6 +103,8 @@
 {
     if ([(id)heap isKindOfClass:[RMHeap class]])
         [(id<MTLComputeCommandEncoder>)self useResource:(id<MTLResource>)heap usage:MTLResourceUsageRead];
+    else if (heap)
+        rmCallInvalid(_cb, PredCompute, 0, 0, "a heap used (useHeap:) not made by this device");
 }
 
 - (void)useHeaps:(const id<MTLHeap> __unsafe_unretained[])heaps count:(NSUInteger)count

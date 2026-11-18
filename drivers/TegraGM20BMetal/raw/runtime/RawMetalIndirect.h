@@ -22,6 +22,10 @@ struct RMICBCommand {
     RMBuffer *indices = nil;
     raw::icb::PatchDraw patches{};  // a patch command's words
     RMBuffer *factors = nil, *patchIndices = nil, *pointIndices = nil;
+    // what the CPU encoded into its index that Metal's validation stops and Apple's driver crashes on, or an object of
+    // another device: an execute that reaches it fails InvalidResource (rmCallInvalid), until a reset of it
+    RMPred invalid = PredNone;
+    const char *invalidWhy = nullptr;
 };
 
 // The kinds of a buffer's commands (RMIndirectCommandBuffer kinds): triangles and lines or points take different polygon
@@ -45,11 +49,15 @@ enum RMICBKinds : uint8_t {
     uint32_t _kinds[4];                             // its commands of each RMICBKinds bit
     // a blit encoder's reset or copy wrote its words on the GPU: an execute fetches them after the GPU's writes land
     std::atomic<bool> _gpuWritten;
+    std::atomic<uint32_t> _invalid;  // its commands marked invalid (RMICBCommand::invalid)
 }
-// Command `index` is now `command` (its words already written)
+// Command `index` is now `command` (its words already written); a command the CPU encodes over one marked invalid keeps
+// the mark, which only a reset (a command of none) clears
 - (void)take:(RMICBCommand)command at:(NSUInteger)index;
 - (uint8_t)kinds;
 - (std::vector<RMBuffer *>)buffers;
+// The first of commands [first, first + count) marked invalid, its mark in `why`; PredNone: none
+- (RMPred)invalidIn:(NSUInteger)first count:(NSUInteger)count why:(const char **)why;
 @end
 
 @interface RMIndirectRenderCommand : RMObject {
@@ -58,6 +66,8 @@ enum RMICBKinds : uint8_t {
     NSUInteger _index;
 }
 - (void)reset;
+// Its words emptied and its index marked invalid with `p` and `why`
+- (void)invalidate:(RMPred)p why:(const char *)why;
 @end
 
 inline uint32_t *rmCommandSlot(RMIndirectCommandBuffer *b, NSUInteger index)

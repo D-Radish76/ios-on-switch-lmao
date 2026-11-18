@@ -317,21 +317,39 @@ inline NSDictionary *counters(id<MTLDevice> device)
     return ask(device, "switchRawCounters");
 }
 
-// The failed command buffer counters (switchRawCounters failed, failed.<predicate>) that moved from `before` to `after`
-inline std::map<std::string, long long> failedMoved(NSDictionary *before, NSDictionary *after)
+// The counters of `family` (switchRawCounters failed and failed.<predicate>, or skipped and skipped.<predicate>) that
+// moved from `before` to `after`
+inline std::map<std::string, long long> countersMoved(NSDictionary *before, NSDictionary *after, NSString *family)
 {
     std::map<std::string, long long> moved;
+    NSString *keys = [family stringByAppendingString:@"."];
     for (NSString *key in after)
-        if ([key isEqualToString:@"failed"] || [key hasPrefix:@"failed."])
+        if ([key isEqualToString:family] || [key hasPrefix:keys])
             if (const long long n = [after[key] longLongValue] - [before[key] longLongValue])
                 moved[key.UTF8String] = n;
     return moved;
+}
+
+inline std::map<std::string, long long> failedMoved(NSDictionary *before, NSDictionary *after)
+{
+    return countersMoved(before, after, @"failed");
+}
+
+inline std::map<std::string, long long> skippedMoved(NSDictionary *before, NSDictionary *after)
+{
+    return countersMoved(before, after, @"skipped");
 }
 
 // What one command buffer whose failure named `pred` ("none": no predicate) moves
 inline std::map<std::string, long long> failedOnce(const std::string &pred)
 {
     return {{"failed", 1}, {"failed." + pred, 1}};
+}
+
+// What one call skipped as `pred` moves
+inline std::map<std::string, long long> skippedOnce(const std::string &pred)
+{
+    return {{"skipped", 1}, {"skipped." + pred, 1}};
 }
 
 inline std::string rawPath(id<MTLCommandBuffer> cb)

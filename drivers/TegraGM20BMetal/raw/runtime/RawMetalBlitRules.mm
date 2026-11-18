@@ -128,14 +128,69 @@ void notRawTexture(RMCommandBuffer *cb, id<MTLTexture> t)
                   "a blit of a texture not made by this device");
 }
 
+static constexpr const char *kMemorylessSide = "of a memoryless texture";
+
 void skipInvalidBlit(const char *call, const char *why)
 {
-    SWITCH_REFUSE("raw", "blit.invalid", "%s %s: Metal's validation error (MTLBlitCommandEncoder.h), nothing copied",
-                  call, why);
+    rmSkipped(PredCallBlit);
+    SWITCH_REFUSE_DETAIL("raw", "blit.invalid", uintptr_t(call) * 31 + uintptr_t(why),
+                         "%s %s: Metal's validation error (MTLBlitCommandEncoder.h), nothing copied", call, why);
+}
+
+void invalidBlit(RMCommandBuffer *cb, const char *call, const char *why)
+{
+    if (why == kMemorylessSide)
+        return rmCallInvalid(cb, PredCallBlit, 0, 0, "a blit of a memoryless texture");
+    skipInvalidBlit(call, why);
+}
+
+void cutToLevel(const char *call, RMTexture *t, NSUInteger level, MTLOrigin o, MTLSize &size)
+{
+    if (level >= t->_descriptor.mipmapLevelCount)
+        return;
+    MTLSize at = levelSize((id<MTLTexture>)t, level);
+    const NSUInteger bw = t->_rawOk ? t->_raw.blockW : 1, bh = t->_rawOk ? t->_raw.blockH : 1;
+    at.width = (at.width + bw - 1) / bw * bw;
+    at.height = (at.height + bh - 1) / bh * bh;
+    if (o.x >= at.width || o.y >= at.height || o.z >= at.depth ||
+        (size.width <= at.width - o.x && size.height <= at.height - o.y && size.depth <= at.depth - o.z))
+        return;
+    size.width = std::min(size.width, at.width - o.x);
+    size.height = std::min(size.height, at.height - o.y);
+    size.depth = std::min(size.depth, at.depth - o.z);
+    constexpr const char *cut = "of a region past its level: the part inside copied";
+    rmSkipped(PredCallBlit);
+    SWITCH_REFUSE_DETAIL("raw", "blit.invalid", uintptr_t(call) * 31 + uintptr_t(cut),
+                         "%s %s: Metal's validation error (MTLBlitCommandEncoder.h)", call, cut);
+}
+
+void roundToBlocks(const char *call, RMTexture *t, MTLOrigin &o)
+{
+    const NSUInteger bw = t->_rawOk ? t->_raw.blockW : 1, bh = t->_rawOk ? t->_raw.blockH : 1;
+    if (!(o.x % bw) && !(o.y % bh))
+        return;
+    o.x -= o.x % bw;
+    o.y -= o.y % bh;
+    constexpr const char *rounded = "into an origin off its format's blocks: rounded down to its block";
+    rmSkipped(PredCallBlit);
+    SWITCH_REFUSE_DETAIL("raw", "blit.invalid", uintptr_t(call) * 31 + uintptr_t(rounded),
+                         "%s %s: Metal's validation error (MTLBlitCommandEncoder.h)", call, rounded);
+}
+
+void flatSlice(const char *call, RMTexture *t, NSUInteger &slice)
+{
+    if (!slice || t->_descriptor.textureType != MTLTextureType2D)
+        return;
+    slice = 0;
+    constexpr const char *flat = "from a slice of a 2D texture past its one: slice 0 copied";
+    rmSkipped(PredCallBlit);
+    SWITCH_REFUSE_DETAIL("raw", "blit.invalid", uintptr_t(call) * 31 + uintptr_t(flat),
+                         "%s %s: Metal's validation error (MTLBlitCommandEncoder.h)", call, flat);
 }
 
 void skipUndefinedFill(const char *call)
 {
+    rmSkipped(PredCallBlit);
     SWITCH_REFUSE("raw", "blit.undefined",
                   "%s of a texture held through planes: undefined on Apple's GPU (it writes plane 0 with a value of no "
                   "colour), nothing written",
@@ -160,7 +215,7 @@ void failNoStencilTemp(__unsafe_unretained RMCommandBuffer *cb, const char *call
 const char *copySideInvalid(RMTexture *t, NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size)
 {
     if (t->_descriptor.storageMode == MTLStorageModeMemoryless)
-        return "of a memoryless texture";
+        return kMemorylessSide;
     if (level >= t->_descriptor.mipmapLevelCount || slice >= sliceCount((id<MTLTexture>)t))
         return "of a level or slice past the texture's";
     // a level that ends inside a block holds that whole block (m2v copy_plan.rs)

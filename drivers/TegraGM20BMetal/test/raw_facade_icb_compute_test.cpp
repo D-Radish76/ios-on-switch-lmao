@@ -224,6 +224,42 @@ TEST_F(FacadeIcbCompute, ABlitsCopyAndResetOfCommandsLaunchWhatMetalWould)
     }
 }
 
+// An execute of a range past its buffer launches the commands inside it, as an M4 Max does (skipped as call.icb); a
+// buffer of dispatches of another device executed, a reset past a buffer and an execute that reaches a command of
+// another device's buffer fail their command buffer InvalidResource (c38-audit/failed-counts/probe)
+TEST_F(FacadeIcbCompute, ARangePastItsBufferRunsWhatIsInsideAndAnotherDevicesObjectsFail)
+{
+    id<MTLIndirectCommandBuffer> icb = dispatches(2, NO), foreign = dispatches(1, NO);
+    ASSERT_TRUE(icb != nil && foreign != nil);
+    encode(icb, 0, MTLSizeMake(1, 1, 1), 1);
+    encode(icb, 1, MTLSizeMake(1, 1, 1), 1);
+    encode(foreign, 0, MTLSizeMake(1, 1, 1), 1);
+    [[foreign indirectComputeCommandAtIndex:0] setKernelBuffer:(id<MTLBuffer>)[NSObject new] offset:0 atIndex:0];
+    std::atomic<uint64_t> launched{0};
+    model_gpu::Gpu gpu([&](uint32_t *, predication_model::Gpu &) {
+        launched++;
+    });
+    NSDictionary *before = counters(gDevice);
+    const Ran cut = execute(icb, NSMakeRange(1, 3));
+    EXPECT_EQ(cut.status, MTLCommandBufferStatusCompleted);
+    EXPECT_EQ(cut.path, "raw");
+    EXPECT_EQ(launched.load(), 1u);
+    NSDictionary *after = counters(gDevice);
+    EXPECT_EQ(skippedMoved(before, after), skippedOnce("call.icb"));
+    EXPECT_TRUE(failedMoved(before, after).empty());
+    const auto fails = [](const Ran &r, const char *path) {
+        EXPECT_EQ(r.status, MTLCommandBufferStatusError) << path;
+        EXPECT_EQ(r.path, path);
+        EXPECT_EQ(r.opens, 0);
+    };
+    fails(execute((id<MTLIndirectCommandBuffer>)[NSObject new], NSMakeRange(0, 1)), "error:call.icb");
+    fails(blit([&](id<MTLBlitCommandEncoder> b) {
+              [b resetCommandsInBuffer:icb withRange:NSMakeRange(1, 4)];
+          }),
+          "error:call.icb");
+    fails(execute(foreign, NSMakeRange(0, 1)), "error:compute");
+}
+
 TEST_F(FacadeIcbCompute, AVariantsCommandWithoutMemoryOutsideAnExecuteIsMadeAgainWhenALaterExecuteReachesIt)
 {
     id<MTLIndirectCommandBuffer> icb = dispatches(2, YES);
