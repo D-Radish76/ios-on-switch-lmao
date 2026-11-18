@@ -8,11 +8,21 @@
 // than it: a 2D texture, one level, one sample, no rotation, of any usage. Metal reads the planes so whatever their elements
 // (an M4 Max over 4+1, 4+2, 8+1, 2+1, 4+4 and '420v' planes: m2v-textures5 probes/xrplane0.mm), their top-left corner
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane);
-// False with raw::surfaceRefusal naming the step
-bool makeXrPlanes(RMTexture *t, IOSurfaceRef s);
-// 550 or 551 over one plane alone (a surface of one, or a plane of several): an M4 Max reads BGR10_XR's (BGR10_XR_sRGB's)
-// words there, alpha 0 (m2v-textures3 probes/xrsurf.mm, m2v-textures4 probes/reads.mm), which the raw path holds under that
-// format's header, its stand-in reading alpha 0. The format those words are held as, and whether `t` is held so
+// Whether the fragment stores `d` allows (Unknown or ShaderWrite usage) can be taken in its planes: the pack holds the
+// merge and split states they go through (mergeXrPlanes), or it allows none
+bool xrPlanesStorable(MTLTextureDescriptor *d);
+// At `width` x `height` (a turned one's plane's extent); false with raw::surfaceRefusal naming the step
+bool makeXrPlanes(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t height);
+// 550 or 551 written (Unknown, RenderTarget or ShaderWrite usage) over one plane alone, a surface's one or a later
+// plane of several, 2D as xrPlanesShape's: an M4 Max's passes and kernels store BGR10_XR's words there with bits 30 and
+// 31 clear and no alpha, and its reads take alpha 0 (m2v-textures4 probes/more.mm, tb.mm). Held as one over two planes
+// is, with no alpha plane (raw_xr_texture.cpp)
+bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane);
+bool makeXrWordPlane(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t height);
+// 550 or 551 read alone over one plane alone (a surface of one, or a plane of several): an M4 Max reads BGR10_XR's
+// (BGR10_XR_sRGB's) words there, alpha 0 (m2v-textures3 probes/xrsurf.mm, m2v-textures4 probes/reads.mm), which the raw
+// path holds under that format's header, its stand-in reading alpha 0. The format those words are held as, and whether
+// `t` is held so
 uint32_t xrWordsFormat(uint32_t format);
 bool xrWordsTexture(RMTexture *t);
 void readAlphaZero(raw::Texture &standIn);

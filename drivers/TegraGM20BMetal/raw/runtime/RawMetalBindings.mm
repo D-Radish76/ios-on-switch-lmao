@@ -2,6 +2,7 @@
 #import "RawMetalInternal.h"
 #include "raw_bound_texture.h"
 #include "raw_draw_check.h"
+#include "raw_xr_pools.h"
 
 @implementation RMRenderEncoder (Bindings)
 
@@ -175,7 +176,7 @@ bool rmBindTexture(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
             e->_eligibility++;
         e->_tex[stage - 1][index] = x;
     }
-    if (x && x->_raw.sampled) {
+    if (x && (x->_raw.sampled || raw::xrPlanesPooled(x->_raw))) {
         rmPipelineVeto(e->_cb, VetoShadows);
         e->_cb->_sampledShadows = true;
     }

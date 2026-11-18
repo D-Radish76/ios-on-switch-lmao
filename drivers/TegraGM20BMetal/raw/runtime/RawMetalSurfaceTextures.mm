@@ -265,8 +265,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const char *form = nullptr;
     raw::YcbcrPlan unused;
     raw::Rotation turned;
-    const bool misturned = rotationOf(d) && !rotatedShape(d, s, plane, turned);
-    if (misturned && !raw::twoPlaneXr(format) && !raw::isYcbcrFormat(format)) {
+    if (rotationOf(d) && !turnedFrame(d, s, plane, turned)) {
         // an M4 Max's validation aborts: "Descriptor height*arrayLength > IOSurface height" (m2v-textures4 probes/reads.mm)
         SWITCH_REFUSE_DETAIL("raw", "tex.metal", uintptr_t(rotationOf(d)),
                              "no %lux%lu texture of format %lu and rotation %lu over IOSurface %u: nil, as Metal makes "
@@ -275,16 +274,19 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
                              (unsigned long)rotationOf(d), IOSurfaceGetID(s), shape);
         return nil;
     }
+    // a turned one of a planar format is planned and held at its plane's extent (RawMetalRotated.mm)
+    MTLTextureDescriptor *flat = rotationOf(d) ? planeDescriptor(d, turned) : d;
+    const bool xr = raw::twoPlaneXr(format);
+    const bool xrTaken =
+        xr && (raw::surfaceRefusal || xrPlanesShape(flat, s, plane) || xrWordPlaneShape(flat, s, plane));
     if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal)
-        form = ycbcrPlan(d, s, plane, unused);
-    else if (misturned)
-        form = "a rotated RGB10A8_2P_XR10 texture";
-    else if (raw::twoPlaneXr(format) && xrPlanesShape(d, s, plane))
-        form = raw::surfaceRefusal;
-    else if (raw::twoPlaneXr(format) && writesTexture(d))
-        form = "RGB10A8_2P_XR10 written over one plane alone, whose stores leave bits 30 and 31 of BGR10_XR's words clear "
-               "and drop alpha";
-    else if (raw::twoPlaneXr(format) && !raw::surfaceRefusal)
+        form = ycbcrPlan(flat, s, plane, unused);
+    else if (xr && !xrTaken && writesTexture(d) && d.textureType == MTLTextureTypeTextureBuffer)
+        form = "an RGB10A8_2P_XR10 texel buffer written over a surface, whose stores leave bits 30 and 31 of "
+               "BGR10_XR's words clear and drop alpha";
+    else if (xr && !xrTaken && !xrPlanesStorable(d))
+        form = "RGB10A8_2P_XR10 a fragment program may store to, with no pack state merging and splitting its planes";
+    else if (xr && !xrTaken)
         form = "RGB10A8_2P_XR10 over the first plane of several whose rows hold fewer bytes than its words or alpha bytes "
                "(rows Metal reads overlapping), or shorter than it";
     if (form) {
@@ -305,12 +307,12 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     if (plane >= std::max<size_t>(planes, 1)) {
         os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: it has no plane %lu: %{public}@",
                      getprogname(), IOSurfaceGetID(s), (unsigned long)plane, extra);
-    } else if (planes ? (pitch & ~size_t(15)) < packed && rows > 1 : (pitch & 15) || pitch < packed) {
+    } else if (!xrTaken && (planes ? (pitch & ~size_t(15)) < packed && rows > 1 : (pitch & 15) || pitch < packed)) {
         // Metal asserts on a surface without planes whose rows are not 16 bytes apart; a plane's rows rounded down to 16
         // overlap on its GPU. m2v refused both (linear_plan.rs).
         os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: rows off 16 that Metal does not take: %{public}@",
                      getprogname(), IOSurfaceGetID(s), extra);
-    } else if (uint64_t(pitch) * rows > IOSurfaceGetAllocSize(s)) {
+    } else if (!xrTaken && uint64_t(pitch) * rows > IOSurfaceGetAllocSize(s)) {
         os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
                      getprogname(), IOSurfaceGetID(s), (unsigned long)d.height, pitch, IOSurfaceGetAllocSize(s), extra);
     } else {
@@ -382,7 +384,9 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
                                  "their command buffer's",
                                  (unsigned long)d.width, (unsigned long)d.height);
     } else if (xrPlanesShape(d, s, plane)) {
-        t->_rawOk = makeXrPlanes(t, s);
+        t->_rawOk = makeXrPlanes(t, s, uint32_t(d.width), uint32_t(d.height));
+    } else if (xrWordPlaneShape(d, s, plane)) {
+        t->_rawOk = makeXrWordPlane(t, s, uint32_t(d.width), uint32_t(d.height));
     } else if (xrWordsShape(d, s, plane)) {
         t->_rawOk = makeXrWords(t, s);
     } else if ((raw::isYcbcrFormat(uint32_t(d.pixelFormat)) || raw::packedPlaneChannels(uint32_t(d.pixelFormat))) &&
@@ -406,7 +410,8 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
         t->_rawOk = gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset,
                                                    uint32_t(d.width), uint32_t(d.height), uint32_t(pitch),
                                                    uint32_t(d.pixelFormat), t->_raw, false);
-    } else if (rawShape(d) && !plane && IOSurfaceGetPlaneCount(s) <= 1) {
+    } else if (rawShape(d) && !raw::twoPlaneXr(uint32_t(d.pixelFormat)) && !plane &&
+               IOSurfaceGetPlaneCount(s) <= 1) {
         // a surface without planes, or one described by a single plane (CoreVideo's chunky surfaces): its plane's bytes
         const size_t gpuPitch = IOSurfaceGetPlaneCount(s) == 1 ? gpuRows(pitch, d) : pitch;
         t->_rawOk = gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset & ~15ull,
@@ -418,7 +423,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
             gRM->raw->destroyTexture(t->_raw);
             t->_rawOk = false;
         }
-    } else if (rawShape(d) && plane < IOSurfaceGetPlaneCount(s)) {
+    } else if (rawShape(d) && !raw::twoPlaneXr(uint32_t(d.pixelFormat)) && plane < IOSurfaceGetPlaneCount(s)) {
         // a plane as a texture of its own (a video player's R8 luma and RG8 chroma): the plane's bytes, pitch, as CoreVideo
         // lays its planes out for every other reader (never a block-linear layout the kernel would decide for the surface)
         t->_rawOk = gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset & ~15ull,

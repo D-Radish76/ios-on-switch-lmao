@@ -2253,7 +2253,8 @@ public:
     bool createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, Texture &t);
     // RGB10A8_2P_XR10 or its sRGB twin (`format`, raw_xr.h twoPlaneXr) over a two-plane surface, its planes at `word` and
     // `alpha` (offsets in the allocation, with their pitches), held in them (Texture::xrPlanes): the planes imported as
-    // luma and chroma; false with *why where a plane cannot be one
+    // luma and chroma; `alphaPitch` 0: over a plane alone, chroma a memoryless target whose header reads 0
+    // (raw_xr_texture.cpp); false with *why where a plane cannot be one
     bool createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t word,
                               uint32_t wordPitch, uint64_t alpha, uint32_t alphaPitch, uint32_t width, uint32_t height,
                               uint32_t format, Texture &t, const char **why);

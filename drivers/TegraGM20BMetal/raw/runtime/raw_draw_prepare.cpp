@@ -245,8 +245,8 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         // rows its header cannot address, which the frontend copies back after the pass; its stand-in is
         // drawn again from the codes before work after the pass samples it (RawMetalEncode.mm)
         if (pair) {
-            cb_->use(*t->luma, false);
-            cb_->use(*t->chroma, false);
+            for (const Texture *plane : {t->luma, t->chroma})
+                cb_->use(plane->sampled ? *plane->sampled : *plane, false);
             RAW_DIAGNOSTIC(dev_->stats.xrPairBinds++);
         } else if (image) {
             cb_->use(*image, true);

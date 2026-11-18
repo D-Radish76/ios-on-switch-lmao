@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
-// RGB10A8_2P_XR10 and RGB10A8_2P_XR10_sRGB textures held in Metal's two planes (raw_xr_pass.h): the texture's own Texture
-// has no memory, its planes are luma (the words, R32Uint) and chroma (the alpha bytes, R8Uint).
+// RGB10A8_2P_XR10 and RGB10A8_2P_XR10_sRGB textures held in Metal's two planes (raw_xr_pass.h): the texture's own
+// Texture has no memory, its planes are luma (the words, R32Uint) and chroma (the alpha bytes, R8Uint), each read
+// through its pool image where its rows are off 32 bytes (raw_xr_pools.h). One written over a plane alone has no alpha
+// plane: chroma is a memoryless target, its header (the pair's second) header 0's null descriptor.
 #include "raw_xr_pass.h"
 
 #include "raw_gpu.h"
@@ -30,30 +32,36 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
     };
     if (!twoPlaneXr(format) || !shape(width, height, format, t))
         return undo("no two-plane extended-range texture of its format and size");
+    const bool alone = !alphaPitch;
     if (!createSurfaceTexture(surfaceId, base, allocBytes, surface, word, width, height, wordPitch, kXrWordFormat,
                               *w) ||
-        !createSurfaceTexture(surfaceId, base, allocBytes, surface, alpha, width, height, alphaPitch, kXrAlphaFormat,
-                              *a))
+        (alone ? !createMemoryless(width, height, kXrAlphaFormat, *a)
+               : !createSurfaceTexture(surfaceId, base, allocBytes, surface, alpha, width, height, alphaPitch,
+                                       kXrAlphaFormat, *a)))
         return undo("a plane the raw path cannot import");
-    if (w->blockLinear || a->blockLinear || w->sampled || a->sampled || !(w->renderable || w->shadowTarget) ||
-        !(a->renderable || a->shadowTarget))
-        return undo("a plane tiled, or of rows or an offset off 32 bytes");
+    if (w->blockLinear || a->blockLinear || !(w->renderable || w->shadowTarget) || !(a->renderable || a->shadowTarget))
+        return undo("a plane the kernel lays out block-linear");
     uint32_t pair = 0;
     {
         std::lock_guard<raw::Mutex> l(lock_);
         if ((pair = allocTicPair())) {
-            Texture word0 = *w, alpha0 = *a;
+            Texture word0 = w->sampled ? *w->sampled : *w, alpha0 = a->sampled ? *a->sampled : *a;
             word0.format = kRGB10A2Unorm;
             memcpy(word0.swizzle, kWordChannels, sizeof word0.swizzle);
             word0.tic = pair;
             alpha0.format = kR8Unorm;
             alpha0.tic = pair + 1;
             writeTic(word0);
-            writeTic(alpha0);
+            if (alone)
+                memcpy(tic_.cpu + 32 * alpha0.tic, tic_.cpu, 32);
+            else
+                writeTic(alpha0);
         }
     }
     if (!pair)
         return undo("no room for its headers");
+    if (alone)  // freed with the pair (destroyTexture)
+        a->tic = pair + 1;
     t.tic = pair;
     t.xrPlanes = true;
     w->xrPlane = 1;
@@ -124,8 +132,12 @@ const char *expandXrPlanes(PassDesc &p, [[maybe_unused]] Device &d)
         word = byte = a;
         word.texture = a.texture->luma;
         byte.texture = a.texture->chroma;
+        // a plane alone keeps no alpha, which a texture read takes as 0: so does a pass that loads it
+        const bool dropped = byte.texture->memoryless && a.load == ColorAttachment::Load;
+        if (dropped)
+            byte.load = ColorAttachment::Clear;
         for (ColorAttachment *plane : {&word, &byte}) {
-            const uint32_t bits = plane == &word ? clears[0] : clears[1];
+            const uint32_t bits = plane == &word ? clears[0] : dropped ? 0 : clears[1];
             memset(plane->clear, 0, sizeof plane->clear);
             memcpy(&plane->clear[0], &bits, 4);
         }

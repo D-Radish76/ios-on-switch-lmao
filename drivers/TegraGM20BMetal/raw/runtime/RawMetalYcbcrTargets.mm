@@ -82,8 +82,10 @@ void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStor
 // stand-in or store states the device could not make; a loaded one draws the pack's own load and tile-masked store states
 const char *ycbcrTargetPassRefusal(const raw::Texture &t, MTLRenderPassColorAttachmentDescriptor *a)
 {
+    // a turned one's draws reach tiles of its frame, which its tile-masked store would read as its planes'
     const char *why = !t.planarStandIn || !t.ycbcrStore   ? "a YCbCr texture with no stand-in as a render target"
                       : a.loadAction != MTLLoadActionLoad ? nullptr
+                      : t.rotation ? "a turned YCbCr target loaded: no tile mask of its planes' tiles"
                       : loadable(t) ? nullptr
                                     : "a YCbCr target loaded: the pack has no load or tile-masked store state for it";
     if (why)

@@ -298,6 +298,7 @@ bool RMRangeEncode::xrImages(const RMPass &pass, raw::PassDesc &p)
         // takes this slot)
         levelTargets_[j] = *image;
         levelTargets_[j].format = t->_raw.format;
+        levelTargets_[j].rotation = t->_raw.rotation;  // laid out as the planes: a turned one's drawn turned
         p.color[j].texture = &levelTargets_[j];
     }
     return true;
@@ -321,6 +322,7 @@ bool RMRangeEncode::writtenBack()
     standInsWritten_.clear();
     for (const auto &[t, image] : planesImaged_) {
         standInFresh_.erase(t);
+        fresh_.erase(t);
         if (const int failed = splitXrPlanes(rc_, t->_raw, *image, why_)) {
             if (failed == 2) {
                 rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);

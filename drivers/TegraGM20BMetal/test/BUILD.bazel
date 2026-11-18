@@ -833,6 +833,18 @@ raw_device_test(
     ],
 )
 
+# RGB10A8_2P_XR10 held in a surface's planes: planes of rows off 32 read through pool images, a plane alone's alpha reading
+# 0 and freed with its header pair, a turned one's plane targets drawn turned
+raw_device_test(
+    name = "raw_device_xr_planes_test",
+    srcs = [
+        "raw_device_views_harness.h",
+        "raw_device_xr_planes_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_texture.cpp",
+    ],
+)
+
 # Every descriptor shape Metal, an identity and GM20B make has a raw creator
 raw_device_test(
     name = "raw_texture_routes_test",

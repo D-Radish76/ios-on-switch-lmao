@@ -12,6 +12,7 @@
 #include "raw_clear.h"
 #include "raw_srgb_pair.h"
 #include "raw_xr_parts.h"
+#include "raw_xr_pools.h"
 
 static void noteWritten(std::vector<__unsafe_unretained RMTexture *> &list, RMTexture *t)
 {
@@ -30,6 +31,14 @@ void RMRangeEncode::refresh(size_t pass)
                                    if (!(use.access & raw::ResourceUse::Sample))
                                        return;
                                    __unsafe_unretained RMTexture *t = (__bridge RMTexture *)use.object;
+                                   if (raw::xrPlanesPooled(t->_raw)) {
+                                       // what the pass writes of it lands in its planes' rows: their pools go stale
+                                       const bool held = (use.access & raw::ResourceUse::Write) ? fresh_.erase(t) != 0
+                                                                                               : !fresh_.insert(t).second;
+                                       if (!held)
+                                           raw::fillXrPools(*rc_, t->_raw);
+                                       return;
+                                   }
                                    if (rc_->readTexture(&t->_raw) != &t->_raw || !t->_raw.sampled)
                                        return;
                                    if (use.access & raw::ResourceUse::Write)
@@ -192,11 +201,17 @@ void RMRangeEncode::shadowCopies(const std::vector<const void *> &back, const st
     raw::BlitEncoder *copy = rc_->blit();
     for (const void *o : back) {
         const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
-        copy->copyTexels(*x.sampled, 0, 0, 0, x, 0, 0, 0, x.width, x.height);
+        if (x.xrPlanes)
+            raw::moveXrPools(*copy, x, false);
+        else
+            copy->copyTexels(*x.sampled, 0, 0, 0, x, 0, 0, 0, x.width, x.height);
     }
     for (const void *o : fill) {
         const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
-        copy->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
+        if (x.xrPlanes)
+            raw::moveXrPools(*copy, x, true);
+        else
+            copy->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
     }
     copy->end();
 }

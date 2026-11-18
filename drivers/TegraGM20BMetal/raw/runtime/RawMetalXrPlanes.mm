@@ -2,38 +2,50 @@
 #import "RawMetalXrPlanes.h"
 #include "raw_format_standin.h"
 #include "raw_surface_refusal.h"
+#include "raw_xr_pools.h"
 
 #include <cstring>
 
 static_assert(kXrPlanesOverflowTag >= raw::kFormatStandInTag + 2 * 8, "an overflow image's tag shares a fixed tag's memory");
 
-bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
+bool xrPlanesStorable(MTLTextureDescriptor *d)
+{
+    const bool stores = d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderWrite);
+    return !stores || (gRM->raw->xrPlanesImagePipeline(false) && gRM->raw->xrPlanesImagePipeline(true));
+}
+
+// A 2D texture of one level and sample, not turned
+static bool planesForm(MTLTextureDescriptor *d)
 {
     static const SEL rotation = NSSelectorFromString(@"rotation");
     const NSUInteger turned =
         [d respondsToSelector:rotation] ? ((NSUInteger (*)(id, SEL))objc_msgSend)(d, rotation) : 0;
-    // a draw stores into such a texture through the pack's merge and split states (mergeXrPlanes)
-    const bool stores = d.usage == MTLTextureUsageUnknown || (d.usage & MTLTextureUsageShaderWrite);
-    const bool unstorable = stores && !(gRM->raw->xrPlanesImagePipeline(false) && gRM->raw->xrPlanesImagePipeline(true));
-    return raw::twoPlaneXr(uint32_t(d.pixelFormat)) && plane == 0 && !unstorable &&
-           IOSurfaceGetPlaneCount(s) == 2 && d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 &&
-           d.sampleCount == 1 && !turned && IOSurfaceGetBytesPerRowOfPlane(s, 0) >= 4 * d.width &&
-           IOSurfaceGetHeightOfPlane(s, 0) >= d.height && IOSurfaceGetBytesPerRowOfPlane(s, 1) >= d.width &&
-           IOSurfaceGetHeightOfPlane(s, 1) >= d.height;
+    return raw::twoPlaneXr(uint32_t(d.pixelFormat)) && xrPlanesStorable(d) && d.textureType == MTLTextureType2D &&
+           d.mipmapLevelCount == 1 && d.sampleCount == 1 && !turned;
 }
 
-bool makeXrPlanes(RMTexture *t, IOSurfaceRef s)
+bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    void *base = IOSurfaceGetBaseAddress(s);
-    const uintptr_t at = uintptr_t(base);
+    return planesForm(d) && plane == 0 && IOSurfaceGetPlaneCount(s) == 2 &&
+           IOSurfaceGetBytesPerRowOfPlane(s, 0) >= 4 * d.width && IOSurfaceGetHeightOfPlane(s, 0) >= d.height &&
+           IOSurfaceGetBytesPerRowOfPlane(s, 1) >= d.width && IOSurfaceGetHeightOfPlane(s, 1) >= d.height;
+}
+
+bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
+{
+    const size_t planes = IOSurfaceGetPlaneCount(s);
+    const bool writes =
+        d.usage == MTLTextureUsageUnknown || (d.usage & (MTLTextureUsageRenderTarget | MTLTextureUsageShaderWrite));
+    return planesForm(d) && writes && (planes <= 1 ? !plane : plane && plane < planes);
+}
+
+static bool holdInPlanes(RMTexture *t, IOSurfaceRef s, uint64_t word, uint32_t wordPitch, uint64_t alpha,
+                         uint32_t alphaPitch, uint32_t width, uint32_t height)
+{
     MTLTextureDescriptor *d = t->_descriptor;
-    const uint64_t word = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 0)) - at,
-                   alpha = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 1)) - at;
-    const uint32_t wordPitch = uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, 0)),
-                   alphaPitch = uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, 1));
     const char *why = "";
-    if (!gRM->raw->createXrPlaneTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, word, wordPitch, alpha,
-                                        alphaPitch, uint32_t(d.width), uint32_t(d.height), uint32_t(d.pixelFormat),
+    if (!gRM->raw->createXrPlaneTexture(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s,
+                                        word, wordPitch, alpha, alphaPitch, width, height, uint32_t(d.pixelFormat),
                                         t->_raw, &why)) {
         raw::surfaceRefusal = why;
         return false;
@@ -43,6 +55,27 @@ bool makeXrPlanes(RMTexture *t, IOSurfaceRef s)
         gRM->raw->destroyTexture(t->_raw);
         return false;
     }
+    return true;
+}
+
+bool makeXrWordPlane(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t height)
+{
+    const bool planes = IOSurfaceGetPlaneCount(s) > 0;
+    const uint64_t word =
+        planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, t->_plane)) - uintptr_t(IOSurfaceGetBaseAddress(s)) : 0;
+    const size_t pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, t->_plane) : IOSurfaceGetBytesPerRow(s);
+    return holdInPlanes(t, s, word, uint32_t(pitch), 0, 0, width, height);
+}
+
+bool makeXrPlanes(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t height)
+{
+    const uintptr_t at = uintptr_t(IOSurfaceGetBaseAddress(s));
+    MTLTextureDescriptor *d = t->_descriptor;
+    const uint64_t word = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 0)) - at,
+                   alpha = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 1)) - at;
+    if (!holdInPlanes(t, s, word, uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, 0)), alpha,
+                      uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, 1)), width, height))
+        return false;
     static std::atomic<bool> said{false};
     if (!said.exchange(true)) {
         const raw::Texture &w = *t->_raw.luma, &a = *t->_raw.chroma;
@@ -127,6 +160,7 @@ int mergeXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, uint32_t k, raw
                       : "the pack has no state merging a two-plane RGB10A8_2P_XR10 texture's planes";
         return 1;
     }
+    raw::fillXrPools(*rc, t);
     raw::PassDesc p;
     p.color[0].texture = image;
     p.color[0].load = raw::ColorAttachment::DontCare;

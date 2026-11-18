@@ -7,8 +7,13 @@
 // A texture `d` makes over plane `plane` of `s` that Metal's rotation SPI turns, of a shape the raw path draws into (`out`: its
 // rotation and frame); false for any other
 bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out);
+// Whether Metal makes `d`'s turned texture over the plane at all (a 2D one of a framebuffer's format whose turned frame
+// the plane holds), and its rotation and frame (`out`)
+bool turnedFrame(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out);
 // Such a texture over the plane's own memory, its rotation kept (Texture::rotation)
 bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r);
+// `d` at its plane's extent, not turned
+MTLTextureDescriptor *planeDescriptor(MTLTextureDescriptor *d, const raw::Rotation &r);
 // Whether `d` asks a rotation of a texture over no surface plane, which Metal makes none of: its line logged
 bool refuseTurnedOffSurface(MTLTextureDescriptor *d);
 

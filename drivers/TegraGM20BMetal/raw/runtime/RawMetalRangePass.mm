@@ -11,6 +11,7 @@
 #include "raw_clear.h"
 #include "raw_format_standin.h"
 #include "raw_planar_target.h"
+#include "raw_turned_planes.h"
 
 // A planar render target's stand-in passes (raw_planar_target.h), the frontend's: the planes' codes into the stand-in before a
 // pass that loads it (its code image from the planes first, the copy engine's remaps), the stand-in into the planes after one
@@ -162,6 +163,11 @@ bool RMRangeEncode::beginPass(size_t at)
 #endif
         }
         p.color[j].texture = target != &t->_raw ? target : standIn ? standIn : &t->_raw;
+        if (standIn && t->_raw.rotation) {  // laid out as its planes (RawMetalRotated.mm): drawn turned
+            levelTargets_[j] = *standIn;
+            levelTargets_[j].rotation = t->_raw.rotation;
+            p.color[j].texture = &levelTargets_[j];
+        }
         p.color[j].image = whole || own ? nullptr : &t->_raw;
         p.color[j].level = own ? 0 : level;
         p.color[j].slice = own ? 0 : slice;
@@ -262,6 +268,9 @@ bool RMRangeEncode::beginPass(size_t at)
         rmPassWorkFails(cb, ahead_, refusal, MTLCommandBufferErrorInternal);
         return fail(PredEncPassRender, refusal);
     }
+    for (const RMPass::Color &a : pass.color)
+        if (__unsafe_unretained RMTexture *t = (RMTexture *)a.texture)
+            raw::turnXrPlaneTargets(t->_raw, p, levelTargets_);
     if (!turned_.begin(*rc, p, draws, why_)) {
         rmReachFails(cb, ahead_, *why_, turned_.failedForMemory(), rc->refusal);
         return fail(PredPassRotated, *why_, 0, 0, *why_);

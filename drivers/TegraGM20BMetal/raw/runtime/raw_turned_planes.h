@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: MIT
+// A turned RGB10A8_2P_XR10 drawn in its planes: raw::expandXrPlanes makes its word's and its alpha's targets its planes,
+// which hold no rotation of their own, as the passes that merge, split or fill them draw them straight. A turned pass
+// takes its rotation from its targets (raw_turned_pass.h), so each plane target goes in turned as the texture is: a copy
+// in the slot's level target, which neither slot holds (the word's slot is the texture's, whole; the alpha's has none).
+#pragma once
+#include <cstdint>
+
+namespace raw {
+
+template <typename Texture, typename Pass> void turnXrPlaneTargets(const Texture &x, Pass &p, Texture (&targets)[8])
+{
+    if (!x.xrPlanes || !x.rotation)
+        return;
+    for (uint32_t k = 0; k < p.count && k < 8; k++)
+        if (p.color[k].texture && (p.color[k].texture == x.luma || p.color[k].texture == x.chroma)) {
+            targets[k] = *p.color[k].texture;
+            targets[k].rotation = x.rotation;
+            p.color[k].texture = &targets[k];
+        }
+}
+
+}  // namespace raw

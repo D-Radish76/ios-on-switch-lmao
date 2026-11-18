@@ -7,6 +7,7 @@
 #include "raw_kernel_texture.h"
 #include "raw_sampler_map.h"
 #include "raw_view.h"
+#include "raw_xr_pools.h"
 
 namespace {
 
@@ -94,6 +95,8 @@ bool kernelSamplersMapped(Plan &plan, const State &state, const raw::PackKernel 
 
 raw::KernelUse textureUse(RMTexture *t, bool writes)
 {
+    if (raw::xrPlanesPooled(t->_raw))  // its kernels read and store its planes' pools (raw_xr_pools.h)
+        return {(__bridge const void *)t, raw::kernelTextureSpan(*t->_raw.luma), true, writes};
     const raw::KernelTextureForm form = raw::kernelTextureForm(t->_raw);
     return {(__bridge const void *)t, raw::kernelTextureSpan(t->_raw), form == raw::KernelTextureForm::Shadow, writes};
 }

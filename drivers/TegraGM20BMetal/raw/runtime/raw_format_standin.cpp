@@ -4,6 +4,7 @@
 
 #include "raw_attachment_target.h"
 #include "raw_gpu.h"
+#include "raw_xr_pools.h"
 
 namespace raw {
 namespace {
@@ -121,6 +122,7 @@ bool fillOne(Device &d, CommandBuffer &rc, Pipeline *load, Texture &t, Texture &
             *why = "no texture header for a stand-in's fill";
             return false;
         }
+        fillXrPools(rc, t);
         return drawAll(rc, load, s, *t.luma, why, nullptr, t.chroma);
     }
     if (t.sampled) {

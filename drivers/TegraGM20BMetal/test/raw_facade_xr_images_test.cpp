@@ -29,8 +29,8 @@ void writesEverySlot(const raw::CompileRequest &request, raw::RuntimeRecord &rec
     pp.xrSlots = request.variant.xrSlots;
 }
 
-// A 64x64 RGB10A8_2P_XR10 texture over the two planes of a surface of its own
-id<MTLTexture> twoPlaneTexture(id<MTLDevice> device)
+// A b3a8 surface of 64x64: a plane of words and one of alpha bytes, each plane's rows `pad` bytes past its texels
+IOSurfaceRef twoPlaneSurface(unsigned pad = 0)
 {
     NSMutableArray *planes = [NSMutableArray array];
     for (unsigned bytes : {4u, 1u})
@@ -38,17 +38,23 @@ id<MTLTexture> twoPlaneTexture(id<MTLDevice> device)
             (id)kIOSurfacePlaneWidth : @64,
             (id)kIOSurfacePlaneHeight : @64,
             (id)kIOSurfacePlaneBytesPerElement : @(bytes),
-            (id)kIOSurfacePlaneBytesPerRow : @(64 * bytes),
-            (id)kIOSurfacePlaneOffset : @(bytes == 4 ? 0 : 64 * 64 * 4),
-            (id)kIOSurfacePlaneSize : @(64 * 64 * bytes)
+            (id)kIOSurfacePlaneBytesPerRow : @(64 * bytes + pad),
+            (id)kIOSurfacePlaneOffset : @(bytes == 4 ? 0 : 64 * (64 * 4 + pad)),
+            (id)kIOSurfacePlaneSize : @(64 * (64 * bytes + pad))
         }];
-    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+    return IOSurfaceCreate((__bridge CFDictionaryRef) @{
         (id)kIOSurfaceWidth : @64,
         (id)kIOSurfaceHeight : @64,
         (id)kIOSurfacePixelFormat : @(uint32_t('b3a8')),
-        (id)kIOSurfaceAllocSize : @(64 * 64 * 5),
+        (id)kIOSurfaceAllocSize : @(64 * (64 * 5 + 2 * pad)),
         (id)kIOSurfacePlaneInfo : planes
     });
+}
+
+// A 64x64 RGB10A8_2P_XR10 texture over the two planes of a surface of its own (twoPlaneSurface)
+id<MTLTexture> twoPlaneTexture(id<MTLDevice> device, unsigned pad = 0)
+{
+    IOSurfaceRef surface = twoPlaneSurface(pad);
     MTLTextureDescriptor *d =
         [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(550) width:64 height:64 mipmapped:NO];
     d.storageMode = MTLStorageModeShared;
@@ -218,7 +224,181 @@ void aSampledTexelBufferIsConvertedFromItsCodes()
     EXPECT_LT(converted, drawn);
 }
 
+void samplesTextureZeroInPairs(const raw::CompileRequest &request, raw::RuntimeRecord &record)
+{
+    samplesTextureZero(request, record);
+    record.pipeline.xrSlots = request.variant.xrSlots;
+}
+
+// Over two planes whose rows lie 16 bytes past a multiple of 32, which no texture header addresses, RGB10A8_2P_XR10's
+// header pair reads each plane's pool image (raw_xr_pools.h). The copy engine fills both pools before the first pass
+// that samples the texture, not before the next while nothing wrote it, and again after a copy wrote its rows.
+void aTwoPlaneTextureOfRowsOff32IsReadThroughItsPools()
+{
+    RenderCompiler compiler;
+    compiler.shapes = samplesTextureZeroInPairs;
+    id<MTLDevice> device = nil;
+    id<MTLLibrary> library = served(compiler, "xr-pools",
+                                    writePack(packKey(MTLPixelFormatRGBA16Float), {}, {}, true, "",
+                                              {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
+                                               {"raw.xr.xr_planes_merge_frag", MTLPixelFormatRG32Uint},
+                                               {"raw.xr.xr_planes_split_frag", MTLPixelFormatR32Uint}}),
+                                    device);
+    ASSERT_TRUE(library != nil);
+    id<MTLRenderPipelineState> state =
+        [device newRenderPipelineStateWithDescriptor:descriptor(library, MTLPixelFormatBGRA8Unorm) error:nil];
+    ASSERT_TRUE(state != nil && ((RMPipeline *)state)->_raw);
+    id<MTLTexture> texture = twoPlaneTexture(device, 16);
+    ASSERT_TRUE(texture != nil && ((RMTexture *)texture)->_rawOk) << "rows of 272 and 80 bytes";
+    const raw::Texture &x = ((RMTexture *)texture)->_raw;
+    ASSERT_TRUE(x.xrPlanes && x.luma->sampled && x.chroma->sampled);
+    for (uint32_t k = 0; k < 2; k++) {
+        const uint64_t pool = (k ? x.chroma : x.luma)->sampled->va;
+        const uint32_t *w = gRM->raw->headerWords(x.tic + k);
+        EXPECT_EQ(w[1] & ~511u, uint32_t(pool) & ~511u) << "plane " << k;
+        EXPECT_EQ(w[2] & 0xffff, uint32_t(pool >> 32)) << "plane " << k;
+    }
+    id<MTLTexture> colours[3];
+    for (id<MTLTexture> __strong &c : colours) {
+        c = attachmentTexture(device, MTLPixelFormatBGRA8Unorm, 64, 64);
+        ASSERT_TRUE(c != nil);
+    }
+    id<MTLBuffer> words = [device newBufferWithLength:64 * 64 * 4 options:MTLResourceStorageModeShared];
+    raw::RenderVariant pairs;
+    pairs.xrSlots = 1;
+    bool readied = false;
+    const size_t first = kernel_model::model.jobs.size();
+    id<MTLCommandBuffer> cb = [[device newCommandQueue] commandBuffer];
+    for (uint32_t k = 0; k < 3; k++) {
+        if (k == 1) {
+            id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+            [b copyFromBuffer:words
+                       sourceOffset:0
+                  sourceBytesPerRow:64 * 4
+                sourceBytesPerImage:64 * 64 * 4
+                         sourceSize:MTLSizeMake(64, 64, 1)
+                          toTexture:texture
+                   destinationSlice:0
+                   destinationLevel:0
+                  destinationOrigin:MTLOriginMake(0, 0, 0)];
+            [b endEncoding];
+        }
+        MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+        p.colorAttachments[0].texture = colours[k];
+        p.colorAttachments[0].loadAction = MTLLoadActionClear;
+        p.colorAttachments[0].storeAction = MTLStoreActionStore;
+        id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
+        [e setRenderPipelineState:state];
+        [e setFragmentTexture:texture atIndex:0];
+        if (!k) {
+            raw::Variant<raw::Pipeline> *variant = variantOf(state, pairs);
+            readied = variant && ready(*variant);
+        }
+        [e drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+        [e endEncoding];
+    }
+    [cb commit];
+    [cb waitUntilCompleted];
+    EXPECT_TRUE(readied) << "the draws read the texture through its header pair";
+    expectRaw(device, cb);
+    const std::vector<Event> e = events(first);
+    // the copy launches into each pool between two events
+    const auto fills = [&](size_t from, size_t to) {
+        std::set<uint64_t> pools;
+        for (size_t i = from; i < to && i < e.size(); i++)
+            if (e[i].copy && (e[i].address == x.luma->sampled->va || e[i].address == x.chroma->sampled->va))
+                pools.insert(e[i].address);
+        return pools.size();
+    };
+    size_t drawn[3];
+    for (uint32_t k = 0; k < 3; k++) {
+        drawn[k] = indexOf(e, false, ((RMTexture *)colours[k])->_raw.va);
+        ASSERT_NE(drawn[k], SIZE_MAX) << k;
+    }
+    const size_t copied = indexOf(e, true, x.luma->va);
+    ASSERT_NE(copied, SIZE_MAX) << "the copy into plane 0's rows";
+    EXPECT_EQ(fills(0, drawn[0]), 2u) << "each pool before the first pass that samples them";
+    EXPECT_LT(drawn[0], copied);
+    EXPECT_LT(copied, drawn[1]);
+    EXPECT_EQ(fills(drawn[0], copied), 0u);
+    EXPECT_EQ(fills(copied, drawn[1]), 2u) << "each again after the copy wrote the rows";
+    EXPECT_EQ(fills(drawn[1], drawn[2]), 0u) << "nothing wrote them since";
+}
+
+MTLTextureDescriptor *rendered(uint32_t format, NSUInteger side)
+{
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(format)
+                                                                                 width:side
+                                                                                height:side
+                                                                             mipmapped:NO];
+    d.storageMode = MTLStorageModeShared;
+    d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    return d;
+}
+
+// RGB10A8_2P_XR10 and its sRGB twin written over one plane alone, a 'w30r' surface's or plane 1 of a b3a8 one: held in
+// that plane as one over two planes is, its words the plane's rows, its alpha a memoryless target whose header is
+// header 0's null descriptor (an M4 Max stores no alpha there and reads it 0). A pass into one renders its words into
+// the rows.
+void writtenOverOnePlaneIsHeldInIt()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.xr.xr_two_planes_srgb_frag", MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef one = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @64,
+        (id)kIOSurfaceHeight : @64,
+        (id)kIOSurfaceBytesPerElement : @4,
+        (id)kIOSurfacePixelFormat : @(uint32_t('w30r'))
+    });
+    ASSERT_TRUE(one);
+    IOSurfaceRef several = twoPlaneSurface();
+    ASSERT_TRUE(several);
+    const struct {
+        IOSurfaceRef s;
+        uint32_t format;
+        NSUInteger plane, side;
+    } kCases[] = {{one, 550, 0, 64}, {one, 551, 0, 64}, {several, 550, 1, 16}};
+    id<MTLTexture> target = nil;
+    for (const auto &c : kCases) {
+        RMTexture *t =
+            (RMTexture *)[device newTextureWithDescriptor:rendered(c.format, c.side) iosurface:c.s plane:c.plane];
+        ASSERT_TRUE(t != nil && t->_rawOk) << c.format << " plane " << c.plane;
+        const raw::Texture &x = t->_raw;
+        ASSERT_TRUE(x.xrPlanes && x.luma && x.chroma) << c.format;
+        EXPECT_TRUE(x.chroma->memoryless) << c.format;
+        const size_t rows = IOSurfaceGetPlaneCount(c.s) ? IOSurfaceGetBytesPerRowOfPlane(c.s, c.plane)
+                                                         : IOSurfaceGetBytesPerRow(c.s);
+        EXPECT_EQ(x.luma->pitch, uint32_t(rows)) << c.format;
+        EXPECT_EQ(memcmp(gRM->raw->headerWords(x.tic + 1), gRM->raw->headerWords(0), 32), 0) << "alpha reads 0";
+        EXPECT_NE(x.standIn, nullptr) << c.format;
+        if (!target)
+            target = (id<MTLTexture>)t;
+    }
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = target;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    const size_t first = kernel_model::model.jobs.size();
+    expectRaw(device, run(device, p));
+    const uint64_t rows = ((RMTexture *)target)->_raw.luma->va;
+    EXPECT_NE(indexOf(events(first), false, rows), SIZE_MAX) << "the words into the rows";
+    for (IOSurfaceRef s : {one, several})
+        CFRelease(s);
+}
+
 }  // namespace
+
+TEST(RawFacadeXrImages, WrittenOverOnePlaneIsHeldInIt)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(writtenOverOnePlaneIsHeldInIt);
+}
+
+TEST(RawFacadeXrImages, ATwoPlaneTextureOfRowsOff32IsReadThroughItsPools)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(aTwoPlaneTextureOfRowsOff32IsReadThroughItsPools);
+}
 
 TEST(RawFacadeXrImages, ASampledTexelBufferIsConvertedFromItsCodesFirst)
 {

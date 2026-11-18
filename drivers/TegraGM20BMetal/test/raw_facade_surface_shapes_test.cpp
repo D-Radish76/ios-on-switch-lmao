@@ -226,6 +226,49 @@ void everyRenderedFormatTurns()
     expectNoM2V(device);
 }
 
+// A turned RGB10A8_2P_XR10 over two planes or over one, its sRGB twin, and a turned YCbCr texture are made at their
+// plane's extent (an M4 Max makes those over two planes and the YCbCr one: m2v-textures4 probes/forms.mm): held in the
+// planes, or a YCbCr image whose stand-in and store states are laid out as the planes
+void planarFormatsTurn()
+{
+    auto states = conversions();
+    states.insert(states.end(), {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float},
+                                 {"raw.ycbcr_store.ycbcr_store_luma8_frag", MTLPixelFormatR8Unorm},
+                                 {"raw.ycbcr_store.ycbcr_store_chroma8_frag", MTLPixelFormatRG8Unorm}});
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", states));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef planes = twoPlanes(), words = chunky('w30r', 4), video = fourTwoZero();
+    ASSERT_TRUE(planes && words && video);
+    const struct {
+        IOSurfaceRef s;
+        uint32_t format;
+        NSUInteger rotation;
+    } kTurned[] = {{planes, 550, 1}, {planes, 551, 3}, {words, 550, 2}, {words, 551, 4}, {video, 500, 1}};
+    for (const auto &c : kTurned) {
+        RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:turned(c.format, c.rotation, kSide / 2, kSide)
+                                                           iosurface:c.s
+                                                               plane:0];
+        ASSERT_TRUE(t != nil && t->_rawOk) << c.format << " rotation " << c.rotation;
+        const raw::Texture &x = t->_raw;
+        const bool half = c.rotation == 2;
+        const NSUInteger planeWidth = half ? kSide / 2 : kSide, planeHeight = half ? kSide : kSide / 2;
+        EXPECT_EQ(x.rotation, c.rotation) << c.format;
+        EXPECT_EQ(x.width, planeWidth) << c.format;
+        EXPECT_EQ(x.height, planeHeight) << c.format;
+        if (c.format == 500) {
+            ASSERT_TRUE(x.ycbcr && x.planarStandIn && x.ycbcrStore);
+            EXPECT_EQ(x.planarStandIn->width, planeWidth);
+            continue;
+        }
+        ASSERT_TRUE(x.xrPlanes && x.luma && x.chroma) << c.format;
+        EXPECT_EQ(x.luma->width, planeWidth) << c.format;
+        EXPECT_EQ(x.chroma->memoryless, c.s == words) << c.format;
+    }
+    for (IOSurfaceRef s : {planes, words, video})
+        CFRelease(s);
+    expectNoM2V(device);
+}
+
 IOSurfaceRef row(NSUInteger texels, NSUInteger bytes)
 {
     return IOSurfaceCreate((__bridge CFDictionaryRef) @{
@@ -439,6 +482,11 @@ TEST(RawFacadeSurfaceShapes, AReadOnlyYcbcrTextureIsATarget)
 TEST(RawFacadeSurfaceShapes, EveryRenderedFormatTurns)
 {
     switch_ios::test::ExpectPassesInFreshProcess(everyRenderedFormatTurns);
+}
+
+TEST(RawFacadeSurfaceShapes, PlanarFormatsTurnAtTheirPlanesExtent)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(planarFormatsTurn);
 }
 
 TEST(RawFacadeSurfaceShapes, ExtendedRangeTexelBuffersOverASurfaceAreRaws)

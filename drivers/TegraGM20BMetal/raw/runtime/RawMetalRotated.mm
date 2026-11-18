@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalRotated.h"
+#import "RawMetalXrPlanes.h"
 #include "raw_format_standin.h"
+#include "raw_surface_refusal.h"
 
 static NSUInteger descriptorRotation(MTLTextureDescriptor *d)
 {
@@ -34,18 +36,46 @@ bool refuseTurnedOffSurface(MTLTextureDescriptor *d)
     return true;
 }
 
+// Drawn through stand-ins or store states laid out as their planes, or held in its planes, whatever its format's own
+// header
+static bool planarFormat(uint32_t format)
+{
+    return raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format) || raw::twoPlaneXr(format);
+}
+
+// RGB10A8_2P_XR10 or its sRGB twin turned: over plane 0 of two whose rows hold the plane's words and alpha bytes, or
+// over one plane alone (RawMetalXrPlanes.h)
+static bool turnedXrShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)
+{
+    const size_t planes = IOSurfaceGetPlaneCount(s);
+    if (!xrPlanesStorable(d))
+        return false;
+    if (planes <= 1 || plane)
+        return true;
+    return planes == 2 && IOSurfaceGetBytesPerRowOfPlane(s, 0) >= 4 * r.planeWidth() &&
+           IOSurfaceGetBytesPerRowOfPlane(s, 1) >= r.planeWidth() && IOSurfaceGetHeightOfPlane(s, 1) >= r.planeHeight();
+}
+
 // Every format Metal renders turns alike, the plane of several of a planar surface as one plane alone (an M4 Max, each
 // rotation: m2v-textures4 probes/reads.mm and more.mm landings). A format the GM20B renders none of is drawn turned into its
-// stand-in (raw_format_standin.h); a block-compressed one Metal makes no rotated texture of
+// stand-in (raw_format_standin.h), a YCbCr one into its stand-in laid out as its planes, which its store states write
+// straight; a block-compressed one Metal makes no rotated texture of
 bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out)
+{
+    return turnedFrame(d, s, plane, out) &&
+           (!raw::twoPlaneXr(uint32_t(d.pixelFormat)) || turnedXrShape(d, s, plane, out));
+}
+
+bool turnedFrame(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out)
 {
     const NSUInteger turn = descriptorRotation(d);
     const uint32_t format = uint32_t(d.pixelFormat);
     const raw::FormatInfo *f = raw::formatInfo(format);
     const size_t planes = IOSurfaceGetPlaneCount(s);
     if (!turn || turn > 4 || d.textureType != MTLTextureType2D || d.mipmapLevelCount > 1 || d.sampleCount > 1 ||
-        d.arrayLength > 1 || d.depth > 1 || !f || !(f->rt || raw::formatStandIn(format)) || raw::blockCompressed(f) ||
-        raw::xrForm(format) == raw::XrForm::Planes || (planes > 1 ? plane >= planes : plane != 0))
+        d.arrayLength > 1 || d.depth > 1 ||
+        (!planarFormat(format) && (!f || !(f->rt || raw::formatStandIn(format)) || raw::blockCompressed(f))) ||
+        (planes > 1 ? plane >= planes : plane != 0))
         return false;
     out.turn = uint8_t(turn);
     out.width = uint32_t(d.width);
@@ -54,16 +84,54 @@ bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw
            (planes ? IOSurfaceGetHeightOfPlane(s, plane) : IOSurfaceGetHeight(s)) >= out.planeHeight();
 }
 
+MTLTextureDescriptor *planeDescriptor(MTLTextureDescriptor *d, const raw::Rotation &r)
+{
+    MTLTextureDescriptor *flat = [d copy];
+    flat.width = r.planeWidth();
+    flat.height = r.planeHeight();
+    ((void (*)(id, SEL, NSUInteger))objc_msgSend)(flat, sel_registerName("setRotation:"), 0);
+    return flat;
+}
+
+// A YCbCr texture planned at its plane's extent: its stand-in and store states are laid out as the planes, and a turned
+// pass draws into the stand-in turned
+static bool createTurnedYcbcr(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane,
+                              const raw::Rotation &r)
+{
+    raw::YcbcrPlan plan;
+    if (ycbcrPlan(planeDescriptor(d, r), s, plane, plan))
+        return false;
+    if (!gRM->raw->createYcbcrTexture(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s, plan,
+                                      r.planeWidth(), r.planeHeight(), t->_raw)) {
+        raw::surfaceRefusal = "the import of its planes, or no memory or pack state for its image";
+        return false;
+    }
+    if (plan.target)
+        makeYcbcrTarget(t->_raw, uint32_t(d.pixelFormat), plan.store);
+    return true;
+}
+
+static bool createTurnedXr(RMTexture *t, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)
+{
+    return IOSurfaceGetPlaneCount(s) == 2 && !plane ? makeXrPlanes(t, s, r.planeWidth(), r.planeHeight())
+                                                    : makeXrWordPlane(t, s, r.planeWidth(), r.planeHeight());
+}
+
 bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)
 {
     const size_t planes = IOSurfaceGetPlaneCount(s);
     void *base = IOSurfaceGetBaseAddress(s);
     const uint64_t offset = planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - uintptr_t(base) : 0;
     const size_t pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
+    const uint32_t format = uint32_t(d.pixelFormat);
     // a planar surface's planes stay rows (TegraGM20BLayout.h), so only a surface of one plane asks to be laid out tiled
-    if (!gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset, r.planeWidth(),
-                                        r.planeHeight(), uint32_t(pitch), uint32_t(d.pixelFormat), t->_raw,
-                                        planes <= 1))
+    const bool made = raw::twoPlaneXr(format) ? createTurnedXr(t, s, plane, r)
+                      : planarFormat(format)  ? createTurnedYcbcr(t, d, s, plane, r)
+                                              : gRM->raw->createSurfaceTexture(
+                                                   IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset,
+                                                   r.planeWidth(), r.planeHeight(), uint32_t(pitch), format, t->_raw,
+                                                   planes <= 1);
+    if (!made)
         return false;
     t->_raw.rotation = r.turn;
     reportFirst(t, d);
