@@ -244,7 +244,71 @@ void aYcbcrTargetWhoseRowsOverlapRenders()
     EXPECT_TRUE(drained(chroma + 8 * 48)) << "chroma's last 16 bytes";
 }
 
+// A YCbCr target of rows under 16 bytes, which an M4 Max reads 1 MiB apart and stores 16 apart (m2v-textures12
+// probes/f2/targets-full.txt #45, #46): its store states render each plane's rows 16 apart, which no linear render target
+// is, so through a backing the copy engine drains into the plane
+void aYcbcrTargetOfRowsUnderSixteenBytesStoresThemSixteenApart()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.ycbcr.ycbcr_codes_frag", MTLPixelFormatRGBA8Unorm},
+                                           {"raw.ycbcr_store.ycbcr_store_luma8_frag", MTLPixelFormatR8Unorm},
+                                           {"raw.ycbcr_store.ycbcr_store_chroma8_frag", MTLPixelFormatRG8Unorm}}));
+    ASSERT_TRUE(device != nil);
+    NSArray *planes = @[
+        @{
+            (id)kIOSurfacePlaneWidth : @8,
+            (id)kIOSurfacePlaneHeight : @8,
+            (id)kIOSurfacePlaneBytesPerElement : @1,
+            (id)kIOSurfacePlaneBytesPerRow : @8,
+            (id)kIOSurfacePlaneOffset : @0,
+            (id)kIOSurfacePlaneSize : @64
+        },
+        @{
+            (id)kIOSurfacePlaneWidth : @4,
+            (id)kIOSurfacePlaneHeight : @4,
+            (id)kIOSurfacePlaneBytesPerElement : @2,
+            (id)kIOSurfacePlaneBytesPerRow : @8,
+            (id)kIOSurfacePlaneOffset : @4096,
+            (id)kIOSurfacePlaneSize : @32
+        }
+    ];
+    IOSurfaceRef s = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @8,
+        (id)kIOSurfaceHeight : @8,
+        (id)kIOSurfacePixelFormat : @(uint32_t('420v')),
+        (id)kIOSurfaceAllocSize : @((8u << 20) + 16384),
+        (id)kIOSurfacePlaneInfo : planes
+    });
+    ASSERT_TRUE(s);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(540)
+                                                                                 width:8
+                                                                                height:8
+                                                                             mipmapped:NO];
+    d.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:s plane:0];
+    CFRelease(s);
+    ASSERT_TRUE(t != nil && t->_rawOk && t->_raw.luma && t->_raw.chroma);
+    EXPECT_EQ(t->_raw.luma->pitch, 1u << 20) << "read 1 MiB apart";
+    EXPECT_EQ(t->_raw.luma->storePitch, 16u);
+    EXPECT_EQ(t->_raw.chroma->storePitch, 16u);
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = (id<MTLTexture>)t;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    p.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.25, 0.75, 1);
+    const size_t first = kernel_model::model.jobs.size();
+    expectRaw(device, run(device, p));
+    const std::vector<uint32_t> to = copyDestinations(first);
+    for (const raw::Texture *plane : {t->_raw.luma, t->_raw.chroma})
+        EXPECT_GT(std::count(to.begin(), to.end(), uint32_t(plane->va)), 0) << "its rows drained 16 apart";
+}
+
 }  // namespace
+
+TEST(RawFacadePlanarTargets, AYcbcrTargetOfRowsUnderSixteenBytesStoresThemSixteenApart)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(aYcbcrTargetOfRowsUnderSixteenBytesStoresThemSixteenApart);
+}
 
 TEST(RawFacadePlanarTargets, AOnePlaneYcbcrTargetRendersIntoItsPairs)
 {

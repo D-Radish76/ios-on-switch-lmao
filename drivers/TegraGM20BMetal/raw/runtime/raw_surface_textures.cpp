@@ -457,6 +457,9 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
         if (c)
             c->nativePlane = 1;
     }
+    y->storePitch = plan.lumaStorePitch;
+    if (c)
+        c->storePitch = plan.chromaStorePitch;
     t.luma = y;
     t.chroma = c;
     memcpy(t.shape, plan.shape, sizeof t.shape);

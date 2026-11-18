@@ -104,9 +104,11 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         if (chroma && (!t.chroma || t.ycbcrStore->words))
             continue;
         raw::Texture *plane = chroma ? t.chroma : t.luma;
-        const bool overlap = !t.onePlane && raw::overlapsRows(*plane);
+        raw::Texture scratch;
+        raw::Texture *rows = plane->storePitch ? &(scratch = raw::storedRows(*plane, t)) : plane;
+        const bool overlap = !t.onePlane && raw::overlapsRows(*rows);
         raw::PassDesc p;
-        p.color[0].texture = overlap ? plane->sampled : plane;
+        p.color[0].texture = overlap ? plane->sampled : rows;
         p.color[0].load = masked ? raw::ColorAttachment::Load : raw::ColorAttachment::DontCare;
         p.color[0].store = true;
         p.count = 1;
@@ -134,9 +136,8 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         e->end();
         if (overlap)
             if (const int failed = raw::storeOverlapRows(
-                    *rc, packState(raw::overlapState(plane->format)), plane->format, plane->va, *plane,
-                    *plane->sampled, nullptr, raw::overlapPlaneRows(*plane, chroma, *t.ycbcrStore),
-                    masked ? &mask : nullptr, why))
+                    *rc, packState(raw::overlapState(plane->format)), plane->format, rows->va, *rows, *plane->sampled,
+                    nullptr, raw::overlapPlaneRows(*rows, chroma, *t.ycbcrStore), masked ? &mask : nullptr, why))
                 return failed;
     }
     if (pairsOverlap(t)) {

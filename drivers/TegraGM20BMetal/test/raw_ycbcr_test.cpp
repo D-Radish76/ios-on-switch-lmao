@@ -641,4 +641,24 @@ TEST(RawYcbcr, RowsUnderSixteenBytesAreAMebibyteApart)
     EXPECT_EQ(p.readable, 7ull * (1u << 20) + 8) << "the last luma row's 8 bytes 7 MiB on";
 }
 
+// Its GPU stores (a pass's into a target, a blit's into the texture) land rows under 16 bytes 16 apart, its CPU copies at the
+// stated rows (an M4 Max over '420v' 8x8 of rows 8 and 8, 8 and 16, 16 and 8: m2v-textures12 probes/f2/targets-full.txt,
+// copies-full.txt): each plane's store stride where it is not its read stride
+TEST(RawYcbcr, RowsUnderSixteenBytesAreStoredSixteenApart)
+{
+    EXPECT_EQ(raw::planeStoreStride(8), 16u);
+    EXPECT_EQ(raw::planeStoreStride(16), 16u);
+    EXPECT_EQ(raw::planeStoreStride(40), 32u);
+    raw::YcbcrPlan p;
+    raw::YcbcrFacts f = surface(500, "420v", 8, 8, 8, 4);
+    f.sparseTail = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
+    EXPECT_EQ(p.lumaStorePitch, 16u);
+    EXPECT_EQ(p.chromaStorePitch, 16u);
+    f.pitch[1] = 16;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
+    EXPECT_EQ(p.lumaStorePitch, 16u);
+    EXPECT_EQ(p.chromaStorePitch, 0u) << "rows of 16 are read and stored 16 apart";
+}
+
 }  // namespace

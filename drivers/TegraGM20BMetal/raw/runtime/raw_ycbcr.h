@@ -73,6 +73,9 @@ struct YcbcrPlan {
     uint32_t lumaFormat = 0, chromaFormat = 0;  // R8Unorm or R16Unorm, RG8Unorm or RG16Unorm; R32Uint packed
     uint64_t luma = 0, chroma = 0;              // offsets past the surface's base address
     uint32_t lumaPitch = 0, chromaPitch = 0;
+    // a two-plane format's planes' rows as a GPU store lands them where not at their pitch (Texture::storePitch: rows under
+    // 16 bytes, which an M4 Max reads 1 MiB apart and stores 16 apart: m2v-textures12 probes/f2/targets-full.txt), else 0
+    uint32_t lumaStorePitch = 0, chromaStorePitch = 0;
     uint64_t readable = 0;  // the bytes past the surface's base the planes' rows may reach
     // the rows run past the allocation's last page, to `readable`: read through a window of their own whose tail reads 0
     // (Device::openSparseWindow)

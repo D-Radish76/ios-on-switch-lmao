@@ -337,10 +337,14 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     out.chromaFormat = words ? 90 : format->packed ? 53 : bytes == 1 ? 30 : 60;  // RGB10A2Unorm, R32Uint, RG8Unorm, RG16Unorm
     out.luma = luma;
     out.lumaPitch = lumaPitch;
+    if (!onePlane && planeStoreStride(f.pitch[f.plane]) != lumaPitch)
+        out.lumaStorePitch = planeStoreStride(f.pitch[f.plane]);
     out.lumaWidth = format->packed ? uint32_t(lumaRow / 4) : onePlane && !words ? 2 * cw : f.width;
     if (!lumaAlone) {
         out.chroma = chroma;
         out.chromaPitch = chromaPitch;
+        if (!onePlane && planeStoreStride(f.pitch[1]) != chromaPitch)
+            out.chromaStorePitch = planeStoreStride(f.pitch[1]);
         out.chromaWidth = format->packed ? uint32_t(chromaRow / 4) : cw;
         out.chromaHeight = ch;
     }
