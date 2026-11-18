@@ -27,13 +27,12 @@ public:
     // `whole`: [from, to) is the whole range, its resources and first contents taken at once, after its commit. Else it is
     // encoded ahead, before the commit, as its caller records more: each encoder's resources and first contents are taken
     // as it is stepped into, nothing reads what the CPU may write until the commit (buffer contents, a surface's seed),
-    // and an encoder whose encode would read such a thing stops it (vetoed()). False: *why (and *refusedEncoder where one
-    // encoder is to blame); nothing of it was submitted.
-    bool open(RMCommandBuffer *cb, size_t from, size_t to, bool whole, const char **why, size_t *refusedEncoder);
+    // and an encoder whose encode would read such a thing stops it (vetoed()). False: *why; nothing of it was submitted.
+    bool open(RMCommandBuffer *cb, size_t from, size_t to, bool whole, const char **why);
     // The range's commands up to `until`; false: failed (*why) or, encoded ahead, stopped (vetoed())
     bool step(size_t until);
     // An encode opened ahead goes on after its command buffer's commit, up to `to` where its range ends; false: as open()
-    bool resume(size_t to, const char **why, size_t *refusedEncoder);
+    bool resume(size_t to, const char **why);
     // False: *why
     bool seal(size_t to);
     // What open() took that no seal() submitted goes back (the raw command buffer abandoned where it is still open)
@@ -48,6 +47,13 @@ public:
     uint32_t vetoed() const
     {
         return veto_;
+    }
+
+    // open() or resume() stopped on an event producer still pending on a channel made again since: the range waits for its
+    // outcome, which wakes its queue (raw_event_timeline.h consumers)
+    bool producerPending() const
+    {
+        return producerPending_;
     }
 
     // The channel it began on (raw::Device::channelGeneration)
@@ -139,16 +145,16 @@ private:
     bool endEncoder(size_t at);
     bool endEncoders();
     bool closeEncoders();
+    bool producersOrdered();
 
     __unsafe_unretained RMCommandBuffer *cb_ = nil;
     raw::Device *d_ = nullptr;
     raw::CommandBuffer *rc_ = nullptr;
     const char **why_ = nullptr;
-    size_t *refusedEncoder_ = nullptr;
     size_t from_ = 0, to_ = 0, at_ = 0;
     bool whole_ = true;
     bool ahead_ = false;  // before its commit: the recording goes on
-    bool abandoned_ = false, sealed_ = false;
+    bool abandoned_ = false, sealed_ = false, producerPending_ = false;
     uint32_t veto_ = 0;
     bool sampledShadows_ = false, standIns_ = false;  // the command buffer's, as of its commit (ahead: none)
     uint64_t generation_ = 0;
@@ -171,7 +177,7 @@ private:
     size_t renderBegin_ = SIZE_MAX;
     uint32_t passDraws_ = 0;  // the raw command buffer's draws as the open pass began (resolvePasses: whether it drew)
     bool continuing_ = false;
-    size_t encoder_ = SIZE_MAX;  // the encoder being encoded, to blame for a refusal (SIZE_MAX: none)
+    size_t encoder_ = SIZE_MAX;  // the encoder being encoded (SIZE_MAX: none)
     size_t freshAt_ = SIZE_MAX;  // encoded ahead: the encoder whose first uses of fresh textures were claimed last
 
     // A planar render target's stand-in passes (raw_planar_target.h), with their attachment slots, and the stand-in each slot

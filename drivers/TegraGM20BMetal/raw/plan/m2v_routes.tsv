@@ -179,7 +179,7 @@ product	class	NBCommandBuffer	RawMetalCommandBuffer.mm	dead	-	cut	cut	-	twinClas
 product	class	NBComputeEncoder	RawMetalCompute.mm	dead	-	cut	cut	-	twinClass, as NBBlitEncoder
 product	class	NBComputePipeline	RawMetalComputeState.mm	dead	-	cut	cut	-	twinClass of RMComputePipeline, which forwards every selector it lacks to its m2v twin (forwardingTargetForSelector)
 product	class	NBDepthStencil	RawMetalDepthStencil.mm	dead	-	cut	cut	-	twinClass, as NBArgumentEncoder
-product	class	NBDeviceMethods	RawMetal.mm,TegraGM20BMetalPlugin.mm	dead	-	cut	cut	-	m2v's device methods the raw device class forwards (installM2VForwarders, RawM2V.methods)
+product	class	NBDeviceMethods	RawMetal.mm	dead	-	cut	cut	-	m2v's device methods the raw device class forwards (installM2VForwarders, RawM2V.methods)
 product	class	NBFence	RawMetalFences.mm	dead	-	cut	cut	-	twinClass, as NBArgumentEncoder
 product	class	NBFunction	RawMetalLibrary.mm	dead	-	cut	cut	-	twinClass, as NBArgumentEncoder
 product	class	NBLibrary	RawMetalLibrary.mm	dead	-	cut	cut	-	twinClass, as NBArgumentEncoder

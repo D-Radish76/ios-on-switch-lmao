@@ -44,10 +44,9 @@
 // The raw GM20B path (raw/runtime/RawMetal.h): when the build's pipeline pack is staged beside the bundle
 // (<Extensions>/TegraGM20BMetal.raw/pack.bin, build-tegra-gm20b-metal.py makes it, stage-tegra-gm20b-metal.py copies it) and the
 // process's sandbox lets it read it, the device every process gets is the raw facade: its command buffers go straight to
-// MAXWELL_B methods, and any the raw path cannot draw exactly as m2v (a state not in the pack, an extended-range format,
-// compute, mipmaps...) are replayed on m2v whole, its m2v device opened at the first such need (RawM2V), the render server's
-// too. The render server's raw device is set up on a thread of its own while the plugin opens, every other process's memory,
-// channel and shader heap at their first use (raw_gpu.h Device::Role). A pack of another build is
+// MAXWELL_B methods, and one the raw path cannot run fails with Metal's error: the raw device has no m2v opener. The render
+// server's raw device is set up on a thread of its own while the plugin opens, every other process's memory, channel and
+// shader heap at their first use (raw_gpu.h Device::Role). A pack of another build is
 // refused (its stack key, TEGRA_RAW_STACK, differs). Off for a boot: remove or rename <Data>/ngpu/addons/TegraGM20BMetal.raw
 // (stage-tegra-gm20b-metal.py --no-raw does); for a process: TEGRA_RAW_METAL=0 in its environment.
 #import <Foundation/Foundation.h>
@@ -836,9 +835,7 @@ id openOnce(unsigned port, raw::OpenFailure &failure)
         if (renderServer && rawWanted && !packRefusal)
             raw_metal_prepare(pack, uint64_t(TEGRA_RAW_STACK));
         M2VOpening &m2v = *new M2VOpening(loader, registryID);
-        // Every process draws through the raw GM20B path when the build's pack is staged and readable (above). Its m2v device is
-        // opened at the first thing only m2v does, so a process that draws only packed states never has one; in the render server
-        // too, where a first need waits for the open on the thread that asks it.
+        // Every process draws through the raw GM20B path when the build's pack is staged and readable (above).
         // One line either way, so a boot shows which device each process got.
         if (!rawWanted) {
             os_log(logger(), "TegraGM20BMetal: raw GM20B path off in %{public}s (TEGRA_RAW_METAL=0): m2v device kept",
@@ -848,13 +845,8 @@ id openOnce(unsigned port, raw::OpenFailure &failure)
                    "TegraGM20BMetal: raw GM20B path off in %{public}s (%{public}s at %{public}s): m2v device kept",
                    getprogname(), packRefusal, pack);
         } else {
-            RawM2V lazy;
-            lazy.open = ^{
-                return m2v.device();
-            };
-            lazy.methods = NSClassFromString(@"NBDeviceMethods");
             NSString *why = nil;
-            if (id raw = raw_metal_device_open_lazy(pack, uint64_t(TEGRA_RAW_STACK), registryID, lazy, &why)) {
+            if (id raw = raw_metal_device_open_lazy(pack, uint64_t(TEGRA_RAW_STACK), registryID, RawM2V{}, &why)) {
                 os_log(logger(), "TegraGM20BMetal: raw GM20B path on in %{public}s (pack %{public}s, stack %016llx)",
                        getprogname(), pack, (unsigned long long)TEGRA_RAW_STACK);
                 device = raw;
@@ -878,9 +870,8 @@ id openOnce(unsigned port, raw::OpenFailure &failure)
             return nil;
         }
         const uint64_t openNs = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - openBegan;
-        os_log(logger(), "TegraGM20BMetal: device %{public}s ready in %{public}s, open %llu ms%{public}s",
-               [[(id<MTLDevice>)device name] UTF8String], getprogname(), (unsigned long long)(openNs / 1000000),
-               gRaw ? " (m2v device at its first need)" : "");
+        os_log(logger(), "TegraGM20BMetal: device %{public}s ready in %{public}s, open %llu ms",
+               [[(id<MTLDevice>)device name] UTF8String], getprogname(), (unsigned long long)(openNs / 1000000));
 #if SWITCH_DEBUG
         startRates();
 #endif

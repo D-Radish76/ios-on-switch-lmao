@@ -4,9 +4,6 @@
 #include "raw_lock.h"
 
 // ---- the tape onto the raw path ----
-// false: something in it the raw path cannot do after all (*why); nothing of it was submitted then. A refusal inside one
-// encoder names that encoder's first command in *refusedEncoder; one no encoder owns (the channel's, the kernel's) leaves
-// it alone.
 
 RMRangeEncode &rmRangeEncode()
 {
@@ -32,8 +29,6 @@ bool RMRangeEncode::fail(RMPred p, const char *w, uint64_t a, uint64_t b, const 
         veto_ = VetoFailed;
     else if (!rc_->refusal.id || !drawFailed(cb_, rc_->refusal, w))
         hit(cb_, p, a, b, detail);
-    if (encoder_ != SIZE_MAX)
-        *refusedEncoder_ = encoder_;
     rc_->abandon();
     abandoned_ = true;
     return false;
@@ -63,21 +58,18 @@ bool RMRangeEncode::refused()
         veto_ = VetoFailed;
     else if (!drawFailed(cb_, f, *why_))
         hit(cb_, refusalPred(f.id), f.a, uint64_t(f.b) | uint64_t(f.c) << 32, *why_);
-    if (encoder_ != SIZE_MAX)
-        *refusedEncoder_ = encoder_;
     rc_->abandon();
     abandoned_ = true;
     return false;
 }
 
 __attribute__((objc_externally_retained)) bool RMRangeEncode::open(RMCommandBuffer *cb, size_t from, size_t to,
-                                                                   bool whole, const char **why, size_t *refusedEncoder)
+                                                                   bool whole, const char **why)
 {
     const Encoding encoding;
     cb_ = cb;
     d_ = gRM->raw;
     why_ = why;
-    refusedEncoder_ = refusedEncoder;
     from_ = at_ = from;
     to_ = to;
     whole_ = whole;
@@ -105,12 +97,8 @@ __attribute__((objc_externally_retained)) bool RMRangeEncode::open(RMCommandBuff
     rc_->inlineStates(cb->_inlineStates);
 #endif
     rc_->deferContents = ahead_;
-    if (whole && validateNativeEventWaits(cb, generation_) != raw::EventDependencyState::ready) {
-        rc_->abandon();
-        abandoned_ = true;
-        *why = "an event producer failed or is pending on a channel made again since";
+    if (whole && !producersOrdered())
         return false;
-    }
     if (whole)
         firstContents_.emplace(cb, from, to, *rc_);
     else
@@ -322,21 +310,30 @@ bool RMRangeEncode::step(size_t until)
     return true;
 }
 
-bool RMRangeEncode::resume(size_t to, const char **why, size_t *refusedEncoder)
+// The range's GPU event waits are on producers this channel orders, or that succeeded. False: one failed (the command
+// buffer's error), or one is pending on a channel made again since (producerPending())
+bool RMRangeEncode::producersOrdered()
+{
+    const raw::EventDependencyState producers = validateNativeEventWaits(cb_, generation_);
+    if (producers == raw::EventDependencyState::ready)
+        return true;
+    rc_->abandon();
+    abandoned_ = true;
+    producerPending_ = producers == raw::EventDependencyState::blocked;
+    *why_ = "an event producer failed or is pending on a channel made again since";
+    return false;
+}
+
+bool RMRangeEncode::resume(size_t to, const char **why)
 {
     why_ = why;
-    refusedEncoder_ = refusedEncoder;
     to_ = to;
     ahead_ = false;
     rc_->deferContents = false;
     sampledShadows_ = cb_->_sampledShadows;
     standIns_ = cb_->_standIns;
-    if (validateNativeEventWaits(cb_, generation_) != raw::EventDependencyState::ready) {
-        rc_->abandon();
-        abandoned_ = true;
-        *why = "an event producer failed or is pending on a channel made again since";
+    if (!producersOrdered())
         return false;
-    }
     // a surface it read through its native view before the commit, published or written since: the whole encode reads it
     // again
     if (!rc_->nativeReadsCurrent()) {
@@ -351,7 +348,7 @@ void RMRangeEncode::reset()
 {
     if (rc_ && !abandoned_ && !sealed_)
         rc_->abandon();
-    sealed_ = abandoned_ = ahead_ = false;
+    sealed_ = abandoned_ = ahead_ = producerPending_ = false;
     veto_ = 0;
     firstContents_.reset();
     counters_.reset();
@@ -402,31 +399,33 @@ void RMRangeEncode::reset()
 #endif
 }
 
-bool encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why, size_t *refusedEncoder)
+RMEncoded encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why)
 {
     RMRangeEncode &encode = rmRangeEncode();
     // what was encoded ahead of the commit goes on: the rest of the range, then the seal; one that stopped submitted
     // nothing, and the range is encoded whole
     if (rmPipelineTake(cb, from)) {
         cb->_xrShadowCurrent = nullptr;
-        const bool encoded = encode.resume(to, why, refusedEncoder) && encode.step(to) && encode.seal(to);
+        const bool encoded = encode.resume(to, why) && encode.step(to) && encode.seal(to);
         const bool stopped = !encoded && encode.vetoed();
+        const bool waits = encode.producerPending();
         encode.reset();
         if (encoded) {
             rmPipelineSealed(cb, to);
-            return true;
+            return RMEncoded::submitted;
         }
         cb->_released.clear();
         if (!stopped)
-            return false;
+            return waits ? RMEncoded::producerPending : RMEncoded::stopped;
     }
     cb->_xrShadowCurrent = nullptr;
-    const bool encoded = encode.open(cb, from, to, true, why, refusedEncoder) && encode.step(to) && encode.seal(to);
+    const bool encoded = encode.open(cb, from, to, true, why) && encode.step(to) && encode.seal(to);
+    const bool waits = encode.producerPending();
     encode.reset();
     if (!encoded) {
         cb->_released.clear();
-        return false;
+        return waits ? RMEncoded::producerPending : RMEncoded::stopped;
     }
     rmPipelineSealed(cb, to);
-    return true;
+    return RMEncoded::submitted;
 }

@@ -280,15 +280,6 @@ raw::EventDependencyState validateNativeEventWaits(RMCommandBuffer *cb, uint64_t
     return state;
 }
 
-bool waitsOnRetiredProducer(RMCommandBuffer *cb)
-{
-    if (cb->_gpuEventWaits.empty())
-        return false;
-    std::lock_guard<raw::Mutex> lock(cb->_lock);
-    return raw::eventDependencies(cb->_gpuEventWaits, gRM->raw->channelGeneration(), true) ==
-           raw::EventDependencyState::blocked;
-}
-
 void releaseEventWaits(RMCommandBuffer *cb)
 {
     cb->_sharedEventWatch.reset();

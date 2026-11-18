@@ -492,11 +492,9 @@ void rmAlphaOneBlend(MTLRenderPipelineColorAttachmentDescriptor *a);
 @end
 
 // RawMetalParallel.mm: the command at `at` is a pass that continues the one before it (a parallel encoder's sub-encoder after
-// its first); the pass at `begin` is one of such a group (pass fusion's body checks see one pass of it, not the group); and
-// where the passes that continue the one at `begin` end (its own end if none does)
+// its first); the pass at `begin` is one of such a group (pass fusion's body checks see one pass of it, not the group)
 bool rmContinuesPass(RMCommandBuffer *cb, size_t at);
 bool rmGroupedPass(RMCommandBuffer *cb, size_t begin);
-size_t rmPassGroupEnd(RMCommandBuffer *cb, size_t begin);
 
 // RawMetalReplay.mm
 id<MTLCommandBuffer> replay(RMCommandBuffer *cb, size_t from, size_t to, bool part);
@@ -512,8 +510,14 @@ bool drawFailed(RMCommandBuffer *cb, const raw::Refusal &f, const char *why);
 // record holds no turned fragment program (PipelineTurnRefused): its line logged, the command buffer failed
 void rmTurnRefused(RMCommandBuffer *cb, uint64_t keyHash, uint32_t turn, const char *key);
 
-// RawMetalEncode.mm
-bool encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why, size_t *refusedEncoder);
+// RawMetalEncode.mm: a range onto the raw path. `stopped`: nothing of it was submitted, the command buffer's error says why
+// (*why where none does); `producerPending`: an event producer it waits on is pending on a channel made again since
+enum class RMEncoded {
+    submitted,
+    stopped,
+    producerPending
+};
+RMEncoded encodeRaw(RMCommandBuffer *cb, size_t from, size_t to, const char **why);
 
 // RawMetalEvents.mm
 extern raw::Mutex gHoldersLock;
@@ -537,7 +541,6 @@ bool expiredEventWait(RMCommandBuffer *cb, size_t index);
 std::vector<RMNativeEventSignal> publishRawEventSignals(RMCommandBuffer *cb);
 void retireEventSignals(const std::vector<RMNativeEventSignal> &signals, bool success);
 raw::EventDependencyState validateNativeEventWaits(RMCommandBuffer *cb, uint64_t generation);
-bool waitsOnRetiredProducer(RMCommandBuffer *cb);
 void releaseEventWaits(RMCommandBuffer *cb);
 std::shared_ptr<raw::SharedEventLease> sharedEventLease(id event);
 int sharedEventReadiness(RMCommandBuffer *cb, id event, uint64_t value, bool native);

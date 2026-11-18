@@ -4858,6 +4858,13 @@ facade_test(
     srcs = ["raw_facade_present_test.cpp"],
 )
 
+# A wait on a shared event whose producer is pending on a channel the kernel killed after it ran: the waiting range waits
+# for the producer's outcome and runs raw, or fails as the producer did; nothing goes to the m2v device
+facade_test(
+    name = "raw_facade_producer_test",
+    srcs = ["raw_facade_producer_test.cpp"],
+)
+
 # The answers above the identity through the facade device's selectors, on the kind of the build's config, and the paths
 # behind them raw: a layered pass that draws, eight RGBA32Float targets, eight amplifications, patches in an indirect
 # command buffer

@@ -192,20 +192,13 @@ void planSegments(RMCommandBuffer *cb)
     inlineSignals(cb);
 }
 
-// The raw path refused `encoder` of the native range being submitted (a draw of it, found while encoding): only that
-// encoder goes to m2v, and the encoders around it are submitted raw, each side encoded again as a range of its own. The
-// encoder's own range was prepared as it was recorded; nothing here writes the plan, which completion handlers of this
-// command buffer's earlier ranges may be reading.
-static void isolateRefused(RMCommandBuffer *cb, size_t encoder)
+// An encode that stopped with no error of its command buffer: every refusal of the range encoder fails it, so this is a
+// refusal that did not, named by its why
+static NSString *stoppedWithoutError(const char *why)
 {
-    const RMSegment range = cb->_segs[cb->_segNext];
-    const size_t end = encoder < range.to ? rmPassGroupEnd(cb, encoder) : range.to;
-    std::vector<RMSegment> parts;
-    for (const raw::ExecutionRange &part :
-         raw::isolate({range.from, range.to, raw::ExecutionKind::native}, encoder, end))
-        parts.push_back({uint32_t(part.from), uint32_t(part.to), part.kind == raw::ExecutionKind::native});
-    cb->_segs.erase(cb->_segs.begin() + ptrdiff_t(cb->_segNext));
-    cb->_segs.insert(cb->_segs.begin() + ptrdiff_t(cb->_segNext), parts.begin(), parts.end());
+    const char *named = why ?: "no reason given";
+    os_log_error(rawLog(), "raw: a range's encode stopped with no command buffer error (%{public}s): it fails", named);
+    return [NSString stringWithFormat:@"The GPU driver stopped encoding the command buffer: %s", named];
 }
 
 // What the range being submitted knows about its end (raw_completion_source.h)
@@ -334,11 +327,10 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
         const uint64_t profileTicks = raw::encodeTicks();
         raw::tEncodeProfile = &profile;
 #endif
-        size_t refusedEncoder = range.to;
         const raw::RangeEnd end = rangeEnd(cb, last, followed, handlers);
         cb->_rangeQuiet = raw::quietEnd(end);
         cb->_rangeHeld = raw::frameHeld(end);
-        const bool encoded = encodeRaw(cb, range.from, range.to, &why, &refusedEncoder);
+        const RMEncoded encoded = encodeRaw(cb, range.from, range.to, &why);
 #if SWITCH_FRAME_TIMELINE
         const uint64_t wallTicks = raw::encodeTicks() - profileTicks;
         cb->_frame.mark(switch_frame::EncodeEnd);
@@ -349,7 +341,7 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
             r.raw->stats.encode.add(profile, wallTicks);
         };
 #endif
-        if (!encoded) {
+        if (encoded != RMEncoded::submitted) {
 #if SWITCH_FRAME_TIMELINE
             folded();
 #endif
@@ -361,21 +353,11 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
                 finish(cb, priorError);
                 return true;
             }
-            if (cb->_resourceReady || waitsOnRetiredProducer(cb))
+            // Visited again: eventReadiness parks the queue until the producer's outcome, or the resource readiness the
+            // seal armed, wakes it
+            if (cb->_resourceReady || encoded == RMEncoded::producerPending)
                 return false;
-            cb->_reason = WhyEncode;
-            cb->_why = [NSString stringWithUTF8String:why ?: "?"];
-            if (cb->_predicates.recorded()) {
-                failCommandBuffer(cb, @"Command predication on work the raw path refused while encoding");
-                std::lock_guard<raw::Mutex> l(cb->_lock);
-                priorError = cb->_segError;
-            }
-            if (priorError) {
-                finish(cb, priorError);
-                return true;
-            }
-            isolateRefused(cb, refusedEncoder);
-            return false;
+            return failSubmission(cb, stoppedWithoutError(why));
         }
         RAW_DIAGNOSTIC(r.stats.raw++);
         r.rawSinceM2v = true;

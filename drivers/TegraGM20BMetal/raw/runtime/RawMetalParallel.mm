@@ -223,11 +223,3 @@ bool rmGroupedPass(RMCommandBuffer *cb, size_t begin)
 {
     return rmContinuesPass(cb, begin) || rmContinuesPass(cb, cb->_plan.encoderEnd(begin));
 }
-
-size_t rmPassGroupEnd(RMCommandBuffer *cb, size_t begin)
-{
-    size_t end = cb->_plan.encoderEnd(begin);
-    while (rmContinuesPass(cb, end))
-        end = cb->_plan.encoderEnd(end);
-    return end;
-}

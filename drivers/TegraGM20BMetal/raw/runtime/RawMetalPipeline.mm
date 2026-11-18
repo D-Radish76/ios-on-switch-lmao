@@ -15,7 +15,6 @@ struct Ahead {
     bool open = false;
     uint64_t moves = 0;  // texture moves (rmExcludingSubmissions) when it began
     const char *why = nullptr;
-    size_t refused = 0;
 };
 
 Ahead &ahead()
@@ -126,7 +125,7 @@ bool rmPipelineStep()
             // counted as committed, no purge takes an arena it encodes (raw_gpu.h purgeArenas)
             gRM->committed.fetch_add(1);
             a.moves = gRM->moves.load(std::memory_order_acquire);
-            if (gRM->raw->purgedArenas() || !encode.open(cb, 0, SIZE_MAX, false, &a.why, &a.refused)) {
+            if (gRM->raw->purgedArenas() || !encode.open(cb, 0, SIZE_MAX, false, &a.why)) {
                 encode.reset();
                 gRM->committed.fetch_sub(1);
                 giveBack(VetoDevice);
