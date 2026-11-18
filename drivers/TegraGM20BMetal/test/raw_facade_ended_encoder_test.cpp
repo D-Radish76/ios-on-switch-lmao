@@ -170,6 +170,24 @@ TEST(RawFacadeEndedEncoder, ADrawOnAnEndedParallelSubEncoderCompletes)
     expectCompleted(cb);
 }
 
+// endprobe p_c_parent_ended (an M4 Max crashes): a draw on a sub-encoder after its parallel encoder ended, which can
+// reach no command buffer to fail, records nothing and is counted skipped once
+TEST(RawFacadeEndedEncoder, ADrawOnASubEncoderAfterItsParallelEncoderEndedIsSkipped)
+{
+    ASSERT_TRUE(opened().device != nil && opened().state != nil);
+    id<MTLCommandBuffer> cb = [[opened().device newCommandQueue] commandBuffer];
+    id<MTLParallelRenderCommandEncoder> parallel = [cb parallelRenderCommandEncoderWithDescriptor:onePass()];
+    id<MTLRenderCommandEncoder> sub = [parallel renderCommandEncoder];
+    [sub setRenderPipelineState:opened().state];
+    quad(sub);
+    [sub endEncoding];
+    [parallel endEncoding];
+    NSDictionary *before = harness::counters(opened().device);
+    quad(sub);
+    EXPECT_EQ(harness::skippedMoved(before, harness::counters(opened().device)), harness::skippedOnce("enc.pass"));
+    expectCompleted(cb);
+}
+
 // endprobe r_c_blit_open: a draw on a render encoder that ended, recorded while a blit encoder is open
 TEST(RawFacadeEndedEncoder, ADrawAfterABlitEncoderBeganFailsInvalidResource)
 {

@@ -411,6 +411,9 @@ void rmAlphaOneBlend(MTLRenderPipelineColorAttachmentDescriptor *a);
 // its first); the pass at `begin` is one of such a group (pass fusion's body checks see one pass of it, not the group)
 bool rmContinuesPass(RMCommandBuffer *cb, size_t at);
 bool rmGroupedPass(RMCommandBuffer *cb, size_t begin);
+// RawMetalParallel.mm: `cb` is the recorder of a sub-encoder whose parallel encoder ended, the draw being recorded
+// skipped and counted; false: it is not
+bool rmDrawAfterParallelEnd(RMCommandBuffer *cb);
 
 // RawMetalDrawErrors.mm: a draw refused as `f` (raw_gpu.h RefusalId) that goes nowhere else: its line logged, the
 // command buffer failed (with Metal's error where Metal fails it too); false: a refusal of another kind

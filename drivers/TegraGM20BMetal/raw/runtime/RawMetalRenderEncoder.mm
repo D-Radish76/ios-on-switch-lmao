@@ -235,9 +235,10 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 {
     _drew = true;
     // no state set, or the encoder failed its command buffer already (a failed pass's formats are not recorded, and every
-    // draw would hit enc.colorfmt for nothing, r7p5's "a=0 b=0")
+    // draw would hit enc.colorfmt for nothing, r7p5's "a=0 b=0"), or a parallel encoder's sub-encoder whose parent
+    // ended, whose draws are refused
     if (!_pipe || _cb->_encFailed)
-        return YES;
+        return !rmDrawAfterParallelEnd(_cb);
     rmXrShadowDrew(_cb, *_pipe->_raw);
     if (_checkedEligibility == _eligibility && _checkedEpoch == _cb->_plan.stateEpoch() &&
         _checkedPipeline == _pipe->_raw)

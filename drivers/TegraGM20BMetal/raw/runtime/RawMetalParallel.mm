@@ -174,6 +174,8 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s)
         seam(subs[at], _descriptor, at, subs.size());
         splice(cb, subs[at]);
         rmRecordingDone(subs[at]);
+        // a draw its encoder records from now on takes checkDraw's failed branch (rmDrawAfterParallelEnd)
+        subs[at]->_encFailed = true;
     }
     rmPlaceCounterMarks(cb, self, first, true);
     rmPlaceCounterMarks(cb, self, cb->_plan.size() - 1, false);
@@ -207,4 +209,18 @@ bool rmContinuesPass(RMCommandBuffer *cb, size_t at)
 bool rmGroupedPass(RMCommandBuffer *cb, size_t begin)
 {
     return rmContinuesPass(cb, begin) || rmContinuesPass(cb, cb->_plan.encoderEnd(begin));
+}
+
+// A draw on a sub-encoder after its parallel encoder ended is Metal's validation error, which an M4 Max with validation
+// off crashes on. The sub-encoder holds no reference to the command buffer its recorder was spliced into, so nothing
+// fails: the draw records nothing and is counted skipped.
+bool rmDrawAfterParallelEnd(RMCommandBuffer *cb)
+{
+    if (![cb isKindOfClass:[RMSubRecorder class]] || !cb->_recordingReturned)
+        return false;
+    rmSkipped(PredEncPassRender);
+    SWITCH_REFUSE("raw", "parallel.ended_sub",
+                  "a draw on a parallel encoder's sub-encoder after the parallel encoder ended: Metal's validation "
+                  "error, nothing drawn (skipped enc.pass)");
+    return true;
 }
