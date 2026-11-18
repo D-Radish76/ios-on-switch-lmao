@@ -18,9 +18,3 @@
 //drivers/NativeMetal:bridge/NativeMetalObjects.rs
 //drivers/NativeMetal:bridge/NativeMetalTarget.rs
 //drivers/NativeMetal:bridge/NativeMetalVariants.rs
-//gpu:bridge
-//gpu:bridge_ios
-//third_party/m2v/crates/metal2vulkan-runtime:build_script
-//third_party/m2v/crates/metal2vulkan-runtime:build_script-
-//third_party/m2v/crates/metal2vulkan-runtime:build_script_
-//third_party/m2v/crates/metal2vulkan-runtime:metal2vulkan-runtime

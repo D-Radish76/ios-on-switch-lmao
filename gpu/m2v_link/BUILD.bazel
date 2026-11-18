@@ -1,10 +1,10 @@
 # The cut's gate: what each binary that ships or builds the pack still takes from m2v. The cut deletes m2v once every
-# list here is empty (and raw/plan/m2v_routes.tsv has no open product row).
+# list here is empty (and raw/plan/m2v_routes.tsv has no open product row). The plugin links the translation alone, and
+# its bundle's build fails on a symbol of m2v's runtime, the bridge or the frontend (tools/gpu/bundle.py).
 #
-#   plugin_<kind>.txt  the plugin linked without the bridge (//gpu:plugin_m2v_edges): each symbol it still needs from
-#                      m2v, with the units that reference it, per IPSW kind
-#   deps_<binary>.txt  the m2v rules in the binary's build graph and the m2v frontend and bridge files it compiles (a
-#                      genquery, every select() branch)
+#   deps_<binary>.txt  the m2v rules in the binary's build graph and the m2v frontend and bridge files it compiles or
+#                      hashes (a genquery, every select() branch): the plugin's and the bundle's are the files the raw
+#                      stack key hashes while native-seed makes records through them
 #   pack_refused_<kind>.txt  the states the raw pack refuses (pack_refusals_test, over a report given to it)
 #
 # A list changes only with the code: rewrite one from the failing test's output (bazel-bin/gpu/m2v_link/<name>.txt).
@@ -40,27 +40,15 @@ BINARIES = {
     scope = [label],
 ) for name, label in BINARIES.items()]
 
-alias(
-    name = "plugin_pin",
-    actual = select({
-        "//ipsw:21H461": "plugin_21H461.txt",
-        "//ipsw:24B119": "plugin_24B119.txt",
-    }),
-)
-
 py_test(
     name = "m2v_link_test",
     srcs = ["m2v_link_test.py"],
-    args = ["$(rootpath //gpu:plugin_m2v_edges)=$(rootpath :plugin_pin)"] + [
+    args = [
         "$(rootpath :deps_%s)=$(rootpath deps_%s.txt)" % (name, name)
         for name in BINARIES
     ],
-    data = [
-        ":plugin_pin",
-        "//gpu:plugin_m2v_edges",
-    ] + [":deps_" + name for name in BINARIES] + ["deps_%s.txt" % name for name in BINARIES],
-    # m2v: the plugin's, the bundle's and the pack tools' genqueries reach the packages --config=nom2v deletes until the
-    # cut; the cut drops the tag
+    data = [":deps_" + name for name in BINARIES] + ["deps_%s.txt" % name for name in BINARIES],
+    # m2v: the pack tools' genquery reaches the packages --config=nom2v deletes until the cut; the cut drops the tag
     tags = ["m2v"],
 )
 

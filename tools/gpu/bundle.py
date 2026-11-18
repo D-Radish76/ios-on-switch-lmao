@@ -3,15 +3,15 @@
 
 The bundle half of the old build-tegra-gm20b-metal.py:
 
-    bundle.py --xcode-env F --plugin <linked plugin> --stack <raw_stack.txt> --bundle <out dir> --trustcache <out>
-              --trust-json <out>
+    bundle.py --xcode-env F --plugin <linked plugin> --stack <raw_stack.txt> --translate-header <NativeMetalTranslate.h>
+              --bundle <out dir> --trustcache <out> --trust-json <out>
 
 Info.plist's SwitchShaderStack is the stack key the plugin is built with, which the shader seed checks its tools
-against. The plugin is stripped (-x) and must be a plain arm64 Mach-O. The bundle is signed ad hoc with 4 KiB pages
-(this kernel's page size) and SHA-256: no team, no entitlements, no signing time, so the CDHash is a function of the
-bytes. The trust cache is one version-2 module (vendor/unixnu/scripts/make-owner-trust-bundle.py): u32 version, uuid5
-of the CDHashes, u32 count, then per entry the 20-byte CDHash, hash type 2 (SHA-256), flags 0, constraint category 0,
-reserved 0, in ascending order.
+against. The linked plugin holds no symbol of the Metal-to-Vulkan fallback (m2v_symbols); it is stripped (-x) and must
+be a plain arm64 Mach-O. The bundle is signed ad hoc with 4 KiB pages (this kernel's page size) and SHA-256: no team, no
+entitlements, no signing time, so the CDHash is a function of the bytes. The trust cache is one version-2 module
+(vendor/unixnu/scripts/make-owner-trust-bundle.py): u32 version, uuid5 of the CDHashes, u32 count, then per entry the
+20-byte CDHash, hash type 2 (SHA-256), flags 0, constraint category 0, reserved 0, in ascending order.
 """
 
 import argparse
@@ -29,6 +29,10 @@ from tools.common import macho
 from tools.trustcache import trustcache
 
 NAME = 'TegraGM20BMetal'
+# m2v's runtime crate and the bridge by their Rust crates' names (the linked plugin's local symbols), and the frontend's
+# entry points and NB classes
+M2V = re.compile(r'metal2vulkan_runtime|native_metal_bridge|^_native_bridge_metal_|^_OBJC_(?:META)?CLASS_\$_NB[A-Z]')
+NMB = re.compile(r'^_(nmb_\w+)$')
 
 
 class Xcode:
@@ -61,6 +65,20 @@ def arm64(path: Path) -> None:
         sys.exit(f'{path}: expected a plain arm64 (subtype 0) Mach-O')
 
 
+def translation_entries(header: Path) -> set[str]:
+    """Give the nmb_ functions the translation's header declares, its comments left out."""
+    code = re.sub(r'//[^\n]*|/\*.*?\*/', '', header.read_text(), flags=re.DOTALL)
+    return set(re.findall(r'\b(nmb_\w+)\s*\(', code))
+
+
+def m2v_symbols(symbols: list[str], translation: set[str]) -> list[str]:
+    """Give the symbols of m2v's runtime, the bridge or the frontend.
+
+    An nmb_ function the translation does not declare is the bridge's.
+    """
+    return sorted({s for s in symbols if M2V.search(s) or ((m := NMB.match(s)) and m[1] not in translation)})
+
+
 def sign(xcode: Xcode, path: Path, identifier: str) -> str:
     xcode.run('codesign', '--force', '--sign', '-', '--pagesize', '4096', '--identifier', identifier, path)
     xcode.run('codesign', '--verify', '--strict', path)
@@ -82,10 +100,14 @@ def trust_module(cdhashes: list[str]) -> bytes:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    for name in ('xcode-env', 'plugin', 'stack', 'bundle', 'trustcache', 'trust-json'):
+    for name in ('xcode-env', 'plugin', 'stack', 'translate-header', 'bundle', 'trustcache', 'trust-json'):
         parser.add_argument('--' + name, required=True)
     args = parser.parse_args()
     xcode = Xcode(args.xcode_env)
+    symbols = xcode.run('nm', '-U', '-j', args.plugin).split()
+    held = m2v_symbols(symbols, translation_entries(Path(args.translate_header)))
+    if held:
+        sys.exit(f'{args.plugin}: holds {len(held)} symbols of the Metal-to-Vulkan fallback: {", ".join(held[:8])}')
 
     bundle = Path(args.bundle)
     if bundle.exists():

@@ -14,15 +14,24 @@ py_binary(
     srcs = ["xcode_run.py"],
 )
 
-# A binary linked without m2v and the symbols it still needs from it (gpu/defs.bzl plugin_m2v_edges)
-py_binary(
-    name = "m2v_link_edges",
-    srcs = ["m2v_link_edges.py"],
-)
-
 py_binary(
     name = "bundle",
     srcs = ["bundle.py"],
+    deps = [
+        "//tools/common:macho",
+        "//tools/trustcache",
+    ],
+)
+
+# bundle.py's check: the plugin holds the translation's entry points and nothing of m2v's runtime, bridge or frontend
+py_test(
+    name = "bundle_test",
+    srcs = [
+        "bundle.py",
+        "bundle_test.py",
+    ],
+    data = ["//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h"],
+    env = {"TRANSLATE_HEADER": "$(rootpath //drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h)"},
     deps = [
         "//tools/common:macho",
         "//tools/trustcache",

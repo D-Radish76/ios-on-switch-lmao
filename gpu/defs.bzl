@@ -1,7 +1,7 @@
 """Rules for the TegraGM20B Metal bundle (gpu/BUILD.bazel). Each step of the old build-tegra-gm20b-metal.py is one
 action with declared inputs, so Bazel reruns only what an edit reaches:
 
-  llvm-as (2 fixtures) -> rustc per crate (iOS bridge: bazel/rust) -> clang++ (each object) -> link -> strip/sign/trust cache
+  rustc per crate (iOS translation: bazel/rust) -> clang++ (each object) -> link -> m2v check/strip/sign/trust cache
 
 The shader seed and the raw pack are gpu/seed's.
 """
@@ -141,10 +141,10 @@ def _metal_plugin_impl(ctx):
         "Linking the TegraGM20BMetal plugin",
         # The compile flags again, as the old one-line build had them: clang passes -O2 on to ld, whose code
         # deduplication it turns on (118 KB less __text).
-        ["clang++"] + _IOS + _PLUGIN_CFLAGS + ["-bundle"] + [o.path for o in objects] + [ctx.file.bridge.path] +
+        ["clang++"] + _IOS + _PLUGIN_CFLAGS + ["-bundle"] + [o.path for o in objects] + [ctx.file.translate.path] +
         [ctx.file.compile.path] +
         ["-Wl,-dead_strip", "-Wl,-oso_prefix,@PWD@/", "-lobjc"] + frameworks + ctx.attr.linkopts + ["-o", out.path],
-        objects + [ctx.file.bridge, ctx.file.compile],
+        objects + [ctx.file.translate, ctx.file.compile],
         [out],
     )
     dsym = ctx.actions.declare_directory(ctx.attr.name + "/TegraGM20BMetal.dSYM")
@@ -153,7 +153,7 @@ def _metal_plugin_impl(ctx):
         "Dsymutil",
         "Writing the plugin's dSYM",
         ["dsymutil", "--oso-prepend-path=@PWD@", out.path, "-o", dsym.path],
-        objects + [ctx.file.bridge, ctx.file.compile, out],
+        objects + [ctx.file.translate, ctx.file.compile, out],
         [dsym],
     )
     return [
@@ -176,49 +176,8 @@ metal_plugin = rule(
     implementation = _metal_plugin_impl,
     attrs = _PLUGIN_ATTRS | {
         "stack": attr.label(allow_single_file = True, doc = "the raw path's stack key (TEGRA_RAW_STACK)"),
-        "bridge": attr.label(mandatory = True, allow_single_file = True),
-        "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's object (NAK)"),
-    },
-)
-
-# --- The plugin linked without m2v --------------------------------------------------------------------------------
-
-def _plugin_m2v_edges_impl(ctx):
-    # A stand-in stack key: a constant changes no symbol either unit references.
-    stack = ctx.actions.declare_file(ctx.attr.name + "/stack.txt")
-    ctx.actions.write(stack, "0\n")
-    objects = _plugin_objects(ctx, ctx.attr.name, stack)
-    linked = ctx.actions.declare_file(ctx.attr.name + "/TegraGM20BMetal")
-    edges = ctx.actions.declare_file(ctx.attr.name + ".txt")
-    args = ctx.actions.args()
-    args.add(ctx.file._xcode_env)
-    args.add("--")
-    args.add_all([ctx.executable._edges, "--out", edges, "--binary", linked, "--", "clang++"])
-    args.add_all(_IOS + _PLUGIN_CFLAGS + ["-bundle"])
-    args.add_all(objects)
-    args.add_all([ctx.file.translate, ctx.file.compile])
-    args.add_all(["-Wl,-dead_strip", "-lobjc"] + _frameworks(ctx) + ctx.attr.linkopts)
-    ctx.actions.run(
-        executable = ctx.executable._xcode_run,
-        arguments = [args],
-        inputs = depset(objects + [ctx.file.translate, ctx.file.compile, ctx.file._xcode_env, ctx.file._xcode_identity]),
-        tools = [ctx.attr._edges[DefaultInfo].files_to_run],
-        outputs = [edges, linked],
-        mnemonic = "PluginM2vEdges",
-        progress_message = "Linking the plugin without m2v",
-    )
-    return [DefaultInfo(files = depset([edges]))]
-
-plugin_m2v_edges = rule(
-    implementation = _plugin_m2v_edges_impl,
-    doc = """The plugin's units linked as the plugin is, without the Metal bridge (m2v's runtime crate and the bridge's
-    exports) but with what stays of it, the translation and the stage compile: the symbols left undefined, each with the
-    units that reference them (tools/gpu/m2v_link_edges.py). Empty: nothing of the plugin needs m2v. Nothing here
-    reaches a package --config=nom2v deletes.""",
-    attrs = _PLUGIN_ATTRS | {
-        "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's object (NAK)"),
         "translate": attr.label(mandatory = True, allow_single_file = True, doc = "the translation's static library"),
-        "_edges": attr.label(default = "//tools/gpu:m2v_link_edges", executable = True, cfg = "exec"),
+        "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's object (NAK)"),
     },
 )
 
@@ -349,13 +308,20 @@ def _metal_bundle_impl(ctx):
     args.add("--xcode-env", ctx.file._xcode_env)
     args.add("--plugin", ctx.file.plugin)
     args.add("--stack", ctx.file.stack)
+    args.add("--translate-header", ctx.file.translate_header)
     args.add("--bundle", bundle.path)
     args.add("--trustcache", trustcache)
     args.add("--trust-json", trust_json)
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = [ctx.file.plugin, ctx.file.stack, ctx.file._xcode_env, ctx.file._xcode_identity],
+        inputs = [
+            ctx.file.plugin,
+            ctx.file.stack,
+            ctx.file.translate_header,
+            ctx.file._xcode_env,
+            ctx.file._xcode_identity,
+        ],
         outputs = [bundle, trustcache, trust_json],
         mnemonic = "MetalBundle",
         progress_message = "Signing TegraGM20BMetal.bundle and writing its trust cache",
@@ -370,6 +336,11 @@ metal_bundle = rule(
     attrs = _XCODE | {
         "plugin": attr.label(mandatory = True, allow_single_file = True),
         "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the raw path's stack key, into Info.plist"),
+        "translate_header": attr.label(
+            mandatory = True,
+            allow_single_file = True,
+            doc = "the translation's C entry points: the only nmb_ functions the plugin may hold",
+        ),
         "_tool": attr.label(default = "//tools/gpu:bundle", executable = True, cfg = "exec"),
     },
 )

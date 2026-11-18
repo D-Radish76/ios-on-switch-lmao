@@ -41,9 +41,9 @@ def profile_tests(name, source, objcxx_source):
     metal_plugin(
         name = name + "_plugin",
         srcs = [objcxx_source],
-        bridge = source,
         compile = source,
         tags = ["manual"],
+        translate = source,
     )
     tests = {
         "_ios_binary_debug": (_ios_debug_test, "_ios_binary"),

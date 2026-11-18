@@ -1,7 +1,7 @@
 """How the build's Rust is compiled: one rule, `rust_artifact`, builds a rules_rust crate (and every crate below it) for a
 platform and a purpose, mapping //bazel:profile onto rustc flags for that crate graph alone.
 
-    rust_artifact(name = "bridge_ios", crate = ":bridge", kind = "device")
+    rust_artifact(name = "translate_ios", crate = ":translate_static", kind = "device")
 
 kind:
   device       the iPad's code (aarch64-apple-ios, //bazel/platforms:ios_arm64), what the plugin links.
