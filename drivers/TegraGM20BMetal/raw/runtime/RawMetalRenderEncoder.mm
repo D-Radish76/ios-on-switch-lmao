@@ -221,9 +221,6 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
     if (![(id)p isKindOfClass:[RMPipeline class]])
         return rmCallInvalid(_cb, PredStateForeign, 0, 0,
                              state ? "a render state not made by this device" : "a nil render state");
-    if (!p->_raw)
-        return rmCallInvalid(_cb, !p->_completable ? PredStateNotPackable : PredStateNotInPack, 0, 0,
-                             "a render state of functions not made by this device");
     __unsafe_unretained RMPipeline *next = p;
     const bool changed = _pipe != next;
     if (changed)

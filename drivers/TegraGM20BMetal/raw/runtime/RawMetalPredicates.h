@@ -18,8 +18,6 @@ enum RMPred : uint8_t {
     PredPassDepthStencil,  // a = depth format, b = stencil format
     // states and calls
     PredStateForeign,
-    PredStateNotPackable,  // a state whose functions are not this device's (neither in the pack nor made by the runtime)
-    PredStateNotInPack,
     PredCallVisibility,
     PredCallBufForeign,      // a = stage << 8 | index (0xffff: an index buffer)
     PredCallSamplerForeign,  // a sampler the raw path does not express (its reason logged when it was made)
@@ -59,8 +57,6 @@ static constexpr const char *kPredNames[] = {"-",
                                              "pass.level",
                                              "pass.ds",
                                              "state.foreign",
-                                             "state.notpack",
-                                             "state.pack",
                                              "call.vis",
                                              "call.buf",
                                              "call.sampler",

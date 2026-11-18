@@ -14,8 +14,6 @@ enum RMNeed : uint8_t {
     NeedFunctionTwin,
     // pipeline states made on m2v, or m2v twins of the raw path's
     NeedComputeStateTwin,
-    NeedRenderStateTwin,
-    NeedPackedRenderStateTwin,
     // twins of objects the raw path keeps itself
     NeedBufferTwin,
     NeedTextureTwin,
@@ -34,8 +32,6 @@ static constexpr const char *kNeedNames[] = {
     "a library's twin",
     "a function's twin",
     "a compute state's twin",
-    "a render state's twin",
-    "a packed render state's twin",
     "a buffer's twin",
     "a texture's twin",
     "a sampler's twin",

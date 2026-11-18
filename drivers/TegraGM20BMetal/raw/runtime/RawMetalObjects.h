@@ -243,15 +243,14 @@ enum class RMShareable : uint8_t {
 
 @interface RMPipeline : RMObject {
 @public
-    // null: not in the pack (a command buffer that sets it fails), or not yet made by the runtime (completeLater: set once,
-    // released, from its queue)
+    // null only until the runtime made it (completeLater: set once, released, from its queue): a state without one is
+    // never handed out (rmFinishState)
     raw::Pipeline *_raw;
     bool _packable;  // its functions are one framework's default library's (looked up in the pack)
     // its record is the pack's, and so are its variants' (RawMetalCubic.mm packedVariants); a record this process made is
     // not, and its variants are made as well
     bool _packed;
     bool _completable;  // its functions, fragment or none, are this device's (made at creation where the pack has none)
-    bool _archived;     // an archive its creation listed declares it: its twin is made as a packed one's
     bool _caTransform;
     // its alpha to coverage and alpha to one (raw_alpha_control.h), which its key does not hold
     uint32_t _alphaControl;

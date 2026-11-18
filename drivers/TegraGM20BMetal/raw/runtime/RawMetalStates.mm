@@ -340,7 +340,6 @@ RMPipeline *rmPipelineShell(RMDevice *device, MTLRenderPipelineDescriptor *d, MT
         p->_completable && !deviceArchive ? renderArchiveAnswer(d, o, keyHash, error) : raw::ArchiveAnswer::NotAsked;
     if (answer == raw::ArchiveAnswer::Missed)
         return nil;
-    p->_archived = answer == raw::ArchiveAnswer::Declared;
     return p;
 }
 
@@ -366,30 +365,8 @@ NSError *rmCreationError(const std::string &failure)
                            }];
 }
 
-static void refuseUnmade(RMPipeline *p, MTLRenderPipelineDescriptor *d)
-{
-    if (p->_raw)
-        return;
-    const char *label = d.label.UTF8String ?: "-";
-    SWITCH_REFUSE_DETAIL("raw", "state.unpacked", raw::Pack::fnv(label, strlen(label)),
-                         "state neither in the pack nor made at its creation: m2v draws it%s: %s (functions %s, %s)",
-                         !p->_completable ? " (a function not this device's: never made)"
-                                          : " (the raw log names why it was refused)",
-                         label, d.vertexFunction ? object_getClassName(d.vertexFunction) : "nil",
-                         d.fragmentFunction ? object_getClassName(d.fragmentFunction) : "nil");
-}
-
-// m2v's state over the twins, for a command buffer that has to go to m2v (made asynchronously in the render server:
-// AsyncPipelines.h). A state the pack draws gets one made at its first set there, by a fallback: made eagerly on the
-// user-initiated workers (above backboardd's main thread), they cost ~9 ms of CPU each, 25-170 ms of a worker, while no
-// command buffer fell back (11-06 21:03: 61 twins, 1074 raw command buffers, none to m2v).
 // A packed state is the device's archive hit, so its twin goes without the archives the creation listed (Core Animation's
-// own, which holds nothing for this GPU) and without FailOnBinaryArchiveMiss: refused there, a command buffer that falls
-// back would have no state to draw with, and listed there, the twin would be made at once instead of at its first set.
-// Every way a state is made (with or without reflection, at once or through a completion handler) asks m2v for its twin
-// this way. A twin m2v refused leaves a command buffer that falls back with no state: m2v fails all of it ("foreign
-// render pipeline", device boot 10: 833 of Core Animation's command buffers, each leaving its framebuffer a frame
-// behind).
+// own, which holds nothing for this GPU) and without FailOnBinaryArchiveMiss
 static MTLRenderPipelineDescriptor *packedTwinDescriptor(MTLRenderPipelineDescriptor *d, bool packed)
 {
     MTLRenderPipelineDescriptor *t = twinDescriptor(d);
@@ -404,18 +381,6 @@ static MTLPipelineOption packedTwinOptions(MTLPipelineOption o, bool packed)
     return o & ~MTLPipelineOptionFailOnBinaryArchiveMiss;
 }
 
-static id<MTLRenderPipelineState> pipelineTwin(MTLRenderPipelineDescriptor *d, MTLPipelineOption o, bool packed,
-                                               NSError **error)
-{
-    if (packed && native_bridge_metal_render_pipeline_lazy)
-        return native_bridge_metal_render_pipeline_lazy(RM_M2V(NeedPackedRenderStateTwin),
-                                                        packedTwinDescriptor(d, true), packedTwinOptions(o, true));
-    return [RM_M2V(NeedRenderStateTwin) newRenderPipelineStateWithDescriptor:twinDescriptor(d)
-                                                                     options:packedTwinOptions(o, packed)
-                                                                  reflection:nil
-                                                                       error:error];
-}
-
 // The twin of a state raw drew from its creation, made when a command buffer that sets it first goes to m2v
 static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLPipelineOption o)
 {
@@ -428,27 +393,18 @@ static id<MTLRenderPipelineState> laterTwin(MTLRenderPipelineDescriptor *d, MTLP
                                                error:nil];
 }
 
-// A state of `d` under `o`: its record the pack's, or made at once, unless the archives it lists miss it as Metal's would; its
-// m2v twin made as a packed state's where the pack or an archive holds it (packedTwinDescriptor). A state raw draws from
-// its creation gets its twin only if a command buffer that sets it goes to m2v; its reflection is raw's
-// (RawMetalReflection.h).
+// A state of `d` under `o`: its record the pack's, or made at once, unless the archives it lists miss it as Metal's would;
+// nil with Metal's error where it has none, its functions another device's or no vertex function among them (Metal's
+// validation error); its reflection is raw's (RawMetalReflection.h).
 id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescriptor *d, MTLPipelineOption o,
                                          MTLAutoreleasedRenderPipelineReflection *reflection, NSError **error)
 {
-    const bool packed = p->_raw || p->_archived;
     if (reflection)
         *reflection = rmRenderReflection(p, d, o);
-    if (p->_raw && p->_madeFrom) {
-        if (!p->_packed && gRM->completion)
-            rmMadeVariants(p, d);
-        p->_twinOptions = o;
-        p->_twinLater = true;
-        if (error)
-            *error = nil;
-        return (id<MTLRenderPipelineState>)p;
-    }
-    if (!p->_raw && p->_completable) {
-        const std::string failure = p->_failure.empty() ? "no shader compiler serves this process" : p->_failure;
+    if (!p->_raw) {
+        const std::string failure = !p->_completable ? "no vertex function, or a function not made by this device"
+                                    : p->_failure.empty() ? "no shader compiler serves this process"
+                                                          : p->_failure;
         os_log_error(rawLog(), "raw: %{public}s: no render state %{public}s: %{public}s", getprogname(),
                      d.label.UTF8String ?: "-", failure.c_str());
         if (error)
@@ -457,11 +413,13 @@ id<MTLRenderPipelineState> rmFinishState(RMPipeline *p, MTLRenderPipelineDescrip
             *reflection = nil;
         return nil;
     }
-    p->_twin = pipelineTwin(d, o, packed, error);
-    refuseUnmade(p, d);
-    if (error && p->_raw)
+    if (!p->_packed && gRM->completion)
+        rmMadeVariants(p, d);
+    p->_twinOptions = o;
+    p->_twinLater = true;
+    if (error)
         *error = nil;
-    return !p->_twin && !p->_raw ? nil : (id<MTLRenderPipelineState>)p;
+    return (id<MTLRenderPipelineState>)p;
 }
 
 static id<MTLRenderPipelineState> makeState(RMDevice *device, MTLRenderPipelineDescriptor *d, MTLPipelineOption o,

@@ -114,11 +114,7 @@ TEST(M2VSource, APackedStatesTwinNeverFailsOnTheArchive)
                 HasSubstr("t.binaryArchives = nil;"));
     EXPECT_THAT(Body(states, "static MTLPipelineOption packedTwinOptions("),
                 HasSubstr("o & ~MTLPipelineOptionFailOnBinaryArchiveMiss"));
-    EXPECT_THAT(Body(states, "static id<MTLRenderPipelineState> pipelineTwin("),
-                HasSubstr("packedTwinOptions(o, true)"));
-    const std::string finish = Body(states, "id<MTLRenderPipelineState> rmFinishState(");
-    EXPECT_THAT(finish, HasSubstr("rmRenderReflection(p, d, o)"));
-    EXPECT_THAT(finish, HasSubstr("pipelineTwin(d, o, packed, error)"));
+    EXPECT_THAT(Body(states, "id<MTLRenderPipelineState> rmFinishState("), HasSubstr("rmRenderReflection(p, d, o)"));
     EXPECT_THAT(Body(states, "static id<MTLRenderPipelineState> makeState("), HasSubstr("rmFinishState(p, d, o"));
     const std::string later = SourceText("../raw/runtime/RawMetalStatesLater.mm");
     EXPECT_THAT(Body(later, "static void finishState("), HasSubstr("rmFinishState(p, d, o"));

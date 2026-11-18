@@ -16,6 +16,28 @@
 
 #include <gtest/gtest.h>
 
+// Another device's vertex function, as a render state's creation reads one
+@interface ForeignVertexFunction : NSObject
+@end
+@implementation ForeignVertexFunction
+
+- (NSString *)name
+{
+    return @"v";
+}
+
+- (MTLFunctionType)functionType
+{
+    return MTLFunctionTypeVertex;
+}
+
+- (MTLPatchType)patchType
+{
+    return MTLPatchTypeNone;
+}
+
+@end
+
 namespace {
 
 using namespace harness;
@@ -190,6 +212,31 @@ TEST(RawFacadeCreation, ACompletionHandlersCreationWithNoCompilerAtAllFailsByNam
         ASSERT_TRUE(library != nil);
         const std::string why = createdLater(device, unpacked(library));
         EXPECT_NE(why.find("no shader compiler comes this boot"), std::string::npos) << why;
+        EXPECT_EQ(kernel_model::model.compiles, 0u);
+    });
+}
+
+// A state of another device's vertex function, or of none, is Metal's validation error: nil with the library's error,
+// synchronously and through a completion handler, with nothing asked of the compiler
+TEST(RawFacadeCreation, AStateOfAnotherDevicesFunctionOrNoneFailsTheCreationWithAnError)
+{
+    switch_ios::test::ExpectPassesInFreshProcess([] {
+        const auto [device, library] = opened(kServing, {TegraGM20BCompileMade});
+        ASSERT_TRUE(library != nil);
+        MTLRenderPipelineDescriptor *foreign = unpacked(library);
+        foreign.vertexFunction = (id<MTLFunction>)[ForeignVertexFunction new];
+        MTLRenderPipelineDescriptor *none = unpacked(library);
+        none.vertexFunction = nil;
+        for (MTLRenderPipelineDescriptor *d : {foreign, none}) {
+            NSError *error = nil;
+            EXPECT_EQ([device newRenderPipelineStateWithDescriptor:d error:&error], nil);
+            EXPECT_EQ(text(error.domain), text(MTLLibraryErrorDomain));
+            EXPECT_EQ(error.code, MTLLibraryErrorInternal);
+            EXPECT_NE(text(error.localizedDescription).find("not made by this device"), std::string::npos)
+                << text(error);
+            const std::string later = createdLater(device, d);
+            EXPECT_NE(later.find("not made by this device"), std::string::npos) << later;
+        }
         EXPECT_EQ(kernel_model::model.compiles, 0u);
     });
 }
