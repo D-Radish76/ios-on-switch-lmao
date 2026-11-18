@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include "NativeBridgeMetalFrontend.h"
 #include "RawMetalInternal.h"
 #include "RawRenderKey.h"
 #include "raw_answer_class.h"

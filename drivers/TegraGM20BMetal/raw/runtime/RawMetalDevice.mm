@@ -6,7 +6,6 @@
 #include "raw_surface_note.h"
 #include "raw_surface_refusal.h"
 #include <mach/vm_page_size.h>
-#include "NativeBridgeMetalFrontend.h"
 #import "RawMetalMultisample.h"
 
 @implementation RMDevice

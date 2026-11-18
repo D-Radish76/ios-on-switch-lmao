@@ -2,7 +2,6 @@
 #import "RawMetalFunctionTags.h"
 #import "RawMetalInternal.h"
 #import "RawPipelineKey.h"
-#include "NativeBridgeMetalFrontend.h"
 #include "raw_metallib.h"
 
 // The function list entry's TESS tag in the AIR slice the facade read (MetallibEntries.h); false where the facade read none

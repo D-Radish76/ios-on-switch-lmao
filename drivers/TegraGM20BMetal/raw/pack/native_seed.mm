@@ -20,6 +20,14 @@ void missing(const char *cls, const char *selector)
     fprintf(stderr, "MISSING -[%s %s]\n", cls, selector);
 }
 
+raw::DirectTranslator m2vTranslator()
+{
+    raw::DirectTranslator t;
+    t.render = native_bridge_metal_render_direct;
+    t.compute = native_bridge_metal_compute_direct;
+    return t;
+}
+
 using rawseed::hex;
 
 NSString *status(precompile::Outcome outcome)
@@ -112,7 +120,7 @@ int main(int argc, char **argv)
         }
         raw::PackRules rules;
         rules.varying = raw::emittableMethods();
-        raw::Direct direct(rules, true);
+        raw::Direct direct(rules, true, m2vTranslator());
         NSMutableArray *rows = [NSMutableArray new];
         std::map<uint64_t, Compiled> compiled;
         bool derived = false, failed = false;

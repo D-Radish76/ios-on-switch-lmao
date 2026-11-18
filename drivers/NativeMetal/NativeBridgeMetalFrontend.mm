@@ -4678,7 +4678,7 @@ extern "C" size_t native_bridge_metal_commit_origin(char *out, size_t size)
     switch_frame::committed(frame, since,
                             {gTimeSurfaceTexture.count.load(std::memory_order_relaxed),
                              gTimeSurfaceImport.count.load(std::memory_order_relaxed),
-                             gSurfaceImportHits.load(std::memory_order_relaxed), 0});
+                             gSurfaceImportHits.load(std::memory_order_relaxed)});
     switch_frame::trace(switch_frame::kM2vCommit, switch_frame::kPoint, frame.seq);
     const uint64_t began = apiTiming() ? mach_absolute_time() : 0;
 #endif

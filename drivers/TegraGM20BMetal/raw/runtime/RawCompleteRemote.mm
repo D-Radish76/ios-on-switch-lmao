@@ -5,7 +5,6 @@
 
 #include <os/log.h>
 #include <pthread/qos.h>
-#include "NativeBridgeMetalFrontend.h"
 #include "RawCompileRequest.h"
 #include "RawMetalInternal.h"
 #include "raw_compute_facts_entry.h"

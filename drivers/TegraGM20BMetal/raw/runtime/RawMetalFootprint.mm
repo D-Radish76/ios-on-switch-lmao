@@ -11,8 +11,6 @@
 #include <unistd.h>
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-extern "C" bool native_bridge_metal_memory(uint64_t out[3]) __attribute__((weak_import));
-
 namespace {
 
 // The ledger system call's records (XNU osfmk/kern/ledger.h, bsd/kern/sys_generic.c ledger())
@@ -124,14 +122,11 @@ void logGivenBack(size_t relieved, const RMPassTrim &passes, const raw::Device::
     if (!ledgered)
         f = taskFootprint();
     raw::Device &d = *gRM->raw;
-    uint64_t m2v[3] = {};
-    if (native_bridge_metal_memory)
-        native_bridge_metal_memory(m2v);
     malloc_statistics_t heap = {};
     malloc_zone_statistics(nullptr, &heap);
     const int64_t pool = int64_t(d.stats.poolBytes.load()), copies = int64_t(d.heapBytes());
     const int64_t rest = f.internal - f.alternate - int64_t(heap.size_allocated) - pool - copies;
-    const int64_t iokitClaimed = int64_t(d.wcChunkBytesHeld() + d.controlMappedBytes() + m2v[0]);
+    const int64_t iokitClaimed = int64_t(d.wcChunkBytesHeld() + d.controlMappedBytes());
     const StoreRegion store = storeRegion();
     uint64_t arenaPlaced = 0, arenaVolatile = 0, arenaGiven = 0;
     d.arenaUse(arenaPlaced, arenaVolatile, &arenaGiven);
@@ -142,8 +137,7 @@ void logGivenBack(size_t relieved, const RMPassTrim &passes, const raw::Device::
         "copies %llu KB, "
         "neither malloc's "
         "nor the raw device's %llu KB) + compressed %llu KB + IOKit %llu KB (raw write-combined %llu KB, raw tables "
-        "and rings %llu KB, m2v "
-        "GPU memory %llu KB, no owner %llu KB; %llu KB of it internal too) + purgeable %llu KB + page tables %llu "
+        "and rings %llu KB, no owner %llu KB; %llu KB of it internal too) + purgeable %llu KB + page tables %llu "
         "KB%s; shader heap in place %llu KB (file pages: no footprint); compiler store mapped %llu KB (external pager "
         "%d, resident %llu KB); malloc gave back %llu KB; trim let go %zu kept surface imports (%llu KB) and %zu pass "
         "copies naming %zu textures",
@@ -151,7 +145,7 @@ void logGivenBack(size_t relieved, const RMPassTrim &passes, const raw::Device::
         kb(pool), (unsigned long long)d.stats.poolChunks.load(), kb(int64_t(d.arenaBytes())), kb(int64_t(arenaPlaced)),
         kb(int64_t(arenaVolatile)), kb(int64_t(arenaGiven)), kb(copies), kb(rest),
         kb(f.compressed - f.alternateCompressed), kb(f.iokit), kb(int64_t(d.wcChunkBytesHeld())),
-        kb(int64_t(d.controlMappedBytes())), kb(int64_t(m2v[0])), kb(f.iokit - iokitClaimed),
+        kb(int64_t(d.controlMappedBytes())), kb(f.iokit - iokitClaimed),
         kb(f.alternate + f.alternateCompressed), kb(f.purgeable), kb(f.pageTable),
         ledgered ? "" : " (no ledger: IOKit counts page tables too)", kb(int64_t(d.heapInPlaceBytes())),
         kb(int64_t(store.mapped)), int(store.external), kb(int64_t(store.resident)), kb(int64_t(relieved)),

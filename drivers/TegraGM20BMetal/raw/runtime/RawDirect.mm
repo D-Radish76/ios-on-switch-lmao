@@ -5,21 +5,11 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
-#include "NativeBridgeMetalFrontend.h"
 #include "raw_compute_key.h"
 #include "raw_direct_compute.h"
 #include "raw_direct_abi.h"
 #include "raw_pack.h"
 #include "raw_record_parts.h"
-
-// Weak, so the host benchmark links without the frontend
-extern "C" bool native_bridge_metal_render_direct(id descriptor, bool barrier, NSUInteger textureFormat,
-                                                  NSUInteger textureSamples, const struct NmbDirectBinds *binds,
-                                                  bool (*each)(const struct NmbDirectState *, void *), void *ctx,
-                                                  const char **why) __attribute__((weak_import));
-extern "C" bool native_bridge_metal_compute_direct(id descriptor, const struct NmbDirectDispatch *dispatch,
-                                                   bool (*each)(const struct NmbDirectKernel *, void *), void *ctx,
-                                                   const char **why) __attribute__((weak_import));
 
 namespace raw {
 namespace {
@@ -73,17 +63,6 @@ bool madeKernel(const NmbDirectKernel *kernel, void *ctx)
 }
 
 }  // namespace
-
-DirectTranslator DirectTranslator::frontend()
-{
-    DirectTranslator t;
-    t.render = native_bridge_metal_render_direct;
-    t.compute = native_bridge_metal_compute_direct;
-    return t;
-}
-
-Direct::Direct(const Pack &pack) : Direct(PackRules::of(pack))
-{}
 
 Direct::Direct(PackRules rules, bool rankArtifacts, DirectTranslator translator)
     : rules_(std::move(rules)), translator_(translator), compile_(StageCompile::linked(rankArtifacts))

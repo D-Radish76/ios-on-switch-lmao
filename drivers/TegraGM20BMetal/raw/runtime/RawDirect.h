@@ -15,8 +15,6 @@
 
 namespace raw {
 
-class Pack;
-
 // A dispatch's shape and what it binds besides its buffers, as the direct compile of its kernel takes them
 class KernelDispatch {
 public:
@@ -50,17 +48,14 @@ struct ProbeTextures {
     std::vector<WrittenTexture> written;
 };
 
-// What makes a state's or a kernel's translation: the frontend over its m2v runtime device, or the pack generator's
-// offline compile (RawOffline.h), whose descriptors hold its own functions. False with `why`: the translator
-// refused it.
+// What makes a state's or a kernel's translation: the offline compile (RawOffline.h), whose descriptors hold its own
+// functions, or a host tool's own. False with `why`: the translator refused it.
 struct DirectTranslator {
     bool (*render)(id descriptor, bool barrier, NSUInteger textureFormat, NSUInteger textureSamples,
                    const NmbDirectBinds *binds, bool (*each)(const NmbDirectState *, void *), void *ctx,
                    const char **why) = nullptr;
     bool (*compute)(id descriptor, const NmbDirectDispatch *dispatch, bool (*each)(const NmbDirectKernel *, void *),
                     void *ctx, const char **why) = nullptr;
-
-    static DirectTranslator frontend();
 };
 
 // m2v's own instantiation of a state's probe draw that binds every buffer slot at its probe offset (pack/probe_bind.h,
@@ -74,10 +69,8 @@ struct BoundDraw {
 
 class Direct {
 public:
-    explicit Direct(const Pack &pack);
-    // The pack generator's: records under `rules` alone (pack/directpack.mm)
-    explicit Direct(PackRules rules, bool rankArtifacts = false,
-                    DirectTranslator translator = DirectTranslator::frontend());
+    // Records under `rules` alone, translated by `translator`
+    Direct(PackRules rules, bool rankArtifacts, DirectTranslator translator);
 
     // The record of the state `descriptor` (of m2v's functions) describes, whose pack key is `key`; `registers`: as
     // directRecord's; `split`: with its fragment program's split (directRecord). A state of bind-stride vertex streams

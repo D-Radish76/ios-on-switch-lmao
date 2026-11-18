@@ -11,7 +11,6 @@
 #import "RawMetalInternal.h"
 
 #include <mutex>
-#include "NativeBridgeMetalFrontend.h"
 #import "RawPipelineKey.h"
 #include "raw_compute_key.h"
 #include "raw_device_answers.h"

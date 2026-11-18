@@ -63,7 +63,6 @@ enum Field : unsigned {
     OrderWaitEnd,
     SlotStart,
     SlotEnd,
-    Twins,  // ticks spent making m2v twins during the replay
     Fence,
     Done,
     Made,  // the command buffer was made
@@ -116,9 +115,9 @@ inline void describe(const Site &site, char *out, size_t size)
         snprintf(out, size, "-");
 }
 
-// Surface work in the process: Metal textures made over IOSurfaces, kernel imports made and reused, m2v twins made (raw replays)
+// Surface work in the process: Metal textures made over IOSurfaces, kernel imports made and reused
 struct Churn {
-    uint64_t surfaces = 0, imports = 0, hits = 0, twins = 0;
+    uint64_t surfaces = 0, imports = 0, hits = 0;
 };
 
 // Time inside the driver's own Metal entry points on this thread, outermost call only, by kind: set against the time
@@ -251,7 +250,7 @@ inline void committed(Stamps &s, Since &since, const Churn &totals, const void *
         }
     }
     s.churn = {totals.surfaces - since.totals.surfaces, totals.imports - since.totals.imports,
-               totals.hits - since.totals.hits, totals.twins - since.totals.twins};
+               totals.hits - since.totals.hits};
     since.totals = totals;
     trace(kCommit, kPoint, s.seq);
 }
@@ -307,13 +306,12 @@ inline void finished(Stamps &s)
     os_log(
         log,
         "SwitchFrameUser: %{public}s cb %llu commit %llu enc %llu %llu replay %llu %llu ret %llu owait %llu %llu fence "
-        "%llu done %llu back %llu slot %llu %llu twins %llu prev %llu dropped %u surf %llu imp %llu hit %llu twin %llu "
-        "made %llu api %{public}s site %{public}s",
+        "%llu done %llu back %llu slot %llu %llu prev %llu dropped %u surf %llu imp %llu hit %llu made %llu api "
+        "%{public}s site %{public}s",
         getprogname(), (unsigned long long)s.seq, g(Commit), g(EncodeStart), g(EncodeEnd), g(ReplayStart), g(ReplayEnd),
-        g(Returned), g(OrderWaitStart), g(OrderWaitEnd), g(Fence), g(Done), g(Back), g(SlotStart), g(SlotEnd), g(Twins),
+        g(Returned), g(OrderWaitStart), g(OrderWaitEnd), g(Fence), g(Done), g(Back), g(SlotStart), g(SlotEnd),
         g(Previous), dropped.exchange(0, std::memory_order_relaxed), (unsigned long long)s.churn.surfaces,
-        (unsigned long long)s.churn.imports, (unsigned long long)s.churn.hits, (unsigned long long)s.churn.twins,
-        g(Made), api, sites);
+        (unsigned long long)s.churn.imports, (unsigned long long)s.churn.hits, g(Made), api, sites);
 }
 
 }  // namespace switch_frame
