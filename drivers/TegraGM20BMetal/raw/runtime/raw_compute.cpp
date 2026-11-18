@@ -398,8 +398,10 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             }
             if (b.buffer && b.buffer->hostVisible && !b.buffer->wc && b.buffer->cpu)
                 cb_.clean(b.buffer->cpu + b.offset, std::min<uint64_t>(desc.range - desc.residual, b.size));
-            at[0] = uint32_t(desc.base);
-            at[1] = uint32_t(desc.base >> 32);
+            // a slot bound to nothing reads the zero page: no buffer load is bounds-checked (raw_nak_target.h)
+            const uint64_t base = b.va ? desc.base : dev_.zero_.va;
+            at[0] = uint32_t(base);
+            at[1] = uint32_t(base >> 32);
             at[2] = b.va ? desc.range : 0;
             at[3] = 0;
         } else if (e.kind == KernelTexture || e.kind == KernelTexturePlane) {
@@ -828,7 +830,8 @@ void ComputeEncoder::argumentRoot(const PackKernel &r, uint32_t *root)
     }
     uint64_t va = 0;
     auto *table = reinterpret_cast<RootEntry *>(dev_.alloc(dev_.upload_, entries * sizeof(RootEntry), 256, va));
-    writeDrawRoots(table, va, r.rootSlots, slot, dev_.heapTables_.sinkVa(), dev_.heapTables_.identityVa());
+    writeDrawRoots(table, va, r.rootSlots, slot, dev_.heapTables_.sinkVa(), dev_.heapTables_.identityVa(),
+                   dev_.zero_.va);
     slotTableVa_ = va;
     root[kRootPush / 4 + r.rootTableWord - 1] = uint32_t(va);
     root[kRootPush / 4 + r.rootTableWord] = uint32_t(va >> 32);

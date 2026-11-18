@@ -733,9 +733,21 @@ static void build_inline_word(struct mme_builder *b, struct mme_value word)
     mme_emit(b, word);
 }
 
+/* The zero page's address as two inline words, low then high, from its scratch word (install() keeps it there shifted
+ * right by 8); `word` is a register of the caller's that it overwrites */
+static void build_inline_zero_page(struct mme_builder *b, struct mme_value word)
+{
+    mme_state_to(b, word, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ZERO_PAGE));
+    mme_sll_to(b, word, word, mme_imm(8));
+    build_inline_word(b, word);
+    mme_state_to(b, word, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ZERO_PAGE));
+    mme_srl_to(b, word, word, mme_imm(24));
+    build_inline_word(b, word);
+}
+
 /* A root table entry of the buffer whose scratch words start at the loaded word, at the loaded address:
- * raw_heap_tables.h writeDrawRoots' {va, va, size rounded up to 16, 0}, all zero for no buffer (computeBindHead writes
- * its size 0) */
+ * raw_heap_tables.h writeDrawRoots' {va, va, size rounded up to 16, 0}, and for no buffer (address 0, size 0 in
+ * computeBindHead's words) its {zero page, 0, 0, 0} */
 static void build_icb_root_entry(struct mme_builder *b)
 {
     struct mme_value hi = mme_load(b);
@@ -748,8 +760,17 @@ static void build_icb_root_entry(struct mme_builder *b)
     struct mme_value va = mme_state_arr(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_BUFFERS), at);
     struct mme_value upper = mme_state_arr(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 1), at);
     mme_and_to(b, upper, upper, mme_imm((1u << SWITCH_GM20B_ICB_STRIDE_SHIFT) - 1));
-    build_inline_word(b, va);
-    build_inline_word(b, upper);
+    struct mme_value bound = mme_or(b, va, upper);
+    mme_if(b, ine, bound, mme_zero())
+    {
+        build_inline_word(b, va);
+        build_inline_word(b, upper);
+    }
+    mme_if(b, ieq, bound, mme_zero())
+    {
+        build_inline_zero_page(b, bound);
+    }
+    mme_free_reg(b, bound);
     build_inline_word(b, va);
     build_inline_word(b, upper);
     mme_free_reg(b, va);
@@ -772,7 +793,8 @@ static void build_icb_root_entry(struct mme_builder *b)
  * kernel's window of it in bytes (0 the whole buffer), the address of its root push word for the base's residual (high
  * word 0: none) and the word the record leaves there. The descriptor is raw_residual.h's storage buffer descriptor of
  * the scratch's binding: the base aligned down to 16 bytes, the range from it to the end of the buffer or of the window
- * rounded up to 16 (an X1 buffer is far below the 0xfffffff0 the CPU's clamps it to), 0 for no buffer. The residual
+ * rounded up to 16 (an X1 buffer is far below the 0xfffffff0 the CPU's clamps it to); for no buffer the zero page's
+ * address and range 0, as the CPU's icbRegion writes it. The residual
  * word takes the base's residual, or the record's word where that is 0, as the CPU's rootWords and composeSpill leave
  * it. Then the count of a stage-in kernel's bind strides, and for each the address of its StageInStride root word
  * (high, low) and its buffer's first scratch word: the stride the address-high scratch word holds above its address.
@@ -799,11 +821,21 @@ static void build_icb_bind(struct mme_builder *b, bool unused)
                 mme_state_arr(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_BUFFERS), at);
             struct mme_value residual = mme_and(b, base, mme_imm(15));
             mme_and_not_to(b, base, base, mme_imm(15));
-            build_inline_word(b, base);
             struct mme_value upper =
                 mme_state_arr(b, NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 1), at);
             mme_and_to(b, upper, upper, mme_imm((1u << SWITCH_GM20B_ICB_STRIDE_SHIFT) - 1));
-            build_inline_word(b, upper);
+            struct mme_value bound = mme_or(b, base, upper);
+            mme_or_to(b, bound, bound, residual);
+            mme_if(b, ine, bound, mme_zero())
+            {
+                build_inline_word(b, base);
+                build_inline_word(b, upper);
+            }
+            mme_if(b, ieq, bound, mme_zero())
+            {
+                build_inline_zero_page(b, bound);
+            }
+            mme_free_reg(b, bound);
             mme_or_to(b, base, base, upper);
             mme_free_reg(b, upper);
 

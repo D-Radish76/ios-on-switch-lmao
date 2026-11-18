@@ -59,7 +59,7 @@ uint64_t RenderEncoder::rootTable(const PackPipeline &r, uint32_t k, bool writes
     }
     uint64_t va = 0;
     auto *table = reinterpret_cast<RootEntry *>(d.alloc(d.upload_, entries * sizeof(RootEntry), 256, va));
-    writeDrawRoots(table, va, slots, slot, d.heapTables_.sinkVa(), d.heapTables_.identityVa());
+    writeDrawRoots(table, va, slots, slot, d.heapTables_.sinkVa(), d.heapTables_.identityVa(), d.zero_.va);
     RAW_DIAGNOSTIC(d.stats.uploadBytes += entries * sizeof(RootEntry));
     return va;
 }

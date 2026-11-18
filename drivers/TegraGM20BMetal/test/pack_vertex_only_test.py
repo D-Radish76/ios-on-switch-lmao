@@ -2,7 +2,9 @@
 """A state of no fragment function is packed: its record names no fragment program (runtime/raw_pack.h kNoProgram).
 
 RenderBox's four path_edges states are the corpus's (precompile/corpus.log): each draws depth and stencil from its
-vertex function alone, and the device looked each up under the key hashes below.
+vertex function alone. The run time keys a stage by its library function, never the name it was specialized under
+(RawMetalLibrary.mm raw_metal_pipeline_key, RawCompileRequest.mm requestPackKey; the pack's probe_states.h alike), so
+the line naming path_edges_vertex as=vhba14dhipa4 is the state of the line naming it plainly: three keys.
 """
 
 import os
@@ -16,7 +18,7 @@ import packfile
 import rawpack
 
 CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'precompile', 'corpus.log')
-RENDER_BOX_KEYS = {0x5A8334BB122A80B3, 0x970DB699817A2E73, 0xE0CA57468521CCEB, 0xE3060592583748EA}
+RENDER_BOX_KEYS = {0x5A8334BB122A80B3, 0x970DB699817A2E73, 0xE0CA57468521CCEB}
 VERTEX = {'image': bytes(80) + b'\x01', 'data': b'', 'cbufs': [1]}
 NONE = {'image': b'', 'data': b'', 'cbufs': []}
 KEY = 'samples=1 topo=0 ds=260/260 c0=115:0:0:1:0:0:1:0:0  | v path_edges_vertex  | f -  | l RenderBox'
@@ -30,9 +32,11 @@ def made(key: str, programs: list[dict]) -> dict:
 
 
 class KeyTest(unittest.TestCase):
-    def test_render_box_path_edges_states_key_as_the_device_looked_them_up(self) -> None:
+    def test_render_box_path_edges_states_key_as_the_run_time_keys_them(self) -> None:
         with open(CORPUS) as f:
             lines = [line.rstrip('\n') for line in f if ' | v path_edges_vertex ' in line and ' | f - ' in line]
+        self.assertEqual(len(lines), 4)
+        self.assertEqual(sum(' as=' in line for line in lines), 1)
         hashes = {packfile.fnv(rawpack.state_key(line).encode()) for line in lines}
         self.assertEqual(hashes, RENDER_BOX_KEYS)
 

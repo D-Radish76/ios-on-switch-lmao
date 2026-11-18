@@ -468,6 +468,22 @@ class WideStride(Records):
                 self.assertEqual(outputs(environment, ATTR_POSITION, 4), [*positions[vid], 0.0, 1.0], f'{stride}')
                 self.assertEqual(outputs(environment, ATTR_GENERIC, 4), [0.25, 0.5, 0.75, 1.0])
 
+    def test_a_buffer_load_past_its_descriptors_range_reads_the_memory_there(self):
+        """No buffer load is bounds-checked (raw_nak_target.h): colour[0] past a range of 0 reads the buffer's bytes."""
+        twin = self.state('wide_dynamic')['stride_twin']
+        pulled = [p for p in twin['pulled_stride'] if p[1]]
+        binding = dr.Binding()
+        binding.bind((1, 1), self.laid([(1.0, -2.0)], 16))
+        colour = binding.bind((1, 2), dr.floats(0.25, 0.5, 0.75, 1.0))
+        binding.at[(1, 2)] = (colour, 0)
+        push = dr.record_push(twin)
+        push[pulled[0][1] - 1] = 16
+        binding.tables(dr.root_table(push, twin['set_bytes']), dr.render_set(twin, binding))
+        program = twin['programs'][0]
+        environment = dr.stage(program, binding, attributes({ATTR_VERTEX_ID: 0, ATTR_INSTANCE_ID: 0}), {})
+        dr.execute(program, environment)
+        self.assertEqual(outputs(environment, ATTR_GENERIC, 4), [0.25, 0.5, 0.75, 1.0])
+
 
 class FiveDynamicStrides(Records):
     """A state of five dynamic-stride layouts: its stride twin pulls each at its bind's stride, a push word each.

@@ -67,6 +67,9 @@ enum {
     SWITCH_GM20B_SCRATCH_FETCH_CONTINUED,
     SWITCH_GM20B_SCRATCH_FETCH_ICB,
     SWITCH_GM20B_SCRATCH_FETCH_END,
+    // the zero page's address shifted right by 8 (raw_mme.h install(): it lies on 256 bytes below 2^40), which the bind
+    // macro writes for a buffer slot bound to nothing, as the CPU's tables do
+    SWITCH_GM20B_SCRATCH_ZERO_PAGE = SWITCH_GM20B_SCRATCH_FETCH_END,
 
     // an indirect command buffer execute's range: location, length
     SWITCH_GM20B_SCRATCH_ICB_LOCATION = SWITCH_GM20B_SCRATCH_FECS_END,
@@ -149,8 +152,9 @@ SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_MACRO_RAW_END <= SWITCH_GM20B_MACRO_SLOTS
 SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_ICB_LOCATION >= SWITCH_GM20B_SCRATCH_FECS_END &&
                               SWITCH_GM20B_SCRATCH_ICB_SET_BYTES < SWITCH_GM20B_SCRATCH_ROOT_HI,
                           "the raw path's words below the root table's address leave FECS's mailbox alone");
-SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_ICB_BUFFERS >= SWITCH_GM20B_SCRATCH_FETCH_END,
-                          "the fetch macros' words and the inherited buffers lie past the root table's address");
+SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_ICB_BUFFERS > SWITCH_GM20B_SCRATCH_ZERO_PAGE,
+                          "the fetch macros' words, the zero page's and the inherited buffers lie past the root table's "
+                          "address");
 SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_ICB_ROOT_BYTES % 256 == 0,
                           "the patch macro binds whole 256-byte constant buffers, as NVK does before Turing");
 SWITCH_GM20B_SLOTS_ASSERT(SWITCH_GM20B_SCRATCH_AMP_END - SWITCH_GM20B_SCRATCH_AMP_MAPS == SWITCH_GM20B_AMP_MAX,

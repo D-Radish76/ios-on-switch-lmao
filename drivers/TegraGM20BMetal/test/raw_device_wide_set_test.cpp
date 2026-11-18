@@ -2,8 +2,8 @@
 // A set 0 of more than kPackEntries entries and past the encoder's 512 bytes (RenderEncoder::prepare's wide path,
 // raw_descriptors.h WideDescriptors), on raw::Device: each entry's descriptor names its own buffer in the set the draw
 // uploads, a draw whose bindings moved uploads a set naming the new ones, one whose bindings did not keeps the set, a
-// runtime record of more entries than its far block holds is not added, and a pack record whose entries no draw can
-// write is not placed.
+// runtime record of more entries than its far block holds is not added, a pack record whose entries no draw can write
+// is not placed, and the entry of a buffer slot bound to nothing names the zero page.
 #include "raw_device_harness.h"
 #include "raw_record_pack.h"
 #include "../raw/runtime/raw_record.h"
@@ -209,6 +209,28 @@ raw::RuntimeRecord narrowRecord(uint64_t key)
     r.pipeline.setBytes = 32;
     r.far.clear();
     return r;
+}
+
+// A buffer slot bound to nothing reads the zero page with range 0 (no buffer load is bounds-checked, raw_nak_target.h),
+// where a bound slot's descriptor names its buffer
+TEST_F(DeviceWideSet, AnEntryOfASlotBoundToNothingNamesTheZeroPage)
+{
+    std::string why;
+    raw::Pipeline *pl = dev.addRecord(narrowRecord(0x3a6), false, why);
+    ASSERT_NE(pl, nullptr) << why;
+    begin(pl);
+    e->setBuffer(1, 0, &buffer, 256);
+    EXPECT_EQ(draw(), "");
+    uint32_t words[8] = {};
+    if (const uint8_t *set = raw::DeviceHarness::upload(dev, raw::DeviceHarness::preparedSet(*e), sizeof words))
+        memcpy(words, set, sizeof words);
+    e->end();
+    uint32_t seqno = 0;
+    ASSERT_TRUE(cb->commit(seqno));
+    EXPECT_EQ(uint64_t(words[1]) << 32 | words[0], buffer.va + 256);
+    EXPECT_NE(words[2], 0u);
+    EXPECT_EQ(uint64_t(words[5]) << 32 | words[4], raw::DeviceHarness::zeroPage(dev).va);
+    EXPECT_EQ(words[6], 0u);
 }
 
 // A pack is read where its records' draws index by their entries: a record of an entry no draw can write is refused

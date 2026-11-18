@@ -23,7 +23,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::bind::{BindState, BoundBuffer, BoundTexture, StageTable, TextureFacts, WriteSource};
 use crate::budget::{Budget, SPIRV_WORDS};
-use crate::device::{Device, DeviceDescription, DevicePolicy};
+use crate::device::profile::{DeviceProfile, GuestIsolation};
+use crate::device::{ContainmentPolicy, Device, DeviceDescription, DevicePolicy};
 use crate::error::Feature;
 use crate::library::{FunctionConstantValues, Library};
 use crate::lower::select::{LowerInputs, Plan};
@@ -484,10 +485,31 @@ fn reads_and_writes_of_every_code_are_metals() {
 /// robustness returns (`-0.752941`).
 #[test]
 fn reads_outside_the_texture_are_metals_zero() {
+    reads_outside_are_metals_zero(profiles());
+}
+
+/// So it is without containment, where every other access is the device's: Metal defines the
+/// texel, and no device's robustness returns it.
+#[test]
+fn reads_outside_the_texture_are_metals_zero_without_containment() {
+    let off = DevicePolicy {
+        containment: ContainmentPolicy::UnsafeOff,
+        isolation: GuestIsolation::Off,
+        ..DevicePolicy::default()
+    };
+    reads_outside_are_metals_zero(
+        ["lavapipe", "moltenvk-m3"]
+            .into_iter()
+            .map(|stem| (stem, profile(stem, off).expect("profile")))
+            .collect(),
+    );
+}
+
+fn reads_outside_are_metals_zero(profiles: Vec<(&'static str, DeviceProfile)>) {
     let Some(bc) = assemble("outside", &kernel(Source::Read, false, SIDE)) else {
         return;
     };
-    for (stem, p) in profiles() {
+    for (stem, p) in profiles {
         for form in FORMS {
             let what = format!("{form:?} on {stem}");
             let (plan, m) = typed_module_with(&bc, "k", &p, &inputs(form, Source::Read))

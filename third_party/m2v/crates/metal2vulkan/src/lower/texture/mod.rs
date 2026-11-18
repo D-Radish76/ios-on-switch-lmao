@@ -3299,8 +3299,10 @@ fn select_read_as(
     if extended.is_some() && residency {
         return Err(Unsupported::not_implemented(Feature::Format).into());
     }
+    // Metal's out-of-bounds texel of an extended-range texture is no device's (its raw zero decodes
+    // to -0.752941), and Metal defines it: the shader checks such a read without containment too.
     let check = match slot::read_check(cx, shape.dim == ImageDim::Buffer) {
-        ReadCheck::Device if extended.is_some() => ReadCheck::Shader,
+        ReadCheck::Device | ReadCheck::Off if extended.is_some() => ReadCheck::Shader,
         c => c,
     };
     // A storage read at a level reads the slot's level views, and past the bound level count

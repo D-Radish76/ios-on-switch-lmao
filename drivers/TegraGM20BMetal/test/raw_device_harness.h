@@ -157,6 +157,12 @@ struct DeviceHarness {
         return cb.rootPush_[word];
     }
 
+    // The set members the command buffer named a use of so far (CommandBuffer::useMember)
+    static size_t memberUses(const CommandBuffer &cb)
+    {
+        return cb.memberUses_.size();
+    }
+
     // The state segments the command buffer bound so far (each bind a call of the state's words, not a skip of them)
     static uint32_t segmentBinds(const CommandBuffer &cb)
     {

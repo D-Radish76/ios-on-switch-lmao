@@ -142,6 +142,15 @@ struct BindRun {
         }
     }
 
+    // The scratch words the device's channel context leaves (raw_mme.h install), its zero page's among them
+    void install(const raw::Device &dev)
+    {
+        std::vector<uint32_t> words(raw::mme::kContextWords);
+        raw::Push p{words.data(), words.data() + words.size()};
+        raw::mme::install(p, 0, raw::DeviceHarness::zeroPage(dev).va);
+        run(words.data(), size_t(p.at - words.data()));
+    }
+
     // An execute of the encoder's buffer `buffer` bound at Metal buffer index `slot`, through `bind`
     void execute(uint32_t slot, const raw::ComputeEncoder::IcbBuffer &buffer, const std::vector<uint32_t> &bind)
     {
@@ -303,7 +312,7 @@ TEST_F(DeviceComputeTables, AnIndirectCommandOfAKernelReadingItsBufferSlotsCarri
 
 // The same kernel's command inheriting the encoder's buffers: the bind macro writes its table's entries from an
 // execute's buffers, over the table its region holds of no buffer, into the table the CPU writes for a command that
-// binds the same buffer itself, and back to that empty table at an execute that binds none
+// binds the same buffer itself, and back to the table of no buffer (the zero page's) at an execute that binds none
 TEST_F(DeviceComputeTables, AnInheritingCommandsBindSlotWritesTheTableOfItsCommandOfItsOwnBuffers)
 {
     const raw::ComputeState *k = raw::placeCompute(dev, slotReader());
@@ -329,6 +338,7 @@ TEST_F(DeviceComputeTables, AnInheritingCommandsBindSlotWritesTheTableOfItsComma
     ASSERT_TRUE(raw::ComputeEncoder::icbBinds(*k, kVa, binds, strides, roots, &why)) << (why ? why : "?");
     const std::vector<uint32_t> slot = bindSlot(binds, strides, roots);
     BindRun run;
+    run.install(dev);
     for (const bool bound : {true, false}) {
         run.execute(1, bound ? buffers[1] : raw::ComputeEncoder::IcbBuffer{}, slot);
         const std::vector<uint8_t> &cpu = bound ? own : inherited;
@@ -536,6 +546,42 @@ TEST_F(DeviceComputeTables, ABufferSlotWithNoResidualWordBindsAtItsBaseRoundedDo
     ASSERT_EQ(set.size(), 3u);
     EXPECT_EQ(uint64_t(set[1]) << 32 | set[0], arguments.va);
     EXPECT_EQ(set[2], uint32_t((arguments.length + 15) & ~uint64_t(15))) << "from the rounded-down base to the end";
+}
+
+// A kernel buffer slot bound to nothing reads the zero page with range 0: no buffer load is bounds-checked
+// (raw_nak_target.h)
+TEST_F(DeviceComputeTables, ABufferSlotBoundToNothingReadsTheZeroPage)
+{
+    static const raw::ComputeRecord unbound = [] {
+        raw::ComputeRecord r = tableReader();
+        r.kernel.rootTableWord = r.kernel.statusWord = 0;
+        r.kernel.regionWord = -1;
+        r.kernel.qmd[kQmdCbufValid] |= 1;
+        r.kernel.setBytes = 16;
+        r.kernel.entries = 1;
+        r.kernel.entry[0] = {0, raw::KernelBuffer, 1, 0};
+        return r;
+    }();
+    const raw::ComputeState *k = raw::placeCompute(dev, unbound);
+    ASSERT_NE(k, nullptr);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    std::vector<uint32_t> set;
+    {
+        raw::ComputeEncoder e(*cb, dev);
+        e.setState(k);
+        const uint32_t groups[3] = {1, 1, 1}, threads[3] = {1, 1, 1};
+        const char *why = nullptr;
+        EXPECT_TRUE(e.dispatch(groups, threads, &why)) << (why ? why : "");
+        if (const uint32_t *words = raw::DeviceHarness::kernelSet(e))
+            set.assign(words, words + 3);
+        e.end();
+    }
+    uint32_t seqno = 0;
+    EXPECT_TRUE(cb->commit(seqno));
+    ASSERT_EQ(set.size(), 3u);
+    EXPECT_EQ(uint64_t(set[1]) << 32 | set[0], raw::DeviceHarness::zeroPage(dev).va);
+    EXPECT_EQ(set[2], 0u);
 }
 
 class DeviceComputeStatedMaps : public harness::DeviceTest {

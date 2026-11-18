@@ -19,6 +19,9 @@
 
 namespace {
 
+// The device's zero page, whose address >> 8 the channel's context keeps in scratch (raw_mme.h install)
+constexpr uint64_t kZeroPage = 0xc3'0046'0000ull;
+
 struct Simulation {
     std::vector<uint32_t> arguments;
     size_t consumed = 0;
@@ -38,8 +41,10 @@ struct Simulation {
     static uint32_t state(void *opaque, uint16_t method)
     {
         const uint32_t word = (method - NVB197_SET_MME_SHADOW_SCRATCH(0)) / 4;
-        EXPECT_GE(word, uint32_t(SWITCH_GM20B_SCRATCH_ICB_BUFFERS));
-        EXPECT_LT(word, uint32_t(SWITCH_GM20B_SCRATCH_ICB_BUFFERS_END));
+        EXPECT_TRUE(word == uint32_t(SWITCH_GM20B_SCRATCH_ZERO_PAGE) ||
+                    (word >= uint32_t(SWITCH_GM20B_SCRATCH_ICB_BUFFERS) &&
+                     word < uint32_t(SWITCH_GM20B_SCRATCH_ICB_BUFFERS_END)))
+            << word;
         return static_cast<Simulation *>(opaque)->scratch.method(method);
     }
 
@@ -101,10 +106,11 @@ struct Simulation {
 };
 
 // An execute's inherited buffers in scratch, as computeBindHead writes them: every buffer's base 4 bytes past 16, its
-// address-high word with a bind stride above it, its size
+// address-high word with a bind stride above it, its size; and the zero page's word
 Simulation simulation()
 {
     Simulation s;
+    s.scratch[SWITCH_GM20B_SCRATCH_ZERO_PAGE] = uint32_t(kZeroPage >> 8);
     for (uint32_t k = 0; k < SWITCH_GM20B_SCRATCH_ICB_BUFFER_SLOTS; k++) {
         s.scratch[SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 3 * k] = 0x10000 + 0x1000 * k + 4;
         s.scratch[SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 3 * k + 1] = (16u << SWITCH_GM20B_ICB_STRIDE_SHIFT) | 1;
@@ -164,7 +170,8 @@ TEST(EmitIcbBind, AResidualWordTakesTheRecordsWordForABaseOn16Bytes)
 }
 
 // A root table entry is writeDrawRoots' {va, va, size rounded up to 16, 0}, a buffer's bind stride left out of its
-// address and a size within 15 of 2^32 carried into the size's high word; no buffer (size 0) is all zero
+// address and a size within 15 of 2^32 carried into the size's high word; no buffer (address 0, size 0) is the zero
+// page's {zero page, 0, 0, 0}
 TEST(EmitIcbBind, ARootTableEntryIsTheCpusEntryOfTheBuffer)
 {
     const raw::icb::ComputeRoot roots[] = {{0x100004040ull, 2}, {0x100004060ull, 3}, {0x100004080ull, 4}};
@@ -177,12 +184,31 @@ TEST(EmitIcbBind, ARootTableEntryIsTheCpusEntryOfTheBuffer)
     s.scratch[SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 3 * 4 + 1] = 16u << SWITCH_GM20B_ICB_STRIDE_SHIFT;
     s.scratch[SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 3 * 4 + 2] = 0;
     s.slot(slot.data(), uint32_t(slot.size()));
-    const uint32_t two[8] = {0x12004, 1, 0x12004, 1, 0x410, 0, 0, 0}, three[8] = {0x13004, 1, 0x13004, 1, 0, 1, 0, 0};
+    const uint32_t two[8] = {0x12004, 1, 0x12004, 1, 0x410, 0, 0, 0}, three[8] = {0x13004, 1, 0x13004, 1, 0, 1, 0, 0},
+                   none[8] = {uint32_t(kZeroPage), uint32_t(kZeroPage >> 32), 0, 0, 0, 0, 0, 0};
     for (uint32_t w = 0; w < 8; w++) {
         EXPECT_EQ(s.memory.at(0x100004040ull + 4 * w), two[w]) << w;
         EXPECT_EQ(s.memory.at(0x100004060ull + 4 * w), three[w]) << w;
-        EXPECT_EQ(s.memory.at(0x100004080ull + 4 * w), 0u) << w;
+        EXPECT_EQ(s.memory.at(0x100004080ull + 4 * w), none[w]) << w;
     }
+}
+
+// The descriptor of no buffer (address 0, size 0; a bind stride above it) is the CPU's icbRegion's: the zero page's
+// address and range 0, whatever the kernel's window, and its residual word takes the record's word
+TEST(EmitIcbBind, ADescriptorOfNoBufferReadsTheZeroPage)
+{
+    const raw::icb::ComputeBind bind = {0x100000000ull, 0x100002000ull, 5, 0x80, 0xabc};
+    std::vector<uint32_t> slot(raw::icb::kComputeBindSlotWords);
+    ASSERT_TRUE(raw::icb::binds(slot.data(), &bind, 1));
+    Simulation s = simulation();
+    s.scratch[SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 3 * 5] = 0;
+    s.scratch[SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 3 * 5 + 1] = 16u << SWITCH_GM20B_ICB_STRIDE_SHIFT;
+    s.scratch[SWITCH_GM20B_SCRATCH_ICB_BUFFERS + 3 * 5 + 2] = 0;
+    s.slot(slot.data(), uint32_t(slot.size()));
+    EXPECT_EQ(s.memory.at(0x100000000ull), uint32_t(kZeroPage));
+    EXPECT_EQ(s.memory.at(0x100000004ull), uint32_t(kZeroPage >> 32));
+    EXPECT_EQ(s.memory.at(0x100000008ull), 0u);
+    EXPECT_EQ(s.memory.at(0x100002000ull), 0xabcu);
 }
 
 TEST(EmitIcbBind, ASlotWithNothingToBindCallsNothing)

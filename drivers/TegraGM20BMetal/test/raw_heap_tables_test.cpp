@@ -162,15 +162,16 @@ TEST(DrawRoots, R0IsM2vsOnEitherSideOfTheTable)
 }
 
 // A draw's table: null, the sink over the resident set, an entry per slot it holds up to its last, rounded to 16 bytes,
-// with the bind offset; a slot outside the mask or bound to nothing is null
+// with the bind offset; a slot outside the mask is null, one held and bound to nothing the zero page at the null
+// address
 TEST(DrawRoots, AnEntryPerHeldSlotUpToTheLast)
 {
     const uint32_t slots = 1u << 1 | 1u << 3;
     ASSERT_EQ(raw::drawRootEntries(slots), 6u);
     raw::RootSlot slot[4] = {{0x5000, 64, 0}, {0x6000, 30, 32}, {0x7000, 64, 0}, {0, 0, 0}};
     std::vector<raw::RootEntry> table(6, raw::RootEntry{1, 1, 1, 1});
-    const uint64_t va = 0x9000000, identity = 0x200040, sink = 0x200060;
-    raw::writeDrawRoots(table.data(), va, slots, slot, sink, identity);
+    const uint64_t va = 0x9000000, identity = 0x200040, sink = 0x200060, zero = 0x310000;
+    raw::writeDrawRoots(table.data(), va, slots, slot, sink, identity, zero);
     EXPECT_EQ(table[0].host | table[0].guest | table[0].size | table[0].bindOffset, 0u);
     EXPECT_EQ(table[1].host, sink);
     EXPECT_EQ(va + 32 * table[1].guest, identity);
@@ -181,7 +182,8 @@ TEST(DrawRoots, AnEntryPerHeldSlotUpToTheLast)
     EXPECT_EQ(table[3].size, 32u);
     EXPECT_EQ(table[3].bindOffset, 32u);
     EXPECT_EQ(table[4].host | table[4].size, 0u);  // slot 2: not held
-    EXPECT_EQ(table[5].host | table[5].size, 0u);  // slot 3: held, bound to nothing
+    EXPECT_EQ(table[5].host, zero);  // slot 3: held, bound to nothing
+    EXPECT_EQ(table[5].guest | table[5].size | table[5].bindOffset, 0u);
 }
 
 }  // namespace

@@ -102,12 +102,14 @@ constexpr size_t kProgramWords =
     std::size(switch_gm20b_macro_amplify_indexed) + std::size(switch_gm20b_macro_clear_layers) +
     std::size(switch_gm20b_macro_fetch_draw) + std::size(switch_gm20b_macro_fetch_draw_indexed);
 static_assert(kProgramWords <= SWITCH_GM20B_MACRO_CODE_WORDS, "install() loads every program from code word 0");
-constexpr size_t kContextWords = 18 * 5 + kProgramWords + 3;  // each program's 5 load words, the root address's 3
+// each program's 5 load words, the zero page's 2, the root address's 3
+constexpr size_t kContextWords = 18 * 5 + kProgramWords + 2 + 3;
 constexpr size_t kCallWords = 4, kParamsCallWords = 6;
 
-// Every program from code word 0, over NVK's, then the root table's address into the scratch words the patch macro
+// Every program from code word 0, over NVK's, then the zero page's address (256-byte aligned below 2^40, >> 8) into the
+// scratch word the bind macro reads it from, and the root table's address into the scratch words the patch macro
 // selects it by (NVK's SELECT_CB0 reads the same words, which the context init wrote with the same address)
-inline void install(Push &push, uint64_t root)
+inline void install(Push &push, uint64_t root, uint64_t zero)
 {
     uint32_t offset = 0;
     auto load = [&](uint32_t slot, const uint32_t *words, uint32_t count) {
@@ -134,6 +136,7 @@ inline void install(Push &push, uint64_t root)
     load(kClearLayers, kClearLayersProgram.words, kClearLayersProgram.size);
     load(kFetchDraw, kFetchDrawProgram.words, kFetchDrawProgram.size);
     load(kFetchDrawIndexed, kFetchDrawIndexedProgram.words, kFetchDrawIndexedProgram.size);
+    push.inc(NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ZERO_PAGE), {uint32_t(zero >> 8)});
     push.inc(NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_ROOT_HI), {uint32_t(root >> 32), uint32_t(root)});
 }
 

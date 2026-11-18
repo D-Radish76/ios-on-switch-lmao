@@ -19,12 +19,17 @@ KERNEL = re.compile(r' \| k (\S+)(?: lib=\S+)?(.*?) \|')
 
 
 def compute_key(line: str) -> str:
-    """Give an inventory C line's archive key (raw_compute_key.h computeArchiveKey)."""
+    """Give an inventory C line's archive key (raw_compute_key.h computeArchiveKey).
+
+    Its kernel is the library function and its constants' text alone, never the line's spec mark of a function made with
+    no constant values, whose text is empty (RawPipelineKey.h constantsText).
+    """
     found = KERNEL.search(line)
     if not found:
         return ''
     fields = dict(f.split('=', 1) for f in line.split(' | ', 1)[0].split() if '=' in f)
-    constants = f' {found[2].strip()}' if found[2].strip() else ''
+    values = ' '.join(t for t in found[2].split() if t != 'spec')
+    constants = f' {values}' if values else ''
     return f'k {found[1]}{constants} | max={fields.get("max", "0")} tgm={fields.get("tgm", "0")}'
 
 

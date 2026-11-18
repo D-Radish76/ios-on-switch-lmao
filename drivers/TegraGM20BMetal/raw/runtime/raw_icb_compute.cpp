@@ -95,8 +95,9 @@ bool ComputeEncoder::icbRegion(Device &dev, const ComputeState &k, const Compute
                 residuals[desc.word] = desc.residual;
                 residualMask |= 1u << desc.word;
             }
-            at[0] = uint32_t(desc.base);
-            at[1] = uint32_t(desc.base >> 32);
+            const uint64_t base = b.va ? desc.base : dev.zero_.va;
+            at[0] = uint32_t(base);
+            at[1] = uint32_t(base >> 32);
             at[2] = b.va ? desc.range : 0;
         } else if (e.kind == KernelTextureTable || e.kind == KernelSamplerTable) {
             tableDescriptor(dev, e, at);
@@ -127,7 +128,7 @@ bool ComputeEncoder::icbRegion(Device &dev, const ComputeState &k, const Compute
                 slot[n] = {buffers[n].va, buffers[n].size, 0};
         const uint64_t tableVa = va + layout.slots;
         writeDrawRoots(reinterpret_cast<RootEntry *>(block + layout.slots), tableVa, r.rootSlots, slot,
-                       dev.heapTables_.sinkVa(), dev.heapTables_.identityVa());
+                       dev.heapTables_.sinkVa(), dev.heapTables_.identityVa(), dev.zero_.va);
         root[kRootPush / 4 + r.rootTableWord - 1] = uint32_t(tableVa);
         root[kRootPush / 4 + r.rootTableWord] = uint32_t(tableVa >> 32);
     }

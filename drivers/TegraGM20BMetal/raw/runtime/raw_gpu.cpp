@@ -344,7 +344,7 @@ void Device::emitContext(Push &p)
         if (!ownedMethod(base[2 * i]))
             p.m(base[2 * i], base[2 * i + 1]);
     stageSwitchesOn(p);
-    mme::install(p, root_.va);
+    mme::install(p, root_.va, zero_.va);
     tiledCacheInit(p, k_.info());
     // the depth/stencil registers (the runtime's, as NVK leaves them for Metal's default state in a pass without the attachment)
     {
@@ -400,10 +400,11 @@ bool Device::init(std::string &err)
         err = k_.error();
         return false;
     }
+    // a use of every job: any of them may read it through a buffer slot bound to nothing, which no draw names
+    set_.add(k_, zero_, TegraGM20BSurfaceRead, true);
     set_.add(k_, {{&tic_, TegraGM20BSurfaceRead},
                   {&tsc_, TegraGM20BSurfaceRead},
                   {&root_, TegraGM20BSurfaceWrite},
-                  {&zero_, TegraGM20BSurfaceRead},
                   {&tickets_, TegraGM20BSurfaceWrite},
                   {&colorTable_, TegraGM20BSurfaceRead},
                   {&srgbEncode_, TegraGM20BSurfaceRead},

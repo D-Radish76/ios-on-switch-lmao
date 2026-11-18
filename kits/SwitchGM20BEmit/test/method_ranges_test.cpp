@@ -198,6 +198,7 @@ TEST(MethodRanges, EveryScratchWordHasOneOwner)
         {"an amplifying state's words", SWITCH_GM20B_SCRATCH_AMP_COUNT_WORD, 5},
         {"the amplification count", SWITCH_GM20B_SCRATCH_AMP_COUNT, 1},
         {"the amplification mappings", SWITCH_GM20B_SCRATCH_AMP_MAPS, SWITCH_GM20B_AMP_MAX},
+        {"the zero page's address", SWITCH_GM20B_SCRATCH_ZERO_PAGE, 1},
         {"an execute's inherited buffers", SWITCH_GM20B_SCRATCH_ICB_BUFFERS, 3 * SWITCH_GM20B_SCRATCH_ICB_BUFFER_SLOTS},
     };
     std::string owner[SWITCH_GM20B_SCRATCH_WORDS];

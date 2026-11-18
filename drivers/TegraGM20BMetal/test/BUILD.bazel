@@ -740,6 +740,15 @@ raw_device_test(
     ],
 )
 
+# Buffer slots bound to nothing read the zero page, a use of every job by its set: no draw or dispatch names it
+raw_device_test(
+    name = "raw_device_zero_page_test",
+    srcs = [
+        "raw_device_zero_page_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+    ],
+)
+
 raw_device_test(
     name = "raw_device_xr_shadow_test",
     srcs = [

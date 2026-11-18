@@ -28,7 +28,7 @@ int main(int argc, char **argv)
         slot[n] = {at, bytes, offset};
     }
     std::vector<raw::RootEntry> table(raw::drawRootEntries(slots));
-    raw::writeDrawRoots(table.data(), va, slots, slot, sink, identity);
+    raw::writeDrawRoots(table.data(), va, slots, slot, sink, identity, 0);
     for (const raw::RootEntry &e : table)
         printf("%" PRIx64 " %" PRIx64 " %" PRIx64 " %" PRIx64 "\n", e.host, e.guest, e.size, e.bindOffset);
     return 0;

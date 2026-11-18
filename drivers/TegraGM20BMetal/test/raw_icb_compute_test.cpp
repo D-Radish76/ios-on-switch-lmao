@@ -26,6 +26,9 @@
 
 namespace {
 
+// The device's zero page: 64 KiB aligned below 2^40, as Kernel::allocControl places it
+constexpr uint64_t kZeroPage = 0xc3'0046'0000ull;
+
 struct Method {
     uint32_t subc;
     uint16_t method;
@@ -173,6 +176,15 @@ struct Channel {
             for (uint32_t k = 0; k < count; k++)
                 this->method(subc, uint16_t(op == 1 ? method + 4 * k : method), w[i++]);
         }
+    }
+
+    // The scratch words the channel's context leaves (raw_mme.h install), the zero page's among them
+    void install()
+    {
+        std::vector<uint32_t> words(raw::mme::kContextWords);
+        raw::Push p{words.data(), words.data() + words.size()};
+        raw::mme::install(p, 0, kZeroPage);
+        run(words.data(), size_t(p.at - words.data()));
     }
 
     void head(bool written, bool fromMemory, uint32_t first, uint32_t count, const uint32_t *memoryRange = nullptr)
@@ -397,7 +409,8 @@ TEST(RawIcbCompute, AKernelOfNoStageInTakesNoStageInWords)
 // An execute of commands that inherit the encoder's buffers: each command's descriptors, as kernelBufferDescriptor makes
 // them for the buffers bound now (a descriptor with no residual word at its base rounded down), land where the command's
 // regions read them, and in each residual word the residual of its base, or the record's own word where that is 0; a
-// buffer bound again between two executes takes its new descriptor at the second, through the same bind slots.
+// buffer bound again between two executes takes its new descriptor at the second, through the same bind slots. A slot
+// bound to nothing reads the zero page with range 0, as icbRegion writes it.
 TEST(RawIcbCompute, BindSlotsWriteTheCpusDescriptorsForTheEncodersBuffers)
 {
     std::mt19937_64 random(0xb1d5);
@@ -432,6 +445,7 @@ TEST(RawIcbCompute, BindSlotsWriteTheCpusDescriptorsForTheEncodersBuffers)
             size[s] = uint32_t(1 + random() % 0x40000);
         }
         Channel c;
+        c.install();
         const uint32_t strides[31] = {};
         uint32_t head[8 + 3 * 31];
         raw::Push p{head, head + std::size(head)};
@@ -448,8 +462,9 @@ TEST(RawIcbCompute, BindSlotsWriteTheCpusDescriptorsForTheEncodersBuffers)
             raw::BufferDescriptor d;
             const int word = b.residual ? int((b.residual - (b.descriptor & ~0xfffull) - 0x100 - 0x700) / 4) : -1;
             ASSERT_TRUE(raw::bufferDescriptor(true, b.window, word < 0 ? 0 : word, va[b.slot], size[b.slot], d));
-            ASSERT_EQ(c.memory.at(b.descriptor), uint32_t(d.base)) << "slot " << b.slot << " pass " << pass;
-            ASSERT_EQ(c.memory.at(b.descriptor + 4), uint32_t(d.base >> 32)) << "slot " << b.slot;
+            const uint64_t base = va[b.slot] ? d.base : kZeroPage;
+            ASSERT_EQ(c.memory.at(b.descriptor), uint32_t(base)) << "slot " << b.slot << " pass " << pass;
+            ASSERT_EQ(c.memory.at(b.descriptor + 4), uint32_t(base >> 32)) << "slot " << b.slot;
             ASSERT_EQ(c.memory.at(b.descriptor + 8), va[b.slot] ? d.range : 0u)
                 << "slot " << b.slot << " window " << b.window << " size " << size[b.slot] << " va " << va[b.slot];
             if (b.residual)
@@ -546,7 +561,7 @@ TEST(RawIcbCompute, AResidualWordTakesBackTheRecordsWordForABaseOn16Bytes)
 
 // A kernel that reads its buffer slots through its root table: each execute's bind slot writes the entry of each slot
 // the kernel reads, raw_heap_tables.h writeDrawRoots' {va, va, size rounded up to 16, 0} of the buffer bound now with
-// its bind stride left out, and all zero where none is bound, over what the execute before wrote
+// its bind stride left out, and {zero page, 0, 0, 0} where none is bound, over what the execute before wrote
 TEST(RawIcbCompute, BindSlotsWriteTheRootTableEntriesOfTheEncodersBuffers)
 {
     const uint64_t table = 0xc0'0000'0b00ull;
@@ -558,6 +573,7 @@ TEST(RawIcbCompute, BindSlotsWriteTheRootTableEntriesOfTheEncodersBuffers)
     std::vector<uint32_t> slot(raw::icb::kComputeBindSlotWords);
     ASSERT_TRUE(raw::icb::binds(slot.data(), nullptr, 0, nullptr, 0, roots.data(), uint32_t(roots.size())));
     Channel c;
+    c.install();
     for (int pass = 0; pass < 2; pass++) {
         uint64_t va[31] = {};
         uint32_t size[31] = {}, strides[31] = {};
@@ -570,8 +586,9 @@ TEST(RawIcbCompute, BindSlotsWriteTheRootTableEntriesOfTheEncodersBuffers)
         size[30] = 16;
         bindExecute(c, va, size, strides, rootSlots, slot);
         for (const raw::icb::ComputeRoot &r : roots) {
-            const uint64_t v = va[r.slot], bytes = v ? (uint64_t(size[r.slot]) + 15) & ~15ull : 0;
-            const uint32_t want[8] = {uint32_t(v),     uint32_t(v >> 32),     uint32_t(v), uint32_t(v >> 32),
+            const uint64_t v = va[r.slot], host = v ? v : kZeroPage,
+                           bytes = v ? (uint64_t(size[r.slot]) + 15) & ~15ull : 0;
+            const uint32_t want[8] = {uint32_t(host),  uint32_t(host >> 32),  uint32_t(v), uint32_t(v >> 32),
                                       uint32_t(bytes), uint32_t(bytes >> 32), 0,           0};
             for (uint32_t w = 0; w < 8; w++)
                 EXPECT_EQ(c.memory.at(r.entry + 4 * w), want[w]) << "slot " << r.slot << " word " << w << " " << pass;

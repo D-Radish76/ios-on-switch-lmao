@@ -633,9 +633,11 @@ pub(super) fn read_check(cx: &SelectCx<'_>, buffer: bool) -> ReadCheck {
 /// Whether a write needs the in-shader bounds check: Metal discards an out-of-bounds write, and
 /// Vulkan does under `robustImageAccess` (images, either level) or `robustBufferAccess2` (texel
 /// buffers). Under `robustBufferAccess` a write past a texel buffer may instead modify any memory
-/// bound to the underlying buffer, so it is checked in the shader.
+/// bound to the underlying buffer, so it is checked in the shader. Without containment
+/// (`Containment::UnsafeOff`) no write is checked.
 pub(super) fn write_guard(cx: &SelectCx<'_>, buffer: bool) -> bool {
-    !contain::device_drops_texel_writes(cx.profile, buffer)
+    matches!(cx.profile.fields().containment, Containment::On { .. })
+        && !contain::device_drops_texel_writes(cx.profile, buffer)
 }
 
 /// Whether the device's robustness is left both an out-of-bounds store and an out-of-bounds

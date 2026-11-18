@@ -9,7 +9,7 @@
 // the same words in every command, so a copy to another index rewrites one word (kComputeIndexWord), as a draw's does.
 // A buffer's slots are kComputeSlotWords long until a command launches more than they hold: then every slot of the
 // buffer is computeSlotWords of the most it launches.
-// A buffer that inherits the encoder's buffers is written the same way, its set-0 buffer descriptors zero, and each
+// A buffer that inherits the encoder's buffers is written the same way, its set-0 buffer descriptors unbound, and each
 // command also has a bind slot: calls of kIcbBind with each descriptor's address, its Metal buffer index, the kernel's
 // window of it, its residual's root word and the word the record leaves there, then each StageInStride root word of a
 // stage-in kernel and its Metal buffer index, then each root table entry of a kernel that reads its buffer slots
@@ -183,7 +183,8 @@ inline void bindsEmpty(uint32_t *slot, uint32_t words = kComputeBindSlotWords)
 
 // An execute's inherited buffers (`va`, `size`, bind `stride` by Metal buffer index; a stride at most kComputeStrideLimit, 0
 // where none) of `slots` (a mask) into the macros' scratch, after the dispatches before have read the descriptors the bind
-// slots write. A slot of no buffer is size 0 there, so the root table entry the bind macro writes of it is all zero.
+// slots write. A slot of no buffer is address 0 and size 0 there, of which the bind macro writes the zero page's
+// descriptor and root table entry (the scratch word raw_mme.h install() writes), as icbRegion does.
 inline void computeBindHead(Push &p, const uint64_t (&va)[31], const uint32_t (&size)[31], const uint32_t (&stride)[31],
                             uint32_t slots)
 {

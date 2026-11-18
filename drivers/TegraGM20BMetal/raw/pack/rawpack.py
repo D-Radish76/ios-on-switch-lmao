@@ -116,6 +116,9 @@ LIBRARY = re.compile(r' lib=(\S+)')
 # A function a state links (" | <vl|vp|fl|fp> <function> lib=<library> ..."): its library is not the state's
 LINKED_LIBRARY = re.compile(r'( \| [vf][lp] \S+) lib=\S+')
 LINKED = ('vl ', 'vp ', 'fl ', 'fp ')
+# What the journal names a stage's function with besides its library function (NativeBridgeMetalFrontend.mm stageText):
+# the name it was specialized under and "spec", made with no constant values
+STAGE_NAMES = re.compile(r'( \| [vf] \S+)(?: as=\S+)?(?: spec(?= ))?')
 # The OS builds a corpus line is a state of (tools/gpu/rawpack.py own_build strips it from the lines a pack takes)
 OS_BUILD = re.compile(r' os=\S+')
 
@@ -423,9 +426,12 @@ def state_key(line: str) -> str:
     The pack files a state under the key the runtime computes of the descriptor made of the line (probe_states.h,
     runtime/RawPipelineKey.h), which is this for a line written as the device journals it.
 
-    No lib= field is in it; the functions the state links follow its stages (probe_states.h linkedFunction); a line
-    whose first library is another framework's default.metallib than QuartzCore's ends with " | l <framework>"
-    (probe.mm libraryPath, frameworkName).
+    No lib= field is in it, nor the journal's spec mark, nor a stage's as= specialized name: the runtime keys a stage by
+    its library function and constants alone (RawMetalLibrary.mm raw_metal_pipeline_key, RawCompileRequest.mm
+    requestPackKey, probe_states.h parseState). The functions the state links follow its stages, each with as=<the
+    name it is specialized under> where that is not its library function's (RawPipelineKey.h linkedSegment); a line
+    whose first library is another framework's default.metallib than QuartzCore's ends with " | l <framework>" (probe.mm
+    libraryPath, frameworkName).
     """
     libs = LIBRARY.findall(LINKED_LIBRARY.sub(r'\1', line))
     framework = ''
@@ -441,13 +447,13 @@ def state_key(line: str) -> str:
         for h in line[:bar1].split()
         if h.startswith(('samples=', 'topo=', 'ds=')) or (len(h) > 1 and h[0] in 'ca' and h[1].isdigit())
     ] + [h for h in line[:bar1].split() if h == 'rast=0']
-    key = ' '.join(fields) + ' ' + line[bar1 : bar3 if bar3 >= 0 else len(line)]
+    key = ' '.join(fields) + ' ' + STAGE_NAMES.sub(r'\1', line[bar1 : bar3 if bar3 >= 0 else len(line)])
     cubic = sampled = written = ''
     for segment in line[bar3 + 3 :].split(' | ') if bar3 >= 0 else ():
         if segment.startswith(LINKED):
             tokens = segment.split()
             named = [t for t in tokens[2:] if t.startswith('as=')]
-            values = [t for t in tokens[2:] if not t.startswith('as=')]
+            values = [t for t in tokens[2:] if not t.startswith('as=') and t != 'spec']
             key += ' | ' + ' '.join(tokens[:2] + named) + ' ' + ' '.join(values)
         elif segment.startswith('cubic '):
             cubic = ' | ' + ' '.join(segment.split())

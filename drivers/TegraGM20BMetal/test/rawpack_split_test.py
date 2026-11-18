@@ -76,6 +76,27 @@ class StateKeyTest(unittest.TestCase):
             ' #0:36:6504 | fp clampToEdges_v1 as=custom_fn #1:33:00000000 | l RenderBox',
         )
 
+    def test_a_specialized_stage_is_keyed_by_its_library_function(self):
+        # RawMetalLibrary.mm keys a stage by libraryName; a linked function keeps the name it is specialized under
+        line = LINKED.replace(f'custom_effect_fragment{RB} #', f'custom_effect_fragment{RB} as=ffgea5 #')
+        self.assertIn(' as=ffgea5 ', line)
+        self.assertEqual(rawpack.state_key(line), rawpack.state_key(LINKED))
+
+    def test_a_function_made_with_no_constant_values_keys_as_its_plain_function(self):
+        # the journal marks it " spec" (NativeBridgeMetalFrontend.mm stageText); the runtime keys its constants alone
+        pencil = ' lib=/System/Library/Frameworks/PencilKit.framework/default.metallib'
+        line = (
+            'R ok=1 label=Pipeline samples=1 topo=0 ds=0/0 c0=80:15:0:1:0:0:1:0:0'
+            f' | v sixChannelBlend_vertex{pencil} spec  | f sixChannelBlend_fragment{pencil} #5:53:01 | '
+        )
+        self.assertEqual(
+            rawpack.state_key(line),
+            'samples=1 topo=0 ds=0/0 c0=80:15:0:1:0:0:1:0:0  | v sixChannelBlend_vertex  | f sixChannelBlend_fragment'
+            ' #5:53:01 | l PencilKit',
+        )
+        linked = LINKED.replace(' as=custom_fn #1:33:00000000', ' as=custom_fn spec ')
+        self.assertTrue(rawpack.state_key(linked).endswith(' | fp clampToEdges_v1 as=custom_fn  | l RenderBox'))
+
     def test_a_fragment_with_no_constants_keeps_its_space_before_the_framework(self):
         # MapKit.SnapshotService's VectorKit state as the device logged its key (a state the pack lacks made, 24B119)
         vectorkit = ' lib=/System/Library/PrivateFrameworks/VectorKit.framework/default.metallib'

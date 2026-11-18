@@ -172,8 +172,10 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         if (pl->uniformProbe && b.cpu)
             probeUniforms(*pl, e.stage, e.slot, b.cpu, std::min<uint64_t>(desc.range - desc.residual, b.size));
 #endif
-        at[0] = uint32_t(desc.base);
-        at[1] = uint32_t(desc.base >> 32);
+        // a slot bound to nothing reads the zero page: no buffer load is bounds-checked (raw_nak_target.h)
+        const uint64_t base = b.va ? desc.base : d.zero_.va;
+        at[0] = uint32_t(base);
+        at[1] = uint32_t(base >> 32);
         at[2] = b.va ? desc.range : 0;
         at[3] = 0;
         return true;

@@ -68,12 +68,18 @@ py_test(
     deps = [":rawprobe_steps"],
 )
 
-# The compile profile the shader tools' bridge is built with, held to their runtime device
+# The compile profile the shader tools' bridge is built with, held to their runtime device but for its bounds checks
 py_test(
     name = "compile_profile_test",
     srcs = ["compile_profile_test.py"],
-    data = ["//gpu/seed:local_tools"],
-    env = {"COMPILE_PROFILE_TOOLS": "$(rootpath //gpu/seed:local_tools)"},
+    data = [
+        "//gpu:compile_profile",
+        "//gpu/seed:local_tools",
+    ],
+    env = {
+        "COMPILE_PROFILE": "$(rootpath //gpu:compile_profile)",
+        "COMPILE_PROFILE_TOOLS": "$(rootpath //gpu/seed:local_tools)",
+    },
     tags = ["requires-darwin"],
 )
 

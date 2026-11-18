@@ -178,7 +178,7 @@ TEST(RawMme, ContextReservationCoversEveryProgram)
 {
     std::array<uint32_t, raw::mme::kContextWords> words{};
     raw::Push push{words.data(), words.data() + words.size()};
-    raw::mme::install(push, 0x1234500000ull);
+    raw::mme::install(push, 0x1234500000ull, 0x2345670000ull);
     EXPECT_EQ(push.at, push.end);
     EXPECT_EQ(words[1], raw::mme::kDraw);
     EXPECT_EQ(words[2], 0u);
@@ -197,7 +197,7 @@ TEST(RawMme, TheContextAndTheScratchWritersWriteOnlyMaxwellBsMethods)
 {
     std::vector<uint32_t> words(raw::mme::kContextWords + raw::mme::kAmplificationScratchWords + 32);
     raw::Push push{words.data(), words.data() + words.size()};
-    raw::mme::install(push, 0x1234500000ull);
+    raw::mme::install(push, 0x1234500000ull, 0x2345670000ull);
     uint32_t layers[SWITCH_GM20B_AMP_MAX], viewports[SWITCH_GM20B_AMP_MAX];
     for (uint32_t a = 0; a < SWITCH_GM20B_AMP_MAX; a++) {
         layers[a] = 2047 - a;

@@ -61,18 +61,21 @@ inline uint32_t drawRootEntries(uint32_t slots)
 }
 
 // A draw's root table at `va` (drawRootEntries(slots) entries): m2v's {null, sink, an entry per slot} over the resident set
-// at `identity`; a slot outside `slots` or bound to nothing is the null entry
+// at `identity`; a slot outside `slots` is the null entry, and one bound to nothing reads the zero page at `zero` at
+// the null address (no access through the table is bounds-checked, raw_nak_target.h)
 inline void writeDrawRoots(RootEntry *table, uint64_t va, uint32_t slots, const RootSlot *slot, uint64_t sink,
-                           uint64_t identity)
+                           uint64_t identity, uint64_t zero)
 {
     const uint32_t entries = drawRootEntries(slots);
     table[0] = {};
     table[kSinkRoot] = {sink, residentFirst(va, identity), 1, 0};
     for (uint32_t n = 0; kFirstSlotRoot + n < entries; n++) {
         const RootSlot &s = slot[n];
-        table[kFirstSlotRoot + n] = (slots >> n & 1) && s.va
-                                        ? RootEntry{s.va, s.va, (s.bytes + 15) & ~uint64_t(15), s.bindOffset}
-                                        : RootEntry{};
+        if (!(slots >> n & 1))
+            table[kFirstSlotRoot + n] = {};
+        else
+            table[kFirstSlotRoot + n] = s.va ? RootEntry{s.va, s.va, (s.bytes + 15) & ~uint64_t(15), s.bindOffset}
+                                             : RootEntry{zero, 0, 0, 0};
     }
 }
 

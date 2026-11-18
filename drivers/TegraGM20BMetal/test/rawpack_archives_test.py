@@ -40,6 +40,9 @@ class ArchivesTest(unittest.TestCase):
         # raw_compute_key.h computeArchiveKey: the library function, its constants, the descriptor's thread limits
         self.assertEqual(archives.compute_key(COMPUTE), 'k RemixDenoise #0:53:01 | max=256 tgm=1')
         self.assertEqual(archives.compute_key(KERNEL), 'k fill | max=0 tgm=0')
+        # made with no constant values: the line says spec (model.py Function.stage), the runtime's constants are none
+        specialized = KERNEL.replace(f'{NRF_LIB}  |', f'{NRF_LIB} spec  |')
+        self.assertEqual(archives.compute_key(specialized), 'k fill | max=0 tgm=0')
         # Core Image's archived kernels name no library: a creation's key names none either
         stitched = 'C ok=1 form=d opt=0 max=0 tgm=0 label=- | k ci_affine_clampRect  | '
         self.assertEqual(archives.compute_key(stitched), 'k ci_affine_clampRect | max=0 tgm=0')
