@@ -2,6 +2,7 @@
 carries each at overlay/<source> (//install:release_inputs), which @switch_release names overlay/<source>."""
 
 OVERLAY_BINARIES = {
+    "//apps/installer:image_ipa": "build/switch-apps/SwitchInstaller.ipa",
     "//drivers/SwitchBluetooth:BlueTool": "build/switch-bluetooth/BlueTool",
     "//drivers/SwitchAudio:SwitchAudioHAL": "build/switch-audio/SwitchAudio.driver/SwitchAudio",
     "//drivers/SwitchJoyCon:joyconpaird": "build/switch-joycon/joyconpaird",

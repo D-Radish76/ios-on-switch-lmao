@@ -16,7 +16,7 @@ exports_files([
 genrule(
     name = "jetsam_properties",
     srcs = ["supplemental/com.brunostjohn.switch.shadercompiler.jetsam.plist"] + select({
-        "//bazel:debug": ["//hw_test_app:peer/com.brunostjohn.switch.texpeer.jetsam.plist"],
+        "//bazel:debug": ["//apps/hwtest:peer/com.brunostjohn.switch.texpeer.jetsam.plist"],
         "//conditions:default": [],
     }),
     outs = ["supplemental/com.apple.jetsamproperties.cryptex.plist"],
@@ -36,6 +36,6 @@ filegroup(
         "//drivers/SwitchCapture:overlay_files",
         "//drivers/SwitchJoyCon:overlay_files",
         "//drivers/TegraGM20BMetal:overlay_files",
-        "//hw_test_app:overlay_files",
+        "//apps/hwtest:overlay_files",
     ],
 )

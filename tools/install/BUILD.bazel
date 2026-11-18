@@ -40,6 +40,7 @@ py_library(
         "room.py",
         "space.py",
         "stages.py",
+        "staged_apps.py",
         "target.py",
         "to_card.py",
     ],
@@ -48,6 +49,7 @@ py_library(
         "//tools/common:files",
         "//tools/common:hashing",
         "//tools/common:paths",
+        "//tools/common:seed_manifest",
         "//tools/common:sudo",
     ],
 )
@@ -177,6 +179,7 @@ py_library(
     "pretranslate",
     "progress",
     "space",
+    "staged_apps",
     "to_card",
 ]]
 

@@ -121,6 +121,7 @@
 #include <sys/spawn_internal.h>
 #include <switch/spawn.h>
 #include <sys/process_policy.h>
+#include <switch/identity.h>
 #include <sys/codesign.h>
 #include <sys/random.h>
 #include <crypto/sha1.h>
@@ -7341,7 +7342,8 @@ exec_add_apple_strings(struct image_params *imgp,
 		imgp->ip_applec++;
 	}
 
-	if (imgp->ip_vattr) {
+	/* dyld prefers this ID over executable_path. On a boot union it names the private backing path. */
+	if (imgp->ip_vattr && !bindfs_boot_union_host(vnode_mount(imgp->ip_vp))) {
 		uint64_t fsid    = vnode_get_va_fsid(imgp->ip_vattr);
 		uint64_t fsobjid = imgp->ip_vattr->va_fileid;
 

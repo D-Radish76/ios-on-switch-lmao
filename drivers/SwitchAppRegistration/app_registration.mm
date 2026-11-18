@@ -48,6 +48,7 @@
 @protocol SwitchLSApplicationProxy <NSObject>
 + (id)applicationProxyForIdentifier:(NSString *)identifier;
 - (BOOL)isInstalled;
+- (NSURL *)bundleURL;
 @end
 
 @protocol SwitchLSOperationRequestContext <NSObject>
@@ -123,6 +124,12 @@ BOOL switch_app_registration_load(NSError **error)
 BOOL switch_app_installed(NSString *identifier)
 {
     return [[proxyClass applicationProxyForIdentifier:identifier] isInstalled];
+}
+
+BOOL switch_app_registered_at_path(NSString *path, NSString *identifier)
+{
+    id<SwitchLSApplicationProxy> proxy = [proxyClass applicationProxyForIdentifier:identifier];
+    return [proxy.bundleURL.path.stringByStandardizingPath isEqualToString:path.stringByStandardizingPath];
 }
 
 static id requestContext(void)
@@ -205,18 +212,19 @@ BOOL switch_unregister_builtin_app(NSString *path, NSString *identifier, NSUUID 
     id<SwitchLSApplicationWorkspace> workspace = [workspaceClass defaultWorkspace];
     id context = requestContext();
 #if SWITCH_APPREGD_INSTALLATION_RECORDS
-    (void)identifier;
-    NSURL *url = [NSURL fileURLWithPath:path isDirectory:YES];
-    return retrying(
-        ^BOOL(NSError **last) {
-            return [workspace unregisterBuiltinApplicationAtURL:url
-                                                  operationUUID:uuid
-                                                 requestContext:context
-                                                   saveObserver:observer
-                                                          error:last];
-        },
-        error);
-#else
+    if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+        NSURL *url = [NSURL fileURLWithPath:path isDirectory:YES];
+        return retrying(
+            ^BOOL(NSError **last) {
+                return [workspace unregisterBuiltinApplicationAtURL:url
+                                                      operationUUID:uuid
+                                                     requestContext:context
+                                                       saveObserver:observer
+                                                              error:last];
+            },
+            error);
+    }
+#endif
     (void)path;
     static const unsigned kUninstallOperation = 3;
     return retrying(
@@ -230,5 +238,4 @@ BOOL switch_unregister_builtin_app(NSString *path, NSString *identifier, NSUUID 
                                                                  unregistrationError:last];
         },
         error);
-#endif
 }

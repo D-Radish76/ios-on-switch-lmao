@@ -352,6 +352,12 @@ def _boot_package_impl(ctx):
         "bootlogo.bmp": ctx.file.bootlogo,
     }
     package = ctx.actions.declare_directory(ctx.attr.out)
+    seed_pin = None
+    seed = binaries.get("build/switch-apps/SwitchInstaller.ipa")
+    if seed:
+        seed_pin = out("installer-bundle.json")
+        policy = ctx.file.installer_entitlements
+        _run(ctx, ctx.executable._installer_seed_pin, [seed.path, seed_pin.path, policy.path, profile], [seed, policy], [seed_pin], "InstallerSeedPin", "Pinning the signed Installer bundle")
     commands = [
         'set -e; out="$1"',
         '/bin/mkdir -p "$out/switchroot/ios" "$out/bootloader/ini" "$out/bootloader/res"',
@@ -362,10 +368,12 @@ def _boot_package_impl(ctx):
         '/bin/cp -L "%s" "$out/switchroot/ios/%s"' % (f.path, n)
         for n, f in sorted(switchroot.items())
     ]
+    if seed_pin:
+        commands.append('/bin/cp -L "%s" "$out/installer-bundle.json"' % seed_pin.path)
     ctx.actions.run_shell(
         command = "\n".join(commands),
         arguments = [package.path],
-        inputs = [overlay, ctx.file.ini, ctx.file.icon] + switchroot.values(),
+        inputs = [overlay, ctx.file.ini, ctx.file.icon] + switchroot.values() + ([seed_pin] if seed_pin else []),
         outputs = [package],
         mnemonic = "BootPackage",
         progress_message = "Assembling the iOS boot entry",
@@ -377,6 +385,7 @@ def _boot_package_impl(ctx):
             boot_script = depset([script_text]),
             constants = depset([constants]),
             kernel_window = depset([window, layout_h, runs_h, constants, window_plan]),
+            installer_seed = depset([seed_pin] if seed_pin else []),
             loader = depset([loader]),
             overlay = depset([plan, overlay_trust, overlay]),
             trust = depset([bundle]),
@@ -410,6 +419,8 @@ boot_package = rule(
         "exporter": attr.label(mandatory = True, allow_single_file = True),
         "bt_patch": attr.label(mandatory = True, allow_single_file = True),
         "overlay_manifest": attr.label(mandatory = True, allow_single_file = True),
+        "installer_entitlements": attr.label(allow_single_file = True),
+        "_installer_seed_pin": _tool("//tools/package:installer_seed_pin"),
         "portrait_header": attr.label(mandatory = True, allow_single_file = True),
         "overlay_binaries": attr.label_keyed_string_dict(allow_files = True, doc = "built Mach-O -> its manifest source"),
         "overlay_data": attr.label_keyed_string_dict(allow_files = True, doc = "other overlay file -> its manifest source"),
