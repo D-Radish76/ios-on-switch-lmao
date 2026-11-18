@@ -134,10 +134,11 @@ static void search_from_channel_six(struct awdl_core *c, struct awdl_chan home)
 
     unsigned phase = c->switch_search_pass;
     if (away == 6u) {
-        // Two extra visits every third pass preserve the average of eight away slots per three passes.
-        if (phase % 3u != 2u)
+        // Rotate through both bands on two passes out of three. Keep 149 reachable during the sweep.
+        if (phase % 3u == 0u)
             return;
-        phase /= 3u;
+        c->cfg.seq[10] = home;
+        phase -= phase / 3u + 1u;
     }
     phase %= AWDL_SEQ_SLOTS;
     if (away & 4u)
