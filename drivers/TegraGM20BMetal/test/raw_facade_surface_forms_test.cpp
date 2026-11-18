@@ -80,9 +80,44 @@ void readsItsPlaneAndTheNext()
     CFRelease(s);
 }
 
+// YCBCR8_420_2P reads luma from its plane and chroma from the next one where there is one, chroma codes 0 where there is
+// none: over planes 1 and 2 of three, and over a surface of one plane (an M4 Max: probes/ycbcr.txt 3aj, 3s). A texture of no
+// width is Metal's descriptor validation's stop (probes/ycbcr.txt, empty).
+void ycbcrReadsItsPlaneAndTheNext()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef three = planesSurface({{1, 64}, {1, 64}, {2, 64}});
+    IOSurfaceRef one = planesSurface({{4, 256}});
+    ASSERT_TRUE(three && one);
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:sampled(500, 32) iosurface:three plane:1];
+    ASSERT_TRUE(t != nil && t->_rawOk) << "over plane 1 of three";
+    ASSERT_TRUE(t->_raw.luma && t->_raw.chroma);
+    EXPECT_EQ(t->_raw.luma->cpu, planeBytes(three, 1));
+    EXPECT_EQ(t->_raw.chroma->cpu, planeBytes(three, 2));
+    EXPECT_EQ(t->_raw.shape[14], 1u);
+    t = (RMTexture *)[device newTextureWithDescriptor:sampled(500, 64) iosurface:one plane:0];
+    ASSERT_TRUE(t != nil && t->_rawOk) << "over a surface of one plane";
+    ASSERT_TRUE(t->_raw.luma);
+    EXPECT_EQ(t->_raw.luma->cpu, planeBytes(one, 0));
+    EXPECT_EQ(t->_raw.chroma, nullptr);
+    EXPECT_EQ(t->_raw.shape[14], 0u) << "chroma codes 0";
+    MTLTextureDescriptor *empty = sampled(500, 64);
+    empty.width = 0;
+    EXPECT_EQ([device newTextureWithDescriptor:empty iosurface:one plane:0], nil);
+    CFRelease(three);
+    CFRelease(one);
+}
+
 }  // namespace
 
 TEST(RawFacadeSurfaceForms, RGB10A8XrReadsItsPlaneAndTheNext)
 {
     switch_ios::test::ExpectPassesInFreshProcess(readsItsPlaneAndTheNext);
+}
+
+TEST(RawFacadeSurfaceForms, YcbcrReadsItsPlaneAndTheNext)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(ycbcrReadsItsPlaneAndTheNext);
 }

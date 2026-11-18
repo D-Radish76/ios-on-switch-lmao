@@ -165,6 +165,8 @@ NSString *surfaceFacts(IOSurfaceRef s, NSUInteger plane)
 const char *surfaceMetalRefusal(MTLTextureDescriptor *d)
 {
     const uint32_t format = uint32_t(d.pixelFormat);
+    if (!d.width || !d.height)
+        return "a texture of no width or height (its descriptor's validation stops it)";
     if (d.textureType != MTLTextureType2D && d.textureType != MTLTextureTypeTextureBuffer)
         return "an IOSurface texture is a 2D texture or a texture buffer";
     if (d.mipmapLevelCount > 1 || d.sampleCount > 1 || d.arrayLength > 1 || d.depth > 1)
@@ -192,16 +194,21 @@ const char *ycbcrPlan(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane,
     raw::YcbcrFacts f;
     f.pixelFormat = uint32_t(d.pixelFormat);
     f.fourcc = IOSurfaceGetPixelFormat(s);
-    f.plane = uint32_t(plane);
-    f.planes = uint32_t(IOSurfaceGetPlaneCount(s));
+    const size_t count = IOSurfaceGetPlaneCount(s);
+    if (plane >= std::max<size_t>(count, 1))
+        return "a plane the surface does not have";
+    // over a surface of more than two planes, the texture's plane and the one after it as planes 0 and 1 (raw_ycbcr.h)
+    const size_t first = count > 2 ? plane : 0;
+    f.plane = uint32_t(plane - first);
+    f.planes = uint32_t(count > 2 ? std::min<size_t>(count - plane, 2) : count);
     f.width = uint32_t(d.width);
     f.height = uint32_t(d.height);
     f.surfaceWidth = uint32_t(IOSurfaceGetWidth(s));
     f.surfaceHeight = uint32_t(IOSurfaceGetHeight(s));
     const uintptr_t base = uintptr_t(IOSurfaceGetBaseAddress(s));
     for (size_t k = 0; k < 2 && k < f.planes; k++) {
-        f.offset[k] = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, k)) - base;
-        f.pitch[k] = uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, k));
+        f.offset[k] = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, first + k)) - base;
+        f.pitch[k] = uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, first + k));
     }
     if (!f.planes)  // a one-plane format's surface of no planes ('2vuy', 'yuvs')
         f.pitch[0] = uint32_t(IOSurfaceGetBytesPerRow(s));
@@ -224,6 +231,9 @@ const char *ycbcrPlan(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane,
         f.target = false;
         why = raw::planYcbcr(f, out);
     }
+    // the kernel's native view knows the surface's own plane numbers
+    if (first)
+        out.nativePlanes = false;
     return why;
 }
 
@@ -278,7 +288,8 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const bool xr = raw::twoPlaneXr(format);
     const bool xrTaken =
         xr && (raw::surfaceRefusal || xrPlanesShape(flat, s, plane) || xrWordPlaneShape(flat, s, plane));
-    if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal)
+    const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
+    if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
         form = ycbcrPlan(flat, s, plane, unused);
     else if (xr && !xrTaken && writesTexture(d) && d.textureType == MTLTextureTypeTextureBuffer)
         form = "an RGB10A8_2P_XR10 texel buffer written over a surface, whose stores leave bits 30 and 31 of "

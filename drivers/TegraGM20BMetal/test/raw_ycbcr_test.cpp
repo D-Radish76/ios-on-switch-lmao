@@ -85,8 +85,9 @@ TEST(RawYcbcr, EveryFormatOverEveryMeasuredSurfaceWhoseChromaRowsItHolds)
                     const uint32_t rows = s.sub == 0 ? 9 : 17;
                     raw::YcbcrFacts f = surface(format, s.code, 33, 17, 256, rows);
                     raw::YcbcrPlan p;
-                    // the format's chroma rows no more than the surface's (a finer one's rows read past the plane's end)
-                    const bool expected = bits == s.bits && (sub == 0 || s.sub != 0);
+                    // the format's chroma rows no more than the surface's (a finer one's rows read past the plane's end), of
+                    // its own bits whatever the surface's (m2v-textures9 probes/ycbcr.txt 3f, 3g)
+                    const bool expected = sub == 0 || s.sub != 0;
                     EXPECT_EQ(raw::planYcbcr(f, p) == nullptr, expected) << s.code << " " << format;
                     taken += expected;
                     if (!expected)
@@ -96,7 +97,7 @@ TEST(RawYcbcr, EveryFormatOverEveryMeasuredSurfaceWhoseChromaRowsItHolds)
                     EXPECT_EQ(p.chromaWidth, sub == 2 ? 33u : 17u) << format;
                     EXPECT_EQ(p.chromaHeight, sub == 0 ? 9u : 17u) << format;
                 }
-    EXPECT_EQ(taken, 3 * (17 + 14));  // per output: 8-bit 2 x 1 + 2 x 3 + 3 x 3 pairs, 10-bit 2 x 1 + 2 x 3 + 2 x 3
+    EXPECT_EQ(taken, 3 * 2 * (4 * 1 + 9 * 3));  // per output and depth: 4:2:0 surfaces take 4:2:0 alone, the rest all three
 }
 
 TEST(RawYcbcr, PlaneOneOfFullHeightChromaReadsItsCodesAsLuma)
@@ -279,10 +280,6 @@ TEST(RawYcbcr, PackedPlanesAreWordsOfThreeCodes)
     ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "a target whose chroma rows overlap (raw_overlap_rows.h)";
     EXPECT_TRUE(p.target);
     EXPECT_EQ(p.store.packed, 1u);
-    f = surface(546, "x420", 33, 17, 128, 9);
-    EXPECT_STREQ(raw::planYcbcr(f, p), "pixel format");
-    f = surface(543, "p420", 33, 17, 128, 9);
-    EXPECT_STREQ(raw::planYcbcr(f, p), "pixel format");
 }
 
 // cameracaptured's FigMetalContext (boot 21): RGB8_420_2P and YCBCR8_420_2P textures of 2x2 over an 8x8 '420f' surface of 64-byte
@@ -504,10 +501,7 @@ TEST(RawYcbcr, AOnePlaneWordsTargetStoresItsCodesAsWords)
 TEST(RawYcbcr, RefusesWhatM2vRefuses)
 {
     raw::YcbcrPlan p;
-    raw::YcbcrFacts f = surface(505, "420v", 33, 17, 128, 9);
-    EXPECT_STREQ(raw::planYcbcr(f, p), "pixel format");
-
-    f = surface(500, "422v", 33, 17, 64, 17);
+    raw::YcbcrFacts f = surface(500, "422v", 33, 17, 64, 17);
     EXPECT_EQ(raw::planYcbcr(f, p), nullptr);
     f = surface(502, "420v", 33, 17, 64, 9);
     EXPECT_STREQ(raw::planYcbcr(f, p), "rows past the allocation's last page (an M4 Max reads 0 there)");
@@ -519,9 +513,6 @@ TEST(RawYcbcr, RefusesWhatM2vRefuses)
     f.matrix = "EBU_3213";
     EXPECT_EQ(raw::planYcbcr(f, p), nullptr) << "a matrix Metal names no coefficients for reads as none";
     EXPECT_EQ(p.shape[4], 13123u) << "BT.601's";
-
-    f = surface(505, "x420", 33, 17, 120, 9);
-    EXPECT_STREQ(raw::planYcbcr(f, p), "plane offset or row not 16-byte");
 
     f = surface(505, "x420", 33, 17, 64, 9);
     EXPECT_STREQ(raw::planYcbcr(f, p), "rows past the allocation's last page (an M4 Max reads 0 there)");
@@ -546,12 +537,86 @@ TEST(RawYcbcr, RefusesWhatM2vRefuses)
     f.simple = false;
     EXPECT_STREQ(raw::planYcbcr(f, p), "shape");
 
-    f = surface(505, "x420", 33, 17, 128, 9);
-    f.planes = 3;
-    EXPECT_STREQ(raw::planYcbcr(f, p), "not two planes");
-
     EXPECT_FALSE(raw::isYcbcrFormat(80));
     EXPECT_TRUE(raw::isYcbcrFormat(545));
+}
+
+// A format reads by its own bits and packing over any surface's code, in full range only over a full-range one (an M4 Max:
+// m2v-textures9 probes/ycbcr.txt 3f-3l, 3u, 3v, 3ac)
+TEST(RawYcbcr, AFormatReadsItsOwnBitsOverAnySurfaceCode)
+{
+    raw::YcbcrPlan p;
+    raw::YcbcrFacts f = surface(505, "420v", 33, 17, 128, 9);
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "10-bit codes over an 8-bit surface";
+    EXPECT_EQ(p.lumaFormat, 20u) << "R16Unorm";
+    EXPECT_EQ(p.shape[2], 0u) << "video range";
+    f = surface(500, "xf20", 33, 17, 128, 9);
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "8-bit codes over a 10-bit surface";
+    EXPECT_EQ(p.lumaFormat, 10u) << "R8Unorm";
+    EXPECT_EQ(p.shape[2], 1u) << "full range";
+    f = surface(546, "x420", 33, 17, 128, 9);
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "packed codes over an unpacked surface";
+    EXPECT_EQ(p.lumaFormat, 53u) << "R32Uint words";
+    for (const uint32_t code : {fourcc("b3a8"), fourcc("BGRA"), fourcc("abcd")}) {
+        f = surface(500, "420v", 33, 17, 128, 9);
+        f.fourcc = code;
+        ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << code;
+        EXPECT_EQ(p.shape[2], 0u) << code << ": video range";
+        EXPECT_EQ(p.chroma, f.offset[1]) << code;
+    }
+}
+
+// With no plane after the texture's, a two-plane format reads chroma codes 0 and stores its luma alone: over a surface of one
+// plane or none, as over the last of several (an M4 Max: probes/ycbcr.txt 3a-3c, 3s, 3t, 3z, 3af, 3aj)
+TEST(RawYcbcr, NoPlaneAfterItsOwnReadsChromaZero)
+{
+    raw::YcbcrPlan p;
+    for (uint32_t planes : {0u, 1u}) {
+        raw::YcbcrFacts f = surface(500, "BGRA", 32, 16, 128, 0);
+        f.planes = planes;
+        f.offset[1] = 0;
+        f.pitch[1] = 0;
+        f.allocBytes = 2048;
+        ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << planes << " planes";
+        EXPECT_EQ(p.luma, 0u);
+        EXPECT_EQ(p.lumaPitch, 128u);
+        EXPECT_EQ(p.chromaWidth, 0u);
+        EXPECT_EQ(p.shape[14], 0u) << "chroma codes 0";
+        f.target = true;
+        ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << planes << " planes, a target";
+        EXPECT_EQ(p.chromaWidth, 0u) << "its luma stored alone";
+    }
+    raw::YcbcrFacts f = surface(500, "420v", 32, 16, 64, 8);
+    f.planes = 3;
+    EXPECT_EQ(raw::planYcbcr(f, p), nullptr) << "plane 0 of three: planes 0 and 1";
+    EXPECT_EQ(p.chroma, f.offset[1]);
+}
+
+// Metal's GPU reads and stores a plane at its offset and rows rounded down to 16 bytes, two-plane and one-plane formats alike
+// (an M4 Max: probes/ycbcr.txt 3m-3r, 3x, 3y, 3ak-3am)
+TEST(RawYcbcr, PlanesOffSixteenAreReadRoundedDown)
+{
+    raw::YcbcrPlan p;
+    raw::YcbcrFacts f = surface(500, "420v", 32, 16, 40, 8);
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "rows of 40";
+    EXPECT_EQ(p.lumaPitch, 32u);
+    EXPECT_EQ(p.chromaPitch, 32u);
+    EXPECT_EQ(p.chroma, 640u);
+    f = surface(500, "420v", 32, 16, 32, 8);
+    f.offset[0] = 8;
+    f.offset[1] = 520;
+    f.allocBytes = 1024;
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "planes at 8 and 520";
+    EXPECT_EQ(p.luma, 0u);
+    EXPECT_EQ(p.chroma, 512u);
+    f = surface(501, "2vuy", 32, 16, 72, 0);
+    f.planes = 1;
+    f.offset[1] = 0;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "a one-plane format, rows of 72";
+    EXPECT_EQ(p.lumaPitch, 64u);
+    f = surface(500, "420v", 8, 8, 8, 4);
+    EXPECT_STREQ(raw::planYcbcr(f, p), "a plane of rows under 16 bytes") << "read by no rule probed";
 }
 
 }  // namespace

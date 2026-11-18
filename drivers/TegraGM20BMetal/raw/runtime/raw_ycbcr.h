@@ -16,8 +16,12 @@ namespace raw {
 struct YcbcrFacts {
     uint32_t pixelFormat = 0;  // MTLPixelFormat
     uint32_t fourcc = 0;       // IOSurfaceGetPixelFormat
-    uint32_t plane = 0;        // the plane the texture is made over
-    uint32_t planes = 0;       // IOSurfaceGetPlaneCount
+    // the plane the texture is made over and the surface's IOSurfaceGetPlaneCount; offset and pitch hold planes 0 and 1. A
+    // two-plane format reads its plane's codes as luma and the next plane's as chroma, codes 0 where there is none (the last
+    // plane, or a surface of one or none), so the facade gives a texture over plane k of more than two planes k and k + 1 as
+    // planes 0 and 1 of two, or plane k alone as the one plane of one (RawMetalSurfaceTextures.mm ycbcrPlan)
+    uint32_t plane = 0;
+    uint32_t planes = 0;
     // Metal reads and stores the top-left corner of the planes' rows: no taller than the surface, as wide as its rows hold
     uint32_t width = 0, height = 0;
     uint32_t surfaceWidth = 0, surfaceHeight = 0;  // IOSurfaceGetWidth/Height: plane 0's size

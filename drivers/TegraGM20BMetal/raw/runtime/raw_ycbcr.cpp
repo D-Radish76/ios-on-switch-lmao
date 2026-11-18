@@ -241,23 +241,24 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     if (!format)
         return "not a two-plane YCbCr format";
     const bool onePlane = format->layout != TwoPlanes;
-    if (onePlane ? f.plane >= std::max(f.planes, 1u) : f.planes != 2)
-        return onePlane ? "a plane the surface does not have" : "not two planes";
-    const Surface *surface = nullptr;
+    if (f.plane >= std::max(f.planes, 1u) || f.plane > 1)
+        return "a plane the surface does not have";
+    // A format reads its planes by its own bits and packing whatever the surface's four-character code, in full range over a
+    // full-range CoreVideo format and in video range over every other (an M4 Max over 'x420', 'xf20', '420v', '420f', 'b3a8',
+    // 'abcd', 'BGRA', 'y3p8': m2v-textures9 probes/ycbcr.txt 3f-3l, 3u, 3v, 3ac)
+    const Surface *known = nullptr;
     for (const Surface &s : kSurfaces)
-        if (s.fourcc == f.fourcc && s.bits == format->bits && s.packed == format->packed && !onePlane)
-            surface = &s;
-    const Surface any = {f.fourcc, format->bits, false, fullRangeSurface(f.fourcc), format->sub};
-    if (onePlane)
-        surface = &any;
-    if (!surface)
-        return "pixel format";
-    if (f.plane > 1)
-        return "a plane past 1";
+        if (s.fourcc == f.fourcc)
+            known = &s;
+    const Surface reads = {f.fourcc, format->bits, format->packed, fullRangeSurface(f.fourcc),
+                           known && !onePlane ? known->sub : format->sub};
+    const Surface *surface = &reads;
     // Metal reads a plane's rows on past its end where the texture has more (the format's chroma finer than the surface's,
     // plane 1 of a 4:2:0 surface read as luma, a texture taller than its surface): the bytes there, up to the end of the
     // allocation's last page, and 0 past it (an M4 Max)
     const bool planeOne = f.plane == 1 && !onePlane;
+    // no plane after the texture's: chroma codes 0, and a target stores its luma alone (probes/ycbcr.txt 3a-3c, 3s, 3z, 3aj)
+    const bool lumaAlone = !onePlane && f.plane + 1 >= f.planes;
     const bool fits = planeOne ? !halvedDown(surface->sub)
                                : (halvedAcross(format->sub) || !halvedAcross(surface->sub)) &&
                                      (halvedDown(format->sub) || !halvedDown(surface->sub));
@@ -299,18 +300,21 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     const uint32_t cw = halvedAcross(format->sub) ? (f.width + 1) / 2 : f.width;
     const uint32_t ch = halvedDown(format->sub) ? (f.height + 1) / 2 : f.height;
     const bool words = format->layout == Words;
-    const uint64_t luma = f.offset[f.plane], chroma = onePlane ? luma : f.offset[1];
-    const uint32_t lumaPitch = f.pitch[f.plane], chromaPitch = onePlane ? lumaPitch : f.pitch[1];
-    if (((luma | chroma) & 15) || ((lumaPitch | chromaPitch) & 15))
-        return "plane offset or row not 16-byte";
+    // Metal's GPU reads and stores each plane at its offset and rows rounded down to 16 bytes (an M4 Max, two-plane and
+    // one-plane formats: probes/ycbcr.txt 3m-3r, 3x, 3y, 3ak-3am)
+    const uint64_t luma = f.offset[f.plane] & ~uint64_t(15), chroma = onePlane ? luma : f.offset[1] & ~uint64_t(15);
+    const uint32_t lumaPitch = f.pitch[f.plane] & ~15u, chromaPitch = onePlane ? lumaPitch : f.pitch[1] & ~15u;
+    // which rows an M4 Max reads there follows none of its pitch, 16 or 32 (m2v-textures9 probes/ycbcr3.txt 3an)
+    if ((!lumaPitch && f.height > 1) || (!lumaAlone && !chromaPitch && ch > 1))
+        return "a plane of rows under 16 bytes";
     // a row of more codes than its plane's pitch holds runs on into the next (Metal reads each row at the pitch); a target
     // stores each byte from the row whose store lands last (raw_overlap_rows.h)
     const uint64_t lumaRow = onePlane ? 4ull * cw : rowBytes(*format, f.width),
                    chromaRow = onePlane ? lumaRow : rowBytes(*format, 2 * cw);
-    const bool overlapping = lumaPitch < lumaRow || (!planeOne && chromaPitch < chromaRow);
+    const bool overlapping = lumaPitch < lumaRow || (!lumaAlone && chromaPitch < chromaRow);
     const uint64_t lumaEnd = luma + uint64_t(lumaPitch) * (f.height - 1) + lumaRow;
     const uint64_t chromaEnd = chroma + uint64_t(chromaPitch) * (ch - 1) + chromaRow;
-    const uint64_t mapped = std::max(f.allocBytes, f.mappedBytes), rowsEnd = std::max(lumaEnd, planeOne ? 0 : chromaEnd);
+    const uint64_t mapped = std::max(f.allocBytes, f.mappedBytes), rowsEnd = std::max(lumaEnd, lumaAlone ? 0 : chromaEnd);
     // An M4 Max reads 0 past the last page (m2v-textures4 probes/more.mm); a store's rows there drop, as a sparse page drops a
     // write (what Metal stores there no read can see)
     const bool window = rowsEnd > mapped;
@@ -323,8 +327,8 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     out.onePlane = onePlane && !words;
     out.pairsReversed = format->layout == PairsReversed;
     out.chromaGreenBlue = words;
-    out.nativePlanes =
-        (f.fourcc == fourcc("420v") || f.fourcc == fourcc("420f")) && !pastPlanes && !overlapping && !window;
+    out.nativePlanes = (f.fourcc == fourcc("420v") || f.fourcc == fourcc("420f")) && !lumaAlone && !pastPlanes &&
+                       !overlapping && !window;
     out.target = f.target;
     out.output = outputOf(*format, lumaFirst);
     out.addressMap = addressMapOf(*format);
@@ -334,7 +338,7 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     out.luma = luma;
     out.lumaPitch = lumaPitch;
     out.lumaWidth = format->packed ? uint32_t(lumaRow / 4) : onePlane && !words ? 2 * cw : f.width;
-    if (!planeOne) {
+    if (!lumaAlone) {
         out.chroma = chroma;
         out.chromaPitch = chromaPitch;
         out.chromaWidth = format->packed ? uint32_t(chromaRow / 4) : cw;
@@ -351,7 +355,7 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     s[11] = 10 - format->bits;
     s[12] = (1u << format->bits) - 1;
     s[13] = (halvedAcross(format->sub) ? 1u : 0u) | (halvedDown(format->sub) ? 2u : 0u);
-    s[14] = !planeOne;
+    s[14] = !lumaAlone;
     if (f.target) {
         const bool across = halvedAcross(format->sub), down = halvedDown(format->sub);
         out.store = format->reads == Codes ? ycbcrCodesShape(format->bits, across, down)
