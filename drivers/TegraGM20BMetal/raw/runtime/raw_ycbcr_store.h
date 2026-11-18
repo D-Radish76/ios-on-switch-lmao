@@ -44,11 +44,13 @@ inline uint32_t ycbcrStandInFormat(uint32_t pixelFormat)
     }
 }
 
-// A format whose passes the raw path renders through its stand-in, or refuses (ycbcrTargetRefusal): the two-plane YCbCr
-// formats but RGB8_444_2P, which the frontend renders through its own stand-in, and the packed 10-bit planes
+// A format whose passes the raw path renders through its stand-in, or refuses (ycbcrTargetRefusal): the YCbCr formats but
+// RGB8_444_2P, which the frontend renders through its own stand-in (the one-plane ones among them, YCBCR8_422_1P_REV 562
+// too), and the packed 10-bit planes
 inline bool ycbcrRenderedFormat(uint32_t pixelFormat)
 {
-    return (pixelFormat >= 500 && pixelFormat <= 548 && pixelFormat != 542) || packedPlaneChannels(pixelFormat);
+    return (pixelFormat >= 500 && pixelFormat <= 548 && pixelFormat != 542) || pixelFormat == 562 ||
+           packedPlaneChannels(pixelFormat);
 }
 
 // Null where the raw path renders passes into a two-plane YCbCr attachment of `pixelFormat` (its stand-in, then the pack's
@@ -100,9 +102,10 @@ struct YcbcrStoreShape {
     uint32_t srgb = 0;    // the _srgb states': steps through pack/srgb_encode.h, bound at kSrgbEncodeSlot
     uint32_t packed = 0;  // the _packed states: R32Uint planes of three codes a word
     uint32_t plane = 0;   // the _plane_packed state: a packed 10-bit plane's codes a texel (raw_packed_plane.h)
+    uint32_t words = 0;   // the _words states: YCBCR10_444_1P's word a texel through its plane's RGB10A2Unorm header
 };
 
-static_assert(sizeof(YcbcrStoreShape) == 100, "pack/ycbcr_store.metal StoreShape");
+static_assert(sizeof(YcbcrStoreShape) == 104, "pack/ycbcr_store.metal StoreShape");
 
 // A code target of `bits`-bit codes: 10-bit codes in a 16-bit word's high bits, a drawn float held toward zero
 inline YcbcrStoreShape ycbcrCodesShape(uint32_t bits, bool across, bool down)

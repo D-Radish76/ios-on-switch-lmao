@@ -380,6 +380,7 @@ void Device::destroyTexture(Texture &t)
         t = {};
         return;
     }
+    closeSparseWindow(t);
     for (Texture *plane : {t.luma, t.chroma, t.planarStandIn, t.stencilTemp})
         if (plane) {
             destroyTexture(*plane);

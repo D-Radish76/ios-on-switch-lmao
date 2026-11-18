@@ -606,10 +606,13 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         model.freeBo(static_cast<const TegraGM20BAbiBoFree *>(input)->handle);
         return KERN_SUCCESS;
     case TegraGM20BMethodVmBind: {
-        const auto &op = static_cast<const TegraGM20BAbiVmBind *>(input)->ops[0];
-        model.binds[op.va] = {op.handle, op.range};
-        if (model.bound)
-            model.bound(op);
+        const auto &b = *static_cast<const TegraGM20BAbiVmBind *>(input);
+        for (uint32_t i = 0; i < b.count; i++) {
+            const TegraGM20BAbiBindOp &op = b.ops[i];
+            model.binds[op.va] = {op.handle, op.range};
+            if (model.bound)
+                model.bound(op);
+        }
         return KERN_SUCCESS;
     }
     case TegraGM20BMethodCpuAcquire:

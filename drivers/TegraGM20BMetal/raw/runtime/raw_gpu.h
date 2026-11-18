@@ -371,6 +371,12 @@ struct Texture {
     // (repeat, mirrored repeat, mirror-clamp) clamp to the edge (4:2:0 converted), 2 clamp to zero and to the border clamp to the
     // edge (4:4:4 codes), 3 both (4:2:0 codes)
     uint8_t addressMap = 0;
+    // A YCbCr texture whose plane rows run past its surface's last page (YcbcrPlan::window): the GPU VA its planes are read
+    // through, its import's `pages` bound again at its start and the rest sparse (Device::openSparseWindow); 0 bytes: none.
+    // A job's use names only those pages: the kernel refuses a use no one binding holds
+    struct Window {
+        uint64_t va = 0, bytes = 0, pages = 0;
+    } window;
 
     // Its image is converted from a surface's planes: Metal's copies of it move the planes' bytes
     bool converted() const
@@ -564,6 +570,9 @@ struct TurnedSource;
 void armKeylineProbe();
 #endif
 
+// Whether a pack key is one of the raw path's own states (raw_own_states.h)
+bool isOwnState(uint64_t keyHash);
+
 struct Pipeline {
     const PackPipeline *rec = nullptr;
     SetEntries entries;  // its record's, with its far block
@@ -637,6 +646,9 @@ struct Pipeline {
     // its registers set SET_ANTI_ALIAS_ALPHA_CONTROL; owned: for its own draws, whatever its Metal state asks
     // (raw_alpha_control.h)
     bool namesAlphaControl = false, ownsAlphaControl = false;
+    // one of the raw path's own states (raw_own_states.h): its draws read a texture's codes as they lie, as the conversion
+    // that draws a stand-in reads the codes the stand-in holds the values of
+    bool own = false;
     mutable BandRate bandRate;  // what its draws cost the GPU, learned from its measured ones (raw_band_rates.h)
     uint8_t readBits = 0;       // colors its draws read as they were: blended into, or written through a partial mask
     uint8_t fetchBits = 0;      // colors it reads by framebuffer fetch
@@ -938,7 +950,8 @@ enum RefusalId : uint8_t {
     RefStorageSamples,
     RefXrShadow,       // a shadow variant drawn in a pass holding no shadow of colour a (the driver's error)
     RefSamplerHeader,  // no header the range makes: a: the sampler, b: the address map, c: 1 compare, 2 constexpr
-    RefMatrixUniform   // a colour matrix form's uniform not bound whole: a: its buffer index, b: offset, c: bytes bound
+    RefMatrixUniform,  // a colour matrix form's uniform not bound whole: a: its buffer index, b: offset, c: bytes bound
+    RefNoStandIn       // a client's draw sampling a texture of no stand-in that a draw reads through one: a: slot, b: format
 };
 
 struct Refusal {
@@ -1661,6 +1674,9 @@ public:
     // A one-plane 4:2:2 YCbCr texture's luma and chroma images from its plane (Texture::onePlane): two remapped copies of
     // its Y0 Cb Y1 Cr texel pairs, Y0 and Y1 into the luma image, Cb and Cr into the chroma image
     void splitPlane(const Texture &t);
+    // Its inverse after a pass stored into such a texture (raw_ycbcr_store.h): Y0 and Y1 of the luma image and Cb and Cr of the
+    // chroma image into their bytes of each pair, the other two NO_WRITE; an odd width's last pair keeps its second luma byte
+    void mergePlane(const Texture &t);
     // generateMipmaps of a mipmapped texture (Texture::chain) on the 2D engine as surface format `fmt2d`: levels first + 1 ..
     // last from the one above, in place (fx_mip_route.h MipRun; `unproven` of its steps)
     void generate(Texture &t, uint32_t fmt2d, uint32_t first, uint32_t last, uint32_t unproven, uint32_t firstLayer,
@@ -2188,6 +2204,11 @@ public:
     // A two-plane YCbCr surface's texture of `width` x `height` as `plan` reads its planes, its image one of the pool
     bool createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
                             const YcbcrPlan &plan, uint32_t width, uint32_t height, Texture &t);
+    // Its planes moved into a VA window of `end` bytes past the surface's base, the pages past its import sparse
+    // (raw_sparse_window.cpp); false: the kernel maps no VA sparse, the import is tiled, no VA is left or a bind was refused.
+    // closeSparseWindow unbinds and releases it (destroyTexture)
+    bool openSparseWindow(Texture &t, uint64_t end);
+    void closeSparseWindow(Texture &t);
     // The pack's conversion state of a YCbCr texture's output (Texture::ycbcr), null if the pack has none
     Pipeline *ycbcrPipeline(uint8_t output);
     // An extended-range texture's stand-in (Texture::standIn), made if the pack has its conversion state

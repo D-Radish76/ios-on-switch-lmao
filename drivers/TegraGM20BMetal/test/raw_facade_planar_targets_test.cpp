@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
 // An RGB8_444_2P (542) surface texture made to be sampled alone, as Core Animation's widget snapshots are, holds no stand-in;
 // a pass into it renders on the raw path all the same (an M4 Max renders into a texture of any usage as into a render
-// target: raw/test/ycbcrnorenderoracle.mm, m2v-passes2 probe/nort.mm), through a stand-in of its command buffer's.
+// target: raw/test/ycbcrnorenderoracle.mm, m2v-passes2 probe/nort.mm), through a stand-in of its command buffer's. A
+// one-plane YCbCr texture renders through its memoryless stand-in into its luma and chroma images, merged into its pairs.
 #include "raw_facade_pass_scene.h"
+#include "../raw/runtime/raw_push.h"
 
 namespace {
 
@@ -103,7 +105,74 @@ void aSampledAndATargetPlanarTextureRenderInOneCommandBuffer()
     EXPECT_EQ(sampled->_raw.planarStandIn, nullptr);
 }
 
+// A one-plane YCbCr texture (501 over a '2vuy' surface) cleared and stored renders on the raw path: its stand-in stored by
+// the two-plane 4:2:2 store states into its luma and chroma images, then merged into its pairs by the copy engine
+// (BlitEncoder::mergePlane: two launches whose destination is the surface's plane)
+void aOnePlaneYcbcrTargetRenders()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.ycbcr_store.ycbcr_store_luma8_frag", MTLPixelFormatR8Unorm},
+                                           {"raw.ycbcr_store.ycbcr_store_chroma8_frag", MTLPixelFormatRG8Unorm}}));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef s = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @(kSide),
+        (id)kIOSurfaceHeight : @(kSide),
+        (id)kIOSurfacePixelFormat : @(uint32_t('2vuy')),
+        (id)kIOSurfaceBytesPerElement : @2,
+        (id)kIOSurfaceBytesPerRow : @(2 * kSide),
+        (id)kIOSurfaceAllocSize : @(2 * kSide * kSide)
+    });
+    ASSERT_TRUE(s);
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(501)
+                                                                                 width:kSide
+                                                                                height:kSide
+                                                                             mipmapped:NO];
+    d.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:s plane:0];
+    CFRelease(s);
+    ASSERT_TRUE(t != nil && t->_rawOk && t->_raw.onePlane);
+    ASSERT_NE(t->_raw.planarStandIn, nullptr) << "a target's memoryless stand-in";
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = (id<MTLTexture>)t;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    p.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.25, 0.75, 1);
+    const size_t first = kernel_model::model.jobs.size();
+    expectRaw(device, run(device, p));
+    constexpr uint32_t kOutLower = 0x040c, kLaunchDma = 0x0300;
+    unsigned merged = 0;
+    uint32_t to = 0;
+    for (size_t j = first; j < kernel_model::model.jobs.size(); ++j) {
+        const std::vector<uint32_t> &w = kernel_model::model.jobs[j].words;
+        for (size_t i = 0; i < w.size();) {
+            const uint32_t h = w[i++], op = h >> 29, count = (h >> 16) & 0x1fff, subc = (h >> 13) & 7,
+                           m = (h & 0xfff) << 2;
+            const auto method = [&](uint32_t at, uint32_t v) {
+                if (subc != raw::SUBC_COPY)
+                    return;
+                if (at == kOutLower)
+                    to = v;
+                else if (at == kLaunchDma && to == uint32_t(t->_raw.planes.luma))
+                    merged++;
+            };
+            if (op == 4) {
+                method(m, count);
+                continue;
+            }
+            for (uint32_t k = 0; k < count && i < w.size(); ++k, ++i)
+                method(op == 1 ? m + 4 * k : op == 5 && k ? m + 4 : m, w[i]);
+        }
+    }
+    EXPECT_EQ(merged, 2u) << "luma's and chroma's copies into the pairs";
+}
+
 }  // namespace
+
+TEST(RawFacadePlanarTargets, AOnePlaneYcbcrTargetRendersIntoItsPairs)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(aOnePlaneYcbcrTargetRenders);
+}
 
 TEST(RawFacadePlanarTargets, ASampledPlanarTextureClearedAndStoredRenders)
 {

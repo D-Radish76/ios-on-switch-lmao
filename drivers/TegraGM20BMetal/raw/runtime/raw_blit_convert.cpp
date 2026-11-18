@@ -77,7 +77,9 @@ void BlitEncoder::splitPlane(const Texture &t)
     if (!t.onePlane || !t.luma || !t.chroma || !t.chroma->width || !t.height)
         return;
     const uint32_t pairs = t.chroma->width;
-    cb_->useAddress(t.planes.luma, rowStorageBytes(t.planes.lumaPitch, pairs, t.height, 4), false);
+    const uint64_t rows = rowStorageBytes(t.planes.lumaPitch, pairs, t.height, 4);
+    cb_->useAddress(t.planes.luma, t.window.bytes ? std::min(rows, t.window.va + t.window.pages - t.planes.luma) : rows,
+                    false);
     cb_->use(*t.luma, true);
     cb_->use(*t.chroma, true);
     RAW_DIAGNOSTIC(dev_->stats.ceOps += 2);
@@ -95,6 +97,39 @@ void BlitEncoder::splitPlane(const Texture &t)
                SUBC_COPY);
         p_.m(CE_LAUNCH_DMA, kLaunchPitch | 1u << 10, SUBC_COPY);
     }
+}
+
+void BlitEncoder::mergePlane(const Texture &t)
+{
+    if (!t.onePlane || !t.luma || !t.chroma || !t.chroma->width || !t.height)
+        return;
+    const uint32_t pairs = t.chroma->width, whole = t.width / 2;
+    const uint64_t rows = rowStorageBytes(t.planes.lumaPitch, pairs, t.height, 4);
+    cb_->useAddress(t.planes.luma, t.window.bytes ? std::min(rows, t.window.va + t.window.pages - t.planes.luma) : rows,
+                    true);
+    cb_->use(*t.luma, false);
+    cb_->use(*t.chroma, false);
+    const auto launch = [&](uint64_t from, uint32_t fromPitch, uint64_t to, uint32_t remap, uint32_t width) {
+        room();
+        p_.m(CE_SET_REMAP_COMPONENTS, remap, SUBC_COPY);
+        p_.inc(CE_OFFSET_IN_UPPER,
+               {uint32_t(from >> 32), uint32_t(from), uint32_t(to >> 32), uint32_t(to), fromPitch, t.planes.lumaPitch,
+                width, t.height},
+               SUBC_COPY);
+        p_.m(CE_LAUNCH_DMA, kLaunchPitch | 1u << 10, SUBC_COPY);
+        RAW_DIAGNOSTIC(dev_->stats.ceOps++);
+        RAW_DIAGNOSTIC(dev_->stats.ceBytes += uint64_t(width) * t.height * 4);
+    };
+    // Y0 Cb Y1 Cr, or Cb Y0 Cr Y1 (Texture::pairsReversed): luma's bytes 0 and 2 of a pair, chroma's 1 and 3, or the reverse
+    constexpr uint32_t W = kRemapNoWrite;
+    const uint32_t lumaPair = t.pairsReversed ? remapOf(W, 0, W, 1, 1, 2, 4) : remapOf(0, W, 1, W, 1, 2, 4);
+    const uint32_t chromaPair = t.pairsReversed ? remapOf(0, W, 1, W, 1, 2, 4) : remapOf(W, 0, W, 1, 1, 2, 4);
+    if (whole)
+        launch(t.luma->va, t.luma->pitch, t.planes.luma, lumaPair, whole);
+    if (t.width & 1)
+        launch(t.luma->va + t.width - 1, t.luma->pitch, t.planes.luma + 4ull * whole,
+               t.pairsReversed ? remapOf(W, 0, W, W, 1, 1, 4) : remapOf(0, W, W, W, 1, 1, 4), 1);
+    launch(t.chroma->va, t.chroma->pitch, t.planes.luma, chromaPair, pairs);
 }
 
 }  // namespace raw

@@ -6,6 +6,7 @@
 #include "raw_icb.h"
 #include "raw_dynamic_push.h"
 #include "raw_blend_color.h"
+#include "raw_bound_texture.h"
 #include "raw_gpu.h"
 #include "raw_layers.h"
 #include "raw_kit.h"
@@ -233,6 +234,11 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         if (written && t && t->format != pl->rec->writtenFormat[e.slot]) {
             *why = "a written texture of another format than its program stores";
             cb_->refusal = {RefWrittenTexture, e.slot, t->format, pl->rec->writtenFormat[e.slot]};
+            return false;
+        }
+        if (t && !written && !pair && !drawsBound(*t) && !pipeline_->own) {
+            *why = "a sampled texture whose codes a draw reads through a stand-in, bound with none";
+            cb_->refusal = {RefNoStandIn, e.slot, t->format};
             return false;
         }
         // A written texture is stored through tic: its own memory, or the sampled shadow that stands for

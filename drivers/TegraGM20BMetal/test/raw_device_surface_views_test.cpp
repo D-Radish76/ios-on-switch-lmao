@@ -2,6 +2,8 @@
 // Textures over a buffer's or a surface's memory and their views (createBufferTexture, createTexelBuffer,
 // createSurfaceTexture, createSurfaceTexelBuffer, createYcbcrTexture): the header each samples and the memory it names.
 #include "raw_device_views_harness.h"
+#include "../raw/runtime/raw_blit_remap.h"
+#include "../raw/runtime/raw_push.h"
 #include "../raw/runtime/raw_xr.h"
 #include "../raw/runtime/raw_ycbcr.h"
 #include <cstdlib>
@@ -260,6 +262,192 @@ TEST_F(DeviceViews, AConvertedImageIsAOneLayerArrayWhole)
     EXPECT_EQ(w, own) << "the image's header but its type";
     dev.destroyTexture(layer);
     dev.destroyTexture(t);
+    free(base);
+}
+
+// The copy engine's launches the jobs from `first` on pushed: each one's remap, destination and line length
+struct Launch {
+    uint32_t remap = 0, length = 0;
+    uint64_t to = 0;
+};
+
+std::vector<Launch> copyLaunches(size_t first)
+{
+    std::vector<Launch> out;
+    Launch at;
+    const auto method = [&](uint32_t subc, uint32_t m, uint32_t v) {
+        if (subc != raw::SUBC_COPY)
+            return;
+        if (m == NVB0B5_SET_REMAP_COMPONENTS)
+            at.remap = v;
+        else if (m == NVB0B5_OFFSET_OUT_UPPER)
+            at.to = (at.to & 0xffffffffull) | uint64_t(v) << 32;
+        else if (m == NVB0B5_OFFSET_OUT_LOWER)
+            at.to = (at.to & ~0xffffffffull) | v;
+        else if (m == NVB0B5_LINE_LENGTH_IN)
+            at.length = v;
+        else if (m == NVB0B5_LAUNCH_DMA)
+            out.push_back(at);
+    };
+    for (size_t j = first; j < kernel_model::model.jobs.size(); ++j) {
+        const std::vector<uint32_t> &w = kernel_model::model.jobs[j].words;
+        for (size_t i = 0; i < w.size();) {
+            const uint32_t h = w[i++], op = h >> 29, count = (h >> 16) & 0x1fff, subc = (h >> 13) & 7,
+                           m = (h & 0xfff) << 2;
+            if (op == 4) {
+                method(subc, m, count);
+                continue;
+            }
+            for (uint32_t k = 0; k < count && i < w.size(); ++k, ++i)
+                method(subc, op == 1 ? m + 4 * k : op == 5 && k ? m + 4 : m, w[i]);
+        }
+    }
+    return out;
+}
+
+// A one-plane 4:2:2 target's store merges its luma and chroma images into its pairs (BlitEncoder::mergePlane): YCBCR8_422_1P_REV
+// 33x8 over a '2vuy' plane, Cb Y0 Cr Y1: luma's 16 whole pairs into bytes 1 and 3, the 33rd texel alone into byte 1 of pair
+// 16 (an M4 Max keeps that pair's second luma byte: m2v-textures6 probes/onep.mm), chroma's 17 pairs into bytes 0 and 2
+TEST_F(DeviceViews, AOnePlaneTargetsImagesAreMergedIntoItsPairs)
+{
+    addOwnState("raw.ycbcr.ycbcr_converted_frag", 115);
+    const size_t page = size_t(getpagesize());
+    void *base = aligned_alloc(page, page);
+    raw::YcbcrFacts f;
+    f.pixelFormat = 562;
+    f.fourcc = '2vuy';
+    f.width = f.surfaceWidth = 33;
+    f.height = f.surfaceHeight = 8;
+    f.pitch[0] = 128;
+    f.allocBytes = 128 * 8;
+    f.mappedBytes = page;
+    f.simple = true;
+    f.target = true;
+    raw::YcbcrPlan plan;
+    ASSERT_EQ(raw::planYcbcr(f, plan), nullptr);
+    raw::Texture t;
+    ASSERT_TRUE(dev.createYcbcrTexture(0, base, 128 * 8, nullptr, plan, 33, 8, t));
+    ASSERT_TRUE(t.onePlane && t.pairsReversed);
+    EXPECT_TRUE(t.luma->renderable && t.chroma->renderable) << "the store states' targets (makeYcbcrTarget)";
+    const size_t first = kernel_model::model.jobs.size();
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    raw::BlitEncoder *b = cb->blit();
+    b->mergePlane(t);
+    b->end();
+    uint32_t seqno = 0;
+    ASSERT_TRUE(cb->commit(seqno));
+    constexpr uint32_t W = raw::kRemapNoWrite;
+    const std::vector<Launch> l = copyLaunches(first);
+    ASSERT_EQ(l.size(), 3u);
+    EXPECT_EQ(l[0].remap, raw::remapOf(W, 0, W, 1, 1, 2, 4));
+    EXPECT_EQ(l[0].to, t.planes.luma);
+    EXPECT_EQ(l[0].length, 16u);
+    EXPECT_EQ(l[1].remap, raw::remapOf(W, 0, W, W, 1, 1, 4));
+    EXPECT_EQ(l[1].to, t.planes.luma + 64);
+    EXPECT_EQ(l[1].length, 1u);
+    EXPECT_EQ(l[2].remap, raw::remapOf(0, W, 1, W, 1, 2, 4));
+    EXPECT_EQ(l[2].to, t.planes.luma);
+    EXPECT_EQ(l[2].length, 17u);
+    dev.destroyTexture(t);
+    free(base);
+}
+
+// 500 64x512 over a 64x8 '420v' of 768 bytes: rows past the allocation's last page (raw_sparse_window.cpp)
+raw::YcbcrPlan pastTheLastPage(size_t page)
+{
+    raw::YcbcrFacts f;
+    f.pixelFormat = 500;
+    f.fourcc = '420v';
+    f.planes = 2;
+    f.width = f.surfaceWidth = 64;
+    f.height = 512;
+    f.surfaceHeight = 8;
+    f.pitch[0] = f.pitch[1] = 64;
+    f.offset[1] = 512;
+    f.allocBytes = 768;
+    f.mappedBytes = page;
+    f.simple = true;
+    f.sparseTail = true;
+    raw::YcbcrPlan plan;
+    EXPECT_EQ(raw::planYcbcr(f, plan), nullptr);
+    EXPECT_TRUE(plan.window);
+    return plan;
+}
+
+class DeviceSparseWindow : public DeviceViews {
+protected:
+    std::vector<TegraGM20BAbiBindOp> ops;
+
+    void SetUp() override
+    {
+        kernel_model::model = {};
+        kernel_model::model.infoFlags = TegraGM20BInfoSparse;
+        kernel_model::model.bound = [this](const TegraGM20BAbiBindOp &op) {
+            ops.push_back(op);
+        };
+        std::string err;
+        ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
+        addOwnState("raw.ycbcr.ycbcr_converted_frag", 115);
+    }
+
+    void TearDown() override
+    {
+        kernel_model::model.bound = nullptr;
+    }
+};
+
+// Where the kernel maps VA sparse, the planes are read through a window: the import's pages bound again at its start, the
+// rest MapSparse, each plane's header at its place there and its job uses inside the pages; destroyed, the window is unbound
+TEST_F(DeviceSparseWindow, RowsPastTheLastPageAreReadThroughAWindowWhoseTailIsSparse)
+{
+    const size_t page = size_t(getpagesize());
+    void *base = aligned_alloc(page, page);
+    const raw::YcbcrPlan plan = pastTheLastPage(page);
+    raw::Texture t;
+    ops.clear();
+    ASSERT_TRUE(dev.createYcbcrTexture(0, base, 768, nullptr, plan, 64, 512, t));
+    ASSERT_TRUE(t.luma && t.chroma);
+    ASSERT_NE(t.window.bytes, 0u);
+    const uint64_t pages = t.luma->import->bo.bytes;
+    EXPECT_GE(t.window.bytes, plan.readable);
+    EXPECT_EQ(t.luma->va, t.window.va);
+    EXPECT_EQ(t.chroma->va, t.window.va + 512);
+    EXPECT_EQ(address(header(*t.luma)), t.luma->va) << "its header reads the window";
+    EXPECT_LE(t.chroma->storage.va + t.chroma->storage.bytes, t.window.va + pages) << "a job names the pages alone";
+    const auto at = [&](uint32_t op, uint64_t va) {
+        return std::find_if(ops.begin(), ops.end(), [&](const TegraGM20BAbiBindOp &o) {
+            return o.op == op && o.va == va;
+        });
+    };
+    const auto alias = at(TegraGM20BBindMap, t.window.va), sparse = at(TegraGM20BBindMapSparse, t.window.va + pages);
+    ASSERT_NE(alias, ops.end());
+    EXPECT_EQ(alias->handle, t.luma->import->bo.handle) << "the import's own BO, no second BoImport";
+    EXPECT_EQ(alias->range, pages);
+    ASSERT_NE(sparse, ops.end());
+    EXPECT_EQ(sparse->range, t.window.bytes - pages);
+    const raw::Texture::Window window = t.window;
+    dev.destroyTexture(t);
+    const auto unbound = at(TegraGM20BBindUnmap, window.va);
+    ASSERT_NE(unbound, ops.end());
+    EXPECT_EQ(unbound->range, window.bytes);
+    free(base);
+}
+
+// Where it does not, a plan of such rows makes no texture and asks no sparse map
+TEST_F(DeviceViews, RowsPastTheLastPageMakeNoTextureWithoutSparseMaps)
+{
+    addOwnState("raw.ycbcr.ycbcr_converted_frag", 115);
+    std::vector<uint32_t> asked;
+    kernel_model::model.bound = [&](const TegraGM20BAbiBindOp &op) {
+        asked.push_back(op.op);
+    };
+    const size_t page = size_t(getpagesize());
+    void *base = aligned_alloc(page, page);
+    raw::Texture t;
+    EXPECT_FALSE(dev.createYcbcrTexture(0, base, 768, nullptr, pastTheLastPage(page), 64, 512, t));
+    kernel_model::model.bound = nullptr;
+    EXPECT_EQ(std::count(asked.begin(), asked.end(), uint32_t(TegraGM20BBindMapSparse)), 0);
     free(base);
 }
 

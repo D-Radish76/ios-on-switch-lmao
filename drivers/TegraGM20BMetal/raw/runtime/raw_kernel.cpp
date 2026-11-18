@@ -428,6 +428,33 @@ bool Kernel::bindAlias(const Bo &bo, uint64_t va, uint32_t kind)
     return bind(va, bo.handle, bo.bytes, kind);
 }
 
+bool Kernel::bindWindow(const Bo &bo, uint64_t va, uint32_t kind, uint64_t bytes)
+{
+    TegraGM20BAbiVmBind b = {};
+    b.count = 2;
+    b.ops[0] = {TegraGM20BBindMap, kind, bo.handle, 0, va, bo.bytes};
+    b.ops[1] = {TegraGM20BBindMapSparse, 0, 0, 0, va + bo.bytes, bytes - bo.bytes};
+    const size_t in = offsetof(TegraGM20BAbiVmBind, ops) + 2 * sizeof(b.ops[0]);
+    if (const int kr = call(TegraGM20BMethodVmBind, &b, in, nullptr, 0); kr != KERN_SUCCESS) {
+        os_log_error(OS_LOG_DEFAULT, "raw: VmBind of BO %llu at VA %#llx and a sparse tail to %llu bytes failed: 0x%x",
+                     (unsigned long long)bo.handle, (unsigned long long)va, (unsigned long long)bytes, kr);
+        setError("VmBind of a sparse window failed");
+        return false;
+    }
+    return true;
+}
+
+void Kernel::unbind(uint64_t va, uint64_t range)
+{
+    TegraGM20BAbiVmBind b = {};
+    b.count = 1;
+    b.ops[0] = {TegraGM20BBindUnmap, 0, 0, 0, va, range};
+    const size_t in = offsetof(TegraGM20BAbiVmBind, ops) + sizeof(b.ops[0]);
+    if (const int kr = call(TegraGM20BMethodVmBind, &b, in, nullptr, 0); kr != KERN_SUCCESS)
+        os_log_error(OS_LOG_DEFAULT, "raw: VmBind Unmap of %llu bytes at VA %#llx failed: 0x%x",
+                     (unsigned long long)range, (unsigned long long)va, kr);
+}
+
 void Kernel::free(Bo &bo)
 {
     const bool listed = bo.handle && freeObserver_ && freeObserver_->leaving(bo.handle);

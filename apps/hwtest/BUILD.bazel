@@ -645,6 +645,7 @@ cc_library(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_pass_end.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_pipelines.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_samplers.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_sparse_window.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_surface_textures.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_texture_views.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_textures.cpp",

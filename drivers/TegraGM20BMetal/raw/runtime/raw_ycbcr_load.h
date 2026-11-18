@@ -78,6 +78,8 @@ inline const char *ycbcrMaskedStoreState(bool chroma, const YcbcrStoreShape &s)
                                               "raw.ycbcr_store.ycbcr_store_chroma_packed_srgb_masked_frag"}};
     if (s.plane)
         return nullptr;
+    if (s.words)
+        return s.srgb ? "raw.ycbcr_store.ycbcr_store_words_srgb_masked_frag" : "raw.ycbcr_store.ycbcr_store_words_masked_frag";
     return s.packed ? packed[s.srgb != 0][chroma] : names[s.srgb != 0][chroma][s.max > 255];
 }
 

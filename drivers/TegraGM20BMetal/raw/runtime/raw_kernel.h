@@ -174,6 +174,16 @@ public:
     // bindImport at `va`, a granule boundary inside a reservation: freeing the BO leaves the VA to the reservation
     bool bindImportAt(void *addr, Bo &bo, uint64_t va, uint32_t kind);
     bool bindAlias(const Bo &bo, uint64_t va, uint32_t kind);
+    // MapSparse (TegraGM20BInfoSparse, read from the info word GetInfo filled at open): a range that reads 0 and drops writes
+    // until an Unmap makes it fault again or a bind over it replaces it
+    bool sparse() const
+    {
+        return (info_.flags & TegraGM20BInfoSparse) != 0;
+    }
+    // One VmBind: `bo` whole at `va`, a reservation's granule, and [va + bo.bytes, va + bytes) sparse (whole pages). BoFree
+    // unbinds only the BO's own binding: unbind [va, va + bytes) before releasing the reservation
+    bool bindWindow(const Bo &bo, uint64_t va, uint32_t kind, uint64_t bytes);
+    void unbind(uint64_t va, uint64_t range);
     // BoFree (the kernel unbinds it at once and releases the pages after the channels complete what they had); the VA goes
     // back to the free list at once: call it only once no submission that uses the BO is still running (raw::Device does).
     // The observer's list loses the handle first.

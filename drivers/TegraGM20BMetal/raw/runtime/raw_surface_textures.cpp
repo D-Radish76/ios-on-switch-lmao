@@ -65,7 +65,8 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
     const uint64_t page = pageSize(),
                    mapped = ((uintptr_t(base) + allocBytes + page - 1) & ~(page - 1)) - uintptr_t(base);
     const bool readsPast = readable != 0;
-    readable = readsPast ? std::min(readable, mapped) : allocBytes;
+    // past the last page only where the planes go on into a sparse window (YcbcrPlan::window, openSparseWindow)
+    readable = !readsPast ? allocBytes : k_.sparse() ? readable : std::min(readable, mapped);
     // rows and offset a multiple of 16, as m2v takes a surface (linear_plan.rs); the texture header's 32 through `sampled`.
     // A plane read past its rows' ends (readsPast: a YCbCr plane read with more codes a row than its pitch holds) has rows
     // that overlap, which no header lays out: the copy engine gathers them into `sampled` too. A base off a page (a surface
@@ -384,7 +385,8 @@ bool Device::createOnePlaneYcbcr(uint64_t surfaceId, void *base, uint64_t allocB
     const uint64_t mapped = (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1);
     const uint64_t pairs = plan.chromaWidth;
     if (!pairs || !height || plan.lumaPitch < 16 || (plan.lumaPitch & 15) || (plan.luma & 15) ||
-        plan.luma + uint64_t(plan.lumaPitch) * (height - 1) + 4 * pairs > std::min(plan.readable, mapped) ||
+        plan.luma + uint64_t(plan.lumaPitch) * (height - 1) + 4 * pairs >
+            (plan.window ? plan.readable : std::min(plan.readable, mapped)) ||
         (uintptr_t(base) & (pageSize() - 1)))
         return false;
     Import *planes;
@@ -416,6 +418,10 @@ bool Device::createOnePlaneYcbcr(uint64_t surfaceId, void *base, uint64_t allocB
     t.ycbcr = plan.output;
     t.addressMap = plan.addressMap;
     ycbcrImageHeader(t, plan.output, plan.shape[2]);
+    if (plan.window && !openSparseWindow(t, plan.readable)) {
+        destroyTexture(t);
+        return false;
+    }
     return true;
 }
 
@@ -457,6 +463,10 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
     t.ycbcr = plan.output;
     t.addressMap = plan.addressMap;
     ycbcrImageHeader(t, plan.output, plan.shape[2]);
+    if (plan.window && !openSparseWindow(t, plan.readable)) {
+        destroyTexture(t);
+        return false;
+    }
     return true;
 }
 

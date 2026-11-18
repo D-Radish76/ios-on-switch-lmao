@@ -571,6 +571,7 @@ void Device::build(Pipeline &pl, const PackPipeline &pp, const PlacedProgram &vs
     pl.turnRefused = pp.flags & PipelineTurnRefused;
     pl.xrSlots = pp.xrSlots;
     pl.writtenSlots = writtenSlots(pp);
+    pl.own = isOwnState(pp.keyHash);
     pl.rec = &pp;
     pl.segment = segmentHeap_.place(pl.methods.data(), uint32_t(pl.methods.size()));
 }
@@ -605,6 +606,8 @@ Pipeline *Device::ycbcrStorePipeline(bool chroma, const YcbcrStoreShape &store)
         {"raw.ycbcr_store.ycbcr_store_luma_packed_frag", "raw.ycbcr_store.ycbcr_store_chroma_packed_frag"},
         {"raw.ycbcr_store.ycbcr_store_luma_packed_srgb_frag", "raw.ycbcr_store.ycbcr_store_chroma_packed_srgb_frag"}};
     const char *name = store.plane    ? "raw.ycbcr_store.ycbcr_store_plane_packed_frag"
+                       : store.words  ? (store.srgb ? "raw.ycbcr_store.ycbcr_store_words_srgb_frag"
+                                                    : "raw.ycbcr_store.ycbcr_store_words_frag")
                        : store.packed ? packed[store.srgb != 0][chroma]
                                       : names[store.srgb != 0][chroma][store.max > 255];
     return ownPipeline(name);

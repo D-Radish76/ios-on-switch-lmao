@@ -41,6 +41,13 @@ inline uint32_t planeUnit(const Texture &t)
     return 0;
 }
 
+// The bytes from `plane`'s first a job may name of `bytes`: a sparse window's bound pages alone (Texture::window), as the
+// kernel refuses a use no one binding holds
+inline uint64_t windowBound(const Texture &plane, uint64_t bytes)
+{
+    return plane.window.bytes ? std::min(bytes, plane.window.va + plane.window.pages - plane.va) : bytes;
+}
+
 // Plane 0 of `t`'s rows as texels of `unit` bytes (1, 2, 4, 8 or 16), pitch memory: what Metal's blits of a texture held
 // through planes move; false: no such plane
 inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out)
@@ -62,7 +69,8 @@ inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out)
     out.format = kUnitFormats[log2];
     out.width = out.texelWidth = pitch / unit;
     out.height = out.texelHeight = rows;
-    out.storage = {va, uint64_t(pitch) * (rows - 1) + uint64_t(out.width) * unit, !import->id};
+    out.window = t.window;
+    out.storage = {va, windowBound(out, uint64_t(pitch) * (rows - 1) + uint64_t(out.width) * unit), !import->id};
     return true;
 }
 
@@ -75,6 +83,8 @@ inline uint64_t planeReach(const Texture &plane, uint64_t x, uint64_t y, uint64_
 // The bytes from plane 0's first to the end of its surface's last page, as its import binds them
 inline uint64_t planeReadable(const Texture &plane)
 {
+    if (plane.window.bytes)
+        return plane.window.va + plane.window.pages - plane.va;
     const Bo &bo = plane.import->bo;
     return (bo.vaBase ? bo.vaBase : bo.va) + bo.bytes - plane.va;
 }
@@ -85,7 +95,7 @@ inline bool planeBytesRead(const Texture &t, uint32_t unit, uint32_t x, uint32_t
 {
     if (!planeBytes(t, unit, out))
         return false;
-    out.storage.bytes = std::max(out.storage.bytes, planeReach(out, x, y, w, h));
+    out.storage.bytes = windowBound(out, std::max(out.storage.bytes, planeReach(out, x, y, w, h)));
     return true;
 }
 
@@ -138,7 +148,8 @@ inline bool planeOneSpan(const Texture &t, uint32_t x, uint32_t y, uint32_t w, u
     out.format = 10;  // R8Unorm
     out.width = out.texelWidth = pitch;
     out.height = out.texelHeight = rows;
-    out.storage = {va, uint64_t(pitch) * rows, !import->id};
+    out.window = t.window;
+    out.storage = {va, windowBound(out, uint64_t(pitch) * rows), !import->id};
     return true;
 }
 

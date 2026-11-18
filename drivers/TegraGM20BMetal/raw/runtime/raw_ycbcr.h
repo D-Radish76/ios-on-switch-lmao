@@ -28,6 +28,7 @@ struct YcbcrFacts {
     bool simple = false;           // 2D, one level, one sample, not rotated
     bool target = false;           // may be rendered into (raw_ycbcr_store.h)
     const char *matrix = nullptr;  // kIOSurfaceYCbCrMatrix, null without one
+    bool sparseTail = false;       // the kernel maps VA sparse (raw_kernel.h Kernel::sparse): rows may run past the last page
 };
 
 // Width, height, full range, red's, green's and blue's (kb, kr), the codes' read scale and dropped low bits, the shift that
@@ -69,6 +70,9 @@ struct YcbcrPlan {
     uint64_t luma = 0, chroma = 0;              // offsets past the surface's base address
     uint32_t lumaPitch = 0, chromaPitch = 0;
     uint64_t readable = 0;  // the bytes past the surface's base the planes' rows may reach
+    // the rows run past the allocation's last page, to `readable`: read through a window of their own whose tail reads 0
+    // (Device::openSparseWindow)
+    bool window = false;
     // a one-plane 4:2:2 format's (501, 521, 562): luma and lumaPitch its plane of texel pairs, Y0 Cb Y1 Cr or, pairsReversed,
     // Cb Y0 Cr Y1 (562), which the copy engine splits into pool images of the luma and chroma textures' sizes
     // (BlitEncoder::splitPlane) for a 4:2:2 conversion

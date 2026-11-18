@@ -228,6 +228,14 @@ bool drawFailed(RMCommandBuffer *cb, const raw::Refusal &f, const char *why)
             why, f.a, f.b);
         code = MTLCommandBufferErrorOutOfMemory;
         break;
+    // a texture is made with its stand-in where it is made to be sampled and the pack holds its conversion state
+    // (RawMetalPredicates.mm keepExtendedRange), so one sampled with none is not made for reading or predates the pack
+    case raw::RefNoStandIn:
+        SWITCH_REFUSE("raw", "draw.no_standin",
+                      "%s (slot %u, format %u): MTLCommandBufferErrorInternal (MTLCommandBuffer.h); its codes are no "
+                      "colour, and a texture sampled without MTLTextureUsageShaderRead is Metal's validation error",
+                      why, f.a, f.b);
+        break;
     // draws Metal takes that the raw path has no form of yet: never handed to m2v either
     case raw::RefStrideTwin:
         SWITCH_REFUSE("raw", "draw.stride_twin", "%s: the raw path has no form of it yet; the command buffer fails",

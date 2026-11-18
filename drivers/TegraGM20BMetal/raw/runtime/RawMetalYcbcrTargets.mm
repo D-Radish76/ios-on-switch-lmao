@@ -41,8 +41,9 @@ void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStor
         return x && (x->renderable || x->shadowTarget);
     };
     raw::Texture *standIn = new raw::Texture;
-    // a packed plane's words are its one plane; a texture over plane 1 stores its luma codes alone
-    const bool chroma = !store.plane && t.chroma;
+    // a packed plane's words are its one plane, as YCBCR10_444_1P's are (its luma header's); a texture over plane 1 stores
+    // its luma codes alone
+    const bool chroma = !store.plane && !store.words && t.chroma;
     if (!rendered(t.luma) || (chroma && !rendered(t.chroma)) || !d.ycbcrStorePipeline(false, store) ||
         (chroma && !d.ycbcrStorePipeline(true, store)) ||
         !d.createMemoryless(t.width, t.height, raw::ycbcrStandInFormat(pixelFormat), *standIn)) {
@@ -79,7 +80,7 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
     if (masked && !loaded->mask)
         return 0;
     for (const bool chroma : {false, true}) {
-        if (chroma && !t.chroma)
+        if (chroma && (!t.chroma || t.ycbcrStore->words))
             continue;
         raw::Texture *plane = chroma ? t.chroma : t.luma;
         raw::PassDesc p;
@@ -111,6 +112,11 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
             return 2;
         e->end();
     }
+    if (t.onePlane) {
+        raw::BlitEncoder *merge = rc->blit();
+        merge->mergePlane(t);
+        merge->end();
+    }
     static std::atomic<bool> said{false}, saidPlane{false};
     if (t.ycbcrStore->plane) {
         if (!saidPlane.exchange(true, std::memory_order_relaxed))
@@ -138,6 +144,12 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
 int loadYcbcrStandIn(raw::CommandBuffer *rc, const raw::Texture &t, uint32_t j, raw::Texture *&loaded, const char **why)
 {
     raw::BlitEncoder *fill = nullptr;
+    // a one-plane 4:2:2 target's luma and chroma images hold its pairs before its load reads them and its tile-masked store
+    // keeps the tiles the pass does not reach
+    if (t.onePlane) {
+        fill = rc->blit();
+        fill->splitPlane(t);
+    }
     for (const raw::Texture *plane : {t.luma, t.chroma})
         if (plane && plane->sampled && rc->readTexture(plane) == plane) {
             if (!fill)

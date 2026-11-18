@@ -213,6 +213,7 @@ Pipeline *Device::addRecord(const RuntimeRecord &r, bool caTransform, std::strin
         stored.pipeline.turnedVariant = true;
         break;
     }
+    stored.pipeline.own = isOwnState(key);
     completed_[key] = &stored.pipeline;
     return &stored.pipeline;
 }
@@ -279,6 +280,11 @@ constexpr std::array<uint64_t, std::size(kOwnStates)> ownStateKeys()
 constexpr std::array<uint64_t, std::size(kOwnStates)> kOwnStateKeys = ownStateKeys();
 
 }  // namespace
+
+bool isOwnState(uint64_t keyHash)
+{
+    return std::binary_search(kOwnStateKeys.begin(), kOwnStateKeys.end(), keyHash);
+}
 
 Pipeline *Device::ownPipeline(const char *name)
 {

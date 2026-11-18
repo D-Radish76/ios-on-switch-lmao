@@ -282,11 +282,12 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     // A target stores as it reads (an M4 Max, m2v-textures5 probes/targets.mm, edges.mm): over plane 1 its luma codes into
     // that plane and no chroma; taller than its surface or of chroma unlike the surface's, each plane's rows at its pitch on
     // past the plane's end, luma first and chroma over it where they meet; of an odd size (made to be read alone), each
-    // chroma block past its last column or row the mean of the texels inside it (pack/ycbcr_store.metal chromaCodes)
+    // chroma block past its last column or row the mean of the texels inside it (pack/ycbcr_store.metal chromaCodes). A
+    // one-plane format stores its two-plane twin's codes in its own layout: pairs (the luma and chroma images merged into
+    // them, BlitEncoder::mergePlane; an odd width's last pair keeps its second luma byte) or words with bits 30 and 31 clear
+    // (an M4 Max over '2vuy', 'yuvs', 'v410': m2v-textures5 probes/targets.mm, m2v-textures6 probes/onep.mm)
     if (f.target) {
-        if (onePlane)
-            return "a one-plane YCbCr render target, whose stores no rule gives";
-        if (const char *why = ycbcrTargetRefusal(f.pixelFormat))
+        if (const char *why = onePlane ? nullptr : ycbcrTargetRefusal(f.pixelFormat))
             return why;
         // an M4 Max's store into one changed words past the texture, and some of its passes faulted
         if (format->packed && (f.width != f.surfaceWidth || f.height != f.surfaceHeight))
@@ -308,16 +309,21 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
         return "a render target of more codes a row than its plane's pitch holds";
     const uint64_t lumaEnd = luma + uint64_t(lumaPitch) * (f.height - 1) + lumaRow;
     const uint64_t chromaEnd = chroma + uint64_t(chromaPitch) * (ch - 1) + chromaRow;
-    const uint64_t readable = std::max(f.allocBytes, f.mappedBytes);
-    if (lumaEnd > readable || (!planeOne && chromaEnd > readable))
+    const uint64_t mapped = std::max(f.allocBytes, f.mappedBytes), rowsEnd = std::max(lumaEnd, planeOne ? 0 : chromaEnd);
+    // An M4 Max reads 0 past the last page (m2v-textures4 probes/more.mm); a store's rows there drop, as a sparse page drops a
+    // write (what Metal stores there no read can see)
+    const bool window = rowsEnd > mapped;
+    if (window && !f.sparseTail)
         return "rows past the allocation's last page (an M4 Max reads 0 there)";
 
     out = {};
-    out.readable = readable;
+    out.readable = window ? rowsEnd : mapped;
+    out.window = window;
     out.onePlane = onePlane && !words;
     out.pairsReversed = format->layout == PairsReversed;
     out.chromaGreenBlue = words;
-    out.nativePlanes = (f.fourcc == fourcc("420v") || f.fourcc == fourcc("420f")) && !pastPlanes && !overlapping;
+    out.nativePlanes =
+        (f.fourcc == fourcc("420v") || f.fourcc == fourcc("420f")) && !pastPlanes && !overlapping && !window;
     out.target = f.target;
     out.output = outputOf(*format, lumaFirst);
     out.addressMap = addressMapOf(*format);
@@ -355,6 +361,7 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
                                               : p3SrgbCodesShape(format->bits, across, down);
         if (format->packed)
             out.store = ycbcrPackedShape(out.store);
+        out.store.words = words;
     }
     return nullptr;
 }

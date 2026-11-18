@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cstring>
 
 namespace {
@@ -155,6 +156,32 @@ TEST(RawYcbcr, RowsPastAPlaneAreReadWithinTheAllocationsPages)
     EXPECT_EQ(p.chromaHeight, 6u);
     f.target = false;
     EXPECT_EQ(raw::planYcbcr(f, p), nullptr);
+}
+
+// Rows past the allocation's last page, which an M4 Max reads as 0 (m2v-textures4 probes/more.mm), go on into a window whose
+// tail the kernel maps sparse (raw_sparse_window.cpp): planned to the rows' end where the kernel maps VA sparse, refused where
+// it does not
+TEST(RawYcbcr, RowsPastTheLastPageGoOnIntoASparseWindow)
+{
+    raw::YcbcrPlan p;
+    raw::YcbcrFacts f = surface(500, "420v", 64, 8, 64, 4);
+    f.height = 512;
+    f.mappedBytes = 16384;
+    EXPECT_STREQ(raw::planYcbcr(f, p), "rows past the allocation's last page (an M4 Max reads 0 there)");
+    f.sparseTail = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
+    EXPECT_TRUE(p.window);
+    EXPECT_EQ(p.readable, std::max(f.offset[0] + 64ull * 511 + 64, f.offset[1] + 64ull * 255 + 64)) << "the rows' end";
+    EXPECT_FALSE(p.nativePlanes);
+    f.target = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "a store's rows past the last page drop";
+    EXPECT_TRUE(p.window && p.target);
+    f = surface(500, "420v", 64, 8, 64, 4);
+    f.mappedBytes = 16384;
+    f.sparseTail = true;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
+    EXPECT_FALSE(p.window) << "rows inside the pages need none";
+    EXPECT_EQ(p.readable, 16384u);
 }
 
 // An M4 Max renders into each of these as it reads it (m2v-textures5 probes/targets.mm, Clear+Store over 420v and 422v): over
@@ -405,8 +432,14 @@ TEST(RawYcbcr, AOnePlaneFormatIsSplitIntoTwoPlanesOfFourTwoTwo)
             ASSERT_EQ(raw::planYcbcr(g, two), nullptr);
             EXPECT_EQ(memcmp(p.shape, two.shape, sizeof p.shape), 0) << code << " " << format;
             EXPECT_EQ(p.addressMap, two.addressMap);
-            f.target = true;
-            EXPECT_STREQ(raw::planYcbcr(f, p), "a one-plane YCbCr render target, whose stores no rule gives");
+            // a target stores its two-plane twin's codes into the luma and chroma images, merged into its pairs
+            // (m2v-textures5 probes/targets.mm, m2v-textures6 probes/onep.mm)
+            f.target = g.target = true;
+            ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << code << " " << format;
+            ASSERT_EQ(raw::planYcbcr(g, two), nullptr);
+            EXPECT_TRUE(p.target && p.onePlane);
+            EXPECT_EQ(memcmp(&p.store, &two.store, sizeof p.store), 0) << "the two-plane 4:2:2 twin's store";
+            EXPECT_EQ(p.store.words, 0u);
             f.target = false;
             f.planes = 2;
             ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << "over a plane of a planar surface: that plane's pairs";
@@ -427,6 +460,28 @@ TEST(RawYcbcr, AOnePlaneFormatIsSplitIntoTwoPlanesOfFourTwoTwo)
     raw::YcbcrPlan p;
     ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
     EXPECT_EQ(p.shape[2], 0u) << "video range";
+}
+
+// YCBCR10_444_1P over 'v410' as a target: the words states into its plane's header, the two-plane 10-bit 4:4:4 codes
+TEST(RawYcbcr, AOnePlaneWordsTargetStoresItsCodesAsWords)
+{
+    raw::YcbcrFacts f;
+    f.pixelFormat = 504;
+    f.fourcc = fourcc("v410");
+    f.width = f.surfaceWidth = 64;
+    f.height = f.surfaceHeight = 16;
+    f.pitch[0] = 256;
+    f.allocBytes = 256 * 16;
+    f.simple = true;
+    f.target = true;
+    raw::YcbcrPlan p;
+    ASSERT_EQ(raw::planYcbcr(f, p), nullptr);
+    EXPECT_TRUE(p.target && p.chromaGreenBlue && !p.onePlane);
+    EXPECT_EQ(p.store.words, 1u);
+    EXPECT_EQ(p.store.max, 1023u);
+    EXPECT_EQ(p.store.across, 0u);
+    EXPECT_EQ(p.store.down, 0u);
+    EXPECT_EQ(p.store.converted, 1u);
 }
 
 TEST(RawYcbcr, RefusesWhatM2vRefuses)

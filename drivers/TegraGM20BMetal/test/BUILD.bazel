@@ -194,6 +194,7 @@ host_library(
         "raw_resource_set",
         "raw_samplers",
         "raw_shared_events",
+        "raw_sparse_window",
         "raw_split",
         "raw_state_segment",
         "raw_surface_textures",
@@ -456,6 +457,17 @@ raw_device_test(
     name = "raw_device_draw_ends_test",
     srcs = [
         "raw_device_draw_ends_test.cpp",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+    ],
+)
+
+# A client's draw sampling an extended-range texture with no stand-in is refused (RefNoStandIn); the raw path's own conversion
+# state, which reads the codes on purpose, draws
+raw_device_test(
+    name = "raw_device_standin_draws_test",
+    srcs = [
+        "raw_device_standin_draws_test.cpp",
+        "raw_record_pack.h",
         "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
@@ -4574,6 +4586,7 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_semantic_resources",
     "raw_semantic_setters",
     "raw_shared_events",
+    "raw_sparse_window",
     "raw_split",
     "raw_state_segment",
     "raw_stencil_bits",

@@ -32,6 +32,7 @@ struct StoreShape {
     uint srgb;        // the runtime's choice of the _srgb functions
     uint packed;      // and of the _packed ones
     uint plane;       // a packed 10-bit plane's codes a texel (ycbcr_store_plane_packed_frag)
+    uint words;       // and of the _words ones
 };
 
 struct Out {
@@ -445,4 +446,43 @@ fragment uint ycbcr_store_chroma_packed_srgb_masked_frag(Out in [[stage_in]], St
                                                          constant Tiles &tiles [[buffer(2)]])
 {
     return packedChromaMasked<true>(stand_in, s, uint2(in.position.xy), encode, reach, tiles, kept);
+}
+
+// YCBCR10_444_1P and its sRGB twin (runtime/raw_ycbcr.h chromaGreenBlue): a word a texel of Y, Cb and Cr ten bits each from
+// bit 0 and bits 30 and 31 clear (an M4 Max over 'v410', m2v-textures6 probes/onep.mm), the codes of the two-plane 10-bit
+// 4:4:4 format, written through the plane's RGB10A2Unorm header as each code over 1023
+template <bool Srgb> static float4 wordCodes(StandIn stand_in, constant StoreShape &s, uint2 at, Encode e)
+{
+    const uint2 c = chromaCodes<Srgb>(stand_in, s, at, e);
+    return float4(float(lumaCode<Srgb>(stand_in, s, at, e)), float(c.x), float(c.y), 0.0f) / 1023.0f;
+}
+
+fragment float4 ycbcr_store_words_frag(Out in [[stage_in]], StandIn stand_in [[texture(0)]],
+                                       constant StoreShape &s [[buffer(0)]])
+{
+    return wordCodes<false>(stand_in, s, uint2(in.position.xy), nullptr);
+}
+
+fragment float4 ycbcr_store_words_srgb_frag(Out in [[stage_in]], StandIn stand_in [[texture(0)]],
+                                            constant StoreShape &s [[buffer(0)]], Encode encode [[buffer(1)]])
+{
+    return wordCodes<true>(stand_in, s, uint2(in.position.xy), encode);
+}
+
+fragment float4 ycbcr_store_words_masked_frag(Out in [[stage_in]], StandIn stand_in [[texture(0)]],
+                                              Reach reach [[texture(1)]], constant StoreShape &s [[buffer(0)]],
+                                              constant Tiles &tiles [[buffer(2)]])
+{
+    if (!reached(reach, tiles, uint2(in.position.xy)))
+        discard_fragment();
+    return wordCodes<false>(stand_in, s, uint2(in.position.xy), nullptr);
+}
+
+fragment float4 ycbcr_store_words_srgb_masked_frag(Out in [[stage_in]], StandIn stand_in [[texture(0)]],
+                                                   Reach reach [[texture(1)]], constant StoreShape &s [[buffer(0)]],
+                                                   Encode encode [[buffer(1)]], constant Tiles &tiles [[buffer(2)]])
+{
+    if (!reached(reach, tiles, uint2(in.position.xy)))
+        discard_fragment();
+    return wordCodes<true>(stand_in, s, uint2(in.position.xy), encode);
 }
