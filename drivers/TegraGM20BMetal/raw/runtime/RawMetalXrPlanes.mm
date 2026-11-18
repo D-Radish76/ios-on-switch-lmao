@@ -4,6 +4,7 @@
 #include "raw_surface_refusal.h"
 #include "raw_xr_pools.h"
 
+#include <algorithm>
 #include <cstring>
 
 static_assert(kXrPlanesOverflowTag >= raw::kFormatStandInTag + 2 * 8, "an overflow image's tag shares a fixed tag's memory");
@@ -24,19 +25,24 @@ static bool planesForm(MTLTextureDescriptor *d)
            d.mipmapLevelCount == 1 && d.sampleCount == 1 && !turned;
 }
 
+bool xrLastPlane(IOSurfaceRef s, NSUInteger plane)
+{
+    return plane + 1 == std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
+}
+
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    return planesForm(d) && plane == 0 && IOSurfaceGetPlaneCount(s) == 2 &&
-           IOSurfaceGetBytesPerRowOfPlane(s, 0) >= 4 * d.width && IOSurfaceGetHeightOfPlane(s, 0) >= d.height &&
-           IOSurfaceGetBytesPerRowOfPlane(s, 1) >= d.width && IOSurfaceGetHeightOfPlane(s, 1) >= d.height;
+    return planesForm(d) && plane + 1 < IOSurfaceGetPlaneCount(s) &&
+           IOSurfaceGetBytesPerRowOfPlane(s, plane) >= 4 * d.width && IOSurfaceGetHeightOfPlane(s, plane) >= d.height &&
+           IOSurfaceGetBytesPerRowOfPlane(s, plane + 1) >= d.width &&
+           IOSurfaceGetHeightOfPlane(s, plane + 1) >= d.height;
 }
 
 bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    const size_t planes = IOSurfaceGetPlaneCount(s);
     const bool writes =
         d.usage == MTLTextureUsageUnknown || (d.usage & (MTLTextureUsageRenderTarget | MTLTextureUsageShaderWrite));
-    return planesForm(d) && writes && (planes <= 1 ? !plane : plane && plane < planes);
+    return planesForm(d) && writes && xrLastPlane(s, plane);
 }
 
 static bool holdInPlanes(RMTexture *t, IOSurfaceRef s, uint64_t word, uint32_t wordPitch, uint64_t alpha,
@@ -71,10 +77,11 @@ bool makeXrPlanes(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t height)
 {
     const uintptr_t at = uintptr_t(IOSurfaceGetBaseAddress(s));
     MTLTextureDescriptor *d = t->_descriptor;
-    const uint64_t word = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 0)) - at,
-                   alpha = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, 1)) - at;
-    if (!holdInPlanes(t, s, word, uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, 0)), alpha,
-                      uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, 1)), width, height))
+    const NSUInteger p = t->_plane;
+    const uint64_t word = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, p)) - at,
+                   alpha = uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, p + 1)) - at;
+    if (!holdInPlanes(t, s, word, uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, p)), alpha,
+                      uint32_t(IOSurfaceGetBytesPerRowOfPlane(s, p + 1)), width, height))
         return false;
     static std::atomic<bool> said{false};
     if (!said.exchange(true)) {

@@ -5342,6 +5342,37 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
+# Textures over surfaces Metal makes and the raw path once answered nil for, each as an M4 Max reads and writes it
+host_test(
+    name = "raw_facade_surface_forms_test",
+    srcs = [
+        "empty_pack.h",
+        "made_metallib.h",
+        "raw_facade_harness.h",
+        "raw_facade_pass_scene.h",
+        "raw_facade_surface_forms_test.cpp",
+        "raw_facade_variant_compiler.h",
+        "raw_frontend_absent.cpp",
+        "raw_job_methods.h",
+        "raw_kernel_model.h",
+        ":librecord_count.dylib",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = [
+        ":raw_facade_plugin_host",
+        ":raw_runtime_plugin_host",
+        "//kits/SwitchRefusal:switch_refusal",
+        "//kits/SwitchGM20BEmit/test:method_checks",
+    ] + RAW_HOST_DEPS,
+)
+
 # An RGB8_444_2P surface texture made to be sampled alone holds no stand-in, and a pass into it renders through one of its
 # command buffer's
 # A GPU copy into or out of a BGRA10_XR texture Metal keeps compressed is drawn back clamped as an M4 Max leaves it; any

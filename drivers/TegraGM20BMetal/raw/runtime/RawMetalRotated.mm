@@ -43,17 +43,17 @@ static bool planarFormat(uint32_t format)
     return raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format) || raw::twoPlaneXr(format);
 }
 
-// RGB10A8_2P_XR10 or its sRGB twin turned: over plane 0 of two whose rows hold the plane's words and alpha bytes, or
-// over one plane alone (RawMetalXrPlanes.h)
+// RGB10A8_2P_XR10 or its sRGB twin turned: over a plane followed by another, the rows of both holding the plane's words
+// and alpha bytes, or over the last plane alone (RawMetalXrPlanes.h)
 static bool turnedXrShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)
 {
-    const size_t planes = IOSurfaceGetPlaneCount(s);
     if (!xrPlanesStorable(d))
         return false;
-    if (planes <= 1 || plane)
+    if (xrLastPlane(s, plane))
         return true;
-    return planes == 2 && IOSurfaceGetBytesPerRowOfPlane(s, 0) >= 4 * r.planeWidth() &&
-           IOSurfaceGetBytesPerRowOfPlane(s, 1) >= r.planeWidth() && IOSurfaceGetHeightOfPlane(s, 1) >= r.planeHeight();
+    return IOSurfaceGetBytesPerRowOfPlane(s, plane) >= 4 * r.planeWidth() &&
+           IOSurfaceGetBytesPerRowOfPlane(s, plane + 1) >= r.planeWidth() &&
+           IOSurfaceGetHeightOfPlane(s, plane + 1) >= r.planeHeight();
 }
 
 // Every format Metal renders turns alike, the plane of several of a planar surface as one plane alone (an M4 Max, each
@@ -113,8 +113,8 @@ static bool createTurnedYcbcr(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRe
 
 static bool createTurnedXr(RMTexture *t, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)
 {
-    return IOSurfaceGetPlaneCount(s) == 2 && !plane ? makeXrPlanes(t, s, r.planeWidth(), r.planeHeight())
-                                                    : makeXrWordPlane(t, s, r.planeWidth(), r.planeHeight());
+    return xrLastPlane(s, plane) ? makeXrWordPlane(t, s, r.planeWidth(), r.planeHeight())
+                                 : makeXrPlanes(t, s, r.planeWidth(), r.planeHeight());
 }
 
 bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)

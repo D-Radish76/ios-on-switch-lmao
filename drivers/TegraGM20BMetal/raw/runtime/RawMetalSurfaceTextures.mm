@@ -84,13 +84,12 @@ void planeAt(IOSurfaceRef s, NSUInteger plane, uint64_t &offset, size_t &pitch)
     pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
 }
 
-// RGB10A8_2P_XR10 or its sRGB twin over a surface of one plane, or over a later plane of several: BGR10_XR's words
+// RGB10A8_2P_XR10 or its sRGB twin over a surface of one plane, or over the last plane of several: BGR10_XR's words
 // (RawMetalXrPlanes.h xrWordsFormat). An M4 Max's passes and kernel stores write them with bits 30 and 31 clear (m2v-textures4
 // probes/more.mm ff), which BGR10_XR's write sets, so the raw path takes one sampled alone
 bool xrWordsShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    const size_t planes = IOSurfaceGetPlaneCount(s);
-    return raw::twoPlaneXr(uint32_t(d.pixelFormat)) && (planes <= 1 ? !plane : plane && plane < planes) &&
+    return raw::twoPlaneXr(uint32_t(d.pixelFormat)) && xrLastPlane(s, plane) &&
            d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 && d.sampleCount == 1 && !rotationOf(d) &&
            !writesTexture(d);
 }
@@ -287,8 +286,8 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     else if (xr && !xrTaken && !xrPlanesStorable(d))
         form = "RGB10A8_2P_XR10 a fragment program may store to, with no pack state merging and splitting its planes";
     else if (xr && !xrTaken)
-        form = "RGB10A8_2P_XR10 over the first plane of several whose rows hold fewer bytes than its words or alpha bytes "
-               "(rows Metal reads overlapping), or shorter than it";
+        form = "RGB10A8_2P_XR10 over a plane followed by another, of rows that hold fewer bytes than its words or alpha "
+               "bytes (rows Metal reads overlapping), or shorter than it";
     if (form) {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.form", uintptr_t(form),
                              "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: %s: nil until the "
