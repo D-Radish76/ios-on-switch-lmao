@@ -5,15 +5,13 @@
 #include <atomic>
 #include <cstdint>
 
-// ---- refusal diagnostics (r10-rawsweep): which predicate sends work to m2v, with its values ----
-// Every refusal site names its predicate. A command buffer keeps a mask of every predicate it hit (not only the first, which
-// decides its reason) and the first one's values. At submission each predicate hit is counted once per command buffer
-// (gPredCbs), and once more when it was the command buffer's only one (gPredOnly: what fixing it alone would gain); the 5 s rates
-// line shows both. The first hit of each predicate in the process logs one line with its values (and, for a resource refused
-// when made, the resource's details). Hot path: an OR into the mask and a relaxed load; strings only on a predicate's first hit.
+// ---- refusal diagnostics (r10-rawsweep): which predicate a command buffer hit, with its values ----
+// Every refusal site names its predicate. A command buffer keeps the first one it hit, with its values. The first hit of each
+// predicate in the process logs one line with its values (and, for a resource refused when made, the resource's details).
+// Hot path: a relaxed load; strings only on a predicate's first hit.
 enum RMPred : uint8_t {
     PredNone = 0,
-    PredTexForeign,  // not an RMTexture (m2v's own: over an m2v buffer, or a creation selector the facade does not answer)
+    PredTexForeign,  // a texture this device did not make
     // passes
     PredPassAttFormat,  // a color attachment not kept or not renderable: a = format, b = attachment index | kind << 8
     PredPassAttLevel,   // slice, depth plane or resolve, or a level of a texture with no chain
@@ -98,24 +96,7 @@ constexpr NSInteger predFailure(RMPred p)
     }
 }
 
-// What makes a command buffer go to m2v (counted, one log line each kind)
-enum RMReason : uint8_t {
-    WhyRaw = 0,
-    WhyState,
-    WhyTexture,
-    WhyPass,
-    WhyCall,
-    WhyCompute,
-    WhyEvent,
-    WhyEncode,
-    WhyCount
-};
-
-static const char *const kReasonNames[WhyCount] = {"raw",     "state",   "texture", "pass",
-                                                   "call",    "compute", "event",   "encode"};
-
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-extern std::atomic<uint64_t> gPredCbs[PredCount], gPredOnly[PredCount];
 extern std::atomic<uint64_t> gPredFailed[PredCount];  // command buffers each predicate failed (predFailure)
 #endif
 extern std::atomic<uint64_t> gPredLogged;

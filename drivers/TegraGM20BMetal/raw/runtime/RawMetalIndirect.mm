@@ -45,24 +45,6 @@ uint8_t kindsOf(const RMICBCommand &c)
 
 }  // namespace
 
-void rmWriteCommand(RMIndirectCommandBuffer *b, NSUInteger index, const RMICBCommand &c)
-{
-    uint32_t *slot = rmCommandSlot(b, index);
-    if (c.kind == RMICBCommand::Draw)
-        raw::icb::draw(slot, uint32_t(index), {c.primitive, c.count, c.instances, c.first, c.baseInstance},
-                       b->_slotWords);
-    else if (c.kind == RMICBCommand::Indexed)
-        raw::icb::indexed(slot, uint32_t(index),
-                          {c.primitive, c.indexType == MTLIndexTypeUInt16 ? 2u : 4u, c.indices->_raw.va + c.indexOffset,
-                           c.indices->_raw.va + c.indices->_raw.length - 1, c.count, c.instances, 0, c.baseVertex,
-                           c.baseInstance},
-                          b->_slotWords);
-    else if (c.kind == RMICBCommand::Patches && b->_slotWords >= raw::icb::kPatchSlotWords)
-        raw::icb::patches(slot, uint32_t(index), c.patches);
-    else
-        raw::icb::empty(slot, b->_slotWords);
-}
-
 @implementation RMIndirectCommandBuffer
 
 - (void)dealloc
@@ -374,33 +356,6 @@ bool encodeCommands(raw::RenderEncoder *re, raw::CommandBuffer *rc, const RMPlan
                              range ? &range->_raw : nullptr, draw.first, draw.primitive, draw.indexType != 0,
                              b->_gpuWritten.load(std::memory_order_relaxed), reads.data(), reads.size()},
                             why);
-}
-
-void replayCommands(id<MTLRenderCommandEncoder> encoder, const RMPlanDraw &draw, const std::function<id(void *)> &use)
-{
-    RMIndirectCommandBuffer *b = (__bridge RMIndirectCommandBuffer *)draw.arguments;
-    std::vector<RMICBCommand> commands;
-    {
-        std::lock_guard<raw::Mutex> hold(b->_lock);
-        commands.assign(b->_commands.begin() + ptrdiff_t(draw.argumentOffset),
-                        b->_commands.begin() + ptrdiff_t(draw.argumentOffset + draw.indexOffset));
-    }
-    for (const RMICBCommand &c : commands)
-        if (c.kind == RMICBCommand::Draw)
-            [encoder drawPrimitives:MTLPrimitiveType(c.primitive)
-                        vertexStart:c.first
-                        vertexCount:c.count
-                      instanceCount:c.instances
-                       baseInstance:c.baseInstance];
-        else if (c.kind == RMICBCommand::Indexed)
-            [encoder drawIndexedPrimitives:MTLPrimitiveType(c.primitive)
-                                indexCount:c.count
-                                 indexType:MTLIndexType(c.indexType)
-                               indexBuffer:use((__bridge void *)c.indices)
-                         indexBufferOffset:c.indexOffset
-                             instanceCount:c.instances
-                                baseVertex:c.baseVertex
-                              baseInstance:c.baseInstance];
 }
 
 // Every draw a command of a buffer makes takes the encoder's pipeline (the buffer inherits it), so any render state draws

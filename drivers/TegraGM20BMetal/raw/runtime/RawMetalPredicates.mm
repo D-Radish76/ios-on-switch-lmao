@@ -13,13 +13,12 @@ static constexpr std::array<uint64_t, PredCount> predKeys()
 
 static constexpr std::array<uint64_t, PredCount> kPredKeys = predKeys();
 #if SWITCH_RAW_DIAGNOSTICS
-std::atomic<uint64_t> gPredCbs[PredCount], gPredOnly[PredCount];
 std::atomic<uint64_t> gPredFailed[PredCount];
 #endif
 std::atomic<uint64_t> gPredLogged{0};
 
-// Each predicate's first command buffer this process sends to m2v, through kits/SwitchRefusal (domain raw-metal, the
-// predicate's name as the reason)
+// Each predicate's first hit in this process, through kits/SwitchRefusal (domain raw-metal, the predicate's name as the
+// reason)
 void logPred(RMPred p, uint64_t a, uint64_t b, NSString *detail)
 {
     const uint64_t bit = 1ull << p;

@@ -18,7 +18,6 @@ py_library(
         "lockscreen.py",
         "morning.py",
         "protection.py",
-        "raw_stats.py",
         "reports.py",
         "rules.py",
         "stutter.py",
@@ -52,14 +51,6 @@ py_test(
         "//apps/hwtest:swift_sources",
         "//apps/hwtest:test_sources",
     ],
-    deps = [":lib"],
-)
-
-# raw_stats.py's per-boot sum of the raw path's rates lines over synthetic lines.
-py_test(
-    name = "raw_stats_test",
-    size = "small",
-    srcs = ["raw_stats_test.py"],
     deps = [":lib"],
 )
 

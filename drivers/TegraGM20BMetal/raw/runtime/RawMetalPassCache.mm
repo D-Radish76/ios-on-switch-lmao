@@ -301,8 +301,8 @@ void bind(RMPassCache &c, size_t i)
     c.textures += texturesOf(c.entries[i].facts);
 }
 
-// Let go by the bank. A copy its command buffer found goes on as that command buffer's pass, which m2v's replay may read
-// past rmPassBind's reach: it names its textures again first.
+// Let go by the bank. A copy its command buffer found goes on as that command buffer's pass: it names its textures again
+// first.
 CFTypeRef take(RMPassCache &c, size_t i)
 {
     RMPassEntry &e = c.entries[i];
@@ -496,13 +496,6 @@ void rmPassBind(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass)
             bind(*c, i);
             return;
         }
-}
-
-void rmPassBind(RMCommandBuffer *cb, size_t from, size_t to)
-{
-    for (size_t at = from; at < to; at++)
-        if (cb->_plan.operation(at).op == OpRender)
-            rmPassBind(cb, (__bridge MTLRenderPassDescriptor *)cb->_plan.legacy(at).obj);
 }
 
 RMPassTrim rmPassCacheHeld(const RMPassCache *cache)

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalInternal.h"
 #import "RawMetalPassCache.h"
-#include "raw_execution_plan.h"
 #include "raw_object_pool.h"
 #include "raw_parallel.h"
 #include "raw_compute.h"
@@ -513,7 +512,6 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
             _plan.addUses(_plan.size() - 1, uses);
         if (cmd.op == OpEnd && _encOpen) {
             _plan.prepareRange(_encAt, _plan.size());
-            // its refusal is final now, into its first command before the worker may read it
             [self closeEncoder];
             rmPublishEncoder(self);
         }
@@ -530,15 +528,12 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     _plan.bind(cmd, _extra.ownData());
 }
 
-// The encoder recorded last: whether it goes to m2v, into its first command
+// The encoder recorded last is done: an OpEnd recorded after this publishes nothing
 - (void)closeEncoder
 {
-    if (_encOpen && _encAt < _plan.size())
-        _plan.setRefused(_encAt, _encRefused);
     _encOpen = false;
 }
 
-// Answered here, not recorded as invocations (each one sent the whole command buffer to m2v)
 - (NSMutableDictionary *)userDictionary
 {
     std::lock_guard<raw::Mutex> l(_lock);
@@ -555,9 +550,10 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     return _traceId;
 }
 
+// Every allocation is mapped in the one GPU VM and stays resident: a residency set asks nothing of the raw path
 - (void)useResidencySet:(id)set
 {
-    _residency.add(&set, 1);
+    (void)set;
 }
 
 // (QuartzCore 27, per command buffer: the kernel charges GPU time to the task that submits it, this one)
@@ -569,7 +565,8 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 
 - (void)useResidencySets:(const __unsafe_unretained id *)sets count:(NSUInteger)count
 {
-    _residency.add(sets, count);
+    (void)sets;
+    (void)count;
 }
 
 - (id)rmTwin
@@ -841,24 +838,16 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     return _gpuStamped ? @"ns" : @"host";
 }
 
-// hw_test_app's attribution, final once the command buffer completed (its completed handlers may ask): "raw",
-// "m2v:<reason>:<first predicate>" or "split:<raw segments>+<m2v segments>:<reason>:<first predicate>". With no lock:
-// what it reads is set before the completed mark this acquires.
+// hw_test_app's attribution, final once the command buffer completed (its completed handlers may ask): "raw", or
+// "error:<predicate>", the one that failed it or, for one that failed otherwise, the first it hit. With no lock: what it
+// reads is set before the completed mark this acquires.
 - (NSString *)switchRawPath
 {
     if (!_completedSent)
         return @"pending";
     if (_failedBy)
         return [NSString stringWithFormat:@"error:%s", kPredNames[_failedBy]];
-    raw::ExecutionAttribution route;
-    for (const RMSegment &range : _segs)
-        route.add(range.raw, range.event);
-    if (route.mixed())
-        return [NSString stringWithFormat:@"split:%zu+%zu:%s:%s", route.native, route.compatibility,
-                                          kReasonNames[_reason], kPredNames[_pred0]];
-    if (!route.onlyCompatibility() && !_m2v)
-        return _error && _pred0 ? [NSString stringWithFormat:@"error:%s", kPredNames[_pred0]] : @"raw";
-    return [NSString stringWithFormat:@"m2v:%s:%s", kReasonNames[_reason], kPredNames[_pred0]];
+    return _error && _pred0 ? [NSString stringWithFormat:@"error:%s", kPredNames[_pred0]] : @"raw";
 }
 
 // hw_test_app's gpu.path.commit_latency, final once it completed: of its raw ranges' encoders, those the worker encoded
@@ -972,7 +961,6 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     if ((self = [super init])) {
         queuePriorityAdd(self);
         _handlers = followingSerialQueue("com.brunostjohn.switch.raw.command.handlers");
-        _urges = followingSerialQueue("com.brunostjohn.switch.raw.command.urge");
     }
     return self;
 }
@@ -1019,24 +1007,27 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 - (void)insertDebugCaptureBoundary
 {}
 
+// (as the command buffer's: everything is resident)
 - (void)addResidencySet:(id)set
 {
-    _residency.add(&set, 1);
+    (void)set;
 }
 
 - (void)addResidencySets:(const __unsafe_unretained id *)sets count:(NSUInteger)count
 {
-    _residency.add(sets, count);
+    (void)sets;
+    (void)count;
 }
 
 - (void)removeResidencySet:(id)set
 {
-    _residency.remove(&set, 1);
+    (void)set;
 }
 
 - (void)removeResidencySets:(const __unsafe_unretained id *)sets count:(NSUInteger)count
 {
-    _residency.remove(sets, count);
+    (void)sets;
+    (void)count;
 }
 
 - (void)setCompletionQueue:(dispatch_queue_t)queue

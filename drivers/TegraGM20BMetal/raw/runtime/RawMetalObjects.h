@@ -19,7 +19,6 @@
 #include "SwitchFrameTimeline.h"
 #include "raw_gpu.h"
 #include "RawMetalPredicates.h"
-#include "RawResidency.h"
 #include "raw_finish_state.h"
 #include "raw_handler_order.h"
 #include "raw_predicate_records.h"
@@ -172,7 +171,7 @@ enum class RMShareable : uint8_t {
 @interface RMTexture : RMObject {
 @public
     raw::Texture _raw;
-    bool _rawOk;  // the raw path can draw with it (else every command buffer using it goes to m2v)
+    bool _rawOk;  // the raw path can draw with it (else a command buffer that blits it fails)
     RMTextureKind _kind;
     std::atomic<bool> _gpuWrites;   // its surface was declared GPU-written (surfaceGpuWrites)
     std::atomic<bool> _readAsData;  // a blit copied out of it or a kernel took it, as recorded (raw_resolve_rule.h)
@@ -244,7 +243,7 @@ enum class RMShareable : uint8_t {
 
 @interface RMPipeline : RMObject {
 @public
-    // null: not in the pack (every command buffer using it goes to m2v), or not yet made by the runtime (completeLater: set once,
+    // null: not in the pack (a command buffer that sets it fails), or not yet made by the runtime (completeLater: set once,
     // released, from its queue)
     raw::Pipeline *_raw;
     bool _packable;  // its functions are one framework's default library's (looked up in the pack)
@@ -261,7 +260,6 @@ enum class RMShareable : uint8_t {
     uint64_t _packKey;     // the hash the pack finds its records and reflection by (its key's, or its key and AIR's)
     MTLRenderPipelineDescriptor
         *_madeFrom;                  // completable states': what its cubic variants and a later twin are made of
-    const char *_m2vMissing;         // what of it m2v has no form of (rmM2vMissingState), null: nothing
     MTLPipelineOption _twinOptions;  // a state raw draws from its creation: its twin is made at its first m2v
     bool _twinLater;                 // replay (rmTwin), with these options
     raw::Mutex _variantLock;
@@ -287,18 +285,13 @@ enum class RMShareable : uint8_t {
 @public
     dispatch_queue_t _completionQueue;
     dispatch_queue_t _handlers;  // its command buffers' scheduled handlers, in its order
-    // the compiles its head waits for, made one at a time at the committers' priority (raw_follow.h): one urged compile per
-    // waiting Metal queue at most
-    dispatch_queue_t _urges;
-    std::atomic<void *> _last;  // the command buffer enqueued last, retained until its completed handlers ran
+    std::atomic<void *> _last;   // the command buffer enqueued last, retained until its completed handlers ran
     uint32_t _gpuPriority, _backgroundGpuPriority;  // what it asked for (RawMetalQueuePriority.mm)
-    raw::ResidencySets _residency;
 }
 @end
 
-// What the raw encode reads of a render pass, taken from the descriptor's copy as its encoder is made (the copy itself is what
-// m2v's replay encodes): no Metal getter, no attachment object Metal makes on a first read, per encode. Objects unretained: the
-// command buffer's owners hold them.
+// What the raw encode reads of a render pass, taken from the descriptor's copy as its encoder is made: no Metal getter, no
+// attachment object Metal makes on a first read, per encode. Objects unretained: the command buffer's owners hold them.
 struct RMPass {
     struct Color {
         __unsafe_unretained id texture;
@@ -348,11 +341,11 @@ struct RMPass {
     uint8_t xrShadows = 0;  // the extended-range colours whose half shadow it holds (raw_xr_shadow.h)
 };
 
-// A command buffer's setBytes data, written once where the GPU reads it: write-combined pool chunks the raw encode binds in place
-// (m2v's replay reads them back), each copy 256-byte aligned and zero to the next 256 bytes as an upload chunk is. The chunks go
-// with the recording (giveRecording), so they outlive every submission that reads them.
+// A command buffer's setBytes data, written once where the GPU reads it: write-combined pool chunks the raw encode binds in place,
+// each copy 256-byte aligned and zero to the next 256 bytes as an upload chunk is. The chunks go with the recording
+// (giveRecording), so they outlive every submission that reads them.
 struct RMBytes {
-    raw::GrowList<raw::Buffer> chunks;  // va 0: heap memory (the GPU pool had none; the command buffer is m2v's)
+    raw::GrowList<raw::Buffer> chunks;  // va 0: heap memory (the GPU pool had none; the command buffer fails)
     size_t at = 0;                      // the chunk being filled
     uint32_t used = 0;                  // its bytes taken
 };
@@ -388,10 +381,9 @@ struct RMSubCommand {
     std::vector<uint64_t> extra;
 };
 
-// A part of a command buffer submitted on its own (RMCommandBuffer::_segs): tape [from, to), on the raw path or m2v
+// A part of a command buffer submitted on its own (RMCommandBuffer::_segs): tape [from, to), raw work or one event
 struct RMSegment {
     uint32_t from, to;
-    bool raw;
     bool event = false;
     bool gpuSignal = false;
     bool gpuWait = false;
@@ -421,15 +413,11 @@ struct RMSharedEventWait {
     uint64_t _protection;  // setProtectionOptions: (kept, no effect)
     NSMutableDictionary *_userDictionary;
     uint64_t _traceId;
-    raw::ResidencySets _residency;
-    // Its encoders: each one's first command (OpRender, OpBlit, OpCompute) carries index 1 where it goes to m2v (a refusal taken
-    // while it was the active encoder: _encRefused, written into it as the next encoder begins or at commit, _encAt the
-    // command's place). A refusal outside any encoder keeps the command buffer whole (_whole). One whose encoders are some raw's
-    // and some m2v's is submitted in segments (_segs, planSegments): each run of encoders of one driver on its own, in order on
-    // the GPU as two command buffers of the drivers are (the kernel's Order), so a refused pass costs m2v that pass, not the
-    // frame. The command buffer completes with its last segment.
+    // The encoder being recorded: its first command's place (_encAt), and whether its recording failed the command buffer
+    // (_encFailed: rmPassFailed), which leaves its draws unchecked and its pass unread. The command buffer is submitted in
+    // segments (_segs, planSegments) and completes with its last.
     size_t _encAt;
-    bool _encOpen, _encRefused, _whole;
+    bool _encOpen, _encFailed;
     raw::PredicateRecords _predicates;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     std::atomic<bool> _forceWholePrograms, _inlineStates;
@@ -448,7 +436,7 @@ struct RMSharedEventWait {
 #endif
     std::vector<RMSegment> _segs;
     size_t _segNext;
-    RMSegError _segError;           // an m2v segment's error, reported at completion
+    RMSegError _segError;           // its error, reported at completion
     raw::FinishState _finishState;  // its ranges in flight, and whether it submits no more (raw_finish_state.h)
     uint64_t _channelGeneration, _rawPrefixGeneration;
     bool _gpuPrefixEligible;
@@ -462,7 +450,6 @@ struct RMSharedEventWait {
     std::shared_ptr<raw::SharedEventWatch> _sharedEventWatch;
     std::shared_ptr<raw::ResourceReadyCompletion> _resourceReady;
     void *_nativeWaitEvent;
-    bool _submittedM2v;
     // a drawable present was added (its completion is observed), cleared once it failed before all its work was
     // submitted (none is made, RawMetalFinish.mm withholdPresents); the range being submitted ends quiet
     // (raw_completion_source.h)
@@ -503,8 +490,6 @@ struct RMSharedEventWait {
     raw::GrowList<uint64_t> _extra;
     std::vector<id> _owners;
     raw::PointerMap<bool> _ownerKeys;  // everything the tape names, retained until completion
-    RMReason _reason;
-    NSString *_why;
     NSMutableArray *_scheduledHandlers, *_completedHandlers;
     std::atomic<bool>
         _handlersQueued;       // scheduled handlers went to its queue's _handlers: its completed ones go behind them
@@ -521,13 +506,11 @@ struct RMSharedEventWait {
     bool _reserved;  // the submit worker's: its reservation made
     std::vector<size_t> _eventWaits;
     raw::EventDeadline::Time _eventStart;
-    std::unordered_set<void *> _pipelineObserved;  // one readiness subscription per compatibility state
     std::unordered_set<void *> _variantObserved;
     std::map<void *, std::shared_ptr<raw::ComputeKernelSet<raw::ComputeState>>> _computeJobs;
     size_t _eventArmed;            // operation position + 1; only the current wait installs a listener
     std::atomic<bool> _inHolders;  // in gHolders or gEventWaits (debug builds): unhold() takes their lock only then
     std::atomic<bool> _committed, _scheduledDone, _completedDone;
-    bool _m2v;
     // its queue's head waits on a shared event Metal's GPU would wait for: waitUntilScheduled returns, its scheduled
     // handlers still wait for its submission (raw_scheduled_wait.h)
     std::atomic<bool> _held;
@@ -551,8 +534,6 @@ struct RMSharedEventWait {
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     std::atomic<uint64_t> _heldReturnUs;  // when waitUntilScheduled returned for it held, until it was submitted
 #endif
-    // its event signals are in m2v work (replayed whole, or in its last segment): finish() makes none
-    bool _signalsOnM2v;
     // scheduled() and finish() ran (their handlers taken): a handler added after goes at once, and scheduled() runs once (a
     // command buffer held for a shared event is scheduled at its commit, eventHeld). A handler is added under _lock after its
     // list's flag is set, and the lists are taken under _lock only where the flag says one was added: taking exchanges the
@@ -577,7 +558,6 @@ struct RMSharedEventWait {
 #endif
     // the encoder being recorded: its end, its drop (endDropped) and this command buffer's drop clear it
     __unsafe_unretained id _active;
-    uint64_t _preds;          // every refusal predicate it hit (1 << RMPred)
     uint64_t _predA, _predB;  // the first one's values
     uint8_t _pred0;           // the first one
     uint8_t _failedBy;        // the predicate that failed it (predFailure), 0: none
@@ -604,12 +584,11 @@ void predFails(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char
 // (RawMetalPassErrors.mm)
 void rmCallInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule);
 
-// A refusal predicate hit while recording (or encoding) `cb`: into its mask; the first one's values kept; the process's first hit
-// of `p` logged with them; a predicate of predFailure fails the command buffer
+// A refusal predicate hit while recording (or encoding) `cb`: the first one's values kept; the process's first hit of `p`
+// logged with them; a predicate of predFailure fails the command buffer
 static inline void hit(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64_t a = 0, uint64_t b = 0,
                        const char *detail = nullptr)
 {
-    cb->_preds |= 1ull << p;
     if (!cb->_pred0) {
         cb->_pred0 = p;
         cb->_predA = a;
@@ -624,14 +603,13 @@ static inline void hit(__unsafe_unretained RMCommandBuffer *cb, RMPred p, uint64
 // Why a command buffer's tape is encoded at its commit, not as its encoders end (RMCommandBuffer::_pipelineVeto, and the
 // worker's own findings): what the encode reads that the recording may still change, or work it is not built for
 enum RMPipelineVeto : uint32_t {
-    VetoWhole = 1u << 0,       // a refusal outside any encoder: all of it goes to m2v
     VetoCounters = 1u << 1,    // counter samples
     VetoShadows = 1u << 2,     // a texture sampled through a pool image, an extended-range stand-in or half shadow
     VetoVariant = 1u << 3,     // a binding of a state variant still being made, which an encode ahead would drop
     VetoProbes = 1u << 4,      // HW Test's probes
     VetoParallel = 1u << 5,    // a parallel render encoder's sub-encoders
     VetoOps = 1u << 6,         // an event, a compute encoder, an indirect command buffer, patches, an invocation
-    VetoRefused = 1u << 7,     // an encoder that goes to m2v
+    VetoRefused = 1u << 7,     // an encoder whose recording failed the command buffer (rmPassFailed)
     VetoPlanar = 1u << 8,      // a planar texture converted for its draws
     VetoContents = 1u << 9,    // the encode read buffer contents the CPU may write until the commit
     VetoNative = 1u << 10,     // a surface read through its native image before a later encoder wrote it
@@ -712,7 +690,7 @@ struct RMPreparedVariant {
     bool _xrPlanes;        // it draws RGB10A8_2P_XR10 in its two planes (raw_xr_pass.h): its states' " | xr2p" variants
     uint32_t _passAt;      // its pass's RMPass (the command buffer's _passes)
     raw::DepthStencilDesc _ds;
-    MTLRenderPassDescriptor *_pass;  // the command buffer's copy, which the raw encode and m2v's replay read
+    MTLRenderPassDescriptor *_pass;  // the command buffer's copy, which the raw encode reads
     bool _passShared;                // _pass is the recording bank's immutable copy (RawMetalPassCache.h)
     size_t _renderAt;                // its OpRender in the command buffer's plan
     __unsafe_unretained id<MTLBuffer> _visibility;  // its pass's visibility result buffer (the command buffer holds it)
@@ -743,16 +721,15 @@ struct RMPreparedVariant {
 @end
 
 // RawMetalComputeState.mm: a compute state with what the raw pack keys its kernels by, answered from the pack's facts of
-// it or the shader compiler's; m2v's state is made only for a replay
+// it or the shader compiler's
 id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipelineOption options,
                   MTLAutoreleasedComputePipelineReflection *reflection, NSError **error);
-// m2v's replay and the raw encode of a compute encoder's commands (the Op*Kernel* ones and OpDispatch): false from the raw
-// encode where it refuses one (*why)
+// A compute encoder's commands (the Op*Kernel* ones and OpDispatch), and their raw encode (encodeKernel): false where it
+// refuses one (*why)
 bool isKernelCommand(Op op);
 // OpBytes and OpKernelBytes (`m`): the bytes into the command buffer's RMBytes, m.a/b/c set (RawMetalBindings.mm)
 void recordBytes(__unsafe_unretained RMCommandBuffer *cb, Cmd m, const void *bytes, NSUInteger length,
                  bool shadow = false);
-void replayKernel(id encoder, RMCommandBuffer *cb, const Cmd &c, std::set<RMBuffer *> &buffers);
 // `at`: the command's tape index, a loop's tag (raw_loop_ranges.h)
 bool encodeKernel(raw::ComputeEncoder &e, raw::CommandBuffer &rc, RMCommandBuffer *cb, const Cmd &c, size_t at,
                   const char **why);
@@ -808,8 +785,6 @@ bool rmBindSampler(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
 
 #if SWITCH_FRAME_TIMELINE
 extern std::atomic<uint64_t> gSurfaceTextures, gTwinsMade;
-extern thread_local uint64_t tTwinTicks;
-void countTwin(id object, uint64_t ticks);  // the rates line's tw= (RawMetalReplay.mm)
 #endif
 static inline id twinOf(id object)
 {
@@ -819,12 +794,8 @@ static inline id twinOf(id object)
         return object;  // an m2v object already (events, fences, anything the device forwarded)
 #if SWITCH_FRAME_TIMELINE
     if (!((RMObject *)object)->_twin) {
-        const uint64_t began = mach_absolute_time();
         id twin = [(RMObject *)object rmTwin];
-        const uint64_t took = mach_absolute_time() - began;
-        tTwinTicks += took;
         gTwinsMade.fetch_add(1, std::memory_order_relaxed);
-        countTwin(object, took);
         return twin;
     }
 #endif

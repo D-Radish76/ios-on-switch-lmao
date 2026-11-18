@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT
 // The new textures whose first contents (raw_fresh.h) the raw channel has not written yet. A texture is added as it is made,
 // before any command buffer can name it; the next raw submission takes every one and writes them ahead of its own commands, on
-// its own channel, so every later command on that channel (that submission's included) finds them written. A submission of the
-// other driver goes after a raw one that took them (RawMetalSubmit.mm's Order before m2v work), so its commands find them
-// written too. A submission that fails gives them back for the next. A CPU transfer (replaceRegion, getBytes) extracts its
-// texture and writes it in a raw submission of its own first, which the transfer follows.
+// its own channel, so every later command on that channel (that submission's included) finds them written. A submission that
+// fails gives them back for the next. A CPU transfer (replaceRegion, getBytes) extracts its texture and writes it in a raw
+// submission of its own first, which the transfer follows.
 #pragma once
 #include <algorithm>
 #include <atomic>
@@ -37,15 +36,6 @@ public:
         taken.swap(pending_);
         any_.store(false, std::memory_order_release);
         return taken;
-    }
-
-    // Ahead of the other driver's submission: every pending entry, in a raw submission of its own (`submit`), where the GPU
-    // then orders the other driver after it (`ordered`). Where it does not, or the submission fails, they are dropped: their
-    // textures keep what their memory held rather than take their first contents later, over what the other driver wrote.
-    template <class Submit> bool writeAhead(bool ordered, Submit submit)
-    {
-        std::vector<Entry> taken = take();
-        return taken.empty() || (ordered && submit(taken));
     }
 
     // The pending entries `match` holds for, out of the queue: true where there was one

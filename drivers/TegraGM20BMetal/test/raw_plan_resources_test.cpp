@@ -101,14 +101,8 @@ TEST(PlanResources, APlanarTargetWrittenAndSampledInOneEncoderStaysNative)
     RMCommandPlan plan;
     resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted);
     pass(plan, {{object(1), write}, {object(1), read | sample}});
-    plan.setRefused(0, false);
-    EXPECT_FALSE(plan.begin(0).refused);
     raw::ExecutionPlan execution;
-    EXPECT_EQ(makeExecutionPlan(plan, false, execution,
-                                [](const auto &) {
-                                    return true;
-                                }),
-              RMPlanError::None);
+    EXPECT_EQ(makeExecutionPlan(plan, execution), RMPlanError::None);
     ASSERT_EQ(execution.ranges().size(), 1u);
     EXPECT_EQ(execution.ranges()[0].kind, raw::ExecutionKind::native);
     EXPECT_EQ(plan.size(), 2u);
@@ -122,16 +116,8 @@ TEST(PlanResources, APlanarTargetWrittenThenSampledIsOneNativeRange)
     resource(plan, 1, RMResourceKind::Texture, RMResourceFacts::Converted);
     pass(plan, {{object(1), write}});
     pass(plan, {{object(1), read | sample}});
-    plan.setRefused(0, false);
-    plan.setRefused(2, false);
-    EXPECT_FALSE(plan.begin(0).refused);
-    EXPECT_FALSE(plan.begin(2).refused);
     raw::ExecutionPlan execution;
-    ASSERT_EQ(makeExecutionPlan(plan, false, execution,
-                                [](const auto &) {
-                                    return true;
-                                }),
-              RMPlanError::None);
+    ASSERT_EQ(makeExecutionPlan(plan, execution), RMPlanError::None);
     ASSERT_EQ(execution.ranges().size(), 1u);
     EXPECT_EQ(execution.ranges()[0].kind, raw::ExecutionKind::native);
     EXPECT_EQ(execution.ranges()[0].to, 4u);
@@ -148,11 +134,7 @@ TEST(PlanResources, EventsSeparateConversionEpochs)
     plan.record(event, {});
     pass(plan, {{object(1), read | sample}});
     raw::ExecutionPlan execution;
-    ASSERT_EQ(makeExecutionPlan(plan, false, execution,
-                                [](const auto &) {
-                                    return true;
-                                }),
-              RMPlanError::None);
+    ASSERT_EQ(makeExecutionPlan(plan, execution), RMPlanError::None);
     ASSERT_EQ(execution.ranges().size(), 3u);
     EXPECT_EQ(execution.ranges()[1].kind, raw::ExecutionKind::signal);
     EXPECT_EQ(plan.event(2).value, event.c);
@@ -173,8 +155,6 @@ TEST(PlanResources, APendingKernelsUsesAreItsAdmittedOnesOncePreparedAgain)
     plan.record(dispatch, dimensions);
     plan.record(cmd(OpEnd), {});
     plan.prepareRange(0, 3);
-    plan.setRefused(0, false);
-    EXPECT_FALSE(plan.begin(0).refused);
     plan.setKernelUses(1, object(3), [](std::vector<raw::ResourceUse> &out) {
         out = std::vector<raw::ResourceUse>{{object(1), read | sample}};
     });

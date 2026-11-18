@@ -17,24 +17,20 @@
 }
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
-// hw_test_app's attribution: this process's command buffers on each path since the device opened, never reset (the rates
-// line's windows stay its own). Keys: raw, m2v, split, split_m2v, aborted, reopens (channels the kernel killed and this
-// process opened again), reopen_us (the last one's time), set_refusals and set_rebuilds (resource set registrations
-// the kernel refused, and those it took once made again without what it refused), gpu_order (1: the drivers order on
-// the GPU now), cpu_ordered (the Orders the kernel refused, each a CPU-ordered line), pipelined_encoders and
+// hw_test_app's attribution: this process's command buffers since the device opened, never reset (the rates line's
+// windows stay its own). Keys: raw, split, aborted, reopens (channels the kernel killed and this process opened again),
+// reopen_us (the last one's time), set_refusals and set_rebuilds (resource set registrations the kernel refused, and
+// those it took once made again without what it refused), gpu_order (1: the kernel has Order), pipelined_encoders and
 // sealed_encoders (encoders the worker encoded ahead of their commit, of all it sealed), pipeline_handoffs and
 // pipeline_handoff_wakes (hand-offs to the worker as encoders ended, and those that found it asleep: a wake each),
-// pipeline_abandons.<reason>,
-// m2v.<reason>, pred.<predicate> and failed.<predicate> (the command buffers a predicate of predFailure failed;
-// nonzero only).
+// pipeline_abandons.<reason>, and failed.<predicate> (the command buffers a predicate of predFailure failed; nonzero
+// only).
 - (NSDictionary<NSString *, NSNumber *> *)switchRawCounters
 {
     const Stats &s = gRM->stats;
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     d[@"raw"] = @(s.raw.load());
-    d[@"m2v"] = @(s.m2v.load());
     d[@"split"] = @(s.splits.load());
-    d[@"split_m2v"] = @(s.splitM2v.load());
     d[@"aborted"] = @(s.aborted.load());
     d[@"reopens"] = @(gRM->raw->stats.reopens.load());
     const raw::ResourceSet::Counts sets = gRM->raw->setCounts();
@@ -44,15 +40,13 @@
         mach_timebase_info_data_t base;
         mach_timebase_info(&base);
         d[@"reopen_us"] = @(gRM->raw->stats.reopenTicks.load() * base.numer / base.denom / 1000);
-        std::lock_guard<raw::Mutex> m(gRM->m2vLock);
-        d[@"gpu_order"] = @(gRM->gpuOrder ? 1 : 0);
     }
-    d[@"cpu_ordered"] = @(s.cpuOrdered.load());
+    d[@"gpu_order"] = @(gRM->gpuOrder ? 1 : 0);
     d[@"pipelined_encoders"] = @(s.pipelinedEncoders.load());
     d[@"sealed_encoders"] = @(s.sealedEncoders.load());
     d[@"pipeline_handoffs"] = @(s.handoffs.load());
     d[@"pipeline_handoff_wakes"] = @(s.handoffWakes.load());
-    static const char *const vetoes[VetoKinds] = {"whole",    "counters", "shadows",    "variant", "probes",
+    static const char *const vetoes[VetoKinds] = {"-",        "counters", "shadows",    "variant", "probes",
                                                   "parallel", "ops",      "refused",    "planar",  "contents",
                                                   "native",   "failed",   "other_work", "device",  "zcull"};
     for (uint32_t k = 0; k < VetoKinds; ++k)
@@ -128,15 +122,9 @@
     for (size_t r = 1; r < raw::kStorageFallbacks; r++)
         if (const uint64_t n = fetch.storageFallback[r].load())
             d[[NSString stringWithFormat:@"fetch_fallback.%s", raw::kStorageFallbackNames[r]]] = @(n);
-    for (int r = 1; r < WhyCount; r++)
-        if (const uint64_t n = s.reasons[r].load())
-            d[[NSString stringWithFormat:@"m2v.%s", kReasonNames[r]]] = @(n);
-    for (int p = 1; p < PredCount; p++) {
-        if (const uint64_t n = gPredCbs[p].load(std::memory_order_relaxed))
-            d[[NSString stringWithFormat:@"pred.%s", kPredNames[p]]] = @(n);
+    for (int p = 1; p < PredCount; p++)
         if (const uint64_t n = gPredFailed[p].load(std::memory_order_relaxed))
             d[[NSString stringWithFormat:@"failed.%s", kPredNames[p]]] = @(n);
-    }
 #if SWITCH_RAW_DIAGNOSTICS
     // states created that the pack lacked: found in this build's record cache or compiled (states_compiled)
     if (gRM->completion) {

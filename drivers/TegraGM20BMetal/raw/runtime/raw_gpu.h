@@ -88,7 +88,6 @@
 #include "raw_heap.h"
 #include "raw_heap_members.h"
 #include "raw_heap_tables.h"
-#include "raw_order.h"
 #include "raw_variants.h"
 #include "raw_device_open.h"
 #include "raw_pack.h"
@@ -1069,7 +1068,8 @@ public:
     void setViewports(const double (*viewports)[6], uint32_t count);
     void setScissors(const uint32_t (*rects)[4], uint32_t count);
     void barrier();  // memoryBarrier...: everything before is written and visible to what follows
-    // false: this draw cannot be drawn exactly as m2v would (*why says what); the command buffer goes to m2v instead
+    // false: this draw cannot be drawn exactly as Metal draws it (*why says what): its command buffer fails
+    // (RawMetalDrawErrors.mm)
     bool draw(uint32_t primitive, uint32_t first, uint32_t count, uint32_t instances, uint32_t baseInstance,
               const char **why);
     // drawIndexedPrimitives: `count` indices of `indexSize` bytes (2 or 4) at `offset` in `ib`, each `baseVertex` on
@@ -2684,41 +2684,10 @@ public:
     // which the facade reads at open): a draw past its buffer's indices binds the buffer with its limit, no padded copy
     bool indexZeroPastLimit = false;
 
-    // GPU-side order with the process's other driver (NVK's channels), through the kernel's Order (TegraGM20BInfoOrder; false:
-    // it has none). orderAfterOthers: this channel's next submission starts with an acquire on what they submitted so far;
-    // orderOthersAfter: their next submissions start with one on everything this channel submitted. The kern_return_t (0:
-    // queued; kOrderNoChannel: no channel to order; else the kernel refused it and the caller orders on the CPU); `waits`:
-    // the acquires queued. Called where submissions are (serialised).
+    // The kernel has Order (TegraGM20BInfoOrder)
     bool canOrder() const
     {
         return k_.canOrder();
-    }
-
-    // A channel the kernel killed is made again first (between command buffers, as begin() would), so one GPU fault does not
-    // leave the process ordered on the CPU for good
-    int orderAfterOthers(uint32_t &waits)
-    {
-        if (!ensureChannel())
-            return kOrderNoChannel;
-        for (int attempt = 0;; attempt++) {
-            if ((contextless_ || k_.lost(channel_)) && !reopen())
-                return kOrderNoChannel;
-            const int kr = k_.order(channel_, TegraGM20BOrderAfterTask, 0, waits);
-            if (kr != kIOReturnNotResponding)
-                return kr;
-            if (attempt)
-                return kOrderNoChannel;
-        }
-    }
-
-    // A killed channel's fence is released and nothing it had runs any more: there is nothing of it to order after
-    int orderOthersAfter(uint32_t &waits)
-    {
-        waits = 0;
-        if (!channelReady_.load(std::memory_order_acquire) || contextless_ || k_.lost(channel_))
-            return KERN_SUCCESS;
-        const int kr = k_.order(channel_, TegraGM20BOrderBeforeTask, lastSubmitted(), waits);
-        return kr == kIOReturnNotResponding ? KERN_SUCCESS : kr;
     }
 
     // A writer promise (TegraGM20BJobABI.h method 34) of the device's channel for the IOSurface imports `handles`, kept by
@@ -2783,10 +2752,10 @@ public:
 #endif
 
     // A job of no pushes that carries event waits and signals (at most TegraGM20BMaxJobEvents together): the kernel makes the
-    // channel acquire each wait's producer, and releases the signals once every earlier submission of this channel and what
-    // orderAfterOthers queued for it completed. Called where submissions are (serialised). `generation`: the channel the
-    // caller ordered the job after (orderAfterOthers) and checked its waits' producers on, 0 for none. A channel made again
-    // since has neither, so the job is not submitted: false with kIOReturnNotResponding, and the caller orders again.
+    // channel acquire each wait's producer, and releases the signals once every earlier submission of this channel
+    // completed. Called where submissions are (serialised). `generation`: the channel the caller checked its waits'
+    // producers on, 0 for none. A channel made again since has not run them, so the job is not submitted: false with
+    // kIOReturnNotResponding, and the caller checks again.
     bool eventJob(const JobEvents &events, uint32_t &seqno, int *result = nullptr, uint64_t generation = 0)
     {
         setView_.refused.clear();
@@ -2930,7 +2899,7 @@ public:
 #else
         std::atomic<uint64_t> heapFull{0};
 #endif
-        // channels made again after the kernel killed one; GPU order returns on one made since a refusal (raw_order.h)
+        // channels made again after the kernel killed one
         std::atomic<uint64_t> reopens{0};
     } stats;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG

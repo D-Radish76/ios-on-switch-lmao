@@ -242,7 +242,7 @@ bool RMRangeEncode::seal(size_t to)
         t->_imageCurrent = false;
     cb->_seqno = seq;
     cb->_channelGeneration = generation_;
-    cb->_stamp = cb->_segs.size() == 1 && cb->_segs.front().raw ? rc->stamp : 0;
+    cb->_stamp = cb->_segs.size() == 1 && !cb->_segs.front().event ? rc->stamp : 0;
     cb->_rangeLoopStamp = rc->loopsLaid ? rc->stamp : 0;
     RAW_DIAGNOSTIC(d_->stats.levelPasses += levelPasses_);
     RAW_DIAGNOSTIC(gRM->stats.draws += rc->draws);

@@ -101,7 +101,7 @@ void rmOwnPass(RMRenderEncoder *e)
     [self closeEncoder];
     _encAt = _plan.size();  // its first command is the next one recorded
     _encOpen = true;
-    _encRefused = false;
+    _encFailed = false;
 }
 
 - (id<MTLRenderCommandEncoder>)renderCommandEncoderWithDescriptor:(MTLRenderPassDescriptor *)d
@@ -234,11 +234,11 @@ void rmOwnPass(RMRenderEncoder *e)
         const bool separate = rmSeparateZeta(pass);
         const char *unbuilt = nullptr;
         const RMZetaForm form =
-            zetaInvalid || _encRefused ? RMZetaForm::Raw : rmRawDepthStencil(pass, separate, &unbuilt);
+            zetaInvalid || _encFailed ? RMZetaForm::Raw : rmRawDepthStencil(pass, separate, &unbuilt);
         if (zetaInvalid) {
             rmPassInvalid(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,
                           pass.stencilAttachment.texture.pixelFormat, zetaInvalid);
-        } else if (_encRefused) {
+        } else if (_encFailed) {
             // failed already: nothing of the pass is encoded
         } else if (rmZetaResolvesIntoMemoryless(pass)) {
             rmPassFailed(self, PredPassDepthStencil, pass.depthAttachment.texture.pixelFormat,
@@ -277,7 +277,8 @@ void rmOwnPass(RMRenderEncoder *e)
                         prepared = aspect.sourceTic != 0;
                     }
                     if (!prepared) {
-                        _encRefused = true;
+                        _encFailed = true;
+                        rmPipelineVeto(self, VetoRefused);
                         failCommandBuffer(self, @"no texture header for a depth/stencil load",
                                           MTLCommandBufferErrorOutOfMemory);
                         break;
@@ -319,8 +320,8 @@ void rmOwnPass(RMRenderEncoder *e)
     const bool resolves = std::any_of(std::begin(facts.color), std::end(facts.color), [](const RMPass::Color &c) {
         return c.resolve != nil;
     });
-    if (keyed && !_encRefused && !resolves) {
-        // what the raw encode and m2v's replay read of it made now, so the copy is read, never changed, after this
+    if (keyed && !_encFailed && !resolves) {
+        // what the raw encode reads of it made now, so the copy is read, never changed, after this
         for (unsigned c = 0; c < 8; c++)
             (void)pass.colorAttachments[c];
         (void)pass.sampleBufferAttachments;

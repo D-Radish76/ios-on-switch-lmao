@@ -407,7 +407,7 @@ TEST_F(FacadeStoredZeta, ARecordedDepth16PassAndItsCachedCopyUseTheMovedImage)
     [cb commit];
     [cb waitUntilCompleted];
     ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error;
-    ASSERT_EQ(recorded->_preds, 0u);
+    ASSERT_EQ(recorded->_pred0, 0u);
     const auto samples = conversionSamples(first);
     ASSERT_EQ(samples.size(), 4u);
     for (size_t i = 0; i < samples.size(); i += 2) {
@@ -453,7 +453,7 @@ TEST_F(FacadeStoredZeta, AMultisampledDepth16ResolvesTheDepthItsPassRendered)
         pass.stencilAttachment.storeAction = MTLStoreActionDontCare;
         auto cb = [[gDevice newCommandQueue] commandBuffer];
         [[cb renderCommandEncoderWithDescriptor:pass] endEncoding];
-        ASSERT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+        ASSERT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
         const size_t first = kernel_model::model.jobs.size();
         [cb commit];
         [cb waitUntilCompleted];

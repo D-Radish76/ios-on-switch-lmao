@@ -11,20 +11,7 @@ KERNEL = 'kernel'
 RAW = 'com.brunostjohn.switch.TegraGM20BMetal'
 DOC = 'r30-frames morning-doc.txt'
 PENDING = 'not on deploy-next5 (r30-frames morning-doc.txt)'
-RAW_5S = r'raw \d+s c=(?P<c>\d+)\(\S+\) m2v=(?P<m2v>\d+)(?:\((?P<reasons>[^)]*)\))?'
-
 MORNING = [
-    Check(
-        'raw.m2v',
-        'r31-rawrt',
-        'raw ',
-        'p50(m2v) == 0',
-        subsystem=RAW,
-        regex=RAW_5S,
-        source='drivers/TegraGM20BMetal/raw/runtime/RawMetalRates.mm',
-        note='m2v=0 in steady App Library scroll',
-    ),
-    Check('raw.m2v-xr', 'r31-rawrt', 'raw ', subsystem=RAW, regex=r'm2v=\d+\([^)]*XR', source=DOC),
     Check('raw.no-m2v-twin', 'r30-alias', 'no m2v twin', source=DOC),
     Check('alias.nocopy-hostmemory', 'r30-alias', 'no-copy', regex='HostMemory', source=DOC),
     Check(

@@ -57,7 +57,7 @@ protected:
     {
         id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
         [[cb renderCommandEncoderWithDescriptor:pass] endEncoding];
-        const bool taken = !(((RMCommandBuffer *)cb)->_preds & 1ull << PredPassDepthStencil);
+        const bool taken = (((RMCommandBuffer *)cb)->_pred0 != PredPassDepthStencil);
         [cb commit];
         [cb waitUntilCompleted];
         NSString *path = ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));

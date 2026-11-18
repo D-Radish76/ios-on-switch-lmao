@@ -518,18 +518,6 @@ void Kernel::unmap(uint32_t token, uint64_t address)
     IOConnectUnmapMemory64(conn_, token, mach_task_self(), mach_vm_address_t(address));
 }
 
-int Kernel::order(uint32_t channel, uint32_t flags, uint32_t seqno, uint32_t &waits)
-{
-    const TegraGM20BAbiOrder in = {channel, flags, seqno, 0};
-    TegraGM20BAbiOrderReply r = {};
-    const uint32_t at = opened();
-    const int kr = call(TegraGM20BMethodOrder, &in, sizeof in, &r, sizeof r);
-    if (kr == kIOReturnNotResponding)
-        notResponding(channel, at);
-    waits = kr == KERN_SUCCESS ? r.waits : 0;
-    return kr;
-}
-
 bool Kernel::cpuAccess(const Bo &bo, uint64_t offset, uint64_t bytes, uint32_t access, bool acquire)
 {
     if (!(info_.flags & TegraGM20BInfoCpuAccess) || !bytes || offset > bo.bytes || bytes > bo.bytes - offset) {

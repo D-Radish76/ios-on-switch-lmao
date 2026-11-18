@@ -31,10 +31,6 @@ private:
     bool submitted_ = false;
 };
 
-// Ahead of a submission of the other driver: every fresh texture written by a raw submission of its own, which that
-// submission is then ordered after (RawMetalSubmit.mm); false when one is pending and the raw path could not submit it
-bool writeFreshAhead(RMCommandBuffer *cb, size_t from, size_t to);
-
 // Before a CPU transfer into or out of `t` (replaceRegion, getBytes): a fresh texture's first contents written now, in a
 // raw submission the transfer follows (its job names the resource set), not by a later one over what the transfer wrote;
 // false when that submission failed (the texture stays fresh)

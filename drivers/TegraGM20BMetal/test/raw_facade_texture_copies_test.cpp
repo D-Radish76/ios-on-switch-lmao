@@ -89,7 +89,7 @@ TEST_F(FacadeTextureCopies, AStencilViewCopiesItsStencilWithATextureOfBytes)
     copy(e, bytes, stencil);
     rows(e, stencil, 64, false);
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     harness::EngineRun run;
     ASSERT_NO_FATAL_FAILURE(harness::commitOnRaw(cb, run));
     EXPECT_EQ(memcmp(out.contents, in.contents, side * side), 0) << "the stencil into the bytes";
@@ -168,7 +168,7 @@ TEST_F(FacadeTextureCopies, ACombinedDepthStencilsCopyWithNoOptionMovesItsDepth)
         destinationBytesPerImage:side * side * 4
                          options:MTLBlitOptionDepthFromDepthStencil];
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     harness::EngineRun run;
     ASSERT_NO_FATAL_FAILURE(harness::commitOnRaw(cb, run));
     EXPECT_EQ(memcmp(in.contents, out.contents, side * side * 4), 0);
@@ -227,7 +227,7 @@ TEST_F(FacadeTextureCopies, AWholeTextureCopyTakesTheLevelsOfOneSize)
             destinationBytesPerImage:w * w * 4];
     }
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     harness::EngineRun run;
     ASSERT_NO_FATAL_FAILURE(harness::commitOnRaw(cb, run));
     for (NSUInteger level = 0; level < 2; ++level) {

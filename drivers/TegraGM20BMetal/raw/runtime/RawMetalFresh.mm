@@ -13,7 +13,7 @@ struct FreshEntry {
 raw::FreshQueue<FreshEntry> gFresh;
 
 #if SWITCH_RAW_DIAGNOSTICS
-std::atomic<uint64_t> gFilled{0}, gFilledBytes{0}, gCleared{0}, gAhead{0};
+std::atomic<uint64_t> gFilled{0}, gFilledBytes{0}, gCleared{0};
 std::mutex gTraceLock;
 NSMapTable<RMTexture *, NSString *>
     *gUnwritten;  // fresh textures no command wrote yet: the read before it, if one came
@@ -219,41 +219,6 @@ FreshWrites::~FreshWrites()
     gFresh.settle(std::move(back), false);
 }
 
-bool writeFreshAhead(RMCommandBuffer *cb, size_t from, size_t to)
-{
-#if SWITCH_RAW_DIAGNOSTICS
-    for (size_t at = from; at < to;) {
-        const auto op = cb->_plan.operation(at).op;
-        if (op != OpRender && op != OpCompute && op != OpBlit) {
-            at++;
-            continue;
-        }
-        traceFreshUses(cb, at);
-        at = std::max(cb->_plan.encoderEnd(at), at + 1);
-    }
-#else
-    (void)from;
-    (void)to;
-#endif
-    return gFresh.writeAhead(gRM->gpuOrder, [&](std::vector<FreshEntry> &taken) {
-        raw::CommandBuffer *rc = gRM->raw->begin();
-        if (!rc)
-            return false;
-        rc->internalCompletion();
-        std::vector<FreshEntry> later;
-        const std::vector<id> handled = writeEntries(cb, 0, 0, *rc, taken, later);
-        uint32_t seqno = 0;
-        if (!rc->commit(seqno)) {
-            rc->abandon();
-            return false;
-        }
-        cb->_owners.insert(cb->_owners.end(), handled.begin(), handled.end());
-        gRM->rawSinceM2v = true;
-        RAW_DIAGNOSTIC(gAhead.fetch_add(1, std::memory_order_relaxed));
-        return true;
-    });
-}
-
 bool freshBeforeTransfer(RMTexture *t)
 {
     t = ownerOf(t);
@@ -275,12 +240,9 @@ bool freshBeforeTransfer(RMTexture *t)
             if (!submitted)
                 rc->abandon();
         }
-        if (!submitted) {
+        if (!submitted)
             gFresh.add({t});
-            return false;
-        }
-        gRM->rawSinceM2v = true;
-        return true;
+        return submitted;
     });
 }
 
@@ -358,15 +320,13 @@ void traceFreshUses(RMCommandBuffer *cb, size_t begin)
 
 #if SWITCH_RAW_DIAGNOSTICS
 // hw_test_app's gpu.texture.fresh: textures written to their first contents by the copy engine, their bytes, those a first
-// pass cleared whole instead, submissions made ahead of the other driver's for them, and reads of a fresh texture before any
-// command wrote it
+// pass cleared whole instead, and reads of a fresh texture before any command wrote it
 - (NSDictionary<NSString *, NSNumber *> *)switchRawFresh
 {
     NSMutableDictionary *d = [NSMutableDictionary dictionary];
     d[@"filled"] = @(gFilled.load());
     d[@"filled_bytes"] = @(gFilledBytes.load());
     d[@"cleared"] = @(gCleared.load());
-    d[@"ahead"] = @(gAhead.load());
     d[@"early_reads"] = @(gEarlyReads.load());
     return d;
 }

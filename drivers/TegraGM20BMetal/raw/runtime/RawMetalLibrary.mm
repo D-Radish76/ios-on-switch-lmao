@@ -9,8 +9,8 @@
 #define RM_FUNCTION_TWIN(f, need) ((f)->_twin ?: [(f) twinOn:RM_M2V(need)])
 
 // The function list entry's TESS tag in the AIR slice the facade read (MetallibEntries.h), as m2v's function answers it;
-// false where the facade read none. Every render state's creation asks it (its key, rmUnsupportedRenderState,
-// rmM2vMissingState), so it makes no twin.
+// false where the facade read none. Every render state's creation asks it (its key, rmUnsupportedRenderState), so it
+// makes no twin.
 static bool ownTess(RMFunction *f, switch_metal::FunctionTess &tess)
 {
     return f->_source && f->_source->bytes &&

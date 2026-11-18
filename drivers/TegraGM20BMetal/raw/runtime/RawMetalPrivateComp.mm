@@ -2,7 +2,6 @@
 // The facade's half of private textures on compressed memory (raw_private_comp.h): which descriptors qualify, and the
 // move to plain memory before anything names a texture's pages another way.
 #import "RawMetalInternal.h"
-#import "RawMetalMultisample.h"
 #include <algorithm>
 #include "raw_submit_gate.h"
 #include "raw_view.h"
@@ -76,25 +75,6 @@ bool rmTexturePlain(RMTexture *t)
             if (!gRM->raw->plainFromCompressed(t->_raw))
                 return false;
         }
-        gRM->rawSinceM2v = true;
         return true;
     });
-}
-
-void rmRangePlain(RMCommandBuffer *cb, size_t from, size_t to)
-{
-    cb->_plan.forEachResource(from, to, RMResourceKind::Texture, [](const RMRangeResource &use) {
-        RMTexture *t = (__bridge RMTexture *)use.object;
-        while (t && t->_kind == RMTextureView)
-            t = t->_parent;
-        rmTexturePlain(t);
-        rmStoredZetaForM2v(t);
-    });
-    for (size_t at = from; at < to; at++)
-        if (cb->_plan.operation(at).op == OpRender) {
-            MTLRenderPassDescriptor *pass = (__bridge MTLRenderPassDescriptor *)cb->_plan.legacy(at).obj;
-            for (id<MTLTexture> zeta : {pass.depthAttachment.texture, pass.stencilAttachment.texture})
-                if ([(id)zeta isKindOfClass:[RMTexture class]])
-                    rmStoredZetaForM2v((RMTexture *)zeta);
-        }
 }

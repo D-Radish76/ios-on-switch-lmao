@@ -24,7 +24,6 @@ struct RMPlanBegin {
     void *descriptor = nullptr;
     uint32_t pass = 0;
     uint32_t dispatchType = 0;
-    bool refused = false;
     size_t end = 0;
     uint32_t rasterBegin = 0, rasterCount = 0;
     uint32_t range = raw::kNoSnapshot;  // its own prepared range (RMCommandPlan::rangeIndex_), once it ended
@@ -97,7 +96,8 @@ enum class RMPlanError : uint8_t {
     None,
     NestedEncoder,
     EventInsideEncoder,
-    UnclosedEncoder
+    UnclosedEncoder,
+    CommandAfterEnd
 };
 
 enum class RMResourceKind : uint8_t {
@@ -378,11 +378,6 @@ public:
     void setDescriptor(size_t at, void *descriptor)
     {
         begins_[operations_[at].payload].descriptor = descriptor;
-    }
-
-    void setRefused(size_t at, bool refused)
-    {
-        begins_[operations_[at].payload].refused = refused;
     }
 
     void registerResource(void *object, RMResourceFacts facts);

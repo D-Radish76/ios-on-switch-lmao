@@ -39,8 +39,6 @@ void rmCounterMarks(RMCommandBuffer *cb, RMEncoder *e, MTLRenderPassDescriptor *
 void rmCounterMarks(RMCommandBuffer *cb, RMEncoder *e, MTLComputePassDescriptor *pass);
 void rmCounterMarks(RMCommandBuffer *cb, RMEncoder *e, MTLBlitPassDescriptor *pass);
 void rmPlaceCounterMarks(RMCommandBuffer *cb, RMEncoder *e, size_t at, bool starts);
-// Samples of [from, to), which m2v replays: not taken (they resolve to 0, as never written)
-void rmCounterMarksDropped(RMCommandBuffer *cb, size_t from, size_t to);
 
 // The samples of a tape range as the raw encode reaches them: an encoder's starts on its own engine where it begins, its ends
 // in a segment behind it once it ended

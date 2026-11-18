@@ -118,7 +118,7 @@ raw::EventReadiness eventReadiness(RMCommandBuffer *cb, raw::EventDeadline::Time
     }
     const bool native =
         cb->_segNext < cb->_segs.size() &&
-        (cb->_segs[cb->_segNext].raw || cb->_segs[cb->_segNext].gpuSignal || cb->_segs[cb->_segNext].gpuWait);
+        (!cb->_segs[cb->_segNext].event || cb->_segs[cb->_segNext].gpuSignal || cb->_segs[cb->_segNext].gpuWait);
     if (!sharedWaitsReady(cb, native))
         return Readiness::blocked;
     if (!cb->_gpuEventWaits.empty()) {
@@ -289,11 +289,4 @@ void releaseEventWaits(RMCommandBuffer *cb)
     gRM->events.unobserve(reinterpret_cast<uintptr_t>(cb->_nativeWaitEvent),
                           reinterpret_cast<uintptr_t>((__bridge void *)cb->_queue));
     cb->_nativeWaitEvent = nullptr;
-}
-
-bool expiredEventWait(RMCommandBuffer *cb, size_t index)
-{
-    const Cmd c = cb->_plan.legacy(index);
-    return c.a && cb->_eventArmed == index + 1 &&
-           raw::EventDeadline::Clock::now() >= raw::EventDeadline(cb->_eventStart, c.a).until();
 }

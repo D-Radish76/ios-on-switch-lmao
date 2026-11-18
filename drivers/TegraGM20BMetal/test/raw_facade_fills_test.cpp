@@ -383,7 +383,7 @@ TEST_F(FacadeFills, AnArrayLevelFillIsTheTwoDEnginesRectangleAtItsLayer)
     auto e = [cb blitCommandEncoder];
     [(id)e fillTexture:t level:1 slice:1 region:MTLRegionMake2D(3, 5, 7, 9) color:MTLClearColorMake(1, 0, 0, 1)];
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);

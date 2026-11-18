@@ -3,7 +3,6 @@
 // it, so a draw's plan holds everything its control stage reads.
 #import "RawMetalInternal.h"
 #include <cstring>
-#include <functional>
 #include "raw_icb.h"
 
 static bool foreignBuffer(RMCommandBuffer *cb, id<MTLBuffer> buffer)
@@ -200,46 +199,4 @@ bool encodePatches(raw::RenderEncoder *re, raw::CommandBuffer *rc, const RMPlanD
     }
     return re->drawPatches(patches.controlPoints, draw.first, draw.count, draw.instances, draw.baseInstance,
                            patchBuffer, draw.indexOffset, pointBuffer, patches.pointIndexOffset, why);
-}
-
-void replayPatches(id<MTLRenderCommandEncoder> encoder, const RMPlanDraw &draw, const RMPlanPatches &patches,
-                   bool indirect, const std::function<id(void *)> &use)
-{
-    [encoder setTessellationFactorBuffer:use(patches.factors)
-                                  offset:patches.factorOffset
-                          instanceStride:patches.factorStride];
-    [encoder setTessellationFactorScale:patches.scale];
-    id patchIndices = use(draw.indices), pointIndices = use(patches.pointIndices);
-    if (indirect && pointIndices)
-        [encoder drawIndexedPatches:patches.controlPoints
-                         patchIndexBuffer:patchIndices
-                   patchIndexBufferOffset:draw.indexOffset
-                  controlPointIndexBuffer:pointIndices
-            controlPointIndexBufferOffset:patches.pointIndexOffset
-                           indirectBuffer:use(draw.arguments)
-                     indirectBufferOffset:draw.argumentOffset];
-    else if (indirect)
-        [encoder drawPatches:patches.controlPoints
-                  patchIndexBuffer:patchIndices
-            patchIndexBufferOffset:draw.indexOffset
-                    indirectBuffer:use(draw.arguments)
-              indirectBufferOffset:draw.argumentOffset];
-    else if (pointIndices)
-        [encoder drawIndexedPatches:patches.controlPoints
-                               patchStart:draw.first
-                               patchCount:draw.count
-                         patchIndexBuffer:patchIndices
-                   patchIndexBufferOffset:draw.indexOffset
-                  controlPointIndexBuffer:pointIndices
-            controlPointIndexBufferOffset:patches.pointIndexOffset
-                            instanceCount:draw.instances
-                             baseInstance:draw.baseInstance];
-    else
-        [encoder drawPatches:patches.controlPoints
-                        patchStart:draw.first
-                        patchCount:draw.count
-                  patchIndexBuffer:patchIndices
-            patchIndexBufferOffset:draw.indexOffset
-                     instanceCount:draw.instances
-                      baseInstance:draw.baseInstance];
 }

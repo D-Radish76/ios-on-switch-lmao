@@ -164,6 +164,5 @@ void rmComputeFails(RMCommandBuffer *cb, raw::ComputeFailure failure, RMPred pre
 bool rmComputeUnitWithheld(RMCommandBuffer *cb, size_t at, bool serial);
 
 // RawMetalIndirectExecute.mm: the raw encode of OpExecuteKernels, and a blit's reset or copy of a buffer of dispatches
-// (be null: m2v's replay)
 bool encodeKernelCommands(raw::ComputeEncoder &e, raw::CommandBuffer &rc, RMKernelExecute *x, const char **why);
 void encodeKernelCommandsBlit(raw::CommandBuffer *rc, raw::BlitEncoder *be, const Cmd &c);

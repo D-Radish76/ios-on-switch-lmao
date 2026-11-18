@@ -2,7 +2,6 @@
 #import "RawMetalEventJobs.h"
 #import "RawMetalInternal.h"
 #include "raw_event_job.h"
-#include "raw_order.h"
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
 static std::atomic<uint64_t> gSignalJobs{0}, gWaitJobs{0}, gPromiseWaits{0};
@@ -44,7 +43,6 @@ bool signalOrderedOnGpu(RMCommandBuffer *cb, const RMSegment &range)
     const Cmd c = cb->_plan.legacy(range.from);
     if (c.op != OpSignalEvent || !sharedEventLease((__bridge id)c.obj))
         return false;
-    std::lock_guard<raw::Mutex> m(gRM->m2vLock);
     return gRM->gpuOrder;
 }
 
@@ -79,35 +77,13 @@ static std::vector<size_t> carriedSignals(RMCommandBuffer *cb, size_t at, std::v
     return carried;
 }
 
-// `waits` then `signals` in jobs of no pushes, ordered after the m2v work committed before them and checked against this
-// channel's producers; the head range then retires with the last job
+// `waits` then `signals` in jobs of no pushes, checked against this channel's producers; the head range then retires with
+// the last job
 static RMEventJob submitJobs(RMCommandBuffer *cb, const std::vector<TegraGM20BAbiEventUse> &waits,
                              const std::vector<TegraGM20BAbiEventUse> &signals, const std::vector<size_t> &carried)
 {
     RawState &r = *gRM;
     const size_t head = cb->_segNext;
-    const bool ordering = r.gpuOrder && r.m2vSinceRaw;
-    if (ordering) {
-        uint32_t acquires = 0;
-        const int kr = r.raw->orderAfterOthers(acquires);
-        switch (raw::orderAnswer(kr)) {
-        case raw::OrderAnswer::ordered:
-            break;
-        case raw::OrderAnswer::refused: {
-            NSString *why = orderRefused("event job after m2v", kr);
-            std::lock_guard<raw::Mutex> lock(cb->_lock);
-            if (!cb->_segError)
-                cb->_segError = [NSError errorWithDomain:MTLCommandBufferErrorDomain
-                                                    code:MTLCommandBufferErrorInternal
-                                                userInfo:@{NSLocalizedDescriptionKey : why}];
-            return RMEventJob::Retry;
-        }
-        case raw::OrderAnswer::noChannel:
-            eventJobFailure(cb, kr);
-            return RMEventJob::Retry;
-        }
-        RAW_DIAGNOSTIC(r.stats.acquires += acquires);
-    }
     const uint64_t generation = r.raw->channelGeneration();
     if (validateNativeEventWaits(cb, generation) != raw::EventDependencyState::ready)
         return RMEventJob::Retry;
@@ -123,13 +99,10 @@ static RMEventJob submitJobs(RMCommandBuffer *cb, const std::vector<TegraGM20BAb
             return RMEventJob::Retry;
         }
     }
-    if (ordering)
-        r.m2vSinceRaw = false;
     cb->_sharedSignalRanges = carried;
     publishSharedEvents(cb);
     cb->_seqno = seqno;
     cb->_channelGeneration = r.raw->channelGeneration();  // the job's: eventJob makes a channel the kernel killed again
-    r.rawSinceM2v = true;
     cb->_rangeQuiet = false;
     retireRawRange(cb, cb->_segs[head].from, cb->_segs[head].to);
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
@@ -153,8 +126,7 @@ RMEventJob submitEventJobs(RMCommandBuffer *cb)
 RMEventJob submitWaitJob(RMCommandBuffer *cb)
 {
     const size_t next = cb->_segNext + 1;
-    if (next < cb->_segs.size() &&
-        (cb->_segs[next].raw || (cb->_segs[next].event && cb->_plan.legacy(cb->_segs[next].from).op == OpWaitEvent)))
+    if (next < cb->_segs.size() && (!cb->_segs[next].event || cb->_plan.legacy(cb->_segs[next].from).op == OpWaitEvent))
         return RMEventJob::None;
     std::vector<TegraGM20BAbiEventUse> waits, signals;
     for (const auto &wait : cb->_sharedEventWaits)

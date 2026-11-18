@@ -33,7 +33,7 @@ void inlineSignals(RMCommandBuffer *cb)
         return;
     std::vector<raw::InlineRangeView> views;
     for (const RMSegment &range : segs)
-        views.push_back({range.raw && !range.event, signalRange(cb, range)});
+        views.push_back({!range.event, signalRange(cb, range)});
     const std::vector<raw::InlineJoin> joins = raw::inlineJoins(views);
     for (auto join = joins.rbegin(); join != joins.rend(); ++join) {
         const uint32_t from = segs[join->first].from, to = segs[join->last].to;
@@ -47,24 +47,6 @@ void inlineSignals(RMCommandBuffer *cb)
         segs.erase(segs.begin() + ptrdiff_t(join->first + 1), segs.begin() + ptrdiff_t(join->last + 1));
     }
     std::sort(cb->_inlineSignals.begin(), cb->_inlineSignals.end());
-}
-
-std::vector<RMSegment> compatibilityParts(RMCommandBuffer *cb, const RMSegment &range)
-{
-    std::vector<RMSegment> parts;
-    uint32_t from = range.from;
-    auto &inlined = cb->_inlineSignals;
-    for (auto at = std::lower_bound(inlined.begin(), inlined.end(), size_t(range.from));
-         at != inlined.end() && *at < range.to;) {
-        if (from < *at)
-            parts.push_back({from, uint32_t(*at), false});
-        parts.push_back({uint32_t(*at), uint32_t(*at + 1), false, true});
-        from = uint32_t(*at + 1);
-        at = inlined.erase(at);
-    }
-    if (from < range.to)
-        parts.push_back({from, range.to, false});
-    return parts;
 }
 
 void beginInlineSignals(RMCommandBuffer *cb)

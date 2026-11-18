@@ -6,9 +6,8 @@
 //  - NVK's root table opens with cs.base_group then cs.group_count (nvk_cmd_buffer.h) and every compute shader is compiled
 //    with its workgroup id based there (nvk_shader.c has_base_workgroup_id, nvk_nir_lower_descriptors.c), where
 //    raw_dispatch_bands_test's launch writes a piece's base;
-//  - a range that inline signals joined splits again where m2v takes it (raw_inline_signals_test's other half);
-//  - m2v takes only its own functions and archives, and the facade's twins (archives dropped, linked functions twinned,
-//    fences replayed as their twins) never hand it the device's own objects;
+//  - m2v takes only its own functions and archives, and the facade's twins (archives dropped, linked functions twinned)
+//    never hand it the device's own objects;
 //  - the frontend hands each stage's linked functions to the bridge under the specialized name it was made under.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -50,13 +49,6 @@ TEST(M2VSource, NvksComputeShadersReadTheirWorkgroupBaseFromTheRootTable)
                 HasSubstr("return lower_sysval_to_root_table(b, intrin, cs.base_group, ctx);"));
 }
 
-TEST(M2VSource, AJoinedRangeSplitsAgainWhereM2VTakesIt)
-{
-    const std::string submit = SourceText("../raw/runtime/RawMetalSubmit.mm");
-    EXPECT_THAT(Body(submit, "bool submitRange(RMCommandBuffer *cb, bool followed)"),
-                HasSubstr("const std::vector<RMSegment> parts = compatibilityParts(cb, range);"));
-}
-
 TEST(M2VSource, M2VsArchiveTakesOnlyItsOwnFunctions)
 {
     const std::string frontend = SourceText("../../NativeMetal/NativeBridgeMetalFrontend.mm");
@@ -73,13 +65,6 @@ TEST(M2VSource, M2vsTwinsAreMadeWithoutTheDevicesArchives)
                 HasSubstr("t.binaryArchives = nil;"));
     const std::string compute = SourceText("../raw/runtime/RawMetalComputeState.mm");
     EXPECT_THAT(Body(compute, "static bool archivesAnswer("), HasSubstr("s->_direct.binaryArchives = nil;"));
-}
-
-TEST(M2VSource, ReplayGetsTheFencesTwin)
-{
-    const std::string replay = SourceText("../raw/runtime/RawMetalReplay.mm");
-    EXPECT_THAT(replay, HasSubstr("[enc updateFence:twinOf((__bridge id)c.obj)];"));
-    EXPECT_THAT(replay, HasSubstr("[enc waitForFence:twinOf((__bridge id)c.obj)];"));
 }
 
 TEST(M2VSource, TheFrontendHandsEachStagesLinkedFunctionsToTheBridge)

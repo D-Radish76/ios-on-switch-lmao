@@ -126,7 +126,7 @@ static void endDropped(void *object)
     (void)s;
 }
 
-// (RawResidency.h: everything is resident; m2v's encoders take them as no-ops too)
+// (as the command buffer's: everything is resident)
 - (void)useResidencySet:(id)set
 {
     (void)set;

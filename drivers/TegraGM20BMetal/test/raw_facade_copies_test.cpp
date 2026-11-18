@@ -97,7 +97,7 @@ protected:
                                      options:l.options];
             const bool skipped = ((RMCommandBuffer *)cb)->_plan.size() == recorded;
             [e endEncoding];
-            if (((RMCommandBuffer *)cb)->_preds) {
+            if (((RMCommandBuffer *)cb)->_pred0) {
                 refused += intoTexture ? " b2t" : " t2b";
                 continue;
             }

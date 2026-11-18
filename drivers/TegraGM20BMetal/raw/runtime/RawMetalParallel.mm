@@ -18,8 +18,8 @@
 @implementation RMSubRecorder
 @end
 
-// Its pass as sub-encoder `at` of `count` records it: m2v's replay draws each as a pass of its own (raw::seamLoad, seamStore)
-// and the raw path continues the first, so the raw facts load as the parallel pass at the first and store as it at each
+// Its pass as sub-encoder `at` of `count` records it: the raw path continues the first (raw::seamLoad, seamStore), so the
+// facts load as the parallel pass at the first and store as it at each
 static void seam(RMSubRecorder *s, MTLRenderPassDescriptor *parallel, size_t at, size_t count)
 {
     RMPass &pass = s->_passes[0];
@@ -46,8 +46,8 @@ static void seam(RMSubRecorder *s, MTLRenderPassDescriptor *parallel, size_t at,
     pass.continues = at > 0;
 }
 
-// `s`'s objects, setBytes chunks and shadow, passes and refusals into `cb`, then its commands as one encoder of `cb`'s
-static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
+// `s`'s objects, setBytes chunks and shadow, passes and failures into `cb`, then its commands as one encoder of `cb`'s
+static void splice(RMCommandBuffer *cb, RMSubRecorder *s)
 {
     for (id object : s->_owners)
         [cb retain:object];
@@ -63,12 +63,6 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
     cb->_passes.append(s->_passes.ownData(), s->_passes.ownData() + s->_passes.size());
     cb->_sampledShadows |= s->_sampledShadows;
     cb->_standIns |= s->_standIns;
-    cb->_whole |= s->_whole;
-    if (cb->_reason == WhyRaw && s->_reason != WhyRaw) {
-        cb->_reason = s->_reason;
-        cb->_why = s->_why;
-    }
-    cb->_preds |= s->_preds;
     if (!cb->_pred0 && s->_pred0) {
         cb->_pred0 = s->_pred0;
         cb->_predA = s->_predA;
@@ -89,7 +83,6 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
     [cb closeEncoder];
     cb->_encAt = cb->_plan.size();
     cb->_encOpen = true;
-    cb->_encRefused = refused;
     for (const RMSubCommand &r : s->_log) {
         const Cmd c = raw::spliced(r.cmd, passBase, chunkBase, shadowBase, cb->_extra.size());
         cb->_extra.append(r.extra.begin(), r.extra.end());
@@ -157,8 +150,7 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
     _descriptor.stencilAttachment.storeActionOptions = options;
 }
 
-// One pass of every sub-encoder, all on the raw path or all on m2v: a raw pass started again after one on m2v would clear
-// what the one before drew
+// One pass of every sub-encoder, each continuing the one before; a sub-encoder's failure fails the command buffer (splice)
 - (void)endEncoding
 {
     std::vector<RMSubRecorder *> subs;
@@ -171,26 +163,18 @@ static void splice(RMCommandBuffer *cb, RMSubRecorder *s, bool refused)
             [[self makeSub] endEncoding];  // the pass's loads, clears and stores with no draw
         subs = _subs;
     }
-    bool refused = false;
     for (RMSubRecorder *s : subs) {
         RMRenderEncoder *e = s->_encoder;  // nil: its caller let it go, which ended it
         [e endEncoding];
-        refused |= s->_encRefused || s->_whole;
     }
     RMCommandBuffer *cb = _cb;
-    std::vector<size_t> begins;
+    const size_t first = cb->_plan.size();
     for (size_t at = 0; at < subs.size(); at++) {
         seam(subs[at], _descriptor, at, subs.size());
-        begins.push_back(cb->_plan.size());
-        splice(cb, subs[at], refused);
+        splice(cb, subs[at]);
         rmRecordingDone(subs[at]);
     }
-    if (!refused && std::any_of(begins.begin(), begins.end(), [&](size_t b) {
-            return cb->_plan.begin(b).refused;
-        }))
-        for (size_t b : begins)
-            cb->_plan.setRefused(b, true);
-    rmPlaceCounterMarks(cb, self, begins.front(), true);
+    rmPlaceCounterMarks(cb, self, first, true);
     rmPlaceCounterMarks(cb, self, cb->_plan.size() - 1, false);
     cb->_active = nil;
 }

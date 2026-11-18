@@ -4,7 +4,7 @@
 // would make lazily, and a pass of the same contents as one opened before takes that pass's copy of its descriptor and the
 // facts read from it (Core Animation opens its passes of a frame in the same few shapes each frame). The copy is shared and
 // read-only: an encoder that changes its pass (a store action it decides, a parallel encoder's seam) takes its own. The raw
-// encode reads a pass's RMPass alone, so a found copy names no texture until m2v's replay is to read it (rmPassBind), and a
+// encode reads a pass's RMPass alone, so a found copy names no texture until an encoder copies it (rmPassBind), and a
 // copy that names any lets them go once its command buffer is done: the driver keeps no client object alive past it, as
 // Metal keeps none, and a key names each by its identity (RMObject::_identity), never by an address a new one may take.
 #pragma once
@@ -47,10 +47,8 @@ RMPassTrim rmPassHeld();
 RMPassCachePtr rmNewPassCache();
 // Its command buffer is done: every copy it named textures in names none
 void rmPassCacheUnbind(RMPassCache *cache);
-// The kept copy `pass` names its pass's textures for m2v's replay of `cb`, once a command buffer; [from, to): those of the
-// range's passes
+// The kept copy `pass` names its pass's textures for `cb`, once a command buffer
 void rmPassBind(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass);
-void rmPassBind(RMCommandBuffer *cb, size_t from, size_t to);
 RMPassTrim rmPassCacheTrim(RMPassCache *cache);
 RMPassTrim rmPassCacheHeld(const RMPassCache *cache);
 size_t rmPassCacheBytes(const RMPassCache *cache);

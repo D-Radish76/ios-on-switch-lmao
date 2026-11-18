@@ -18,7 +18,6 @@
     raw::PackComputeFacts _facts;  // the pack's answers, or the shader compiler's
     id<MTLComputePipelineState> _compatibility;
     std::once_flag _twinOnce;
-    const char *_m2vMissing;  // what of it m2v has no form of (rmM2vMissingKernel), null: nothing
     std::once_flag _writtenOnce;
     uint32_t _texturesWritten;
 }

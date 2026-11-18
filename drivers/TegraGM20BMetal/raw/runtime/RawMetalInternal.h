@@ -65,10 +65,6 @@ extern "C" id native_bridge_metal_texture_tiled_in_place(id buffer, id descripto
     __attribute__((weak_import));
 extern "C" id native_bridge_metal_render_pipeline_lazy(id device, id descriptor, NSUInteger options)
     __attribute__((weak_import));
-extern "C" int native_bridge_metal_render_pipeline_ready(id pipeline, void (^observer)(void))
-    __attribute__((weak_import));
-extern "C" int native_bridge_metal_render_pipeline_urge(id pipeline, void (^observer)(void), dispatch_queue_t queue)
-    __attribute__((weak_import));
 // Where NVK keeps a texture's texels (a stored depth/stencil texture the raw path renders and copies in place)
 struct switch_nvk_image_memory;
 extern "C" int native_bridge_metal_texture_memory(id texture, struct switch_nvk_image_memory *out)
@@ -98,8 +94,8 @@ uint64_t nowUs();
 
 struct Stats {
 #if SWITCH_RAW_DIAGNOSTICS
-    std::atomic<uint64_t> raw{0}, m2v{0}, deferred{0}, aborted{0}, encodeUs{0}, draws{0}, passes{0}, copies{0},
-        reasons[WhyCount]{}, switches{0}, cpuOrdered{0}, acquires{0}, eventsReleased{0}, heldReturns{0};
+    std::atomic<uint64_t> raw{0}, deferred{0}, aborted{0}, encodeUs{0}, draws{0}, passes{0}, copies{0},
+        eventsReleased{0}, heldReturns{0};
     // shared event signals published as their raw work completes (publishRawEventSignals), those the CPU set after the head
     // waited for its own work, and native event waits that went on a submitted command buffer's promise
     std::atomic<uint64_t> signalsPublished{0}, signalsAfterWork{0}, waitsOnPromise{0};
@@ -107,12 +103,11 @@ struct Stats {
     std::atomic<uint64_t> waitsHeldOnCpu{0};
     // predicated loops laid down again after their job, where they would have run past their copies
     std::atomic<uint64_t> loopContinuations{0};
-    // diagnostics (r10-rawsweep): the raw encode thrown away by aborted command buffers, the m2v replay's time on the committing
-    // thread (replay + commit), and the bytes replay cleans
-    std::atomic<uint64_t> abortUs{0}, replayUs{0}, replayClean{0};
-    // command buffers submitted in segments (planSegments), and their segments on m2v; of those with both drivers' encoders, the
-    // ones split around their shared events, and the ones kept whole for an event wait or signal between encoders
-    std::atomic<uint64_t> splits{0}, splitM2v{0}, eventSplits{0}, eventWhole{0};
+    // diagnostics (r10-rawsweep): the raw encode thrown away by aborted command buffers
+    std::atomic<uint64_t> abortUs{0};
+    // command buffers submitted in segments (planSegments); the ones split around their shared events, and the ones kept
+    // whole for an event wait or signal between encoders
+    std::atomic<uint64_t> splits{0}, eventSplits{0}, eventWhole{0};
     // command buffers completed (finish): with the commits, what the stall line (rawStall) watches
     std::atomic<uint64_t> finished{0};
     // waitUntilScheduled / waitUntilCompleted calls that blocked, and the time they blocked: CPU waits on the caller's thread
@@ -124,10 +119,6 @@ struct Stats {
     // command buffers handed to the worker as encoders ended, and those hand-offs that found it asleep (woken by them)
     std::atomic<uint64_t> handoffs{0}, handoffWakes{0};
 #if SWITCH_FRAME_TIMELINE
-    // the m2v replay's parts (noteReplay)
-    std::atomic<uint64_t> replaySlotUs{0}, replayTwinUs{0}, replayCommitUs{0}, replayMaxUs{0};
-    // the draws it replayed, and the twins it made: textures, buffers, anything else
-    std::atomic<uint64_t> replayDraws{0}, twinTextures{0}, twinBuffers{0}, twinOthers{0}, twinTextureUs{0};
     // command buffers completed before their submitting thread scheduled them (finish() ran their scheduled handlers)
     std::atomic<uint64_t> scheduledByFinish{0};
     std::atomic<uint64_t> twinForwards{
@@ -220,21 +211,9 @@ struct RawState {
     std::atomic<uint32_t> waitingCommitted{0};  // waiting.committed() as the worker last saw it (the stall line's)
     raw::Mutex eventValues;
     raw::EventTimeline events;
-    raw::Mutex m2vLock;
-    raw::CondVar m2vChanged;
-    // changed under m2vLock, read with none (m2vClear)
-    std::atomic<uint32_t> m2vPending{0};      // m2v command buffers committed and not completed
-    std::atomic<uint32_t> m2vUnscheduled{0};  // and not scheduled yet: their kernel submission (NVK's Exec) is not made
-    // The two drivers' order (stored under m2vLock): on the GPU when the kernel has Order (TegraGM20BInfoOrder), else on
-    // the CPU (the m2v work before a raw command buffer completes first, and the raw work before an m2v one).
+    // the kernel has Order (TegraGM20BInfoOrder): a kernel event's signal goes in a job behind the channel's work
+    // (signalOrderedOnGpu), and a range may end quiet (raw_completion_source.h cpuOrdered)
     std::atomic<bool> gpuOrder{false};
-    bool rawSinceM2v =
-        false;  // raw work submitted since the last m2v commit: the next m2v one waits for it (BeforeTask)
-    bool m2vSinceRaw =
-        false;  // m2v work submitted since the last raw submission: the next raw one waits for it (AfterTask)
-#if SWITCH_RAW_DIAGNOSTICS
-    int lastDriver = 0;
-#endif
     MTLSharedEventListener *listener;  // the CPU-ordered remainder's event waits
     // immutable range fences, the submit worker's to the completion thread; later submissions never change an earlier wait
     raw::HandoffQueue<RMRawRetirement> inflight;
@@ -251,7 +230,7 @@ struct RawState {
     // the submit worker is about to wait or waits for a change: a command buffer's hand-offs after its first wake it only
     // then (rmPublishEncoder; with its _published, a store then a load on each side, both sequentially consistent)
     std::atomic<bool> submitAsleep{false};
-    // ranges handed to the kernel or m2v and not completed (rmRangeHandedOff): the idle deadline's drain and its
+    // ranges handed to the kernel and not completed (rmRangeHandedOff): the idle deadline's drain and its
     // in-flight count, which a command buffer parked on an event the CPU has not signalled holds no part of
     std::atomic<uint32_t> rangesInFlight{0};
     // gRawRelease's idle release: the completion thread's wait for its next range carries it (completionLoop)
@@ -406,11 +385,9 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed);
 // RawMetalEncode.mm: the imports a texture's or buffer's memory lies in, named to the submission
 void useTexture(raw::CommandBuffer *rc, RMTexture *t, bool write);
 void useBuffer(raw::CommandBuffer *rc, RMBuffer *b, bool write);
-// RawMetalTessellation.mm: a patch draw on the raw encoder, and its replay on m2v's
+// RawMetalTessellation.mm: a patch draw on the raw encoder
 bool encodePatches(raw::RenderEncoder *re, raw::CommandBuffer *rc, const RMPlanDraw &draw, const RMPlanPatches &patches,
                    bool indirect, const char **why);
-void replayPatches(id<MTLRenderCommandEncoder> encoder, const RMPlanDraw &draw, const RMPlanPatches &patches,
-                   bool indirect, const std::function<id(void *)> &use);
 
 // RawMetalEncodeBlit.mm: a blit encoder's copy or fill of the tape onto the raw path's copy engine (a fill's rectangle on the
 // 2D engine where rule clear.twod holds); a texture it writes leaves `fresh` and `standInFresh` (its pool image and its
@@ -498,13 +475,6 @@ void rmAlphaOneBlend(MTLRenderPipelineColorAttachmentDescriptor *a);
 bool rmContinuesPass(RMCommandBuffer *cb, size_t at);
 bool rmGroupedPass(RMCommandBuffer *cb, size_t begin);
 
-// RawMetalReplay.mm
-id<MTLCommandBuffer> replay(RMCommandBuffer *cb, size_t from, size_t to, bool part);
-// RawMetalM2vGuard.mm: what of a state m2v has no form of (null: none), and whether the range [from, to) holds such work,
-// which fails its command buffer (its error set, one refusal line) instead of replaying on m2v
-const char *rmM2vMissingState(MTLRenderPipelineDescriptor *d);
-const char *rmM2vMissingKernel(MTLComputePipelineDescriptor *d);
-bool rmRefuseM2vRange(RMCommandBuffer *cb, size_t from, size_t to);
 // RawMetalDrawErrors.mm: a draw refused as `f` (raw_gpu.h RefusalId) that goes nowhere else: its line logged, the
 // command buffer failed (with Metal's error where Metal fails it too); false: a refusal of another kind
 bool drawFailed(RMCommandBuffer *cb, const raw::Refusal &f, const char *why);
@@ -539,7 +509,6 @@ void armEventWaits(RMCommandBuffer *cb);
 raw::EventReadiness eventReadiness(RMCommandBuffer *cb, raw::EventDeadline::Time &nextWake);
 // A value a submitted command buffer's signal reaches once its work completes (raw_event_timeline.h)
 bool promisedEvent(void *event, uint64_t value);
-bool expiredEventWait(RMCommandBuffer *cb, size_t index);
 std::vector<RMNativeEventSignal> publishRawEventSignals(RMCommandBuffer *cb);
 void retireEventSignals(const std::vector<RMNativeEventSignal> &signals, bool success);
 raw::EventDependencyState validateNativeEventWaits(RMCommandBuffer *cb, uint64_t generation);
@@ -555,20 +524,16 @@ bool sharedEventWord(id event, uint64_t value, uint64_t inlineStamp, uint64_t &a
 // RawMetalInlineSignals.mm: a signal of a kernel event between two native ranges joins them (planSegments); at encode, its
 // release into the event's word after the work before it
 void inlineSignals(RMCommandBuffer *cb);
-// `range`, now m2v's: its inline signals back as event ranges of their own between compatibility ranges (one part: it has none)
-std::vector<RMSegment> compatibilityParts(RMCommandBuffer *cb, const RMSegment &range);
 void beginInlineSignals(RMCommandBuffer *cb);
 bool isInlineSignal(RMCommandBuffer *cb, size_t at);
 bool releaseInlineSignal(RMCommandBuffer *cb, size_t at, raw::CommandBuffer *commands);
 void enqueueBuffer(RMCommandBuffer *cb);
 
 enum RMReadyDependency : uint32_t {
-    RMRawProgress = 1,
-    RMCompatibilityProgress = 2
+    RMRawProgress = 1
 };
 
 void wakeSubmit(void *queue, uint32_t dependencies = 0);
-bool m2vClear();
 void planSegments(RMCommandBuffer *cb);
 bool submitRange(RMCommandBuffer *cb, bool followed);
 void cancelPromises(RMCommandBuffer *cb);
@@ -615,7 +580,6 @@ template <typename Run> auto rmSubmission(Run &&run) -> decltype(run())
 extern thread_local bool tRawEncoding;
 uint32_t privateCompressedKind(MTLTextureDescriptor *d);
 bool rmTexturePlain(RMTexture *t);
-void rmRangePlain(RMCommandBuffer *cb, size_t from, size_t to);
 
 // RawMetalCommandBuffer.mm: the kept recordings and setBytes chunks past what steady frames take, given back
 void releaseRecordings();
@@ -693,7 +657,6 @@ void queuePriorityAdd(RMQueue *queue);
 void queuePriorityRemove(RMQueue *queue);
 
 // RawMetalSubmit.mm
-NSString *orderRefused(const char *what, int kr);
 void commitBuffer(RMCommandBuffer *cb);
 void submitLoop();
 bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKernelSet<raw::ComputeState> *kernels,

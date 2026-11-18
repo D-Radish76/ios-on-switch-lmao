@@ -239,9 +239,9 @@ static void forwardCall(RMEncoder *e, SEL selector, const void *argument)
 - (BOOL)checkDraw
 {
     _drew = true;
-    // no raw draw to decide (m2v drops a draw without a state too), or this encoder goes to m2v already (its pass refused: its
-    // formats are not recorded, and every draw would hit enc.colorfmt for nothing, r7p5's "a=0 b=0")
-    if (!_pipe || !_pipe->_raw || _cb->_encRefused)
+    // no state set, or the encoder failed its command buffer already (a failed pass's formats are not recorded, and every
+    // draw would hit enc.colorfmt for nothing, r7p5's "a=0 b=0")
+    if (!_pipe || _cb->_encFailed)
         return YES;
     rmXrShadowDrew(_cb, *_pipe->_raw);
     if (_checkedEligibility == _eligibility && _checkedEpoch == _cb->_plan.stateEpoch() &&

@@ -234,7 +234,7 @@ TEST(RawFacadeRangeForms, ExtendedRangeSamplesAndTheEncodeAhead)
         else if (((RMTexture *)sampled)->_raw.standIn)
             EXPECT_NE([p[@"veto"] intValue] & int(VetoShadows), 0) << format;
         else  // no conversion state in this harness's pack: no stand-in to draw at the commit
-            EXPECT_EQ([p[@"veto"] intValue] & int(VetoShadows | VetoWhole), 0) << format;
+            EXPECT_EQ([p[@"veto"] intValue] & int(VetoShadows), 0) << format;
     }
 }
 

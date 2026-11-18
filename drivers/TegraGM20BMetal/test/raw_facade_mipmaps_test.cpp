@@ -184,7 +184,7 @@ TEST_F(FacadeMipmaps, GenerateMipmapsLeavesOneLevelAndDepthStencilTexturesUnchan
         const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
         [e generateMipmapsForTexture:t];
         EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
-        EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+        EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
         EXPECT_FALSE(raw->_gpuWrites.load());
         [e endEncoding];
         execute(cb, 0, true);
@@ -272,7 +272,7 @@ TEST_F(FacadeMipmaps, GenerateMipmapsOfWordFormatsDrawsTheirWords)
         auto e = [cb blitCommandEncoder];
         [e generateMipmapsForTexture:t];
         [e endEncoding];
-        EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+        EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
         [cb commit];
         [cb waitUntilCompleted];
         ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error.description.UTF8String;
@@ -296,7 +296,7 @@ TEST_F(FacadeMipmaps, GenerateMipmapsOfAnIntegerFormatRecordsNothing)
     [e generateMipmapsForTexture:t];
     EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     execute(cb, 0, true);
 }
 
@@ -318,7 +318,7 @@ TEST_F(FacadeMipmaps, GenerateMipmapsWithoutItsPackStateFailsInternally)
     auto e = [cb blitCommandEncoder];
     [e generateMipmapsForTexture:t];
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
@@ -343,7 +343,7 @@ TEST_F(FacadeMipmaps, GenerateMipmapsFailsAnAbsentNativeChainInternally)
     [e generateMipmapsForTexture:t];
     raw->_raw.chain = chain;
     EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     [e endEncoding];
     [cb commit];
     [cb waitUntilCompleted];
@@ -384,7 +384,7 @@ TEST_F(FacadeMipmaps, GenerateMipmapsOfANestedViewKeepsItsParentNeighbors)
             read(e, parent, out, level, slice, at);
         }
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     execute(cb, 1);
     for (NSUInteger slice = 0; slice < 2; ++slice)
         for (NSUInteger level = 0; level < 6; ++level) {
@@ -448,7 +448,7 @@ TEST_F(FacadeMipmaps, GenerateMipmapsUsesTheViewFormatAndParentRangeForArraysCub
         auto e = [cb blitCommandEncoder];
         [e generateMipmapsForTexture:selected];
         [e endEncoding];
-        EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+        EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
         [cb commit];
         [cb waitUntilCompleted];
         ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << cb.error.description.UTF8String;

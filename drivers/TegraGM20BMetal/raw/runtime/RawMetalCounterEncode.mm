@@ -92,15 +92,6 @@ void rmPlaceCounterMarks(RMCommandBuffer *cb, RMEncoder *e, size_t at, bool star
                   pending.end());
 }
 
-void rmCounterMarksDropped(RMCommandBuffer *cb, size_t from, size_t to)
-{
-    for (const RMCounterMark &m : cb->_counterMarks)
-        if (m.at >= from && m.at < to) {
-            SWITCH_REFUSE("raw", "counter.m2v", "an encoder with counter samples went to m2v: its samples read 0");
-            return;
-        }
-}
-
 static bool before(const RMCounterMark &m, size_t position)
 {
     return m.at < position;

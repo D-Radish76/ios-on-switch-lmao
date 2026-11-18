@@ -190,7 +190,6 @@ id rmComputeState(id device, MTLComputePipelineDescriptor *descriptor, MTLPipeli
     const std::string stageIn = raw::stageInText(raw::stageInFieldsOf(descriptor.stageInputDescriptor));
     s->_stageIn = !stageIn.empty();
     s->_constants = raw::computeStateConstants(f->_constants, stageIn, linked);
-    s->_m2vMissing = rmM2vMissingKernel(descriptor);
     s->_maxThreads = uint32_t(descriptor.maxTotalThreadsPerThreadgroup);
     s->_multipleOfWidth = descriptor.threadGroupSizeIsMultipleOfThreadExecutionWidth;
     s->_direct = descriptor;

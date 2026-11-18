@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalInternal.h"
-#import "RawMetalEventJobs.h"
 #include "raw_scheduled_wait.h"
 #include "TegraGM20BJobABI.h"
 #import "RawMetalPipeline.h"
@@ -181,35 +180,6 @@ static void applyChanges(RawState &r)
     }
 }
 
-// Return pending only for this queue head. Other queues remain runnable while its pipelines compile. A compile it waits for
-// is urged on its queue's urge queue (one at a time per Metal queue, at the committers' priority, ahead of the workers' queue).
-// A compile either completes or fails: no deadline turns a slow one into an error.
-static int pipelineReadiness(RMCommandBuffer *cb, const RMSegment &range)
-{
-    if (!native_bridge_metal_render_pipeline_ready)
-        return 1;  // older host bridge: replay retains its synchronous contract
-    bool pending = false;
-    for (void *object : cb->_plan.renderPipelines(range.from, range.to)) {
-        id state = twinOf((__bridge id)object);
-        const bool first = cb->_pipelineObserved.insert(object).second;
-        void (^observer)(void) = nil;
-        if (first) {
-            void *queue = (__bridge void *)cb->_queue;
-            observer = ^{
-                wakeSubmit(queue);
-            };
-        }
-        const int status = first && native_bridge_metal_render_pipeline_urge
-                               ? native_bridge_metal_render_pipeline_urge(state, observer, cb->_queue->_urges)
-                               : native_bridge_metal_render_pipeline_ready(state, observer);
-        if (status < 0)
-            return -1;
-        if (!status)
-            pending = true;
-    }
-    return pending ? 0 : 1;
-}
-
 // A native variant this queue head waits for, made on the raw compiler's two bounded workers: refused, its command buffer
 // fails. No deadline.
 // Work the raw path cannot run: its command buffer fails, as Metal's does for a pipeline it could not compile, never handed
@@ -358,7 +328,7 @@ void submitLoop()
                 if (loopRetiring) {
                     blocked = true;
                     dependencies = RMRawProgress;
-                } else if (!range.event && range.raw) {
+                } else if (!range.event) {
                     const char *why = "";
                     int ready = variantReadiness(cb, range, &why);
                     if (ready > 0)
@@ -375,31 +345,6 @@ void submitLoop()
                     } else if (!ready) {
                         blocked = true;
                         wait = raw::HeadWait::compile;
-                    }
-                }
-                if (!error && !blocked && ((!range.event && range.raw) || signalOrderedOnGpu(cb, range))) {
-                    if (!m2vClear()) {
-                        blocked = true;
-                        dependencies = RMCompatibilityProgress;
-                    }
-                } else if (!error && !blocked && !range.event) {
-                    const int ready = pipelineReadiness(cb, range);
-                    if (ready < 0)
-                        error = [NSError
-                            errorWithDomain:MTLCommandBufferErrorDomain
-                                       code:MTLCommandBufferErrorInternal
-                                   userInfo:@{NSLocalizedDescriptionKey : @"A render pipeline could not be compiled"}];
-                    else if (!ready)
-                        blocked = true;
-                    else {
-                        const bool gpuOrder = r.gpuOrder.load(std::memory_order_acquire);
-                        const bool rawRetiring = r.inflight.size() != 0;
-                        // completionLoop's retirements, which wake RMRawProgress: the device's own jobs (a reopen's context)
-                        // have no retirement, and a seqno the device submitted may be another channel's than its fence
-                        if (!gpuOrder && rawRetiring) {
-                            blocked = true;
-                            dependencies = RMRawProgress;
-                        }
                     }
                 }
             }

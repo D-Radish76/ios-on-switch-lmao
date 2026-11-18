@@ -22,7 +22,7 @@ call.bufcopy	record	client	buffer_range	a copy or fill past its buffer: clamped 
 compute	record	cb-error	-	a kernel's state, buffer, texture or sampler of another device: the command buffer fails InvalidResource as it is recorded (rmComputeFails)
 compute.nokernel	record	layer	L4	no pack kernel at the dispatch's shape: a kernel record per shape
 compute.image	record	rule	compute.shadow_load,compute.shadow_store	a texture sampled through an image of its own; the cropped-surface-view alias case is not tested
-compute.predicate	record	cb-error	-	predication raw cannot run fails the command buffer, since m2v's encoders take no records (NativeBridgeMetalFrontend.mm withholds supportsCommandBufferJump): a misused record, a loop open where its unit ends, or records in a command buffer with refused work; If/Else/End and loops run on render enable (raw_predication.h, raw_loop_copies.h)
+compute.predicate	record	cb-error	-	predication raw cannot run fails the command buffer: a misused record or a loop open where its unit ends; If/Else/End and loops run on render enable (raw_predication.h, raw_loop_copies.h)
 event	record	rule	recorded	MTLEvent waits and signals: Wait and Signal nodes (GPU semaphore acquire, release)
 enc.planarclamp	encode	layer	L3	a sampler state's header under a planar texture's address map with no header entry left (a constexpr sampler's are placed with it, Device::constexprMapped_)
 enc.planarrt	encode	rule	planar.standin_load,planar.standin_store	a planar target through its stand-in; sampled and rendered in one command buffer: its codes converted again after the store (edges order it)

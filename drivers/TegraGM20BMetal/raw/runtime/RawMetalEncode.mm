@@ -232,8 +232,6 @@ uint32_t RMRangeEncode::ineligible(size_t from, size_t until)
         if (!RMCommandPlan::isEncoderBegin(op))
             continue;
         const size_t end = plan.encoderEnd(at);
-        if (plan.begin(at).refused)
-            return VetoRefused;
         // its images are converted from their surfaces at the seeds the commit makes final (conversions)
         bool planar = false;
         plan.forEachResource(at, end, RMResourceKind::Texture, [&](const RMRangeResource &use) {

@@ -190,16 +190,6 @@ STUTTER = [
         note='the render server waited for the GPU to finish a command buffer',
     ),
     Check(
-        'stutter.raw-cpu-ordered',
-        OWNER,
-        'raw ',
-        'sum(cpu) == 0',
-        subsystem=RAW,
-        regex=r' sw=\d+ cpu=(?P<cpu>\d+) ',
-        source=RATES,
-        note='raw and m2v ordered by a CPU wait instead of the GPU',
-    ),
-    Check(
         'stutter.raw-ring-waits',
         OWNER,
         'raw ',

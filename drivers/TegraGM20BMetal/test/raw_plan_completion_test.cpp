@@ -29,7 +29,7 @@ void event(RMCommandPlan &plan, Op op, uintptr_t identity)
     plan.record(command, {});
 }
 
-TEST(PlanExecution, ClosedEncoderSummariesPreserveEventsAndLateRefusals)
+TEST(PlanExecution, ClosedEncoderSummariesPreserveEvents)
 {
     RMCommandPlan plan;
     plan.record(cmd(OpRender), {});
@@ -41,51 +41,32 @@ TEST(PlanExecution, ClosedEncoderSummariesPreserveEventsAndLateRefusals)
     const size_t second = plan.size();
     plan.record(cmd(OpCompute), {});
     plan.record(cmd(OpEnd), {});
-    const size_t third = plan.size();
     plan.record(cmd(OpBlit), {});
     plan.record(cmd(OpEnd), {});
-    plan.setRefused(third, true);
-    plan.record(cmd(OpInvocation), {});
     raw::ExecutionPlan result;
-    std::vector<RMPlanEvent> observed;
-    ASSERT_EQ(makeExecutionPlan(plan, false, result,
-                                [&](const auto &value) {
-                                    observed.push_back(value);
-                                    return true;
-                                }),
-              RMPlanError::None);
-    ASSERT_EQ(result.ranges().size(), 5u);
+    ASSERT_EQ(makeExecutionPlan(plan, result), RMPlanError::None);
+    ASSERT_EQ(result.ranges().size(), 4u);
     EXPECT_EQ(result.ranges()[0].to, 10002u);
     EXPECT_EQ(result.ranges()[1].kind, raw::ExecutionKind::signal);
     EXPECT_EQ(result.ranges()[2].kind, raw::ExecutionKind::wait);
     EXPECT_TRUE(result.ranges()[2].gpuWait);
     EXPECT_EQ(result.ranges()[3].from, second);
-    EXPECT_EQ(result.ranges()[3].to, third);
-    EXPECT_EQ(result.ranges()[4].kind, raw::ExecutionKind::compatibility);
-    EXPECT_EQ(result.ranges()[4].to, plan.size());
-    ASSERT_EQ(observed.size(), 2u);
-    EXPECT_EQ(observed[0].event, object(7));
-    EXPECT_EQ(observed[1].value, 28u);
+    EXPECT_EQ(result.ranges()[3].to, plan.size());
+    EXPECT_EQ(result.ranges()[3].kind, raw::ExecutionKind::native);
+    EXPECT_EQ(plan.event(second - 2).event, object(7));
+    EXPECT_EQ(plan.event(second - 1).value, 28u);
 }
 
-TEST(PlanExecution, WholeCompatibilityAndOpaqueEventsKeepTheirPositions)
+// A command recorded on an encoder that had ended lands outside every encoder: Metal's validation error, which the plan
+// refuses whole
+TEST(PlanExecution, ACommandAfterItsEncoderEndedIsAPlanError)
 {
     RMCommandPlan plan;
     plan.record(cmd(OpBlit), {});
     plan.record(cmd(OpEnd), {});
-    event(plan, OpWaitEvent, 3);
-    plan.record(cmd(OpCompute), {});
-    plan.record(cmd(OpEnd), {});
+    draw(plan);
     raw::ExecutionPlan result;
-    ASSERT_EQ(makeExecutionPlan(plan, true, result,
-                                [](const auto &) {
-                                    return false;
-                                }),
-              RMPlanError::None);
-    ASSERT_EQ(result.ranges().size(), 1u);
-    EXPECT_EQ(result.ranges()[0].kind, raw::ExecutionKind::compatibility);
-    EXPECT_EQ(result.ranges()[0].from, 0u);
-    EXPECT_EQ(result.ranges()[0].to, plan.size());
+    EXPECT_EQ(makeExecutionPlan(plan, result), RMPlanError::CommandAfterEnd);
 }
 
 TEST(PlanExecution, RecordingErrorsCannotHideInsideSkippedEncoderBodies)
@@ -97,28 +78,14 @@ TEST(PlanExecution, RecordingErrorsCannotHideInsideSkippedEncoderBodies)
         plan.record(cmd(invalid), {});
         plan.record(cmd(OpEnd), {});
         raw::ExecutionPlan result;
-        unsigned callbacks = 0;
-        EXPECT_EQ(makeExecutionPlan(plan, false, result,
-                                    [&](const auto &) {
-                                        ++callbacks;
-                                        return true;
-                                    }),
+        EXPECT_EQ(makeExecutionPlan(plan, result),
                   invalid == OpCompute ? RMPlanError::NestedEncoder : RMPlanError::EventInsideEncoder);
         EXPECT_TRUE(result.ranges().empty());
-        EXPECT_EQ(callbacks, 0u);
         plan.clear();
         plan.record(cmd(OpRender), {});
-        EXPECT_EQ(makeExecutionPlan(plan, false, result,
-                                    [](const auto &) {
-                                        return true;
-                                    }),
-                  RMPlanError::UnclosedEncoder);
+        EXPECT_EQ(makeExecutionPlan(plan, result), RMPlanError::UnclosedEncoder);
         plan.record(cmd(OpEnd), {});
-        EXPECT_EQ(makeExecutionPlan(plan, false, result,
-                                    [](const auto &) {
-                                        return true;
-                                    }),
-                  RMPlanError::None);
+        EXPECT_EQ(makeExecutionPlan(plan, result), RMPlanError::None);
     }
 }
 

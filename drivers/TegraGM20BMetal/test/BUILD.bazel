@@ -1332,17 +1332,6 @@ host_test(
 )
 
 host_test(
-    name = "raw_execution_plan_test",
-    srcs = [
-        "raw_execution_plan_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_execution_plan.h",
-    ],
-    cxx_std = "c++17",
-    # m2v: the split of a command buffer into native and compatibility (m2v) ranges
-    tags = ["m2v"],
-)
-
-host_test(
     name = "raw_submit_queue_test",
     srcs = [
         "raw_submit_queue_test.cpp",
@@ -1380,20 +1369,6 @@ host_test(
 )
 
 host_test(
-    name = "raw_order_test",
-    srcs = [
-        "raw_order_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_order.h",
-    ],
-    cxx_std = "c++17",
-    data = [
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalEventJobs.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalSubmit.mm",
-    ],
-    tags = ["m2v"],
-)
-
-host_test(
     name = "raw_handler_order_test",
     srcs = [
         "raw_handler_order_test.cpp",
@@ -1409,16 +1384,6 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_scheduled_wait.h",
     ],
     cxx_std = "c++17",
-)
-
-host_test(
-    name = "raw_replay_twins_test",
-    srcs = [
-        "raw_replay_twins_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_replay_twins.h",
-    ],
-    cxx_std = "c++17",
-    tags = ["m2v"],
 )
 
 host_test(
@@ -1855,10 +1820,8 @@ host_test(
         "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalComputeState.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalReplay.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalStates.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalStatesLater.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalSubmit.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawRenderKey.mm",
         "//third_party/m2v/crates/metal2vulkan-runtime:sources",
         "//third_party/mesa/src/nouveau/switch_compile:nvk_nir_lower_descriptors.c",
@@ -2882,15 +2845,6 @@ host_test(
 )
 
 host_test(
-    name = "raw_m2v_views_test",
-    srcs = [
-        "raw_m2v_views_test.cpp",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_m2v_views.h",
-    ],
-    cxx_std = "c++17",
-)
-
-host_test(
     name = "raw_fetch_order_test",
     srcs = [
         "raw_fetch_order_test.cpp",
@@ -3173,18 +3127,6 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_fetch_rungs.h",
     ],
     cxx_std = "c++17",
-)
-
-host_test(
-    name = "raw_replay_selectors_test",
-    srcs = ["raw_replay_selectors_test.cpp"],
-    cxx_std = "c++17",
-    data = [
-        "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalCompute.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalPlanReplay.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalReplay.mm",
-    ],
 )
 
 host_test(

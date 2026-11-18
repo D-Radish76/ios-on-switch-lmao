@@ -94,34 +94,27 @@ void encodeCommandsBlit(raw::CommandBuffer *rc, raw::BlitEncoder *be, const Cmd 
     RMIndirectCommandBuffer *to = (__bridge RMIndirectCommandBuffer *)c.obj2;
     const uint64_t toBytes = uint64_t(to->_slotWords) * 4;
     const NSUInteger first = NSUInteger(c.c), count = NSUInteger(c.x), into = c.op == OpCopyCommands ? c.a : first;
-    if (be) {
-        if (c.op == OpCopyCommands)
-            rc->use(from->_raw, false);
-        rc->use(to->_raw, true, false);
-        be->access(c.op == OpCopyCommands ? (__bridge void *)from : nullptr, (__bridge void *)to);
-    }
+    if (c.op == OpCopyCommands)
+        rc->use(from->_raw, false);
+    rc->use(to->_raw, true, false);
+    be->access(c.op == OpCopyCommands ? (__bridge void *)from : nullptr, (__bridge void *)to);
     std::vector<RMICBCommand> commands(count);
     if (c.op == OpCopyCommands) {
         std::lock_guard<raw::Mutex> hold(from->_lock);
         std::copy_n(from->_commands.begin() + ptrdiff_t(first), count, commands.begin());
     }
-    if (be) {
-        if (c.op == OpResetCommands)
-            be->fillWords(to->_raw.va + first * toBytes, count * toBytes, raw::icb::kNop);
-        else
-            copySlots(be, from, to, first, into, count);
-        // a copied command draws as its new index (the gated draw compares it with the range)
-        if (c.op == OpCopyCommands) {
-            be->barrier();
-            for (NSUInteger i = 0; i < count; i++)
-                if (commands[i].kind != RMICBCommand::None)
-                    be->fillWords(to->_raw.va + (into + i) * toBytes + raw::icb::kIndexWord * 4, 4, uint32_t(into + i));
-        }
-        to->_gpuWritten.store(true, std::memory_order_relaxed);
+    if (c.op == OpResetCommands)
+        be->fillWords(to->_raw.va + first * toBytes, count * toBytes, raw::icb::kNop);
+    else
+        copySlots(be, from, to, first, into, count);
+    // a copied command draws as its new index (the gated draw compares it with the range)
+    if (c.op == OpCopyCommands) {
+        be->barrier();
+        for (NSUInteger i = 0; i < count; i++)
+            if (commands[i].kind != RMICBCommand::None)
+                be->fillWords(to->_raw.va + (into + i) * toBytes + raw::icb::kIndexWord * 4, 4, uint32_t(into + i));
     }
-    for (NSUInteger i = 0; i < count; i++) {
-        if (!be)
-            rmWriteCommand(to, into + i, commands[i]);
+    to->_gpuWritten.store(true, std::memory_order_relaxed);
+    for (NSUInteger i = 0; i < count; i++)
         [to take:commands[i] at:into + i];
-    }
 }

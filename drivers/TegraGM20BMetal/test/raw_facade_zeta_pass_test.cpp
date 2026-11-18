@@ -78,7 +78,7 @@ protected:
         [e endEncoding];
         if (sourceTic)
             *sourceTic = ((RMCommandBuffer *)cb)->_passes.back().zeta[0].sourceTic;
-        const bool taken = !(((RMCommandBuffer *)cb)->_preds & 1ull << PredPassDepthStencil);
+        const bool taken = (((RMCommandBuffer *)cb)->_pred0 != PredPassDepthStencil);
         [cb commit];
         [cb waitUntilCompleted];
         NSString *path = ((NSString * (*)(id, SEL)) objc_msgSend)(cb, sel_registerName("switchRawPath"));
@@ -339,7 +339,7 @@ TEST_F(FacadeZetaPass, MipAdmissionTakesAspectsAtTheirOwnLevelsAndKeepsTheChainB
     const auto refused = [](MTLRenderPassDescriptor *p) {
         auto cb = [[gDevice newCommandQueue] commandBuffer];
         [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
-        EXPECT_NE(((RMCommandBuffer *)cb)->_preds & 1ull << PredPassDepthStencil, 0u);
+        EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, PredPassDepthStencil);
     };
     auto separate = pass(depth, stencil, MTLLoadActionClear, MTLStoreActionStore);
     separate.depthAttachment.level = 1;
@@ -453,7 +453,7 @@ TEST_F(FacadeZetaPass, ADepth16UnormBesideAStencil8IsTakenAndATwoSampleOneIsNot)
         id<MTLCommandBuffer> cb = [[gDevice newCommandQueue] commandBuffer];
         id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
         [e endEncoding];
-        return !(((RMCommandBuffer *)cb)->_preds & 1ull << PredPassDepthStencil);
+        return (((RMCommandBuffer *)cb)->_pred0 != PredPassDepthStencil);
     };
     EXPECT_TRUE(taken(pass(depth, stencil, MTLLoadActionLoad, MTLStoreActionStore)));
     MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatDepth16Unorm

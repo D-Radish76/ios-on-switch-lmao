@@ -5,14 +5,11 @@
 #include "raw_resolve_rule.h"
 
 #if SWITCH_RAW_DIAGNOSTICS
-static uint64_t gPredRates[PredCount];  // the rates line's last gPredCbs (its timer thread only)
-
 // ---- the rates line ----
 static struct {
-    uint64_t raw, m2v, encodeUs, draws, passes, copies, deferred, aborted, reasons[WhyCount], ringWaits, lastUs,
-        switches, cpuOrdered, acquires, poolStalls, eventsReleased, heldReturns, signalsPublished, signalsAfterWork,
-        waitsOnPromise, scheduledWaits, scheduledWaitUs, completedWaits, completedWaitUs, abortUs, replayUs,
-        replayClean, rtUnaligned, rtMixed, predOnly[PredCount], splits, splitM2v, eventSplits, eventWhole, levelPasses;
+    uint64_t raw, encodeUs, draws, passes, copies, deferred, aborted, ringWaits, lastUs, poolStalls, eventsReleased,
+        heldReturns, signalsPublished, signalsAfterWork, waitsOnPromise, scheduledWaits, scheduledWaitUs,
+        completedWaits, completedWaitUs, abortUs, rtUnaligned, rtMixed, splits, eventSplits, eventWhole, levelPasses;
 } gRates;
 
 #endif
@@ -45,65 +42,27 @@ size_t raw_metal_rates(char *out, size_t size)
     if (!gRM || !size)
         return 0;
     Stats &s = gRM->stats;
-    const uint64_t raw = s.raw.load(), m2v = s.m2v.load(), now = nowUs();
-    const uint64_t c = raw - gRates.raw, f = m2v - gRates.m2v, sp = s.splits.load() - gRates.splits;
-    if (!c && !f && !sp)
+    const uint64_t raw = s.raw.load(), now = nowUs();
+    const uint64_t c = raw - gRates.raw, sp = s.splits.load() - gRates.splits;
+    if (!c && !sp)
         return 0;
     const double secs = gRates.lastUs ? (now - gRates.lastUs) / 1e6 : 5.0;
-    char reasons[160] = "";
-    size_t at = 0;
-    for (int r = 1; r < WhyCount; r++) {
-        const uint64_t n = s.reasons[r].load() - gRates.reasons[r];
-        if (n && at < sizeof reasons)
-            at += snprintf(reasons + at, sizeof reasons - at, "%s%s:%llu", at ? "," : "", kReasonNames[r],
-                           (unsigned long long)n);
-        gRates.reasons[r] = s.reasons[r].load();
-    }
     raw::Device::Stats &k = gRM->raw->stats;
     const double per = c + sp ? double(c + sp) : 1.0;  // the raw path's command buffers, the split ones included
-    // diagnostics (r10-rawsweep): per predicate, the command buffers that hit it / those it alone sent to m2v, the ten most hit
-    char preds[256] = "";
-    {
-        uint64_t cbs[PredCount], only[PredCount];
-        for (int i = 0; i < PredCount; i++) {
-            const uint64_t now = gPredCbs[i].load(std::memory_order_relaxed),
-                           o = gPredOnly[i].load(std::memory_order_relaxed);
-            cbs[i] = now - gPredRates[i];
-            only[i] = o - gRates.predOnly[i];
-            gPredRates[i] = now;
-            gRates.predOnly[i] = o;
-        }
-        size_t pat = 0;
-        for (int shown = 0; shown < 10; shown++) {
-            int best = 0;
-            for (int i = 1; i < PredCount; i++)
-                if (cbs[i] > cbs[best])
-                    best = i;
-            if (!best || !cbs[best] || pat >= sizeof preds)
-                break;
-            pat += snprintf(preds + pat, sizeof preds - pat, "%s%s:%llu/%llu", pat ? "," : "", kPredNames[best],
-                            (unsigned long long)cbs[best], (unsigned long long)only[best]);
-            cbs[best] = 0;
-        }
-    }
-    // replay= and rclean= per m2v submission: whole command buffers and split ones' m2v segments
     const uint64_t evSplits = s.eventSplits.load() - gRates.eventSplits,
                    evWhole = s.eventWhole.load() - gRates.eventWhole;
-    const uint64_t aborts = s.aborted.load() - gRates.aborted, segs = s.splitM2v.load() - gRates.splitM2v,
-                   m2vs = f + segs ? f + segs : 1;
+    const uint64_t aborts = s.aborted.load() - gRates.aborted;
     const raw::Compiler::Stats made = gRM->completion ? gRM->completion->stats() : raw::Compiler::Stats();
     char diag[1024];
     snprintf(
         diag, sizeof diag,
-        " sp=%llu/%llu evsp=%llu/%llu abortenc=%.0fus/a replay=%.0fus/m rclean=%.0fKB/m "
+        " sp=%llu evsp=%llu/%llu abortenc=%.0fus/a "
         "rt128=%llu(pitch %u va&255 %u) rtmix=%llu lvl=%llu states=%llu/%llu/%llu/%llu/%.0fms "
         "atcreate=%llu/%.0fus/s%llu/o%llu swait=%.0fms comp=%llu/%lluKB/v%llu/m%llu/f%llu/x%llu bk=%llu/%lluMB/r%llu "
         "tfree=%lluMB zbc=%llu/%llu "
-        "split=%llu rsv=t%llu/%llu,x%llu/%llu,p%llu/%llu/%llu why=%s",
-        (unsigned long long)sp, (unsigned long long)segs, (unsigned long long)evSplits, (unsigned long long)evWhole,
+        "split=%llu rsv=t%llu/%llu,x%llu/%llu,p%llu/%llu/%llu",
+        (unsigned long long)sp, (unsigned long long)evSplits, (unsigned long long)evWhole,
         (s.abortUs.load() - gRates.abortUs) / double(aborts ? aborts : 1),
-        (s.replayUs.load() - gRates.replayUs) / double(m2vs),
-        (s.replayClean.load() - gRates.replayClean) / 1024.0 / double(m2vs),
         (unsigned long long)(k.rtUnaligned.load() - gRates.rtUnaligned), k.rtUnalignedPitch.load(),
         k.rtUnalignedVa.load(), (unsigned long long)(k.rtMixed.load() - gRates.rtMixed),
         (unsigned long long)(k.levelPasses.load() - gRates.levelPasses), (unsigned long long)made.hits,
@@ -123,20 +82,14 @@ size_t raw_metal_rates(char *out, size_t size)
         (unsigned long long)k.resolveRoute[raw::ResolveByComplement][1].exchange(0),
         (unsigned long long)k.resolveRoute[raw::ResolveByPass][0].exchange(0),
         (unsigned long long)k.resolveRoute[raw::ResolveByPass][1].exchange(0),
-        (unsigned long long)k.resolveRoute[raw::ResolveByPass][2].exchange(0), *preds ? preds : "-");
+        (unsigned long long)k.resolveRoute[raw::ResolveByPass][2].exchange(0));
 #if SWITCH_FRAME_TIMELINE
     {
         const size_t used = strlen(diag);
         snprintf(diag + used, sizeof diag - used,
-                 " rsplit=%.0f/%.0f/%.0fus/m rmax=%lluus rdraw=%.1f/m tw=t%llu/%lluus/b%llu/o%llu/f%llu sbf=%llu"
-                 " fb=%llu/%llu/%llu/%llu(%s) clr=%llu/%llu zero=%llu",
-                 (s.replaySlotUs.exchange(0) / double(m2vs)), (s.replayTwinUs.exchange(0) / double(m2vs)),
-                 (s.replayCommitUs.exchange(0) / double(m2vs)), (unsigned long long)s.replayMaxUs.exchange(0),
-                 s.replayDraws.exchange(0) / double(m2vs), (unsigned long long)s.twinTextures.exchange(0),
-                 (unsigned long long)s.twinTextureUs.exchange(0), (unsigned long long)s.twinBuffers.exchange(0),
-                 (unsigned long long)s.twinOthers.exchange(0), (unsigned long long)s.twinForwards.exchange(0),
-                 (unsigned long long)s.scheduledByFinish.exchange(0), (unsigned long long)k.fetchBarriers.exchange(0),
-                 (unsigned long long)k.fetchBarriersElided.exchange(0),
+                 " tw=f%llu sbf=%llu fb=%llu/%llu/%llu/%llu(%s) clr=%llu/%llu zero=%llu",
+                 (unsigned long long)s.twinForwards.exchange(0), (unsigned long long)s.scheduledByFinish.exchange(0),
+                 (unsigned long long)k.fetchBarriers.exchange(0), (unsigned long long)k.fetchBarriersElided.exchange(0),
                  (unsigned long long)k.fetchBarriersAnyColor.exchange(0),
                  (unsigned long long)k.fetchBarriersInterlocked.exchange(0),
                  raw::Device::fetchBarrierName(gRM->raw->fetchBarrier.load(std::memory_order_relaxed)),
@@ -146,11 +99,8 @@ size_t raw_metal_rates(char *out, size_t size)
 #endif
     gRates.abortUs = s.abortUs.load();
     gRates.splits = s.splits.load();
-    gRates.splitM2v = s.splitM2v.load();
     gRates.eventSplits = s.eventSplits.load();
     gRates.eventWhole = s.eventWhole.load();
-    gRates.replayUs = s.replayUs.load();
-    gRates.replayClean = s.replayClean.load();
     gRates.rtUnaligned = k.rtUnaligned.load();
     gRates.rtMixed = k.rtMixed.load();
     gRates.levelPasses = k.levelPasses.load();
@@ -159,14 +109,11 @@ size_t raw_metal_rates(char *out, size_t size)
     const RMPassTrim passes = rmPassHeld();
     const int n = snprintf(
         out, size,
-        "raw %.0fs c=%llu(%.1f/s) m2v=%llu%s%s%s sw=%llu cpu=%llu acq=%llu enc=%.0fus/c d=%.1f p=%.1f b=%.2f "
+        "raw %.0fs c=%llu(%.1f/s) enc=%.0fus/c d=%.1f p=%.1f b=%.2f "
         "defer=%llu abort=%llu rw=%llu pool=%lluMB/%llu grow=%llu imp=%llu/%lluMB clean=%.1fKB/c ce=%llu/%.0fKB "
         "ev=%llu/%llu sig=%llu/%llu/%llu ws=%llu/%lluus wc=%llu/%lluus set_refusals=%u set_rebuilds=%u "
         "kept=%zu/%lluKB passes=%zu/%zu hdr=%u%s",
-        secs, (unsigned long long)c, c / secs, (unsigned long long)f, *reasons ? "(" : "", reasons, *reasons ? ")" : "",
-        (unsigned long long)(s.switches.load() - gRates.switches),
-        (unsigned long long)(s.cpuOrdered.load() - gRates.cpuOrdered),
-        (unsigned long long)(s.acquires.load() - gRates.acquires), (s.encodeUs.load() - gRates.encodeUs) / per,
+        secs, (unsigned long long)c, c / secs, (s.encodeUs.load() - gRates.encodeUs) / per,
         (s.draws.load() - gRates.draws) / per, (s.passes.load() - gRates.passes) / per,
         (s.copies.load() - gRates.copies) / per, (unsigned long long)(s.deferred.load() - gRates.deferred),
         (unsigned long long)(s.aborted.load() - gRates.aborted),
@@ -186,16 +133,12 @@ size_t raw_metal_rates(char *out, size_t size)
         kept.keptImports, (unsigned long long)(kept.keptImportBytes >> 10), passes.passes, passes.textures,
         gRM->raw->headersLeft(), diag);
     gRates.raw = raw;
-    gRates.m2v = m2v;
     gRates.encodeUs = s.encodeUs.load();
     gRates.draws = s.draws.load();
     gRates.passes = s.passes.load();
     gRates.copies = s.copies.load();
     gRates.deferred = s.deferred.load();
     gRates.aborted = s.aborted.load();
-    gRates.switches = s.switches.load();
-    gRates.cpuOrdered = s.cpuOrdered.load();
-    gRates.acquires = s.acquires.load();
     gRates.poolStalls = k.poolStalls.load();
     gRates.ringWaits = k.ringWaits.load();
     gRates.eventsReleased = s.eventsReleased.load();
@@ -464,7 +407,7 @@ void rawStallTick()
         return;
     RawState &r = *gRM;
     Stats &s = r.stats;
-    const uint64_t commits = s.raw.load() + s.m2v.load() + s.splits.load(), done = s.finished.load();
+    const uint64_t commits = s.raw.load() + s.splits.load(), done = s.finished.load();
     const bool moved = commits != lastCommits || done != lastDone;
     lastCommits = commits;
     lastDone = done;
@@ -472,9 +415,7 @@ void rawStallTick()
         still = 0;
         return;
     }
-    const long waiting = long(r.waitingCommitted.load(std::memory_order_relaxed)), inflight = long(r.inflight.size()),
-               m2vPending = long(r.m2vPending.load(std::memory_order_relaxed)),
-               m2vUnscheduled = long(r.m2vUnscheduled.load(std::memory_order_relaxed));
+    const long waiting = long(r.waitingCommitted.load(std::memory_order_relaxed)), inflight = long(r.inflight.size());
     bool holders = false;
     {
         std::unique_lock<raw::Mutex> h(gHoldersLock, std::try_to_lock);
@@ -482,8 +423,7 @@ void rawStallTick()
     }
     const bool device = r.raw->lockFree();
     const uint32_t submitted = r.raw->submitted(), completed = r.raw->completed();
-    const bool pending = waiting != 0 || inflight != 0 || m2vPending != 0 || m2vUnscheduled != 0 || !holders ||
-                         !device || submitted != completed;
+    const bool pending = waiting != 0 || inflight != 0 || !holders || !device || submitted != completed;
     if (!pending) {
         still = 0;
         return;
@@ -493,10 +433,10 @@ void rawStallTick()
     said = true;
     os_log_error(rawLog(),
                  "raw: stall: nothing committed or completed for 10 s with work pending: waiting %ld, "
-                 "inflight %ld, m2v pending %ld unscheduled %ld, locks free: "
-                 "holders %d device %d, seqno submitted %u completed %u, commits %llu completed %llu",
-                 waiting, inflight, m2vPending, m2vUnscheduled, int(holders), int(device), submitted, completed,
-                 (unsigned long long)commits, (unsigned long long)done);
+                 "inflight %ld, locks free: holders %d device %d, seqno submitted %u completed %u, commits %llu "
+                 "completed %llu",
+                 waiting, inflight, int(holders), int(device), submitted, completed, (unsigned long long)commits,
+                 (unsigned long long)done);
 }
 #endif
 

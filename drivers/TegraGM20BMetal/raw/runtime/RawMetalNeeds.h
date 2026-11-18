@@ -7,7 +7,6 @@
 // builds log and what switchRawM2V's "needs" and "opened_for" hold.
 enum RMNeed : uint8_t {
     // command buffers and indirect command buffers replayed on m2v
-    NeedReplay,
     NeedReplayQueue,
     NeedRawStateTwinAtReplay,
     // what a library or function answers from its m2v twin
@@ -30,7 +29,6 @@ enum RMNeed : uint8_t {
 };
 
 static constexpr const char *kNeedNames[] = {
-    "a command buffer replayed on m2v",
     "a command queue for a command buffer replayed on it",
     "a raw state's twin, at its first m2v replay",
     "a library's twin",

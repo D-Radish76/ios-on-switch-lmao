@@ -253,7 +253,7 @@ static raw::Variant<raw::Pipeline> *preparedVariant(__unsafe_unretained RMRender
 
 - (void)prepareDrawnRecord
 {
-    raw::Pipeline *base = !_cb->_encRefused && _pipe ? _pipe->_raw : nullptr;
+    raw::Pipeline *base = !_cb->_encFailed && _pipe ? _pipe->_raw : nullptr;
     _formVariant = _sampledVariant = nullptr;
     _sampledSlots = {};
     if (!base || !(_cubicMask[0] | _cubicMask[1])) {

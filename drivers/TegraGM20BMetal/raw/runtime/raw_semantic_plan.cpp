@@ -138,7 +138,7 @@ bool RMCommandPlan::record(const Cmd &c, const uint64_t *extra, size_t extraWord
         kernel.resetCurrent();
         ++renderGeneration_;
         ++kernelGeneration_;
-        operation.payload = append(begins_, {c.obj, uint32_t(c.x), c.a, bool(c.index)});
+        operation.payload = append(begins_, {c.obj, uint32_t(c.x), c.a});
         begins_.back().rasterBegin = uint32_t(rasterGroups_.size());
         lastRasterGroup_ = raw::kNoSnapshot;
         break;
@@ -378,7 +378,6 @@ Cmd RMCommandPlan::legacy(size_t at) const
         c.obj = begin.descriptor;
         c.x = begin.pass;
         c.a = begin.dispatchType;
-        c.index = begin.refused;
         break;
     }
     case OpDraw:

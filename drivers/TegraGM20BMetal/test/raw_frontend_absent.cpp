@@ -95,16 +95,6 @@ id native_bridge_metal_render_pipeline_lazy(id, id, NSUInteger)
     return nil;
 }
 
-int native_bridge_metal_render_pipeline_ready(id, void (^)(void))
-{
-    return -1;
-}
-
-int native_bridge_metal_render_pipeline_urge(id, void (^)(void), dispatch_queue_t)
-{
-    return -1;
-}
-
 void native_bridge_metal_set_surface_importer(switch_surface_importer)
 {}
 

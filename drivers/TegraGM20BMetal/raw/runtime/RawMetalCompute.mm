@@ -523,65 +523,6 @@ static uint32_t commandStride(const Cmd &c)
     return c.x && c.x <= UINT32_MAX ? uint32_t(c.x - 1) : UINT32_MAX;
 }
 
-void replayKernel(id encoder, RMCommandBuffer *cb, const Cmd &c, std::set<RMBuffer *> &buffers)
-{
-    id<MTLComputeCommandEncoder> e = encoder;
-    id object = (__bridge id)c.obj;
-    switch (c.op) {
-    case OpKernelState:
-        [e setComputePipelineState:twinOf(object)];
-        break;
-    // a stride form's stride is a stage-in kernel's alone, which m2v never runs (rmM2vMissingKernel): the plain forms
-    case OpKernelBytes:
-        [e setBytes:cb->_bytes.chunks[c.c].cpu + c.a length:c.b atIndex:c.index];
-        break;
-    case OpKernelBuffer:
-        if ([object isKindOfClass:[RMBuffer class]])
-            buffers.insert((RMBuffer *)object);
-        [e setBuffer:twinOf(object) offset:c.c atIndex:c.index];
-        break;
-    case OpKernelBufferOffset:
-        [e setBufferOffset:c.c atIndex:c.index];
-        break;
-    case OpKernelClockAnchors: {
-        const TegraGM20BAbiClockAnchors anchors = rmClockAnchorsNow();
-        [e setBytes:&anchors length:sizeof anchors atIndex:c.index];
-        break;
-    }
-    case OpKernelTexture:
-        [e setTexture:twinOf(object) atIndex:c.index];
-        break;
-    case OpKernelSampler:
-        [e setSamplerState:twinOf(object) atIndex:c.index];
-        break;
-    case OpKernelMemory:
-        [e setThreadgroupMemoryLength:c.a atIndex:c.index];
-        break;
-    case OpKernelUse:
-        if ([object isKindOfClass:[RMBuffer class]])
-            buffers.insert((RMBuffer *)object);
-        if (![object isKindOfClass:[RMHeap class]])
-            [e useResource:twinOf(object) usage:MTLResourceUsage(c.c)];
-        break;
-    case OpKernelBarrier:
-        [e memoryBarrierWithScope:MTLBarrierScopeBuffers | MTLBarrierScopeTextures];
-        break;
-    case OpDispatch: {
-        const MTLSize grid = MTLSizeMake(extra(cb, c.x), extra(cb, c.x + 1), extra(cb, c.x + 2)),
-                      threads = MTLSizeMake(c.c & 0xffff, (c.c >> 16) & 0xffff, c.c >> 32);
-        [e setStageInRegion:MTLRegionMake3D(extra(cb, c.x + 6), extra(cb, c.x + 7), extra(cb, c.x + 8),
-                                            extra(cb, c.x + 9), extra(cb, c.x + 10), extra(cb, c.x + 11))];
-        if (c.index)
-            [e dispatchThreads:grid threadsPerThreadgroup:threads];
-        else
-            [e dispatchThreadgroups:grid threadsPerThreadgroup:threads];
-        break;
-    }
-    default:
-        break;
-    }
-}
-
 static bool encodePredicate(raw::ComputeEncoder &e, const Cmd &c, size_t at, const char **why)
 {
     const uint64_t wordVa = c.obj ? ((__bridge RMBuffer *)c.obj)->_raw.va + c.c : 0;

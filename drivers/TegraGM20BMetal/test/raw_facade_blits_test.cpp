@@ -174,7 +174,7 @@ TEST_F(FacadeBlits, TextureCopiesMetalStopsCopyNothing)
     EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
     read(e, b, out);
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     execute(cb);
     EXPECT_EQ(memcmp(before.contents, out.contents, 1024), 0);
     EXPECT_EQ(harness::gOpens, opens);
@@ -223,7 +223,7 @@ TEST_F(FacadeBlits, BufferCopiesMetalStopsCopyNothing)
     EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded);
     read(e, t, out);
     [e endEncoding];
-    EXPECT_EQ(((RMCommandBuffer *)cb)->_preds, 0u);
+    EXPECT_EQ(((RMCommandBuffer *)cb)->_pred0, 0u);
     execute(cb);
     EXPECT_EQ(harness::gOpens, opens);
     EXPECT_EQ(memcmp(in.contents, out.contents, 1024), 0);

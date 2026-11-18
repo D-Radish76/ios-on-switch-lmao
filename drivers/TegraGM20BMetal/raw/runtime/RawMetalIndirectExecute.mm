@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // A compute encoder's execute of an indirect command buffer of dispatches (raw_icb_compute.h) by reference: the buffer's own
 // words, or its variant for the encoder's pipeline where it inherits that, and the bind slots for the encoder's buffers in
-// the macros' scratch where it inherits them; m2v's replay encodes the commands again into m2v's buffer, which executes
-// them as Metal does; and a blit's reset or copy of the commands.
+// the macros' scratch where it inherits them; and a blit's reset or copy of the commands.
 #include "raw_lock.h"
 #import "RawMetalIndirectCompute.h"
 
@@ -306,54 +305,48 @@ void encodeKernelCommandsBlit(raw::CommandBuffer *rc, raw::BlitEncoder *be, cons
         toWords = to->_slotWords;
         toBindWords = to->_bindWords;
     }
-    if (be) {
-        raw::Buffer fromSlots, fromBinds;
-        uint32_t fromWords = 0, fromBindWords = 0;
-        if (copied) {
-            std::lock_guard<raw::Mutex> hold(from->_lock);
-            fromSlots = from->_raw;
-            fromBinds = from->_binds;
-            fromWords = from->_slotWords;
-            fromBindWords = from->_bindWords;
-            rc->use(fromSlots, false);
-        }
-        const uint64_t toBytes = uint64_t(toWords) * 4, toBindBytes = uint64_t(toBindWords) * 4;
-        rc->use(toSlots, true, false);
-        if (to->_inheritBuffers) {
-            if (copied && from->_inheritBuffers)
-                rc->use(fromBinds, false);
-            rc->use(toBinds, true, false);
-        }
-        be->access(copy ? (__bridge void *)from : nullptr, (__bridge void *)to);
-        if (!copied)
-            be->fillWords(toSlots.va + into * toBytes, count * toBytes, raw::icb::kNop);
-        else
-            copySlots(be, fromSlots.va + first * uint64_t(fromWords) * 4, fromWords, toSlots.va + into * toBytes,
-                      toWords, count);
-        // a copied command launches as its new index (the gate compares it with the range)
-        if (copied) {
-            be->barrier();
-            for (NSUInteger i = 0; i < count; i++)
-                if (commands[i].raw)
-                    be->fillWords(toSlots.va + (into + i) * toBytes + raw::icb::kComputeIndexWord * 4, 4,
-                                  uint32_t(into + i));
-        }
-        if (to->_inheritBuffers) {
-            if (copied && from->_inheritBuffers)
-                copySlots(be, fromBinds.va + first * uint64_t(fromBindWords) * 4, fromBindWords,
-                          toBinds.va + into * toBindBytes, toBindWords, count);
-            else
-                be->fillWords(toBinds.va + into * toBindBytes, count * toBindBytes, raw::icb::kNop);
-        }
-        to->_gpuWritten.store(true, std::memory_order_relaxed);
+    raw::Buffer fromSlots, fromBinds;
+    uint32_t fromWords = 0, fromBindWords = 0;
+    if (copied) {
+        std::lock_guard<raw::Mutex> hold(from->_lock);
+        fromSlots = from->_raw;
+        fromBinds = from->_binds;
+        fromWords = from->_slotWords;
+        fromBindWords = from->_bindWords;
+        rc->use(fromSlots, false);
     }
+    const uint64_t toBytes = uint64_t(toWords) * 4, toBindBytes = uint64_t(toBindWords) * 4;
+    rc->use(toSlots, true, false);
+    if (to->_inheritBuffers) {
+        if (copied && from->_inheritBuffers)
+            rc->use(fromBinds, false);
+        rc->use(toBinds, true, false);
+    }
+    be->access(copy ? (__bridge void *)from : nullptr, (__bridge void *)to);
+    if (!copied)
+        be->fillWords(toSlots.va + into * toBytes, count * toBytes, raw::icb::kNop);
+    else
+        copySlots(be, fromSlots.va + first * uint64_t(fromWords) * 4, fromWords, toSlots.va + into * toBytes, toWords,
+                  count);
+    // a copied command launches as its new index (the gate compares it with the range)
+    if (copied) {
+        be->barrier();
+        for (NSUInteger i = 0; i < count; i++)
+            if (commands[i].raw)
+                be->fillWords(toSlots.va + (into + i) * toBytes + raw::icb::kComputeIndexWord * 4, 4,
+                              uint32_t(into + i));
+    }
+    if (to->_inheritBuffers) {
+        if (copied && from->_inheritBuffers)
+            copySlots(be, fromBinds.va + first * uint64_t(fromBindWords) * 4, fromBindWords,
+                      toBinds.va + into * toBindBytes, toBindWords, count);
+        else
+            be->fillWords(toBinds.va + into * toBindBytes, count * toBindBytes, raw::icb::kNop);
+    }
+    to->_gpuWritten.store(true, std::memory_order_relaxed);
     std::lock_guard<raw::Mutex> hold(to->_lock);
     to->_bindsChanged = true;
     to->_generation++;
-    for (NSUInteger i = 0; i < count; i++) {
+    for (NSUInteger i = 0; i < count; i++)
         to->_dispatches[into + i] = commands[i];
-        // with no copy engine (the blit encoder replayed on m2v) the words are the CPU's to write, as Metal's would be the GPU's
-        if (!be)
-            rmWriteWords(to, into + i);
-    }
 }
