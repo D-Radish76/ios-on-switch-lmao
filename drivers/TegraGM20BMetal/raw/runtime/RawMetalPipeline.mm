@@ -127,13 +127,19 @@ bool rmPipelineStep()
             // counted as committed, no purge takes an arena it encodes (raw_gpu.h purgeArenas)
             gRM->committed.fetch_add(1);
             a.moves = gRM->moves.load(std::memory_order_acquire);
-            if (gRM->raw->purgedArenas() || !encode.open(cb, 0, SIZE_MAX, false, &a.why)) {
+            if (gRM->raw->purgedArenas()) {
                 encode.reset();
                 gRM->committed.fetch_sub(1);
                 giveBack(VetoDevice);
                 return true;
             }
+            // an open() that stops (VetoChannel: the kernel gave it no channel) is given back as an encode that began,
+            // its reason counted; the command buffer's own encode at its turn asks for the channel again
             a.open = true;
+            if (!encode.open(cb, 0, SIZE_MAX, false, &a.why)) {
+                giveBack(encode.vetoed());
+                return true;
+            }
         }
         if (!encode.step(until))
             giveBack(encode.vetoed());

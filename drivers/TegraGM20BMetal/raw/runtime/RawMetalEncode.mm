@@ -92,6 +92,8 @@ __attribute__((objc_externally_retained)) bool RMRangeEncode::open(RMCommandBuff
     rc_ = d.begin();
     if (!rc_) {
         *why = "the kernel gave the raw path no channel";
+        if (ahead_)
+            return stop(VetoChannel);
         hit(cb, PredEncNoChannel, 0, 0, d.channelError().c_str());
         return false;
     }

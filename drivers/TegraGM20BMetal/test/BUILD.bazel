@@ -4938,6 +4938,30 @@ facade_test(
     plugin = "_tsan",
 )
 
+# Command buffers that fail as they record or at their commit, or whose encode ahead the kernel gives no channel, beside
+# the submit worker's encode ahead (raw_facade_ahead_failures_test.cpp), plain and thread-sanitized
+facade_test(
+    name = "raw_facade_ahead_failures_test",
+    srcs = [
+        "raw_facade_ahead_failures_test.cpp",
+        "raw_scale_frames.h",
+    ],
+)
+
+facade_test(
+    name = "raw_facade_ahead_failures_tsan_test",
+    size = "medium",
+    srcs = [
+        "raw_facade_ahead_failures_test.cpp",
+        "raw_scale_frames.h",
+    ],
+    copts = ["-fsanitize=thread"],
+    data = ["raw_model_gpu.supp"],
+    env = {"TSAN_OPTIONS": "halt_on_error=1:report_signal_unsafe=0:suppressions=$(rootpath raw_model_gpu.supp)"},
+    linkopts = ["-fsanitize=thread"],
+    plugin = "_tsan",
+)
+
 # A raw command buffer's scheduled and completed stages as its caller sees them (raw_facade_handlers_test.cpp), plain and
 # thread-sanitized
 facade_test(

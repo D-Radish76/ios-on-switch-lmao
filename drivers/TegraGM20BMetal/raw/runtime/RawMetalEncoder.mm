@@ -278,7 +278,6 @@ void rmOwnPass(RMRenderEncoder *e)
                     }
                     if (!prepared) {
                         _encFailed = true;
-                        rmPipelineVeto(self, VetoRefused);
                         failCommandBuffer(self, @"no texture header for a depth/stencil load",
                                           MTLCommandBufferErrorOutOfMemory);
                         break;

@@ -215,42 +215,6 @@ TEST(RawFacadeCommit, AnEncoderFailedAfterTheHandOffsGivesTheDeviceBack)
     EXPECT_EQ([q[@"abandons"] intValue], 0);
 }
 
-// Pass 9 of 15 ends twice, Metal's validation error, after the worker was handed the ones before it: the command buffer
-// fails InvalidResource as it records, which stops no encode ahead (no RMPipelineVeto). Its turn on the worker gives the
-// encode ahead back before its completion returns the recording that encode reads: the next command buffer is encoded
-// ahead as any other.
-TEST(RawFacadeCommit, AFailureThatStopsNoEncodeAheadGivesTheDeviceBackBeforeItCompletes)
-{
-    ASSERT_TRUE(opened().device != nil);
-    id<MTLCommandQueue> queue = [opened().device newCommandQueue];
-    const scale_frames::Shape shape{15, 90, 4};
-    const auto into = scale_frames::targets(opened().device, shape);
-    id<MTLCommandBuffer> cb = [queue commandBuffer];
-    __block id<MTLRenderCommandEncoder> endedTwice = nil;
-    for (int p = 0; p < shape.passes; p++) {
-        if (p == 9) {
-            scale_frames::pass(cb, opened().state, into, shape, p, 0, nil, ^(id<MTLRenderCommandEncoder> e) {
-                endedTwice = e;
-            });
-            [endedTwice endEncoding];
-        } else
-            scale_frames::pass(cb, opened().state, into, shape, p, 0);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    [cb commit];
-    [cb waitUntilCompleted];
-    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
-    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorInvalidResource);
-    id<MTLCommandBuffer> next = paced(queue, into, shape, 1, std::chrono::milliseconds(1));
-    [next commit];
-    [next waitUntilCompleted];
-    ASSERT_EQ(next.status, MTLCommandBufferStatusCompleted);
-    EXPECT_EQ(path(next), "raw");
-    NSDictionary *q = pipelined(next);
-    ASSERT_NE(q, nil);
-    EXPECT_GE([q[@"pipelined"] intValue], 10) << [[q description] UTF8String];
-}
-
 // Copy-engine launches in the model's jobs from `first` on: a fresh texture's fill is one (RawMetalFresh.mm writeFresh)
 size_t copyLaunches(size_t first)
 {

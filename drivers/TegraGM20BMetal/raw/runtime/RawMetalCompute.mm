@@ -498,7 +498,6 @@ static MTLTextureDescriptor *kernelDescriptor(RMTexture *t, RMComputeState *stat
 void rmComputeFails(RMCommandBuffer *cb, raw::ComputeFailure failure, RMPred pred, uint64_t a, const char *why)
 {
     hit(cb, pred, a, 0, why);
-    rmPipelineVeto(cb, VetoFailed);  // a failed command buffer submits nothing: no encode ahead of its commit
     switch (failure) {
     case raw::ComputeFailure::Invalid:
         return failCommandBuffer(cb, [NSString stringWithFormat:@"%s: Metal's validation error", why],

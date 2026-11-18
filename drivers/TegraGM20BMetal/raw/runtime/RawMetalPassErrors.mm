@@ -328,12 +328,11 @@ bool rmZetaResolvesIntoMemoryless(MTLRenderPassDescriptor *pass)
     return false;
 }
 
-// The encoder is marked failed so that no encode ahead of the commit reads its pass (VetoRefused); the command buffer
-// fails before its first range is submitted (RawMetalSubmit.mm submitRange)
+// The encoder is marked failed, and the failure vetoes the encode ahead of the commit (failCommandBuffer: VetoRefused);
+// the command buffer fails before its first range is submitted (RawMetalSubmit.mm submitRange)
 void rmPassFailed(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, NSString *why, MTLCommandBufferError code)
 {
     cb->_encFailed = true;
-    rmPipelineVeto(cb, VetoRefused);
     hit(cb, p, a, b);
     failCommandBuffer(cb, why, code, p);
 }

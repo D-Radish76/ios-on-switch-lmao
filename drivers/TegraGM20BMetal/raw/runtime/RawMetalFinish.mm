@@ -322,6 +322,10 @@ void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferEr
     NSError *error = [NSError errorWithDomain:MTLCommandBufferErrorDomain
                                          code:code
                                      userInfo:@{NSLocalizedDescriptionKey : reason}];
+    // failed as it records: the worker encodes no more of it ahead. One its commit or the worker fails is judged at its
+    // turn, which gives back its encode ahead first (rmPipelineFailed).
+    if (!cb->_committed.load(std::memory_order_relaxed))
+        rmPipelineVeto(cb, VetoRefused);
     std::lock_guard<raw::Mutex> l(cb->_lock);
     if (!cb->_segError) {
         cb->_segError = error;
