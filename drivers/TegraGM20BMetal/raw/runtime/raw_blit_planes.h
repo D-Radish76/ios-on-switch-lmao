@@ -47,12 +47,14 @@ inline uint64_t windowBound(const Texture &plane, uint64_t bytes)
     return plane.window.bytes ? std::min(bytes, plane.window.va + plane.window.pages - plane.va) : bytes;
 }
 
+// The format of a texel of 1, 2, 4, 8 or 16 bytes, by its log2: R8Unorm, R16Uint, R32Uint, RG32Uint, RGBA32Uint
+constexpr uint32_t kUnitFormats[5] = {10, 23, 53, 103, 123};
+
 // Plane 0 of `t`'s rows as texels of `unit` bytes (1, 2, 4, 8 or 16), pitch memory, or the texels of RGB10A8_2P_XR10's
 // words over a surface the kernel laid out block-linear, in that layout: what Metal's blits of a texture held through
 // planes move; false: no such plane
 inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out)
 {
-    constexpr uint32_t kUnitFormats[5] = {10, 23, 53, 103, 123};  // R8Unorm, R16Uint, R32Uint, RG32Uint, RGBA32Uint
     const Texture *luma = t.xrPlanes || (t.ycbcr && !t.onePlane) ? t.luma : nullptr;
     const uint64_t va = luma ? luma->va : t.planes.luma;
     const uint32_t pitch = luma ? luma->pitch : t.planes.lumaPitch, rows = luma ? luma->height : t.height;
@@ -200,6 +202,34 @@ inline void planeOneRuns(uint64_t readable, uint64_t sPitch, uint32_t sx, uint32
             k++;
         }
     }
+}
+
+// A plain texture's level `image` read in texels of `unit` bytes, as Metal's blit into a texture held through planes of
+// another unit reads it (an M4 Max with validation off reads a texture over a buffer's rows so, `unit` bytes a texel,
+// and its own textures' bytes in their own layout: m2v-textures11 probes/h5/copies.txt): each row's bytes in its
+// layout, pitch or block-linear; false: a row of no whole units, or a crop of the kernel's layout off them
+inline bool imageInUnits(const Texture &image, uint32_t unit, Texture &out)
+{
+    const uint32_t log2 = unit ? uint32_t(__builtin_ctz(unit)) : 5;
+    const uint32_t row = image.width * image.bpp;
+    if (log2 > 4 || unit != 1u << log2 || !row ||
+        (image.blockLinear && (row % unit || (image.surfaceX * image.bpp) % unit)))
+        return false;
+    out = image;
+    out.bpp = unit;
+    out.format = kUnitFormats[log2];
+    out.width = out.texelWidth = (image.blockLinear ? row : std::max(image.pitch, row)) / unit;
+    out.surfaceX = image.surfaceX * image.bpp / unit;
+    return true;
+}
+
+// Whether a blit of `w` x `h` of `image`'s texels (imageInUnits) from (x, y) reads its own bytes alone: a block-linear
+// image's region inside its texels, a pitch image's run of rows inside the `bytes` its memory holds from its first
+inline bool unitRegionReadable(const Texture &image, uint64_t bytes, uint64_t x, uint64_t y, uint64_t w, uint64_t h)
+{
+    if (image.blockLinear)
+        return x + w <= image.width && y + h <= image.height;
+    return planeReach(image, x, y, w, h) <= bytes;
 }
 
 // Whether a blit moves `t`'s planes: one held through a surface's planes or through its two extended-range planes

@@ -98,7 +98,7 @@ static void bufferCopyImage(RMTexture *t, uint32_t level, raw::Texture &image)
 
 // Plane 0's bytes of the side or sides held through planes, counted in the destination's texel (kCopyPlaneBytes): the
 // copy engine's lines `pitch` apart, each its texels' bytes in one run, which past a row's end are the next rows' (a
-// source's lines may overlap)
+// source's lines may overlap); a plain source of another texel size read in it (raw_blit_planes.h imageInUnits)
 static void copyPlaneBytes(raw::BlitEncoder *be, RMTexture *s, uint32_t sl, uint32_t ss, uint32_t sx, uint32_t sy,
                            uint32_t sz, RMTexture *t, uint32_t dl, uint32_t ds, uint32_t dx, uint32_t dy, uint32_t dz,
                            uint32_t w, uint32_t h)
@@ -109,10 +109,13 @@ static void copyPlaneBytes(raw::BlitEncoder *be, RMTexture *s, uint32_t sl, uint
         raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), to);
     else
         blitImage(t, dl, to);
+    raw::Texture image;
     if (fromPlanes)
         raw::planeBytesRead(s->_raw, to.bpp, sx, sy, w, h, from);
+    else if (blitImage(s, sl, image) && image.bpp != to.bpp)
+        raw::imageInUnits(image, to.bpp, from);
     else
-        blitImage(s, sl, from);
+        from = image;
     be->copyTexels(from, sx, sy, fromPlanes ? 0 : layerOrPlane(from, ss, sz), to, dx, dy,
                    intoPlanes ? 0 : layerOrPlane(to, ds, dz), w, h);
 }

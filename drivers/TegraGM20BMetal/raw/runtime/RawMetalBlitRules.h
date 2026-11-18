@@ -45,6 +45,9 @@ void cutToLevel(const char *call, RMTexture *t, NSUInteger level, MTLOrigin o, M
 void roundToBlocks(const char *call, RMTexture *t, MTLOrigin &o);
 // ... a copy from slice `slice` of a 2D texture, which has one: slice 0, as an M4 Max copies it (pat_slice2d)
 void flatSlice(const char *call, RMTexture *t, NSUInteger &slice);
+// ... a copy between textures of two pixel formats, one of them held through planes: its bytes moved in the
+// destination's texel, as an M4 Max moves them (m2v-textures11 probes/h5/copies.txt, m2v-textures12 probes/h5x.txt)
+void copyAcrossFormats(const char *call);
 // A colour fill of a texture held through planes: undefined on Apple's GPU (an M4 Max writes plane 0's region with a value
 // that ignores the colour and follows the process's earlier fills), recorded as nothing, one line a process
 // (raw:blit.undefined)

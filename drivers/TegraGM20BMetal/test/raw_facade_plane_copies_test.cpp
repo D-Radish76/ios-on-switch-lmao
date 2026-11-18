@@ -205,14 +205,15 @@ struct TwoPlanes {
 };
 
 // The destination's bytes after a copy of `size` texels from `from` to `to` between textures over plane 0 of `s` and of
-// `d`, as an M4 Max moves them (m2v-textures12 probes/f1.txt): plane 0 in its unit at its rows; plane 1 a byte a texel
-// at plane 0's rows, on through its end, source bytes past its page read as 0, destination bytes past its page dropped
+// `d`, as an M4 Max moves them (m2v-textures12 probes/f1.txt): plane 0 in the destination's unit at its rows; plane 1 a
+// byte a texel at plane 0's rows, on through its end, source bytes past its page read as 0, destination bytes past its
+// page dropped
 std::vector<uint8_t> applesCopy(const TwoPlanes &s, const std::vector<uint8_t> &src, const TwoPlanes &d,
                                 std::vector<uint8_t> dst, MTLOrigin from, MTLSize size, MTLOrigin to)
 {
     for (NSUInteger y = 0; y < size.height; ++y) {
-        for (NSUInteger b = 0; b < size.width * s.unit0; ++b)
-            dst[(to.y + y) * d.rows0 + to.x * s.unit0 + b] = src[(from.y + y) * s.rows0 + from.x * s.unit0 + b];
+        for (NSUInteger b = 0; b < size.width * d.unit0; ++b)
+            dst[(to.y + y) * d.rows0 + to.x * d.unit0 + b] = src[(from.y + y) * s.rows0 + from.x * d.unit0 + b];
         for (NSUInteger b = 0; b < size.width; ++b) {
             const size_t at = d.off1 + (to.y + y) * d.rows0 + to.x + b;
             const size_t of = s.off1 + (from.y + y) * s.rows0 + from.x + b;
@@ -269,6 +270,58 @@ TEST_F(FacadePlaneCopies, PlaneOneMovesAtPlaneZerosRowsOnThroughItsEnd)
         EXPECT_EQ(bytesOf(s), src) << what << ": the source is only read";
         CFRelease(s);
         CFRelease(d);
+    }
+}
+
+// A copy between textures of two pixel formats one of which is held through planes, which Metal's validation stops,
+// moves what an M4 Max moves with validation off and is counted skipped: a plain source read in the planes' unit, each
+// row's bytes in its own layout, plane 1 untouched (m2v-textures11 probes/h5/copies.txt, a texture over a buffer);
+// between two two-plane formats both planes as between two of one format, plane 0 in the destination's unit
+// (probes/h5x.txt)
+TEST_F(FacadePlaneCopies, CopiesAcrossFormatsMoveTheBytesAppleMovesAndCountAsSkipped)
+{
+    const TwoPlanes alpha32{'b3a8', 4, 128, 1024, 1, kWidth, kHeight, 32};
+    const TwoPlanes alpha48{'b3a8', 4, 160, 2048, 1, kWidth, kHeight, 48};
+    const TwoPlanes chroma32{'420v', 1, 48, 1024, 2, kWidth / 2, kHeight / 2, 32};
+
+    IOSurfaceRef d = alpha32.make();
+    ASSERT_NE(d, nullptr);
+    id<MTLTexture> planes = over(d, 550);
+    id<MTLBuffer> rows = [gDevice newBufferWithLength:kWidth * kHeight options:MTLResourceStorageModeShared];
+    id<MTLTexture> plain = plainOver(rows, MTLPixelFormatR8Unorm, 1);
+    auto *bytes = static_cast<uint8_t *>(rows.contents);
+    for (NSUInteger i = 0; i < rows.length; ++i)
+        bytes[i] = uint8_t(i * 13 + 5);
+    std::vector<uint8_t> want = seeded(d, 8);
+    NSDictionary *before = harness::counters(gDevice);
+    EXPECT_TRUE(copied(plain, MTLOriginMake(2, 1, 0), MTLSizeMake(4, 4, 1), planes, MTLOriginMake(3, 2, 0)));
+    EXPECT_EQ(harness::skippedMoved(before, harness::counters(gDevice)), harness::skippedOnce("call.blit"));
+    for (NSUInteger y = 0; y < 4; ++y)
+        for (NSUInteger b = 0; b < 16; ++b)  // four texels of four bytes from byte 8 of each 16-byte row on
+            want[(2 + y) * 128 + 12 + b] = bytes[(1 + y) * kWidth + 8 + b];
+    EXPECT_EQ(bytesOf(d), want) << "R8Unorm rows read in four-byte texels; the alpha plane untouched";
+    CFRelease(d);
+
+    struct Case {
+        uint32_t from, into;
+        TwoPlanes s, d;
+    };
+    for (const Case &c : {Case{550, 551, alpha32, alpha48}, Case{551, 550, alpha48, alpha32},
+                          Case{500, 550, chroma32, alpha48}}) {
+        const std::string what = std::to_string(c.from) + " into " + std::to_string(c.into);
+        IOSurfaceRef s = c.s.make(), t = c.d.make();
+        ASSERT_TRUE(s && t) << what;
+        id<MTLTexture> a = over(s, c.from), b = over(t, c.into);
+        const std::vector<uint8_t> src = seeded(s, c.from), was = seeded(t, c.into);
+        const MTLOrigin from = MTLOriginMake(2, 2, 0), to = MTLOriginMake(4, 2, 0);
+        const MTLSize size = MTLSizeMake(4, 4, 1);
+        NSDictionary *counted = harness::counters(gDevice);
+        EXPECT_TRUE(copied(a, from, size, b, to)) << what;
+        EXPECT_EQ(harness::skippedMoved(counted, harness::counters(gDevice)), harness::skippedOnce("call.blit"))
+            << what;
+        EXPECT_EQ(bytesOf(t), applesCopy(c.s, src, c.d, was, from, size, to)) << what;
+        CFRelease(s);
+        CFRelease(t);
     }
 }
 

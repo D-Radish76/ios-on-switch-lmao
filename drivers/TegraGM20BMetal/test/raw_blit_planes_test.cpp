@@ -185,4 +185,40 @@ TEST(BlitPlanes, PlaneOneRunsReadZeroPastTheSourceAndDropPastTheDestination)
     EXPECT_EQ(runs(4096, 395), (std::vector<Run>{{0, 3, 16, 0}, {3, 1, 5, 0}}));
 }
 
+// A plain source of another texel size than the planes' unit, read as an M4 Max reads one with validation off: each
+// row's bytes in its own layout, the unit's bytes a texel (m2v-textures11 probes/h5/copies.txt)
+TEST(BlitPlanes, APlainSourceIsReadInThePlanesUnit)
+{
+    raw::Texture pitch;
+    pitch.va = 0x50000;
+    pitch.pitch = 64;
+    pitch.width = 30;
+    pitch.height = 8;
+    pitch.bpp = 1;
+    pitch.format = 10;
+    raw::Texture out;
+    ASSERT_TRUE(raw::imageInUnits(pitch, 4, out));
+    EXPECT_EQ(out.bpp, 4u);
+    EXPECT_EQ(out.format, 53u);
+    EXPECT_EQ(out.width, 16u) << "a pitch image's whole rows";
+    EXPECT_EQ(out.va, 0x50000u);
+    EXPECT_TRUE(raw::unitRegionReadable(out, 544, 8, 0, 16, 8)) << "bytes 32-95 of rows 0-7: the last ends at 544";
+    EXPECT_FALSE(raw::unitRegionReadable(out, 512, 8, 0, 16, 8)) << "past its memory";
+    EXPECT_FALSE(raw::unitRegionReadable(out, 544, 9, 7, 16, 1));
+
+    raw::Texture tiled = pitch;
+    tiled.blockLinear = true;
+    tiled.width = 32;
+    tiled.bpp = 2;
+    tiled.surfaceX = 6;
+    ASSERT_TRUE(raw::imageInUnits(tiled, 4, out));
+    EXPECT_EQ(out.width, 16u) << "a block-linear image's texels' bytes alone";
+    EXPECT_EQ(out.surfaceX, 3u);
+    EXPECT_TRUE(raw::unitRegionReadable(out, 0, 4, 0, 12, 8));
+    EXPECT_FALSE(raw::unitRegionReadable(out, 0, 5, 0, 12, 8));
+    tiled.surfaceX = 1;
+    EXPECT_FALSE(raw::imageInUnits(tiled, 4, out)) << "a crop of the kernel's layout off the unit";
+    EXPECT_FALSE(raw::imageInUnits(pitch, 3, out));
+}
+
 }  // namespace

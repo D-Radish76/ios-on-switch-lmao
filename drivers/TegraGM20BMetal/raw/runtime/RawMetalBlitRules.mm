@@ -185,6 +185,14 @@ void flatSlice(const char *call, RMTexture *t, NSUInteger &slice)
                          "%s %s: Metal's validation error (MTLBlitCommandEncoder.h)", call, flat);
 }
 
+void copyAcrossFormats(const char *call)
+{
+    constexpr const char *across = "between textures of two pixel formats, one held through planes: its bytes copied";
+    rmSkipped(PredCallBlit);
+    SWITCH_REFUSE_DETAIL("raw", "blit.invalid", uintptr_t(call) * 31 + uintptr_t(across),
+                         "%s %s: Metal's validation error (MTLBlitCommandEncoder.h)", call, across);
+}
+
 void skipUndefinedFill(const char *call)
 {
     rmSkipped(PredCallBlit);

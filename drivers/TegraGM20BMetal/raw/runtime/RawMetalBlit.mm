@@ -20,13 +20,22 @@ uint32_t textureCopyForm(RMTexture *a, RMTexture *b)
     return fromStencil ? kCopyStencilOut : toStencil ? kCopyStencilIn : raw::kAspectWhole;
 }
 
+// The bytes `image`'s memory holds from its first
+uint64_t imageBytes(const raw::Texture &image)
+{
+    const raw::Texture::StorageRange r = image.storageRange();
+    return r.bytes && image.va >= r.va && image.va - r.va < r.bytes ? r.va + r.bytes - image.va : 0;
+}
+
 // A copy one of whose sides is held through planes, as an M4 Max moves it with validation off (raw_blit_planes.h):
-// plane 0's bytes counted in the destination's texel (a plain texture's, or plane 0's unit), and between two such
-// textures plane 1 too, a byte a texel at each side's plane-0 rows (kCopyPlanes). Each side's region is inside its texture
-// (copySideInvalid). Null: the form; else why Metal's validation stops the copy, which past it lands the bytes of a
-// texture of another texel size than plane 0's unit transposed into the planes, or reads zeros past the source
-// surface's last page
-const char *planesCopyForm(RMTexture *a, MTLOrigin so, MTLSize size, RMTexture *b, MTLOrigin dorg, uint32_t &form)
+// plane 0's bytes counted in the destination's texel (a plain texture's, or plane 0's unit), a plain source of another
+// texel size read in that unit, its rows' bytes in its own layout (imageInUnits), and between two such textures plane 1
+// too, a byte a texel at each side's plane-0 rows (kCopyPlanes). Each side's region is inside its texture
+// (copySideInvalid). Null: the form; else why Metal's validation stops the copy, and of what past it the raw path moves
+// nothing: a multisampled, depth or block-compressed plain side, a region that reads past its surface's last page or
+// its texture's memory, or one past a plane's rows
+const char *planesCopyForm(RMTexture *a, NSUInteger sl, MTLOrigin so, MTLSize size, RMTexture *b, MTLOrigin dorg,
+                           uint32_t &form)
 {
     const raw::Texture &s = a->_raw, &d = b->_raw;
     const bool fromPlanes = raw::heldInPlanes(s), intoPlanes = raw::heldInPlanes(d);
@@ -34,9 +43,13 @@ const char *planesCopyForm(RMTexture *a, MTLOrigin so, MTLSize size, RMTexture *
     if (!(fromPlanes && intoPlanes) && (plain.samples > 1 || plain.zeta || plain.blockW > 1 || plain.blockH > 1))
         return "between a texture held through planes and a multisampled, depth or block-compressed one";
     const uint32_t unit = intoPlanes ? raw::planeUnit(d) : d.bpp;
-    if (!fromPlanes && s.bpp != unit)
+    raw::Texture from, to, image;
+    if (!fromPlanes && s.bpp != unit && a->_descriptor.pixelFormat == b->_descriptor.pixelFormat)
         return "into a texture held through planes from one of another texel size than its plane 0's";
-    raw::Texture from, to;
+    if (!fromPlanes && s.bpp != unit &&
+        (!blitImage(a, uint32_t(sl), image) || !raw::imageInUnits(image, unit, from) ||
+         !raw::unitRegionReadable(from, imageBytes(image), so.x, so.y, size.width, size.height)))
+        return "into a texture held through planes, read in its unit past its source's memory";
     if (fromPlanes && (!raw::planeBytes(s, unit, from) ||
                        !raw::planeRegionReadable(from, so.x, so.y, size.width, size.height)))
         return "of a region that reads past the end of its surface's last page";
@@ -117,8 +130,10 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
     flatSlice(call, a, ss);
     if (raw::heldInPlanes(a->_raw) || raw::heldInPlanes(b->_raw)) {
         if (const char *invalid = copySideInvalid(a, ss, sl, so, size) ?: copySideInvalid(b, ds, dl, dorg, size)
-                                                                     ?: planesCopyForm(a, so, size, b, dorg, form))
+                                                                     ?: planesCopyForm(a, sl, so, size, b, dorg, form))
             return invalidBlit(_cb, call, invalid);
+        if (a->_descriptor.pixelFormat != b->_descriptor.pixelFormat)
+            copyAcrossFormats(call);
         if ((!raw::heldInPlanes(a->_raw) && !copySideOk(a, ss, sl, so, size)) ||
             (!raw::heldInPlanes(b->_raw) && !copySideOk(b, ds, dl, dorg, size)))
             return failNoImage(_cb, call);
