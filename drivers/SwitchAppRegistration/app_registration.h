@@ -13,6 +13,7 @@
 
 BOOL switch_app_registration_load(NSError **error);
 BOOL switch_app_installed(NSString *identifier);
+BOOL switch_app_registered_at_path(NSString *path, NSString *identifier);
 BOOL switch_register_builtin_app(NSString *path, NSUUID *uuid, id<LSOperationSaveObserver> observer, NSError **error);
 BOOL switch_unregister_builtin_app(NSString *path, NSString *identifier, NSUUID *uuid,
                                    id<LSOperationSaveObserver> observer, NSError **error);

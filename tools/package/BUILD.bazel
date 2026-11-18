@@ -56,6 +56,13 @@ py_binary(
     srcs = ["boot_args.py"],
 )
 
+py_binary(
+    name = "installer_seed_pin",
+    srcs = ["//tools/common:seed_manifest.py"],
+    main = "//tools/common:seed_manifest.py",
+    deps = ["//tools/common:hashing"],
+)
+
 # //boot:adt: the native OLED board's ADT with the pinned /chosen/random-seed.
 py_binary(
     name = "adt",
@@ -183,7 +190,7 @@ py_test(
         "jetsam_overlay_test.py",
     ],
     data = [
-        "//hw_test_app:peer/com.brunostjohn.switch.texpeer.jetsam.plist",
+        "//apps/hwtest:peer/com.brunostjohn.switch.texpeer.jetsam.plist",
         "//overlay:manifest.json",
         "//overlay:supplemental/com.apple.jetsamproperties.cryptex.plist",
         "//overlay:supplemental/com.brunostjohn.switch.shadercompiler.jetsam.plist",

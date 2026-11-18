@@ -63,7 +63,7 @@ selects.config_setting_group(
     ],
 )
 
-# Each IPSW kind's debug image carries the hardware test app built for its iOS version (hw_test_app/BUILD.bazel).
+# Each IPSW kind's debug image carries the hardware test app built for its iOS version (apps/hwtest/BUILD.bazel).
 [
     selects.config_setting_group(
         name = "local_debug_" + kind,
@@ -130,6 +130,10 @@ boot_package(
     exporter = "//bazel/pinned:firmware/exporter.uimg",
     icon = "//boot/logo:icon_ios_hue.bmp",
     ini = ":ios_ini",
+    installer_entitlements = select({
+        "//ipsw:21H461": "//apps/installer:SwitchInstaller.entitlements",
+        "//ipsw:24B119": "//apps/installer:SwitchInstaller27.entitlements",
+    }),
     kernel = select({
         "//install:from_release": "//install:release_kernel",
         "//conditions:default": "//kernel:prelinked",
@@ -188,14 +192,14 @@ boot_package(
     } | select({
         ":local_debug": {
             "//drivers/TegraGM20BMetal:fetchform": "build/switch-gpu/fetchform",
-            "//hw_test_app:switch-texpeer": "build/switch-hwtest/switch-texpeer",
+            "//apps/hwtest:switch-texpeer": "build/switch-hwtest/switch-texpeer",
         },
         "//conditions:default": {},
     }) | select({
-        ":local_debug_21H461": {"//hw_test_app:SwitchHWTest17": "build/switch-hwtest/SwitchHWTest.ipa"},
+        ":local_debug_21H461": {"//apps/hwtest:SwitchHWTest17": "build/switch-hwtest/SwitchHWTest.ipa"},
         ":local_debug_24B119": {
-            "//hw_test_app:SwitchHWTest27": "build/switch-hwtest/SwitchHWTest.ipa",
-            "//hw_test_app:SwitchHWTest27e": "build/switch-hwtest/SwitchHWTest27e.ipa",
+            "//apps/hwtest:SwitchHWTest27": "build/switch-hwtest/SwitchHWTest.ipa",
+            "//apps/hwtest:SwitchHWTest27e": "build/switch-hwtest/SwitchHWTest27e.ipa",
         },
         "//conditions:default": {},
     }),

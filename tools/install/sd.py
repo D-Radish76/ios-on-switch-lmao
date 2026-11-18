@@ -41,6 +41,7 @@ from tools.install import (
     host,
     owners as ownership,
     populate,
+    staged_apps,
     target as targets,
 )
 
@@ -254,6 +255,7 @@ class Installer:
             )
             if self.args.boot_package:
                 cards.sync_overlay(data, self.args.boot_package, self.log)
+                staged_apps.stage(data, owners, self.log, package=Path(self.args.boot_package))
 
     def boot_entry(self) -> None:
         if not self.args.boot_package:
