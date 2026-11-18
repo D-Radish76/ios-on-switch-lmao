@@ -4,6 +4,7 @@
 // plane's bytes from it in one pass, each byte from the row whose store lands last (raw_overlap_order.h).
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include "raw_gpu.h"
@@ -12,6 +13,41 @@
 #include "raw_ycbcr_store.h"
 
 namespace raw {
+
+// The bytes from `va` on that a job of `t`'s planes may name: past its window's bound pages none (Texture::window; the GMMU
+// reads 0 there and drops stores), as the kernel refuses a use no one binding holds
+inline uint64_t boundFrom(const Texture &t, uint64_t va, uint64_t bytes)
+{
+    return t.window.pages ? std::min(bytes, t.window.va + t.window.pages - std::min(va, t.window.va + t.window.pages))
+                          : bytes;
+}
+
+// A plane's rows as its GPU stores land them: at Texture::storePitch where it has one (rows under 16 bytes, which an M4
+// Max stores 16 bytes apart and reads 1 MiB apart: m2v-textures11 probes/h1/rows550.txt, m2v-textures12
+// probes/f2/targets-full.txt), else as it reads them; its storage the bytes those rows reach
+inline Texture storedRows(const Texture &plane, const Texture &t)
+{
+    Texture rows = plane;
+    if (plane.storePitch) {
+        rows.pitch = plane.storePitch;
+        rows.storage.va = plane.va;
+        rows.storage.bytes =
+            boundFrom(t, plane.va, uint64_t(rows.pitch) * (rows.height - 1) + uint64_t(rows.width) * rows.bpp);
+        // a target as NVK's linear-render rule takes it (overlapTarget)
+        rows.renderable = !((rows.va | rows.pitch) & 127);
+        rows.shadowTarget = !rows.renderable;
+    }
+    return rows;
+}
+
+// storedRows, `scratch` holding the view where stores land at other rows than the plane's own, else the plane itself
+inline const Texture &storedRows(const Texture &plane, const Texture &t, Texture &scratch)
+{
+    if (!plane.storePitch)
+        return plane;
+    scratch = storedRows(plane, t);
+    return scratch;
+}
 
 // Whether a plane's rows overlap: its pitch holds fewer bytes than a row
 inline bool overlapsRows(const Texture &plane)

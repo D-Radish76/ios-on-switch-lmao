@@ -101,6 +101,13 @@ constexpr uint32_t ycbcrPlaneStride(uint32_t bytesPerRow)
     return 16u * ((((bytesPerRow >> 4) - 1u) & 0xffffu) + 1u);
 }
 
+// The bytes between a plane's rows as Metal's GPU stores them: rows under 16 bytes 16 apart, others rounded down to 16 (an
+// M4 Max's passes and kernels into RGB10A8_2P_XR10 planes: m2v-textures11 probes/h1/rows550.txt)
+constexpr uint32_t planeStoreStride(uint32_t bytesPerRow)
+{
+    return bytesPerRow < 16 ? 16u : bytesPerRow & ~15u;
+}
+
 bool isYcbcrFormat(uint32_t pixelFormat);
 
 // Whether Metal makes no texture of `usage` over a surface (MTLDevice.h newTextureWithDescriptor:iosurface:plane:, nullable): a

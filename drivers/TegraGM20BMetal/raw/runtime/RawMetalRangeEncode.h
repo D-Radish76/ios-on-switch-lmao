@@ -180,6 +180,7 @@ private:
     raw::PassUses planned_;
     size_t renderBegin_ = SIZE_MAX;
     uint32_t passDraws_ = 0;  // the raw command buffer's draws as the open pass began (resolvePasses: whether it drew)
+    bool passDrew_ = false;   // the pass closing drew, read before the raw path's own draws after it (closeEncoders)
     bool continuing_ = false;
     size_t encoder_ = SIZE_MAX;  // the encoder being encoded (SIZE_MAX: none)
     size_t freshAt_ = SIZE_MAX;  // encoded ahead: the encoder whose first uses of fresh textures were claimed last
@@ -188,7 +189,8 @@ private:
     // took of the command buffer's for a texture that holds none
     std::vector<std::pair<__unsafe_unretained RMTexture *, uint32_t>> standInLoads_, standInStores_;
     std::array<raw::Texture *, 8> planarScratch_{};
-    std::vector<__unsafe_unretained RMTexture *> planesWritten_, overlapStores_;
+    // overlapStores_ the open pass's targets held in planes that overlap, overlapLoaded_ those of them it loads
+    std::vector<__unsafe_unretained RMTexture *> planesWritten_, overlapStores_, overlapLoaded_;
     std::array<const raw::Texture *, 8> backings_{};
     // The open pass's loaded two-plane YCbCr targets and their slots, the tiles its draws reach (raw_ycbcr_load.h) and the
     // targets whose stores write those tiles alone

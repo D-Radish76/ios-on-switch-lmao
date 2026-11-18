@@ -145,12 +145,14 @@ void aMultisampledBgra10XrResolvesByItsState()
     expectRaw(device, p);
 }
 
-// The copy engine's launches' destinations in the jobs from `first` on, in push order
-std::vector<uint64_t> copiesInto(size_t first)
+// The copy engine's launches' destinations in the jobs from `first` on, in push order; `pitches`: each one's PITCH_OUT
+std::vector<uint64_t> copiesInto(size_t first, std::vector<uint32_t> *pitches = nullptr)
 {
-    constexpr uint32_t kCopySubchannel = 4, kOutUpper = 0x0408, kOutLower = 0x040c, kLaunchDma = 0x0300;
+    constexpr uint32_t kCopySubchannel = 4, kOutUpper = 0x0408, kOutLower = 0x040c, kPitchOut = 0x0414,
+                       kLaunchDma = 0x0300;
     std::vector<uint64_t> out;
     uint64_t to = 0;
+    uint32_t pitch = 0;
     for (size_t j = first; j < kernel_model::model.jobs.size(); ++j) {
         const std::vector<uint32_t> &w = kernel_model::model.jobs[j].words;
         for (size_t i = 0; i < w.size();) {
@@ -164,11 +166,19 @@ std::vector<uint64_t> copiesInto(size_t first)
                     to = (to & 0xffffffffull) | uint64_t(w[i]) << 32;
                 else if (method == kOutLower)
                     to = (to & ~0xffffffffull) | w[i];
-                else if (method == kLaunchDma)
+                else if (method == kPitchOut)
+                    pitch = w[i];
+                else if (method == kLaunchDma) {
                     out.push_back(to);
+                    if (pitches)
+                        pitches->push_back(pitch);
+                }
             }
-            if (op == 4 && subc == kCopySubchannel && m == kLaunchDma)
+            if (op == 4 && subc == kCopySubchannel && m == kLaunchDma) {
                 out.push_back(to);
+                if (pitches)
+                    pitches->push_back(pitch);
+            }
         }
     }
     return out;
@@ -278,6 +288,65 @@ void crossingPlanesCleared(bool state)
     CFRelease(surface);
 }
 
+// RGB10A8_2P_XR10 8x8 over words of rows 32 at 0 and alpha bytes of rows 8 at 256: an M4 Max makes it, reads the alpha
+// rows 1 MiB apart and stores them 16 apart (m2v-textures11 probes/h1/rows550.txt m3), and a pass that loads the planes and
+// draws nothing stores none (m2v-textures12 probes/f2/targets-full.txt #168, #169). A Clear pass stores the alpha pool at
+// rows 16 apart; a Load pass with no draw fills the pools and copies nothing back into the planes
+void planesOfRowsUnderSixteenBytesStoreSixteenApart()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    NSMutableArray *planes = [NSMutableArray array];
+    for (unsigned bytes : {4u, 1u})
+        [planes addObject:@{
+            (id)kIOSurfacePlaneWidth : @8,
+            (id)kIOSurfacePlaneHeight : @8,
+            (id)kIOSurfacePlaneBytesPerElement : @(bytes),
+            (id)kIOSurfacePlaneBytesPerRow : @(8 * bytes),
+            (id)kIOSurfacePlaneOffset : @(bytes == 4 ? 0 : 256),
+            (id)kIOSurfacePlaneSize : @(64 * bytes)
+        }];
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @8,
+        (id)kIOSurfaceHeight : @8,
+        (id)kIOSurfacePixelFormat : @(uint32_t('b3a8')),
+        (id)kIOSurfaceAllocSize : @((8u << 20) + 16384),
+        (id)kIOSurfacePlaneInfo : planes
+    });
+    ASSERT_TRUE(surface);
+    MTLTextureDescriptor *d =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(550) width:8 height:8 mipmapped:NO];
+    d.storageMode = MTLStorageModeShared;
+    d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:surface plane:0];
+    ASSERT_TRUE(t != nil && t->_rawOk) << "Metal makes it";
+    const raw::Texture &alpha = *t->_raw.chroma;
+    EXPECT_EQ(alpha.pitch, 1u << 20);
+    EXPECT_EQ(alpha.storePitch, 16u);
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = (id<MTLTexture>)t;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    p.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.25, -0.25, 0.75);
+    size_t first = kernel_model::model.jobs.size();
+    expectRaw(device, p);
+    std::vector<uint32_t> pitches;
+    std::vector<uint64_t> copies = copiesInto(first, &pitches);
+    const auto stored = std::find(copies.begin(), copies.end(), alpha.va);
+    ASSERT_NE(stored, copies.end()) << "the alpha pool stored into the plane";
+    EXPECT_EQ(pitches[size_t(stored - copies.begin())], 16u) << "at rows 16 apart";
+
+    p.colorAttachments[0].loadAction = MTLLoadActionLoad;
+    first = kernel_model::model.jobs.size();
+    expectRaw(device, p);
+    copies = copiesInto(first);
+    for (const raw::Texture *plane : {t->_raw.luma, t->_raw.chroma})
+        EXPECT_EQ(std::find(copies.begin(), copies.end(), plane->va), copies.end()) << "nothing stored back";
+    EXPECT_NE(std::find(copies.begin(), copies.end(), alpha.sampled->va), copies.end()) << "the pools loaded";
+    CFRelease(surface);
+}
+
 void crossingPlanesStoredTogether()
 {
     crossingPlanesCleared(true);
@@ -294,6 +363,11 @@ TEST(RawFacadeXrPlanesPass, PlanesWhoseWordsRunIntoTheAlphaPlaneAreStoredTogethe
 {
     switch_ios::test::ExpectPassesInFreshProcess(crossingPlanesStoredTogether);
     switch_ios::test::ExpectPassesInFreshProcess(crossingPlanesWithNoStateFail);
+}
+
+TEST(RawFacadeXrPlanesPass, PlanesOfRowsUnderSixteenBytesStoreSixteenApartAndNotFromALoadedPassThatDrewNothing)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(planesOfRowsUnderSixteenBytesStoreSixteenApart);
 }
 
 TEST(RawFacadeXrPlanesPass, PlanesWhoseRowsOverlapAreStoredFromTheirPools)

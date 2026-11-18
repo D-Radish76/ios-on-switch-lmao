@@ -23,9 +23,10 @@ inline bool xrPlanesPooled(const Texture &t)
     return t.xrPlanes && ((t.luma && t.luma->sampled) || (t.chroma && t.chroma->sampled));
 }
 
-// Whether the rows of a texture's two planes reach one another's bytes (words that run on into the alpha plane): an M4 Max's
-// pass gives such a byte to whichever store lands later, taken across both planes (raw_overlap_order.h overlapPlanesWinner).
-// Both planes lie in one import, a surface's by its ID (Device::importSurface), or in the window both were moved into
+// Whether the rows of a texture's two planes, as its stores land them (storedRows), reach one another's bytes (words that
+// run on into the alpha plane): an M4 Max's pass gives such a byte to whichever store lands later, taken across both planes
+// (raw_overlap_order.h overlapPlanesWinner). Both planes lie in one import, a surface's by its ID (Device::importSurface),
+// or in the window both were moved into
 inline bool xrPlanesCross(const Texture &w, const Texture &a)
 {
     const uint64_t wordsEnd = w.va + uint64_t(w.pitch) * (w.height - 1) + uint64_t(w.width) * w.bpp;
@@ -33,12 +34,13 @@ inline bool xrPlanesCross(const Texture &w, const Texture &a)
     return !a.memoryless && w.va < alphaEnd && a.va < wordsEnd;
 }
 
-// Held in planes whose rows overlap, their own or one another's: stored through both pools
+// Held in planes stored through both pools: stored at other rows than they are read (Texture::storePitch), or of rows that
+// overlap, their own or one another's
 inline bool xrPlanesOverlap(const Texture &t)
 {
     if (!t.xrPlanes || !t.luma || !t.chroma || !t.luma->sampled)
         return false;
-    return overlapsRows(*t.luma) ||
+    return t.luma->storePitch || t.chroma->storePitch || overlapsRows(*t.luma) ||
            (!t.chroma->memoryless && (overlapsRows(*t.chroma) || xrPlanesCross(*t.luma, *t.chroma)));
 }
 
@@ -48,7 +50,7 @@ inline bool xrPlanesOverlap(const Texture &t)
 inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t, const char **why)
 {
     constexpr uint32_t kR8Uint = 13;
-    const Texture &w = *t.luma, &a = *t.chroma;
+    const Texture w = storedRows(*t.luma, t), a = storedRows(*t.chroma, t);
     Pipeline *state = d.ownPipeline(kOverlapPlanesState);
     if (!state) {
         *why = "the pack has no state storing RGB10A8_2P_XR10 planes whose rows reach one another's";
@@ -75,6 +77,7 @@ inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t,
         s.base = part ? whole * s.pitch : 0;
         Texture target;
         overlapTarget(w, lo + s.base, s.pitch, width, height, kR8Uint, target);
+        target.storage.bytes = boundFrom(t, target.va, target.storage.bytes);
         PassDesc p;
         p.color[0].texture = &target;
         p.color[0].load = ColorAttachment::Load;
@@ -88,8 +91,8 @@ inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t,
             return 1;
         }
         e->setPipeline(state);
-        e->setTexture(0, w.sampled);
-        e->setTexture(1, a.sampled);
+        e->setTexture(0, t.luma->sampled);
+        e->setTexture(1, t.chroma->sampled);
         e->setBytes(2, 0, &s, sizeof s);
         if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
             return 2;
@@ -104,14 +107,17 @@ inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t,
 inline int storeXrPlaneRows(Device &d, CommandBuffer &rc, const Texture &t, const char **why)
 {
     constexpr uint32_t kR8Unorm = 10;
-    if (xrPlanesCross(*t.luma, *t.chroma))
+    Texture words, alpha;
+    if (xrPlanesCross(storedRows(*t.luma, t, words), storedRows(*t.chroma, t, alpha)))
         return storeXrCrossingPlanes(d, rc, t, why);
     for (const Texture *plane : {t.chroma, t.luma}) {
         if (!plane->sampled)
             continue;
-        if (!overlapsRows(*plane)) {
+        Texture scratch;
+        const Texture &rows = storedRows(*plane, t, scratch);
+        if (!overlapsRows(rows)) {
             BlitEncoder *b = rc.blit();
-            b->copyTexels(*plane->sampled, 0, 0, 0, *plane, 0, 0, 0, plane->width, plane->height);
+            b->copyTexels(*plane->sampled, 0, 0, 0, rows, 0, 0, 0, plane->width, plane->height);
             b->end();
             continue;
         }
@@ -128,21 +134,22 @@ inline int storeXrPlaneRows(Device &d, CommandBuffer &rc, const Texture &t, cons
             source.format = kR8Unorm;
             source.tic = t.tic + 1;
         }
-        const OverlapRows rows =
-            overlapRowsOf(plane->pitch, plane->width * plane->bpp, plane->height, plane->bpp, plane->bpp, 1, 1);
-        if (const int failed =
-                storeOverlapRows(rc, state, format, plane->va, *plane, source, nullptr, rows, nullptr, why))
+        const OverlapRows order =
+            overlapRowsOf(rows.pitch, plane->width * plane->bpp, plane->height, plane->bpp, plane->bpp, 1, 1);
+        if (const int failed = storeOverlapRows(rc, state, format, rows.va, rows, source, nullptr, order, nullptr, why))
             return failed;
     }
     return 0;
 }
 
-// `fill`: each pool from its rows; else each pool back into its rows
+// `fill`: each pool from its rows as they are read; else each pool back into its rows as stores land them (storedRows),
+// the words last: where they reach the alpha plane an M4 Max's kernel stores leave the word (probes/h1/rows550.txt a1)
 inline void moveXrPools(BlitEncoder &b, const Texture &t, bool fill)
 {
-    for (const Texture *plane : {t.luma, t.chroma})
+    for (const Texture *plane : {t.chroma, t.luma})
         if (plane && plane->sampled) {
-            const Texture &rows = *plane, &pool = *plane->sampled;
+            Texture scratch;
+            const Texture &rows = fill ? *plane : storedRows(*plane, t, scratch), &pool = *plane->sampled;
             b.copyTexels(fill ? rows : pool, 0, 0, 0, fill ? pool : rows, 0, 0, 0, plane->width, plane->height);
         }
 }

@@ -10,8 +10,7 @@
 bool xrLastPlane(IOSurfaceRef s, NSUInteger plane);
 // A plane's rows as Metal's GPU reads and writes them, rounded down to 16 (probes/xr.txt 5a-5m)
 size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane);
-// 550 or 551 over a plane followed by another, both of rows of 16 bytes or more: a 2D texture, one level, one sample, no
-// rotation, of any usage. An M4 Max reads words that run on into the alpha plane at their pitch, and its pass gives a byte
+// 550 or 551 over a plane followed by another: a 2D texture, one level, one sample, no rotation, of any usage. An M4 Max reads words that run on into the alpha plane at their pitch, and its pass gives a byte
 // both planes' rows reach to whichever store comes later, taken across both planes (raw_xr_pools.h xrPlanesCross). Metal
 // reads the planes so whatever their elements (an M4 Max over 4+1, 4+2, 8+1, 2+1,
 // 4+4 and '420v' planes: m2v-textures5 probes/xrplane0.mm), their top-left corner, each row at its plane's pitch where rows
@@ -22,10 +21,10 @@ bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane);
 bool xrPlanesStorable(MTLTextureDescriptor *d);
 // At `width` x `height` (a turned one's plane's extent); false with raw::surfaceRefusal naming the step
 bool makeXrPlanes(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t height);
-// 550 or 551 written (Unknown, RenderTarget or ShaderWrite usage) over one plane alone, a surface's one or the last of
-// several, 2D as xrPlanesShape's: an M4 Max's passes and kernels store BGR10_XR's words there with bits 30 and
-// 31 clear and no alpha, and its reads take alpha 0 (m2v-textures4 probes/more.mm, tb.mm). Held as one over two planes
-// is, with no alpha plane (raw_xr_texture.cpp)
+// 550 or 551 written (Unknown, RenderTarget or ShaderWrite usage), or of rows under 16 bytes, over one plane alone, a
+// surface's one or the last of several, 2D as xrPlanesShape's: an M4 Max's passes and kernels store BGR10_XR's words
+// there with bits 30 and 31 clear and no alpha, and its reads take alpha 0 (m2v-textures4 probes/more.mm, tb.mm). Held
+// as one over two planes is, with no alpha plane (raw_xr_texture.cpp)
 bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane);
 bool makeXrWordPlane(RMTexture *t, IOSurfaceRef s, uint32_t width, uint32_t height);
 // 550 or 551 read alone over one plane alone (a surface of one, or the last of several): an M4 Max reads BGR10_XR's

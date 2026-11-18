@@ -54,7 +54,7 @@ const char *planesCopyForm(RMTexture *a, NSUInteger sl, MTLOrigin so, MTLSize si
                        !raw::planeRegionReadable(from, so.x, so.y, size.width, size.height)))
         return "of a region that reads past the end of its surface's last page";
     if (intoPlanes &&
-        (!raw::planeBytes(d, unit, to) || dorg.x + size.width > to.width || dorg.y + size.height > to.height))
+        (!raw::planeBytes(d, unit, to, true) || dorg.x + size.width > to.width || dorg.y + size.height > to.height))
         return "of a region past a plane's rows";
     form = fromPlanes && intoPlanes ? kCopyPlanes : kCopyPlaneBytes;
     return nullptr;

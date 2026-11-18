@@ -38,26 +38,27 @@ size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane)
 
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
-    return planesForm(d) && plane + 1 < IOSurfaceGetPlaneCount(s) && xrGpuRows(s, plane) && xrGpuRows(s, plane + 1);
+    return planesForm(d) && plane + 1 < IOSurfaceGetPlaneCount(s);
 }
 
 bool xrWordPlaneShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
     const bool writes =
         d.usage == MTLTextureUsageUnknown || (d.usage & (MTLTextureUsageRenderTarget | MTLTextureUsageShaderWrite));
-    return planesForm(d) && writes && xrLastPlane(s, plane);
+    return planesForm(d) && (writes || !xrGpuRows(s, plane)) && xrLastPlane(s, plane);
 }
 
-// The planes at Metal's GPU layout, each offset and rows rounded down to 16, and plane `word`'s own rows kept for the CPU
-// copies, which an M4 Max makes at the plane's layout (m2v-textures9 probes/xr.txt 5a-5n)
+// The planes at Metal's GPU layout, each offset rounded down to 16, the rows each at Metal's strides
+// (createXrPlaneTexture), and plane `word`'s own rows kept for the CPU copies, which an M4 Max makes at the plane's layout
+// (m2v-textures9 probes/xr.txt 5a-5n)
 static bool holdInPlanes(RMTexture *t, IOSurfaceRef s, uint64_t word, uint32_t wordPitch, uint64_t alpha,
                          uint32_t alphaPitch, uint32_t width, uint32_t height)
 {
     MTLTextureDescriptor *d = t->_descriptor;
     const char *why = "";
     if (!gRM->raw->createXrPlaneTexture(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s,
-                                        word & ~uint64_t(15), wordPitch & ~15u, alpha & ~uint64_t(15),
-                                        alphaPitch & ~15u, width, height, uint32_t(d.pixelFormat), t->_raw, &why)) {
+                                        word & ~uint64_t(15), wordPitch, alpha & ~uint64_t(15), alphaPitch, width,
+                                        height, uint32_t(d.pixelFormat), t->_raw, &why)) {
         raw::surfaceRefusal = why;
         return false;
     }

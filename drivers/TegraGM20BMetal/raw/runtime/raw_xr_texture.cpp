@@ -6,9 +6,13 @@
 // 'w30r' a BGR10_XR target was cleared in, reads its words with alpha 0 and stores them with bits 30 and 31 clear). One
 // written over a plane alone has no alpha plane: chroma is a memoryless target, its header (the pair's second) over a
 // sparse range of the texture's own (Texture::window), which the GMMU reads as 0 and whose stores it drops, as an M4 Max
-// reads alpha 0 there and stores none (m2v-textures9 probes/xr.txt 6a-6c).
+// reads alpha 0 there and stores none (m2v-textures9 probes/xr.txt 6a-6c). A plane's rows are read at Metal's GPU stride
+// (raw_ycbcr.h ycbcrPlaneStride: rows under 16 bytes 1 MiB apart) and stored at one of their own (planeStoreStride): an
+// M4 Max stores rows under 16 bytes 16 apart, a word that lands on the alpha plane taking its byte as a pass orders them
+// (m2v-textures11 probes/h1/rows550.txt).
 #include "raw_xr_pass.h"
 #include "raw_xr_pools.h"
+#include "raw_ycbcr.h"
 
 #include "raw_gpu.h"
 #include "raw_gpu_internal.h"
@@ -24,8 +28,8 @@ constexpr uint8_t kWordChannels[4] = {4, 3, 2, 1};  // Blue, Green, Red, One
 constexpr uint32_t kRGB10A2Unorm = 90, kR8Unorm = 10;
 
 bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
-                                  uint64_t word, uint32_t wordPitch, uint64_t alpha, uint32_t alphaPitch,
-                                  uint32_t width, uint32_t height, uint32_t format, Texture &t, const char **why)
+                                  uint64_t word, uint32_t wordRows, uint64_t alpha, uint32_t alphaRows, uint32_t width,
+                                  uint32_t height, uint32_t format, Texture &t, const char **why)
 {
     Texture *w = new Texture, *a = new Texture;
     const auto undo = [&](const char *reason) {
@@ -37,11 +41,10 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
         *why = reason;
         return false;
     };
-    if (!twoPlaneXr(format) || !shape(width, height, format, t))
+    if (!twoPlaneXr(format) || !shape(width, height, format, t) || !wordRows)
         return undo("no two-plane extended-range texture of its format and size");
-    if (!wordPitch)
-        return undo("words of rows under 16 bytes");
-    const bool alone = !alphaPitch;
+    const bool alone = !alphaRows;
+    const uint32_t wordPitch = ycbcrPlaneStride(wordRows), alphaPitch = alone ? 0 : ycbcrPlaneStride(alphaRows);
     // rows read at their pitch past their row's or their plane's end (raw_xr_pools.h) are imported to the bytes they
     // reach: to the surface's last page, past it through a sparse window (reads 0, stores dropped, as an M4 Max reads 0
     // past a surface's last page where nothing else is mapped)
@@ -77,7 +80,14 @@ bool Device::createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t alloc
         plane.tic = image->tic;
         return true;
     };
-    if ((overlapsRows(*w) || (!alone && (overlapsRows(*a) || xrPlanesCross(*w, *a)))) && (!pooled(*w) || !pooled(*a)))
+    if (planeStoreStride(wordRows) != wordPitch)
+        w->storePitch = planeStoreStride(wordRows);
+    if (!alone && planeStoreStride(alphaRows) != alphaPitch)
+        a->storePitch = planeStoreStride(alphaRows);
+    const Texture ws = storedRows(*w, t), as = storedRows(*a, t);
+    if ((w->storePitch || a->storePitch || overlapsRows(ws) ||
+         (!alone && (overlapsRows(as) || xrPlanesCross(ws, as)))) &&
+        (!pooled(*w) || !pooled(*a)))
         return undo("no memory for the pool images planes that overlap are read and stored through");
     // a plane alone's alpha sink: a sparse range of its own, or the end of the window its words' rows past the last page
     // are read through

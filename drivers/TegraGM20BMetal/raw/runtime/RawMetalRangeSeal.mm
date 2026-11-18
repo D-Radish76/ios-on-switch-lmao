@@ -8,6 +8,8 @@
 #import "RawMetalTargetViews.h"
 #include "raw_xr_pools.h"
 
+#include <algorithm>
+
 // The pass's backings of its YCbCr targets' stand-ins, read before the resolve passes take the encoder over, then the
 // stand-ins stored into the planes
 void RMRangeEncode::standInBackings()
@@ -49,7 +51,11 @@ bool RMRangeEncode::storeStandIns()
 
 bool RMRangeEncode::storeOverlappingPlanes()
 {
-    for (RMTexture *t : overlapStores_)
+    // a pass that loads its planes and draws nothing stores nothing (an M4 Max over planes it reads and stores at other
+    // rows: m2v-textures12 probes/f2/targets-full.txt #168, #169)
+    for (RMTexture *t : overlapStores_) {
+        if (!passDrew_ && std::find(overlapLoaded_.begin(), overlapLoaded_.end(), t) != overlapLoaded_.end())
+            continue;
         if (const int failed = raw::storeXrPlaneRows(*d_, *rc_, t->_raw, why_)) {
             if (failed == 2) {
                 rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
@@ -58,7 +64,9 @@ bool RMRangeEncode::storeOverlappingPlanes()
             rmPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorInternal);
             return fail(PredEncPlanarRT, *why_);
         }
+    }
     overlapStores_.clear();
+    overlapLoaded_.clear();
     return true;
 }
 
@@ -142,6 +150,7 @@ bool RMRangeEncode::endEncoders()
 // The open encoders ended, their resolves and stand-ins after them
 bool RMRangeEncode::closeEncoders()
 {
+    passDrew_ = rc_->draws != passDraws_;
     if (re_)
         re_->end();
     standInBackings();

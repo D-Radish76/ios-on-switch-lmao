@@ -10,6 +10,7 @@
 #include "raw_format_standin.h"
 #include "raw_fresh.h"
 #include "raw_turn_copy.h"
+#include "raw_xr_pools.h"
 
 // Loaded two-plane YCbCr targets (raw_ycbcr_load.h): each pass renders into a stand-in the pack's load state fills from the
 // planes first
@@ -113,11 +114,16 @@ bool RMRangeEncode::formatStandIns(const RMPass &pass, raw::PassDesc &p, const P
 
 bool RMRangeEncode::storeFormatTargets()
 {
-    for (const FormatStore &s : formatStores_)
+    for (const FormatStore &s : formatStores_) {
+        // planes stored through their pools: none from a loaded pass that drew nothing, as storeOverlappingPlanes
+        const raw::Texture *t = s.attachment.texture;
+        if (!passDrew_ && s.attachment.load == raw::ColorAttachment::Load && t && t->xrPlanes && raw::xrPlanesOverlap(*t))
+            continue;
         if (!raw::storeFormatStandIn(*d_, *rc_, s.attachment, s.layers, *s.standIn, why_)) {
             rmPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorInternal);
             return fail(PredPassAttFormat, *why_, s.attachment.texture->format);
         }
+    }
     formatStores_.clear();
     return true;
 }

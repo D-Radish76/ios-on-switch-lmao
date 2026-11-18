@@ -314,7 +314,10 @@ void RMRangeEncode::overlappingPlanes(const RMPass &pass, const raw::PassDesc &p
             continue;
         if (a.load == MTLLoadActionLoad)
             raw::fillXrPools(*rc_, t->_raw);
-        if (a.store != MTLStoreActionDontCare)
-            overlapStores_.push_back(t);
+        if (a.store == MTLStoreActionDontCare)
+            continue;
+        overlapStores_.push_back(t);
+        if (a.load == MTLLoadActionLoad)
+            overlapLoaded_.push_back(t);
     }
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 // RGB10A8_2P_XR10 held in a surface's planes (createXrPlaneTexture): over two planes whose rows are off 32 bytes, its
 // header pair reads the planes' pool images; over a plane alone, its alpha a memoryless target whose header, freed with the
-// pair, is over a sparse range of its own (reads 0, stores dropped); turned, a pass into it draws its planes turned.
+// pair, is over a sparse range of its own (reads 0, stores dropped); turned, a pass into it draws its planes turned; of
+// rows under 16 bytes, read and stored at Metal's two strides.
 #include "raw_device_views_harness.h"
 #include "../raw/runtime/raw_rotated_pass.h"
 #include "../raw/runtime/raw_turned_planes.h"
@@ -77,15 +78,6 @@ TEST_F(DeviceViews, PlanesThatOverlapAreHeldThroughPools)
     EXPECT_EQ(p.color[0].texture, t.luma->sampled) << "the words rendered in their pool";
     EXPECT_EQ(p.color[1].texture, t.chroma->sampled);
     dev.destroyTexture(t);
-}
-
-TEST_F(DeviceViews, WordsOfRowsUnderSixteenBytesAreNotTaken)
-{
-    Surface s;
-    raw::Texture t;
-    const char *why = "";
-    EXPECT_FALSE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 0, 512, 32, 2, 8, 550, t, &why));
-    EXPECT_STREQ(why, "words of rows under 16 bytes");
 }
 
 class DeviceXrSink : public DeviceViews {
@@ -196,6 +188,42 @@ TEST_F(DeviceXrSink, APlaneAloneWhoseRowsRunPastTheLastPageReadsThroughAWindow)
     EXPECT_GE(alpha, t.luma->va + 64 * 7 + 4 * 32) << "the sink past every word row";
     EXPECT_LT(alpha, t.window.va + t.window.bytes);
     dev.destroyTexture(t);
+}
+
+// Planes of rows under 16 bytes, which an M4 Max reads 1 MiB apart and stores 16 apart, the words of rows 4-7 landing on
+// the alpha plane (m2v-textures11 probes/h1/rows550.txt a1): each read through its pool from rows 1 MiB apart in a window
+// of the surface's pages and a sparse tail, and stored from it at rows 16 apart, the two planes' stores crossing
+TEST_F(DeviceXrSink, PlanesOfRowsUnderSixteenBytesAreReadAMebibyteApartAndStoredSixteenApart)
+{
+    Surface s;
+    raw::Texture t;
+    const char *why = "";
+    ASSERT_TRUE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 8, 64, 2, 2, 8, 550, t, &why)) << why;
+    ASSERT_TRUE(t.xrPlanes && t.luma->sampled && t.chroma->sampled);
+    for (const raw::Texture *plane : {t.luma, t.chroma}) {
+        EXPECT_EQ(plane->pitch, 1u << 20) << "read 1 MiB apart";
+        EXPECT_EQ(plane->storePitch, 16u) << "stored 16 apart";
+        EXPECT_EQ(raw::storedRows(*plane, t).pitch, 16u);
+    }
+    ASSERT_GT(t.window.bytes, t.window.pages) << "rows past the surface's pages through a sparse tail";
+    EXPECT_EQ(t.chroma->va - t.luma->va, 64u);
+    EXPECT_EQ(raw::storedRows(*t.luma, t).storage.bytes, 16u * 7 + 8);
+    EXPECT_TRUE(raw::xrPlanesCross(raw::storedRows(*t.luma, t), raw::storedRows(*t.chroma, t)));
+    EXPECT_TRUE(raw::xrPlanesOverlap(t));
+    for (uint32_t k = 0; k < 2; k++)
+        EXPECT_EQ(headerAddress(dev.headerWords(t.tic + k)), (k ? t.chroma : t.luma)->sampled->va & ~uint64_t(511));
+    dev.destroyTexture(t);
+
+    // words of rows 32 and alpha bytes of rows 8 (rows550.txt m3): the alpha alone at two strides
+    raw::Texture u;
+    ASSERT_TRUE(dev.createXrPlaneTexture(0, s.base, s.bytes, nullptr, 0, 32, 256, 8, 8, 8, 550, u, &why)) << why;
+    EXPECT_EQ(u.luma->pitch, 32u);
+    EXPECT_EQ(u.luma->storePitch, 0u);
+    EXPECT_EQ(u.chroma->pitch, 1u << 20);
+    EXPECT_EQ(u.chroma->storePitch, 16u);
+    EXPECT_FALSE(raw::xrPlanesCross(raw::storedRows(*u.luma, u), raw::storedRows(*u.chroma, u)));
+    EXPECT_TRUE(raw::xrPlanesOverlap(u)) << "stored through its pools";
+    dev.destroyTexture(u);
 }
 
 TEST_F(DeviceXrSink, APlaneAloneOfWholeRowsHasNoPool)

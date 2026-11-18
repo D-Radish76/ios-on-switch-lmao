@@ -87,13 +87,13 @@ static void copyToCallerPages(raw::BlitEncoder *be, raw::CommandBuffer *rc, RMTe
     be->copyBytes(x.imagePitchVa, x.callerPages->bo.va, x.storage.bytes);
 }
 
-// The image a buffer copy moves of `t`'s level: a texture held through a surface's planes moves plane 0's bytes
-// (raw_blit_planes.h; RGB10A8_2P_XR10's colour words: BlitEncoder::copyBufferTexels)
-static void bufferCopyImage(RMTexture *t, uint32_t level, raw::Texture &image)
+// The image a buffer copy moves of `t`'s level: a texture held through a surface's planes moves plane 0's bytes, at the
+// rows its writes land at `into` it (raw_blit_planes.h; RGB10A8_2P_XR10's colour words: BlitEncoder::copyBufferTexels)
+static void bufferCopyImage(RMTexture *t, uint32_t level, raw::Texture &image, bool into)
 {
     blitImage(t, level, image);
     if (t->_raw.converted())
-        raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), image);
+        raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), image, into);
 }
 
 // Plane 0's bytes of the side or sides held through planes, counted in the destination's texel (kCopyPlaneBytes): the
@@ -106,7 +106,7 @@ static void copyPlaneBytes(raw::BlitEncoder *be, RMTexture *s, uint32_t sl, uint
     const bool fromPlanes = raw::heldInPlanes(s->_raw), intoPlanes = raw::heldInPlanes(t->_raw);
     raw::Texture from, to;
     if (intoPlanes)
-        raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), to);
+        raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), to, true);
     else
         blitImage(t, dl, to);
     raw::Texture image;
@@ -128,7 +128,7 @@ static void copyPlanePair(raw::BlitEncoder *be, const raw::Texture &s, uint32_t 
 {
     const uint32_t unit = raw::planeUnit(d);
     raw::Texture from, to;
-    if (!raw::planeBytesRead(s, unit, sx, sy, w, h, from) || !raw::planeBytes(d, unit, to))
+    if (!raw::planeBytesRead(s, unit, sx, sy, w, h, from) || !raw::planeBytes(d, unit, to, true))
         return;
     be->copyTexels(from, sx, sy, 0, to, dx, dy, 0, w, h);
     raw::Texture fromOne, toOne;
@@ -303,7 +303,7 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
             fresh.erase(t);
         standInFresh.erase(t);
         raw::Texture level;
-        bufferCopyImage(t, uint32_t(dl), level);
+        bufferCopyImage(t, uint32_t(dl), level, true);
         copyPlanes(be, rc, s->_raw, so, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(dz), uint32_t(w),
                    uint32_t(h), uint32_t(d), true, uint8_t(c.a));
         if (rmCopyClamps(nil, 0, t, uint32_t(dl)) &&
@@ -324,7 +324,7 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
                        w = extra(cb, x + 4), h = extra(cb, x + 5), d = extra(cb, x + 6), dof = extra(cb, x + 7),
                        row = extra(cb, x + 8), image = extra(cb, x + 9), sl = extra(cb, x + 1);
         raw::Texture level;
-        bufferCopyImage(s, uint32_t(sl), level);
+        bufferCopyImage(s, uint32_t(sl), level, false);
         copyPlanes(be, rc, t->_raw, dof, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(sz), uint32_t(w),
                    uint32_t(h), uint32_t(d), false, uint8_t(c.a));
         if (rmCopyClamps(s, uint32_t(sl), nil, 0) &&

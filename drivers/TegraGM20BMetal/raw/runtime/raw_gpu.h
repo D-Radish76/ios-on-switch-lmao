@@ -395,6 +395,10 @@ struct Texture {
     // 0's words read as RGB10A2Unorm codes, plane 1's bytes as R8Unorm at the next index. xrPlane on luma (1) and chroma (2)
     bool xrPlanes = false;
     uint8_t xrPlane = 0;
+    // The bytes between a plane's rows as a GPU store lands them where they are not `pitch`, its rows as reads take them:
+    // an RGB10A8_2P_XR10 plane of rows under 16 bytes, which an M4 Max reads 1 MiB apart and stores 16 apart
+    // (raw_xr_pools.h storedRows). 0: stores land at `pitch`
+    uint32_t storePitch = 0;
     // Metal keeps it losslessly compressed (m2v nan_clear.rs keeps_nan_sign): an extended-range Clear in a pass that records
     // no draw call stores Metal's straight route's codes
     bool compressed = false;
@@ -2245,9 +2249,10 @@ public:
     // states or a plane cannot be rendered
     bool createPlanarTarget(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, Texture &t);
     // RGB10A8_2P_XR10 or its sRGB twin (`format`, raw_xr.h twoPlaneXr) over a two-plane surface, its planes at `word` and
-    // `alpha` (offsets in the allocation, with their pitches), held in them (Texture::xrPlanes): the planes imported as
-    // luma and chroma; `alphaPitch` 0: over a plane alone, chroma a memoryless target whose header is over a sparse range
-    // that reads 0 and drops a kernel's stores (raw_xr_texture.cpp); false with *why where a plane cannot be one
+    // `alpha` (offsets in the allocation, with the bytes a row the surface states for them, which Metal's GPU reads and
+    // stores at its own strides: raw_xr_texture.cpp), held in them (Texture::xrPlanes): the planes imported as luma and
+    // chroma; `alphaPitch` 0: over a plane alone, chroma a memoryless target whose header is over a sparse range that reads
+    // 0 and drops a kernel's stores; false with *why where a plane cannot be one
     bool createXrPlaneTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t word,
                               uint32_t wordPitch, uint64_t alpha, uint32_t alphaPitch, uint32_t width, uint32_t height,
                               uint32_t format, Texture &t, const char **why);

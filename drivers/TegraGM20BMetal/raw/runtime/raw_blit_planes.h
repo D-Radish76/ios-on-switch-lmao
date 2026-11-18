@@ -52,12 +52,14 @@ constexpr uint32_t kUnitFormats[5] = {10, 23, 53, 103, 123};
 
 // Plane 0 of `t`'s rows as texels of `unit` bytes (1, 2, 4, 8 or 16), pitch memory, or the texels of RGB10A8_2P_XR10's
 // words over a surface the kernel laid out block-linear, in that layout: what Metal's blits of a texture held through
-// planes move; false: no such plane
-inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out)
+// planes move. `store`: its rows as a blit's writes land them (Texture::storePitch: an M4 Max reads rows under 16 bytes 1
+// MiB apart and writes them 16 apart, m2v-textures12 probes/f2/copies-full.txt). False: no such plane
+inline bool planeBytes(const Texture &t, uint32_t unit, Texture &out, bool store = false)
 {
     const Texture *luma = t.xrPlanes || (t.ycbcr && !t.onePlane) ? t.luma : nullptr;
     const uint64_t va = luma ? luma->va : t.planes.luma;
-    const uint32_t pitch = luma ? luma->pitch : t.planes.lumaPitch, rows = luma ? luma->height : t.height;
+    const uint32_t pitch = luma ? (store && luma->storePitch ? luma->storePitch : luma->pitch) : t.planes.lumaPitch,
+                   rows = luma ? luma->height : t.height;
     Import *import = luma ? luma->import : t.import;
     const uint32_t log2 = unit ? uint32_t(__builtin_ctz(unit)) : 5;
     if (!va || !pitch || !rows || !import || log2 > 4 || unit != 1u << log2 || pitch < unit)
