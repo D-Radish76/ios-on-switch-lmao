@@ -21,7 +21,7 @@ import Metal
 /// in neither order, a flat arm off Metal's order or a failed command buffer fails. A command buffer failing
 /// MTLCommandBufferErrorInternal is a state with no storage form for its pass (raw:draw.fetch_patches):
 /// <arm>_blocked=fetch_patches, and the arm fails. Fields per arm _first_then_second, _second_then_first, _torn, _other,
-/// _stable, _error, _order; readback_paths=, m2v_cbs=.
+/// _stable, _error, _order; readback_paths=, failed_cbs=.
 struct FetchTessellatedTest: HWTest {
     typealias Cases = FetchTessellatedCases
 
@@ -32,7 +32,7 @@ struct FetchTessellatedTest: HWTest {
 
     static let kept: Set<String> = Set(
         Cases.arms.flatMap { [$0.key + "_order", $0.key + "_blocked"] } + [
-            "tess_six_ordered", "tess_ms4_u2_samples_distinct", "readback_paths", "m2v_cbs",
+            "tess_six_ordered", "tess_ms4_u2_samples_distinct", "readback_paths", "failed_cbs",
         ])
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -51,8 +51,9 @@ struct FetchTessellatedTest: HWTest {
             }
         }
         metrics.set("readback_paths", gpu.paths.isEmpty ? "-" : String(gpu.paths.text.prefix(80)))
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check())
         metrics.fitLog(within: 720, keeping: Self.kept)
         return .judged(checks, metrics, proof: gpu.proof)
     }

@@ -14,7 +14,7 @@ import Metal
 /// rasterization off, the vertex function storing to a buffer, reaching nothing (no_raster; stored_no_raster= the
 /// buffer's words written, 3); and one indirect command buffer of a triangle in tile (0, 0) and a line in tile (1, 1)
 /// (icb_mixed). Per case reached_changed_<case>= bytes changed in the tiles it reaches (above 0; 0 for no_raster, which
-/// reaches none), untouched_changed_<case>= bytes changed elsewhere (0), path_<case>=; m2v_cbs=.
+/// reaches none), untouched_changed_<case>= bytes changed elsewhere (0), path_<case>=; failed_cbs=.
 struct ReachShapesTest: HWTest {
     let id = "gpu.raw.reach_shapes"
     let name = "Loaded YCbCr passes store the tiles an ICB, patch, fragmentless or unrasterized draw reaches, on raw"
@@ -112,8 +112,9 @@ struct ReachShapesTest: HWTest {
                 checks.append(("\(key): \(GPU.describe(error))", false))
             }
         }
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

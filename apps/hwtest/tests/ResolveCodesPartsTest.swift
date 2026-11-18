@@ -11,7 +11,7 @@ import Metal
 /// area resolves the render area rounded up to 32 pixels, [0, 64) x [0, 32), the clear's (0, 0, 0, 1) codes past the
 /// drawn 40x24; every other level, slice, texel and row pad keeps 0x5a; tolerance 0. An M4 Max, this scene: 0 off and
 /// nothing changed outside in every case of both formats. Per format and case <fmt>_<case>_off texels off, _max the
-/// largest |off| in codes, _outside bytes changed outside the resolved part; every command buffer raw, m2v_cbs=0.
+/// largest |off| in codes, _outside bytes changed outside the resolved part; every command buffer raw, failed_cbs=0.
 struct ResolveCodesPartsTest: HWTest {
     let id = "gpu.raw.resolve_codes_parts"
     let name =
@@ -55,10 +55,11 @@ struct ResolveCodesPartsTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["paths", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

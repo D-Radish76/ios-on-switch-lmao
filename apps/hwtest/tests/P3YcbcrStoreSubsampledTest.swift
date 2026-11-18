@@ -12,7 +12,7 @@ import Metal
 /// pattern (DontCare, one full-frame strip), then cleared (a 10-bit luma of 726 is a clear held toward zero, not to
 /// the nearest half; a pattern luma of 128 or 512 at green 0.5 the plain codes stored, not the encode). Fields:
 /// p3_store_codes= codes compared, p3_store_off= codes off, p3_store_max_off=, p3_store_first_off= the first off as
-/// format_plane_x_y_got_want, paths=, m2v_cbs=.
+/// format_plane_x_y_got_want, paths=, failed_cbs=.
 struct P3YcbcrStoreSubsampledTest: HWTest {
     let id = "gpu.raw.p3_ycbcr_store_subsampled"
     let name = "Subsampled sRGB YCbCr targets under P3 matrices store Metal's codes, drawn and cleared, on raw"
@@ -177,10 +177,11 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
         metrics.set("p3_store_max_off", tally.maxOff)
         metrics.set("p3_store_first_off", tally.first)
         metrics.set("paths", tally.paths.isEmpty ? "-" : Set(tally.paths).sorted().joined(separator: ","))
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every code Metal's", tally.codes > 0 && tally.off == 0))
         checks.append(("every pass on the raw path", !tally.paths.isEmpty && tally.paths.allSatisfy { $0 == "raw" }))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

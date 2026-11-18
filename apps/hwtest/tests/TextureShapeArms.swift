@@ -3,9 +3,10 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// What a gpu.raw.texture_shapes case checks of newTextureWithDescriptor: shapes that went to m2v (raw_texture_shape.h,
-/// test/raw_device_shapes_test.cpp): each texture's route (raw's own, m2v's or nil), the bytes it gave back, every made
-/// texture asked again for its twin after its work (twins_after), and every command buffer's path (paths)
+/// What a gpu.raw.texture_shapes case checks of newTextureWithDescriptor (raw_texture_shape.h,
+/// test/raw_device_shapes_test.cpp): each texture's route (raw's own, another object or nil), the bytes it gave back,
+/// every made texture asked again after its work whether it is still raw's (twins_after), and every command buffer's
+/// path (paths)
 final class ShapeArms {
     let gpu: GPU
     private var metrics = Metrics()
@@ -28,7 +29,7 @@ final class ShapeArms {
     }
 
     private func answer(_ texture: MTLTexture?) -> String {
-        texture.map { NativeObject.name($0) == nil ? "m2v" : "raw" } ?? "nil"
+        texture.map { NativeObject.name($0) == nil ? "other" : "raw" } ?? "nil"
     }
 
     func route(_ label: String, _ texture: MTLTexture?, expect: String) {

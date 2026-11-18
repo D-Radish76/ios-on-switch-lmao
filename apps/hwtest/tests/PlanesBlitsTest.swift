@@ -19,7 +19,7 @@ import OSLog
 /// and raw:blit.invalid; F (Apple writes plane 0 with a value that ignores the colour) nothing and raw:blit.undefined.
 /// Each line is logged once a process, so the process's log must hold each exactly once afterwards (invalid_lines=,
 /// undefined_lines=). cases= and cases_off=; for a case off its rule or the raw path only (a line of every case would
-/// pass os_log's limit), <case>_changed= (bytes off the rule) and <case>_path=; m2v_cbs=.
+/// pass os_log's limit), <case>_changed= (bytes off the rule) and <case>_path=; failed_cbs=.
 struct PlanesBlitsTest: HWTest {
     let id = "gpu.raw.planes_blits"
     let name = "Blits of textures held through YCbCr and RGB10A8_2P_XR10 planes move only their rule's bytes, on raw"
@@ -58,9 +58,10 @@ struct PlanesBlitsTest: HWTest {
             checks.append(
                 ("raw:\(reason) once in the process's log (\(lines.map(String.init) ?? "no log"))", lines == 1))
         }
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

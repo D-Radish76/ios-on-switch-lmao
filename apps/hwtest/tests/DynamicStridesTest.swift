@@ -5,7 +5,7 @@ import Metal
 
 /// DynamicStrides.swift on the raw path, which once refused strides past 4095 (raw:draw.stride_twin, its own refusal
 /// line, held to none by tools/devicerun refusal.hwtest-m2v): wrong= pixels off the colour (0 on an M4 Max), path=,
-/// m2v_cbs=.
+/// failed_cbs=.
 struct DynamicStridesTest: HWTest {
     let id = "gpu.raw.draw_five_dynamic_strides"
     let name = "Five dynamic-stride vertex buffers at strides past 4095 bytes draw on raw"
@@ -20,11 +20,12 @@ struct DynamicStridesTest: HWTest {
         var metrics = Metrics()
         metrics.set("wrong", wrong)
         metrics.set("path", String(path.prefix(80)))
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         return .judged(
             [
                 ("every pixel at the buffers' colour", wrong == 0), ("on the raw path", path == "raw"),
-                ("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)),
+                FailedCounts(before: before, after: counted).check(),
             ], metrics, proof: gpu.proof)
     }
 }

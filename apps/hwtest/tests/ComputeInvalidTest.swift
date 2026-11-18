@@ -6,12 +6,12 @@ import Metal
 /// Compute work Metal's validation would stop, on the raw path. A dispatch with no compute state set fails its command
 /// buffer with MTLCommandBufferErrorInvalidResource and the facade's compute predicate (no_state_error=, no_state_path=).
 /// An indirect dispatch whose argument buffer holds 8 of the 12 bytes ends as Apple's GPU ends it (short_ending=,
-/// short_path=; Self.short is what it is held to). The kernel writes only inside its buffer. Neither reaches m2v
-/// (m2v_cbs=).
+/// short_path=; Self.short is what it is held to). The kernel writes only inside its buffer. The stateless one is the
+/// only command buffer that fails (failed_cbs=, failed_why=).
 struct ComputeInvalidTest: HWTest {
     let id = "gpu.raw.compute_invalid"
     let name =
-        "A dispatch with no compute state fails InvalidResource and a short indirect one ends as Metal's, not m2v"
+        "A dispatch with no compute state fails InvalidResource and a short indirect one ends as Metal's"
     let subsystem = Subsystem.metal
 
     enum Ending: Equatable {
@@ -106,8 +106,9 @@ struct ComputeInvalidTest: HWTest {
             ("short arguments: ends \(Self.shown(Self.short.ending))", Self.ending(short) == Self.short.ending))
         checks.append(("short arguments: path \(Self.short.path)", shortPath == Self.short.path))
 
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check(expecting: ["compute": 1]))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

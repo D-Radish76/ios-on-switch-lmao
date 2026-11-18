@@ -8,11 +8,11 @@ import Metal
 /// descriptor share their compare form's slot, so 1500 of them all live. A draw sampling a converted '420f' texture
 /// through a wrapping sampler takes one more header for the texture's address map. With every slot taken, a new sampler
 /// is nil, and the draw's command buffer fails with MTLCommandBufferErrorOutOfMemory, as Metal does for a resource it
-/// has no room for. Once the samplers are released, the same draw completes. Nothing may ask for the m2v device
-/// (m2v_needs_asked names what did).
+/// has no room for: the only command buffer that fails, the facade's enc.planarclamp (failed_why=). Once the samplers
+/// are released, the same draw completes.
 struct SamplerTableTest: HWTest {
     let id = "gpu.raw.sampler_table"
-    let name = "Samplers share header slots; a full table is nil and an out-of-memory command buffer, never m2v"
+    let name = "Samplers share header slots; a full table is nil and an out-of-memory command buffer"
     let subsystem = Subsystem.metal
 
     static let width = 64, height = 48
@@ -96,7 +96,7 @@ struct SamplerTableTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = OwnAnswersTest.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -142,9 +142,9 @@ struct SamplerTableTest: HWTest {
         if freed.status != .completed { wrong.append("freed_draw") }
         withExtendedLifetime(pixels) {}
 
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), expecting: ["enc.planarclamp": 1], &metrics)
+        if !failed.1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

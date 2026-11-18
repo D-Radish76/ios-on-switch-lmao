@@ -12,7 +12,6 @@ RAW = 'com.brunostjohn.switch.TegraGM20BMetal'
 DOC = 'r30-frames morning-doc.txt'
 PENDING = 'not on deploy-next5 (r30-frames morning-doc.txt)'
 MORNING = [
-    Check('raw.no-m2v-twin', 'r30-alias', 'no m2v twin', source=DOC),
     Check('alias.nocopy-hostmemory', 'r30-alias', 'no-copy', regex='HostMemory', source=DOC),
     Check(
         'gpu.tiled-cache-on',

@@ -13,7 +13,7 @@ import Metal
 /// and drawn (texel_values_two): the surface's planes and the device-made one's words, read by a blit, each hold the
 /// clear and the draw by the same rule. Tolerance 0. An M4 Max, this scene: 0 texels off in every check.
 /// images_word_off, images_alpha_off texels off, images_max the largest difference in codes, alone_off,
-/// made_surface_off and made_kept_off texels off; every command buffer raw, m2v_cbs=0.
+/// made_surface_off and made_kept_off texels off; every command buffer raw, failed_cbs=0.
 struct XrPlanesImagesTest: HWTest {
     let id = "gpu.raw.xr_planes_images"
     let name = "RGB10A8_2P_XR10 colours beside seven targets or a device-made 550 draw into their planes, on raw"
@@ -69,9 +69,10 @@ struct XrPlanesImagesTest: HWTest {
             checks.append(("made: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

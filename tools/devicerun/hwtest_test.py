@@ -53,12 +53,12 @@ class Verdicts(unittest.TestCase):
 
     def test_gpu_paths_and_pacing_are_reported(self):
         results = run(
-            'HWTEST gpu.clear.formats PASS dev=raw raw_checks=228 raw_paths=raw/230,m2v:compute:compute/2 ms=9.0',
+            'HWTEST gpu.clear.formats PASS dev=raw raw_checks=228 raw_paths=raw/230,error:compute.nokernel/2 ms=9.0',
             'HWTEST pacing.blur_over FAIL link_frames=300 link_missed=0 link_hist=299/0/0/0 late=0 '
             'present_frames=290 present_missed=12 present_hist=280/9/1/0 ms=6000.0 why=the_display_missed',
             'HWTEST suite FAIL pass=1 fail=1 skip=0 ms=1.0',
         )
-        self.assertIn('raw/230,m2v:compute:compute/2', results['hwtest.gpu-paths'].observed)
+        self.assertIn('raw/230,error:compute.nokernel/2', results['hwtest.gpu-paths'].observed)
         self.assertIn('280/9/1/0', results['hwtest.pacing'].observed)
         self.assertEqual(results['hwtest.pacing.blur_over'].verdict, FAIL)
 

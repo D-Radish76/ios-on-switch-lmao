@@ -131,6 +131,39 @@ class Rules(unittest.TestCase):
         results, _ = devicerun.run_checks(boot17[2:], [view])
         self.assertEqual(results[0].verdict, PASS)
 
+    def test_failed_command_buffers_are_judged_per_process(self):
+        failed = [c for c in checks.GROUPS['refusals'] if c.name.startswith('raw.failed')]
+
+        def record(process: str, message: str) -> dict:
+            return {
+                'timestamp': '2026-11-18 15:51:01.210000+0000',
+                'bootUUID': 'B00T',
+                'processImagePath': '/usr/libexec/' + process,
+                'subsystem': checks.REFUSAL_SUBSYSTEM,
+                'category': 'raw.failed',
+                'messageType': 'Error',
+                'eventMessage': message,
+            }
+
+        hwtest = record(
+            'SwitchHWTest',
+            'SwitchHWTest[409] pass.fmt: a command buffer failed (MTLCommandBufferErrorDomain 1): a texture buffer '
+            'past 16384 texels as a colour attachment, which an M4 Max fails Internal',
+        )
+        springboard = record(
+            'SpringBoard',
+            'SpringBoard[88] none: a command buffer failed (MTLCommandBufferErrorDomain 1): A render pipeline could '
+            'not be compiled',
+        )
+        results, _ = devicerun.run_checks([hwtest], failed)
+        got = {r.check.name: r for r in results}
+        self.assertEqual(got['raw.failed'].verdict, PASS)
+        self.assertIn('pass.fmt/1', got['raw.failed-hwtest'].observed)
+        results, _ = devicerun.run_checks([hwtest, springboard], failed)
+        got = {r.check.name: r for r in results}
+        self.assertEqual(got['raw.failed'].verdict, FAIL)
+        self.assertIn('SpringBoard/none/1', got['raw.failed'].observed)
+
     def test_wifi_join_boot16(self):
         events = devicerun.read_ndjson(str(TEST / 'wifi.ndjson'))
         results, _ = devicerun.run_checks(events, checks.GROUPS['wifi'])

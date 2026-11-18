@@ -13,8 +13,8 @@ import Metal
 /// Per chain (f16, u8) one count per level, slash-separated ("0" when every level has none): <c>_nan=, <c>_inf=,
 /// <c>_oor= (f16: finite but outside [0, 1]), <c>_mag= (R and B over 200/255, G under 80/255), <c>_stale= (the
 /// sentinel: texels the level's pass never wrote), <c>_top= and <c>_bottom= (texels of those kinds in the level's
-/// first and last row); <c>_mean= each level's mean over its channels x 255, to set the raw facade's run beside m2v's;
-/// <c>_path= the chain command buffer's path. Any such texel fails the scene, naming the chain and level.
+/// first and last row); <c>_mean= each level's mean over its channels x 255; <c>_path= the chain command buffer's
+/// path. Any such texel fails the scene, naming the chain and level.
 struct CAVariableBlurChainScene: GPUScene {
     let id = "gpu.blur_chain_nan"
     let name = "CA variable blur chain, 776x24 in 10 levels: NaN, magenta and stale texels per level"

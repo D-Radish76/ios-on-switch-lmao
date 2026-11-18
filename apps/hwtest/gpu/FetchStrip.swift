@@ -6,10 +6,9 @@ import Metal
 /// (fetch_add_fragment over quad_vertex), into a cleared 32x32 BGRA8 target of private and of shared storage; once as
 /// the four indices alone and once as two strips split by a restart index (0, 1, 2, 0xffff, 1, 2, 3). Each pixel is
 /// covered once either way, so every pixel is the clear plus the value. `replay_scissor`: the four indices again with
-/// back faces culled (the quad faces front) and a scissor of the target's middle 16x16 into a private target: where the
-/// raw path draws it outside the pixel interlock its faces decide its pixels and it leaves it to m2v; only the
-/// scissor's pixels take the sum, as Metal draws it, wherever it is drawn. A cell's `wrong` counts pixels more than a code off, `path` and `routes` are the command buffer's path and its
-/// fetching draws' routes on the raw facade.
+/// back faces culled (the quad faces front) and a scissor of the target's middle 16x16 into a private target, drawn on
+/// the raw path: only the scissor's pixels take the sum (an M4 Max: 0 pixels off). A cell's `wrong` counts pixels more
+/// than a code off, `path` and `routes` are the command buffer's path and its fetching draws' routes on the raw facade.
 public enum FetchStrip {
     public struct Cell: Sendable {
         public let name, path, routes: String

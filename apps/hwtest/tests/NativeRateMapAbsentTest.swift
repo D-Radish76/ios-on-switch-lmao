@@ -27,7 +27,7 @@ struct NativeRateMapAbsentTest: NativeObjectTest {
         let pass = ClientErrors.pass(target)
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 0.8)
         pass.rasterizationRateMap = ForeignRateMap(device: gpu.device)
-        let before = RawFacade.counters(of: gpu.device)["m2v"] ?? 0
+        let before = RawFacade.counters(of: gpu.device)
         var status = MTLCommandBufferStatus.notEnqueued
         let timing = try await gpu.run(tolerateError: true) { commands in
             commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()

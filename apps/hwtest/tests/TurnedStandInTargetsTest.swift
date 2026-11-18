@@ -14,7 +14,7 @@ import Metal
 /// frame pixel differs from BGRA8's; 0 on an M4 Max for every arm (m2v-textures4 probes/reads.mm and more.mm landings,
 /// and this test's case code on it). On a failure <arm>_looks= names the turn whose store map the plane matches
 /// (RotatedCells.stored, r0 unturned; rotation 4 stores as rotation 1), or the nearest and its misses. Every command
-/// buffer raw, m2v_cbs=0.
+/// buffer raw, failed_cbs=0.
 struct TurnedStandInTargetsTest: HWTest {
     let id = "gpu.raw.turned_standin_targets"
     let name = "Turned stand-in and plane targets land every pixel where BGRA8 of the same rotation does, on raw"
@@ -44,10 +44,11 @@ struct TurnedStandInTargetsTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: looks.union(TurnedStandInCases.arms.map(\.key)).union(["m2v_cbs"]))
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: looks.union(TurnedStandInCases.arms.map(\.key)).union(["failed_cbs"]))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

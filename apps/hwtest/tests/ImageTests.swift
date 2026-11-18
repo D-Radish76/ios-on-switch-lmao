@@ -2,6 +2,7 @@ import CoreGraphics
 import CoreImage
 import Foundation
 import HWTestCore
+import HWTestGPU
 import ImageIO
 import Metal
 
@@ -219,7 +220,8 @@ struct ImageDecodeTest: HWTest {
     static var all: [ImageDecodeTest] { StillImage.all.map { ImageDecodeTest(image: $0) } }
 }
 
-/// A Metal-backed CIContext: a blur of a flat colour stays flat (exact), and a 1080p blur chain is timed.
+/// A Metal-backed CIContext: a blur of a flat colour stays flat (exact), and a 1080p blur chain is timed. On the raw
+/// facade none of Core Image's command buffers may fail (failed_cbs=, failed_why=).
 struct CoreImageTest: HWTest {
     let id = "image.coreimage"
     let name = "Core Image filters on the GPU"
@@ -227,6 +229,7 @@ struct CoreImageTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         guard let device = MTLCreateSystemDefaultDevice() else { return .fail("no Metal device") }
+        let before = RawFacade.counters(of: device)
         let ci = CIContext(mtlDevice: device, options: [.cacheIntermediates: false])
         let flat = CIImage(color: CIColor(red: 0.2, green: 0.4, blue: 0.6)).cropped(
             to: CGRect(x: 0, y: 0, width: 256, height: 256))
@@ -257,13 +260,15 @@ struct CoreImageTest: HWTest {
         var metrics = Metrics()
         metrics.set("flat", pixel.prefix(3).map(String.init).joined(separator: ","))
         metrics.set("ms_1080p", perRun, digits: 1)
-        return .judged(
-            [
-                (
-                    "a blurred flat colour stays 51,102,153",
-                    zip(pixel.prefix(3), [51, 102, 153]).allSatisfy { abs(Int($0) - $1) <= 1 }
-                )
-            ],
-            metrics, proof: "CIContext(mtlDevice: \(device.name))")
+        var checks = [
+            (
+                "a blurred flat colour stays 51,102,153",
+                zip(pixel.prefix(3), [51, 102, 153]).allSatisfy { abs(Int($0) - $1) <= 1 }
+            ),
+        ]
+        if RawFacade.kind(of: device) == "raw" {
+            checks.append(FailedCounts.judged(before: before, after: RawFacade.counters(of: device), &metrics))
+        }
+        return .judged(checks, metrics, proof: "CIContext(mtlDevice: \(device.name))")
     }
 }

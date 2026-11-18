@@ -3,14 +3,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// newTextureWithDescriptor: shapes that went to m2v, one a group (ShapeArms): each made texture is raw's own (no m2v
-/// twin, after its work too), its command buffers are raw's, and it reads back what was put in it; each shape the
-/// identity, GM20B or Metal makes none of answers nil. Cube arrays are the A13's alone: made on iOS 27, nil on iOS 17.
-/// ASTC HDR is nil on both: the A10X makes none, and GM20B decodes ASTC LDR alone. A BC1 3D texture's planes and levels
-/// read back as their solid blocks; a signed normalized target keeps Metal's clear codes.
+/// newTextureWithDescriptor: shapes that went to m2v, one a group (ShapeArms): each made texture is raw's own (after
+/// its work too), its command buffers are raw's, and it reads back what was put in it; each shape the identity, GM20B
+/// or Metal makes none of answers nil. Cube arrays are the A13's alone: made on iOS 27, nil on iOS 17. ASTC HDR is nil
+/// on both: the A10X makes none, and GM20B decodes ASTC LDR alone. A BC1 3D texture's planes and levels read back as
+/// their solid blocks; a signed normalized target keeps Metal's clear codes.
 struct TextureShapesTest: HWTest {
     let id = "gpu.raw.texture_shapes"
-    let name = "Texture shapes that went to m2v are raw's own, or nil where the identity makes none"
+    let name = "Texture shapes are raw's own, or nil where the identity makes none"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 

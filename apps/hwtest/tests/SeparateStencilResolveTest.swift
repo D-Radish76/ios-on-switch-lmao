@@ -10,7 +10,7 @@ import Metal
 /// Min and Max), the Stencil8 read back by a blit into a buffer. The stencil is the picked sample's: sample0 1/1, min
 /// 2/4, max 3/1 (left/right), and the depth the picked sample's, as Metal's resolve filters define them and an M4 Max
 /// stores every texel of this scene. Per case <storage>_<filter>_stencil (left/right), _stencil_off and _depth_off
-/// texels off; every command buffer raw, m2v_cbs=0. Stencil resolve is Apple5's: SKIP below it.
+/// texels off; every command buffer raw, failed_cbs=0. Stencil resolve is Apple5's: SKIP below it.
 struct SeparateStencilResolveTest: HWTest {
     let id = "gpu.raw.separate_stencil_resolve"
     let name = "A multisampled Stencil8 beside a Depth32Float resolves the sample its filter picks, on raw"
@@ -62,9 +62,10 @@ struct SeparateStencilResolveTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

@@ -7,13 +7,14 @@ import Metal
 /// is made before the work that samples through it, from the device's 2048 sampler headers. An OpaqueWhite sampler of a
 /// descriptor no other test makes is made first; gpu.raw.sampler_table's distinct samplers then take every header left;
 /// a draw sampling an R8Unorm texture through the border sampler, whose border reads (1, 0, 0, 1) and so needs a header
-/// of its own, fails its command buffer with MTLCommandBufferErrorOutOfMemory and the facade's call.sampler, never m2v.
+/// of its own, fails its command buffer with MTLCommandBufferErrorOutOfMemory and the facade's call.sampler, the only
+/// command buffer that fails (failed_cbs=, failed_why=).
 /// Once the samplers are released the same draw completes on raw: the 4x4 texture in the middle of a 12x12 target, its
 /// ring the border (shaders/OpaqueBorder.metal). Fields: table_full (no sampler could be made), full_error= the failed
-/// buffer's code, full_path=, freed_path=, freed_wrong= pixels off, m2v_cbs=.
+/// buffer's code, full_path=, freed_path=, freed_wrong= pixels off.
 struct BorderTableFullTest: HWTest {
     let id = "gpu.heap.border_table_full"
-    let name = "An opaque border with no sampler header left fails out of memory, never m2v, and draws once one is free"
+    let name = "An opaque border with no sampler header left fails out of memory, and draws once one is free"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -100,8 +101,9 @@ struct BorderTableFullTest: HWTest {
         }.count
         metrics.set("freed_wrong", wrong)
         checks.append(("the texture and its border read Metal's texels", wrong == 0))
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check(expecting: ["call.sampler": 1]))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

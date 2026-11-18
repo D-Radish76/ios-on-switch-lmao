@@ -79,9 +79,10 @@ struct SameBitsTest: HWTest {
             checks.append(("same_bits_rgba8_depth_load: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

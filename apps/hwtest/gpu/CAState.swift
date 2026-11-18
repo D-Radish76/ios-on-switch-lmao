@@ -5,7 +5,7 @@ import simd
 
 /// Core Animation's own render pipeline states, made in this process from QuartzCore's default.metallib exactly as
 /// the corpus line records them. The raw facade looks up a state whose functions are one framework library's in
-/// its pack, so these are the app's way onto the raw path's draws (the app's own shaders always go to m2v).
+/// its pack, so these draw from the pack's records as Core Animation's own do.
 public enum CAState {
     /// The system's QuartzCore library; the Mac's goldens writers point it at the IPSW's.
     #if os(macOS)

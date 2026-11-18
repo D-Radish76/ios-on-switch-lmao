@@ -19,6 +19,13 @@ LAUNCHD = 'launchd'
 KERNEL = 'kernel'
 SPAWNED = 'Successfully spawned'
 REFUSAL_SUBSYSTEM = 'com.brunostjohn.switch.refusal'
+# The driver's line for the first command buffer each predicate fails in a process (the error's MTLCommandBufferError
+# code); `none` is a failure no predicate gave
+FAILED_LINE = (
+    r'^(?P<who>{who})\[\d+\] (?P<predicate>[\w.]+): a command buffer failed '
+    r'\(MTLCommandBufferErrorDomain (?P<code>\d+)\)'
+)
+FAILED_SOURCE = 'drivers/TegraGM20BMetal/raw/runtime (c38-audit/failed-counts/CONTRACT.md)'
 GPU_METAL_SUBSYSTEM = 'com.brunostjohn.switch.TegraGM20BMetal'
 
 GROUPS: dict[str, list[Check]] = {
@@ -723,6 +730,33 @@ GROUPS: dict[str, list[Check]] = {
             regex=r'^(?P<domain>[A-Za-z][\w.-]*): (?P<who>[^\s\[]+)\[\d+\] (?P<reason>[^:]+): ',
             show=('who', 'domain', 'reason'),
             source='kits/SwitchRefusal/SwitchRefusal.c (kernel default log)',
+        ),
+        Check(
+            'raw.failed',
+            'failed-counts',
+            'a command buffer failed',
+            subsystem=REFUSAL_SUBSYSTEM,
+            level='error',
+            regex=FAILED_LINE.format(who=r'(?!SwitchHWTest\[)[^\[]+'),
+            show=('who', 'predicate', 'code'),
+            source=FAILED_SOURCE,
+            note='every predicate that failed a command buffer, per process (one line a process and predicate, '
+            "category raw.failed): SpringBoard, backboardd, WebKit's GPU process and every other app or daemon; HW "
+            "Test's own are raw.failed-hwtest. hwtest.gpu.recover.kernel_second_timeout kills the contexts the GPU "
+            "holds on purpose: a resident client failing in its window is that test's",
+        ),
+        Check(
+            'raw.failed-hwtest',
+            'failed-counts',
+            'a command buffer failed',
+            REPORT,
+            process='SwitchHWTest',
+            subsystem=REFUSAL_SUBSYSTEM,
+            level='error',
+            regex=FAILED_LINE.format(who='SwitchHWTest'),
+            show=('predicate', 'code'),
+            source=FAILED_SOURCE,
+            note="HW Test's: its tests that expect a failure judge their own predicate and count (FailedCounts)",
         ),
         Check(
             'refusal.mipmaps-state',

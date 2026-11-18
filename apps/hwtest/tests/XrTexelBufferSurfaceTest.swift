@@ -10,7 +10,7 @@ import Metal
 /// surface. An M4 Max (m2v-textures4 probes/tb.mm, and this test's case code on it) reads every texel red 0.5, green
 /// 0.250980, blue -0.250980 (the codes' (code - 384) / 510) through both, alpha 1 through 554 and 0 through 550. r= g=
 /// b= texel 0's colour through 554, a554= a550= its alpha through each; off= texels of either read off Apple's value by
-/// half a code or more (a colour channel; alpha exact). Every command buffer raw, m2v_cbs=0.
+/// half a code or more (a colour channel; alpha exact). Every command buffer raw, failed_cbs=0.
 struct XrTexelBufferSurfaceTest: HWTest {
     let id = "gpu.raw.xr_texel_buffer_surface"
     let name = "Extended-range texture buffers over an IOSurface read an M4 Max's values, on raw"
@@ -53,10 +53,11 @@ struct XrTexelBufferSurfaceTest: HWTest {
         }
         metrics.set("off", off)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["r", "g", "b", "a554", "a550", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["r", "g", "b", "a554", "a550", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

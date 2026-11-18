@@ -10,9 +10,9 @@ import UIKit
 /// the copy engine), so kills land with its copies in flight. Each GR error resets GR, and with the compositor drawing
 /// every frame the PBDMA is often on its channel when that reset comes: a reset that leaves the compositor's context
 /// load stuck shows as a frame waiting a context-switch timeout tick or more. Each kill fails only its own command
-/// buffer, the raw channel comes back once each time, the copy-engine bystander sees no error or kill, and no frame
-/// waits past the bound. kill_ms_max= the longest of the rounds from the fill's end to the poisoned command buffer's
-/// failed end (gpu.recover.kill_one's kill_ms).
+/// buffer (error:none; the process's only failures, failed_cbs=), the raw channel comes back once each time, the
+/// copy-engine bystander sees no error or kill, and no frame waits past the bound. kill_ms_max= the longest of the
+/// rounds from the fill's end to the poisoned command buffer's failed end (gpu.recover.kill_one's kill_ms).
 struct RecoverKillUnderCompositorTest: HWTest {
     let id = "gpu.recover.kill_under_compositor"
     let name = "Raw channel kills while the compositor presents every frame: each fails only itself, no frame waits"
@@ -84,7 +84,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
             bytes[(2 * round * slice)..<((2 * round + 1) * slice)].allSatisfy { $0 == UInt8(2 * round + 1) }
         }.count
         let fillsOK = (fills + [last]).filter { $0.status == .completed && $0.error == nil }.count
-        let killed = poisoned.filter { $0.status == .error && RawFacade.path(of: $0) == "raw" }.count
+        let killed = poisoned.filter { $0.status == .error && RawFacade.path(of: $0) == "error:none" }.count
         let delta = { (key: String) in (end[key] ?? 0) - (start[key] ?? 0) }
         let shown = Pacing(times: presented.sorted(), period: 1.0 / 60)
         let presentGapMs = shown.intervals.max() ?? 0
@@ -96,7 +96,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
         metrics.set("fills_ok", "\(fillsOK)/\(Self.rounds + 1)")
         metrics.set("fill_bytes", kept)
         metrics.set("reopens", delta("reopens"))
-        metrics.set("cpu_ordered", delta("cpu_ordered"))
+        let failed = FailedCounts.judged(before: start, after: end, expecting: ["none": Self.rounds], &metrics)
         metrics.set("present_gap_ms", presentGapMs, digits: 1)
         metrics.set("gap_bound_ms", Self.gapBoundMs, digits: 0)
         metrics.set("kill_ms_max", killMs, digits: 1)
@@ -112,14 +112,14 @@ struct RecoverKillUnderCompositorTest: HWTest {
         return .judged(
             [
                 ("every command buffer ended (none hung)", allEnded),
-                ("every poisoned command buffer ran raw and failed", killed == Self.rounds),
+                ("every poisoned command buffer failed, error:none", killed == Self.rounds), failed,
                 ("every fill completed with its bytes", fillsOK == Self.rounds + 1 && kept == Self.rounds),
                 ("each kill made one reopen of this channel (\(delta("reopens")))", delta("reopens") == Self.rounds),
                 (
                     copier.failure.isEmpty ? "\(copier.role.rawValue) ran with no error" : copier.failure,
                     copierStopped && copier.runs > 0 && copier.errors == 0
                 ),
-                ("no CPU-ordered fallback; GPU order on", delta("cpu_ordered") == 0 && end["gpu_order"] == 1),
+                ("GPU order on", end["gpu_order"] == 1),
                 (
                     "the compositor kept presenting within the bound",
                     shown.frames > 0 && presentGapMs <= Self.gapBoundMs

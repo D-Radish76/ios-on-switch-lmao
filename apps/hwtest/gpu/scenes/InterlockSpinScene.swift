@@ -14,10 +14,6 @@ struct InterlockSpinScene: GPUScene {
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
         let kind = RawFacade.kind(of: gpu.device)
-        guard kind != "m2v" else {
-            result.notes.append("the raw device and Apple GPU reference only")
-            return result
-        }
         let format = TexelFormat.rgba16Float
         let scale = FetchBlendState.scale(format)
         let target = try gpu.texture(format.metal, Self.width, Self.height)
@@ -58,11 +54,7 @@ struct InterlockSpinScene: GPUScene {
                     }
                     encoder.endEncoding()
                 }
-                var warm = try await gpu.run(tolerateError: true, draw)
-                for _ in 0..<20 where kind == "raw" && warm.path.hasPrefix("m2v:state") {
-                    try await Task.sleep(nanoseconds: 50_000_000)
-                    warm = try await gpu.run(tolerateError: true, draw)
-                }
+                let warm = try await gpu.run(tolerateError: true, draw)
                 guard !warm.path.hasPrefix("error:"), kind != "raw" || warm.path == "raw" else {
                     result.expect(false, "\(label): \(warm.path)")
                     continue

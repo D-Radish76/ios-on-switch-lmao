@@ -3,11 +3,11 @@ import HWTestCore
 import Metal
 
 // A heap texture drawn after its backing was purged keeps its contents, sampled through a white border sampler: the raw
-// path's own (boot 21: it was m2v's, call.sampler "border 2", and the range that bound it failed). Sampling stays inside
+// path's own (boot 21, as gpu.heap.m2v_target: it was m2v's, call.sampler "border 2"). Sampling stays inside
 // the texture; a last draw samples past it, its ring the border's white.
 struct HeapTwinScene: GPUScene {
-    let id = "gpu.heap.m2v_target"
-    let name = "A heap texture drawn by an m2v command buffer, before and after the heap is purged"
+    let id = "gpu.heap.purged_target"
+    let name = "A heap texture drawn and sampled before and after the heap is purged"
 
     static let (width, height) = (140, 143)
     static let color: [UInt8] = [51, 153, 204, 255]

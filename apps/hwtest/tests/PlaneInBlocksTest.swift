@@ -10,7 +10,7 @@ import Metal
 /// right, the other planes 0x11. Tolerance 0. An M4 Max renders into such textures (m2v-passes2 probe/nort.mm, the 3D
 /// case; this scene on an M4 Max: 0 off in every case, red and green A1BGR5 words 0xf801 and 0x07c1). Per case
 /// <case>_plane_off texels of plane 5 off, <case>_others_changed texels of the other planes changed; every command
-/// buffer raw, m2v_cbs=0.
+/// buffer raw, failed_cbs=0.
 struct PlaneInBlocksTest: HWTest {
     let id = "gpu.raw.plane_in_blocks"
     let name = "A pass into one plane of a 3D texture laid out several planes a block changes that plane alone, on raw"
@@ -54,9 +54,10 @@ struct PlaneInBlocksTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

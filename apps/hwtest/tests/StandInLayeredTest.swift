@@ -10,7 +10,7 @@ import Metal
 /// 1 and 2 hold the pattern with colour 0 or 1 inside the quad, stored as a one-sample draw stores it, tolerance 0. The
 /// colours' words are an M4 Max's (this test's own pass there, which also keeps every pattern word). Per format
 /// f<format>_off texels off in slices 0/1/2, f<format>_max the largest difference in codes (93: mantissa steps); every
-/// command buffer raw, m2v_cbs=0.
+/// command buffer raw, failed_cbs=0.
 struct StandInLayeredTest: HWTest {
     let id = "gpu.raw.standin_layered"
     let name = "A layered pass into arrays of stand-in formats loads, draws and stores each layer, on raw"
@@ -58,9 +58,10 @@ struct StandInLayeredTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

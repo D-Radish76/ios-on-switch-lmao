@@ -91,7 +91,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.kernel_window',
             'gpu.raw.buffer_texture_rows16',
             'gpu.shared.retained_pointer',
-            'gpu.heap.m2v_target',
+            'gpu.heap.purged_target',
             'gpu.heap.placement',
             'gpu.heap.kinds',
             'gpu.raw.archive_miss',

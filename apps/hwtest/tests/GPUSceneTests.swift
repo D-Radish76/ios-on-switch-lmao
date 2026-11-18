@@ -7,11 +7,11 @@ import Metal
 /// has no CPU model of against the same picture drawn on a Mac's GPU (core/SceneGoldens.swift; golden_<picture>=exact,
 /// close, wrong or missing, or blind: the golden is the cleared target, which fails), and the scene's own judge. Fields carry the device's prefix (raw_ on the facade): checks,
 /// failed, wrong pixels, the scene's own measurements, and paths= (every command buffer's path as the facade reported
-/// it). raw_cbs=, m2v_cbs=, split_cbs= and m2v_why= are the facade's process-wide counters over the run, framework
-/// command buffers included. <prefix>_gpu_clock=host: some of the run's GPU times are the host's window, the facade
-/// having read no GPU stamp for them. On the facade every command buffer of the scene's own must run on the raw path: one
-/// that did not fails the scene, named by its path. Failed comparisons leave got, want and diff PNGs in
-/// Documents/gpu/<id>/.
+/// it). raw_cbs=, failed_cbs= and failed_why= are the facade's process-wide counters over the run, framework command
+/// buffers included. <prefix>_gpu_clock=host: some of the run's GPU times are the host's window, the facade having read
+/// no GPU stamp for them. On the facade no command buffer of the run may fail, Core Animation's, MPS's and Core Image's
+/// included, but those the scene expects (GPUScene.expectedFailures, each its own error:<predicate> path); one that did
+/// fails the scene, named by its predicate. Failed comparisons leave got, want and diff PNGs in Documents/gpu/<id>/.
 public struct GPUSceneTest: HWTest {
     let scene: any GPUScene
     public let subsystem = Subsystem.metal
@@ -33,6 +33,7 @@ public struct GPUSceneTest: HWTest {
         var reasons: [String] = []
         var notes: [String] = []
         var saved = 0
+        let before = RawFacade.counters(of: primary.device)
         do {
             let result = try await measure(primary, kind, &metrics)
             reasons += result.reasons().map { "\(kind): \($0.prefix(300))" }
@@ -43,8 +44,13 @@ public struct GPUSceneTest: HWTest {
             reasons.append("\(kind): \(error)")
             metrics.set(kind + "_threw", true)
         }
+        let after = RawFacade.counters(of: primary.device)
         let offRaw = primary.paths.offRaw
-        if kind == "raw" && !offRaw.isEmpty {
+        if kind == "raw" && !after.isEmpty {
+            let failed = FailedCounts(before: before, after: after)
+                .check(expecting: scene.expectedFailures, offRaw: offRaw)
+            if !failed.1 { reasons.insert("raw: \(failed.0)", at: 0) }
+        } else if kind == "raw" && !offRaw.isEmpty {
             reasons.insert("raw: command buffers off the raw path: \(offRaw.text)", at: 0)
         }
         reasons += scene.judge(&metrics)

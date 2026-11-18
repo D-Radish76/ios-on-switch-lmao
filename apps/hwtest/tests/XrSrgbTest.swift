@@ -14,7 +14,7 @@ import Metal
 /// blended: source-over over Metal's drawn words, within one code of Metal's (blended_off texels past it,
 /// blended_worst). cleared: four clears store Metal's codes (cleared_off; cleared= the words where one is off). 555's
 /// drawn_pad= and cleared_pad= the values of the two bits above its codes (Metal writes 3), reported, not judged.
-/// Every command buffer raw, no m2v command buffer and no m2v need asked.
+/// Every command buffer raw, and none failed (failed_cbs=).
 struct XrSrgbTest: HWTest {
     let id: String
     let name: String
@@ -34,7 +34,6 @@ struct XrSrgbTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let needs = OwnAnswersTest.needs(gpu.device)
         let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -48,13 +47,12 @@ struct XrSrgbTest: HWTest {
                 checks.append(("\(section): \(GPU.describe(error))", false))
             }
         }
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > needs[$0.key, default: 0] }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v need asked", asked.isEmpty))
-        metrics.fitLog(within: 720, keeping: ["oracle", "paths", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["oracle", "paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

@@ -21,7 +21,6 @@ struct FetchBlendOrderScene: GPUScene {
 
     static let size = FetchBlendMesh.size
     static let formats: [TexelFormat] = [.rgba8Unorm, .bgra8Unorm, .rgba16Float]
-    static let warmups = 20
     static let wideBase = 65_530
 
     enum Shape: String, CaseIterable {
@@ -100,17 +99,12 @@ struct FetchBlendOrderScene: GPUScene {
     struct Tally {
         var wrong = 0
         var first: String?
-        var warm = 0
         var problems: [String] = []
     }
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
         let kind = RawFacade.kind(of: gpu.device)
-        guard kind != "m2v" else {
-            result.notes.append("drawn on the raw facade and on Apple GPUs only")
-            return result
-        }
         for shape in Shape.allCases {
             let plan = Self.plan(shape)
             let before = RawFacade.counters(of: gpu.device)
@@ -136,14 +130,7 @@ struct FetchBlendOrderScene: GPUScene {
     ) async throws {
         let resources = try Resources(shape, plan, format, gpu)
         let draw = { (commands: MTLCommandBuffer) in Self.encode(shape, plan, resources, commands) }
-        var timing = try await gpu.run(tolerateError: true, draw)
-        var warm = 0
-        while RawFacade.kind(of: gpu.device) == "raw", warm < Self.warmups, timing.path.hasPrefix("m2v:state") {
-            warm += 1
-            try await Task.sleep(nanoseconds: 50_000_000)
-            timing = try await gpu.run(tolerateError: true, draw)
-        }
-        tally.warm += warm
+        let timing = try await gpu.run(tolerateError: true, draw)
         guard !timing.path.hasPrefix("error:") else {
             tally.problems.append("\(Self.short(format)) \(timing.path)")
             return
@@ -175,7 +162,6 @@ struct FetchBlendOrderScene: GPUScene {
             result.expect(false, name)
         }
         if let routes { result.metrics.set("fetch_" + name, routes) }
-        if tally.warm > 0 { result.metrics.set("warm_" + name, tally.warm) }
         for problem in tally.problems { result.expect(false, "\(name): \(problem)") }
     }
 }

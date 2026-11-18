@@ -10,7 +10,7 @@ import Metal
 /// floor((sum - 1) / n + 0.5), ties down (the spec's rules from resolvecodesoracle.mm: an M4 Max rounds alpha ties down
 /// in 88% / 98% of them; this scene on an M4 Max: 0 colour channels off, alpha at most one code off, 845 / 447 alpha
 /// codes off the ties-down rule at 2x / 4x). Per count x<n>_colour_off channels off, x<n>_colour_max, x<n>_alpha_off
-/// alpha codes not the ties-down rule's, x<n>_alpha_max; every command buffer raw, m2v_cbs=0.
+/// alpha codes not the ties-down rule's, x<n>_alpha_max; every command buffer raw, failed_cbs=0.
 struct Bgra10XrResolveTest: HWTest {
     let id = "gpu.raw.bgra10xr_resolve"
     let name = "BGRA10_XR resolves to its colour codes' mean rounded half up and alpha within one code, on raw"
@@ -49,9 +49,10 @@ struct Bgra10XrResolveTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

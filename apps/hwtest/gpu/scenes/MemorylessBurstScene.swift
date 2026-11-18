@@ -19,7 +19,6 @@ struct MemorylessBurstScene: GPUScene {
 
     static let frames = 48
     static let settle = 680  // a backing's 600 command buffers past its last use, then the trim at the next 64th
-    static let warmups = 20
     static let slack = 8 << 20  // two of a client's largest chunks
 
     func run(_ gpu: GPU) async throws -> SceneResult {
@@ -42,11 +41,7 @@ struct MemorylessBurstScene: GPUScene {
             }
         }
         // the state, made at its first use where the pack lacks it, before anything is counted
-        let first = try gpu.texture(.rgba16Float, 16, 16, usage: [.renderTarget], storage: .memoryless)
-        for _ in 0..<Self.warmups {
-            guard try await draw(first).path.hasPrefix("m2v:state") else { break }
-            try await Task.sleep(nanoseconds: 50_000_000)
-        }
+        _ = try await draw(try gpu.texture(.rgba16Float, 16, 16, usage: [.renderTarget], storage: .memoryless))
         let before = RawFacade.memory(of: gpu.device)
         let sizes =
             (0..<Self.frames).map { (320 + 8 * $0, 180 + 5 * $0) }

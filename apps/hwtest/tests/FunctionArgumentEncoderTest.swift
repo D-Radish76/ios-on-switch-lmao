@@ -9,10 +9,10 @@ import Metal
 /// answers for the same source (macOS 27.2): constants, arrays, struct arrays, gaps between ids, every texture kind, a
 /// pointer to another argument buffer (its nested encoder), and plain buffers of no struct (an encoder of no bytes). A
 /// draw then reads every kind of member through what the encoders wrote and must give the pixels the M4 Max gave. The
-/// case fails on a wrong answer or pixel, a draw off the raw path, or any m2v need asked (m2v_needs_asked).
+/// case fails on a wrong answer or pixel, a draw off the raw path, or any command buffer that failed (failed_cbs=).
 struct FunctionArgumentEncoderTest: HWTest {
     let id = "gpu.raw.function_argument_encoder"
-    let name = "A function's argument encoders are the shader compiler's and Metal's, without m2v"
+    let name = "A function's argument encoders are the shader compiler's and Metal's"
     let subsystem = Subsystem.metal
 
     /// (function, buffer index, "length/alignment", "id@offset ...")
@@ -59,7 +59,7 @@ struct FunctionArgumentEncoderTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = OwnAnswersTest.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -82,9 +82,9 @@ struct FunctionArgumentEncoderTest: HWTest {
             wrong.append("draw")
         }
 
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        if !failed.1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

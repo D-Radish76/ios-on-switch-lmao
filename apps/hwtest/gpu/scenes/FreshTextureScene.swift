@@ -63,9 +63,8 @@ struct FreshTextureScene: GPUScene {
                 let texel = level < patterned ? c.texel : [UInt8](repeating: 0, count: c.texel.count)
                 let got = try await gpu.read(texture, bytesPerPixel: c.texel.count, level: level)
                 let wrong = Self.wrongTexels(got, texel)
-                expect(
-                    gpu, &result, wrong == 0,
-                    "\(c.label) level \(level): \(wrong) of \(texels) texels are not \(Self.hex(texel))")
+                result.expect(
+                    wrong == 0, "\(c.label) level \(level): \(wrong) of \(texels) texels are not \(Self.hex(texel))")
             }
         }
         try await sampled(gpu, &result)
@@ -107,7 +106,7 @@ struct FreshTextureScene: GPUScene {
             encoder.endEncoding()
         }
         let wrong = Self.wrongTexels(try await gpu.read(target, bytesPerPixel: 4), Self.magenta)
-        expect(gpu, &result, wrong == 0, "sampled: \(wrong) of 4096 texels are not the pattern")
+        result.expect(wrong == 0, "sampled: \(wrong) of 4096 texels are not the pattern")
     }
 
     /// A fresh texture whose first pass clears it whole reads the clear colour.
@@ -123,15 +122,6 @@ struct FreshTextureScene: GPUScene {
         }
         let wrong = Self.wrongTexels(try await gpu.read(target, bytesPerPixel: 4), [0xff, 0, 0, 0xff])
         result.expect(wrong == 0, "cleared: \(wrong) of 4096 texels are not the clear colour")
-    }
-
-    /// m2v (frozen, to be deleted) is measured, not judged: its misses are notes
-    private func expect(_ gpu: GPU, _ result: inout SceneResult, _ condition: Bool, _ problem: String) {
-        if RawFacade.kind(of: gpu.device) == "m2v" {
-            if !condition { result.notes.append(problem) }
-            return
-        }
-        result.expect(condition, problem)
     }
 
     static func make(_ gpu: GPU, _ c: Case) throws -> MTLTexture {

@@ -12,7 +12,7 @@ import Metal
 /// value held as a half first, toward zero at 10 bits (YcbcrStore.codes); 523 stores 128 in every code and 527 384
 /// (each 16-bit word 384 << 6), whatever is drawn. Tolerance 0. Per format <fmt>_luma_off and <fmt>_chroma_off codes
 /// off, <fmt>_texel0 texel 0's luma/Cb/Cr codes (an M4 Max: 503 76/33/11, 507 305/134/44, 523 128/128/128, 527
-/// 384/384/384); every command buffer raw, m2v_cbs=0.
+/// 384/384/384); every command buffer raw, failed_cbs=0.
 struct P3YcbcrStoreTest: HWTest {
     let id = "gpu.raw.p3_ycbcr_store"
     let name = "Draws into 4:4:4 YCbCr targets under the P3_D65 matrix store Metal's codes, on raw"
@@ -56,9 +56,10 @@ struct P3YcbcrStoreTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

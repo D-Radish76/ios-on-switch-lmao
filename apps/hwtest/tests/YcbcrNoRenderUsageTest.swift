@@ -11,7 +11,7 @@ import Metal
 /// M4 Max: m2v-passes3 probe/ycbcrnort.mm, out4.txt, 0 bytes differ in all 12; this scene on an M4 Max: the same).
 /// Expected to fail on the device until the raw path's texture side gives every usage the stand-in such a pass needs:
 /// until then the command buffer fails Internal (enc.planarrt). Per format and usage <fmt>_<usage>_differ bytes that
-/// differ; every command buffer raw, m2v_cbs=0.
+/// differ; every command buffer raw, failed_cbs=0.
 struct YcbcrNoRenderUsageTest: HWTest {
     let id = "gpu.raw.ycbcr_norender_usage"
     let name =
@@ -49,10 +49,11 @@ struct YcbcrNoRenderUsageTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["paths", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

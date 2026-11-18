@@ -13,7 +13,7 @@ import Metal
 /// buffer. Fields: wrong= pixels whose codes are not the scene's (first= the first, x,y:red/green/blue against the
 /// scene's), path=, sequential= and triangles= the facade's fetch_sequential and fetch_triangles counters over the draws
 /// (1 a draw; the draws' primitives times instances, 0 for an indirect draw; reported, not judged, for an indirect
-/// command buffer's), m2v_cbs=.
+/// command buffer's), failed_cbs= (0).
 struct FetchShapeTest: HWTest {
     let id: String
     let name: String
@@ -94,7 +94,7 @@ struct FetchShapeTest: HWTest {
                 ("fetch_sequential rose by \(draws.count), one a draw", moved("fetch_sequential") == draws.count))
             checks.append(("fetch_triangles rose by \(counted)", moved("fetch_triangles") == counted))
         }
-        checks.append(("no m2v command buffer", moved("m2v") == 0))
+        checks.append(FailedCounts(before: before, after: after).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

@@ -8,12 +8,12 @@ import MetalPerformanceShaders
 /// metadata (drivers/TegraGM20BMetal/raw/runtime/raw_function_tags.h), never from an m2v twin. The expected answers for
 /// shaders/FunctionTags.metal are what an M-series Mac's Metal gives for the same source built for iOS. A function made
 /// with constant values answers no constants, and the attributes its constants leave (tags_has_normal false drops
-/// normal), which the shader compiler reads from its specialized AIR. MPS reads its kernels' constants before specializing
-/// them, so a Gaussian blur is encoded too. The case fails on a wrong answer, or if any of this asked for the m2v device
-/// (m2v_needs_asked).
+/// normal), which the shader compiler reads from its specialized AIR. MPS reads its kernels' constants before
+/// specializing them, so a Gaussian blur is encoded too. The case fails on a wrong answer, or on any command buffer
+/// that failed, MPS's included (failed_cbs=, failed_why=).
 struct FunctionTagsTest: HWTest {
     let id = "gpu.raw.function_tags"
-    let name = "Function constants and attributes from the metallib, without m2v"
+    let name = "Function constants and attributes from the metallib"
     let subsystem = Subsystem.metal
 
     static let measured: [(function: String, constants: String, vertex: String, stageInput: String)] = [
@@ -60,7 +60,7 @@ struct FunctionTagsTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = OwnAnswersTest.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -102,9 +102,9 @@ struct FunctionTagsTest: HWTest {
             blur.encode(commandBuffer: commands, sourceTexture: source, destinationTexture: destination)
         }
 
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        if !failed.1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

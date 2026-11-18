@@ -154,6 +154,13 @@ public struct Outcome: Sendable {
         return Outcome(.fail, metrics, detail: detail.isEmpty ? reason : reason + "; " + detail, proof: proof)
     }
 
+    /// FAIL with `check`'s label ahead of whatever else the test found where the check does not hold; unchanged where
+    /// it does.
+    public func failing(unless check: (String, Bool)) -> Outcome {
+        guard !check.1 else { return self }
+        return Outcome(.fail, metrics, detail: detail.isEmpty ? check.0 : check.0 + "; " + detail, proof: proof)
+    }
+
     /// FAIL naming the metric keys the test could not log, ahead of whatever else it found; unchanged without any.
     public var withHarnessFaults: Outcome {
         guard !metrics.faults.isEmpty else { return self }

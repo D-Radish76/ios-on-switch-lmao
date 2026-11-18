@@ -14,7 +14,7 @@ import Metal
 /// 3326/3301 for 555, all for 11; 93's rounded mean 4028/3642). Each stored sample read through texture2d_ms must read
 /// as a one-sample draw of its value reads, tolerance 0 (an M4 Max: every sample of every case). Per case
 /// f<format>_x<n>_off texels not Apple's, _far past one code, _max the largest difference, _samples_off samples off;
-/// far_total, samples_off_total; every command buffer raw, m2v_cbs=0.
+/// far_total, samples_off_total; every command buffer raw, failed_cbs=0.
 struct StandInResolveTest: HWTest {
     let id = "gpu.raw.standin_ms_resolve"
     let name =
@@ -64,10 +64,11 @@ struct StandInResolveTest: HWTest {
         metrics.set("far_total", far)
         metrics.set("samples_off_total", samplesOff)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["far_total", "samples_off_total", "paths", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["far_total", "samples_off_total", "paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

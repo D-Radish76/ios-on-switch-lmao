@@ -93,7 +93,6 @@ struct MSAAResolveScene: GPUScene {
         if RawFacade.kind(of: gpu.device) == "raw" {
             let off = gpu.paths.paths.keys.filter { $0 != "raw" }.sorted()
             result.expect(off.isEmpty, "command buffers off the raw path: \(off.joined(separator: ","))")
-            result.metrics.set("route", off.isEmpty ? "raw" : "m2v")
         }
         return result
     }

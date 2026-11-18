@@ -57,7 +57,7 @@ struct LayersPastDepthTest: HWTest {
         let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        var kept: Set<String> = ["m2v_cbs"]
+        var kept: Set<String> = ["failed_cbs"]
         let compares = LayersPastDepthCases.compares
         for f in [LayersPastDepthCases.Format.d32f, .d16, .d32fs8] {
             do {
@@ -127,9 +127,10 @@ struct LayersPastDepthTest: HWTest {
             metrics.set("dontcare_gpu_ms", "error_" + GPU.describe(error).prefix(80))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         metrics.fitLog(within: 720, keeping: kept.union(["dontcare_gpu_ms", "dontcare_clear_gpu_ms"]))
         return .judged(checks, metrics, proof: gpu.proof)
     }

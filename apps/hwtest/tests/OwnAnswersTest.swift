@@ -5,27 +5,23 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// What the raw facade answers itself, never through m2v (drivers/TegraGM20BMetal/raw/runtime RawMetalLibrary.mm,
+/// What the raw facade answers itself (drivers/TegraGM20BMetal/raw/runtime RawMetalLibrary.mm,
 /// RawMetalLibraries.mm, RawMetalDevice.mm, RawMetalYcbcrTargets.mm): a library's function names, extern names and
 /// type from its own metallib; a library Metal would not load (a missing file, bytes that are no metallib) as Metal's
 /// error; a buffer the kernel has no memory for, and one over pages it cannot wire, as nil; an uncompressed texture's
-/// plain layout (RawMetalPlainLayout.mm), none for a heap's; a two-plane YCbCr target's state drawn by raw, whose m2v
-/// twin waits for a fallback; and a Core Image filter chain, whose linked program's extern functions the library makes
-/// from its own list. The case fails if any of them asked for the m2v device (m2v_needs_asked names what did).
+/// plain layout (RawMetalPlainLayout.mm), none for a heap's; a two-plane YCbCr target's state drawn by raw; and a Core
+/// Image filter chain, whose linked program's extern functions the library makes from its own list. No command buffer
+/// may fail, Core Image's included (failed_cbs=, failed_why=).
 struct OwnAnswersTest: HWTest {
     let id = "gpu.raw.own_answers"
-    let name = "Library names, unloadable libraries, no memory and a YCbCr target state, answered without m2v"
+    let name = "Library names, unloadable libraries, no memory and a YCbCr target state, answered by the facade"
     let subsystem = Subsystem.metal
-
-    static func needs(_ device: MTLDevice) -> [String: Int] {
-        (RawFacade.m2vRecord(of: device)["needs"] as? [String: NSNumber] ?? [:]).mapValues(\.intValue)
-    }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = Self.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -81,10 +77,8 @@ struct OwnAnswersTest: HWTest {
         // inverted in Core Image's linear working space: 1 - linear(0.2, 0.4, 0.6), back to sRGB
         if !zip(pixel.prefix(3), [251, 239, 215]).allSatisfy({ abs(Int($0) - $1) <= 2 }) { wrong.append("core_image") }
 
-        let after = Self.needs(gpu.device)
-        let asked = after.filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
+        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        if !failed.1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

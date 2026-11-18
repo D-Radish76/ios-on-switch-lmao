@@ -15,7 +15,7 @@ import Metal
 /// as depth and its X32_Stencil8 view as stencil, drawn: .5/7; f_alone: the view alone as stencil: .1/7. Tolerance 0.
 /// The expectations are an M4 Max's (m2v-passes3 probe/p3probe.mm, out1.txt and out2.txt; this scene on an M4 Max: 0
 /// off in every case). Per case <case>_depth_off and <case>_stencil_off texels off (e: e_colour_off too); every command
-/// buffer raw, m2v_cbs=0.
+/// buffer raw, failed_cbs=0.
 struct ZetaApartTest: HWTest {
     let id = "gpu.raw.zeta_apart"
     let name = "Depth and stencil attached apart each keep to their own texture, level or slice, on raw"
@@ -67,10 +67,11 @@ struct ZetaApartTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["paths", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

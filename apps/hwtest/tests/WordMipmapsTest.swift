@@ -7,7 +7,7 @@ import Metal
 /// level exactly an M4 Max's levels of the same chain (WordMipmapCases.swift, WordMipGoldens.swift): 16x16 2D chains of
 /// 552 to 555, 101x63 2D and 45x37x7 3D chains of the rest, where the taps weight texels and planes off 1/2 (the mip
 /// rule package: 0 texels differ from Apple's on every format). Per format <format>_max_diff= the largest difference in
-/// codes from Apple's (RGB9E5: mantissa steps), <format>_off= texels that differ, <format>_path=; m2v_cbs=.
+/// codes from Apple's (RGB9E5: mantissa steps), <format>_off= texels that differ, <format>_path=; failed_cbs=.
 struct WordMipmapsTest: HWTest {
     let id = "gpu.raw.word_mipmaps"
     let name = "Mipmaps of extended-range, sRGB, packed and shared-exponent words as an M4 Max makes them, on raw"
@@ -40,9 +40,10 @@ struct WordMipmapsTest: HWTest {
                 checks.append(("\(format.key): \(GPU.describe(error))", false))
             }
         }
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["m2v_cbs"])
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

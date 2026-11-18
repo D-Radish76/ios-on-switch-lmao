@@ -7,11 +7,11 @@ import Metal
 /// argument buffers) take one id per innermost element, laid out flat, as an M4 Max's Metal answers for
 /// shaders/ArgumentShapes.metal (macOS 27.2). grid_fragment's own encoder must give those lengths and offsets, its
 /// nested encoders included, and a draw that reads one element of each grid through what the encoders wrote must give
-/// the M4 Max's pixels on the raw path. The case fails on a wrong answer or pixel, a draw off the raw path, or any m2v
-/// need asked (m2v_needs_asked).
+/// the M4 Max's pixels on the raw path. The case fails on a wrong answer or pixel, a draw off the raw path, or any
+/// command buffer that failed (failed_cbs=, failed_why=).
 struct ArgumentGridsTest: HWTest {
     let id = "gpu.raw.argument_array_of_arrays"
-    let name = "Arrays of arrays in an argument buffer lay out flat, as Metal's, without m2v"
+    let name = "Arrays of arrays in an argument buffer lay out flat, as Metal's"
     let subsystem = Subsystem.metal
 
     static let places =
@@ -28,7 +28,7 @@ struct ArgumentGridsTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = OwnAnswersTest.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
         do {
@@ -37,9 +37,9 @@ struct ArgumentGridsTest: HWTest {
             metrics.set("draw", "threw: \(String(describing: error).prefix(200))")
             wrong.append("threw")
         }
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        if !failed.1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

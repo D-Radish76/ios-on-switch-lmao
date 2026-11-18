@@ -3,26 +3,15 @@ import HWTestCore
 import Metal
 
 /// What the Switch's Metal stack tells a process about its GPU paths (drivers/TegraGM20BMetal/raw/runtime/RawMetal.mm,
-/// debug builds): the default device is the raw GM20B facade unless the process runs with TEGRA_RAW_METAL=0 or the
-/// pack was refused; the facade counts its command buffers per path and names each one's path. On a Mac (the host tests)
-/// or a device without them, every answer says so instead.
+/// debug builds): the default device is the raw GM20B facade (a process it cannot serve gets no Metal device); the
+/// facade counts its command buffers and the ones that failed, and names each one's path. On a Mac (the host tests),
+/// every answer says so instead.
 public enum RawFacade {
     static let facadeClass = "RawGM20BMetalDevice"
 
-    /// "raw" (the facade), "m2v" (the Metal-over-Vulkan device itself) or "apple" (a Mac's GPU).
+    /// "raw" (the facade) or "apple" (Apple's GPU: a Mac's).
     public static func kind(of device: MTLDevice) -> String {
-        if NSStringFromClass(type(of: device as AnyObject)) == facadeClass { return "raw" }
-        #if os(macOS)
-            return "apple"
-        #else
-            return "m2v"
-        #endif
-    }
-
-    /// Whether the facade still wraps an m2v device (a debug build that has one answers switchM2VDevice), asked
-    /// without opening it.
-    public static func wrapsM2V(_ device: MTLDevice) -> Bool {
-        (device as AnyObject).responds(to: NSSelectorFromString("switchM2VDevice"))
+        NSStringFromClass(type(of: device as AnyObject)) == facadeClass ? "raw" : "apple"
     }
 
     /// Whether the facade drew `state` from the raw pack's record rather than one made at its creation (nil off the
@@ -31,18 +20,14 @@ public enum RawFacade {
         ((ask(state, "switchRawObject") as? [String: Any])?["packed"] as? NSNumber)?.boolValue
     }
 
-    /// The set-0 entries of the record the facade draws `state` from (0: none; nil off the facade or in a release runtime).
+    /// The set-0 entries of the record the facade draws `state` from (0: none; nil off the facade or in a release
+    /// runtime).
     public static func entries(of state: MTLRenderPipelineState) -> Int? {
         ((ask(state, "switchRawObject") as? [String: Any])?["entries"] as? NSNumber)?.intValue
     }
 
-    /// The facade's record of its m2v device, read without opening it (debug builds; empty off the facade):
-    /// "opened", "opens", "opened_for" and "needs" (each need the process asked it for, with its count)
-    public static func m2vRecord(of device: MTLDevice) -> [String: Any] {
-        ask(device, "switchRawM2V") as? [String: Any] ?? [:]
-    }
-
-    /// The facade's cumulative command buffer counters (empty off the facade).
+    /// The facade's cumulative command buffer counters (empty off the facade): "raw", "failed", "failed.<predicate>"
+    /// (FailedCounts) and the raw path's own.
     public static func counters(of device: MTLDevice) -> [String: Int] {
         guard let counters = ask(device, "switchRawCounters") as? [String: NSNumber] else { return [:] }
         return counters.mapValues(\.intValue)
@@ -64,15 +49,15 @@ public enum RawFacade {
     }
 
     /// The bytes the facade's raw device holds now (empty off the facade): "pool" (its pool, block-linear and depth
-    /// chunks), "wc" (write-combined chunks), "heap" (the shader heap's bound parts) and "headers_left" (texture headers
-    /// not held).
+    /// chunks), "wc" (write-combined chunks), "heap" (the shader heap's bound parts) and "headers_left" (texture
+    /// headers not held).
     public static func memory(of device: MTLDevice) -> [String: Int] {
         guard let memory = ask(device, "switchRawMemory") as? [String: NSNumber] else { return [:] }
         return memory.mapValues(\.intValue)
     }
 
-    /// The facade's compressed memory (empty off the facade): "held", "held_bytes" and "views" now, "made" and "refused"
-    /// since the device opened.
+    /// The facade's compressed memory (empty off the facade): "held", "held_bytes" and "views" now, "made" and
+    /// "refused" since the device opened.
     public static func compression(of device: MTLDevice) -> [String: Int] {
         guard let compression = ask(device, "switchRawCompression") as? [String: NSNumber] else { return [:] }
         return compression.mapValues(\.intValue)
@@ -88,7 +73,7 @@ public enum RawFacade {
         return changed.isEmpty ? "-" : changed.sorted().joined(separator: ",")
     }
 
-    /// "raw", "m2v:<reason>:<predicate>" or "split:..." on the facade, "device" anywhere else.
+    /// "raw", "error:<predicate>" or "error:none" (a failed one) on the facade, "device" anywhere else.
     public static func path(of buffer: MTLCommandBuffer) -> String {
         ask(buffer, "switchRawPath") as? String ?? "device"
     }
@@ -99,7 +84,8 @@ public enum RawFacade {
         ask(buffer, "switchGpuClock") as? String
     }
 
-    /// Whether a render state's record came out of the raw pack at its creation (nil off the facade or in a release build).
+    /// Whether a render state's record came out of the raw pack at its creation (nil off the facade or in a release
+    /// build).
     public static func packHit(_ state: MTLRenderPipelineState) -> Bool? {
         (ask(state, "switchPackHit") as? NSNumber)?.boolValue
     }
@@ -140,13 +126,19 @@ public enum RawFacade {
 }
 
 extension Outcome {
-    /// On the facade, FAIL naming the command buffers `gpu` ran off the raw path (their paths name the refusal), ahead of
-    /// whatever else the test found; unchanged off the facade and when every one ran raw. paths= on the line.
-    public func onRawPath(_ gpu: GPU) -> Outcome {
+    /// On the facade, FAIL naming the command buffers `gpu` ran off the raw path and every command buffer of the
+    /// process that failed since `gpu` was made, a framework's included, but the `expected` ones (FailedCounts.check),
+    /// ahead of whatever else the test found; unchanged off the facade. paths=, failed_cbs= and failed_why= on the
+    /// line.
+    public func onRawPath(_ gpu: GPU, expecting expected: [String: Int] = [:]) -> Outcome {
         guard RawFacade.kind(of: gpu.device) == "raw" else { return self }
         var marked = self
         marked.metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        return marked.failing(offRaw: gpu.paths.offRaw)
+        let after = RawFacade.counters(of: gpu.device)
+        guard !after.isEmpty else { return marked.failing(offRaw: gpu.paths.offRaw) }
+        let failed = FailedCounts.judged(
+            before: gpu.startCounters, after: after, expecting: expected, offRaw: gpu.paths.offRaw, &marked.metrics)
+        return marked.failing(unless: failed)
     }
 }
 

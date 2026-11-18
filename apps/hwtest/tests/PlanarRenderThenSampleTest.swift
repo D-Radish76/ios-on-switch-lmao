@@ -13,7 +13,7 @@ import Metal
 /// that the two agree, tolerance 0, is an M4 Max's (c38-audit/m2v-planar-plan/probe/planarsample.mm, and these cases on
 /// the same Mac); render's (4,4) and (32,32) for 502 and 500 are the M4 Max's within 0.001 (probe/out.txt). Fields:
 /// <fmt>_same_cb_off= channels that differ summed over the arms, <fmt>_<arm>_off= where not 0, <fmt>_unseen= arms whose
-/// sample after a write equals the planes before it, <fmt>_spot_off=, paths=, m2v_cbs=.
+/// sample after a write equals the planes before it, <fmt>_spot_off=, paths=, failed_cbs=.
 struct PlanarRenderThenSampleTest: HWTest {
     let id = "gpu.raw.planar_render_then_sample"
     let name = "A YCbCr texture written then sampled in one command buffer samples as the same work split, on raw"
@@ -32,7 +32,7 @@ struct PlanarRenderThenSampleTest: HWTest {
         let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        var kept: Set<String> = ["m2v_cbs"]
+        var kept: Set<String> = ["failed_cbs"]
         let library: MTLLibrary
         do {
             library = try await Cases.library(gpu)
@@ -73,9 +73,10 @@ struct PlanarRenderThenSampleTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         metrics.fitLog(within: 720, keeping: kept)
         return .judged(checks, metrics, proof: gpu.proof)
     }

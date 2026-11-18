@@ -9,6 +9,9 @@ public final class GPU: @unchecked Sendable {
     public let device: MTLDevice
     public let queue: MTLCommandQueue
     public let library: MTLLibrary
+    /// The raw facade's counters as this GPU was made (RawFacade.counters; empty off the facade): onRawPath's failures
+    /// are counted from them.
+    public let startCounters: [String: Int]
     private let lock = NSLock()
     private var recorded = PathTally()
     private var failures: [String] = []
@@ -31,6 +34,7 @@ public final class GPU: @unchecked Sendable {
         self.device = device
         self.queue = queue
         self.library = library
+        startCounters = RawFacade.counters(of: device)
     }
 
     public struct Timing: Sendable {
@@ -43,6 +47,9 @@ public final class GPU: @unchecked Sendable {
         public var commitMilliseconds = 0.0
         /// The raw facade's clock of gpuMilliseconds (RawFacade.gpuClock); nil off the facade.
         public var gpuClock: String?
+        /// The facade's own path of the command buffer (RawFacade.path): error:<predicate> where `path` holds Metal's
+        /// error.
+        public var facadePath = "device"
 
         /// GPU timestamps that advance prove the work ran on the GPU's clock, not a CPU fallback.
         public var gpuTimed: Bool { gpuMilliseconds > 0 }
@@ -103,13 +110,13 @@ public final class GPU: @unchecked Sendable {
             if !tolerateError { throw TestFailure("command buffer failed: \(error)") }
             return Timing(
                 gpuMilliseconds: 0, wallMilliseconds: wall, path: "error:" + error, encodeMilliseconds: encodeMs,
-                commitMilliseconds: commitMs)
+                commitMilliseconds: commitMs, facadePath: path)
         }
         let clock = RawFacade.gpuClock(of: buffer)
         if clock == "host" { locked { hostClocked += 1 } }
         return Timing(
             gpuMilliseconds: max(0, buffer.gpuEndTime - buffer.gpuStartTime) * 1000, wallMilliseconds: wall, path: path,
-            encodeMilliseconds: encodeMs, commitMilliseconds: commitMs, gpuClock: clock)
+            encodeMilliseconds: encodeMs, commitMilliseconds: commitMs, gpuClock: clock, facadePath: path)
     }
 
     /// Commits one command buffer without waiting: `finish` waits for a batch of them, so work queued back to back
@@ -217,8 +224,8 @@ public final class GPU: @unchecked Sendable {
         return format.raster(bytes, width: max(1, texture.width >> level), height: max(1, texture.height >> level))
     }
 
-    /// The same texels read by a compute kernel instead of the blit engine (a command buffer m2v draws whole on the
-    /// raw facade): where the two readbacks disagree, the readback is what is broken, not the scene.
+    /// The same texels read by a compute kernel instead of the blit engine: where the two readbacks disagree, the
+    /// readback is what is broken, not the scene.
     public func texels(_ texture: MTLTexture) async throws -> [SIMD4<Float>] {
         let count = texture.width * texture.height
         let out = try buffer(count * 16)

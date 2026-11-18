@@ -4,9 +4,9 @@ import HWTestGPU
 import Metal
 
 /// What Metal's validation layer would stop completes on the raw path as Apple's driver completes it
-/// (drivers/TegraGM20BMetal/raw/runtime/raw_client_errors.h), never on m2v. Every expected value is what an M-series Mac
-/// did with API validation off (x1-m2v-errors' probes), each command buffer completed with no error; the raw path logs
-/// one refusal line a process and reason. Each case: status=completed, paths=raw, m2v=0 and its contents.
+/// (drivers/TegraGM20BMetal/raw/runtime/raw_client_errors.h). Every expected value is what an M-series Mac did with API
+/// validation off (x1-m2v-errors' probes), each command buffer completed with no error; the raw path logs one refusal
+/// line a process and reason. Each case: status=completed, paths=raw, failed_cbs=0 and its contents.
 enum ClientErrors {
     /// client_colour_fragment's (0.2, 0.4, 0.6, 0.8) as a BGRA8 texel's bytes, as Apple's driver stored it
     static let colour: [UInt8] = [0x99, 0x66, 0x33, 0xcc]
@@ -31,7 +31,7 @@ enum ClientErrors {
         _ gpu: GPU, _ pass: MTLRenderPassDescriptor, _ state: MTLRenderPipelineState, _ work: inout NativeWork,
         _ metrics: inout Metrics
     ) async throws {
-        let before = RawFacade.counters(of: gpu.device)["m2v"] ?? 0
+        let before = RawFacade.counters(of: gpu.device)
         var status = MTLCommandBufferStatus.notEnqueued
         let timing = try await gpu.run(tolerateError: true) { commands in
             let e = commands.makeRenderCommandEncoder(descriptor: pass)!
@@ -45,14 +45,13 @@ enum ClientErrors {
     }
 
     static func record(
-        _ gpu: GPU, _ m2vBefore: Int, _ status: MTLCommandBufferStatus, _ work: inout NativeWork,
+        _ gpu: GPU, _ before: [String: Int], _ status: MTLCommandBufferStatus, _ work: inout NativeWork,
         _ metrics: inout Metrics
     ) {
-        let m2v = (RawFacade.counters(of: gpu.device)["m2v"] ?? 0) - m2vBefore
         metrics.set("status", status == .completed ? "completed" : "\(status.rawValue)")
-        metrics.set("m2v", m2v)
         if status != .completed { work.failures.append("the command buffer did not complete") }
-        if m2v != 0 { work.failures.append("\(m2v) command buffers went to m2v") }
+        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        if !failed.1 { work.failures.append(failed.0) }
     }
 
     /// The BGRA8 texel at (4, 4) of `t`, logged as `field`; a failure where a channel is off `want` by more than `slack`
@@ -81,7 +80,7 @@ struct NativeErrorBufferCopyTest: NativeObjectTest {
         memset(a.contents(), 0xAA, 4096)
         memset(b.contents(), 0x55, 8192)
         memset(c.contents(), 0x11, 4096)
-        let before = RawFacade.counters(of: gpu.device)["m2v"] ?? 0
+        let before = RawFacade.counters(of: gpu.device)
         var status = MTLCommandBufferStatus.notEnqueued
         let timing = try await gpu.run(tolerateError: true) { commands in
             let blit = commands.makeBlitCommandEncoder()!
@@ -116,7 +115,7 @@ struct NativeErrorIndexRangeTest: NativeObjectTest {
         let state = try ClientErrors.state(gpu, .bgra8Unorm)
         let arguments = try gpu.buffer([UInt32](arrayLiteral: 7, 3, 1, 0))
         work.objects += [target, state]
-        let before = RawFacade.counters(of: gpu.device)["m2v"] ?? 0
+        let before = RawFacade.counters(of: gpu.device)
         var status = MTLCommandBufferStatus.notEnqueued
         let timing = try await gpu.run(tolerateError: true) { commands in
             let e = commands.makeRenderCommandEncoder(descriptor: ClientErrors.pass(target))!

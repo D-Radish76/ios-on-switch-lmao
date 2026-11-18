@@ -10,7 +10,7 @@ import Metal
 /// word changed) 0. Reported, not judged: over a 64x64 texture of the same texels, a draw of pixels 4 to 11 of each axis
 /// inside the 32x32 tile at the origin; the M4 Max clamps alpha to 894 in that tile alone (probes/more.mm corner, and
 /// this case code), so alpha_touched_tile= (texel 20,20, undrawn) 894 and alpha_untouched_tile= (texel 52,52) 1000
-/// (touched_tile_error= in their place if that arm throws). Every command buffer raw, m2v_cbs=0.
+/// (touched_tile_error= in their place if that arm throws). Every command buffer raw, failed_cbs=0.
 struct Bgra10XrSrgbEmptyPassTest: HWTest {
     let id = "gpu.raw.bgra10xrsrgb_empty_pass"
     let name = "A BGRA10_XR_sRGB pass that draws nothing keeps alpha codes past 894, as an M4 Max does, on raw"
@@ -47,10 +47,11 @@ struct Bgra10XrSrgbEmptyPassTest: HWTest {
             metrics.set("touched_tile_error", GPU.describe(error))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["alpha_load", "alpha_dontcare", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["alpha_load", "alpha_dontcare", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

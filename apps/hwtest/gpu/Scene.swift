@@ -14,11 +14,15 @@ public protocol GPUScene: Sendable {
     func run(_ gpu: GPU) async throws -> SceneResult
     /// Failures found in the default device's metrics, which carry its prefix (raw_ on the facade).
     func judge(_ metrics: inout Metrics) -> [String]
+    /// The command buffers the scene's own work fails on the raw facade, by predicate ("none": an error no predicate
+    /// gave); every other command buffer of the run, a framework's included, must complete (FailedCounts).
+    var expectedFailures: [String: Int] { get }
 }
 
 extension GPUScene {
     public var timeout: TimeInterval { 60 }
     public func judge(_ metrics: inout Metrics) -> [String] { [] }
+    public var expectedFailures: [String: Int] { [:] }
 }
 
 public struct SceneCheck: Sendable {

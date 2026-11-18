@@ -9,7 +9,7 @@ import Metal
 /// them (m2v-passes2/probe/nort.mm, and this scene): the 2D texture red, plane 2 red, planes 0, 1 and 3 as filled, both
 /// command buffers completed; tolerance 0. flat_off texels of the 2D one not red, plane_off texels of plane 2 not red,
 /// others_changed texels of planes 0, 1 and 3 changed, errors the command buffers' errors ("-" for none); every command
-/// buffer raw, m2v_cbs=0.
+/// buffer raw, failed_cbs=0.
 struct NoRenderUsageTest: HWTest {
     let id = "gpu.raw.norender_usage"
     let name = "Passes render into textures made without RenderTarget usage, as Apple's GPU does, on raw"
@@ -53,9 +53,10 @@ struct NoRenderUsageTest: HWTest {
         metrics.set("errors", errors.isEmpty ? "-" : String(errors.joined(separator: ";").prefix(160)))
         checks.append(("both command buffers completed", errors.isEmpty))
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

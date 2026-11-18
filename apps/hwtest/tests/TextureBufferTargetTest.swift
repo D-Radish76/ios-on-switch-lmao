@@ -8,7 +8,8 @@ import Metal
 /// target's 16384: its command buffer fails MTLCommandBufferErrorInternal and no word changes. Tolerance 0. An M4 Max
 /// (m2v-passes3 probe/p3probe.mm texture_buffer and unspecialized_views, out3.txt and out4.txt: status 5 error 1; this
 /// scene on an M4 Max: 0 words off, wide_status 1, 0 words changed). row_off words not red, wide_status the wide
-/// command buffer's error code (0 completed), wide_changed its words changed; every command buffer raw, m2v_cbs=0.
+/// command buffer's error code (0 completed), wide_changed its words changed; every other command buffer raw, and the
+/// wide one the only failure, the facade's pass.fmt (failed_why=).
 struct TextureBufferTargetTest: HWTest {
     let id = "gpu.raw.texture_buffer_target"
     let name = "A pass clears a texture buffer as a pitch row and fails one past 16384 texels, as Apple's GPU, on raw"
@@ -44,9 +45,10 @@ struct TextureBufferTargetTest: HWTest {
             checks.append(("wide: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(
+            FailedCounts(before: before, after: counted).check(expecting: ["pass.fmt": 1], offRaw: gpu.paths.offRaw))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

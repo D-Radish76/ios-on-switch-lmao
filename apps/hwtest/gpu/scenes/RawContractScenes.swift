@@ -131,7 +131,8 @@ struct PixelSamplerScene: GPUScene {
 
 /// globalTraceObjectID, which MPS asks of every encoder for its kdebug traces (cameracaptured's compute encoders were
 /// answered zero on boot 15): a command buffer, its blit encoder and its compute encoder each answer an ID of their
-/// own, the same one when asked again, and the command buffer stays raw. m2v's encoders have no such method.
+/// own, the same one when asked again, and the command buffer stays raw. An M4 Max's command buffer and encoders each
+/// answer it.
 struct TraceIdScene: GPUScene {
     let id = "gpu.raw.trace_ids"
     let name = "Command buffers and encoders answer trace object IDs of their own"
@@ -160,7 +161,7 @@ struct TraceIdScene: GPUScene {
         var seen = Set<UInt64>()
         for (label, first, again) in asked {
             guard let first else {
-                result.expect(kind == "m2v", "\(label) has no globalTraceObjectID")
+                result.expect(false, "\(label) has no globalTraceObjectID")
                 continue
             }
             result.expect(first != 0, "\(label) answered 0")

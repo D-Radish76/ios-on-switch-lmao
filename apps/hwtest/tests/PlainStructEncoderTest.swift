@@ -9,10 +9,10 @@ import Metal
 /// *` is 4/1; a one-component vector, which Metal reflects with no data type, 8 bytes with an id). A dispatch then
 /// reads back what the encoders wrote (k's tail, n[1] and m[2], s's h, v's a) and must give the words the M4 Max
 /// gave, on the raw path. The case fails on a nil or wrong encoder, a wrong word, a dispatch off the
-/// raw path, or any m2v need asked (m2v_needs_asked).
+/// raw path, or any command buffer that failed (failed_cbs=).
 struct PlainStructEncoderTest: HWTest {
     let id = "gpu.raw.plain_struct_encoder"
-    let name = "A plain struct buffer's encoder is where its program reads, without m2v"
+    let name = "A plain struct buffer's encoder is where its program reads"
     let subsystem = Subsystem.metal
 
     /// (buffer index, "length/alignment", "id@offset ...")
@@ -24,7 +24,7 @@ struct PlainStructEncoderTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = OwnAnswersTest.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
         do {
@@ -33,9 +33,9 @@ struct PlainStructEncoderTest: HWTest {
             metrics.set("dispatch", "threw: \(String(describing: error).prefix(200))")
             wrong.append("threw")
         }
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        if !failed.1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

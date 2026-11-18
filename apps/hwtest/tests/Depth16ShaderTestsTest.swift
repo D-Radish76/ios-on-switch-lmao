@@ -13,7 +13,7 @@ import Metal
 /// over a ramp texel of 45874), every other ramp code kept through the conversion. Per band b<k>_passed texels the
 /// first draw reached and b<k>_code the code it stored (an M4 Max: 512/1000, 512/19661, 512/45874, 1/65535),
 /// kept_changed the texels it did not reach whose code is not the ramp's (0), stencil_passed texels the stencil draw
-/// reached (4096); every command buffer raw, m2v_cbs=0.
+/// reached (4096); every command buffer raw, failed_cbs=0.
 struct Depth16ShaderTestsTest: HWTest {
     let id = "gpu.raw.depth16_shader_tests"
     let name = "A Depth16Unorm a fetching draw tests in its shader stores Metal's codes, on raw"
@@ -49,9 +49,10 @@ struct Depth16ShaderTestsTest: HWTest {
             checks.append(("the pass: \(error)", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

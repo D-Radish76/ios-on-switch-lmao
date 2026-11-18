@@ -93,6 +93,7 @@ struct MPSControlFlowTest: HWTest {
             if continued == 0 { wrong.append("no loop continued") }
         }
         for path in paths + [canny.path] where path != "raw" { wrong.append("path:\(path)") }
+        if !FailedCounts.judged(before: before, after: after, &metrics).1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

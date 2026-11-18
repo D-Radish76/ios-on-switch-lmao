@@ -7,7 +7,7 @@ import Metal
 /// compiler's Metal front end from the base device's DAG text and each function's bitcode as the raw device read it
 /// (drivers/TegraGM20BMetal/raw/runtime/RawMetalCompiledLibraries.mm), never from m2v twins: the stitched function is
 /// the raw device's own. Core Image stitches its kernels this way (iconservicesagent, Maps, mediaanalysisd on boot 21).
-/// The case fails if the library is not made or anything asked for the m2v device (m2v_needs_asked).
+/// The case fails if the library is not made or any command buffer failed (failed_cbs=).
 /// It also stitches stitch_scaled_add specialized with each gain, as MPS stitches its DAG functions, links the result
 /// into stitch_consumer and checks every word it writes (specialized_words_off) and that each run stayed raw.
 struct StitchedLibraryTest: HWTest {
@@ -77,7 +77,7 @@ struct StitchedLibraryTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = OwnAnswersTest.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         guard let add = gpu.library.makeFunction(name: "stitch_add"),
             let mul = gpu.library.makeFunction(name: "stitch_mul")
         else { throw TestFailure("no stitch_add or stitch_mul in the app library") }
@@ -109,7 +109,6 @@ struct StitchedLibraryTest: HWTest {
         } catch {
             specializedFailure = String(error.localizedDescription.prefix(160))
         }
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
 
         var metrics = Metrics()
         metrics.set("made_ms", madeMs, digits: 1)
@@ -120,12 +119,12 @@ struct StitchedLibraryTest: HWTest {
         metrics.set("specialized_words_off", specialized.wrong)
         metrics.set("specialized_last", specialized.last.map { String($0) }.joined(separator: ","))
         metrics.set("specialized_failure", specializedFailure)
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
+        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), &metrics)
         var wrong: [String] = []
         if made == nil { wrong.append("library") }
         if stitched?.functionType != .visible { wrong.append("function") }
         if specialized.wrong != 0 { wrong.append("specialized_words") }
-        if !asked.isEmpty { wrong.append("m2v") }
+        if !failed.1 { wrong.append("failed") }
         let outcome: Outcome = wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
         return outcome.onRawPath(gpu)
     }

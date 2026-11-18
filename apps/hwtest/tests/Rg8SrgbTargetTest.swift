@@ -9,7 +9,7 @@ import Metal
 /// and (0.99, 0.001) (clears), and the sweep loaded and blended over by (0.8, 0.1, 0.3) at source alpha 0.37 (blend).
 /// Every RG8 texel equals the RGBA8 one's first two bytes, tolerance 0 (an M4 Max: m2v-passes3 probe/p3probe.mm
 /// rg8_srgb, out3.txt, 0 of 8192 channels; this scene on an M4 Max: 0 off in each). sweep_off, clears_off, blend_off
-/// channels off; every command buffer raw, m2v_cbs=0.
+/// channels off; every command buffer raw, failed_cbs=0.
 struct Rg8SrgbTargetTest: HWTest {
     let id = "gpu.raw.rg8_srgb_target"
     let name = "RG8Unorm_sRGB targets store what RGBA8Unorm_sRGB stores in its first two bytes, on raw"
@@ -49,9 +49,10 @@ struct Rg8SrgbTargetTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

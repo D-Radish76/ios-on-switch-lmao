@@ -10,7 +10,7 @@ import Metal
 /// slot table (11, 22; icb_root_slots= the state's root slots where the facade answers them, else -); binds_over_20, 24
 /// inherited buffers (300); residual_off16, a buffer bound at offsets 4 and 20, which the raw path binds at the base
 /// rounded down to 16 with the remainder in the kernel (101, 102, then 105, 106). Per case icb_<case>_value=,
-/// icb_<case>_path=, icb_<case>_ok=; m2v_cbs=.
+/// icb_<case>_path=, icb_<case>_ok=; failed_cbs=.
 struct IcbComputeFormsTest: HWTest {
     let id = "gpu.raw.icb_compute_forms"
     let name = "Indirect command buffers' dispatches: handle tables, root slots, 24 binds and unaligned offsets, on raw"
@@ -182,8 +182,9 @@ struct IcbComputeFormsTest: HWTest {
                 checks.append(("\(key): \(GPU.describe(error))", false))
             }
         }
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

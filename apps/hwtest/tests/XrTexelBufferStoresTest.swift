@@ -8,7 +8,7 @@ import Metal
 /// nothing past them. The words are the M4 Max's (m2v-textures4 probes/tbstore.mm, and this test's case code on it):
 /// 552 0x80004000 0xbf809fc0, 553 0xa4801b80 0xbf80bdc0, 554 0xe7f80100, 555 0xef7a486e. w552_lo= w552_hi= w553_lo=
 /// w553_hi= w554= w555= texel 0's words in hex, off= texels of the four buffers off Apple's words, past= words past the
-/// texels that changed; every command buffer raw, m2v_cbs=0.
+/// texels that changed; every command buffer raw, failed_cbs=0.
 struct XrTexelBufferStoresTest: HWTest {
     let id = "gpu.raw.xr_texel_buffer_stores"
     let name = "A kernel's stores into extended-range texture buffers leave an M4 Max's words, on raw"
@@ -45,10 +45,11 @@ struct XrTexelBufferStoresTest: HWTest {
         metrics.set("off", off)
         metrics.set("past", past)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["w552_lo", "w552_hi", "w553_lo", "w553_hi", "w554", "w555", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["w552_lo", "w552_hi", "w553_lo", "w553_hi", "w554", "w555", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

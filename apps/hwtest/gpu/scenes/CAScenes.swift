@@ -21,7 +21,7 @@ struct FirstTiledSurfaceScene: GPUScene {
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
         let start = RawFacade.counters(of: gpu.device)
-        if !start.isEmpty { result.metrics.set("first", ["raw", "m2v", "split"].allSatisfy { (start[$0] ?? 0) == 0 }) }
+        if !start.isEmpty { result.metrics.set("first", ["raw", "failed"].allSatisfy { (start[$0] ?? 0) == 0 }) }
         var pipeline: MTLRenderPipelineState?
         do {
             let library = try gpu.device.makeLibrary(URL: CAState.library)

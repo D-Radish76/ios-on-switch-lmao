@@ -6,13 +6,11 @@ import Metal
 /// full-screen rectangles into a 1280x720 target of its first colour's format, its other colours memoryless, sampling
 /// a BGRA8 picture with zero uniforms (as the raw pack's probe binds them). Medians of `runs` command buffers, the
 /// label lowercased:
-/// - us_<label>: GPU time per draw as the device answers GPUStartTime/GPUEndTime, in the clock gpu_clock names. The raw
-///   path's are nanoseconds; m2v's are PTIMER units read as nanoseconds (NVK's timestampPeriod is 1, and this PTIMER
-///   counts 0.6144 ns a nanosecond), so they show the work 1.6276 times faster than it ran.
+/// - us_<label>: GPU time per draw as the device answers GPUStartTime/GPUEndTime, in nanoseconds.
 /// - wall_us_<label>: per draw from the commit's return to the completed handler, on the host's clock on both devices.
 /// - cpu_us_<label>: per command buffer, the encode and the commit call (raw encodes and submits inside commit).
 /// - stall_us_<label>: per command buffer, the host's time after the commit that the GPU time does not account for (the
-///   wait for the GPU and the completion's latency), where the GPU time is in nanoseconds.
+///   wait for the GPU and the completion's latency).
 /// - ilk_<label> (raw): the timed runs' draws that took the pixel interlock. Such a state is timed again as the same
 ///   pixels in eight disjoint bands, no fragment waiting on another (apart_us_<label>, GPU time per full screen), and
 ///   as the pass with no draw (pass_us_<label>, its clears and setup), which InterlockBound takes out of both.
@@ -31,7 +29,6 @@ struct CAHotStatesScene: GPUScene {
     static let height = 720
     static let draws = InterlockBound.draws
     static let runs = 5
-    static let warmups = 20
     static let wideBlur = "narrow_blur_27_frag_lph"
     static let dumpBuffers = 4
 
@@ -46,8 +43,6 @@ struct CAHotStatesScene: GPUScene {
         }
         let kind = RawFacade.kind(of: gpu.device)
         let processDefault = gpu.device === MTLCreateSystemDefaultDevice()
-        let nanoseconds = kind != "m2v"
-        result.metrics.set("gpu_clock", nanoseconds ? "ns" : "ptimer")
         let source = try gpu.texture(.bgra8Unorm, Self.width, Self.height, usage: [.shaderRead])
         try await gpu.blitUpload(
             [UploadRect(x: 0, y: 0, width: Self.width, height: Self.height)],
@@ -89,13 +84,6 @@ struct CAHotStatesScene: GPUScene {
             }
             let overlapping = { (commands: MTLCommandBuffer) in draw(false, Self.draws, commands) }
             let label = line.shortLabel.lowercased()
-            var warm = 0
-            if kind == "raw" {
-                while warm < Self.warmups, try await gpu.run(tolerateError: true, overlapping).path != "raw" {
-                    warm += 1
-                    try await Task.sleep(nanoseconds: 50_000_000)
-                }
-            }
             let before = RawFacade.counters(of: gpu.device)
             var runs: [GPU.Timing] = []
             for _ in 0..<Self.runs {
@@ -116,7 +104,7 @@ struct CAHotStatesScene: GPUScene {
             let named = paths.sorted().joined(separator: ",")
             result.expect(!paths.contains { $0.hasPrefix("error:") }, "\(line.shortLabel): \(named)")
             if kind == "raw" && paths != ["raw"] {
-                result.expect(false, "\(line.shortLabel): drawn off the raw path, on \(named), after \(warm) runs")
+                result.expect(false, "\(line.shortLabel): drawn off the raw path, on \(named)")
                 continue
             }
             timed += 1
@@ -128,11 +116,8 @@ struct CAHotStatesScene: GPUScene {
             result.metrics.set(
                 "cpu_us_" + label,
                 Stats.percentile(runs.map { ($0.encodeMilliseconds + $0.commitMilliseconds) * 1000 }, 0.5), digits: 0)
-            if nanoseconds {
-                let stalls = zip(afterCommit, runs).map { ($0 - $1.gpuMilliseconds) * 1000 }
-                result.metrics.set("stall_us_" + label, Stats.percentile(stalls, 0.5), digits: 0)
-            }
-            if warm > 0 { result.metrics.set("warm_" + label, warm) }
+            let stalls = zip(afterCommit, runs).map { ($0 - $1.gpuMilliseconds) * 1000 }
+            result.metrics.set("stall_us_" + label, Stats.percentile(stalls, 0.5), digits: 0)
             var timings = runs
             if let interlocked = after["interlock_draws"], interlocked > before["interlock_draws"] ?? 0 {
                 result.metrics.set("ilk_" + label, interlocked - (before["interlock_draws"] ?? 0))

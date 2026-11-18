@@ -8,8 +8,10 @@ import Metal
 /// zero as clamp to edge (an M4 Max's reads) and the RGBA texture's as they are. The raw path refused every constexpr
 /// sampler beside such a texture (compute.image): a kernel's sampler is a word of its own. Now the record names the
 /// texture each sampler samples (raw_pack.h kernelSamplerPairs), and the direct compile compiles a kernel under its
-/// textures' address maps (NativeMetalDirectCompute.rs, as m2v's variant): one sampler the maps give two sets of modes
-/// fails the command buffer, as on m2v. Every sample is a texel's codes, exact.
+/// textures' address maps (NativeMetalDirectCompute.rs): one sampler the maps give two sets of modes is a kernel the
+/// compile cannot make, so its command buffer fails MTLCommandBufferErrorInternal with no predicate (error:none, the
+/// scene's one failed command buffer; boot C24: "A render pipeline could not be compiled"), where an M4 Max samples it.
+/// Every sample is a texel's codes, exact.
 struct KernelYcbcrSamplerScene: GPUScene {
     let id = "gpu.raw.kernel_ycbcr_sampler"
     let name = "A kernel sampling a YCbCr and an RGBA texture through samplers of their own"
@@ -25,6 +27,7 @@ struct KernelYcbcrMappedSamplerScene: GPUScene {
 struct KernelYcbcrSharedSamplerScene: GPUScene {
     let id = "gpu.raw.kernel_ycbcr_shared_sampler"
     let name = "A kernel sampling a YCbCr and an RGBA texture through one sampler"
+    var expectedFailures: [String: Int] { ["none": 1] }
     func run(_ gpu: GPU) async throws -> SceneResult { try await KernelYcbcrSampling(form: .shared).run(gpu) }
 }
 
@@ -88,8 +91,6 @@ struct KernelYcbcrSampling {
         let pipeline = try gpu.compute(kernel)
         let count = 2 * w * h * samples.count
         let out = try gpu.buffer(count * MemoryLayout<SIMD4<Float>>.stride)
-        let refused = { RawFacade.counters(of: gpu.device)["pred.compute.image"] ?? 0 }
-        let before = refused()
         let raw = RawFacade.kind(of: gpu.device) == "raw"
         let timing = try await gpu.run(tolerateError: form == .shared && raw) { commands in
             let encoder = commands.makeComputeCommandEncoder()!
@@ -103,16 +104,12 @@ struct KernelYcbcrSampling {
                 threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
             encoder.endEncoding()
         }
-        let refusals = refused() - before
         result.metrics.set("path", String(timing.path.prefix(80)))
-        result.metrics.set("refusals", refusals)
-        if raw {
-            result.expect(refusals == 0, "compute.image refused it \(refusals) times")
-        }
         if form == .shared && raw {
+            let internalError = "error:\(MTLCommandBufferErrorDomain)/\(MTLCommandBufferError.internal.rawValue) "
             result.expect(
-                timing.path.hasPrefix("error:"),
-                "the command buffer took \(timing.path), not the error m2v gives it too")
+                timing.path.hasPrefix(internalError) && timing.facadePath == "error:none",
+                "the command buffer took \(timing.path) (\(timing.facadePath)), not Internal with no predicate")
             return result
         }
         let got = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count)

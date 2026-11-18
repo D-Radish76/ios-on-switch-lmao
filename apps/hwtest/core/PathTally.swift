@@ -1,8 +1,8 @@
 import Foundation
 
 /// Which GPU path drew a test's work, for its log line: each of its own command buffers' path as the raw facade
-/// reports it ("raw", "m2v:<reason>:<predicate>", "split:<raw>+<m2v>:<reason>:<predicate>"), and the process's
-/// counters before and after (they also count command buffers a framework made, such as Core Image's).
+/// reports it ("raw", or "error:<predicate>" / "error:none" for one that failed), and the process's counters before and
+/// after (they also count command buffers a framework made, such as Core Image's).
 public struct PathTally: Equatable, Sendable {
     public private(set) var paths: [String: Int] = [:]
 
@@ -16,38 +16,26 @@ public struct PathTally: Equatable, Sendable {
 
     public var isEmpty: Bool { paths.isEmpty }
 
-    /// "raw/4,m2v:state:state.notpack/3": most frequent first.
+    /// "raw/4,error:call.sampler/1": most frequent first.
     public var text: String {
         paths.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
             .map { "\($0.key)/\($0.value)" }.joined(separator: ",")
     }
 
-    /// Whether there were command buffers and every one went to m2v whole.
-    public var onlyM2V: Bool { !paths.isEmpty && paths.keys.allSatisfy { $0.hasPrefix("m2v:") } }
-
-    /// The command buffers the facade did not run whole on the raw path, each under its path, which names the refusal
-    /// that took it off raw ("device": a release runtime, which answers no path, is not counted).
+    /// The command buffers the facade did not complete on the raw path, each under its path, which names the failure
+    /// ("device": a release runtime, which answers no path, is not counted).
     public var offRaw: PathTally {
         var off = PathTally()
         for (path, count) in paths where path != "raw" && path != "device" { off.paths[path] = count }
         return off
     }
 
-    /// Counter deltas (the facade's switchRawCounters) as log fields: raw_cbs, m2v_cbs, split_cbs and the predicates
-    /// that sent work to m2v, most hit first.
+    /// Counter deltas (the facade's switchRawCounters) as log fields: raw_cbs, and failed_cbs and failed_why
+    /// (FailedCounts).
     public static func counterMetrics(before: [String: Int], after: [String: Int]) -> Metrics {
-        let delta = after.reduce(into: [String: Int]()) { result, entry in
-            let change = entry.value - (before[entry.key] ?? 0)
-            if change != 0 { result[entry.key] = change }
-        }
         var metrics = Metrics()
-        metrics.set("raw_cbs", delta["raw"] ?? 0)
-        metrics.set("m2v_cbs", delta["m2v"] ?? 0)
-        metrics.set("split_cbs", delta["split"] ?? 0)
-        let predicates = delta.filter { $0.key.hasPrefix("pred.") }
-            .sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-            .map { "\($0.key.dropFirst("pred.".count))/\($0.value)" }
-        if !predicates.isEmpty { metrics.set("m2v_why", predicates.joined(separator: ",")) }
+        metrics.set("raw_cbs", (after["raw"] ?? 0) - (before["raw"] ?? 0))
+        metrics.merge(FailedCounts(before: before, after: after).metrics)
         return metrics
     }
 }

@@ -9,10 +9,10 @@ import Metal
 /// replaceRegion and getBytes use the plane's own (m2v linear_plan.rs, measured on an M3 Max and an M4). The raw path makes
 /// the texture at that GPU layout and keeps the CPU rows apart (drivers/TegraGM20BMetal/raw/runtime RawMetalDevice.mm,
 /// RawMetalTexture.mm). A plane whose rows overlap once rounded (13 texels in rows of 60) is nil, as m2v refused it.
-/// Nothing may ask for the m2v device (m2v_needs_asked).
+/// No command buffer may fail (failed_cbs=).
 struct PlaneRows16Test: HWTest {
     let id = "gpu.raw.plane_rows16"
-    let name = "A surface plane off 16 is read at Metal's GPU layout and written at its own rows, without m2v"
+    let name = "A surface plane off 16 is read at Metal's GPU layout and written at its own rows"
     let subsystem = Subsystem.metal
 
     static func plane(width: Int, offset: Int, rowBytes: Int) -> [IOSurfacePropertyKey: Any] {
@@ -26,7 +26,7 @@ struct PlaneRows16Test: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = OwnAnswersTest.needs(gpu.device)
+        let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -84,9 +84,9 @@ struct PlaneRows16Test: HWTest {
         metrics.set("wrong_texels", mismatched)
         if mismatched != 0 { wrong.append("gpu_layout") }
 
-        let asked = OwnAnswersTest.needs(gpu.device).filter { $0.value > (before[$0.key] ?? 0) }.keys.sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
+        let failed = FailedCounts.judged(
+            before: before, after: RawFacade.counters(of: gpu.device), &metrics)
+        if !failed.1 { wrong.append("failed") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

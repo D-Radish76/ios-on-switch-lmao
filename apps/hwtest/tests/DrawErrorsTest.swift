@@ -3,13 +3,15 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Draws Metal's validation stops fail their command buffer on the raw path with the raw path's own reason, never
-/// handed to m2v (its error then names m2v): a tessellation state drawn as primitives, a plain state drawn as patches,
-/// an amplification count above the state's maxVertexAmplificationCount (1 for a state that sets none) and patches at a
-/// tessellation factor scale of 0. An M4 Max's validation layer stops each of these draws.
+/// Draws Metal's validation stops fail their command buffer on the raw path with the raw path's own reason: a
+/// tessellation state drawn as primitives, a plain state drawn as patches, an amplification count above the state's
+/// maxVertexAmplificationCount (1 for a state that sets none) and patches at a tessellation factor scale of 0. An M4
+/// Max's validation layer stops each of these draws. Each arm's command buffer is the one that fails, under the
+/// encoder's refusal predicate enc.pass (raw/runtime/RawMetalEncode.mm refusalPred): its path error:enc.pass and
+/// failed.enc.pass one more (<arm>_failed_cbs=, <arm>_failed_why=).
 struct DrawErrorsTest: HWTest {
     let id = "gpu.raw.draw_errors"
-    let name = "Draws Metal's validation stops fail their command buffer with the raw path's reason, not on m2v"
+    let name = "Draws Metal's validation stops fail their command buffer with the raw path's reason"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -88,6 +90,7 @@ struct DrawErrorsTest: HWTest {
         var metrics = Metrics()
         var wrong: [String] = []
         for (label, why, draw) in arms {
+            let before = RawFacade.counters(of: gpu.device)
             let timing = try await gpu.run(tolerateError: true) { commands in
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = target
@@ -98,7 +101,12 @@ struct DrawErrorsTest: HWTest {
                 encoder.endEncoding()
             }
             metrics.set(label, String(timing.path.prefix(160)))
-            if timing.path != "error:" + Self.internalError + why { wrong.append(label) }
+            var own = PathTally()
+            own.add(timing.facadePath)
+            let failed = FailedCounts(before: before, after: RawFacade.counters(of: gpu.device))
+            metrics.merge(failed.metrics, prefix: label + "_")
+            let counted = failed.check(expecting: ["enc.pass": 1], offRaw: own.offRaw).1
+            if timing.path != "error:" + Self.internalError + why || !counted { wrong.append(label) }
         }
         return wrong.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(wrong.joined(separator: ","), metrics)
     }

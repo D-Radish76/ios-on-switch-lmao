@@ -39,8 +39,8 @@ final class ProbeTests: XCTestCase {
     }
 
     func testWorkOffTheRawPathDecidesNothing() {
-        let finding = ProbeFinding.counted(["a_wrong": 0], paths: ["raw", "m2v:pipeline:compile"])
+        let finding = ProbeFinding.counted(["a_wrong": 0], paths: ["raw", "error:compute.nokernel"])
         XCTAssertEqual(finding.verdict, .inconclusive)
-        XCTAssertEqual(finding.note, "not on the raw path: m2v:pipeline:compile")
+        XCTAssertEqual(finding.note, "not on the raw path: error:compute.nokernel")
     }
 }

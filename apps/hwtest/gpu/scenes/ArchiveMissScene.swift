@@ -66,7 +66,7 @@ struct ArchiveMissScene: GPUScene {
         ]
         for (label, make) in makers {
             let error = expectMiss(&result, "\(label), QuartzCore's archive", make)
-            if kind != "m2v", let error {
+            if let error {
                 result.expect(error.code == 3, "\(label), QuartzCore's archive: code \(error.code), not Metal's 3")
             }
             result.metrics.set("\(label)_domain", error?.domain ?? "-")

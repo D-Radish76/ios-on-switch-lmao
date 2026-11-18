@@ -26,7 +26,6 @@ struct CAGenericStateScene: GPUScene {
             + "fc_has_image_1C:53:01 fc_has_lod_bias:53:01 fc_has_lut_tex:53:01 fc_has_noise_scale:53:01 "
             + "fc_has_noise_tex:53:01 fc_has_ycbcr_matrix:53:01 fc_vertex_layout:49:00 | ")!
     static let size = 256
-    static let warmups = 20
     static let mistyped = "leftover_2d"
 
     func run(_ gpu: GPU) async throws -> SceneResult {
@@ -70,13 +69,7 @@ struct CAGenericStateScene: GPUScene {
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 encoder.endEncoding()
             }
-            var timing = try await gpu.run(tolerateError: true, draw)
-            var runs = 1
-            while raw && timing.path.hasPrefix("m2v:state") && runs < Self.warmups {
-                try await Task.sleep(nanoseconds: 50_000_000)
-                timing = try await gpu.run(tolerateError: true, draw)
-                runs += 1
-            }
+            let timing = try await gpu.run(tolerateError: true, draw)
             result.metrics.set("path_" + label, timing.path)
             result.metrics.set("wait_ms_" + label, timing.wallMilliseconds, digits: 2)
             if !timing.path.hasPrefix("error:") {

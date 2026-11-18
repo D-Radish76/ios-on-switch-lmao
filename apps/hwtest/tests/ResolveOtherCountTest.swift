@@ -10,7 +10,7 @@ import Metal
 /// texture. Tolerance 0. An M4 Max, this scene: both, every sample of every format (drawn per sample, per pixel or
 /// sample-masked alike; m2v-passes passoracle.mm resolve_other_count measured the cleared one). Per format and case
 /// <fmt>_<case>_off samples off and _max the largest difference (codes; RGBA16Float: half steps); every command buffer
-/// raw, m2v_cbs=0.
+/// raw, failed_cbs=0.
 struct ResolveOtherCountTest: HWTest {
     let id = "gpu.raw.resolve_other_count"
     let name = "A 4x resolve into a 2x texture keeps it after a draw and spreads a clear-only pass, on raw"
@@ -46,9 +46,10 @@ struct ResolveOtherCountTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

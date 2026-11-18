@@ -7,7 +7,7 @@ import Metal
 /// fills them): an RGB9E5 region, planes 1 to 3 of a 3D texture's region, every sample of a 4x texture (through a
 /// resolve), Depth32Float_Stencil8's depth through R32Float keeping its stencil, RGBA32Float through R8Unorm, RGBA8
 /// through RGBA16Float (the half texel cut to 4 bytes) and a cube array's slice 7. Per case: <case>_path (raw),
-/// <case>_inside_wrong and <case>_outside_changed (0 each), and no m2v command buffer over the test (m2v_cbs=).
+/// <case>_inside_wrong and <case>_outside_changed (0 each), and no command buffer failed over the test (failed_cbs=).
 struct FillShapesTest: HWTest {
     let id = "gpu.raw.fill_shapes"
     let name = "fillTexture: into RGB9E5, 3D, multisampled, depth, cube-array and narrower-format texels, on raw"
@@ -40,9 +40,10 @@ struct FillShapesTest: HWTest {
                     result.insideWrong + result.outsideChanged == 0
                 ))
         }
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["m2v_cbs"])
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

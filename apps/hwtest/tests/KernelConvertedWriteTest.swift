@@ -5,7 +5,7 @@ import Metal
 
 /// KernelConvertedWrites.swift on the raw path: per view <view>_bytes_changed= surface bytes the dropped store moved,
 /// <view>_reads_changed= texels a later read() reads otherwise, <view>_null_nonzero= bytes a read of a null binding
-/// after it made non-zero, <view>_paths=; m2v_cbs=. An M4 Max: 0, 0, 0 for both views.
+/// after it made non-zero, <view>_paths=; failed_cbs=. An M4 Max: 0, 0, 0 for both views.
 struct KernelConvertedWriteTest: HWTest {
     let id = "gpu.raw.kernel_converted_write"
     let name = "A kernel's store into a converted YCbCr view is dropped, as Metal drops it, on raw"
@@ -32,8 +32,9 @@ struct KernelConvertedWriteTest: HWTest {
                 checks.append(("\(view.key): \(GPU.describe(error))", false))
             }
         }
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

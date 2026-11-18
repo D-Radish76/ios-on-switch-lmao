@@ -13,7 +13,7 @@ import Metal
 /// command buffer fails MTLCommandBufferErrorInvalidResource. Tolerance 0. The expectations are an M4 Max's
 /// (m2v-passes3 probe/p3probe.mm zeta_resolves, out2.txt: status 5 error 9 for memoryless; this scene on an M4 Max: 0
 /// off in every case, memoryless_status 9/9). <case>_off texels off, memoryless_status the two error codes; every
-/// command buffer raw, m2v_cbs=0.
+/// other command buffer raw, and only the two memoryless ones failed, each the facade's pass.ds (failed_why=).
 struct ZetaResolvePartsTest: HWTest {
     let id = "gpu.raw.zeta_resolve_parts"
     let name = "Depth and stencil resolves into a level, a slice or another format, and none into memoryless, on raw"
@@ -55,9 +55,10 @@ struct ZetaResolvePartsTest: HWTest {
             checks.append(("memoryless: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
+        checks.append(
+            FailedCounts(before: before, after: counted).check(expecting: ["pass.ds": 2], offRaw: gpu.paths.offRaw))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

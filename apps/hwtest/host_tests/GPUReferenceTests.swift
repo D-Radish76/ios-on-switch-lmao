@@ -106,16 +106,15 @@ final class GPUReferenceTests: XCTestCase {
 
     func testPathsAndCountersBecomeLogFields() {
         var tally = PathTally()
-        ["raw", "m2v:state:state.notpack", "raw"].forEach { tally.add($0) }
-        XCTAssertEqual(tally.text, "raw/2,m2v:state:state.notpack/1")
-        XCTAssertFalse(tally.onlyM2V)
-        XCTAssertEqual(tally.offRaw.text, "m2v:state:state.notpack/1")
+        ["raw", "error:pass.fmt", "raw"].forEach { tally.add($0) }
+        XCTAssertEqual(tally.text, "raw/2,error:pass.fmt/1")
+        XCTAssertEqual(tally.offRaw.text, "error:pass.fmt/1")
         var raw = PathTally()
         raw.add("raw")
         XCTAssertTrue(raw.offRaw.isEmpty)
-        raw.add("split:2+1:enc.storage")
-        raw.add("refused:call.sampler")
-        XCTAssertEqual(raw.offRaw.text, "refused:call.sampler/1,split:2+1:enc.storage/1")
+        raw.add("error:none")
+        raw.add("error:call.sampler")
+        XCTAssertEqual(raw.offRaw.text, "error:call.sampler/1,error:none/1")
         var release = PathTally()
         release.add("device")
         XCTAssertTrue(release.offRaw.isEmpty)
@@ -123,15 +122,39 @@ final class GPUReferenceTests: XCTestCase {
         XCTAssertEqual(passed.failing(offRaw: PathTally()).verdict, .pass)
         let failed = passed.failing(offRaw: raw.offRaw)
         XCTAssertEqual(failed.verdict, .fail)
-        XCTAssertEqual(
-            failed.detail, "command buffers off the raw path: refused:call.sampler/1,split:2+1:enc.storage/1; d")
+        XCTAssertEqual(failed.detail, "command buffers off the raw path: error:call.sampler/1,error:none/1; d")
         XCTAssertEqual(failed.proof, "p")
         let metrics = PathTally.counterMetrics(
-            before: ["raw": 5, "m2v": 1, "pred.state.notpack": 1],
-            after: ["raw": 9, "m2v": 4, "pred.state.notpack": 3, "pred.compute": 1])
+            before: ["raw": 5, "failed": 1, "failed.pass.fmt": 1],
+            after: ["raw": 9, "failed": 4, "failed.pass.fmt": 3, "failed.none": 1])
         XCTAssertEqual(metrics["raw_cbs"], .integer(4))
-        XCTAssertEqual(metrics["m2v_cbs"], .integer(3))
-        XCTAssertEqual(metrics["m2v_why"], .text("state.notpack/2,compute/1"))
+        XCTAssertEqual(metrics["failed_cbs"], .integer(3))
+        XCTAssertEqual(metrics["failed_why"], .text("pass.fmt/2,none/1"))
+    }
+
+    func testFailedCountsJudgeExactlyTheExpectedFailures() {
+        let before = ["failed": 2, "failed.call.buf": 2]
+        let quiet = FailedCounts(before: before, after: ["failed": 2, "failed.call.buf": 2])
+        XCTAssertTrue(quiet.check().1)
+        XCTAssertEqual(quiet.metrics["failed_cbs"], .integer(0))
+        let framework = FailedCounts(before: before, after: ["failed": 3, "failed.call.buf": 2, "failed.none": 1])
+        XCTAssertEqual(framework.check().0, "no command buffer failed, not failed none/1")
+        XCTAssertFalse(framework.check().1)
+        XCTAssertTrue(framework.check(expecting: ["none": 1]).1)
+        XCTAssertFalse(framework.check(expecting: ["pass.fmt": 1]).1)
+        var own = PathTally()
+        own.add("error:none")
+        XCTAssertTrue(framework.check(expecting: ["none": 1], offRaw: own.offRaw).1)
+        own.add("error:pass.fmt")
+        XCTAssertEqual(
+            framework.check(expecting: ["none": 1], offRaw: own.offRaw).0,
+            "exactly none/1 failed, not off the raw path error:none/1,error:pass.fmt/1")
+        let unanswered = FailedCounts(before: [:], after: ["raw": 4])
+        XCTAssertFalse(unanswered.check().1)
+        XCTAssertEqual(unanswered.metrics["failed_cbs"], .text("unanswered"))
+        let outcome = Outcome.pass(Metrics(), detail: "d").failing(unless: framework.check())
+        XCTAssertEqual(outcome.verdict, .fail)
+        XCTAssertEqual(outcome.detail, "no command buffer failed, not failed none/1; d")
     }
 
     func testFittedReasonsKeepTheFirstAndCountTheRest() {

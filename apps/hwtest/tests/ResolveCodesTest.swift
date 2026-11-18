@@ -11,7 +11,7 @@ import Metal
 /// half up toward +inf for negative means too: the rule an M4 Max resolves these formats by (raw/test/
 /// resolvecodesoracle.mm, every channel at 2x and 4x), and this scene's every channel on an M4 Max. Per format and
 /// count: <fmt>_x<n>_off channels off, _max the largest |off| in codes, _ties the first four tie texels' offsets (got -
-/// want, channels by "/"); every command buffer raw, m2v_cbs=0.
+/// want, channels by "/"); every command buffer raw, failed_cbs=0.
 struct ResolveCodesTest: HWTest {
     let id = "gpu.raw.resolve_codes"
     let name = "Signed normalized and BGR10_XR targets resolve to their codes' mean rounded half up, on raw"
@@ -85,10 +85,11 @@ struct ResolveCodesTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
-        metrics.fitLog(within: 720, keeping: ["paths", "m2v_cbs"])
+        checks.append(FailedCounts(before: before, after: counted).check())
+        metrics.fitLog(within: 720, keeping: ["paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

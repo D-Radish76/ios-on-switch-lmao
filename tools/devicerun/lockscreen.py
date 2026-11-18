@@ -14,15 +14,16 @@ POSTERKIT = 'PosterKit (dyld cache)'
 
 LOCKSCREEN = [
     Check(
-        'lockscreen.m2v',
+        'lockscreen.failed',
         OWNER,
-        'cb.m2v',
+        'a command buffer failed',
         subsystem=REFUSAL,
-        regex=rf'^(?P<who>{LOCK_PROCESSES})\[\d+\] cb\.m2v: .*\[first predicate (?P<pred>[\w.]+)\]',
+        level='error',
+        regex=rf'^(?P<who>{LOCK_PROCESSES})\[\d+\] (?P<pred>[\w.]+): a command buffer failed ',
         show=('who', 'pred'),
-        source='drivers/TegraGM20BMetal/raw/runtime/RawMetalCommandBuffer.mm',
-        note='first m2v command buffer per process and reason; boot 15: enc.ubo, enc.notic, pass.fmt, blit.b2t, '
-        'tex.shape, compute',
+        source='drivers/TegraGM20BMetal/raw/runtime (c38-audit/failed-counts/CONTRACT.md)',
+        note='the first command buffer each predicate failed, per lock-screen process; boot 15 sent enc.ubo, '
+        'enc.notic, pass.fmt, blit.b2t, tex.shape and compute work to m2v',
     ),
     Check(
         'lockscreen.scene-watchdog',

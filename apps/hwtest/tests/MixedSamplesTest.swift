@@ -34,7 +34,7 @@ struct MixedSamplesTest: HWTest {
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var grey = 0, fillOff = 0
-        var kept: Set<String> = ["m2v_cbs"]
+        var kept: Set<String> = ["failed_cbs"]
         do {
             let scene = try MixedSamplesCases.Scene(gpu)
             _ = try await scene.run(mask: 0, raster: 1)
@@ -86,9 +86,10 @@ struct MixedSamplesTest: HWTest {
         checks.append(("no colour value but 0 and 255", grey == 0))
         checks.append(("the 4x fill wrote each sample its mask's bit", fillOff == 0))
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         metrics.fitLog(within: 720, keeping: kept.union(["mixed_grey", "mixed_fill_off"]))
         return .judged(checks, metrics, proof: gpu.proof)
     }

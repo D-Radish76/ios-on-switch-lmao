@@ -5,11 +5,10 @@ import Metal
 
 /// A linear texture's row of a format the raw path does not lay out (drivers/TegraGM20BMetal/raw/runtime/
 /// RawMetalDeviceAnswers.mm requiredLinearTextureBytesPerRowForDescriptor:, raw_metal_formats.h): its texels at Metal's
-/// size rounded up to the format's linear alignment, 0 for a depth format, which has no linear alignment, with no m2v
-/// device asked.
+/// size rounded up to the format's linear alignment, 0 for a depth format, which has no linear alignment.
 struct NativeLinearRowTest: HWTest {
     let id = "metal.native.linear_row"
-    let name = "A linear row of a format raw does not lay out, answered without m2v"
+    let name = "A linear row of a format raw does not lay out, answered by the device"
     let subsystem = Subsystem.metal
 
     static let width = 100
@@ -23,7 +22,6 @@ struct NativeLinearRowTest: HWTest {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let needsBefore = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
         let selector = NSSelectorFromString("requiredLinearTextureBytesPerRowForDescriptor:")
         typealias Row = @convention(c) (AnyObject, Selector, MTLTextureDescriptor) -> Int
         let row = unsafeBitCast((gpu.device as AnyObject).method(for: selector), to: Row.self)
@@ -42,10 +40,6 @@ struct NativeLinearRowTest: HWTest {
         let depthRow = row(gpu.device as AnyObject, selector, descriptor)
         metrics.set("depth32f_row", depthRow)
         if depthRow != 0 { wrong.append("depth32f") }
-        let needsAfter = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
-        let asked = Set(needsAfter.keys).subtracting(needsBefore.keys).sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

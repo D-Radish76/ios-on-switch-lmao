@@ -5,17 +5,16 @@ import Metal
 
 /// A heap's block-compressed textures, a mip chain and a 2D array in a private heap and one level in a shared one
 /// (drivers/TegraGM20BMetal/raw/runtime/RawMetalHeap.mm heapTextureAsk, raw::TextureAsk::Block): their size is the
-/// device's own answer and each is made in the heap by the raw path (an object of raw's), no m2v device asked.
+/// device's own answer and each is made in the heap by the raw path (an object of raw's).
 struct NativeHeapBlockTest: HWTest {
     let id = "metal.native.heap_block"
-    let name = "A heap's block-compressed textures placed in it, with no m2v"
+    let name = "A heap's block-compressed textures placed in it"
     let subsystem = Subsystem.metal
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let needsBefore = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
         func heap(_ mode: MTLStorageMode) throws -> MTLHeap {
             let descriptor = MTLHeapDescriptor()
             descriptor.storageMode = mode
@@ -53,10 +52,6 @@ struct NativeHeapBlockTest: HWTest {
             if texture.heap !== heap { wrong.append("\(name)_heap") }
             if made == nil { wrong.append("\(name)_not_raw") }
         }
-        let needsAfter = RawFacade.m2vRecord(of: gpu.device)["needs"] as? [String: Any] ?? [:]
-        let asked = Set(needsAfter.keys).subtracting(needsBefore.keys).sorted()
-        metrics.set("m2v_needs_asked", asked.isEmpty ? "-" : asked.joined(separator: ","))
-        if !asked.isEmpty { wrong.append("m2v") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

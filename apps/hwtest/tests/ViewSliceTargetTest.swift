@@ -8,7 +8,7 @@ import Metal
 /// red. Slice 2 of the array at level 0 is red and every other slice and level keeps its bytes, tolerance 0 (the
 /// spec's; an M4 Max, this scene: 0 texels off, 0 bytes changed elsewhere). target_off texels of slice 2 level 0 not
 /// red, changed_elsewhere bytes changed in any other slice or level, changed the parts they lie in (s<slice>l<level>,
-/// "-" for none); every command buffer raw, m2v_cbs=0.
+/// "-" for none); every command buffer raw, failed_cbs=0.
 struct ViewSliceTargetTest: HWTest {
     let id = "gpu.raw.view_slice_target"
     let name = "A pass into a slice of a 2D array view renders into that slice and level of the texture alone, on raw"
@@ -50,9 +50,10 @@ struct ViewSliceTargetTest: HWTest {
             checks.append(("the pass: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        metrics.merge(PathTally.counterMetrics(before: before, after: RawFacade.counters(of: gpu.device)))
+        let counted = RawFacade.counters(of: gpu.device)
+        metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
-        checks.append(("no m2v command buffer", metrics["m2v_cbs"] == .integer(0)))
+        checks.append(FailedCounts(before: before, after: counted).check())
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
