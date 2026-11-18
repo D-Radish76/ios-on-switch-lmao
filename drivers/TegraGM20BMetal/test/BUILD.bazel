@@ -1841,10 +1841,7 @@ host_test(
 host_test(
     name = "raw_events_source_test",
     srcs = ["raw_events_source_test.cpp"],
-    data = [
-        "//drivers/TegraGM20BMetal:TegraGM20BMetalPlugin.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalEvents.mm",
-    ],
+    data = ["//drivers/TegraGM20BMetal:raw/runtime/RawMetalEvents.mm"],
 )
 
 # What raw relies on in m2v and NVK while they ship: goes with them (tag m2v: .bazelrc's nom2v dry run leaves it out).

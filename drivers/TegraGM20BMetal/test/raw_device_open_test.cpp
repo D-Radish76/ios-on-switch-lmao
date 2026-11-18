@@ -25,8 +25,9 @@ TEST(RawDeviceOpen, TheRawDeviceCarriesTheClassOfWhatItMetToThePluginsLine)
         Body(gpu, "bool Device::open(const char *packPath, uint64_t stack, std::string &err, Role role)");
     EXPECT_LT(open.find("openFailure_ = OpenFailure::Structural;"), open.find("pack_.load("));
     EXPECT_LT(open.find("openFailure_ = OpenFailure::Transient;"), open.find("k_.open(err)"));
-    EXPECT_THAT(SourceText("../TegraGM20BMetalPlugin.mm"),
-                HasSubstr("m2v device kept\",\n                    getprogname(), why, raw_metal_open_failure());"));
+    EXPECT_THAT(Body(SourceText("../TegraGM20BMetalPlugin.mm"),
+                     "id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)"),
+                HasSubstr("failure = raw_metal_open_failure();"));
 }
 
 // A device that did not open fails that ask alone (nil, one error line naming its class); no count, no latch: the next
@@ -38,10 +39,8 @@ TEST(RawDeviceOpen, EveryAskOfAProcessWithNoDeviceOpensAfresh)
     EXPECT_THAT(plugin, Not(HasSubstr("DeviceOpens")));
     const std::string open = Body(plugin, "id openDevice(unsigned port)");
     EXPECT_THAT(open, HasSubstr("if (device)\n            return device;"));
-    EXPECT_THAT(open, HasSubstr("device = openOnce(port, failure);"));
-    const std::string once = Body(plugin, "id openOnce(unsigned port, raw::OpenFailure &failure)");
-    EXPECT_THAT(once, HasSubstr("failure = native_bridge_metal_memory(memory) ? raw::OpenFailure::Structural : "
-                                "raw::OpenFailure::Transient;"));
+    EXPECT_THAT(open, HasSubstr("device = openOnce(port, failure, why);"));
+    EXPECT_THAT(open, HasSubstr("raw::openFailureText(failure), why);"));
 }
 
 TEST(RawDeviceOpen, APreparedRawDeviceThatDidNotOpenIsPreparedAgain)

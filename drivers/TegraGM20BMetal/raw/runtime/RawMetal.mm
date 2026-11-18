@@ -294,9 +294,9 @@ id<MTLDevice> raw_metal_device_open(const char *packPath, uint64_t stack, id<MTL
     return raw_metal_device_open_lazy(packPath, stack, registryID, m2v, error);
 }
 
-const char *raw_metal_open_failure(void)
+raw::OpenFailure raw_metal_open_failure(void)
 {
-    return raw::openFailureText(gOpenFailure);
+    return gOpenFailure;
 }
 
 id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, uint64_t registryID, RawM2V m2v,

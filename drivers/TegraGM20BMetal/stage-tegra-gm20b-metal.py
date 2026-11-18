@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Stage the TegraGM20B Metal plugin onto the SD card's iPadOS Data volume, mounted on the Mac.
 
-usage: stage-tegra-gm20b-metal.py <Data mount point> (--build <manifest or dir> | --remove) [--no-raw] [--progress]
+usage: stage-tegra-gm20b-metal.py <Data mount point> (--build <manifest or dir> | --remove) [--progress]
 
 --build is //gpu:bundle's manifest (bazel-bin/gpu/bundle.stage, in //deploy:sd's runfiles: tools/gpu/stage_manifest.py),
 or a directory laid out as //gpu:base (bazel-bin/gpu/base, an lkg snapshot's gpu/). Exit status 0 on success, else one
@@ -15,9 +15,8 @@ What it stages, on the live volume (as vendor/unixnu/scripts/add-gpu-plugin-data
   * <Data>/ngpu/addons/TegraGM20BMetal.bundle. The kernel shows /private/var/ngpu/addons over
     /System/Library/Extensions;
   * <Data>/ngpu/addons/TegraGM20BMetal.m2v-seed beside it, when the build has one (the shader cache seed);
-  * <Data>/ngpu/addons/TegraGM20BMetal.raw beside it, when the build has one (the raw GM20B path's pipeline pack: with
-    it staged, backboardd draws through the raw path; --no-raw, or TEGRA_RAW_STAGE=0 in the environment, leaves it
-    out, and the render server keeps the m2v device);
+  * <Data>/ngpu/addons/TegraGM20BMetal.raw beside it (the raw GM20B path's pipeline pack: a process that cannot read
+    it gets no Metal device);
   * CAEnableDeepFramebuffer, CAEnableFramebufferCompression and CAEnableIOSurfaceCompression = false merged into the
     preferences backboardd reads when it starts, before any plugin code runs (its own domain and the global one, for
     mobile and root): the GPU and the display driver take plain 8-bit rows.
@@ -63,11 +62,10 @@ PREFS = {
 Wanted = dict[str, tuple[Path, str, int, int]]
 
 
-def _arguments(argv: list[str]) -> tuple[Path, Path | None, bool, bool, bool]:
+def _arguments(argv: list[str]) -> tuple[Path, Path | None, bool, bool]:
     remove = '--remove' in argv
-    raw = '--no-raw' not in argv and os.environ.get('TEGRA_RAW_STAGE', '1') != '0'
     progress = '--progress' in argv
-    argv = [a for a in argv if a not in ('--no-raw', '--progress')]
+    argv = [a for a in argv if a != '--progress']
     build = None
     if '--build' in argv[:-1]:
         build = Path(os.path.abspath(argv[argv.index('--build') + 1]))
@@ -75,7 +73,7 @@ def _arguments(argv: list[str]) -> tuple[Path, Path | None, bool, bool, bool]:
     args = [a for a in argv if a != '--remove']
     if len(args) != 1 or (build is None and not remove):
         sys.exit(__doc__)
-    return Path(args[0]).resolve(), build, remove, raw, progress
+    return Path(args[0]).resolve(), build, remove, progress
 
 
 def _check_volume(data: Path) -> None:
@@ -242,7 +240,7 @@ def _report(what: str) -> None:
 
 
 def main() -> None:
-    data, build, remove, raw, progress = _arguments(sys.argv[1:])
+    data, build, remove, progress = _arguments(sys.argv[1:])
     report = _report if progress else _silent
     _check_volume(data)
     if remove:
@@ -257,8 +255,6 @@ def main() -> None:
     wanted = from_manifest(build) if build.is_file() else from_directory(build)
     if BUNDLE + '/TegraGM20BMetal' not in wanted:
         sys.exit(f'stage-tegra-gm20b-metal: no plugin build in {build} (bazel build //gpu:bundle)')
-    if not raw:
-        wanted = {p: w for p, w in wanted.items() if not p.startswith(RAW + '/')}
     done = sync(data, wanted, report)
     _merge_preferences(data)
     report('flushing to the card')

@@ -11,6 +11,7 @@
 #pragma once
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#include "raw_device_open.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -34,7 +35,7 @@ NSString *raw_metal_pipeline_key(MTLRenderPipelineDescriptor *descriptor);
 bool raw_metal_linked_packable(MTLRenderPipelineDescriptor *descriptor);
 // One rates line since the previous call (0 when the device did nothing): command buffers on each path and why, encode time,
 // draws, passes, copies, waits, memory; and the states the runtime made since the device opened (states=<records from the
-// cache>/<probes>/<refused>/<failed>/<ms making them>). The plugin logs it every 5 s with the m2v line (TEGRA_M2V_TELEMETRY).
+// cache>/<probes>/<refused>/<failed>/<ms making them>). The plugin logs it every 5 s in debug builds.
 size_t raw_metal_rates(char *out, size_t size);
 size_t raw_metal_split_rates(char *out, size_t size);  // RawMetalRates.mm: split twins taken and not, by why
 // Debug builds: one line of the fetching draws since the previous call (0 when there were none), by how each kept raster
@@ -74,5 +75,5 @@ struct RawM2V {
 // *error.
 id<MTLDevice> raw_metal_device_open_lazy(const char *packPath, uint64_t stack, uint64_t registryID, RawM2V m2v,
                                          NSString **error);
-// What the last raw_metal_device_open_lazy that returned nil met (raw_device_open.h): "structural" or "transient"
-const char *raw_metal_open_failure(void);
+// What the last raw_metal_device_open_lazy that returned nil met (raw_device_open.h)
+raw::OpenFailure raw_metal_open_failure(void);
