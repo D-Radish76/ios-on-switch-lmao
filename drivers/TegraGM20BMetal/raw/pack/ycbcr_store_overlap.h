@@ -5,8 +5,8 @@
 // A target whose plane rows overlap (runtime/raw_overlap_rows.h OverlapRows, overlapOrder and overlapWinner step for step):
 // each plane byte from the pool image of its rows' own texels, the row whose store lands last as an M4 Max stores a pass:
 // tiles of 64x32 frame texels from the last tile row up and each row's last tile back (at a quarter turn the 64-wide frame
-// column further left later, then the tile further down), a tile by 32-texel column, then row pair, the even row of a
-// pair after the odd one. The target is the plane's bytes `pitch` apart from `base`; a texel of the
+// column further left later, then the tile further down), a tile by 32-texel column, then 2x2 quad row, then quad column,
+// the even row of a quad after the odd one. The target is the plane's bytes `pitch` apart from `base`; a texel of the
 // source is a texel of the target, its bits moved as the unorm it is. A one-plane 4:2:2 target's bytes come from its luma
 // (texture 0) and chroma (texture 2) images.
 struct OverlapRows {
@@ -25,11 +25,15 @@ static bool overlapReached(Reach reach, constant OverlapRows &s, uint2 pixel)
     return reached(reach, s.tiles, pixel);
 }
 
+static uint inTileOrder(uint x, uint y)
+{
+    return (x % 64 / 32) << 9 | (y % 32 / 2) << 5 | (x % 32 / 2) << 1 | ((y & 1) == 0 ? 1u : 0u);
+}
+
 static uint overlapOrder(uint x, uint y)
 {
     const uint tileRow = y / 32, tileColumn = x / 64;
-    return (0xffffu - tileRow) << 14 | (0xffu - tileColumn) << 6 | (x % 64 / 32) << 5 | (y % 32 / 2) << 1 |
-           ((y & 1) == 0 ? 1u : 0u);
+    return (0x3ffu - tileRow) << 18 | (0xffu - tileColumn) << 10 | inTileOrder(x, y);
 }
 
 static uint2 frameTexel(constant Tiles &t, uint x, uint y, uint across, uint down)
@@ -43,8 +47,7 @@ static uint frameOrder(constant Tiles &t, uint2 f)
 {
     if (t.ax != 0)
         return overlapOrder(f.x, f.y);
-    return (0x3ffu - f.x / 64) << 22 | (f.y / 32) << 6 | (f.x % 64 / 32) << 5 | (f.y % 32 / 2) << 1 |
-           ((f.y & 1) == 0 ? 1u : 0u);
+    return (0x3ffu - f.x / 64) << 22 | (f.y / 32) << 10 | inTileOrder(f.x, f.y);
 }
 
 static bool overlapWinner(constant OverlapRows &s, Reach reach, uint a, thread uint &row, thread uint &offset)

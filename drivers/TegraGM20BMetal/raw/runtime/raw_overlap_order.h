@@ -34,13 +34,21 @@ struct OverlapRows {
 
 static_assert(sizeof(OverlapRows) == 76, "pack/ycbcr_store_overlap.h OverlapRows");
 
+// Where the store of frame texel (x, y) lands inside its 64x32 tile: the right 32-texel half later, then the 2x2 quad's
+// row, then its column, then the even row of a quad after the odd one (an M4 Max stores a pass by quads: the later quad
+// row, then the later quad column, keeps a byte two quads reach: m2v-textures12 probes/f2/q1.txt R3, m2v-textures13
+// probes/c4misc/RESULT.txt R3, at every turn)
+inline uint32_t inTileOrder(uint32_t x, uint32_t y)
+{
+    return (x % 64 / 32) << 9 | (y % 32 / 2) << 5 | (x % 32 / 2) << 1 | ((y & 1) == 0 ? 1u : 0u);
+}
+
 // Where the store of frame texel (x, y) of an unturned or half-turned frame lands in the order, later stores higher
 // (pack/ycbcr_store_overlap.h overlapOrder)
 inline uint32_t overlapOrder(uint32_t x, uint32_t y)
 {
     const uint32_t tileRow = y / 32, tileColumn = x / 64;
-    return (0xffffu - tileRow) << 14 | (0xffu - tileColumn) << 6 | (x % 64 / 32) << 5 | (y % 32 / 2) << 1 |
-           ((y & 1) == 0 ? 1u : 0u);
+    return (0x3ffu - tileRow) << 18 | (0xffu - tileColumn) << 10 | inTileOrder(x, y);
 }
 
 // The frame texel `map` takes the top-left of a store of `across` x `down` plane texels from (x, y) to: the frame's first
@@ -59,8 +67,7 @@ inline uint32_t frameOrder(const TileMap &map, uint32_t fx, uint32_t fy)
 {
     if (map.ax != 0)
         return overlapOrder(fx, fy);
-    return (0x3ffu - fx / 64) << 22 | (fy / 32) << 6 | (fx % 64 / 32) << 5 | (fy % 32 / 2) << 1 |
-           ((fy & 1) == 0 ? 1u : 0u);
+    return (0x3ffu - fx / 64) << 22 | (fy / 32) << 10 | inTileOrder(fx, fy);
 }
 
 // The row whose store of plane byte `a` lands last and that row's byte, as pack/ycbcr_store_overlap.h overlapWinner picks them;

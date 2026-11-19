@@ -61,3 +61,30 @@ TEST(RawOverlapOrder, ATurnedTargetsRowsKeepTheStoreAppleLandsLastInAFrameTile)
         EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple((a - 96) / 4, 1u, a % 4)) << "word byte " << a;
     }
 }
+
+// Two stores reaching one byte keep the later 2x2 quad of the frame, by quad row and then quad column, whichever plane
+// it is: RGB10A8_2P_XR10 2x8 over words of rows 8 at 0 and alpha of rows 2 at 64, both stored 16 apart, alpha rows 0-3
+// on word rows 4-7: the words keep the bytes turned 0 and 1 times, the alpha 2 and 3 times (an M4 Max's clears, draws
+// and loaded passes alike, deterministic: m2v-textures13 probes/c4misc/RESULT.txt R3)
+TEST(RawOverlapOrder, StoresThatMeetKeepTheLaterQuadOfTheFrame)
+{
+    raw::OverlapPlanes xr;
+    xr.pitch = xr.wordPitch = xr.alphaPitch = 16;
+    xr.wordRow = 8;
+    xr.alphaRow = 2;
+    xr.wordRows = xr.alphaRows = 8;
+    xr.alpha = 64;
+    for (uint8_t turn = 0; turn < 4; turn++) {
+        xr.tiles = frameOfTurned(turn, 2, 8);
+        for (uint32_t k = 0; k < 4; k++)
+            for (uint32_t j = 0; j < 2; j++) {
+                const uint32_t a = 64 + 16 * k + j;
+                uint32_t x = 0, y = 0, byte = 0;
+                ASSERT_TRUE(raw::overlapPlanesWinner(xr, a, x, y, byte)) << a;
+                if (turn < 2)
+                    EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple(0u, 4 + k, j)) << "turn " << int(turn) << a;
+                else
+                    EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple(j, k, 4u)) << "turn " << int(turn) << a;
+            }
+    }
+}
