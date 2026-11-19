@@ -3,17 +3,16 @@
 
 One action per step (gpu/seed/tools.bzl seed_tools builds, gpu/seed/defs.bzl seed_raw_pack runs the rest):
 
-    rawpack.py build --xcode-env F [--host-bridge <darwin bridge .a>] --translate <darwin translation .a>
-                     --compile <switch_compile.o> --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h>
-                     --generator <raw/pack/rawpack.py> --tree <tree> --out <dir>
-        the generator's host tools (directpack over the translation and the stage compile, the mock GM20B, the raw
-        path's own.metallib; with the host bridge the probe, native-seed and compile-profile through this build's
-        frontend too) into <dir>, with the context init nvdec ran (context.log)
+    rawpack.py build --xcode-env F --translate <darwin translation .a> --compile <switch_compile.o>
+                     --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h> --generator <raw/pack/rawpack.py>
+                     --tree <tree> --out <dir>
+        the generator's host tools (directpack and native-seed over the translation and the stage compile, the mock
+        GM20B, the raw path's own.metallib) into <dir>, with the context init nvdec ran (context.log)
     rawpack.py corpus --corpus corpus.log --build <IPSW build> [--archives <build>.tsv]
                       [--app-states <build>.log] --out <file> --report <file>
-        the corpus lines the probe makes (raw/pack/probe.mm: Core Animation's render states, without lib=, and every
-        other library's the runtime looks up in the pack, framework_line), so an edit to any other line leaves the
-        run's input as it was; with the render states Apple's archives declare for the
+        the corpus lines directpack makes (raw/pack/directpack.mm: Core Animation's render states, without lib=, and
+        every other library's the runtime looks up in the pack, framework_line), so an edit to any other line leaves
+        the run's input as it was; with the render states Apple's archives declare for the
         device (precompile/archives/<build>.tsv) whose functions are one framework's default.metallib, and our own
         apps' states the pack holds (precompile/app-states/<build>.log, app_line). Every such line
         names the OS builds it is a state of (os=<build>[,<build>...] in its head): one of other builds is left out and
@@ -120,7 +119,7 @@ def app_line(line: str) -> bool:
 
 
 def probe_lines(corpus: str) -> list[str]:
-    """Return the corpus lines directpack.mm and probe.mm make, as they read them (a D line keeps its libraries).
+    """Return the corpus lines directpack.mm makes, as it reads them (a D line keeps its libraries).
 
     Not a dispatch shape of our own apps' kernels: their tests ask for kernels no pack holds (gpu.raw.archive_miss,
     gpu.raw.kernel_direct), and the probe's root holds their library.
@@ -263,7 +262,6 @@ def build(args: argparse.Namespace, generator: list[str], env: dict[str, str], r
     xcode = dict(line.split('=', 1) for line in Path(args.xcode_env).read_text().splitlines() if '=' in line)
     env['DEVELOPER_DIR'] = xcode['DEVELOPER_DIR']
     arguments = ['--build-only', '--translate', root / args.translate, '--compile', root / args.compile]
-    arguments += ['--bridge', root / args.host_bridge] if args.host_bridge else []
     arguments += ['--metal-abi', root / args.metal_abi]
     arguments += ['--context-header', root / args.context_header]
     arguments += ['--out', root / args.out]
@@ -343,7 +341,6 @@ def main() -> None:
         p = steps.add_parser(step)
         for name in names:
             p.add_argument('--' + name, required=True)
-    steps.choices['build'].add_argument('--host-bridge')
     steps.choices['split'].add_argument('--out', nargs='+', required=True)
     steps.choices['split'].add_argument('--ca-names')
     steps.choices['split'].add_argument('--ca-preferences')

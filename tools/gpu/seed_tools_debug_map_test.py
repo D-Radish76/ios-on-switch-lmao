@@ -14,9 +14,7 @@ from tools.common import macho
 LINKED = [
     'precompile',
     'raw/directpack',
-    'raw/probe',
     'raw/native-seed',
-    'raw/compile-profile',
 ]
 
 

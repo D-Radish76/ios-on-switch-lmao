@@ -23,7 +23,6 @@ RAW = [
     "kernels.py",
     "splits.py",
     "eqcheck.py",
-    "probe.mm",
     "fetchfree_link.py",
     "ca/caset.py",
     "ca/caspec.py",
@@ -48,15 +47,13 @@ RAW_RUNTIME = [
     "raw_own_states.h",
 ]
 
-# The shader tools' raw/ (gpu/seed/tools.bzl _PACK_TOOLS and _BRIDGE_TOOLS)
+# The shader tools' raw/ (gpu/seed/tools.bzl _PACK_TOOLS)
 RAW_TOOLS = [
     "directpack",
+    "native-seed",
     "libmock_iokit.dylib",
     "own.metallib",
     "context.log",
-    "probe",
-    "native-seed",
-    "compile-profile",
 ]
 
 [write_file(

@@ -17,10 +17,9 @@ _DARWIN = {"requires-darwin": ""}
 # are links into the source tree) and failed on a remote worker.
 _RAW_BUILD_MODULES = ["packfile.py", "selector_section.py"]
 
-# What rawpack.py build makes (its PACK_TOOLS, and BUILT with the host bridge), each its own output: a step's action reads
-# only the tools it runs (raw_tool_files), so a tool it does not run reruns none of it.
+# What rawpack.py build makes (its PACK_TOOLS), each its own output: a step's action reads only the tools it runs
+# (raw_tool_files), so a tool it does not run reruns none of it.
 _PACK_TOOLS = ["directpack", "native-seed", "libmock_iokit.dylib", "own.metallib", "context.log"]
-_BRIDGE_TOOLS = ["probe", "compile-profile"]
 
 SeedToolsInfo = provider(
     doc = "The shader tools' files, each on its own: what a seed step runs, without the rest of the tools.",
@@ -30,7 +29,7 @@ SeedToolsInfo = provider(
         "twin": "the NVK twin, libvulkan_nouveau.dylib",
         "manifest": "MANIFEST.json (the stack key, the twin's LC_UUID and compiler identity)",
         "nvk_identity": "the twin's .source (its Mesa tree and compiler identity), or None: what a bucket is keyed on",
-        "raw": "the raw pack's tools, one file each (_PACK_TOOLS; with the bridge also _BRIDGE_TOOLS)",
+        "raw": "the raw pack's tools, one file each (_PACK_TOOLS)",
         "raw_dir": "the directory holding them",
     },
 )
@@ -73,16 +72,14 @@ def raw_tool_files(tools, names):
         fail("the raw tools have no " + ", ".join(missing))
     return [found[n] for n in names]
 
-def _raw_build(ctx, name, host_bridge):
-    """The pack generator's tools (raw/pack/rawpack.py build), one file each; with `host_bridge` the frontend's too."""
+def _raw_build(ctx, name):
+    """The pack generator's tools (raw/pack/rawpack.py build), one file each."""
     tree = ctx.file.raw_generator.dirname.partition("drivers/TegraGM20BMetal/")[0].rstrip("/") or "."
-    raw = [ctx.actions.declare_file(name + "/" + tool) for tool in _PACK_TOOLS + (_BRIDGE_TOOLS if host_bridge else [])]
+    raw = [ctx.actions.declare_file(name + "/" + tool) for tool in _PACK_TOOLS]
     raw_dir = raw[0].dirname
     args = ctx.actions.args()
     args.add("build")
     args.add("--xcode-env", ctx.file._xcode_env)
-    if host_bridge:
-        args.add("--host-bridge", host_bridge)
     args.add("--translate", ctx.file.translate)
     args.add("--compile", ctx.file.compile)
     args.add("--metal-abi", ctx.file.metal_abi)
@@ -96,7 +93,7 @@ def _raw_build(ctx, name, host_bridge):
         arguments = [args],
         inputs = depset(
             [ctx.file.translate, ctx.file.compile, ctx.file.metal_abi, ctx.file.context_header, ctx.file.raw_generator] +
-            ([host_bridge] if host_bridge else []) + [ctx.file._xcode_env, ctx.file._xcode_identity] + sources,
+            [ctx.file._xcode_env, ctx.file._xcode_identity] + sources,
         ),
         outputs = raw,
         mnemonic = "SeedToolsRaw",
@@ -153,7 +150,7 @@ def _seed_tools_impl(ctx):
         execution_requirements = _DARWIN,
     )
 
-    raw, raw_dir = _raw_build(ctx, ctx.attr.name + "_raw", ctx.file.host_bridge)
+    raw, raw_dir = _raw_build(ctx, ctx.attr.name + "_raw")
 
     out = ctx.actions.declare_directory(ctx.attr.name)
     manifest = ctx.actions.declare_file(ctx.attr.name + "_manifest/MANIFEST.json")
@@ -216,7 +213,7 @@ seed_tools = rule(
 )
 
 def _raw_tools_impl(ctx):
-    raw, raw_dir = _raw_build(ctx, ctx.attr.name + "_raw", None)
+    raw, raw_dir = _raw_build(ctx, ctx.attr.name + "_raw")
     manifest = ctx.actions.declare_file(ctx.attr.name + "_manifest/MANIFEST.json")
     ctx.actions.run_shell(
         command = 'printf \'{\\n "format": 1,\\n "stack": "%s"\\n}\\n\' "$(cat "$1")" > "$2"',
