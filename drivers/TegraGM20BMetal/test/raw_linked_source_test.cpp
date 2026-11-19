@@ -30,8 +30,7 @@ TEST(RawLinkedSource, TheRawRecordIsTheLinkedFunctionsToo)
                 HasSubstr("key += linked;"));
 
     EXPECT_THAT(Body(SourceText("../raw/runtime/RawComplete.mm"), "bool Completion::keyOf(Ask &a, CacheKey &k)"),
-                HasSubstr("renderCacheKey(a.facade ?: a.descriptor, a.key, a.own, stack_, k, a.facade ? "
-                          "rmFunctionSource : nullptr)"));
+                HasSubstr("renderCacheKey(a.facade, a.key, a.own, stack_, k, rmFunctionSource)"));
     const std::string key = SourceText("../raw/runtime/RawRenderKey.mm");
     EXPECT_THAT(key, HasSubstr("descriptor.vertexLinkedFunctions"));
     EXPECT_THAT(key, HasSubstr("descriptor.fragmentLinkedFunctions"));

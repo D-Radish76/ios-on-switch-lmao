@@ -93,12 +93,13 @@ Completion::~Completion()
     compiler_.reset();
 }
 
-// The state's key: the build, both functions' AIR (their entries' HASH tags in the metallibs m2v made them from) and the pack
-// key, which a state of no framework's library gets both AIR hashes appended to, and a state linking functions each linked
-// one's. False: a function the raw path cannot name the AIR of (made from no metallib's bytes, or not one of them)
+// The state's key: the build, both functions' AIR (their entries' HASH tags in the metallibs they were made from) and
+// the pack key, which a state of no framework's library gets both AIR hashes appended to, and a state linking functions
+// each linked one's. False: a function the raw path cannot name the AIR of (made from no metallib's bytes, or not one
+// of them)
 bool Completion::keyOf(Ask &a, CacheKey &k)
 {
-    if (!renderCacheKey(a.facade ?: a.descriptor, a.key, a.own, stack_, k, a.facade ? rmFunctionSource : nullptr))
+    if (!renderCacheKey(a.facade, a.key, a.own, stack_, k, rmFunctionSource))
         return false;
     a.key = k.key;
     return true;
