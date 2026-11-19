@@ -136,8 +136,8 @@ inline bool planeBytesRead(const Texture &t, uint32_t unit, uint32_t x, uint32_t
 // through planes moves it (an M4 Max under macOS 27.2.1, validation off, formats 550, 551, 500, 502, 503, 505, 508 and
 // 542: m2v-textures12 probes/f1.txt): its bytes from its first, a byte a texel of the region, rows `pitch` apart (plane
 // 0's, as planeBytes has them), running on through the plane's end into the surface's bytes after it, up to the end of
-// its last page; false: no plane 1 (a one-plane format's, a plane alone's alpha), which such a blit reads as zeros and
-// writes nothing into
+// its last page; false: no plane 1 (a one-plane format's, a plane alone's alpha): such a blit from it leaves the
+// destination's plane 1 as it is, and into it writes nothing (an M4 Max: hwtests8 mac/e504/OUTPUT.txt)
 inline bool planeOneRows(const Texture &t, uint32_t pitch, Texture &out)
 {
     const Texture *c = (t.xrPlanes || (t.ycbcr && !t.onePlane && t.luma && !planeOfWords(t))) ? t.chroma : nullptr;

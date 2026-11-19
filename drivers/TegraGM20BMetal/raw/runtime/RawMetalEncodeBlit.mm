@@ -121,8 +121,8 @@ static void copyPlaneBytes(raw::BlitEncoder *be, RMTexture *s, uint32_t sl, uint
 }
 
 // Two textures held through planes (kCopyPlanes): plane 0's bytes in the destination's unit, and plane 1 a byte a texel
-// at each side's plane-0 rows on through its end (raw_blit_planes.h planeOneRows), zeros past the source's last page
-// (or from a source of no plane 1), nothing past the destination's
+// at each side's plane-0 rows on through its end (raw_blit_planes.h planeOneRows), zeros past the source's last page,
+// nothing past the destination's; a source of no plane 1 leaves the destination's as it is
 static void copyPlanePair(raw::BlitEncoder *be, const raw::Texture &s, uint32_t sx, uint32_t sy, const raw::Texture &d,
                           uint32_t dx, uint32_t dy, uint32_t w, uint32_t h)
 {
@@ -132,12 +132,11 @@ static void copyPlanePair(raw::BlitEncoder *be, const raw::Texture &s, uint32_t 
         return;
     be->copyTexels(from, sx, sy, 0, to, dx, dy, 0, w, h);
     raw::Texture fromOne, toOne;
-    if (!raw::planeOneRows(d, to.pitch, toOne))
+    if (!raw::planeOneRows(d, to.pitch, toOne) || !raw::planeOneRows(s, from.pitch, fromOne))
         return;
-    const bool source = raw::planeOneRows(s, from.pitch, fromOne);
     constexpr uint8_t kZero[16] = {};
-    raw::planeOneRuns(source ? fromOne.storage.bytes : 0, source ? fromOne.pitch : 1, sx, sy, toOne.storage.bytes,
-                      toOne.pitch, dx, dy, w, h, [&](const raw::PlaneOneRun &r) {
+    raw::planeOneRuns(fromOne.storage.bytes, fromOne.pitch, sx, sy, toOne.storage.bytes, toOne.pitch, dx, dy, w, h,
+                      [&](const raw::PlaneOneRun &r) {
                           if (r.copied)
                               be->copyTexels(fromOne, sx, sy + r.row, 0, toOne, dx, dy + r.row, 0, r.copied, r.rows);
                           if (r.zeroed)

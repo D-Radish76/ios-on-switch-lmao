@@ -436,6 +436,40 @@ TEST_F(FacadePlaneCopies, OnePlaneFormatsCountTheirOwnUnit)
     }
 }
 
+// A one-plane source (504 over 'v410', 501 and 562 over '2vuy') into planes of another format: plane 0 moves in the
+// destination's unit at each side's rows, and plane 1, which the source has none of, keeps every byte (an M4 Max, 3
+// runs: hwtests8 mac/e504/OUTPUT.txt)
+TEST_F(FacadePlaneCopies, ASourceOfNoPlaneOneLeavesTheDestinationsAsItIs)
+{
+    struct Case {
+        uint32_t fourcc, format;
+        NSUInteger unit;
+        TwoPlanes into;
+        uint32_t intoFormat;
+    };
+    const TwoPlanes alpha32{'b3a8', 4, 128, 1024, 1, kWidth, kHeight, 32};
+    const TwoPlanes chroma32{'420v', 1, 48, 1024, 2, kWidth / 2, kHeight / 2, 32};
+    for (const Case &c : {Case{'v410', 504, 4, alpha32, 550}, Case{'2vuy', 501, 2, chroma32, 500},
+                          Case{'2vuy', 562, 2, alpha32, 550}}) {
+        const std::string what = std::to_string(c.format) + " into " + std::to_string(c.intoFormat);
+        IOSurfaceRef s = onePlaneSurface(c.fourcc, kHeight), d = c.into.make();
+        ASSERT_TRUE(s && d) << what;
+        id<MTLTexture> one = over(s, c.format), planes = over(d, c.intoFormat);
+        const std::vector<uint8_t> src = seeded(s, c.format);
+        std::vector<uint8_t> want = seeded(d, c.intoFormat);
+        NSDictionary *counted = harness::counters(gDevice);
+        EXPECT_TRUE(copied(one, MTLOriginMake(2, 1, 0), MTLSizeMake(4, 4, 1), planes, MTLOriginMake(3, 2, 0))) << what;
+        EXPECT_EQ(harness::skippedMoved(counted, harness::counters(gDevice)), harness::skippedOnce("call.blit")) << what;
+        const NSUInteger unit = c.into.unit0;
+        for (NSUInteger y = 0; y < 4; ++y)
+            for (NSUInteger b = 0; b < 4 * unit; ++b)
+                want[(2 + y) * c.into.rows0 + 3 * unit + b] = src[(1 + y) * kWidth * c.unit + 2 * unit + b];
+        EXPECT_EQ(bytesOf(d), want) << what << ": plane 0 in the destination's unit, plane 1 untouched";
+        CFRelease(s);
+        CFRelease(d);
+    }
+}
+
 // An M4 Max fills RGB10A8_2P_XR10 planes with a word that ignores the colour and follows the process's earlier fills,
 // as it fills YCbCr planes (m2v-blits-fix probes/extra.mm): undefined, recorded as nothing
 TEST_F(FacadePlaneCopies, AColourFillOfTwoPlaneXrPlanesWritesNothing)

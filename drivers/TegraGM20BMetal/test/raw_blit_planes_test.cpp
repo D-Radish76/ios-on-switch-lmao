@@ -180,7 +180,7 @@ TEST(BlitPlanes, PlaneOneRunsReadZeroPastTheSourceAndDropPastTheDestination)
     EXPECT_EQ(runs(256, 256), (std::vector<Run>{{0, 2, 16, 0}})) << "plane 1's 256 bytes end the page";
     EXPECT_EQ(runs(200, 4096), (std::vector<Run>{{0, 2, 16, 0}, {2, 6, 0, 16}}));
     EXPECT_EQ(runs(140, 4096), (std::vector<Run>{{0, 1, 16, 0}, {1, 1, 4, 12}, {2, 6, 0, 16}}));
-    EXPECT_EQ(runs(0, 4096), (std::vector<Run>{{0, 8, 0, 16}})) << "a source of no plane 1";
+    EXPECT_EQ(runs(0, 4096), (std::vector<Run>{{0, 8, 0, 16}})) << "a source plane 1 at its last page's end";
     EXPECT_EQ(runs(4096, 400), (std::vector<Run>{{0, 3, 16, 0}, {3, 1, 10, 0}})) << "row 3 runs from 390 to 406";
     EXPECT_EQ(runs(4096, 395), (std::vector<Run>{{0, 3, 16, 0}, {3, 1, 5, 0}}));
 }
