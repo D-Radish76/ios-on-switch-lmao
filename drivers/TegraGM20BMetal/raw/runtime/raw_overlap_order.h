@@ -70,6 +70,20 @@ inline uint32_t frameOrder(const TileMap &map, uint32_t fx, uint32_t fy)
     return (0x3ffu - fx / 64) << 22 | (fy / 32) << 10 | inTileOrder(fx, fy);
 }
 
+// Where the store of frame texel (fx, fy) of a pass that draws nothing (a clear) lands: tiles race on an M4 Max, inside a
+// 32x32 frame tile never (unturned or half turned: by 2x2 quad, the quad's row, its column, the even row after the odd;
+// at a quarter turn the frame column further right later, then the lower texel). Between tiles the best fixed order: an
+// odd 32-wide tile column after an even one, then the lower tile row, then the column further right (81% of an M4 Max's
+// bytes against a 95% bound and 42% for frameOrder: m2v-textures13 probes/c2clears/RESULT.txt, probes/qclear/score.txt)
+inline uint32_t clearOrder(const TileMap &map, uint32_t fx, uint32_t fy)
+{
+    if (map.ax == 0)
+        return fx << 16 | fy;
+    const uint32_t column = fx / 32;
+    return (column & 1) << 29 | (fy / 32 & 0x3ffu) << 19 | (column & 0x3ffu) << 9 | (fy % 32 / 2) << 5 |
+           (fx % 32 / 2) << 1 | ((fy & 1) == 0 ? 1u : 0u);
+}
+
 // The row whose store of plane byte `a` lands last and that row's byte, as pack/ycbcr_store_overlap.h overlapWinner picks them;
 // false where no store writes it (every row there kept or unreached). `reached(x, y)` names a reached luma texel.
 template <typename Reached>
@@ -97,22 +111,23 @@ inline bool overlapWinner(const OverlapRows &s, uint32_t a, Reached reached, uin
 
 // RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (raw_xr_pools.h xrPlanesCross): the overlap planes
 // state's fragment buffer 0 (pack/ycbcr_store_overlap.h OverlapPlanes). Its target is the planes' span `pitch` bytes a row from
-// `base`; each plane's first byte (from the span's), pitch, bytes a row and rows; each plane texel's frame texel
+// `base`; each plane's first byte (from the span's), pitch, bytes a row and rows; each plane texel's frame texel; whether
+// the pass drew nothing (clearOrder)
 struct OverlapPlanes {
     uint32_t base = 0, pitch = 0;
     uint32_t words = 0, wordPitch = 0, wordRow = 0, wordRows = 0;
     uint32_t alpha = 0, alphaPitch = 0, alphaRow = 0, alphaRows = 0;
     TileMap tiles;
+    uint32_t cleared = 0;
 };
 
-static_assert(sizeof(OverlapPlanes) == 72, "pack/ycbcr_store_overlap.h OverlapPlanes");
+static_assert(sizeof(OverlapPlanes) == 76, "pack/ycbcr_store_overlap.h OverlapPlanes");
 
-// The texel whose store of span byte `a` lands last, of either plane, as an M4 Max's pass stores both: frameOrder's key
-// of each plane texel's frame texel, and between a word and an alpha byte of one key the texel further right in the
-// frame, at one x the word (a
-// 32x8 RGB10A8_2P_XR10 of words 128 bytes a row at 0 and alpha 32 at 512, cleared: alpha rows 0 to 3 keep word row 4,
-// rows 4, 6 and 7 their own, row 5 word row 5's bytes up to its 11th); false where no row stores it. `byte`: the byte of
-// a word texel, 4 for an alpha one
+// The texel whose store of span byte `a` lands last, of either plane, as an M4 Max's pass stores both: frameOrder's (a
+// clear's clearOrder's) key of each plane texel's frame texel, and between a word and an alpha byte of one key the
+// texel further right in the frame, at one x the word (a 32x8 RGB10A8_2P_XR10 of words 128 bytes a row at 0 and alpha
+// 32 at 512, cleared: alpha rows 0 to 3 keep word row 4, rows 4, 6 and 7 their own, row 5 word row 5's bytes up to its
+// 11th); false where no row stores it. `byte`: the byte of a word texel, 4 for an alpha one
 inline bool overlapPlanesWinner(const OverlapPlanes &s, uint32_t a, uint32_t &x, uint32_t &y, uint32_t &byte)
 {
     bool found = false;
@@ -129,7 +144,8 @@ inline bool overlapPlanesWinner(const OverlapPlanes &s, uint32_t a, uint32_t &x,
             const uint32_t b = off - r * pitch, tx = word ? b / 4 : b;
             uint32_t fx = 0, fy = 0;
             frameTexel(s.tiles, tx, r, 1, 1, fx, fy);
-            const uint32_t order = frameOrder(s.tiles, fx, fy), key = fx << 1 | (word ? 1u : 0u);
+            const uint32_t order = s.cleared ? clearOrder(s.tiles, fx, fy) : frameOrder(s.tiles, fx, fy);
+            const uint32_t key = fx << 1 | (word ? 1u : 0u);
             if (!found || order > best || (order == best && key > bestX)) {
                 found = true;
                 best = order;

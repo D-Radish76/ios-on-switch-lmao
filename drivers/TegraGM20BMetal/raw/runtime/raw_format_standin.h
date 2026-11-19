@@ -310,9 +310,9 @@ class Device;
 Texture *formatStandInFor(Device &d, CommandBuffer &rc, const ColorAttachment &a, uint32_t layers, uint32_t slot,
                           bool fill, const char **why);
 // `a`'s texels from its stand-in after its pass, a layer at a time (a multisampled one by the per-sample store state);
-// false: *why
+// `cleared`: the pass drew nothing (raw_xr_pools.h storeXrPlaneRows); false: *why
 bool storeFormatStandIn(Device &d, CommandBuffer &rc, const ColorAttachment &a, uint32_t layers, Texture &standIn,
-                        const char **why);
+                        bool cleared, const char **why);
 // Levels first + 1 .. last of the selected layers of chain `t` from the level above by the format's mip state; false: *why
 bool formatMipPasses(Device &d, CommandBuffer &rc, Texture &t, uint32_t first, uint32_t last, uint32_t firstLayer,
                      uint32_t layers, uint32_t format, const char **why);

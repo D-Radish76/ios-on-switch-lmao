@@ -88,3 +88,24 @@ TEST(RawOverlapOrder, StoresThatMeetKeepTheLaterQuadOfTheFrame)
             }
     }
 }
+
+// A pass that draws nothing stores by a clear's order: at a quarter turn the frame column further right lands later,
+// inside a frame tile in every pass: 550 96x8 of words 192 bytes a row at 0 and alpha 96 at 1536, turned once, word row
+// 7 keeping bytes 1568-1597 and 1696-1706 in all 84 passes of 12 processes, where a draw's order gives them to alpha rows
+// 0 and 1 (an M4 Max: m2v-textures13 probes/c2clears case 61, probes/qclear/pick.txt)
+TEST(RawOverlapOrder, AClearKeepsTheFrameColumnFurtherRightAtAQuarterTurn)
+{
+    raw::OverlapPlanes xr;
+    xr.pitch = xr.wordPitch = 192;
+    xr.wordRow = 384;
+    xr.wordRows = xr.alphaRows = 8;
+    xr.alpha = 1536;
+    xr.alphaPitch = xr.alphaRow = 96;
+    xr.tiles = frameOfTurned(1, 96, 8);
+    xr.cleared = 1;
+    for (const uint32_t a : {1568u, 1587u, 1597u, 1696u, 1706u}) {
+        uint32_t x = 0, y = 0, byte = 0;
+        ASSERT_TRUE(raw::overlapPlanesWinner(xr, a, x, y, byte)) << a;
+        EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple((a - 7 * 192) / 4, 7u, (a - 7 * 192) % 4)) << a;
+    }
+}

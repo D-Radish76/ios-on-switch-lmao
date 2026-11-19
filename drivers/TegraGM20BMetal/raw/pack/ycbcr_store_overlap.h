@@ -43,6 +43,15 @@ static uint2 frameTexel(constant Tiles &t, uint x, uint y, uint across, uint dow
                       t.bx * p.x + t.by * p.y + t.cy + min(t.bx, 0) * s.x + min(t.by, 0) * s.y));
 }
 
+static uint clearOrder(constant Tiles &t, uint2 f)
+{
+    if (t.ax == 0)
+        return f.x << 16 | f.y;
+    const uint column = f.x / 32;
+    return (column & 1) << 29 | (f.y / 32 & 0x3ffu) << 19 | (column & 0x3ffu) << 9 | (f.y % 32 / 2) << 5 |
+           (f.x % 32 / 2) << 1 | ((f.y & 1) == 0 ? 1u : 0u);
+}
+
 static uint frameOrder(constant Tiles &t, uint2 f)
 {
     if (t.ax != 0)
@@ -131,14 +140,16 @@ fragment uint ycbcr_overlap_r32ui_frag(Out in [[stage_in]], texture2d<uint, acce
 }
 
 // RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (runtime/raw_xr_pools.h xrPlanesCross,
-// runtime/raw_overlap_order.h overlapPlanesWinner step for step): each byte of the planes' span from the texel, of either
-// plane's pool, whose store lands last as an M4 Max stores a pass, by frameOrder and then the texel further right in the
-// frame, the word at one x. The target is the span's bytes `pitch` apart from `base`, a byte a texel.
+// runtime/raw_overlap_order.h overlapPlanesWinner step for step): each byte of the planes' span from the texel, of
+// either plane's pool, whose store lands last as an M4 Max stores a pass, by frameOrder (a pass that drew nothing by
+// clearOrder) and then the texel further right in the frame, the word at one x. The target is the span's bytes `pitch`
+// apart from `base`, a byte a texel.
 struct OverlapPlanes {
     uint base, pitch;
     uint words, wordPitch, wordRow, wordRows;
     uint alpha, alphaPitch, alphaRow, alphaRows;
     Tiles tiles;
+    uint cleared;
 };
 
 fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> words [[texture(0)]],
@@ -160,7 +171,8 @@ fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, acc
         for (uint r = first; r <= last; r++) {
             const uint b = off - r * pitch, x = word ? b / 4 : b;
             const uint2 f = frameTexel(s.tiles, x, r, 1, 1);
-            const uint order = frameOrder(s.tiles, f), key = f.x << 1 | (word ? 1u : 0u);
+            const uint order = s.cleared != 0 ? clearOrder(s.tiles, f) : frameOrder(s.tiles, f);
+            const uint key = f.x << 1 | (word ? 1u : 0u);
             if (!found || order > best || (order == best && key > bestX)) {
                 found = true;
                 best = order;

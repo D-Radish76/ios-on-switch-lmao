@@ -32,7 +32,7 @@ TEST_F(DeviceFormatStandIn, ALayeredPassRendersEachLayerThroughItsStandIn)
     EXPECT_EQ(s->layers, 3u);
     EXPECT_TRUE(s->blockLinear);
     const raw::Texture held = *s;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 3, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 3, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -71,7 +71,7 @@ TEST_F(DeviceFormatStandIn, A3DLevelsPlanesAreTheStandInsLayers)
     const char *why = nullptr;
     raw::Texture *s = raw::formatStandInFor(dev, *cb, a, 2, 0, true, &why);
     ASSERT_NE(s, nullptr) << why;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, a, 2, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, a, 2, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -134,7 +134,7 @@ TEST_F(DeviceFormatStandIn, AMultisampledTargetIsFilledAndStoredPerSample)
     EXPECT_EQ(s->samples, 4u);
     EXPECT_EQ(s->format, 125u);
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -175,12 +175,12 @@ TEST_F(DeviceFormatStandIn, TheCopiedFormatsMoveEachLayerAndEverySample)
     raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(array), 2, 0, true, &why);
     ASSERT_NE(s, nullptr) << why;
     const raw::Texture layered = *s;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(array), 2, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(array), 2, *s, false, &why)) << why;
     raw::Texture *m = raw::formatStandInFor(dev, *cb, whole(samples), 1, 1, true, &why);
     ASSERT_NE(m, nullptr) << why;
     EXPECT_EQ(m->samples, 4u);
     const uint64_t grid = m->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(samples), 1, *m, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(samples), 1, *m, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;

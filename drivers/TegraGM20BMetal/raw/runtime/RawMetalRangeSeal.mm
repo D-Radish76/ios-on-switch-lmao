@@ -56,7 +56,7 @@ bool RMRangeEncode::storeOverlappingPlanes()
     for (RMTexture *t : overlapStores_) {
         if (!passDrew_ && std::find(overlapLoaded_.begin(), overlapLoaded_.end(), t) != overlapLoaded_.end())
             continue;
-        if (const int failed = raw::storeXrPlaneRows(*d_, *rc_, t->_raw, why_)) {
+        if (const int failed = raw::storeXrPlaneRows(*d_, *rc_, t->_raw, !passDrew_, why_)) {
             if (failed == 2) {
                 rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
                 return refused();

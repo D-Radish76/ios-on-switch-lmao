@@ -54,4 +54,5 @@ constexpr uint32_t xrPlanesImageTag(uint32_t k)
     return k < 8 ? kXrPlanesImageTag + k : k < 24 ? 32 + (k - 8) : kXrPlanesOverflowTag + (k - 24);
 }
 int mergeXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, uint32_t k, raw::Texture *&image, const char **why);
-int splitXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::Texture &image, const char **why);
+int splitXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::Texture &image, bool cleared,
+                  const char **why);

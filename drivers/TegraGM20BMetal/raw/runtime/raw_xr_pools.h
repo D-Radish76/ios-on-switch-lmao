@@ -45,9 +45,9 @@ inline bool xrPlanesOverlap(const Texture &t)
 }
 
 // Planes whose rows reach one another's bytes, from their pools after work rendered them there: their span drawn a byte a
-// texel by the pack's overlap planes state, rows `pitch` bytes long, then the bytes past them; 0, or 1 a target the raw path
-// cannot render, 2 a draw the encoder refused (*why)
-inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t, const char **why)
+// texel by the pack's overlap planes state, rows `pitch` bytes long, then the bytes past them, in a clear's order where the
+// pass drew nothing (`cleared`); 0, or 1 a target the raw path cannot render, 2 a draw the encoder refused (*why)
+inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t, bool cleared, const char **why)
 {
     constexpr uint32_t kR8Uint = 13;
     const Texture w = storedRows(*t.luma, t), a = storedRows(*t.chroma, t);
@@ -70,6 +70,7 @@ inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t,
     s.alphaRow = a.width * a.bpp;
     s.alphaRows = a.height;
     s.tiles = frameTiles(t);
+    s.cleared = cleared ? 1 : 0;
     const uint32_t span = uint32_t(hi - lo), whole = span / s.pitch, tail = span - whole * s.pitch;
     for (const bool part : {false, true}) {
         const uint32_t width = part ? tail : s.pitch, height = part ? 1 : whole;
@@ -104,13 +105,13 @@ inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t,
 
 // Planes that overlap from their pools after work rendered them there, each byte from the row whose store an M4 Max's
 // pass lands last (pack overlap states), a plane whose rows do not overlap by the copy engine; 0, or 1 a target the raw
-// path cannot render, 2 a draw the encoder refused (*why)
-inline int storeXrPlaneRows(Device &d, CommandBuffer &rc, const Texture &t, const char **why)
+// path cannot render, 2 a draw the encoder refused (*why); `cleared`: the pass drew nothing
+inline int storeXrPlaneRows(Device &d, CommandBuffer &rc, const Texture &t, bool cleared, const char **why)
 {
     constexpr uint32_t kR8Unorm = 10;
     Texture words, alpha;
     if (xrPlanesCross(storedRows(*t.luma, t, words), storedRows(*t.chroma, t, alpha)))
-        return storeXrCrossingPlanes(d, rc, t, why);
+        return storeXrCrossingPlanes(d, rc, t, cleared, why);
     for (const Texture *plane : {t.chroma, t.luma}) {
         if (!plane->sampled)
             continue;

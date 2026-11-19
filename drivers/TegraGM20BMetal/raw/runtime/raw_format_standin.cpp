@@ -188,7 +188,7 @@ Texture *formatStandInFor(Device &d, CommandBuffer &rc, const ColorAttachment &a
 }
 
 bool storeFormatStandIn(Device &d, CommandBuffer &rc, const ColorAttachment &a, uint32_t layers, Texture &standIn,
-                        const char **why)
+                        bool cleared, const char **why)
 {
     Texture &t = *a.texture;
     layers = std::max(layers, 1u);
@@ -207,7 +207,7 @@ bool storeFormatStandIn(Device &d, CommandBuffer &rc, const ColorAttachment &a, 
         Texture &words = pools ? *t.luma->sampled : *t.luma;
         Texture *alpha = pools && t.chroma->sampled ? t.chroma->sampled : t.chroma;
         return drawAll(rc, d.ownPipeline(kPlanesSrgbStoreState), words, standIn, why, alpha) &&
-               (!pools || !storeXrPlaneRows(d, rc, t, why));
+               (!pools || !storeXrPlaneRows(d, rc, t, cleared, why));
     }
     Pipeline *store = d.ownPipeline(formatStoreState(t.format, t.samples));
     for (uint32_t l = 0; l < layers; l++) {

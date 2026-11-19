@@ -162,7 +162,7 @@ TEST_F(DeviceFormatStandIn, AnSrgbR8TargetsFirstByteGoesIntoItsStandInAndBack)
     EXPECT_EQ(s->width, 40u);
     EXPECT_EQ(s->height, 12u);
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -192,7 +192,7 @@ TEST_F(DeviceFormatStandIn, AnSrgbRg8TargetsTwoBytesGoIntoItsStandInAndBack)
     ASSERT_NE(s, nullptr) << why;
     EXPECT_EQ(s->format, 71u) << "RGBA8Unorm_sRGB";
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -257,7 +257,7 @@ TEST_F(DeviceFormatStandIn, APackedTargetIsFilledByTheLoadStateAndStoredIntoItsW
         ASSERT_NE(s, nullptr) << why;
         EXPECT_EQ(s->format, 125u) << "RGBA32Float";
         const uint64_t standIn = s->va;
-        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
         uint32_t seq = 0;
         ASSERT_TRUE(cb->commit(seq));
         std::vector<Launch> launches;
@@ -292,7 +292,7 @@ TEST_F(DeviceFormatStandIn, AnSrgbExtendedRangeTargetRendersThroughAHalfStandInI
     ASSERT_NE(s, nullptr) << why;
     EXPECT_EQ(s->format, 115u) << "RGBA16Float: Metal's tile holds the pass in halves";
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -323,7 +323,7 @@ TEST_F(DeviceFormatStandIn, AnSrgbExtendedRangeTargetWithAlphaRendersThroughAHal
     ASSERT_NE(s, nullptr) << why;
     EXPECT_EQ(s->format, 115u) << "RGBA16Float: Metal's tile holds the pass in halves";
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -352,7 +352,7 @@ TEST_F(DeviceFormatStandIn, AnSrgbTwoPlaneFormatOfADescriptorKeepsItsTexels)
     ASSERT_NE(s, nullptr) << why;
     EXPECT_EQ(s->format, 115u);
     const uint64_t standIn = s->va;
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -381,7 +381,7 @@ TEST_F(DeviceFormatStandIn, ATurnedTargetsStandInIsStoredAsThePlaneLies)
     raw::Texture *s = raw::formatStandInFor(dev, *cb, whole(t), 1, 0, true, &why);
     ASSERT_NE(s, nullptr) << why;
     EXPECT_EQ(s->width, 64u) << "the plane's";
-    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, &why)) << why;
+    ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, whole(t), 1, *s, false, &why)) << why;
     uint32_t seq = 0;
     ASSERT_TRUE(cb->commit(seq));
     std::vector<Launch> launches;
@@ -420,7 +420,7 @@ TEST_F(DeviceFormatStandIn, ALevelOfAChainRendersThroughItsOwnStandIn)
         ASSERT_NE(s, nullptr) << why;
         EXPECT_EQ(s->width, 16u);
         EXPECT_EQ(s->height, 8u);
-        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, part, 1, *s, &why)) << why;
+        ASSERT_TRUE(raw::storeFormatStandIn(dev, *cb, part, 1, *s, false, &why)) << why;
         uint32_t seq = 0;
         ASSERT_TRUE(cb->commit(seq));
         std::vector<Launch> launches;

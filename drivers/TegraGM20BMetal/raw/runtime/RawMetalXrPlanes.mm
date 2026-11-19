@@ -199,7 +199,8 @@ int mergeXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, uint32_t k, raw
     return planesPass(rc, p, merge, *t.luma, t.chroma, t.width, t.height, why);
 }
 
-int splitXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::Texture &image, const char **why)
+int splitXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::Texture &image, bool cleared,
+                  const char **why)
 {
     raw::Pipeline *split = gRM->raw->xrPlanesImagePipeline(true);
     if (!split) {
@@ -217,5 +218,5 @@ int splitXrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::Text
     p.count = 2;
     if (const int failed = planesPass(rc, p, split, image, nullptr, t.width, t.height, why))
         return failed;
-    return pools ? raw::storeXrPlaneRows(*gRM->raw, *rc, t, why) : 0;
+    return pools ? raw::storeXrPlaneRows(*gRM->raw, *rc, t, cleared, why) : 0;
 }

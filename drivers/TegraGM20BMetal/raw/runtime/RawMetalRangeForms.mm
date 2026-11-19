@@ -119,7 +119,7 @@ bool RMRangeEncode::storeFormatTargets()
         const raw::Texture *t = s.attachment.texture;
         if (!passDrew_ && s.attachment.load == raw::ColorAttachment::Load && t && t->xrPlanes && raw::xrPlanesOverlap(*t))
             continue;
-        if (!raw::storeFormatStandIn(*d_, *rc_, s.attachment, s.layers, *s.standIn, why_)) {
+        if (!raw::storeFormatStandIn(*d_, *rc_, s.attachment, s.layers, *s.standIn, !passDrew_, why_)) {
             rmPassWorkFails(cb_, ahead_, *why_, MTLCommandBufferErrorInternal);
             return fail(PredPassAttFormat, *why_, s.attachment.texture->format);
         }
@@ -334,7 +334,7 @@ bool RMRangeEncode::writtenBack()
     for (const auto &[t, image] : planesImaged_) {
         standInFresh_.erase(t);
         fresh_.erase(t);
-        if (const int failed = splitXrPlanes(rc_, t->_raw, *image, why_)) {
+        if (const int failed = splitXrPlanes(rc_, t->_raw, *image, !passDrew_, why_)) {
             if (failed == 2) {
                 rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
                 return refused();
