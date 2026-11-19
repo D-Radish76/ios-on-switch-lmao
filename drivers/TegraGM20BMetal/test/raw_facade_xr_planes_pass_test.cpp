@@ -347,6 +347,58 @@ void planesOfRowsUnderSixteenBytesStoreSixteenApart()
     CFRelease(surface);
 }
 
+// RGB10A8_2P_XR10 turned once over planes of rows under 16 bytes, its alpha rows stored on its word rows 4-7 (2x8 words of
+// rows 8 at 0, alpha of rows 2 at 64): an M4 Max makes it and stores each plane 16 bytes a row apart by its frame, the
+// later quad keeping the bytes both reach (m2v-textures13 probes/c4misc/RESULT.txt C1, R2, R3). It is held in its planes
+// through both pools, turned, and a Clear pass draws their span through the pack's overlap planes state
+void turnedPlanesOfRowsUnderSixteenBytes()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
+                                           {raw::kOverlapPlanesState, MTLPixelFormatR8Uint}}));
+    ASSERT_TRUE(device != nil);
+    NSMutableArray *planes = [NSMutableArray array];
+    for (unsigned bytes : {4u, 1u})
+        [planes addObject:@{
+            (id)kIOSurfacePlaneWidth : @2,
+            (id)kIOSurfacePlaneHeight : @8,
+            (id)kIOSurfacePlaneBytesPerElement : @(bytes),
+            (id)kIOSurfacePlaneBytesPerRow : @(2 * bytes),
+            (id)kIOSurfacePlaneOffset : @(bytes == 4 ? 0 : 64),
+            (id)kIOSurfacePlaneSize : @(16 * bytes)
+        }];
+    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @2,
+        (id)kIOSurfaceHeight : @8,
+        (id)kIOSurfacePixelFormat : @(uint32_t('b3a8')),
+        (id)kIOSurfaceAllocSize : @((8u << 20) + 16384),
+        (id)kIOSurfacePlaneInfo : planes
+    });
+    ASSERT_TRUE(surface);
+    MTLTextureDescriptor *d =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(550) width:8 height:2 mipmapped:NO];
+    d.storageMode = MTLStorageModeShared;
+    d.usage = MTLTextureUsageRenderTarget;
+    ((void (*)(id, SEL, NSUInteger))objc_msgSend)(d, sel_registerName("setRotation:"), 1);
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:surface plane:0];
+    ASSERT_TRUE(t != nil && t->_rawOk) << "Metal makes it";
+    const raw::Texture &x = t->_raw;
+    ASSERT_TRUE(x.xrPlanes && x.luma && x.chroma && x.luma->sampled && x.chroma->sampled);
+    EXPECT_EQ(x.rotation, 1u);
+    EXPECT_EQ(x.width, 2u) << "made at its plane's extent";
+    EXPECT_EQ(x.luma->storePitch, 16u);
+    EXPECT_EQ(x.chroma->storePitch, 16u);
+    raw::Texture words, alpha;
+    EXPECT_TRUE(raw::xrPlanesCross(raw::storedRows(*x.luma, x, words), raw::storedRows(*x.chroma, x, alpha)));
+    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture = (id<MTLTexture>)t;
+    p.colorAttachments[0].loadAction = MTLLoadActionClear;
+    p.colorAttachments[0].storeAction = MTLStoreActionStore;
+    p.colorAttachments[0].clearColor = MTLClearColorMake(0.5, 0.25, -0.25, 0.75);
+    expectRaw(device, p);
+    CFRelease(surface);
+}
+
 void crossingPlanesStoredTogether()
 {
     crossingPlanesCleared(true);
@@ -388,4 +440,9 @@ TEST(RawFacadeXrPlanesPass, A550WithNoFreeIndexIsDrawnInOneImage)
 TEST(RawFacadeXrPlanesPass, ADeviceMade550BesideASurfacesIsRaws)
 {
     switch_ios::test::ExpectPassesInFreshProcess(aDeviceMade550BesideASurfacesIsRaws);
+}
+
+TEST(RawFacadeXrPlanesPass, ATurnedTextureOverPlanesOfRowsUnderSixteenBytesIsHeldInItsPools)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(turnedPlanesOfRowsUnderSixteenBytes);
 }

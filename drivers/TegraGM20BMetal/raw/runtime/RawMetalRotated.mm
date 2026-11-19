@@ -43,26 +43,16 @@ static bool planarFormat(uint32_t format)
     return raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format) || raw::twoPlaneXr(format);
 }
 
-// RGB10A8_2P_XR10 or its sRGB twin turned: over a plane followed by another, the rows of both holding the plane's words
-// and alpha bytes, or over the last plane alone (RawMetalXrPlanes.h)
-static bool turnedXrShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, const raw::Rotation &r)
-{
-    if (!xrPlanesStorable(d))
-        return false;
-    if (xrLastPlane(s, plane))
-        return true;
-    return xrGpuRows(s, plane) >= 4 * r.planeWidth() && xrGpuRows(s, plane + 1) >= r.planeWidth() &&
-           IOSurfaceGetHeightOfPlane(s, plane + 1) >= r.planeHeight();
-}
-
 // Every format Metal renders turns alike, the plane of several of a planar surface as one plane alone (an M4 Max, each
 // rotation: m2v-textures4 probes/reads.mm and more.mm landings). A format the GM20B renders none of is drawn turned into its
 // stand-in (raw_format_standin.h), a YCbCr one into its stand-in laid out as its planes, which its store states write
 // straight; a block-compressed one Metal makes no rotated texture of
 bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out)
 {
-    return turnedFrame(d, s, plane, out) &&
-           (!raw::twoPlaneXr(uint32_t(d.pixelFormat)) || turnedXrShape(d, s, plane, out));
+    // RGB10A8_2P_XR10 and its sRGB twin turn over planes of any rows as unturned (RawMetalXrPlanes.h): rows that overlap,
+    // run into the other plane or lie under 16 bytes are held through the planes' pools, each stored by the frame's
+    // tiles and quads (an M4 Max: m2v-textures12 probes/f3/RESULT.txt, m2v-textures13 probes/c4misc/RESULT.txt R2-R5)
+    return turnedFrame(d, s, plane, out) && (!raw::twoPlaneXr(uint32_t(d.pixelFormat)) || xrPlanesStorable(d));
 }
 
 bool turnedFrame(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out)
