@@ -29,7 +29,8 @@ struct YcbcrFacts {
     uint32_t pitch[2] = {};
     uint64_t allocBytes = 0;
     uint64_t mappedBytes = 0;      // the allocation's whole pages, which the GPU maps (0: allocBytes)
-    bool simple = false;           // 2D, one level, one sample, not rotated
+    bool simple = false;           // 2D, one sample, not rotated
+    uint32_t levels = 1;           // mipmapLevelCount
     bool target = false;           // may be rendered into (raw_ycbcr_store.h)
     const char *matrix = nullptr;  // kIOSurfaceYCbCrMatrix, null without one
     bool sparseTail = false;       // the kernel maps VA sparse (raw_kernel.h Kernel::sparse): rows may run past the last page
@@ -91,6 +92,9 @@ struct YcbcrPlan {
     // the planes' textures' sizes: a texel a code (luma) or pair (chroma), or a word of three codes packed; chromaWidth 0:
     // no chroma plane read (a texture over plane 1: chroma codes 0)
     uint32_t lumaWidth = 0, chromaWidth = 0, chromaHeight = 0;
+    // the image's levels: several only for R10Unorm_PACKED and RG10Unorm_PACKED, every level of which reads level 0
+    // (raw_packed_plane.h, Texture::levelZero)
+    uint32_t levels = 1;
     uint32_t shape[kYcbcrShapeWords] = {};
     YcbcrStoreShape store;  // a target's store states' shape
 };

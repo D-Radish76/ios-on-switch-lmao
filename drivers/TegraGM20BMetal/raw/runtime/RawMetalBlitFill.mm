@@ -175,6 +175,11 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
     if (raw::zetaFormatIndex(format) < raw::kZetaFormats || format == MTLPixelFormatX32_Stencil8)
         return skipInvalidBlit("generateMipmapsForTexture:", "of a depth or stencil format");
     __unsafe_unretained RMTexture *owner = x->_levelsOwner ?: x;
+    // its levels are the copy engine's copies of level 0's corner (raw_level_zero.h), as an M4 Max reads them; an M4 Max's
+    // generateMipmapsForTexture: of one completes and changes nothing it reads (validation on and off: m2v-textures13
+    // probes/pmips/pmips.txt)
+    if (owner->_raw.levelZero)
+        return;
     if (!owner->_raw.chain) {
         failCommandBuffer(_cb, @"generateMipmapsForTexture: a native mipmapped texture has no mip chain",
                           MTLCommandBufferErrorInternal);

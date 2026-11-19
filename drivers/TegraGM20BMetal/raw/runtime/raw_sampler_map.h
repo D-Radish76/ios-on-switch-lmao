@@ -9,6 +9,10 @@
 
 namespace raw {
 
+// The map past the address maps 1 to 3 that a sampler's headers are made under: a texture whose every lod reads level 0
+// (Texture::levelZero), never under an address map. It changes no address mode, so a compile is never made under it.
+constexpr uint8_t kLevelZeroMap = 4;
+
 // An MTLSamplerAddressMode under address map `map` (m2v texture/ycbcr_image.rs `ycbcr_modes`, Metal's measured reads): bit
 // 0 sends the wrapping modes (mirror clamp to edge, repeat, mirrored repeat) to clamp to edge, bit 1 the clamps to zero
 // and to the border colour

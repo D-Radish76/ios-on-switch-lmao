@@ -151,6 +151,42 @@ TEST_F(DeviceKernelPairs, AMapOfTheWrappingModesLeavesAClampToZero)
     EXPECT_EQ(address(set[0]), kBorder);
 }
 
+// R10Unorm_PACKED of several levels reads level 0 at every lod (m2v-textures11 probes/h4/mips.txt): its sampler binds its
+// header without a mip filter (Device::constexprLevelZeroPlaced, before the work), the RGBA texture's its own
+TEST_F(DeviceKernelPairs, ASamplerOfATextureWhoseEveryLodReadsLevelZeroReadsLevelZeroAlone)
+{
+    converted.addressMap = 0;
+    converted.levelZero = true;
+    static const raw::ComputeRecord r = kernel(kEdge, kKnown | 1u << 0, kKnown | 1u << 1);
+    std::string why;
+    EXPECT_TRUE(words(r, why).empty());
+    EXPECT_EQ(why, "a kernel sampler without its header for a texture whose every lod reads level 0");
+    ASSERT_TRUE(dev.constexprLevelZeroPlaced());
+    const std::vector<uint32_t> set = words(r, why);
+    ASSERT_EQ(set.size(), 2u) << why;
+    const uint32_t *levelZero = raw::DeviceHarness::samplerHeader(dev, set[0] >> 20),
+                   *own = raw::DeviceHarness::samplerHeader(dev, set[1] >> 20);
+    EXPECT_EQ(levelZero[1] >> 6 & 3, 2u) << "MIP_POINT";
+    EXPECT_EQ(levelZero[2] & 0xffffff, 0x40000u) << "LOD clamps [0, 1/4]: level 0 alone";
+    EXPECT_EQ(own[2] & 0xffffff, 0xfff000u);
+    EXPECT_EQ(levelZero[0], own[0]);
+}
+
+// One sampler of both such a texture and another, which its header would read at level 0 too, is no dispatch; a record
+// without pairs, whose samplers sample every texture it reads, likewise
+TEST_F(DeviceKernelPairs, ASamplerOfALevelZeroTextureAndAnotherIsNoDispatch)
+{
+    converted.addressMap = 0;
+    converted.levelZero = true;
+    static const raw::ComputeRecord both = kernel(kEdge, kKnown | 1u << 0 | 1u << 1, kKnown | 1u << 1);
+    static const raw::ComputeRecord legacy = kernel(kEdge, 0, 0);
+    for (const raw::ComputeRecord *r : {&both, &legacy}) {
+        std::string why;
+        EXPECT_TRUE(words(*r, why).empty());
+        EXPECT_EQ(why, "a kernel sampler of a texture whose every lod reads level 0 and of another texture");
+    }
+}
+
 TEST_F(DeviceKernelPairs, ARecordWithoutPairsKeepsTheOldRule)
 {
     static const raw::ComputeRecord r = kernel(kWrap, 0, 0);

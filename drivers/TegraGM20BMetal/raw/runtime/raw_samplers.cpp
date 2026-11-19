@@ -2,6 +2,7 @@
 // See raw_gpu.h. The sampler header fill follows Mesa NVK's nvk_sampler_get_header (MIT).
 #include "raw_lock.h"
 #include "raw_gpu.h"
+#include "raw_sampler.h"
 
 #include <algorithm>
 #include <cmath>
@@ -198,14 +199,14 @@ void Device::destroySampler(Sampler &s)
 // every mode of a converted 4:2:0 texture to the edge: its clamps to zero read the edge texels, not the border m2v reads.)
 bool Device::samplerVariant(Sampler &s, uint8_t map)
 {
-    if (!map || map > 3)
+    if (!map || map > kLevelZeroMap)
         return false;
     if (s.mapped[map])
         return true;
     uint32_t own[8], w[8], compared[8];
     samplerHeader(s.desc, own);
     memcpy(w, own, sizeof w);
-    mapSamplerAddresses(w, map);
+    mapSamplerHeader(w, map);
     if (!memcmp(w, own, sizeof w)) {
         s.mapped[map] = s.tsc;
         s.compareMapped[map] = s.compareTsc;
@@ -258,6 +259,23 @@ bool Device::constexprMapsPlaced()
         });
         if (placed == completedSamplers_.end() || !placeConstexprMaps(constexprMappedCount_, placed->first.data()))
             return false;
+    }
+    return true;
+}
+
+bool Device::constexprLevelZeroPlaced()
+{
+    RAW_ENCODE_LOCK(l, lock_);
+    for (; constexprLevelZeroCount_ < constexprCount_; constexprLevelZeroCount_++) {
+        const uint32_t index = constexprLevelZeroCount_, own = constexprTsc_[index];
+        uint32_t words[8], w[8];
+        memcpy(words, tsc_.cpu + 32 * own, sizeof words);
+        memcpy(w, words, sizeof w);
+        levelZeroHeader(w);
+        uint32_t tsc = own;
+        if (memcmp(w, words, sizeof w) && !takeHeader(w, tsc))
+            return false;
+        constexprMapped_[index][kLevelZeroMap] = tsc;
     }
     return true;
 }

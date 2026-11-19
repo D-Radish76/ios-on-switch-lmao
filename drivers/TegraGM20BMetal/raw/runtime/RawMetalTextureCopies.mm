@@ -172,6 +172,13 @@ void cpuUnreached(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice)
                          (unsigned long)t->_descriptor.storageMode);
 }
 
+// getBytes and replaceRegion of R10Unorm_PACKED or RG10Unorm_PACKED over a surface plane move nothing, at every level
+// (an M4 Max, validation on and off: m2v-textures11 probes/h4/mips.txt, m2v-textures13 probes/pmips/pmips.txt)
+bool packedPlaneMovesNothing(RMTexture *t)
+{
+    return t->_rawOk && t->_raw.ycbcr == raw::YcbcrPackedPlane;
+}
+
 // The texture a view's CPU copy is made on, at the view's first level and slice on: its levels owner, of the same texels
 // (a view's format is of its texture's texel size), which the owner's own CPU paths reach. Not a depth/stencil view's:
 // X32_Stencil8 names one aspect of its texture's texels.
@@ -243,6 +250,8 @@ RMTexture *cpuOwner(RMTexture *t)
         cpuUnreached(self, r, level, slice);
         return;
     }
+    if (packedPlaneMovesNothing(self))
+        return;
     if (_rawOk && _raw.chain) {
         cpuLevel(self, r, level, slice, (uint8_t *)bytes, row, image, true);
         return;
@@ -308,6 +317,8 @@ RMTexture *cpuOwner(RMTexture *t)
                                   slice:_slicesBase + slice];
         return;
     }
+    if (packedPlaneMovesNothing(self))
+        return;
     freshBeforeTransfer(self);
     if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, false))
         return;

@@ -6,6 +6,8 @@
 // c38-audit/m2v-planar-plan/probe).
 #import "RawMetalRangeEncode.h"
 #import "RawMetalPassErrors.h"
+#include "raw_level_zero.h"
+#include "raw_sampler_map.h"
 
 namespace {
 
@@ -75,8 +77,9 @@ bool writtenFirst(RMCommandBuffer *cb, size_t from, size_t to, RMTexture *t)
 
 // The images of the converted textures the range samples, from their planes, before its passes, whose prologue's full
 // barrier orders the copies before their reads. A texture bound where no draw's state reads it is not converted: the
-// image is made when a draw samples it. Its samplers read it under its address map (Texture::addressMap): a sampler state
-// through its header made here, a constexpr sampler through the one placed with it (Device::constexprMapped_).
+// image is made when a draw samples it. Its samplers read it under its address map (Texture::addressMap), or one whose
+// every lod reads level 0 through their level-0 headers (kLevelZeroMap): a sampler state through its header made here, a
+// constexpr sampler through the one placed with it (Device::constexprMapped_).
 bool RMRangeEncode::conversions()
 {
     raw::Device &d = *d_;
@@ -96,9 +99,12 @@ bool RMRangeEncode::conversions()
     });
     // the samplers' headers under the planar textures' address maps (m2v's), which the draws' handles take
     bool placed = d.constexprMapsPlaced();
-    for (__unsafe_unretained RMTexture *t : planar)
+    for (__unsafe_unretained RMTexture *t : planar) {
+        const uint8_t map = t->_raw.levelZero ? raw::kLevelZeroMap : t->_raw.addressMap;
+        placed = placed && (!t->_raw.levelZero || d.constexprLevelZeroPlaced());
         for (__unsafe_unretained RMSampler *sm : samplers)
-            placed = placed && (!t->_raw.addressMap || d.samplerVariant(sm->_raw, t->_raw.addressMap));
+            placed = placed && (!map || d.samplerVariant(sm->_raw, map));
+    }
     if (!placed) {
         hit(cb, PredEncPlanarClamp, 0, 0, "no sampler header left in the device's table for an address map");
         failCommandBuffer(cb, @"no sampler header left in the device's table for a planar texture's address modes",
@@ -221,5 +227,15 @@ bool RMRangeEncode::makeImages(const std::vector<__unsafe_unretained RMTexture *
         }
         conv->end();
     }
+    // the levels of those whose every lod reads level 0: level 0's corner each (raw_level_zero.h)
+    raw::BlitEncoder *levels = nullptr;
+    for (__unsafe_unretained RMTexture *t : planar)
+        if (t->_raw.levelZero) {
+            if (!levels)
+                levels = rc->blit();
+            raw::copyLevelZero(*levels, t->_raw);
+        }
+    if (levels)
+        levels->end();
     return true;
 }

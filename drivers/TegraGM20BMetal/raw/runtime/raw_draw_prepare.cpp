@@ -13,6 +13,7 @@
 #include "raw_mme.h"
 #include "raw_cbuf.h"
 #include "raw_residual.h"
+#include "raw_sampler_map.h"
 #include "raw_mixed_samples.h"
 #include "raw_multisample.h"
 #include "raw_rotated_pass.h"
@@ -319,7 +320,7 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
         tic = t ? t->tic : 0;
     }
     const Texture *mapped = e.kind == EntryTexture ? boundTexture(e) : nullptr;
-    const uint8_t map = mapped ? mapped->addressMap : 0;
+    const uint8_t map = !mapped ? 0 : mapped->levelZero ? kLevelZeroMap : mapped->addressMap;
     if (e.samplerKind == SamplerSlot) {
         const Sampler *s = boundSampler(e);
         const bool compares = entryCompares(e);
@@ -329,17 +330,20 @@ __attribute__((always_inline)) inline bool RenderEncoder::writeSetEntry(Pipeline
               : compares ? d.neutralCompareTsc_
                          : d.neutralTsc_;
         if (s && !tsc) {
-            *why = map        ? "a planar texture's sampler without its address map"
-                   : compares ? "a sampler without its compare header"
-                              : "a sampler without its opaque border's header for the texture";
+            *why = map == kLevelZeroMap ? "a sampler without its header for a texture whose every lod reads level 0"
+                   : map                ? "a planar texture's sampler without its address map"
+                   : compares           ? "a sampler without its compare header"
+                                        : "a sampler without its opaque border's header for the texture";
             cb_->refusal = {RefSamplerHeader, e.sampler, map, compares};
             return false;
         }
     } else if (e.samplerKind == SamplerConstexpr) {
         tsc = map ? d.constexprMapped_[e.sampler][map] : d.constexprTsc_[e.sampler];
         if (!tsc) {
-            *why = map ? "a planar texture's constexpr sampler without its address map"
-                       : "a constexpr sampler the device placed no header of";
+            *why = map == kLevelZeroMap
+                       ? "a constexpr sampler without its header for a texture whose every lod reads level 0"
+                   : map ? "a planar texture's constexpr sampler without its address map"
+                         : "a constexpr sampler the device placed no header of";
             cb_->refusal = {RefSamplerHeader, e.sampler, map, 2};
             return false;
         }

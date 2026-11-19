@@ -349,6 +349,16 @@ const char *ComputeEncoder::pairedSamplerTsc(const Device &dev, const PackKernel
     };
     if (!mapsStated && !pairedSamplerKept(kernelSamplerPairs(e), leaves, mapOf))
         return "a kernel sampler whose modes a converted texture's address map changes, compiled without that map";
+    bool levelZero = false, other = false;
+    for (uint32_t p = kernelSamplerPairs(e); p; p &= p - 1)
+        if (const uint32_t slot = uint32_t(__builtin_ctz(p)); slot < 31 && textures[slot])
+            (textures[slot]->levelZero ? levelZero : other) = true;
+    if (levelZero && other)
+        return "a kernel sampler of a texture whose every lod reads level 0 and of another texture";
+    if (levelZero) {
+        tsc = constant ? dev.constexprMapped_[index][kLevelZeroMap] : s ? s->mapped[kLevelZeroMap] : dev.neutralTsc_;
+        return tsc ? nullptr : "a kernel sampler without its header for a texture whose every lod reads level 0";
+    }
     tsc = constant ? dev.constexprTsc_[index] : s ? s->tsc : dev.neutralTsc_;
     return nullptr;
 }
@@ -374,10 +384,17 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
     // a planar or YCbCr texture's address map: its samplers' headers with the map applied, as a draw's handle takes them
     // (admission keeps a kernel here only where every texture it binds is under one map, or the map changes no sampler;
     // a sampler entry that holds its pairs only where its own textures' maps change none of its modes)
+    // and the header of a texture whose every lod reads level 0 where the kernel reads no other texture, whose samples it
+    // would move: else such a texture's samplers are no dispatch
     uint8_t map = 0;
+    bool levelZero = false, other = false;
     for (uint32_t i = 0; i < r.entries; i++)
-        if (r.entry[i].kind == KernelTexture && r.entry[i].slot < 31 && textures_[r.entry[i].slot])
-            map = std::max(map, textures_[r.entry[i].slot]->addressMap);
+        if (r.entry[i].kind == KernelTexture && r.entry[i].slot < 31 && textures_[r.entry[i].slot]) {
+            const Texture &t = *textures_[r.entry[i].slot];
+            map = std::max(map, t.addressMap);
+            if (!kernelEntryWrites(r, i))
+                (t.levelZero ? levelZero : other) = true;
+        }
     for (uint32_t i = 0; i < r.entries; i++) {
         const PackKernelEntry &e = r.entry[i];
         const bool writes = kernelEntryWrites(r, i);
@@ -460,20 +477,33 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
                 return false;
             }
             at[0] |= tsc << 20;
+        } else if (levelZero && other) {
+            *why = "a kernel sampler of a texture whose every lod reads level 0 and of another texture";
+            return false;
         } else if (e.slot & kConstexprSampler) {
             const uint32_t index = e.slot & ~kConstexprSampler;
             if (index >= dev_.constexprCount_) {
                 *why = "a kernel's constexpr sampler the pack holds no header of";
                 return false;
             }
-            at[0] |= dev_.constexprTsc_[index] << 20;
+            const uint32_t tsc = levelZero ? dev_.constexprMapped_[index][kLevelZeroMap] : dev_.constexprTsc_[index];
+            if (!tsc) {
+                *why = "a kernel sampler without its header for a texture whose every lod reads level 0";
+                return false;
+            }
+            at[0] |= tsc << 20;
         } else {
             const Sampler *s = e.slot < 16 ? samplers_[e.slot] : nullptr;
             const Texture *sampled = nullptr;
             for (uint32_t j = 0; s && s->desc.border && j < r.entries; j++)
                 if (r.entry[j].kind == KernelTexture && r.entry[j].offset == e.offset && r.entry[j].slot < 31)
                     sampled = textures_[r.entry[j].slot];
-            const uint32_t mapped = s && map ? s->mapped[map] : 0;
+            const uint8_t sampledMap = levelZero ? kLevelZeroMap : map;
+            const uint32_t mapped = s && sampledMap ? s->mapped[sampledMap] : 0;
+            if (s && levelZero && !mapped) {
+                *why = "a kernel sampler without its header for a texture whose every lod reads level 0";
+                return false;
+            }
             const uint32_t tsc = s ? (mapped ? mapped : borderedTsc(*s, sampled)) : dev_.neutralTsc_;
             if (!tsc) {
                 *why = "a kernel's sampler without its opaque border's header for the texture";

@@ -450,7 +450,10 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
     constexpr uint8_t kGreenBlue[4] = {3, 4, 0, 1};  // MTLTextureSwizzle Green, Blue, Zero, One
     if (c && plan.chromaGreenBlue)
         swizzle(c->sampled ? *c->sampled : *c, kGreenBlue);
-    if (!createTexture(width, height, plan.image, t, false, true))  // block-linear, as NVK makes m2v's converted image
+    // block-linear, as NVK makes m2v's converted image
+    const bool image = plan.levels > 1 ? createMipTexture(width, height, plan.image, plan.levels, t)
+                                       : createTexture(width, height, plan.image, t, false, true);
+    if (!image)
         return undo();
     if (plan.nativePlanes) {
         y->nativePlane = 0;
@@ -465,6 +468,7 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
     memcpy(t.shape, plan.shape, sizeof t.shape);
     t.ycbcr = plan.output;
     t.addressMap = plan.addressMap;
+    t.levelZero = plan.levels > 1;
     ycbcrImageHeader(t, plan.output, plan.shape[2]);
     if (plan.window && !openSparseWindow(t, plan.readable)) {
         destroyTexture(t);

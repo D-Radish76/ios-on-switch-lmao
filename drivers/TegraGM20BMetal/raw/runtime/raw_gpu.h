@@ -360,6 +360,10 @@ struct Texture {
     // (repeat, mirrored repeat, mirror-clamp) clamp to the edge (4:2:0 converted), 2 clamp to zero and to the border clamp to the
     // edge (4:4:4 codes), 3 both (4:2:0 codes)
     uint8_t addressMap = 0;
+    // R10Unorm_PACKED or RG10Unorm_PACKED of several levels (raw_packed_plane.h): every lod reads level 0, so each level L of
+    // its chain holds level 0's top-left corner (raw_level_zero.h copyLevelZero) and its samplers read level 0 alone
+    // (Sampler::mapped[kLevelZeroMap]); its address map is 0
+    bool levelZero = false;
     // A YCbCr texture whose plane rows run past its surface's last page (YcbcrPlan::window): the GPU VA its planes are read
     // through, its import's `pages` bound again at its start and the rest sparse (Device::openSparseWindow); 0 bytes: none.
     // A job's use names only those pages: the kernel refuses a use no one binding holds
@@ -532,10 +536,11 @@ struct Sampler {
     uint32_t compareTsc = 0;
     SamplerDesc desc;
     // its headers under a planar texture's address map (Texture::addressMap 1 to 3): m2v samples those textures through the
-    // sampler with the map applied (Device::samplerVariant makes them; the same header where the map changes nothing)
-    uint32_t mapped[4] = {};
+    // sampler with the map applied (Device::samplerVariant makes them; the same header where the map changes nothing), and at
+    // kLevelZeroMap its header for a texture whose every lod reads level 0 (Texture::levelZero)
+    uint32_t mapped[kLevelZeroMap + 1] = {};
     // and its compare header under those maps, which a state sampling a planar texture by comparison reads
-    uint32_t compareMapped[4] = {};
+    uint32_t compareMapped[kLevelZeroMap + 1] = {};
     // an opaque border's headers by the texel a texture reads at it (borderTexel), where that is not tsc's
     // (Device::borderVariant makes them before the work that samples the texture through the sampler)
     uint32_t bordered[32] = {};
@@ -2225,10 +2230,13 @@ public:
     Pipeline *stencilColourPipeline(uint32_t format, uint32_t samples, StencilSample pick);  // raw_zeta_colour.h
     // raw_reach.h: `pl` drawing its geometry into a reach target; null: *why
     Pipeline *reachTwin(Pipeline &pl, const char **why);
-    // s's header under address map `map` (Texture::addressMap), made now if it is not yet
+    // s's header under address map `map` (Texture::addressMap) or kLevelZeroMap, made now if it is not yet
     bool samplerVariant(Sampler &s, uint8_t map);
     // Every constexpr sampler's headers under the address maps, those of samplers placed since made now; false: no room
     bool constexprMapsPlaced();
+    // Every constexpr sampler's header under kLevelZeroMap, made before the first work that samples such a texture (so no
+    // other header moves); false: no room
+    bool constexprLevelZeroPlaced();
     // s's header for sampling `t` at an opaque border (Sampler::bordered), made now if it is not yet
     bool borderVariant(Sampler &s, const Texture &t);
 
@@ -3321,9 +3329,10 @@ private:
     static constexpr uint32_t kConstexprSamplers = 256;  // PackEntry::sampler is a byte
     uint32_t constexprTsc_[kConstexprSamplers] = {};
     // and each one's headers under a planar texture's address maps 1 to 3 (mapSamplerAddresses): the pack's placed with
-    // them, a runtime record's by constexprMapsPlaced before the work that samples a planar texture
-    uint32_t constexprMapped_[kConstexprSamplers][4] = {};
-    uint32_t constexprCount_ = 0, constexprMappedCount_ = 0;
+    // them, a runtime record's by constexprMapsPlaced before the work that samples a planar texture; and at kLevelZeroMap
+    // each one's by constexprLevelZeroPlaced
+    uint32_t constexprMapped_[kConstexprSamplers][kLevelZeroMap + 1] = {};
+    uint32_t constexprCount_ = 0, constexprMappedCount_ = 0, constexprLevelZeroCount_ = 0;
     uint32_t constexprWord0_[kConstexprSamplers] = {};  // and their headers' word 0, written with them
     // constexprMapped_[index] from its header `words` (lock_ held, or the device not yet open); false: no room
     bool placeConstexprMaps(uint32_t index, const uint32_t words[8]);

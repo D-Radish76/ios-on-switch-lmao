@@ -3,6 +3,7 @@
 // taken_descriptor, then metal2vulkan metal/sampler.rs vk_sampler on NVK's profile, whose device samples natively), in the
 // fields the texture sampler header takes (raw_gpu.cpp samplerHeader).
 #pragma once
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <initializer_list>
@@ -143,6 +144,29 @@ inline void mapSamplerAddresses(uint32_t w[8], uint8_t map)
 {
     for (uint32_t shift : {0u, 3u, 6u})
         w[0] = (w[0] & ~(7u << shift)) | mappedHeaderAddress(w[0] >> shift & 7, map) << shift;
+}
+
+// Sampler header `w` of a texture whose every lod reads level 0 (Texture::levelZero): TEXSAMP1 MIP_FILTER MIP_POINT under
+// a TEXSAMP2 MAX_LOD_CLAMP of at most a quarter and a MIN_LOD_CLAMP of at most that, the form samplerHeader writes for a
+// sampler without a mip filter (NVK's [0, 1/4]), so it reads level 0 alone and its lod still picks the minification or
+// the magnification filter. An M4 Max's samples of R10Unorm_PACKED of several levels at lod L read level 0 at the same
+// coordinate (nearest filters alone measured: m2v-textures11 probes/h4/mips.txt). A header that reads level 0 alone
+// already is left as it is.
+inline void levelZeroHeader(uint32_t w[8])
+{
+    constexpr uint32_t kMipPoint = 2, kQuarterLevel = 64;  // MIP_POINT; a quarter in the clamps' 4.8 fixed point
+    const uint32_t maxLod = std::min(w[2] >> 12 & 0xfffu, kQuarterLevel), minLod = std::min(w[2] & 0xfffu, maxLod);
+    w[1] = (w[1] & ~(3u << 6)) | kMipPoint << 6;
+    w[2] = (w[2] & ~0xffffffu) | maxLod << 12 | minLod;
+}
+
+// Sampler header `w` under map `map`: an address map's (mapSamplerAddresses), or kLevelZeroMap's (levelZeroHeader)
+inline void mapSamplerHeader(uint32_t w[8], uint8_t map)
+{
+    if (map == kLevelZeroMap)
+        levelZeroHeader(w);
+    else
+        mapSamplerAddresses(w, map);
 }
 
 inline bool takeSampler(const MetalSamplerFields &m, SamplerDesc &s)

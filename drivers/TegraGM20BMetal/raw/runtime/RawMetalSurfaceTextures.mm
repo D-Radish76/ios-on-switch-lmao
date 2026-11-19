@@ -229,7 +229,8 @@ const char *ycbcrPlan(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane,
     f.allocBytes = IOSurfaceGetAllocSize(s);
     f.mappedBytes = (f.allocBytes + vm_page_size - 1) & ~uint64_t(vm_page_size - 1);
     f.sparseTail = gRM->raw->kernel().sparse();
-    f.simple = d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 && d.sampleCount == 1 && !rotationOf(d);
+    f.simple = d.textureType == MTLTextureType2D && d.sampleCount == 1 && !rotationOf(d);
+    f.levels = uint32_t(d.mipmapLevelCount);
     // An M4 Max renders into a texture of any usage as into a render target (raw/test/ycbcrnorenderoracle.mm); the stand-in is
     // memoryless, so every texture that can be one is
     f.target = true;
@@ -305,8 +306,6 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
     if (raw::surfaceRefusal == raw::kTiledTexelBuffer)
         form = raw::kTiledTexelBuffer;
-    else if (raw::packedPlaneChannels(format) && d.mipmapLevelCount > 1 && !raw::surfaceRefusal)
-        form = "R10Unorm_PACKED or RG10Unorm_PACKED of several levels, which an M4 Max reads at level 0 at every lod";
     else if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
         form = ycbcrPlan(flat, s, plane, unused);
     if (xr && !xrTaken && !xrPlanesStorable(d)) {

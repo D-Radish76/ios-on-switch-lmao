@@ -205,6 +205,91 @@ TEST(SamplerAddressMaps, TheHeaderMapIsTheDescriptorMap)
                 }
 }
 
+// A texture whose every lod reads level 0 (R10Unorm_PACKED of several levels: m2v-textures11 probes/h4/mips.txt) is sampled
+// through its sampler as written without a mip filter: level 0 alone, the lod still choosing the filter
+TEST(SamplerLevelZero, TheHeaderIsTheSamplersWithoutAMipFilter)
+{
+    struct Case {
+        uint8_t filter, mipFilter;
+        float lodMin, lodMax;
+    } cases[] = {{1, 1, 0, 1000}, {1, 2, 0, 1000}, {1, 2, 0.5f, 3}, {0, 1, 2, 4}, {1, 1, 0, 0}};
+
+    for (const Case &c : cases) {
+        raw::SamplerDesc d;
+        d.minFilter = d.magFilter = c.filter;
+        d.mipFilter = c.mipFilter;
+        d.lodMin = c.lodMin;
+        d.lodMax = c.lodMax;
+        raw::SamplerDesc none = d;
+        none.mipFilter = 0;
+        uint32_t want[8], got[8];
+        raw::samplerHeader(none, want);
+        raw::samplerHeader(d, got);
+        raw::mapSamplerHeader(got, raw::kLevelZeroMap);
+        EXPECT_EQ(memcmp(want, got, sizeof want), 0)
+            << int(c.filter) << " mip " << int(c.mipFilter) << " [" << c.lodMin << ", " << c.lodMax << "]";
+        uint32_t own[8];
+        raw::samplerHeader(none, own);
+        raw::levelZeroHeader(own);
+        EXPECT_EQ(memcmp(want, own, sizeof want), 0) << "one without a mip filter reads level 0 already";
+    }
+}
+
+// Its draws take that header (made with the texture's conversion, before the work), a plain texture's the sampler's own;
+// a draw finding none is refused, never drawn through the mip filter
+TEST_F(DeviceSamplers, ATextureWhoseEveryLodReadsLevelZeroSamplesThroughItsLevelZeroHeader)
+{
+    raw::SamplerDesc d;
+    d.minFilter = d.magFilter = 1;
+    d.mipFilter = 2;
+    raw::Sampler s;
+    ASSERT_TRUE(dev.createSampler(d, s));
+    raw::Pipeline *state = slotState();
+    ASSERT_NE(state, nullptr);
+    raw::Texture levels = image;
+    levels.levelZero = true;
+    uint32_t handle = 0;
+    std::string why;
+    EXPECT_FALSE(drawnHandle(state, levels, handle, why, &s));
+    EXPECT_EQ(why, "a sampler without its header for a texture whose every lod reads level 0");
+    ASSERT_TRUE(dev.samplerVariant(s, raw::kLevelZeroMap));
+    ASSERT_NE(s.mapped[raw::kLevelZeroMap], s.tsc);
+    ASSERT_TRUE(drawnHandle(state, levels, handle, why, &s)) << why;
+    EXPECT_EQ(handle >> 20, s.mapped[raw::kLevelZeroMap]);
+    raw::SamplerDesc none = d;
+    none.mipFilter = 0;
+    Header want;
+    raw::samplerHeader(none, want.data());
+    EXPECT_EQ(raw::DeviceHarness::tscHeader(dev, handle >> 20), want);
+    ASSERT_TRUE(drawnHandle(state, image, handle, why, &s)) << why;
+    EXPECT_EQ(handle >> 20, s.tsc) << "a plain texture: the sampler's own";
+}
+
+// A constexpr sampler's level-0 header is placed only once such a texture is converted (no other header moves); a
+// trilinear one's is its linear one's, a header that reads level 0 already its own
+TEST_F(DeviceSamplers, AConstexprSamplersLevelZeroHeaderIsPlacedBeforeTheWork)
+{
+    constexpr Header kTrilinearClamp = {0x26092, 0x2e2, 0xf00000, 0, 0, 0, 0, 0};
+    raw::Pipeline *trilinear = constexprState(kTrilinearClamp, 0x55), *linear = constexprState(kLinearClamp, 0x56);
+    ASSERT_NE(trilinear, nullptr);
+    ASSERT_NE(linear, nullptr);
+    raw::Texture levels = image;
+    levels.levelZero = true;
+    uint32_t handle = 0;
+    std::string why;
+    EXPECT_FALSE(drawnHandle(trilinear, levels, handle, why));
+    EXPECT_EQ(why, "a constexpr sampler without its header for a texture whose every lod reads level 0");
+    ASSERT_TRUE(dev.constexprLevelZeroPlaced());
+    ASSERT_TRUE(drawnHandle(trilinear, levels, handle, why)) << why;
+    const uint32_t index = trilinear->rec->entry[0].sampler;
+    EXPECT_EQ(handle >> 20, raw::DeviceHarness::constexprTsc(dev, index, raw::kLevelZeroMap));
+    EXPECT_NE(handle >> 20, raw::DeviceHarness::constexprTsc(dev, index, 0));
+    EXPECT_EQ(raw::DeviceHarness::tscHeader(dev, handle >> 20), kLinearClamp);
+    const uint32_t own = linear->rec->entry[0].sampler;
+    EXPECT_EQ(raw::DeviceHarness::constexprTsc(dev, own, raw::kLevelZeroMap),
+              raw::DeviceHarness::constexprTsc(dev, own, 0));
+}
+
 TEST_F(DeviceSamplers, ASamplerStatesVariantIsItsHeaderUnderTheMap)
 {
     raw::SamplerDesc d;

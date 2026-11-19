@@ -2266,6 +2266,24 @@ host_test(
     deps = ["//kits/SwitchGM20B:classes"],
 )
 
+# R10Unorm_PACKED of several levels on raw::Device: its image a chain of every level under one header, each later level
+# level 0's corner copied by the copy engine
+raw_device_test(
+    name = "raw_device_packed_levels_test",
+    srcs = [
+        "raw_device_packed_levels_test.cpp",
+        "raw_device_views_harness.h",
+        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_ycbcr.cpp",
+    ],
+)
+
+# R10Unorm_PACKED over a surface plane on the facade: getBytes writes nothing; of several levels every lod reads level 0
+facade_test(
+    name = "raw_facade_packed_levels_test",
+    srcs = ["raw_facade_packed_levels_test.cpp"],
+)
+
 host_test(
     name = "raw_xr_copy_test",
     srcs = [

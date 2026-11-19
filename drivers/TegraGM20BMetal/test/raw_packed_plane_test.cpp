@@ -13,7 +13,7 @@
 
 namespace {
 
-constexpr uint32_t kP420 = 0x70343230, kP422 = 0x70343232, kP444 = 0x70343434, kX420 = 0x78343230;
+constexpr uint32_t kP420 = 0x70343230, kP422 = 0x70343232, kP444 = 0x70343434, kX420 = 0x78343230, kV420 = 0x34323076;
 
 // A CoreVideo 'p4xx' surface of w x h: rows `pitch` bytes apart, plane 1 after plane 0's rows
 raw::YcbcrFacts surface(uint32_t format, uint32_t plane, uint32_t fourcc, uint32_t w, uint32_t h, uint32_t pitch,
@@ -136,6 +136,30 @@ TEST(RawPackedPlane, RowsPastTheLastPageReadThroughAWindow)
     ASSERT_EQ(raw::planPackedPlane(f, p), nullptr);
     EXPECT_TRUE(p.window);
     EXPECT_EQ(p.readable, 16384u - 128 + 3 * 128 + 22 * 4);
+}
+
+// Metal makes them of 2 and 3 levels too, every lod reading level 0 (an M4 Max: m2v-textures11 probes/h4/mips.txt): the
+// plan's image holds as many levels. A two-plane YCbCr format of several levels stays Metal's nil (no IOSurface texture is
+// mipmapped)
+TEST(RawPackedPlane, SeveralLevelsAreTakenAsTheyAreMade)
+{
+    for (const uint32_t levels : {2u, 3u}) {
+        raw::YcbcrFacts f = surface(588, 0, kP420, 32, 16, 64, 8);
+        f.width = 32;
+        f.height = 16;
+        f.levels = levels;
+        raw::YcbcrPlan p;
+        ASSERT_EQ(raw::planYcbcr(f, p), nullptr) << levels;
+        EXPECT_EQ(p.levels, levels);
+        EXPECT_EQ(p.lumaWidth, 11u) << "level 0's rows: every level reads them";
+        EXPECT_EQ(p.addressMap, 0);
+    }
+    raw::YcbcrFacts f = surface(500, 0, kV420, 32, 16, 32, 8);
+    f.width = 32;
+    f.height = 16;
+    f.levels = 2;
+    raw::YcbcrPlan p;
+    EXPECT_STREQ(raw::planYcbcr(f, p), "shape");
 }
 
 TEST(RawPackedPlane, TheYcbcrPlannerRoutesThem)

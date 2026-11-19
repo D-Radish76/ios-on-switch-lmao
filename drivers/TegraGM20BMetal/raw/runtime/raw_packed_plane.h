@@ -46,7 +46,9 @@ inline YcbcrStoreShape packedPlaneShape(uint32_t channels)
 // M4 Max, validation on and off, over 'p420', '420v', 'x420', 'v210', one-plane and planeless 'BGRA', a made-up code, either
 // plane and plane 2 of three, sizes smaller and larger than the plane): its codes a texel by the format alone, the plane's
 // offset and rows rounded down to 16, rows of fewer bytes than their codes overlapping, the bytes past the allocation in its
-// last page read, 0 past the mapping
+// last page read, 0 past the mapping. Of several levels, every lod reads level 0: a read at lod L level-0 texel (x, y), a
+// sample level 0 at the same coordinate, while the shader sees each level's size (an M4 Max, validation on and off:
+// m2v-textures11 probes/h4/mips.txt), which an image of as many levels holds (Texture::levelZero)
 inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
 {
     const uint32_t channels = packedPlaneChannels(f.pixelFormat);
@@ -74,6 +76,7 @@ inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
     out.luma = offset;
     out.lumaPitch = pitch;
     out.lumaWidth = words;
+    out.levels = f.levels;
     out.shape[0] = width;
     out.shape[1] = height;
     out.shape[2] = channels;
