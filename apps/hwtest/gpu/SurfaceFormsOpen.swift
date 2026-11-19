@@ -91,15 +91,26 @@ public enum SurfaceFormsOpen {
         return Reading(made: true, path: path, off: off)
     }
 
+    public enum TurnedPass: String, Sendable, CaseIterable { case clear, draw, load }
+
     /// gpu.raw.xr_turned_rows_under_16: a 550 turned by `rotation` (frame 8x2 at 1 and 3, 2x8 at 2) over
     /// gpu.raw.xr_rows_under_16's 'b3a8' 2x8 of rows 8 and 2 in 8 MiB + 16 KiB, over 0xff: a clear of (0.5, 0.25,
     /// -0.25, 0.75), or a whole-frame coded draw, stores frame pixel (fx, fy)'s word and alpha at the plane texel the
-    /// rotation turns it to, 16 bytes a row apart; where word rows 4 to 7 meet alpha rows 0 to 3 the words land last at
-    /// rotation 1 and the alpha at rotations 2 and 3 (an M4 Max, both kinds of pass, three runs)
-    public static func turnedRowsUnder16(_ gpu: GPU, rotation: Int, draw: Bool) async throws -> Reading {
-        let alphaLast = rotation != 1
+    /// rotation turns it to, 16 bytes a row apart; a loaded pass whose draw discards every fragment stores each plane
+    /// texel's word and alpha read a MiB a row apart at the same texel 16 apart; where word rows 4 to 7 meet alpha rows 0
+    /// to 3 the words land last at rotation 1 and the alpha at rotations 2 and 3 (an M4 Max, three runs)
+    public static func turnedRowsUnder16(_ gpu: GPU, rotation: Int, pass: TurnedPass) async throws -> Reading {
+        let alphaLast = rotation != 1, mebibyte = RowsUnder16.mebibyte
         guard let surface = RowsUnder16.surface("b3a8", 2, 8, planes: XrRowsUnder16.planes, fill: 0xff) else {
             throw TestFailure("no 'b3a8' 2x8 of rows 8 and 2")
+        }
+        var read: [Int: UInt8] = [:]
+        if pass == .load {
+            for y in 0..<8 {
+                for b in 0..<8 { read[y * mebibyte + b] = UInt8(1 + 7 * y + b) }
+                for x in 0..<2 { read[64 + y * mebibyte + x] = UInt8(truncatingIfNeeded: 9 + 16 * y + x) }
+            }
+            RowsUnder16.edit(surface) { base in for (at, byte) in read { base[at] = byte } }
         }
         let (fw, fh) = rotation == 2 ? (2, 8) : (8, 2)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
@@ -114,18 +125,33 @@ public enum SurfaceFormsOpen {
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return Reading()
         }
+        let fragment = ["draw": "rows16_xr_codes", "load": "rows16_discard"][pass.rawValue]
         let path = try await RowsUnder16.pass(
-            gpu, texture, clear: XrRowsUnder16.clear, fragment: draw ? "rows16_xr_codes" : nil)
+            gpu, texture, clear: XrRowsUnder16.clear, fragment: fragment, load: pass == .load)
         var want = [UInt8](repeating: 0xff, count: 16384)
-        let frame = (0..<fh).flatMap { fy in (0..<fw).map { fx in (fx, fy, plane(rotation, fx, fy)) } }
-        let value = { (fx: Int, fy: Int) in
-            draw ? XrRowsUnder16.coded(fx, fy) : (word: XrRowsUnder16.clearWord, alpha: XrRowsUnder16.clearAlpha)
+        for (at, byte) in read where at < 16384 { want[at] = byte }
+        let texels = (0..<fh).flatMap { fy in (0..<fw).map { fx in plane(rotation, fx, fy) } }
+        let frame = Dictionary(uniqueKeysWithValues: (0..<fh).flatMap { fy in
+            (0..<fw).map { fx in ("\(plane(rotation, fx, fy))", (fx, fy)) }
+        })
+        let value = { (p: (x: Int, y: Int)) -> (word: UInt32, alpha: UInt8) in
+            switch pass {
+            case .clear: return (XrRowsUnder16.clearWord, XrRowsUnder16.clearAlpha)
+            case .draw:
+                let f = frame["\(p)"]!
+                return XrRowsUnder16.coded(f.0, f.1)
+            case .load:
+                let at = p.y * mebibyte + 4 * p.x
+                let word = (0..<4).reduce(UInt32(0)) { $0 | UInt32(read[at + $1] ?? 0xff) << (8 * $1) }
+                return (word, read[64 + p.y * mebibyte + p.x] ?? 0xff)
+            }
         }
-        let alpha = { for (fx, fy, p) in frame { want[64 + 16 * p.y + p.x] = value(fx, fy).alpha } }
+        let alpha = { for p in texels { want[64 + 16 * p.y + p.x] = value(p).alpha } }
         if !alphaLast { alpha() }
-        for (fx, fy, p) in frame { RowsUnder16.put(value(fx, fy).word, &want, at: 16 * p.y + 4 * p.x) }
+        for p in texels { RowsUnder16.put(value(p).word, &want, at: 16 * p.y + 4 * p.x) }
         if alphaLast { alpha() }
-        return Reading(made: true, path: path, off: RowsUnder16.off(surface, want, fill: 0xff))
+        let off = RowsUnder16.off(surface, want, fill: 0xff, except: read.filter { $0.key >= 16384 })
+        return Reading(made: true, path: path, off: off)
     }
 
     /// The plane texel of a 2x8 plane that frame pixel (fx, fy) of a texture turned by `rotation` lands on

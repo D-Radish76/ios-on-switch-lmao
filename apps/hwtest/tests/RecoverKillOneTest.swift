@@ -11,9 +11,9 @@ import UIKit
 /// their fill (RecoverBystander): one on the 2D engine, one through the copy engine. A probe layer another bench raw
 /// device fills shows that the compositor kept presenting. Exactly the poisoned command buffer fails, the eight before
 /// it keep their completion and bytes, the eight after it complete on the channel made again, neither bystander sees an
-/// error or a kill (its reopen), the GR one no gap past the bound, this channel one reopen, and the facade keeps GPU
-/// order. The poisoned command buffer is the process's only failure, with no predicate (error:none: the kernel's kill
-/// names none; failed_cbs=, failed_why=). kill_ms= from the end of the command buffer before the poisoned one to the
+/// error or a kill (its reopen), the GR one no gap past the bound, and this channel one reopen. The poisoned command
+/// buffer is the process's only failure, with no predicate (error:none: the kernel's kill names none; failed_cbs=,
+/// failed_why=). kill_ms= from the end of the command buffer before the poisoned one to the
 /// poisoned one's failed end: the app's view of GR's error to the kernel's "channel killed" line.
 struct RecoverKillOneTest: HWTest {
     let id = "gpu.recover.kill_one"
@@ -34,7 +34,7 @@ struct RecoverKillOneTest: HWTest {
         }
         try Self.settle(gpu)
         let start = RawFacade.counters(of: gpu.device)
-        guard start["gpu_order"] != nil else { return .skip("the facade has no recovery counters (a release build)") }
+        guard start["reopen_us"] != nil else { return .skip("the facade has no recovery counters (a release build)") }
         let bystander: RecoverBystander
         let copier: RecoverBystander
         let probeBench: BenchRunner
@@ -113,7 +113,6 @@ struct RecoverKillOneTest: HWTest {
         var own = PathTally()
         for buffer in before + [poisoned] + after { own.add(RawFacade.path(of: buffer)) }
         let failed = FailedCounts.judged(before: start, after: end, expecting: ["none": 1], own: own, &metrics)
-        metrics.set("gpu_order", end["gpu_order"] ?? 0)
         metrics.set("reopen_us", end["reopen_us"] ?? 0)
         metrics.set("recover_ms", recoverMs, digits: 1)
         metrics.set("kill_ms", killMs, digits: 1)
@@ -149,7 +148,6 @@ struct RecoverKillOneTest: HWTest {
                     afterOK == Self.around && afterKept == Self.around && paths == ["raw"]
                 ),
                 ("the kernel's kill made one reopen of this channel (\(delta("reopens")))", delta("reopens") == 1),
-                ("GPU order on", end["gpu_order"] == 1),
                 (
                     bystander.failure.isEmpty ? "\(bystander.role.rawValue) ran with no error" : bystander.failure,
                     bystanderStopped && bystander.runs > 0 && bystander.errors == 0

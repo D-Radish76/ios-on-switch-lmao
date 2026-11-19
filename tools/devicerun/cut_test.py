@@ -105,6 +105,27 @@ class Cut(unittest.TestCase):
         self.assertEqual(got.verdict, FAIL)
         self.assertIn('PosterBoard', got.observed)
 
+    def test_a_kernel_line_of_the_deleted_methods_names_an_old_kernel(self):
+        kernel = '/System/Library/Caches/com.apple.kernelcaches/kernel.development'
+        hang = 'tegra-gm20b: GPU hang detail: ch 3 (no progress for 2100 ms){wait}; late ch 5: 40/41, moved 12 ms ago'
+        current = [
+            hang.format(wait=''),
+            'tegra-gm20b: paths flags=0x5ced pid=812 submit_jobs=40 set_jobs=40 stale_sets=0',
+            'tegra-gm20b: semaphore acquire timed out on SpringBoard (channel 4) 2003 ms after its kick: waits on ch 3',
+        ]
+        got = results(*clean_boot(), *(record(kernel, line, '', 1) for line in current))['cut.kernel-legacy-line']
+        self.assertEqual(got.verdict, PASS)
+        old = [
+            'tegra-gm20b: paths flags=0x6dfd pid=812 submit_jobs=40 set_jobs=40 stale_sets=0 address_jobs=2',
+            'tegra-gm20b: exec by process: backboardd 812, SubmitAddress 3 x mean 20 us (resolve 2, lock 1, exec 15)',
+            hang.format(wait=' waits on no other channel'),
+            'tegra-gm20b: backboardd: fence 9 still pending after 2000 ms: busy, order wait on chan 5 fence 9 (at 8)',
+        ]
+        got = results(*clean_boot(), *(record(kernel, line, '', 1) for line in old))['cut.kernel-legacy-line']
+        self.assertEqual(got.verdict, FAIL)
+        for what in ('address_jobs=', 'SubmitAddress', 'order wait', 'GPU hang detail'):
+            self.assertIn(what, got.observed)
+
     def test_rates_fields_need_a_rates_line(self):
         self.assertEqual(results()['cut.rates-fields'].verdict, NO_DATA)
 

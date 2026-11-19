@@ -366,6 +366,18 @@ TESTS: dict[str, bool] = {
             'gpu.raw.packed_plane_any_surface',
             'gpu.raw.planar_turned',
             'gpu.raw.ycbcr_turned_overlap_order',
+            'gpu.raw.ycbcr_planes_meet',
+            'gpu.raw.ycbcr_cpu_copies',
+            'gpu.raw.ycbcr_texel_buffers',
+            'gpu.raw.ycbcr_texel_buffer_wide',
+            'gpu.raw.packed_levels',
+            'gpu.raw.packed_levels_open',
+            'gpu.raw.xr_descriptor_copies',
+            'gpu.raw.xr_descriptor_padding',
+            'gpu.raw.texel_rows',
+            'gpu.raw.xr_stand_in_refill',
+            'gpu.raw.turned_overlap_tile_order',
+            'gpu.raw.xr_turned_clear_order',
             'gpu.path.job_visibility',
             'gpu.path.lean_copy',
             'gpu.path.control_reserve',
@@ -666,9 +678,36 @@ OPEN: dict[str, str] = {
     'gpu.raw.packed_mips': 'no form for R10Unorm_PACKED or RG10Unorm_PACKED of several levels',
     'gpu.raw.xr_turned_rows_under_16': 'no form for a turned RGB10A8_2P_XR10 over planes of rows under 16 bytes',
     'gpu.raw.xr_into_alpha_tie': 'where a word byte and an alpha byte of one store meet, Metal ORs them; raw keeps one',
+    'gpu.raw.ycbcr_texel_buffer_wide': (
+        "no form for a YCbCr or packed texture buffer wider than 16384 texels (Metal reads texel i at the plane's row "
+        'i / 16384, texel i % 16384); Metal makes no 500 texture buffer of render-target usage'
+    ),
+    'gpu.raw.packed_levels_open': (
+        'part views of R10/RG10Unorm_PACKED of several levels are nil; a kernel sampler shared with another texture '
+        'fails the command buffer'
+    ),
+    'gpu.raw.ycbcr_planes_meet': (
+        "where a YCbCr target's two planes' stored rows meet, Metal keeps the later 2x2 quad's byte and ORs one quad's "
+        'two planes; raw stores luma, then chroma'
+    ),
     'gpu.raw.ycbcr_turned_overlap_order': (
-        "a turned YCbCr target's overlap store order is keyed on plane coordinates (raw_overlap_order.h); Metal "
-        "keys it on the frame's 32x32 tiles: rotations 1-3 red, rotation 0 green"
+        'turnedFrame refuses a turned target over a plane declared narrower than its frame (overlapping rows force a '
+        'narrow plane): rotations 1-3 nil (raw:tex.metal), rotation 0 green'
+    ),
+    'gpu.raw.turned_overlap_tile_order': (
+        'turnedFrame refuses a turned target over a plane declared narrower than its frame (overlapping rows force a '
+        'narrow plane): nil (raw:tex.metal)'
+    ),
+    'gpu.raw.xr_turned_clear_order': (
+        'turnedFrame refuses a turned target over a plane declared narrower than its frame (overlapping rows force a '
+        'narrow plane): nil (raw:tex.metal)'
+    ),
+    'gpu.raw.xr_descriptor_padding': (
+        'a descriptor 550 has no row padding on raw: bytes a copy leaves in its padding or past its rows come back 0'
+    ),
+    'gpu.raw.xr_stand_in_refill': (
+        'inside one compute encoder the pool of an XR texel buffer over a tiled surface is refilled but its stand-in '
+        'is not redrawn: a read after a write in that encoder sees the old colours'
     ),
 }
 

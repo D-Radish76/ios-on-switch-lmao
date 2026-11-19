@@ -23,8 +23,8 @@ public enum XrRowsUnder16 {
         /// After the clear, texels read off the read rule over the cleared bytes, and those that read the clear
         public var readAfterOff = -1
         public var readAfterClear = -1
-        /// Bytes a whole-target coded draw, and a coded kernel store outside the bytes where its word and alpha rows
-        /// meet, leave off the store rule
+        /// Bytes a whole-target coded draw and a coded kernel store leave off the store rule (the words land last where
+        /// word and alpha rows meet: the kernel's sixteen threads are one simdgroup, whose later quadgroup wins)
         public var drawOff = -1
         public var kernelOff = -1
         public var failures: [String] = []
@@ -93,7 +93,7 @@ public enum XrRowsUnder16 {
         guard let (written, kernelTarget) = texture(gpu, fill: 0xff) else { throw TestFailure("no fourth 550") }
         let store = try await RowsUnder16.dispatch(gpu, "rows16_xr_store", kernelTarget)
         if store.hasPrefix("error") { r.failures.append("kernel \(store)") }
-        r.kernelOff = RowsUnder16.off(written, stored, fill: 0xff, ignoring: 64..<128)
+        r.kernelOff = RowsUnder16.off(written, stored, fill: 0xff)
         return r
     }
 }

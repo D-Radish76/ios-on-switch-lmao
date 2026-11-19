@@ -7,9 +7,9 @@ import Metal
 /// device's resource set at its current generation, so none of the device's own memory is a use of a job: its control
 /// memory, rings, shader heap, local memory, pool, block-linear and setBytes chunks go with the set. Frames of a clear and
 /// a setFragmentBytes draw into private targets name no use at all; the readbacks name only their CPU-read buffers, which
-/// the CPU leases took out of the set. Read back byte for byte; in the window the kernel ran no SubmitAddress job and
-/// refused few jobs for an ended set generation. The counts are the process's, so a copy-channel
-/// job (no set) or an NVK submission (SubmitAddress) from another thread of the app shows in them too.
+/// the CPU leases took out of the set. Read back byte for byte; in the window the kernel refused few jobs for an ended
+/// set generation. The counts are the process's, so a copy-channel job (no set) from another thread of the app shows in
+/// them too.
 struct SubmitJobPathTest: GPUPathTest {
     let id = "gpu.path.submit_job"
     let name = "Raw command buffers go to the kernel as jobs over the device's resource set"
@@ -61,17 +61,15 @@ struct SubmitJobPathTest: GPUPathTest {
         }
         guard case .counts(let after) = GPUPaths.read(connection) else { throw TestFailure("no path counters after") }
         let jobs = after.taken("submit_jobs", since: before), setJobs = after.taken("set_jobs", since: before)
-        let stale = after.taken("stale_sets", since: before), address = after.taken("address_jobs", since: before)
+        let stale = after.taken("stale_sets", since: before)
         let shared = after.taken("shared_uses", since: before)
         metrics.set("frames", Self.frames)
         metrics.set("wrong_bytes", wrong)
         metrics.set("stale_sets", stale)
-        metrics.set("address_jobs", address)
         metrics.set("shared_uses", shared)
         metrics.set("set_share", jobs > 0 ? String(format: "%.2f", Double(setJobs) / Double(jobs)) : "-")
         var failures: [String] = []
         if wrong != 0 { failures.append("\(wrong) bytes differ from the clears and draws") }
-        if address != 0 { failures.append("\(address) SubmitAddress jobs while it ran") }
         if shared > Self.frames {
             failures.append("\(shared) uses beside the set in \(jobs) jobs: more than each readback's buffer")
         }

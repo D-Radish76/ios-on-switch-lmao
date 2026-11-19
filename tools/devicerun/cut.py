@@ -122,6 +122,17 @@ CUT = [
     ),
     Check('cut.order-refused', 'm2v-cut2', 'the kernel refused Order', note=OLD_PLUGIN),
     Check(
+        'cut.kernel-legacy-line',
+        'm2v-cut5',
+        ('address_jobs=', 'SubmitAddress', 'GPU hang detail:', 'order wait'),
+        process='kernel',
+        regex=r'(?P<what>address_jobs=|SubmitAddress|order wait|GPU hang detail:.* waits on)',
+        show=('what',),
+        source='drivers/TegraGM20B (Order, Exec, ExecSurfaces, Submit and SubmitAddress left the kernel)',
+        note="the kernel's paths line lost address_jobs=, its exec-by-process line SubmitAddress, its hang detail "
+        "'waits on' and its hang panic and acquire timeouts 'order wait': any is a kernel from before",
+    ),
+    Check(
         'cut.stall-m2v',
         'm2v-cut2',
         'raw: stall:',

@@ -92,6 +92,11 @@ public enum Registry {
             PlanesPlaneOneRowsTest(), PlanesAcrossFormatsTest(), XrRowsUnder16Test(), YcbcrRowsUnder16StoresTest(),
             PlanesCopiesOpenTest(), XrTexelBufferTiledTest(), PackedMipsTest(), XrTurnedRowsUnder16Test(),
             XrOverlapRowsTest(), PackedPlaneAnySurfaceTest(), PlanarTurnedTest(), YcbcrTurnedOverlapOrderTest(),
+            YcbcrPlanesMeetTest(),
+            YcbcrCpuCopiesTest(), YcbcrTexelBuffersTest(), YcbcrTexelBufferWideTest(), PackedLevelsTest(),
+            PackedLevelsOpenTest(),
+            XrDescriptorCopiesTest(), XrDescriptorPaddingTest(), TexelRowsTest(), XrStandInRefillTest(),
+            TurnedOverlapTileOrderTest(), XrTurnedClearOrderTest(),
         ]
 
     static let video: [any HWTest] =

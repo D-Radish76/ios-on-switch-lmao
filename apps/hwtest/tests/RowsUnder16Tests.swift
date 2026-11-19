@@ -10,8 +10,8 @@ import Metal
 /// apart, 0x27f80100 twice at [16y, 16y + 8) and 0xbf at [128 + 16k, 130 + 16k) (xr_rows16_clear_off 0); read again,
 /// every texel is the read rule's over those bytes (xr_rows16_read_after_off 0), texel (0, 0) alone the clear
 /// (xr_rows16_read_after 1); a whole-target coded draw stores words at 16y + 4x over alpha bytes at 64 + 16y + x, the
-/// later word row winning where they meet (xr_rows16_draw_off 0); a coded kernel store does the same outside bytes 64
-/// to 127, where an M4 Max's word and alpha stores race (xr_rows16_kernel_off 0).
+/// later word row winning where they meet (xr_rows16_draw_off 0); a coded kernel store does the same, its word rows
+/// landing last there too (one simdgroup, the later quadgroup's store wins: xr_rows16_kernel_off 0, six runs).
 struct XrRowsUnder16Test: HWTest {
     let id = "gpu.raw.xr_rows_under_16"
     let name = "RGB10A8_2P_XR10 over planes of rows under 16 bytes reads a MiB a row apart and stores 16 apart, on raw"

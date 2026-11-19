@@ -29,7 +29,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
         }
         try RecoverKillOneTest.settle(gpu)
         let start = RawFacade.counters(of: gpu.device)
-        guard start["gpu_order"] != nil else { return .skip("the facade has no recovery counters (a release build)") }
+        guard start["reopen_us"] != nil else { return .skip("the facade has no recovery counters (a release build)") }
         let probeBench: BenchRunner
         let copier: RecoverBystander
         do {
@@ -122,7 +122,6 @@ struct RecoverKillUnderCompositorTest: HWTest {
                     copier.failure.isEmpty ? "\(copier.role.rawValue) ran with no error" : copier.failure,
                     copierStopped && copier.runs > 0 && copier.errors == 0
                 ),
-                ("GPU order on", end["gpu_order"] == 1),
                 (
                     "the compositor kept presenting within the bound",
                     shown.frames > 0 && presentGapMs <= Self.gapBoundMs
