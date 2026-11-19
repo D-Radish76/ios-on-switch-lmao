@@ -410,10 +410,10 @@ static void chan_job_fence(void *context, u32 seqno)
 
 /* The room chan_exec reserves, and the one a waiter for it (switch_gpu_chan_wait_submission_room) waits for: one
  * computation, so a waiter that returns leaves room the retried submission finds. nouveau_exec_job_run(): every user
- * entry plus our fence push and, each kicked as its own entry before them, a present wait, the task order's acquires
- * and (stats) a start stamp, one more nvif GET semaphore with each. A profile's stamps: an entry each, a stamp and a GET
- * semaphore. A profile is given up (*prof NULL) where chan_exec gives it up; one whose completion the stats' interrupt
- * pass no longer looks at (more than CHAN_NSTAMPS behind) does not hold the channel's. */
+ * entry plus our fence push and, each kicked as its own entry before them, a present wait and (stats) a start stamp,
+ * one more nvif GET semaphore with each. A profile's stamps: an entry each, a stamp and a GET semaphore. A profile is
+ * given up (*prof NULL) where chan_exec gives it up; one whose completion the stats' interrupt pass no longer looks at
+ * (more than CHAN_NSTAMPS behind) does not hold the channel's. */
 static void chan_submission_room(struct tgm_chan *chan, const struct tgm_push *pushes, u32 count,
 				 u32 dependency_count, u32 job_fences, const struct tgm_prof **prof,
 				 u32 *entries, u32 *words)
@@ -430,7 +430,7 @@ static void chan_submission_room(struct tgm_chan *chan, const struct tgm_push *p
 		stamps += switch_gpu_prof_stamped(chan->critical, &pushes[i], i, count,
 						  (*prof)->cls[i]);
 	*entries = count + 6 + stamps + job_fences + CHAN_WAKE_ENTRIES + 1;
-	*words = CHAN_FENCE_DWORDS + 64 + 5 * (TGM_ORDER_MAX + dependency_count + 1) + 16 * stamps +
+	*words = CHAN_FENCE_DWORDS + 64 + 5 * (dependency_count + 1) + 16 * stamps +
 		 SWITCH_GPU_FENCE_POINT_DWORDS * job_fences + CHAN_WAKE_DWORDS + 16 +
 		 5 * SWITCH_GPU_MAX_RELEASES;
 }
@@ -513,7 +513,6 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 	struct switch_gpu_job_emitter emitter = {&job, chan_job_entry, chan_job_fence};
 	int ret = 0;
 	int tlb = 0;
-	u32 waits = 0;
 	u32 unsettled[(TegraGM20BMaxJobDependencies + 31) / 32] = {0};
 	u32 channels = 0;
 	u32 ring_cur;
@@ -592,8 +591,7 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 	ret = nvif_chan_gpfifo_wait(&chan->chan, entries, words);
 	if (ret)
 		goto rollback;
-	channels = READ_ONCE(chan->norder) != 0;
-	channels += backing_unsettled(dependencies, dependency_count, unsettled);
+	channels = backing_unsettled(dependencies, dependency_count, unsettled);
 	channels += word_wait_count && chan->high;
 	if (channels)
 		mutex_lock(&tgm_live_lock);
@@ -615,11 +613,6 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 				  NVDEF(NV906F, SEMAPHORED, ACQUIRE_SWITCH, ENABLED));
 	PUSH_KICK(&chan->chan.push);
 	switch_gpu_chan_park_promises_locked(chan, dependencies, dependency_count, unsettled);
-	if (channels && chan->norder) {
-		/* the task's other channels' work it follows (tgm_chan_order), first, so the start stamp below times the work
-		 * itself */
-		waits = (u32)switch_gpu_order_waits_locked(chan);
-	}
 	if (channels)
 		mutex_unlock(&tgm_live_lock);
 	if (owned)
@@ -632,7 +625,7 @@ chan_exec_body(struct tgm_chan *chan, const struct tgm_push *pushes, uint32_t co
 				   nvkm_timer_read(tgm_gpu.device->timer));
 		}
 		if (chan->high)
-			WRITE_ONCE(switch_gpu_jobs_next(&chan->jobs)->waits, waits);
+			WRITE_ONCE(switch_gpu_jobs_next(&chan->jobs)->waits, 0);
 		push_stamp(&chan->chan.push,
 			   chan_stamps_va(chan, next) + offsetof(struct tgm_stamps, start), next);
 		PUSH_KICK(&chan->chan.push);

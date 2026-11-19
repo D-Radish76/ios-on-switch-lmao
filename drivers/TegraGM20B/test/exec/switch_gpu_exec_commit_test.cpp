@@ -333,7 +333,7 @@ TEST_F(ExecCommit, GpfifoWaitFailureRestoresTheRingAndPublishesNothing)
 	EXPECT_EQ(switch_exec_backing::pending(written), 0u);
 }
 
-// SubmitJob and SubmitAddress begin no transaction for a job with no pushes: owned is the empty one.
+// SubmitJob begins no transaction for a job with no pushes: owned is the empty one.
 TEST_F(ExecCommit, NoPushesNoForcedFenceReturnsWithoutAKick)
 {
 	const uint64_t own = ioLockTakes().load(), live = switch_exec_mutex_takes();
@@ -501,20 +501,18 @@ TEST_F(ExecCommit, ForcedEmptyWaitJobsTakeNoOwnershipOrder)
 {
 	switch_exec_chan *source = switch_exec_chan_new(0x120, 1);
 	switch_exec_chan_live(source, 1);
-	for (unsigned mode = 0; mode < 4; ++mode) {
+	for (unsigned mode = 0; mode < 3; ++mode) {
 		SCOPED_TRACE(mode);
 		consumer = switch_exec_chan_new(0x110 + mode, 2 + mode);
 		if (mode < 2)
 			words = {{0x100, 1, 0x120}};
-		else if (mode == 2)
-			siblings = {{switch_exec_chan_tgm(source), 1}};
 		else
-			switch_exec_chan_task_order(consumer, source, 1);
+			siblings = {{switch_exec_chan_tgm(source), 1}};
 		switch_exec_chan_high(consumer, mode == 1);
 		const uint64_t own = ioLockTakes().load(), live = switch_exec_mutex_takes();
 		ASSERT_EQ(exec(nullptr, 0, kJob | SWITCH_GPU_SUBMIT_FORCE_FENCE), 0);
 		EXPECT_EQ(ioLockTakes().load() - own, 0u);
-		EXPECT_EQ(switch_exec_mutex_takes() - live, mode == 1 || mode == 3 ? 1u : 0u);
+		EXPECT_EQ(switch_exec_mutex_takes() - live, mode == 1 ? 1u : 0u);
 		expect_published(false, false);
 		if (mode < 2)
 			EXPECT_EQ(switch_exec_chan_word_acquires(consumer, 0x100, 1), 1u);
@@ -541,7 +539,6 @@ TEST_F(ExecCommit, CombinedWaitsReadEachDependencyOnceUnderOneLiveHold)
 	siblings = {{switch_exec_chan_tgm(second), 2}};
 	words = {{0x108, 5, 0x103}};
 	switch_exec_chan_high(consumer, 1);
-	switch_exec_chan_task_order(consumer, first, 2);
 	const uint64_t status = switch_exec_backing::status_reads(),
 		       live = switch_exec_mutex_takes();
 	const uint32_t parked = switch_exec_parked_promises();
@@ -552,7 +549,6 @@ TEST_F(ExecCommit, CombinedWaitsReadEachDependencyOnceUnderOneLiveHold)
 	expect_published();
 	for (auto *source : {first, second})
 		EXPECT_EQ(switch_exec_chan_acquires(consumer, source, 1), 1u);
-	EXPECT_EQ(switch_exec_chan_acquires(consumer, first, 2), 1u);
 	EXPECT_EQ(switch_exec_chan_acquires(consumer, second, 2), 1u);
 	for (uint32_t pool : {0x100u, 0x104u})
 		EXPECT_EQ(switch_exec_chan_word_acquires(consumer, pool, 1), 1u);

@@ -318,11 +318,6 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 			  keepPromises(record.promises, releases)))
 		return refuseWrites(switch_gpu_refuse(why, SwitchGpuRefusal::Promises,
 						      kIOReturnBadArgument, keptCount, count));
-	const uint32_t submit =
-		TegraGM20BSubmitVisibilityExplicit |
-		((head.flags & TegraGM20BJobExternal) ? uint32_t(TegraGM20BSubmitExternalVisibility)
-						      : 0u) |
-		((head.flags & TegraGM20BJobHasEvents) ? uint32_t(TegraGM20BSubmitHasEvents) : 0u);
 	switch_gpu_backing_transaction transaction = {};
 	switch_gpu_backing_token completion = {};
 	uint32_t seqno = 0, dependencies = 0, jobVisibility = 0, leaseCount = 0;
@@ -425,7 +420,7 @@ refresh:
 			const bool quietEnd = switch_gpu_quiet_end(quiet, semanticBound,
 								   scanoutWrites, closesGroup);
 			jobVisibility =
-				switch_gpu_job_visibility(submit, events->signals(),
+				switch_gpu_job_visibility(head.flags, events->signals(),
 							  unlockedWrites || scanoutWrites,
 							  hostWritten || transaction.host_written) |
 				(quietEnd ? uint32_t(SWITCH_GPU_SUBMIT_QUIET) : 0u);
@@ -490,7 +485,7 @@ refresh:
 		switch_gpu_path_job(jobVisibility, unlockedWrites, leanChannels_[slot], rangedUses);
 		switch_gpu_path_taken(SWITCH_GPU_PATH_NATIVE_READ, nativeReads);
 		for (uint32_t i = 0; i < writtenCount; ++i)
-			tgm_coherency_wrote_listed(job.written[i], tgm_chan_uid(chan), seqno);
+			tgm_coherency_wrote(job.written[i], tgm_chan_uid(chan), seqno);
 	}
 	job.phases.end(TGM_SUBMIT_COMMIT);
 #if TGM_STATS

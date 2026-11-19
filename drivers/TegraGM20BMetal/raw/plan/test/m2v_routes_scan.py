@@ -53,8 +53,8 @@ FRONTEND_HEADERS = {
     'NativeMetalArtifactCache.h',
     'TwoPlaneStandIn.h',
 }
-# The kernel's submission entries only NVK calls (TegraGM20BABI.h)
-KERNEL_LEGACY = ('Exec', 'ExecSurfaces', 'Submit', 'SubmitAddress')
+# The kernel methods the cut deleted (TegraGM20BABI.h keeps the names Mesa NVK's host build still compiles)
+KERNEL_GONE = ('Exec', 'GetTimestamp', 'Order', 'ExecSurfaces', 'Submit', 'SubmitAddress')
 
 TWIN = re.compile(r'\b\w*[Tt]win\w*\b')
 BRIDGE = re.compile(r'\b(native_bridge_metal_\w+|nmb_\w+|switch_nmb_\w+)\b')
@@ -193,9 +193,8 @@ class Census:
             if p.name != 'TegraGM20BABI.h'
         }
         texts.update({p.name: t for p, t in self.code.items()})
-        for method in KERNEL_LEGACY:
+        for method in KERNEL_GONE:
             word = re.compile(r'\bTegraGM20BMethod' + method + r'\b')
-            self.routes[('kernel', method)]
             for file, text in texts.items():
                 if word.search(text):
                     self.add('kernel', method, file)

@@ -698,7 +698,7 @@ TEST(HangBlame, ALateKernelVictimIsNeverFatal)
 }
 
 // iconservicesagent's channel 20 on slice B's boot: GR and PBDMA0 on another process's long 3D work that keeps going,
-// channel 20 not resident with work pending behind it, and the late sibling's order acquire on channel 20.
+// channel 20 not resident with work pending behind it, and the late sibling's acquire on channel 20.
 TEST(HangBlame, ChannelsWaitingBehindAnEngineThatMovesAreNotKilled)
 {
 	Candidates k{{kMovingResident, kStuckClient, waiting(kStuckClient, 1)}};

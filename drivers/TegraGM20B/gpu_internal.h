@@ -163,10 +163,7 @@ struct tgm_vm {
 	struct nvif_vmm vmm;
 	struct mutex map_lock;
 	struct list_head kmaps;
-	u64 fences_va; /* every connection's fence page, read-only (tgm_chan_order's acquires), 0: not mapped */
-	struct list_head
-		imports; /* struct tgm_import: first pages of the host imports made in it (tgm_live_lock) */
-	int imports_lost;         /* one could not be recorded: taken as importing every page */
+	u64 fences_va; /* every connection's fence page, read-only (a job's acquires on other channels), 0: not mapped */
 	struct tgm_tlb_space tlb; /* GPU-ordered maps (TegraGM20BTlb.h) */
 	const void *owner;        /* tgm_vm_claim: the connection whose channels alone address it */
 	const void *connection; /* tgm_vm_claim_connection: the client whose pushes a hang reads */
@@ -175,12 +172,6 @@ struct tgm_vm {
 	u64 bind_va;
 	const volatile u32 *bind_cpu;
 	u32 bind_target;
-};
-
-struct tgm_import {
-	struct list_head head;
-	u64 pa;
-	u32 refs;
 };
 
 struct switch_gpu_memory_view {
@@ -237,15 +228,6 @@ struct tgm_stamp {
 struct tgm_stamps {
 	struct tgm_stamp start,
 		end; /* the GPU starts the submission (WFI: the one before finished) / finished it */
-};
-
-/* An acquire tgm_chan_order queued for a channel's next submission: another channel's fence word reaching seqno. */
-struct tgm_order {
-	u64 va;                  /* the source's fence word in the waiter's address space */
-	const volatile u32 *cpu; /* and in the kernel's */
-	u64 id;                  /* the source channel */
-	u32 seqno;
-	u32 chid; /* the source's hardware channel */
 };
 
 struct tgm_chan {
@@ -357,12 +339,6 @@ struct tgm_chan {
 	u32 prof_n[TGM_PC_COUNT];
 	u64 prof_dn[TGM_PC_COUNT],
 		prof_sdn[TGM_PC_COUNT]; /* draws, and draws shaded per sample, by class */
-	/* tgm_chan_order: its connection's task (tgm_chan_set_group), the acquires queued for its next submission
-	 * (tgm_live_lock), and the last one kicked (a hang's line names it while it has not passed) */
-	const void *group;
-	u32 norder;
-	struct tgm_order order[TGM_ORDER_MAX];
-	struct tgm_order waited;
 	struct tgm_hang_log hang;
 	/* tgm_hang_recover: its GPFIFO and pushbuffer GET as last read, and when they last moved */
 	u64 get_seen, get_ns;
@@ -384,9 +360,6 @@ struct tgm_chan {
 	int iso_retried; /* tgm_iso_deadline asked nvkm for its kill again */
 #if TGM_STATS
 	u64 killed_ns; /* tgm_chan_killed's time, for a fault's line (TegraGM20BUserClient.cpp) */
-	/* this window's SubmitAddress calls on it, by phase (tgm_stats_submit), for its owner */
-	u64 stat_submit_ns[TGM_SUBMIT_PHASES], stat_submit_total, stat_submit_max;
-	u32 stat_submits;
 	unsigned int gr_slot; /* gpu_stats_ctx.c's slot for its GR context, plus 1; 0: none */
 #endif
 };
@@ -602,8 +575,6 @@ int tgm_chan_ramfc_open(struct tgm_chan *chan, int critical);
 
 static int chan_push_wait(struct tgm_chan *chan, u32 push_nr);
 
-static void order_forget(struct tgm_chan *chan);
-
 /* fence pages:
  * Every connection's fence page (its channels' seqno words) is one page of a single pool range, so the GPU present's
  * address space maps all of them once and waits on any user channel with a semaphore acquire. Pages are handed out
@@ -642,7 +613,6 @@ void tgm_clock_anchors_fill(u32 page);
 extern u64 tgm_fences_pas[];
 extern struct tgm_mem *tgm_fences_mem;
 int tgm_fences_map(struct tgm_vm *vm);
-int switch_gpu_order_waits_locked(struct tgm_chan *chan);
 
 /* CPU readers of GPU-written memory:
  * The GPU is not IO-coherent; its sysmem PTEs are volatile (no GPU L2 lines), so a submission's writes are in DRAM once

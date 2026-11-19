@@ -254,12 +254,10 @@ IOReturn AGXDeviceUserClient::boImport(const TegraGM20BAbiBoImport *in,
 	const bool critical = critical_;
 	if (!published) {
 		tgm_stats_import(static_cast<int64_t>(in->bytes), first);
-		// this connection may draw into what it imports (the GPU present asks)
-		tgm_vm_import_note(vm_, first, 1);
 	}
 	IOLockUnlock(lock_);
 	if (published) {
-		// NotOpen: the connection's submissions are shut; NoMemory: no room in its BO or surface tables
+		// NotOpen: the connection's submissions are shut; NoMemory: no room in its BO table
 		switch_refusal("bo-import", "publish", "IOSurface %u: %llu bytes at %#llx imported, not published (%#x)",
 			       in->surface_id, in->bytes, in->address, published);
 		releaseBo(bo);

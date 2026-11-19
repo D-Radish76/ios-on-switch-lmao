@@ -187,7 +187,6 @@ kernel_driver(
         "TegraGM20BViews.cpp",
         "TegraGM20BRecord.cpp",
         "TegraGM20BOwnerMemory.cpp",
-        "TegraGM20BExecSurfaces.cpp",
         "TegraGM20BSharedWiring.cpp",
         "TegraGM20BSurfacePrefault.cpp",
         "TegraGM20BReadback.cpp",

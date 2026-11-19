@@ -65,7 +65,7 @@ template <typename T> static bool reservedZero(const T &v)
 IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSize, void *out,
 				  const uint32_t *outSize)
 {
-	// exact record sizes; VmBind/Exec also accept just `count` entries
+	// exact record sizes; VmBind also accepts just `count` entries
 	uint32_t wantIn = 0;
 	uint32_t wantOut = 0;
 	uint32_t count = 0;
@@ -103,10 +103,6 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 	case TegraGM20BMethodCpuRelease:
 		wantIn = sizeof(TegraGM20BAbiCpuAccess);
 		break;
-	case TegraGM20BMethodSubmitAddress:
-		wantIn = sizeof(TegraGM20BAbiSubmitAddress);
-		wantOut = sizeof(TegraGM20BAbiExecReply);
-		break;
 	case TegraGM20BMethodSubmitJob:
 		wantIn = sizeof(TegraGM20BAbiSubmitAddress);
 		wantOut = sizeof(TegraGM20BAbiExecReply);
@@ -140,31 +136,8 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 	case TegraGM20BMethodChannelDestroy:
 		wantIn = sizeof(TegraGM20BAbiChannel);
 		break;
-	case TegraGM20BMethodSubmit:
-		if (inSize < sizeof(TegraGM20BAbiSubmit) ||
-		    !tgm_fences::ExecSurfaces::validSubmit(
-			    static_cast<const TegraGM20BAbiSubmit *>(in), inSize))
-			return kIOReturnBadArgument;
-		wantIn = inSize;
-		wantOut = sizeof(TegraGM20BAbiExecReply);
-		break;
-	case TegraGM20BMethodExec:
-		if (inSize < offsetof(TegraGM20BAbiExec, pushes))
-			return kIOReturnBadArgument;
-		count = static_cast<const TegraGM20BAbiExec *>(in)->count;
-		if (count > TegraGM20BMaxPushes)
-			return kIOReturnBadArgument;
-		wantIn = inSize == sizeof(TegraGM20BAbiExec)
-				 ? inSize
-				 : static_cast<uint32_t>(offsetof(TegraGM20BAbiExec, pushes) +
-							 count * sizeof(TegraGM20BAbiPush));
-		wantOut = sizeof(TegraGM20BAbiExecReply);
-		break;
 	case TegraGM20BMethodWaitFence:
 		wantIn = sizeof(TegraGM20BAbiWaitFence);
-		break;
-	case TegraGM20BMethodGetTimestamp:
-		wantOut = sizeof(TegraGM20BAbiTimestamp);
 		break;
 	case TegraGM20BMethodGetStatus:
 		wantIn = sizeof(TegraGM20BAbiChannel);
@@ -176,10 +149,6 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 		break;
 	case TegraGM20BMethodUnmap:
 		wantIn = sizeof(TegraGM20BAbiUnmap);
-		break;
-	case TegraGM20BMethodOrder:
-		wantIn = sizeof(TegraGM20BAbiOrder);
-		wantOut = sizeof(TegraGM20BAbiOrderReply);
 		break;
 	case TegraGM20BMethodSurfaceWrites:
 		wantIn = sizeof(TegraGM20BAbiSurfaceWrites);
@@ -195,17 +164,6 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 	case TegraGM20BMethodSurfaceLayout:
 		wantIn = sizeof(TegraGM20BAbiSurfaceLayout);
 		wantOut = sizeof(TegraGM20BAbiSurfaceLayoutReply);
-		break;
-	case TegraGM20BMethodExecSurfaces:
-		if (inSize < offsetof(TegraGM20BAbiExecSurfaces, uses))
-			return kIOReturnBadArgument;
-		count = static_cast<const TegraGM20BAbiExecSurfaces *>(in)->count;
-		if (count > TegraGM20BMaxExecSurfaces)
-			return kIOReturnBadArgument;
-		wantIn = inSize == sizeof(TegraGM20BAbiExecSurfaces)
-				 ? inSize
-				 : static_cast<uint32_t>(offsetof(TegraGM20BAbiExecSurfaces, uses) +
-							 count * sizeof(TegraGM20BAbiSurfaceUse));
 		break;
 	case TegraGM20BMethodPriority:
 		wantIn = sizeof(TegraGM20BAbiPriority);
@@ -293,15 +251,6 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 		if (!reservedZero(static_cast<const TegraGM20BAbiUnmap *>(in)->reserved))
 			return kIOReturnBadArgument;
 		break;
-	case TegraGM20BMethodOrder:
-		if (!reservedZero(static_cast<const TegraGM20BAbiOrder *>(in)->reserved))
-			return kIOReturnBadArgument;
-		break;
-	case TegraGM20BMethodExecSurfaces:
-		if (!tgm_fences::ExecSurfaces::valid(
-			    static_cast<const TegraGM20BAbiExecSurfaces *>(in)))
-			return kIOReturnBadArgument;
-		break;
 	case TegraGM20BMethodPriority:
 		if (static_cast<const TegraGM20BAbiPriority *>(in)->priority >
 			    TegraGM20BMaxPriority ||
@@ -333,9 +282,6 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 		return ioreturn(events_.word(input->handle, input->channel, &reply->address,
 					     &reply->base, &reply->floor));
 	}
-	if (method == TegraGM20BMethodSubmitAddress)
-		return submitAddress(static_cast<const TegraGM20BAbiSubmitAddress *>(in),
-				     static_cast<TegraGM20BAbiExecReply *>(out));
 	if (method == TegraGM20BMethodSubmitJob)
 		return submitJob(static_cast<const TegraGM20BAbiSubmitAddress *>(in),
 				 static_cast<TegraGM20BAbiExecReply *>(out));
@@ -375,10 +321,6 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 	}
 	if (method == TegraGM20BMethodUnmap)
 		return unmapToken(static_cast<const TegraGM20BAbiUnmap *>(in));
-	if (method == TegraGM20BMethodGetTimestamp) {
-		static_cast<TegraGM20BAbiTimestamp *>(out)->ns = tgm_timestamp_ns();
-		return kIOReturnSuccess;
-	}
 	if (method == TegraGM20BMethodClockAnchors) {
 		*static_cast<TegraGM20BAbiClockAnchorsReply *>(out) = {
 			fence_gpu_ + TegraGM20BClockAnchorOffset, kFenceToken, 0};
@@ -448,7 +390,7 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 		IOLockUnlock(lock_);
 		return kIOReturnNotOpen;
 	}
-	// A channel killed for a GPU fault or hang (client fault isolation) refuses only what names it (Exec, Order and
+	// A channel killed for a GPU fault or hang (client fault isolation) refuses only what names it (SubmitJob and
 	// WaitFence answer kIOReturnNotResponding, GetStatus its error); the connection's memory, binds and other channels
 	// go on, and ChannelCreate makes it a new one, as a GPU restart leaves a Metal device on iOS.
 	IOReturn ret = 0;
@@ -473,38 +415,9 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 	case TegraGM20BMethodChannelDestroy:
 		ret = channelDestroy(static_cast<const TegraGM20BAbiChannel *>(in));
 		break;
-	case TegraGM20BMethodSubmit: {
-		const auto *submit = static_cast<const TegraGM20BAbiSubmit *>(in);
-		if (!submit->channel || submit->channel > kMaxChannels ||
-		    !chans_[submit->channel - 1]) {
-			ret = kIOReturnBadArgument;
-			break;
-		}
-		auto *pushes = reinterpret_cast<TegraGM20BAbiPush *>(
-			const_cast<TegraGM20BAbiSubmit *>(submit + 1));
-		const auto *uses = reinterpret_cast<const TegraGM20BAbiSurfaceUse *>(
-			pushes + submit->push_count);
-		const bool exact = !submit->surface_flags;
-		ret = exec(submit->channel, pushes, submit->push_count,
-			   static_cast<TegraGM20BAbiExecReply *>(out), uses, submit->surface_count,
-			   exact);
-		break;
-	}
-
-	case TegraGM20BMethodExec: {
-		auto *e =
-			const_cast<TegraGM20BAbiExec *>(static_cast<const TegraGM20BAbiExec *>(in));
-		ret = exec(e->channel, e->pushes, count,
-			   static_cast<TegraGM20BAbiExecReply *>(out));
-		break;
-	}
 	case TegraGM20BMethodGetStatus:
 		ret = getStatus(static_cast<const TegraGM20BAbiChannel *>(in),
 				static_cast<TegraGM20BAbiStatus *>(out));
-		break;
-	case TegraGM20BMethodOrder:
-		ret = order(static_cast<const TegraGM20BAbiOrder *>(in),
-			    static_cast<TegraGM20BAbiOrderReply *>(out));
 		break;
 	case TegraGM20BMethodSurfaceWrites:
 		tgm_coherency_gpu_writes(
@@ -518,9 +431,6 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 	case TegraGM20BMethodSurfaceLayout:
 		ret = surfaceLayout(static_cast<const TegraGM20BAbiSurfaceLayout *>(in),
 				    static_cast<TegraGM20BAbiSurfaceLayoutReply *>(out));
-		break;
-	case TegraGM20BMethodExecSurfaces:
-		ret = execSurfaces(static_cast<const TegraGM20BAbiExecSurfaces *>(in));
 		break;
 	case TegraGM20BMethodResourceSetRelease:
 		ret = resourceSetRelease(static_cast<const TegraGM20BAbiResourceSetRelease *>(in));

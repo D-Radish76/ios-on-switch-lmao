@@ -21,7 +21,6 @@
 #include "TegraGM20BABI.h"
 #include "TegraGM20BJobABI.h"
 #include "TegraGM20BBindHistory.h"
-#include "TegraGM20BExecSurfaces.h"
 #include "TegraGM20BGpu.h"
 #include "TegraGM20BLayout.h"
 #include "TegraGM20BLayoutFit.h"
@@ -40,7 +39,7 @@
 #include "SwitchGpuBoIndex.h"
 #include "SwitchGpuBindingTable.h"
 #include "SwitchGpuGatedMethods.h"
-#include "SwitchGpuLegacyUses.h"
+#include "SwitchGpuClaims.h"
 #include "SwitchGpuSubmitGate.h"
 #include "SwitchGpuNativeSurface.h"
 #include "SwitchGpuNativeUse.h"
@@ -77,14 +76,14 @@ namespace tgm_uc
 {
 constexpr uint32_t kMaxChannels = 8;  // fence slots: 16 bytes each in the connection's fence page
 constexpr uint32_t kJobBytes =
-	(sizeof(TegraGM20BAbiJob) > sizeof(TegraGM20BAbiSubmit) ? sizeof(TegraGM20BAbiJob)
-								: sizeof(TegraGM20BAbiSubmit)) +
-	TegraGM20BMaxJobPushes * sizeof(TegraGM20BAbiPush) +
+	sizeof(TegraGM20BAbiJob) + TegraGM20BMaxJobPushes * sizeof(TegraGM20BAbiPush) +
 	TegraGM20BMaxJobUses * sizeof(TegraGM20BAbiSurfaceUse) + sizeof(TegraGM20BAbiSubmitEvents) +
 	TegraGM20BMaxJobEvents *
 		(sizeof(TegraGM20BAbiEventUse) + sizeof(TegraGM20BAbiSignalRelease)) +
 	sizeof(TegraGM20BAbiSubmitAdmission) + sizeof(TegraGM20BAbiJobPromises);
 constexpr uint64_t kMaxBoBytes = 256ULL << 20;
+// IOKit's inline structure limit (4096 bytes) less the tunnel's header
+constexpr uint32_t kMaxRecordBytes = 4096 - 8;
 constexpr uint32_t kFenceToken = 0xfe000001u;
 // GPU pool pages are outside the VM (arm_vm_init.c switch_ram_init), so the kernel reports them as device
 // memory, and for a physical descriptor IOKit fixes the user mapping's memory type from that default when the descriptor
@@ -358,7 +357,7 @@ class AGXDeviceUserClient : public IOUserClient
 		SwitchGpuCpuSurface reservation;
 	};
 
-	// Debug kernels: a SubmitAddress's time by phase, for the "exec by process" line (tgm_stats_submit).
+	// Debug kernels: a SubmitJob's time by phase (switch_gpu_job_submitted).
 	struct SubmitPhases {
 #if TGM_STATS
 		uint64_t at = 0, ns[TGM_SUBMIT_PHASES] = {};
@@ -423,7 +422,6 @@ class AGXDeviceUserClient : public IOUserClient
 			      SwitchGpuAsyncReference &asyncReference);
 	IOReturn memoryForType(UInt32 type, IOOptionBits *options, IOMemoryDescriptor **memory);
 	SwitchGpuMethodGate methods_;
-	JobScratch job_ = {};
 	JobScratch channelJobs_[kMaxChannels] = {};
 	IOLock *submitLocks_[kMaxChannels] = {};
 	SwitchGpuSubmitGate submitGate_;
@@ -485,8 +483,6 @@ class AGXDeviceUserClient : public IOUserClient
 	uint32_t retiredCount_ = 0, retireRemaining_ = 0, retirementPending_ = 0,
 		 retirementStopped_ = 0;
 	uint64_t retirementEpoch_ = 0, retireScanEpoch_ = 0;
-	tgm_fences::ExecSurfaces
-		surfaces_;  // the imports of bos_ with a coherency entry, and method 17's lists
 	Mapping *maps_ = nullptr;  // under lock_
 	Binding *binds_ = nullptr;
 	uint32_t nbinds_ = 0, cap_binds_ = 0;
@@ -511,8 +507,6 @@ class AGXDeviceUserClient : public IOUserClient
 	bool entitlementsRead_ = false, realTimeEntitled_ = false, restartNoKill_ = false;
 	bool realTimeLogged_ = false, highLogged_ = false, compositorLogged_ = false;
 	uint32_t level_ = TGM_LEVEL_FOREGROUND;
-	bool importsWritten_ =
-		false;  // TegraGM20BPushImportsWritten: every submission marks every writable import
 	bool quotaLogged_ = false;
 	bool compressibleLogged_ = false;  // a compressible BoAlloc refused, logged once
 	bool systemLogged_ =
@@ -601,20 +595,13 @@ class AGXDeviceUserClient : public IOUserClient
 	void releaseCpuLeases();
 	static bool reserveJob(JobScratch &job, uint32_t uses);
 	static void freeJob(JobScratch &job);
-	IOReturn submitAddress(const TegraGM20BAbiSubmitAddress *in, TegraGM20BAbiExecReply *out);
 	IOReturn vmBind(const TegraGM20BAbiVmBind *in, uint32_t count);
 	IOReturn channelCreate(const TegraGM20BAbiChannelCreate *in,
 			       TegraGM20BAbiChannelCreateReply *out);
 	IOReturn channelDestroy(const TegraGM20BAbiChannel *in);
-	IOReturn exec(uint32_t channel, TegraGM20BAbiPush *input, uint32_t count,
-		      TegraGM20BAbiExecReply *out, const TegraGM20BAbiSurfaceUse *uses = nullptr,
-		      uint32_t useCount = 0, bool native = false, JobScratch *scratch = nullptr,
-		      uint32_t visibility = 0, SwitchGpuEventJob *events = nullptr,
-		      uint64_t admissionCookie = 0);
 	IOReturn waitFence(const TegraGM20BAbiWaitFence *in);
 	IOReturn getStatus(const TegraGM20BAbiChannel *in, TegraGM20BAbiStatus *out);
 	IOReturn mapToken(const TegraGM20BAbiMap *in, TegraGM20BAbiMapReply *out);
-	IOReturn order(const TegraGM20BAbiOrder *in, TegraGM20BAbiOrderReply *out);
 	IOReturn nativeSurfaceView(const TegraGM20BAbiNativeSurfaceView *in,
 				   TegraGM20BAbiNativeSurfaceViewReply *out);
 	IOReturn surfaceLayout(const TegraGM20BAbiSurfaceLayout *in,
@@ -623,7 +610,6 @@ class AGXDeviceUserClient : public IOUserClient
 				   TegraGM20BAbiSurfaceLayoutInfo *out, bool canonical);
 	void applyLevel(bool allChannels = true);
 	IOReturn setPriority(const TegraGM20BAbiPriority &asked);
-	IOReturn execSurfaces(const TegraGM20BAbiExecSurfaces *in);
 	IOReturn resourceSetCreate(const TegraGM20BAbiResourceSetCreate *in,
 				   TegraGM20BAbiResourceSetCreateReply *out);
 	IOReturn attachSet(const TegraGM20BAbiResourceSetCreate *in, TegraGM20BAbiSurfaceUse *uses,

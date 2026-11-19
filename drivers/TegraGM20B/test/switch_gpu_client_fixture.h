@@ -422,16 +422,6 @@ public:
 		}
 	} submitGate_;
 
-	struct Surfaces {
-		void clear()
-		{
-		}
-
-		void remove(uint64_t)
-		{
-		}
-	} surfaces_;
-
 	struct Service {
 		void stop()
 		{

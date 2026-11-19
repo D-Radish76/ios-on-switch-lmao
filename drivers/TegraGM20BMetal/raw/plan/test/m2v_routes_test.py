@@ -8,7 +8,8 @@ it logs (an error line kept in release, kits/SwitchRefusal); a row main already 
 files. The identifiers that name an m2v twin are counted and pinned too: after the cut the count is 0, and every twin
 row left is raw's own form, which the rename step (S4) renames. The frontend and the bridge left the plugin (S5): an
 include of their headers, an NB class, a type only the frontend declares or an nmb_ symbol the translation does not
-declare fails whether or not a row names it.
+declare fails whether or not a row names it. So does a kernel method the cut deleted (S6), named again in the kernel or
+the plugin.
 """
 
 import csv
@@ -85,6 +86,14 @@ class Routes(unittest.TestCase):
             or (route == 'bridge' and name not in translation)
         )
         self.assertEqual(back, [], 'the plugin names the frontend or the bridge again')
+
+    def test_the_deleted_kernel_methods_stay_out(self) -> None:
+        back = sorted(
+            f'{name}: {",".join(sorted(files))}'
+            for (route, name), files in self.census.routes.items()
+            if route == 'kernel'
+        )
+        self.assertEqual(back, [], 'the kernel or the plugin names a deleted kernel method again')
 
     def test_m2v_twins_pinned(self) -> None:
         product = [r for r in self.rows if r['kind'] == 'product' and r['route'] == 'twin']

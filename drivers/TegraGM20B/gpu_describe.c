@@ -41,17 +41,10 @@ void tgm_chan_describe(struct tgm_chan *chan, char *buf, unsigned int len)
 void tgm_chan_hung(struct tgm_chan *chan, const char *who, uint32_t seqno, uint64_t waited_ns)
 {
 	char state[TGM_HANG_LINE];
-	char order[64] = "";
-	const struct tgm_order *w = &chan->waited;
 	tgm_chan_describe(chan, state, sizeof(state));
-	/* still waiting for another channel of its task (tgm_chan_order) */
-	if (w->cpu && (s32)(READ_ONCE(*w->cpu) - w->seqno) < 0) {
-		scnprintf(order, sizeof(order), ", order wait on chan %llu fence %u (at %u)", w->id,
-			  w->seqno, READ_ONCE(*w->cpu));
-	}
 	nvxnu_panic("tegra-gm20b: %s: fence %u still pending after %llu ms and no GPU error "
-		    "reported: %s%s",
-		    who, seqno, waited_ns / 1000000, state, order);
+		    "reported: %s",
+		    who, seqno, waited_ns / 1000000, state);
 }
 
 void tgm_engine_state(char *buf, unsigned int len)

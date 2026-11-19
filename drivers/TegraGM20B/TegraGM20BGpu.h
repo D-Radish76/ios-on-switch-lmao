@@ -213,9 +213,8 @@ struct tgm_push {
 };
 /* Append the pushes, then the fence (WFI semaphore release of the next seqno), then kick. User mappings are
  * L2-cacheable: the L2's clean lines are invalidated on the GPU before the pushes are fetched and its dirty lines
- * written back before the seqno is released (gpu_inline.h l2_on). The pushes run after what the acquires tgm_chan_order
- * queued for the channel wait for. -EBUSY when the GPFIFO stays full for 1 s (a panic from the self-test on), -EIO on a
- * dead channel. */
+ * written back before the seqno is released (gpu_inline.h l2_on). -EBUSY when the GPFIFO stays full for 1 s (a panic
+ * from the self-test on), -EIO on a dead channel. */
 struct tgm_prof;
 int tgm_chan_exec(struct tgm_chan *chan, const struct tgm_push *push, uint32_t count,
 		  uint32_t *seqno, const struct tgm_prof *prof);
@@ -385,17 +384,6 @@ void tgm_chan_need(struct tgm_chan *chan, uint32_t seqno);
 void tgm_chan_need_uid(uint32_t uid, uint32_t seqno);
 void tgm_chan_need_tokens(const struct switch_gpu_backing_token *tokens, uint32_t count);
 void tgm_chan_quiet_wake(struct tgm_chan *chan);
-/* The group a channel belongs to (its connection's task): tgm_chan_order relates the channels of one group. */
-void tgm_chan_set_group(struct tgm_chan *chan, const void *group);
-/* GPU-side order between the channels of chan's group (TegraGM20BABI.h method 14), no CPU wait: semaphore acquires the
- * channels' next tgm_chan_exec starts with. TGM_ORDER_AFTER: chan's next submission waits for the last submission of every
- * other channel of the group with work pending; TGM_ORDER_BEFORE: every other channel's next submission waits for chan to
- * complete `seqno` (0: its last submission; a later one is -EINVAL). *queued: the acquires queued. -ENODEV: an address
- * space has no view of the fence pages; -ENOSPC: a channel has TGM_ORDER_MAX acquires queued from other channels. */
-#define TGM_ORDER_AFTER 1u
-#define TGM_ORDER_BEFORE 2u
-#define TGM_ORDER_MAX 16
-int tgm_chan_order(struct tgm_chan *chan, uint32_t flags, uint32_t seqno, uint32_t *queued);
 /* 0 healthy; else the CONTRACT.md error code (1 MMU fault, 2 GR exception, 3 host error, 4 timeout). Only before the
  * self-test passed, or under client fault isolation for a client's channel: an error on a kernel channel panics
  * (nvkm's report in the panic string). */
@@ -494,8 +482,6 @@ void tgm_present_pass(void);
 void tgm_present_filter_attach(const struct switch_gpu_backing_token *token);
 void tgm_present_filter_detach(void);
 void tgm_present_filter(void);
-/* Host import bookkeeping: `pa` is the import's first page; add 1 when made, 0 when released (gpu_sync.c vm_imports). */
-void tgm_vm_import_note(struct tgm_vm *vm, uint64_t pa, int add);
 
 /* Clean+invalidate the CPU caches over pages of ordinary RAM (by physical address), so the GPU, which does not snoop
  * them, reads what the CPU wrote and no dirty line is later written back over what the GPU wrote. */
@@ -506,9 +492,8 @@ void tgm_cpu_clean_pages(const uint64_t *pas, uint32_t npages);
  * IOSurface) and the import's page list; it returns the entry the import holds (NULL without memory: no lazy
  * coherency). The importer cleans its pages itself, then says so (cleaned), unless *covered: a live import of the
  * same surface that finished its clean, kept clean since by the traps, already spans them. gpu_writes: the import does
- * not say the GPU only reads it (TegraGM20BImportGpuReads). put at release; wrote from Exec, for a writable import a
- * submission may have written: it marks only a surface the GPU may write. take_stats returns and zeroes the traps' lock
- * invalidations and unlock cleans (count, bytes each). */
+ * not say the GPU only reads it (TegraGM20BImportGpuReads). put at release; wrote from SubmitJob, for an import a job
+ * lists as written. take_stats returns and zeroes the traps' lock invalidations and unlock cleans (count, bytes each). */
 struct tgm_coh;
 int tgm_coherency_init(void);
 struct tgm_coh *tgm_coherency_add(uint64_t pa, uint32_t surface_id, const uint64_t *pas,
@@ -521,23 +506,12 @@ struct switch_gpu_backing;
 int tgm_coherency_pin(struct tgm_coh *c, struct switch_gpu_backing *backing, void *surface,
 		      void (*release_surface)(void *));
 void tgm_coherency_put(struct tgm_coh *c);
-/* always: mark it even if the GPU only samples it (TegraGM20BPushImportsWritten). uid, seqno: the submission (channel
- * tgm_chan_uid, its fence seqno) that may have written it, which a CPU lock waits for. */
-void tgm_coherency_wrote(struct tgm_coh *c, int always, uint32_t uid, uint32_t seqno);
-/* The submissions an entry keeps as its writers: the raw path's channel and m2v's, in each of two processes. A later one
- * of the same channel takes its slot, and so does any once its writer completed; past that the entry loses track. */
+/* uid, seqno: the submission (channel tgm_chan_uid, its fence seqno) that may have written it, which a CPU lock waits
+ * for. */
+void tgm_coherency_wrote(struct tgm_coh *c, uint32_t uid, uint32_t seqno);
+/* The submissions an entry keeps as its writers. A later one of the same channel takes its slot, and so does any once its
+ * writer completed; past that the entry loses track. */
 #define TGM_COH_WRITERS 4
-/* A submission whose ExecSurfaces (method 17) listed the surface as written: wrote with `always`, and a listed writer too,
- * which another channel's listed Exec waits for on the GPU. */
-void tgm_coherency_wrote_listed(struct tgm_coh *c, uint32_t uid, uint32_t seqno);
-/* The listed writers (uid << 32 | seqno) `c` names, done or not; *lost: nonzero when listed writers found no slot since
- * tgm_coherency_lost_seen(c, *lost) last cleared it (some submissions that may write it are not among them); *pa: the
- * surface's first page. */
-uint32_t tgm_coherency_writers(const struct tgm_coh *c, uint64_t out[TGM_COH_WRITERS],
-			       uint32_t *lost, uint64_t *pa);
-/* Every channel that imports the surface completed what it had submitted: the count `lost` read goes, unless more were
- * lost since. */
-void tgm_coherency_lost_seen(struct tgm_coh *c, uint32_t lost);
 /* Also the locks that waited for GPU writes and the AvoidSync locks refused (count each). */
 void tgm_coherency_take_stats(uint64_t out[6]);
 /* XNU's iokit_user_client_trap, after an IOSurfaceRootUserClient trap ran: index 2 lock, 3 unlock (IOConnectTrap3 p1 the
@@ -618,13 +592,6 @@ void tgm_copy_wait(uint32_t uid, uint32_t seqno, const struct tgm_relayout_write
 /* The GPU address in `vm` (one that maps every connection's fence page, as every tgm_vm_new space does) of channel uid's
  * fence seqno; -ENOENT when it is gone or killed (its work is complete or abandoned). */
 int tgm_writer_fence_va(struct tgm_vm *vm, uint32_t uid, uint64_t *va);
-/* Method 17's acquires (TegraGM20BFences.h): chan's next submission waits on the GPU for each writer (uid << 32 | seqno) of
- * another live channel that has not completed it, queued as tgm_chan_order's; follow_importers, for the last submission of
- * every other channel whose address space imports the surface whose first page is `pa` and has work pending (*pending:
- * how many). 0, or tgm_chan_order's -ENODEV (no view of the fence pages) or -ENOSPC (TGM_ORDER_MAX channels queued): the
- * rest go unqueued. */
-int tgm_chan_follow(struct tgm_chan *chan, const uint64_t *writers, uint32_t n);
-int tgm_chan_follow_importers(struct tgm_chan *chan, uint64_t pa, uint32_t *pending);
 /* A GPU client made (add 1) or removed (add -1) a bind of the whole surface holding `c` with TEGRA_SCANOUT_TILED_KIND:
  * the surface is tiled while any such bind lives, whatever other binds of it say (tegra_gm20b_surface_tiled). */
 void tgm_coherency_tiled_bind(struct tgm_coh *c, int add);
@@ -819,8 +786,8 @@ void tgm_stats_wait(uint32_t waiter, int woken, int done);
  * (SwitchGpuQuiet.h enum switch_gpu_loud). */
 void tgm_stats_loud(struct tgm_chan *chan, uint32_t reason);
 
-/* A SubmitAddress by phase (TegraGM20BUserClient.cpp): resolving its uses under the connection lock, owning them
- * (backing locks, dependency scan, room waits), chan_exec, and the commit after it. The "exec by process" line. */
+/* A SubmitJob by phase (TegraGM20BUserClientJobSubmit.cpp): resolving its uses, owning them (backing locks, dependency
+ * scan, room waits), chan_exec, and the commit after it (switch_gpu_job_submitted). */
 enum {
 	TGM_SUBMIT_RESOLVE,
 	TGM_SUBMIT_LOCK,
@@ -828,9 +795,7 @@ enum {
 	TGM_SUBMIT_COMMIT,
 	TGM_SUBMIT_PHASES
 };
-#if TGM_STATS
-void tgm_stats_submit(struct tgm_chan *chan, const uint64_t ns[TGM_SUBMIT_PHASES]);
-#endif
+
 void tgm_stats_bo_free(uint64_t ns);
 void tgm_stats_prefault(uint64_t bytes);
 

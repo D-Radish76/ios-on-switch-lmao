@@ -199,22 +199,19 @@ void AGXDeviceUserClient::poolLine(char *line, size_t size)
 }
 #endif
 
-// lock_ held: `bo`, made without it, becomes the connection's: a handle (and a map token), the BO list, the index
-// SubmitJob reads with no lock (SwitchGpuBoIndex.h) and the imports' list. The submit gate stays open: nothing a job in
-// flight reads changes.
+// lock_ held: `bo`, made without it, becomes the connection's: a handle (and a map token), the BO list and the index
+// SubmitJob reads with no lock (SwitchGpuBoIndex.h). The submit gate stays open: nothing a job in flight reads changes.
 IOReturn AGXDeviceUserClient::publishBo(Bo *bo, bool mapped)
 {
 	if (submitGate_.closed())
 		return kIOReturnNotOpen;
-	if (!boIndex_.reserve() || (bo->coh && !surfaces_.reserve()))
+	if (!boIndex_.reserve())
 		return kIOReturnNoMemory;
 	bo->handle = next_handle_++;
 	bo->token = mapped ? next_token_++ : 0;
 	bo->next = bos_;
 	bos_ = bo;
 	boIndex_.insert(bo->handle, bo);
-	if (bo->coh)
-		surfaces_.add(bo->handle, bo->coh, !bo->readOnly);
 	if (SWITCH_GPU_OWNER_COUNTS)
 		ownerMemory_.change(bo->ownerKind, bo->bytes, true);
 	return kIOReturnSuccess;

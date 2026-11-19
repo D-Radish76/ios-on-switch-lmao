@@ -402,7 +402,8 @@ static Push macro_call(uint32_t slot, const std::vector<uint32_t> &arguments)
 
 // One raw job per kind of draw and clear the raw path writes, into a 1280x720 one-sample block-linear target, an indirect
 // command buffer's commands inside their execute's range: each counts once as a draw or a clear and latches that target,
-// which its push's profile class names. An Exec's stream reads the raw path's own slots as NVK's macros there: no draws.
+// which its push's profile class names. A stream read without rawMacros reads the raw path's own slots as NVK's
+// macros there: no draws.
 TEST(GM20BPushScan, EachRawDrawAndClearCountsOnceAndLatchesItsTarget)
 {
 	constexpr uint32_t kIndex = 7;

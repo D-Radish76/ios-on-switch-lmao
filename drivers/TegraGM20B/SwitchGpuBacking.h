@@ -25,7 +25,6 @@ enum {
 	SWITCH_GPU_BACKING_CPU_NO_CACHE = 1u << 4,
 	SWITCH_GPU_BACKING_CPU_CONCURRENT = 1u << 5,
 	SWITCH_GPU_BACKING_CPU_PRESERVE_DIRTY = 1u << 6,
-	SWITCH_GPU_BACKING_UNLISTED = 1u << 7,
 	SWITCH_GPU_BACKING_NO_CPU_EXCLUSION = 1u << 8,
 	/* a display read lease taken behind writer promises: no admission waits for it (SwitchGpuWriterPromise.h) */
 	SWITCH_GPU_BACKING_PROMISED = 1u << 9,
@@ -243,7 +242,7 @@ struct switch_gpu_backing_transaction {
 };
 
 /* begin sorts/merges the caller's use array and claims its backings in allocation order: their locks, held across
- * dependency encoding, the kick and publication. An ordered begin (begin_held, begin_ordered) holds the ownership order
+ * dependency encoding, the kick and publication. An ordered begin (begin_held) holds the ownership order
  * instead, and its uses' locks only while one of them is claimed or CPU-dirty. A GPU job publishes after private
  * validation and finishes once its channel's submitted seqno names it, before GP_PUT, keeping the ownership order between
  * them. Every success must end with commit
@@ -256,9 +255,6 @@ struct switch_gpu_backing_transaction {
  * Failed work fails no later use: its records retire as completed ones do, and what a failed writer wrote is undefined
  * (logged once). Nothing here, in dependencies, or in a CPU acquire or wait returns its errno; a snapshot or export of
  * what it wrote is refused with why (switch_gpu_backing_token_failure).
- * An UNLISTED use is one the engine cannot vouch for (a legacy submission's private BOs and unlisted imports): CPU
- * access and the kernel's other engines still order after the job, as after a writer when WRITE is set, but no GM20B
- * job waits for it, it waits for nothing and CPU owners never refuse it.
  * NO_CPU_EXCLUSION: CPU owners holding the backing now do not refuse the use (a GM20B user submission: no submission
  * ABI refuses for a CPU lock). An owner ordered itself after earlier work when it acquired; this job orders the next
  * acquire. While a CPU writer holds the backing every begin cleans what it wrote so far, and its release the rest. */
@@ -293,14 +289,6 @@ int switch_gpu_backing_begin_held(struct switch_gpu_backing_use *uses, uint32_t 
 				  uint32_t guard_count,
 				  const struct switch_gpu_backing_token *completion,
 				  struct switch_gpu_backing_transaction *transaction);
-/* begin_conversion_checked, any lease count, ordered, taking its own references on the uses */
-int switch_gpu_backing_begin_ordered(struct switch_gpu_backing_use *uses, uint32_t count,
-				     struct switch_gpu_cpu_lease *const *leases,
-				     uint32_t lease_count,
-				     const struct switch_gpu_backing_guard *guards,
-				     uint32_t guard_count,
-				     const struct switch_gpu_backing_token *completion,
-				     struct switch_gpu_backing_transaction *transaction);
 int switch_gpu_backing_dependencies(const struct switch_gpu_backing_transaction *transaction,
 				    struct switch_gpu_backing_token *out, uint32_t capacity,
 				    uint32_t *needed);

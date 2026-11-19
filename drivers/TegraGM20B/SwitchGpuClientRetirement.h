@@ -322,7 +322,6 @@ void AGXDeviceUserClient::drainResources()
 	IOLockLock(lock_);
 	while (nbinds_)
 		unbindOverlaps(binds_[0].va, binds_[0].range, nullptr);
-	surfaces_.clear();
 	boIndex_.clear();
 	while (bos_) {
 		auto *bo = bos_;
@@ -380,7 +379,6 @@ IOReturn AGXDeviceUserClient::freeBo(Bo **p)
 	*p = bo->next;
 	switch_gpu_backing_member_freed(bo->backing);
 	boIndex_.erase(bo->handle);
-	surfaces_.remove(bo->handle);
 	for (uint32_t i = 0; i < nbinds_;) {
 		if (binds_[i].bo == bo) {
 			unbindOverlaps(binds_[i].va, binds_[i].range, bo);

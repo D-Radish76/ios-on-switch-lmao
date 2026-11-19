@@ -72,17 +72,11 @@ extern "C" int switch_gpu_backing_dependencies(const switch_gpu_backing_transact
 	if (!transaction || !needed || (capacity && !out) || !holds(transaction))
 		return -22;
 	*needed = 0;
-	// The kernel's other engines follow what a GM20B job did not list; GM20B jobs follow only listed work, as
-	// TegraGM20BFences.h orders them.
-	const bool follows_unlisted = transaction->completion.engine != SWITCH_GPU_ENGINE_GM20B;
 	for (uint32_t i = 0; i < transaction->count; ++i) {
 		const auto &use = transaction->uses[i];
-		if (use.access & SWITCH_GPU_BACKING_UNLISTED)
-			continue;
 		for (uint32_t j = 0; j < use.backing->access_count; ++j) {
 			auto &access = use.backing->accesses[j];
-			if (((access.access & SWITCH_GPU_BACKING_UNLISTED) && !follows_unlisted) ||
-			    !conflicts(access.access, use.access) ||
+			if (!conflicts(access.access, use.access) ||
 			    reads_promised(*use.backing, access))
 				continue;
 			const bool external =

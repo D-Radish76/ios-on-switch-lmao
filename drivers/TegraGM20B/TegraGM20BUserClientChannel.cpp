@@ -294,7 +294,6 @@ IOReturn AGXDeviceUserClient::channelCreate(const TegraGM20BAbiChannelCreate *in
 	auto *identity = reinterpret_cast<volatile TegraGM20BAbiFenceIdentity *>(fence + 8);
 	__atomic_store_n(&identity->channel_uid, switch_gpu_chan_identity(chans_[slot]),
 			 __ATOMIC_RELEASE);
-	tgm_chan_set_group(chans_[slot], task_);  // Order relates the channels of one task
 	if (level_ != TGM_LEVEL_FOREGROUND && !critical_)
 		tgm_chan_set_level(chans_[slot], level_, 0);
 	channelLevels_[slot] = level_;
@@ -307,33 +306,6 @@ IOReturn AGXDeviceUserClient::channelCreate(const TegraGM20BAbiChannelCreate *in
 	out->fence_offset = slot * 64;
 	out->reserved = 0;
 	return kIOReturnSuccess;
-}
-
-// Method 14: GPU-side order between this channel and the task's other channels (gpu_sync.c tgm_chan_order); the peers are found by
-// task in gpu_sync.c, only the caller's own channel is named here.
-IOReturn AGXDeviceUserClient::order(const TegraGM20BAbiOrder *in, TegraGM20BAbiOrderReply *out)
-{
-	static_assert(TegraGM20BOrderAfterTask == TGM_ORDER_AFTER &&
-			      TegraGM20BOrderBeforeTask == TGM_ORDER_BEFORE &&
-			      TegraGM20BMaxOrderWaits == TGM_ORDER_MAX,
-		      "order flags");
-	if (!in->channel || in->channel > kMaxChannels || !chans_[in->channel - 1])
-		return kIOReturnBadArgument;
-	uint32_t queued = 0;
-	const IOReturn ret =
-		ioreturn(tgm_chan_order(chans_[in->channel - 1], in->flags, in->seqno, &queued));
-	out->waits = queued;
-	out->reserved = 0;
-	return ret;
-}
-
-// Method 17: what the channel's next Exec touches (TegraGM20BExecSurfaces.h).
-IOReturn AGXDeviceUserClient::execSurfaces(const TegraGM20BAbiExecSurfaces *in)
-{
-	static_assert(tgm_fences::kChannels == kMaxChannels, "channel slots");
-	if (!in->channel || in->channel > kMaxChannels || !chans_[in->channel - 1])
-		return kIOReturnBadArgument;
-	return surfaces_.set(in->channel - 1, in) ? kIOReturnSuccess : kIOReturnNoMemory;
 }
 
 IOReturn AGXDeviceUserClient::channelDestroy(const TegraGM20BAbiChannel *in)
@@ -352,7 +324,6 @@ IOReturn AGXDeviceUserClient::channelDestroy(const TegraGM20BAbiChannel *in)
 	admissions_[in->channel - 1].end();
 	admissionCookies_[in->channel - 1] = 0;
 	hangHolder_ = nullptr;
-	surfaces_.forget(in->channel - 1);
 	scheduleRetirement();
 	return kIOReturnSuccess;
 }

@@ -138,7 +138,6 @@ void AGXDeviceUserClient::free()
 			thread_call_free(releaseCall_);
 		if (binds_)
 			IODelete(binds_, Binding, cap_binds_);
-		freeJob(job_);
 		for (auto &job : channelJobs_)
 			freeJob(job);
 		boIndex_.destroy();
@@ -246,7 +245,6 @@ void AGXDeviceUserClient::releaseBo(Bo *bo)
 	if (bo->wired) {
 		if (bo->handle) {
 			tgm_stats_import(-static_cast<int64_t>(bo->bytes), bo->pas[0]);
-			tgm_vm_import_note(vm_, bo->pas[0], 0);
 		}
 		tgm_coherency_put(bo->coh);
 		if (bo->wiring) {
@@ -462,10 +460,8 @@ extern "C" uint32_t switch_gpu_info_flags(void)
 	tgm_info info;
 	tgm_get_info(&info);
 	uint32_t flags = static_cast<uint32_t>(TegraGM20BInfoSparse) | TegraGM20BInfoHostImport |
-			 TegraGM20BInfoKernelMap |
-			 TegraGM20BInfoOrder | TegraGM20BInfoSurfaceWrites |
-			 TegraGM20BInfoSurfaceLayout | TegraGM20BInfoExecSurfaces |
-			 TegraGM20BInfoPriority | TegraGM20BInfoKillRecord | TegraGM20BInfoSubmit |
+			 TegraGM20BInfoKernelMap | TegraGM20BInfoSurfaceWrites |
+			 TegraGM20BInfoSurfaceLayout | TegraGM20BInfoPriority | TegraGM20BInfoKillRecord |
 			 TegraGM20BInfoCpuAccess | TegraGM20BInfoSubmitAddress |
 			 TegraGM20BInfoCpuPreserveDirty | TegraGM20BInfoCanonicalSurfaceLayout |
 			 TegraGM20BInfoPushFences;
@@ -556,10 +552,10 @@ IOReturn AGXDeviceUserClient::externalCall(uint32_t selector, IOExternalMethodAr
 		inSize -= 8;
 	}
 	// copy the input: records are naturally aligned structs and the caller's buffer may not be. Small records use the
-	// stack; VmBind/Exec (up to 4 KiB) a heap buffer, keeping kernel stack use small.
+	// stack; VmBind (up to 4 KiB) a heap buffer, keeping kernel stack use small.
 	uint64_t small[64];
 	void *copy = small;
-	if (inSize > TegraGM20BMaxPushes * sizeof(TegraGM20BAbiPush) + 8)
+	if (inSize > kMaxRecordBytes)
 		return refuseCall("a GPU call", SwitchGpuRefusal::CallSize, kIOReturnBadArgument,
 				  method, inSize);
 	if (inSize > sizeof(small)) {

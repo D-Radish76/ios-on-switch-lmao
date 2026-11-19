@@ -70,10 +70,6 @@ TEST(GM20BSubmitLocksSource, AJobsRecordsGoUpBeforeItsKick)
 				   "IOReturn AGXDeviceUserClient::runJobUses(");
 	EXPECT_TRUE(job.has("jobVisibility, releases, keptCount, &transaction);"));
 	EXPECT_FALSE(job.has("switch_gpu_backing_commit("));
-	const CodeText legacy = Block(unit("TegraGM20BUserClientSubmit.cpp"),
-				      "IOReturn AGXDeviceUserClient::exec(");
-	EXPECT_TRUE(legacy.has("jobVisibility, nullptr, 0, &transaction);"));
-	EXPECT_FALSE(legacy.has("switch_gpu_backing_commit("));
 }
 
 // System sleep's gate is on every submission's path: an open enter or leave counts on the caller's own CPU's cell with
