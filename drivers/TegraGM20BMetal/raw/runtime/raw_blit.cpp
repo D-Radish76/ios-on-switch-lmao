@@ -58,6 +58,9 @@ TextureTransferResult Device::transferTexture(const Texture &texture, uint32_t l
                                               const uint32_t origin[3], const uint32_t size[3], void *bytes,
                                               uint64_t row, uint64_t image, bool write, std::shared_ptr<void> owner)
 {
+    if (texture.texelRows)
+        return level || slice ? TextureTransferResult::Unsupported
+                              : transferTexelRows(texture, origin, size, bytes, write, std::move(owner));
     Texture view;
     const Texture *selected = &texture;
     if (texture.chain && level) {  // a chain's level 0 is its own image

@@ -648,6 +648,7 @@ cc_library(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_samplers.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_sparse_window.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_surface_textures.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_texel_rows.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_texture_views.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_textures.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_texture_chains.cpp",

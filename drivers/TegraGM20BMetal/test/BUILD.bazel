@@ -199,6 +199,7 @@ host_library(
         "raw_state_segment",
         "raw_surface_textures",
         "raw_tessellation",
+        "raw_texel_rows",
         "raw_texture_chains",
         "raw_texture_headers",
         "raw_texture_views",
@@ -2282,6 +2283,37 @@ raw_device_test(
 facade_test(
     name = "raw_facade_packed_levels_test",
     srcs = ["raw_facade_packed_levels_test.cpp"],
+)
+
+# raw/runtime/raw_texel_rows.h: the parts of a block-linear surface's rows a texel buffer's bytes lie in, every byte the
+# layout holds in one part at its place, none past a row's texels, the last row or the range
+host_test(
+    name = "raw_texel_rows_test",
+    srcs = [
+        "raw_texel_rows_test.cpp",
+        "//drivers/TegraGM20B:TegraGM20BLayout.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_texel_rows.h",
+    ],
+    copts = ["-Idrivers/TegraGM20B"],
+    cxx_std = "c++17",
+)
+
+# A texel buffer over a surface the kernel laid out block-linear: a header over a pool of its bytes, the copy engine's fill
+# and copy back a part of a row at each end and the rows' texels alone, its CPU copies through the transfer channel
+raw_device_test(
+    name = "raw_device_texel_rows_test",
+    srcs = ["raw_device_texel_rows_test.cpp"],
+)
+
+# A texel buffer over a surface the kernel tiled for a target on the raw facade: its pool filled from the rows before a
+# draw, a pass, a blit and a kernel, copied back after each that writes it, m2v never opened
+facade_test(
+    name = "raw_facade_texel_rows_test",
+    srcs = [
+        "raw_facade_compute.h",
+        "raw_facade_texel_rows_test.cpp",
+    ],
+    deps = ["//kits/SwitchGM20B:classes"],
 )
 
 host_test(
@@ -4615,6 +4647,7 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_surface_image",
     "raw_surface_textures",
     "raw_tessellation",
+    "raw_texel_rows",
     "raw_texture_chains",
     "raw_texture_headers",
     "raw_texture_shape",

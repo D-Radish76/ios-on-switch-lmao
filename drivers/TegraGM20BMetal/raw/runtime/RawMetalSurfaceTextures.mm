@@ -127,14 +127,15 @@ bool makeXrWords(RMTexture *t, IOSurfaceRef s)
 // its sRGB twin's are BGR10_XR's words, which an M4 Max reads with alpha 0 and whose kernels and fragment functions store
 // them with bits 30 and 31 clear and nothing else: a program that stores one is compiled for its format, whose texel
 // buffer the translator holds as the words alone, and samples read its stand-in, alpha 0
-bool makeSurfaceTexelBuffer(RMTexture *t, IOSurfaceRef s, uint64_t offset)
+bool makeSurfaceTexelBuffer(RMTexture *t, IOSurfaceRef s, uint64_t offset, size_t pitch)
 {
     MTLTextureDescriptor *d = t->_descriptor;
     const uint32_t format = uint32_t(d.pixelFormat);
     const bool words = raw::twoPlaneXr(format);
-    if (d.width > UINT32_MAX ||
+    if (d.width > UINT32_MAX || pitch > UINT32_MAX ||
         !gRM->raw->createSurfaceTexelBuffer(IOSurfaceGetID(s), IOSurfaceGetBaseAddress(s), IOSurfaceGetAllocSize(s), s,
-                                            offset, uint32_t(d.width), words ? xrWordsFormat(format) : format, t->_raw))
+                                            offset, uint32_t(pitch), uint32_t(d.width),
+                                            words ? xrWordsFormat(format) : format, t->_raw))
         return false;
     if (words && t->_raw.standIn)
         readAlphaZero(*t->_raw.standIn);
@@ -305,9 +306,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const bool xrTaken =
         xr && (raw::surfaceRefusal || xrPlanesShape(flat, s, plane) || xrWordPlaneShape(flat, s, plane));
     const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
-    if (raw::surfaceRefusal == raw::kTiledTexelBuffer)
-        form = raw::kTiledTexelBuffer;
-    else if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
+    if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
         form = ycbcrPlan(flat, s, plane, unused);
     if (xr && !xrTaken && !xrPlanesStorable(d)) {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.pack", uintptr_t(d.usage),
@@ -431,7 +430,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
                                                  uint32_t(d.width), uint32_t(d.height), uint32_t(d.pixelFormat),
                                                  t->_raw);
     } else if (d.textureType == MTLTextureTypeTextureBuffer) {
-        t->_rawOk = makeSurfaceTexelBuffer(t, s, offset);
+        t->_rawOk = makeSurfaceTexelBuffer(t, s, offset, pitch);
     } else if (blockSurface(d, s, plane)) {
         // its blocks in place under a pitch header (raw_surface_textures.cpp createSurfaceTexture), rows off 32 bytes
         // through a block-linear pool image the copy engine fills from them, refreshed as the surface's seed moves

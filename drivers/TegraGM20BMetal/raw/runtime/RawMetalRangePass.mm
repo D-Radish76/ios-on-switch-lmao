@@ -273,6 +273,7 @@ bool RMRangeEncode::beginPass(size_t at)
         return fail(PredEncPassRender, refusal);
     }
     overlappingPlanes(pass, p);
+    texelRowsTargets(pass);
     for (const RMPass::Color &a : pass.color)
         if (__unsafe_unretained RMTexture *t = (RMTexture *)a.texture)
             raw::turnXrPlaneTargets(t->_raw, p, levelTargets_);

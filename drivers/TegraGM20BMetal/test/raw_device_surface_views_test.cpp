@@ -183,12 +183,12 @@ TEST_F(DeviceViews, ATexelBufferOverASurfaceIsAHeaderOfItsBytesInOrder)
     const size_t page = size_t(getpagesize());
     void *base = aligned_alloc(page, 4 * page);
     raw::Texture t, off;
-    ASSERT_TRUE(dev.createSurfaceTexelBuffer(0, base, 4 * page, nullptr, 256, 1000, kRGBA8, t));
+    ASSERT_TRUE(dev.createSurfaceTexelBuffer(0, base, 4 * page, nullptr, 256, 1024, 1000, kRGBA8, t));
     EXPECT_EQ(textureType(header(t)), raw::fx::kTexOneDBuffer);
     EXPECT_EQ(field(header(t), 143, 128), 999u);
     EXPECT_EQ(t.va & (page - 1), 256u);
-    EXPECT_FALSE(dev.createSurfaceTexelBuffer(0, base, 4 * page, nullptr, 8, 16, kRGBA8, off)) << "off 16";
-    EXPECT_FALSE(dev.createSurfaceTexelBuffer(0, base, 4 * page, nullptr, 0, uint32_t(page) + 1, kRGBA8, off))
+    EXPECT_FALSE(dev.createSurfaceTexelBuffer(0, base, 4 * page, nullptr, 8, 1024, 16, kRGBA8, off)) << "off 16";
+    EXPECT_FALSE(dev.createSurfaceTexelBuffer(0, base, 4 * page, nullptr, 0, 1024, uint32_t(page) + 1, kRGBA8, off))
         << "past the surface";
     dev.destroyTexture(t);
     free(base);

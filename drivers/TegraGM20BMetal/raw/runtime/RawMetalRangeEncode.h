@@ -125,6 +125,12 @@ private:
     // pools, filled first where loaded, and stored into their rows after the pass
     void overlappingPlanes(const RMPass &pass, const raw::PassDesc &p);
     bool storeOverlappingPlanes();
+    // The open pass's targets that are texel buffers held in a pool of a block-linear surface's rows (raw_texel_rows.h):
+    // rendered in their pools, filled first, copied back after the pass where it stores them (writtenBack)
+    void texelRowsTargets(const RMPass &pass);
+    // A blit command over such a texel buffer reads and writes its pool (blitImage): filled before the command (`before`),
+    // copied back after one that writes it
+    void blitTexelRows(const Cmd &c, bool before);
     // Colour j's planes `plane` .. + `layers` of `t`, laid out several planes a block (raw::planeInBlocks), as a
     // one-plane-a-block image the copy engine fills from them where `filled` and drains into them after the pass where
     // `stored` (planesBack); null: no memory for it (*why_)
@@ -248,5 +254,9 @@ private:
 
 // The submit worker's one range encode
 RMRangeEncode &rmRangeEncode();
+// A texture a kernel or a draw reaches through an image of its own (raw_kernel_shadow.h): that image filled from the
+// texels where `fill`, else copied back into them. Two-plane RGB10A8_2P_XR10 planes' pools (raw_xr_pools.h), a texel
+// buffer's pool of its surface's rows (raw_texel_rows.h), or Texture::sampled
+void rmMoveShadowImage(raw::BlitEncoder &b, const raw::Texture &t, bool fill);
 // The refusal predicate of an encode-time refusal or skip (raw_gpu.h RefusalId)
 RMPred refusalPred(uint8_t id);

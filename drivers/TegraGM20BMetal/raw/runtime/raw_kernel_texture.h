@@ -9,7 +9,9 @@ namespace raw {
 
 enum class KernelTextureForm : uint8_t {
     InPlace,  // its own header over its own texels
-    Shadow,  // through its 32-aligned image (Texture::sampled), copied in and out around its encoder (raw_kernel_shadow.h)
+    // through an image of its own, copied in and out around its encoder (raw_kernel_shadow.h): its 32-aligned image
+    // (Texture::sampled), or a texel buffer's pool of a block-linear surface's rows (Texture::texelRows)
+    Shadow,
     Converted,  // the image the command buffer converts from its planes before any work (planar, YCbCr, packed plane)
     NoHeader,   // no header and no texels a header could hold: memoryless, or a depth texture made without ShaderRead
     StandIn,    // extended range: the codes' header, sampled through a stand-in drawn from them
@@ -24,6 +26,9 @@ template <typename Texture> constexpr KernelTextureForm kernelTextureForm(const 
         return KernelTextureForm::TwoPlanes;
     if (x.converted())
         return KernelTextureForm::Converted;
+    // ahead of its stand-in: the stand-in is drawn from the pool the encoder's opening fills
+    if (x.texelRows)
+        return KernelTextureForm::Shadow;
     if (x.standIn)
         return KernelTextureForm::StandIn;
     if (x.sampled)

@@ -7,6 +7,7 @@
 #include "raw_srgb_pair.h"
 #include "../fx/fx_mip_probe.h"
 #include "raw_multisample.h"
+#include "raw_texel_rows.h"
 #include "TegraGM20BLayout.h"
 
 #include <mach/mach.h>
@@ -420,6 +421,10 @@ void Device::destroyTexture(Texture &t)
     }
     if (t.import)
         release(t.import);
+    if (t.texelRows) {
+        release(t.texelRows->import);
+        delete t.texelRows;
+    }
     if (t.callerPages)
         release(t.callerPages);
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG

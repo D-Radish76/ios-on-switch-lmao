@@ -176,7 +176,7 @@ bool rmBindTexture(__unsafe_unretained RMRenderEncoder *e, int stage, __unsafe_u
             e->_eligibility++;
         e->_tex[stage - 1][index] = x;
     }
-    if (x && (x->_raw.sampled || raw::xrPlanesPooled(x->_raw))) {
+    if (x && (x->_raw.sampled || raw::xrPlanesPooled(x->_raw) || x->_raw.texelRows)) {
         rmPipelineVeto(e->_cb, VetoShadows);
         e->_cb->_sampledShadows = true;
     }

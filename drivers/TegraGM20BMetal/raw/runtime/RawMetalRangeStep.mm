@@ -22,8 +22,9 @@ static void noteWritten(std::vector<__unsafe_unretained RMTexture *> &list, RMTe
 
 // textures sampled through a pool image (rows 16 but not 32 apart, raw::Texture::sampled): refreshed from their texels by the
 // copy engine before the first pass that samples them, and again after work here wrote them (m2v copies such a surface into
-// its shadow at each encoder that uses it once written since); a texture over a buffer before every pass that samples
-// it, as any work may write the buffer's bytes. One the pass's draws store into is copied back after it.
+// its shadow at each encoder that uses it once written since); a texture over a buffer, and a texel buffer held in a pool
+// of a block-linear surface's rows (raw_texel_rows.h), before every pass that samples it, as any work may write the
+// buffer's bytes or the surface's rows. One the pass's draws store into is copied back after it.
 void RMRangeEncode::refresh(size_t pass)
 {
     cb_->_plan.forEachResource(pass, cb_->_plan.encoderEnd(pass), RMResourceKind::Texture,
@@ -39,15 +40,18 @@ void RMRangeEncode::refresh(size_t pass)
                                            raw::fillXrPools(*rc_, t->_raw);
                                        return;
                                    }
-                                   if (rc_->readTexture(&t->_raw) != &t->_raw || !t->_raw.sampled)
+                                   const raw::Texture &x = t->_raw;
+                                   if (rc_->readTexture(&x) != &x || !(x.sampled || x.texelRows))
                                        return;
                                    if (use.access & raw::ResourceUse::Write)
                                        noteWritten(shadowsWritten_, t);
-                                   if (!t->_raw.surfaceView && t->_kind != RMTextureBuffer && !fresh_.insert(t).second)
+                                   if (!x.surfaceView && !x.texelRows && t->_kind != RMTextureBuffer &&
+                                       !fresh_.insert(t).second)
                                        return;
-                                   const raw::Texture &x = t->_raw;
+                                   if (x.texelRows)
+                                       standInFresh_.erase(t);
                                    raw::BlitEncoder *b = rc_->blit();
-                                   b->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
+                                   rmMoveShadowImage(*b, x, true);
                                    b->end();
                                });
 }
@@ -199,20 +203,10 @@ void RMRangeEncode::localShadows(std::vector<raw::KernelUse> &list)
 void RMRangeEncode::shadowCopies(const std::vector<const void *> &back, const std::vector<const void *> &fill)
 {
     raw::BlitEncoder *copy = rc_->blit();
-    for (const void *o : back) {
-        const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
-        if (x.xrPlanes)
-            raw::moveXrPools(*copy, x, false);
-        else
-            copy->copyTexels(*x.sampled, 0, 0, 0, x, 0, 0, 0, x.width, x.height);
-    }
-    for (const void *o : fill) {
-        const raw::Texture &x = ((__bridge RMTexture *)o)->_raw;
-        if (x.xrPlanes)
-            raw::moveXrPools(*copy, x, true);
-        else
-            copy->copyTexels(x, 0, 0, 0, *x.sampled, 0, 0, 0, x.width, x.height);
-    }
+    for (const void *o : back)
+        rmMoveShadowImage(*copy, ((__bridge RMTexture *)o)->_raw, false);
+    for (const void *o : fill)
+        rmMoveShadowImage(*copy, ((__bridge RMTexture *)o)->_raw, true);
     copy->end();
 }
 
@@ -491,6 +485,7 @@ bool RMRangeEncode::command(size_t at)
     case OpCopyBufferToTexture:
     case OpCopyTextureToBuffer: {
         RAW_ENCODE_SPAN(Blit);
+        blitTexelRows(c, true);
         if (!encodeBlit(cb, c, rc, be_, fresh_, standInFresh_, why_)) {
             constexpr const char *clamp =
                 "no memory, header or pack state for a copy's alpha clamp (RawMetalCopyClamp.h)";
@@ -501,6 +496,7 @@ bool RMRangeEncode::command(size_t at)
             }
             return fail(PredEncPassRender, clamp, uint32_t(c.op));
         }
+        blitTexelRows(c, false);
         break;
     }
     case OpSignalEvent:

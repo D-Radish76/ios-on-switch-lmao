@@ -18,7 +18,7 @@ struct Texture {
     uint8_t type = 0;
     bool planar = false, ycbcr = false, surfaceView = false, memoryless = false, xrPlanes = false;
     const Texture *standIn = nullptr, *sampled = nullptr;
-    const void *chain = nullptr;
+    const void *chain = nullptr, *texelRows = nullptr;
 
     bool converted() const
     {
@@ -117,6 +117,20 @@ TEST(KernelTexture, RowsTheHeaderCannotAddressGoThroughTheShadow)
     t.sampled = &image;
     EXPECT_EQ(raw::kernelTextureForm(t), KernelTextureForm::Shadow);
     t.surfaceView = true;
+    EXPECT_EQ(raw::kernelTextureForm(t), KernelTextureForm::Shadow);
+}
+
+// A texel buffer over a surface the kernel laid out block-linear (raw_texel_rows.h) is reached through its pool, filled
+// from the surface's rows and copied back around its encoder; an extended-range one too, its stand-in drawn from that pool
+TEST(KernelTexture, ATexelBufferOverABlockLinearSurfaceGoesThroughItsPool)
+{
+    const int rows = 0;
+    const Texture standIn;
+    Texture t;
+    t.type = raw::kTexelBufferType;
+    t.texelRows = &rows;
+    EXPECT_EQ(raw::kernelTextureForm(t), KernelTextureForm::Shadow);
+    t.standIn = &standIn;
     EXPECT_EQ(raw::kernelTextureForm(t), KernelTextureForm::Shadow);
 }
 

@@ -315,16 +315,14 @@ bool RMRangeEncode::xrImages(const RMPass &pass, raw::PassDesc &p)
     return true;
 }
 
-// What the pass's draws stored goes back: sampled shadows copied into their textures, stand-ins drawn again before their
-// next sample, two-plane images split into their planes
+// What the pass stored goes back: sampled shadows and texel buffers' pools of a surface's rows copied into their texels,
+// stand-ins drawn again before their next sample, two-plane images split into their planes
 bool RMRangeEncode::writtenBack()
 {
     if (!shadowsWritten_.empty()) {
         raw::BlitEncoder *b = rc_->blit();
-        for (__unsafe_unretained RMTexture *t : shadowsWritten_) {
-            const raw::Texture &x = t->_raw;
-            b->copyTexels(*x.sampled, 0, 0, 0, x, 0, 0, 0, x.width, x.height);
-        }
+        for (__unsafe_unretained RMTexture *t : shadowsWritten_)
+            rmMoveShadowImage(*b, t->_raw, false);
         b->end();
     }
     for (__unsafe_unretained RMTexture *t : standInsWritten_)

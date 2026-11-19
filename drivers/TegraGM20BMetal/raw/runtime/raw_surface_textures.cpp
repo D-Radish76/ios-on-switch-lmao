@@ -326,9 +326,11 @@ bool Device::createTexelStandIn(Texture &t)
 }
 
 // A texel buffer over a surface plane's bytes in order: its import (pitch, as the kernel lays out a surface it is not
-// asked to render) under a texel buffer header from `offset`
+// asked to render) under a texel buffer header from `offset`, or a pool of those bytes where the kernel laid the surface
+// out block-linear (raw_texel_rows.h)
 bool Device::createSurfaceTexelBuffer(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
-                                      uint64_t offset, uint32_t elements, uint32_t format, Texture &t)
+                                      uint64_t offset, uint32_t bytesPerRow, uint32_t elements, uint32_t format,
+                                      Texture &t)
 {
     constexpr uint64_t kTexelBufferAlign = 16, kMaxElements = 1u << 27;
     const FormatInfo *f = formatInfo(format);
@@ -341,32 +343,36 @@ bool Device::createSurfaceTexelBuffer(uint64_t surfaceId, void *base, uint64_t a
     {
         std::lock_guard<raw::Mutex> l(lock_);
         Import *i = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface);
-        if (!i || i->kernelTiled()) {
-            surfaceRefusal = !i ? "its import: the kernel's BoImport, SurfaceLayout or VmBind (their bo-import, "
-                                  "iosurface-layout or vm-bind line), or no GPU VA left"
-                                : kTiledTexelBuffer;
-            if (i)
+        if (!i) {
+            surfaceRefusal = "its import: the kernel's BoImport, SurfaceLayout or VmBind (their bo-import, "
+                             "iosurface-layout or vm-bind line), or no GPU VA left";
+            return false;
+        }
+        if (i->kernelTiled()) {
+            if (!createTexelRows(i, offset, bytesPerRow, elements, format, t)) {
                 release(i);
-            return false;
+                return false;
+            }
+        } else {
+            t = {};
+            t.import = i;
+            t.format = format;
+            t.bpp = f->bpp;
+            t.width = t.texelWidth = elements;
+            t.height = t.texelHeight = 1;
+            t.pitch = elements * f->bpp;
+            t.type = fx::kTexOneDBuffer;
+            t.va = i->bo.va + offset;
+            t.storage = {t.va, uint64_t(t.pitch), !i->id};
+            t.cpu = static_cast<uint8_t *>(base) + offset;
+            if (!(t.tic = allocTic())) {
+                surfaceRefusal = "no texture header left";
+                release(i);
+                t.import = nullptr;
+                return false;
+            }
+            writeTic(t);
         }
-        t = {};
-        t.import = i;
-        t.format = format;
-        t.bpp = f->bpp;
-        t.width = t.texelWidth = elements;
-        t.height = t.texelHeight = 1;
-        t.pitch = elements * f->bpp;
-        t.type = fx::kTexOneDBuffer;
-        t.va = i->bo.va + offset;
-        t.storage = {t.va, uint64_t(t.pitch), !i->id};
-        t.cpu = static_cast<uint8_t *>(base) + offset;
-        if (!(t.tic = allocTic())) {
-            surfaceRefusal = "no texture header left";
-            release(i);
-            t.import = nullptr;
-            return false;
-        }
-        writeTic(t);
     }
     // an extended-range one reads and stores the plane's texels as one over a buffer of the same bytes does (an M4 Max:
     // m2v-textures4 probes/reads.mm buffers), sampled through the same stand-in

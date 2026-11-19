@@ -135,7 +135,8 @@ struct NativeSurface;
 
 constexpr uint32_t kPteKindPitch = 0;
 
-struct Lease;  // raw_alias.cpp
+struct Lease;      // raw_alias.cpp
+struct TexelRows;  // raw_texel_rows.h
 
 // Where memory comes from: the pool, the write-combined GPU pool, an import, the block-linear chunks (kind 0xFE), an MTLHeap's
 // span (raw_arena.cpp)
@@ -390,6 +391,9 @@ struct Texture {
     uint64_t imagePitchVa = 0;
     bool surfaceView = false;
     uint32_t surfaceX = 0, surfaceY = 0;
+    // A texel buffer over a surface the kernel laid out block-linear (raw_texel_rows.h): this texture is a pitch pool of its
+    // bytes, which the copy engine fills from the surface's rows and copies back into them
+    TexelRows *texelRows = nullptr;
 
     // An extended-range texture's (raw_xr.h): the image a draw samples, its codes' values as RGBA16Float, which a pass of the
     // pack's conversion state draws from the codes (tic) before the work that samples it. Null: not sampled.
@@ -2294,9 +2298,10 @@ public:
     bool createTexelBuffer(const Buffer &b, uint64_t offset, uint32_t elements, uint32_t format, Texture &t,
                            uint32_t limit = 1u << 27);
     bool createTexelStandIn(Texture &t);
-    // A texel buffer over a surface plane's bytes in order (its import, a texel buffer header from `offset`)
+    // A texel buffer over a surface plane's bytes in order (its import, a texel buffer header from `offset`); over a surface
+    // the kernel laid out block-linear, a pool of them (createTexelRows), the plane's rows `bytesPerRow` apart
     bool createSurfaceTexelBuffer(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
-                                  uint64_t offset, uint32_t elements, uint32_t format, Texture &t);
+                                  uint64_t offset, uint32_t bytesPerRow, uint32_t elements, uint32_t format, Texture &t);
     bool createView(const Texture &of, uint32_t format, Texture &t);  // the same memory as another format
     bool createZetaView(const Texture &of, uint32_t format, Texture &t);
     // Its header's sources read through `channels` (MTLTextureSwizzle each, Texture::swizzle), its header written as it is
@@ -3702,6 +3707,12 @@ private:
     void poolFree(Span &s);
     bool tiledSurfaceTexture(uint64_t offset, uint32_t width, uint32_t height, uint32_t pitch, Texture &t,
                              Texture *sampled);
+    // raw_texel_rows.cpp. lock_ held: `t` a texel buffer of `elements` texels of `format` held in a pool of import `i`'s
+    // bytes from `offset`, its rows `bytesPerRow` apart, taking `i`'s hold
+    bool createTexelRows(Import *i, uint64_t offset, uint32_t bytesPerRow, uint32_t elements, uint32_t format,
+                         Texture &t);
+    TextureTransferResult transferTexelRows(const Texture &t, const uint32_t origin[3], const uint32_t size[3],
+                                            void *bytes, bool write, std::shared_ptr<void> owner);
     Import *importSurface(uint64_t id, void *base, uint64_t bytes, const void *owner, const LayoutAsk *ask = nullptr);
     // lock_ held: a texture's hold on its import goes. A surface's import no texture holds is kept (keepImport)
     void release(Import *i);
