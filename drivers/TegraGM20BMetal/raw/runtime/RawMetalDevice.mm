@@ -17,15 +17,14 @@
 
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
 // hw_test_app's attribution: this process's command buffers since the device opened, never reset (the rates line's
-// windows stay its own). Keys: raw, reopens (channels the kernel killed and this process opened again),
-// reopen_us (the last one's time), set_refusals and set_rebuilds (resource set registrations the kernel refused, and
-// those it took once made again without what it refused), gpu_order (1: the kernel has Order), pipelined_encoders and
-// sealed_encoders (encoders the worker encoded ahead of their commit, of all it sealed), pipeline_handoffs and
-// pipeline_handoff_wakes (hand-offs to the worker as encoders ended, and those that found it asleep: a wake each),
-// pipeline_abandons.<reason>, failed (the command buffers that completed with an error) and failed.<predicate> (those
-// by the predicate their failure named, failed.none where it named none; nonzero only, their sum `failed`), skipped
-// (the calls Metal's validation stops that ran as Apple's driver runs them, not failures) and skipped.<predicate>
-// (nonzero only, their sum `skipped`).
+// windows stay its own). Keys: raw, reopens (channels the kernel killed and this process opened again), reopen_us (the
+// last one's time), set_refusals and set_rebuilds (resource set registrations the kernel refused, and those it took
+// once made again without what it refused), pipelined_encoders and sealed_encoders (encoders the worker encoded ahead
+// of their commit, of all it sealed), pipeline_handoffs and pipeline_handoff_wakes (hand-offs to the worker as encoders
+// ended, and those that found it asleep: a wake each), pipeline_abandons.<reason>, failed (the command buffers that
+// completed with an error) and failed.<predicate> (those by the predicate their failure named, failed.none where it
+// named none; nonzero only, their sum `failed`), skipped (the calls Metal's validation stops that ran as Apple's driver
+// runs them, not failures) and skipped.<predicate> (nonzero only, their sum `skipped`).
 - (NSDictionary<NSString *, NSNumber *> *)switchRawCounters
 {
     const Stats &s = gRM->stats;
@@ -40,7 +39,6 @@
         mach_timebase_info(&base);
         d[@"reopen_us"] = @(gRM->raw->stats.reopenTicks.load() * base.numer / base.denom / 1000);
     }
-    d[@"gpu_order"] = @(gRM->gpuOrder ? 1 : 0);
     d[@"pipelined_encoders"] = @(s.pipelinedEncoders.load());
     d[@"sealed_encoders"] = @(s.sealedEncoders.load());
     d[@"pipeline_handoffs"] = @(s.handoffs.load());

@@ -30,9 +30,6 @@ TEST(QuietEnd, OnlyWorkInHandBehindItAndNobodyWaitingMakesARangeQuiet)
     EXPECT_TRUE(raw::quietEnd(end));
     end.signals = true;
     EXPECT_FALSE(raw::quietEnd(end)) << "the CPU publishes its signals when it completes";
-    end.signals = false;
-    end.cpuOrdered = true;
-    EXPECT_FALSE(raw::quietEnd(end));
 }
 
 TEST(CompletionTarget, TheFirstRangeThatInterruptsCoversThoseBeforeIt)

@@ -201,7 +201,6 @@ static raw::RangeEnd rangeEnd(RMCommandBuffer *cb, bool last, bool followed, boo
     end.observed = handlers || waited;
     end.handlersOnly = handlers && !waited;
     end.compositor = gRM->raw->role() == raw::Device::Role::RenderServer;
-    end.cpuOrdered = !gRM->gpuOrder;
     return end;
 }
 

@@ -104,7 +104,7 @@ int main()
             return false;
         }
         const uint64_t before = cap_draws();
-        const unsigned long submits = mock_iokit_calls(TegraGM20BMethodExec);
+        const unsigned long submits = mock_iokit_calls(TegraGM20BMethodSubmitJob);
         for (unsigned i = 0; i < count; ++i) {
             encoder->setScissor(i & 1, 0, 1, 1);
             if (!encoder->draw(3, 0, 3, 1, 0, &why)) {
@@ -124,11 +124,11 @@ int main()
         const bool noWaits = mock_iokit_calls(TegraGM20BMethodWaitFence) == waits;
         const bool finished = device.wait(sequence);
         const bool ok = noWaits && finished && cap_draws() - before == count &&
-                        mock_iokit_calls(TegraGM20BMethodExec) - submits == batches;
+                        mock_iokit_calls(TegraGM20BMethodSubmitJob) - submits == batches;
         if (!ok)
             fprintf(stderr, "repeated result: noWaits=%d finished=%d draws=%llu/%u submits=%lu/%u error=%s\n", noWaits,
                     finished, (unsigned long long)(cap_draws() - before), count,
-                    mock_iokit_calls(TegraGM20BMethodExec) - submits, batches, device.channelError().c_str());
+                    mock_iokit_calls(TegraGM20BMethodSubmitJob) - submits, batches, device.channelError().c_str());
         return ok;
     };
     expect(repeated(1, 1), "one small draw stays one submission");
@@ -190,14 +190,14 @@ int main()
         memcpy(arguments.cpu, words, sizeof words);
         auto [cb, encoder] = begin();
         const uint64_t before = cap_draws();
-        const unsigned long submits = mock_iokit_calls(TegraGM20BMethodExec);
+        const unsigned long submits = mock_iokit_calls(TegraGM20BMethodSubmitJob);
         const bool draws =
             encoder && encoder->drawIndirect(3, &arguments, 0, &why) && encoder->draw(3, 0, 3, 1, 0, &why);
         if (encoder)
             encoder->end();
         uint32_t sequence = 0;
         expect(draws && cb->commit(sequence) && device.wait(sequence) && cap_draws() - before == 3 &&
-                   mock_iokit_calls(TegraGM20BMethodExec) - submits == 2,
+                   mock_iokit_calls(TegraGM20BMethodSubmitJob) - submits == 2,
                "indirect arguments stay with their macro and direct work resumes after the cut");
         device.destroyBuffer(arguments);
     }
@@ -234,10 +234,10 @@ int main()
         expect(device.stats.uploadBytes - uploaded == 256 + 2048 + 1000 * 256,
                "unchanged dispatches upload one descriptor/root snapshot and fresh QMDs only");
         encoder.end();
-        const unsigned long submits = mock_iokit_calls(TegraGM20BMethodExec);
+        const unsigned long submits = mock_iokit_calls(TegraGM20BMethodSubmitJob);
         uint32_t sequence = 0;
         expect(dispatched && cb->commit(sequence) && device.wait(sequence) &&
-                   mock_iokit_calls(TegraGM20BMethodExec) - submits == 8,
+                   mock_iokit_calls(TegraGM20BMethodSubmitJob) - submits == 8,
                "1000 dispatch launches form eight bounded submissions");
         std::ifstream trace(getenv("RAWCAP_LOG"));
         std::string line;
@@ -368,7 +368,7 @@ int main()
             if (!encoder->draw(3, 0, 3, 1, 0, &why))
                 return 2;
         encoder->end();
-        mock_iokit_fail_after(TegraGM20BMethodExec, 1, 1, kIOReturnNoMemory);
+        mock_iokit_fail_after(TegraGM20BMethodSubmitJob, 1, 1, kIOReturnNoMemory);
         uint32_t sequence = 0;
         expect(!cb->commit(sequence) && cb->partial && cap_draws() - before == raw::BatchWork::kOperations,
                "later submission failure drains the accepted prefix and reports partial execution");

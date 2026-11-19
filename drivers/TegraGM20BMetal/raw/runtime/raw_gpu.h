@@ -2714,12 +2714,6 @@ public:
     // which the facade reads at open): a draw past its buffer's indices binds the buffer with its limit, no padded copy
     bool indexZeroPastLimit = false;
 
-    // The kernel has Order (TegraGM20BInfoOrder)
-    bool canOrder() const
-    {
-        return k_.canOrder();
-    }
-
     // A writer promise (TegraGM20BJobABI.h method 34) of the device's channel for the IOSurface imports `handles`, kept by
     // the job that names it (CommandBuffer::promises) or cancelled
     bool promise(const std::vector<uint64_t> &handles, uint32_t &id)

@@ -182,9 +182,6 @@ struct RawState {
     std::atomic<uint32_t> waitingCommitted{0};  // waiting.committed() as the worker last saw it (the stall line's)
     raw::Mutex eventValues;
     raw::EventTimeline events;
-    // the kernel has Order (TegraGM20BInfoOrder): a kernel event's signal goes in a job behind the channel's work
-    // (signalOrderedOnGpu), and a range may end quiet (raw_completion_source.h cpuOrdered)
-    std::atomic<bool> gpuOrder{false};
     MTLSharedEventListener *listener;  // the CPU-ordered remainder's event waits
     // immutable range fences, the submit worker's to the completion thread; later submissions never change an earlier wait
     raw::HandoffQueue<RMRawRetirement> inflight;

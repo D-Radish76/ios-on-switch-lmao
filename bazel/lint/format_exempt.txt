@@ -9,7 +9,6 @@ drivers/NativeMetal/NativeMetalArtifactCache.h
 drivers/TegraGM20B/TegraGM20BABI.h
 drivers/TegraGM20BMetal/precompile/PrecompileCompute.h
 drivers/TegraGM20BMetal/raw/pack/mock_iokit.c
-drivers/TegraGM20BMetal/raw/pack/mock_submission.h
 drivers/TegraGM20BMetal/raw/pack/native_seed.mm
 drivers/TegraGM20BMetal/raw/pack/native_seed_analysis.h
 drivers/TegraGM20BMetal/raw/pack/native_seed_manifest.h

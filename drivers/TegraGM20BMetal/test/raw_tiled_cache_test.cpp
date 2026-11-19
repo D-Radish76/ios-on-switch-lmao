@@ -53,7 +53,7 @@ TEST(RawTiledCache, NothingWithoutTheKernelsTable)
 {
     uint32_t words[64];
     raw::Push p{words, words + 64};
-    raw::tiledCacheInit(p, info(TegraGM20BInfoHostImport | TegraGM20BInfoOrder));
+    raw::tiledCacheInit(p, info(TegraGM20BInfoHostImport | TegraGM20BInfoKillRecord));
     EXPECT_EQ(p.at, words);
     EXPECT_FALSE(raw::tiledCache(info(0)));
 }

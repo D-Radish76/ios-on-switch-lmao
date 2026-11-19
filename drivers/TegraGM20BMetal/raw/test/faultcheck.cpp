@@ -34,6 +34,7 @@
 #include <tuple>
 #include <unistd.h>
 #include "../runtime/raw_gpu.h"
+#include "TegraGM20BJobABI.h"
 
 extern "C" uint64_t cap_draws(void);
 extern "C" uint32_t cap_reg3d(uint32_t mthd);
@@ -330,9 +331,9 @@ void partialCommit(raw::Device &dev, const Expect &expect)
         e->end();
     }
     const uint64_t reopens = dev.stats.reopens.load();
-    mock_iokit_fail_after(TegraGM20BMethodExec, 1, 1, kIOReturnNoMemory);
+    mock_iokit_fail_after(TegraGM20BMethodSubmitJob, 1, 1, kIOReturnNoMemory);
     uint32_t seq = 0;
-    expect(!cb->commit(seq), "the commit fails at its second Exec");
+    expect(!cb->commit(seq), "the commit fails at its second SubmitJob");
     const bool settled = dev.done(dev.submitted());
     cb->abandon();
     expect(settled, "its first batch completed before commit returned");
@@ -490,7 +491,7 @@ void reopenRefused(raw::Device &dev, const Expect &expect)
         return killed && !dev.wait(killed);
     };
     for (const auto &[method, kr, what] :
-         {std::tuple{unsigned(TegraGM20BMethodExec), int(kIOReturnNoMemory), "the context's Exec"},
+         {std::tuple{unsigned(TegraGM20BMethodSubmitJob), int(kIOReturnNoMemory), "the context's SubmitJob"},
           std::tuple{unsigned(TegraGM20BMethodChannelCreate), int(kIOReturnNoResources), "ChannelCreate"}}) {
         expect(kill(), "a command buffer the kernel killed with its channel");
         const unsigned long creates = mock_iokit_calls(TegraGM20BMethodChannelCreate);
@@ -519,7 +520,7 @@ void invalidateRefused(raw::Device &dev, const Expect &expect)
     const raw::PackPipeline *recs = dev.pack().section<raw::PackPipeline>(raw::PackPipelines);
     for (uint32_t i = 0; i < dev.pack().header()->pipelines; i++)
         dev.pipeline(recs[i].keyHash);  // every state's programs placed
-    mock_iokit_fail_next(TegraGM20BMethodExec, 1, kIOReturnNoMemory);
+    mock_iokit_fail_next(TegraGM20BMethodSubmitJob, 1, kIOReturnNoMemory);
     expect(!copy(dev, a, b), "a submission the kernel refused");
     const uint32_t next = copy(dev, a, b);
     expect(next && dev.wait(next), "the next one");

@@ -3,8 +3,8 @@
 #pragma once
 #import "RawMetalObjects.h"
 
-// The head range is a kernel event's signal no job carries yet, on a kernel with Order (TegraGM20BInfoOrder): its job
-// follows the channel's work before it on the GPU, so it is ready without that work having completed
+// The head range is a kernel event's signal no job carries yet: its job follows the channel's work before it on the GPU,
+// so it is ready without that work having completed
 bool signalOrderedOnGpu(RMCommandBuffer *cb, const RMSegment &range);
 
 enum class RMEventJob {

@@ -2,7 +2,7 @@
 // The TegraGM20B user client as raw::Kernel calls it (drivers/TegraGM20B/TegraGM20BABI.h, TegraGM20BJobABI.h), for the
 // raw path's channel recovery and resource set tests. Channels live in the slots of one fence page: a channel takes the
 // lowest free slot, and a slot's seqnos go on across the channels it holds, so a channel made again can land in a slot
-// whose fence is behind the old one. Jobs (SubmitAddress, SubmitJob) complete as they are submitted, or stay in flight
+// whose fence is behind the old one. Jobs (SubmitJob) complete as they are submitted, or stay in flight
 // until a kill, which writes the record and then moves the fence past every seqno given out, as the kernel does, or with
 // a test's GPU (model_gpu.h) complete as it runs them, a WaitFence waiting for that. Each job keeps the words of its
 // pushes that lie in memory the model bound (VmBind), for a test to read the methods back, and checkJob sees the words of
@@ -57,7 +57,7 @@ struct Job {
     uint32_t channel = 0, seqno = 0;
     uint64_t uid = 0;
     std::vector<TegraGM20BAbiSurfaceUse> uses;
-    uint32_t flags = 0;           // SubmitAddress: TegraGM20BAbiSubmit.surface_flags; SubmitJob: TegraGM20BAbiJob.flags
+    uint32_t flags = 0;           // TegraGM20BAbiJob.flags
     std::vector<uint32_t> words;  // its pushes' method stream, in push order, where the model's memory holds them
     std::vector<TegraGM20BAbiPush> pushes;  // a SubmitJob's GP entries
     bool hostWritten = false;               // the kernel drops the GPU L2's lines before the job (gpu_exec.c)
@@ -105,7 +105,7 @@ struct Model {
     }
 
     SetState sets[TegraGM20BMaxResourceSets];
-    unsigned submitJobs = 0, setJobs = 0, staleSets = 0, addressJobs = 0, staleViews = 0;
+    unsigned submitJobs = 0, setJobs = 0, staleSets = 0, staleViews = 0;
     unsigned setRefusals = 0;    // ResourceSetCreates refused for a member
     uint64_t refusedHandle = 0;  // the last one's member
     unsigned setRepeats = 0;     // ResourceSetCreate records naming a BO an earlier record of the same call named
@@ -288,28 +288,6 @@ struct Model {
             fence(channel - 1).completed = job.seqno;
         reply = {job.seqno, 0};
         return KERN_SUCCESS;
-    }
-
-    int submit(const TegraGM20BAbiSubmitAddress &address, TegraGM20BAbiExecReply &reply)
-    {
-        const auto *head = reinterpret_cast<const TegraGM20BAbiSubmit *>(uintptr_t(address.address));
-        Slot *s = live(head->channel);
-        if (!s)
-            return kIOReturnBadArgument;
-        if (s->error)
-            return kIOReturnNotResponding;
-        if (refuse) {
-            refuse--;
-            return refusal;
-        }
-        const auto *uses = reinterpret_cast<const TegraGM20BAbiSurfaceUse *>(
-            reinterpret_cast<const uint8_t *>(head + 1) + head->push_count * sizeof(TegraGM20BAbiPush));
-        addressJobs++;
-        const int kr = run(*s, head->channel, {uses, uses + head->surface_count}, reply, head->surface_flags,
-                           pushWords(reinterpret_cast<const TegraGM20BAbiPush *>(head + 1), head->push_count));
-        if (jobAdded)
-            jobAdded();
-        return kr;
     }
 
     int submitJob(const TegraGM20BAbiSubmitAddress &address, TegraGM20BAbiExecReply &reply)
@@ -657,9 +635,6 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         model.foreignTakesFreedSlot = false;
         return KERN_SUCCESS;
     }
-    case TegraGM20BMethodSubmitAddress:
-        return model.submit(*static_cast<const TegraGM20BAbiSubmitAddress *>(input),
-                            *static_cast<TegraGM20BAbiExecReply *>(output));
     case TegraGM20BMethodWaitFence:
         return model.wait(*static_cast<const TegraGM20BAbiWaitFence *>(input));
     case TegraGM20BMethodGetStatus:

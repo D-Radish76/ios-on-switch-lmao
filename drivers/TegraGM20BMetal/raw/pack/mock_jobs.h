@@ -6,6 +6,8 @@
 #pragma once
 #include "TegraGM20BJobABI.h"
 
+static kern_return_t mock_call(mach_port_t, uint32_t, const void *, size_t, void *, size_t *);
+
 static struct {
     uint32_t live, generation;
 } mock_sets[TegraGM20BMaxResourceSets];

@@ -41,9 +41,7 @@ bool signalOrderedOnGpu(RMCommandBuffer *cb, const RMSegment &range)
     if (!range.event || range.gpuSignal)
         return false;
     const Cmd c = cb->_plan.legacy(range.from);
-    if (c.op != OpSignalEvent || !sharedEventLease((__bridge id)c.obj))
-        return false;
-    return gRM->gpuOrder;
+    return c.op == OpSignalEvent && sharedEventLease((__bridge id)c.obj);
 }
 
 // `setRefused`: the job's resource set refusal (raw::Device::setRefused), empty for none

@@ -63,7 +63,6 @@ TEST_F(ResourceSetTest, MembersGoWithTheSetNotAsUses)
     ASSERT_TRUE(set.add(kernel, {{&root, kWrite}, {&tickets, kWrite}, {&ring, kRead}}));
     ASSERT_TRUE(job());
     EXPECT_EQ(model.setJobs, 1u);
-    EXPECT_EQ(model.addressJobs, 0u);
     EXPECT_TRUE(used(root.handle, kWrite));
     EXPECT_TRUE(used(ring.handle, kRead));
     ASSERT_TRUE(job({{0x5000, kRead, 0}}));

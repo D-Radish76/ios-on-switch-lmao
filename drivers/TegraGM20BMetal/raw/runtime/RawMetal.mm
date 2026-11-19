@@ -320,7 +320,6 @@ id<MTLDevice> raw_metal_device_open(const char *packPath, uint64_t stack, uint64
     gRM = r;
     r->device = [cls new];
     fillDeviceLimits(r->device);
-    r->gpuOrder = dev->canOrder();
     r->handlers = followingSerialQueue("com.brunostjohn.switch.raw.handlers");
     r->listener = [[MTLSharedEventListener alloc] initWithDispatchQueue:r->handlers];
     gRawRelease.startOnPressure(

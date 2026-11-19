@@ -287,11 +287,6 @@ public:
     // `result` (null: not wanted): WaitFence's kern_return_t; kIOReturnAborted is that job's own event wait failing.
     bool wait(uint32_t channel, uint32_t seqno, uint64_t timeoutNs = ~0ull, int *result = nullptr);
 
-    bool canOrder() const
-    {
-        return (info_.flags & TegraGM20BInfoOrder) != 0;
-    }
-
     // A channel's fence word is a TegraGM20BAbiFence: a kill names the seqnos it took
     bool killRecords() const
     {

@@ -18,7 +18,6 @@ struct RangeEnd {
     bool observed = false;      // completed handlers, a drawable present, or a thread in waitUntilCompleted
     bool handlersOnly = false;  // observed by completed handlers alone
     bool compositor = false;    // the render server's device (raw::Device::Role::RenderServer)
-    bool cpuOrdered = false;    // a kernel without Order (TegraGM20BInfoOrder): every range ends loud
 };
 
 // Quiet when nothing waits for this range alone and the submit thread has more raw work in hand to put behind it. The
@@ -28,7 +27,7 @@ struct RangeEnd {
 // completion, in order.
 inline bool quietEnd(const RangeEnd &end)
 {
-    if (end.signals || end.cpuOrdered)
+    if (end.signals)
         return false;
     if (!end.lastOfBuffer)
         return end.nextRangeRaw;
