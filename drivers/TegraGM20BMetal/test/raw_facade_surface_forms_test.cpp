@@ -143,6 +143,77 @@ void planesOffSixteenAreRoundedForTheGpu()
     CFRelease(one);
 }
 
+// An 8x8 '420v' of 8 MiB + 16 KiB, plane 0 bytes `rows` apart at `luma`, plane 1 pairs `rows` apart at `chroma`
+IOSurfaceRef narrowPlanes(unsigned rows, unsigned luma, unsigned chroma)
+{
+    return IOSurfaceCreate((__bridge CFDictionaryRef) @{
+        (id)kIOSurfaceWidth : @8,
+        (id)kIOSurfaceHeight : @8,
+        (id)kIOSurfacePixelFormat : @(uint32_t('420v')),
+        (id)kIOSurfaceAllocSize : @((8u << 20) + 16384),
+        (id)kIOSurfacePlaneInfo : @[
+            @{
+                (id)kIOSurfacePlaneWidth : @8,
+                (id)kIOSurfacePlaneHeight : @8,
+                (id)kIOSurfacePlaneBytesPerElement : @1,
+                (id)kIOSurfacePlaneBytesPerRow : @(rows),
+                (id)kIOSurfacePlaneOffset : @(luma),
+                (id)kIOSurfacePlaneSize : @(8 * rows)
+            },
+            @{
+                (id)kIOSurfacePlaneWidth : @4,
+                (id)kIOSurfacePlaneHeight : @4,
+                (id)kIOSurfacePlaneBytesPerElement : @2,
+                (id)kIOSurfacePlaneBytesPerRow : @(rows),
+                (id)kIOSurfacePlaneOffset : @(chroma),
+                (id)kIOSurfacePlaneSize : @(4 * rows)
+            }
+        ]
+    });
+}
+
+// A two-plane YCbCr texture's CPU copies move its luma codes alone, a code a texel at its plane's own offset and rows
+// (8 at 8, which its GPU reads 1 MiB apart from 0), never its chroma; a packed 10-bit one's move nothing (an M4 Max:
+// m2v-textures13 probes/c4misc/RESULT.txt P1, P2)
+void ycbcrCpuCopiesMoveTheLumaPlaneAlone()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.ycbcr.ycbcr_packed_converted_frag", MTLPixelFormatRGBA16Float}}));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef narrow = narrowPlanes(8, 8, 4100), wide = narrowPlanes(16, 0, 4096);
+    ASSERT_TRUE(narrow && wide);
+    uint8_t *base = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(narrow));
+    memset(base, 0xee, 8192);
+    RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:sampled(500, 8) iosurface:narrow plane:0];
+    ASSERT_TRUE(t != nil && t->_rawOk);
+    uint8_t codes[4 * 16];
+    for (unsigned i = 0; i < sizeof codes; i++)
+        codes[i] = uint8_t(i * 7 + 3);
+    [(id<MTLTexture>)t replaceRegion:MTLRegionMake2D(2, 3, 4, 4) mipmapLevel:0 withBytes:codes bytesPerRow:16];
+    for (unsigned a = 0; a < 8192; a++) {
+        const unsigned y = (a - 8) / 8, x = (a - 8) % 8;
+        const bool region = a >= 8 && y >= 3 && y < 7 && x >= 2 && x < 6;
+        EXPECT_EQ(base[a], region ? codes[(y - 3) * 16 + x - 2] : 0xee) << "byte " << a;
+    }
+    uint8_t back[4 * 16];
+    memset(back, 0x55, sizeof back);
+    [(id<MTLTexture>)t getBytes:back bytesPerRow:16 fromRegion:MTLRegionMake2D(2, 3, 4, 4) mipmapLevel:0];
+    for (unsigned i = 0; i < sizeof back; i++)
+        EXPECT_EQ(back[i], i % 16 < 4 ? codes[i] : 0x55) << "buffer byte " << i;
+    RMTexture *p = (RMTexture *)[device newTextureWithDescriptor:sampled(508, 8) iosurface:wide plane:0];
+    ASSERT_TRUE(p != nil && p->_rawOk);
+    uint8_t *bytes = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(wide));
+    memset(bytes, 0xee, 8192);
+    [(id<MTLTexture>)p replaceRegion:MTLRegionMake2D(0, 0, 4, 4) mipmapLevel:0 withBytes:codes bytesPerRow:16];
+    EXPECT_EQ(std::count(bytes, bytes + 8192, 0xee), 8192) << "a packed 10-bit texture's replaceRegion moves nothing";
+    memset(back, 0x55, sizeof back);
+    [(id<MTLTexture>)p getBytes:back bytesPerRow:16 fromRegion:MTLRegionMake2D(0, 0, 4, 4) mipmapLevel:0];
+    EXPECT_EQ(std::count(back, back + sizeof back, 0x55), long(sizeof back)) << "nor its getBytes";
+    CFRelease(narrow);
+    CFRelease(wide);
+}
+
 }  // namespace
 
 TEST(RawFacadeSurfaceForms, RGB10A8XrReadsItsPlaneAndTheNext)
@@ -158,4 +229,9 @@ TEST(RawFacadeSurfaceForms, YcbcrReadsItsPlaneAndTheNext)
 TEST(RawFacadeSurfaceForms, RGB10A8XrPlanesOffSixteenAreRoundedForTheGpu)
 {
     switch_ios::test::ExpectPassesInFreshProcess(planesOffSixteenAreRoundedForTheGpu);
+}
+
+TEST(RawFacadeSurfaceForms, YcbcrCpuCopiesMoveTheLumaPlaneAlone)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(ycbcrCpuCopiesMoveTheLumaPlaneAlone);
 }

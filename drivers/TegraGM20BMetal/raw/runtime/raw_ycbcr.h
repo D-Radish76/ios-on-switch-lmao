@@ -113,6 +113,12 @@ constexpr uint32_t planeStoreStride(uint32_t bytesPerRow)
 
 bool isYcbcrFormat(uint32_t pixelFormat);
 
+// Whether `pixelFormat` is a two-plane YCbCr format, and the bytes of each texel Metal's CPU copies of a texture of it move:
+// its luma code's alone (1, or 2 for unpacked 10-bit codes) from its plane at the plane's own offset and rows, never its
+// chroma; 0 for a packed 10-bit format, of which they move nothing (an M4 Max, validation on and off, rows under 16 bytes
+// and over: m2v-textures13 probes/c4misc/RESULT.txt P1, P2)
+bool ycbcrCpuLuma(uint32_t pixelFormat, uint32_t &bytes);
+
 // Whether Metal makes no texture of `usage` over a surface (MTLDevice.h newTextureWithDescriptor:iosurface:plane:, nullable): a
 // format of chroma halved across or down, of an odd width or height, that the GPU may write (render target, shader write or
 // Unknown usage). An M4 Max answers nil, and makes one used only to be read.

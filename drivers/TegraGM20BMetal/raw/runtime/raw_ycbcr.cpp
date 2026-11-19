@@ -226,6 +226,15 @@ bool isYcbcrFormat(uint32_t pixelFormat)
     return findFormat(pixelFormat) != nullptr;
 }
 
+bool ycbcrCpuLuma(uint32_t pixelFormat, uint32_t &bytes)
+{
+    const Format *f = findFormat(pixelFormat);
+    if (!f || f->layout != TwoPlanes)
+        return false;
+    bytes = f->packed ? 0 : f->bits == 8 ? 1 : 2;
+    return true;
+}
+
 bool ycbcrMetalRefuses(uint32_t pixelFormat, uint32_t width, uint32_t height, uint64_t usage)
 {
     constexpr uint64_t kWrites = 2 | 4;  // ShaderWrite, RenderTarget

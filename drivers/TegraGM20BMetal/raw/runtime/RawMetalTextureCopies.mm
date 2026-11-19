@@ -6,6 +6,7 @@
 #import "RawMetalMultisample.h"
 #import "RawMetalXrPlanes.h"
 #include "raw_texture_cpu_range.h"
+#include "raw_ycbcr.h"
 
 namespace {
 // A region of `t`'s texels in its elements: a block-compressed texture's blocks (Metal's region of one is whole blocks but at
@@ -103,6 +104,48 @@ void planeRows(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, ui
     }
 }
 
+// replaceRegion/getBytes of a two-plane YCbCr texture over a surface: its luma codes alone, a code a texel at its plane's
+// own offset and rows (raw_ycbcr.h ycbcrCpuLuma), nothing of a packed 10-bit one. False: not such a texture
+bool ycbcrLumaRows(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, uint8_t *bytes, NSUInteger row,
+                   bool write)
+{
+    uint32_t unit = 0;
+    const raw::Texture *luma = t->_rawOk && t->_surface ? t->_raw.luma : nullptr;
+    if (!luma || !raw::ycbcrCpuLuma(uint32_t(t->_descriptor.pixelFormat), unit))
+        return false;
+    if (!unit || level || slice || r.origin.z || r.size.depth != 1 || r.origin.x + r.size.width > t->_raw.width ||
+        r.origin.y + r.size.height > t->_raw.height)
+        return true;
+    const size_t line = r.size.width * unit;
+    if (row && row < line) {
+        // an M4 Max's driver asserts "bytes_per_row >= used_bytes_per_row" and moves nothing (probes/c4misc P4)
+        SWITCH_REFUSE_DETAIL("raw", "texture.cpu.unreached", row,
+                             "%s of %lux%lu of a format %lu texture with bytesPerRow %lu under its %zu-byte row: nothing "
+                             "moved (Metal's validation stops it)",
+                             write ? "replaceRegion" : "getBytes", (unsigned long)r.size.width,
+                             (unsigned long)r.size.height, (unsigned long)t->_descriptor.pixelFormat,
+                             (unsigned long)row, line);
+        return true;
+    }
+    IOSurfaceRef s = t->_surface;
+    const bool planes = IOSurfaceGetPlaneCount(s) > 0;
+    uint8_t *plane = static_cast<uint8_t *>(planes ? IOSurfaceGetBaseAddressOfPlane(s, t->_plane)
+                                                   : IOSurfaceGetBaseAddress(s));
+    const size_t pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, t->_plane) : IOSurfaceGetBytesPerRow(s);
+    uint8_t *first = plane + r.origin.y * pitch + r.origin.x * unit;
+    raw::HostAccess access;
+    if (!gRM->raw->hostAccess(*luma, first, (r.size.height - 1) * pitch + line, write, access))
+        [NSException raise:NSInternalInconsistencyException format:@"GPU texture CPU ownership failed"];
+    for (NSUInteger y = 0; y < r.size.height; y++) {
+        uint8_t *codes = first + y * pitch;
+        if (write)
+            memcpy(codes, bytes + y * row, line);
+        else
+            memcpy(bytes + y * row, codes, line);
+    }
+    return true;
+}
+
 // A memoryless texture holds nothing between passes: Apple's driver leaves getBytes' bytes as they were and drops
 // replaceRegion's (an M-series Mac with API validation off), where its twin would open m2v
 bool cpuReachesNothing(RMTexture *t)
@@ -177,6 +220,8 @@ RMTexture *cpuOwner(RMTexture *t)
         noteSurfaceWrite(_surfaceWrites);
     freshBeforeTransfer(self);
     if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, true))
+        return;
+    if (ycbcrLumaRows(self, r, level, slice, (uint8_t *)bytes, row, true))
         return;
     if (_cpuRows) {
         planeRows(self, r, level, slice, (uint8_t *)bytes, row, true);
@@ -265,6 +310,8 @@ RMTexture *cpuOwner(RMTexture *t)
     }
     freshBeforeTransfer(self);
     if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, false))
+        return;
+    if (ycbcrLumaRows(self, r, level, slice, (uint8_t *)bytes, row, false))
         return;
     if (_cpuRows) {
         planeRows(self, r, level, slice, (uint8_t *)bytes, row, false);
