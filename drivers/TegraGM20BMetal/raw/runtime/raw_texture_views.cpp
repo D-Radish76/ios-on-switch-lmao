@@ -8,6 +8,7 @@
 #include "raw_srgb_pair.h"
 #include "raw_target.h"
 #include "raw_view.h"
+#include "raw_xr.h"
 
 #include <algorithm>
 #include <cstring>
@@ -327,7 +328,8 @@ bool Device::createZetaOver(const ZetaMemory &m, uint32_t width, uint32_t height
 bool Device::stencilTemp(Texture &t)
 {
     constexpr uint32_t kRG8Unorm = 30;
-    if (t.stencilTemp || !t.zeta || t.format != kZetaFormat)
+    const bool fifthByte = (t.zeta && t.format == kZetaFormat) || (twoPlaneXr(t.format) && t.bpp == 8 && !t.xrPlanes);
+    if (t.stencilTemp || !fifthByte)
         return t.stencilTemp != nullptr;
     Texture *temp = new Texture;
     if (!createTexture(t.width, t.height, kRG8Unorm, *temp)) {

@@ -5,6 +5,7 @@
 #import "RawMetalBlitRules.h"
 #import "RawMetalCopyClamp.h"
 #import "RawMetalStandIns.h"
+#import "RawMetalXrCopies.h"
 #include "raw_format_standin.h"
 #include "../fx/fx_mip_probe.h"
 #include "../fx/fx_mip_route.h"
@@ -202,6 +203,10 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
                        sz = uint32_t(extra(cb, x + 4)), w = uint32_t(extra(cb, x + 5)), h = uint32_t(extra(cb, x + 6)),
                        d = uint32_t(extra(cb, x + 7)), dx = uint32_t(o), dy = uint32_t(o >> 32),
                        dz = uint32_t(extra(cb, x + 11)), ss = uint32_t(extra(cb, x)), ds = uint32_t(extra(cb, x + 8));
+        if (c.a == kCopyXrPlanes) {
+            copyXrPlanes(be, s, ss, sx, sy, t, ds, dx, dy, w, h);
+            break;
+        }
         if (c.a == kCopyPlanes) {
             copyPlanePair(be, s->_raw, sx, sy, t->_raw, dx, dy, w, h);
             break;

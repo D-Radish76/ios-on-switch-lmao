@@ -212,9 +212,10 @@ void failNoImage(__unsafe_unretained RMCommandBuffer *cb, const char *call)
 void failNoStencilTemp(__unsafe_unretained RMCommandBuffer *cb, const char *call)
 {
     SWITCH_REFUSE("raw", "blit.stencil_memory",
-                  "%s: no memory for a Depth32Float_Stencil8 texture's stencil temp: MTLCommandBufferErrorOutOfMemory",
+                  "%s: no memory for a texture's byte temp (Depth32Float_Stencil8's stencil, RGB10A8_2P_XR10's alpha): "
+                  "MTLCommandBufferErrorOutOfMemory",
                   call);
-    failCommandBuffer(cb, @"no memory for a stencil copy's temp", MTLCommandBufferErrorOutOfMemory);
+    failCommandBuffer(cb, @"no memory for a copy's byte temp", MTLCommandBufferErrorOutOfMemory);
 }
 
 const char *copySideInvalid(RMTexture *t, NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size)

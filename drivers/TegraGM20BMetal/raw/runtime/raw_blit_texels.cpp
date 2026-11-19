@@ -15,10 +15,13 @@ void BlitEncoder::copyTexels(const Texture &src, uint32_t sx, uint32_t sy, uint3
     cb_->use(src, false);
     cb_->use(dst, true);
     room(32);
+    // an eight-byte texel's first or second word alone: Depth32Float_Stencil8's depth or stencil word, RGB10A8_2P_XR10's
+    // colour word or alpha word
     const uint32_t remap = aspect == kAspectStencil ? remapOf(kRemapNoWrite, 1, kRemapNoWrite, kRemapNoWrite, 4, 2, 2)
+                           : aspect == kAspectDepth ? remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 4, 2, 2)
                                                     : texelRemap(src.bpp);
     copyRemapped(p_, sideOf(src, sx, sy, sz), sideOf(dst, dx, dy, dz), w, h, remap,
-                 aspect == kAspectStencil ? 4 : src.bpp, dev_->stats);
+                 aspect == kAspectWhole ? src.bpp : 4, dev_->stats);
 #if SWITCH_RAW_DIAGNOSTICS
     char detail[64];
     snprintf(detail, sizeof detail, " from %ux%u f%u at %u,%u", src.width, src.height, src.format, sx, sy);
@@ -121,14 +124,21 @@ void BlitEncoder::copyBufferTexels(uint64_t va, uint32_t pitch, const Texture &t
                      4, dev_->stats);
         return;
     }
-    if (t.zeta && t.format == kZetaFormat && aspect == kAspectStencil && t.stencilTemp) {
-        // its fifth byte, stencil: as the third of its two-byte components to or from the temp's two bytes a texel, and those
-        // two bytes' first to or from the buffer's byte; each launch after the copies before it, which may share the temp
+    if (aspect == kAspectStencil && t.stencilTemp && ((t.zeta && t.format == kZetaFormat) || twoPlaneXr(t.format))) {
+        // its fifth byte, stencil (an RGB10A8_2P_XR10 texel's alpha, whose sixth byte is 0): as the third of its two-byte
+        // components to or from the temp's two bytes a texel, the buffer's byte and a 0, and those two bytes' first to or
+        // from the buffer's byte; each launch after the copies before it, which may share the temp
         const Texture &s = *t.stencilTemp;
         cb_->use(s, true);
         const CopySide temp{s.va + uint64_t(y) * s.pitch + 2ull * x, s.pitch};
         if (toTexture) {
-            copyRemapped(p_, rows, temp, w, h, remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 1, 1, 2), 1,
+            const bool xr = twoPlaneXr(t.format);
+            if (xr) {
+                room(64);
+                p_.m(CE_SET_REMAP_CONST_A, 0, SUBC_COPY);
+            }
+            copyRemapped(p_, rows, temp, w, h,
+                         remapOf(0, xr ? kRemapConstA : kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 1, 1, 2), xr ? 2 : 1,
                          dev_->stats, true);
             copyRemapped(p_, temp, texels, w, h, remapOf(kRemapNoWrite, kRemapNoWrite, 0, kRemapNoWrite, 2, 1, 4), 2,
                          dev_->stats, true);

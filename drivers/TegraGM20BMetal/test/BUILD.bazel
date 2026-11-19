@@ -2267,6 +2267,15 @@ host_test(
 )
 
 host_test(
+    name = "raw_xr_copy_test",
+    srcs = [
+        "raw_xr_copy_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_copy.h",
+    ],
+    cxx_std = "c++17",
+)
+
+host_test(
     name = "raw_xr_test",
     srcs = [
         "raw_xr_test.cpp",
@@ -5661,6 +5670,7 @@ host_test(
     "raw_facade_multisample_copy_test",
     "raw_facade_plane_copies_test",
     "raw_facade_texture_copies_test",
+    "raw_facade_xr_copies_test",
 ]]
 
 # A command recorded on an encoder after its endEncoding: moved inside the encoder that ended last, or its command

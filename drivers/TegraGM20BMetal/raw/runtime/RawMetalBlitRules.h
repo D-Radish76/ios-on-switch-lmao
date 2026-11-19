@@ -9,8 +9,9 @@ constexpr int kAspectNoMemory = -1;
 
 // A texture-to-texture copy's form (OpCopyTexture's a) past raw::kAspectWhole and raw::kAspectStencil (a stencil view into
 // another): a stencil view's stencil into a texture of one-byte texels, the other way, both planes of two textures held
-// through planes, and plane 0's bytes of a side held through planes (raw_blit_planes.h planeBytes)
-constexpr uint32_t kCopyStencilOut = 3, kCopyStencilIn = 4, kCopyPlanes = 5, kCopyPlaneBytes = 6;
+// through planes, plane 0's bytes of a side held through planes (raw_blit_planes.h planeBytes), and RGB10A8_2P_XR10 of a
+// descriptor's with another (RawMetalXrCopies.h)
+constexpr uint32_t kCopyStencilOut = 3, kCopyStencilIn = 4, kCopyPlanes = 5, kCopyPlaneBytes = 6, kCopyXrPlanes = 7;
 
 MTLSize levelSize(id<MTLTexture> t, NSUInteger level);
 NSUInteger sliceCount(id<MTLTexture> t);

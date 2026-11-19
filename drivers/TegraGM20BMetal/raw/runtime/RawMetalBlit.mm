@@ -5,6 +5,7 @@
 #import "RawMetalResolveAsk.h"
 #import "RawMetalBlitImages.h"
 #import "RawMetalBlitRules.h"
+#import "RawMetalXrCopies.h"
 #include "raw_blit_planes.h"
 
 namespace {
@@ -128,7 +129,15 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
     if (!a || !b)
         return notRawTexture(_cb, a ? d : s);
     flatSlice(call, a, ss);
-    if (raw::heldInPlanes(a->_raw) || raw::heldInPlanes(b->_raw)) {
+    if (xrDescriptorCopy(a, b)) {
+        if (const char *invalid = copySideInvalid(a, ss, sl, so, size) ?: copySideInvalid(b, ds, dl, dorg, size))
+            return invalidBlit(_cb, call, invalid);
+        if (a->_descriptor.pixelFormat != b->_descriptor.pixelFormat)
+            copyAcrossFormats(call);
+        if (!xrCopyTemps(a, b))
+            return failNoStencilTemp(_cb, call);
+        form = kCopyXrPlanes;
+    } else if (raw::heldInPlanes(a->_raw) || raw::heldInPlanes(b->_raw)) {
         if (const char *invalid = copySideInvalid(a, ss, sl, so, size) ?: copySideInvalid(b, ds, dl, dorg, size)
                                                                      ?: planesCopyForm(a, sl, so, size, b, dorg, form))
             return invalidBlit(_cb, call, invalid);
