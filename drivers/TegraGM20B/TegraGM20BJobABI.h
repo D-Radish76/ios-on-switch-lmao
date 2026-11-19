@@ -143,12 +143,13 @@ struct TegraGM20BAbiJobPromises {
 	uint32_t promise[TegraGM20BMaxJobPromises];
 };
 
-/* Method 33, reply TegraGM20BAbiExecReply. Pushes and shared uses are as SubmitAddress's (TegraGM20BPushFence allowed);
- * push VAs are not resolved to BOs: pushes in GPU-cached memory need HostWritten after CPU writes.
+/* Method 33, input TegraGM20BAbiSubmitAddress, reply TegraGM20BAbiExecReply. The job is followed by its pushes
+ * (TegraGM20BPushFence allowed), then its shared uses; push VAs are not resolved to BOs: pushes in GPU-cached memory need
+ * HostWritten after CPU writes.
  * With a set, the job runs after the latest job of each other channel of the connection that named the set, as an
  * acquire on that channel's fence word, and its members take no per-use work. kIOReturnNotReady: set_generation is not
  * the set's (its fence-page word says the current one), or a shared use's native view is stale. A member named as a
- * shared use is refused. Shared uses keep SubmitAddress's ownership exactly, CPU-lock exclusion included.
+ * shared use is refused. Shared uses take ownership as their access says, CPU-lock exclusion included.
  * Order between two channels is the order their SubmitJobs return in; calls that overlap are not ordered by the set.
  * A job submitted without the set that uses a member is not ordered against the set's jobs. */
 struct TegraGM20BAbiJob {
@@ -159,8 +160,6 @@ struct TegraGM20BAbiJob {
 
 enum {
 	TegraGM20BMethodEventWord = 40,
-	TegraGM20BSubmitEventReleases = 1u
-		<< 12, /* TegraGM20BAbiSubmit.surface_flags (SubmitAddress) */
 	TegraGM20BJobEventReleases = 1u << 12, /* TegraGM20BAbiJob.flags */
 	TegraGM20BEventReleaseLimit = 1u << 31,
 	/* The connection's fence page holds the word of each imported event whose handle's slot is below
@@ -188,7 +187,7 @@ struct TegraGM20BAbiEventWordReply {
 	uint32_t floor, reserved;
 };
 
-/* With SubmitEventReleases or JobEventReleases, one per signal after the signals. Released: the job's pushes release
+/* With JobEventReleases, one per signal after the signals. Released: the job's pushes release
  * payload into the event's word for it (method 40); the submission is refused if payload is not that signal's. */
 enum {
 	TegraGM20BSignalReleased = 1u << 0
