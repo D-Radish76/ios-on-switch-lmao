@@ -49,6 +49,12 @@ inline const Texture &storedRows(const Texture &plane, const Texture &t, Texture
     return scratch;
 }
 
+// Each luma texel's frame texel of target `t`, a turned one's in its frame (raw_overlap_order.h frameOrder)
+inline TileMap frameTiles(const Texture &t)
+{
+    return tileMap(frameToPlane(frameOf(t)), 0, 0);
+}
+
 // Whether a plane's rows overlap: its pitch holds fewer bytes than a row
 inline bool overlapsRows(const Texture &plane)
 {
@@ -97,13 +103,15 @@ inline void overlapTarget(const Texture &plane, uint64_t va, uint32_t pitch, uin
 }
 
 // The plane's bytes from `planeVa` drawn from `source` by `state`: the run of its whole pitches, then the bytes past it.
-// `chroma`: a one-plane target's chroma image (s.pairs); `loaded`: a loaded pass's reach and each luma texel's frame tile.
-// 0, or 1 a target the raw path cannot render, 2 a draw the encoder refused (*why)
+// `chroma`: a one-plane target's chroma image (s.pairs); `frame`: each luma texel's frame texel (frameTiles); `loaded`: a
+// loaded pass's reach and each luma texel's frame tile. 0, or 1 a target the raw path cannot render, 2 a draw the encoder
+// refused (*why)
 inline int storeOverlapRows(CommandBuffer &rc, Pipeline *state, uint32_t format, uint64_t planeVa,
                             const Texture &plane, const Texture &source, const Texture *chroma, OverlapRows s,
-                            const TurnMask *loaded, const char **why)
+                            const TileMap &frame, const TurnMask *loaded, const char **why)
 {
     const uint32_t span = s.pitch * (s.rows - 1) + s.row, whole = span / s.pitch, tail = span - whole * s.pitch;
+    s.tiles = frame;
     if (loaded) {
         s.masked = 1;
         s.tiles = loaded->tiles;

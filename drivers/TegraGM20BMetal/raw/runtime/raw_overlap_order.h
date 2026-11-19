@@ -5,9 +5,14 @@
 // row of a pair after the odd one (a 4:2:0 chroma row holds a pair's luma rows). Tiles are stored concurrently: runs of one
 // shape differ wherever two tiles share a byte. The order here takes the tiles from the last tile row up, each row from its
 // last tile back: every run of the shapes whose runs agree followed it (6 shapes), and the most runs of the rest (56%; the
-// next best order 53%). pack/ycbcr_store_overlap.h draws each byte by it (raw_overlap_rows.h).
+// next best order 53%). A turned target is stored by its FRAME's tiles (the texture as the rasteriser draws it): in a
+// frame tile by the frame's rows, with no miss in 1.46 M byte runs of 124 turned and unturned shapes; at a quarter turn the
+// 64-wide frame column further left lands later, then the tile further down, the best fixed order of a race (62-70% of an
+// M4 Max's bytes, 39-44% by the plane's tiles: m2v-textures12 probes/f3/RESULT.txt). pack/ycbcr_store_overlap.h draws
+// each byte by it (raw_overlap_rows.h).
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 
 #include "raw_reach.h"
@@ -24,17 +29,38 @@ struct OverlapRows {
     uint32_t masked = 0;  // a loaded pass: only rows in the 32x32 frame tiles its draws reach store (tiles)
     uint32_t kept = ~0u;  // a row's byte no store writes (an odd-width one-plane target's last Y1), ~0u: none
     uint32_t pairs = 0;   // a one-plane target's pairs from its luma and chroma images: 1 Y0 Cb Y1 Cr, 2 Cb Y0 Cr Y1
-    TileMap tiles;        // each luma texel's frame tile, a turned target's in its frame
+    TileMap tiles;        // each luma texel's frame texel and tile, a turned target's in its frame
 };
 
 static_assert(sizeof(OverlapRows) == 76, "pack/ycbcr_store_overlap.h OverlapRows");
 
-// Where the store of luma texel (x, y) lands in the order, later stores higher (pack/ycbcr_store_overlap.h overlapOrder)
+// Where the store of frame texel (x, y) of an unturned or half-turned frame lands in the order, later stores higher
+// (pack/ycbcr_store_overlap.h overlapOrder)
 inline uint32_t overlapOrder(uint32_t x, uint32_t y)
 {
     const uint32_t tileRow = y / 32, tileColumn = x / 64;
     return (0xffffu - tileRow) << 14 | (0xffu - tileColumn) << 6 | (x % 64 / 32) << 5 | (y % 32 / 2) << 1 |
            ((y & 1) == 0 ? 1u : 0u);
+}
+
+// The frame texel `map` takes the top-left of a store of `across` x `down` plane texels from (x, y) to: the frame's first
+// of them (a 4:2:0 chroma block's top-left frame texel)
+inline void frameTexel(const TileMap &map, uint32_t x, uint32_t y, uint32_t across, uint32_t down, uint32_t &fx,
+                       uint32_t &fy)
+{
+    const int32_t px = int32_t(x), py = int32_t(y), sx = int32_t(across) - 1, sy = int32_t(down) - 1;
+    fx = uint32_t(map.ax * px + map.ay * py + map.cx + std::min(map.ax, 0) * sx + std::min(map.ay, 0) * sy);
+    fy = uint32_t(map.bx * px + map.by * py + map.cy + std::min(map.bx, 0) * sx + std::min(map.by, 0) * sy);
+}
+
+// Where the store of frame texel (fx, fy) lands in the order of a frame `map` turns a quarter or not (ax 0: the plane's x
+// runs down the frame)
+inline uint32_t frameOrder(const TileMap &map, uint32_t fx, uint32_t fy)
+{
+    if (map.ax != 0)
+        return overlapOrder(fx, fy);
+    return (0x3ffu - fx / 64) << 22 | (fy / 32) << 6 | (fx % 64 / 32) << 5 | (fy % 32 / 2) << 1 |
+           ((fy & 1) == 0 ? 1u : 0u);
 }
 
 // The row whose store of plane byte `a` lands last and that row's byte, as pack/ycbcr_store_overlap.h overlapWinner picks them;
@@ -50,7 +76,9 @@ inline bool overlapWinner(const OverlapRows &s, uint32_t a, Reached reached, uin
         const uint32_t off = a - r * s.pitch, x = off * s.across / s.texelBytes, y = r * s.down;
         if (off == s.kept || (s.masked && !reached(x, y)))
             continue;
-        if (const uint32_t order = overlapOrder(x, y); !found || order > best) {
+        uint32_t fx = 0, fy = 0;
+        frameTexel(s.tiles, x, y, s.across, s.down, fx, fy);
+        if (const uint32_t order = frameOrder(s.tiles, fx, fy); !found || order > best) {
             found = true;
             best = order;
             row = r;
@@ -62,17 +90,19 @@ inline bool overlapWinner(const OverlapRows &s, uint32_t a, Reached reached, uin
 
 // RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (raw_xr_pools.h xrPlanesCross): the overlap planes
 // state's fragment buffer 0 (pack/ycbcr_store_overlap.h OverlapPlanes). Its target is the planes' span `pitch` bytes a row from
-// `base`; each plane's first byte (from the span's), pitch, bytes a row and rows
+// `base`; each plane's first byte (from the span's), pitch, bytes a row and rows; each plane texel's frame texel
 struct OverlapPlanes {
     uint32_t base = 0, pitch = 0;
     uint32_t words = 0, wordPitch = 0, wordRow = 0, wordRows = 0;
     uint32_t alpha = 0, alphaPitch = 0, alphaRow = 0, alphaRows = 0;
+    TileMap tiles;
 };
 
-static_assert(sizeof(OverlapPlanes) == 40, "pack/ycbcr_store_overlap.h OverlapPlanes");
+static_assert(sizeof(OverlapPlanes) == 72, "pack/ycbcr_store_overlap.h OverlapPlanes");
 
-// The texel whose store of span byte `a` lands last, of either plane, as an M4 Max's pass stores both: overlapOrder's key
-// of each plane's texel, and between a word and an alpha byte of one key the texel further right, at one x the word (a
+// The texel whose store of span byte `a` lands last, of either plane, as an M4 Max's pass stores both: frameOrder's key
+// of each plane texel's frame texel, and between a word and an alpha byte of one key the texel further right in the
+// frame, at one x the word (a
 // 32x8 RGB10A8_2P_XR10 of words 128 bytes a row at 0 and alpha 32 at 512, cleared: alpha rows 0 to 3 keep word row 4,
 // rows 4, 6 and 7 their own, row 5 word row 5's bytes up to its 11th); false where no row stores it. `byte`: the byte of
 // a word texel, 4 for an alpha one
@@ -89,8 +119,10 @@ inline bool overlapPlanesWinner(const OverlapPlanes &s, uint32_t a, uint32_t &x,
         const uint32_t last = off / pitch < rows - 1 ? off / pitch : rows - 1;
         const uint32_t first = off >= row ? (off - row) / pitch + 1 : 0;
         for (uint32_t r = first; r <= last; r++) {
-            const uint32_t b = off - r * pitch, tx = word ? b / 4 : b, order = overlapOrder(tx, r);
-            const uint32_t key = tx << 1 | (word ? 1u : 0u);
+            const uint32_t b = off - r * pitch, tx = word ? b / 4 : b;
+            uint32_t fx = 0, fy = 0;
+            frameTexel(s.tiles, tx, r, 1, 1, fx, fy);
+            const uint32_t order = frameOrder(s.tiles, fx, fy), key = fx << 1 | (word ? 1u : 0u);
             if (!found || order > best || (order == best && key > bestX)) {
                 found = true;
                 best = order;

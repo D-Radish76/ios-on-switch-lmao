@@ -135,15 +135,16 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
             return 2;
         e->end();
         if (overlap)
-            if (const int failed = raw::storeOverlapRows(
-                    *rc, packState(raw::overlapState(plane->format)), plane->format, rows->va, *rows, *plane->sampled,
-                    nullptr, raw::overlapPlaneRows(*rows, chroma, *t.ycbcrStore), masked ? &mask : nullptr, why))
+            if (const int failed = raw::storeOverlapRows(*rc, packState(raw::overlapState(plane->format)),
+                                                         plane->format, rows->va, *rows, *plane->sampled, nullptr,
+                                                         raw::overlapPlaneRows(*rows, chroma, *t.ycbcrStore),
+                                                         raw::frameTiles(t), masked ? &mask : nullptr, why))
                 return failed;
     }
     if (pairsOverlap(t)) {
         if (const int failed =
                 raw::storeOverlapRows(*rc, packState(raw::overlapState(10)), 10, t.planes.luma, t, *t.luma, t.chroma,
-                                      raw::overlapPairsOf(t), masked ? &mask : nullptr, why))
+                                      raw::overlapPairsOf(t), raw::frameTiles(t), masked ? &mask : nullptr, why))
             return failed;
     } else if (t.onePlane) {
         raw::BlitEncoder *merge = rc->blit();

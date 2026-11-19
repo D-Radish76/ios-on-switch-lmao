@@ -69,6 +69,7 @@ inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t,
     s.alphaPitch = a.pitch;
     s.alphaRow = a.width * a.bpp;
     s.alphaRows = a.height;
+    s.tiles = frameTiles(t);
     const uint32_t span = uint32_t(hi - lo), whole = span / s.pitch, tail = span - whole * s.pitch;
     for (const bool part : {false, true}) {
         const uint32_t width = part ? tail : s.pitch, height = part ? 1 : whole;
@@ -136,7 +137,8 @@ inline int storeXrPlaneRows(Device &d, CommandBuffer &rc, const Texture &t, cons
         }
         const OverlapRows order =
             overlapRowsOf(rows.pitch, plane->width * plane->bpp, plane->height, plane->bpp, plane->bpp, 1, 1);
-        if (const int failed = storeOverlapRows(rc, state, format, rows.va, rows, source, nullptr, order, nullptr, why))
+        if (const int failed =
+                storeOverlapRows(rc, state, format, rows.va, rows, source, nullptr, order, frameTiles(t), nullptr, why))
             return failed;
     }
     return 0;

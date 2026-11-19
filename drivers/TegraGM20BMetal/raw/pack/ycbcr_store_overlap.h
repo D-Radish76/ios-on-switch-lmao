@@ -4,8 +4,9 @@
 
 // A target whose plane rows overlap (runtime/raw_overlap_rows.h OverlapRows, overlapOrder and overlapWinner step for step):
 // each plane byte from the pool image of its rows' own texels, the row whose store lands last as an M4 Max stores a pass:
-// tiles of 64x32 luma texels from the last tile row up and each row's last tile back, a tile by 32-texel column, then row
-// pair, the even row of a pair after the odd one. The target is the plane's bytes `pitch` apart from `base`; a texel of the
+// tiles of 64x32 frame texels from the last tile row up and each row's last tile back (at a quarter turn the 64-wide frame
+// column further left later, then the tile further down), a tile by 32-texel column, then row pair, the even row of a
+// pair after the odd one. The target is the plane's bytes `pitch` apart from `base`; a texel of the
 // source is a texel of the target, its bits moved as the unorm it is. A one-plane 4:2:2 target's bytes come from its luma
 // (texture 0) and chroma (texture 2) images.
 struct OverlapRows {
@@ -31,6 +32,21 @@ static uint overlapOrder(uint x, uint y)
            ((y & 1) == 0 ? 1u : 0u);
 }
 
+static uint2 frameTexel(constant Tiles &t, uint x, uint y, uint across, uint down)
+{
+    const int2 p = int2(int(x), int(y)), s = int2(int(across) - 1, int(down) - 1);
+    return uint2(int2(t.ax * p.x + t.ay * p.y + t.cx + min(t.ax, 0) * s.x + min(t.ay, 0) * s.y,
+                      t.bx * p.x + t.by * p.y + t.cy + min(t.bx, 0) * s.x + min(t.by, 0) * s.y));
+}
+
+static uint frameOrder(constant Tiles &t, uint2 f)
+{
+    if (t.ax != 0)
+        return overlapOrder(f.x, f.y);
+    return (0x3ffu - f.x / 64) << 22 | (f.y / 32) << 6 | (f.x % 64 / 32) << 5 | (f.y % 32 / 2) << 1 |
+           ((f.y & 1) == 0 ? 1u : 0u);
+}
+
 static bool overlapWinner(constant OverlapRows &s, Reach reach, uint a, thread uint &row, thread uint &offset)
 {
     const uint last = min(a / s.pitch, s.rows - 1);
@@ -41,7 +57,7 @@ static bool overlapWinner(constant OverlapRows &s, Reach reach, uint a, thread u
         const uint off = a - r * s.pitch, x = off * s.across / s.texelBytes, y = r * s.down;
         if (off == s.kept || (s.masked != 0 && !overlapReached(reach, s, uint2(x, y))))
             continue;
-        const uint order = overlapOrder(x, y);
+        const uint order = frameOrder(s.tiles, frameTexel(s.tiles, x, y, s.across, s.down));
         if (!found || order > best) {
             found = true;
             best = order;
@@ -113,12 +129,13 @@ fragment uint ycbcr_overlap_r32ui_frag(Out in [[stage_in]], texture2d<uint, acce
 
 // RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (runtime/raw_xr_pools.h xrPlanesCross,
 // runtime/raw_overlap_order.h overlapPlanesWinner step for step): each byte of the planes' span from the texel, of either
-// plane's pool, whose store lands last as an M4 Max stores a pass, by overlapOrder and then the texel further right, the word
-// at one x. The target is the span's bytes `pitch` apart from `base`, a byte a texel.
+// plane's pool, whose store lands last as an M4 Max stores a pass, by frameOrder and then the texel further right in the
+// frame, the word at one x. The target is the span's bytes `pitch` apart from `base`, a byte a texel.
 struct OverlapPlanes {
     uint base, pitch;
     uint words, wordPitch, wordRow, wordRows;
     uint alpha, alphaPitch, alphaRow, alphaRows;
+    Tiles tiles;
 };
 
 fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> words [[texture(0)]],
@@ -138,8 +155,9 @@ fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, acc
         const uint off = a - at;
         const uint last = min(off / pitch, rows - 1), first = off >= row ? (off - row) / pitch + 1 : 0;
         for (uint r = first; r <= last; r++) {
-            const uint b = off - r * pitch, x = word ? b / 4 : b, order = overlapOrder(x, r);
-            const uint key = x << 1 | (word ? 1u : 0u);
+            const uint b = off - r * pitch, x = word ? b / 4 : b;
+            const uint2 f = frameTexel(s.tiles, x, r, 1, 1);
+            const uint order = frameOrder(s.tiles, f), key = f.x << 1 | (word ? 1u : 0u);
             if (!found || order > best || (order == best && key > bestX)) {
                 found = true;
                 best = order;
