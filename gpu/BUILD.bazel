@@ -52,8 +52,8 @@ llvm_as(
     out = "air/function_constant.air",
 )
 
-# The selected IPSW build's compile profile: the m2v runtime device the bridge's offline compile makes its translator
-# devices of (translate/NativeMetalOffline.rs). Another build needs its own, frozen from its runtime.
+# The selected IPSW build's compile profile: the GM20B device description and compile policy the translation's offline
+# compile makes its translator devices of (translate/NativeMetalOffline.rs). Another build needs its own.
 alias(
     name = "compile_profile",
     actual = select({
@@ -208,17 +208,14 @@ rust_artifact(
 # (gpu/defs.bzl raw_stack), so an edit to the rest of the raw runtime keeps every record made.
 raw_stack(
     name = "raw_stack",
-    # The frontend's and the bridge's files by bytes, not as a crate: native-seed makes its records through them, and a
-    # crate edge would reach m2v's runtime crate
     srcs = [
         GM20B_METAL + ":raw_stack_sources",
         GM20B_METAL + ":translate_rust",
-        METAL + ":bridge_rust",
     ],
     bridge = ":translate",
     compile = COMPILE,
     include_markers = [
-        METAL + ":NativeBridgeMetalFrontend.h",
+        METAL + ":MetallibSlice.h",
         GM20B_ABI,
         "//kits/SwitchGM20BEmit:context",
         # where NVIDIA's class headers find "nvtypes.h" (raw/pack/nvdec.cpp)

@@ -3,8 +3,7 @@
 # its bundle's build fails on a symbol of m2v's runtime, the bridge or the frontend (tools/gpu/bundle.py).
 #
 #   deps_<binary>.txt  the m2v rules in the binary's build graph and the m2v frontend and bridge files it compiles or
-#                      hashes (a genquery, every select() branch): the plugin's and the bundle's are the files the raw
-#                      stack key hashes while native-seed makes records through them
+#                      hashes (a genquery, every select() branch)
 #   pack_refused_<kind>.txt  the states the raw pack refuses (pack_refusals_test, over a report given to it)
 #
 # A list changes only with the code: rewrite one from the failing test's output (bazel-bin/gpu/m2v_link/<name>.txt).

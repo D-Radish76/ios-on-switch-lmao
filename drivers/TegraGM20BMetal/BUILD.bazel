@@ -90,7 +90,6 @@ filegroup(
 filegroup(
     name = "raw_direct_sources",
     srcs = [
-        "precompile/PrecompileCompute.h",
         "precompile/PrecompileInputs.h",
         "raw/runtime/RawDirect.h",
         "raw/runtime/RawDirect.mm",
@@ -248,13 +247,15 @@ filegroup(
     srcs = [
         ":raw_direct_sources",
         ":raw_pack_records",
-        "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
-        "//drivers/NativeMetal:frontend_headers",
+        "//drivers/NativeMetal:MetallibEntries.h",
+        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/NativeMetal:TwoPlaneStandIn.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "//drivers/TegraGM20B:TegraGM20BJobABI.h",
         "//drivers/TegraGM20B:TegraGM20BLayout.h",
         "//kits/SwitchRefusal:SwitchRefusal.h",
         "//kits/SwitchRefusal:SwitchRefusalSite.h",
+        "//kits/SwitchSeedPack:SwitchSeedPack.h",
     ],
 )
 
