@@ -392,8 +392,7 @@ static io_service_t mock_get(mach_port_t main, CFDictionaryRef matching)
     char name[128] = "";
     if (cls)
         CFStringGetCString(cls, name, sizeof name, kCFStringEncodingUTF8);
-    if (strcmp(name, "IOAcceleratorES") && strcmp(name, "AGXAccelerator") &&
-        strcmp(name, "TegraGM20BUserClientService") && strncmp(name, "Tegra", 5))
+    if (strcmp(name, "AGXAccelerator") && strcmp(name, "TegraGM20BUserClientService") && strncmp(name, "Tegra", 5))
         return IOServiceGetMatchingService(main, matching);
     if (matching)
         CFRelease(matching);
