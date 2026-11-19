@@ -52,9 +52,8 @@ class NativeSeedTest(unittest.TestCase):
             dispatch,
             dispatch.replace('data:compute', 'data:absent'),
             dispatch.replace('edge=0,0,0', 'edge=1,0,0'),
+            'C ok=1 form=d opt=0 max=0 tgm=0 depth=1 | k artifact_probe lib=data:compute | ',
         ]
-        analysis = 'C ok=1 form=d opt=0 max=0 tgm=0 depth=1 | k artifact_probe lib=data:compute | '
-        lines += [analysis, analysis.replace('max=0', 'max=64'), analysis.replace('data:compute', 'data:absent')]
         corpus = cls.root / 'observed.log'
         corpus.write_text('\n'.join(lines) + '\n')
         derived = cls.root / 'derived.log'
@@ -64,8 +63,6 @@ class NativeSeedTest(unittest.TestCase):
                 ARGS.tool,
                 '--libs',
                 str(store),
-                ARGS.nvk,
-                str(cls.root / 'cache'),
                 ARGS.metallib,
                 '0',
                 str(cls.bucket),
@@ -98,7 +95,7 @@ class NativeSeedTest(unittest.TestCase):
 
     def test_generic_inputs_and_full_identity(self):
         rows = self.manifest['records']
-        self.assertEqual(len(rows), 15)
+        self.assertEqual(len(rows), 12)
         self.assertEqual([row['status'] for row in rows[:7]], ['made'] * 5 + ['missing-library', 'missing-function'])
         for row in rows[:5]:
             self.assertEqual(len(row['vertexAir']), 64)
@@ -132,19 +129,6 @@ class NativeSeedTest(unittest.TestCase):
         (bucket / 'manifest.json').write_text(json.dumps(manifest))
         self.run_restamp(self.root / 'reject-compute-kind', bucket, success=False)
 
-    def test_compute_analysis_preserves_descriptor_and_reflection_identity(self):
-        first, changed, missing = self.manifest['records'][11:14]
-        self.assertEqual([first['status'], changed['status'], missing['status']], ['made', 'made', 'missing-library'])
-        self.assertEqual(first['kind'], 'analysis')
-        self.assertEqual([entry['reflection'] for entry in first['analysis']], [False, True])
-        identities = [entry['name'] for row in (first, changed) for entry in row['analysis']]
-        self.assertEqual(len(set(identities)), 4)
-        for row in (first, changed):
-            for entry in row['analysis']:
-                data = (self.bucket / entry['path']).read_bytes()
-                self.assertEqual(data[:8], b'SWNCART\0')
-                self.assertEqual(data[24:56].hex(), entry['name'][:64])
-
     def test_restamp_preserves_programs_and_all_rows(self):
         output = self.root / 'restamped'
         self.run_restamp(output, self.bucket, self.bucket)
@@ -156,14 +140,6 @@ class NativeSeedTest(unittest.TestCase):
             for field in ('status', 'source', 'line', 'derived', 'input', 'key', 'vertexAir', 'fragmentAir'):
                 self.assertEqual(old.get(field), new.get(field), field)
             if old['status'] == 'made':
-                if old['kind'] == 'analysis':
-                    self.assertEqual(old['analysis'], new['analysis'])
-                    for entry in old['analysis']:
-                        self.assertEqual(
-                            (self.bucket / entry['path']).read_bytes(), (output / entry['path']).read_bytes()
-                        )
-                        self.assertEqual((output / entry['path']).stat().st_mode & 0o777, 0o644)
-                    continue
                 before = (self.bucket / old['artifact']).read_bytes()
                 after_file = output / new['artifact']
                 after = after_file.read_bytes()
@@ -201,22 +177,6 @@ class NativeSeedTest(unittest.TestCase):
             (bucket / 'manifest.json').write_text(json.dumps(manifest))
             self.run_restamp(self.root / f'reject-{field}', bucket, success=False)
 
-    def test_rejects_damaged_analysis_and_duplicate_reflection_contract(self):
-        for change in ('checksum', 'contract', 'path'):
-            bucket, manifest = self.changed_bucket('analysis-' + change)
-            row = manifest['records'][11]
-            if change == 'checksum':
-                path = bucket / row['analysis'][0]['path']
-                data = bytearray(path.read_bytes())
-                data[-1] ^= 1
-                path.write_bytes(data)
-            elif change == 'contract':
-                row['analysis'][1]['reflection'] = False
-            else:
-                row['analysis'][0]['path'] = '../outside.nca'
-            (bucket / 'manifest.json').write_text(json.dumps(manifest))
-            self.run_restamp(self.root / ('reject-analysis-' + change), bucket, success=False)
-
     def test_rejects_different_valid_payload_under_same_name(self):
         bucket, manifest = self.changed_bucket('conflict')
         row = manifest['records'][0]
@@ -238,7 +198,6 @@ class NativeSeedTest(unittest.TestCase):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--tool', required=True)
-    parser.add_argument('--nvk', required=True)
     parser.add_argument('--metallib', required=True)
     parser.add_argument('--compute-metallib', required=True)
     parser.add_argument('--evidence')

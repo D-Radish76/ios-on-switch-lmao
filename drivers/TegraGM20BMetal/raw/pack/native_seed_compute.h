@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MIT
 #pragma once
-#include "NativeBridgeMetalFrontend.h"
 #include "kernel_shapes.h"
 #include "native_seed_key.h"
 #include "native_seed_manifest.h"
@@ -38,9 +37,10 @@ inline NSMutableDictionary *computeRow(const std::string &line, uint64_t stack, 
     }
     const void *bytes = nullptr;
     size_t length = 0;
+    std::string entry;
     std::map<std::string, raw::AirHash> hashes;
-    if (!native_bridge_metal_function_metallib(function, &bytes, &length) ||
-        !raw::metallibAirHashes(static_cast<const uint8_t *>(bytes), length, hashes) || !hashes.count(stage.name)) {
+    if (!raw::functionLibrary(function, bytes, length, entry) ||
+        !raw::metallibAirHashes(static_cast<const uint8_t *>(bytes), length, hashes) || !hashes.count(entry)) {
         row[@"reason"] = @"native AIR identity unavailable";
         return row;
     }
@@ -69,7 +69,7 @@ inline NSMutableDictionary *computeRow(const std::string &line, uint64_t stack, 
     }
     for (const auto &sampler : shape.samplers)
         dispatch.sampler(sampler.slot, probe::samplerDescriptor(sampler));
-    const std::string dispatchKey = probe::key(shape, hashes.at(stage.name));
+    const std::string dispatchKey = probe::key(shape, hashes.at(entry));
     raw::CacheKey key;
     key.stack = stack;
     key.key = "kernel | " + dispatchKey;

@@ -19,8 +19,8 @@ _RAW_BUILD_MODULES = ["packfile.py", "selector_section.py"]
 
 # What rawpack.py build makes (its PACK_TOOLS, and BUILT with the host bridge), each its own output: a step's action reads
 # only the tools it runs (raw_tool_files), so a tool it does not run reruns none of it.
-_PACK_TOOLS = ["directpack", "libmock_iokit.dylib", "own.metallib", "context.log"]
-_BRIDGE_TOOLS = ["probe", "native-seed", "compile-profile"]
+_PACK_TOOLS = ["directpack", "native-seed", "libmock_iokit.dylib", "own.metallib", "context.log"]
+_BRIDGE_TOOLS = ["probe", "compile-profile"]
 
 SeedToolsInfo = provider(
     doc = "The shader tools' files, each on its own: what a seed step runs, without the rest of the tools.",
@@ -241,8 +241,8 @@ def _raw_tools_impl(ctx):
 
 raw_tools = rule(
     implementation = _raw_tools_impl,
-    doc = """The raw pack's own tools (directpack over the translation and the stage compile, the mock GM20B, own.metallib,
-    the context init) and a manifest of the stack key alone: what the raw pack is made with, no m2v in them.""",
+    doc = """The raw pack's own tools (directpack and native-seed over the translation and the stage compile, the mock
+    GM20B, own.metallib, the context init) and a manifest of the stack key alone: no m2v in them.""",
     attrs = _XCODE | {
         "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's macOS object"),
         "context_header": attr.label(mandatory = True, allow_single_file = True, doc = "the channel's context init"),

@@ -10,7 +10,7 @@
   and context.log), the libraries and their own tool, and nothing else: not the stack key, the generator's other
   modules, rawpack.py's other steps or the tools they do not run, so an edit to any of those reruns no probe; only the
   stamp reads the tools' manifest (the stack key);
-- a native bucket reads native-seed and the mock of the raw tools, none of the others;
+- a native bucket reads native-seed and the mock of the raw tools, none of the others, and no NVK;
 - of a crawl with our own apps, only the last bucket (the apps' states) reads the tree with their libraries: the others
   read the tree without them, so an app's shader edit reruns one probe.
 """
@@ -74,6 +74,7 @@ def _seed_impl(ctx):
             sorted([p for p in names if "/tools/raw/" in p]),
             "native compilation reads native-seed and the mock of the raw tools",
         )
+        asserts.equals(env, [], [p for p in names if "libvulkan_nouveau" in p], "native compilation takes no NVK")
         asserts.equals(
             env,
             [],

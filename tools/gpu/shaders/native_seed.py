@@ -30,41 +30,12 @@ def run(command: list[Path | str], work: Path) -> None:
 
 
 def native_lines(lines: list[str]) -> list[str]:
-    return [line for line in lines if line.startswith(('R ', 'D ', 'C ')) and ' ok=1 ' in line]
+    return [line for line in lines if line.startswith(('R ', 'D ')) and ' ok=1 ' in line]
 
 
 def split_lines(text: str) -> tuple[list[str], list[str]]:
     observed, marker, derived = text.partition(DERIVED + '\n')
     return native_lines(observed.splitlines()), native_lines(derived.splitlines()) if marker else []
-
-
-def analysis_artifacts(row: dict, root: Path) -> dict:
-    entries = row.get('analysis', [])
-    if len(entries) != 2 or {entry.get('reflection') for entry in entries} != {False, True}:
-        raise ValueError('native analysis requires both reflection contracts')
-    artifacts = {}
-    for entry in entries:
-        name = entry['name']
-        if len(name) != 68 or not name.endswith('.nca') or any(c not in '0123456789abcdef' for c in name[:64]):
-            raise ValueError('invalid native analysis key')
-        relative = Path(entry['path'])
-        if relative.parts != ('native-analysis', name):
-            raise ValueError('native analysis path differs from its key')
-        path = root / relative
-        if path.is_symlink() or not path.is_file() or not 88 < path.stat().st_size <= 88 + 64 * 1024 * 1024:
-            raise ValueError('missing or invalid native analysis file')
-        data = path.read_bytes()
-        if (
-            data[:8] != b'SWNCART\0'
-            or int.from_bytes(data[8:12], 'little') != 1
-            or int.from_bytes(data[12:16], 'little') != 88
-            or int.from_bytes(data[16:24], 'little') != len(data) - 88
-            or data[24:56] != bytes.fromhex(name[:64])
-            or hashlib.sha256(data[88:]).digest() != data[56:88]
-        ):
-            raise ValueError('native analysis envelope differs')
-        artifacts[entry['path']] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
-    return artifacts
 
 
 # raw_program_pages.h kProgramSlotPage: a slot's entry is whole pages, which the seed pack keeps on pages of their own
@@ -196,7 +167,7 @@ def coverage(manifest: dict, expected: int, root: Path, ipsw: str, tools: dict) 
         raise ValueError('native seed and installed compiler identity differ')
     counts: dict[str, Counter] = {'observed': Counter(), 'derived': Counter()}
     variants: dict[str, Counter] = {'observed': Counter(), 'derived': Counter()}
-    kinds: dict[str, Counter] = {'render': Counter(), 'compute': Counter(), 'analysis': Counter()}
+    kinds: dict[str, Counter] = {'render': Counter(), 'compute': Counter()}
     artifacts = {}
     for row, status in operation_rows(manifest['records']):
         tier = 'derived' if row['derived'] else 'observed'
@@ -208,24 +179,16 @@ def coverage(manifest: dict, expected: int, root: Path, ipsw: str, tools: dict) 
             kinds[kind][status] += 1
     for row in manifest['records']:
         variants['derived' if row['derived'] else 'observed'][row['status']] += 1
-        if row['status'] != 'made':
-            continue
-        if row.get('kind') == 'analysis':
-            artifacts.update(analysis_artifacts(row, root))
-        else:
+        if row['status'] == 'made':
             add_record(row, root, tools['stack'], artifacts)
     actual = sum(counts['observed'].values())
     if actual != expected:
-        raise ValueError(
-            f'native seed accounted for {actual} observed render/dispatch/analysis states, expected {expected}'
-        )
+        raise ValueError(f'native seed accounted for {actual} observed render/dispatch states, expected {expected}')
     return {
         'schema': 1,
-        'scope': 'resolved-native-render-dispatch-and-analysis-records',
+        'scope': 'resolved-native-render-and-dispatch-records',
         'ipsw': ipsw,
         'stack': tools['stack'],
-        'nvk_uuid': tools['nvk_uuid'],
-        'nvk_build_id': tools['nvk_build_id'],
         'packVersion': manifest['packVersion'],
         'cacheVersion': manifest['cacheVersion'],
         'counts': {key: dict(value) for key, value in counts.items()},
@@ -240,7 +203,6 @@ def coverage(manifest: dict, expected: int, root: Path, ipsw: str, tools: dict) 
 def bucket(args: argparse.Namespace, work: Path) -> None:
     place(args.raw / 'native-seed', work / 'native-seed')
     place(args.raw / 'libmock_iokit.dylib', work / 'libmock_iokit.dylib')
-    place(args.nvk, work / 'libvulkan_nouveau.dylib')
     store_view(work / 'store', args.root, json.loads(args.store.read_text()), args.embedded)
     observed, derived = split_lines(args.lines.read_text())
     for name, lines in (('observed', observed), ('derived', derived)):
@@ -250,8 +212,6 @@ def bucket(args: argparse.Namespace, work: Path) -> None:
             work / 'native-seed',
             '--libs',
             work / 'store',
-            work / 'libvulkan_nouveau.dylib',
-            work / 'cache',
             args.qc.absolute(),
             '0',
             args.out.absolute(),
@@ -271,20 +231,6 @@ def bucket(args: argparse.Namespace, work: Path) -> None:
     path.write_text(json.dumps(manifest, sort_keys=True) + '\n')
 
 
-def restamp_view(bucket: Path, view: Path) -> Path:
-    view.mkdir()
-    for entry in bucket.iterdir():
-        target = view / entry.name
-        if entry.name == 'native-analysis':
-            target.mkdir()
-            # Bazel links tree inputs; the runtime artifact reader requires regular files with O_NOFOLLOW.
-            for artifact in entry.iterdir():
-                place(artifact, target / artifact.name)
-        else:
-            target.symlink_to(entry.absolute(), target_is_directory=entry.is_dir())
-    return view
-
-
 def stamp(args: argparse.Namespace, work: Path) -> None:
     place(args.raw / 'native-seed', work / 'native-seed')
     place(args.raw / 'libmock_iokit.dylib', work / 'libmock_iokit.dylib')
@@ -295,7 +241,7 @@ def stamp(args: argparse.Namespace, work: Path) -> None:
             '--restamp',
             tools['stack'],
             args.out.absolute(),
-            *(restamp_view(path, work / f'bucket-{index}') for index, path in enumerate(args.bucket)),
+            *(path.absolute() for path in args.bucket),
         ],
         work,
     )
@@ -307,56 +253,42 @@ def stamp(args: argparse.Namespace, work: Path) -> None:
     (args.out / 'coverage.json').write_text(json.dumps(report, sort_keys=True, indent=1) + '\n')
 
 
-def pack_lists(manifest: dict) -> tuple[dict[str, tuple[int, str]], dict[str, tuple[int, str]]]:
-    """Return the made records' and analyses' {name: (tier, path below the stamped seed)}: 0 observed, 1 derived."""
+def pack_lists(manifest: dict) -> dict[str, tuple[int, str]]:
+    """Return the made records' {name: (tier, path below the stamped seed)}: 0 observed, 1 derived."""
     records: dict[str, tuple[int, str]] = {}
-    analyses: dict[str, tuple[int, str]] = {}
     for row in manifest['records']:
         if row['status'] != 'made':
             continue
-        if row.get('kind') == 'analysis':
-            table, named = analyses, [(entry['name'][:64], entry['path']) for entry in row['analysis']]
-        else:
-            slots = [(slot['name'], slot['path']) for slot in row.get('slots', [])]
-            table, named = records, [(row['name'], row['artifact']), *slots]
-        for name, path in named:
-            tier, known = int(bool(row['derived'])), table.get(name)
+        slots = [(slot['name'], slot['path']) for slot in row.get('slots', [])]
+        for name, path in [(row['name'], row['artifact']), *slots]:
+            tier, known = int(bool(row['derived'])), records.get(name)
             if known and known[1] != path:
                 raise ValueError(f'native seed has two files named {name}')
-            table[name] = (min(tier, known[0]) if known else tier, path)
-    return records, analyses
+            records[name] = (min(tier, known[0]) if known else tier, path)
+    return records
 
 
 def pack(args: argparse.Namespace, work: Path) -> None:
-    """Pack the stamped seed as the device reads it: <out>/raw-<stack> and <out>/native-analysis (kits/SwitchSeedPack).
+    """Pack the stamped seed as the device reads it: <out>/raw-<stack> (kits/SwitchSeedPack).
 
-    The records' index names the stack its records were stamped for. The analyses' names the m2v build the join made
-    (its index's build): each analysis key already hashes that build's sources, and the device cannot ask m2v for it.
+    Its index names the stack its records were stamped for.
     """
     manifest = json.loads((args.seed / 'manifest.json').read_text())
-    records, analyses = pack_lists(manifest)
-    header = args.m2v_index.read_bytes()[:56]
-    if header[:8] != b'M2VSEED2':
-        raise ValueError('the m2v seed index has another layout')
+    records = pack_lists(manifest)
     args.out.mkdir(parents=True, exist_ok=True)
     stack = manifest['stack']
-    for directory, width, identity, table in (
-        (f'raw-{stack}', 8, int(stack, 16).to_bytes(32, 'little'), records),
-        ('native-analysis', 32, header[24:56], analyses),
-    ):
-        listing = work / f'{directory}.list'
-        listing.write_text(
-            ''.join(
-                f'{tier}\t{name}\t{(args.seed / path).absolute()}\n' for name, (tier, path) in sorted(table.items())
-            )
-        )
-        run([args.tool.absolute(), args.out.absolute() / directory, str(width), identity.hex(), listing], work)
+    listing = work / f'raw-{stack}.list'
+    listing.write_text(
+        ''.join(f'{tier}\t{name}\t{(args.seed / path).absolute()}\n' for name, (tier, path) in sorted(records.items()))
+    )
+    identity = int(stack, 16).to_bytes(32, 'little').hex()
+    run([args.tool.absolute(), args.out.absolute() / f'raw-{stack}', '8', identity, listing], work)
 
 
 def check(args: argparse.Namespace) -> None:
     report = json.loads((args.seed / 'coverage.json').read_text())
     if args.strict and not report['complete']:
-        raise ValueError(f'native release render/dispatch/analysis seed incomplete: {report["counts"]["observed"]}')
+        raise ValueError(f'native release render/dispatch seed incomplete: {report["counts"]["observed"]}')
     args.out.write_text(
         json.dumps({key: value for key, value in report.items() if key != 'artifacts'}, sort_keys=True) + '\n'
     )
@@ -366,9 +298,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     steps = parser.add_subparsers(dest='step', required=True)
     for step, names in (
-        ('bucket', ('raw', 'nvk', 'root', 'store', 'qc', 'lines', 'out')),
+        ('bucket', ('raw', 'root', 'store', 'qc', 'lines', 'out')),
         ('stamp', ('raw', 'manifest', 'out')),
-        ('pack', ('seed', 'm2v-index', 'tool', 'out')),
+        ('pack', ('seed', 'tool', 'out')),
         ('check', ('seed', 'out')),
     ):
         command = steps.add_parser(step)

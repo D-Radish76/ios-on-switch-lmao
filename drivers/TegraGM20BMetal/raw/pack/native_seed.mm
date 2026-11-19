@@ -3,30 +3,14 @@
 #include "native_seed_key.h"
 #include "native_seed_manifest.h"
 #include "native_seed_compute.h"
-#include "native_seed_analysis.h"
-#include "../runtime/RawDirect.h"
+#include "../runtime/RawOffline.h"
 #include "../runtime/raw_emit.h"
 #include "../runtime/raw_cache_io.h"
-#include "NativeBridgeMetalFrontend.h"
-#include "bridge/NativeMetalObjects.h"
 #include <cerrno>
 #include <fstream>
 #include <sys/stat.h>
 
 namespace {
-
-void missing(const char *cls, const char *selector)
-{
-    fprintf(stderr, "MISSING -[%s %s]\n", cls, selector);
-}
-
-raw::DirectTranslator m2vTranslator()
-{
-    raw::DirectTranslator t;
-    t.render = native_bridge_metal_render_direct;
-    t.compute = native_bridge_metal_compute_direct;
-    return t;
-}
 
 using rawseed::hex;
 
@@ -94,37 +78,31 @@ int main(int argc, char **argv)
             precompile::gStore = argv[first + 1];
             first += 2;
         }
-        if (argc - first < 6) {
-            fprintf(stderr, "usage: native-seed [--libs store] nvk cache QuartzCore.metallib stack output corpus... "
+        if (argc - first < 4) {
+            fprintf(stderr, "usage: native-seed [--libs store] QuartzCore.metallib stack output corpus... "
                             "[--derived corpus...]\n");
             return 2;
         }
         char *end = nullptr;
         errno = 0;
-        const uint64_t stack = strtoull(argv[first + 3], &end, 16);
-        if (errno || !*argv[first + 3] || !end || *end) {
-            fprintf(stderr, "native-seed: the stack key %s is not hexadecimal\n", argv[first + 3]);
+        const uint64_t stack = strtoull(argv[first + 1], &end, 16);
+        if (errno || !*argv[first + 1] || !end || *end) {
+            fprintf(stderr, "native-seed: the stack key %s is not hexadecimal\n", argv[first + 1]);
             return 2;
         }
-        const std::string output = argv[first + 4];
+        const std::string output = argv[first + 2];
         raw::RecordCache cache;
         if (!rawseed::openOutput(output, stack, cache))
             return 1;
-        setenv("NMB_DEVICE_BASE_NSOBJECT", "1", 1);
-        precompile::gQuartzCore = argv[first + 2];
-        precompile::gDevice = native_bridge_metal_open(argv[first], argv[first + 1], 0, missing);
-        if (!precompile::gDevice) {
-            fprintf(stderr, "native-seed: open the m2v device over %s (cache %s): %s\n", argv[first], argv[first + 1],
-                    nmb_last_error() ?: "-");
-            return 1;
-        }
+        precompile::gQuartzCore = argv[first];
+        precompile::gDevice = (id<MTLDevice>)[RawOfflineDevice new];
         raw::PackRules rules;
         rules.varying = raw::emittableMethods();
-        raw::Direct direct(rules, true, m2vTranslator());
+        raw::Direct direct(rules, true, offline::translator());
         NSMutableArray *rows = [NSMutableArray new];
         std::map<uint64_t, Compiled> compiled;
         bool derived = false, failed = false;
-        for (int arg = first + 5; arg < argc; ++arg) {
+        for (int arg = first + 3; arg < argc; ++arg) {
             if (!strcmp(argv[arg], "--derived")) {
                 derived = true;
                 continue;
@@ -138,14 +116,11 @@ int main(int argc, char **argv)
             size_t lineNumber = 0;
             while (std::getline(stream, line)) {
                 ++lineNumber;
-                if ((line.rfind("R ", 0) != 0 && line.rfind("D ", 0) != 0 && line.rfind("C ", 0) != 0) ||
-                    line.find(" ok=1 ") == std::string::npos)
+                if ((line.rfind("R ", 0) != 0 && line.rfind("D ", 0) != 0) || line.find(" ok=1 ") == std::string::npos)
                     continue;
                 @autoreleasepool {
-                    if (line[0] == 'D' || line[0] == 'C') {
-                        NSArray *dispatchRows = line[0] == 'D' ?
-                            rawseed::computeRows(line, stack, direct, cache, output) : @[rawseed::analysisRow(line, output)];
-                        for (NSMutableDictionary *row in dispatchRows) {
+                    if (line[0] == 'D') {
+                        for (NSMutableDictionary *row in rawseed::computeRows(line, stack, direct, cache, output)) {
                             row[@"source"] = @(argv[arg]);
                             row[@"line"] = @(lineNumber);
                             row[@"derived"] = @(derived);

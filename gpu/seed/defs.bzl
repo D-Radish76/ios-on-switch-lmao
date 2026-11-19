@@ -38,7 +38,7 @@ SeedInfo = provider(
     fields = {
         "packs": "one pack per bucket",
         "meta": "SEED, MANIFEST.json, the index and the merged driver records' pack",
-        "native": "the native records and analyses as the device reads them, packed (native.bzl)",
+        "native": "the native records as the device reads them, packed (native.bzl)",
     },
 )
 
@@ -280,7 +280,7 @@ def _metal_seed_impl(ctx):
         mnemonic = "MetalSeedJoin",
         progress_message = "Joining the shader seed's bucket indexes",
     )
-    native_packed = native_pack(ctx, native_stamped, meta)
+    native_packed = native_pack(ctx, native_stamped)
 
     # The tools must be the GPU bundle's, or no key of the seed would ever be hit: checked beside the build, which
     # neither waits for it nor reruns anything when only the bundle changes.

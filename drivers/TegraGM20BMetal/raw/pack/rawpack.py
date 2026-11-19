@@ -25,9 +25,8 @@ usage: rawpack.py [--bridge <host libnative_metal_bridge.a>] --translate <host l
                   --translate <host libnative_metal_translate_static.a> --compile <host switch_compile.o>
                   --metal-abi <MetalABI.h> --context-header <SwitchGM20BContext.h> --out <dir>
 writes <out>/pack.bin, pack.json, layouts.txt, report.txt and keeps the buckets in <out>/work (deleted with --clean).
---build-only compiles directpack, the mock GPU (libmock_iokit.dylib) and own.metallib into <dir>, with the channel's
-context init as nvdec runs it (context.log), and with --bridge the probe, native-seed and compile-profile too, then
-stops;
+--build-only compiles directpack, native-seed, the mock GPU (libmock_iokit.dylib) and own.metallib into <dir>, with the
+channel's context init as nvdec runs it (context.log), and with --bridge the probe and compile-profile too, then stops;
 --prebuilt <dir> runs those instead of compiling them (//gpu/seed:local_raw_tools makes them its own action, so a corpus
 edit only reruns the buckets).
 --ca-names: Core Animation states a device's logs name as missing from the pack (precompile/ca_names.py), made from
@@ -105,8 +104,8 @@ def option(name: str, required: bool = True) -> str | None:
 
 
 # The pack's own tools, and those only a build with the host bridge makes (the frontend's: m2v's runtime in them)
-PACK_TOOLS = ('directpack', 'libmock_iokit.dylib', 'own.metallib', 'context.log')
-BUILT = (*PACK_TOOLS, 'probe', 'native-seed', 'compile-profile')
+PACK_TOOLS = ('directpack', 'native-seed', 'libmock_iokit.dylib', 'own.metallib', 'context.log')
+BUILT = (*PACK_TOOLS, 'probe', 'compile-profile')
 # Another framework's states, a bundle's or a framework resource library's, and our own apps' (their lines keep lib=,
 # tools/gpu/rawpack.py framework_line and app_line): the probe loads that library from the crawl's root
 FRAMEWORK = re.compile(
@@ -361,14 +360,20 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
         tuple(RAW / f'runtime/{name}.cpp' for name in DIRECT_RUNTIME),
         frontend=False,
     )
+    tool(
+        'native-seed',
+        [
+            HERE / 'native_seed.mm',
+            RAW / 'runtime/RawOffline.mm',
+            RAW / 'runtime/RawDirect.mm',
+            RAW / 'runtime/RawRenderKey.mm',
+        ],
+        tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
+        frontend=False,
+    )
     if bridge:
         tool('probe', [HERE / 'probe.mm'])
         tool('compile-profile', [HERE / 'compile_profile.mm'])
-        tool(
-            'native-seed',
-            [HERE / 'native_seed.mm', RAW / 'runtime/RawDirect.mm', RAW / 'runtime/RawRenderKey.mm'],
-            tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
-        )
     own = ('ycbcr', 'ycbcr_store', 'xr', 'resolve', 'mip', 'turn', 'stencil_bits', 'fmt')
     # resolve.metal's sums in sample order and its NaN tests kept; ycbcr_store.metal's NaN tests and half rounding;
     # stencil_bits.metal's depth comparisons; fmt.metal's NaN tests and half rounding

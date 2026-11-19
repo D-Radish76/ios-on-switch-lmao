@@ -3,7 +3,6 @@
 #import <Foundation/Foundation.h>
 #include "../runtime/raw_cache_io.h"
 #include "../runtime/raw_program_pages.h"
-#include "NativeMetalArtifactCache.h"
 #include <cerrno>
 #include <cstring>
 #include <map>
@@ -247,48 +246,6 @@ inline bool restampRow(NSMutableDictionary *row, const std::string &input, uint6
     return true;
 }
 
-inline bool copyAnalysis(NSDictionary *row, const std::string &input, const std::string &output,
-                          std::map<std::string, native_artifact_cache::Key> &written)
-{
-    if (![row[@"status"] isKindOfClass:[NSString class]])
-        return false;
-    if (![row[@"status"] isEqualToString:@"made"])
-        return !row[@"analysis"];
-    NSArray *artifacts = row[@"analysis"];
-    if (![artifacts isKindOfClass:[NSArray class]] || artifacts.count != 2)
-        return false;
-    unsigned contracts = 0;
-    for (id entry in artifacts) {
-        if (![entry isKindOfClass:[NSDictionary class]] || ![entry[@"name"] isKindOfClass:[NSString class]] ||
-            !([entry[@"reflection"] isEqual:@NO] || [entry[@"reflection"] isEqual:@YES]))
-            return false;
-        const unsigned contract = [entry[@"reflection"] boolValue] ? 2 : 1;
-        if (contracts & contract)
-            return false;
-        contracts |= contract;
-        NSString *name = entry[@"name"];
-        native_artifact_cache::Key key = {}, digest = {};
-        if (name.length != 68 || ![name hasSuffix:@".nca"] ||
-            !parseHex([name substringToIndex:64], key.data(), key.size()))
-            return false;
-        const std::string filename = name.UTF8String;
-        const std::string relative = "native-analysis/" + filename;
-        if (![entry[@"path"] isEqual:@(relative.c_str())])
-            return false;
-        native_artifact_cache::Mapping mapped;
-        if (!mapped.load(input + "/native-analysis", key))
-            return false;
-        CC_SHA256(mapped.data(), CC_LONG(mapped.size()), digest.data());
-        const auto [at, inserted] = written.emplace(filename, digest);
-        if (!inserted && at->second != digest)
-            return false;
-        if (inserted && (!native_artifact_cache::store(output + "/native-analysis", key, mapped.data(), mapped.size()) ||
-                         !withMode(output + "/" + relative, 0644) || !withMode(output + "/native-analysis", 0755)))
-            return false;
-    }
-    return contracts == 3;
-}
-
 inline int restamp(int argc, char **argv)
 {
     uint64_t stack;
@@ -302,7 +259,6 @@ inline int restamp(int argc, char **argv)
         return 1;
     NSMutableArray *rows = [NSMutableArray new];
     std::map<uint64_t, std::string> written;
-    std::map<std::string, native_artifact_cache::Key> analysisWritten;
     for (int arg = 4; arg < argc; ++arg) {
         NSData *data = [NSData dataWithContentsOfFile:@((std::string(argv[arg]) + "/manifest.json").c_str())];
         NSError *error = nil;
@@ -322,10 +278,7 @@ inline int restamp(int argc, char **argv)
                     return 1;
                 }
                 NSMutableDictionary *row = [source mutableCopy];
-                const bool valid = [row[@"kind"] isEqual:@"analysis"]
-                    ? copyAnalysis(row, argv[arg], output, analysisWritten)
-                    : restampRow(row, argv[arg], oldStack, stack, output, cache, written);
-                if (!valid) {
+                if (!restampRow(row, argv[arg], oldStack, stack, output, cache, written)) {
                     fprintf(stderr, "invalid or conflicting native record in %s\n", argv[arg]);
                     return 1;
                 }
