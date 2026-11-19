@@ -71,6 +71,28 @@ TEST(DevicePassTargets, ATextureBufferIsItsRowUpTo16384Texels)
     EXPECT_FALSE(raw::texelBufferTarget(t, row));
 }
 
+// A YCbCr texture buffer's image wider than 16384 texels: rows of 16384 back to back, which its conversion draws as one
+// pitch target of its rows, an M4 Max reading texel i at its plane's (i % 16384, i / 16384)
+TEST(DevicePassTargets, AWideTextureBufferIsRowsOf16384Texels)
+{
+    raw::Texture t;
+    t.va = 0x200000;
+    t.format = kRGBA8;
+    t.bpp = 4;
+    t.width = t.texelWidth = 20000;
+    t.height = t.texelHeight = 1;
+    t.pitch = 16384 * 4;
+    t.type = raw::fx::kTexOneDBuffer;
+    raw::Texture rows;
+    ASSERT_TRUE(raw::texelBufferRows(t, rows));
+    EXPECT_EQ(rows.type, raw::fx::kTexTwoD);
+    EXPECT_EQ(rows.width, 16384u);
+    EXPECT_EQ(rows.height, 2u);
+    EXPECT_EQ(rows.pitch, 16384u * 4);
+    EXPECT_TRUE(rows.renderable);
+    EXPECT_FALSE(raw::texelBufferTarget(t, rows)) << "no pass of the app's renders into one past 16384 texels";
+}
+
 class DevicePassTargetsVolume : public harness::DeviceTest {};
 
 TEST_F(DevicePassTargetsVolume, APlaneInsideABlockOfSeveralIsRenderedThroughAnImage)

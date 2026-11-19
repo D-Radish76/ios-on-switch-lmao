@@ -129,11 +129,16 @@ bool isYcbcrFormat(uint32_t pixelFormat);
 // reads 0 there): the import's step, not a form (RawMetalSurfaceTextures.mm raw:tex.surf.imp)
 inline constexpr char kRowsPastWithoutSparse[] = "rows past the allocation's last page (an M4 Max reads 0 there)";
 
-// Whether a texture buffer of `width` texels takes a conversion drawn into its one row: a colour target of at most 16384
-// texels across (the GM20B's, NVK's maxFramebufferWidth)
-constexpr bool ycbcrRowTarget(uint32_t width)
+// A YCbCr or packed 10-bit texture buffer of `texels` as an M4 Max reads one: texel i at its plane's (i % 16384,
+// i / 16384), 20000 texels of 500, 503, 540, 588 and 589 alike (the wide texel-buffer probe, macOS 27.2.1). Its conversion
+// draws that 2D texture's extent, rows 16384 wide, which a GM20B colour target holds and its buffer header reads back to
+// back
+constexpr uint32_t kYcbcrBufferRow = 16384;
+
+constexpr void ycbcrBufferExtent(uint32_t texels, uint32_t &width, uint32_t &height)
 {
-    return width <= 16384;
+    width = texels < kYcbcrBufferRow ? texels : kYcbcrBufferRow;
+    height = (texels + kYcbcrBufferRow - 1) / kYcbcrBufferRow;
 }
 
 // Whether `pixelFormat` is a two-plane YCbCr format, and the bytes of each texel Metal's CPU copies of a texture of it move:

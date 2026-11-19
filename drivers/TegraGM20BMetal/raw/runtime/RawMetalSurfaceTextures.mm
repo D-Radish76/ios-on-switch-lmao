@@ -232,6 +232,8 @@ const char *ycbcrPlan(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane,
     f.mappedBytes = (f.allocBytes + vm_page_size - 1) & ~uint64_t(vm_page_size - 1);
     f.sparseTail = gRM->raw->kernel().sparse();
     f.buffer = d.textureType == MTLTextureTypeTextureBuffer;
+    if (f.buffer)
+        raw::ycbcrBufferExtent(uint32_t(d.width), f.width, f.height);
     f.simple = (d.textureType == MTLTextureType2D || f.buffer) && d.sampleCount == 1 && !rotationOf(d);
     f.levels = uint32_t(d.mipmapLevelCount);
     // An M4 Max renders into a texture of any usage as into a render target (raw/test/ycbcrnorenderoracle.mm); the stand-in is
@@ -289,7 +291,6 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
                              (unsigned long)format, IOSurfaceGetID(s), gm20b, shape);
         return nil;
     }
-    const char *form = nullptr;
     raw::YcbcrPlan unused;
     raw::Rotation turned;
     if (rotationOf(d) && !turnedFrame(d, s, plane, turned)) {
@@ -307,12 +308,9 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const bool xrTaken =
         xr && (raw::surfaceRefusal || xrPlanesShape(flat, s, plane) || xrWordPlaneShape(flat, s, plane));
     const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
-    if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
-        form = ycbcrPlan(flat, s, plane, unused);
-    if (form == raw::kRowsPastWithoutSparse) {
-        raw::surfaceRefusal = form;
-        form = nullptr;
-    }
+    if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane &&
+        ycbcrPlan(flat, s, plane, unused) == raw::kRowsPastWithoutSparse)
+        raw::surfaceRefusal = raw::kRowsPastWithoutSparse;
     if (xr && !xrTaken && !xrPlanesStorable(d)) {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.pack", uintptr_t(d.usage),
                              "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: nil: the pack holds no "
@@ -322,14 +320,6 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
                              (unsigned long)d.usage, IOSurfaceGetID(s), shape);
         return nil;
     }
-    if (form) {
-        SWITCH_REFUSE_DETAIL("raw", "tex.surf.form", uintptr_t(form),
-                             "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: %s: nil until the "
-                             "raw path has its form: %s",
-                             (unsigned long)d.width, (unsigned long)d.height, (unsigned long)format,
-                             (unsigned long)d.usage, IOSurfaceGetID(s), form, shape);
-        return nil;
-    }
     uint64_t offset;
     size_t pitch;
     planeAt(s, plane, offset, pitch);
@@ -337,15 +327,28 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const raw::FormatInfo *f = raw::formatInfo(format);
     const uint64_t packed = f ? (uint64_t(flat.width) + f->blockW - 1) / f->blockW * f->bpp : 0;
     const uint64_t rows = f ? (uint64_t(flat.height) + f->blockH - 1) / f->blockH : flat.height;
+    const bool pastAllocation = uint64_t(pitch) * rows > IOSurfaceGetAllocSize(s);
     if (plane >= std::max<size_t>(planes, 1)) {
         os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: it has no plane %lu: %{public}@",
                      getprogname(), IOSurfaceGetID(s), (unsigned long)plane, extra);
-    } else if (!xrTaken && (planes ? (pitch & ~size_t(15)) < packed && rows > 1 : (pitch & 15) || pitch < packed)) {
-        // Metal asserts on a surface without planes whose rows are not 16 bytes apart; a plane's rows rounded down to 16
-        // overlap on its GPU. m2v refused both (linear_plan.rs).
-        os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: rows off 16 that Metal does not take: %{public}@",
-                     getprogname(), IOSurfaceGetID(s), extra);
-    } else if (!xrTaken && uint64_t(pitch) * rows > IOSurfaceGetAllocSize(s)) {
+    } else if (!xrTaken && !planes && ((pitch & 15) || pitch < packed)) {
+        // an M4 Max asserts with validation off too: "bytesPerRow (256) must be greater or equal to (264) bytes" (the
+        // turned-extent probe, macOS 27.2.1)
+        SWITCH_REFUSE_DETAIL("raw", "tex.metal", uintptr_t(pitch),
+                             "no %lux%lu texture of format %lu over IOSurface %u: nil, as Metal makes none (rows of a "
+                             "surface of no planes off 16 bytes or under the texture's row): %s",
+                             (unsigned long)flat.width, (unsigned long)flat.height, (unsigned long)format,
+                             IOSurfaceGetID(s), shape);
+    } else if (!xrTaken && f && planes && (((pitch & ~size_t(15)) < packed && rows > 1) || pastAllocation)) {
+        // an M4 Max makes it, turned or not, reading the plane at its pitch rounded down to 16 (R8 136 wide over rows of 16,
+        // BGRA8 66 wide over rows of 256, 1048 rows over an allocation of 48: the turned-extent probe)
+        SWITCH_REFUSE_DETAIL("raw", "tex.surf.form", uintptr_t(format),
+                             "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: a plane whose rows "
+                             "overlap or run past the allocation, which Metal reads at its pitch: nil until the raw path "
+                             "has its form: %s",
+                             (unsigned long)flat.width, (unsigned long)flat.height, (unsigned long)format,
+                             (unsigned long)d.usage, IOSurfaceGetID(s), shape);
+    } else if (!xrTaken && pastAllocation) {
         os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
                      getprogname(), IOSurfaceGetID(s), (unsigned long)flat.height, pitch, IOSurfaceGetAllocSize(s), extra);
     } else {

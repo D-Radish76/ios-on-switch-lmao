@@ -2,6 +2,7 @@
 // Textures over surfaces the raw path once answered nil for, as Metal makes them: each expectation is an M4 Max's
 // (m2v-textures9 probes/xr.txt, ycbcr.txt).
 #include "raw_facade_pass_scene.h"
+#include "../raw/runtime/raw_attachment_target.h"
 #import "../raw/runtime/RawMetalXrPlanes.h"
 
 namespace {
@@ -244,6 +245,67 @@ void ycbcrTexelBuffersAreTheirFirstRow()
     CFRelease(s);
 }
 
+// A YCbCr or packed 10-bit texture buffer wider than 16384 texels, which an M4 Max makes and reads texel i of at its plane's
+// (i % 16384, i / 16384) (20000 texels, every format: HW Test gpu.raw.ycbcr_texel_buffer_wide's scene): planned as the 2D
+// texture of rows 16384 wide, its image those rows back to back under the buffer's header of 20000 texels, which its
+// conversion draws as one target of its rows
+void wideYcbcrTexelBuffersAreRowsOf16384()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.ycbcr.ycbcr_codes_frag", MTLPixelFormatRGBA8Unorm},
+                                           {"raw.ycbcr.ycbcr_packed_plane_frag", MTLPixelFormatRGB10A2Unorm}}));
+    ASSERT_TRUE(device != nil);
+    constexpr unsigned kWidth = 20000, kRows = 26880;  // a row of 20000 bytes or 6667 packed words, rounded to 256
+    for (const uint32_t format : {500u, 540u, 588u}) {
+        IOSurfaceRef s = IOSurfaceCreate((__bridge CFDictionaryRef) @{
+            (id)kIOSurfaceWidth : @(kWidth),
+            (id)kIOSurfaceHeight : @2,
+            (id)kIOSurfacePixelFormat : @(format == 588 ? uint32_t('p420') : uint32_t('420v')),
+            (id)kIOSurfaceAllocSize : @(4 * kRows + 16384),
+            (id)kIOSurfacePlaneInfo : @[
+                @{
+                    (id)kIOSurfacePlaneWidth : @(kWidth),
+                    (id)kIOSurfacePlaneHeight : @2,
+                    (id)kIOSurfacePlaneBytesPerElement : @1,
+                    (id)kIOSurfacePlaneBytesPerRow : @(kRows),
+                    (id)kIOSurfacePlaneOffset : @0,
+                    (id)kIOSurfacePlaneSize : @(2 * kRows)
+                },
+                @{
+                    (id)kIOSurfacePlaneWidth : @(kWidth / 2),
+                    (id)kIOSurfacePlaneHeight : @1,
+                    (id)kIOSurfacePlaneBytesPerElement : @2,
+                    (id)kIOSurfacePlaneBytesPerRow : @(kRows),
+                    (id)kIOSurfacePlaneOffset : @(2 * kRows),
+                    (id)kIOSurfacePlaneSize : @(kRows)
+                }
+            ]
+        });
+        ASSERT_TRUE(s);
+        MTLTextureDescriptor *d = [MTLTextureDescriptor textureBufferDescriptorWithPixelFormat:MTLPixelFormat(format)
+                                                                                         width:kWidth
+                                                                                 resourceOptions:MTLResourceStorageModeShared
+                                                                                         usage:MTLTextureUsageShaderRead];
+        RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:s plane:0];
+        CFRelease(s);
+        ASSERT_TRUE(t != nil && t->_rawOk) << format << ": Metal makes it";
+        const raw::Texture &x = t->_raw;
+        EXPECT_EQ(x.type, raw::fx::kTexOneDBuffer) << format;
+        EXPECT_EQ(x.width, kWidth) << format;
+        EXPECT_EQ(x.shape[0], 16384u) << format << ": converted as the 2D texture of rows 16384 wide";
+        EXPECT_EQ(x.shape[1], 2u) << format;
+        EXPECT_EQ(x.luma->height, 2u) << format << ": the plane's rows 0 and 1";
+        const uint32_t *w = gRM->raw->headerWords(x.tic);
+        EXPECT_EQ((w[3] & 0xffff) << 16 | (w[4] & 0xffff), kWidth - 1) << format << ": the header's texels";
+        raw::Texture rows;
+        ASSERT_TRUE(raw::texelBufferRows(x, rows)) << format;
+        EXPECT_EQ(rows.width, 16384u) << format;
+        EXPECT_EQ(rows.height, 2u) << format;
+        EXPECT_EQ(rows.pitch, 16384u * rows.bpp) << format << ": rows back to back";
+    }
+}
+
 }  // namespace
 
 TEST(RawFacadeSurfaceForms, RGB10A8XrReadsItsPlaneAndTheNext)
@@ -269,4 +331,9 @@ TEST(RawFacadeSurfaceForms, YcbcrCpuCopiesMoveTheLumaPlaneAlone)
 TEST(RawFacadeSurfaceForms, YcbcrTexelBuffersAreTheirFirstRow)
 {
     switch_ios::test::ExpectPassesInFreshProcess(ycbcrTexelBuffersAreTheirFirstRow);
+}
+
+TEST(RawFacadeSurfaceForms, WideYcbcrTexelBuffersAreRowsOf16384)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(wideYcbcrTexelBuffersAreRowsOf16384);
 }

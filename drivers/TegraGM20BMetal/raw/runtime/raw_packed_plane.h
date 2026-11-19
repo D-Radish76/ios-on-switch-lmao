@@ -54,7 +54,7 @@ inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
     const uint32_t channels = packedPlaneChannels(f.pixelFormat);
     if (!channels)
         return "not a packed 10-bit plane format";
-    if (!f.simple || (f.buffer && !ycbcrRowTarget(f.width)))
+    if (!f.simple)
         return "shape";
     const uint32_t width = f.width, height = f.height;
     if (!width || !height)

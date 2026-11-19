@@ -285,7 +285,7 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
         matrix = 0;
     }
     format = &read;
-    if (!f.simple || f.levels != 1 || (f.buffer && !ycbcrRowTarget(f.width)))
+    if (!f.simple || f.levels != 1)
         return "shape";
     if (!f.width || !f.height)
         return "an empty texture";

@@ -76,14 +76,15 @@ void BlitEncoder::splitPlane(const Texture &t)
 {
     if (!t.onePlane || !t.luma || !t.chroma || !t.chroma->width || !t.height)
         return;
-    const uint32_t pairs = t.chroma->width;
-    const uint64_t rows = rowStorageBytes(t.planes.lumaPitch, pairs, t.height, 4);
+    // the luma image's rows: a texture buffer's are its rows of 16384 texels (raw_ycbcr.h kYcbcrBufferRow)
+    const uint32_t pairs = t.chroma->width, height = t.luma->height;
+    const uint64_t rows = rowStorageBytes(t.planes.lumaPitch, pairs, height, 4);
     cb_->useAddress(t.planes.luma, t.window.bytes ? std::min(rows, t.window.va + t.window.pages - t.planes.luma) : rows,
                     false);
     cb_->use(*t.luma, true);
     cb_->use(*t.chroma, true);
     RAW_DIAGNOSTIC(dev_->stats.ceOps += 2);
-    RAW_DIAGNOSTIC(dev_->stats.ceBytes += uint64_t(pairs) * t.height * 4);
+    RAW_DIAGNOSTIC(dev_->stats.ceBytes += uint64_t(pairs) * height * 4);
     constexpr uint32_t one = 0 << 16, src4 = 3u << 20, dst2 = 1u << 24;
     for (const Texture *to : {t.luma, t.chroma}) {
         // Y0, Y1 or Cb, Cr of Y0 Cb Y1 Cr (of Cb Y0 Cr Y1: Texture::pairsReversed)
@@ -93,7 +94,7 @@ void BlitEncoder::splitPlane(const Texture &t)
         p_.m(CE_SET_REMAP_COMPONENTS, remap | one | src4 | dst2, SUBC_COPY);
         p_.inc(CE_OFFSET_IN_UPPER,
                {uint32_t(t.planes.luma >> 32), uint32_t(t.planes.luma), uint32_t(to->va >> 32), uint32_t(to->va),
-                t.planes.lumaPitch, to->pitch, pairs, t.height},
+                t.planes.lumaPitch, to->pitch, pairs, height},
                SUBC_COPY);
         p_.m(CE_LAUNCH_DMA, kLaunchPitch | 1u << 10, SUBC_COPY);
     }

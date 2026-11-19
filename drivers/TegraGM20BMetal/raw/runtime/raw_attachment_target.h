@@ -65,20 +65,28 @@ inline bool pitchSliceTarget(const Texture &t, uint32_t level, uint32_t slice, T
     return true;
 }
 
-// A texture buffer (TIC ONE_D_BUFFER) as its one row of texels, a pitch target. An M4 Max renders into one made with
-// render-target usage, and fails a pass into one past 16384 texels Internal (raw/test/passformsoracle.mm texture_buffer,
-// unspecialized_views)
-inline bool texelBufferTarget(const Texture &t, Texture &out)
+// A texture buffer (TIC ONE_D_BUFFER) as rows of 16384 texels back to back, a pitch target of `t`'s pitch: a YCbCr image's,
+// which its conversion draws (raw_ycbcr.h kYcbcrBufferRow), one row up to 16384 texels
+inline bool texelBufferRows(const Texture &t, Texture &out)
 {
+    constexpr uint32_t kRow = 16384;
     const FormatInfo *f = formatInfo(t.format);
-    if (t.type != fx::kTexOneDBuffer || !f || !f->rt || t.width > 16384)
+    if (t.type != fx::kTexOneDBuffer || !f || !f->rt)
         return false;
     out = t;
     out.type = fx::kTexTwoD;
-    out.height = out.texelHeight = 1;
+    out.width = out.texelWidth = std::min(t.width, kRow);
+    out.height = out.texelHeight = (t.width + kRow - 1) / kRow;
     out.tic = 0;
     pitchTargetForm(out);
     return true;
+}
+
+// A texture buffer as its one row of texels, a pitch target. An M4 Max renders into one made with render-target usage,
+// and fails a pass into one past 16384 texels Internal (raw/test/passformsoracle.mm texture_buffer, unspecialized_views)
+inline bool texelBufferTarget(const Texture &t, Texture &out)
+{
+    return t.width <= 16384 && texelBufferRows(t, out);
 }
 
 // The command buffer's scratch (CommandBuffer::turnScratch) of colour j's plane image (planeInBlocks): 24 + j, between the

@@ -207,8 +207,9 @@ bool RMRangeEncode::makeImages(const std::vector<__unsafe_unretained RMTexture *
         if (!x.ycbcr)
             continue;
         raw::PassDesc p;
-        raw::Texture row;  // a texture buffer's image drawn as its one row (raw_attachment_target.h)
-        p.color[0].texture = x.type == raw::fx::kTexOneDBuffer && raw::texelBufferTarget(x, row) ? &row : &x;
+        raw::Texture rows;  // a texture buffer's image drawn as its rows (raw_attachment_target.h)
+        raw::Texture &into = x.type == raw::fx::kTexOneDBuffer && raw::texelBufferRows(x, rows) ? rows : x;
+        p.color[0].texture = &into;
         p.color[0].load = raw::ColorAttachment::DontCare;
         p.color[0].store = true;
         p.count = 1;
@@ -221,8 +222,8 @@ bool RMRangeEncode::makeImages(const std::vector<__unsafe_unretained RMTexture *
         conv->setBytes(2, 0, x.shape, sizeof x.shape);
         conv->setTexture(0, x.luma);
         conv->setTexture(1, x.chroma ? x.chroma : x.luma);  // (over plane 1: chroma codes 0, none read)
-        conv->setViewport(0, 0, x.width, x.height, 0, 1);
-        conv->setScissor(0, 0, x.width, x.height);
+        conv->setViewport(0, 0, into.width, into.height, 0, 1);
+        conv->setScissor(0, 0, into.width, into.height);
         if (!conv->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why_)) {
             rmOwnDrawFails(cb_, ahead_, *why_, rc->refusal);
             return refused();
