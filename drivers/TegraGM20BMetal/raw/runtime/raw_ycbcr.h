@@ -29,8 +29,10 @@ struct YcbcrFacts {
     uint32_t pitch[2] = {};
     uint64_t allocBytes = 0;
     uint64_t mappedBytes = 0;      // the allocation's whole pages, which the GPU maps (0: allocBytes)
-    bool simple = false;           // 2D, one sample, not rotated
+    bool simple = false;           // 2D (or a texture buffer), one sample, not rotated
     uint32_t levels = 1;           // mipmapLevelCount
+    bool buffer = false;           // a texture buffer: an M4 Max reads one as a 2D texture's row 0 (m2v-textures13
+                                   // probes/ytbuf/ytread.txt)
     bool target = false;           // may be rendered into (raw_ycbcr_store.h)
     const char *matrix = nullptr;  // kIOSurfaceYCbCrMatrix, null without one
     bool sparseTail = false;       // the kernel maps VA sparse (raw_kernel.h Kernel::sparse): rows may run past the last page
@@ -95,6 +97,9 @@ struct YcbcrPlan {
     // the image's levels: several only for R10Unorm_PACKED and RG10Unorm_PACKED, every level of which reads level 0
     // (raw_packed_plane.h, Texture::levelZero)
     uint32_t levels = 1;
+    // a texture buffer's image: its one row, linear, under a texel buffer's header (TEXHEAD_1D addresses linear memory
+    // alone: clb097tex.h), which its conversion draws into as a row target
+    bool buffer = false;
     uint32_t shape[kYcbcrShapeWords] = {};
     YcbcrStoreShape store;  // a target's store states' shape
 };
@@ -116,6 +121,13 @@ constexpr uint32_t planeStoreStride(uint32_t bytesPerRow)
 }
 
 bool isYcbcrFormat(uint32_t pixelFormat);
+
+// Whether a texture buffer of `width` texels takes a conversion drawn into its one row: a colour target of at most 16384
+// texels across (the GM20B's, NVK's maxFramebufferWidth)
+constexpr bool ycbcrRowTarget(uint32_t width)
+{
+    return width <= 16384;
+}
 
 // Whether `pixelFormat` is a two-plane YCbCr format, and the bytes of each texel Metal's CPU copies of a texture of it move:
 // its luma code's alone (1, or 2 for unpacked 10-bit codes) from its plane at the plane's own offset and rows, never its

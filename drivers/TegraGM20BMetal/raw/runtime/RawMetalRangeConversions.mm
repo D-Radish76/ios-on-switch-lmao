@@ -6,6 +6,7 @@
 // c38-audit/m2v-planar-plan/probe).
 #import "RawMetalRangeEncode.h"
 #import "RawMetalPassErrors.h"
+#include "raw_attachment_target.h"
 #include "raw_level_zero.h"
 #include "raw_sampler_map.h"
 
@@ -206,7 +207,8 @@ bool RMRangeEncode::makeImages(const std::vector<__unsafe_unretained RMTexture *
         if (!x.ycbcr)
             continue;
         raw::PassDesc p;
-        p.color[0].texture = &x;
+        raw::Texture row;  // a texture buffer's image drawn as its one row (raw_attachment_target.h)
+        p.color[0].texture = x.type == raw::fx::kTexOneDBuffer && raw::texelBufferTarget(x, row) ? &row : &x;
         p.color[0].load = raw::ColorAttachment::DontCare;
         p.color[0].store = true;
         p.count = 1;

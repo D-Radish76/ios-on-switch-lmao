@@ -214,6 +214,36 @@ void ycbcrCpuCopiesMoveTheLumaPlaneAlone()
     CFRelease(wide);
 }
 
+// A texture buffer of a YCbCr or packed 10-bit plane format over a surface's plane, which an M4 Max makes (validation on
+// and off) and reads as a 2D texture of the format's row 0 (64 of 64 texels: m2v-textures13 probes/ytbuf/ytbuf.txt,
+// ytread.txt): its converted image one linear row under a texel buffer's header
+void ycbcrTexelBuffersAreTheirFirstRow()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "",
+                                          {{"raw.ycbcr.ycbcr_converted_frag", MTLPixelFormatRGBA16Float},
+                                           {"raw.ycbcr.ycbcr_codes_frag", MTLPixelFormatRGBA8Unorm},
+                                           {"raw.ycbcr.ycbcr_packed_plane_frag", MTLPixelFormatRGB10A2Unorm}}));
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef s = narrowPlanes(64, 0, 4096);
+    ASSERT_TRUE(s);
+    for (const uint32_t format : {500u, 540u, 588u}) {
+        MTLTextureDescriptor *d = [MTLTextureDescriptor textureBufferDescriptorWithPixelFormat:MTLPixelFormat(format)
+                                                                                         width:8
+                                                                                 resourceOptions:MTLResourceStorageModeShared
+                                                                                         usage:MTLTextureUsageShaderRead];
+        RMTexture *t = (RMTexture *)[device newTextureWithDescriptor:d iosurface:s plane:0];
+        ASSERT_TRUE(t != nil && t->_rawOk) << format << ": Metal makes it";
+        const raw::Texture &x = t->_raw;
+        EXPECT_TRUE(x.converted()) << format;
+        EXPECT_EQ(x.type, raw::fx::kTexOneDBuffer) << format;
+        EXPECT_FALSE(x.blockLinear) << format << ": a texel buffer's header reads linear memory";
+        EXPECT_EQ(x.width, 8u) << format;
+        EXPECT_EQ(x.height, 1u) << format;
+        EXPECT_EQ(gRM->raw->headerWords(x.tic)[2] >> 21 & 7, 0u) << format << ": HEADER_VERSION SELECT_ONE_D_BUFFER";
+    }
+    CFRelease(s);
+}
+
 }  // namespace
 
 TEST(RawFacadeSurfaceForms, RGB10A8XrReadsItsPlaneAndTheNext)
@@ -234,4 +264,9 @@ TEST(RawFacadeSurfaceForms, RGB10A8XrPlanesOffSixteenAreRoundedForTheGpu)
 TEST(RawFacadeSurfaceForms, YcbcrCpuCopiesMoveTheLumaPlaneAlone)
 {
     switch_ios::test::ExpectPassesInFreshProcess(ycbcrCpuCopiesMoveTheLumaPlaneAlone);
+}
+
+TEST(RawFacadeSurfaceForms, YcbcrTexelBuffersAreTheirFirstRow)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(ycbcrTexelBuffersAreTheirFirstRow);
 }

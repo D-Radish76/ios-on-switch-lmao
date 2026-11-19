@@ -54,7 +54,7 @@ inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
     const uint32_t channels = packedPlaneChannels(f.pixelFormat);
     if (!channels)
         return "not a packed 10-bit plane format";
-    if (!f.simple)
+    if (!f.simple || (f.buffer && !ycbcrRowTarget(f.width)))
         return "shape";
     const uint32_t width = f.width, height = f.height;
     if (!width || !height)
@@ -77,6 +77,7 @@ inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
     out.lumaPitch = pitch;
     out.lumaWidth = words;
     out.levels = f.levels;
+    out.buffer = f.buffer;
     out.shape[0] = width;
     out.shape[1] = height;
     out.shape[2] = channels;

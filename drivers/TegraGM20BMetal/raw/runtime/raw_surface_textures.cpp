@@ -399,7 +399,7 @@ bool Device::createOnePlaneYcbcr(uint64_t surfaceId, void *base, uint64_t allocB
     Texture *y = new Texture, *c = new Texture;
     if (!createTexture(plan.lumaWidth, height, plan.lumaFormat, *y) ||
         !createTexture(plan.chromaWidth, plan.chromaHeight, plan.chromaFormat, *c) || y->blockLinear ||
-        c->blockLinear || !createTexture(width, height, plan.image, t, false, true)) {
+        c->blockLinear || !createTexture(width, height, plan.image, t, false, !plan.buffer)) {
         for (Texture *x : {y, c}) {
             destroyTexture(*x);
             delete x;
@@ -417,6 +417,8 @@ bool Device::createOnePlaneYcbcr(uint64_t surfaceId, void *base, uint64_t allocB
     memcpy(t.shape, plan.shape, sizeof t.shape);
     t.ycbcr = plan.output;
     t.addressMap = plan.addressMap;
+    if (plan.buffer)
+        t.type = fx::kTexOneDBuffer;
     ycbcrImageHeader(t, plan.output, plan.shape[2]);
     if (plan.window && !openSparseWindow(t, plan.readable)) {
         destroyTexture(t);
@@ -450,9 +452,9 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
     constexpr uint8_t kGreenBlue[4] = {3, 4, 0, 1};  // MTLTextureSwizzle Green, Blue, Zero, One
     if (c && plan.chromaGreenBlue)
         swizzle(c->sampled ? *c->sampled : *c, kGreenBlue);
-    // block-linear, as NVK makes m2v's converted image
+    // block-linear, as NVK makes m2v's converted image; a texture buffer's row linear (YcbcrPlan::buffer)
     const bool image = plan.levels > 1 ? createMipTexture(width, height, plan.image, plan.levels, t)
-                                       : createTexture(width, height, plan.image, t, false, true);
+                                       : createTexture(width, height, plan.image, t, false, !plan.buffer);
     if (!image)
         return undo();
     if (plan.nativePlanes) {
@@ -469,6 +471,8 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
     t.ycbcr = plan.output;
     t.addressMap = plan.addressMap;
     t.levelZero = plan.levels > 1;
+    if (plan.buffer)
+        t.type = fx::kTexOneDBuffer;
     ycbcrImageHeader(t, plan.output, plan.shape[2]);
     if (plan.window && !openSparseWindow(t, plan.readable)) {
         destroyTexture(t);
@@ -480,6 +484,8 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
 void Device::ycbcrImageHeader(Texture &t, uint8_t output, uint32_t packedCodes)
 {
     std::lock_guard<raw::Mutex> l(lock_);
+    if (t.type == fx::kTexOneDBuffer)  // the image's one row under a texel buffer's header
+        writeTic(t);
     uint32_t *w = reinterpret_cast<uint32_t *>(tic_.cpu + 32 * t.tic);
     if (ycbcrLumaFirst(output)) {
         constexpr uint8_t kLumaFirst[4] = {3, 4, 2, 5};  // the codes image's green, blue, red: Y, Cb, Cr

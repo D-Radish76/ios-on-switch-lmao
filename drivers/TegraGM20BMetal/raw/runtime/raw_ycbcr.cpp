@@ -285,7 +285,7 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
         matrix = 0;
     }
     format = &read;
-    if (!f.simple || f.levels != 1)
+    if (!f.simple || f.levels != 1 || (f.buffer && !ycbcrRowTarget(f.width)))
         return "shape";
     if (!f.width || !f.height)
         return "an empty texture";
@@ -332,6 +332,7 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
 
     out = {};
     out.readable = window ? rowsEnd : mapped;
+    out.buffer = f.buffer;
     out.window = window;
     out.onePlane = onePlane && !words;
     out.pairsReversed = format->layout == PairsReversed;
