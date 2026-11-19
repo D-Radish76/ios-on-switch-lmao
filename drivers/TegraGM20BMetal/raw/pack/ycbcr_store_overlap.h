@@ -140,10 +140,10 @@ fragment uint ycbcr_overlap_r32ui_frag(Out in [[stage_in]], texture2d<uint, acce
 }
 
 // RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (runtime/raw_xr_pools.h xrPlanesCross,
-// runtime/raw_overlap_order.h overlapPlanesWinner step for step): each byte of the planes' span from the texel, of
+// runtime/raw_overlap_order.h overlapPlanesWriters step for step): each byte of the planes' span from the texel, of
 // either plane's pool, whose store lands last as an M4 Max stores a pass, by frameOrder (a pass that drew nothing by
-// clearOrder) and then the texel further right in the frame, the word at one x. The target is the span's bytes `pitch`
-// apart from `base`, a byte a texel.
+// clearOrder) and then the texel further right in the frame, the word at one x, ORed with every other store of its 2x2
+// frame quad. The target is the span's bytes `pitch` apart from `base`, a byte a texel.
 struct OverlapPlanes {
     uint base, pitch;
     uint words, wordPitch, wordRow, wordRows;
@@ -158,32 +158,38 @@ fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, acc
 {
     const uint a = s.base + uint(in.position.y) * s.pitch + uint(in.position.x);
     bool found = false;
-    uint best = 0, bestX = 0;
-    uint3 won = uint3(0);
-    for (uint plane = 0; plane < 2; plane++) {
-        const bool word = plane == 0;
-        const uint at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
-        const uint row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
-        if (a < at)
-            continue;
-        const uint off = a - at;
-        const uint last = min(off / pitch, rows - 1), first = off >= row ? (off - row) / pitch + 1 : 0;
-        for (uint r = first; r <= last; r++) {
-            const uint b = off - r * pitch, x = word ? b / 4 : b;
-            const uint2 f = frameTexel(s.tiles, x, r, 1, 1);
-            const uint order = s.cleared != 0 ? clearOrder(s.tiles, f) : frameOrder(s.tiles, f);
-            const uint key = f.x << 1 | (word ? 1u : 0u);
-            if (!found || order > best || (order == best && key > bestX)) {
-                found = true;
-                best = order;
-                bestX = key;
-                won = uint3(x, r, word ? b % 4 : 4);
+    uint best = 0, bestX = 0, value = 0, kept = 0;
+    uint2 quad = uint2(0);
+    for (uint pass = 0; pass < 2; pass++)
+        for (uint plane = 0; plane < 2; plane++) {
+            const bool word = plane == 0;
+            const uint at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
+            const uint row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
+            if (a < at)
+                continue;
+            const uint off = a - at;
+            const uint last = min(off / pitch, rows - 1), first = off >= row ? (off - row) / pitch + 1 : 0;
+            for (uint r = first; r <= last; r++) {
+                const uint b = off - r * pitch, x = word ? b / 4 : b;
+                const uint2 f = frameTexel(s.tiles, x, r, 1, 1);
+                if (pass == 1) {
+                    if (all(f / 2 == quad) && kept < 2) {
+                        kept++;
+                        value |= word ? (words.read(uint2(x, r)).r >> (8 * (b % 4))) & 0xffu : alpha.read(uint2(x, r)).r;
+                    }
+                    continue;
+                }
+                const uint order = s.cleared != 0 ? clearOrder(s.tiles, f) : frameOrder(s.tiles, f);
+                const uint key = f.x << 1 | (word ? 1u : 0u);
+                if (!found || order > best || (order == best && key > bestX)) {
+                    found = true;
+                    best = order;
+                    bestX = key;
+                    quad = f / 2;
+                }
             }
         }
-    }
     if (!found)
         discard_fragment();
-    if (won.z == 4)
-        return alpha.read(won.xy).r;
-    return (words.read(won.xy).r >> (8 * won.z)) & 0xffu;
+    return value;
 }

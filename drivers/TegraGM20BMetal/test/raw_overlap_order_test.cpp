@@ -22,6 +22,19 @@ raw::TileMap frameOfTurned(uint8_t rotation, uint32_t width, uint32_t height)
     return raw::tileMap(raw::frameToPlane(raw::frameOf(Turned{rotation, width, height})), 0, 0);
 }
 
+using Writer = std::tuple<uint32_t, uint32_t, uint32_t>;
+
+// The stores span byte `a` keeps: each one's texel and byte (4: alpha)
+std::vector<Writer> writers(const raw::OverlapPlanes &s, uint32_t a)
+{
+    raw::OverlapWriters w;
+    std::vector<Writer> out;
+    if (raw::overlapPlanesWriters(s, a, w))
+        for (uint32_t k = 0; k < w.count; k++)
+            out.emplace_back(w.x[k], w.y[k], w.byte[k]);
+    return out;
+}
+
 }  // namespace
 
 // A turned target's rows that overlap keep the store an M4 Max lands last inside a 32x32 tile of its FRAME: the later
@@ -55,11 +68,8 @@ TEST(RawOverlapOrder, ATurnedTargetsRowsKeepTheStoreAppleLandsLastInAFrameTile)
     xr.wordRows = xr.alphaRows = 72;
     xr.alpha = 6912;
     xr.tiles = frameOfTurned(1, 96, 72);
-    for (const uint32_t a : {96u, 99u, 113u, 127u}) {
-        uint32_t x = 0, y = 0, byte = 0;
-        ASSERT_TRUE(raw::overlapPlanesWinner(xr, a, x, y, byte)) << a;
-        EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple((a - 96) / 4, 1u, a % 4)) << "word byte " << a;
-    }
+    for (const uint32_t a : {96u, 99u, 113u, 127u})
+        EXPECT_EQ(writers(xr, a), std::vector<Writer>{Writer((a - 96) / 4, 1u, a % 4)}) << "word byte " << a;
 }
 
 // Two stores reaching one byte keep the later 2x2 quad of the frame, by quad row and then quad column, whichever plane
@@ -79,12 +89,8 @@ TEST(RawOverlapOrder, StoresThatMeetKeepTheLaterQuadOfTheFrame)
         for (uint32_t k = 0; k < 4; k++)
             for (uint32_t j = 0; j < 2; j++) {
                 const uint32_t a = 64 + 16 * k + j;
-                uint32_t x = 0, y = 0, byte = 0;
-                ASSERT_TRUE(raw::overlapPlanesWinner(xr, a, x, y, byte)) << a;
-                if (turn < 2)
-                    EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple(0u, 4 + k, j)) << "turn " << int(turn) << a;
-                else
-                    EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple(j, k, 4u)) << "turn " << int(turn) << a;
+                EXPECT_EQ(writers(xr, a), std::vector<Writer>{turn < 2 ? Writer(0u, 4 + k, j) : Writer(j, k, 4u)})
+                    << "turn " << int(turn) << " byte " << a;
             }
     }
 }
@@ -103,9 +109,30 @@ TEST(RawOverlapOrder, AClearKeepsTheFrameColumnFurtherRightAtAQuarterTurn)
     xr.alphaPitch = xr.alphaRow = 96;
     xr.tiles = frameOfTurned(1, 96, 8);
     xr.cleared = 1;
-    for (const uint32_t a : {1568u, 1587u, 1597u, 1696u, 1706u}) {
-        uint32_t x = 0, y = 0, byte = 0;
-        ASSERT_TRUE(raw::overlapPlanesWinner(xr, a, x, y, byte)) << a;
-        EXPECT_EQ(std::make_tuple(x, y, byte), std::make_tuple((a - 7 * 192) / 4, 7u, (a - 7 * 192) % 4)) << a;
+    for (const uint32_t a : {1568u, 1587u, 1597u, 1696u, 1706u})
+        EXPECT_EQ(writers(xr, a), std::vector<Writer>{Writer((a - 7 * 192) / 4, 7u, (a - 7 * 192) % 4)}) << a;
+}
+
+// A word and an alpha byte of one 2x2 frame quad that reach one byte, the latest quad there, leave the OR of both: a
+// 32x8 of words 128 bytes a row at 0 and alpha 32 at 512 (word rows 4-7 in the alpha plane), cleared: byte 682 (word
+// row 5's texel 10, byte 2, and alpha texel (10, 5)) holds 0xf8 | 0xbf (an M4 Max, 3 runs: hwtests8
+// mac/gpu.raw.xr_into_alpha_tie; in passes of every format and op, in a 32x32 frame tile: m2v-textures13
+// probes/c3meet/RESULT.txt A5); a quad alone keeps its own store
+TEST(RawOverlapOrder, AWordAndAnAlphaByteOfOneQuadLeaveTheirOr)
+{
+    raw::OverlapPlanes xr;
+    xr.pitch = xr.wordPitch = xr.wordRow = 128;
+    xr.wordRows = xr.alphaRows = 8;
+    xr.alpha = 512;
+    xr.alphaPitch = xr.alphaRow = 32;
+    for (const uint32_t cleared : {0u, 1u}) {
+        xr.cleared = cleared;
+        EXPECT_EQ(writers(xr, 682), (std::vector<Writer>{Writer(10, 5, 2), Writer(10, 5, 4)})) << cleared;
+        EXPECT_EQ(writers(xr, 683), (std::vector<Writer>{Writer(10, 5, 3), Writer(11, 5, 4)})) << cleared;
+        EXPECT_EQ(writers(xr, 672 + 9), std::vector<Writer>{Writer(10, 5, 1)})
+            << "word row 5's quad column 5 over alpha's 4";
+        EXPECT_EQ(writers(xr, 672 + 12), std::vector<Writer>{Writer(12, 5, 4)}) << "alpha's quad column 6";
+        EXPECT_EQ(writers(xr, 640), (std::vector<Writer>{Writer(0, 5, 0), Writer(0, 4, 4)})) << "row pair 2, quad 0";
+        EXPECT_EQ(writers(xr, 512 + 5), std::vector<Writer>{Writer(1, 4, 1)}) << "word row 4 over alpha row 0";
     }
 }

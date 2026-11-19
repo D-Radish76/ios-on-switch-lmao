@@ -123,39 +123,55 @@ struct OverlapPlanes {
 
 static_assert(sizeof(OverlapPlanes) == 76, "pack/ycbcr_store_overlap.h OverlapPlanes");
 
-// The texel whose store of span byte `a` lands last, of either plane, as an M4 Max's pass stores both: frameOrder's (a
-// clear's clearOrder's) key of each plane texel's frame texel, and between a word and an alpha byte of one key the
-// texel further right in the frame, at one x the word (a 32x8 RGB10A8_2P_XR10 of words 128 bytes a row at 0 and alpha
-// 32 at 512, cleared: alpha rows 0 to 3 keep word row 4, rows 4, 6 and 7 their own, row 5 word row 5's bytes up to its
-// 11th); false where no row stores it. `byte`: the byte of a word texel, 4 for an alpha one
-inline bool overlapPlanesWinner(const OverlapPlanes &s, uint32_t a, uint32_t &x, uint32_t &y, uint32_t &byte)
+// Each texel of either plane whose store of span byte `a` the byte keeps (at most two)
+struct OverlapWriters {
+    uint32_t count = 0;
+    uint32_t x[2] = {}, y[2] = {}, byte[2] = {};  // `byte`: the byte of a word texel, 4 for an alpha one
+};
+
+// The stores span byte `a` keeps, of either plane, as an M4 Max's pass stores both: the one landing last by frameOrder's
+// (a clear's clearOrder's) key of each plane texel's frame texel, between a word and an alpha byte of one key the texel
+// further right in the frame, at one x the word; and with it every other store of its 2x2 frame quad, the byte their
+// bitwise OR (an M4 Max, every format, pass and turn: m2v-textures13 probes/c3meet/RESULT.txt A5, probes/c4misc R3; a
+// 32x8 of words 128 bytes a row at 0 and alpha 32 at 512, cleared: alpha rows 0 to 3 keep word row 4, rows 4, 6 and 7
+// their own, row 5 word row 5's bytes up to its 11th, byte 10 the OR, 0xf8 | 0xbf: hwtests8
+// mac/gpu.raw.xr_into_alpha_tie). False where no row stores it
+inline bool overlapPlanesWriters(const OverlapPlanes &s, uint32_t a, OverlapWriters &out)
 {
     bool found = false;
-    uint32_t best = 0, bestX = 0;
-    for (const bool word : {true, false}) {
-        const uint32_t at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
-        const uint32_t row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
-        if (a < at)
-            continue;
-        const uint32_t off = a - at;
-        const uint32_t last = off / pitch < rows - 1 ? off / pitch : rows - 1;
-        const uint32_t first = off >= row ? (off - row) / pitch + 1 : 0;
-        for (uint32_t r = first; r <= last; r++) {
-            const uint32_t b = off - r * pitch, tx = word ? b / 4 : b;
-            uint32_t fx = 0, fy = 0;
-            frameTexel(s.tiles, tx, r, 1, 1, fx, fy);
-            const uint32_t order = s.cleared ? clearOrder(s.tiles, fx, fy) : frameOrder(s.tiles, fx, fy);
-            const uint32_t key = fx << 1 | (word ? 1u : 0u);
-            if (!found || order > best || (order == best && key > bestX)) {
-                found = true;
-                best = order;
-                bestX = key;
-                x = tx;
-                y = r;
-                byte = word ? b % 4 : 4;
+    uint32_t best = 0, bestX = 0, quadX = 0, quadY = 0;
+    for (const bool pick : {true, false})
+        for (const bool word : {true, false}) {
+            const uint32_t at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
+            const uint32_t row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
+            if (a < at)
+                continue;
+            const uint32_t off = a - at;
+            const uint32_t last = off / pitch < rows - 1 ? off / pitch : rows - 1;
+            const uint32_t first = off >= row ? (off - row) / pitch + 1 : 0;
+            for (uint32_t r = first; r <= last; r++) {
+                const uint32_t b = off - r * pitch, tx = word ? b / 4 : b;
+                uint32_t fx = 0, fy = 0;
+                frameTexel(s.tiles, tx, r, 1, 1, fx, fy);
+                if (!pick) {
+                    if (fx / 2 == quadX && fy / 2 == quadY && out.count < 2) {
+                        out.x[out.count] = tx;
+                        out.y[out.count] = r;
+                        out.byte[out.count++] = word ? b % 4 : 4;
+                    }
+                    continue;
+                }
+                const uint32_t order = s.cleared ? clearOrder(s.tiles, fx, fy) : frameOrder(s.tiles, fx, fy);
+                const uint32_t key = fx << 1 | (word ? 1u : 0u);
+                if (!found || order > best || (order == best && key > bestX)) {
+                    found = true;
+                    best = order;
+                    bestX = key;
+                    quadX = fx / 2;
+                    quadY = fy / 2;
+                }
             }
         }
-    }
     return found;
 }
 

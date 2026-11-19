@@ -25,7 +25,7 @@ inline bool xrPlanesPooled(const Texture &t)
 
 // Whether the rows of a texture's two planes, as its stores land them (storedRows), reach one another's bytes (words that
 // run on into the alpha plane): an M4 Max's pass gives such a byte to whichever store lands later, taken across both planes
-// (raw_overlap_order.h overlapPlanesWinner). Both planes lie in one import, a surface's by its ID (Device::importSurface),
+// (raw_overlap_order.h overlapPlanesWriters). Both planes lie in one import, a surface's by its ID (Device::importSurface),
 // or in the window both were moved into
 inline bool xrPlanesCross(const Texture &w, const Texture &a)
 {
