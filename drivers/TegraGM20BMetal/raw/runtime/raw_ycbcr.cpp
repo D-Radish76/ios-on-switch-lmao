@@ -328,7 +328,7 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     // write (what Metal stores there no read can see)
     const bool window = rowsEnd > mapped;
     if (window && !f.sparseTail)
-        return "rows past the allocation's last page (an M4 Max reads 0 there)";
+        return kRowsPastWithoutSparse;
 
     out = {};
     out.readable = window ? rowsEnd : mapped;

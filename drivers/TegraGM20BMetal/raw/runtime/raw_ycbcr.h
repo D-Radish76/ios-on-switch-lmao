@@ -122,6 +122,10 @@ constexpr uint32_t planeStoreStride(uint32_t bytesPerRow)
 
 bool isYcbcrFormat(uint32_t pixelFormat);
 
+// A plan's refusal of planes whose rows run past the allocation's last page on a kernel that maps no VA sparse (an M4 Max
+// reads 0 there): the import's step, not a form (RawMetalSurfaceTextures.mm raw:tex.surf.imp)
+inline constexpr char kRowsPastWithoutSparse[] = "rows past the allocation's last page (an M4 Max reads 0 there)";
+
 // Whether a texture buffer of `width` texels takes a conversion drawn into its one row: a colour target of at most 16384
 // texels across (the GM20B's, NVK's maxFramebufferWidth)
 constexpr bool ycbcrRowTarget(uint32_t width)

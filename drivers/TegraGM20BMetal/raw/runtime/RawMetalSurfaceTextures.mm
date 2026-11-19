@@ -7,6 +7,7 @@
 #include "raw_surface_note.h"
 #include "raw_surface_refusal.h"
 #include "raw_texture_shape.h"
+#include "raw_ycbcr.h"
 #include "raw_zeta.h"
 #include <mach/vm_page_size.h>
 
@@ -308,6 +309,10 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
     if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane)
         form = ycbcrPlan(flat, s, plane, unused);
+    if (form == raw::kRowsPastWithoutSparse) {
+        raw::surfaceRefusal = form;
+        form = nullptr;
+    }
     if (xr && !xrTaken && !xrPlanesStorable(d)) {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.pack", uintptr_t(d.usage),
                              "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: nil: the pack holds no "

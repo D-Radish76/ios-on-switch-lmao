@@ -65,7 +65,7 @@ inline const char *planPackedPlane(const YcbcrFacts &f, YcbcrPlan &out)
     const uint64_t mapped = std::max(f.allocBytes, f.mappedBytes);
     const bool window = rowsEnd > mapped;
     if (window && !f.sparseTail)
-        return "rows past the allocation's last page (an M4 Max reads 0 there)";
+        return kRowsPastWithoutSparse;
     out = {};
     out.readable = window ? rowsEnd : mapped;
     out.window = window;
