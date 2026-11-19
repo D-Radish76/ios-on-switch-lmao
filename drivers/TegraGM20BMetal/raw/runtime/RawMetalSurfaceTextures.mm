@@ -293,10 +293,10 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     raw::YcbcrPlan unused;
     raw::Rotation turned;
     if (rotationOf(d) && !turnedFrame(d, s, plane, turned)) {
-        // an M4 Max's validation aborts: "Descriptor height*arrayLength > IOSurface height" (m2v-textures4 probes/reads.mm)
         SWITCH_REFUSE_DETAIL("raw", "tex.metal", uintptr_t(rotationOf(d)),
                              "no %lux%lu texture of format %lu and rotation %lu over IOSurface %u: nil, as Metal makes "
-                             "none (a turned frame larger than its plane, of a type or a format no framebuffer is): %s",
+                             "none (a turned frame past the rows or the height of a surface of no planes, of a type or a "
+                             "format no framebuffer is): %s",
                              (unsigned long)d.width, (unsigned long)d.height, (unsigned long)format,
                              (unsigned long)rotationOf(d), IOSurfaceGetID(s), shape);
         return nil;
@@ -335,8 +335,8 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     planeAt(s, plane, offset, pitch);
     const size_t planes = IOSurfaceGetPlaneCount(s);
     const raw::FormatInfo *f = raw::formatInfo(format);
-    const uint64_t packed = f ? (uint64_t(d.width) + f->blockW - 1) / f->blockW * f->bpp : 0;
-    const uint64_t rows = f ? (uint64_t(d.height) + f->blockH - 1) / f->blockH : d.height;
+    const uint64_t packed = f ? (uint64_t(flat.width) + f->blockW - 1) / f->blockW * f->bpp : 0;
+    const uint64_t rows = f ? (uint64_t(flat.height) + f->blockH - 1) / f->blockH : flat.height;
     if (plane >= std::max<size_t>(planes, 1)) {
         os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: it has no plane %lu: %{public}@",
                      getprogname(), IOSurfaceGetID(s), (unsigned long)plane, extra);
@@ -347,7 +347,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
                      getprogname(), IOSurfaceGetID(s), extra);
     } else if (!xrTaken && uint64_t(pitch) * rows > IOSurfaceGetAllocSize(s)) {
         os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
-                     getprogname(), IOSurfaceGetID(s), (unsigned long)d.height, pitch, IOSurfaceGetAllocSize(s), extra);
+                     getprogname(), IOSurfaceGetID(s), (unsigned long)flat.height, pitch, IOSurfaceGetAllocSize(s), extra);
     } else {
         SWITCH_REFUSE_DETAIL("raw", "tex.surf.imp", 0,
                              "no texture over IOSurface %u: %s (the connection's last error: %s): nil (MTLDevice.h "

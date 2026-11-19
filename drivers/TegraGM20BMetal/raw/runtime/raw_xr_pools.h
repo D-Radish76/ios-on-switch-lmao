@@ -44,21 +44,14 @@ inline bool xrPlanesOverlap(const Texture &t)
            (!t.chroma->memoryless && (overlapsRows(*t.chroma) || xrPlanesCross(*t.luma, *t.chroma)));
 }
 
-// Planes whose rows reach one another's bytes, from their pools after work rendered them there: their span drawn a byte a
-// texel by the pack's overlap planes state, rows `pitch` bytes long, then the bytes past them, in a clear's order where the
-// pass drew nothing (`cleared`); 0, or 1 a target the raw path cannot render, 2 a draw the encoder refused (*why)
-inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t, bool cleared, const char **why)
+// The overlap planes state's buffer for planes whose stored rows reach one another's bytes, their span from `lo` to `hi`;
+// `cleared`: the pass drew nothing
+inline OverlapPlanes crossingPlanesOrder(const Texture &t, bool cleared, uint64_t &lo, uint64_t &hi)
 {
-    constexpr uint32_t kR8Uint = 13;
     const Texture w = storedRows(*t.luma, t), a = storedRows(*t.chroma, t);
-    Pipeline *state = d.ownPipeline(kOverlapPlanesState);
-    if (!state) {
-        *why = "the pack has no state storing RGB10A8_2P_XR10 planes whose rows reach one another's";
-        return 1;
-    }
-    const uint64_t lo = std::min(w.va, a.va);
-    const uint64_t hi = std::max(w.va + uint64_t(w.pitch) * (w.height - 1) + uint64_t(w.width) * w.bpp,
-                                 a.va + uint64_t(a.pitch) * (a.height - 1) + uint64_t(a.width) * a.bpp);
+    lo = std::min(w.va, a.va);
+    hi = std::max(w.va + uint64_t(w.pitch) * (w.height - 1) + uint64_t(w.width) * w.bpp,
+                  a.va + uint64_t(a.pitch) * (a.height - 1) + uint64_t(a.width) * a.bpp);
     OverlapPlanes s;
     s.pitch = w.pitch;
     s.words = uint32_t(w.va - lo);
@@ -71,6 +64,23 @@ inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t,
     s.alphaRows = a.height;
     s.tiles = frameTiles(t);
     s.cleared = cleared ? 1 : 0;
+    return s;
+}
+
+// Planes whose rows reach one another's bytes, from their pools after work rendered them there: their span drawn a byte a
+// texel by the pack's overlap planes state, rows `pitch` bytes long, then the bytes past them, in a clear's order where the
+// pass drew nothing (`cleared`); 0, or 1 a target the raw path cannot render, 2 a draw the encoder refused (*why)
+inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t, bool cleared, const char **why)
+{
+    constexpr uint32_t kR8Uint = 13;
+    Pipeline *state = d.ownPipeline(kOverlapPlanesState);
+    if (!state) {
+        *why = "the pack has no state storing RGB10A8_2P_XR10 planes whose rows reach one another's";
+        return 1;
+    }
+    uint64_t lo = 0, hi = 0;
+    OverlapPlanes s = crossingPlanesOrder(t, cleared, lo, hi);
+    const Texture w = storedRows(*t.luma, t);
     const uint32_t span = uint32_t(hi - lo), whole = span / s.pitch, tail = span - whole * s.pitch;
     for (const bool part : {false, true}) {
         const uint32_t width = part ? tail : s.pitch, height = part ? 1 : whole;

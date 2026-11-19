@@ -5235,6 +5235,18 @@ facade_test(
     srcs = ["raw_facade_xr_planes_pass_test.cpp"],
 )
 
+# Turned targets over planes declared narrower than their frame, as the device tests make them: made at their plane's extent,
+# the store order keeping every byte an M4 Max keeps there
+facade_test(
+    name = "raw_facade_turned_overlap_test",
+    srcs = [
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_facade_turned_overlap_test.cpp",
+        ":librecord_count.dylib",
+    ],
+)
+
 facade_test(
     name = "raw_facade_texture_rows_test",
     srcs = ["raw_facade_texture_rows_test.cpp"],

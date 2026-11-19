@@ -55,6 +55,11 @@ bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw
     return turnedFrame(d, s, plane, out) && (!raw::twoPlaneXr(uint32_t(d.pixelFormat)) || xrPlanesStorable(d));
 }
 
+// An M4 Max makes a turned texture wherever it makes the unturned one of the plane's extent: over a surface of planes at
+// any extent (past the plane's declared width, which IOSurfaceCreate keeps within bytesPerRow, past the surface and its
+// allocation), over a surface of none within its rows and its height, its IOGPU aborting otherwise with validation off too
+// ("bytesPerRow (256) must be greater or equal to (264) bytes", "Descriptor height*arrayLength > IOSurface height"; the
+// turned-extent probe, macOS 27.2.1)
 bool turnedFrame(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out)
 {
     const NSUInteger turn = descriptorRotation(d);
@@ -69,8 +74,10 @@ bool turnedFrame(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw:
     out.turn = uint8_t(turn);
     out.width = uint32_t(d.width);
     out.height = uint32_t(d.height);
-    return (planes ? IOSurfaceGetWidthOfPlane(s, plane) : IOSurfaceGetWidth(s)) >= out.planeWidth() &&
-           (planes ? IOSurfaceGetHeightOfPlane(s, plane) : IOSurfaceGetHeight(s)) >= out.planeHeight();
+    if (planes)
+        return true;
+    const bool rows = planarFormat(format) || uint64_t(out.planeWidth()) * f->bpp <= IOSurfaceGetBytesPerRow(s);
+    return rows && IOSurfaceGetHeight(s) >= out.planeHeight();
 }
 
 MTLTextureDescriptor *planeDescriptor(MTLTextureDescriptor *d, const raw::Rotation &r)
