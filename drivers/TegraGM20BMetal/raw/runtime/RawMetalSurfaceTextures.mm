@@ -154,6 +154,22 @@ void noteCompositorSurface(MTLTextureDescriptor *d, IOSurfaceRef s, const void *
 }
 #endif
 
+// A texture buffer over a surface of no planes longer than its rows, which an M4 Max's Metal asserts on with validation off
+// too ("bytesPerRow (320) must be greater or equal to (324) bytes"), counting 2 bytes a texel of RGB10A8_2P_XR10 and its
+// sRGB twin and every other format's own (R8, BGRA8, BGR10_XR, RGBA16Float, BGRA10_XR, RGBA32Float: the texel-buffer row
+// probe, macOS 27.2.1); over a plane it makes one of any length
+const char *texelBufferRowsRefusal(MTLTextureDescriptor *d, IOSurfaceRef s)
+{
+    const uint32_t format = uint32_t(d.pixelFormat);
+    const raw::FormatInfo *f = raw::formatInfo(format);
+    if (d.textureType != MTLTextureTypeTextureBuffer || IOSurfaceGetPlaneCount(s) || !f || raw::isYcbcrFormat(format) ||
+        raw::packedPlaneChannels(format))
+        return nullptr;
+    const uint64_t bytes = uint64_t(d.width) * (raw::twoPlaneXr(format) ? 2 : f->bpp);
+    return bytes > IOSurfaceGetBytesPerRow(s) ? "an IOSurface texture buffer is no longer than its surface's rows"
+                                              : nullptr;
+}
+
 NSString *surfaceFacts(IOSurfaceRef s, NSUInteger plane)
 {
     uint64_t offset;
@@ -266,7 +282,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
     const uint32_t format = uint32_t(d.pixelFormat);
     raw::shapes::TextureShape texture;
     texture.format = format;
-    if (const char *why = raw::surfaceRefusal ? nullptr : surfaceMetalRefusal(d)) {
+    if (const char *why = raw::surfaceRefusal ? nullptr : surfaceMetalRefusal(d) ?: texelBufferRowsRefusal(d, s)) {
         SWITCH_REFUSE_DETAIL("raw", "tex.metal", uintptr_t(why),
                              "no %lux%lu texture of format %lu, type %lu over IOSurface %u: nil, as Metal makes none "
                              "(%s; MTLDevice.h newTextureWithDescriptor:iosurface:plane:, nullable): %s",
@@ -438,7 +454,7 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
                                                  uint32_t(d.width), uint32_t(d.height), uint32_t(d.pixelFormat),
                                                  t->_raw);
     } else if (d.textureType == MTLTextureTypeTextureBuffer) {
-        t->_rawOk = makeSurfaceTexelBuffer(t, s, offset, pitch);
+        t->_rawOk = !texelBufferRowsRefusal(d, s) && makeSurfaceTexelBuffer(t, s, offset, pitch);
     } else if (blockSurface(d, s, plane)) {
         // its blocks in place under a pitch header (raw_surface_textures.cpp createSurfaceTexture), rows off 32 bytes
         // through a block-linear pool image the copy engine fills from them, refreshed as the surface's seed moves

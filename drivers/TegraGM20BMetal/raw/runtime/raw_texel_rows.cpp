@@ -38,11 +38,6 @@ bool Device::createTexelRows(Import *i, uint64_t offset, uint32_t bytesPerRow, u
     const FormatInfo *f = formatInfo(format);
     const uint64_t bytes = uint64_t(elements) * f->bpp;
     const TexelRowsParts parts = texelRowsParts(i->layout, offset, bytesPerRow, bytes);
-    if (bytesPerRow < uint64_t(i->layout.width) * i->layout.bpp || !texelRowsAddressable(parts)) {
-        surfaceRefusal = "a texel buffer over a block-linear surface of rows shorter than its texels, or of a part of a "
-                         "row past the copy engine's 16-bit origin";
-        return false;
-    }
     t = {};
     if (!poolAlloc(bytes, t.span)) {
         surfaceRefusal = "no memory for the pool a texel buffer over a block-linear surface is held in";

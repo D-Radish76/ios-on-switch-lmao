@@ -21,8 +21,9 @@ namespace {
 
 using namespace harness;
 
-// a 64x16 BGRA8 surface of rows 320 bytes apart; the buffer's 288 texels are its rows 0 to 2 and 192 bytes of row 3
-constexpr uint32_t kWidth = 64, kHeight = 16, kRows = 320, kElements = 288;
+// a 64x16 BGRA8 surface of rows 320 bytes apart; the buffer's 80 texels are row 0, its 64 texels and 64 bytes of padding, the
+// longest Metal makes over a surface of no planes
+constexpr uint32_t kWidth = 64, kHeight = 16, kRows = 320, kElements = 80;
 constexpr uint32_t kCopy = 4, kCompute = 1;
 constexpr uint32_t kLaunchDma = 0x0300, kSendPcasA = 0x02b4;  // NVB0B5_LAUNCH_DMA, NVB1C0_SEND_PCAS_A
 const uint32_t kThreads[3] = {2, 2, 1};
@@ -187,7 +188,7 @@ TEST_F(FacadeTexelRows, APassRendersItsPoolFilledFromTheRowsAndCopiedBack)
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(rawPath(cb), "raw");
-    EXPECT_EQ(moves(jobs, surfaceVa()), "FFDD") << "rows 0 to 2 and a part of row 3 each way";
+    EXPECT_EQ(moves(jobs, surfaceVa()), "FD") << "row 0's texels each way";
 }
 
 // A draw samples its pool, filled before the pass: other textures over the surface may have written its rows
@@ -198,7 +199,7 @@ TEST_F(FacadeTexelRows, ADrawSamplesItsPoolFilledFromTheRows)
     id<MTLCommandBuffer> cb = drawSampling(gDevice, gDraw, (id<MTLTexture>)buffer, sampler);
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(rawPath(cb), "raw");
-    EXPECT_EQ(moves(jobs, surfaceVa()), "FF") << "nothing copied back: no draw stores to it";
+    EXPECT_EQ(moves(jobs, surfaceVa()), "F") << "nothing copied back: no draw stores to it";
 }
 
 // A blit command reaches the pool (its image): fillTexture: (Apple SPI) of texels 10 to 29
@@ -217,7 +218,7 @@ TEST_F(FacadeTexelRows, ABlitFillsItsPoolFilledFromTheRowsAndCopiedBack)
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(rawPath(cb), "raw");
-    EXPECT_EQ(moves(jobs, surfaceVa()), "FFDD") << "filled before the command, copied back after it";
+    EXPECT_EQ(moves(jobs, surfaceVa()), "FD") << "filled before the command, copied back after it";
 }
 
 TEST_F(FacadeTexelRows, AKernelStoresItsPoolFilledFromTheRowsAndCopiedBack)
@@ -240,7 +241,18 @@ TEST_F(FacadeTexelRows, AKernelStoresItsPoolFilledFromTheRowsAndCopiedBack)
     id<MTLCommandBuffer> cb = dispatch();
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
     EXPECT_EQ(rawPath(cb), "raw");
-    EXPECT_EQ(moves(jobs, surfaceVa()), "FFLDD") << "filled as its encoder begins, copied back as it ends";
+    EXPECT_EQ(moves(jobs, surfaceVa()), "FLD") << "filled as its encoder begins, copied back as it ends";
+}
+
+// One texel past the surface's rows: an M4 Max's Metal asserts, validation off too ("bytesPerRow (320) must be greater or
+// equal to (324) bytes"), so the raw path makes none and logs Metal's stop (raw:tex.metal)
+TEST_F(FacadeTexelRows, ATexelBufferPastTheSurfacesRowsIsNil)
+{
+    MTLTextureDescriptor *b = [MTLTextureDescriptor textureBufferDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                     width:kElements + 1
+                                                                           resourceOptions:MTLResourceStorageModeShared
+                                                                                     usage:MTLTextureUsageShaderRead];
+    EXPECT_EQ([gDevice newTextureWithDescriptor:b iosurface:surface plane:0], nil);
 }
 
 }  // namespace

@@ -102,12 +102,24 @@ void surfaceShapesEndOnRaw()
     IOSurfaceRef bgra = chunky('BGRA', 4), half = chunky('RGhA', 8), planes = twoPlanes();
     ASSERT_TRUE(bgra && half && planes);
     MTLTextureDescriptor *line = [MTLTextureDescriptor textureBufferDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                                       width:kSide * kSide
+                                                                                       width:kSide
                                                                              resourceOptions:0
                                                                                        usage:MTLTextureUsageShaderRead];
     RMTexture *buffer = (RMTexture *)[device newTextureWithDescriptor:line iosurface:bgra plane:0];
     ASSERT_TRUE(buffer != nil && buffer->_rawOk);
     EXPECT_EQ(buffer->_raw.type, raw::fx::kTexOneDBuffer);
+    // no longer than the surface's rows, which an M4 Max's Metal asserts on, counting 2 bytes a texel of RGB10A8_2P_XR10
+    line.width = kSide + 1;
+    EXPECT_EQ([device newTextureWithDescriptor:line iosurface:bgra plane:0], nil) << "a texel past a row of 256 bytes";
+    IOSurfaceRef xrWords = chunky('w30r', 4);
+    ASSERT_TRUE(xrWords);
+    line.pixelFormat = MTLPixelFormat(550);
+    line.width = 2 * kSide;
+    RMTexture *words = (RMTexture *)[device newTextureWithDescriptor:line iosurface:xrWords plane:0];
+    EXPECT_TRUE(words != nil && words->_rawOk) << "128 texels of 550 over a row of 256 bytes";
+    line.width = 2 * kSide + 1;
+    EXPECT_EQ([device newTextureWithDescriptor:line iosurface:xrWords plane:0], nil) << "129 texels of 550";
+    CFRelease(xrWords);
     for (const MTLTextureUsage usage :
          {MTLTextureUsage(MTLTextureUsageUnknown), MTLTextureUsage(MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView)})
         for (const NSUInteger side : {kSide, kSide / 2}) {

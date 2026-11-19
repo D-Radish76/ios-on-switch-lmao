@@ -173,16 +173,6 @@ TEST_F(DeviceTexelRows, ItIsATexelBufferHeaderOverAPoolOfItsBytes)
     dev.destroyTexture(image);
 }
 
-TEST_F(DeviceTexelRows, RowsShorterThanTheTexelsAreRefusedAndTakeNoHold)
-{
-    raw::Texture t;
-    EXPECT_FALSE(texelBuffer(0, 16, t, kTexels - 16));
-    EXPECT_NE(raw::surfaceRefusal, nullptr);
-    const uint64_t handle = image.import->bo.handle;
-    dev.destroyTexture(image);
-    EXPECT_TRUE(freed(handle)) << "the import went with the last texture over it";
-}
-
 TEST_F(DeviceTexelRows, ItHoldsTheSurfacesImportUntilItGoes)
 {
     raw::Texture t;
