@@ -295,6 +295,7 @@ PLUGIN_CC_SRCS = [
     GM20B_METAL + ":raw/runtime/raw_samplers.cpp",
     GM20B_METAL + ":raw/runtime/raw_sparse_window.cpp",
     GM20B_METAL + ":raw/runtime/raw_surface_textures.cpp",
+    GM20B_METAL + ":raw/runtime/raw_ycbcr_textures.cpp",
     GM20B_METAL + ":raw/runtime/raw_texel_rows.cpp",
     GM20B_METAL + ":raw/runtime/raw_texture_views.cpp",
     GM20B_METAL + ":raw/runtime/raw_textures.cpp",

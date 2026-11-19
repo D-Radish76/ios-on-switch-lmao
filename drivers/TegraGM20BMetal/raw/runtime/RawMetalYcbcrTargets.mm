@@ -16,6 +16,7 @@
 #include "raw_planar_target.h"
 #include "raw_standin_blend.h"
 #include "raw_ycbcr_load.h"
+#include "raw_ycbcr_meet.h"
 #include "raw_ycbcr_store.h"
 
 static raw::Pipeline *packState(const char *name)
@@ -59,7 +60,9 @@ void makeYcbcrTarget(raw::Texture &t, uint32_t pixelFormat, const raw::YcbcrStor
     // a packed plane's words are its one plane, as YCBCR10_444_1P's are (its luma header's); a texture over plane 1 stores
     // its luma codes alone
     const bool chroma = !store.plane && !store.words && t.chroma;
+    const bool meet = raw::ycbcrPlanesMeet(t, store);
     const bool overlaps = t.onePlane ? !pairsOverlap(t) || packState(raw::overlapState(10))
+                          : meet     ? packState(raw::kOverlapMeetState) != nullptr
                                      : overlapReady(t.luma) && (!chroma || overlapReady(t.chroma));
     // RGB8_444_2P's pipelines render into an RGBA16Float stand-in, as the planar path's targets do (RawOffline.mm)
     const uint32_t standInFormat =
@@ -100,6 +103,7 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
     if (masked && !loaded->mask)
         return 0;
     const raw::TurnMask mask = masked ? raw::ycbcrStoreMask(t, *loaded) : raw::TurnMask{};
+    const bool meet = raw::ycbcrPlanesMeet(t, *t.ycbcrStore);
     for (const bool chroma : {false, true}) {
         if (chroma && (!t.chroma || t.ycbcrStore->words))
             continue;
@@ -108,7 +112,7 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         raw::Texture *rows = plane->storePitch ? &(scratch = raw::storedRows(*plane, t)) : plane;
         const bool overlap = !t.onePlane && raw::overlapsRows(*rows);
         raw::PassDesc p;
-        p.color[0].texture = overlap ? plane->sampled : rows;
+        p.color[0].texture = overlap || meet ? plane->sampled : rows;
         p.color[0].load = masked ? raw::ColorAttachment::Load : raw::ColorAttachment::DontCare;
         p.color[0].store = true;
         p.count = 1;
@@ -134,14 +138,17 @@ int storeYcbcrPlanes(raw::CommandBuffer *rc, const raw::Texture &t, const raw::T
         if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
             return 2;
         e->end();
-        if (overlap)
+        if (overlap && !meet)
             if (const int failed = raw::storeOverlapRows(*rc, packState(raw::overlapState(plane->format)),
                                                          plane->format, rows->va, *rows, *plane->sampled, nullptr,
                                                          raw::overlapPlaneRows(*rows, chroma, *t.ycbcrStore),
                                                          raw::frameTiles(t), masked ? &mask : nullptr, why))
                 return failed;
     }
-    if (pairsOverlap(t)) {
+    if (meet) {
+        if (const int failed = raw::storeMeetingPlanes(d, *rc, t, masked ? &mask : nullptr, why))
+            return failed;
+    } else if (pairsOverlap(t)) {
         if (const int failed =
                 raw::storeOverlapRows(*rc, packState(raw::overlapState(10)), 10, t.planes.luma, t, *t.luma, t.chroma,
                                       raw::overlapPairsOf(t), raw::frameTiles(t), masked ? &mask : nullptr, why))

@@ -54,14 +54,8 @@ inline OverlapPlanes crossingPlanesOrder(const Texture &t, bool cleared, uint64_
                   a.va + uint64_t(a.pitch) * (a.height - 1) + uint64_t(a.width) * a.bpp);
     OverlapPlanes s;
     s.pitch = w.pitch;
-    s.words = uint32_t(w.va - lo);
-    s.wordPitch = w.pitch;
-    s.wordRow = w.width * w.bpp;
-    s.wordRows = w.height;
-    s.alpha = uint32_t(a.va - lo);
-    s.alphaPitch = a.pitch;
-    s.alphaRow = a.width * a.bpp;
-    s.alphaRows = a.height;
+    s.plane[0] = meetPlane(uint32_t(w.va - lo), w.pitch, w.width * w.bpp, w.height, 4, 4);
+    s.plane[1] = meetPlane(uint32_t(a.va - lo), a.pitch, a.width * a.bpp, a.height, 1, 1);
     s.tiles = frameTiles(t);
     s.cleared = cleared ? 1 : 0;
     return s;
@@ -72,45 +66,15 @@ inline OverlapPlanes crossingPlanesOrder(const Texture &t, bool cleared, uint64_
 // pass drew nothing (`cleared`); 0, or 1 a target the raw path cannot render, 2 a draw the encoder refused (*why)
 inline int storeXrCrossingPlanes(Device &d, CommandBuffer &rc, const Texture &t, bool cleared, const char **why)
 {
-    constexpr uint32_t kR8Uint = 13;
     Pipeline *state = d.ownPipeline(kOverlapPlanesState);
     if (!state) {
         *why = "the pack has no state storing RGB10A8_2P_XR10 planes whose rows reach one another's";
         return 1;
     }
     uint64_t lo = 0, hi = 0;
-    OverlapPlanes s = crossingPlanesOrder(t, cleared, lo, hi);
-    const Texture w = storedRows(*t.luma, t);
-    const uint32_t span = uint32_t(hi - lo), whole = span / s.pitch, tail = span - whole * s.pitch;
-    for (const bool part : {false, true}) {
-        const uint32_t width = part ? tail : s.pitch, height = part ? 1 : whole;
-        if (!width || !height)
-            continue;
-        s.base = part ? whole * s.pitch : 0;
-        Texture target;
-        overlapTarget(w, lo + s.base, s.pitch, width, height, kR8Uint, target);
-        target.storage.bytes = boundFrom(t, target.va, target.storage.bytes);
-        PassDesc p;
-        p.color[0].texture = &target;
-        p.color[0].load = ColorAttachment::Load;
-        p.color[0].store = true;
-        p.count = 1;
-        p.width = width;
-        p.height = height;
-        RenderEncoder *e = rc.render(p);
-        if (!e) {
-            *why = "RGB10A8_2P_XR10 planes whose rows reach one another's the raw path cannot render";
-            return 1;
-        }
-        e->setPipeline(state);
-        e->setTexture(0, t.luma->sampled);
-        e->setTexture(1, t.chroma->sampled);
-        e->setBytes(2, 0, &s, sizeof s);
-        if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
-            return 2;
-        e->end();
-    }
-    return 0;
+    const OverlapPlanes s = crossingPlanesOrder(t, cleared, lo, hi);
+    return storePlanesSpan(rc, state, t, s, lo, hi, *t.luma->sampled, *t.chroma->sampled, *t.luma->sampled,
+                           "RGB10A8_2P_XR10 planes whose rows reach one another's the raw path cannot render", why);
 }
 
 // Planes that overlap from their pools after work rendered them there, each byte from the row whose store an M4 Max's

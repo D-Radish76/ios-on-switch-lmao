@@ -209,6 +209,7 @@ host_library(
         "raw_vertex_streams",
         "raw_visibility",
         "raw_visibility_pass",
+        "raw_ycbcr_textures",
         "raw_zeta",
     ]],
     hdrs = [
@@ -4662,6 +4663,7 @@ RAW_HOST_UNITS = ["//drivers/TegraGM20BMetal:raw/fx/" + f for f in [
     "raw_visibility_pass",
     "raw_xr_texture",
     "raw_ycbcr",
+    "raw_ycbcr_textures",
     "raw_zeta",
     "raw_zeta_colour",
 ]] + ["//drivers/TegraGM20BMetal:compiler_cc_srcs"]
@@ -5243,6 +5245,18 @@ facade_test(
         "raw_facade_pass_scene.h",
         "raw_facade_variant_compiler.h",
         "raw_facade_turned_overlap_test.cpp",
+        ":librecord_count.dylib",
+    ],
+)
+
+# A YCbCr target whose planes' stored rows meet: both planes in pools, their span drawn by the pack's meet state in an M4
+# Max's quad order; a pack without the state makes no target of it
+facade_test(
+    name = "raw_facade_ycbcr_meet_test",
+    srcs = [
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_facade_ycbcr_meet_test.cpp",
         ":librecord_count.dylib",
     ],
 )

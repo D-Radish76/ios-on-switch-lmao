@@ -139,56 +139,95 @@ fragment uint ycbcr_overlap_r32ui_frag(Out in [[stage_in]], texture2d<uint, acce
     return source.read(uint2(off / s.element, row)).r;
 }
 
-// RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (runtime/raw_xr_pools.h xrPlanesCross,
-// runtime/raw_overlap_order.h overlapPlanesWriters step for step): each byte of the planes' span from the texel, of
-// either plane's pool, whose store lands last as an M4 Max stores a pass, by frameOrder (a pass that drew nothing by
-// clearOrder) and then the texel further right in the frame, the word at one x, ORed with every other store of its 2x2
-// frame quad. The target is the span's bytes `pitch` apart from `base`, a byte a texel.
-struct OverlapPlanes {
-    uint base, pitch;
-    uint words, wordPitch, wordRow, wordRows;
-    uint alpha, alphaPitch, alphaRow, alphaRows;
-    Tiles tiles;
-    uint cleared;
+// Two planes whose stored rows reach one another's bytes: an RGB10A8_2P_XR10's words and alpha (runtime/raw_xr_pools.h
+// xrPlanesCross) from their R32Uint and R8Uint pools, a YCbCr target's luma and chroma (runtime/raw_ycbcr_meet.h) from their
+// unorm pools (runtime/raw_overlap_order.h overlapPlanesWriters step for step): each byte of the planes' span from the
+// element, of either plane, whose store lands last as an M4 Max stores a pass, by frameOrder (a pass that drew nothing by
+// clearOrder) and then the texel further right in the frame, plane 0 at one x, ORed with every other store of its 2x2
+// frame quad; a loaded pass's only where its draws reach. The target is the span's bytes `pitch` apart from `base`, a byte
+// a texel.
+struct MeetPlane {
+    uint at, pitch, row, rows;
+    uint unit, channel, across, down;
 };
 
-fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> words [[texture(0)]],
-                                        texture2d<uint, access::read> alpha [[texture(1)]],
-                                        constant OverlapPlanes &s [[buffer(0)]])
+struct OverlapPlanes {
+    uint base, pitch;
+    MeetPlane plane[2];
+    Tiles tiles;
+    uint cleared, masked;
+};
+
+static uint meetByte(texture2d<uint, access::read> t, uint2 at, uint b, uint channel)
 {
-    const uint a = s.base + uint(in.position.y) * s.pitch + uint(in.position.x);
-    bool found = false;
-    uint best = 0, bestX = 0, value = 0, kept = 0;
+    return (t.read(at).r >> (8 * b)) & 0xffu;
+}
+
+// Byte `b` of a unorm element of `channel`-byte codes
+static uint meetByte(StandIn t, uint2 at, uint b, uint channel)
+{
+    const float v = t.read(at)[b / channel];
+    const uint code = uint(rint(v * float((1u << (8 * channel)) - 1u)));
+    return (code >> (8 * (b % channel))) & 0xffu;
+}
+
+template <typename T>
+static uint meetValue(constant OverlapPlanes &s, Reach reach, texture2d<T, access::read> p0, texture2d<T, access::read> p1,
+                      uint a, thread bool &found)
+{
+    found = false;
+    uint best = 0, bestKey = 0, value = 0, kept = 0;
     uint2 quad = uint2(0);
     for (uint pass = 0; pass < 2; pass++)
-        for (uint plane = 0; plane < 2; plane++) {
-            const bool word = plane == 0;
-            const uint at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
-            const uint row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
-            if (a < at)
+        for (uint k = 0; k < 2; k++) {
+            constant MeetPlane &p = s.plane[k];
+            if (p.rows == 0 || a < p.at)
                 continue;
-            const uint off = a - at;
-            const uint last = min(off / pitch, rows - 1), first = off >= row ? (off - row) / pitch + 1 : 0;
+            const uint off = a - p.at;
+            const uint last = min(off / p.pitch, p.rows - 1), first = off >= p.row ? (off - p.row) / p.pitch + 1 : 0;
             for (uint r = first; r <= last; r++) {
-                const uint b = off - r * pitch, x = word ? b / 4 : b;
-                const uint2 f = frameTexel(s.tiles, x, r, 1, 1);
+                const uint b = off - r * p.pitch, e = b / p.unit;
+                const uint2 at = uint2(e * p.across, r * p.down);
+                if (s.masked != 0 && !reached(reach, s.tiles, at))
+                    continue;
+                const uint2 f = frameTexel(s.tiles, at.x, at.y, p.across, p.down);
                 if (pass == 1) {
-                    if (all(f / 2 == quad) && kept < 2) {
+                    if (all(f / 2 == quad) && kept < 4) {
                         kept++;
-                        value |= word ? (words.read(uint2(x, r)).r >> (8 * (b % 4))) & 0xffu : alpha.read(uint2(x, r)).r;
+                        value |= k == 0 ? meetByte(p0, uint2(e, r), b % p.unit, p.channel)
+                                        : meetByte(p1, uint2(e, r), b % p.unit, p.channel);
                     }
                     continue;
                 }
                 const uint order = s.cleared != 0 ? clearOrder(s.tiles, f) : frameOrder(s.tiles, f);
-                const uint key = f.x << 1 | (word ? 1u : 0u);
-                if (!found || order > best || (order == best && key > bestX)) {
+                const uint key = f.x << 1 | (k == 0 ? 1u : 0u);
+                if (!found || order > best || (order == best && key > bestKey)) {
                     found = true;
                     best = order;
-                    bestX = key;
+                    bestKey = key;
                     quad = f / 2;
                 }
             }
         }
+    return value;
+}
+
+fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, access::read> words [[texture(0)]],
+                                        texture2d<uint, access::read> alpha [[texture(1)]], Reach reach [[texture(2)]],
+                                        constant OverlapPlanes &s [[buffer(0)]])
+{
+    bool found = false;
+    const uint value = meetValue(s, reach, words, alpha, s.base + uint(in.position.y) * s.pitch + uint(in.position.x), found);
+    if (!found)
+        discard_fragment();
+    return value;
+}
+
+fragment uint ycbcr_overlap_meet_frag(Out in [[stage_in]], StandIn luma [[texture(0)]], StandIn chroma [[texture(1)]],
+                                      Reach reach [[texture(2)]], constant OverlapPlanes &s [[buffer(0)]])
+{
+    bool found = false;
+    const uint value = meetValue(s, reach, luma, chroma, s.base + uint(in.position.y) * s.pitch + uint(in.position.x), found);
     if (!found)
         discard_fragment();
     return value;

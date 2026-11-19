@@ -324,6 +324,7 @@ ios_binary(
         "raw/runtime/raw_samplers.cpp",
         "raw/runtime/raw_sparse_window.cpp",
         "raw/runtime/raw_surface_textures.cpp",
+        "raw/runtime/raw_ycbcr_textures.cpp",
         "raw/runtime/raw_texel_rows.cpp",
         "raw/runtime/raw_texture_views.cpp",
         "raw/runtime/raw_textures.cpp",

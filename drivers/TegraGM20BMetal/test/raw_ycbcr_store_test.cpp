@@ -401,10 +401,9 @@ TEST(RawYcbcrStore, RowsThatOverlapStoreOnlyFromReachedTiles)
 TEST(RawYcbcrStore, WordsRunningIntoTheAlphaPlaneKeepTheStoreAppleLandsLast)
 {
     raw::OverlapPlanes s;
-    s.pitch = s.wordPitch = s.wordRow = 128;
-    s.wordRows = s.alphaRows = 8;
-    s.alpha = 512;
-    s.alphaPitch = s.alphaRow = 32;
+    s.pitch = 128;
+    s.plane[0] = raw::meetPlane(0, 128, 128, 8, 4, 4);
+    s.plane[1] = raw::meetPlane(512, 32, 32, 8, 1, 1);
     for (uint32_t a = 0; a < 1024; a++) {
         raw::OverlapWriters w;
         ASSERT_TRUE(raw::overlapPlanesWriters(s, a, w)) << a;
@@ -416,8 +415,8 @@ TEST(RawYcbcrStore, WordsRunningIntoTheAlphaPlaneKeepTheStoreAppleLandsLast)
         if (word)
             EXPECT_EQ(w.y[0] * 128 + 4 * w.x[0] + w.byte[0], a) << "byte " << a;
         if (alpha)
-            EXPECT_EQ(std::make_tuple(w.x[w.count - 1], w.y[w.count - 1], w.byte[w.count - 1]),
-                      std::make_tuple(b, r, 4u))
+            EXPECT_EQ(std::make_tuple(w.plane[w.count - 1], w.x[w.count - 1], w.y[w.count - 1], w.byte[w.count - 1]),
+                      std::make_tuple(1u, b, r, 0u))
                 << "byte " << a;
     }
 }

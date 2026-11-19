@@ -109,70 +109,93 @@ inline bool overlapWinner(const OverlapRows &s, uint32_t a, Reached reached, uin
     return found;
 }
 
-// RGB10A8_2P_XR10 in two planes whose rows reach one another's bytes (raw_xr_pools.h xrPlanesCross): the overlap planes
-// state's fragment buffer 0 (pack/ycbcr_store_overlap.h OverlapPlanes). Its target is the planes' span `pitch` bytes a row from
-// `base`; each plane's first byte (from the span's), pitch, bytes a row and rows; each plane texel's frame texel; whether
-// the pass drew nothing (clearOrder)
-struct OverlapPlanes {
-    uint32_t base = 0, pitch = 0;
-    uint32_t words = 0, wordPitch = 0, wordRow = 0, wordRows = 0;
-    uint32_t alpha = 0, alphaPitch = 0, alphaRow = 0, alphaRows = 0;
-    TileMap tiles;
-    uint32_t cleared = 0;
+// One of two planes whose stored rows reach one another's bytes (OverlapPlanes): its first byte from the span's, pitch,
+// bytes a row and rows; an element's bytes, the bytes of each of its channels, and the plane texels across and down one
+// covers (RGB10A8_2P_XR10: a word of 4 and an alpha byte, a texel each; YCbCr: a luma code a texel, a chroma pair a block
+// of the store's halving)
+struct MeetPlane {
+    uint32_t at = 0, pitch = 0, row = 0, rows = 0;
+    uint32_t unit = 1, channel = 1, across = 1, down = 1;
 };
 
-static_assert(sizeof(OverlapPlanes) == 76, "pack/ycbcr_store_overlap.h OverlapPlanes");
+inline MeetPlane meetPlane(uint32_t at, uint32_t pitch, uint32_t row, uint32_t rows, uint32_t unit, uint32_t channel,
+                           uint32_t across = 1, uint32_t down = 1)
+{
+    return {at, pitch, row, rows, unit, channel, across, down};
+}
 
-// Each texel of either plane whose store of span byte `a` the byte keeps (at most two)
+// Two planes whose stored rows reach one another's bytes, an RGB10A8_2P_XR10's words and alpha (raw_xr_pools.h
+// xrPlanesCross) or a YCbCr target's luma and chroma (raw_ycbcr_meet.h): the overlap planes states' fragment buffer 0
+// (pack/ycbcr_store_overlap.h OverlapPlanes). Its target is the planes' span `pitch` bytes a row from `base`; each plane
+// texel's frame texel; whether the pass drew nothing (clearOrder); a loaded pass's: only stores in the 32x32 frame tiles
+// its draws reach (tiles)
+struct OverlapPlanes {
+    uint32_t base = 0, pitch = 0;
+    MeetPlane plane[2];
+    TileMap tiles;
+    uint32_t cleared = 0, masked = 0;
+};
+
+static_assert(sizeof(OverlapPlanes) == 112, "pack/ycbcr_store_overlap.h OverlapPlanes");
+
+// Each element of either plane whose store of span byte `a` the byte keeps
 struct OverlapWriters {
     uint32_t count = 0;
-    uint32_t x[2] = {}, y[2] = {}, byte[2] = {};  // `byte`: the byte of a word texel, 4 for an alpha one
+    uint32_t plane[4] = {}, x[4] = {}, y[4] = {}, byte[4] = {};  // its plane, element, row and byte of the element
 };
 
 // The stores span byte `a` keeps, of either plane, as an M4 Max's pass stores both: the one landing last by frameOrder's
-// (a clear's clearOrder's) key of each plane texel's frame texel, between a word and an alpha byte of one key the texel
-// further right in the frame, at one x the word; and with it every other store of its 2x2 frame quad, the byte their
-// bitwise OR (an M4 Max, every format, pass and turn: m2v-textures13 probes/c3meet/RESULT.txt A5, probes/c4misc R3; a
-// 32x8 of words 128 bytes a row at 0 and alpha 32 at 512, cleared: alpha rows 0 to 3 keep word row 4, rows 4, 6 and 7
-// their own, row 5 word row 5's bytes up to its 11th, byte 10 the OR, 0xf8 | 0xbf: hwtests8
-// mac/gpu.raw.xr_into_alpha_tie). False where no row stores it
-inline bool overlapPlanesWriters(const OverlapPlanes &s, uint32_t a, OverlapWriters &out)
+// (a clear's clearOrder's) key of each element's frame texel, between planes at one key the texel further right in the
+// frame, at one x plane 0; and with it every other store of its 2x2 frame quad, the byte their bitwise OR (an M4 Max,
+// every format, pass and turn, inside a 32x32 frame tile: the planes-meet probe's 882 cases; 550 32x8 of words 128 bytes
+// a row at 0 and alpha 32 at 512, cleared: byte 682 holds 0xf8 | 0xbf; 500 8x8 of luma rows 8 at 0 and chroma rows 8 at
+// 64, stored 16 apart: luma rows 4-6 over chroma rows 0-2, row 7 and chroma row 3 their OR). `reached(x, y)` names a
+// plane texel a loaded pass stores. False where no row stores it
+template <typename Reached>
+inline bool overlapPlanesWriters(const OverlapPlanes &s, uint32_t a, Reached reached, OverlapWriters &out)
 {
     bool found = false;
-    uint32_t best = 0, bestX = 0, quadX = 0, quadY = 0;
+    uint32_t best = 0, bestKey = 0, quadX = 0, quadY = 0;
     for (const bool pick : {true, false})
-        for (const bool word : {true, false}) {
-            const uint32_t at = word ? s.words : s.alpha, pitch = word ? s.wordPitch : s.alphaPitch;
-            const uint32_t row = word ? s.wordRow : s.alphaRow, rows = word ? s.wordRows : s.alphaRows;
-            if (a < at)
+        for (uint32_t k = 0; k < 2; k++) {
+            const MeetPlane &p = s.plane[k];
+            if (!p.rows || a < p.at)
                 continue;
-            const uint32_t off = a - at;
-            const uint32_t last = off / pitch < rows - 1 ? off / pitch : rows - 1;
-            const uint32_t first = off >= row ? (off - row) / pitch + 1 : 0;
+            const uint32_t off = a - p.at;
+            const uint32_t last = off / p.pitch < p.rows - 1 ? off / p.pitch : p.rows - 1;
+            const uint32_t first = off >= p.row ? (off - p.row) / p.pitch + 1 : 0;
             for (uint32_t r = first; r <= last; r++) {
-                const uint32_t b = off - r * pitch, tx = word ? b / 4 : b;
+                const uint32_t b = off - r * p.pitch, e = b / p.unit, x = e * p.across, y = r * p.down;
+                if (s.masked && !reached(x, y))
+                    continue;
                 uint32_t fx = 0, fy = 0;
-                frameTexel(s.tiles, tx, r, 1, 1, fx, fy);
+                frameTexel(s.tiles, x, y, p.across, p.down, fx, fy);
                 if (!pick) {
-                    if (fx / 2 == quadX && fy / 2 == quadY && out.count < 2) {
-                        out.x[out.count] = tx;
+                    if (fx / 2 == quadX && fy / 2 == quadY && out.count < 4) {
+                        out.plane[out.count] = k;
+                        out.x[out.count] = e;
                         out.y[out.count] = r;
-                        out.byte[out.count++] = word ? b % 4 : 4;
+                        out.byte[out.count++] = b % p.unit;
                     }
                     continue;
                 }
                 const uint32_t order = s.cleared ? clearOrder(s.tiles, fx, fy) : frameOrder(s.tiles, fx, fy);
-                const uint32_t key = fx << 1 | (word ? 1u : 0u);
-                if (!found || order > best || (order == best && key > bestX)) {
+                const uint32_t key = fx << 1 | (k == 0 ? 1u : 0u);
+                if (!found || order > best || (order == best && key > bestKey)) {
                     found = true;
                     best = order;
-                    bestX = key;
+                    bestKey = key;
                     quadX = fx / 2;
                     quadY = fy / 2;
                 }
             }
         }
     return found;
+}
+
+inline bool overlapPlanesWriters(const OverlapPlanes &s, uint32_t a, OverlapWriters &out)
+{
+    return overlapPlanesWriters(s, a, [](uint32_t, uint32_t) { return true; }, out);
 }
 
 // A plane of `rows` rows of `rowBytes`, `pitch` apart, drawn `elementBytes` a texel
@@ -190,8 +213,10 @@ inline OverlapRows overlapRowsOf(uint32_t pitch, uint32_t rowBytes, uint32_t row
     return s;
 }
 
-// The pack's state drawing two planes that reach one another's bytes into their span, a byte a texel (R8Uint)
+// The pack's states drawing two planes that reach one another's bytes into their span, a byte a texel (R8Uint), from
+// RGB10A8_2P_XR10's R32Uint and R8Uint pools and from a YCbCr target's unorm ones
 constexpr const char *kOverlapPlanesState = "raw.ycbcr_store.ycbcr_overlap_planes_frag";
+constexpr const char *kOverlapMeetState = "raw.ycbcr_store.ycbcr_overlap_meet_frag";
 
 // The pack's overlap state of a target format (pack/ycbcr_store_overlap.h), null for none
 inline const char *overlapState(uint32_t format)

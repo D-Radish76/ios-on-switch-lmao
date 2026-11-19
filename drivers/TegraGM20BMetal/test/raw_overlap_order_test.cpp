@@ -31,8 +31,19 @@ std::vector<Writer> writers(const raw::OverlapPlanes &s, uint32_t a)
     std::vector<Writer> out;
     if (raw::overlapPlanesWriters(s, a, w))
         for (uint32_t k = 0; k < w.count; k++)
-            out.emplace_back(w.x[k], w.y[k], w.byte[k]);
+            out.emplace_back(w.x[k], w.y[k], w.plane[k] ? 4u : w.byte[k]);
     return out;
+}
+
+// RGB10A8_2P_XR10's words (`wordPitch` apart, rows of `wordRow` bytes) at the span's start and alpha bytes at `alpha`
+raw::OverlapPlanes xrPlanes(uint32_t wordPitch, uint32_t wordRow, uint32_t alpha, uint32_t alphaPitch, uint32_t alphaRow,
+                            uint32_t rows)
+{
+    raw::OverlapPlanes s;
+    s.pitch = wordPitch;
+    s.plane[0] = raw::meetPlane(0, wordPitch, wordRow, rows, 4, 4);
+    s.plane[1] = raw::meetPlane(alpha, alphaPitch, alphaRow, rows, 1, 1);
+    return s;
 }
 
 }  // namespace
@@ -62,11 +73,7 @@ TEST(RawOverlapOrder, ATurnedTargetsRowsKeepTheStoreAppleLandsLastInAFrameTile)
         EXPECT_EQ(row, r) << "chroma byte " << a;
         EXPECT_EQ(offset, a - r * 16) << "chroma byte " << a;
     }
-    raw::OverlapPlanes xr;
-    xr.pitch = xr.wordPitch = xr.alphaPitch = xr.alphaRow = 96;
-    xr.wordRow = 384;
-    xr.wordRows = xr.alphaRows = 72;
-    xr.alpha = 6912;
+    raw::OverlapPlanes xr = xrPlanes(96, 384, 6912, 96, 96, 72);
     xr.tiles = frameOfTurned(1, 96, 72);
     for (const uint32_t a : {96u, 99u, 113u, 127u})
         EXPECT_EQ(writers(xr, a), std::vector<Writer>{Writer((a - 96) / 4, 1u, a % 4)}) << "word byte " << a;
@@ -78,12 +85,7 @@ TEST(RawOverlapOrder, ATurnedTargetsRowsKeepTheStoreAppleLandsLastInAFrameTile)
 // and loaded passes alike, deterministic: m2v-textures13 probes/c4misc/RESULT.txt R3)
 TEST(RawOverlapOrder, StoresThatMeetKeepTheLaterQuadOfTheFrame)
 {
-    raw::OverlapPlanes xr;
-    xr.pitch = xr.wordPitch = xr.alphaPitch = 16;
-    xr.wordRow = 8;
-    xr.alphaRow = 2;
-    xr.wordRows = xr.alphaRows = 8;
-    xr.alpha = 64;
+    raw::OverlapPlanes xr = xrPlanes(16, 8, 64, 16, 2, 8);
     for (uint8_t turn = 0; turn < 4; turn++) {
         xr.tiles = frameOfTurned(turn, 2, 8);
         for (uint32_t k = 0; k < 4; k++)
@@ -101,12 +103,7 @@ TEST(RawOverlapOrder, StoresThatMeetKeepTheLaterQuadOfTheFrame)
 // 0 and 1 (an M4 Max: m2v-textures13 probes/c2clears case 61, probes/qclear/pick.txt)
 TEST(RawOverlapOrder, AClearKeepsTheFrameColumnFurtherRightAtAQuarterTurn)
 {
-    raw::OverlapPlanes xr;
-    xr.pitch = xr.wordPitch = 192;
-    xr.wordRow = 384;
-    xr.wordRows = xr.alphaRows = 8;
-    xr.alpha = 1536;
-    xr.alphaPitch = xr.alphaRow = 96;
+    raw::OverlapPlanes xr = xrPlanes(192, 384, 1536, 96, 96, 8);
     xr.tiles = frameOfTurned(1, 96, 8);
     xr.cleared = 1;
     for (const uint32_t a : {1568u, 1587u, 1597u, 1696u, 1706u})
@@ -120,11 +117,7 @@ TEST(RawOverlapOrder, AClearKeepsTheFrameColumnFurtherRightAtAQuarterTurn)
 // probes/c3meet/RESULT.txt A5); a quad alone keeps its own store
 TEST(RawOverlapOrder, AWordAndAnAlphaByteOfOneQuadLeaveTheirOr)
 {
-    raw::OverlapPlanes xr;
-    xr.pitch = xr.wordPitch = xr.wordRow = 128;
-    xr.wordRows = xr.alphaRows = 8;
-    xr.alpha = 512;
-    xr.alphaPitch = xr.alphaRow = 32;
+    raw::OverlapPlanes xr = xrPlanes(128, 128, 512, 32, 32, 8);
     for (const uint32_t cleared : {0u, 1u}) {
         xr.cleared = cleared;
         EXPECT_EQ(writers(xr, 682), (std::vector<Writer>{Writer(10, 5, 2), Writer(10, 5, 4)})) << cleared;
@@ -135,4 +128,34 @@ TEST(RawOverlapOrder, AWordAndAnAlphaByteOfOneQuadLeaveTheirOr)
         EXPECT_EQ(writers(xr, 640), (std::vector<Writer>{Writer(0, 5, 0), Writer(0, 4, 4)})) << "row pair 2, quad 0";
         EXPECT_EQ(writers(xr, 512 + 5), std::vector<Writer>{Writer(1, 4, 1)}) << "word row 4 over alpha row 0";
     }
+}
+
+// A YCbCr target's luma and chroma stores that reach one byte keep the later 2x2 frame quad, and one quad's luma and chroma
+// bytes their OR: 500 8x8 over a '420v' of luma rows 8 at 0 and chroma rows 8 at 64, both stored 16 apart, chroma row k on
+// luma row 4 + k: luma rows 4-6 keep their bytes over chroma rows 0-2, and row 7 with chroma row 3 (one quad row) leave
+// each byte the OR of a luma code and its block's Cb or Cr (an M4 Max, 5 runs: HW Test gpu.raw.ycbcr_planes_meet's scene)
+TEST(RawOverlapOrder, YcbcrPlanesThatMeetKeepTheLaterQuadAndOrOneQuadsBytes)
+{
+    raw::OverlapPlanes s;
+    s.pitch = 16;
+    s.plane[0] = raw::meetPlane(0, 16, 8, 8, 1, 1);
+    s.plane[1] = raw::meetPlane(64, 16, 8, 4, 2, 1, 2, 2);
+    using Store = std::tuple<uint32_t, uint32_t, uint32_t, uint32_t>;  // plane, element, row, byte of the element
+    const auto stores = [&](uint32_t a) {
+        raw::OverlapWriters w;
+        std::vector<Store> out;
+        if (raw::overlapPlanesWriters(s, a, w))
+            for (uint32_t k = 0; k < w.count; k++)
+                out.emplace_back(w.plane[k], w.x[k], w.y[k], w.byte[k]);
+        return out;
+    };
+    for (uint32_t y = 0; y < 4; y++)
+        for (uint32_t b = 0; b < 8; b++)
+            EXPECT_EQ(stores(16 * y + b), std::vector<Store>{Store(0, b, y, 0)}) << "luma row " << y;
+    for (uint32_t k = 0; k < 4; k++)
+        for (uint32_t b = 0; b < 8; b++) {
+            const std::vector<Store> want = k < 3 ? std::vector<Store>{Store(0, b, 4 + k, 0)}
+                                                  : std::vector<Store>{Store(0, b, 7, 0), Store(1, b / 2, 3, b % 2)};
+            EXPECT_EQ(stores(64 + 16 * k + b), want) << "chroma row " << k << " byte " << b;
+        }
 }

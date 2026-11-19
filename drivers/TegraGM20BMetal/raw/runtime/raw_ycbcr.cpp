@@ -357,6 +357,9 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
             out.chromaStorePitch = planeStoreStride(f.pitch[1]);
         out.chromaWidth = format->packed ? uint32_t(chromaRow / 4) : cw;
         out.chromaHeight = ch;
+        const uint64_t lumaStored = luma + uint64_t(planeStoreStride(f.pitch[f.plane])) * (f.height - 1) + lumaRow;
+        const uint64_t chromaStored = chroma + uint64_t(planeStoreStride(f.pitch[1])) * (ch - 1) + chromaRow;
+        out.meet = f.target && !onePlane && !format->packed && luma < chromaStored && chroma < lumaStored;
     }
     uint32_t *s = out.shape;
     s[0] = f.width;

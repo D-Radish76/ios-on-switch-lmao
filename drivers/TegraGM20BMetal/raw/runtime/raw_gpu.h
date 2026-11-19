@@ -2199,10 +2199,11 @@ public:
 
     // `writes`: the texture is rendered into or stored to. A surface the kernel decides block-linear (the first texture over
     // it writes it: TegraGM20BLayout.h) has block-linear textures only, at the decided shape (false: another one).
-    // `readable`: the bytes past `base` its rows may reach, past allocBytes into the allocation's last page (0: allocBytes)
+    // `readable`: the bytes past `base` its rows may reach, past allocBytes into the allocation's last page (0: allocBytes).
+    // `pooled`: sampled and rendered through a pool image (Texture::sampled) whatever its rows
     bool createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface, uint64_t offset,
                               uint32_t width, uint32_t height, uint32_t pitch, uint32_t format, Texture &t,
-                              bool writes = false, uint64_t readable = 0);
+                              bool writes = false, uint64_t readable = 0, bool pooled = false);
     // A two-plane YCbCr surface's texture of `width` x `height` as `plan` reads its planes, its image one of the pool
     bool createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBytes, const void *surface,
                             const YcbcrPlan &plan, uint32_t width, uint32_t height, Texture &t);

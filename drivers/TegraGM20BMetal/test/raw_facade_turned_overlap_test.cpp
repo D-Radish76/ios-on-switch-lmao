@@ -193,8 +193,8 @@ int wordRowBytes(const raw::OverlapPlanes &order, uint32_t from, uint32_t to, ui
     int off = 0;
     for (uint32_t a = from; a < to; a++) {
         raw::OverlapWriters out;
-        off += !raw::overlapPlanesWriters(order, a, out) || out.count != 1 || out.byte[0] == 4 || out.y[0] != row ||
-               out.x[0] != (a - row * order.wordPitch) / 4;
+        off += !raw::overlapPlanesWriters(order, a, out) || out.count != 1 || out.plane[0] != 0 || out.y[0] != row ||
+               out.x[0] != (a - row * order.plane[0].pitch) / 4;
     }
     return off;
 }

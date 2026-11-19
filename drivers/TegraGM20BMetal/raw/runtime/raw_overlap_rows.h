@@ -149,4 +149,46 @@ inline int storeOverlapRows(CommandBuffer &rc, Pipeline *state, uint32_t format,
     return 0;
 }
 
+// Two planes' span from `lo` to `hi` of target `t`'s planes, drawn a byte a texel (R8Uint) by `state` from the planes'
+// pools `p0` and `p1` as `s` orders their stores (raw_overlap_order.h OverlapPlanes; `reach`: a loaded pass's tile mask):
+// rows `s.pitch` bytes long, then the bytes past them, a byte no store writes keeping its value. 0, or 1 a target the raw
+// path cannot render (*why `cannot`), 2 a draw the encoder refused (*why)
+inline int storePlanesSpan(CommandBuffer &rc, Pipeline *state, const Texture &t, OverlapPlanes s, uint64_t lo,
+                           uint64_t hi, const Texture &p0, const Texture &p1, const Texture &reach, const char *cannot,
+                           const char **why)
+{
+    constexpr uint32_t kR8Uint = 13;
+    const uint32_t span = uint32_t(hi - lo), whole = span / s.pitch, tail = span - whole * s.pitch;
+    for (const bool part : {false, true}) {
+        const uint32_t width = part ? tail : s.pitch, height = part ? 1 : whole;
+        if (!width || !height)
+            continue;
+        s.base = part ? whole * s.pitch : 0;
+        Texture target;
+        overlapTarget(*t.luma, lo + s.base, s.pitch, width, height, kR8Uint, target);
+        target.storage.bytes = boundFrom(t, target.va, target.storage.bytes);
+        PassDesc p;
+        p.color[0].texture = &target;
+        p.color[0].load = ColorAttachment::Load;
+        p.color[0].store = true;
+        p.count = 1;
+        p.width = width;
+        p.height = height;
+        RenderEncoder *e = rc.render(p);
+        if (!e) {
+            *why = cannot;
+            return 1;
+        }
+        e->setPipeline(state);
+        e->setTexture(0, &p0);
+        e->setTexture(1, &p1);
+        e->setTexture(2, &reach);
+        e->setBytes(2, 0, &s, sizeof s);
+        if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
+            return 2;
+        e->end();
+    }
+    return 0;
+}
+
 }  // namespace raw
