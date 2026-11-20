@@ -1,7 +1,4 @@
 # drivers/NativeMobileDisplay on the host:
-#   vsync_phase_test                    VsyncPhase.h (r17-touch) against a model compositor at 60 Hz: r8a's quiet
-#                                       windows, periodic and rare stalls, a 20 Hz client, a copying compositor, one too
-#                                       slow for any phase
 #   switch_interaction_test             SwitchInteraction.h: the presents of a touch interaction window, its line
 #   switch_frame_stall_test             SwitchFrameStall.h: the frame ends at which the screen stopped mid-animation
 #   switch_sbim_test                    SwitchSBIM.h: libEDR's enableSBIM dictionaries (iOS 27), as
@@ -13,8 +10,8 @@
 #                                       on a working unit and failing at its own stage, undone, for each fault
 #   request_state_test                  NativeLegacyRequest.h: which swaps the legacy backend shows itself, the fill,
 #                                       the frame scans and colour counts, IOSurface bounds, the bounded row copy
-#   native_legacy_display_source_test   how NativeLegacyDisplay.cpp drives the ring, direct scanout, the vsync phase and
-#                                       the probe, and hangs its panic restore on SwitchDiag's hook (the driver itself
+#   native_legacy_display_source_test   how NativeLegacyDisplay.cpp drives the ring, direct scanout, the vsync and the
+#                                       probe, and hangs its panic restore on SwitchDiag's hook (the driver itself
 #                                       is not built for the host); iOS 17's IOMobileFramebufferLegacy table keeps its
 #                                       values
 #   display_planes_test                 NativePlanes.h (r18-planes): every swap Core Animation can build from the
@@ -90,14 +87,6 @@ load("//bazel/lint:defs.bzl", "lint_files")
 load("//bazel/testing:defs.bzl", "host_library", "host_shims", "host_test")
 
 lint_files()
-
-host_test(
-    name = "vsync_phase_test",
-    srcs = [
-        "vsync_phase_test.cpp",
-        "//drivers/NativeMobileDisplay:VsyncPhase.h",
-    ],
-)
 
 host_test(
     name = "switch_interaction_test",
