@@ -258,7 +258,6 @@ raw_device_test(
     name = "raw_device_compute_test",
     srcs = [
         "raw_device_compute_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -288,7 +287,6 @@ raw_device_test(
     name = "raw_device_resolve_twod_test",
     srcs = [
         "raw_device_resolve_twod_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_resolve_twod.cpp",
     ],
     deps = ["//kits/SwitchGM20B:classes"],
@@ -299,7 +297,6 @@ raw_device_test(
     srcs = [
         "raw_device_samplers_test.cpp",
         "//kits/SwitchGM20B:SwitchGM20BSampler.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
     data = [":sampler_states_tsv"],
     env = {"SAMPLER_STATES": "$(rootpath :sampler_states_tsv)"},
@@ -311,7 +308,6 @@ raw_device_test(
     name = "raw_device_segments_test",
     srcs = [
         "raw_device_segments_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -321,7 +317,6 @@ raw_device_test(
     name = "raw_device_room_test",
     srcs = [
         "raw_device_room_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -338,7 +333,6 @@ raw_device_test(
     name = "raw_device_xr_kernel_test",
     srcs = [
         "raw_device_xr_kernel_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -430,7 +424,6 @@ raw_device_test(
     name = "raw_device_chunk_memory_test",
     srcs = [
         "raw_device_chunk_memory_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
     linkopts = ["-Wl,-U,_switch_nmb_blend_color_words"],
 )
@@ -460,7 +453,6 @@ raw_device_test(
     name = "raw_device_draw_ends_test",
     srcs = [
         "raw_device_draw_ends_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -471,7 +463,6 @@ raw_device_test(
     srcs = [
         "raw_device_standin_draws_test.cpp",
         "raw_record_pack.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -481,7 +472,6 @@ raw_device_test(
     name = "raw_device_pass_barrier_test",
     srcs = [
         "raw_device_pass_barrier_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -491,7 +481,6 @@ raw_device_test(
     name = "raw_device_alpha_test",
     srcs = [
         "raw_device_alpha_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -502,7 +491,6 @@ raw_device_test(
     name = "raw_device_client_errors_test",
     srcs = [
         "raw_device_client_errors_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -512,7 +500,6 @@ raw_device_test(
     name = "raw_device_zeta_cpu_test",
     srcs = [
         "raw_device_zeta_cpu_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -574,7 +561,6 @@ raw_device_test(
     name = "raw_device_separate_zeta_test",
     srcs = [
         "raw_device_separate_zeta_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -583,7 +569,6 @@ raw_device_test(
     srcs = [
         "raw_device_depth_forms_test.cpp",
         "raw_device_forms.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -598,7 +583,6 @@ raw_device_test(
     srcs = [
         "raw_device_mixed_samples_test.cpp",
         "raw_device_forms.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -613,7 +597,6 @@ raw_device_test(
     srcs = [
         "raw_device_pass_layers_test.cpp",
         "raw_device_forms.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -628,7 +611,6 @@ raw_device_test(
     srcs = [
         "raw_device_same_bits_test.cpp",
         "raw_device_forms.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -642,7 +624,6 @@ raw_device_test(
     name = "raw_device_turned_pass_test",
     srcs = [
         "raw_device_turned_pass_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -656,7 +637,6 @@ raw_device_test(
     name = "raw_device_reach_test",
     srcs = [
         "raw_device_reach_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -672,7 +652,6 @@ raw_device_test(
         "raw_device_reach_forms_test.cpp",
         "raw_reach_calls.h",
         "raw_record_pack.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -687,7 +666,6 @@ raw_device_test(
     srcs = [
         "raw_device_format_standin_test.cpp",
         "raw_format_standin_harness.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
@@ -704,7 +682,6 @@ raw_device_test(
     srcs = [
         "raw_device_format_standin_layers_test.cpp",
         "raw_format_standin_harness.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_format_standin.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
@@ -720,7 +697,6 @@ raw_device_test(
     srcs = [
         "raw_device_surface_rows_test.cpp",
         "predication_model.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_area_load.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_reach.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
@@ -735,7 +711,6 @@ raw_device_test(
     name = "raw_device_written_texture_test",
     srcs = [
         "raw_device_written_texture_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -743,7 +718,6 @@ raw_device_test(
     name = "raw_device_record_guards_test",
     srcs = [
         "raw_device_record_guards_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_cache.cpp",
         "//kits/SwitchSeedPack:SwitchSeedPack.h",
@@ -756,7 +730,6 @@ raw_device_test(
     srcs = [
         "raw_device_wide_set_test.cpp",
         "raw_record_pack.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_cache.cpp",
         "//kits/SwitchSeedPack:SwitchSeedPack.h",
@@ -769,7 +742,6 @@ raw_device_test(
     name = "raw_device_zero_page_test",
     srcs = [
         "raw_device_zero_page_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -777,7 +749,6 @@ raw_device_test(
     name = "raw_device_xr_shadow_test",
     srcs = [
         "raw_device_xr_shadow_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -785,7 +756,6 @@ raw_device_test(
     name = "raw_device_shadow_stencil_test",
     srcs = [
         "raw_device_shadow_stencil_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -811,7 +781,6 @@ raw_device_test(
     name = "raw_device_layered_tests_test",
     srcs = [
         "raw_device_layered_tests_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -820,7 +789,6 @@ raw_device_test(
     srcs = [
         "raw_device_views_harness.h",
         "raw_device_views_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
 )
 
@@ -831,7 +799,6 @@ raw_device_test(
     srcs = [
         "raw_device_surface_views_test.cpp",
         "raw_device_views_harness.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_ycbcr.cpp",
     ],
 )
@@ -843,7 +810,6 @@ raw_device_test(
     srcs = [
         "raw_device_views_harness.h",
         "raw_device_xr_planes_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_texture.cpp",
     ],
 )
@@ -853,7 +819,6 @@ raw_device_test(
     name = "raw_texture_routes_test",
     srcs = [
         "raw_texture_routes_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_mip_passes.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_texture_shape.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_texture.cpp",
@@ -867,7 +832,6 @@ raw_device_test(
     name = "raw_device_mips_test",
     srcs = [
         "raw_device_mips_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_mip_passes.cpp",
     ],
 )
@@ -876,7 +840,6 @@ raw_device_test(
     name = "raw_device_shapes_test",
     srcs = [
         "raw_device_shapes_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_mip_passes.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_texture_shape.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_texture.cpp",
@@ -891,7 +854,6 @@ raw_device_test(
     name = "raw_device_zeta_image_test",
     srcs = [
         "raw_device_zeta_image_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_mip_passes.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_texture_shape.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_texture.cpp",
@@ -957,7 +919,6 @@ raw_device_test(
     name = "raw_device_indirect_dispatch_test",
     srcs = [
         "raw_device_indirect_dispatch_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -968,7 +929,6 @@ raw_device_test(
     name = "raw_device_grid_test",
     srcs = [
         "raw_device_grid_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -977,7 +937,6 @@ raw_device_test(
     name = "raw_device_kernel_pairs_test",
     srcs = [
         "raw_device_kernel_pairs_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
     ],
     deps = [":raw_mme_simulator"],
 )
@@ -1589,7 +1548,6 @@ raw_device_test(
     name = "raw_device_zeta_colour_test",
     srcs = [
         "raw_device_zeta_colour_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stencil_bits.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_turn_copy.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_zeta_colour.cpp",
@@ -1792,10 +1750,8 @@ host_test(
     name = "raw_linked_source_test",
     srcs = ["raw_linked_source_test.cpp"],
     data = [
-        "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/TegraGM20BMetal:translate/NativeMetalDescriptors.rs",
         "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h",
-        "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
         "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawComplete.mm",
         "//drivers/TegraGM20BMetal:raw/runtime/RawMetalLibrary.mm",
@@ -2212,7 +2168,6 @@ raw_device_test(
     srcs = [
         "raw_device_packed_levels_test.cpp",
         "raw_device_views_harness.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_ycbcr.cpp",
     ],
 )
@@ -3369,7 +3324,6 @@ raw_device_test(
     name = "raw_device_private_comp_test",
     srcs = [
         "raw_device_private_comp_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_surface_image.cpp",
     ],
 )
@@ -3380,7 +3334,6 @@ raw_device_test(
     name = "raw_kept_import_test",
     srcs = [
         "raw_kept_import_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_surface_image.cpp",
     ],
 )
@@ -4256,10 +4209,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_attributes.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
         "//drivers/NativeMetal:MetallibSlice.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
-        "//drivers/NativeMetal:bridge/NativeMetalDirect.h",
-        "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
@@ -4332,10 +4282,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_compute_key.h",
         "//drivers/NativeMetal:StageInText.h",
         "//drivers/NativeMetal:MetallibSlice.h",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
-        "//drivers/NativeMetal:bridge/NativeMetalDirect.h",
-        "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
@@ -6404,7 +6351,6 @@ raw_device_test(
     name = "raw_device_wide_textures_test",
     srcs = [
         "raw_device_wide_textures_test.cpp",
-        "//drivers/NativeMetal:bridge/NativeMetalBlend.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel_cache.cpp",
         "//kits/SwitchSeedPack:SwitchSeedPack.h",
