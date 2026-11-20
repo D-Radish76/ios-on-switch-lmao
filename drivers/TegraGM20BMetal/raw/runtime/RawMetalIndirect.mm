@@ -335,15 +335,24 @@ uint8_t kindsOf(const RMICBCommand &c)
         return rmCallInvalid(_cb, PredCallBufForeign, offset, 0,
                              rangeBuffer ? "an execute's range buffer not made by this device"
                                          : "an execute's nil range buffer");
-    // an M4 Max's GPU faults reading a range off 4 bytes, MTLCommandBufferErrorPageFault, the other encoders of its
-    // command buffer run; one past its buffer reads what lies past it, faulting or drawing nothing
-    if ((offset & 3) || offset > r->_raw.length || r->_raw.length - offset < 8)
-        return rmCallInvalid(_cb, PredCallIcb, offset, r->_raw.length,
-                             "executeCommandsInBuffer:indirectBuffer: a range read off 4 bytes or past its buffer",
-                             MTLCommandBufferErrorPageFault);
+    // an M4 Max's GPU reads the range at the offset rounded down to 4 bytes, and past its buffer reads whatever lies
+    // there: nothing drawn, commands drawn or a page fault, by those bytes
+    const NSUInteger read = offset & ~NSUInteger(3);
+    if (read > r->_raw.length || r->_raw.length - read < 8) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 8,
+                             "executeCommandsInBuffer:indirectBuffer: a range read past its buffer: none run");
+        return;
+    }
+    if (read != offset) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 9,
+                             "executeCommandsInBuffer:indirectBuffer: a range offset off 4 bytes: read from it "
+                             "rounded down");
+    }
     RMIndirectCommandBuffer *b =
         [(id)buffer isKindOfClass:[RMIndirectCommandBuffer class]] ? (RMIndirectCommandBuffer *)buffer : nil;
-    [self execute:buffer first:0 count:b ? b->_count : 0 range:r offset:offset];
+    [self execute:buffer first:0 count:b ? b->_count : 0 range:r offset:read];
 }
 
 - (void)execute:(id<MTLIndirectCommandBuffer>)buffer

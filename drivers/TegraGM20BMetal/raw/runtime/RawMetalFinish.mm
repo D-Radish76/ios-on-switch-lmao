@@ -317,8 +317,8 @@ static void deliverCompletion(RMCommandBuffer *cb)
         dispatch_async_f(q ?: followingRootQueue(), context, completeHeld);
 }
 
-// What Metal's errors of a GPU address fault carry beneath them (an M4 Max, macOS 27.2.1: a render execute's range read
-// off 4 bytes)
+// What Metal's errors of a GPU address fault carry beneath them (an M4 Max, macOS 27.2.1: a render execute whose range
+// named commands far past its indirect command buffer)
 static NSError *pageFaultUnderlying()
 {
     return [NSError errorWithDomain:@"IOGPUCommandQueueErrorDomain" code:11 userInfo:nil];
@@ -328,10 +328,7 @@ void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferEr
 {
     NSError *error = [NSError errorWithDomain:MTLCommandBufferErrorDomain
                                          code:code
-                                     userInfo:code == MTLCommandBufferErrorPageFault
-                                                  ? @{NSLocalizedDescriptionKey : reason,
-                                                      NSUnderlyingErrorKey : pageFaultUnderlying()}
-                                                  : @{NSLocalizedDescriptionKey : reason}];
+                                     userInfo:@{NSLocalizedDescriptionKey : reason}];
     // failed as it records: the worker encodes no more of it ahead. One its commit or the worker fails is judged at its
     // turn, which gives back its encode ahead first (rmPipelineFailed).
     if (!cb->_committed.load(std::memory_order_relaxed))

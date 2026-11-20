@@ -4,7 +4,8 @@
 // before it still run; a blit's copy out of a buffer whose slots grew into one whose slots did not, and a blit's reset,
 // launch what Metal would, run on the copy engine of the model GPU (model_gpu.h); and a buffer that inherits the
 // pipeline, whose variant holds a command the device had no memory for outside an earlier execute's range, makes its
-// variant again when a later execute reaches that command, which then runs.
+// variant again when a later execute reaches that command, which then runs. A range read past its range buffer launches
+// none, and one at an offset off 4 bytes is read from the offset rounded down, as an M4 Max's GPU reads them.
 #include "raw_facade_compute.h"
 #include "model_gpu.h"
 #include "../raw/runtime/RawMetalIndirectCompute.h"
@@ -252,6 +253,58 @@ TEST_F(FacadeIcbCompute, ARangePastItsBufferRunsWhatIsInsideAndAnotherDevicesObj
           }),
           "error:call.icb");
     fails(execute(foreign, NSMakeRange(0, 1)), "error:compute");
+}
+
+// An execute whose range the GPU reads from a buffer: past it (an M4 Max's GPU reads whatever lies there) nothing is
+// recorded, each call skipped as call.icb once, and the encoder's dispatch after them launches; at an offset off 4 bytes
+// the execute is recorded reading the range from the offset rounded down, skipped as call.icb
+TEST_F(FacadeIcbCompute, ARangeReadPastItsBufferRunsNoneAndOneOffFourBytesIsReadFromTheOffsetRoundedDown)
+{
+    id<MTLIndirectCommandBuffer> icb = dispatches(2, NO);
+    id<MTLBuffer> range = [gDevice newBufferWithLength:64 options:0];
+    ASSERT_TRUE(icb != nil && range != nil);
+    encode(icb, 0, MTLSizeMake(1, 1, 1), 1);
+    encode(icb, 1, MTLSizeMake(1, 1, 1), 1);
+    NSDictionary *before = counters(gDevice);
+    const Ran past = ranCommands([&](id<MTLCommandBuffer> cb) {
+        id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
+        [e setComputePipelineState:gState];
+        const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
+        for (NSUInteger offset : {60, 62, 64, 1 << 20}) {
+            [e executeCommandsInBuffer:icb indirectBuffer:range indirectBufferOffset:offset];
+            EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded) << offset;
+        }
+        [e dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [e endEncoding];
+    });
+    EXPECT_EQ(past.status, MTLCommandBufferStatusCompleted);
+    EXPECT_EQ(past.path, "raw");
+    EXPECT_EQ(past.launched, 1u) << "the dispatch after them";
+    NSDictionary *after = counters(gDevice);
+    const std::map<std::string, long long> four = {{"skipped", 4}, {"skipped.call.icb", 4}};
+    EXPECT_EQ(skippedMoved(before, after), four);
+    EXPECT_TRUE(failedMoved(before, after).empty());
+    before = counters(gDevice);
+    size_t executes = 0;
+    const Ran rounded = ranCommands([&](id<MTLCommandBuffer> cb) {
+        id<MTLComputeCommandEncoder> e = [cb computeCommandEncoder];
+        [e setComputePipelineState:gState];
+        const RMCommandPlan &plan = ((RMCommandBuffer *)cb)->_plan;
+        const size_t recorded = plan.size();
+        [e executeCommandsInBuffer:icb indirectBuffer:range indirectBufferOffset:58];
+        for (size_t i = recorded; i < plan.size(); i++)
+            if (plan.operation(i).op == OpExecuteKernels) {
+                executes++;
+                EXPECT_EQ(((__bridge RMKernelExecute *)plan.control(i).object)->_rangeOffset, 56u);
+            }
+        [e endEncoding];
+    });
+    EXPECT_EQ(executes, 1u);
+    EXPECT_EQ(rounded.status, MTLCommandBufferStatusCompleted);
+    EXPECT_EQ(rounded.path, "raw");
+    after = counters(gDevice);
+    EXPECT_EQ(skippedMoved(before, after), skippedOnce("call.icb"));
+    EXPECT_TRUE(failedMoved(before, after).empty());
 }
 
 TEST_F(FacadeIcbCompute, AVariantsCommandWithoutMemoryOutsideAnExecuteIsMadeAgainWhenALaterExecuteReachesIt)

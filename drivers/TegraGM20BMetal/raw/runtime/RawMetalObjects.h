@@ -557,10 +557,9 @@ void predFails(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char
 // A call Metal's validation stops (`rule`) as it is recorded: an object another device made, or nil where Metal takes
 // none. Apple's driver dereferences what it is handed (a nil state or index buffer is EXC_BAD_ACCESS on an M4 Max with
 // validation off: c38-audit/m2v-cut2/probe); here the call records nothing and the command buffer fails
-// MTLCommandBufferErrorInvalidResource (or `code`, where Apple's GPU reports another for the call), its predicate named
-// in its path, the first of each logged with `rule` (RawMetalPassErrors.mm)
-void rmCallInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule,
-                   MTLCommandBufferError code = MTLCommandBufferErrorInvalidResource);
+// MTLCommandBufferErrorInvalidResource, its predicate named in its path, the first of each logged with `rule`
+// (RawMetalPassErrors.mm)
+void rmCallInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule);
 
 // A refusal predicate hit while recording (or encoding) `cb`: the first one's values kept; the process's first hit of `p`
 // logged with them; a predicate of predFailure fails the command buffer

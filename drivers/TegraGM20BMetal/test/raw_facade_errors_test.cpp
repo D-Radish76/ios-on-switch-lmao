@@ -9,8 +9,9 @@
 // mode the device has no report page for fails it OutOfMemory. A state of another depth format than its pass's is
 // drawn against the pass's attachment, as Apple's GPU draws it. A command buffer whose later job the kernel refused after
 // earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words. Each failed
-// command buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither. A GPU
-// address fault, the kernel's or one an M4 Max's GPU takes on a call, fails as Metal reports it.
+// command buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither. The
+// kernel's GPU address fault fails as Metal reports one. A render execute's range read past its buffer runs none, and
+// one at an offset off 4 bytes is read from the offset rounded down, as an M4 Max's GPU reads it.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/RawMetalIndirect.h"
 #include "../raw/runtime/raw_batch.h"
@@ -660,30 +661,79 @@ void indicesOffTheirTypeRoundDown()
     }
 }
 
-// A render execute whose range the GPU would read off 4 bytes, which an M4 Max's GPU faults on: its command buffer fails
-// as Metal reports that fault (MTLCommandBufferErrorPageFault, IOGPUCommandQueueErrorDomain 11 beneath it), named
-// call.icb
-void executeRangeOffFourBytesFaults()
+// An indirect command buffer of four triangles drawn with the encoder's state, and a 64-byte buffer for its range
+struct Executed {
+    id<MTLIndirectCommandBuffer> icb;
+    id<MTLBuffer> range;
+};
+
+Executed fourTriangles(id<MTLDevice> device)
 {
-    const Opened o = openPacked();
-    ASSERT_TRUE(o.device != nil && o.state != nil);
     MTLIndirectCommandBufferDescriptor *d = [MTLIndirectCommandBufferDescriptor new];
     d.commandTypes = MTLIndirectCommandTypeDraw;
     d.inheritPipelineState = YES;
     d.inheritBuffers = YES;
-    id<MTLIndirectCommandBuffer> icb = [o.device newIndirectCommandBufferWithDescriptor:d maxCommandCount:4 options:0];
-    id<MTLBuffer> range = [o.device newBufferWithLength:64 options:0];
-    ASSERT_TRUE(icb != nil && range != nil);
+    id<MTLIndirectCommandBuffer> icb = [device newIndirectCommandBufferWithDescriptor:d maxCommandCount:4 options:0];
+    for (NSUInteger i = 0; i < 4; i++)
+        [[icb indirectRenderCommandAtIndex:i] drawPrimitives:MTLPrimitiveTypeTriangle
+                                                 vertexStart:0
+                                                 vertexCount:3
+                                               instanceCount:1
+                                                baseInstance:0];
+    return {icb, [device newBufferWithLength:64 options:0]};
+}
+
+// A render execute whose range lies past its buffer, which an M4 Max's GPU reads from whatever lies past it: nothing
+// recorded, each call skipped as call.icb once (one off 4 bytes and past too), and the encoder's draw after them drawn
+void executeRangePastItsBufferRunsNone()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    const Executed x = fourTriangles(o.device);
+    ASSERT_TRUE(x.icb != nil && x.range != nil);
+    const size_t firstJob = kernel_model::model.jobs.size();
     NSDictionary *before = counters(o.device);
     id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
     id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass(target(o.device, kPacked))];
     [e setRenderPipelineState:o.state];
-    [e executeCommandsInBuffer:icb indirectBuffer:range indirectBufferOffset:2];
+    [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
+    const size_t recorded = ((RMCommandBuffer *)cb)->_plan.size();
+    for (NSUInteger offset : {60, 62, 64, 1 << 20}) {
+        [e executeCommandsInBuffer:x.icb indirectBuffer:x.range indirectBufferOffset:offset];
+        EXPECT_EQ(((RMCommandBuffer *)cb)->_plan.size(), recorded) << offset;
+    }
+    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
     [e endEncoding];
-    expectError(o.device, before, cb, "call.icb", MTLCommandBufferErrorPageFault);
-    NSError *beneath = cb.error.userInfo[NSUnderlyingErrorKey];
-    EXPECT_EQ(text(beneath.domain), "IOGPUCommandQueueErrorDomain");
-    EXPECT_EQ(beneath.code, 11);
+    expectRan(o.device, before, cb, {{"skipped", 4}, {"skipped.call.icb", 4}});
+    EXPECT_EQ(drawsSince(firstJob), 1u);
+}
+
+// A render execute whose range offset is off 4 bytes, which an M4 Max's GPU reads from the offset rounded down: the
+// execute recorded at that offset (the plan's draw keeps it as `first`, raw_semantic_plan.cpp), skipped as call.icb, and
+// its command buffer completed
+void executeRangeOffFourBytesReadsFromItRoundedDown()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    const Executed x = fourTriangles(o.device);
+    ASSERT_TRUE(x.icb != nil && x.range != nil);
+    NSDictionary *before = counters(o.device);
+    id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass(target(o.device, kPacked))];
+    [e setRenderPipelineState:o.state];
+    [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
+    const RMCommandPlan &plan = ((RMCommandBuffer *)cb)->_plan;
+    const size_t recorded = plan.size();
+    [e executeCommandsInBuffer:x.icb indirectBuffer:x.range indirectBufferOffset:58];
+    size_t executes = 0;
+    for (size_t i = recorded; i < plan.size(); i++)
+        if (plan.operation(i).op == OpExecuteCommands) {
+            executes++;
+            EXPECT_EQ(plan.draw(i).first, 56u);
+        }
+    EXPECT_EQ(executes, 1u);
+    [e endEncoding];
+    expectSkipped(o.device, before, cb, "call.icb");
 }
 
 // The kernel killing the channel for an MMU fault (TegraGM20BAbiFence error 1) with a command buffer in flight: it fails
@@ -731,9 +781,14 @@ void anMmuFaultInFlightIsAPageFault()
 
 }  // namespace
 
-TEST(RawFacadeErrors, ARenderExecutesRangeReadOffFourBytesFailsAsAPageFault)
+TEST(RawFacadeErrors, ARenderExecutesRangePastItsBufferRunsNoneAndTheEncoderGoesOn)
 {
-    switch_ios::test::ExpectPassesInFreshProcess(executeRangeOffFourBytesFaults);
+    switch_ios::test::ExpectPassesInFreshProcess(executeRangePastItsBufferRunsNone);
+}
+
+TEST(RawFacadeErrors, ARenderExecutesRangeOffFourBytesIsReadFromTheOffsetRoundedDown)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(executeRangeOffFourBytesReadsFromItRoundedDown);
 }
 
 TEST(RawFacadeErrors, AnMmuFaultInFlightFailsItsCommandBufferAsMetalReportsAPageFault)

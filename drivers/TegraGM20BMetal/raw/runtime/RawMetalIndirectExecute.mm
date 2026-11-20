@@ -133,17 +133,25 @@ std::vector<RMBuffer *> commandBuffers(RMKernelExecute *x)
         return rmCallInvalid(_cb, PredCallBufForeign, offset, 0,
                              rangeBuffer ? "an execute's range buffer not made by this device"
                                          : "an execute's nil range buffer");
-    // an M4 Max launches none of a range read past its buffer
-    if ((offset & 3) || offset > r->_raw.length || r->_raw.length - offset < 8) {
+    // an M4 Max's GPU reads the range at the offset rounded down to 4 bytes, and past its buffer reads whatever lies
+    // there: nothing launched, commands launched or a page fault, by those bytes
+    const NSUInteger read = offset & ~NSUInteger(3);
+    if (read > r->_raw.length || r->_raw.length - read < 8) {
         rmSkipped(PredCallIcb);
         SWITCH_REFUSE_DETAIL("raw", "icb.range", 5,
-                             "executeCommandsInBuffer:indirectBuffer: on a compute encoder: a range read off 4 bytes "
-                             "or past its buffer: none run");
+                             "executeCommandsInBuffer:indirectBuffer: on a compute encoder: a range read past its "
+                             "buffer: none run");
         return;
+    }
+    if (read != offset) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.range", 10,
+                             "executeCommandsInBuffer:indirectBuffer: on a compute encoder: a range offset off 4 bytes: "
+                             "read from it rounded down");
     }
     RMIndirectCommandBuffer *b =
         [(id)buffer isKindOfClass:[RMIndirectCommandBuffer class]] ? (RMIndirectCommandBuffer *)buffer : nil;
-    [self executeKernels:buffer first:0 count:b ? b->_count : 0 range:r offset:offset];
+    [self executeKernels:buffer first:0 count:b ? b->_count : 0 range:r offset:read];
 }
 
 - (void)executeKernels:(id<MTLIndirectCommandBuffer>)buffer
