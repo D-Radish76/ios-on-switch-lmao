@@ -405,6 +405,11 @@ impl Cx<'_> {
             | ParamRole::RenderPipelineState(_)
             | ParamRole::DepthStencilState(_) => return Err(self.gap(Some(arg), ty)),
         };
+        let array_length = match &p.role {
+            ParamRole::Texture(t) => self.int(arg, t.location.count, ty)?,
+            ParamRole::Sampler { location } => self.int(arg, location.count, ty)?,
+            _ => 1,
+        };
         let name = p.name.as_ref().map(ToString::to_string).unwrap_or_default();
         Ok(Some(Binding::new(
             name,
@@ -413,6 +418,7 @@ impl Cx<'_> {
             index,
             !p.unused,
             true,
+            array_length,
             kind,
         )))
     }

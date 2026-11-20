@@ -201,7 +201,7 @@ impl Reflection {
         node.values[0] = binding.binding_type().as_raw().into();
         node.values[1] = binding.access().as_raw().into();
         node.values[2] = binding.index().into();
-        node.values[7] = 1;
+        node.values[7] = binding.array_length().into();
         if let Some(buffer) = binding.buffer() {
             node.values[3] = buffer.buffer_data_type().as_raw().into();
             node.values[5] = buffer.buffer_alignment();
@@ -214,7 +214,6 @@ impl Reflection {
         } else if let Some(texture) = binding.texture() {
             node.values[5] = texture.texture_type().as_raw().into();
             node.values[6] = texture.texture_data_type().as_raw().into();
-            node.values[7] = texture.array_length().into();
             node.flags |= u32::from(texture.is_depth_texture()) << 2;
         }
         self.push(node)
@@ -364,11 +363,11 @@ mod tests {
         assert_eq!(empty.len(), 24 + 16);
     }
 
-    // A binding of `binding_type` whose kind is `kind` in m2v's serde form
-    fn bound(binding_type: &str, kind: &str) -> Binding {
+    // A binding of `binding_type`, `array_length` long, whose kind is `kind` in m2v's serde form
+    fn bound(binding_type: &str, array_length: u32, kind: &str) -> Binding {
         let json = format!(
             "{{\"name\":\"b\",\"binding_type\":\"{binding_type}\",\"access\":\"ReadWrite\",\"index\":0,\
-             \"used\":true,\"argument\":true,\"kind\":{kind}}}"
+             \"used\":true,\"argument\":true,\"array_length\":{array_length},\"kind\":{kind}}}"
         );
         serde_json::from_str(&json).unwrap()
     }
@@ -381,28 +380,31 @@ mod tests {
     }
 
     // compute_average_luma's float4 buffer and threadgroup memory (iOS 27's QuartzCore), an array<texture2d<float>, 4>
-    // and a sampler: Metal's arrayLength is 1, 1, 4 and 1, the buffer's data type Float4
+    // and an array<sampler, 3>: Metal's arrayLength is 1, 1, 4 and 3, the buffer's data type Float4
     #[test]
     fn every_bindings_array_length_is_its_own_word() {
         let bindings = [
             bound(
                 "Buffer",
+                1,
                 r#"{"Buffer":{"alignment":16,"data_size":16,"data_type":"Float4",
                     "struct_type":null,"pointer_type":null}}"#,
             ),
             bound(
                 "ThreadgroupMemory",
+                1,
                 r#"{"Threadgroup":{"alignment":16,"data_size":16}}"#,
             ),
             bound(
                 "Texture",
+                4,
                 r#"{"Texture":{"texture_type":"Type2D","data_type":"Float","depth":false,"array_length":4}}"#,
             ),
-            bound("Sampler", r#""Plain""#),
+            bound("Sampler", 3, r#""Plain""#),
         ];
         let blob = Reflection::blob(&[&bindings[..]]);
         let lengths: Vec<u64> = (0..bindings.len()).map(|n| value(&blob, n, 7)).collect();
-        assert_eq!(lengths, [1, 1, 4, 1]);
+        assert_eq!(lengths, [1, 1, 4, 3]);
         assert_eq!(
             value(&blob, 0, 3),
             u64::from(metal2vulkan::metal::DataType::Float4.as_raw())
