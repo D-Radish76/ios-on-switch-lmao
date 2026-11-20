@@ -69,11 +69,6 @@ uint32_t nvTopology(uint32_t mtl)
     return icb::topology(mtl);
 }
 
-void CommandBuffer::clean(const void *cpu, uint64_t bytes, bool invalidate)
-{
-    dirty_.add(cpu, bytes, invalidate);
-}
-
 // Viewports and scissors 1 .. count - 1 as NVK writes viewport j (nvk_emit_viewport, nvk_emit_scissor), through a turned
 // pass's transform and its clip-space swizzle at each index (index 0's is the pass's prologue's)
 void RenderEncoder::emitViewports(Push &p)

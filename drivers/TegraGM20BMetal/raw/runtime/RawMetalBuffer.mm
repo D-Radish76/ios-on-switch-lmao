@@ -85,7 +85,7 @@
 
 - (void)didModifyRange:(NSRange)range
 {
-    (void)range;  // the draws that read it clean what they read (raw_gpu.cpp CommandBuffer::clean)
+    (void)range;  // the draws that read it clean what they read (raw_gpu.h CommandBuffer::clean)
 }
 
 // A buffer of its own keeps its pages while it lives: Volatile and Empty keep the contents (a later NonVolatile answers what

@@ -1785,7 +1785,10 @@ public:
     void timestamps(const counters::Stamp *stamps, size_t count);
     // CPU lines the GPU reads in this submission (CPU-written cached memory): cleaned to memory before it is submitted.
     // `invalidate`: also dropped from the CPU's caches (memory the GPU writes, so no dirty line lands on it later).
-    void clean(const void *cpu, uint64_t bytes, bool invalidate = false);
+    void clean(const void *cpu, uint64_t bytes, bool invalidate = false)
+    {
+        dirty_.add(cpu, bytes, invalidate);
+    }
     // Bounded legal draw/dispatch batches, in channel order, without CPU waits between their Execs.
     // false with `partial`: the kernel refused a later Exec after earlier ones were submitted; those completed before it
     // returned, and the next command buffer gets a new channel (the GPU's state after them is not what the device tracks).
