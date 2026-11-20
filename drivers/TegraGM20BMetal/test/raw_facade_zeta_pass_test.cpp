@@ -526,6 +526,7 @@ TEST_F(FacadeZetaPass, AResolveTheEncoderDecidesWithNoResolveTextureKeepsItsStor
     ASSERT_TRUE(combined != nil);
     for (MTLStoreAction decided : {MTLStoreActionMultisampleResolve, MTLStoreActionStoreAndMultisampleResolve}) {
         __block MTLStoreAction depthKept = MTLStoreActionUnknown, stencilKept = MTLStoreActionUnknown;
+        NSDictionary *before = counters(gDevice);
         const auto [taken, path] =
             run(pass(combined, combined, MTLLoadActionClear, MTLStoreActionUnknown), ^(id<MTLRenderCommandEncoder> e) {
                 [e setDepthStoreAction:decided];
@@ -540,7 +541,29 @@ TEST_F(FacadeZetaPass, AResolveTheEncoderDecidesWithNoResolveTextureKeepsItsStor
         EXPECT_EQ(path, "raw") << decided;
         EXPECT_EQ(depthKept, kept) << decided;
         EXPECT_EQ(stencilKept, kept) << decided;
+        const std::map<std::string, long long> eachAspect = {{"skipped", 2}, {"skipped.pass.ds", 2}};
+        EXPECT_EQ(skippedMoved(before, counters(gDevice)), eachAspect) << decided;
     }
+}
+
+// A store the encoder decides other than DontCare, Store or the agnostic store, Metal's validation error: stored, and
+// counted skipped at each call
+TEST_F(FacadeZetaPass, AnUnknownStoreTheEncoderDecidesIsStoredAndCountedSkipped)
+{
+    id<MTLTexture> depth = zeta(MTLPixelFormatDepth32Float);
+    ASSERT_TRUE(depth != nil);
+    __block MTLStoreAction kept = MTLStoreActionDontCare;
+    NSDictionary *before = counters(gDevice);
+    const auto [taken, path] =
+        run(pass(depth, nil, MTLLoadActionClear, MTLStoreActionUnknown), ^(id<MTLRenderCommandEncoder> e) {
+            [e setDepthStoreAction:MTLStoreActionUnknown];
+            RMRenderEncoder *r = (RMRenderEncoder *)e;
+            kept = r->_cb->_passes[r->_passAt].zeta[0].store;
+        });
+    EXPECT_TRUE(taken);
+    EXPECT_EQ(path, "raw");
+    EXPECT_EQ(kept, MTLStoreActionStore);
+    EXPECT_EQ(skippedMoved(before, counters(gDevice)), skippedOnce("pass.ds"));
 }
 
 TEST_F(FacadeZetaPass, ANanClearDepthIsTheRawPaths)

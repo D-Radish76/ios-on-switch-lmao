@@ -41,6 +41,7 @@ static MTLStoreAction decideZetaStore(RMRenderEncoder *e, uint32_t aspect, MTLSt
                       "a depth or stencil store action %lu resolving with no resolve texture: Metal's validation error "
                       "(MTLRenderPass.h resolveTexture), nothing resolved",
                       (unsigned long)action);
+        rmSkipped(PredPassDepthStencil);
         action = action == MTLStoreActionMultisampleResolve ? MTLStoreActionDontCare : MTLStoreActionStore;
     }
     if (action == MTLStoreActionCustomSampleDepthStore) {
@@ -50,6 +51,7 @@ static MTLStoreAction decideZetaStore(RMRenderEncoder *e, uint32_t aspect, MTLSt
                       "a depth or stencil store action %lu decided by the encoder: Metal's validation error "
                       "(MTLRenderCommandEncoder.h setDepthStoreAction:, a store action other than Unknown), stored",
                       (unsigned long)action);
+        rmSkipped(PredPassDepthStencil);
         action = MTLStoreActionStore;
     }
     e->_cb->_passes[e->_passAt].zeta[aspect].store = action;
