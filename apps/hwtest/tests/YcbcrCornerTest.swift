@@ -7,12 +7,12 @@ import Metal
 
 /// Two-plane YCbCr textures smaller than their surface, of usage ShaderRead | ShaderWrite | RenderTarget, as
 /// cameracaptured's FigMetalContext makes them (boot 21: RGB8_420_2P and YCBCR8_420_2P of 2x2 over an 8x8 '420f'
-/// surface, tex.shape, then `Fig assert: "texture"`). Metal makes them and reads and stores their top-left corner (an
-/// M4 Max: raw/test/ycbcroracle.mm's corner cases, and no byte outside the corner stored). Each target gets a clear and
-/// a draw: the corner's bytes against Metal's store, every byte outside it as scribbled (outside_), the corner sampled
-/// against the same bytes in a surface of the texture's own size (read_off_), every command buffer raw. Then one pass
-/// into a YCBCR8_420_2P and an RGB8_420_2P corner at once, as cameracaptured's two-target states draw (an M4 Max stores
-/// each as it stores it alone): two_wrong, two_outside.
+/// surface, then `Fig assert: "texture"`). Metal makes them and reads and stores their top-left corner (an M4 Max:
+/// raw/test/ycbcroracle.mm's corner cases, and no byte outside the corner stored). Each target gets a clear and a draw:
+/// the corner's bytes against Metal's store, every byte outside it as scribbled (outside_), the corner sampled against
+/// the same bytes in a surface of the texture's own size (read_off_), every command buffer raw. Then one pass into a
+/// YCBCR8_420_2P and an RGB8_420_2P corner at once, as cameracaptured's two-target states draw (an M4 Max stores each
+/// as it stores it alone): two_wrong, two_outside.
 struct YcbcrCornerTest: HWTest {
     let id = "gpu.ycbcr_corner"
     let name = "YCbCr textures smaller than their surface: made, rendered and sampled at the corner, on the raw path"

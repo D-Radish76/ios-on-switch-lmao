@@ -3,11 +3,10 @@ import HWTestCore
 import Metal
 
 /// Kernels that write half-float textures (RGBA16Float, R16Float), as Core Image's do in PosterBoard and
-/// iconservicesagent. m2v writes each through its unsigned integer twin; the raw facade binds a texture header of
-/// that format over the same memory (drivers/TegraGM20BMetal/raw/runtime/raw_view.h). Boot 17 sent 216 of
-/// PosterBoard's 222 command buffers to m2v for it (compute.view). A sampled source in the same kernel keeps its own
-/// header, a read_write texture is read and written through the view, and a bgra8 write is the control. Every value
-/// is exact in half, so the bytes must match.
+/// iconservicesagent: the raw facade binds a texture header of that format over the same memory
+/// (drivers/TegraGM20BMetal/raw/runtime/raw_view.h). A sampled source in the same kernel keeps its own header, a
+/// read_write texture is read and written through the view, and a bgra8 write is the control. Every value is exact in
+/// half, so the bytes must match.
 struct KernelViewScene: GPUScene {
     let id = "gpu.raw.kernel_view"
     let name = "Kernels writing half-float textures through a view of another format"

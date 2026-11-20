@@ -29,12 +29,12 @@ func drawWrittenHalves(_ gpu: GPU, _ written: MTLTexture, _ values: [SIMD4<Float
     }.path
 }
 
-/// A fragment function's storage write into a BGRA10_XR texture, which the raw path samples through an RGBA16Float stand-in
-/// (before this the draw was refused: "a written texture the raw path holds through another image"). An 8x8 texture is
-/// written with values across the extended range, then read by a second pass into an RGBA16Float target. The texture holds
-/// each channel's code as Metal writes a half (raw_xr.h writeCode: 384 + round-half-even(min(|h|, 1.5) x 510) clamped,
-/// alpha 384 + round(a x 510)), and the read gives (code - 384) / 510 rounded to half, so the stand-in was drawn again
-/// after the write. PASS: no code or read off, both command buffers on the raw path.
+/// A fragment function's storage write into a BGRA10_XR texture, which the raw path samples through an RGBA16Float
+/// stand-in. An 8x8 texture is written with values across the extended range, then read by a second pass into an
+/// RGBA16Float target. The texture holds each channel's code as Metal writes a half (raw_xr.h writeCode: 384 +
+/// round-half-even(min(|h|, 1.5) x 510) clamped, alpha 384 + round(a x 510)), and the read gives (code - 384) / 510
+/// rounded to half, so the stand-in was drawn again after the write. PASS: no code or read off, both command buffers on
+/// the raw path.
 struct WrittenXrTextureTest: HWTest {
     let id = "gpu.raw.written_xr_texture"
     let name = "A fragment function's storage write into an extended-range texture, read after, on the raw path"

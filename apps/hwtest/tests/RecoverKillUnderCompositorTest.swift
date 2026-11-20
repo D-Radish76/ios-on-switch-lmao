@@ -29,7 +29,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
         }
         try RecoverKillOneTest.settle(gpu)
         let start = RawFacade.counters(of: gpu.device)
-        guard start["reopen_us"] != nil else { return .skip("the facade has no recovery counters (a release build)") }
+        guard start["reopen_us"] != nil else { return .skip(RawFacade.missing("reopen_us", on: gpu.device)) }
         let probeBench: BenchRunner
         let copier: RecoverBystander
         do {

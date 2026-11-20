@@ -10,7 +10,6 @@ import Metal
 /// submitted behind it (the next command buffer waits for a shared event) asks the kernel for its wake entry and is
 /// woken. gpu.sched.long_draw_bands' blend draws, quiet too, run ahead of that job, so the job is still in flight when
 /// its waiter asks: a 16x16 clear alone was done before the ask (boot 19, quiet_wait_ms=0.1), and a done job needs none.
-/// A wake that never came is the kernel's one-line panic ("... was done but its wake never came"), not a failure here.
 struct QuietJobsPathTest: GPUPathTest {
     let id = "gpu.path.quiet_jobs"
     let name = "Command buffers nobody waits for alone end without an interrupt, and their waiters still wake"

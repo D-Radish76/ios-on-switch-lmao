@@ -4,12 +4,12 @@ import HWTestGPU
 import Metal
 
 /// Core Animation's zoom window target of an app opening and closing (boot 21: 1792x1472 BGRA8, cleared and redrawn
-/// every frame, beside a memoryless RGBA16Float second colour), drawn with Core Animation's own fill state: a target made
-/// plain for want of compressed memory moves there once some is made, its texels with it (raw_private_comp.h
-/// compressedFromPlain); a closed target's memory serves the next one at its creation; the memoryless second colour's
-/// clear covers only the tiles of the draws that see it (raw_clear_box.h). Fields: first_at_creation and first_after
-/// (comptags of the first target), moved_bytes_differ (against the same draw into a target held plain), next_at_creation,
-/// compressed_moves, clears_narrowed and clear_pixels_left (this test's), paths.
+/// every frame, beside a memoryless RGBA16Float second colour), drawn with Core Animation's own fill state: a target
+/// made plain for want of compressed memory must be compressed once drawn (first_after 1; this driver moves none there,
+/// so a first target made plain stays red until one does); a closed target's memory serves the next one at its
+/// creation; the memoryless second colour's clear covers only the tiles of the draws that see it (raw_clear_box.h).
+/// Fields: first_at_creation and first_after (comptags of the first target), moved_bytes_differ (against the same draw
+/// into a target held plain), next_at_creation, clears_narrowed and clear_pixels_left (this test's), paths.
 struct ZoomTargetTest: HWTest {
     let id = "gpu.raw.zoom_target"
     let name =
@@ -25,7 +25,7 @@ struct ZoomTargetTest: HWTest {
             return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
         }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.plainSelector) else {
-            return .skip("a release facade: no switch to hold compression off for the reference")
+            return .skip(RawFacade.missing("switchRawProbePlainPrivate:", on: gpu.device))
         }
         let library: MTLLibrary
         do {
@@ -63,12 +63,12 @@ struct ZoomTargetTest: HWTest {
         metrics.set("first_after", firstAfter)
         metrics.set("moved_bytes_differ", differing)
         metrics.set("next_at_creation", nextAtCreation)
-        for key in ["private_compressed_moves", "clears_narrowed", "clear_pixels_left"] {
+        for key in ["clears_narrowed", "clear_pixels_left"] {
             guard after[key] != nil else {
                 wrong.append("no_counter_" + key)
                 continue
             }
-            metrics.set(key == "private_compressed_moves" ? "compressed_moves" : key, delta(key))
+            metrics.set(key, delta(key))
         }
         metrics.set("paths", paths.joined(separator: ","))
         if paths.contains(where: { $0 != "raw" }) { wrong.append("paths") }

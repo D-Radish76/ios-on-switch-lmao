@@ -29,7 +29,9 @@ struct StateSegmentsPathTest: HWTest {
             return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
         }
         let before = RawFacade.counters(of: gpu.device)
-        guard before["state_segment_binds"] != nil else { return .skip("no state segment counters: a release runtime") }
+        guard before["state_segment_binds"] != nil else {
+            return .skip(RawFacade.missing("state_segment_binds", on: gpu.device))
+        }
         var metrics = Metrics()
         let a = try gpu.render(fragment: "solid_fragment", format: .rgba8Unorm)
         let b = try gpu.render(fragment: "solid_fragment", format: .rgba8Unorm) { descriptor in

@@ -5,20 +5,23 @@ import Metal
 
 /// Requests Metal's validation layer stops complete on the raw path: each blit fails nothing and is counted as one
 /// skipped call (skipped.call.blit; one raw:blit.invalid line a process per call and rule), and a depth resolve with no
-/// resolve texture keeps its store part (one raw:pass.resolve_store line). Each blit sits in a command buffer of its
-/// own between two buffer copies that land: a copy from a 4x texture (samples), into an R8 level from an RGBA8 one
-/// (texel_size), into a texture from buffer rows shorter than its rows (rows_short_in) and into a buffer the same way
-/// (rows_short_out) record nothing; a copy from a region past its level (past_level) lands the part inside the level,
-/// as an M4 Max under macOS 27.2.1 copies it with validation off, and leaves the rest of its destination as it was,
-/// where the M4 Max writes bytes of no texel. Every byte each would touch, done as asked, lies inside what the test
-/// made: a level past the texture's, a slice past it, a memoryless side and rows past a buffer are left out. The
-/// resolves decide the depth's store in the encoder (MTLStoreActionUnknown, then setDepthStoreAction:):
-/// StoreAndMultisampleResolve keeps the store, read by a later pass whose depth test shows the left half drawn at 0.25
-/// (resolve_store); MultisampleResolve discards it (resolve_discard). Per case: <case>_path, <case>_neighbours (the two
-/// copies' bytes off, or the pass's resolved colour texels off), <case>_untouched (the request's destination as it must
-/// be left; resolve_store: the later pass saw the kept depth), <case>_skipped_why (the calls counted skipped),
-/// resolve_store_load_path (that later pass's); the run's failed_cbs=, skipped_why= and, for a failure, whose it was
-/// (own_why=, foreign_why=).
+/// resolve texture keeps its store part (one raw:pass.resolve_store line, each call counted skipped.pass.ds). Each blit
+/// sits in a command buffer of its own between two buffer copies that land: a copy from a 4x texture (samples), into an
+/// R8 level from an RGBA8 one (texel_size), into a texture from buffer rows shorter than its rows (rows_short_in) and
+/// into a buffer the same way (rows_short_out) record nothing. texel_size, formats of other copy units, records nothing
+/// on purpose: what an M4 Max under macOS 27.2.1 writes there with validation off follows no rule (the units-zeta
+/// probe: ff 00 ff ff over 64-texel sides, the source's leading bytes over 8-texel ones and over a 64-texel R8 the GPU
+/// wrote, a depth or stencil source's own words). A copy from a region past its level (past_level) lands the part
+/// inside the level, as the M4 Max copies it, and leaves the rest of its destination as it was, where the M4 Max writes
+/// bytes of no texel. Every byte each would touch, done as asked, lies inside what the test made: a level past the
+/// texture's, a slice past it, a memoryless side and rows past a buffer are left out. The resolves decide the depth's
+/// store in the encoder (MTLStoreActionUnknown, then setDepthStoreAction:): StoreAndMultisampleResolve keeps the store,
+/// read by a later pass whose depth test shows the left half drawn at 0.25 (resolve_store); MultisampleResolve discards
+/// it (resolve_discard). Per case: <case>_path, <case>_neighbours (the two copies' bytes off, or the pass's resolved
+/// colour texels off), <case>_untouched (the request's destination as it must be left; resolve_store: the later pass
+/// saw the kept depth), <case>_skipped_why (the calls counted skipped), resolve_store_load_path (that later pass's);
+/// the run's failed_cbs=, skipped_why= and, for a failure, whose it was (own_why=, foreign_why=). The arms of requests
+/// the raw path runs as the M4 Max does, and units, are InvalidRequestsMirrored.swift's.
 struct InvalidRequestsTest: HWTest {
     let id = "gpu.raw.invalid_requests"
     let name = "Blits and a resolve store Metal's validation stops complete on raw, their neighbours intact"
@@ -127,9 +130,12 @@ struct InvalidRequestsTest: HWTest {
         try await resolveStores(gpu, &metrics, &checks)
         let resolved = FailedCounts(before: resolveCounters, after: RawFacade.counters(of: gpu.device))
         attributions.append(
-            Self.judge("resolves", resolved, own: gpu.paths.since(resolvePaths), skipped: nil, &metrics, &checks))
+            Self.judge(
+                "resolves", resolved, own: gpu.paths.since(resolvePaths), skipped: ["pass.ds": 2], &metrics, &checks))
+        attributions += await mirrored(gpu, &metrics, &checks)
         metrics.merge(FailedCounts(before: start, after: RawFacade.counters(of: gpu.device)).metrics)
         metrics.merge(FailedAttribution.metrics(attributions))
+        metrics.fitLog(within: 720, keeping: ["failed_cbs", "failed_why"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
@@ -147,13 +153,13 @@ struct InvalidRequestsTest: HWTest {
         }
     }
 
-    /// No command buffer failed while `key` ran (its own: `own`), and exactly `skipped` calls were counted skipped
-    /// (nil: not judged)
+    /// No command buffer failed while `key` ran but the `expected` of its own (`own`), and exactly `skipped` calls were
+    /// counted skipped (nil: not judged)
     static func judge(
-        _ key: String, _ counts: FailedCounts, own: PathTally, skipped: [String: Int]?, _ metrics: inout Metrics,
-        _ checks: inout [(String, Bool)]
+        _ key: String, _ counts: FailedCounts, own: PathTally, expecting expected: [String: Int] = [:],
+        skipped: [String: Int]?, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]
     ) -> FailedAttribution {
-        let attribution = counts.attributed(own: own)
+        let attribution = counts.attributed(expecting: expected, own: own)
         checks.append(("\(key): \(attribution.check.0)", attribution.holds))
         if !counts.skippedPredicates.isEmpty {
             metrics.set("\(key)_skipped_why", FailedCounts.text(counts.skippedPredicates))

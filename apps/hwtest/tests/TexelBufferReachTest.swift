@@ -24,7 +24,7 @@ struct TexelBufferReachTest: HWTest {
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.selector) else {
-            return .skip("the facade has no switchRawTexelBuffer:format:width: (a release build)")
+            return .skip(RawFacade.missing("switchRawTexelBuffer:format:width:", on: gpu.device))
         }
         let before = RawFacade.counters(of: gpu.device)
         var metrics = Metrics()

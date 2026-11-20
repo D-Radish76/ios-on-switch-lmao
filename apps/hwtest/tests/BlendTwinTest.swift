@@ -81,7 +81,7 @@ struct BlendTwinTest: HWTest {
                     try await BlendTwinScene.bytes(line, colour: colour, draws: scene.draws, library: library, gpu: gpu)
                 }
                 guard let storage = try await FetchRungScene.forcing(BlendTwinScene.storage, gpu.device, draw) else {
-                    return .skip("the facade has no probe channel (a release build)")
+                    return .skip(RawFacade.missing("switchRawProbeFetchRung:", on: gpu.device))
                 }
                 for arm in Self.arms {
                     guard let twin = try await FetchRungScene.forcing(arm.rung, gpu.device, draw) else { continue }

@@ -596,6 +596,7 @@ swift_interop_hint(
 cc_library(
     name = "bench",
     srcs = [
+        "bench/bench_channel_epoch.cpp",
         "bench/bench_completed.cpp",
         "bench/bench_device.h",
         "bench/bench_known.h",

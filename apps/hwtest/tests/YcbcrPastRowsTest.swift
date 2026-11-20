@@ -5,13 +5,13 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// Two-plane YCbCr textures whose reads run past their planes' rows, which Metal reads from the bytes there up to the end
-/// of the allocation's last page (an M4 Max, raw/test/ycbcroracle.mm): taller than the surface (540 16x12 of 16x8 '420v'),
-/// a format's chroma finer than the surface's (541 over '420v'), plane 1 of a 4:2:0 surface read as luma (540 16x16), and
-/// rows of more codes than the plane's pitch holds (540 80x8 of 16x8: each row runs on into the next, which the copy engine
-/// gathers into the planes' pool images on the raw path). Each arm reads a second texture of the same format over a surface whose planes hold those bytes in their own rows,
-/// a form the raw path took before: off_<arm> counts the texels that differ (0 to pass); paths raw/N (before the change
-/// the first texture of each arm was an m2v twin: tex.shape term 6).
+/// Two-plane YCbCr textures whose reads run past their planes' rows, which Metal reads from the bytes there up to the
+/// end of the allocation's last page (an M4 Max, raw/test/ycbcroracle.mm): taller than the surface (540 16x12 of 16x8
+/// '420v'), a format's chroma finer than the surface's (541 over '420v'), plane 1 of a 4:2:0 surface read as luma (540
+/// 16x16), and rows of more codes than the plane's pitch holds (540 80x8 of 16x8: each row runs on into the next, which
+/// the copy engine gathers into the planes' pool images on the raw path). Each arm reads a second texture of the same
+/// format over a surface whose planes hold those bytes in their own rows, a form the raw path took before: off_<arm>
+/// counts the texels that differ (0 to pass); paths raw/N.
 struct YcbcrPastRowsTest: HWTest {
     let id = "gpu.raw.ycbcr_past_rows"
     let name = "YCbCr textures read past their planes' rows as Metal reads them, on the raw path"

@@ -147,7 +147,7 @@ struct XRTwoPlaneCells {
             }
         }
         let (wrong, offByOne) = XRTwoPlaneModel.apart(XRTwoPlaneTest.planes(buffer), want)
-        return (wrong, offByOne, moved("interlock_draws"), moved("fetch_whole") + moved("fetch_sequential"))
+        return (wrong, offByOne, moved("interlock_draws"), moved("fetch_sequential"))
     }
 
     /// Texels wrong after a clear and a draw into a surface 60 wide: its alpha plane's rows (64 bytes) miss the 128 a

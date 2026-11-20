@@ -4,12 +4,11 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// Copies between textures held in planes that the raw path does not move as an M4 Max does yet
-/// (gpu.raw.planes_copies_open). A source with no plane 1 (504 over 'v410', 501 over '2vuy', 562 over '2vuy') leaves a
-/// two-plane destination's plane 1 alone. Between a 550 made from a descriptor (32x8) and one over a 'b3a8' 32x8 (words
-/// rows 128 at 0, alpha rows 32 at 1024, one page), an 8x2 copy from (5, 0) to (3, 0) moves the words texel for texel
-/// and the alpha bytes as between two surfaces: a byte a texel at the WORD rows (128), so its second row is alpha row 4
-/// of a 32-wide texture on either side.
+/// Copies between textures held in planes, as an M4 Max moves them (gpu.raw.planes_copies_open). A source with no plane
+/// 1 (504 over 'v410', 501 over '2vuy', 562 over '2vuy') leaves a two-plane destination's plane 1 alone. Between a 550
+/// made from a descriptor (32x8) and one over a 'b3a8' 32x8 (words rows 128 at 0, alpha rows 32 at 1024, one page), an
+/// 8x2 copy from (5, 0) to (3, 0) moves the words texel for texel and the alpha bytes as between two surfaces: a byte a
+/// texel at the WORD rows (128), so its second row is alpha row 4 of a 32-wide texture on either side.
 public enum PlaneCopiesOpen {
     public struct Result: Sendable {
         public var made = true

@@ -54,17 +54,17 @@ class Textures(unittest.TestCase):
         line = 'PosterBoard[311] tex.surf.pack: no 32x8 texture of format 550 and usage 0x7 over IOSurface 9: nil: (x)'
         self.assertEqual(results(record('PosterBoard', line))['textures.surf-pack'].verdict, FAIL)
 
-    def test_open_forms_and_cross_format_copies_report_other_processes_only(self):
+    def test_a_form_line_names_an_old_driver_whoever_asked(self):
+        got = results(record('SwitchHWTest', FORM.format(who='SwitchHWTest', pid=51)))['textures.removed-refusal']
+        self.assertEqual(got.verdict, FAIL)
+        self.assertIn('nil until the raw path has its form', got.observed)
+
+    def test_cross_format_copies_report_other_processes_only(self):
         got = results(
-            record('SwitchHWTest', FORM.format(who='SwitchHWTest', pid=51)),
             record('SwitchHWTest', ACROSS.format(who='SwitchHWTest', pid=51), 1),
-            record('Photos', FORM.format(who='Photos', pid=77), 2),
             record('Photos', ACROSS.format(who='Photos', pid=77), 3),
         )
-        self.assertEqual(got['textures.surf-form'].verdict, INFO)
-        self.assertIn('Photos', got['textures.surf-form'].observed)
-        self.assertIn('Photos/550/a texel buffer over a surface', got['textures.surf-form'].observed)
-        self.assertNotIn('SwitchHWTest', got['textures.surf-form'].observed)
+        self.assertEqual(got['textures.blit-across'].verdict, INFO)
         self.assertIn('Photos', got['textures.blit-across'].observed)
         self.assertNotIn('SwitchHWTest', got['textures.blit-across'].observed)
 

@@ -4,21 +4,23 @@ import HWTestGPU
 import Metal
 
 /// The raw encode's CPU cost of a command buffer shaped as Core Animation's (raw_encode_profile.h, debug builds):
-/// `passes` passes of Core Animation's untextured fill (PBGRAXm_A2Xhf, BGRA8 beside its memoryless colour 1 in the line's format), each draw
-/// binding its vertices, transform and zero uniforms by setBytes with a scissor of its own, `buffers` command buffers
-/// at each of two draw counts, each after as many at that count (whose recording storage they reuse, as a steady frame
-/// does). Per command buffer at each count: the encode's wall time and its parts (us_<part>, and
-/// walk_us the loop's time outside every part), its events (mallocs, frees, locks, sends, uses, use_adds, descriptor
-/// builds and uploads, geometry vertices) and bindings applied per draw. A command buffer's mallocs, frees, locks,
-/// Objective-C sends, job uses that reached a job's list, vertices the CPU read and set-0 uploads must not grow with
-/// its draws, none may pass what the host's facade harness counts of the same command buffers with the encode and its
-/// retire lock-free (raw/test/facadecost.mm: at most the trim's lock once in 64 command buffers, no send, 4 allocations
-/// and 2 frees), and every command buffer is the raw path's. Beside the encode's own: the runtime's locks on every
-/// thread over the batch (facade_locks, raw_lock.h's count of its wrappers), at most 4 a command buffer, and the growth
-/// of the blocks in use in every malloc zone while the batch is recorded and held (held_blocks), a coarse bound on what
-/// each keeps allocated (the whole process's, so no per-draw check). The pooled encoders' blocks (raw_object_pool.h):
-/// none freed in the batch (its pool kept too few for what the batch holds at once), and the most each pool made in the
-/// process. The profile is the facade's; a release runtime has none and the test skips.
+/// `passes` passes of Core Animation's untextured fill (PBGRAXm_A2Xhf, BGRA8 beside its memoryless colour 1 in the
+/// line's format), each draw binding its vertices, transform and zero uniforms by setBytes with a scissor of its own,
+/// `buffers` command buffers at each of two draw counts, each after as many at that count (whose recording storage they
+/// reuse, as a steady frame does). Per command buffer at each count: the encode's wall time and its parts (us_<part>,
+/// and walk_us the loop's time outside every part), its events (mallocs, frees, locks, sends, uses, use_adds,
+/// descriptor builds and uploads, geometry vertices) and bindings applied per draw. A command buffer's mallocs, frees,
+/// locks, Objective-C sends, job uses that reached a job's list, vertices the CPU read and set-0 uploads must not grow
+/// with its draws, none may pass what the facade's cost harness counted of the same command buffers over the mock GPU
+/// on a Mac with the encode and its retire lock-free (at most the trim's lock once in 64 command buffers, no send, 4
+/// allocations and 2 frees; the harness ran over the m2v device and went with it), and every command buffer is the raw
+/// path's. Times are reported, not judged: a fragment-slot-0 bind reads no selector id, a state with a selector table
+/// reads it once at a draw whose bindings moved (us_bind, us_draw). Beside the encode's own: the runtime's locks on
+/// every thread over the batch (facade_locks, raw_lock.h's count of its wrappers), at most 4 a command buffer, and the
+/// growth of the blocks in use in every malloc zone while the batch is recorded and held (held_blocks), a coarse bound
+/// on what each keeps allocated (the whole process's, so no per-draw check). The pooled encoders' blocks
+/// (raw_object_pool.h): none freed in the batch (its pool kept too few for what the batch holds at once), and the most
+/// each pool made in the process. The profile is the facade's; a release runtime has none and the test skips.
 struct EncodeCostPathTest: HWTest {
     let id = "gpu.path.encode_cost"
     let name =
@@ -42,7 +44,7 @@ struct EncodeCostPathTest: HWTest {
         ("locks", 0.1), ("sends", 0), ("mallocs", 4), ("frees", 2), ("geometry_vertices", 0), ("facade_locks", 4),
         ("held_blocks", heldBlocksMost), ("render_encoders_freed", 0),
     ]
-    /// coarse: facadecost's held window grows 3 blocks a command buffer on the host
+    /// coarse: the same harness's held window grew 3 blocks a command buffer on the host
     static let heldBlocksMost = 8.0
 
     func run(_: TestContext) async throws -> Outcome {

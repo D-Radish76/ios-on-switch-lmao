@@ -39,7 +39,7 @@ struct ResolveTwodTest: HWTest {
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.drawSelector),
             facade.responds(to: Self.exactSelector)
         else {
-            return .skip("a release facade: no switches to send resolves through the pass or the complement")
+            return .skip(RawFacade.missing("switchRawProbeResolveDraw:/switchRawProbeResolveExact:", on: gpu.device))
         }
         var metrics = Metrics()
         var wrong: [String] = []

@@ -220,6 +220,18 @@ struct switch_bench_sparse {
 // Every step on a TegraGM20B connection of its own (no Metal device), on the caller's thread; the last kills a
 // throwaway channel of that connection with an MMU fault
 void switch_bench_sparse_map(struct switch_bench_sparse *r);
+// gpu.kernel.channel_epoch's readings (bench_channel_epoch.cpp): -1 where an earlier failure stopped the run (`why`
+// says which); epoch_* are the fence page's TegraGM20BChannelEpochWord: before the refused ask, after it, right after
+// a channel was destroyed (epoch_after) and in the other connection's page then (epoch_other)
+struct switch_bench_channel_epoch {
+    int32_t epoch_flag, slots_made, refused_kr, recreate_kr, job_kr, wait_kr, job_filled;
+    uint32_t fence_token, epoch_before, epoch_refused, epoch_after, epoch_other;
+    uint64_t destroy_to_create_ns;
+    char why[128];
+};
+
+// Every step on two TegraGM20B connections of its own (no Metal device), on the caller's thread; nothing is left open
+void switch_bench_channel_epoch_run(struct switch_bench_channel_epoch *r);
 // GetInfo's flags (TegraGM20BInfo*) on a connection of its own; 0 where no connection opened
 uint32_t switch_bench_kernel_flags(void);
 // GetInfo's flags and zcull[12], and method 'ZC''s reply (zcull's layout), on a connection of its own: ZC's

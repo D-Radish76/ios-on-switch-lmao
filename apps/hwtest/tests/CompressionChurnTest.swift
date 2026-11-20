@@ -21,8 +21,11 @@ struct CompressionChurnTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw", !RawFacade.compression(of: gpu.device).isEmpty else {
+        guard RawFacade.kind(of: gpu.device) == "raw" else {
             return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        }
+        guard !RawFacade.compression(of: gpu.device).isEmpty else {
+            return .skip(RawFacade.missing("switchRawCompression", on: gpu.device))
         }
         var metrics = Metrics()
         var failures: [String] = []

@@ -121,6 +121,23 @@ class Rules(unittest.TestCase):
         self.assertEqual(results[0].verdict, INFO)
         self.assertIn('backboardd/transfer function change', results[0].observed)
 
+    def test_vic_pitch_fails_on_a_row_pitch_refusal_only(self):
+        pitch = next(c for c in checks.GROUPS['media'] if c.name == 'media.vic-pitch')
+
+        def record(why: str) -> dict:
+            return {
+                'timestamp': '2026-11-19 09:12:00.000000-0800',
+                'processImagePath': '/kernel',
+                'messageType': 'Error',
+                'eventMessage': f'TegraVIC: mediaserverd[71] {why}: IOSurfaceAccelerator transform refused '
+                "(not on VIC), the caller falls back: '420v' 1920x1080 to 'BGRA' 1920x1080",
+            }
+
+        results, _ = devicerun.run_checks([record('row pitch the engine cannot address')], [pitch])
+        self.assertEqual(results[0].verdict, FAIL)
+        results, _ = devicerun.run_checks([record("transfer function change (VIC's curves are not Apple's)")], [pitch])
+        self.assertEqual(results[0].verdict, PASS)
+
     def test_compute_view_refusals(self):
         view = next(c for c in checks.GROUPS['refusals'] if c.name == 'refusal.compute-view')
 
@@ -205,18 +222,25 @@ class Rules(unittest.TestCase):
             'SpringBoard[88] none: a command buffer failed (MTLCommandBufferErrorDomain 2): The operation '
             'couldn\u2019t be completed. (MTLCommandBufferErrorDomain error 2.)'
         )
+        faulted = (
+            'WebContent[93] none: a command buffer failed (MTLCommandBufferErrorDomain 3): Caused GPU Address Fault '
+            'Error (0000000b:kIOGPUCommandBufferCallbackErrorPageFault)'
+        )
         unexplained = 'backboardd[61] none: a command buffer failed (MTLCommandBufferErrorDomain 1): A render pipeline'
         refused = 'backboardd[61] enc.pass: a command buffer failed (MTLCommandBufferErrorDomain 1): a refusal'
         kill = 'raw: command buffer 7 failed: the kernel killed its channel (error 4, fault VA 0x0)'
         stall = 'HWTEST gpu.recover.kernel_second_timeout PASS state=4 killed=2 ms=10000.0'
         inside = [record(20, 'SpringBoard', killed), record(21, 'backboardd', refused), record(22, 'PosterBoard', kill)]
-        results, _ = devicerun.run_checks([*inside, record(30, 'SwitchHWTest', stall)], judged + windows)
+        results, _ = devicerun.run_checks(
+            [*inside, record(23, 'WebContent', faulted), record(30, 'SwitchHWTest', stall)], judged + windows
+        )
         got = {r.check.name: r for r in results}
         self.assertEqual(got['raw.failed'].verdict, FAIL)
         self.assertIn('backboardd/enc.pass/1', got['raw.failed'].observed)
         self.assertIn(
             'expected: killed by gpu.recover.kernel_second_timeout: SpringBoard/none/2', got['raw.failed'].observed
         )
+        self.assertIn('WebContent/none/3', got['raw.failed'].observed.split('expected:', 1)[1])
         self.assertEqual(got['raw.killed'].verdict, PASS)
         self.assertIn(
             'expected: killed by gpu.recover.kernel_second_timeout: PosterBoard/4', got['raw.killed'].observed

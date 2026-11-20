@@ -130,7 +130,7 @@ struct FetchRungTest: HWTest {
                 outcomes.append((program, false))
                 continue
             }
-            guard let m = measured else { return .skip("the facade has no probe channel (a release build)") }
+            guard let m = measured else { return .skip(RawFacade.missing("switchRawProbeFetchRung:", on: gpu.device)) }
             metrics.set("unforced_\(state.key)", m.unforced)
             if m.formless {
                 metrics.set("noform_\(state.key)", 1)

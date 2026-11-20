@@ -81,8 +81,9 @@ struct CompressedTargetsTest: HWTest {
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw", !RawFacade.compression(of: gpu.device).isEmpty else {
-            return .skip("the default device is not the raw facade (\(kind))")
+        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        guard !RawFacade.compression(of: gpu.device).isEmpty else {
+            return .skip(RawFacade.missing("switchRawCompression", on: gpu.device))
         }
         var metrics = Metrics()
         var wrong: [String] = []

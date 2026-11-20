@@ -7,9 +7,9 @@ import SwitchBench
 /// A 500 texture of 64x512 over a 64x8 '420v' of 768 bytes, its rows running past the allocation's last page
 /// (gpu/YcbcrRowsPastPage.swift): an M4 Max makes it, and every one of its 512 rows reads as a reference surface whose
 /// planes hold the surface's bytes, then 0, in their own rows (rows_matched 512): rows past the last page read the
-/// conversion of code 0 (0, 0.5312, 0). With the kernel's TegraGM20BInfoSparse (sparse_info_bit 1) the raw path makes it
-/// the same way, the pages past the allocation sparse; without it the texture is nil (made 0, one raw:tex.surf.form
-/// line). sparse_faults: the test's command buffers that failed (0).
+/// conversion of code 0 (0, 0.5312, 0). With the kernel's TegraGM20BInfoSparse (sparse_info_bit 1) the raw path makes
+/// it the same way, the pages past the allocation sparse; without it the texture is nil (made 0, one raw:tex.surf.imp
+/// line naming rows past the allocation's last page). sparse_faults: the test's command buffers that failed (0).
 struct YcbcrRowsPastPageTest: HWTest {
     let id = "gpu.raw.ycbcr_rows_past_page"
     let name = "A YCbCr texture whose rows run past its surface's last page reads them as Metal does, on raw"

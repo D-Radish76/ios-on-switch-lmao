@@ -5,13 +5,12 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// Blended and channel-masked states into two-plane YCbCr attachments (RawMetalYcbcrTargets.mm standInTargetState: before,
-/// raw:state.ycbcr left them to m2v, which renders into no YCbCr target). A clear and three draws a pass. Masked states,
-/// and states blending by the destination alpha (which a format without alpha reads as 1), store Metal's codes exactly;
-/// one blending over the source alpha lies within one code of Metal's, which blends in halves of its own rounding
-/// (raw/test/ycbcrblendoracle.mm on an M4 Max: the route's codes 0 off for those, at most one off for these).
-/// off_<case>_<format> counts codes past that bound (0 to pass), one_<case>_<format> the codes one off (a figure),
-/// paths every command buffer's path (raw/N to pass).
+/// Blended and channel-masked states into two-plane YCbCr attachments (RawMetalYcbcrTargets.mm standInTargetState). A
+/// clear and three draws a pass. Masked states, and states blending by the destination alpha (which a format without
+/// alpha reads as 1), store Metal's codes exactly; one blending over the source alpha lies within one code of Metal's,
+/// which blends in halves of its own rounding (raw/test/ycbcrblendoracle.mm on an M4 Max: the route's codes 0 off for
+/// those, at most one off for these). off_<case>_<format> counts codes past that bound (0 to pass), one_<case>_<format>
+/// the codes one off (a figure), paths every command buffer's path (raw/N to pass).
 struct YcbcrBlendTargetTest: HWTest {
     let id = "gpu.raw.ycbcr_blend"
     let name = "Blended and masked states into two-plane YCbCr targets on the raw path"

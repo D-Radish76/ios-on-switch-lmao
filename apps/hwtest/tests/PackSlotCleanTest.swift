@@ -21,7 +21,9 @@ struct PackSlotCleanTest: HWTest {
             return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
         }
         let before = RawFacade.counters(of: gpu.device)
-        if before["state_segment_binds"] == nil { return .skip("no counters: a release runtime") }
+        if before["state_segment_binds"] == nil {
+            return .skip(RawFacade.missing("state_segment_binds", on: gpu.device))
+        }
         let library: MTLLibrary
         do {
             library = try gpu.device.makeLibrary(URL: CAState.library)

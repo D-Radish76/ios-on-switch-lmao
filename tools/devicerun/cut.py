@@ -59,7 +59,7 @@ CUT = [
         'm2v-cut4',
         'native-metal: ',
         show=('process',),
-        source='drivers/NativeMetal/NativeBridgeMetalFrontend.mm (out of the image)',
+        source='the old Metal front end (no longer built, out of the image)',
         note='only the old front end logged these: any line is a front end loaded again',
     ),
     Check('cut.m2v-device-line', 'm2v-cut1', 'TegraGM20BMetal: m2v device', source=PLUGIN, note=OLD_PLUGIN),

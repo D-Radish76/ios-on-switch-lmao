@@ -4,11 +4,11 @@ import HWTestGPU
 import Metal
 
 /// A 550 over a 'w30r' a 554 render target was cleared in first (gpu/XrTiledSurface.swift), against an M4 Max: made
-/// (xr_tiled_made; nil before, "a plane the kernel lays out block-linear"); a kernel reads every texel (0.2510, 0.5,
-/// 0.7490, 0) (xr_tiled_read_off 0); after a kernel's (0.5, 0.25, -0.25, 0.75) into the 550 the 554 reads (0.5, 0.2510,
-/// -0.2510, 1) everywhere (xr_tiled_store_off 0); getBytes at (5, 3) is 0x27f80100, a replaceRegion of 0x2abcdef1 there
-/// reads back and the 554 reads its colour (xr_tiled_cpu_off 0); a blit of 16x8 from (8, 0) into a 550 over a second
-/// such surface reads, through that one's 554, what the first reads at (8, 0) (xr_tiled_blit_off 0). Within 1e-6.
+/// (xr_tiled_made); a kernel reads every texel (0.2510, 0.5, 0.7490, 0) (xr_tiled_read_off 0); after a kernel's (0.5,
+/// 0.25, -0.25, 0.75) into the 550 the 554 reads (0.5, 0.2510, -0.2510, 1) everywhere (xr_tiled_store_off 0); getBytes
+/// at (5, 3) is 0x27f80100, a replaceRegion of 0x2abcdef1 there reads back and the 554 reads its colour
+/// (xr_tiled_cpu_off 0); a blit of 16x8 from (8, 0) into a 550 over a second such surface reads, through that one's
+/// 554, what the first reads at (8, 0) (xr_tiled_blit_off 0). Within 1e-6.
 struct XrTiledSurfaceTest: HWTest {
     let id = "gpu.raw.xr_tiled_surface"
     let name = "An XR texture over a surface the kernel laid out block-linear reads, stores, copies and blits, on raw"
@@ -31,9 +31,9 @@ struct XrTiledSurfaceTest: HWTest {
 }
 
 /// YCbCr textures over planes of rows under 16 bytes (gpu/YcbcrRowsUnder16.swift): a 500 8x8 over a '420v' of rows 8
-/// and a 501 4x4 over a '2vuy' of rows 8 are made (ycbcr_rows16_made; nil before, "a plane of rows under 16 bytes") and
-/// every texel reads as the reference of rows 16 whose first row is the scene's and the rest 0 (ycbcr_rows16_texels_off
-/// 0 of 64 and of 16, both formats, in three runs on an M4 Max).
+/// and a 501 4x4 over a '2vuy' of rows 8 are made (ycbcr_rows16_made) and every texel reads as the reference of rows 16
+/// whose first row is the scene's and the rest 0 (ycbcr_rows16_texels_off 0 of 64 and of 16, both formats, in three
+/// runs on an M4 Max).
 struct YcbcrRowsUnder16Test: HWTest {
     let id = "gpu.raw.ycbcr_rows_under16"
     let name = "YCbCr textures over planes of rows under 16 bytes read their first row and zeros, on raw"

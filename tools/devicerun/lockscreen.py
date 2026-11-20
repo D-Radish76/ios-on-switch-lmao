@@ -22,8 +22,7 @@ LOCKSCREEN = [
         regex=rf'^(?P<who>{LOCK_PROCESSES})\[\d+\] (?P<pred>[\w.]+): a command buffer failed ',
         show=('who', 'pred'),
         source='drivers/TegraGM20BMetal/raw/runtime (c38-audit/failed-counts/CONTRACT.md)',
-        note='the first command buffer each predicate failed, per lock-screen process; boot 15 sent enc.ubo, '
-        'enc.notic, pass.fmt, blit.b2t, tex.shape and compute work to m2v',
+        note='the first command buffer each predicate failed, per lock-screen process',
     ),
     Check(
         'lockscreen.scene-watchdog',
@@ -45,7 +44,7 @@ LOCKSCREEN = [
         show=('wait',),
         source='drivers/TegraGM20BMetal/raw/runtime/RawMetal.mm',
         note='the window server aborted on a command buffer: boot 15 twice (19:20:00, 19:21:36), m2v pending 1 '
-        'unscheduled 1; RawMetalSubmit.mm aborts a raw command buffer held behind m2v work the same way',
+        'unscheduled 1; nothing in the driver waits so now: any line is an old driver on the card',
     ),
     Check(
         'lockscreen.hero-fits-time',

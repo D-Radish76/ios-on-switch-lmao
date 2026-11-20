@@ -23,7 +23,9 @@ struct MipCandidatesTest: HWTest {
         guard RawFacade.kind(of: gpu.device) == "raw" else {
             return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
         }
-        guard MipChains.probe(gpu.device, false) != nil else { return .skip("the facade has no mip probe switch") }
+        guard MipChains.probe(gpu.device, false) != nil else {
+            return .skip(RawFacade.missing("switchRawProbeMipCandidates:", on: gpu.device))
+        }
         defer { _ = MipChains.probe(gpu.device, false) }
         var detail = Metrics()
         var cells: [String] = []

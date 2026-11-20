@@ -6,12 +6,12 @@ import Metal
 import SwitchCompilerProbe
 import notify
 
-/// A render state the pack lacks is usable when its creation returns: each salted state (no pack or store holds it before
-/// its run) is drawn by the first command buffer after its creation, on the raw path, every pixel its colour. Made once
-/// by the synchronous form, once by the completion-handler form, and once while the shader compiler dies holding its
-/// request (a debug compiler's com.brunostjohn.switch.debug.compiler-dies-at-next-request, its state this app's pid: the
-/// compiler dies at this app's next request): the creation completes once launchd's next compiler has made it. Nothing goes to m2v (T-v3g: state.making, a returned state still being made) and
-/// the synchronous creation's state is the compiler's.
+/// A render state the pack lacks is usable when its creation returns: each salted state (no pack or store holds it
+/// before its run) is drawn by the first command buffer after its creation, on the raw path, every pixel its colour.
+/// Made once by the synchronous form, once by the completion-handler form, and once while the shader compiler dies
+/// holding its request (a debug compiler's com.brunostjohn.switch.debug.compiler-dies-at-next-request, its state this
+/// app's pid: the compiler dies at this app's next request): the creation completes once launchd's next compiler has
+/// made it. No state is returned still being made, and the synchronous creation's state is the compiler's.
 struct CompileFirstDrawTest: HWTest {
     let id = "gpu.compile.first_draw"
     let name = "A state the pack lacks draws raw from the first command buffer after its creation"

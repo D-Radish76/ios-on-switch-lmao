@@ -7,7 +7,7 @@ import Metal
 /// buffers of its own besides its control points, so set 0 holds over 16 descriptors and the control stage's buffers
 /// sit in its second block. The patch macro selects the set at the state's own size. One quad patch at level 4 over the
 /// left half of the target, every buffer holding 0 so the position is the patch's own: the left half green, the right
-/// half black. The base build fails the command buffer (raw:draw.patch_commands_set_bytes).
+/// half black.
 struct PatchCommandsWideSetTest: HWTest {
     let id = "gpu.raw.patch_commands_wide_set"
     let name = "Patch commands of a state whose set 0 is past 256 bytes draw on the raw path"

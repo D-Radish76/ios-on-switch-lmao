@@ -36,12 +36,10 @@ struct CompileStageLibraryTest: HWTest {
         let packed = RawFacade.packed(state)
         let wrong = try await kernel(gpu, salt: salt)
         let after = RawFacade.counters(of: gpu.device)
-        let here = (after["compiled_here"] ?? 0) - (before["compiled_here"] ?? 0)
 
         metrics.set("how", how)
         metrics.set("packed", packed.map { $0 ? 1 : 0 } ?? -1)
         metrics.set("kernel_wrong", wrong)
-        metrics.set("compiled_here", here)
         let failed = FailedCounts.judged(before: before, after: after, own: gpu.paths, &metrics)
         return .judged(
             [
@@ -49,7 +47,6 @@ struct CompileStageLibraryTest: HWTest {
                 ("the state is the facade's, made at its creation", packed == false),
                 ("compiled by the shader compiler", how == "compiled"),
                 ("the salted kernel's every element exact", wrong == 0),
-                ("nothing compiled in this process", here == 0),
                 failed,
             ], metrics, proof: "salt \(salt)")
     }

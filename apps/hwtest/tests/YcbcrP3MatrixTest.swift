@@ -5,12 +5,11 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// Two-plane YCbCr textures over surfaces tagged kIOSurfaceYCbCrMatrix P3_D65 or DCI_P3. An M4 Max converts nothing under
-/// those matrices (raw/test/ycbcroracle.mm): a converted format reads its codes as red Y, green Cb, blue Cr, which is its
-/// surface's codes format's read (red Cr, green Y, blue Cb) turned. Each arm reads both textures over one surface of random
-/// codes, each texture read by a draw: off_<format>_<matrix> counts the converted texels that are not the codes texels
-/// turned (0 to pass), paths the command buffers' paths (raw/N to pass; before the change the converted texture was m2v's:
-/// tex.shape "matrix").
+/// Two-plane YCbCr textures over surfaces tagged kIOSurfaceYCbCrMatrix P3_D65 or DCI_P3. An M4 Max converts nothing
+/// under those matrices (raw/test/ycbcroracle.mm): a converted format reads its codes as red Y, green Cb, blue Cr,
+/// which is its surface's codes format's read (red Cr, green Y, blue Cb) turned. Each arm reads both textures over one
+/// surface of random codes, each texture read by a draw: off_<format>_<matrix> counts the converted texels that are not
+/// the codes texels turned (0 to pass), paths the command buffers' paths (raw/N to pass).
 struct YcbcrP3MatrixTest: HWTest {
     let id = "gpu.raw.ycbcr_p3"
     let name = "YCbCr textures under the P3 matrices read their codes, as Metal reads them, on the raw path"

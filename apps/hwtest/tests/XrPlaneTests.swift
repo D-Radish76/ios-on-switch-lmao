@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A 550 over a 'b3a8' whose rows are off 32 bytes (gpu/XrPlanesRows.swift), against an M4 Max: made (it was nil:
-/// tex.surf.form "a plane tiled, or of rows or an offset off 32 bytes"); a draw reading it into RGBA16Float writes each
+/// A 550 over a 'b3a8' whose rows are off 32 bytes (gpu/XrPlanesRows.swift), against an M4 Max: made; a draw reading
+/// it into RGBA16Float writes each
 /// texel's (code - 384) / 510 and alpha byte / 255 within one half step, after the fill and after a blit of new words
 /// (filled_off, blitted_off 0 of 4,096; 3,744 and 2,915 of them not the nearest halves on the M4 Max, reported as
 /// *_inexact); a kernel writing every texel back with alpha 1 leaves plane 0 the blitted words and plane 1 all 255

@@ -38,8 +38,7 @@ struct TexelRowsTest: HWTest {
 /// device), read by a kernel after another wrote (0.5, 0.25, -0.25, 0.75) through the 554 (gpu/XrStandInRefill.swift):
 /// in the same compute encoder after a texture memory barrier (xr_refill_same_encoder_off) and, as the control, in an
 /// encoder of its own (xr_refill_next_encoder_off). An M4 Max under macOS 27.2.1 reads the written colour with alpha 0
-/// both ways (this scene on it, three runs, 0 of 128 off). The raw path refills the buffer's pool inside the encoder
-/// but reads the XR stand-in drawn before it.
+/// both ways (this scene on it, three runs, 0 of 128 off).
 struct XrStandInRefillTest: HWTest {
     let id = "gpu.raw.xr_stand_in_refill"
     let name = "An XR texel buffer over a tiled surface reads a write made earlier in the same compute encoder, on raw"

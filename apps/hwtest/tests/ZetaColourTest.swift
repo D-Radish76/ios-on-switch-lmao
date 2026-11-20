@@ -60,7 +60,7 @@ struct ZetaColourTest: HWTest {
         let kind = RawFacade.kind(of: gpu.device)
         let raw = kind == "raw"
         if raw && !Self.probe(gpu.device, "StencilBits", false) {
-            return .skip("the facade has no eight-draw comparison arm (a release build)")
+            return .skip(RawFacade.missing("switchRawProbeStencilBits:", on: gpu.device))
         }
         defer {
             _ = Self.probe(gpu.device, "StencilBits", false)

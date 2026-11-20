@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Buffers bound off the descriptor base alignment on the raw path (enc.ubo): twenty vertex uniform buffers each 4
+/// Buffers bound off the descriptor base alignment on the raw path: twenty vertex uniform buffers each 4
 /// bytes past a multiple of 256 plus a slot's own step, eight fragment storage buffers each 4 to 12 bytes past a
 /// multiple of 16, each holding one float of 1/128 where it is bound and 1 everywhere else: 29 buffer entries with the
 /// corners', within the 32 a record holds (raw_pack.h kPackEntries). Every residual is in its record word, the vertex

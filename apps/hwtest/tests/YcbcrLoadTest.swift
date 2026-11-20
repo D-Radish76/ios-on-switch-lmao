@@ -5,13 +5,13 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// Passes that load a two-plane YCbCr target (it went to m2v: raw:pass.ycbcr). The raw path loads each read's tile value into
-/// a stand-in, draws the pass there, and stores only the 32x32 tiles a draw reaches (raw_ycbcr_load.h). Each case's planes
-/// start as random codes and take one draw into the scissor (13, 9, 30, 20) of a 64x48 surface: their bytes hash to what an
-/// M4 Max's Metal stored (raw/test/ycbcrloadoracle.mm golden; wrong= the cases that do not), no byte of the untouched tiles
-/// changes (untouched_changed), a loaded pass without a draw changes nothing (undrawn_changed), and every command buffer is
-/// raw. 500_p3 is the '420f' surface under the P3_D65 matrix (raw:pass.ycbcr_p3), its hash this scene's own on an M4 Max
-/// (the oracle's golden cases hold no P3 one).
+/// Passes that load a two-plane YCbCr target (it went to m2v: raw:pass.ycbcr). The raw path loads each read's tile
+/// value into a stand-in, draws the pass there, and stores only the 32x32 tiles a draw reaches (raw_ycbcr_load.h). Each
+/// case's planes start as random codes and take one draw into the scissor (13, 9, 30, 20) of a 64x48 surface: their
+/// bytes hash to what an M4 Max's Metal stored (raw/test/ycbcrloadoracle.mm golden; wrong= the cases that do not), no
+/// byte of the untouched tiles changes (untouched_changed), a loaded pass without a draw changes nothing
+/// (undrawn_changed), and every command buffer is raw. 500_p3 is the '420f' surface under the P3_D65 matrix, its hash
+/// this scene's own on an M4 Max (the oracle's golden cases hold no P3 one).
 struct YcbcrLoadTest: HWTest {
     let id = "gpu.raw.ycbcr_load"
     let name = "Loaded passes into two-plane YCbCr targets store the tiles their draws reach, as Metal does, on raw"

@@ -50,8 +50,9 @@ FRAME = (
 
 
 RATES = (
-    'TegraGM20BMetal: backboardd raw 5s c=300(60.0/s) enc=120us/c d=9.0 p=2.0 b=0.10 defer=0 abort=0 rw=0 '
-    'pool=16MB/4 grow=0 imp=12/40MB clean=0.0KB/c ce=0/0KB ev=0/0 ws={ws}/{wsus}us wc=0/0us sp=0'
+    'TegraGM20BMetal: backboardd raw 5s c=300(60.0/s) enc=120us/c d=9.0 p=2.0 b=0.10 defer=0 rw=0 '
+    'pool=16MB/4 grow=0 imp=12/40MB clean=0.0KB/c ce=0/0KB ev=0/0 sig=0/0/0 ws={ws}/{wsus}us wc=0/0us '
+    'set_refusals=0 set_rebuilds=0 kept=0/0KB passes=0/0 hdr=8000'
 )
 
 

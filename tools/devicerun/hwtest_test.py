@@ -103,6 +103,20 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(results['hwtest.metal.compute'].verdict, PASS)
 
 
+class MissingKeys(unittest.TestCase):
+    def test_a_debug_skip_names_its_key_and_fails_a_release_skip_passes(self):
+        got = run(
+            'HWTEST gpu.recover.kill_one SKIP ms=1.0 why=missing_key_reopen_us_in_a_debug_runtime',
+            'HWTEST gpu.path.state_segments SKIP ms=1.0 why=no_state_segment_binds:_a_release_runtime',
+        )['hwtest.missing-key']
+        self.assertEqual(got.verdict, FAIL)
+        self.assertIn('gpu.recover.kill_one/reopen_us', got.observed)
+        self.assertNotIn('state_segments', got.observed)
+        self.assertEqual(
+            run('HWTEST gpu.path.state_segments SKIP ms=1.0 why=a_release_runtime')['hwtest.missing-key'].verdict, PASS
+        )
+
+
 class OpenCases(unittest.TestCase):
     def test_every_open_id_is_a_test_whose_row_names_its_gap(self):
         ids = set(hwtest.TESTS) | {test_id for tests in hwtest.BY_IOS.values() for test_id in tests}

@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A cubic sampler (MTLSamplerMinMagFilterCubic) bound to the vertex stage on the raw path (call.vsampler): a vertex
+/// A cubic sampler (MTLSamplerMinMagFilterCubic) bound to the vertex stage on the raw path: a vertex
 /// function reads six coordinates of an 8x4 texture (its rows alike) through it at level 0, one point each, and a fragment
 /// function reads the same six through the same sampler. Metal's red channel at those six, an M4 Max's (macOS 27.2.1,
 /// either stage): 250, 41, 183, 115, 66, 125, where a linear filter reads 232, 58, 165, 115, 82, 119 (a texture of one row

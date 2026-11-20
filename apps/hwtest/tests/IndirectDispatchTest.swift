@@ -3,11 +3,10 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// An indirect dispatch on the raw path (boot 21 metal.native.shared_event: dispatchThreadgroupsWithIndirectBuffer: was
-/// recorded as an invocation, call.inv, and its command buffer went to m2v). A kernel writes the threadgroup counts into
-/// a buffer and the dispatch after it in the same encoder takes its grid from there: every thread of the grid writes its
-/// index once and its threadgroups_per_grid, nothing past the grid is written, and a grid of no threadgroups writes
-/// nothing. A stage-in kernel then takes its region from words a kernel wrote (setStageInRegionWithIndirectBuffer:).
+/// An indirect dispatch on the raw path. A kernel writes the threadgroup counts into a buffer and the dispatch after it
+/// in the same encoder takes its grid from there: every thread of the grid writes its index once and its
+/// threadgroups_per_grid, nothing past the grid is written, and a grid of no threadgroups writes nothing. A stage-in
+/// kernel then takes its region from words a kernel wrote (setStageInRegionWithIndirectBuffer:).
 struct IndirectDispatchTest: NativeObjectTest {
     let id = "gpu.raw.indirect_dispatch"
     let name = "Indirect dispatch grids and stage-in regions the GPU wrote, on the raw path"

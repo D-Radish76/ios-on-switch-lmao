@@ -16,7 +16,7 @@ struct CAGlassSplitTest: HWTest {
             return .skip("requires the raw facade to exercise native whole and split programs")
         }
         guard RawFacade.counters(of: gpu.device)["split_prologues"] != nil else {
-            return .skip("requires development split attribution; route coverage is unverified")
+            return .skip(RawFacade.missing("split_prologues", on: gpu.device))
         }
         return try await GPUSceneTest(scene: scene).run(context)
     }

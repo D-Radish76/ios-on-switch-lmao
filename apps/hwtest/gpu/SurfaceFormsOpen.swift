@@ -4,9 +4,9 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// Textures over surfaces that an M4 Max makes and the raw path answers nil (raw:tex.surf.form) or does not store as
-/// Apple does yet: a texel buffer over a surface the kernel laid out block-linear, R10Unorm_PACKED and RG10Unorm_PACKED
-/// of several levels, and a turned RGB10A8_2P_XR10 over planes of rows under 16 bytes.
+/// Textures over surfaces that an M4 Max makes, each through a form of its own on the raw path: a texel buffer over a
+/// surface the kernel laid out block-linear, R10Unorm_PACKED and RG10Unorm_PACKED of several levels, and a turned
+/// RGB10A8_2P_XR10 over planes of rows under 16 bytes.
 public enum SurfaceFormsOpen {
     public struct Reading: Sendable {
         public var made = false

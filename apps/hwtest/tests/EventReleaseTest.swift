@@ -64,7 +64,7 @@ struct EventReleaseTest: HWTest {
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
         guard EventJobs.read(gpu.device)["jobs"] != nil else {
-            return .skip("the facade counts no jobs (release runtime)")
+            return .skip(RawFacade.missing("switchRawEvents.jobs", on: gpu.device))
         }
         guard let event = gpu.device.makeSharedEvent(), let other = gpu.device.makeCommandQueue() else {
             throw TestFailure("no shared event or second queue")

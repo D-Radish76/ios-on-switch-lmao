@@ -71,7 +71,8 @@ enum X1CompressedDepthProbe {
         var metrics = Metrics()
         metrics.set("rule", "copy.ce_compressed_depth")
         guard plainMemory(gpu.device, false) else {
-            return ProbeFinding(.inconclusive, metrics, note: "the facade has no zeta probe switch (a release build)")
+            let why = RawFacade.missing("switchRawProbePlainMemory:", on: gpu.device)
+            return ProbeFinding(.inconclusive, metrics, note: why)
         }
         defer { _ = plainMemory(gpu.device, false) }
         let journal = ProbeJournal(probe: "gpu.x1.ce_compressed_depth")

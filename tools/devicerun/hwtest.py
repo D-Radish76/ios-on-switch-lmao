@@ -378,6 +378,15 @@ TESTS: dict[str, bool] = {
             'gpu.raw.xr_stand_in_refill',
             'gpu.raw.turned_overlap_tile_order',
             'gpu.raw.xr_turned_clear_order',
+            'gpu.raw.plain_rows_reads',
+            'gpu.raw.plain_rows_store_order',
+            'gpu.raw.plain_rows_loaded',
+            'gpu.raw.plain_rows_cpu',
+            'gpu.raw.plain_rows_under16',
+            'gpu.raw.plain_rows_blit_tiles',
+            'gpu.raw.plain_rows_quarter_turns',
+            'gpu.raw.ms_buffer_copy',
+            'gpu.raw.integer_mipmaps',
             'gpu.path.job_visibility',
             'gpu.path.lean_copy',
             'gpu.path.control_reserve',
@@ -578,6 +587,7 @@ TESTS: dict[str, bool] = {
     'gpu.recover.kernel_second_timeout': False,
     'gpu.raw.unchecked_buffer_loads': False,
     'gpu.kernel.sparse_map': False,
+    'gpu.kernel.channel_epoch': False,
     'gpu.raw.ended_encoder': False,
     'gpu.raw.ahead_failures': False,
     'input.controllers': False,
@@ -667,47 +677,69 @@ BY_IOS: dict[str, dict[str, bool]] = {
     },
 }
 
-# Tests that judge Apple's value for a case the raw path does not handle yet, by what it lacks: red until that lands, so
-# a red there is the known gap, not a regression.
+# Tests that judge Apple's value for a case the raw path did not handle, red until it does, so a red there is the known
+# gap, not a regression. A row stays until a device run shows its test green: it names what the raw path lacks, or,
+# once the driver builds it, what the raw path now does that no device has judged yet ('built, unjudged: ...').
 OPEN: dict[str, str] = {
     'gpu.raw.planes_copies_open': (
-        'plane 1 from a source with none is zeroed; descriptor-made and surface 550 copies are refused one way and '
-        'moved in 8-byte texels the other'
+        'built, unjudged: a source with no plane 1 leaves the destination plane 1 alone; a descriptor-made 550 and one '
+        'over a surface copy either way through the alpha at the word rows'
     ),
-    'gpu.raw.xr_texel_buffer_tiled': 'no form for a texel buffer over a surface the kernel laid out block-linear',
-    'gpu.raw.packed_mips': 'no form for R10Unorm_PACKED or RG10Unorm_PACKED of several levels',
-    'gpu.raw.xr_turned_rows_under_16': 'no form for a turned RGB10A8_2P_XR10 over planes of rows under 16 bytes',
-    'gpu.raw.xr_into_alpha_tie': 'where a word byte and an alpha byte of one store meet, Metal ORs them; raw keeps one',
+    'gpu.raw.xr_texel_buffer_tiled': (
+        'built, unjudged: a texel buffer over a surface the kernel laid out block-linear reads its bytes in order '
+        'through a pool the copy engine fills'
+    ),
+    'gpu.raw.packed_mips': 'built, unjudged: R10Unorm_PACKED and RG10Unorm_PACKED over planes made with several levels',
+    'gpu.raw.xr_turned_rows_under_16': (
+        'built, unjudged: a turned RGB10A8_2P_XR10 over planes of rows under 16 bytes stores through the turned pools'
+    ),
+    'gpu.raw.xr_into_alpha_tie': (
+        'built, unjudged: where a word byte and an alpha byte of one store meet, they are ORed'
+    ),
     'gpu.raw.ycbcr_texel_buffer_wide': (
-        "no form for a YCbCr or packed texture buffer wider than 16384 texels (Metal reads texel i at the plane's row "
-        'i / 16384, texel i % 16384); Metal makes no 500 texture buffer of render-target usage'
+        'built, unjudged: a YCbCr or packed texture buffer wider than 16384 texels is read as rows of 16384 '
+        "(texel i at the plane's row i / 16384, texel i % 16384)"
     ),
     'gpu.raw.packed_levels_open': (
-        'part views of R10/RG10Unorm_PACKED of several levels are nil; a kernel sampler shared with another texture '
-        'fails the command buffer'
+        'built, unjudged: level views of R10/RG10Unorm_PACKED of several levels; a kernel sampler shared with a '
+        'one-level texture reads its level 0'
     ),
     'gpu.raw.ycbcr_planes_meet': (
-        "where a YCbCr target's two planes' stored rows meet, Metal keeps the later 2x2 quad's byte and ORs one quad's "
-        'two planes; raw stores luma, then chroma'
+        "built, unjudged: where a YCbCr target's two planes' stored rows meet, the later 2x2 quad's byte is kept and "
+        "one quad's two planes are ORed"
     ),
     'gpu.raw.ycbcr_turned_overlap_order': (
-        'turnedFrame refuses a turned target over a plane declared narrower than its frame (overlapping rows force a '
-        'narrow plane): rotations 1-3 nil (raw:tex.metal), rotation 0 green'
+        'built, unjudged: a turned target over planes is made at any extent (rotations 1-3 were nil, rotation 0 the '
+        "control), stored by its frame's tiles"
     ),
     'gpu.raw.turned_overlap_tile_order': (
-        'turnedFrame refuses a turned target over a plane declared narrower than its frame (overlapping rows force a '
-        'narrow plane): nil (raw:tex.metal)'
+        "built, unjudged: a turned target over planes is made at any extent and stored by its frame's tiles"
     ),
     'gpu.raw.xr_turned_clear_order': (
-        'turnedFrame refuses a turned target over a plane declared narrower than its frame (overlapping rows force a '
-        'narrow plane): nil (raw:tex.metal)'
+        "built, unjudged: a turned target over planes is made at any extent and stored by its frame's tiles"
     ),
     'gpu.raw.xr_descriptor_padding': (
         'a descriptor 550 has no row padding on raw: bytes a copy leaves in its padding or past its rows come back 0'
     ),
     'gpu.raw.xr_stand_in_refill': (
-        'inside one compute encoder the pool of an XR texel buffer over a tiled surface is refilled but its stand-in '
-        'is not redrawn: a read after a write in that encoder sees the old colours'
+        'built, unjudged: a kernel reading an XR texel buffer through its stand-in after a write in the same compute '
+        'encoder reached it splits the encoder there, refills the pool and redraws the stand-in'
+    ),
+    'gpu.raw.plain_rows_blit_tiles': (
+        'a copy into plain texels over overlapping rows stores them in row order on raw; Metal stores 16-byte texels '
+        'by 32x32 tiles, the last tile row first'
+    ),
+    'gpu.raw.plain_rows_quarter_turns': (
+        "a quarter-turned pass over overlapping plain rows stores by the frame's 64-wide columns on raw; Metal keeps "
+        'other rows (no one tile order fits)'
+    ),
+    'gpu.raw.ms_buffer_copy': (
+        'a 4-sample texture copied to a buffer at the full row of its samples is skipped (call.blit) and writes '
+        "nothing; Metal writes it texel-major, each texel's samples in order"
+    ),
+    'gpu.raw.integer_mipmaps': (
+        'generateMipmapsForTexture: of an integer format is skipped (call.blit) and leaves the levels; Metal makes '
+        "each level the previous level's texel at (2x + 1, 2y + 1)"
     ),
 }
 
@@ -800,6 +832,17 @@ HWTEST = [
         regex=r'^HWTEST (?P<id>\S+) SKIP',
         show=('id',),
         source=SOURCE,
+    ),
+    Check(
+        'hwtest.missing-key',
+        OWNER,
+        LITERAL,
+        subsystem=SUBSYSTEM,
+        regex=r'^HWTEST (?P<id>\S+) SKIP .*\bwhy=.*?missing_key_(?P<key>\S+?)_in_a_debug_runtime',
+        show=('id', 'key'),
+        source='apps/hwtest/gpu/RawFacade.swift',
+        note='a test skipped in a debug runtime for a counter key or selector the facade no longer answers: what it '
+        'reads is gone, so it judges nothing until it reads what replaced it (a release runtime answers none)',
     ),
     Check(
         'hwtest.decode-fps',

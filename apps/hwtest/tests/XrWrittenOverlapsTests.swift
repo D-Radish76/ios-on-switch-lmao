@@ -39,8 +39,7 @@ struct XrWordsIntoAlphaTest: HWTest {
 
 /// gpu.raw.xr_words_into_alpha's clear at its tie byte (682: word row 5's byte 42 and alpha texel (10, 5), the one byte
 /// a word and an alpha byte of the same texel column both store to): an M4 Max under macOS 27.2.1 leaves the OR of the
-/// two, 0xff (0xf8 | 0xbf; this test's scene code, three runs alike) (xr_into_alpha_tie). The raw path's overlap planes
-/// state takes each byte from one store, so it leaves one of them.
+/// two, 0xff (0xf8 | 0xbf; this test's scene code, three runs alike) (xr_into_alpha_tie).
 struct XrIntoAlphaTieTest: HWTest {
     let id = "gpu.raw.xr_into_alpha_tie"
     let name = "Where a written RGB10A8_2P_XR10's word and alpha stores meet in a byte, a clear leaves their OR, on raw"

@@ -19,9 +19,9 @@ private func pattern(_ gpu: GPU, size: Int) async throws -> (MTLTexture, Raster)
     return (texture, Raster(unorm8: bytes, width: size, height: size, channels: 4))
 }
 
-/// Storage buffers bound off a multiple of 16: the vertex corners at 0x38e8 (iconservicesagent's RenderBox offset on boot
-/// 13, which raw refused as enc.ubo) and the coordinates at 4 past one. Each texel is copied through the nearest
-/// constexpr sampler, so the reference is the pattern itself.
+/// Storage buffers bound off a multiple of 16: the vertex corners at 0x38e8 (iconservicesagent's RenderBox offset on
+/// boot 13) and the coordinates at 4 past one. Each texel is copied through the nearest constexpr sampler, so the
+/// reference is the pattern itself.
 struct StorageOffsetScene: GPUScene {
     let id = "gpu.raw.storage_offset"
     let name = "Storage buffers bound at offsets that are not multiples of 16"

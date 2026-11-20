@@ -30,7 +30,7 @@ struct StorageCompressedTest: HWTest {
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.storageSelector) else {
-            return .skip("a release facade: no storage-compression switch")
+            return .skip(RawFacade.missing("switchRawProbeStorageCompressed:", on: gpu.device))
         }
         let state = try gpu.render(fragment: "rule_fetch_fragment", format: .bgra8Unorm)
         var metrics = Metrics()

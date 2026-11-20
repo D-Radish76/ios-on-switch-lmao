@@ -63,7 +63,7 @@ struct DrawBandsTest: HWTest {
             return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
         }
         guard let production = Self.budget(gpu.device, Self.budgetUs * 1000) else {
-            return .skip("the facade has no band budget (a release build)")
+            return .skip(RawFacade.missing("switchRawBandBudget:", on: gpu.device))
         }
         defer { Self.budget(gpu.device, production) }
         var metrics = Metrics()

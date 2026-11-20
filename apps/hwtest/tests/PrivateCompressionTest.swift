@@ -31,7 +31,7 @@ struct PrivateCompressionTest: HWTest {
         let kind = RawFacade.kind(of: gpu.device)
         guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.plainSelector) else {
-            return .skip("a release facade: no switch to hold compression off for the reference")
+            return .skip(RawFacade.missing("switchRawProbePlainPrivate:", on: gpu.device))
         }
         let before = RawFacade.counters(of: gpu.device), zbcBefore = RawFacade.compression(of: gpu.device)
         let compressed = try await chain(gpu, facade, plain: false)

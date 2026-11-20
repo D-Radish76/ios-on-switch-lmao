@@ -8,9 +8,9 @@ import Metal
 /// an M4 Max under macOS 27.2.1 running this case code (five runs: 1744 judged luma bytes a rotation, 0 misses), every
 /// judged byte holds the code of a frame tile's winner: of the rows reaching it from one 32x32 tile of the frame, the
 /// frame row in the later row pair, a pair's even row after its odd one (ycbcr_turned_order_misses_r<rotation>,
-/// ycbcr_turned_order_judged_r<rotation>). Rotation 0 is the unturned control. The raw path keys the order on the
-/// plane's coordinates (raw_overlap_order.h overlapOrder), which on this shape misses 816, 1536 and 688 of the 1744
-/// bytes at rotations 1, 2 and 3 by the same model: those arms are red until the driver keys on the frame.
+/// ycbcr_turned_order_judged_r<rotation>; -1 misses: no texture). Rotation 0 is the unturned control. The overlapping
+/// rows force a luma plane declared 16 wide (IOSurfaceCreate makes no plane wider than its bytesPerRow), and an M4 Max
+/// makes the turned texture over it at any extent.
 struct YcbcrTurnedOverlapOrderTest: HWTest {
     let id = "gpu.raw.ycbcr_turned_overlap_order"
     let name = "A turned YCbCr target whose rows overlap keeps each byte from its frame tile's last store, on raw"

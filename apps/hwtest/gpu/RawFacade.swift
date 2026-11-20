@@ -33,6 +33,14 @@ public enum RawFacade {
         return counters.mapValues(\.intValue)
     }
 
+    /// Why a test that reads `dependency` (a counter key or a selector the facade answers in debug builds only) skips
+    /// on `device`'s facade, which lacks it: a release runtime answers no counters at all; a debug one that lacks it
+    /// has dropped what the test reads, and the reason names it (tools/devicerun hwtest.missing-key fails on that)
+    public static func missing(_ dependency: String, on device: MTLDevice) -> String {
+        counters(of: device).isEmpty
+            ? "no \(dependency): a release runtime" : "missing key \(dependency) in a debug runtime"
+    }
+
     /// The latest resource set registration the kernel refused: its member and the reason (debug builds; "-" for none
     /// or off the facade).
     public static func setRefusal(of device: MTLDevice) -> String {

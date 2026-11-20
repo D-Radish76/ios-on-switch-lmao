@@ -3,8 +3,8 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// What an M4 Max does with R10Unorm_PACKED (588) and RG10Unorm_PACKED (589) textures of three levels over gpu.raw
-/// .packed_levels's 'p420' that the raw path does not yet (gpu.raw.packed_levels_open): views of levels 1-2, 2 and 0
+/// What an M4 Max does with views and shared samplers of R10Unorm_PACKED (588) and RG10Unorm_PACKED (589) textures of
+/// three levels over gpu.raw.packed_levels's 'p420' (gpu.raw.packed_levels_open): views of levels 1-2, 2 and 0
 /// are made at those levels' sizes and a kernel sees them so; a kernel's one constexpr sampler over such a texture and
 /// an RGBA8 one completes and samples the RGBA8 one's texels.
 public enum PackedLevelsOpen {

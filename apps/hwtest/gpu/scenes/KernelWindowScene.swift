@@ -4,8 +4,8 @@ import Metal
 
 /// Kernels whose buffers are bound at addresses off 16 bytes, by element: floats at 4, float2s at 8, packed float3s at
 /// 4. The descriptor starts 16 below and the record's residual word holds the rest; a slot whose record names none is
-/// one its program never addresses (raw once refused that as compute.off16). Every element written is the source's
-/// doubled plus one, every byte around it untouched, and every dispatch raw.
+/// one its program never addresses. Every element written is the source's doubled plus one, every byte around it
+/// untouched, and every dispatch raw.
 struct KernelWindowScene: GPUScene {
     let id = "gpu.raw.kernel_window"
     let name = "Kernel buffers bound at addresses off 16 bytes"

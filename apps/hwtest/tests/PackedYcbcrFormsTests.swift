@@ -81,8 +81,7 @@ struct YcbcrTexelBuffersTest: HWTest {
 /// against the 2D texture of 16384 x 2 over the same plane, and a 500 texture buffer of render-target usage. An M4 Max
 /// under macOS 27.2.1 (this scene, three runs) makes every wide one, a kernel sees 20000 and reads texel i as the 2D
 /// texture's (i % 16384, i / 16384): past texel 16383 the plane's second row (ycbcr_tbuf_wide_off_<format> 0); it makes
-/// no texture buffer of 500 of render-target usage (ycbcr_tbuf_render_made 0). The raw path answers nil past 16384
-/// texels (raw:tex.surf.form).
+/// no texture buffer of 500 of render-target usage (ycbcr_tbuf_render_made 0).
 struct YcbcrTexelBufferWideTest: HWTest {
     let id = "gpu.raw.ycbcr_texel_buffer_wide"
     let name = "YCbCr and packed texture buffers past 16384 texels read the next row on, as Metal does, on raw"
@@ -163,8 +162,8 @@ struct PackedLevelsTest: HWTest {
     }
 }
 
-/// What an M4 Max under macOS 27.2.1 does with the packed textures of gpu.raw.packed_levels that the raw path does not
-/// yet (gpu/PackedLevelsOpen.swift, this scene, three runs): views of levels 1-2, 2 and 0 are made at those levels'
+/// Views and shared samplers of the packed textures of gpu.raw.packed_levels, against an M4 Max under macOS 27.2.1
+/// (gpu/PackedLevelsOpen.swift, this scene, three runs): views of levels 1-2, 2 and 0 are made at those levels'
 /// sizes and a kernel sees them so (packed_open_views_made_<format> 3, _views_wrong 0); a kernel's one constexpr
 /// sampler over such a texture and an RGBA8 8x8 completes and samples the RGBA8 texels exactly
 /// (packed_open_shared_off_<format> 0).

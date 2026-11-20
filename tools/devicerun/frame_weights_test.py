@@ -1,4 +1,4 @@
-"""frame_weights.py over "raw: fw" lines as drivers/TegraGM20BMetal/raw/runtime/raw_draw_capture.h writes them."""
+"""frame_weights.py over "raw: fw" lines as drivers/TegraGM20BMetal/raw/runtime/raw_draw_times.cpp writes them."""
 
 import tempfile
 import unittest

@@ -5,13 +5,15 @@ import HWTestVideo
 
 /// The luma VIC writes into an L008 for a direct IOSurfaceAccelerator client (video/ScalerClient.swift), 64x64, each
 /// one synchronous TransformSurface: a, a 'BGRA' red left (255, 0, 0) and green right (0, 255, 0) into an untagged
-/// L008, reported (luma_red_601, luma_green_601; BT.601 gives 76 and 150, while VideoToolbox's own conversion on an M4
-/// Max writes BT.709's 54 and 182 there), its status judged; b, the same into an L008 tagged ITU_R_709_2: BT.709's,
-/// luma_red_709 54, luma_green_709 182; c, a '420v' of luma 235 above and 126 below, every Cb and Cr 16, into an
-/// L008: y_white 255, y_mid 128 (no chroma in it); d, an L008 ramp into a 'BGRA': gray_err 0 (max |R - L|, |G - L|,
-/// |B - L|), gray_alpha 255. Each within one code. These are the standards' arithmetic: this Mac's scaler refuses an
-/// L008 either side (0xe00002c2), so no Apple scaler value exists; VideoToolbox's own conversions on an M4 Max give b,
-/// c and d these values. status_<case>: each IOReturn (0).
+/// L008: BT.601's, luma_red_601 76, luma_green_601 150, exact (an untagged destination is BT.601 to Apple's scaler: an
+/// M4 Max's IOSurfaceAccelerator encodes BGRA into an untagged '420v' as BT.601 at every size from 640x480 to
+/// 3840x2160; VideoToolbox's 54 and 182 come from its tagging the destination with the untagged BGRA's BT.709 before it
+/// converts; the untagged-scaler probe, macOS 27.2.1); b, the same into an L008 tagged ITU_R_709_2: BT.709's,
+/// luma_red_709 54, luma_green_709 182, exact (the VIC luma model, equal to VideoToolbox's per tag on the M4 Max); c, a
+/// '420v' of luma 235 above and 126 below, every Cb and Cr 16, into an L008: y_white 255, y_mid 128 (no chroma in it);
+/// d, an L008 ramp into a 'BGRA': gray_err 0 (max |R - L|, |G - L|, |B - L|), gray_alpha 255. c within one code. This
+/// Mac's scaler refuses an L008 either side (0xe00002c2), so c and d are the standards' arithmetic, which
+/// VideoToolbox's own conversions on an M4 Max give. status_<case>: each IOReturn (0).
 struct VICLumaTest: HWTest {
     let id = "gpu.x1.vic_luma"
     let name = "VIC writes the luma of the destination's standard into an L008, and gray back to BGRA"
@@ -38,13 +40,11 @@ struct VICLumaTest: HWTest {
                 let (status, red, green) = try Self.halves(scaler, tags)
                 metrics.set("status_" + standard, Int(status))
                 checks.append(("status_\(standard)", status == 0))
-                if standard == "601" {
-                    metrics.set("luma_red_601", red)
-                    metrics.set("luma_green_601", green)
-                } else {
-                    near("luma_red_709", red, 54)
-                    near("luma_green_709", green, 182)
-                }
+                let (wantRed, wantGreen) = standard == "601" ? (76, 150) : (54, 182)
+                metrics.set("luma_red_" + standard, red)
+                metrics.set("luma_green_" + standard, green)
+                checks.append(("luma_red_\(standard)=\(red) not \(wantRed)", red == wantRed))
+                checks.append(("luma_green_\(standard)=\(green) not \(wantGreen)", green == wantGreen))
             }
             let (status, white, mid) = try Self.lumaOnly(scaler)
             metrics.set("status_420v", Int(status))

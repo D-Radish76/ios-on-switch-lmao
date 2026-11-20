@@ -25,7 +25,7 @@ struct FrameWeightsTest: HWTest {
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         guard let device = gpu.device as? NSObject, device.responds(to: Self.arm), device.responds(to: Self.taken)
-        else { return .skip("no frame-weights channel") }
+        else { return .skip(RawFacade.missing("switchRawFrameWeights:", on: gpu.device)) }
         let scene = try Scene(gpu)
         _ = try await scene.run(gpu)
         if let refusal = device.perform(Self.arm, with: NSNumber(value: 1))?.takeUnretainedValue() as? String {

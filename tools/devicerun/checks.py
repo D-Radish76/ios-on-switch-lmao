@@ -28,11 +28,12 @@ FAILED_LINE = (
     r'\(MTLCommandBufferErrorDomain (?P<code>\d+)\)'
 )
 FAILED_SOURCE = 'drivers/TegraGM20BMetal/raw/runtime (c38-audit/failed-counts/CONTRACT.md)'
-# What a kill gives a command buffer of the killed channel (RawMetalFinish.mm killError: 3 a fault, 2 a hang, else 1,
-# no description, so Foundation's text for its code)
+# What a kill gives a command buffer of the killed channel (RawMetalFinish.mm killError: 3 a fault, with the
+# description an M4 Max's GPU address fault carries; 2 a hang, else 1, no description, so Foundation's text)
 KILLED_FAILURE = (
-    r'^[^\[]+\[\d+\] none: a command buffer failed \(MTLCommandBufferErrorDomain (?P<code>[123])\): '
-    r'The operation couldn.t be completed\. \(MTLCommandBufferErrorDomain error (?P=code)\.\)'
+    r'^[^\[]+\[\d+\] none: a command buffer failed \(MTLCommandBufferErrorDomain '
+    r'(?:3\): Caused GPU Address Fault Error \(0000000b:kIOGPUCommandBufferCallbackErrorPageFault\)'
+    r'|(?P<code>[12])\): The operation couldn.t be completed\. \(MTLCommandBufferErrorDomain error (?P=code)\.\))'
 )
 GPU_METAL_SUBSYSTEM = 'com.brunostjohn.switch.TegraGM20BMetal'
 
@@ -401,9 +402,9 @@ GROUPS: dict[str, list[Check]] = {
         Check(
             'media.vic-pitch',
             'r32-media',
-            'TegraVIC: transform refused',
+            'IOSurfaceAccelerator transform refused',
             process=KERNEL,
-            regex='pitch',
+            regex=r'^TegraVIC: [^\[]+\[\d+\] row pitch',
             source='drivers/TegraVIC/TegraVICUserClient.cpp',
         ),
         Check(
@@ -426,7 +427,7 @@ GROUPS: dict[str, list[Check]] = {
             process=KERNEL,
             regex=r'TegraVIC: \d+s jobs=(?P<jobs>\d+) ops=\d+ refused=(?P<refused>\d+)',
             show=('refused',),
-            source='drivers/TegraVIC/TegraVICUserClient.cpp',
+            source='drivers/TegraVIC/SwitchVICStats.h',
         ),
         Check(
             'media.idle-power',
@@ -746,9 +747,9 @@ GROUPS: dict[str, list[Check]] = {
             source=FAILED_SOURCE,
             note='every predicate that failed a command buffer, per process (one line a process and predicate, '
             "category raw.failed): SpringBoard, backboardd, WebKit's GPU process and every other app or daemon; HW "
-            "Test's own (SwitchHWTest, SwitchHWTest27e) are raw.failed-hwtest. A kill's line (none, code 1-3, no "
-            'description) inside the window of a HW Test test that killed resident clients on purpose '
-            "(hwtest.kill-windows) is that test's",
+            "Test's own (SwitchHWTest, SwitchHWTest27e) are raw.failed-hwtest. A kill's line (none: code 3 with a GPU "
+            "address fault's description, 1 or 2 with Foundation's) inside the window of a HW Test test that killed "
+            "resident clients on purpose (hwtest.kill-windows) is that test's",
         ),
         Check(
             'raw.killed',
@@ -785,7 +786,7 @@ GROUPS: dict[str, list[Check]] = {
             'mipmaps.state',
             subsystem=REFUSAL_SUBSYSTEM,
             note="generateMipmaps of a format the device's pack holds no mip state for (a stale pack) fails its "
-            'command buffer, MTLCommandBufferErrorInternal; was mipmaps.fmt, which sent it to m2v',
+            'command buffer, MTLCommandBufferErrorInternal',
             source='drivers/TegraGM20BMetal/raw/runtime/RawMetalBlitFill.mm',
         ),
         Check(
@@ -797,14 +798,13 @@ GROUPS: dict[str, list[Check]] = {
                 'a compute kernel the shader compiler refused',
                 'draw.stride_twin',
                 'enc.planarrt',
-                'needs its m2v device',
             ),
             process='SwitchHWTest',
             source='drivers/TegraGM20BMetal/raw/runtime/RawComplete.mm, RawDirect.mm, RawMetalDrawErrors.mm',
             note='HW Test work the raw path refused or sent to m2v: gpu.packed_spare_bits (Core Image over a 98x8 '
             "'p420' surface, 32,8,1 and 32,32,1), gpu.raw.kernel_ycbcr_one_plane and gpu.raw.draw_five_dynamic_strides "
             '(draw.stride_twin), none after the compile-path fix; gpu.raw.ycbcr_load and gpu.raw.reach_shapes '
-            '(enc.planarrt, needs its m2v device), none after the reach fix',
+            '(enc.planarrt), none after the reach fix',
         ),
         Check(
             'refusal.hwtest-blit-once',
@@ -827,9 +827,8 @@ GROUPS: dict[str, list[Check]] = {
             regex=r'^(?P<who>[^\[]+)\[\d+\] compute\.view: ',
             show=('who',),
             source='drivers/TegraGM20BMetal/raw/runtime/RawMetalCompute.mm',
-            note="a kernel's texture m2v views in a format of another texel size; boot 17 (half-float writes, before "
-            'raw bound their view): PosterBoard 216 of 222 command buffers on m2v, iconservicesagent 4, '
-            'SwitchHWTest 51 (the MPS and Core Image blurs among them)',
+            note="the driver prints no compute.view line now (raw binds a view of a kernel's texture in its own "
+            'format, raw_view.h): any is an old driver on the card',
         ),
     ],
     'io': [

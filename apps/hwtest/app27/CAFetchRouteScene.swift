@@ -110,7 +110,7 @@ struct CAFetchRouteScene: GPUScene {
         result.expect(!timing.path.hasPrefix("error:"), "\(name): \(timing.path)")
         if RawFacade.kind(of: gpu.device) == "raw" {
             let interlocked = moved("fetch_interlocked")
-            let ordered = moved("fetch_sequential") + moved("fetch_whole")
+            let ordered = moved("fetch_sequential")
             result.expect(timing.path == "raw", "\(name): not drawn on the raw path: \(timing.path)")
             result.expect(
                 interlocked + ordered > 0,
