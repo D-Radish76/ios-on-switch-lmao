@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // raw/runtime/raw_dispatch_bands.h on the host: a long dispatch's pieces cover its grid once along its longest axis, a
-// piece count follows the budget, and the piece's base reaches the root table's workgroup base.
+// piece count follows the budget, and the piece's base reaches the root table's workgroup base, which the stage compile
+// (switch_compile) builds every compute shader to read.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -102,7 +103,7 @@ TEST(DispatchPieces, QmdSlicesCoverAGridPastTheQmdOnce)
 }
 
 // A launch writes the piece's base and the whole grid's count into the root table's first words, where the kernel's
-// compile reads its workgroup base (m2v_source_test holds NVK's compile to reading it there)
+// compile reads its workgroup base
 TEST(DispatchPieces, ThePiecesBaseIsTheKernelsWorkgroupBase)
 {
     const std::string compute = SourceText("../raw/runtime/raw_compute.cpp");
@@ -113,6 +114,17 @@ TEST(DispatchPieces, ThePiecesBaseIsTheKernelsWorkgroupBase)
     EXPECT_THAT(words, HasSubstr("root[a] = base[a];"));
     EXPECT_THAT(words, HasSubstr("root[3 + a] = groups[a];"));
     EXPECT_THAT(Body(compute, "bool ComputeEncoder::qmdWords("), HasSubstr("qmd[kQmdRasterWidth] = groups[0];"));
+}
+
+TEST(DispatchPieces, TheStageCompileReadsTheWorkgroupBaseFromTheRootTable)
+{
+    const std::string root = SourceText("../../../third_party/mesa/src/nouveau/switch_compile/nvk_root_table.h");
+    EXPECT_THAT(
+        root, HasSubstr("struct {\n         uint32_t base_group[3];\n         uint32_t group_count[3];\n      } cs;"));
+    EXPECT_THAT(SourceText("../../../third_party/mesa/src/nouveau/switch_compile/nvk_shader_lower.c"),
+                HasSubstr(".has_base_workgroup_id = mesa_shader_stage_is_compute(nir->info.stage),"));
+    EXPECT_THAT(SourceText("../../../third_party/mesa/src/nouveau/switch_compile/nvk_nir_lower_descriptors.c"),
+                HasSubstr("return lower_sysval_to_root_table(b, intrin, cs.base_group, ctx);"));
 }
 
 }  // namespace

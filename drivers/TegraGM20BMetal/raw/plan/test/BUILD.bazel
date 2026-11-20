@@ -73,23 +73,6 @@ host_test(
     ],
 )
 
-# The hazard table's NVK citations against the vendored NVK sources
-host_test(
-    name = "plan_citations_test",
-    srcs = ["plan_citations_test.cpp"],
-    cxx_std = "c++17",
-    data = [
-        "//third_party/mesa/src/nouveau/vulkan:nvk_cmd_buffer.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_cmd_dispatch.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_cmd_draw.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_event.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_physical_device.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_tiled_cache.h",
-    ],
-    tags = ["m2v"],
-    deps = [":plan"],
-)
-
 py_library(
     name = "m2v_routes_scan",
     srcs = ["m2v_routes_scan.py"],

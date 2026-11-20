@@ -536,8 +536,6 @@ py_test(
     "dsc_owner",
     "make_corpus",
     "mtlb_extract",
-    "report",
-    "run_corpus",
     "runtime_compile_callers",
 ]]
 

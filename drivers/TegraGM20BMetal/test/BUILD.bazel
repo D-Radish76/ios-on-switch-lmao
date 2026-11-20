@@ -1746,48 +1746,6 @@ host_test(
 )
 
 host_test(
-    name = "nvk_wait_any_test",
-    srcs = [
-        "nvk_wait_any_test.cpp",
-        "//third_party/mesa/src/nouveau/vulkan:nvkmd/darwin/nvkmd_darwin_wait_any.h",
-    ],
-    cxx_std = "c++17",
-    tags = ["m2v"],
-)
-
-host_test(
-    name = "nvk_kill_test",
-    srcs = [
-        "nvk_kill_test.cpp",
-        "//drivers/TegraGM20B:TegraGM20BABI.h",
-        "//drivers/TegraGM20B:TegraGM20BClockABI.h",
-        "//third_party/mesa/src/nouveau/vulkan:nvkmd/darwin/nvkmd_darwin_kill.h",
-    ],
-    copts = [
-        "-I",
-        "drivers/TegraGM20B",
-    ],
-    cxx_std = "c++17",
-    tags = ["m2v"],
-)
-
-host_test(
-    name = "nvk_surfaces_test",
-    srcs = [
-        "nvk_surfaces_test.cpp",
-        "//drivers/TegraGM20B:TegraGM20BABI.h",
-        "//drivers/TegraGM20B:TegraGM20BClockABI.h",
-        "//third_party/mesa/src/nouveau/vulkan:nvkmd/darwin/nvkmd_darwin_surfaces.h",
-    ],
-    copts = [
-        "-I",
-        "drivers/TegraGM20B",
-    ],
-    cxx_std = "c++17",
-    tags = ["m2v"],
-)
-
-host_test(
     name = "raw_writer_promise_source_test",
     srcs = ["raw_writer_promise_source_test.cpp"],
     data = [
@@ -1818,28 +1776,6 @@ host_test(
     name = "raw_events_source_test",
     srcs = ["raw_events_source_test.cpp"],
     data = ["//drivers/TegraGM20BMetal:raw/runtime/RawMetalEvents.mm"],
-)
-
-# What raw relies on in m2v and NVK while they ship: goes with them (tag m2v: .bazelrc's nom2v dry run leaves it out).
-host_test(
-    name = "m2v_source_test",
-    srcs = ["m2v_source_test.cpp"],
-    data = [
-        "//drivers/NativeMetal:NativeBridgeMetalFrontend.mm",
-        "//drivers/TegraGM20BMetal:translate/NativeMetalDescriptors.rs",
-        "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h",
-        "//drivers/NativeMetal:bridge/NativeMetalObjects.h",
-        "//drivers/NativeMetal:bridge/NativeMetalObjects.rs",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalComputeState.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalStates.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawMetalStatesLater.mm",
-        "//drivers/TegraGM20BMetal:raw/runtime/RawRenderKey.mm",
-        "//third_party/m2v/crates/metal2vulkan-runtime:sources",
-        "//third_party/mesa/src/nouveau/switch_compile:nvk_nir_lower_descriptors.c",
-        "//third_party/mesa/src/nouveau/switch_compile:nvk_root_table.h",
-        "//third_party/mesa/src/nouveau/switch_compile:nvk_shader_lower.c",
-    ],
-    tags = ["m2v"],
 )
 
 host_test(
@@ -2818,7 +2754,12 @@ host_test(
     ],
     copts = ["-Idrivers/TegraGM20B"],
     cxx_std = "c++17",
-    data = ["//drivers/TegraGM20BMetal:raw/runtime/raw_compute.cpp"],
+    data = [
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_compute.cpp",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_nir_lower_descriptors.c",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_root_table.h",
+        "//third_party/mesa/src/nouveau/switch_compile:nvk_shader_lower.c",
+    ],
     deps = [
         "//kits/SwitchGM20B:classes",
         "//kits/SwitchGM20BEmit:emit_ndebug",
@@ -3862,11 +3803,7 @@ host_test(
     data = ["//gpu/seed:raw_pack"],
     defines = ["RAW_VARIANT_WALK_PACK"],
     env = {"RAW_VARIANT_WALK_PACK": "$(rootpath //gpu/seed:raw_pack)/pack.bin"},
-    # m2v: //gpu/seed:raw_pack's probe runs NVK until the pack generator stops needing it
-    tags = [
-        "m2v",
-        "pack",
-    ],
+    tags = ["pack"],
 )
 
 host_test(
@@ -3971,16 +3908,6 @@ host_test(
     ],
     copts = ["-Idrivers/TegraGM20B"],
     cxx_std = "c++17",
-)
-
-host_test(
-    name = "nvk_submit_state_test",
-    srcs = [
-        "nvk_submit_state_test.cpp",
-        "//third_party/mesa/src/nouveau/vulkan:nvkmd/darwin/nvkmd_darwin_submit_state.h",
-    ],
-    cxx_std = "c++17",
-    tags = ["m2v"],
 )
 
 host_test(

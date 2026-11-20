@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Guards on how the raw path keeps a command buffer with a Metal event on raw, which no host model runs (the facade, the
 // frontend and m2v's events): a plain MTLEvent stays on raw as a shared one does: RawMetal asks an event for a shared
-// event's value, set and notifications, not for MTLSharedEvent (m2v_source_test holds the frontend's plain event to
-// answering them).
+// event's value, set and notifications, not for MTLSharedEvent.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 

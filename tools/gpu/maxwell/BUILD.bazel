@@ -204,11 +204,7 @@ py_test(
     data = ["//gpu/seed:raw_pack"],
     env = {"TICKETCHECK_PACK": "$(rootpath //gpu/seed:raw_pack)/pack.bin"},
     main = "ticketcheck_test.py",
-    # m2v: //gpu/seed:raw_pack's probe runs NVK until the pack generator stops needing it
-    tags = [
-        "m2v",
-        "pack",
-    ],
+    tags = ["pack"],
     deps = [":ticketcheck_lib"],
 )
 

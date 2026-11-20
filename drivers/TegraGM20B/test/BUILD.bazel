@@ -1174,19 +1174,6 @@ host_test(
     ],
 )
 
-# NVK's side of the kernel's contracts: goes with m2v (tag m2v: .bazelrc's nom2v dry run leaves it out).
-host_test(
-    name = "gm20b_nvk_source_test",
-    srcs = ["gm20b_nvk_source_test.cpp"],
-    data = [
-        "//third_party/mesa/src/nouveau/vulkan:nvkmd/darwin/nvkmd_darwin.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_image.c",
-        "//third_party/mesa/src/nouveau/vulkan:nvk_queue.c",
-        "//third_party/mesa/src/vulkan/runtime:vk_queue.c",
-    ],
-    tags = ["m2v"],
-)
-
 host_test(
     name = "gm20b_quiet_source_test",
     srcs = ["gm20b_quiet_source_test.cpp"],
