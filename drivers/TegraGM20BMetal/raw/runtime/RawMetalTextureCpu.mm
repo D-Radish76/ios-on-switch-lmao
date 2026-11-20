@@ -24,7 +24,16 @@ bool transferTexture(RMTexture *texture, MTLRegion region, NSUInteger level, NSU
     });
     const auto result = gRM->raw->transferTexture(texture->_raw, uint32_t(level), uint32_t(slice), origin, size, bytes,
                                                   row, image, write, std::move(owner));
-    // A failed write published nothing and a failed read touched only its staging: the CPU paths take either over
+    // A failed write published nothing and a failed read touched only its staging: the CPU paths take either over, but
+    // not a block-linear surface's, whose task mapping holds its rows while a CPU lock is held (TegraGM20BViews.h)
+    if (result == raw::TextureTransferResult::Failed && textureCpuImportLayout(texture)) {
+        SWITCH_REFUSE_DETAIL("raw", "texture.cpu.unreached", texture->_surface ? IOSurfaceGetID(texture->_surface) : 0u,
+                             "%s of %ux%u at (%u, %u) of block-linear IOSurface %u: the copy engine's transfer failed: "
+                             "nothing moved",
+                             write ? "replaceRegion" : "getBytes", size[0], size[1], origin[0], origin[1],
+                             texture->_surface ? IOSurfaceGetID(texture->_surface) : 0u);
+        return true;
+    }
     if (result != raw::TextureTransferResult::Complete)
         return false;
     if (write)

@@ -8,7 +8,10 @@
 
 #include <gtest/gtest.h>
 #include <sys/mman.h>
+#include <algorithm>
+#include <mutex>
 #include <string>
+#include <vector>
 
 @interface NSObject (SwitchTexelRowsFill)
 - (void)fillTexture:(id<MTLTexture>)texture
@@ -276,6 +279,26 @@ TEST_F(FacadeTexelRows, ANoCopyBufferOverTheSurfacesPagesIsNil)
     EXPECT_NE(
         [gDevice newBufferWithBytesNoCopy:pages length:16384 options:MTLResourceStorageModeShared deallocator:nil],
         nil);
+}
+
+// Last, as it refuses submissions. The target's texels reach a CPU reader through the copy engine alone: where its
+// transfer fails nothing moves, since the task's mapping of the surface holds rows while a CPU lock is held
+TEST_F(FacadeTexelRows, ATargetsReadTheCopyEngineFailedMovesNothing)
+{
+    const MTLRegion all = MTLRegionMake2D(0, 0, kWidth, kHeight);
+    std::vector<uint8_t> bytes(kWidth * 4 * kHeight, 0x5a);
+    [(id<MTLTexture>)target getBytes:bytes.data() bytesPerRow:kWidth * 4 fromRegion:all mipmapLevel:0];
+    std::fill(bytes.begin(), bytes.end(), uint8_t(0x5a));
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        kernel_model::model.refuse = 1000;
+    }
+    [(id<MTLTexture>)target getBytes:bytes.data() bytesPerRow:kWidth * 4 fromRegion:all mipmapLevel:0];
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        kernel_model::model.refuse = 0;
+    }
+    EXPECT_EQ(bytes, std::vector<uint8_t>(bytes.size(), 0x5a)) << "the CPU detiled the task's mapping";
 }
 
 }  // namespace
