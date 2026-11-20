@@ -9,6 +9,7 @@
 # Inputs: m2v's translator (third_party/m2v: steelbrain/metal2vulkan 720ef1ce and our patches as commits), its crates.io
 # crates (@rust_crates, bazel/rust), Rust 1.98.0 (a pinned download), Xcode and NAK's stage compile.
 
+load("@rules_python//python:py_test.bzl", "py_test")
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_static_library", "rust_test")
 load("//bazel/lint:defs.bzl", "lint_files")
 load("//bazel/rust:defs.bzl", "cargo_ids", "rust_artifact")
@@ -349,4 +350,40 @@ gpu_stage(
     raw = "//gpu/seed:raw_pack",
     seed = "//gpu/seed:seed",
     tags = ["manual"],
+)
+
+# The deleted Metal-to-Vulkan fallback's packages: m2v's runtime crate, Mesa's Vulkan driver and its dylibs, the Metal
+# bridge and its frontend
+FALLBACK = (
+    "^//(drivers/NativeMetal|gpu/m2v_link|gpu/nvk|third_party/m2v/crates/metal2vulkan-runtime|" +
+    "third_party/mesa/src/nouveau/vulkan)[:/]|^//gpu:bridge"
+)
+
+# What ships, and what builds the raw pack
+SHIPPED = [
+    "//apps/hwtest:SwitchHWTest17",
+    "//apps/hwtest:SwitchHWTest27",
+    "//apps/hwtest:SwitchHWTest27e",
+    "//apps/hwtest:switch-texpeer",
+    "//drivers/TegraGM20BMetal:SwitchShaderCompiler",
+    "//gpu:base",
+    "//gpu:plugin",
+    "//gpu/seed:local_tools",
+]
+
+# Every target of their graphs, in every select() branch, in one of the fallback's packages
+genquery(
+    name = "fallback_deps",
+    expression = 'filter("{}", deps({}))'.format(
+        FALLBACK,
+        " + ".join(SHIPPED),
+    ),
+    scope = SHIPPED,
+)
+
+py_test(
+    name = "no_fallback_test",
+    srcs = ["no_fallback_test.py"],
+    args = ["$(rootpath :fallback_deps)"],
+    data = [":fallback_deps"],
 )

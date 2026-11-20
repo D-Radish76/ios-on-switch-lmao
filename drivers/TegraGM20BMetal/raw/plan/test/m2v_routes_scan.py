@@ -4,7 +4,8 @@ A route is (route, name) with the files that raise it. The raw device has no m2v
 would be a route), m2v's objects come only from a client's foreign object (a predicate) or a twin field, and its code
 only through a bridge symbol, an NB class looked up by name, an NVK export, a header of the frontend or the bridge, or a
 type only the frontend declares (ident frontend), so these detectors close the set together with the plugin's link,
-which holds the translation alone (gpu/m2v_link, tools/gpu/bundle.py): a call hidden behind a pointer fails that link.
+which holds the translation alone (gpu:no_fallback_test, tools/gpu/bundle.py): a call hidden behind a pointer fails
+that link.
 """
 
 import re

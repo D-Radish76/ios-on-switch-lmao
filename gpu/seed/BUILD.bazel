@@ -1,4 +1,5 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel/lint:defs.bzl", "lint_files")
 load(":defs.bzl", "metal_seed", "seed_raw_pack", "seed_tree", "shader_crawl")
 load(":tools.bzl", "seed_tools", "tools_archive")
@@ -116,4 +117,26 @@ filegroup(
     srcs = [":tree"],
     output_group = "size",
     tags = ["manual"],
+)
+
+# The raw pack's refused states for the configured IPSW kind, against a pack report built elsewhere (the pack is too
+# large to build here): bazel test --config=ios27 //gpu/seed:pack_refusals_test --test_arg=<pack>/report.txt.
+# Re-pin from a report: grep -E '^  (refused \(|skipped kernel )' report.txt | sed 's/^  //' | sort
+alias(
+    name = "pack_pin",
+    actual = select({
+        "//ipsw:21H461": "pack_refused_21H461.txt",
+        "//ipsw:24B119": "pack_refused_24B119.txt",
+    }),
+)
+
+py_test(
+    name = "pack_refusals_test",
+    srcs = ["pack_refusals_test.py"],
+    args = ["$(rootpath :pack_pin)"],
+    data = [":pack_pin"],
+    tags = [
+        "manual",
+        "pack",
+    ],
 )
