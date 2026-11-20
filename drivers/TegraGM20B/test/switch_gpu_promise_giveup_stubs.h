@@ -28,8 +28,8 @@ typedef int32_t s32;
 #define _Static_assert static_assert
 #define TGM_FENCE_SLOT (16 * 1024)
 #define TGM_FENCE_USER_PAGES 64
-#define TGM_FENCE_PROMISE_WORD 512
-#define TGM_FENCE_PROMISES 32
+#define TGM_FENCE_PROMISE_WORD TegraGM20BPromiseWord
+#define TGM_FENCE_PROMISES TegraGM20BMaxPromises
 
 // gpu_internal.h's fences_state: the raise/remake guard
 inline struct {

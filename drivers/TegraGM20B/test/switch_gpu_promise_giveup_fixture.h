@@ -6,13 +6,14 @@
 #include <string>
 #include <vector>
 #include "switch_gpu_promise_giveup_stubs.h"
+#include "drivers/TegraGM20B/TegraGM20BJobABI.h"
 #include "drivers/TegraGM20B/test/promise_giveup_source.h"
 #include "drivers/TegraGM20B/test/promise_park_source.h"
 
 namespace promise_giveup
 {
 constexpr uint64_t kMs = 1000 * 1000;
-constexpr uint32_t kOffset = 2052, kValue = 9;
+constexpr uint32_t kOffset = (TegraGM20BPromiseWord + 1) * 4, kValue = 9;
 constexpr int kPrevious = 1, kPromised = 2;
 
 struct Kind {

@@ -165,6 +165,7 @@ PLUGIN_HDRS = [
     GM20B_METAL + ":raw_runtime_headers",
     GM20B_METAL + ":compiler_headers",
     GM20B_ABI,
+    "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
     "//drivers/TegraGM20B:TegraGM20BJobABI.h",
     "//drivers/TegraGM20B:TegraGM20BCompilerABI.h",
     "//kits/SwitchSeedPack:SwitchSeedStore.h",

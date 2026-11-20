@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // VM binds, surface layouts, channels, and the hung submission's interlocks (the push scan: TegraGM20BPushScanRun.cpp).
 #include "TegraGM20BUserClientInternal.h"
+#include "TegraGM20BFencePageABI.h"
 #include "TegraGM20BLayoutAsk.h"
 #include "TegraGM20BRecord.h"
 #include "../../kits/SwitchRefusal/SwitchRefusal.h"
@@ -287,8 +288,9 @@ IOReturn AGXDeviceUserClient::channelCreate(const TegraGM20BAbiChannelCreate *in
 				owner_, static_cast<int>(critical_), &chans_[slot]));
 	if (ret)
 		return ret;
-	switch_gpu_chan_visibility(chans_[slot], fence_va_ + 128 + slot,
-				   fence_gpu_ + 512 + uint64_t(slot) * 4);
+	switch_gpu_chan_visibility(
+		chans_[slot], fence_va_ + TegraGM20BFencePageVisibleFirst / 4 + slot,
+		fence_gpu_ + TegraGM20BFencePageVisibleFirst + uint64_t(slot) * 4);
 	auto *semantic = reinterpret_cast<volatile TegraGM20BAbiFenceSemantic *>(fence + 4);
 	switch_gpu_chan_semantic_visibility(chans_[slot], semantic);
 	auto *identity = reinterpret_cast<volatile TegraGM20BAbiFenceIdentity *>(fence + 8);

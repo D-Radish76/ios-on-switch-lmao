@@ -8,6 +8,7 @@ RAW_HOST_HEADERS = [
     "//drivers/TegraGM20B:TegraGM20BABI.h",
     "//drivers/TegraGM20B:TegraGM20BClockABI.h",
     "//drivers/TegraGM20B:TegraGM20BCompilerABI.h",
+    "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
     "//drivers/TegraGM20B:TegraGM20BHost.h",
     "//drivers/TegraGM20B:TegraGM20BJobABI.h",
     "//drivers/TegraGM20B:TegraGM20BLayout.h",

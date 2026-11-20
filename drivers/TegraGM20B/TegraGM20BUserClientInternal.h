@@ -20,6 +20,7 @@
 #include <sys/systm.h>
 #include "TegraGM20BABI.h"
 #include "TegraGM20BJobABI.h"
+#include "TegraGM20BFencePageABI.h"
 #include "TegraGM20BBindHistory.h"
 #include "TegraGM20BGpu.h"
 #include "TegraGM20BLayout.h"
@@ -74,7 +75,9 @@ using tgm_scan::scanPush;
 
 namespace tgm_uc
 {
-constexpr uint32_t kMaxChannels = 8;  // fence slots: 16 bytes each in the connection's fence page
+constexpr uint32_t kMaxChannels = 8;  // fence slots: 64 bytes each in the connection's fence page
+static_assert(kMaxChannels * TegraGM20BFencePageRecordBytes == TegraGM20BFencePageChannelsBytes,
+	      "a channel slot of the fence page for each channel");
 constexpr uint32_t kJobBytes =
 	sizeof(TegraGM20BAbiJob) + TegraGM20BMaxJobPushes * sizeof(TegraGM20BAbiPush) +
 	TegraGM20BMaxJobUses * sizeof(TegraGM20BAbiSurfaceUse) + sizeof(TegraGM20BAbiSubmitEvents) +
@@ -459,7 +462,7 @@ class AGXDeviceUserClient : public IOUserClient
 	bool faultLogged_[kMaxChannels] = {};
 	// the bind epoch (issueBind): the last issued and the last up to which every pending binding's PTEs are in place,
 	// its word in the fence page
-	static constexpr uint32_t kBindEpochWord = 256;
+	static constexpr uint32_t kBindEpochWord = TegraGM20BFencePageBindEpochFirst / 4;
 	uint32_t bindIssued_ = 0, bindDone_ = 0;
 #if TGM_STATS
 	// NVK's own heap is the client window's lower half (its replay heap and the raw path's quarter lie above): its maps

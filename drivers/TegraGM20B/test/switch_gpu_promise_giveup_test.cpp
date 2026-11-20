@@ -26,11 +26,9 @@ TEST_P(GiveUp, IsGivenUpOnceAboutOneSecondAfterThePark)
 	until(second + 9000 * kMs);
 	ASSERT_EQ(lines.size(), 1u) << "given up within the raw wait's 10 s contract";
 	const std::string expect =
-		std::string(
-			"tegra-gm20b: maker-app's writer promise at fence offset 2052 (value 9) "
-			"was not kept: ") +
-		GetParam().owner + " waited 1000 ms for it in " +
-		(GetParam().present ? "a present job" : "a GPU job");
+		"tegra-gm20b: maker-app's writer promise at fence offset " +
+		std::to_string(kOffset) + " (value 9) was not kept: " + GetParam().owner +
+		" waited 1000 ms for it in " + (GetParam().present ? "a present job" : "a GPU job");
 	EXPECT_EQ(lines[0].substr(0, expect.size()), expect);
 	EXPECT_EQ(fake::pool[kOffset / 4], kValue);
 	EXPECT_EQ(reader.fence, reader.submitted) << "the reader's acquire passed";
@@ -254,11 +252,10 @@ TEST_P(Leaves, IsGivenUpOnceAboutOneSecondAfterThePark)
 	EXPECT_TRUE(lines.empty());
 	until(fake::now + 1 * kMs);
 	ASSERT_EQ(lines.size(), 1u);
-	const std::string expect =
-		std::string(
-			"tegra-gm20b: maker-app's writer promise at fence offset 2052 (value 9) "
-			"was not kept: ") +
-		waiter().waiter + " waited 1000 ms for it in " + waiter().who;
+	const std::string expect = "tegra-gm20b: maker-app's writer promise at fence offset " +
+				   std::to_string(kOffset) +
+				   " (value 9) was not kept: " + waiter().waiter +
+				   " waited 1000 ms for it in " + waiter().who;
 	EXPECT_EQ(lines[0].substr(0, expect.size()), expect);
 	EXPECT_EQ(status(), -5);
 	EXPECT_EQ(shown(), kPrevious);

@@ -16,10 +16,15 @@
 // kernel's attachSet refuses it, with the reason in that record's reserved word. The first IOServiceOpen of a model is
 // `model`; each later one is a connection of its own (its BOs, sets, channels and GPU VM), closed with
 // IOServiceClose, as HW Test's bench is beside the app's Metal device. Its IOKit calls replace the framework's:
-// include it in one unit of a test.
+// include it in one unit of a test. The fence page is one page laid out as the kernel's (TegraGM20BFencePageABI.h): the
+// channels' records, the channel epoch, the set generations, the clock anchors of each power-up (powerUp) and the writer
+// promises' words, which a Make takes one past and the end of a job that keeps them (when the model completes it at its
+// submission) or their cancel releases.
 #pragma once
 #include "TegraGM20BABI.h"
+#include "TegraGM20BClockABI.h"
 #include "TegraGM20BCompilerABI.h"
+#include "TegraGM20BFencePageABI.h"
 #include "TegraGM20BJobABI.h"
 #include <IOKit/IOKitLib.h>
 #include <algorithm>
@@ -27,6 +32,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -36,7 +42,9 @@
 
 namespace kernel_model {
 
-constexpr uint32_t kSlots = 16, kRecordBytes = 64, kFenceToken = 0x7fff0000, kFencePageBytes = 4096;
+constexpr uint32_t kSlots = TegraGM20BFencePageChannelsBytes / TegraGM20BFencePageRecordBytes,
+                   kRecordBytes = TegraGM20BFencePageRecordBytes, kFenceToken = 0x7fff0000,
+                   kFencePageBytes = TegraGM20BFencePageGpuBytes;
 
 inline void (*checkJob)(const uint32_t *words, const TegraGM20BAbiPush *pushes, uint32_t count) = nullptr;
 
@@ -69,8 +77,35 @@ struct Slot {
     bool foreign = false;  // another driver's channel of the connection (NVK's) holds it
 };
 
+// The kernel's page is zero where no region of TegraGM20BFencePageABI.h is; the model's holds kStray there, so a word
+// placed in no region reads it instead of the zero it starts at, and a write there shows (stray)
+struct FencePage {
+    static constexpr uint8_t kStray = 0xa5;
+    alignas(64) uint8_t bytes[kFencePageBytes];
+
+    FencePage()
+    {
+        std::memset(bytes, kStray, sizeof bytes);
+        for (const tgm_fence_page_region &r : tgm_fence_page_regions)
+            std::memset(bytes + r.first, 0, r.bytes);
+    }
+
+    // The first byte in no region that does not hold kStray, kFencePageBytes where there is none
+    uint32_t stray() const
+    {
+        for (uint32_t at = 0; at < kFencePageBytes; at++)
+            if (bytes[at] != kStray &&
+                std::none_of(std::begin(tgm_fence_page_regions), std::end(tgm_fence_page_regions),
+                             [at](const tgm_fence_page_region &r) {
+                                 return at >= r.first && at - r.first < r.bytes;
+                             }))
+                return at;
+        return kFencePageBytes;
+    }
+};
+
 struct Model {
-    alignas(64) uint8_t fences[kFencePageBytes] = {};
+    FencePage fences;
     Slot slots[kSlots];
     uint64_t nextHandle = 1, nextUid = 1;
     std::map<uint32_t, std::vector<uint8_t>> memory;
@@ -186,15 +221,45 @@ struct Model {
     };
     std::vector<PromiseCall> promiseCalls;
     uint32_t nextPromise = 0;
+    uint32_t promiseValues[TegraGM20BMaxPromises] = {};
+    // The kernel's clock anchors (gpu_anchor.c), on the first connection's model, which holds them
+    TegraGM20BAbiClockAnchors anchors = {};
 
     TegraGM20BAbiFence &fence(uint32_t slot)
     {
-        return *reinterpret_cast<TegraGM20BAbiFence *>(fences + slot * kRecordBytes);
+        return *reinterpret_cast<TegraGM20BAbiFence *>(fences.bytes + slot * kRecordBytes);
     }
 
     volatile uint32_t &epochWord()
     {
-        return reinterpret_cast<volatile uint32_t *>(fences)[TegraGM20BChannelEpochWord];
+        return reinterpret_cast<volatile uint32_t *>(fences.bytes)[TegraGM20BChannelEpochWord];
+    }
+
+    volatile uint32_t &promiseWord(uint32_t promise)
+    {
+        return reinterpret_cast<volatile uint32_t *>(fences.bytes)[TegraGM20BPromiseWord + promise];
+    }
+
+    void promiseReleased(uint32_t promise)
+    {
+        if (promise < TegraGM20BMaxPromises && int32_t(promiseWord(promise) - promiseValues[promise]) < 0)
+            promiseWord(promise) = promiseValues[promise];
+    }
+
+    TegraGM20BAbiClockAnchors *anchorTable()
+    {
+        return reinterpret_cast<TegraGM20BAbiClockAnchors *>(fences.bytes + TegraGM20BClockAnchorOffset);
+    }
+
+    // A power-up of the GPU: its anchor into every connection's page, as the kernel publishes it
+    void powerUp(const TegraGM20BAbiClockAnchor &anchor)
+    {
+        const uint32_t n = anchors.published;
+        *tgm_clock_anchor_slot(&anchors, n) = anchor;
+        anchors.published = n + 1;
+        tgm_clock_anchor_mirror(anchorTable(), &anchors, n);
+        for (auto &[connection, other] : others)
+            tgm_clock_anchor_mirror(other->anchorTable(), &anchors, n);
     }
 
     // The GPU's channel epoch (TegraGM20BChannelEpochWord) moving on, in every connection's page, as the kernel moves it
@@ -252,7 +317,7 @@ struct Model {
         TegraGM20BAbiFence &f = fence(slot);
         f.killed_first = f.killed_last = f.error = 0;
         auto *identity = reinterpret_cast<TegraGM20BAbiFenceIdentity *>(
-            fences + slot * kRecordBytes + sizeof(TegraGM20BAbiFence) + sizeof(TegraGM20BAbiFenceSemantic));
+            fences.bytes + slot * kRecordBytes + sizeof(TegraGM20BAbiFence) + sizeof(TegraGM20BAbiFenceSemantic));
         identity->channel_uid = slots[slot].uid;
         reply = {slot + 1, kFenceToken, slot * kRecordBytes, 0};
         return KERN_SUCCESS;
@@ -381,6 +446,12 @@ struct Model {
         const int kr = run(*s, head->channel, std::move(uses), reply, head->flags, pushWords(pushes, head->push_count));
         jobs.back().hostWritten = hostWritten;
         jobs.back().pushes.assign(pushes, pushes + head->push_count);
+        const auto *kept = reinterpret_cast<const TegraGM20BAbiJobPromises *>(
+            reinterpret_cast<const uint8_t *>(shared + head->shared_count) +
+            (admission ? sizeof(TegraGM20BAbiSubmitAdmission) : 0));
+        if ((head->flags & TegraGM20BJobFulfills) && !inFlight && !jobAdded)
+            for (uint32_t i = 0; i < std::min<uint32_t>(kept->count, TegraGM20BMaxJobPromises); i++)
+                promiseReleased(kept->promise[i]);
         if (jobAdded)
             jobAdded();
         return kr;
@@ -388,7 +459,8 @@ struct Model {
 
     void endGeneration(uint32_t index)
     {
-        reinterpret_cast<volatile uint32_t *>(fences)[TegraGM20BSetGenerationWord + index] = ++sets[index].generation;
+        reinterpret_cast<volatile uint32_t *>(fences.bytes)[TegraGM20BSetGenerationWord + index] =
+            ++sets[index].generation;
     }
 
     int setCreate(const TegraGM20BAbiResourceSetCreate &in, TegraGM20BAbiResourceSetCreateReply &out)
@@ -633,7 +705,7 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         const auto &in = *static_cast<const TegraGM20BAbiMap *>(input);
         auto &reply = *static_cast<TegraGM20BAbiMapReply *>(output);
         if (in.token == kernel_model::kFenceToken)
-            reply = {uint64_t(uintptr_t(model.fences)), sizeof model.fences};
+            reply = {uint64_t(uintptr_t(model.fences.bytes)), sizeof model.fences.bytes};
         else if (in.token == TegraGM20BCompilerStoreToken)
             reply = {uint64_t(uintptr_t(model.store)), model.storeBytes};
         else
@@ -722,12 +794,20 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         kernel_model::Model::PromiseCall call{in.op, in.promise, {}};
         for (uint32_t i = 0; i < in.count; i++)
             call.handles.push_back(uses[i].handle);
-        if (in.op == TegraGM20BPromiseMake)
+        if (in.op == TegraGM20BPromiseMake) {
             call.promise = model.nextPromise++ % TegraGM20BMaxPromises;
+            model.promiseValues[call.promise] = model.promiseWord(call.promise) + 1;
+        } else if (!in.count) {
+            model.promiseReleased(in.promise);
+        }
         *static_cast<TegraGM20BAbiWriterPromiseReply *>(output) = {call.promise, 0};
         model.promiseCalls.push_back(std::move(call));
         return KERN_SUCCESS;
     }
+    case TegraGM20BMethodClockAnchors:
+        *static_cast<TegraGM20BAbiClockAnchorsReply *>(output) = {
+            kernel_model::kFenceToken + TegraGM20BClockAnchorOffset, kernel_model::kFenceToken, 0};
+        return KERN_SUCCESS;
     default:
         return kIOReturnUnsupported;
     }
@@ -752,6 +832,10 @@ extern "C" kern_return_t IOServiceOpen(io_service_t, task_port_t, uint32_t, io_c
     other->vaEnd = model.vaEnd;
     other->opened = true;
     other->epochWord() = model.epoch;
+    const uint32_t published = model.anchors.published;
+    for (uint32_t n = published > TegraGM20BClockAnchorSlots ? published - TegraGM20BClockAnchorSlots : 0;
+         n < published; n++)
+        tgm_clock_anchor_mirror(other->anchorTable(), &model.anchors, n);
     return KERN_SUCCESS;
 }
 

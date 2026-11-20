@@ -69,6 +69,7 @@
 #include "TegraGM20BClkgate.h"
 #include "TegraGM20BComp.h"
 #include "TegraGM20BCopyEmit.h"
+#include "TegraGM20BFencePageABI.h"
 #include "TegraGM20BGpu.h"
 #include "SwitchGpuJobFences.h"
 #include "SwitchGpuQuiet.h"
@@ -580,8 +581,8 @@ static int chan_push_wait(struct tgm_chan *chan, u32 push_nr);
  * address space maps all of them once and waits on any user channel with a semaphore acquire. Pages are handed out
  * round-robin and zeroed, so a page freed with an acquire still pending on it is not reused at once. */
 /* a fence page's writer promise words (TegraGM20BJobABI.h TegraGM20BMaxPromises from TegraGM20BPromiseWord) */
-#define TGM_FENCE_PROMISES 32
-#define TGM_FENCE_PROMISE_WORD 512
+#define TGM_FENCE_PROMISES (TegraGM20BFencePagePromisesBytes / 4)
+#define TGM_FENCE_PROMISE_WORD (TegraGM20BFencePagePromisesFirst / 4)
 #define TGM_FENCE_USER_PAGES \
 	64 /* one per connection (TegraGM20BUserClient.cpp kMaxConnectionsAll) */
 /* and one after them for the kernel's own client channels (tgm_fence_kernel), so every address space's fence view holds

@@ -457,6 +457,7 @@ host_test(
         "gm20b_job_abi_test.cpp",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "//drivers/TegraGM20B:TegraGM20BCopyResetABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
         "//drivers/TegraGM20B:TegraGM20BJobABI.h",
         "//drivers/TegraGM20B:TegraGM20BReadbackABI.h",
         "//drivers/TegraGM20B:TegraGM20BRegDumpABI.h",
@@ -470,6 +471,7 @@ host_test(
         "gm20b_job_record_test.cpp",
         "//drivers/TegraGM20B:SwitchGpuJobRecord.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
         "//drivers/TegraGM20B:TegraGM20BJobABI.h",
     ],
 )
@@ -702,6 +704,7 @@ PROMISE_GIVEUP_SRCS = [
     "//drivers/TegraGM20B:SwitchGpuPromiseGiveUp.h",
     "//drivers/TegraGM20B:SwitchGpuWriterPromise.h",
     "//drivers/TegraGM20B:TegraGM20BABI.h",
+    "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
     "//drivers/TegraGM20B:TegraGM20BGpu.h",
     "//drivers/TegraGM20B:TegraGM20BJobABI.h",
 ]
@@ -1678,6 +1681,7 @@ host_test(
         "switch_gpu_job_visibility_test.cpp",
         "//drivers/TegraGM20B:SwitchGpuJobVisibility.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
         "//drivers/TegraGM20B:TegraGM20BGpu.h",
         "//drivers/TegraGM20B:TegraGM20BJobABI.h",
     ],
@@ -2382,6 +2386,7 @@ host_library(
         "//drivers/TegraGM20B:SwitchGpuBacking.h",
         "//drivers/TegraGM20B:SwitchGpuWordWait.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
         "//drivers/TegraGM20B:TegraGM20BJobABI.h",
         "//drivers/TegraGM20B:SwitchGpuTimeline.h",
     ],
@@ -2432,6 +2437,7 @@ host_library(
         "//drivers/TegraGM20B:SwitchGpuBacking.h",
         "//drivers/TegraGM20B:SwitchGpuWordWait.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
         "//drivers/TegraGM20B:TegraGM20BJobABI.h",
     ],
     visibility = [
@@ -3226,6 +3232,22 @@ host_test(
         "//drivers/TegraGM20B:SwitchGpuChannelEpoch.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
     ],
+)
+
+# The fence page (TegraGM20BFencePageABI.h) as the kernel writes it: each power-up's clock anchor and the writer promises,
+# made, kept and cancelled, each writing bytes of its own region alone
+host_test(
+    name = "switch_gpu_fence_page_test",
+    srcs = [
+        "switch_gpu_fence_page_test.cpp",
+        "//drivers/TegraGM20B:SwitchGpuBacking.h",
+        "//drivers/TegraGM20B:SwitchGpuWriterPromise.h",
+        "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BClockABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
+        "//drivers/TegraGM20B:TegraGM20BJobABI.h",
+    ],
+    cxx_std = "c++17",
 )
 
 # The busy words and the wake word between threads, under ThreadSanitizer

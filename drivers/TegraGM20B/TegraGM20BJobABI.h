@@ -1,11 +1,12 @@
 /* SPDX-License-Identifier: MIT */
-/* The job interface: persistent resource sets and SubmitJob. The raw stack key does not hash this header, so no unit it
- * hashes (gpu/BUILD.bazel raw_stack, RawStackIncludes) may include it, and TegraGM20BABI.h never does. Records keep
- * TegraGM20BABI.h's rules: little endian, naturally aligned, reserved fields zero on input. */
+/* The job interface: persistent resource sets and SubmitJob. The raw stack key hashes it (the pack's mock_jobs.h includes
+ * it); TegraGM20BABI.h never includes it. Records keep TegraGM20BABI.h's rules: little endian, naturally aligned,
+ * reserved fields zero on input. */
 #ifndef TEGRA_GM20B_JOB_ABI_H
 #define TEGRA_GM20B_JOB_ABI_H
 #include <stdint.h>
 #include "TegraGM20BABI.h"
+#include "TegraGM20BFencePageABI.h"
 
 enum {
 	TegraGM20BMethodResourceSetCreate = 31,
@@ -13,15 +14,15 @@ enum {
 	TegraGM20BMethodSubmitJob = 33,
 	TegraGM20BMethodWriterPromise = 34,
 
-	TegraGM20BMaxResourceSets = 16,
+	TegraGM20BMaxResourceSets = TegraGM20BFencePageSetGenerationsBytes / 4,
 	TegraGM20BMaxSetMembers = 4096,
 	/* The connection's fence page (ChannelCreate's fence_token) holds each set's generation at this word plus its id
 	 * minus one, so a client that gets kIOReturnNotReady can tell a stale set from a stale native view. */
-	TegraGM20BSetGenerationWord = 768,
+	TegraGM20BSetGenerationWord = TegraGM20BFencePageSetGenerationsFirst / 4,
 	/* Writer promises (method 34): promise i is released when the fence page's word TegraGM20BPromiseWord + i
 	 * reaches its value */
-	TegraGM20BPromiseWord = 512,
-	TegraGM20BMaxPromises = 32,
+	TegraGM20BPromiseWord = TegraGM20BFencePagePromisesFirst / 4,
+	TegraGM20BMaxPromises = TegraGM20BFencePagePromisesBytes / 4,
 	TegraGM20BMaxPromiseUses = 8,
 	TegraGM20BMaxJobPromises = 4,
 };
@@ -163,10 +164,10 @@ enum {
 	TegraGM20BJobEventReleases = 1u << 12, /* TegraGM20BAbiJob.flags */
 	TegraGM20BEventReleaseLimit = 1u << 31,
 	/* The connection's fence page holds the word of each imported event whose handle's slot is below
-	 * TegraGM20BEventWords at this word plus the slot: the words after the client bind epoch (256) and before the
-	 * writer promises. Method 40 answers kIOReturnNoResources for the other slots, whose signals end their jobs. */
-	TegraGM20BEventWordFirst = 257,
-	TegraGM20BEventWords = TegraGM20BPromiseWord - TegraGM20BEventWordFirst,
+	 * TegraGM20BEventWords at this word plus the slot. Method 40 answers kIOReturnNoResources for the other slots, whose
+	 * signals end their jobs. */
+	TegraGM20BEventWordFirst = TegraGM20BFencePageEventsFirst / 4,
+	TegraGM20BEventWords = TegraGM20BFencePageEventsBytes / 4,
 };
 
 /* Method 40. The word one channel of the connection releases an imported event's values into, mid-job: a signal of value v
@@ -213,4 +214,8 @@ TEGRA_GM20B_JOB_ASSERT(TegraGM20BAbiEventWord, 16);
 TEGRA_GM20B_JOB_ASSERT(TegraGM20BAbiEventWordReply, 24);
 TEGRA_GM20B_JOB_ASSERT(TegraGM20BAbiSignalRelease, 8);
 #undef TEGRA_GM20B_JOB_ASSERT
+TEGRA_GM20B_FENCE_PAGE_ASSERT(TegraGM20BChannelEpochWord * 4 ==
+					      TegraGM20BFencePageChannelEpochFirst &&
+				      TegraGM20BFencePageChannelEpochBytes == 4,
+			      "the channel epoch's word is its region");
 #endif
