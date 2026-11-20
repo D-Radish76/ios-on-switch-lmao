@@ -303,10 +303,19 @@
     b->_device = self;
     b->_options = o;
     // The kernel wires pages the task maps read-only for GPU reads (TegraGM20BUserClientBo.cpp boImport): what it refuses
-    // no device of this GPU imports
-    if (!gRM->raw->createBufferNoCopy(p, n, b->_raw)) {
-        os_log_error(rawLog(), "raw: %{public}s: the kernel imported no %lu bytes at %p: no no-copy buffer made",
-                     getprogname(), (unsigned long)n, p);
+    // no device of this GPU imports. An M4 Max makes a buffer over an IOSurface's pages that reads and writes its texels
+    // as rows; the pages of one the kernel laid out block-linear hold no rows to alias.
+    bool tiled = false;
+    if (!gRM->raw->createBufferNoCopy(p, n, b->_raw, tiled)) {
+        if (tiled)
+            os_log_error(
+                rawLog(),
+                "raw: %{public}s: newBufferWithBytesNoCopy over %lu bytes at %p: they lie in an IOSurface this "
+                "process imported block-linear, whose pages hold its texels in GOBs: no buffer",
+                getprogname(), (unsigned long)n, p);
+        else
+            os_log_error(rawLog(), "raw: %{public}s: the kernel imported no %lu bytes at %p: no no-copy buffer made",
+                         getprogname(), (unsigned long)n, p);
         return nil;
     }
     b->_deallocator = [deallocator copy];

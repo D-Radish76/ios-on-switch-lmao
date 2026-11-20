@@ -3,6 +3,7 @@
 #include "raw_lock.h"
 #include "raw_follow.h"
 #include "raw_gpu.h"
+#include "raw_surface_view.h"
 #include "TegraGM20BLayout.h"
 
 #include <CoreFoundation/CoreFoundation.h>
@@ -772,12 +773,18 @@ uint64_t Device::blChunkFreeBytes()
 // The caller's pages around [bytes, bytes + length): the frontend answers minBufferNoCopyAlignmentBytes with the kernel's 4 KiB
 // page, not getpagesize()'s 16 KiB, and Apple's own callers (iconservicesagent on 27) pass pointers inside a page; the import
 // binds whole kernel pages and the buffer's address is its first byte's inside them
-bool Device::createBufferNoCopy(void *bytes, uint64_t length, Buffer &b)
+bool Device::createBufferNoCopy(void *bytes, uint64_t length, Buffer &b, bool &tiled)
 {
     b = {};
+    tiled = false;
     if (!bytes || !length)
         return false;
     std::lock_guard<raw::Mutex> l(lock_);
+    for (const auto &[key, i] : surfaces_)
+        if (i->kernelTiled() && surfaceBackingAliases(0, i->base, i->bytes, 0, uintptr_t(bytes), length)) {
+            tiled = true;
+            return false;
+        }
     if (!(b.import = importSurface(0, bytes, length, nullptr)))
         return false;
     b.va = b.import->bo.va;

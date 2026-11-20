@@ -2503,7 +2503,9 @@ public:
         return k_.allocatedBytes();
     }
 
-    bool createBufferNoCopy(void *bytes, uint64_t length, Buffer &b);
+    // The caller's pages as a buffer (newBufferWithBytesNoCopy). False where the kernel refuses the import, or where the
+    // pages lie in a surface this task imported block-linear (`tiled`): they hold its texels in GOBs, no buffer's rows
+    bool createBufferNoCopy(void *bytes, uint64_t length, Buffer &b, bool &tiled);
     // An IOSurface's pages as a buffer of `length` bytes (newBufferWithIOSurface:), sharing its textures' import. False
     // where the kernel refuses the import, or keeps the surface block-linear (`tiled`): its bytes are no pitch buffer then
     bool createSurfaceBuffer(uint64_t id, void *base, uint64_t length, const void *owner, Buffer &b, bool &tiled);

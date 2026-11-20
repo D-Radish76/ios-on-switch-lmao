@@ -7,6 +7,7 @@
 #include "../raw/runtime/raw_texel_rows.h"
 
 #include <gtest/gtest.h>
+#include <sys/mman.h>
 #include <string>
 
 @interface NSObject (SwitchTexelRowsFill)
@@ -253,6 +254,28 @@ TEST_F(FacadeTexelRows, ATexelBufferPastTheSurfacesRowsIsNil)
                                                                            resourceOptions:MTLResourceStorageModeShared
                                                                                      usage:MTLTextureUsageShaderRead];
     EXPECT_EQ([gDevice newTextureWithDescriptor:b iosurface:surface plane:0], nil);
+}
+
+// The surface's pages hold the target's texels in GOBs: a no-copy buffer over them, or over a page of them, would read
+// and write those as rows, so none is made; one over pages of no such surface is
+TEST_F(FacadeTexelRows, ANoCopyBufferOverTheSurfacesPagesIsNil)
+{
+    ASSERT_TRUE(target->_raw.import && target->_raw.import->kernelTiled());
+    uint8_t *base = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(surface));
+    EXPECT_EQ([gDevice newBufferWithBytesNoCopy:base
+                                         length:IOSurfaceGetAllocSize(surface)
+                                        options:MTLResourceStorageModeShared
+                                    deallocator:nil],
+              nil);
+    EXPECT_EQ(
+        [gDevice newBufferWithBytesNoCopy:base + 4096 length:4096 options:MTLResourceStorageModeShared deallocator:nil],
+        nil)
+        << "a page inside the surface";
+    void *pages = mmap(nullptr, 16384, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
+    ASSERT_NE(pages, MAP_FAILED);
+    EXPECT_NE(
+        [gDevice newBufferWithBytesNoCopy:pages length:16384 options:MTLResourceStorageModeShared deallocator:nil],
+        nil);
 }
 
 }  // namespace
