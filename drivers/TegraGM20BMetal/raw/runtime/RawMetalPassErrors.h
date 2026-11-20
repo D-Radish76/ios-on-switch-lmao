@@ -13,8 +13,9 @@
 // case, made_kept_off 0); renderTargetArrayLength past an
 // attachment's layers draws the layers it has. CustomSampleDepthStore keeps each sample's depth, which a stored zeta
 // holds uncompressed (raw_comp.h storedZetaKind), so it is the plain store. An X32_Stencil8 view as the stencil
-// attachment is the Depth32Float_Stencil8 texture it views, at the view's level and slice in it.
-void rmPassAsApple(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass);
+// attachment is the Depth32Float_Stencil8 texture it views, at the view's level and slice in it. True: it counted a
+// skip (a pass that differs from the M4 Max's), which the pass's every making counts again.
+bool rmPassAsApple(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass);
 
 // Why Metal's validation stops `pass` as a whole, null where it takes it: attachments of different sample counts
 // (MTLRenderPipeline.h rasterSampleCount: the samples per fragment of the render pass)

@@ -166,12 +166,13 @@ NSUInteger attachmentLayers(MTLRenderPassAttachmentDescriptor *a)
 // so the pass is of the most layers a stored attachment has, each shorter one rendered through a backing of the pass's
 // (CommandBuffer::render), a memoryless one backed with the pass's. A pass with an attachment the encode moves through
 // work of its own of the pass's layers (a format stand-in, a planar, YCbCr or two-plane target, a 3D plane image) stays
-// of the layers every stored attachment has, the rest dropped
-void layersAsApple(MTLRenderPassDescriptor *pass)
+// of the layers every stored attachment has, the rest dropped: where that leaves layers of an attachment undrawn that
+// the M4 Max draws, a skip (true)
+bool layersAsApple(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass)
 {
     const NSUInteger layers = pass.renderTargetArrayLength;
     if (layers <= 1)
-        return;
+        return false;
     NSUInteger most = 0, least = layers;
     bool plain = true;
     const auto count = [&](MTLRenderPassAttachmentDescriptor *a) {
@@ -188,13 +189,20 @@ void layersAsApple(MTLRenderPassDescriptor *pass)
     count(pass.stencilAttachment);
     for (NSUInteger c = 0; c < 8; c++)
         count(pass.colorAttachments[c]);
-    if (most)
-        pass.renderTargetArrayLength = plain ? std::min(layers, most) : least;
+    if (!most)
+        return false;
+    pass.renderTargetArrayLength = plain ? std::min(layers, most) : least;
+    if (plain || least >= std::min(layers, most))
+        return false;
+    skip(cb, PredPassAttLevel, std::min(layers, most), least,
+         "renderTargetArrayLength past an attachment's layers, beside one the raw path draws through work of its own: "
+         "the layers every attachment has drawn, where an M4 Max draws each attachment's own");
+    return true;
 }
 
 }  // namespace
 
-void rmPassAsApple(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass)
+bool rmPassAsApple(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass)
 {
     MTLRenderPassDepthAttachmentDescriptor *depth = pass.depthAttachment;
     MTLRenderPassStencilAttachmentDescriptor *stencil = pass.stencilAttachment;
@@ -227,7 +235,7 @@ void rmPassAsApple(RMCommandBuffer *cb, MTLRenderPassDescriptor *pass)
         }
         memorylessAsApple(a);
     }
-    layersAsApple(pass);
+    return layersAsApple(cb, pass);
 }
 
 // A one-sample colour beside one four-sample depth/stencil texture renders as an M4 Max renders it (raw_mixed_samples.h)

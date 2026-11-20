@@ -116,7 +116,7 @@ void rmOwnPass(RMRenderEncoder *e)
         if (const RMPassEntry *kept = rmPassFind(self, key, hash))
             return openKeptPass(self, e, *kept);
     MTLRenderPassDescriptor *pass = [d copy];
-    rmPassAsApple(self, pass);
+    bool skipped = rmPassAsApple(self, pass);
     [self retain:pass];
     e->_pass = pass;
     e->_passAt = uint32_t(_passes.size());
@@ -304,9 +304,11 @@ void rmOwnPass(RMRenderEncoder *e)
         SWITCH_REFUSE("raw", "pass.ratemap",
                       "a pass with a rasterization rate map: drawn at full rate, as Metal draws it on "
                       "a device without rate maps");
-    if (positions && !passSamplePositions(pass, positions, e->_samples, facts.positions))
+    if (positions && !passSamplePositions(pass, positions, e->_samples, facts.positions)) {
         skip(self, PredPassPositions, positions, e->_samples,
              "sample positions past the pass's samples: drawn at the standard ones");
+        skipped = true;
+    }
     e->_renderAt = _plan.size();
     Cmd m = cmd(OpRender);
     m.obj = (__bridge void *)pass;
@@ -319,7 +321,8 @@ void rmOwnPass(RMRenderEncoder *e)
     const bool resolves = std::any_of(std::begin(facts.color), std::end(facts.color), [](const RMPass::Color &c) {
         return c.resolve != nil;
     });
-    if (keyed && !_encFailed && !resolves) {
+    // a pass whose making counted a skip is made again at each call, which counts it again
+    if (keyed && !_encFailed && !resolves && !skipped) {
         // what the raw encode reads of it made now, so the copy is read, never changed, after this
         for (unsigned c = 0; c < 8; c++)
             (void)pass.colorAttachments[c];

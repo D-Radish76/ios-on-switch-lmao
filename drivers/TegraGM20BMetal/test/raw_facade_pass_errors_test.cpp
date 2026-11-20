@@ -4,7 +4,7 @@
 // as it is recorded, the predicate named in its path. A target of a format the GM20B renders none of whose stand-in
 // states the pack lacks fails as it is encoded; a YCbCr texture with no stand-in fails a pass into it; a resolve
 // texture beside a store that resolves nothing is left alone; a state of a YCbCr format no target texture is made of
-// is the raw path's own.
+// is the raw path's own. A pass that differs from the M4 Max's is counted skipped at each call.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_attachment_target.h"
 #include "../raw/runtime/raw_samples.h"
@@ -424,6 +424,44 @@ void aLayeredStandInPassIsRaws()
     expectRaw(device, p);
 }
 
+// renderTargetArrayLength past a plain array's layers draws the layers it has, as an M4 Max draws them: no skip. Beside a
+// stand-in array of fewer layers, the pass draws the layers both have where the M4 Max draws the plain array's every
+// layer: a skip of pass.level at each call
+void layersPastBesideAStandInAreCountedSkipped()
+{
+    id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", a1bgr5States(1)));
+    ASSERT_TRUE(device != nil);
+    const auto array = [&](MTLPixelFormat format, NSUInteger layers) {
+        MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                     width:64
+                                                                                    height:64
+                                                                                 mipmapped:NO];
+        d.textureType = MTLTextureType2DArray;
+        d.arrayLength = layers;
+        d.storageMode = MTLStorageModePrivate;
+        d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
+        return [device newTextureWithDescriptor:d];
+    };
+    id<MTLTexture> plain = array(MTLPixelFormatBGRA8Unorm, 3), standIn = array(MTLPixelFormatA1BGR5Unorm, 2);
+    ASSERT_TRUE(plain != nil && standIn != nil);
+    MTLRenderPassDescriptor *alone = colourPass(plain);
+    alone.colorAttachments[0].slice = 1;
+    alone.renderTargetArrayLength = 3;
+    NSDictionary *before = counters(device);
+    expectRaw(device, alone);
+    EXPECT_TRUE(skippedMoved(before, counters(device)).empty()) << text(counters(device));
+    MTLRenderPassDescriptor *beside = colourPass(plain);
+    beside.colorAttachments[1].texture = standIn;
+    beside.colorAttachments[1].loadAction = MTLLoadActionLoad;
+    beside.colorAttachments[1].storeAction = MTLStoreActionStore;
+    beside.renderTargetArrayLength = 3;
+    before = counters(device);
+    expectRaw(device, beside);
+    expectRaw(device, beside);
+    const std::map<std::string, long long> eachCall = {{"skipped", 2}, {"skipped.pass.level", 2}};
+    EXPECT_EQ(skippedMoved(before, counters(device)), eachCall) << text(counters(device));
+}
+
 }  // namespace
 
 TEST(RawFacadePassErrors, ASliceOfAViewOfAMipmappedArrayIsRaws)
@@ -454,6 +492,11 @@ TEST(RawFacadePassErrors, AnRgb9e5ResolveIsItsOwnStates)
 TEST(RawFacadePassErrors, ALayeredStandInPassIsRaws)
 {
     switch_ios::test::ExpectPassesInFreshProcess(aLayeredStandInPassIsRaws);
+}
+
+TEST(RawFacadePassErrors, LayersPastBesideAStandInAreCountedSkippedAtEachCall)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(layersPastBesideAStandInAreCountedSkipped);
 }
 
 TEST(RawFacadePassErrors, ABlockColourAttachmentIsDroppedADepthOneIsItsColourTwinAndAStencilOneFails)
