@@ -837,8 +837,8 @@ bool CommandBuffer::commit(uint32_t &seqno)
         k.submitted.store(true, std::memory_order_relaxed);
         k.usedNs.store(now, std::memory_order_relaxed);
     }
-    d.commitCount_.fetch_add(1, std::memory_order_relaxed);
-    d.closedCount_.fetch_add(1, std::memory_order_release);
+    d.commitCount_.store(d.commitCount_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    d.closedCount_.store(d.closedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
     d.noteCommittedTimings(timings);
     RAW_DIAGNOSTIC(if (drawTimes_) d.committedDrawTimes(*this, seq));
     releaseNativeReads();
@@ -929,7 +929,7 @@ void CommandBuffer::abandon()
 {
     releaseNativeReads();
     Device &d = *dev_;
-    d.closedCount_.fetch_add(1, std::memory_order_release);
+    d.closedCount_.store(d.closedCount_.load(std::memory_order_relaxed) + 1, std::memory_order_release);
     d.overflowing_ = false;
     d.overflow_.clear();
     for (Device::Ring *r : {&d.push_, &d.upload_}) {

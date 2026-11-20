@@ -650,10 +650,20 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 - (void)popDebugGroup
 {}
 
+// Before its commit a command buffer's handler lists are its recording thread's alone (Metal takes handlers before the
+// commit), published to the submit worker by the commit's hand-off with no lock; one added after the commit takes the lock
+// its consumer takes them under
 - (void)addScheduledHandler:(MTLCommandBufferHandler)block
 {
     if (!block)
         return;
+    if (!_committed.load(std::memory_order_relaxed)) {
+        if (!_scheduledHandlers)
+            _scheduledHandlers = [NSMutableArray array];
+        [_scheduledHandlers addObject:[block copy]];
+        _hasScheduledHandlers.store(true, std::memory_order_relaxed);
+        return;
+    }
     _hasScheduledHandlers.store(true);
     {
         std::lock_guard<raw::Mutex> l(_lock);
@@ -676,6 +686,13 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
 {
     if (!block)
         return;
+    if (!_committed.load(std::memory_order_relaxed)) {
+        if (!_completedHandlers)
+            _completedHandlers = [NSMutableArray array];
+        [_completedHandlers addObject:[block copy]];
+        _hasCompletedHandlers.store(true, std::memory_order_relaxed);
+        return;
+    }
     bool now;
     _hasCompletedHandlers.store(true);
     {

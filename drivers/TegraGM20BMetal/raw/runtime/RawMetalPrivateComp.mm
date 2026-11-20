@@ -5,21 +5,17 @@
 #import "RawMetalPipeline.h"
 #include <algorithm>
 #include <vector>
-#include "raw_submit_gate.h"
 #include "raw_view.h"
 #include "raw_xr.h"
 
 thread_local bool tRawEncoding = false;
 
-static raw::SubmitGate gSubmitGate;
 static thread_local bool tSubmitting = false;
 
 bool submitRangeExclusive(RMCommandBuffer *cb, bool followed)
 {
     tSubmitting = true;
-    const bool submitted = gSubmitGate.submit([&] {
-        return submitRange(cb, followed);
-    });
+    const bool submitted = submitRange(cb, followed);
     tSubmitting = false;
     return submitted;
 }
@@ -27,11 +23,6 @@ bool submitRangeExclusive(RMCommandBuffer *cb, bool followed)
 void rmMarkSubmission(bool submitting)
 {
     tSubmitting = submitting;
-}
-
-raw::SubmitGate &rmSubmitGate()
-{
-    return gSubmitGate;
 }
 
 bool rmInSubmission()

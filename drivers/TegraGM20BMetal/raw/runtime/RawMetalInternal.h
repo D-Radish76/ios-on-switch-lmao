@@ -19,6 +19,7 @@
 #include <functional>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -27,7 +28,6 @@
 #include "GpuMemoryRelease.h"
 #include "LimitsTable.h"
 #include "raw_kernel_shadow.h"
-#include "raw_submit_gate.h"
 #include "SwitchFrameTimeline.h"
 #include "../../../../kits/SwitchRefusal/SwitchRefusalSite.h"
 #include "RawComplete.h"
@@ -155,18 +155,27 @@ struct RMRawRetirement {
     uint64_t frameDue = 0;  // left quiet for its frame's loud end, due by then (raw_completion_source.h completionLook)
 };
 
+// A move of a texture's memory another thread hands the submit worker (rmExcludingSubmissions): `work`, run between the
+// worker's submissions, then `done` signalled to the giver, which waits for it
+struct RMMove {
+    const std::function<void()> *work;
+    dispatch_semaphore_t done;
+};
+
 // A change of the submit worker's schedule another thread hands it (RawState::schedule)
 struct RMScheduleChange {
     enum Kind : uint8_t {
         Enqueue,
         Commit,
         Wake,
-        Encoded  // more of its tape is final (rmPublishEncoder)
+        Encoded,  // more of its tape is final (rmPublishEncoder)
+        Move
     } kind = Wake;
 
     RMCommandBuffer *buffer = nil;  // Enqueue, Commit, Encoded
     void *queue = nullptr;          // Wake: the queue whose head it wakes (null: none)
     uint32_t dependencies = 0;      // Wake: the progress it reports (RMReadyDependency)
+    RMMove *move = nullptr;         // Move
 };
 
 struct RawState {
@@ -192,7 +201,6 @@ struct RawState {
     dispatch_queue_t handlers;           // where scheduled handlers run (in order, never inside commit)
     raw::ProgressGate progress;          // whether a completion wakes the submit worker (raw_progress_gate.h)
     std::atomic<uint32_t> committed{0};  // command buffers committed and not finished (the arenas' purge)
-    std::atomic<uint64_t> moves{0};      // texture memory moves other threads made (rmExcludingSubmissions)
     std::atomic<bool> orphanCheck{
         false};  // the device idled: an encode ahead no one can commit goes (rmPipelineOrphans)
     // the submit worker is about to wait or waits for a change: a command buffer's hand-offs after its first wake it only
@@ -476,30 +484,33 @@ bool submitRange(RMCommandBuffer *cb, bool followed);
 void cancelPromises(RMCommandBuffer *cb);
 void unhold(RMCommandBuffer *cb);
 
-// RawMetalPrivateComp.mm (raw_private_comp.h): submissions and the moves of a texture's memory exclude each other through
-// the submit gate; a move inside a raw encode is refused
-// submitRange on the submit worker, excluding the moves of compressed private textures (raw_submit_gate.h)
+// RawMetalPrivateComp.mm (raw_private_comp.h): the moves of a texture's memory are the submit worker's, between its
+// submissions; a move inside a raw encode is refused
+// submitRange on the submit worker, marked as its submission
 bool submitRangeExclusive(RMCommandBuffer *cb, bool followed);
-// The gate a move of a texture's memory takes against the submit worker's submissions, and whether this thread is that
-// worker inside one (RawMetalPrivateComp.mm)
-raw::SubmitGate &rmSubmitGate();
+// Whether this thread is the submit worker inside a submission
 bool rmInSubmission();
+// RawMetalSchedule.mm: whether this thread is the submit worker, and `work` run by it between its submissions with no
+// encode ahead open (a Move change from any other thread, which waits for it)
+bool rmOnSubmitWorker();
+void rmRunOnSubmitWorker(const std::function<void()> &work);
 
-// `move` with no submission running: at once on the submit worker inside its own submission
+// `move` with no submission running and no encode ahead holding the device's command buffer: at once inside the submit
+// worker's own submission, else on the worker in its order
 template <typename Move> auto rmExcludingSubmissions(Move &&move) -> decltype(move())
 {
     if (rmInSubmission())
         return move();
-    return rmSubmitGate().exclude([&] {
-        // a texture's memory may move: an encode ahead that named it goes again (RawMetalPipeline.mm)
-        gRM->moves.fetch_add(1, std::memory_order_release);
-        return move();
+    std::optional<decltype(move())> result;
+    rmRunOnSubmitWorker([&] {
+        result = move();
     });
+    return *result;
 }
 
 void rmMarkSubmission(bool submitting);
 
-// `run` on the submit worker as a submission of its own (moves excluded): an encode ahead's step
+// `run` on the submit worker as a submission of its own: an encode ahead's step
 template <typename Run> auto rmSubmission(Run &&run) -> decltype(run())
 {
     rmMarkSubmission(true);
@@ -511,7 +522,7 @@ template <typename Run> auto rmSubmission(Run &&run) -> decltype(run())
         }
     } unmark;
 
-    return rmSubmitGate().submit(run);
+    return run();
 }
 
 extern thread_local bool tRawEncoding;

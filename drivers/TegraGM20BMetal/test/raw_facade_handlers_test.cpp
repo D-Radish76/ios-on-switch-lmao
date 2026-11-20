@@ -3,16 +3,19 @@
 // scheduled before it hands the range to the completion thread (RawMetalSubmit.mm): scheduled handlers before
 // completed ones and each kind in queue order, and a waitUntilCompleted right after waitUntilScheduled woken by the
 // range it waits for, while other work keeps the worker from going idle (an idle worker would wake the completion
-// thread on its own and hide a lost wake), and measured draws' timings handed over and learned on the submit worker alone
-// while the completion thread finishes the command buffers before them. Every command buffer is kept until all completed:
-// libobjc's release orders a dealloc after the completion thread's last touch where TSAN cannot see it.
+// thread on its own and hide a lost wake), measured draws' timings handed over and learned on the submit worker alone
+// while the completion thread finishes the command buffers before them, and another thread's move of a texture's memory
+// run by the submit worker between its submissions. Every command buffer is kept until all completed: libobjc's release
+// orders a dealloc after the completion thread's last touch where TSAN cannot see it.
 #include "raw_scale_frames.h"
 #include "../raw/runtime/raw_stamps.h"
 #include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
 
 #include <gtest/gtest.h>
+#include <pthread.h>
 #include <atomic>
 #include <chrono>
+#include <cstring>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -154,6 +157,45 @@ TEST(RawFacadeHandlers, MeasuredDrawsTimingsStayTheSubmitWorkersBesideItsComplet
                       m[size_t(i)].value == raw::kDrawStampRelease;
     }
     EXPECT_GE(stamps, 2 * raw::kWarmSamples) << "no draw was measured: the test reaches no timing";
+}
+
+// Another thread's moves (rmExcludingSubmissions: a compressed texture made plain, a fresh texture's fill before its CPU
+// copy) while command buffers are committed back to back: each runs on the submit worker, between its submissions
+TEST(RawFacadeHandlers, AnotherThreadsMoveRunsOnTheSubmitWorker)
+{
+    ASSERT_TRUE(opened().device != nil && opened().state != nil);
+    id<MTLCommandQueue> queue = [opened().device newCommandQueue];
+    const scale_frames::Shape shape{2, 12, 2};
+    const auto into = scale_frames::targets(opened().device, shape);
+    constexpr int kMoves = 50;
+    std::atomic<bool> stop{false};
+    NSMutableArray *kept = [NSMutableArray array];
+    std::thread committer([&] {
+        for (uint32_t frame = 0; !stop.load(std::memory_order_relaxed); frame++)
+            @autoreleasepool {
+                id<MTLCommandBuffer> cb = scale_frames::record(queue, opened().state, into, shape, frame);
+                [cb commit];
+                [kept addObject:cb];
+                [cb waitUntilScheduled];
+            }
+    });
+    int onWorker = 0;
+    std::thread mover([&] {
+        for (int i = 0; i < kMoves; i++) {
+            char name[64] = "";
+            rmExcludingSubmissions([&] {
+                pthread_getname_np(pthread_self(), name, sizeof name);
+                return true;
+            });
+            onWorker += strcmp(name, "com.brunostjohn.switch.raw.submit") == 0;
+        }
+    });
+    mover.join();
+    stop = true;
+    committer.join();
+    [kept.lastObject waitUntilCompleted];
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(onWorker, kMoves) << "a move ran on the thread that asked for it";
 }
 
 }  // namespace

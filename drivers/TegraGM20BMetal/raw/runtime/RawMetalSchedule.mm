@@ -136,12 +136,46 @@ void commitBuffer(RMCommandBuffer *cb)
     r.schedule.push({RMScheduleChange::Commit, cb});
 }
 
+static thread_local bool tSubmitWorker = false;
+
+bool rmOnSubmitWorker()
+{
+    return tSubmitWorker;
+}
+
+// The worker's, between its submissions: a move begins and commits the device's one command buffer on its own, so an
+// encode ahead holding it goes back first
+static void runMove(const std::function<void()> &work)
+{
+    rmPipelineYield(nil, SIZE_MAX, false);
+    work();
+}
+
+void rmRunOnSubmitWorker(const std::function<void()> &work)
+{
+    if (tSubmitWorker) {
+        runMove(work);
+        return;
+    }
+    RMMove move{&work, dispatch_semaphore_create(0)};
+    RMScheduleChange change;
+    change.kind = RMScheduleChange::Move;
+    change.move = &move;
+    gRM->schedule.push(std::move(change));
+    dispatch_semaphore_wait(move.done, DISPATCH_TIME_FOREVER);
+}
+
 // A change another thread handed the worker, on the worker
 static void applyChange(RawState &r, const RMScheduleChange &change)
 {
     RMCommandBuffer *cb = change.buffer;
     if (change.kind == RMScheduleChange::Encoded) {
         rmPipelineHanded(cb);
+        return;
+    }
+    if (change.kind == RMScheduleChange::Move) {
+        runMove(*change.move->work);
+        dispatch_semaphore_signal(change.move->done);
         return;
     }
     // a commit on one thread can hand over before the enqueue another thread made of the same command buffer
@@ -168,6 +202,7 @@ static void applyChange(RawState &r, const RMScheduleChange &change)
         r.waiting.wakeDependencies(change.dependencies);
         break;
     case RMScheduleChange::Encoded:
+    case RMScheduleChange::Move:
         break;
     }
 }
@@ -260,6 +295,7 @@ static void closePromise()
 void submitLoop()
 {
     RawState &r = *gRM;
+    tSubmitWorker = true;
     std::vector<RMCommandBuffer *> marked;
     for (;;) {
         @autoreleasepool {

@@ -3211,8 +3211,8 @@ private:
     bool overflowing_ = false;  // the open command buffer outgrew a ring with no memory for a larger one
     std::deque<std::vector<uint8_t>> overflow_;  // where it is written then (never submitted)
     uint32_t channel_ = 0;
-    // Stored only by whoever submits (the submit gate's holder, or openChannel before channelReady_), one release store
-    // a job; read by any thread, the memory release's purge among them, which holds lock_ and no submit gate
+    // Stored only by whoever submits (the submit worker, or openChannel before channelReady_), one release store a job;
+    // read by any thread, the memory release's purge among them, which holds lock_
     std::atomic<uint32_t> lastSeqno_{0};
 
     void submittedThrough(uint32_t seqno)
@@ -3620,9 +3620,10 @@ private:
     bool chunkMemory(uint64_t size, uint32_t kind, std::unique_lock<raw::Mutex> *unlocked, Chunk &ch);
     bool newChunk(uint64_t size, bool dedicated, std::unique_lock<raw::Mutex> *unlocked, uint32_t &index);
     void growLoop();
-    // Written by the submitting thread alone; a command buffer's backings are marked used before closedCount_ moves
+    // Written by the submitting thread alone (the submit worker, which runs every move too), each a load and a store; a
+    // command buffer's backings are marked used before closedCount_ moves
     std::atomic<uint64_t> commitCount_{0};
-    uint64_t begun_ = 0;  // CommandBuffer::serial's source: Device::begin's, on the submit worker or under its gate
+    uint64_t begun_ = 0;  // CommandBuffer::serial's source: Device::begin's, on the submit worker
     std::atomic<uint64_t> closedCount_{0};  // command buffers committed or abandoned
 
 #if SWITCH_RAW_DIAGNOSTICS

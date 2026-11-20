@@ -10,12 +10,12 @@ namespace {
 constexpr uint32_t kHandOff = 24;
 
 // The command buffer encoded ahead (the worker's alone): handed and not begun, or open on the device. The worker gives it
-// back or takes it before it finishes that command buffer (rmPipelineYield, rmPipelineFailed): once its completion is
-// sent, nothing of it is the worker's, and the counts giveBack wrote on it are final.
+// back or takes it before it finishes that command buffer (rmPipelineYield, rmPipelineFailed), and before it runs a move
+// of a texture's memory (rmRunOnSubmitWorker), so no encode ahead spans one: once its completion is sent, nothing of it
+// is the worker's, and the counts giveBack wrote on it are final.
 struct Ahead {
     RMCommandBuffer *cb = nil;
     bool open = false;
-    uint64_t moves = 0;  // texture moves (rmExcludingSubmissions) when it began
     const char *why = nullptr;
 };
 
@@ -112,10 +112,6 @@ bool rmPipelineStep()
         giveBack(veto);
         return true;
     }
-    if (a.open && gRM->moves.load(std::memory_order_acquire) != a.moves) {
-        giveBack(VetoDevice);
-        return true;
-    }
     const size_t until = size_t(published >> 32);
     RMRangeEncode &encode = rmRangeEncode();
     if (a.open && encode.position() >= until)
@@ -126,7 +122,6 @@ bool rmPipelineStep()
         if (!a.open) {
             // counted as committed, no purge takes an arena it encodes (raw_gpu.h purgeArenas)
             gRM->committed.fetch_add(1);
-            a.moves = gRM->moves.load(std::memory_order_acquire);
             if (gRM->raw->purgedArenas()) {
                 encode.reset();
                 gRM->committed.fetch_sub(1);
@@ -174,7 +169,7 @@ bool rmPipelineTake(RMCommandBuffer *cb, size_t from)
         giveBack(veto);
         return false;
     }
-    if (gRM->moves.load(std::memory_order_acquire) != a.moves || !gRM->raw->channelCurrent(encode.generation())) {
+    if (!gRM->raw->channelCurrent(encode.generation())) {
         giveBack(VetoDevice);
         return false;
     }

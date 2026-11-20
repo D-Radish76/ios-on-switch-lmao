@@ -612,7 +612,7 @@ enum RMPipelineVeto : uint32_t {
     VetoNative = 1u << 9,      // a surface read through its native image before a later encoder wrote it
     VetoFailed = 1u << 10,     // its encode failed ahead (the commit's encode meets the failure again, as before)
     VetoOtherWork = 1u << 11,  // the worker needed the device for another command buffer
-    VetoDevice = 1u << 12,     // a purge, a texture's memory moved or a channel made again since it began
+    VetoDevice = 1u << 12,     // a purge, or a channel made again since it began
     VetoZcull = 1u << 13,      // a pass loads a depth an earlier pass stored (raw_zcull_planes.h)
     VetoChannel = 1u << 14,    // the kernel gave its begin no channel (the commit's encode asks again)
     VetoKinds = 15
