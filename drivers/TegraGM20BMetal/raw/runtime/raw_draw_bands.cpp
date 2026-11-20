@@ -43,7 +43,7 @@ bool RenderEncoder::measurePass(bool drained)
     if (!drained || passDraws_ != 1 || !candidate_.rate || cb_->timings.size() >= kMeasuredPerCommandBuffer ||
         !measure(*candidate_.rate, candidate_.units))
         return false;
-    const uint32_t n = dev_->drawStamps_.fetch_add(1, std::memory_order_relaxed);
+    const uint32_t n = dev_->drawStamps_++;
     candidate_.slot = n % kDrawStampSlots;
     candidate_.payload = n + 1 ? n + 1 : 1;
     cb_->timings.push_back(candidate_);
@@ -88,21 +88,19 @@ void Device::noteCommittedTimings(std::vector<DrawTiming> &timings)
 {
     if (timings.empty())
         return;
-    std::lock_guard<std::mutex> l(timingsLock_);
     committedTimings_.insert(committedTimings_.end(), timings.begin(), timings.end());
     timings.clear();
-    committedTimingCount_.store(uint32_t(committedTimings_.size()), std::memory_order_release);
 }
 
-// Every completer calls this (the Metal facade's finish, a raw-direct client after its wait): each committed measured
-// draw whose two stamps the GPU wrote teaches its state, one whose slot a later draw took is dropped, the rest wait
+// Each command buffer's begin calls this, on the thread its commit handed the measured draws over on: the one thread that
+// encodes at a time, which alone takes stamp slots, so the list has one owner and no completion thread reads it. Each
+// committed measured draw whose two stamps the GPU wrote teaches its state, one whose slot a later draw took is dropped,
+// the rest wait for a later begin.
 void Device::learnCompleted()
 {
-    RAW_DIAGNOSTIC(reportDrawTimes());
-    if (!committedTimingCount_.load(std::memory_order_acquire))
+    if (committedTimings_.empty())
         return;
-    std::lock_guard<std::mutex> l(timingsLock_);
-    const uint32_t taken = drawStamps_.load(std::memory_order_relaxed);
+    const uint32_t taken = drawStamps_;
     size_t kept = 0;
     for (const DrawTiming &t : committedTimings_) {
         const auto *slot = reinterpret_cast<const volatile StampSlot *>(stamps_.cpu + drawStampOffset(t.slot, false));
@@ -123,7 +121,6 @@ void Device::learnCompleted()
             committedTimings_[kept++] = t;
     }
     committedTimings_.resize(kept);
-    committedTimingCount_.store(uint32_t(kept), std::memory_order_release);
 }
 
 }  // namespace raw

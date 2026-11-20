@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // raw_band_rates.h's measured draws on raw::Device over the kernel model, with the tiled cache on: a measured draw adds
 // its two report-semaphore stamps and no tiled-cache flush, only a draw alone in its pass is measured, a state no
-// completion teaches is measured no more than its warm picks and one in kRemeasureEvery, and any completer's
-// learnCompleted teaches what the GPU wrote.
+// completion teaches is measured no more than its warm picks and one in kRemeasureEvery, and learnCompleted, which the
+// next command buffer's begin calls, teaches what the GPU wrote.
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_record.h"
 #include "../raw/runtime/raw_stamps.h"
@@ -156,6 +156,24 @@ TEST_F(DeviceMeasure, AnyCompleterTeachesWhatTheGpuStamped)
     EXPECT_EQ(pl->bandRate.psPerUnit.load(), 1'000'000'000ull / (uint64_t(kSide) * kSide));
     dev.learnCompleted();
     EXPECT_EQ(pl->bandRate.samples.load(), 1u);
+}
+
+// The next command buffer's begin teaches what the GPU stamped, on the thread that committed the measured draw
+TEST_F(DeviceMeasure, TheNextCommandBufferTeachesWhatTheGpuStamped)
+{
+    const Words w = pass(1);
+    ASSERT_EQ(w.stamps.size(), 2u);
+    const uint64_t ticks[2] = {1000, 1000 + 614'400};
+    for (size_t i = 0; i < 2; i++) {
+        const raw::StampRelease r{w.stamps[i].second, 0, ticks[i]};
+        memcpy(kernel_model::model.host(w.stamps[i].first), &r, sizeof r);
+    }
+    EXPECT_EQ(pl->bandRate.samples.load(), 0u);
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    EXPECT_EQ(pl->bandRate.samples.load(), 1u);
+    EXPECT_EQ(pl->bandRate.psPerUnit.load(), 1'000'000'000ull / (uint64_t(kSide) * kSide));
+    cb->abandon();
 }
 
 TEST_F(DeviceMeasure, AMeasuredDrawTheGpuHasNotRunWaits)

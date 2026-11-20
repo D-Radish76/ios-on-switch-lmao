@@ -827,7 +827,7 @@ void ComputeEncoder::noteDispatch(uint64_t units, bool looping)
     candidate_ = {&state_->rate, units, 0, 0, state_->rec->keyHash, state_->instructions};
     if (!wouldMeasure(state_->rate, units))
         return;
-    const uint32_t n = dev_.drawStamps_.fetch_add(1, std::memory_order_relaxed);
+    const uint32_t n = dev_.drawStamps_++;
     candidate_.slot = n % kDrawStampSlots;
     candidate_.payload = n + 1 ? n + 1 : 1;
     room(kStampWords);

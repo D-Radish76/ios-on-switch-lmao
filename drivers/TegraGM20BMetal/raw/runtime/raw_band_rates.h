@@ -8,8 +8,9 @@
 // its pass (a dispatch alone in its encoder) of at least kMeasureUnits units is a candidate: its stamps go where the pass
 // already drains the tiled cache and waits (raw_draw_bands.cpp), so a measured draw costs what an unmeasured one does. A
 // state's first kWarmSamples candidates, then one in kRemeasureEvery, are measured, counted where they are encoded whatever
-// later teaches them; any completion teaches every committed measured draw the GPU has run (Device::learnCompleted). The
-// table is per state, its reads and its update relaxed atomics: a racing update loses a sample, never a rate.
+// later teaches them; the next command buffer's begin teaches every committed measured draw the GPU has run
+// (Device::learnCompleted). Picks, stamp slots and learning are the encoding thread's alone (the device encodes one command
+// buffer at a time), so the pick count is a load and a store; the rate stays atomic for the band decision's relaxed reads.
 #pragma once
 #include <algorithm>
 #include <atomic>
@@ -58,10 +59,14 @@ inline bool picked(uint32_t pick)
     return pick < kWarmSamples || (pick - kWarmSamples) % kRemeasureEvery == kRemeasureEvery - 1;
 }
 
-// Whether a candidate of `units` is one to measure; counts it
+// Whether a candidate of `units` is one to measure; counts it where it is large enough to be one
 inline bool measure(BandRate &r, uint64_t units)
 {
-    return units >= kMeasureUnits && picked(r.picks.fetch_add(1, std::memory_order_relaxed));
+    if (units < kMeasureUnits)
+        return false;
+    const uint32_t pick = r.picks.load(std::memory_order_relaxed);
+    r.picks.store(pick + 1, std::memory_order_relaxed);
+    return picked(pick);
 }
 
 // Whether the state's next candidate would be measured, without counting it (a dispatch's start stamp goes out before its

@@ -340,6 +340,7 @@ CommandBuffer *Device::begin()
 {
     if (!ensureChannel())
         return nullptr;
+    learnCompleted();
     Killed live = {};
     if ((contextless_ || k_.lost(channel_) || liveKill(live)) && !reopen())
         return nullptr;

@@ -3,9 +3,12 @@
 // scheduled before it hands the range to the completion thread (RawMetalSubmit.mm): scheduled handlers before
 // completed ones and each kind in queue order, and a waitUntilCompleted right after waitUntilScheduled woken by the
 // range it waits for, while other work keeps the worker from going idle (an idle worker would wake the completion
-// thread on its own and hide a lost wake). Every command buffer is kept until all completed: libobjc's release orders a
-// dealloc after the completion thread's last touch where TSAN cannot see it.
+// thread on its own and hide a lost wake), and measured draws' timings handed over and learned on the submit worker alone
+// while the completion thread finishes the command buffers before them. Every command buffer is kept until all completed:
+// libobjc's release orders a dealloc after the completion thread's last touch where TSAN cannot see it.
 #include "raw_scale_frames.h"
+#include "../raw/runtime/raw_stamps.h"
+#include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
 
 #include <gtest/gtest.h>
 #include <atomic>
@@ -99,6 +102,58 @@ TEST(RawFacadeHandlers, AWaitForCompletionAfterScheduledIsWokenByItsRange)
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     printf("longest waitUntilCompleted after waitUntilScheduled: %.2f ms\n", longest);
     EXPECT_LT(longest, 250.0);
+}
+
+// A client's draws alone in their passes over a whole target are measured (raw_band_rates.h): each commit hands its
+// timings to the device and the next begin learns them, both on the submit worker, while the completion thread finishes the
+// command buffers committed before (thread-sanitized: nothing else touches the timings)
+TEST(RawFacadeHandlers, MeasuredDrawsTimingsStayTheSubmitWorkersBesideItsCompletions)
+{
+    ASSERT_TRUE(opened().device != nil && opened().state != nil);
+    id<MTLCommandQueue> queue = [opened().device newCommandQueue];
+    const scale_frames::Shape shape{1, 1, 1};
+    const auto into = scale_frames::targets(opened().device, shape);
+    size_t first;
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        first = kernel_model::model.jobs.size();
+    }
+    NSMutableArray *kept = [NSMutableArray array];
+    for (uint32_t frame = 0; frame < 160; frame++)
+        @autoreleasepool {
+            id<MTLCommandBuffer> cb = [queue commandBuffer];
+            MTLRenderPassDescriptor *d = [MTLRenderPassDescriptor renderPassDescriptor];
+            d.colorAttachments[0].texture = into[0];
+            d.colorAttachments[0].loadAction = MTLLoadActionLoad;
+            d.colorAttachments[0].storeAction = MTLStoreActionStore;
+            id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:d];
+            [e setRenderPipelineState:opened().state];
+            const float vertices[16] = {-1, -1, 0, 1, 1, -1, 0, 1, -1, 1, 0, 1, 1, 1, 0, 1};
+            const float transform[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            const float colour[4] = {float(frame % 5) / 5, 0.5f, 0.5f, 1};
+            [e setVertexBytes:vertices length:sizeof vertices atIndex:0];
+            [e setVertexBytes:transform length:sizeof transform atIndex:2];
+            [e setFragmentBytes:colour length:sizeof colour atIndex:0];
+            [e drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
+            [e endEncoding];
+            [cb commit];
+            [kept addObject:cb];
+        }
+    [kept.lastObject waitUntilCompleted];
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    for (id<MTLCommandBuffer> cb in kept)
+        EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
+    uint32_t stamps = 0;
+    std::lock_guard<std::mutex> l(kernel_model::callLock);
+    for (size_t j = first; j < kernel_model::model.jobs.size(); j++) {
+        const std::vector<uint32_t> &words = kernel_model::model.jobs[j].words;
+        std::vector<switch_gm20b_method> m(words.size());
+        const long n = switch_gm20b_push_decode(words.data(), words.size(), m.data(), m.size());
+        for (long i = 0; i < n; i++)
+            stamps += m[size_t(i)].method == NVB197_SET_REPORT_SEMAPHORE_D &&
+                      m[size_t(i)].value == raw::kDrawStampRelease;
+    }
+    EXPECT_GE(stamps, 2 * raw::kWarmSamples) << "no draw was measured: the test reaches no timing";
 }
 
 }  // namespace

@@ -2674,7 +2674,7 @@ public:
 #endif
     // a committed command buffer's measured draws, kept until the GPU has run them (raw_band_rates.h)
     void noteCommittedTimings(std::vector<DrawTiming> &timings);
-    // the measured draws the GPU has run, each teaching its state's rate: every command buffer's completer calls it
+    // the measured draws the GPU has run, each teaching its state's rate: each command buffer's begin calls it
     void learnCompleted();
 #if SWITCH_RAW_DIAGNOSTICS
     SpanMarks spans_;
@@ -2682,7 +2682,7 @@ public:
     // and notes to the kernel for HW Test ui.launch_hitch
     std::vector<StateSpan> longSpans(uint32_t stamp);
     // The frame-weights capture (raw_draw_capture.h): asked for from any thread, its command buffers taken at begin() and
-    // handed over at commit, read back by every completer (learnCompleted)
+    // handed over at commit, read back by every completer (reportDrawTimes)
     DrawTimes drawTimes_;
     Bo drawTimeMarks_;
     bool countingInvocations_ = false;  // a capture's counter still runs: the next begin() stops it
@@ -3049,10 +3049,10 @@ private:
                              const YcbcrPlan &plan, uint32_t width, uint32_t height, Texture &t);
     // A YCbCr texture's image header as `output` reads it (`packedCodes`: a packed plane's codes a texel)
     void ycbcrImageHeader(Texture &t, uint8_t output, uint32_t packedCodes);
-    std::atomic<uint32_t> drawStamps_{0};  // measured draws' stamp slots taken (raw_stamps.h kDrawStampSlots)
-    std::mutex timingsLock_;
+    // Measured draws' stamp slots taken (raw_stamps.h kDrawStampSlots) and the committed ones not yet learned: the encoding
+    // thread's (begin, the encoders, commit), which the submit worker's order makes one thread at a time, so plain
+    uint32_t drawStamps_ = 0;
     std::vector<DrawTiming> committedTimings_;
-    std::atomic<uint32_t> committedTimingCount_{0};
     // A block-compressed image of `layout` at t.va (lock_ held, t.tic allocated): its header of `type` and, past one level,
     // its chain
     void layBlocks(const fx::MipChain &layout, const FormatInfo *f, uint32_t width, uint32_t height, uint8_t type,
