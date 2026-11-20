@@ -339,7 +339,12 @@
     bool tiled = false;
     if (!gRM->raw->createSurfaceBuffer(IOSurfaceGetID(s), base, (allocation + page - 1) & ~(page - 1), s, b->_raw,
                                        tiled)) {
-        if (!tiled)
+        if (tiled)
+            SWITCH_REFUSE_DETAIL("raw", "buf.surface.tiled", IOSurfaceGetID(s),
+                                 "newBufferWithIOSurface: of IOSurface %u, %zu bytes: the kernel laid it out "
+                                 "block-linear, so its pages hold its texels in GOBs: no buffer",
+                                 IOSurfaceGetID(s), allocation);
+        else
             os_log_error(rawLog(), "raw: %{public}s: the kernel imported no IOSurface %u: no buffer over it made",
                          getprogname(), IOSurfaceGetID(s));
         return nil;
