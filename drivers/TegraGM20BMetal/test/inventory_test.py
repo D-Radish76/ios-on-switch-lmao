@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[3]
 TEST = ROOT / 'drivers/TegraGM20BMetal/raw/test'
-KINDS = sorted((ROOT / 'drivers/NativeMetal/abi/kinds').glob('*.json'))
+KINDS = sorted((ROOT / 'drivers/TegraGM20BMetal/abi/kinds').glob('*.json'))
 FIRST_PARTY = ('raw', 'zero', 'refused')
 
 

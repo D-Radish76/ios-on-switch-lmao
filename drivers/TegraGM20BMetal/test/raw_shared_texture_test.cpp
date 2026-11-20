@@ -384,12 +384,12 @@ TEST(RawSharedTexture, ALaidOutSurfaceHoldsAGXsPropertiesAndIOSurfaceMakesIt)
     EXPECT_EQ(IOSurfaceCreate((__bridge CFDictionaryRef)rmLaidOutSurfaceProperties(0)), nullptr);
 }
 
-// _MTLDevice's own methods in each kind's ABI table (drivers/NativeMetal/abi/kinds)
+// _MTLDevice's own methods in each kind's ABI table (drivers/TegraGM20BMetal/abi/kinds)
 TEST(RawSharedTexture, AResourceIndexOpensWhereTheKindsMetalHasIt)
 {
     for (const raw::shared::Kind &k : raw::shared::kKinds) {
-        NSString *path =
-            [NSString stringWithFormat:@"drivers/NativeMetal/abi/kinds/%.*s.json", int(k.kind.size()), k.kind.data()];
+        NSString *path = [NSString
+            stringWithFormat:@"drivers/TegraGM20BMetal/abi/kinds/%.*s.json", int(k.kind.size()), k.kind.data()];
         NSData *data = [NSData dataWithContentsOfFile:path];
         ASSERT_NE(data, nil) << path.UTF8String;
         NSDictionary *table = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];

@@ -9,7 +9,7 @@ or ADRP+LDR of the image's own text to a selector, and every branch out of the i
 
 import array
 
-from drivers.NativeMetal.abi.dyld_cache import CacheError, DyldCache
+from drivers.TegraGM20BMetal.abi.dyld_cache import CacheError, DyldCache
 
 ADRP_MASK, ADRP = 0x9F000000, 0x90000000
 ADRP_X1_MASK, ADRP_X1 = 0x9F00001F, 0x90000001

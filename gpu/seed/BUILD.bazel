@@ -7,8 +7,6 @@ package(default_visibility = ["//visibility:public"])
 
 lint_files()
 
-METAL = "//drivers/NativeMetal"
-
 GM20B_METAL = "//drivers/TegraGM20BMetal"
 
 label_flag(
@@ -51,7 +49,7 @@ seed_tools(
     name = "local_tools",
     compile = "//third_party/mesa/src/nouveau/switch_compile:host",
     context_header = "//kits/SwitchGM20BEmit:context",
-    metal_abi = METAL + "/abi:MetalABI.h",
+    metal_abi = GM20B_METAL + "/abi:MetalABI.h",
     raw_generator = GM20B_METAL + ":raw/pack/rawpack.py",
     raw_srcs = [GM20B_METAL + ":raw_stack_sources"],
     stack = "//gpu:raw_stack",

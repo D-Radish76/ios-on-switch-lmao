@@ -1,7 +1,7 @@
 """kinds/<kind>.json: the Metal.framework ABI the frontend depends on, read out of a kind's SystemOS dyld cache.
 
-    bazel run [--config=ios27] //drivers/NativeMetal/abi:extract    (rewrites the selected kind's table)
-    bazel run [--config=ios27] //drivers/NativeMetal/abi:verify     (compares it)
+    bazel run [--config=ios27] //drivers/TegraGM20BMetal/abi:extract    (rewrites the selected kind's table)
+    bazel run [--config=ios27] //drivers/TegraGM20BMetal/abi:verify     (compares it)
     extract.py --cache <dyld_shared_cache_arm64[e]> --kind <kind> [--check]
 
 The frontend's device is a dynamic subclass of _MTLDevice that adds no instance variables and writes its answers
@@ -28,9 +28,9 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from drivers.NativeMetal.abi.dyld_cache import CacheError, DyldCache
-from drivers.NativeMetal.abi.objc_metadata import ObjcReader
-from drivers.NativeMetal.abi.sends import SendScanner
+from drivers.TegraGM20BMetal.abi.dyld_cache import CacheError, DyldCache
+from drivers.TegraGM20BMetal.abi.objc_metadata import ObjcReader
+from drivers.TegraGM20BMetal.abi.sends import SendScanner
 
 HERE = Path(__file__).resolve().parent
 METAL = '/System/Library/Frameworks/Metal.framework/Metal'
@@ -255,7 +255,7 @@ def main() -> None:
     parser.add_argument('--pins', type=Path, default=HERE.parents[2] / 'ipsw/pins.bzl')
     workspace = os.environ.get('BUILD_WORKSPACE_DIRECTORY')
     parser.add_argument(
-        '--tables', type=Path, default=Path(workspace or HERE.parents[2]) / 'drivers/NativeMetal/abi/kinds'
+        '--tables', type=Path, default=Path(workspace or HERE.parents[2]) / 'drivers/TegraGM20BMetal/abi/kinds'
     )
     parser.add_argument('--check', action='store_true', help='compare with the committed table instead of writing')
     args = parser.parse_args()
@@ -273,7 +273,7 @@ def main() -> None:
         path.write_text(text)
     elif not path.exists() or path.read_text() != text:
         raise SystemExit(
-            f"{path}: differs from {args.kind}'s Metal.framework (bazel run //drivers/NativeMetal/abi:extract)"
+            f"{path}: differs from {args.kind}'s Metal.framework (bazel run //drivers/TegraGM20BMetal/abi:extract)"
         )
 
 

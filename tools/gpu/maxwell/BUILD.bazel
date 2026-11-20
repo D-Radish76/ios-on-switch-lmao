@@ -292,7 +292,7 @@ direct_runner(
         "//drivers/TegraGM20BMetal:raw_stack_sources",
         "//kits/SwitchGM20B:class_headers",
     ],
-    metal_abi = "//drivers/NativeMetal/abi:MetalABI.h",
+    metal_abi = "//drivers/TegraGM20BMetal/abi:MetalABI.h",
     tools = "//gpu/seed:local_tools",
     translate = "//gpu:translate_host",
     visibility = ["//drivers/TegraGM20BMetal/test:__pkg__"],

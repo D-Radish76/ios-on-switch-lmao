@@ -12,7 +12,7 @@ relative_list_list_t) and dyld's objc-shared-cache.h (ObjCOptimizationHeader).
 
 from dataclasses import dataclass, field
 
-from drivers.NativeMetal.abi.dyld_cache import DyldCache
+from drivers.TegraGM20BMetal.abi.dyld_cache import DyldCache
 
 CLASS_SUPERCLASS, CLASS_DATA = 8, 32
 DATA_FLAG_BITS = 7

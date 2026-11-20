@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Selectors the kinds' system images send (drivers/NativeMetal/abi/kinds/*.json "sent"; raw/test/selcover) that m2v's objects
+// Selectors the kinds' system images send (drivers/TegraGM20BMetal/abi/kinds/*.json "sent"; raw/test/selcover) that m2v's objects
 // answer zero (the frontend's forwardZero) or do not answer at all, answered here: forwarding them would make an m2v twin of a
 // texture, buffer or queue for a zero, or send a command buffer to m2v whole for a no-op.
 #import "RawMetalInternal.h"

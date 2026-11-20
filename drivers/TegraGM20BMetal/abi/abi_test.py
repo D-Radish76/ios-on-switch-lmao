@@ -6,9 +6,9 @@ import re
 import unittest
 from pathlib import Path
 
-from drivers.NativeMetal.abi.dyld_cache import decode_pointer
-from drivers.NativeMetal.abi.extract import closure, struct_fields
-from drivers.NativeMetal.abi.gen import header
+from drivers.TegraGM20BMetal.abi.dyld_cache import decode_pointer
+from drivers.TegraGM20BMetal.abi.extract import closure, struct_fields
+from drivers.TegraGM20BMetal.abi.gen import header
 
 HERE = Path(__file__).resolve().parent
 KINDS = sorted((HERE / 'kinds').glob('*.json'))

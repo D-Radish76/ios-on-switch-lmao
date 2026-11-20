@@ -41,7 +41,7 @@ filegroup(
         "raw/pack/srgb_encode.h",  # the sRGB YCbCr store states' table, the device's copy of it (Device::srgbEncode_)
         "raw/pack/xr_srgb_decode.h",  # BGR10_XR_sRGB's tables, which raw_xr_srgb.h's model reads
         "raw/pack/xr_srgb_encode.h",
-        "//drivers/NativeMetal/abi:MetalABI.h",
+        "//drivers/TegraGM20BMetal/abi:MetalABI.h",
         "//drivers/TegraGM20BMetal/precompile/ca-selectors:raw_ca_selector_layout.h",
     ],
 )
@@ -388,7 +388,7 @@ ios_binary(
         "-I",
         "{bin}",
         "-I",
-        "{bin}/drivers/NativeMetal/abi",
+        "{bin}/drivers/TegraGM20BMetal/abi",
         "-I",
         "third_party/mesa/src/nouveau/headers",
         "-lc++",

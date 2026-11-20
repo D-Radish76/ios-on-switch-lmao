@@ -4,8 +4,8 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 # extract.py: _MTLDevice's size, methods and limits table, the private classes the frontend calls, and per Metal object
 # the protocol methods the system's code sends. The tables are committed (CI has no IPSWs):
 #
-#   bazel run [--config=ios27] //drivers/NativeMetal/abi:extract   rewrites the selected kind's table from its cryptex
-#   bazel run [--config=ios27] //drivers/NativeMetal/abi:verify    fails if the committed table differs from it
+#   bazel run [--config=ios27] //drivers/TegraGM20BMetal/abi:extract   rewrites the selected kind's table from its cryptex
+#   bazel run [--config=ios27] //drivers/TegraGM20BMetal/abi:verify    fails if the committed table differs from it
 #
 # :MetalABI.h is the selected kind's (--//ipsw:kind) facts the frontend compiles in (gen.py).
 load("@rules_python//python:py_binary.bzl", "py_binary")
@@ -74,7 +74,7 @@ genrule(
     name = "header",
     srcs = select(
         {"//ipsw:" + table[len("kinds/"):-len(".json")]: [table] for table in glob(["kinds/*.json"])},
-        no_match_error = "drivers/NativeMetal/abi has no table for this IPSW kind (bazel run :extract)",
+        no_match_error = "drivers/TegraGM20BMetal/abi has no table for this IPSW kind (bazel run :extract)",
     ),
     outs = ["MetalABI.h"],
     cmd = "$(execpath :gen) $(SRCS) $@",

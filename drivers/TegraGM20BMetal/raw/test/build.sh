@@ -2,13 +2,13 @@
 # raw GM20B path (r7-raw, r8-rawca) host build: the mock GPU with nvdec (pack/), rawframe (raw C++ API), killcheck (a channel
 # kill) and the checks and oracles below.
 # usage: test/build.sh <tree> <outdir>
-#   MetalABI.h: bazel build //drivers/NativeMetal/abi:header (or METAL_ABI=<its directory>)
+#   MetalABI.h: bazel build //drivers/TegraGM20BMetal/abi:header (or METAL_ABI=<its directory>)
 set -e -o pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 RAW=$HERE/..
 TREE=$1
 OUT=$2
-METAL_ABI=${METAL_ABI:-$TREE/bazel-bin/drivers/NativeMetal/abi}
+METAL_ABI=${METAL_ABI:-$TREE/bazel-bin/drivers/TegraGM20BMetal/abi}
 mkdir -p "$OUT"
 # SWITCH_RAW_HARNESS_MARKS: raw_gpu.cpp marks each fetch barrier it leaves out and each draw it splits, for pack/eqcheck.py
 FLAGS=(-O2 -g -Wall -Wextra -std=c++17 -DSWITCH_RAW_HARNESS_MARKS -I "$TREE/bazel-bin" -I "$TREE/kits/SwitchGM20BEmit/mesa"

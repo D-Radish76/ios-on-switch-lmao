@@ -4,7 +4,7 @@
 // PhotosUICore's texture converter takes its largest image from 0x84/0x88 (-[PXGMetalTextureConverter
 // createTextureFromCGImage:transform:alpha:options:], PXGCreateMetalTextureFromBytesInCGImage); with them 0 every image is
 // "too large", is redrawn to fit 0x0 and PXGCreateContext asserts. CoreRE reads minBufferNoCopyAlignmentBytes at 0x7c. The
-// fields and their offsets are the selected IPSW kind's (kLimitFields, MetalABI.h: drivers/NativeMetal/abi).
+// fields and their offsets are the selected IPSW kind's (kLimitFields, MetalABI.h: drivers/TegraGM20BMetal/abi).
 #pragma once
 #include <cstdint>
 #include <cstring>

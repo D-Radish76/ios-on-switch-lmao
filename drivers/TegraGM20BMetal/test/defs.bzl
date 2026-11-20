@@ -40,7 +40,7 @@ RAW_HOST_COPTS = [
 ]
 
 RAW_HOST_DEPS = [
-    "//drivers/NativeMetal/abi:metal_abi",
+    "//drivers/TegraGM20BMetal/abi:metal_abi",
     "//kits/SwitchGM20B:caps",
     "//kits/SwitchGM20BEmit:macros_h",
     "//third_party/mesa/src/nouveau/switch_compile:host_cc",

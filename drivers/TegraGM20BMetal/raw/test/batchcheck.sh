@@ -9,8 +9,8 @@ OUT=$(cd "$1" && pwd)
 HERE=$(cd "$(dirname "$0")" && pwd)
 RAW=$(cd "$HERE/.." && pwd)
 TREE=$(cd "$HERE/../../../.." && pwd)
-# the frontend's MetalABI.h: bazel build //drivers/NativeMetal/abi:header (or METAL_ABI=<its directory>)
-METAL_ABI=${METAL_ABI:-$TREE/bazel-bin/drivers/NativeMetal/abi}
+# the frontend's MetalABI.h: bazel build //drivers/TegraGM20BMetal/abi:header (or METAL_ABI=<its directory>)
+METAL_ABI=${METAL_ABI:-$TREE/bazel-bin/drivers/TegraGM20BMetal/abi}
 # the push headers (bazel build //kits/SwitchGM20BEmit:push_headers, or PUSH_HEADERS=<their directory>)
 PUSH_HEADERS=${PUSH_HEADERS:-$TREE/bazel-bin/kits/SwitchGM20BEmit/gen}
 FLAGS=(-O1 -g -Wall -Wextra -std=c++17 -DSWITCH_RAW_HARNESS_MARKS '-fsanitize=address,undefined' -fno-sanitize-recover=all

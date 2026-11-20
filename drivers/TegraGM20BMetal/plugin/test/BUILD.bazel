@@ -26,7 +26,7 @@ host_test(
         "//drivers/TegraGM20BMetal:plugin/LimitsTable.h",
     ],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -78,7 +78,7 @@ host_test(
         "@ipsw//:crawl_tree",
     ],
     env = {"SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)"},
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -93,7 +93,7 @@ host_test(
         "@ipsw//:crawl_tree",
     ],
     env = {"SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)"},
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(

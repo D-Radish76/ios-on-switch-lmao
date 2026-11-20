@@ -76,7 +76,7 @@ host_test(
     copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
     linkopts = ["-lobjc"],
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -228,7 +228,7 @@ host_library(
     copts = RAW_DEVICE_COPTS,
     cxx_std = "c++17",
     deps = [
-        "//drivers/NativeMetal/abi:metal_abi",
+        "//drivers/TegraGM20BMetal/abi:metal_abi",
         "//kits/SwitchGM20B:classes",
         "//kits/SwitchGM20BEmit:emit_ndebug",
         "//kits/SwitchGM20BEmit:macros_h",
@@ -1083,7 +1083,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stage_textures.h",
     ],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -1237,7 +1237,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stage_textures.h",
     ],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -1261,7 +1261,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stage_textures.h",
     ],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -1825,7 +1825,7 @@ host_test(
     copts = ["-Idrivers/TegraGM20B"],
     cxx_std = "c++17",
     deps = [
-        "//drivers/NativeMetal/abi:metal_abi",
+        "//drivers/TegraGM20BMetal/abi:metal_abi",
         "//kits/SwitchGM20B:classes",
         "//kits/SwitchGM20BEmit:emit_ndebug",
     ],
@@ -1915,8 +1915,8 @@ py_test(
     name = "inventory_test",
     srcs = ["inventory_test.py"],
     data = [
-        "//drivers/NativeMetal/abi:kinds/21H461.json",
-        "//drivers/NativeMetal/abi:kinds/24B119.json",
+        "//drivers/TegraGM20BMetal/abi:kinds/21H461.json",
+        "//drivers/TegraGM20BMetal/abi:kinds/24B119.json",
         "//drivers/TegraGM20BMetal:raw/test/inventory.tsv",
         "//drivers/TegraGM20BMetal:raw/test/refused.txt",
         "//drivers/TegraGM20BMetal:raw/test/selgaps.txt",
@@ -2027,7 +2027,7 @@ raw_directcheck(
         "//kits/SwitchGM20B:class_headers",
     ],
     crawl = "//gpu/seed:crawl",
-    metal_abi = "//drivers/NativeMetal/abi:MetalABI.h",
+    metal_abi = "//drivers/TegraGM20BMetal/abi:MetalABI.h",
     pack = "//gpu/seed:raw_pack",
     tools = "//gpu/seed:local_tools",
     translate = "//gpu:translate_host",
@@ -2392,7 +2392,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_stage_textures.h",
     ],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -3258,7 +3258,7 @@ host_test(
     data = ["@ipsw//:crawl_qc"],
     env = {"SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)"},
     deps = [
-        "//drivers/NativeMetal/abi:metal_abi",
+        "//drivers/TegraGM20BMetal/abi:metal_abi",
         "//kits/SwitchGM20B:caps",
     ],
 )
@@ -3273,7 +3273,7 @@ host_test(
     copts = ["-I$(GENDIR)/kits/SwitchGM20B"],
     cxx_std = "c++17",
     deps = [
-        "//drivers/NativeMetal/abi:metal_abi",
+        "//drivers/TegraGM20BMetal/abi:metal_abi",
         "//kits/SwitchGM20B:caps",
     ],
 )
@@ -3290,7 +3290,7 @@ host_test(
     copts = ["-I$(GENDIR)/kits/SwitchGM20B"],
     cxx_std = "c++17",
     deps = [
-        "//drivers/NativeMetal/abi:metal_abi",
+        "//drivers/TegraGM20BMetal/abi:metal_abi",
         "//kits/SwitchGM20B:caps",
     ],
 )
@@ -3360,8 +3360,8 @@ host_test(
     ],
     cxx_std = "c++17",
     data = [
-        "//drivers/NativeMetal/abi:kinds/21H461.json",
-        "//drivers/NativeMetal/abi:kinds/24B119.json",
+        "//drivers/TegraGM20BMetal/abi:kinds/21H461.json",
+        "//drivers/TegraGM20BMetal/abi:kinds/24B119.json",
     ],
     linkopts = [
         "-framework",
@@ -3372,7 +3372,7 @@ host_test(
         "Metal",
     ],
     deps = [
-        "//drivers/NativeMetal/abi:metal_abi",
+        "//drivers/TegraGM20BMetal/abi:metal_abi",
         "//kits/SwitchGM20B:classes",
         "//kits/SwitchGM20BEmit:emit",
     ],
@@ -3417,7 +3417,7 @@ host_test(
     ],
     copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -3790,7 +3790,7 @@ host_test(
     ],
     copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -3825,7 +3825,7 @@ host_test(
     ],
     copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -4108,7 +4108,7 @@ host_test(
         "-framework",
         "Metal",
     ],
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -4180,7 +4180,7 @@ host_test(
         "-framework",
         "Metal",
     ],
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -4252,7 +4252,7 @@ host_test(
         "-framework",
         "Metal",
     ],
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -4331,7 +4331,7 @@ host_test(
         "-framework",
         "Metal",
     ],
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -4386,7 +4386,7 @@ host_test(
     ],
     copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 host_test(
@@ -4447,7 +4447,7 @@ host_test(
         "-framework",
         "CoreFoundation",
     ],
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
+    deps = ["//drivers/TegraGM20BMetal/abi:metal_abi"],
 )
 
 # The raw runtime's C++ units as //gpu:plugin builds them (its cc_srcs, the shader compiler's among them), for this Mac
