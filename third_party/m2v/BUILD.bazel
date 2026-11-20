@@ -11,9 +11,6 @@ lint_files(exclude = THIRD_PARTY_LINT_EXCLUDE)
 exports_files([
     # The workspace manifest the crates inherit from: metal2vulkan's source fingerprint hashes it.
     "Cargo.toml",
-    # The runtime's AIR fixtures, which the Metal bridge assembles and compiles in (gpu/BUILD.bazel).
-    "crates/metal2vulkan-validation/fixtures/public/examples/runtime_examples.ll",
-    "crates/metal2vulkan-validation/fixtures/public/kernel_function_constant_gate_fold.ll",
 ])
 
 # The profiles are upstream's at 963f0e64, only those the translation tests name. engine_stencil.rs sweeps the directory
