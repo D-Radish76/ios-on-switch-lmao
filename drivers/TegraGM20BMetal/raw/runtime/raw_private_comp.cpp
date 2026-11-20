@@ -61,7 +61,7 @@ void Device::noteCompressed(const TextureAsk &ask, const Bo &bo, uint64_t bytes,
     t.storage = {t.va, bytes, false};
     t.comptags = true;
     PrivateCompTexture &p = privateComp_[&t];
-    p.comp = {bo};
+    p.comp = {bo, ask.compressKind};
     p.ask = ask;
     p.ask.compressKind = 0;
     privateMade_.store(privateMade_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
@@ -90,6 +90,7 @@ bool Device::createCompressedTexture(uint32_t width, uint32_t height, uint32_t f
     ask.height = height;
     ask.format = format;
     ask.tiled = true;
+    ask.compressKind = kind;
     noteCompressed(ask, bo, bl.bytes, t);
     writeTic(t);
     return true;
@@ -261,10 +262,20 @@ void Device::releasePrivateCompressed(const Texture &t)
                 freeTic(level);
         delete stale;
     }
-    RAW_DIAGNOSTIC(stats.compHeld--);
-    RAW_DIAGNOSTIC(stats.compHeldBytes -= it->second.comp.bo.bytes);
-    k_.free(it->second.comp.bo);
+    PrivateComp comp = it->second.comp;
     privateComp_.erase(it);
+    // Core Animation makes its large targets again at each app open and close (boot 21: its 1792x1472 BGRA8 zoom window
+    // target): the memory stays made for the next target of its kind until compTrim finds it idle
+    if (comp.kind && !stopping_ && comp_.servesRefusals(comp.bo.bytes, comp.kind)) {
+        comp_.ready.push_back({comp.bo, comp.kind, commits(), compClock()});
+        backingsChanged();
+        compRearm_ = true;
+        compStart();
+        return;
+    }
+    RAW_DIAGNOSTIC(stats.compHeld--);
+    RAW_DIAGNOSTIC(stats.compHeldBytes -= comp.bo.bytes);
+    k_.free(comp.bo);
     comp_.freed();
 }
 

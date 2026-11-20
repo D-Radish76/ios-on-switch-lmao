@@ -90,6 +90,7 @@ constexpr void sampleGrid(uint32_t samples, uint32_t &sxLog2, uint32_t &syLog2)
 
 struct PrivateComp {
     Bo bo;
+    uint32_t kind = 0;  // bo's: when the texture goes, bo joins the made buffers (CompQueue::ready) for its kind
 };
 
 }  // namespace raw

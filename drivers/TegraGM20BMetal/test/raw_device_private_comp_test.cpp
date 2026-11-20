@@ -182,16 +182,60 @@ TEST_F(DevicePrivateComp, AStoredMultisampledTextureMovesAsItsSampleGrid)
     dev.destroyTexture(first);
 }
 
-TEST_F(DevicePrivateComp, AMovedTexturesCompressedMemoryGoesBackWithIt)
+TEST_F(DevicePrivateComp, AMovedTexturesCompressedMemoryStaysMadeWhenItGoes)
 {
     raw::Texture first, t;
     compressedSecond(first, t, [&](raw::Texture &x) {
         return dev.createMipTexture(128, 128, kBGRA8, 3, x, nullptr, raw::kCompKindC32);
     });
     ASSERT_TRUE(dev.plainFromCompressed(t));
-    const size_t freedBefore = kernel_model::model.freed.size();
+    const size_t freedBefore = kernel_model::model.freed.size(), ready = raw::DeviceHarness::compReady(dev);
     dev.destroyTexture(t);
-    EXPECT_GT(kernel_model::model.freed.size(), freedBefore) << "the compressed buffer went back to the kernel";
+    EXPECT_EQ(kernel_model::model.freed.size(), freedBefore);
+    EXPECT_EQ(raw::DeviceHarness::compReady(dev), ready + 1) << "made for the next texture of its kind";
+    dev.destroyTexture(first);
+}
+
+// Core Animation's zoom window target, made again at each app open and close: the memory a closed one held makes the
+// next one compressed at its creation, with no BoAlloc
+TEST_F(DevicePrivateComp, AClosedTargetsMemoryServesTheNextOfItsKind)
+{
+    raw::Texture first, opened;
+    compressedSecond(first, opened, [&](raw::Texture &x) {
+        return dev.createCompressedTexture(kW, kH, kBGRA8, raw::kCompKindC32, x) ||
+               dev.createTexture(kW, kH, kBGRA8, x, false, true);
+    });
+    const uint64_t va = opened.va, handles = kernel_model::model.nextHandle;
+    const size_t freed = kernel_model::model.freed.size();
+    dev.destroyTexture(opened);
+    EXPECT_EQ(kernel_model::model.freed.size(), freed);
+    raw::Texture again;
+    ASSERT_TRUE(dev.createCompressedTexture(kW, kH, kBGRA8, raw::kCompKindC32, again));
+    EXPECT_EQ(again.va, va);
+    EXPECT_EQ(kernel_model::model.nextHandle, handles) << "no BoAlloc";
+    dev.destroyTexture(again);
+    dev.destroyTexture(first);
+}
+
+// An ask refused for a shortage waits for memory given back (raw_comp.h CompQueue::refuse): memory that cannot serve it
+// goes back when its texture goes, as before, so that ask may be made again
+TEST_F(DevicePrivateComp, AClosedTargetsMemoryGoesBackWhereARefusedAskWantsMore)
+{
+    raw::Texture first, opened, larger;
+    compressedSecond(first, opened, [&](raw::Texture &x) {
+        return dev.createCompressedTexture(kW, kH, kBGRA8, raw::kCompKindC32, x) ||
+               dev.createTexture(kW, kH, kBGRA8, x, false, true);
+    });
+    const uint64_t refused = dev.stats.compFailed.load();
+    kernel_model::model.refuseAllocCount = 1;
+    ASSERT_FALSE(dev.createCompressedTexture(2 * kW, kH, kBGRA8, raw::kCompKindC32, larger));
+    for (int i = 0; i < 5000 && dev.stats.compFailed.load() == refused; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_GT(dev.stats.compFailed.load(), refused) << "the larger ask was refused";
+    const size_t freed = kernel_model::model.freed.size();
+    dev.destroyTexture(opened);
+    EXPECT_GT(kernel_model::model.freed.size(), freed) << "given back to the kernel";
+    EXPECT_EQ(raw::DeviceHarness::compReady(dev), 0u);
     dev.destroyTexture(first);
 }
 

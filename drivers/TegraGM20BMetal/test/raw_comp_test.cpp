@@ -312,6 +312,18 @@ TEST(RawComp, AReadyBufferAnswersItsWant)
     EXPECT_FALSE(q.asked({0x20000, 0xe9}));
 }
 
+// raw_private_comp.cpp releasePrivateCompressed keeps a closed texture's memory made only where it serves every ask
+// refused for a shortage; otherwise it goes back, and those asks are made again
+TEST(RawComp, KeptMemoryServesEveryRefusedAsk)
+{
+    raw::CompQueue q;
+    EXPECT_TRUE(q.servesRefusals(1 << 20, raw::kCompKindC32)) << "none refused";
+    q.refuse({4 << 20, raw::kCompKindC32}, true);
+    EXPECT_TRUE(q.servesRefusals(8 << 20, raw::kCompKindC32));
+    EXPECT_FALSE(q.servesRefusals(2 << 20, raw::kCompKindC32)) << "too small for the refused ask";
+    EXPECT_FALSE(q.servesRefusals(8 << 20, raw::kCompKindC64)) << "another kind";
+}
+
 TEST(RawComp, ClassesAreQuarterStepsOfWholeLines)
 {
     EXPECT_EQ(raw::compClassBytes(1), raw::kCompGranule);

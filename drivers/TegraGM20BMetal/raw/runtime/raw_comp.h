@@ -325,6 +325,15 @@ struct CompQueue {
         return true;
     }
 
+    // Whether `bytes` of `kind` kept made serves every want refused for a shortage: keeping it then holds back no other
+    // ask that giving it back would let through
+    bool servesRefusals(uint64_t bytes, uint32_t kind) const
+    {
+        return std::all_of(refused.begin(), refused.end(), [&](const CompWant &w) {
+            return w.kind == kind && w.bytes <= bytes;
+        });
+    }
+
     // This process gave compressed memory back: the wants refused for a shortage may be asked again
     void freed()
     {
