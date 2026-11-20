@@ -50,8 +50,8 @@ public enum Registry {
         LayeredShaderTestsTest(), LayeredShaderStencilTest(), WideSetTest(), FarUniformTest(), WideTexturesTest(),
         TextureShapesXRTest(),
         TextureShapesDepthTest(), TextureShapesSrgbPairTest(), DepthShapesTest(),
-        VertexOnlyStateTest(), RenderReflectionTest(), ComputeReflectionTest(), Depth16MultisampleResolveTest(),
-        InvalidRequestsTest(), HeapAliasableUsedTest(),
+        VertexOnlyStateTest(), RenderReflectionTest(), ComputeReflectionTest(), ReflectionKindsTest(),
+        FencePageRegionsTest(), Depth16MultisampleResolveTest(), InvalidRequestsTest(), HeapAliasableUsedTest(),
     ]
 
     /// Routes the m2v removal moved onto the raw path, each against Apple's GPU

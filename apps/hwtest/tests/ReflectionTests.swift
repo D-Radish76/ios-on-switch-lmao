@@ -3,31 +3,6 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The raw facade's reflections (drivers/TegraGM20BMetal/raw/runtime/RawMetalReflection.mm): asked with argument info,
-/// a state's bindings come from the pack's blob or the system shader compiler's.
-enum ReflectionCheck {
-    static func describe(_ bindings: [MTLBinding]) -> String {
-        bindings.isEmpty ? "-" : bindings.map { "\($0.name):\($0.index):\($0.type.rawValue)" }.joined(separator: ",")
-    }
-
-    // Synchronous on purpose: inside an async run Swift resolves the tuple-returning calls to Metal's completion-handler
-    // forms
-    static func render(
-        _ device: MTLDevice, _ descriptor: MTLRenderPipelineDescriptor
-    ) throws
-        -> MTLRenderPipelineReflection?
-    {
-        try device.makeRenderPipelineState(descriptor: descriptor, options: [.bindingInfo, .bufferTypeInfo]).1
-    }
-
-    static func compute(_ device: MTLDevice, _ function: MTLFunction) throws -> MTLComputePipelineReflection? {
-        var reflection: MTLComputePipelineReflection?
-        _ = try device.makeComputePipelineState(
-            function: function, options: [.bindingInfo, .bufferTypeInfo], reflection: &reflection)
-        return reflection
-    }
-}
-
 /// quad_vertex's corners at buffer 0 and solid_fragment's colour at buffer 0, from a state made with argument info
 struct RenderReflectionTest: HWTest {
     let id = "gpu.raw.render_reflection"

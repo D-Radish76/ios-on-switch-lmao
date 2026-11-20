@@ -768,6 +768,21 @@ GROUPS: dict[str, list[Check]] = {
             "that test's",
         ),
         Check(
+            'raw.reflection-wrong-kind',
+            'reflection-fix',
+            'where Metal asserts',
+            process='!SwitchHWTest',
+            subsystem=GPU_METAL_SUBSYSTEM,
+            level='error',
+            regex=r'^raw: (?P<who>[^:]+): (?P<selector>\w+) asked of binding (?P<binding>\S+) of type (?P<type>\d+), '
+            r'where Metal asserts$',
+            show=('who', 'selector', 'type'),
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalReflectionObjects.mm',
+            note="a pipeline binding asked another kind's selector (a texture's bufferAlignment): Metal fails an "
+            'assertion there and aborts the process, the raw path answers 0, NO or nil; HW Test asks on purpose '
+            '(gpu.raw.reflection_kinds wrong_kind)',
+        ),
+        Check(
             'raw.failed-hwtest',
             'failed-counts',
             'a command buffer failed',

@@ -106,3 +106,21 @@ public final class GPUConnection {
         b.withUnsafeBytes { $0.loadUnaligned(fromByteOffset: at, as: UInt64.self) }
     }
 }
+
+extension GPUConnection {
+    /// The connection's fence page and the calls that reach it, as drivers/TegraGM20B/TegraGM20BFencePageABI.h (its
+    /// regions), TegraGM20BClockABI.h (ClockAnchors) and TegraGM20BABI.h (GetInfo, ChannelCreate, ChannelDestroy) lay
+    /// them out.
+    public enum FencePage {
+        public static let getInfo: UInt32 = 1, infoBytes = 192, infoFenceToken = 28
+        public static let channelCreate: UInt32 = 6, channelDestroy: UInt32 = 7, channelReplyBytes = 16
+        /// TegraGM20BEngineCopy | TegraGM20BEngineCopyOnly
+        public static let copyOnlyEngines: UInt32 = 0x8000_0001
+        public static let clockAnchors: UInt32 = 0x4341, clockAnchorsReplyBytes = 16
+        public static let anchorsFirst = 2048, anchorsBytes = 1024
+        public static let promisesFirst = 3136, promiseWords = 32
+        /// TegraGM20BFencePageGpuBytes: the GPU maps the page's first bytes at an address aligned to them, so a GPU
+        /// address in the page names its byte by its offset from that alignment
+        public static let gpuBytes = 4096
+    }
+}

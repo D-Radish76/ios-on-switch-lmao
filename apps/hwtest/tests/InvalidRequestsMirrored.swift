@@ -14,16 +14,18 @@ import Metal
 /// _u16_differ 0; the M4 Max covers 120 and 136 pixels: _u32_red, _u16_red, reported), skipped call.icb 2 (the controls
 /// none). resolve_off: four timestamp samples resolved at offset 2 of a buffer of 0x22 bytes land as the same resolve
 /// at offset 0 does, two bytes on, bytes 0-1 and from 34 on as they were, skipped call.counter 1 (resolve_off_stamps:
-/// the resolved words that hold a sample, 2 on the M4 Max, reported). range_off: an execute whose range it reads at
-/// offset 2 of a 4096-byte buffer fails its command buffer as the M4 Max's GPU faults: MTLCommandBufferErrorPageFault
-/// (3), underlying IOGPUCommandQueueErrorDomain 11, by call.icb, the failure expected; the raw path fails it as it
-/// records, so what its neighbouring blits wrote and what it drew (the M4 Max: 4096 and 4096 bytes, 256 of 256 pixels)
-/// is reported only (range_off_before, _after, _drawn). layers_past: a clear-only pass of renderTargetArrayLength 3
-/// into a BGRA8Unorm array of 3 layers beside an A1BGR5Unorm array of 2 (a format the raw path renders through a
-/// stand-in), run twice: both raw, the layers both arrays have cleared, skipped pass.level 2: the M4 Max clears each
-/// attachment's own layers, the raw path the layers every attachment has, so the BGRA8's third holds its clear on the
-/// M4 Max and its fill on raw (layers_past_bgra8_l2: 1 cleared, 0 its fill, reported). layers_plain: the BGRA8Unorm
-/// array alone from slice 1: slices 1 and 2 cleared, slice 0 its fill, skipped none.
+/// the resolved words that hold a sample, 2 on the M4 Max, reported). range_off: an execute of four draws (draw i in
+/// quadrant i) whose range {0, 4} lies at byte 0 of a 4096-byte buffer, read at offset 2: the M4 Max reads it from the
+/// offset rounded down to 4 bytes, so the command buffer completes with no error, all four commands draw
+/// (range_off_drawn 0xf) and the blits before and after it write their 4096 bytes; skipped call.icb 1. range_past: the
+/// same execute reading a 4096-byte buffer of zeros at offset 4092, 4 bytes of the range inside it: the M4 Max reads
+/// what lies past the buffer, here a zeroed placement heap's (a range of no command), and draws nothing (0); the raw
+/// path reads nothing past a buffer and runs none, skipped call.icb 1, the rest as range_off. layers_past: a clear-only
+/// pass of renderTargetArrayLength 3 into a BGRA8Unorm array of 3 layers beside an A1BGR5Unorm array of 2 (a format the
+/// raw path renders through a stand-in), run twice: both raw, the layers both arrays have cleared, skipped pass.level
+/// 2: the M4 Max clears each attachment's own layers, the raw path the layers every attachment has, so the BGRA8's
+/// third holds its clear on the M4 Max and its fill on raw (layers_past_bgra8_l2: 1 cleared, 0 its fill, reported).
+/// layers_plain: the BGRA8Unorm array alone from slice 1: slices 1 and 2 cleared, slice 0 its fill, skipped none.
 extension InvalidRequestsTest {
     func mirrored(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async -> [FailedAttribution] {
         var attributions: [FailedAttribution] = []
@@ -31,7 +33,8 @@ extension InvalidRequestsTest {
             ("units", [:], ["call.blit": 1], Self.units),
             ("indices_off", [:], ["call.icb": 2], Self.indicesOff),
             ("resolve_off", [:], ["call.counter": 1], Self.resolveOff),
-            ("range_off", ["call.icb": 1], [:], Self.rangeOff),
+            ("range_off", [:], ["call.icb": 1], Self.rangeOff),
+            ("range_past", [:], ["call.icb": 1], Self.rangePast),
             ("layers_past", [:], ["pass.level": 2], Self.layersPast),
             ("layers_plain", [:], [:], Self.layersPlain),
         ]
@@ -94,19 +97,34 @@ extension InvalidRequestsTest {
     }
 
     static func rangeOff(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
-        let r = try await MirroredRequests.rangeOffFour(gpu)
-        metrics.set("range_off_path", r.facadePath)
-        metrics.set("range_off_code", r.code)
-        metrics.set("range_off_underlying", r.underlying)
-        metrics.set("range_off_before", r.beforeWritten)
-        metrics.set("range_off_after", r.afterWritten)
-        metrics.set("range_off_drawn", r.drawn)
-        let failed = Int(MTLCommandBufferStatus.error.rawValue)
-        checks.append(("range_off: failed (status \(r.status))", r.status == failed))
-        checks.append(("range_off: code \(r.code), not PageFault", r.code == MTLCommandBufferError.pageFault.rawValue))
-        checks.append(("range_off: \(r.facadePath), not error:call.icb", r.facadePath == "error:call.icb"))
+        executed("range_off", try await MirroredRequests.rangeOff(gpu), drawn: 0xf, &metrics, &checks)
+    }
+
+    static func rangePast(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
+        executed("range_past", try await MirroredRequests.rangePast(gpu), drawn: 0, &metrics, &checks)
+    }
+
+    /// Completed with no error on the raw path, the commands that drew `drawn`, both blits' 4096 bytes written
+    static func executed(
+        _ key: String, _ r: MirroredRequests.Executed, drawn: Int, _ metrics: inout Metrics,
+        _ checks: inout [(String, Bool)]
+    ) {
+        let hex = { (mask: Int) in "0x" + String(mask, radix: 16) }
+        metrics.set(key + "_path", r.path)
+        metrics.set(key + "_error", r.error)
+        metrics.set(key + "_drawn", hex(r.drawn))
+        metrics.set(key + "_before", r.beforeWritten)
+        metrics.set(key + "_after", r.afterWritten)
+        let completed = Int(MTLCommandBufferStatus.completed.rawValue)
+        checks.append(("\(key): status \(r.status), error \(r.error)", r.status == completed && r.error == "none"))
+        checks.append(("\(key): on the \(r.path) path", r.path == "raw"))
+        checks.append(("\(key): drew \(hex(r.drawn)), not \(hex(drawn))", r.drawn == drawn))
+        let all = MirroredRequests.bytes
         checks.append(
-            ("range_off: underlying \(r.underlying)", r.underlying == "IOGPUCommandQueueErrorDomain/11"))
+            (
+                "\(key): the blits around it wrote \(r.beforeWritten) and \(r.afterWritten) of \(all)",
+                r.beforeWritten == all && r.afterWritten == all
+            ))
     }
 
     static func layersPast(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {

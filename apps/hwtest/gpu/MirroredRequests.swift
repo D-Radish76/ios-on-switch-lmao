@@ -5,8 +5,8 @@ import Metal
 /// Requests Metal's validation layer stops (the scenes of gpu.raw.invalid_requests's later arms): a copy between
 /// formats of other copy units, which the raw path records nothing for, and, each as an M4 Max's driver runs it with
 /// validation off, indexed draws of an indirect command buffer at an index offset off their type, a counter resolve
-/// into an offset off 4 bytes, an execute whose range lies off 4 bytes in its buffer, and a layered pass past one
-/// attachment's layers beside a format stand-in.
+/// into an offset off 4 bytes, an execute whose range is read at an offset off 4 bytes and one read past its buffer,
+/// and a layered pass past one attachment's layers beside a format stand-in.
 public enum MirroredRequests {
     public static let side = 64, region = 16, bytes = 4096
 
@@ -144,18 +144,50 @@ public enum MirroredRequests {
         return out
     }
 
-    public struct Faulted: Sendable {
-        public var status = -1, code = -1
-        public var facadePath = "-", description = "-", underlying = "-"
-        /// Bytes the blit encoders before and after the execute wrote of their 4096, and the execute's red pixels of
-        /// 256
-        public var beforeWritten = -1, afterWritten = -1, drawn = -1
+    public struct Executed: Sendable {
+        public var status = -1
+        /// "none", or the error's "<domain>/<code>"
+        public var error = "-", path = "-"
+        /// Bytes the blit encoders before and after the execute wrote of their 4096
+        public var beforeWritten = -1, afterWritten = -1
+        /// Bit i set where command i drew: its triangle lies in quadrant i of the 16x16 target
+        public var drawn = -1
+    }
+
+    /// range_off: the range {0, 4} at byte 0 of a 4096-byte buffer of zeros, read at offset 2, which an M4 Max reads
+    /// from the offset rounded down to 4 bytes
+    public static func rangeOff(_ gpu: GPU) async throws -> Executed {
+        let range = try gpu.buffer([UInt8](repeating: 0, count: bytes))
+        let words: [UInt32] = [0, 4]
+        words.withUnsafeBytes { range.contents().copyMemory(from: $0.baseAddress!, byteCount: 8) }
+        return try await executed(gpu, range, offset: 2, heap: nil)
+    }
+
+    public static let heapBytes = 65536
+
+    /// range_past: a 4096-byte buffer of zeros read at offset 4092, 4 bytes of the range inside it. It lies at the
+    /// start of a placement heap that a zeroed buffer spans whole, so what an M4 Max reads past it is zeros: a range
+    /// that runs no command.
+    public static func rangePast(_ gpu: GPU) async throws -> Executed {
+        let descriptor = MTLHeapDescriptor()
+        descriptor.type = .placement
+        descriptor.storageMode = .shared
+        descriptor.size = gpu.device.heapBufferSizeAndAlign(length: heapBytes, options: .storageModeShared).size
+        guard let heap = gpu.device.makeHeap(descriptor: descriptor),
+            let whole = heap.makeBuffer(length: heapBytes, options: .storageModeShared, offset: 0)
+        else { throw TestFailure("no placement heap of \(heapBytes) bytes") }
+        memset(whole.contents(), 0, heapBytes)
+        guard let range = heap.makeBuffer(length: bytes, options: .storageModeShared, offset: 0) else {
+            throw TestFailure("no range buffer at the heap's start")
+        }
+        memset(range.contents(), 0, bytes)
+        return try await executed(gpu, range, offset: bytes - 4, heap: heap)
     }
 
     /// A command buffer of a blit filling 4096 bytes, a render pass executing four draws of an indirect command buffer
-    /// whose range it reads at offset 2 of a 4096-byte buffer (Metal's offset off 4 bytes), and a blit filling another
-    /// 4096 bytes
-    public static func rangeOffFour(_ gpu: GPU) async throws -> Faulted {
+    /// (draw i one triangle in quadrant i) whose range it reads at `offset` of `range`, and a blit filling another 4096
+    /// bytes
+    static func executed(_ gpu: GPU, _ range: MTLBuffer, offset: Int, heap: MTLHeap?) async throws -> Executed {
         let descriptor = MTLIndirectCommandBufferDescriptor()
         descriptor.commandTypes = [.draw]
         descriptor.inheritPipelineState = true
@@ -164,13 +196,10 @@ public enum MirroredRequests {
         else { throw TestFailure("no indirect command buffer of draws") }
         for i in 0..<4 {
             icb.indirectRenderCommandAt(i).drawPrimitives(
-                .triangle, vertexStart: 0, vertexCount: 3, instanceCount: 1, baseInstance: 0)
+                .triangle, vertexStart: 3 * i, vertexCount: 3, instanceCount: 1, baseInstance: 0)
         }
-        let range = try gpu.buffer([UInt8](repeating: 0, count: bytes))
-        let words: [UInt32] = [0, 4]
-        words.withUnsafeBytes { range.contents().advanced(by: 2).copyMemory(from: $0.baseAddress!, byteCount: 8) }
         let state = try gpu.render(
-            vertex: "mirrored_cover_vertex", fragment: "mirrored_red_fragment", format: .rgba8Unorm
+            vertex: "mirrored_quadrant_vertex", fragment: "mirrored_red_fragment", format: .rgba8Unorm
         ) { $0.supportIndirectCommandBuffers = true }
         let target = try gpu.texture(.rgba8Unorm, 16, 16)
         let before = try gpu.buffer([UInt8](repeating: 0x11, count: bytes))
@@ -185,8 +214,9 @@ public enum MirroredRequests {
         pass.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 0)
         pass.colorAttachments[0].storeAction = .store
         let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
+        if let heap { encoder.useHeap(heap, stages: [.vertex, .fragment]) }
         encoder.setRenderPipelineState(state)
-        encoder.executeCommandsInBuffer(icb, indirectBuffer: range, offset: 2)
+        encoder.executeCommandsInBuffer(icb, indirectBuffer: range, offset: offset)
         encoder.endEncoding()
         let last = commands.makeBlitCommandEncoder()!
         last.fill(buffer: after, range: 0..<bytes, value: 0x5a)
@@ -195,23 +225,22 @@ public enum MirroredRequests {
             commands.addCompletedHandler { _ in done.resume() }
             commands.commit()
         }
-        var out = Faulted()
+        var out = Executed()
         out.status = Int(commands.status.rawValue)
-        out.facadePath = RawFacade.path(of: commands)
-        if let error = commands.error as NSError? {
-            out.code = error.code
-            out.description = error.localizedDescription
-            if let under = error.userInfo[NSUnderlyingErrorKey] as? NSError {
-                out.underlying = "\(under.domain)/\(under.code)"
-            }
-        }
+        out.path = RawFacade.path(of: commands)
+        out.error = (commands.error as NSError?).map { "\($0.domain)/\($0.code)" } ?? "none"
         let written = { (b: MTLBuffer) in
             UnsafeRawBufferPointer(start: b.contents(), count: bytes).filter { $0 != 0x11 }.count
         }
         out.beforeWritten = written(before)
         out.afterWritten = written(after)
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        out.drawn = stride(from: 0, to: pixels.count, by: 4).filter { pixels[$0] == 255 && pixels[$0 + 1] == 0 }.count
+        out.drawn = 0
+        for at in stride(from: 0, to: pixels.count, by: 4) where pixels[at] == 255 && pixels[at + 1] == 0 {
+            let x = at / 4 % 16, y = at / 64
+            out.drawn |= 1 << ((x / 8) + 2 * (y / 8))
+        }
+        withExtendedLifetime(heap) {}
         return out
     }
 

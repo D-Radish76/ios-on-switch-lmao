@@ -20,7 +20,10 @@ import Metal
 /// growth of the blocks in use in every malloc zone while the batch is recorded and held (held_blocks), a coarse bound
 /// on what each keeps allocated (the whole process's, so no per-draw check). The pooled encoders' blocks
 /// (raw_object_pool.h): none freed in the batch (its pool kept too few for what the batch holds at once), and the most
-/// each pool made in the process. The profile is the facade's; a release runtime has none and the test skips.
+/// each pool made in the process. The profile is the facade's; a release runtime has none and the test skips. A view of
+/// the target taken at its creation keeps it plain where it was made plain for want of compressed memory
+/// (raw_private_comp.h): its move onto that memory, an encode ahead given back and a copy job inside a range's encode,
+/// never lands in a measured batch.
 struct EncodeCostPathTest: HWTest {
     let id = "gpu.path.encode_cost"
     let name =
@@ -66,6 +69,7 @@ struct EncodeCostPathTest: HWTest {
         guard let line = CACorpus.state("PBGRAXm_A2Xhf") else { return .fail("CACorpus has no PBGRAXm_A2Xhf") }
         let pipeline = try CAState.pipeline(line, library: library, device: gpu.device)
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
+        let keptPlain = target.makeTextureView(pixelFormat: .bgra8Unorm)
         let scratch = try gpu.texture(
             CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
         let encode = { (commands: MTLCommandBuffer, draws: Int) in
@@ -155,6 +159,7 @@ struct EncodeCostPathTest: HWTest {
                         + "\(Self.drawCounts[1]) draws \(counts[1])")
             }
         }
+        withExtendedLifetime(keptPlain) {}
         return failures.isEmpty
             ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics, proof: gpu.proof)
     }

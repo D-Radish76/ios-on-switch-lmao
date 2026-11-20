@@ -23,6 +23,16 @@ vertex MirroredVertex mirrored_cover_vertex(uint i [[vertex_id]])
     return {float4(i == 1 ? 3.0f : -1.0f, i == 2 ? 3.0f : -1.0f, 0, 1)};
 }
 
+// Vertices 3k to 3k + 2: a triangle inside quadrant k of the target (column k % 2, row k / 2 from the top), so the
+// quadrants drawn name the commands of an indirect command buffer that ran
+vertex MirroredVertex mirrored_quadrant_vertex(uint i [[vertex_id]])
+{
+    const uint k = i / 3, corner = i % 3;
+    const float x = -1.0f + float(k % 2) + (corner == 1 ? 0.9f : 0.1f);
+    const float y = -float(k / 2) + (corner == 2 ? 0.9f : 0.1f);
+    return {float4(x, y, 0, 1)};
+}
+
 // Sample s of pixel (x, y) holds (x, y, s, 0xa0) in RGBA8Unorm codes (shaded per sample)
 fragment float4 mirrored_sample_codes(MirroredVertex in [[stage_in]], uint sample [[sample_id]])
 {

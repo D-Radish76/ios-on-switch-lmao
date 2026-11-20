@@ -261,6 +261,8 @@ TESTS: dict[str, bool] = {
             'gpu.raw.vertex_only_state',
             'gpu.raw.render_reflection',
             'gpu.raw.compute_reflection',
+            'gpu.raw.reflection_kinds',
+            'gpu.kernel.fence_page_regions',
             'gpu.raw.depth16_ms_resolve',
             'gpu.raw.invalid_requests',
             'gpu.heap.aliasable_used',

@@ -25,6 +25,17 @@ struct PromiseCancelPathTest: GPUPathTest {
 
     /// The surface imported into `maker` and its writes promised: the import's handle and the promise.
     static func promise(_ surface: IOSurface, _ maker: GPUConnection) throws -> (UInt64, UInt32) {
+        let handle = try imported(surface, maker)
+        let (kr, promise) = make(handle, maker, channel: 1)
+        guard kr == KERN_SUCCESS else {
+            _ = maker.call(boFree, GPUConnection.words(halves(handle)), outputSize: 0)
+            throw TestFailure("the writer promise was refused: \(GPUConnection.hex(kr))")
+        }
+        return (handle, promise)
+    }
+
+    /// The surface imported into `maker`: the import's handle
+    static func imported(_ surface: IOSurface, _ maker: GPUConnection) throws -> UInt64 {
         let page = Int(getpagesize())
         let bytes = UInt32((surface.allocationSize + page - 1) / page * page)
         surface.lock(options: [], seed: nil)
@@ -35,18 +46,22 @@ struct PromiseCancelPathTest: GPUPathTest {
         guard imported.0 == KERN_SUCCESS else {
             throw TestFailure("the surface's import was refused: \(GPUConnection.hex(imported.0))")
         }
-        let handle = GPUConnection.uint64(imported.1, 0)
+        return GPUConnection.uint64(imported.1, 0)
+    }
+
+    /// A promise of the writes of the import `handle`, kept by `channel`: the kern_return_t and the promise
+    static func make(_ handle: UInt64, _ maker: GPUConnection, channel: UInt32) -> (kern_return_t, UInt32) {
         let use = GPUConnection.words(halves(handle) + [surfaceWrite, 0])
         let made = use.withUnsafeBytes { uses -> (kern_return_t, [UInt8]) in
             let at = UInt64(UInt(bitPattern: uses.baseAddress!))
             return maker.call(
-                writerPromise, GPUConnection.words(halves(at) + [promiseMake, 1, 0, 1]), outputSize: 8)
+                writerPromise, GPUConnection.words(halves(at) + [promiseMake, 1, 0, channel]), outputSize: 8)
         }
-        guard made.0 == KERN_SUCCESS else {
-            _ = maker.call(boFree, GPUConnection.words(halves(handle)), outputSize: 0)
-            throw TestFailure("the writer promise was refused: \(GPUConnection.hex(made.0))")
-        }
-        return (handle, GPUConnection.uint32(made.1, 0))
+        return (made.0, GPUConnection.uint32(made.1, 0))
+    }
+
+    static func cancel(_ promise: UInt32, _ maker: GPUConnection) -> kern_return_t {
+        maker.call(writerPromise, GPUConnection.words([0, 0, promiseCancel, 0, promise, 0]), outputSize: 8).0
     }
 
     func exercise(_ gpu: GPU, _ context: TestContext, _ metrics: inout Metrics) async throws -> [String] {

@@ -11,12 +11,14 @@ import QuartzCore
 /// with a shared event signalled between passes 8 and 9; the same with its last pass into a drawable it presents): the
 /// commit call's time, waitUntilScheduled's, and the time from the commit to the GPU starting its submission (its start
 /// stamp on the CPU's clock), and how many of its encoders the submit worker encoded before the commit. A shape without
-/// an event must have all but the encoders recorded since the worker was last handed the buffer (24 tape commands, 3
-/// of these passes) and the two held for the look-ahead encoded ahead; its median from commit to GPU start must stay
-/// under what the remainder, the kernel's SubmitJob and a thread hop take (the encode was 2.2-4.6 ms of a scale frame
-/// before, boot 21); the event's shape is encoded at its commit, as before. Each pass draws into BGRA8 beside a
-/// memoryless colour 1 in the format the state's line gives it (RGBA16Float on iOS 27). A pack without the state sends
-/// its first command buffers to m2v while the runtime makes its record: those warm it before any shape runs.
+/// an event must have all but the encoders recorded since the worker was last handed the buffer (24 tape commands, 3 of
+/// these passes) and the two held for the look-ahead encoded ahead; its median from commit to GPU start must stay under
+/// what the remainder, the kernel's SubmitJob and a thread hop take (the encode was 2.2-4.6 ms of a scale frame before,
+/// boot 21); the event's shape is encoded at its commit, as before. Each pass draws into BGRA8 beside a memoryless
+/// colour 1 in the format the state's line gives it (RGBA16Float on iOS 27). A pack without the state sends its first
+/// command buffers to m2v while the runtime makes its record: those warm it before any shape runs. A view of each
+/// target taken at its creation keeps it plain where it was made plain for want of compressed memory
+/// (raw_private_comp.h): its move onto that memory gives back an encode ahead, which no measured round may lose.
 struct CommitLatencyPathTest: HWTest {
     let id = "gpu.path.commit_latency"
     let name = "A Core Animation shaped command buffer's commit returns at once and its GPU work starts soon after"
@@ -46,6 +48,7 @@ struct CommitLatencyPathTest: HWTest {
         guard let line = CACorpus.state("PBGRAXm_A2Xhf") else { return .fail("CACorpus has no PBGRAXm_A2Xhf") }
         let pipeline = try CAState.pipeline(line, library: library, device: gpu.device)
         let targets = try (0..<Self.targets).map { _ in try gpu.texture(.bgra8Unorm, Self.width, Self.height) }
+        let keptPlain = targets.map { $0.makeTextureView(pixelFormat: .bgra8Unorm) }
         let scratch = try gpu.texture(
             CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
         guard let event = gpu.device.makeSharedEvent() else { return .fail("makeSharedEvent returned nil") }
@@ -156,6 +159,7 @@ struct CommitLatencyPathTest: HWTest {
                 ? .skip("no pipelining counters: a release runtime")
                 : .fail("a debug runtime without pipelining counters", metrics, proof: gpu.proof)
         }
+        withExtendedLifetime(keptPlain) {}
         return failures.isEmpty
             ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics, proof: gpu.proof)
     }

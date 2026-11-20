@@ -167,6 +167,27 @@ class Rules(unittest.TestCase):
         results, _ = devicerun.run_checks(boot17[2:], [view])
         self.assertEqual(results[0].verdict, PASS)
 
+    def test_a_wrong_kind_reflection_ask_fails_outside_hw_test(self):
+        wrong = next(c for c in checks.GROUPS['refusals'] if c.name == 'raw.reflection-wrong-kind')
+
+        def record(process: str, message: str) -> dict:
+            return {
+                'timestamp': '2026-11-19 09:40:00.000000-0800',
+                'processImagePath': f'/private/var/containers/Bundle/Application/X/{process}.app/{process}',
+                'subsystem': checks.GPU_METAL_SUBSYSTEM,
+                'category': 'raw',
+                'messageType': 'Error',
+                'eventMessage': message,
+            }
+
+        line = 'raw: {who}: bufferAlignment asked of binding t of type 2, where Metal asserts'
+        results, _ = devicerun.run_checks([record('Weather', line.format(who='Weather'))], [wrong])
+        self.assertEqual(results[0].verdict, FAIL)
+        self.assertIn('Weather', results[0].observed)
+        own = record('SwitchHWTest27e', line.format(who='SwitchHWTest27e'))
+        results, _ = devicerun.run_checks([own], [wrong])
+        self.assertEqual(results[0].verdict, PASS)
+
     def test_failed_command_buffers_are_judged_per_process(self):
         failed = [c for c in checks.GROUPS['refusals'] if c.name.startswith('raw.failed')]
 
