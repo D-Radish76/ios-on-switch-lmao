@@ -6469,6 +6469,44 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
+# IOSurface imports on a client's raw::Device with one surface's BoImport held in the kernel model: the submit worker's CPU
+# completion capture and another surface's import do not wait for it; a second import of that surface shares it, and one
+# that fails publishes nothing; plain and thread-sanitized
+[host_test(
+    name = "raw_device_import" + suffix + "_test",
+    size = "medium",
+    srcs = [
+        "raw_device_import_test.cpp",
+        "empty_pack.h",
+        "raw_translate_absent.cpp",
+        "raw_kernel_model.h",
+    ] + RAW_HOST_HEADERS,
+    copts = [
+        "-x",
+        "objective-c++",
+        "-fobjc-arc",
+    ] + RAW_HOST_COPTS + tsan,
+    cxx_std = "c++17",
+    env = {"TSAN_OPTIONS": "halt_on_error=1:report_signal_unsafe=0"},
+    linkopts = FACADE_LINKOPTS + tsan,
+    sanitize = False,
+    deps = [
+        ":raw_runtime_plugin" + plugin,
+        "//kits/SwitchRefusal:switch_refusal",
+    ] + RAW_HOST_DEPS,
+) for suffix, plugin, tsan in [
+    (
+        "",
+        "_host",
+        [],
+    ),
+    (
+        "_tsan",
+        "_tsan",
+        ["-fsanitize=thread"],
+    ),
+]]
+
 host_test(
     name = "raw_pass_cache_race_test",
     size = "medium",

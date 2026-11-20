@@ -28,6 +28,7 @@
 #include "TegraGM20BJobABI.h"
 #include <IOKit/IOKitLib.h>
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -47,6 +48,9 @@ constexpr uint32_t kSlots = TegraGM20BFencePageChannelsBytes / TegraGM20BFencePa
                    kFencePageBytes = TegraGM20BFencePageGpuBytes;
 
 inline void (*checkJob)(const uint32_t *words, const TegraGM20BAbiPush *pushes, uint32_t count) = nullptr;
+// Each call as it arrives, before the model takes it and outside callLock: a test holds one open there while others go on,
+// or answers it (anything but KERN_SUCCESS)
+inline std::atomic<int (*)(uint32_t method, const void *input)> arriving{nullptr};
 
 struct BoState {
     bool import = false, cached = false, cpuReached = false;
@@ -624,6 +628,9 @@ inline Model &connected(io_connect_t connection)
 extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint32_t method, const void *input, size_t,
                                                    void *output, size_t *)
 {
+    if (const auto hook = kernel_model::arriving.load(std::memory_order_acquire))
+        if (const int kr = hook(method, input); kr != KERN_SUCCESS)
+            return kr;
     kernel_model::Model &model = kernel_model::connected(connection);
     std::unique_lock<std::mutex> hold(kernel_model::callLock, std::defer_lock);
     if (method != TegraGM20BMethodWaitFence)

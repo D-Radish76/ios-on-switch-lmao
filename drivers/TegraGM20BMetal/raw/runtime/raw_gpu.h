@@ -3409,6 +3409,10 @@ private:
     uint32_t sampleMaskHeld_ = ~0u;  // and SET_SAMPLE_MASK_X0_Y0..X1_Y1 (~0: not known)
     DepthStencilRegs ds_;            // and its depth/stencil registers
     std::map<std::tuple<uint64_t, uint64_t, uint64_t>, Import *> surfaces_;
+    // The surfaces being imported with lock_ released (importSurface), each with the threads that wait for its import,
+    // which imported_ wakes once it is published or failed
+    std::map<std::tuple<uint64_t, uint64_t, uint64_t>, uint32_t> importing_;
+    raw::CondVar imported_;
     // Surface imports no texture holds, kept for the surface's next texture: Core Animation makes a texture over its
     // pooled surface every frame after it drops the last, and an import made again is bound, untiled, cleaned and laid
     // out again (boot 21: 3.4-4 ms of each app-close frame). Oldest first, at most kKeptImports and kKeptImportBytes;
@@ -3733,7 +3737,9 @@ private:
                          Texture &t);
     TextureTransferResult transferTexelRows(const Texture &t, const uint32_t origin[3], const uint32_t size[3],
                                             void *bytes, bool write, std::shared_ptr<void> owner);
-    Import *importSurface(uint64_t id, void *base, uint64_t bytes, const void *owner, const LayoutAsk *ask = nullptr);
+    Import *importSurface(std::unique_lock<raw::Mutex> &l, uint64_t id, void *base, uint64_t bytes, const void *owner,
+                          const LayoutAsk *ask = nullptr);
+    Import *makeImport(uint64_t id, void *base, uint64_t bytes, const void *owner, const LayoutAsk *ask);
     // lock_ held: a texture's hold on its import goes. A surface's import no texture holds is kept (keepImport)
     void release(Import *i);
     void keepImport(Import *i);

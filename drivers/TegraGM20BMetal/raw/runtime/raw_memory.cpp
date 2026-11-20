@@ -294,13 +294,21 @@ Device::Trimmed Device::trim()
     return trimmed;
 }
 
-// A surface's one import in this task. A new one asks the kernel its layout (`ask`: the first texture's shape and whether it
-// writes; none: a pitch decision, as for m2v's imports and buffers over a surface) before binding it under that layout's
-// kind; one already made is shared whatever its layout.
-Import *Device::importSurface(uint64_t id, void *base, uint64_t bytes, const void *owner, const LayoutAsk *ask)
+// lock_ held through `l`: a surface's one import in this task. A new one asks the kernel its layout (`ask`: the first
+// texture's shape and whether it writes; none: a pitch decision, as for buffers over a surface) before binding it under
+// that layout's kind; one already made is shared whatever its layout. A new import's kernel calls run with lock_
+// released, so the submit worker and other threads' creates do not wait for them; a thread asking for a surface another
+// is importing waits for that import and shares it (or makes its own where it failed), so a surface has one import and
+// one layout ask: the kernel decides the layout at the first ask and takes a second import of its pages as sharing.
+Import *Device::importSurface(std::unique_lock<raw::Mutex> &l, uint64_t id, void *base, uint64_t bytes,
+                              const void *owner, const LayoutAsk *ask)
 {
     const auto key = std::make_tuple(id, uint64_t(uintptr_t(base)), bytes);
     if (id) {
+        for (auto at = importing_.find(key); at != importing_.end(); at = importing_.find(key)) {
+            at->second++;
+            imported_.wait(l);
+        }
         auto it = surfaces_.find(key);
         if (it != surfaces_.end()) {
             Import *kept = it->second;
@@ -311,7 +319,30 @@ Import *Device::importSurface(uint64_t id, void *base, uint64_t bytes, const voi
             RAW_DIAGNOSTIC(stats.importHits++);
             return kept;
         }
+        importing_[key] = 0;
     }
+    l.unlock();
+    Import *i = makeImport(id, base, bytes, owner, ask);
+    l.lock();
+    if (id) {
+        const auto at = importing_.find(key);
+        if (at->second)
+            imported_.notify_all();
+        importing_.erase(at);
+    }
+    if (!i)
+        return nullptr;
+    if (id)
+        surfaces_[key] = i;
+    RAW_DIAGNOSTIC(stats.imports++);
+    RAW_DIAGNOSTIC(stats.importsMade++);
+    RAW_DIAGNOSTIC(stats.importBytes += i->bo.bytes);
+    return i;
+}
+
+// lock_ not held: a new import's kernel calls; the import is no other thread's until importSurface publishes it
+Import *Device::makeImport(uint64_t id, void *base, uint64_t bytes, const void *owner, const LayoutAsk *ask)
+{
     Import *i = new Import;
     if (!k_.importPages(base, bytes, i->bo, uint32_t(id))) {
         delete i;
@@ -339,11 +370,6 @@ Import *Device::importSurface(uint64_t id, void *base, uint64_t bytes, const voi
     i->bytes = bytes;
     if (owner)
         i->owner = CFRetain(owner);
-    if (id)
-        surfaces_[key] = i;
-    RAW_DIAGNOSTIC(stats.imports++);
-    RAW_DIAGNOSTIC(stats.importsMade++);
-    RAW_DIAGNOSTIC(stats.importBytes += i->bo.bytes);
     return i;
 }
 
@@ -779,13 +805,13 @@ bool Device::createBufferNoCopy(void *bytes, uint64_t length, Buffer &b, bool &t
     tiled = false;
     if (!bytes || !length)
         return false;
-    std::lock_guard<raw::Mutex> l(lock_);
+    std::unique_lock<raw::Mutex> l(lock_);
     for (const auto &[key, i] : surfaces_)
         if (i->kernelTiled() && surfaceBackingAliases(0, i->base, i->bytes, 0, uintptr_t(bytes), length)) {
             tiled = true;
             return false;
         }
-    if (!(b.import = importSurface(0, bytes, length, nullptr)))
+    if (!(b.import = importSurface(l, 0, bytes, length, nullptr)))
         return false;
     b.va = b.import->bo.va;
     b.cpu = static_cast<uint8_t *>(bytes);
@@ -797,8 +823,8 @@ bool Device::createSurfaceBuffer(uint64_t id, void *base, uint64_t length, const
 {
     b = {};
     tiled = false;
-    std::lock_guard<raw::Mutex> l(lock_);
-    Import *i = importSurface(id, base, length, owner);
+    std::unique_lock<raw::Mutex> l(lock_);
+    Import *i = importSurface(l, id, base, length, owner);
     if (!i)
         return false;
     if (i->kind == TGM_LAYOUT_KIND) {

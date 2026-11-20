@@ -95,7 +95,8 @@ bool Device::createSurfaceTexture(uint64_t surfaceId, void *base, uint64_t alloc
     std::unique_lock<raw::Mutex> l(lock_);
     t.pitch = pitch;
     const LayoutAsk ask = {t.width, t.height, t.bpp, pitch, writes && !offset && !sampled && !blocks};
-    t.import = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface, &ask);
+    t.import =
+        importSurface(l, surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface, &ask);
     if (!t.import)
         surfaceRefusal = "its import: the kernel's BoImport, SurfaceLayout or VmBind (their bo-import, "
                          "iosurface-layout or vm-bind line), or no GPU VA left";
@@ -167,8 +168,8 @@ bool Device::createPlanarTexture(uint64_t surfaceId, void *base, uint64_t allocB
         return false;
     Import *planes;
     {
-        std::lock_guard<raw::Mutex> l(lock_);
-        planes = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface);
+        std::unique_lock<raw::Mutex> l(lock_);
+        planes = importSurface(l, surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface);
     }
     if (!planes)
         return false;
@@ -341,8 +342,9 @@ bool Device::createSurfaceTexelBuffer(uint64_t surfaceId, void *base, uint64_t a
         return false;
     }
     {
-        std::lock_guard<raw::Mutex> l(lock_);
-        Import *i = importSurface(surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface);
+        std::unique_lock<raw::Mutex> l(lock_);
+        Import *i =
+            importSurface(l, surfaceId, base, (allocBytes + pageSize() - 1) & ~uint64_t(pageSize() - 1), surface);
         if (!i) {
             surfaceRefusal = "its import: the kernel's BoImport, SurfaceLayout or VmBind (their bo-import, "
                              "iosurface-layout or vm-bind line), or no GPU VA left";

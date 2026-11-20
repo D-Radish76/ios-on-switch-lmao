@@ -26,8 +26,8 @@ bool Device::createOnePlaneYcbcr(uint64_t surfaceId, void *base, uint64_t allocB
         return false;
     Import *planes;
     {
-        std::lock_guard<raw::Mutex> l(lock_);
-        planes = importSurface(surfaceId, base, mapped, surface);
+        std::unique_lock<raw::Mutex> l(lock_);
+        planes = importSurface(l, surfaceId, base, mapped, surface);
     }
     if (!planes)
         return false;
