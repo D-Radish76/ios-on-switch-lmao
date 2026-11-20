@@ -69,6 +69,7 @@ enum {
 	TegraGM20BInfoSubmitAddress = 1u << 14, /* SubmitJob (method 33) takes exact jobs */
 	TegraGM20BInfoCpuPreserveDirty = 1u << 15,
 	TegraGM20BInfoCanonicalSurfaceLayout = 1u << 16,
+	TegraGM20BInfoChannelEpoch = 1u << 17, /* the fence page holds TegraGM20BChannelEpochWord */
     TegraGM20BInfoPushFences = 1u << 26, /* SubmitJob takes TegraGM20BPushFence */
 };
 
@@ -199,7 +200,7 @@ struct TegraGM20BAbiInfo {
 	uint16_t cls_m2mf;    /* 0xa140 KEPLER_INLINE_TO_MEMORY_B */
 	uint16_t cls_compute; /* 0xb1c0 MAXWELL_COMPUTE_B */
 	uint16_t cls_gpfifo;  /* 0xb06f MAXWELL_CHANNEL_GPFIFO_A */
-	uint32_t reserved1;
+	uint32_t fence_token; /* the fence page's clientMemoryForType type (ChannelCreate's) */
 	uint64_t va_start;  /* client-managed GPU VA range [va_start, va_end) */
 	uint64_t va_end;    /* the kext keeps everything at and above va_end for itself */
 	uint32_t page_size; /* bind granularity: 4096 */
@@ -361,6 +362,15 @@ struct TegraGM20BAbiChannelCreateReply {
 	uint32_t fence_token;  /* clientMemoryForType type of the fence page */
 	uint32_t fence_offset; /* byte offset of this channel's uint32 seqno in that page */
 	uint32_t reserved;
+};
+
+/* TegraGM20BInfoChannelEpoch: the GPU's channel epoch, the same in every connection's fence page (GetInfo's fence_token
+ * maps it before any channel is made). It moves on (by one, wrapping) whenever a ChannelCreate that was refused may
+ * succeed: a channel destroyed on any connection, a connection closed, and GPU pool memory given back after the pool
+ * refused the kernel an allocation (a channel's ring or context). A refused call returns no reply, so a client reads the
+ * word (acquire) before it asks, and once refused asks again only when the word differs from what it read. */
+enum {
+	TegraGM20BChannelEpochWord = 255,
 };
 
 /* What fence_offset points at (TegraGM20BInfoKillRecord). The GPU writes `completed`. When the kext kills the channel

@@ -2070,7 +2070,8 @@ public:
     }
 
     // The channel and its context, made now if not yet (a client's first command buffer, Order or mipmapped texture); with it
-    // the 2D engine's mip-chain self-test. False: the kernel refused it (`channelError()`), and the device submits nothing.
+    // the 2D engine's mip-chain self-test. False: the kernel refused it (`channelError()`), and the device submits nothing
+    // until the kernel's channel epoch says one may be made (ChannelRefusal).
     bool ensureChannel();
 
     // Why the kernel last refused the channel or its context (ensureChannel, or begin() making a killed channel again)
@@ -3240,7 +3241,8 @@ private:
     raw::Mutex channelLock_;
     std::atomic<bool> channelReady_{false};
     ChannelGenerations generations_;
-    bool channelFailed_ = false;
+    // channelLock_'s until the first channel is made (ensureChannel), then the submit thread's (reopen), as contextless_
+    ChannelRefusal channelRefusal_;
     std::string channelError_;
     // The channel died and the one made since has no context yet (reopen gave up before the context's Exec): begin() makes it
     // again before it gives out a command buffer. channel_ is 0 while the kernel holds none of this device's.
@@ -3645,7 +3647,7 @@ private:
     std::atomic<bool> nativeStale_{false};
 
     bool init(std::string &err);
-    bool openChannel(std::string &err);
+    bool openChannel(std::string &err, bool &gaveBack);
     void growRing(Ring &r, uint64_t most);
     void freeChunk(Chunk &ch);
     uint32_t contextWords() const;

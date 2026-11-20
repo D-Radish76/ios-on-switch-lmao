@@ -18,12 +18,14 @@
 // - A command buffer larger than its push ring reaches the GPU whole (the ring grows under it).
 // - A fill writes its byte over its range, at any alignment and length, and nothing around it.
 // - A channel the kernel killed is made again with its context before any command buffer is encoded for it: one whose
-//   ChannelCreate or context Exec the kernel refused gives no command buffer, and the next begin() tries again.
+//   ChannelCreate or context Exec the kernel refused gives no command buffer, nor does a begin() after it, until a channel
+//   destroyed elsewhere moves the kernel's channel epoch; the begin() after that asks once.
 // - Programs placed in the shader heap are behind an instruction-cache invalidate before any draw runs them, even when the
 //   kernel refused the submission whose prologue was to invalidate it.
 // - A fence wait the kernel refuses with no kill is no completion: it is waited again, and one the kernel keeps refusing is a
 //   failure (the GPU runs each submission for MOCK_GPU_US, so it is in flight when waited for).
-// - A client whose first channel the kernel refuses says why, and asks for none again, a second later too.
+// - A client whose first channel the kernel refuses says why, asks for none again (a second later neither) until a channel
+//   destroyed elsewhere moves the kernel's channel epoch, and then gets one.
 // usage: faultcheck <pack.bin>
 #include <cstdio>
 #include <cstdlib>
@@ -346,14 +348,12 @@ void partialCommit(raw::Device &dev, const Expect &expect)
 
 // A wait on a channel that answers NotResponding only after the channel was destroyed and its id given to a new one (a
 // completion thread's wait across the submit thread's reopen) marks nothing lost: the new channel is not the dead one
-void lostReused(const Expect &expect)
+void lostReused(raw::Kernel &k, const Expect &expect)
 {
-    raw::Kernel k;
-    std::string err;
     uint32_t first = 0, second = 0;
     const volatile uint32_t *fence = nullptr;
-    if (!k.open(err) || !k.channel(1, first, fence)) {
-        expect(false, "a connection and a channel");
+    if (!k.channel(1, first, fence)) {
+        expect(false, "a channel");
         return;
     }
     std::thread waiter([&] {
@@ -478,7 +478,18 @@ void overflowRing(const char *pack, const Expect &expect)
     client.destroyBuffer(chain);
 }
 
-void reopenRefused(raw::Device &dev, const Expect &expect)
+// A channel made and destroyed on another connection: the kernel's channel epoch moves
+void destroyElsewhere(raw::Kernel &other, const Expect &expect)
+{
+    uint32_t channel = 0;
+    const volatile uint32_t *fence = nullptr;
+    const bool made = other.channel(TegraGM20BEngineCopy, channel, fence);
+    expect(made, "a channel on another connection");
+    if (made)
+        other.closeChannel(channel);
+}
+
+void reopenRefused(raw::Device &dev, raw::Kernel &other, const Expect &expect)
 {
     raw::Buffer a, b;
     if (!dev.createBuffer(4096, a) || !dev.createBuffer(4096, b)) {
@@ -499,9 +510,13 @@ void reopenRefused(raw::Device &dev, const Expect &expect)
         const bool refused = !dev.begin();
         std::printf("%s refused: begin() %s\n", what, refused ? "gave none" : "gave a command buffer");
         expect(refused, "no command buffer while the kernel refuses the channel or its context");
+        expect(!dev.begin() && mock_iokit_calls(TegraGM20BMethodChannelCreate) == creates + 1,
+               "none asked for again while the kernel's channel epoch stays where the refusal left it");
+        destroyElsewhere(other, expect);
         const uint32_t next = copy(dev, a, b);
-        expect(next && dev.wait(next) && mock_iokit_calls(TegraGM20BMethodChannelCreate) == creates + 2,
-               "the next begin() makes the channel again, and its command buffer completes");
+        expect(next && dev.wait(next) && mock_iokit_calls(TegraGM20BMethodChannelCreate) == creates + 3,
+               "a channel destroyed elsewhere: the next begin() makes the channel again, and its command buffer "
+               "completes");
     }
     dev.destroyBuffer(a);
     dev.destroyBuffer(b);
@@ -556,7 +571,7 @@ void waitRefused(raw::Device &dev, const Expect &expect)
     dev.destroyBuffer(b);
 }
 
-void channelRefused(const char *pack, const Expect &expect)
+void channelRefused(const char *pack, raw::Kernel &other, const Expect &expect)
 {
     raw::Device client;
     std::string err;
@@ -575,7 +590,13 @@ void channelRefused(const char *pack, const Expect &expect)
            "none asked for again at once (no kernel call a command buffer)");
     usleep(1100000);
     expect(!client.begin() && mock_iokit_calls(TegraGM20BMethodChannelCreate) == creates,
-           "none asked for again a second later: nothing says the kernel can make one");
+           "none asked for again a second later: the kernel's channel epoch did not move");
+    destroyElsewhere(other, expect);
+    raw::Buffer a, b;
+    const bool made = client.createBuffer(4096, a) && client.createBuffer(4096, b);
+    const uint32_t later = made ? copy(client, a, b) : 0;
+    expect(later && client.wait(later) && mock_iokit_calls(TegraGM20BMethodChannelCreate) == creates + 2,
+           "a channel destroyed elsewhere: one ask, and a command buffer that completes");
 }
 
 }  // namespace
@@ -613,12 +634,17 @@ int main(int argc, char **argv)
     constantAfterFill(dev, expect);
     freedHeader(dev, expect);
     partialCommit(dev, expect);
-    lostReused(expect);
+    raw::Kernel other;
+    if (!other.open(err)) {
+        std::fprintf(stderr, "a second connection: %s\n", err.c_str());
+        return 1;
+    }
+    lostReused(other, expect);
     fills(dev, expect);
-    reopenRefused(dev, expect);
+    reopenRefused(dev, other, expect);
     invalidateRefused(dev, expect);
     waitRefused(dev, expect);
-    channelRefused(argv[1], expect);
+    channelRefused(argv[1], other, expect);
     outgrownRing(argv[1], expect);  // last: its device's channel is the mock's latest from here on
     overflowRing(argv[1], expect);
     if (failures) {

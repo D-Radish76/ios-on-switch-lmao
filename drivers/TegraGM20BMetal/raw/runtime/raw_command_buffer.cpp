@@ -237,13 +237,20 @@ bool Device::reopen()
         k_.closeChannel(channel_);
         generations_.closed(retiring);
     }
-    if (!makeChannel(k_, kEngines, channel_, fence_, lastSeqno_, &kNoFence, [this](uint32_t channel, uint32_t &seqno) {
-            return newContext(channel, seqno);
-        })) {
+    if (!channelRefusal_.mayAsk(k_))
+        return false;
+    bool gaveBack = false;
+    if (!makeChannel(k_, kEngines, channel_, fence_, lastSeqno_, &kNoFence,
+                     [this, &gaveBack](uint32_t channel, uint32_t &seqno) {
+                         gaveBack = !newContext(channel, seqno);
+                         return !gaveBack;
+                     })) {
+        channelRefusal_.refused(gaveBack);
         std::lock_guard<raw::Mutex> l(channelLock_);
         channelError_ = k_.error();
         return false;
     }
+    channelRefusal_.made();
     if (fence_ != keptSlot_)
         forgetKept();
     contextless_ = false;

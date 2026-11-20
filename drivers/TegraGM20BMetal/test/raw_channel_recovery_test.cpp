@@ -99,6 +99,40 @@ TEST_F(ChannelRecovery, AReopenWhoseContextTheKernelRefusesLeavesNoChannelBehind
     EXPECT_TRUE(done(job()));
 }
 
+// A refused ask is made again only once the GPU's channel epoch moves: slots freed with no word of it change nothing
+TEST_F(ChannelRecovery, ARefusedChannelIsAskedForAgainOnlyOnceTheEpochMoves)
+{
+    raw::ChannelRefusal refusal;
+    for (kernel_model::Slot &s : model.slots)
+        s.foreign = true;
+    ASSERT_TRUE(refusal.mayAsk(kernel));
+    EXPECT_FALSE(make());
+    refusal.refused(false);
+    for (kernel_model::Slot &s : model.slots)
+        s.foreign = false;
+    EXPECT_FALSE(refusal.mayAsk(kernel));
+    EXPECT_FALSE(refusal.mayAsk(kernel));
+    model.channelEpochMoves();
+    ASSERT_TRUE(refusal.mayAsk(kernel));
+    ASSERT_TRUE(make());
+    refusal.made();
+    EXPECT_TRUE(refusal.mayAsk(kernel));
+}
+
+// The epoch is read before the ask: a move while the refused ask is on its way (a channel destroyed elsewhere) is not
+// lost
+TEST_F(ChannelRecovery, AMoveWhileTheRefusedAskWasOnItsWayIsNotLost)
+{
+    raw::ChannelRefusal refusal;
+    for (kernel_model::Slot &s : model.slots)
+        s.foreign = true;
+    ASSERT_TRUE(refusal.mayAsk(kernel));
+    model.channelEpochMoves();
+    EXPECT_FALSE(make());
+    refusal.refused(false);
+    EXPECT_TRUE(refusal.mayAsk(kernel));
+}
+
 // R6: a channel killed with two jobs in flight; the device keeps its record and makes the next channel before the
 // completion thread waits for the jobs the dead channel ran
 TEST_F(ChannelRecovery, ARetiredChannelsSeqnosEndAsItsKillRecordSays)

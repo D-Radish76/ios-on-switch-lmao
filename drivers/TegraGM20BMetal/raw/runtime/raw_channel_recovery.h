@@ -113,6 +113,45 @@ struct OutgrownRing {
     }
 };
 
+// A channel the kernel refused is asked for again only once the GPU's channel epoch (TegraGM20BChannelEpochWord) moved on
+// from the value it held before the refused ask: one load, no kernel call. No word to read (the fence page would not map):
+// none is asked for again.
+class ChannelRefusal {
+public:
+    bool mayAsk(Kernel &k)
+    {
+        if (refused_ && (!word_ || epoch() == epoch_))
+            return false;
+        word_ = k.channelEpoch();
+        epoch_ = word_ ? epoch() : 0;
+        return true;
+    }
+
+    // `gaveBack`: the ask made a channel and destroyed it itself (the kernel refused its context), which moved the epoch;
+    // the value after that is kept, since nothing the epoch tracks is what a context's refusal lacked
+    void refused(bool gaveBack)
+    {
+        refused_ = true;
+        if (word_ && gaveBack)
+            epoch_ = epoch();
+    }
+
+    void made()
+    {
+        refused_ = false;
+    }
+
+private:
+    uint32_t epoch() const
+    {
+        return __atomic_load_n(word_, __ATOMIC_ACQUIRE);
+    }
+
+    const volatile uint32_t *word_ = nullptr;
+    uint32_t epoch_ = 0;
+    bool refused_ = false;
+};
+
 // The next channel of `engines`, its context submitted by `context(channel, seqno)` before anything else runs on it. False:
 // the kernel made none, or refused its context, and no channel is left: `fence` is `none`, which every seqno has passed, so
 // nothing waits for `last` (a seqno of the dead channel) on a channel that never runs, whose slot's fence may be behind.

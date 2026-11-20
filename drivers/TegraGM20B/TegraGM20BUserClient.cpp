@@ -8,6 +8,7 @@
 // so does one that never completes.
 #include <IOKit/IOKitKeys.h>
 #include "TegraGM20BUserClientInternal.h"
+#include "SwitchGpuChannelEpoch.h"
 #include "SwitchGpuConnectionQuota.h"
 #include "SwitchGpuShaderCompiler.h"
 #include "TegraGM20BCompilerABI.h"
@@ -122,6 +123,7 @@ IOReturn AGXDeviceUserClient::clientClose()
 	IOLockUnlock(lock_);
 	switch_gpu_compiler_close(this);
 	drainResources();
+	switch_gpu_channel_epoch_move();
 	terminate();
 	return kIOReturnSuccess;
 }
@@ -461,9 +463,10 @@ extern "C" uint32_t switch_gpu_info_flags(void)
 	tgm_get_info(&info);
 	uint32_t flags = static_cast<uint32_t>(TegraGM20BInfoSparse) | TegraGM20BInfoHostImport |
 			 TegraGM20BInfoKernelMap | TegraGM20BInfoSurfaceWrites |
-			 TegraGM20BInfoSurfaceLayout | TegraGM20BInfoPriority | TegraGM20BInfoKillRecord |
-			 TegraGM20BInfoCpuAccess | TegraGM20BInfoSubmitAddress |
-			 TegraGM20BInfoCpuPreserveDirty | TegraGM20BInfoCanonicalSurfaceLayout |
+			 TegraGM20BInfoSurfaceLayout | TegraGM20BInfoPriority |
+			 TegraGM20BInfoKillRecord | TegraGM20BInfoCpuAccess |
+			 TegraGM20BInfoSubmitAddress | TegraGM20BInfoCpuPreserveDirty |
+			 TegraGM20BInfoCanonicalSurfaceLayout | TegraGM20BInfoChannelEpoch |
 			 TegraGM20BInfoPushFences;
 	if (info.comptag_lines && switch_gpu_compression_on())
 		flags |= TegraGM20BInfoCompression;
@@ -492,6 +495,7 @@ IOReturn AGXDeviceUserClient::getInfo(TegraGM20BAbiInfo *out)
 	out->cls_m2mf = 0xa140;
 	out->cls_compute = 0xb1c0;
 	out->cls_gpfifo = 0xb06f;
+	out->fence_token = kFenceToken;
 	out->va_start = TGM_USER_VA_START;
 	out->va_end = TGM_KERNEL_VA;
 	out->page_size = 4096;

@@ -3219,6 +3219,15 @@ host_test(
     ],
 )
 
+host_test(
+    name = "switch_gpu_channel_epoch_test",
+    srcs = [
+        "switch_gpu_channel_epoch_test.cpp",
+        "//drivers/TegraGM20B:SwitchGpuChannelEpoch.h",
+        "//drivers/TegraGM20B:TegraGM20BABI.h",
+    ],
+)
+
 # The busy words and the wake word between threads, under ThreadSanitizer
 host_test(
     name = "switch_gpu_busy_tsan_test",

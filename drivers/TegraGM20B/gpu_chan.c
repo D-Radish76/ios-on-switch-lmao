@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Channel creation and teardown, timeslices and fence pages.
 #include "gpu_internal.h"
+#include "SwitchGpuChannelEpoch.h"
 
 #define CHAN_SEMA_BYTES \
 	0x2000 /* nvif's GET semaphore at +0; stats stamps at CHAN_STAMPS, push profile at CHAN_PROF */
@@ -287,7 +288,9 @@ int tgm_chan_new(struct tgm_vm *vm, const void *vm_owner, volatile uint32_t *fen
 	int ret = 0;
 
 	tgm_gate_enter();
+	switch_gpu_channel_create_begins();
 	ret = chan_new(vm, vm_owner, fence_cpu, fence_gpu_va, owner, critical, 0, pchan);
+	switch_gpu_channel_create_ends();
 	gate_leave();
 	return ret;
 }
@@ -297,7 +300,9 @@ int tgm_chan_new_copy(struct tgm_vm *vm, const void *vm_owner, volatile uint32_t
 		      struct tgm_chan **pchan)
 {
 	tgm_gate_enter();
+	switch_gpu_channel_create_begins();
 	const int ret = chan_new(vm, vm_owner, fence_cpu, fence_gpu_va, owner, critical, 1, pchan);
+	switch_gpu_channel_create_ends();
 	gate_leave();
 	return ret;
 }
@@ -376,6 +381,7 @@ void tgm_chan_del(struct tgm_chan **pchan)
 	}
 	mutex_unlock(&tgm_gpu.lock);
 	*pchan = NULL;
+	switch_gpu_channel_epoch_move();
 	nvxnu_wword_wake(&tgm_waiter_words[waiter], 0);
 }
 struct fences_state tgm_fence_pages;
@@ -417,6 +423,7 @@ int tgm_fence_page_get(volatile uint32_t **va, uint64_t *pa)
 		memset(tgm_fence_pages.made[i], 0, sizeof(tgm_fence_pages.made[i]));
 		tgm_clock_anchors_fill(i);
 		*va = (volatile uint32_t *)((u8 *)tgm_fence_pages.va + i * TGM_FENCE_SLOT);
+		switch_gpu_channel_epoch_fill(*va);
 		*pa = tgm_fence_pages.pa + i * TGM_FENCE_SLOT;
 		ret = 0;
 		break;

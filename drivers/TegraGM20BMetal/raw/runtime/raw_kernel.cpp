@@ -457,6 +457,14 @@ void Kernel::closeChannel(uint32_t channel)
     call(TegraGM20BMethodChannelDestroy, &in, sizeof in, nullptr, 0);
 }
 
+const volatile uint32_t *Kernel::channelEpoch()
+{
+    std::lock_guard<raw::Mutex> l(lostLock_);
+    if (!fenceMap_ && !map(info_.fence_token, true, fenceMap_, fenceMapBytes_))
+        return nullptr;
+    return reinterpret_cast<const volatile uint32_t *>(uintptr_t(fenceMap_)) + TegraGM20BChannelEpochWord;
+}
+
 // A clientMemoryForType token mapped into this task: through the kext's own Map (method 12) where it has one, as NVK's
 // nvkmd_darwin does then (a sandbox may admit io_connect_method and not io_connect_map_memory_into_task), else IOKit's.
 bool Kernel::map(uint32_t token, bool readOnly, uint64_t &address, uint64_t &bytes)

@@ -2,7 +2,8 @@
 // Core Animation shaped command buffers recorded at the render thread's pace (raw_scale_frames.h), which the submit worker
 // encodes ahead of their commits (RawMetalPipeline.mm), that fail or meet no channel: a failure recorded stops the encode
 // ahead; one the commit finds is judged at the command buffer's turn, which gives the encode ahead back before it
-// completes; a channel the kernel refuses an encode ahead is asked for again by the commit's encode.
+// completes; a channel the kernel refuses an encode ahead is asked for again by the commit's encode once the kernel's
+// channel epoch moved.
 #include "raw_scale_frames.h"
 #include "bazel/testing/fresh_process.h"
 
@@ -53,8 +54,8 @@ id<MTLCommandBuffer> paced(id<MTLCommandQueue> queue, const std::vector<id<MTLTe
 }
 
 // Refused: every free slot another driver's, the device's channel killed, and the slot it frees another driver's too,
-// so its next begin gets no channel (raw_facade_errors_test.cpp's kernelRefusesTheChannel). Undone: the next begin
-// makes one again.
+// so its next begin gets no channel (raw_facade_errors_test.cpp's kernelRefusesTheChannel). Undone: the other driver's
+// channels destroyed, which moves the kernel's channel epoch, and the next begin makes one again.
 void refuseChannels(bool refused)
 {
     std::lock_guard<std::mutex> l(kernel_model::callLock);
@@ -63,10 +64,13 @@ void refuseChannels(bool refused)
         if (!m.slots[s].uid)
             m.slots[s].foreign = refused;
     m.foreignTakesFreedSlot = refused;
-    if (refused)
-        for (uint32_t s = 0; s < kernel_model::kSlots; s++)
-            if (m.slots[s].uid && !m.slots[s].foreign)
-                m.kill(s + 1, 0x1f);
+    if (!refused) {
+        m.channelEpochMoves();
+        return;
+    }
+    for (uint32_t s = 0; s < kernel_model::kSlots; s++)
+        if (m.slots[s].uid && !m.slots[s].foreign)
+            m.kill(s + 1, 0x1f);
 }
 
 // The kernel refuses the channel while two frames record: the worker's encode ahead of each meets no channel and gives

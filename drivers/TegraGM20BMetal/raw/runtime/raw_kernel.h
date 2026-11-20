@@ -190,6 +190,9 @@ public:
 
     bool channel(uint32_t engines, uint32_t &channel, const volatile uint32_t *&fence);
     void closeChannel(uint32_t channel);
+    // The GPU's channel epoch (TegraGM20BChannelEpochWord) in the connection's fence page, mapped at the first call; null:
+    // the page could not be mapped
+    const volatile uint32_t *channelEpoch();
 
     // A SubmitJob or WaitFence found `channel` dead (the kernel killed it for a GPU fault or hang; its fence was released, and
     // the connection's other channels, BOs and binds go on)

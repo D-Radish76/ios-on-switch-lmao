@@ -48,7 +48,9 @@ TEST_F(DeviceRecovery, AKillFailsWhatItTookAndTheNextCommandBufferGetsANewChanne
     EXPECT_TRUE(dev.wait(after));
 }
 
-TEST_F(DeviceRecovery, AReopenTheKernelRefusesLeavesTheDeviceToTryAgain)
+// A reopen the kernel refuses: no channel asked for again while the kernel's channel epoch stays where it was (slots freed
+// with no word of it change nothing); once it moves, the next command buffer asks once and completes
+TEST_F(DeviceRecovery, AReopenTheKernelRefusedIsAskedForAgainOnceTheEpochMoves)
 {
     ASSERT_NE(copy(a, b, 4096), 0u);
     kill();
@@ -57,17 +59,23 @@ TEST_F(DeviceRecovery, AReopenTheKernelRefusesLeavesTheDeviceToTryAgain)
             s.foreign = true;
     model.foreignTakesFreedSlot = true;
     EXPECT_EQ(dev.begin(), nullptr);
+    const unsigned made = model.creates;
     for (kernel_model::Slot &s : model.slots)
         if (s.foreign && !s.uid)
             s.foreign = false;
+    EXPECT_EQ(dev.begin(), nullptr);
+    EXPECT_EQ(model.creates, made);
+    model.channelEpochMoves();
     const uint32_t after = copy(a, b, 4096);
     ASSERT_NE(after, 0u);
+    EXPECT_EQ(model.creates, made + 1);
     EXPECT_TRUE(dev.wait(after));
 }
 
-// A client's first channel the kernel refuses: no command buffer, its answer kept, and no channel asked for again later
-// (the kernel gives no word of when one can be made), whatever the time since
-TEST_F(DeviceRecovery, AFirstChannelTheKernelRefusedIsNotAskedForAgain)
+// A client's first channel the kernel refuses: no command buffer, its answer kept, and no channel asked for again while
+// the kernel's channel epoch stays where it was, whatever the time since; once it moves, the next command buffer asks once
+// and completes
+TEST_F(DeviceRecovery, AFirstChannelTheKernelRefusedIsAskedForAgainOnceTheEpochMoves)
 {
     for (kernel_model::Slot &s : model.slots)
         s.foreign = true;
@@ -80,6 +88,28 @@ TEST_F(DeviceRecovery, AFirstChannelTheKernelRefusedIsNotAskedForAgain)
     std::this_thread::sleep_for(std::chrono::milliseconds(1100));
     EXPECT_EQ(dev.begin(), nullptr);
     EXPECT_EQ(model.creates, made);
+    model.channelEpochMoves();
+    const uint32_t after = copy(a, b, 4096);
+    ASSERT_NE(after, 0u);
+    EXPECT_EQ(model.creates, made + 1);
+    EXPECT_TRUE(dev.wait(after));
+}
+
+// A first channel whose context the kernel refuses: the device destroyed that channel itself, which moved the epoch, and
+// that move is no reason to ask again; a later one is
+TEST_F(DeviceRecovery, AFirstChannelsRefusedContextIsAskedForAgainOnlyOnAMoveOfAnothers)
+{
+    model.refuse = 1;
+    EXPECT_EQ(dev.begin(), nullptr);
+    EXPECT_EQ(model.liveChannels(), 0u);
+    const unsigned made = model.creates;
+    EXPECT_EQ(dev.begin(), nullptr);
+    EXPECT_EQ(model.creates, made);
+    model.channelEpochMoves();
+    const uint32_t after = copy(a, b, 4096);
+    ASSERT_NE(after, 0u);
+    EXPECT_EQ(model.creates, made + 1);
+    EXPECT_TRUE(dev.wait(after));
 }
 
 // A push ring replaced while the dead channel's work was in flight goes back once the channel is made again, though the new

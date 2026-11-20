@@ -532,24 +532,26 @@ bool Device::ensureChannel()
     std::lock_guard<raw::Mutex> l(channelLock_);
     if (channelReady_.load(std::memory_order_relaxed))
         return true;
-    // the kernel tells a client nothing of when a channel it refused can be made, so none is asked for again
-    if (channelFailed_)
+    if (!channelRefusal_.mayAsk(k_))
         return false;
-    if (!openChannel(channelError_)) {
-        channelFailed_ = true;
+    bool gaveBack = false;
+    if (!openChannel(channelError_, gaveBack)) {
+        channelRefusal_.refused(gaveBack);
         return false;
     }
+    channelRefusal_.made();
     generations_.opened();
     channelReady_.store(true, std::memory_order_release);
     return true;
 }
 
 // channelLock_ held: the rings, the channel and its context with the 2D engine's state (raw/fx). False: what it made is given
-// back, so a later call starts over.
-bool Device::openChannel(std::string &err)
+// back, so a later call starts over; `gaveBack`: a channel among it.
+bool Device::openChannel(std::string &err, bool &gaveBack)
 {
     auto undo = [&](bool created) {
         err = k_.error();
+        gaveBack = created;
         if (created)
             k_.closeChannel(channel_);
         k_.free(push_.bo);

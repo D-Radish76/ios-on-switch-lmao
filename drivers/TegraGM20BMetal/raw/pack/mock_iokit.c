@@ -422,12 +422,14 @@ static kern_return_t mock_release(io_object_t o)
     return (o == kService || is_conn(o)) ? KERN_SUCCESS : IOObjectRelease(o);
 }
 
+static uint32_t *fence_page(void);
+
 static void *backing(uint32_t token, uint64_t *bytes, int *fd)
 {
     if (token == kFenceToken) {
         *bytes = 4096;
         *fd = -1;
-        return fence;
+        return fence_page();
     }
     if (!token || token >= kMaxBo || !bos[token].bytes)
         return NULL;
@@ -531,7 +533,8 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
                                                (getenv("MOCK_TILED_CACHE") ? TegraGM20BInfoTiledCache : 0) |
                                                (getenv("MOCK_COMPRESSION") ? TegraGM20BInfoCompression : 0) |
                                                (getenv("MOCK_NO_PRIORITY") ? 0 : TegraGM20BInfoPriority) |
-                                               (getenv("MOCK_NATIVE_JOBS") ? TegraGM20BInfoSubmitAddress : 0),
+                                               (getenv("MOCK_NATIVE_JOBS") ? TegraGM20BInfoSubmitAddress : 0) |
+                                               TegraGM20BInfoChannelEpoch,
                                       .chipset = 0x12e,
                                       .gpc_count = 1,
                                       .tpc_count = 2,
@@ -541,6 +544,7 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
                                       .cls_m2mf = 0xa140,
                                       .cls_compute = 0xb1c0,
                                       .cls_gpfifo = 0xb06f,
+                                      .fence_token = kFenceToken,
                                       .va_start = at + 0x1000,
                                       .va_end = at + window,
                                       .page_size = 4096,
@@ -646,6 +650,7 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
         const struct TegraGM20BAbiChannel *d = in;
         pthread_mutex_lock(&gpu_lock);
         live[d->channel & 15] = 0;
+        fence_page()[TegraGM20BChannelEpochWord]++; /* the kernel's channel epoch: one page serves every connection */
         pthread_mutex_unlock(&gpu_lock);
         return KERN_SUCCESS;
     }

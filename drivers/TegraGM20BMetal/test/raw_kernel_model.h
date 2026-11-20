@@ -170,6 +170,8 @@ struct Model {
     unsigned notResponding = 0;  // WaitFences answered kIOReturnNotResponding while GetStatus calls the channel healthy
     bool foreignTakesFreedSlot = false;
     unsigned creates = 0, destroys = 0, staleReads = 0;
+    // the channel epoch's count (channelEpochMoves)
+    uint32_t epoch = 0;
     std::vector<uint64_t> freed;             // BoFree's handles, in order
     std::map<uint64_t, uint64_t> undefined;  // handle: the killed channel whose job wrote it last
     // Kernel events (EventImport, EventWord): off, the kernel answers neither, as one without them does
@@ -188,6 +190,22 @@ struct Model {
     TegraGM20BAbiFence &fence(uint32_t slot)
     {
         return *reinterpret_cast<TegraGM20BAbiFence *>(fences + slot * kRecordBytes);
+    }
+
+    volatile uint32_t &epochWord()
+    {
+        return reinterpret_cast<volatile uint32_t *>(fences)[TegraGM20BChannelEpochWord];
+    }
+
+    // The GPU's channel epoch (TegraGM20BChannelEpochWord) moving on, in every connection's page, as the kernel moves it
+    // at a channel destroyed on any connection, a connection closed, or pool memory back after the pool refused the kernel
+    // an allocation. On the first connection's model, which holds the count.
+    void channelEpochMoves()
+    {
+        ++epoch;
+        __atomic_store_n(&epochWord(), epoch, __ATOMIC_RELEASE);
+        for (auto &[connection, other] : others)
+            __atomic_store_n(&other->epochWord(), epoch, __ATOMIC_RELEASE);
     }
 
     Slot *live(uint32_t channel)
@@ -544,7 +562,8 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         info = {};
         info.abi_version = TegraGM20BAbiVersion;
         info.flags = TegraGM20BInfoKernelMap | TegraGM20BInfoSubmitAddress | TegraGM20BInfoKillRecord |
-                     TegraGM20BInfoCpuAccess | model.infoFlags;
+                     TegraGM20BInfoCpuAccess | TegraGM20BInfoChannelEpoch | model.infoFlags;
+        info.fence_token = kernel_model::kFenceToken;
         info.cls_copy = 0xb0b5;
         info.cls_eng3d = 0xb197;
         info.va_start = 0x1000000;
@@ -633,6 +652,7 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         s->uid = 0;
         s->foreign = model.foreignTakesFreedSlot;
         model.foreignTakesFreedSlot = false;
+        kernel_model::model.channelEpochMoves();
         return KERN_SUCCESS;
     }
     case TegraGM20BMethodWaitFence:
@@ -731,6 +751,7 @@ extern "C" kern_return_t IOServiceOpen(io_service_t, task_port_t, uint32_t, io_c
     auto &other = model.others[*connection] = std::make_unique<kernel_model::Model>();
     other->vaEnd = model.vaEnd;
     other->opened = true;
+    other->epochWord() = model.epoch;
     return KERN_SUCCESS;
 }
 
@@ -743,5 +764,6 @@ extern "C" kern_return_t IOServiceClose(io_connect_t connection)
 {
     std::lock_guard<std::mutex> hold(kernel_model::callLock);
     kernel_model::model.others.erase(connection);
+    kernel_model::model.channelEpochMoves();
     return KERN_SUCCESS;
 }

@@ -5,6 +5,7 @@
 // before its first submission; a loaded channel's RAMFC lives in the PBDMA and goes back to memory when a preempt
 // switches it out, as each engine object's context bind does (nvkm_chan_cctx_bind: block, preempt, allow).
 #include "gpu_internal.h"
+#include "SwitchGpuChannelEpoch.h"
 #include "TegraGM20BRamfcOrder.h"
 #include "switch_gpu_chan_new_harness.h"
 
@@ -494,6 +495,16 @@ int tgm_chan_wait_ready(struct tgm_chan *chan, u32 gpfifo_nr, u32 push_nr)
 }
 
 void tgm_clock_anchors_fill(u32 page)
+{
+}
+
+uint32_t switch_gpu_channel_memory_refused, switch_gpu_channel_creates;
+
+void switch_gpu_channel_epoch_move(void)
+{
+}
+
+void switch_gpu_channel_epoch_fill(volatile uint32_t *page)
 {
 }
 
