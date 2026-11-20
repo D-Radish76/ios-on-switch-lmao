@@ -3,7 +3,8 @@
 #include "raw_lock.h"
 #include "raw_kernel.h"
 #include "raw_resource_set.h"
-#include <array>
+#include <atomic>
+#include <deque>
 #include <memory>
 #include <mutex>
 
@@ -58,20 +59,34 @@ private:
         uint32_t sequence = 0;
         bool pending = false;
         std::shared_ptr<void> owner;
+        // Held by one copy's thread from open() until it is done with the slot's memory, lock_ held or not, so no other
+        // copy takes the slot meanwhile: set under lock_, given back with one release store
+        std::atomic<bool> claimed{false};
     };
 
-    bool retire(Kernel &kernel, Slot &slot);
+    struct Unclaim {
+        void operator()(Slot *slot) const
+        {
+            slot->claimed.store(false, std::memory_order_release);
+        }
+    };
+    using Claim = std::unique_ptr<Slot, Unclaim>;
+
+    bool retire(Kernel &kernel, std::unique_lock<raw::Mutex> &serial, Slot &slot);
     void reset(Kernel &kernel);
-    Slot *open(Kernel &kernel, raw::Mutex &allocationLock, uint64_t bytes);
+    Claim claim();
+    Claim open(Kernel &kernel, std::unique_lock<raw::Mutex> &serial, raw::Mutex &allocationLock, uint64_t bytes);
     bool name(Kernel &kernel, ResourceSet &set, SurfaceList &uses, uint64_t va, uint64_t bytes, bool write,
               uint32_t flags);
     bool submit(Kernel &kernel, ResourceSet &set, Slot &slot, uint64_t offset, const uint32_t *start,
                 const uint32_t *end, SurfaceList &uses, uint32_t removals, KernelJob job, std::shared_ptr<void> owner);
     raw::Mutex lock_;
-    std::array<Slot, 4> slots_;
+    std::deque<Slot> slots_ = std::deque<Slot>(4);  // grows, never shrinks: a claimed slot stays where it is
     SetView view_;
     std::vector<SetUse> recorded_;
-    uint32_t channel_ = 0, last_ = 0, next_ = 0;
+    uint32_t channel_ = 0, next_ = 0;
+    // channels reset() closed: a copy that waited without lock_ checks no other thread closed its one meanwhile
+    uint32_t resets_ = 0;
     const volatile uint32_t *fence_ = nullptr;
 };
 

@@ -14,7 +14,8 @@ void TextureTransfers::reset(Kernel &kernel)
 {
     if (channel_)
         kernel.closeChannel(channel_);
-    channel_ = last_ = next_ = 0;
+    channel_ = next_ = 0;
+    ++resets_;
     fence_ = nullptr;
     for (auto &slot : slots_) {
         slot.pending = false;
@@ -22,7 +23,11 @@ void TextureTransfers::reset(Kernel &kernel)
     }
 }
 
-bool TextureTransfers::retire(Kernel &kernel, Slot &slot)
+// lock_ held through `serial`, the slot claimed: true once its last copy ran. The WaitFence runs with lock_ released (the
+// kernel's wait looks the channel up again and a close wakes it). False: the copy failed, or another thread's reset()
+// closed the channel meanwhile (its copies drained, the slot no longer pending), whose fence record a new channel may hold
+// by now.
+bool TextureTransfers::retire(Kernel &kernel, std::unique_lock<raw::Mutex> &serial, Slot &slot)
 {
     if (!slot.pending)
         return true;
@@ -35,8 +40,14 @@ bool TextureTransfers::retire(Kernel &kernel, Slot &slot)
             return false;
         wait = status == SemanticFenceStatus::Pending;
     }
-    if (wait && !kernel.wait(channel_, slot.sequence))
-        return false;
+    if (wait) {
+        const uint32_t channel = channel_, resets = resets_, sequence = slot.sequence;
+        serial.unlock();
+        const bool waited = kernel.wait(channel, sequence);
+        serial.lock();
+        if (resets != resets_ || !waited)
+            return false;
+    }
     if (kernel.killRecords()) {
         std::atomic_thread_fence(std::memory_order_acquire);
         if (fence->error) {
@@ -113,8 +124,8 @@ bool TextureTransfers::copy(Kernel &kernel, ResourceSet &set, raw::Mutex &alloca
     const uint64_t commandBytes = uint64_t(region.planes) * 32 * sizeof(uint32_t);
     if (commandOffset < dataBytes || commandOffset > UINT64_MAX - commandBytes || commandBytes / 4 >= (1u << 21))
         return false;
-    std::lock_guard<raw::Mutex> serial(lock_);
-    Slot *opened = open(kernel, allocationLock, commandOffset + commandBytes);
+    std::unique_lock<raw::Mutex> serial(lock_);
+    const Claim opened = open(kernel, serial, allocationLock, commandOffset + commandBytes);
     if (!opened)
         return false;
     Slot &slot = *opened;
@@ -145,8 +156,9 @@ bool TextureTransfers::copy(Kernel &kernel, ResourceSet &set, raw::Mutex &alloca
         return false;
     if (write)
         return true;
-    if (!retire(kernel, slot))
+    if (!retire(kernel, serial, slot))
         return false;
+    serial.unlock();
     std::atomic_thread_fence(std::memory_order_acquire);
     moveRows(region, static_cast<uint8_t *>(bytes), row, image, slot.memory.cpu, pitch, plane, false);
     return true;
@@ -157,8 +169,8 @@ bool TextureTransfers::copyBytes(Kernel &kernel, ResourceSet &set, raw::Mutex &a
 {
     if (!kernel.exactJobs() || !source || !destination || !bytes || bytes > UINT32_MAX)
         return false;
-    std::lock_guard<raw::Mutex> serial(lock_);
-    Slot *slot = open(kernel, allocationLock, kCopyBytesWords * sizeof(uint32_t));
+    std::unique_lock<raw::Mutex> serial(lock_);
+    const Claim slot = open(kernel, serial, allocationLock, kCopyBytesWords * sizeof(uint32_t));
     if (!slot)
         return false;
     auto *start = reinterpret_cast<uint32_t *>(slot->memory.cpu);
@@ -177,28 +189,47 @@ bool TextureTransfers::copyBytes(Kernel &kernel, ResourceSet &set, raw::Mutex &a
     return submit(kernel, set, *slot, 0, start, push.at, uses, removals, job, std::move(owner));
 }
 
-// lock_ held: the next slot, its last copy retired, with `bytes` of memory, on a live channel; null: none
-TextureTransfers::Slot *TextureTransfers::open(Kernel &kernel, raw::Mutex &allocationLock, uint64_t bytes)
+// lock_ held: the next slot no copy holds, claimed, next_ past it; a new slot when every one is held
+TextureTransfers::Claim TextureTransfers::claim()
 {
+    for (size_t i = 0; i < slots_.size(); ++i) {
+        Slot &slot = slots_[(next_ + i) % slots_.size()];
+        if (!slot.claimed.load(std::memory_order_acquire)) {
+            next_ = uint32_t((next_ + i + 1) % slots_.size());
+            slot.claimed.store(true, std::memory_order_relaxed);
+            return Claim(&slot);
+        }
+    }
+    Slot &added = slots_.emplace_back();
+    next_ = 0;
+    added.claimed.store(true, std::memory_order_relaxed);
+    return Claim(&added);
+}
+
+// lock_ held through `serial`: the next slot, claimed, its last copy retired, with `bytes` of memory, on a live channel;
+// null: none
+TextureTransfers::Claim TextureTransfers::open(Kernel &kernel, std::unique_lock<raw::Mutex> &serial,
+                                               raw::Mutex &allocationLock, uint64_t bytes)
+{
+    Claim slot = claim();
     const bool killed =
         channel_ && kernel.killRecords() && reinterpret_cast<const volatile TegraGM20BAbiFence *>(fence_)->error;
-    if (channel_ && (killed || kernel.lost(channel_) || !retire(kernel, slots_[next_])))
+    if (channel_ && (killed || kernel.lost(channel_) || (!retire(kernel, serial, *slot) && slot->pending)))
         reset(kernel);
     if (!channel_) {
         std::lock_guard<raw::Mutex> allocate(allocationLock);
         if (!kernel.channel(TegraGM20BEngineCopy, channel_, fence_))
             return nullptr;
     }
-    Slot &slot = slots_[next_];
-    if (slot.memory.bytes < bytes) {
+    if (slot->memory.bytes < bytes) {
         std::lock_guard<raw::Mutex> allocate(allocationLock);
         Bo replacement;
         if (!kernel.allocControl(std::max<uint64_t>(0x10000, bytes), replacement, ControlUse::TransferSlot))
             return nullptr;
-        kernel.free(slot.memory);
-        slot.memory = replacement;
+        kernel.free(slot->memory);
+        slot->memory = replacement;
     }
-    return &slot;
+    return slot;
 }
 
 // lock_ held, view_ current: [va, va + bytes) named to the job. A set member goes with the set (recorded_), so the device
@@ -235,8 +266,6 @@ bool TextureTransfers::submit(Kernel &kernel, ResourceSet &set, Slot &slot, uint
     slot.sequence = sequence;
     slot.pending = true;
     slot.owner = std::move(owner);
-    last_ = sequence;
-    next_ = (next_ + 1) % slots_.size();
     return true;
 }
 

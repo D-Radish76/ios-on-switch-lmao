@@ -2840,6 +2840,7 @@ host_test(
 host_test(
     name = "raw_transfer_test",
     srcs = [
+        "raw_transfer_fake.h",
         "raw_transfer_test.cpp",
         "//drivers/TegraGM20BMetal:raw/fx/fx_image.h",
         "//drivers/TegraGM20BMetal:raw/fx/fx_image.cpp",
@@ -2874,6 +2875,57 @@ host_test(
         "//kits/SwitchGM20BEmit:emit_ndebug",
     ],
 )
+
+# TextureTransfers from several threads, some held inside their WaitFence: the others' copies neither wait for them nor take
+# a slot they still hold, and a readback whose channel another thread reset meanwhile fails; plain and thread-sanitized
+[host_test(
+    name = "raw_transfer_threads" + suffix + "_test",
+    srcs = [
+        "raw_transfer_fake.h",
+        "raw_transfer_threads_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/fx/fx_image.h",
+        "//drivers/TegraGM20BMetal:raw/fx/fx_image.cpp",
+        "//drivers/TegraGM20BMetal:raw/fx/fx_mip.h",
+        "//drivers/TegraGM20BMetal:raw/fx/fx_mip.cpp",
+        "//drivers/TegraGM20B:TegraGM20BABI.h",
+        "//drivers/TegraGM20B:TegraGM20BClockABI.h",
+        "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
+        "//drivers/TegraGM20B:TegraGM20BJobABI.h",
+        "//drivers/TegraGM20B:TegraGM20BLayout.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_control_memory.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_kernel.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_lock.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_kit.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_cpu_completion.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_encode_profile.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_fence.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_shared_events.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_push.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_resource_set.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_resource_set.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_surfaces.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_transfer.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_transfer.h",
+    ],
+    copts = ["-Idrivers/TegraGM20B"] + tsan,
+    cxx_std = "c++17",
+    env = {"TSAN_OPTIONS": "halt_on_error=1"},
+    linkopts = tsan,
+    sanitize = not tsan,
+    deps = [
+        "//kits/SwitchGM20B:classes",
+        "//kits/SwitchGM20BEmit:emit_ndebug",
+    ],
+) for suffix, tsan in [
+    (
+        "",
+        [],
+    ),
+    (
+        "_tsan",
+        ["-fsanitize=thread"],
+    ),
+]]
 
 host_test(
     name = "raw_host_access_test",
