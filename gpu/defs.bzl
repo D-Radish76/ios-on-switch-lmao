@@ -16,29 +16,6 @@ _XCODE = {
     "_xcode_identity": attr.label(default = "@xcode//:identity", allow_single_file = True),
 }
 
-# --- llvm-as ---------------------------------------------------------------------------------------------------------
-
-def _llvm_as_impl(ctx):
-    out = ctx.actions.declare_file(ctx.attr.out)
-    ctx.actions.run(
-        executable = ctx.executable._llvm_as,
-        arguments = ["-o", out.path, ctx.file.src.path],
-        inputs = [ctx.file.src],
-        outputs = [out],
-        mnemonic = "LlvmAs",
-        progress_message = "Assembling %{input}",
-    )
-    return [DefaultInfo(files = depset([out]))]
-
-llvm_as = rule(
-    implementation = _llvm_as_impl,
-    attrs = {
-        "src": attr.label(mandatory = True, allow_single_file = [".ll"]),
-        "out": attr.string(mandatory = True),
-        "_llvm_as": attr.label(default = "@gpu_llvm_as//:bin/llvm-as", executable = True, cfg = "exec", allow_single_file = True),
-    },
-)
-
 # --- Xcode clang: objects and the plugin link --------------------------------------------------------------------
 
 def _xcode_run(ctx, mnemonic, message, command, inputs, outputs, env = {}):

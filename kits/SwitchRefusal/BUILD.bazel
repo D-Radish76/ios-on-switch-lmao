@@ -27,8 +27,7 @@ filegroup(
 
 kernel_headers()
 
-# User space. The Metal plugin compiles SwitchRefusal.c as a unit of its own (gpu/BUILD.bazel); a host tool that links
-# the bridge (//gpu:bridge) takes the copy in the bridge's static library.
+# User space. The Metal plugin compiles SwitchRefusal.c as a unit of its own (gpu/BUILD.bazel).
 cc_library(
     name = "switch_refusal",
     srcs = ["SwitchRefusal.c"],
@@ -45,8 +44,7 @@ kernel_driver(
     hdr_deps = [],
 )
 
-# The Rust side (SwitchRefusal.rs): the keys as const fns and the C calls, for the translation and the Metal bridge
-# (//gpu:translate, //gpu:bridge).
+# The Rust side (SwitchRefusal.rs): the keys as const fns and the C calls, for the translation (//gpu:translate).
 rust_library(
     name = "switch_refusal_rs",
     srcs = ["SwitchRefusal.rs"],

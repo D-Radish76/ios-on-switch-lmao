@@ -7,16 +7,14 @@
 #   bazel build //gpu:plugin --output_groups=debug   the plugin's dSYM
 #
 # Inputs: m2v's translator (third_party/m2v: steelbrain/metal2vulkan 720ef1ce and our patches as commits), its crates.io
-# crates (@rust_crates, bazel/rust), Rust 1.98.0 (a pinned download), Xcode and NAK's stage compile. The bridge, its
-# fixtures (LLVM 23.1.4's llvm-as) and NVK's host twin (//gpu/nvk: Mesa 77452b90 + the series) are the shader seed's
-# host tools' (//gpu/seed).
+# crates (@rust_crates, bazel/rust), Rust 1.98.0 (a pinned download), Xcode and NAK's stage compile.
 
 load("@rules_rust//rust:defs.bzl", "rust_library", "rust_static_library", "rust_test")
 load("//bazel/lint:defs.bzl", "lint_files")
 load("//bazel/rust:defs.bzl", "cargo_ids", "rust_artifact")
 load("//kits/SwitchGM20BEmit:defs.bzl", "EMIT_SOURCES")
 load("//translate/arm64e:target.bzl", "a64x_target_linkopts")
-load(":defs.bzl", "gpu_stage", "gpu_tree", "llvm_as", "metal_bundle", "metal_plugin", "raw_stack")
+load(":defs.bzl", "gpu_stage", "gpu_tree", "metal_bundle", "metal_plugin", "raw_stack")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -39,19 +37,6 @@ GM20B_LAYOUT = "//drivers/TegraGM20B:TegraGM20BLayout.h"
 # global symbols (third_party/mesa/src/nouveau/switch_compile).
 COMPILE = "//third_party/mesa/src/nouveau/switch_compile:ios"
 
-# The runtime's AIR fixtures, which the bridge compiles in (include_bytes!).
-llvm_as(
-    name = "runtime_examples_air",
-    src = "//third_party/m2v:crates/metal2vulkan-validation/fixtures/public/examples/runtime_examples.ll",
-    out = "air/runtime_examples.air",
-)
-
-llvm_as(
-    name = "function_constant_air",
-    src = "//third_party/m2v:crates/metal2vulkan-validation/fixtures/public/kernel_function_constant_gate_fold.ll",
-    out = "air/function_constant.air",
-)
-
 # The selected IPSW build's compile profile: the GM20B device description and compile policy the translation's offline
 # compile makes its translator devices of (translate/NativeMetalOffline.rs). Another build needs its own.
 alias(
@@ -64,7 +49,7 @@ alias(
 
 # The raw path's direct compile with no m2v runtime (drivers/TegraGM20BMetal/translate/NativeMetalTranslate.rs): the translator's own libraries,
 # functions and compile devices (the build's compile profile, which it compiles in), what the pack generator and the shader
-# compiler daemon compile with. The bridge below builds on it.
+# compiler daemon compile with.
 rust_library(
     name = "translate",
     srcs = [
@@ -131,76 +116,6 @@ rust_artifact(
     name = "translate_ios",
     crate = ":translate_static",
     kind = "device",
-)
-
-# The Metal bridge: NativeMetal's bridge (drivers/NativeMetal/bridge) over m2v's runtime and translator, a static
-# library the shader seed's host tools link (//gpu/seed). One crate graph, built per crate (bazel/rust/defs.bzl): each
-# m2v crate and crates.io crate is its own cached rustc action, so an edit recompiles that crate and its dependents only.
-rust_static_library(
-    name = "bridge",
-    srcs = [
-        METAL + ":bridge/NativeMetalBridge.rs",
-        METAL + ":bridge/NativeMetalCompile.rs",
-        METAL + ":bridge/NativeMetalDirectDevice.rs",
-        METAL + ":bridge/NativeMetalHeap.rs",
-        METAL + ":bridge/NativeMetalArguments.rs",
-        METAL + ":bridge/NativeMetalComputeArtifact.rs",
-        METAL + ":bridge/NativeMetalArtifactCodec.rs",
-        METAL + ":bridge/NativeMetalVariants.rs",
-        METAL + ":bridge/NativeMetalFailure.rs",
-        METAL + ":bridge/NativeMetalFunctions.rs",
-        METAL + ":bridge/NativeMetalObjects.rs",
-        METAL + ":bridge/NativeMetalTarget.rs",
-    ],
-    # The AIR fixtures and the compile profile it compiles in (include_bytes!(env!(...)); rules_rust makes $(execpath)
-    # absolute).
-    compile_data = [
-        ":function_constant_air",
-        ":runtime_examples_air",
-    ],
-    crate_name = "native_metal_bridge",
-    crate_root = METAL + ":bridge/NativeMetalBridge.rs",
-    edition = "2024",
-    rustc_env = {
-        "NMB_FC_AIR": "$(execpath :function_constant_air)",
-        "NMB_FIXTURE_AIR": "$(execpath :runtime_examples_air)",
-    },
-    # cargo's -C metadata for the crate (bazel/rust/defs.bzl: the release bridge is cargo's, byte for byte). A staticlib
-    # takes no extra-filename: the archive's own object is named without cargo's suffix (no shipped byte depends on it).
-    # target_j181: iOS 27 identifies the hardware as iPad12,1 (NativeMetalTarget.rs's A13 answers).
-    rustc_flags = cargo_ids("0cd6ef7afe7b4328", "943b498a20400856")[:1] + ["--check-cfg=cfg(target_j181)"] + select({
-        "//ipsw:24B119": ["--cfg=target_j181"],
-        "//conditions:default": [],
-    }),
-    version = "0.1.0",
-    # switch_refusal_rs brings kits/SwitchRefusal's C, bundled into the archive by rustc (a static native library of a
-    # staticlib)
-    deps = [
-        ":translate",
-        "//kits/SwitchRefusal:switch_refusal_rs",
-        "//third_party/m2v/crates/metal2vulkan",
-        "//third_party/m2v/crates/metal2vulkan-runtime",
-        "@rust_crates//:ash",
-        "@rust_crates//:libc",
-        "@rust_crates//:serde",
-        "@rust_crates//:serde_json",
-        "@rust_crates//:sha2",
-    ],
-)
-
-# The precompile's: this Mac, optimized but no LTO, in both profiles (the cache keys hash the sources, not the code).
-rust_artifact(
-    name = "bridge_host",
-    crate = ":bridge",
-    kind = "tool",
-)
-
-# The device's bridge built for this Mac (the device's code, in the build profile): the host simulation's
-# (drivers/TegraGM20BMetal/hostsim/build.sh `bazel-bin/gpu/bridge_darwin/libnative_metal_bridge.a` <outdir>).
-rust_artifact(
-    name = "bridge_darwin",
-    crate = ":bridge",
-    kind = "device_mac",
 )
 
 # The raw GM20B path's stack key: compiled into the plugin and stamped into the raw pack and the native seed, whose
