@@ -147,6 +147,8 @@ private:
     bool resolvePasses();
     void refresh(size_t pass);
     bool standIns(size_t pass);
+    bool drawStandIns(const std::vector<__unsafe_unretained RMTexture *> &stale);
+    bool standInsGoStale(size_t encoderAt);
     void localShadows(std::vector<raw::KernelUse> &list);
     void shadowCopies(const std::vector<const void *> &back, const std::vector<const void *> &fill);
     void beginKernelShadows(size_t encoderAt);
@@ -181,6 +183,7 @@ private:
     raw::KernelShadows kernelShadows_;  // the open compute encoder's (raw_kernel_shadow.h)
     std::vector<raw::KernelUse> dispatchUses_, encoderUses_;
     bool encoderShadows_ = false;
+    bool encoderTracked_ = false;  // its dispatches' uses are tracked: shadowed images, or stand-ins writes reach
     raw::StateCursor stateCursor_;
     raw::FusionPass fused_;
     size_t fusedAt_ = SIZE_MAX;

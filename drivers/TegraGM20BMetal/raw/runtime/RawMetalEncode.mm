@@ -363,7 +363,7 @@ void RMRangeEncode::reset()
     be_ = nullptr;
     rc_ = nullptr;
     cb_ = nil;
-    serialCompute_ = computeUnit_ = continuing_ = encoderShadows_ = false;
+    serialCompute_ = computeUnit_ = continuing_ = encoderShadows_ = encoderTracked_ = false;
     kernelShadows_ = {};
     stateCursor_ = {};
     fused_ = {};

@@ -87,6 +87,11 @@ bool RMRangeEncode::standIns(size_t pass)
                                        std::find(stale.begin(), stale.end(), holder) == stale.end())
                                        stale.push_back(holder);
                                });
+    return drawStandIns(stale);
+}
+
+bool RMRangeEncode::drawStandIns(const std::vector<__unsafe_unretained RMTexture *> &stale)
+{
     // one pass of the conversion state from `from` into `into`, `width` x `height` of each; false: refused
     auto convert = [&](raw::Texture *into, const raw::Texture *from, const raw::Texture &x, uint32_t width,
                        uint32_t height) -> bool {
@@ -185,62 +190,6 @@ bool RMRangeEncode::standIns(size_t pass)
     return true;
 }
 
-// textures a kernel reaches through their images (raw_kernel_shadow.h): filled as their compute encoder begins,
-// copied back as it ends, sooner where another resource of a dispatch reaches the same bytes. A load the
-// command buffer's native view of a decoder's plane answers (readTexture) reads in place.
-void RMRangeEncode::localShadows(std::vector<raw::KernelUse> &list)
-{
-    for (raw::KernelUse &u : list)
-        if (u.shadowed && !u.writes) {
-            const raw::Texture &x = ((__bridge RMTexture *)u.object)->_raw;
-            if (const raw::Texture *native = rc_->readTexture(&x); native != &x) {
-                u.shadowed = false;
-                u.object = native;  // another resource over its bytes: an image written before is copied back first
-            }
-        }
-}
-
-void RMRangeEncode::shadowCopies(const std::vector<const void *> &back, const std::vector<const void *> &fill)
-{
-    raw::BlitEncoder *copy = rc_->blit();
-    for (const void *o : back)
-        rmMoveShadowImage(*copy, ((__bridge RMTexture *)o)->_raw, false);
-    for (const void *o : fill)
-        rmMoveShadowImage(*copy, ((__bridge RMTexture *)o)->_raw, true);
-    copy->end();
-}
-
-void RMRangeEncode::beginKernelShadows(size_t encoderAt)
-{
-    encoderUses_.clear();
-    for (size_t at = encoderAt; at < cb_->_plan.encoderEnd(encoderAt); ++at) {
-        if (cb_->_plan.operation(at).op != OpDispatch || !cb_->_plan.dispatch(at).surfaceSlots)
-            continue;
-        kernelUses(cb_, at, dispatchUses_);
-        localShadows(dispatchUses_);
-        encoderUses_.insert(encoderUses_.end(), dispatchUses_.begin(), dispatchUses_.end());
-    }
-    kernelShadows_.begin(encoderUses_.data(), encoderUses_.size());
-    encoderShadows_ = !encoderUses_.empty();
-    std::vector<const void *> fill;
-    for (const raw::KernelUse &u : encoderUses_)
-        if (u.shadowed && std::find(fill.begin(), fill.end(), u.object) == fill.end())
-            fill.push_back(u.object);
-    if (!fill.empty())
-        shadowCopies({}, fill);
-}
-
-// the images written back, and every pool image of a texture a draw samples refreshed again before that draw: a
-// kernel may have written its rows through another resource
-void RMRangeEncode::endKernelShadows()
-{
-    const std::vector<const void *> back = kernelShadows_.end();
-    if (!back.empty())
-        shadowCopies(back, {});
-    fresh_.clear();
-    encoderShadows_ = false;
-}
-
 // setVisibility refuses a mode set at a result word its Metal encoder set before (Metal's validation: "Using the same
 // offset in the visibility buffer twice in the same command encoder is not allowed"; an offset past
 // maxVisibilityQueryOffset lands on one) and any mode once the device could not make its report page
@@ -307,7 +256,7 @@ bool RMRangeEncode::command(size_t at)
             ce_->setSerial(serialCompute_);
             stateCursor_.reset();
         }
-        if (encoderShadows_) {
+        if (encoderTracked_) {
             kernelUses(cb, at, dispatchUses_);
             localShadows(dispatchUses_);
         }
@@ -315,6 +264,17 @@ bool RMRangeEncode::command(size_t at)
             ce_->end();
             ce_.reset();
             shadowCopies(steps.copyBack, steps.fill);
+            if (!steps.redraw.empty()) {
+                std::vector<__unsafe_unretained RMTexture *> redrawn;
+                for (const void *o : steps.redraw) {
+                    __unsafe_unretained RMTexture *holder = rmStandInHolder((__bridge RMTexture *)o);
+                    standInFresh_.erase(holder);
+                    if (std::find(redrawn.begin(), redrawn.end(), holder) == redrawn.end())
+                        redrawn.push_back(holder);
+                }
+                if (!drawStandIns(redrawn))
+                    return false;
+            }
             ce_.emplace(*rc, *d_);
             ce_->setSerial(serialCompute_);
             stateCursor_.reset();

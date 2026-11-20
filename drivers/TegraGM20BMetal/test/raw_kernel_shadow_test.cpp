@@ -206,4 +206,69 @@ TEST(KernelShadow, TwoStoresToTheSameBytesInOneDispatchLeaveTheImages)
     EXPECT_EQ(next.fill[0], &f.chroma);
 }
 
+// HW Test gpu.raw.xr_stand_in_refill's encoder: a BGR10_XR target over a 'w30r' 64x64 of rows 256 written by one dispatch,
+// a 128-texel RGB10A8_2P_XR10 texel buffer over the same surface read by the next through its stand-in. An M4 Max reads
+// the written texels after the barrier between them. Over a pitch surface the buffer reads the rows; over the
+// block-linear one the kernel lays out it reads a pool of them (raw_texel_rows.h); either way the stand-in a dispatch
+// reads is drawn from what it reads.
+struct Refill {
+    static constexpr uint64_t kSurfaceVa = 0x30000000;
+    static constexpr uint32_t kRows = 256, kSide = 64, kTexels = 128;
+    Bytes surface = Bytes(size_t(kRows) * kSide, 0);
+    Texture target{kSurfaceVa, surface, 0, kSide, kSide, 4, kRows};
+    Bytes pool = Bytes(size_t(kTexels) * 4, 0), standIn = Bytes(size_t(kTexels) * 4, 0);
+    raw::KernelUse write = use(target, true), read;
+
+    explicit Refill(bool pooled) : read{&pool, {kSurfaceVa, surface.size()}, pooled, false, true} {}
+
+    void fill()
+    {
+        memcpy(pool.data(), surface.data(), pool.size());
+    }
+};
+
+void refillsTheStandIn(bool pooled)
+{
+    Refill r(pooled);
+    const raw::KernelUse uses[] = {r.write, r.read};
+    raw::KernelShadows plan;
+    plan.begin(uses, 2);
+    r.fill();
+    r.standIn = pooled ? r.pool : Bytes(r.surface.begin(), r.surface.begin() + r.standIn.size());
+    EXPECT_TRUE(plan.before(&r.write, 1).empty());
+    memset(r.surface.data(), 0x27, r.surface.size());  // the first dispatch's stores, in place
+    plan.after(&r.write, 1);
+    const auto &next = plan.before(&r.read, 1);
+    EXPECT_EQ(next.fill.size(), pooled ? 1u : 0u) << "a pool is filled again from the rows the target wrote";
+    ASSERT_EQ(next.redraw.size(), 1u) << "and the stand-in drawn again before the read";
+    EXPECT_EQ(next.redraw[0], &r.pool);
+    if (!next.fill.empty())
+        r.fill();
+    r.standIn = pooled ? r.pool : Bytes(r.surface.begin(), r.surface.begin() + r.standIn.size());
+    EXPECT_EQ(r.standIn, Bytes(r.standIn.size(), 0x27)) << "the read sees the written texels";
+    plan.after(&r.read, 1);
+    EXPECT_TRUE(plan.before(&r.read, 1).empty()) << "drawn once per write, not before every dispatch";
+}
+
+TEST(KernelShadow, AStandInIsDrawnAgainAfterADispatchWroteItsTexelsInTheSameEncoder)
+{
+    refillsTheStandIn(false);
+    refillsTheStandIn(true);
+}
+
+TEST(KernelShadow, AStandInItsOwnDispatchWroteIsDrawnAgainBeforeItIsRead)
+{
+    Refill r(false);
+    const raw::KernelUse store = {r.read.object, r.read.span, false, true, false};
+    raw::KernelShadows plan;
+    plan.begin(&r.read, 1);
+    EXPECT_TRUE(plan.before(&r.read, 1).empty()) << "drawn as the encoder began";
+    plan.after(&r.read, 1);
+    EXPECT_TRUE(plan.before(&store, 1).empty());
+    plan.after(&store, 1);
+    const auto &next = plan.before(&r.read, 1);
+    ASSERT_EQ(next.redraw.size(), 1u);
+    EXPECT_EQ(next.redraw[0], &r.pool);
+}
+
 }  // namespace

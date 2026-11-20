@@ -96,12 +96,14 @@ bool kernelSamplersMapped(Plan &plan, const State &state, const raw::PackKernel 
 
 raw::KernelUse textureUse(RMTexture *t, bool writes)
 {
+    const bool derived = !writes && t->_raw.standIn;
     if (raw::xrPlanesPooled(t->_raw))  // its kernels read and store its planes' pools (raw_xr_pools.h)
-        return {(__bridge const void *)t, raw::kernelTextureSpan(*t->_raw.luma), true, writes};
+        return {(__bridge const void *)t, raw::kernelTextureSpan(*t->_raw.luma), true, writes, derived};
     if (const raw::TexelRows *rows = t->_raw.texelRows)  // its texels lie in its surface's image (raw_texel_rows.h)
-        return {(__bridge const void *)t, {rows->import->bo.va, rows->import->layout.bytes}, true, writes};
+        return {(__bridge const void *)t, {rows->import->bo.va, rows->import->layout.bytes}, true, writes, derived};
     const raw::KernelTextureForm form = raw::kernelTextureForm(t->_raw);
-    return {(__bridge const void *)t, raw::kernelTextureSpan(t->_raw), form == raw::KernelTextureForm::Shadow, writes};
+    return {(__bridge const void *)t, raw::kernelTextureSpan(t->_raw), form == raw::KernelTextureForm::Shadow, writes,
+            derived};
 }
 
 raw::KernelUse bufferUse(RMBuffer *b, uint64_t offset, bool writes)
@@ -234,7 +236,10 @@ bool admitComputeDispatch(RMCommandBuffer *cb, size_t at, const raw::ComputeKern
                 imageRefused(cb, x.slot, TermTwoPlanesBare, t, k->rec->keyHash);
                 return refuse(imageTermName(TermTwoPlanesBare));
             }
-            if (standIn) {  // drawn from its codes as the encoder begins (encodeRaw's standIns)
+            // drawn from its codes as the encoder begins (encodeRaw's standIns), and again before a dispatch of it
+            // that a write since reached (raw_kernel_shadow.h KernelUse::derived)
+            if (standIn) {
+                shadowSlots |= 1u << x.slot;
                 cb->_standIns = true;
                 if (t->_raw.xrPlanes)
                     cb->_xrStandIns.insert(t);
