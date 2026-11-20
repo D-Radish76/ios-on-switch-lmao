@@ -17,7 +17,7 @@ import SwitchTexturePattern
 /// tolerance) and `<route>_gob` (its first row is the pattern laid out in GOBs, whatever pitch the misread took). Core
 /// Image's and SwiftUI's routes are judged on `_gob` only (their colour handling is theirs). `surface_bare` reads a
 /// block-linear surface with no lock, which only a lock can show as rows (TegraGM20BViews.cpp): reported with the
-/// surface's layout, not judged.
+/// surface's layout, not judged. The CPU routes and buffer asks over a surface are RawReadbackRoutesSurface.swift's.
 struct RawReadbackRoutesTest: HWTest {
     let id = "gpu.raw.readback_routes"
     let name = "A 260x260 BGRA render reads back as rows by every readback route"
@@ -87,6 +87,8 @@ struct RawReadbackRoutesTest: HWTest {
             "ci_surface",
             Self.ciRows(CIImage(ioSurface: unsafeBitCast(surface.surface, to: IOSurfaceRef.self)), gpu.device),
             gobOnly: true)
+
+        try await surfaceCpu(gpu, draw, &metrics, &checks)
 
         judge("swiftui", await Self.swiftUIRows(), gobOnly: true, tolerance: 2)
 

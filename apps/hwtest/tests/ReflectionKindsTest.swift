@@ -2,7 +2,6 @@ import Foundation
 import HWTestCore
 import HWTestGPU
 import Metal
-import OSLog
 
 /// Pipeline reflection per binding kind (drivers/TegraGM20BMetal/raw/runtime/RawMetalReflectionObjects.mm), two arms
 /// judged apart. kinds: reflection_kinds's compute state and reflection_vs/reflection_fs's render state (BGRA8Unorm),
@@ -117,17 +116,8 @@ struct ReflectionKindsTest: HWTest {
 
     /// This process's facade lines since `start` that end as a wrong-kind ask's does; nil when its log cannot be read
     static func assertLines(since start: Date) -> [String]? {
-        let subsystem = "com.brunostjohn.switch.TegraGM20BMetal"
-        guard let store = try? OSLogStore(scope: .currentProcessIdentifier),
-            let entries = try? store.getEntries(
-                at: store.position(date: start),
-                matching: NSPredicate(
-                    format: "subsystem == %@ AND category == %@ AND composedMessage CONTAINS %@", subsystem, "raw",
-                    assertSuffix))
-        else { return nil }
-        return entries.compactMap { $0 as? OSLogEntryLog }.filter {
-            $0.date >= start && $0.subsystem == subsystem && $0.category == "raw"
-                && $0.composedMessage.hasSuffix(assertSuffix)
-        }.map(\.composedMessage)
+        ProcessLog.lines(ProcessLog.metal, "raw", containing: assertSuffix, since: start)?.filter {
+            $0.hasSuffix(assertSuffix)
+        }
     }
 }

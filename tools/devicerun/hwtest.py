@@ -262,6 +262,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.render_reflection',
             'gpu.raw.compute_reflection',
             'gpu.raw.reflection_kinds',
+            'gpu.raw.function_pointer_answers',
             'gpu.kernel.fence_page_regions',
             'gpu.raw.depth16_ms_resolve',
             'gpu.raw.invalid_requests',
