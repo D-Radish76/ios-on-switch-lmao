@@ -4,8 +4,6 @@
 # What //gpu:raw_stack hashes (its `inputs` output group, and the sources of the NVK dylib it hashes) and the raw pack
 # generator's own sources (raw/pack, gpu/seed, tools/gpu and the runtime headers it reads): formatting them moves the
 # raw stack key or the pack, so they are formatted with the next key batch.
-drivers/NativeMetal/NativeComputeArtifactStorage.h
-drivers/NativeMetal/NativeMetalArtifactCache.h
 drivers/TegraGM20B/TegraGM20BABI.h
 drivers/TegraGM20BMetal/raw/pack/mock_iokit.c
 drivers/TegraGM20BMetal/raw/pack/native_seed.mm

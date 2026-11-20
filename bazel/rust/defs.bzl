@@ -39,10 +39,9 @@ _PIPELINED = "@rules_rust//rust/settings:pipelined_compilation"
 # Source paths as rustc records them (panic locations, debug info), the same in both profiles and on every machine:
 # the crate roots are execroot-relative, so these name each tree by a fixed prefix (rustc matches whole path components;
 # the crates.io crates' are theirs, in crates.MODULE.bazel). They are the paths cargo's build of the bridge gave
-# (tools/gpu/cargo_bridge.py laid m2v in as m2v/ next to the bridge's src/), so the release plugin's strings are the same.
+# (tools/gpu/cargo_bridge.py laid m2v in as m2v/), so the release plugin's strings are the same.
 REMAP_FLAGS = [
     "--remap-path-prefix=third_party/m2v=m2v",
-    "--remap-path-prefix=drivers/NativeMetal/bridge=src",
 ]
 
 # The deployment targets the plugin and the host tools are built for (rustc reads them from the environment: the
