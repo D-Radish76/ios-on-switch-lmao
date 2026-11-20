@@ -13,6 +13,7 @@
 #include "raw_blit_planes.h"
 #include "raw_fill_record.h"
 #include "raw_mip.h"
+#include "raw_overlap_rows.h"
 #include "raw_rotated_pass.h"
 #include "raw_twod_fill.h"
 
@@ -95,6 +96,8 @@ static void bufferCopyImage(RMTexture *t, uint32_t level, raw::Texture &image, b
     blitImage(t, level, image);
     if (t->_raw.converted())
         raw::planeBytes(t->_raw, raw::planeUnit(t->_raw), image, into);
+    else if (into && image.storePitch)
+        image = raw::storedRows(image, image);
 }
 
 // Plane 0's bytes of the side or sides held through planes, counted in the destination's texel (kCopyPlaneBytes): the
@@ -220,6 +223,8 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         raw::Texture fromLevel, toLevel;
         blitImage(s, uint32_t(sl), fromLevel);
         blitImage(t, uint32_t(dl), toLevel);
+        if (toLevel.storePitch)  // rows under 16 bytes, which an M4 Max's blit writes 16 apart (raw_plain_rows.h)
+            toLevel = raw::storedRows(toLevel, toLevel);
         uint32_t ex = sx, ey = sy, ew = w, eh = h;
         raw::toElements(s->_raw, ex, ey, ew, eh);  // (whole blocks, the same blocks both sides: checked at record)
         uint32_t fx = dx / t->_raw.blockW, fy = dy / t->_raw.blockH;

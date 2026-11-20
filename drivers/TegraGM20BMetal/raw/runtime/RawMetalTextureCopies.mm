@@ -7,6 +7,7 @@
 #import "RawMetalXrPlanes.h"
 #include "raw_texture_cpu_range.h"
 #include "raw_ycbcr.h"
+#include <mach/vm_page_size.h>
 
 namespace {
 // A region of `t`'s texels in its elements: a block-compressed texture's blocks (Metal's region of one is whole blocks but at
@@ -93,8 +94,18 @@ void planeRows(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice, ui
     if (level || slice || r.origin.z || r.size.depth != 1 || r.origin.x + r.size.width > t->_raw.width ||
         r.origin.y + r.size.height > t->_raw.height)
         return;
-    TextureCpuAccess access(t, r, level, slice, write);
     const size_t line = r.size.width * t->_raw.bpp;
+    // an M4 Max's CPU copy moves no row past the surface's last page (the plain-rows probe, macOS 27.2.1)
+    if (IOSurfaceRef s = t->_surface) {
+        const uint8_t *end = static_cast<const uint8_t *>(IOSurfaceGetBaseAddress(s)) +
+                             ((IOSurfaceGetAllocSize(s) + vm_page_size - 1) & ~size_t(vm_page_size - 1));
+        while (r.size.height &&
+               t->_cpuRows + (r.origin.y + r.size.height - 1) * t->_cpuPitch + r.origin.x * t->_raw.bpp + line > end)
+            r.size.height--;
+        if (!r.size.height)
+            return;
+    }
+    TextureCpuAccess access(t, r, level, slice, write);
     for (NSUInteger y = 0; y < r.size.height; y++) {
         uint8_t *at = t->_cpuRows + (r.origin.y + y) * t->_cpuPitch + r.origin.x * t->_raw.bpp;
         if (write)

@@ -4,6 +4,9 @@
 #import "RawMetalInternal.h"
 #include "raw_rotated_pass.h"
 
+// The descriptor's MTLTextureRotation, 0 where it names none
+NSUInteger descriptorRotation(MTLTextureDescriptor *d);
+
 // A texture `d` makes over plane `plane` of `s` that Metal's rotation SPI turns, of a shape the raw path draws into (`out`: its
 // rotation and frame); false for any other
 bool rotatedShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane, raw::Rotation &out);

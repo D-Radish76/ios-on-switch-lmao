@@ -15,7 +15,8 @@ namespace raw {
 
 bool Device::openSparseWindow(Texture &t, uint64_t end, uint64_t sink)
 {
-    Import *import = t.onePlane ? t.import : t.luma ? t.luma->import : nullptr;
+    // a YCbCr texture's planes, or a texture of its own rows (raw_plain_rows.h)
+    Import *import = t.onePlane || !t.luma ? t.import : t.luma->import;
     if (!import || import->kernelTiled() || !k_.sparse())
         return false;
     const uint64_t page = k_.info().page_size, pages = import->bo.bytes, into = import->bo.va - import->bo.vaBase;
@@ -42,7 +43,7 @@ bool Device::openSparseWindow(Texture &t, uint64_t end, uint64_t sink)
         return true;
     }
     std::lock_guard<raw::Mutex> l(lock_);
-    for (Texture *plane : {t.luma, t.chroma}) {
+    for (Texture *plane : {t.luma ? t.luma : &t, t.chroma}) {
         if (!plane || plane->memoryless)
             continue;
         plane->va = moved(plane->va, *plane->import);

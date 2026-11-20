@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: MIT
 #import "RawMetalRotated.h"
+#import "RawMetalPlainRows.h"
 #import "RawMetalXrPlanes.h"
 #include "raw_format_standin.h"
 #include "raw_surface_refusal.h"
 
-static NSUInteger descriptorRotation(MTLTextureDescriptor *d)
+NSUInteger descriptorRotation(MTLTextureDescriptor *d)
 {
     static const SEL rotation = NSSelectorFromString(@"rotation");
     return [d respondsToSelector:rotation] ? ((NSUInteger (*)(id, SEL))objc_msgSend)(d, rotation) : 0;
@@ -121,12 +122,17 @@ bool createRotated(RMTexture *t, MTLTextureDescriptor *d, IOSurfaceRef s, NSUInt
     const size_t pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
     const uint32_t format = uint32_t(d.pixelFormat);
     // a planar surface's planes stay rows (TegraGM20BLayout.h), so only a surface of one plane asks to be laid out tiled
-    const bool made = raw::twoPlaneXr(format) ? createTurnedXr(t, s, plane, r)
-                      : planarFormat(format)  ? createTurnedYcbcr(t, d, s, plane, r)
-                                              : gRM->raw->createSurfaceTexture(
-                                                   IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset,
-                                                   r.planeWidth(), r.planeHeight(), uint32_t(pitch), format, t->_raw,
-                                                   planes <= 1);
+    bool made;
+    if (raw::twoPlaneXr(format))
+        made = createTurnedXr(t, s, plane, r);
+    else if (planarFormat(format))
+        made = createTurnedYcbcr(t, d, s, plane, r);
+    else if (plainRowsShape(planeDescriptor(d, r), s, plane))
+        made = makePlainRows(t, s, plane, r.planeWidth(), r.planeHeight());
+    else
+        made = gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset,
+                                              r.planeWidth(), r.planeHeight(), uint32_t(pitch), format, t->_raw,
+                                              planes <= 1);
     if (!made)
         return false;
     t->_raw.rotation = r.turn;

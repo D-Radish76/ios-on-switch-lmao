@@ -5168,6 +5168,19 @@ facade_test(
     ],
 )
 
+# Plain formats over surface planes whose rows overlap, lie under 16 bytes or run past the allocation: made through their
+# pools (rows past the last page through a sparse window), a pass's rows stored from the pool by the overlap state of the
+# texel's size in an M4 Max's order
+facade_test(
+    name = "raw_facade_plain_rows_test",
+    srcs = [
+        "raw_facade_pass_scene.h",
+        "raw_facade_variant_compiler.h",
+        "raw_facade_plain_rows_test.cpp",
+        ":librecord_count.dylib",
+    ],
+)
+
 facade_test(
     name = "raw_facade_texture_rows_test",
     srcs = ["raw_facade_texture_rows_test.cpp"],

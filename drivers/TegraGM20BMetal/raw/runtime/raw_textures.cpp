@@ -397,6 +397,11 @@ void Device::destroyTexture(Texture &t)
         delete t.standIn;
         t.standIn = nullptr;
     }
+    if (t.storeView) {
+        destroyTexture(*t.storeView);
+        delete t.storeView;
+        t.storeView = nullptr;
+    }
     if (t.sampled) {  // its header is the pool image's
         destroyTexture(*t.sampled);
         delete t.sampled;

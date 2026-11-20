@@ -406,6 +406,8 @@ inline std::vector<std::string> corpusLines(NSString *text, bool own)
                             "60 | v ycbcr_store_vert | f ycbcr_overlap_rg16_frag",
                             "90 | v ycbcr_store_vert | f ycbcr_overlap_rgb10a2_frag",
                             "53 | v ycbcr_store_vert | f ycbcr_overlap_r32ui_frag",
+                            "103 | v ycbcr_store_vert | f ycbcr_overlap_rg32ui_frag",
+                            "123 | v ycbcr_store_vert | f ycbcr_overlap_rgba32ui_frag",
                             "13 | v ycbcr_store_vert | f ycbcr_overlap_planes_frag",
                             "13 | v ycbcr_store_vert | f ycbcr_overlap_meet_frag",
                             "13 | v turn_vert | f turn_copy8_frag",

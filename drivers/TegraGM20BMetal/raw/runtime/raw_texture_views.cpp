@@ -170,7 +170,7 @@ bool Device::createView(const Texture &of, uint32_t format, Texture &t)
         t.span = {};
         t.lease = nullptr;
         t.chain = nullptr;  // a mipmapped texture's view: every level sampled, level 0 rendered and copied
-        t.standIn = t.sampled = nullptr;
+        t.standIn = t.sampled = t.storeView = nullptr;
         t.tic = 0;
         if (!of.sampled && !(t.tic = of.xrPlanes ? allocTicPair() : allocTic()))
             return false;
@@ -258,7 +258,7 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
         t.span = {};
         t.lease = nullptr;
         t.chain = nullptr;
-        t.standIn = t.sampled = nullptr;
+        t.standIn = t.sampled = t.storeView = nullptr;
         t.tic = 0;
         if (!of.sampled && !(t.tic = of.xrPlanes ? allocTicPair() : allocTic()))
             return false;

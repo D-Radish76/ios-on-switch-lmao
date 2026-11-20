@@ -382,6 +382,9 @@ struct Texture {
     // through `sampled`, a block-linear pool image of its texels the copy engine refreshes from it before work that samples
     // it, as m2v samples such a surface through a shadow image it copies in. tic is sampled's.
     Texture *sampled = nullptr;
+    // A plain format over a surface plane whose rows overlap or lie under 16 bytes (raw_plain_rows.h): `sampled` read as
+    // integer texels of its size, the view the pack's overlap state stores its rows from after a pass renders the pool
+    Texture *storeView = nullptr;
     // A no-copy block texture whose caller's memory is off its image's alignment (raw_block_base.h) is a pool image of the
     // same layout: callerPages are the caller's pages, bound pitch, that the copy engine fills the image from
     // (Device::copyCallerPages) and that Metal's copies into the image go on to. Both copies reach the image through

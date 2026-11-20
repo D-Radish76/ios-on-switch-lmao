@@ -234,6 +234,10 @@ inline const char *overlapState(uint32_t format)
         return "raw.ycbcr_store.ycbcr_overlap_rg16_frag";
     case 90:  // RGB10A2Unorm: a one-plane 4:4:4 target's words
         return "raw.ycbcr_store.ycbcr_overlap_rgb10a2_frag";
+    case 103:  // RG32Uint and RGBA32Uint: a plain format's texels of 8 and 16 bytes (raw_plain_rows.h)
+        return "raw.ycbcr_store.ycbcr_overlap_rg32ui_frag";
+    case 123:
+        return "raw.ycbcr_store.ycbcr_overlap_rgba32ui_frag";
     default:
         return nullptr;
     }

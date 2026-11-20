@@ -10,6 +10,7 @@
 #import "RawMetalTargetViews.h"
 #include "raw_clear.h"
 #include "raw_format_standin.h"
+#include "raw_plain_rows.h"
 #include "raw_planar_target.h"
 #include "raw_turned_planes.h"
 #include "raw_xr_pools.h"
@@ -117,6 +118,10 @@ bool RMRangeEncode::beginPass(size_t at)
             return fail(PredEncPlanarRT, kNoStandIn, j);
         }
         useTexture(rc, t, true);
+        // an M4 Max stores only the 32x32 frame tiles a loaded pass's draws reach of a plain target whose rows overlap
+        // (the plain-rows probe: a scissored draw's texels win bytes later rows outside it would by the order)
+        if (raw::plainRowsPooled(t->_raw) && a.load == MTLLoadActionLoad && a.store != MTLStoreActionDontCare)
+            loadedTargets_ |= uint8_t(1u << j);
         if (standIn) {
             // Metal's DontCare load keeps the planes' codes where no draw writes, and the store writes every texel
             // (raw/test/standinoracle.mm): such a pass loads them too. A YCbCr code target's undrawn texels are
@@ -302,18 +307,28 @@ bool RMRangeEncode::beginPass(size_t at)
     return true;
 }
 
-void RMRangeEncode::overlappingPlanes(const RMPass &pass, const raw::PassDesc &p)
+void RMRangeEncode::overlappingPlanes(const RMPass &pass, raw::PassDesc &p)
 {
-    for (const RMPass::Color &a : pass.color) {
+    for (unsigned j = 0; j < 8; j++) {
+        const RMPass::Color &a = pass.color[j];
         __unsafe_unretained RMTexture *t = (RMTexture *)a.texture;
-        if (!t || !raw::xrPlanesOverlap(t->_raw))
+        if (!t)
             continue;
-        // drawn in an image of its planes, or through its format's stand-in, it is stored there
-        if (std::none_of(std::begin(p.color), std::end(p.color), [&](const raw::ColorAttachment &c) {
-                return c.texture == t->_raw.luma->sampled;
-            }))
+        const bool plain = raw::plainRowsPooled(t->_raw) && p.color[j].texture == &t->_raw;
+        if (plain) {
+            levelTargets_[j] = *t->_raw.sampled;
+            levelTargets_[j].rotation = t->_raw.rotation;  // laid out as the plane: a turned one's drawn turned
+            p.color[j].texture = &levelTargets_[j];
+        } else if (!raw::xrPlanesOverlap(t->_raw) ||
+                   // drawn in an image of its planes, or through its format's stand-in, it is stored there
+                   std::none_of(std::begin(p.color), std::end(p.color), [&](const raw::ColorAttachment &c) {
+                       return c.texture == t->_raw.luma->sampled;
+                   })) {
             continue;
-        if (a.load == MTLLoadActionLoad)
+        }
+        if (a.load == MTLLoadActionLoad && plain)
+            raw::fillPlainRows(*rc_, t->_raw);
+        else if (a.load == MTLLoadActionLoad)
             raw::fillXrPools(*rc_, t->_raw);
         if (a.store == MTLStoreActionDontCare)
             continue;

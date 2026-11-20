@@ -6,6 +6,8 @@
 #import "RawMetalPassFusion.h"
 #import "RawMetalSplitPlan.h"
 #import "RawMetalTargetViews.h"
+#include "raw_plain_rows.h"
+#include "raw_ycbcr_load.h"
 #include "raw_xr_pools.h"
 
 #include <algorithm>
@@ -54,9 +56,18 @@ bool RMRangeEncode::storeOverlappingPlanes()
     // a pass that loads its planes and draws nothing stores nothing (an M4 Max over planes it reads and stores at other
     // rows: m2v-textures12 probes/f2/targets-full.txt #168, #169)
     for (RMTexture *t : overlapStores_) {
-        if (!passDrew_ && std::find(overlapLoaded_.begin(), overlapLoaded_.end(), t) != overlapLoaded_.end())
+        const bool loaded = std::find(overlapLoaded_.begin(), overlapLoaded_.end(), t) != overlapLoaded_.end();
+        if (!passDrew_ && loaded)
             continue;
-        if (const int failed = raw::storeXrPlaneRows(*d_, *rc_, t->_raw, !passDrew_, why_)) {
+        int failed = 0;
+        if (t->_raw.xrPlanes) {
+            failed = raw::storeXrPlaneRows(*d_, *rc_, t->_raw, !passDrew_, why_);
+        } else {
+            const raw::TurnMask mask =
+                loaded && loadedReach_.mask ? raw::ycbcrStoreMask(t->_raw, loadedReach_) : raw::TurnMask{};
+            failed = raw::storePlainRows(*d_, *rc_, t->_raw, mask.mask ? &mask : nullptr, why_);
+        }
+        if (failed) {
             if (failed == 2) {
                 rmOwnDrawFails(cb_, ahead_, *why_, rc_->refusal);
                 return refused();

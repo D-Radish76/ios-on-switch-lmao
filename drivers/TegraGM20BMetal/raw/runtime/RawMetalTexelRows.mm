@@ -3,19 +3,22 @@
 // block-linear surface's rows (raw_texel_rows.h) around the passes that render them and the blit commands that reach them
 // (a draw's and a kernel's are refresh(), writtenBack() and the kernel shadows')
 #import "RawMetalRangeEncode.h"
+#include "raw_overlap_rows.h"
 #include "raw_texel_rows.h"
 #include "raw_xr_pools.h"
 
 void rmMoveShadowImage(raw::BlitEncoder &b, const raw::Texture &t, bool fill)
 {
-    if (t.xrPlanes)
+    if (t.xrPlanes) {
         raw::moveXrPools(b, t, fill);
-    else if (t.texelRows)
+    } else if (t.texelRows) {
         raw::moveTexelRows(b, t, fill);
-    else if (fill)
+    } else if (fill) {
         b.copyTexels(t, 0, 0, 0, *t.sampled, 0, 0, 0, t.width, t.height);
-    else
-        b.copyTexels(*t.sampled, 0, 0, 0, t, 0, 0, 0, t.width, t.height);
+    } else {
+        raw::Texture scratch;
+        b.copyTexels(*t.sampled, 0, 0, 0, raw::storedRows(t, t, scratch), 0, 0, 0, t.width, t.height);
+    }
 }
 
 // A clear reaches the render area alone in a pass that draws (RawMetalRangeResolve.mm), and the pool goes back whole: it

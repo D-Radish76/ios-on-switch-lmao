@@ -139,6 +139,29 @@ fragment uint ycbcr_overlap_r32ui_frag(Out in [[stage_in]], texture2d<uint, acce
     return source.read(uint2(off / s.element, row)).r;
 }
 
+// A plain format's rows of 8 or 16 bytes a texel, read through an integer view of its pool (runtime/raw_plain_rows.h)
+static uint4 overlapWords(texture2d<uint, access::read> source, Reach reach, constant OverlapRows &s, uint2 at)
+{
+    uint row = 0, off = 0;
+    if (!overlapWinner(s, reach, s.base + at.y * s.pitch + at.x * s.element, row, off)) {
+        discard_fragment();
+        return uint4(0);
+    }
+    return source.read(uint2(off / s.element, row));
+}
+
+fragment uint2 ycbcr_overlap_rg32ui_frag(Out in [[stage_in]], texture2d<uint, access::read> source [[texture(0)]],
+                                         Reach reach [[texture(1)]], constant OverlapRows &s [[buffer(0)]])
+{
+    return overlapWords(source, reach, s, uint2(in.position.xy)).rg;
+}
+
+fragment uint4 ycbcr_overlap_rgba32ui_frag(Out in [[stage_in]], texture2d<uint, access::read> source [[texture(0)]],
+                                           Reach reach [[texture(1)]], constant OverlapRows &s [[buffer(0)]])
+{
+    return overlapWords(source, reach, s, uint2(in.position.xy));
+}
+
 // Two planes whose stored rows reach one another's bytes: an RGB10A8_2P_XR10's words and alpha (runtime/raw_xr_pools.h
 // xrPlanesCross) from their R32Uint and R8Uint pools, a YCbCr target's luma and chroma (runtime/raw_ycbcr_meet.h) from their
 // unorm pools (runtime/raw_overlap_order.h overlapPlanesWriters step for step): each byte of the planes' span from the

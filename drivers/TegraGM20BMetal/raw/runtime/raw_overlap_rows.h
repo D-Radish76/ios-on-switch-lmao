@@ -125,6 +125,7 @@ inline int storeOverlapRows(CommandBuffer &rc, Pipeline *state, uint32_t format,
         s.base = part ? whole * s.pitch : 0;
         Texture target;
         overlapTarget(plane, planeVa + s.base, s.pitch, width, height, format, target);
+        target.storage.bytes = boundFrom(plane, target.va, target.storage.bytes);
         PassDesc p;
         p.color[0].texture = &target;
         p.color[0].load = keeps ? ColorAttachment::Load : ColorAttachment::DontCare;

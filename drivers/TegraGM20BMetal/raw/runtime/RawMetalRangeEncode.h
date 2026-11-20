@@ -121,9 +121,10 @@ private:
     bool loadPlanes(raw::PassDesc &p);
     bool formatStandIns(const RMPass &pass, raw::PassDesc &p, const PlanDraws &draws, bool continued);
     bool storeFormatTargets();
-    // The open pass's RGB10A8_2P_XR10 targets held in planes that overlap (raw_xr_pools.h xrPlanesOverlap): rendered in their
-    // pools, filled first where loaded, and stored into their rows after the pass
-    void overlappingPlanes(const RMPass &pass, const raw::PassDesc &p);
+    // The open pass's RGB10A8_2P_XR10 targets held in planes that overlap (raw_xr_pools.h xrPlanesOverlap) and plain ones
+    // over rows that overlap (raw_plain_rows.h): rendered in their pools, filled first where loaded, and stored into their
+    // rows after the pass
+    void overlappingPlanes(const RMPass &pass, raw::PassDesc &p);
     bool storeOverlappingPlanes();
     // The open pass's targets that are texel buffers held in a pool of a block-linear surface's rows (raw_texel_rows.h):
     // rendered in their pools, filled first, copied back after the pass where it stores them (writtenBack)
@@ -195,7 +196,7 @@ private:
     // took of the command buffer's for a texture that holds none
     std::vector<std::pair<__unsafe_unretained RMTexture *, uint32_t>> standInLoads_, standInStores_;
     std::array<raw::Texture *, 8> planarScratch_{};
-    // overlapStores_ the open pass's targets held in planes that overlap, overlapLoaded_ those of them it loads
+    // overlapStores_ the open pass's targets held in planes or rows that overlap, overlapLoaded_ those of them it loads
     std::vector<__unsafe_unretained RMTexture *> planesWritten_, overlapStores_, overlapLoaded_;
     std::array<const raw::Texture *, 8> backings_{};
     // The open pass's loaded two-plane YCbCr targets and their slots, the tiles its draws reach (raw_ycbcr_load.h) and the

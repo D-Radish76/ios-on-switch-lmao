@@ -2,7 +2,9 @@
 // newTextureWithDescriptor:iosurface:plane: on the raw path: a texture over a surface plane's own bytes, an image its
 // conversion draws from the planes, or Metal's, the identity's or GM20B's nil with one line
 #import "RawMetalInternal.h"
+#import "RawMetalPlainRows.h"
 #import "RawMetalRotated.h"
+#import "RawMetalSurfaceRefusals.h"
 #import "RawMetalXrPlanes.h"
 #include "raw_surface_note.h"
 #include "raw_surface_refusal.h"
@@ -12,12 +14,6 @@
 #include <mach/vm_page_size.h>
 
 namespace {
-
-NSUInteger rotationOf(MTLTextureDescriptor *d)
-{
-    static const SEL rotation = NSSelectorFromString(@"rotation");
-    return [d respondsToSelector:rotation] ? ((NSUInteger (*)(id, SEL))objc_msgSend)(d, rotation) : 0;
-}
 
 // RGB8_444_2P (542) over plane 0 of a two-plane 4:4:4 surface of one byte a luma texel and two a chroma pair (CoreVideo's
 // '_RB4', the widget and poster snapshots Core Animation samples): Metal reads its codes, red Cr, green Y, blue Cb, alpha 1
@@ -31,8 +27,9 @@ bool planar444(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
     constexpr MTLPixelFormat kRGB8_444_2P = MTLPixelFormat(542);
     return d.pixelFormat == kRGB8_444_2P && plane == 0 && IOSurfaceGetPlaneCount(s) == 2 &&
-           d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 && d.sampleCount == 1 && !rotationOf(d) &&
-           IOSurfaceGetBytesPerRowOfPlane(s, 0) >= d.width && IOSurfaceGetHeightOfPlane(s, 0) >= d.height &&
+           d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 && d.sampleCount == 1 &&
+           !descriptorRotation(d) && IOSurfaceGetBytesPerRowOfPlane(s, 0) >= d.width &&
+           IOSurfaceGetHeightOfPlane(s, 0) >= d.height &&
            IOSurfaceGetBytesPerRowOfPlane(s, 1) >= 2 * d.width && IOSurfaceGetHeightOfPlane(s, 1) >= d.height &&
            IOSurfaceGetBytesPerElementOfPlane(s, 0) == 1 && IOSurfaceGetBytesPerElementOfPlane(s, 1) == 2;
 }
@@ -77,22 +74,14 @@ bool producesTexture(MTLTextureDescriptor *d)
     return d.usage & (MTLTextureUsageRenderTarget | MTLTextureUsageShaderWrite);
 }
 
-// The plane a texture over `s` reads: its first byte past the surface's base and its rows
-void planeAt(IOSurfaceRef s, NSUInteger plane, uint64_t &offset, size_t &pitch)
-{
-    const bool planes = IOSurfaceGetPlaneCount(s) > 0;
-    offset = planes ? uintptr_t(IOSurfaceGetBaseAddressOfPlane(s, plane)) - uintptr_t(IOSurfaceGetBaseAddress(s)) : 0;
-    pitch = planes ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s);
-}
-
 // RGB10A8_2P_XR10 or its sRGB twin over a surface of one plane, or over the last plane of several: BGR10_XR's words
 // (RawMetalXrPlanes.h xrWordsFormat). An M4 Max's passes and kernel stores write them with bits 30 and 31 clear (m2v-textures4
 // probes/more.mm ff), which BGR10_XR's write sets, so the raw path takes one sampled alone
 bool xrWordsShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
 {
     return raw::twoPlaneXr(uint32_t(d.pixelFormat)) && xrLastPlane(s, plane) &&
-           d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 && d.sampleCount == 1 && !rotationOf(d) &&
-           !writesTexture(d);
+           d.textureType == MTLTextureType2D && d.mipmapLevelCount == 1 && d.sampleCount == 1 &&
+           !descriptorRotation(d) && !writesTexture(d);
 }
 
 // Such a texture: the plane under BGR10_XR's (BGR10_XR_sRGB's) header, its stand-in's header reading alpha 0
@@ -154,68 +143,6 @@ void noteCompositorSurface(MTLTextureDescriptor *d, IOSurfaceRef s, const void *
 }
 #endif
 
-// A texture buffer over a surface of no planes longer than its rows, which an M4 Max's Metal asserts on with validation off
-// too ("bytesPerRow (320) must be greater or equal to (324) bytes"), counting 2 bytes a texel of RGB10A8_2P_XR10 and its
-// sRGB twin and every other format's own (R8, BGRA8, BGR10_XR, RGBA16Float, BGRA10_XR, RGBA32Float: the texel-buffer row
-// probe, macOS 27.2.1); over a plane it makes one of any length
-const char *texelBufferRowsRefusal(MTLTextureDescriptor *d, IOSurfaceRef s)
-{
-    const uint32_t format = uint32_t(d.pixelFormat);
-    const raw::FormatInfo *f = raw::formatInfo(format);
-    if (d.textureType != MTLTextureTypeTextureBuffer || IOSurfaceGetPlaneCount(s) || !f || raw::isYcbcrFormat(format) ||
-        raw::packedPlaneChannels(format))
-        return nullptr;
-    const uint64_t bytes = uint64_t(d.width) * (raw::twoPlaneXr(format) ? 2 : f->bpp);
-    return bytes > IOSurfaceGetBytesPerRow(s) ? "an IOSurface texture buffer is no longer than its surface's rows"
-                                              : nullptr;
-}
-
-NSString *surfaceFacts(IOSurfaceRef s, NSUInteger plane)
-{
-    uint64_t offset;
-    size_t pitch;
-    planeAt(s, plane, offset, pitch);
-    const OSType fourcc = IOSurfaceGetPixelFormat(s);
-    return [NSString stringWithFormat:@"surface %u %ux%u '%c%c%c%c' bytesPerRow %lu planes %lu plane %lu alloc %lu "
-                                      @"base&0xfff 0x%lx",
-                                      IOSurfaceGetID(s), unsigned(IOSurfaceGetWidth(s)), unsigned(IOSurfaceGetHeight(s)),
-                                      char(fourcc >> 24), char(fourcc >> 16), char(fourcc >> 8), char(fourcc),
-                                      (unsigned long)pitch, (unsigned long)IOSurfaceGetPlaneCount(s),
-                                      (unsigned long)plane, (unsigned long)IOSurfaceGetAllocSize(s),
-                                      (unsigned long)(uintptr_t(IOSurfaceGetBaseAddress(s)) & 0xfff)];
-}
-
-// Metal's stop or nil for a texture over a surface, null where Metal makes one: an IOSurface texture is 2D (or a texture
-// buffer) of one level, sample and layer, of a rotation Metal names and no depth, stencil or undescribed format (an M4
-// Max's validation: "IOSurface texture: must be of type MTLTextureType2D", "cannot be mipmapped", "cannot create
-// compressed, depth, or stencil textures", "rotation is not a valid MTLTextureRotation"). RGB10A8_2P_XR10 and its sRGB twin
-// pass the level rule, and their mipmapped texture reads none of the surface's codes (probes/xrsurf.mm): no texture either.
-// R10Unorm_PACKED and RG10Unorm_PACKED pass it too, and an M4 Max makes them of 2 and 3 levels, every lod reading level 0
-// (m2v-textures11 probes/h4/mips.txt).
-const char *surfaceMetalRefusal(MTLTextureDescriptor *d)
-{
-    const uint32_t format = uint32_t(d.pixelFormat);
-    if (!d.width || !d.height)
-        return "a texture of no width or height (its descriptor's validation stops it)";
-    if (d.textureType != MTLTextureType2D && d.textureType != MTLTextureTypeTextureBuffer)
-        return "an IOSurface texture is a 2D texture or a texture buffer";
-    const uint32_t chain = 32u - uint32_t(__builtin_clz(uint32_t(std::max(d.width, d.height))));
-    const bool levels = raw::packedPlaneChannels(format) ? d.mipmapLevelCount > chain : d.mipmapLevelCount > 1;
-    if (levels || d.sampleCount > 1 || d.arrayLength > 1 || d.depth > 1)
-        return "an IOSurface texture is of one level, sample, layer and plane";
-    if (rotationOf(d) > 4)
-        return "a rotation that is no MTLTextureRotation";
-    if (const char *why = raw::shapes::formatRefusal(format))
-        return why;
-    if (raw::zetaFormatIndex(format) < raw::kZetaFormats || format == 255 || format == 261 || format == 262)
-        return "an IOSurface texture is of no depth or stencil format";
-    // an M4 Max makes none of any usage (m2v-textures4 probes/forms.mm, more.mm); a rotated texture is a framebuffer's
-    if (raw::blockCompressed(raw::formatInfo(format)) && (rotationOf(d) || (d.usage & (MTLTextureUsageRenderTarget |
-                                                                                       MTLTextureUsageShaderWrite))))
-        return "a block-compressed IOSurface texture is never rendered into or written";
-    return nullptr;
-}
-
 }  // namespace
 
 // A YCbCr texture's plan (raw_ycbcr.h): Metal reads it converted by the surface's range and matrix, that through the sRGB curve,
@@ -250,7 +177,7 @@ const char *ycbcrPlan(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane,
     f.buffer = d.textureType == MTLTextureTypeTextureBuffer;
     if (f.buffer)
         raw::ycbcrBufferExtent(uint32_t(d.width), f.width, f.height);
-    f.simple = (d.textureType == MTLTextureType2D || f.buffer) && d.sampleCount == 1 && !rotationOf(d);
+    f.simple = (d.textureType == MTLTextureType2D || f.buffer) && d.sampleCount == 1 && !descriptorRotation(d);
     f.levels = uint32_t(d.mipmapLevelCount);
     // An M4 Max renders into a texture of any usage as into a render target (raw/test/ycbcrnorenderoracle.mm); the stand-in is
     // memoryless, so every texture that can be one is. A texture buffer is read alone
@@ -271,110 +198,6 @@ const char *ycbcrPlan(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane,
     if (first)
         out.nativePlanes = false;
     return why;
-}
-
-// No texture over `s`: one line naming whose answer the nil is, the shape the raw path has no form for yet, or the step
-// that failed
-static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)
-{
-    NSString *extra = surfaceFacts(s, plane);
-    const char *shape = extra.UTF8String;
-    const uint32_t format = uint32_t(d.pixelFormat);
-    raw::shapes::TextureShape texture;
-    texture.format = format;
-    if (const char *why = raw::surfaceRefusal ? nullptr : surfaceMetalRefusal(d) ?: texelBufferRowsRefusal(d, s)) {
-        SWITCH_REFUSE_DETAIL("raw", "tex.metal", uintptr_t(why),
-                             "no %lux%lu texture of format %lu, type %lu over IOSurface %u: nil, as Metal makes none "
-                             "(%s; MTLDevice.h newTextureWithDescriptor:iosurface:plane:, nullable): %s",
-                             (unsigned long)d.width, (unsigned long)d.height, (unsigned long)format,
-                             (unsigned long)d.textureType, IOSurfaceGetID(s), why, shape);
-        return nil;
-    }
-    const char *identity = raw::shapes::surfaceFormatRefusal(format);
-    if (!identity)
-        identity = raw::shapes::identityRefusal(texture, raw::answers::kThisKind);
-    if (identity) {
-        SWITCH_REFUSE_DETAIL("raw", "tex.identity", uintptr_t(identity),
-                             "no texture of format %lu over IOSurface %u: nil, as the identity's Metal makes none (%s; "
-                             "MTLDevice.h newTextureWithDescriptor:iosurface:plane:, nullable): %s",
-                             (unsigned long)format, IOSurfaceGetID(s), identity, shape);
-        return nil;
-    }
-    if (const char *gm20b = raw::packedPlaneChannels(format) ? nullptr : raw::shapes::hardwareRefusal(texture)) {
-        SWITCH_REFUSE_DETAIL("raw", "tex.gm20b", uintptr_t(gm20b),
-                             "no texture of format %lu over IOSurface %u: nil (%s; MTLDevice.h "
-                             "newTextureWithDescriptor:iosurface:plane:, nullable): %s",
-                             (unsigned long)format, IOSurfaceGetID(s), gm20b, shape);
-        return nil;
-    }
-    raw::YcbcrPlan unused;
-    raw::Rotation turned;
-    if (rotationOf(d) && !turnedFrame(d, s, plane, turned)) {
-        SWITCH_REFUSE_DETAIL("raw", "tex.metal", uintptr_t(rotationOf(d)),
-                             "no %lux%lu texture of format %lu and rotation %lu over IOSurface %u: nil, as Metal makes "
-                             "none (a turned frame past the rows or the height of a surface of no planes, of a type or a "
-                             "format no framebuffer is): %s",
-                             (unsigned long)d.width, (unsigned long)d.height, (unsigned long)format,
-                             (unsigned long)rotationOf(d), IOSurfaceGetID(s), shape);
-        return nil;
-    }
-    // a turned one of a planar format is planned and held at its plane's extent (RawMetalRotated.mm)
-    MTLTextureDescriptor *flat = rotationOf(d) ? planeDescriptor(d, turned) : d;
-    const bool xr = raw::twoPlaneXr(format);
-    const bool xrTaken =
-        xr && (raw::surfaceRefusal || xrPlanesShape(flat, s, plane) || xrWordPlaneShape(flat, s, plane));
-    const bool hasPlane = plane < std::max<size_t>(IOSurfaceGetPlaneCount(s), 1);
-    if ((raw::isYcbcrFormat(format) || raw::packedPlaneChannels(format)) && !raw::surfaceRefusal && hasPlane &&
-        ycbcrPlan(flat, s, plane, unused) == raw::kRowsPastWithoutSparse)
-        raw::surfaceRefusal = raw::kRowsPastWithoutSparse;
-    if (xr && !xrTaken && !xrPlanesStorable(d)) {
-        SWITCH_REFUSE_DETAIL("raw", "tex.surf.pack", uintptr_t(d.usage),
-                             "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: nil: the pack holds no "
-                             "state merging and splitting RGB10A8_2P_XR10 planes, which a fragment program may store to "
-                             "(a pack made without them): %s",
-                             (unsigned long)d.width, (unsigned long)d.height, (unsigned long)format,
-                             (unsigned long)d.usage, IOSurfaceGetID(s), shape);
-        return nil;
-    }
-    uint64_t offset;
-    size_t pitch;
-    planeAt(s, plane, offset, pitch);
-    const size_t planes = IOSurfaceGetPlaneCount(s);
-    const raw::FormatInfo *f = raw::formatInfo(format);
-    const uint64_t packed = f ? (uint64_t(flat.width) + f->blockW - 1) / f->blockW * f->bpp : 0;
-    const uint64_t rows = f ? (uint64_t(flat.height) + f->blockH - 1) / f->blockH : flat.height;
-    const bool pastAllocation = uint64_t(pitch) * rows > IOSurfaceGetAllocSize(s);
-    if (plane >= std::max<size_t>(planes, 1)) {
-        os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: it has no plane %lu: %{public}@",
-                     getprogname(), IOSurfaceGetID(s), (unsigned long)plane, extra);
-    } else if (!xrTaken && !planes && ((pitch & 15) || pitch < packed)) {
-        // an M4 Max asserts with validation off too: "bytesPerRow (256) must be greater or equal to (264) bytes" (the
-        // turned-extent probe, macOS 27.2.1)
-        SWITCH_REFUSE_DETAIL("raw", "tex.metal", uintptr_t(pitch),
-                             "no %lux%lu texture of format %lu over IOSurface %u: nil, as Metal makes none (rows of a "
-                             "surface of no planes off 16 bytes or under the texture's row): %s",
-                             (unsigned long)flat.width, (unsigned long)flat.height, (unsigned long)format,
-                             IOSurfaceGetID(s), shape);
-    } else if (!xrTaken && f && planes && (((pitch & ~size_t(15)) < packed && rows > 1) || pastAllocation)) {
-        // an M4 Max makes it, turned or not, reading the plane at its pitch rounded down to 16 (R8 136 wide over rows of 16,
-        // BGRA8 66 wide over rows of 256, 1048 rows over an allocation of 48: the turned-extent probe)
-        SWITCH_REFUSE_DETAIL("raw", "tex.surf.form", uintptr_t(format),
-                             "no %lux%lu texture of format %lu and usage 0x%lx over IOSurface %u: a plane whose rows "
-                             "overlap or run past the allocation, which Metal reads at its pitch: nil until the raw path "
-                             "has its form: %s",
-                             (unsigned long)flat.width, (unsigned long)flat.height, (unsigned long)format,
-                             (unsigned long)d.usage, IOSurfaceGetID(s), shape);
-    } else if (!xrTaken && pastAllocation) {
-        os_log_error(rawLog(), "raw: %{public}s: no texture over IOSurface %u: %lu rows of %zu bytes past its %zu: %{public}@",
-                     getprogname(), IOSurfaceGetID(s), (unsigned long)flat.height, pitch, IOSurfaceGetAllocSize(s), extra);
-    } else {
-        SWITCH_REFUSE_DETAIL("raw", "tex.surf.imp", 0,
-                             "no texture over IOSurface %u: %s (the connection's last error: %s): nil (MTLDevice.h "
-                             "newTextureWithDescriptor:iosurface:plane:, nullable): %s",
-                             IOSurfaceGetID(s), raw::surfaceRefusal ?: "a step that names none",
-                             gRM->raw->kernel().error().c_str(), shape);
-    }
-    return nil;
 }
 
 @interface RMDevice (SurfaceTextures)
@@ -461,6 +284,8 @@ static id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef
         t->_rawOk = gRM->raw->createSurfaceTexture(IOSurfaceGetID(s), base, IOSurfaceGetAllocSize(s), s, offset,
                                                    uint32_t(d.width), uint32_t(d.height), uint32_t(pitch),
                                                    uint32_t(d.pixelFormat), t->_raw, false);
+    } else if (plainRowsShape(d, s, plane)) {
+        t->_rawOk = makePlainRows(t, s, plane, uint32_t(d.width), uint32_t(d.height));
     } else if (rawShape(d) && !raw::twoPlaneXr(uint32_t(d.pixelFormat)) && !plane &&
                IOSurfaceGetPlaneCount(s) <= 1) {
         // a surface without planes, or one described by a single plane (CoreVideo's chunky surfaces): its plane's bytes

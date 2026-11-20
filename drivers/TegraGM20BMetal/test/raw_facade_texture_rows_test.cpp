@@ -100,7 +100,8 @@ void bufferTexturesAt16()
 
 // A surface plane whose offset or rows are off 16 (any covering its row, as IOSurface makes them): Metal's GPU reads it from
 // both rounded down to 16 and its CPU at the plane's own (m2v linear_plan.rs, measured), so the raw texture is made at the
-// rounded layout and replaceRegion and getBytes take the plane's; rows that overlap once rounded are nil
+// rounded layout and replaceRegion and getBytes take the plane's; rows that overlap once rounded are read through a pool of
+// the rounded rows (raw_plain_rows.h)
 void planesOff16()
 {
     const raw::PackEntry sampled = {0, raw::EntryTexture, 2, 0, raw::SamplerSlot, 0, 0};
@@ -147,8 +148,23 @@ void planesOff16()
     EXPECT_EQ(memcmp(back, texel, 4), 0);
     id<MTLSamplerState> sampler = [device newSamplerStateWithDescriptor:[MTLSamplerDescriptor new]];
     EXPECT_EQ(drawSampling(device, state, texture, sampler).status, MTLCommandBufferStatusCompleted);
+    // rows of 60 overlap once 48 apart: an M4 Max makes this texture, a kernel reading texel (x, y) at 1024 + 48y + 4x and
+    // getBytes at 1024 + 60y + 4x (the off-16 rows probe on this surface: 104 of 104 texels each, 3 runs and the
+    // validation layer alike)
     d.width = 13;
-    EXPECT_EQ([device newTextureWithDescriptor:d iosurface:surface plane:2], nil) << "rows of 60 overlap once 48 apart";
+    RMTexture *overlapping = (RMTexture *)[device newTextureWithDescriptor:d iosurface:surface plane:2];
+    ASSERT_TRUE(overlapping != nil && overlapping->_rawOk);
+    const raw::Texture &x = overlapping->_raw;
+    EXPECT_EQ(x.pitch, 48u) << "the GPU's rows";
+    EXPECT_EQ(x.va - x.import->bo.va, 1024u);
+    EXPECT_TRUE(x.sampled && x.storeView) << "read through its pool, as no header lays out rows that overlap";
+    uint8_t *rows = static_cast<uint8_t *>(IOSurfaceGetBaseAddress(surface)) + 1024;
+    for (uint32_t i = 0; i < 60 * 8; i++)
+        rows[i] = uint8_t(i * 7 + 1);
+    uint8_t read[8][52];
+    [(id<MTLTexture>)overlapping getBytes:read bytesPerRow:52 fromRegion:MTLRegionMake2D(0, 0, 13, 8) mipmapLevel:0];
+    for (uint32_t y = 0; y < 8; y++)
+        EXPECT_EQ(memcmp(read[y], rows + 60 * y, 52), 0) << "getBytes row " << y << " at the plane's rows";
     CFRelease(surface);
 }
 
