@@ -2070,8 +2070,7 @@ public:
     }
 
     // The channel and its context, made now if not yet (a client's first command buffer, Order or mipmapped texture); with it
-    // the 2D engine's mip-chain self-test. False: the kernel refused it (`channelError()`), and the device submits nothing
-    // until a call kChannelRetryNs or more later gets one.
+    // the 2D engine's mip-chain self-test. False: the kernel refused it (`channelError()`), and the device submits nothing.
     bool ensureChannel();
 
     // Why the kernel last refused the channel or its context (ensureChannel, or begin() making a killed channel again)
@@ -3242,8 +3241,6 @@ private:
     std::atomic<bool> channelReady_{false};
     ChannelGenerations generations_;
     bool channelFailed_ = false;
-    uint64_t channelRetryNs_ = 0;  // CLOCK_UPTIME_RAW: a refused channel is asked for again from then on
-    static constexpr uint64_t kChannelRetryNs = 1000000000;
     std::string channelError_;
     // The channel died and the one made since has no context yet (reopen gave up before the context's Exec): begin() makes it
     // again before it gives out a command buffer. channel_ is 0 while the kernel holds none of this device's.

@@ -23,7 +23,7 @@
 //   kernel refused the submission whose prologue was to invalidate it.
 // - A fence wait the kernel refuses with no kill is no completion: it is waited again, and one the kernel keeps refusing is a
 //   failure (the GPU runs each submission for MOCK_GPU_US, so it is in flight when waited for).
-// - A client whose first channel the kernel refuses says why, and gets one a second later.
+// - A client whose first channel the kernel refuses says why, and asks for none again, a second later too.
 // usage: faultcheck <pack.bin>
 #include <cstdio>
 #include <cstdlib>
@@ -574,10 +574,8 @@ void channelRefused(const char *pack, const Expect &expect)
     expect(!client.begin() && mock_iokit_calls(TegraGM20BMethodChannelCreate) == creates,
            "none asked for again at once (no kernel call a command buffer)");
     usleep(1100000);
-    raw::Buffer a, b;
-    const bool made = client.createBuffer(4096, a) && client.createBuffer(4096, b);
-    const uint32_t later = made ? copy(client, a, b) : 0;
-    expect(later && client.wait(later), "a second later, a channel and a command buffer that completes");
+    expect(!client.begin() && mock_iokit_calls(TegraGM20BMethodChannelCreate) == creates,
+           "none asked for again a second later: nothing says the kernel can make one");
 }
 
 }  // namespace

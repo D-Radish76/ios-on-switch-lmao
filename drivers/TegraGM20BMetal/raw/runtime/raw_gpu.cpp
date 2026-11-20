@@ -19,7 +19,6 @@
 
 #include <mach/mach.h>
 #include <os/log.h>
-#include <time.h>
 #include <algorithm>
 #include <cstring>
 
@@ -533,12 +532,11 @@ bool Device::ensureChannel()
     std::lock_guard<raw::Mutex> l(channelLock_);
     if (channelReady_.load(std::memory_order_relaxed))
         return true;
-    const uint64_t now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
-    if (channelFailed_ && now < channelRetryNs_)
+    // the kernel tells a client nothing of when a channel it refused can be made, so none is asked for again
+    if (channelFailed_)
         return false;
     if (!openChannel(channelError_)) {
         channelFailed_ = true;
-        channelRetryNs_ = now + kChannelRetryNs;
         return false;
     }
     generations_.opened();

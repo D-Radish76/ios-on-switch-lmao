@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 #include "raw_device_harness.h"
 
+#include <chrono>
+#include <thread>
+
 namespace {
 
 using kernel_model::model;
@@ -60,6 +63,23 @@ TEST_F(DeviceRecovery, AReopenTheKernelRefusesLeavesTheDeviceToTryAgain)
     const uint32_t after = copy(a, b, 4096);
     ASSERT_NE(after, 0u);
     EXPECT_TRUE(dev.wait(after));
+}
+
+// A client's first channel the kernel refuses: no command buffer, its answer kept, and no channel asked for again later
+// (the kernel gives no word of when one can be made), whatever the time since
+TEST_F(DeviceRecovery, AFirstChannelTheKernelRefusedIsNotAskedForAgain)
+{
+    for (kernel_model::Slot &s : model.slots)
+        s.foreign = true;
+    EXPECT_EQ(dev.begin(), nullptr);
+    EXPECT_NE(dev.channelError(), "");
+    const unsigned made = model.creates;
+    for (kernel_model::Slot &s : model.slots)
+        s.foreign = false;
+    EXPECT_EQ(dev.begin(), nullptr);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1100));
+    EXPECT_EQ(dev.begin(), nullptr);
+    EXPECT_EQ(model.creates, made);
 }
 
 // A push ring replaced while the dead channel's work was in flight goes back once the channel is made again, though the new
