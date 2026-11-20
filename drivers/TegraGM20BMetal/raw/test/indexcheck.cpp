@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
-// raw GM20B path: an indexed draw past its buffer's indices (Metal reads index 0 there) over the mock GPU. With the
-// index fetch's limit proven (raw::Device::indexZeroPastLimit, caps row 3D-B11) the draw binds its buffer, its limit at
-// the buffer's fetch end, and the CPU copies and reads no index; without it, a zero-padded copy of the indices the
-// buffer holds; a draw of no index the buffer holds reads the zero page; a draw within the buffer binds it as it was.
+// raw GM20B path: an indexed draw past its buffer's indices (Metal reads index 0 there) over the mock GPU. The index
+// fetch reads index 0 past its limit (caps row 3D-B11), so the draw binds its buffer, its limit at the buffer's fetch end,
+// and the CPU copies and reads no index; a draw of no index the buffer holds reads the zero page under the same limit,
+// longer than the page or not; a draw within the buffer binds it as it was.
 // usage: indexcheck <pack.bin>
 #include <cstdio>
 #include <cstdlib>
@@ -99,21 +99,21 @@ int main(int argc, char **argv)
     expect(inside.drawn && inside.start == ib.va && inside.last == ib.va + 9,
            "a draw of the buffer's own indices binds the buffer to its last index");
 
-    Bound padded = drawIndexed(dev, state, desc, ib, 0, 8);
-    expect(padded.drawn && padded.start != ib.va && padded.last == padded.start + 15 &&
-               padded.uploaded == inside.uploaded + 16,
-           "past the buffer's end, unproven: a zero-padded copy of its six fetched indices and two zeros");
-
     Bound none = drawIndexed(dev, state, desc, ib, 16, 4);
-    expect(none.drawn && (none.start < ib.va || none.start >= ib.va + ib.length) && none.uploaded == inside.uploaded,
+    expect(none.drawn && (none.start < ib.va || none.start >= ib.va + ib.length) && none.last == none.start + 7 &&
+               none.uploaded == inside.uploaded,
            "a draw of no index the buffer holds reads the zero page, nothing copied");
 
-    dev.indexZeroPastLimit = true;
+    Bound endless = drawIndexed(dev, state, desc, ib, 16, 1u << 20);
+    expect(endless.drawn && endless.start == none.start && endless.last - endless.start < (1u << 21) - 1 &&
+               endless.uploaded == inside.uploaded,
+           "a draw of no index the buffer holds, longer than the zero page: the page under its own limit, nothing "
+           "copied");
+
     Bound limited = drawIndexed(dev, state, desc, ib, 2, 8);
-    expect(
-        limited.drawn && limited.start == ib.va + 2 && limited.last == ib.va + 11 &&
-            limited.uploaded == inside.uploaded,
-        "past the buffer's end, proven: the buffer bound at the draw's offset, its limit at the fetch end (12 bytes)");
+    expect(limited.drawn && limited.start == ib.va + 2 && limited.last == ib.va + 11 &&
+               limited.uploaded == inside.uploaded,
+           "past the buffer's end: the buffer bound at the draw's offset, its limit at the fetch end (12 bytes)");
 
     dev.destroyBuffer(ib);
     std::printf("indexcheck: %s\n", failures ? "FAIL" : "PASS");

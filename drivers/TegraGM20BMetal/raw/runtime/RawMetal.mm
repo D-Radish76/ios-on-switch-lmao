@@ -12,7 +12,6 @@
 #include "raw_lock.h"
 #import "RawMetalIndirect.h"
 #import "RawMetalPassCache.h"
-#include "raw_device_answers.h"
 #include "raw_heap_fit.h"
 #include "raw_limits_fill.h"
 
@@ -137,7 +136,6 @@ static raw::Device *openDevice(const char *packPath, uint64_t stack, raw::Device
                                raw::OpenFailure &failure)
 {
     raw::Device *dev = new raw::Device;
-    dev->indexZeroPastLimit = raw::answers::chipFeature(SWITCH_GM20B_FEATURE_3D_B11);
     dev->heapHolds(raw::heapHolds);
     if (!dev->open(packPath, stack, err, role)) {
         failure = dev->openFailure();

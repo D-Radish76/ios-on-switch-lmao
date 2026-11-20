@@ -185,14 +185,10 @@ DrawGeometry RenderEncoder::geometry(const Pipeline &pl, uint32_t primitive, int
     g.strip = primitive == 4;
     const Bound &m = bufs_[1][2];
     const Bound &v = pl.rec->vertexSlot < 31 ? bufs_[1][pl.rec->vertexSlot] : bufs_[1][0];
+    // only what the recording copied (setBytes) is read: a transform, vertices or indices in a buffer leave it unbounded
     g.bounded = !indirectGeometry_ && pl.caTransform && pl.positionComponents && (primitive == 3 || primitive == 4) &&
-                m.cpu && m.size >= 64 && v.cpu && pl.rec->vertexSlot < 31;
-    g.bounded &= !g.indices || drawIndexCpuSafe_ || drawIndexBuffer_;
-    g.owner = cb_;
-    g.inputs = {m.buffer, v.buffer, g.indices && !drawIndexCpuSafe_ ? drawIndexBuffer_ : nullptr};
-    g.acquire = [](void *owner, const void *input, const uint8_t *cpu, uint64_t bytes) {
-        return static_cast<CommandBuffer *>(owner)->acquireGeometry(*static_cast<const Buffer *>(input), cpu, bytes);
-    };
+                !m.buffer && m.cpu && m.size >= 64 && !v.buffer && v.cpu && pl.rec->vertexSlot < 31;
+    g.bounded &= !g.indices || drawIndexCpuSafe_;
     if (g.bounded) {
         g.matrix = m.cpu;
         g.positions = {v.cpu, pl.rec->vertexStride, pl.positionOffset, pl.positionComponents};

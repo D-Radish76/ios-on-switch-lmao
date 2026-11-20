@@ -4,8 +4,8 @@
 // Resources, Loop and Tail are the encode's three phases; Loop holds State (which holds Apply), Pass (which holds
 // SplitPlan), Fusion, Blit and Compute; Commit, in Tail, holds Prologues and Exec (each Submit of the command buffer's
 // batches; execUses: the job uses they carried). Draw (which holds Prepare, and Prepare Geometry, Descriptors (which
-// holds Textures), Barriers and SplitLaunch), PassEnd, Kernel (every kernel call), GeometryAcquire and GeometryRelease
-// are counted in whichever phase they run. Use (each resource a command buffer names), Uniforms (each setBytes chunk
+// holds Textures), Barriers and SplitLaunch), PassEnd and Kernel (every kernel call) are counted in whichever phase they
+// run. Use (each resource a command buffer names), Uniforms (each setBytes chunk
 // bound), Bind (a draw's state, root and depth/stencil words), Variant (a draw's program form) and PassPrologue (a
 // pass's targets and clears, inside PassEnd) and PassBegin (the raw encoder's pass set up, inside Pass) are counted
 // wherever they run too. Retire is the facade's work after the encode returned, outside its wall time. A span outside an encode (another thread, or the submit worker between
@@ -44,8 +44,6 @@ enum class EncodePart : uint8_t {
     Prologues,
     Kernel,
     Exec,
-    GeometryAcquire,
-    GeometryRelease,
     Use,
     Uniforms,
     Bind,

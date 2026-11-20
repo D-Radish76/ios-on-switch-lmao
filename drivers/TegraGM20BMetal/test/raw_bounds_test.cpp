@@ -420,8 +420,7 @@ TEST(RawRegion, TenThousandDrawsReuseOneSnapshotUntilGenerationChanges)
     auto first = cache.analysis(g, 7, budget);
     ASSERT_TRUE(first.covers(false, kWidth, kHeight));
     EXPECT_EQ(budget.vertices, 0u);
-    // The producer may only mutate after the ownership interval. Changing these source bytes here deliberately
-    // verifies that subsequent consumers use the acquired snapshot, rather than rereading an uncached mapping.
+    // the recording's copy does not change under a snapshot; changing it here shows later draws take the snapshot
     memory[3] = 0;
     for (unsigned i = 0; i < 10000; ++i) {
         auto draw = cache.analysis(g, 7, budget);
@@ -473,32 +472,6 @@ TEST(RawRegion, UnavailableAndOverBudgetInputsKeepTheEntireScissorWithoutReading
     auto exhausted = cache.analysis(unavailable, 1, budget);
     EXPECT_FALSE(exhausted.bounds(box));  // deliberately invalid pointers must never be dereferenced
     EXPECT_EQ(exhausted.cachedBox().y1, 700u);
-}
-
-TEST(RawRegion, OwnershipAcquisitionIsLazyAndNeverRetriedInsideASnapshot)
-{
-    std::vector<float> memory;
-    auto g = quad(memory, 0, 0, kWidth, kHeight);
-    unsigned attempts = 0;
-    g.owner = &attempts;
-    g.inputs[0] = reinterpret_cast<const void *>(1);
-    g.acquire = [](void *owner, const void *, const uint8_t *, uint64_t) {
-        ++*static_cast<unsigned *>(owner);
-        return false;
-    };
-    g.matrix = reinterpret_cast<const uint8_t *>(1);  // failed ownership must prevent reading even one byte
-    raw::GeometryBudget budget;
-    raw::GeometryCache cache;
-    auto first = cache.analysis(g, 1, budget);
-    EXPECT_EQ(attempts, 0u);
-    raw::PixelBox box;
-    EXPECT_FALSE(first.bounds(box));
-    EXPECT_EQ(attempts, 1u);
-    for (unsigned i = 0; i < 10000; ++i) {
-        auto again = cache.analysis(g, 1, budget);
-        ASSERT_FALSE(again.bounds(box));
-    }
-    EXPECT_EQ(attempts, 1u);
 }
 
 }  // namespace

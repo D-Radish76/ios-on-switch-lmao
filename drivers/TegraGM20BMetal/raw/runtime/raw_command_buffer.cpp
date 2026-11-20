@@ -408,7 +408,6 @@ CommandBuffer *Device::begin()
     cb.nativeReads_.clear();
     cb.nativeSurfaces_.clear();
     cb.pitchImports_.clear();
-    cb.deferContents = cb.contentsDeferred = false;
     overflowing_ = false;
     overflow_.clear();
     cb.pushStart_ = push_.head;
@@ -472,8 +471,6 @@ CommandBuffer *Device::begin()
     cb.bufferWrites_.clear();
     cb.geometryBudget_ = {};
     cb.geometryPool_.clear();
-    cb.geometryRefusedBuffers_.clear();
-    cb.geometryRefusedBackings_.clear();
     return &cb;
 }
 
@@ -527,108 +524,6 @@ uint64_t CommandBuffer::transient(uint32_t bytes)
     uint64_t va = 0;
     dev_->alloc(dev_->upload_, std::max(bytes, 16u), 256, va);
     return va;
-}
-
-// Read ownership remains held until every consuming GPU job is published. Releasing after the CPU copy alone
-// would allow a producer to replace the vertices between the snapshot and this draw's GPU read.
-bool CommandBuffer::acquireGeometry(const Buffer &buffer, const uint8_t *cpu, uint64_t bytes)
-{
-    if (deferContents) {
-        contentsDeferred = true;
-        return false;
-    }
-    Device &d = *dev_;
-    if (!cpu || !buffer.cpu || uintptr_t(cpu) < uintptr_t(buffer.cpu) || !bytes)
-        return false;
-    const uint64_t delta = uintptr_t(cpu) - uintptr_t(buffer.cpu);
-    const uint64_t extent = (buffer.length + 3) & ~uint64_t(3);
-    if (delta > extent || bytes > extent - delta || delta > UINT64_MAX - buffer.va)
-        return false;
-    const uint64_t address = buffer.va + delta;
-    // Imported cached buffers may have producers outside this frontend's completion/cache contract. Until their
-    // transitions are attested, use conservative GPU ordering rather than discarding or cleaning unqualified lines.
-    if (!buffer.wc && (buffer.import || !(d.k_.info().flags & TegraGM20BInfoCpuPreserveDirty)))
-        return false;
-    const uint32_t access =
-        TegraGM20BCpuRead | TegraGM20BCpuAvoidSync | (buffer.wc ? 0u : uint32_t(TegraGM20BCpuPreserveDirty));
-    for (const auto &read : geometryReads_) {
-        const auto &bo = read.bo;
-        const uint64_t base = bo.vaBase ? bo.vaBase : bo.va;
-        const uint64_t start = base + read.offset;
-        if (address >= start && address - start < read.bytes && bytes <= read.bytes - (address - start))
-            return !surfaces_.writesBacking(bo.handle, base, bo.bytes);
-    }
-    if (std::find(geometryRefusedBuffers_.begin(), geometryRefusedBuffers_.end(), &buffer) !=
-        geometryRefusedBuffers_.end())
-        return false;
-    RAW_ENCODE_SPAN(GeometryAcquire);
-    RAW_ENCODE_LOCK(lock, d.lock_);
-    Bo bo;
-    if (buffer.import) {
-        bo = buffer.import->bo;
-    } else if (buffer.span.valid()) {
-        const auto index = buffer.span.chunk;
-        if (buffer.arena) {
-            if (index >= d.arenas_.size() || d.arenas_[index].purged)
-                return false;
-            if (d.arenas_[index].bufferVa != d.arenas_[index].va)
-                return false;  // Private placement aliases can also be written through their tiled VA.
-            bo = d.arenas_[index].bo;
-        } else {
-            const auto &chunks = buffer.wc ? d.wcChunks_ : d.chunks_;
-            if (index >= chunks.size())
-                return false;
-            bo = chunks[index].bo;
-        }
-    }
-    const uint64_t base = bo.vaBase ? bo.vaBase : bo.va;
-    if (!bo.handle || address < base || address - base > bo.bytes || bytes > bo.bytes - (address - base) ||
-        surfaces_.writesBacking(bo.handle, base, bo.bytes))
-        return false;
-    if (std::find(geometryRefusedBackings_.begin(), geometryRefusedBackings_.end(), bo.handle) !=
-        geometryRefusedBackings_.end()) {
-        geometryRefusedBuffers_.push_back(&buffer);
-        return false;
-    }
-    // Small page windows amortize adjacent matrix/vertex/index views while bounding cache-maintenance work.
-    // Ownership remains whole-backing; only visibility maintenance is narrowed to these verified physical bytes.
-    constexpr uint64_t page = 4096;
-    const uint64_t offset = (address - base) & ~(page - 1);
-    const uint64_t end = std::min(bo.bytes, (address - base + bytes + page - 1) & ~(page - 1));
-    const uint64_t maintained = end - offset;
-    if (geometryReads_.size() >= 64 || maintained > geometryBudget_.maintainedBytes)
-        return false;
-    if (!d.k_.cpuAccess(bo, offset, maintained, access, true)) {
-        geometryRefusedBuffers_.push_back(&buffer);
-        geometryRefusedBackings_.push_back(bo.handle);
-        return false;
-    }
-    geometryBudget_.maintainedBytes -= maintained;
-    geometryReads_.push_back({bo, offset, maintained, access});
-    return true;
-}
-
-bool CommandBuffer::geometryWritable() const
-{
-    for (const auto &read : geometryReads_) {
-        const auto &bo = read.bo;
-        if (surfaces_.writesBacking(bo.handle, bo.vaBase ? bo.vaBase : bo.va, bo.bytes))
-            return true;
-    }
-    return false;
-}
-
-void CommandBuffer::releaseGeometry()
-{
-    if (geometryReads_.empty())
-        return;
-    RAW_ENCODE_SPAN(GeometryRelease);
-    RAW_ENCODE_LOCK(lock, dev_->lock_);
-    for (const auto &read : geometryReads_)
-        if (!dev_->k_.cpuAccess(read.bo, read.offset, read.bytes, read.access, false))
-            os_log_error(os_log_create("com.brunostjohn.switch.TegraGM20BMetal", "raw"),
-                         "raw: geometry CPU read release failed for BO %llu", (unsigned long long)read.bo.handle);
-    geometryReads_.clear();
 }
 
 std::shared_ptr<ResourceReadyCompletion> CommandBuffer::resourceReadiness(std::function<void()> ready, int &result)
@@ -703,15 +598,6 @@ bool CommandBuffer::commit(uint32_t &seqno)
     RAW_ENCODE_COUNT(GeometryVertices, GeometryBudget().vertices - geometryBudget_.vertices);
     if (nativeError)
         return false;
-
-    struct ReleaseReads {
-        CommandBuffer &cb;
-
-        ~ReleaseReads()
-        {
-            cb.releaseGeometry();
-        }
-    } releaseReads{*this};
 
     Device &d = *dev_;
     RAW_DIAGNOSTIC(foldCounts());
@@ -812,11 +698,6 @@ bool CommandBuffer::commit(uint32_t &seqno)
             RAW_ENCODE_LOCK(lock, d.lock_);
             nameHeaps();
         }
-    }
-    if (geometryWritable()) {
-        notSubmitted = surfaces_.valid() ? "a write of the geometry the CPU read"
-                                         : "a job's uses past what one job names, or a use of no backing";
-        return false;  // later internal writes invalidate the CPU proof; no prefix may reach the GPU
     }
     if (!batchWork_.operations)
         segments_.includeTail();
@@ -1046,7 +927,6 @@ void RenderEncoder::markSpan(Push &p, uint32_t index, SpanKind kind)
 
 void CommandBuffer::abandon()
 {
-    releaseGeometry();
     releaseNativeReads();
     Device &d = *dev_;
     d.closedCount_.fetch_add(1, std::memory_order_release);

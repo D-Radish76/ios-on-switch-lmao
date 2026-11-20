@@ -43,10 +43,9 @@
     d[@"sealed_encoders"] = @(s.sealedEncoders.load());
     d[@"pipeline_handoffs"] = @(s.handoffs.load());
     d[@"pipeline_handoff_wakes"] = @(s.handoffWakes.load());
-    static const char *const vetoes[VetoKinds] = {"-",        "counters", "shadows",    "variant", "probes",
-                                                  "parallel", "ops",      "refused",    "planar",  "contents",
-                                                  "native",   "failed",   "other_work", "device",  "zcull",
-                                                  "channel"};
+    static const char *const vetoes[VetoKinds] = {"-",       "counters",   "shadows", "variant", "probes",
+                                                  "parallel", "ops",       "refused", "planar",  "native",
+                                                  "failed",  "other_work", "device",  "zcull",   "channel"};
     for (uint32_t k = 0; k < VetoKinds; ++k)
         if (const uint64_t n = s.pipelineAbandons[k].load())
             d[[NSString stringWithFormat:@"pipeline_abandons.%s", vetoes[k]]] = @(n);

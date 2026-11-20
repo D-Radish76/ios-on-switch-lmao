@@ -1542,7 +1542,7 @@ private:
     void refuseFetch(const Pipeline &pl, FetchRefusal refusal, uint32_t primitive, uint32_t count, uint32_t instances,
                      const char **why);
     const uint8_t *drawIndices_ = nullptr;
-    const Buffer *drawIndexBuffer_ = nullptr;
+    // the draw's indices are the zero page's, which the CPU may read: no index an app wrote is read on the CPU
     bool drawIndexCpuSafe_ = false;
     uint32_t drawIndexSize_ = 0, drawIndexCount_ = 0;
     DrawGeometry geometry(const Pipeline &pl, uint32_t primitive, int32_t first, uint32_t count, const PixelBox &limit);
@@ -1828,11 +1828,6 @@ public:
     // An import required pitch after a texture over it was read through its native image
     bool pitchAfterNativeRead() const;
     bool nativeReadsCurrent() const;
-    // Encoded before its command buffer's commit (RawMetalRangeEncode.h): the CPU may still write a buffer, so the encode
-    // reads no buffer's contents; one that would have is `contentsDeferred` (the encode then stops, and goes again at the
-    // commit)
-    bool deferContents = false;
-    bool contentsDeferred = false;
     void invalidateNativeReads();
     void releaseNativeReads();
 
@@ -2003,21 +1998,6 @@ private:
     std::vector<const Import *> pitchImports_;
     GeometryBudget geometryBudget_;
     GeometrySnapshotPool geometryPool_;
-
-    struct GeometryRead {
-        Bo bo;
-        uint64_t offset, bytes;
-        uint32_t access;
-    };
-
-    std::vector<GeometryRead> geometryReads_;
-    // the buffers and backings whose CPU read the kernel refused in this command buffer: their draws take their
-    // scissor without asking again
-    std::vector<const Buffer *> geometryRefusedBuffers_;
-    std::vector<uint64_t> geometryRefusedBackings_;
-    bool acquireGeometry(const Buffer &buffer, const uint8_t *cpu, uint64_t bytes);
-    bool geometryWritable() const;
-    void releaseGeometry();
     RenderEncoder render_;
     BlitEncoder blit_;
     uint64_t pushStart_ = 0, uploadStart_ = 0;
@@ -2734,10 +2714,6 @@ public:
 
     // Which of this device's memory holds GPU VA `va` (a killed command buffer's fault VA), and where in it, for its line
     std::string vaOwner(uint64_t va);
-
-    // The index fetch reads index 0 past SET_INDEX_BUFFER_C/D's limit (kits/SwitchGM20B caps row 3D-B11 at chip grade,
-    // which the facade reads at open): a draw past its buffer's indices binds the buffer with its limit, no padded copy
-    bool indexZeroPastLimit = false;
 
     // A writer promise (TegraGM20BJobABI.h method 34) of the device's channel for the IOSurface imports `handles`, kept by
     // the job that names it (CommandBuffer::promises) or cancelled

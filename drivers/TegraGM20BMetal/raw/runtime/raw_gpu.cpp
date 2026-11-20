@@ -303,7 +303,6 @@ void Device::retire(Ring &r, uint32_t seqno)
 Device::~Device()
 {
     transfers_.close(k_, lock_);
-    cb_.releaseGeometry();
     // the render server keeps its device until it exits; a host test's device: the kernel frees what the connection held
     {
         std::lock_guard<raw::Mutex> l(lock_);

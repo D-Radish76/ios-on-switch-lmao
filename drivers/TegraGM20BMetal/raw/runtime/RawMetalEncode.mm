@@ -55,9 +55,7 @@ bool RMRangeEncode::passRefused(uint64_t a)
 bool RMRangeEncode::refused()
 {
     const raw::Refusal &f = rc_->refusal;
-    if (rc_->contentsDeferred)
-        veto_ = VetoContents;
-    else if (ahead_)
+    if (ahead_)
         veto_ = VetoFailed;
     else {
         nameFailure(cb_, refusalPred(f.id));
@@ -104,7 +102,6 @@ __attribute__((objc_externally_retained)) bool RMRangeEncode::open(RMCommandBuff
     rc_->forceWholePrograms(cb->_forceWholePrograms);
     rc_->inlineStates(cb->_inlineStates);
 #endif
-    rc_->deferContents = ahead_;
     if (whole && !producersOrdered())
         return false;
     if (whole)
@@ -304,11 +301,6 @@ bool RMRangeEncode::step(size_t until)
             return false;
         if (!command(at_))
             return false;
-        if (rc_->contentsDeferred) {
-            rc_->abandon();
-            abandoned_ = true;
-            return stop(VetoContents);
-        }
         if (!rewritten_.empty() && !continuing_ && cb_->_plan.operation(at_).op == OpEnd && !remakeImages(at_ + 1))
             return false;
     }
@@ -335,7 +327,6 @@ bool RMRangeEncode::resume(size_t to, const char **why)
     why_ = why;
     to_ = to;
     ahead_ = false;
-    rc_->deferContents = false;
     sampledShadows_ = cb_->_sampledShadows;
     standIns_ = cb_->_standIns;
     if (!producersOrdered())

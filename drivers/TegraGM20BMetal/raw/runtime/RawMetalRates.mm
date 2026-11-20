@@ -282,7 +282,7 @@ size_t raw_metal_encode_rates(char *out, size_t size)
         out, size,
         "encode n=%llu wall=%.0f res=%.0f loop=%.0f state=%.0f pass=%.0f splan=%.0f fuse=%.0f pend=%.0f/%.1f "
         "draw=%.0f/%.1f prep=%.0f geo=%.0f desc=%.0f bar=%.0f slaunch=%.0f/%.1f blit=%.0f comp=%.0f tail=%.0f "
-        "commit=%.0f prolog=%.0f exec=%.0f/%.1f uses=%.0f pushes=%.0f kern=%.0f/%.1f gacq=%.0f/%.1f grel=%.0f/%.1f "
+        "commit=%.0f prolog=%.0f exec=%.0f/%.1f uses=%.0f pushes=%.0f kern=%.0f/%.1f "
         "pmax=%.0f use=%.0f/%.1f uni=%.0f/%.1f bind=%.0f var=%.0f pprol=%.0f slots=%.0f/%.0f spans=%.0f@%.0fns "
         "seg=%.1f/%.1f segw=%.0f replay=%llu/%llu/%llu",
         (unsigned long long)encodes, wallUs, part(EncodePart::Resources), part(EncodePart::Loop),
@@ -292,12 +292,10 @@ size_t raw_metal_encode_rates(char *out, size_t size)
         part(EncodePart::Barriers), part(EncodePart::SplitLaunch), count(EncodePart::SplitLaunch),
         part(EncodePart::Blit), part(EncodePart::Compute), part(EncodePart::Tail), part(EncodePart::Commit),
         part(EncodePart::Prologues), part(EncodePart::Exec), count(EncodePart::Exec), execUses, execPushes,
-        part(EncodePart::Kernel), count(EncodePart::Kernel), part(EncodePart::GeometryAcquire),
-        count(EncodePart::GeometryAcquire), part(EncodePart::GeometryRelease), count(EncodePart::GeometryRelease),
-        longestPrepareUs, part(EncodePart::Use), count(EncodePart::Use), part(EncodePart::Uniforms),
-        count(EncodePart::Uniforms), part(EncodePart::Bind), part(EncodePart::Variant), part(EncodePart::PassPrologue),
-        slotsCompared, slotsInTables, spans, spanNs, segBinds, segSkips, segWords, (unsigned long long)same,
-        (unsigned long long)recent, (unsigned long long)fresh);
+        part(EncodePart::Kernel), count(EncodePart::Kernel), longestPrepareUs, part(EncodePart::Use),
+        count(EncodePart::Use), part(EncodePart::Uniforms), count(EncodePart::Uniforms), part(EncodePart::Bind),
+        part(EncodePart::Variant), part(EncodePart::PassPrologue), slotsCompared, slotsInTables, spans, spanNs,
+        segBinds, segSkips, segWords, (unsigned long long)same, (unsigned long long)recent, (unsigned long long)fresh);
     if (head <= 0 || size_t(head) >= size)
         return head > 0 ? size - 1 : 0;
     // self times: walk= the loop's own (the plan walk between its parts), res/tail= the phases', state/draw/prep/

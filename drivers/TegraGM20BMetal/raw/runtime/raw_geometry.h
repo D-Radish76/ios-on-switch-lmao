@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
-// Submission-local geometry snapshots. The caller owns a CPU read lease until GPU publication; an unavailable input
-// is unbounded. Cached points never survive that ownership interval. Limits bound total CPU work, not just one draw.
+// Submission-local geometry snapshots of what the recording copied (setBytes) or the zero page: a draw whose transform,
+// vertices or indices live in a buffer the app may still write is unbounded, and its bytes are never read. Limits bound
+// total CPU work, not just one draw.
 #pragma once
 #include <array>
 #include <cstdint>
@@ -25,15 +26,10 @@ struct DrawGeometry {
     WindowViewport viewport;
     PixelBox limit;
     bool strip = true;
-    // Acquisition is lazy: a draw that never needs a CPU geometry proof performs no ownership syscall.
-    void *owner = nullptr;
-    std::array<const void *, 3> inputs = {};
-    bool (*acquire)(void *, const void *, const uint8_t *, uint64_t) = nullptr;
 };
 
 struct GeometryBudget {
     uint32_t vertices = 4096, pairs = 4096;
-    uint64_t maintainedBytes = 256 * 1024;
 
     bool takeVertices(uint32_t count)
     {
@@ -85,15 +81,9 @@ public:
             g.positions.components > 4 || (g.indices && g.indexSize != 2 && g.indexSize != 4) ||
             (budget_ && !budget_->takeVertices(g.count)))
             return false;
-        auto acquire = [&](size_t input, const uint8_t *cpu, uint64_t bytes) {
-            return !g.acquire || !g.inputs[input] || !bytes || g.acquire(g.owner, g.inputs[input], cpu, bytes);
-        };
-        if (!acquire(0, g.matrix, 64) || !acquire(2, g.indices, uint64_t(g.count) * g.indexSize))
-            return false;
         points.resize(g.count);
         std::array<uint32_t, kMaxVertices> vertices = {};
         const uint64_t reach = uint64_t(g.positions.offset) + g.positions.components * sizeof(float);
-        uint64_t low = UINT64_MAX, high = 0;
         for (uint32_t i = 0; i < g.count; ++i) {
             auto &point = points[i];
             uint32_t index = i;
@@ -115,11 +105,7 @@ public:
             const uint64_t at = uint64_t(vertices[i]) * g.positions.stride;
             if (at > g.positionBytes || reach > g.positionBytes - at)
                 return false;
-            low = std::min(low, at + g.positions.offset);
-            high = std::max(high, at + reach);
         }
-        if (high && !acquire(1, g.positions.base + low, high - low))
-            return false;
         float matrix[16];
         memcpy(matrix, g.matrix, sizeof matrix);
         exactX = matrix[4] == 0 && matrix[7] == 0;
@@ -130,7 +116,6 @@ public:
             if (point.restart)
                 continue;
             const uint64_t at = uint64_t(vertices[i]) * g.positions.stride;
-            // Read each position once from the acquired mapping; projection and exact-edge comparisons use cached bytes.
             memcpy(point.bits, g.positions.base + at + g.positions.offset, g.positions.components * sizeof(float));
             const PositionStream scratch{reinterpret_cast<const uint8_t *>(point.bits), 16, 0, g.positions.components};
             if (!bounds.project(scratch, 0, point.at))
@@ -154,8 +139,7 @@ public:
             s.positions.components != g.positions.components || s.positionBytes != g.positionBytes ||
             s.indexSize != g.indexSize || s.strip != g.strip || s.viewport.originX != g.viewport.originX ||
             s.viewport.originY != g.viewport.originY || s.viewport.width != g.viewport.width ||
-            s.viewport.height != g.viewport.height || bool(s.indices) != bool(g.indices) || s.owner != g.owner ||
-            s.inputs != g.inputs || s.acquire != g.acquire)
+            s.viewport.height != g.viewport.height || bool(s.indices) != bool(g.indices))
             return false;
         if (s.indices) {
             if (g.first != s.first || !g.indexSize || uintptr_t(g.indices) < uintptr_t(s.indices))

@@ -609,14 +609,13 @@ enum RMPipelineVeto : uint32_t {
     VetoOps = 1u << 6,         // an event, a compute encoder, an indirect command buffer, patches, a late command
     VetoRefused = 1u << 7,     // the command buffer failed as it recorded (failCommandBuffer): nothing of it runs
     VetoPlanar = 1u << 8,      // a planar texture converted for its draws
-    VetoContents = 1u << 9,    // the encode read buffer contents the CPU may write until the commit
-    VetoNative = 1u << 10,     // a surface read through its native image before a later encoder wrote it
-    VetoFailed = 1u << 11,     // its encode failed ahead (the commit's encode meets the failure again, as before)
-    VetoOtherWork = 1u << 12,  // the worker needed the device for another command buffer
-    VetoDevice = 1u << 13,     // a purge, a texture's memory moved or a channel made again since it began
-    VetoZcull = 1u << 14,      // a pass loads a depth an earlier pass stored (raw_zcull_planes.h)
-    VetoChannel = 1u << 15,    // the kernel gave its begin no channel (the commit's encode asks again)
-    VetoKinds = 16
+    VetoNative = 1u << 9,      // a surface read through its native image before a later encoder wrote it
+    VetoFailed = 1u << 10,     // its encode failed ahead (the commit's encode meets the failure again, as before)
+    VetoOtherWork = 1u << 11,  // the worker needed the device for another command buffer
+    VetoDevice = 1u << 12,     // a purge, a texture's memory moved or a channel made again since it began
+    VetoZcull = 1u << 13,      // a pass loads a depth an earlier pass stored (raw_zcull_planes.h)
+    VetoChannel = 1u << 14,    // the kernel gave its begin no channel (the commit's encode asks again)
+    VetoKinds = 15
 };
 
 static inline void rmPipelineVeto(RMCommandBuffer *cb, uint32_t reason)

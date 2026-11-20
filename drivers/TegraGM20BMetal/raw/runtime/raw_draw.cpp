@@ -318,11 +318,11 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
     offset -= offset % indexSize;
     const uint64_t fetchEnd = offset < ib->length ? (ib->length + 3) & ~uint64_t(3) : ib->length,
                    inside = fetchEnd > offset ? (fetchEnd - offset) / indexSize : 0;
-    Buffer padded;
-    drawIndexBuffer_ = ib;
+    Buffer zero;
     drawIndexCpuSafe_ = false;
-    // the index fetch's last byte: the draw's last index where the buffer holds every one, else the buffer's fetch end
-    // with index 0 past it from the hardware, the zero page, or a padded copy
+    // the index fetch's last byte: the draw's last index where the buffer holds every one, else the buffer's fetch end,
+    // the hardware reading index 0 past it (caps row 3D-B11); a draw of no index the buffer holds reads the zero page under
+    // the same limit
     uint64_t indexLimit = uint64_t(count) * indexSize;
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     const uint32_t probedLimit = cb_->forms_.indexLimit;
@@ -333,42 +333,20 @@ bool RenderEncoder::drawIndexed(uint32_t primitive, uint32_t count, uint32_t ind
 #endif
     if (probedLimit) {
         indexLimit = probedLimit;
-        drawIndexBuffer_ = nullptr;
-    } else if (count > inside && !inside && uint64_t(count) * indexSize <= dev_->zero_.bytes) {
-        padded.va = dev_->zero_.va;
-        padded.cpu = dev_->zero_.cpu;
-        padded.length = dev_->zero_.bytes;
-        ib = &padded;
-        drawIndexCpuSafe_ = true;
-        drawIndexBuffer_ = nullptr;
+    } else if (count > inside && !inside) {
+        zero.va = dev_->zero_.va;
+        zero.cpu = dev_->zero_.cpu;
+        zero.length = dev_->zero_.bytes;
+        ib = &zero;
+        indexLimit = std::min<uint64_t>(indexLimit, dev_->zero_.bytes);
+        drawIndexCpuSafe_ = uint64_t(count) * indexSize <= dev_->zero_.bytes;
         offset = 0;
-    } else if (count > inside && dev_->indexZeroPastLimit) {
-        indexLimit = fetchEnd - offset;
-        drawIndexBuffer_ = nullptr;  // the CPU reads no index past the buffer's end (an unbounded draw)
     } else if (count > inside) {
-        if (inside && !cb_->acquireGeometry(*ib, ib->cpu + offset, inside * indexSize)) {
-            cb_->skipped = {RefIndexedRange, uint32_t(offset), indexSize, count};
-            cb_->skips++;
-            return true;
-        }
-        const uint64_t bytes = uint64_t(count) * indexSize;
-        uint8_t *m =
-            dev_->alloc(dev_->upload_, (bytes + kUboChunk - 1) & ~uint64_t(kUboChunk - 1), kUboChunk, padded.va);
-        if (inside)
-            memcpy(m, ib->cpu + offset, inside * indexSize);
-        memset(m + inside * indexSize, 0, bytes - inside * indexSize);
-        padded.cpu = m;
-        padded.length = bytes;
-        padded.wc = true;
-        RAW_DIAGNOSTIC(cb_->counts_.uploadBytes += bytes);
-        ib = &padded;
-        drawIndexCpuSafe_ = true;  // immutable upload bytes owned by this command buffer
-        drawIndexBuffer_ = nullptr;
-        offset = 0;
+        indexLimit = fetchEnd - offset;
     }
     cb_->use(*ib, false);
     // Never scan potentially GPU-produced indices to choose a CPU cache range. Cached vertex bindings are
-    // cleaned conservatively below; WC vertices need no clean, and geometry reads have their own read lease.
+    // cleaned conservatively below; WC vertices need no clean.
     const uint8_t *at = ib->cpu + offset;
     if (ib->hostVisible && !ib->wc)
         cb_->clean(at, std::min<uint64_t>(indexLimit, uint64_t(count) * indexSize));

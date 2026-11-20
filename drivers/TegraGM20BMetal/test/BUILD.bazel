@@ -577,6 +577,13 @@ raw_device_test(
     linkopts = ["-Wl,-U,_switch_nmb_blend_color_words"],
 )
 
+# The encode reads no buffer's contents on the CPU (raw::Device over the kernel model): a first draw over buffer vertices and
+# transform takes its pixel limit, an indexed draw past its buffer binds it under the hardware's index limit
+raw_device_test(
+    name = "raw_device_geometry_test",
+    srcs = ["raw_device_geometry_test.cpp"],
+)
+
 # A split draw's prologue reads that draw's own push words (raw::Device over the kernel model): each draw of one state in a
 # command buffer gets a batch record holding its own residual push word and a frontier of its own
 raw_device_test(
