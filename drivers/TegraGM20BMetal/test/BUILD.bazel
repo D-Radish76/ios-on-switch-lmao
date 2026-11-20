@@ -2,8 +2,9 @@ load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_python//python:py_binary.bzl", "py_binary")
 load("@rules_python//python:py_test.bzl", "py_test")
-load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_static_library", "rust_test")
 load("//bazel/lint:defs.bzl", "lint_files")
+load("//bazel/rust:defs.bzl", "rust_artifact")
 load("//bazel/testing:defs.bzl", "SANITIZERS", "WARNINGS", "host_library", "host_test")
 load("//third_party/mesa/bazel:defs.bzl", "mesa_args", "mesa_cc_library", "mesa_files")
 load("//third_party/mesa/src/nouveau/compiler:fs_depth_test.bzl", "fs_depth_test_binary")
@@ -5935,84 +5936,6 @@ host_test(
     tags = ["manual"],
 )
 
-# hostsim's mock GM20B (mock_iokit.c), which interposes IOKit's calls for every image of a process that links it: NVK's too
-cc_binary(
-    name = "libmock_iokit.dylib",
-    testonly = True,
-    srcs = [
-        "//drivers/TegraGM20B:TegraGM20BABI.h",
-        "//drivers/TegraGM20BMetal:hostsim/mock_iokit.c",
-        "//drivers/TegraGM20BMetal:hostsim/mock_iokit.h",
-    ],
-    copts = ["-Idrivers/TegraGM20B"],
-    linkopts = [
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-    ],
-    linkshared = True,
-)
-
-objcxx_units(
-    name = "frontend_units",
-    testonly = True,
-    srcs = ["//drivers/NativeMetal:NativeBridgeMetalFrontend.mm"],
-)
-
-host_library(
-    name = "frontend_host",
-    srcs = [":frontend_units"],
-    additional_compiler_inputs = ["//drivers/NativeMetal:NativeBridgeMetalFrontend.mm"] + RAW_HOST_HEADERS,
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-        "-Wno-nullability-completeness",
-        "-Wno-nullability-completeness-on-arrays",
-    ] + RAW_HOST_COPTS,
-    cxx_std = "c++17",
-    sanitize = False,
-    deps = ["//drivers/NativeMetal/abi:metal_abi"],
-)
-
-# What raw took over from the bridge, against the bridge (the host bridge over NVK's host twin): raw_metal_formats.h, the
-# capability queries raw_device_answers.h answers
-host_test(
-    name = "raw_bridge_parity_test",
-    size = "medium",
-    srcs = [
-        "raw_bridge_parity_test.cpp",
-        ":libmock_iokit.dylib",
-        "//drivers/TegraGM20BMetal:raw/runtime/raw_metal_formats.h",
-        "//gpu:bridge_darwin",
-    ] + RAW_HOST_HEADERS,
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-    ] + RAW_HOST_COPTS,
-    cxx_std = "c++17",
-    data = ["//gpu/nvk:host_dylib"],
-    env = {"SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)"},
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
-    sanitize = False,
-    tags = ["m2v"],
-    deps = [":frontend_host"] + RAW_HOST_DEPS,
-)
-
 # A CPU write the next job reads drops the GPU L2's lines first only when it was made under a CPU lease (raw::HostAccess):
 # raw::Device over the kernel model, which takes jobs as host-written as the kernel does
 host_test(
@@ -6163,130 +6086,6 @@ host_test(
     ] + RAW_HOST_DEPS,
 )
 
-# The system shader compiler's engine (compiler/compiler_engine.mm, the translator alone: raw/runtime/RawOffline.h)
-# against the m2v device it replaced, each a process over the mock GM20B: byte-identical records of a sample of the
-# corpus's states (render and compute) made from the crawl's libraries, each sampled kernel's reflection (a Reflection
-# request, the translator alone) answering as the device's compute prepare's; and the frontend's compile context
-# (bridge/NativeMetalCompile.h) has the runtime device's enable set and compile devices
-host_test(
-    name = "compiler_compile_only_test",
-    size = "medium",
-    srcs = [
-        "compiler_compile_only_test.cpp",
-        "compiler_requests.h",
-        "reflection_compare.h",
-        ":libmock_iokit.dylib",
-        "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
-        "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
-        "//gpu:bridge_darwin",
-    ] + RAW_HOST_HEADERS,
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-    ] + RAW_HOST_COPTS + select({
-        # the corpus's states of private linked functions are iOS 27's libraries' alone, and so is a refused state:
-        # iOS 27's PencilKit made sixChannelBlend's constant 6 a bool where iOS 17's states set a uint. iOS 17's
-        # libraries refuse none of the corpus states the test can ask of them. (copts are Bourne-tokenized: the single
-        # quotes keep the string's.)
-        "//ipsw:24B119": [
-            "-DSWITCH_LIBRARIES_LINK_PRIVATE_FUNCTIONS=1",
-            "'-DSWITCH_REFUSED_FRAGMENT_FUNCTION=\"sixChannelBlend_fragment\"'",
-        ],
-        "//conditions:default": [],
-    }),
-    cxx_std = "c++17",
-    data = [
-        "//drivers/TegraGM20BMetal:precompile/corpus.log",
-        "//gpu/nvk:host_dylib",
-        "@ipsw//:crawl_qc",
-        "@ipsw//:crawl_tree",
-    ],
-    env = {
-        "SWITCH_CORPUS": "$(rootpath //drivers/TegraGM20BMetal:precompile/corpus.log)",
-        "SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)",
-        "SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)",
-    },
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
-    sanitize = False,
-    deps = [
-        ":frontend_host",
-        ":raw_facade_plugin_host",
-        ":raw_runtime_plugin_host",
-    ] + RAW_HOST_DEPS,
-)
-
-# One device failure's state through the compile context (compiler_repro_test.cpp). Manual: it takes the state by --test_env.
-host_test(
-    name = "compiler_repro_test",
-    size = "medium",
-    srcs = [
-        "compiler_repro_test.cpp",
-        "compiler_requests.h",
-        ":libmock_iokit.dylib",
-        "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
-        "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
-        "//gpu:bridge_darwin",
-    ] + RAW_HOST_HEADERS,
-    copts = [
-        "-x",
-        "objective-c++",
-        "-fobjc-arc",
-    ] + RAW_HOST_COPTS + select({
-        # the corpus's states of private linked functions are iOS 27's libraries' alone, and so is a refused state:
-        # iOS 27's PencilKit made sixChannelBlend's constant 6 a bool where iOS 17's states set a uint. iOS 17's
-        # libraries refuse none of the corpus states the test can ask of them. (copts are Bourne-tokenized: the single
-        # quotes keep the string's.)
-        "//ipsw:24B119": [
-            "-DSWITCH_LIBRARIES_LINK_PRIVATE_FUNCTIONS=1",
-            "'-DSWITCH_REFUSED_FRAGMENT_FUNCTION=\"sixChannelBlend_fragment\"'",
-        ],
-        "//conditions:default": [],
-    }),
-    cxx_std = "c++17",
-    data = [
-        "//gpu/nvk:host_dylib",
-        "@ipsw//:crawl_qc",
-        "@ipsw//:crawl_tree",
-    ],
-    env = {
-        "SWITCH_NVK": "$(rootpath //gpu/nvk:host_dylib)",
-        "SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)",
-    },
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
-    sanitize = False,
-    tags = ["manual"],
-    deps = [
-        ":frontend_host",
-        ":raw_facade_plugin_host",
-        ":raw_runtime_plugin_host",
-    ] + RAW_HOST_DEPS,
-)
-
 COMPILER_ENGINE_HOST_SRCS = [
     "//drivers/TegraGM20BMetal:compiler/compiler_codegen.mm",
     "//drivers/TegraGM20BMetal:compiler/compiler_engine.mm",
@@ -6307,12 +6106,13 @@ objcxx_units(
     srcs = COMPILER_ENGINE_HOST_SRCS,
 )
 
+# The system shader compiler's engine (compiler/compiler_engine.mm, the translator alone: raw/runtime/RawOffline.h), each
+# run a process of its own: what it holds as it serves boot 12's requests, and a library of grouped pointers
 [host_test(
     name = name,
     size = "medium",
     srcs = [name + ".cpp"] + headers + [
         ":compiler_engine_units",
-        ":libmock_iokit.dylib",
         "//gpu:translate_host",
     ] + RAW_HOST_HEADERS,
     additional_compiler_inputs = COMPILER_ENGINE_HOST_SRCS,
@@ -6324,22 +6124,7 @@ objcxx_units(
     cxx_std = "c++17",
     data = data,
     env = env,
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ] + [
-        "-Wl,-U,_native_bridge_metal_" + symbol
-        for symbol in ("render_direct", "compute_direct", "function_metallib", "function_library_name")
-    ],
+    linkopts = FACADE_LINKOPTS,
     sanitize = False,
     deps = [
         ":raw_runtime_plugin_host",
@@ -6371,53 +6156,116 @@ objcxx_units(
     ),
 ]]
 
-# What one compile of the heaviest states costs at its peak (RenderBox's uber states, Core Animation's generic state), each
-# in a process of its own, and which part of the compile the heap peaks in (compiler_transient_test.cpp)
-host_test(
-    name = "compiler_transient_test",
-    size = "large",
+# The engine as the plugin's units link it, each run a process of its own:
+#   compiler_compile_only_test  a record of every kind a sample of the corpus's states asks, and each sampled kernel's
+#                               reflection as this Mac's Metal gives it
+#   compiler_repro_test         one device failure's state (manual: it takes the state by --test_env)
+#   compiler_transient_test     one compile of the heaviest states at its peak
+[host_test(
+    name = name,
+    size = size,
     srcs = [
+        name + ".cpp",
         "compiler_requests.h",
-        "compiler_transient_test.cpp",
-        ":libmock_iokit.dylib",
         "//drivers/TegraGM20BMetal:raw/pack/kernel_shapes.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_states.h",
-        "//gpu:bridge_darwin",
-    ] + RAW_HOST_HEADERS,
+        "//gpu:translate_host",
+    ] + headers + RAW_HOST_HEADERS,
     copts = [
         "-x",
         "objective-c++",
         "-fobjc-arc",
-    ] + RAW_HOST_COPTS,
+    ] + RAW_HOST_COPTS + defines,
     cxx_std = "c++17",
-    data = [
-        "//drivers/TegraGM20BMetal:precompile/corpus.log",
+    data = data + [
         "@ipsw//:crawl_qc",
         "@ipsw//:crawl_tree",
     ],
-    env = {
-        "SWITCH_CORPUS": "$(rootpath //drivers/TegraGM20BMetal:precompile/corpus.log)",
-        "SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)",
-    },
-    linkopts = [
-        "-framework",
-        "Foundation",
-        "-framework",
-        "Metal",
-        "-framework",
-        "IOSurface",
-        "-framework",
-        "IOKit",
-        "-framework",
-        "CoreFoundation",
-        "-lobjc",
-    ],
+    env = env | {"SWITCH_QUARTZCORE": "$(rootpath @ipsw//:crawl_qc)"},
+    linkopts = FACADE_LINKOPTS,
     sanitize = False,
+    tags = tags,
     deps = [
-        ":frontend_host",
         ":raw_facade_plugin_host",
         ":raw_runtime_plugin_host",
     ] + RAW_HOST_DEPS,
+) for name, size, tags, headers, defines, data, env in [
+    (
+        "compiler_compile_only_test",
+        "medium",
+        [],
+        ["reflection_compare.h"],
+        select({
+            # the corpus's states of private linked functions are iOS 27's libraries' alone, and so is a refused state:
+            # iOS 27's PencilKit made sixChannelBlend's constant 6 a bool where iOS 17's states set a uint. iOS 17's
+            # libraries refuse none of the corpus states the test can ask of them. (copts are Bourne-tokenized: the
+            # single quotes keep the string's.)
+            "//ipsw:24B119": [
+                "-DSWITCH_LIBRARIES_LINK_PRIVATE_FUNCTIONS=1",
+                "'-DSWITCH_REFUSED_FRAGMENT_FUNCTION=\"sixChannelBlend_fragment\"'",
+            ],
+            "//conditions:default": [],
+        }),
+        ["//drivers/TegraGM20BMetal:precompile/corpus.log"],
+        {"SWITCH_CORPUS": "$(rootpath //drivers/TegraGM20BMetal:precompile/corpus.log)"},
+    ),
+    (
+        "compiler_repro_test",
+        "medium",
+        ["manual"],
+        [],
+        [],
+        [],
+        {},
+    ),
+    (
+        "compiler_transient_test",
+        "large",
+        [],
+        [],
+        [],
+        ["//drivers/TegraGM20BMetal:precompile/corpus.log"],
+        {"SWITCH_CORPUS": "$(rootpath //drivers/TegraGM20BMetal:precompile/corpus.log)"},
+    ),
+]]
+
+# The translator's own heap and sampler rules (metal_rules.rs), which raw_metal_rules_test holds raw's to
+rust_static_library(
+    name = "metal_rules",
+    testonly = True,
+    srcs = ["metal_rules.rs"],
+    edition = "2024",
+    deps = [
+        "//gpu:translate",
+        "//third_party/m2v/crates/metal2vulkan",
+    ],
+)
+
+rust_artifact(
+    name = "metal_rules_host",
+    testonly = True,
+    crate = ":metal_rules",
+    kind = "tool",
+)
+
+# What the raw path took over from m2v, against Metal's measured description and the translator's own rules
+# (raw_metal_rules_test.cpp)
+host_test(
+    name = "raw_metal_rules_test",
+    size = "medium",
+    srcs = [
+        "metal_format_golden.h",
+        "raw_metal_rules_test.cpp",
+        ":metal_rules_host",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_heap_fit.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_metal_formats.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_sampler_word.h",
+    ] + RAW_HOST_HEADERS,
+    copts = RAW_HOST_COPTS,
+    cxx_std = "c++17",
+    linkopts = FACADE_LINKOPTS,
+    sanitize = False,
+    deps = RAW_HOST_DEPS,
 )
 
 # raw/runtime/raw_remote_ask.h: every answer of the shader compiler, and what a client's ask does next

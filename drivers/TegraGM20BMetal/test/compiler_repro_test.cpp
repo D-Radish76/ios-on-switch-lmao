@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
-// One state line (a corpus R or D line) through the system shader compiler's compile context over hostsim's mock GM20B and
-// NVK's host twin, as the device's compiler made it: its result and why. SWITCH_REPRO_LINE names the state; a stage's
+// One state line (a corpus R or D line) through the system shader compiler's engine (the translator alone), as the
+// device's compiler made it: its result and why. SWITCH_REPRO_LINE names the state; a stage's
 // lib=/repro.metallib reads SWITCH_REPRO_LIBRARY, a library a client made from source (the HW Test's). Manual: a probe
 // of one device failure, run with --test_env=SWITCH_REPRO_LINE=... --test_env=SWITCH_REPRO_LIBRARY=<absolute path>.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
-#include "NativeBridgeMetalFrontend.h"
-#include "bridge/NativeMetalCompile.h"
 #include "TegraGM20BCompilerABI.h"
 #include "compiler_requests.h"
 #include "../compiler/compiler_engine.h"
@@ -27,9 +25,6 @@ TEST(CompilerRepro, TheLinesStateThroughTheCompileContext)
     const std::string line = env("SWITCH_REPRO_LINE"), library = env("SWITCH_REPRO_LIBRARY");
     if (line.empty())
         GTEST_SKIP() << "no SWITCH_REPRO_LINE";
-    setenv("NMB_DEVICE_BASE_NSOBJECT", "1", 1);
-    setenv("NVK_DARWIN_SERVICE", "AGXAccelerator", 0);
-    setenv("NMB_SHADOW_LOG", "0", 0);
     const std::string root = compiler_test::systemRoot(getenv("SWITCH_QUARTZCORE"));
     compiler_test::Requests made(root, {{"/repro.metallib", library}});
     const std::vector<raw::CompileRequest> asked = made.of({line});

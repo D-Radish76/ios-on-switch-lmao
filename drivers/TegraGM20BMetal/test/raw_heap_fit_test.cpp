@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // raw/runtime/raw_heap_fit.h: which heap image array holds a texture and its handle-table flags, m2v's rules over
-// raw_heap_classes.h's rows. raw_bridge_parity_test (m2v) compares both with the bridge over the domain; these pin the
+// raw_heap_classes.h's rows. raw_metal_rules_test holds both to the translator's rules over the domain; these pin the
 // rules' cases: a class of the texture's shape and numeric type, a form a heap reads by its raw texels, the half-bits
 // storage twin, depth comparison, sample counts, and facts no Metal enumerator has.
 #include "../raw/runtime/raw_heap_fit.h"

@@ -1,17 +1,15 @@
 // SPDX-License-Identifier: MIT
-// What the raw path took over from the bridge, against the bridge: the m2v device's Metal description
-// (nmb_device_pixel_format_block) is raw/runtime/raw_metal_formats.h's row and its linear row
-// (nmb_device_linear_bytes_per_row) is refused exactly where the raw device answers none; every capability query the
-// bridge installed on m2v's device class (nmb_device_answer_selector) has an answer of its kind in raw_device_answers.h, so
-// the raw device opens m2v for none of them; a sampler's word (raw_sampler_word.h) is switch_nmb_sampler_word's over every
-// enumerator value and one past each, and over the level clamps on and around Metal's grid; which heap image array holds
-// a texture and its handle-table flags (raw_heap_fit.h) are switch_nmb_heap_holds' and switch_nmb_heap_texture_flags':
-// the flags over every format value below 2048 and every swizzle of the six channel sources and one past them, and
-// holding over every format, texture type, usage of the sampled and storage classes, sample count and kind of swizzle
-// against each class word of the type's own dimension, plus every class word's field values against a few textures. The m2v device is the host
-// bridge over NVK's host twin and hostsim's mock GM20B.
-#include "bridge/NativeMetalDirect.h"
-#include "bridge/NativeMetalObjects.h"
+// What the raw path took over from m2v, against its sources of truth: raw/runtime/raw_metal_formats.h's description of
+// every pixel format below 2048 is Metal's (metal_format_golden.h, Metal's answers as m2v measured them), and a format
+// has a linear row exactly where Metal makes one (a described format not of blocks and with no depth or stencil
+// aspect, measured by m2v as Metal's minimumLinearTextureAlignmentForPixelFormat: answers); a sampler's
+// word (raw_sampler_word.h) is the translator's (metal_rules.rs) over every enumerator value and one past each, and over
+// the level clamps on and around Metal's grid; which heap image array holds a texture and its handle-table flags
+// (raw_heap_fit.h) are the translator's: the flags over every format value below 2048 and every swizzle of the six channel
+// sources and one past them, and holding over every format, texture type, usage of the sampled and storage classes, sample
+// count and kind of swizzle against each class word of the type's own dimension, plus every class word's field values
+// against a few textures.
+#include "metal_format_golden.h"
 #include "../raw/runtime/raw_device_answers.h"
 #include "../raw/runtime/raw_heap_fit.h"
 #include "../raw/runtime/raw_metal_formats.h"
@@ -19,109 +17,97 @@
 
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <array>
 #include <cfloat>
-#include <climits>
-#include <cstddef>
 #include <cmath>
-#include <vector>
-#include <cstdlib>
+#include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <iterator>
+#include <vector>
+
+extern "C" {
+void metal_rules_layouts(std::array<size_t, 4> *out);
+bool metal_rules_heap_holds(uint32_t heapClass, const raw::HeapTextureFacts *facts);
+uint32_t metal_rules_heap_texture_flags(const raw::HeapTextureFacts *facts);
+uint32_t metal_rules_sampler_word(const raw::SamplerFacts *facts);
+bool metal_rules_depth_stencil(uint32_t format);
+}
 
 namespace {
 
 namespace mf = raw::metal_formats;
 
-const raw::answers::ArgRange *argument(const char *selector, uint64_t value = ~0ull)
+const metal_format_golden::Block *metalDescribes(uint32_t format)
 {
-    const raw::answers::Kind &k = raw::answers::kThisKind;
-    for (size_t i = 0; i < k.argCount; i++)
-        if (!strcmp(k.args[i].selector, selector) &&
-            (value == ~0ull || (value >= k.args[i].first && value <= k.args[i].last)))
-            return &k.args[i];
-    return nullptr;
-}
-
-const raw::answers::Count *count(const char *selector)
-{
-    const raw::answers::Kind &k = raw::answers::kThisKind;
-    for (size_t i = 0; i < k.countCount; i++)
-        if (!strcmp(k.counts[i].selector, selector))
-            return &k.counts[i];
-    return nullptr;
+    const auto *golden =
+        std::find_if(std::begin(metal_format_golden::kDescribed), std::end(metal_format_golden::kDescribed),
+                     [&](const metal_format_golden::Block &b) {
+                         return b.mtl == format;
+                     });
+    return golden == std::end(metal_format_golden::kDescribed) ? nullptr : golden;
 }
 
 uint64_t linearAlignment(uint64_t format)
 {
-    const raw::answers::ArgRange *r = argument("minimumLinearTextureAlignmentForPixelFormat:", format);
-    return r ? r->value : 0;
+    const raw::answers::Kind &k = raw::answers::kThisKind;
+    for (size_t i = 0; i < k.argCount; i++)
+        if (!strcmp(k.args[i].selector, "minimumLinearTextureAlignmentForPixelFormat:") && format >= k.args[i].first &&
+            format <= k.args[i].last)
+            return k.args[i].value;
+    return 0;
 }
 
-TEST(RawBridgeParity, TheDescriptionAndTheLinearRowsAreTheBridges)
+TEST(RawMetalRules, TheDescriptionIsMetals)
 {
-    const char *nvk = getenv("SWITCH_NVK");
-    ASSERT_NE(nvk, nullptr);
-    char loader[PATH_MAX];
-    ASSERT_NE(realpath(nvk, loader), nullptr);
-    setenv("NMB_DEVICE_BASE_NSOBJECT", "1", 1);
-    setenv("NVK_DARWIN_SERVICE", "AGXAccelerator", 0);
-    NmbDevice *device = nmb_device_open(loader, nullptr);
-    ASSERT_NE(device, nullptr) << nmb_last_error();
-    size_t described = 0, rows = 0;
+    size_t described = 0;
     for (uint32_t format = 0; format < 2048; format++) {
-        uint64_t block[4] = {};
-        const bool bridge = nmb_device_pixel_format_block(device, format, block);
         const mf::Described *d = mf::described(format);
-        EXPECT_EQ(bridge, d != nullptr) << format;
-        if (bridge && d) {
+        const metal_format_golden::Block *golden = metalDescribes(format);
+        const bool metal = golden != nullptr;
+        EXPECT_EQ(metal, d != nullptr) << format;
+        if (metal && d) {
             described++;
-            EXPECT_EQ(block[0], d->bytes) << format;
-            EXPECT_EQ(block[1], d->blockW) << format;
-            EXPECT_EQ(block[2], d->blockH) << format;
+            EXPECT_EQ(golden->bytes, d->bytes) << format;
+            EXPECT_EQ(golden->blockW, d->blockW) << format;
+            EXPECT_EQ(golden->blockH, d->blockH) << format;
         }
-        const uint64_t bridgeRow = nmb_device_linear_bytes_per_row(device, format, 100);
-        const uint64_t rawRow = mf::linearRow(100, mf::texelBytes(format), linearAlignment(format));
-        rows += rawRow != 0;
-        EXPECT_EQ(bridgeRow != 0, rawRow != 0) << format << ": bridge " << bridgeRow << ", raw " << rawRow;
     }
     EXPECT_EQ(described, std::size(mf::kDescribed));
+}
+
+TEST(RawMetalRules, AFormatHasALinearRowWhereMetalMakesOne)
+{
+    size_t rows = 0;
+    for (uint32_t format = 0; format < 2048; format++) {
+        const metal_format_golden::Block *golden = metalDescribes(format);
+        const bool metal = golden && !golden->blocks && !metal_rules_depth_stencil(format);
+        const uint64_t rawRow = mf::linearRow(100, mf::texelBytes(format), linearAlignment(format));
+        rows += rawRow != 0;
+        EXPECT_EQ(metal, rawRow != 0) << format << ": raw " << rawRow;
+    }
     EXPECT_GT(rows, 150u);
 }
 
-TEST(RawBridgeParity, EveryCapabilityQueryTheBridgeAnsweredIsRaws)
+TEST(RawMetalRules, TheTranslatorTakesRawsStructs)
 {
-    size_t asked = 0;
-    uint32_t kind = 0;
-    for (size_t i = 0; const char *name = nmb_device_answer_selector(i, &kind); i++) {
-        asked++;
-        const bool flag = kind == NMB_ANSWER_FLAG || kind == NMB_ANSWER_FLAG_ARG;
-        if (kind == NMB_ANSWER_COUNT || kind == NMB_ANSWER_FLAG) {
-            const raw::answers::Count *c = count(name);
-            ASSERT_NE(c, nullptr) << name;
-            EXPECT_EQ(c->flag, flag) << name;
-        } else {
-            const raw::answers::ArgRange *r = argument(name);
-            ASSERT_NE(r, nullptr) << name;
-            EXPECT_EQ(r->flag, flag) << name;
-        }
-    }
-    EXPECT_GT(asked, 60u);
+    std::array<size_t, 4> layouts = {};
+    metal_rules_layouts(&layouts);
+    EXPECT_EQ(layouts[0], sizeof(raw::SamplerFacts));
+    EXPECT_EQ(layouts[1], offsetof(raw::SamplerFacts, lodMin));
+    EXPECT_EQ(layouts[2], sizeof(raw::HeapTextureFacts));
+    EXPECT_EQ(layouts[3], offsetof(raw::HeapTextureFacts, swizzle));
 }
-
-static_assert(sizeof(raw::SamplerFacts) == sizeof(NmbSamplerDescriptor) &&
-                  offsetof(raw::SamplerFacts, lodMin) == offsetof(NmbSamplerDescriptor, lod_min),
-              "the bridge's sampler descriptor");
 
 struct SamplerParity {
     size_t compared = 0, differ = 0;
 
     void check(const raw::SamplerFacts &f)
     {
-        NmbSamplerDescriptor d;
-        memcpy(&d, &f, sizeof d);
-        const uint32_t ours = raw::samplerWord(f), bridge = switch_nmb_sampler_word(&d);
+        const uint32_t ours = raw::samplerWord(f), rule = metal_rules_sampler_word(&f);
         compared++;
-        if (ours != bridge && ++differ <= 8)
-            ADD_FAILURE() << std::hex << "raw " << ours << ", bridge " << bridge << std::dec << ": filters "
+        if (ours != rule && ++differ <= 8)
+            ADD_FAILURE() << std::hex << "raw " << ours << ", translator " << rule << std::dec << ": filters "
                           << f.minFilter << "/" << f.magFilter << "/" << f.mipFilter << " address " << f.sAddress << "/"
                           << f.tAddress << "/" << f.rAddress << " border " << f.borderColor << " compare " << f.compare
                           << " normalized " << f.normalized << " anisotropy " << f.maxAnisotropy << " lod " << f.lodMin
@@ -129,7 +115,7 @@ struct SamplerParity {
     }
 };
 
-TEST(RawBridgeParity, TheSamplerWordIsTheBridgesOverEveryEnumerator)
+TEST(RawMetalRules, TheSamplerWordIsTheTranslatorsOverEveryEnumerator)
 {
     SamplerParity p;
     raw::SamplerFacts f{};
@@ -158,7 +144,7 @@ TEST(RawBridgeParity, TheSamplerWordIsTheBridgesOverEveryEnumerator)
     EXPECT_GT(p.compared, 7000000u);
 }
 
-TEST(RawBridgeParity, TheSamplerWordIsTheBridgesOverTheLevelClamps)
+TEST(RawMetalRules, TheSamplerWordIsTheTranslatorsOverTheLevelClamps)
 {
     std::vector<float> clamps = {NAN, -INFINITY, INFINITY, -FLT_MAX, FLT_MAX, -0.0f, FLT_MIN, 1e-9f, 1e9f};
     for (int k = -256; k <= 70 * 256; k++)
@@ -182,30 +168,25 @@ TEST(RawBridgeParity, TheSamplerWordIsTheBridgesOverTheLevelClamps)
     EXPECT_EQ(p.differ, 0u);
 }
 
-static_assert(sizeof(raw::HeapTextureFacts) == sizeof(NmbHeapTextureFacts) &&
-                  offsetof(raw::HeapTextureFacts, swizzle) == offsetof(NmbHeapTextureFacts, swizzle),
-              "the bridge's texture facts");
-
 struct HeapParity {
     size_t compared = 0, differ = 0;
 
     void check(uint32_t word, const raw::HeapTextureFacts &f, bool flagsToo)
     {
-        const auto *bridgeFacts = reinterpret_cast<const NmbHeapTextureFacts *>(&f);
-        const bool ours = raw::heapHolds(word, &f), bridge = switch_nmb_heap_holds(word, bridgeFacts);
+        const bool ours = raw::heapHolds(word, &f), rule = metal_rules_heap_holds(word, &f);
         const uint32_t ourFlags = flagsToo ? raw::heapTextureFlags(f) : 0,
-                       bridgeFlags = flagsToo ? switch_nmb_heap_texture_flags(bridgeFacts) : 0;
+                       ruleFlags = flagsToo ? metal_rules_heap_texture_flags(&f) : 0;
         compared++;
-        if ((ours != bridge || ourFlags != bridgeFlags) && ++differ <= 8)
+        if ((ours != rule || ourFlags != ruleFlags) && ++differ <= 8)
             ADD_FAILURE() << std::hex << "class " << word << " format " << std::dec << f.pixelFormat << " type "
                           << f.textureType << " samples " << f.sampleCount << " usage " << std::hex << f.usage
                           << " swizzle " << int(f.swizzle[0]) << int(f.swizzle[1]) << int(f.swizzle[2])
-                          << int(f.swizzle[3]) << ": raw " << ours << "/" << ourFlags << ", bridge " << bridge << "/"
-                          << bridgeFlags;
+                          << int(f.swizzle[3]) << ": raw " << ours << "/" << ourFlags << ", translator " << rule << "/"
+                          << ruleFlags;
     }
 };
 
-TEST(RawBridgeParity, TheHeapTextureFlagsAreTheBridgesOverEveryFormatAndSwizzle)
+TEST(RawMetalRules, TheHeapTextureFlagsAreTheTranslatorsOverEveryFormatAndSwizzle)
 {
     HeapParity p;
     for (uint32_t format = 0; format < 2048; format++)
@@ -218,7 +199,7 @@ TEST(RawBridgeParity, TheHeapTextureFlagsAreTheBridgesOverEveryFormatAndSwizzle)
     EXPECT_EQ(p.differ, 0u);
 }
 
-TEST(RawBridgeParity, AHeapArrayHoldsWhatTheBridgesHolds)
+TEST(RawMetalRules, AHeapArrayHoldsWhatTheTranslatorsHolds)
 {
     // MTLTextureType's dimension, arrayedness and multisampling in a class word's fields
     constexpr uint32_t kShapes[10][3] = {{0, 0, 0}, {0, 1, 0}, {1, 0, 0}, {1, 1, 0}, {1, 0, 1},

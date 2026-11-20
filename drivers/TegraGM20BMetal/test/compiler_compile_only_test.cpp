@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
 // The system shader compiler's engine (compiler_engine.h, the translator alone: raw/runtime/RawOffline.h), run in a
-// process of its own over hostsim's mock GM20B and NVK's host twin: it makes a record of every kind a sample of the
-// corpus's states asks for, render and compute, refusing only the build's refused function, and each sampled kernel's
-// reflection is the m2v device's it replaced. Its records are not that device's: the build's compile profile compiles
-// with no buffer bounds checks, the frozen runtime with them (tools/gpu/compile_profile_test.py).
+// process of its own: it makes a record of every kind a sample of the corpus's states asks for, render and compute,
+// refusing only the build's refused function, and each sampled kernel's reflection is the one this Mac's Metal gives the
+// same function.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
-#include "NativeBridgeMetalFrontend.h"
-#include "bridge/NativeMetalCompile.h"
 #include "TegraGM20BCompilerABI.h"
 #include "bazel/testing/fresh_process.h"
 #include "compiler_requests.h"
@@ -31,23 +28,9 @@ std::string dir()
     return tmp ? tmp : "/tmp";
 }
 
-std::string loader()
-{
-    char path[PATH_MAX];
-    const char *nvk = getenv("SWITCH_NVK");
-    return nvk && realpath(nvk, path) ? path : "";
-}
-
 std::string root()
 {
     return compiler_test::systemRoot(getenv("SWITCH_QUARTZCORE"));
-}
-
-void environment()
-{
-    setenv("NMB_DEVICE_BASE_NSOBJECT", "1", 1);
-    setenv("NVK_DARWIN_SERVICE", "AGXAccelerator", 0);
-    setenv("NMB_SHADOW_LOG", "0", 0);
 }
 
 // The sample: every corpus state linking functions, a few of each other kind, a stride through the rest, a RenderBox
@@ -173,7 +156,6 @@ std::vector<Made> readEntries(const char *name)
 
 void viaTheEngine()
 {
-    environment();
     switch_compiler::Engine engine;
     std::string why;
     ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), root(), {}}, why)) << why;
@@ -182,13 +164,12 @@ void viaTheEngine()
     });
 }
 
-// Each sampled kernel's reflection as the shader compiler makes it (a Reflection request: the translator alone, no m2v
-// runtime) and as the m2v device's compute prepare gave it, selector by selector
-void reflectionsAsTheDevice()
+// Each sampled kernel's reflection as the shader compiler makes it (a Reflection request: the translator alone) and as
+// this Mac's Metal gives it for the same function and pipeline descriptor, selector by selector
+void reflectionsAsMetal()
 {
-    environment();
-    id<MTLDevice> device = native_bridge_metal_open(loader().c_str(), nullptr, 0, nullptr);
-    ASSERT_TRUE(device != nil) << nmb_last_error();
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    ASSERT_TRUE(device != nil);
     switch_compiler::Engine engine;
     std::string why;
     ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), root(), {}}, why)) << why;
@@ -209,9 +190,12 @@ void reflectionsAsTheDevice()
         d.computeFunction = [library newFunctionWithName:@(r.stages[0].function.c_str())];
         d.maxTotalThreadsPerThreadgroup = r.kernel.maxThreads;
         d.threadGroupSizeIsMultipleOfThreadExecutionWidth = r.kernel.multipleOfWidth;
-        id m2v = nil;
+        MTLComputePipelineReflection *metal = nil;
         NSError *error = nil;
-        ASSERT_TRUE(native_bridge_metal_compute_prepare(d, MTLPipelineOptionArgumentInfo, &m2v, &error) != nil)
+        ASSERT_TRUE([device newComputePipelineStateWithDescriptor:d
+                                                          options:MTLPipelineOptionArgumentInfo
+                                                       reflection:&metal
+                                                            error:&error] != nil)
             << state << ": " << (error ? error.localizedDescription.UTF8String : "");
         r.kind = raw::RequestKind::Reflection;
         r.key = raw::computeReflectionKey(0, state).key;
@@ -223,7 +207,7 @@ void reflectionsAsTheDevice()
         ASSERT_TRUE(raw::decodeReflectionEntry(entry, p.key, made, blob) && made) << state << ": " << blob;
         id raw = rmReflectionOf(reinterpret_cast<const uint8_t *>(blob.data()), blob.size(), true);
         ASSERT_TRUE(raw != nil) << state;
-        reflection_compare::expectSameList([m2v bindings], [raw bindings], state);
+        reflection_compare::expectSameList(metal.bindings, [raw bindings], state);
     }
     EXPECT_FALSE(states.empty()) << "the sample has no kernel of no constants";
     printf("%zu compute reflections compared\n", states.size());
@@ -231,10 +215,10 @@ void reflectionsAsTheDevice()
 
 }  // namespace
 
-TEST(CompilerCompileOnly, AKernelsReflectionIsTheDevicesSelectorForSelector)
+TEST(CompilerCompileOnly, AKernelsReflectionIsMetalsSelectorForSelector)
 {
     ASSERT_FALSE(root().empty());
-    switch_ios::test::ExpectPassesInFreshProcess(reflectionsAsTheDevice);
+    switch_ios::test::ExpectPassesInFreshProcess(reflectionsAsMetal);
 }
 
 TEST(CompilerCompileOnly, ItMakesARecordOfEveryKindTheSampleAsks)

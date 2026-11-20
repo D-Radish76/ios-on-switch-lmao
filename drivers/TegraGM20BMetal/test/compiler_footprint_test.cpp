@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // What the system shader compiler holds as it serves boot 12's requests (compiler_boot12.log), each run a process of its
-// own over the mock GM20B, as compiler_service.mm opens and serves: the pack, the store, the request log an earlier boot
+// own, as compiler_service.mm opens and serves: the pack, the store, the request log an earlier boot
 // left (boot 12's 13 replayed requests), the take buffer and the pool's workers; the log replayed at the background
 // class; the 2 requests clients then asked; the compiler at rest (its libraries let go: compiler_libraries.h), and the
 // heap relieved (malloc_zone_pressure_relief). Each step's line: the heap in use and allocated (the device's footprint

@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// What one compile of the system shader compiler's heaviest states costs at its peak, each state a process of its own over
-// the mock GM20B, as the compiler makes it (compiler_engine.h, the first compile of the process): RenderBox's uber states
+// What one compile of the system shader compiler's heaviest states costs at its peak, each state a process of its own,
+// as the compiler makes it (compiler_engine.h, the first compile of the process): RenderBox's uber states
 // and Core Animation's generic fixed-function state with every image input (PBGRAXm_A2Xghfc). A sampler beside the
 // compile reads the heap in use and the compiling thread's stack every millisecond: each state's line gives its time, its
 // peak heap and phys_footprint, the function the compile was in at the peak, and the most heap the compile held while
-// each part of it ran (m2v's translation, NIR, NAK, NVK, the raw record). Run by hand with MallocStackLogging=1 and
+// each part of it ran (m2v's translation, NIR, NAK, the raw record). Run by hand with MallocStackLogging=1 and
 // COMPILER_TRANSIENT_SITES=<dir>, a state's run also leaves malloc_history's live allocations there each time the heap
 // passes a new high by a quarter; COMPILER_TRANSIENT_ENTRIES=<dir> keeps each state's entry there, to compare two builds'
 // records byte for byte.
@@ -13,7 +13,6 @@
 #include <dlfcn.h>
 #include <mach/mach.h>
 #include <malloc/malloc.h>
-#include "NativeBridgeMetalFrontend.h"
 #include "bazel/testing/fresh_process.h"
 #include "compiler_requests.h"
 #include "../compiler/compiler_engine.h"
@@ -59,9 +58,7 @@ uint64_t heapInUse()
 const char *partOf(const char *symbol)
 {
     static const std::pair<const char *, const char *> parts[] = {
-        {"3nak", "NAK"},        {"nak_", "NAK"},         {"nir_", "NIR"},
-        {"spirv", "NIR"},       {"metal2vulkan", "m2v"}, {"nvk_", "NVK"},
-        {"vk_pipeline", "NVK"}, {"N3raw", "raw"},        {"native_metal_bridge", "bridge"}};
+        {"3nak", "NAK"}, {"nak_", "NAK"}, {"nir_", "NIR"}, {"spirv", "NIR"}, {"metal2vulkan", "m2v"}, {"N3raw", "raw"}};
     for (const auto &[needle, part] : parts)
         if (strstr(symbol, needle))
             return part;
@@ -158,8 +155,6 @@ struct Sampler {
 
 void compileOne(size_t index)
 {
-    setenv("NMB_DEVICE_BASE_NSOBJECT", "1", 1);
-    setenv("NVK_DARWIN_SERVICE", "AGXAccelerator", 0);
     const std::string line = heavy()[index];
     compiler_test::Requests made(root());
     raw::CompileRequest r;
