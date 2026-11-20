@@ -10,6 +10,14 @@
 
 namespace raw {
 
+// Whether a sampler header that reads level 0 alone (raw_sampler.h levelZeroHeader) samples `t` as its own header does:
+// such a texture, or one of one level, which every lod reads anyway (MIP_POINT with LOD clamps [0, 1/4] keeps a
+// minification as one). A view holds no chain whatever its levels: taken as mipmapped
+inline bool samplesLevelZeroAlone(const Texture &t)
+{
+    return t.levelZero || (!t.view && (!t.chain || t.chain->layout.levels <= 1));
+}
+
 // Levels 1 and on of `t` from its level 0, on the copy engine
 inline void copyLevelZero(BlitEncoder &e, const Texture &t)
 {

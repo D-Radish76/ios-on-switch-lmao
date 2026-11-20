@@ -172,18 +172,41 @@ TEST_F(DeviceKernelPairs, ASamplerOfATextureWhoseEveryLodReadsLevelZeroReadsLeve
     EXPECT_EQ(levelZero[0], own[0]);
 }
 
-// One sampler of both such a texture and another, which its header would read at level 0 too, is no dispatch; a record
-// without pairs, whose samplers sample every texture it reads, likewise
-TEST_F(DeviceKernelPairs, ASamplerOfALevelZeroTextureAndAnotherIsNoDispatch)
+// One sampler of both such a texture and a mipmapped one, which its header would read at level 0 too, is no dispatch; a
+// record without pairs, whose samplers sample every texture it reads, likewise
+TEST_F(DeviceKernelPairs, ASamplerOfALevelZeroTextureAndAMipmappedOneIsNoDispatch)
 {
     converted.addressMap = 0;
     converted.levelZero = true;
+    dev.destroyTexture(rgba);
+    ASSERT_TRUE(dev.createMipTexture(8, 8, kRGBA8, 4, rgba));
     static const raw::ComputeRecord both = kernel(kEdge, kKnown | 1u << 0 | 1u << 1, kKnown | 1u << 1);
     static const raw::ComputeRecord legacy = kernel(kEdge, 0, 0);
     for (const raw::ComputeRecord *r : {&both, &legacy}) {
         std::string why;
         EXPECT_TRUE(words(*r, why).empty());
-        EXPECT_EQ(why, "a kernel sampler of a texture whose every lod reads level 0 and of another texture");
+        EXPECT_EQ(why, "a kernel sampler of a texture whose every lod reads level 0 and of a mipmapped texture");
+    }
+}
+
+// HW Test gpu.raw.packed_levels_open's shared sampler: one constexpr sampler of such a texture and of an RGBA8 8x8 of one
+// level, which an M4 Max samples as its own (the packed-levels shared-sampler probe, 3 runs): both through the level-0
+// header, which reads a texture of one level as its own header does
+TEST_F(DeviceKernelPairs, ASamplerOfALevelZeroTextureAndAOneLevelOneTakesTheLevelZeroHeader)
+{
+    converted.addressMap = 0;
+    converted.levelZero = true;
+    static const raw::ComputeRecord both = kernel(kEdge, kKnown | 1u << 0 | 1u << 1, kKnown | 1u << 1);
+    static const raw::ComputeRecord legacy = kernel(kEdge, 0, 0);
+    std::string why;
+    EXPECT_TRUE(words(both, why).empty());
+    EXPECT_EQ(why, "a kernel sampler without its header for a texture whose every lod reads level 0");
+    ASSERT_TRUE(dev.constexprLevelZeroPlaced());
+    for (const raw::ComputeRecord *r : {&both, &legacy}) {
+        const std::vector<uint32_t> set = words(*r, why);
+        ASSERT_EQ(set.size(), 2u) << why;
+        EXPECT_EQ(raw::DeviceHarness::samplerHeader(dev, set[0] >> 20)[1] >> 6 & 3, 2u) << "the level-0 header";
+        EXPECT_EQ(set[1] & 0xfffff, rgba.tic);
     }
 }
 

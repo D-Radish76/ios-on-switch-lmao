@@ -197,7 +197,44 @@ void twoLevelsReadLevelZero()
     CFRelease(s);
 }
 
+// HW Test gpu.raw.packed_levels_open's views: of R10Unorm_PACKED 32x16 of three levels, views of levels 1-2, 2 and 0,
+// which an M4 Max makes at those levels' sizes (the packed-levels views probe, 3 runs): each a header over the
+// chain's levels it names, every lod still reading its level 0
+void viewsOfItsLevels()
+{
+    id<MTLDevice> device = open(packedPack());
+    ASSERT_TRUE(device != nil);
+    IOSurfaceRef s = p420();
+    ASSERT_TRUE(s);
+    MTLTextureDescriptor *d = packed(3);
+    d.usage = MTLTextureUsageShaderRead | MTLTextureUsagePixelFormatView;
+    id<MTLTexture> t = [device newTextureWithDescriptor:d iosurface:s plane:0];
+    CFRelease(s);
+    ASSERT_TRUE(t != nil && ((RMTexture *)t)->_rawOk && ((RMTexture *)t)->_raw.chain);
+    const NSUInteger parts[3][2] = {{1, 2}, {2, 1}, {0, 1}};
+    for (const auto &p : parts) {
+        id<MTLTexture> v = [t newTextureViewWithPixelFormat:kR10Packed
+                                                textureType:MTLTextureType2D
+                                                     levels:NSMakeRange(p[0], p[1])
+                                                     slices:NSMakeRange(0, 1)];
+        ASSERT_TRUE(v != nil) << "levels " << p[0] << "+" << p[1];
+        EXPECT_TRUE(((RMTexture *)v)->_rawOk) << "levels " << p[0] << "+" << p[1];
+        EXPECT_EQ(v.width, NSUInteger(32 >> p[0]));
+        EXPECT_EQ(v.height, NSUInteger(16 >> p[0]));
+        EXPECT_EQ(v.mipmapLevelCount, p[1]);
+        const raw::Texture &x = ((RMTexture *)v)->_raw;
+        EXPECT_NE(x.tic, 0u);
+        EXPECT_EQ(x.width, uint32_t(32 >> p[0])) << "its header over the chain's level " << p[0];
+        EXPECT_TRUE(x.levelZero);
+    }
+}
+
 }  // namespace
+
+TEST(RawFacadePackedLevels, ViewsOfItsLevelsAreMadeAtTheirSizes)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(viewsOfItsLevels);
+}
 
 TEST(RawFacadePackedLevels, OneLevelGetsNothing)
 {

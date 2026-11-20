@@ -207,7 +207,10 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
     // viewed as the type asked
     const bool flat = levels == 1 && !of.chain && (type == fx::kTexTwoD || type == fx::kTexTwoDArray);
     const bool whole = flat && !baseLevel && !baseLayer && layers == 1;
-    if (((of.converted() || of.xrPlanes) && (!whole || (of.xrPlanes && !twoPlaneXr(format)) ||
+    // a packed 10-bit image of several levels (Texture::levelZero) is a chain like any other, its levels viewed as such
+    // (an M4 Max makes views of levels 1-2, 2 and 0 of three at those levels' sizes: the packed-levels views probe)
+    const bool chained = of.converted() && of.levelZero && of.chain && type == fx::kTexTwoD;
+    if (((of.converted() || of.xrPlanes) && ((!whole && !chained) || (of.xrPlanes && !twoPlaneXr(format)) ||
                                              (of.converted() && format != of.format))) ||
         (of.samples > 1 && !whole) || (!of.blockLinear && !flat) || !sameTexels || of.memoryless || !levels ||
         !layers || (of.type == fx::kTexThreeD) != volume || (oneLayer && layers != 1) ||
@@ -222,6 +225,14 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
             return false;
         if (!baseLevel)
             image = of;
+        if (chained && baseLevel) {  // a level's image holds its texels, not the conversion its header reads them by
+            image.ycbcr = of.ycbcr;
+            image.levelZero = true;
+            image.luma = of.luma;
+            image.chroma = of.chroma;
+            image.addressMap = of.addressMap;
+            memcpy(image.shape, of.shape, sizeof image.shape);
+        }
         image.cpu = nullptr;
         layerBytes = c.arrayStride;
     } else {
@@ -263,7 +274,7 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
         if (!of.sampled && !(t.tic = of.xrPlanes ? allocTicPair() : allocTic()))
             return false;
         noteView(of, t);
-        if (of.xrPlanes || of.converted()) {
+        if (of.xrPlanes || (of.converted() && !chained)) {
             memcpy(tic_.cpu + 32 * t.tic, tic_.cpu + 32 * of.tic, of.xrPlanes ? 64 : 32);
             if (of.converted() && type != fx::kTexTwoD)  // a block-linear image's header (the planes' are pitch)
                 setField(reinterpret_cast<uint32_t *>(tic_.cpu + 32 * t.tic), 154, 151, type);
@@ -280,6 +291,8 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
             c.layers = layers;
             uint32_t w[8];
             chainViewHeader(of, c, of.chain->va + baseLayer * layerBytes, *f, baseLevel, levels, type, w);
+            if (chained)  // the conversion's channels (ycbcrImageHeader)
+                w[0] = reinterpret_cast<const uint32_t *>(tic_.cpu + 32 * of.tic)[0];
             memcpy(tic_.cpu + 32 * t.tic, w, 32);
         }
     }

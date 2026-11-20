@@ -7,6 +7,7 @@
 #include "../../../../kits/SwitchGM20B/SwitchGM20B.h"
 #include "../../../../kits/SwitchGM20BEmit/SwitchGM20BEmitPredicate.h"
 #include "raw_kit.h"
+#include "raw_level_zero.h"
 #include "raw_compute_visibility.h"
 #include "raw_dispatch_bands.h"
 #include "raw_stamps.h"
@@ -351,10 +352,12 @@ const char *ComputeEncoder::pairedSamplerTsc(const Device &dev, const PackKernel
         return "a kernel sampler whose modes a converted texture's address map changes, compiled without that map";
     bool levelZero = false, other = false;
     for (uint32_t p = kernelSamplerPairs(e); p; p &= p - 1)
-        if (const uint32_t slot = uint32_t(__builtin_ctz(p)); slot < 31 && textures[slot])
-            (textures[slot]->levelZero ? levelZero : other) = true;
+        if (const uint32_t slot = uint32_t(__builtin_ctz(p)); slot < 31 && textures[slot]) {
+            levelZero |= textures[slot]->levelZero;
+            other |= !samplesLevelZeroAlone(*textures[slot]);
+        }
     if (levelZero && other)
-        return "a kernel sampler of a texture whose every lod reads level 0 and of another texture";
+        return "a kernel sampler of a texture whose every lod reads level 0 and of a mipmapped texture";
     if (levelZero) {
         tsc = constant ? dev.constexprMapped_[index][kLevelZeroMap] : s ? s->mapped[kLevelZeroMap] : dev.neutralTsc_;
         return tsc ? nullptr : "a kernel sampler without its header for a texture whose every lod reads level 0";
@@ -384,16 +387,18 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
     // a planar or YCbCr texture's address map: its samplers' headers with the map applied, as a draw's handle takes them
     // (admission keeps a kernel here only where every texture it binds is under one map, or the map changes no sampler;
     // a sampler entry that holds its pairs only where its own textures' maps change none of its modes)
-    // and the header of a texture whose every lod reads level 0 where the kernel reads no other texture, whose samples it
-    // would move: else such a texture's samplers are no dispatch
+    // and the header of a texture whose every lod reads level 0 where the kernel reads no mipmapped texture, whose samples
+    // it would move: else such a texture's samplers are no dispatch
     uint8_t map = 0;
     bool levelZero = false, other = false;
     for (uint32_t i = 0; i < r.entries; i++)
         if (r.entry[i].kind == KernelTexture && r.entry[i].slot < 31 && textures_[r.entry[i].slot]) {
             const Texture &t = *textures_[r.entry[i].slot];
             map = std::max(map, t.addressMap);
-            if (!kernelEntryWrites(r, i))
-                (t.levelZero ? levelZero : other) = true;
+            if (!kernelEntryWrites(r, i)) {
+                levelZero |= t.levelZero;
+                other |= !samplesLevelZeroAlone(t);
+            }
         }
     for (uint32_t i = 0; i < r.entries; i++) {
         const PackKernelEntry &e = r.entry[i];
@@ -478,7 +483,7 @@ bool ComputeEncoder::prepareDescriptors(const char **why)
             }
             at[0] |= tsc << 20;
         } else if (levelZero && other) {
-            *why = "a kernel sampler of a texture whose every lod reads level 0 and of another texture";
+            *why = "a kernel sampler of a texture whose every lod reads level 0 and of a mipmapped texture";
             return false;
         } else if (e.slot & kConstexprSampler) {
             const uint32_t index = e.slot & ~kConstexprSampler;
