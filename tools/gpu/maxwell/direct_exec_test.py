@@ -1116,6 +1116,25 @@ class Kernels(Records):
         self.dispatch(record, binding, (count + 63) // 64, 64)
         return list(struct.unpack(f'<{count}Q', binding.memory.read(out, 8 * count)))
 
+    def test_the_byte_resolve_writes_the_word_resolves_bytes_past_a_word(self):
+        """The byte resolve bound at a 4-byte word, its samples `shift` bytes past it, as RawMetalCounterEncode.mm binds
+        it for a destination offset off 4 bytes: the word resolve's bytes moved by `shift`, the bytes around them kept.
+        """
+        anchor_units, anchor_ns = 0x0000_0312_FFFF_FF00, 0x0000_0003_FFFF_FFF0
+        records = [(1, anchor_units + s) for s in (0, 5, 384, 0x1_0000_0005)] + [(0, 0x1234), (1, anchor_units - 1)]
+        words = struct.pack(f'<{len(records)}Q', *self.resolve(records, 1, {0: (anchor_units, anchor_ns)}))
+        layout = RECORDS['layouts']['counter']
+        record = self.kernel('counter_resolve_bytes')
+        for shift in (1, 2, 3):
+            binding = dr.Binding()
+            binding.bind((3, 0), dr.counter_records(layout, records))
+            out = binding.bind((3, 1), b'\x22' * (8 * len(records) + 8))
+            binding.bind((3, 2), dr.resolve_bytes_params(layout, len(records), shift))
+            binding.bind((3, 3), dr.clock_anchors(layout, 1, {0: (anchor_units, anchor_ns)}))
+            self.dispatch(record, binding, 1, 64)
+            got = binding.memory.read(out, 8 * len(records) + 8)
+            self.assertEqual(got, b'\x22' * shift + words + b'\x22' * (8 - shift), shift)
+
     def test_the_counter_resolve_kernel_gives_nanoseconds(self):
         """A sample at or past the table's one anchor resolves with it, and one before it to the error value."""
         anchor_units, anchor_ns = 0x0000_0312_FFFF_FF00, 0x0000_0003_FFFF_FFF0

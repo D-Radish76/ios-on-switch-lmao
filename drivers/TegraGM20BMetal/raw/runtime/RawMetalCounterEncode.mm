@@ -162,11 +162,11 @@ void RMCounterEmit::ended(size_t position)
     rc_.timestamps(stamps, count);
 }
 
-static id<MTLComputePipelineState> resolveState(const char *source, const char *name)
+static id<MTLComputePipelineState> resolveState(const char *name)
 {
     NSError *error = nil;
     id<MTLDevice> device = gRM->device;
-    id<MTLLibrary> library = [device newLibraryWithSource:@(source) options:nil error:&error];
+    id<MTLLibrary> library = [device newLibraryWithSource:@(raw::counters::kResolveSource) options:nil error:&error];
     id<MTLFunction> function = [library newFunctionWithName:@(name)];
     id<MTLComputePipelineState> state = function ? [device newComputePipelineStateWithFunction:function error:&error] : nil;
     if (!state)
@@ -181,7 +181,7 @@ id<MTLComputePipelineState> rmCounterResolveState()
     static id<MTLComputePipelineState> state;
     static std::once_flag once;
     std::call_once(once, [] {
-        state = resolveState(raw::counters::kResolveSource, raw::counters::kResolveFunction);
+        state = resolveState(raw::counters::kResolveFunction);
     });
     return state;
 }
@@ -192,7 +192,7 @@ static id<MTLComputePipelineState> resolveBytesState()
     static id<MTLComputePipelineState> state;
     static std::once_flag once;
     std::call_once(once, [] {
-        state = resolveState(raw::counters::kResolveBytesSource, raw::counters::kResolveBytesFunction);
+        state = resolveState(raw::counters::kResolveBytesFunction);
     });
     return state;
 }

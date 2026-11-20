@@ -86,10 +86,8 @@ bool mipRouted(RMTexture *t)
     return fmt2d || d.mipPipeline(format) || rmFormatMips(format) || d.ownPipeline(raw::wordMipState(format));
 }
 
-// `texel`, `texelBytes`: the unit's bytes as given, the colour unpacked (the call's own words still carry it)
 void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUInteger level, NSUInteger slice,
-                MTLRegion region, MTLClearColor color, MTLPixelFormat packedIn, const uint8_t *texel = nullptr,
-                uint32_t texelBytes = 0)
+                MTLRegion region, MTLClearColor color, MTLPixelFormat packedIn)
 {
     constexpr const char *call = "fillTexture:level:slice:region:color:";
     if (!t)
@@ -125,10 +123,7 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
             return;
         const double rgba[4] = {color.red, color.green, color.blue, color.alpha};
         uint8_t packed[16];
-        if (texel)
-            fillUnit(x, texel, texelBytes, f);
-        else
-            fillUnit(x, packed, raw::fillTexel(uint32_t(packedIn), rgba, packed), f);
+        fillUnit(x, packed, raw::fillTexel(uint32_t(packedIn), rgba, packed), f);
     } else {
         return notRawTexture(cb, t);
     }
@@ -154,22 +149,6 @@ void recordFill(__unsafe_unretained RMCommandBuffer *cb, id<MTLTexture> t, NSUIn
 }
 
 }  // namespace
-
-void otherUnitsCopy(RMCommandBuffer *cb, const char *call, RMTexture *d, NSUInteger slice, NSUInteger level, MTLOrigin o,
-                    MTLSize size)
-{
-    uint8_t texel[16];
-    const uint32_t bytes = raw::otherUnitsTexel(uint32_t(d->_descriptor.pixelFormat), texel);
-    if (!bytes)
-        return skipInvalidBlit(call, "between formats of other copy units");
-    constexpr const char *written =
-        "between formats of other copy units: its region written red, blue and alpha all ones, green zero";
-    rmSkipped(PredCallBlit);
-    SWITCH_REFUSE_DETAIL("raw", "blit.invalid", uintptr_t(call) * 31 + uintptr_t(written),
-                         "%s %s: Metal's validation error (MTLBlitCommandEncoder.h)", call, written);
-    recordFill(cb, (id<MTLTexture>)d, level, slice, MTLRegionMake3D(o.x, o.y, o.z, size.width, size.height, size.depth),
-               MTLClearColorMake(1, 0, 1, 1), d->_descriptor.pixelFormat, texel, bytes);
-}
 
 @interface RMBlitEncoder (Fill)
 @end

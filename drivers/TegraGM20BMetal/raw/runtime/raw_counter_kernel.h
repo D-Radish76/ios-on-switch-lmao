@@ -40,8 +40,11 @@ inline uint64_t resolved(const Record &r, const TegraGM20BAbiClockAnchors &t)
 
 inline constexpr const char *kResolveFunction = "switch_counter_resolve";
 
-// The resolve kernels' shared source: the records, the anchor table and the span from an anchor in nanoseconds
-#define SWITCH_COUNTER_RESOLVE_COMMON R"(#include <metal_stdlib>
+// ... into a destination `shift` bytes past its 4-byte word, a byte at a time, as an M4 Max's resolveCounters: writes
+// at such an offset: kResolveSource's second kernel, its pipeline made at the first such resolve
+inline constexpr const char *kResolveBytesFunction = "switch_counter_resolve_bytes";
+
+inline constexpr const char *kResolveSource = R"(#include <metal_stdlib>
 using namespace metal;
 
 struct SwitchCounterResolve {
@@ -90,9 +93,7 @@ static uint2 since(uint4 a, uint unitsLo, uint unitsHi)
     return uint2(a.z - mLo, a.w - mHi - (a.z < mLo ? 1u : 0u));
 }
 
-)"
-
-inline constexpr const char *kResolveSource = SWITCH_COUNTER_RESOLVE_COMMON R"(kernel void switch_counter_resolve(device const uint4 *records [[buffer(0)]], device uint *samples [[buffer(1)]],
+kernel void switch_counter_resolve(device const uint4 *records [[buffer(0)]], device uint *samples [[buffer(1)]],
                                    constant SwitchCounterResolve &p [[buffer(2)]],
                                    device const SwitchClockAnchors &anchors [[buffer(3)]],
                                    uint i [[thread_position_in_grid]])
@@ -116,13 +117,8 @@ inline constexpr const char *kResolveSource = SWITCH_COUNTER_RESOLVE_COMMON R"(k
     samples[2 * i] = ns.x;
     samples[2 * i + 1] = ns.y;
 }
-)";
 
-// ... into a destination `shift` bytes past its 4-byte word, a byte at a time, as an M4 Max's resolveCounters:
-// writes at such an offset: a library of its own, made at the first such resolve
-inline constexpr const char *kResolveBytesFunction = "switch_counter_resolve_bytes";
-
-inline constexpr const char *kResolveBytesSource = SWITCH_COUNTER_RESOLVE_COMMON R"(struct SwitchCounterResolveBytes {
+struct SwitchCounterResolveBytes {
     uint count;
     uint shift;
 };

@@ -174,6 +174,15 @@ def resolve_params(layout: dict, count: int) -> bytes:
     return bytes(data)
 
 
+def resolve_bytes_params(layout: dict, count: int, shift: int) -> bytes:
+    """Give the byte resolve's parameters: its samples' count and its destination's bytes past a 4-byte word."""
+    params = layout['bytes_params']
+    data = bytearray(params['bytes'])
+    put(data, params['count'], count)
+    put(data, params['shift'], shift)
+    return bytes(data)
+
+
 def clock_anchors(layout: dict, published: int, slots: dict[int, tuple[int, int]]) -> bytes:
     """Give the kernel's clock anchor table of `published` anchors: each slot's (units, ns) by its index."""
     table, anchor = layout['anchors'], layout['anchor']

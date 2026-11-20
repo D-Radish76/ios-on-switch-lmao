@@ -2,7 +2,7 @@
 // fillTexture:level:slice:region:color:[pixelFormat:] (Apple SPI) on the raw facade, run on the copy engine's and the 2D
 // engine's models: every fill a raw texture takes stays raw and leaves the bytes plain Metal leaves (m2v blit_fill.rs,
 // fill_value.rs, measured on an Apple M4): the colour packed by the fill's rules, repeated or cut at the texel, placed
-// and cut as Metal places it. A copy between formats of other copy units writes the texel an M4 Max writes there.
+// and cut as Metal places it.
 #include "raw_facade_blit_engines.h"
 #include "kits/SwitchGM20B/SwitchGM20B2D.h"
 #include "../raw/runtime/raw_fill_texel.h"
@@ -298,44 +298,6 @@ TEST_F(FacadeFills, AFillIsPlacedAsPlainMetalPlacesIt)
                     ASSERT_EQ(got[((image * side + y) * side + x) * 4 + c], lit ? 0xff : 0)
                         << image << ':' << x << ',' << y;
             }
-}
-
-// A copy between textures of formats of other copy units, Metal's validation error, leaves its destination's region as an
-// M4 Max leaves it whatever the source holds: red, blue and alpha all ones, green zero; the rest as it was. Counted
-// skipped as call.blit.
-TEST_F(FacadeFills, ACopyBetweenOtherCopyUnitsWritesTheTexelAnM4MaxWrites)
-{
-    constexpr NSUInteger side = 16;
-    auto from = texture(MTLPixelFormatRGBA16Float, side), into = texture(MTLPixelFormatRGBA8Unorm, side);
-    ASSERT_TRUE(from && into);
-    auto out = [device newBufferWithLength:side * side * 4 options:MTLResourceStorageModeShared];
-    memset(out.contents, 0x5c, out.length);
-    auto cb = [[device newCommandQueue] commandBuffer];
-    auto e = [cb blitCommandEncoder];
-    fill(e, into, 0, MTLRegionMake2D(0, 0, side, side), MTLClearColorMake(0, 0, 0, 0));
-    NSDictionary *before = harness::counters(device);
-    [e copyFromTexture:from
-              sourceSlice:0
-              sourceLevel:0
-             sourceOrigin:MTLOriginMake(4, 2, 0)
-               sourceSize:MTLSizeMake(8, 4, 1)
-                toTexture:into
-         destinationSlice:0
-         destinationLevel:0
-        destinationOrigin:MTLOriginMake(3, 5, 0)];
-    EXPECT_EQ(harness::skippedMoved(before, harness::counters(device)), harness::skippedOnce("call.blit"));
-    plane(e, into, out, side, 4, 0, 0, 0);
-    [e endEncoding];
-    harness::EngineRun run;
-    ASSERT_NO_FATAL_FAILURE(harness::commitOnRaw(cb, run));
-    const uint8_t written[4] = {0xff, 0x00, 0xff, 0xff};
-    const auto *got = static_cast<const uint8_t *>(out.contents);
-    for (NSUInteger y = 0; y < side; ++y)
-        for (NSUInteger x = 0; x < side; ++x) {
-            const bool inside = x >= 3 && x < 11 && y >= 5 && y < 9;
-            for (NSUInteger c = 0; c < 4; ++c)
-                ASSERT_EQ(got[(y * side + x) * 4 + c], inside ? written[c] : 0) << x << ',' << y << ',' << c;
-        }
 }
 
 // A rotation-4 drawable's fill lands where Metal stores its frame (raw_rotation.h: rotation 1's map), the plane's other

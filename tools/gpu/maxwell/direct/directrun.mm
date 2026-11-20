@@ -174,11 +174,12 @@ NSDictionary *kernelJson(const raw::ComputeRecord &r)
 // A field as [byte offset, bytes]
 #define SWITCH_FIELD(type, field) @[ @(offsetof(type, field)), @(sizeof(type::field)) ]
 
-// The counter resolve kernel's buffers as raw_counter_kernel.h and TegraGM20BClockABI.h lay them out: its records, its
-// parameters and the kernel's clock anchor table
+// The counter resolve kernels' buffers as raw_counter_kernel.h and TegraGM20BClockABI.h lay them out: its records, its
+// parameters (the byte resolve's with its shift) and the kernel's clock anchor table
 NSDictionary *counterLayout()
 {
     using raw::counters::Record;
+    using raw::counters::ResolveBytesParams;
     using raw::counters::ResolveParams;
     return @{
         @"record" : @{
@@ -188,6 +189,11 @@ NSDictionary *counterLayout()
         },
         @"sample_bytes" : @(raw::counters::kSampleBytes),
         @"params" : @{@"bytes" : @(sizeof(ResolveParams)), @"count" : SWITCH_FIELD(ResolveParams, count)},
+        @"bytes_params" : @{
+            @"bytes" : @(sizeof(ResolveBytesParams)),
+            @"count" : SWITCH_FIELD(ResolveBytesParams, count),
+            @"shift" : SWITCH_FIELD(ResolveBytesParams, shift)
+        },
         @"anchors" : @{
             @"bytes" : @(sizeof(TegraGM20BAbiClockAnchors)),
             @"published" : SWITCH_FIELD(TegraGM20BAbiClockAnchors, published),
@@ -460,6 +466,9 @@ void make(Runner &run)
                },
                {{0, (48u << 10) + 16}});
     run.kernel(@"counter_resolve", @(raw::counters::kResolveFunction), raw::counters::kResolveThreads,
+               ^(MTLComputePipelineDescriptor *){
+               });
+    run.kernel(@"counter_resolve_bytes", @(raw::counters::kResolveBytesFunction), raw::counters::kResolveThreads,
                ^(MTLComputePipelineDescriptor *){
                });
     // a texture raw samples through an image it converts (NativeMetalKernelTextures.rs), its sampler repeating and

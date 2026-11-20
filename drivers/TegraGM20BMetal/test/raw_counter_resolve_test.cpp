@@ -14,10 +14,10 @@ namespace {
 constexpr uint32_t kSamples = 5, kBytes = 256;
 constexpr uint8_t kUntouched = 0x22;
 
-id<MTLComputePipelineState> stateOf(id<MTLDevice> dev, const char *source, const char *name)
+id<MTLComputePipelineState> stateOf(id<MTLDevice> dev, const char *name)
 {
     NSError *error = nil;
-    id<MTLLibrary> library = [dev newLibraryWithSource:@(source) options:nil error:&error];
+    id<MTLLibrary> library = [dev newLibraryWithSource:@(raw::counters::kResolveSource) options:nil error:&error];
     EXPECT_NE(library, nil) << error.localizedDescription.UTF8String;
     id<MTLFunction> function = [library newFunctionWithName:@(name)];
     return function ? [dev newComputePipelineStateWithFunction:function error:&error] : nil;
@@ -69,9 +69,8 @@ TEST(RawCounterResolve, AnOffsetOffFourBytesWritesTheWordResolvesBytesThere)
 {
     id<MTLDevice> dev = MTLCreateSystemDefaultDevice();
     ASSERT_NE(dev, nil);
-    id<MTLComputePipelineState> words = stateOf(dev, raw::counters::kResolveSource, raw::counters::kResolveFunction);
-    id<MTLComputePipelineState> bytes =
-        stateOf(dev, raw::counters::kResolveBytesSource, raw::counters::kResolveBytesFunction);
+    id<MTLComputePipelineState> words = stateOf(dev, raw::counters::kResolveFunction);
+    id<MTLComputePipelineState> bytes = stateOf(dev, raw::counters::kResolveBytesFunction);
     ASSERT_NE(words, nil);
     ASSERT_NE(bytes, nil);
     const std::vector<uint8_t> word = resolvedAt(dev, words, 8);

@@ -147,9 +147,6 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
             (!raw::heldInPlanes(b->_raw) && !copySideOk(b, ds, dl, dorg, size)))
             return failNoImage(_cb, call);
     } else {
-        if (a->_descriptor.sampleCount == b->_descriptor.sampleCount && otherCopyUnits(a, b) &&
-            !copySideInvalid(a, ss, sl, so, size) && !copySideInvalid(b, ds, dl, dorg, size))
-            return otherUnitsCopy(_cb, call, b, ds, dl, dorg, size);
         cutToLevel(call, a, sl, so, size);
         if (const char *invalid = textureCopyInvalid(a, ss, sl, so, size, b, ds, dl, dorg))
             return invalidBlit(_cb, call, invalid);
