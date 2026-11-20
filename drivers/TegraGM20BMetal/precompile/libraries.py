@@ -41,7 +41,7 @@ QC = '/System/Library/Frameworks/QuartzCore.framework/default.metallib'
 
 
 AIR64 = 0x01000017
-# drivers/NativeMetal/MetallibSlice.h's kAirSliceRules (libraries_test holds the two the same): per IPSW build, whether
+# drivers/TegraGM20BMetal/plugin/MetallibSlice.h's kAirSliceRules (libraries_test holds the two the same): per IPSW build, whether
 # its Metal loads the first AIR64 slice, else its AIR ceiling, whether the device is below featureProfile 8 and the
 # subtype of AIR 2.9
 AIR_SLICE_RULES = {

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // ImageFilterLink.h: Core Image's filter-function link request, as MTLCompiler's front end reads it (21H461).
 #include <gtest/gtest.h>
-#include "drivers/NativeMetal/ImageFilterLink.h"
+#include "drivers/TegraGM20BMetal/plugin/ImageFilterLink.h"
 
 namespace {
 using switch_metal::ImageFilterArgument;

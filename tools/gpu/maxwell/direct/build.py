@@ -18,7 +18,7 @@ from pathlib import Path
 
 HERE = Path('tools/gpu/maxwell/direct')
 RUNTIME = Path('drivers/TegraGM20BMetal/raw/runtime')
-METAL = Path('drivers/NativeMetal')
+PLUGIN = Path('drivers/TegraGM20BMetal/plugin')
 LINKED = Path('drivers/TegraGM20BMetal/raw/test/linked')
 DIRECT_RUNTIME = ('raw_direct', 'raw_direct_compute', 'raw_record_parts', 'raw_emit', 'raw_pack', 'raw_metallib')
 RESOLVE = re.compile(r'kResolveSource = R"\((.*?)\)";', re.DOTALL)
@@ -55,7 +55,7 @@ def main() -> None:
     for source, name, flags in (
         (LINKED / 'caller.metal', 'linked-caller', []),
         (LINKED / 'callee.metal', 'linked-callee', []),
-        (METAL / 'test/neutral_compute.metal', 'neutral', ['-fno-fast-math']),
+        (HERE / 'neutral_compute.metal', 'neutral', ['-fno-fast-math']),
         (Path('drivers/TegraGM20BMetal/test/grouped_pointer.metal'), 'grouped-pointer', []),
     ):
         air = work / (name + '.air')
@@ -67,7 +67,7 @@ def main() -> None:
     ]
     includes = [
         '-I',
-        METAL,
+        PLUGIN,
         '-I',
         Path(args.metal_abi).parent,
         '-I',
@@ -85,7 +85,7 @@ def main() -> None:
     for name, source in (
         ('directrun', HERE / 'directrun.mm'),
         ('linkcheck', RUNTIME.parent / 'test/linkcheck.mm'),
-        ('neutral_compute', METAL / 'test/neutral_compute.mm'),
+        ('neutral_compute', HERE / 'neutral_compute.mm'),
     ):
         run(
             [

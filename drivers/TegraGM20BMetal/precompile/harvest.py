@@ -379,7 +379,7 @@ def embedded_libraries() -> set[str]:
         for line in (PROJECT / 'gpu/apple-libs.sha256').read_text().splitlines()
         if line.strip() and not line.startswith('#')
     }
-    text = (Path(__file__).resolve().parents[2] / 'NativeMetal/TwoPlaneStandIn.h').read_text()
+    text = (Path(__file__).resolve().parents[1] / 'plugin/TwoPlaneStandIn.h').read_text()
     made.add(
         hashlib.sha256(
             bytes(int(b, 16) for b in re.findall(r'0x([0-9a-fA-F]{2})', text[text.index('{') :]))

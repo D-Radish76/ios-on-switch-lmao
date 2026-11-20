@@ -70,7 +70,7 @@ import packfile
 HERE = Path(__file__).resolve().parent  # drivers/TegraGM20BMetal/raw/pack
 RAW = HERE.parent
 TREE = Path(os.environ.get('RAWPACK_TREE', RAW.parents[2]))  # tree/ (drivers/TegraGM20BMetal/raw -> tree)
-METAL = TREE / 'drivers/NativeMetal'
+PLUGIN = TREE / 'drivers/TegraGM20BMetal/plugin'
 ABI = TREE / 'drivers/TegraGM20B'
 CLASSES = TREE / 'third_party/mesa/src/nouveau/headers'  # NVIDIA's class headers find nvtypes.h here (nvdec.cpp)
 STAGER = RAW.parent / 'stage-tegra-gm20b-metal.py'
@@ -313,7 +313,7 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
                 '-Wno-deprecated-declarations',
                 *maps,
                 '-I',
-                METAL,
+                PLUGIN,
                 '-I',
                 metal_abi.parent,
                 '-I',

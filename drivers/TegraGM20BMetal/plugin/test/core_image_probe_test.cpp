@@ -4,7 +4,7 @@
 // logs EntryNotFound for (iconservicesagent's _asgDownH and _asgDownV, HW Test's _gaussianBlur13, _cubicUpsample10 and
 // _gaussianReduce4) are ci_filters' entries and none of ci_stdlib's, so the first ask misses on a real device as well:
 // the frontend answers it as Metal does (NBLibrary's functionNotFound) and the second makes the kernel.
-#include "drivers/NativeMetal/MetallibEntries.h"
+#include "drivers/TegraGM20BMetal/plugin/MetallibEntries.h"
 #include <gtest/gtest.h>
 #include <cstdlib>
 #include <fstream>

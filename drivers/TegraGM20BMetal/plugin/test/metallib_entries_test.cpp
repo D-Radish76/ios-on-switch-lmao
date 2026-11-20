@@ -2,7 +2,7 @@
 // MetallibEntries.h against what Metal answers (macOS 27 on an Apple GPU; the same for iOS 17's and 27's Core Image metallibs):
 // externFunctionNames lists the TYPE 5 entries and functionNames the others, whatever the header's file type; a function's
 // patch is its entry's TESS byte, as Xcode's metal writes it (xcrun -sdk iphoneos metal and metallib).
-#include "drivers/NativeMetal/MetallibEntries.h"
+#include "drivers/TegraGM20BMetal/plugin/MetallibEntries.h"
 #include <gtest/gtest.h>
 #include <algorithm>
 #include <cstring>

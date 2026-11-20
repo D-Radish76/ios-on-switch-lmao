@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // QueuePriority.h: the GPU priority the GPU driver gets for a process, from its Metal queues', as Core Animation sets them.
 #include <gtest/gtest.h>
-#include "drivers/NativeMetal/QueuePriority.h"
+#include "drivers/TegraGM20BMetal/plugin/QueuePriority.h"
 
 namespace {
 using switch_metal::QueuePriorities;

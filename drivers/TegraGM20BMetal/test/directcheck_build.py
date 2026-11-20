@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 RAW = Path('drivers/TegraGM20BMetal/raw')
-METAL = Path('drivers/NativeMetal')
+PLUGIN = Path('drivers/TegraGM20BMetal/plugin')
 DIRECT_RUNTIME = ('raw_direct', 'raw_direct_compute', 'raw_record_parts', 'raw_emit', 'raw_pack', 'raw_metallib')
 
 
@@ -29,7 +29,7 @@ def main() -> None:
     frameworks = [
         f for name in ('Foundation', 'Metal', 'IOSurface', 'IOKit', 'CoreVideo') for f in ('-framework', name)
     ]
-    includes = ['-I', METAL, '-I', Path(args.metal_abi).parent, '-I', 'drivers/TegraGM20B']
+    includes = ['-I', PLUGIN, '-I', Path(args.metal_abi).parent, '-I', 'drivers/TegraGM20B']
     includes += ['-I', 'third_party/mesa/src/nouveau/headers']
     objcxx = [
         RAW / 'test/directcheck.mm',

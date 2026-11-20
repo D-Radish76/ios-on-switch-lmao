@@ -2,8 +2,8 @@
 // MetallibSlice.h: the AIR slice of a universal metallib the selected IPSW's Metal loads, on that IPSW's own fat libraries
 // (24B119's CoreImage.metallib: AIR 2.4 and AIR 2.9 slices; QuartzCore's: AIR beside the AGX binary) and over the rules of
 // both kinds.
-#include "drivers/NativeMetal/MetallibEntries.h"
-#include "drivers/NativeMetal/MetallibSlice.h"
+#include "drivers/TegraGM20BMetal/plugin/MetallibEntries.h"
+#include "drivers/TegraGM20BMetal/plugin/MetallibSlice.h"
 #include <gtest/gtest.h>
 #include <cstdlib>
 #include <fstream>

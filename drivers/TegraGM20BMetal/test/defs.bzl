@@ -4,7 +4,7 @@ load("//bazel/testing:defs.bzl", "host_test")
 
 # The headers the raw runtime's units and the facade's Objective-C++ units include
 RAW_HOST_HEADERS = [
-    "//drivers/NativeMetal:frontend_headers",
+    "//drivers/TegraGM20BMetal:plugin_headers",
     "//drivers/TegraGM20B:TegraGM20BABI.h",
     "//drivers/TegraGM20B:TegraGM20BClockABI.h",
     "//drivers/TegraGM20B:TegraGM20BCompilerABI.h",
@@ -18,13 +18,15 @@ RAW_HOST_HEADERS = [
     "//drivers/TegraGM20BMetal:raw_runtime_headers",
     "//kits/SwitchGM20B:class_headers",
     "//kits/SwitchGM20BEmit:emit_headers",
+    "//kits/SwitchDMA:SwitchDcache.h",
     "//kits/SwitchRefusal:SwitchRefusal.h",
     "//kits/SwitchRefusal:SwitchRefusalSite.h",
+    "//kits/SwitchSeedPack:SwitchSeedPack.h",
     "//kits/SwitchSeedPack:SwitchSeedStore.h",
 ]
 
 RAW_HOST_COPTS = [
-    "-Idrivers/NativeMetal",
+    "-Idrivers/TegraGM20BMetal/plugin",
     "-Idrivers/TegraGM20B",
     "-Idrivers/TegraGM20BMetal/raw/runtime",
     "-Ikits/SwitchRefusal",

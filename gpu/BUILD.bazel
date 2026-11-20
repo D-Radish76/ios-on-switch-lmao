@@ -130,7 +130,7 @@ raw_stack(
     bridge = ":translate",
     compile = COMPILE,
     include_markers = [
-        METAL + ":MetallibSlice.h",
+        GM20B_METAL + ":plugin/MetallibSlice.h",
         GM20B_ABI,
         "//kits/SwitchGM20BEmit:context",
         # where NVIDIA's class headers find "nvtypes.h" (raw/pack/nvdec.cpp)
@@ -153,16 +153,16 @@ PLUGIN_SRCS = [
     GM20B_METAL + ":compiler_srcs",
 ]
 
-# The headers of drivers/NativeMetal the plugin's units include
+# The headers the plugin's units include
 PLUGIN_HDRS = [
-    METAL + ":GpuMemoryRelease.h",
-    METAL + ":ImageFilterLink.h",
-    METAL + ":LimitsTable.h",
-    METAL + ":MetallibEntries.h",
-    METAL + ":MetallibSlice.h",
-    METAL + ":QueuePriority.h",
-    METAL + ":SwitchCompileReply.h",
-    METAL + ":SwitchFrameTimeline.h",
+    GM20B_METAL + ":plugin/GpuMemoryRelease.h",
+    GM20B_METAL + ":plugin/ImageFilterLink.h",
+    GM20B_METAL + ":plugin/LimitsTable.h",
+    GM20B_METAL + ":plugin/MetallibEntries.h",
+    GM20B_METAL + ":plugin/MetallibSlice.h",
+    GM20B_METAL + ":plugin/QueuePriority.h",
+    GM20B_METAL + ":plugin/SwitchCompileReply.h",
+    GM20B_METAL + ":plugin/SwitchFrameTimeline.h",
     METAL_ABI,
     GM20B_METAL + ":raw_runtime_headers",
     GM20B_METAL + ":compiler_headers",
@@ -285,7 +285,7 @@ PLUGIN_FRAMEWORKS = [
 ]
 
 PLUGIN_INCLUDE_MARKERS = [
-    METAL + ":SwitchFrameTimeline.h",
+    GM20B_METAL + ":plugin/SwitchFrameTimeline.h",
     METAL_ABI,
     GM20B_METAL + ":raw/runtime/RawMetal.h",
     GM20B_ABI,

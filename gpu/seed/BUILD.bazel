@@ -72,7 +72,7 @@ shader_crawl(
             "//apps/hwtest:SwitchHWTest27e",
         ],
     }),
-    embedded = [METAL + ":TwoPlaneStandIn.h"],
+    embedded = [GM20B_METAL + ":plugin/TwoPlaneStandIn.h"],
     inventory = "@ipsw//:crawl_inventory",
     qc = "@ipsw//:crawl_qc",
     tags = ["manual"],

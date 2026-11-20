@@ -3,7 +3,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <objc/runtime.h>
-#include "bridge/NativeMetalComputeArtifact.h"
+#include "NativeMetalComputeArtifact.h"
 
 @interface NBReflectionValue : NSObject {
 @public

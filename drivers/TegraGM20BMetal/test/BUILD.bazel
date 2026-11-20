@@ -70,10 +70,10 @@ host_test(
     name = "raw_limits_fill_test",
     srcs = [
         "raw_limits_fill_test.cpp",
-        "//drivers/NativeMetal:LimitsTable.h",
+        "//drivers/TegraGM20BMetal:plugin/LimitsTable.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_limits_fill.h",
     ],
-    copts = ["-Idrivers/NativeMetal"],
+    copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
     linkopts = ["-lobjc"],
     deps = ["//drivers/NativeMetal/abi:metal_abi"],
@@ -2468,11 +2468,11 @@ host_test(
     name = "raw_surface_note_test",
     srcs = [
         "raw_surface_note_test.cpp",
-        "//drivers/NativeMetal:SwitchFrameTimeline.h",
+        "//drivers/TegraGM20BMetal:plugin/SwitchFrameTimeline.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_surface_note.h",
     ],
     copts = [
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
         "-Idrivers/TegraGM20BMetal/raw/runtime",
     ],
     cxx_std = "c++17",
@@ -2606,7 +2606,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_pass.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_slot_mask.h",
     ],
-    copts = ["-Idrivers/NativeMetal"],
+    copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
     deps = ["//kits/SwitchGM20B:classes"],
 )
@@ -3411,11 +3411,11 @@ host_test(
     srcs = [
         "made_metallib.h",
         "raw_metallib_functions_test.cpp",
-        "//drivers/NativeMetal:MetallibEntries.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibEntries.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_metallib_functions.h",
     ],
-    copts = ["-Idrivers/NativeMetal"],
+    copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
     deps = ["//drivers/NativeMetal/abi:metal_abi"],
 )
@@ -3451,7 +3451,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_pack.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_set_entries.h",
     ],
-    copts = ["-Idrivers/NativeMetal"],
+    copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
 )
 
@@ -3472,7 +3472,7 @@ host_test(
         "//kits/SwitchGM20B:class_headers",
     ],
     copts = [
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
         "-Ithird_party/mesa/src/nouveau/headers",
     ],
     cxx_std = "c++17",
@@ -3576,7 +3576,7 @@ host_test(
         "//kits/SwitchGM20B:class_headers",
     ],
     copts = [
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
         "-Ithird_party/mesa/src/nouveau/headers",
     ],
     cxx_std = "c++17",
@@ -3764,7 +3764,7 @@ host_test(
     name = "raw_cache_test",
     srcs = [
         "raw_cache_test.cpp",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_cache.cpp",
@@ -3788,7 +3788,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/test/cache_checks.h",
         "//kits/SwitchSeedPack:SwitchSeedPack.h",
     ],
-    copts = ["-Idrivers/NativeMetal"],
+    copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
     deps = ["//drivers/NativeMetal/abi:metal_abi"],
 )
@@ -3797,7 +3797,7 @@ host_test(
     name = "raw_native_seed_test",
     srcs = [
         "raw_native_seed_test.cpp",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_program_pages.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
@@ -3823,7 +3823,7 @@ host_test(
         "//kits/SwitchSeedPack:SwitchSeedPack.h",
         "//kits/SwitchSeedPack:SwitchSeedPackWriter.h",
     ],
-    copts = ["-Idrivers/NativeMetal"],
+    copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
     deps = ["//drivers/NativeMetal/abi:metal_abi"],
 )
@@ -4045,8 +4045,8 @@ host_test(
         "compiler_request_layout03.h",
         "made_metallib.h",
         "shader_compiler_request_test.cpp",
-        "//drivers/NativeMetal:ImageFilterLink.h",
-        "//drivers/NativeMetal:MetallibEntries.h",
+        "//drivers/TegraGM20BMetal:plugin/ImageFilterLink.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibEntries.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_key_difference.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_request.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawDirect.h",
@@ -4063,7 +4063,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_buffer_encoders.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_attributes.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
@@ -4099,7 +4099,7 @@ host_test(
         "-x",
         "objective-c++",
         "-fobjc-arc",
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
     ],
     cxx_std = "c++17",
     linkopts = [
@@ -4123,8 +4123,8 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_pass.h",
         "made_metallib.h",
         "shader_compiler_buffer_encoders_test.cpp",
-        "//drivers/NativeMetal:ImageFilterLink.h",
-        "//drivers/NativeMetal:MetallibEntries.h",
+        "//drivers/TegraGM20BMetal:plugin/ImageFilterLink.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibEntries.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_request.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_codegen_request.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawCompileRequest.h",
@@ -4134,7 +4134,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_buffer_encoders.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_attributes.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
@@ -4171,7 +4171,7 @@ host_test(
         "-x",
         "objective-c++",
         "-fobjc-arc",
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
     ],
     cxx_std = "c++17",
     linkopts = [
@@ -4189,8 +4189,8 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
         "made_metallib.h",
         "shader_compiler_library_request_test.cpp",
-        "//drivers/NativeMetal:ImageFilterLink.h",
-        "//drivers/NativeMetal:MetallibEntries.h",
+        "//drivers/TegraGM20BMetal:plugin/ImageFilterLink.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibEntries.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_key_difference.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_request.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawDirect.h",
@@ -4208,7 +4208,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_buffer_encoders.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_attributes.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
@@ -4243,7 +4243,7 @@ host_test(
         "-x",
         "objective-c++",
         "-fobjc-arc",
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
     ],
     cxx_std = "c++17",
     linkopts = [
@@ -4265,8 +4265,8 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_function_tags.h",
         "made_metallib.h",
         "shader_compiler_request_forms_test.cpp",
-        "//drivers/NativeMetal:ImageFilterLink.h",
-        "//drivers/NativeMetal:MetallibEntries.h",
+        "//drivers/TegraGM20BMetal:plugin/ImageFilterLink.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibEntries.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_key_difference.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_request.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawDirect.h",
@@ -4280,8 +4280,8 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/RawCompileRequest.h",
         "//drivers/TegraGM20BMetal:raw/runtime/RawPipelineKey.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_compute_key.h",
-        "//drivers/NativeMetal:StageInText.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/StageInText.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_record.h",
@@ -4316,7 +4316,7 @@ host_test(
         "-x",
         "objective-c++",
         "-fobjc-arc",
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
     ],
     cxx_std = "c++17",
     data = [
@@ -4342,7 +4342,7 @@ host_test(
         "//drivers/TegraGM20BMetal:compiler/compiler_log.h",
         "//drivers/TegraGM20BMetal:compiler/compiler_store.cpp",
         "//drivers/TegraGM20BMetal:compiler/compiler_store.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
         "//drivers/TegraGM20BMetal:raw/pack/probe_bind.h",
@@ -4384,7 +4384,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_spill_table.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_slot_mask.h",
     ],
-    copts = ["-Idrivers/NativeMetal"],
+    copts = ["-Idrivers/TegraGM20BMetal/plugin"],
     cxx_std = "c++17",
     deps = ["//drivers/NativeMetal/abi:metal_abi"],
 )
@@ -4401,7 +4401,7 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_remote.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_remote.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_lock.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_blend_color.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_direct_abi.h",
         "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.h",
@@ -4438,7 +4438,7 @@ host_test(
     ],
     copts = [
         "-Idrivers/TegraGM20B",
-        "-Idrivers/NativeMetal",
+        "-Idrivers/TegraGM20BMetal/plugin",
     ],
     cxx_std = "c++17",
     linkopts = [
@@ -4726,6 +4726,7 @@ host_library(
 facade_test(
     name = "raw_facade_lazy_test",
     srcs = [
+        "NativeMetalComputeArtifact.h",
         "raw_facade_lazy_test.cpp",
         "reflection_blob_writer.h",
     ],
@@ -4736,6 +4737,8 @@ facade_test(
 facade_test(
     name = "raw_reflection_values_test",
     srcs = [
+        "NativeComputeReflection.h",
+        "NativeMetalComputeArtifact.h",
         "raw_reflection_values_test.cpp",
         "reflection_blob_writer.h",
         "reflection_compare.h",
@@ -5968,7 +5971,6 @@ host_test(
         "raw_translate_absent.cpp",
         "raw_kernel_model.h",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_program_pages.h",
-        "//kits/SwitchSeedPack:SwitchSeedPack.h",
         "//kits/SwitchSeedPack:SwitchSeedPackWriter.h",
     ] + RAW_HOST_HEADERS,
     copts = [
@@ -6500,4 +6502,31 @@ host_test(
         "//drivers/TegraGM20BMetal:raw/runtime/raw_xr_srgb.h",
     ],
     cxx_std = "c++17",
+)
+
+# Every compile the translate crate starts runs under compile_budget(), with no deadline
+host_test(
+    name = "translate_budget_test",
+    srcs = ["translate_budget_test.cpp"],
+    data = [
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirect.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectCompute.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalDirectTess.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalOffline.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalReflection.rs",
+        "//drivers/TegraGM20BMetal:translate/NativeMetalTranslate.rs",
+    ],
+)
+
+# NativeMetalAddressMaps.rs and NativeMetalTessModes.rs's own tests, each built alone
+rust_test(
+    name = "native_address_maps_test",
+    srcs = ["//drivers/TegraGM20BMetal:translate/NativeMetalAddressMaps.rs"],
+    edition = "2024",
+)
+
+rust_test(
+    name = "native_tess_modes_test",
+    srcs = ["//drivers/TegraGM20BMetal:translate/NativeMetalTessModes.rs"],
+    edition = "2024",
 )

@@ -28,7 +28,7 @@ for f in SwitchGM20BEmit3D SwitchGM20BEmitBarrier SwitchGM20BEmitIterated mesa/n
 done
 xcrun clang++ -dynamiclib "$OUT/mock_iokit.o" "$OUT/cap.o" "$OUT/nvdec.o" "$OUT/nvdec_compute.o" "$OUT/twod_sim.o" "$OUT/mme_fermi.o" "$OUT/mme_fermi_sim.o" "$OUT"/kit_*.o -framework IOKit \
     -framework CoreFoundation -install_name @rpath/libmock_iokit.dylib -o "$OUT/libmock_iokit.dylib"
-OBJC=(-O2 -g -std=c++17 -fobjc-arc -Wno-deprecated-declarations -DSWITCH_RAW_HARNESS_MARKS -I "$TREE/bazel-bin" -I "$TREE/kits/SwitchGM20BEmit/mesa" -I "$TREE/bazel-bin/kits/SwitchGM20BEmit/gen" -I "$TREE/third_party/mesa/src/nouveau/headers" -I "$TREE/drivers/NativeMetal" -I "$METAL_ABI" -I "$TREE/drivers/TegraGM20B" -I "$TREE/bazel-bin/kits/SwitchGM20B")
+OBJC=(-O2 -g -std=c++17 -fobjc-arc -Wno-deprecated-declarations -DSWITCH_RAW_HARNESS_MARKS -I "$TREE/bazel-bin" -I "$TREE/kits/SwitchGM20BEmit/mesa" -I "$TREE/bazel-bin/kits/SwitchGM20BEmit/gen" -I "$TREE/third_party/mesa/src/nouveau/headers" -I "$TREE/drivers/TegraGM20BMetal/plugin" -I "$METAL_ABI" -I "$TREE/drivers/TegraGM20B" -I "$TREE/bazel-bin/kits/SwitchGM20B")
 # the runtime's completion of states the pack lacks (RawComplete.mm, RawDirect.mm; raw_completed.cpp beside raw_gpu.cpp)
 # the facade's own runtime units: its recording plan (RawMetalPlan.h), XR planes, multisample resolves and visibility
 FACADE_RUNTIME=("$RAW/runtime/raw_semantic_plan.cpp" "$RAW/runtime/raw_semantic_resources.cpp" "$RAW/runtime/raw_semantic_setters.cpp"
@@ -79,7 +79,7 @@ xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" "$HERE/indexcheck.cpp"
 xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" "$HERE/faultcheck.cpp" "$RAW/runtime/raw_gpu.cpp" "$RAW/runtime/raw_draw_bands.cpp" "$RAW/runtime/raw_job_uses.cpp" "$RAW/runtime/raw_transfer.cpp" "$RAW/runtime/raw_split.cpp" "$RAW/runtime/raw_variants.cpp" "$RAW/fx/fx_mip.cpp" "$RAW/fx/fx_image.cpp" \
     "$RAW/runtime/raw_kernel.cpp" "$RAW/runtime/raw_kernel_job.cpp" "$RAW/runtime/raw_resource_set.cpp" "$RAW/runtime/raw_state_segment.cpp" "$RAW/runtime/raw_encoder_state.cpp" "$RAW/runtime/raw_shared_events.cpp" "$RAW/runtime/raw_alias.cpp" "$RAW/runtime/raw_arena.cpp" "$RAW/runtime/raw_pack.cpp" "$RAW/runtime/raw_ycbcr.cpp" "$RAW/runtime/raw_zeta.cpp" "$RAW/runtime/raw_comp.cpp" "${LIBS[@]}" -o "$OUT/faultcheck"
 # racecheck: what the completion queue adds to the device while the submit thread draws (build it with -fsanitize=thread)
-xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" -I "$TREE/drivers/NativeMetal" -I "$METAL_ABI" "$HERE/racecheck.cpp" "$RAW/runtime/raw_gpu.cpp" "$RAW/runtime/raw_draw_bands.cpp" "$RAW/runtime/raw_job_uses.cpp" "$RAW/runtime/raw_transfer.cpp" "$RAW/runtime/raw_split.cpp" "$RAW/runtime/raw_variants.cpp" "$RAW/fx/fx_mip.cpp" "$RAW/fx/fx_image.cpp" \
+xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" -I "$TREE/drivers/TegraGM20BMetal/plugin" -I "$METAL_ABI" "$HERE/racecheck.cpp" "$RAW/runtime/raw_gpu.cpp" "$RAW/runtime/raw_draw_bands.cpp" "$RAW/runtime/raw_job_uses.cpp" "$RAW/runtime/raw_transfer.cpp" "$RAW/runtime/raw_split.cpp" "$RAW/runtime/raw_variants.cpp" "$RAW/fx/fx_mip.cpp" "$RAW/fx/fx_image.cpp" \
     "$RAW/runtime/raw_kernel.cpp" "$RAW/runtime/raw_kernel_job.cpp" "$RAW/runtime/raw_resource_set.cpp" "$RAW/runtime/raw_state_segment.cpp" "$RAW/runtime/raw_encoder_state.cpp" "$RAW/runtime/raw_shared_events.cpp" "$RAW/runtime/raw_alias.cpp" "$RAW/runtime/raw_arena.cpp" "$RAW/runtime/raw_pack.cpp" "$RAW/runtime/raw_ycbcr.cpp" "$RAW/runtime/raw_zeta.cpp" "$RAW/runtime/raw_comp.cpp" \
     "$RAW/runtime/raw_completed.cpp" "$RAW/runtime/raw_compute.cpp" "$RAW/runtime/raw_predication.cpp" "$RAW/runtime/raw_icb_compute.cpp" "$RAW/runtime/raw_compute_loops.cpp" "$RAW/runtime/raw_loop_copies.cpp" "$RAW/runtime/raw_predicate_loops.cpp" "${COMPLETION[@]}" "${FACADE_RUNTIME[@]}" "${LIBS[@]}" -o "$OUT/racecheck"
 # footprint: what the raw device costs a process (its BOs and malloc heap) at open and at its first state, texture and command buffer
@@ -104,13 +104,13 @@ xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" "$HERE/edgecheck.cpp" 
     "$RAW/runtime/raw_emit.cpp" "${LIBS[@]}" -o "$OUT/edgecheck"
 echo "built $OUT/rawframe $OUT/arenacheck $OUT/heapframe $OUT/compchurn $OUT/lockcheck $OUT/geomcheck $OUT/poolcheck $OUT/killcheck $OUT/xrcopycheck $OUT/zetacheck $OUT/faultcheck $OUT/footprint $OUT/heapcheck $OUT/emitcheck $OUT/vertexcheck $OUT/cachecheck"
 echo "native compiler checks: bazel test //drivers/TegraGM20BMetal/test:directcheck_test //tools/gpu/maxwell:direct_consumers_test"
-# standinoracle: the frontend's RGB8_444_2P stand-in against this Mac's Metal ($OUT/standinoracle drivers/NativeMetal/TwoPlaneStandIn.metal)
+# standinoracle: the frontend's RGB8_444_2P stand-in against this Mac's Metal ($OUT/standinoracle drivers/TegraGM20BMetal/plugin/TwoPlaneStandIn.metal)
 xcrun clang++ -O1 -std=c++17 -fobjc-arc "$HERE/standinoracle.mm" -framework Metal -framework Foundation -framework CoreVideo \
     -framework IOSurface -o "$OUT/standinoracle"
 echo "built $OUT/standinoracle"
 # ycbcrstoreoracle: raw_ycbcr_store.h's rule of a pass's store into two-plane YCbCr attachments, and the raw route of the 8-bit
 # code formats (the stand-in, the two-plane store and the 2D engine's halving), against this Mac's Metal
-# ($OUT/ycbcrstoreoracle drivers/NativeMetal/TwoPlaneStandIn.metal)
+# ($OUT/ycbcrstoreoracle drivers/TegraGM20BMetal/plugin/TwoPlaneStandIn.metal)
 xcrun clang++ -O1 -std=c++17 -fobjc-arc -I "$TREE/drivers/TegraGM20B" -I "$TREE/kits/SwitchGM20BEmit/mesa" \
     -I "$TREE/bazel-bin/kits/SwitchGM20BEmit/gen" -I "$TREE/third_party/mesa/src/nouveau/headers" "$HERE/ycbcrstoreoracle.mm" \
     -x c++ "$RAW/fx/fx_mip.cpp" -framework Metal -framework Foundation -framework CoreVideo -framework IOSurface \

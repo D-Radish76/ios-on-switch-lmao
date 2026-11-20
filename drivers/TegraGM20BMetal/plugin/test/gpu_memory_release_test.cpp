@@ -8,7 +8,7 @@
 #include <chrono>
 #include <thread>
 #include <vector>
-#include "drivers/NativeMetal/GpuMemoryRelease.h"
+#include "drivers/TegraGM20BMetal/plugin/GpuMemoryRelease.h"
 
 namespace {
 

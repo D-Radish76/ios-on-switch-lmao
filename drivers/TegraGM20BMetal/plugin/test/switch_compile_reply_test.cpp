@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "drivers/NativeMetal/SwitchCompileReply.h"
+#include "drivers/TegraGM20BMetal/plugin/SwitchCompileReply.h"
 #include <gtest/gtest.h>
 #include <thread>
 #include <vector>

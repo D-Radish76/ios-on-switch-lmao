@@ -39,12 +39,12 @@ for source in gpu transfer split kernel shared_events alias arena pack ycbcr zet
     record_parts direct direct_compute emit cache kernel_cache compiler metallib state_segment resource_set variants kernel_job encoder_state job_uses multisample; do
     SOURCES+=("$RAW/runtime/raw_$source.cpp")
 done
-xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" -I "$TREE/drivers/NativeMetal" -I "$METAL_ABI" \
+xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" -I "$TREE/drivers/TegraGM20BMetal/plugin" -I "$METAL_ABI" \
     "$HERE/batchcheck.cpp" "${SOURCES[@]}" "$RAW/fx/fx_mip.cpp" "$RAW/fx/fx_image.cpp" \
     -L "$OUT" -lmock_iokit "-Wl,-rpath,$OUT" -lobjc -framework Foundation -framework Metal \
     -framework IOSurface -framework IOKit -framework CoreFoundation -o "$OUT/batchcheck"
 # stagecheck: a pack state's set 0 against what each stage and slot binds (stagecheck.py runs its programs over it)
-xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" -I "$TREE/drivers/NativeMetal" -I "$METAL_ABI" \
+xcrun clang++ "${FLAGS[@]}" -I "$TREE/drivers/TegraGM20B" -I "$TREE/drivers/TegraGM20BMetal/plugin" -I "$METAL_ABI" \
     "$HERE/stagecheck.cpp" "${SOURCES[@]}" "$RAW/fx/fx_mip.cpp" "$RAW/fx/fx_image.cpp" \
     -L "$OUT" -lmock_iokit "-Wl,-rpath,$OUT" -lobjc -framework Foundation -framework Metal \
     -framework IOSurface -framework IOKit -framework CoreFoundation -o "$OUT/stagecheck"

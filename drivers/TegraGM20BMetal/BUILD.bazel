@@ -12,8 +12,10 @@ package(default_visibility = ["//visibility:public"])
 
 # raw/pack/mesa is Mesa's code, kept as upstream has it; srgb_knots.h is m2v's SRGB_KNOTS table and srgb_encode.h its
 # inverse (raw_ycbcr_converted_store_test holds it to the rule), generated; xr_srgb_decode.h and xr_srgb_encode.h are m2v's
-# BGR10_XR_sRGB tables (metal/format/extended_srgb.rs), copied.
+# BGR10_XR_sRGB tables (metal/format/extended_srgb.rs), copied. plugin/TwoPlaneStandIn.h is generated (TwoPlaneStandIn.sh
+# from TwoPlaneStandIn.metal).
 lint_files(exclude = [
+    "plugin/TwoPlaneStandIn.h",
     "raw/pack/mesa/**",
     "raw/pack/srgb_encode.h",
     "raw/pack/srgb_knots.h",
@@ -42,6 +44,12 @@ filegroup(
         "//drivers/NativeMetal/abi:MetalABI.h",
         "//drivers/TegraGM20BMetal/precompile/ca-selectors:raw_ca_selector_layout.h",
     ],
+)
+
+# The plugin's own headers, which the plugin's units, the compiler daemon's and the raw runtime's include by name
+filegroup(
+    name = "plugin_headers",
+    srcs = glob(["plugin/*.h"]),
 )
 
 # The raw path's translation crate's Rust (//gpu:translate), which the stack key hashes by bytes
@@ -247,9 +255,9 @@ filegroup(
     srcs = [
         ":raw_direct_sources",
         ":raw_pack_records",
-        "//drivers/NativeMetal:MetallibEntries.h",
-        "//drivers/NativeMetal:MetallibSlice.h",
-        "//drivers/NativeMetal:TwoPlaneStandIn.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibEntries.h",
+        "//drivers/TegraGM20BMetal:plugin/MetallibSlice.h",
+        "//drivers/TegraGM20BMetal:plugin/TwoPlaneStandIn.h",
         "//drivers/TegraGM20B:TegraGM20BABI.h",
         "//drivers/TegraGM20B:TegraGM20BJobABI.h",
         "//drivers/TegraGM20B:TegraGM20BLayout.h",
@@ -709,7 +717,7 @@ py_test(
         "precompile/libraries.py",
         "precompile/libraries_test.py",
     ],
-    data = ["//drivers/NativeMetal:MetallibSlice.h"],
+    data = ["//drivers/TegraGM20BMetal:plugin/MetallibSlice.h"],
     imports = ["precompile"],
     main = "precompile/libraries_test.py",
 )

@@ -8,7 +8,7 @@
 // The drawn values are halves because this Mac's RGBA16Float target rounds a float fragment toward zero, where Metal's 542 store
 // rounds it to the nearest half, ties to even (every float beside every half midpoint: round(h * 255) of that half, h clamped to
 // [0, 1], a NaN 0); on the device the stand-in's conversion is GM20B's (NVK's R16G16B16A16_SFLOAT target).
-// usage: standinoracle <drivers/NativeMetal/TwoPlaneStandIn.metal>
+// usage: standinoracle <drivers/TegraGM20BMetal/plugin/TwoPlaneStandIn.metal>
 #import <CoreVideo/CoreVideo.h>
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>

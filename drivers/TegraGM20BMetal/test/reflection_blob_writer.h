@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 #include "../raw/runtime/raw_reflection_blob.h"
-#include "bridge/NativeMetalComputeArtifact.h"
+#include "NativeMetalComputeArtifact.h"
 
 namespace reflection_blob {
 
