@@ -444,7 +444,7 @@ CommandBuffer *Device::begin()
     Push p{start, start + 64};
     emitStartStamp(p, stamps_.va, cb.stamp);
     cb.lastEngine_ = BarrierEngine::None;
-    cb.chain_ = {};
+    cb.chain_.reset();
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     cb.forms_ = nextForms;
     nextForms = {};

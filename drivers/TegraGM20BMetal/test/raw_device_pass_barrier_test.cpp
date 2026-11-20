@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Rule barrier.pass_pixel on raw::Device (raw_pass_hazard.h): a pass whose recording says it samples a small
 // block-linear target the pass before rendered opens with PIXEL_SHADER_BARRIER and no drain; one sampling a 1280x720
-// target, and one the encode never described, open with today's.
+// target, and one the encode never described, open with today's; a memoryless colour's backing is no dependency.
 #include "raw_device_harness.h"
 
 namespace {
@@ -198,6 +198,51 @@ TEST_F(DevicePassBarrier, APassOfStorageFormsKeepsTheDrain)
     ASSERT_TRUE(cb->commit(seqno));
     const std::vector<uint32_t> m = methods(kernel_model::model.jobs.back().words);
     EXPECT_EQ(std::count(m.begin(), m.end(), kPixelShaderBarrier), 0);
+}
+
+// A Core Animation scale frame (boot 21: 15 passes, each a BGRA8 target of its own and a memoryless RGBA16F c1, four of
+// 55 textures sampled a pass): the passes open with PIXEL_SHADER_BARRIER but where one samples the full-size target a pass
+// since the last drain rendered (a glass backdrop), which no held cell covers and keeps the drain
+TEST_F(DevicePassBarrier, ACompositorFrameDrainsOnlyWhereAPassReadsAnEarlierOnesTarget)
+{
+    constexpr uint32_t kPasses = 15, kTextures = 55;
+    constexpr uint32_t kRgba16f = 115;
+    std::vector<raw::Texture> targets(kPasses), textures(kTextures), scratch(kPasses);
+    for (raw::Texture &t : targets)
+        ASSERT_TRUE(dev.createTexture(722, 1282, kBgra8, t, false, true));
+    for (raw::Texture &t : textures)
+        ASSERT_TRUE(dev.createTexture(64, 64, kBgra8, t, false, true));
+    for (raw::Texture &t : scratch)
+        ASSERT_TRUE(dev.createMemoryless(722, 1282, kRgba16f, t));
+    const auto backdrop = [](uint32_t p) {
+        return p == 5 || p == 9 || p == 13 ? int(p) - 2 : -1;
+    };
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    for (uint32_t p = 0; p < kPasses; p++) {
+        raw::PassDesc pass;
+        pass.color[0].texture = &targets[p];
+        pass.color[0].load = raw::ColorAttachment::Clear;
+        pass.color[1].texture = &scratch[p];
+        pass.color[1].load = raw::ColorAttachment::Clear;
+        pass.color[1].store = false;
+        pass.count = 2;
+        raw::RenderEncoder *e = cb->render(pass);
+        ASSERT_NE(e, nullptr);
+        raw::PassUses uses;
+        uses.known = true;
+        for (uint32_t t = 0; t < 4; t++)
+            uses.sample(raw::hazardImage(textures[(p * 4 + t) % kTextures]), false);
+        if (backdrop(p) >= 0)
+            uses.sample(raw::hazardImage(targets[size_t(backdrop(p))]), false);
+        e->plan(uses);
+        e->end();
+    }
+    uint32_t seqno = 0;
+    ASSERT_TRUE(cb->commit(seqno));
+    const std::vector<uint32_t> m = methods(kernel_model::model.jobs.back().words);
+    EXPECT_EQ(std::count(m.begin(), m.end(), kPixelShaderBarrier), long(kPasses - 1 - 3));
+    EXPECT_EQ(std::count(m.begin(), m.end(), kWaitForIdle), 3) << "the three passes that sample a backdrop";
 }
 
 TEST_F(DevicePassBarrier, AFullSizeTargetKeepsTheDrain)

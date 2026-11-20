@@ -7,9 +7,16 @@
 // target is held where every shape was held at its size (64x64 block-linear), or where the pass draws a pyramid level of
 // it (a target at most half its size), or a write over it (waw); every other dependency, the 8 blind cells' sizes among
 // them, and anything a pass does that no cell did (storage writes, depth, more than one sample, level or layer,
-// vertex-stage samples, an unnamed or fenced read, a target sampled before it is written) keeps the drain.
+// vertex-stage samples, an unnamed or fenced read, a target sampled before it is written) keeps the drain. A memoryless
+// attachment's backing is scratch: Metal leaves its contents undefined at every pass's start, so a later pass's scratch
+// over the same memory depends on nothing an earlier pass left there. Every pass the rule opens begins with
+// PIXEL_SHADER_BARRIER, which holds its pixel shading until the earlier passes' pixels have left the ROP, so their
+// scratch writes and in-pass fetches of it are done before its own begin; its first fetch of a cleared or DontCare
+// attachment takes the in-pass barrier and its texture invalidate (RenderEncoder::begin's whole-area write). Scratch over
+// memory a real image of the chain names, either way, keeps the drain.
 #pragma once
 #include <cstdint>
+#include <iterator>
 #include "raw_attachment_lifetime.h"
 
 namespace raw {
@@ -146,15 +153,29 @@ constexpr bool heldWrite(const HazardImage &written)
            heldCell(written.format, written.layout, HazardShape::Waw, hazardSize(written.width, written.height));
 }
 
-constexpr uint32_t kPassImages = 16;
+constexpr uint32_t kPassImages = 16, kChainImages = 128;
+
+// Why a known pass keeps the drain (drainCause)
+enum class DrainCause : uint8_t {
+    None,
+    Unknown,       // the pass is not known
+    Chain,         // a pass since the last drain was not known, or a list of the chain filled
+    Depth,         // a depth or stencil attachment, this pass's or the chain's
+    Read,          // it samples what the chain wrote, in no held cell
+    Write,         // it writes what the chain wrote, in no held cell
+    WriteSampled,  // it writes what the chain sampled
+    Scratch        // scratch over memory a real image names
+};
 
 // What a pass reads and writes. `known`: everything it reads came through its bindings and named uses (no heap, fence
 // wait, storage write or an image past the lists); `vertexSamples`: its vertex stage binds a texture
 struct PassUses {
     bool known = false, vertexSamples = false;
     uint32_t areaWidth = 0, areaHeight = 0;
-    HazardImage written[kPassImages];  // its colour targets
+    HazardImage written[8];  // its colour targets
     uint8_t writtenCount = 0;
+    HazardImage scratch[8];  // its memoryless colours' backings
+    uint8_t scratchCount = 0;
     bool depthStencil = false;  // it binds a depth or stencil attachment
     HazardImage depth;
     HazardImage sampled[kPassImages];  // what its stages sample and the resources it names (useResource)
@@ -163,9 +184,17 @@ struct PassUses {
 
     bool write(const HazardImage &image)
     {
-        if (writtenCount == kPassImages)
+        if (writtenCount == std::size(written))
             return known = false;
         written[writtenCount++] = image;
+        return true;
+    }
+
+    bool scratchWrite(const HazardImage &image)
+    {
+        if (scratchCount == std::size(scratch))
+            return known = false;
+        scratch[scratchCount++] = image;
         return true;
     }
 
@@ -179,60 +208,104 @@ struct PassUses {
     }
 };
 
-// The passes since the last drain: the images they wrote and sampled; `valid` false where one of them was not known
+// The passes since the last drain: the images they wrote, sampled and used as scratch, each once; `valid` false where
+// one of them was not known or a list filled
 struct PassChain {
     bool valid = false;
-    HazardImage written[2 * kPassImages], sampled[2 * kPassImages];
-    uint8_t writtenCount = 0, sampledCount = 0;
+    HazardImage written[kChainImages], sampled[kChainImages], scratch[kChainImages];
+    uint8_t writtenCount = 0, sampledCount = 0, scratchCount = 0;
     bool depth = false;  // one of them bound a depth or stencil attachment
+
+    void reset()
+    {
+        valid = depth = false;
+        writtenCount = sampledCount = scratchCount = 0;
+    }
 };
 
-// Whether `next`'s dependencies on the chain are all held cells: PIXEL_SHADER_BARRIER may open it
-constexpr bool pixelBarrierHolds(const PassChain &chain, const PassUses &next)
+constexpr bool overlapsAny(const HazardImage &image, const HazardImage *list, uint8_t count)
 {
-    if (!chain.valid || !next.known || next.depthStencil || chain.depth)
-        return false;
+    for (uint8_t j = 0; j < count; j++)
+        if (overlaps(image, list[j]))
+            return true;
+    return false;
+}
+
+// What keeps `next` from opening with PIXEL_SHADER_BARRIER after the chain: None where its dependencies on it are all
+// held cells
+constexpr DrainCause drainCause(const PassChain &chain, const PassUses &next)
+{
+    if (!next.known)
+        return DrainCause::Unknown;
+    if (!chain.valid)
+        return DrainCause::Chain;
+    if (next.depthStencil || chain.depth)
+        return DrainCause::Depth;
     for (uint8_t w = 0; w < next.writtenCount; w++) {
         const HazardImage &target = next.written[w];
-        for (uint8_t j = 0; j < chain.sampledCount; j++)
-            if (overlaps(target, chain.sampled[j]))
-                return false;
+        if (overlapsAny(target, chain.sampled, chain.sampledCount))
+            return DrainCause::WriteSampled;
+        if (overlapsAny(target, chain.scratch, chain.scratchCount))
+            return DrainCause::Scratch;
         for (uint8_t j = 0; j < chain.writtenCount; j++)
             if (overlaps(target, chain.written[j]) && !(heldWrite(target) && heldWrite(chain.written[j])))
-                return false;
+                return DrainCause::Write;
     }
+    for (uint8_t k = 0; k < next.scratchCount; k++)
+        if (overlapsAny(next.scratch[k], chain.written, chain.writtenCount) ||
+            overlapsAny(next.scratch[k], chain.sampled, chain.sampledCount))
+            return DrainCause::Scratch;
     for (uint8_t s = 0; s < next.sampledCount; s++) {
         const HazardImage &read = next.sampled[s];
+        if (overlapsAny(read, chain.scratch, chain.scratchCount))
+            return DrainCause::Scratch;
         for (uint8_t j = 0; j < chain.writtenCount; j++) {
             if (!overlaps(read, chain.written[j]))
                 continue;
             if (next.named[s] || next.vertexSamples || !heldRead(read, next.areaWidth, next.areaHeight) ||
                 !heldRead(chain.written[j], next.areaWidth, next.areaHeight))
-                return false;
+                return DrainCause::Read;
         }
     }
+    return DrainCause::None;
+}
+
+// Whether `next`'s dependencies on the chain are all held cells: PIXEL_SHADER_BARRIER may open it
+constexpr bool pixelBarrierHolds(const PassChain &chain, const PassUses &next)
+{
+    return drainCause(chain, next) == DrainCause::None;
+}
+
+namespace pass_hazard_detail {
+
+// `image` into `list` unless an image of the same memory is there; false where the list is full
+inline bool addOnce(HazardImage *list, uint8_t &count, const HazardImage &image)
+{
+    for (uint8_t j = 0; j < count; j++)
+        if (list[j].va == image.va && list[j].bytes == image.bytes && list[j].importBase == image.importBase)
+            return true;
+    if (count == kChainImages)
+        return false;
+    list[count++] = image;
     return true;
 }
+
+}  // namespace pass_hazard_detail
 
 // The chain after `next` opened: itself alone after a drain, else added to it
 inline void advanceChain(PassChain &chain, const PassUses &next, bool drained)
 {
+    using pass_hazard_detail::addOnce;
     if (drained)
-        chain = PassChain{};
+        chain.reset();
     chain.valid = next.known && (drained || chain.valid);
     chain.depth = chain.depth || next.depthStencil;
-    for (uint8_t w = 0; w < next.writtenCount && chain.valid; w++) {
-        if (chain.writtenCount == 2 * kPassImages)
-            chain.valid = false;
-        else
-            chain.written[chain.writtenCount++] = next.written[w];
-    }
-    for (uint8_t s = 0; s < next.sampledCount && chain.valid; s++) {
-        if (chain.sampledCount == 2 * kPassImages)
-            chain.valid = false;
-        else
-            chain.sampled[chain.sampledCount++] = next.sampled[s];
-    }
+    for (uint8_t w = 0; w < next.writtenCount && chain.valid; w++)
+        chain.valid = addOnce(chain.written, chain.writtenCount, next.written[w]);
+    for (uint8_t s = 0; s < next.sampledCount && chain.valid; s++)
+        chain.valid = addOnce(chain.sampled, chain.sampledCount, next.sampled[s]);
+    for (uint8_t k = 0; k < next.scratchCount && chain.valid; k++)
+        chain.valid = addOnce(chain.scratch, chain.scratchCount, next.scratch[k]);
 }
 
 }  // namespace raw

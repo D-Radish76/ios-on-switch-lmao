@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // raw/runtime/raw_pass_hazard.h: the held cells are boot 21's line, and a pass opens with the pixel barrier only where
-// each of its dependencies on the passes since the last drain is one of them.
+// each of its dependencies on the passes since the last drain is one of them; a memoryless attachment's backing, scratch,
+// is no dependency on another pass's scratch over the same memory.
 #include <gtest/gtest.h>
 
 #include <set>
@@ -193,6 +194,83 @@ TEST(PassHazard, TheChainHoldsEveryPassSinceTheDrain)
     EXPECT_FALSE(raw::pixelBarrierHolds(chain, reader)) << "the 1280x720 target two passes back";
     raw::advanceChain(chain, reader, true);
     EXPECT_EQ(chain.writtenCount, 1u) << "a drain leaves the drained pass alone";
+}
+
+// A memoryless attachment's backing holds nothing a later pass may read (its contents are undefined at each pass's start):
+// passes whose scratch shares that memory depend on nothing through it, whatever its size
+TEST(PassHazard, ScratchOverTheSameBackingIsNoDependency)
+{
+    const HazardImage backing = image(0x4000000, raw::kHazardRgba16f, 768, 1344);
+    PassUses a = pass(722, 1282);
+    a.write(image(0x10000, raw::kHazardBgra8, 722, 1282));
+    a.scratchWrite(backing);
+    PassChain chain;
+    raw::advanceChain(chain, a, true);
+    PassUses b = pass(1792, 1472);
+    b.write(image(0x2000000, raw::kHazardBgra8, 1792, 1472));
+    HazardImage larger = backing;
+    larger.bytes *= 3;
+    b.scratchWrite(larger);
+    EXPECT_EQ(raw::drainCause(chain, b), raw::DrainCause::None);
+}
+
+// Scratch over memory a real image of the chain names, or a real image over an earlier pass's scratch, keeps the drain
+TEST(PassHazard, ScratchOverARealImageKeepsTheDrain)
+{
+    const HazardImage target = image(0x10000, raw::kHazardBgra8, 320, 180);
+    PassUses a = pass(320, 180);
+    a.write(target);
+    PassChain chain;
+    raw::advanceChain(chain, a, true);
+    PassUses b = pass(320, 180);
+    b.scratchWrite(target);
+    EXPECT_EQ(raw::drainCause(chain, b), raw::DrainCause::Scratch);
+    PassUses c = pass(320, 180);
+    c.scratchWrite(image(0x900000, raw::kHazardRgba16f, 320, 180));
+    raw::advanceChain(chain, c, true);
+    PassUses d = pass(320, 180);
+    d.sample(image(0x900000, raw::kHazardRgba16f, 320, 180), false);
+    EXPECT_EQ(raw::drainCause(chain, d), raw::DrainCause::Scratch);
+    PassUses e = pass(320, 180);
+    e.write(image(0x900000, raw::kHazardRgba16f, 320, 180));
+    EXPECT_EQ(raw::drainCause(chain, e), raw::DrainCause::Scratch);
+}
+
+// The same textures sampled by every pass are listed once: forty passes of four textures of a set of five stay one chain
+TEST(PassHazard, TheChainListsEachImageOnce)
+{
+    PassChain chain;
+    for (uint32_t p = 0; p < 40; p++) {
+        PassUses next = pass(722, 1282);
+        next.write(image(0x10000000 + uint64_t(p) * 0x1000000, raw::kHazardBgra8, 722, 1282));
+        for (uint32_t t = 0; t < 4; t++)
+            next.sample(image(0x100000 + uint64_t((p + t) % 5) * 0x10000, raw::kHazardBgra8, 64, 64), false);
+        ASSERT_TRUE(p == 0 || raw::pixelBarrierHolds(chain, next)) << p;
+        raw::advanceChain(chain, next, p == 0);
+    }
+    EXPECT_TRUE(chain.valid);
+    EXPECT_EQ(chain.sampledCount, 5u);
+    EXPECT_EQ(chain.writtenCount, 40u);
+}
+
+TEST(PassHazard, EachDrainSaysWhy)
+{
+    const HazardImage big = image(0x10000, raw::kHazardBgra8, 1280, 720);
+    PassUses unknown = pass(64, 64);
+    unknown.known = false;
+    EXPECT_EQ(raw::drainCause(after(big), unknown), raw::DrainCause::Unknown);
+    PassChain invalid = after(big);
+    invalid.valid = false;
+    EXPECT_EQ(raw::drainCause(invalid, pass(64, 64)), raw::DrainCause::Chain);
+    PassUses reader = pass(640, 360);
+    reader.sample(big, false);
+    EXPECT_EQ(raw::drainCause(after(big), reader), raw::DrainCause::Read);
+    PassUses over = pass(1280, 720);
+    over.write(big);
+    EXPECT_EQ(raw::drainCause(after(big), over), raw::DrainCause::Write);
+    PassUses depth = pass(64, 64);
+    depth.depthStencil = true;
+    EXPECT_EQ(raw::drainCause(after(big), depth), raw::DrainCause::Depth);
 }
 
 }  // namespace

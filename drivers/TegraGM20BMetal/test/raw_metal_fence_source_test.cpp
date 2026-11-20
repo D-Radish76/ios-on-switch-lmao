@@ -38,8 +38,8 @@ TEST(RawMetalFenceSource, EveryRawEncoderOpensWithADrainOrAnEngineChange)
                 Not(HasSubstr("BarrierEngine::None")));
     // a pass opens with the pixel barrier alone only where its uses are known, and a fence wait makes them unknown
     EXPECT_THAT(Body(SourceText("../raw/runtime/raw_pass_hazard.h"),
-                     "constexpr bool pixelBarrierHolds(const PassChain &chain, const PassUses &next)"),
-                HasSubstr("!next.known"));
+                     "constexpr DrainCause drainCause(const PassChain &chain, const PassUses &next)"),
+                HasSubstr("if (!next.known)\n        return DrainCause::Unknown;"));
     EXPECT_THAT(SourceText("../raw/runtime/RawMetalPassUses.h"), HasSubstr("op == OpWaitFence"));
     // a job's first encoder opens with nothing behind the job before's end, which waits for idle as it releases
     EXPECT_THAT(Body(SourceText("../raw/runtime/raw_event_release.h"),

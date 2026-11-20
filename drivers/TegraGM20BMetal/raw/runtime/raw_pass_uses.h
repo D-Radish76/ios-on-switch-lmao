@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: MIT
 // A pass's reads and writes for rule barrier.pass_pixel (raw_pass_hazard.h): what RawMetalEncode found in its recording
-// (its samples and named uses), with the targets, depth and area the encoder holds. A pass the encode never described,
-// one rendered through shadow images, memoryless targets or a turned plane, or one whose storage forms read and write a
-// target through the SMs' data cache (which only the drain drops; no held cell drew one), is unknown and keeps the drain.
+// (its samples and named uses), with the targets, depth and area the encoder holds; a memoryless target's backing as its
+// scratch. A pass the encode never described, one rendered through shadow images, a memoryless target with no backing of
+// the pass's or a turned plane, or one whose storage forms read and write a target through the SMs' data cache (which
+// only the drain drops; no held cell drew one), is unknown and keeps the drain.
 #pragma once
 
 namespace raw {
@@ -20,8 +21,10 @@ PassUses RenderEncoder::passUses() const
         const Texture *t = pass_.color[j].texture;
         if (!t)
             continue;
-        if (shadowOf_[j] || memoryless_[j] || t->memoryless)
+        if (shadowOf_[j] || (t->memoryless && !memoryless_[j]))
             uses.known = false;
+        else if (memoryless_[j])
+            uses.scratchWrite(hazardImage(*t));
         else
             uses.write(hazardImage(*t));
     }
