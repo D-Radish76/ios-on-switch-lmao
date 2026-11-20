@@ -574,34 +574,4 @@ TEGRA_GM20B_ASSERT(TegraGM20BAbiPriority, 8);
 TEGRA_GM20B_ASSERT(TegraGM20BAbiZbc, 40);
 TEGRA_GM20B_ASSERT(TegraGM20BAbiZbcReply, 8);
 #undef TEGRA_GM20B_ASSERT
-
-/* What Mesa NVK's nvkmd_darwin still names, built only for host tools; the kext answers these selectors as it answers any
- * selector it does not know. */
-enum {
-	TegraGM20BMethodExec = 8,
-	TegraGM20BMethodGetTimestamp = 10,
-	TegraGM20BMethodExecSurfaces = 17,
-	TegraGM20BMaxExecSurfaces = 64,
-	TegraGM20BInfoExecSurfaces = 1u << 7,
-	TegraGM20BExecSurfacesAll = 1u << 0,
-	TegraGM20BPushImportsWritten = 1u << 1,
-};
-
-struct TegraGM20BAbiExec {
-	uint32_t channel;
-	uint32_t count;
-	struct TegraGM20BAbiPush pushes[TegraGM20BMaxPushes];
-};
-
-struct TegraGM20BAbiExecSurfaces {
-	uint32_t channel;
-	uint32_t count;
-	uint32_t flags;
-	uint32_t reserved;
-	struct TegraGM20BAbiSurfaceUse uses[TegraGM20BMaxExecSurfaces];
-};
-
-struct TegraGM20BAbiTimestamp {
-	uint64_t ns;
-};
 #endif

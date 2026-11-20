@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: MIT
-// The job interface (TegraGM20BJobABI.h, methods 31-33) over the mock GPU, in the host harnesses' mock only
-// (SWITCH_MOCK_JOB_INTERFACE): the raw stack key hashes the pack's mock and not that header. A resource set's members decide
-// residency and ownership, which the mock does not model, so a set is its id and generation, and a job is a submission of
-// its pushes.
+// The job interface (TegraGM20BJobABI.h, methods 31-33) over the mock GPU. A resource set's members decide residency and
+// ownership, which the mock does not model, so a set is its id and generation, and a job is a submission of its pushes.
 #pragma once
 #include "TegraGM20BJobABI.h"
 

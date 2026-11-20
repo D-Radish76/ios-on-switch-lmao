@@ -1,12 +1,10 @@
 // Host mock of the TegraGM20B user client (CONTRACT.md v1) for NVK's nvkmd_darwin, interposed over IOKit: a "GM20B" that
-// accepts every call and completes every submission at once (its fence page shows the seqno as soon as Exec returns).
+// accepts every call and completes every submission at once (its fence page shows the seqno as soon as SubmitJob returns).
 // Enough for vkCreateDevice, metal2vulkan's device open and shader/pipeline creation (NAK SM53); nothing is executed.
 // r8-rawca: Map/Unmap (methods 12, 13; MOCK_NO_KERNEL_MAP=1 hides them). MOCK_GPU_US=<n>: an asynchronous GPU instead, one
-// thread that runs the channels side by side (a thread each), each channel's submissions in kick order, n us each, a submission
-// only once the acquires ExecSurfaces queued for it have passed (as the host's semaphore acquires): its fence word moves then, WaitFence
-// sleeps until it does (a condition variable, as the kext's interrupt), and "mock GPU: deadlock" aborts if nothing can run.
-// MOCK_GPU_LOG=<file>: every submission run, "ch seqno kick_us start_us end_us acquires", and the WaitFence calls by thread.
-// MOCK_IGNORE_ACQUIRES=1: the GPU runs submissions without their acquires (ordercheck.py's negative control).
+// thread that runs the channels side by side (a thread each), each channel's submissions in kick order, n us each: its fence
+// word moves then, and WaitFence sleeps until it does (a condition variable, as the kext's interrupt).
+// MOCK_GPU_LOG=<file>: every submission run, "ch seqno kick_us start_us end_us", and the WaitFence calls by thread.
 // MOCK_IMPORT_US=<n>: BoImport takes n us per 16 MiB (the kext's wiring; selcheck's pool test).
 // MOCK_COMPRESSION=1: GetInfo says compressible kinds bind (TegraGM20BInfoCompression), and they do as the kext binds them
 // (mock_comp.h: which binds, the contract's violations counted, MOCK_COMP_LINES=<n> comptag lines). Off by default.
@@ -14,20 +12,16 @@
 // MOCK_COMP_REFUSE=<n>: the first n Compressible BoAllocs are refused with kIOReturnNoMemory (the pool short).
 // MOCK_TILED_CACHE=1: GetInfo says every GR context holds the tiled cache's table (TegraGM20BInfoTiledCache), as the kext
 // does unless booted with switch-no-tiled-cache. Off by default while NVK host builds without the bit stay in use.
-// Each IOServiceOpen is a connection of its own, as another task's would be (MOCK_TASK_WINDOWS=1: its own GPU VA window too),
-// and ExecSurfaces (method 17; MOCK_NO_EXEC_SURFACES=1 hides it) orders as the kext's method 17 did: a
-// submission that lists an IOSurface's import waits on the GPU for every other channel's, any connection's, last submission
-// that listed the surface as written (surfaces by the surface ID their BoImport named), and one that lists it written becomes
-// its channel's writer.
+// Each IOServiceOpen is a connection of its own, as another task's would be (MOCK_TASK_WINDOWS=1: its own GPU VA window too).
 // SurfaceLayout (method 16; MOCK_NO_SURFACE_LAYOUT=1 hides it) decides a surface's layout as the kext does: at its first asking
 // import, block-linear when that import writes it, is the surface's only import and its shape tiles, its rows then tiled in
 // place (TegraGM20BLayout.h); pitch for good otherwise.
 // Priority (method 18; MOCK_NO_PRIORITY=1 hides it): one per process, as the kext keeps one per connection
 // (mock_iokit_priority).
-// mock_iokit_kill_next(error): the next Exec on a 3D channel (a queue's, not NVK's upload channel) is accepted, then its
+// mock_iokit_kill_next(error): the next SubmitJob on a 3D channel (a queue's, not NVK's upload channel) is accepted, then its
 // channel dies as the kext kills one (method 11's error, and with mock_iokit_kill_next_at the fault VA GetStatus reports
 // for an MMU fault): what it had in flight never runs, its kill record
-// (TegraGM20BAbiFence) names those seqnos, its fence passes them, and Exec and WaitFence on it answer
+// (TegraGM20BAbiFence) names those seqnos, its fence passes them, and SubmitJob and WaitFence on it answer
 // kIOReturnNotResponding until the client makes a new channel (MOCK_NO_KILL_RECORD=1: no record, as a kext without
 // TegraGM20BInfoKillRecord).
 #include <IOKit/IOKitLib.h>
@@ -145,55 +139,32 @@ static int is_conn(mach_port_t c)
     return c >= kConn && c < kConn + kConns;
 }
 
-/* ExecSurfaces' acquires and the asynchronous GPU (gpu_lock) */
+/* The asynchronous GPU (gpu_lock) */
 enum {
-    kOrderMax = 16,
     kJobs = 8192
 };
 
-struct acq {
-    uint32_t ch, seqno;
-};
-
 struct job {
-    uint32_t ch, seqno, nacq, count;
-    struct acq acq[kOrderMax];
+    uint32_t ch, seqno, count;
     struct TegraGM20BAbiPush *pushes;
     uint64_t kick;
     int kill; /* MOCK_KILL's submission: the channel dies when the GPU reaches it */
 };
 
 struct run {
-    uint32_t ch, seqno, nacq;
+    uint32_t ch, seqno;
     uint64_t kick, start, end;
 };
 
 static pthread_mutex_t gpu_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t gpu_cond = PTHREAD_COND_INITIALIZER;
-static struct acq pending[16][kOrderMax];
-static uint32_t npending[16];
 static mach_port_t chan_conn[16]; /* the connection that made each channel */
-
-/* ExecSurfaces: each channel's list for its next Exec, and each surface's writers (a channel's last submission that listed it
- * written) */
-struct listed {
-    uint32_t count, surface[TegraGM20BMaxExecSurfaces];
-    uint64_t writes; /* bit i: surface[i] listed written */
-    int given;
-};
-static struct listed lists[16];
-
-static struct writer {
-    uint32_t surface, ch, seqno;
-} writers[256];
-
-static uint32_t nwriters;
 
 enum {
     kQueue = 1024
 };
 static struct job queue[16][kQueue]; /* per channel, in kick order: [head, tail) */
-static uint32_t qhead[16], qtail[16], running;
+static uint32_t qhead[16], qtail[16];
 static bool paused[16];
 static struct run runs[kJobs];
 static uint32_t nruns;
@@ -252,81 +223,17 @@ void mock_iokit_pause(uint32_t channel, bool pause)
     pthread_mutex_unlock(&gpu_lock);
 }
 
-/* gpu_lock held: `waiter`'s next submission waits for `source` to pass `seqno` (one per source, the later seqno) */
-static int order_add(uint32_t waiter, uint32_t source, uint32_t seqno)
-{
-    for (uint32_t i = 0; i < npending[waiter]; i++)
-        if (pending[waiter][i].ch == source) {
-            if ((int32_t)(seqno - pending[waiter][i].seqno) > 0)
-                pending[waiter][i].seqno = seqno;
-            return 0;
-        }
-    if (npending[waiter] == kOrderMax)
-        return -1;
-    pending[waiter][npending[waiter]++] = (struct acq){source, seqno};
-    return 0;
-}
-
-/* gpu_lock held: channel ch's Exec of `seqno` takes its list (ExecSurfaces): an acquire on each other channel's last writer of
- * a listed surface that may still run, then it is the writer of the surfaces it lists written */
-static void surface_acquires(uint32_t ch, uint32_t seqno)
-{
-    struct listed *l = &lists[ch];
-    if (!l->given)
-        return;
-    for (uint32_t i = 0; i < l->count; i++)
-        for (uint32_t w = 0; w < nwriters; w++)
-            if (writers[w].surface == l->surface[i] && writers[w].ch != ch && !passed(writers[w].ch, writers[w].seqno))
-                order_add(ch, writers[w].ch, writers[w].seqno);
-    for (uint32_t i = 0; i < l->count; i++) {
-        if (!(l->writes >> i & 1))
-            continue;
-        uint32_t w = 0;
-        while (w < nwriters && !(writers[w].surface == l->surface[i] && writers[w].ch == ch))
-            w++;
-        if (w == nwriters && nwriters < sizeof writers / sizeof writers[0])
-            nwriters++;
-        if (w < nwriters)
-            writers[w] = (struct writer){l->surface[i], ch, seqno};
-    }
-    l->given = 0;
-}
-
-/* gpu_lock held: the head of channel ch's queue may run (its acquires passed; MOCK_IGNORE_ACQUIRES: always) */
-static int head_ready(uint32_t ch, int ignore_acquires)
-{
-    if (qhead[ch] == qtail[ch] || paused[ch])
-        return 0;
-    const struct job *j = &queue[ch][qhead[ch] % kQueue];
-    for (uint32_t k = 0; k < j->nacq && !ignore_acquires; k++)
-        if (!passed(j->acq[k].ch, j->acq[k].seqno))
-            return 0;
-    return 1;
-}
-
 /* One per channel, as the host's PBDMAs and the engines' time slices run channels side by side: the channel's submissions in
- * order, each once its acquires passed, each taking MOCK_GPU_US. */
+ * order, each taking MOCK_GPU_US. */
 static void *gpu_thread(void *arg)
 {
     const uint32_t ch = (uint32_t)(uintptr_t)arg;
     char name[32];
     snprintf(name, sizeof name, "mock.gpu.%u", ch);
     pthread_setname_np(name);
-    const int ignore_acquires = getenv("MOCK_IGNORE_ACQUIRES") != NULL; /* the checker's negative control */
     pthread_mutex_lock(&gpu_lock);
     for (;;) {
-        if (!head_ready(ch, ignore_acquires)) {
-            if (qhead[ch] != qtail[ch] && !running && !paused[ch]) { /* nothing runs that could move a fence: none ever will */
-                int any = 0;
-                for (uint32_t c = 1; c < 16 && !any; c++)
-                    any = head_ready(c, ignore_acquires);
-                if (!any) {
-                    const struct job *j = &queue[ch][qhead[ch] % kQueue];
-                    fprintf(stderr, "mock GPU: deadlock: ch %u seqno %u waits on ch %u fence %u (at %u)\n", j->ch,
-                            j->seqno, j->acq[0].ch, j->acq[0].seqno, fence[j->acq[0].ch * kFenceWords]);
-                    abort();
-                }
-            }
+        if (qhead[ch] == qtail[ch] || paused[ch]) {
             pthread_cond_wait(&gpu_cond, &gpu_lock);
             continue;
         }
@@ -338,7 +245,6 @@ static void *gpu_thread(void *arg)
             free(j.pushes);
             continue;
         }
-        running++;
         pthread_mutex_unlock(&gpu_lock);
         const uint64_t start = now_us();
         pushcount_submit(j.ch, j.pushes, j.count);
@@ -346,12 +252,11 @@ static void *gpu_thread(void *arg)
         const uint64_t end = now_us();
         free(j.pushes);
         pthread_mutex_lock(&gpu_lock);
-        running--;
         qhead[ch]++;
         if (!dead[ch])
             fence[ch * kFenceWords] = j.seqno;
         if (nruns < kJobs)
-            runs[nruns++] = (struct run){j.ch, j.seqno, j.nacq, j.kick, start, end};
+            runs[nruns++] = (struct run){j.ch, j.seqno, j.kick, start, end};
         pthread_cond_broadcast(&gpu_cond);
     }
     return NULL;
@@ -378,8 +283,8 @@ static void gpu_log(void)
         return;
     pthread_mutex_lock(&gpu_lock);
     for (uint32_t i = 0; i < nruns; i++)
-        fprintf(f, "run %u %u %llu %llu %llu %u\n", runs[i].ch, runs[i].seqno, (unsigned long long)runs[i].kick,
-                (unsigned long long)runs[i].start, (unsigned long long)runs[i].end, runs[i].nacq);
+        fprintf(f, "run %u %u %llu %llu %llu\n", runs[i].ch, runs[i].seqno, (unsigned long long)runs[i].kick,
+                (unsigned long long)runs[i].start, (unsigned long long)runs[i].end);
     fprintf(f, "waitfence total %lu submit-thread %lu\n", waits_total, waits_submit);
     pthread_mutex_unlock(&gpu_lock);
     fclose(f);
@@ -500,12 +405,6 @@ static kern_return_t mock_submit(uint32_t ch, const struct TegraGM20BAbiPush *pu
         return KERN_SUCCESS;
     }
     struct job j = {.ch = ch, .seqno = ++submitted[ch], .kick = now_us()};
-    surface_acquires(ch, j.seqno);
-    for (uint32_t i = 0; i < npending[ch];
-         i++) /* the acquires ExecSurfaces queued: its first entry (one already passed: none) */
-        if (!passed(pending[ch][i].ch, pending[ch][i].seqno))
-            j.acq[j.nacq++] = pending[ch][i];
-    npending[ch] = 0;
     struct TegraGM20BAbiExecReply r = {.seqno = j.seqno};
     j.kill = kill_due(ch, j.seqno);
     if (j.kill && !async_gpu())
@@ -546,9 +445,7 @@ static kern_return_t mock_submit(uint32_t ch, const struct TegraGM20BAbiPush *pu
     return KERN_SUCCESS;
 }
 
-#ifdef SWITCH_MOCK_JOB_INTERFACE
 #include "mock_jobs.h"
-#endif
 
 static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size_t insz, void *out, size_t *outsz)
 {
@@ -587,7 +484,6 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
                                                               : 1ull << 39;
         struct TegraGM20BAbiInfo i = {.abi_version = TegraGM20BAbiVersion,
                                       .flags = TegraGM20BInfoHostImport | TegraGM20BInfoCpuAccess |
-                                               (getenv("MOCK_NO_EXEC_SURFACES") ? 0 : TegraGM20BInfoExecSurfaces) |
                                                (getenv("MOCK_NO_KERNEL_MAP") ? 0 : TegraGM20BInfoKernelMap) |
                                                (getenv("MOCK_NO_SURFACE_LAYOUT") ? 0 : TegraGM20BInfoSurfaceLayout) |
                                                (getenv("MOCK_NO_KILL_RECORD") ? 0 : TegraGM20BInfoKillRecord) |
@@ -741,39 +637,12 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
         memcpy(out, &r, sizeof(r));
         return KERN_SUCCESS;
     }
-#ifdef SWITCH_MOCK_JOB_INTERFACE
     case TegraGM20BMethodResourceSetCreate:
         return mock_set_create(in, insz, out);
     case TegraGM20BMethodResourceSetRelease:
         return mock_set_release(in, insz);
     case TegraGM20BMethodSubmitJob:
         return mock_job(in, insz, out);
-#endif
-    case TegraGM20BMethodExec: {
-        const struct TegraGM20BAbiExec *e = in;
-        return mock_submit(e->channel & 15, e->pushes, e->count, out);
-    }
-    case TegraGM20BMethodExecSurfaces: {
-        const struct TegraGM20BAbiExecSurfaces *e = in;
-        const size_t head = offsetof(struct TegraGM20BAbiExecSurfaces, uses);
-        if (getenv("MOCK_NO_EXEC_SURFACES") || insz < head || e->count > TegraGM20BMaxExecSurfaces ||
-            insz < head + e->count * sizeof(struct TegraGM20BAbiSurfaceUse))
-            return kIOReturnBadArgument;
-        pthread_mutex_lock(&gpu_lock);
-        struct listed *l = &lists[e->channel & 15];
-        *l = (struct listed){.given = 1};
-        for (uint32_t i = 0; i < e->count && !(e->flags & TegraGM20BExecSurfacesAll); i++) {
-            const unsigned h = slot_of(e->uses[i].handle);
-            const uint32_t surface = bos[h].import ? bos[h].surface : 0;
-            if (!surface)
-                continue; /* not a live import of a surface */
-            if (e->uses[i].access & TegraGM20BSurfaceWrite)
-                l->writes |= 1ull << l->count;
-            l->surface[l->count++] = surface;
-        }
-        pthread_mutex_unlock(&gpu_lock);
-        return KERN_SUCCESS;
-    }
     case TegraGM20BMethodWaitFence: {
         const struct TegraGM20BAbiWaitFence *w = in;
         char name[64] = "";
@@ -821,11 +690,6 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
         if (getenv("MOCK_NO_KERNEL_MAP"))
             return kIOReturnBadArgument;
         return mock_unmap(c, u->token, mach_task_self(), u->address);
-    }
-    case TegraGM20BMethodGetTimestamp: {
-        struct TegraGM20BAbiTimestamp t = {.ns = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)};
-        memcpy(out, &t, sizeof(t));
-        return KERN_SUCCESS;
     }
     case TegraGM20BMethodPriority: {
         const struct TegraGM20BAbiPriority *p = in;
@@ -904,7 +768,7 @@ void mock_iokit_kill_next_at(uint32_t error, uint64_t fault_va)
     pthread_mutex_unlock(&gpu_lock);
 }
 
-/* The `count` calls of `method` after the next `skip` answer `kr` and do nothing: the kernel refusing them (an Exec or a
+/* The `count` calls of `method` after the next `skip` answer `kr` and do nothing: the kernel refusing them (a SubmitJob or a
  * ChannelCreate, a WaitFence that fails with no kill) */
 void mock_iokit_fail_after(unsigned method, unsigned skip, unsigned count, int kr)
 {
@@ -931,8 +795,8 @@ void mock_iokit_priority(uint32_t out[2])
     out[1] = atomic_load(&priority_now[1]);
 }
 
-/* The GPU's runs so far (MOCK_GPU_US), up to `most`: channel, seqno, kick, start and end (us), acquires */
-unsigned mock_iokit_runs(uint64_t (*out)[6], unsigned most)
+/* The GPU's runs so far (MOCK_GPU_US), up to `most`: channel, seqno, kick, start and end (us) */
+unsigned mock_iokit_runs(uint64_t (*out)[5], unsigned most)
 {
     pthread_mutex_lock(&gpu_lock);
     unsigned n = 0;
@@ -942,7 +806,6 @@ unsigned mock_iokit_runs(uint64_t (*out)[6], unsigned most)
         out[n][2] = runs[n].kick;
         out[n][3] = runs[n].start;
         out[n][4] = runs[n].end;
-        out[n][5] = runs[n].nacq;
     }
     pthread_mutex_unlock(&gpu_lock);
     return n;
@@ -972,9 +835,9 @@ unsigned long mock_iokit_kind_maps(unsigned kind)
 
 void mock_iokit_report(void)
 {
-    static const char *names[] = {"",       "GetInfo",   "BoAlloc",       "BoImport",
-                                  "BoFree", "VmBind",    "ChannelCreate", "ChannelDestroy",
-                                  "Exec",   "WaitFence", "GetTimestamp",  "GetStatus"};
+    static const char *names[] = {"",       "GetInfo",       "BoAlloc",        "BoImport", "BoFree",
+                                  "VmBind", "ChannelCreate", "ChannelDestroy", "",         "WaitFence",
+                                  "",       "GetStatus"};
     for (int i = 1; i < 12; i++)
         if (calls[i])
             fprintf(stderr, "mock: %s x%lu\n", names[i], (unsigned long)calls[i]);

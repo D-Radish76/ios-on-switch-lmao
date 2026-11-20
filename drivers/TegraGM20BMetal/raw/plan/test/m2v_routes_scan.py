@@ -16,6 +16,8 @@ METAL = ROOT / 'drivers/TegraGM20BMetal'
 RUNTIME = METAL / 'raw/runtime'
 TRANSLATE = METAL / 'translate/NativeMetalTranslate.h'
 KERNEL = ROOT / 'drivers/TegraGM20B'
+# The host mocks of the kernel's user client
+MOCKS = [METAL / 'raw/pack' / name for name in ('mock_iokit.c', 'mock_jobs.h', 'cap.cpp')]
 INVENTORY = METAL / 'raw/test/inventory.tsv'
 SUFFIXES = {'.mm', '.cpp', '.h', '.c'}
 
@@ -53,7 +55,7 @@ FRONTEND_HEADERS = {
     'NativeMetalArtifactCache.h',
     'TwoPlaneStandIn.h',
 }
-# The kernel methods the cut deleted (TegraGM20BABI.h keeps the names Mesa NVK's host build still compiles)
+# The kernel methods the cut deleted
 KERNEL_GONE = ('Exec', 'GetTimestamp', 'Order', 'ExecSurfaces', 'Submit', 'SubmitAddress')
 
 TWIN = re.compile(r'\b\w*[Tt]win\w*\b')
@@ -187,11 +189,7 @@ class Census:
             self.add('sel', f'{fields[0]} {fields[2]}', INVENTORY.name)
 
     def _kernel(self) -> None:
-        texts = {
-            p.name: strip_comments(p.read_text(errors='replace'), strings=False)
-            for p in kernel_units()
-            if p.name != 'TegraGM20BABI.h'
-        }
+        texts = {p.name: strip_comments(p.read_text(errors='replace'), strings=False) for p in kernel_units() + MOCKS}
         texts.update({p.name: t for p, t in self.code.items()})
         for method in KERNEL_GONE:
             word = re.compile(r'\bTegraGM20BMethod' + method + r'\b')

@@ -79,6 +79,9 @@ py_library(
     data = [
         "//drivers/TegraGM20B:all_files",
         "//drivers/TegraGM20BMetal:m2v_route_sources",
+        "//drivers/TegraGM20BMetal:raw/pack/cap.cpp",
+        "//drivers/TegraGM20BMetal:raw/pack/mock_iokit.c",
+        "//drivers/TegraGM20BMetal:raw/pack/mock_jobs.h",
     ],
     imports = ["."],
 )
