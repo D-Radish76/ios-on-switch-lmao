@@ -3,7 +3,7 @@
 // the model (kernel_model::arriving): the device lock is not held across the import's kernel calls, so the submit worker's
 // CPU completion capture and another surface's import go on meanwhile; a second import of the held surface waits for it
 // and shares it (one BoImport, one layout ask), and an import that fails publishes nothing and lets that second one make
-// its own. Plain and thread-sanitized.
+// its own; a no-copy buffer over the held surface's pages waits for its layout. Plain and thread-sanitized.
 #include "raw_kernel_model.h"
 #include "empty_pack.h"
 #include "../raw/runtime/raw_gpu.h"
@@ -112,6 +112,7 @@ protected:
     void SetUp() override
     {
         kernel_model::model = {};
+        kernel_model::model.infoFlags = TegraGM20BInfoSurfaceLayout;
         std::string err;
         ASSERT_TRUE(dev.open(emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
     }
@@ -229,6 +230,40 @@ TEST_F(RawDeviceImport, AFailedImportPublishesNothingAndTheWaitingImportMakesIts
     EXPECT_EQ(liveImports(pages[0]), 1u);
     dev.destroyTexture(second);
     EXPECT_EQ(liveImports(pages[0]), 0u);
+}
+
+// A no-copy buffer over pages of a surface another thread is importing waits for that import: the kernel lays the
+// surface out block-linear at its first ask, and a buffer over its GOBs would read and write them as rows, so none is made
+TEST_F(RawDeviceImport, ANoCopyBufferOverASurfaceBeingImportedWaitsForItsLayout)
+{
+    kernel_model::model.surfaceLayout = TegraGM20BLayoutTiled;
+    CFDataRef owner = CFDataCreate(kCFAllocatorDefault, nullptr, 0);
+    raw::Texture held;
+    raw::Buffer over;
+    bool heldMade = false, made = true, tiled = false, waited = false;
+    {
+        HeldImport hold;
+        hold.start([&] {
+            heldMade = dev.createSurfaceTexture(kHeldSurface, pages[0], kBytes, owner, 0, kSide, kSide, kPitch,
+                                                kBGRA8Unorm, held, true);
+        });
+        ASSERT_TRUE(hold.reached());
+        auto buffer = std::async(std::launch::async, [&] {
+            return dev.createBufferNoCopy(static_cast<uint8_t *>(pages[0]) + 4096, 4096, over, tiled);
+        });
+        waited = buffer.wait_for(200ms) == std::future_status::timeout;
+        hold.release(KERN_SUCCESS);
+        hold.join();
+        made = buffer.get();
+    }
+    EXPECT_TRUE(waited) << "the no-copy buffer was made beside the surface's import";
+    EXPECT_FALSE(made);
+    EXPECT_TRUE(tiled);
+    if (heldMade)
+        dev.destroyTexture(held);
+    if (made)
+        dev.destroyBuffer(over);
+    CFRelease(owner);
 }
 
 }  // namespace

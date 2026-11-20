@@ -806,6 +806,16 @@ bool Device::createBufferNoCopy(void *bytes, uint64_t length, Buffer &b, bool &t
     if (!bytes || !length)
         return false;
     std::unique_lock<raw::Mutex> l(lock_);
+    // a surface another thread is importing has its layout once that import is published: wait for one over these pages
+    const auto importingOver = [&] {
+        return std::find_if(importing_.begin(), importing_.end(), [&](const auto &at) {
+            return surfaceBackingAliases(0, std::get<1>(at.first), std::get<2>(at.first), 0, uintptr_t(bytes), length);
+        });
+    };
+    for (auto at = importingOver(); at != importing_.end(); at = importingOver()) {
+        at->second++;
+        imported_.wait(l);
+    }
     for (const auto &[key, i] : surfaces_)
         if (i->kernelTiled() && surfaceBackingAliases(0, i->base, i->bytes, 0, uintptr_t(bytes), length)) {
             tiled = true;
