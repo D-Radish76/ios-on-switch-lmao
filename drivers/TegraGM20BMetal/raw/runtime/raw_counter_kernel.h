@@ -40,7 +40,8 @@ inline uint64_t resolved(const Record &r, const TegraGM20BAbiClockAnchors &t)
 
 inline constexpr const char *kResolveFunction = "switch_counter_resolve";
 
-inline constexpr const char *kResolveSource = R"(#include <metal_stdlib>
+// The resolve kernels' shared source: the records, the anchor table and the span from an anchor in nanoseconds
+#define SWITCH_COUNTER_RESOLVE_COMMON R"(#include <metal_stdlib>
 using namespace metal;
 
 struct SwitchCounterResolve {
@@ -89,7 +90,9 @@ static uint2 since(uint4 a, uint unitsLo, uint unitsHi)
     return uint2(a.z - mLo, a.w - mHi - (a.z < mLo ? 1u : 0u));
 }
 
-kernel void switch_counter_resolve(device const uint4 *records [[buffer(0)]], device uint *samples [[buffer(1)]],
+)"
+
+inline constexpr const char *kResolveSource = SWITCH_COUNTER_RESOLVE_COMMON R"(kernel void switch_counter_resolve(device const uint4 *records [[buffer(0)]], device uint *samples [[buffer(1)]],
                                    constant SwitchCounterResolve &p [[buffer(2)]],
                                    device const SwitchClockAnchors &anchors [[buffer(3)]],
                                    uint i [[thread_position_in_grid]])
@@ -115,6 +118,44 @@ kernel void switch_counter_resolve(device const uint4 *records [[buffer(0)]], de
 }
 )";
 
+// ... into a destination `shift` bytes past its 4-byte word, a byte at a time, as an M4 Max's resolveCounters:
+// writes at such an offset: a library of its own, made at the first such resolve
+inline constexpr const char *kResolveBytesFunction = "switch_counter_resolve_bytes";
+
+inline constexpr const char *kResolveBytesSource = SWITCH_COUNTER_RESOLVE_COMMON R"(struct SwitchCounterResolveBytes {
+    uint count;
+    uint shift;
+};
+
+kernel void switch_counter_resolve_bytes(device const uint4 *records [[buffer(0)]], device uchar *samples [[buffer(1)]],
+                                         constant SwitchCounterResolveBytes &p [[buffer(2)]],
+                                         device const SwitchClockAnchors &anchors [[buffer(3)]],
+                                         uint i [[thread_position_in_grid]])
+{
+    if (i >= p.count)
+        return;
+    const uint4 r = records[i];
+    uint2 ns = uint2(0u, 0u);
+    if (r.x != 0) {
+        ns = uint2(0xffffffffu, 0xffffffffu);
+        const uint published = anchors.published;
+        const uint kept = min(published, 62u);
+        for (uint k = 0; k < kept; k++) {
+            const uint4 a = anchors.slot[(published - 1u - k) % 63u];
+            if (a.y < r.w || (a.y == r.w && a.x <= r.z)) {
+                ns = since(a, r.z, r.w);
+                break;
+            }
+        }
+    }
+    device uchar *at = samples + p.shift + 8 * i;
+    for (uint k = 0; k < 4; k++) {
+        at[k] = uchar(ns.x >> (8 * k));
+        at[4 + k] = uchar(ns.y >> (8 * k));
+    }
+}
+)";
+
 constexpr uint32_t kResolveThreads = 64;
 
 // SwitchCounterResolve
@@ -123,6 +164,14 @@ struct ResolveParams {
 };
 
 static_assert(sizeof(ResolveParams) == 4, "SwitchCounterResolve");
+
+// SwitchCounterResolveBytes
+struct ResolveBytesParams {
+    uint32_t count;
+    uint32_t shift;
+};
+
+static_assert(sizeof(ResolveBytesParams) == 8, "SwitchCounterResolveBytes");
 static_assert(TegraGM20BClockAnchorSlots == 63, "SwitchClockAnchors");
 
 inline uint64_t sinceInWords(const TegraGM20BAbiClockAnchor &anchor, uint32_t unitsLo, uint32_t unitsHi)

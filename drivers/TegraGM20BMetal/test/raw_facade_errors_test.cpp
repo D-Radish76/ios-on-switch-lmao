@@ -11,6 +11,7 @@
 // earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words. Each failed
 // command buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither.
 #include "raw_facade_harness.h"
+#include "../raw/runtime/RawMetalIndirect.h"
 #include "../raw/runtime/raw_batch.h"
 #include "../raw/runtime/raw_mme.h"
 #include "../../../kits/SwitchGM20BEmit/SwitchGM20BPushDecode.h"
@@ -620,7 +621,48 @@ void blitsAnM4MaxRunsToNoRuleOrInPartAreSkipped()
     EXPECT_GT(kernel_model::model.jobs.size(), firstJob) << "the part inside the level was copied";
 }
 
+// An indirect command's indices at an offset off their type, which an M4 Max reads from the offset rounded down to it:
+// the command takes that offset, counted skipped as call.icb at each call
+void indicesOffTheirTypeRoundDown()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil);
+    MTLIndirectCommandBufferDescriptor *d = [MTLIndirectCommandBufferDescriptor new];
+    d.commandTypes = MTLIndirectCommandTypeDrawIndexed;
+    d.inheritPipelineState = YES;
+    d.inheritBuffers = YES;
+    id<MTLIndirectCommandBuffer> icb = [o.device newIndirectCommandBufferWithDescriptor:d maxCommandCount:2 options:0];
+    id<MTLBuffer> indices = [o.device newBufferWithLength:64 options:0];
+    ASSERT_TRUE(icb != nil && indices != nil);
+    NSDictionary *before = counters(o.device);
+    const struct {
+        MTLIndexType type;
+        NSUInteger offset, read;
+    } commands[] = {{MTLIndexTypeUInt32, 6, 4}, {MTLIndexTypeUInt16, 3, 2}};
+    for (NSUInteger i = 0; i < 2; i++)
+        [[icb indirectRenderCommandAtIndex:i] drawIndexedPrimitives:MTLPrimitiveTypeTriangle
+                                                        indexCount:3
+                                                         indexType:commands[i].type
+                                                       indexBuffer:indices
+                                                 indexBufferOffset:commands[i].offset
+                                                     instanceCount:1
+                                                        baseVertex:0
+                                                      baseInstance:0];
+    const std::map<std::string, long long> each = {{"skipped", 2}, {"skipped.call.icb", 2}};
+    EXPECT_EQ(skippedMoved(before, counters(o.device)), each) << text(counters(o.device));
+    const std::vector<RMICBCommand> &taken = ((RMIndirectCommandBuffer *)icb)->_commands;
+    for (NSUInteger i = 0; i < 2; i++) {
+        EXPECT_EQ(taken[i].kind, RMICBCommand::Indexed) << i;
+        EXPECT_EQ(taken[i].indexOffset, commands[i].read) << i;
+    }
+}
+
 }  // namespace
+
+TEST(RawFacadeErrors, IndicesOfAnIndirectCommandOffTheirTypeAreReadFromTheOffsetRoundedDown)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(indicesOffTheirTypeRoundDown);
+}
 
 TEST(RawFacadeErrors, CallsAnM4MaxCrashesOnFailInvalidResource)
 {

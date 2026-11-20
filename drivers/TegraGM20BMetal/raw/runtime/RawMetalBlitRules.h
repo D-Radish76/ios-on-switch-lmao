@@ -61,6 +61,13 @@ void failNoImage(__unsafe_unretained RMCommandBuffer *cb, const char *call);
 void failNoStencilTemp(__unsafe_unretained RMCommandBuffer *cb, const char *call);
 // Why one side of a copy breaks Metal's rules, null where it keeps them
 const char *copySideInvalid(RMTexture *t, NSUInteger slice, NSUInteger level, MTLOrigin o, MTLSize size);
+// Whether a copy between textures `a` and `b` moves units of other sizes on each side (Metal's validation error)
+bool otherCopyUnits(RMTexture *a, RMTexture *b);
+// ... such a copy, both sides inside their textures: the destination's region `o`, `size` written with the texel an M4
+// Max writes there (raw::otherUnitsTexel), skipped as call.blit, its line once; one into a format of no such texel records
+// nothing, skipped as before (RawMetalBlitFill.mm)
+void otherUnitsCopy(RMCommandBuffer *cb, const char *call, RMTexture *d, NSUInteger slice, NSUInteger level, MTLOrigin o,
+                    MTLSize size);
 // Why a texture-to-texture copy breaks Metal's rules: another sample count, formats of other copy units, a side outside
 // its texture
 const char *textureCopyInvalid(RMTexture *a, NSUInteger ss, NSUInteger sl, MTLOrigin so, MTLSize size, RMTexture *b,

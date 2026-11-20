@@ -258,12 +258,17 @@ CopyUnit copyUnit(RMTexture *t)
 }
 }  // namespace
 
+bool otherCopyUnits(RMTexture *a, RMTexture *b)
+{
+    return a->_descriptor.pixelFormat != b->_descriptor.pixelFormat && !(copyUnit(a) == copyUnit(b));
+}
+
 const char *textureCopyInvalid(RMTexture *a, NSUInteger ss, NSUInteger sl, MTLOrigin so, MTLSize size, RMTexture *b,
                                NSUInteger ds, NSUInteger dl, MTLOrigin dorg)
 {
     if (a->_descriptor.sampleCount != b->_descriptor.sampleCount)
         return "between textures of other sample counts";
-    if (a->_descriptor.pixelFormat != b->_descriptor.pixelFormat && !(copyUnit(a) == copyUnit(b)))
+    if (otherCopyUnits(a, b))
         return "between formats of other copy units";
     if (const char *side = copySideInvalid(a, ss, sl, so, size))
         return side;

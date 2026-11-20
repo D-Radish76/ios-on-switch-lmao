@@ -212,12 +212,21 @@ uint8_t kindsOf(const RMICBCommand &c)
         return [self invalidate:PredCallBufForeign
                             why:buffer ? "an indirect command's index buffer not made by this device"
                                        : "an indirect command's nil index buffer"];
-    if (!b->_raw.va || offset % size || offset >= b->_raw.length) {
+    const NSUInteger read = offset - offset % size;
+    if (!b->_raw.va || read >= b->_raw.length) {
         rmSkipped(PredCallIcb);
-        SWITCH_REFUSE("raw", "icb.indices", "indirect command %lu: an index buffer offset %lu off its type or past it",
+        SWITCH_REFUSE("raw", "icb.indices", "indirect command %lu: an index buffer offset %lu past it",
                       (unsigned long)_index, (unsigned long)offset);
         [self reset];
         return;
+    }
+    // an M4 Max reads the indices of an offset off their type from the offset rounded down to it
+    if (read != offset) {
+        rmSkipped(PredCallIcb);
+        SWITCH_REFUSE_DETAIL("raw", "icb.indices", 1,
+                             "indirect command %lu: an index buffer offset %lu off its type: rounded down to it",
+                             (unsigned long)_index, (unsigned long)offset);
+        offset = read;
     }
     raw::icb::indexed(rmCommandSlot(_buffer, _index), uint32_t(_index),
                       {uint32_t(type), size, b->_raw.va + offset, b->_raw.va + b->_raw.length - 1, uint32_t(count),

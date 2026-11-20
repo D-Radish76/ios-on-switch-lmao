@@ -162,22 +162,37 @@ void RMCounterEmit::ended(size_t position)
     rc_.timestamps(stamps, count);
 }
 
+static id<MTLComputePipelineState> resolveState(const char *source, const char *name)
+{
+    NSError *error = nil;
+    id<MTLDevice> device = gRM->device;
+    id<MTLLibrary> library = [device newLibraryWithSource:@(source) options:nil error:&error];
+    id<MTLFunction> function = [library newFunctionWithName:@(name)];
+    id<MTLComputePipelineState> state = function ? [device newComputePipelineStateWithFunction:function error:&error] : nil;
+    if (!state)
+        SWITCH_REFUSE_DETAIL("raw", "counter.resolve_state", uintptr_t(name),
+                             "the counter resolve kernel %s was not made (%s): no blit resolve of it", name,
+                             error.localizedDescription.UTF8String ?: "no function");
+    return state;
+}
+
 id<MTLComputePipelineState> rmCounterResolveState()
 {
     static id<MTLComputePipelineState> state;
     static std::once_flag once;
     std::call_once(once, [] {
-        NSError *error = nil;
-        id<MTLDevice> device = gRM->device;
-        id<MTLLibrary> library = [device newLibraryWithSource:@(raw::counters::kResolveSource)
-                                                      options:nil
-                                                        error:&error];
-        id<MTLFunction> function = [library newFunctionWithName:@(raw::counters::kResolveFunction)];
-        state = function ? [device newComputePipelineStateWithFunction:function error:&error] : nil;
-        if (!state)
-            SWITCH_REFUSE("raw", "counter.resolve_state",
-                          "the counter resolve kernel was not made (%s): no blit resolve",
-                          error.localizedDescription.UTF8String ?: "no function");
+        state = resolveState(raw::counters::kResolveSource, raw::counters::kResolveFunction);
+    });
+    return state;
+}
+
+// The resolve into a destination offset off 4 bytes, made at the first such resolve
+static id<MTLComputePipelineState> resolveBytesState()
+{
+    static id<MTLComputePipelineState> state;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        state = resolveState(raw::counters::kResolveBytesSource, raw::counters::kResolveBytesFunction);
     });
     return state;
 }
@@ -216,11 +231,13 @@ id<MTLComputePipelineState> rmCounterResolveState()
         return rmCallInvalid(_cb, PredCallBufForeign, offset, 0,
                              destination ? "resolveCounters: a destination buffer not made by this device"
                                          : "resolveCounters: a nil destination buffer");
-    if (offset % 4) {
+    // an M4 Max writes the samples at an offset off 4 bytes byte for byte from there
+    const uint32_t shift = uint32_t(offset % 4);
+    id<MTLComputePipelineState> state = shift ? resolveBytesState() : rmCounterResolveState();
+    if (shift) {
         rmSkipped(PredCallCounter);
-        SWITCH_REFUSE("raw", "counter.resolve_into", "resolveCounters: into offset %lu, off 4 bytes: not resolved",
-                      (unsigned long)offset);
-        return;
+        SWITCH_REFUSE("raw", "counter.resolve_into", "resolveCounters: into offset %lu, off 4 bytes: %s",
+                      (unsigned long)offset, state ? "resolved there" : "not resolved");
     }
     // an M4 Max resolves the samples the destination holds past the offset
     const uint64_t fits = offset < into->_raw.length ? (into->_raw.length - offset) / raw::counters::kSampleBytes : 0;
@@ -234,10 +251,10 @@ id<MTLComputePipelineState> rmCounterResolveState()
         if (!range.length)
             return;
     }
-    id<MTLComputePipelineState> state = rmCounterResolveState();
     if (!state)
         return;
     const raw::counters::ResolveParams params = {uint32_t(range.length)};
+    const raw::counters::ResolveBytesParams shifted = {uint32_t(range.length), shift};
     const RMClockAnchors &anchors = rmClockAnchors();
     RMCommandBuffer *cb = _cb;
     [cb record:cmd(OpEnd)];
@@ -245,8 +262,11 @@ id<MTLComputePipelineState> rmCounterResolveState()
     id<MTLComputeCommandEncoder> c = [(id<MTLCommandBuffer>)cb computeCommandEncoder];
     [c setComputePipelineState:state];
     [c setBuffer:(id<MTLBuffer>)b->_storage offset:range.location * raw::counters::kRecordBytes atIndex:0];
-    [c setBuffer:destination offset:offset atIndex:1];
-    [c setBytes:&params length:sizeof params atIndex:2];
+    [c setBuffer:destination offset:offset - shift atIndex:1];
+    if (shift)
+        [c setBytes:&shifted length:sizeof shifted atIndex:2];
+    else
+        [c setBytes:&params length:sizeof params atIndex:2];
     // read where the GPU runs the resolve, so a power-up between this encode and the samples has its anchor
     if (anchors.va) {
         Cmd m = cmd(OpKernelClockAnchors, 3, 3);

@@ -346,4 +346,28 @@ inline uint32_t fillTexel(uint32_t format, const double rgba[4], uint8_t out[16]
     return 0;
 }
 
+// The texel an M4 Max writes over every texel of the destination's region of a copy between textures of formats of other
+// copy units, Metal's validation error (whatever the source holds: RGBA8Unorm ff 00 ff ff, RGBA16Float and RGBA32Float
+// every bit of red, blue and alpha set and green clear, R8Unorm ff, R16Float ffff): its bytes in `out`; 0 for a format
+// whose fields are not whole bytes of 8, 16 or 32 bits, which no copy of the M4 Max's measured
+inline uint32_t otherUnitsTexel(uint32_t format, uint8_t out[16])
+{
+    memset(out, 0, 16);
+    for (const FillFormat &f : fill_detail::kFillFormats) {
+        if (f.mtl != format)
+            continue;
+        unsigned __int128 bits = 0;
+        for (uint32_t k = 0; k < f.fields; k++) {
+            const FillField &x = f.field[k];
+            if (x.at % 8 || (x.bits != 8 && x.bits != 16 && x.bits != 32))
+                return 0;
+            if (x.channel != 1)
+                bits |= static_cast<unsigned __int128>(fill_detail::mask(x.bits)) << x.at;
+        }
+        memcpy(out, &bits, f.bytes);
+        return f.bytes;
+    }
+    return 0;
+}
+
 }  // namespace raw
