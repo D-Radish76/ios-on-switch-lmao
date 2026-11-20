@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: MIT
 // Two reflection objects compared selector by selector, recursively: every answer Metal's reflection classes give
 // (MTLBinding and its kinds, MTLStructType, MTLStructMember, MTLArrayType, MTLPointerType, MTLTextureReferenceType),
-// Metal's against the raw facade's.
+// Metal's against the raw facade's, and which of the classes' selectors each responds to. Each difference is collected
+// with its state and path, and a failure prints them summarised, one line per path and selector.
 #pragma once
 #import <Metal/Metal.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <cstring>
+#include <iterator>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -17,8 +22,26 @@ namespace reflection_compare {
 // per binding type and type class; the first object's kind picks the set, and raw is asked the same set.
 struct Selectors {
     std::vector<const char *> counts, flags, objects;
-    bool named = false, members = false;
+    bool named = false, members = false, binding = false;
 };
+
+// Every selector of the reflection classes' public API, MTLArgument's and the type classes': an object responds to
+// those of its own class alone
+inline const std::vector<std::string> &everySelector()
+{
+    static const std::vector<std::string> all = [] {
+        std::istringstream names(
+            "name type access index isUsed isActive isArgument arrayLength bufferAlignment "
+            "bufferDataSize bufferDataType bufferStructType bufferPointerType structType "
+            "threadgroupMemoryAlignment threadgroupMemoryDataSize textureType textureDataType "
+            "isDepthTexture dataType offset argumentIndex arrayType textureReferenceType pointerType "
+            "members memberByName: elementType stride argumentIndexStride elementStructType "
+            "elementArrayType elementTextureReferenceType elementPointerType alignment dataSize "
+            "elementIsArgumentBuffer");
+        return std::vector<std::string>(std::istream_iterator<std::string>(names), {});
+    }();
+    return all;
+}
 
 inline Selectors selectorsOf(id metal)
 {
@@ -27,6 +50,7 @@ inline Selectors selectorsOf(id metal)
                     {"isUsed", "isActive", "isArgument"},
                     {"structType", "bufferPointerType"},
                     true};
+        s.binding = true;
         switch (((NSUInteger (*)(id, SEL))objc_msgSend)(metal, @selector(type))) {
         case MTLBindingTypeBuffer:
             s.counts.insert(s.counts.end(), {"bufferAlignment", "bufferDataSize", "bufferDataType"});
@@ -64,20 +88,128 @@ inline Selectors selectorsOf(id metal)
     return {};
 }
 
-inline void expectSame(id metal, id raw, const std::string &path);
-
-inline void expectSameList(NSArray *metal, NSArray *raw, const std::string &path)
+inline bool among(const std::vector<const char *> &selectors, const char *s)
 {
-    ASSERT_EQ(metal.count, raw.count) << path;
-    for (NSUInteger i = 0; i < metal.count; i++)
-        expectSame(metal[i], raw[i], path + "[" + std::to_string(i) + "]");
+    return std::any_of(selectors.begin(), selectors.end(), [s](const char *x) {
+        return !strcmp(x, s);
+    });
 }
 
-inline void expectSame(id metal, id raw, const std::string &path)
+// What a comparison judges. usedOneWay: a binding raw answers used and Metal unused is counted apart, not a difference.
+// Metal answers isUsed and isActive of a render state after its own compiler has optimised the specialized functions,
+// which can drop a read the specialized AIR still makes; raw answers a binding used where the specialized AIR reads it.
+// The other way, a binding Metal uses and raw does not, stays a difference.
+struct Options {
+    bool usedOneWay = false;
+};
+
+// One answer raw gives otherwise than Metal: the state, the node's path, what was asked and both answers
+struct Difference {
+    std::string state, path, what, metal, raw;
+};
+
+class Differences {
+public:
+    std::string state;
+    std::vector<Difference> found, usedOnlyByRaw;
+
+    void add(const std::string &path, const std::string &what, const std::string &metal, const std::string &raw)
+    {
+        found.push_back({state, path, what, metal, raw});
+    }
+
+    // One line per group of `list` (the node's path without its indices, and what was asked): its count, then its
+    // first difference
+    static std::string summary(const std::vector<Difference> &list)
+    {
+        std::vector<std::pair<std::string, std::vector<const Difference *>>> groups;
+        for (const Difference &d : list) {
+            const std::string key = withoutIndices(d.path) + " " + d.what;
+            auto at = std::find_if(groups.begin(), groups.end(), [&](const auto &g) {
+                return g.first == key;
+            });
+            if (at == groups.end())
+                groups.push_back({key, {&d}});
+            else
+                at->second.push_back(&d);
+        }
+        std::ostringstream out;
+        for (const auto &[key, members] : groups) {
+            const Difference &d = *members.front();
+            out << members.size() << " x " << key << ": first " << d.state << " " << d.path << " metal=" << d.metal
+                << " raw=" << d.raw << "\n";
+        }
+        return out.str();
+    }
+
+private:
+    static std::string withoutIndices(const std::string &path)
+    {
+        std::string out;
+        for (size_t i = 0; i < path.size(); i++) {
+            if (path[i] != '[') {
+                out += path[i];
+                continue;
+            }
+            out += "[]";
+            i = path.find(']', i);
+            if (i == std::string::npos)
+                break;
+        }
+        return out;
+    }
+};
+
+inline std::string number(NSUInteger n)
 {
-    ASSERT_EQ(metal == nil, raw == nil) << path;
-    if (!metal)
+    return std::to_string((unsigned long long)n);
+}
+
+// The names of a list's objects, a struct member's with its offset and data type
+inline std::string names(NSArray *list)
+{
+    std::string out;
+    for (id x in list) {
+        out += out.empty() ? "" : ",";
+        out += [x name] ? [[x name] UTF8String] : "-";
+        if ([x isKindOfClass:[MTLStructMember class]])
+            out += ":" + number([(MTLStructMember *)x offset]) + ":" + number([(MTLStructMember *)x dataType]);
+    }
+    return "{" + out + "}";
+}
+
+// A binding's selectors of another binding type, where Metal fails an assertion (an abort no caller can catch): raw
+// answers 0, NO and nil
+inline void neutral(id raw, const Selectors &asked, const std::string &path, Differences &d)
+{
+    for (const char *s : {"bufferAlignment", "bufferDataSize", "bufferDataType", "threadgroupMemoryAlignment",
+                          "threadgroupMemoryDataSize", "textureType", "textureDataType"})
+        if (const NSUInteger n = ((NSUInteger (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s));
+            !among(asked.counts, s) && n)
+            d.add(path, std::string(s) + " (Metal asserts)", "0", number(n));
+    if (!among(asked.flags, "isDepthTexture") && ((BOOL (*)(id, SEL))objc_msgSend)(raw, @selector(isDepthTexture)))
+        d.add(path, "isDepthTexture (Metal asserts)", "NO", "YES");
+    if (!among(asked.objects, "bufferStructType") && ((id (*)(id, SEL))objc_msgSend)(raw, @selector(bufferStructType)))
+        d.add(path, "bufferStructType (Metal asserts)", "nil", "an object");
+}
+
+inline void compare(id metal, id raw, const std::string &path, const Options &o, Differences &d);
+
+inline void compareList(NSArray *metal, NSArray *raw, const std::string &path, const Options &o, Differences &d)
+{
+    if (metal.count != raw.count)
+        return d.add(path, "count", number(metal.count) + " " + names(metal), number(raw.count) + " " + names(raw));
+    for (NSUInteger i = 0; i < metal.count; i++)
+        compare(metal[i], raw[i], path + "[" + std::to_string(i) + "]", o, d);
+}
+
+inline void compare(id metal, id raw, const std::string &path, const Options &o, Differences &d)
+{
+    if (!metal || !raw) {
+        if (metal != raw)
+            d.add(path, "presence", metal ? "an object" : "nil", raw ? "an object" : "nil");
         return;
+    }
     for (Class c : {[MTLArgument class],
                     [MTLStructType class],
                     [MTLStructMember class],
@@ -85,31 +217,79 @@ inline void expectSame(id metal, id raw, const std::string &path)
                     [MTLPointerType class],
                     [MTLTextureReferenceType class],
                     [MTLType class]})
-        EXPECT_EQ([metal isKindOfClass:c], [raw isKindOfClass:c]) << path << " " << class_getName(c);
+        if ([metal isKindOfClass:c] != [raw isKindOfClass:c])
+            d.add(path, std::string("isKindOfClass ") + class_getName(c), [metal isKindOfClass:c] ? "YES" : "NO",
+                  [raw isKindOfClass:c] ? "YES" : "NO");
     for (Protocol *p : {
              @protocol (MTLBinding), @protocol (MTLBufferBinding), @protocol (MTLTextureBinding),
                  @protocol (MTLThreadgroupBinding)
          })
-        EXPECT_EQ([metal conformsToProtocol:p], [raw conformsToProtocol:p]) << path << " " << protocol_getName(p);
+        if ([metal conformsToProtocol:p] != [raw conformsToProtocol:p])
+            d.add(path, std::string("conformsToProtocol ") + protocol_getName(p),
+                  [metal conformsToProtocol:p] ? "YES" : "NO", [raw conformsToProtocol:p] ? "YES" : "NO");
+    for (const std::string &s : everySelector())
+        if (const SEL sel = sel_registerName(s.c_str()); [metal respondsToSelector:sel] != [raw respondsToSelector:sel])
+            d.add(path, "respondsToSelector " + s, [metal respondsToSelector:sel] ? "YES" : "NO",
+                  [raw respondsToSelector:sel] ? "YES" : "NO");
     const Selectors selectors = selectorsOf(metal);
-    if (selectors.named)
-        EXPECT_TRUE([[metal name] isEqual:[raw name]] || (![metal name] && ![raw name])) << path;
-    for (const char *s : selectors.counts)
-        EXPECT_EQ(((NSUInteger (*)(id, SEL))objc_msgSend)(metal, sel_registerName(s)),
-                  ((NSUInteger (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)))
-            << path << " " << s;
-    for (const char *s : selectors.flags)
-        EXPECT_EQ(((BOOL (*)(id, SEL))objc_msgSend)(metal, sel_registerName(s)),
-                  ((BOOL (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)))
-            << path << " " << s;
+    if (selectors.named && ![[metal name] isEqual:[raw name]] && ([metal name] || [raw name]))
+        d.add(path, "name", [metal name] ? [[metal name] UTF8String] : "nil",
+              [raw name] ? [[raw name] UTF8String] : "nil");
+    for (const char *s : selectors.counts) {
+        const NSUInteger m = ((NSUInteger (*)(id, SEL))objc_msgSend)(metal, sel_registerName(s)),
+                         r = ((NSUInteger (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s));
+        if (m != r)
+            d.add(path, s, number(m), number(r));
+    }
+    for (const char *s : selectors.flags) {
+        const BOOL m = ((BOOL (*)(id, SEL))objc_msgSend)(metal, sel_registerName(s)),
+                   r = ((BOOL (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s));
+        if (m == r)
+            continue;
+        if (o.usedOneWay && !m && (!strcmp(s, "isUsed") || !strcmp(s, "isActive")))
+            d.usedOnlyByRaw.push_back({d.state, path, s, "NO", "YES"});
+        else
+            d.add(path, s, m ? "YES" : "NO", r ? "YES" : "NO");
+    }
+    if (selectors.binding)
+        neutral(raw, selectors, path, d);
     for (const char *s : selectors.objects)
-        expectSame(((id (*)(id, SEL))objc_msgSend)(metal, sel_registerName(s)),
-                   ((id (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)), path + "." + s);
+        compare(((id (*)(id, SEL))objc_msgSend)(metal, sel_registerName(s)),
+                ((id (*)(id, SEL))objc_msgSend)(raw, sel_registerName(s)), path + "." + s, o, d);
     if (!selectors.members)
         return;
-    expectSameList([metal members], [raw members], path + ".members");
-    for (id member in [metal members])
-        expectSame([metal memberByName:[member name]], [raw memberByName:[member name]], path + ".memberByName");
+    compareList([metal members], [raw members], path + ".members", o, d);
+    for (id member in [metal members]) {
+        const NSUInteger m = [[metal members] indexOfObject:[metal memberByName:[member name]]],
+                         r = [[raw members] indexOfObject:[raw memberByName:[member name]]];
+        if (m != r)
+            d.add(path, std::string("memberByName ") + ([member name].UTF8String ?: "nil"), "member " + number(m),
+                  r == NSNotFound ? "none" : "member " + number(r));
+    }
+}
+
+// A render state's stages Metal reflects: its vertex, fragment and tile bindings
+inline void compareRender(MTLRenderPipelineReflection *metal, id raw, const Options &o, Differences &d)
+{
+    compareList(metal.vertexBindings, [raw vertexBindings], "vertex", o, d);
+    compareList(metal.fragmentBindings, [raw fragmentBindings], "fragment", o, d);
+    compareList(metal.tileBindings, [raw tileBindings], "tile", o, d);
+}
+
+// Every difference between two lists of bindings, judged in full, as one test failure that summarises them
+inline void expectSameList(NSArray *metal, NSArray *raw, const std::string &path)
+{
+    Differences d;
+    compareList(metal, raw, path, {}, d);
+    EXPECT_TRUE(d.found.empty()) << d.found.size() << " differences\n" << Differences::summary(d.found);
+}
+
+inline void expectSameRender(MTLRenderPipelineReflection *metal, id raw, const std::string &path)
+{
+    Differences d;
+    d.state = path;
+    compareRender(metal, raw, {}, d);
+    EXPECT_TRUE(d.found.empty()) << d.found.size() << " differences\n" << Differences::summary(d.found);
 }
 
 }  // namespace reflection_compare

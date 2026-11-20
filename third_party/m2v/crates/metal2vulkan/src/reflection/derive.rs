@@ -15,7 +15,7 @@ use crate::air::abi::{
     StructInfo, StructRef,
 };
 use crate::air::error::{DiagName, Location};
-use crate::air::ir::{FuncId, Module, Value};
+use crate::air::ir::{AddrSpace, FuncId, Module, Value};
 use crate::error::{Error, Feature, Unsupported};
 use crate::metal::{BindingAccess, BindingType, DataType};
 
@@ -429,11 +429,17 @@ impl Cx<'_> {
         let untyped = !argument_buffer
             && b.layout.is_none()
             && ty.name.as_ref().is_some_and(|name| name.to_string() == "void");
+        // Metal answers a constant buffer's pointee aligned to at least 4 bytes (`constant half &`:
+        // 4, `device half *`: 2), and a void pointee without AIR layout metadata as 0 bytes aligned
+        // 4 in the constant address space and 0 in device memory, whatever the stage and access
+        // (measured on an M4 Max, macOS 27.2: kernels and fragment functions, `air.read`,
+        // `air.write` and `air.read_write`, and iOS 27 RenderBox's primitive_gradient_fragment).
+        let constant = b.space == AddrSpace::Constant;
         let (size, align) = if untyped && ty.size.is_none() && ty.align.is_none() {
-            // Metal exposes generated void buffers without AIR layout metadata as 0B/4B.
-            (0, 4)
+            (0, if constant { 4 } else { 0 })
         } else {
-            self.size_align(arg, ty)?
+            let (size, align) = self.size_align(arg, ty)?;
+            (size, if constant { align.max(4) } else { align })
         };
         let (data_type, detail) = if untyped {
             (DataType::None, TypeDetail::Plain)

@@ -6,6 +6,7 @@
 #import <Metal/Metal.h>
 #include <functional>
 #include <string>
+#include <vector>
 #include "compiler_request.h"
 
 namespace raw {
@@ -16,6 +17,10 @@ namespace switch_compiler {
 
 // The library `l` names, nil with `why`
 using Libraries = std::function<id<MTLLibrary>(const raw::RequestLibrary &l, std::string &why)>;
+
+// The function of each of `r`'s stages in stage order, of `libraries`, specialized as the stage names; false with `why`
+bool functions(const raw::CompileRequest &r, const Libraries &libraries, std::vector<id<MTLFunction>> &out,
+               std::string &why);
 
 // `p`'s record or refusal as the store keeps it (raw_cache.h's entry bytes), keyed under `stack`; TegraGM20BCompilerABI.h's
 // result

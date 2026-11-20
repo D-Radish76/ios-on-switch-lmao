@@ -4822,13 +4822,14 @@ facade_test(
     ],
 )
 
-# The facade's reflection objects of a blob (RawMetalReflection.mm) answer every selector of Metal's reflection classes as
-# m2v's frontend did of the same node table (NativeComputeReflection.h); a blob that is not one whole gives none
+# The facade's reflection objects of a blob (RawMetalReflectionObjects.mm) answer every selector of Metal's reflection
+# classes as this Mac's Metal does for the same compute, render and tile states, laid out as the translator lays them
+# out; a blob that is not one whole gives none
 facade_test(
     name = "raw_reflection_values_test",
     srcs = [
-        "NativeComputeReflection.h",
         "NativeMetalComputeArtifact.h",
+        "metal_reflection_blob.h",
         "raw_reflection_values_test.cpp",
         "reflection_blob_writer.h",
         "reflection_compare.h",
@@ -6210,7 +6211,7 @@ objcxx_units(
 
 # The engine as the plugin's units link it, each run a process of its own:
 #   compiler_compile_only_test  a record of every kind a sample of the corpus's states asks, and each sampled kernel's
-#                               reflection as this Mac's Metal gives it
+#                               and render state's reflection as this Mac's Metal gives it
 #   compiler_repro_test         one device failure's state (manual: it takes the state by --test_env)
 #   compiler_transient_test     one compile of the heaviest states at its peak
 [host_test(

@@ -48,6 +48,9 @@ struct ReflectionNode {
     // struct, array, texture reference, pointer (a binding's: its struct and pointer); kReflectionAbsent: none
     uint32_t children[4];
     uint32_t reserved;
+    // A binding's: 0 its MTLBindingType, 1 access, 2 index, 3 a buffer's data type, 5 and 6 a buffer's or threadgroup
+    // memory's alignment and size or a texture's type and data type, 7 its array length (MTLArgument arrayLength, 1 but
+    // for an array of textures)
     uint64_t values[8];
 };
 

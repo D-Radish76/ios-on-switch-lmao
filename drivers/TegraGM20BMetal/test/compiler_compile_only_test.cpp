@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: MIT
 // The system shader compiler's engine (compiler_engine.h, the translator alone: raw/runtime/RawOffline.h), run in a
 // process of its own: it makes a record of every kind a sample of the corpus's states asks for, render and compute,
-// refusing only the build's refused function, and each sampled kernel's reflection is the one this Mac's Metal gives the
-// same function.
+// refusing only the build's refused function, and each sampled kernel's and render state's reflection is the one this
+// Mac's Metal gives the same functions.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include "TegraGM20BCompilerABI.h"
 #include "bazel/testing/fresh_process.h"
 #include "compiler_requests.h"
 #include "../compiler/compiler_engine.h"
+#include "../compiler/compiler_record.h"
 #include "../raw/runtime/raw_cache.h"
+#include "../raw/runtime/raw_compile_request.h"
 #include "../raw/runtime/raw_pack.h"
+#include "../raw/runtime/RawCompileRequest.h"
 #include "../raw/runtime/RawMetalReflection.h"
 #include "../raw/runtime/raw_reflection_blob.h"
 #include "reflection_compare.h"
@@ -213,12 +216,94 @@ void reflectionsAsMetal()
     printf("%zu compute reflections compared\n", states.size());
 }
 
+// A render state as a difference names it: its functions and its key's hash
+std::string stateName(const raw::CompileRequest &r)
+{
+    const size_t f = raw::fragmentStage(r);
+    char hash[24];
+    snprintf(hash, sizeof hash, " #%016llx", (unsigned long long)raw::Pack::fnv(r.key.data(), r.key.size()));
+    return r.stages[0].function + "/" + (f == raw::kNoStage ? std::string("-") : r.stages[f].function) + hash;
+}
+
+// Each sampled render state's reflection as the shader compiler makes it (a Reflection request of the state's key) and
+// as this Mac's Metal gives it for the same functions and descriptor fields, selector by selector: vertex, fragment and
+// tile bindings, isUsed and isActive one way (reflection_compare.h Options). A state of linked functions is left out,
+// and so is one this Mac's Metal does not make (a function or a field of iOS alone), counted. It prints the GPU and OS
+// that answered for Metal, every state by name with its key's prefix, and the differences summarised.
+void renderReflectionsAsMetal()
+{
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    ASSERT_TRUE(device != nil);
+    printf("Metal of %s, %s\n", device.name.UTF8String,
+           NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String);
+    switch_compiler::Engine engine;
+    std::string why;
+    ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), root(), {}}, why)) << why;
+    const switch_compiler::Libraries libraries = compiler_test::deviceLibraries(device, root());
+    switch_compiler::SystemLibraries system(root());
+    std::set<std::string> states;
+    size_t unmade = 0;
+    reflection_compare::Differences differences;
+    const reflection_compare::Options usedOneWay{true};
+    for (raw::CompileRequest r : requests()) {
+        if (r.kind != raw::RequestKind::Render || raw::firstLinked(r) != r.stages.size() ||
+            !states.insert(r.key).second)
+            continue;
+        std::vector<id<MTLFunction>> made;
+        MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
+        MTLRenderPipelineReflection *metal = nil;
+        NSError *error = nil;
+        if (switch_compiler::functions(r, libraries, made, why)) {
+            raw::applyFields(r.fields, d);
+            d.vertexFunction = made[0];
+            if (const size_t f = raw::fragmentStage(r); f != raw::kNoStage)
+                d.fragmentFunction = made[f];
+        }
+        const std::string state = stateName(r);
+        if (!d.vertexFunction || ![device newRenderPipelineStateWithDescriptor:d
+                                                                       options:MTLPipelineOptionArgumentInfo
+                                                                    reflection:&metal
+                                                                         error:&error]) {
+            printf("not made by this Mac's Metal: %s %s: %s\n", state.c_str(), r.key.substr(0, 160).c_str(),
+                   error ? error.localizedDescription.UTF8String : why.c_str());
+            unmade++;
+            states.erase(r.key);
+            continue;
+        }
+        printf("compared %s %s\n", state.c_str(), r.key.substr(0, 160).c_str());
+        r.kind = raw::RequestKind::Reflection;
+        switch_compiler::Prepared p;
+        ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why)) << state << ": " << why;
+        std::string entry, blob;
+        ASSERT_EQ(engine.compile(p, entry, why), TegraGM20BCompileMade) << state << ": " << why;
+        bool reflected = false;
+        ASSERT_TRUE(raw::decodeReflectionEntry(entry, p.key, reflected, blob) && reflected) << state << ": " << blob;
+        id raw = rmReflectionOf(reinterpret_cast<const uint8_t *>(blob.data()), blob.size(), false);
+        ASSERT_TRUE(raw != nil) << state;
+        differences.state = state;
+        reflection_compare::compareRender(metal, raw, usedOneWay, differences);
+    }
+    EXPECT_FALSE(states.empty()) << "this Mac's Metal made none of the sample's render states";
+    printf("%zu render reflections compared, %zu states this Mac's Metal did not make, %zu differences; %zu bindings "
+           "raw answers used and Metal's compiler unused (not judged):\n%s",
+           states.size(), unmade, differences.found.size(), differences.usedOnlyByRaw.size(),
+           reflection_compare::Differences::summary(differences.usedOnlyByRaw).c_str());
+    EXPECT_TRUE(differences.found.empty()) << differences.found.size() << " differences\n"
+                                           << reflection_compare::Differences::summary(differences.found);
+}
+
 }  // namespace
 
 TEST(CompilerCompileOnly, AKernelsReflectionIsMetalsSelectorForSelector)
 {
     ASSERT_FALSE(root().empty());
     switch_ios::test::ExpectPassesInFreshProcess(reflectionsAsMetal);
+}
+
+TEST(CompilerCompileOnly, ARenderStatesReflectionIsMetalsSelectorForSelector)
+{
+    ASSERT_FALSE(root().empty());
+    switch_ios::test::ExpectPassesInFreshProcess(renderReflectionsAsMetal);
 }
 
 TEST(CompilerCompileOnly, ItMakesARecordOfEveryKindTheSampleAsks)

@@ -52,25 +52,6 @@ int32_t resultOf(raw::CompileOutcome outcome)
                                                      : TegraGM20BCompileFailed;
 }
 
-bool functions(const raw::CompileRequest &r, const Libraries &libraries, std::vector<id<MTLFunction>> &out,
-               std::string &why)
-{
-    std::vector<id<MTLLibrary>> made;
-    for (const raw::RequestLibrary &l : r.libraries) {
-        id<MTLLibrary> library = libraries(l, why);
-        if (!library)
-            return false;
-        made.push_back(library);
-    }
-    for (const raw::RequestStage &s : r.stages) {
-        id<MTLFunction> f = function(made[s.library], s, why);
-        if (!f)
-            return false;
-        out.push_back(f);
-    }
-    return true;
-}
-
 // `p`'s descriptor over the functions of `libraries`, checked to key as `p` was keyed
 MTLRenderPipelineDescriptor *descriptor(const Prepared &p, const Libraries &libraries, uint64_t stack, std::string &why)
 {
@@ -192,6 +173,25 @@ int32_t reflection(const Prepared &p, const Libraries &libraries, uint64_t stack
 }
 
 }  // namespace
+
+bool functions(const raw::CompileRequest &r, const Libraries &libraries, std::vector<id<MTLFunction>> &out,
+               std::string &why)
+{
+    std::vector<id<MTLLibrary>> made;
+    for (const raw::RequestLibrary &l : r.libraries) {
+        id<MTLLibrary> library = libraries(l, why);
+        if (!library)
+            return false;
+        made.push_back(library);
+    }
+    for (const raw::RequestStage &s : r.stages) {
+        id<MTLFunction> f = function(made[s.library], s, why);
+        if (!f)
+            return false;
+        out.push_back(f);
+    }
+    return true;
+}
 
 int32_t makeReflectionEntry(const Prepared &p, const Libraries &libraries, uint64_t stack, std::string &entry,
                             std::string &why)
