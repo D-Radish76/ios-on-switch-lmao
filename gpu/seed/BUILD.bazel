@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("//bazel/lint:defs.bzl", "lint_files")
 load(":defs.bzl", "metal_seed", "seed_raw_pack", "seed_tree", "shader_crawl")
-load(":tools.bzl", "raw_tools", "seed_tools", "tools_archive")
+load(":tools.bzl", "seed_tools", "tools_archive")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -29,15 +29,6 @@ alias(
     }),
 )
 
-# The raw pack's tools: the release's prebuilt shader tools, or these (no m2v or NVK in them)
-alias(
-    name = "default_raw_tools",
-    actual = select({
-        "//install:from_release": "@switch_release//:shader_tools",
-        "//conditions:default": ":local_raw_tools",
-    }),
-)
-
 alias(
     name = "default_base",
     actual = select({
@@ -58,37 +49,6 @@ string_flag(
 
 seed_tools(
     name = "local_tools",
-    hdrs = [
-        METAL + ":frontend_headers",
-        GM20B_METAL + ":precompile/PrecompileCompute.h",
-        GM20B_METAL + ":precompile/PrecompileInputs.h",
-        "//drivers/TegraGM20B:TegraGM20BJobABI.h",
-        "//kits/SwitchRefusal:SwitchRefusal.h",
-        "//kits/SwitchRefusal:SwitchRefusalSite.h",
-    ],
-    abi_header = "//drivers/TegraGM20B:TegraGM20BABI.h",
-    compile = "//third_party/mesa/src/nouveau/switch_compile:host",
-    context_header = "//kits/SwitchGM20BEmit:context",
-    frontend = METAL + ":NativeBridgeMetalFrontend.mm",
-    host_bridge = "//gpu:bridge_host",
-    metal_abi = METAL + "/abi:MetalABI.h",
-    metal_header = METAL + ":NativeBridgeMetalFrontend.h",
-    mock_iokit = GM20B_METAL + ":precompile/mock_iokit.c",
-    nvk = "//gpu/nvk:dylib",
-    nvk_sources = [
-        "//gpu/nvk:dylib_source",
-        "//gpu/nvk:twin_source",
-    ],
-    precompile = GM20B_METAL + ":precompile/precompile.mm",
-    raw_generator = GM20B_METAL + ":raw/pack/rawpack.py",
-    raw_srcs = [GM20B_METAL + ":raw_stack_sources"],
-    stack = "//gpu:raw_stack",
-    translate = "//gpu:translate_host",
-    twin = "//gpu/nvk:twin",
-)
-
-raw_tools(
-    name = "local_raw_tools",
     compile = "//third_party/mesa/src/nouveau/switch_compile:host",
     context_header = "//kits/SwitchGM20BEmit:context",
     metal_abi = METAL + "/abi:MetalABI.h",
@@ -126,7 +86,6 @@ metal_seed(
     crawl = ":crawl",
     depth = ":depth",
     device_libraries = "@gpu_device_data//:libraries",
-    records = "@gpu_device_data//:records",
     replies = "@gpu_device_data//:replies",
     tags = ["manual"],
     tools = ":tools",
@@ -144,7 +103,7 @@ seed_raw_pack(
     device_libraries = "@gpu_device_data//:libraries",
     generator = GM20B_METAL + ":raw/pack/rawpack.py",
     tags = ["manual"],
-    tools = ":default_raw_tools",
+    tools = ":default_tools",
 )
 
 seed_tree(

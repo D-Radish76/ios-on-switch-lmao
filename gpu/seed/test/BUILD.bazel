@@ -68,10 +68,6 @@ RAW_TOOLS = [
     "device/1.metallib",
     "crawl/inventory.json",
     "base/TegraGM20BMetal.bundle/Info.plist",
-    "tools/precompile",
-    "tools/libmock_iokit.dylib",
-    "tools/libvulkan_nouveau.dylib",
-    "tools/libvulkan_nouveau.dylib.source",
     "tools/MANIFEST.json",
     "corpus/corpus.log",
     "app/SwitchHWTest.ipa",
@@ -85,13 +81,7 @@ filegroup(
 
 filegroup(
     name = "tools",
-    srcs = [
-        ":tools/MANIFEST.json",
-        ":tools/libmock_iokit.dylib",
-        ":tools/libvulkan_nouveau.dylib",
-        ":tools/libvulkan_nouveau.dylib.source",
-        ":tools/precompile",
-    ] + [":tools/raw/" + name for name in RAW_TOOLS],
+    srcs = [":tools/MANIFEST.json"] + [":tools/raw/" + name for name in RAW_TOOLS],
     tags = ["manual"],
 )
 

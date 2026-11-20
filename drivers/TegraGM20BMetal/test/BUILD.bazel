@@ -2136,7 +2136,7 @@ raw_directcheck(
     crawl = "//gpu/seed:crawl",
     metal_abi = "//drivers/NativeMetal/abi:MetalABI.h",
     pack = "//gpu/seed:raw_pack",
-    tools = "//gpu/seed:local_raw_tools",
+    tools = "//gpu/seed:local_tools",
     translate = "//gpu:translate_host",
 )
 

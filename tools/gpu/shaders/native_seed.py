@@ -3,13 +3,36 @@
 import argparse
 import hashlib
 import json
+import os
 import re
+import shutil
 import subprocess
 import tempfile
 from collections import Counter
 from pathlib import Path
 
-from tools.gpu.shaders.precompile import DERIVED, place, store_view
+DERIVED = '# derived'
+
+
+def store_view(store: Path, root: Path, by_sha: dict[str, str], embedded: list[Path]) -> None:
+    """Lay out the library store native-seed reads: root/ and data/<sha256>.metallib."""
+    (store / 'data').mkdir(parents=True)
+    (store / 'root').symlink_to(root.absolute())
+    for digest, path in by_sha.items():
+        (store / 'data' / (digest + '.metallib')).symlink_to(Path(path).absolute())
+    for header in embedded:
+        text = header.read_text()
+        library = bytes(int(b, 16) for b in re.findall(r'0x([0-9a-fA-F]{2})', text[text.index('{') : text.rindex('}')]))
+        (store / 'data' / (hashlib.sha256(library).hexdigest() + '.metallib')).write_bytes(library)
+
+
+def place(source: Path, target: Path) -> None:
+    """Put a tool where the run expects it: a hard link to the input, a copy where the file system refuses one."""
+    try:
+        os.link(os.path.realpath(source), target)
+    except OSError:
+        shutil.copyfile(source, target)
+        target.chmod(0o755)
 
 
 def run(command: list[Path | str], work: Path) -> None:

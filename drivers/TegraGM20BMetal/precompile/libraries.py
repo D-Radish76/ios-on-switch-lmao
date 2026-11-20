@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""The Metal libraries the shader cache precompile (precompile.mm) loads on the host.
+"""The Metal libraries the native seed (raw/pack/native_seed.mm) loads on the host.
 
-The seed build (tools/gpu/seed.py) lays them out as the store precompile.mm reads:
+The seed build (tools/gpu/shaders/native_seed.py) lays them out as the store native-seed reads:
 
   <store>/root/<device path>        a library the device loaded from a file (the journal's lib=<path>): the IPSW's
                                     volumes', crawled by //gpu/seed:crawl (tools/gpu/shaders/crawl.py)
@@ -19,7 +19,7 @@ usage: libraries.py pins <mounted OS volume>
        libraries.py resolve <names.json> <corpus.log> <out.log>
            the corpus with lib=<path> added to the stages of journal lines from before the journal named libraries
            (no lib=) whose function names are in exactly one library (QuartzCore's names stay QuartzCore's, the
-           precompile's default; a line whose names are in two or three is replayed in each), and the coverage table:
+           native seed's default; a line whose names are in two or three is replayed in each), and the coverage table:
            per library, lines named and resolved
 
 A journal line names its library from the frontend that writes lib= on; an older line's library is only guessed by a

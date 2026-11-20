@@ -14,7 +14,8 @@ and eject the card before it goes back into the Switch.
 What it stages, on the live volume (as vendor/unixnu/scripts/add-gpu-plugin-data.py --publish did on a seed image):
   * <Data>/ngpu/addons/TegraGM20BMetal.bundle. The kernel shows /private/var/ngpu/addons over
     /System/Library/Extensions;
-  * <Data>/ngpu/addons/TegraGM20BMetal.m2v-seed beside it, when the build has one (the shader cache seed);
+  * <Data>/ngpu/addons/TegraGM20BMetal.m2v-seed beside it, when the build has one (the Metal compiler's replies the
+    shader compiler reads);
   * <Data>/ngpu/addons/TegraGM20BMetal.raw beside it (the raw GM20B path's pipeline pack: a process that cannot read
     it gets no Metal device);
   * CAEnableDeepFramebuffer, CAEnableFramebufferCompression and CAEnableIOSurfaceCompression = false merged into the

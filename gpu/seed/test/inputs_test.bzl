@@ -1,16 +1,13 @@
 """Analysis tests of what the seed's actions are keyed on, over stand-in inputs (no IPSW is fetched):
 
 - the crawl's names read the crawled tree and the tool alone;
-- a bucket's compile reads its bucket's lines, the libraries and the three tools that make code: not the corpus, the
-  GPU bundle, the tools' manifest or the raw pack's tools, so a corpus edit reaches only the buckets it rewrites and a
-  plugin edit reaches none; it reports the NVK twin unused, keyed on the twin's compiler identity instead;
-- the join reads the buckets' indexes and reports, never their packs or the tools;
+- the replies' layout reads neither the tools nor the GPU bundle;
 - the bundle check is a validation action, so the GPU bundle is no input of anything that makes the seed;
 - the raw pack's probes read their bucket's states, directbucket.py, directpack and the mock (bucket 0 also own.metallib
   and context.log), the libraries and their own tool, and nothing else: not the stack key, the generator's other
   modules, rawpack.py's other steps or the tools they do not run, so an edit to any of those reruns no probe; only the
   stamp reads the tools' manifest (the stack key);
-- a native bucket reads native-seed and the mock of the raw tools, none of the others, and no NVK;
+- a native bucket reads native-seed and the mock of the raw tools, none of the others;
 - of a crawl with our own apps, only the last bucket (the apps' states) reads the tree with their libraries: the others
   read the tree without them, so an app's shader edit reruns one probe.
 """
@@ -37,23 +34,8 @@ _crawl_test = analysistest.make(_crawl_impl)
 
 def _seed_impl(ctx):
     env = analysistest.begin(ctx)
-    buckets = _actions(env, "MetalSeedBucket")
-    asserts.equals(env, 4, len(buckets))
-    for i, bucket in enumerate(buckets):
-        names = _names(bucket)
-        lines = [p for p in names if p.endswith(".log")]
-        asserts.equals(env, 1, len(lines), "one bucket's lines")
-        asserts.true(env, lines[0].endswith("bucket-00{}.log".format(i)), lines[0])
-        for forbidden in ("corpus.log", "/base/", "MANIFEST.json", "/raw/"):
-            asserts.equals(env, [], [p for p in names if forbidden in p], "a bucket's inputs naming " + forbidden)
-        asserts.true(env, [p for p in names if p.endswith("libvulkan_nouveau.dylib.source")] != [], "the identity")
-        unused = [f.short_path for f in bucket.outputs.to_list() if f.extension == "unused"]
-        asserts.equals(env, 1, len(unused), "the unused inputs list")
-        argv = bucket.argv
-        asserts.equals(env, argv[argv.index("--nvk") + 1], argv[argv.index("--unused") + 1], "the twin is unused")
-    (join,) = _actions(env, "MetalSeedJoin")
-    asserts.equals(env, [], [p for p in _names(join) if p.endswith(".pack")], "the join reads no pack")
-    asserts.equals(env, [], [p for p in _names(join) if "/base/" in p or "/tools/" in p], "the join reads no tools")
+    (replies,) = _actions(env, "MetalSeedReplies")
+    asserts.equals(env, [], [p for p in _names(replies) if "/base/" in p or "/tools/" in p], "the replies read no tools")
     (check,) = _actions(env, "MetalSeedCheck")
     asserts.true(env, [p for p in _names(check) if "/base/" in p] != [], "the bundle is checked")
     validation = analysistest.target_under_test(env)[OutputGroupInfo]._validation.to_list()
@@ -74,7 +56,6 @@ def _seed_impl(ctx):
             sorted([p for p in names if "/tools/raw/" in p]),
             "native compilation reads native-seed and the mock of the raw tools",
         )
-        asserts.equals(env, [], [p for p in names if "libvulkan_nouveau" in p], "native compilation takes no NVK")
         asserts.equals(
             env,
             [],
@@ -126,7 +107,6 @@ def _raw_impl(ctx):
         asserts.equals(env, ["bucket{}.log".format(i)], [p.rpartition("/")[2] for p in lines], "one bucket's states")
         asserts.equals(env, [], [p for p in names if not _probe_read(p, i)], "bucket {} reads beyond its records' makers".format(i))
         asserts.equals(env, [], [p for p in names if p.endswith("MANIFEST.json")], "a probe reads no stack key")
-        asserts.equals(env, [], [p for p in names if p.endswith("libvulkan_nouveau.dylib")], "no NVK")
         for library in (
             "crawl/tree/data/0.metallib",
             "device/1.metallib",

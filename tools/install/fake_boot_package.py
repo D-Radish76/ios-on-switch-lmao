@@ -23,9 +23,9 @@ def gpu_bundle(out: Path) -> None:
     bundle.mkdir(parents=True)
     for name in ('TegraGM20BMetal', 'Info.plist'):
         (bundle / name).write_bytes(b'fake ' + name.encode())
-    seed = out / 'ngpu/addons/TegraGM20BMetal.m2v-seed/shared/v1'
-    seed.mkdir(parents=True)
-    (seed / 'SEED').write_text('fake seed\n')
+    replies = out / 'ngpu/addons/TegraGM20BMetal.m2v-seed/shared/msl'
+    replies.mkdir(parents=True)
+    (replies / ('0' * 64 + '.reply')).write_bytes(b'fake reply')
     (out / 'TegraGM20BMetal.trustcache').write_bytes(bytes(24))
 
 

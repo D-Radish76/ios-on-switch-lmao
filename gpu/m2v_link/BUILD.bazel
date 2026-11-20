@@ -47,8 +47,6 @@ py_test(
         for name in BINARIES
     ],
     data = [":deps_" + name for name in BINARIES] + ["deps_%s.txt" % name for name in BINARIES],
-    # m2v: the pack tools' genquery reaches the packages --config=nom2v deletes until the cut; the cut drops the tag
-    tags = ["m2v"],
 )
 
 # The raw pack's refused states for the configured IPSW kind, against a pack report built elsewhere (the pack is too

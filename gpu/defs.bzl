@@ -388,17 +388,14 @@ def _gpu_stage_impl(ctx):
     part = ctx.actions.declare_file(ctx.attr.name + ".stage.seed")
     args = ctx.actions.args()
     args.add("--part")
-    for flag, tree in (("--seed", seed.meta), ("--raw", ctx.file.raw), ("--native", seed.native)):
+    for flag, tree in (("--seed", seed.replies), ("--raw", ctx.file.raw), ("--native", seed.native)):
         args.add(flag, tree.path)
         args.add(flag + "-rlocation", _rlocation(ctx, tree))
-    for pack in seed.packs:
-        args.add("--pack", pack)
-        args.add("--pack-rlocation", _rlocation(ctx, pack))
     args.add("--out", part)
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = [seed.meta, seed.native, ctx.file.raw] + seed.packs,
+        inputs = [seed.replies, seed.native, ctx.file.raw],
         outputs = [part],
         mnemonic = "GpuStageSeed",
         progress_message = "Listing the shader seed and the raw pack for the Data volume",
@@ -419,7 +416,7 @@ def _gpu_stage_impl(ctx):
         mnemonic = "GpuStageManifest",
         progress_message = "Listing the GPU bundle, the shader seed and the raw pack for the Data volume",
     )
-    files = [manifest, base, seed.meta, seed.native, ctx.file.raw] + seed.packs
+    files = [manifest, base, seed.replies, seed.native, ctx.file.raw]
     return [DefaultInfo(files = depset([manifest]), runfiles = ctx.runfiles(files = files))]
 
 gpu_stage = rule(

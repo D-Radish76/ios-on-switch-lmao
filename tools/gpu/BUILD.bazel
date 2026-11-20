@@ -38,22 +38,13 @@ py_test(
     ],
 )
 
-py_library(
-    name = "nvk_twin",
-    srcs = ["nvk_twin.py"],
-    visibility = ["//tools/gpu/shaders:__pkg__"],
-    deps = ["//tools/common:macho"],
-)
-
 py_binary(
     name = "seed",
     srcs = ["seed.py"],
-    deps = [":nvk_twin"],
 )
 
-# Runs the pack generator (--generator: drivers/TegraGM20BMetal/raw/pack/rawpack.py, by path) with the twin seed.py
-# made. The generator's modules are each step's own inputs, not this tool's runfiles: a module edit reruns only the
-# steps that run it.
+# Runs the pack generator (--generator: drivers/TegraGM20BMetal/raw/pack/rawpack.py, by path). The generator's modules
+# are each step's own inputs, not this tool's runfiles: a module edit reruns only the steps that run it.
 py_binary(
     name = "rawpack",
     srcs = ["rawpack.py"],
