@@ -57,7 +57,6 @@ void RenderEncoder::continuePass(uint8_t stores)
     for (uint32_t i = 0; i < 8; ++i)
         pass_.color[i].store = stores & (1u << i);
     pipeline_ = nullptr;
-    selectorId_ = 0;
     for (auto &stage : bufs_)
         for (auto &binding : stage)
             binding = {};

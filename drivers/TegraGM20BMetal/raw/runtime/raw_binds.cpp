@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 // See raw_gpu.h (RenderEncoder's buffer, viewport, scissor and state setters).
 #include "raw_lock.h"
-#include "drivers/TegraGM20BMetal/precompile/ca-selectors/raw_ca_selector_layout.h"
 #include "raw_gpu.h"
 
 #include <algorithm>
@@ -23,8 +22,6 @@ void RenderEncoder::setBytes(int stage, uint32_t slot, const void *bytes, uint32
     memset(m + length, 0, (chunk ? chunk : kUboChunk) - length);
     bufs_[stage][slot] = {va, length, nullptr, 0,
                           m};  // m2v binds the Metal length (its upload chunks are 256-byte aligned)
-    if (kCaSelectorConfigs && stage == 2 && slot == kCaSelectorSlot)
-        selectorId_ = pipeline_ && pipeline_->selectorLayout() ? caSelectorId(m, length) : UINT16_MAX;
     bufs_[stage][slot].resourceVa = dev_->upload_.bo.va;
     bufs_[stage][slot].named = true;
     bufferMoved(stage, slot);
@@ -41,8 +38,6 @@ void RenderEncoder::setBytesAt(int stage, uint32_t slot, uint64_t va, uint32_t l
     if (old.va == va && old.size == length && !old.buffer && old.cpu == cpu && old.resourceVa == resourceVa)
         return;
     bufs_[stage][slot] = {va, length, nullptr, 0, cpu, resourceVa, allocation != nullptr};
-    if (kCaSelectorConfigs && stage == 2 && slot == kCaSelectorSlot)
-        selectorId_ = pipeline_ && pipeline_->selectorLayout() ? caSelectorId(cpu, length) : UINT16_MAX;
     if (allocation) {
         cb_->use(*allocation, false);
         if (allocation->hostVisible && !allocation->wc)
@@ -55,8 +50,6 @@ void RenderEncoder::setBuffer(int stage, uint32_t slot, const Buffer *b, uint64_
 {
     if (slot >= 31 || stage < 1 || stage > 2)
         return;
-    if (stage == 2 && slot == kCaSelectorSlot)
-        selectorId_ = 0;
     const Bound next =
         b ? Bound{b->va + offset, uint32_t(std::min<uint64_t>(b->length - std::min(offset, b->length), 0xffffffffu)), b,
                   offset, b->cpu && offset < b->length ? b->cpu + offset : nullptr}

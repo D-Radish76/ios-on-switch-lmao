@@ -403,7 +403,8 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
         x[0] = std::min(x[0], xj[0]), x[1] = std::max(x[1], xj[1]);
         y[0] = std::min(y[0], yj[0]), y[1] = std::max(y[1], yj[1]);
     }
-    Pipeline *prepared = dev_->variant(*pl, bindingFacts(*pl) | (rot_.turned() ? AssumeTurned : 0u), selectorId_);
+    const uint32_t facts = bindingFacts(*pl);
+    Pipeline *prepared = dev_->variant(*pl, facts | (rot_.turned() ? AssumeTurned : 0u), selectorId_);
     if (prepared->selectorVariant)
         pl = prepared;
     RAW_ENCODE_BEGIN(geometrySpan, Geometry);

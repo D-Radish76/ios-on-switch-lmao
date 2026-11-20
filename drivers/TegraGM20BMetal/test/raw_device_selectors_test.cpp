@@ -233,6 +233,23 @@ TEST_F(Selectors, ImmutableBindingsSelectPreparedProgramsAndGpuBuffersRemainDyna
     }
 }
 
+// The config is read where the draw reads what its bindings moved, never as it is bound: bytes bound by address and
+// written before the draw select the variant of what they hold at the draw
+TEST_F(Selectors, TheConfigIsReadAtTheDrawNotAtTheBind)
+{
+    raw::CommandBuffer *cb = dev.begin();
+    ASSERT_NE(cb, nullptr);
+    raw::RenderEncoder *e = encoder(*cb);
+    e->setBytes(2, raw::kCaSelectorSlot, config.data(), uint32_t(config.size()));
+    draw(*e);
+    memset(buffer.cpu, 0, config.size());
+    e->setBytesAt(2, raw::kCaSelectorSlot, buffer.va, uint32_t(config.size()), buffer.cpu, nullptr);
+    memcpy(buffer.cpu, config.data(), config.size());
+    draw(*e);
+    submit(*cb, *e);
+    EXPECT_EQ(fragmentPrograms().size(), 1u) << "the second draw selected from the bytes as they were bound";
+}
+
 TEST_F(Selectors, UnrelatedUniformBindingsKeepThePreparedSelection)
 {
     raw::CommandBuffer *cb = dev.begin();

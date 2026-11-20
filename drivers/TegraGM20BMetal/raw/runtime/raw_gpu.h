@@ -678,15 +678,6 @@ struct Pipeline {
     uint32_t selectorAssume = 0;
     bool selectorVariant = false;
 
-    bool selectorLayout() const
-    {
-        const Pipeline *forms[] = {this, barrierTwin, blendTwin, fetchFree};
-        for (const Pipeline *form : forms)
-            if (form && (form->selectorCount || (form->strideTwin && form->strideTwin->selectorCount)))
-                return true;
-        return false;
-    }
-
     // DEVELOPMENT: a Core Animation state's name, whose draws log their form and quads (RenderEncoder::probeDraw): a solid
     // fill into its three-colour pass (..Xmw_A3Xhfc, the scroll edge keyline's state: fillState) its first draws and thin
     // ones always, any other state its thin ones while the keyline probe is armed (armKeylineProbe); the probe's generation
@@ -1398,6 +1389,9 @@ private:
                  const char **why);
     // `pl`'s split twin where the draw is large enough for it to save time and its prologue can read what the draw binds
     Pipeline *splitTwin(Pipeline *pl, WrittenRegion::Analysis &analysis) const;
+    // the facts of a draw of `pl` its bindings decide, and with them selectorId_: the Core Animation config bound at
+    // fragment slot kCaSelectorSlot as `pl`'s selector variants name it (0: none), read where the bindings moved since
+    // the last draw, never as one is bound
     uint32_t bindingFacts(const Pipeline &pl);
     uint16_t selectorId_ = 0;
     const Pipeline *factsPipeline_ = nullptr;

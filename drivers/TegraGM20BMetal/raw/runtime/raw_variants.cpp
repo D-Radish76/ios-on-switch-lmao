@@ -23,10 +23,6 @@ void RenderEncoder::setPipeline(Pipeline *p)
     if (pipeline_ == p)
         return;
     pipeline_ = p;
-    if (kCaSelectorConfigs && selectorId_ == UINT16_MAX && p && p->selectorLayout()) {
-        const Bound &bound = bufs_[2][kCaSelectorSlot];
-        selectorId_ = bound.buffer ? 0 : caSelectorId(bound.cpu, bound.size);
-    }
 }
 
 bool Device::placeRequiredVariants(const PackPipeline &pp, uint64_t &slm)
@@ -188,6 +184,8 @@ uint32_t RenderEncoder::bindingFacts(const Pipeline &pl)
     factsPipeline_ = &pl;
     factsRevision_ = bindingRevision_;
     facts_ = facts;
+    const Bound &config = bufs_[2][kCaSelectorSlot];
+    selectorId_ = pl.selectorCount && !config.buffer ? caSelectorId(config.cpu, config.size) : 0;
     return facts;
 }
 
