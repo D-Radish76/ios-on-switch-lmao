@@ -345,12 +345,11 @@ void rmPassFailed(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, NSStrin
     failCommandBuffer(cb, why, code, p);
 }
 
-void rmCallInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule)
+void rmCallInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule, MTLCommandBufferError code)
 {
     if (!predLogged(p))
         logPred(p, a, b, @(rule));
-    rmPassFailed(cb, p, a, b, [NSString stringWithFormat:@"%s: Metal's validation error", rule],
-                 MTLCommandBufferErrorInvalidResource);
+    rmPassFailed(cb, p, a, b, [NSString stringWithFormat:@"%s: Metal's validation error", rule], code);
 }
 
 void rmPassInvalid(RMCommandBuffer *cb, RMPred p, uint64_t a, uint64_t b, const char *rule)

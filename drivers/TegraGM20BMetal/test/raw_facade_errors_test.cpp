@@ -9,7 +9,8 @@
 // mode the device has no report page for fails it OutOfMemory. A state of another depth format than its pass's is
 // drawn against the pass's attachment, as Apple's GPU draws it. A command buffer whose later job the kernel refused after
 // earlier ones ran counts as not run; a refused reset of indirect commands wrote none of their words. Each failed
-// command buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither.
+// command buffer moves `failed` and its predicate's failed.<predicate> by one; a completed one moves neither. A GPU
+// address fault, the kernel's or one an M4 Max's GPU takes on a call, fails as Metal reports it.
 #include "raw_facade_harness.h"
 #include "../raw/runtime/RawMetalIndirect.h"
 #include "../raw/runtime/raw_batch.h"
@@ -18,6 +19,8 @@
 #include "bazel/testing/fresh_process.h"
 
 #include <gtest/gtest.h>
+#include <condition_variable>
+#include <mutex>
 #include <string>
 
 // A plain event this device did not make: none of a shared event's selectors
@@ -657,7 +660,86 @@ void indicesOffTheirTypeRoundDown()
     }
 }
 
+// A render execute whose range the GPU would read off 4 bytes, which an M4 Max's GPU faults on: its command buffer fails
+// as Metal reports that fault (MTLCommandBufferErrorPageFault, IOGPUCommandQueueErrorDomain 11 beneath it), named
+// call.icb
+void executeRangeOffFourBytesFaults()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    MTLIndirectCommandBufferDescriptor *d = [MTLIndirectCommandBufferDescriptor new];
+    d.commandTypes = MTLIndirectCommandTypeDraw;
+    d.inheritPipelineState = YES;
+    d.inheritBuffers = YES;
+    id<MTLIndirectCommandBuffer> icb = [o.device newIndirectCommandBufferWithDescriptor:d maxCommandCount:4 options:0];
+    id<MTLBuffer> range = [o.device newBufferWithLength:64 options:0];
+    ASSERT_TRUE(icb != nil && range != nil);
+    NSDictionary *before = counters(o.device);
+    id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:pass(target(o.device, kPacked))];
+    [e setRenderPipelineState:o.state];
+    [e executeCommandsInBuffer:icb indirectBuffer:range indirectBufferOffset:2];
+    [e endEncoding];
+    expectError(o.device, before, cb, "call.icb", MTLCommandBufferErrorPageFault);
+    NSError *beneath = cb.error.userInfo[NSUnderlyingErrorKey];
+    EXPECT_EQ(text(beneath.domain), "IOGPUCommandQueueErrorDomain");
+    EXPECT_EQ(beneath.code, 11);
+}
+
+// The kernel killing the channel for an MMU fault (TegraGM20BAbiFence error 1) with a command buffer in flight: it fails
+// with the code, description and underlying error an M4 Max's GPU address fault carries
+void anMmuFaultInFlightIsAPageFault()
+{
+    const Opened o = openPacked();
+    ASSERT_TRUE(o.device != nil && o.state != nil);
+    id<MTLCommandQueue> queue = [o.device newCommandQueue];
+    drawnOnce(queue, o);
+    // the completion thread's wait held until the kill, so it meets the kill and no wait it took as refused
+    static std::mutex held;
+    static std::condition_variable changed;
+    static bool killed = false;
+    kernel_model::model.blockUntil = [](uint32_t, uint32_t) {
+        std::unique_lock<std::mutex> l(held);
+        changed.wait(l, [] { return killed; });
+        return true;
+    };
+    kernel_model::model.inFlight = true;
+    id<MTLCommandBuffer> cb = [queue commandBuffer];
+    drawInto(cb, pass(target(o.device, kPacked)), o.state);
+    [cb commit];
+    [cb waitUntilScheduled];
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        for (uint32_t s = 0; s < kernel_model::kSlots; s++)
+            if (kernel_model::model.slots[s].uid && !kernel_model::model.slots[s].foreign)
+                kernel_model::model.kill(s + 1, 1);
+    }
+    {
+        std::lock_guard<std::mutex> l(held);
+        killed = true;
+    }
+    changed.notify_all();
+    [cb waitUntilCompleted];
+    EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
+    EXPECT_EQ(cb.error.code, MTLCommandBufferErrorPageFault) << text(cb.error);
+    EXPECT_EQ(text(cb.error.localizedDescription),
+              "Caused GPU Address Fault Error (0000000b:kIOGPUCommandBufferCallbackErrorPageFault)");
+    NSError *beneath = cb.error.userInfo[NSUnderlyingErrorKey];
+    EXPECT_EQ(text(beneath.domain), "IOGPUCommandQueueErrorDomain");
+    EXPECT_EQ(beneath.code, 11);
+}
+
 }  // namespace
+
+TEST(RawFacadeErrors, ARenderExecutesRangeReadOffFourBytesFailsAsAPageFault)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(executeRangeOffFourBytesFaults);
+}
+
+TEST(RawFacadeErrors, AnMmuFaultInFlightFailsItsCommandBufferAsMetalReportsAPageFault)
+{
+    switch_ios::test::ExpectPassesInFreshProcess(anMmuFaultInFlightIsAPageFault);
+}
 
 TEST(RawFacadeErrors, IndicesOfAnIndirectCommandOffTheirTypeAreReadFromTheOffsetRoundedDown)
 {

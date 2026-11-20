@@ -317,11 +317,21 @@ static void deliverCompletion(RMCommandBuffer *cb)
         dispatch_async_f(q ?: followingRootQueue(), context, completeHeld);
 }
 
+// What Metal's errors of a GPU address fault carry beneath them (an M4 Max, macOS 27.2.1: a render execute's range read
+// off 4 bytes)
+static NSError *pageFaultUnderlying()
+{
+    return [NSError errorWithDomain:@"IOGPUCommandQueueErrorDomain" code:11 userInfo:nil];
+}
+
 void failCommandBuffer(RMCommandBuffer *cb, NSString *reason, MTLCommandBufferError code, RMPred p)
 {
     NSError *error = [NSError errorWithDomain:MTLCommandBufferErrorDomain
                                          code:code
-                                     userInfo:@{NSLocalizedDescriptionKey : reason}];
+                                     userInfo:code == MTLCommandBufferErrorPageFault
+                                                  ? @{NSLocalizedDescriptionKey : reason,
+                                                      NSUnderlyingErrorKey : pageFaultUnderlying()}
+                                                  : @{NSLocalizedDescriptionKey : reason}];
     // failed as it records: the worker encodes no more of it ahead. One its commit or the worker fails is judged at its
     // turn, which gives back its encode ahead first (rmPipelineFailed).
     if (!cb->_committed.load(std::memory_order_relaxed))
@@ -433,12 +443,20 @@ static void finished(RMCommandBuffer *cb)
 }
 
 // A command buffer the kernel killed the channel of: as Metal reports the GPU's own failures (TegraGM20BAbiFence error:
-// 1 MMU fault, 4 timeout)
+// 1 MMU fault, 4 timeout), a fault with the description and underlying error an M4 Max's carries
 static NSError *killError(uint32_t kernelError)
 {
-    const MTLCommandBufferError code = kernelError == 1   ? MTLCommandBufferErrorPageFault
-                                       : kernelError == 4 ? MTLCommandBufferErrorTimeout
-                                                          : MTLCommandBufferErrorInternal;
+    if (kernelError == 1)
+        return [NSError
+            errorWithDomain:MTLCommandBufferErrorDomain
+                       code:MTLCommandBufferErrorPageFault
+                   userInfo:@{
+                       NSLocalizedDescriptionKey :
+                           @"Caused GPU Address Fault Error (0000000b:kIOGPUCommandBufferCallbackErrorPageFault)",
+                       NSUnderlyingErrorKey : pageFaultUnderlying()
+                   }];
+    const MTLCommandBufferError code =
+        kernelError == 4 ? MTLCommandBufferErrorTimeout : MTLCommandBufferErrorInternal;
     return [NSError errorWithDomain:MTLCommandBufferErrorDomain code:code userInfo:nil];
 }
 
