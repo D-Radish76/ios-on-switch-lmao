@@ -337,7 +337,8 @@ static inline void tegra_vic_matrix_ycc_to_rgb(uint32_t standard, bool full, con
 
 // A luminance-only destination ('L008'): the source's full-range luma in every channel. VIC writes L8 from the pipeline
 // with fixed weights, (5 R + 9 G + 2 B) / 16 (TRM 15.3.14 "Luminance Conversion", p.711-712), which give back any
-// value held in all three channels. An RGB source's luma is the destination's standard's; a Y'CbCr source's is its Y'.
+// value held in all three channels. An RGB source's luma is the destination's standard's, as Apple's scaler encodes
+// into a Y'CbCr destination by its matrix; a Y'CbCr source's is its Y'.
 static inline void tegra_vic_matrix_luma(uint32_t standard, bool ycc, bool full, TegraVICMatrix *m)
 {
     int64_t w[3] = {full ? 1000000 : 1000000 * 255 / 219, 0, 0};
