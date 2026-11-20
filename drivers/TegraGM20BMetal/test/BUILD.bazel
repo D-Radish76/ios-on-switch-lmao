@@ -3411,7 +3411,19 @@ raw_device_test(
 raw_device_test(
     name = "raw_device_private_comp_test",
     srcs = [
+        "raw_device_private_comp.h",
         "raw_device_private_comp_test.cpp",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_surface_image.cpp",
+    ],
+)
+
+# A private target made plain for want of compressed memory moves onto it once some is made (raw_private_comp.h
+# Device::compressedFromPlain)
+raw_device_test(
+    name = "raw_device_private_move_test",
+    srcs = [
+        "raw_device_private_comp.h",
+        "raw_device_private_move_test.cpp",
         "//drivers/TegraGM20BMetal:raw/runtime/raw_surface_image.cpp",
     ],
 )
@@ -4911,6 +4923,31 @@ facade_test(
         "raw_scale_frames.h",
         "timed_gpu.h",
     ],
+)
+
+# A private target made plain for want of compressed memory moved onto it by the submit worker while another thread
+# records passes into it, samples it and copies out of it (raw_facade_compressed_move_test.cpp), plain and
+# thread-sanitized: the recording reads none of the fields the move writes
+facade_test(
+    name = "raw_facade_compressed_move_test",
+    srcs = [
+        "raw_facade_compressed_move_test.cpp",
+        "raw_scale_frames.h",
+    ],
+)
+
+facade_test(
+    name = "raw_facade_compressed_move_tsan_test",
+    size = "medium",
+    srcs = [
+        "raw_facade_compressed_move_test.cpp",
+        "raw_scale_frames.h",
+    ],
+    copts = ["-fsanitize=thread"],
+    data = ["raw_model_gpu.supp"],
+    env = {"TSAN_OPTIONS": "halt_on_error=1:report_signal_unsafe=0:suppressions=$(rootpath raw_model_gpu.supp)"},
+    linkopts = ["-fsanitize=thread"],
+    plugin = "_tsan",
 )
 
 # A texture moved off compressed memory from another thread while the submit worker holds the device's command buffer open

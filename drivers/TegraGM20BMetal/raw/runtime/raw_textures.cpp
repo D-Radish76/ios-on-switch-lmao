@@ -311,7 +311,7 @@ bool Device::createLaidOut(const TextureAsk &ask, Texture &t, const ArenaAt *at)
     if (!(t.tic = allocTic())) {
         Lease *none = nullptr;
         if (compressed)
-            comp_.ready.push_back({comp, ask.compressKind, commits(), compClock()});
+            compReadyPush(comp, ask.compressKind);
         else if (zeta && !at)
             tiledFree(zChunks_[z], owned);
         else

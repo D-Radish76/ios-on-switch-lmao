@@ -161,6 +161,14 @@ bool ycbcrLumaRows(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger slice
 // replaceRegion's (an M-series Mac with API validation off), where its twin would open m2v
 bool cpuReachesNothing(RMTexture *t)
 {
+    // its memory may move on the submit worker (raw_private_comp.h compressedFromPlain), whose fields no other thread reads
+    if (t->_movableBytes) {
+        SWITCH_REFUSE("raw", "texture.cpu.private",
+                      "a CPU copy of a private %lux%lu texture: nothing moved (Metal's validation stops a CPU copy of "
+                      "private storage)",
+                      (unsigned long)t->_descriptor.width, (unsigned long)t->_descriptor.height);
+        return true;
+    }
     if (t->_descriptor.storageMode != MTLStorageModeMemoryless)
         return false;
     SWITCH_REFUSE("raw", "texture.cpu.memoryless",

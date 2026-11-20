@@ -100,6 +100,7 @@
     d[@"mip_3d_levels"] = @(gRM->raw->stats.mip3dLevels.load());
     d[@"private_compressed"] = @(gRM->raw->privateMade());
     d[@"private_moves"] = @(gRM->raw->privateTransitions());
+    d[@"private_compressed_moves"] = @(gRM->raw->stats.privateCompressedMoves.load());
 #if SWITCH_RAW_DIAGNOSTICS
     d[@"loop_continuations"] = @(gRM->stats.loopContinuations.load());
 #endif
@@ -363,9 +364,12 @@ static void noteCompositorTarget(MTLTextureDescriptor *d, const void *frame)
 #if SWITCH_FRAME_TIMELINE
     noteCompositorTarget(d, __builtin_frame_address(0));
 #endif
-    return swizzled([self rmNewTexture:d
-                                 tiled:d.storageMode == MTLStorageModePrivate || d.storageMode == MTLStorageModeShared],
-                    d.swizzle);
+    id<MTLTexture> made =
+        swizzled([self rmNewTexture:d
+                              tiled:d.storageMode == MTLStorageModePrivate || d.storageMode == MTLStorageModeShared],
+                 d.swizzle);
+    rmWantCompressed(made);
+    return made;
 }
 
 // Metal's, the identity's and GM20B's refusal of a descriptor's texture: one error line per rule, and nil
@@ -488,6 +492,8 @@ static void announceTexture(raw::shapes::Route route, const raw::shapes::Texture
     }
     if (route != Route::Block)
         establishFresh(t, d);
+    if (route == Route::Plain && kind && !t->_raw.comptags)
+        t->_movableBytes = t->_raw.span.bytes;
     return (id<MTLTexture>)t;
 }
 

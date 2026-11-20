@@ -26,7 +26,9 @@ static bool appendMethods(NSData *pairs, std::vector<uint32_t> &words)
 static RMTexture *rawTexture(id object)
 {
     RMTexture *t = [object isKindOfClass:[RMTexture class]] ? (RMTexture *)object : nil;
-    return t && t->_rawOk && !t->_raw.memoryless && t->_raw.va && t->_kind != RMTextureView ? t : nil;
+    if (!t || !t->_rawOk || t->_raw.memoryless || t->_kind == RMTextureView)
+        return nil;
+    return gRM->raw->lockedCopy(t->_raw).va ? t : nil;
 }
 
 static uint64_t number(NSDictionary *op, NSString *key, uint64_t otherwise = 0)
@@ -158,9 +160,11 @@ static raw::ProbeSurface probeSurface(const raw::Texture &t, uint32_t fmt2d)
 {
     const uint32_t flags = gRM->raw->kernelInfo().flags;
     RMTexture *t = rawTexture(texture);
-    return [NSString stringWithFormat:@"raw=%d comptags=%d block_linear=%d pitch=%u tiled_cache=%d compression=%d", t != nil,
-                                      t && t->_raw.comptags, t && t->_raw.blockLinear, t ? t->_raw.pitch : 0,
-                                      (flags & TegraGM20BInfoTiledCache) != 0, (flags & TegraGM20BInfoCompression) != 0];
+    const raw::Texture now = t ? gRM->raw->lockedCopy(t->_raw) : raw::Texture();
+    return
+        [NSString stringWithFormat:@"raw=%d comptags=%d block_linear=%d pitch=%u tiled_cache=%d compression=%d",
+                                   t != nil, t && now.comptags, t && now.blockLinear, t ? now.pitch : 0,
+                                   (flags & TegraGM20BInfoTiledCache) != 0, (flags & TegraGM20BInfoCompression) != 0];
 }
 
 @end

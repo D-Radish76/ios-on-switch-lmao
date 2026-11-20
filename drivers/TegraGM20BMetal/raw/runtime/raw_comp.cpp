@@ -221,7 +221,7 @@ void Device::compMake(std::unique_lock<raw::Mutex> &l)
         comp_.wanted.erase(std::find(comp_.wanted.begin(), comp_.wanted.end(), w));
         if (made && (kr = k_.bindCompressed(bo, w.kind)) == KERN_SUCCESS) {
             set_.add(k_, bo, TegraGM20BSurfaceWrite);
-            comp_.ready.push_back({bo, w.kind, commits(), compClock()});
+            compReadyPush(bo, w.kind);
             backingsChanged();
             RAW_DIAGNOSTIC(stats.compMade++);
             RAW_DIAGNOSTIC(stats.compHeld++);

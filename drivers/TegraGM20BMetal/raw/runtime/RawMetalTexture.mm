@@ -106,6 +106,8 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
         return 0;
     if (_surface)
         return IOSurfaceGetAllocSize(_surface);
+    if (_movableBytes)
+        return NSUInteger(_movableBytes);
     if (_raw.span.valid())
         return NSUInteger(_raw.span.bytes);
     return NSUInteger(_raw.storage.bytes);

@@ -297,6 +297,7 @@ bool submitRange(RMCommandBuffer *cb, bool followed)
         const raw::RangeEnd end = rangeEnd(cb, last, followed, handlers);
         cb->_rangeQuiet = raw::quietEnd(end);
         cb->_rangeHeld = raw::frameHeld(end);
+        rmMoveWanting();
         const RMEncoded encoded = encodeRaw(cb, range.from, range.to, &why);
 #if SWITCH_FRAME_TIMELINE
         const uint64_t wallTicks = raw::encodeTicks() - profileTicks;

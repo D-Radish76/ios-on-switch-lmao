@@ -8,6 +8,7 @@
 #import "RawMetalTargetViews.h"
 #include "raw_format_standin.h"
 #include "raw_planar_target.h"
+#include "raw_xr.h"
 #include "raw_zeta_colour.h"
 
 // Whether the pass draws RGB10A8_2P_XR10 in its two planes (raw_xr_pass.h). Where one cannot take them beside the pass's
@@ -41,7 +42,7 @@ static id<MTLRenderCommandEncoder> openKeptPass(RMCommandBuffer *cb, RMRenderEnc
             declareGpuWrites(x);
             if (x->_rawOk)
                 colors[c] = &x->_raw;
-            if (x->_rawOk && x->_raw.comptags)
+            if (x->_rawOk && raw::xrForm(x->_raw.format) != raw::XrForm::None && x->_raw.comptags)
                 facts.compressed |= uint8_t(1u << c);
         }
         if (RMTexture *r = (RMTexture *)facts.color[c].resolve; [(id)r isKindOfClass:[RMTexture class]])
@@ -134,7 +135,10 @@ void rmOwnPass(RMRenderEncoder *e)
         const bool volume = t.textureType == MTLTextureType3D;
         const NSUInteger slice = volume ? a.depthPlane : a.slice;
         facts.color[c] = {t, a.level, slice, a.loadAction, a.storeAction, a.clearColor, resolve, 0, 0};
-        if ([(id)t isKindOfClass:[RMTexture class]] && ((RMTexture *)t)->_rawOk && ((RMTexture *)t)->_raw.comptags)
+        // an extended-range texture's alone: no texture of another form may be moving on the submit worker, whose
+        // memory and comptags this thread may not read (raw_private_comp.h)
+        if (RMTexture *x = (RMTexture *)t; [(id)x isKindOfClass:[RMTexture class]] && x->_rawOk &&
+                                           raw::xrForm(x->_raw.format) != raw::XrForm::None && x->_raw.comptags)
             facts.compressed |= uint8_t(1u << c);
         [self retain:t];
         [self retain:resolve];

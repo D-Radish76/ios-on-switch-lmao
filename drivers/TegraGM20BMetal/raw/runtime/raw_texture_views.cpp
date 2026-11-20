@@ -193,9 +193,15 @@ bool Device::createView(const Texture &of, uint32_t format, Texture &t)
     return false;
 }
 
-bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, uint32_t baseLevel, uint32_t levels,
+bool Device::createPartView(const Texture &parent, uint32_t format, uint32_t type, uint32_t baseLevel, uint32_t levels,
                             uint32_t baseLayer, uint32_t layers, Texture &t)
 {
+    // the submit worker may move the parent's memory (raw_private_comp.h compressedFromPlain), which it writes under lock_
+    Texture of;
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        of = parent;
+    }
     const bool cube = type == fx::kTexCube || type == fx::kTexCubeArray, volume = type == fx::kTexThreeD;
     const bool oneLayer = type == fx::kTexOneD || type == fx::kTexTwoD || volume;
     const FormatInfo *f = of.zeta ? nullptr : formatInfo(format);
@@ -258,7 +264,12 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
     {
         std::lock_guard<raw::Mutex> l(lock_);
         t = image;
-        t.storage = of.storageRange();
+        if (parent.va != of.va) {
+            t.va = t.va - of.va + parent.va;
+            t.cpu = nullptr;
+            t.comptags = parent.comptags;
+        }
+        t.storage = parent.storageRange();
         memcpy(t.swizzle, kIdentitySwizzle, 4);
         t.view = true;
         t.format = format;
@@ -273,7 +284,7 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
         t.tic = 0;
         if (!of.sampled && !(t.tic = of.xrPlanes ? allocTicPair() : allocTic()))
             return false;
-        noteView(of, t);
+        noteView(parent, t);
         if (of.xrPlanes || (of.converted() && !chained)) {
             memcpy(tic_.cpu + 32 * t.tic, tic_.cpu + 32 * of.tic, of.xrPlanes ? 64 : 32);
             if (of.converted() && type != fx::kTexTwoD)  // a block-linear image's header (the planes' are pitch)
@@ -296,7 +307,8 @@ bool Device::createPartView(const Texture &of, uint32_t format, uint32_t type, u
             memcpy(tic_.cpu + 32 * t.tic, w, 32);
         }
     }
-    if (of.zeta || viewCompanions(*this, of, format, t, [&](const Texture &over, uint32_t overFormat, Texture &out) {
+    if (of.zeta ||
+        viewCompanions(*this, parent, format, t, [&](const Texture &over, uint32_t overFormat, Texture &out) {
             return createPartView(over, overFormat, type, baseLevel, levels, baseLayer, layers, out);
         }))
         return true;
@@ -471,7 +483,7 @@ uint32_t Device::viewTic(const Texture &t, uint32_t word0, ViewAccess access)
     if (!tic)
         return 0;
     uint32_t own[8], w[8];
-    memcpy(own, tic_.cpu + 32 * t.tic, 32);
+    memcpy(own, headerNow(t.tic), 32);
     viewHeader(own, word0, w, sxLog2, syLog2);
     memcpy(tic_.cpu + 32 * tic, w, 32);  // visible at the next submission's header invalidate
     viewTics_.emplace(t.tic, std::make_pair(key, tic));
@@ -499,7 +511,7 @@ uint32_t Device::attachmentViewTic(const Texture &owner, const AttachmentView &v
         headed = attachmentImage(owner, c, base) && attachmentViewHeader(c, base, owner.type == fx::kTexThreeD, v, w);
     } else {
         uint32_t own[8];
-        memcpy(own, tic_.cpu + 32 * owner.tic, 32);
+        memcpy(own, headerNow(owner.tic), 32);
         headed = ownViewHeader(own, v, w);
     }
     if (!headed) {

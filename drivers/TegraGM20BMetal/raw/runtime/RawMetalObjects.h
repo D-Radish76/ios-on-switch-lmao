@@ -186,6 +186,11 @@ enum class RMShareable : uint8_t {
     std::atomic<bool>
         _idNamed;  // its gpuResourceID was asked: the device's handle tables name it (RawMetalResourceIds.mm)
     std::atomic<RMShareable> _shareable;  // its surface's creation properties name a Metal device (read once)
+    // Made plain for want of compressed memory (raw_private_comp.h): the submit worker may move its memory
+    // (compressedFromPlain), so allocatedSize answers this, its plain allocation's bytes; 0: it wants none
+    // (rmWantCompressed registers it)
+    uint64_t _movableBytes;
+    __weak RMTexture *_wanting;  // itself: the worker's look holds it only while it is not being deallocated
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
     std::atomic<bool> _freshUnwritten;  // a fresh texture no command wrote yet (RawMetalFresh.mm traceFreshUses)
 #endif
@@ -300,7 +305,7 @@ struct RMPass {
     NSUInteger width, height;
     uint32_t layers = 1;  // renderTargetArrayLength (0 and 1: one)
     raw::SamplePositions positions;
-    uint8_t compressed = 0;        // colour attachments on compressed memory as the pass was made (raw_private_comp.h)
+    uint8_t compressed = 0;        // extended-range colours on compressed memory at its making (raw_private_comp.h)
     bool testsHiddenZeta = false;  // a depth/stencil state set in it tests depth or stencil (raw::testsHiddenZeta)
     // a draw in it tests depth in its shader (raw_shader_tests.h): a Depth16Unorm attachment renders converted
     // (RawMetalRangeForms.mm depth16Tested)

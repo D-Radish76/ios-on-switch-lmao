@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: MIT
-// The facade's half of private textures on compressed memory (raw_private_comp.h): which descriptors qualify, and the
-// move to plain memory before anything names a texture's pages another way.
+// The facade's half of private textures on compressed memory (raw_private_comp.h): which descriptors qualify, the move to
+// plain memory before anything names a texture's pages another way, and the submit worker's moves onto compressed memory.
 #import "RawMetalInternal.h"
+#import "RawMetalPipeline.h"
 #include <algorithm>
+#include <vector>
 #include "raw_submit_gate.h"
 #include "raw_view.h"
 #include "raw_xr.h"
@@ -77,4 +79,40 @@ bool rmTexturePlain(RMTexture *t)
         }
         return true;
     });
+}
+
+void rmWantCompressed(id<MTLTexture> texture)
+{
+    RMTexture *t = [(id)texture isKindOfClass:[RMTexture class]] ? (RMTexture *)texture : nil;
+    if (!t || !t->_movableBytes)
+        return;
+    t->_wanting = t;
+    if (!gRM->raw->wantCompressed(t->_raw, privateCompressedKind(t->_descriptor), (__bridge void *)t))
+        t->_movableBytes = 0;
+}
+
+static std::vector<RMTexture *> &gMoving = *new std::vector<RMTexture *>;  // the submit worker's alone
+
+// Called under the device lock (Device::privateMoves): a texture whose want is still there has not reached the
+// destroyTexture of its dealloc, which erases it under that lock, so its memory holds; one being deallocated loads nil
+static void takeWanting(void *owner)
+{
+    __unsafe_unretained RMTexture *t = (__bridge RMTexture *)owner;
+    if (RMTexture *alive = t->_wanting)
+        gMoving.push_back(alive);
+}
+
+void rmMoveWanting()
+{
+    raw::Device &d = *gRM->raw;
+    if (!d.privateMoveDue())
+        return;
+    d.privateMoves(takeWanting);
+    if (gMoving.empty())
+        return;
+    // a move's job is a command buffer of its own: an encode ahead holding the device's goes back first
+    rmPipelineYield(nil, SIZE_MAX, false);
+    for (RMTexture *t : gMoving)
+        d.compressedFromPlain(t->_raw);
+    gMoving.clear();
 }

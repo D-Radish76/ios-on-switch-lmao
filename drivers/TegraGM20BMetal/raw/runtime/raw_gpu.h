@@ -2433,6 +2433,28 @@ public:
     bool plainFromCompressed(Texture &t);
     // The plain twin of a one-level 2D texture on compressed memory: block-linear memory and a header of its own
     bool plainTiledTwin(const Texture &t, Texture &plain);
+    // t, made plain where createCompressedTexture found no memory of `kind` ready, wants that memory (raw_private_comp.h);
+    // `owner`, the facade's texture, is what the submit worker's look hands back; false: t takes none (its layout, a probe)
+    bool wantCompressed(const Texture &t, uint32_t kind, void *owner);
+
+    // t as it is between the submit worker's moves of its memory, which write it under lock_ (a debug probe's read)
+    Texture lockedCopy(const Texture &t)
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        return t;
+    }
+
+    // The submit worker's, before a raw range, with no lock: whether memory made since its last look may serve a want
+    bool privateMoveDue() const
+    {
+        return privateMoveDue_.load(std::memory_order_relaxed);
+    }
+
+    // The submit worker's look, where privateMoveDue: the flag cleared, and `take(owner)` for each texture ready memory
+    // serves now, called under lock_, where an owner whose want is there is not freed yet (destroyTexture erases it)
+    void privateMoves(void (*take)(void *owner));
+    // The submit worker's, inside its submission with no command buffer open: t onto the compressed memory it wants
+    bool compressedFromPlain(Texture &t);
 
     uint64_t privateMade() const
     {
@@ -2868,6 +2890,8 @@ public:
         // value the boot ZBC table holds (no texels written) and to one it does not
         std::atomic<uint64_t> compHeld{0}, compHeldBytes{0}, compViews{0}, compMade{0}, compFailed{0}, zbcHits{0},
             zbcMisses{0};
+        // private textures made plain for want of compressed memory and moved onto it since (Device::compressedFromPlain)
+        std::atomic<uint64_t> privateCompressedMoves{0};
         // passes whose memoryless attachment wanted compressed memory not made yet, and took plain memory
         std::atomic<uint64_t> compMisses{0};
         // ZBC entries this process added, those a full table refused, and full clears of compressed targets to a value no
@@ -3782,7 +3806,8 @@ private:
         Buffer headers;                        // the views' moved headers the move's job copies in place
     };
 
-    // `view` of memory `of` names: a view of a private texture on compressed memory follows it to plain memory, lock_ held
+    // `view` of memory `of` names: a view of a private texture on compressed memory follows it to plain memory, and one of
+    // a plain texture wanting compressed memory keeps that texture plain (compressedFromPlain), lock_ held
     void noteView(const Texture &of, Texture &view);
     void forgetView(const Texture &view);  // lock_ held
     std::unordered_map<const Texture *, PrivateCompTexture> privateComp_;
@@ -3794,6 +3819,41 @@ private:
     // written under lock_, read without it by the counters
     std::atomic<uint64_t> privateMade_{0}, privateTransitions_{0};
     void releasePrivateCompressed(const Texture &t);  // lock_ held
+
+    // plain private textures wanting compressed memory (wantCompressed), lock_
+    struct PrivateWant {
+        uint32_t kind = 0;
+        uint64_t bytes = 0;            // its block-linear image's
+        void *owner = nullptr;         // wantCompressed's
+        std::vector<Texture *> views;  // raw views of its plain memory (createView, createPartView)
+    };
+
+    std::unordered_map<const Texture *, PrivateWant> privateWants_;
+    // Set under lock_ where a want and made memory that serves it meet (compReadyPush, wantCompressed) and cleared by the
+    // worker's look (privateMoves), read by the submit worker with no lock before each raw range: an atomic, as the worker
+    // holds no lock there. A want no ready memory serves leaves it clear.
+    std::atomic<bool> privateMoveDue_{false};
+    // lock_ held: `bo` of `kind` among the made buffers; the look is due where it serves a want
+    void compReadyPush(const Bo &bo, uint32_t kind);
+    // Header `tic` and those made from it, which freeTic frees with it (viewTic's, attachmentViewTic's, attachmentTic's
+    // parts and theirs), into `tics`, lock_ held
+    void headersOf(uint32_t tic, std::vector<uint32_t> &tics) const;
+    // Header `tic`'s words as work from now on reads them, lock_ held: a move whose job has not run yet holds them
+    const uint8_t *headerNow(uint32_t tic) const;
+
+    // A moved texture's plain memory and the headers its job copied over `tics` (none once the texture went), freed at a
+    // begin() once that job completed. Added and removed by begin()'s caller, who holds the submit gate; lock_
+    struct MovedPlain {
+        const Texture *texture = nullptr;
+        Span span;
+        Buffer headers;
+        std::vector<uint32_t> tics;
+        uint32_t seqno = 0;
+        uint64_t generation = 0;
+    };
+
+    std::vector<MovedPlain> movedPlain_;
+    void freeMovedPlain();
     // A clear of target t to SET_COLOR_CLEAR_VALUE words `v` (or depth `depth`), `full` it covers t whole: on a compressed
     // target, a value the ZBC table lacks is asked for (raw_zbc.h); hits and misses counted
     void clearZbc(const Texture &t, bool full, const uint32_t v[4]);

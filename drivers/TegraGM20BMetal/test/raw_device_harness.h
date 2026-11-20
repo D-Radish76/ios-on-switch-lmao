@@ -142,6 +142,19 @@ struct DeviceHarness {
         return d.comp_.ready.size();
     }
 
+    // Plain private textures wanting compressed memory (raw_private_comp.h)
+    static size_t wanting(Device &d)
+    {
+        std::lock_guard<raw::Mutex> l(d.lock_);
+        return d.privateWants_.size();
+    }
+
+    // Moved textures' plain memory not freed yet
+    static size_t movedPlain(const Device &d)
+    {
+        return d.movedPlain_.size();
+    }
+
     // The clears of the pass `e` ended: target, x0, y0, x1, y1
     static std::vector<std::array<uint32_t, 5>> clears(const RenderEncoder &e)
     {

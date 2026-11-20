@@ -517,6 +517,14 @@ template <typename Run> auto rmSubmission(Run &&run) -> decltype(run())
 extern thread_local bool tRawEncoding;
 uint32_t privateCompressedKind(MTLTextureDescriptor *d);
 bool rmTexturePlain(RMTexture *t);
+// A texture rmNewTexture made plain for want of compressed memory (its _movableBytes) registered as wanting it, once its
+// descriptor's swizzle is in its header: Device::swizzle writes that header in place, and from the registration on the
+// submit worker may move the texture, header words and all
+void rmWantCompressed(id<MTLTexture> texture);
+// The submit worker's, inside a raw range's submission before its encode, where memory made since its last look serves a
+// texture made plain for want of it: each such texture moved there (raw::Device::compressedFromPlain), used by this range
+// or not
+void rmMoveWanting();
 
 // RawMetalCommandBuffer.mm: the kept recordings and setBytes chunks past what steady frames take, given back
 void releaseRecordings();

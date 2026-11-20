@@ -352,6 +352,8 @@ CommandBuffer *Device::begin()
         } else {
             ++it;
         }
+    if (!movedPlain_.empty())
+        freeMovedPlain();
     growRing(push_, kSizes[0].push);
     growRing(upload_, kSizes[0].upload);
 #if SWITCH_RAW_DIAGNOSTICS

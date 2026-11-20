@@ -29,7 +29,7 @@ const void *raw_metal_texture_image(id<MTLTexture> texture, size_t *pitch)
     if (![(id)texture isKindOfClass:[RMTexture class]])
         return nullptr;
     RMTexture *t = (RMTexture *)texture;
-    if (!t->_rawOk || !t->_raw.cpu || t->_raw.blockLinear)
+    if (!t->_rawOk || t->_raw.blockLinear || !t->_raw.cpu)
         return nullptr;
     if (pitch)
         *pitch = t->_raw.pitch;

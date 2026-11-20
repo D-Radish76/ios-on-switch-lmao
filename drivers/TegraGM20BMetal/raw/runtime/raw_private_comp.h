@@ -13,6 +13,14 @@
 // raw job by the channel and before NVK's next submission by Order, and the same job then rewrites the texture's header
 // and each raw view's in place to name the plain memory (ticAt), so a gpuResourceID or view handed out before keeps its
 // index and reads what later work writes. Work already submitted reads the old memory, which stays until the texture goes.
+//
+// A private 2D target made plain because no compressed memory of its size was ready at its creation wants that memory
+// (Device::wantCompressed). Where memory that serves it is made or kept, the submit worker's next raw range submission
+// moves it, before that range's encode and whether or not the range uses it (Device::compressedFromPlain): the copy
+// engine copies it in a raw job of its own, which then rewrites its header and those made from it in place, and its
+// plain memory goes once that job completed. The worker alone writes its memory's fields, under lock_; no other thread
+// reads them but under lock_ (view creation). One with a raw view stays plain: a view may go, and its header index be
+// reused, before the job runs.
 #pragma once
 #include <algorithm>
 #include <cstdint>
