@@ -44,7 +44,7 @@
 #include "TegraGM20BABI.h"
 #include "TegraGM20BLayout.h"
 void pushcount_bind(uint64_t va, uint64_t range, int fd, void *import, uint64_t offset, uint64_t bytes);
-void pushcount_exec(const struct TegraGM20BAbiExec *e);
+void pushcount_submit(uint32_t channel, const struct TegraGM20BAbiPush *pushes, uint32_t count);
 
 #define DYLD_INTERPOSE(_replacement, _replacee)                                 \
     __attribute__((used)) static struct {                                       \
@@ -156,9 +156,9 @@ struct acq {
 };
 
 struct job {
-    uint32_t ch, seqno, nacq;
+    uint32_t ch, seqno, nacq, count;
     struct acq acq[kOrderMax];
-    struct TegraGM20BAbiExec *exec;
+    struct TegraGM20BAbiPush *pushes;
     uint64_t kick;
     int kill; /* MOCK_KILL's submission: the channel dies when the GPU reaches it */
 };
@@ -335,16 +335,16 @@ static void *gpu_thread(void *arg)
             if (!dead[ch])
                 kill_channel(ch, 2);
             qhead[ch]++;
-            free(j.exec);
+            free(j.pushes);
             continue;
         }
         running++;
         pthread_mutex_unlock(&gpu_lock);
         const uint64_t start = now_us();
-        pushcount_exec(j.exec);
+        pushcount_submit(j.ch, j.pushes, j.count);
         usleep(gpu_us);
         const uint64_t end = now_us();
-        free(j.exec);
+        free(j.pushes);
         pthread_mutex_lock(&gpu_lock);
         running--;
         qhead[ch]++;
@@ -483,6 +483,67 @@ static uint32_t *fence_page(void)
     if (!fence)
         fence = mmap(NULL, 4096, PROT_READ | PROT_WRITE, MAP_ANON | MAP_SHARED, -1, 0);
     return fence;
+}
+
+/* One submission of `count` pushes on channel `ch`: its reply (TegraGM20BAbiExecReply) in `out` */
+static kern_return_t mock_submit(uint32_t ch, const struct TegraGM20BAbiPush *pushes, uint32_t count, void *out)
+{
+    pthread_mutex_lock(&gpu_lock);
+    if (dead[ch]) {
+        pthread_mutex_unlock(&gpu_lock);
+        return kIOReturnNotResponding;
+    }
+    if (!count) {
+        struct TegraGM20BAbiExecReply r = {.seqno = submitted[ch]};
+        pthread_mutex_unlock(&gpu_lock);
+        memcpy(out, &r, sizeof(r));
+        return KERN_SUCCESS;
+    }
+    struct job j = {.ch = ch, .seqno = ++submitted[ch], .kick = now_us()};
+    surface_acquires(ch, j.seqno);
+    for (uint32_t i = 0; i < npending[ch];
+         i++) /* the acquires ExecSurfaces queued: its first entry (one already passed: none) */
+        if (!passed(pending[ch][i].ch, pending[ch][i].seqno))
+            j.acq[j.nacq++] = pending[ch][i];
+    npending[ch] = 0;
+    struct TegraGM20BAbiExecReply r = {.seqno = j.seqno};
+    j.kill = kill_due(ch, j.seqno);
+    if (j.kill && !async_gpu())
+        kill_channel(ch, 2);
+    else if (kill_next && (engines[ch] & TegraGM20BEngine3D)) {
+        kill_channel(ch, kill_next);
+        dead_va[ch] = kill_next_va;
+        kill_next = 0;
+        kill_next_va = 0;
+    }
+    if (dead[ch]) {
+        pthread_mutex_unlock(&gpu_lock);
+        memcpy(out, &r, sizeof(r));
+        return KERN_SUCCESS;
+    }
+    if (async_gpu() || paused[ch]) {
+        static pthread_t threads[16];
+        if (!threads[ch])
+            pthread_create(&threads[ch], NULL, gpu_thread, (void *)(uintptr_t)ch);
+        j.count = count;
+        j.pushes = malloc(count * sizeof(*pushes));
+        memcpy(j.pushes, pushes, count * sizeof(*pushes));
+        if (qtail[ch] - qhead[ch] == kQueue) {
+            fprintf(stderr, "mock GPU: queue full\n");
+            abort();
+        }
+        queue[ch][qtail[ch]++ % kQueue] = j;
+        pthread_cond_broadcast(&gpu_cond);
+        pthread_mutex_unlock(&gpu_lock);
+    } else {
+        pthread_mutex_unlock(&gpu_lock);
+        pushcount_submit(ch, pushes, count);
+        pthread_mutex_lock(&gpu_lock);
+        fence[ch * kFenceWords] = j.seqno;
+        pthread_mutex_unlock(&gpu_lock);
+    }
+    memcpy(out, &r, sizeof(r));
+    return KERN_SUCCESS;
 }
 
 #ifdef SWITCH_MOCK_JOB_INTERFACE
@@ -686,66 +747,11 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
     case TegraGM20BMethodResourceSetRelease:
         return mock_set_release(in, insz);
     case TegraGM20BMethodSubmitJob:
-        return mock_job(c, in, insz, out, outsz);
+        return mock_job(in, insz, out);
 #endif
     case TegraGM20BMethodExec: {
         const struct TegraGM20BAbiExec *e = in;
-        uint32_t ch = e->channel & 15;
-        pthread_mutex_lock(&gpu_lock);
-        if (dead[ch]) {
-            pthread_mutex_unlock(&gpu_lock);
-            return kIOReturnNotResponding;
-        }
-        if (!e->count) {
-            struct TegraGM20BAbiExecReply r = {.seqno = submitted[ch]};
-            pthread_mutex_unlock(&gpu_lock);
-            memcpy(out, &r, sizeof(r));
-            return KERN_SUCCESS;
-        }
-        struct job j = {.ch = ch, .seqno = ++submitted[ch], .kick = now_us()};
-        surface_acquires(ch, j.seqno);
-        for (uint32_t i = 0; i < npending[ch];
-             i++) /* the acquires ExecSurfaces queued: its first entry (one already passed: none) */
-            if (!passed(pending[ch][i].ch, pending[ch][i].seqno))
-                j.acq[j.nacq++] = pending[ch][i];
-        npending[ch] = 0;
-        struct TegraGM20BAbiExecReply r = {.seqno = j.seqno};
-        j.kill = kill_due(ch, j.seqno);
-        if (j.kill && !async_gpu())
-            kill_channel(ch, 2);
-        else if (kill_next && (engines[ch] & TegraGM20BEngine3D)) {
-            kill_channel(ch, kill_next);
-            dead_va[ch] = kill_next_va;
-            kill_next = 0;
-            kill_next_va = 0;
-        }
-        if (dead[ch]) {
-            pthread_mutex_unlock(&gpu_lock);
-            memcpy(out, &r, sizeof(r));
-            return KERN_SUCCESS;
-        }
-        if (async_gpu() || paused[ch]) {
-            static pthread_t threads[16];
-            if (!threads[ch])
-                pthread_create(&threads[ch], NULL, gpu_thread, (void *)(uintptr_t)ch);
-            j.exec = malloc(insz);
-            memcpy(j.exec, e, insz);
-            if (qtail[ch] - qhead[ch] == kQueue) {
-                fprintf(stderr, "mock GPU: queue full\n");
-                abort();
-            }
-            queue[ch][qtail[ch]++ % kQueue] = j;
-            pthread_cond_broadcast(&gpu_cond);
-            pthread_mutex_unlock(&gpu_lock);
-        } else {
-            pthread_mutex_unlock(&gpu_lock);
-            pushcount_exec(e);
-            pthread_mutex_lock(&gpu_lock);
-            fence[ch * kFenceWords] = j.seqno;
-            pthread_mutex_unlock(&gpu_lock);
-        }
-        memcpy(out, &r, sizeof(r));
-        return KERN_SUCCESS;
+        return mock_submit(e->channel & 15, e->pushes, e->count, out);
     }
     case TegraGM20BMethodExecSurfaces: {
         const struct TegraGM20BAbiExecSurfaces *e = in;

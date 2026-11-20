@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: MIT
 // The job interface (TegraGM20BJobABI.h, methods 31-33) over the mock GPU, in the host harnesses' mock only
 // (SWITCH_MOCK_JOB_INTERFACE): the raw stack key hashes the pack's mock and not that header. A resource set's members decide
-// residency and ownership, which the mock does not model, so a set is its id and generation, and a job runs as Exec of
+// residency and ownership, which the mock does not model, so a set is its id and generation, and a job is a submission of
 // its pushes.
 #pragma once
 #include "TegraGM20BJobABI.h"
-
-static kern_return_t mock_call(mach_port_t, uint32_t, const void *, size_t, void *, size_t *);
 
 static struct {
     uint32_t live, generation;
@@ -44,7 +42,7 @@ static kern_return_t mock_set_release(const void *input, size_t bytes)
     return KERN_SUCCESS;
 }
 
-static kern_return_t mock_job(mach_port_t connection, const void *input, size_t bytes, void *out, size_t *outsz)
+static kern_return_t mock_job(const void *input, size_t bytes, void *out)
 {
     const struct TegraGM20BAbiSubmitAddress *address = input;
     if (bytes != sizeof *address || !address->address || address->reserved ||
@@ -60,15 +58,5 @@ static kern_return_t mock_job(mach_port_t connection, const void *input, size_t 
         return kIOReturnBadArgument;
     if (job->set && mock_sets[job->set - 1].generation != job->set_generation)
         return kIOReturnNotReady;
-    const size_t execBytes =
-        offsetof(struct TegraGM20BAbiExec, pushes) + job->push_count * sizeof(struct TegraGM20BAbiPush);
-    struct TegraGM20BAbiExec *exec = calloc(1, execBytes);
-    if (!exec)
-        return kIOReturnNoMemory;
-    exec->channel = job->channel;
-    exec->count = job->push_count;
-    memcpy(exec->pushes, job + 1, job->push_count * sizeof(struct TegraGM20BAbiPush));
-    const kern_return_t result = mock_call(connection, TegraGM20BMethodExec, exec, execBytes, out, outsz);
-    free(exec);
-    return result;
+    return mock_submit(job->channel, (const struct TegraGM20BAbiPush *)(job + 1), job->push_count, out);
 }

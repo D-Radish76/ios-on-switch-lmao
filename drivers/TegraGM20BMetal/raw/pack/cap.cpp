@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// r7-raw capture: the mock kernel's VmBind/Exec hooks (mock_iokit.c, r5-gpuwaste's pushcount API) feeding every submission
+// r7-raw capture: the mock kernel's VmBind and submit hooks (mock_iokit.c, r5-gpuwaste's pushcount API) feeding every submission
 // through nvdec (tools/nvdec.cpp) with GPU VAs resolved to the mock BOs' host memory as the CPU left it at submit time.
 //   RAWCAP_LOG=<file>       canonical draw/clear/barrier records
 //   RAWCAP_PROGRAMS=<file>  programs.bin (tools/mkprograms.py): identify programs exactly, compare only the cbufs they use
@@ -158,10 +158,10 @@ extern "C" void pushcount_bind(uint64_t va, uint64_t range, int fd, void *import
         gBinds[va] = Bind{range, fd, import, offset, bytes, base};
 }
 
-extern "C" void pushcount_exec(const struct TegraGM20BAbiExec *e)
+extern "C" void pushcount_submit(uint32_t channel, const struct TegraGM20BAbiPush *pushes, uint32_t count)
 {
     std::lock_guard<std::mutex> l(gLock);
-    if (!e->count)
+    if (!count)
         return;
     static const bool fast = getenv("MOCK_FAST") != nullptr;  // benchmarks: the kernel's work is not the encoder's
     if (fast)
@@ -169,11 +169,11 @@ extern "C" void pushcount_exec(const struct TegraGM20BAbiExec *e)
     init();
     gSubmit++;
     gC.submits++;
-    gLastChannel = e->channel;
+    gLastChannel = channel;
     PushParse p = {};
     nvdec::Decoder *dec = nullptr;
     if (gDecode) {
-        auto &d = gChannels[e->channel];
+        auto &d = gChannels[channel];
         if (!d) {
             d.reset(new nvdec::Decoder(
                 [](uint64_t va, uint64_t bytes) {
@@ -194,19 +194,19 @@ extern "C" void pushcount_exec(const struct TegraGM20BAbiExec *e)
     }
     if (dec)
         dec->submitBegin();
-    for (uint32_t i = 0; i < e->count; i++) {
-        const uint8_t *w = host(e->pushes[i].va, uint64_t(e->pushes[i].dwords) * 4);
-        gC.bytes += uint64_t(e->pushes[i].dwords) * 4;
+    for (uint32_t i = 0; i < count; i++) {
+        const uint8_t *w = host(pushes[i].va, uint64_t(pushes[i].dwords) * 4);
+        gC.bytes += uint64_t(pushes[i].dwords) * 4;
         if (!w) {
             p.left = 0;
             continue;
         }
-        gC.readBytes += uint64_t(e->pushes[i].dwords) * 4;
-        pushParse(gC, p, (const uint32_t *)w, e->pushes[i].dwords);
+        gC.readBytes += uint64_t(pushes[i].dwords) * 4;
+        pushParse(gC, p, (const uint32_t *)w, pushes[i].dwords);
         if (gDump)
-            dumpPush((const uint32_t *)w, e->pushes[i].dwords);
+            dumpPush((const uint32_t *)w, pushes[i].dwords);
         if (dec)
-            dec->push((const uint32_t *)w, e->pushes[i].dwords);
+            dec->push((const uint32_t *)w, pushes[i].dwords);
     }
     if (dec) {
         dec->submitEnd();
