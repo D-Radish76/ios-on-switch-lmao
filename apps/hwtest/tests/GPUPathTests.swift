@@ -602,8 +602,8 @@ enum GPUPathTests {
         QuietJobsPathTest(), PresentPromisePathTest(), PromiseCancelPathTest(), StateSegmentsPathTest(),
         EncodeCostPathTest(), PromiseVICPathTest(), PromiseUnkeptPathTest(), PromiseReleaseOrderPathTest(),
         SetSurvivesTrimPathTest(), SurfaceLocksSideBySideTest.blockLinear, SurfaceLocksSideBySideTest.pitchLinear,
-        ImportBesideSubmitsTest(), CommitLatencyPathTest(), FreshSurfaceImportPathTest(),
-        NativeSurfaceRepublishedPathTest(),
+        ImportBesideSubmitsTest(), TransferBesideReadbackTest(), CommitLatencyPathTest(), AheadMovesTest(),
+        FreshSurfaceImportPathTest(), NativeSurfaceRepublishedPathTest(),
     ]
 }
 

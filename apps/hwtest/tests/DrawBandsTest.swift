@@ -7,25 +7,28 @@ import UIKit
 
 /// An app draw longer than a band (TegraGM20BSchedPolicy.h TGM_APP_BAND_NS) drawn in scissor bands
 /// (raw/runtime/raw_draw_bands.h). A layer animates on screen throughout, so the compositor kicks every frame and
-/// preempts these draws. Per case (blended, framebuffer fetch inside the pixel interlock, 4x MSAA resolved) the same two
-/// full-screen draws of a ~15 ms fragment program are made banded and with the facade's band budget at 0: the bytes
+/// preempts these draws. Per case (blended, framebuffer fetch inside the pixel interlock, 4x MSAA resolved) the same
+/// two full-screen draws of a ~15 ms fragment program are made banded and with the facade's band budget at 0: the bytes
 /// must be identical and only the first arm banded (banded_draws, bands); the fetch case must have drawn interlocked
 /// (interlock_draws), so its identity covers interlock tickets across bands and preempts. Then banded draws run back to
 /// back: the kernel's preemption latencies sampled for this process (debug kernels, TegraGM20BPathsABI.h `preempts`,
 /// `preempt_max_us`, buckets `preempt_lt250_us`..`preempt_ge4000_us`) must stay within the budget plus a context
 /// switch, and where each preempt landed (SwitchGpuPreemptLanding.h): `preempt_mid_job` at a band's release inside a
 /// job, `preempt_job_end` at a job's end. One mid-job landing proves a preempt lands while the PBDMA waits at a band's
-/// release. The compositor's profiled submissions kicked behind these draws (spans op: `behind`, `sync_max_us`) must find GR
-/// within the same bound: their first push's wait for GR is the app's preemption latency. The unbanded arm shows what a whole
-/// draw costs the compositor. us_per_band is the GPU time a band took. `windows` and `holds` are the compositor's deadline
-/// windows opened and app channels held meanwhile (spans op): an app whose preemption latency is worth a hold (over
-/// the hold's slack, within a refresh period: TegraGM20BSchedPolicy.h tgm_hold_worth) with work in flight while the
-/// compositor animates gets a window, so the banded arm fails with none.
-/// The learned arm draws a loop of scattered texture reads, a few dozen instructions priced far under a band: its first
-/// draw is whole and measured (raw_band_rates.h), and once its state's rate is learned the same draw must be banded by
-/// the time it took, with the whole draw's pixels. Its draw is alone in its pass, so the state's first three are measured and
-/// the rest not (raw_band_rates.h): us_measured (the measured banded draws) against us_unmeasured (the later ones) is what a
-/// measurement costs the GPU, which must be nothing beyond noise.
+/// release. The compositor's profiled submissions kicked behind these draws (spans op: `behind`, `sync_max_us`) must
+/// find GR within the same bound: their first push's wait for GR is the app's preemption latency. The unbanded arm
+/// shows what a whole draw costs the compositor. us_per_band is the GPU time a band took. `windows` and `holds` are the
+/// compositor's deadline windows opened and app channels held meanwhile (spans op): an app whose preemption latency is
+/// worth a hold (over the hold's slack, within a refresh period: TegraGM20BSchedPolicy.h tgm_hold_worth) with work in
+/// flight while the compositor animates gets a window, so the banded arm fails with none. The learned arm draws a loop
+/// of scattered texture reads, a few dozen instructions priced far under a band: its first draw is whole and measured
+/// (raw_band_rates.h), and once its state's rate is learned the same draw must be banded by the time it took, with the
+/// whole draw's pixels. Its draw is alone in its pass, so the state's first three are measured and the rest not
+/// (raw_band_rates.h): us_measured (the measured banded draws) against us_unmeasured (the later ones) is what a
+/// measurement costs the GPU, which must be nothing beyond noise. Before them the same state draws `smallPasses` passes
+/// into a 64x64 target, each alone in its pass but under the 64 K units a measured draw needs: they take none of the
+/// state's picks (learned_small 0), so its first large draw is still measured. A device learns the measured draws at
+/// its next command buffer's begin, so a blit fill follows every measured command buffer before the counters are read.
 struct DrawBandsTest: HWTest {
     let id = "gpu.sched.long_draw_bands"
     let name = "Long app draws in scissor bands: compositor wait and pixel identity"
@@ -42,6 +45,7 @@ struct DrawBandsTest: HWTest {
     static let memorySide = 2048
     static let memoryReads: UInt32 = 8
     static let learnRounds = 7
+    static let smallPasses = 4, smallSide = 64
     static let measuredSlackUs = 50.0
 
     struct Case {
@@ -182,12 +186,13 @@ struct DrawBandsTest: HWTest {
                 bytesPerRow: side * 8)
         }
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
-        let encode = { (commands: MTLCommandBuffer) in
-            let pass = MTLRenderPassDescriptor()
-            pass.colorAttachments[0].texture = target
-            pass.colorAttachments[0].loadAction = .clear
-            pass.colorAttachments[0].storeAction = .store
-            let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
+        let small = try gpu.texture(.bgra8Unorm, Self.smallSide, Self.smallSide)
+        let pass = { (commands: MTLCommandBuffer, into: MTLTexture) in
+            let descriptor = MTLRenderPassDescriptor()
+            descriptor.colorAttachments[0].texture = into
+            descriptor.colorAttachments[0].loadAction = .clear
+            descriptor.colorAttachments[0].storeAction = .store
+            let encoder = commands.makeRenderCommandEncoder(descriptor: descriptor)!
             encoder.setRenderPipelineState(pipeline)
             encoder.setFragmentTexture(big, index: 0)
             var reads = Self.memoryReads
@@ -195,13 +200,30 @@ struct DrawBandsTest: HWTest {
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             encoder.endEncoding()
         }
+        let encode = { (commands: MTLCommandBuffer) in pass(commands, target) }
+        let teachBuffer = try gpu.buffer(4)
+        let teach = { (commands: MTLCommandBuffer) in
+            let blit = commands.makeBlitCommandEncoder()!
+            blit.fill(buffer: teachBuffer, range: 0..<4, value: 0)
+            blit.endEncoding()
+        }
         var failures: [String] = []
+        let smallBefore = RawFacade.counters(of: gpu.device)
+        for _ in 0..<Self.smallPasses {
+            try await gpu.run { pass($0, small) }
+            try await gpu.run(teach)
+        }
+        let smallLearned =
+            (RawFacade.counters(of: gpu.device)["learned_draws"] ?? 0) - (smallBefore["learned_draws"] ?? 0)
+        metrics.set("learned_small", smallLearned)
+        if smallLearned != 0 { failures.append("memory: \(smallLearned) small passes took the state's picks") }
         var wholeMs = 0.0
         var learnedBands = 0
         var measuredUs: [Double] = [], unmeasuredUs: [Double] = []
         for round in 0..<Self.learnRounds {
             let before = RawFacade.counters(of: gpu.device)
             let timing = try await gpu.run(encode)
+            try await gpu.run(teach)
             let after = RawFacade.counters(of: gpu.device)
             let bands = (after["bands"] ?? 0) - (before["bands"] ?? 0)
             let learned = (after["learned_draws"] ?? 0) - (before["learned_draws"] ?? 0)

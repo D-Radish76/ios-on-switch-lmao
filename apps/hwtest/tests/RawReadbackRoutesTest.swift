@@ -109,6 +109,7 @@ struct RawReadbackRoutesTest: HWTest {
         let (mixedBuffer, mixedBacking, mixedPitch) = try Self.bufferTexture(gpu)
         try await drawMixed(mixedBuffer)
         judge("mixed_buffer_texture", Self.rows(mixedBacking.contents(), pitch: mixedPitch))
+        metrics.fitLog(within: 720, keeping: ["surface_cpu_layout"])
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

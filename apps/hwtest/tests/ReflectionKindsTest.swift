@@ -12,9 +12,10 @@ import Metal
 /// elementType or members (responds_mismatches); a state not made is named apart (unmade); the pointer and struct types
 /// every binding has a method for are reported (kinds_reported_off). wrong_kind: the first binding of each kind of each
 /// state asked the other kinds' selectors, where Metal fails an assertion and aborts the process: each answers
-/// Self.wrongKind's answer and logs its error lines ("raw: <process>: <selector> asked of binding <name> of type <n>,
-/// where Metal asserts"), counted in this process's log since the test began (wrong_kind_asks, wrong_kind_off,
-/// wrong_kind_lines, wrong_kind_lines_other).
+/// Self.wrongKind's answer (wrong_kind_asks, wrong_kind_off) and logs its error lines ("raw: <process>: <selector>
+/// asked of binding <name> of type <n>, where Metal asserts"): tools/devicerun's raw.reflection-wrong-kind-hwtest
+/// judges their count in this run's window of the pulled log against wrong_kind_lines_want; this process's own log,
+/// read right after the asks, may not hold them yet, so wrong_kind_lines and wrong_kind_lines_other are reported only.
 struct ReflectionKindsTest: HWTest {
     let id = "gpu.raw.reflection_kinds"
     let name = "Every binding kind's reflection answers as Metal's"
@@ -78,20 +79,14 @@ struct ReflectionKindsTest: HWTest {
         metrics.set("wrong_kind_asks", asks.count)
         metrics.set("wrong_kind_off", off.count)
         metrics.set("wrong_kind_first_off", off.first.map { "\($0.key):\($0.answer)" } ?? "-")
+        metrics.set("wrong_kind_lines_want", wantLines)
         metrics.set("wrong_kind_lines", lines == nil ? -1 : matched)
         metrics.set("wrong_kind_lines_other", left.count)
-        checks += [
+        checks.append(
             (
                 "wrong_kind: \(off.count) of \(asks.count) asks answered other than \(Self.wrongKind.answer)",
                 off.isEmpty && !asks.isEmpty
-            ),
-            (
-                lines == nil
-                    ? "wrong_kind: this process's log is unreadable"
-                    : "wrong_kind: \(matched) of \(wantLines) lines, \(left.count) others",
-                lines != nil && matched == wantLines && left.isEmpty
-            ),
-        ]
+            ))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

@@ -27,6 +27,9 @@ SKIPS = 'hwtest.skips'
 # their windows stays a finding.
 KILLS_OTHERS = ('gpu.recover.kernel_second_timeout',)
 KILL_WINDOWS = 'hwtest.kill-windows'
+# The runs of tests whose driver lines checks.py counts per run from the pulled log, each a window as KILL_WINDOWS's
+REFLECTION_RUNS = 'hwtest.reflection-kinds-runs'
+READBACK_RUNS = 'hwtest.readback-routes-runs'
 
 CODECS = ('h264', 'hevc', 'hevc_main10', 'vp9')
 SIZES = ('720p', '1080p', '4k')
@@ -263,6 +266,7 @@ TESTS: dict[str, bool] = {
             'gpu.raw.compute_reflection',
             'gpu.raw.reflection_kinds',
             'gpu.raw.function_pointer_answers',
+            'gpu.raw.scratch_order',
             'gpu.kernel.fence_page_regions',
             'gpu.raw.depth16_ms_resolve',
             'gpu.raw.invalid_requests',
@@ -415,7 +419,9 @@ TESTS: dict[str, bool] = {
             'gpu.path.cpu_locks_side_by_side',
             'gpu.path.cpu_locks_side_by_side_pitch',
             'gpu.path.import_beside_submits',
+            'gpu.path.transfer_beside_readback',
             'gpu.path.commit_latency',
+            'gpu.path.ahead_moves',
             'gpu.path.fresh_surface_import',
             'gpu.path.native_surface_republished',
             'metal.native.depth_stencil',
@@ -794,6 +800,30 @@ HWTEST = [
         show=('id',),
         source=SOURCE,
         note='runs that killed clients (killed= above 0): raw.failed and raw.killed lines in a window are its kills',
+    ),
+    Check(
+        REFLECTION_RUNS,
+        OWNER,
+        LITERAL,
+        REPORT,
+        subsystem=SUBSYSTEM,
+        regex=(
+            r'^HWTEST gpu\.raw\.reflection_kinds (?:PASS|FAIL) .*\bwrong_kind_lines_want=(?P<want>\d+)\b'
+            r'.* ms=(?P<ms>[\d.]+)(?: why=|$)'
+        ),
+        show=('want',),
+        source=SOURCE,
+        note='each run of gpu.raw.reflection_kinds and the facade lines its wrong-kind asks must log',
+    ),
+    Check(
+        READBACK_RUNS,
+        OWNER,
+        LITERAL,
+        REPORT,
+        subsystem=SUBSYSTEM,
+        regex=r'^HWTEST gpu\.raw\.readback_routes (?:PASS|FAIL) .* ms=(?P<ms>[\d.]+)(?: why=|$)',
+        source=SOURCE,
+        note='each run of gpu.raw.readback_routes, whose surface arms ask for buffers over a block-linear surface',
     ),
     Check(
         'hwtest.suite-reds',

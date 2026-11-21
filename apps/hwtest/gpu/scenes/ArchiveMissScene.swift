@@ -55,7 +55,7 @@ struct ArchiveMissScene: GPUScene {
         let kind = RawFacade.kind(of: gpu.device)
         guard let quartzCore = try? gpu.device.makeBinaryArchive(descriptor: archiveDescriptor) else {
             // This Mac's Metal calls its own QuartzCore library an invalid archive; iOS's (an AIR slice beside Apple GPU
-            // binaries) opens on an M4 as an archive holding nothing for it (metal2vulkan-runtime container.rs)
+            // binaries) opens on an M4 as an archive holding nothing for it
             result.expect(kind == "apple", "QuartzCore's default.metallib did not open as an archive")
             return result
         }

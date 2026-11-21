@@ -8,7 +8,7 @@ from tools.devicerun.apps import APPS
 from tools.devicerun.audio import AUDIO
 from tools.devicerun.cut import CUT
 from tools.devicerun.dispatch import DISPATCH
-from tools.devicerun.hwtest import HWTEST, KILL_WINDOWS
+from tools.devicerun.hwtest import HWTEST, KILL_WINDOWS, READBACK_RUNS, REFLECTION_RUNS
 from tools.devicerun.joycon import JOYCON
 from tools.devicerun.lockscreen import LOCKSCREEN
 from tools.devicerun.morning import MORNING
@@ -781,6 +781,47 @@ GROUPS: dict[str, list[Check]] = {
             note="a pipeline binding asked another kind's selector (a texture's bufferAlignment): Metal fails an "
             'assertion there and aborts the process, the raw path answers 0, NO or nil; HW Test asks on purpose '
             '(gpu.raw.reflection_kinds wrong_kind)',
+        ),
+        Check(
+            'raw.reflection-wrong-kind-hwtest',
+            'reflection-fix',
+            'where Metal asserts',
+            subsystem=GPU_METAL_SUBSYSTEM,
+            level='error',
+            regex=r'^raw: SwitchHWTest\w*: \w+ asked of binding \S+ of type \d+, where Metal asserts$',
+            per=REFLECTION_RUNS,
+            per_count='want',
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalReflectionObjects.mm',
+            note='one line for each wrong-kind ask of a gpu.raw.reflection_kinds run, in that run (its '
+            'wrong_kind_lines_want): fewer is an ask the facade answered silently',
+        ),
+        Check(
+            'raw.nocopy-tiled-hwtest',
+            'lost-work-3',
+            'whose pages hold its texels in GOBs: no buffer',
+            subsystem=GPU_METAL_SUBSYSTEM,
+            level='error',
+            regex=r'^raw: SwitchHWTest\w*: newBufferWithBytesNoCopy over \d+ bytes at \S+: they lie in an IOSurface '
+            r'this process imported block-linear',
+            per=READBACK_RUNS,
+            per_count='2',
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalDevice.mm',
+            note='each gpu.raw.readback_routes run asks for two no-copy buffers over its block-linear surface (all its '
+            'pages, one page of them): two nils, a line each. A run whose surface was not block-linear '
+            '(surface_cpu_layout in its report) reads 0 here',
+        ),
+        Check(
+            'refusal.buf-surface-tiled-hwtest',
+            'lost-work-3',
+            'buf.surface.tiled',
+            subsystem=REFUSAL_SUBSYSTEM,
+            level='error',
+            regex=r'^SwitchHWTest\w*\[\d+\] buf\.surface\.tiled: newBufferWithIOSurface: of IOSurface \d+, ',
+            per=READBACK_RUNS,
+            per_count='1',
+            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalDevice.mm',
+            note='each gpu.raw.readback_routes run asks newBufferWithIOSurface: twice of one block-linear surface: '
+            'two nils, one line (once a surface)',
         ),
         Check(
             'raw.failed-hwtest',

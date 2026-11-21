@@ -46,7 +46,9 @@ class Check:
     subjects on purpose, each test's window its line's time less its `ms` field up to its time: this check's lines in a
     window of the same boot that match `excusable` (searched; every line when empty) are that test's, listed as expected
     ("killed by <its id>") and left out of the rule. A `process` of '!<name>' matches every process whose name does not
-    begin with <name>.
+    begin with <name>. `per` names a check whose lines are tests' runs, each a window as `during`'s: the verdict is then
+    each window's count of this check's lines in the same boot against `per_count`, that line's field or a number (FAIL
+    where any differs, NO_DATA with no run), and `rule` is not read.
     """
 
     name: str
@@ -72,6 +74,8 @@ class Check:
     unless: str = ''
     during: str = ''
     excusable: str = ''
+    per: str = ''
+    per_count: str = ''
 
     def literals(self) -> tuple[str, ...]:
         return (self.contains,) if isinstance(self.contains, str) else self.contains
@@ -341,8 +345,9 @@ def judge(check: Check, matches: list[dict], minutes: float, by_name: dict[str, 
         return Result(check, NO_DATA, f'no {check.needs} line', matches)
     if check.applies and not applicable(check.applies, by_name):
         return Result(check, NA, f'not run here: no {check.applies} line', matches)
-    if check.followed:
-        return follow(check, matches, minutes, by_name)
+    if check.followed or check.per:
+        runs = by_name.get(check.per, [])
+        return follow(check, matches, minutes, by_name) if check.followed else per_run(check, matches, runs)
     if check.rule in {TIMELINE, REPORT}:
         return informational(check, matches, minutes, by_name)
     got, observed = measure(check, matches, minutes)
@@ -351,3 +356,22 @@ def judge(check: Check, matches: list[dict], minutes: float, by_name: dict[str, 
     m = RULE.match(check.rule)
     verdict = PASS if OPS[m['op']](got, float(m['value'])) else FAIL
     return Result(check, verdict, observed, matches)
+
+
+def per_run(check: Check, matches: list[dict], runs: list[dict]) -> Result:
+    """Each run's count of `matches` in its window against `check.per_count` (its field, else the number itself)."""
+    counted = []
+    for run in runs:
+        want = str(run.get(check.per_count, check.per_count))
+        if 'ms' not in run or not want.isdigit():
+            continue
+        start = run['time'] - timedelta(milliseconds=number(run['ms']))
+        got = sum(1 for f in matches if f['boot'] == run['boot'] and start <= f['time'] <= run['time'])
+        counted.append((run['time'], got, int(want)))
+    if not counted:
+        return Result(check, NO_DATA, f'no {check.per} run', matches)
+    off = [c for c in counted if c[1] != c[2]]
+    rows = ' '.join(f'{t:%H:%M:%S} {got}/{want}' for t, got, want in (off or counted)[:8])
+    return Result(
+        check, FAIL if off else PASS, f'{len(counted)} runs, {len(off)} off (lines/expected): {rows}', matches
+    )

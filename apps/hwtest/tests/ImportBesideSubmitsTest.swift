@@ -7,17 +7,17 @@ import Metal
 /// A connection's SubmitJob beside its BoImport (drivers/TegraGM20B/TegraGM20BUserClientDispatch.cpp): an import's
 /// wiring, zero-fill faults, page walk and clean run before the connection's lock and submit gate, so a command buffer
 /// committed while another thread makes textures over fresh IOSurfaces is scheduled without waiting for them. One
-/// thread makes textures over new 4096x2048 surfaces back to back; this one commits fills of a private buffer meanwhile,
-/// timing each from commit to waitUntilScheduled, and the same with no imports first. A submission is beside the
-/// imports when its time overlaps one. An import's own wiring is timed on the test's own connection: a fresh surface's
-/// BoImport less a second BoImport of it, which adopts the first's wiring (TegraGM20BUserClientBo.cpp sharedWiringFind)
-/// and so skips the zero-fill, page walk, nvkm memory and clean (`wire_ms`; both imports' times are logged). The
-/// surfaces are 32 MiB so that half a wiring stands clear of the run's contention (ImportBesideVerdict: 3.5 MiB wired in
-/// 0.28 ms on boot 22, too short to tell, makes about 2.6 ms); four of them, 128 MiB, are held. Fails when imports add
-/// half a wiring or more to the submissions' p99. The fills are private because the raw runtime holds its device lock across a surface
-/// texture's import (raw_gpu.cpp createSurfaceTexture) and takes it again before a command buffer that wrote a
-/// CPU-cached buffer is scheduled (raw_alias.cpp captureCpuCompletion); a private fill's encode and submission never take
-/// it, so the two threads meet only in the kernel.
+/// thread makes textures over new 4096x2048 surfaces back to back; this one commits fills of a private buffer
+/// meanwhile, timing each from commit to waitUntilScheduled, and the same with no imports first. A submission is beside
+/// the imports when its time overlaps one. An import's own wiring is timed on the test's own connection: a fresh
+/// surface's BoImport less a second BoImport of it, which adopts the first's wiring (TegraGM20BUserClientBo.cpp
+/// sharedWiringFind) and so skips the zero-fill, page walk, nvkm memory and clean (`wire_ms`; both imports' times are
+/// logged). The surfaces are 32 MiB so that half a wiring stands clear of the run's contention (ImportBesideVerdict:
+/// 3.5 MiB wired in 0.28 ms on boot 22, too short to tell, makes about 2.6 ms); four of them, 128 MiB, are held. Fails
+/// when imports add half a wiring or more to the submissions' p99. Two arms: fills of a private buffer, and (`shared_*`
+/// keys) fills of a shared, CPU-cached one, whose command buffers take the device lock to capture their CPU completion
+/// (raw_alias.cpp captureCpuCompletion). The runtime holds no device lock across a surface texture's import, so both
+/// arms meet the imports only in the kernel.
 struct ImportBesideSubmitsTest: GPUPathTest {
     let id = "gpu.path.import_beside_submits"
     let name = "Command buffers are scheduled without waiting for another thread's IOSurface imports"
@@ -96,10 +96,25 @@ struct ImportBesideSubmitsTest: GPUPathTest {
 
     func exercise(_ gpu: GPU, _: TestContext, _ metrics: inout Metrics) async throws -> [String] {
         guard let connection = GPUConnection() else { throw TestFailure("no TegraGM20B connection") }
-        guard let target = gpu.device.makeBuffer(length: Self.fillBytes, options: .storageModePrivate) else {
-            throw TestFailure("no private buffer")
-        }
         let (wireMs, firstMs, secondMs) = try Self.wiring(connection)
+        metrics.set("wire_ms", wireMs, digits: 2)
+        metrics.set("boimport_ms", firstMs, digits: 2)
+        metrics.set("boimport_again_ms", secondMs, digits: 2)
+        var failures: [String] = []
+        for (arm, storage) in [("", MTLResourceOptions.storageModePrivate), ("shared_", .storageModeShared)] {
+            guard let target = gpu.device.makeBuffer(length: Self.fillBytes, options: storage) else {
+                throw TestFailure("no \(arm.isEmpty ? "private" : "shared") buffer")
+            }
+            let found = try Self.beside(gpu, target, wireMs: wireMs, arm, &metrics)
+            failures += found.map { arm.isEmpty ? $0 : "shared: " + $0 }
+        }
+        return failures
+    }
+
+    /// Submissions filling `target` alone and beside another thread's imports, their keys prefixed with `arm`
+    static func beside(
+        _ gpu: GPU, _ target: MTLBuffer, wireMs: Double, _ arm: String, _ metrics: inout Metrics
+    ) throws -> [String] {
         for _ in 0..<Self.warmFills { _ = try Self.submit(gpu, target) }
         let quiet = try (0..<Self.quiet).map { _ in try Self.submit(gpu, target) }
         let importer = Importer()
@@ -110,17 +125,14 @@ struct ImportBesideSubmitsTest: GPUPathTest {
         let beside = during.filter { submission in importer.spans.contains { $0.overlaps(submission) } }
         let quietMs = quiet.map(\.ms), besideMs = beside.map(\.ms)
         let quietP99 = Stats.percentile(quietMs, 0.99), besideP99 = Stats.percentile(besideMs, 0.99)
-        metrics.set("wire_ms", wireMs, digits: 2)
-        metrics.set("boimport_ms", firstMs, digits: 2)
-        metrics.set("boimport_again_ms", secondMs, digits: 2)
-        metrics.set("import_ms", Self.median(importer.spans.map(\.ms)), digits: 2)
-        metrics.set("imports", importer.made.count)
-        metrics.set("beside", beside.count)
-        metrics.set("quiet_p99_ms", quietP99, digits: 2)
-        metrics.set("quiet_worst_ms", quiet.map(\.ms).max() ?? 0, digits: 2)
-        metrics.set("beside_p99_ms", besideP99, digits: 2)
-        metrics.set("beside_worst_ms", beside.map(\.ms).max() ?? 0, digits: 2)
-        metrics.set("added_p99_ms", ImportBesideVerdict.addedP99(quiet: quietMs, beside: besideMs), digits: 2)
+        metrics.set(arm + "import_ms", Self.median(importer.spans.map(\.ms)), digits: 2)
+        metrics.set(arm + "imports", importer.made.count)
+        metrics.set(arm + "beside", beside.count)
+        metrics.set(arm + "quiet_p99_ms", quietP99, digits: 2)
+        metrics.set(arm + "quiet_worst_ms", quiet.map(\.ms).max() ?? 0, digits: 2)
+        metrics.set(arm + "beside_p99_ms", besideP99, digits: 2)
+        metrics.set(arm + "beside_worst_ms", beside.map(\.ms).max() ?? 0, digits: 2)
+        metrics.set(arm + "added_p99_ms", ImportBesideVerdict.addedP99(quiet: quietMs, beside: besideMs), digits: 2)
         withExtendedLifetime(importer.made) {}
         return (importer.failure.map { [$0] } ?? [])
             + ImportBesideVerdict.failures(

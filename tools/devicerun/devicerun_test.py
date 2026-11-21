@@ -6,7 +6,7 @@ import re
 import unittest
 from pathlib import Path
 
-from tools.devicerun import checks, devicerun, rules
+from tools.devicerun import checks, devicerun, hwtest, rules
 from tools.devicerun.rules import FAIL, INFO, NO_DATA, PASS, Check
 
 TEST = Path(__file__).resolve().parent / 'test'
@@ -31,6 +31,7 @@ class Checks(unittest.TestCase):
                 self.assertTrue(not c.needs or c.needs in names, c.name)
                 self.assertTrue(not c.against or c.against in names, c.name)
                 self.assertTrue(not c.during or c.during in names, c.name)
+                self.assertTrue(not c.per or c.per in names, c.name)
 
     def test_predicate_escapes_and_covers_every_check(self):
         check = Check('q', 'o', 'say "hi" \\ there', process='kernel', subsystem='a.b', level='error')
@@ -187,6 +188,40 @@ class Rules(unittest.TestCase):
         own = record('SwitchHWTest27e', line.format(who='SwitchHWTest27e'))
         results, _ = devicerun.run_checks([own], [wrong])
         self.assertEqual(results[0].verdict, PASS)
+
+    def test_driver_lines_are_counted_per_run_of_their_test(self):
+        runs = next(c for c in hwtest.HWTEST if c.name == hwtest.REFLECTION_RUNS)
+        lines = next(c for c in checks.GROUPS['refusals'] if c.name == 'raw.reflection-wrong-kind-hwtest')
+
+        def record(second: int, subsystem: str, message: str) -> dict:
+            return {
+                'timestamp': f'2026-11-20 09:00:{second:02d}.000000-0800',
+                'bootUUID': 'B00T',
+                'processImagePath': '/private/var/containers/Bundle/Application/X/SwitchHWTest27e.app/SwitchHWTest27e',
+                'subsystem': subsystem,
+                'category': 'raw',
+                'messageType': 'Error',
+                'eventMessage': message,
+            }
+
+        ask = 'raw: SwitchHWTest27e: textureType asked of binding b4 of type 0, where Metal asserts'
+        run = 'HWTEST gpu.raw.reflection_kinds PASS wrong_kind_asks=2 wrong_kind_lines_want=2 ms=3000.0'
+        hwtest_line = {**record(0, hwtest.SUBSYSTEM, ''), 'category': 'hwtest', 'messageType': 'Default'}
+        first = [record(1, checks.GPU_METAL_SUBSYSTEM, ask), record(2, checks.GPU_METAL_SUBSYSTEM, ask)]
+        second = [record(11, checks.GPU_METAL_SUBSYSTEM, ask)]
+        log = [
+            *first,
+            {**hwtest_line, 'timestamp': '2026-11-20 09:00:03.000000-0800', 'eventMessage': run},
+            record(6, checks.GPU_METAL_SUBSYSTEM, ask),
+            *second,
+            {**hwtest_line, 'timestamp': '2026-11-20 09:00:13.000000-0800', 'eventMessage': run},
+        ]
+        got = {r.check.name: r for r in devicerun.run_checks(log, [runs, lines])[0]}
+        self.assertEqual(got[lines.name].verdict, FAIL)
+        self.assertIn('2 runs, 1 off', got[lines.name].observed)
+        self.assertIn('1/2', got[lines.name].observed)
+        got = {r.check.name: r for r in devicerun.run_checks(log[:3], [runs, lines])[0]}
+        self.assertEqual(got[lines.name].verdict, PASS)
 
     def test_failed_command_buffers_are_judged_per_process(self):
         failed = [c for c in checks.GROUPS['refusals'] if c.name.startswith('raw.failed')]

@@ -11,11 +11,13 @@ import Metal
 /// IOSurface lock held, and the texture's read after the view's replaceRegion of the pattern's rows inverted under a
 /// lock. Where the kernel laid the surface out block-linear (surface_cpu_layout 1), its pages hold GOBs, so no buffer
 /// aliases them as an M4 Max's does: newBufferWithBytesNoCopy over the surface's pages and over one page inside them is
-/// nil (surface_nocopy_buffer, surface_page_nocopy_buffer 0) with a line each (surface_nocopy_lines 2), over the
-/// process's own pages it is made (own_pages_nocopy_buffer 1), and newBufferWithIOSurface: (SPI) asked twice makes none
-/// (surface_buffers 0) with one raw:buf.surface.tiled line for the surface (surface_tiled_lines 1). On another layout
-/// those are reported, not judged. A transfer the copy engine failed (raw:texture.cpu.unreached) cannot be provoked
-/// from here.
+/// nil (surface_nocopy_buffer, surface_page_nocopy_buffer 0), over the process's own pages it is made
+/// (own_pages_nocopy_buffer 1), and newBufferWithIOSurface: (SPI) asked twice makes none (surface_buffers 0). On
+/// another layout those are reported, not judged. Their lines, a line a no-copy nil and one raw:buf.surface.tiled line
+/// for the surface, are judged by tools/devicerun per run of this test from the pulled log (raw.nocopy-tiled-hwtest 2,
+/// refusal.buf-surface-tiled-hwtest 1); this process's own log, read right after the calls, may not hold them yet, so
+/// surface_nocopy_lines and surface_tiled_lines are reported only. A transfer the copy engine failed
+/// (raw:texture.cpu.unreached) cannot be provoked from here.
 extension RawReadbackRoutesTest {
     func surfaceCpu(
         _ gpu: GPU, _ draw: (MTLTexture) async throws -> Void, _ metrics: inout Metrics,
@@ -57,9 +59,7 @@ extension RawReadbackRoutesTest {
         checks += [
             ("surface_nocopy_buffer: a buffer over a block-linear surface's pages", !r.surfaceNoCopy),
             ("surface_page_nocopy_buffer: a buffer over a page of them", !r.pageNoCopy),
-            ("surface_nocopy_lines=\(noCopyLines ?? -1) not 2", noCopyLines == 2),
             ("surface_buffers=\(r.surfaceBuffers ?? -1) not 0 of 2 (newBufferWithIOSurface:)", r.surfaceBuffers == 0),
-            ("surface_tiled_lines=\(tiledLines ?? -1) not 1", tiledLines == 1),
         ]
     }
 

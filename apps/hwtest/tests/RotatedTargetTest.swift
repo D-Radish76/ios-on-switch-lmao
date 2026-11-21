@@ -5,22 +5,22 @@ import IOSurface
 import Metal
 
 /// gpu.x1.rotated_target (METALMAP d26): passes into a texture Metal's rotation SPI turns over an IOSurface plane (a
-/// CAMetalLayer drawable on the turned display), rotations 1 to 4, against the same draws into a plain texture turned by
-/// Metal's measured store map (metal2vulkan-runtime rotated.rs). The raw path draws straight into the plane through the
-/// viewport coordinate swizzle, a state that reads the plane's axes through its turned variant (its position, one axis's
-/// derivative), a private depth texture neither loaded nor stored through a backing laid out as the plane, a 4x resolve
-/// into the plane through the resolve state's turned variant, a private colour texture stored beside the plane, a
-/// private depth texture loaded beside it and a private depth/stencil texture stored then loaded beside it (each through a
-/// stand-in laid out as the plane, turned in and back by the pack's turn copies and stencil bits), rotation 4's load, which Metal makes transposed in each tile a draw reaches (its expected bytes
-/// the reference pass loading pass 1's frame flipped top to bottom, every tile reached by a full-frame draw whose fragments
-/// are discarded), loads whose draws reach some tiles alone (RotatedReachCells.swift: rotation 4's plane and a second
-/// plane of rotation 4 beside the target), a load with no draw, which leaves the plane as it is, a second plane of another
-/// turn and frame beside it and private textures of other sizes (RotatedMixedCells.swift: each landing by its own store map
-/// over the render area, a turned attachment of a frame past the area loaded as Metal loads it): those cells FAIL when they
-/// run anywhere else (path= other than raw).
-/// native_cells / native_raw count the required cells and those that ran raw; tie_wrong counts the pixels the plane's
-/// rasteriser decides apart from the frame's where an edge runs through pixel centres (its tie rule turns too); r4_edge_wrong
-/// those of a rotation-4 load whose rectangle ends on tile edges, which Metal's reach takes past them.
+/// CAMetalLayer drawable on the turned display), rotations 1 to 4, against the same draws into a plain texture turned
+/// by Metal's measured store map. The raw path draws straight into the plane through the viewport coordinate swizzle, a
+/// state that reads the plane's axes through its turned variant (its position, one axis's derivative), a private depth
+/// texture neither loaded nor stored through a backing laid out as the plane, a 4x resolve into the plane through the
+/// resolve state's turned variant, a private colour texture stored beside the plane, a private depth texture loaded
+/// beside it and a private depth/stencil texture stored then loaded beside it (each through a stand-in laid out as the
+/// plane, turned in and back by the pack's turn copies and stencil bits), rotation 4's load, which Metal makes
+/// transposed in each tile a draw reaches (its expected bytes the reference pass loading pass 1's frame flipped top to
+/// bottom, every tile reached by a full-frame draw whose fragments are discarded), loads whose draws reach some tiles
+/// alone (RotatedReachCells.swift: rotation 4's plane and a second plane of rotation 4 beside the target), a load with
+/// no draw, which leaves the plane as it is, a second plane of another turn and frame beside it and private textures of
+/// other sizes (RotatedMixedCells.swift: each landing by its own store map over the render area, a turned attachment of
+/// a frame past the area loaded as Metal loads it): those cells FAIL when they run anywhere else (path= other than
+/// raw). native_cells / native_raw count the required cells and those that ran raw; tie_wrong counts the pixels the
+/// plane's rasteriser decides apart from the frame's where an edge runs through pixel centres (its tie rule turns too);
+/// r4_edge_wrong those of a rotation-4 load whose rectangle ends on tile edges, which Metal's reach takes past them.
 struct RotatedTargetTest: HWTest {
     let id = "gpu.x1.rotated_target"
     let name = "Rotated drawables: rendered straight into the turned plane, each rotation"
