@@ -788,8 +788,7 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     // A failed one returns once finish() withdrew the writes it will never make (RawMetalSchedule.mm cancelPromises), so
     // a present its caller makes next of a surface it was to write is refused, never shown with the frame before
     auto returns = [&] {
-        return raw::scheduledWaitReturns(_scheduledDone, _held,
-                                         _segError.set() && _promised.load(std::memory_order_acquire));
+        return raw::scheduledWaitReturns(_scheduledDone, _segError.set() && _promised.load(std::memory_order_acquire));
     };
     if (_committed && !returns()) {
 #if SWITCH_RAW_DIAGNOSTICS

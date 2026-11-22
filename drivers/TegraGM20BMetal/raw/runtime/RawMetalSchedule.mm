@@ -116,6 +116,39 @@ void cancelPromises(RMCommandBuffer *cb)
                      unsigned(refusal));
 }
 
+// Method 34 Arm: the kernel holds the bound on its unkept writer promises too, since Metal's bound is its kernel's and
+// fires whatever this process is doing, suspended or stopped; a reader of the surfaces then goes on at `due` without
+// waiting for this worker to run. `fails`: the command buffer fails at `due` (an untimed wait's own bound), so the
+// kernel refuses a later keep. On the worker: it arms before it keeps, on one thread.
+static void armBound(RMCommandBuffer *cb, raw::EventDeadline::Time due, bool fails = false)
+{
+    uint32_t mask = 0;
+    {
+        std::lock_guard<raw::Mutex> l(cb->_lock);
+        for (uint32_t id : cb->_promises)
+            mask |= 1u << id;
+    }
+    if (!mask || due == raw::EventDeadline::Time{})
+        return;
+    const int64_t left = std::chrono::duration_cast<std::chrono::nanoseconds>(due - raw::EventDeadline::now()).count();
+    if (const int kr = gRM->raw->armPromises(mask, uint64_t(std::max<int64_t>(left, 0)), fails))
+        once([NSString stringWithFormat:@"the kernel took no bound for the writer promises of a command buffer held on a "
+                                        @"shared event (0x%x): a reader of its surfaces waits for this process to run",
+                                        kr]);
+}
+
+// The head held at a wait on a shared event: its own bound (`fails`: an untimed wait's, where it fails), and one a bound
+// later for every command buffer held behind it, which this worker runs once the head fails or goes on (on Apple's GPU
+// a held buffer behind another fails 5 s after it)
+static raw::EventDeadline::Time holdBound(RMCommandBuffer *cb, bool &fails)
+{
+    const Cmd c = cb->_plan.legacy(cb->_segs[cb->_segNext].from);
+    const raw::EventDeadline wait(cb->_eventStart, uint32_t(c.a));
+    fails = !c.a;
+    cb->_queue->_heldBound = wait.holderBound() + raw::EventDeadline::kHeldBound;
+    return wait.holderBound();
+}
+
 void commitBuffer(RMCommandBuffer *cb)
 {
     raw::followers().committing();
@@ -192,6 +225,7 @@ static void applyChange(RawState &r, const RMScheduleChange &change)
         if (held) {
             promiseWrites(cb, writtenSurfaces(cb));
             cb->_held = true;
+            armBound(cb, cb->_queue->_heldBound);
             rmChanged(cb);
         }
         break;
@@ -269,13 +303,16 @@ static raw::HeadWait eventWait(RMCommandBuffer *cb)
     return promisedEvent(c.obj, c.c) ? raw::HeadWait::promised : raw::HeadWait::event;
 }
 
-// waitUntilScheduled of the command buffers a hold took returns; one a release gave back waits for its scheduling again
-static void markHeld(std::vector<RMCommandBuffer *> &buffers, bool held)
+// The command buffers a hold took promise their writes, and those behind the held head get their bound; `head`, the held
+// queue's head, has its own, which the submit loop arms
+static void markHeld(std::vector<RMCommandBuffer *> &buffers, bool held, RMCommandBuffer *head = nil)
 {
     for (RMCommandBuffer *cb : buffers) {
         if (held)
             promiseWrites(cb, writtenSurfaces(cb));
         cb->_held = held;
+        if (held && cb != head)
+            armBound(cb, cb->_queue->_heldBound);
         if (held)
             rmChanged(cb);
     }
@@ -303,7 +340,7 @@ void submitLoop()
             bool followed = false;
             for (;;) {
                 applyChanges(r);
-                r.waiting.expire(raw::EventDeadline::Clock::now());
+                r.waiting.expire(raw::EventDeadline::now());
                 r.waitingCommitted.store(uint32_t(r.waiting.committed()), std::memory_order_relaxed);
                 ticket = r.waiting.next();
                 if (ticket) {
@@ -321,7 +358,7 @@ void submitLoop()
                 const auto due = r.waiting.deadline();
                 dispatch_time_t until = DISPATCH_TIME_FOREVER;
                 if (due != raw::EventDeadline::Time::max()) {
-                    const auto left = due - raw::EventDeadline::Clock::now();
+                    const auto left = due - raw::EventDeadline::now();
                     until = dispatch_time(
                         DISPATCH_TIME_NOW,
                         std::max<int64_t>(0, std::chrono::duration_cast<std::chrono::nanoseconds>(left).count()));
@@ -387,9 +424,18 @@ void submitLoop()
                     continue;
                 }
                 r.waiting.park(ticket, dependencies, deadline);
-                if (raw::holds(wait))
-                    r.waiting.hold(ticket.key, marked);
-                markHeld(marked, true);
+                if (!raw::holds(wait)) {
+                    markHeld(marked, true);
+                    continue;
+                }
+                r.waiting.hold(ticket.key, marked);
+                bool fails = false;
+                const auto bound = holdBound(cb, fails);
+                markHeld(marked, true, cb);
+                if (cb->_boundArmed != cb->_eventArmed) {
+                    cb->_boundArmed = cb->_eventArmed;
+                    armBound(cb, bound, fails);
+                }
                 continue;
             }
             bool submitted = true;

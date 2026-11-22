@@ -352,21 +352,55 @@ enum class EventReadiness {
     blocked
 };
 
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+// The event clock a test holds (switchRawProbeAdvanceEventClock:), in steady-clock nanoseconds; 0: it runs
+inline std::atomic<int64_t> gEventClockHeld{0};
+#endif
+
 class EventDeadline {
 public:
     using Clock = std::chrono::steady_clock;
     using Time = Clock::time_point;
 
+    // How long Metal's GPU lets an untimed wait on a shared event hold its queue's head before the command buffer fails
+    // with MTLCommandBufferErrorTimeout: 5.0 s from the wait becoming the head, whatever waits behind it (an M4 Max,
+    // macOS 27.2.1: 5004.3-5005.5 ms over 26 held command buffers; a second held buffer fails 5.0 s after the first)
+    static constexpr std::chrono::milliseconds kHeldBound{5000};
+
+    static Time now()
+    {
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+        if (const int64_t held = gEventClockHeld.load(std::memory_order_acquire))
+            return Time(std::chrono::duration_cast<Clock::duration>(std::chrono::nanoseconds(held)));
+#endif
+        return Clock::now();
+    }
+
     EventDeadline(Time start, uint32_t timeoutMs)
-        : until_(timeoutMs ? start + std::chrono::milliseconds(timeoutMs) : Time::max()), timed_(timeoutMs != 0)
+        : until_(start + (timeoutMs ? std::chrono::milliseconds(timeoutMs) : kHeldBound)), timed_(timeoutMs != 0)
     {}
 
-    // An untimed wait waits as long as Metal's GPU would: until the value is reached, or its producer fails
+    // A timed wait goes on at its limit as if reached; an untimed one waits for the value, its producer's failure or
+    // the bound (expired)
     EventReadiness state(bool covered, Time now) const
     {
         if (covered || (timed_ && now >= until_))
             return EventReadiness::ready;
         return EventReadiness::blocked;
+    }
+
+    // An untimed wait not reached by the bound: its command buffer fails. Reached at the bound, it goes on.
+    bool expired(bool covered, Time now) const
+    {
+        return !covered && !timed_ && now >= until_;
+    }
+
+    // The bound the kernel holds for the held command buffer's writer promises (method 34 Arm): an untimed wait's own,
+    // where the command buffer fails; a timed one's a bound past its limit, where the command buffer runs, so a running
+    // submit worker keeps the promises well inside it
+    Time holderBound() const
+    {
+        return timed_ ? until_ + kHeldBound : until_;
     }
 
     Time until() const

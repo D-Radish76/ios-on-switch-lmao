@@ -218,14 +218,23 @@ struct Model {
     std::map<uint64_t, uint32_t> events;  // handle: the port imported
     uint64_t nextEvent = 1;
     std::vector<uint64_t> eventWords;  // EventWord's handles, in order
-    // WriterPromise's calls, in order; a Make is answered with the next promise, which its record's `promise` holds
+    // WriterPromise's calls, in order; a Make is answered with the next promise, which its record's `promise` holds (an
+    // Arm's is its mask, and `ns` its bound); promiseCalled runs after each is recorded, under callLock
     struct PromiseCall {
         uint32_t op = 0, promise = 0;
         std::vector<uint64_t> handles;
+        uint64_t ns = 0;
     };
     std::vector<PromiseCall> promiseCalls;
+    std::function<void()> promiseCalled;
     uint32_t nextPromise = 0;
     uint32_t promiseValues[TegraGM20BMaxPromises] = {};
+    // The holders' bounds (TegraGM20BPromiseArm) on the model's own clock, which only advancePromiseClock moves: a
+    // promise past its bound is given up as the kernel gives it up (released, so a reader goes on), and a job that keeps
+    // it is refused with kIOReturnTimeout
+    uint64_t promiseNs = 0;
+    uint64_t promiseDue[TegraGM20BMaxPromises] = {};
+    bool promiseGivenUp[TegraGM20BMaxPromises] = {}, promiseFails[TegraGM20BMaxPromises] = {};
     // The kernel's clock anchors (gpu_anchor.c), on the first connection's model, which holds them
     TegraGM20BAbiClockAnchors anchors = {};
 
@@ -248,6 +257,19 @@ struct Model {
     {
         if (promise < TegraGM20BMaxPromises && int32_t(promiseWord(promise) - promiseValues[promise]) < 0)
             promiseWord(promise) = promiseValues[promise];
+    }
+
+    // Under callLock
+    void advancePromiseClock(uint64_t ms)
+    {
+        promiseNs += ms * 1000000;
+        for (uint32_t p = 0; p < TegraGM20BMaxPromises; ++p) {
+            if (!promiseDue[p] || promiseNs < promiseDue[p])
+                continue;
+            promiseDue[p] = 0;
+            promiseGivenUp[p] = true;
+            promiseReleased(p);
+        }
     }
 
     TegraGM20BAbiClockAnchors *anchorTable()
@@ -445,14 +467,22 @@ struct Model {
             if (const auto bo = bos.find(resolve(shared[i])); bo != bos.end())
                 hostWritten |= std::exchange(bo->second.hostWritten, false);
         }
+        const auto *kept = reinterpret_cast<const TegraGM20BAbiJobPromises *>(
+            reinterpret_cast<const uint8_t *>(shared + head->shared_count) +
+            (admission ? sizeof(TegraGM20BAbiSubmitAdmission) : 0));
+        const uint32_t keeps =
+            (head->flags & TegraGM20BJobFulfills) ? std::min<uint32_t>(kept->count, TegraGM20BMaxJobPromises) : 0;
+        for (uint32_t i = 0; i < keeps; i++) {
+            if (promiseGivenUp[kept->promise[i] % TegraGM20BMaxPromises] &&
+                promiseFails[kept->promise[i] % TegraGM20BMaxPromises])
+                return kIOReturnTimeout;
+            promiseDue[kept->promise[i] % TegraGM20BMaxPromises] = 0;
+        }
         submitJobs++;
         const auto *pushes = reinterpret_cast<const TegraGM20BAbiPush *>(head + 1);
         const int kr = run(*s, head->channel, std::move(uses), reply, head->flags, pushWords(pushes, head->push_count));
         jobs.back().hostWritten = hostWritten;
         jobs.back().pushes.assign(pushes, pushes + head->push_count);
-        const auto *kept = reinterpret_cast<const TegraGM20BAbiJobPromises *>(
-            reinterpret_cast<const uint8_t *>(shared + head->shared_count) +
-            (admission ? sizeof(TegraGM20BAbiSubmitAdmission) : 0));
         if ((head->flags & TegraGM20BJobFulfills) && !inFlight && !jobAdded)
             for (uint32_t i = 0; i < std::min<uint32_t>(kept->count, TegraGM20BMaxJobPromises); i++)
                 promiseReleased(kept->promise[i]);
@@ -633,6 +663,7 @@ inline void clearHooks()
     const auto clear = [](Model &m) {
         m.bound = nullptr;
         m.jobAdded = nullptr;
+        m.promiseCalled = nullptr;
         m.compiler = nullptr;
         m.compilerFlags = 0;
         m.store = nullptr;
@@ -844,11 +875,24 @@ extern "C" kern_return_t IOConnectCallStructMethod(mach_port_t connection, uint3
         if (in.op == TegraGM20BPromiseMake) {
             call.promise = model.nextPromise++ % TegraGM20BMaxPromises;
             model.promiseValues[call.promise] = model.promiseWord(call.promise) + 1;
+            model.promiseDue[call.promise] = 0;
+            model.promiseGivenUp[call.promise] = false;
+        } else if (in.op == TegraGM20BPromiseArm) {
+            call.ns = in.uses_address;
+            for (uint32_t p = 0; p < TegraGM20BMaxPromises; ++p) {
+                if (!(in.promise & (1u << p)))
+                    continue;
+                model.promiseDue[p] = model.promiseNs + std::max<uint64_t>(in.uses_address, 1);
+                model.promiseFails[p] = (in.channel & TegraGM20BPromiseArmFails) != 0;
+            }
         } else if (!in.count) {
+            model.promiseDue[in.promise % TegraGM20BMaxPromises] = 0;
             model.promiseReleased(in.promise);
         }
         *static_cast<TegraGM20BAbiWriterPromiseReply *>(output) = {call.promise, 0};
         model.promiseCalls.push_back(std::move(call));
+        if (model.promiseCalled)
+            model.promiseCalled();
         return KERN_SUCCESS;
     }
     case TegraGM20BMethodClockAnchors:

@@ -166,6 +166,14 @@ int Kernel::cancelPromise(uint32_t promise, bool withdrawn)
     return call(TegraGM20BMethodWriterPromise, &in, sizeof in, &reply, sizeof reply);
 }
 
+int Kernel::armPromises(uint32_t mask, uint64_t ns, bool fails)
+{
+    const TegraGM20BAbiWriterPromise in = {ns, TegraGM20BPromiseArm, 0, mask,
+                                           fails ? uint32_t(TegraGM20BPromiseArmFails) : 0u};
+    TegraGM20BAbiWriterPromiseReply reply = {};
+    return call(TegraGM20BMethodWriterPromise, &in, sizeof in, &reply, sizeof reply);
+}
+
 int Kernel::withdrawWrites(const std::vector<uint64_t> &handles)
 {
     int result = KERN_SUCCESS;

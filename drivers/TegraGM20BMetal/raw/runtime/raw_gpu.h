@@ -2723,6 +2723,13 @@ public:
         return k_.cancelPromise(id, withdrawn);
     }
 
+    // The holder's bound on the promises of `mask` (TegraGM20BPromiseArm), `ns` from now (`fails`: their command buffer
+    // fails there): the kern_return_t
+    int armPromises(uint32_t mask, uint64_t ns, bool fails)
+    {
+        return k_.armPromises(mask, ns, fails);
+    }
+
     // A failed command buffer's writes of the IOSurface imports `handles` that no promise names, withdrawn: the
     // kern_return_t
     int withdrawWrites(const std::vector<uint64_t> &handles)

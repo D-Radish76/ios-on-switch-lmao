@@ -122,12 +122,25 @@ enum {
  * zero, `promise` is given up (a reader parked on it goes on without it) and released as Cancel releases it; otherwise
  * `uses_address`/`count` name, as Make does, IOSurfaces it wrote under no promise. Either way each surface's frame is
  * refused until its next write (SWITCH_GPU_BACKING_WRITE_REFUSED), so a present of it is not shown with the frame before
- * in its place. */
+ * in its place.
+ * Arm: the command buffer's wait on a shared event became its queue's head; `promise` is a mask of its promises made and
+ * not kept, `uses_address` the nanoseconds from now to its holder's bound (at most TegraGM20BPromiseArmMaxNs), `count`
+ * zero, `channel` TegraGM20BPromiseArmFails or 0. At the bound the kernel gives each one still unkept up, as Withdraw
+ * does for its readers, whatever its maker is doing; the maker's own Withdraw or Cancel of it afterwards succeeds. With
+ * TegraGM20BPromiseArmFails (the command buffer fails at this bound, as Metal fails an untimed wait) a job that keeps it
+ * later is refused with kIOReturnTimeout; without (it runs after the bound) its job still runs. An arm again replaces
+ * the bound; a keep before it ends it. */
 enum {
 	TegraGM20BPromiseMake = 0,
 	TegraGM20BPromiseCancel = 1,
 	TegraGM20BPromiseWithdraw = 2,
+	TegraGM20BPromiseArm = 3,
 };
+enum {
+	TegraGM20BPromiseArmFails = 1u,
+};
+/* The longest bound an arm may set: ten minutes, a hundred and twenty of Metal's 5 s */
+#define TegraGM20BPromiseArmMaxNs (600ull * 1000 * 1000 * 1000)
 
 struct TegraGM20BAbiWriterPromise {
 	uint64_t uses_address;

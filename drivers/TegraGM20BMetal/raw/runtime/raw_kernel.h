@@ -244,6 +244,9 @@ public:
     // The kern_return_t.
     int promise(uint32_t channel, const std::vector<uint64_t> &handles, uint32_t &promise);
     int cancelPromise(uint32_t promise, bool withdrawn = false);
+    // Arm: the promises of `mask` given up by the kernel `ns` from now unless kept first (`fails`: their command buffer
+    // fails there, and a later keep is refused)
+    int armPromises(uint32_t mask, uint64_t ns, bool fails);
     int withdrawWrites(const std::vector<uint64_t> &handles);
 
     std::shared_ptr<SharedEvents> sharedEvents();

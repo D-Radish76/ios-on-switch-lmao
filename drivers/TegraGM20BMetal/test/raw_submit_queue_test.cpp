@@ -255,16 +255,21 @@ TEST(SubmitQueue, ReservationsSurvivePrefixRetirementAndRejectRecycledQueues)
     EXPECT_TRUE(queue.commit(1, 10, reused));
 }
 
-TEST(EventDeadline, AnUntimedWaitWaitsUntilItsValueAndNeverFails)
+// An untimed wait holds its queue's head until its value, or until Metal's bound, where its command buffer fails (an
+// M4 Max: 5.0 s from the wait becoming the head); a value reached at the bound goes on, one outcome only
+TEST(EventDeadline, AnUntimedWaitExpiresAtMetalsBoundAndAValueReachedThereGoesOn)
 {
     using namespace std::chrono_literals;
     const raw::EventDeadline::Time start{};
     raw::EventDeadline wait(start, 0);
-    EXPECT_EQ(wait.state(false, start + 9s), raw::EventReadiness::blocked);
-    EXPECT_EQ(wait.state(false, start + 10s), raw::EventReadiness::blocked);
-    EXPECT_EQ(wait.state(false, start + 3600s), raw::EventReadiness::blocked);
-    EXPECT_EQ(wait.until(), raw::EventDeadline::Time::max());
-    EXPECT_EQ(wait.state(true, start + 3600s), raw::EventReadiness::ready);
+    EXPECT_EQ(wait.until(), start + 5000ms);
+    EXPECT_FALSE(wait.expired(false, start + 4999ms));
+    EXPECT_EQ(wait.state(false, start + 4999ms), raw::EventReadiness::blocked);
+    EXPECT_TRUE(wait.expired(false, start + 5000ms));
+    EXPECT_EQ(wait.state(false, start + 5000ms), raw::EventReadiness::blocked) << "an unreached wait never goes on";
+    EXPECT_FALSE(wait.expired(true, start + 5000ms)) << "the value reached at the bound and the bound both acted";
+    EXPECT_EQ(wait.state(true, start + 5000ms), raw::EventReadiness::ready);
+    EXPECT_TRUE(wait.expired(false, start + 3600s));
 }
 
 TEST(SubmitQueue, AHeldQueueCountsItsJobsScheduledAndThoseCommittedBehindIt)
@@ -342,6 +347,7 @@ TEST(EventDeadline, ExplicitTimeoutRetainsItsRequestedDuration)
     raw::EventDeadline wait(start, 30000);
     EXPECT_EQ(wait.state(false, start + 10s), raw::EventReadiness::blocked);
     EXPECT_EQ(wait.state(false, start + 30s), raw::EventReadiness::ready);
+    EXPECT_FALSE(wait.expired(false, start + 30s)) << "a timed wait goes on at its limit, never fails";
 }
 
 // A publishes E then waits F; B (queued later) waits E then publishes F. Preflighting all of A's waits deadlocked for ten

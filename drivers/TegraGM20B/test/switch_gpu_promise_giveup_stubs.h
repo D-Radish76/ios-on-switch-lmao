@@ -30,6 +30,7 @@ typedef int32_t s32;
 #define TGM_FENCE_USER_PAGES 64
 #define TGM_FENCE_PROMISE_WORD TegraGM20BPromiseWord
 #define TGM_FENCE_PROMISES TegraGM20BMaxPromises
+#define TGM_HANG_NS (2000ull * 1000 * 1000)
 
 // gpu_internal.h's fences_state: the raise/remake guard
 inline struct {
@@ -204,7 +205,7 @@ inline void tgm_chan_need(fake_tgm_chan *chan, uint32_t seqno)
 // ahead complete.
 inline uint64_t tgm_chan_check_progress_locked(fake_tgm_chan *chan, const char *, uint32_t)
 {
-	constexpr uint64_t kHangNs = 2000ull * 1000 * 1000;
+	constexpr uint64_t kHangNs = TGM_HANG_NS;
 	registers("the hang rule's look");
 	const uint32_t done = *chan->fence_cpu;
 	++fake::hangLooks;

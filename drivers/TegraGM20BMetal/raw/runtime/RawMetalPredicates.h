@@ -47,6 +47,7 @@ enum RMPred : uint8_t {
     PredCallBlit,
     PredCallIcb,
     PredCallCounter,  // a counter sample buffer of another device too
+    PredEventTimeout,  // an untimed shared-event wait held its queue's head past Metal's bound: a = the value, b = reached
     PredCount
 };
 
@@ -82,7 +83,8 @@ static constexpr const char *kPredNames[] = {"-",
                                              "pass.positions",
                                              "call.blit",
                                              "call.icb",
-                                             "call.counter"};
+                                             "call.counter",
+                                             "event.timeout"};
 static_assert(sizeof kPredNames / sizeof *kPredNames == PredCount, "a name for each predicate");
 
 // The predicates whose command buffer fails, its work run nowhere, with MTLCommandBufferErrorDomain's code (0: not one):

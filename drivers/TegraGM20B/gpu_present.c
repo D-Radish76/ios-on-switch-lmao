@@ -480,8 +480,9 @@ int tgm_present_watch_dependencies(void (*done)(void *, int), void *arg,
 		__atomic_store_n(&tgm_present.typed_pending, 1, __ATOMIC_RELEASE);
 		tgm_present.recheck = TGM_PRESENT_NS;
 		if (tgm_present.tokens.tokens[0].engine == SWITCH_GPU_ENGINE_PROMISE) {
-			/* no deadline until the job that keeps it is submitted (tgm_present_promise_kept): the give-up is the
-			 * promise's */
+			/* no deadline until the job that keeps it is submitted (tgm_present_promise_kept): until then the promise is
+			 * its maker's to release, by that keep, its withdraw (a held command buffer fails at Metal's bound), a
+			 * cancel or its close */
 			switch_gpu_path_promise_direct(SWITCH_GPU_PATH_DIRECT_PROMISED);
 			switch_gpu_present_watch_promise(&tgm_present.watch,
 							 &tgm_present.tokens.tokens[0]);

@@ -2,33 +2,51 @@
 // A writer promise nobody keeps, given up once (SwitchGpuPromiseGiveUp.h), run as the kernel builds it:
 // gpu_promise_giveup.c whole (:promise_giveup_source) and gpu_promise.c's GPU-reader park (:promise_park_source),
 // under switch_gpu_promise_giveup_stubs.h's clock, call, fence pool and channels. Each GPU reader kind parks the way
-// its submission does (switch_gpu_chan_park_promises_locked after the acquires are kicked); every one is given up
-// about a second after it parked, with one line, and its reader goes on with the frame before the promised one.
+// its submission does (switch_gpu_chan_park_promises_locked after the acquires are kicked). A promise its holder armed
+// is given up at the holder's bound whether its maker runs or not, with one line, and its reader goes on with the frame
+// before the promised one; a kept promise is never given up by time.
 #include "switch_gpu_promise_giveup_fixture.h"
 
 namespace
 {
 using namespace promise_giveup;
 
-// The reader parks; nobody keeps the promise. A second later the call gives it up: marked abandoned, the word raised
-// (the reader's acquire passes, its job completes), one line naming the maker, the reader and how long it waited. The
-// raw untimed wait (10 s contract) and every other reader are let go at 1 s, never at a hang check.
-TEST_P(GiveUp, IsGivenUpOnceAboutOneSecondAfterThePark)
+// The reader parks on a promise whose job is not submitted and whose holder armed no bound: the kernel never gives it up
+// and arms nothing; the maker's withdraw lets the reader go.
+TEST_P(GiveUp, AnUnarmedPromiseIsNeverGivenUpTheMakersWithdrawLetsItsReaderGo)
 {
 	readerSubmits();
-	EXPECT_EQ(fake::call.armed, 1u);
-	until(fake::now + 999 * kMs);
+	until(fake::now + 60000 * kMs);
+	EXPECT_EQ(fake::call.armed + fake::call.ran, 0u);
 	EXPECT_TRUE(lines.empty());
 	EXPECT_NE(reader.fence, reader.submitted);
-	until(fake::now + 1 * kMs);
-	const uint64_t second = fake::now;
-	EXPECT_EQ(lines.size(), 1u) << "given up a second after the park";
-	until(second + 9000 * kMs);
-	ASSERT_EQ(lines.size(), 1u) << "given up within the raw wait's 10 s contract";
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue - 1);
+	makerRetires();
+	EXPECT_EQ(reader.fence, reader.submitted) << "the reader's acquire passed at the withdraw";
+	EXPECT_EQ(status(), -5);
+	EXPECT_EQ(shown(), kPrevious);
+	EXPECT_TRUE(lines.empty());
+}
+
+// The holder armed Metal's bound when its wait became its queue's head, then stopped running (an app iOS suspended
+// mid-hold). At the bound the call gives the promise up: marked abandoned, the word raised (the reader's acquire passes,
+// its job completes), one line naming the maker, the reader and how long it waited. A keep that comes later is refused,
+// and the holder's own Withdraw, once it runs again, tells nothing more.
+TEST_P(GiveUp, AStoppedHoldersPromiseIsGivenUpAtItsBound)
+{
+	readerSubmits();
+	holderArms(5000);
+	EXPECT_EQ(fake::call.armed, 1u);
+	const uint64_t parked = fake::now;
+	until(parked + 4999 * kMs);
+	EXPECT_TRUE(lines.empty());
+	EXPECT_NE(reader.fence, reader.submitted);
+	until(parked + 5000 * kMs);
+	ASSERT_EQ(lines.size(), 1u) << "given up at the holder's bound";
 	const std::string expect =
 		"tegra-gm20b: maker-app's writer promise at fence offset " +
 		std::to_string(kOffset) + " (value 9) was not kept: " + GetParam().owner +
-		" waited 1000 ms for it in " + (GetParam().present ? "a present job" : "a GPU job");
+		" waited 5000 ms for it in " + (GetParam().present ? "a present job" : "a GPU job");
 	EXPECT_EQ(lines[0].substr(0, expect.size()), expect);
 	EXPECT_EQ(fake::pool[kOffset / 4], kValue);
 	EXPECT_EQ(reader.fence, reader.submitted) << "the reader's acquire passed";
@@ -39,9 +57,81 @@ TEST_P(GiveUp, IsGivenUpOnceAboutOneSecondAfterThePark)
 	EXPECT_EQ(probedReaders, 1u)
 		<< "the ACQUIRE probe looks at the reader still parked at the give-up";
 	EXPECT_FALSE(fake::call.pending) << "nothing left to wait on";
-	until(second + 20000 * kMs);
+	EXPECT_EQ(tgm_promise_unhold(kOffset, kValue), 1) << "a keep after the bound is refused";
+	makerRetires();
+	until(parked + 20000 * kMs);
 	EXPECT_EQ(lines.size(), 1u);
 	EXPECT_EQ(fake::call.ran, 1u);
+}
+
+// A reader that parks after the bound passed, the holder still not running, goes on at once
+TEST_P(GiveUp, AReaderThatParksPastTheBoundGoesOnAtOnce)
+{
+	holderArms(5000);
+	EXPECT_EQ(fake::call.armed, 0u) << "nothing armed while no reader waits";
+	until(fake::now + 6000 * kMs);
+	readerSubmits();
+	until(fake::now);
+	ASSERT_EQ(lines.size(), 1u);
+	EXPECT_NE(lines[0].find("waited 0 ms"), std::string::npos) << lines[0];
+	EXPECT_EQ(reader.fence, reader.submitted);
+	EXPECT_EQ(status(), -5);
+}
+
+// The signal reaches the holder before its bound: its keep ends the bound (tgm_promise_unhold under the call's lock),
+// the call due at the bound gives nothing up, and the promised job's end shows its frame
+TEST_P(GiveUp, AKeepBeforeTheBoundEndsIt)
+{
+	readerSubmits();
+	holderArms(5000);
+	until(fake::now + 4999 * kMs);
+	EXPECT_EQ(tgm_promise_unhold(kOffset, kValue), 0);
+	makerKeeps(0);
+	until(fake::now + 1 * kMs);
+	EXPECT_TRUE(lines.empty());
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue - 1);
+	makerReleases();
+	gpuRuns();
+	until(fake::now + 20000 * kMs);
+	EXPECT_TRUE(lines.empty());
+	EXPECT_EQ(shown(), kPromised);
+}
+
+// The keep and the bound at the same instant: the bound wins, once. With no reader parked, nothing was given up yet, but
+// the keep is refused all the same, so the command buffer fails as Metal fails it there.
+TEST_F(Fixture, AKeepAtTheBoundIsRefused)
+{
+	holderArms(5000);
+	fake::now += 5000 * kMs;
+	EXPECT_EQ(tgm_promise_unhold(kOffset, kValue), 1);
+	EXPECT_EQ(tgm_promise_unhold(kOffset, kValue), 0) << "ended once";
+}
+
+// A command buffer held behind the head runs once the head fails: its bound (a bound past the head's) gives its readers
+// up if the holder cannot run, but a keep after it is not refused
+TEST_F(Fixture, ABufferThatRunsAfterItsBoundIsNotRefused)
+{
+	readerSubmits();
+	holderArms(10000, 0);
+	until(fake::now + 10000 * kMs);
+	EXPECT_EQ(lines.size(), 1u);
+	EXPECT_EQ(reader.fence, reader.submitted);
+	EXPECT_EQ(tgm_promise_unhold(kOffset, kValue), 0);
+}
+
+// The holder dies while armed: its close releases the promise (abandoned, its word raised), and the call due at the bound
+// finds the word moved and tells nothing
+TEST_P(GiveUp, AHolderThatDiesWhileArmedIsReleasedByItsClose)
+{
+	readerSubmits();
+	holderArms(5000);
+	until(fake::now + 1000 * kMs);
+	makerRetires();
+	EXPECT_EQ(reader.fence, reader.submitted);
+	until(fake::now + 10000 * kMs);
+	EXPECT_TRUE(lines.empty());
+	EXPECT_EQ(status(), -5);
+	EXPECT_FALSE(fake::call.pending);
 }
 
 // An ordinary kept promise: armed once at the park, cancelled by the keeping job's interrupt pass, never run.
@@ -61,10 +151,11 @@ TEST_P(GiveUp, AKeptPromiseCancelsTheCallWhichNeverRuns)
 	EXPECT_EQ(shown(), kPromised);
 }
 
-// The reader goes away before the second is up (its channel killed): the call drops the promise, untold and unraised.
+// The reader goes away before the bound (its channel killed): the call drops the promise, untold and unraised.
 TEST_P(GiveUp, AReaderThatLeftIsNotWaitedForAndNothingIsGivenUp)
 {
 	readerSubmits();
+	holderArms(1000);
 	reader.error = 1;
 	until(fake::now + 1000 * kMs);
 	EXPECT_EQ(fake::call.ran, 1u);
@@ -74,11 +165,12 @@ TEST_P(GiveUp, AReaderThatLeftIsNotWaitedForAndNothingIsGivenUp)
 	EXPECT_FALSE(fake::call.pending);
 }
 
-// The maker's GPU release lands between the mark and the raise: its writes are there, so the mark is taken back and
-// nothing is reported.
+// The maker's release lands between the mark and the raise at the bound: its writes are there, so the mark is taken back
+// and nothing is reported.
 TEST_P(GiveUp, TheMakersReleaseRacingTheGiveUpShowsItsFrame)
 {
 	readerSubmits();
+	holderArms(1000);
 	until(fake::now + 999 * kMs);
 
 	struct Race {
@@ -105,6 +197,7 @@ TEST_P(GiveUp, TheMakersReleaseRacingTheGiveUpShowsItsFrame)
 TEST_P(GiveUp, AWordWhosePageChangedOwnerIsDroppedNeverRaised)
 {
 	readerSubmits();
+	holderArms(1000);
 	++fake::owner;
 	fake::pool[kOffset / 4] = 0;
 	until(fake::now + 1000 * kMs);
@@ -114,81 +207,50 @@ TEST_P(GiveUp, AWordWhosePageChangedOwnerIsDroppedNeverRaised)
 	EXPECT_FALSE(fake::call.pending);
 }
 
-// The promised job is submitted behind another job of its channel still running. At the second it is not given up: it
-// waits for that job (its interrupt asked for), and from that job's completion the promised job has its own second.
-TEST_P(GiveUp, AJobQueuedBehindAnotherIsJudgedFromThatJobsCompletion)
+// The promised job is submitted behind another job of its channel still running. It is never given up: the call waits
+// for that job (its interrupt asked for) as the hang rule's waiter, then for the promised job itself, and the promised
+// job's end shows its frame.
+TEST_P(GiveUp, AJobQueuedBehindAnotherIsWaitedForNeverGivenUp)
 {
 	readerSubmits();
 	makerKeeps(1);
-	if (givenUpAtTheSecond())
-		return;
-	until(fake::now + 1000 * kMs);
+	until(fake::now + 2000 * kMs);
 	EXPECT_TRUE(lines.empty());
+	EXPECT_EQ(fake::hangLooks, 1u) << "the hang rule's first look, as the job ahead's waiter";
 	ASSERT_FALSE(maker.asked.empty());
-	EXPECT_EQ(maker.asked.back(), maker.submitted - 1)
-		<< "the job ahead's interrupt is asked for";
-	until(fake::now + 1500 * kMs);
-	EXPECT_TRUE(lines.empty());
+	EXPECT_EQ(maker.asked.back(), maker.submitted - 1) << "the job ahead's interrupt is asked for";
 	maker.fence = maker.submitted - 1;
-	const uint64_t ahead_done = fake::now;
+	const uint64_t ahead_done = fake::now + 500 * kMs;
+	fake::now = ahead_done;
 	pass();
 	EXPECT_TRUE(fake::call.pending);
 	EXPECT_EQ(fake::call.due, ahead_done) << "the pass runs the call now";
-	until(ahead_done + 999 * kMs);
-	EXPECT_TRUE(lines.empty());
-	until(ahead_done + 1000 * kMs);
-	ASSERT_EQ(lines.size(), 1u);
-	EXPECT_NE(lines[0].find("waited 3500 ms"), std::string::npos) << lines[0];
-	EXPECT_EQ(shown(), kPrevious);
+	until(ahead_done);
+	EXPECT_EQ(maker.asked.back(), maker.submitted) << "then the promised job's own interrupt";
+	until(ahead_done + 10000 * kMs);
+	EXPECT_TRUE(lines.empty()) << "a kept promise given up by time";
+	makerReleases();
+	gpuRuns();
+	EXPECT_EQ(shown(), kPromised);
+	EXPECT_FALSE(fake::call.pending);
 }
 
-// The job ahead never completes: the hang rule's, not this rule's. The call is that channel's waiter on the hang rule's
-// own two strikes; the recovery (here an engine reset that lets the job ahead complete) hands the promised job back,
-// judged from its own start.
-TEST_P(GiveUp, AStuckJobAheadIsTheHangRulesAndThePromisedJobIsJudgedFromItsOwnStart)
+// The job ahead never completes: the hang rule's. The call is that channel's waiter on the rule's own two strikes; the
+// recovery (here an engine reset that lets the job ahead complete) hands the promised job back, never given up. A
+// compositor's reader waits so too: no reader kind has a shorter second of its own.
+TEST_P(GiveUp, AStuckJobAheadIsTheHangRules)
 {
 	readerSubmits();
 	makerKeeps(1);
-	if (givenUpAtTheSecond())
-		return;
 	maker.recovery = 2;
-	until(fake::now + 1000 * kMs);
-	const uint64_t deferred = fake::now;
-	EXPECT_EQ(fake::hangLooks, 1u);
-	until(deferred + 4000 * kMs);
+	until(fake::now + 10000 * kMs);
 	EXPECT_EQ(maker.fence, maker.submitted - 1) << "recovered at the second strike";
-	const uint64_t start = fake::now;
+	EXPECT_GE(fake::hangLooks, 3u);
 	EXPECT_TRUE(lines.empty());
-	until(start + 999 * kMs);
-	EXPECT_TRUE(lines.empty());
-	until(start + 1000 * kMs);
-	ASSERT_EQ(lines.size(), 1u);
-	EXPECT_EQ(shown(), kPrevious);
-}
-
-// The compositor's job is never held behind the maker's channel: its promised job queued behind a stuck one is given up
-// at the second, the maker's frame missing, without the hang rule's seconds.
-TEST_F(Fixture, ACompositorsReaderIsNotHeldBehindTheMakersStuckJob)
-{
-	reader.critical = 1;
-	readerSubmits();
-	makerKeeps(1);
-	until(fake::now + 1000 * kMs);
-	ASSERT_EQ(lines.size(), 1u) << "given up at the second";
-	EXPECT_EQ(fake::hangLooks, 0u);
-	EXPECT_EQ(reader.fence, reader.submitted) << "the compositor's acquire passed";
-	EXPECT_EQ(shown(), kPrevious);
-}
-
-// A kernel queue's critical channel (the scrubber's, a copy queue's) is no compositor: its reader waits as an app's
-TEST_F(Fixture, AKernelQueuesReaderStillWaitsForTheMakersQueue)
-{
-	reader.critical = 1;
-	reader.kernel = 1;
-	readerSubmits();
-	makerKeeps(1);
-	until(fake::now + 1000 * kMs);
-	EXPECT_TRUE(lines.empty());
+	EXPECT_NE(reader.fence, reader.submitted) << "the reader still waits for the promised job";
+	makerReleases();
+	gpuRuns();
+	EXPECT_EQ(shown(), kPromised);
 }
 
 // The hang rule's recovery kills the maker's channel: the promised job died with it, and that kill's retirement releases
@@ -197,10 +259,8 @@ TEST_P(GiveUp, AJobAheadWhoseChannelTheHangRuleKillsIsReleasedByTheKillsRetireme
 {
 	readerSubmits();
 	makerKeeps(1);
-	if (givenUpAtTheSecond())
-		return;
 	maker.recovery = 1;
-	until(fake::now + 1000 * kMs + 6000 * kMs);
+	until(fake::now + 7000 * kMs);
 	EXPECT_EQ(maker.error, 1u);
 	EXPECT_TRUE(lines.empty()) << "the call gave up a promise the kill's retirement releases";
 	EXPECT_EQ(fake::pool[kOffset / 4], kValue - 1);
@@ -270,17 +330,37 @@ protected:
 	}
 };
 
-TEST_P(Leaves, IsGivenUpOnceAboutOneSecondAfterThePark)
+// Parked on a promise whose job is not submitted: never given up, nothing scheduled; the maker's withdraw is what the
+// waiter hears (the direct present through its release, a CPU waiter through the abandon's wake)
+TEST_P(Leaves, AnUnkeptPromiseIsNeverGivenUpTheMakersWithdrawReleasesTheWaiter)
 {
 	ASSERT_EQ(park(), 1);
-	until(fake::now + 999 * kMs);
+	until(fake::now + 60000 * kMs);
+	EXPECT_EQ(fake::call.armed + fake::call.ran, 0u);
+	EXPECT_TRUE(lines.empty());
+	makerRetires();
+	EXPECT_EQ(presentReleased, 1u);
+	EXPECT_EQ(fake::abandoned.size(), 1u);
+	EXPECT_EQ(status(), -5);
+	EXPECT_EQ(shown(), kPrevious);
+	leave();
+	until(fake::now + 10000 * kMs);
+	EXPECT_TRUE(lines.empty());
+}
+
+// The holder stopped after arming its bound: the waiter is let go at it, the direct present told it was given up
+TEST_P(Leaves, AStoppedHoldersPromiseIsGivenUpAtItsBound)
+{
+	ASSERT_EQ(park(), 1);
+	holderArms(5000);
+	until(fake::now + 4999 * kMs);
 	EXPECT_TRUE(lines.empty());
 	until(fake::now + 1 * kMs);
 	ASSERT_EQ(lines.size(), 1u);
 	const std::string expect = "tegra-gm20b: maker-app's writer promise at fence offset " +
 				   std::to_string(kOffset) +
 				   " (value 9) was not kept: " + waiter().waiter +
-				   " waited 1000 ms for it in " + waiter().who;
+				   " waited 5000 ms for it in " + waiter().who;
 	EXPECT_EQ(lines[0].substr(0, expect.size()), expect);
 	EXPECT_EQ(status(), -5);
 	EXPECT_EQ(shown(), kPrevious);
@@ -308,6 +388,7 @@ TEST_P(Leaves, TheLastWaiterLeavingCancelsTheCall)
 {
 	ASSERT_EQ(park(), 1);
 	ASSERT_EQ(park(), 1);
+	keeps();
 	leave();
 	EXPECT_EQ(fake::call.cancelled, 0u);
 	leave();
@@ -321,6 +402,7 @@ TEST_P(Leaves, TheLastWaiterLeavingCancelsTheCall)
 TEST_P(Leaves, TheMakersReleaseRacingTheGiveUpShowsItsFrame)
 {
 	ASSERT_EQ(park(), 1);
+	holderArms(1000);
 
 	struct Race {
 		static void release(uint32_t offset, uint32_t value, int step, void *entry)
@@ -342,6 +424,7 @@ TEST_P(Leaves, TheMakersReleaseRacingTheGiveUpShowsItsFrame)
 TEST_P(Leaves, AWordWhosePageChangedOwnerIsDroppedNeverRaised)
 {
 	ASSERT_EQ(park(), 1);
+	holderArms(1000);
 	++fake::owner;
 	fake::pool[kOffset / 4] = 0;
 	until(fake::now + 1000 * kMs);

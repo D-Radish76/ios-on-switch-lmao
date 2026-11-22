@@ -140,6 +140,26 @@ protected:
 		tgm_promise_kept(kOffset, kValue, &maker, &job);
 	}
 
+	// The promise of `value` at `offset` kept by the maker's job at the head of its channel, nothing ahead of it (kicked
+	// at the first keep)
+	void keeps(uint32_t offset = kOffset, uint32_t value = kValue)
+	{
+		if (maker.submitted == maker.fence) {
+			maker.submitted += 1;
+			switch_gpu_jobs_kick(&maker.jobs, maker.submitted, maker.submitted, fake::now, 1);
+		}
+		const switch_gpu_backing_token job = {maker.submitted, uint32_t(maker.id >> 32) + 1,
+						      SWITCH_GPU_ENGINE_GM20B, uint32_t(maker.id)};
+		tgm_promise_kept(offset, value, &maker, &job);
+	}
+
+	// The holder's runtime arms its bound on the promise (method 34 Arm), `ms` from now; `fails`: its command buffer fails
+	// there, so a keep after it is refused
+	static void holderArms(uint64_t ms, int fails = 1, uint32_t offset = kOffset, uint32_t value = kValue)
+	{
+		tgm_promise_hold(offset, value, ms * kMs, fails);
+	}
+
 	// The keeping job's end: its fence, then its push's release of the word, then its interrupt's pass
 	void makerReleases()
 	{
@@ -148,10 +168,12 @@ protected:
 		pass();
 	}
 
-	// The maker's channel killed or destroyed is retired: its connection releases the kept promise the kill left
-	// (AGXDeviceUserClient::releasePromise), marked abandoned before the word moves, and the readers it lets go complete
+	// The maker's connection releases a promise it will never write (AGXDeviceUserClient::releasePromise: the retirement of
+	// its killed or destroyed channel, the withdraw of a command buffer its runtime failed), marked abandoned before the
+	// word moves, and the readers it lets go complete
 	void makerRetires()
 	{
+		tgm_promise_unhold(kOffset, kValue);
 		tgm_promise_abandon(kOffset, kValue);
 		fake::pool[kOffset / 4] = kValue;
 		tgm_present_promise_released(kOffset, kValue);
@@ -218,17 +240,6 @@ protected:
 	bool readerCompositor() const override
 	{
 		return GetParam().compositor;
-	}
-
-	// A compositor's reader of a promised job queued behind another of its maker's: given up at the second
-	bool givenUpAtTheSecond()
-	{
-		if (!GetParam().compositor)
-			return false;
-		until(fake::now + 1000 * kMs);
-		EXPECT_EQ(lines.size(), 1u) << "a compositor's reader is not held behind the maker";
-		EXPECT_EQ(shown(), kPrevious);
-		return true;
 	}
 };
 }  // namespace promise_giveup

@@ -268,6 +268,8 @@ enum class RMShareable : uint8_t {
     dispatch_queue_t _completionQueue;
     dispatch_queue_t _handlers;  // its command buffers' scheduled handlers, in its order
     std::atomic<void *> _last;   // the command buffer enqueued last, retained until its completed handlers ran
+    // the submit worker's: the kernel's bound on the writer promises of a command buffer held behind its held head
+    raw::EventDeadline::Time _heldBound;
     uint32_t _gpuPriority, _backgroundGpuPriority;  // what it asked for (RawMetalQueuePriority.mm)
 }
 @end
@@ -491,10 +493,10 @@ struct RMSharedEventWait {
     std::unordered_set<void *> _variantObserved;
     std::map<void *, std::shared_ptr<raw::ComputeKernelSet<raw::ComputeState>>> _computeJobs;
     size_t _eventArmed;            // operation position + 1; only the current wait installs a listener
+    size_t _boundArmed;            // the submit worker's: the wait (_eventArmed) whose bound the kernel holds
     std::atomic<bool> _inHolders;  // in gHolders or gEventWaits (debug builds): unhold() takes their lock only then
     std::atomic<bool> _committed, _scheduledDone, _completedDone;
-    // its queue's head waits on a shared event Metal's GPU would wait for: waitUntilScheduled returns, its scheduled
-    // handlers still wait for its submission (raw_scheduled_wait.h)
+    // its queue's head waits on a shared event Metal's GPU would wait for: its writes are promised (raw_scheduled_wait.h)
     std::atomic<bool> _held;
     // What the submit worker may encode before the commit (RawMetalPipeline.mm). `_published`: where the worker may encode
     // up to (the first command of the encoder ended before the last one: an encoder's end looks at the two encoders after

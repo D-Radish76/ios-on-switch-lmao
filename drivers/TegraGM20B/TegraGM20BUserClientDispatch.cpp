@@ -289,6 +289,8 @@ IOReturn AGXDeviceUserClient::run(uint32_t method, const void *in, uint32_t inSi
 		return resourceSetCreate(static_cast<const TegraGM20BAbiResourceSetCreate *>(in),
 					 static_cast<TegraGM20BAbiResourceSetCreateReply *>(out));
 	if (method == TegraGM20BMethodWriterPromise) {
+		if (static_cast<const TegraGM20BAbiWriterPromise *>(in)->op == TegraGM20BPromiseArm)
+			return armPromises(static_cast<const TegraGM20BAbiWriterPromise *>(in));
 		IOLockLock(lock_);
 		const IOReturn promised =
 			submitGate_.closed()

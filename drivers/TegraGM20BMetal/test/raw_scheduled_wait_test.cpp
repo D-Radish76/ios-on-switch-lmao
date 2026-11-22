@@ -11,17 +11,12 @@ namespace {
 
 using namespace std::chrono_literals;
 
-// RawMetalCommandBuffer.mm's waitUntilScheduled over RawMetalSchedule.mm's parks and RawMetalFinish.mm's failure wake
+// RawMetalCommandBuffer.mm's waitUntilScheduled over RawMetalSchedule.mm's parks and RawMetalFinish.mm's failure wake.
+// A park wakes the waiter (the hold marks it changed), which looks again.
 class Buffer {
 public:
-    void park(raw::HeadWait wait)
+    void park(raw::HeadWait)
     {
-        if (!raw::holds(wait))
-            return;
-        {
-            std::lock_guard<std::mutex> l(lock_);
-            held_ = true;
-        }
         changed_.notify_all();
     }
 
@@ -47,14 +42,14 @@ public:
     {
         std::unique_lock<std::mutex> l(lock_);
         changed_.wait(l, [&] {
-            return raw::scheduledWaitReturns(scheduled_, held_, failed_);
+            return raw::scheduledWaitReturns(scheduled_, failed_);
         });
     }
 
 private:
     std::mutex lock_;
     std::condition_variable changed_;
-    bool scheduled_ = false, held_ = false, failed_ = false;
+    bool scheduled_ = false, failed_ = false;
 };
 
 class Waiter {
@@ -113,14 +108,23 @@ TEST(ScheduledWait, AFailedCompileWakesTheWaiter)
     EXPECT_TRUE(w.returnedWithin(5000ms));
 }
 
-TEST(ScheduledWait, AHeadParkedOnASharedEventLetsTheWaiterGo)
+// Metal's waitUntilScheduled of a command buffer held on a shared event returns at its failure 5 s on (an M4 Max), or
+// once the signal lets it be scheduled: never at the hold
+TEST(ScheduledWait, AHeadParkedOnASharedEventKeepsTheWaiterUntilItFailsOrIsScheduled)
 {
+    {
+        Buffer b;
+        Waiter w(b);
+        b.park(raw::HeadWait::event);
+        EXPECT_FALSE(w.returnedWithin(50ms));
+        b.fail();
+        EXPECT_TRUE(w.returnedWithin(5000ms));
+    }
     Buffer b;
     Waiter w(b);
-    b.park(raw::HeadWait::signal);
-    b.park(raw::HeadWait::order);
-    EXPECT_FALSE(w.returnedWithin(50ms));
     b.park(raw::HeadWait::event);
+    EXPECT_FALSE(w.returnedWithin(50ms));
+    b.schedule();
     EXPECT_TRUE(w.returnedWithin(5000ms));
 }
 

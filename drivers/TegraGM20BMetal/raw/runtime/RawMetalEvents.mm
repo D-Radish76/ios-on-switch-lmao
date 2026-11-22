@@ -99,6 +99,31 @@ void armEventWaits(RMCommandBuffer *cb)
     cb->_eventArmed = 0;
 }
 
+// Its untimed wait held its queue's head for EventDeadline::kHeldBound, here or in the kernel (a keep past the holder's
+// bound refused): it fails as Metal's GPU fails it (its error and the underlying IOGPU one), its writer promises then
+// withdrawn by finish(), and the queue goes on behind it
+void heldTooLong(RMCommandBuffer *cb, uint64_t value, uint64_t reached)
+{
+    NSError *underlying = [NSError errorWithDomain:@"IOGPUCommandQueueErrorDomain" code:2 userInfo:nil];
+    NSError *timeout = [NSError
+        errorWithDomain:MTLCommandBufferErrorDomain
+                   code:MTLCommandBufferErrorTimeout
+               userInfo:@{
+                   NSLocalizedDescriptionKey : @"Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout)",
+                   NSUnderlyingErrorKey : underlying
+               }];
+    if (!predLogged(PredEventTimeout))
+        logPred(PredEventTimeout, value, reached,
+                @"a wait on a shared event held its queue's head for 5 s: the command buffer fails "
+                @"MTLCommandBufferErrorTimeout, as Metal's GPU fails it, and the queue goes on");
+    hit(cb, PredEventTimeout, value);
+    std::lock_guard<raw::Mutex> l(cb->_lock);
+    if (!cb->_segError) {
+        cb->_segError = timeout;
+        cb->_failedBy = PredEventTimeout;
+    }
+}
+
 raw::EventReadiness eventReadiness(RMCommandBuffer *cb, raw::EventDeadline::Time &nextWake)
 {
     using Readiness = raw::EventReadiness;
@@ -178,7 +203,7 @@ raw::EventReadiness eventReadiness(RMCommandBuffer *cb, raw::EventDeadline::Time
     if (cb->_eventArmed != range.from + 1) {
         cb->_eventArmed = range.from + 1;
         RAW_DIAGNOSTIC(gRM->stats.waitsHeldOnCpu++);
-        cb->_eventStart = raw::EventDeadline::Clock::now();
+        cb->_eventStart = raw::EventDeadline::now();
         cb->_eventWaits.push_back(range.from);
 #if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
         {
@@ -198,7 +223,13 @@ raw::EventReadiness eventReadiness(RMCommandBuffer *cb, raw::EventDeadline::Time
                             }];
     }
     const raw::EventDeadline deadline(cb->_eventStart, c.a);
-    const Readiness state = deadline.state([event signaledValue] >= c.c, raw::EventDeadline::Clock::now());
+    const bool covered = [event signaledValue] >= c.c;
+    const auto now = raw::EventDeadline::now();
+    if (deadline.expired(covered, now)) {
+        heldTooLong(cb, c.c, uint64_t([event signaledValue]));
+        return Readiness::ready;
+    }
+    const Readiness state = deadline.state(covered, now);
     if (state == Readiness::blocked)
         nextWake = std::min(nextWake, deadline.until());
     return state;

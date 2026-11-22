@@ -5,66 +5,18 @@
 // where it was held on a shared event, else the writes themselves, so a present of one of those surfaces from elsewhere
 // is refused instead of showing the frame before. One that was submitted presents once and calls method 34 for nothing.
 // In the render server such a command buffer ends the process with its cause (RawMetalFinish.mm withholdPresents).
-#include "raw_facade_harness.h"
+#include "raw_facade_drawn.h"
 #include "bazel/testing/fresh_process.h"
 
 #include <gtest/gtest.h>
 #include <unistd.h>
-#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <future>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <utility>
-
-// A drawable that counts its presents of every kind
-@interface CountingDrawable : NSObject <MTLDrawable>
-@property(nonatomic, readonly) int presents;
-@end
-
-@implementation CountingDrawable {
-    std::atomic<int> _made;
-}
-
-- (int)presents
-{
-    return _made.load();
-}
-
-- (void)present
-{
-    _made++;
-}
-
-- (void)presentAtTime:(CFTimeInterval)presentationTime
-{
-    (void)presentationTime;
-    _made++;
-}
-
-- (void)presentAfterMinimumDuration:(CFTimeInterval)duration
-{
-    (void)duration;
-    _made++;
-}
-
-- (void)addPresentedHandler:(MTLDrawablePresentedHandler)block
-{
-    (void)block;
-}
-
-- (CFTimeInterval)presentedTime
-{
-    return 0;
-}
-
-- (NSUInteger)drawableID
-{
-    return 0;
-}
-
-@end
 
 // libsyscall's abort_with_reason, stood in for as the kernel model stands in for IOKit: its reason on stderr, and the
 // process ends as the real one ends it
@@ -77,98 +29,7 @@ extern "C" void abort_with_reason(uint32_t, uint64_t, const char *reason, uint64
 
 namespace {
 
-using namespace harness;
-
-constexpr MTLPixelFormat kPacked = MTLPixelFormatBGRA8Unorm;
-constexpr float kTriangle[12] = {-1, -1, 0, 1, 3, -1, 0, 1, -1, 3, 0, 1};
-
-std::string text(id object)
-{
-    return [object description].UTF8String ?: "";
-}
-
-struct Opened {
-    id<MTLDevice> device;
-    id<MTLRenderPipelineState> state;
-    std::string why;  // which was not made, and its own error
-};
-
-// The facade over the pack of the BGRA8 state, and that state; the render server's device when `renderServer`
-// (raw_metal_prepare's), else another process's
-Opened openPacked(bool renderServer = false)
-{
-    const std::string metallib = writeMetallib();
-    const std::string pack = writePack(packKey(kPacked));
-    if (renderServer)
-        raw_metal_prepare(pack.c_str(), 0);
-    NSString *why = nil;
-    id<MTLDevice> device = open(pack, &why);
-    if (!device)
-        return {nil, nil, std::string("no device: ") + (why.UTF8String ?: "?")};
-    NSError *error = nil;
-    id<MTLLibrary> library = [device newLibraryWithURL:[NSURL fileURLWithPath:@(metallib.c_str())] error:&error];
-    if (!library)
-        return {device, nil, "no library: " + text(error)};
-    id<MTLRenderPipelineState> state =
-        [device newRenderPipelineStateWithDescriptor:descriptor(library, kPacked) error:&error];
-    if (!state)
-        return {device, nil, "no state: " + text(error)};
-    return {device, state, ""};
-}
-
-// A render target over an IOSurface, as a CAMetalLayer drawable's texture is
-id<MTLTexture> surfaceTarget(id<MTLDevice> device)
-{
-    IOSurfaceRef surface = IOSurfaceCreate((__bridge CFDictionaryRef) @{
-        (id)kIOSurfaceWidth : @64,
-        (id)kIOSurfaceHeight : @64,
-        (id)kIOSurfaceBytesPerElement : @4,
-        (id)kIOSurfaceBytesPerRow : @256,
-        (id)kIOSurfaceAllocSize : @(64 * 256),
-        (id)kIOSurfacePixelFormat : @(uint32_t('BGRA'))
-    });
-    if (!surface)
-        return nil;
-    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:kPacked
-                                                                                 width:64
-                                                                                height:64
-                                                                             mipmapped:NO];
-    d.storageMode = MTLStorageModeShared;
-    d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-    id<MTLTexture> t = [device newTextureWithDescriptor:d iosurface:surface plane:0];
-    CFRelease(surface);
-    return t;
-}
-
-// A clear of `t` and a draw into it
-void drawInto(id<MTLCommandBuffer> cb, id<MTLTexture> t, id<MTLRenderPipelineState> state)
-{
-    MTLRenderPassDescriptor *p = [MTLRenderPassDescriptor renderPassDescriptor];
-    p.colorAttachments[0].texture = t;
-    p.colorAttachments[0].loadAction = MTLLoadActionClear;
-    p.colorAttachments[0].storeAction = MTLStoreActionStore;
-    id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
-    [e setRenderPipelineState:state];
-    [e setVertexBytes:kTriangle length:sizeof kTriangle atIndex:0];
-    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
-    [e endEncoding];
-}
-
-// A command buffer drawing into `t` that presents `drawable` (nil: none) completed: the jobs it took. The first one
-// also makes the channel, so a later refusal is the submission's.
-size_t jobsOfDrawn(id<MTLCommandQueue> queue, id<MTLTexture> t, id<MTLRenderPipelineState> state,
-                   CountingDrawable *drawable)
-{
-    const size_t before = kernel_model::model.jobs.size();
-    id<MTLCommandBuffer> cb = [queue commandBuffer];
-    drawInto(cb, t, state);
-    if (drawable)
-        [cb presentDrawable:drawable];
-    [cb commit];
-    [cb waitUntilCompleted];
-    EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted) << text(cb.error);
-    return kernel_model::model.jobs.size() - before;
-}
+using namespace drawn;
 
 // The kernel refuses the job of a command buffer that draws into an IOSurface and presents it three ways: none of the
 // presents is made, and with no promise to withdraw the surface's write itself is, naming its import. The next command
@@ -205,7 +66,7 @@ void refusedCommandBufferPresentsNothing()
     EXPECT_EQ(m.promiseCalls.size(), 1u);
 }
 
-// Held on a shared event nothing signalled, a command buffer counts as scheduled and promises the IOSurface it writes;
+// Held on a shared event nothing signalled, a command buffer promises the IOSurface it writes and arms its bound;
 // signalled, its job is refused: the promise is withdrawn, not given back as if its write had come, and its drawable is
 // not presented
 void heldCommandBufferWithdrawsItsPromise()
@@ -220,13 +81,22 @@ void heldCommandBufferWithdrawsItsPromise()
     ASSERT_TRUE(event != nil);
     kernel_model::Model &m = kernel_model::model;
     CountingDrawable *drawable = [CountingDrawable new];
+    dispatch_semaphore_t made = dispatch_semaphore_create(0);
+    {
+        std::lock_guard<std::mutex> l(kernel_model::callLock);
+        m.promiseCalled = [made, &m] {
+            if (m.promiseCalls.back().op == TegraGM20BPromiseMake)
+                dispatch_semaphore_signal(made);
+        };
+    }
+    const kernel_model::HooksCleared cleared;
     id<MTLCommandBuffer> cb = [queue commandBuffer];
     [cb encodeWaitForEvent:event value:1];
     drawInto(cb, frame, o.state);
     [cb presentDrawable:drawable];
     [cb commit];
-    [cb waitUntilScheduled];
-    ASSERT_EQ(m.promiseCalls.size(), 1u) << "held: its write promised before its wait returned";
+    ASSERT_FALSE(dispatch_semaphore_wait(made, dispatch_time(DISPATCH_TIME_NOW, 10 * int64_t(NSEC_PER_SEC))))
+        << "held: its write is promised";
     ASSERT_EQ(m.promiseCalls[0].op, uint32_t(TegraGM20BPromiseMake));
     const uint32_t promise = m.promiseCalls[0].promise;
     m.refuse = 1;
@@ -234,10 +104,11 @@ void heldCommandBufferWithdrawsItsPromise()
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
     EXPECT_EQ(drawable.presents, 0);
-    ASSERT_EQ(m.promiseCalls.size(), 2u);
-    EXPECT_EQ(m.promiseCalls[1].op, uint32_t(TegraGM20BPromiseWithdraw));
-    EXPECT_EQ(m.promiseCalls[1].promise, promise);
-    EXPECT_TRUE(m.promiseCalls[1].handles.empty());
+    ASSERT_EQ(m.promiseCalls.size(), 3u);
+    EXPECT_EQ(m.promiseCalls[1].op, uint32_t(TegraGM20BPromiseArm)) << "its bound handed to the kernel";
+    EXPECT_EQ(m.promiseCalls[2].op, uint32_t(TegraGM20BPromiseWithdraw));
+    EXPECT_EQ(m.promiseCalls[2].promise, promise);
+    EXPECT_TRUE(m.promiseCalls[2].handles.empty());
 }
 
 // A command buffer that failed as it was recorded, committed behind one whose job the kernel is still taking: its

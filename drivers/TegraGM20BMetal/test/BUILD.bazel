@@ -4967,7 +4967,18 @@ facade_test(
 # (method 34 Withdraw: its promises where it was held, else the writes); one submitted presents once
 facade_test(
     name = "raw_facade_present_test",
-    srcs = ["raw_facade_present_test.cpp"],
+    srcs = [
+        "raw_facade_drawn.h",
+        "raw_facade_present_test.cpp",
+    ],
+)
+
+facade_test(
+    name = "raw_facade_held_test",
+    srcs = [
+        "raw_facade_drawn.h",
+        "raw_facade_held_test.cpp",
+    ],
 )
 
 # A wait on a shared event whose producer is pending on a channel the kernel killed after it ran: the waiting range waits

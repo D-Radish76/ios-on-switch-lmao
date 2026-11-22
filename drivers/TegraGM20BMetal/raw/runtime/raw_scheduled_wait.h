@@ -13,20 +13,21 @@ enum class HeadWait {
     order,     // the other driver's work, ordered on the CPU
 };
 
-// The kernel orders a present only after the writers it already has, so a command buffer counts as scheduled before its
-// work is submitted only where waiting could deadlock: behind a shared event, which the waiting thread may be about to
-// commit the signaller of. Even then the surfaces it writes are first the kernel's promised writes (RawMetalSchedule.mm
-// promiseWrites, TegraGM20BMethodWriterPromise), so a present of one still waits for its job.
+// A queue whose head waits on a shared event holds: the surfaces its command buffers write become the kernel's promised
+// writes (RawMetalSchedule.mm promiseWrites, TegraGM20BMethodWriterPromise), which a present or another process's job
+// waits for, as Apple's kernel knows a committed command buffer's writes, and the kernel holds the wait's bound on them
+// (TegraGM20BPromiseArm).
 constexpr bool holds(HeadWait wait)
 {
     return wait == HeadWait::event;
 }
 
-// `scheduled`: its scheduled handlers ran; `held`: its queue's head waits on a shared event; `failed`: no more of it will
-// be submitted
-constexpr bool scheduledWaitReturns(bool scheduled, bool held, bool failed)
+// `scheduled`: its scheduled handlers ran; `failed`: no more of it will be submitted. A held command buffer is neither:
+// Metal's waitUntilScheduled returns at the signal or at the failure 5 s on (an M4 Max), and a thread that commits the
+// signaller after its own wait waits that long there too.
+constexpr bool scheduledWaitReturns(bool scheduled, bool failed)
 {
-    return scheduled || held || failed;
+    return scheduled || failed;
 }
 
 }  // namespace raw

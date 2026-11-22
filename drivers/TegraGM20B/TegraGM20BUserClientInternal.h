@@ -631,6 +631,7 @@ class AGXDeviceUserClient : public IOUserClient
 			    uint64_t b = 0, uint64_t c = 0);
 	IOReturn writerPromise(const TegraGM20BAbiWriterPromise *in,
 			       TegraGM20BAbiWriterPromiseReply *out);
+	IOReturn armPromises(const TegraGM20BAbiWriterPromise *in);
 
 	volatile uint32_t *promiseWord(uint32_t promise) const
 	{

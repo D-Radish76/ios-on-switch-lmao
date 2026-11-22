@@ -483,6 +483,7 @@ void planSegments(RMCommandBuffer *cb);
 bool submitRange(RMCommandBuffer *cb, bool followed);
 void cancelPromises(RMCommandBuffer *cb);
 void unhold(RMCommandBuffer *cb);
+void heldTooLong(RMCommandBuffer *cb, uint64_t value, uint64_t reached);
 
 // RawMetalPrivateComp.mm (raw_private_comp.h): the moves of a texture's memory are the submit worker's, between its
 // submissions; a move inside a raw encode is refused

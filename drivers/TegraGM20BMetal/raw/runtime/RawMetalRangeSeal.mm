@@ -229,6 +229,12 @@ bool RMRangeEncode::seal(size_t to)
             rc->abandon();
             return false;
         }
+        // its promises were given up at the holder's bound before this keep: it fails as one held past it
+        if (rc->kernelResult == kIOReturnTimeout && !rc->promises.empty()) {
+            heldTooLong(cb, 0, 0);
+            rc->abandon();
+            return false;
+        }
         if (!rc->setRefused.empty() && !rc->partial) {
             failCommandBuffer(cb, [NSString stringWithUTF8String:rc->setRefused.c_str()]);
             rc->abandon();

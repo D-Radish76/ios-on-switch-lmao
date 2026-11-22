@@ -103,6 +103,20 @@ static raw::ProbeSurface probeSurface(const raw::Texture &t, uint32_t fmt2d)
     return @(raw::failNextTransfer(on.boolValue));
 }
 
+// The event clock (raw_submit_queue.h EventDeadline::now) held from the first call, moved on by `ms`, and the submit
+// worker woken to judge its parked waits against it: a test's way to Metal's 5 s bound on a held wait without sleeping,
+// with no real time in what it measures. One test thread calls it.
+- (NSNumber *)switchRawProbeAdvanceEventClock:(NSNumber *)ms
+{
+    using namespace std::chrono;
+    int64_t held = raw::gEventClockHeld.load(std::memory_order_relaxed);
+    if (!held)
+        held = duration_cast<nanoseconds>(raw::EventDeadline::Clock::now().time_since_epoch()).count();
+    raw::gEventClockHeld.store(held + ms.longLongValue * 1000000, std::memory_order_release);
+    wakeSubmit(nullptr);
+    return ms;
+}
+
 // Private textures made while `on` is true stay on plain memory (raw_private_comp.h), for a probe's uncompressed
 // reference
 - (NSString *)switchRawProbePlainPrivate:(NSNumber *)on

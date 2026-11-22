@@ -314,10 +314,14 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 	switch_gpu_release releases[TegraGM20BMaxJobPromises] = {};
 	const uint32_t keptCount = record.promises ? record.promises->count : 0;
 	// the job's fence releases them: a job with no pushes and no events has none
-	if (keptCount && ((!count && !(head.flags & TegraGM20BJobHasEvents)) ||
-			  keepPromises(record.promises, releases)))
-		return refuseWrites(switch_gpu_refuse(why, SwitchGpuRefusal::Promises,
-						      kIOReturnBadArgument, keptCount, count));
+	const bool fenced = count || (head.flags & TegraGM20BJobHasEvents);
+	const IOReturn kept =
+		keptCount && fenced ? keepPromises(record.promises, releases) : kIOReturnSuccess;
+	if (keptCount && (!fenced || kept))
+		return refuseWrites(switch_gpu_refuse(
+			why, SwitchGpuRefusal::Promises,
+			kept == kIOReturnTimeout ? kIOReturnTimeout : kIOReturnBadArgument, keptCount,
+			count));
 	switch_gpu_backing_transaction transaction = {};
 	switch_gpu_backing_token completion = {};
 	uint32_t seqno = 0, dependencies = 0, jobVisibility = 0, leaseCount = 0;

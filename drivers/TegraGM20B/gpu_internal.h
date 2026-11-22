@@ -657,8 +657,6 @@ void tgm_idle_settle(void *arg);
 int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *waiter,
 				   const char *who, const struct switch_gpu_giveup_job *reader,
 				   int display);
-/* tgm_live_lock held: the reader parked on the promise is the compositor's (switch_gpu_giveup_compositor) */
-void switch_gpu_promise_compositor_locked(uint32_t offset, uint32_t value);
 void switch_gpu_chan_park_promises_locked(struct tgm_chan *chan,
 					  const struct switch_gpu_backing_token *tokens, u32 count,
 					  const u32 *unsettled);
