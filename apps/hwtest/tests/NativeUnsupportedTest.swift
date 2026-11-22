@@ -7,14 +7,14 @@ import Metal
 /// an amplification count past the amplify macro's 8 mapping words. What both builds answer YES is made: a state of
 /// amplification 8, one of a dynamic attribute stride (render and compute stage-in) and a post-tessellation state at
 /// the device's maxTessellationFactor, 64 (metal.native.amplification, metal.native.dynamic_stride and
-/// metal.native.tessellation draw them). Predicated loops nest as deep as the raw path lays them down
-/// (raw_loop_copies.h LoopCopies::kMaxDepth, 8; gpu.raw.predication runs them). Linear textures align to the pitch
-/// texture header's 32 bytes. The amplification count Metal defaults to, 1, draws on the raw path.
+/// metal.native.tessellation draw them). Predicated loops nest as deep as the driver lays them down
+/// (loop_copies.h LoopCopies::kMaxDepth, 8; gpu.gm20b.predication runs them). Linear textures align to the pitch
+/// texture header's 32 bytes. The amplification count Metal defaults to, 1, draws on the driver.
 struct NativeUnsupportedTest: NativeObjectTest {
     let id = "metal.native.unsupported"
     let name = "Features the device has no form of answer NO and refuse their creations; amplification 1 draws raw"
 
-    /// raw_loop_copies.h LoopCopies::kMaxDepth
+    /// loop_copies.h LoopCopies::kMaxDepth
     static let loopDepth = 8
 
     static let patchSource = """
@@ -53,7 +53,7 @@ struct NativeUnsupportedTest: NativeObjectTest {
         let nesting = Self.answer(device, "maxPredicatedNestingDepth")
         metrics.set("predicated_nesting", nesting ?? -1)
         if nesting != Self.loopDepth {
-            work.failures.append("maxPredicatedNestingDepth is not the raw path's loop depth")
+            work.failures.append("maxPredicatedNestingDepth is not the driver's loop depth")
         }
         for (selector, want, field) in [
             ("supportsDynamicAttributeStride", 1, "dynamic_stride"),

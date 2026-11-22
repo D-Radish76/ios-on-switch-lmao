@@ -9,9 +9,9 @@
 #include <vector>
 #include "TegraGM20BJobABI.h"
 #include "TegraGM20BZcullABI.h"
-#include "drivers/TegraGM20BMetal/raw/runtime/raw_host_access.h"
-#include "drivers/TegraGM20BMetal/raw/runtime/raw_push.h"
-#include "drivers/TegraGM20BMetal/raw/runtime/raw_zcull.h"
+#include "drivers/TegraGM20BMetal/host_access.h"
+#include "drivers/TegraGM20BMetal/push.h"
+#include "drivers/TegraGM20BMetal/zcull.h"
 #include "kits/SwitchGM20B/SwitchGM20BCopy.h"
 #include "apps/hwtest/bench/switch_bench.h"
 
@@ -40,7 +40,7 @@ public:
         for (uint32_t channel : {main_, throwaway_})
             if (channel)
                 k_.closeChannel(channel);
-        for (raw::Bo *bo : {&push_, &s_, &d_, &c_})
+        for (gm20b::Bo *bo : {&push_, &s_, &d_, &c_})
             if (bo->handle)
                 k_.free(*bo);
     }
@@ -62,9 +62,9 @@ public:
     }
 
 private:
-    raw::Kernel k_;
+    gm20b::Kernel k_;
     switch_bench_sparse &r_;
-    raw::Bo push_, s_, d_, c_;
+    gm20b::Bo push_, s_, d_, c_;
     uint32_t main_ = 0, throwaway_ = 0;
     uint64_t v_ = 0, x_ = 0;
 
@@ -132,9 +132,9 @@ private:
         return text;
     }
 
-    bool cpuFill(const raw::Bo &bo, uint8_t value)
+    bool cpuFill(const gm20b::Bo &bo, uint8_t value)
     {
-        raw::HostAccess lease;
+        gm20b::HostAccess lease;
         if (!lease.acquire(k_, bo, bo.cpu, bo.bytes, true))
             return stopped("CpuAcquire for a write: " + k_.error());
         memset(bo.cpu, value, bo.bytes);
@@ -142,9 +142,9 @@ private:
     }
 
     // [offset, offset + bytes) of `bo` all `value`, read under a lease; -1: the lease was refused
-    int cpuHolds(const raw::Bo &bo, uint64_t offset, uint64_t bytes, uint8_t value)
+    int cpuHolds(const gm20b::Bo &bo, uint64_t offset, uint64_t bytes, uint8_t value)
     {
-        raw::HostAccess lease;
+        gm20b::HostAccess lease;
         if (!lease.acquire(k_, bo, bo.cpu, bo.bytes, false)) {
             stop("CpuAcquire for a read: " + k_.error());
             return -1;
@@ -155,28 +155,28 @@ private:
         return 1;
     }
 
-    static void copy(raw::Push &p, uint64_t from, uint64_t to, uint64_t bytes)
+    static void copy(gm20b::Push &p, uint64_t from, uint64_t to, uint64_t bytes)
     {
         p.inc(NVB0B5_OFFSET_IN_UPPER, {uint32_t(from >> 32), uint32_t(from), uint32_t(to >> 32), uint32_t(to)},
-              raw::SUBC_COPY);
-        p.inc(NVB0B5_LINE_LENGTH_IN, {uint32_t(bytes), 1}, raw::SUBC_COPY);
-        p.m(NVB0B5_LAUNCH_DMA, kCopyLaunch, raw::SUBC_COPY);
+              gm20b::SUBC_COPY);
+        p.inc(NVB0B5_LINE_LENGTH_IN, {uint32_t(bytes), 1}, gm20b::SUBC_COPY);
+        p.m(NVB0B5_LAUNCH_DMA, kCopyLaunch, gm20b::SUBC_COPY);
     }
 
-    static void fill(raw::Push &p, uint64_t at, uint64_t bytes, uint8_t value)
+    static void fill(gm20b::Push &p, uint64_t at, uint64_t bytes, uint8_t value)
     {
-        p.m(NVB0B5_SET_REMAP_CONST_A, uint32_t(value) * 0x01010101u, raw::SUBC_COPY);
-        p.m(NVB0B5_SET_REMAP_COMPONENTS, kFillWords, raw::SUBC_COPY);
-        p.inc(NVB0B5_OFFSET_OUT_UPPER, {uint32_t(at >> 32), uint32_t(at)}, raw::SUBC_COPY);
-        p.inc(NVB0B5_LINE_LENGTH_IN, {uint32_t(bytes / 4), 1}, raw::SUBC_COPY);
-        p.m(NVB0B5_LAUNCH_DMA, kFillLaunch, raw::SUBC_COPY);
+        p.m(NVB0B5_SET_REMAP_CONST_A, uint32_t(value) * 0x01010101u, gm20b::SUBC_COPY);
+        p.m(NVB0B5_SET_REMAP_COMPONENTS, kFillWords, gm20b::SUBC_COPY);
+        p.inc(NVB0B5_OFFSET_OUT_UPPER, {uint32_t(at >> 32), uint32_t(at)}, gm20b::SUBC_COPY);
+        p.inc(NVB0B5_LINE_LENGTH_IN, {uint32_t(bytes / 4), 1}, gm20b::SUBC_COPY);
+        p.m(NVB0B5_LAUNCH_DMA, kFillLaunch, gm20b::SUBC_COPY);
     }
 
     // One job of `emit`'s methods on `channel`, waited for. kr: WaitFence's (kIOReturnNotResponding: killed)
-    bool job(uint32_t channel, const std::function<void(raw::Push &)> &emit, const std::vector<Use> &uses, int &kr)
+    bool job(uint32_t channel, const std::function<void(gm20b::Push &)> &emit, const std::vector<Use> &uses, int &kr)
     {
         auto *words = reinterpret_cast<uint32_t *>(push_.cpu);
-        raw::Push p{words, words + push_.bytes / 4};
+        gm20b::Push p{words, words + push_.bytes / 4};
         emit(p);
         std::vector<TegraGM20BAbiSurfaceUse> named = {{push_.handle, TegraGM20BSurfaceRead, 0}};
         for (const Use &u : uses)
@@ -186,7 +186,7 @@ private:
                                  (u.hostWritten ? uint32_t(TegraGM20BSurfaceHostWritten) : 0u),
                              uint32_t(u.bytes)});
         const TegraGM20BAbiPush pushed = {push_.va, uint32_t(p.at - words), 0};
-        raw::KernelJob j;
+        gm20b::KernelJob j;
         j.channel = channel;
         j.pushes = &pushed;
         j.pushCount = 1;
@@ -210,7 +210,7 @@ private:
     }
 
     // `emit`'s job on the main channel, W (D) refilled with kD first
-    bool intoW(const std::function<void(raw::Push &)> &emit, std::vector<Use> uses)
+    bool intoW(const std::function<void(gm20b::Push &)> &emit, std::vector<Use> uses)
     {
         int kr = 0;
         if (!cpuFill(d_, kD))
@@ -228,8 +228,11 @@ private:
 
     bool headAndTail()
     {
-        if (!bind(TegraGM20BBindMapSparse, v_ + kBoBytes, kBoBytes) ||
-            !intoW([&](raw::Push &p) { copy(p, v_ + 0xf000, d_.va, 0x2000); }, {sUse()}))
+        if (!bind(TegraGM20BBindMapSparse, v_ + kBoBytes, kBoBytes) || !intoW(
+                                                                           [&](gm20b::Push &p) {
+                                                                               copy(p, v_ + 0xf000, d_.va, 0x2000);
+                                                                           },
+                                                                           {sUse()}))
             return false;
         r_.head_bytes_kept = cpuHolds(d_, 0, kPage, kS);
         r_.tail_read_zero = cpuHolds(d_, kPage, kPage, 0);
@@ -238,8 +241,11 @@ private:
 
     bool bigPages()
     {
-        if (!bind(TegraGM20BBindMapSparse, v_ + 0x40000, 0x40000) ||
-            !intoW([&](raw::Push &p) { copy(p, v_ + 0x5f000, d_.va, kPage); }, {}))
+        if (!bind(TegraGM20BBindMapSparse, v_ + 0x40000, 0x40000) || !intoW(
+                                                                         [&](gm20b::Push &p) {
+                                                                             copy(p, v_ + 0x5f000, d_.va, kPage);
+                                                                         },
+                                                                         {}))
             return false;
         r_.big_read_zero = cpuHolds(d_, 0, kPage, 0);
         return r_.big_read_zero >= 0;
@@ -250,9 +256,18 @@ private:
         int kr = 0;
         if (!bind(TegraGM20BBindMap, x_, kBigPage, c_.handle) || !bind(TegraGM20BBindMapSparse, x_ + kBigPage, 0x4000))
             return false;
-        if (!job(main_, [&](raw::Push &p) { fill(p, x_, kBigPage, kC); }, {cUse(true)}, kr))
+        if (!job(
+                main_,
+                [&](gm20b::Push &p) {
+                    fill(p, x_, kBigPage, kC);
+                },
+                {cUse(true)}, kr))
             return stopped("the fill of C did not complete: 0x" + hex(kr));
-        if (!intoW([&](raw::Push &p) { copy(p, x_ + kBigPage - kPage, d_.va, 0x2000); }, {cUse(false)}))
+        if (!intoW(
+                [&](gm20b::Push &p) {
+                    copy(p, x_ + kBigPage - kPage, d_.va, 0x2000);
+                },
+                {cUse(false)}))
             return false;
         r_.beside_big_read_zero = wHolds(kPage, kC, 0x2000, 0);
         return r_.beside_big_read_zero >= 0;
@@ -262,7 +277,7 @@ private:
     bool writesDropped()
     {
         if (!intoW(
-                [&](raw::Push &p) {
+                [&](gm20b::Push &p) {
                     fill(p, v_ + kBoBytes, kPage, kDropped);
                     copy(p, v_ + kBoBytes, d_.va, kPage);
                 },
@@ -271,7 +286,11 @@ private:
         const int w = wHolds(kPage, 0, kBoBytes, kD), sKept = cpuHolds(s_, 0, kBoBytes, kS);
         int cKept = 1;
         for (uint64_t half = 0; half < kBigPage && cKept == 1; half += kBoBytes) {
-            if (!intoW([&](raw::Push &p) { copy(p, x_ + half, d_.va, kBoBytes); }, {cUse(false)}))
+            if (!intoW(
+                    [&](gm20b::Push &p) {
+                        copy(p, x_ + half, d_.va, kBoBytes);
+                    },
+                    {cUse(false)}))
                 return false;
             cKept = cpuHolds(d_, 0, kBoBytes, kC);
         }
@@ -283,7 +302,9 @@ private:
 
     bool replacements()
     {
-        const auto readV = [&](raw::Push &p) { copy(p, v_, d_.va, kPage); };
+        const auto readV = [&](gm20b::Push &p) {
+            copy(p, v_, d_.va, kPage);
+        };
         if (!bind(TegraGM20BBindMapSparse, v_, kBoBytes) || !intoW(readV, {sUse()}))
             return false;
         r_.replaces_map = cpuHolds(d_, 0, kPage, 0);
@@ -318,8 +339,12 @@ private:
             return;
         r_.unmapped_va = v_ + kBoBytes;
         int kr = 0;
-        const bool completed = job(throwaway_, [&](raw::Push &p) { copy(p, r_.unmapped_va, d_.va, kPage); },
-                                   {{d_.va, d_.bytes, true, false}}, kr);
+        const bool completed = job(
+            throwaway_,
+            [&](gm20b::Push &p) {
+                copy(p, r_.unmapped_va, d_.va, kPage);
+            },
+            {{d_.va, d_.bytes, true, false}}, kr);
         TegraGM20BAbiStatus st = {};
         if (!k_.status(throwaway_, st))
             return stop("GetStatus of the throwaway channel refused");
@@ -346,14 +371,14 @@ void switch_bench_sparse_map(struct switch_bench_sparse *r)
 
 uint32_t switch_bench_kernel_flags(void)
 {
-    raw::Kernel k;
+    gm20b::Kernel k;
     std::string err;
     return k.open(err) ? k.info().flags : 0;
 }
 
 int32_t switch_bench_zcull_info(uint32_t *flags, uint32_t info[12], uint32_t zc[12])
 {
-    raw::Kernel k;
+    gm20b::Kernel k;
     std::string err;
     if (!k.open(err))
         return -1;

@@ -13,7 +13,7 @@ import Metal
 /// here (its creation is a metric).
 struct NativeIndirectCommandsTest: NativeObjectTest {
     let id = "metal.native.indirect_commands"
-    let name = "Indirect command buffers of inherited state: encoded once, executed by range on the raw path"
+    let name = "Indirect command buffers of inherited state: encoded once, executed by range on the driver"
 
     static let size = 64
 

@@ -61,13 +61,13 @@ def split_lines(text: str) -> tuple[list[str], list[str]]:
     return native_lines(observed.splitlines()), native_lines(derived.splitlines()) if marker else []
 
 
-# raw_program_pages.h kProgramSlotPage: a slot's entry is whole pages, which the seed pack keeps on pages of their own
+# program_pages.h kProgramSlotPage: a slot's entry is whole pages, which the seed pack keeps on pages of their own
 SLOT_PAGE_BYTES = 16384
 
 
 def add_record(row: dict, root: Path, stack: str, artifacts: dict) -> None:
     relative = Path(row['artifact'])
-    if relative.parts != (f'raw-{stack}', row['name'] + '.rec'):
+    if relative.parts != (f'rec-{stack}', row['name'] + '.rec'):
         raise ValueError('native record path does not match its stack and key')
     path = root / relative
     if path.is_symlink() or not path.is_file():
@@ -77,7 +77,7 @@ def add_record(row: dict, root: Path, stack: str, artifacts: dict) -> None:
         artifacts[row['artifact']] = {'sha256': hashlib.sha256(data).hexdigest(), 'bytes': len(data)}
     for slot in row.get('slots', []):
         relative = Path(slot['path'])
-        if relative.parts != (f'raw-{stack}', slot['name'] + '.slot'):
+        if relative.parts != (f'rec-{stack}', slot['name'] + '.slot'):
             raise ValueError('native program slot path does not match its stack and bytes')
         path = root / relative
         if path.is_symlink() or not path.is_file():
@@ -300,12 +300,12 @@ def pack(args: argparse.Namespace, work: Path) -> None:
     records = pack_lists(manifest)
     args.out.mkdir(parents=True, exist_ok=True)
     stack = manifest['stack']
-    listing = work / f'raw-{stack}.list'
+    listing = work / f'rec-{stack}.list'
     listing.write_text(
         ''.join(f'{tier}\t{name}\t{(args.seed / path).absolute()}\n' for name, (tier, path) in sorted(records.items()))
     )
     identity = int(stack, 16).to_bytes(32, 'little').hex()
-    run([args.tool.absolute(), args.out.absolute() / f'raw-{stack}', '8', identity, listing], work)
+    run([args.tool.absolute(), args.out.absolute() / f'rec-{stack}', '8', identity, listing], work)
 
 
 def check(args: argparse.Namespace) -> None:

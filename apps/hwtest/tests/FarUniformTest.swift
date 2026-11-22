@@ -4,12 +4,12 @@ import HWTestGPU
 import Metal
 
 /// Two fragment uniform buffers whose set-0 descriptors lie past byte 496, after twenty storage buffers a stage: NVK reads
-/// each through a constant buffer its program names by offset, which the record keeps out of line (raw_pack.h
+/// each through a constant buffer its program names by offset, which the record keeps out of line (pack.h
 /// PackProgram::farUbos). Each uniform scales or shifts one channel, so binding either at the other's offset shows. A build
-/// without it does not draw the state on raw: path is not "raw".
+/// without it does not draw the state on raw: path is not "gm20b".
 struct FarUniformTest: HWTest {
-    let id = "gpu.raw.far_uniform"
-    let name = "Two uniform buffers past set-0 byte 496 each bind as their own constant buffer on the raw path"
+    let id = "gpu.gm20b.far_uniform"
+    let name = "Two uniform buffers past set-0 byte 496 each bind as their own constant buffer on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -46,8 +46,8 @@ struct FarUniformTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.n
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
@@ -82,12 +82,12 @@ struct FarUniformTest: HWTest {
         let middle = 4 * (n / 2 * n + n / 2)
         var metrics = Metrics()
         metrics.set("path", path)
-        metrics.set("entries", RawFacade.entries(of: state).map(String.init) ?? "-")
+        metrics.set("entries", GM20BFacade.entries(of: state).map(String.init) ?? "-")
         metrics.set("wrong_pixels", wrong)
         metrics.set("middle", floats[middle..<middle + 4].map { String($0) }.joined(separator: "/"))
         metrics.set("want", want.map { String($0) }.joined(separator: "/"))
         var failures: [String] = []
-        if path != "raw" { failures.append("path") }
+        if path != "gm20b" { failures.append("path") }
         if wrong > 0 { failures.append("wrong_pixels") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: ","), metrics)
     }

@@ -17,7 +17,7 @@ stage = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(stage)
 
 SELF = '_main/gpu/bundle.stage'
-SEED = 'ngpu/addons/TegraGM20BMetal.m2v-seed/shared'
+SEED = 'ngpu/addons/TegraGM20BMetal.seed/shared'
 
 
 class StageTest(unittest.TestCase):

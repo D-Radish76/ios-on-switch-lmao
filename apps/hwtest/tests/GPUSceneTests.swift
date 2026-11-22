@@ -5,9 +5,9 @@ import Metal
 
 /// A GPU scene (gpu/scenes) as one test, judged on the process's default device alone: its CPU checks, each picture it
 /// has no CPU model of against the same picture drawn on a Mac's GPU (core/SceneGoldens.swift; golden_<picture>=exact,
-/// close, wrong or missing, or blind: the golden is the cleared target, which fails), and the scene's own judge. Fields carry the device's prefix (raw_ on the facade): checks,
+/// close, wrong or missing, or blind: the golden is the cleared target, which fails), and the scene's own judge. Fields carry the device's prefix (gm20b_ on the facade): checks,
 /// failed, wrong pixels, the scene's own measurements, and paths= (every command buffer's path as the facade reported
-/// it). raw_cbs=, failed_cbs= and failed_why= are the facade's process-wide counters over the run, framework command
+/// it). gm20b_cbs=, failed_cbs= and failed_why= are the facade's process-wide counters over the run, framework command
 /// buffers included. <prefix>_gpu_clock=host: some of the run's GPU times are the host's window, the facade having read
 /// no GPU stamp for them. On the facade no command buffer of the run may fail, Core Animation's, MPS's and Core Image's
 /// included, but those the scene expects (GPUScene.expectedFailures, each its own error:<predicate> path); one that did
@@ -30,13 +30,13 @@ public struct GPUSceneTest: HWTest {
 
     public func run(_ context: TestContext) async throws -> Outcome {
         let primary = try GPU.make()
-        let kind = RawFacade.kind(of: primary.device)
+        let kind = GM20BFacade.kind(of: primary.device)
         var metrics = Metrics()
         metrics.set("dev", kind)
         var reasons: [String] = []
         var notes: [String] = []
         var saved = 0
-        let before = RawFacade.counters(of: primary.device)
+        let before = GM20BFacade.counters(of: primary.device)
         do {
             let result = try await measure(primary, kind, &metrics)
             reasons += result.reasons().map { "\(kind): \($0.prefix(300))" }
@@ -47,16 +47,16 @@ public struct GPUSceneTest: HWTest {
             reasons.append("\(kind): \(error)")
             metrics.set(kind + "_threw", true)
         }
-        let after = RawFacade.counters(of: primary.device)
+        let after = GM20BFacade.counters(of: primary.device)
         let own = primary.paths
-        if kind == "raw" && !after.isEmpty {
+        if kind == "gm20b" && !after.isEmpty {
             let failed = FailedCounts.judged(
                 before: before, after: after, expecting: scene.expectedFailures, own: own, &metrics)
             var checks = [failed]
             if scene.framework { checks.append(FailedCounts(before: before, after: after).skipCheck()) }
-            reasons.insert(contentsOf: checks.filter { !$0.1 }.map { "raw: \($0.0)" }, at: 0)
-        } else if kind == "raw" && !own.offRaw.isEmpty {
-            reasons.insert("raw: command buffers off the raw path: \(own.offRaw.text)", at: 0)
+            reasons.insert(contentsOf: checks.filter { !$0.1 }.map { "SwitchMetal: \($0.0)" }, at: 0)
+        } else if kind == "gm20b" && !own.offRaw.isEmpty {
+            reasons.insert("SwitchMetal: command buffers off the driver: \(own.offRaw.text)", at: 0)
         }
         reasons += scene.judge(&metrics)
         if saved > 0 { metrics.set("pngs", saved) }
@@ -66,9 +66,9 @@ public struct GPUSceneTest: HWTest {
 
     /// One run on `gpu`, its fields under `prefix`.
     func measure(_ gpu: GPU, _ prefix: String, _ metrics: inout Metrics) async throws -> SceneResult {
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let result = try await scene.run(gpu)
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         metrics.set(prefix + "_checks", result.checks.count)
         metrics.set(prefix + "_failed", result.failed.count + result.problems.count)
         metrics.set(prefix + "_wrong", result.wrongPixels)

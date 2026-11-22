@@ -4,14 +4,14 @@ import HWTestGPU
 import Metal
 
 /// A function's own argument encoder (newArgumentEncoderWithBufferIndex:) is the shader compiler's answer from the
-/// function's AIR (drivers/TegraGM20BMetal/raw/runtime/raw_buffer_encoders.h), never an m2v twin. The expected encoded
+/// function's AIR (drivers/TegraGM20BMetal/buffer_encoders.h), never an m2v twin. The expected encoded
 /// lengths, alignments and per-index offsets for shaders/FunctionArgumentEncoders.metal are what an M4 Max's Metal
 /// answers for the same source (macOS 27.2): constants, arrays, struct arrays, gaps between ids, every texture kind, a
 /// pointer to another argument buffer (its nested encoder), and plain buffers of no struct (an encoder of no bytes). A
 /// draw then reads every kind of member through what the encoders wrote and must give the pixels the M4 Max gave. The
-/// case fails on a wrong answer or pixel, a draw off the raw path, or any command buffer that failed (failed_cbs=).
+/// case fails on a wrong answer or pixel, a draw off the driver, or any command buffer that failed (failed_cbs=).
 struct FunctionArgumentEncoderTest: HWTest {
-    let id = "gpu.raw.function_argument_encoder"
+    let id = "gpu.gm20b.function_argument_encoder"
     let name = "A function's argument encoders are the shader compiler's and Metal's"
     let subsystem = Subsystem.metal
 
@@ -36,7 +36,7 @@ struct FunctionArgumentEncoderTest: HWTest {
         [255, 0, 255, 255],
     ]
 
-    /// The raw facade answers nil where it makes no encoder, which the Swift signature cannot say
+    /// The facade answers nil where it makes no encoder, which the Swift signature cannot say
     static func made(_ encoder: MTLArgumentEncoder) -> MTLArgumentEncoder? {
         unsafeBitCast(encoder as AnyObject, to: Int.self) == 0 ? nil : encoder
     }
@@ -57,9 +57,9 @@ struct FunctionArgumentEncoderTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -83,7 +83,7 @@ struct FunctionArgumentEncoderTest: HWTest {
         }
 
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
@@ -143,6 +143,6 @@ struct FunctionArgumentEncoderTest: HWTest {
             metrics.set("pixels", got.map { $0.map(String.init).joined(separator: ",") }.joined(separator: " "))
             wrong.append("draw")
         }
-        if timing.path != "raw" { wrong.append("draw_path") }
+        if timing.path != "gm20b" { wrong.append("draw_path") }
     }
 }

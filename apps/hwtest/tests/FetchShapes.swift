@@ -11,7 +11,7 @@ struct FetchDraw {
     var instances = 1
     var indirect = false
 
-    /// The primitives the facade counts for the draw (raw_fetch_order.h primitives: a strip's restarts left in), or 0 for
+    /// The primitives the facade counts for the draw (fetch_order.h primitives: a strip's restarts left in), or 0 for
     /// an indirect one, whose count only the GPU reads
     var counted: Int {
         if indirect { return 0 }

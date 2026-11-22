@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A linear texture's row of a format the raw path does not lay out (drivers/TegraGM20BMetal/raw/runtime/
-/// RawMetalDeviceAnswers.mm requiredLinearTextureBytesPerRowForDescriptor:, raw_metal_formats.h): its texels at Metal's
+/// A linear texture's row of a format the driver does not lay out (drivers/TegraGM20BMetal/
+/// TegraGM20BMetalDeviceAnswers.mm requiredLinearTextureBytesPerRowForDescriptor:, metal_formats.h): its texels at Metal's
 /// size rounded up to the format's linear alignment, 0 for a depth format, which has no linear alignment.
 struct NativeLinearRowTest: HWTest {
     let id = "metal.native.linear_row"
@@ -20,8 +20,8 @@ struct NativeLinearRowTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let selector = NSSelectorFromString("requiredLinearTextureBytesPerRowForDescriptor:")
         typealias Row = @convention(c) (AnyObject, Selector, MTLTextureDescriptor) -> Int
         let row = unsafeBitCast((gpu.device as AnyObject).method(for: selector), to: Row.self)

@@ -24,7 +24,7 @@ struct Kind {
 };
 
 const Kind kKinds[] = {
-	{"RawUntimedWaitFence", "Camera", false, false},
+	{"GM20BUntimedWaitFence", "Camera", false, false},
 	{"WriterWaitIOSurfaceLock", "Photos", false, false},
 	{"FenceOnlyPresent", "present", true, true},
 	{"Composite", "backboardd", false, true},

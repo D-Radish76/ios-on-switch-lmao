@@ -2,11 +2,11 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// Frames recorded at a render thread's pace, so the raw facade's submit worker encodes each ended pass ahead of the
-/// commit (RawMetalPipeline.mm): 15 passes over four 64x64 RGBA8 targets, a millisecond apart. Pass p clears target
+/// Frames recorded at a render thread's pace, so the facade's submit worker encodes each ended pass ahead of the
+/// commit (TegraGM20BMetalPipeline.mm): 15 passes over four 64x64 RGBA8 targets, a millisecond apart. Pass p clears target
 /// p % 4 (p < 4) to frame f's clear colour or loads it, and draws eight 8x16 cells of row p / 4, cell d from column 8d,
 /// flat (17p, 30d + 10, 60f + 30, 255) / 255, each a vertex and a fragment setBytes and a draw, so every pass's tape
-/// reaches a hand-off. A frame may fail as the host test raw_facade_ahead_failures_test.cpp makes it fail.
+/// reaches a hand-off. A frame may fail as the host test facade_ahead_failures_test.cpp makes it fail.
 public final class AheadFrames {
     public enum Failure: Sendable {
         case none
@@ -19,7 +19,7 @@ public final class AheadFrames {
     public struct Reading: Sendable {
         /// completed or error, the error's MTLCommandBufferError code, the facade's path
         public var status = "completed", code = 0, path = "-"
-        /// switchRawPipelined: encoders, pipelined, abandons, veto, given_back (-1: not answered)
+        /// switchMetalPipelined: encoders, pipelined, abandons, veto, given_back (-1: not answered)
         public var pipelined: [String: Int] = [:]
         /// pipeline_handoffs counted from the failure until the commit (endedTwice; -1 elsewhere or unanswered)
         public var handoffsAfterFailure = -1
@@ -88,7 +88,7 @@ public final class AheadFrames {
             encoder.endEncoding()
             if case .endedTwice(let at) = failure, at == pass {
                 encoder.endEncoding()
-                handoffsAt = RawFacade.counters(of: gpu.device)["pipeline_handoffs"]
+                handoffsAt = GM20BFacade.counters(of: gpu.device)["pipeline_handoffs"]
             }
             if case .drawInBlit = failure, pass == Self.passes - 1, let blit = commands.makeBlitCommandEncoder() {
                 GPU.draw(
@@ -108,14 +108,14 @@ public final class AheadFrames {
         let timing = try await gpu.run(tolerateError: true) { commands in
             buffer = commands
             record(commands, frame, failure, handoffsAt: &handoffsAt)
-            handoffsBeforeCommit = RawFacade.counters(of: gpu.device)["pipeline_handoffs"]
+            handoffsBeforeCommit = GM20BFacade.counters(of: gpu.device)["pipeline_handoffs"]
         }
         var reading = Reading(path: timing.facadePath)
         if timing.path.hasPrefix("error:") {
             reading.status = "error"
             reading.code = (buffer?.error as NSError?)?.code ?? -1
         }
-        if let buffer { reading.pipelined = RawFacade.pipelined(buffer).mapValues(\.intValue) }
+        if let buffer { reading.pipelined = GM20BFacade.pipelined(buffer).mapValues(\.intValue) }
         if let at = handoffsAt, let commit = handoffsBeforeCommit { reading.handoffsAfterFailure = commit - at }
         if reading.status == "completed" {
             for t in 0..<Self.targets {

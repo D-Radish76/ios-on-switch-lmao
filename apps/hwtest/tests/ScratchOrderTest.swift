@@ -4,14 +4,14 @@ import HWTestGPU
 import Metal
 
 /// Passes over one memoryless attachment's scratch memory open without a drain between them (gpu/ScratchOrder.swift):
-/// the raw path rests their order on the ROP keeping write order on the same memory across a change of target, which
+/// the driver rests their order on the ROP keeping write order on the same memory across a change of target, which
 /// nothing else on the device shows. Per scratch format (BGRA8Unorm, RGBA16Float), `rounds` command buffers of pass A
 /// (722x1282: a seed's pattern into colour 1, fetched into colour 0) then pass B (1792x1472 over the same scratch:
 /// colour 1 cleared, fetched into colour 0). A's colour 0 is the pattern as the CPU computes it and B's every texel the
 /// clear as an M4 Max stores it (`<format>_a_off`, `<format>_b_off` 0, texels over all rounds); a B that fetched what A
 /// left in the scratch, or an A that fetched a stale round's, reads other texels.
 struct ScratchOrderTest: HWTest {
-    let id = "gpu.raw.scratch_order"
+    let id = "gpu.gm20b.scratch_order"
     let name = "Passes over one memoryless scratch keep their order with no drain between them"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -22,8 +22,8 @@ struct ScratchOrderTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for (label, format) in [("bgra8", MTLPixelFormat.bgra8Unorm), ("rgba16f", .rgba16Float)] {
@@ -33,7 +33,7 @@ struct ScratchOrderTest: HWTest {
             metrics.set(label + "_b_off", off.b)
             checks.append(("\(label): \(off.a) of pass A's texels not its pattern", off.a == 0))
             checks.append(("\(label): \(off.b) of pass B's texels not its clear", off.b == 0))
-            checks.append(("\(label): every command buffer raw", read.paths.allSatisfy { $0 == "raw" }))
+            checks.append(("\(label): every command buffer raw", read.paths.allSatisfy { $0 == "gm20b" }))
         }
         return .judged(checks, metrics, proof: gpu.proof)
     }

@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 struct FramebufferFetchScene: GPUScene {
-    let id = "gpu.raw.framebuffer_fetch"
+    let id = "gpu.gm20b.framebuffer_fetch"
     let name = "Ordered framebuffer fetch, discard, render-target transitions and copy visibility"
 
     private static let size = 64
@@ -30,7 +30,7 @@ struct FramebufferFetchScene: GPUScene {
             for mode in 0..<7 {
                 let steps = mode >= 5 ? Self.stressSteps : Self.steps
                 let key = "\(format.rawValue.lowercased())_\(mode)"
-                let before = RawFacade.counters(of: gpu.device)
+                let before = GM20BFacade.counters(of: gpu.device)
                 let timing = try await gpu.run { commands in
                     let pass = MTLRenderPassDescriptor()
                     pass.colorAttachments[0].texture = target
@@ -72,13 +72,13 @@ struct FramebufferFetchScene: GPUScene {
                         destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
                     blit.endEncoding()
                 }
-                let after = RawFacade.counters(of: gpu.device)
+                let after = GM20BFacade.counters(of: gpu.device)
                 result.metrics.set("path_\(key)", timing.path)
                 result.metrics.set("gpu_ms_\(key)", timing.gpuMilliseconds, digits: 3)
                 result.metrics.set("cpu_encode_ms_\(key)", timing.encodeMilliseconds, digits: 3)
                 result.metrics.set("cpu_commit_ms_\(key)", timing.commitMilliseconds, digits: 3)
-                if RawFacade.kind(of: gpu.device) == "raw" {
-                    result.expect(timing.path == "raw", "\(key) did not execute entirely raw: \(timing.path)")
+                if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+                    result.expect(timing.path == "gm20b", "\(key) did not execute entirely raw: \(timing.path)")
                     let draws = (after["interlock_draws"] ?? 0) - (before["interlock_draws"] ?? 0)
                     result.metrics.set("interlock_\(key)", draws)
                     result.expect(
@@ -104,7 +104,7 @@ struct FramebufferFetchScene: GPUScene {
                     tolerance: 0)
             }
         }
-        if RawFacade.kind(of: gpu.device) == "raw" {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             let object = gpu.device as AnyObject as! NSObject
             for (key, selector) in [
                 ("read_answer", "isFramebufferReadSupported"),

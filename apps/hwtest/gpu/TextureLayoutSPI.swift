@@ -6,7 +6,7 @@ import Metal
 /// Metal's texture layout SPI, as Core Animation and CoreUI use it for compressed images: the device's layout object
 /// (newTextureLayoutWithDescriptor:isHeapOrBufferBacked:) sizes the memory and lays the blocks out in it, and
 /// newTextureWithBytesNoCopy:length:descriptor:deallocator: wraps that memory as a texture with no copy
-/// (drivers/TegraGM20BMetal/raw/runtime/RawMetalNoCopy.mm on the Switch).
+/// (drivers/TegraGM20BMetal/TegraGM20BMetalNoCopy.mm on the Switch).
 public struct TextureLayoutSPI {
     typealias NewLayout = @convention(c) (AnyObject, Selector, MTLTextureDescriptor, Bool) -> Unmanaged<AnyObject>?
     typealias Count = @convention(c) (AnyObject, Selector) -> Int

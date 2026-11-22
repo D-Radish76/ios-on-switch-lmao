@@ -2,16 +2,16 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// QuartzCore's multiply over BGRA8 (PBGRAXm_TimgBmpyA2Xhf_Isrc, its colour 1 write-masked), which the raw facade draws
-/// unforced on rung 3 (raw_chip_facts.h kIteratedProven "mpy"): the iterated blend on, the per-target blend off and the
-/// targets narrowed to colour 0 (raw/runtime/raw_fetch_free.h). Each case draws it over colour 0's first quarter in one
+/// QuartzCore's multiply over BGRA8 (PBGRAXm_TimgBmpyA2Xhf_Isrc, its colour 1 write-masked), which the facade draws
+/// unforced on rung 3 (chip_facts.h kIteratedProven "mpy"): the iterated blend on, the per-target blend off and the
+/// targets narrowed to colour 0 (fetch_free.h). Each case draws it over colour 0's first quarter in one
 /// pass and over its second in a later pass, with other work between (`Between`). The state has two colours, so a pass
 /// of its own never keeps the blend on (RenderEncoder::keepsExtras): it sets it back and binds the state again. A
 /// one-colour BGRA8 pass between keeps it on where the state's segment is kept across passes, until its clear or
 /// another state's bind sets it back. The image is one opaque magenta texel, the vertex colour the same magenta (the
 /// source is magenta whether the texture function samples, tints or multiplies) and colour 0 is cleared opaque cyan, so
-/// the multiply (raw/pack/iterated/reference.py apple "mpy") is blue: every channel 0 or 1, exact under any rounding
-/// (rung 3's programs are within one code of exact, raw_chip_facts.h). A draw without the blend writes magenta, a draw
+/// the multiply (pack/iterated/reference.py apple "mpy") is blue: every channel 0 or 1, exact under any rounding
+/// (rung 3's programs are within one code of exact, chip_facts.h). A draw without the blend writes magenta, a draw
 /// dropped leaves cyan. The other state draws opaque yellow over the whole of a target it does not load, yellow only
 /// with the blend set back.
 public final class IteratedBlendPasses {
@@ -66,7 +66,7 @@ public final class IteratedBlendPasses {
 
     public init(line: PipelineLine, library: MTLLibrary, gpu: GPU) throws {
         self.gpu = gpu
-        counts = (gpu.device as? NSObject)?.responds(to: NSSelectorFromString("switchRawProbeFetchRung:")) ?? false
+        counts = (gpu.device as? NSObject)?.responds(to: NSSelectorFromString("switchMetalProbeFetchRung:")) ?? false
         state = try CAState.pipeline(line, library: library, device: gpu.device)
         formats = try line.colors.sorted { $0.index < $1.index }.map {
             guard let format = MTLPixelFormat(rawValue: $0.format) else {
@@ -86,7 +86,7 @@ public final class IteratedBlendPasses {
         let targets = try formats.map { try gpu.texture($0, Self.width, Self.height) }
         let aside = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
         let words = try gpu.buffer((0..<Self.words).map { UInt32($0) })
-        let counted = { self.counts ? RawFacade.counters(of: self.gpu.device)["fetch_rung3"] : nil }
+        let counted = { self.counts ? GM20BFacade.counters(of: self.gpu.device)["fetch_rung3"] : nil }
         let before = counted()
         var paths: [String] = []
         let alone = { (clear: Bool, quarter: Int) async throws -> String in
@@ -188,7 +188,7 @@ public final class IteratedBlendPasses {
         }
     }
 
-    /// QuartzCore 24B119's multiply of premultiplied S over D (raw/pack/iterated/reference.py apple "mpy")
+    /// QuartzCore 24B119's multiply of premultiplied S over D (pack/iterated/reference.py apple "mpy")
     static func multiply(_ s: SIMD4<Float>, over d: SIMD4<Float>) -> SIMD4<Float> {
         var out = s * (1 - d.w) + ((1 - s.w) + s) * d
         out.w = min(max(s.w * (1 - d.w) + d.w, 0), 1)

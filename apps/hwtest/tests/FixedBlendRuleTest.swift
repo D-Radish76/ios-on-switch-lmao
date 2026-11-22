@@ -3,16 +3,16 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Rule fetch.blend (drivers/TegraGM20BMetal/raw/runtime/raw_fetch_rungs.h fixedBlendAcceptable) on the chip: N
+/// Rule fetch.blend (drivers/TegraGM20BMetal/fetch_rungs.h fixedBlendAcceptable) on the chip: N
 /// premultiplied source-over layers into one BGRA8 target, drawn once through the ROP's blend and once by a program that
 /// fetches the destination and blends it (the fetch rung the rule would replace), each against Metal's exact blend
 /// computed here (every layer stored as the nearest code). Sources are 8-bit codes or codes plus sixteenths (a
 /// shader-computed colour), from shaders/FixedBlendRule.metal's hash. The rule's claim: the ROP stays within 2 codes for
 /// 8-bit sources at any depth and for computed sources up to 2 layers; 8 computed layers are reported (x1-units' model
 /// says 4). Then 8 layers over 1280x720 both ways give each route's GPU time. The rule's further formats are
-/// gpu.raw.fixed_blend_formats'.
+/// gpu.gm20b.fixed_blend_formats'.
 struct FixedBlendRuleTest: HWTest {
-    let id = "gpu.raw.fixed_blend_rule"
+    let id = "gpu.gm20b.fixed_blend_rule"
     let name = "Fixed-function blend against the fetch rung: codes within the rule's bounds, GPU time both ways"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }
@@ -55,8 +55,8 @@ struct FixedBlendRuleTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let rop = try gpu.render(fragment: "rule_rop_fragment", format: .bgra8Unorm) { d in
             let a = d.colorAttachments[0]!
             a.isBlendingEnabled = true
@@ -92,8 +92,8 @@ struct FixedBlendRuleTest: HWTest {
         }
         metrics.set("rop_gpu_ms_8_layers_720p", ropMs / 3, digits: 3)
         metrics.set("fetch_gpu_ms_8_layers_720p", fetchMs / 3, digits: 3)
-        metrics.set("paths", paths.allSatisfy { $0 == "raw" } ? "raw" : paths.joined(separator: ","))
-        if paths.contains(where: { $0 != "raw" }) { wrong.append("paths") }
+        metrics.set("paths", paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : paths.joined(separator: ","))
+        if paths.contains(where: { $0 != "gm20b" }) { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

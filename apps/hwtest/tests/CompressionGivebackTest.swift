@@ -5,7 +5,7 @@ import HWTestGPU
 import Metal
 
 /// A private target whose compressed memory the kernel refused for a shortage asks again when this process gives some
-/// back, and moves onto it (drivers/TegraGM20BMetal/raw/runtime/raw_private_comp.cpp compGaveBack). A private
+/// back, and moves onto it (drivers/TegraGM20BMetal/private_comp.cpp compGaveBack). A private
 /// RGBA16Float 640x480 target on compressed memory (C64) is held; the GPU pool is filled to its floor by compressible
 /// BoAllocs of a connection of the test's own (CompressedFloorTest's asks); a private BGRA8 1792x1472 target is made:
 /// its ask is refused (`refused` >= 1 once the compression thread settled, `comptags_at_creation` 0). The connection's
@@ -18,7 +18,7 @@ import Metal
 /// but comptags 0 (the move's due flag or the worker's look). It drains the pool to its floor for a moment, refusing
 /// every other process's compressed asks meanwhile: it runs among the last tests (Registry.last).
 struct CompressionGivebackTest: HWTest {
-    let id = "gpu.raw.compression_giveback"
+    let id = "gpu.gm20b.compression_giveback"
     let name = "A refused ask for compressed memory is made again when this process gives memory back"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }
@@ -27,10 +27,10 @@ struct CompressionGivebackTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard (gpu.device as? NSObject)?.responds(to: CompressionSettled.factsSelector) == true else {
-            return .skip(RawFacade.missing("switchRawProbeFacts:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalProbeFacts:", on: gpu.device))
         }
         guard let connection = GPUConnection() else { return .skip("no TegraGM20B connection") }
         var metrics = Metrics()
@@ -43,18 +43,18 @@ struct CompressionGivebackTest: HWTest {
         var handles = Self.fill(connection)
         defer { Self.free(connection, handles) }
         metrics.set("filled_kib", handles.reduce(0) { $0 + $1.kib })
-        let before = RawFacade.compression(of: gpu.device)
-        let movesBefore = RawFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0
+        let before = GM20BFacade.compression(of: gpu.device)
+        let movesBefore = GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
         let atCreation = CompressionSettled.comptags(gpu.device, target) ?? -1
         try await CompressionSettled.settle(gpu.device)
-        let refused = RawFacade.compression(of: gpu.device)
+        let refused = GM20BFacade.compression(of: gpu.device)
         Self.free(connection, handles)
         handles = []
-        let beforeRelease = RawFacade.compression(of: gpu.device)
+        let beforeRelease = GM20BFacade.compression(of: gpu.device)
         autoreleasepool { held = nil }
         try await CompressionSettled.settle(gpu.device)
-        let gaveBack = RawFacade.compression(of: gpu.device)
+        let gaveBack = GM20BFacade.compression(of: gpu.device)
         let scratch = try gpu.texture(.bgra8Unorm, 16, 16, usage: [.renderTarget, .pixelFormatView])
         for _ in 0..<2 {
             try await gpu.run { commands in
@@ -66,7 +66,7 @@ struct CompressionGivebackTest: HWTest {
             }
         }
         let after = CompressionSettled.comptags(gpu.device, target) ?? -1
-        let moves = (RawFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0) - movesBefore
+        let moves = (GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0) - movesBefore
         let delta = { (a: [String: Int], b: [String: Int], key: String) in (b[key] ?? 0) - (a[key] ?? 0) }
         metrics.set("comptags_at_creation", atCreation)
         metrics.set("refused", delta(before, refused, "refused"))

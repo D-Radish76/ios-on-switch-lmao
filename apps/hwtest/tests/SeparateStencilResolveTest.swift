@@ -12,7 +12,7 @@ import Metal
 /// stores every texel of this scene. Per case <storage>_<filter>_stencil (left/right), _stencil_off and _depth_off
 /// texels off; every command buffer raw, failed_cbs=0. Stencil resolve is Apple5's: SKIP below it.
 struct SeparateStencilResolveTest: HWTest {
-    let id = "gpu.raw.separate_stencil_resolve"
+    let id = "gpu.gm20b.separate_stencil_resolve"
     let name = "A multisampled Stencil8 beside a Depth32Float resolves the sample its filter picks, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -39,10 +39,10 @@ struct SeparateStencilResolveTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard gpu.device.supportsFamily(.apple5) else { return .skip("the device resolves no stencil (Apple5)") }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for storage in Self.storages {
@@ -62,9 +62,9 @@ struct SeparateStencilResolveTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

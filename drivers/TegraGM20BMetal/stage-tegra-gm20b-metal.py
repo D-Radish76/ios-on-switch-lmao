@@ -14,9 +14,9 @@ and eject the card before it goes back into the Switch.
 What it stages, on the live volume (as vendor/unixnu/scripts/add-gpu-plugin-data.py --publish did on a seed image):
   * <Data>/ngpu/addons/TegraGM20BMetal.bundle. The kernel shows /private/var/ngpu/addons over
     /System/Library/Extensions;
-  * <Data>/ngpu/addons/TegraGM20BMetal.m2v-seed beside it, when the build has one (the Metal compiler's replies the
+  * <Data>/ngpu/addons/TegraGM20BMetal.seed beside it, when the build has one (the Metal compiler's replies the
     shader compiler reads);
-  * <Data>/ngpu/addons/TegraGM20BMetal.raw beside it (the raw GM20B path's pipeline pack: a process that cannot read
+  * <Data>/ngpu/addons/TegraGM20BMetal.pack beside it (the driver's pipeline pack: a process that cannot read
     it gets no Metal device);
   * CAEnableDeepFramebuffer, CAEnableFramebufferCompression and CAEnableIOSurfaceCompression = false merged into the
     preferences backboardd reads when it starts, before any plugin code runs (its own domain and the global one, for
@@ -46,8 +46,8 @@ from pathlib import Path
 DATA_UUID = 'D1B1D053-D0A6-496C-8625-A947A3DA863E'
 ADDONS = 'ngpu/addons'
 BUNDLE = ADDONS + '/TegraGM20BMetal.bundle'
-SEED = ADDONS + '/TegraGM20BMetal.m2v-seed'
-RAW = ADDONS + '/TegraGM20BMetal.raw'
+SEED = ADDONS + '/TegraGM20BMetal.seed'
+RAW = ADDONS + '/TegraGM20BMetal.pack'
 OWNED = (BUNDLE, SEED, RAW)
 STATE = 'ngpu/stage.tsv.gz'
 PENDING = 'ngpu/stage.pending'

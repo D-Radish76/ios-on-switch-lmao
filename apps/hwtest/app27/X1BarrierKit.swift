@@ -49,9 +49,9 @@ struct BarrierKit {
             return try gpu.buffer(rowBytes * height).makeTexture(
                 descriptor: descriptor, offset: 0, bytesPerRow: rowBytes)
         }
-        if layout == .compressed { try RawProbe.compressNext(gpu.device) }
+        if layout == .compressed { try GM20BProbe.compressNext(gpu.device) }
         let texture = try gpu.texture(format, width, height, usage: [.renderTarget, .shaderRead])
-        if layout == .compressed, try RawProbe.facts(gpu.device, texture)["comptags"] != 1 { return nil }
+        if layout == .compressed, try GM20BProbe.facts(gpu.device, texture)["comptags"] != 1 { return nil }
         return texture
     }
 

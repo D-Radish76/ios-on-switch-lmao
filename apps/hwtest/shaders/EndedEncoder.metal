@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-/// gpu.raw.ended_encoder: quad q of the strip (vertex q * 6 on) covers kEndedRects[q] (left, right, whole, top), flat
+/// gpu.gm20b.ended_encoder: quad q of the strip (vertex q * 6 on) covers kEndedRects[q] (left, right, whole, top), flat
 /// coloured kEndedColours[q]
 struct EndedVertex {
     float4 p [[position]];

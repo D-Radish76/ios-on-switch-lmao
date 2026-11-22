@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A view of a decoded texture holds its parent, which holds the kept blocks (RawMetalDecodedFamily.mm): a 203
+/// A view of a decoded texture holds its parent, which holds the kept blocks (TegraGM20BMetalDecodedFamily.mm): a 203
 /// texture's 185 view, the texture's last reference let go, takes an upload of the rotated blocks and reads its own
 /// decode of them (`decode_view_outlives_off` 0, against a 185 texture holding those blocks). Then a 203 texture with
 /// views of other forms (two 185 views, and on 24B119 a 221 one), each let go while a command buffer uploading new
 /// blocks into the texture is in flight: none fails (`decode_view_release_failed` 0) and the texture reads its decode
 /// of the last blocks. Once all of it is gone and one more command buffer completed, the device holds no more texture
-/// headers than before (`decode_memory_left` at most 0, of switchRawMemory headers_left, which is the process's: below
+/// headers than before (`decode_memory_left` at most 0, of switchMetalMemory headers_left, which is the process's: below
 /// 0 is earlier tests' retired backings going meanwhile; the pool and write-combined bytes reported). Whether a view
 /// goes before its upload was encoded is the worker's timing; either order must hold. Red: a view whose image or blocks
 /// went with the texture, a decode into a view already gone, or headers a family keeps.
@@ -20,9 +20,9 @@ struct DecodeViewLifetimeTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.memory(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.memory(of: gpu.device)
         let set = DecodeVectors.set(203)
         guard !set.blocks.isEmpty else { return .fail("no 203 vectors") }
         let outlives = try await Self.outliving(gpu, set)
@@ -34,7 +34,7 @@ struct DecodeViewLifetimeTest: HWTest {
             blit.fill(buffer: settled, range: 0..<16, value: 0)
             blit.endEncoding()
         }
-        let after = RawFacade.memory(of: gpu.device)
+        let after = GM20BFacade.memory(of: gpu.device)
         var metrics = Metrics()
         metrics.set("decode_view_outlives_off", outlives)
         metrics.set("decode_view_release_failed", gpu.commandBufferErrors.count)
@@ -102,7 +102,7 @@ struct DecodeViewLifetimeTest: HWTest {
     }
 }
 
-/// What a decode on upload costs, once an upload and never in a frame (raw_decoded.h): replaceRegion of a 2048x2048 166
+/// What a decode on upload costs, once an upload and never in a frame (decoded.h): replaceRegion of a 2048x2048 166
 /// level (2 MiB of PVRTC blocks, any words), of a 2048x2048 222 level (4 MiB, 24B119), of a 1024x512 209 level, and of
 /// that 209 level again with a 191 and (24B119) a 227 view alive, every live form decoded in the upload's own job (the
 /// ASTC levels the driver's vectors' blocks, tiled: every block mode they exercise, none an error block alone); each
@@ -117,10 +117,10 @@ struct DecodeUploadCostTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let hdr = context.ios >= 27
-        let before = RawFacade.memory(of: gpu.device)
+        let before = GM20BFacade.memory(of: gpu.device)
         var metrics = Metrics()
         var unmade: [String] = []
         func timed(
@@ -162,7 +162,7 @@ struct DecodeUploadCostTest: HWTest {
         try await timed(
             "decode_ms_8x4_1024_three_forms", 209, 1024, 512, blockW: 8, bytes: 1024 * 512 / 2,
             forms: hdr ? [191, 227] : [191])
-        let after = RawFacade.memory(of: gpu.device)
+        let after = GM20BFacade.memory(of: gpu.device)
         metrics.set("decode_pool_grows", (after["grows"] ?? 0) - (before["grows"] ?? 0))
         metrics.set("unmade", unmade.isEmpty ? "-" : unmade.joined(separator: ","))
         return .judged(

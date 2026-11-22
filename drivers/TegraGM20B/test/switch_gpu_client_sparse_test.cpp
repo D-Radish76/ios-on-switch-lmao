@@ -172,7 +172,7 @@ TEST_F(ClientSparse, OnlyTheSameSparseRangeIsTheSameBinding)
 	EXPECT_TRUE(AGXDeviceUserClient::bindingIs(mapped, op, bo));
 }
 
-// The raw path's window (raw_sparse_window.cpp): an import's BO bound again at the window's start, the tail sparse, and
+// The driver's window (sparse_window.cpp): an import's BO bound again at the window's start, the tail sparse, and
 // one Unmap of the whole window, behind queued work: that work keeps both, then both retire; the import's own binding
 // and the BO stay.
 TEST_F(ClientSparse, OneUnmapRetiresAWindowsAliasAndItsSparseTail)

@@ -9,7 +9,7 @@ import Metal
 /// sampler: the left half the first texture's colour, the right half the second's, through the device's handle tables.
 struct NativeArgumentTier2Test: NativeObjectTest {
     let id = "metal.native.argument_tier2"
-    let name = "Resource IDs written straight into an argument buffer read through the handle tables on the raw path"
+    let name = "Resource IDs written straight into an argument buffer read through the handle tables on the driver"
 
     func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
         let device = gpu.device

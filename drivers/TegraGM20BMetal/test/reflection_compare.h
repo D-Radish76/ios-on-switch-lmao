@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Two reflection objects compared selector by selector, recursively: every answer Metal's reflection classes give
 // (MTLBinding and its kinds, MTLStructType, MTLStructMember, MTLArrayType, MTLPointerType, MTLTextureReferenceType),
-// Metal's against the raw facade's, and which of the classes' selectors each responds to. Each difference is collected
+// Metal's against the facade's, and which of the classes' selectors each responds to. Each difference is collected
 // with its state and path, and a failure prints them summarised, one line per path and selector.
 #pragma once
 #import <Metal/Metal.h>

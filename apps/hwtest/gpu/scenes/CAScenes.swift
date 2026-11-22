@@ -21,8 +21,8 @@ struct FirstTiledSurfaceScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let start = RawFacade.counters(of: gpu.device)
-        if !start.isEmpty { result.metrics.set("first", ["raw", "failed"].allSatisfy { (start[$0] ?? 0) == 0 }) }
+        let start = GM20BFacade.counters(of: gpu.device)
+        if !start.isEmpty { result.metrics.set("first", ["gm20b", "failed"].allSatisfy { (start[$0] ?? 0) == 0 }) }
         var pipeline: MTLRenderPipelineState?
         do {
             let library = try gpu.device.makeLibrary(URL: CAState.library)
@@ -82,7 +82,7 @@ struct FirstTiledSurfaceScene: GPUScene {
                 result.metrics.set("fill_px\(round)", got.shown(got.pixel(drawn.x + 1, drawn.y + 1)))
             }
         }
-        let end = RawFacade.counters(of: gpu.device)
+        let end = GM20BFacade.counters(of: gpu.device)
         if !end.isEmpty { result.metrics.set("reopens", (end["reopens"] ?? 0) - (start["reopens"] ?? 0)) }
         result.metrics.set("cb_errors", gpu.commandBufferErrors.count)
         result.expect(hashes.count <= 1, "the fill drew \(hashes.count) different pictures in three rounds")

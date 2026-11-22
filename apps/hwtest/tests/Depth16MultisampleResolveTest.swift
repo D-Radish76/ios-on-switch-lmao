@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A 4x Depth16Unorm beside a 4x Stencil8 resolved into a one-sample Depth16Unorm (sample 0). The raw path renders the
+/// A 4x Depth16Unorm beside a 4x Stencil8 resolved into a one-sample Depth16Unorm (sample 0). The driver renders the
 /// pair through a Depth32Float_Stencil8 of its own, so the resolve must read that, not the Depth16Unorm, which the pass
 /// never writes before its end. The depth is cleared to 1 and a quad at 0.25 drawn over the left half, resolved into a
 /// Depth16Unorm the test cleared to 0.75 first, once with MultisampleResolve and once with StoreAndMultisampleResolve;
@@ -13,8 +13,8 @@ import Metal
 /// codes off, <r>_kept the codes still 0.75's; reload_differs the codes the reload's resolve does not share with
 /// store_resolve's; paths=.
 struct Depth16MultisampleResolveTest: HWTest {
-    let id = "gpu.raw.depth16_ms_resolve"
-    let name = "A multisampled Depth16Unorm and Stencil8 pair resolves the depth its pass drew, on the raw path"
+    let id = "gpu.gm20b.depth16_ms_resolve"
+    let name = "A multisampled Depth16Unorm and Stencil8 pair resolves the depth its pass drew, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -24,8 +24,8 @@ struct Depth16MultisampleResolveTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let (n, samples) = (Self.n, Self.samples)
         let colour = try gpu.texture(.rgba8Unorm, n, n, samples: samples)
         let depth = try gpu.texture(.depth16Unorm, n, n, usage: [.renderTarget], samples: samples)
@@ -106,10 +106,10 @@ struct Depth16MultisampleResolveTest: HWTest {
         }
         let reloadDiffers = zip(read["store_resolve"] ?? [], read["reload"] ?? []).filter { $0 != $1 }.count
         metrics.set("reload_differs", reloadDiffers)
-        let raw = paths.allSatisfy { $0 == "raw" }
-        metrics.set("paths", raw ? "raw" : String(paths.joined(separator: ",").prefix(120)))
+        let raw = paths.allSatisfy { $0 == "gm20b" }
+        metrics.set("paths", raw ? "gm20b" : String(paths.joined(separator: ",").prefix(120)))
         checks.append(("the kept depth resolves as the pass that drew it did", reloadDiffers == 0))
-        checks.append(("every pass on the raw path", raw))
+        checks.append(("every pass on the driver", raw))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

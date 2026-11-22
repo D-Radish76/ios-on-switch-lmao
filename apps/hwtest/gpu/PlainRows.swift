@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// Plain-format textures over a surface plane whose rows, as an M4 Max's GPU reads them (bytesPerRow rounded down to
-/// 16), overlap, lie under 16 bytes or run past the allocation (gpu.raw.plain_rows_*). An M4 Max makes each at any
+/// 16), overlap, lie under 16 bytes or run past the allocation (gpu.gm20b.plain_rows_*). An M4 Max makes each at any
 /// extent and reads plane row y at y * (bytesPerRow & ~15), rows under 16 bytes a mebibyte apart and 0 past the
 /// allocation's last page; its GPU stores rows under 16 bytes 16 apart, its CPU copies at the plane's own bytesPerRow,
 /// the last row winning. Every texel's code tells which plane row a byte several rows reach kept

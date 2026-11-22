@@ -4,7 +4,7 @@ import Metal
 
 /// Metal's three SIMD-group feature rows on the GPU's own SIMD width, each lane's word against the CPU's: permute and
 /// votes (supportsSIMDGroup), reduction and prefix (supportsSIMDReduction), shift-and-fill
-/// (supportsSIMDShuffleAndFill). On the raw device each row's answer is reported beside its count.
+/// (supportsSIMDShuffleAndFill). On the device each row's answer is reported beside its count.
 struct SimdGroupScene: GPUScene {
     let id = "gpu.compute.simd_group"
     let name = "SIMD-group permute, reduction and shift-and-fill against the CPU"
@@ -101,8 +101,8 @@ struct SimdGroupScene: GPUScene {
         result.metrics.set("path", timing.path)
         result.metrics.set("layout_wrong", layoutWrong)
         for (row, entry) in Self.rows.enumerated() { result.metrics.set(entry.name + "_wrong", wrong[row]) }
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(timing.path == "raw", "SIMD-group operations left raw: \(timing.path)")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(timing.path == "gm20b", "SIMD-group operations left raw: \(timing.path)")
             let object = gpu.device as AnyObject as! NSObject
             for entry in Self.rows {
                 let answer = (object.value(forKey: entry.answer) as? NSNumber)?.intValue ?? -1

@@ -11,10 +11,10 @@ import Metal
 /// complete and the two surfaces' planes are byte for byte the same, and the twin holds Apple's bytes (apple_bytes_off:
 /// green in plane 0, blue and red pairs in plane 1; the clear 40 / bf 80, the quad 00 / 00 ff). status: command buffers that failed
 /// (0: completed); luma_bytes_differ, chroma_bytes_differ: bytes the twins' planes differ by; path: the ShaderRead
-/// texture's command buffers' paths. '_RB4' surfaces are made through IOSurface, as gpu.raw.planar_constexpr's: Core
+/// texture's command buffers' paths. '_RB4' surfaces are made through IOSurface, as gpu.gm20b.planar_constexpr's: Core
 /// Video makes no '_RB4' pixel buffer.
 struct PlanarSampledTargetTest: HWTest {
-    let id = "gpu.raw.planar_sampled_target"
+    let id = "gpu.gm20b.planar_sampled_target"
     let name = "An RGB8_444_2P made ShaderRead alone renders as its ShaderRead|RenderTarget twin does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -29,9 +29,9 @@ struct PlanarSampledTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -55,10 +55,10 @@ struct PlanarSampledTargetTest: HWTest {
             checks.append(("\(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.private_compression's arms array1 and ms4_move (drivers/TegraGM20BMetal/raw/runtime/raw_private_comp.h: a
+/// gpu.gm20b.private_compression's arms array1 and ms4_move (drivers/TegraGM20BMetal/private_comp.h: a
 /// one-level array or a 2x/4x target made plain for want of compressed memory moves onto it, every layer and sample,
 /// copyImages): a private BGRA8 2D array of 3 layers of 1024x1024 and a private 4x BGRA8 512x512 target, each larger
 /// than any of its kind an earlier test makes, so made plain (`array_at_creation`, `ms_at_creation`; kept memory of a
@@ -12,7 +12,7 @@ import Metal
 /// left half, and draws the 4x target's slanted pattern (a pixel on the edge has samples of both); both move at that
 /// command buffer's submission, before its encode. Judged: both on compressed memory after (`array_comptags_after`,
 /// `ms_comptags_after` 1), every layer's texels its codes (`layer_wrong` 0), every sample the same as the same pass
-/// into a 4x target held plain (switchRawProbePlainPrivate:, `sample_wrong` 0), and `moves` (private_compressed_moves)
+/// into a 4x target held plain (switchMetalProbePlainPrivate:, `sample_wrong` 0), and `moves` (private_compressed_moves)
 /// as many as were made plain. Red: a layer past the first lost in the move (the want's bytes short of storageRange, or
 /// copyImages missed a layer), or the sample grid's copy wrong.
 extension PrivateCompressionTest {
@@ -30,7 +30,7 @@ extension PrivateCompressionTest {
     }
 
     func moveArms(_ gpu: GPU, _ facade: NSObject, _ metrics: inout Metrics, _ wrong: inout [String]) async throws {
-        let movesBefore = RawFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0
+        let movesBefore = GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0
         let d = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm, width: Self.moveArraySide, height: Self.moveArraySide, mipmapped: false)
         d.textureType = .type2DArray
@@ -66,7 +66,7 @@ extension PrivateCompressionTest {
                 Self.slanted(commands, samples, pattern)
             }.path)
         let arrayAfter = comptags(facade, array), samplesAfter = comptags(facade, samples)
-        let moves = (RawFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0) - movesBefore
+        let moves = (GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0) - movesBefore
         var layerWrong = 0
         for layer in 0..<Self.moveLayers {
             let bytes = try await gpu.read(array, bytesPerPixel: 4, slice: layer)
@@ -102,7 +102,7 @@ extension PrivateCompressionTest {
         if moves != wantMoves { wrong.append("moves") }
         if layerWrong > 0 { wrong.append("layer_wrong") }
         if sampleWrong > 0 { wrong.append("sample_wrong") }
-        if run.paths.contains(where: { $0 != "raw" }) { wrong.append("move_arms_path") }
+        if run.paths.contains(where: { $0 != "gm20b" }) { wrong.append("move_arms_path") }
     }
 
     /// A clear to opaque black and the pattern over a left part whose right edge crosses pixels

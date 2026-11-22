@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-// A compute state's stage input as the raw path keys its kernels (RawMetalComputeState.mm: its constants text) and the
+// A compute state's stage input as the driver keys its kernels (TegraGM20BMetalComputeState.mm: its constants text) and the
 // journal's D line names it (pack/kernel_shapes.h reads it back): " | in a<i>=<format>:<offset>:<buffer>:<stride>:<step
-// function>:<step rate>... i=<index type>:<index buffer>", a dynamic stride as UINT32_MAX as RawPipelineKey.h writes a
+// function>:<step rate>... i=<index type>:<index buffer>", a dynamic stride as UINT32_MAX as TegraGM20BMetalPipelineKey.h writes a
 // vertex layout's; "" for none, so a kernel without one keys as before.
 #pragma once
 #import <Metal/Metal.h>

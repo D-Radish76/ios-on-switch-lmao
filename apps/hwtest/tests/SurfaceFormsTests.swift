@@ -10,7 +10,7 @@ import Metal
 /// (xr_tiled_cpu_off 0); a blit of 16x8 from (8, 0) into a 550 over a second such surface reads, through that one's
 /// 554, what the first reads at (8, 0) (xr_tiled_blit_off 0). Within 1e-6.
 struct XrTiledSurfaceTest: HWTest {
-    let id = "gpu.raw.xr_tiled_surface"
+    let id = "gpu.gm20b.xr_tiled_surface"
     let name = "An XR texture over a surface the kernel laid out block-linear reads, stores, copies and blits, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -35,7 +35,7 @@ struct XrTiledSurfaceTest: HWTest {
 /// whose first row is the scene's and the rest 0 (ycbcr_rows16_texels_off 0 of 64 and of 16, both formats, in three
 /// runs on an M4 Max).
 struct YcbcrRowsUnder16Test: HWTest {
-    let id = "gpu.raw.ycbcr_rows_under16"
+    let id = "gpu.gm20b.ycbcr_rows_under16"
     let name = "YCbCr textures over planes of rows under 16 bytes read their first row and zeros, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

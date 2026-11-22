@@ -3,7 +3,7 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// gpu.raw.ycbcr_turned_load: a YCbCr 4:2:0 (500) target turned by rotation 1, 2 or 3 over plane 0 of a '420v' 128x64
+/// gpu.gm20b.ycbcr_turned_load: a YCbCr 4:2:0 (500) target turned by rotation 1, 2 or 3 over plane 0 of a '420v' 128x64
 /// (luma rows 128 at 0, chroma pairs 64x32 rows 128 at 8192), every byte SurfaceReads.pattern(i), drawn by a pass that
 /// loads and stores it, one draw of a frame rectangle whose fragments are all discarded: what the store writes back of
 /// the frame tiles the draw reaches, in plane bytes

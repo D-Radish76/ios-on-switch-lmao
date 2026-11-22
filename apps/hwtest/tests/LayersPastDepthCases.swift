@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The scenes of gpu.raw.layers_past_depth (c38-audit m2v-pass-forms/probe/layerprobe.mm, layers.txt): an RGBA8Unorm
+/// The scenes of gpu.gm20b.layers_past_depth (c38-audit m2v-pass-forms/probe/layerprobe.mm, layers.txt): an RGBA8Unorm
 /// array of 4 layers cleared to 0, a pass of 4 layers, a layer-choosing state drawing a full quad in every layer, beside
 /// a depth/stencil array of 2 layers a pass of 2 filled first. Each run answers, per layer, whether the draw passed.
 enum LayersPastDepthCases {

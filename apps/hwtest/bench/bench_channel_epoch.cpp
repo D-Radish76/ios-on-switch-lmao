@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 #include "TegraGM20BJobABI.h"
-#include "drivers/TegraGM20BMetal/raw/runtime/raw_host_access.h"
-#include "drivers/TegraGM20BMetal/raw/runtime/raw_push.h"
+#include "drivers/TegraGM20BMetal/host_access.h"
+#include "drivers/TegraGM20BMetal/push.h"
 #include "kits/SwitchGM20B/SwitchGM20BCopy.h"
 #include "apps/hwtest/bench/switch_bench.h"
 
@@ -39,7 +39,7 @@ public:
         for (uint32_t channel : made_)
             if (channel)
                 a_.closeChannel(channel);
-        for (raw::Bo *bo : {&push_, &target_})
+        for (gm20b::Bo *bo : {&push_, &target_})
             if (bo->handle)
                 a_.free(*bo);
     }
@@ -83,10 +83,10 @@ public:
     }
 
 private:
-    raw::Kernel a_, b_;
+    gm20b::Kernel a_, b_;
     switch_bench_channel_epoch &r_;
     std::vector<uint32_t> made_;
-    raw::Bo push_, target_;
+    gm20b::Bo push_, target_;
 
     void stop(const std::string &why)
     {
@@ -94,7 +94,7 @@ private:
             snprintf(r_.why, sizeof r_.why, "%s", why.c_str());
     }
 
-    // ChannelCreate's kern_return_t as the kernel answers it (raw::Kernel::channel keeps only its text)
+    // ChannelCreate's kern_return_t as the kernel answers it (gm20b::Kernel::channel keeps only its text)
     int create(uint32_t &channel)
     {
         TegraGM20BAbiChannelCreate in = {kCopyOnly, 0};
@@ -110,16 +110,16 @@ private:
         if (!a_.alloc(kPage, true, push_) || !a_.alloc(kPage, true, target_))
             return stop("BoAlloc: " + a_.error());
         auto *words = reinterpret_cast<uint32_t *>(push_.cpu);
-        raw::Push p{words, words + push_.bytes / 4};
-        p.m(NVB0B5_SET_REMAP_CONST_A, uint32_t(kFilled) * 0x01010101u, raw::SUBC_COPY);
-        p.m(NVB0B5_SET_REMAP_COMPONENTS, kFillWords, raw::SUBC_COPY);
-        p.inc(NVB0B5_OFFSET_OUT_UPPER, {uint32_t(target_.va >> 32), uint32_t(target_.va)}, raw::SUBC_COPY);
-        p.inc(NVB0B5_LINE_LENGTH_IN, {uint32_t(kPage / 4), 1}, raw::SUBC_COPY);
-        p.m(NVB0B5_LAUNCH_DMA, kFillLaunch, raw::SUBC_COPY);
+        gm20b::Push p{words, words + push_.bytes / 4};
+        p.m(NVB0B5_SET_REMAP_CONST_A, uint32_t(kFilled) * 0x01010101u, gm20b::SUBC_COPY);
+        p.m(NVB0B5_SET_REMAP_COMPONENTS, kFillWords, gm20b::SUBC_COPY);
+        p.inc(NVB0B5_OFFSET_OUT_UPPER, {uint32_t(target_.va >> 32), uint32_t(target_.va)}, gm20b::SUBC_COPY);
+        p.inc(NVB0B5_LINE_LENGTH_IN, {uint32_t(kPage / 4), 1}, gm20b::SUBC_COPY);
+        p.m(NVB0B5_LAUNCH_DMA, kFillLaunch, gm20b::SUBC_COPY);
         const TegraGM20BAbiSurfaceUse uses[] = {{push_.handle, TegraGM20BSurfaceRead, 0},
                                                 {target_.handle, TegraGM20BSurfaceWrite, 0}};
         const TegraGM20BAbiPush pushed = {push_.va, uint32_t(p.at - words), 0};
-        raw::KernelJob job;
+        gm20b::KernelJob job;
         job.channel = channel;
         job.pushes = &pushed;
         job.pushCount = 1;
@@ -135,7 +135,7 @@ private:
         kr = KERN_SUCCESS;
         a_.wait(channel, seqno, kWaitNs, &kr);
         r_.wait_kr = kr;
-        raw::HostAccess lease;
+        gm20b::HostAccess lease;
         if (!lease.acquire(a_, target_, target_.cpu, target_.bytes, false))
             return stop("CpuAcquire for a read: " + a_.error());
         uint32_t off = 0;

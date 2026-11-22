@@ -4,14 +4,14 @@ import HWTestGPU
 import Metal
 
 /// A stitched library of the app library's own visible functions (shaders/Stitching.metal) is made by the system shader
-/// compiler's Metal front end from the base device's DAG text and each function's bitcode as the raw device read it
-/// (drivers/TegraGM20BMetal/raw/runtime/RawMetalCompiledLibraries.mm), never from m2v twins: the stitched function is
-/// the raw device's own. Core Image stitches its kernels this way (iconservicesagent, Maps, mediaanalysisd on boot 21).
+/// compiler's Metal front end from the base device's DAG text and each function's bitcode as the device read it
+/// (drivers/TegraGM20BMetal/TegraGM20BMetalCompiledLibraries.mm), never from m2v twins: the stitched function is
+/// the device's own. Core Image stitches its kernels this way (iconservicesagent, Maps, mediaanalysisd on boot 21).
 /// The case fails if the library is not made or any command buffer failed (failed_cbs=).
 /// It also stitches stitch_scaled_add specialized with each gain, as MPS stitches its DAG functions, links the result
 /// into stitch_consumer and checks every word it writes (specialized_words_off) and that each run stayed raw.
 struct StitchedLibraryTest: HWTest {
-    let id = "gpu.raw.stitched_library"
+    let id = "gpu.gm20b.stitched_library"
     let name = "A stitched library, made by the shader compiler"
     let subsystem = Subsystem.metal
 
@@ -75,9 +75,9 @@ struct StitchedLibraryTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         guard let add = gpu.library.makeFunction(name: "stitch_add"),
             let mul = gpu.library.makeFunction(name: "stitch_mul")
         else { throw TestFailure("no stitch_add or stitch_mul in the app library") }
@@ -120,7 +120,7 @@ struct StitchedLibraryTest: HWTest {
         metrics.set("specialized_last", specialized.last.map { String($0) }.joined(separator: ","))
         metrics.set("specialized_failure", specializedFailure)
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         var wrong: [String] = []
         if made == nil { wrong.append("library") }
         if stitched?.functionType != .visible { wrong.append("function") }

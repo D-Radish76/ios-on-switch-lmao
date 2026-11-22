@@ -3,14 +3,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Buffers bound off the descriptor base alignment on the raw path: twenty vertex uniform buffers each 4
+/// Buffers bound off the descriptor base alignment on the driver: twenty vertex uniform buffers each 4
 /// bytes past a multiple of 256 plus a slot's own step, eight fragment storage buffers each 4 to 12 bytes past a
 /// multiple of 16, each holding one float of 1/128 where it is bound and 1 everywhere else: 29 buffer entries with the
-/// corners', within the 32 a record holds (raw_pack.h kPackEntries). Every residual is in its record word, the vertex
+/// corners', within the 32 a record holds (pack.h kPackEntries). Every residual is in its record word, the vertex
 /// stage's last ones in its argument table; one lost reads 1 and the channel saturates. Metal's sums are 20/128 (red
 /// 40) and 8/128 (green 16); the pass must stay raw.
 struct UnalignedBufferOffsetsTest: HWTest {
-    let id = "gpu.raw.unaligned_buffer_offsets"
+    let id = "gpu.gm20b.unaligned_buffer_offsets"
     let name = "Uniform and storage buffers bound off their base alignment read through their residual words, raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -26,8 +26,8 @@ struct UnalignedBufferOffsetsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let uniforms = try Self.values(gpu, bytes: 8192, at: (1...20).map(Self.uniformOffset))
         let storage = try Self.values(gpu, bytes: 1024, at: (0...7).map(Self.storageOffset))
         let state = try gpu.render(vertex: "residual_vertex", fragment: "residual_fragment", format: .rgba8Unorm)
@@ -51,7 +51,7 @@ struct UnalignedBufferOffsetsTest: HWTest {
         metrics.set("path", drawn.path)
         metrics.set("pixel", pixel.map(String.init).joined(separator: ","))
         var failures: [String] = []
-        if drawn.path != "raw" { failures.append("the pass went off the raw path: \(drawn.path)") }
+        if drawn.path != "gm20b" { failures.append("the pass went off the driver: \(drawn.path)") }
         if abs(Int(pixel[0]) - 40) > 1 || abs(Int(pixel[1]) - 16) > 1 {
             failures.append("red \(pixel[0]) green \(pixel[1]), Metal 40 and 16")
         }

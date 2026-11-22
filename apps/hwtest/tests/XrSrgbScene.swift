@@ -1,7 +1,7 @@
 import Foundation
 import Metal
 
-/// What gpu.raw.xr_srgb and gpu.raw.xr_srgb_alpha draw and what Metal makes of it. BGRA10_XR_sRGB (553) holds each
+/// What gpu.gm20b.xr_srgb and gpu.gm20b.xr_srgb_alpha draw and what Metal makes of it. BGRA10_XR_sRGB (553) holds each
 /// channel's 10-bit code in the top of a 16-bit word, BGR10_XR_sRGB (555) three codes in a 32-bit word (blue in bits
 /// 0-9, red 20-29, two bits above). A colour code reads as the sRGB curve of (code - 384) / 510, mirrored below zero; an
 /// alpha code as (code - 384) / 510 clamped to [0, 1].
@@ -41,7 +41,7 @@ enum XrSrgb {
     static let side = 8
 
     /// The value Metal reads for a code. An M4 Max's own reads lie within 6.1e-5 of it, nearest zero coarser
-    /// (code 385 reads 2^-13), so a read is judged within that plus one step of a half, which the raw path's
+    /// (code 385 reads 2^-13), so a read is judged within that plus one step of a half, which the driver's
     /// RGBA16Float stand-in holds
     static func decoded(_ code: Int, alpha: Bool) -> Float {
         let e = (Double(code) - 384) / 510

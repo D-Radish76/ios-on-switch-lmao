@@ -3,12 +3,12 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.integer_targets: every integer colour format the GM20B renders (NIL's RU*/RS* targets) cleared, then half of it
+/// gpu.gm20b.integer_targets: every integer colour format the GM20B renders (NIL's RU*/RS* targets) cleared, then half of it
 /// drawn by an integer fragment, read back word for word. A clear's double is truncated toward zero and saturated, as
-/// Metal stores it (m2v clear_value.rs). Fails on any byte off or any command buffer off the raw path.
+/// Metal stores it (m2v clear_value.rs). Fails on any byte off or any command buffer off the driver.
 struct IntegerTargetTest: HWTest {
-    let id = "gpu.raw.integer_targets"
-    let name = "Integer render targets: cleared and drawn on the raw path"
+    let id = "gpu.gm20b.integer_targets"
+    let name = "Integer render targets: cleared and drawn on the driver"
     let subsystem = Subsystem.metal
 
     struct Case {
@@ -76,8 +76,8 @@ struct IntegerTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var failed: [String] = []
         for c in Self.cases {
@@ -118,8 +118,8 @@ struct IntegerTargetTest: HWTest {
                 failed.append("\(c.format.rawValue): \(GPU.describe(error))")
             }
         }
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
-        if !raw { failed.append("command buffers off the raw path: \(gpu.paths.text)") }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
+        if !raw { failed.append("command buffers off the driver: \(gpu.paths.text)") }
         var metrics = Metrics()
         metrics.set("formats", Self.cases.count)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)

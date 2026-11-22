@@ -3,15 +3,15 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Opaque border colours on the raw path (boot 21 gpu.heap.m2v_target: such a sampler was m2v's, call.sampler "border
+/// Opaque border colours on the driver (boot 21 gpu.heap.m2v_target: such a sampler was m2v's, call.sampler "border
 /// 2"): a 4x4 texture drawn into the middle of a 12x12 target through a clamp-to-border sampler, its ring sampled past
 /// the edge. Metal reads the colour in the format's channels, a missing red, green or blue 0 and alpha 1, A8Unorm's
 /// alpha the colour's red, then the view's swizzle (m2v metal/sampler.rs border_texel, measured). RGBA8 reads the
 /// sampler's own header; R8, A8 and a swizzled view read the headers made for them, and the A8 and swizzled arms tell
-/// whether the texture unit returns the header's border words as they are (raw_sampler.h borderTexel's assumption).
+/// whether the texture unit returns the header's border words as they are (sampler.h borderTexel's assumption).
 struct OpaqueBorderTest: HWTest {
-    let id = "gpu.raw.opaque_border"
-    let name = "Opaque border colours read Metal's texel of each texture format and swizzle, on the raw path"
+    let id = "gpu.gm20b.opaque_border"
+    let name = "Opaque border colours read Metal's texel of each texture format and swizzle, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -27,8 +27,8 @@ struct OpaqueBorderTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let rgba = try gpu.texture(.rgba8Unorm, 4, 4, usage: [.shaderRead, .pixelFormatView])
         try await gpu.upload(Array([[UInt8]](repeating: Self.texel, count: 16).joined()), to: rgba, bytesPerRow: 16)
         let red = try gpu.texture(.r8Unorm, 4, 4, usage: [.shaderRead])
@@ -98,7 +98,7 @@ struct OpaqueBorderTest: HWTest {
             }
         }
         metrics.set("paths", paths.joined(separator: ","))
-        if paths.contains(where: { $0 != "raw" }) { wrong.append("paths") }
+        if paths.contains(where: { $0 != "gm20b" }) { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

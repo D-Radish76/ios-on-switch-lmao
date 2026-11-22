@@ -29,15 +29,15 @@ func drawWrittenHalves(_ gpu: GPU, _ written: MTLTexture, _ values: [SIMD4<Float
     }.path
 }
 
-/// A fragment function's storage write into a BGRA10_XR texture, which the raw path samples through an RGBA16Float
+/// A fragment function's storage write into a BGRA10_XR texture, which the driver samples through an RGBA16Float
 /// stand-in. An 8x8 texture is written with values across the extended range, then read by a second pass into an
-/// RGBA16Float target. The texture holds each channel's code as Metal writes a half (raw_xr.h writeCode: 384 +
+/// RGBA16Float target. The texture holds each channel's code as Metal writes a half (xr.h writeCode: 384 +
 /// round-half-even(min(|h|, 1.5) x 510) clamped, alpha 384 + round(a x 510)), and the read gives (code - 384) / 510
 /// rounded to half, so the stand-in was drawn again after the write. PASS: no code or read off, both command buffers on
-/// the raw path.
+/// the driver.
 struct WrittenXrTextureTest: HWTest {
-    let id = "gpu.raw.written_xr_texture"
-    let name = "A fragment function's storage write into an extended-range texture, read after, on the raw path"
+    let id = "gpu.gm20b.written_xr_texture"
+    let name = "A fragment function's storage write into an extended-range texture, read after, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }
 
@@ -57,8 +57,8 @@ struct WrittenXrTextureTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.size
         let xr = try gpu.texture(.bgra10_xr, n, n, usage: [.shaderRead, .shaderWrite])
         let values: [SIMD4<Float>] = (0..<(n * n)).map { (i: Int) -> SIMD4<Float> in
@@ -106,7 +106,7 @@ struct WrittenXrTextureTest: HWTest {
         metrics.set("reads_wrong", readsWrong)
         metrics.set("first_wrong", first)
         var failures: [String] = []
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a command buffer off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a command buffer off the driver") }
         if codesWrong != 0 { failures.append("\(codesWrong) texels' codes wrong") }
         if readsWrong != 0 { failures.append("\(readsWrong) channels read wrong") }
         return failures.isEmpty
@@ -115,13 +115,13 @@ struct WrittenXrTextureTest: HWTest {
 }
 
 /// A fragment function's storage write into a BGRA8Unorm texture over an IOSurface whose rows are 48 bytes apart: a
-/// texture header's pitch takes multiples of 32, so the raw path samples it through a block-linear shadow (before this the
+/// texture header's pitch takes multiples of 32, so the driver samples it through a block-linear shadow (before this the
 /// draw was refused). The draw writes the shadow, which goes back into the surface after the pass. Each byte of the
 /// surface read on the CPU is the value written (codes k / 255, stored exactly), the padding past each row untouched.
-/// PASS: no byte off, the command buffer on the raw path.
+/// PASS: no byte off, the command buffer on the driver.
 struct WrittenShadowedSurfaceTest: HWTest {
-    let id = "gpu.raw.written_shadowed_surface"
-    let name = "A fragment function's storage write into a surface of 48-byte rows, on the raw path"
+    let id = "gpu.gm20b.written_shadowed_surface"
+    let name = "A fragment function's storage write into a surface of 48-byte rows, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -129,8 +129,8 @@ struct WrittenShadowedSurfaceTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let (w, h) = (Self.width, Self.height)
         guard
             let surface = IOSurfaceCreate(
@@ -174,7 +174,7 @@ struct WrittenShadowedSurfaceTest: HWTest {
         metrics.set("padding_wrong", paddingWrong)
         metrics.set("texel0", firstTexel)
         var failures: [String] = []
-        if path != "raw" { failures.append("the command buffer went off the raw path (\(path))") }
+        if path != "gm20b" { failures.append("the command buffer went off the driver (\(path))") }
         if wrong != 0 { failures.append("\(wrong) texels wrong") }
         if paddingWrong != 0 { failures.append("\(paddingWrong) padding bytes changed") }
         return failures.isEmpty
@@ -182,14 +182,14 @@ struct WrittenShadowedSurfaceTest: HWTest {
     }
 }
 
-/// A fragment function's storage write into an RGB10A8_2P_XR10 texture over a 'b3a8' surface, which the raw path holds
+/// A fragment function's storage write into an RGB10A8_2P_XR10 texture over a 'b3a8' surface, which the driver holds
 /// in Metal's two planes (no image of its texels; such a texture with write usage was m2v's): the draw stores through an
 /// RG32Uint image merged from the planes before its pass and split back into them after. Every texel of both planes, read
 /// on the CPU, is Metal's: plane 0 the code word of the half written (XRTwoPlaneTest.code), plane 1 the alpha byte. PASS:
-/// no texel off, the command buffer on the raw path.
+/// no texel off, the command buffer on the driver.
 struct WrittenXrPlanesTest: HWTest {
-    let id = "gpu.raw.written_xr_planes"
-    let name = "A fragment function's storage write into a two-plane extended-range surface, on the raw path"
+    let id = "gpu.gm20b.written_xr_planes"
+    let name = "A fragment function's storage write into a two-plane extended-range surface, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -197,8 +197,8 @@ struct WrittenXrPlanesTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let (w, h) = (Self.width, Self.height)
         var made: CVPixelBuffer?
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
@@ -240,7 +240,7 @@ struct WrittenXrPlanesTest: HWTest {
         metrics.set("texels_wrong", wrong)
         metrics.set("first_wrong", first)
         var failures: [String] = []
-        if path != "raw" { failures.append("the command buffer went off the raw path (\(path))") }
+        if path != "gm20b" { failures.append("the command buffer went off the driver (\(path))") }
         if wrong != 0 { failures.append("\(wrong) texels wrong") }
         return failures.isEmpty
             ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics, proof: gpu.proof)

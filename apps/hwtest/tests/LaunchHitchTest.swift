@@ -8,7 +8,7 @@ import UIKit
 /// An app launch's compositor cost, there and back, in two arms. Settings is opened (LSApplicationWorkspace, with
 /// FrontBoard's launch entitlement), then this app again, and the debug kernel answers the compositor's longest GPU job
 /// and every span of 5 ms or more of one state the render server's raw path noted (TegraGM20BPathsABI.h spans op;
-/// raw_span_marks.h), each "<us> us k<key> <state> <instructions> instr x<marks> <target>k[m]".
+/// span_marks.h), each "<us> us k<key> <state> <instructions> instr x<marks> <target>k[m]".
 /// - The cold arm is the first round, run only where the process list shows Settings was not running when the test
 ///   began: the app holds no right to end another app, and a list the sandbox cuts to this app cannot tell (the
 ///   first round is then reported as "first").

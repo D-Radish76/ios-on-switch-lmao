@@ -174,7 +174,7 @@ struct UIListTest: HWTest {
 }
 
 /// The same SwiftUI picture twice: once through .drawingGroup(), which RenderBox renders with Metal in this process
-/// (its pack states draw on the raw path), once as plain Core Animation layers. Their composited pictures must agree to
+/// (its pack states draw on the driver), once as plain Core Animation layers. Their composited pictures must agree to
 /// within anti-aliasing, none of RenderBox's command buffers may fail (failed_cbs=, failed_why=; foreign_why=:
 /// RenderBox's are none of the test's own) and none of its calls be skipped (skipped_calls=, skipped_why=).
 struct UIRenderBoxTest: HWTest {
@@ -184,7 +184,7 @@ struct UIRenderBoxTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let device = MTLCreateSystemDefaultDevice()
-        let before = device.map(RawFacade.counters) ?? [:]
+        let before = device.map(GM20BFacade.counters) ?? [:]
         let check = await UISceneTests.staged(context) {
             stage, screen -> [UIHostingController<RenderBoxPicture>] in
             [true, false].enumerated().map { index, grouped in
@@ -203,9 +203,9 @@ struct UIRenderBoxTest: HWTest {
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        if let device, RawFacade.kind(of: device) == "raw" {
+        if let device, GM20BFacade.kind(of: device) == "gm20b" {
             checks = FailedCounts.judgedFramework(
-                before: before, after: RawFacade.counters(of: device), own: PathTally(), &metrics)
+                before: before, after: GM20BFacade.counters(of: device), own: PathTally(), &metrics)
         }
         return checks.reduce(UISceneTests.outcome([("group", check)], context, id: id, metrics: metrics)) {
             $0.failing(unless: $1)

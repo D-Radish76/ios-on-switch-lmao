@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A cubic sampler (MTLSamplerMinMagFilterCubic) bound to the vertex stage on the raw path: a vertex
+/// A cubic sampler (MTLSamplerMinMagFilterCubic) bound to the vertex stage on the driver: a vertex
 /// function reads six coordinates of an 8x4 texture (its rows alike) through it at level 0, one point each, and a fragment
 /// function reads the same six through the same sampler. Metal's red channel at those six, an M4 Max's (macOS 27.2.1,
 /// either stage): 250, 41, 183, 115, 66, 125, where a linear filter reads 232, 58, 165, 115, 82, 119 (a texture of one row
 /// reads linearly there, so the texture has four). Both stages within 2 codes of Metal's, every pass raw.
 struct VertexCubicSamplerTest: HWTest {
-    let id = "gpu.raw.vertex_cubic_sampler"
+    let id = "gpu.gm20b.vertex_cubic_sampler"
     let name = "A cubic sampler bound to the vertex stage filters as Metal's does, raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -21,8 +21,8 @@ struct VertexCubicSamplerTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.coordinates.count
         let texture = try gpu.texture(.rgba8Unorm, Self.reds.count, Self.rows, usage: [.shaderRead])
         let texels = Self.reds.flatMap { r -> [UInt8] in [r, 255 - r, 0, 255] }
@@ -85,7 +85,7 @@ struct VertexCubicSamplerTest: HWTest {
         metrics.set("vertex_linear", vertexLinear.map(String.init).joined(separator: ","))
         metrics.set("paths", paths.joined(separator: ","))
         var failures: [String] = []
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         for (stage, values) in [("vertex", vertexCubic), ("fragment", fragmentCubic)]
         where zip(values, Self.metal).contains(where: { abs(Int($0) - Int($1)) > 2 }) {
             failures.append("the \(stage) stage's cubic samples are not Metal's")

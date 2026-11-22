@@ -10,7 +10,7 @@ REFUSAL = 'com.brunostjohn.switch.refusal'
 RAW = 'com.brunostjohn.switch.TegraGM20BMetal'
 MERCURY_FAILED = (
     'MercuryPosterExtension[467] pass.fmt: a command buffer failed (MTLCommandBufferErrorDomain 1): a colour '
-    'attachment the raw path renders no form of'
+    'attachment the driver renders no form of'
 )
 CAMERA_FAILED = (
     'cameracaptured[64] compute: a command buffer failed (MTLCommandBufferErrorDomain 9): a dispatch with no compute '
@@ -21,9 +21,10 @@ WATCHDOG = (
     '<FBSProcessResourceProvision: 0xd281501e0; allowance: <; FBSProcessResourceAllowance; type: realTime; '
     'timeValue: 10.0s>; violated: YES>'
 )
-ABORT = 'raw: waitUntilScheduled of command buffer 0xda48d2400 not done after 20 s: abort() for the stack'
+ABORT = 'SwitchMetal: waitUntilScheduled of command buffer 0xda48d2400 not done after 20 s: abort() for the stack'
 BEHIND_M2V = (
-    'raw: raw command buffer waiting for the m2v work before it, command buffer 0x7bf660400 not done after 20 s: '
+    'SwitchMetal: raw command buffer waiting for the m2v work before it, command buffer 0x7bf660400 not done after '
+    '20 s: '
     'abort() for the stack'
 )
 PORTRAIT = 'currentTallest: 0.600000, upper: 0.615638, lower: 0.224219'

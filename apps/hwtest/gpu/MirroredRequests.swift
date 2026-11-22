@@ -2,8 +2,8 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// Requests Metal's validation layer stops (the scenes of gpu.raw.invalid_requests's later arms): a copy between
-/// formats of other copy units, which the raw path records nothing for, and, each as an M4 Max's driver runs it with
+/// Requests Metal's validation layer stops (the scenes of gpu.gm20b.invalid_requests's later arms): a copy between
+/// formats of other copy units, which the driver records nothing for, and, each as an M4 Max's driver runs it with
 /// validation off, indexed draws of an indirect command buffer at an index offset off their type, a counter resolve
 /// into an offset off 4 bytes, an execute whose range is read at an offset off 4 bytes and one read past its buffer,
 /// and a layered pass past one attachment's layers beside a format stand-in.
@@ -227,7 +227,7 @@ public enum MirroredRequests {
         }
         var out = Executed()
         out.status = Int(commands.status.rawValue)
-        out.path = RawFacade.path(of: commands)
+        out.path = GM20BFacade.path(of: commands)
         out.error = (commands.error as NSError?).map { "\($0.domain)/\($0.code)" } ?? "none"
         let written = { (b: MTLBuffer) in
             UnsafeRawBufferPointer(start: b.contents(), count: bytes).filter { $0 != 0x11 }.count

@@ -4,7 +4,7 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// gpu.raw.readback_routes's surface arms: a 260x260 'BGRA' IOSurface the GPU drew, asked for buffers over its pages
+/// gpu.gm20b.readback_routes's surface arms: a 260x260 'BGRA' IOSurface the GPU drew, asked for buffers over its pages
 /// and read and written by the CPU routes, with and without an IOSurface lock, through its texture and a view of it
 public enum SurfaceCpuRoutes {
     public static let side = 260, row = side * 4

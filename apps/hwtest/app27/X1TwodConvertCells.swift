@@ -32,7 +32,7 @@ extension X1TwodProbes {
                 let du = (UInt64(from) << 32) / UInt64(to)
                 let batch = try await gpu.run(forms: "") { commands in
                     let blit = commands.makeBlitCommandEncoder()!
-                    try RawProbe.engine(
+                    try GM20BProbe.engine(
                         commands,
                         [
                             "kind": "scale", "read": src, "written": written, "du": du, "dv": du, "sx": du / 2,
@@ -41,7 +41,7 @@ extension X1TwodProbes {
                     blit.endEncoding()
                 }
                 paths.append(batch.path)
-                guard batch.path == "raw" else {
+                guard batch.path == "gm20b" else {
                     cells.append("\(name):\(batch.path)")
                     continue
                 }

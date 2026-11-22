@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// gpu.raw.mip_lod's draws (shaders/MipLod.metal): a mipmapped texture drawn over a whole target, minified by a uniform
+/// gpu.gm20b.mip_lod's draws (shaders/MipLod.metal): a mipmapped texture drawn over a whole target, minified by a uniform
 /// ratio, so every pixel's level of detail is Metal's log2 of the texels a pixel spans, plus the bias, within the
 /// sampler's clamps.
 ///

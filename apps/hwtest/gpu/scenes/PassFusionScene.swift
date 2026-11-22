@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 struct PassFusionScene: GPUScene {
-    let id = "gpu.raw.pass_fusion"
+    let id = "gpu.gm20b.pass_fusion"
     let name = "Adjacent passes preserve encoder defaults, empty clears and framebuffer fetch"
 
     func run(_ gpu: GPU) async throws -> SceneResult {
@@ -41,7 +41,7 @@ struct PassFusionScene: GPUScene {
                 } else {
                     target = try gpu.texture(.rgba8Unorm, side, side)
                 }
-                let before = RawFacade.counters(of: gpu.device)
+                let before = GM20BFacade.counters(of: gpu.device)
                 let timing = try await gpu.run { commands in
                     func pass(clear: Bool) -> MTLRenderPassDescriptor {
                         let pass = MTLRenderPassDescriptor()
@@ -98,9 +98,9 @@ struct PassFusionScene: GPUScene {
                 let key =
                     "\(linear ? "linear" : "private")_\(withDepth ? "depth" : "color")_\(separate ? "separate" : "adjacent")"
                 result.metrics.set("path_\(key)", timing.path)
-                if RawFacade.kind(of: gpu.device) == "raw" {
-                    result.expect(timing.path == "raw", "\(key) did not remain raw: \(timing.path)")
-                    let after = RawFacade.counters(of: gpu.device)
+                if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+                    result.expect(timing.path == "gm20b", "\(key) did not remain raw: \(timing.path)")
+                    let after = GM20BFacade.counters(of: gpu.device)
                     if let first = before["fused_passes"], let last = after["fused_passes"] {
                         let fused = last - first
                         result.metrics.set("fused_\(key)", fused)

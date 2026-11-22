@@ -6,14 +6,14 @@ import Metal
 /// Counter sampling as the identity's AGX driver answers it: one counter set, "timestamp", of "GPUTimestamp", sampled
 /// at stage boundaries alone, and its creation errors. One command buffer samples, in order, a render pass's four
 /// boundaries, a compute and a blit encoder's two each, then a pass, two that load what the one before drew (passes
-/// the raw path could fuse) and a parallel encoder's of two sub-encoders. A second command buffer resolves them with a
+/// the driver could fuse) and a parallel encoder's of two sub-encoders. A second command buffer resolves them with a
 /// blit. Each boundary's start is at or before its end, every encoder's samples follow the one before it,
 /// and every sample lies between the sampleTimestamps pairs taken before the commit and after the completion, at or
 /// before GPUEndTime; the samples span no more than the GPU's time for the command buffer. The CPU's resolve and the
 /// blit's agree word for word, unwritten samples read 0, and both command buffers stay raw.
 struct NativeCountersTest: NativeObjectTest {
     let id = "metal.native.counters"
-    let name = "Stage-boundary counter samples on the GPU's clock, resolved on the CPU and by a blit, on the raw path"
+    let name = "Stage-boundary counter samples on the GPU's clock, resolved on the CPU and by a blit, on the driver"
 
     static let samples = 28
     /// Each encoder's samples, in the order they run: render passes take four (vertex start and end, fragment start and
@@ -138,7 +138,7 @@ struct NativeCountersTest: NativeObjectTest {
         }
         try gpu.finish([sampling])
         let after = device.sampleTimestamps()
-        work.paths.append(RawFacade.path(of: sampling))
+        work.paths.append(GM20BFacade.path(of: sampling))
         if before.cpu != before.gpu || after.cpu != after.gpu {
             work.failures.append("sampleTimestamps answered two clocks")
         }
@@ -154,7 +154,7 @@ struct NativeCountersTest: NativeObjectTest {
             blit.endEncoding()
         }
         try gpu.finish([resolving])
-        work.paths.append(RawFacade.path(of: resolving))
+        work.paths.append(GM20BFacade.path(of: resolving))
         let blitted = Array(
             UnsafeBufferPointer(
                 start: resolved.contents().bindMemory(to: UInt64.self, capacity: Self.samples), count: Self.samples))
@@ -186,7 +186,7 @@ struct NativeCountersTest: NativeObjectTest {
         if first < gpu0 || last > gpu1 { failures.append("a sample outside the sampleTimestamps pairs") }
         let endNs = UInt64(sampling.gpuEndTime * 1e9), spanNs = (sampling.gpuEndTime - sampling.gpuStartTime) * 1e9
         if last > endNs + 1000 { failures.append("a sample after GPUEndTime by \(last - endNs) ns") }
-        if RawFacade.gpuClock(of: sampling) == "ns" && Double(last - first) > spanNs + 1000 {
+        if GM20BFacade.gpuClock(of: sampling) == "ns" && Double(last - first) > spanNs + 1000 {
             failures.append("the samples span \(last - first) ns of a GPU time of \(Int(spanNs)) ns")
         }
         func us(_ later: UInt64, _ earlier: UInt64) -> Double { (Double(later) - Double(earlier)) / 1000 }
@@ -198,7 +198,7 @@ struct NativeCountersTest: NativeObjectTest {
         metrics.set("gpu_us", spanNs / 1000, digits: 1)
         metrics.set("lead_us", us(first, gpu0), digits: 1)
         metrics.set("tail_us", us(gpu1, last), digits: 1)
-        metrics.set("clock", RawFacade.gpuClock(of: sampling) ?? "-")
+        metrics.set("clock", GM20BFacade.gpuClock(of: sampling) ?? "-")
         return failures
     }
 }

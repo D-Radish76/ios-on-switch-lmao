@@ -3,12 +3,12 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A library from Metal source is made by the system shader compiler's Metal front end and read as the raw device's own
-/// (drivers/TegraGM20BMetal/raw/runtime/RawMetalCompiledLibraries.mm, compiler/compiler_codegen.mm), never by m2v: its
-/// kernel's state and dispatch run on the raw path, and source the front end refuses fails as Metal's compile failure
+/// A library from Metal source is made by the system shader compiler's Metal front end and read as the device's own
+/// (drivers/TegraGM20BMetal/TegraGM20BMetalCompiledLibraries.mm, compiler/compiler_codegen.mm), never by m2v: its
+/// kernel's state and dispatch run on the driver, and source the front end refuses fails as Metal's compile failure
 /// with the front end's log. No command buffer may fail (failed_cbs=).
 struct SourceLibraryTest: HWTest {
-    let id = "gpu.raw.source_library"
+    let id = "gpu.gm20b.source_library"
     let name = "A library from source, made by the shader compiler"
     let subsystem = Subsystem.metal
 
@@ -24,9 +24,9 @@ struct SourceLibraryTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
 
         let started = Date()
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
@@ -65,10 +65,10 @@ struct SourceLibraryTest: HWTest {
         metrics.set("refused_code", refusedCode)
         metrics.set("refused_log", refusedLog.isEmpty ? "-" : refusedLog)
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         var wrong: [String] = []
         if off > 0 { wrong.append("words") }
-        if path != "raw" { wrong.append("path") }
+        if path != "gm20b" { wrong.append("path") }
         let compileFailure = MTLLibraryError.Code.compileFailure.rawValue
         if refusedCode != compileFailure || refusedLog.isEmpty { wrong.append("refusal") }
         if !failed.1 { wrong.append(failed.0) }

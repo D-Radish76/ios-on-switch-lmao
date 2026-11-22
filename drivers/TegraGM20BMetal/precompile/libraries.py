@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The Metal libraries the native seed (raw/pack/native_seed.mm) loads on the host.
+"""The Metal libraries the native seed (pack/native_seed.mm) loads on the host.
 
 The seed build (tools/gpu/shaders/native_seed.py) lays them out as the store native-seed reads:
 
@@ -41,9 +41,9 @@ QC = '/System/Library/Frameworks/QuartzCore.framework/default.metallib'
 
 
 AIR64 = 0x01000017
-# drivers/TegraGM20BMetal/plugin/MetallibSlice.h's kAirSliceRules (libraries_test holds the two the same): per IPSW build, whether
-# its Metal loads the first AIR64 slice, else its AIR ceiling, whether the device is below featureProfile 8 and the
-# subtype of AIR 2.9
+# drivers/TegraGM20BMetal/plugin/MetallibSlice.h's kAirSliceRules (libraries_test holds the two the same): per IPSW
+# build, whether its Metal loads the first AIR64 slice, else its AIR ceiling, whether the device is below featureProfile
+# 8 and the subtype of AIR 2.9
 AIR_SLICE_RULES = {
     '21H461': (True, 0, False, 0),
     '24B119': (False, 0x20009, True, 0xD),
@@ -118,7 +118,7 @@ def names(data: bytes, build: str | None = None) -> list[str] | None:
 
 
 def functions(data: bytes, build: str | None = None) -> dict[str, str] | None:
-    """Return each named function's AIR hash in hex (its HASH tag, which raw keys a function by: raw_metallib.cpp), or
+    """Return each named function's AIR hash in hex (its HASH tag, which raw keys a function by: metallib.cpp), or
     None if not a library."""
     entries = _entries(data, build)
     if entries is None:

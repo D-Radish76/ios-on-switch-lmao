@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Destination-reading draws with no storage form, which the raw path draws as one call of its fetch macro (raw_mme.h):
+/// Destination-reading draws with no storage form, which the driver draws as one call of its fetch macro (mme.h):
 /// the GPU loops over the draw's primitives and instances, one BEGIN each behind the fetch barrier, the strip's
 /// assembly kept between them (RenderEncoder::fetchDraw). Each scene (FetchShapes.swift) draws into a BGR5A1Unorm target
 /// cleared to 0, which no storage image views, so its fetch is the texture unit's behind that barrier; its fragment adds
@@ -22,44 +22,44 @@ struct FetchShapeTest: HWTest {
 
     static let all: [any HWTest] = [
         FetchShapeTest(
-            id: "gpu.raw.fetch_list", name: "A fetching list's triangles each read the last", shapes: [.list]),
+            id: "gpu.gm20b.fetch_list", name: "A fetching list's triangles each read the last", shapes: [.list]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_long", name: "A fetching list of 128 triangles, past the old 96-triangle cap",
+            id: "gpu.gm20b.fetch_long", name: "A fetching list of 128 triangles, past the old 96-triangle cap",
             shapes: [.long]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_strip_restart",
+            id: "gpu.gm20b.fetch_strip_restart",
             name: "A fetching indexed strip keeps its winding across primitives and restarts", shapes: [.stripRestart]),
-        FetchShapeTest(id: "gpu.raw.fetch_points", name: "Fetching points each read the last", shapes: [.points]),
+        FetchShapeTest(id: "gpu.gm20b.fetch_points", name: "Fetching points each read the last", shapes: [.points]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_lines", name: "Fetching lines and a line strip each read the last", shapes: [.lines]),
+            id: "gpu.gm20b.fetch_lines", name: "Fetching lines and a line strip each read the last", shapes: [.lines]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_primitive_id", name: "A fetching draw's primitive_id counts across its primitives",
+            id: "gpu.gm20b.fetch_primitive_id", name: "A fetching draw's primitive_id counts across its primitives",
             shapes: [.primitiveID]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_instances", name: "A fetching draw's instances each draw every primitive, in order",
+            id: "gpu.gm20b.fetch_instances", name: "A fetching draw's instances each draw every primitive, in order",
             shapes: [.instances]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_vertex_id", name: "A fetching draw's vertex_id counts from its vertexStart",
+            id: "gpu.gm20b.fetch_vertex_id", name: "A fetching draw's vertex_id counts from its vertexStart",
             shapes: [.vertexID]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_indirect", name: "Indirect fetching draws, a list and a restarted strip",
+            id: "gpu.gm20b.fetch_indirect", name: "Indirect fetching draws, a list and a restarted strip",
             shapes: [.indirectList, .indirectStrip]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_icb", name: "An indirect command buffer's fetching draws: a list, a strip and points",
+            id: "gpu.gm20b.fetch_icb", name: "An indirect command buffer's fetching draws: a list, a strip and points",
             shapes: [.icbDraws]),
         FetchShapeTest(
-            id: "gpu.raw.fetch_icb_indexed",
+            id: "gpu.gm20b.fetch_icb_indexed",
             name: "An indirect command buffer's indexed fetching draws: a list, a strip and points",
             shapes: [.icbIndexedDraws]),
     ]
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var wrong = 0
         var first = "-"
         for (index, shape) in shapes.enumerated() {
@@ -69,7 +69,7 @@ struct FetchShapeTest: HWTest {
             }
             let path = try await gpu.run(tolerateError: true) { try Self.encode(shape, state, into: target, gpu, $0) }
                 .path
-            checks.append(("scene \(index): its command buffer on the raw path", path == "raw"))
+            checks.append(("scene \(index): its command buffer on the driver", path == "gm20b"))
             let got = Self.codes(try await gpu.read(target, bytesPerPixel: 2))
             let off = zip(got, shape.codes).enumerated().filter { $0.element.0 != $0.element.1 }
             wrong += off.count
@@ -78,7 +78,7 @@ struct FetchShapeTest: HWTest {
                 first = "\(index):\(x),\(y):\(Self.shown(o.element.0))_want_\(Self.shown(o.element.1))"
             }
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let moved = { (key: String) in (after[key] ?? 0) - (before[key] ?? 0) }
         let draws = shapes.filter { !$0.icb }.flatMap(\.draws)
         let counted = draws.map(\.counted).reduce(0, +)
@@ -173,7 +173,7 @@ struct FetchShapeTest: HWTest {
         encoder.executeCommandsInBuffer(icb, range: 0..<shape.draws.count)
     }
 
-    /// BGR5A1Unorm's texels as (red, green, blue) codes: blue in bits 0-4, green 5-9, red 10-14 (raw_fill_texel.h)
+    /// BGR5A1Unorm's texels as (red, green, blue) codes: blue in bits 0-4, green 5-9, red 10-14 (fill_texel.h)
     static func codes(_ bytes: [UInt8]) -> [SIMD3<UInt8>] {
         stride(from: 0, to: bytes.count - 1, by: 2).map { at in
             let word = UInt16(bytes[at]) | UInt16(bytes[at + 1]) << 8

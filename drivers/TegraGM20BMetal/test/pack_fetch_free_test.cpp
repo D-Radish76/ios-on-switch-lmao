@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
-// raw/pack/fetch_free.h: the fetch-free form's R line a corpus line's " free=" tag makes.
+// pack/fetch_free.h: the fetch-free form's R line a corpus line's " free=" tag makes.
 #include <string>
 
 #include <gtest/gtest.h>
 
-#include "drivers/TegraGM20BMetal/raw/pack/fetch_free.h"
+#include "drivers/TegraGM20BMetal/pack/fetch_free.h"
 
 namespace {
 

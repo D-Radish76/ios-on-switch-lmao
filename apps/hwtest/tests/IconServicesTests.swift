@@ -86,7 +86,7 @@ enum IconArm {
 /// scale 2, and 40 and 16) at the device's scale and at 1.25: IconArm's fields. FAIL: an arm's edge bands asymmetric,
 /// its cached picture another, a placeholder, or IconServices' calls absent.
 struct IconSmallSizesTest: HWTest {
-    let id = "gpu.raw.icon_small_sizes"
+    let id = "gpu.gm20b.icon_small_sizes"
     let name = "IconServices' Settings icon at the App Library's sizes: edges, cache and placeholder"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
@@ -98,9 +98,9 @@ struct IconSmallSizesTest: HWTest {
 
 /// Settings' Passcode pane icon (com.apple.graphic-icon.passcode, which Settings shows on a device without Face ID or
 /// Touch ID) at Settings' 29-point row size and 68 points: IconArm's fields. SKIP where the system declares no such
-/// type. FAIL as gpu.raw.icon_small_sizes.
+/// type. FAIL as gpu.gm20b.icon_small_sizes.
 struct IconPasscodeTest: HWTest {
-    let id = "gpu.raw.icon_passcode"
+    let id = "gpu.gm20b.icon_passcode"
     let name = "IconServices' Passcode pane icon: edges, cache and placeholder"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }
@@ -113,9 +113,9 @@ struct IconPasscodeTest: HWTest {
 }
 
 /// Calendar's icon (com.apple.mobilecal, drawn with today's date, so a cached picture of another day is another
-/// picture) at the App Library's 68 and 28 points: IconArm's fields. FAIL as gpu.raw.icon_small_sizes.
+/// picture) at the App Library's 68 and 28 points: IconArm's fields. FAIL as gpu.gm20b.icon_small_sizes.
 struct IconCalendarTest: HWTest {
-    let id = "gpu.raw.icon_calendar"
+    let id = "gpu.gm20b.icon_calendar"
     let name = "IconServices' Calendar icon: edges, today's cache and placeholder"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }

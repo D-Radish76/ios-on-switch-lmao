@@ -61,7 +61,7 @@ final class TexturePeerAcceptor: NSObject, NSXPCListenerDelegate, SharedTextureP
     func ready(_ pid: Int32) { accepted.signal() }
 }
 
-/// Shared textures across two processes: the app makes one of each shape the raw path now shares (a mipmapped 2D
+/// Shared textures across two processes: the app makes one of each shape the driver now shares (a mipmapped 2D
 /// texture, a 2D array, a cube and a cube array, a 3D texture, a 4-sample texture, a 1D texture and a mipmapped ASTC
 /// one and a one-level ASTC one, each where the device makes the private texture of its descriptor) and sends each
 /// handle to the texture peer, a process of its own with its own device and raw channel, which opens it with
@@ -287,7 +287,7 @@ struct NativeSharedTexturePeerTest: NativeObjectTest {
             peerPaths.append(fields["path"] ?? "-")
             peerPeak = fields["peak_kb"] ?? peerPeak
             if !answer.hasPrefix("ok ") { work.failures.append("the peer's \(name) write: \(answer)") }
-            if fields["path"] != "raw" {
+            if fields["path"] != "gm20b" {
                 work.failures.append("the peer's \(name) command buffer went \(fields["path"] ?? "-")")
             }
             if fields["registry"] != String(device.registryID, radix: 16) {

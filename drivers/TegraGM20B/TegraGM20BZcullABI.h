@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
-/* Zcull, the GPU's coarse depth rejection: its layout, for clients that program zcull regions. The raw stack key does not
- * hash this header, so no unit it hashes (gpu/BUILD.bazel raw_stack) may include it. GetInfo's zcull[] holds the same
+/* Zcull, the GPU's coarse depth rejection: its layout, for clients that program zcull regions. The stack key does not
+ * hash this header, so no unit it hashes (gpu/BUILD.bazel stack_key) may include it. GetInfo's zcull[] holds the same
  * record, with TegraGM20BInfoZcull set, wherever this method answers. */
 #ifndef TEGRA_GM20B_ZCULL_ABI_H
 #define TEGRA_GM20B_ZCULL_ABI_H

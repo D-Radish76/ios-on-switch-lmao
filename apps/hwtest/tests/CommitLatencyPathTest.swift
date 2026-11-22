@@ -5,7 +5,7 @@ import Metal
 import QuartzCore
 import simd
 
-/// What a commit waits for (RawMetalPipeline.mm, debug builds): Core Animation shaped command buffers recorded at the
+/// What a commit waits for (TegraGM20BMetalPipeline.mm, debug builds): Core Animation shaped command buffers recorded at the
 /// render thread's pace (a pass every 400 us, its draws binding vertices, transform and uniforms by setBytes under a
 /// scissor of their own), each committed, waited for scheduled as the render server does before its swap, then for its
 /// completion on an otherwise idle GPU. Per shape (one pass of 6 draws; 15 passes of 90 draws over 4 targets; the same
@@ -22,9 +22,9 @@ import simd
 /// rectangle and transform in shared buffers, six indices read from a buffer of four): the encode reads no buffer's
 /// contents, so no frame gives an encode ahead back (given_back 0), each keeps all but 5 passes ahead, and its median
 /// commit stays within 10% of the scale arm's. A view of each target taken at its creation keeps it plain where it was
-/// made plain for want of compressed memory (raw_private_comp.h): its move onto that memory gives back an encode ahead,
+/// made plain for want of compressed memory (private_comp.h): its move onto that memory gives back an encode ahead,
 /// which no measured round may lose. Per shape, <shape>_pass_pixel_openings is the median over measured frames of the
-/// passes opened with the pixel-shader barrier instead of a drain (switchRawCounters pass_pixel_openings, counted at
+/// passes opened with the pixel-shader barrier instead of a drain (switchMetalCounters pass_pixel_openings, counted at
 /// each commit; debug builds), reported: the driver's rule gives passes - 1, less the passes that read a full-size
 /// target an earlier pass of the frame rendered (one pass: 0).
 struct CommitLatencyPathTest: HWTest {
@@ -47,8 +47,8 @@ struct CommitLatencyPathTest: HWTest {
 
     func run(_: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         let library: MTLLibrary
         do {
@@ -76,7 +76,7 @@ struct CommitLatencyPathTest: HWTest {
                 draws: 6)
             commands.commit()
             commands.waitUntilCompleted()
-            if RawFacade.path(of: commands) == "raw" { break }
+            if GM20BFacade.path(of: commands) == "gm20b" { break }
             warm += 1
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -93,7 +93,7 @@ struct CommitLatencyPathTest: HWTest {
             for round in 0..<(Self.warmups + Self.measured) {
                 guard let commands = gpu.queue.makeCommandBuffer() else { return .fail("makeCommandBuffer nil") }
                 let drawable = shape.present ? layer.nextDrawable() : nil
-                let openingsBefore = RawFacade.counters(of: gpu.device)["pass_pixel_openings"]
+                let openingsBefore = GM20BFacade.counters(of: gpu.device)["pass_pixel_openings"]
                 if shape.present && drawable == nil { return .fail("nextDrawable returned nil") }
                 for pass in 0..<shape.passes {
                     let last = pass == shape.passes - 1
@@ -120,21 +120,21 @@ struct CommitLatencyPathTest: HWTest {
                     failures.append("\(shape.name): \(commands.error.map(GPU.describe) ?? "error")")
                     break
                 }
-                if RawFacade.path(of: commands) != "raw" {
-                    failures.append("\(shape.name) went \(RawFacade.path(of: commands))")
+                if GM20BFacade.path(of: commands) != "gm20b" {
+                    failures.append("\(shape.name) went \(GM20BFacade.path(of: commands))")
                     break
                 }
                 guard round >= Self.warmups else { continue }
                 commitUs.append((returned - committing) * 1e6)
                 scheduledUs.append((scheduled - returned) * 1e6)
-                let ahead = RawFacade.pipelined(commands)
+                let ahead = GM20BFacade.pipelined(commands)
                 if let start = ahead["commit_to_gpu_start_us"] { gpuStartUs.append(start.doubleValue) }
                 pipelined += ahead["pipelined"]?.doubleValue ?? 0
                 encoders += ahead["encoders"]?.doubleValue ?? 0
                 abandons += ahead["abandons"]?.doubleValue ?? 0
                 vetoes |= ahead["veto"]?.uint64Value ?? 0
                 measuredCount += 1
-                if let before = openingsBefore, let after = RawFacade.counters(of: gpu.device)["pass_pixel_openings"] {
+                if let before = openingsBefore, let after = GM20BFacade.counters(of: gpu.device)["pass_pixel_openings"] {
                     openings.append(Double(after - before))
                 }
                 if shape.geometry {
@@ -185,7 +185,7 @@ struct CommitLatencyPathTest: HWTest {
                 }
             }
         }
-        let counters = RawFacade.counters(of: gpu.device)
+        let counters = GM20BFacade.counters(of: gpu.device)
         metrics.set("pipelined_encoders", counters["pipelined_encoders"] ?? 0)
         metrics.set("sealed_encoders", counters["sealed_encoders"] ?? 0)
         metrics.set(
@@ -193,7 +193,7 @@ struct CommitLatencyPathTest: HWTest {
             counters.filter { $0.key.hasPrefix("pipeline_abandons.") }.map { "\($0.key.dropFirst(18))=\($0.value)" }
                 .sorted().joined(separator: ","))
         if counters["sealed_encoders"] == nil {
-            return counters["raw"] == nil
+            return counters["gm20b"] == nil
                 ? .skip("no pipelining counters: a release runtime")
                 : .fail("a debug runtime without pipelining counters", metrics, proof: gpu.proof)
         }

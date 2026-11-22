@@ -6,7 +6,7 @@ import IOSurface
 import Metal
 
 /// Subsampled sRGB YCbCr targets under a P3 matrix store as Apple's GPU stores them (m2v-ycbcr-p3 hwtest-spec.txt, the
-/// rule raw/test/p3storeoracle.mm holds an M4 Max to on every code): a stored code is the low 8 or 10 bits of the sRGB
+/// rule harness/p3storeoracle.mm holds an M4 Max to on every code): a stored code is the low 8 or 10 bits of the sRGB
 /// encode of the drawn code taken as a linear step of 1/8192, a chroma code the block mean of those, half up. 64x32
 /// '420v' P3_D65 as 520, '422f' DCI_P3 as 522, 'x420' P3_D65 as 525 and 'xf22' DCI_P3 as 526, each drawn a 2x2 colour
 /// pattern (DontCare, one full-frame strip), then cleared (a 10-bit luma of 726 is a clear held toward zero, not to
@@ -14,7 +14,7 @@ import Metal
 /// p3_store_codes= codes compared, p3_store_off= codes off, p3_store_max_off=, p3_store_first_off= the first off as
 /// format_plane_x_y_got_want, paths=, failed_cbs=.
 struct P3YcbcrStoreSubsampledTest: HWTest {
-    let id = "gpu.raw.p3_ycbcr_store_subsampled"
+    let id = "gpu.gm20b.p3_ycbcr_store_subsampled"
     let name = "Subsampled sRGB YCbCr targets under P3 matrices store Metal's codes, drawn and cleared, on raw"
     let subsystem = Subsystem.metal
 
@@ -160,9 +160,9 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         var tally = Tally()
         var metrics = Metrics()
@@ -177,10 +177,10 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
         metrics.set("p3_store_max_off", tally.maxOff)
         metrics.set("p3_store_first_off", tally.first)
         metrics.set("paths", tally.paths.isEmpty ? "-" : Set(tally.paths).sorted().joined(separator: ","))
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(("every code Metal's", tally.codes > 0 && tally.off == 0))
-        checks.append(("every pass on the raw path", !tally.paths.isEmpty && tally.paths.allSatisfy { $0 == "raw" }))
+        checks.append(("every pass on the driver", !tally.paths.isEmpty && tally.paths.allSatisfy { $0 == "gm20b" }))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

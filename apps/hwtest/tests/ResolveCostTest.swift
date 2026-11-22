@@ -48,7 +48,7 @@ struct ResolveCostTest: HWTest {
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         guard gpu.device.supportsTextureSampleCount(4) else { return .fail("4x MSAA unsupported") }
-        let facade = RawFacade.kind(of: gpu.device) == "raw"
+        let facade = GM20BFacade.kind(of: gpu.device) == "gm20b"
         var posterJudged = false
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -62,7 +62,7 @@ struct ResolveCostTest: HWTest {
             let texel = Array(
                 try await gpu.read(resolved, bytesPerPixel: variant.texel.count).prefix(variant.texel.count))
             let resolveMs = max(0, with.ms - without.ms)
-            let raw = with.paths == ["raw"] && without.paths == ["raw"]
+            let raw = with.paths == ["gm20b"] && without.paths == ["gm20b"]
             let gpuClocked = with.clocks == ["ns"] && without.clocks == ["ns"]
             metrics.set("\(variant.label)_pass_ms", with.ms, digits: 3)
             metrics.set("\(variant.label)_bare_ms", without.ms, digits: 3)
@@ -73,7 +73,7 @@ struct ResolveCostTest: HWTest {
             checks.append(("\(variant.label) resolved the clear colour", texel == variant.texel))
             if facade {
                 let paths = with.paths.union(without.paths).sorted().joined(separator: ",")
-                checks.append(("\(variant.label) on the raw path (\(paths))", raw))
+                checks.append(("\(variant.label) on the driver (\(paths))", raw))
             }
             if variant.label == "rgba8_4x_memoryless" && raw && gpuClocked {
                 posterJudged = true

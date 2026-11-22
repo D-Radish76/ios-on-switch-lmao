@@ -3,14 +3,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A render state of 40 Metal arguments, twenty storage buffers a stage, drawn on the raw path: its set 0 holds more than
+/// A render state of 40 Metal arguments, twenty storage buffers a stage, drawn on the driver: its set 0 holds more than
 /// the 32 entries a pack record had room for (pack version 27 keeps the rest in a far block) and past the encoder's 512
 /// bytes, and the uniform buffer m2v binds of its own lies past set-0 byte 496 (a constant buffer NVK names by offset). Each buffer
 /// holds a distinct power of two, so a descriptor at another entry's bytes, or one left out, shows in the exact sum. A build
-/// without it does not draw the state on raw: path is not "raw".
+/// without it does not draw the state on raw: path is not "gm20b".
 struct WideSetTest: HWTest {
-    let id = "gpu.raw.wide_set"
-    let name = "A render state of 40 buffer arguments draws on the raw path with every buffer read at its own entry"
+    let id = "gpu.gm20b.wide_set"
+    let name = "A render state of 40 buffer arguments draws on the driver with every buffer read at its own entry"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -40,8 +40,8 @@ struct WideSetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.n
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
@@ -71,12 +71,12 @@ struct WideSetTest: HWTest {
         let middle = 4 * (n / 2 * n + n / 2)
         var metrics = Metrics()
         metrics.set("path", path)
-        metrics.set("entries", RawFacade.entries(of: state).map(String.init) ?? "-")
+        metrics.set("entries", GM20BFacade.entries(of: state).map(String.init) ?? "-")
         metrics.set("arguments", 2 * Self.buffers)
         metrics.set("wrong_pixels", wrong)
         metrics.set("middle", floats[middle..<middle + 4].map { String($0) }.joined(separator: "/"))
         var failures: [String] = []
-        if path != "raw" { failures.append("path") }
+        if path != "gm20b" { failures.append("path") }
         if wrong > 0 { failures.append("wrong_pixels") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: ","), metrics)
     }

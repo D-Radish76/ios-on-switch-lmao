@@ -8,10 +8,10 @@ import Metal
 /// what an M4 Max's Metal answers (macOS 27.2: an integer scalar its own size, alignment 1 and no id, so `atomic_uint
 /// *` is 4/1; a one-component vector, which Metal reflects with no data type, 8 bytes with an id). A dispatch then
 /// reads back what the encoders wrote (k's tail, n[1] and m[2], s's h, v's a) and must give the words the M4 Max
-/// gave, on the raw path. The case fails on a nil or wrong encoder, a wrong word, a dispatch off the
+/// gave, on the driver. The case fails on a nil or wrong encoder, a wrong word, a dispatch off the
 /// raw path, or any command buffer that failed (failed_cbs=).
 struct PlainStructEncoderTest: HWTest {
-    let id = "gpu.raw.plain_struct_encoder"
+    let id = "gpu.gm20b.plain_struct_encoder"
     let name = "A plain struct buffer's encoder is where its program reads"
     let subsystem = Subsystem.metal
 
@@ -22,9 +22,9 @@ struct PlainStructEncoderTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
         do {
@@ -34,7 +34,7 @@ struct PlainStructEncoderTest: HWTest {
             wrong.append("threw")
         }
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
@@ -90,6 +90,6 @@ struct PlainStructEncoderTest: HWTest {
             metrics.set("words", words.map { String($0) }.joined(separator: ",") + " counter \(count)")
             wrong.append("dispatch")
         }
-        if timing.path != "raw" { wrong.append("dispatch_path") }
+        if timing.path != "gm20b" { wrong.append("dispatch_path") }
     }
 }

@@ -12,16 +12,16 @@ import Metal
 /// the rest kept. <case>_status: 0 completed, 1 the command buffer failed, 2 no texture; <case>_bytes_off: bytes not
 /// Apple's.
 struct YcbcrOnePlaneTargetsTest: HWTest {
-    let id = "gpu.raw.ycbcr_onep_targets"
+    let id = "gpu.gm20b.ycbcr_onep_targets"
     let name = "One-plane YCbCr targets (2vuy, yuvs, v410) cleared and drawn, odd widths, every byte Apple's, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 45 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for c in YcbcrOnePlaneTargets.cases {
@@ -36,10 +36,10 @@ struct YcbcrOnePlaneTargetsTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

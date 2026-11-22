@@ -12,7 +12,7 @@ private func floats(_ bytes: [UInt8]) -> [Float] {
 /// the answer counts, each target written its own value at every texel by one draw, exact.
 struct NativeWideTargetsTest: NativeObjectTest {
     let id = "metal.native.wide_targets"
-    let name = "Eight RGBA32Float targets in one pass, the framebuffer bits the device answers, on the raw path"
+    let name = "Eight RGBA32Float targets in one pass, the framebuffer bits the device answers, on the driver"
 
     static let size = 16, targets = 8
 
@@ -70,7 +70,7 @@ struct NativeWideTargetsTest: NativeObjectTest {
 /// weighted sum fills an RGBA32Float target.
 struct NativeInterpolantsTest: NativeObjectTest {
     let id = "metal.native.interpolants"
-    let name = "As many interpolated components as the device answers reach the fragment function, on the raw path"
+    let name = "As many interpolated components as the device answers reach the fragment function, on the driver"
 
     static let size = 8
 
@@ -118,7 +118,7 @@ struct NativeInterpolantsTest: NativeObjectTest {
 /// the words past 32 KiB cross threads too.
 struct NativeThreadgroupMemoryTest: NativeObjectTest {
     let id = "metal.native.threadgroup_memory"
-    let name = "A kernel uses all the threadgroup memory the device answers, on the raw path"
+    let name = "A kernel uses all the threadgroup memory the device answers, on the driver"
 
     static let threads = 256
 

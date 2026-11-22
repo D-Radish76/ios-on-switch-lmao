@@ -5,7 +5,7 @@ import Metal
 /// Instanced draws, indexed and not, with base vertex and base instance: 16- and 32-bit indices, an index buffer
 /// offset, a base vertex past 65535 under 16-bit indices (it is added after the index is read, never truncated to
 /// it). Every instance is a pixel-aligned rectangle of its own colour, so the CPU reference is exact. The app's
-/// pipelines are no framework's, so on the raw facade these draw on m2v (paths= says so); the raw path's own instanced
+/// pipelines are no framework's, so on the facade these draw on m2v (paths= says so); the driver's own instanced
 /// draws are Core Animation's and RenderBox's, which the UI scenes reach.
 struct InstancedDrawScene: GPUScene {
     let id = "gpu.draw.instanced"
@@ -85,7 +85,7 @@ struct InstancedDrawScene: GPUScene {
 }
 
 /// Render to a private texture (block-linear) with the app's pipeline, then sample it: nearest and mirrored, bilinear
-/// halfway between texel centres (an exact average), and copied whole by the blit engine (the raw path's own copy on
+/// halfway between texel centres (an exact average), and copied whole by the blit engine (the driver's own copy on
 /// the facade, reading what m2v's draw left through the alias of the same memory).
 struct RenderThenSampleScene: GPUScene {
     let id = "gpu.draw.render_then_sample"

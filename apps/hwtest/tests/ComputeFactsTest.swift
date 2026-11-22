@@ -5,11 +5,11 @@ import Metal
 
 /// A compute state the pack holds no answers of (icb_fold at a thread limit of 192, which no corpus line names) gets its
 /// maxTotalThreadsPerThreadgroup, threadExecutionWidth and staticThreadgroupMemoryLength from the system shader compiler
-/// at its creation (drivers/TegraGM20BMetal/raw/runtime/RawMetalComputeState.mm compilerAnswers), never from m2v, and
-/// its dispatch runs on the raw path. So does tags_kernel made with a stage input, whose facts request carries it. No
+/// at its creation (drivers/TegraGM20BMetal/TegraGM20BMetalComputeState.mm compilerAnswers), never from m2v, and
+/// its dispatch runs on the driver. So does tags_kernel made with a stage input, whose facts request carries it. No
 /// command buffer may fail (failed_cbs=).
 struct ComputeFactsTest: HWTest {
-    let id = "gpu.raw.compute_facts"
+    let id = "gpu.gm20b.compute_facts"
     let name = "A compute state the pack lacks, answered by the shader compiler"
     let subsystem = Subsystem.metal
 
@@ -35,9 +35,9 @@ struct ComputeFactsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         guard let function = gpu.library.makeFunction(name: "icb_fold") else { throw TestFailure("no icb_fold") }
         let descriptor = MTLComputePipelineDescriptor()
         descriptor.computeFunction = function
@@ -74,13 +74,13 @@ struct ComputeFactsTest: HWTest {
         metrics.set("path", path)
         metrics.set("stage_input_max_threads", staged.maxTotalThreadsPerThreadgroup)
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         var wrong: [String] = []
         if state.maxTotalThreadsPerThreadgroup < 1 || state.maxTotalThreadsPerThreadgroup > 192 { wrong.append("max") }
         if state.threadExecutionWidth != 32 { wrong.append("width") }
         if staged.maxTotalThreadsPerThreadgroup < 1 || staged.threadExecutionWidth != 32 { wrong.append("stage_input") }
         if off > 0 { wrong.append("words") }
-        if path != "raw" { wrong.append("path") }
+        if path != "gm20b" { wrong.append("path") }
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

@@ -1,4 +1,4 @@
-"""The replies the seed keeps, and the tree the image builder lays out of them, the native records and the raw pack."""
+"""The replies the seed keeps, and the tree the image builder lays out of them, the native records and the pack."""
 
 import argparse
 import hashlib
@@ -32,15 +32,15 @@ class SeedTest(unittest.TestCase):
 
     def test_packed_native_seed_is_installed_beside_the_raw_pack_without_its_host_files(self):
         seed, raw, native = (self.root / name for name in ('seed', 'raw', 'native'))
-        for folder in (seed, raw, native / 'raw-0000000000001234' / 'packs'):
+        for folder in (seed, raw, native / 'rec-0000000000001234' / 'packs'):
             folder.mkdir(parents=True)
         (seed / 'MANIFEST.json').write_text('{}')
         (raw / 'pack.bin').write_bytes(b'raw pack')
         record_index = struct.pack('<8sIIIIII', b'SWSEEDPK', 1, 8, 0, 2, 1, 0) + bytes(32)
         packed = {
-            'raw-0000000000001234/index': record_index,
-            'raw-0000000000001234/packs/000': b'native records',
-            'raw-0000000000001234/packs/001': b'derived native records',
+            'rec-0000000000001234/index': record_index,
+            'rec-0000000000001234/packs/000': b'native records',
+            'rec-0000000000001234/packs/001': b'derived native records',
         }
         for relative, data in packed.items():
             (native / relative).write_bytes(data)
@@ -49,7 +49,7 @@ class SeedTest(unittest.TestCase):
         out = self.root / 'tree'
         size = self.root / 'size.json'
         merge.tree(argparse.Namespace(seed=seed, raw=raw, native=native, out=out, size=size))
-        records = out / merge.RAW / 'native' / 'raw-0000000000001234'
+        records = out / merge.RAW / 'native' / 'rec-0000000000001234'
         self.assertEqual((records / 'packs' / '000').read_bytes(), b'native records')
         self.assertEqual((records / 'index').stat().st_mode & 0o777, 0o644)
         self.assertEqual((out / merge.RAW / 'native').stat().st_mode & 0o777, 0o755)

@@ -3,7 +3,7 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// gpu.raw.ycbcr_planes_meet: a YCBCR8_420_2P (500) 8x8 target over a '420v' of 8 MiB + 16 KiB whose planes' stored
+/// gpu.gm20b.ycbcr_planes_meet: a YCBCR8_420_2P (500) 8x8 target over a '420v' of 8 MiB + 16 KiB whose planes' stored
 /// rows meet (luma rows 8 at 0, chroma rows 8 at 64: both stored 16 bytes apart, so chroma row k lands on luma row
 /// 4 + k), every byte 0xa5, drawn whole with a colour of each pixel's own. An M4 Max keeps the later 2x2 quad's byte in
 /// a 32x32 frame tile and ORs the bytes of one quad's two planes: luma row 4 + k wins over chroma row k for k < 3, and

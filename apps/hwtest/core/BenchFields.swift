@@ -13,7 +13,7 @@ struct BenchFields {
         let target = fields["target"] as? [String: Any] ?? [:]
         try Self.keys(target, BenchProtocol.targetKeys, "target")
         guard let format = target["format"] as? String, let info = BenchProtocol.formats[format] else {
-            throw BenchInvalid("target format is not one the raw path renders")
+            throw BenchInvalid("target format is not one the driver renders")
         }
         let width = try count(target["width"], 1...BenchProtocol.maxSide, "width")
         let height = try count(target["height"], 1...BenchProtocol.maxSide, "height")

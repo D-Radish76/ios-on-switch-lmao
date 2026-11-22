@@ -3,15 +3,15 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The compression thread's debug event (CompressionSettled, raw_gpu.h compWhenSettled): a private BGRA8 target of a
+/// The compression thread's debug event (CompressionSettled, gpu.h compWhenSettled): a private BGRA8 target of a
 /// size no other test makes asks for compressed memory at its creation; the event's block runs once that memory is made
 /// or refused (settled, settled_calls 1: once, never twice), and the same target made after it binds compressed memory
 /// (comptags 1). Asked again with nothing wanted, the block runs on the caller's thread before the call returns
 /// (idle_sync 1). first_comptags (where kept memory already served the first target, nothing was asked: the event then
-/// settles at once), asked_sync (the first block ran before its call returned), made and refused (switchRawCompression
+/// settles at once), asked_sync (the first block ran before its call returned), made and refused (switchMetalCompression
 /// over the test) and settled_ms are reported.
 struct CompressionSettledTest: HWTest {
-    let id = "gpu.raw.compression_settled"
+    let id = "gpu.gm20b.compression_settled"
     let name = "The compression thread's settled event runs once after an ask and at once with none"
     let subsystem = Subsystem.metal
 
@@ -19,13 +19,13 @@ struct CompressionSettledTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: CompressionSettled.selector) else {
-            return .skip(RawFacade.missing("switchRawProbeCompressionSettled:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalProbeCompressionSettled:", on: gpu.device))
         }
-        let before = RawFacade.compression(of: gpu.device)
-        guard !before.isEmpty else { return .skip(RawFacade.missing("switchRawCompression", on: gpu.device)) }
+        let before = GM20BFacade.compression(of: gpu.device)
+        guard !before.isEmpty else { return .skip(GM20BFacade.missing("switchMetalCompression", on: gpu.device)) }
         let call = unsafeBitCast(facade.method(for: CompressionSettled.selector), to: CompressionSettled.Call.self)
         let make = { try gpu.texture(.bgra8Unorm, Self.width, Self.height) }
         let first = try make()
@@ -44,7 +44,7 @@ struct CompressionSettledTest: HWTest {
         let idle = CallCount()
         _ = call(facade, CompressionSettled.selector) { idle.add() }
         let idleSync = idle.count == 1
-        let after = RawFacade.compression(of: gpu.device)
+        let after = GM20BFacade.compression(of: gpu.device)
         var metrics = Metrics()
         metrics.set("settled", settledMs != nil)
         metrics.set("settled_calls", calls.count)

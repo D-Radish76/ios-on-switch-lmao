@@ -4,7 +4,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Extended-range targets under overlapping premultiplied source-over draws, each route the raw path can draw them by
+/// Extended-range targets under overlapping premultiplied source-over draws, each route the driver can draw them by
 /// (`routes`; today planes: the codes encoded by the program, RGB10A8_2P_XR10 550 in its two planes over a 'b3a8'
 /// surface, BGRA10_XR 552 as its code words over a 'w40a' surface), against Apple's codes. Golden scene: per format, 4
 /// bands of rows (in range; overbright and past XR's range; NaN in a colour or in alpha; opaque, clear and near-range
@@ -14,10 +14,10 @@ import Metal
 /// 550's byte, 552's code); <format>_<route>_off, texels not Apple's; xr_<route>_worst_code, both formats' largest.
 /// Timing scene: the 8 staircase quads of band 0 over a 1280x720 surface of each format, one pass; <format>_<route>_us,
 /// its GPU time, and us_<route> both formats' sum. Reported, not judged: the planes route rounds to codes at every draw
-/// where Apple's tile keeps half until the store. Judged: a route ran, every command buffer on the raw path, no command
+/// where Apple's tile keeps half until the store. Judged: a route ran, every command buffer on the driver, no command
 /// buffer failed. A cell whose command buffer fails or whose target cannot be made reports <format>_<route>_failed.
 struct XrBlendRoutesTest: HWTest {
-    let id = "gpu.raw.xr_blend_routes"
+    let id = "gpu.gm20b.xr_blend_routes"
     let name = "Overlapping source-over draws into RGB10A8_2P_XR10 and BGRA10_XR surfaces per route, against Apple"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -80,9 +80,9 @@ struct XrBlendRoutesTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var ran = 0
         for route in Self.routes {
@@ -116,12 +116,12 @@ struct XrBlendRoutesTest: HWTest {
             metrics.set("us_\(route.name)", micros, digits: 0)
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         metrics.fitLog(within: 720, keeping: ["paths", "failed_cbs", "xr_planes_worst_code", "us_planes"])
         return .judged(
             [
-                ("a route drew a format", ran > 0), ("every command buffer on the raw path", gpu.paths.offRaw.isEmpty),
+                ("a route drew a format", ran > 0), ("every command buffer on the driver", gpu.paths.offRaw.isEmpty),
                 FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
             ], metrics, proof: gpu.proof)
     }

@@ -4,11 +4,11 @@ import IOSurface
 import Metal
 
 /// RGB10A8_2P_XR10 (550) over 'b3a8' planes whose rows overlap inside a plane (a pitch below a row's bytes), as an M4
-/// Max reads and stores them (gpu.raw.xr_overlap_rows). Read scenes, every byte SurfaceReads.pattern: a kernel reads
+/// Max reads and stores them (gpu.gm20b.xr_overlap_rows). Read scenes, every byte SurfaceReads.pattern: a kernel reads
 /// texel (x, y) as the word at y * rows0 + 4x with the alpha byte at plane 1 + y * rows1 + x. Written scenes, every
 /// byte 0xee first: a pass drawing each texel's row y as red code 385 + y, its column as green code 385 + x and alpha
 /// byte y (xr_overlap_rows_frag) leaves each word and alpha byte that several rows reach with the row whose store lands
-/// last (raw_overlap_order.h overlapOrder, the order of an M4 Max's YCbCr stores); a kernel storing the same leaves one
+/// last (overlap_order.h overlapOrder, the order of an M4 Max's YCbCr stores); a kernel storing the same leaves one
 /// of the rows that reach it; a Clear of (0.5, 0.25, -0.25, 0.75) leaves every word 0x27f80100 and alpha byte 0xbf;
 /// none changes a byte outside the planes' rows.
 public enum XrOverlapRows {

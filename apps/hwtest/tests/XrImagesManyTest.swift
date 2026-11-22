@@ -12,7 +12,7 @@ import Metal
 /// buffers that failed; path: their paths; textures_written: textures every texel of which holds both, for each count
 /// ("25/40"); words_off and alpha_off: texels that do not, over both.
 struct XrImagesManyTest: HWTest {
-    let id = "gpu.raw.xr_images_many"
+    let id = "gpu.gm20b.xr_images_many"
     let name = "25 and 40 RGB10A8_2P_XR10 storage images written in one pass, 16 a draw, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -22,9 +22,9 @@ struct XrImagesManyTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -52,10 +52,10 @@ struct XrImagesManyTest: HWTest {
             checks.append(("\(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

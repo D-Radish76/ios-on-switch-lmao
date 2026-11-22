@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-/// gpu.raw.xr_rows_under_16: texel i = 2y + x's codes red 300 + 11i, green 520 + 7i, blue 100 + 13i (each (code - 384)
+/// gpu.gm20b.xr_rows_under_16: texel i = 2y + x's codes red 300 + 11i, green 520 + 7i, blue 100 + 13i (each (code - 384)
 /// / 510) and alpha (16 + 15i) / 255
 static float4 rows16_xr_value(uint2 at)
 {
@@ -21,14 +21,14 @@ kernel void rows16_xr_store(texture2d<float, access::write> t [[texture(0)]], ui
         t.write(rows16_xr_value(id), id);
 }
 
-/// gpu.raw.ycbcr_rows_under_16_stores: a colour of each pixel's own, which a YCbCr target stores converted
+/// gpu.gm20b.ycbcr_rows_under_16_stores: a colour of each pixel's own, which a YCbCr target stores converted
 fragment float4 rows16_ycbcr_colours(float4 position [[position]])
 {
     const float2 x = floor(position.xy);
     return float4(0.1f + 0.1f * x.x, 0.9f - 0.1f * x.y, 0.2f + 0.05f * (x.x + x.y), 1.0f);
 }
 
-/// gpu.raw.ycbcr_rows_under_16_stores: a draw that writes nothing
+/// gpu.gm20b.ycbcr_rows_under_16_stores: a draw that writes nothing
 fragment float4 rows16_discard()
 {
     discard_fragment();

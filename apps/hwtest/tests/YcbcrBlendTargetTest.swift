@@ -5,15 +5,15 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// Blended and channel-masked states into two-plane YCbCr attachments (RawMetalYcbcrTargets.mm standInTargetState). A
+/// Blended and channel-masked states into two-plane YCbCr attachments (TegraGM20BMetalYcbcrTargets.mm standInTargetState). A
 /// clear and three draws a pass. Masked states, and states blending by the destination alpha (which a format without
 /// alpha reads as 1), store Metal's codes exactly; one blending over the source alpha lies within one code of Metal's,
-/// which blends in halves of its own rounding (raw/test/ycbcrblendoracle.mm on an M4 Max: the route's codes 0 off for
+/// which blends in halves of its own rounding (harness/ycbcrblendoracle.mm on an M4 Max: the route's codes 0 off for
 /// those, at most one off for these). off_<case>_<format> counts codes past that bound (0 to pass), one_<case>_<format>
 /// the codes one off (a figure), paths every command buffer's path (raw/N to pass).
 struct YcbcrBlendTargetTest: HWTest {
-    let id = "gpu.raw.ycbcr_blend"
-    let name = "Blended and masked states into two-plane YCbCr targets on the raw path"
+    let id = "gpu.gm20b.ycbcr_blend"
+    let name = "Blended and masked states into two-plane YCbCr targets on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -50,8 +50,8 @@ struct YcbcrBlendTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -69,7 +69,7 @@ struct YcbcrBlendTargetTest: HWTest {
                 }
             }
         }
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         checks.append(("every command buffer raw", raw))
         return .judged(checks, metrics, proof: gpu.proof)

@@ -11,10 +11,10 @@ from tools.devicerun.rules import FAIL, INFO, NO_DATA, PASS
 
 PATH_ON = 'TegraGM20BMetal: raw GM20B path on in {who} (pack raw.pack, stack 00ff00ff00ff00ff)'
 READY = 'TegraGM20BMetal: device NVIDIA Tegra X1 (GM20B) ready in {who}, open 41 ms'
-RATES = 'raw 5s c=310(62.0/s) enc=120us/c d=4.0 p=1.0 b=0.00 defer=0 rw=0 pool=48MB/3 grow=0'
+RATES = 'gm20b 5s c=310(62.0/s) enc=120us/c d=4.0 p=1.0 b=0.00 defer=0 rw=0 pool=48MB/3 grow=0'
 RAISE = (
     "*** Terminating app due to uncaught exception 'NSInvalidArgumentException', reason: "
-    "'-[RMDevice hostImport:]: unrecognized selector sent to instance 0x10a2c4000'"
+    "'-[SwitchMetalDevice hostImport:]: unrecognized selector sent to instance 0x10a2c4000'"
 )
 
 
@@ -24,7 +24,7 @@ def record(process: str, message: str, subsystem: str = '', second: int = 0) -> 
         'bootUUID': '7C1E0A22',
         'processImagePath': '/System/Library/CoreServices/' + process,
         'subsystem': subsystem,
-        'category': 'raw',
+        'category': 'gm20b',
         'messageType': 'Default',
         'eventMessage': message,
     }
@@ -54,7 +54,9 @@ class Cut(unittest.TestCase):
     def test_an_old_plugin_fails_by_its_lines(self):
         got = results(
             *clean_boot(),
-            record('SpringBoard', 'raw: SpringBoard opened its m2v device for enc.planarrt', GPU_METAL_SUBSYSTEM, 1),
+            record(
+                'SpringBoard', 'SwitchMetal: SpringBoard opened its m2v device for enc.planarrt', GPU_METAL_SUBSYSTEM, 1
+            ),
             record('SpringBoard', 'TegraGM20BMetal: raw GM20B path off in SpringBoard', GPU_METAL_SUBSYSTEM, 2),
             record('backboardd', RATES + ' m2v=3 replay=1', GPU_METAL_SUBSYSTEM, 6),
         )
@@ -84,7 +86,11 @@ class Cut(unittest.TestCase):
 
     def test_deleted_refusal_tags_fail_and_record_refusals_report(self):
         got = results(
-            record('PosterBoard', 'PosterBoard[311] selector.missing: -[RMDevice view:] no method', REFUSAL_SUBSYSTEM),
+            record(
+                'PosterBoard',
+                'PosterBoard[311] selector.missing: -[SwitchMetalDevice view:] no method',
+                REFUSAL_SUBSYSTEM,
+            ),
             record('SpringBoard', 'SpringBoard[88] call.buf: a buffer not made by this device', REFUSAL_SUBSYSTEM, 1),
         )
         self.assertEqual(got['cut.deleted-tags'].verdict, FAIL)
@@ -143,8 +149,8 @@ class CutCrashReports(unittest.TestCase):
             self.write(Path(d), 'WidgetRenderer', {'asi': {'CoreFoundation': [RAISE]}, 'usedImages': []})
             self.write(Path(d), 'PosterBoard', {'usedImages': [{'name': 'libvulkan_nouveau.dylib'}]})
             got = self.rows(Path(d))
-        self.assertEqual(got['crash.raw-selector'].verdict, FAIL)
-        self.assertIn('WidgetRenderer -[RMDevice hostImport:]', got['crash.raw-selector'].observed)
+        self.assertEqual(got['crash.gm20b-selector'].verdict, FAIL)
+        self.assertIn('WidgetRenderer -[SwitchMetalDevice hostImport:]', got['crash.gm20b-selector'].observed)
         self.assertEqual(got['crash.nvk-image'].verdict, FAIL)
         self.assertIn('PosterBoard', got['crash.nvk-image'].observed)
 
@@ -153,7 +159,7 @@ class CutCrashReports(unittest.TestCase):
             other = '-[NSNull length]: unrecognized selector sent to instance 0x1f00'
             self.write(Path(d), 'Maps', {'asi': {'CoreFoundation': [other]}, 'usedImages': [{'name': 'Metal'}]})
             got = self.rows(Path(d))
-        self.assertEqual(got['crash.raw-selector'].verdict, PASS)
+        self.assertEqual(got['crash.gm20b-selector'].verdict, PASS)
         self.assertEqual(got['crash.nvk-image'].verdict, PASS)
 
 

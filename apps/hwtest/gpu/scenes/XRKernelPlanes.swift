@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// RGB10A8_2P_XR10 over a 'b3a8' surface of Metal's two planes, 64 texels wide (rows of 256 and 64 bytes): plane 0 the
-/// colour words, plane 1 the alpha bytes, as kernels reach them (gpu.raw.xr_kernel_store, gpu.raw.xr_kernel_read).
+/// colour words, plane 1 the alpha bytes, as kernels reach them (gpu.gm20b.xr_kernel_store, gpu.gm20b.xr_kernel_read).
 struct XRKernelPlanes {
     static let width = 64
     static let format = MTLPixelFormat(rawValue: 550)!

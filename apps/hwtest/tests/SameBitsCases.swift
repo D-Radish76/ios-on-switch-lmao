@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The scenes of gpu.raw.same_bits (c38-audit m2v-pass-forms/probe/bitsprobe.mm), 16x16: a depth texture as colour 0
+/// The scenes of gpu.gm20b.same_bits (c38-audit m2v-pass-forms/probe/bitsprobe.mm), 16x16: a depth texture as colour 0
 /// under a state of the colour format of the same bits, cleared to 0.25 and drawn 0.75 over the left half; an RGBA8Unorm
 /// texture (private, or over a buffer) as the depth attachment beside an RGBA8Unorm colour, filled with 0x11 bytes,
 /// cleared to 0.5 (or loaded) and drawn over the left half at z 0.25 under Less with depth writes.
 enum SameBitsCases {
     static let side = 16
-    static let factsSelector = NSSelectorFromString("switchRawProbeFacts:")
+    static let factsSelector = NSSelectorFromString("switchMetalProbeFacts:")
 
     struct AsDepth {
         var depth: [UInt8] = []
@@ -89,7 +89,7 @@ enum SameBitsCases {
         return result
     }
 
-    /// The facade's switchRawProbeFacts: of `texture` (debug builds; empty elsewhere)
+    /// The facade's switchMetalProbeFacts: of `texture` (debug builds; empty elsewhere)
     static func facts(_ gpu: GPU, _ texture: MTLTexture) -> [String: Int] {
         guard let facade = gpu.device as? NSObject, facade.responds(to: factsSelector),
             let line = facade.perform(factsSelector, with: texture)?.takeUnretainedValue() as? String

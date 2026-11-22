@@ -93,10 +93,10 @@ struct HalfArithmeticScene: GPUScene {
         }
         result.metrics.set("pairs", a.count)
         result.metrics.set("path", timing.path)
-        if !RawFacade.counters(of: gpu.device).isEmpty {
-            result.expect(timing.path == "raw", "Half arithmetic left raw: \(timing.path)")
+        if !GM20BFacade.counters(of: gpu.device).isEmpty {
+            result.expect(timing.path == "gm20b", "Half arithmetic left raw: \(timing.path)")
         }
-        if RawFacade.kind(of: gpu.device) == "raw" {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             let object = gpu.device as AnyObject as! NSObject
             let native = (object.value(forKey: "supportsNativeHardwareFP16") as? NSNumber)?.intValue ?? -1
             result.metrics.set("native_answer", native)

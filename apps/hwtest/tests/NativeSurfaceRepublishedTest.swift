@@ -61,7 +61,7 @@ struct NativeSurfaceRepublishedPathTest: GPUPathTest {
         guard CVMetalTextureCacheCreate(nil, nil, gpu.device, nil, &made) == kCVReturnSuccess, let cache = made else {
             throw TestFailure("CVMetalTextureCacheCreate failed")
         }
-        let counters = RawFacade.counters(of: gpu.device)
+        let counters = GM20BFacade.counters(of: gpu.device)
         let failedBefore = gpu.commandBufferErrors.count
         let pictures = Pictures()
         var seen = Set<IOSurfaceID>()
@@ -96,7 +96,7 @@ struct NativeSurfaceRepublishedPathTest: GPUPathTest {
         guard pictures.failure == noErr else { throw TestFailure("decoder output \(pictures.failure)") }
         let failed = gpu.commandBufferErrors.count - failedBefore
         let vetoes =
-            (RawFacade.counters(of: gpu.device)["pipeline_abandons.native"] ?? 0)
+            (GM20BFacade.counters(of: gpu.device)["pipeline_abandons.native"] ?? 0)
             - (counters["pipeline_abandons.native"] ?? 0)
         metrics.set("frames", frames)
         metrics.set("surfaces", seen.count)

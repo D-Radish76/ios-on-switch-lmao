@@ -3,8 +3,8 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// Copies between textures over two-plane surfaces of one 16 KiB page (gpu.raw.planes_plane1_rows,
-/// gpu.raw.planes_across_formats), each its own command buffer, every byte of each surface seeded, and the
+/// Copies between textures over two-plane surfaces of one 16 KiB page (gpu.gm20b.planes_plane1_rows,
+/// gpu.gm20b.planes_across_formats), each its own command buffer, every byte of each surface seeded, and the
 /// destination's whole allocation judged by the rule an M4 Max's copies follow with validation off: plane 0 `w` texels
 /// in the destination's unit from each side's plane-0 rows; plane 1 `w` bytes, one a texel and never halved, for `h`
 /// rows from plane 1's offset & ~15 at PLANE 0's rows & ~15, on through plane 1's end; 0 where the source byte lies
@@ -74,7 +74,7 @@ public enum PlaneCopies {
         public var made = true
     }
 
-    /// gpu.raw.planes_plane1_rows: copies between two textures of one format
+    /// gpu.gm20b.planes_plane1_rows: copies between two textures of one format
     public static let sameFormat: [Case] = [
         Case("a_b_550", .planes(a, format: 550), from: (5, 3), (8, 4), into: b, 550, at: (3, 1)),
         Case("b_a_550", .planes(b, format: 550), from: (0, 0), (16, 8), into: a, 550, at: (0, 0)),
@@ -85,7 +85,7 @@ public enum PlaneCopies {
         Case("z_y_500", .planes(z, format: 500), from: (0, 0), (16, 8), into: y, 500, at: (0, 0)),
     ]
 
-    /// gpu.raw.planes_across_formats: copies between textures of two pixel formats, Metal's validation error
+    /// gpu.gm20b.planes_across_formats: copies between textures of two pixel formats, Metal's validation error
     public static let acrossFormats: [Case] = [
         Case("r8_a_550", .r8OverBuffer, from: (2, 1), (4, 4), into: a, 550, at: (3, 2)),
         Case("a550_b551", .planes(a, format: 550), from: (2, 2), (4, 4), into: b, 551, at: (4, 2)),

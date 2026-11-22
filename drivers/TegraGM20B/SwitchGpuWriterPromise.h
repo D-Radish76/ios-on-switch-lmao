@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* Writer promises (TegraGM20BJobABI.h method 34). The raw runtime counts a command buffer as scheduled before its jobs
+/* Writer promises (TegraGM20BJobABI.h method 34). The runtime counts a command buffer as scheduled before its jobs
  * reach the kernel only while it waits for a shared event; before it does, it promises its writes of the IOSurfaces it
  * names. A promise is a word of its connection's fence page and a value: each surface it names keeps a ref to it, and a
  * present or another connection's job that uses the surface acquires the word on the GPU until the value is reached, as

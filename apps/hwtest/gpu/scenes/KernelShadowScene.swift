@@ -6,12 +6,12 @@ import Metal
 
 /// mediaanalysisd's Core Image conversion on boot 21 (326 command buffers on m2v, compute.image at slot 1): a kernel
 /// samples an RGBA8 surface texture and writes the luma and chroma planes of a 4:2:0 surface, every texture's rows 16
-/// bytes off 32, which the texture header cannot address. The raw path reaches them through their own 32-aligned
-/// images, filled and copied back by the copy engine around the encoder (raw/runtime/raw_kernel_shadow.h). The planes
+/// bytes off 32, which the texture header cannot address. The driver reaches them through their own 32-aligned
+/// images, filled and copied back by the copy engine around the encoder (kernel_shadow.h). The planes
 /// are read back from the surface under its lock: every texel and the rows' padding as the kernel and the CPU left
 /// them, and a CPU write between two command buffers seen by the second.
 struct KernelShadowScene: GPUScene {
-    let id = "gpu.raw.kernel_shadow"
+    let id = "gpu.gm20b.kernel_shadow"
     let name = "Kernels sampling and writing surface textures whose rows are 16 bytes off 32"
 
     static let width = 332
@@ -93,8 +93,8 @@ struct KernelShadowScene: GPUScene {
                 wrong.isEmpty, "run \(run): \(wrong.count) surface bytes wrong, the first at \(wrong.first ?? -1)")
         }
         result.metrics.set("paths", paths.joined(separator: ","))
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(paths.allSatisfy { $0 == "raw" }, "the kernels took \(paths), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(paths.allSatisfy { $0 == "gm20b" }, "the kernels took \(paths), not raw")
         }
         return result
     }

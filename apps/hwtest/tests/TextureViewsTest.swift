@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Texture views of a part of a texture on the raw path (drivers/TegraGM20BMetal/raw/runtime/raw_texture_views.cpp
+/// Texture views of a part of a texture on the driver (drivers/TegraGM20BMetal/texture_views.cpp
 /// createPartView and createZetaView). Each level, slice, face and plane is cleared to its own colour by a pass into
 /// it, then a draw reads it through the view: level 1 of slice 1 of a mipmapped array as a 2D texture, the last six
 /// slices of an array as a cube, levels 1 and 2 of a mipmapped 3D texture, slice 2 and slices 1-2 of a depth array, and
@@ -11,8 +11,8 @@ import Metal
 /// Every command buffer that reads a view must stay raw; the fills' path is reported (passes into levels, slices and
 /// depth layers are pass.level's and pass.ds's).
 struct TextureViewsTest: HWTest {
-    let id = "gpu.raw.texture_views"
-    let name = "Views of levels, slices, faces, 3D levels, depth layers and stencil read their part, on the raw path"
+    let id = "gpu.gm20b.texture_views"
+    let name = "Views of levels, slices, faces, 3D levels, depth layers and stencil read their part, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -26,8 +26,8 @@ struct TextureViewsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
         var paths: [String] = []
@@ -217,7 +217,7 @@ struct TextureViewsTest: HWTest {
                 wrong.append(arm.name)
             }
         }
-        if paths.contains(where: { $0 != "raw" }) { wrong.append("paths") }
+        if paths.contains(where: { $0 != "gm20b" }) { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

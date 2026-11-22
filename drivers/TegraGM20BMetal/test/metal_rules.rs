@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //! The translator's own rules for which heap array of a class holds a texture, a texture's handle-table flags, a
 //! sampler's word and which formats are depth or stencil (metal2vulkan bind/heap.rs, bind/heap_code.rs,
-//! metal/sampler.rs, metal/format): raw_metal_rules_test holds raw_heap_fit.h, raw_sampler_word.h and raw's linear rows
+//! metal/sampler.rs, metal/format): metal_rules_test holds heap_fit.h, sampler_word.h and raw's linear rows
 //! to them.
 
 use metal2vulkan::bind::{TextureFacts, handle_entry_flags, heap_code_holds};
@@ -11,7 +11,7 @@ use metal2vulkan::metal::{PixelFormat, TextureSwizzle, TextureSwizzleChannels, T
 use native_metal_translate::descriptors::{NmbSamplerDescriptor, raw, sampler_descriptor};
 use std::mem::{offset_of, size_of};
 
-/// raw_heap_tables.h HeapTextureFacts: a texture's MTLTextureDescriptor
+/// heap_tables.h HeapTextureFacts: a texture's MTLTextureDescriptor
 #[repr(C)]
 pub struct HeapTextureFacts {
     pub pixel_format: u32,

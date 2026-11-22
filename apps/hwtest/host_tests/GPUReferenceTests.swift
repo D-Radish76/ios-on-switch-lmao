@@ -17,7 +17,7 @@ final class GPUReferenceTests: XCTestCase {
         XCTAssertEqual(diff.box, [3, 0, 12, 7])
         XCTAssertEqual(diff.streakColumns, 1)
         XCTAssertEqual(diff.map, "4042404040404040")
-        XCTAssertEqual(diff.metrics(prefix: "raw_")["raw_wrong"], .integer(9))
+        XCTAssertEqual(diff.metrics(prefix: "gm20b_")["gm20b_wrong"], .integer(9))
         XCTAssertTrue(diff.summary.hasPrefix("9 wrong of 128 at 3,0 got 0 want 128"))
     }
 
@@ -106,11 +106,11 @@ final class GPUReferenceTests: XCTestCase {
 
     func testPathsAndCountersBecomeLogFields() {
         var tally = PathTally()
-        ["raw", "error:pass.fmt", "raw"].forEach { tally.add($0) }
-        XCTAssertEqual(tally.text, "raw/2,error:pass.fmt/1")
+        ["gm20b", "error:pass.fmt", "gm20b"].forEach { tally.add($0) }
+        XCTAssertEqual(tally.text, "gm20b/2,error:pass.fmt/1")
         XCTAssertEqual(tally.offRaw.text, "error:pass.fmt/1")
         var raw = PathTally()
-        raw.add("raw")
+        raw.add("gm20b")
         XCTAssertTrue(raw.offRaw.isEmpty)
         raw.add("error:none")
         raw.add("error:call.sampler")
@@ -122,12 +122,12 @@ final class GPUReferenceTests: XCTestCase {
         XCTAssertEqual(passed.failing(offRaw: PathTally()).verdict, .pass)
         let failed = passed.failing(offRaw: raw.offRaw)
         XCTAssertEqual(failed.verdict, .fail)
-        XCTAssertEqual(failed.detail, "command buffers off the raw path: error:call.sampler/1,error:none/1; d")
+        XCTAssertEqual(failed.detail, "command buffers off the driver: error:call.sampler/1,error:none/1; d")
         XCTAssertEqual(failed.proof, "p")
         let metrics = PathTally.counterMetrics(
-            before: ["raw": 5, "failed": 1, "failed.pass.fmt": 1],
-            after: ["raw": 9, "failed": 4, "failed.pass.fmt": 3, "failed.none": 1])
-        XCTAssertEqual(metrics["raw_cbs"], .integer(4))
+            before: ["gm20b": 5, "failed": 1, "failed.pass.fmt": 1],
+            after: ["gm20b": 9, "failed": 4, "failed.pass.fmt": 3, "failed.none": 1])
+        XCTAssertEqual(metrics["gm20b_cbs"], .integer(4))
         XCTAssertEqual(metrics["failed_cbs"], .integer(3))
         XCTAssertEqual(metrics["failed_why"], .text("pass.fmt/2,none/1"))
     }

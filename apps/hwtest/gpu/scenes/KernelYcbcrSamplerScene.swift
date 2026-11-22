@@ -5,27 +5,27 @@ import Metal
 
 /// A kernel sampling a two-plane 4:2:0 YCbCr texture (540, RGB8_420_2P read as codes, over a '420v' surface) beside an
 /// RGBA8 texture, across a grid twice the textures' width. Metal samples the YCbCr texture's wrapping modes and clamps to
-/// zero as clamp to edge (an M4 Max's reads) and the RGBA texture's as they are. The raw path refused every constexpr
+/// zero as clamp to edge (an M4 Max's reads) and the RGBA texture's as they are. The driver refused every constexpr
 /// sampler beside such a texture (compute.image): a kernel's sampler is a word of its own. Now the record names the
-/// texture each sampler samples (raw_pack.h kernelSamplerPairs), and the direct compile compiles a kernel under its
+/// texture each sampler samples (pack.h kernelSamplerPairs), and the direct compile compiles a kernel under its
 /// textures' address maps (NativeMetalDirectCompute.rs): one sampler the maps give two sets of modes is a kernel the
 /// compile cannot make, so its command buffer fails MTLCommandBufferErrorInternal with no predicate (error:none, the
 /// scene's one failed command buffer; boot C24: "A render pipeline could not be compiled"), where an M4 Max samples it.
 /// Every sample is a texel's codes, exact.
 struct KernelYcbcrSamplerScene: GPUScene {
-    let id = "gpu.raw.kernel_ycbcr_sampler"
+    let id = "gpu.gm20b.kernel_ycbcr_sampler"
     let name = "A kernel sampling a YCbCr and an RGBA texture through samplers of their own"
     func run(_ gpu: GPU) async throws -> SceneResult { try await KernelYcbcrSampling(form: .edge).run(gpu) }
 }
 
 struct KernelYcbcrMappedSamplerScene: GPUScene {
-    let id = "gpu.raw.kernel_ycbcr_sampler_mapped"
+    let id = "gpu.gm20b.kernel_ycbcr_sampler_mapped"
     let name = "A kernel sampling a YCbCr texture through samplers its address map changes"
     func run(_ gpu: GPU) async throws -> SceneResult { try await KernelYcbcrSampling(form: .mapped).run(gpu) }
 }
 
 struct KernelYcbcrSharedSamplerScene: GPUScene {
-    let id = "gpu.raw.kernel_ycbcr_shared_sampler"
+    let id = "gpu.gm20b.kernel_ycbcr_shared_sampler"
     let name = "A kernel sampling a YCbCr and an RGBA texture through one sampler"
     var expectedFailures: [String: Int] { ["none": 1] }
     func run(_ gpu: GPU) async throws -> SceneResult { try await KernelYcbcrSampling(form: .shared).run(gpu) }
@@ -91,7 +91,7 @@ struct KernelYcbcrSampling {
         let pipeline = try gpu.compute(kernel)
         let count = 2 * w * h * samples.count
         let out = try gpu.buffer(count * MemoryLayout<SIMD4<Float>>.stride)
-        let raw = RawFacade.kind(of: gpu.device) == "raw"
+        let raw = GM20BFacade.kind(of: gpu.device) == "gm20b"
         let timing = try await gpu.run(tolerateError: form == .shared && raw) { commands in
             let encoder = commands.makeComputeCommandEncoder()!
             encoder.setComputePipelineState(pipeline)
@@ -135,7 +135,7 @@ struct KernelYcbcrSampling {
             "samples off their texel's codes: \(wrong[0]) YCbCr (clamped to its edge), \(wrong[1]) RGBA (repeated); "
                 + "largest error \(maxError) codes")
         if raw {
-            result.expect(timing.path == "raw", "the kernel took \(timing.path), not raw")
+            result.expect(timing.path == "gm20b", "the kernel took \(timing.path), not raw")
         }
         return result
     }

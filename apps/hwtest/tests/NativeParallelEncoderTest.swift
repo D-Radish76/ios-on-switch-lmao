@@ -140,7 +140,7 @@ struct NativeParallelEncoderTest: NativeObjectTest {
             parallel.endEncoding()
         }
         metrics.set("clamped_group_path", timing.path)
-        if timing.path != "raw" { work.failures.append("the clamped group went \(timing.path)") }
+        if timing.path != "gm20b" { work.failures.append("the clamped group went \(timing.path)") }
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
         let wrong = (0..<size * size).filter {
             let want: [UInt8] = $0 % size < size / 2 ? [255, 0, 0, 255] : [0, 255, 0, 255]

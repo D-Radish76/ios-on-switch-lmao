@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A CPU copy of a memoryless texture (drivers/TegraGM20BMetal/raw/runtime/RawMetalTexture.mm cpuReachesNothing): getBytes
+/// A CPU copy of a memoryless texture (drivers/TegraGM20BMetal/TegraGM20BMetalTexture.mm cpuReachesNothing): getBytes
 /// leaves the caller's bytes and replaceRegion moves nothing, as Apple's driver does with API validation off.
 struct NativeMemorylessCpuTest: HWTest {
     let id = "metal.native.memoryless_cpu"
@@ -12,8 +12,8 @@ struct NativeMemorylessCpuTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: false)
         descriptor.storageMode = .memoryless

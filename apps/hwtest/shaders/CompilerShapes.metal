@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-/// gpu.raw.sm53_layout: nested if/else and a loop with continue and break, each pixel's branches its own; red the
+/// gpu.gm20b.sm53_layout: nested if/else and a loop with continue and break, each pixel's branches its own; red the
 /// if/else path, green the loop's sum, blue the pixel's index (SM53Layout.path is the same code on the CPU)
 fragment float4 sm53_layout_paths(float4 position [[position]])
 {
@@ -42,7 +42,7 @@ fragment float4 sm53_layout_paths(float4 position [[position]])
     return float4(float(path), float(sum), float(y * 256 + x), 1);
 }
 
-/// gpu.raw.float_tests: each value's classes and comparisons as bits of red (FloatClasses.bits on the CPU); `shape` is
+/// gpu.gm20b.float_tests: each value's classes and comparisons as bits of red (FloatClasses.bits on the CPU); `shape` is
 /// the target's width and the values' count
 fragment float4 float_classes(float4 position [[position]], device const float *values [[buffer(0)]],
                               constant uint2 &shape [[buffer(1)]])

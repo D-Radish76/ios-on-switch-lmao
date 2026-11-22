@@ -103,7 +103,7 @@ inline Owner mainOwner(const Frame &f)
             return Owner::Model;
     for (const char *test :
          {"held_blocks_test::", "encode_cost::", "harness::", "scale_frames::", "held_sites::", "testing::", "main",
-          "RawFacadeHeldBlocks", "-[Harness", "+[Harness", "facade::", "-[EncodeCostGone"})
+          "GM20BFacadeHeldBlocks", "-[Harness", "+[Harness", "facade::", "-[EncodeCostGone"})
         if (startsWith(f.symbol, test))
             return Owner::Test;
     return Owner::Runtime;

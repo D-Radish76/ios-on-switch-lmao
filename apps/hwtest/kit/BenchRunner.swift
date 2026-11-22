@@ -13,7 +13,7 @@ public final class BenchRunner {
 
     deinit { switch_bench_close(bench) }
 
-    /// The Metal device is made first: it loads the GPU plugin, beside which the bench finds the raw pack.
+    /// The Metal device is made first: it loads the GPU plugin, beside which the bench finds the pack.
     public static func open() throws -> BenchRunner {
         _ = MTLCreateSystemDefaultDevice()
         var why = [CChar](repeating: 0, count: 256)
@@ -47,7 +47,7 @@ public final class BenchRunner {
         "whole": SWITCH_BENCH_PACK_WHOLE, "whole_generic": SWITCH_BENCH_PACK_WHOLE_GENERIC,
         "split": SWITCH_BENCH_PACK_SPLIT, "split_whole": SWITCH_BENCH_PACK_SPLIT_WHOLE,
     ]
-    /// The most a split's frontier holds (raw_split_metadata.h): the room a pack experiment's quads need for theirs
+    /// The most a split's frontier holds (split_metadata.h): the room a pack experiment's quads need for theirs
     static let frontierBytes = 4096
     static let statuses = ["ok", "invalid", "refused", "killed", "error"]
     static let twodOps: [BenchTwodOp: switch_bench_twod_op] = [
@@ -59,7 +59,7 @@ public final class BenchRunner {
         "sampled3d": SWITCH_BENCH_COMPARE_SAMPLED3D,
     ]
 
-    /// All of `surface` (one plane, of a format the raw path renders) filled with `color` (an RGBA8 word) by the 2D engine
+    /// All of `surface` (one plane, of a format the driver renders) filled with `color` (an RGBA8 word) by the 2D engine
     /// on the bench's own connection and channel, waited for: "ok", else the status and why.
     func fill(_ surface: IOSurfaceRef, format: MTLPixelFormat, color: UInt32) -> String {
         var r = switch_bench_result()

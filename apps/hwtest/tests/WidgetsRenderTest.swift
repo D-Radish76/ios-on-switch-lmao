@@ -9,9 +9,9 @@ import Metal
 /// TVWidgetExtension was jetsammed at 30 MB half a second after its first draw).
 /// - WidgetKit's archiver sizes its image limit for a 2x screen: the limit's helper reads no -scale
 ///   (switch_ui_scale_sites_24B119.h). At the display's 1.25 it refused GameCenter's 310 x 310 artwork.
-/// - A widget's draw, a 305 x 305 target cleared and drawn once, runs on raw, and a chunk the raw device makes for it
+/// - A widget's draw, a 305 x 305 target cleared and drawn once, runs on raw, and a chunk the device makes for it
 ///   is no larger than what the device already held, its first size (a sixteenth of the render server's 4 MiB) or the
-///   target (raw_gpu.cpp chunkSize). A fixed 4 MiB chunk breaks that while the app holds less; once it holds 4 MiB the
+///   target (gpu.cpp chunkSize). A fixed 4 MiB chunk breaks that while the app holds less; once it holds 4 MiB the
 ///   bound holds either way, so the boot's jetsam lines for widget extensions remain the check of what they hold.
 /// headers_left= the app's raw device's texture headers not held (of 8191) once every GPU test before this one has run.
 struct WidgetsRenderTest: HWTest {
@@ -44,7 +44,7 @@ struct WidgetsRenderTest: HWTest {
 
         let gpu = try GPU.make()
         let pipeline = try gpu.render(fragment: "solid_fragment", format: .bgra8Unorm)
-        let held = RawFacade.memory(of: gpu.device)
+        let held = GM20BFacade.memory(of: gpu.device)
         let before = Self.footprint()
         let target = try gpu.texture(.bgra8Unorm, Self.side, Self.side)
         let timing = try await gpu.run { commands in
@@ -60,13 +60,13 @@ struct WidgetsRenderTest: HWTest {
             encoder.endEncoding()
         }
         let grown = Self.footprint() &- before
-        metrics.set("dev", RawFacade.kind(of: gpu.device))
+        metrics.set("dev", GM20BFacade.kind(of: gpu.device))
         metrics.set("path", timing.path)
         metrics.set("grown_kb", Int(Int64(bitPattern: grown) >> 10))
-        if RawFacade.kind(of: gpu.device) == "raw" && timing.path != "raw" {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" && timing.path != "gm20b" {
             failures.append("the widget's draw went \(timing.path)")
         }
-        let memory = RawFacade.memory(of: gpu.device)
+        let memory = GM20BFacade.memory(of: gpu.device)
         if let left = memory["headers_left"] { metrics.set("headers_left", left) }
         if let pool = held["pool"], let now = memory["pool"] {
             let bound = max(Self.firstChunk, pool, Self.targetBound)

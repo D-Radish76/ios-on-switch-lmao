@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// What a gpu.raw.texture_shapes case checks of newTextureWithDescriptor (raw_texture_shape.h,
-/// test/raw_device_shapes_test.cpp): each texture's route (raw's own, another object or nil), the bytes it gave back,
+/// What a gpu.gm20b.texture_shapes case checks of newTextureWithDescriptor (texture_shape.h,
+/// test/device_shapes_test.cpp): each texture's route (raw's own, another object or nil), the bytes it gave back,
 /// every made texture asked again after its work whether it is still raw's (twins_after), and every command buffer's
 /// path (paths)
 final class ShapeArms {
@@ -19,17 +19,17 @@ final class ShapeArms {
 
     /// Why a case cannot run on `gpu`, nil where it can
     static func skip(_ gpu: GPU) -> Outcome? {
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
-        guard !RawFacade.counters(of: gpu.device).isEmpty else {
-            return .skip("a release runtime: textures do not answer switchRawObject")
+        guard !GM20BFacade.counters(of: gpu.device).isEmpty else {
+            return .skip("a release runtime: textures do not answer switchMetalObject")
         }
         return nil
     }
 
     private func answer(_ texture: MTLTexture?) -> String {
-        texture.map { NativeObject.name($0) == nil ? "other" : "raw" } ?? "nil"
+        texture.map { NativeObject.name($0) == nil ? "other" : "gm20b" } ?? "nil"
     }
 
     func route(_ label: String, _ texture: MTLTexture?, expect: String) {
@@ -49,11 +49,11 @@ final class ShapeArms {
     }
 
     func outcome() -> Outcome {
-        let twins = made.filter { answer($0.1) != "raw" }.map(\.0)
+        let twins = made.filter { answer($0.1) != "gm20b" }.map(\.0)
         metrics.set("twins_after", twins.isEmpty ? "-" : twins.joined(separator: "/"))
         if !twins.isEmpty { wrong.append("twins_after") }
         metrics.set("paths", gpu.paths.text)
-        if gpu.paths.paths.keys.contains(where: { $0 != "raw" }) { wrong.append("paths") }
+        if gpu.paths.paths.keys.contains(where: { $0 != "gm20b" }) { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(wrong.joined(separator: ","), metrics)
     }
 

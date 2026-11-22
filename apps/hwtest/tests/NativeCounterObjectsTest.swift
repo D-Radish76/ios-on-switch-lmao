@@ -10,7 +10,7 @@ import Metal
 /// the CPU resolves, start at or before end, the unsampled ones 0.
 struct NativeCounterObjectsTest: NativeObjectTest {
     let id = "metal.native.counter_objects"
-    let name = "Counter sets of Metal's classes and the length form of a sample buffer, on the raw path"
+    let name = "Counter sets of Metal's classes and the length form of a sample buffer, on the driver"
 
     typealias LengthForm =
         @convention(c) (AnyObject, Selector, UInt, NSString?, UnsafeMutablePointer<Unmanaged<NSError>?>?) ->
@@ -84,7 +84,7 @@ struct NativeCounterObjectsTest: NativeObjectTest {
             compute.endEncoding()
         }
         try gpu.finish([sampling])
-        work.paths.append(RawFacade.path(of: sampling))
+        work.paths.append(GM20BFacade.path(of: sampling))
         let samples = NativeCountersTest.words(try counters.resolveCounterRange(0..<8))
         if samples.count != 8 || samples[0] == 0 || samples[0] > samples[1]
             || samples[2...].contains(where: { $0 != 0 })

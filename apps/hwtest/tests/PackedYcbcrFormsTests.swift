@@ -8,10 +8,10 @@ import Metal
 /// bytesPerRow 16 lands its codes at 8 + (3 + y) * 8 + 2 + x and nothing else (ycbcr_cpu_write_off 0); a read of the
 /// region gives the luma bytes there, the rest of the buffer as it was (ycbcr_cpu_read_off 0); a 508 over a '420v'
 /// moves nothing either way (ycbcr_cpu_packed_moved 0); a write at bytesPerRow 2, under the 4-byte row, moves nothing
-/// (ycbcr_cpu_short_rows_moved 0) and the raw path logs one raw:texture.cpu.unreached line for it
+/// (ycbcr_cpu_short_rows_moved 0) and the driver logs one gm20b:texture.cpu.unreached line for it
 /// (ycbcr_cpu_unreached_lines 1).
 struct YcbcrCpuCopiesTest: HWTest {
-    let id = "gpu.raw.ycbcr_cpu_copies"
+    let id = "gpu.gm20b.ycbcr_cpu_copies"
     let name = "CPU copies of YCbCr textures move the luma plane alone at its own rows, as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -32,7 +32,7 @@ struct YcbcrCpuCopiesTest: HWTest {
             metrics.set("ycbcr_cpu_unreached_lines", lines?.count ?? -1)
             return counts.map { ("\($0.0)=\($0.1)", $0.1 == 0) } + [
                 ("a 508 over a '420v'", r.packedMade),
-                ("one raw:texture.cpu.unreached line (\(lines?.count ?? -1))", lines?.count == 1),
+                ("one gm20b:texture.cpu.unreached line (\(lines?.count ?? -1))", lines?.count == 1),
             ]
         }
     }
@@ -44,7 +44,7 @@ struct YcbcrCpuCopiesTest: HWTest {
 /// (i, 0) (this scene, three runs, 0 texels off; the ytread probe agrees at 64). ycbcr_tbuf_made (of 10),
 /// ycbcr_tbuf_row_off_<format>_<width> (texels further than half a code from the 2D texture's).
 struct YcbcrTexelBuffersTest: HWTest {
-    let id = "gpu.raw.ycbcr_texel_buffers"
+    let id = "gpu.gm20b.ycbcr_texel_buffers"
     let name = "YCbCr and packed 10-bit texture buffers up to 16384 texels read as their 2D textures' rows, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -83,7 +83,7 @@ struct YcbcrTexelBuffersTest: HWTest {
 /// texture's (i % 16384, i / 16384): past texel 16383 the plane's second row (ycbcr_tbuf_wide_off_<format> 0); it makes
 /// no texture buffer of 500 of render-target usage (ycbcr_tbuf_render_made 0).
 struct YcbcrTexelBufferWideTest: HWTest {
-    let id = "gpu.raw.ycbcr_texel_buffer_wide"
+    let id = "gpu.gm20b.ycbcr_texel_buffer_wide"
     let name = "YCbCr and packed texture buffers past 16384 texels read the next row on, as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -126,7 +126,7 @@ struct YcbcrTexelBufferWideTest: HWTest {
 /// Max reads exactly in some runs and displaced in others, and level 1's red code under a linear-minifying sampler
 /// (_minmag_sample_code).
 struct PackedLevelsTest: HWTest {
-    let id = "gpu.raw.packed_levels"
+    let id = "gpu.gm20b.packed_levels"
     let name = "Packed 10-bit plane textures of three levels show their levels and take no CPU or mipmap writes, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -162,13 +162,13 @@ struct PackedLevelsTest: HWTest {
     }
 }
 
-/// Views and shared samplers of the packed textures of gpu.raw.packed_levels, against an M4 Max under macOS 27.2.1
+/// Views and shared samplers of the packed textures of gpu.gm20b.packed_levels, against an M4 Max under macOS 27.2.1
 /// (gpu/PackedLevelsOpen.swift, this scene, three runs): views of levels 1-2, 2 and 0 are made at those levels'
 /// sizes and a kernel sees them so (packed_open_views_made_<format> 3, _views_wrong 0); a kernel's one constexpr
 /// sampler over such a texture and an RGBA8 8x8 completes and samples the RGBA8 texels exactly
 /// (packed_open_shared_off_<format> 0).
 struct PackedLevelsOpenTest: HWTest {
-    let id = "gpu.raw.packed_levels_open"
+    let id = "gpu.gm20b.packed_levels_open"
     let name = "Views of packed 10-bit textures of three levels and samplers shared with them work as Metal's, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -189,7 +189,7 @@ struct PackedLevelsOpenTest: HWTest {
                 do {
                     let s = try await PackedLevelsOpen.sharedSampler(gpu, c)
                     metrics.set("packed_open_shared_off_\(c.format)", s.off)
-                    checks.append(("\(c.format): shared sampler \(s.path)", s.path == "raw"))
+                    checks.append(("\(c.format): shared sampler \(s.path)", s.path == "gm20b"))
                     checks.append(("\(c.format): \(s.off) off", s.off == 0))
                 } catch {
                     checks.append(("\(c.format) shared sampler: \(GPU.describe(error))", false))

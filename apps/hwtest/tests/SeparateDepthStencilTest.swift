@@ -7,10 +7,10 @@ import Metal
 /// such a pass went to m2v). The first pass clears both, writes depth 0.5 and stencil 0x5A over the left half and stores
 /// them; the second loads both and draws red at depth 0.25 where the stencil is 0x5A, then green at depth 0.75 where it is,
 /// which the depth test keeps out. The colour is red on the left and black on the right, and each texture read back holds
-/// what the first pass stored. The two passes' command buffers run on the raw path.
+/// what the first pass stored. The two passes' command buffers run on the driver.
 struct SeparateDepthStencilTest: HWTest {
-    let id = "gpu.raw.separate_depth_stencil"
-    let name = "Depth32Float and Stencil8 textures as one pass's attachments, on the raw path"
+    let id = "gpu.gm20b.separate_depth_stencil"
+    let name = "Depth32Float and Stencil8 textures as one pass's attachments, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -18,8 +18,8 @@ struct SeparateDepthStencilTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.size
         let colour = try gpu.texture(.rgba8Unorm, n, n)
         let depth = try gpu.texture(.depth32Float, n, n, usage: [.renderTarget])
@@ -90,7 +90,7 @@ struct SeparateDepthStencilTest: HWTest {
                 e.endEncoding()
             }.path)
         metrics.set("paths", paths.joined(separator: ","))
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         let pixels = try await gpu.read(colour, bytesPerPixel: 4)
         var colourWrong = 0
         for y in 0..<n {

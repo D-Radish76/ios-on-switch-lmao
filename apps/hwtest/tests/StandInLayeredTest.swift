@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// A layered pass into a 16x16 2D array of three slices of A1BGR5Unorm (41), RGB9E5Float (93) or BGRA10_XR_sRGB (553),
-/// formats the raw path renders through a stand-in: every slice uploaded a pattern of words a load keeps (RGB9E5 words
+/// formats the driver renders through a stand-in: every slice uploaded a pattern of words a load keeps (RGB9E5 words
 /// as a draw stores them, 553's alpha codes within [0, 1]), a pass at slice 1, renderTargetArrayLength 2, Load, an
 /// instanced draw (layered_vertex) of colour k over pixels [4, 12) of layer k, Store. Slice 0 keeps its pattern, slices
 /// 1 and 2 hold the pattern with colour 0 or 1 inside the quad, stored as a one-sample draw stores it, tolerance 0. The
@@ -12,7 +12,7 @@ import Metal
 /// f<format>_off texels off in slices 0/1/2, f<format>_max the largest difference in codes (93: mantissa steps); every
 /// command buffer raw, failed_cbs=0.
 struct StandInLayeredTest: HWTest {
-    let id = "gpu.raw.standin_layered"
+    let id = "gpu.gm20b.standin_layered"
     let name = "A layered pass into arrays of stand-in formats loads, draws and stores each layer, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -39,9 +39,9 @@ struct StandInLayeredTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for c in Self.cases {
@@ -58,9 +58,9 @@ struct StandInLayeredTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

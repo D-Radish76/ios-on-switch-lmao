@@ -6,17 +6,17 @@ import Metal
 /// A multisampled Depth32Float texture and Stencil8 texture as one pass's attachments, resolved (pass.ds took a pair with a
 /// resolve to m2v): cleared to 0.25 and 0x33, a quad at depth 0.5 replacing stencil with 0x5A over the left half, then the
 /// depth resolved (sample 0) into a one-sample Depth32Float and, where the device resolves stencil (Apple5), the stencil into a
-/// one-sample Stencil8. Read back: 0.5 and 0x5A on the left, 0.25 and 0x33 on the right; the pass on the raw path.
+/// one-sample Stencil8. Read back: 0.5 and 0x5A on the left, 0.25 and 0x33 on the right; the pass on the driver.
 struct SeparateZetaResolveTest: HWTest {
-    let id = "gpu.raw.separate_zeta_resolve"
-    let name = "A multisampled Depth32Float and Stencil8 pair resolved, on the raw path"
+    let id = "gpu.gm20b.separate_zeta_resolve"
+    let name = "A multisampled Depth32Float and Stencil8 pair resolved, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = 16, samples = 4
         let stencilResolves = gpu.device.supportsFamily(.apple5)
         let colour = try gpu.texture(.rgba8Unorm, n, n, samples: samples)
@@ -95,7 +95,7 @@ struct SeparateZetaResolveTest: HWTest {
         metrics.set("stencil_wrong", stencilResolves ? "\(stencilWrong)" : "no stencil resolve (Apple5)")
         metrics.set("left_right", String(format: "%.3f/%.3f %02x/%02x", z[2], z[n - 2], s[2], s[n - 2]))
         var failures: [String] = []
-        if path != "raw" { failures.append("the pass went off the raw path (\(path))") }
+        if path != "gm20b" { failures.append("the pass went off the driver (\(path))") }
         if depthWrong != 0 { failures.append("\(depthWrong) resolved depths wrong") }
         if stencilWrong != 0 { failures.append("\(stencilWrong) resolved stencils wrong") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)

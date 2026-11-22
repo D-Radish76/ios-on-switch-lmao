@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The depths Metal's draws store into Depth32Float on the raw path, against an M4 Max's (macOS 27.2.1): in clip mode
+/// The depths Metal's draws store into Depth32Float on the driver, against an M4 Max's (macOS 27.2.1): in clip mode
 /// every depth within 0 to 1, whether a finite bias, a viewport depth range past 1 or a fragment function's own depth
 /// takes it out; in clamp mode from the viewport's lower depth but at least 0 to its higher, a fragment function's own
 /// depth to 1 at most. A flat triangle over the target, its depth read back at the middle.
@@ -16,8 +16,8 @@ import Metal
 /// the clamp's top 1 plus the most a constant bias adds where that is known); the case fails where GM20B is not the
 /// model's, so a boot measures the model. 9 of the 22 meet Metal's: unbiased and non-negative constant biases above 1.
 struct DepthClipBoundsTest: HWTest {
-    let id = "gpu.raw.depth_clip_bounds"
-    let name = "Depth32Float depths stay within Metal's bounds in clip and clamp mode on the raw path"
+    let id = "gpu.gm20b.depth_clip_bounds"
+    let name = "Depth32Float depths stay within Metal's bounds in clip and clamp mode on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -71,7 +71,7 @@ struct DepthClipBoundsTest: HWTest {
         ] {
             for (bias, value) in biases {
                 let metalValue = bias == "-" ? low : metal[bias]!
-                // the range's top meets 1 plus the most a known bias adds (raw_depth_bounds.h topDepthBias)
+                // the range's top meets 1 plus the most a known bias adds (depth_bounds.h topDepthBias)
                 let known = bias == "0" || bias == "u" || bias == "3m"
                 let biased = bias == "-" ? (name == "kC1" ? 0.5579071 : 0.3079071) : known ? metalValue : model
                 rows.append(
@@ -97,8 +97,8 @@ struct DepthClipBoundsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.n
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         func state(_ fragment: String) throws -> MTLRenderPipelineState {
@@ -202,7 +202,7 @@ struct DepthClipBoundsTest: HWTest {
         metrics.set("per_vertex_off_model", offModel.isEmpty ? "-" : offModel.joined(separator: ","))
         metrics.set("per_vertex_off_metal", "\(offMetal) of \(Self.rows.count)")
         metrics.set("paths", Set(paths).sorted().joined(separator: ","))
-        if paths.contains(where: { $0 != "raw" }) { failures.append("paths") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("paths") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: ","), metrics)
     }
 }

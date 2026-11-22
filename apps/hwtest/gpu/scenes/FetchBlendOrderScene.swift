@@ -13,10 +13,10 @@ import Metal
 /// RenderBox state fetches whose storage form needs a packed view.
 ///
 /// <shape>=ok|bad each; a bad shape adds <shape>_wrong (pixels, its three formats together) and <shape>_first
-/// (format:x,y:got:r/g/b/a:want:r/g/b/a in steps). On the raw facade fetch_<shape> is how the fetch counters say it
+/// (format:x,y:got:r/g/b/a:want:r/g/b/a in steps). On the facade fetch_<shape> is how the fetch counters say it
 /// kept order, and a pass not drawn raw fails.
 struct FetchBlendOrderScene: GPUScene {
-    let id = "gpu.raw.fetch_blend_order"
+    let id = "gpu.gm20b.fetch_blend_order"
     let name = "Self-blending framebuffer fetch: overlapping draws of every shape, in primitive order"
 
     static let size = FetchBlendMesh.size
@@ -104,10 +104,10 @@ struct FetchBlendOrderScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let kind = RawFacade.kind(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
         for shape in Shape.allCases {
             let plan = Self.plan(shape)
-            let before = RawFacade.counters(of: gpu.device)
+            let before = GM20BFacade.counters(of: gpu.device)
             var tally = Tally()
             for format in Self.formats(shape) {
                 let want = FetchBlendState.replay(plan.layers, size: Self.size, format: format)
@@ -118,8 +118,8 @@ struct FetchBlendOrderScene: GPUScene {
                     tally.problems.append("\(Self.short(format)) \(GPU.describe(error))")
                 }
             }
-            let routes = RawFacade.fetchRoutes(before: before, after: RawFacade.counters(of: gpu.device))
-            report(shape, tally, routes: kind == "raw" ? routes : nil, &result)
+            let routes = GM20BFacade.fetchRoutes(before: before, after: GM20BFacade.counters(of: gpu.device))
+            report(shape, tally, routes: kind == "gm20b" ? routes : nil, &result)
         }
         return result
     }
@@ -135,7 +135,7 @@ struct FetchBlendOrderScene: GPUScene {
             tally.problems.append("\(Self.short(format)) \(timing.path)")
             return
         }
-        if RawFacade.kind(of: gpu.device) == "raw" && timing.path != "raw" {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" && timing.path != "gm20b" {
             tally.problems.append("\(Self.short(format)) drawn on \(timing.path)")
         }
         let got = try await gpu.read(resources.target, bytesPerPixel: format.bytesPerTexel)

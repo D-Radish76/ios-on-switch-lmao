@@ -5,15 +5,15 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// Passes that load a two-plane YCbCr target (it went to m2v: raw:pass.ycbcr). The raw path loads each read's tile
-/// value into a stand-in, draws the pass there, and stores only the 32x32 tiles a draw reaches (raw_ycbcr_load.h). Each
+/// Passes that load a two-plane YCbCr target (it went to m2v: gm20b:pass.ycbcr). The driver loads each read's tile
+/// value into a stand-in, draws the pass there, and stores only the 32x32 tiles a draw reaches (ycbcr_load.h). Each
 /// case's planes start as random codes and take one draw into the scissor (13, 9, 30, 20) of a 64x48 surface: their
-/// bytes hash to what an M4 Max's Metal stored (raw/test/ycbcrloadoracle.mm golden; wrong= the cases that do not), no
+/// bytes hash to what an M4 Max's Metal stored (harness/ycbcrloadoracle.mm golden; wrong= the cases that do not), no
 /// byte of the untouched tiles changes (untouched_changed), a loaded pass without a draw changes nothing
 /// (undrawn_changed), and every command buffer is raw. 500_p3 is the '420f' surface under the P3_D65 matrix, its hash
 /// this scene's own on an M4 Max (the oracle's golden cases hold no P3 one).
 struct YcbcrLoadTest: HWTest {
-    let id = "gpu.raw.ycbcr_load"
+    let id = "gpu.gm20b.ycbcr_load"
     let name = "Loaded passes into two-plane YCbCr targets store the tiles their draws reach, as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -76,8 +76,8 @@ struct YcbcrLoadTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let probe = try GPU.make()
-        guard RawFacade.kind(of: probe.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: probe.device)))")
+        guard GM20BFacade.kind(of: probe.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: probe.device)))")
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -94,7 +94,7 @@ struct YcbcrLoadTest: HWTest {
                 note = "failed: \(GPU.describe(error))"
             }
             for (path, count) in gpu.paths.paths { paths[path, default: 0] += count }
-            let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+            let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
             if !result.hashOk { wrong.append(c.key) }
             untouched += result.untouched
             undrawn += result.undrawn
@@ -102,7 +102,7 @@ struct YcbcrLoadTest: HWTest {
             if let note { check += " (\(note))" }
             checks.append((check, note == nil && result.hashOk && result.untouched + result.undrawn == 0 && raw))
         }
-        metrics.set("route", paths.keys.sorted() == ["raw"] ? "raw" : paths.keys.sorted().joined(separator: "+"))
+        metrics.set("route", paths.keys.sorted() == ["gm20b"] ? "gm20b" : paths.keys.sorted().joined(separator: "+"))
         metrics.set("wrong", wrong.isEmpty ? "-" : wrong.joined(separator: ","))
         metrics.set("untouched_changed", untouched)
         metrics.set("undrawn_changed", undrawn)
@@ -175,7 +175,7 @@ struct YcbcrLoadTest: HWTest {
         return z ^ (z >> 31)
     }
 
-    /// raw_ycbcr_load_cases.h randomPlanes: the planes' row bytes from one generator, plane 0 first.
+    /// ycbcr_load_cases.h randomPlanes: the planes' row bytes from one generator, plane 0 first.
     static func fill(_ buffer: CVPixelBuffer, _ rows: [(bytes: Int, count: Int)], seed: UInt64) -> [[UInt8]] {
         var state = seed
         let planes = rows.map { r in (0..<r.bytes * r.count).map { _ in UInt8(truncatingIfNeeded: splitmix(&state)) } }
@@ -229,7 +229,7 @@ struct YcbcrLoadTest: HWTest {
         return changed
     }
 
-    /// raw_ycbcr_load_cases.h drawnValues: floats beside the grids' midpoints and half midpoints, and across [-0.05, 1.05].
+    /// ycbcr_load_cases.h drawnValues: floats beside the grids' midpoints and half midpoints, and across [-0.05, 1.05].
     static func values(_ count: Int, seed: UInt64) -> [SIMD4<Float>] {
         var state = seed
         let grids: [UInt64] = [255, 1023, 2048, 8192]

@@ -3,8 +3,8 @@ import HWTestCore
 
 /// The Core Animation states that cost the most GPU time per frame (r91's static ranking: src-over layer images, an
 /// opaque copy, the backdrop blur chain, Liquid Glass), each as its own QuartzCore makes it: iOS 17's lines verbatim from
-/// the raw pack's corpus with their libraries left out, iOS 27's the same names decoded with 24B119's tables
-/// (raw/pack/ca/caspec.py) plus its glass states. A fixed_frag_lph_cph line of one version names other constant values
+/// the pack's corpus with their libraries left out, iOS 27's the same names decoded with 24B119's tables
+/// (pack/ca/caspec.py) plus its glass states. A fixed_frag_lph_cph line of one version names other constant values
 /// in the other's library: 17's `Isrg` line compiles to a constant program on 27.
 enum CAHotCorpus {
     static let lines17 = """

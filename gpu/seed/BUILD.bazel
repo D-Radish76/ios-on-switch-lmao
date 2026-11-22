@@ -1,7 +1,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel/lint:defs.bzl", "lint_files")
-load(":defs.bzl", "metal_seed", "seed_raw_pack", "seed_tree", "shader_crawl")
+load(":defs.bzl", "metal_seed", "seed_pipeline_pack", "seed_tree", "shader_crawl")
 load(":tools.bzl", "seed_tools", "tools_archive")
 
 package(default_visibility = ["//visibility:public"])
@@ -50,10 +50,10 @@ seed_tools(
     name = "local_tools",
     compile = "//third_party/mesa/src/nouveau/switch_compile:host",
     context_header = "//kits/SwitchGM20BEmit:context",
+    gm20b_generator = GM20B_METAL + ":pack/make_pack.py",
+    gm20b_srcs = [GM20B_METAL + ":stack_key_sources"],
     metal_abi = GM20B_METAL + "/abi:MetalABI.h",
-    raw_generator = GM20B_METAL + ":raw/pack/rawpack.py",
-    raw_srcs = [GM20B_METAL + ":raw_stack_sources"],
-    stack = "//gpu:raw_stack",
+    stack = "//gpu:stack_key",
     translate = "//gpu:translate_host",
 )
 
@@ -90,9 +90,9 @@ metal_seed(
     tools = ":tools",
 )
 
-seed_raw_pack(
-    name = "raw_pack",
-    srcs = [GM20B_METAL + ":raw_pack_generator"],
+seed_pipeline_pack(
+    name = "pack",
+    srcs = [GM20B_METAL + ":pack_generator"],
     app_states = [GM20B_METAL + ":app_state_lists"],
     archives = [GM20B_METAL + ":archive_inventories"],
     ca_names = [GM20B_METAL + ":ca_name_lists"],
@@ -100,14 +100,14 @@ seed_raw_pack(
     corpus = GM20B_METAL + ":precompile/corpus.log",
     crawl = ":crawl",
     device_libraries = "@gpu_device_data//:libraries",
-    generator = GM20B_METAL + ":raw/pack/rawpack.py",
+    generator = GM20B_METAL + ":pack/make_pack.py",
     tags = ["manual"],
     tools = ":default_tools",
 )
 
 seed_tree(
     name = "tree",
-    raw = ":raw_pack",
+    raw = ":pack",
     seed = ":seed",
     tags = ["manual"],
 )
@@ -119,7 +119,7 @@ filegroup(
     tags = ["manual"],
 )
 
-# The raw pack's refused states for the configured IPSW kind, against a pack report built elsewhere (the pack is too
+# The pack's refused states for the configured IPSW kind, against a pack report built elsewhere (the pack is too
 # large to build here): bazel test --config=ios27 //gpu/seed:pack_refusals_test --test_arg=<pack>/report.txt.
 # Re-pin from a report: grep -E '^  (refused \(|skipped kernel )' report.txt | sed 's/^  //' | sort
 alias(

@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// generateMipmapsForTexture: of mipmapped 3D textures on the raw path: every level drawn a plane a pass by the pack's
+/// generateMipmapsForTexture: of mipmapped 3D textures on the driver: every level drawn a plane a pass by the pack's
 /// volume mip state (pack/mip.metal mip_3d_*), each texel Metal's trilinear step at its centre with weights in 1/256 steps
 /// (an M4 Max's taps, probe zweight), against the same step computed here from the level above as read back. RGBA8Unorm
 /// within one code, RGBA16Float within three units in the last place, R32Float within four, at an even and an odd size;
-/// every command buffer on the raw path.
+/// every command buffer on the driver.
 struct MipmapVolumeTest: HWTest {
-    let id = "gpu.raw.mipmap_3d"
+    let id = "gpu.gm20b.mipmap_3d"
     let name = "Mipmaps of 3D textures and texture views"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -56,8 +56,8 @@ struct MipmapVolumeTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var failures: [String] = []
         for arm in Self.arms {
@@ -133,7 +133,7 @@ struct MipmapVolumeTest: HWTest {
                 metrics.set("\(label)_path", path)
                 metrics.set("\(label)_wrong", wrong)
                 metrics.set("\(label)_max", largest)
-                if path != "raw" { failures.append("\(label) went off the raw path (\(path))") }
+                if path != "gm20b" { failures.append("\(label) went off the driver (\(path))") }
                 if wrong > 0 {
                     failures.append("\(label): \(wrong) channels past \(arm.tolerance) (largest \(largest))")
                 }
@@ -189,7 +189,7 @@ struct MipmapVolumeTest: HWTest {
         }
         metrics.set("volume_view_path", viewPath)
         metrics.set("volume_view_wrong", viewWrong)
-        if viewPath != "raw" { failures.append("volume view went off the raw path (\(viewPath))") }
+        if viewPath != "gm20b" { failures.append("volume view went off the driver (\(viewPath))") }
         if viewWrong > 0 { failures.append("volume view: \(viewWrong) changed or incorrect bytes") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)
     }

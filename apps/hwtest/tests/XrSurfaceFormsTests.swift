@@ -9,7 +9,7 @@ import Metal
 /// -0.25, 0.75) into the 550 over plane 1 writes plane 1's words 0x27f80100, plane 2's first 32 bytes a row 0xbf and
 /// nothing else (xr_next_plane_store_bytes_off 0).
 struct XrNextPlaneTest: HWTest {
-    let id = "gpu.raw.xr_next_plane"
+    let id = "gpu.gm20b.xr_next_plane"
     let name = "An XR texture over plane p of three takes plane p + 1 as its alpha, reading and storing, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -34,7 +34,7 @@ struct XrNextPlaneTest: HWTest {
 /// bytes [0, 512) and [640, 896), and over the 'BGRA' the first 32 bytes of each row alone, each 115
 /// (ycbcr_store_rows_bytes_outside 0).
 struct YcbcrAnySurfaceTest: HWTest {
-    let id = "gpu.raw.ycbcr_any_surface"
+    let id = "gpu.gm20b.ycbcr_any_surface"
     let name = "YCbCr textures over 10-bit, BGRA, three-plane and rows-40 surfaces read and store as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 45 }
@@ -60,7 +60,7 @@ struct YcbcrAnySurfaceTest: HWTest {
 /// (rows rounded down to 16 bytes) and the alpha bytes at rows of 32 (xr_off16_gpu_off, xr_off16_blit_off 0), while
 /// getBytes reads and replaceRegion writes the rows of 136 (xr_off16_cpu_off 0); each count is both surfaces'.
 struct XrPlanesOff16Test: HWTest {
-    let id = "gpu.raw.xr_planes_off16"
+    let id = "gpu.gm20b.xr_planes_off16"
     let name = "XR planes whose rows are off 16 bytes: the GPU's rows rounded down, the CPU's as stated, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -83,7 +83,7 @@ struct XrPlanesOff16Test: HWTest {
 /// buffer completes (it failed Internal before), every word is 0x27f80100 (xr_alpha_sink_words_off 0), nothing past the
 /// rows changes, and read back the texels are (0.5, 0.2510, -0.2510, 0) (xr_alpha_sink_read_alpha 0).
 struct XrAlphaSinkTest: HWTest {
-    let id = "gpu.raw.xr_alpha_sink"
+    let id = "gpu.gm20b.xr_alpha_sink"
     let name = "A kernel store into an XR texture over a plane with no alpha plane keeps the colour, alpha 0, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

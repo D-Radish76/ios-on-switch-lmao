@@ -49,11 +49,11 @@ struct Float32FilterTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
         var metrics = Metrics()
         metrics.set("supports_32bit_filtering", gpu.device.supports32BitFloatFiltering)
         var wrong: [String] = []
-        if kind == "raw" && !gpu.device.supports32BitFloatFiltering { wrong.append("answer") }
+        if kind == "gm20b" && !gpu.device.supports32BitFloatFiltering { wrong.append("answer") }
         let kernel = try gpu.compute("float32_filter_sample")
         let points = try gpu.buffer(Self.points)
         var paths: [String] = []
@@ -89,8 +89,8 @@ struct Float32FilterTest: HWTest {
             metrics.set("\(name)_max_diff", worst, digits: 3)
             if worst > 1 { wrong.append(name) }
         }
-        metrics.set("paths", paths.allSatisfy { $0 == "raw" } ? "raw" : paths.joined(separator: ","))
-        if kind == "raw" && !paths.allSatisfy({ $0 == "raw" }) { wrong.append("paths") }
+        metrics.set("paths", paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : paths.joined(separator: ","))
+        if kind == "gm20b" && !paths.allSatisfy({ $0 == "gm20b" }) { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

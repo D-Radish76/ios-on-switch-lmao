@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Rule fetch.blend's further formats (drivers/TegraGM20BMetal/raw/runtime/raw_fetch_rungs.h fixedBlendFormat): 8-bit
-/// sources (gpu.raw.fixed_blend_rule's shader) blended through the ROP 1, 2 and 8 layers deep into RGBA16Float,
+/// Rule fetch.blend's further formats (drivers/TegraGM20BMetal/fetch_rungs.h fixedBlendFormat): 8-bit
+/// sources (gpu.gm20b.fixed_blend_rule's shader) blended through the ROP 1, 2 and 8 layers deep into RGBA16Float,
 /// BGRA8Unorm_sRGB and RGBA8Unorm_sRGB, against Metal's blend computed here (each layer stored as the format stores it,
 /// sRGB channels blended in linear light).
 /// RGBA16Float is judged by value: the ROP takes the source in half precision, so where the source alpha is near 1 its
@@ -16,7 +16,7 @@ import Metal
 /// reported (GM20B 3 codes, Apple's GPU 2). <arm>_<n>_at= is the worst texel: x,y,channel:got/want (half bits in hex,
 /// codes in decimal).
 struct FixedBlendFormatsTest: HWTest {
-    let id = "gpu.raw.fixed_blend_formats"
+    let id = "gpu.gm20b.fixed_blend_formats"
     let name = "Fixed-function blend into RGBA16F and sRGB targets against Metal's blend"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -33,8 +33,8 @@ struct FixedBlendFormatsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
         for arm in Self.arms {
@@ -66,7 +66,7 @@ struct FixedBlendFormatsTest: HWTest {
                 }
             }
             metrics.set(arm.label + "_path", paths.sorted().joined(separator: ","))
-            if paths != ["raw"] { wrong.append(arm.label + "_path") }
+            if paths != ["gm20b"] { wrong.append(arm.label + "_path") }
         }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

@@ -3,8 +3,8 @@ import HWTestCore
 import Metal
 
 /// Load-action clears of every common format into private (block-linear where the shape tiles) targets, small and
-/// large, read back by the blit engine. A pass with nothing but a clear needs no pipeline state, so on the raw facade
-/// it is the raw path's own: its fast clears and the kernel's zero-bandwidth-clear table (ZBC, method 19), whose
+/// large, read back by the blit engine. A pass with nothing but a clear needs no pipeline state, so on the facade
+/// it is the driver's own: its fast clears and the kernel's zero-bandwidth-clear table (ZBC, method 19), whose
 /// few entries the many distinct colours here overflow, so both kinds of clear run.
 struct ClearFormatsScene: GPUScene {
     let id = "gpu.clear.formats"
@@ -95,7 +95,7 @@ struct ClearFormatsScene: GPUScene {
 }
 
 /// A large target cleared (raw on the facade, compressible and ZBC-cleared where the kernel compresses), drawn over
-/// in part by a pipeline of the app's own (m2v on the facade, through its alias of the raw path's memory), cleared
+/// in part by a pipeline of the app's own (m2v on the facade, through its alias of the driver's memory), cleared
 /// again and loaded and drawn again: each step read back whole. A draw that sees the cleared memory in another
 /// compression state or layout than the clear left it shows up as blocks or streaks here.
 struct ClearThenDrawScene: GPUScene {

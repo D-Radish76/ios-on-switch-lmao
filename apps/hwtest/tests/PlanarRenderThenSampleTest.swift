@@ -15,21 +15,21 @@ import Metal
 /// <fmt>_same_cb_off= channels that differ summed over the arms, <fmt>_<arm>_off= where not 0, <fmt>_unseen= arms whose
 /// sample after a write equals the planes before it, <fmt>_spot_off=, paths=, failed_cbs=.
 struct PlanarRenderThenSampleTest: HWTest {
-    let id = "gpu.raw.planar_render_then_sample"
+    let id = "gpu.gm20b.planar_render_then_sample"
     let name = "A YCbCr texture written then sampled in one command buffer samples as the same work split, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         return await Self.outcome(gpu)
     }
 
     static func outcome(_ gpu: GPU) async -> Outcome {
         typealias Cases = PlanarRenderThenSampleCases
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var kept: Set<String> = ["failed_cbs"]
@@ -73,9 +73,9 @@ struct PlanarRenderThenSampleTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: kept)
         return .judged(checks, metrics, proof: gpu.proof)

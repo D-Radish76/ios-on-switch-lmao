@@ -2,8 +2,8 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// Blits Metal takes that the raw path does not yet run as Metal does (gpu.raw.ms_buffer_copy,
-/// gpu.raw.integer_mipmaps): a 4-sample texture copied to a buffer at the full row of its samples, and
+/// Blits Metal takes that the driver does not yet run as Metal does (gpu.gm20b.ms_buffer_copy,
+/// gpu.gm20b.integer_mipmaps): a 4-sample texture copied to a buffer at the full row of its samples, and
 /// generateMipmapsForTexture: of an integer format.
 public enum BlitsOpen {
     public static let msSide = 64, msSamples = 4

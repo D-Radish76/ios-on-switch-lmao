@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// PVRTC decoded on the GPU as it is uploaded (drivers/TegraGM20BMetal/raw/runtime/raw_decoded.h): each of the driver's
+/// PVRTC decoded on the GPU as it is uploaded (drivers/TegraGM20BMetal/decoded.h): each of the driver's
 /// PVRTC vectors (DecodeVectors.pvrtc: whole levels of 160 to 167, sides 1 to 16, and every texel as an M4 Max reads
 /// it) in a Shared ShaderRead|PixelFormatView texture by replaceRegion of the whole level (Morton order, bytesPerRow
 /// 0), every texel read by a kernel. A linear format's codes, and an sRGB one's read through a view as its linear twin
@@ -17,8 +17,8 @@ struct DecodePvrtcTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var off = 0, texels = 0, srgbMax: Float = 0
         var unmade: [String] = []
         for v in DecodeVectors.pvrtc {
@@ -67,7 +67,7 @@ struct DecodePvrtcTest: HWTest {
 /// The linear forms are held as RGBA16Unorm (the owner's choice): their codes must be the driver's rule of Apple's
 /// 12-bit k, the nearest 16-bit code of k / 4095 (`astc_narrow_linear_off` 0), which no 8-bit target would hold as
 /// another code than Apple's (`astc_narrow_linear_8bit_off` 0; the largest distance from Apple's value in 16-bit codes
-/// reported, at most 0.4999 on an M4 Max: raw/test/decodeoracle.mm). The sRGB forms read Apple's sRGB table of the
+/// reported, at most 0.4999 on an M4 Max: harness/decodeoracle.mm). The sRGB forms read Apple's sRGB table of the
 /// codes (`astc_narrow_srgb_codes_off` 0, by the nearest table code; the largest distance reported). Red: a block
 /// decoded wrongly (endpoint mode, partition, dual plane, void extent, the error colour), or a blit offset or row
 /// misread.
@@ -78,8 +78,8 @@ struct DecodeAstcNarrowTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var linear = DecodeJudge.Linear()
         var srgb = DecodeJudge.Tally()
         var linearTexels = 0, srgbTexels = 0
@@ -143,8 +143,8 @@ struct DecodeAstcHdrTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let identityMakesHdr = context.ios >= 27
         var made = 0, texels = 0, levelOff = 0, sliceOff = 0
         var halves = DecodeJudge.Halves()
@@ -210,8 +210,8 @@ struct DecodeNativeAstcPrecisionTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var made = true
         let linear = DecodeVectors.set(204), srgb = DecodeVectors.set(186)

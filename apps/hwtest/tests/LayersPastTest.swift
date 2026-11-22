@@ -8,9 +8,9 @@ import Metal
 /// (bitsprobe.mm layersMixed, this scene measured): each layer's halves, left then right, k the clear, d the layer's own
 /// colour, w the right half's depth 0.125: layers_past_c0_l0..l3 kd (nothing passes 0.5 Less against the clear 0.25,
 /// past the depth's layers too, and everything passes 0.125), layers_past_c1_l0..l1 kd, layers_past_depth_l0..l1 kw.
-/// The raw path renders the shorter attachments through backings of the pass's layers (raw_pass_begin.cpp shortOf).
+/// The driver renders the shorter attachments through backings of the pass's layers (pass_begin.cpp shortOf).
 struct LayersPastTest: HWTest {
-    let id = "gpu.raw.layers_past"
+    let id = "gpu.gm20b.layers_past"
     let name =
         "A layered pass past some attachments' layers keeps each one's layers and tests against the clear, on raw"
     let subsystem = Subsystem.metal
@@ -18,13 +18,13 @@ struct LayersPastTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         return await Self.outcome(gpu)
     }
 
     static func outcome(_ gpu: GPU) async -> Outcome {
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -45,9 +45,9 @@ struct LayersPastTest: HWTest {
             checks.append(("the pass: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

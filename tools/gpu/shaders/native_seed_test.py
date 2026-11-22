@@ -18,7 +18,7 @@ class NativeSeedTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.stack = '0000000000001234'
         self.name = '0000000000000010'
-        artifact = f'raw-{self.stack}/{self.name}.rec'
+        artifact = f'rec-{self.stack}/{self.name}.rec'
         (self.root / artifact).parent.mkdir()
         (self.root / artifact).write_bytes(b'validated native record')
         self.tools = {'stack': self.stack}
@@ -71,7 +71,7 @@ class NativeSeedTests(unittest.TestCase):
 
     def test_only_matching_real_records_are_certified(self):
         original = copy.deepcopy(self.manifest['records'][0])
-        for artifact in ('../outside.rec', 'raw-other/key.rec', f'raw-{self.stack}/missing.rec'):
+        for artifact in ('../outside.rec', 'raw-other/key.rec', f'rec-{self.stack}/missing.rec'):
             self.manifest['records'][0]['artifact'] = artifact
             with self.assertRaises(ValueError):
                 self.report()
@@ -189,20 +189,20 @@ class NativeSeedTests(unittest.TestCase):
         record = self.manifest['records'][0]
         guessed = dict(record, derived=True)
         derived_only = dict(
-            record, name='0000000000000020', artifact=f'raw-{self.stack}/0000000000000020.rec', derived=True
+            record, name='0000000000000020', artifact=f'rec-{self.stack}/0000000000000020.rec', derived=True
         )
         self.manifest['records'] = [guessed, record, derived_only, {'derived': False, 'status': 'refused'}]
         records = native_seed.pack_lists(self.manifest)
         self.assertEqual(
             records, {self.name: (0, record['artifact']), '0000000000000020': (1, derived_only['artifact'])}
         )
-        self.manifest['records'].append(dict(record, artifact=f'raw-{self.stack}/elsewhere.rec'))
+        self.manifest['records'].append(dict(record, artifact=f'rec-{self.stack}/elsewhere.rec'))
         with self.assertRaises(ValueError):
             native_seed.pack_lists(self.manifest)
 
     def test_a_records_program_slots_are_packed_and_certified_with_it(self):
         record = self.manifest['records'][0]
-        slot = {'name': '00000000000000a0', 'path': f'raw-{self.stack}/00000000000000a0.slot'}
+        slot = {'name': '00000000000000a0', 'path': f'rec-{self.stack}/00000000000000a0.slot'}
         (self.root / slot['path']).write_bytes(bytes(native_seed.SLOT_PAGE_BYTES * 2))
         record['slots'] = [slot]
         self.assertIn(slot['path'], self.report()['artifacts'])
@@ -211,7 +211,7 @@ class NativeSeedTests(unittest.TestCase):
         (self.root / slot['path']).write_bytes(bytes(100))
         with self.assertRaises(ValueError):
             self.report()
-        record['slots'] = [dict(slot, path=f'raw-{self.stack}/00000000000000a1.slot')]
+        record['slots'] = [dict(slot, path=f'rec-{self.stack}/00000000000000a1.slot')]
         with self.assertRaises(ValueError):
             self.report()
 
@@ -229,12 +229,12 @@ class NativeSeedTests(unittest.TestCase):
                 {p.relative_to(out).as_posix(): p.read_bytes() for p in sorted(out.rglob('*')) if p.is_file()}
             )
         self.assertEqual(outputs[0], outputs[1])
-        self.assertEqual(sorted(outputs[0]), [f'raw-{self.stack}/{name}' for name in ('index', 'packs/000')])
-        records = outputs[0][f'raw-{self.stack}/index']
+        self.assertEqual(sorted(outputs[0]), [f'rec-{self.stack}/{name}' for name in ('index', 'packs/000')])
+        records = outputs[0][f'rec-{self.stack}/index']
         self.assertEqual(records[:8], b'SWSEEDPK')
         self.assertEqual(struct.unpack('<6I', records[8:32]), (1, 8, 1, 1, 1, 0))
         self.assertEqual(records[32:64], int(self.stack, 16).to_bytes(32, 'little'))
-        self.assertEqual(outputs[0][f'raw-{self.stack}/packs/000'][:23], b'validated native record')
+        self.assertEqual(outputs[0][f'rec-{self.stack}/packs/000'][:23], b'validated native record')
 
 
 if __name__ == '__main__':

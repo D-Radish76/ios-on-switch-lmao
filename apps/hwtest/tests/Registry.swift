@@ -10,7 +10,7 @@ public enum Registry {
         MetalDeviceTest(), MetalComputeTest(), MetalColorPassTest(), MetalDepthStencilTest(), MetalMSAATest(),
         MetalPixelFormatTest(), MetalHalfRoundingTest(), MetalCompressedTest(), MetalBlitTest(), MetalTextureViewTest(),
         MetalIOSurfaceTest(), SurfaceTiledDefaultTest(), SurfaceCrossProcessTest(), SurfaceSnapshotLayoutTest(),
-        PeerUserClientTest(), RawReadbackRoutesTest(),
+        PeerUserClientTest(), GM20BReadbackRoutesTest(),
         YcbcrTargetTest(),
         YcbcrPackedTargetTest(),
         PackedPlaneTargetTest(), PackedSpareBitsTest(), XRTwoPlaneTest(),
@@ -33,7 +33,7 @@ public enum Registry {
         ResolveTwodTest(), FillTextureTest(), StorageCompressedTest(), SharedLayoutTest(), PredicationTest(),
         MPSControlFlowTest(),
         EventReleaseTest(), CoherenceRewriteTest(),
-        FetchRungTest(id: "gpu.raw.fetch_rung2", rung: 2), BlendTwinTest(), ZetaColourTest(), PlanarConstexprTest(),
+        FetchRungTest(id: "gpu.gm20b.fetch_rung2", rung: 2), BlendTwinTest(), ZetaColourTest(), PlanarConstexprTest(),
         TessellationRootTableTest(),
         StripOverCompressedTest(), OpaqueBorderTest(), IndirectDispatchTest(), TileRefusedTest(),
         SeparateDepthStencilTest(), PixelMirrorSamplerTest(), DeferredZetaStoreTest(),
@@ -58,8 +58,8 @@ public enum Registry {
         DecodeFreshTest(), DecodeReadbackTest(), DecodeViewsTest(), DecodeViewLifetimeTest(), DecodeUploadCostTest(),
     ]
 
-    /// Routes the m2v removal moved onto the raw path, each against Apple's GPU
-    static let rawRoutes: [any HWTest] =
+    /// Routes the m2v removal moved onto the driver, each against Apple's GPU
+    static let gm20bRoutes: [any HWTest] =
         FetchShapeTest.all + [
             DepthFormatMismatchTest.attached, DepthFormatMismatchTest.unattached, HiddenDepthTest(),
             BorderTableFullTest(), XrSrgbTest.bgr, XrSrgbTest.bgra, ComputeInvalidTest(), FillShapesTest(),
@@ -165,7 +165,7 @@ public enum Registry {
         UISceneTests.all + [VideoAlphaTest()] + PacingTests.all + [ScalePacingTest()]
 
     public static let all: [any HWTest] =
-        [CPUAsyncTimersTest(), RegDumpQuietTest()] + gpuScenes + metal + rawRoutes + GPUPathTests.all
+        [CPUAsyncTimersTest(), RegDumpQuietTest()] + gpuScenes + metal + gm20bRoutes + GPUPathTests.all
         + NativeObjectTests.all
         + NativeCallTests.all + video + images + audio
         + display + compositor + sensorsAndInput + connectivityAndStorage
@@ -184,12 +184,12 @@ public enum Registry {
         + [LaunchHitchTest()]
 
     /// A 1.6 GB cube first, where the process has the memory; then fills the GPU pool to its compressed floor and gives
-    /// it back (gpu.raw.compression_giveback), then takes it down to that floor again, which refuses every other
+    /// it back (gpu.gm20b.compression_giveback), then takes it down to that floor again, which refuses every other
     /// process's compressed asks while each runs; then fills the GPU's ZBC colour table for the rest of the boot
-    /// (gpu.raw.zbc_full: no test after it counts ZBC hits); then programs a unit no other driver here drives (across
+    /// (gpu.gm20b.zbc_full: no test after it counts ZBC hits); then programs a unit no other driver here drives (across
     /// pass boundaries, then each program forced), which kills the channel when its setup is wrong: each app's last.
     public static let last: [any HWTest] = [
-        X1TextureExtentsTest(), CompressionGivebackTest(), CompressedFloorTest(), ZbcFullTest(), IteratedBlendPassesTest(), FetchRungTest(id: "gpu.raw.fetch_rung3", rung: 3),
+        X1TextureExtentsTest(), CompressionGivebackTest(), CompressedFloorTest(), ZbcFullTest(), IteratedBlendPassesTest(), FetchRungTest(id: "gpu.gm20b.fetch_rung3", rung: 3),
     ]
     /// Reset the copy engine under the present, then kill the app's raw channel: each app runs them after all its other
     /// tests, so a failed recovery spoils none of them.

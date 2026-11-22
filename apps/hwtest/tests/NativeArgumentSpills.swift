@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// metal.native.argument_encoder's draws of functions whose bind offsets m2v places past their stage's push window, in the
-/// stage's argument table the raw path fills (raw_spill_table.h): an argument buffer beside fourteen fragment buffers,
+/// stage's argument table the driver fills (spill_table.h): an argument buffer beside fourteen fragment buffers,
 /// beside thirteen vertex buffers, or both in one draw, each a float. Every slot is bound 4 bytes past a multiple of 16,
 /// so each residual is in its word: the root's, which m2v's plan names where the probe's codes are shared, or the
 /// table's.

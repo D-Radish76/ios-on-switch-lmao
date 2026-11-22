@@ -7,11 +7,11 @@ import Metal
 import VideoToolbox
 
 /// Whether anything on the device reads the spare bits of a packed 10-bit surface's words (bits 30-31 and a row's slots
-/// past its last code), which the raw path's packed store states write 0. Each surface ('p420', 'pf20', 'p422', 'p444',
+/// past its last code), which the driver's packed store states write 0. Each surface ('p420', 'pf20', 'p422', 'p444',
 /// 98 wide: rows with spare slots) is read with the spare bits clear and then set, by Metal's R10Unorm_PACKED,
 /// RG10Unorm_PACKED, RGB10_*_2P_PACKED and YCBCR10_*_2P_PACKED textures, VTPixelTransferSession into its 16-bit twin and
 /// Core Image. moved_<reader>_ counts the reads the bits changed: any but 0 names a reader the store must write for. On
-/// macOS 27.2.1 none moves (raw/test/packedreaders.mm).
+/// macOS 27.2.1 none moves (harness/packedreaders.mm).
 struct PackedSpareBitsTest: HWTest {
     let id = "gpu.packed_spare_bits"
     let name = "Readers of packed 10-bit surfaces' spare bits"

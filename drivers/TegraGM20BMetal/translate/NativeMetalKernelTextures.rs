@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
 //! How the direct compile of a kernel (NativeMetalDirectCompute.rs) describes a texture its dispatch binds to the
-//! translator: as the image the raw path binds at the slot, under the address map the runtime samples it with. A
+//! translator: as the image the driver binds at the slot, under the address map the runtime samples it with. A
 //! two-plane YCbCr texture's image is the translator's own form of its format (metal2vulkan format.rs `ycbcr_repr`),
 //! except under kIOSurfaceYCbCrMatrix P3_D65 or DCI_P3, where raw reads a converted or sRGB format as the codes format
-//! of its layout (raw/runtime/raw_ycbcr.cpp planYcbcr): the map the runtime states then clamps, as only a codes read's
-//! does (address_maps.rs CLAMPS). Raw also reads formats the translator holds no texture of through an image of its
-//! own: R10Unorm_PACKED and RG10Unorm_PACKED as an RGB10A2Unorm image of their codes (raw_packed_plane.h),
-//! YCBCR8_422_1P and its sRGB twin as the two-plane 4:2:2 format of the same reads (raw_ycbcr.cpp kOnePlaneFormats: the
+//! of its layout (ycbcr.cpp planYcbcr): the map the runtime states then clamps, as only a codes read's
+//! does (address_maps.rs CLAMPS). The driver also reads formats the translator holds no texture of through an image of its
+//! own: R10Unorm_PACKED and RG10Unorm_PACKED as an RGB10A2Unorm image of their codes (packed_plane.h),
+//! YCBCR8_422_1P and its sRGB twin as the two-plane 4:2:2 format of the same reads (ycbcr.cpp kOnePlaneFormats: the
 //! same output, image and map). Metal stores nothing of a kernel's write into either kind: on an M4 Max under macOS
 //! 27.2.1 the surface's bytes stay as they were, and its validation layer refuses YCBCR8_422_1P's write binding.
 
@@ -14,7 +14,7 @@ use crate::address_maps;
 use metal2vulkan::metal::PixelFormat;
 use metal2vulkan::metal::format::{ChromaSubsampling, YCbCrReads, ycbcr_format};
 
-// NmbDirectBoundTexture.planes (raw_direct_abi.h): bit 0 an RGB10A8_2P_XR10 texture held in Metal's two planes,
+// NmbDirectBoundTexture.planes (direct_abi.h): bit 0 an RGB10A8_2P_XR10 texture held in Metal's two planes,
 // bits 8-9 the address map the runtime samples it with (Texture::addressMap), bit 15 set where the runtime states it
 pub const TWO_PLANES: u32 = 1;
 const MAP_SHIFT: u32 = 8;
@@ -100,7 +100,7 @@ mod tests {
     const WRAPPED: u8 = address_maps::WRAPPED;
     const CLAMPS: u8 = address_maps::CLAMPS;
 
-    // raw/runtime/raw_ycbcr.cpp kFormats and kOnePlaneFormats: each format raw converts from an IOSurface's planes, its
+    // ycbcr.cpp kFormats and kOnePlaneFormats: each format raw converts from an IOSurface's planes, its
     // bits, chroma halved across, packed, reads (0 converted, 1 sRGB, 2 codes) and one plane
     const RAW: [(u64, u8, bool, bool, u8, bool); 29] = [
         (500, 8, true, false, 0, false),
@@ -142,7 +142,7 @@ mod tests {
         MAP_STATED | (u32::from(map) << MAP_SHIFT)
     }
 
-    /// raw_ycbcr.cpp imageFormat's image of a texture that reads `reads` in `bits`-bit codes, as its Vulkan format
+    /// ycbcr.cpp imageFormat's image of a texture that reads `reads` in `bits`-bit codes, as its Vulkan format
     fn raw_image(reads: u8, bits: u8) -> Format {
         match (reads, bits) {
             (0, _) => Format::R16G16B16A16_SFLOAT,
@@ -152,8 +152,8 @@ mod tests {
         }
     }
 
-    // What the kernel reads at the slot is the image raw binds there (raw_compute.cpp: a view of another texel size is
-    // no dispatch), and its samplers are made under the map raw samples it with (raw_ycbcr.cpp addressMapOf), for every
+    // What the kernel reads at the slot is the image raw binds there (compute.cpp: a view of another texel size is
+    // no dispatch), and its samplers are made under the map raw samples it with (ycbcr.cpp addressMapOf), for every
     // format raw converts, under every matrix but P3 and under P3, where a converted or sRGB format reads as codes
     #[test]
     fn every_converted_texture_is_read_as_the_image_raw_binds_under_raws_map() {
@@ -169,7 +169,7 @@ mod tests {
         }
     }
 
-    // raw_packed_plane.h planPackedPlane: the image is RGB10A2Unorm of the codes, whatever the matrix, map 0
+    // packed_plane.h planPackedPlane: the image is RGB10A2Unorm of the codes, whatever the matrix, map 0
     #[test]
     fn a_packed_10_bit_plane_is_read_as_its_rgb10a2_image() {
         for raw in [588, 589] {
@@ -201,7 +201,7 @@ mod tests {
         assert_eq!(kernel_texture(PixelFormat::RGBA8Unorm, 0).map, 0);
     }
 
-    // The map a corpus key that states none is rekeyed with (raw/pack/kernel_shapes.h stateFormatMaps): what the device
+    // The map a corpus key that states none is rekeyed with (pack/kernel_shapes.h stateFormatMaps): what the device
     // samples a texture of the format with under every matrix but P3
     #[test]
     fn a_format_states_the_map_raw_samples_it_with() {
@@ -214,7 +214,7 @@ mod tests {
         }
     }
 
-    // A planar texture over a 4:4:4 surface (raw_surface_textures.cpp createPlanarTexture) states map 2, RGB8_444_2P's
+    // A planar texture over a 4:4:4 surface (surface_textures.cpp createPlanarTexture) states map 2, RGB8_444_2P's
     #[test]
     fn a_stated_map_is_the_kernels_even_where_it_is_not_its_formats() {
         let t = kernel_texture(PixelFormat::RGB84442P, stating(CLAMPS));

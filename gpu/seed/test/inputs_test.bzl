@@ -3,9 +3,9 @@
 - the crawl's names read the crawled tree and the tool alone;
 - the replies' layout reads neither the tools nor the GPU bundle;
 - the bundle check is a validation action, so the GPU bundle is no input of anything that makes the seed;
-- the raw pack's probes read their bucket's states, directbucket.py, directpack and the mock (bucket 0 also own.metallib
+- the pack's probes read their bucket's states, directbucket.py, directpack and the mock (bucket 0 also own.metallib
   and context.log), the libraries and their own tool, and nothing else: not the stack key, the generator's other
-  modules, rawpack.py's other steps or the tools they do not run, so an edit to any of those reruns no probe; only the
+  modules, make_pack.py's other steps or the tools they do not run, so an edit to any of those reruns no probe; only the
   stamp reads the tools' manifest (the stack key);
 - a native bucket reads native-seed and the mock of the raw tools, none of the others;
 - of a crawl with our own apps, only the last bucket (the apps' states) reads the tree with their libraries: the others
@@ -91,13 +91,13 @@ def _probe_read(path, i):
     tools = _PROBE_TOOLS + (["own.metallib", "context.log"] if i == 0 else [])
     return (
         path.endswith("/split/bucket{}.log".format(i)) or
-        path == "gpu/seed/test/raw/directbucket.py" or
+        path == "gpu/seed/test/pack/directbucket.py" or
         path in ["gpu/seed/test/tools/raw/" + t for t in tools] or
         path.startswith(("gpu/seed/test/crawl/tree/", "gpu/seed/test/device/")) or
-        path.startswith("tools/gpu/") and "rawprobe" in path
+        path.startswith("tools/gpu/") and "probe" in path
     )
 
-def _raw_impl(ctx):
+def _pack_impl(ctx):
     env = analysistest.begin(ctx)
     probes = _actions(env, "MetalRawProbe")
     asserts.equals(env, 17, len(probes))
@@ -114,20 +114,20 @@ def _raw_impl(ctx):
         ):
             asserts.true(env, "gpu/seed/test/" + library in names, "native compiler input " + library)
         asserts.true(env, "--data" in probe.argv, "harvested libraries reach the native probe")
-        asserts.true(env, probe.outputs.to_list()[0].basename == "bucket{}".format(i), "named as rawpack.py knows it")
+        asserts.true(env, probe.outputs.to_list()[0].basename == "bucket{}".format(i), "named as make_pack.py knows it")
     for mnemonic in ("MetalRawSplit", "MetalRawLink"):
         (action,) = _actions(env, mnemonic)
         asserts.equals(env, [], [p for p in _names(action) if p.endswith("MANIFEST.json")], mnemonic + " reads no key")
     (link,) = _actions(env, "MetalRawLink")
-    asserts.true(env, "gpu/seed/test/raw/splits.py" in _names(link), "the split layout generator")
+    asserts.true(env, "gpu/seed/test/pack/splits.py" in _names(link), "the split layout generator")
     asserts.equals(env, 17, len([f for f in link.inputs.to_list() if f.is_directory]), "every bucket's probe runs")
     (stamp,) = _actions(env, "MetalRawStamp")
     asserts.true(env, [p for p in _names(stamp) if p.endswith("MANIFEST.json")] != [], "the stamp reads the key")
     return analysistest.end(env)
 
-_raw_test = analysistest.make(_raw_impl)
+_pack_test = analysistest.make(_pack_impl)
 
-def _raw_apps_impl(ctx):
+def _pack_apps_impl(ctx):
     env = analysistest.begin(ctx)
     probes = _actions(env, "MetalRawProbe")
     asserts.equals(env, 17, len(probes))
@@ -136,24 +136,24 @@ def _raw_apps_impl(ctx):
         asserts.equals(env, ["inputs"] if i == 16 else ["base"], trees, "bucket {}'s libraries".format(i))
     return analysistest.end(env)
 
-_raw_apps_test = analysistest.make(_raw_apps_impl)
+_pack_apps_test = analysistest.make(_pack_apps_impl)
 
-def seed_inputs_tests(name, crawl, raw_pack, raw_pack_apps, seed):
+def seed_inputs_tests(name, crawl, pack, pack_apps, seed):
     """The tests, as one test_suite.
 
     Args:
         name: the test_suite's name.
         crawl: a shader_crawl over a stand-in tree.
-        raw_pack: a seed_raw_pack over stand-in tools and generator.
-        raw_pack_apps: the same over a crawl with an application.
+        pack: a seed_pipeline_pack over stand-in tools and generator.
+        pack_apps: the same over a crawl with an application.
         seed: a metal_seed of four buckets over stand-in inputs.
     """
     _crawl_test(name = name + "_crawl", target_under_test = crawl)
     _seed_test(name = name + "_seed", target_under_test = seed)
     _seed_release_test(name = name + "_release", target_under_test = seed)
-    _raw_test(name = name + "_raw", target_under_test = raw_pack)
-    _raw_apps_test(name = name + "_raw_apps", target_under_test = raw_pack_apps)
+    _pack_test(name = name + "_pack", target_under_test = pack)
+    _pack_apps_test(name = name + "_pack_apps", target_under_test = pack_apps)
     native.test_suite(
         name = name,
-        tests = [name + "_crawl", name + "_seed", name + "_raw", name + "_raw_apps", name + "_release"],
+        tests = [name + "_crawl", name + "_seed", name + "_pack", name + "_pack_apps", name + "_release"],
     )

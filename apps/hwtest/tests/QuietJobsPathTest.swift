@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Quiet job ends (drivers/TegraGM20B/SwitchGpuQuiet.h, raw/runtime/raw_completion_source.h): a frame of three command
+/// Quiet job ends (drivers/TegraGM20B/SwitchGpuQuiet.h, completion_source.h): a frame of three command
 /// buffers with no handlers committed back to back and a fourth with a completed handler ends with one interrupt, the
 /// fourth's; the others' jobs end quiet. The interrupts a frame costs are counted as its jobs that interrupt
 /// (submit_jobs - quiet_jobs) and the wake entries waits asked for (wake_asks). Then a waiter of a quiet job with nothing

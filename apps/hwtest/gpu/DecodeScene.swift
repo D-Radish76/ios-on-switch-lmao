@@ -2,8 +2,8 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// The decode tests' Metal work: textures of the formats the raw path decodes on upload (PVRTC, ASTC 4x2/8x4, ASTC HDR:
-/// drivers/TegraGM20BMetal/raw/runtime/raw_decoded.h), their uploads, and a kernel that read()s chosen texels
+/// The decode tests' Metal work: textures of the formats the driver decodes on upload (PVRTC, ASTC 4x2/8x4, ASTC HDR:
+/// drivers/TegraGM20BMetal/decoded.h), their uploads, and a kernel that read()s chosen texels
 /// (shaders/DecodeReads.metal).
 public enum DecodeScene {
     /// A texture of `format`, or nil where the device makes none (an identity's refusal is a finding the caller judges)

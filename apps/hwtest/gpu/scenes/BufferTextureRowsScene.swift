@@ -3,11 +3,11 @@ import HWTestCore
 import Metal
 
 /// An RGBA8 texture over a buffer at offset 48 with rows of 48 bytes (16 mod 32), which the texture header cannot address:
-/// raw samples it through a pool image of its texels (raw/runtime/raw_gpu.cpp createBufferTexture), where it once refused
+/// raw samples it through a pool image of its texels (gpu.cpp createBufferTexture), where it once refused
 /// to make it and m2v held it. Read by a kernel, again after a blit fills the buffer's bytes in the same command buffer,
 /// and by two passes with a blit between them, each of which must see the bytes as they are then.
 struct BufferTextureRowsScene: GPUScene {
-    let id = "gpu.raw.buffer_texture_rows16"
+    let id = "gpu.gm20b.buffer_texture_rows16"
     let name = "Textures over a buffer whose rows and start are 16 bytes off 32"
 
     static let (width, height, row, start) = (12, 8, 48, 48)
@@ -94,8 +94,8 @@ struct BufferTextureRowsScene: GPUScene {
             result.expect(wrong == 0, "pass \(i): \(wrong) pixel channels wrong")
         }
         result.metrics.set("path", timing.path)
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(timing.path == "raw", "the command buffer took \(timing.path), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(timing.path == "gm20b", "the command buffer took \(timing.path), not raw")
         }
         return result
     }

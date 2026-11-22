@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A state of two fixed-function vertex streams on the raw path: positions in buffer 1 (8 bytes apart), colours in buffer
+/// A state of two fixed-function vertex streams on the driver: positions in buffer 1 (8 bytes apart), colours in buffer
 /// 2 (32 bytes apart, junk between them). One draw of two quads, the left half red and the right half blue, each vertex
 /// its own colour from stream 1. A second stream left unbound, bound at stream 0's address or read at the wrong stride
 /// draws black, red or junk where the expected colour is.
 struct NativeVertexStreamsTest: NativeObjectTest {
     let id = "metal.native.vertex_streams"
-    let name = "A state of two vertex buffers reads each from its own bind on the raw path"
+    let name = "A state of two vertex buffers reads each from its own bind on the driver"
 
     static let size = 32
     static let colourStride = 32

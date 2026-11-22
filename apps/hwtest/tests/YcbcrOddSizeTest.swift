@@ -6,7 +6,7 @@ import Metal
 
 /// Subsampled two-plane YCbCr textures of an odd width or height: Metal makes one used only to be read and none it may
 /// write (render target, shader write or Unknown usage; an M4 Max answers nil for 8- and 10-bit, packed, sRGB and code
-/// formats). The raw path answers nil as Metal does, before anything is made, with the error line `raw ycbcr.odd`; the
+/// formats). The driver answers nil as Metal does, before anything is made, with the error line `raw ycbcr.odd`; the
 /// read-only one is its own and drawn raw.
 struct YcbcrOddSizeTest: HWTest {
     let id = "gpu.ycbcr_odd"
@@ -24,8 +24,8 @@ struct YcbcrOddSizeTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var made: [String] = [], unread: [String] = []
         var readable: [MTLTexture] = []
@@ -65,7 +65,7 @@ struct YcbcrOddSizeTest: HWTest {
                 encoder.endEncoding()
             }
         }
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
         var metrics = Metrics()
         metrics.set("writable_made", made.isEmpty ? "-" : made.joined(separator: ","))
         metrics.set("read_only_nil", unread.isEmpty ? "-" : unread.joined(separator: ","))
@@ -73,7 +73,7 @@ struct YcbcrOddSizeTest: HWTest {
         let checks = [
             ("no writable odd-size texture made, as Metal makes none", made.isEmpty),
             ("every read-only odd-size texture made", unread.isEmpty),
-            ("the read-only ones drawn on the raw path", raw),
+            ("the read-only ones drawn on the driver", raw),
         ]
         return .judged(checks, metrics, proof: gpu.proof)
     }

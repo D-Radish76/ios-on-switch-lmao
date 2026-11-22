@@ -11,7 +11,7 @@ import Metal
 /// command buffer's error code (0 completed), wide_changed its words changed; every other command buffer raw, and the
 /// wide one the only failure, the facade's pass.fmt (failed_why=).
 struct TextureBufferTargetTest: HWTest {
-    let id = "gpu.raw.texture_buffer_target"
+    let id = "gpu.gm20b.texture_buffer_target"
     let name = "A pass clears a texture buffer as a pitch row and fails one past 16384 texels, as Apple's GPU, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -21,9 +21,9 @@ struct TextureBufferTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -45,7 +45,7 @@ struct TextureBufferTargetTest: HWTest {
             checks.append(("wide: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
             FailedCounts.judged(before: before, after: counted, expecting: ["pass.fmt": 1], own: gpu.paths, &metrics))

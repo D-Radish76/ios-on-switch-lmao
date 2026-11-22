@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import XCTest
 
-/// The raw facade's failure and skip counters as a test judges them, whose each failure was, and Run All's roll-up.
+/// The facade's failure and skip counters as a test judges them, whose each failure was, and Run All's roll-up.
 final class FailedCountsTests: XCTestCase {
     func paths(_ paths: [String: Int]) -> PathTally {
         var tally = PathTally()
@@ -28,10 +28,10 @@ final class FailedCountsTests: XCTestCase {
         XCTAssertEqual(counts.metrics["skipped_calls"], .integer(3))
         XCTAssertEqual(counts.metrics["skipped_why"], .text("call.blit/3"))
         XCTAssertNil(FailedCounts(before: before, after: before).metrics["skipped_why"])
-        let unanswered = FailedCounts(before: [:], after: ["raw": 4])
+        let unanswered = FailedCounts(before: [:], after: ["gm20b": 4])
         XCTAssertEqual(unanswered.metrics["failed_cbs"], .text("unanswered"))
         XCTAssertEqual(
-            unanswered.check(own: paths(["raw": 4])).0,
+            unanswered.check(own: paths(["gm20b": 4])).0,
             "no command buffer failed: the facade's counters answer no failed count")
         XCTAssertFalse(unanswered.skipCheck().1)
         XCTAssertEqual(FailedCounts.counts("none/2,call.buf/1"), ["none": 2, "call.buf": 1])
@@ -39,7 +39,7 @@ final class FailedCountsTests: XCTestCase {
 
     func testAFailureOfTheTestsOwnCommandBufferIsItsOwn() {
         let counts = FailedCounts(before: ["failed": 0], after: ["failed": 1, "failed.enc.pass": 1])
-        let attribution = counts.attributed(own: paths(["raw": 3, "error:enc.pass": 1]))
+        let attribution = counts.attributed(own: paths(["gm20b": 3, "error:enc.pass": 1]))
         XCTAssertFalse(attribution.holds)
         XCTAssertEqual(attribution.check.0, "own failure: its own command buffers failed enc.pass/1")
         XCTAssertEqual(attribution.metrics["own_failed"], .integer(1))
@@ -49,7 +49,7 @@ final class FailedCountsTests: XCTestCase {
 
     func testAFailureOfAnotherCommandBufferIsForeignWithItsOwnKey() {
         let counts = FailedCounts(before: ["failed": 0], after: ["failed": 2, "failed.none": 2])
-        let attribution = counts.attributed(own: paths(["raw": 14]))
+        let attribution = counts.attributed(own: paths(["gm20b": 14]))
         XCTAssertEqual(
             attribution.check.0,
             "foreign failure: foreign_failed=2 none/2 in command buffers it did not commit (a framework's, another "
@@ -79,11 +79,11 @@ final class FailedCountsTests: XCTestCase {
                 "foreign failure: foreign_failed=1 compute/1"))
         let none = FailedCounts(before: [:], after: ["failed": 0])
         XCTAssertEqual(
-            none.check(expecting: ["compute": 1], own: paths(["raw": 1])).0,
+            none.check(expecting: ["compute": 1], own: paths(["gm20b": 1])).0,
             "own failure: expected compute/1 more to fail (failed -)")
         XCTAssertEqual(
-            none.check(own: paths(["raw": 1, "pending": 1])).0,
-            "own failure: its own command buffers off the raw path pending/1")
+            none.check(own: paths(["gm20b": 1, "pending": 1])).0,
+            "own failure: its own command buffers off the driver pending/1")
         XCTAssertEqual(
             none.check(own: paths(["error:pass.fmt": 1])).0,
             "own failure: its own command buffers failed pass.fmt/1; own failure: its own paths failed pass.fmt/1 the "
@@ -138,8 +138,8 @@ final class FailedCountsTests: XCTestCase {
     }
 
     func testATallyGrownFromAnotherSaysWhatWasAdded() {
-        let earlier = paths(["raw": 2, "error:none": 1])
-        let later = paths(["raw": 5, "error:none": 1, "pending": 1])
-        XCTAssertEqual(later.since(earlier), paths(["raw": 3, "pending": 1]))
+        let earlier = paths(["gm20b": 2, "error:none": 1])
+        let later = paths(["gm20b": 5, "error:none": 1, "pending": 1])
+        XCTAssertEqual(later.since(earlier), paths(["gm20b": 3, "pending": 1]))
     }
 }

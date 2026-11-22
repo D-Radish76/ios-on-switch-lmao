@@ -1,6 +1,6 @@
 import Foundation
 
-/// A render pipeline state as the Metal frontend journals it and the raw pack's corpus keeps it
+/// A render pipeline state as the Metal frontend journals it and the pack's corpus keeps it
 /// (drivers/TegraGM20BMetal/precompile/corpus.log: "R ok=1 label=... samples=1 topo=0 ds=0/0 c0=... a0=... | v <name>
 /// <constants> | f <name> <constants> |"), so a test can make the exact state Core Animation made.
 public struct PipelineLine: Equatable, Sendable {

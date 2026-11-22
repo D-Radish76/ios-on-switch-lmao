@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import XCTest
 
-/// gpu.raw.resolve_twod's model of the 2D engine's 2x box against the arithmetic raw_resolve_rule_test.cpp fits to the
+/// gpu.gm20b.resolve_twod's model of the 2D engine's 2x box against the arithmetic resolve_rule_test.cpp fits to the
 /// device's counts
 final class TwodResolveReadingTests: XCTestCase {
     func testCodesAreFifteenBitsNearest() {

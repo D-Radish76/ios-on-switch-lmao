@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The fillTexture: (SPI) shapes gpu.raw.fill_shapes fills, each into a texture of its own, as an M4 Max's Metal fills
+/// The fillTexture: (SPI) shapes gpu.gm20b.fill_shapes fills, each into a texture of its own, as an M4 Max's Metal fills
 /// them: every byte of the region at the expected texel and every byte outside it as it was.
 struct FillShapeResult {
     var path = "-"

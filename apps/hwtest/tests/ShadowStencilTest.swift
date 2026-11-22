@@ -3,16 +3,16 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A fragment function's [[stencil]] output on the raw path: GM20B's fragment program header has no stencil output, so
+/// A fragment function's [[stencil]] output on the driver: GM20B's fragment program header has no stencil output, so
 /// the program tests and writes a stand-in of the stencil inside the interlock (m2v's shader-side stencil, before this
 /// m2v's alone). A 32x32 Depth32Float_Stencil8 pass cleared to stencil 16 draws red with each pixel's column x as its
 /// reference under LessEqual (pass Replace, stencil failure Zero), then green with x + 256 (low 8 bits x) under Equal
 /// (pass IncrementWrap): columns 0-16 end green with stencil x + 1, the rest black with stencil 0. A pass of only a
 /// Depth32Float attachment draws the same function blue everywhere: nothing tests its output. PASS: no pixel or stencil
-/// texel off and every command buffer on the raw path.
+/// texel off and every command buffer on the driver.
 struct ShadowStencilTest: HWTest {
-    let id = "gpu.raw.shadow_stencil"
-    let name = "A fragment function's [[stencil]] output tested in its program on the raw path"
+    let id = "gpu.gm20b.shadow_stencil"
+    let name = "A fragment function's [[stencil]] output tested in its program on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -20,8 +20,8 @@ struct ShadowStencilTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.size
         let colour = try gpu.texture(.rgba8Unorm, n, n)
         let zeta = try gpu.texture(.depth32Float_stencil8, n, n, usage: [.renderTarget])
@@ -130,7 +130,7 @@ struct ShadowStencilTest: HWTest {
         metrics.set("stencil_x0_x16_x17", "\(s[0])/\(s[16])/\(s[17])")
         metrics.set("colour_x16_x17", "\(pixels[4 * 16 + 1])/\(pixels[4 * 17])")
         var failures: [String] = []
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         if colourWrong != 0 { failures.append("\(colourWrong) pixels wrong") }
         if stencilWrong != 0 { failures.append("\(stencilWrong) stencil texels wrong") }
         if unattachedWrong != 0 { failures.append("\(unattachedWrong) pixels wrong without a stencil") }

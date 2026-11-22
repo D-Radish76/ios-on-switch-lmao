@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The states and kernels direct_exec_test.py executes the raw path's records of (directrun.mm makes them).
+// The states and kernels direct_exec_test.py executes the driver's records of (directrun.mm makes them).
 #include <metal_stdlib>
 using namespace metal;
 

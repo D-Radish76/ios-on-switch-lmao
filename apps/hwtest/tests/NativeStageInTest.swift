@@ -11,7 +11,7 @@ import Metal
 /// and stage-in region. Each result is compared with the CPU's; every command buffer stays raw.
 struct NativeStageInTest: NativeObjectTest {
     let id = "metal.native.stage_in"
-    let name = "Compute stage-in from static and per-bind strides on the raw path"
+    let name = "Compute stage-in from static and per-bind strides on the driver"
 
     static let count = 64
 

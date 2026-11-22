@@ -26,7 +26,7 @@ final class AstcBlockGridTests: XCTestCase {
         XCTAssertNil(AstcBlockGrid.decode([UInt8](repeating: 0, count: 16)[...]))
     }
 
-    /// A 128x128 ASTC 4x4 image is 32x32 blocks, 4 GOBs tall (raw/fx blockChainLayout's clamp), 2 KiB a GOB column.
+    /// A 128x128 ASTC 4x4 image is 32x32 blocks, 4 GOBs tall (fx blockChainLayout's clamp), 2 KiB a GOB column.
     func testAddressesAreTegraColorGobsInFourGobBlocks() {
         let yLog2 = BlockLinearMap.yLog2(texelHeight: 128, rows: 32)
         XCTAssertEqual(yLog2, 2)

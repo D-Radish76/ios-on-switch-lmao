@@ -5,7 +5,7 @@ struct R5MaskDepth {
     float depth [[depth(any)]];
 };
 
-/// gpu.raw.mixed_samples: sample s of a pixel at depth 1 where bit s of the mask is set, else 0; a mask of 16 or more
+/// gpu.gm20b.mixed_samples: sample s of a pixel at depth 1 where bit s of the mask is set, else 0; a mask of 16 or more
 /// takes each pixel's own from a hash of its coordinates (MixedSamplesCases.hashedMask)
 fragment R5MaskDepth r5_mask_depth_fragment(float4 position [[position]], uint sample [[sample_id]],
                                             constant uint &mask [[buffer(0)]])

@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-// gpu.raw.reflection_kinds: one binding of every kind, compute and render, as Metal's reflection names them
+// gpu.gm20b.reflection_kinds: one binding of every kind, compute and render, as Metal's reflection names them
 struct ReflectionKindsS { float4 v; float a[4]; };
 
 kernel void reflection_kinds(device float4 *b4 [[buffer(0)]], device ReflectionKindsS *bs [[buffer(1)]],

@@ -410,7 +410,7 @@ IOReturn AGXDeviceUserClient::mapToken(const TegraGM20BAbiMap *in, TegraGM20BAbi
 }
 
 // IOKit hands a second Map of the same token (no kIOMapUnique) the first one's IOMemoryMap, retained: every channel's Map of
-// the connection's one fence page, which NVK and the raw path share, is the same map. Unmap drops this caller's reference and
+// the connection's one fence page, which NVK and the driver share, is the same map. Unmap drops this caller's reference and
 // tears the map down only when no other Map holds it, or one channel's teardown unmaps every other channel's fence word.
 IOReturn AGXDeviceUserClient::unmapToken(const TegraGM20BAbiUnmap *in)
 {

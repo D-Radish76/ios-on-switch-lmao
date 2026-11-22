@@ -4,9 +4,9 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.xr_two_plane's cells beyond the planes' own bytes, each against the CPU model (XRTwoPlaneModel): blended
+/// gpu.gm20b.xr_two_plane's cells beyond the planes' own bytes, each against the CPU model (XRTwoPlaneModel): blended
 /// draws of the app's own state (made on the device, its storage form alone), Core Animation's source-over in the pack
-/// record's storage form and in its barrier form (raw_probe_forms.h fetch=barrier), each within one code, a surface
+/// record's storage form and in its barrier form (probe_forms.h fetch=barrier), each within one code, a surface
 /// whose alpha rows miss a pitch target's 128 bytes, and samples through the texture's header pair
 /// (nvk_switch_xr_planes.h): nearest exact, linear within a half step of Metal's filter, and gathers of alpha and red.
 struct XRTwoPlaneCells {
@@ -31,7 +31,7 @@ struct XRTwoPlaneCells {
             a.sourceAlphaBlendFactor = .one
             a.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         }
-        let before = RawFacade.counters(of: gpu.device)["interlock_draws"] ?? 0
+        let before = GM20BFacade.counters(of: gpu.device)["interlock_draws"] ?? 0
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = texture
@@ -49,7 +49,7 @@ struct XRTwoPlaneCells {
             }
             encoder.endEncoding()
         }
-        let interlocked = (RawFacade.counters(of: gpu.device)["interlock_draws"] ?? 0) - before
+        let interlocked = (GM20BFacade.counters(of: gpu.device)["interlock_draws"] ?? 0) - before
         var want = [UInt64](repeating: XRTwoPlaneTest.texel(XRTwoPlaneTest.clear), count: width * height)
         for b in Self.blends {
             let half = SIMD4<Float16>(b.color)
@@ -109,7 +109,7 @@ struct XRTwoPlaneCells {
         let scratch = try [XRTwoPlaneTest.format, .r32Float].map {
             try gpu.texture($0, width, height, usage: [.renderTarget], storage: .memoryless)
         }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         try await gpu.run { commands in
             if barrier { try Self.forms(commands, "fetch=barrier") }
             let pass = MTLRenderPassDescriptor()
@@ -134,7 +134,7 @@ struct XRTwoPlaneCells {
             }
             encoder.endEncoding()
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let moved = { (name: String) in (after[name] ?? 0) - (before[name] ?? 0) }
         var want = [UInt64](repeating: XRTwoPlaneTest.texel(XRTwoPlaneTest.clear), count: width * height)
         for f in Self.fetches {
@@ -151,7 +151,7 @@ struct XRTwoPlaneCells {
     }
 
     /// Texels wrong after a clear and a draw into a surface 60 wide: its alpha plane's rows (64 bytes) miss the 128 a
-    /// pitch target's address and rows take (raw_gpu.cpp linearTarget), so the pass draws its planes through shadows
+    /// pitch target's address and rows take (gpu.cpp linearTarget), so the pass draws its planes through shadows
     func narrowWrong() async throws -> Int {
         let (width, height) = (60, 40)
         let (buffer, texture) = try XRTwoPlaneTest.surfaceTexture(gpu, width: width, height: height)
@@ -205,15 +205,15 @@ struct XRTwoPlaneCells {
     }
 
     /// Samples drawn through the header pair: the state's sampled variant is made on the device at its first draw
-    /// (RawMetalCubic.mm renderVariant), its stand-in drawn until then, so the samples are taken again until the
+    /// (TegraGM20BMetalCubic.mm renderVariant), its stand-in drawn until then, so the samples are taken again until the
     /// facade's header-pair binds move, up to two seconds
     func pairSamples(
         _ texture: MTLTexture, _ fragment: String, shift: Float = 1.0 / 3
     ) async throws -> (halves: [UInt16], paired: Bool) {
         for _ in 0..<200 {
-            let before = RawFacade.counters(of: gpu.device)["xr_pair_binds"] ?? 0
+            let before = GM20BFacade.counters(of: gpu.device)["xr_pair_binds"] ?? 0
             let halves = try await Self.samples(gpu, texture, fragment, shift: shift)
-            if (RawFacade.counters(of: gpu.device)["xr_pair_binds"] ?? 0) > before { return (halves, true) }
+            if (GM20BFacade.counters(of: gpu.device)["xr_pair_binds"] ?? 0) > before { return (halves, true) }
             try await Task.sleep(nanoseconds: 10_000_000)
         }
         return (try await Self.samples(gpu, texture, fragment, shift: shift), false)
@@ -243,11 +243,11 @@ struct XRTwoPlaneCells {
         return (wrong, paired)
     }
 
-    /// raw_probe_forms.h: the raw command buffer's barrier forms (debug builds' RawMetalProbe.mm)
+    /// probe_forms.h: the raw command buffer's barrier forms (debug builds' TegraGM20BMetalProbe.mm)
     static func forms(_ commands: MTLCommandBuffer, _ forms: String) throws {
-        let selector = NSSelectorFromString("switchRawProbeForms:")
+        let selector = NSSelectorFromString("switchMetalProbeForms:")
         guard let object = commands as? NSObject, object.responds(to: selector) else {
-            throw TestFailure("the facade has no switchRawProbeForms: (a release plug-in)")
+            throw TestFailure("the facade has no switchMetalProbeForms: (a release plug-in)")
         }
         if let refusal = object.perform(selector, with: forms)?.takeUnretainedValue() as? String {
             throw TestFailure(refusal)

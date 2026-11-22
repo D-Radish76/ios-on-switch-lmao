@@ -4,21 +4,21 @@ import HWTestGPU
 import Metal
 
 /// A Depth16Unorm texture and a Stencil8 texture as one pass's attachments (pass.ds: GM20B has no 16-bit depth zeta with
-/// stencil, so the raw path renders a Depth32Float_Stencil8 and converts the depth in and out by draws). The first pass
+/// stencil, so the driver renders a Depth32Float_Stencil8 and converts the depth in and out by draws). The first pass
 /// clears depth to 0.25 (Metal's code 0x3fff), writes depth 0.5 and stencil 0x5A over the left half and stores both; the
 /// second loads both, draws red at 0.2 where the stencil is 0x5A and stores them again. Every depth code read back after
 /// the second pass is the one the first stored (the load and store through the float depth keep each code), the right
-/// half 0x3fff, the colour red on the left alone, the stencil 0x5A on the left; both passes on the raw path.
+/// half 0x3fff, the colour red on the left alone, the stencil 0x5A on the left; both passes on the driver.
 struct SeparateDepth16StencilTest: HWTest {
-    let id = "gpu.raw.separate_depth16_stencil"
-    let name = "Depth16Unorm and Stencil8 textures as one pass's attachments, on the raw path"
+    let id = "gpu.gm20b.separate_depth16_stencil"
+    let name = "Depth16Unorm and Stencil8 textures as one pass's attachments, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = 32
         let colour = try gpu.texture(.rgba8Unorm, n, n)
         let depth = try gpu.texture(.depth16Unorm, n, n, usage: [.renderTarget])
@@ -125,7 +125,7 @@ struct SeparateDepth16StencilTest: HWTest {
         metrics.set("stencil_wrong", stencilWrong)
         metrics.set("left_right", String(format: "%04x/%04x->%04x/%04x", d1[2], d1[n - 2], d2[2], d2[n - 2]))
         var failures: [String] = []
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         if colourWrong != 0 { failures.append("\(colourWrong) colour pixels wrong") }
         if changed != 0 { failures.append("\(changed) depth codes changed by a load and store") }
         if clearWrong != 0 { failures.append("\(clearWrong) cleared codes not 0x3fff") }

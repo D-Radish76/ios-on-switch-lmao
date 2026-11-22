@@ -69,7 +69,7 @@ struct NativeEventWaitTest: NativeObjectTest {
         let wrong = (0..<4096).filter { check.contents().load(fromByteOffset: $0, as: UInt8.self) != 0x5a }.count
         metrics.set("wrong_bytes", wrong)
         if wrong != 0 { work.failures.append("\(wrong) bytes the relayed wait let through early") }
-        work.paths = [relay, tail, reader].map { RawFacade.path(of: $0) }
+        work.paths = [relay, tail, reader].map { GM20BFacade.path(of: $0) }
 
         let after = EventJobs.read(device)
         for key in ["wait_jobs", "signal_jobs", "promise_waits", "cpu_waits", "cpu_signals"] {

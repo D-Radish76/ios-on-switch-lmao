@@ -2,7 +2,7 @@
 
 Lines of code the cut deleted are an old plugin when they appear. A private selector no Metal protocol declares, which
 only the old front end's classes answered, now raises in the process that sends it: that crash names the selector
-here and in the crash reports (reports.py crash.raw-selector).
+here and in the crash reports (reports.py crash.gm20b-selector).
 """
 
 from tools.devicerun.rules import REPORT, Check
@@ -10,12 +10,12 @@ from tools.devicerun.rules import REPORT, Check
 REFUSAL_SUBSYSTEM = 'com.brunostjohn.switch.refusal'
 GPU_METAL_SUBSYSTEM = 'com.brunostjohn.switch.TegraGM20BMetal'
 PLUGIN = 'drivers/TegraGM20BMetal/TegraGM20BMetalPlugin.mm'
-SUBMIT = 'drivers/TegraGM20BMetal/raw/runtime/RawMetalSubmit.mm'
+SUBMIT = 'drivers/TegraGM20BMetal/TegraGM20BMetalSubmit.mm'
 OLD_PLUGIN = 'the string is gone with the cut: any line is an old plugin'
 # A refusal line: `<process>[<pid>] <reason>: <message>` (kits/SwitchRefusal/SwitchRefusal.c)
 REFUSAL = r'^(?P<who>[^\[]+)\[\d+\] (?P<reason>{reasons}): '
-# The debug rates line (RawMetalRates.mm): `raw <seconds>s c=<command buffers>(...`
-RATES = r'\braw \d+s c=\d+\('
+# The debug rates line (TegraGM20BMetalRates.mm): `raw <seconds>s c=<command buffers>(...`
+RATES = r'\bgm20b \d+s c=\d+\('
 # A process TEGRA_GPU_ALL_CLIENTS=0 leaves out on purpose
 LEFT_OUT = r'(?!.*left out \(TEGRA_GPU_ALL_CLIENTS=0\)$)'
 
@@ -24,7 +24,7 @@ CUT = [
         'cut.m2v-opener',
         'm2v-cut1',
         ('needs its m2v device for', 'opened its m2v device for'),
-        source='RawMetalM2V.mm (deleted)',
+        source='GM20BMetalM2V.mm (deleted)',
         note=OLD_PLUGIN,
     ),
     Check(
@@ -51,7 +51,7 @@ CUT = [
         show=('who', 'why'),
         source=PLUGIN,
         note='every Metal process opens its device; a process left out by TEGRA_GPU_ALL_CLIENTS=0 is not counted. '
-        "'no AGXAccelerator' or 'IOServiceOpen failed' here: the service match the raw device makes itself",
+        "'no AGXAccelerator' or 'IOServiceOpen failed' here: the service match the device makes itself",
     ),
     Check('cut.path-off', 'm2v-cut1', 'raw GM20B path off', source=PLUGIN, note=OLD_PLUGIN),
     Check(
@@ -86,7 +86,7 @@ CUT = [
         against='cut.path-on',
         show=('who',),
         source=PLUGIN,
-        note='every process whose device is ready logged the raw path on before it',
+        note='every process whose device is ready logged the driver on before it',
     ),
     Check(
         'cut.record-refusals',
@@ -96,7 +96,7 @@ CUT = [
         subsystem=REFUSAL_SUBSYSTEM,
         regex=REFUSAL.format(reasons=r'call\.buf|state\.foreign|tex\.foreign'),
         show=('who', 'reason'),
-        source='drivers/TegraGM20BMetal/raw/runtime (rmCallInvalid)',
+        source='drivers/TegraGM20BMetal (gm20bCallInvalid)',
         note="a client's object of another device, failed as Metal's validation error: report the process",
     ),
     Check(
@@ -117,7 +117,7 @@ CUT = [
         regex=REFUSAL.format(reasons=r'plan\.ended_encoder'),
         show=('who',),
         source=SUBMIT,
-        note="a client encoded on an encoder that had ended: report the process (HW Test's gpu.raw.ended_encoder "
+        note="a client encoded on an encoder that had ended: report the process (HW Test's gpu.gm20b.ended_encoder "
         'does so on purpose)',
     ),
     Check('cut.order-refused', 'm2v-cut2', 'the kernel refused Order', note=OLD_PLUGIN),
@@ -135,7 +135,7 @@ CUT = [
     Check(
         'cut.stall-m2v',
         'm2v-cut2',
-        'raw: stall:',
+        'SwitchMetal: stall:',
         regex=r'm2v (?:pending|unscheduled)',
         note='a stall line naming m2v work: an old plugin',
     ),
@@ -147,7 +147,7 @@ CUT = [
         subsystem=GPU_METAL_SUBSYSTEM,
         regex=RATES,
         show=('process',),
-        source='drivers/TegraGM20BMetal/raw/runtime/RawMetalRates.mm',
+        source='drivers/TegraGM20BMetal/TegraGM20BMetalRates.mm',
         note='debug images: the rates line still comes',
     ),
     Check(
@@ -158,7 +158,7 @@ CUT = [
         regex=RATES + r'.*? (?P<field>m2v|sw|cpu|acq|replay|rclean|why|rsplit|rmax|rdraw|tw)=',
         show=('field',),
         needs='cut.rates',
-        source='drivers/TegraGM20BMetal/raw/runtime/RawMetalRates.mm',
+        source='drivers/TegraGM20BMetal/TegraGM20BMetalRates.mm',
         note='a field the cut removed from the rates line: an old plugin',
     ),
     Check(
@@ -166,9 +166,9 @@ CUT = [
         'm2v-cut3',
         ': no render state ',
         REPORT,
-        regex=r'^raw: (?P<who>[^:]+): no render state ',
+        regex=r'^SwitchMetal: (?P<who>[^:]+): no render state ',
         show=('who',),
-        source='drivers/TegraGM20BMetal/raw/runtime (s4a)',
+        source='drivers/TegraGM20BMetal (s4a)',
         note="a render state of another device's functions or of no vertex function, nil: a client defect",
     ),
     Check(
@@ -185,7 +185,7 @@ CUT = [
         'cut.selector-raised',
         'm2v-cut3',
         'unrecognized selector sent to',
-        regex=r'-\[(?P<cls>RM\w+) (?P<selector>[^\]]+)\]: unrecognized selector sent to',
+        regex=r'-\[(?P<cls>SwitchMetal\w+) (?P<selector>[^\]]+)\]: unrecognized selector sent to',
         show=('process', 'cls', 'selector'),
         source='libobjc (doesNotRecognizeSelector:)',
         note='a selector no Metal protocol declares that only the old front end answered raises and crashes its '
@@ -196,7 +196,7 @@ CUT = [
         'm2v-cut3',
         'out of GPU VA',
         show=('process',),
-        source='drivers/TegraGM20BMetal/raw/runtime/raw_kernel.cpp',
+        source='drivers/TegraGM20BMetal/kernel.cpp',
         note="a raw device places in its connection's whole VA range: never runs out",
     ),
 ]

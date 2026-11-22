@@ -1,6 +1,6 @@
 """Normalise one driver's nvdec log of a frame into the draws and clears eq compares.
 
-Every submission's events are one frame (a command buffer the raw path submits in segments is several submissions,
+Every submission's events are one frame (a command buffer the driver submits in segments is several submissions,
 NVK's one), the BEGINs of one split draw are one draw (fold_split: the fetch macro's BEGIN a primitive, which the
 hardware assembles as one draw), and each draw's fields drop what two drivers compile or lay out their own way:
 
@@ -17,7 +17,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'raw/pack'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'pack'))
 import eqcheck
 
 # SET_PIPELINE_REGISTER_COUNT(i) and SET_BINDLESS_TEXTURE: each driver's compiler decides them

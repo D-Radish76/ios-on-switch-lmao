@@ -4,14 +4,14 @@ import HWTestGPU
 import Metal
 
 /// A slice-choosing state whose fragment function returns [[stencil]], in a layered pass of two layers over a Stencil8
-/// array: the raw path runs the shader-side stencil against a shadow of every layer (a 2D array, each fragment at its
+/// array: the driver runs the shader-side stencil against a shadow of every layer (a 2D array, each fragment at its
 /// layer). Draw 1, red, writes stencil 5 into layer 0 and 9 into layer 1 (replace); draw 2, cyan, its output 9, passes
 /// where the stencil equals it: layer 1 alone. An M4 Max stores 255/0/0/255 in layer 0 and 0/255/255/255 in layer 1 at
-/// every pixel. The base build fails the command buffer (raw:draw.layer_dropped: the translation had no layered form of
+/// every pixel. The base build fails the command buffer (gm20b:draw.layer_dropped: the translation had no layered form of
 /// the shader-side stencil).
 struct LayeredShaderStencilTest: HWTest {
-    let id = "gpu.raw.layered_shader_stencil"
-    let name = "A layered pass's shader-side stencil reads a shadow of every layer on the raw path"
+    let id = "gpu.gm20b.layered_shader_stencil"
+    let name = "A layered pass's shader-side stencil reads a shadow of every layer on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -37,8 +37,8 @@ struct LayeredShaderStencilTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let device = gpu.device
         let library = try await device.makeLibrary(source: Self.source, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
@@ -111,7 +111,7 @@ struct LayeredShaderStencilTest: HWTest {
             }
         }
         metrics.set("wrong_pixels", wrong)
-        return timing.path == "raw" && wrong == 0
+        return timing.path == "gm20b" && wrong == 0
             ? .pass(metrics, proof: gpu.proof) : .fail("path \(timing.path.prefix(80)), \(wrong) pixels wrong", metrics)
     }
 }

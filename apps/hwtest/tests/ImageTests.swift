@@ -230,7 +230,7 @@ struct CoreImageTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         guard let device = MTLCreateSystemDefaultDevice() else { return .fail("no Metal device") }
-        let before = RawFacade.counters(of: device)
+        let before = GM20BFacade.counters(of: device)
         let ci = CIContext(mtlDevice: device, options: [.cacheIntermediates: false])
         let flat = CIImage(color: CIColor(red: 0.2, green: 0.4, blue: 0.6)).cropped(
             to: CGRect(x: 0, y: 0, width: 256, height: 256))
@@ -267,9 +267,9 @@ struct CoreImageTest: HWTest {
                 zip(pixel.prefix(3), [51, 102, 153]).allSatisfy { abs(Int($0) - $1) <= 1 }
             ),
         ]
-        if RawFacade.kind(of: device) == "raw" {
+        if GM20BFacade.kind(of: device) == "gm20b" {
             checks += FailedCounts.judgedFramework(
-                before: before, after: RawFacade.counters(of: device), own: PathTally(), &metrics)
+                before: before, after: GM20BFacade.counters(of: device), own: PathTally(), &metrics)
         }
         return .judged(checks, metrics, proof: "CIContext(mtlDevice: \(device.name))")
     }

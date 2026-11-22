@@ -2,13 +2,13 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// Judges raw_chip_facts.h AssumeTexsF16, which every raw draw holds: TEXS.F16 against round-to-nearest-even of TEXS's
+/// Judges chip_facts.h AssumeTexsF16, which every raw draw holds: TEXS.F16 against round-to-nearest-even of TEXS's
 /// F32 result, over every unorm8 code and every half, point sampled and bilinear between neighbours. It also holds bound
 /// TEXS's F32 form to TEX.B's (a compute kernel's textures stay bindless), since bound textures had not run on GM20B
-/// before. Every target is a float format the raw path renders: the F16 form's bits arrive as whole floats, the proof
+/// before. Every target is a float format the driver renders: the F16 form's bits arrive as whole floats, the proof
 /// word as a float's bits.
 struct TexsF16Scene: GPUScene {
-    let id = "gpu.raw.texs_f16"
+    let id = "gpu.gm20b.texs_f16"
     let name = "TEXS.F16 against round-to-nearest-even of its F32 form; bound TEXS against TEX.B"
 
     /// (name, bilinear, offset in texels from the pixel's centre). metal2vulkan fetches a nearest pixel-coordinate sample
@@ -140,9 +140,9 @@ struct TexsF16Scene: GPUScene {
             // an unstamped marker is a signalling NaN's bits, which a store may quiet
             let marker = proofWord & ~0x0040_0000 == 0x7FA5_5347
             result.expect(stamped || marker, "\(name): the proof output was not written")
-            if !RawFacade.counters(of: gpu.device).isEmpty {
+            if !GM20BFacade.counters(of: gpu.device).isEmpty {
                 result.expect(stamped, "\(name): NAK did not fold the F16 fetch")
-                result.expect(timing.path == "raw", "\(name) left raw: \(timing.path)")
+                result.expect(timing.path == "gm20b", "\(name) left raw: \(timing.path)")
             }
             result.expect(boundWrong == 0, "\(name): bound TEXS differs from TEX.B on \(boundWrong) components")
         }

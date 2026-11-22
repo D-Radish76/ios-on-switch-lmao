@@ -3,14 +3,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Metal's command predication SPI on the raw path (drivers/TegraGM20BMetal/raw/runtime/raw_predication.h): each of the
+/// Metal's command predication SPI on the driver (drivers/TegraGM20BMetal/predication.h): each of the
 /// six compares at its edge values, two levels of If/Else, a block spanning two compute encoders of its unit, and the
 /// draw, clear and blit after a failed block, all in one command buffer; then the loops (PredicationLoops.swift). Every predicate word is written by a dispatch
 /// before its record, so neither the CPU nor the test reads or writes it, but for one buffer the CPU writes and nothing
 /// else binds; marks says which branch each case ran. Metal has no predication on render or blit encoders (no such
 /// selector on 21H461 or 24B119) and either one ends the unit, so the draw, clear and blit are the work after a block.
 struct PredicationTest: HWTest {
-    let id = "gpu.raw.predication"
+    let id = "gpu.gm20b.predication"
     let name = "Predicated dispatches on render enable: every compare, nesting, spanning encoders, work after, loops"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -91,8 +91,8 @@ struct PredicationTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let probe = gpu.queue.makeCommandBuffer(), let compute = probe.makeComputeCommandEncoder() else {
             throw TestFailure("no command buffer or compute encoder")
         }
@@ -158,7 +158,7 @@ struct PredicationTest: HWTest {
         metrics.set("ends_yes", enc.ends.filter { $0 }.count)
         metrics.set("ends", enc.ends.count)
         metrics.set("gpu_ms", ran.gpuMilliseconds)
-        if ran.path != "raw" { wrong.append("path") }
+        if ran.path != "gm20b" { wrong.append("path") }
         if !compareWrong.isEmpty { wrong.append("compares") }
         if nestedWrong != 0 { wrong.append("nested") }
         if span != 1 || spanFailed != 0 { wrong.append("span") }

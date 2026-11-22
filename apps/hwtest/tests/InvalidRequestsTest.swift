@@ -3,9 +3,9 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Requests Metal's validation layer stops complete on the raw path: each blit fails nothing and is counted as one
-/// skipped call (skipped.call.blit; one raw:blit.invalid line a process per call and rule), and a depth resolve with no
-/// resolve texture keeps its store part (one raw:pass.resolve_store line, each call counted skipped.pass.ds). Each blit
+/// Requests Metal's validation layer stops complete on the driver: each blit fails nothing and is counted as one
+/// skipped call (skipped.call.blit; one gm20b:blit.invalid line a process per call and rule), and a depth resolve with no
+/// resolve texture keeps its store part (one gm20b:pass.resolve_store line, each call counted skipped.pass.ds). Each blit
 /// sits in a command buffer of its own between two buffer copies that land: a copy from a 4x texture (samples), into an
 /// R8 level from an RGBA8 one (texel_size), into a texture from buffer rows shorter than its rows (rows_short_in) and
 /// into a buffer the same way (rows_short_out) record nothing. texel_size, formats of other copy units, records nothing
@@ -21,9 +21,9 @@ import Metal
 /// colour texels off), <case>_untouched (the request's destination as it must be left; resolve_store: the later pass
 /// saw the kept depth), <case>_skipped_why (the calls counted skipped), resolve_store_load_path (that later pass's);
 /// the run's failed_cbs=, skipped_why= and, for a failure, whose it was (own_why=, foreign_why=). The arms of requests
-/// the raw path runs as the M4 Max does, and units, are InvalidRequestsMirrored.swift's.
+/// the driver runs as the M4 Max does, and units, are InvalidRequestsMirrored.swift's.
 struct InvalidRequestsTest: HWTest {
-    let id = "gpu.raw.invalid_requests"
+    let id = "gpu.gm20b.invalid_requests"
     let name = "Blits and a resolve store Metal's validation stops complete on raw, their neighbours intact"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -40,9 +40,9 @@ struct InvalidRequestsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let start = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let start = GM20BFacade.counters(of: gpu.device)
         let pattern = try gpu.buffer((0..<Self.bytes).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) })
         let junk = try gpu.buffer([UInt8](repeating: 0xee, count: Self.bytes))
         let source = try gpu.texture(.rgba8Unorm, Self.side, Self.side, mipmaps: 7)
@@ -105,7 +105,7 @@ struct InvalidRequestsTest: HWTest {
         for (key, destination, request) in requests {
             let kept = try await Self.fill(destination, gpu)
             let first = try gpu.buffer(Self.bytes), last = try gpu.buffer(Self.bytes)
-            let counters = RawFacade.counters(of: gpu.device)
+            let counters = GM20BFacade.counters(of: gpu.device)
             let timing = try await gpu.run(tolerateError: true) { commands in
                 let blit = commands.makeBlitCommandEncoder()!
                 blit.copy(from: pattern, sourceOffset: 0, to: first, destinationOffset: 0, size: Self.bytes)
@@ -113,7 +113,7 @@ struct InvalidRequestsTest: HWTest {
                 blit.copy(from: pattern, sourceOffset: 0, to: last, destinationOffset: 0, size: Self.bytes)
                 blit.endEncoding()
             }
-            let counts = FailedCounts(before: counters, after: RawFacade.counters(of: gpu.device))
+            let counts = FailedCounts(before: counters, after: GM20BFacade.counters(of: gpu.device))
             let neighbours = Self.off(first, pattern) + Self.off(last, pattern)
             let past = key == "past_level"
             let left = past ? Self.insideCopied(kept, from: sourceLevel) : kept
@@ -125,15 +125,15 @@ struct InvalidRequestsTest: HWTest {
             own.add(timing.facadePath)
             attributions.append(Self.judge(key, counts, own: own, skipped: ["call.blit": 1], &metrics, &checks))
         }
-        let resolveCounters = RawFacade.counters(of: gpu.device)
+        let resolveCounters = GM20BFacade.counters(of: gpu.device)
         let resolvePaths = gpu.paths
         try await resolveStores(gpu, &metrics, &checks)
-        let resolved = FailedCounts(before: resolveCounters, after: RawFacade.counters(of: gpu.device))
+        let resolved = FailedCounts(before: resolveCounters, after: GM20BFacade.counters(of: gpu.device))
         attributions.append(
             Self.judge(
                 "resolves", resolved, own: gpu.paths.since(resolvePaths), skipped: ["pass.ds": 2], &metrics, &checks))
         attributions += await mirrored(gpu, &metrics, &checks)
-        metrics.merge(FailedCounts(before: start, after: RawFacade.counters(of: gpu.device)).metrics)
+        metrics.merge(FailedCounts(before: start, after: GM20BFacade.counters(of: gpu.device)).metrics)
         metrics.merge(FailedAttribution.metrics(attributions))
         metrics.fitLog(within: 720, keeping: ["failed_cbs", "failed_why"])
         return .judged(checks, metrics, proof: gpu.proof)
@@ -145,7 +145,7 @@ struct InvalidRequestsTest: HWTest {
     ) {
         metrics.set("\(key)_path", String(path.prefix(80)))
         metrics.set("\(key)_neighbours", neighbours)
-        checks.append(("\(key): completed on the raw path", path == "raw"))
+        checks.append(("\(key): completed on the driver", path == "gm20b"))
         checks.append(("\(key): its neighbours landed", neighbours == 0))
         if let untouched {
             metrics.set("\(key)_untouched", untouched)
@@ -272,7 +272,7 @@ extension InvalidRequestsTest {
                     pass($0, into: later, load: true, decided: nil)
                 }.path
                 metrics.set("\(key)_load_path", String(loadPath.prefix(80)))
-                checks.append(("\(key): the pass loading the kept depth on the raw path", loadPath == "raw"))
+                checks.append(("\(key): the pass loading the kept depth on the driver", loadPath == "gm20b"))
                 untouched = try await off(later, left: black, right: green) == 0
             }
             Self.report(key, path: path, neighbours: neighbours, untouched: untouched, &metrics, &checks)

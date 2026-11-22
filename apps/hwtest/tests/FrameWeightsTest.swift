@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The frame-weights capture (raw_draw_times.h, through switchRawFrameWeights: and switchRawFrameWeightsTaken; debug
+/// The frame-weights capture (draw_times.h, through switchMetalFrameWeights: and switchMetalFrameWeightsTaken; debug
 /// builds, else SKIP) over one pass into a 1280x720 BGRA8 target: A (a constant colour), B (64 dependent FMAs), C
 /// (512) and D (A's pipeline, its triangle one point), four times, each a triangle covering the target so a draw
 /// shades exactly 921,600 pixels. The scene runs once uncaptured, once captured, once more for normal_us. Judged: the
@@ -18,22 +18,22 @@ struct FrameWeightsTest: HWTest {
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
-    static let arm = NSSelectorFromString("switchRawFrameWeights:")
-    static let taken = NSSelectorFromString("switchRawFrameWeightsTaken")
+    static let arm = NSSelectorFromString("switchMetalFrameWeights:")
+    static let taken = NSSelectorFromString("switchMetalFrameWeightsTaken")
     static let pixels = 1280 * 720
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         guard let device = gpu.device as? NSObject, device.responds(to: Self.arm), device.responds(to: Self.taken)
-        else { return .skip(RawFacade.missing("switchRawFrameWeights:", on: gpu.device)) }
+        else { return .skip(GM20BFacade.missing("switchMetalFrameWeights:", on: gpu.device)) }
         let scene = try Scene(gpu)
         _ = try await scene.run(gpu)
         if let refusal = device.perform(Self.arm, with: NSNumber(value: 1))?.takeUnretainedValue() as? String {
-            return .fail("switchRawFrameWeights: refused: \(refusal)")
+            return .fail("switchMetalFrameWeights: refused: \(refusal)")
         }
         let captured = try await scene.run(gpu)
         guard let capture = device.perform(Self.taken)?.takeUnretainedValue() as? NSDictionary else {
-            return .fail("switchRawFrameWeightsTaken answered no dictionary")
+            return .fail("switchMetalFrameWeightsTaken answered no dictionary")
         }
         let normal = try await scene.run(gpu)
         var metrics = Metrics()

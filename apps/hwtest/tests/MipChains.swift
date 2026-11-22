@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.mip_twod's chains of one format: made by generateMipmaps, or drawn by 3D passes (mip_step_fragment) one
+/// gpu.gm20b.mip_twod's chains of one format: made by generateMipmaps, or drawn by 3D passes (mip_step_fragment) one
 /// one-level texture a level, from the same level 0, and each step compared with MipReference
 final class MipChains {
     let gpu: GPU
@@ -31,7 +31,7 @@ final class MipChains {
 
     /// The facade's debug switch of 2D-engine mips for the 3D engine's formats: what it was, nil without one
     static func probe(_ device: MTLDevice, _ on: Bool) -> Bool? {
-        let selector = NSSelectorFromString("switchRawProbeMipCandidates:")
+        let selector = NSSelectorFromString("switchMetalProbeMipCandidates:")
         guard let object = device as? NSObject, object.responds(to: selector) else { return nil }
         return (object.perform(selector, with: NSNumber(value: on))?.takeUnretainedValue() as? NSNumber)?.boolValue
             ?? false

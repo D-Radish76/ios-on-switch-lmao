@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The pack's PackReflections section (runtime/raw_pack.h PackReflection) from directpack.mm's DRFL records.
+"""The pack's PackReflections section (runtime/pack.h PackReflection) from directpack.mm's DRFL records.
 
 A render state's reflection is filed under its key's hash, a compute state's under its computeStateKey's (a kernel key's
 part before its dispatch shape): the hashes Pack::reflection looks up. Each distinct blob is held once.
@@ -11,7 +11,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'raw', 'pack'))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'pack'))
 import directlink
 import packfile
 

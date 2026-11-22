@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// setDepthBias:slopeScale:clamp: with infinite and NaN factors on the raw path, against the depths an M4 Max stores
+/// setDepthBias:slopeScale:clamp: with infinite and NaN factors on the driver, against the depths an M4 Max stores
 /// (macOS 27.2.1): an unbounded +inf or NaN bias puts a triangle's depth at the top of its clamp ([0, 1], or the viewport's
 /// range in clamp mode) and -inf at the bottom; a clamp bounds an infinite bias to the depth plus the clamp; a NaN bias
 /// takes the clamp's side; an infinite slope leaves a flat triangle NaN and a sloped one infinite; a tessellated quad
@@ -11,8 +11,8 @@ import Metal
 /// without judging it, what the chip stores for a Depth32Float flat triangle at depth 0 under a -inf constant: Metal's unit
 /// there is 0, so its bias is NaN and it stores 1, which no finite polygon offset gives (the raw form's answer is 0).
 struct NonFiniteDepthBiasTest: HWTest {
-    let id = "gpu.raw.nonfinite_depth_bias"
-    let name = "Infinite and NaN depth bias factors store Metal's depths on the raw path"
+    let id = "gpu.gm20b.nonfinite_depth_bias"
+    let name = "Infinite and NaN depth bias factors store Metal's depths on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -78,8 +78,8 @@ struct NonFiniteDepthBiasTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.n
         let colour = try gpu.texture(.rgba8Unorm, n, n)
         let d = MTLDepthStencilDescriptor()
@@ -205,7 +205,7 @@ struct NonFiniteDepthBiasTest: HWTest {
         metrics.set("values", values.joined(separator: " "))
         metrics.set("zero_corner", String(format: "%.5f (Metal 1)", corner))
         metrics.set("paths", Set(paths).sorted().joined(separator: ","))
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)
     }
 }

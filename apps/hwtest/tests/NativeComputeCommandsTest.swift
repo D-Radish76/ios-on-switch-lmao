@@ -15,7 +15,7 @@ import Metal
 /// command buffer runs what the GPU left. Every command buffer stays raw.
 struct NativeComputeCommandsTest: NativeObjectTest {
     let id = "metal.native.compute_commands"
-    let name = "Indirect command buffers of dispatches: encoded once, executed by range on the raw path"
+    let name = "Indirect command buffers of dispatches: encoded once, executed by range on the driver"
 
     static let count = 100
 

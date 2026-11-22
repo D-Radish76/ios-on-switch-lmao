@@ -1,4 +1,4 @@
-"""frame_weights.py over "raw: fw" lines as drivers/TegraGM20BMetal/raw/runtime/raw_draw_times.cpp writes them."""
+"""frame_weights.py over "SwitchMetal: fw" lines as drivers/TegraGM20BMetal/draw_times.cpp writes them."""
 
 import tempfile
 import unittest
@@ -40,7 +40,7 @@ def record(message: str, pid: int = 77) -> dict:
 
 
 def records(lines: list[str], serial: int = 1, pid: int = 77, skip: int = -1) -> list[dict]:
-    return [record(f'raw: fw c{serial}.{n} {text}', pid) for n, text in enumerate(lines) if n != skip]
+    return [record(f'SwitchMetal: fw c{serial}.{n} {text}', pid) for n, text in enumerate(lines) if n != skip]
 
 
 def one(lines: list[dict]) -> frame_weights.Capture:

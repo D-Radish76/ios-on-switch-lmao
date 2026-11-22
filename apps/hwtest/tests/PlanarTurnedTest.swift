@@ -11,7 +11,7 @@ import Metal
 /// (planar_turned_off_<case>, a 4:2:0 block's chroma with its texels), and no byte past the turned frame changes
 /// (planar_turned_outside).
 struct PlanarTurnedTest: HWTest {
-    let id = "gpu.raw.planar_turned"
+    let id = "gpu.gm20b.planar_turned"
     let name = "Turned XR and YCbCr render targets store each frame texel where Metal turns it, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

@@ -6,7 +6,7 @@ import QuartzCore
 import UIKit
 
 /// An app draw longer than a band (TegraGM20BSchedPolicy.h TGM_APP_BAND_NS) drawn in scissor bands
-/// (raw/runtime/raw_draw_bands.h). A layer animates on screen throughout, so the compositor kicks every frame and
+/// (draw_bands.h). A layer animates on screen throughout, so the compositor kicks every frame and
 /// preempts these draws. Per case (blended, framebuffer fetch inside the pixel interlock, 4x MSAA resolved) the same
 /// two full-screen draws of a ~15 ms fragment program are made banded and with the facade's band budget at 0: the bytes
 /// must be identical and only the first arm banded (banded_draws, bands); the fetch case must have drawn interlocked
@@ -22,9 +22,9 @@ import UIKit
 /// worth a hold (over the hold's slack, within a refresh period: TegraGM20BSchedPolicy.h tgm_hold_worth) with work in
 /// flight while the compositor animates gets a window, so the banded arm fails with none. The learned arm draws a loop
 /// of scattered texture reads, a few dozen instructions priced far under a band: its first draw is whole and measured
-/// (raw_band_rates.h), and once its state's rate is learned the same draw must be banded by the time it took, with the
+/// (band_rates.h), and once its state's rate is learned the same draw must be banded by the time it took, with the
 /// whole draw's pixels. Its draw is alone in its pass, so the state's first three are measured and the rest not
-/// (raw_band_rates.h): us_measured (the measured banded draws) against us_unmeasured (the later ones) is what a
+/// (band_rates.h): us_measured (the measured banded draws) against us_unmeasured (the later ones) is what a
 /// measurement costs the GPU, which must be nothing beyond noise. Before them the same state draws `smallPasses` passes
 /// into a 64x64 target, each alone in its pass but under the 64 K units a measured draw needs: they take none of the
 /// state's picks (learned_small 0), so its first large draw is still measured. A device learns the measured draws at
@@ -63,11 +63,11 @@ struct DrawBandsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         guard let production = Self.budget(gpu.device, Self.budgetUs * 1000) else {
-            return .skip(RawFacade.missing("switchRawBandBudget:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalBandBudget:", on: gpu.device))
         }
         defer { Self.budget(gpu.device, production) }
         var metrics = Metrics()
@@ -208,23 +208,23 @@ struct DrawBandsTest: HWTest {
             blit.endEncoding()
         }
         var failures: [String] = []
-        let smallBefore = RawFacade.counters(of: gpu.device)
+        let smallBefore = GM20BFacade.counters(of: gpu.device)
         for _ in 0..<Self.smallPasses {
             try await gpu.run { pass($0, small) }
             try await gpu.run(teach)
         }
         let smallLearned =
-            (RawFacade.counters(of: gpu.device)["learned_draws"] ?? 0) - (smallBefore["learned_draws"] ?? 0)
+            (GM20BFacade.counters(of: gpu.device)["learned_draws"] ?? 0) - (smallBefore["learned_draws"] ?? 0)
         metrics.set("learned_small", smallLearned)
         if smallLearned != 0 { failures.append("memory: \(smallLearned) small passes took the state's picks") }
         var wholeMs = 0.0
         var learnedBands = 0
         var measuredUs: [Double] = [], unmeasuredUs: [Double] = []
         for round in 0..<Self.learnRounds {
-            let before = RawFacade.counters(of: gpu.device)
+            let before = GM20BFacade.counters(of: gpu.device)
             let timing = try await gpu.run(encode)
             try await gpu.run(teach)
-            let after = RawFacade.counters(of: gpu.device)
+            let after = GM20BFacade.counters(of: gpu.device)
             let bands = (after["bands"] ?? 0) - (before["bands"] ?? 0)
             let learned = (after["learned_draws"] ?? 0) - (before["learned_draws"] ?? 0)
             if round == 0 {
@@ -292,11 +292,11 @@ struct DrawBandsTest: HWTest {
     ) async throws -> Drawn {
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
         let msaa = test.samples > 1 ? try gpu.texture(.bgra8Unorm, Self.width, Self.height, samples: test.samples) : nil
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let timing = try await gpu.run { commands in
             Self.encode(commands, pipeline, msaa ?? target, samples: test.samples, resolve: msaa == nil ? nil : target)
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let drawsBanded = (after["banded_draws"] ?? 0) - (before["banded_draws"] ?? 0)
         let bands = (after["bands"] ?? 0) - (before["bands"] ?? 0)
         let interlocked = (after["interlock_draws"] ?? 0) - (before["interlock_draws"] ?? 0)
@@ -331,7 +331,7 @@ struct DrawBandsTest: HWTest {
     /// Sets the facade's band budget (debug builds) and answers the one it replaced; nil off a debug facade.
     @discardableResult
     static func budget(_ device: MTLDevice, _ ns: Int) -> Int? {
-        let selector = NSSelectorFromString("switchRawBandBudget:")
+        let selector = NSSelectorFromString("switchMetalBandBudget:")
         guard let object = device as? NSObject, object.responds(to: selector) else { return nil }
         let old = object.perform(selector, with: NSNumber(value: ns))?.takeUnretainedValue() as? String
         return old.flatMap { Int($0) }

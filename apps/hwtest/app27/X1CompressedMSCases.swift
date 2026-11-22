@@ -6,19 +6,19 @@ import Metal
 
 /// gpu.x1.ce_compressed's multisampled cases: the copy engine reading the sample grid of a stored 2x or 4x BGRA8 target
 /// on compressed memory (C32_MS2_2CRA, C32_MS4_2CRA) through a product route, Metal's blit copyFromTexture:toTexture:
-/// into a target of its count held on plain memory (switchRawProbePlainPrivate:). The compressed target is made where
+/// into a target of its count held on plain memory (switchMetalProbePlainPrivate:). The compressed target is made where
 /// the device binds compressed memory (CompressionSettled.remade). A draw whose slanted edge gives a pixel's samples
 /// different colours goes into it and into a second plain target, the reference; each sample is read by the texture
 /// unit (ms_sample_fragment): `ms<n>_bgra8_rendered` (the compressed target itself, 0 or 1) and `ms<n>_bgra8_wrong`
 /// (its copy's samples off the reference's). An M4 Max's blit copy keeps every sample (hwtests12
 /// mac/gpu.x1.ce_compressed). A facade without the selector counts `ms_cases_missing` 1, naming why in ms_why.
 extension X1CompressedCopyProbe {
-    static let plainSelector = NSSelectorFromString("switchRawProbePlainPrivate:")
+    static let plainSelector = NSSelectorFromString("switchMetalProbePlainPrivate:")
     static let msSide = 64
 
     static func multisampled(_ gpu: GPU, _ metrics: inout Metrics, _ wrong: inout [String: Int]) async throws {
         guard let facade = gpu.device as? NSObject, facade.responds(to: plainSelector) else {
-            metrics.set("ms_why", RawFacade.missing("switchRawProbePlainPrivate:", on: gpu.device))
+            metrics.set("ms_why", GM20BFacade.missing("switchMetalProbePlainPrivate:", on: gpu.device))
             wrong["ms_cases_missing"] = 1
             return
         }
@@ -27,7 +27,7 @@ extension X1CompressedCopyProbe {
             let compressed = try await CompressionSettled.remade(gpu.device) {
                 try gpu.texture(.bgra8Unorm, msSide, msSide, samples: count)
             }
-            let made = try RawProbe.facts(gpu.device, compressed)["comptags"] == 1
+            let made = try GM20BProbe.facts(gpu.device, compressed)["comptags"] == 1
             metrics.set("\(name)_made", made ? 1 : 0)
             wrong["\(name)_not_compressed"] = made ? 0 : 1
             guard made else { continue }
@@ -51,7 +51,7 @@ extension X1CompressedCopyProbe {
             wrong["\(name)_wrong"] =
                 stride(from: 0, to: min(got.count, want.count), by: 4).filter { got[$0..<$0 + 4] != want[$0..<$0 + 4] }
                 .count + abs(got.count - want.count) / 4
-            metrics.set("\(name)_copy_comptags", try RawProbe.facts(gpu.device, copy)["comptags"] ?? -1)
+            metrics.set("\(name)_copy_comptags", try GM20BProbe.facts(gpu.device, copy)["comptags"] ?? -1)
         }
     }
 

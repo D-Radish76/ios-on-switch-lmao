@@ -11,9 +11,9 @@ import Metal
 /// an M4 Max stores on every one of these values in both formats and pipelines. srgb_encode_values: the values per
 /// target and pipeline summed; srgb_encode_half_wrong, srgb_encode_float_wrong, srgb_encode_special_wrong: channels
 /// off Metal's byte (a correctly rounded encode is off by one at 1,643 of the halves; reported); srgb_encode_max_delta:
-/// the largest difference, judged at most 1. Every command buffer on the raw path.
+/// the largest difference, judged at most 1. Every command buffer on the driver.
 struct SrgbEncodeTest: HWTest {
-    let id = "gpu.raw.srgb_encode"
+    let id = "gpu.gm20b.srgb_encode"
     let name = "The output merger's sRGB encode of half and float writes against Metal's twelve-bit encode, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -49,9 +49,9 @@ struct SrgbEncodeTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var tally = (values: 0, half: 0, float: 0, special: 0, delta: 0)
@@ -74,11 +74,11 @@ struct SrgbEncodeTest: HWTest {
         metrics.set("srgb_encode_special_wrong", tally.special)
         metrics.set("srgb_encode_max_delta", tally.delta)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         checks.append(("every byte within one code of Metal's", tally.delta <= 1))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

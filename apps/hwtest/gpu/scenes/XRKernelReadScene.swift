@@ -3,12 +3,12 @@ import HWTestCore
 import Metal
 
 /// A kernel's read() and nearest sample of RGB10A8_2P_XR10 over a two-plane surface, through the kernel's own view of
-/// the planes (the raw path refused any view but its stand-in's: compute.image's TermTwoPlanesBare). The planes hold
+/// the planes (the driver refused any view but its stand-in's: compute.image's TermTwoPlanesBare). The planes hold
 /// Apple's planted words, some with their unread top bits set, and bytes (XRKernelTable.reads); each read and sample
 /// must be Apple's value bit for bit, (c - 384) / 510 a colour code and the byte over 255, every command buffer on the
 /// raw path.
 struct XRKernelReadScene: GPUScene {
-    let id = "gpu.raw.xr_kernel_read"
+    let id = "gpu.gm20b.xr_kernel_read"
     let name = "Kernel reads and samples of an RGB10A8_2P_XR10 surface texture's two planes"
 
     func run(_ gpu: GPU) async throws -> SceneResult {
@@ -46,8 +46,8 @@ struct XRKernelReadScene: GPUScene {
         if let first { result.metrics.set("first", first) }
         result.expect(
             reads == 0 && samples == 0, "\(reads) reads and \(samples) samples are not Apple's: \(first ?? "")")
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(path == "raw", "the reads took \(path), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(path == "gm20b", "the reads took \(path), not raw")
         }
         return result
     }

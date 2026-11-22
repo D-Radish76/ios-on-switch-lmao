@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The raw encode's CPU cost of a command buffer shaped as Core Animation's (raw_encode_profile.h, debug builds):
+/// The raw encode's CPU cost of a command buffer shaped as Core Animation's (encode_profile.h, debug builds):
 /// `passes` passes of Core Animation's untextured fill (PBGRAXm_A2Xhf, BGRA8 beside its memoryless colour 1 in the
 /// line's format), each draw binding its vertices, transform and zero uniforms by setBytes with a scissor of its own,
 /// `buffers` command buffers at each of two draw counts, each after as many at that count (whose recording storage they
@@ -16,13 +16,13 @@ import Metal
 /// allocations and 2 frees; the harness ran over the m2v device and went with it), and every command buffer is the raw
 /// path's. Times are reported, not judged: a fragment-slot-0 bind reads no selector id, a state with a selector table
 /// reads it once at a draw whose bindings moved (us_bind, us_draw). Beside the encode's own: the runtime's locks on
-/// every thread over the batch (facade_locks, raw_lock.h's count of its wrappers), at most 4 a command buffer, and the
+/// every thread over the batch (facade_locks, lock.h's count of its wrappers), at most 4 a command buffer, and the
 /// growth of the blocks in use in every malloc zone while the batch is recorded and held (held_blocks), a coarse bound
 /// on what each keeps allocated (the whole process's, so no per-draw check). The pooled encoders' blocks
-/// (raw_object_pool.h): none freed in the batch (its pool kept too few for what the batch holds at once), and the most
+/// (object_pool.h): none freed in the batch (its pool kept too few for what the batch holds at once), and the most
 /// each pool made in the process. The profile is the facade's; a release runtime has none and the test skips. A view of
 /// the target taken at its creation keeps it plain where it was made plain for want of compressed memory
-/// (raw_private_comp.h): its move onto that memory, an encode ahead given back and a copy job inside a range's encode,
+/// (private_comp.h): its move onto that memory, an encode ahead given back and a copy job inside a range's encode,
 /// never lands in a measured batch.
 struct EncodeCostPathTest: HWTest {
     let id = "gpu.path.encode_cost"
@@ -52,13 +52,13 @@ struct EncodeCostPathTest: HWTest {
 
     func run(_: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
-        if RawFacade.encodeProfile(of: gpu.device).isEmpty {
-            return RawFacade.counters(of: gpu.device)["state_segment_binds"] == nil
+        if GM20BFacade.encodeProfile(of: gpu.device).isEmpty {
+            return GM20BFacade.counters(of: gpu.device)["state_segment_binds"] == nil
                 ? .skip("no encode profile: a release runtime")
-                : .fail("a debug runtime without switchRawEncodeProfile")
+                : .fail("a debug runtime without switchMetalEncodeProfile")
         }
         let library: MTLLibrary
         do {
@@ -97,7 +97,7 @@ struct EncodeCostPathTest: HWTest {
         }
         var warm = 0
         let warmup = { (commands: MTLCommandBuffer) in encode(commands, Self.drawCounts[0]) }
-        while warm < Self.warmups, try await gpu.run(tolerateError: true, warmup).path != "raw" {
+        while warm < Self.warmups, try await gpu.run(tolerateError: true, warmup).path != "gm20b" {
             warm += 1
             try await Task.sleep(nanoseconds: 50_000_000)
         }
@@ -111,12 +111,12 @@ struct EncodeCostPathTest: HWTest {
         var arms: [[String: Double]] = []
         for draws in Self.drawCounts {
             try gpu.finish((0..<Self.buffers).map { _ in try gpu.commit { encode($0, draws) } })
-            let before = RawFacade.encodeProfile(of: gpu.device)
+            let before = GM20BFacade.encodeProfile(of: gpu.device)
             let blocks = Self.blocksInUse()
             let held = try (0..<Self.buffers).map { _ in try autoreleasepool { try gpu.commit { encode($0, draws) } } }
             let heldBlocks = (Self.blocksInUse() - blocks) / Double(Self.buffers)
             try gpu.finish(held)
-            var measured = Self.perCommandBuffer(before, RawFacade.encodeProfile(of: gpu.device))
+            var measured = Self.perCommandBuffer(before, GM20BFacade.encodeProfile(of: gpu.device))
             measured["held_blocks"] = heldBlocks
             arms.append(measured)
             let arm = arms.last!
@@ -130,7 +130,7 @@ struct EncodeCostPathTest: HWTest {
             metrics.set("applied_per_draw" + suffix, drawn > 0 ? (arm["applied"] ?? 0) / drawn : 0, digits: 2)
             metrics.set("mallocs_counted" + suffix, arm["malloc_encodes"] ?? 0 > 0)
         }
-        let process = RawFacade.encodeProfile(of: gpu.device)
+        let process = GM20BFacade.encodeProfile(of: gpu.device)
         for kind in ["render", "blit", "compute"] {
             for count in ["made", "freed"] {
                 let key = kind + "_encoders_" + count
@@ -139,11 +139,11 @@ struct EncodeCostPathTest: HWTest {
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         var failures: [String] = []
-        if gpu.paths.paths.keys.contains(where: { $0 != "raw" }) {
+        if gpu.paths.paths.keys.contains(where: { $0 != "gm20b" }) {
             failures.append("command buffers went \(gpu.paths.text)")
         }
         if arms.contains(where: { ($0["encodes"] ?? 0) < 1 }) {
-            failures.append("an arm encoded nothing on the raw path")
+            failures.append("an arm encoded nothing on the driver")
         }
         for (event, most) in Self.ceilings {
             metrics.set(event + "_ceiling", most, digits: 1)

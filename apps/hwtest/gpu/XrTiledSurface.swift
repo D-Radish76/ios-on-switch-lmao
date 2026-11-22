@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// A 550 over a planeless 'w30r' 64x64 (rows 256) that a BGR10_XR (554) render target over it was cleared in first (the
-/// device's kernel lays such a surface out block-linear for that target) (gpu.raw.xr_tiled_surface), against an M4 Max
+/// device's kernel lays such a surface out block-linear for that target) (gpu.gm20b.xr_tiled_surface), against an M4 Max
 public enum XrTiledSurface {
     public struct Reading: Sendable {
         public var made = false

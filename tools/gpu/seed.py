@@ -4,8 +4,8 @@
     seed.py layout --raw <raw pack tools dir> --stack <stack file> --out <dir> --manifest <a copy of its MANIFEST.json>
     seed.py archive --tools <dir> --out <tar>
 
-layout: the tools directory the seed runs (raw/ with the raw pack's tools: directpack, native-seed, the mock GM20B,
-own.metallib and the context init) and MANIFEST.json: the raw path's stack key, which the plugin is built with. The
+layout: the tools directory the seed runs (raw/ with the pack's tools: directpack, native-seed, the mock GM20B,
+own.metallib and the context init) and MANIFEST.json: the driver's stack key, which the plugin is built with. The
 seed refuses tools whose manifest is not the GPU bundle's. Running the tools needs nothing but macOS.
 """
 

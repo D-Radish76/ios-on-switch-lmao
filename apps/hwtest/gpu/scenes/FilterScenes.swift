@@ -57,9 +57,9 @@ struct MipmapScene: GPUScene {
                 "rgba8Unorm 100x60 level \(level)", got, TexelFormat.rgba8Unorm.quantized(want), tolerance: 1.01 / 255)
         }
         result.metrics.set("paths", paths.joined(separator: ","))
-        if RawFacade.kind(of: gpu.device) == "raw" {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             let off = paths.filter { !$0.hasSuffix(":raw") }
-            result.expect(off.isEmpty, "generateMipmaps off the raw path: \(off.joined(separator: ","))")
+            result.expect(off.isEmpty, "generateMipmaps off the driver: \(off.joined(separator: ","))")
         }
         return result
     }

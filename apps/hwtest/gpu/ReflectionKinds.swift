@@ -1,7 +1,7 @@
 import Foundation
 import Metal
 
-/// The raw facade's reflections (drivers/TegraGM20BMetal/raw/runtime/RawMetalReflection.mm): asked with argument info,
+/// The facade's reflections (drivers/TegraGM20BMetal/TegraGM20BMetalReflection.mm): asked with argument info,
 /// a state's bindings come from the pack's blob or the system shader compiler's.
 public enum ReflectionCheck {
     public static func describe(_ bindings: [MTLBinding]) -> String {
@@ -26,7 +26,7 @@ public enum ReflectionCheck {
     }
 }
 
-/// Each pipeline binding's answers, selector by selector, as gpu.raw.reflection_kinds compares them with Metal's
+/// Each pipeline binding's answers, selector by selector, as gpu.gm20b.reflection_kinds compares them with Metal's
 /// (ReflectionKindsGoldens): the selectors every binding answers, those of its own kind, and the pointer and struct
 /// types every binding has a method for (reported). Read by sending each selector, so a binding of another kind than
 /// Swift's protocol cast would allow is asked as an app asks it.

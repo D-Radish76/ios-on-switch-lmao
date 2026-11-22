@@ -13,7 +13,7 @@ import Metal
 /// (code - 384) / 510 nearest, 552's alpha clamped to [0, 1] as an M4 Max reads it, 550's alpha byte / 255
 /// (xr_decode_wrong, xr_decode_half_wrong: channels off), then those values written by
 /// kernels as floats and as halves into a texture of the format, read back as codes (xr_encode_wrong,
-/// xr_encode_half_wrong: channels off). All 0; every command buffer on the raw path.
+/// xr_encode_half_wrong: channels off). All 0; every command buffer on the driver.
 struct ExactRoundTest: HWTest {
     let id = "gpu.compute.exact_round"
     let name = "MSL float packs and extended-range codes read and written in compute round as Metal's, on raw"
@@ -38,9 +38,9 @@ struct ExactRoundTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -67,10 +67,10 @@ struct ExactRoundTest: HWTest {
             checks.append(("\(key) 0", count == 0))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

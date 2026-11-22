@@ -12,7 +12,7 @@ import Metal
 /// <fmt>_<case>_off samples off and _max the largest difference (codes; RGBA16Float: half steps); every command buffer
 /// raw, failed_cbs=0.
 struct ResolveOtherCountTest: HWTest {
-    let id = "gpu.raw.resolve_other_count"
+    let id = "gpu.gm20b.resolve_other_count"
     let name = "A 4x resolve into a 2x texture keeps it after a draw and spreads a clear-only pass, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -26,9 +26,9 @@ struct ResolveOtherCountTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for f in Self.formats {
@@ -46,9 +46,9 @@ struct ResolveOtherCountTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

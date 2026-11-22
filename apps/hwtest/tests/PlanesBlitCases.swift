@@ -5,7 +5,7 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// The blits gpu.raw.planes_blits runs (PlanesBlitsTest.swift), each over memory seeded at random as blitgroups.mm seeds
+/// The blits gpu.gm20b.planes_blits runs (PlanesBlitsTest.swift), each over memory seeded at random as blitgroups.mm seeds
 /// it, and judged whole: every byte of each surface (to the end of its last page), buffer and plain texture afterwards
 /// against what it held before with the rule's bytes written in. p0(x, y) and p1(x, y) are byte x of row y of a plane
 /// from the plane's start at the surface's own pitch, x unbounded: past a row's end they are the next rows' bytes, past
@@ -49,7 +49,7 @@ enum PlanesBlitCases {
         var text: String { off.map { "\($0.0) \($0.1)" }.joined(separator: ", ") }
     }
 
-    /// `skips`: the calls the raw path counts skipped (skipped.call.blit): a copy between two pixel formats, a fill of
+    /// `skips`: the calls the driver counts skipped (skipped.call.blit): a copy between two pixel formats, a fill of
     /// planes, a region past its surface's last page
     typealias Case = (key: String, skips: Int, run: (GPU) async throws -> Result)
 

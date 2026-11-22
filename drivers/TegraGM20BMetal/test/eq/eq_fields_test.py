@@ -35,7 +35,7 @@ def indexed(first: int, count: int, begin: int, idx: str) -> str:
 
 def frame(text: str) -> eq_fields.Frame:
     with tempfile.TemporaryDirectory() as tmp:
-        log = Path(tmp) / 'raw.log'
+        log = Path(tmp) / 'gm20b.log'
         log.write_text(text)
         return eq_fields.frame(str(log))
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
-//! The raw GM20B path's direct compile of a compute state at one dispatch shape (NativeMetalDirect.h): what m2v's
+//! The driver's direct compile of a compute state at one dispatch shape (NativeMetalDirect.h): what m2v's
 //! translator makes of the kernel for the three dispatches the pack's kernel probe ran
-//! (drivers/TegraGM20BMetal/raw/pack/kernels.py), with no pipeline state, command buffer or capture. Only the
+//! (drivers/TegraGM20BMetal/pack/kernels.py), with no pipeline state, command buffer or capture. Only the
 //! translator's public API is used. A runtime device lends its compile device and its Vulkan device, on which the
 //! variant's layout and samplers are made too; the offline compile (the pack generator's, and the compile context's:
 //! NativeMetalCompile.rs) runs on the compile profile's native device with the layout as data alone.
@@ -126,7 +126,7 @@ pub struct NmbDirectKernel {
     pub stage_in_strides: [[u32; 2]; 4],
 }
 
-/// The kernel's reads through argument buffers the raw path fills (NativeMetalDirect.rs holes_of and heap_of for a draw): its
+/// The kernel's reads through argument buffers the driver fills (NativeMetalDirect.rs holes_of and heap_of for a draw): its
 /// root-table and ExecutionStatus address holes (push word + 1), the others counted, the buffer slots its root table holds
 /// an entry for as the bound dispatch names them, and its set 1's heap arrays
 fn arguments_of(
@@ -266,7 +266,7 @@ fn bound_map(ask: &NmbDirectDispatch, slot: u32) -> u8 {
 
 /// `state` with each runtime sampler the kernel samples a converted texture through mapped by that texture's map, as
 /// m2v binds it (metal2vulkan-runtime address_map.rs `sampler_maps`): the pairs are the layout's. A sampler two textures
-/// need under different modes fails the dispatch's command buffer ("fails: ", RawDirect.mm), as m2v's
+/// need under different modes fails the dispatch's command buffer ("fails: ", TegraGM20BMetalDirect.mm), as m2v's
 /// `SharedSamplerSlot` does.
 fn mapped_samplers(layout: &PipelineLayout, ask: &NmbDirectDispatch, state: &BindState) -> Result<BindState, String> {
     let mut pairs = Vec::new();
@@ -573,7 +573,7 @@ fn offset_change(
 
 /// The record's residual words, the plain plan's `words` (NativeMetalDirect.rs residual_words), where they hold every
 /// buffer's offset: raw binds a buffer entry 16-aligned and adds back only the remainder a residual word names
-/// (raw_compute.cpp kernelBufferDescriptor), so a plan the offsets change (offset_change of `variants`, `respecialized`
+/// (compute.cpp kernelBufferDescriptor), so a plan the offsets change (offset_change of `variants`, `respecialized`
 /// and `layouts`), or a residual placed where no record word names it, is refused
 fn record_residuals(
     variants: [&VariantKey; 2],

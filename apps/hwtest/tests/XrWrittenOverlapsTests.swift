@@ -9,10 +9,10 @@ import Metal
 /// before); every texel a kernel reads is the word at y * 128 + 4x with the alpha byte at 512 + y * 32 + x
 /// (xr_into_alpha_read_off 0 of 256); a clear to (0.5, 0.25, -0.25, 0.75) leaves words 0x27f80100 everywhere but alpha
 /// rows 4 to 7 (bytes 640 to 767), which hold 0xbf but row 5's first ten bytes, which hold the words' bytes
-/// (xr_into_alpha_clear_bytes_off 0 of the 1023 bytes but the tie byte, gpu.raw.xr_into_alpha_tie's), and nothing past
+/// (xr_into_alpha_clear_bytes_off 0 of the 1023 bytes but the tie byte, gpu.gm20b.xr_into_alpha_tie's), and nothing past
 /// the planes (xr_into_alpha_tail 0).
 struct XrWordsIntoAlphaTest: HWTest {
-    let id = "gpu.raw.xr_words_into_alpha"
+    let id = "gpu.gm20b.xr_words_into_alpha"
     let name = "A written RGB10A8_2P_XR10 whose words run into its alpha plane reads and clears as an M4 Max's, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -37,11 +37,11 @@ struct XrWordsIntoAlphaTest: HWTest {
     }
 }
 
-/// gpu.raw.xr_words_into_alpha's clear at its tie byte (682: word row 5's byte 42 and alpha texel (10, 5), the one byte
+/// gpu.gm20b.xr_words_into_alpha's clear at its tie byte (682: word row 5's byte 42 and alpha texel (10, 5), the one byte
 /// a word and an alpha byte of the same texel column both store to): an M4 Max under macOS 27.2.1 leaves the OR of the
 /// two, 0xff (0xf8 | 0xbf; this test's scene code, three runs alike) (xr_into_alpha_tie).
 struct XrIntoAlphaTieTest: HWTest {
-    let id = "gpu.raw.xr_into_alpha_tie"
+    let id = "gpu.gm20b.xr_into_alpha_tie"
     let name = "Where a written RGB10A8_2P_XR10's word and alpha stores meet in a byte, a clear leaves their OR, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -66,7 +66,7 @@ struct XrIntoAlphaTieTest: HWTest {
 /// of 256); a kernel's store of (0.5, 0.25, -0.25, 0.75) completes (xr_alone_window_status) and leaves every word of
 /// the plane inside the page 0x27f80100 and every byte before the plane as it was (xr_alone_window_store_off 0).
 struct XrAlonePastLastPageTest: HWTest {
-    let id = "gpu.raw.xr_alone_past_last_page"
+    let id = "gpu.gm20b.xr_alone_past_last_page"
     let name = "A written RGB10A8_2P_XR10 over a plane alone whose rows run past the last page reads and stores, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

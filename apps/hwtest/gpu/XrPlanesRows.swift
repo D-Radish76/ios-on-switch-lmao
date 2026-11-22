@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// A 550 (RGB10A8_2P_XR10) texture of 64x64 over plane 0 of a 'b3a8' whose rows are off 32 bytes: plane 0 words, rows
-/// 272 bytes apart at 0, plane 1 alpha bytes, rows 80 apart at 17408, 22528 bytes (gpu.raw.xr_planes_rows_off32). Word
+/// 272 bytes apart at 0, plane 1 alpha bytes, rows 80 apart at 17408, 22528 bytes (gpu.gm20b.xr_planes_rows_off32). Word
 /// (x, y) holds codes (x + 7y) & 0x3ff, 300 + y, 500 + x from bit 20 down; alpha byte (3x + y) & 255.
 public enum XrPlanesRows {
     static let size = 64, wordPitch = 272, alphaAt = 17408, alphaPitch = 80, allocation = 22528

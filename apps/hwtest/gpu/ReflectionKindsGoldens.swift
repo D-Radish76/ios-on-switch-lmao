@@ -1,4 +1,4 @@
-/// Metal's answers for gpu.raw.reflection_kinds's bindings (ReflectionKinds.answers), measured on an M4 Max under macOS
+/// Metal's answers for gpu.gm20b.reflection_kinds's bindings (ReflectionKinds.answers), measured on an M4 Max under macOS
 /// 27.2.1 with the test's own shaders and 24B119's QuartzCore library
 public enum ReflectionKindsGoldens {
     public static let metal: [String: [String: Int]] = [

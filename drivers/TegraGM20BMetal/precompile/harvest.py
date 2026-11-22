@@ -14,16 +14,16 @@ usage: harvest.py <corpus.log> --build <IPSW build> <pipelines.log>...
                   [--open <container UUID>]... [--open-all]
 
 --build   the OS build the journals were written under (a journal does not say): each render and dispatch line it adds
-          names it (os=<build>), as the raw pack keeps a line to the builds it names (tools/gpu/rawpack.py own_build)
+          names it (os=<build>), as the pack keeps a line to the builds it names (tools/gpu/make_pack.py own_build)
 
 --volume  every process's m2v cache on the iPad's Data volume (the plugin's cacheCandidates: a container's
-          Library/Caches/m2v, Library/Caches/m2v-<process> or tmp/m2v, tmp/m2v-<process>, a daemon's user cache or
-          temp directory), its pipelines.log and pipelines.log.old. Read only, but for one write: a system container's
-          Library and Library/Caches are mode 000, so for a container named by --open (default: backboardd's,
-          SpringBoard's, PosterBoard's, Preferences' and Spotlight's, by SYSTEM_CACHES' UUIDs or by their container
-          manager identifiers, SYSTEM_IDENTIFIERS) or every one with --open-all, each closed directory on the way is
-          made u+rx for the read and given its mode back at once (and checked); other closed containers are skipped
-          and counted.
+          Library/Caches/TegraGM20BMetal, Library/Caches/TegraGM20BMetal-<process> or tmp/TegraGM20BMetal,
+          tmp/TegraGM20BMetal-<process>, a daemon's user cache or temp directory), its pipelines.log and
+          pipelines.log.old. Read only, but for one write: a system container's Library and Library/Caches are mode 000,
+          so for a container named by --open (default: backboardd's, SpringBoard's, PosterBoard's, Preferences' and
+          Spotlight's, by SYSTEM_CACHES' UUIDs or by their container manager identifiers, SYSTEM_IDENTIFIERS) or every
+          one with --open-all, each closed directory on the way is made u+rx for the read and given its mode back at
+          once (and checked); other closed containers are skipped and counted.
 --save    also copy each m2v cache found, whole (v1/, msl/, libs/, the journals, makings.log), to <dir>/<where it was>,
           e.g. the boot's log folder. makings.log (m2v 0118, the plugin turns it on in every cache): one line per driver
           record the process wrote (a compile), its name and the making's description; a precompile run with
@@ -39,7 +39,7 @@ usage: harvest.py <corpus.log> --build <IPSW build> <pipelines.log>...
 --pack    harvest.py --pack [--device <dir>]: the staging directory as the build's @gpu_device_data: a tar (sorted, no
           times or owners) of the libraries made from bytes that the corpus names and the build cannot make itself (not
           one of gpu/apple-libs.sha256's, not the frontend's TwoPlaneStandIn.h: Core Image's kernels compiled on the
-          device) and of its compile replies, written to <state>/gpu-device-data/m2v-device-<sha256[:16]>.tar; prints
+          device) and of its compile replies, written to <state>/gpu-device-data/device-data-<sha256[:16]>.tar; prints
           the DEVICE_DATA pin for gpu/deps.bzl. The first build after the pin copies the tar into the repository cache;
           no build reads the staging directory.
 """
@@ -59,7 +59,7 @@ from pathlib import Path
 
 from tools.gpu.shaders import replies as compiler_replies
 
-# os=<build>: the OS build the journal was written under, which the raw pack keeps a line to (tools/gpu/rawpack.py
+# os=<build>: the OS build the journal was written under, which the pack keeps a line to (tools/gpu/make_pack.py
 # own_build)
 DESCRIPTOR = re.compile(r'(samples|topo|ds|opt|os|c\d|a\d+)=')
 OS_BUILD = re.compile(r' os=\S+')
@@ -71,10 +71,10 @@ PROJECT = Path(os.environ.get('BUILD_WORKSPACE_DIRECTORY') or Path(__file__).res
 DEVICE = (
     Path(os.environ.get('SWITCH_HOME') or Path.home() / 'Library/Application Support/switch-ios') / 'gpu-device-data'
 )
-# /private/var/containers/Data/System/<UUID>/Library/Caches/m2v of the system containers whose processes kept an m2v
-# cache there (the plugin's "device ... ready in" lines, r5d and r6h): their Library and Library/Caches are mode 000.
-# The UUIDs are one install's (21H461's, r5d); another install names the same containers otherwise (24B119's boot 15:
-# backboardd's CE929FE0-..., SpringBoard's 1809AE07-...), so a container is also known by the identifier its
+# /private/var/containers/Data/System/<UUID>/Library/Caches/TegraGM20BMetal of the system containers whose processes
+# kept an m2v cache there (the plugin's "device ... ready in" lines, r5d and r6h): their Library and Library/Caches are
+# mode 000. The UUIDs are one install's (21H461's, r5d); another install names the same containers otherwise (24B119's
+# boot 15: backboardd's CE929FE0-..., SpringBoard's 1809AE07-...), so a container is also known by the identifier its
 # container manager metadata gives it.
 SYSTEM_CACHES = {
     '6C7A65AF-CB18-421C-A07A-D724B05A7AB6': 'backboardd',
@@ -155,9 +155,9 @@ def _normal_render(line: str) -> tuple[str | None, str | None]:
     if v < 0 or f < 0:
         return None, None
     # The functions the state links follow its stages (the frontend's linkedText: " | <vl|vp|fl|fp> <stage>"), then
-    # the cubic samplers' binds of a state's variant (" | cubic ...", raw_cubic.h), then the slots its sampled two-plane
-    # variant reads two-plane textures at (" | xrs=<slots>", raw_xr_pass.h), then the formats its written variant stores
-    # (" | wtex=<slot>:<format>,...", raw_written_textures.h)
+    # the cubic samplers' binds of a state's variant (" | cubic ...", cubic.h), then the slots its sampled two-plane
+    # variant reads two-plane textures at (" | xrs=<slots>", xr_pass.h), then the formats its written variant stores
+    # (" | wtex=<slot>:<format>,...", written_textures.h)
     while end >= 0 and (
         line[end + 3 : end + 6] in ('vl ', 'vp ', 'fl ', 'fp ')
         or line[end + 3 : end + 9] == 'cubic '
@@ -221,13 +221,13 @@ def caches(
             found += in_container
             skipped += closed
     for pattern in (
-        'tmp/m2v-*',
-        'tmp/m2v',
-        'mobile/tmp/*/m2v',
-        'mobile/Library/Caches/m2v',
-        'root/Library/Caches/m2v',
-        'folders/*/*/C/m2v',
-        'folders/*/*/T/m2v',
+        'tmp/TegraGM20BMetal-*',
+        'tmp/TegraGM20BMetal',
+        'mobile/tmp/*/TegraGM20BMetal',
+        'mobile/Library/Caches/TegraGM20BMetal',
+        'root/Library/Caches/TegraGM20BMetal',
+        'folders/*/*/C/TegraGM20BMetal',
+        'folders/*/*/T/TegraGM20BMetal',
     ):
         for m2v in sorted(volume.glob(pattern)):
             if m2v.is_dir() and readable(m2v):
@@ -254,7 +254,7 @@ def _container_caches(
     where: str, container: Path, may_open: bool
 ) -> tuple[list[tuple[str, Path, tuple[Path, ...]]], list[str]]:
     found, skipped = [], []
-    for sub in ('Library/Caches/m2v', 'tmp/m2v'):
+    for sub in ('Library/Caches/TegraGM20BMetal', 'tmp/TegraGM20BMetal'):
         parts = sub.split('/')
         way = [container / '/'.join(parts[: i + 1]) for i in range(len(parts) - 1)]
         shut = [d for d in way if os.path.lexists(d) and not readable(d)]
@@ -265,12 +265,12 @@ def _container_caches(
             found.append((f'{where}/{sub}', container / sub, tuple(way)))
         elif sub.startswith('Library'):
             skipped.append(container.name)
-    # the plugin's Library/Caches/m2v-<process> of a data container whose tmp is the process's temp directory
-    # (66b8ec2: WebKit's GPU process in Safari's container, a poster extension in its own)
+    # the plugin's Library/Caches/TegraGM20BMetal-<process> of a data container whose tmp is the process's temp
+    # directory (66b8ec2: WebKit's GPU process in Safari's container, a poster extension in its own)
     if readable(container / 'Library') and readable(container / 'Library/Caches'):
         found.extend(
             (f'{where}/{m2v.relative_to(container)}', m2v, ())
-            for m2v in sorted((container / 'Library/Caches').glob('m2v-*'))
+            for m2v in sorted((container / 'Library/Caches').glob('TegraGM20BMetal-*'))
             if m2v.is_dir() and readable(m2v)
         )
     return found, skipped
@@ -358,7 +358,7 @@ def pack(store: Path, corpus: Path) -> None:
             with path.open('rb') as f:
                 tar.addfile(info, f)
     digest = hashlib.sha256(data.getvalue()).hexdigest()
-    out = DEVICE / f'm2v-device-{digest[:16]}.tar'
+    out = DEVICE / f'device-data-{digest[:16]}.tar'
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_bytes(data.getvalue())
     library_count = sum(1 for p in members if p.parts[-2] == 'data')

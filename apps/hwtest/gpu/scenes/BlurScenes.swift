@@ -5,8 +5,8 @@ import Metal
 import MetalPerformanceShaders
 
 /// MPS's Gaussian blur, edges clamped, against a Gaussian worked in double on the CPU, at small, medium and large
-/// sigma. MPS's kernels write half-float intermediate textures, which the raw facade writes through a texture header of
-/// that format (raw_view.h).
+/// sigma. MPS's kernels write half-float intermediate textures, which the facade writes through a texture header of
+/// that format (view.h).
 struct MPSBlurScene: GPUScene {
     let id = "gpu.blur.mps"
     let framework = true
@@ -38,8 +38,8 @@ struct MPSBlurScene: GPUScene {
                 "sigma \(sigma)", try await gpu.raster(destination, .rgba8Unorm), want, tolerance: BlurTolerance.mps)
         }
         result.metrics.set("paths", paths.joined(separator: ","))
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(paths.allSatisfy { $0 == "raw" }, "the blurs took \(paths), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(paths.allSatisfy { $0 == "gm20b" }, "the blurs took \(paths), not raw")
         }
         return result
     }

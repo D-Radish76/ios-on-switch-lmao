@@ -17,7 +17,7 @@ class StageManifestTest(unittest.TestCase):
     def test_packed_native_records_reach_the_runtime_lookup_paths(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            records = 'raw-0123456789abcdef/'
+            records = 'rec-0123456789abcdef/'
             reply = 'msl/' + 'a' * 64 + '.reply'
             inputs = {
                 'base/ngpu/addons/TegraGM20BMetal.bundle/TegraGM20BMetal': b'plugin',
@@ -71,8 +71,8 @@ class StageManifestTest(unittest.TestCase):
                 'base/ngpu/addons/TegraGM20BMetal.bundle/TegraGM20BMetal': b'plugin',
                 'seed/MANIFEST.json': b'{}',
                 'raw/pack.bin': b'raw pipeline pack',
-                'native/raw-0123456789abcdef/index': index(1, 1),
-                'native/raw-0123456789abcdef/packs/000': b'records',
+                'native/rec-0123456789abcdef/index': index(1, 1),
+                'native/rec-0123456789abcdef/packs/000': b'records',
             }.items():
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
                 (root / name).write_bytes(data)
@@ -94,11 +94,11 @@ class StageManifestTest(unittest.TestCase):
     def test_a_packed_directory_without_a_seed_pack_index_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:
             native = Path(directory)
-            name = 'raw-0123456789abcdef/index'
+            name = 'rec-0123456789abcdef/index'
             (native / name).parent.mkdir(parents=True)
             (native / name).write_bytes(index(2, 1, b'NOTASEED'))
             with self.assertRaisesRegex(ValueError, 'seed pack'):
-                stage_manifest.native_target(native, 'raw-0123456789abcdef/packs/000')
+                stage_manifest.native_target(native, 'rec-0123456789abcdef/packs/000')
 
 
 if __name__ == '__main__':

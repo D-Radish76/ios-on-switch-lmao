@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Fetch rungs 2 and 3 (drivers/TegraGM20BMetal/raw/runtime/raw_fetch_free.h) on the chip: Core Animation states that
+/// Fetch rungs 2 and 3 (drivers/TegraGM20BMetal/fetch_free.h) on the chip: Core Animation states that
 /// blend by fetching their colour (FetchRungStates), each drawn first as the rules draw it (the probe channel at 0), then
 /// by its storage form (rung 4: the fetch and the blend inside the pixel interlock) and by its fetch-free form (rung 2:
 /// the ROP's 8-bit blender with the form's factors; rung 3: the iterated blend unit running the form's program, the
@@ -20,7 +20,7 @@ import Metal
 ///   noform_<key>    the forced draw took no fetch-free form: left out where the pack holds none on this IPSW (21H461's
 ///                   pdi), else formless= and FAIL
 /// proven= the programs every state of which was within the bound and faster; on= the programs the rules drew on the
-/// rung (raw_chip_facts.h kIteratedProven for rung 3). r<N>= the draws the facade's counter says took the fetch-free
+/// rung (chip_facts.h kIteratedProven for rung 3). r<N>= the draws the facade's counter says took the fetch-free
 /// form. Core Animation's clear (clr, clr_m1 with its memoryless image) loads no colour, so it draws plain:
 /// fetched_<key> the fetching draws the facade counted over its draws (0), path_<key> its path. Rung 2 also stacks 4
 /// layers of each state over one target with no rung forced, so rule fetch.blend decides: the pattern is an 8-bit image,
@@ -69,14 +69,14 @@ struct FetchRungTest: HWTest {
     func measure(_ line: PipelineLine, library: MTLLibrary, gpu: GPU) async throws -> Measured? {
         var m = Measured()
         let counter = "fetch_rung\(rung)"
-        let before = RawFacade.counters(of: gpu.device)[counter] ?? 0
+        let before = GM20BFacade.counters(of: gpu.device)[counter] ?? 0
         _ = try await FetchRungScene.bytes(line, library: library, gpu: gpu)
-        m.unforced = (RawFacade.counters(of: gpu.device)[counter] ?? 0) - before
+        m.unforced = (GM20BFacade.counters(of: gpu.device)[counter] ?? 0) - before
         let draw = { try await FetchRungScene.bytes(line, library: library, gpu: gpu) }
         guard let storage = try await FetchRungScene.forcing(4, gpu.device, draw) else { return nil }
-        let forcedFrom = RawFacade.counters(of: gpu.device)[counter] ?? 0
+        let forcedFrom = GM20BFacade.counters(of: gpu.device)[counter] ?? 0
         guard let free = try await FetchRungScene.forcing(rung, gpu.device, draw) else { return nil }
-        m.formless = (RawFacade.counters(of: gpu.device)[counter] ?? 0) == forcedFrom
+        m.formless = (GM20BFacade.counters(of: gpu.device)[counter] ?? 0) == forcedFrom
         if m.formless { return m }
         let blended = line.colors.min { $0.index < $1.index }?.format
         (m.worst, m.differing) =
@@ -96,7 +96,7 @@ struct FetchRungTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else { return .skip("the default device is not the raw facade") }
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else { return .skip("the default device is not the facade") }
         guard let statesURL = Bundle.main.url(forResource: "ca_states", withExtension: "log"),
             let text = try? String(contentsOf: statesURL, encoding: .utf8)
         else { return .fail("ca_states.log is not in the app's bundle") }
@@ -116,7 +116,7 @@ struct FetchRungTest: HWTest {
         var on = Set<String>()
         var unstacked: [String] = []
         let key = "fetch_rung\(rung)"
-        let before = RawFacade.counters(of: gpu.device)[key] ?? 0
+        let before = GM20BFacade.counters(of: gpu.device)[key] ?? 0
         var forcedDraws = 0
         for line in lines {
             let state = states[line.shortLabel]!
@@ -130,7 +130,7 @@ struct FetchRungTest: HWTest {
                 outcomes.append((program, false))
                 continue
             }
-            guard let m = measured else { return .skip(RawFacade.missing("switchRawProbeFetchRung:", on: gpu.device)) }
+            guard let m = measured else { return .skip(GM20BFacade.missing("switchMetalProbeFetchRung:", on: gpu.device)) }
             metrics.set("unforced_\(state.key)", m.unforced)
             if m.formless {
                 metrics.set("noform_\(state.key)", 1)
@@ -178,7 +178,7 @@ struct FetchRungTest: HWTest {
         }
         var fetching: [String] = []
         let fetchedDraws = {
-            let counters = RawFacade.counters(of: gpu.device)
+            let counters = GM20BFacade.counters(of: gpu.device)
             return Self.fetchCounters.reduce(0) { $0 + (counters[$1] ?? 0) }
         }
         for line in plainLines {
@@ -188,9 +188,9 @@ struct FetchRungTest: HWTest {
             let fetched = fetchedDraws() - start
             metrics.set("fetched_\(label)", fetched)
             metrics.set("path_\(label)", path)
-            if fetched != 0 || path != "raw" { fetching.append(label) }
+            if fetched != 0 || path != "gm20b" { fetching.append(label) }
         }
-        let taken = (RawFacade.counters(of: gpu.device)[key] ?? 0) - before
+        let taken = (GM20BFacade.counters(of: gpu.device)[key] ?? 0) - before
         metrics.set("r\(rung)", taken)
         metrics.set("forced_draws", forcedDraws)
         metrics.set("states", lines.count + plainLines.count)

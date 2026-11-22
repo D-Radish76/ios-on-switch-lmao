@@ -10,7 +10,7 @@ import Metal
 /// one amplify call a draw, every command buffer raw.
 struct NativeAmplificationCountTest: NativeObjectTest {
     let id = "metal.native.amplification_count"
-    let name = "[[amplification_count]] is each draw's count on the raw path"
+    let name = "[[amplification_count]] is each draw's count on the driver"
 
     static let size = 32
 

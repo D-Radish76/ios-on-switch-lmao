@@ -11,7 +11,7 @@ import Metal
 /// id's colour. Exact texel by texel, every command buffer raw.
 struct NativeAmplificationMappingsTest: NativeObjectTest {
     let id = "metal.native.amplification_mappings"
-    let name = "Vertex amplification's view mappings choose each amplification's layer and viewport on the raw path"
+    let name = "Vertex amplification's view mappings choose each amplification's layer and viewport on the driver"
 
     static let size = 32
 

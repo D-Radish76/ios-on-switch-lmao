@@ -3,12 +3,12 @@ import HWTestCore
 import Metal
 
 /// Kernels that write half-float textures (RGBA16Float, R16Float), as Core Image's do in PosterBoard and
-/// iconservicesagent: the raw facade binds a texture header of that format over the same memory
-/// (drivers/TegraGM20BMetal/raw/runtime/raw_view.h). A sampled source in the same kernel keeps its own header, a
+/// iconservicesagent: the facade binds a texture header of that format over the same memory
+/// (drivers/TegraGM20BMetal/view.h). A sampled source in the same kernel keeps its own header, a
 /// read_write texture is read and written through the view, and a bgra8 write is the control. Every value is exact in
 /// half, so the bytes must match.
 struct KernelViewScene: GPUScene {
-    let id = "gpu.raw.kernel_view"
+    let id = "gpu.gm20b.kernel_view"
     let name = "Kernels writing half-float textures through a view of another format"
 
     static let width = 32
@@ -68,8 +68,8 @@ struct KernelViewScene: GPUScene {
             result.expect(wrong.isEmpty, "\(label): \(wrong.count) texels wrong, the first at \(wrong.first ?? -1)")
         }
         result.metrics.set("paths", paths.joined(separator: ","))
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(paths.allSatisfy { $0 == "raw" }, "the kernels took \(paths), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(paths.allSatisfy { $0 == "gm20b" }, "the kernels took \(paths), not raw")
         }
         return result
     }

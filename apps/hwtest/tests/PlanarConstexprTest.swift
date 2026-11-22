@@ -4,15 +4,15 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// RenderBox's widget snapshots on the raw path (boot 21 WidgetRenderer: enc.planarclamp a=0 b=2, then the command
+/// RenderBox's widget snapshots on the driver (boot 21 WidgetRenderer: enc.planarclamp a=0 b=2, then the command
 /// buffer failed): an RGB8_444_2P (542) texture over a two-plane 4:4:4 '_RB4' surface sampled through constexpr samplers,
 /// the quad's corners set as vertex bytes before the encoder's first draw. Metal reads its codes (red Cr, green Y, blue
 /// Cb, alpha 1) and samples clamp-to-zero and clamp-to-border as clamp-to-edge (m2v texture/ycbcr_image.rs ycbcr_modes,
 /// measured), the wrapping modes as themselves. Target pixel (x, y) samples texel (x - 1, y - 1), so the ring around the
 /// texture reads each mode outside it. PASS: one raw command buffer, every pixel the texel its mode names.
 struct PlanarConstexprTest: HWTest {
-    let id = "gpu.raw.planar_constexpr"
-    let name = "A two-plane 4:4:4 texture through constexpr samplers of each address mode, on the raw path"
+    let id = "gpu.gm20b.planar_constexpr"
+    let name = "A two-plane 4:4:4 texture through constexpr samplers of each address mode, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
 
@@ -41,8 +41,8 @@ struct PlanarConstexprTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let surface = try Self.surface()
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: Self.rgb8_444_2P, width: Self.width, height: Self.height, mipmapped: false)
@@ -77,7 +77,7 @@ struct PlanarConstexprTest: HWTest {
         var metrics = Metrics()
         var wrong: [String] = []
         metrics.set("path", path)
-        if path != "raw" { wrong.append("path") }
+        if path != "gm20b" { wrong.append("path") }
         for (mode, target) in zip(Self.modes, targets) {
             let bytes = try await gpu.read(target, bytesPerPixel: 4)
             var off = 0

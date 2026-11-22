@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""No binary that ships or builds the raw pack depends on the deleted Metal-to-Vulkan fallback again.
+"""No binary that ships or builds the pack depends on the deleted Metal-to-Vulkan fallback again.
 
 usage: no_fallback_test.py <fallback_deps>   (gpu/BUILD.bazel's genquery: each such target of their graphs)
 """

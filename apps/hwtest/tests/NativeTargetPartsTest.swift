@@ -106,7 +106,7 @@ enum TextureParts {
 }
 
 /// Render targets of a mip level, an array slice, a cube face, a cube array's face and a 3D plane, in textures of one
-/// level and mipmapped ones: each binds the part NVK binds (raw_attachment_target.h), so the quad lands in that part and
+/// level and mipmapped ones: each binds the part NVK binds (attachment_target.h), so the quad lands in that part and
 /// every other texel of the texture keeps its clear.
 struct NativeTargetPartsTest: NativeObjectTest {
     let id = "metal.native.target_parts"

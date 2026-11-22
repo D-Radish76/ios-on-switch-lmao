@@ -5,7 +5,7 @@ struct UncheckedArgs {
     device const uint *data;
 };
 
-/// gpu.raw.unchecked_buffer_loads: word i read through the bound buffer and through the argument buffer's pointer
+/// gpu.gm20b.unchecked_buffer_loads: word i read through the bound buffer and through the argument buffer's pointer
 kernel void unchecked_reads(device const uint *direct [[buffer(0)]], device const UncheckedArgs &args [[buffer(1)]],
                             device uint2 *out [[buffer(2)]], uint i [[thread_position_in_grid]])
 {

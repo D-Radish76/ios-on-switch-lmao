@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// replaceRegion and getBytes of private one-aspect depth and stencil textures (drivers/TegraGM20BMetal/raw/runtime/
-/// raw_gpu.cpp transferTexture): the bytes written read back, through the copy engine. Apple's driver does the same
+/// replaceRegion and getBytes of private one-aspect depth and stencil textures (drivers/TegraGM20BMetal/
+/// gpu.cpp transferTexture): the bytes written read back, through the copy engine. Apple's driver does the same
 /// with API validation off.
 struct NativeDepthCpuTest: HWTest {
     let id = "metal.native.depth_cpu"
@@ -13,8 +13,8 @@ struct NativeDepthCpuTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
         let size = 64

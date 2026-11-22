@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-/// gpu.raw.xr_descriptor_copies: texel (x, y)'s codes red (37x + 101y + 13s) & 1023, green (53x + 7y + 211s) & 1023,
+/// gpu.gm20b.xr_descriptor_copies: texel (x, y)'s codes red (37x + 101y + 13s) & 1023, green (53x + 7y + 211s) & 1023,
 /// blue (11x + 89y + 97s) & 1023 (each (code - 384) / 510) and alpha (29x + 7y + 5s) & 255, s the seed
 kernel void xr_desc_fill(texture2d<float, access::write> t [[texture(0)]], constant uint &seed [[buffer(0)]],
                          uint2 id [[thread_position_in_grid]])
@@ -13,14 +13,14 @@ kernel void xr_desc_fill(texture2d<float, access::write> t [[texture(0)]], const
     t.write(float4((float3(codes) - 384.0f) / 510.0f, float((29 * id.x + 7 * id.y + 5 * seed) & 255) / 255.0f), id);
 }
 
-/// gpu.raw.texel_rows: pixel (x, y) of the BGRA8 target, codes red 4x, green 16y, blue 0x80, alpha 0xff
+/// gpu.gm20b.texel_rows: pixel (x, y) of the BGRA8 target, codes red 4x, green 16y, blue 0x80, alpha 0xff
 fragment float4 texel_rows_colours(float4 position [[position]])
 {
     const float2 p = floor(position.xy);
     return float4(4.0f * p.x, 16.0f * p.y, 128.0f, 255.0f) / 255.0f;
 }
 
-/// gpu.raw.texel_rows: element k of a BGRA8 texel buffer, codes red k & 255, green 0x5a, blue (3k) & 255, alpha 0xff
+/// gpu.gm20b.texel_rows: element k of a BGRA8 texel buffer, codes red k & 255, green 0x5a, blue (3k) & 255, alpha 0xff
 static float4 texel_rows_stored(uint k)
 {
     return float4(float(k & 255), 90.0f, float((3 * k) & 255), 255.0f) / 255.0f;
@@ -33,7 +33,7 @@ kernel void texel_rows_kernel_store(texture_buffer<float, access::write> t [[tex
         t.write(texel_rows_stored(k), k);
 }
 
-/// gpu.raw.texel_rows: each fragment of a one-row draw stores element x, codes red (k + 1) & 255, green 0xa5, blue 7,
+/// gpu.gm20b.texel_rows: each fragment of a one-row draw stores element x, codes red (k + 1) & 255, green 0xa5, blue 7,
 /// alpha 0xff, and returns the same
 fragment float4 texel_rows_fragment_store(float4 position [[position]],
                                           texture_buffer<float, access::write> t [[texture(0)]])
@@ -45,7 +45,7 @@ fragment float4 texel_rows_fragment_store(float4 position [[position]],
     return v;
 }
 
-/// gpu.raw.turned_overlap_tile_order, gpu.raw.xr_turned_clear_order: a colour of each frame pixel's own, inside
+/// gpu.gm20b.turned_overlap_tile_order, gpu.gm20b.xr_turned_clear_order: a colour of each frame pixel's own, inside
 /// BGR10_XR's range
 fragment float4 turned_order_colours(float4 position [[position]])
 {

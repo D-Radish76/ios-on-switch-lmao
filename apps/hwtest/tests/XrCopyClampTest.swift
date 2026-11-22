@@ -10,7 +10,7 @@ import Metal
 /// keeps every field bit for bit (source_changed 0); one made without it (plain) or of 15x15 keeps every field bit for
 /// bit either way. The facade's own copy: no failed command buffer, every one raw.
 struct XrCopyClampTest: HWTest {
-    let id = "gpu.raw.xr_copy_clamp"
+    let id = "gpu.gm20b.xr_copy_clamp"
     let name = "Blits into and out of BGRA10_XR textures clamp and drop low bits only as Metal's optimized ones do, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 45 }

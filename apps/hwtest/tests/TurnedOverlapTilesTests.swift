@@ -9,9 +9,9 @@ import Metal
 /// 16400-16415 and row 46's 112-127 at 17232-17247 (turned_overlap_chroma_off); a 550 turned by 1 over word rows 96
 /// apart that run into the alpha plane keeps word row 1's words 0-7 at bytes 96-127 (turned_overlap_words_off), each
 /// as a control of rows that do not overlap stores them. turned_overlap_status: scenes made and completed of 2. A
-/// 540's luma at rotations 0-3 is gpu.raw.ycbcr_turned_overlap_order's.
+/// 540's luma at rotations 0-3 is gpu.gm20b.ycbcr_turned_overlap_order's.
 struct TurnedOverlapTileOrderTest: HWTest {
-    let id = "gpu.raw.turned_overlap_tile_order"
+    let id = "gpu.gm20b.turned_overlap_tile_order"
     let name = "Turned targets over overlapping rows keep the later frame row inside a tile, as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -33,7 +33,7 @@ struct TurnedOverlapTileOrderTest: HWTest {
 /// macOS 27.2.1, this scene on it, five runs, 0 off of 41 bytes; the clear-order probe's case 61). xr_clear_order_off,
 /// xr_clear_order_status.
 struct XrTurnedClearOrderTest: HWTest {
-    let id = "gpu.raw.xr_turned_clear_order"
+    let id = "gpu.gm20b.xr_turned_clear_order"
     let name = "A turned RGB10A8_2P_XR10 clear over overlapping rows lands its words after its alpha, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -62,9 +62,9 @@ enum TurnedOverlapRun {
                     checks.append(("\(key): \(why)", false))
                     continue
                 }
-                if r.path == "raw" { completed += 1 }
+                if r.path == "gm20b" { completed += 1 }
                 checks += [
-                    ("\(key): \(r.path)", r.path == "raw"), ("\(key)=\(r.off) of \(r.telling) telling", r.off == 0),
+                    ("\(key): \(r.path)", r.path == "gm20b"), ("\(key)=\(r.off) of \(r.telling) telling", r.off == 0),
                 ]
             } catch {
                 metrics.set(key, -1)

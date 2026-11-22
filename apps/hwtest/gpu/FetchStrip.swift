@@ -7,8 +7,8 @@ import Metal
 /// the four indices alone and once as two strips split by a restart index (0, 1, 2, 0xffff, 1, 2, 3). Each pixel is
 /// covered once either way, so every pixel is the clear plus the value. `replay_scissor`: the four indices again with
 /// back faces culled (the quad faces front) and a scissor of the target's middle 16x16 into a private target, drawn on
-/// the raw path: only the scissor's pixels take the sum (an M4 Max: 0 pixels off). A cell's `wrong` counts pixels more
-/// than a code off, `path` and `routes` are the command buffer's path and its fetching draws' routes on the raw facade.
+/// the driver: only the scissor's pixels take the sum (an M4 Max: 0 pixels off). A cell's `wrong` counts pixels more
+/// than a code off, `path` and `routes` are the command buffer's path and its fetching draws' routes on the facade.
 public enum FetchStrip {
     public struct Cell: Sendable {
         public let name, path, routes: String
@@ -76,7 +76,7 @@ public enum FetchStrip {
         storage: MTLStorageMode, culled: Bool, want: [UInt8] = FetchStrip.want
     ) async throws -> Cell {
         let target = try gpu.texture(.bgra8Unorm, side, side, storage: storage)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let path = try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = target
@@ -99,7 +99,7 @@ public enum FetchStrip {
                 indexBufferOffset: offset * 2)
             e.endEncoding()
         }.path
-        let routes = RawFacade.fetchRoutes(before: before, after: RawFacade.counters(of: gpu.device))
+        let routes = GM20BFacade.fetchRoutes(before: before, after: GM20BFacade.counters(of: gpu.device))
         let bytes = try await gpu.read(target, bytesPerPixel: 4)
         let wrong = (0..<(side * side)).filter { p in
             let x = p % side, y = p / side

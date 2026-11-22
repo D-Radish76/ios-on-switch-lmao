@@ -3,14 +3,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// State segments (drivers/TegraGM20BMetal/raw/runtime/raw_state_segment.h): a pipeline's registers are written once
+/// State segments (drivers/TegraGM20BMetal/state_segment.h): a pipeline's registers are written once
 /// into GPU memory at its creation and a bind runs them from there, and a pass that starts with the pipeline the last
 /// pass ended with writes nothing for it. Frames of two passes, each pass an opaque quad, an additive quad over it and
 /// the opaque quad again, so every pass binds A, B, A and starts with the A the pass or frame before ended with.
 /// Additive blending of 8-bit values is exact, so every pixel is checked against its sum. Then the same command buffers
 /// of `switches` alternating binds, in batches bound inline (as before segments) and by segment in turn: the encode
 /// time the facade counted, its pushes and kernel submit time per command buffer, and the GPU time per command buffer
-/// of each, which decide whether a state as short as these is worth a segment (raw_state_segment.h kSegmentBindWords),
+/// of each, which decide whether a state as short as these is worth a segment (state_segment.h kSegmentBindWords),
 /// and both arms' pixels, the same bytes. A state the runtime made with registers outside the pack's (extras) cannot
 /// keep its segment across a pass, which the facade counts apart. The counters are the facade's (debug builds); a
 /// release runtime has none and the test skips.
@@ -25,12 +25,12 @@ struct StateSegmentsPathTest: HWTest {
 
     func run(_: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         guard before["state_segment_binds"] != nil else {
-            return .skip(RawFacade.missing("state_segment_binds", on: gpu.device))
+            return .skip(GM20BFacade.missing("state_segment_binds", on: gpu.device))
         }
         var metrics = Metrics()
         let a = try gpu.render(fragment: "solid_fragment", format: .rgba8Unorm)
@@ -75,7 +75,7 @@ struct StateSegmentsPathTest: HWTest {
                 }
             }
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         func taken(_ key: String) -> Int { (after[key] ?? 0) - (before[key] ?? 0) }
         let binds = taken("state_segment_binds"), skips = taken("state_segment_skips")
         let words = taken("state_segment_words"), extras = taken("state_segment_extras_losses")
@@ -88,7 +88,7 @@ struct StateSegmentsPathTest: HWTest {
         metrics.set("words_per_bind", binds > 0 ? String(format: "%.1f", Double(words) / Double(binds)) : "-")
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         var failures = try await compare(gpu, a, b, &metrics)
-        if gpu.paths.paths.keys.contains(where: { $0 != "raw" }) {
+        if gpu.paths.paths.keys.contains(where: { $0 != "gm20b" }) {
             failures.append("command buffers went \(gpu.paths.text)")
         }
         if wrong != 0 { failures.append("\(wrong) bytes differ from the quads' colours and sums") }
@@ -109,7 +109,7 @@ struct StateSegmentsPathTest: HWTest {
         var images: [[UInt8]] = [[], []]
         for batch in 0..<Self.batches {
             let arm = batch % 2
-            let before = RawFacade.counters(of: gpu.device)
+            let before = GM20BFacade.counters(of: gpu.device)
             var buffers: [MTLCommandBuffer] = []
             var target: MTLTexture?
             for _ in 0..<Self.perBatch {
@@ -117,7 +117,7 @@ struct StateSegmentsPathTest: HWTest {
                 target = drawn
                 buffers.append(
                     try gpu.commit { commands in
-                        if arm == 0 { _ = RawFacade.inlineStates(in: commands) }
+                        if arm == 0 { _ = GM20BFacade.inlineStates(in: commands) }
                         let descriptor = MTLRenderPassDescriptor()
                         descriptor.colorAttachments[0].texture = drawn
                         descriptor.colorAttachments[0].loadAction = .clear
@@ -130,7 +130,7 @@ struct StateSegmentsPathTest: HWTest {
                     })
             }
             try gpu.finish(buffers)
-            let after = RawFacade.counters(of: gpu.device)
+            let after = GM20BFacade.counters(of: gpu.device)
             encodeUs[arm] += Double((after["encode_us"] ?? 0) - (before["encode_us"] ?? 0))
             encodes[arm] += (after["encodes"] ?? 0) - (before["encodes"] ?? 0)
             execUs[arm] += Double((after["exec_us"] ?? 0) - (before["exec_us"] ?? 0))

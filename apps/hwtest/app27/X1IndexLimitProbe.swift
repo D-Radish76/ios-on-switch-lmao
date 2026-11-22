@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// index.past_limit (kits/SwitchGM20B caps row 3D-B11, raw_gpu.cpp drawIndexed): what GM20B's index fetch reads past
+/// index.past_limit (kits/SwitchGM20B caps row 3D-B11, gpu.cpp drawIndexed): what GM20B's index fetch reads past
 /// SET_INDEX_BUFFER_C/D's limit. Core Animation's fill draws a strip of five 16-bit indices from a buffer holding
 /// [1, 2, 3, 4, 5, 5, 5, 5] under the probe form index=8, so the fetch ends after [1, 2, 3, 4]. The strip's first two
 /// triangles cover the bottom-left quarter (`quarter`: the draw ran); its third, (3, 4, fifth index), covers pixel `p0`
@@ -55,8 +55,8 @@ enum X1IndexLimitProbe {
         metrics.set("quarter", drawn(quarter))
         metrics.set("p0", drawn(p0))
         metrics.set("p5", drawn(p5))
-        if batch.path != "raw" || (batch.taken["index_limits"] ?? 0) == 0 {
-            return ProbeFinding(.inconclusive, metrics, note: "the draw did not take the index=8 form on the raw path")
+        if batch.path != "gm20b" || (batch.taken["index_limits"] ?? 0) == 0 {
+            return ProbeFinding(.inconclusive, metrics, note: "the draw did not take the index=8 form on the driver")
         }
         if !drawn(quarter) {
             return ProbeFinding(.inconclusive, metrics, note: "the strip's first triangles drew nothing")

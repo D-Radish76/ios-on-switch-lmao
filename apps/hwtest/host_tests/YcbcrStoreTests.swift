@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import XCTest
 
-/// YcbcrStore against bytes an M4 Max's Metal stored (the same texels raw_ycbcr_store_test checks the C++ rule with).
+/// YcbcrStore against bytes an M4 Max's Metal stored (the same texels ycbcr_store_test checks the C++ rule with).
 final class YcbcrStoreTests: XCTestCase {
     static let block: [SIMD4<Float>] = [
         [1060967144, 1064460635, 1057066791], [1041835799, 1051208286, 1060668499],

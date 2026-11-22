@@ -12,7 +12,7 @@ compiler reads one its own store lacks (compiler/compiler_codegen.mm), and MANIF
 replies' inventory) beside them.
 check: refuses tools that are not the GPU bundle's (--base: its tree or files): the bundle's Info.plist must name the
 tools' stack key; a seed of other tools would never be hit. A validation action: the seed does not wait for it.
-tree: ngpu/addons/TegraGM20BMetal.m2v-seed/shared (the replies' directory) and ngpu/addons/TegraGM20BMetal.raw (with the
+tree: ngpu/addons/TegraGM20BMetal.seed/shared (the replies' directory) and ngpu/addons/TegraGM20BMetal.pack (with the
 packed native seed's raw-<stack>/ in native/; of the packed native seed, only each index and its observed packs go:
 tools/gpu/seed_pack.py), directories 0755 and files 0644 (APFS clones of the sources), and size.json (bytes, files,
 blocks4k: what the tree takes on APFS) beside it.
@@ -30,8 +30,8 @@ from pathlib import Path
 from tools.gpu import seed_pack
 from tools.gpu.shaders import replies as compiler_replies
 
-SEED = 'ngpu/addons/TegraGM20BMetal.m2v-seed/shared'
-RAW = 'ngpu/addons/TegraGM20BMetal.raw'
+SEED = 'ngpu/addons/TegraGM20BMetal.seed/shared'
+RAW = 'ngpu/addons/TegraGM20BMetal.pack'
 
 
 def replies(args: argparse.Namespace) -> None:
@@ -80,7 +80,7 @@ def native_pairs(native: Path, out: Path) -> list[tuple[Path, Path]]:
     pairs = []
     for path in sorted(native.rglob('*')):
         relative = path.relative_to(native)
-        if not path.is_file() or len(relative.parts) < 2 or not relative.parts[0].startswith('raw-'):
+        if not path.is_file() or len(relative.parts) < 2 or not relative.parts[0].startswith('rec-'):
             continue
         top = relative.parts[0]
         if seed_pack.staged(native / top, relative.relative_to(top).as_posix()):
@@ -89,7 +89,7 @@ def native_pairs(native: Path, out: Path) -> list[tuple[Path, Path]]:
 
 
 def tree(args: argparse.Namespace) -> None:
-    """Lay the seed and the raw pack out under ngpu/addons, and write the size."""
+    """Lay the seed and the pack out under ngpu/addons, and write the size."""
     out = args.out
     shutil.rmtree(out, ignore_errors=True)
     pairs = [(p, out / SEED / p.relative_to(args.seed)) for p in sorted(args.seed.rglob('*')) if p.is_file()]

@@ -57,8 +57,9 @@ uint64_t heapInUse()
 // The part of the compile a symbol is in, "" for none
 const char *partOf(const char *symbol)
 {
-    static const std::pair<const char *, const char *> parts[] = {
-        {"3nak", "NAK"}, {"nak_", "NAK"}, {"nir_", "NIR"}, {"spirv", "NIR"}, {"metal2vulkan", "m2v"}, {"N3raw", "raw"}};
+    static const std::pair<const char *, const char *> parts[] = {{"3nak", "NAK"},         {"nak_", "NAK"},
+                                                                  {"nir_", "NIR"},         {"spirv", "NIR"},
+                                                                  {"metal2vulkan", "m2v"}, {"N5gm20b", "gm20b"}};
     for (const auto &[needle, part] : parts)
         if (strstr(symbol, needle))
             return part;
@@ -157,12 +158,12 @@ void compileOne(size_t index)
 {
     const std::string line = heavy()[index];
     compiler_test::Requests made(root());
-    raw::CompileRequest r;
+    gm20b::CompileRequest r;
     std::string why;
     ASSERT_TRUE(made.render(line, r, why)) << why;
     switch_compiler::SystemLibraries system(root());
     switch_compiler::Prepared p;
-    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why)) << why;
+    ASSERT_TRUE(switch_compiler::prepare(gm20b::encodeRequest(r), 0, system, p, why)) << why;
     switch_compiler::Engine engine;
     ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir()), root(), {}}, why)) << why;
     const std::string label =

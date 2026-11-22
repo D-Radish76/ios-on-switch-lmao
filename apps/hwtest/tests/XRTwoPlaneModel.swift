@@ -1,6 +1,6 @@
 import Foundation
 
-/// gpu.raw.xr_two_plane's CPU model of RGB10A8_2P_XR10 texels (the alpha byte above the code word, raw_xr.h): Metal's
+/// gpu.gm20b.xr_two_plane's CPU model of RGB10A8_2P_XR10 texels (the alpha byte above the code word, xr.h): Metal's
 /// values of their codes, source-over blending of premultiplied colours stored back as codes after each draw (the
 /// storage and barrier forms fetch the stored codes), and bilinear samples.
 enum XRTwoPlaneModel {
@@ -10,7 +10,7 @@ enum XRTwoPlaneModel {
         return SIMD4(channel(20), channel(10), channel(0), Double(t >> 32 & 0xff) / 255)
     }
 
-    /// raw_xr.h writeCode of each channel, as XRTwoPlaneTest.code but without rounding through a Float
+    /// xr.h writeCode of each channel, as XRTwoPlaneTest.code but without rounding through a Float
     static func texel(_ v: SIMD4<Double>) -> UInt64 {
         let code = { (value: Double) -> UInt64 in
             let k = Int((min(abs(value), 1.5) * 510).rounded(.toNearestOrEven))

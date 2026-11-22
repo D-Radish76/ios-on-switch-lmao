@@ -6,7 +6,7 @@ import Metal
 /// compressed (allowGPUOptimizedContents, a shorter side of 16 or more, no shader-write, format-view or atomic usage) reads
 /// one fixed texel in each level down to a shorter side of 16 and zero below; every other one reads zero. Each case is read
 /// back by the blit engine level by level, one is sampled by a draw, and one is cleared whole by its first pass. On the raw
-/// facade, fresh_filled, fresh_cleared and fresh_early_reads are the deltas of its switchRawFresh counters (a debug build's).
+/// facade, fresh_filled, fresh_cleared and fresh_early_reads are the deltas of its switchMetalFresh counters (a debug build's).
 struct FreshTextureScene: GPUScene {
     let id = "gpu.texture.fresh"
     let name = "New private textures read before anything writes them"
@@ -145,6 +145,6 @@ struct FreshTextureScene: GPUScene {
     static func hex(_ bytes: [UInt8]) -> String { bytes.map { String(format: "%02x", $0) }.joined() }
 
     static func counters(_ device: MTLDevice) -> [String: Int] {
-        (RawFacade.ask(device, "switchRawFresh") as? [String: NSNumber])?.mapValues(\.intValue) ?? [:]
+        (GM20BFacade.ask(device, "switchMetalFresh") as? [String: NSNumber])?.mapValues(\.intValue) ?? [:]
     }
 }

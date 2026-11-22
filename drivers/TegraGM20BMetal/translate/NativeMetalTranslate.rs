@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-//! The raw GM20B path's direct compile with no m2v runtime: a render state's or a kernel's translation by metal2vulkan's
+//! The driver's direct compile with no m2v runtime: a render state's or a kernel's translation by metal2vulkan's
 //! translator alone, on the compile profile's devices, handed to the stage compile as SPIR-V and layouts given as data
 //! (NativeMetalDirect.h). The pack generator and the shader compiler daemon compile through it; the m2v bridge
 //! (NativeMetalBridge.rs) adds its runtime device's forms on top.

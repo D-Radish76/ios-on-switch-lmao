@@ -7,9 +7,9 @@ import Metal
 /// with validation off, DepthProbeScene's depth_probe.mm): each state, declaring none, Depth16Unorm, Depth32Float,
 /// Depth32Float_Stencil8 or Stencil8, draws red at z 0.25 and then green at z 0.75 (Less, depth write on) over black,
 /// the pass's depth cleared to 1. The second draw fails the depth test: every pixel red and every depth 0.25, the
-/// command buffer completed on the raw path. gpu.raw.depth_format_mismatch has passes with a Depth32Float or
-/// Depth32Float_Stencil8 attachment; gpu.raw.depth_format_mismatch_no_depth has passes with none, which Apple's GPU
-/// tests in its tile and the raw path in a hidden depth/stencil target (gpu.raw.hidden_depth). Per cell
+/// command buffer completed on the driver. gpu.gm20b.depth_format_mismatch has passes with a Depth32Float or
+/// Depth32Float_Stencil8 attachment; gpu.gm20b.depth_format_mismatch_no_depth has passes with none, which Apple's GPU
+/// tests in its tile and the driver in a hidden depth/stencil target (gpu.gm20b.hidden_depth). Per cell
 /// <declared>_<pass>=<red pixels>/<pixels at depth 0.25, "-" with no attachment>/<path> (64/64/raw).
 struct DepthFormatMismatchTest: HWTest {
     let id: String
@@ -18,11 +18,11 @@ struct DepthFormatMismatchTest: HWTest {
     let subsystem = Subsystem.metal
 
     static let attached = DepthFormatMismatchTest(
-        id: "gpu.raw.depth_format_mismatch",
+        id: "gpu.gm20b.depth_format_mismatch",
         name: "States declaring another depth or stencil format draw and depth-test in a depth pass as Metal does",
         passes: [.depth32Float, .depth32Float_stencil8])
     static let unattached = DepthFormatMismatchTest(
-        id: "gpu.raw.depth_format_mismatch_no_depth",
+        id: "gpu.gm20b.depth_format_mismatch_no_depth",
         name: "States declaring a depth or stencil format depth-test in a pass with no depth attachment as Metal does",
         passes: [.invalid])
 
@@ -40,8 +40,8 @@ struct DepthFormatMismatchTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let scene = try await DepthProbeScene(gpu)
         let test = MTLDepthStencilDescriptor()
         test.depthCompareFunction = .less
@@ -97,7 +97,7 @@ struct DepthFormatMismatchTest: HWTest {
                     let cell = "\(Self.key(declared))_\(Self.key(format))"
                     metrics.set(cell, "\(reds)/\(near)/\(String(path.prefix(60)))")
                     let landed = reds == n * n && (depth == nil || near == "\(n * n)")
-                    checks.append(("\(cell): every pixel red, depth 0.25, raw", landed && path == "raw"))
+                    checks.append(("\(cell): every pixel red, depth 0.25, raw", landed && path == "gm20b"))
                 } catch {
                     checks.append(("\(Self.key(declared))_\(Self.key(format)): \(GPU.describe(error))", false))
                 }

@@ -24,8 +24,8 @@ struct CoherenceRewriteTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         let blend = try gpu.render(vertex: "coherence_vertex", fragment: "coherence_fragment", format: .bgra8Unorm) {
             let colour = $0.colorAttachments[0]!

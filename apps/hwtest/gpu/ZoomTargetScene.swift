@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// gpu.raw.zoom_target's passes over Core Animation's zoom window target (1792x1472 BGRA8), and its redrawn arm's: a
+/// gpu.gm20b.zoom_target's passes over Core Animation's zoom window target (1792x1472 BGRA8), and its redrawn arm's: a
 /// pass that loads the target and draws a solid rectangle over part of what it held, and the texture unit's samples of
 /// it at `points` through its header, so a header still naming memory the target left reads the old texels there.
 public enum ZoomTargetScene {

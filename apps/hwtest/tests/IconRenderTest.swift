@@ -6,9 +6,9 @@ import UIKit
 /// An icon render the way a helper asks for one: IconServices draws Settings' icon at the home screen's size in
 /// iconservicesagent (ISIcon -prepareImageForDescriptor:, which crosses to the agent), timed cold and warm, with the
 /// agent's phys_footprint, resident size and lifetime peak before and after (proc_pid_rusage), and once more when its
-/// GPU's idle memory went back (the raw device's give-back, a second after its GPU idles), against its jetsam
+/// GPU's idle memory went back (the device's give-back, a second after its GPU idles), against its jetsam
 /// InactiveHard limit of 15 MB. A settled footprint above the limit fails: the agent would be killed as soon as it goes
-/// inactive. The agent's own log line ("raw: idle memory given back: footprint ...") names each term's owner.
+/// inactive. The agent's own log line ("SwitchMetal: idle memory given back: footprint ...") names each term's owner.
 struct IconRenderTest: HWTest {
     let id = "ui.icon_render"
     let name = "An icon render keeps iconservicesagent within its inactive memory limit"

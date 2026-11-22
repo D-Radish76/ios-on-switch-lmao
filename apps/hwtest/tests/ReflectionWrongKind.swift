@@ -3,7 +3,7 @@ import Foundation
 import HWTestGPU
 import Metal
 
-/// gpu.raw.reflection_kinds's wrong_kind arm: a binding asked another binding type's selector reports through Metal's
+/// gpu.gm20b.reflection_kinds's wrong_kind arm: a binding asked another binding type's selector reports through Metal's
 /// MTLReportFailure, type 0, and then answers a fixed value (c38-audit reflection-abort wrong_kind_probe.txt, an M4
 /// Max; 21H461's and 24B119's Metal read the same). With no report block set Metal's default for type 0 aborts the
 /// process: not an Objective-C exception, so nothing here could catch it. Each ask therefore runs with a block of the

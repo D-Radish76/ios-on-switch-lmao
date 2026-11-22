@@ -6,7 +6,7 @@ import Metal
 /// A 500 (two-plane 4:2:0, video range) texture of 64x512 over plane 0 of a 64x8 '420v' made by IOSurfaceCreate (pitch
 /// 64, plane 1 at 512, 768 bytes, every byte i * 31 + 7 first), every texel read by a kernel, against a 64x512 '420v'
 /// whose planes hold in their own rows the bytes the first one's rows reach: the surface's own bytes, then 0 to the end
-/// of its last page and past it (gpu.raw.ycbcr_rows_past_page).
+/// of its last page and past it (gpu.gm20b.ycbcr_rows_past_page).
 public enum YcbcrRowsPastPage {
     public static let width = 64, height = 512, rows = 8, chromaAt = 512, allocation = 768
 

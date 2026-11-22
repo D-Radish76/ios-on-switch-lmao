@@ -2,8 +2,8 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// The plain-rows stores an M4 Max keeps in an order of its own that the raw path does not take yet
-/// (gpu.raw.plain_rows_blit_tiles, gpu.raw.plain_rows_quarter_turns), each over RGBA32Uint 40x40 on rows of 128 bytes:
+/// The plain-rows stores an M4 Max keeps in an order of its own that the driver does not take yet
+/// (gpu.gm20b.plain_rows_blit_tiles, gpu.gm20b.plain_rows_quarter_turns), each over RGBA32Uint 40x40 on rows of 128 bytes:
 /// eight texels a row apart, so elements 8 to 343 are reached by two to five rows and keep one.
 extension PlainRows {
     public static let quarterShape = Shape(MTLPixelFormat.rgba32Uint.rawValue, 40, 40, bpp: 16, pitch: 128)

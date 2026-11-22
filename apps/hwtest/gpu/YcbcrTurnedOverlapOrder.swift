@@ -5,7 +5,7 @@ import Metal
 
 /// A 540 (YCbCr 4:2:0 codes) render target turned by rotations 0 to 3 over a '420v' whose luma rows of 136 bytes lie 16
 /// apart (planes 136x104, plane 1 at 16384, every byte 0xee first), one DontCare and Store pass of one draw writing Y
-/// (x + 7y) & 255 from the frame's coordinates (overlap_codes) (gpu.raw.ycbcr_turned_overlap_order). An M4 Max stores a
+/// (x + 7y) & 255 from the frame's coordinates (overlap_codes) (gpu.gm20b.ycbcr_turned_overlap_order). An M4 Max stores a
 /// turned target by 32x32 tiles of its FRAME: of the rows that reach a luma byte from one frame tile, only the frame
 /// row in the later row pair, a pair's even row after its odd one, can keep the byte, in every run (an M4 Max's
 /// turned-order probe under macOS 27.2.1: 0 misses of 1,461,824 such byte runs over 124 cases); which tile lands last

@@ -3,7 +3,7 @@
 
 The bundle half of the old build-tegra-gm20b-metal.py:
 
-    bundle.py --xcode-env F --plugin <linked plugin> --stack <raw_stack.txt> --translate-header <NativeMetalTranslate.h>
+    bundle.py --xcode-env F --plugin <linked plugin> --stack <stack_key.txt> --translate-header <NativeMetalTranslate.h>
               --bundle <out dir> --trustcache <out> --trust-json <out>
 
 Info.plist's SwitchShaderStack is the stack key the plugin is built with, which the shader seed checks its tools

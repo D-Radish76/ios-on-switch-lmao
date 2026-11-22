@@ -1,5 +1,5 @@
 // HW Test's bench loop on the GPU (tools/benchloop): caller-supplied Maxwell programs and MAXWELL_B methods drawn on a raw
-// device of its own (raw/runtime/raw_gpu.h over its own connection and GPU VM), each command buffer timed by its PTIMER
+// device of its own (gpu.h over its own connection and GPU VM), each command buffer timed by its PTIMER
 // stamps. Nothing here changes the app's Metal device.
 #ifndef SWITCH_BENCH_H
 #define SWITCH_BENCH_H
@@ -17,11 +17,11 @@ enum switch_bench_kind {
     SWITCH_BENCH_FRAGMENT,  // the caller's pixel program on a quad
     SWITCH_BENCH_COMPUTE,   // the caller's kernel
     SWITCH_BENCH_READBACK,  // the caller's pixel program with the caller's methods around its draw
-    SWITCH_BENCH_TWOD,      // one 2D-engine fill, scaled copy or resolve into the target (raw_probe_ops.h), no program
+    SWITCH_BENCH_TWOD,      // one 2D-engine fill, scaled copy or resolve into the target (probe_ops.h), no program
     SWITCH_BENCH_PACK,  // a pack state with its own programs, the caller's uniform blocks a quad (switch_bench_pack)
 };
 
-// How a pack experiment's draws take a state with a split (raw_split_reuse.h SplitProbe). Every form but whole takes
+// How a pack experiment's draws take a state with a split (split_reuse.h SplitProbe). Every form but whole takes
 // the split plan's draws without a plan, so a bench-sized quad splits as a screen-sized one would.
 enum switch_bench_pack_form {
     SWITCH_BENCH_PACK_WHOLE,          // whole programs, the fact-selected variant (forceWholePrograms)
@@ -67,14 +67,14 @@ enum switch_bench_compare {
     SWITCH_BENCH_COMPARE_NONE,
     SWITCH_BENCH_COMPARE_PROGRAM,    // twod fill or scale: the caller's pixel program drawn over the rect
     SWITCH_BENCH_COMPARE_COPY,       // twod 1:1 point scale: the copy engine copying the source
-    SWITCH_BENCH_COMPARE_RESOLVE3D,  // twod resolve: the pack's resolve state (raw_samples.h), as Metal's resolve draws
+    SWITCH_BENCH_COMPARE_RESOLVE3D,  // twod resolve: the pack's resolve state (samples.h), as Metal's resolve draws
     SWITCH_BENCH_COMPARE_PLAIN,      // a compressed readback: the same draws into a plain target
-    SWITCH_BENCH_COMPARE_SAMPLED3D,  // twod bilinear scale: the pack's mip state (raw_mip.h) sampling the source
+    SWITCH_BENCH_COMPARE_SAMPLED3D,  // twod bilinear scale: the pack's mip state (mip.h) sampling the source
 };
 
 struct switch_bench_twod {
     uint32_t op;
-    uint32_t fmt2d;           // the destination's 2D surface format; 0: the target format's (raw::probeTwodFormat)
+    uint32_t fmt2d;           // the destination's 2D surface format; 0: the target format's (gm20b::probeTwodFormat)
     uint32_t color_format;    // SET_RENDER_SOLID_PRIM_COLOR_FORMAT
     uint32_t color[4];        // one packed word, or four floats' bits for RF32_GF32_BF32_AF32
     uint64_t du, dv, sx, sy;  // 32.32 source step per destination texel and source origin
@@ -86,7 +86,7 @@ struct switch_bench_twod {
     uint32_t clear_first;  // a clear-only pass on the target just before the operation, in its command buffer
     uint32_t tiled;        // a block-linear target with no CPU view, its texels in and out through the copy engine
     // a resolve read by a scale of the sample grid with this operation's du, dv, sx, sy, bilinear and corner, in place
-    // of the driver's resolve (raw_probe_ops.h probeResolveOp)
+    // of the driver's resolve (probe_ops.h probeResolveOp)
     uint32_t resolve_by_scale;
     uint32_t rop;  // fill, scale, a by-scale resolve: a ROP3 code on the destination's codes (ProbeOp::rop); 0 SRCCOPY
     // a by-scale resolve: the sample grid complemented in place (a fill under ROP3 DSTINVERT) before the scale reads it
@@ -101,8 +101,8 @@ struct switch_bench_source {
 
 enum switch_bench_status {
     SWITCH_BENCH_OK,
-    SWITCH_BENCH_INVALID,  // the description is not one the raw path can take
-    SWITCH_BENCH_REFUSED,  // the raw path refused the state, the pass or a draw
+    SWITCH_BENCH_INVALID,  // the description is not one the driver can take
+    SWITCH_BENCH_REFUSED,  // the driver refused the state, the pass or a draw
     SWITCH_BENCH_KILLED,   // the kernel killed the channel while it ran
     SWITCH_BENCH_ERROR,
 };
@@ -189,7 +189,7 @@ struct switch_bench;
 // The bench's raw device over the installed pack; null with *why
 struct switch_bench *switch_bench_open(char *why, size_t why_size);
 void switch_bench_close(struct switch_bench *bench);
-// Bytes per texel of a target format the raw path renders, 0 for any other
+// Bytes per texel of a target format the driver renders, 0 for any other
 uint32_t switch_bench_texel_bytes(uint32_t format);
 // One line: the pack, the connection and the templates found
 size_t switch_bench_describe(struct switch_bench *bench, char *out, size_t size);
@@ -200,7 +200,7 @@ size_t switch_bench_known_kernel(uint8_t *out, size_t size);
 // Runs on the caller's thread; one experiment at a time
 void switch_bench_run(struct switch_bench *bench, const struct switch_bench_experiment *e,
                       struct switch_bench_result *r);
-// One 2D-engine fill of all of `surface` (an IOSurfaceRef of one plane, `format` a MTLPixelFormat the raw path renders)
+// One 2D-engine fill of all of `surface` (an IOSurfaceRef of one plane, `format` a MTLPixelFormat the driver renders)
 // with `color`, one A8B8G8R8 word, on the bench's own connection and channel, waited for: a status, and *why
 void switch_bench_fill_surface(struct switch_bench *bench, const void *surface, uint32_t format, uint32_t color,
                                struct switch_bench_result *r);

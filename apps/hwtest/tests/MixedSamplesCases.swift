@@ -3,11 +3,11 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The scene of gpu.raw.mixed_samples (c38-audit m2v-pass-forms/probe/mixprobe.mm): a one-sample RGBA8Unorm colour
+/// The scene of gpu.gm20b.mixed_samples (c38-audit m2v-pass-forms/probe/mixprobe.mm): a one-sample RGBA8Unorm colour
 /// beside a 4x Depth32Float, 32x32. The depth is filled by a 4x depth-only pass writing sample s at 1 where bit s of the
 /// mask is set, else 0; the mixed pass clears the colour to 0, loads the depth and draws white at z 0.5 under Less with
 /// depth writes, under a state of 1 or of 4 raster samples. Samples are read by ms_depth_fragment (side by side in an
-/// R32Float, as gpu.raw.stored_msaa reads them) and copied out by the blit engine.
+/// R32Float, as gpu.gm20b.stored_msaa reads them) and copied out by the blit engine.
 enum MixedSamplesCases {
     static let side = 32
     static let hashed: UInt32 = 16

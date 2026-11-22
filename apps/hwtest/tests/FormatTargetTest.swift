@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// Render passes into R8Unorm_sRGB, A1BGR5Unorm, ABGR4Unorm and RGB9E5Float targets, formats the GM20B renders none of
-/// (raw_format_standin.h: a stand-in each pass; before, pass.fmt sent every such pass to m2v, whose NVK renders none of
+/// (format_standin.h: a stand-in each pass; before, pass.fmt sent every such pass to m2v, whose NVK renders none of
 /// them either). Each format's passes: a clear; one draw; a loaded texture drawn over its left part; three blended draws over
 /// a clear. Against an M4 Max's rules (probe/fmt): A1BGR5 and ABGR4 store a drawn channel's nearest half's nearest code and a
 /// clear's nearest code, ties up; RGB9E5 truncates a draw's mantissas and rounds a clear's; R8Unorm_sRGB holds 8-bit sRGB
@@ -15,8 +15,8 @@ import Metal
 /// for the clear), one code for every R8Unorm_sRGB pass (the GM20B's own sRGB encoder); paths every command buffer's path
 /// (raw/N to pass).
 struct FormatTargetTest: HWTest {
-    let id = "gpu.raw.format_targets"
-    let name = "Passes into R8Unorm_sRGB, A1BGR5Unorm, ABGR4Unorm and RGB9E5Float targets on the raw path"
+    let id = "gpu.gm20b.format_targets"
+    let name = "Passes into R8Unorm_sRGB, A1BGR5Unorm, ABGR4Unorm and RGB9E5Float targets on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -26,8 +26,8 @@ struct FormatTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -44,7 +44,7 @@ struct FormatTargetTest: HWTest {
                 }
             }
         }
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         checks.append(("every command buffer raw", raw))
         return .judged(checks, metrics, proof: gpu.proof)
@@ -170,7 +170,7 @@ struct FormatTargetTest: HWTest {
         return off
     }
 
-    /// Metal's step of texel (x, y) of a level from the level above (pack/mip.metal's taps, raw_format_standin.h's rules)
+    /// Metal's step of texel (x, y) of a level from the level above (pack/mip.metal's taps, format_standin.h's rules)
     static func mipWord(
         _ format: UInt, _ above: [UInt32], _ aw: Int, _ ah: Int, _ lw: Int, _ lh: Int, _ x: Int, _ y: Int
     ) -> UInt32 {

@@ -10,7 +10,7 @@ import Metal
 /// w553_hi= w554= w555= texel 0's words in hex, off= texels of the four buffers off Apple's words, past= words past the
 /// texels that changed; every command buffer raw, failed_cbs=0.
 struct XrTexelBufferStoresTest: HWTest {
-    let id = "gpu.raw.xr_texel_buffer_stores"
+    let id = "gpu.gm20b.xr_texel_buffer_stores"
     let name = "A kernel's stores into extended-range texture buffers leave an M4 Max's words, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -24,9 +24,9 @@ struct XrTexelBufferStoresTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var off = 0, past = 0
@@ -45,9 +45,9 @@ struct XrTexelBufferStoresTest: HWTest {
         metrics.set("off", off)
         metrics.set("past", past)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: ["w552_lo", "w552_hi", "w553_lo", "w553_hi", "w554", "w555", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)

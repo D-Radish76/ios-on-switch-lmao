@@ -48,9 +48,9 @@ struct SM53ProbeScene: GPUScene {
         let attested = proofWord & 0xFFFF_0000 == 0x5353_0000 && proofWord & 0xFF00 != 0
         result.metrics.set("alu_rewrite_proof", hex(proofWord))
         result.expect(attested || proofWord == 0x7FA5_5354, "ALU proof output was not written correctly")
-        if !RawFacade.counters(of: gpu.device).isEmpty {
+        if !GM20BFacade.counters(of: gpu.device).isEmpty {
             result.expect(attested, "SM53 ALU probe rewrites were not attested")
-            result.expect(timing.path == "raw", "SM53 ALU probe left raw: \(timing.path)")
+            result.expect(timing.path == "gm20b", "SM53 ALU probe left raw: \(timing.path)")
         }
         let echoed = echo.contents().bindMemory(to: UInt32.self, capacity: a.count * 4)
         var transportWrong = 0
@@ -135,9 +135,9 @@ struct SM53ProbeScene: GPUScene {
         let attested = proofWord & 0xFFFF_0000 == 0x5353_0000 && proofWord & 0xFF != 0
         result.metrics.set("f32_source_rewrite_proof", hex(proofWord))
         result.expect(attested || proofWord == 0x7FA5_5354, "F32 source proof output was not written correctly")
-        if !RawFacade.counters(of: gpu.device).isEmpty {
+        if !GM20BFacade.counters(of: gpu.device).isEmpty {
             result.expect(attested, "SM53 F32 source probe rewrites were not attested")
-            result.expect(timing.path == "raw", "SM53 source probe left raw: \(timing.path)")
+            result.expect(timing.path == "gm20b", "SM53 source probe left raw: \(timing.path)")
         }
         let halves = UnsafeBufferPointer(
             start: narrowed.contents().bindMemory(to: UInt16.self, capacity: x.count), count: x.count)

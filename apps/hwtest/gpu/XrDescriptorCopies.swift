@@ -267,6 +267,6 @@ extension XrDescriptorCopies {
             (0..<4 * size.w).map { j * 128 + $0 } + (0..<size.w).map { 1024 + j * 128 + $0 }
         }
         let off = region.filter { a[$0] != b[$0] }.count
-        return Result(path: paths.first { $0 != "raw" } ?? paths[0], off: off, sourceOff: 0, moved: region.count)
+        return Result(path: paths.first { $0 != "gm20b" } ?? paths[0], off: off, sourceOff: 0, moved: region.count)
     }
 }

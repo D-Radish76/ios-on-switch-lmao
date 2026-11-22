@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// generateMipmapsForTexture: of formats whose levels the raw path filters as words (pack/fmt.metal word states),
+/// generateMipmapsForTexture: of formats whose levels the driver filters as words (pack/fmt.metal word states),
 /// against an M4 Max's levels of the same chain (WordMipGoldens.swift, made by this file's own code there): 16x16 2D
 /// chains of the extended-range formats, 101x63 2D and 45x37x7 3D chains whose steps weight texels and planes off 1/2.
 /// A texel is judged by its largest difference in codes from Apple's (RGB9E5: in mantissa steps of Apple's exponent).

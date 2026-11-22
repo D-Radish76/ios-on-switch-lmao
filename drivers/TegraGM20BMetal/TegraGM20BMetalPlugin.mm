@@ -2,8 +2,8 @@
 // TegraGM20B Metal plugin: Metal on the Tegra X1 GPU (GM20B) for iPadOS 17.7.11, reached through the original discovery:
 // IOServiceMatching("IOAcceleratorES") -> AGXAccelerator (drivers/TegraGM20B, published unless switch-no-gpu) -> MetalPluginName
 // TegraGM20BMetal -> /System/Library/Extensions/TegraGM20BMetal.bundle -> MetalPluginClassName TegraGM20BMetalDevice ->
-// -initWithAcceleratorPort:. That returns the raw facade (raw/runtime/RawMetal.h) over the accelerator's
-// AGXDeviceUserClient, on a connection of its own (raw_kernel.cpp Kernel::open).
+// -initWithAcceleratorPort:. That returns the facade (TegraGM20BMetal.h) over the accelerator's
+// AGXDeviceUserClient, on a connection of its own (kernel.cpp Kernel::open).
 //
 // Adapted from UniXNU-sheng's drivers/NativeMetal/NativeAdrenoMetalPlugin.mm (published mode): the same device open, cache
 // directory search and render-server preferences, without the Adreno user test, the marker stream, the scanout hand-off
@@ -16,20 +16,20 @@
 // -[CIContext initWithOptions:] in 21H461 has Metal or GLES and no CPU renderer; without Metal it makes a GLES context that does
 // not exist and crashes at once, and launchd's respawns hang Settings) and, by default, every other process (the kernel's
 // grant admits them too; TEGRA_GPU_ALL_CLIENTS=0 limits it to those named here). A process left out gets nil from here and
-// keeps rendering on the CPU, as does one whose device does not open (raw_device_open.h: one error line naming the cause's
+// keeps rendering on the CPU, as does one whose device does not open (device_open.h: one error line naming the cause's
 // class); Metal's next ask opens afresh. The Metal source and stitched libraries Core Image makes are compiled by the
 // shader compiler daemon (compiler/).
 //
 // Knob, an environment variable of the process (not a boot-arg):
 //   TEGRA_GPU_ALL_CLIENTS=0   only the processes named above get a device (default: every process)
 //
-// The raw GM20B path (raw/runtime/RawMetal.h): when the build's pipeline pack is staged beside the bundle
-// (<Extensions>/TegraGM20BMetal.raw/pack.bin, build-tegra-gm20b-metal.py makes it, stage-tegra-gm20b-metal.py copies it) and the
-// process's sandbox lets it read it, the device every process gets is the raw facade: its command buffers go straight to
-// MAXWELL_B methods, and one the raw path cannot run fails with Metal's error. The render
+// The driver (TegraGM20BMetal.h): when the build's pipeline pack is staged beside the bundle
+// (<Extensions>/TegraGM20BMetal.pack/pack.bin, build-tegra-gm20b-metal.py makes it, stage-tegra-gm20b-metal.py copies it) and the
+// process's sandbox lets it read it, the device every process gets is the facade: its command buffers go straight to
+// MAXWELL_B methods, and one the driver cannot run fails with Metal's error. The render
 // server's raw device is set up on a thread of its own while the plugin opens, every other process's memory, channel and
-// shader heap at their first use (raw_gpu.h Device::Role). A pack of another build is
-// refused (its stack key, TEGRA_RAW_STACK, differs). A process that cannot read the pack gets no device.
+// shader heap at their first use (gpu.h Device::Role). A pack of another build is
+// refused (its stack key, TEGRA_STACK_KEY, differs). A process that cannot read the pack gets no device.
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #include <algorithm>
@@ -46,12 +46,12 @@
 #include <sys/stat.h>
 #include <string.h>
 #include <unistd.h>
-#include "RawMetal.h"
-#include "raw_device_open.h"
+#include "TegraGM20BMetal.h"
+#include "device_open.h"
 
 // The build's stack key (build-tegra-gm20b-metal.py); 0 takes a pack of any build (never shipped so).
-#ifndef TEGRA_RAW_STACK
-#define TEGRA_RAW_STACK 0
+#ifndef TEGRA_STACK_KEY
+#define TEGRA_STACK_KEY 0
 #endif
 
 @interface _MTLDevice : NSObject
@@ -137,7 +137,7 @@ bool writable(const char *dir)
     return wrote;
 }
 
-// <process system container>/Library/Caches/m2v. The container survives reboots and the process's sandbox writes it once
+// <process system container>/Library/Caches/TegraGM20BMetal. The container survives reboots and the process's sandbox writes it once
 // container_system_path_for_identifier (libsystem_containermanager: identifier, error out; a malloc'd path) has consumed its
 // extension; backboardd's StartWindowServer makes the same lookup for Core Animation's shader cache before Metal opens. The
 // identifier is the main bundle's, else com.apple.<process name> (backboardd's and iconservicesagent's own).
@@ -158,7 +158,7 @@ bool systemContainerCache(char *out, size_t size)
     char *container = lookup(identifier, &error);
     if (!container)
         return false;
-    snprintf(out, size, "%s/Library/Caches/m2v", container);
+    snprintf(out, size, "%s/Library/Caches/TegraGM20BMetal", container);
     free(container);
     return true;
 }
@@ -169,8 +169,8 @@ bool systemContainerCache(char *out, size_t size)
 //  - the user cache directory elsewhere (a daemon with a home);
 //  - the Library/Caches of the data container whose tmp is the temp directory, as m2v-<process> (WebKit's GPU process writes Safari's
 //    container, a poster extension its own: iOS may clear a container's tmp, never its Library/Caches but under storage pressure, so
-//    their pipelines no longer compile again after a reboot; r7n/r7o: the GPU process's and AegirPoster's caches were in tmp/m2v);
-//  - /private/var/tmp/m2v-<process> (iconservicesagent, whose home is /var/empty), then the user temp directory, then $TMPDIR (WebKit's
+//    their pipelines no longer compile again after a reboot; r7n/r7o: the GPU process's and AegirPoster's caches were in tmp/TegraGM20BMetal);
+//  - /private/var/tmp/TegraGM20BMetal-<process> (iconservicesagent, whose home is /var/empty), then the user temp directory, then $TMPDIR (WebKit's
 //    GPU process: its per-user temp directory is the one its sandbox extension covers).
 // One the sandbox would refuse is left out, asked without a report (sandboxMayCreate): the order of the others is unchanged.
 unsigned cacheCandidates(char candidates[][512], unsigned most)
@@ -191,14 +191,14 @@ unsigned cacheCandidates(char candidates[][512], unsigned most)
         user[0] = 0;
     const bool appContainer = strstr(user, "/Containers/Data/") != nullptr;
     if (user[0] && appContainer)
-        add("%s%s", user, "m2v");
+        add("%s%s", user, "TegraGM20BMetal");
     if (!appContainer && systemContainerCache(container, sizeof container))
         add("%s%s", container, "");
     if (user[0] && !appContainer)
-        add("%s%s", user, "m2v");
+        add("%s%s", user, "TegraGM20BMetal");
     const bool haveTemp = confstr(_CS_DARWIN_USER_TEMP_DIR, temp, sizeof temp) != 0;
     for (const char *dir : {haveTemp ? (const char *)temp : nullptr, (const char *)getenv("TMPDIR")}) {
-        // <...>/Containers/Data/<kind>/<UUID>/tmp/... -> <...>/Containers/Data/<kind>/<UUID>/Library/Caches/m2v-<process>
+        // <...>/Containers/Data/<kind>/<UUID>/tmp/... -> <...>/Containers/Data/<kind>/<UUID>/Library/Caches/TegraGM20BMetal-<process>
         const char *data = dir ? strstr(dir, "/Containers/Data/") : nullptr;
         const char *tmp = data ? strstr(data, "/tmp/") : nullptr;
         if (!tmp && data && (tmp = strstr(data, "/tmp")) && tmp[4])
@@ -206,44 +206,44 @@ unsigned cacheCandidates(char candidates[][512], unsigned most)
         if (!tmp)
             continue;
         char root[512];
-        snprintf(root, sizeof root, "%.*s/Library/Caches/m2v-", (int)(tmp - dir), dir);
+        snprintf(root, sizeof root, "%.*s/Library/Caches/TegraGM20BMetal-", (int)(tmp - dir), dir);
         add("%s%s", root, getprogname());
     }
-    add("%s%s", "/private/var/tmp/m2v-", getprogname());
+    add("%s%s", "/private/var/tmp/TegraGM20BMetal-", getprogname());
     if (haveTemp)
-        add("%s%s", temp, "m2v");
+        add("%s%s", temp, "TegraGM20BMetal");
     if (const char *tmpdir = getenv("TMPDIR"); tmpdir && *tmpdir == '/')
-        add(tmpdir[strlen(tmpdir) - 1] == '/' ? "%s%s" : "%s/%s", tmpdir, "m2v");
+        add(tmpdir[strlen(tmpdir) - 1] == '/' ? "%s%s" : "%s/%s", tmpdir, "TegraGM20BMetal");
     return count;
 }
 
-// <Extensions>/TegraGM20BMetal.raw/pack.bin, beside the bundle: the raw path's pipeline pack. Null if this process
+// <Extensions>/TegraGM20BMetal.pack/pack.bin, beside the bundle: the driver's pipeline pack. Null if this process
 // may read it, else why not (a process whose sandbox may not read it never tries: asked without a report).
-const char *rawPackRefusal(char *path, size_t size)
+const char *gm20bPackRefusal(char *path, size_t size)
 {
     Dl_info info = {};
-    if (!dladdr(reinterpret_cast<const void *>(&rawPackRefusal), &info) || !info.dli_fname)
+    if (!dladdr(reinterpret_cast<const void *>(&gm20bPackRefusal), &info) || !info.dli_fname)
         return "the plugin's path is unknown";
     strlcpy(path, info.dli_fname, size);
     for (int i = 0; i < 2; ++i)  // <Extensions>/TegraGM20BMetal.bundle/TegraGM20BMetal -> <Extensions>
         if (char *slash = strrchr(path, '/'))
             *slash = 0;
-    strlcat(path, "/TegraGM20BMetal.raw/pack.bin", size);
+    strlcat(path, "/TegraGM20BMetal.pack/pack.bin", size);
     if (!sandboxAllows("file-read-data", kSandboxFilterPath, path))
         return "its sandbox does not let it read the pack";
     return access(path, R_OK) == 0 ? nullptr : "no pack staged";
 }
 
-// The installed native records beside the pack at `pack` (<Extensions>/TegraGM20BMetal.raw/native, RecordCache::attachSeed) into
+// The installed native records beside the pack at `pack` (<Extensions>/TegraGM20BMetal.pack/native, RecordCache::attachSeed) into
 // `seed`; false if this process's sandbox may not read their index (asked without a report).
-bool rawNativeSeed(const char *pack, char *seed, size_t size)
+bool gm20bNativeSeed(const char *pack, char *seed, size_t size)
 {
     const char *slash = strrchr(pack, '/');
     if (!slash)
         return false;
     snprintf(seed, size, "%.*s/native", int(slash - pack), pack);
     char index[1200];
-    snprintf(index, sizeof index, "%s/raw-%016llx/index", seed, (unsigned long long)TEGRA_RAW_STACK);
+    snprintf(index, sizeof index, "%s/rec-%016llx/index", seed, (unsigned long long)TEGRA_STACK_KEY);
     return sandboxAllows("file-read-data", kSandboxFilterPath, index);
 }
 
@@ -498,7 +498,7 @@ const char *processWord()
     return word;
 }
 
-// The raw path's rates lines, every 5 s while the device works (they say nothing when idle). r16-idle: with a whole
+// The driver's rates lines, every 5 s while the device works (they say nothing when idle). r16-idle: with a whole
 // interval of leeway, so the timer rides a wakeup the process or the kernel takes anyway instead of waking every
 // Metal process every 5 s; each rates function measures its own window, so a late tick only makes a longer one.
 void startRates()
@@ -519,22 +519,22 @@ void startRates()
         // 1024: the raw rates line passed 768 with its replay parts (rsplit= rdraw= tw=).
         char line[1024];
         // command buffers on each path and why, encode, draws, memory
-        if (raw_metal_rates(line, sizeof line))
+        if (metal_rates(line, sizeof line))
             os_log(logger(), "TegraGM20BMetal: %{public}s %{public}s", processWord(), line);
-        if (raw_metal_fetch_rates(line, sizeof line))
+        if (metal_fetch_rates(line, sizeof line))
             os_log(logger(), "TegraGM20BMetal: %{public}s %{public}s", processWord(), line);
-        if (raw_metal_split_rates(line, sizeof line))
+        if (metal_split_rates(line, sizeof line))
             os_log(logger(), "TegraGM20BMetal: %{public}s %{public}s", processWord(), line);
-        if (raw_metal_encode_rates(line, sizeof line))
+        if (metal_encode_rates(line, sizeof line))
             os_log(logger(), "TegraGM20BMetal: %{public}s %{public}s", processWord(), line);
-        if (raw_metal_fetch_keys(line, sizeof line))
+        if (metal_fetch_keys(line, sizeof line))
             os_log(logger(), "TegraGM20BMetal: %{public}s %{public}s", processWord(), line);
     });
     dispatch_resume(timer);
 }
 #endif
 
-// The first record cache directory this process can write (cacheCandidates), for the raw path's records; null: none, and
+// The first record cache directory this process can write (cacheCandidates), for the driver's records; null: none, and
 // they stay in its memory
 const char *recordCacheDir()
 {
@@ -546,10 +546,10 @@ const char *recordCacheDir()
     return nullptr;
 }
 
-// One open of the process's device; nil with what it met in `failure` (raw_device_open.h) and in `why`
-id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)
+// One open of the process's device; nil with what it met in `failure` (device_open.h) and in `why`
+id openOnce(unsigned port, gm20b::OpenFailure &failure, NSString *__strong &why)
 {
-    failure = raw::OpenFailure::Structural;
+    failure = gm20b::OpenFailure::Structural;
     const bool renderServer = strcmp(getprogname(), "backboardd") == 0;
     // ScreenshotServicesService: PencilKit in the screenshot thumbnail aborts the process without a device (TegraGM20B.cpp).
     if (!renderServer && strcmp(getprogname(), "iconservicesagent") != 0 &&
@@ -558,7 +558,7 @@ id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)
         return nil;
     }
     char pack[1100] = "";
-    if (const char *refusal = rawPackRefusal(pack, sizeof pack)) {
+    if (const char *refusal = gm20bPackRefusal(pack, sizeof pack)) {
         why = [NSString stringWithFormat:@"%s at %s", refusal, pack];
         return nil;
     }
@@ -578,19 +578,19 @@ id openOnce(unsigned port, raw::OpenFailure &failure, NSString *__strong &why)
     }
     const uint64_t openBegan = clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
     // The render server's raw GM20B path's own setup (its pack, channel and context, the first pool chunk) starts now on a
-    // thread of its own, beside the cache directory search below; raw_metal_device_open takes what it made.
+    // thread of its own, beside the cache directory search below; metal_device_open takes what it made.
     if (renderServer)
-        raw_metal_prepare(pack, uint64_t(TEGRA_RAW_STACK));
+        metal_prepare(pack, uint64_t(TEGRA_STACK_KEY));
     const char *records = recordCacheDir();
-    id device = raw_metal_device_open(pack, uint64_t(TEGRA_RAW_STACK), registryID, &why);
+    id device = metal_device_open(pack, uint64_t(TEGRA_STACK_KEY), registryID, &why);
     if (!device) {
-        failure = raw_metal_open_failure();
+        failure = metal_open_failure();
         return nil;
     }
     os_log(logger(), "TegraGM20BMetal: raw GM20B path on in %{public}s (pack %{public}s, stack %016llx)", getprogname(),
-           pack, (unsigned long long)TEGRA_RAW_STACK);
+           pack, (unsigned long long)TEGRA_STACK_KEY);
     char nativeSeed[1100];
-    raw_metal_complete_states(records, rawNativeSeed(pack, nativeSeed, sizeof nativeSeed) ? nativeSeed : nullptr);
+    metal_complete_states(records, gm20bNativeSeed(pack, nativeSeed, sizeof nativeSeed) ? nativeSeed : nullptr);
     const uint64_t openNs = clock_gettime_nsec_np(CLOCK_UPTIME_RAW) - openBegan;
     os_log(logger(), "TegraGM20BMetal: device %{public}s ready in %{public}s, open %llu ms",
            [[(id<MTLDevice>)device name] UTF8String], getprogname(), (unsigned long long)(openNs / 1000000));
@@ -606,12 +606,12 @@ id openDevice(unsigned port)
     @synchronized([TegraGM20BMetalDevice class]) {
         if (device)
             return device;
-        raw::OpenFailure failure = raw::OpenFailure::Structural;
+        gm20b::OpenFailure failure = gm20b::OpenFailure::Structural;
         NSString *why = nil;
         device = openOnce(port, failure, why);
         if (!device)
             os_log_error(logger(), "TegraGM20BMetal: no device in %{public}s (%{public}s): %{public}@", getprogname(),
-                         raw::openFailureText(failure), why);
+                         gm20b::openFailureText(failure), why);
         return device;
     }
 }

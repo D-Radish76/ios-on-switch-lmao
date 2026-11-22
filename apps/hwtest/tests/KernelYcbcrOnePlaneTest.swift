@@ -5,18 +5,18 @@ import Metal
 
 /// A compute kernel reading a '2vuy' surface as YCBCR8_422_1P (501), whose kernel the shader compiler once refused
 /// (compute.nokernel): through read() and through a linear sample a quarter texel off each centre, every texel equal to
-/// the same kernel's read of YCBCR8_422_2P (502) over a '422v' surface of the same codes (gpu.raw.ycbcr_one_plane's
+/// the same kernel's read of YCBCR8_422_2P (502) over a '422v' surface of the same codes (gpu.gm20b.ycbcr_one_plane's
 /// surfaces). Fields: read_off= and linear_off= texels that differ, paths=, failed_cbs=.
 struct KernelYcbcrOnePlaneTest: HWTest {
-    let id = "gpu.raw.kernel_ycbcr_one_plane"
+    let id = "gpu.gm20b.kernel_ycbcr_one_plane"
     let name = "A kernel reads and samples a one-plane 4:2:2 texture as the two-plane one, on raw"
     let subsystem = Subsystem.metal
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         guard let (one, two) = YcbcrOnePlaneTest.textures(gpu, YcbcrOnePlaneTest.arms[0]) else {
             return .fail("no 501 texture over '2vuy' or 502 over '422v'")
         }
@@ -44,7 +44,7 @@ struct KernelYcbcrOnePlaneTest: HWTest {
         metrics.set("read_off", readOff)
         metrics.set("linear_off", linearOff)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         return .judged(
             [

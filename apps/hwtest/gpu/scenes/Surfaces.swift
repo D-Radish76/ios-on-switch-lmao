@@ -77,7 +77,7 @@ struct SurfaceTarget {
 }
 
 extension GPU {
-    /// One pass into `target`: a load-action clear (the raw path's own on the facade) and, when `rect` is given, a
+    /// One pass into `target`: a load-action clear (the driver's own on the facade) and, when `rect` is given, a
     /// solid quad over it drawn by the app's pipeline (m2v on the facade).
     func clearAndFill(
         _ target: MTLTexture, clear: [Float], rect: UploadRect?, color: [Float], pipeline: MTLRenderPipelineState?

@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 // pack/kernel_shapes.h over this Mac's Metal: a D line's stage-in segment, as the journal writes a state's stage input
-// (StageInText.h), makes the descriptor it names and keys the kernel as the runtime keys it (RawMetalComputeState.mm);
+// (StageInText.h), makes the descriptor it names and keys the kernel as the runtime keys it (TegraGM20BMetalComputeState.mm);
 // one the reader cannot make a descriptor of names why.
 #import <Metal/Metal.h>
 #include <gtest/gtest.h>
 #include <string>
-#include "../raw/pack/kernel_shapes.h"
+#include "../pack/kernel_shapes.h"
 #include "StageInText.h"
 
 namespace {

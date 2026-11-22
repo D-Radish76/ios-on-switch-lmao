@@ -33,7 +33,7 @@ class NakstatTest(unittest.TestCase):
         self.assertEqual(nakstat.state_key(line), 'samples=1 topo=0 ds=0/0 c0=80:15 a0=31:0  | v vf  | f ff')
 
     def test_a_framework_stage_of_no_constants_keeps_its_space_before_the_framework(self):
-        # RawPipelineKey.h pipelineKey trims the key's end alone: " | f <function> " then " | l <framework>"
+        # TegraGM20BMetalPipelineKey.h pipelineKey trims the key's end alone: " | f <function> " then " | l <framework>"
         lib = ' lib=/System/Library/PrivateFrameworks/MediaCoreUI.framework/default.metallib'
         line = f'R ok=1 label=- samples=1 topo=0 ds=0/0 c0=80:15 | v pinch_vertex{lib}  | f pinch_fragment{lib}  | '
         want = 'samples=1 topo=0 ds=0/0 c0=80:15  | v pinch_vertex  | f pinch_fragment  | l MediaCoreUI'

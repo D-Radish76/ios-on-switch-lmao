@@ -5,7 +5,7 @@ import Metal
 /// METALMAP d1 (F11) and d24: what new buffers hold, and textures over buffers at offsets and rows 16 mod 32.
 public enum X1MemoryProbes {
     /// Metal's contract: a new MTLBuffer reads zero. Each size is made, checked, filled with 0xAB and freed 64 times,
-    /// so the raw path's pool and write-combined spans are handed out again; pattern bytes are 0xAB found in a new one.
+    /// so the driver's pool and write-combined spans are handed out again; pattern bytes are 0xAB found in a new one.
     /// Only a span handed out again tests the claim: with every buffer zero and none at an address seen before, the
     /// pages were fresh and the verdict is INCONCLUSIVE.
     public static func bufferZero(_ gpu: GPU) async throws -> ProbeFinding {
@@ -53,7 +53,7 @@ public enum X1MemoryProbes {
 
     /// Textures over a buffer at the alignments the device answers, read back exact on its path: RGBA8 2D textures
     /// sampled at each texel's centre, one at offset 64 with rows of 64 bytes, and a texture buffer at the
-    /// texture-buffer alignment. The raw device answers 32 for both (its pitch texture header's, LIMITS row): an
+    /// texture-buffer alignment. The device answers 32 for both (its pitch texture header's, LIMITS row): an
     /// alignment under it is alignment_low=1. Rows 16 mod 32 (offset 48, rows of 48) are read and reported (odd16_wrong,
     /// odd16_path) but not judged, and only where the linear answer lets a client make them (odd16_made=no otherwise:
     /// a command buffer of a texture outside the answer would put the probe's paths off raw).
@@ -65,7 +65,7 @@ public enum X1MemoryProbes {
         let textureBuffer = gpu.device.minimumTextureBufferAlignment(for: .rgba8Unorm)
         metrics.set("min_linear_alignment", linear)
         metrics.set("min_texture_buffer_alignment", textureBuffer)
-        if RawFacade.kind(of: gpu.device) == "raw" {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             wrong["alignment_low"] = linear < 32 || textureBuffer < 32 ? 1 : 0
         }
         let kernel = try gpu.compute("sample_texture")

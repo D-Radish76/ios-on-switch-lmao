@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 /// The fragment programs of shaders/CompilerShapes.metal drawn over an RGBA32F target, against the same code run on
-/// the CPU (gpu.raw.sm53_layout, gpu.raw.float_tests).
+/// the CPU (gpu.gm20b.sm53_layout, gpu.gm20b.float_tests).
 public enum CompilerShapes {
     public static let width = 256, height = 256
 

@@ -3,7 +3,7 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// YCbCr textures over planes of rows under 16 bytes (gpu.raw.ycbcr_rows_under16): a 500 8x8 over a '420v' of rows 8
+/// YCbCr textures over planes of rows under 16 bytes (gpu.gm20b.ycbcr_rows_under16): a 500 8x8 over a '420v' of rows 8
 /// (luma byte i 16 + i, chroma 128 at 64, 96 bytes) and a 501 4x4 over a one-plane '2vuy' of rows 8 (byte i 16 + i, 32
 /// bytes), each read by a kernel against the same format over a surface of rows 16 whose row 0 holds the scene's first
 /// row (and chroma row) and every other row 0: an M4 Max reads row 0 at the plane and rows 1 on a MiB apart, past the

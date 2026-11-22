@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The system shader compiler's engine (compiler_engine.h, the translator alone: raw/runtime/RawOffline.h), run in a
+// The system shader compiler's engine (compiler_engine.h, the translator alone: TegraGM20BMetalOffline.h), run in a
 // process of its own: it makes a record of every kind a sample of the corpus's states asks for, render and compute,
 // refusing only the build's refused function, and each sampled kernel's and render state's reflection is the one this
 // Mac's Metal gives the same functions.
@@ -10,12 +10,12 @@
 #include "compiler_requests.h"
 #include "../compiler/compiler_engine.h"
 #include "../compiler/compiler_record.h"
-#include "../raw/runtime/raw_cache.h"
-#include "../raw/runtime/raw_compile_request.h"
-#include "../raw/runtime/raw_pack.h"
-#include "../raw/runtime/RawCompileRequest.h"
-#include "../raw/runtime/RawMetalReflection.h"
-#include "../raw/runtime/raw_reflection_blob.h"
+#include "../gm20b_cache.h"
+#include "../compile_request.h"
+#include "../pack.h"
+#include "../TegraGM20BMetalCompileRequest.h"
+#include "../TegraGM20BMetalReflection.h"
+#include "../reflection_blob.h"
 #include "reflection_compare.h"
 
 #include <gtest/gtest.h>
@@ -117,7 +117,7 @@ std::vector<std::string> sample()
     return out;
 }
 
-std::vector<raw::CompileRequest> requests()
+std::vector<gm20b::CompileRequest> requests()
 {
     compiler_test::Requests made(root());
     return made.of(sample());
@@ -128,11 +128,11 @@ template <typename Compile> void writeEntries(const char *name, Compile compile)
 {
     switch_compiler::SystemLibraries system(root());
     std::ofstream out(dir() + "/" + name + ".bin", std::ios::binary);
-    for (const raw::CompileRequest &r : requests()) {
+    for (const gm20b::CompileRequest &r : requests()) {
         switch_compiler::Prepared p;
         std::string entry, why;
         int32_t result = -1;
-        if (switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why))
+        if (switch_compiler::prepare(gm20b::encodeRequest(r), 0, system, p, why))
             result = compile(p, entry, why);
         const uint32_t head[2] = {uint32_t(result), uint32_t(entry.size())};
         out.write(reinterpret_cast<const char *>(head), sizeof head);
@@ -179,10 +179,10 @@ void reflectionsAsMetal()
     const switch_compiler::Libraries libraries = compiler_test::deviceLibraries(device, root());
     switch_compiler::SystemLibraries system(root());
     std::set<std::string> states;
-    for (raw::CompileRequest r : requests()) {
+    for (gm20b::CompileRequest r : requests()) {
         switch_compiler::Prepared kernel;
-        if (r.kind != raw::RequestKind::Kernel || !r.stages[0].constants.empty() ||
-            !switch_compiler::prepare(raw::encodeRequest(r), 0, system, kernel, why))
+        if (r.kind != gm20b::RequestKind::Kernel || !r.stages[0].constants.empty() ||
+            !switch_compiler::prepare(gm20b::encodeRequest(r), 0, system, kernel, why))
             continue;
         const std::string state = kernel.packKey.substr(0, kernel.packKey.find(" | tg="));
         if (!states.insert(state).second)
@@ -200,15 +200,15 @@ void reflectionsAsMetal()
                                                        reflection:&metal
                                                             error:&error] != nil)
             << state << ": " << (error ? error.localizedDescription.UTF8String : "");
-        r.kind = raw::RequestKind::Reflection;
-        r.key = raw::computeReflectionKey(0, state).key;
+        r.kind = gm20b::RequestKind::Reflection;
+        r.key = gm20b::computeReflectionKey(0, state).key;
         switch_compiler::Prepared p;
-        ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why)) << why;
+        ASSERT_TRUE(switch_compiler::prepare(gm20b::encodeRequest(r), 0, system, p, why)) << why;
         std::string entry, blob;
         ASSERT_EQ(engine.compile(p, entry, why), TegraGM20BCompileMade) << state << ": " << why;
         bool made = false;
-        ASSERT_TRUE(raw::decodeReflectionEntry(entry, p.key, made, blob) && made) << state << ": " << blob;
-        id raw = rmReflectionOf(reinterpret_cast<const uint8_t *>(blob.data()), blob.size(), true);
+        ASSERT_TRUE(gm20b::decodeReflectionEntry(entry, p.key, made, blob) && made) << state << ": " << blob;
+        id raw = gm20bReflectionOf(reinterpret_cast<const uint8_t *>(blob.data()), blob.size(), true);
         ASSERT_TRUE(raw != nil) << state;
         reflection_compare::expectSameList(metal.bindings, [raw bindings], state);
     }
@@ -217,12 +217,12 @@ void reflectionsAsMetal()
 }
 
 // A render state as a difference names it: its functions and its key's hash
-std::string stateName(const raw::CompileRequest &r)
+std::string stateName(const gm20b::CompileRequest &r)
 {
-    const size_t f = raw::fragmentStage(r);
+    const size_t f = gm20b::fragmentStage(r);
     char hash[24];
-    snprintf(hash, sizeof hash, " #%016llx", (unsigned long long)raw::Pack::fnv(r.key.data(), r.key.size()));
-    return r.stages[0].function + "/" + (f == raw::kNoStage ? std::string("-") : r.stages[f].function) + hash;
+    snprintf(hash, sizeof hash, " #%016llx", (unsigned long long)gm20b::Pack::fnv(r.key.data(), r.key.size()));
+    return r.stages[0].function + "/" + (f == gm20b::kNoStage ? std::string("-") : r.stages[f].function) + hash;
 }
 
 // Each sampled render state's reflection as the shader compiler makes it (a Reflection request of the state's key) and
@@ -245,8 +245,8 @@ void renderReflectionsAsMetal()
     size_t unmade = 0;
     reflection_compare::Differences differences;
     const reflection_compare::Options usedOneWay{true};
-    for (raw::CompileRequest r : requests()) {
-        if (r.kind != raw::RequestKind::Render || raw::firstLinked(r) != r.stages.size() ||
+    for (gm20b::CompileRequest r : requests()) {
+        if (r.kind != gm20b::RequestKind::Render || gm20b::firstLinked(r) != r.stages.size() ||
             !states.insert(r.key).second)
             continue;
         std::vector<id<MTLFunction>> made;
@@ -254,9 +254,9 @@ void renderReflectionsAsMetal()
         MTLRenderPipelineReflection *metal = nil;
         NSError *error = nil;
         if (switch_compiler::functions(r, libraries, made, why)) {
-            raw::applyFields(r.fields, d);
+            gm20b::applyFields(r.fields, d);
             d.vertexFunction = made[0];
-            if (const size_t f = raw::fragmentStage(r); f != raw::kNoStage)
+            if (const size_t f = gm20b::fragmentStage(r); f != gm20b::kNoStage)
                 d.fragmentFunction = made[f];
         }
         const std::string state = stateName(r);
@@ -271,14 +271,14 @@ void renderReflectionsAsMetal()
             continue;
         }
         printf("compared %s %s\n", state.c_str(), r.key.substr(0, 160).c_str());
-        r.kind = raw::RequestKind::Reflection;
+        r.kind = gm20b::RequestKind::Reflection;
         switch_compiler::Prepared p;
-        ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why)) << state << ": " << why;
+        ASSERT_TRUE(switch_compiler::prepare(gm20b::encodeRequest(r), 0, system, p, why)) << state << ": " << why;
         std::string entry, blob;
         ASSERT_EQ(engine.compile(p, entry, why), TegraGM20BCompileMade) << state << ": " << why;
         bool reflected = false;
-        ASSERT_TRUE(raw::decodeReflectionEntry(entry, p.key, reflected, blob) && reflected) << state << ": " << blob;
-        id raw = rmReflectionOf(reinterpret_cast<const uint8_t *>(blob.data()), blob.size(), false);
+        ASSERT_TRUE(gm20b::decodeReflectionEntry(entry, p.key, reflected, blob) && reflected) << state << ": " << blob;
+        id raw = gm20bReflectionOf(reinterpret_cast<const uint8_t *>(blob.data()), blob.size(), false);
         ASSERT_TRUE(raw != nil) << state;
         differences.state = state;
         reflection_compare::compareRender(metal, raw, usedOneWay, differences);
@@ -310,13 +310,13 @@ TEST(CompilerCompileOnly, ItMakesARecordOfEveryKindTheSampleAsks)
 {
     ASSERT_FALSE(root().empty());
     switch_ios::test::ExpectPassesInFreshProcess(viaTheEngine);
-    const std::vector<raw::CompileRequest> asked = requests();
+    const std::vector<gm20b::CompileRequest> asked = requests();
     const std::vector<Made> engine = readEntries("engine");
     ASSERT_EQ(engine.size(), asked.size());
     switch_compiler::SystemLibraries system(root());
     std::map<std::string, size_t> covered;
     for (size_t i = 0; i < asked.size(); ++i) {
-        const raw::CompileRequest &r = asked[i];
+        const gm20b::CompileRequest &r = asked[i];
         if (engine[i].result == TegraGM20BCompileRefused)
             covered["refused"]++;
         if (r.variant.xrShadows)
@@ -326,46 +326,45 @@ TEST(CompilerCompileOnly, ItMakesARecordOfEveryKindTheSampleAsks)
             continue;
         switch_compiler::Prepared p;
         std::string why;
-        ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(r), 0, system, p, why)) << why;
-        if (r.kind == raw::RequestKind::Kernel) {
+        ASSERT_TRUE(switch_compiler::prepare(gm20b::encodeRequest(r), 0, system, p, why)) << why;
+        if (r.kind == gm20b::RequestKind::Kernel) {
             covered["kernel"]++;
             covered["kernel with textures and samplers"] += !r.kernel.textures.empty() && !r.kernel.samplers.empty();
             covered["region kernel"] += r.kernel.regionMode;
             continue;
         }
-        raw::RuntimeRecord record;
-        ASSERT_EQ(raw::decodeEntry(engine[i].entry, p.key, record, why), raw::RecordCache::Found::Record) << why;
+        gm20b::RuntimeRecord record;
+        ASSERT_EQ(gm20b::decodeEntry(engine[i].entry, p.key, record, why), gm20b::RecordCache::Found::Record) << why;
         covered["render"]++;
         covered["constexpr samplers"] += !record.samplers.empty();
-        covered["storage form"] += (record.pipeline.flags & raw::PipelineStorageMetadata) != 0;
+        covered["storage form"] += (record.pipeline.flags & gm20b::PipelineStorageMetadata) != 0;
         covered["cubic"] += !r.variant.cubic.empty();
         covered["test class"] += r.variant.fragmentTests != 0;
         covered["two planes"] += r.variant.twoPlane;
         covered["written"] += !r.variant.written.empty();
         covered["shadowed writer"] += r.variant.xrShadows != 0;
         if (r.variant.xrShadows) {
-            const raw::SetEntries set = raw::entriesOf(record);
+            const gm20b::SetEntries set = gm20b::entriesOf(record);
             uint8_t bound = 0;
             for (uint32_t k = 0; k < set.size(); k++)
-                if (set[k].kind == raw::EntryXrShadow && set[k].slot < 8)
+                if (set[k].kind == gm20b::EntryXrShadow && set[k].slot < 8)
                     bound |= uint8_t(1u << set[k].slot);
-            EXPECT_FALSE(record.pipeline.flags & raw::PipelineBarrierForm) << r.key.substr(0, 300);
+            EXPECT_FALSE(record.pipeline.flags & gm20b::PipelineBarrierForm) << r.key.substr(0, 300);
             EXPECT_EQ(record.pipeline.storageMask & r.variant.xrShadows, r.variant.xrShadows) << r.key.substr(0, 300);
             EXPECT_EQ(bound, r.variant.xrShadows) << r.key.substr(0, 300);
         }
         covered["amplified"] += r.fields.amplification > 1;
         covered["multisampled"] += r.fields.samples > 1;
-        covered["specialized"] += std::any_of(r.stages.begin(), r.stages.end(), [](const raw::RequestStage &s) {
+        covered["specialized"] += std::any_of(r.stages.begin(), r.stages.end(), [](const gm20b::RequestStage &s) {
             return !s.constants.empty();
         });
-        covered["private linked"] += std::any_of(r.stages.begin(), r.stages.end(), [](const raw::RequestStage &s) {
+        covered["private linked"] += std::any_of(r.stages.begin(), r.stages.end(), [](const gm20b::RequestStage &s) {
             return s.tag == "fp" || s.tag == "vp";
         });
     }
-    for (const char *kind :
-         {"render", "constexpr samplers", "storage form", "cubic", "test class", "two planes", "written",
-          "shadowed writer", "multisampled", "specialized", "kernel", "kernel with textures and samplers",
-          "region kernel"})
+    for (const char *kind : {"render", "constexpr samplers", "storage form", "cubic", "test class", "two planes",
+                             "written", "shadowed writer", "multisampled", "specialized", "kernel",
+                             "kernel with textures and samplers", "region kernel"})
         EXPECT_GT(covered[kind], 0u) << "the sample made no " << kind << " record";
 #if SWITCH_LIBRARIES_LINK_PRIVATE_FUNCTIONS
     EXPECT_GT(covered["private linked"], 0u) << "the sample made no private linked record";

@@ -4,10 +4,10 @@ import Metal
 
 /// Core Animation's generic state (the uber shader) declares color_cube0, color_cube1 and lut_tex as texture3d
 /// arguments at fragment indices 12, 13 and 14. Boot 15's first key press drew it with a 1-texel BGRA8 texture at index
-/// 12; the raw facade sent the command buffer to m2v, whose pipelines for the keyboard took 18-20 s to make while the
+/// 12; the facade sent the command buffer to m2v, whose pipelines for the keyboard took 18-20 s to make while the
 /// render thread waited for it to be scheduled. Each case draws the state into a 256x256 BGRA8 target (its second
 /// colour memoryless) after binding what that case leaves at indices 12-14: nothing, a 2D texture, one cube, one cube
-/// at all three, three distinct cubes. On the raw facade path_<case>= must be "raw" for every case (wait_ms_<case>= is
+/// at all three, three distinct cubes. On the facade path_<case>= must be "gm20b" for every case (wait_ms_<case>= is
 /// the command buffer's commit to completion). Each case's target is held to the Mac's drawing of it, the mistyped 2D
 /// texture to the Mac's case with nothing bound (a Mac's Metal draws no mistyped case). iOS 17's QuartzCore has no such
 /// state, so the scene draws nothing there.
@@ -31,7 +31,7 @@ struct CAGenericStateScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let kind = RawFacade.kind(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
         let pipeline: MTLRenderPipelineState
         do {
             let library = try gpu.device.makeLibrary(URL: CAState.library)
@@ -48,7 +48,7 @@ struct CAGenericStateScene: GPUScene {
             ("nothing", [nil, nil, nil]), ("leftover_2d", [leftover, nil, nil]), ("one_cube", [cube, nil, nil]),
             ("same_cube", [cube, cube, cube]), ("distinct_cubes", [cube, other, lut]),
         ].filter { kind != "apple" || $0.0 != Self.mistyped }
-        let raw = kind == "raw"
+        let raw = kind == "gm20b"
         let zeros = [UInt8](repeating: 0, count: 256)
         for (label, cubes) in cases {
             let draw = { (commands: MTLCommandBuffer) in
@@ -81,7 +81,7 @@ struct CAGenericStateScene: GPUScene {
             }
             guard raw else { continue }
             result.expect(!timing.path.hasPrefix("error:"), "\(label): \(timing.path)")
-            result.expect(timing.path == "raw", "\(label) drawn on \(timing.path)")
+            result.expect(timing.path == "gm20b", "\(label) drawn on \(timing.path)")
         }
         return result
     }

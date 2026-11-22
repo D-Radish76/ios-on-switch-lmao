@@ -7,7 +7,7 @@ import Metal
 /// one its program never addresses. Every element written is the source's doubled plus one, every byte around it
 /// untouched, and every dispatch raw.
 struct KernelWindowScene: GPUScene {
-    let id = "gpu.raw.kernel_window"
+    let id = "gpu.gm20b.kernel_window"
     let name = "Kernel buffers bound at addresses off 16 bytes"
 
     static let count = 37
@@ -50,8 +50,8 @@ struct KernelWindowScene: GPUScene {
             result.expect(wrong == 0, "\(function) at \(offset): \(wrong) values or bytes around them wrong")
         }
         result.metrics.set("paths", paths.joined(separator: ","))
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(paths.allSatisfy { $0 == "raw" }, "the dispatches took \(paths), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(paths.allSatisfy { $0 == "gm20b" }, "the dispatches took \(paths), not raw")
         }
         return result
     }

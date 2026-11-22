@@ -24,7 +24,7 @@ prints that boot's manual steps first and drops the checks that only apply to an
 The line above the table is HW Test's first red caused by a failed command buffer, and how many tests each predicate
 reddened, read from the latest boot's HWTEST lines (`hwtest.first-red`, `hwtest.red.<predicate>`). Some HW Test tests
 kill other clients' GPU work on purpose (`KILLS_OTHERS` in `hwtest.py`). When such a run reports `killed=` above 0,
-`raw.failed` and `raw.killed` list another process's kill inside it (predicate `none`, code 1 to 3, no description)
+`gm20b.failed` and `gm20b.killed` list another process's kill inside it (predicate `none`, code 1 to 3, no description)
 as expected and leave it out of the verdict.
 
 ## Frame weights

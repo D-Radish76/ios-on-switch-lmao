@@ -4,12 +4,12 @@
  */
 
 /*
- * The raw path's macros (ABI v7, at the slots and shadow scratch words kits/SwitchGM20BEmit/SwitchGM20BMacroSlots.h
+ * The driver's macros (ABI v7, at the slots and shadow scratch words kits/SwitchGM20BEmit/SwitchGM20BMacroSlots.h
  * names: R1 the first argument, constant buffer 0 left selected), built with Mesa's MME builder. The draw macros take
- * the slots NVK's draw macros take, so a push profile that counts NVK's draw calls counts the raw path's too. The
+ * the slots NVK's draw macros take, so a push profile that counts NVK's draw calls counts the driver's too. The
  * instance loops are NVK's pre-Pascal nvk_mme_build_draw_loop and
  * nvk_mme_build_draw_indexed_loop (src/nouveau/vulkan/nvk_cmd_draw.c, commit 77452b9092cc), with their Turing and
- * Pascal branches dropped; the calling convention around them is raw's (drivers/TegraGM20BMetal/raw/runtime/raw_mme.h),
+ * Pascal branches dropped; the calling convention around them is raw's (drivers/TegraGM20BMetal/mme.h),
  * and a zero instance count skips the loop, which on Fermi's MME tests its condition at the end.
  *
  * Writes the macros' words as a C header: gen_macros <out.h>.
@@ -289,7 +289,7 @@ static void build_amplify(struct mme_builder *b, bool indexed)
 
 #define FETCH_SCRATCH(word) NVB197_SET_MME_SHADOW_SCRATCH(SWITCH_GM20B_SCRATCH_FETCH_##word)
 
-/* The fetch barrier: the pixels after it read what the ROP wrote before it (raw_draw_prepare.cpp fetchBarrier) */
+/* The fetch barrier: the pixels after it read what the ROP wrote before it (draw_prepare.cpp fetchBarrier) */
 static void fetch_barrier(struct mme_builder *b)
 {
     mme_mthd(b, NVB197_PIXEL_SHADER_BARRIER);
@@ -435,7 +435,7 @@ static void build_indirect(struct mme_builder *b, bool indexed)
 }
 
 /* Core Animation's colour matrix blend (vcm) on the iterated blend unit, fetch rung 3
- * (drivers/TegraGM20BMetal/raw/pack/iterated/programs_long.py vcm): the program's words, whose 21-word head and 5-word
+ * (drivers/TegraGM20BMetal/pack/iterated/programs_long.py vcm): the program's words, whose 21-word head and 5-word
  * tail its three forms share. The form is the matrix uniform's clamp pair's: none (p3 <= 0), clip (p4 <= 0), scale.
  * Its first pass reads the guard constant, which is therefore constant 0: GM20B refuses any other constant there
  * (INVALID_VALUE at LOAD_ITERATED_BLEND_INSTRUCTION). */
@@ -746,7 +746,7 @@ static void build_inline_zero_page(struct mme_builder *b, struct mme_value word)
 }
 
 /* A root table entry of the buffer whose scratch words start at the loaded word, at the loaded address:
- * raw_heap_tables.h writeDrawRoots' {va, va, size rounded up to 16, 0}, and for no buffer (address 0, size 0 in
+ * heap_tables.h writeDrawRoots' {va, va, size rounded up to 16, 0}, and for no buffer (address 0, size 0 in
  * computeBindHead's words) its {zero page, 0, 0, 0} */
 static void build_icb_root_entry(struct mme_builder *b)
 {
@@ -791,7 +791,7 @@ static void build_icb_root_entry(struct mme_builder *b)
 /* An execute's inherited buffers into the set-0 descriptors of an indirect command buffer's dispatches, on the GPU: the
  * count of descriptors, then for each the descriptor's address (high, low word), its buffer's first scratch word, the
  * kernel's window of it in bytes (0 the whole buffer), the address of its root push word for the base's residual (high
- * word 0: none) and the word the record leaves there. The descriptor is raw_residual.h's storage buffer descriptor of
+ * word 0: none) and the word the record leaves there. The descriptor is residual.h's storage buffer descriptor of
  * the scratch's binding: the base aligned down to 16 bytes, the range from it to the end of the buffer or of the window
  * rounded up to 16 (an X1 buffer is far below the 0xfffffff0 the CPU's clamps it to); for no buffer the zero page's
  * address and range 0, as the CPU's icbRegion writes it. The residual

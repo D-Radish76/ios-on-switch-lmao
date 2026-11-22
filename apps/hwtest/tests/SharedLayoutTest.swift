@@ -3,18 +3,18 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Shared-storage textures in block-linear memory (drivers/TegraGM20BMetal/raw/runtime/RawMetalDevice.mm
+/// Shared-storage textures in block-linear memory (drivers/TegraGM20BMetal/TegraGM20BMetalDevice.mm
 /// newTextureWithDescriptor: every one-level 2D Shared texture is block-linear, as a Private one is): a 512x512 BGRA8 and a
 /// 333x77 R8 texture written whole by replaceRegion, then an unaligned rectangle of each, read back by getBytes and
 /// sampled by the texture unit (shared_read_fragment into a private target the copy engine reads), every byte against
 /// the CPU's own. Reports the CPU milliseconds of the whole replaceRegion and getBytes, and the GPU milliseconds of 16
 /// sampling passes; facts names the layout on a debug facade (block_linear=1).
 struct SharedLayoutTest: HWTest {
-    let id = "gpu.raw.shared_layout"
+    let id = "gpu.gm20b.shared_layout"
     let name = "Shared textures in block-linear memory: replaceRegion, getBytes and sampling exact, and their cost"
     let subsystem = Subsystem.metal
 
-    static let factsSelector = NSSelectorFromString("switchRawProbeFacts:")
+    static let factsSelector = NSSelectorFromString("switchMetalProbeFacts:")
 
     struct Case {
         let name: String
@@ -29,8 +29,8 @@ struct SharedLayoutTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
         for c in Self.cases { try await check(gpu, c, &metrics, &wrong) }
@@ -95,7 +95,7 @@ struct SharedLayoutTest: HWTest {
         metrics.set("\(c.name)_sampled_wrong", sampledWrong)
         metrics.set("\(c.name)_path", path)
         if sampledWrong > 0 { wrong.append("\(c.name)_sampled") }
-        if path != "raw" { wrong.append("\(c.name)_path") }
+        if path != "gm20b" { wrong.append("\(c.name)_path") }
         let sixteen = try await gpu.run { commands in for _ in 0..<16 { sample(commands) } }
         metrics.set("\(c.name)_sample16_gpu_ms", sixteen.gpuMilliseconds, digits: 3)
     }

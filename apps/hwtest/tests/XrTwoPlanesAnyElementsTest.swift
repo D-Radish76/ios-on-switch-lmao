@@ -11,7 +11,7 @@ import Metal
 /// 20-29, 10-19, 0-9) and alpha plane 1's byte at x / 255, within 0.002, texel 0 1.0765 -0.1020 -0.7314 0.0431.
 /// words_<b0>_<b1>_matched: texels read so (256 each); words_<b0>_<b1>_failed: why one case did not run.
 struct XrTwoPlanesAnyElementsTest: HWTest {
-    let id = "gpu.raw.xr_two_planes_any_elements"
+    let id = "gpu.gm20b.xr_two_planes_any_elements"
     let name = "RGB10A8_2P_XR10 over b3a8 planes of 4+2, 8+1 and 4+4 bytes reads by the two-plane rule, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -21,9 +21,9 @@ struct XrTwoPlanesAnyElementsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for (b0, b1) in Self.planes {
@@ -38,10 +38,10 @@ struct XrTwoPlanesAnyElementsTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 

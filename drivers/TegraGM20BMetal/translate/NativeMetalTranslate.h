@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The C ABI of the raw path's translation with no m2v runtime (native_metal_translate, NativeMetalTranslate.rs): libraries
+// The C ABI of the driver's translation with no m2v runtime (native_metal_translate, NativeMetalTranslate.rs): libraries
 // and functions the translator makes alone, the states and kernels it compiles of them on the build's compile profile's
 // devices (every Vulkan handle they hand over 0), and the pipeline descriptors' fields, which the bridge's runtime device
 // takes too (NativeMetalObjects.h). A call that fails returns 0/NULL/false and leaves its reason in nmb_last_error() (per
@@ -8,7 +8,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include "../raw/runtime/raw_direct_abi.h"
+#include "../direct_abi.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -147,11 +147,11 @@ bool nmb_offline_compute_pipeline_compiles(const NmbOfflineComputePipelineDescri
 bool nmb_offline_compute_pipeline_facts(const NmbOfflineComputePipelineDescriptor *descriptor, uint32_t facts[3]);
 
 // The address map (Texture::addressMap) a kernel's compile takes for a texture of MTLPixelFormat `pixelFormat` whose
-// dispatch states none: the raw path's map of such a texture under every YCbCr matrix but P3
+// dispatch states none: the driver's map of such a texture under every YCbCr matrix but P3
 // (NativeMetalKernelTextures.rs)
 uint8_t nmb_kernel_texture_map(uint64_t pixelFormat);
 
-// A state's reflection with no m2v runtime, as raw/runtime/raw_reflection_blob.h lays it out (NativeMetalReflection.rs):
+// A state's reflection with no m2v runtime, as reflection_blob.h lays it out (NativeMetalReflection.rs):
 // a render state's as newRenderPipelineStateWithDescriptor:options:reflection:error: answers it with argument info, its
 // vertex, fragment, tile, object and mesh stages; a compute state's as the runtime's compute prepare gives it (its kernel's
 // bindings). Null with nmb_last_error. Its bytes live until nmb_reflection_blob_release.

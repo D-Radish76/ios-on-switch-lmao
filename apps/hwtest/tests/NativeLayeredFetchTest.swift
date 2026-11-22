@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// Framebuffer fetch in a layered pass: a fragment function reads [[color(0)]] in the layer its vertex function chose
-/// ([[render_target_array_index]], instance i into the pass's layer i). On the raw path the fetch is the pixel interlock's
+/// ([[render_target_array_index]], instance i into the pass's layer i). On the driver the fetch is the pixel interlock's
 /// storage form, whose storage image is a 2D array of the pass's layers from the attachment's slice. Every part of each
 /// texture is cleared to a colour of its own first; the quad in each layer the pass renders then holds that layer's colour
 /// with its channels rotated, every other texel its clear colour. Passes of six layers, of two from slice 3, of three of a

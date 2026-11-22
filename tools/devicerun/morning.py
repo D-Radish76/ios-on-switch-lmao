@@ -16,7 +16,7 @@ MORNING = [
     Check(
         'gpu.tiled-cache-on',
         'r31-gpuanatomy',
-        'raw: tiled cache on',
+        'SwitchMetal: tiled cache on',
         'count > 0',
         subsystem=RAW,
         boot='B',

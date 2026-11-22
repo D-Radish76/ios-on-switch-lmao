@@ -12,9 +12,9 @@ import Metal
 /// in_range read right after succeeds (unchecked_after_fault_ok 1); the fault's is the process's one failed command
 /// buffer, with no predicate (error:none, failed_cbs=); reopens: GPU channels the facade opened again. The kernel's
 /// "channel killed" line is not the app's to check, nor the compositor's presents meanwhile, which the app cannot
-/// observe. The fault arm is undefined on Apple's GPUs and runs only on the raw path, as the whole test does.
+/// observe. The fault arm is undefined on Apple's GPUs and runs only on the driver, as the whole test does.
 struct UncheckedBufferLoadsTest: HWTest {
-    let id = "gpu.raw.unchecked_buffer_loads"
+    let id = "gpu.gm20b.unchecked_buffer_loads"
     let name = "Buffer loads without bounds checks: in range, an unbound slot, and a pointer nothing maps"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 45 }
@@ -23,11 +23,11 @@ struct UncheckedBufferLoadsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         do {
             let (path, mismatches) = try await Self.inRange(gpu, pointer: nil)
             metrics.set("unchecked_in_range_mismatches", mismatches)
@@ -50,7 +50,7 @@ struct UncheckedBufferLoadsTest: HWTest {
         } catch {
             checks.append(("\(GPU.describe(error))", false))
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         metrics.set("reopens", (after["reopens"] ?? 0) - (before["reopens"] ?? 0))
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         checks.append(

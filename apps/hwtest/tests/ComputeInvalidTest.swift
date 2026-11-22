@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Compute work Metal's validation would stop, on the raw path. A dispatch with no compute state set fails its command
+/// Compute work Metal's validation would stop, on the driver. A dispatch with no compute state set fails its command
 /// buffer with MTLCommandBufferErrorInvalidResource and the facade's compute predicate (no_state_error=, no_state_path=).
 /// An indirect dispatch whose argument buffer holds 8 of the 12 bytes ends as Apple's GPU ends it (short_ending=,
 /// short_path=; Self.short is what it is held to). The kernel writes only inside its buffer. The stateless one is the
 /// only command buffer that fails (failed_cbs=, failed_why=).
 struct ComputeInvalidTest: HWTest {
-    let id = "gpu.raw.compute_invalid"
+    let id = "gpu.gm20b.compute_invalid"
     let name =
         "A dispatch with no compute state fails InvalidResource and a short indirect one ends as Metal's"
     let subsystem = Subsystem.metal
@@ -20,7 +20,7 @@ struct ComputeInvalidTest: HWTest {
     }
 
     /// An indirect dispatch whose arguments are 8 bytes long, as an Apple GPU ends it
-    static let short: (ending: Ending, path: String) = (.completes, "raw")
+    static let short: (ending: Ending, path: String) = (.completes, "gm20b")
 
     static let capacity = 1024
 
@@ -58,14 +58,14 @@ struct ComputeInvalidTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         guard let function = library.makeFunction(name: "invalid_marks") else { throw TestFailure("no kernel") }
         let state = try await gpu.device.makeComputePipelineState(function: function)
         let out = try gpu.buffer(Self.capacity * 4)
         var capacity = UInt32(Self.capacity)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
 
@@ -75,7 +75,7 @@ struct ComputeInvalidTest: HWTest {
             encoder.dispatchThreadgroups(
                 MTLSize(width: 4, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
         }
-        let statelessPath = RawFacade.path(of: stateless)
+        let statelessPath = GM20BFacade.path(of: stateless)
         metrics.set("no_state_error", Self.shown(Self.ending(stateless)))
         metrics.set("no_state_path", statelessPath)
         checks.append(
@@ -95,7 +95,7 @@ struct ComputeInvalidTest: HWTest {
                 indirectBuffer: arguments, indirectBufferOffset: 0,
                 threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
         }
-        let shortPath = RawFacade.path(of: short)
+        let shortPath = GM20BFacade.path(of: short)
         let written = UnsafeBufferPointer(
             start: out.contents().bindMemory(to: UInt32.self, capacity: Self.capacity), count: Self.capacity
         ).filter { $0 != 0 }.count
@@ -106,7 +106,7 @@ struct ComputeInvalidTest: HWTest {
             ("short arguments: ends \(Self.shown(Self.short.ending))", Self.ending(short) == Self.short.ending))
         checks.append(("short arguments: path \(Self.short.path)", shortPath == Self.short.path))
 
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
             FailedCounts.judged(before: before, after: counted, expecting: ["compute": 1], own: gpu.paths, &metrics))

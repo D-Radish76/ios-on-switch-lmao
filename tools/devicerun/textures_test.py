@@ -9,7 +9,7 @@ from tools.devicerun.textures import TEXTURES
 
 FORM = (
     '{who}[{pid}] tex.surf.form: no 128x1 texture of format 550 and usage 0x1 over IOSurface 41: a texel buffer over a '
-    'surface the kernel laid out block-linear, whose bytes an M4 Max reads in order: nil until the raw path has its '
+    'surface the kernel laid out block-linear, whose bytes an M4 Max reads in order: nil until the driver has its '
     'form: w30r 64x64'
 )
 ACROSS = (
@@ -24,7 +24,7 @@ def record(process: str, message: str, second: int = 0) -> dict:
         'bootUUID': '7C1E0A22',
         'processImagePath': '/System/Library/CoreServices/' + process,
         'subsystem': REFUSAL_SUBSYSTEM,
-        'category': 'raw',
+        'category': 'gm20b',
         'messageType': 'Default',
         'eventMessage': message,
     }
@@ -57,7 +57,7 @@ class Textures(unittest.TestCase):
     def test_a_form_line_names_an_old_driver_whoever_asked(self):
         got = results(record('SwitchHWTest', FORM.format(who='SwitchHWTest', pid=51)))['textures.removed-refusal']
         self.assertEqual(got.verdict, FAIL)
-        self.assertIn('nil until the raw path has its form', got.observed)
+        self.assertIn('nil until the driver has its form', got.observed)
 
     def test_cross_format_copies_report_other_processes_only(self):
         got = results(

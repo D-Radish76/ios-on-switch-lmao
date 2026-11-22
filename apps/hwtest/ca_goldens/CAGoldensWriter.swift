@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 import XCTest
 
-/// gpu.ca.sweep's reference (core/CAGoldens.swift): every Core Animation state of the raw pack's corpus drawn on this
+/// gpu.ca.sweep's reference (core/CAGoldens.swift): every Core Animation state of the pack's corpus drawn on this
 /// Mac's GPU with the IPSW's own QuartzCore library, written to apps/hwtest/goldens/ca_<build>.txt in the checkout
 /// under `bazel run` (the test's outputs otherwise). States of the other iOS version's QuartzCore are left out.
 final class CAGoldensWriter: XCTestCase {

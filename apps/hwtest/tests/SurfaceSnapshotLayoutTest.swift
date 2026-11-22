@@ -22,7 +22,7 @@ struct SurfaceSnapshotLayoutTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else { return .skip("the default device is not the raw facade") }
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else { return .skip("the default device is not the facade") }
         guard let kernel = GPUConnection() else { return .skip("no TegraGM20B connection") }
         let acceptor = TexturePeerAcceptor()
         let listener = NSXPCListener.anonymous()

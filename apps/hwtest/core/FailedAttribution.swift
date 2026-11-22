@@ -20,7 +20,7 @@ public struct FailedAttribution: Sendable {
     public let missing: [String: Int]
     /// Own error paths the counters did not count.
     public let uncounted: [String: Int]
-    /// Own command buffers neither on the raw path nor failed.
+    /// Own command buffers neither on the driver nor failed.
     public let stray: PathTally
 
     init(_ counts: FailedCounts, expecting expected: [String: Int], own: PathTally) {
@@ -99,7 +99,7 @@ public struct FailedAttribution: Sendable {
         if !missing.isEmpty {
             parts.append("own failure: expected \(FailedCounts.text(missing)) more to fail (failed \(counts.text))")
         }
-        if !stray.isEmpty { parts.append("own failure: its own command buffers off the raw path \(stray.text)") }
+        if !stray.isEmpty { parts.append("own failure: its own command buffers off the driver \(stray.text)") }
         if !uncounted.isEmpty {
             parts.append("own failure: its own paths failed \(FailedCounts.text(uncounted)) the counters did not count")
         }

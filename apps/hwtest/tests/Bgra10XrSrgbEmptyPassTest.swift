@@ -12,7 +12,7 @@ import Metal
 /// this case code), so alpha_touched_tile= (texel 20,20, undrawn) 894 and alpha_untouched_tile= (texel 52,52) 1000
 /// (touched_tile_error= in their place if that arm throws). Every command buffer raw, failed_cbs=0.
 struct Bgra10XrSrgbEmptyPassTest: HWTest {
-    let id = "gpu.raw.bgra10xrsrgb_empty_pass"
+    let id = "gpu.gm20b.bgra10xrsrgb_empty_pass"
     let name = "A BGRA10_XR_sRGB pass that draws nothing keeps alpha codes past 894, as an M4 Max does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -21,9 +21,9 @@ struct Bgra10XrSrgbEmptyPassTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var off = 0
@@ -47,9 +47,9 @@ struct Bgra10XrSrgbEmptyPassTest: HWTest {
             metrics.set("touched_tile_error", GPU.describe(error))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: ["alpha_load", "alpha_dontcare", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)

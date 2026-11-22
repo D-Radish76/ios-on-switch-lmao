@@ -13,7 +13,7 @@ import Metal
 /// (xr_rows16_draw_off 0); a coded kernel store does the same, its word rows landing last there too (one simdgroup, the
 /// later quadgroup's store wins: xr_rows16_kernel_off 0, six runs).
 struct XrRowsUnder16Test: HWTest {
-    let id = "gpu.raw.xr_rows_under_16"
+    let id = "gpu.gm20b.xr_rows_under_16"
     let name = "RGB10A8_2P_XR10 over planes of rows under 16 bytes reads a MiB a row apart and stores 16 apart, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -47,7 +47,7 @@ struct XrRowsUnder16Test: HWTest {
 /// lands its rows 16 apart, one into a buffer reads them a MiB apart, getBytes and replaceRegion use the stated rows of
 /// 8 (ycbcr_rows16_blit_off_<call> 0).
 struct YcbcrRowsUnder16StoresTest: HWTest {
-    let id = "gpu.raw.ycbcr_rows_under_16_stores"
+    let id = "gpu.gm20b.ycbcr_rows_under_16_stores"
     let name = "YCbCr targets of rows under 16 bytes store their rows 16 apart as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

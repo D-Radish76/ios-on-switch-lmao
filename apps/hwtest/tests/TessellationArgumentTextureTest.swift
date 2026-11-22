@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A post-tessellation vertex function that reads a texture through an argument buffer, on the raw path: its program
+/// A post-tessellation vertex function that reads a texture through an argument buffer, on the driver: its program
 /// reads the texture's handle through set 1, which the draw binds at the tessellation program's constant buffer (raw
 /// refused such draws, and m2v has no patch draw). One quad patch at factor 1 covers the target, each vertex taking the
 /// texture's one texel as its colour.
 struct TessellationArgumentTextureTest: HWTest {
-    let id = "gpu.raw.tess_argument_texture"
-    let name = "A post-tessellation vertex function reads a texture through an argument buffer on the raw path"
+    let id = "gpu.gm20b.tess_argument_texture"
+    let name = "A post-tessellation vertex function reads a texture through an argument buffer on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -37,8 +37,8 @@ struct TessellationArgumentTextureTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.n
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         guard let post = library.makeFunction(name: "tess_argument_post") else { throw TestFailure("no post function") }
@@ -92,7 +92,7 @@ struct TessellationArgumentTextureTest: HWTest {
         metrics.set("pixels_wrong", wrong)
         metrics.set("middle", Array(pixels.pixel(n / 2, n / 2, width: n)).map(String.init).joined(separator: "/"))
         var failures: [String] = []
-        if path != "raw" { failures.append("path") }
+        if path != "gm20b" { failures.append("path") }
         if wrong > 0 { failures.append("pixels") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: ","), metrics)
     }

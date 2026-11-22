@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// copy.ce_compressed (METALMAP d2): the copy engine reading and writing a private render target over compressible
-/// memory (raw_comp.h kinds, the facade's switchRawProbeCompressNext) sees and leaves plain texels through that binding,
+/// memory (comp.h kinds, the facade's switchMetalProbeCompressNext) sees and leaves plain texels through that binding,
 /// as it does for the same work on a plain block-linear target. Cases, each format (BGRA8 on C32, RGBA16F on C64,
 /// RGBA32F on C128) and size: a rendered pattern read by the copy engine; full clears to the boot ZBC table's values (comptags only) and to
 /// one it lacks, read by it; a clear then a half-target draw (mixed tiles); the copy engine writing all of it and half

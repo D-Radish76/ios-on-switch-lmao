@@ -193,7 +193,7 @@ struct X1TextureExtentsTest: HWTest {
     }
 }
 
-/// kits/SwitchGM20B/caps/features.tsv MME-2 (graded host: raw_icb_test runs switch_gm20b_macros.c build_icb_draw in
+/// kits/SwitchGM20B/caps/features.tsv MME-2 (graded host: icb_test runs switch_gm20b_macros.c build_icb_draw in
 /// Mesa's MME simulator): an indirect command buffer of eight draws, command k covering column k of a 64x8 target in
 /// code 30(k + 1), executed with executeCommandsInBuffer:indirectBuffer: whose range a compute pass of the same command
 /// buffer writes just before as location 2, length 3 (the buffer held 0, 8 at its commit). drawn_commands "2,3,4":

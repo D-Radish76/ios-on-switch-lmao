@@ -4,32 +4,32 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// A copy-engine texture transfer that fails (RawMetalProbe.mm switchRawProbeFailTransfer:, debug builds: the calling
+/// A copy-engine texture transfer that fails (TegraGM20BMetalProbe.mm switchMetalProbeFailTransfer:, debug builds: the calling
 /// thread's next getBytes or replaceRegion the copy engine moves fails as the kernel's refusal of its submission does)
 /// over an IOSurface the kernel laid out block-linear at the first GPU write, where no CPU path may take the copy over
-/// (RawMetalTextureCpu.mm transferTexture): a fresh 256x256 'BGRA' surface each run, its texture cleared to (0.2, 0.4,
+/// (TegraGM20BMetalTextureCpu.mm transferTexture): a fresh 256x256 'BGRA' surface each run, its texture cleared to (0.2, 0.4,
 /// 0.6, 1). Each arm, its copy and its disarm run on one thread with no suspension point between them. Judged:
 /// armed_before 0 (nothing armed), fired_write and fired_read 1 (each arm met its copy), texture_unchanged 1 (the
 /// failed replaceRegion of 0xff moved nothing: the region still reads the clear), read_untouched 1 (the failed getBytes
 /// left its 0x5a buffer alone), next_write_ok 1 (an unarmed replaceRegion afterwards writes, so no arm is left behind),
-/// and the clear read back exactly first. The one raw:texture.cpu.unreached line both failures share (once a surface
+/// and the clear read back exactly first. The one gm20b:texture.cpu.unreached line both failures share (once a surface
 /// ID) is judged by tools/devicerun per run (refusal.texture-unreached-hwtest); surface_cpu_layout is reported, and a
 /// surface the kernel left pitch-linear is red: no failure would reach the line there.
 struct TextureTransferFailedTest: HWTest {
-    let id = "gpu.raw.texture_transfer_failed"
+    let id = "gpu.gm20b.texture_transfer_failed"
     let name = "A copy-engine transfer that fails moves nothing over a block-linear surface"
     let subsystem = Subsystem.metal
 
     static let side = 256, row = side * 4, region = 16
-    static let selector = NSSelectorFromString("switchRawProbeFailTransfer:")
+    static let selector = NSSelectorFromString("switchMetalProbeFailTransfer:")
     static let clear: [UInt8] = [153, 102, 51, 255]
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.selector) else {
-            return .skip(RawFacade.missing("switchRawProbeFailTransfer:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalProbeFailTransfer:", on: gpu.device))
         }
         let (surface, texture) = try Self.surfaceTexture(gpu.device)
         try await gpu.run { commands in

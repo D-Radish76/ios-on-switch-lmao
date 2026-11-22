@@ -6,7 +6,7 @@ import XCTest
 
 /// The X1 probes that need only Metal, on this Mac's GPU: each must run to its finding, and its numbers are Apple's
 /// answers for the probes whose reference is an Apple GPU (which E4 model, d17's second pass, the sRGB and unorm16
-/// rules). Their verdicts here are INCONCLUSIVE, since nothing runs on the raw path.
+/// rules). Their verdicts here are INCONCLUSIVE, since nothing runs on the driver.
 final class X1ProbeTests: XCTestCase {
     private func makeGPU() throws -> GPU {
         let directory =

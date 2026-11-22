@@ -167,8 +167,8 @@ NSString *footprint()
     }
     [cb commit];
     [cb waitUntilCompleted];
-    const SEL path = NSSelectorFromString(@"switchRawPath");
-    NSString *taken = [(id)cb respondsToSelector:path] ? [(id)cb valueForKey:@"switchRawPath"] : @"device";
+    const SEL path = NSSelectorFromString(@"switchMetalPath");
+    NSString *taken = [(id)cb respondsToSelector:path] ? [(id)cb valueForKey:@"switchMetalPath"] : @"device";
     reply([NSString stringWithFormat:@"%@ pid=%d registry=%llx path=%@ shareable=%d %@",
                                      cb.status == MTLCommandBufferStatusCompleted ? @"ok" : @"fail=not_completed",
                                      getpid(), (unsigned long long)self.device.registryID, taken, t.isShareable,
@@ -212,8 +212,8 @@ NSString *footprint()
     [cb waitUntilCompleted];
     if (keep)
         [self.kept addObject:t];
-    const SEL path = NSSelectorFromString(@"switchRawPath");
-    NSString *taken = [(id)cb respondsToSelector:path] ? [(id)cb valueForKey:@"switchRawPath"] : @"device";
+    const SEL path = NSSelectorFromString(@"switchMetalPath");
+    NSString *taken = [(id)cb respondsToSelector:path] ? [(id)cb valueForKey:@"switchMetalPath"] : @"device";
     return [NSString stringWithFormat:@"%@ pid=%d id=%u path=%@",
                                       cb.status == MTLCommandBufferStatusCompleted ? @"ok" : @"fail=not_completed",
                                       getpid(), IOSurfaceGetID((__bridge IOSurfaceRef)surface), taken];

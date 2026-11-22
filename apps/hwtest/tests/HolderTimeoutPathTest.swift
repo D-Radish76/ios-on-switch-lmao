@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// A command buffer held on its own app's shared event that nobody signals fails as Metal's GPU fails it
-/// (RawMetalEvents.mm heldTooLong, predicate event.timeout), measured on an M4 Max with validation off (c38-audit ds3
+/// (TegraGM20BMetalEvents.mm heldTooLong, predicate event.timeout), measured on an M4 Max with validation off (c38-audit ds3
 /// probes/holder-timeout/MEASURED.txt: 5004.6-5005.5 ms over twelve runs, from the commit of a buffer that is its
 /// queue's head). On the test's queue: the held buffer H fills word 0, waits for value 1 of a fresh event, fills word
 /// 1; B1 and B2, committed behind it, fill words of their own; on a second queue one buffer fills its word at once.
@@ -13,7 +13,7 @@ import Metal
 /// before the wait ran, after it not), B1 then B2 completed with their words, each within 50 ms of the failure, the
 /// other queue's buffer within 100 ms of its commit (Apple: 4 ms), and, once the event reads 1, a buffer waiting on it
 /// completes and writes (late_wait). In time: a second held buffer whose event the test signals 1 s after its commit
-/// completes with both words. failed_event_timeout (switchRawCounters failed.event.timeout over the test, debug builds)
+/// completes with both words. failed_event_timeout (switchMetalCounters failed.event.timeout over the test, debug builds)
 /// is 1. waitUntilScheduled, called on a thread of its own right after each commit, returns at the failure for H
 /// (held_scheduled_ms in [5000, 5100]; Apple 5004.8-5004.9 ms) and no sooner than the signal for the in-time hold
 /// (in_time_scheduled_after_signal_ms >= 0). held_status_at_1s is reported (Apple: committed).
@@ -30,15 +30,15 @@ struct HolderTimeoutPathTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let other = gpu.device.makeCommandQueue(), let event = gpu.device.makeSharedEvent(),
             let inTimeEvent = gpu.device.makeSharedEvent(),
             let words = gpu.device.makeBuffer(length: Self.words * 4, options: .storageModeShared),
             let otherCommands = other.makeCommandBuffer()
         else { throw TestFailure("no second queue, shared event, buffer or command buffer") }
         memset(words.contents(), 0, Self.words * 4)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let order = Order()
         let held = Ended(), behind = [Ended(), Ended()], otherEnded = Ended(), late = Ended(), inTime = Ended()
 
@@ -91,7 +91,7 @@ struct HolderTimeoutPathTest: HWTest {
         let inTimeSignal = await signalled.wait(timeout: Self.neverFailedSeconds)
         let inTimeScheduledAt = await inTimeScheduled.wait(timeout: Self.neverFailedSeconds)
         let afterSignalMs = inTimeSignal.flatMap { signal in inTimeScheduledAt.map { $0 - signal } }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
 
         let written = (0..<Self.words).map { Self.written(words, $0) }
         let error = heldCommands.error as NSError?

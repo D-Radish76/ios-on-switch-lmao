@@ -30,8 +30,8 @@ struct FencePageRegionsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let connection = GPUConnection() else { throw TestFailure("no TegraGM20B connection") }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -45,7 +45,7 @@ struct FencePageRegionsTest: HWTest {
         metrics.set("samples_paths", sampled.paths.joined(separator: ","))
         checks.append(("samples_outside=\(sampled.outside) not 0", sampled.outside == 0))
         checks.append(("cpu_blit_differ=\(sampled.differ) not 0", sampled.differ == 0))
-        checks.append(("the sampling and resolving command buffers raw", sampled.paths == ["raw", "raw"]))
+        checks.append(("the sampling and resolving command buffers raw", sampled.paths == ["gm20b", "gm20b"]))
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
@@ -160,7 +160,7 @@ struct FencePageRegionsTest: HWTest {
         metrics.set("held_status", "\(held.head),\(held.writer)")
         metrics.set("held_paths", "\(held.headPath),\(held.writerPath)")
         checks.append(("the held writer ended \(held.writer), not completed", held.writer == completed))
-        checks.append(("the held writer raw (\(held.writerPath))", held.writerPath == "raw"))
+        checks.append(("the held writer raw (\(held.writerPath))", held.writerPath == "gm20b"))
         checks.append(("the head ended \(held.head) (\(held.headPath)), not completed", held.head == completed))
         checks.append(("the writer's waitUntilScheduled returned before the signal", held.scheduledAtSignal))
         switch (before, after) {

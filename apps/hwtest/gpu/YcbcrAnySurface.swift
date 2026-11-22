@@ -5,7 +5,7 @@ import Metal
 
 /// YCBCR8_420_2P (500) 32x16 textures over surfaces of other formats and layouts, each surface's byte i
 /// SurfaceReads.pattern(i), read by a kernel and compared texel for texel with a 500 over a '420v' (or '420f') whose
-/// planes hold, in rows of their own, the bytes an M4 Max reads (gpu.raw.ycbcr_any_surface)
+/// planes hold, in rows of their own, the bytes an M4 Max reads (gpu.gm20b.ycbcr_any_surface)
 public enum YcbcrAnySurface {
     typealias P = SurfaceReads.Plane
 

@@ -43,7 +43,7 @@ struct GlyphAtlasScene: GPUScene {
         var result = SceneResult()
         let glyphs = Self.glyphs(count: 160)
         let size = Self.size
-        let canReplacePrivate = RawFacade.kind(of: gpu.device) == "raw"
+        let canReplacePrivate = GM20BFacade.kind(of: gpu.device) == "gm20b"
         for format in [TexelFormat.r8Unorm, .a8Unorm] {
             let atlas = try gpu.texture(format.metal, size, size, usage: [.shaderRead])
             var model = TexelImage(format, size, size, Raster(width: size, height: size, channels: 1) { _, _, _ in 0 })

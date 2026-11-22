@@ -2,8 +2,8 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// Every kind of texture a heap holds lies in the heap's own memory (raw::Device::arenaTexture): making 64 of a kind
-/// grows none of the device's own (RawFacade.memory's pool), the GPU's writes to the first read back exactly, and a
+/// Every kind of texture a heap holds lies in the heap's own memory (gm20b::Device::arenaTexture): making 64 of a kind
+/// grows none of the device's own (GM20BFacade.memory's pool), the GPU's writes to the first read back exactly, and a
 /// command buffer that used the heap names as much with 4 of them as with 64 (the encode profile's uses and use_adds,
 /// a debug runtime's). <kind>_cost: "constant" or the two counts; <kind>_own_bytes: the pool's growth; <kind>_read:
 /// exact, wrong, or - for a kind read back no way the blit engine reads it.
@@ -78,7 +78,7 @@ struct HeapKindsScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let raw = RawFacade.kind(of: gpu.device) == "raw"
+        let raw = GM20BFacade.kind(of: gpu.device) == "gm20b"
         let target = try gpu.texture(.rgba8Unorm, 8, 8)
         for kind in Self.kinds {
             let need = gpu.device.heapTextureSizeAndAlign(descriptor: kind.descriptor)
@@ -90,9 +90,9 @@ struct HeapKindsScene: GPUScene {
             }
             var grown = 0
             let make = { (count: Int) -> [MTLTexture] in
-                let before = RawFacade.memory(of: gpu.device)["pool"] ?? 0
+                let before = GM20BFacade.memory(of: gpu.device)["pool"] ?? 0
                 let made = (0..<count).compactMap { _ in heap.makeTexture(descriptor: kind.descriptor) }
-                grown += (RawFacade.memory(of: gpu.device)["pool"] ?? 0) - before
+                grown += (GM20BFacade.memory(of: gpu.device)["pool"] ?? 0) - before
                 return made
             }
             let few = make(4)
@@ -129,7 +129,7 @@ struct HeapKindsScene: GPUScene {
 
     /// The encode profile's uses and use_adds of an empty pass that used the heap
     func cost(_ gpu: GPU, _ heap: MTLHeap, _ target: MTLTexture) async throws -> [String: Double] {
-        let before = RawFacade.encodeProfile(of: gpu.device)
+        let before = GM20BFacade.encodeProfile(of: gpu.device)
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = target
@@ -139,7 +139,7 @@ struct HeapKindsScene: GPUScene {
             render.useHeap(heap, stages: .fragment)
             render.endEncoding()
         }
-        let after = RawFacade.encodeProfile(of: gpu.device)
+        let after = GM20BFacade.encodeProfile(of: gpu.device)
         return ["uses", "use_adds"].reduce(into: [:]) { $0[$1] = (after[$1] ?? 0) - (before[$1] ?? 0) }
     }
 

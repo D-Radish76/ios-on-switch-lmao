@@ -5,14 +5,14 @@ import Metal
 import MetalPerformanceShaders
 
 /// A function's functionConstantsDictionary, vertexAttributes and stageInputAttributes come from its metallib's public
-/// metadata (drivers/TegraGM20BMetal/raw/runtime/raw_function_tags.h), never from an m2v twin. The expected answers for
+/// metadata (drivers/TegraGM20BMetal/function_tags.h), never from an m2v twin. The expected answers for
 /// shaders/FunctionTags.metal are what an M-series Mac's Metal gives for the same source built for iOS. A function made
 /// with constant values answers no constants, and the attributes its constants leave (tags_has_normal false drops
 /// normal), which the shader compiler reads from its specialized AIR. MPS reads its kernels' constants before
 /// specializing them, so a Gaussian blur is encoded too. The case fails on a wrong answer, or on any command buffer
 /// that failed, MPS's included (failed_cbs=, failed_why=).
 struct FunctionTagsTest: HWTest {
-    let id = "gpu.raw.function_tags"
+    let id = "gpu.gm20b.function_tags"
     let name = "Function constants and attributes from the metallib"
     let subsystem = Subsystem.metal
 
@@ -58,9 +58,9 @@ struct FunctionTagsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -103,7 +103,7 @@ struct FunctionTagsTest: HWTest {
         }
 
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

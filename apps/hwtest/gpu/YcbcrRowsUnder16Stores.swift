@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// YCBCR8_420_2P (500) 8x8 targets over '420v' planes of rows under 16 bytes in 8 MiB + 16 KiB (luma at 0, chroma at
-/// 4096; gpu.raw.ycbcr_rows_under_16_stores), luma and chroma rows 8 and 8 (b), 8 and 16 (p0), 16 and 8 (p1). An M4 Max
+/// 4096; gpu.gm20b.ycbcr_rows_under_16_stores), luma and chroma rows 8 and 8 (b), 8 and 16 (p0), 16 and 8 (p1). An M4 Max
 /// reads such a plane's rows a mebibyte apart and stores them 16 bytes apart from its offset (rows of 16 and more at
 /// their own rows), so a pass leaves the first 16 KiB as the same pass leaves a control target of rows 16 and 16 whose
 /// rows hold what the odd one reads; a blit from a buffer lands there too, one into a buffer reads the mebibyte rows,

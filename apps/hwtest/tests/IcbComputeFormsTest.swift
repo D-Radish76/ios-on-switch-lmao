@@ -8,11 +8,11 @@ import Metal
 /// hwtest-icb-compute-spec.txt): handle_table, a kernel reading an argument buffer's texture and buffer through the
 /// handle table (out 43); inherited_root_slots, inherited buffers a pointer chosen at run time reads through the root
 /// slot table (11, 22; icb_root_slots= the state's root slots where the facade answers them, else -); binds_over_20, 24
-/// inherited buffers (300); residual_off16, a buffer bound at offsets 4 and 20, which the raw path binds at the base
+/// inherited buffers (300); residual_off16, a buffer bound at offsets 4 and 20, which the driver binds at the base
 /// rounded down to 16 with the remainder in the kernel (101, 102, then 105, 106). Per case icb_<case>_value=,
 /// icb_<case>_path=, icb_<case>_ok=; failed_cbs=.
 struct IcbComputeFormsTest: HWTest {
-    let id = "gpu.raw.icb_compute_forms"
+    let id = "gpu.gm20b.icb_compute_forms"
     let name = "Indirect command buffers' dispatches: handle tables, root slots, 24 binds and unaligned offsets, on raw"
     let subsystem = Subsystem.metal
 
@@ -118,7 +118,7 @@ struct IcbComputeFormsTest: HWTest {
             compute.setBuffer(out, offset: 0, index: 3)
         }
         ran.words = words(out, 2)
-        let probe = NSSelectorFromString("switchRawObject")
+        let probe = NSSelectorFromString("switchMetalObject")
         let object = (state as? NSObject).flatMap {
             $0.responds(to: probe) ? $0.perform(probe)?.takeUnretainedValue() : nil
         }
@@ -151,9 +151,9 @@ struct IcbComputeFormsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -173,16 +173,16 @@ struct IcbComputeFormsTest: HWTest {
                 case "binds_over_20": ran = try await Self.bindsOver20(gpu, library)
                 default: ran = try await Self.residual(gpu, library, offset: key.hasSuffix("_4") ? 4 : 20)
                 }
-                let ok = ran.words == want && ran.path == "raw"
+                let ok = ran.words == want && ran.path == "gm20b"
                 metrics.set("icb_\(key)_value", ran.words.map(String.init).joined(separator: "/"))
                 metrics.set("icb_\(key)_path", String(ran.path.prefix(60)))
                 metrics.set("icb_\(key)_ok", ok)
-                checks.append(("\(key): \(want.map(String.init).joined(separator: "/")) on the raw path", ok))
+                checks.append(("\(key): \(want.map(String.init).joined(separator: "/")) on the driver", ok))
             } catch {
                 checks.append(("\(key): \(GPU.describe(error))", false))
             }
         }
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)

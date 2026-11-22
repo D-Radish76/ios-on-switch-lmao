@@ -3,14 +3,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The raw facade's compression thread, waited for by its own event (drivers/TegraGM20BMetal/raw/runtime/
-/// RawMetalProbe.mm switchRawProbeCompressionSettled:, debug builds): the block runs once every compressed memory asked
+/// The facade's compression thread, waited for by its own event (drivers/TegraGM20BMetal/
+/// TegraGM20BMetalProbe.mm switchMetalProbeCompressionSettled:, debug builds): the block runs once every compressed memory asked
 /// of the thread so far is made or refused, at once on the caller's thread when none is asked. It covers compressed
 /// memory alone: the ZBC entries the same thread adds after it are not waited for. Past `bound` the event is taken as
 /// lost (a FAIL naming it), never waited for again.
 public enum CompressionSettled {
-    static let selector = NSSelectorFromString("switchRawProbeCompressionSettled:")
-    static let factsSelector = NSSelectorFromString("switchRawProbeFacts:")
+    static let selector = NSSelectorFromString("switchMetalProbeCompressionSettled:")
+    static let factsSelector = NSSelectorFromString("switchMetalProbeFacts:")
     public static let bound: TimeInterval = 5
 
     public enum Wait: Equatable, Sendable {
@@ -49,7 +49,7 @@ public enum CompressionSettled {
         return try make()
     }
 
-    /// comptags= of switchRawProbeFacts: (nil without the selector)
+    /// comptags= of switchMetalProbeFacts: (nil without the selector)
     public static func comptags(_ device: MTLDevice, _ texture: MTLTexture) -> Int? {
         guard let facade = device as? NSObject, facade.responds(to: factsSelector) else { return nil }
         let line = facade.perform(factsSelector, with: texture)?.takeUnretainedValue() as? String ?? ""

@@ -4,14 +4,14 @@ import HWTestGPU
 import Metal
 
 /// A post-tessellation vertex function that reads a colour through one pointer that is a bound buffer or an argument
-/// buffer's pointer, on the raw path: m2v reaches the bound slot through the draw's root table, whose address the
+/// buffer's pointer, on the driver: m2v reaches the bound slot through the draw's root table, whose address the
 /// evaluation program reads from a push word the bridge places as the vertex stage's (it dropped the hole of a
 /// TESSELLATION_EVALUATION range, leaving the word unwritten). Two quad patches at factor 1, one per target, the first
 /// through the argument buffer, the second through the slot. Runs last: on a build without the bridge's placement the
 /// evaluation program reads a root table at whatever the word held, which can fault the channel.
 struct TessellationRootTableTest: HWTest {
-    let id = "gpu.raw.tess_root_table"
-    let name = "A post-tessellation vertex function reads a bound buffer through the draw's root table on the raw path"
+    let id = "gpu.gm20b.tess_root_table"
+    let name = "A post-tessellation vertex function reads a bound buffer through the draw's root table on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -42,8 +42,8 @@ struct TessellationRootTableTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.n
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         guard let post = library.makeFunction(name: "tess_root_post") else { throw TestFailure("no post function") }
@@ -94,7 +94,7 @@ struct TessellationRootTableTest: HWTest {
         }.path
         var metrics = Metrics()
         metrics.set("path", path)
-        var failures: [String] = path == "raw" ? [] : ["path"]
+        var failures: [String] = path == "gm20b" ? [] : ["path"]
         for (label, target, want) in [
             ("arguments", targets[0], Self.viaArguments), ("slot", targets[1], Self.viaSlot),
         ] {

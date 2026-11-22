@@ -7,10 +7,10 @@ import Metal
 
 /// Render passes into the packed two-plane YCbCr attachments (YCBCR10_*_2P_PACKED, their sRGB twins, RGB10_*_2P_PACKED
 /// over 'p420', 'p422', 'p444' and 'pf20'), each beside the same passes into its unpacked twin. An M4 Max's Metal faults
-/// on every pass into a packed target, so the store is not measured: the raw path stores the twin's codes three to a
+/// on every pass into a packed target, so the store is not measured: the driver stores the twin's codes three to a
 /// word, at bits 0, 10 and 20 as Metal reads them, bits 30-31 and a row's tail slots 0. Every word is checked against
 /// that (wrong_words_luma_/wrong_words_chroma_), and the packed texture's reads against the twin's (wrong_reads_). words_
-/// records the device's first words of each plane, so a run on any GPU, the raw facade's or not, keeps its codes.
+/// records the device's first words of each plane, so a run on any GPU, the facade's or not, keeps its codes.
 struct YcbcrPackedTargetTest: HWTest {
     let id = "gpu.ycbcr_packed_target"
     let name = "Render passes into packed two-plane YCbCr surfaces"
@@ -55,7 +55,7 @@ struct YcbcrPackedTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let probe = try GPU.make()
-        let onRaw = RawFacade.kind(of: probe.device) == "raw"
+        let onRaw = GM20BFacade.kind(of: probe.device) == "gm20b"
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for target in Self.targets {
@@ -67,7 +67,7 @@ struct YcbcrPackedTargetTest: HWTest {
             } catch {
                 (found, note) = (Found(), "failed: \(GPU.describe(error))")
             }
-            let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+            let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
             let key = target.label.filter { $0.isLetter || $0.isNumber }
             metrics.set("paths_" + key, gpu.paths.isEmpty ? "-" : gpu.paths.text)
             metrics.set("wrong_words_luma_" + key, found.luma)
@@ -79,7 +79,7 @@ struct YcbcrPackedTargetTest: HWTest {
             checks.append((check, note == nil && found.luma + found.chroma + found.reads == 0 && raw))
         }
         guard onRaw else {
-            return .skip("the default device is not the raw facade: its words recorded", metrics)
+            return .skip("the default device is not the facade: its words recorded", metrics)
         }
         return .judged(checks, metrics, proof: probe.proof)
     }

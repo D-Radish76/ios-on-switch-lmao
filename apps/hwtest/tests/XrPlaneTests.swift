@@ -10,7 +10,7 @@ import Metal
 /// *_inexact); a kernel writing every texel back with alpha 1 leaves plane 0 the blitted words and plane 1 all 255
 /// (words_off, alpha_off 0).
 struct XrPlanesRowsOff32Test: HWTest {
-    let id = "gpu.raw.xr_planes_rows_off32"
+    let id = "gpu.gm20b.xr_planes_rows_off32"
     let name = "An XR texture over planes whose rows are off 32 bytes reads, takes a blit and a kernel store, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 45 }
@@ -39,7 +39,7 @@ struct XrPlanesRowsOff32Test: HWTest {
 /// target read by a draw is that word's colour with alpha 0 (texels_off 0, within one half step); a 16x16 550 over
 /// plane 1 of a 'b3a8' stores 0x27f80100. <arm>_word: the first word, <arm>_words_off: words not it.
 struct XrWrittenOnePlaneTest: HWTest {
-    let id = "gpu.raw.xr_written_one_plane"
+    let id = "gpu.gm20b.xr_written_one_plane"
     let name = "XR targets over a plane with no alpha plane clear, blend and read as over alpha 0, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 45 }

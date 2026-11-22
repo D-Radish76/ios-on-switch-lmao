@@ -43,13 +43,13 @@ extension NativeArgumentEncoderTest {
         var drawn: GPU.Timing?
         var events: [String: Double] = [:]
         for _ in 0..<2 {
-            let before = RawFacade.encodeProfile(of: gpu.device)
+            let before = GM20BFacade.encodeProfile(of: gpu.device)
             drawn = try await gpu.run { commands in
                 let render = commands.makeRenderCommandEncoder(descriptor: Self.pass(target))!
                 render.useHeap(heap, stages: .fragment)
                 Self.cover(render, pipeline, arguments)
             }
-            let after = RawFacade.encodeProfile(of: gpu.device)
+            let after = GM20BFacade.encodeProfile(of: gpu.device)
             events = ["uses", "use_adds"].reduce(into: [:]) { $0[$1] = (after[$1] ?? 0) - (before[$1] ?? 0) }
         }
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
@@ -77,7 +77,7 @@ extension NativeArgumentEncoderTest {
         }
         guard counts.count == 2, !counts[0].values.allSatisfy({ $0 == 0 }) else {
             metrics.set("heap_use_cost", "unmeasured")
-            if !RawFacade.encodeProfile(of: gpu.device).isEmpty { failures.append("heap_use_cost unmeasured") }
+            if !GM20BFacade.encodeProfile(of: gpu.device).isEmpty { failures.append("heap_use_cost unmeasured") }
             return
         }
         let same = counts[0] == counts[1]

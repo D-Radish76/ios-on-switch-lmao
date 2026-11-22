@@ -7,17 +7,17 @@ import Metal
 /// from a slice past 0 was pass.ds, m2v's). Three passes clear depth slice s to 0.1 x (s + 1) and stencil slice s to s + 1;
 /// a fourth loads depth slice 1 beside stencil slice 2, draws z 0.5 with stencil 0x5A replaced over the left half and stores
 /// both. Read back: depth slice 1 is 0.5 on the left and 0.2 on the right, stencil slice 2 0x5A on the left and 3 on the
-/// right, every other slice its clear; every pass on the raw path.
+/// right, every other slice its clear; every pass on the driver.
 struct SeparateZetaSliceTest: HWTest {
-    let id = "gpu.raw.separate_zeta_slice"
-    let name = "Depth32Float and Stencil8 array slices past 0 as one pass's attachments, on the raw path"
+    let id = "gpu.gm20b.separate_zeta_slice"
+    let name = "Depth32Float and Stencil8 array slices past 0 as one pass's attachments, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = 16, slices = 3
         func array(_ format: MTLPixelFormat) throws -> MTLTexture {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: n, height: n, mipmapped: false)
@@ -117,7 +117,7 @@ struct SeparateZetaSliceTest: HWTest {
         metrics.set("slice1_depth", String(format: "%.3f/%.3f", z[n * n + 2], z[n * n + n - 2]))
         metrics.set("slice2_stencil", String(format: "%02x/%02x", st[2 * n * n + 2], st[2 * n * n + n - 2]))
         var failures: [String] = []
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         if depthWrong.reduce(0, +) != 0 { failures.append("depth texels wrong by slice \(depthWrong)") }
         if stencilWrong.reduce(0, +) != 0 { failures.append("stencil texels wrong by slice \(stencilWrong)") }
         try await mipArms(gpu, metrics: &metrics, failures: &failures)
@@ -267,11 +267,11 @@ struct SeparateZetaSliceTest: HWTest {
                     pixels.enumerated().filter { $0.element != [UInt8(255), 0, 0, 255][$0.offset % 4] }.count
                     + abs(pixels.count - w * h * 4)
                 metrics.set("\(label)_completed", paths.count)
-                metrics.set("\(label)_raw", paths.allSatisfy { $0 == "raw" } ? 1 : 0)
+                metrics.set("\(label)_raw", paths.allSatisfy { $0 == "gm20b" } ? 1 : 0)
                 metrics.set("\(label)_wrong", wrong)
                 metrics.set("\(label)_neighbors_wrong", neighbors)
                 metrics.set("\(label)_colour_wrong", colourWrong)
-                if paths.contains(where: { $0 != "raw" }) || wrong != 0 || colourWrong != 0 {
+                if paths.contains(where: { $0 != "gm20b" }) || wrong != 0 || colourWrong != 0 {
                     failures.append(
                         "\(label): bytes \(wrong), neighbors \(neighbors), colour \(colourWrong), paths \(paths)")
                 }

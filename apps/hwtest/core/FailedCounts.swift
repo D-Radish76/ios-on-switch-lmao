@@ -1,6 +1,6 @@
 import Foundation
 
-/// The raw facade's failed command buffers and skipped calls between two reads of its counters (switchRawCounters,
+/// The facade's failed command buffers and skipped calls between two reads of its counters (switchMetalCounters,
 /// debug builds). `failed` counts every command buffer that completed with an error, whoever made it (RenderBox, Core
 /// Image, MPS, Core Animation or the test itself), and `failed.<predicate>` / `failed.none` name what gave each its
 /// error, the predicate its path names too (error:<predicate>, error:none). `skipped` counts the calls Metal's

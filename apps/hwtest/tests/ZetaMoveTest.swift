@@ -4,21 +4,21 @@ import HWTestGPU
 import Metal
 
 /// A stored one-sample depth texture made plain for want of compressed memory moves onto it once some is made
-/// (drivers/TegraGM20BMetal/raw/runtime/raw_private_comp.h compressedFromPlain, its zeta branch; raw_comp.h
+/// (drivers/TegraGM20BMetal/private_comp.h compressedFromPlain, its zeta branch; comp.h
 /// storedZetaKind), at the submission after the compression thread settled, its values with it. Per arm (Depth32Float,
 /// Depth32Float_Stencil8 with stencil 0x5a, Depth16Unorm), a private 1376x784 texture, larger than any depth texture an
 /// earlier test makes (kept compressed memory of a kind at least as large serves a texture at its creation:
 /// CompQueue::fit), then three command buffers that clear it to 1 and draw 64x64-pixel cells at 0.25 + 0.0625 * ((cx +
 /// cy) % 9) (LESS, writes), then a pass that loads it and draws red at 0.53125 (LESS) over a black BGRA8 target. Every
 /// depth (Depth16Unorm: its nearest code, or the one below, StoredDepthTest's rule), stencil and colour texel is the
-/// CPU's model of the scene, which an M4 Max matches (hwtests12 mac/gpu.raw.zeta_move). Judged: `<arm>_depth_wrong`,
+/// CPU's model of the scene, which an M4 Max matches (hwtests12 mac/gpu.gm20b.zeta_move). Judged: `<arm>_depth_wrong`,
 /// `<arm>_stencil_wrong`, `<arm>_colour_wrong` 0, `<arm>_comptags_after` 1; where the texture was made plain
 /// (`<arm>_comptags_at_creation` 0), memory made for it (`<arm>_made`) and its move (`<arm>_zeta_moves`) at least 1;
 /// Depth32Float's 1.0 clears, a boot ZBC entry, a ZBC hit (`d32f_zbc_hits`), and its copy into a shared Depth32Float
 /// read by getBytes (`d32f_shared_wrong` 0). Red: the move never ran (comptags_after 0), moved ZF32 bytes wrongly, or a
 /// header still names the plain zeta (depth or colour wrong); a GPU fault: its plain span went back early.
 struct ZetaMoveTest: HWTest {
-    let id = "gpu.raw.zeta_move"
+    let id = "gpu.gm20b.zeta_move"
     let name = "A stored depth texture made plain moves onto compressed memory, its values with it"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
@@ -44,10 +44,10 @@ struct ZetaMoveTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard (gpu.device as? NSObject)?.responds(to: CompressionSettled.factsSelector) == true else {
-            return .skip(RawFacade.missing("switchRawProbeFacts:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalProbeFacts:", on: gpu.device))
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -65,17 +65,17 @@ struct ZetaMoveTest: HWTest {
     func check(_ gpu: GPU, _ arm: Arm, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let (w, h) = (Self.width, Self.height)
         let p = arm.name + "_"
-        let movesBefore = RawFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0
-        let madeBefore = RawFacade.compression(of: gpu.device)["made"] ?? 0
+        let movesBefore = GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0
+        let madeBefore = GM20BFacade.compression(of: gpu.device)["made"] ?? 0
         let depth = try gpu.texture(arm.format, w, h, usage: [.renderTarget, .shaderRead])
         let atCreation = CompressionSettled.comptags(gpu.device, depth) ?? -1
         if atCreation == 0 { try await CompressionSettled.settle(gpu.device) }
-        let made = (RawFacade.compression(of: gpu.device)["made"] ?? 0) - madeBefore
+        let made = (GM20BFacade.compression(of: gpu.device)["made"] ?? 0) - madeBefore
         let colour = try gpu.texture(.bgra8Unorm, w, h, usage: [.renderTarget, .pixelFormatView])
         let pipeline = try gpu.render(
             fragment: "solid_fragment", format: .bgra8Unorm, depth: arm.format,
             stencil: arm.stencil ? arm.format : .invalid)
-        let zbcBefore = RawFacade.compression(of: gpu.device)["zbc_hits"] ?? 0
+        let zbcBefore = GM20BFacade.compression(of: gpu.device)["zbc_hits"] ?? 0
         for _ in 0..<3 {
             try await gpu.run { commands in
                 let encoder = commands.makeRenderCommandEncoder(descriptor: Self.pass(arm, colour, depth, load: false))!
@@ -92,9 +92,9 @@ struct ZetaMoveTest: HWTest {
                 encoder.endEncoding()
             }
         }
-        let zbcHits = (RawFacade.compression(of: gpu.device)["zbc_hits"] ?? 0) - zbcBefore
+        let zbcHits = (GM20BFacade.compression(of: gpu.device)["zbc_hits"] ?? 0) - zbcBefore
         let after = CompressionSettled.comptags(gpu.device, depth) ?? -1
-        let moves = (RawFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0) - movesBefore
+        let moves = (GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0) - movesBefore
         try await gpu.run { commands in
             let encoder = commands.makeRenderCommandEncoder(descriptor: Self.pass(arm, colour, depth, load: true))!
             encoder.setRenderPipelineState(pipeline)

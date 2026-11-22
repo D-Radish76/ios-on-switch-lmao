@@ -7,10 +7,10 @@ import Metal
 /// argument buffers) take one id per innermost element, laid out flat, as an M4 Max's Metal answers for
 /// shaders/ArgumentShapes.metal (macOS 27.2). grid_fragment's own encoder must give those lengths and offsets, its
 /// nested encoders included, and a draw that reads one element of each grid through what the encoders wrote must give
-/// the M4 Max's pixels on the raw path. The case fails on a wrong answer or pixel, a draw off the raw path, or any
+/// the M4 Max's pixels on the driver. The case fails on a wrong answer or pixel, a draw off the driver, or any
 /// command buffer that failed (failed_cbs=, failed_why=).
 struct ArgumentGridsTest: HWTest {
-    let id = "gpu.raw.argument_array_of_arrays"
+    let id = "gpu.gm20b.argument_array_of_arrays"
     let name = "Arrays of arrays in an argument buffer lay out flat, as Metal's"
     let subsystem = Subsystem.metal
 
@@ -26,9 +26,9 @@ struct ArgumentGridsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
         do {
@@ -38,7 +38,7 @@ struct ArgumentGridsTest: HWTest {
             wrong.append("threw")
         }
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
@@ -114,6 +114,6 @@ struct ArgumentGridsTest: HWTest {
             metrics.set("pixels", got.map { $0.map(String.init).joined(separator: ",") }.joined(separator: " "))
             wrong.append("draw")
         }
-        if timing.path != "raw" { wrong.append("draw_path") }
+        if timing.path != "gm20b" { wrong.append("draw_path") }
     }
 }

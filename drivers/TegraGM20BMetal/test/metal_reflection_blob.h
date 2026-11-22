@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// This Mac's Metal's own reflection of a state as a blob (raw/runtime/raw_reflection_blob.h), each binding and type
-// laid out as translate/NativeMetalReflection.rs lays out m2v's: what the raw facade's objects read back must answer as
+// This Mac's Metal's own reflection of a state as a blob (reflection_blob.h), each binding and type
+// laid out as translate/NativeMetalReflection.rs lays out m2v's: what the facade's objects read back must answer as
 // Metal did. Stages are added in the blob's order (compute: one; render: vertex, fragment, tile, object, mesh).
 #pragma once
 #import <Metal/Metal.h>
@@ -33,14 +33,14 @@ public:
 private:
     std::vector<NmbReflectionNode> nodes_;
     std::vector<uint32_t> edges_;
-    std::vector<raw::ReflectionRange> stages_;
+    std::vector<gm20b::ReflectionRange> stages_;
     std::deque<std::string> names_;
 
     NmbReflectionNode node(uint32_t kind, NSString *name)
     {
         NmbReflectionNode n = {};
         n.kind = kind;
-        std::fill(std::begin(n.children), std::end(n.children), raw::kReflectionAbsent);
+        std::fill(std::begin(n.children), std::end(n.children), gm20b::kReflectionAbsent);
         if (name)
             n.name = names_.emplace_back(name.UTF8String).c_str();
         return n;
@@ -54,7 +54,7 @@ private:
 
     uint32_t binding(id<MTLBinding> b)
     {
-        NmbReflectionNode n = node(raw::ReflectionBinding, b.name);
+        NmbReflectionNode n = node(gm20b::ReflectionBinding, b.name);
         n.flags = uint32_t([b isUsed]) | uint32_t([b isArgument]) << 1;
         n.values[0] = b.type;
         n.values[1] = b.access;
@@ -83,11 +83,11 @@ private:
     uint32_t structure(MTLStructType *s)
     {
         if (!s)
-            return raw::kReflectionAbsent;
+            return gm20b::kReflectionAbsent;
         std::vector<uint32_t> members;
         for (MTLStructMember *m in s.members)
             members.push_back(member(m));
-        NmbReflectionNode n = node(raw::ReflectionStruct, nil);
+        NmbReflectionNode n = node(gm20b::ReflectionStruct, nil);
         n.first = uint32_t(edges_.size());
         n.count = uint32_t(members.size());
         edges_.insert(edges_.end(), members.begin(), members.end());
@@ -96,7 +96,7 @@ private:
 
     uint32_t member(MTLStructMember *m)
     {
-        NmbReflectionNode n = node(raw::ReflectionMember, m.name);
+        NmbReflectionNode n = node(gm20b::ReflectionMember, m.name);
         n.values[0] = m.dataType;
         n.values[1] = m.offset;
         n.values[2] = m.argumentIndex;
@@ -110,8 +110,8 @@ private:
     uint32_t array(MTLArrayType *a)
     {
         if (!a)
-            return raw::kReflectionAbsent;
-        NmbReflectionNode n = node(raw::ReflectionArray, nil);
+            return gm20b::kReflectionAbsent;
+        NmbReflectionNode n = node(gm20b::ReflectionArray, nil);
         n.values[0] = a.elementType;
         n.values[1] = a.arrayLength;
         n.values[2] = a.stride;
@@ -126,8 +126,8 @@ private:
     uint32_t pointer(MTLPointerType *p)
     {
         if (!p)
-            return raw::kReflectionAbsent;
-        NmbReflectionNode n = node(raw::ReflectionPointer, nil);
+            return gm20b::kReflectionAbsent;
+        NmbReflectionNode n = node(gm20b::ReflectionPointer, nil);
         n.values[0] = p.elementType;
         n.values[1] = p.access;
         n.values[2] = p.alignment;
@@ -141,8 +141,8 @@ private:
     uint32_t texture(MTLTextureReferenceType *t)
     {
         if (!t)
-            return raw::kReflectionAbsent;
-        NmbReflectionNode n = node(raw::ReflectionTexture, nil);
+            return gm20b::kReflectionAbsent;
+        NmbReflectionNode n = node(gm20b::ReflectionTexture, nil);
         n.values[0] = t.textureDataType;
         n.values[1] = t.textureType;
         n.values[2] = t.access;

@@ -12,7 +12,7 @@ import Metal
 /// them too.
 struct SubmitJobPathTest: GPUPathTest {
     let id = "gpu.path.submit_job"
-    let name = "Raw command buffers go to the kernel as jobs over the device's resource set"
+    let name = "Command buffers go to the kernel as jobs over the device's resource set"
     let counters = ["submit_jobs", "set_jobs"]
     static let frames = 12, width = 16, height = 16, staleBound = 4
 

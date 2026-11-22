@@ -3,15 +3,15 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.written_textures: a fragment function writes words past 8 and 16 bits to a texture at index 1 (RenderBox's
+/// gpu.gm20b.written_textures: a fragment function writes words past 8 and 16 bits to a texture at index 1 (RenderBox's
 /// uber_resolve_fragment and its packed_tex), bound in each format below, after a clear of it; the left half drawn,
-/// read back word for word. The raw path compiles a written texture's stores for one format and draws a state's
-/// " | wtex=" variant for any other (raw/runtime/raw_written_textures.h), so a format the probe did not guess must
+/// read back word for word. The driver compiles a written texture's stores for one format and draws a state's
+/// " | wtex=" variant for any other (written_textures.h), so a format the probe did not guess must
 /// still store Metal's words (an M4 Max's: saturated to each channel's range). Fails on any word off or any command
-/// buffer off the raw path.
+/// buffer off the driver.
 struct WrittenTextureTest: HWTest {
-    let id = "gpu.raw.written_textures"
-    let name = "Written textures: each format's words stored on the raw path"
+    let id = "gpu.gm20b.written_textures"
+    let name = "Written textures: each format's words stored on the driver"
     let subsystem = Subsystem.metal
 
     struct Case {
@@ -110,8 +110,8 @@ struct WrittenTextureTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var failed: [String] = []
         for c in Self.cases {
@@ -122,8 +122,8 @@ struct WrittenTextureTest: HWTest {
                 failed.append("\(c.format.rawValue): \(GPU.describe(error))")
             }
         }
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
-        if !raw { failed.append("command buffers off the raw path: \(gpu.paths.text)") }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
+        if !raw { failed.append("command buffers off the driver: \(gpu.paths.text)") }
         var metrics = Metrics()
         metrics.set("formats", Self.cases.count)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)

@@ -3,11 +3,11 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.zcull's fragment_stores arm (drivers/TegraGM20BMetal/raw/runtime/raw_zcull.h zcullInvalidates: a program
+/// gpu.gm20b.zcull's fragment_stores arm (drivers/TegraGM20BMetal/zcull.h zcullInvalidates: a program
 /// that can write memory drops its pass's region): a 1.0-cleared memoryless Depth32Float, a near full-screen quad at
 /// 0.25 (LESS, writes), then one far full-screen quad at 0.75 whose fragment function adds to a device counter with no
 /// early fragment tests (ZcullSideEffect.metal). Metal runs it for every far fragment: 1280 x 720 = 921,600 on an M4
-/// Max, memoryless or private depth alike (hwtests12 mac/gpu.raw.zcull). The pass gets its region
+/// Max, memoryless or private depth alike (hwtests12 mac/gpu.gm20b.zcull). The pass gets its region
 /// (`stores_zcull_passes` 1) and drops it at the storing program (`stores_zcull_invalidations` 1). Red: a count short
 /// of the fragments (zcull culled fragments whose stores Metal promises: writesMemory missed the store, or the
 /// invalidation came after the draw).
@@ -27,7 +27,7 @@ extension ZcullTest {
             throw TestFailure("makeDepthStencilState returned nil")
         }
         let count = try gpu.buffer([UInt32(0)])
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         paths.insert(
             try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
@@ -47,7 +47,7 @@ extension ZcullTest {
                 GPU.draw(encoder, corners: GPU.pixelQuad(0, 0, w, h, width: w, height: h, z: 0.75), color: Self.green)
                 encoder.endEncoding()
             }.path)
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let delta = { (key: String) in (after[key] ?? 0) - (before[key] ?? 0) }
         let counted = Int(count.contents().load(as: UInt32.self))
         metrics.set("stores_counter", counted)

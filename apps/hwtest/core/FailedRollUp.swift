@@ -3,9 +3,9 @@ import Foundation
 /// Run All's account of what reddened its tests and what they skipped, from each test's fields in run order, logged
 /// once ahead of the summary (LogLine.rollUp). failed_reds=: each predicate a failure past a test's expectation named
 /// (own_why=, foreign_why=; FailedAttribution), the number of tests it reddened, the first of them and whether that
-/// failure was the test's own or foreign: "enc.pass/12@gpu.raw.xr_srgb:own,none/3@gpu.ca.blur_chain:foreign", in the
+/// failure was the test's own or foreign: "enc.pass/12@gpu.gm20b.xr_srgb:own,none/3@gpu.ca.blur_chain:foreign", in the
 /// order the first reds came. skipped_tests=: each predicate of a skipped call (skipped_why=), the tests that skipped
-/// one and the first: "call.blit/2@gpu.raw.invalid_requests".
+/// one and the first: "call.blit/2@gpu.gm20b.invalid_requests".
 public struct FailedRollUp: Equatable, Sendable {
     public struct Entry: Equatable, Sendable {
         public let predicate: String

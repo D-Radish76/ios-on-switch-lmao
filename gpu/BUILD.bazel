@@ -1,7 +1,7 @@
 # The TegraGM20B Metal plugin bundle for iOS 17 (arm64): the GPU userland of the Switch's GM20B.
 #
 #   bazel build //gpu:base          IPSW-free: ngpu/addons/TegraGM20BMetal.bundle, TegraGM20BMetal.trustcache, trust.json
-#   bazel build //gpu:bundle        what deploy stages: base + the shader seed and the raw pack (//gpu/seed, which reads
+#   bazel build //gpu:bundle        what deploy stages: base + the shader seed and the pack (//gpu/seed, which reads
 #                                   the IPSW's Metal libraries), as a manifest over their outputs in deploy's runfiles
 #   bazel build //gpu:trustcache    only the trust-cache module the boot package appends (both CDHashes)
 #   bazel build //gpu:plugin --output_groups=debug   the plugin's dSYM
@@ -15,7 +15,7 @@ load("//bazel/lint:defs.bzl", "lint_files")
 load("//bazel/rust:defs.bzl", "cargo_ids", "rust_artifact")
 load("//kits/SwitchGM20BEmit:defs.bzl", "EMIT_SOURCES")
 load("//translate/arm64e:target.bzl", "a64x_target_linkopts")
-load(":defs.bzl", "gpu_stage", "gpu_tree", "metal_bundle", "metal_plugin", "raw_stack")
+load(":defs.bzl", "gpu_stage", "gpu_tree", "metal_bundle", "metal_plugin", "stack_key")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,7 +32,7 @@ GM20B_ABI = "//drivers/TegraGM20B:TegraGM20BABI.h"
 
 GM20B_LAYOUT = "//drivers/TegraGM20B:TegraGM20BLayout.h"
 
-# The stage compile (NAK, with no Vulkan device) the raw path makes records with: one object, its entry points its only
+# The stage compile (NAK, with no Vulkan device) the driver makes records with: one object, its entry points its only
 # global symbols (third_party/mesa/src/nouveau/switch_compile).
 COMPILE = "//third_party/mesa/src/nouveau/switch_compile:ios"
 
@@ -46,7 +46,7 @@ alias(
     }),
 )
 
-# The raw path's direct compile with no m2v runtime (drivers/TegraGM20BMetal/translate/NativeMetalTranslate.rs): the translator's own libraries,
+# The driver's direct compile with no m2v runtime (drivers/TegraGM20BMetal/translate/NativeMetalTranslate.rs): the translator's own libraries,
 # functions and compile devices (the build's compile profile, which it compiles in), what the pack generator and the shader
 # compiler daemon compile with.
 rust_library(
@@ -117,13 +117,13 @@ rust_artifact(
     kind = "device",
 )
 
-# The raw GM20B path's stack key: compiled into the plugin and stamped into the raw pack and the native seed, whose
+# The driver's stack key: compiled into the plugin and stamped into the pack and the native seed, whose
 # records a plugin of another key refuses, and naming each process's record cache. What a record is made and read by
-# (gpu/defs.bzl raw_stack), so an edit to the rest of the raw runtime keeps every record made.
-raw_stack(
-    name = "raw_stack",
+# (gpu/defs.bzl stack_key), so an edit to the rest of the runtime keeps every record made.
+stack_key(
+    name = "stack_key",
     srcs = [
-        GM20B_METAL + ":raw_stack_sources",
+        GM20B_METAL + ":stack_key_sources",
         GM20B_METAL + ":translate_rust",
     ],
     bridge = ":translate",
@@ -132,23 +132,23 @@ raw_stack(
         GM20B_METAL + ":plugin/MetallibSlice.h",
         GM20B_ABI,
         "//kits/SwitchGM20BEmit:context",
-        # where NVIDIA's class headers find "nvtypes.h" (raw/pack/nvdec.cpp)
+        # where NVIDIA's class headers find "nvtypes.h" (pack/nvdec.cpp)
         "//third_party/mesa/src/nouveau/headers:nvtypes.h",
     ],
     metal_abi = METAL_ABI,
-    readers = [GM20B_METAL + ":raw/runtime/raw_completed.cpp"],
+    readers = [GM20B_METAL + ":completed.cpp"],
 )
 
-# The paths the stack key hashes (tools/gpu/raw_stack_test.py)
+# The paths the stack key hashes (tools/gpu/stack_key_test.py)
 filegroup(
-    name = "raw_stack_inputs",
-    srcs = [":raw_stack"],
+    name = "stack_key_inputs",
+    srcs = [":stack_key"],
     output_group = "inputs",
 )
 
 PLUGIN_SRCS = [
     GM20B_METAL + ":TegraGM20BMetalPlugin.mm",
-    GM20B_METAL + ":raw_facade_srcs",
+    GM20B_METAL + ":facade_srcs",
     GM20B_METAL + ":compiler_srcs",
 ]
 
@@ -163,7 +163,7 @@ PLUGIN_HDRS = [
     GM20B_METAL + ":plugin/SwitchCompileReply.h",
     GM20B_METAL + ":plugin/SwitchFrameTimeline.h",
     METAL_ABI,
-    GM20B_METAL + ":raw_runtime_headers",
+    GM20B_METAL + ":gm20b_runtime_headers",
     GM20B_METAL + ":compiler_headers",
     GM20B_ABI,
     "//drivers/TegraGM20B:TegraGM20BFencePageABI.h",
@@ -186,95 +186,95 @@ PLUGIN_HDRS = [
 ]
 
 PLUGIN_CC_SRCS = [
-    GM20B_METAL + ":raw/runtime/raw_amplification.cpp",
-    GM20B_METAL + ":raw/runtime/raw_vertex_streams.cpp",
-    GM20B_METAL + ":raw/runtime/raw_gpu.cpp",
-    GM20B_METAL + ":raw/runtime/raw_binds.cpp",
-    GM20B_METAL + ":raw/runtime/raw_blit.cpp",
-    GM20B_METAL + ":raw/runtime/raw_blit_convert.cpp",
-    GM20B_METAL + ":raw/runtime/raw_blit_probe.cpp",
-    GM20B_METAL + ":raw/runtime/raw_blit_texels.cpp",
-    GM20B_METAL + ":raw/runtime/raw_command_buffer.cpp",
-    GM20B_METAL + ":raw/runtime/raw_draw.cpp",
-    GM20B_METAL + ":raw/runtime/raw_draw_prepare.cpp",
-    GM20B_METAL + ":raw/runtime/raw_draw_probes.cpp",
-    GM20B_METAL + ":raw/runtime/raw_draw_times.cpp",
-    GM20B_METAL + ":raw/runtime/raw_draw_inputs.cpp",
-    GM20B_METAL + ":raw/runtime/raw_draw_shader_tests.cpp",
-    GM20B_METAL + ":raw/runtime/raw_memory.cpp",
-    GM20B_METAL + ":raw/runtime/raw_pass_backings.cpp",
-    GM20B_METAL + ":raw/runtime/raw_pass_begin.cpp",
-    GM20B_METAL + ":raw/runtime/raw_pass_clears.cpp",
-    GM20B_METAL + ":raw/runtime/raw_pass_end.cpp",
-    GM20B_METAL + ":raw/runtime/raw_pipelines.cpp",
-    GM20B_METAL + ":raw/runtime/raw_samplers.cpp",
-    GM20B_METAL + ":raw/runtime/raw_sparse_window.cpp",
-    GM20B_METAL + ":raw/runtime/raw_surface_textures.cpp",
-    GM20B_METAL + ":raw/runtime/raw_ycbcr_textures.cpp",
-    GM20B_METAL + ":raw/runtime/raw_texel_rows.cpp",
-    GM20B_METAL + ":raw/runtime/raw_texture_views.cpp",
-    GM20B_METAL + ":raw/runtime/raw_textures.cpp",
-    GM20B_METAL + ":raw/runtime/raw_texture_chains.cpp",
-    GM20B_METAL + ":raw/runtime/raw_texture_headers.cpp",
-    GM20B_METAL + ":raw/runtime/raw_draw_bands.cpp",
-    GM20B_METAL + ":raw/runtime/raw_job_uses.cpp",
-    GM20B_METAL + ":raw/runtime/raw_tessellation.cpp",
-    GM20B_METAL + ":raw/runtime/raw_transfer.cpp",
-    GM20B_METAL + ":raw/runtime/raw_split.cpp",
-    GM20B_METAL + ":raw/runtime/raw_variants.cpp",
-    GM20B_METAL + ":raw/runtime/raw_alias.cpp",
-    GM20B_METAL + ":raw/runtime/raw_arena.cpp",
-    GM20B_METAL + ":raw/fx/fx_mip.cpp",
-    GM20B_METAL + ":raw/fx/fx_image.cpp",
-    GM20B_METAL + ":raw/runtime/raw_kernel.cpp",
-    GM20B_METAL + ":raw/runtime/raw_kernel_job.cpp",
-    GM20B_METAL + ":raw/runtime/raw_resource_set.cpp",
-    GM20B_METAL + ":raw/runtime/raw_encoder_state.cpp",
-    GM20B_METAL + ":raw/runtime/raw_state_segment.cpp",
-    GM20B_METAL + ":raw/runtime/raw_shared_events.cpp",
-    GM20B_METAL + ":raw/runtime/raw_pack.cpp",
-    GM20B_METAL + ":raw/runtime/raw_ycbcr.cpp",
-    GM20B_METAL + ":raw/runtime/raw_xr_texture.cpp",
-    GM20B_METAL + ":raw/runtime/raw_zeta.cpp",
-    GM20B_METAL + ":raw/runtime/raw_visibility.cpp",
-    GM20B_METAL + ":raw/runtime/raw_visibility_pass.cpp",
-    GM20B_METAL + ":raw/runtime/raw_predication.cpp",
-    GM20B_METAL + ":raw/runtime/raw_predicate_loops.cpp",
-    GM20B_METAL + ":raw/runtime/raw_private_comp.cpp",
-    GM20B_METAL + ":raw/runtime/raw_mip_passes.cpp",
-    GM20B_METAL + ":raw/runtime/raw_resolve_twod.cpp",
-    GM20B_METAL + ":raw/runtime/raw_multisample.cpp",
-    GM20B_METAL + ":raw/runtime/raw_object_pool.cpp",
-    GM20B_METAL + ":raw/runtime/raw_surface_image.cpp",
-    GM20B_METAL + ":raw/runtime/raw_texture_shape.cpp",
-    GM20B_METAL + ":raw/runtime/raw_turn_copy.cpp",
-    GM20B_METAL + ":raw/runtime/raw_stencil_bits.cpp",
-    GM20B_METAL + ":raw/runtime/raw_zeta_colour.cpp",
-    GM20B_METAL + ":raw/runtime/raw_turned_pass.cpp",
-    GM20B_METAL + ":raw/runtime/raw_format_standin.cpp",
-    GM20B_METAL + ":raw/runtime/raw_decode_pass.cpp",
-    GM20B_METAL + ":raw/runtime/raw_area_load.cpp",
-    GM20B_METAL + ":raw/runtime/raw_reach.cpp",
-    GM20B_METAL + ":raw/runtime/raw_comp.cpp",
-    GM20B_METAL + ":raw/runtime/raw_record_parts.cpp",
-    GM20B_METAL + ":raw/runtime/raw_direct.cpp",
-    GM20B_METAL + ":raw/runtime/raw_direct_compute.cpp",
-    GM20B_METAL + ":raw/runtime/raw_emit.cpp",
-    GM20B_METAL + ":raw/runtime/raw_cache.cpp",
-    GM20B_METAL + ":raw/runtime/raw_kernel_cache.cpp",
-    GM20B_METAL + ":raw/runtime/raw_compiler.cpp",
-    GM20B_METAL + ":raw/runtime/raw_metallib.cpp",
-    GM20B_METAL + ":raw/runtime/raw_completed.cpp",
-    GM20B_METAL + ":raw/runtime/raw_compute.cpp",
-    GM20B_METAL + ":raw/runtime/raw_compute_indirect.cpp",
-    GM20B_METAL + ":raw/runtime/raw_compute_loops.cpp",
-    GM20B_METAL + ":raw/runtime/raw_loop_copies.cpp",
-    GM20B_METAL + ":raw/runtime/raw_icb_compute.cpp",
-    GM20B_METAL + ":raw/runtime/raw_semantic_plan.cpp",
-    GM20B_METAL + ":raw/runtime/raw_semantic_resources.cpp",
-    GM20B_METAL + ":raw/runtime/raw_semantic_setters.cpp",
-    GM20B_METAL + ":raw/runtime/raw_compile_request.cpp",
-    GM20B_METAL + ":raw/runtime/raw_remote.cpp",
+    GM20B_METAL + ":amplification.cpp",
+    GM20B_METAL + ":vertex_streams.cpp",
+    GM20B_METAL + ":gpu.cpp",
+    GM20B_METAL + ":binds.cpp",
+    GM20B_METAL + ":blit.cpp",
+    GM20B_METAL + ":blit_convert.cpp",
+    GM20B_METAL + ":blit_probe.cpp",
+    GM20B_METAL + ":blit_texels.cpp",
+    GM20B_METAL + ":command_buffer.cpp",
+    GM20B_METAL + ":draw.cpp",
+    GM20B_METAL + ":draw_prepare.cpp",
+    GM20B_METAL + ":draw_probes.cpp",
+    GM20B_METAL + ":draw_times.cpp",
+    GM20B_METAL + ":draw_inputs.cpp",
+    GM20B_METAL + ":draw_shader_tests.cpp",
+    GM20B_METAL + ":memory.cpp",
+    GM20B_METAL + ":pass_backings.cpp",
+    GM20B_METAL + ":pass_begin.cpp",
+    GM20B_METAL + ":pass_clears.cpp",
+    GM20B_METAL + ":pass_end.cpp",
+    GM20B_METAL + ":pipelines.cpp",
+    GM20B_METAL + ":samplers.cpp",
+    GM20B_METAL + ":sparse_window.cpp",
+    GM20B_METAL + ":surface_textures.cpp",
+    GM20B_METAL + ":ycbcr_textures.cpp",
+    GM20B_METAL + ":texel_rows.cpp",
+    GM20B_METAL + ":texture_views.cpp",
+    GM20B_METAL + ":textures.cpp",
+    GM20B_METAL + ":texture_chains.cpp",
+    GM20B_METAL + ":texture_headers.cpp",
+    GM20B_METAL + ":draw_bands.cpp",
+    GM20B_METAL + ":job_uses.cpp",
+    GM20B_METAL + ":tessellation.cpp",
+    GM20B_METAL + ":transfer.cpp",
+    GM20B_METAL + ":split.cpp",
+    GM20B_METAL + ":variants.cpp",
+    GM20B_METAL + ":alias.cpp",
+    GM20B_METAL + ":arena.cpp",
+    GM20B_METAL + ":fx/fx_mip.cpp",
+    GM20B_METAL + ":fx/fx_image.cpp",
+    GM20B_METAL + ":kernel.cpp",
+    GM20B_METAL + ":kernel_job.cpp",
+    GM20B_METAL + ":resource_set.cpp",
+    GM20B_METAL + ":encoder_state.cpp",
+    GM20B_METAL + ":state_segment.cpp",
+    GM20B_METAL + ":shared_events.cpp",
+    GM20B_METAL + ":pack.cpp",
+    GM20B_METAL + ":ycbcr.cpp",
+    GM20B_METAL + ":xr_texture.cpp",
+    GM20B_METAL + ":zeta.cpp",
+    GM20B_METAL + ":visibility.cpp",
+    GM20B_METAL + ":visibility_pass.cpp",
+    GM20B_METAL + ":predication.cpp",
+    GM20B_METAL + ":predicate_loops.cpp",
+    GM20B_METAL + ":private_comp.cpp",
+    GM20B_METAL + ":mip_passes.cpp",
+    GM20B_METAL + ":resolve_twod.cpp",
+    GM20B_METAL + ":multisample.cpp",
+    GM20B_METAL + ":object_pool.cpp",
+    GM20B_METAL + ":surface_image.cpp",
+    GM20B_METAL + ":texture_shape.cpp",
+    GM20B_METAL + ":turn_copy.cpp",
+    GM20B_METAL + ":stencil_bits.cpp",
+    GM20B_METAL + ":zeta_colour.cpp",
+    GM20B_METAL + ":turned_pass.cpp",
+    GM20B_METAL + ":format_standin.cpp",
+    GM20B_METAL + ":decode_pass.cpp",
+    GM20B_METAL + ":area_load.cpp",
+    GM20B_METAL + ":reach.cpp",
+    GM20B_METAL + ":comp.cpp",
+    GM20B_METAL + ":record_parts.cpp",
+    GM20B_METAL + ":direct.cpp",
+    GM20B_METAL + ":direct_compute.cpp",
+    GM20B_METAL + ":emit.cpp",
+    GM20B_METAL + ":gm20b_cache.cpp",
+    GM20B_METAL + ":kernel_cache.cpp",
+    GM20B_METAL + ":compiler.cpp",
+    GM20B_METAL + ":metallib.cpp",
+    GM20B_METAL + ":completed.cpp",
+    GM20B_METAL + ":compute.cpp",
+    GM20B_METAL + ":compute_indirect.cpp",
+    GM20B_METAL + ":compute_loops.cpp",
+    GM20B_METAL + ":loop_copies.cpp",
+    GM20B_METAL + ":icb_compute.cpp",
+    GM20B_METAL + ":semantic_plan.cpp",
+    GM20B_METAL + ":semantic_resources.cpp",
+    GM20B_METAL + ":semantic_setters.cpp",
+    GM20B_METAL + ":compile_request.cpp",
+    GM20B_METAL + ":remote.cpp",
     GM20B_METAL + ":compiler_cc_srcs",
 ]
 
@@ -288,14 +288,14 @@ PLUGIN_FRAMEWORKS = [
 PLUGIN_INCLUDE_MARKERS = [
     GM20B_METAL + ":plugin/SwitchFrameTimeline.h",
     METAL_ABI,
-    GM20B_METAL + ":raw/runtime/RawMetal.h",
+    GM20B_METAL + ":TegraGM20BMetal.h",
     GM20B_ABI,
     "//kits/SwitchRefusal:SwitchRefusal.h",
     # the kit's nv_push.h ahead of Mesa's own, in the directory NVIDIA's headers find "nvtypes.h" in
     "//kits/SwitchGM20BEmit:mesa/nv_push.h",
     "//kits/SwitchGM20BEmit:gen/nv_push_clb197.h",
     "//third_party/mesa/src/nouveau/headers:nvtypes.h",
-    # the generated capability table (raw_device_answers.h chipFeature)
+    # the generated capability table (device_answers.h chipFeature)
     "//kits/SwitchGM20B:SwitchGM20BCaps.h",
 ]
 
@@ -309,14 +309,14 @@ metal_plugin(
     frameworks = PLUGIN_FRAMEWORKS,
     include_markers = PLUGIN_INCLUDE_MARKERS,
     linkopts = a64x_target_linkopts(),
-    stack = ":raw_stack",
+    stack = ":stack_key",
     translate = ":translate_ios",
 )
 
 metal_bundle(
     name = "signed",
     plugin = ":plugin",
-    stack = ":raw_stack",
+    stack = ":stack_key",
     translate_header = TRANSLATE + "NativeMetalTranslate.h",
 )
 
@@ -348,7 +348,7 @@ gpu_tree(
 gpu_stage(
     name = "bundle",
     base = ":base",
-    raw = "//gpu/seed:raw_pack",
+    raw = "//gpu/seed:pack",
     seed = "//gpu/seed:seed",
     tags = ["manual"],
 )
@@ -360,7 +360,7 @@ FALLBACK = (
     "third_party/mesa/src/nouveau/vulkan)[:/]|^//gpu:bridge"
 )
 
-# What ships, and what builds the raw pack
+# What ships, and what builds the pack
 SHIPPED = [
     "//apps/hwtest:SwitchHWTest17",
     "//apps/hwtest:SwitchHWTest27",

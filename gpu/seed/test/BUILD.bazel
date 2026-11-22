@@ -4,7 +4,7 @@
 load("@bazel_skylib//rules:write_file.bzl", "write_file")
 load("//bazel/lint:defs.bzl", "lint_files")
 load("//gpu/seed:crawl.bzl", "QUARTZCORE")
-load("//gpu/seed:defs.bzl", "metal_seed", "seed_raw_pack", "shader_crawl")
+load("//gpu/seed:defs.bzl", "metal_seed", "seed_pipeline_pack", "shader_crawl")
 load(":inputs_test.bzl", "seed_inputs_tests")
 
 lint_files()
@@ -12,7 +12,7 @@ lint_files()
 RAW = [
     "archives.py",
     "draw_context.txt",
-    "rawpack.py",
+    "make_pack.py",
     "directbucket.py",
     "directlink.py",
     "mkpack.py",
@@ -39,16 +39,16 @@ RAW = [
     "iterated/ucode.py",
 ]
 
-# What the generator reads beside its directory (defs.bzl _RAW_LINK's ../runtime/ headers).
-RAW_RUNTIME = [
-    "raw_owned.h",
-    "raw_srgb_table.h",
-    "raw_chip_facts.h",
-    "raw_own_states.h",
+# What the generator reads beside its directory (defs.bzl _METAL_LINK's ../runtime/ headers).
+METAL_RUNTIME = [
+    "owned.h",
+    "srgb_table.h",
+    "chip_facts.h",
+    "own_states.h",
 ]
 
 # The shader tools' raw/ (gpu/seed/tools.bzl _PACK_TOOLS)
-RAW_TOOLS = [
+METAL_TOOLS = [
     "directpack",
     "native-seed",
     "libmock_iokit.dylib",
@@ -71,7 +71,7 @@ RAW_TOOLS = [
     "tools/MANIFEST.json",
     "corpus/corpus.log",
     "app/SwitchHWTest.ipa",
-] + ["raw/" + name for name in RAW] + ["runtime/" + name for name in RAW_RUNTIME] + ["tools/raw/" + name for name in RAW_TOOLS]]
+] + ["pack/" + name for name in RAW] + [name for name in METAL_RUNTIME] + ["tools/raw/" + name for name in METAL_TOOLS]]
 
 filegroup(
     name = "base",
@@ -81,7 +81,7 @@ filegroup(
 
 filegroup(
     name = "tools",
-    srcs = [":tools/MANIFEST.json"] + [":tools/raw/" + name for name in RAW_TOOLS],
+    srcs = [":tools/MANIFEST.json"] + [":tools/raw/" + name for name in METAL_TOOLS],
     tags = ["manual"],
 )
 
@@ -114,13 +114,13 @@ metal_seed(
     tools = ":tools",
 )
 
-seed_raw_pack(
-    name = "raw_pack",
-    srcs = [":raw/" + name for name in RAW] + [":runtime/" + name for name in RAW_RUNTIME],
+seed_pipeline_pack(
+    name = "pack",
+    srcs = [":pack/" + name for name in RAW] + [":" + name for name in METAL_RUNTIME],
     corpus = ":corpus/corpus.log",
     crawl = ":crawl",
     device_libraries = ":device/1.metallib",
-    generator = ":raw/rawpack.py",
+    generator = ":pack/make_pack.py",
     tags = ["manual"],
     tools = ":tools",
 )
@@ -134,13 +134,13 @@ shader_crawl(
     tree = ":tree",
 )
 
-seed_raw_pack(
-    name = "raw_pack_apps",
-    srcs = [":raw/" + name for name in RAW] + [":runtime/" + name for name in RAW_RUNTIME],
+seed_pipeline_pack(
+    name = "pack_apps",
+    srcs = [":pack/" + name for name in RAW] + [":" + name for name in METAL_RUNTIME],
     corpus = ":corpus/corpus.log",
     crawl = ":crawl_apps",
     device_libraries = ":device/1.metallib",
-    generator = ":raw/rawpack.py",
+    generator = ":pack/make_pack.py",
     tags = ["manual"],
     tools = ":tools",
 )
@@ -148,7 +148,7 @@ seed_raw_pack(
 seed_inputs_tests(
     name = "inputs_test",
     crawl = ":crawl",
-    raw_pack = ":raw_pack",
-    raw_pack_apps = ":raw_pack_apps",
+    pack = ":pack",
+    pack_apps = ":pack_apps",
     seed = ":seed",
 )

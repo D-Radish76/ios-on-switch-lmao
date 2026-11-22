@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Pipeline reflection per binding kind (drivers/TegraGM20BMetal/raw/runtime/RawMetalReflectionObjects.mm), two arms
+/// Pipeline reflection per binding kind (drivers/TegraGM20BMetal/TegraGM20BMetalReflectionObjects.mm), two arms
 /// judged apart. kinds: reflection_kinds's compute state and reflection_vs/reflection_fs's render state (BGRA8Unorm),
 /// made with binding and buffer type info, and on the versions whose QuartzCore has them its compute_average_luma and
 /// compute_sum_luma (qc_kernels): every binding answers type, access, index, arrayLength, isUsed, isActive, isArgument
@@ -18,7 +18,7 @@ import Metal
 /// report block set: with none Metal's default aborts the process. failure_mode and failure_enabled are the device
 /// Metal's error mode and enable of failure type 0, reported (an M4 Max: 6, the abort, and 1).
 struct ReflectionKindsTest: HWTest {
-    let id = "gpu.raw.reflection_kinds"
+    let id = "gpu.gm20b.reflection_kinds"
     let name = "Every binding kind's reflection answers as Metal's"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -30,8 +30,8 @@ struct ReflectionKindsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let system = Self.systemKernels[context.ios] ?? []
         let made = ReflectionKinds.made(gpu.device, gpu.library, system: system) {
             try gpu.device.makeLibrary(URL: CAState.library)

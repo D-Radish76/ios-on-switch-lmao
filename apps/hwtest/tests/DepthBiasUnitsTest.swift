@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The units of a constant depth bias (setDepthBias:slopeScale:clamp:) on the raw path: a flat quad at z drawn with bias b
+/// The units of a constant depth bias (setDepthBias:slopeScale:clamp:) on the driver: a flat quad at z drawn with bias b
 /// over depth cleared to 0. A Depth16Unorm beside a Stencil8 (rendered through a Depth32Float_Stencil8 with its depth
 /// converted) moves the stored code by b codes, as Metal's own Depth16Unorm does; a Depth32Float, alone or with stencil,
 /// by b units of 2^(e-23), e the exponent of z. The expected values are an M4 Max's (macOS 27.2.1):
@@ -11,8 +11,8 @@ import Metal
 /// conversion out of the float depth rounds); Depth32Float moves 50 units of 2^-24 for 100 at 0.25 and 100 at 0.5. Every
 /// pass must stay raw.
 struct DepthBiasUnitsTest: HWTest {
-    let id = "gpu.raw.depth_bias_units"
-    let name = "Depth bias in Metal's units of each depth format, a Depth16Unorm pair's included, on the raw path"
+    let id = "gpu.gm20b.depth_bias_units"
+    let name = "Depth bias in Metal's units of each depth format, a Depth16Unorm pair's included, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -39,8 +39,8 @@ struct DepthBiasUnitsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.n
         let colour = try gpu.texture(.rgba8Unorm, n, n)
         let d = MTLDepthStencilDescriptor()
@@ -110,7 +110,7 @@ struct DepthBiasUnitsTest: HWTest {
         var metrics = Metrics()
         metrics.set("paths", paths.joined(separator: ","))
         metrics.set("moved", moved.joined(separator: " "))
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)
     }
 }

@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 import simd
 
-/// One Core Animation state drawn the same way on any device, for comparing the raw facade's pixels with a Mac's
+/// One Core Animation state drawn the same way on any device, for comparing the facade's pixels with a Mac's
 /// (tests/CAStateSweepTest.swift). The state is made from QuartzCore's library exactly as its corpus line
 /// records it; every attachment is cleared, then two draws (a slanted strip and a small rectangle, so blending,
 /// clears and partial tiles all show) read CA's bindings: vertices at vertex buffer 1, an identity transform at 2,

@@ -12,7 +12,7 @@ import Metal
 /// rows force a luma plane declared 16 wide (IOSurfaceCreate makes no plane wider than its bytesPerRow), and an M4 Max
 /// makes the turned texture over it at any extent.
 struct YcbcrTurnedOverlapOrderTest: HWTest {
-    let id = "gpu.raw.ycbcr_turned_overlap_order"
+    let id = "gpu.gm20b.ycbcr_turned_overlap_order"
     let name = "A turned YCbCr target whose rows overlap keeps each byte from its frame tile's last store, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

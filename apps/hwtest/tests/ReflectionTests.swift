@@ -5,14 +5,14 @@ import Metal
 
 /// quad_vertex's corners at buffer 0 and solid_fragment's colour at buffer 0, from a state made with argument info
 struct RenderReflectionTest: HWTest {
-    let id = "gpu.raw.render_reflection"
+    let id = "gpu.gm20b.render_reflection"
     let name = "A render state's reflection, given by the facade"
     let subsystem = Subsystem.metal
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = gpu.library.makeFunction(name: "quad_vertex")
         descriptor.fragmentFunction = gpu.library.makeFunction(name: "solid_fragment")
@@ -37,14 +37,14 @@ struct RenderReflectionTest: HWTest {
 
 /// multiply_add's a, b, out and counter at buffers 0 to 3, from a state made with argument info
 struct ComputeReflectionTest: HWTest {
-    let id = "gpu.raw.compute_reflection"
+    let id = "gpu.gm20b.compute_reflection"
     let name = "A compute state's reflection, given by the facade"
     let subsystem = Subsystem.metal
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let function = gpu.library.makeFunction(name: "multiply_add") else {
             throw TestFailure("no multiply_add")
         }

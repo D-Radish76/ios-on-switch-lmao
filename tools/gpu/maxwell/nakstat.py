@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""The raw path's shader scoreboard: what each state's fragment program costs a pixel, from its machine code.
+"""The driver's shader scoreboard: what each state's fragment program costs a pixel, from its machine code.
 
 usage: nakstat.py (--pack pack.bin | --dump <directcheck DIRECTCHECK_DUMP dir>) [--corpus <R lines>]... [--json]
 
-A pack (raw/runtime/raw_pack.h) or a directcheck dump gives each state's programs and the register count its pipeline
+A pack (pack.h) or a directcheck dump gives each state's programs and the register count its pipeline
 sets. Each state the corpora name gets a row: instructions by class, GPRs, warps per SM, the time a 1280x720 draw
 takes if the program is instruction-bound (the hot-state scenes measure 8-22% above that), and the same from GM20B's
 measured issue cycles (cost.py: `cyc`/`ms_c` adding them, `cyc_o`/`ms_o` overlapping them, `unm` instructions of
@@ -147,7 +147,7 @@ LINKED = ('vl ', 'vp ', 'fl ', 'fp ')
 
 
 def state_key(line: str) -> str:
-    """Give the key the pack files a corpus R line's state under (RawPipelineKey.h pipelineKey).
+    """Give the key the pack files a corpus R line's state under (TegraGM20BMetalPipelineKey.h pipelineKey).
 
     Its stages are named by their library functions (a stage's as= specialized name is not in it), its linked functions
     by theirs with the names they are specialized under. A cubic, xrs= or wtex= segment names a variant, which the pack
@@ -176,7 +176,7 @@ def state_key(line: str) -> str:
     return (f'{key} | l {framework}' if framework else key).strip()
 
 
-# raw_pack.h by version: PackPipeline and PackProgram sizes, sections, and the pipeline's head (key hash, key string,
+# pack.h by version: PackPipeline and PackProgram sizes, sections, and the pipeline's head (key hash, key string,
 # vs, fs, blob, blob dwords, ..., flags). From 15 a program's register count is its own; from 16 program indices are
 # 32-bit.
 LAYOUTS = {
@@ -207,7 +207,7 @@ def program_fields(p: bytes, at: int, program_bytes: int) -> tuple[int, bytes, i
 
 
 VARIANT_RECORD = 16  # PackPipelineFlags PipelineVariantRecord: a variant's record under its state's key
-NO_PROGRAM = 0xFFFFFFFF  # raw_pack.h kNoProgram: a state of no fragment program
+NO_PROGRAM = 0xFFFFFFFF  # pack.h kNoProgram: a state of no fragment program
 FETCH_FREE_FORM = 32  # PipelineFetchFreeForm: the state drawn with no framebuffer fetch, under its state's key
 
 

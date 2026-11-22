@@ -4,24 +4,24 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// Two device methods the raw facade answers itself (drivers/TegraGM20BMetal/raw/runtime/
-/// RawMetalDevice.mm newBufferWithIOSurface:, RawMetalDeviceAnswers.mm requiredLinearTextureBytesPerRowForDescriptor:):
+/// Two device methods the facade answers itself (drivers/TegraGM20BMetal/
+/// TegraGM20BMetalDevice.mm newBufferWithIOSurface:, TegraGM20BMetalDeviceAnswers.mm requiredLinearTextureBytesPerRowForDescriptor:):
 /// a buffer over an IOSurface's pages reads what the CPU wrote through the surface and is copied by the GPU, and a
 /// linear row is the texels rounded up to the format's linear alignment, 0 for a format of blocks.
 struct SurfaceBufferTest: HWTest {
-    let id = "gpu.raw.surface_buffer"
+    let id = "gpu.gm20b.surface_buffer"
     let name = "A buffer over an IOSurface and a linear texture's row, answered by the facade"
     let subsystem = Subsystem.metal
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { throw TestFailure("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { throw TestFailure("the default device is not the facade (\(kind))") }
         let page = Int(vm_page_size)
         var metrics = Metrics()
         var wrong: [String] = []
         var off = 0, smallOff = 0, paddingOff = 0, nonPageAllocations = 0
-        var path = "raw"
+        var path = "gm20b"
         for height in [64, 80, 96, 112] {
             let properties: [CFString: Any] = [
                 kIOSurfaceWidth: 64, kIOSurfaceHeight: height, kIOSurfaceBytesPerElement: 4,
@@ -61,7 +61,7 @@ struct SurfaceBufferTest: HWTest {
                     blit.copy(from: surfaceBuffer, sourceOffset: 0, to: copy, destinationOffset: 0, size: count)
                     blit.endEncoding()
                 }
-                if result.path != "raw" {
+                if result.path != "gm20b" {
                     path = result.path
                     wrong.append("path_\(height)_\(count)")
                 }
@@ -100,7 +100,7 @@ struct SurfaceBufferTest: HWTest {
         if nonPageAllocations == 0 { wrong.append("no_non_page_allocation") }
         if bgraRow != (400 + align - 1) / align * align { wrong.append("bgra8_row") }
         if astcRow != 0 { wrong.append("astc_row") }
-        if path != "raw" { wrong.append("path") }
+        if path != "gm20b" { wrong.append("path") }
         if answer != 1 { wrong.append("answer") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

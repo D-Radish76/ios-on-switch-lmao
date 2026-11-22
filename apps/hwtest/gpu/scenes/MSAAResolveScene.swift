@@ -7,7 +7,7 @@ import Metal
 /// of a 2D array, a cube's face and a depth plane of a 3D texture; and drawn at one sample into each of those, covered
 /// where its centre is. Every level, slice or plane of the destination is first cleared to a colour of its own by a pass
 /// into it, and each one the pass did not name must keep it. The rare pixel whose sample lies on an edge (where the fill
-/// rule decides) is not checked. On the raw facade every command buffer must run on the raw path.
+/// rule decides) is not checked. On the facade every command buffer must run on the driver.
 struct MSAAResolveScene: GPUScene {
     let id = "gpu.msaa.resolve"
     let name = "4x MSAA resolve against sample coverage, into levels, slices and depth planes"
@@ -90,9 +90,9 @@ struct MSAAResolveScene: GPUScene {
                 }
             }
         }
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            let off = gpu.paths.paths.keys.filter { $0 != "raw" }.sorted()
-            result.expect(off.isEmpty, "command buffers off the raw path: \(off.joined(separator: ","))")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            let off = gpu.paths.paths.keys.filter { $0 != "gm20b" }.sorted()
+            result.expect(off.isEmpty, "command buffers off the driver: \(off.joined(separator: ","))")
         }
         return result
     }

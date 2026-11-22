@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 import XCTest
 
-/// The raw pack's mip states (drivers/TegraGM20BMetal/raw/pack/mip.metal) on this Mac's GPU: every step of every chain
+/// The pack's mip states (drivers/TegraGM20BMetal/pack/mip.metal) on this Mac's GPU: every step of every chain
 /// format, odd steps included, within one code of Metal's step (MipReference), each level drawn from the one above as
 /// the runtime's mipPasses draws it (buffer 0: the two levels' sizes; an sRGB level read as its codes). A 32-bit float field may be two ulps off: the
 /// state blends in float, rounding twice where MipReference rounds once.
@@ -12,7 +12,7 @@ final class PackMipTests: XCTestCase {
     private func library(_ device: MTLDevice) throws -> MTLLibrary {
         let root = ProcessInfo.processInfo.environment["TEST_SRCDIR"].map { $0 + "/_main/" } ?? ""
         let source = try String(
-            contentsOfFile: root + "drivers/TegraGM20BMetal/raw/pack/mip.metal", encoding: .utf8)
+            contentsOfFile: root + "drivers/TegraGM20BMetal/pack/mip.metal", encoding: .utf8)
         return try device.makeLibrary(source: source, options: MTLCompileOptions())
     }
 

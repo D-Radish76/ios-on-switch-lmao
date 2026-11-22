@@ -10,7 +10,7 @@ import UIKit
 /// contrast is reported (contrast=) but not judged: how much glass blurs is UIKit's choice, not the GPU's. Apple's own
 /// render of this scene (the iOS 27 simulator, iPad Pro 11-inch: out/agent-scratch/x1-glass/ref) measures
 /// column_spread=8 contrast=29 (reference=). The run arms the render server's split capture (split-capture:
-/// `raw: splitcap` lines of the glass shape's draws, tools/benchloop/capture.py). A failed run saves its picture
+/// `SwitchMetal: splitcap` lines of the glass shape's draws, tools/benchloop/capture.py). A failed run saves its picture
 /// (composited.png).
 struct UIGlassTest: HWTest {
     let id = "ui.glass"

@@ -4,7 +4,7 @@ import Foundation
 import HWTestCore
 import HWTestGPU
 
-/// gpu.raw.icon_corners' IconServices arms: Settings' icon as iconservicesagent draws it at the App Library's 27 and
+/// gpu.gm20b.icon_corners' IconServices arms: Settings' icon as iconservicesagent draws it at the App Library's 27 and
 /// 68 points, scale 2, and the agent's rendered-icon cache; and the requests the icon_* cases make.
 ///
 /// The agent keeps its renders in systemgroup.com.apple.lsd.iconscache's Library/Caches/com.apple.IconsCache, 24B119's

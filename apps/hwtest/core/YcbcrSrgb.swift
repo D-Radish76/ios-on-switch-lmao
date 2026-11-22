@@ -1,10 +1,10 @@
 import Foundation
 
-/// The sRGB encode a YCbCr sRGB target's store goes through (drivers/TegraGM20BMetal/raw/runtime/
-/// raw_ycbcr_store_rule.h ycbcrSrgbEncodeTable): of the sRGB steps of 1/8192 whose read decodes nearest a linear step,
+/// The sRGB encode a YCbCr sRGB target's store goes through (drivers/TegraGM20BMetal/
+/// ycbcr_store_rule.h ycbcrSrgbEncodeTable): of the sRGB steps of 1/8192 whose read decodes nearest a linear step,
 /// the middle one rounded up.
 public enum YcbcrSrgb {
-    /// m2v's SRGB_KNOTS (raw/pack/srgb_knots.h): the read's decode at every 16th sRGB step
+    /// m2v's SRGB_KNOTS (pack/srgb_knots.h): the read's decode at every 16th sRGB step
     static let knots: [UInt32] = [
         0, 1, 2, 4, 5, 6, 7, 9, 10, 11, 12, 14, 15, 16, 17, 19,
         20, 21, 22, 24, 25, 26, 27, 29, 30, 31, 33, 34, 36, 37, 39, 41,

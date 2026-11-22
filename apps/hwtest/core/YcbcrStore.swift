@@ -1,7 +1,7 @@
 import Foundation
 
 /// Metal's store of a render pass into a two-plane YCbCr attachment over plane 0 of a CoreVideo surface, as
-/// drivers/TegraGM20BMetal/raw/runtime/raw_ycbcr_store_rule.h states it (an M4 Max's bytes): code formats (540, 541,
+/// drivers/TegraGM20BMetal/ycbcr_store_rule.h states it (an M4 Max's bytes): code formats (540, 541,
 /// 543, 544) hold each texel as a half and store each texel's green code and each chroma block's rounded mean code; the
 /// converted ones (500-507) are m2v's rule over the same halves, and their sRGB twins (520-527) the same rule over the
 /// halves' sRGB steps.

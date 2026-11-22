@@ -15,7 +15,7 @@ import Metal
 /// off in every case, memoryless_status 9/9). <case>_off texels off, memoryless_status the two error codes; every
 /// other command buffer raw, and only the two memoryless ones failed, each the facade's pass.ds (failed_why=).
 struct ZetaResolvePartsTest: HWTest {
-    let id = "gpu.raw.zeta_resolve_parts"
+    let id = "gpu.gm20b.zeta_resolve_parts"
     let name = "Depth and stencil resolves into a level, a slice or another format, and none into memoryless, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -31,9 +31,9 @@ struct ZetaResolvePartsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for c in Self.cases {
@@ -55,7 +55,7 @@ struct ZetaResolvePartsTest: HWTest {
             checks.append(("memoryless: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
             FailedCounts.judged(before: before, after: counted, expecting: ["pass.ds": 2], own: gpu.paths, &metrics))

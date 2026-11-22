@@ -147,11 +147,11 @@ public struct Outcome: Sendable {
         Outcome(.skip, metrics, detail: detail)
     }
 
-    /// FAIL naming the command buffers of the test's own off the raw path, ahead of whatever else it found; unchanged
+    /// FAIL naming the command buffers of the test's own off the driver, ahead of whatever else it found; unchanged
     /// when there are none.
     public func failing(offRaw: PathTally) -> Outcome {
         guard !offRaw.isEmpty else { return self }
-        let reason = "command buffers off the raw path: \(offRaw.text)"
+        let reason = "command buffers off the driver: \(offRaw.text)"
         return Outcome(.fail, metrics, detail: detail.isEmpty ? reason : reason + "; " + detail, proof: proof)
     }
 

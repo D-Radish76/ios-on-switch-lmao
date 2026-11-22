@@ -3,22 +3,22 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Stored one-sample depth/stencil textures in the raw path's own zeta memory: each of Metal's four formats made private
+/// Stored one-sample depth/stencil textures in the driver's own zeta memory: each of Metal's four formats made private
 /// (render target and sampled), cleared and drawn into on the left half, and read back by the copy engine, exact; and a
 /// Depth32Float_Stencil8 2D array (its slice 1) and cube (its face 4) the same way; every command buffer raw and each
-/// texture in raw memory (switchRawProbeFacts raw=1). Then Depth32Float targets as the device makes them on
-/// compressed zeta memory (raw_comp.h storedZetaKind): a 64x64 one drawn and read back by the copy engine and sampled by
+/// texture in raw memory (switchMetalProbeFacts raw=1). Then Depth32Float targets as the device makes them on
+/// compressed zeta memory (comp.h storedZetaKind): a 64x64 one drawn and read back by the copy engine and sampled by
 /// the texture unit, exact, and a 1280x720 one taking 16 clear-only passes (ZBC's case), timed against one held on plain
-/// memory where a debug facade can (switchRawProbePlainPrivate:). The d32f case is sampled too, as the reference read.
+/// memory where a debug facade can (switchMetalProbePlainPrivate:). The d32f case is sampled too, as the reference read.
 /// Each other format storedZetaKind compresses (compressedCases) is drawn, read back and sampled on compressed memory.
 struct StoredDepthTest: HWTest {
-    let id = "gpu.raw.stored_depth"
+    let id = "gpu.gm20b.stored_depth"
     let name = "Stored depth/stencil in raw zeta memory: exact readback, ZBC clear cost"
     let subsystem = Subsystem.metal
 
     static let size = 64
-    static let factsSelector = NSSelectorFromString("switchRawProbeFacts:")
-    static let plainSelector = NSSelectorFromString("switchRawProbePlainPrivate:")
+    static let factsSelector = NSSelectorFromString("switchMetalProbeFacts:")
+    static let plainSelector = NSSelectorFromString("switchMetalProbePlainPrivate:")
 
     struct Case {
         let name: String
@@ -56,8 +56,8 @@ struct StoredDepthTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
         for c in Self.cases {
@@ -71,7 +71,7 @@ struct StoredDepthTest: HWTest {
                 metrics.set(c.name + "_sampled_paths", ran.sampledPaths.joined(separator: "/"))
             }
             if (ran.sampledWrong ?? 0) > 0 { wrong.append(c.name + "_sampled") }
-            if ran.paths.contains(where: { $0 != "raw" }) { wrong.append(c.name + "_path") }
+            if ran.paths.contains(where: { $0 != "gm20b" }) { wrong.append(c.name + "_path") }
             if !ran.facts.contains("raw=1") { wrong.append(c.name + "_facts") }
             if ran.wrongDepth + ran.wrongStencil > 0 { wrong.append(c.name) }
         }
@@ -239,7 +239,7 @@ struct StoredDepthTest: HWTest {
         }
     }
 
-    /// The formats besides Depth32Float whose stored one-sample textures bind compressed memory (raw_comp.h
+    /// The formats besides Depth32Float whose stored one-sample textures bind compressed memory (comp.h
     /// storedZetaKind)
     static let compressedCases = ["d16", "d32fs8"]
 
@@ -258,7 +258,7 @@ struct StoredDepthTest: HWTest {
         metrics.set(name + "_paths", ran.paths.joined(separator: "/"))
         if ran.wrongDepth + ran.wrongStencil > 0 { wrong.append(name) }
         if sampled > 0 { wrong.append(name + "_sampled") }
-        if ran.paths.contains(where: { $0 != "raw" }) { wrong.append(name + "_path") }
+        if ran.paths.contains(where: { $0 != "gm20b" }) { wrong.append(name + "_path") }
         if made != "-" && !made.contains("comptags=1") { wrong.append(name + "_not_made") }
     }
 
@@ -279,7 +279,7 @@ struct StoredDepthTest: HWTest {
         metrics.set("compressed_readback_paths", ran.paths.joined(separator: "/"))
         if ran.wrongDepth > 0 { wrong.append("compressed_readback") }
         if sampled > 0 { wrong.append("compressed_sampled") }
-        if ran.paths.contains(where: { $0 != "raw" }) { wrong.append("compressed_path") }
+        if ran.paths.contains(where: { $0 != "gm20b" }) { wrong.append("compressed_path") }
         if smallFacts != "-" && !smallFacts.contains("comptags=1") { wrong.append("compressed_not_made") }
 
         let big = try await compressedDepth(gpu, .depth32Float, 1280, 720)

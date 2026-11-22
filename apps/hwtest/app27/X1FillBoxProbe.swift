@@ -59,7 +59,7 @@ enum X1FillBoxProbe {
         for (name, mode) in [("disabled", UInt32(0)), ("bbox", 2), ("all", 1)] {
             let target = try gpu.texture(.bgra8Unorm, size, size)
             do {
-                let drawn = try await RawMethods.draw(
+                let drawn = try await GM20BMethods.draw(
                     gpu, before: [(setFillViaTriangle, mode)], after: [(setFillViaTriangle, 0)],
                     draw(state, target, corners: quad, vertices: 3, count: 1))
                 paths.append(drawn.path)
@@ -78,7 +78,7 @@ enum X1FillBoxProbe {
         for _ in 0..<3 {
             stripMs += try await gpu.run(draw(state, big, corners: GPU.fullScreen, vertices: 4, count: 64))
                 .gpuMilliseconds
-            if let box = try? await RawMethods.draw(
+            if let box = try? await GM20BMethods.draw(
                 gpu, before: [(setFillViaTriangle, 2)], after: [(setFillViaTriangle, 0)],
                 draw(state, big, corners: GPU.fullScreen, vertices: 3, count: 64))
             {

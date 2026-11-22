@@ -4,7 +4,7 @@ from pathlib import Path
 
 from tools.gpu import bundle
 
-RAW = ['_raw_metal_rates', '_OBJC_CLASS_$_RMTexture', '_OBJC_METACLASS_$_RMDevice', '_switch_refusal_log']
+RAW = ['_metal_rates', '_OBJC_CLASS_$_SwitchMetalTexture', '_OBJC_METACLASS_$_SwitchMetalDevice', '_switch_refusal_log']
 TRANSLATOR = [
     '__ZN12metal2vulkan5lower5stage17h0123456789abcdefE',
     '_RNvNtCs5Qb1yU3gTz2_22native_metal_translate7offline7compile',

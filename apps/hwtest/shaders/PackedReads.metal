@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-/// gpu.raw.ycbcr_texel_buffers: the width a kernel sees of a texture buffer
+/// gpu.gm20b.ycbcr_texel_buffers: the width a kernel sees of a texture buffer
 kernel void pbuf_width(texture_buffer<float> t [[texture(0)]], device uint *out [[buffer(0)]],
                        uint i [[thread_position_in_grid]])
 {
@@ -9,7 +9,7 @@ kernel void pbuf_width(texture_buffer<float> t [[texture(0)]], device uint *out 
         out[0] = t.get_width();
 }
 
-/// gpu.raw.packed_levels: read() of every texel of level `lod`
+/// gpu.gm20b.packed_levels: read() of every texel of level `lod`
 kernel void plevels_read(texture2d<float, access::read> t [[texture(0)]], device float4 *out [[buffer(0)]],
                          constant uint &lod [[buffer(1)]], uint2 g [[thread_position_in_grid]])
 {
@@ -18,7 +18,7 @@ kernel void plevels_read(texture2d<float, access::read> t [[texture(0)]], device
         out[g.y * w + g.x] = t.read(g, lod);
 }
 
-/// gpu.raw.packed_levels: a nearest sample at each texel centre of level `lod`, nearest between levels, clamped
+/// gpu.gm20b.packed_levels: a nearest sample at each texel centre of level `lod`, nearest between levels, clamped
 kernel void plevels_sample(texture2d<float> t [[texture(0)]], device float4 *out [[buffer(0)]],
                            constant uint &lod [[buffer(1)]], uint2 g [[thread_position_in_grid]])
 {
@@ -28,7 +28,7 @@ kernel void plevels_sample(texture2d<float> t [[texture(0)]], device float4 *out
         out[g.y * w + g.x] = t.sample(s, (float2(g) + 0.5f) / float2(w, h), level(float(lod)));
 }
 
-/// gpu.raw.packed_levels: minification linear, magnification nearest, at level 1 (recorded, not judged)
+/// gpu.gm20b.packed_levels: minification linear, magnification nearest, at level 1 (recorded, not judged)
 kernel void plevels_minmag(texture2d<float> t [[texture(0)]], device float4 *out [[buffer(0)]],
                            uint2 g [[thread_position_in_grid]])
 {
@@ -39,7 +39,7 @@ kernel void plevels_minmag(texture2d<float> t [[texture(0)]], device float4 *out
         out[g.y * w + g.x] = t.sample(s, (float2(g) + 0.5f) / float2(w, h), level(1.0f));
 }
 
-/// gpu.raw.packed_levels_open: one constexpr sampler over a packed texture of several levels and a plain one
+/// gpu.gm20b.packed_levels_open: one constexpr sampler over a packed texture of several levels and a plain one
 kernel void plevels_shared(texture2d<float> packed [[texture(0)]], texture2d<float> plain [[texture(1)]],
                            device float4 *out [[buffer(0)]], device float4 *packedOut [[buffer(1)]],
                            uint2 g [[thread_position_in_grid]])

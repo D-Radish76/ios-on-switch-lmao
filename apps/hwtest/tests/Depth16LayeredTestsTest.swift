@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// A Depth16Unorm a fetching draw tests in its shader, in a layered pass and in a pass into a turned plane
-/// (Depth16LayeredCases), each rendered through the raw path's converted Depth32Float_Stencil8 (RawMetalRangeForms.mm
+/// (Depth16LayeredCases), each rendered through the driver's converted Depth32Float_Stencil8 (TegraGM20BMetalRangeForms.mm
 /// depth16Tested). Expected values are an M4 Max's (this scene, measured): layer 0 keeps its clear's code 16383
 /// everywhere (0.5 < 0.25 fails); layers 1 and 2 hold the draw's 0.5, 32768 (the spec allows one code either way),
 /// inside the rectangle and their clears' 36044 and 55704 outside it (Metal's floor of the clear, Depth16ClearTest);
@@ -14,7 +14,7 @@ import Metal
 /// turned by Metal's store map, as on an M4 Max (d16_turned_match; _depth_off and _colour_off the texels apart; a device
 /// with no rotation SPI FAILs with d16_turned_match=-).
 struct Depth16LayeredTestsTest: HWTest {
-    let id = "gpu.raw.depth16_layered_tests"
+    let id = "gpu.gm20b.depth16_layered_tests"
     let name = "A Depth16Unorm a fetching draw tests in its shader, layered and turned, stores Metal's codes, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -23,13 +23,13 @@ struct Depth16LayeredTestsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         return await Self.outcome(gpu)
     }
 
     static func outcome(_ gpu: GPU) async -> Outcome {
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -64,9 +64,9 @@ struct Depth16LayeredTestsTest: HWTest {
             checks.append(("turned: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

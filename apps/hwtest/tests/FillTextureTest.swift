@@ -3,24 +3,24 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// fillTexture:level:slice:region:color: (SPI) on the raw path: a region of a 64x64 texture set to one colour, drawn by
-/// the 2D engine's solid rectangle in the target's own format where rule clear.twod holds for it (raw_twod_fill.h: plain
+/// fillTexture:level:slice:region:color: (SPI) on the driver: a region of a 64x64 texture set to one colour, drawn by
+/// the 2D engine's solid rectangle in the target's own format where rule clear.twod holds for it (twod_fill.h: plain
 /// memory, the formats whose gpu.x1.twod_clear cells read exact), else the copy engine's constant fill over the region
-/// (raw::BlitEncoder::fillRect), which a compressed target takes through its own compressible binding. Each format's
-/// target is made on plain memory (switchRawProbePlainPrivate:, where the facade has it) so the 2D route is the one
+/// (gm20b::BlitEncoder::fillRect), which a compressed target takes through its own compressible binding. Each format's
+/// target is made on plain memory (switchMetalProbePlainPrivate:, where the facade has it) so the 2D route is the one
 /// judged; without it the targets are compressed, which judges the copy engine's partial-tile writes and NO_WRITE
-/// components (device-only). PASS: every format's fill on the raw path, the region at Metal's codes of the colour (sRGB
+/// components (device-only). PASS: every format's fill on the driver, the region at Metal's codes of the colour (sRGB
 /// channels encoded), the texels around it as uploaded, and each 2D format's fill by the 2D engine (`<fmt>_twod`, the
 /// facade's fill_twod counter).
 struct FillTextureTest: HWTest {
-    let id = "gpu.raw.fill_texture"
-    let name = "fillTexture: on the raw path: the region at the colour's codes, the rest untouched"
+    let id = "gpu.gm20b.fill_texture"
+    let name = "fillTexture: on the driver: the region at the colour's codes, the rest untouched"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     typealias Fill = @convention(c) (AnyObject, Selector, MTLTexture, Int, Int, MTLRegion, MTLClearColor) -> Void
     static let selector = NSSelectorFromString("fillTexture:level:slice:region:color:")
-    static let plainSelector = NSSelectorFromString("switchRawProbePlainPrivate:")
+    static let plainSelector = NSSelectorFromString("switchMetalProbePlainPrivate:")
     static let side = 64
     static let region = MTLRegionMake2D(5, 7, 40, 31)
     static let colour = MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 0.8)
@@ -43,8 +43,8 @@ struct FillTextureTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let facade = gpu.device as? NSObject
         let plain = facade?.responds(to: Self.plainSelector) ?? false
         var metrics = Metrics()
@@ -58,7 +58,7 @@ struct FillTextureTest: HWTest {
             let texture = try made.get()
             let pattern = (0..<Self.side * Self.side * cell.bytes).map { UInt8(truncatingIfNeeded: $0 &* 37) }
             try await gpu.upload(pattern, to: texture, bytesPerRow: Self.side * cell.bytes)
-            let before = RawFacade.counters(of: gpu.device)["fill_twod"]
+            let before = GM20BFacade.counters(of: gpu.device)["fill_twod"]
             var responded = true
             let path = try await gpu.run { commands in
                 let blit = commands.makeBlitCommandEncoder()!
@@ -71,7 +71,7 @@ struct FillTextureTest: HWTest {
                 blit.endEncoding()
             }.path
             guard responded else { return .skip("the blit encoder answers no fillTexture:") }
-            let after = RawFacade.counters(of: gpu.device)["fill_twod"]
+            let after = GM20BFacade.counters(of: gpu.device)["fill_twod"]
             let twod = before.flatMap { b in after.map { $0 - b } }
             let got = try await gpu.read(texture, bytesPerPixel: cell.bytes)
             let want = Self.codes(cell)
@@ -90,7 +90,7 @@ struct FillTextureTest: HWTest {
             metrics.set("\(cell.name)_inside_wrong", inside)
             metrics.set("\(cell.name)_outside_changed", outside)
             if let twod { metrics.set("\(cell.name)_twod", twod) }
-            if path != "raw" { wrong.append("\(cell.name)_path") }
+            if path != "gm20b" { wrong.append("\(cell.name)_path") }
             if inside > 0 || outside > 0 { wrong.append(cell.name) }
             if plain, let twod, twod != 1 { wrong.append("\(cell.name)_twod") }
         }

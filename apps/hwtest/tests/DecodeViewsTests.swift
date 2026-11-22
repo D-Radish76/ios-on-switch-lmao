@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Views of decoded textures across forms (drivers/TegraGM20BMetal/raw/runtime/RawMetalDecodedFamily.mm). A 166 PVRTC
+/// Views of decoded textures across forms (drivers/TegraGM20BMetal/TegraGM20BMetalDecodedFamily.mm). A 166 PVRTC
 /// texture's 167 view reads the sRGB decode of its codes, the one image (`decode_view_srgb_off` 0, by the nearest code
 /// of Apple's table). A texture of the 203 vectors' blocks (and of 209's) with a 185 (191) view and, on 24B119, a 221
 /// (227) view made after the upload; then the blocks rotated by one uploaded into the texture; then the first blocks
@@ -14,8 +14,8 @@ import Metal
 /// 222 texture's 204 and 186 views, which GM20B decodes itself, the same way (`decode_form_native_off` 0). A 204
 /// texture's 222 view stays nil (the owner's choice: a texture GM20B decodes keeps no blocks;
 /// `decode_native_hdr_view_made` 0). On 21H461 the 221 and 227 views are nil, as the identity makes no HDR texture.
-/// Lines judged from the pulled log in this run's window: one raw:tex.view for the 222 view (`decode_view_lines_want`)
-/// and, on 21H461, one raw:tex.decoded_form (`decode_form_lines_want`), each on the process's first run alone (once a
+/// Lines judged from the pulled log in this run's window: one gm20b:tex.view for the 222 view (`decode_view_lines_want`)
+/// and, on 21H461, one gm20b:tex.decoded_form (`decode_form_lines_want`), each on the process's first run alone (once a
 /// key a process).
 struct DecodeViewsTest: HWTest {
     let id = "gpu.decode.views"
@@ -33,8 +33,8 @@ struct DecodeViewsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let start = Date()
         let hdr = context.ios >= 27
         var forms = Forms()
@@ -74,8 +74,8 @@ struct DecodeViewsTest: HWTest {
         metrics.set("decode_native_hdr_view_made", nativeHdrMade)
         metrics.set("unmade", forms.unmade.isEmpty ? "-" : forms.unmade.joined(separator: ","))
         let viewLines = ProcessLog.lines(
-            ProcessLog.refusal, "raw", containing: "tex.view: no view of format 222,", since: start)
-        let formLines = ProcessLog.lines(ProcessLog.refusal, "raw", containing: "tex.decoded_form", since: start)
+            ProcessLog.refusal, "gm20b", containing: "tex.view: no view of format 222,", since: start)
+        let formLines = ProcessLog.lines(ProcessLog.refusal, "gm20b", containing: "tex.decoded_form", since: start)
         metrics.set("decode_view_lines_want", viewLinesWant)
         metrics.set("decode_view_lines", viewLines?.count ?? -1)
         metrics.set("decode_form_lines_want", formLinesWant)

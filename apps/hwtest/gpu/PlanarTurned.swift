@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// Turned RGB10A8_2P_XR10 (550, 551) and YCbCr (500) render targets of a 32x64 frame over 64x64 planes
-/// (gpu.raw.planar_turned): one pass each, every surface byte 0xee first, a Clear of (0.25, 0.5, 0.75, 1) and a draw of
+/// (gpu.gm20b.planar_turned): one pass each, every surface byte 0xee first, a Clear of (0.25, 0.5, 0.75, 1) and a draw of
 /// (0.75, 0.25, 0.5, 0.6) over frame pixels (0, 0)-(16, 16). Against the same pass into the format unturned over a
 /// 32x64 surface: an M4 Max stores frame texel (x, y) at plane texel (63 - y, x) for rotations 1 and 4, (y, 31 - x) for
 /// 3, (31 - x, 63 - y) for 2, each plane's bytes the unturned pass's (words, alpha bytes, luma, a 2x2 block's chroma),

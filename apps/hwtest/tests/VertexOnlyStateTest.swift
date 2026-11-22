@@ -3,12 +3,12 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A render state of no fragment function (RenderBox's path_edges states are of this kind): drawn by the raw path with
-/// its pixel stage off (drivers/TegraGM20BMetal/raw/runtime/raw_stage_switches.h), it writes depth and stencil and no
+/// A render state of no fragment function (RenderBox's path_edges states are of this kind): drawn by the driver with
+/// its pixel stage off (drivers/TegraGM20BMetal/stage_switches.h), it writes depth and stencil and no
 /// colour. Left half: quad_vertex alone at z 0.5, stencil replaced with 1. Then a state Metal does not rasterize draws
 /// the whole target at z 0.1, which changes nothing. No command buffer may fail (failed_cbs=).
 struct VertexOnlyStateTest: HWTest {
-    let id = "gpu.raw.vertex_only_state"
+    let id = "gpu.gm20b.vertex_only_state"
     let name = "A state of no fragment function: depth and stencil written, colour untouched"
     let subsystem = Subsystem.metal
 
@@ -37,9 +37,9 @@ struct VertexOnlyStateTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         let size = 64
         let color = try gpu.texture(.rgba8Unorm, size, size)
         let depth = try gpu.texture(.depth32Float_stencil8, size, size, usage: [.renderTarget])
@@ -88,11 +88,11 @@ struct VertexOnlyStateTest: HWTest {
         metrics.set("corner_color", Array(pixels.pixel(0, 0, width: size)).map(String.init).joined(separator: ","))
         metrics.set("path", path)
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         return .judged(
             [
                 ("colour untouched (0,255,0,255)", wrongColor == 0), ("depth 0.5 | 1", wrongDepth == 0),
-                ("stencil 1 | 0", wrongStencil == 0), ("drawn by raw", path == "raw"), failed,
+                ("stencil 1 | 0", wrongStencil == 0), ("drawn by raw", path == "gm20b"), failed,
             ], metrics, proof: gpu.proof)
     }
 }

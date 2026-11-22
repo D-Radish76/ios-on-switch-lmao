@@ -5,9 +5,9 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// A pass that loads a YCbCr target stores only the 32x32 tiles its draws reach (raw_reach.h), as Apple's GPU does: the
+/// A pass that loads a YCbCr target stores only the 32x32 tiles its draws reach (reach.h), as Apple's GPU does: the
 /// conversion is lossy, so a tile stored again changes (an M4 Max: about 474 luma and 505 chroma bytes of a reached
-/// tile). Each case loads a 64x48 '420f' surface of random codes (format 500, the 709 matrix, gpu.raw.ycbcr_load's
+/// tile). Each case loads a 64x48 '420f' surface of random codes (format 500, the 709 matrix, gpu.gm20b.ycbcr_load's
 /// surface) and draws in one command buffer of its own: a draw of an indirect command buffer inheriting the encoder's
 /// state into tile (1, 0) (icb); a quad patch at tessellation factor 1 inside tile (0, 1) (patch); a state with no
 /// fragment function inside tile (1, 1), which reaches as a discarding draw does (no_fragment, measured on an M4 Max);
@@ -16,7 +16,7 @@ import Metal
 /// (icb_mixed). Per case reached_changed_<case>= bytes changed in the tiles it reaches (above 0; 0 for no_raster, which
 /// reaches none), untouched_changed_<case>= bytes changed elsewhere (0), path_<case>=; failed_cbs=.
 struct ReachShapesTest: HWTest {
-    let id = "gpu.raw.reach_shapes"
+    let id = "gpu.gm20b.reach_shapes"
     let name = "Loaded YCbCr passes store the tiles an ICB, patch, fragmentless or unrasterized draw reaches, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -73,8 +73,8 @@ struct ReachShapesTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         let (w, h) = (Self.width, Self.height)
         var made: CVPixelBuffer?
@@ -90,7 +90,7 @@ struct ReachShapesTest: HWTest {
         guard let target = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no format 500 texture")
         }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let rows = YcbcrLoadTest.rows(Self.surface)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -107,12 +107,12 @@ struct ReachShapesTest: HWTest {
                 let reaches = shape.reached.isEmpty ? reached == 0 && stored == 3 : reached > 0
                 checks.append(("\(key): the reached tiles stored, as Apple's are", reaches))
                 checks.append(("\(key): no other tile stored", untouched == 0))
-                checks.append(("\(key): on the raw path", path == "raw"))
+                checks.append(("\(key): on the driver", path == "gm20b"))
             } catch {
                 checks.append(("\(key): \(GPU.describe(error))", false))
             }
         }
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)

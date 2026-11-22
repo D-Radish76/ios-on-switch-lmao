@@ -13,7 +13,7 @@ import Metal
 /// ycbcr_turned_load_status counts those completed. ycbcr_turned_load_changed: luma bytes the stores rewrote (reported;
 /// an M4 Max's 406-559 a case).
 struct YcbcrTurnedLoadTest: HWTest {
-    let id = "gpu.raw.ycbcr_turned_load"
+    let id = "gpu.gm20b.ycbcr_turned_load"
     let name = "Turned YCbCr targets a pass loads store back the frame tiles its draws reach, turned, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

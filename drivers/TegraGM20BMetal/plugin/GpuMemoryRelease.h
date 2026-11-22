@@ -1,11 +1,11 @@
-// When a device gives back the GPU memory no resource holds (the raw path's empty chunks, raw::Device::trim; its caller
+// When a device gives back the GPU memory no resource holds (the driver's empty chunks, gm20b::Device::trim; its caller
 // names what to release, so nothing here is m2v's). Apple's driver keeps such memory in IOGPU's resource pools, which it can mark purgeable (IOGPUResourceSetPurgeable)
 // so that it stops counting in the process's footprint, and AGXMetal listens for DISPATCH_SOURCE_TYPE_MEMORYPRESSURE. Ours
 // are kernel BOs mapped into the process and charged to its footprint as iokit_mapped until freed, so they go back on the
 // same events, and once the GPU has had nothing to do for a second: a widget or a snapshot service that stopped drawing
 // would otherwise carry them into its lower inactive limit, past which jetsam kills it at once, with no warning to answer.
 // The render server too: what it gives back after a still screen is made again on its render thread at the next frame
-// (HW Test pacing.* and gpu.raw.memoryless_burst judge that cost on the device).
+// (HW Test pacing.* and gpu.gm20b.memoryless_burst judge that cost on the device).
 #pragma once
 #include <dispatch/dispatch.h>
 #include <stdint.h>

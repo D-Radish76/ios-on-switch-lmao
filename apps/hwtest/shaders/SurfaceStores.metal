@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-/// gpu.raw.xr_texel_buffer_written: one value into every element of a texture buffer, by a kernel
+/// gpu.gm20b.xr_texel_buffer_written: one value into every element of a texture buffer, by a kernel
 kernel void xr_tbuf_written_kernel(texture_buffer<float, access::write> texels [[texture(0)]],
                                    constant float4 &value [[buffer(0)]], uint id [[thread_position_in_grid]])
 {
@@ -19,7 +19,7 @@ vertex SurfaceStoresVertex surface_stores_rect(uint vid [[vertex_id]], constant 
     return SurfaceStoresVertex{float4(vid & 1 ? rect.z : rect.x, vid >> 1 ? rect.w : rect.y, 0, 1)};
 }
 
-/// gpu.raw.xr_texel_buffer_written: each fragment writes the value at its column of the texture buffer
+/// gpu.gm20b.xr_texel_buffer_written: each fragment writes the value at its column of the texture buffer
 fragment float4 xr_tbuf_written_fragment(SurfaceStoresVertex in [[stage_in]],
                                          texture_buffer<float, access::write> texels [[texture(0)]],
                                          constant float4 &value [[buffer(0)]])
@@ -28,7 +28,7 @@ fragment float4 xr_tbuf_written_fragment(SurfaceStoresVertex in [[stage_in]],
     return 0;
 }
 
-/// gpu.raw.ycbcr_turned_load: a draw whose every fragment is discarded, so a loaded pass stores back only what it loaded
+/// gpu.gm20b.ycbcr_turned_load: a draw whose every fragment is discarded, so a loaded pass stores back only what it loaded
 fragment float4 ycbcr_turned_load_discard(SurfaceStoresVertex in [[stage_in]])
 {
     discard_fragment();

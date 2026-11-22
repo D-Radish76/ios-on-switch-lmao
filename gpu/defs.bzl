@@ -3,7 +3,7 @@ action with declared inputs, so Bazel reruns only what an edit reaches:
 
   rustc per crate (iOS translation: bazel/rust) -> clang++ (each object) -> link -> m2v check/strip/sign/trust cache
 
-The shader seed and the raw pack are gpu/seed's.
+The shader seed and the pack are gpu/seed's.
 """
 
 load("//bazel:profile.bzl", "PROFILE_ATTR", "switch_debug_define")
@@ -68,15 +68,15 @@ _PLUGIN_CFLAGS = [
 ]
 
 def _plugin_objects(ctx, name, stack):
-    """Each unit of the plugin compiled on its own (objects in link order), with `stack` as the raw stack key's file."""
+    """Each unit of the plugin compiled on its own (objects in link order), with `stack` as the stack key's file."""
 
-    # -I in the old build's order (NativeMetal, raw/runtime, TegraGM20B), and the raw path's stack key as a define.
+    # -I in the old build's order (NativeMetal, drivers/TegraGM20BMetal, TegraGM20B), and the driver's stack key as a define.
     includes = ["-I", ctx.bin_dir.path]
     for marker in ctx.files.include_markers:
         includes += ["-I", marker.dirname]
     defines = [switch_debug_define(ctx)]
     if stack:
-        defines.append("-DTEGRA_RAW_STACK=0x@FILE:%s@ull" % stack.path)
+        defines.append("-DTEGRA_STACK_KEY=0x@FILE:%s@ull" % stack.path)
     headers = ctx.files.hdrs + ctx.files.include_markers + ([stack] if stack else [])
     objects = []
     for language, sources in (("objective-c++", ctx.files.srcs), ("c++", ctx.files.cc_srcs), ("c", ctx.files.c_srcs)):
@@ -152,13 +152,13 @@ _PLUGIN_ATTRS = _XCODE | PROFILE_ATTR | {
 metal_plugin = rule(
     implementation = _metal_plugin_impl,
     attrs = _PLUGIN_ATTRS | {
-        "stack": attr.label(allow_single_file = True, doc = "the raw path's stack key (TEGRA_RAW_STACK)"),
+        "stack": attr.label(allow_single_file = True, doc = "the driver's stack key (TEGRA_STACK_KEY)"),
         "translate": attr.label(mandatory = True, allow_single_file = True, doc = "the translation's static library"),
         "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's object (NAK)"),
     },
 )
 
-# --- The raw GM20B path's stack key --------------------------------------------------------------------------------
+# --- The driver's stack key --------------------------------------------------------------------------------
 
 _CrateSourcesInfo = provider(
     doc = "What a crate graph is compiled from: each crate's and build script's sources and compile data.",
@@ -191,7 +191,7 @@ def _hashed_as(f):
 def _short_path(f):
     return f.short_path
 
-# The preprocessor of each kind of unit, as the shader tools compile it (raw/pack/rawpack.py build)
+# The preprocessor of each kind of unit, as the shader tools compile it (pack/make_pack.py build)
 _UNITS = {
     "c": ["clang", "-isysroot", "@MACOSX_SDK@", "-x", "c", "-std=c11"],
     "cpp": ["clang++", "-isysroot", "@MACOSX_SDK@", "-x", "c++", "-std=c++17"],
@@ -211,8 +211,8 @@ def _includes_checked(ctx):
         out = ctx.actions.declare_file("{}_includes/{}.d".format(ctx.attr.name, src.short_path))
         _xcode_run(
             ctx,
-            "RawStackIncludes",
-            "Checking that %s includes only the raw stack key's files" % src.short_path,
+            "GM20BStackIncludes",
+            "Checking that %s includes only the stack key's files" % src.short_path,
             _UNITS[src.extension] + includes + ["-MM", "-MF", out.path, src.path],
             [src] + headers,
             [out],
@@ -220,7 +220,7 @@ def _includes_checked(ctx):
         checked.append(out)
     return checked
 
-def _raw_stack_impl(ctx):
+def _stack_key_impl(ctx):
     out = ctx.actions.declare_file(ctx.attr.name + ".txt")
     files = depset(
         ctx.files.srcs + ctx.files.readers + [ctx.file.metal_abi, ctx.file.compile, ctx.file._selector_layout],
@@ -237,8 +237,8 @@ def _raw_stack_impl(ctx):
         arguments = [args],
         inputs = files,
         outputs = [out],
-        mnemonic = "RawStack",
-        progress_message = "Hashing the raw path's stack key",
+        mnemonic = "GM20BStack",
+        progress_message = "Hashing the driver's stack key",
     )
     listing = ctx.actions.declare_file(ctx.attr.name + ".inputs")
     names = ctx.actions.args()
@@ -250,9 +250,9 @@ def _raw_stack_impl(ctx):
         OutputGroupInfo(inputs = depset([listing]), _validation = depset(_includes_checked(ctx))),
     ]
 
-raw_stack = rule(
-    implementation = _raw_stack_impl,
-    doc = """The raw path's stack key (tools/gpu/raw_stack.py): what its records are made and read by.
+stack_key = rule(
+    implementation = _stack_key_impl,
+    doc = """The driver's stack key (tools/gpu/stack_key.py): what its records are made and read by.
 
     srcs and readers, by path and bytes, with the stage compile's object, MetalABI.h, every crate the direct compile's
     translation compiles (native_metal_translate's graph: sources, compile data and build scripts) and the IPSW build. Each C, C++ and Objective-C++ unit of srcs
@@ -268,9 +268,9 @@ raw_stack = rule(
         "include_markers": attr.label_list(allow_files = True, doc = "one file per -I directory of srcs' units"),
         "metal_abi": attr.label(mandatory = True, allow_single_file = True, doc = "the IPSW kind's MetalABI.h"),
         "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's iOS object"),
-        "_selector_layout": attr.label(default = "//drivers/TegraGM20BMetal/precompile/ca-selectors:raw_ca_selector_layout.h", allow_single_file = True),
+        "_selector_layout": attr.label(default = "//drivers/TegraGM20BMetal/precompile/ca-selectors:ca_selector_layout.h", allow_single_file = True),
         "ipsw": attr.label(default = "//ipsw:current", providers = [IpswInfo]),
-        "_tool": attr.label(default = "//tools/gpu:raw_stack", executable = True, cfg = "exec"),
+        "_tool": attr.label(default = "//tools/gpu:stack_key", executable = True, cfg = "exec"),
         "_xcode_run": attr.label(default = "//tools/gpu:xcode_run", executable = True, cfg = "exec"),
     },
 )
@@ -312,7 +312,7 @@ metal_bundle = rule(
     implementation = _metal_bundle_impl,
     attrs = _XCODE | {
         "plugin": attr.label(mandatory = True, allow_single_file = True),
-        "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the raw path's stack key, into Info.plist"),
+        "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the driver's stack key, into Info.plist"),
         "translate_header": attr.label(
             mandatory = True,
             allow_single_file = True,
@@ -375,7 +375,7 @@ def _gpu_stage_impl(ctx):
         inputs = [seed.replies, seed.native, ctx.file.raw],
         outputs = [part],
         mnemonic = "GpuStageSeed",
-        progress_message = "Listing the shader seed and the raw pack for the Data volume",
+        progress_message = "Listing the shader seed and the pack for the Data volume",
     )
 
     manifest = ctx.actions.declare_file(ctx.attr.name + ".stage")
@@ -391,7 +391,7 @@ def _gpu_stage_impl(ctx):
         inputs = [base, part],
         outputs = [manifest],
         mnemonic = "GpuStageManifest",
-        progress_message = "Listing the GPU bundle, the shader seed and the raw pack for the Data volume",
+        progress_message = "Listing the GPU bundle, the shader seed and the pack for the Data volume",
     )
     files = [manifest, base, seed.replies, seed.native, ctx.file.raw]
     return [DefaultInfo(files = depset([manifest]), runfiles = ctx.runfiles(files = files))]
@@ -402,7 +402,7 @@ gpu_stage = rule(
     attrs = {
         "base": attr.label(mandatory = True, doc = "//gpu:base: the signed bundle"),
         "seed": attr.label(mandatory = True, providers = [SeedInfo]),
-        "raw": attr.label(mandatory = True, allow_single_file = True, doc = "the raw pack's directory"),
+        "raw": attr.label(mandatory = True, allow_single_file = True, doc = "the pack's directory"),
         "_tool": attr.label(default = "//tools/gpu:stage_manifest", executable = True, cfg = "exec"),
     },
 )

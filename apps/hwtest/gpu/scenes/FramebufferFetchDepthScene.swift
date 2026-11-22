@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 struct FramebufferFetchDepthScene: GPUScene {
-    let id = "gpu.raw.framebuffer_fetch_depth"
+    let id = "gpu.gm20b.framebuffer_fetch_depth"
     let name = "Framebuffer fetch depth/stencil writes, multisampling and fixed-function transitions"
 
     private static let size = 32
@@ -34,7 +34,7 @@ struct FramebufferFetchDepthScene: GPUScene {
     }
 
     /// One case in a command buffer of its own: a case that throws leaves the other cases' compares. A memoryless zeta
-    /// (the raw path's compressed backings: raw_comp.h backingKind) lives for the first pass alone, so its case reads
+    /// (the driver's compressed backings: comp.h backingKind) lives for the first pass alone, so its case reads
     /// that pass's picture and draws no verify pass.
     private func draw(
         _ gpu: GPU, samples: Int, stencil: Bool, memoryless: Bool, _ packed: inout [Bool], _ result: inout SceneResult
@@ -56,7 +56,7 @@ struct FramebufferFetchDepthScene: GPUScene {
         let less = try Self.state(gpu, stencil: stencil, depth: .less, stencilCompare: .always)
         let equalStencil = try Self.state(gpu, stencil: stencil, depth: .less, stencilCompare: .equal)
         let final = try Self.state(gpu, stencil: stencil, depth: .equal, stencilCompare: .equal)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let timing = try await gpu.run { commands in
             func pass(clear: Bool) -> MTLRenderPassDescriptor {
                 let pass = MTLRenderPassDescriptor()
@@ -116,13 +116,13 @@ struct FramebufferFetchDepthScene: GPUScene {
             }
         }
         result.metrics.set("path_\(key)", timing.path)
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(timing.path == "raw", "\(key) did not execute entirely raw: \(timing.path)")
-            if let fetchPacked = RawFacade.packed(fetch), let ordinaryPacked = RawFacade.packed(ordinary) {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(timing.path == "gm20b", "\(key) did not execute entirely raw: \(timing.path)")
+            if let fetchPacked = GM20BFacade.packed(fetch), let ordinaryPacked = GM20BFacade.packed(ordinary) {
                 packed.append(fetchPacked && ordinaryPacked)
                 result.expect(packed.last!, "\(key): a state made at its creation, not the pack's")
             }
-            let after = RawFacade.counters(of: gpu.device)
+            let after = GM20BFacade.counters(of: gpu.device)
             let draws = (after["interlock_draws"] ?? 0) - (before["interlock_draws"] ?? 0)
             result.metrics.set("interlock_\(key)", draws)
             result.expect(draws >= 5, "\(key) has no confirmed native interlock draw coverage")

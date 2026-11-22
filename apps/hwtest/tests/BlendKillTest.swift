@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The ROP's zero-source pixel kill (drivers/TegraGM20BMetal/raw/runtime/raw_blend_kill.h): a source-over state draws
+/// The ROP's zero-source pixel kill (drivers/TegraGM20BMetal/blend_kill.h): a source-over state draws
 /// a zero colour over RGBA16F holding -0, NaN, infinities and denormals and over BGRA8, and no bit changes; the same
 /// state still blends a non-zero colour as source-over says; the facade counts the state made with the kill and its
 /// binds; and the same draws with the kill forced off through the probe channel give the GPU time it saves. The zeta
@@ -12,7 +12,7 @@ import Metal
 /// (zeta_<depth|stencil>_wrong= texels other than Metal's, zeta_<...>_colour_changed_bytes=, zeta_<...>_kill_binds= the
 /// binds the facade made with the kill on).
 struct BlendKillTest: HWTest {
-    let id = "gpu.raw.blend_kill"
+    let id = "gpu.gm20b.blend_kill"
     let name = "Zero-source pixels are dropped by the ROP, bits kept, blending unchanged"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -60,11 +60,11 @@ struct BlendKillTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var paths: [String] = []
         var onMs = 0.0
         var offMs = 0.0
@@ -93,7 +93,7 @@ struct BlendKillTest: HWTest {
             metrics.set("\(label)_changed_bytes", changed)
             if changed != 0 { wrong.append("\(label)_changed_bytes") }
             for _ in 0..<Self.rounds {
-                let off = try await RawMethods.draw(gpu, before: [(0x02f4, 0)], after: [(0x02f4, 1)], zero)
+                let off = try await GM20BMethods.draw(gpu, before: [(0x02f4, 0)], after: [(0x02f4, 1)], zero)
                 paths.append(off.path)
                 offMs += off.gpuMilliseconds
                 emitted += off.emitted
@@ -109,7 +109,7 @@ struct BlendKillTest: HWTest {
             metrics.set("\(label)_control_max_diff", worst, digits: 4)
             if worst > (half ? 1.0 / 1024 : 1.0) { wrong.append("\(label)_control") }
         }
-        let counters = RawFacade.counters(of: gpu.device)
+        let counters = GM20BFacade.counters(of: gpu.device)
         let states = (counters["blend_kill_states"] ?? 0) - (before["blend_kill_states"] ?? 0)
         let binds = (counters["blend_kill_binds"] ?? 0) - (before["blend_kill_binds"] ?? 0)
         metrics.set("kill_states", states)
@@ -120,17 +120,17 @@ struct BlendKillTest: HWTest {
         metrics.set("off_emitted", emitted)
         for stencil in [false, true] {
             let label = stencil ? "zeta_stencil" : "zeta_depth"
-            let binds = RawFacade.counters(of: gpu.device)["blend_kill_binds"] ?? 0
+            let binds = GM20BFacade.counters(of: gpu.device)["blend_kill_binds"] ?? 0
             let arm = try await Self.zetaArm(gpu, stencil: stencil)
             metrics.set("\(label)_wrong", arm.wrong)
             metrics.set("\(label)_colour_changed_bytes", arm.colourChanged)
-            metrics.set("\(label)_kill_binds", (RawFacade.counters(of: gpu.device)["blend_kill_binds"] ?? 0) - binds)
+            metrics.set("\(label)_kill_binds", (GM20BFacade.counters(of: gpu.device)["blend_kill_binds"] ?? 0) - binds)
             paths.append(contentsOf: arm.paths)
             if arm.wrong != 0 { wrong.append("\(label)_wrong") }
             if arm.colourChanged != 0 { wrong.append("\(label)_colour_changed_bytes") }
         }
-        metrics.set("paths", paths.filter { $0 != "raw" }.isEmpty ? "raw" : paths.joined(separator: ","))
-        if paths.contains(where: { $0 != "raw" }) { wrong.append("paths") }
+        metrics.set("paths", paths.filter { $0 != "gm20b" }.isEmpty ? "gm20b" : paths.joined(separator: ","))
+        if paths.contains(where: { $0 != "gm20b" }) { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

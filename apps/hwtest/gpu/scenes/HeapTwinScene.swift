@@ -62,8 +62,8 @@ struct HeapTwinScene: GPUScene {
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
             paths.append(timing.path)
-            if RawFacade.kind(of: gpu.device) == "raw" {
-                result.expect(timing.path == "raw", "the sampled draw took \(timing.path), not raw")
+            if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+                result.expect(timing.path == "gm20b", "the sampled draw took \(timing.path), not raw")
             }
             result.compare(round, try await gpu.raster(target, .bgra8Unorm), want, tolerance: 1.51 / 255)
             heap.setPurgeableState(.nonVolatile)
@@ -79,8 +79,8 @@ struct HeapTwinScene: GPUScene {
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         }
         paths.append(timing.path)
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(timing.path == "raw", "the border draw took \(timing.path), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(timing.path == "gm20b", "the border draw took \(timing.path), not raw")
         }
         let bordered = Raster(width: 64, height: 64, channels: 4) { x, y, c in
             (16..<48).contains(x) && (16..<48).contains(y) ? Float(Self.color[c]) / 255 : 1

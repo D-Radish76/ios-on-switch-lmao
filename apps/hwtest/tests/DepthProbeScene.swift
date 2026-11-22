@@ -2,7 +2,7 @@ import Foundation
 import HWTestGPU
 import Metal
 
-/// The scene of the M4 Max probes gpu.raw.depth_format_mismatch and gpu.raw.hidden_depth hold the raw path to
+/// The scene of the M4 Max probes gpu.gm20b.depth_format_mismatch and gpu.gm20b.hidden_depth hold the driver to
 /// (c38-audit m2v-draws/depth_probe.mm, hidden_probe.mm): an 8x8 RGBA8 target cleared black, each draw one full-screen
 /// triangle at depth `z` in a solid colour.
 struct DepthProbeScene {

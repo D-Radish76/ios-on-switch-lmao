@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The GPU's ZBC colour table filling up (drivers/TegraGM20BMetal/raw/runtime/raw_zbc.h: 15 colour entries, every
-/// process's, never emptied; raw_comp.cpp zbcMake): 16 opaque BGRA8 colours of exact codes no other test clears to,
+/// The GPU's ZBC colour table filling up (drivers/TegraGM20BMetal/zbc.h: 15 colour entries, every
+/// process's, never emptied; comp.cpp zbcMake): 16 opaque BGRA8 colours of exact codes no other test clears to,
 /// each cleared three times in full over a private 512x512 target on compressed memory (the third clear asks for the
 /// entry). Its answers come from the compression thread after its make pass, which no event marks, so the test waits
 /// for two passes of that thread, each making Depth16Unorm memory of its own (CompressionSettled; `drained` 1): the
@@ -17,7 +17,7 @@ import Metal
 /// stays full for the rest of the boot, so every process's clears to values it lacks write their texels from then on:
 /// it runs last.
 struct ZbcFullTest: HWTest {
-    let id = "gpu.raw.zbc_full"
+    let id = "gpu.gm20b.zbc_full"
     let name = "The GPU's ZBC colour table fills: every clear exact, the refusals counted, one line a process"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }
@@ -48,11 +48,11 @@ struct ZbcFullTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        guard !RawFacade.compression(of: gpu.device).isEmpty,
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        guard !GM20BFacade.compression(of: gpu.device).isEmpty,
             (gpu.device as? NSObject)?.responds(to: CompressionSettled.factsSelector) == true
-        else { return .skip(RawFacade.missing("switchRawCompression", on: gpu.device)) }
+        else { return .skip(GM20BFacade.missing("switchMetalCompression", on: gpu.device)) }
         let start = Date()
         let run = Runs.shared.next()
         var metrics = Metrics()
@@ -62,19 +62,19 @@ struct ZbcFullTest: HWTest {
         let compressed = CompressionSettled.comptags(gpu.device, target) ?? -1
         metrics.set("target_comptags", compressed)
         guard compressed == 1 else { return .fail("no compressed 512x512 BGRA8 target", metrics) }
-        let before = RawFacade.compression(of: gpu.device)
+        let before = GM20BFacade.compression(of: gpu.device)
         var pixelsWrong = 0
         for k in 0..<Self.colours {
             for _ in 0..<3 { try await Self.clear(gpu, target, k) }
             pixelsWrong += try await Self.wrong(gpu, target, k)
         }
         let drained = try await Self.drain(gpu)
-        let answered = RawFacade.compression(of: gpu.device)
+        let answered = GM20BFacade.compression(of: gpu.device)
         for k in 0..<Self.colours {
             try await Self.clear(gpu, target, k)
             pixelsWrong += try await Self.wrong(gpu, target, k)
         }
-        let after = RawFacade.compression(of: gpu.device)
+        let after = GM20BFacade.compression(of: gpu.device)
         let delta = { (a: [String: Int], b: [String: Int], key: String) in (b[key] ?? 0) - (a[key] ?? 0) }
         let added = delta(before, answered, "zbc_added"), full = delta(before, answered, "zbc_full")
         let want = run == 1 ? Self.colours : 0
@@ -85,7 +85,7 @@ struct ZbcFullTest: HWTest {
         metrics.set("asked_want", want)
         metrics.set("zbc_hits", delta(before, after, "zbc_hits"))
         metrics.set("pixels_wrong", pixelsWrong)
-        let fullLines = ProcessLog.lines(ProcessLog.metal, "raw", containing: Self.fullLine, since: start)
+        let fullLines = ProcessLog.lines(ProcessLog.metal, "gm20b", containing: Self.fullLine, since: start)
         metrics.set("full_lines", fullLines?.count ?? -1)
         var checks = [("\(pixelsWrong) texels off their clear", pixelsWrong == 0)]
         if drained {

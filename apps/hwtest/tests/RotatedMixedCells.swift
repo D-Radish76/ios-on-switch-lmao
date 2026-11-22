@@ -5,7 +5,7 @@ import IOSurface
 import Metal
 
 /// gpu.x1.rotated_target's passes whose attachments beside the turned target are turned another way, of another frame, or
-/// not turned and of another size. Metal accepts each (measured on an M4 Max, raw/runtime/raw_area_load.h): the render area,
+/// not turned and of another size. Metal accepts each (measured on an M4 Max, area_load.h): the render area,
 /// default viewport and scissor are the attachments' intersection, and every attachment lands by its own store map. A turned
 /// attachment's Load reads its plane as a plane of the render area's frame would be read, so where its frame is past the area
 /// each texel the pass stores is the frame's texel past it; the references load so ahead of those passes (loadAsMetal).

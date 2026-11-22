@@ -7,12 +7,12 @@ import Metal
 
 /// One-plane 4:2:2 YCbCr textures (YCBCR8_422_1P 501, its sRGB 521) over '2vuy', 'yuvs' and 'yuvf' surfaces. An M4 Max
 /// reads the plane's bytes as Y0 Cb Y1 Cr whatever the surface's order, as the two-plane 4:2:2 format (502, 522) reads
-/// those codes split into a '422v' or '422f' surface (raw/test/ycbcroracle.mm); the raw path splits the plane with the
+/// those codes split into a '422v' or '422f' surface (harness/ycbcroracle.mm); the driver splits the plane with the
 /// copy engine and runs the 4:2:2 conversion. Each arm reads both textures through a draw: off_<format>_<surface> the
 /// texels that differ (0 to pass), paths raw/N (before: the one-plane texture m2v's).
 struct YcbcrOnePlaneTest: HWTest {
-    let id = "gpu.raw.ycbcr_one_plane"
-    let name = "One-plane 4:2:2 YCbCr textures read as Metal reads them, on the raw path"
+    let id = "gpu.gm20b.ycbcr_one_plane"
+    let name = "One-plane 4:2:2 YCbCr textures read as Metal reads them, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -37,8 +37,8 @@ struct YcbcrOnePlaneTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -48,7 +48,7 @@ struct YcbcrOnePlaneTest: HWTest {
             metrics.set("off_" + key, off.map(String.init) ?? "no texture")
             checks.append(("\(key): read as its codes split into two planes", off == 0))
         }
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         checks.append(("every command buffer raw", raw))
         return .judged(checks, metrics, proof: gpu.proof)

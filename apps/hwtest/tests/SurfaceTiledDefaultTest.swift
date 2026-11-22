@@ -7,7 +7,7 @@ import IOSurface
 import Metal
 
 /// A fresh IOSurface the GPU renders first is block-linear (drivers/TegraGM20B/TegraGM20BTiled.cpp: its first GPU import
-/// that asks, writing, while no other import holds it). The raw facade's import asks when the texture is made; after the
+/// that asks, writing, while no other import holds it). The facade's import asks when the texture is made; after the
 /// render, an import of the test's own connection asks too and gets that decision back. Its ask comes last because a
 /// first ask that does not write decides pitch for good. One surface per shape: a square, and Core Animation's 720x1280
 /// framebuffer with 3072-byte rows.
@@ -21,8 +21,8 @@ struct SurfaceTiledDefaultTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let connection = GPUConnection() else { return .skip("no TegraGM20B connection") }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []

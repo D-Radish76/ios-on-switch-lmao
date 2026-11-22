@@ -72,7 +72,7 @@ extension PlainRows {
 
     /// Where the store of plane texel (x, y) of an unturned pass lands, later higher: 64x32 tiles from the last tile
     /// row up, each row from its last tile back; in a tile the right 32-texel half later, then the 2x2 quad's row, its
-    /// column, the even row of a quad after the odd (raw_overlap_order.h overlapOrder, an M4 Max's order)
+    /// column, the even row of a quad after the odd (overlap_order.h overlapOrder, an M4 Max's order)
     public static func overlapOrder(_ x: Int, _ y: Int) -> Int {
         let inTile = (x % 64 / 32) << 9 | (y % 32 / 2) << 5 | (x % 32 / 2) << 1 | (y % 2 == 0 ? 1 : 0)
         return (0x3ff - y / 32) << 18 | (0xff - x / 64) << 10 | inTile

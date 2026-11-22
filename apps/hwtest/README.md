@@ -54,7 +54,7 @@ model, such as Core Animation's states with zero uniforms or a cubic filter. Tho
 drawn on a Mac's GPU with the same IPSW's QuartzCore (`goldens/scenes_<build>.txt`), using the 8x8 block means that
 `gpu.ca.sweep` uses below, and each logs `golden_<picture>=exact|close|wrong|missing`. After a scene's picture changes,
 `bazel run --config=remote //apps/hwtest:scene_goldens` (again with `--config=ios27`) redraws them. A scene's verdict comes from the
-process's default Metal device, the raw GM20B facade, alone. `raw_paths=` lists each command buffer's path: `raw`, or
+process's default Metal device, the raw GM20B facade, alone. `gm20b_paths=` lists each command buffer's path: `raw`, or
 `error:<predicate>` (`error:none`) for one that failed. `failed_cbs` and `failed_why` count every command buffer of the
 process that failed over the run, framework work included. A scene fails on any of them it does not expect
 (`GPUScene.expectedFailures`), naming the predicate. Tests that call `onRawPath` or `FailedCounts` judge the same way.
@@ -64,12 +64,12 @@ such as a framework's or another thread's. Framework work (Core Animation scenes
 when the facade counts a call as skipped (`skipped_calls=`, `skipped_why=`). Before its summary, Run All logs one
 `HWTEST suite.reds` line: each predicate with the number of tests it reddened and the first of them (`failed_reds=`), and
 each skipped call's predicate with the tests that hit it (`skipped_tests=`).
-The counters come from `switchRawCounters` in `RawMetalDevice.mm` and the paths from `switchRawPath` in
-`RawMetalCommandBuffer.mm`. Only debug builds have them. A failed comparison
+The counters come from `switchMetalCounters` in `TegraGM20BMetalDevice.mm` and the paths from `switchMetalPath` in
+`TegraGM20BMetalCommandBuffer.mm`. Only debug builds have them. A failed comparison
 names the first wrong pixel, both values, the bounding box, an 8x8 hex map of the wrong area and any streak columns, and
 saves got, want and diff PNGs under `Documents/gpu/<id>/`.
 
-`gpu.ca.sweep` checks the raw path against a Mac's GPU too. It draws one Core Animation state of each class in the raw
+`gpu.ca.sweep` checks the driver against a Mac's GPU too. It draws one Core Animation state of each class in the raw
 pack's corpus (`ca_states.log`, cut from `precompile/corpus.log` at build time). It compares each attachment with that
 state as the same IPSW's QuartzCore draws it on a Mac (`goldens/ca_<build>.txt`). The comparison is the 8x8 block means
 of every channel, which another GPU's filtering and rounding move by a step or two and a wrong blend, format or texture

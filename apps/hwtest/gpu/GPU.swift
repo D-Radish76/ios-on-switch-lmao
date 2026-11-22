@@ -3,13 +3,13 @@ import HWTestCore
 import Metal
 
 /// What every Metal test needs: the device, its library, pipelines, command buffers awaited with their GPU timestamps
-/// and the path the raw facade sent each down, and readback of private (tiled) textures through the blit engine, the
+/// and the path the facade sent each down, and readback of private (tiled) textures through the blit engine, the
 /// way apps do it.
 public final class GPU: @unchecked Sendable {
     public let device: MTLDevice
     public let queue: MTLCommandQueue
     public let library: MTLLibrary
-    /// The raw facade's counters as this GPU was made (RawFacade.counters; empty off the facade): onRawPath's failures
+    /// The facade's counters as this GPU was made (GM20BFacade.counters; empty off the facade): onRawPath's failures
     /// are counted from them.
     public let startCounters: [String: Int]
     private let lock = NSLock()
@@ -36,7 +36,7 @@ public final class GPU: @unchecked Sendable {
         self.device = device
         self.queue = queue
         self.library = library
-        startCounters = RawFacade.counters(of: device)
+        startCounters = GM20BFacade.counters(of: device)
     }
 
     public struct Timing: Sendable {
@@ -44,12 +44,12 @@ public final class GPU: @unchecked Sendable {
         /// From the commit to the completed handler, on the host's clock.
         public let wallMilliseconds: Double
         public let path: String
-        /// The CPU's part: the encode closure, and the commit call (the raw path encodes and submits inside it).
+        /// The CPU's part: the encode closure, and the commit call (the driver encodes and submits inside it).
         public var encodeMilliseconds = 0.0
         public var commitMilliseconds = 0.0
-        /// The raw facade's clock of gpuMilliseconds (RawFacade.gpuClock); nil off the facade.
+        /// The facade's clock of gpuMilliseconds (GM20BFacade.gpuClock); nil off the facade.
         public var gpuClock: String?
-        /// The facade's own path of the command buffer (RawFacade.path): error:<predicate> where `path` holds Metal's
+        /// The facade's own path of the command buffer (GM20BFacade.path): error:<predicate> where `path` holds Metal's
         /// error.
         public var facadePath = "device"
 
@@ -57,7 +57,7 @@ public final class GPU: @unchecked Sendable {
         public var gpuTimed: Bool { gpuMilliseconds > 0 }
     }
 
-    /// Every command buffer `run` and `commit` committed and `finish` waited for, by the path the raw facade reports
+    /// Every command buffer `run` and `commit` committed and `finish` waited for, by the path the facade reports
     /// for it ("device" elsewhere): the test's own command buffers (FailedAttribution). `commit`'s count once they
     /// complete, whoever waited for them. No completed handler records them: a handler makes the facade ask for the
     /// interrupt at the end of their range, which the path tests count.
@@ -65,13 +65,13 @@ public final class GPU: @unchecked Sendable {
         locked {
             var all = recorded
             for buffer in unfinished where buffer.status == .completed || buffer.status == .error {
-                all.add(RawFacade.path(of: buffer))
+                all.add(GM20BFacade.path(of: buffer))
             }
             return all
         }
     }
 
-    /// Runs whose GPU time on the raw facade is the host's window, for want of a GPU stamp (RawFacade.gpuClock).
+    /// Runs whose GPU time on the facade is the host's window, for want of a GPU stamp (GM20BFacade.gpuClock).
     public var hostClockedRuns: Int { locked { hostClocked } }
 
     /// Command buffers that completed with an error, in order (their error's domain, code and text).
@@ -115,7 +115,7 @@ public final class GPU: @unchecked Sendable {
         let wall = (completed - start) * 1000
         let encodeMs = (start - began) * 1000
         let commitMs = (min(committed, completed) - start) * 1000
-        let path = RawFacade.path(of: buffer)
+        let path = GM20BFacade.path(of: buffer)
         locked { recorded.add(path) }
         if buffer.status == .error {
             let error = buffer.error.map(Self.describe) ?? "no error"
@@ -125,7 +125,7 @@ public final class GPU: @unchecked Sendable {
                 gpuMilliseconds: 0, wallMilliseconds: wall, path: "error:" + error, encodeMilliseconds: encodeMs,
                 commitMilliseconds: commitMs, facadePath: path)
         }
-        let clock = RawFacade.gpuClock(of: buffer)
+        let clock = GM20BFacade.gpuClock(of: buffer)
         if clock == "host" { locked { hostClocked += 1 } }
         return Timing(
             gpuMilliseconds: max(0, buffer.gpuEndTime - buffer.gpuStartTime) * 1000, wallMilliseconds: wall, path: path,
@@ -146,7 +146,7 @@ public final class GPU: @unchecked Sendable {
         var errors: [String] = []
         for buffer in buffers {
             buffer.waitUntilCompleted()
-            let path = RawFacade.path(of: buffer)
+            let path = GM20BFacade.path(of: buffer)
             locked {
                 unfinished.removeAll { $0 === buffer }
                 recorded.add(path)

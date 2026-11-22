@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// Compression and zero-bandwidth clears for the targets no CPU or other engine reaches
-/// (drivers/TegraGM20BMetal/raw/runtime/raw_comp.h, raw_zbc.h): 4x multisampled memoryless RGBA16Float, BGRA8 and RGBA8
+/// (drivers/TegraGM20BMetal/comp.h, zbc.h): 4x multisampled memoryless RGBA16Float, BGRA8 and RGBA8
 /// colour over 4x Depth16Unorm, and one-sample BGRA8 over a memoryless Depth32Float_Stencil8, each cleared again and
 /// again to a value the boot ZBC table lacks, a quad drawn over the left half and the colour resolved or stored. The
 /// pixels must be the quad's and the clear's exactly: each added entry's texel, in its format's channel order, read
@@ -15,7 +15,7 @@ import Metal
 /// Depth16), and a 4x BGRA8 target cleared to a value the table holds and to 0.5 (a ROP tie, never added): the GPU time
 /// of each.
 struct CompressedTargetsTest: HWTest {
-    let id = "gpu.raw.compressed_targets"
+    let id = "gpu.gm20b.compressed_targets"
     let name = "Multisampled and depth memoryless targets compress; repeated clears become zero-bandwidth"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
@@ -80,15 +80,15 @@ struct CompressedTargetsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        guard !RawFacade.compression(of: gpu.device).isEmpty else {
-            return .skip(RawFacade.missing("switchRawCompression", on: gpu.device))
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        guard !GM20BFacade.compression(of: gpu.device).isEmpty else {
+            return .skip(GM20BFacade.missing("switchMetalCompression", on: gpu.device))
         }
         var metrics = Metrics()
         var wrong: [String] = []
         var paths: Set<String> = []
-        let start = RawFacade.compression(of: gpu.device)
+        let start = GM20BFacade.compression(of: gpu.device)
         let depthState = gpu.device.makeDepthStencilState(
             descriptor: {
                 let d = MTLDepthStencilDescriptor()
@@ -142,7 +142,7 @@ struct CompressedTargetsTest: HWTest {
             metrics.set("\(c.label)_wrong", bad)
             if bad != 0 { wrong.append("\(c.label)_pixels") }
         }
-        let after = RawFacade.compression(of: gpu.device)
+        let after = GM20BFacade.compression(of: gpu.device)
         let delta = { (key: String) in (after[key] ?? 0) - (start[key] ?? 0) }
         for key in ["made", "refused", "zbc_added", "zbc_full", "zbc_hits", "zbc_misses", "zbc_inexact"] {
             metrics.set(key, delta(key))
@@ -157,7 +157,7 @@ struct CompressedTargetsTest: HWTest {
         metrics.set("zbc_clear_gpu_ms", heldMs, digits: 3)
         metrics.set("tie_clear_gpu_ms", tieMs, digits: 3)
         metrics.set("paths", paths.sorted().joined(separator: ","))
-        if paths != ["raw"] { wrong.append("paths") }
+        if paths != ["gm20b"] { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

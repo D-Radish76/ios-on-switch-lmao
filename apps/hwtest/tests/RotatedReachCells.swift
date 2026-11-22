@@ -5,7 +5,7 @@ import Metal
 
 /// gpu.x1.rotated_target's rotation-4 loads whose draws reach some 32x32 frame tiles and not others. Metal loads the plane
 /// transposed and stores it only in the tiles a draw's primitives touch, rounded out to tiles by the scissor (measured on an
-/// M4 Max, raw/runtime/raw_reach.h): the reference loads pass 1's frame flipped top to bottom in those tiles alone.
+/// M4 Max, reach.h): the reference loads pass 1's frame flipped top to bottom in those tiles alone.
 extension RotatedCells {
     var tilesX: Int { (width + 31) / 32 }
 
@@ -63,7 +63,7 @@ extension RotatedCells {
     }
 
     /// The same tiles by a point (three pixels wide) and a line whose fragments are discarded (a turned plane's line
-    /// rasteriser may pick other end pixels), which the raw path reaches at the frame's resolution
+    /// rasteriser may pick other end pixels), which the driver reaches at the frame's resolution
     func pointLoad() -> Pass {
         encode(load: .load) { e in
             let ndc = { (x: Float, y: Float) in

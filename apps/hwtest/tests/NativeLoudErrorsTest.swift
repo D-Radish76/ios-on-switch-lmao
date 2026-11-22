@@ -3,9 +3,9 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// What Metal's validation layer would stop completes on the raw path as Apple's driver completes it
-/// (drivers/TegraGM20BMetal/raw/runtime/raw_client_errors.h). Every expected value is what an M-series Mac did with API
-/// validation off (x1-m2v-errors' probes), each command buffer completed with no error; the raw path logs one refusal
+/// What Metal's validation layer would stop completes on the driver as Apple's driver completes it
+/// (drivers/TegraGM20BMetal/client_errors.h). Every expected value is what an M-series Mac did with API
+/// validation off (x1-m2v-errors' probes), each command buffer completed with no error; the driver logs one refusal
 /// line a process and rule. Each case: status=completed, paths=raw, failed_cbs=0 and its contents.
 enum ClientErrors {
     /// client_colour_fragment's (0.2, 0.4, 0.6, 0.8) as a BGRA8 texel's bytes, as Apple's driver stored it
@@ -31,7 +31,7 @@ enum ClientErrors {
         _ gpu: GPU, _ pass: MTLRenderPassDescriptor, _ state: MTLRenderPipelineState, _ work: inout NativeWork,
         _ metrics: inout Metrics
     ) async throws {
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var status = MTLCommandBufferStatus.notEnqueued
         let timing = try await gpu.run(tolerateError: true) { commands in
             let e = commands.makeRenderCommandEncoder(descriptor: pass)!
@@ -52,7 +52,7 @@ enum ClientErrors {
         if status != .completed { work.failures.append("the command buffer did not complete") }
         var own = PathTally()
         own.add(timing.facadePath)
-        let failed = FailedCounts.judged(before: before, after: RawFacade.counters(of: gpu.device), own: own, &metrics)
+        let failed = FailedCounts.judged(before: before, after: GM20BFacade.counters(of: gpu.device), own: own, &metrics)
         if !failed.1 { work.failures.append(failed.0) }
     }
 
@@ -74,7 +74,7 @@ enum ClientErrors {
 /// the source to [0, 2048) and left the rest. A fill of 8 KiB from offset 1024 of a 4 KiB buffer filled [1024, 4096).
 struct NativeErrorBufferCopyTest: NativeObjectTest {
     let id = "metal.native.error_bufcopy"
-    let name = "A buffer copy or fill past its buffer moves the bytes inside it, as Apple's driver, on the raw path"
+    let name = "A buffer copy or fill past its buffer moves the bytes inside it, as Apple's driver, on the driver"
 
     func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
         var work = NativeWork()
@@ -82,7 +82,7 @@ struct NativeErrorBufferCopyTest: NativeObjectTest {
         memset(a.contents(), 0xAA, 4096)
         memset(b.contents(), 0x55, 8192)
         memset(c.contents(), 0x11, 4096)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var status = MTLCommandBufferStatus.notEnqueued
         let timing = try await gpu.run(tolerateError: true) { commands in
             let blit = commands.makeBlitCommandEncoder()!
@@ -109,7 +109,7 @@ struct NativeErrorBufferCopyTest: NativeObjectTest {
 /// vertices, 1 instance, from the three words inside and a zero after
 struct NativeErrorIndexRangeTest: NativeObjectTest {
     let id = "metal.native.error_idxrange"
-    let name = "Indirect arguments past their buffer draw from zeros after it, as Apple's driver, on the raw path"
+    let name = "Indirect arguments past their buffer draw from zeros after it, as Apple's driver, on the driver"
 
     func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
         var work = NativeWork()
@@ -117,7 +117,7 @@ struct NativeErrorIndexRangeTest: NativeObjectTest {
         let state = try ClientErrors.state(gpu, .bgra8Unorm)
         let arguments = try gpu.buffer([UInt32](arrayLiteral: 7, 3, 1, 0))
         work.objects += [target, state]
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var status = MTLCommandBufferStatus.notEnqueued
         let timing = try await gpu.run(tolerateError: true) { commands in
             let e = commands.makeRenderCommandEncoder(descriptor: ClientErrors.pass(target))!
@@ -170,7 +170,7 @@ struct NativeErrorFormatSkipTest: NativeObjectTest {
 /// four-sample state into a one-sample pass drew the whole colour
 struct NativeErrorSamplesTest: NativeObjectTest {
     let id = "metal.native.error_samples"
-    let name = "States of other samples than their pass draw as Apple's driver draws them, on the raw path"
+    let name = "States of other samples than their pass draw as Apple's driver draws them, on the driver"
 
     func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
         var work = NativeWork()

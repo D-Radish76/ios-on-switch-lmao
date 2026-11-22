@@ -4,7 +4,7 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// Textures over surfaces that an M4 Max makes, each through a form of its own on the raw path: a texel buffer over a
+/// Textures over surfaces that an M4 Max makes, each through a form of its own on the driver: a texel buffer over a
 /// surface the kernel laid out block-linear, R10Unorm_PACKED and RG10Unorm_PACKED of several levels, and a turned
 /// RGB10A8_2P_XR10 over planes of rows under 16 bytes.
 public enum SurfaceFormsOpen {
@@ -15,7 +15,7 @@ public enum SurfaceFormsOpen {
         public var off = -1
     }
 
-    /// gpu.raw.xr_texel_buffer_tiled: a 'w30r' 64x64 of rows 256 drawn as BGR10_XR (554) first (on the device the
+    /// gpu.gm20b.xr_texel_buffer_tiled: a 'w30r' 64x64 of rows 256 drawn as BGR10_XR (554) first (on the device the
     /// kernel then lays it out block-linear), then a 128-texel 550 texel buffer over it (Metal asserts on one whose texels
     /// pass the rows of 256): element i reads what the 554 reads at (i % 64, i / 64), alpha 0 (Metal reads such a
     /// buffer's bytes in order)
@@ -51,7 +51,7 @@ public enum SurfaceFormsOpen {
         return Reading(made: true, path: path, off: off)
     }
 
-    /// gpu.raw.packed_mips: R10Unorm_PACKED (588) 32x16 over plane 0, or RG10Unorm_PACKED (589) 16x8 over plane 1, of a
+    /// gpu.gm20b.packed_mips: R10Unorm_PACKED (588) 32x16 over plane 0, or RG10Unorm_PACKED (589) 16x8 over plane 1, of a
     /// CoreVideo 'p420' 32x16 with `levels` levels: made, and a kernel sees that many levels each half the last
     /// (Apple's reads of such a texture at any lod are level 0's, but which tile of it varies: not judged)
     public static func packedMips(_ gpu: GPU, format: UInt, levels: Int) async throws -> Reading {
@@ -93,8 +93,8 @@ public enum SurfaceFormsOpen {
 
     public enum TurnedPass: String, Sendable, CaseIterable { case clear, draw, load }
 
-    /// gpu.raw.xr_turned_rows_under_16: a 550 turned by `rotation` (frame 8x2 at 1 and 3, 2x8 at 2) over
-    /// gpu.raw.xr_rows_under_16's 'b3a8' 2x8 of rows 8 and 2 in 8 MiB + 16 KiB, over 0xff: a clear of (0.5, 0.25,
+    /// gpu.gm20b.xr_turned_rows_under_16: a 550 turned by `rotation` (frame 8x2 at 1 and 3, 2x8 at 2) over
+    /// gpu.gm20b.xr_rows_under_16's 'b3a8' 2x8 of rows 8 and 2 in 8 MiB + 16 KiB, over 0xff: a clear of (0.5, 0.25,
     /// -0.25, 0.75), or a whole-frame coded draw, stores frame pixel (fx, fy)'s word and alpha at the plane texel the
     /// rotation turns it to, 16 bytes a row apart; a loaded pass whose draw discards every fragment stores each plane
     /// texel's word and alpha read a MiB a row apart at the same texel 16 apart; where word rows 4 to 7 meet alpha rows 0

@@ -1,4 +1,4 @@
-"""Frame weights: where a captured frame's GPU time went, by compiled state, from the raw path's "raw: fw" lines.
+"""Frame weights: where a captured frame's GPU time went, by compiled state, from the driver's "SwitchMetal: fw" lines.
 
 Ask a debug build's process for a capture (backboardd draws the compositor's frames), while the screen is moving:
 
@@ -8,7 +8,7 @@ pull the log archive over USB (tools/devicerun/README.md), then on the Mac, with
 
   python3 -m tools.devicerun.frame_weights <absolute .logarchive> --pack <pack.bin> [--names <file>] [--top 20]
 
-The capture ran each draw alone from an idle pipe (drivers/TegraGM20BMetal/raw/runtime/raw_draw_times.h): a state's
+The capture ran each draw alone from an idle pipe (drivers/TegraGM20BMetal/draw_times.h): a state's
 time is what its draws cost alone, which ranks states, and its command buffers took longer than the ones before it; the
 report prints both. `--names` reads "<16-hex key> <label>" lines for states Core Animation did not name.
 """
@@ -24,8 +24,8 @@ from pathlib import Path
 from tools.devicerun import devicerun
 from tools.gpu.maxwell import nakstat
 
-PREDICATE = 'subsystem == "com.brunostjohn.switch.TegraGM20BMetal" AND eventMessage BEGINSWITH "raw: fw c"'
-LINE = re.compile(r'raw: fw c(?P<serial>\d+)\.(?P<number>\d+) (?P<text>.*)$')
+PREDICATE = 'subsystem == "com.brunostjohn.switch.TegraGM20BMetal" AND eventMessage BEGINSWITH "SwitchMetal: fw c"'
+LINE = re.compile(r'SwitchMetal: fw c(?P<serial>\d+)\.(?P<number>\d+) (?P<text>.*)$')
 DRAW = re.compile(
     r'(?P<kind>[di])(?P<state>\d+|-):(?P<pass>\d+|-):(?P<topology>\d+|-):(?P<vertices>\d+)x(?P<instances>\d+):'
     r'(?P<box>\d+):(?P<invocations>\d+|-):(?P<ns>\d+)$'
@@ -42,11 +42,11 @@ CB = re.compile(
 DROPPED = re.compile(r'dropped (?P<buffer>b\d+ \S+)')
 END = re.compile(r'end taken (?P<taken>\d+) reported (?P<reported>\d+) dropped (?P<dropped>\d+) lines (?P<lines>\d+)')
 CAPTURE = re.compile(r'capture (?P<process>\S+) asked (?P<asked>\d+) stamp \d+ ref(?P<ref>(?: (?:\d+|-))*)')
-# GM20B's issue rate: 2 SMs of 128 lanes at 768 MHz, one instruction a lane a clock (raw_span_marks.h)
+# GM20B's issue rate: 2 SMs of 128 lanes at 768 MHz, one instruction a lane a clock (span_marks.h)
 INSTRUCTIONS_PER_NS = 256 * 0.768
 # A program's code words hold one scheduling word in every four (tools/gpu/maxwell/isa.py instructions)
 INSTRUCTIONS_PER_WORD = 3 / 4
-PTIMER_NS = 625 / 384  # a PTIMER unit (raw_stamps.h)
+PTIMER_NS = 625 / 384  # a PTIMER unit (stamps.h)
 HUGE_GPRS, HUGE_INSTRUCTIONS, OCCUPANCY_GPRS, NORMAL_GPRS = 64, 4000, 96, 32
 KIND_NAMES = {'s': 'start', 'b': 'before passes', 'p': 'prologues', 't': 'tails'}
 
@@ -326,7 +326,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     captures = [c for c in parse(records).values() if args.capture in (None, c.serial)]
     if not captures:
-        print('no "raw: fw" lines: no capture was asked for, or a release build ran')
+        print('no "SwitchMetal: fw" lines: no capture was asked for, or a release build ran')
         return 1
     names = read_names(args.names)
     for c in captures:

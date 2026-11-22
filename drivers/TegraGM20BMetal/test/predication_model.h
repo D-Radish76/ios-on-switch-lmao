@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-#include "drivers/TegraGM20BMetal/raw/runtime/raw_batch.h"
+#include "drivers/TegraGM20BMetal/batch.h"
 #include "kits/SwitchGM20B/SwitchGM20B.h"
 
 namespace predication_model {
@@ -33,7 +33,7 @@ struct Gpu {
     std::vector<uint8_t> memory;
     std::vector<uint32_t> launched;
     std::function<void(uint32_t)> onLaunch;  // what a launch's program does to memory
-    // A device's memory instead of `memory` (a raw::Device over the kernel model), with only the compute class and the
+    // A device's memory instead of `memory` (a gm20b::Device over the kernel model), with only the compute class and the
     // copy engine modelled: other subchannels' methods (3D, 2D, host semaphores the stamps release) do nothing
     std::function<uint8_t *(uint64_t)> map;
     bool enabled = true;
@@ -257,7 +257,7 @@ struct Gpu {
     }
 
     // GP entries in order, each segment read from memory when its turn comes
-    void runEntries(const raw::PushBatches &entries)
+    void runEntries(const gm20b::PushBatches &entries)
     {
         for (size_t e = 0; e < entries.size(); ++e) {
             std::vector<uint32_t> words(entries[e].dwords);

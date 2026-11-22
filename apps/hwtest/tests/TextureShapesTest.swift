@@ -7,10 +7,10 @@ import Metal
 /// its work too), its command buffers are raw's, and it reads back what was put in it; each shape the identity, GM20B
 /// or Metal makes none of answers nil. Cube arrays are the A13's alone: made on iOS 27, nil on iOS 17. PVRTC is made
 /// on both and ASTC HDR on iOS 27 alone (the A10X makes none): GM20B decodes neither, so their blocks are decoded on
-/// the GPU as they are uploaded (raw_decoded.h). A BC1 3D texture's planes and levels read back as their solid blocks;
+/// the GPU as they are uploaded (decoded.h). A BC1 3D texture's planes and levels read back as their solid blocks;
 /// a signed normalized target keeps Metal's clear codes.
 struct TextureShapesTest: HWTest {
-    let id = "gpu.raw.texture_shapes"
+    let id = "gpu.gm20b.texture_shapes"
     let name = "Texture shapes are raw's own, or nil where the identity makes none"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -21,14 +21,14 @@ struct TextureShapesTest: HWTest {
         let arms = ShapeArms(gpu)
 
         let snorm = try gpu.texture(.rgba8Snorm, 4, 4, usage: [.shaderRead])
-        arms.route("snorm", snorm, expect: "raw")
+        arms.route("snorm", snorm, expect: "gm20b")
         let snormTexels = Array([[UInt8]](repeating: [127, 0, 127, 129], count: 16).joined())
         try await gpu.upload(snormTexels, to: snorm, bytesPerRow: 16)
         arms.off(
             "snorm", try await arms.sampled(snorm), Array([[UInt8]](repeating: [255, 0, 255, 0], count: 16).joined()))
 
         let snormTarget = try gpu.texture(.rgba8Snorm, 4, 4, usage: [.renderTarget, .shaderRead])
-        arms.route("snorm_target", snormTarget, expect: "raw")
+        arms.route("snorm_target", snormTarget, expect: "gm20b")
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = snormTarget
@@ -42,27 +42,27 @@ struct TextureShapesTest: HWTest {
             Array([[UInt8]](repeating: [129, 192, 64, 127], count: 16).joined()))
 
         let chain = try gpu.texture(.r8Unorm_srgb, 4, 4, usage: [.shaderRead], storage: .shared, mipmaps: 3)
-        arms.route("srgb_chain", chain, expect: "raw")
+        arms.route("srgb_chain", chain, expect: "gm20b")
         arms.off("srgb_chain", try arms.cpuRoundTrip(chain, width: 2, height: 2, bytesPerRow: 2, rows: 2, level: 1), [])
 
         let volume = arms.make(.rgba8Unorm, .type3D, 8, 8, depth: 4, storage: .memoryless, usage: .renderTarget)
-        arms.route("memoryless_3d", volume, expect: "raw")
+        arms.route("memoryless_3d", volume, expect: "gm20b")
 
         let pairs = arms.make(.gbgr422, .type2D, 8, 2, storage: .shared, usage: .shaderRead)
-        arms.route("gbgr422", pairs, expect: "raw")
+        arms.route("gbgr422", pairs, expect: "gm20b")
         if let pairs {
             arms.off("gbgr422", try arms.cpuRoundTrip(pairs, width: 8, height: 2, bytesPerRow: 16, rows: 2), [])
         }
 
         let cube = arms.make(.bc1_rgba, .typeCube, 8, 8, storage: .shared, usage: .shaderRead)
-        arms.route("bc1_cube", cube, expect: "raw")
+        arms.route("bc1_cube", cube, expect: "gm20b")
         if let cube {
             arms.off(
                 "bc1_cube", try arms.cpuRoundTrip(cube, width: 8, height: 8, bytesPerRow: 16, rows: 2, slice: 3), [])
         }
 
         let samples = try gpu.texture(.rgba8Unorm, 4, 4, samples: 4, storage: .shared)
-        arms.route("shared_ms", samples, expect: "raw")
+        arms.route("shared_ms", samples, expect: "gm20b")
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = samples
@@ -78,15 +78,15 @@ struct TextureShapesTest: HWTest {
         let a13 = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
         arms.route(
             "cube_array", arms.make(.rgba8Unorm, .typeCubeArray, 8, 8, array: 2, usage: .shaderRead),
-            expect: a13 ? "raw" : "nil")
+            expect: a13 ? "gm20b" : "nil")
         arms.route(
             "ms_array", arms.make(.rgba8Unorm, .type2DMultisampleArray, 8, 8, samples: 4, usage: .renderTarget),
             expect: "nil")
         arms.route(
-            "pvrtc", arms.make(MTLPixelFormat(rawValue: 166)!, .type2D, 8, 8, usage: .shaderRead), expect: "raw")
+            "pvrtc", arms.make(MTLPixelFormat(rawValue: 166)!, .type2D, 8, 8, usage: .shaderRead), expect: "gm20b")
         arms.route(
             "astc_hdr", arms.make(MTLPixelFormat(rawValue: 222)!, .type2D, 8, 8, usage: .shaderRead),
-            expect: a13 ? "raw" : "nil")
+            expect: a13 ? "gm20b" : "nil")
         try await blockVolumes(arms)
         arms.route(
             "line_levels", arms.make(.rgba8Unorm, .type1D, 16, 1, levels: 3, usage: .shaderRead), expect: "nil")
@@ -98,7 +98,7 @@ struct TextureShapesTest: HWTest {
     /// m2vf-shapes2 probe/hwref/bc3d.swift); a private ASTC 4x4 3D texture made
     private func blockVolumes(_ arms: ShapeArms) async throws {
         let blockVolume = arms.make(.bc1_rgba, .type3D, 8, 8, depth: 4, levels: 2, storage: .shared, usage: .shaderRead)
-        arms.route("bc1_3d", blockVolume, expect: "raw")
+        arms.route("bc1_3d", blockVolume, expect: "gm20b")
         if let blockVolume {
             arms.off(
                 "bc1_3d",
@@ -116,6 +116,6 @@ struct TextureShapesTest: HWTest {
                 "bc1_3d_read", try await arms.drawn(blockVolume, fragment: "view_read_volume", width: 3),
                 [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255])
         }
-        arms.route("astc_3d", arms.make(.astc_4x4_ldr, .type3D, 8, 8, depth: 4, usage: .shaderRead), expect: "raw")
+        arms.route("astc_3d", arms.make(.astc_4x4_ldr, .type3D, 8, 8, depth: 4, usage: .shaderRead), expect: "gm20b")
     }
 }

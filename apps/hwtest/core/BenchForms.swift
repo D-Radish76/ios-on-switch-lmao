@@ -83,7 +83,7 @@ extension BenchFields {
         guard let s = value as? [String: Any] else { throw BenchInvalid("source is an object") }
         try Self.keys(s, BenchProtocol.sourceKeys, "source")
         guard let format = s["format"] as? String, let info = BenchProtocol.formats[format] else {
-            throw BenchInvalid("source format is not one the raw path renders")
+            throw BenchInvalid("source format is not one the driver renders")
         }
         guard BenchProtocol.twodFormats.contains(info.raw) else {
             throw BenchInvalid("source format: the 2D engine has no surface format for it")

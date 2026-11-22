@@ -1,4 +1,4 @@
-"""kernelharvest.py over ndjson records shaped as `log show --style ndjson` prints the raw runtime's kernel lines."""
+"""kernelharvest.py over ndjson records shaped as `log show --style ndjson` prints the runtime's kernel lines."""
 
 import struct
 import sys
@@ -17,11 +17,12 @@ SHAPE = (
     ' | smp=0:1:1:0:0:0:0:0:7f7fffff:1:0:0:1:0'
 )
 REFUSED = (
-    'raw: a kernel the pack lacks is refused at 32,8,1 threads: m2v refused its translation: plan: Unsupported(...)'
+    'SwitchMetal: a kernel the pack lacks is refused at 32,8,1 threads: m2v refused its translation: plan: '
+    'Unsupported(...)'
     f' | ci_srgb_to_linear_colormatrix {AIR}{SHAPE} | constants '
 )
 MADE = (
-    'raw: a kernel the pack lacks, made at its first dispatch of 32,32,1 threads in 166826 us (IN):'
+    'SwitchMetal: a kernel the pack lacks, made at its first dispatch of 32,32,1 threads in 166826 us (IN):'
     f' VTMTSComputeFunction1x1 {OTHER_AIR} | max=0 tgm=0 | tg=32,32,1 | tgmem= | tex=0:80:2:1:1:02030405 | smp='
     ' | constants #0:33:41524742 #3:29:ffffffff'
 )
@@ -46,7 +47,7 @@ def record(message: str, process: str = 'SwitchHWTest', boot: str = 'boot-1') ->
 
 
 def library(functions: dict[str, str]) -> bytes:
-    """A thin metallib whose function list names each function with its AIR hash (raw_metallib.cpp's tags)."""
+    """A thin metallib whose function list names each function with its AIR hash (metallib.cpp's tags)."""
     entries = b''
     for name, air in functions.items():
         tags = b'NAME' + struct.pack('<H', len(name) + 1) + name.encode() + b'\0'
@@ -61,7 +62,7 @@ def harvest_parts(text: str, name: str = '0123456789abcdef') -> list[dict]:
     parts = [text[i : i + kernelharvest.PART_CHARS] for i in range(0, len(text), kernelharvest.PART_CHARS)]
     # the log drops a part's trailing spaces, which the reader pads back
     return [
-        record(f'raw: kernel harvest {name} {i + 1}/{len(parts)} {part.rstrip()}', 'mediaanalysisd')
+        record(f'SwitchMetal: kernel harvest {name} {i + 1}/{len(parts)} {part.rstrip()}', 'mediaanalysisd')
         for i, part in enumerate(parts)
     ]
 
@@ -120,7 +121,7 @@ class KernelHarvestTest(unittest.TestCase):
         region = REFUSED.replace(' | smp=0:1:1:0:0:0:0:0:7f7fffff:1:0:0:1:0', ' | smp= | region=1')
         linked = f'kernel | {AIR} |  | kl {OTHER_AIR}{SHAPE}'
         records = [record(region), *harvest_parts(f'lib={VT} function=k {linked}', 'fedcba9876543210')]
-        records += [record('raw: a kernel the pack lacks is refused at 32,8,1 threads: m2v refused | ci_x')]
+        records += [record('SwitchMetal: a kernel the pack lacks is refused at 32,8,1 threads: m2v refused | ci_x')]
         records += [record(REFUSED.replace('tex=0:115:2:1:1', 'tex=0:115:2:3:1'), 'levels')]
         records += [record('SwitchHWTest[524] compute.kernel: a kernel the pack lacks (-, threads 32,8,1)', 'route')]
         _, report = self.run_harvest(records)

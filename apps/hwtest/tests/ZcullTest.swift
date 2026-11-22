@@ -3,17 +3,17 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Zcull (drivers/TegraGM20BMetal/raw/runtime/raw_zcull.h, drivers/TegraGM20B/TegraGM20BZcull.h): passes that clear a
+/// Zcull (drivers/TegraGM20BMetal/zcull.h, drivers/TegraGM20B/TegraGM20BZcull.h): passes that clear a
 /// one-sample depth target get a zcull region. A near quad over the left half, then far quads over everything: the left
 /// half keeps the near colour, the right the far one, with LESS and with reversed depth (GREATER from a 0 clear); a
 /// GREATER draw after LESS ones invalidates the region and still draws where it passes. The facade counts the regions
 /// and the invalidation; the same far quads with the region invalidated before every draw give the GPU time zcull saves
 /// (reported). Each of the three passes' own invalidations (`<arm>_invalidations`): 0 for less and reversed, whose
-/// program stores nothing, 1 for flipped (a program wrongly taken as writing memory drops the region: raw_zcull.h
-/// zcullInvalidates, raw_program_stores.h). Then the multisampled, layered and loaded arms (ZcullArms.swift), the info
+/// program stores nothing, 1 for flipped (a program wrongly taken as writing memory drops the region: zcull.h
+/// zcullInvalidates, program_stores.h). Then the multisampled, layered and loaded arms (ZcullArms.swift), the info
 /// and side_effects arms (ZcullProbeArms.swift) and fragment_stores (ZcullStoresArm.swift).
 struct ZcullTest: HWTest {
-    let id = "gpu.raw.zcull"
+    let id = "gpu.gm20b.zcull"
     let name = "Zcull rejects hidden quads; a direction flip invalidates it; pixels exact"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
@@ -33,8 +33,8 @@ struct ZcullTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height, usage: [.renderTarget, .shaderRead])
         let depth = try gpu.texture(
             .depth32Float, Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
@@ -76,7 +76,7 @@ struct ZcullTest: HWTest {
         var metrics = Metrics()
         var wrong: [String] = []
         var paths: Set<String> = []
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let less = encode(
             1,
             [
@@ -100,9 +100,9 @@ struct ZcullTest: HWTest {
             ("less", less, Self.red), ("reversed", reversed, Self.red),
             ("flipped", flipped, Self.blue),
         ] {
-            let armBefore = RawFacade.counters(of: gpu.device)["zcull_invalidations"] ?? 0
+            let armBefore = GM20BFacade.counters(of: gpu.device)["zcull_invalidations"] ?? 0
             paths.insert(try await gpu.run(pass).path)
-            let armInvalidations = (RawFacade.counters(of: gpu.device)["zcull_invalidations"] ?? 0) - armBefore
+            let armInvalidations = (GM20BFacade.counters(of: gpu.device)["zcull_invalidations"] ?? 0) - armBefore
             metrics.set("\(label)_invalidations", armInvalidations)
             if armInvalidations != (label == "flipped" ? 1 : 0) { wrong.append("\(label)_invalidations") }
             let raster = try await gpu.raster(target, .bgra8Unorm)
@@ -116,7 +116,7 @@ struct ZcullTest: HWTest {
             metrics.set("\(label)_wrong", bad)
             if bad != 0 { wrong.append(label) }
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let passes = (after["zcull_passes"] ?? 0) - (before["zcull_passes"] ?? 0)
         let invalidations = (after["zcull_invalidations"] ?? 0) - (before["zcull_invalidations"] ?? 0)
         metrics.set("zcull_passes", passes)
@@ -143,7 +143,7 @@ struct ZcullTest: HWTest {
             let on = try await gpu.run(less)
             onMs += on.gpuMilliseconds
             paths.insert(on.path)
-            let off = try await RawMethods.draw(gpu, before: [(0x1958, 0)], after: [], less)
+            let off = try await GM20BMethods.draw(gpu, before: [(0x1958, 0)], after: [], less)
             offMs += off.gpuMilliseconds
             emitted += off.emitted
             paths.insert(off.path)
@@ -152,7 +152,7 @@ struct ZcullTest: HWTest {
         metrics.set("invalidated_gpu_ms", offMs, digits: 3)
         metrics.set("invalidated_emitted", emitted)
         metrics.set("paths", paths.sorted().joined(separator: ","))
-        if paths != ["raw"] { wrong.append("paths") }
+        if paths != ["gm20b"] { wrong.append("paths") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 }

@@ -4,8 +4,8 @@ import HWTestGPU
 import IOSurface
 import Metal
 
-/// gpu.raw.zeta_colour's cells (ZetaColourTest.swift): a zeta given a pattern by the fixed-function depth and stencil,
-/// then its stencil moved by the raw path's stencil plane route (a resolve, or a turned pass's turn copies), then read
+/// gpu.gm20b.zeta_colour's cells (ZetaColourTest.swift): a zeta given a pattern by the fixed-function depth and stencil,
+/// then its stencil moved by the driver's stencil plane route (a resolve, or a turned pass's turn copies), then read
 /// back by aspect and tested as a zeta. The pattern holds every stencil value and a depth of its own a texel, so a texel
 /// the route puts elsewhere in the zeta's memory is seen.
 struct ZetaColourCells {

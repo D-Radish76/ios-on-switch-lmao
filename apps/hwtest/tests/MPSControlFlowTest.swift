@@ -5,7 +5,7 @@ import Metal
 import MetalPerformanceShaders
 import MetalPerformanceShadersGraph
 
-/// The callers of the predication SPI on the raw path (drivers/TegraGM20BMetal/raw/runtime/raw_predication.h), with
+/// The callers of the predication SPI on the driver (drivers/TegraGM20BMetal/predication.h), with
 /// supportsCommandBufferJump YES: MPSGraph's while, for and if, alone and nested as MPSGraph nests them (a while inside
 /// an if, a for inside a while, an if inside a for, a for three loops deep), each count past its loop's copies at that
 /// depth (1024 outermost, 128 inside one loop, 16 inside two), so the submission lays it again (loop_continuations),
@@ -14,8 +14,8 @@ import MetalPerformanceShadersGraph
 /// (skipped_calls=), and a diagnostic build counted continuations; SKIP while the device answers
 /// supportsCommandBufferJump NO.
 struct MPSControlFlowTest: HWTest {
-    let id = "gpu.raw.mps_control_flow"
-    let name = "MPSGraph while/for/if and MPSImageCanny on the raw path's predicated loops"
+    let id = "gpu.gm20b.mps_control_flow"
+    let name = "MPSGraph while/for/if and MPSImageCanny on the driver's predicated loops"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
 
@@ -25,8 +25,8 @@ struct MPSControlFlowTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard MPSSupportsMTLDevice(gpu.device) else { return .fail("MPSSupportsMTLDevice is false") }
         let jump = (gpu.device as AnyObject).value(forKey: "supportsCommandBufferJump") as? Bool ?? false
         guard jump else {
@@ -34,7 +34,7 @@ struct MPSControlFlowTest: HWTest {
         }
         var metrics = Metrics()
         var wrong: [String] = []
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
 
         let (counted, whilePath) = try runGraph(gpu, start: 0) { graph, start in
             let one = graph.constant(1, shape: [1], dataType: .int32)
@@ -87,13 +87,13 @@ struct MPSControlFlowTest: HWTest {
         metrics.set("canny_path", canny.path)
         if canny.edges == 0 || canny.inside != 0 { wrong.append("canny") }
 
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         if let counted = after["loop_continuations"] {
             let continued = counted - (before["loop_continuations"] ?? 0)
             metrics.set("loop_continuations", continued)
             if continued == 0 { wrong.append("no loop continued") }
         }
-        for path in paths + [canny.path] where path != "raw" { wrong.append("path:\(path)") }
+        for path in paths + [canny.path] where path != "gm20b" { wrong.append("path:\(path)") }
         let checks = FailedCounts.judgedFramework(before: before, after: after, own: gpu.paths, &metrics)
         wrong += checks.filter { !$0.1 }.map(\.0)
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
@@ -190,7 +190,7 @@ struct MPSControlFlowTest: HWTest {
         }
         var value: Int32 = 0
         data.mpsndarray().readBytes(&value, strideBytes: nil)
-        return (value, RawFacade.path(of: root))
+        return (value, GM20BFacade.path(of: root))
     }
 
     /// A white square on black through MPSImageCanny: edge pixels on the square's border, none well inside it

@@ -3,7 +3,7 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// RGB10A8_2P_XR10 (550) 2x8 over a 'b3a8' whose planes' rows are under 16 bytes (gpu.raw.xr_rows_under_16): plane 0
+/// RGB10A8_2P_XR10 (550) 2x8 over a 'b3a8' whose planes' rows are under 16 bytes (gpu.gm20b.xr_rows_under_16): plane 0
 /// rows 8 at 0, plane 1 rows 2 at 64, 8 MiB + 16 KiB. An M4 Max reads texel (x, y)'s word at y MiB + 4x and its alpha
 /// at 64 + y MiB + x, and stores them 16 bytes a row apart from each plane's offset, a word row overrunning the alpha
 /// rows it meets.

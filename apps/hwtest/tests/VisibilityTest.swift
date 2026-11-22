@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Visibility results on the raw path (drivers/TegraGM20BMetal/raw/runtime/raw_visibility.h): Counting offsets are the
+/// Visibility results on the driver (drivers/TegraGM20BMetal/visibility.h): Counting offsets are the
 /// 3D engine's sample counter, reported per mode set and copied to the offset by the copy engine at the encoder's end.
 /// Each arm's values are the samples M4 counts (m2v's visibility.rs rules): draws at one offset add up, an offset set
 /// with no draw reads 0, a draw under Disabled counts nowhere, an offset never set keeps its bytes, depth-rejected
@@ -11,8 +11,8 @@ import Metal
 /// the copy engine. The same 32 full-target draws under Counting and under Boolean give each mode's GPU time. Every
 /// arm's command buffer must stay raw.
 struct VisibilityTest: HWTest {
-    let id = "gpu.raw.visibility"
-    let name = "Visibility results: Counting on the raw path, exact per offset, MSAA and depth"
+    let id = "gpu.gm20b.visibility"
+    let name = "Visibility results: Counting on the driver, exact per offset, MSAA and depth"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -66,8 +66,8 @@ struct VisibilityTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
         let results = try gpu.buffer(32)
@@ -76,13 +76,13 @@ struct VisibilityTest: HWTest {
             metrics.set("\(arm.name)_path", ran.path)
             metrics.set("\(arm.name)_values", ran.values)
             wrong += ran.wrong
-            if ran.path != "raw" { wrong.append("\(arm.name)_path") }
+            if ran.path != "gm20b" { wrong.append("\(arm.name)_path") }
         }
-        let (rawMs, otherMs, otherPath) = try await timed(gpu, results)
-        metrics.set("counting_gpu_ms", rawMs, digits: 3)
+        let (gm20bMs, otherMs, otherPath) = try await timed(gpu, results)
+        metrics.set("counting_gpu_ms", gm20bMs, digits: 3)
         metrics.set("boolean_gpu_ms", otherMs, digits: 3)
         metrics.set("boolean_timed_path", otherPath)
-        if otherPath != "raw" { wrong.append("boolean_timed_path") }
+        if otherPath != "gm20b" { wrong.append("boolean_timed_path") }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 

@@ -1,4 +1,4 @@
-"""The native seed's actions (metal_seed's, defs.bzl): the raw path's records, made per corpus bucket by the offline
+"""The native seed's actions (metal_seed's, defs.bzl): the driver's records, made per corpus bucket by the offline
 compile, stamped for the tools' stack into one per-file tree that the host checks read, then packed as the device reads
 them (kits/SwitchSeedPack): <packed>/raw-<stack>, an index and ~12 MiB packs, the observed states' packs first.
 """

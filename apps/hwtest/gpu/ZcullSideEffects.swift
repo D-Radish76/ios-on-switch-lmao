@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// gpu.raw.zcull's side_effects arm: a near full-screen quad (z 0.25, LESS, from a 1.0 clear), then far quads (z 0.75)
+/// gpu.gm20b.zcull's side_effects arm: a near full-screen quad (z 0.25, LESS, from a 1.0 clear), then far quads (z 0.75)
 /// whose fragment function adds to a device counter and asks for no early fragment tests: Metal runs it for every far
 /// fragment, hidden or not
 public enum ZcullSideEffects {

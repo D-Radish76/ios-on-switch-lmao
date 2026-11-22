@@ -3,13 +3,13 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// An indirect dispatch on the raw path. A kernel writes the threadgroup counts into a buffer and the dispatch after it
+/// An indirect dispatch on the driver. A kernel writes the threadgroup counts into a buffer and the dispatch after it
 /// in the same encoder takes its grid from there: every thread of the grid writes its index once and its
 /// threadgroups_per_grid, nothing past the grid is written, and a grid of no threadgroups writes nothing. A stage-in
 /// kernel then takes its region from words a kernel wrote (setStageInRegionWithIndirectBuffer:).
 struct IndirectDispatchTest: NativeObjectTest {
-    let id = "gpu.raw.indirect_dispatch"
-    let name = "Indirect dispatch grids and stage-in regions the GPU wrote, on the raw path"
+    let id = "gpu.gm20b.indirect_dispatch"
+    let name = "Indirect dispatch grids and stage-in regions the GPU wrote, on the driver"
 
     static let groups: SIMD3<UInt32> = [3, 2, 2]
     static let threads = MTLSize(width: 4, height: 2, depth: 1)

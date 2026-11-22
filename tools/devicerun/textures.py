@@ -1,9 +1,9 @@
 """What the texture rounds' fixes leave in the refusal log of every process.
 
-A refusal line the fixes removed names an old driver on the card: raw:tex.surf.form's form lines among them, gone since
-the raw path has a form for every texture over a surface Metal makes. raw:tex.surf.pack names a pack made without the
-RGB10A8_2P_XR10 merge and split states, which the shipped pack holds. A copy across two pixel formats with a texture
-held in planes is Metal's validation error the raw path copies as Apple's driver does.
+A refusal line the fixes removed names an old driver on the card: gm20b:tex.surf.form's form lines among them, gone
+since the driver has a form for every texture over a surface Metal makes. gm20b:tex.surf.pack names a pack made without
+the RGB10A8_2P_XR10 merge and split states, which the shipped pack holds. A copy across two pixel formats with a texture
+held in planes is Metal's validation error the driver copies as Apple's driver does.
 """
 
 import re
@@ -11,19 +11,19 @@ import re
 from tools.devicerun.cut import REFUSAL, REFUSAL_SUBSYSTEM
 from tools.devicerun.rules import REPORT, Check
 
-OWNER = 'raw-textures'
-SURFACES = 'drivers/TegraGM20BMetal/raw/runtime/RawMetalSurfaceTextures.mm'
-SURFACE_REFUSALS = 'drivers/TegraGM20BMetal/raw/runtime/RawMetalSurfaceRefusals.mm'
-BLIT_RULES = 'drivers/TegraGM20BMetal/raw/runtime/RawMetalBlitRules.mm'
+OWNER = 'gm20b-textures'
+SURFACES = 'drivers/TegraGM20BMetal/TegraGM20BMetalSurfaceTextures.mm'
+SURFACE_REFUSALS = 'drivers/TegraGM20BMetal/TegraGM20BMetalSurfaceRefusals.mm'
+BLIT_RULES = 'drivers/TegraGM20BMetal/TegraGM20BMetalBlitRules.mm'
 # The texts of the refusals the fixes removed: a written XR texel buffer over a surface, a turned YCbCr target loaded,
 # an XR texture whose words run into its alpha plane, XR planes of rows under 16 bytes, and every tex.surf.form line's
-# tail (a texture over a surface Metal makes that the raw path had no form for)
+# tail (a texture over a surface Metal makes that the driver had no form for)
 REMOVED = (
     'an RGB10A8_2P_XR10 texel buffer written over a surface',
     'a turned YCbCr target loaded',
     'written over planes whose words run on into its alpha plane',
     'RGB10A8_2P_XR10 over planes of rows under 16 bytes',
-    'nil until the raw path has its form',
+    'nil until the driver has its form',
 )
 ACROSS = 'between textures of two pixel formats, one held through planes: its bytes copied'
 

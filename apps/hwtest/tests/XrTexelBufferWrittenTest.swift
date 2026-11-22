@@ -6,13 +6,13 @@ import Metal
 /// A 64-texel RGB10A8_2P_XR10 (550) and sRGB (551) texture buffer, ShaderRead and ShaderWrite, over a 16384x1 'BGRA'
 /// surface of 0xff bytes (gpu/XrTexelBufferWritten.swift), written (0.5, 0.25, -0.25, 0.75) by a kernel and, over a
 /// fresh surface, by a fragment function at its column, then read back by a kernel. An M4 Max under macOS 27.2.1 (this
-/// test's scene code, three runs alike): every texture made (xr_tbuf_written_made; nil before the raw path held a
+/// test's scene code, three runs alike): every texture made (xr_tbuf_written_made; nil before the driver held a
 /// written one as its words), each store leaves every word 0x27f80100 (551: 0x2f7a486e) and no other byte changed
 /// (xr_tbuf_kernel_words_off, xr_tbuf_fragment_words_off, xr_tbuf_bytes_outside 0), and every texel reads (0.5,
 /// 0.2509804, -0.2509804, 0) (551: (0.49987793, 0.25012207, -0.25012207, 0)) within half a code (xr_tbuf_read_off 0,
 /// xr_tbuf_read_alpha 0).
 struct XrTexelBufferWrittenTest: HWTest {
-    let id = "gpu.raw.xr_texel_buffer_written"
+    let id = "gpu.gm20b.xr_texel_buffer_written"
     let name = "Written RGB10A8_2P_XR10 texel buffers over a surface store and read an M4 Max's words, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

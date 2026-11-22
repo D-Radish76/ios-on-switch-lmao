@@ -7,15 +7,15 @@ import Metal
 /// descriptor validation wants framebufferOnly, then its driver asserts "Buffer texture has invalid rotation"); the raw
 /// path answers nil with the error line `raw tex.turned`.
 struct TurnedOffSurfaceTest: HWTest {
-    let id = "gpu.raw.turned_nil"
+    let id = "gpu.gm20b.turned_nil"
     let name = "A rotation over no surface plane: nil, as Metal makes none"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 15 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var made: [String] = []
         let buffer = try gpu.buffer(64 * 32 * 4)

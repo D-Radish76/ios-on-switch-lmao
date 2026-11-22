@@ -4,7 +4,7 @@ import Metal
 import simd
 
 /// Core Animation's own render pipeline states, made in this process from QuartzCore's default.metallib exactly as
-/// the corpus line records them. The raw facade looks up a state whose functions are one framework library's in
+/// the corpus line records them. The facade looks up a state whose functions are one framework library's in
 /// its pack, so these draw from the pack's records as Core Animation's own do.
 public enum CAState {
     /// The system's QuartzCore library; the Mac's goldens writers point it at the IPSW's.
@@ -103,7 +103,7 @@ public enum CAState {
 
     /// The bindings QuartzCore's vertex functions read (vertices at buffer 1, fixed_vert's float4x4 transform at
     /// buffer 2, column-major) with an identity transform, and zeros for every other buffer slot a function may read,
-    /// as the raw pack's probe binds them.
+    /// as the pack's probe binds them.
     public static func bind(_ encoder: MTLRenderCommandEncoder, vertices: [Vertex], source: MTLTexture?) {
         var vertices = vertices
         var identity = matrix_identity_float4x4

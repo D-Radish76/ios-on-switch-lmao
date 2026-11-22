@@ -4,12 +4,12 @@ import HWTestGPU
 import Metal
 
 /// A pass with no depth or stencil attachment under a depth/stencil state that tests: Apple's GPU tests in its tile,
-/// cleared to depth 1 and stencil 0, and keeps the pass's writes to it; the raw path gives such a pass a hidden
+/// cleared to depth 1 and stencil 0, and keeps the pass's writes to it; the driver gives such a pass a hidden
 /// depth/stencil target. The cases of an M4 Max probe (DepthProbeScene's hidden_probe.mm), each a red full-screen
 /// triangle under one state and then a green one under another over black, every pixel the colour Metal leaves:
 /// red, black, red, red, red, black, green. Per case <case>=<pixels off that colour>/<path>.
 struct HiddenDepthTest: HWTest {
-    let id = "gpu.raw.hidden_depth"
+    let id = "gpu.gm20b.hidden_depth"
     let name = "A pass with no depth or stencil attachment depth- and stencil-tests as Metal's tile does, on raw"
     let subsystem = Subsystem.metal
 
@@ -52,8 +52,8 @@ struct HiddenDepthTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let scene = try await DepthProbeScene(gpu)
         let state = try scene.state()
         var metrics = Metrics()
@@ -75,7 +75,7 @@ struct HiddenDepthTest: HWTest {
                 }.path
                 let off = try await scene.off(colour, c.leaves)
                 metrics.set(c.key, "\(off)/\(String(path.prefix(60)))")
-                checks.append(("\(c.key): every pixel the colour Metal leaves, raw", off == 0 && path == "raw"))
+                checks.append(("\(c.key): every pixel the colour Metal leaves, raw", off == 0 && path == "gm20b"))
             } catch {
                 checks.append(("\(c.key): \(GPU.describe(error))", false))
             }

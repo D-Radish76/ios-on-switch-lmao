@@ -1,9 +1,9 @@
-"""directrun's records (direct/directrun.mm) bound as the raw path binds them, for stage.py.
+"""directrun's records (direct/directrun.mm) bound as the driver binds them, for stage.py.
 
 A draw's or dispatch's root table (NVK's nvk_root_descriptor_table: a kernel's group count, set 0's address and size,
-the push words at 0x700), set 0's buffer descriptors (raw/runtime/raw_residual.h bufferDescriptor, each buffer bound on
+the push words at 0x700), set 0's buffer descriptors (residual.h bufferDescriptor, each buffer bound on
 its base alignment so no residual word is written), and each program's constant buffer banks by its nvk_cbuf_type
-(raw_gpu.cpp bindProgramCbufs, raw_compute.cpp qmdWords). A program that reads a bank, an entry or a buffer the test
+(gpu.cpp bindProgramCbufs, compute.cpp qmdWords). A program that reads a bank, an entry or a buffer the test
 did not give stops its run.
 """
 
@@ -64,7 +64,7 @@ def code(program: dict, header: bool = True) -> bytes:
 
 
 def descriptor_range(storage: bool, window: int, size: int) -> int:
-    """Give a buffer descriptor's range for `size` bytes on its base alignment (raw_residual.h bufferDescriptor)."""
+    """Give a buffer descriptor's range for `size` bytes on its base alignment (residual.h bufferDescriptor)."""
     span = (size + 15) & ~15
     if not storage:
         span = min(span, 0x10000)
@@ -159,7 +159,7 @@ def put(data: bytearray, field: list[int], value: int, base: int = 0) -> None:
 
 
 def counter_records(layout: dict, records: list[tuple[int, int]]) -> bytes:
-    """Give the counter samples' records, each (payload, PTIMER units), laid out as raw_counters.h Record."""
+    """Give the counter samples' records, each (payload, PTIMER units), laid out as counters.h Record."""
     shape = layout['record']
     data = bytearray(shape['bytes'] * len(records))
     for i, (payload, units) in enumerate(records):

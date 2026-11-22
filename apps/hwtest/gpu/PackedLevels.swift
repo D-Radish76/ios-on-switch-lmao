@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// R10Unorm_PACKED (588) 32x16 over plane 0 and RG10Unorm_PACKED (589) 16x8 over plane 1 of a 'p420' 32x16 (plane 0
-/// rows 64 at 0, plane 1 rows 64 at 1024, every byte seeded), of three levels (gpu.raw.packed_levels). Level-0 texel X
+/// rows 64 at 0, plane 1 rows 64 at 1024, every byte seeded), of three levels (gpu.gm20b.packed_levels). Level-0 texel X
 /// of row Y, channel c < k (1 for 588, 2 for 589), is the 10-bit code at bit 8 * offset + 8 * 64 * Y + 32 * (n / 3) +
 /// 10 * (n % 3), n = k * X + c, over 1023; the other channels 0, alpha 1. An M4 Max makes each with three levels each
 /// half the last; its getBytes writes nothing, its replaceRegion and generateMipmaps change no byte of the surface; its

@@ -5,7 +5,7 @@ import Metal
 
 /// A 128-texel RGB10A8_2P_XR10 (550) texel buffer over a 'w30r' 64x64 of rows 256 that a BGR10_XR (554) target drew
 /// into first (on the device the kernel then lays it out block-linear), read by a kernel after another kernel wrote
-/// (0.5, 0.25, -0.25, 0.75) through the 554 (gpu.raw.xr_stand_in_refill): in the same compute encoder after a texture
+/// (0.5, 0.25, -0.25, 0.75) through the 554 (gpu.gm20b.xr_stand_in_refill): in the same compute encoder after a texture
 /// memory barrier, or in an encoder of its own. An M4 Max reads the written colour with alpha 0 either way.
 public enum XrStandInRefill {
     public static let texels = 128

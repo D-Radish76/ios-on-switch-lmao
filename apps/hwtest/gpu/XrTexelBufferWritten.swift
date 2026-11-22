@@ -3,7 +3,7 @@ import HWTestCore
 import IOSurface
 import Metal
 
-/// gpu.raw.xr_texel_buffer_written: a 64-texel RGB10A8_2P_XR10 (550) or sRGB (551) texture buffer, ShaderRead and
+/// gpu.gm20b.xr_texel_buffer_written: a 64-texel RGB10A8_2P_XR10 (550) or sRGB (551) texture buffer, ShaderRead and
 /// ShaderWrite, over a 16384x1 'BGRA' surface of 4-byte elements every byte 0xff, written (0.5, 0.25, -0.25, 0.75) by a
 /// kernel or by a fragment function at its column, then read back by a kernel
 public enum XrTexelBufferWritten {

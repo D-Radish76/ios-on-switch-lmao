@@ -11,7 +11,7 @@ import Metal
 /// Every command buffer stays raw.
 struct NativeAmplificationTest: NativeObjectTest {
     let id = "metal.native.amplification"
-    let name = "Vertex amplification drawn one amplification at a time on the raw path"
+    let name = "Vertex amplification drawn one amplification at a time on the driver"
 
     static let size = 32
 

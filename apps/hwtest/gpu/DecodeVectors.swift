@@ -1,7 +1,7 @@
 import Foundation
 import Metal
 
-/// The driver's decode vectors (drivers/TegraGM20BMetal/test/raw_decode_vectors.h, written by raw/test/decodevectors.mm
+/// The driver's decode vectors (drivers/TegraGM20BMetal/test/decode_vectors.h, written by harness/decodevectors.mm
 /// on an M4 Max): blocks and what Apple's GPU reads from them. A want holds, per channel, an 8-bit code (an sRGB
 /// format's colour channels through Apple's sRGB table `srgb`, its alpha as code / 255), the 12-bit k of a linear ASTC
 /// form (Apple reads k / 4095), or the half bits of an HDR form (0xffff where Apple read a NaN).
@@ -119,7 +119,7 @@ public enum DecodeVectors {
         return best
     }
 
-    /// The driver's 16-bit code of a linear ASTC form's 12-bit k (raw_decoded.h kRgba16Unorm stored: the nearest
+    /// The driver's 16-bit code of a linear ASTC form's 12-bit k (decoded.h kRgba16Unorm stored: the nearest
     /// 16-bit code of k / 4095)
     public static func unorm16(_ k: UInt32) -> UInt32 { 16 * k + (k + 136) / 273 }
 

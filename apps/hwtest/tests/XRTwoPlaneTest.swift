@@ -5,15 +5,15 @@ import HWTestGPU
 import Metal
 
 /// RGB10A8_2P_XR10 (550) over a 'b3a8' surface, as Core Animation's backdrop blur makes it, drawn in its planes
-/// (raw_xr_pass.h: the word into plane 0, the alpha byte into plane 1 as a target of its own): a cleared pass with a
+/// (xr_pass.h: the word into plane 0, the alpha byte into plane 1 as a target of its own): a cleared pass with a
 /// draw, a pass that loads it and draws again, and a pass that samples it; then, each after the CPU rewrote part of
 /// both planes, a loading pass, a sampling pass and a blit into a buffer; last a blit from a buffer into it. Every
-/// command buffer must take the raw path, and the planes must hold Metal's bytes (plane 0 the code word, plane 1 the alpha byte, codes as raw_xr.h writeCode stores
+/// command buffer must take the driver, and the planes must hold Metal's bytes (plane 0 the code word, plane 1 the alpha byte, codes as xr.h writeCode stores
 /// them), the samples each code's value as a half, and blits move plane 0's words alone; rows of
 /// 128-byte multiples (96 wide) are drawn in place. Then XRTwoPlaneCells.
 struct XRTwoPlaneTest: HWTest {
-    let id = "gpu.raw.xr_two_plane"
-    let name = "RGB10A8_2P_XR10 over a b3a8 surface: drawn, loaded, sampled and blitted on the raw path"
+    let id = "gpu.gm20b.xr_two_plane"
+    let name = "RGB10A8_2P_XR10 over a b3a8 surface: drawn, loaded, sampled and blitted on the driver"
     let subsystem = Subsystem.metal
 
     static let width = 96, height = 64
@@ -32,10 +32,10 @@ struct XRTwoPlaneTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         let (buffer, texture) = try Self.surfaceTexture(gpu)
         let draw = try gpu.render(fragment: "solid_fragment", format: Self.format)
         var want = [UInt64](repeating: Self.texel(Self.clear), count: Self.width * Self.height)
@@ -59,7 +59,7 @@ struct XRTwoPlaneTest: HWTest {
         let copiedIn = Self.wrongTexels(Self.planes(buffer), want)
 
         let moved = { (name: String) in
-            (RawFacade.counters(of: gpu.device)[name] ?? 0) - (counted[name] ?? 0)
+            (GM20BFacade.counters(of: gpu.device)[name] ?? 0) - (counted[name] ?? 0)
         }
         let directShadows = moved("xr_plane_shadows")
         let cells = XRTwoPlaneCells(gpu: gpu)
@@ -112,10 +112,10 @@ struct XRTwoPlaneTest: HWTest {
         metrics.set("copied_out_wrong", copiedOut)
         metrics.set("copied_in_wrong", copiedIn)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
         return .judged(
             [
-                ("every command buffer on the raw path (\(gpu.paths.text))", raw),
+                ("every command buffer on the driver (\(gpu.paths.text))", raw),
                 ("both planes hold the clear and the draws", drawn == 0),
                 ("the samples are the codes' values", sampled == 0),
                 ("a loading pass keeps a CPU write of the planes", loaded == 0),
@@ -155,7 +155,7 @@ struct XRTwoPlaneTest: HWTest {
             ], metrics, proof: gpu.proof)
     }
 
-    /// raw_xr.h writeCode: a channel's code, or the alpha byte
+    /// xr.h writeCode: a channel's code, or the alpha byte
     static func code(_ value: Float, alpha: Bool = false) -> UInt32 {
         let v = value.isNaN ? 0 : Double(value)
         if alpha { return UInt32((min(max(v, 0), 1) * 255).rounded(.toNearestOrEven)) }

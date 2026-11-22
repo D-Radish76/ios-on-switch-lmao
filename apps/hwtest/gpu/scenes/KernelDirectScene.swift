@@ -2,11 +2,11 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// A kernel no pack holds (this app's multiply_add, at a threadgroup shape of its own): on the raw facade its record is made
-/// at its first dispatch (drivers/TegraGM20BMetal/raw/runtime/RawComplete.h), so that dispatch and the next both run on raw,
+/// A kernel no pack holds (this app's multiply_add, at a threadgroup shape of its own): on the facade its record is made
+/// at its first dispatch (drivers/TegraGM20BMetal/TegraGM20BMetalComplete.h), so that dispatch and the next both run on raw,
 /// never m2v, and each result is exact.
 struct KernelDirectScene: GPUScene {
-    let id = "gpu.raw.kernel_direct"
+    let id = "gpu.gm20b.kernel_direct"
     let name = "A kernel the pack lacks, made on raw at its first dispatch"
 
     static let threads = 96
@@ -44,8 +44,8 @@ struct KernelDirectScene: GPUScene {
                 "dispatch \(dispatch): not one atomic increment per thread")
         }
         result.metrics.set("paths", paths.joined(separator: ","))
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(paths == ["raw", "raw"], "the first and second dispatches took \(paths), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(paths == ["gm20b", "gm20b"], "the first and second dispatches took \(paths), not raw")
         }
         return result
     }

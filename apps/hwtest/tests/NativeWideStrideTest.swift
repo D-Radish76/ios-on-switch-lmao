@@ -11,7 +11,7 @@ import Metal
 /// and the right half at 4112 in one pass, the second from its stride twin. Every texel exact.
 struct NativeWideStrideTest: NativeObjectTest {
     let id = "metal.native.wide_stride"
-    let name = "Vertex layout strides past a vertex stream's 12 bits draw on the raw path"
+    let name = "Vertex layout strides past a vertex stream's 12 bits draw on the driver"
 
     static let size = 32
     static let positionStride = 2052

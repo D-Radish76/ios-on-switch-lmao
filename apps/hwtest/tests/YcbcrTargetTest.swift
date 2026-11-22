@@ -8,8 +8,8 @@ import Metal
 /// Render passes into two-plane YCbCr attachments over CoreVideo surfaces, as cameracaptured renders its frames
 /// (RGB8_420_2P over '420v'/'420f'): a clear, a draw of floats and a draw of halves into each, every byte of both planes
 /// against Metal's store (YcbcrStore, an M4 Max's bytes: the code formats, the converted YCBCR*_2P and their sRGB twins)
-/// and every command buffer on the raw path. The raw path renders each pass into a memoryless stand-in and draws both planes from it with the
-/// pack's store states (device log: "raw: YCbCr target stored on the GPU"). wrong_luma_ and wrong_chroma_ split each
+/// and every command buffer on the driver. The driver renders each pass into a memoryless stand-in and draws both planes from it with the
+/// pack's store states (device log: "SwitchMetal: YCbCr target stored on the GPU"). wrong_luma_ and wrong_chroma_ split each
 /// target's count by plane.
 struct YcbcrTargetTest: HWTest {
     let id = "gpu.ycbcr_target"
@@ -68,8 +68,8 @@ struct YcbcrTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let probe = try GPU.make()
-        guard RawFacade.kind(of: probe.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: probe.device)))")
+        guard GM20BFacade.kind(of: probe.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: probe.device)))")
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -82,7 +82,7 @@ struct YcbcrTargetTest: HWTest {
             } catch {
                 (wrong, note) = ((0, 0), "failed: \(GPU.describe(error))")
             }
-            let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+            let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
             let key = target.label.filter { $0.isLetter || $0.isNumber }
             metrics.set("paths_" + key, gpu.paths.isEmpty ? "-" : gpu.paths.text)
             metrics.set("wrong_" + key, wrong.luma + wrong.chroma)

@@ -7,7 +7,7 @@ import Metal
 /// argument's place are Metal's (an M3 Max's and an M4's: a pointer, a texture, a sampler, a float and a float4 take
 /// 0, 8, 16, 24 and 32 of 48 bytes aligned to 16), a buffer is written as its GPU address plus the offset, a texture and
 /// a sampler as real resource IDs (nonzero, distinct, past every ID m2v hands out), and an array's elements at their own
-/// places. Five passes read through argument buffers, each drawn on the raw path with the exact colours: a colour behind a
+/// places. Five passes read through argument buffers, each drawn on the driver with the exact colours: a colour behind a
 /// pointer; two textures and a sampler written by the fragment function's own encoder (its buffer index form), so a draw
 /// that reads texture 0 for every ID cannot pass; an array of three textures sampled through an array of two samplers of
 /// other address modes (NativeArgumentDraws.swift); one pointer that is a bound buffer or an argument buffer's by pixel;

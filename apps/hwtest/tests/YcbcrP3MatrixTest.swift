@@ -6,13 +6,13 @@ import IOSurface
 import Metal
 
 /// Two-plane YCbCr textures over surfaces tagged kIOSurfaceYCbCrMatrix P3_D65 or DCI_P3. An M4 Max converts nothing
-/// under those matrices (raw/test/ycbcroracle.mm): a converted format reads its codes as red Y, green Cb, blue Cr,
+/// under those matrices (harness/ycbcroracle.mm): a converted format reads its codes as red Y, green Cb, blue Cr,
 /// which is its surface's codes format's read (red Cr, green Y, blue Cb) turned. Each arm reads both textures over one
 /// surface of random codes, each texture read by a draw: off_<format>_<matrix> counts the converted texels that are not
 /// the codes texels turned (0 to pass), paths the command buffers' paths (raw/N to pass).
 struct YcbcrP3MatrixTest: HWTest {
-    let id = "gpu.raw.ycbcr_p3"
-    let name = "YCbCr textures under the P3 matrices read their codes, as Metal reads them, on the raw path"
+    let id = "gpu.gm20b.ycbcr_p3"
+    let name = "YCbCr textures under the P3 matrices read their codes, as Metal reads them, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -30,8 +30,8 @@ struct YcbcrP3MatrixTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
@@ -43,7 +43,7 @@ struct YcbcrP3MatrixTest: HWTest {
                 checks.append(("\(key): the converted texture reads the codes turned", off == 0))
             }
         }
-        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "raw" }
+        let raw = !gpu.paths.isEmpty && gpu.paths.paths.keys.allSatisfy { $0 == "gm20b" }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         checks.append(("every command buffer raw", raw))
         return .judged(checks, metrics, proof: gpu.proof)

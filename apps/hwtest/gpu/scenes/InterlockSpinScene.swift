@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 struct InterlockSpinScene: GPUScene {
-    let id = "gpu.raw.interlock_spin"
+    let id = "gpu.gm20b.interlock_spin"
     let name = "Interlock ticket waits: exact overlapping blends and GPU time"
 
     static let width = 1280, height = 720
@@ -13,7 +13,7 @@ struct InterlockSpinScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let kind = RawFacade.kind(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
         let format = TexelFormat.rgba16Float
         let scale = FetchBlendState.scale(format)
         let target = try gpu.texture(format.metal, Self.width, Self.height)
@@ -55,15 +55,15 @@ struct InterlockSpinScene: GPUScene {
                     encoder.endEncoding()
                 }
                 let warm = try await gpu.run(tolerateError: true, draw)
-                guard !warm.path.hasPrefix("error:"), kind != "raw" || warm.path == "raw" else {
+                guard !warm.path.hasPrefix("error:"), kind != "gm20b" || warm.path == "gm20b" else {
                     result.expect(false, "\(label): \(warm.path)")
                     continue
                 }
-                let before = RawFacade.counters(of: gpu.device)
+                let before = GM20BFacade.counters(of: gpu.device)
                 var times: [Double] = []
                 for _ in 0..<Self.runs {
                     let timing = try await gpu.run(draw)
-                    result.expect(kind != "raw" || timing.path == "raw", "\(label): \(timing.path)")
+                    result.expect(kind != "gm20b" || timing.path == "gm20b", "\(label): \(timing.path)")
                     result.expect(timing.gpuTimed && timing.gpuClock != "host", "\(label): no GPU timestamp")
                     times.append(timing.gpuTimed && timing.gpuClock != "host" ? timing.gpuMilliseconds : 0)
                     let bytes = try await gpu.read(target, bytesPerPixel: format.bytesPerTexel)
@@ -72,8 +72,8 @@ struct InterlockSpinScene: GPUScene {
                         width: Self.width, height: Self.height, tolerance: 0)
                 }
                 result.metrics.set("gpu_ms_" + label, Stats.percentile(times, 0.5), digits: 3)
-                if kind == "raw" {
-                    let after = RawFacade.counters(of: gpu.device)
+                if kind == "gm20b" {
+                    let after = GM20BFacade.counters(of: gpu.device)
                     let interlocked = (after["interlock_draws"] ?? 0) - (before["interlock_draws"] ?? 0)
                     result.metrics.set("ilk_" + label, interlocked)
                     result.expect(

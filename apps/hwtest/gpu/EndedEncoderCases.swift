@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// Commands recorded on an encoder after its endEncoding (gpu.raw.ended_encoder), each case one command buffer over a
+/// Commands recorded on an encoder after its endEncoding (gpu.gm20b.ended_encoder), each case one command buffer over a
 /// 64x64 RGBA8 target T cleared to (0.25, 0.25, 0.25, 1) and 4 KiB shared buffers: src byte i = i (i < 256), src2 all
 /// 0xaa, out and out2 zero. A "snap" is a blit after the late command in the same command buffer.
 public final class EndedEncoderBench {

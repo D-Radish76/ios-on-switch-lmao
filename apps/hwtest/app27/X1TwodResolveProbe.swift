@@ -27,7 +27,7 @@ extension X1TwodProbes {
     /// today's route) is judged the same way where the format has one. T-v2 found no single rounding for the 4x cells:
     /// each is also read as two rounded 2:1 steps (PairReading, either pairing, each rule), and the rules on the line come
     /// from whichever reading fits it with fewer misses (`pair_readings=` lists the cells a pair reading explained). Under resolve=twod the facade needs no resolve
-    /// state for the format; a cell whose command buffer still leaves the raw path is listed apart.
+    /// state for the format; a cell whose command buffer still leaves the driver is listed apart.
     static let resolve = X1Probe(
         id: "gpu.x1.twod_resolve", name: "2D-engine MSAA resolves against the samples' average, per format and count",
         probe: "resolve.twod", risky: true, timeout: 150
@@ -40,7 +40,7 @@ extension X1TwodProbes {
         let (w, h) = (96, 64)
         for format in X1Format.named(["bgra8", "rgba8", "bgra8srgb", "rgba8srgb", "rgba16f", "rgb10a2", "rg11b10f"]) {
             let (stored, calibration) = try await storedSamples(gpu, format)
-            if let off = calibration.first(where: { $0 != "raw" }) {
+            if let off = calibration.first(where: { $0 != "gm20b" }) {
                 offPath.append("\(format.name)_samples:\(off)")
                 continue
             }
@@ -70,7 +70,7 @@ extension X1TwodProbes {
                         encoder.endEncoding()
                     }
                     if arm == "twod" { ops += batch.taken["resolves"] ?? 0 }
-                    guard batch.path == "raw" else {
+                    guard batch.path == "gm20b" else {
                         offPath.append("\(name)_\(arm):\(batch.path)")
                         continue
                     }

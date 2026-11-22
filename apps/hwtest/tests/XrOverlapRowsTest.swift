@@ -7,11 +7,11 @@ import Metal
 /// under macOS 27.2.1 running this case code (four runs, every count 0): a kernel reads each texel at the planes' rows
 /// over rows 64 and 16, rows 64 and 32, and planes of 32x4 for a 32x8 texture (xr_overlap_read_off_<scene>); written
 /// over rows 64 and 16 (32x8) and rows 128 and 64 (64x64), a pass's per-row words and alpha bytes keep the row whose
-/// store lands last by raw_overlap_order.h overlapOrder (xr_overlap_pass_rows_off), a kernel's keep a row that reaches
+/// store lands last by overlap_order.h overlapOrder (xr_overlap_pass_rows_off), a kernel's keep a row that reaches
 /// them (xr_overlap_kernel_rows_uncovered), a Clear leaves 0x27f80100 and 0xbf (xr_overlap_clear_off), and no byte
 /// outside the planes' rows changes (xr_overlap_outside). Each texture is made (nil reads -1).
 struct XrOverlapRowsTest: HWTest {
-    let id = "gpu.raw.xr_overlap_rows"
+    let id = "gpu.gm20b.xr_overlap_rows"
     let name = "An XR texture over planes whose rows overlap reads, draws, stores and clears as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

@@ -27,7 +27,7 @@ public enum XrWrittenOverlaps {
     /// which an M4 Max's clear leaves as the OR of the two (0xf8 | 0xbf), three runs alike
     public static let tieByte = 682
 
-    /// gpu.raw.xr_words_into_alpha: a 550 32x8, ShaderRead, ShaderWrite and RenderTarget, over plane 0 of a 'b3a8' 32x4
+    /// gpu.gm20b.xr_words_into_alpha: a 550 32x8, ShaderRead, ShaderWrite and RenderTarget, over plane 0 of a 'b3a8' 32x4
     /// (words rows 128 at 0, alpha rows 32 at 512, 1024 bytes): its word rows 4 to 7 are plane 1's bytes and the bytes
     /// after it. Read by a kernel, then cleared to (0.5, 0.25, -0.25, 0.75) by a pass
     public static func intoAlpha(_ gpu: GPU) async throws -> IntoAlpha {
@@ -94,7 +94,7 @@ public enum XrWrittenOverlaps {
 
     public static let alonePage = 16384, aloneOffset = 16384 - 256
 
-    /// gpu.raw.xr_alone_past_last_page: a 550 32x8, ShaderRead and ShaderWrite, over a 'w30r' of one 16 KiB page whose
+    /// gpu.gm20b.xr_alone_past_last_page: a 550 32x8, ShaderRead and ShaderWrite, over a 'w30r' of one 16 KiB page whose
     /// one plane (32x4 two-byte elements of rows 64, which IOSurfaceCreate makes where it makes no four-byte one)
     /// starts 256 bytes before its end: the texture's rows overlap (128 bytes of words a row) and rows 3 to 7 run past
     /// the page. Read by a kernel, then written by one

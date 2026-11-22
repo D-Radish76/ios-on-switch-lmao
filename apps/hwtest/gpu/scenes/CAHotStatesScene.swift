@@ -4,7 +4,7 @@ import Metal
 
 /// The time of Core Animation's costliest states (CAHotCorpus) at the console's resolution: each state draws `draws`
 /// full-screen rectangles into a 1280x720 target of its first colour's format, its other colours memoryless, sampling
-/// a BGRA8 picture with zero uniforms (as the raw pack's probe binds them). Medians of `runs` command buffers, the
+/// a BGRA8 picture with zero uniforms (as the pack's probe binds them). Medians of `runs` command buffers, the
 /// label lowercased:
 /// - us_<label>: GPU time per draw as the device answers GPUStartTime/GPUEndTime, in nanoseconds.
 /// - wall_us_<label>: per draw from the commit's return to the completed handler, on the host's clock on both devices.
@@ -16,7 +16,7 @@ import Metal
 ///   as the pass with no draw (pass_us_<label>, its clears and setup), which InterlockBound takes out of both.
 /// - gpu_clock_<label>=host (raw, debug builds): a timed run's GPU time (the interlock's bands and pass included) was the
 ///   host's window, for want of a GPU stamp.
-/// On the raw facade a state's command buffers must take the raw path: one that does not fails the scene, naming its
+/// On the facade a state's command buffers must take the driver: one that does not fails the scene, naming its
 /// path (warm_<label>: the runs before it was timed).
 /// On the process's default device the wide blur (narrow_blur_27) also draws `dumpBuffers` untimed command buffers
 /// back to back, and a debug kernel dumps the GPU's registers into its log while the first runs (gpu/RegDump.swift):
@@ -42,7 +42,7 @@ struct CAHotStatesScene: GPUScene {
             result.notes.append("no QuartzCore library here (\(GPU.describe(error)))")
             return result
         }
-        let kind = RawFacade.kind(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
         let processDefault = gpu.device === MTLCreateSystemDefaultDevice()
         let source = try gpu.texture(.bgra8Unorm, Self.width, Self.height, usage: [.shaderRead])
         try await gpu.blitUpload(
@@ -85,12 +85,12 @@ struct CAHotStatesScene: GPUScene {
             }
             let overlapping = { (commands: MTLCommandBuffer) in draw(false, Self.draws, commands) }
             let label = line.shortLabel.lowercased()
-            let before = RawFacade.counters(of: gpu.device)
+            let before = GM20BFacade.counters(of: gpu.device)
             var runs: [GPU.Timing] = []
             for _ in 0..<Self.runs {
                 runs.append(try await gpu.run(tolerateError: true, overlapping))
             }
-            let after = RawFacade.counters(of: gpu.device)
+            let after = GM20BFacade.counters(of: gpu.device)
             if processDefault && line.fragment.name == Self.wideBlur {
                 let connection = GPUConnection()
                 let buffers = try (0..<Self.dumpBuffers).map { _ in try gpu.commit(overlapping) }
@@ -104,8 +104,8 @@ struct CAHotStatesScene: GPUScene {
             let paths = Set(runs.map(\.path))
             let named = paths.sorted().joined(separator: ",")
             result.expect(!paths.contains { $0.hasPrefix("error:") }, "\(line.shortLabel): \(named)")
-            if kind == "raw" && paths != ["raw"] {
-                result.expect(false, "\(line.shortLabel): drawn off the raw path, on \(named)")
+            if kind == "gm20b" && paths != ["gm20b"] {
+                result.expect(false, "\(line.shortLabel): drawn off the driver, on \(named)")
                 continue
             }
             timed += 1

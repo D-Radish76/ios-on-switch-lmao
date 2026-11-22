@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// gpu.raw.scratch_order's passes: two passes of different sizes over a memoryless colour 1 of one format, which the
+/// gpu.gm20b.scratch_order's passes: two passes of different sizes over a memoryless colour 1 of one format, which the
 /// raw path backs with the same scratch memory and opens one after the other with no drain between them. Pass A
 /// (722x1282) writes a seed's pattern into colour 1, then a second draw fetches colour 1 into its stored colour 0;
 /// pass B (1792x1472) clears colour 1, and its first draw fetches it into its stored colour 0.

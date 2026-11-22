@@ -4,11 +4,11 @@ import HWTestGPU
 import Metal
 
 /// c38-audit m2v-pass-forms spec 4: whether SET_COLOR_TARGET_THIRD_DIMENSION alone keeps a layered draw out of the layers
-/// past a target's own, which would let the raw path bind a shorter attachment in place of today's backing of the pass's
-/// layers (raw_pass_begin.cpp shortOf; gpu.raw.layers_past checks that). Two 16x16 RGBA8Unorm arrays of 4 layers, both
+/// past a target's own, which would let the driver bind a shorter attachment in place of today's backing of the pass's
+/// layers (pass_begin.cpp shortOf; gpu.gm20b.layers_past checks that). Two 16x16 RGBA8Unorm arrays of 4 layers, both
 /// loaded: target 0 zeros, target 1 zeros in layers 0-1 and 0x5a bytes in layers 2-3, bound with THIRD_DIMENSION 2 for
 /// each draw (0x0858, set back to 4 after it). Four one-instance draws in layer order, draw l into layer l in its own
-/// colour (r5_layer_vertex). The claim, Apple's behaviour (gpu.raw.rtal_past_layers): target 1 keeps 0x5a in layers 2-3
+/// colour (r5_layer_vertex). The claim, Apple's behaviour (gpu.gm20b.rtal_past_layers): target 1 keeps 0x5a in layers 2-3
 /// and draw 0's and draw 1's colours in layers 0-1. past_count_layer2/3: 0 kept, 1 the layer's own colour, 2 layer 1's,
 /// 3 layer 0's, -1 another; past_count_c0 and _c1 each layer's holder, layers 0 to 3 (the draw whose colour it holds, k
 /// the bytes it was filled with, x another), which tells a draw dropped past the count from one clamped onto layer 1.
@@ -100,7 +100,7 @@ enum X1LayerPastCountProbe {
         metrics.set("past_count_c1", holders[1].joined(separator: "/"))
         metrics.set("path", path)
         let holds = holders[0] == ["0", "1", "2", "3"] && holders[1] == ["0", "1", "k", "k"]
-        if path != "raw" { return ProbeFinding(.inconclusive, metrics, note: "not on the raw path: \(path)") }
+        if path != "gm20b" { return ProbeFinding(.inconclusive, metrics, note: "not on the driver: \(path)") }
         return ProbeFinding(holds ? .pass : .fail, metrics, note: holds ? "" : "target 1 \(holders[1])")
     }
 
@@ -109,7 +109,7 @@ enum X1LayerPastCountProbe {
         probe: "layer_past_count", risky: true
     ) { gpu in
         let targets = try await targets(gpu)
-        let drawn = try await RawMethods.draw(
+        let drawn = try await GM20BMethods.draw(
             gpu, before: [(setColorTargetThirdDimension1, 2)], after: [(setColorTargetThirdDimension1, 4)],
             encode(targets, try state(gpu)))
         return finding(try await holders(gpu, targets), path: drawn.path).emitting(drawn.emitted)

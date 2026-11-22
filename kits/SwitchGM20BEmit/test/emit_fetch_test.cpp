@@ -77,7 +77,7 @@ struct Simulation {
     }
 };
 
-// MTLPrimitiveType's run sizes as raw_mme.h fetchShape writes them
+// MTLPrimitiveType's run sizes as mme.h fetchShape writes them
 constexpr uint32_t kRunFirst[5] = {1, 2, 2, 3, 3}, kRunStep[5] = {1, 2, 1, 3, 1};
 
 // An indirect command buffer's: commands [0, 4) in range, `ordered` its execute's FETCH_ICB, `topology` the command's

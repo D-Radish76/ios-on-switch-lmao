@@ -7,7 +7,7 @@ import Metal
 
 /// A compute kernel's store into a converted YCbCr view (R10Unorm_PACKED 588 over a 'p420' surface's luma plane,
 /// YCBCR8_422_1P 501 over a '2vuy' surface), which an M4 Max's Metal drops: the surface's bytes stay as they were and a
-/// later read() gives its old texels. The raw path binds a null texture for the dropped store; a kernel reading a null
+/// later read() gives its old texels. The driver binds a null texture for the dropped store; a kernel reading a null
 /// binding afterwards still reads 0.
 enum KernelConvertedWrites {
     struct Result {

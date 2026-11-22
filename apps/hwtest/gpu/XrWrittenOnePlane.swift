@@ -5,7 +5,7 @@ import Metal
 
 /// RGB10A8_2P_XR10 (550) and its sRGB twin (551) render targets over one plane alone, which holds no alpha: a 'w30r' of
 /// 64x64 words (rows 256 bytes, 4 KiB more after them) and plane 1 of a 'b3a8' (alpha bytes, rows 64), every byte 0xff
-/// first (gpu.raw.xr_written_one_plane).
+/// first (gpu.gm20b.xr_written_one_plane).
 public enum XrWrittenOnePlane {
     public enum Arm: String, Sendable, CaseIterable {
         /// a Clear (0.5, 0.25, -0.25, 1) and Store pass

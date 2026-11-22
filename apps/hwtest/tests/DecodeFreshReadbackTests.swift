@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A never-written texture of a format decoded on upload reads what an M4 Max reads from a new one (raw_decoded.h
+/// A never-written texture of a format decoded on upload reads what an M4 Max reads from a new one (decoded.h
 /// DecodedFormat::fresh, the decode of a block of zeros): 16x16 textures, Private and Shared, of 166 (PVRTC RGBA: 0, 0,
 /// 0, 0), 162 (PVRTC RGB: 0, 0, 0, 1), 185 (ASTC 4x2 sRGB: magenta 1, 0, 1, 1 through the sRGB decode), 203 (ASTC 4x2
 /// linear: 1, 0, 1, 1) and on 24B119 222 (ASTC 4x4 HDR: a NaN in every channel), and level 2 of a mipmapped 64x64 166;
@@ -22,8 +22,8 @@ struct DecodeFreshTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var off: [String] = [], unmade: [String] = []
         var reads = 0
         let at: [SIMD2<UInt32>] = [SIMD2(3, 5)]
@@ -62,8 +62,8 @@ struct DecodeFreshTest: HWTest {
     }
 }
 
-/// A readback of a decoded texture (raw_decoded.h; the owner's choice): PVRTC keeps no blocks, so its getBytes and its
-/// blit into a buffer move nothing and the command buffer completes, with one raw:tex.decoded_readback line a format a
+/// A readback of a decoded texture (decoded.h; the owner's choice): PVRTC keeps no blocks, so its getBytes and its
+/// blit into a buffer move nothing and the command buffer completes, with one gm20b:tex.decoded_readback line a format a
 /// process (a 32x32 166 read by getBytes and by a blit with MTLBlitOptionRowLinearPVRTC, then a 16x16 164 by a blit:
 /// two lines, the getBytes's and the blit's); an ASTC form keeps its blocks, so a 64x32 209's getBytes and blit give
 /// back the uploaded blocks byte for byte, as Apple's do. `decode_readback_moved` 0 (bytes of the 0xa5 fills a PVRTC
@@ -81,8 +81,8 @@ struct DecodeReadbackTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let start = Date()
         let uploaded = Array(DecodeVectors.set(209).bytes().prefix(1024))
         guard uploaded.count == 1024 else { return .fail("the 209 vectors hold fewer than 64 blocks") }
@@ -117,7 +117,7 @@ struct DecodeReadbackTest: HWTest {
         }
         let keptBack = try await Self.blitted(gpu, kept, rowBytes: 128, rows: 8, options: [])
         let keptOff = zip(back + keptBack, uploaded + uploaded).filter { $0 != $1 }.count
-        let lines = ProcessLog.lines(ProcessLog.refusal, "raw", containing: "tex.decoded_readback", since: start)
+        let lines = ProcessLog.lines(ProcessLog.refusal, "gm20b", containing: "tex.decoded_readback", since: start)
         var metrics = Metrics()
         metrics.set("decode_readback_moved", moved)
         metrics.set("decode_readback_kept_off", keptOff)

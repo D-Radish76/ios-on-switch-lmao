@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A Core Animation state the raw path draws on rung 3 (the ROP's iterated blend) drawn again in a later pass: in the
+/// A Core Animation state the driver draws on rung 3 (the ROP's iterated blend) drawn again in a later pass: in the
 /// same command buffer, in the next one, after a pass that clears another texture, in a pass that clears first, after a
 /// blit, after a compute encoder and after a pass of another state (gpu/IteratedBlendPasses.swift). Whatever sets the
 /// blend back between two draws of the state must also forget its bound segment, or the later draw runs with the blend
@@ -16,15 +16,15 @@ import Metal
 /// model or the form, not a pass boundary. Every command buffer runs with its error tolerated, so a class error that
 /// kills the channel fails its case and the next case runs.
 struct IteratedBlendPassesTest: HWTest {
-    let id = "gpu.raw.iterated_blend_passes"
+    let id = "gpu.gm20b.iterated_blend_passes"
     let name = "A rung-3 Core Animation state drawn again after a pass end, a command buffer or other work, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let url = Bundle.main.url(forResource: "ca_states", withExtension: "log"),
             let text = try? String(contentsOf: url, encoding: .utf8)
         else { return .fail("ca_states.log is not in the app's bundle") }
@@ -40,13 +40,13 @@ struct IteratedBlendPassesTest: HWTest {
         for between in IteratedBlendPasses.Between.allCases {
             let drawn = try await scene.run(between)
             let key = between.rawValue
-            let raw = drawn.paths.allSatisfy { $0 == "raw" }
+            let raw = drawn.paths.allSatisfy { $0 == "gm20b" }
             let rung3 = drawn.rung3.map { $0 >= drawn.draws } ?? true
             metrics.set("\(key)_wrong", drawn.wrong)
             if drawn.wrong > 0 { metrics.set("\(key)_first", drawn.first) }
             if let wrong = drawn.between { metrics.set("\(key)_between_wrong", wrong) }
             metrics.set("\(key)_rung3", drawn.rung3.map { "\($0)/\(drawn.draws)" } ?? "-")
-            metrics.set("\(key)_paths", raw ? "raw" : String(drawn.paths.joined(separator: ",").prefix(80)))
+            metrics.set("\(key)_paths", raw ? "gm20b" : String(drawn.paths.joined(separator: ",").prefix(80)))
             checks.append(("\(key): colour 0 is the CPU's multiply", drawn.wrong == 0))
             checks.append(("\(key): the work between kept its own result", (drawn.between ?? 0) == 0))
             checks.append(("\(key): every draw of the state on rung 3", rung3))

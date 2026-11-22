@@ -1,7 +1,7 @@
 #include <metal_stdlib>
 using namespace metal;
 
-/// gpu.raw.ycbcr_overlap_rows: a 4:2:0 codes target's (Cr, Y, Cb): Y (x + 7y) & 255, and over chroma block b
+/// gpu.gm20b.ycbcr_overlap_rows: a 4:2:0 codes target's (Cr, Y, Cb): Y (x + 7y) & 255, and over chroma block b
 /// Cb (b.x + 5 b.y) & 255, Cr (3 b.x + 11 b.y + 1) & 255
 fragment float4 overlap_codes(float4 position [[position]])
 {
@@ -10,7 +10,7 @@ fragment float4 overlap_codes(float4 position [[position]])
            255.0;
 }
 
-/// gpu.raw.ycbcr_overlap_words: hashed 10-bit codes of each pixel, a 4:4:4 target's (Cr, Y, Cb)
+/// gpu.gm20b.ycbcr_overlap_words: hashed 10-bit codes of each pixel, a 4:4:4 target's (Cr, Y, Cb)
 fragment float4 overlap_hash(float4 position [[position]])
 {
     const uint2 x = uint2(position.xy);

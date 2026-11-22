@@ -4,8 +4,8 @@ import HWTestGPU
 import Metal
 
 /// makeAliasable on a texture of an automatic heap gives the heap back all the room the texture took: usedSize returns
-/// to its value before the texture was made. An extended-range texture the raw path samples is placed with an integer
-/// stand-in beside it (raw::Device::arenaTexture), which makeAliasable must give back with it; a BGRA8 texture, which
+/// to its value before the texture was made. An extended-range texture the driver samples is placed with an integer
+/// stand-in beside it (gm20b::Device::arenaTexture), which makeAliasable must give back with it; a BGRA8 texture, which
 /// has none, is the control. Per format, in a private heap of its own: <f>_used the bytes the texture made usedSize
 /// take, <f>_left what makeAliasable left of them (0), <f>_size heapTextureSizeAndAlign's size.
 struct HeapAliasableUsedTest: HWTest {
@@ -17,8 +17,8 @@ struct HeapAliasableUsedTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         let formats: [(String, MTLPixelFormat)] = [("bgr10_xr", .bgr10_xr), ("bgra8", .bgra8Unorm)]

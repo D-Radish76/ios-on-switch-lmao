@@ -5,7 +5,7 @@ import os
 
 /// What the bench screen shows.
 struct BenchStatus: Sendable {
-    var device = "opening the raw device"
+    var device = "opening the device"
     var selfCheck = "-"
     var roots: [String] = []
     var current = "waiting for a batch"

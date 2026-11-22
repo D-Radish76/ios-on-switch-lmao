@@ -106,12 +106,12 @@ struct MacroRun {
     }
 };
 
-// A fetch macro call's shape as raw_mme.h fetchShape writes it before every call, by MTLPrimitiveType (point, line, line
+// A fetch macro call's shape as mme.h fetchShape writes it before every call, by MTLPrimitiveType (point, line, line
 // strip, triangle, triangle strip): the vertices of an instance's first BEGIN and of each later one. The macro's loop
 // advances by them, so a call never meets them 0.
 constexpr uint32_t kFetchFirst[5] = {1, 2, 2, 3, 3}, kFetchStep[5] = {1, 2, 1, 3, 1};
 
-// The scratch words as the raw path writes them: an execute's range and layout, its inherited buffers (each slot's
+// The scratch words as the driver writes them: an execute's range and layout, its inherited buffers (each slot's
 // address, stride and size), the root table's address, a bound state's amplification words, the count and the mappings,
 // a fetch call's shape (`primitive`) and BEGIN words, and whether an execute's commands are a fetching state's
 Scratch channelScratch(uint32_t amplifications, uint32_t layer, uint32_t barrier, uint32_t primitive = 3,
@@ -270,7 +270,7 @@ TEST(MethodRanges, EveryMacroRunsOnMaxwellBsMethods)
 }
 
 // The fetch macros under every shape fetchShape gives a call, and an execute of a fetching state's commands (FETCH_ICB)
-// under every topology a command sets (SET_PRIMITIVE_TOPOLOGY 1 to 5, raw_icb.h topology)
+// under every topology a command sets (SET_PRIMITIVE_TOPOLOGY 1 to 5, icb.h topology)
 TEST(MethodRanges, EveryMacroRunsOnMaxwellBsMethodsInEveryFetchShape)
 {
     const mme_sim_state_ops ops = {MacroRun::load, MacroRun::state, MacroRun::emit, MacroRun::barrier, MacroRun::dram};

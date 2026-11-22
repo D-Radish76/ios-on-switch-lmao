@@ -3,14 +3,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// barrier.pass_pixel (raw/plan plan_hazard.cpp CrossPassPixel): between pass A, which renders into a target, and
+/// barrier.pass_pixel (plan plan_hazard.cpp CrossPassPixel): between pass A, which renders into a target, and
 /// pass B, which samples it, the tiled flush A ends with and PIXEL_SHADER_BARRIER with its pixel-ordered texture
 /// invalidate (0x0f74) order B's reads after A's writes, with no WAIT_FOR_IDLE or shader-cache flush. Each trial is A
 /// then B in one command buffer, eight a batch; the targets rotate between two, so a read too early, or through a
 /// texture cache still holding the last trial's lines, copies another seed's texels. Arms: control (today's
 /// switch_gm20b_pass_barrier), pixel (the planner's form), none (no barrier: the arm that shows a cell can see the
 /// hazard), each with today's engine changes and job entry; rule forces nothing, so production's rules pick every barrier
-/// (raw_pass_hazard.h: the pixel barrier only where every dependency is a cell this line held), rule_passes= the passes
+/// (pass_hazard.h: the pixel barrier only where every dependency is a cell this line held), rule_passes= the passes
 /// it opened with the pixel barrier, and a cell where rule read other texels than control fails the line. Cells: format x
 /// layout x read shape x size. 0x1288 in place of 0x0f74 after the barrier is never sent: F-v1
 /// read it wrong in every 64 x 64 cell (bgra8_bl_same_s 623 of 1,008 trials). The 64 x 64 cells run four times as long

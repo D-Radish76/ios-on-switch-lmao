@@ -9,12 +9,12 @@ import Metal
 /// bind_only, then_load, parallel_sub, parallel_next, blit_late_copy, blit_earlier, late_dispatch, late_kernel,
 /// late_kernel_buf: completed, T's corners and the buffers' bytes and words as the table says); where Apple's driver
 /// crashes the process (draw_in_blit, copy_after_pass, copy_after_event, end_twice_render, end_twice_blit,
-/// end_twice_compute, begin_while_open) the raw path fails the command buffer InvalidResource (code 9, error:none), seven
-/// failed.none; parallel_after (a sub-encoder's draw after its parent ended), which Apple crashes on and the raw path
+/// end_twice_compute, begin_while_open) the driver fails the command buffer InvalidResource (code 9, error:none), seven
+/// failed.none; parallel_after (a sub-encoder's draw after its parent ended), which Apple crashes on and the driver
 /// cannot fail, completes having drawn nothing and counts one skipped.enc.pass. <case>_status, <case>_off (values not
 /// the table's).
 struct EndedEncoderTest: HWTest {
-    let id = "gpu.raw.ended_encoder"
+    let id = "gpu.gm20b.ended_encoder"
     let name = "A command on an ended encoder runs inside it as Apple's does, or fails where Apple's crashes, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -87,9 +87,9 @@ struct EndedEncoderTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -104,7 +104,7 @@ struct EndedEncoderTest: HWTest {
             checks.append(("\(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         let counts = FailedCounts(before: before, after: counted)
         checks.append(
             FailedCounts.judged(before: before, after: counted, expecting: ["none": Self.crashes.count], own: gpu.paths, &metrics))

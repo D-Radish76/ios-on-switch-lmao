@@ -4,19 +4,19 @@ import HWTestGPU
 import Metal
 
 /// generateMipmaps of arrays and cubes whose steps are the 3D engine's (formats with a pack mip state and no 2D-engine
-/// filter: drivers/TegraGM20BMetal/raw/runtime/raw_mip_passes.cpp, one pass a layer and level), which went to m2v
+/// filter: drivers/TegraGM20BMetal/mip_passes.cpp, one pass a layer and level), which went to m2v
 /// (mipmaps) before. Each layer's level 0 is cleared to its own colour, so every level of it must read that colour back.
 /// The generateMipmaps command buffer must stay raw; the clears' path is reported.
 struct MipmapLayersTest: HWTest {
-    let id = "gpu.raw.mipmap_layers"
+    let id = "gpu.gm20b.mipmap_layers"
     let name = "Mipmaps of arrays, cubes and texture views"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var metrics = Metrics()
         var wrong: [String] = []
         let cases: [(String, MTLPixelFormat, MTLTextureType, Int)] = [
@@ -68,7 +68,7 @@ struct MipmapLayersTest: HWTest {
             metrics.set("\(label)_wrong", off)
             metrics.set("\(label)_texels", firsts.joined(separator: ","))
             if off > 0 { wrong.append(label) }
-            if generated != "raw" { wrong.append("\(label)_path") }
+            if generated != "gm20b" { wrong.append("\(label)_path") }
         }
         let cubeArrays = gpu.device.supportsFamily(.apple4)
         for arm in [
@@ -148,7 +148,7 @@ struct MipmapLayersTest: HWTest {
             metrics.set("\(arm.name)_path", generated)
             metrics.set("\(arm.name)_wrong", off)
             if off > 0 { wrong.append(arm.name) }
-            if generated != "raw" { wrong.append("\(arm.name)_path") }
+            if generated != "gm20b" { wrong.append("\(arm.name)_path") }
         }
         return wrong.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(wrong.joined(separator: ","), metrics)
     }

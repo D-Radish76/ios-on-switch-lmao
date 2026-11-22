@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.zcull's arms past a one-sample, one-layer, cleared depth (raw_zcull.h): the near quad over the left half and
+/// gpu.gm20b.zcull's arms past a one-sample, one-layer, cleared depth (zcull.h): the near quad over the left half and
 /// the far quads over everything again, on a 4x multisampled depth resolved into the target (`msaa4x`), on a two-layer
 /// array whose layers each take the quads (`layered`), and on a depth one pass clears and stores and a later pass of
 /// the same command buffer loads, the second pass drawing only the far quads: right after it, where the facade fuses the
@@ -26,7 +26,7 @@ extension ZcullTest {
             ("fused", 2, 1, 0, { try await self.loaded($0, apart: false) }),
             ("loaded", 2, 0, 1, { try await self.loaded($0, apart: true) }),
         ] as [(String, Int, Int, Int, (ArmContext) async throws -> (Int, String))] {
-            let before = RawFacade.counters(of: c.gpu.device)
+            let before = GM20BFacade.counters(of: c.gpu.device)
             let ran: (Int, String)
             do {
                 ran = try await run(c)
@@ -36,7 +36,7 @@ extension ZcullTest {
                 continue
             }
             let (bad, path) = ran
-            let after = RawFacade.counters(of: c.gpu.device)
+            let after = GM20BFacade.counters(of: c.gpu.device)
             let delta = { (key: String) in (after[key] ?? 0) - (before[key] ?? 0) }
             let passes = delta("zcull_passes"), fused = delta("fused_passes"), loaded = delta("zcull_loads")
             metrics.set("\(name)_wrong", bad)

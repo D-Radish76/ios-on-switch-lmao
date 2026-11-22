@@ -3,12 +3,12 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Private render targets on compressed memory (drivers/TegraGM20BMetal/raw/runtime/raw_private_comp.h): a glass-like
+/// Private render targets on compressed memory (drivers/TegraGM20BMetal/private_comp.h): a glass-like
 /// chain (a 512x512 BGRA8 pattern, a 256x256 RGBA16Float and a 128x128 BGRA8 2:1 reduction of it) and a 256x256
 /// RGBA32Float pattern (C128), each pass cleared to a ZBC value first, drawn on compressed memory and again with
-/// compression held off (switchRawProbePlainPrivate:): every byte the same, the first and the RGBA32Float target
+/// compression held off (switchMetalProbePlainPrivate:): every byte the same, the first and the RGBA32Float target
 /// compressed once the work is done (compressed_targets; made_targets at creation: a target made plain for want of
-/// compressed memory moves onto it once some is made, raw_private_comp.h compressedFromPlain, counted in
+/// compressed memory moves onto it once some is made, private_comp.h compressedFromPlain, counted in
 /// compressed_moves; nothing moves one off it). A size's compressed memory is waited for by the compression thread's
 /// own event (CompressionSettled). Mid-chain one command buffer that samples the first target also writes a Boolean
 /// visibility result, and stays raw.
@@ -16,13 +16,13 @@ import Metal
 /// shape arms follow (PrivateCompressionShapes.swift), then the move arms (PrivateCompressionMoveArms.swift); the line
 /// keeps the judged fields and puts the longest others in the report alone.
 struct PrivateCompressionTest: HWTest {
-    let id = "gpu.raw.private_compression"
+    let id = "gpu.gm20b.private_compression"
     let name = "Private targets on compressed memory: same bytes, ZBC clears, a Boolean visibility pass kept raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }
 
-    static let plainSelector = NSSelectorFromString("switchRawProbePlainPrivate:")
-    static let factsSelector = NSSelectorFromString("switchRawProbeFacts:")
+    static let plainSelector = NSSelectorFromString("switchMetalProbePlainPrivate:")
+    static let factsSelector = NSSelectorFromString("switchMetalProbeFacts:")
 
     struct Chain {
         var bytes: [[UInt8]] = []
@@ -34,14 +34,14 @@ struct PrivateCompressionTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.plainSelector) else {
-            return .skip(RawFacade.missing("switchRawProbePlainPrivate:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalProbePlainPrivate:", on: gpu.device))
         }
-        let before = RawFacade.counters(of: gpu.device), zbcBefore = RawFacade.compression(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device), zbcBefore = GM20BFacade.compression(of: gpu.device)
         let compressed = try await chain(gpu, facade, plain: false)
-        let after = RawFacade.counters(of: gpu.device), zbcAfter = RawFacade.compression(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device), zbcAfter = GM20BFacade.compression(of: gpu.device)
         let plain = try await chain(gpu, facade, plain: true)
         var metrics = Metrics()
         var wrong: [String] = []
@@ -65,7 +65,7 @@ struct PrivateCompressionTest: HWTest {
         if compressed.compressed.first != 1 { wrong.append("not_compressed") }
         if compressed.compressed.last != 1 { wrong.append("wide_not_compressed") }
         if plain.compressed.contains(1) { wrong.append("reference_compressed") }
-        if compressed.booleanPath != "raw" { wrong.append("boolean_path") }
+        if compressed.booleanPath != "gm20b" { wrong.append("boolean_path") }
         try await shapeArms(gpu, facade, &metrics, &wrong)
         try await moveArms(gpu, facade, &metrics, &wrong)
         metrics.fitLog(

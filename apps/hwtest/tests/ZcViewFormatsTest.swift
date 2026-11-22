@@ -4,21 +4,21 @@ import HWTestGPU
 import Metal
 
 /// Whether PixelFormatView textures can join compressed memory (a probe; LIST #7): a private RGBA8Unorm 256x256 target
-/// of pixelFormatView usage, forced onto compressible memory (switchRawProbeCompressNext), and its R32Uint and
+/// of pixelFormatView usage, forced onto compressible memory (switchMetalProbeCompressNext), and its R32Uint and
 /// BGRA8Unorm views (raw views over the same binding). It is drawn through each in turn (a word per pixel through
 /// R32Uint, codes through the colour views), then read by the copy engine (`view_render_wrong`: texels off the bytes
 /// the draw stored) and by the texture unit through the other two (`view_sample_wrong`); last a clear to 0 through the
 /// R32Uint view, a boot ZBC value, read every way (`view_zbc_wrong`: texels not 0). The same on a plain target is the
-/// control (`control_*`). An M4 Max matches the CPU's model of every read (hwtests12 mac/gpu.raw.zc_view_formats). It
+/// control (`control_*`). An M4 Max matches the CPU's model of every read (hwtests12 mac/gpu.gm20b.zc_view_formats). It
 /// decides, not judges: all 0 means the mask can take PixelFormatView; a count is the finding. FAIL only where it could
 /// not run.
 struct ZcViewFormatsTest: HWTest {
-    let id = "gpu.raw.zc_view_formats"
+    let id = "gpu.gm20b.zc_view_formats"
     let name = "PixelFormatView probe: a compressed RGBA8 target drawn and read through R32Uint and BGRA8 views"
     let subsystem = Subsystem.metal
 
     static let side = 256
-    static let compressNext = NSSelectorFromString("switchRawProbeCompressNext")
+    static let compressNext = NSSelectorFromString("switchMetalProbeCompressNext")
 
     struct Counts {
         var render = 0, sample = 0, zbc = 0
@@ -26,10 +26,10 @@ struct ZcViewFormatsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.compressNext) else {
-            return .skip(RawFacade.missing("switchRawProbeCompressNext", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalProbeCompressNext", on: gpu.device))
         }
         var metrics = Metrics()
         for compressed in [true, false] {
@@ -43,7 +43,7 @@ struct ZcViewFormatsTest: HWTest {
             let prefix = compressed ? "view_" : "control_"
             metrics.set(prefix + "comptags", comptags)
             if compressed && comptags != 1 {
-                return .fail("switchRawProbeCompressNext gave the target no compressible memory", metrics)
+                return .fail("switchMetalProbeCompressNext gave the target no compressible memory", metrics)
             }
             let counts = try await Self.probe(gpu, texture)
             metrics.set(prefix + "render_wrong", counts.render)

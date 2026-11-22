@@ -129,7 +129,7 @@ py_test(
 )
 
 # bazel run //tools/devicerun:frame_weights -- <absolute .logarchive> --pack <pack.bin>: the frame-weights capture's table
-# (drivers/TegraGM20BMetal/raw/runtime/raw_draw_times.h, tools/devicerun/README.md)
+# (drivers/TegraGM20BMetal/draw_times.h, tools/devicerun/README.md)
 py_library(
     name = "frame_weights_lib",
     srcs = ["frame_weights.py"],

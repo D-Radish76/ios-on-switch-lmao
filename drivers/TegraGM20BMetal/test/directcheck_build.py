@@ -7,9 +7,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-RAW = Path('drivers/TegraGM20BMetal/raw')
+METAL = Path('drivers/TegraGM20BMetal')
 PLUGIN = Path('drivers/TegraGM20BMetal/plugin')
-DIRECT_RUNTIME = ('raw_direct', 'raw_direct_compute', 'raw_record_parts', 'raw_emit', 'raw_pack', 'raw_metallib')
+DIRECT_RUNTIME = ('direct', 'direct_compute', 'record_parts', 'emit', 'pack', 'metallib')
 
 
 def main() -> None:
@@ -32,11 +32,11 @@ def main() -> None:
     includes = ['-I', PLUGIN, '-I', Path(args.metal_abi).parent, '-I', 'drivers/TegraGM20B']
     includes += ['-I', 'third_party/mesa/src/nouveau/headers']
     objcxx = [
-        RAW / 'test/directcheck.mm',
-        RAW / 'runtime/RawDirect.mm',
-        RAW / 'runtime/RawRenderKey.mm',
-        RAW / 'runtime/RawOffline.mm',
-        RAW / 'runtime/RawOfflineReflection.mm',
+        METAL / 'harness/directcheck.mm',
+        METAL / 'TegraGM20BMetalDirect.mm',
+        METAL / 'TegraGM20BMetalRenderKey.mm',
+        METAL / 'TegraGM20BMetalOffline.mm',
+        METAL / 'TegraGM20BMetalOfflineReflection.mm',
     ]
     command = [
         'xcrun',
@@ -51,7 +51,7 @@ def main() -> None:
         *objcxx,
         '-x',
         'c++',
-        *(RAW / 'runtime' / f'{name}.cpp' for name in DIRECT_RUNTIME),
+        *(METAL / f'{name}.cpp' for name in DIRECT_RUNTIME),
         '-x',
         'none',
         args.translate,

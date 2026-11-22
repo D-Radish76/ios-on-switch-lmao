@@ -5,7 +5,7 @@
  * client and the GPU both read, so a sample converts with its own power-up's anchor with no call and no CPU wait.
  * PTIMER is reseeded past every value before the power-down (gpu_power.c stamp_reseed): each power-up's values lie at or
  * above its anchor and below the next one's, so a value's anchor is the newest one at or below it.
- * The raw stack key does not hash this header, so no unit it hashes (gpu/BUILD.bazel raw_stack) may include it. */
+ * The stack key does not hash this header, so no unit it hashes (gpu/BUILD.bazel stack_key) may include it. */
 #ifndef TEGRA_GM20B_CLOCK_ABI_H
 #define TEGRA_GM20B_CLOCK_ABI_H
 #include <stdint.h>

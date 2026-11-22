@@ -3,17 +3,17 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The resolve of the six signed normalized formats and BGR10_XR, which the raw path runs on the 2D engine's signed and
+/// The resolve of the six signed normalized formats and BGR10_XR, which the driver runs on the 2D engine's signed and
 /// A2B10G10R10 formats with no reference driving its rounding. A 64x64 target at 2x and 4x, each sample drawn its own
 /// code by a draw masked to it (masked_texel_values), resolved by MultisampleResolve into a one-sample texture of the
 /// format. Rows 0-15 hold ties (2x: c and c+1; 4x: four codes summing to 4k+2), the first four texels the ties near
 /// zero, at each end and across zero; rows 16-63 random codes. Every channel must be floor(mean of the codes + 0.5),
-/// half up toward +inf for negative means too: the rule an M4 Max resolves these formats by (raw/test/
+/// half up toward +inf for negative means too: the rule an M4 Max resolves these formats by (harness/
 /// resolvecodesoracle.mm, every channel at 2x and 4x), and this scene's every channel on an M4 Max. Per format and
 /// count: <fmt>_x<n>_off channels off, _max the largest |off| in codes, _ties the first four tie texels' offsets (got -
 /// want, channels by "/"); every command buffer raw, failed_cbs=0.
 struct ResolveCodesTest: HWTest {
-    let id = "gpu.raw.resolve_codes"
+    let id = "gpu.gm20b.resolve_codes"
     let name = "Signed normalized and BGR10_XR targets resolve to their codes' mean rounded half up, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -65,9 +65,9 @@ struct ResolveCodesTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for format in Self.formats {
@@ -85,9 +85,9 @@ struct ResolveCodesTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: ["paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)

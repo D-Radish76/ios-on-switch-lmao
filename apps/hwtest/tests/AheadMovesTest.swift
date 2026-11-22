@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Texture moves run on the submit worker, which gives back an open encode ahead first (raw_private_comp.h; the
+/// Texture moves run on the submit worker, which gives back an open encode ahead first (private_comp.h; the
 /// facade's freshBeforeTransfer). Core Animation's scale frame (CommitLatencyPathTest's encode: 15 passes of 6 draws
 /// over 4 targets, a pass every 400 us, so the worker encodes ahead) is recorded `frames` times, then again while a
 /// second thread, at each pass, makes a fresh private texture and writes it with replaceRegion (a move). Every frame
@@ -65,8 +65,8 @@ struct AheadMovesTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         let library: MTLLibrary
         do {
@@ -105,12 +105,12 @@ struct AheadMovesTest: HWTest {
             return bytes
         }
         let alone = try await frames(nil)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let mover = Mover()
         mover.start(gpu.device)
         let beside = try await frames(mover)
         let moves = mover.stop()
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let delta = { (key: String) in (after[key] ?? 0) - (before[key] ?? 0) }
         let differ = zip(alone, beside).map { zip($0, $1).filter { $0 != $1 }.count }.reduce(0, +)
         let otherWork = delta("pipeline_abandons.other_work")

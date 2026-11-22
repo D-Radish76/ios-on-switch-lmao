@@ -59,12 +59,12 @@ struct CAGlassSplitScene: GPUScene {
             Patterns.opaque(Patterns.busy(width: size, height: size, channels: 4, seed: 3)), .bgra8Unorm)
         let target = try gpu.texture(.bgra8Unorm, size, size, usage: [.renderTarget, .shaderRead])
         let frame = try await make(gpu, parsed, library, target: target, content: content)
-        let onFacade = RawFacade.kind(of: gpu.device) == "raw"
-        let before = RawFacade.counters(of: gpu.device)
+        let onFacade = GM20BFacade.kind(of: gpu.device) == "gm20b"
+        let before = GM20BFacade.counters(of: gpu.device)
         let whole = try await draw(gpu, frame, tiles: Self.tiles, wholePrograms: true, &result)
         let split = try await draw(gpu, frame, tiles: 1, wholePrograms: false, &result)
-        let after = RawFacade.counters(of: gpu.device)
-        result.metrics.set("fetch", RawFacade.fetchRoutes(before: before, after: after))
+        let after = GM20BFacade.counters(of: gpu.device)
+        result.metrics.set("fetch", GM20BFacade.fetchRoutes(before: before, after: after))
         for key in ["split_room_refusals", "heap_full"] {
             result.metrics.set(key, (after[key] ?? 0) - (before[key] ?? 0))
         }
@@ -89,7 +89,7 @@ struct CAGlassSplitScene: GPUScene {
             result.expect(split.twins.map { $0 > 0 } ?? false, "the whole-target split path was not proven")
             result.expect(whole.twins.map { $0 == 0 } ?? false, "the tiled whole-program path was not proven")
             let paths = Set(split.paths + whole.paths)
-            result.expect(paths == ["raw"], "the glass drew on \(paths.sorted().joined(separator: ",")), not raw")
+            result.expect(paths == ["gm20b"], "the glass drew on \(paths.sorted().joined(separator: ",")), not raw")
         }
         for (name, text) in Self.xrLines {
             do {
@@ -118,11 +118,11 @@ struct CAGlassSplitScene: GPUScene {
             return
         }
         let frame = try await make(gpu, parsed, library, target: target, content: nil)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let whole = try await draw(gpu, frame, tiles: Self.tiles, wholePrograms: true, &result)
         let split = try await draw(gpu, frame, tiles: 1, wholePrograms: false, &result)
         result.metrics.set(
-            name + "_fetch", RawFacade.fetchRoutes(before: before, after: RawFacade.counters(of: gpu.device)))
+            name + "_fetch", GM20BFacade.fetchRoutes(before: before, after: GM20BFacade.counters(of: gpu.device)))
         let paths = Set(split.paths + whole.paths)
         result.metrics.set(name + "_paths", paths.sorted().joined(separator: ","))
         result.metrics.set(name + "_mean_split", Self.mean(split.picture))
@@ -141,7 +141,7 @@ struct CAGlassSplitScene: GPUScene {
         result.compare("\(name): one draw against tiles", split.picture, whole.picture, tolerance: 3.0 / 255)
         if onFacade {
             result.expect(
-                paths == ["raw"], "\(name): the glass drew on \(paths.sorted().joined(separator: ",")), not raw")
+                paths == ["gm20b"], "\(name): the glass drew on \(paths.sorted().joined(separator: ",")), not raw")
         }
     }
 
@@ -207,9 +207,9 @@ struct CAGlassSplitScene: GPUScene {
         if let content = frame.content {
             try await gpu.upload(content, to: frame.target, bytesPerRow: Self.size * 4)
         }
-        let before = RawFacade.counters(of: gpu.device)["split_prologues"]
+        let before = GM20BFacade.counters(of: gpu.device)["split_prologues"]
         let timing = try await gpu.run(tolerateError: true) { commands in
-            if wholePrograms && RawFacade.kind(of: gpu.device) == "raw" && !RawFacade.wholePrograms(in: commands) {
+            if wholePrograms && GM20BFacade.kind(of: gpu.device) == "gm20b" && !GM20BFacade.wholePrograms(in: commands) {
                 throw TestFailure("the raw whole-program control was unavailable before commit")
             }
             let pass = MTLRenderPassDescriptor()
@@ -245,7 +245,7 @@ struct CAGlassSplitScene: GPUScene {
             encoder.endEncoding()
         }
         result.expect(!timing.path.hasPrefix("error:"), "\(tiles)x\(tiles) tiles: \(timing.path)")
-        let after = RawFacade.counters(of: gpu.device)["split_prologues"]
+        let after = GM20BFacade.counters(of: gpu.device)["split_prologues"]
         let picture: Raster
         if frame.target.pixelFormat == .bgr10_xr {
             picture = try await gpu.raster(frame.target, .bgr10XR)

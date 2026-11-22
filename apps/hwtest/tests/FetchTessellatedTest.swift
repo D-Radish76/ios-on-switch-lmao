@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Tessellated draws whose fragment function reads the colour it writes keep Metal's order on the raw path: patch order,
+/// Tessellated draws whose fragment function reads the colour it writes keep Metal's order on the driver: patch order,
 /// then instance order, and inside a patch an order that never tears, where the state's storage form (a depth-format
 /// state's per-test-class variant included) draws each patch whole inside the pixel interlock. Each arm
 /// (FetchTessellatedCases) draws quad patches over a 64x64 target cleared to (0, 0, 0, 1) whose fragment writes
@@ -19,13 +19,13 @@ import Metal
 /// samples). Per arm <arm>_order= apple (those counts), stable (the same image every run, other counts: GM20B's
 /// tessellator orders a patch's triangles otherwise) or torn (runs differ, or a pixel read a stale colour); torn, a pixel
 /// in neither order, a flat arm off Metal's order or a failed command buffer fails. A command buffer failing
-/// MTLCommandBufferErrorInternal is a state with no storage form for its pass (raw:draw.fetch_patches):
+/// MTLCommandBufferErrorInternal is a state with no storage form for its pass (gm20b:draw.fetch_patches):
 /// <arm>_blocked=fetch_patches, and the arm fails. Fields per arm _first_then_second, _second_then_first, _torn, _other,
 /// _stable, _error, _order; readback_paths=, failed_cbs=.
 struct FetchTessellatedTest: HWTest {
     typealias Cases = FetchTessellatedCases
 
-    let id = "gpu.raw.fetch_tessellated"
+    let id = "gpu.gm20b.fetch_tessellated"
     let name = "Tessellated draws reading the colour they write keep patch, instance and in-patch order, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
@@ -37,10 +37,10 @@ struct FetchTessellatedTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let scene = try await Cases.Scene(gpu)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for arm in Cases.arms {
@@ -51,7 +51,7 @@ struct FetchTessellatedTest: HWTest {
             }
         }
         metrics.set("readback_paths", gpu.paths.isEmpty ? "-" : String(gpu.paths.text.prefix(80)))
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: Self.kept)
@@ -71,12 +71,12 @@ struct FetchTessellatedTest: HWTest {
             metrics.set("\(key)_path", String(seen.path.prefix(60)))
             checks.append(
                 (
-                    "\(key): \(refused ? "no storage form for its pass (raw:draw.fetch_patches)" : GPU.describe(error))",
+                    "\(key): \(refused ? "no storage form for its pass (gm20b:draw.fetch_patches)" : GPU.describe(error))",
                     false
                 ))
             return
         }
-        checks.append(("\(key): drawn on raw (\(seen.path))", seen.path == "raw"))
+        checks.append(("\(key): drawn on raw (\(seen.path))", seen.path == "gm20b"))
         let tallies = Cases.tally(arm, seen.images[0])
         var total = tallies.reduce(Cases.Tally(), +)
         total.torn = seen.images.map { Cases.tally(arm, $0).reduce(Cases.Tally(), +).torn }.max() ?? 0

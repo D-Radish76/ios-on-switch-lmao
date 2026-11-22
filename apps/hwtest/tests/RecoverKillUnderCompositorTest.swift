@@ -15,7 +15,7 @@ import UIKit
 /// rounds from the fill's end to the poisoned command buffer's failed end (gpu.recover.kill_one's kill_ms).
 struct RecoverKillUnderCompositorTest: HWTest {
     let id = "gpu.recover.kill_under_compositor"
-    let name = "Raw channel kills while the compositor presents every frame: each fails only itself, no frame waits"
+    let name = "Channel kills while the compositor presents every frame: each fails only itself, no frame waits"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 90 }
 
@@ -24,12 +24,12 @@ struct RecoverKillUnderCompositorTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         try RecoverKillOneTest.settle(gpu)
-        let start = RawFacade.counters(of: gpu.device)
-        guard start["reopen_us"] != nil else { return .skip(RawFacade.missing("reopen_us", on: gpu.device)) }
+        let start = GM20BFacade.counters(of: gpu.device)
+        guard start["reopen_us"] != nil else { return .skip(GM20BFacade.missing("reopen_us", on: gpu.device)) }
         let probeBench: BenchRunner
         let copier: RecoverBystander
         do {
@@ -76,7 +76,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
         let presented = await MainActor.run { compositor.presented }
         let (fillErrors, firstFillError) = await MainActor.run { (compositor.fillErrors, compositor.firstFillError) }
         await context.clearStage()
-        let end = RawFacade.counters(of: gpu.device)
+        let end = GM20BFacade.counters(of: gpu.device)
 
         let bytes = UnsafeRawBufferPointer(start: ring.contents(), count: ring.length)
         let slice = RecoverKillOneTest.slice
@@ -84,7 +84,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
             bytes[(2 * round * slice)..<((2 * round + 1) * slice)].allSatisfy { $0 == UInt8(2 * round + 1) }
         }.count
         let fillsOK = (fills + [last]).filter { $0.status == .completed && $0.error == nil }.count
-        let killed = poisoned.filter { $0.status == .error && RawFacade.path(of: $0) == "error:none" }.count
+        let killed = poisoned.filter { $0.status == .error && GM20BFacade.path(of: $0) == "error:none" }.count
         let delta = { (key: String) in (end[key] ?? 0) - (start[key] ?? 0) }
         let shown = Pacing(times: presented.sorted(), period: 1.0 / 60)
         let presentGapMs = shown.intervals.max() ?? 0
@@ -97,7 +97,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
         metrics.set("fill_bytes", kept)
         metrics.set("reopens", delta("reopens"))
         var own = PathTally()
-        for buffer in fills + poisoned + [last] { own.add(RawFacade.path(of: buffer)) }
+        for buffer in fills + poisoned + [last] { own.add(GM20BFacade.path(of: buffer)) }
         let failed = FailedCounts.judged(
             before: start, after: end, expecting: ["none": Self.rounds], own: own, &metrics)
         metrics.set("present_gap_ms", presentGapMs, digits: 1)

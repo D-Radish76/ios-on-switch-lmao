@@ -9,8 +9,8 @@ import Metal
 /// left half of the target, every buffer holding 0 so the position is the patch's own: the left half green, the right
 /// half black.
 struct PatchCommandsWideSetTest: HWTest {
-    let id = "gpu.raw.patch_commands_wide_set"
-    let name = "Patch commands of a state whose set 0 is past 256 bytes draw on the raw path"
+    let id = "gpu.gm20b.patch_commands_wide_set"
+    let name = "Patch commands of a state whose set 0 is past 256 bytes draw on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -37,8 +37,8 @@ struct PatchCommandsWideSetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let device = gpu.device
         let indirect =
             (device as AnyObject as! NSObject).value(forKey: "supportsIndirectTessellation") as? Bool ?? false
@@ -102,7 +102,7 @@ struct PatchCommandsWideSetTest: HWTest {
                 }.count
         }
         metrics.set("wrong_pixels", wrong)
-        return timing.path == "raw" && wrong == 0
+        return timing.path == "gm20b" && wrong == 0
             ? .pass(metrics, proof: gpu.proof) : .fail("path \(timing.path.prefix(80)), \(wrong) pixels wrong", metrics)
     }
 }

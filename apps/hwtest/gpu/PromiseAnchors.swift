@@ -62,8 +62,8 @@ public enum PromiseAnchors {
         out.scheduledAtSignal = times.scheduledAtSignal()
         out.head = Int(head.status.rawValue)
         out.writer = Int(writer.status.rawValue)
-        out.headPath = RawFacade.path(of: head)
-        out.writerPath = RawFacade.path(of: writer)
+        out.headPath = GM20BFacade.path(of: head)
+        out.writerPath = GM20BFacade.path(of: writer)
         return out
     }
 
@@ -127,7 +127,7 @@ public enum PromiseAnchors {
         out.blitted = Array(
             UnsafeBufferPointer(
                 start: resolved.contents().bindMemory(to: UInt64.self, capacity: samples), count: samples))
-        out.paths = [RawFacade.path(of: sampling), RawFacade.path(of: resolving)]
+        out.paths = [GM20BFacade.path(of: sampling), GM20BFacade.path(of: resolving)]
         return out
     }
 

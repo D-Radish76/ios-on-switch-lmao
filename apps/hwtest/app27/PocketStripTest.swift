@@ -223,7 +223,7 @@ struct PocketStripTest: HWTest {
         return picture[x, y, 0] - green > margin && picture[x, y, 2] - green > margin
     }
 
-    /// Pixels of a new texture's pattern as Apple's GPUs read it (raw_fresh.h): opaque magenta, 254 where a filter mixed in
+    /// Pixels of a new texture's pattern as Apple's GPUs read it (fresh.h): opaque magenta, 254 where a filter mixed in
     /// 1/255 of a neighbour
     static func patternPixels(_ picture: Raster) -> Int {
         var count = 0

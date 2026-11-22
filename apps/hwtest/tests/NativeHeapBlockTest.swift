@@ -4,8 +4,8 @@ import HWTestGPU
 import Metal
 
 /// A heap's block-compressed textures, a mip chain and a 2D array in a private heap and one level in a shared one
-/// (drivers/TegraGM20BMetal/raw/runtime/RawMetalHeap.mm heapTextureAsk, raw::TextureAsk::Block): their size is the
-/// device's own answer and each is made in the heap by the raw path (an object of raw's).
+/// (drivers/TegraGM20BMetal/TegraGM20BMetalHeap.mm heapTextureAsk, gm20b::TextureAsk::Block): their size is the
+/// device's own answer and each is made in the heap by the driver (an object of raw's).
 struct NativeHeapBlockTest: HWTest {
     let id = "metal.native.heap_block"
     let name = "A heap's block-compressed textures placed in it"
@@ -13,8 +13,8 @@ struct NativeHeapBlockTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         func heap(_ mode: MTLStorageMode) throws -> MTLHeap {
             let descriptor = MTLHeapDescriptor()
             descriptor.storageMode = mode

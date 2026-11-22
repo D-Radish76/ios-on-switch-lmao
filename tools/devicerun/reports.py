@@ -203,7 +203,7 @@ def stale_sync_waiter(path: Path) -> bool:
 
 
 # A raw Metal object's selector that no Metal protocol declares and only the old front end answered: it raises now
-RAW_SELECTOR = re.compile(r'-\[(RM\w+) ([^\]]+)\]: unrecognized selector sent to')
+SWITCH_METAL_SELECTOR = re.compile(r'-\[(SwitchMetal\w+) ([^\]]+)\]: unrecognized selector sent to')
 
 
 def ips_body(path: Path) -> dict:
@@ -218,9 +218,9 @@ def ips_body(path: Path) -> dict:
 
 
 def raised_selector(body: dict) -> str:
-    """Return the '-[RMClass selector]' an uncaught unrecognized-selector exception names, '' for none."""
+    """Return the '-[SwitchMetalClass selector]' an uncaught unrecognized-selector exception names, '' for none."""
     asi = ' '.join(' '.join(lines) for lines in (body.get('asi') or {}).values())
-    m = RAW_SELECTOR.search(asi)
+    m = SWITCH_METAL_SELECTOR.search(asi)
     return f'-[{m[1]} {m[2]}]' if m else ''
 
 
@@ -272,7 +272,7 @@ def crash_rows(directory: str | None) -> list[Result]:
     )
     rows.append(
         row(
-            'crash.raw-selector',
+            'crash.gm20b-selector',
             'm2v-cut3',
             'count == 0',
             FAIL if raised else PASS,

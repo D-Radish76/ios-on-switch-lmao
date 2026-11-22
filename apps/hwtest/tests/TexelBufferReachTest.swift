@@ -4,29 +4,29 @@ import HWTestGPU
 import Metal
 
 /// An R8Uint texel buffer of 2^27 + 1 texels, one past the device's maxTextureBufferWidth answer (NVK's 2^27), made by
-/// the facade's debug switchRawTexelBuffer:format:width: (RawMetalDevice.mm; the texture header's width holds 32 bits),
+/// the facade's debug switchMetalTexelBuffer:format:width: (TegraGM20BMetalDevice.mm; the texture header's width holds 32 bits),
 /// over a buffer holding 0x5a at byte 0, 0xa5 at 2^27 - 1 and 0x3c at 2^27, read by a kernel (r5_read_texel_buffer).
 /// v0 and v_last_in must be the bytes there, as any texel buffer reads its texels; v_past (the texel past 2^27) is the
 /// finding, reported in reach_ok (1: the texture unit reaches it), not judged. SKIP where the facade has no such call.
 struct TexelBufferReachTest: HWTest {
-    let id = "gpu.raw.texel_buffer_reach"
+    let id = "gpu.gm20b.texel_buffer_reach"
     let name = "A texel buffer of 2^27 + 1 texels reads its texels, and the one past 2^27, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     typealias Make = @convention(c) (AnyObject, Selector, MTLBuffer, UInt, UInt) -> Unmanaged<AnyObject>?
-    static let selector = NSSelectorFromString("switchRawTexelBuffer:format:width:")
+    static let selector = NSSelectorFromString("switchMetalTexelBuffer:format:width:")
     static let width = (1 << 27) + 1
     static let marks: [(offset: Int, byte: UInt8)] = [(0, 0x5a), ((1 << 27) - 1, 0xa5), (1 << 27, 0x3c)]
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.selector) else {
-            return .skip(RawFacade.missing("switchRawTexelBuffer:format:width:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalTexelBuffer:format:width:", on: gpu.device))
         }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -66,9 +66,9 @@ struct TexelBufferReachTest: HWTest {
             checks.append(("the read: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

@@ -4,18 +4,18 @@ import HWTestGPU
 import Metal
 
 /// A layered pass (renderTargetArrayLength 2) of a Depth32Float array beside a Stencil8 array, cleared to 0.25 and 0x33 and
-/// stored: both layers of each read back hold the clears, on the raw path (a layered pair was pass.ds, m2v's). Raw renders
+/// stored: both layers of each read back hold the clears, on the driver (a layered pair was pass.ds, m2v's). The driver renders
 /// layers on both builds (21H461 answers layered rendering above its A10X: NativeAnswers).
 struct SeparateZetaLayeredTest: HWTest {
-    let id = "gpu.raw.separate_zeta_layered"
-    let name = "A layered pass of Depth32Float and Stencil8 arrays clears every layer, on the raw path"
+    let id = "gpu.gm20b.separate_zeta_layered"
+    let name = "A layered pass of Depth32Float and Stencil8 arrays clears every layer, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = 16
         func array(_ format: MTLPixelFormat) throws -> MTLTexture {
             let d = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: n, height: n, mipmapped: false)
@@ -69,7 +69,7 @@ struct SeparateZetaLayeredTest: HWTest {
         metrics.set("stencil_wrong", stencilWrong)
         metrics.set("layer1", "\(d[n * n])/\(s[n * n])")
         var failures: [String] = []
-        if timing.path != "raw" { failures.append("the pass went \(timing.path)") }
+        if timing.path != "gm20b" { failures.append("the pass went \(timing.path)") }
         if depthWrong != 0 { failures.append("\(depthWrong) depth texels not 0.25") }
         if stencilWrong != 0 { failures.append("\(stencilWrong) stencil texels not 0x33") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)

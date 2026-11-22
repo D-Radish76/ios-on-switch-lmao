@@ -36,7 +36,7 @@ extension AstcLayoutRun {
                 threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
             encoder.endEncoding()
         }
-        if noCopy && onRaw && timing.path != "raw" { return AstcLayoutReading(measured: false) }
+        if noCopy && onRaw && timing.path != "gm20b" { return AstcLayoutReading(measured: false) }
         let texels = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: width * height)
         return Self.judge { x, y in
             let first = texels[y * 4 * width + x * 4]

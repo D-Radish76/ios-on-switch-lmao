@@ -106,7 +106,7 @@ enum X1ConstantColourProbe {
                 if arm.words.isEmpty {
                     paths.append(try await gpu.run(draw(state, target, quad: quad, count: 1)).path)
                 } else {
-                    let drawn = try await RawMethods.draw(
+                    let drawn = try await GM20BMethods.draw(
                         gpu, before: arm.words, after: arm.after, draw(state, target, quad: quad, count: 1))
                     paths.append(drawn.path)
                     emitted += drawn.emitted
@@ -140,7 +140,7 @@ enum X1ConstantColourProbe {
         var onMs = 0.0, offMs = 0.0
         for _ in 0..<3 {
             offMs += try await gpu.run(draw(state, big, quad: GPU.fullScreen, count: 32)).gpuMilliseconds
-            if let on = try? await RawMethods.draw(
+            if let on = try? await GM20BMethods.draw(
                 gpu, before: stageOff + floatWords, after: off + stageOn,
                 draw(state, big, quad: GPU.fullScreen, count: 32))
             {

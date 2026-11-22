@@ -2,8 +2,8 @@ import Foundation
 import HWTestCore
 import Metal
 
-/// A Core Animation state that fetches its own colour, drawn by the raw facade with the route a debug build's probe
-/// forces (RMDevice switchRawProbeFetchRung:): 4 its storage form (the fetch, and the pipeline's blend where it has one,
+/// A Core Animation state that fetches its own colour, drawn by the facade with the route a debug build's probe
+/// forces (SwitchMetalDevice switchMetalProbeFetchRung:): 4 its storage form (the fetch, and the pipeline's blend where it has one,
 /// inside the pixel interlock), 5 its barrier twin a triangle at a time behind the fetch barrier, 6 the twin's whole draw
 /// behind one barrier, the ROP blending. Quads are CA's 48-byte vertices at vertex buffer 1, drawn as triangle lists.
 public enum BlendTwinScene {
@@ -111,7 +111,7 @@ public enum BlendTwinScene {
     }
 
     /// The GPU's time of one draw of `quads` overlapping full-target quads into a `side`-pixel (or 1280x720) target, the
-    /// median of `runs` command buffers of `draws` draws each, from the raw facade's GPU stamps; nil where untimed
+    /// median of `runs` command buffers of `draws` draws each, from the facade's GPU stamps; nil where untimed
     public static func microseconds(
         _ line: PipelineLine, quads: Int, width: Int, height: Int, library: MTLLibrary, gpu: GPU, draws: Int, runs: Int
     ) async throws -> Double? {

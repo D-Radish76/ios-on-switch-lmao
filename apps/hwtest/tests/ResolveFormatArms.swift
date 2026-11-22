@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.resolve_twod's format arms (raw_resolve_rule.h twodResolveFit): per format and sample count the codes the
+/// gpu.gm20b.resolve_twod's format arms (resolve_rule.h twodResolveFit): per format and sample count the codes the
 /// format stores for each sample (one-sample draws of its colour, resolve_twod_sample_fragment), the resolve the rule
 /// picks for a private target only passes sample, and the pack's pass where the format has a resolve state, each held
 /// to Metal's rule computed from the stored codes (unorm nearest, sRGB averaged as linear light, floats ties to even)
@@ -65,7 +65,7 @@ extension ResolveTwodTest {
         }
         metrics.set("\(cell.name)_ms", String(format: "%.3f", picked.gpuMs) + "/" + passMs)
         if route != "twod" { wrong.append("\(cell.name)_not_twod") }
-        if picked.path != "raw" { wrong.append("\(cell.name)_path") }
+        if picked.path != "gm20b" { wrong.append("\(cell.name)_path") }
         if beyond > 0 { wrong.append("\(cell.name)_beyond_one") }
         if cell.exact && off > 0 { wrong.append("\(cell.name)_off_metal") }
         guard cell.exact else { return }

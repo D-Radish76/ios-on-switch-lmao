@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 /// GPU copies into and out of a Shared BGRA10_XR (552) or BGRA10_XR_sRGB (553) texture, usage ShaderRead, of 16-bit
-/// fields whose low 6 bits are set (gpu.raw.xr_copy_clamp): field i's B (500 + i % 7) << 6 | i % 64, G (300 + i % 5) << 6 |
+/// fields whose low 6 bits are set (gpu.gm20b.xr_copy_clamp): field i's B (500 + i % 7) << 6 | i % 64, G (300 + i % 5) << 6 |
 /// 3i % 64, R (900 + i % 3) << 6 | 5i % 64, A (i % 1024) << 6 | 7i % 64.
 public enum XrCopyClamp {
     public enum Route: String, Sendable, CaseIterable {

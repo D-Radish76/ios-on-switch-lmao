@@ -3,10 +3,10 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.private_compression's shape arms (raw_private_comp.h privateShapeCompresses): a private target of each shape
+/// gpu.gm20b.private_compression's shape arms (private_comp.h privateShapeCompresses): a private target of each shape
 /// the device lays out on compressed memory, made until it binds some, drawn and read whole, against the same work with
 /// compression held off. `<arm>_made` is its comptags when made, `<arm>_compressed` after the work, `<arm>_paths` the
-/// command buffers' paths; it fails where the bytes differ, the target was not compressed or the work left the raw path.
+/// command buffers' paths; it fails where the bytes differ, the target was not compressed or the work left the driver.
 /// The mips arm draws into level 1 after generating the levels, the 3D engine's target there a level of the chain.
 extension PrivateCompressionTest {
     struct ShapeRun {
@@ -41,7 +41,7 @@ extension PrivateCompressionTest {
             if differ > 0 { wrong.append("\(arm)_bytes_differ") }
             if run.made != 1 || run.compressed != 1 { wrong.append("\(arm)_not_compressed") }
             if reference.made == 1 { wrong.append("\(arm)_reference_compressed") }
-            if run.paths.contains(where: { $0 != "raw" }) { wrong.append("\(arm)_path") }
+            if run.paths.contains(where: { $0 != "gm20b" }) { wrong.append("\(arm)_path") }
             for (name, value) in run.musts {
                 metrics.set("\(arm)_\(name)", value)
                 if value != 1 { wrong.append("\(arm)_\(name)") }

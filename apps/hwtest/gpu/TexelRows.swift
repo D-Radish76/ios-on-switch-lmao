@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// A BGRA8Unorm texel buffer over a 'BGRA' 64x16 of rows 320 (64 bytes of padding a row) that a BGRA8 target drew
-/// into first, which on the device makes the kernel lay the surface out block-linear (gpu.raw.texel_rows). Metal makes
+/// into first, which on the device makes the kernel lay the surface out block-linear (gpu.gm20b.texel_rows). Metal makes
 /// such a buffer up to one row of the surface, 80 texels here (an M4 Max asserts "bytesPerRow (320) must be greater or
 /// equal to (324)" at 81), and reads and writes its bytes in order: element k is texel (k, 0) for k < 64 and row 0's
 /// padding past it, which reads 0 while nothing wrote it and which no 2D texel shows.

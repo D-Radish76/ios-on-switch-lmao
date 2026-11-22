@@ -4,9 +4,9 @@ the image.
   shader_crawl   the IPSW kind's crawled libraries (crawl.bzl crawls them once, in a repository) and their names
   metal_seed     resolve the corpus, plan the buckets, the native records of each (native.bzl), and the Metal compiler's
                  replies the device kept
-  seed_raw_pack  the raw GM20B path's pipeline pack, from Core Animation's corpus lines
-  sample_raw_pack  a raw pack of some of seed_raw_pack's states, made as it makes them (the record goldens' test)
-  seed_tree      the replies, the native records and the raw pack laid out as the Data volume holds them (the image
+  seed_pipeline_pack  the driver's pipeline pack, from Core Animation's corpus lines
+  sample_pipeline_pack  a raw pack of some of seed_pipeline_pack's states, made as it makes them (the record goldens' test)
+  seed_tree      the replies, the native records and the pack laid out as the Data volume holds them (the image
                  builder's)
 
 Every output is named below the IPSW kind (21H461/, 24B119/): a build of the other kind writes its own files, so
@@ -232,7 +232,7 @@ def _metal_seed_impl(ctx):
 
 metal_seed = rule(
     implementation = _metal_seed_impl,
-    doc = """The seed the device reads beside the plugin: the raw path's native records of the corpus's states, and the
+    doc = """The seed the device reads beside the plugin: the driver's native records of the corpus's states, and the
     Metal compiler's replies the device kept.""",
     attrs = _IPSW | {
         "corpus": attr.label(mandatory = True, allow_single_file = True),
@@ -254,15 +254,15 @@ metal_seed = rule(
     },
 )
 
-# rawpack.py's BUCKETS: the split writes this many bucket corpora, then our own apps' states in one more, each bucket
+# make_pack.py's BUCKETS: the split writes this many bucket corpora, then our own apps' states in one more, each bucket
 # made by its own action.
-_RAW_BUCKETS = 16
+_METAL_BUCKETS = 16
 
-# The generator's modules each step runs (rawpack.py imports or runs them by path, beside it). Python finds a module
+# The generator's modules each step runs (make_pack.py imports or runs them by path, beside it). Python finds a module
 # beside a script through the script's real path, so a module missing here still imported in the local sandbox (its
 # inputs are links into the source tree) and failed on a remote worker.
-_RAW_STAMP = ["rawpack.py", "packfile.py", "selector_section.py"]
-_RAW_SPLIT = _RAW_STAMP + [
+_METAL_STAMP = ["make_pack.py", "packfile.py", "selector_section.py"]
+_METAL_SPLIT = _METAL_STAMP + [
     "ca/caset.py",
     "ca/caspec.py",
     "ca/caspec27.py",
@@ -277,12 +277,12 @@ _RAW_SPLIT = _RAW_STAMP + [
 ]
 
 # A bucket runs directbucket.py alone (it imports none of the other modules), with directpack and the mock it loads;
-# bucket 0 also draws the raw path's own states (own.metallib) and keeps the context init nvdec ran (context.log).
-_RAW_PROBE = ["directbucket.py"]
+# bucket 0 also draws the driver's own states (own.metallib) and keeps the context init nvdec ran (context.log).
+_METAL_PROBE = ["directbucket.py"]
 _PROBE_TOOLS = ["directpack", "libmock_iokit.dylib"]
 _PROBE0_TOOLS = _PROBE_TOOLS + ["own.metallib", "context.log"]
-_RAW_LINK = [
-    "rawpack.py",
+_METAL_LINK = [
+    "make_pack.py",
     "directlink.py",
     "fetchfree_link.py",
     "iterated/programs.py",
@@ -300,10 +300,10 @@ _RAW_LINK = [
     "draw_context.txt",
     # Read beside the generator's directory: mkpack.py's owned methods, layouts.py's colour table, packfile.py's chip
     # facts and own states.
-    "../runtime/raw_owned.h",
-    "../runtime/raw_srgb_table.h",
-    "../runtime/raw_chip_facts.h",
-    "../runtime/raw_own_states.h",
+    "../owned.h",
+    "../srgb_table.h",
+    "../chip_facts.h",
+    "../own_states.h",
 ]
 
 def _generator_files(ctx, names):
@@ -312,17 +312,17 @@ def _generator_files(ctx, names):
     wanted = [parent + "/" + n.removeprefix("../") if n.startswith("../") else here + "/" + n for n in names]
     files = [f for f in ctx.files.srcs if f.path in wanted]
     if len(files) != len(names):
-        fail("the raw pack generator's srcs lack some of " + ", ".join(names))
+        fail("the pack generator's srcs lack some of " + ", ".join(names))
     return files
 
-def _raw_buckets(ctx, tools, corpora, views, selectors = []):
+def _pack_buckets(ctx, tools, corpora, views, selectors = []):
     """Probe each corpus over its view of the libraries (views[i]: a root and its files)."""
-    generator = _generator_files(ctx, _RAW_PROBE)
+    generator = _generator_files(ctx, _METAL_PROBE)
     buckets = []
     for i, bucket_corpus in enumerate(corpora):
         view = views[i]
 
-        # directbucket.py knows a bucket by its directory's name (bucket0 also draws the raw path's own states).
+        # directbucket.py knows a bucket by its directory's name (bucket0 also draws the driver's own states).
         bucket = ctx.actions.declare_directory(named(ctx, "_work/bucket{}".format(i)))
         probe_tools = raw_tool_files(tools, _PROBE0_TOOLS if i == 0 else _PROBE_TOOLS)
         args = ctx.actions.args()
@@ -344,13 +344,13 @@ def _raw_buckets(ctx, tools, corpora, views, selectors = []):
             inputs = depset([bucket_corpus] + probe_tools + generator + selectors + ctx.files.device_libraries, transitive = [view.files]),
             outputs = [bucket],
             mnemonic = "MetalRawProbe",
-            progress_message = "Making the raw pack's bucket {} of {} directly".format(i + 1, len(corpora)),
+            progress_message = "Making the pack's bucket {} of {} directly".format(i + 1, len(corpora)),
             execution_requirements = DARWIN,
         )
         buckets.append(bucket)
     return buckets
 
-def _raw_link(ctx, buckets, corpus_report, archives, selectors = []):
+def _pack_link(ctx, buckets, corpus_report, archives, selectors = []):
     linked = ctx.actions.declare_directory(named(ctx, "_work/linked"))
     args = ctx.actions.args()
     args.add("link")
@@ -365,14 +365,14 @@ def _raw_link(ctx, buckets, corpus_report, archives, selectors = []):
         executable = ctx.executable._tool,
         arguments = [args],
         inputs = depset(([corpus_report] if corpus_report else []) + archives + selectors + buckets +
-                        _generator_files(ctx, _RAW_LINK)),
+                        _generator_files(ctx, _METAL_LINK)),
         outputs = [linked],
         mnemonic = "MetalRawLink",
-        progress_message = "Linking the raw GM20B path's pipeline pack",
+        progress_message = "Linking the driver's pipeline pack",
     )
     return linked
 
-def _seed_raw_pack_impl(ctx):
+def _seed_pipeline_pack_impl(ctx):
     tools = seed_tool_files(ctx.attr.tools)
     crawl = ctx.attr.crawl[CrawlInfo]
     qc = [crawl.qc]
@@ -389,7 +389,7 @@ def _seed_raw_pack_impl(ctx):
         inputs = [ctx.file.corpus] + archives + app_states,
         outputs = [lines, corpus_report],
         mnemonic = "MetalRawCorpus",
-        progress_message = "Picking the raw pack's corpus lines",
+        progress_message = "Picking the pack's corpus lines",
     )
 
     # QuartzCore's tables (ca/qc-<build>.json) make Core Animation's states from their names; RenderBox's
@@ -399,7 +399,7 @@ def _seed_raw_pack_impl(ctx):
         for f in ctx.files.srcs
         if (f.dirname.endswith("/ca") or f.dirname.endswith("/rb")) and f.extension == "json"
     ]
-    corpora = [ctx.actions.declare_file(named(ctx, "_work/split/bucket{}.log".format(i))) for i in range(_RAW_BUCKETS + 1)]
+    corpora = [ctx.actions.declare_file(named(ctx, "_work/split/bucket{}.log".format(i))) for i in range(_METAL_BUCKETS + 1)]
     args = ctx.actions.args()
     names = [f for f in ctx.files.ca_names if f.basename == kind + ".txt"]
     args.add("split")
@@ -412,18 +412,18 @@ def _seed_raw_pack_impl(ctx):
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = depset([lines, ctx.file._ca_preferences] + qc + tables + names + _generator_files(ctx, _RAW_SPLIT)),
+        inputs = depset([lines, ctx.file._ca_preferences] + qc + tables + names + _generator_files(ctx, _METAL_SPLIT)),
         outputs = corpora,
         mnemonic = "MetalRawSplit",
-        progress_message = "Splitting the raw pack's states into buckets",
+        progress_message = "Splitting the pack's states into buckets",
     )
 
     # The shared buckets read the crawl without this build's applications; the apps' bucket, the last, reads them too.
     base = struct(root = crawl.base_root, files = crawl.base_files, qc = crawl.qc)
     full = struct(root = crawl.root, files = crawl.files, qc = crawl.qc)
     selectors = [f for f in ctx.files.ca_selectors if f.basename == kind + ".txt"]
-    buckets = _raw_buckets(ctx, tools, corpora, [base] * _RAW_BUCKETS + [full], selectors)
-    linked = _raw_link(ctx, buckets, corpus_report, archives, selectors)
+    buckets = _pack_buckets(ctx, tools, corpora, [base] * _METAL_BUCKETS + [full], selectors)
+    linked = _pack_link(ctx, buckets, corpus_report, archives, selectors)
 
     out = ctx.actions.declare_directory(named(ctx, ""))
     args = ctx.actions.args()
@@ -435,10 +435,10 @@ def _seed_raw_pack_impl(ctx):
     ctx.actions.run(
         executable = ctx.executable._tool,
         arguments = [args],
-        inputs = [linked, tools.manifest] + _generator_files(ctx, _RAW_STAMP),
+        inputs = [linked, tools.manifest] + _generator_files(ctx, _METAL_STAMP),
         outputs = [out],
         mnemonic = "MetalRawStamp",
-        progress_message = "Stamping the raw pack with the tools' stack key",
+        progress_message = "Stamping the pack with the tools' stack key",
     )
     return [
         DefaultInfo(files = depset([out])),
@@ -446,9 +446,9 @@ def _seed_raw_pack_impl(ctx):
         OutputGroupInfo(report = depset([linked] + corpora), buckets = depset(buckets)),
     ]
 
-seed_raw_pack = rule(
-    implementation = _seed_raw_pack_impl,
-    doc = "The raw GM20B path's pipeline pack: Core Animation's corpus states made directly per bucket, linked, stamped.",
+seed_pipeline_pack = rule(
+    implementation = _seed_pipeline_pack_impl,
+    doc = "The driver's pipeline pack: Core Animation's corpus states made directly per bucket, linked, stamped.",
     attrs = _IPSW | {
         "tools": attr.label(mandatory = True),
         "crawl": attr.label(mandatory = True, providers = [CrawlInfo]),
@@ -467,31 +467,31 @@ seed_raw_pack = rule(
             allow_files = [".log"],
             doc = "our own apps' states the pack holds (precompile/app-states/<build>.log): the IPSW kind's",
         ),
-        "generator": attr.label(mandatory = True, allow_single_file = True, doc = "raw/pack/rawpack.py"),
-        "srcs": attr.label_list(allow_files = True, doc = "the generator's modules and QuartzCore tables (raw/pack)"),
+        "generator": attr.label(mandatory = True, allow_single_file = True, doc = "pack/make_pack.py"),
+        "srcs": attr.label_list(allow_files = True, doc = "the generator's modules and QuartzCore tables (pack)"),
         # The Core Animation preferences the device runs with decide which colour precision its QuartzCore names
-        # states with (raw/pack/ca/deepcolour.py)
+        # states with (pack/ca/deepcolour.py)
         "_ca_preferences": attr.label(
             default = "//drivers/TegraGM20BMetal:stage-tegra-gm20b-metal.py",
             allow_single_file = True,
         ),
-        "_tool": attr.label(default = "//tools/gpu:rawpack", executable = True, cfg = "exec"),
-        "_probe": attr.label(default = "//tools/gpu:rawprobe", executable = True, cfg = "exec"),
+        "_tool": attr.label(default = "//tools/gpu:make_pack", executable = True, cfg = "exec"),
+        "_probe": attr.label(default = "//tools/gpu:probe", executable = True, cfg = "exec"),
     },
 )
 
-def _sample_raw_pack_impl(ctx):
+def _sample_pipeline_pack_impl(ctx):
     tools = seed_tool_files(ctx.attr.tools)
     crawl = ctx.attr.crawl[CrawlInfo]
     kind = ctx.attr.ipsw[IpswInfo].build
     selectors = [f for f in ctx.files.ca_selectors if f.basename == kind + ".txt"]
-    buckets = _raw_buckets(ctx, tools, [ctx.file.corpus], [struct(root = crawl.root, files = crawl.files, qc = crawl.qc)], selectors)
-    return [DefaultInfo(files = depset([_raw_link(ctx, buckets, None, [])]))]
+    buckets = _pack_buckets(ctx, tools, [ctx.file.corpus], [struct(root = crawl.root, files = crawl.files, qc = crawl.qc)], selectors)
+    return [DefaultInfo(files = depset([_pack_link(ctx, buckets, None, [])]))]
 
-sample_raw_pack = rule(
-    implementation = _sample_raw_pack_impl,
-    doc = """A raw pack of a sample of seed_raw_pack's states: one bucket of corpus lines as seed_raw_pack's split wrote them
-    (the first bucket's warm-up line first), probed and linked as seed_raw_pack probes and links its buckets, with no
+sample_pipeline_pack = rule(
+    implementation = _sample_pipeline_pack_impl,
+    doc = """A raw pack of a sample of seed_pipeline_pack's states: one bucket of corpus lines as seed_pipeline_pack's split wrote them
+    (the first bucket's warm-up line first), probed and linked as seed_pipeline_pack probes and links its buckets, with no
     archive inventory and no stamp. Its records are the full pack's records of those states.""",
     attrs = _IPSW | {
         "ca_selectors": attr.label(default = "//drivers/TegraGM20BMetal/precompile/ca-selectors:tables"),
@@ -499,10 +499,10 @@ sample_raw_pack = rule(
         "crawl": attr.label(mandatory = True, providers = [CrawlInfo]),
         "device_libraries": attr.label(allow_files = True, doc = "device-compiled libraries used by native corpus states"),
         "corpus": attr.label(mandatory = True, allow_single_file = True, doc = "split corpus lines, bucket0's"),
-        "generator": attr.label(mandatory = True, allow_single_file = True, doc = "raw/pack/rawpack.py"),
-        "srcs": attr.label_list(allow_files = True, doc = "the generator's modules (raw/pack)"),
-        "_tool": attr.label(default = "//tools/gpu:rawpack", executable = True, cfg = "exec"),
-        "_probe": attr.label(default = "//tools/gpu:rawprobe", executable = True, cfg = "exec"),
+        "generator": attr.label(mandatory = True, allow_single_file = True, doc = "pack/make_pack.py"),
+        "srcs": attr.label_list(allow_files = True, doc = "the generator's modules (pack)"),
+        "_tool": attr.label(default = "//tools/gpu:make_pack", executable = True, cfg = "exec"),
+        "_probe": attr.label(default = "//tools/gpu:probe", executable = True, cfg = "exec"),
     },
 )
 
@@ -530,7 +530,7 @@ def _seed_tree_impl(ctx):
 
 seed_tree = rule(
     implementation = _seed_tree_impl,
-    doc = "ngpu/addons/TegraGM20BMetal.m2v-seed/shared (the replies) and TegraGM20BMetal.raw, for the Data volume's root.",
+    doc = "ngpu/addons/TegraGM20BMetal.seed/shared (the replies) and TegraGM20BMetal.pack, for the Data volume's root.",
     attrs = _IPSW | {
         "seed": attr.label(mandatory = True, providers = [SeedInfo]),
         "raw": attr.label(allow_single_file = True),

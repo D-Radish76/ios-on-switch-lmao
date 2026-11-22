@@ -4,14 +4,14 @@ import HWTestGPU
 import Metal
 
 /// An indexed indirect draw whose index buffer offset is at or past the buffer's end, which Metal's validation takes:
-/// the raw path reads index 0 at every position (the zero page, as NVK binds an empty range). Three points at base
+/// the driver reads index 0 at every position (the zero page, as NVK binds an empty range). Three points at base
 /// vertex 5 over a buffer of 7s, each point at x = its vertex id writing id + 1: only x5 lit. The control arm's offset
 /// holds one index (7): only x12. The past_page arm draws 20000 points, past the 64 KiB zero page's 16384 indices, where
 /// the index fetch's past-limit zero (3D-B11) answers: still only x5. An M4 Max reads whatever memory follows the buffer
 /// instead (undefined).
 struct IndirectIndexEndTest: HWTest {
-    let id = "gpu.raw.indirect_index_end"
-    let name = "Indexed indirect draws at or past their index buffer's end read index 0 on the raw path"
+    let id = "gpu.gm20b.indirect_index_end"
+    let name = "Indexed indirect draws at or past their index buffer's end read index 0 on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -31,8 +31,8 @@ struct IndirectIndexEndTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let library = try await gpu.device.makeLibrary(source: Self.source, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "index_end_vertex")
@@ -73,7 +73,7 @@ struct IndirectIndexEndTest: HWTest {
             }
             metrics.set("\(arm.label)_path", String(timing.path.prefix(120)))
             metrics.set("\(arm.label)_lit", lit)
-            if timing.path != "raw" || lit != arm.lit { wrong.append(arm.label) }
+            if timing.path != "gm20b" || lit != arm.lit { wrong.append(arm.label) }
         }
         return wrong.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(wrong.joined(separator: ","), metrics)
     }

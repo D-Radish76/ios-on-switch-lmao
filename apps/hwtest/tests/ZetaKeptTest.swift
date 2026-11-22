@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// A closed depth texture's compressed memory serves the next one of its kind at its creation
-/// (drivers/TegraGM20BMetal/raw/runtime/raw_private_comp.cpp compRelease: kept made where that holds back no ask
+/// (drivers/TegraGM20BMetal/private_comp.cpp compRelease: kept made where that holds back no ask
 /// refused for a shortage). A private Depth32Float 1024x600 made, the compression thread settled (CompressionSettled),
 /// the first let go and a second made (`second_comptags_at_creation` 1); the second let go with nothing submitted
 /// meanwhile, and a third made at once: `third_comptags_at_creation` 1, no compressed memory made for it (`made_delta`
@@ -12,7 +12,7 @@ import Metal
 /// timed (`second_make_us`, `third_make_us`, reported: both bind memory already made). Red: compRelease gave the memory
 /// back (held_bytes falls, the third is plain or made anew), or servesRefusals held back what it should keep.
 struct ZetaKeptTest: HWTest {
-    let id = "gpu.raw.zeta_kept"
+    let id = "gpu.gm20b.zeta_kept"
     let name = "A closed depth texture's compressed memory serves the next of its kind at creation"
     let subsystem = Subsystem.metal
 
@@ -20,10 +20,10 @@ struct ZetaKeptTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard (gpu.device as? NSObject)?.responds(to: CompressionSettled.factsSelector) == true else {
-            return .skip(RawFacade.missing("switchRawProbeFacts:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalProbeFacts:", on: gpu.device))
         }
         let make = { try gpu.texture(.depth32Float, Self.width, Self.height, usage: [.renderTarget, .shaderRead]) }
         var first: MTLTexture? = try make()
@@ -34,11 +34,11 @@ struct ZetaKeptTest: HWTest {
         var second: MTLTexture? = try make()
         let secondUs = (CFAbsoluteTimeGetCurrent() - start) * 1_000_000
         let secondAtCreation = CompressionSettled.comptags(gpu.device, second!) ?? -1
-        let held = RawFacade.compression(of: gpu.device)
+        let held = GM20BFacade.compression(of: gpu.device)
         autoreleasepool { second = nil }
-        let released = RawFacade.compression(of: gpu.device)
+        let released = GM20BFacade.compression(of: gpu.device)
         let (third, thirdUs) = try Self.timed(make)
-        let made = RawFacade.compression(of: gpu.device)
+        let made = GM20BFacade.compression(of: gpu.device)
         let thirdAtCreation = CompressionSettled.comptags(gpu.device, third) ?? -1
         let heldDelta = (made["held_bytes"] ?? 0) - (held["held_bytes"] ?? 0)
         let releaseDelta = (released["held_bytes"] ?? 0) - (held["held_bytes"] ?? 0)

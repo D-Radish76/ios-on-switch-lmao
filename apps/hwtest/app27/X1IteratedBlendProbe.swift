@@ -10,7 +10,7 @@ import Metal
 /// every arm draws into one target, clears per-target blend and gives the common blend block (0x133c-0x1358) the alpha blend
 /// NVN pairs with the program. Programs are NVN's, as Ryujinx's AdvancedBlendFunctions table records them; each ends by
 /// writing TEMP0, which is the blend's result. Each program arm sets SET_ITERATED_BLEND_OPTIMIZATION (0x02f4) to NEVER:
-/// the facade's source-over states set NOOP_SOURCE_RGBA_0000 (raw_blend_kill.h), whose drop of a zero source is right for
+/// the facade's source-over states set NOOP_SOURCE_RGBA_0000 (blend_kill.h), whose drop of a zero source is right for
 /// the common block's source-over but not for a program that ignores the destination (T-v2's pass arm kept the
 /// destination on its row of zero source, 510 fields up to 255 codes off). One arm a command buffer, journaled before it
 /// runs, NVN's own sequences first and the arms expected to be refused last; a refusal ends the arm, not the probe. The
@@ -165,7 +165,7 @@ enum X1IteratedBlendProbe {
             let isNVN = !arm.program.isEmpty && arm.rgb != nil && arm.judged
             if isNVN { nvnRun += 1 }
             do {
-                let drawn = try await RawMethods.draw(gpu, before: words(arm), after: restore) { commands in
+                let drawn = try await GM20BMethods.draw(gpu, before: words(arm), after: restore) { commands in
                     let encoder = commands.makeRenderCommandEncoder(descriptor: X1RawProbes.pass(target, load: .load))!
                     encoder.setRenderPipelineState(state)
                     var corners = GPU.fullScreen
@@ -197,7 +197,7 @@ enum X1IteratedBlendProbe {
         metrics.set("nvn_within_one", nvnWithinOne)
         metrics.set("refusals", refusals)
         metrics.set("arms", outcomes.joined(separator: ","))
-        let offPath = paths.filter { $0 != "raw" }
+        let offPath = paths.filter { $0 != "gm20b" }
         let verdict: ClaimVerdict =
             emitted == 0 || !offPath.isEmpty
             ? .inconclusive : nvnAccepted == nvnRun && nvnWithinOne == nvnRun ? .pass : .fail
@@ -206,7 +206,7 @@ enum X1IteratedBlendProbe {
             emitted == 0
             ? "the probe's methods reached no draw"
             : !offPath.isEmpty
-                ? "not on the raw path: \(offPath.joined(separator: ","))"
+                ? "not on the driver: \(offPath.joined(separator: ","))"
                 : verdict == .fail ? "NVN's programs refused or beyond one code: see arms" : ""
         return ProbeFinding(verdict, metrics, note: note)
     }

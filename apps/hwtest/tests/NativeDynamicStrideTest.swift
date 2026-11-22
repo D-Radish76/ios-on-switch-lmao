@@ -9,7 +9,7 @@ import Metal
 /// wrong would not.
 struct NativeDynamicStrideTest: NativeObjectTest {
     let id = "metal.native.dynamic_stride"
-    let name = "A dynamic-stride vertex layout reads each bind's attributeStride on the raw path"
+    let name = "A dynamic-stride vertex layout reads each bind's attributeStride on the driver"
 
     static let size = 32
 

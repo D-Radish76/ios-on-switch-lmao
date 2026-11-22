@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A Depth16Unorm attachment whose draws' depth test runs in their shader on the raw path (a fetching state with a
+/// A Depth16Unorm attachment whose draws' depth test runs in their shader on the driver (a fetching state with a
 /// depth format: fetch_add_fragment), which renders the pass through a converted Depth32Float_Stencil8. 64x64, loaded
 /// with a ramp: each band of 16 rows 1024 consecutive codes, the band's draw depth's code at texel 512 (the last for
 /// 1.0). One draw a band at depth 1000/65535, 0.3, 0.7 and 1.0 under LessEqual with writes adds red 0.25; then a
@@ -15,7 +15,7 @@ import Metal
 /// kept_changed the texels it did not reach whose code is not the ramp's (0), stencil_passed texels the stencil draw
 /// reached (4096); every command buffer raw, failed_cbs=0.
 struct Depth16ShaderTestsTest: HWTest {
-    let id = "gpu.raw.depth16_shader_tests"
+    let id = "gpu.gm20b.depth16_shader_tests"
     let name = "A Depth16Unorm a fetching draw tests in its shader stores Metal's codes, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -32,9 +32,9 @@ struct Depth16ShaderTestsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -49,9 +49,9 @@ struct Depth16ShaderTestsTest: HWTest {
             checks.append(("the pass: \(error)", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

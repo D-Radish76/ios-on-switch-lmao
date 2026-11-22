@@ -12,12 +12,12 @@ _XCODE = {
 
 _DARWIN = {"requires-darwin": ""}
 
-# The raw sources' Python that the raw build step reads: rawpack.py imports packfile.py at start. Python finds a module
+# The raw sources' Python that the raw build step reads: make_pack.py imports packfile.py at start. Python finds a module
 # beside a script through the script's real path, so an undeclared one still imported in the local sandbox (its inputs
 # are links into the source tree) and failed on a remote worker.
-_RAW_BUILD_MODULES = ["packfile.py", "selector_section.py"]
+_METAL_BUILD_MODULES = ["packfile.py", "selector_section.py"]
 
-# What rawpack.py build makes (its PACK_TOOLS), each its own output: a step's action reads only the tools it runs
+# What make_pack.py build makes (its PACK_TOOLS), each its own output: a step's action reads only the tools it runs
 # (raw_tool_files), so a tool it does not run reruns none of it.
 _PACK_TOOLS = ["directpack", "native-seed", "libmock_iokit.dylib", "own.metallib", "context.log"]
 
@@ -25,7 +25,7 @@ SeedToolsInfo = provider(
     doc = "The shader tools' files, each on its own: what a seed step runs, without the rest of the tools.",
     fields = {
         "manifest": "MANIFEST.json (the stack key)",
-        "raw": "the raw pack's tools, one file each (_PACK_TOOLS)",
+        "raw": "the pack's tools, one file each (_PACK_TOOLS)",
         "raw_dir": "the directory holding them",
     },
 )
@@ -63,9 +63,9 @@ def raw_tool_files(tools, names):
         fail("the raw tools have no " + ", ".join(missing))
     return [found[n] for n in names]
 
-def _raw_build(ctx, name):
-    """The pack generator's tools (raw/pack/rawpack.py build), one file each."""
-    tree = ctx.file.raw_generator.dirname.partition("drivers/TegraGM20BMetal/")[0].rstrip("/") or "."
+def _pack_build(ctx, name):
+    """The pack generator's tools (pack/make_pack.py build), one file each."""
+    tree = ctx.file.gm20b_generator.dirname.partition("drivers/TegraGM20BMetal/")[0].rstrip("/") or "."
     raw = [ctx.actions.declare_file(name + "/" + tool) for tool in _PACK_TOOLS]
     raw_dir = raw[0].dirname
     args = ctx.actions.args()
@@ -75,26 +75,26 @@ def _raw_build(ctx, name):
     args.add("--compile", ctx.file.compile)
     args.add("--metal-abi", ctx.file.metal_abi)
     args.add("--context-header", ctx.file.context_header)
-    args.add("--generator", ctx.file.raw_generator)
+    args.add("--generator", ctx.file.gm20b_generator)
     args.add("--tree", tree)
     args.add("--out", raw_dir)
-    sources = [f for f in ctx.files.raw_srcs if f.extension != "py" or f.basename in _RAW_BUILD_MODULES]
+    sources = [f for f in ctx.files.gm20b_srcs if f.extension != "py" or f.basename in _METAL_BUILD_MODULES]
     ctx.actions.run(
-        executable = ctx.executable._rawpack,
+        executable = ctx.executable._make_pack,
         arguments = [args],
         inputs = depset(
-            [ctx.file.translate, ctx.file.compile, ctx.file.metal_abi, ctx.file.context_header, ctx.file.raw_generator] +
+            [ctx.file.translate, ctx.file.compile, ctx.file.metal_abi, ctx.file.context_header, ctx.file.gm20b_generator] +
             [ctx.file._xcode_env, ctx.file._xcode_identity] + sources,
         ),
         outputs = raw,
         mnemonic = "SeedToolsRaw",
-        progress_message = "Building the raw pack's tools and mock GM20B",
+        progress_message = "Building the pack's tools and mock GM20B",
         execution_requirements = _DARWIN,
     )
     return raw, raw_dir
 
 def _seed_tools_impl(ctx):
-    raw, raw_dir = _raw_build(ctx, ctx.attr.name + "_raw")
+    raw, raw_dir = _pack_build(ctx, ctx.attr.name + "_raw")
     out = ctx.actions.declare_directory(ctx.attr.name)
     manifest = ctx.actions.declare_file(ctx.attr.name + "_manifest/MANIFEST.json")
     args = ctx.actions.args()
@@ -125,12 +125,12 @@ seed_tools = rule(
         "compile": attr.label(mandatory = True, allow_single_file = True, doc = "the stage compile's macOS object"),
         "context_header": attr.label(mandatory = True, allow_single_file = True, doc = "the channel's context init"),
         "metal_abi": attr.label(mandatory = True, allow_single_file = True, doc = "the selected IPSW kind's MetalABI.h"),
-        "raw_generator": attr.label(mandatory = True, allow_single_file = True, doc = "raw/pack/rawpack.py"),
-        "raw_srcs": attr.label_list(allow_files = True),
-        "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the raw path's stack key"),
+        "gm20b_generator": attr.label(mandatory = True, allow_single_file = True, doc = "pack/make_pack.py"),
+        "gm20b_srcs": attr.label_list(allow_files = True),
+        "stack": attr.label(mandatory = True, allow_single_file = True, doc = "the driver's stack key"),
         "translate": attr.label(mandatory = True, allow_single_file = True, doc = "the translation alone"),
         "_tool": attr.label(default = "//tools/gpu:seed", executable = True, cfg = "exec"),
-        "_rawpack": attr.label(default = "//tools/gpu:rawpack", executable = True, cfg = "exec"),
+        "_make_pack": attr.label(default = "//tools/gpu:make_pack", executable = True, cfg = "exec"),
     },
 )
 

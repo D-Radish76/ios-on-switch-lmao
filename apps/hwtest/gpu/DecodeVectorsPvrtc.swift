@@ -1,4 +1,4 @@
-// Generated from drivers/TegraGM20BMetal/test/raw_decode_vectors.h, the driver's host-test vectors (an M4 Max's reads):
+// Generated from drivers/TegraGM20BMetal/test/decode_vectors.h, the driver's host-test vectors (an M4 Max's reads):
 // a level each, its Morton-ordered block words then each texel's RGBA8 codes, little-endian words in base64.
 // Do not edit.
 

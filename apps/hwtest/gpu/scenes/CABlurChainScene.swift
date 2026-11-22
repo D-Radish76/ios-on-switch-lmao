@@ -7,7 +7,7 @@ import Metal
 /// Core Animation's backdrop blur chain, state by state as the corpus has it for this IPSW: the downsamples and narrow
 /// blurs into a 'b3a8' (format 550) surface and the luma boost into it and into BGR10_XR (554), each beside a memoryless
 /// colour 1 of the state's own format (550 on iOS 17; iOS 27's QuartzCore makes these names with 115), sampling a BGRA8
-/// picture. The downsamples' and blurs' uniforms are zero (as the raw pack's probe binds them):
+/// picture. The downsamples' and blurs' uniforms are zero (as the pack's probe binds them):
 /// what counts there is how long each pass takes on the GPU (t_<state>= in ms, the median of three), which path took it,
 /// and whether it completed. The luma boost fetches its target's colour through a LUT (CAUniforms): the BGR10_XR one
 /// draws over a picture uploaded first, and its result (lub_xr) is held to the Mac's.

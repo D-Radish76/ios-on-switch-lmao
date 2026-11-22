@@ -35,16 +35,17 @@ class Checks(unittest.TestCase):
                 self.assertTrue(not c.preceded or c.preceded in names, c.name)
 
     def test_zbc_full_lines_are_listed_by_process_and_type(self):
-        full = next(c for c in checks.GROUPS['gpu'] if c.name == 'raw.zbc-full-lines')
+        full = next(c for c in checks.GROUPS['gpu'] if c.name == 'gm20b.zbc-full-lines')
 
         def record(process: str, kind: str) -> dict:
             return {
                 'timestamp': '2026-11-22 09:00:00.000000-0800',
                 'processImagePath': f'/private/var/containers/Bundle/Application/X/{process}.app/{process}',
                 'subsystem': checks.GPU_METAL_SUBSYSTEM,
-                'category': 'raw',
+                'category': 'gm20b',
                 'messageType': 'Error',
-                'eventMessage': f"raw: the GPU's ZBC {kind} table is full (every process's, never emptied): full "
+                'eventMessage': f"SwitchMetal: the GPU's ZBC {kind} table is full (every process's, never emptied): "
+                f'full '
                 'clears of compressed targets to values it lacks write their texels',
             }
 
@@ -123,7 +124,7 @@ class Rules(unittest.TestCase):
         got = run(by_name['gpu.surface-locks'], by_name['gpu.rainbow'], by_name['refusal.user'])
         self.assertEqual(got['gpu.rainbow'].verdict, INFO)
         self.assertIn('2 surfaces, 1 without a gpu.surface-locks line: 78', got['gpu.rainbow'].observed)
-        self.assertIn('backboardd/raw/format', got['refusal.user'].observed)
+        self.assertIn('backboardd/gm20b/format', got['refusal.user'].observed)
 
     def test_kernel_refusal_line(self):
         refusal = next(c for c in checks.GROUPS['refusals'] if c.name == 'refusal.kernel')
@@ -171,7 +172,7 @@ class Rules(unittest.TestCase):
                 'bootUUID': 'B00T',
                 'processImagePath': '/usr/libexec/PosterBoard',
                 'subsystem': subsystem,
-                'category': 'raw',
+                'category': 'gm20b',
                 'messageType': 'Error',
                 'eventMessage': message,
             }
@@ -201,7 +202,7 @@ class Rules(unittest.TestCase):
                 'bootUUID': 'B00T',
                 'processImagePath': '/Applications/SwitchHWTest.app/SwitchHWTest',
                 'subsystem': subsystem,
-                'category': 'raw',
+                'category': 'gm20b',
                 'messageType': 'Error',
                 'eventMessage': message,
             }
@@ -210,7 +211,7 @@ class Rules(unittest.TestCase):
             'SwitchHWTest[512] texture.cpu.unreached: replaceRegion of 16x16 at (0, 0) of block-linear IOSurface 77: '
             "the copy engine's transfer failed: nothing moved"
         )
-        run = 'HWTEST gpu.raw.texture_transfer_failed PASS armed_before=0 fired_write=1 ms=2000.0'
+        run = 'HWTEST gpu.gm20b.texture_transfer_failed PASS armed_before=0 fired_write=1 ms=2000.0'
         log = [
             record(1, checks.REFUSAL_SUBSYSTEM, unreached),
             {**record(2, hwtest.SUBSYSTEM, run), 'category': 'hwtest', 'messageType': 'Default'},
@@ -292,7 +293,7 @@ class Rules(unittest.TestCase):
                 'bootUUID': 'B00T',
                 'processImagePath': '/Applications/SwitchHWTest.app/SwitchHWTest',
                 'subsystem': subsystem,
-                'category': 'raw' if subsystem == checks.REFUSAL_SUBSYSTEM else 'results',
+                'category': 'gm20b' if subsystem == checks.REFUSAL_SUBSYSTEM else 'results',
                 'messageType': 'Error' if subsystem == checks.REFUSAL_SUBSYSTEM else 'Default',
                 'eventMessage': message,
             }
@@ -331,7 +332,7 @@ class Rules(unittest.TestCase):
         self.assertEqual(got['refusal.tex-decoded-form-hwtest'].verdict, FAIL)
 
     def test_failed_command_buffers_are_judged_per_process(self):
-        failed = [c for c in checks.GROUPS['refusals'] if c.name.startswith('raw.failed')]
+        failed = [c for c in checks.GROUPS['refusals'] if c.name.startswith('gm20b.failed')]
 
         def record(process: str, message: str) -> dict:
             return {
@@ -339,7 +340,7 @@ class Rules(unittest.TestCase):
                 'bootUUID': 'B00T',
                 'processImagePath': '/usr/libexec/' + process,
                 'subsystem': checks.REFUSAL_SUBSYSTEM,
-                'category': 'raw.failed',
+                'category': 'gm20b.failed',
                 'messageType': 'Error',
                 'eventMessage': message,
             }
@@ -356,27 +357,27 @@ class Rules(unittest.TestCase):
         )
         results, _ = devicerun.run_checks([hwtest], failed)
         got = {r.check.name: r for r in results}
-        self.assertEqual(got['raw.failed'].verdict, PASS)
-        self.assertIn('pass.fmt/1', got['raw.failed-hwtest'].observed)
+        self.assertEqual(got['gm20b.failed'].verdict, PASS)
+        self.assertIn('pass.fmt/1', got['gm20b.failed-hwtest'].observed)
         results, _ = devicerun.run_checks([hwtest, springboard], failed)
         got = {r.check.name: r for r in results}
-        self.assertEqual(got['raw.failed'].verdict, FAIL)
-        self.assertIn('SpringBoard/none/1', got['raw.failed'].observed)
+        self.assertEqual(got['gm20b.failed'].verdict, FAIL)
+        self.assertIn('SpringBoard/none/1', got['gm20b.failed'].observed)
 
     def test_kills_in_a_kill_tests_window_are_that_tests(self):
-        judged = [c for c in checks.GROUPS['refusals'] if c.name in {'raw.failed', 'raw.killed'}]
+        judged = [c for c in checks.GROUPS['refusals'] if c.name in {'gm20b.failed', 'gm20b.killed'}]
         windows = [c for c in checks.GROUPS['hwtest'] if c.name == 'hwtest.kill-windows']
 
         def record(second: int, process: str, message: str, boot: str = 'B00T') -> dict:
             subsystem = 'com.brunostjohn.switch.hwtest' if message.startswith('HWTEST') else checks.REFUSAL_SUBSYSTEM
-            if message.startswith('raw: '):
+            if message.startswith('SwitchMetal: '):
                 subsystem = checks.GPU_METAL_SUBSYSTEM
             return {
                 'timestamp': f'2026-11-18 15:51:{second:02d}.000000+0000',
                 'bootUUID': boot,
                 'processImagePath': '/usr/libexec/' + process,
                 'subsystem': subsystem,
-                'category': 'raw',
+                'category': 'gm20b',
                 'messageType': 'Error',
                 'eventMessage': message,
             }
@@ -391,22 +392,22 @@ class Rules(unittest.TestCase):
         )
         unexplained = 'backboardd[61] none: a command buffer failed (MTLCommandBufferErrorDomain 1): A render pipeline'
         refused = 'backboardd[61] enc.pass: a command buffer failed (MTLCommandBufferErrorDomain 1): a refusal'
-        kill = 'raw: command buffer 7 failed: the kernel killed its channel (error 4, fault VA 0x0)'
+        kill = 'SwitchMetal: command buffer 7 failed: the kernel killed its channel (error 4, fault VA 0x0)'
         stall = 'HWTEST gpu.recover.kernel_second_timeout PASS state=4 killed=2 ms=10000.0'
         inside = [record(20, 'SpringBoard', killed), record(21, 'backboardd', refused), record(22, 'PosterBoard', kill)]
         results, _ = devicerun.run_checks(
             [*inside, record(23, 'WebContent', faulted), record(30, 'SwitchHWTest', stall)], judged + windows
         )
         got = {r.check.name: r for r in results}
-        self.assertEqual(got['raw.failed'].verdict, FAIL)
-        self.assertIn('backboardd/enc.pass/1', got['raw.failed'].observed)
+        self.assertEqual(got['gm20b.failed'].verdict, FAIL)
+        self.assertIn('backboardd/enc.pass/1', got['gm20b.failed'].observed)
         self.assertIn(
-            'expected: killed by gpu.recover.kernel_second_timeout: SpringBoard/none/2', got['raw.failed'].observed
+            'expected: killed by gpu.recover.kernel_second_timeout: SpringBoard/none/2', got['gm20b.failed'].observed
         )
-        self.assertIn('WebContent/none/3', got['raw.failed'].observed.split('expected:', 1)[1])
-        self.assertEqual(got['raw.killed'].verdict, PASS)
+        self.assertIn('WebContent/none/3', got['gm20b.failed'].observed.split('expected:', 1)[1])
+        self.assertEqual(got['gm20b.killed'].verdict, PASS)
         self.assertIn(
-            'expected: killed by gpu.recover.kernel_second_timeout: PosterBoard/4', got['raw.killed'].observed
+            'expected: killed by gpu.recover.kernel_second_timeout: PosterBoard/4', got['gm20b.killed'].observed
         )
         own = [
             record(21, 'SwitchHWTest27e', kill),
@@ -420,15 +421,16 @@ class Rules(unittest.TestCase):
         ):
             results, _ = devicerun.run_checks([*inside[::2], record(30, 'SwitchHWTest', line)], judged + windows)
             got = {r.check.name: r for r in results}
-            self.assertEqual((got['raw.failed'].verdict, got['raw.killed'].verdict), (FAIL, FAIL), line)
-            self.assertNotIn('expected', got['raw.killed'].observed)
+            self.assertEqual((got['gm20b.failed'].verdict, got['gm20b.killed'].verdict), (FAIL, FAIL), line)
+            self.assertNotIn('expected', got['gm20b.killed'].observed)
         lines = [record(20, 'backboardd', unexplained), record(30, 'SwitchHWTest', stall)]
         results, _ = devicerun.run_checks(lines, judged + windows)
         self.assertEqual(results[0].verdict, FAIL)
         late = [record(41, 'SpringBoard', killed), record(42, 'PosterBoard', kill)]
         results, _ = devicerun.run_checks([record(30, 'SwitchHWTest', stall), *late], judged + windows)
         self.assertEqual(
-            {r.check.name: r.verdict for r in results if r.check in judged}, {'raw.failed': FAIL, 'raw.killed': FAIL}
+            {r.check.name: r.verdict for r in results if r.check in judged},
+            {'gm20b.failed': FAIL, 'gm20b.killed': FAIL},
         )
         other = [record(20, 'SpringBoard', killed, 'B00T2'), record(30, 'SwitchHWTest', stall)]
         results, _ = devicerun.run_checks(other, judged + windows)

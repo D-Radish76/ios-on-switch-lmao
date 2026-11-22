@@ -3,20 +3,20 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The extended-range sRGB formats on the raw path, which holds each in an RGBA16Float stand-in (BGR10_XR_sRGB 555 for
-/// gpu.raw.xr_srgb, BGRA10_XR_sRGB 553 for gpu.raw.xr_srgb_alpha), against Metal (XrSrgbScene.swift, goldens measured
+/// The extended-range sRGB formats on the driver, which holds each in an RGBA16Float stand-in (BGR10_XR_sRGB 555 for
+/// gpu.gm20b.xr_srgb, BGRA10_XR_sRGB 553 for gpu.gm20b.xr_srgb_alpha), against Metal (XrSrgbScene.swift, goldens measured
 /// on an M4 Max). decode: every code of every channel sampled reads Metal's value within its tolerance (decode_off
 /// texel channels off, decode_worst the largest difference). load_store: a pass that loads and stores with no draw
 /// keeps every word, alpha codes past [0, 1] included, as Metal does (load_store_off bytes off). The texture is made
 /// with shaderWrite: an M4 Max's blits into a compressible 552/553 texture of 16 texels or more a side clamp alpha to
-/// 384..894 (gpu.raw.bgra10xrsrgb_empty_pass's measurement), a pass with no draw never does. drawn: an unblended draw over a clear stores Metal's codes (drawn_off texels; 553's texel
+/// 384..894 (gpu.gm20b.bgra10xrsrgb_empty_pass's measurement), a pass with no draw never does. drawn: an unblended draw over a clear stores Metal's codes (drawn_off texels; 553's texel
 /// 0, 0.5 in every channel, reads c0bdc0bdc0bdc09f) and samples back as Metal reads them (drawn_sampled_off).
 /// blended: source-over over Metal's drawn words, within one code of Metal's (blended_off texels past it,
 /// blended_worst). cleared: four clears store Metal's codes (cleared_off; cleared= the words where one is off). 555's
 /// drawn_pad= and cleared_pad= the values of the two bits above its codes (Metal writes 3), reported, not judged.
 /// compressed_upload (553 alone, reported): a blit from a buffer into a 64x64 ShaderRead|RenderTarget texture of alpha
 /// codes i % 1024, read back by a blit; an M4 Max keeps such a texture compressed and clamps its alpha to 384..894 in
-/// the copy (compressed_upload_kept 2044, compressed_upload_clamped 2052), and the raw path's copies clamp it too.
+/// the copy (compressed_upload_kept 2044, compressed_upload_clamped 2052), and the driver's copies clamp it too.
 /// Every command buffer raw, and none failed (failed_cbs=).
 struct XrSrgbTest: HWTest {
     let id: String
@@ -26,18 +26,18 @@ struct XrSrgbTest: HWTest {
     var timeout: TimeInterval { 60 }
 
     static let bgr = XrSrgbTest(
-        id: "gpu.raw.xr_srgb", name: "BGR10_XR_sRGB reads, stores, draws, blends and clears as Metal does, on raw",
+        id: "gpu.gm20b.xr_srgb", name: "BGR10_XR_sRGB reads, stores, draws, blends and clears as Metal does, on raw",
         format: .bgr)
     static let bgra = XrSrgbTest(
-        id: "gpu.raw.xr_srgb_alpha",
+        id: "gpu.gm20b.xr_srgb_alpha",
         name: "BGRA10_XR_sRGB reads, stores, draws, blends and clears as Metal does, alpha linear, on raw",
         format: .bgra)
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var sections: [(String, (GPU, inout Metrics, inout [(String, Bool)]) async throws -> Void)] = [
@@ -52,9 +52,9 @@ struct XrSrgbTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: ["oracle", "paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)

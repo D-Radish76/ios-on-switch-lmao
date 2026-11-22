@@ -6,19 +6,19 @@ import Metal
 
 /// A texture over a buffer at offset 48 with rows of 48 bytes (16 mod 32, which the texture header cannot address) is the
 /// raw path's: a draw samples it through a pool image that the copy engine fills from the buffer first
-/// (drivers/TegraGM20BMetal/raw/runtime/raw_gpu.cpp createBufferTexture). Every texel drawn must be the buffer's. One at an
+/// (drivers/TegraGM20BMetal/gpu.cpp createBufferTexture). Every texel drawn must be the buffer's. One at an
 /// offset or with rows off 16, which Metal's validation stops, is nil, as is one over an IOSurface without planes whose rows
 /// are off 16 (Metal asserts there) or over a plane the surface lacks. No command buffer may fail (failed_cbs=).
 struct BufferTexture16Test: HWTest {
-    let id = "gpu.raw.buffer_texture16"
+    let id = "gpu.gm20b.buffer_texture16"
     let name = "A texture over a buffer at 16 bytes is sampled through a pool image"
     let subsystem = Subsystem.metal
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -79,7 +79,7 @@ struct BufferTexture16Test: HWTest {
         if mismatched != 0 { wrong.append("texels") }
 
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

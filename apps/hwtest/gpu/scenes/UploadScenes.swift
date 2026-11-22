@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 /// Buffer-to-texture blits into private textures (block-linear where the shape tiles) at offsets and sizes no GOB
-/// lines up with, from a staging buffer with padded rows: the copy engine's block-linear writes on the raw facade.
+/// lines up with, from a staging buffer with padded rows: the copy engine's block-linear writes on the facade.
 struct BlitUploadScene: GPUScene {
     let id = "gpu.upload.blit_buffer"
     let name = "Buffer-to-texture uploads at unaligned offsets"
@@ -38,7 +38,7 @@ struct BlitUploadScene: GPUScene {
 }
 
 /// replaceRegion and getBytes at unaligned offsets: into shared textures (rows), copied on the GPU into private ones;
-/// and, on the raw facade, straight into private R8, A8 and BGRA8 textures, which it keeps block-linear and whose
+/// and, on the facade, straight into private R8, A8 and BGRA8 textures, which it keeps block-linear and whose
 /// texels its CPU writes swizzle (the way Core Animation's glyph atlas is filled). Metal on a Mac refuses CPU access
 /// to private textures, so that half runs only on the Switch's devices.
 struct ReplaceRegionScene: GPUScene {
@@ -47,12 +47,12 @@ struct ReplaceRegionScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let kind = RawFacade.kind(of: gpu.device)
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         for format in [TexelFormat.r8Unorm, .a8Unorm, .bgra8Unorm, .rgba8Unorm, .rgba16Float] {
             let (width, height) = (333, 77)
             var storages: [MTLStorageMode] = [.shared]
-            if kind == "raw" && [.r8Unorm, .a8Unorm, .bgra8Unorm].contains(format) { storages.append(.private) }
+            if kind == "gm20b" && [.r8Unorm, .a8Unorm, .bgra8Unorm].contains(format) { storages.append(.private) }
             for storage in storages {
                 let label = "\(format.rawValue) \(storage == .shared ? "shared" : "private")"
                 let texture = try gpu.texture(format.metal, width, height, usage: [.shaderRead], storage: storage)
@@ -83,8 +83,8 @@ struct ReplaceRegionScene: GPUScene {
                 try await result.compareBothWays(label + " copied to private", copy, model, gpu: gpu)
             }
         }
-        if kind == "raw" {
-            let after = RawFacade.counters(of: gpu.device)
+        if kind == "gm20b" {
+            let after = GM20BFacade.counters(of: gpu.device)
             for key in ["texture_uploads", "texture_readbacks"] {
                 if let first = before[key], let last = after[key] {
                     result.metrics.set(key, last - first)
@@ -94,13 +94,13 @@ struct ReplaceRegionScene: GPUScene {
                 }
             }
         } else {
-            result.notes.append("private-texture replaceRegion only on the raw facade")
+            result.notes.append("private-texture replaceRegion only on the facade")
         }
         return result
     }
 }
 
-/// replaceRegion and getBytes of level 0 of a mipmapped shared texture on the raw facade: the copy engine moves them, as
+/// replaceRegion and getBytes of level 0 of a mipmapped shared texture on the facade: the copy engine moves them, as
 /// it moves every later level (a chain's level 0 is the texture itself, which the device refused, so its CPU copies fell
 /// to the CPU's swizzle). The bytes read back are the ones written, every level apart keeps its own, and the facade's
 /// texture_uploads and texture_readbacks count one each.
@@ -118,7 +118,7 @@ struct ChainLevelZeroScene: GPUScene {
         guard let texture = gpu.device.makeTexture(descriptor: descriptor) else {
             throw TestFailure("makeTexture of a mipmapped shared 64x64 BGRA8 returned nil")
         }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let levelOne = UploadRect(x: 0, y: 0, width: width / 2, height: height / 2)
         let one = Patterns.bytes(
             Patterns.busy(width: levelOne.width, height: levelOne.height, channels: format.channels, seed: 9), format)
@@ -137,11 +137,11 @@ struct ChainLevelZeroScene: GPUScene {
         result.compare(
             "level 1 kept", bytes: levelOneBack, expected: one, format: format, width: levelOne.width,
             height: levelOne.height, tolerance: 0)
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            result.notes.append("the copy-engine route is the raw facade's")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            result.notes.append("the copy-engine route is the facade's")
             return result
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         for key in ["texture_uploads", "texture_readbacks"] {
             guard let first = before[key], let last = after[key] else {
                 result.notes.append("\(key) route counters unavailable in this build")

@@ -11,7 +11,7 @@ import Metal
 /// layers= each slice's contents, slice 0 first: p 0x11, r red, g green, b blue, x anything else; slice<n>_off texels
 /// not as expected, completed=, error= the command buffer's when it failed; every command buffer raw, failed_cbs=0.
 struct RtalPastLayersTest: HWTest {
-    let id = "gpu.raw.rtal_past_layers"
+    let id = "gpu.gm20b.rtal_past_layers"
     let name = "A layered pass past the texture's layers draws its own layers and drops the one past them, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -23,9 +23,9 @@ struct RtalPastLayersTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -44,9 +44,9 @@ struct RtalPastLayersTest: HWTest {
             checks.append(("the pass: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

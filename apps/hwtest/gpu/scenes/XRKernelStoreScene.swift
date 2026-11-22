@@ -6,9 +6,9 @@ import Metal
 /// raw path refused it until the kernel record split the store across the planes: KernelTexturePlane). The probe's
 /// float4(0.25, 0.5, 1.25, 0.75) and Apple's own stores of float4 and half4 values (XRKernelTable: NaNs, infinities,
 /// past ±1.5, the codes' ties, alpha outside [0, 1]): plane 0 must hold Apple's word and plane 1 its byte for each, every
-/// command buffer on the raw path.
+/// command buffer on the driver.
 struct XRKernelStoreScene: GPUScene {
-    let id = "gpu.raw.xr_kernel_store"
+    let id = "gpu.gm20b.xr_kernel_store"
     let name = "Kernel stores into an RGB10A8_2P_XR10 surface texture's two planes"
 
     /// The probe's case (xrprobe, an Apple M4 Max): its float bits, word and byte
@@ -57,8 +57,8 @@ struct XRKernelStoreScene: GPUScene {
         if let first = wrong.first { result.metrics.set("first", first) }
         result.expect(
             wrong.isEmpty, "\(wrong.count) texels hold another word or byte than Apple's: \(wrong.first ?? "")")
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            result.expect(paths.allSatisfy { $0 == "raw" }, "the stores took \(paths), not raw")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            result.expect(paths.allSatisfy { $0 == "gm20b" }, "the stores took \(paths), not raw")
         }
         return result
     }

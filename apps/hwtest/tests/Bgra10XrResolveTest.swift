@@ -12,7 +12,7 @@ import Metal
 /// codes off the ties-down rule at 2x / 4x). Per count x<n>_colour_off channels off, x<n>_colour_max, x<n>_alpha_off
 /// alpha codes not the ties-down rule's, x<n>_alpha_max; every command buffer raw, failed_cbs=0.
 struct Bgra10XrResolveTest: HWTest {
-    let id = "gpu.raw.bgra10xr_resolve"
+    let id = "gpu.gm20b.bgra10xr_resolve"
     let name = "BGRA10_XR resolves to its colour codes' mean rounded half up and alpha within one code, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -29,9 +29,9 @@ struct Bgra10XrResolveTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for samples in [2, 4] {
@@ -49,9 +49,9 @@ struct Bgra10XrResolveTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

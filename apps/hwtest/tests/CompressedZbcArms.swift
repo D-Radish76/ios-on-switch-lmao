@@ -3,9 +3,9 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.compressed_targets' ZBC arms (drivers/TegraGM20BMetal/raw/runtime/raw_zbc.h zbcColorEntry, zbcDepthEntry): a
+/// gpu.gm20b.compressed_targets' ZBC arms (drivers/TegraGM20BMetal/zbc.h zbcColorEntry, zbcDepthEntry): a
 /// private one-sample target of each format (compressed memory once the facade has made some of its shape:
-/// raw_private_comp.h, C32, C64 or C128, so a first texture asks and the arm's own comes after:
+/// private_comp.h, C32, C64 or C128, so a first texture asks and the arm's own comes after:
 /// CompressionSettled.remade; the rounds' 20 ms gaps give the same thread time to add the entry, which no event marks)
 /// cleared again and again
 /// to a value the boot table lacks, read back through the copy engine; for Depth16, a memoryless depth and an
@@ -69,10 +69,10 @@ enum CompressedZbcArms {
         _ name: String, _ gpu: GPU, _ metrics: inout Metrics, _ wrong: inout [String],
         _ body: () async throws -> (Int, Int)
     ) async {
-        let before = RawFacade.compression(of: gpu.device)
+        let before = GM20BFacade.compression(of: gpu.device)
         do {
             let (firstOff, lastOff) = try await body()
-            let hits = (RawFacade.compression(of: gpu.device)["zbc_hits"] ?? 0) - (before["zbc_hits"] ?? 0)
+            let hits = (GM20BFacade.compression(of: gpu.device)["zbc_hits"] ?? 0) - (before["zbc_hits"] ?? 0)
             metrics.set("zbc_\(name)", "\(firstOff):\(lastOff):\(hits)")
             if firstOff > 0 { wrong.append("zbc_\(name)_first") }
             if lastOff > 0 { wrong.append("zbc_\(name)_held_texel") }

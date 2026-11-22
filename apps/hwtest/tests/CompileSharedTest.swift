@@ -26,13 +26,13 @@ struct CompileSharedTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade")
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
 
-        let store = RawFacade.compilerStore(of: gpu.device) ?? ""
+        let store = GM20BFacade.compilerStore(of: gpu.device) ?? ""
         metrics.set("store", store.isEmpty ? "none" : String(store.prefix(16)))
         checks.append(("the process maps the shader compiler's store", !store.isEmpty))
         let previousStore = UserDefaults.standard.string(forKey: Self.storeKey)
@@ -82,8 +82,8 @@ struct CompileSharedTest: HWTest {
     }
 
     func made(_ state: MTLRenderPipelineState) throws -> Made {
-        guard let answer = RawFacade.compile(of: state) else {
-            throw TestFailure("the state answers no switchRawCompile (a release build?)")
+        guard let answer = GM20BFacade.compile(of: state) else {
+            throw TestFailure("the state answers no switchMetalCompile (a release build?)")
         }
         return Made(
             how: answer["how"] as? String ?? "?", waitUs: (answer["wait_us"] as? NSNumber)?.intValue ?? 0,

@@ -6,7 +6,7 @@ import Metal
 /// A 504 (one-plane 4:4:4 10-bit words) render target of 96 x h over a 'v410' whose rows overlap (pitch below a row's 384
 /// bytes), every byte 0xee first, one DontCare and Store pass drawing overlap_hash, against the same pass into a 'v410' of
 /// 512-byte rows: each overlapped byte holds the reference's byte of the row whose store an M4 Max lands last there
-/// (YcbcrOverlapRows.winner, a word a texel) (gpu.raw.ycbcr_overlap_words).
+/// (YcbcrOverlapRows.winner, a word a texel) (gpu.gm20b.ycbcr_overlap_words).
 public enum YcbcrOverlapWords {
     public struct Shape: Sendable {
         public let key: String

@@ -17,7 +17,7 @@ struct AstcInPlaceCopyScene: GPUScene {
     func run(_ gpu: GPU) async throws -> SceneResult {
         let run = try AstcLayoutRun(gpu)
         guard run.onRaw else {
-            run.result.notes.append("off the raw facade: only raw takes the no-copy paths")
+            run.result.notes.append("off the facade: only raw takes the no-copy paths")
             return run.finish()
         }
         guard let layout = TextureLayoutSPI(gpu.device, AstcLayoutRun.descriptor(.shared)) else {

@@ -4,14 +4,14 @@ import HWTestGPU
 import Metal
 
 /// A slice-choosing state whose fetching fragment function may discard, depth-tested with writes, in a layered pass of two
-/// layers: the raw path runs the depth test in its program against a stand-in of the pass's layers (a 2D array, each
+/// layers: the driver runs the depth test in its program against a stand-in of the pass's layers (a 2D array, each
 /// fragment at its layer). Three draws: z 0.5 into both layers, z 0.75 into both (fails the test), z 0.25 into layer 1.
 /// Each writes its colour plus half the colour it fetches. An M4 Max stores 128/0/0/255 in layer 0 and 64/0/128/255 in
-/// layer 1 at every pixel. The base build fails the command buffer (raw:draw.layer_dropped: the translation had no layered
+/// layer 1 at every pixel. The base build fails the command buffer (gm20b:draw.layer_dropped: the translation had no layered
 /// form of the in-shader depth test).
 struct LayeredShaderTestsTest: HWTest {
-    let id = "gpu.raw.layered_shader_tests"
-    let name = "A layered pass's in-shader depth test reads a stand-in of every layer on the raw path"
+    let id = "gpu.gm20b.layered_shader_tests"
+    let name = "A layered pass's in-shader depth test reads a stand-in of every layer on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
@@ -39,8 +39,8 @@ struct LayeredShaderTestsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let device = gpu.device
         let library = try await device.makeLibrary(source: Self.source, options: nil)
         let descriptor = MTLRenderPipelineDescriptor()
@@ -114,7 +114,7 @@ struct LayeredShaderTestsTest: HWTest {
             }
         }
         metrics.set("wrong_pixels", wrong)
-        return timing.path == "raw" && wrong == 0
+        return timing.path == "gm20b" && wrong == 0
             ? .pass(metrics, proof: gpu.proof) : .fail("path \(timing.path.prefix(80)), \(wrong) pixels wrong", metrics)
     }
 }

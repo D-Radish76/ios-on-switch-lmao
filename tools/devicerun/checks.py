@@ -34,8 +34,8 @@ FAILED_LINE = (
     r'^(?P<who>{who})\[\d+\] (?P<predicate>[\w.]+): a command buffer failed '
     r'\(MTLCommandBufferErrorDomain (?P<code>\d+)\)'
 )
-FAILED_SOURCE = 'drivers/TegraGM20BMetal/raw/runtime (c38-audit/failed-counts/CONTRACT.md)'
-# What a kill gives a command buffer of the killed channel (RawMetalFinish.mm killError: 3 a fault, with the
+FAILED_SOURCE = 'drivers/TegraGM20BMetal (c38-audit/failed-counts/CONTRACT.md)'
+# What a kill gives a command buffer of the killed channel (TegraGM20BMetalFinish.mm killError: 3 a fault, with the
 # description an M4 Max's GPU address fault carries; 2 a hang, else 1, no description, so Foundation's text)
 KILLED_FAILURE = (
     r'^[^\[]+\[\d+\] none: a command buffer failed \(MTLCommandBufferErrorDomain '
@@ -225,13 +225,13 @@ GROUPS: dict[str, list[Check]] = {
         Check(
             'gpu.rainbow',
             'r30-lows',
-            'raw: IOSurface ',
+            'SwitchMetal: IOSurface ',
             REPORT,
             subsystem=GPU_METAL_SUBSYSTEM,
             regex=r'IOSurface (?P<surface>\d+) .* image (?P<what>.+?) at seed (?P<seed>\d+)',
             against='gpu.surface-locks',
             key='surface',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalTexture.mm traceSurfaceImage',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalTexture.mm traceSurfaceImage',
             note='a seed that moves with no kernel lock/unlock line is a writer the locks never see',
         ),
         Check(
@@ -241,7 +241,7 @@ GROUPS: dict[str, list[Check]] = {
             'sum(elided) > 0',
             subsystem=GPU_METAL_SUBSYSTEM,
             regex=r'fb=(?P<barriers>\d+)/(?P<elided>\d+)/(?P<anycolor>\d+)/(?P<interlocked>\d+)\((?P<mode>[^)]*)\)',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalRates.mm raw 5 s line',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalRates.mm raw 5 s line',
             note='debug (SWITCH_FRAME_TIMELINE)',
         ),
         Check(
@@ -351,16 +351,19 @@ GROUPS: dict[str, list[Check]] = {
             'releases it (abandon and raise), never the give-up',
         ),
         Check(
-            'raw.zbc-full-lines',
+            'gm20b.zbc-full-lines',
             'zcull-comp',
             'table is full (every process',
             REPORT,
             subsystem=GPU_METAL_SUBSYSTEM,
             level='error',
-            regex=r"^raw: the GPU's ZBC (?P<type>colour|depth) table is full \(every process's, never emptied\)",
+            regex=(
+                r"^SwitchMetal: the GPU's ZBC (?P<type>colour|depth) table is full \(every process's, never "
+                r'emptied\)'
+            ),
             show=('process', 'type'),
-            source='drivers/TegraGM20BMetal/raw/runtime/raw_comp.cpp',
-            note='one line a process and type (raw_zbc.h firstFull); gpu.raw.zbc_full fills the colour table for the '
+            source='drivers/TegraGM20BMetal/comp.cpp',
+            note='one line a process and type (zbc.h firstFull); gpu.gm20b.zbc_full fills the colour table for the '
             'rest of the boot, so each process that then asks a colour logs one; two of one type from one process '
             '(this list counts by name: a relaunched process is another) is a repeat',
         ),
@@ -798,7 +801,7 @@ GROUPS: dict[str, list[Check]] = {
             'texture.bytesnocopy',
             subsystem=REFUSAL_SUBSYSTEM,
             note='a nil no-copy texture leaves a compressed image undrawn (Core Animation keeps no copy)',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalNoCopy.mm',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalNoCopy.mm',
         ),
         Check(
             'refusal.user',
@@ -822,7 +825,7 @@ GROUPS: dict[str, list[Check]] = {
             source='kits/SwitchRefusal/SwitchRefusal.c (kernel default log)',
         ),
         Check(
-            'raw.failed',
+            'gm20b.failed',
             'failed-counts',
             'a command buffer failed',
             subsystem=REFUSAL_SUBSYSTEM,
@@ -833,39 +836,42 @@ GROUPS: dict[str, list[Check]] = {
             excusable=KILLED_FAILURE,
             source=FAILED_SOURCE,
             note='every predicate that failed a command buffer, per process (one line a process and predicate, '
-            "category raw.failed): SpringBoard, backboardd, WebKit's GPU process and every other app or daemon; HW "
-            "Test's own (SwitchHWTest, SwitchHWTest27e) are raw.failed-hwtest. A kill's line (none: code 3 with a GPU "
+            "category gm20b.failed): SpringBoard, backboardd, WebKit's GPU process and every other app or daemon; HW "
+            "Test's own (SwitchHWTest, SwitchHWTest27e) are gm20b.failed-hwtest. A kill's line (none: code 3 with a "
+            'GPU '
             "address fault's description, 1 or 2 with Foundation's) inside the window of a HW Test test that killed "
             "resident clients on purpose (hwtest.kill-windows) is that test's",
         ),
         Check(
-            'raw.killed',
+            'gm20b.killed',
             'hwtests6',
             'failed: the kernel killed its channel',
             process='!SwitchHWTest',
             subsystem=GPU_METAL_SUBSYSTEM,
             level='error',
-            regex=r'^raw: command buffer \d+ failed: the kernel killed its channel \(error (?P<error>\d+), ',
+            regex=r'^SwitchMetal: command buffer \d+ failed: the kernel killed its channel \(error (?P<error>\d+), ',
             show=('process', 'error'),
             during=KILL_WINDOWS,
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalFinish.mm completionLoop',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalFinish.mm completionLoop',
             note='each command buffer of another process the kernel killed in flight, one line each in every build '
-            "(raw.failed logs a process's first failure of each code alone, so a kill after an excused one shows "
+            "(gm20b.failed logs a process's first failure of each code alone, so a kill after an excused one shows "
             'here); inside the window of a HW Test test that kills resident clients on purpose (hwtest.kill-windows): '
             "that test's",
         ),
         Check(
-            'raw.nocopy-tiled-hwtest',
+            'gm20b.nocopy-tiled-hwtest',
             'lost-work-3',
             'whose pages hold its texels in GOBs: no buffer',
             subsystem=GPU_METAL_SUBSYSTEM,
             level='error',
-            regex=r'^raw: SwitchHWTest\w*: newBufferWithBytesNoCopy over \d+ bytes at \S+: they lie in an IOSurface '
+            regex=r'^SwitchMetal: SwitchHWTest\w*: newBufferWithBytesNoCopy over \d+ bytes at \S+: they lie in an '
+            r'IOSurface '
             r'this process imported block-linear',
             per=READBACK_RUNS,
             per_count='2',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalDevice.mm',
-            note='each gpu.raw.readback_routes run asks for two no-copy buffers over its block-linear surface (all its '
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalDevice.mm',
+            note='each gpu.gm20b.readback_routes run asks for two no-copy buffers over its block-linear surface (all '
+            'its '
             'pages, one page of them): two nils, a line each. A run whose surface was not block-linear '
             '(surface_cpu_layout in its report) reads 0 here',
         ),
@@ -878,8 +884,8 @@ GROUPS: dict[str, list[Check]] = {
             regex=r'^SwitchHWTest\w*\[\d+\] buf\.surface\.tiled: newBufferWithIOSurface: of IOSurface \d+, ',
             per=READBACK_RUNS,
             per_count='1',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalDevice.mm',
-            note='each gpu.raw.readback_routes run asks newBufferWithIOSurface: twice of one block-linear surface: '
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalDevice.mm',
+            note='each gpu.gm20b.readback_routes run asks newBufferWithIOSurface: twice of one block-linear surface: '
             'two nils, one line (once a surface)',
         ),
         Check(
@@ -892,8 +898,8 @@ GROUPS: dict[str, list[Check]] = {
             r"\(0, 0\) of block-linear IOSurface \d+: the copy engine's transfer failed: nothing moved",
             per=TRANSFER_FAILED_RUNS,
             per_count='1',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalTextureCpu.mm transferTexture',
-            note='each gpu.raw.texture_transfer_failed run fails a replaceRegion and a getBytes of one fresh '
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalTextureCpu.mm transferTexture',
+            note='each gpu.gm20b.texture_transfer_failed run fails a replaceRegion and a getBytes of one fresh '
             'block-linear surface: one line, the first (once a surface ID)',
         ),
         Check(
@@ -906,7 +912,7 @@ GROUPS: dict[str, list[Check]] = {
             r'16[46] texture: nothing moved',
             per=DECODE_READBACK_RUNS,
             per_count='want',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalDecoded.mm',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalDecoded.mm',
             note='a gpu.decode.readback run reads back a 166 (getBytes, then a blit) and a 164 (a blit), which keep no '
             'blocks: one line a format a process, so 2 on its first run in a process and 0 after (its want)',
         ),
@@ -920,7 +926,7 @@ GROUPS: dict[str, list[Check]] = {
             r'texture of format 204: ',
             per=DECODE_VIEWS_RUNS,
             per_count='view',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalTextureViews.mm',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalTextureViews.mm',
             note='a gpu.decode.views run asks a 204 texture, which keeps no blocks, for a 222 view: nil and one '
             'line (the owner, 21 Nov), on its first run in a process',
         ),
@@ -934,12 +940,12 @@ GROUPS: dict[str, list[Check]] = {
             r"nil, as the identity's Metal makes none",
             per=DECODE_VIEWS_RUNS,
             per_count='form',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalDecodedFamily.mm',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalDecodedFamily.mm',
             note="on 21H461 a gpu.decode.views run's 221 and 227 views are nil, as the A10X identity makes no ASTC HDR "
             'texture: one line a process (one key for both), on its first run; none on 24B119',
         ),
         Check(
-            'raw.failed-hwtest',
+            'gm20b.failed-hwtest',
             'failed-counts',
             'a command buffer failed',
             REPORT,
@@ -958,7 +964,7 @@ GROUPS: dict[str, list[Check]] = {
             subsystem=REFUSAL_SUBSYSTEM,
             note="generateMipmaps of a format the device's pack holds no mip state for (a stale pack) fails its "
             'command buffer, MTLCommandBufferErrorInternal',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalBlitFill.mm',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalBlitFill.mm',
         ),
         Check(
             'refusal.hwtest-m2v',
@@ -971,10 +977,14 @@ GROUPS: dict[str, list[Check]] = {
                 'enc.planarrt',
             ),
             process='SwitchHWTest',
-            source='drivers/TegraGM20BMetal/raw/runtime/RawComplete.mm, RawDirect.mm, RawMetalDrawErrors.mm',
-            note='HW Test work the raw path refused or sent to m2v: gpu.packed_spare_bits (Core Image over a 98x8 '
-            "'p420' surface, 32,8,1 and 32,32,1), gpu.raw.kernel_ycbcr_one_plane and gpu.raw.draw_five_dynamic_strides "
-            '(draw.stride_twin), none after the compile-path fix; gpu.raw.ycbcr_load and gpu.raw.reach_shapes '
+            source=(
+                'drivers/TegraGM20BMetal/TegraGM20BMetalComplete.mm, TegraGM20BMetalDirect.mm, '
+                'TegraGM20BMetalDrawErrors.mm'
+            ),
+            note='HW Test work the driver refused or sent to m2v: gpu.packed_spare_bits (Core Image over a 98x8 '
+            "'p420' surface, 32,8,1 and 32,32,1), gpu.gm20b.kernel_ycbcr_one_plane and "
+            'gpu.gm20b.draw_five_dynamic_strides '
+            '(draw.stride_twin), none after the compile-path fix; gpu.gm20b.ycbcr_load and gpu.gm20b.reach_shapes '
             '(enc.planarrt), none after the reach fix',
         ),
         Check(
@@ -986,9 +996,9 @@ GROUPS: dict[str, list[Check]] = {
             subsystem=REFUSAL_SUBSYSTEM,
             regex=r'^SwitchHWTest\[(?P<pid>\d+)\] (?P<reason>blit\.(?:invalid|undefined)): (?P<call>\S+) (?P<rule>.+)$',
             show=('pid', 'call', 'rule'),
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalBlitRules.mm',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalBlitRules.mm',
             note='once a process per call and rule (the line names the call, then the rule): every pid/call/rule '
-            'group must read x1, after gpu.raw.planes_blits and invalid_requests',
+            'group must read x1, after gpu.gm20b.planes_blits and invalid_requests',
         ),
         Check(
             'refusal.compute-view',
@@ -997,9 +1007,9 @@ GROUPS: dict[str, list[Check]] = {
             subsystem=REFUSAL_SUBSYSTEM,
             regex=r'^(?P<who>[^\[]+)\[\d+\] compute\.view: ',
             show=('who',),
-            source='drivers/TegraGM20BMetal/raw/runtime/RawMetalCompute.mm',
+            source='drivers/TegraGM20BMetal/TegraGM20BMetalCompute.mm',
             note="the driver prints no compute.view line now (raw binds a view of a kernel's texture in its own "
-            'format, raw_view.h): any is an old driver on the card',
+            'format, view.h): any is an old driver on the card',
         ),
     ],
     'io': [

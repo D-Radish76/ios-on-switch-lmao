@@ -1,4 +1,4 @@
-/// gpu.raw.xr_blend_routes's golden scene on an M4 Max under macOS 27.2.1, its shaders compiled as the app's metallib is
+/// gpu.gm20b.xr_blend_routes's golden scene on an M4 Max under macOS 27.2.1, its shaders compiled as the app's metallib is
 /// (rules_apple's metal compile passes -ffast-math), the same in four runs: each region's texel, row band by row band
 /// (550: the alpha byte above the code word; 552: the four 16-bit channels, blue lowest). Compiled with -fno-fast-math,
 /// the same GPU stores one code more in 550's regions 8 (red) and 11 (blue) and 552's regions 6 (alpha), 8 (red) and 11

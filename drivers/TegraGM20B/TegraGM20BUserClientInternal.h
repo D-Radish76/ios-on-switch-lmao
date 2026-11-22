@@ -465,8 +465,8 @@ class AGXDeviceUserClient : public IOUserClient
 	static constexpr uint32_t kBindEpochWord = TegraGM20BFencePageBindEpochFirst / 4;
 	uint32_t bindIssued_ = 0, bindDone_ = 0;
 #if TGM_STATS
-	// NVK's own heap is the client window's lower half (its replay heap and the raw path's quarter lie above): its maps
-	// and unmaps are kept apart from the raw path's
+	// NVK's own heap is the client window's lower half (its replay heap and the driver's quarter lie above): its maps
+	// and unmaps are kept apart from the driver's
 	tgm_bind_history *bindHistory_[2] = {};
 #endif
 	void noteBind(uint8_t op, uint64_t va, uint64_t range, const Bo *bo, uint64_t boOffset,
@@ -562,11 +562,11 @@ class AGXDeviceUserClient : public IOUserClient
 	bool bindCuts(const TegraGM20BAbiVmBind *in, uint32_t count);
 	static bool bindingIs(const Binding &binding, const TegraGM20BAbiBindOp &op, const Bo *bo);
 	IOReturn bindOp(const TegraGM20BAbiBindOp &op, bool &changed);
-	void scanPushes(const tgm_push *pushes, uint32_t count, tgm_prof *prof, bool rawMacros);
+	void scanPushes(const tgm_push *pushes, uint32_t count, tgm_prof *prof, bool metalMacros);
 	void deferScan(uint32_t slot, uint32_t fences, const tgm_push *pushes, uint32_t count,
-		       bool rawMacros);
+		       bool metalMacros);
 	const tgm_prof *scanSubmission(uint32_t slot, uint32_t fences, const tgm_push *pushes,
-				       uint32_t count, tgm_prof &prof, bool rawMacros);
+				       uint32_t count, tgm_prof &prof, bool metalMacros);
 	const uint32_t *pushView(uint64_t va, uint64_t bytes,
 				 const BindingTable::Entry *&hit) const;
 	IOReturn run(uint32_t method, const void *in, uint32_t inSize, void *out,

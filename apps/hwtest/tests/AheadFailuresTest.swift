@@ -4,8 +4,8 @@ import HWTestGPU
 import Metal
 
 /// The submit worker's encode ahead of command buffers that fail (gpu/AheadFrames.swift: 15 passes a millisecond
-/// apart), judged by the rule raw_facade_ahead_failures_test.cpp pins on the host: Apple's driver stops the process on
-/// both failures (gpu.raw.ended_encoder), so no Apple value exists; the valid frames' model is an M4 Max's draw of them
+/// apart), judged by the rule facade_ahead_failures_test.cpp pins on the host: Apple's driver stops the process on
+/// both failures (gpu.gm20b.ended_encoder), so no Apple value exists; the valid frames' model is an M4 Max's draw of them
 /// (0 pixels off in five runs). In order: warm, a valid frame, encoded ahead (pipelined at least 10 of its 15 encoders)
 /// and drawing the model; commit_fails, whose last pass draws again after a blit encoder began: its commit fails it
 /// InvalidResource (code 9, error:none) with no veto recorded; after_commit, a valid frame the worker still encodes
@@ -14,7 +14,7 @@ import Metal
 /// after_record, as after_commit. failed_cbs none x2, no call skipped. Per frame <frame>_status, _pipelined, _off
 /// (pixels more than a code from the model); the failures' _code, _veto, _given_back.
 struct AheadFailuresTest: HWTest {
-    let id = "gpu.raw.ahead_failures"
+    let id = "gpu.gm20b.ahead_failures"
     let name = "A command buffer that fails while encoded ahead gives the device back and the next is encoded ahead"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -24,11 +24,11 @@ struct AheadFailuresTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         guard before["pipeline_handoffs"] != nil else {
-            return before["raw"] == nil
+            return before["gm20b"] == nil
                 ? .skip("no pipelining counters: a release runtime")
                 : .fail("a debug runtime without pipelining counters")
         }
@@ -55,7 +55,7 @@ struct AheadFailuresTest: HWTest {
             checks.append(("\(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         checks.append(
             FailedCounts.judged(before: before, after: counted, expecting: ["none": 2], own: gpu.paths, &metrics))
         checks.append(FailedCounts(before: before, after: counted).skipCheck())
@@ -70,7 +70,7 @@ struct AheadFailuresTest: HWTest {
         metrics.set(arm + "_encoders", encoders)
         metrics.set(arm + "_off", r.pixelsOff)
         return [
-            ("\(arm): \(r.status) \(r.path)", r.status == "completed" && r.path == "raw"),
+            ("\(arm): \(r.status) \(r.path)", r.status == "completed" && r.path == "gm20b"),
             ("\(arm): \(pipelined) of \(encoders) encoders encoded ahead", pipelined >= leastPipelined),
             ("\(arm): \(r.pixelsOff) pixels off the model", r.status == "completed" && r.pixelsOff == 0),
         ]

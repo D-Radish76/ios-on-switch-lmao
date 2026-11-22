@@ -11,9 +11,9 @@ import Metal
 /// minimum, maximum and sample 0, and where the depth is stored unresolved, which takes the last sample (an M-series Mac's
 /// GPU does; its target's depth kept); Stencil8's by sample 0 under both filters. Each target's stencil is 0xFF before. Positions: a pass at sample positions of its own. Each sample's colour and
 /// depth is read back through texture2d_ms and depth2d_ms, and every reference is the triangle's coverage at the samples'
-/// positions, worked out on the CPU. On the raw facade every command buffer must run on the raw path.
+/// positions, worked out on the CPU. On the facade every command buffer must run on the driver.
 struct StoredMSAAScene: GPUScene {
-    let id = "gpu.raw.stored_msaa"
+    let id = "gpu.gm20b.stored_msaa"
     let name = "Stored 2x/4x colour and depth: load, store, texture2d_ms reads, resolves and own sample positions"
 
     static let size = 16
@@ -74,13 +74,13 @@ struct StoredMSAAScene: GPUScene {
         }
         result.expect(!counts.isEmpty, "the device renders no 2x or 4x texture")
         result.metrics.set("counts", counts.joined(separator: ","))
-        if RawFacade.kind(of: gpu.device) == "raw" {
-            let off = gpu.paths.paths.keys.filter { $0 != "raw" }.sorted()
-            result.expect(off.isEmpty, "command buffers off the raw path: \(off.joined(separator: ","))")
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
+            let off = gpu.paths.paths.keys.filter { $0 != "gm20b" }.sorted()
+            result.expect(off.isEmpty, "command buffers off the driver: \(off.joined(separator: ","))")
             var packed: [Bool] = []
             for format in [TexelFormat.rgba8Unorm, .r32Float] {
                 let fragment = Self.unpackFragment(format)
-                guard let held = RawFacade.packed(try gpu.render(fragment: fragment, format: format.metal)) else {
+                guard let held = GM20BFacade.packed(try gpu.render(fragment: fragment, format: format.metal)) else {
                     continue
                 }
                 packed.append(held)
@@ -230,7 +230,7 @@ struct StoredMSAAScene: GPUScene {
     }
 
     /// A memoryless multisampled depth texture of each format, depth-tested and resolved to its minimum in the pass that
-    /// draws it: the raw path's backing for it may be compressed memory, which the resolve samples through a header of its
+    /// draws it: the driver's backing for it may be compressed memory, which the resolve samples through a header of its
     /// own
     private func memorylessDepth(
         _ gpu: GPU, _ samples: Int, _ cover: [[Bool]?], _ result: inout SceneResult

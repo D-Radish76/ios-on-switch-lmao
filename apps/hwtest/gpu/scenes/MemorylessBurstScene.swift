@@ -11,10 +11,10 @@ import Metal
 /// expire. backings_grow_kb and backings_shrink_kb are the backings' memory held after each half: the shrinking half
 /// must take none. pool_before_kb, pool_peak_kb and pool_after_kb are the raw pool's chunks then, backings_after_kb the
 /// backings' memory still held and grows_burst the allocations of the burst that wired a chunk themselves (a client has
-/// no grower thread: the render server's line says grow=). On the raw facade nothing may be held after, and the pool
+/// no grower thread: the render server's line says grow=). On the facade nothing may be held after, and the pool
 /// must come back to within two chunks of where it started.
 struct MemorylessBurstScene: GPUScene {
-    let id = "gpu.raw.memoryless_burst"
+    let id = "gpu.gm20b.memoryless_burst"
     let name = "Memoryless attachments at a new size every frame: what the raw pool holds after"
 
     static let frames = 48
@@ -23,8 +23,8 @@ struct MemorylessBurstScene: GPUScene {
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            result.notes.append("the raw facade's pool only")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            result.notes.append("the facade's pool only")
             return result
         }
         let pipeline = try gpu.render(fragment: "solid_fragment", format: .rgba16Float)
@@ -42,18 +42,18 @@ struct MemorylessBurstScene: GPUScene {
         }
         // the state, made at its first use where the pack lacks it, before anything is counted
         _ = try await draw(try gpu.texture(.rgba16Float, 16, 16, usage: [.renderTarget], storage: .memoryless))
-        let before = RawFacade.memory(of: gpu.device)
+        let before = GM20BFacade.memory(of: gpu.device)
         let sizes =
             (0..<Self.frames).map { (320 + 8 * $0, 180 + 5 * $0) }
             + (0..<Self.frames).map { (316 + 8 * (Self.frames - 1 - $0), 176 + 5 * (Self.frames - 1 - $0)) }
         var grown: [String: Int] = [:]
         for (frame, (width, height)) in sizes.enumerated() {
-            if frame == Self.frames { grown = RawFacade.memory(of: gpu.device) }
+            if frame == Self.frames { grown = GM20BFacade.memory(of: gpu.device) }
             let scratch = try gpu.texture(.rgba16Float, width, height, usage: [.renderTarget], storage: .memoryless)
             let timing = try await draw(scratch)
-            result.expect(timing.path == "raw", "frame \(frame) drawn on \(timing.path)")
+            result.expect(timing.path == "gm20b", "frame \(frame) drawn on \(timing.path)")
         }
-        let peak = RawFacade.memory(of: gpu.device)
+        let peak = GM20BFacade.memory(of: gpu.device)
         if let atGrown = grown["backings"], let atShrunk = peak["backings"] {
             result.metrics.set("backings_grow_kb", atGrown >> 10)
             result.metrics.set("backings_shrink_kb", atShrunk >> 10)
@@ -70,9 +70,9 @@ struct MemorylessBurstScene: GPUScene {
                 commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
             }
         }
-        let after = RawFacade.memory(of: gpu.device)
+        let after = GM20BFacade.memory(of: gpu.device)
         guard let pool = before["pool"], let held = after["pool"], let backings = after["backings"] else {
-            result.notes.append("the raw facade answered no memory (switchRawMemory)")
+            result.notes.append("the facade answered no memory (switchMetalMemory)")
             return result
         }
         result.metrics.set("pool_before_kb", pool >> 10)

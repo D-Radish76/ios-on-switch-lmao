@@ -4,13 +4,13 @@ import HWTestGPU
 import Metal
 import SwitchBench
 
-/// gpu.raw.zcull's info and side_effects arms. info: GetInfo carries TegraGM20BInfoZcull (info_zcull_flag 1) and its
+/// gpu.gm20b.zcull's info and side_effects arms. info: GetInfo carries TegraGM20BInfoZcull (info_zcull_flag 1) and its
 /// zcull[12] equals method 'ZC''s reply word for word (info_zcull_matches 1): 2048 aliquots (info_aliquots), 1024 pixel
 /// squares an aliquot (info_pixel_squares), as nvgpu's gr_gk20a_get_zcull_info gives GM20B. side_effects: far quads
 /// whose function adds to a counter with no early fragment tests (gpu/ZcullSideEffects.swift), behind a near quad, with
 /// the pass's zcull region and with it invalidated before every draw: Metal runs the function for every far fragment,
 /// 64 x 1280 x 720 = 58,982,400 on an M4 Max (side_effect_count_zcull, side_effect_count_invalidated,
-/// side_effect_expected all equal; if not, raw_zcull.h's zcullInvalidates must take a program's device writes as unsafe).
+/// side_effect_expected all equal; if not, zcull.h's zcullInvalidates must take a program's device writes as unsafe).
 extension ZcullTest {
     func info(_ metrics: inout Metrics, _ wrong: inout [String]) {
         var flags: UInt32 = 0
@@ -36,7 +36,7 @@ extension ZcullTest {
             let count = try gpu.buffer([UInt32(0)])
             let pass = try ZcullSideEffects.pass(gpu, target: target, depth: depth, count: count)
             if invalidated {
-                paths.insert(try await RawMethods.draw(gpu, before: [(0x1958, 0)], after: [], pass).path)
+                paths.insert(try await GM20BMethods.draw(gpu, before: [(0x1958, 0)], after: [], pass).path)
             } else {
                 paths.insert(try await gpu.run(pass).path)
             }

@@ -388,8 +388,8 @@ TEST(GM20BPushScanSource, OnlyAProfiledSubmissionIsReadOnItsThread)
 {
 	const CodeText submission =
 		Block(client(), "const tgm_prof *AGXDeviceUserClient::scanSubmission(");
-	EXPECT_TRUE(submission.before("deferScan(slot, fences, pushes, count, rawMacros);",
-				      "scanPushes(pushes, count, &prof, rawMacros);"));
+	EXPECT_TRUE(submission.before("deferScan(slot, fences, pushes, count, metalMacros);",
+				      "scanPushes(pushes, count, &prof, metalMacros);"));
 	const CodeText defer = Block(client(), "void AGXDeviceUserClient::deferScan(");
 	EXPECT_TRUE(defer.has("hit->bo->pool_va"));
 	EXPECT_TRUE(defer.has("thread_call_enter(d->call);"));
@@ -608,17 +608,16 @@ TEST(GM20BKillSource, AKilledChannelLeavesItsConnectionWorking)
 			    .has("!tgm_chan_error(chans_[slot])"));
 }
 
-// The raw path's reopen after its channel is killed: the shader heap's BO and VA outlive the channel, so every program
+// The driver's reopen after its channel is killed: the shader heap's BO and VA outlive the channel, so every program
 // placed in it (Device::place) keeps its slot and every state that baked its offset stays drawable; the new channel gets
 // what lives in a channel's context again, the program region at the heap, the texture and sampler pools and the root
 // constant buffer (emitContext, from the pack's relocations) and the 2D state, and the first command buffer's prologue
 // invalidates the shader caches before any draw.
 TEST(GM20BRawReopenSource, ReopenKeepsTheHeapAndReplaysTheContext)
 {
-	const std::string raw = SourceText("../../TegraGM20BMetal/raw/runtime/raw_gpu.cpp");
-	const std::string channel =
-		SourceText("../../TegraGM20BMetal/raw/runtime/raw_command_buffer.cpp");
-	// raw_channel_recovery.h makeChannel makes the channel, then runs newContext on it
+	const std::string raw = SourceText("../../TegraGM20BMetal/gpu.cpp");
+	const std::string channel = SourceText("../../TegraGM20BMetal/command_buffer.cpp");
+	// channel_recovery.h makeChannel makes the channel, then runs newContext on it
 	const CodeText reopen =
 		Block(channel, "bool Device::reopen()") +
 		Block(channel, "bool Device::newContext(uint32_t channel, uint32_t &seq)");
@@ -638,13 +637,13 @@ TEST(GM20BRawReopenSource, ReopenKeepsTheHeapAndReplaysTheContext)
 	EXPECT_TRUE(reopen.before("p.m(CE_LAUNCH_DMA, kLaunchPitch, SUBC_COPY);",
 				  "p.m(WAIT_FOR_IDLE, 0);"));
 	const CodeText context = Block(raw, "void Device::emitContext(Push &p)");
-	// the init template relocated to this device's own addresses (raw_pack.cpp relocated, shared with the runtime's capture),
+	// the init template relocated to this device's own addresses (pack.cpp relocated, shared with the runtime's capture),
 	// the interlock's ticket buffer among them
 	EXPECT_TRUE(context.has("const InitAddresses here{heap_.va, zero_.va, root_.va, "
 				"tic_.va, tsc_.va, kTicCount - 1, kTscCount - 1, tickets_.va};"));
 	EXPECT_TRUE(context.has("relocated(im[i], here)"));
 	const CodeText relocated =
-		Block(SourceText("../../TegraGM20BMetal/raw/runtime/raw_pack.cpp"),
+		Block(SourceText("../../TegraGM20BMetal/pack.cpp"),
 		      "uint32_t relocated(const PackInitMethod &m, const InitAddresses &a)");
 	for (const char *reloc :
 	     {"case RelocHeapHi:", "case RelocHeapLo:", "case RelocTicHi:", "case RelocTicLo:",
@@ -652,10 +651,10 @@ TEST(GM20BRawReopenSource, ReopenKeepsTheHeapAndReplaysTheContext)
 	      "case RelocTicketsLo:", "case RelocTicketsHi:"})
 		EXPECT_TRUE(relocated.has(reloc));
 	EXPECT_TRUE(context.has("sampleWords(p, 1, root_.va);"));
-	EXPECT_TRUE(Block(SourceText("../../TegraGM20BMetal/raw/runtime/raw_gpu_internal.h"),
+	EXPECT_TRUE(Block(SourceText("../../TegraGM20BMetal/gm20b_gpu_internal.h"),
 			  "void sampleWords(Push &p, uint32_t samples, uint64_t root,")
 			    .has("sampleLayoutMethods(p, l, kRootBytes, root);"));
-	EXPECT_TRUE(Block(SourceText("../../TegraGM20BMetal/raw/runtime/raw_multisample.h"),
+	EXPECT_TRUE(Block(SourceText("../../TegraGM20BMetal/multisample.h"),
 			  "inline void sampleLayoutMethods(")
 			    .has("p.inc(NVB197_SET_CONSTANT_BUFFER_SELECTOR_A,"));
 	const CodeText begin = Block(channel, "CommandBuffer *Device::begin()");

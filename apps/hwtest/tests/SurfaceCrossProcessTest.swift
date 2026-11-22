@@ -34,7 +34,7 @@ struct SurfaceCrossProcessTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else { return .skip("the default device is not the raw facade") }
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else { return .skip("the default device is not the facade") }
         let acceptor = TexturePeerAcceptor()
         let listener = NSXPCListener.anonymous()
         listener.delegate = acceptor

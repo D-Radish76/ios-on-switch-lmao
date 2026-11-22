@@ -21,7 +21,7 @@ public enum FetchBlendHeavy {
         try await gpu.blitUpload(
             [UploadRect(x: 0, y: 0, width: 64, height: 64)],
             [Patterns.bytes(Patterns.busy(width: 64, height: 64, channels: 4), .bgra8Unorm)], into: source, texel: 4)
-        let raw = RawFacade.kind(of: gpu.device) == "raw"
+        let raw = GM20BFacade.kind(of: gpu.device) == "gm20b"
         for (label, line) in states {
             let pipeline = try CAState.pipeline(line, library: library, device: gpu.device)
             let attachments = try line.colors.map { color in
@@ -50,15 +50,15 @@ public enum FetchBlendHeavy {
                 encoder.endEncoding()
             }
             let warm = try await gpu.run(tolerateError: true, draw)
-            guard !warm.path.hasPrefix("error:"), !raw || warm.path == "raw" else {
+            guard !warm.path.hasPrefix("error:"), !raw || warm.path == "gm20b" else {
                 result.expect(false, "\(label): \(warm.path)")
                 continue
             }
-            let before = RawFacade.counters(of: gpu.device)
+            let before = GM20BFacade.counters(of: gpu.device)
             var times: [Double] = []
             for _ in 0..<runs {
                 let timing = try await gpu.run(draw)
-                result.expect(!raw || timing.path == "raw", "\(label): \(timing.path)")
+                result.expect(!raw || timing.path == "gm20b", "\(label): \(timing.path)")
                 result.expect(timing.gpuTimed && timing.gpuClock != "host", "\(label): no GPU timestamp")
                 times.append(timing.gpuMilliseconds)
             }
@@ -67,7 +67,7 @@ public enum FetchBlendHeavy {
             if raw {
                 result.metrics.set(
                     "fetch_" + label,
-                    RawFacade.fetchRoutes(before: before, after: RawFacade.counters(of: gpu.device)))
+                    GM20BFacade.fetchRoutes(before: before, after: GM20BFacade.counters(of: gpu.device)))
             }
         }
         return result

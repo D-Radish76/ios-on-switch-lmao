@@ -54,7 +54,7 @@ public struct AstcBlockGrid: Sendable {
 /// tgm_layout_offset_of: TegraColor GOBs, blocks one GOB wide and 2^yLog2 GOBs tall), and which address bits a
 /// misplaced picture swapped.
 public enum BlockLinearMap {
-    /// The block height NIL picks for an image `texelHeight` tall with `rows` rows of blocks (raw/fx blockChainLayout).
+    /// The block height NIL picks for an image `texelHeight` tall with `rows` rows of blocks (fx blockChainLayout).
     public static func yLog2(texelHeight: Int, rows: Int) -> Int {
         let byHeight =
             texelHeight >= 86 ? 4 : texelHeight >= 43 ? 3 : texelHeight >= 22 ? 2 : texelHeight >= 11 ? 1 : 0

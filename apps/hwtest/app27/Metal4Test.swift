@@ -7,7 +7,7 @@ import Metal
 /// metal4=0 and the test passes with mtl4=0; every family answer is logged, so a wrong yes shows. Where the family is
 /// there, an MTL4 queue, allocator and one empty command buffer must complete: the queue signals a shared event after
 /// it, and the test's timeout fails a signal that never comes. The MTL4 entry points are probed with
-/// respondsToSelector: first, because the raw facade forwards a selector it lacks to its m2v twin and one neither
+/// respondsToSelector: first, because the facade forwards a selector it lacks to its m2v twin and one neither
 /// answers raises, which would end the suite.
 struct Metal4Test: HWTest {
     let id = "metal4.device"

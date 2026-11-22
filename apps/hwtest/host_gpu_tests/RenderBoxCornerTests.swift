@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 import XCTest
 
-/// gpu.raw.icon_corners' GPU arms on this Mac's GPU, whose Metal is Apple's: RenderBox's icon masks at the App
+/// gpu.gm20b.icon_corners' GPU arms on this Mac's GPU, whose Metal is Apple's: RenderBox's icon masks at the App
 /// Library's small and large sizes within RenderBoxCorner.tolerance of its own CPU drawing in every corner pixel, as
 /// antialiased as it, a stepped corner beyond it; the fetching indexed strips' sums; and the reduction the
 /// IconServices arms compare through.

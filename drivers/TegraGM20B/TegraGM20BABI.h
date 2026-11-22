@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
-/* Kernel <-> userland wire ABI for the Tegra X1 GM20B driver (kext: drivers/TegraGM20B, client: the raw GM20B path,
- * drivers/TegraGM20BMetal/raw/runtime/raw_kernel.cpp).
+/* Kernel <-> userland wire ABI for the Tegra X1 GM20B driver (kext: drivers/TegraGM20B, client: the driver,
+ * drivers/TegraGM20BMetal/kernel.cpp).
  * Semantics are in scratchpad/gpu/CONTRACT.md. The kext and the client compile this same file; keep it byte-identical in both.
  *
  * Every call is IOConnectCallStructMethod(conn, selector, in, in_size, out, &out_size) with one of the fixed records below.

@@ -9,7 +9,7 @@ use metal2vulkan::reflection::{
 use std::ffi::{CStr, CString, c_char};
 
 const ABSENT: u32 = u32::MAX;
-// raw/runtime/raw_reflection_blob.h's magic and version
+// reflection_blob.h's magic and version
 const BLOB_MAGIC: &[u8; 4] = b"SWRF";
 const BLOB_VERSION: u32 = 1;
 
@@ -120,7 +120,7 @@ impl Reflection {
         out
     }
 
-    /// The blob raw_reflection_blob.h reads: each of `stages`' bindings as a stage's range of the edges, every node as
+    /// The blob reflection_blob.h reads: each of `stages`' bindings as a stage's range of the edges, every node as
     /// `of` makes it
     pub fn blob(stages: &[&[Binding]]) -> Vec<u8> {
         let mut made = Self {
@@ -278,7 +278,7 @@ impl Reflection {
     }
 }
 
-/// A reflection blob (raw/runtime/raw_reflection_blob.h), owned by its handle
+/// A reflection blob (reflection_blob.h), owned by its handle
 pub struct NmbReflectionBlob(Vec<u8>);
 
 /// The reflection `newRenderPipelineStateWithDescriptor:options:reflection:error:` answers for a state of offline
@@ -372,7 +372,7 @@ mod tests {
         serde_json::from_str(&json).unwrap()
     }
 
-    // Word `at` of node `node` of a one-stage blob (raw_reflection_blob.h: a 24-byte header, one 8-byte stage range,
+    // Word `at` of node `node` of a one-stage blob (reflection_blob.h: a 24-byte header, one 8-byte stage range,
     // 104-byte nodes whose values start at their byte 40)
     fn value(blob: &[u8], node: usize, at: usize) -> u64 {
         let start = 24 + 8 + 104 * node + 40 + 8 * at;

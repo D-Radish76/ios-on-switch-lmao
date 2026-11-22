@@ -5,20 +5,21 @@ usage: bazel run //tools/gpu:kernelharvest -- <boot.logarchive>... [--build <IPS
                                                [--libraries <directory or tar>]... [--dry-run]
        bazel run //tools/gpu:kernelharvest -- --ndjson <file>...   (`log show --style ndjson --info` output instead)
 
-The lines it reads, os_log's (the raw runtime's, RawComplete.mm and RawCompleteRemote.mm):
-    raw: kernel harvest <name> <i>/<n> <part>
+The lines it reads, os_log's (the runtime's, TegraGM20BMetalComplete.mm and TegraGM20BMetalCompleteRemote.mm):
+    SwitchMetal: kernel harvest <name> <i>/<n> <part>
         the n parts, 700 characters each, of "lib=<library> function=<function>[ spec] kernel | <compute key>": a kernel
         the shader compiler answered at run time (debug builds), its library a system library's path or data:<SHA-256
         of its bytes>, spec where its function was made with constant values
-    raw: a kernel the pack lacks, made at its first dispatch of <x,y,z> threads in <us> us[ (<QoS>)]: <function> <key>
-    raw: a kernel the pack lacks <is refused|was not made> at <x,y,z> threads: <why> | <function> <key>
+    SwitchMetal: a kernel the pack lacks, made at its first dispatch of <x,y,z> threads in <us> us[ (<QoS>)]: <function>
+    <key>
+    SwitchMetal: a kernel the pack lacks <is refused|was not made> at <x,y,z> threads: <why> | <function> <key>
         a kernel made by an older runtime, and one refused: <key> is the compute key with its constants last
-        (RawComplete.mm constantsLast: "<AIR> | max=.. tgm=.. | tg=.. | tgmem=.. | tex=.. | smp=..[ | region=1] |
-        constants <constants>")
-A compute key is raw_compute_key.h computeKey's text. Each kernel becomes the line
+        (TegraGM20BMetalComplete.mm constantsLast: "<AIR> | max=.. tgm=.. | tg=.. | tgmem=.. | tex=.. | smp=..[ |
+        region=1] | constants <constants>")
+A compute key is compute_key.h computeKey's text. Each kernel becomes the line
     D ok=1 tg=<x,y,z> edge=0,0,0 threads=0 [tgmem=..] [tex=..] [smp=..] os=<build> | form=d opt=0 max=.. tgm=..
         label=- | k <function> lib=<library>[ spec] <constants>[ | in <stage input>] |
-which raw/pack/kernel_shapes.h reads back to the key: a texture item stating no address map (a key from before keys
+which pack/kernel_shapes.h reads back to the key: a texture item stating no address map (a key from before keys
 stated them) takes its format's own (stateFormatMaps). The older lines name no library: a kernel's is the one of
 --libraries (data libraries, each <SHA-256>.metallib, in a directory or a tar's data/) whose function of its name has
 its AIR, else the one library the corpus's D lines and specializations (S lines) name for the function. A line the
@@ -61,7 +62,7 @@ SHAPE = (
 )
 # constantsLast puts " | constants" and the key's constants part, after one space, last
 MADE = re.compile(
-    r'raw: a kernel the pack lacks, made at its first dispatch of \S+ threads in \d+ us(?: \([^)]*\))?: '
+    r'SwitchMetal: a kernel the pack lacks, made at its first dispatch of \S+ threads in \d+ us(?: \([^)]*\))?: '
     + r'(?P<function>\S+) '
     + AIR
     + SHAPE
@@ -69,7 +70,7 @@ MADE = re.compile(
     re.DOTALL,
 )
 REFUSED = re.compile(
-    r'raw: a kernel the pack lacks (?:is refused|was not made) at \S+ threads: .*? \| (?P<function>\S+) '
+    r'SwitchMetal: a kernel the pack lacks (?:is refused|was not made) at \S+ threads: .*? \| (?P<function>\S+) '
     + AIR
     + SHAPE
     + r' \| constants(?P<constants>.*)$',
@@ -77,14 +78,14 @@ REFUSED = re.compile(
 )
 KEY = re.compile(r'kernel \| ' + AIR + r' \| (?P<constants>.*?)' + SHAPE + r'$', re.DOTALL)
 HEAD = re.compile(r'lib=(?P<lib>\S+) function=(?P<function>\S+)(?P<spec> spec)? ')
-PART = re.compile(r'raw: kernel harvest ([0-9a-f]{16}) (\d+)/(\d+) (.*)$', re.DOTALL)
+PART = re.compile(r'SwitchMetal: kernel harvest ([0-9a-f]{16}) (\d+)/(\d+) (.*)$', re.DOTALL)
 ROUTE = 'compute.kernel: a kernel the pack lacks ('
 PART_CHARS = 700
 PREDICATE = ' OR '.join(
     f'eventMessage CONTAINS "{text}"'
     for text in (
         'a kernel the pack lacks',
-        'raw: kernel harvest ',
+        'SwitchMetal: kernel harvest ',
         'OS version: ',
         'deviceBuildVersion is',
         'iPhone OS ',

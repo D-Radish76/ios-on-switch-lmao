@@ -19,7 +19,7 @@ constexpr uint32_t kBoFlags = static_cast<uint32_t>(TegraGM20BBoCoherent) |
 //  - a BO of up to kPoolSmallBytes (what a device needs to exist: NVK's event heap, upload chunks) is refused only when it
 //    would leave less than kPoolFloorBytes free: one more of the compositor's 16 MiB m2v blocks, and with it the room
 //    nvkm's page tables and channels for new clients take;
-//  - a larger one also leaves kPoolReserveBytes (one of the compositor's 16 MiB m2v blocks, and the raw path's ~7 MiB of
+//  - a larger one also leaves kPoolReserveBytes (one of the compositor's 16 MiB m2v blocks, and the driver's ~7 MiB of
 //    rings and tables should backboardd restart, with margin) free, and keeps the client within kClientPoolBytes of pool
 //    BOs, a fairness share, not a limit on GPU memory (cached BOs have none).
 // Was: any BO kept the 32 MiB, so at 97 of 128 MiB used every poster extension's first 4 KiB was refused and its device

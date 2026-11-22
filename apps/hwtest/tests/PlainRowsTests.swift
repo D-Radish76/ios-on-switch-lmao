@@ -7,10 +7,10 @@ import Metal
 /// (gpu/PlainRows.swift), against an M4 Max under macOS 27.2.1 (this scene on it, ten runs, 0 off): R8Unorm 136x104
 /// over a '420v' plane of rows 16 reads texel (x, y) at plane byte y * 16 + x (plain_reads_off_overlap, of 14144);
 /// BGRA8Unorm 64x1048 over the one plane of a 'BGRA' 64x48 of rows 256 in 12 KiB reads its page's bytes, those past the
-/// allocation too, and 0 past the page (plain_reads_off_past_page, of 67072; the raw path reads those rows through a
+/// allocation too, and 0 past the page (plain_reads_off_past_page, of 67072; the driver reads those rows through a
 /// sparse window). plain_reads_made_<arm>.
 struct PlainRowsReadsTest: HWTest {
-    let id = "gpu.raw.plain_rows_reads"
+    let id = "gpu.gm20b.plain_rows_reads"
     let name = "Plain textures over overlapping rows and past the last page read as Metal reads them, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -36,12 +36,12 @@ struct PlainRowsReadsTest: HWTest {
 }
 
 /// RGBA32Uint 40x40 over a '420v' plane of rows 128, every texel drawn its code by a DontCare pass (gpu/PlainRows
-/// Stores.swift): each 16-byte element keeps the code of the row whose store lands last by raw_overlap_order.h's
+/// Stores.swift): each 16-byte element keeps the code of the row whose store lands last by overlap_order.h's
 /// overlapOrder, an M4 Max's order (this scene on it, ten runs: every one of the 336 elements two to five rows reach
 /// held the same row each run, the rows the driver's host test names, and 0 of 352 off the order; the bytes past the
 /// span unchanged). plain_order_off, plain_order_made.
 struct PlainRowsStoreOrderTest: HWTest {
-    let id = "gpu.raw.plain_rows_store_order"
+    let id = "gpu.gm20b.plain_rows_store_order"
     let name = "A pass into plain texels over overlapping rows keeps the row Metal stores last, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -62,7 +62,7 @@ struct PlainRowsStoreOrderTest: HWTest {
 /// outside; an element no such row reaches keeps 0xee (an M4 Max under macOS 27.2.1, this scene, ten runs, 0 of 1640
 /// off). plain_loaded_off, plain_loaded_made.
 struct PlainRowsLoadedTest: HWTest {
-    let id = "gpu.raw.plain_rows_loaded"
+    let id = "gpu.gm20b.plain_rows_loaded"
     let name = "A scissored loaded pass over overlapping plain rows stores the tiles it reaches as Metal does, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -83,7 +83,7 @@ struct PlainRowsLoadedTest: HWTest {
 /// of the last row reaching it and nothing past the rows changed (plain_cpu_write_off); getBytes reads texel (x, y) at
 /// plane byte y * 64 + x (plain_cpu_read_off).
 struct PlainRowsCpuTest: HWTest {
-    let id = "gpu.raw.plain_rows_cpu"
+    let id = "gpu.gm20b.plain_rows_cpu"
     let name = "CPU copies of a plain texture over overlapping rows move bytes at the plane's rows, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -108,7 +108,7 @@ struct PlainRowsCpuTest: HWTest {
 /// getBytes at the plane's rows, y * 8 + x (plain_under16_getbytes_off), and a pass of codes stores row y at y * 16 + x
 /// and nothing else in the first 16 KiB or at the mebibyte rows (plain_under16_store_off).
 struct PlainRowsUnder16Test: HWTest {
-    let id = "gpu.raw.plain_rows_under16"
+    let id = "gpu.gm20b.plain_rows_under16"
     let name = "A plain texture over rows under 16 bytes reads them a MiB apart and stores them 16 apart, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }
@@ -123,7 +123,7 @@ struct PlainRowsUnder16Test: HWTest {
                 ("plain_under16_store_off", u.storeOff),
             ]
             for (key, value) in counts { metrics.set(key, value) }
-            return [("read \(u.readPath)", u.readPath == "raw"), ("pass \(u.passPath)", u.passPath == "raw")]
+            return [("read \(u.readPath)", u.readPath == "gm20b"), ("pass \(u.passPath)", u.passPath == "gm20b")]
                 + counts.map { ("\($0.0)=\($0.1)", $0.1 == 0) }
         }
     }
@@ -141,7 +141,7 @@ enum PlainRowsRun {
             checks.append(("\(key): no texture", false))
             return
         }
-        checks.append(("\(key): \(r.path)", r.path == "raw"))
+        checks.append(("\(key): \(r.path)", r.path == "gm20b"))
         checks.append(("\(key): \(r.off) of \(r.judged) off, first \(r.first)", r.off == 0))
     }
 
@@ -156,7 +156,7 @@ enum PlainRowsRun {
         metrics.set(prefix + "_off", r.made ? r.off : -1)
         guard r.made else { return [("no texture over rows of \(s.pitch)", false)] }
         return [
-            ("\(prefix): \(r.path)", r.path == "raw"),
+            ("\(prefix): \(r.path)", r.path == "gm20b"),
             ("\(prefix): \(r.off) of \(r.judged) off, first \(r.first)", r.off == 0),
         ]
     }

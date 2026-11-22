@@ -2,7 +2,7 @@ import Foundation
 import HWTestCore
 
 /// The other channel of a `compete` experiment: the app's known program drawn 64 times over 1280x720, a command buffer
-/// at a time, on a second bench device (its own kernel connection, GPU VM and channel: raw_gpu.cpp Device::open and
+/// at a time, on a second bench device (its own kernel connection, GPU VM and channel: gpu.cpp Device::open and
 /// openChannel), from a thread of its own until the experiment ends.
 final class BenchCompetition {
     private let runner: BenchRunner

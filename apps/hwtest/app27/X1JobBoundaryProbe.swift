@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// barrier.entry_no_drain (raw/plan plan_barriers.cpp entry): a job that starts after the one before it ended (its end
+/// barrier.entry_no_drain (plan plan_barriers.cpp entry): a job that starts after the one before it ended (its end
 /// fence released with RELEASE_WFI, after the kernel's WAIT_FOR_IDLE and L2 flush) needs no flush or wait at its entry,
 /// only invalidates of what it reads (planner) or none of the data caches at all (bare). Each trial: job 0 reads a small
 /// texture or buffer (so its lines sit in the caches), job 1 or the CPU or the copy channel writes it with a new seed,
@@ -16,7 +16,7 @@ import Metal
 /// the copy engine reading what the SMs stored (sto_ce: what the planner's entry drops against today's, the flush of the
 /// SMs' data, shows only where something outside the SMs reads their stores). hdr_tex is the hazard every entry but
 /// entry_none invalidates for: between job 0 and job 2 the CPU rewrites the header job 0 sampled a texture through to
-/// describe another image (the raw device's own contract: a header written between submissions is visible at the next
+/// describe another image (the device's own contract: a header written between submissions is visible at the next
 /// one's header invalidate), so job 2 samples the new image, or with a header cache that kept job 0's entry the old one.
 /// entry_none, the positive control at a job's entry, opens each job with no invalidate at all (not even the header
 /// and sampler caches bare keeps) and no barrier before its first encoder: where a cache holds job 0's lines across the
@@ -290,8 +290,8 @@ enum X1JobBoundaryProbe {
             if writer == .hdr { writeFromCPU(seeds) }
             _ = try await gpu.run(forms: forms) { read($0, results: false) }
             if writer == .hdr {
-                for (t, image) in zip(textures, images) { try RawProbe.retarget(gpu.device, t, to: image) }
-                defer { for t in textures { try? RawProbe.retarget(gpu.device, t, to: nil) } }
+                for (t, image) in zip(textures, images) { try GM20BProbe.retarget(gpu.device, t, to: image) }
+                defer { for t in textures { try? GM20BProbe.retarget(gpu.device, t, to: nil) } }
                 return try await gpu.run(forms: forms) { read($0, results: true) }
             }
             writeFromCPU(seeds)

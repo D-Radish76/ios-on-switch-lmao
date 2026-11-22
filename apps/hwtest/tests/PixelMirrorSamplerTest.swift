@@ -5,18 +5,18 @@ import Metal
 
 /// A sampler of pixel coordinates whose s and t axes mirror once to the edge (call.sampler: such a sampler was m2v's alone,
 /// so every draw that bound it went there). Metal defines pixel coordinates only under ClampToEdge (MTLSampler.h
-/// normalizedCoordinates), so the raw path clamps those axes to the edge: a 4x4 texture read at its texel centres through
-/// it is the texture's texels, on the raw path.
+/// normalizedCoordinates), so the driver clamps those axes to the edge: a 4x4 texture read at its texel centres through
+/// it is the texture's texels, on the driver.
 struct PixelMirrorSamplerTest: HWTest {
-    let id = "gpu.raw.pixel_mirror_sampler"
-    let name = "A pixel-coordinate sampler that mirrors once to the edge samples on the raw path"
+    let id = "gpu.gm20b.pixel_mirror_sampler"
+    let name = "A pixel-coordinate sampler that mirrors once to the edge samples on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var texels: [UInt8] = []
         for i in 0..<16 { texels += [UInt8(16 * i), UInt8(255 - 16 * i), UInt8(7 * i), 255] }
         let source = try gpu.texture(.rgba8Unorm, 4, 4, usage: [.shaderRead])
@@ -57,7 +57,7 @@ struct PixelMirrorSamplerTest: HWTest {
         metrics.set("texels_wrong", wrong)
         metrics.set("first", bytes[4 * (4 + 12 * 4)..<4 * (4 + 12 * 4) + 4].map { String($0) }.joined(separator: "/"))
         var failures: [String] = []
-        if timing.path != "raw" { failures.append("the draw went \(timing.path)") }
+        if timing.path != "gm20b" { failures.append("the draw went \(timing.path)") }
         if wrong != 0 { failures.append("\(wrong) of 16 texels wrong") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)
     }

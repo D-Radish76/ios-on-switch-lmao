@@ -10,7 +10,7 @@ import Metal
 /// texels off each). Per destination <dst>_off texels off, <dst>_texel the bytes of texel (5, 3) as stored (an M4 Max:
 /// bgra8 232/13/23/134, rgba8_srgb 23/13/232/134); every command buffer raw, failed_cbs=0.
 struct ResolveOneSampleSwapTest: HWTest {
-    let id = "gpu.raw.resolve_one_sample_swap"
+    let id = "gpu.gm20b.resolve_one_sample_swap"
     let name = "A one-sample RGBA8 resolve copies its codes into BGRA8 and RGBA8 sRGB textures, on raw"
     let subsystem = Subsystem.metal
 
@@ -21,9 +21,9 @@ struct ResolveOneSampleSwapTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for d in Self.destinations {
@@ -39,9 +39,9 @@ struct ResolveOneSampleSwapTest: HWTest {
             }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

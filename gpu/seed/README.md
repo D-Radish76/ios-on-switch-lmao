@@ -1,6 +1,6 @@
 # Shader seed
 
-The raw path compiles every Metal pipeline it hasn't seen before on the console's CPU, which takes up most of a cold
+The driver compiles every Metal pipeline it hasn't seen before on the console's CPU, which takes up most of a cold
 first boot. The seed makes those records ahead of time on the Mac from the IPSW's own Metal libraries, and the device
 reads them before it compiles anything. It also carries the Metal compiler replies a console kept (Core Image's kernels
 compiled from source), which the shader compiler reads before it asks the OS's compiler.
@@ -40,7 +40,7 @@ user downloads, using host tools from the release (`--//gpu/seed:tools`, `--//gp
 macOS. The seed refuses tools whose stack key differs from the GPU bundle's, because their records would never be hit.
 
 The corpus is split into buckets by program, one action each, so they run in parallel and a corpus edit only redoes
-the buckets it touches. The raw pack is probed in buckets too. Only the last step, which stamps the stack key into the
-pack and the native records, reads the key. The key changes only with what the raw path's records are made and read by
-(`//gpu:raw_stack`), so an edit to the rest of the raw runtime leaves the pack and every record on the device as they
+the buckets it touches. The pack is probed in buckets too. Only the last step, which stamps the stack key into the
+pack and the native records, reads the key. The key changes only with what the driver's records are made and read by
+(`//gpu:stack_key`), so an edit to the rest of the runtime leaves the pack and every record on the device as they
 are.

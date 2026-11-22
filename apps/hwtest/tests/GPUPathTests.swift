@@ -57,7 +57,7 @@ struct GPUPaths {
 
 /// The parts of a GPUPathTest's workload that could not run here, each with why and the counters only it would have
 /// taken: exercise() reports them through `current`, and run() leaves those counters out of its "no X while it ran".
-/// A part that could not run because of the raw path's own failing fails the test.
+/// A part that could not run because of the driver's own failing fails the test.
 final class PathParts: @unchecked Sendable {
     @TaskLocal static var current: PathParts?
     private(set) var skipped: [(why: String, counters: [String])] = []
@@ -70,7 +70,7 @@ final class PathParts: @unchecked Sendable {
     }
 
     /// The route HW Test's own command buffers take, from a blit fill through the test's queue that the path tally
-    /// leaves out: a promise test whose maker or reader is this process's own Metal work runs its part only on "raw".
+    /// leaves out: a promise test whose maker or reader is this process's own Metal work runs its part only on "gm20b".
     static func ownRoute(_ gpu: GPU) -> String {
         guard let buffer = gpu.device.makeBuffer(length: 256, options: .storageModeShared),
             let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder()
@@ -79,22 +79,22 @@ final class PathParts: @unchecked Sendable {
         blit.endEncoding()
         commands.commit()
         commands.waitUntilCompleted()
-        return RawFacade.path(of: commands)
+        return GM20BFacade.path(of: commands)
     }
 
-    /// Whether this process's own command buffers take the raw path; when not, the part does not run and the test fails
+    /// Whether this process's own command buffers take the driver; when not, the part does not run and the test fails
     /// with the route.
     static func ownRouteRaw(_ gpu: GPU, part: String, counters: [String], _ metrics: inout Metrics) -> Bool {
         let route = ownRoute(gpu)
         metrics.set("own_route", route)
-        if route == "raw" { return true }
+        if route == "gm20b" { return true }
         current?.fail("\(part): HW Test's own command buffers go \(route)", counters: counters)
         return false
     }
 }
 
-/// One GM20B kernel path behind a capability bit, on the raw facade: the kernel advertises the bit, a workload that
-/// needs the path gives the right bytes with every command buffer on the raw path, and the kernel counted the path for
+/// One GM20B kernel path behind a capability bit, on the facade: the kernel advertises the bit, a workload that
+/// needs the path gives the right bytes with every command buffer on the driver, and the kernel counted the path for
 /// this process while it ran.
 protocol GPUPathTest: HWTest {
     /// The capability bit that still gates the path, if any
@@ -110,8 +110,8 @@ extension GPUPathTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         let connection = GPUConnection()
         var metrics = Metrics()
@@ -145,7 +145,7 @@ extension GPUPathTest {
             if taken <= 0 && !skippedCounters.contains(counter) { failures.append("no \(counter) while it ran") }
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        if gpu.paths.paths.keys.contains(where: { $0 != "raw" }) {
+        if gpu.paths.paths.keys.contains(where: { $0 != "gm20b" }) {
             failures.append("command buffers went \(gpu.paths.text)")
         }
         if !failures.isEmpty { return .fail(failures.joined(separator: "; "), metrics, proof: gpu.proof) }
@@ -194,11 +194,11 @@ struct LeanCopyPathTest: GPUPathTest {
         let texture = try gpu.texture(.rgba8Unorm, width, height, usage: [.shaderRead], storage: .shared)
         let pattern = (0..<(row * height)).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) }
         let region = MTLRegionMake2D(0, 0, width, height)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         texture.replace(region: region, mipmapLevel: 0, withBytes: pattern, bytesPerRow: row)
         var back = [UInt8](repeating: 0, count: pattern.count)
         texture.getBytes(&back, bytesPerRow: row, from: region, mipmapLevel: 0)
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let uploads = (after["texture_uploads"] ?? 0) - (before["texture_uploads"] ?? 0)
         let readbacks = (after["texture_readbacks"] ?? 0) - (before["texture_readbacks"] ?? 0)
         let wrong = Self.wrong(back, pattern)
@@ -461,7 +461,7 @@ struct SemanticFencePathTest: GPUPathTest {
 
     func exercise(_ gpu: GPU, _: TestContext, _ metrics: inout Metrics) async throws -> [String] {
         let buffer = try gpu.buffer(Self.count * Self.slice)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var committed: [MTLCommandBuffer] = []
         for index in 0..<Self.count {
             committed.append(
@@ -474,7 +474,7 @@ struct SemanticFencePathTest: GPUPathTest {
                 })
         }
         try gpu.finish(committed)
-        let reopens = (RawFacade.counters(of: gpu.device)["reopens"] ?? 0) - (before["reopens"] ?? 0)
+        let reopens = (GM20BFacade.counters(of: gpu.device)["reopens"] ?? 0) - (before["reopens"] ?? 0)
         let bytes = UnsafeRawBufferPointer(start: buffer.contents(), count: Self.count * Self.slice)
         var wrong = 0
         for (offset, byte) in bytes.enumerated() where byte != UInt8(offset / Self.slice + 1) {
@@ -517,9 +517,9 @@ struct SharedEventsPathTest: GPUPathTest {
         try gpu.finish([producer])
         waiter.waitUntilCompleted()
         var failures: [String] = []
-        let waiterPath = RawFacade.path(of: waiter)
+        let waiterPath = GM20BFacade.path(of: waiter)
         metrics.set("waiter_path", waiterPath)
-        if waiterPath != "raw" && waiterPath != "device" {
+        if waiterPath != "gm20b" && waiterPath != "device" {
             failures.append("the waiting command buffer went \(waiterPath)")
         }
         if waiter.status != .completed { failures.append("the waiting command buffer ended \(waiter.status.rawValue)") }

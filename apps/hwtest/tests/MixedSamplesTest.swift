@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// A one-sample colour beside a 4x depth (MixedSamplesCases), which decides two inferred fields of the raw path's mixed
-/// samples (raw_mixed_samples.h): SET_TIR_CONTROL REDUCE_COVERAGE's meaning and whether the zeta follows
+/// A one-sample colour beside a 4x depth (MixedSamplesCases), which decides two inferred fields of the driver's mixed
+/// samples (mixed_samples.h): SET_TIR_CONTROL REDUCE_COVERAGE's meaning and whether the zeta follows
 /// SET_ANTI_ALIAS_RASTER under TIR. Expected values are an M4 Max's (mixprobe.mm, analyse.py; this scene measured
 /// again in a fresh process after one warm-up mixed pass): every pixel is rasterised at the depth's 4 samples; the depth
 /// is 0.5 after in every covered, passing sample under either state; the colour is white where ANY covered sample passes
@@ -15,7 +15,7 @@ import Metal
 /// _swapped the other rule's, _depth the pixels whose written samples are the covered and passing ones (reported; the
 /// Mac 1023 under analyse.py's coverage model) and _rows each row's edge pixels (MixedSamplesCases.edge's codes).
 struct MixedSamplesTest: HWTest {
-    let id = "gpu.raw.mixed_samples"
+    let id = "gpu.gm20b.mixed_samples"
     let name = "A one-sample colour beside a 4x depth tests, writes and resolves its samples as Metal's, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 120 }
@@ -24,13 +24,13 @@ struct MixedSamplesTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         return await Self.outcome(gpu)
     }
 
     static func outcome(_ gpu: GPU) async -> Outcome {
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var grey = 0, fillOff = 0
@@ -86,9 +86,9 @@ struct MixedSamplesTest: HWTest {
         checks.append(("no colour value but 0 and 255", grey == 0))
         checks.append(("the 4x fill wrote each sample its mask's bit", fillOff == 0))
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: kept.union(["mixed_grey", "mixed_fill_off"]))
         return .judged(checks, metrics, proof: gpu.proof)

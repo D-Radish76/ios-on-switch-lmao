@@ -16,7 +16,7 @@ import Metal
 /// 3.5 MiB wired in 0.28 ms on boot 22, too short to tell, makes about 2.6 ms); four of them, 128 MiB, are held. Fails
 /// when imports add half a wiring or more to the submissions' p99. Two arms: fills of a private buffer, and (`shared_*`
 /// keys) fills of a shared, CPU-cached one, whose command buffers take the device lock to capture their CPU completion
-/// (raw_alias.cpp captureCpuCompletion). The runtime holds no device lock across a surface texture's import, so both
+/// (alias.cpp captureCpuCompletion). The runtime holds no device lock across a surface texture's import, so both
 /// arms meet the imports only in the kernel.
 struct ImportBesideSubmitsTest: GPUPathTest {
     let id = "gpu.path.import_beside_submits"

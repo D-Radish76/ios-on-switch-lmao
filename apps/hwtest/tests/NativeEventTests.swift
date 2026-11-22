@@ -3,11 +3,11 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The raw facade's event jobs (drivers/TegraGM20BMetal/raw/runtime/RawMetalEventJobs.mm, debug runtimes): jobs of no
+/// The facade's event jobs (drivers/TegraGM20BMetal/TegraGM20BMetalEventJobs.mm, debug runtimes): jobs of no
 /// work it made, by what they carried, and the signals whose value the CPU set after the work before them.
 enum EventJobs {
     static func read(_ device: MTLDevice) -> [String: Int] {
-        let selector = NSSelectorFromString("switchRawEvents")
+        let selector = NSSelectorFromString("switchMetalEvents")
         guard let device = device as? NSObject, device.responds(to: selector),
             let answer = device.perform(selector)?.takeUnretainedValue() as? [String: NSNumber]
         else { return [:] }
@@ -29,7 +29,7 @@ final class HandlerValue<T>: @unchecked Sendable {
 }
 
 /// Events: every event the device makes is a kernel event, plain ones too. A command buffer of a signal alone and a
-/// signal after an indirect dispatch each go to the GPU in a job of no work, on the raw path; a listener on an event made from the first's
+/// signal after an indirect dispatch each go to the GPU in a job of no work, on the driver; a listener on an event made from the first's
 /// handle hears its GPU signal; a plain event orders another queue's copy after a fill; a command buffer that ends in a
 /// wait completes (where its producer stood then is logged, the two completions being unordered). No signal's value is
 /// set by the CPU.
@@ -118,7 +118,7 @@ struct NativeSharedEventTest: NativeObjectTest {
         if !(await Self.waited(copied, seconds: 5)) {
             work.failures.append("the copy waiting on a plain event never ran")
         }
-        work.paths += [RawFacade.path(of: waiter), RawFacade.path(of: producer)]
+        work.paths += [GM20BFacade.path(of: waiter), GM20BFacade.path(of: producer)]
         let wrong = UnsafeRawBufferPointer(start: target.contents(), count: length).filter { $0 != 0x5a }.count
         metrics.set("wrong_bytes", wrong)
         if wrong != 0 { work.failures.append("\(wrong) copied bytes miss the fill the event signalled") }
@@ -140,7 +140,7 @@ struct NativeSharedEventTest: NativeObjectTest {
         if !(await Self.waited(tailDone, seconds: 5)) {
             work.failures.append("a command buffer ending in a wait never completed")
         }
-        work.paths += [RawFacade.path(of: tail), RawFacade.path(of: late)]
+        work.paths += [GM20BFacade.path(of: tail), GM20BFacade.path(of: late)]
         metrics.set("producer_at_waiter", Int(lateAtTail.value.rawValue))
 
         let kernel = try gpu.compute("fma_loop")

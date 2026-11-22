@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MIT */
-/* The job interface: persistent resource sets and SubmitJob. The raw stack key hashes it (the pack's mock_jobs.h includes
+/* The job interface: persistent resource sets and SubmitJob. The stack key hashes it (the pack's mock_jobs.h includes
  * it); TegraGM20BABI.h never includes it. Records keep TegraGM20BABI.h's rules: little endian, naturally aligned,
  * reserved fields zero on input. */
 #ifndef TEGRA_GM20B_JOB_ABI_H

@@ -10,7 +10,7 @@ import Metal
 /// red, changed_elsewhere bytes changed in any other slice or level, changed the parts they lie in (s<slice>l<level>,
 /// "-" for none); every command buffer raw, failed_cbs=0.
 struct ViewSliceTargetTest: HWTest {
-    let id = "gpu.raw.view_slice_target"
+    let id = "gpu.gm20b.view_slice_target"
     let name = "A pass into a slice of a 2D array view renders into that slice and level of the texture alone, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
@@ -20,9 +20,9 @@ struct ViewSliceTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         do {
@@ -50,9 +50,9 @@ struct ViewSliceTargetTest: HWTest {
             checks.append(("the pass: \(GPU.describe(error))", false))
         }
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         return .judged(checks, metrics, proof: gpu.proof)
     }

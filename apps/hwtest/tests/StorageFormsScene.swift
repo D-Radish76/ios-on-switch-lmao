@@ -124,7 +124,7 @@ extension StorageFormsCases {
             let state = try await state(c)
             let targets = try targets(c, width: side, height: side)
             let buffer = try waited { encode(c, state, targets, zStep: 1.0 / 32, $0) }
-            var seen = Observation(error: Self.failure(buffer), path: RawFacade.path(of: buffer))
+            var seen = Observation(error: Self.failure(buffer), path: GM20BFacade.path(of: buffer))
             if seen.error == nil { seen.pixels = try await pixels(c, targets.colour) }
             return seen
         }
@@ -180,7 +180,7 @@ extension StorageFormsCases {
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 encoder.endEncoding()
             }
-            var seen = Loaded(error: Self.failure(buffer), path: RawFacade.path(of: buffer))
+            var seen = Loaded(error: Self.failure(buffer), path: GM20BFacade.path(of: buffer))
             guard seen.error == nil else { return seen }
             let after = try await gpu.read(colour, bytesPerPixel: 2)
             let words = try await gpu.read(copy, bytesPerPixel: 16).withUnsafeBytes {

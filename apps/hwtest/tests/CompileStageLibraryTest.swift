@@ -7,7 +7,7 @@ import Metal
 
 /// A render state and a kernel no pack or store holds, made by the shader compiler with NAK's stage compile linked into
 /// the plugin (third_party/mesa/src/nouveau/switch_compile): the plugin image exports switch_compile_stage, the state is
-/// the raw facade's, compiled by the compiler rather than in this process, its kernel computes every element, and no
+/// the facade's, compiled by the compiler rather than in this process, its kernel computes every element, and no
 /// command buffer failed. Before the stage compile left NVK, the plugin had no such export and the compiler found
 /// NAK's exports in libvulkan_nouveau.dylib.
 struct CompileStageLibraryTest: HWTest {
@@ -18,8 +18,8 @@ struct CompileStageLibraryTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade")
         }
         var metrics = Metrics()
         let plugin = Self.pluginImage()
@@ -28,14 +28,14 @@ struct CompileStageLibraryTest: HWTest {
         metrics.set("stage_compile", export)
         metrics.set("nvk_loaded", Self.imageLoaded("libvulkan_nouveau.dylib") ? 1 : 0)
 
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let salt = UInt32.random(in: 1...UInt32.max) ^ 0x6e61_6b6c
         let state = try pipeline(gpu, salt: salt)
-        let compile = RawFacade.compile(of: state) ?? [:]
+        let compile = GM20BFacade.compile(of: state) ?? [:]
         let how = compile["how"] as? String ?? "none"
-        let packed = RawFacade.packed(state)
+        let packed = GM20BFacade.packed(state)
         let wrong = try await kernel(gpu, salt: salt)
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
 
         metrics.set("how", how)
         metrics.set("packed", packed.map { $0 ? 1 : 0 } ?? -1)

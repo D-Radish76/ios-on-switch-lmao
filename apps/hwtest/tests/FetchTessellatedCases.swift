@@ -254,7 +254,7 @@ enum FetchTessellatedCases {
             var seen = Observation()
             for _ in 0..<runs {
                 let buffer = try drawn(draw)
-                seen.path = RawFacade.path(of: buffer)
+                seen.path = GM20BFacade.path(of: buffer)
                 if buffer.status == .error {
                     seen.error = (buffer.error as NSError?) ?? NSError(domain: "no error", code: -1)
                     return seen

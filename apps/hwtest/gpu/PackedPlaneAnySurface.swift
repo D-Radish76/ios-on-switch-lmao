@@ -5,7 +5,7 @@ import IOSurface
 import Metal
 
 /// R10Unorm_PACKED (588) and RG10Unorm_PACKED (589) over planes of any surface code, size and plane count, every word
-/// of the surface a seeded xorshift first, read by a kernel (gpu.raw.packed_plane_any_surface). An M4 Max reads channel
+/// of the surface a seeded xorshift first, read by a kernel (gpu.gm20b.packed_plane_any_surface). An M4 Max reads channel
 /// c < k (k 1 for 588, 2 for 589) of texel (x, y) as code / 1023, the code the 10 bits at bit 10 * (n % 3) of the word
 /// at (off & ~15) + (rows & ~15) * y + 4 * (n / 3), n = k * x + c (off, rows: the plane's offset and bytes a row, a
 /// planeless surface's 0 and its rows), 0 where that word lies past the surface's last page; other channels 0, 0, 1.

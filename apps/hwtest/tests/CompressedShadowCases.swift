@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.compressed_targets' shadow cases (drivers/TegraGM20BMetal/raw/runtime/raw_comp.h copyEngineReadsCompressed):
+/// gpu.gm20b.compressed_targets' shadow cases (drivers/TegraGM20BMetal/comp.h copyEngineReadsCompressed):
 /// a pitch target over a buffer, rendered through a block-linear image the copy engine fills before the pass and stores
 /// after it, which is compressed memory (C32 for BGRA8, C64 for RGBA16Float) once the facade has made some. Two ways to
 /// get one: the target beside a memoryless depth attachment (`mixed`), and rows not a multiple of 128 bytes
@@ -87,7 +87,7 @@ enum CompressedShadowCases {
     }
 
     static func run(_ gpu: GPU, _ metrics: inout Metrics, _ wrong: inout [String]) async throws {
-        let start = RawFacade.compression(of: gpu.device)
+        let start = GM20BFacade.compression(of: gpu.device)
         var paths: Set<String> = []
         for f in formats {
             for mixed in [true, false] {
@@ -118,7 +118,7 @@ enum CompressedShadowCases {
                 var bad = ["load": 0, "cpu": 0, "clear": 0, "fetch": 0]
                 var engagedAt = -1
                 for round in 0..<rounds {
-                    let before = RawFacade.compression(of: gpu.device)["ce_copies"] ?? 0
+                    let before = GM20BFacade.compression(of: gpu.device)["ce_copies"] ?? 0
                     let under = pattern(f, round: round)
                     try await gpu.upload(under, to: target, bytesPerRow: width * f.bytes)
                     paths.insert(try await pass(gpu, target, depth, load: nil, draw: half))
@@ -150,7 +150,7 @@ enum CompressedShadowCases {
                     if try await gpu.read(target, bytesPerPixel: f.bytes) != opaque(under, f) {
                         bad["fetch", default: 0] += 1
                     }
-                    if engagedAt < 0 && (RawFacade.compression(of: gpu.device)["ce_copies"] ?? 0) > before {
+                    if engagedAt < 0 && (GM20BFacade.compression(of: gpu.device)["ce_copies"] ?? 0) > before {
                         engagedAt = round
                     }
                     try await Task.sleep(nanoseconds: 10_000_000)
@@ -162,12 +162,12 @@ enum CompressedShadowCases {
                 metrics.set("\(label)_compressed_from_round", engagedAt)
             }
         }
-        let end = RawFacade.compression(of: gpu.device)
+        let end = GM20BFacade.compression(of: gpu.device)
         let delta = { (key: String) in (end[key] ?? 0) - (start[key] ?? 0) }
         metrics.set("shadow_paths", paths.sorted().joined(separator: ","))
         metrics.set("ce_copies", delta("ce_copies"))
         metrics.set("storage_fallback_compressed", delta("storage_fallback_compressed"))
-        if paths != ["raw"] { wrong.append("shadow_paths") }
+        if paths != ["gm20b"] { wrong.append("shadow_paths") }
         if delta("ce_copies") == 0 { wrong.append("no_compressed_shadow") }
         if delta("storage_fallback_compressed") != 0 { wrong.append("storage_fallback_compressed") }
     }

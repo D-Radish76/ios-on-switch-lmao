@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// Texture buffers of two-plane YCbCr (500, 503, 540 over '420v') and packed 10-bit (588, 589 over 'p420') formats over
-/// a surface's plane 0 (gpu.raw.ycbcr_texel_buffers, gpu.raw.ycbcr_texel_buffer_wide), each against the 2D texture of
+/// a surface's plane 0 (gpu.gm20b.ycbcr_texel_buffers, gpu.gm20b.ycbcr_texel_buffer_wide), each against the 2D texture of
 /// its format over the same plane: an M4 Max makes them at any width a plane's rows hold, and a kernel reads buffer
 /// texel i as the 2D texture's texel (i, 0).
 public enum YcbcrTexelBuffers {

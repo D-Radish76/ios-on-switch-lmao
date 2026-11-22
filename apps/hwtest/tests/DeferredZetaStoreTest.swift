@@ -5,17 +5,17 @@ import Metal
 
 /// A depth attachment whose store action the pass leaves Unknown and the encoder decides (setDepthStoreAction:): such a
 /// pass was pass.ds, m2v's. The first pass writes depth 0.5 over the left half and decides Store; the second loads it and
-/// draws red at 0.75 under a Less test, which only the right half passes. Both passes run on the raw path.
+/// draws red at 0.75 under a Less test, which only the right half passes. Both passes run on the driver.
 struct DeferredZetaStoreTest: HWTest {
-    let id = "gpu.raw.deferred_zeta_store"
-    let name = "A depth store action the encoder decides keeps the depth, on the raw path"
+    let id = "gpu.gm20b.deferred_zeta_store"
+    let name = "A depth store action the encoder decides keeps the depth, on the driver"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 60 }
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = 32
         let colour = try gpu.texture(.rgba8Unorm, n, n)
         let depth = try gpu.texture(.depth32Float, n, n, usage: [.renderTarget])
@@ -82,7 +82,7 @@ struct DeferredZetaStoreTest: HWTest {
         metrics.set("paths", paths.joined(separator: ","))
         metrics.set("colour_wrong", wrong)
         var failures: [String] = []
-        if paths.contains(where: { $0 != "raw" }) { failures.append("a pass went off the raw path") }
+        if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         if wrong != 0 { failures.append("\(wrong) pixels wrong: the decided store lost the depth") }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)
     }

@@ -10,7 +10,7 @@ import Metal
 /// (those read 0). Each texture is made (packed_any_made) and every texel reads its code within half a code
 /// (packed_any_texels_off_<scene>); packed_any_worst_codes is the largest distance.
 struct PackedPlaneAnySurfaceTest: HWTest {
-    let id = "gpu.raw.packed_plane_any_surface"
+    let id = "gpu.gm20b.packed_plane_any_surface"
     let name = "Packed 10-bit textures over any surface plane read the codes Metal reads, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 30 }

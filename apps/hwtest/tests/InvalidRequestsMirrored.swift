@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// gpu.raw.invalid_requests's arms of requests Metal's validation stops (gpu/MirroredRequests.swift), each in a counter
-/// window of its own. units, which the raw path does not mirror: RGBA16Float copied 16x16 into an RGBA8Unorm of 0x22
+/// gpu.gm20b.invalid_requests's arms of requests Metal's validation stops (gpu/MirroredRequests.swift), each in a counter
+/// window of its own. units, which the driver does not mirror: RGBA16Float copied 16x16 into an RGBA8Unorm of 0x22
 /// bytes, formats of other copy units, between two pattern copies: neighbours 0, the destination as it was, skipped
 /// call.blit 1 (an M4 Max under macOS 27.2.1 writes ff 00 ff ff there at these 64-texel sides and other bytes at
 /// others, by size and by whether the CPU or the GPU wrote the source: the units-zeta probe). The rest run as the M4
@@ -23,7 +23,7 @@ import Metal
 /// path reads nothing past a buffer and runs none, skipped call.icb 1, the rest as range_off. layers_past: a clear-only
 /// pass of renderTargetArrayLength 3 into a BGRA8Unorm array of 3 layers beside an A1BGR5Unorm array of 2 (a format the
 /// raw path renders through a stand-in), run twice: both raw, the layers both arrays have cleared, skipped pass.level
-/// 2: the M4 Max clears each attachment's own layers, the raw path the layers every attachment has, so the BGRA8's
+/// 2: the M4 Max clears each attachment's own layers, the driver the layers every attachment has, so the BGRA8's
 /// third holds its clear on the M4 Max and its fill on raw (layers_past_bgra8_l2: 1 cleared, 0 its fill, reported).
 /// layers_plain: the BGRA8Unorm array alone from slice 1: slices 1 and 2 cleared, slice 0 its fill, skipped none.
 extension InvalidRequestsTest {
@@ -39,7 +39,7 @@ extension InvalidRequestsTest {
             ("layers_plain", [:], [:], Self.layersPlain),
         ]
         for (key, expected, skipped, arm) in arms {
-            let before = RawFacade.counters(of: gpu.device)
+            let before = GM20BFacade.counters(of: gpu.device)
             let paths = gpu.paths
             do {
                 try await arm(gpu, &metrics, &checks)
@@ -47,7 +47,7 @@ extension InvalidRequestsTest {
                 metrics.set(key + "_path", "failed")
                 checks.append(("\(key): \(GPU.describe(error))", false))
             }
-            let counts = FailedCounts(before: before, after: RawFacade.counters(of: gpu.device))
+            let counts = FailedCounts(before: before, after: GM20BFacade.counters(of: gpu.device))
             attributions.append(
                 Self.judge(
                     key, counts, own: gpu.paths.since(paths), expecting: expected, skipped: skipped, &metrics, &checks))
@@ -76,7 +76,7 @@ extension InvalidRequestsTest {
             metrics.set(key + "_path", String(odd.path.prefix(80)))
             metrics.set(key + "_red", odd.redPixels)
             metrics.set(key + "_differ", differ)
-            checks.append(("\(key): both draws on the raw path", odd.path == "raw" && aligned.path == "raw"))
+            checks.append(("\(key): both draws on the driver", odd.path == "gm20b" && aligned.path == "gm20b"))
             checks.append(("\(key): drew a triangle (\(odd.redPixels) pixels)", odd.redPixels > 0))
             checks.append(("\(key): \(differ) pixels off the draw at offset \(control)", differ == 0))
         }
@@ -87,11 +87,11 @@ extension InvalidRequestsTest {
         let moved = Array(r.atTwo[2..<34]) == Array(r.atZero[0..<32])
         let kept = r.atTwo[0..<2].allSatisfy { $0 == 0x22 } && r.atTwo[34...].allSatisfy { $0 == 0x22 }
         let stamps = stride(from: 0, to: 32, by: 8).filter { k in r.atZero[k..<(k + 8)].contains { $0 != 0 } }.count
-        metrics.set("resolve_off_path", r.paths.allSatisfy { $0 == "raw" } ? "raw" : r.paths.joined(separator: ","))
+        metrics.set("resolve_off_path", r.paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : r.paths.joined(separator: ","))
         metrics.set("resolve_off_moved", moved)
         metrics.set("resolve_off_kept", kept)
         metrics.set("resolve_off_stamps", stamps)
-        checks.append(("resolve_off: every command buffer raw", r.paths.allSatisfy { $0 == "raw" }))
+        checks.append(("resolve_off: every command buffer raw", r.paths.allSatisfy { $0 == "gm20b" }))
         checks.append(("resolve_off: bytes 2 to 33 the resolve at offset 0's 32", moved))
         checks.append(("resolve_off: bytes 0-1 and from 34 on as they were", kept))
     }
@@ -104,7 +104,7 @@ extension InvalidRequestsTest {
         executed("range_past", try await MirroredRequests.rangePast(gpu), drawn: 0, &metrics, &checks)
     }
 
-    /// Completed with no error on the raw path, the commands that drew `drawn`, both blits' 4096 bytes written
+    /// Completed with no error on the driver, the commands that drew `drawn`, both blits' 4096 bytes written
     static func executed(
         _ key: String, _ r: MirroredRequests.Executed, drawn: Int, _ metrics: inout Metrics,
         _ checks: inout [(String, Bool)]
@@ -117,7 +117,7 @@ extension InvalidRequestsTest {
         metrics.set(key + "_after", r.afterWritten)
         let completed = Int(MTLCommandBufferStatus.completed.rawValue)
         checks.append(("\(key): status \(r.status), error \(r.error)", r.status == completed && r.error == "none"))
-        checks.append(("\(key): on the \(r.path) path", r.path == "raw"))
+        checks.append(("\(key): on the \(r.path) path", r.path == "gm20b"))
         checks.append(("\(key): drew \(hex(r.drawn)), not \(hex(drawn))", r.drawn == drawn))
         let all = MirroredRequests.bytes
         checks.append(
@@ -130,9 +130,9 @@ extension InvalidRequestsTest {
     static func layersPast(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let r = try await MirroredRequests.layered(
             gpu, [(.bgra8Unorm, 3, 4), (.a1bgr5Unorm, 2, 2)], slice: 0, runs: 2)
-        metrics.set("layers_past_path", r.paths.allSatisfy { $0 == "raw" } ? "raw" : r.paths.joined(separator: ","))
+        metrics.set("layers_past_path", r.paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : r.paths.joined(separator: ","))
         metrics.set("layers_past_bgra8_l2", r.cleared[0][2])
-        checks.append(("layers_past: both passes raw", r.paths.allSatisfy { $0 == "raw" }))
+        checks.append(("layers_past: both passes raw", r.paths.allSatisfy { $0 == "gm20b" }))
         let drawnLayers = r.cleared[0][0..<2].allSatisfy { $0 == 1 }
         checks.append(("layers_past: BGRA8 layers 0-1 cleared (\(r.cleared[0]))", drawnLayers))
         checks.append(("layers_past: A1BGR5 layers cleared (\(r.cleared[1]))", r.cleared[1] == [1, 1]))
@@ -140,8 +140,8 @@ extension InvalidRequestsTest {
 
     static func layersPlain(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let r = try await MirroredRequests.layered(gpu, [(.bgra8Unorm, 3, 4)], slice: 1, runs: 1)
-        metrics.set("layers_plain_path", r.paths.allSatisfy { $0 == "raw" } ? "raw" : r.paths.joined(separator: ","))
-        checks.append(("layers_plain: the pass raw", r.paths.allSatisfy { $0 == "raw" }))
+        metrics.set("layers_plain_path", r.paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : r.paths.joined(separator: ","))
+        checks.append(("layers_plain: the pass raw", r.paths.allSatisfy { $0 == "gm20b" }))
         checks.append(("layers_plain: slices 1-2 cleared, 0 kept (\(r.cleared[0]))", r.cleared[0] == [0, 1, 1]))
     }
 }

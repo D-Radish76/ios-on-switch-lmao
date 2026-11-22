@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// A reflection blob (raw/runtime/raw_reflection_blob.h) of an NmbReflectionNode table, as the translator's
+// A reflection blob (reflection_blob.h) of an NmbReflectionNode table, as the translator's
 // Reflection::blob lays out a state's (translate/NativeMetalReflection.rs): each stage's bindings a range of the edges.
 // `of` takes a table as m2v's compute artifact held it (Reflection::of: node 0 the root, its edges the bindings): no
 // root in the blob, every other node one index down, the root's bindings stage 0's.
@@ -9,7 +9,7 @@
 #include <cstring>
 #include <string>
 #include <vector>
-#include "../raw/runtime/raw_reflection_blob.h"
+#include "../reflection_blob.h"
 #include "NativeMetalComputeArtifact.h"
 
 namespace reflection_blob {
@@ -21,7 +21,7 @@ inline void word(std::string &out, uint32_t w)
 
 // `nodes` (children and members before their parents) and `edges`, `stages` each stage's bindings
 inline std::string blob(const std::vector<NmbReflectionNode> &nodes, const std::vector<uint32_t> &edges,
-                        const std::vector<raw::ReflectionRange> &stages)
+                        const std::vector<gm20b::ReflectionRange> &stages)
 {
     std::string names;
     std::vector<uint32_t> nameAt;
@@ -30,11 +30,11 @@ inline std::string blob(const std::vector<NmbReflectionNode> &nodes, const std::
         if (n.name)
             names.append(n.name, strlen(n.name) + 1);
     }
-    std::string out(raw::kReflectionMagic, sizeof raw::kReflectionMagic);
-    for (const uint32_t w : {raw::kReflectionVersion, uint32_t(stages.size()), uint32_t(nodes.size()),
+    std::string out(gm20b::kReflectionMagic, sizeof gm20b::kReflectionMagic);
+    for (const uint32_t w : {gm20b::kReflectionVersion, uint32_t(stages.size()), uint32_t(nodes.size()),
                              uint32_t(edges.size()), uint32_t(names.size())})
         word(out, w);
-    for (const raw::ReflectionRange &s : stages) {
+    for (const gm20b::ReflectionRange &s : stages) {
         word(out, s.first);
         word(out, s.count);
     }
@@ -56,14 +56,14 @@ inline std::string blob(const std::vector<NmbReflectionNode> &nodes, const std::
 inline std::string of(const std::vector<NmbReflectionNode> &nodes, const std::vector<uint32_t> &edges, uint32_t stages)
 {
     const auto down = [](uint32_t i) {
-        return i == raw::kReflectionAbsent ? i : i - 1;
+        return i == gm20b::kReflectionAbsent ? i : i - 1;
     };
     std::vector<NmbReflectionNode> rest(nodes.begin() + 1, nodes.end());
     for (NmbReflectionNode &n : rest)
         std::transform(std::begin(n.children), std::end(n.children), std::begin(n.children), down);
     std::vector<uint32_t> lowered(edges.size());
     std::transform(edges.begin(), edges.end(), lowered.begin(), down);
-    std::vector<raw::ReflectionRange> ranges(stages, raw::ReflectionRange{0, 0});
+    std::vector<gm20b::ReflectionRange> ranges(stages, gm20b::ReflectionRange{0, 0});
     ranges[0] = {nodes[0].first, nodes[0].count};
     return blob(rest, lowered, ranges);
 }
@@ -74,7 +74,7 @@ struct Entry {
     std::string blob;
 };
 
-// The PackReflections section of `entries` as raw/pack/packfile.py reflection_bytes lays it out (each blob its own here)
+// The PackReflections section of `entries` as pack/packfile.py reflection_bytes lays it out (each blob its own here)
 inline std::string section(std::vector<Entry> entries)
 {
     std::stable_sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) {

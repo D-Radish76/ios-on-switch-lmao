@@ -3,9 +3,9 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Multisampled targets of the formats the raw path renders through a stand-in (11, 41, 42, 44, 93, 553, 555, 84, 85)
+/// Multisampled targets of the formats the driver renders through a stand-in (11, 41, 42, 44, 93, 553, 555, 84, 85)
 /// at 2x and 4x: a 64x64 target, one draw whose fragment gives each sample its own value (standin_sample_values; the
-/// values raw/test/standinresolveoracle.mm draws, std::mt19937(format * 131 + samples), 84 and 85 through a half as
+/// values harness/standinresolveoracle.mm draws, std::mt19937(format * 131 + samples), 84 and 85 through a half as
 /// resolvecodesoracle.mm draws them), StoreAndMultisampleResolve into a one-sample texture of the format. The resolve
 /// against an M4 Max's bytes of this scene (StandInResolveGoldens.swift, made by StandInResolveCases on an M4 Max) at
 /// 256 texels spread over every row (StandInResolveCases.compared): every field within one code, RGB9E5 within one
@@ -16,7 +16,7 @@ import Metal
 /// f<format>_x<n>_off texels not Apple's, _far past one code, _max the largest difference, _samples_off samples off;
 /// far_total, samples_off_total; every command buffer raw, failed_cbs=0.
 struct StandInResolveTest: HWTest {
-    let id = "gpu.raw.standin_ms_resolve"
+    let id = "gpu.gm20b.standin_ms_resolve"
     let name =
         "Multisampled stand-in format targets keep each sample's code and resolve within one code of Apple's, on raw"
     let subsystem = Subsystem.metal
@@ -24,9 +24,9 @@ struct StandInResolveTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var far = 0
@@ -64,9 +64,9 @@ struct StandInResolveTest: HWTest {
         metrics.set("far_total", far)
         metrics.set("samples_off_total", samplesOff)
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
-        let counted = RawFacade.counters(of: gpu.device)
+        let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
-        checks.append(("every command buffer on the raw path", gpu.paths.offRaw.isEmpty))
+        checks.append(("every command buffer on the driver", gpu.paths.offRaw.isEmpty))
         checks.append(FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics))
         metrics.fitLog(within: 720, keeping: ["far_total", "samples_off_total", "paths", "failed_cbs"])
         return .judged(checks, metrics, proof: gpu.proof)

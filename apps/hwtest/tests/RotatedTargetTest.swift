@@ -6,7 +6,7 @@ import Metal
 
 /// gpu.x1.rotated_target (METALMAP d26): passes into a texture Metal's rotation SPI turns over an IOSurface plane (a
 /// CAMetalLayer drawable on the turned display), rotations 1 to 4, against the same draws into a plain texture turned
-/// by Metal's measured store map. The raw path draws straight into the plane through the viewport coordinate swizzle, a
+/// by Metal's measured store map. The driver draws straight into the plane through the viewport coordinate swizzle, a
 /// state that reads the plane's axes through its turned variant (its position, one axis's derivative), a private depth
 /// texture neither loaded nor stored through a backing laid out as the plane, a 4x resolve into the plane through the
 /// resolve state's turned variant, a private colour texture stored beside the plane, a private depth texture loaded
@@ -37,8 +37,8 @@ struct RotatedTargetTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let raw = RawFacade.kind(of: gpu.device) == "raw"
-        let heapFullBefore = RawFacade.counters(of: gpu.device)["heap_full"] ?? 0
+        let raw = GM20BFacade.kind(of: gpu.device) == "gm20b"
+        let heapFullBefore = GM20BFacade.counters(of: gpu.device)["heap_full"] ?? 0
         let states = try RotatedStates(gpu)
         var metrics = Metrics()
         var failures: [String] = []
@@ -60,7 +60,7 @@ struct RotatedTargetTest: HWTest {
                     case .native:
                         if raw {
                             native += 1
-                            if result.path == "raw" {
+                            if result.path == "gm20b" {
                                 nativeRaw += 1
                             } else {
                                 failures.append("\(name) ran \(result.path)")
@@ -79,7 +79,7 @@ struct RotatedTargetTest: HWTest {
         metrics.set("r4_edge_wrong", edgeWrong)
         metrics.set("r4_load_paths", r4Load.isEmpty ? "-" : r4Load.text)
         metrics.set("paths", gpu.paths.text)
-        metrics.set("heap_full", (RawFacade.counters(of: gpu.device)["heap_full"] ?? 0) - heapFullBefore)
+        metrics.set("heap_full", (GM20BFacade.counters(of: gpu.device)["heap_full"] ?? 0) - heapFullBefore)
         return failures.isEmpty
             ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics, proof: gpu.proof)
     }
@@ -89,7 +89,7 @@ enum RotatedCell: String, CaseIterable {
     case clear, draw, load, idleLoad, partLoad, pointLoad, edgeLoad, besideR4, points, fetch, position, derivative,
         fwidth, depth, resolve, beside, keptDepth, keptStencil, turns, frames, sized, tie, keptPair, keptPair16
 
-    /// gpu.raw.turned_separate_pair's (TurnedSeparatePairTest), and this test's: every other
+    /// gpu.gm20b.turned_separate_pair's (TurnedSeparatePairTest), and this test's: every other
     static let pairCells: [RotatedCell] = [.keptPair, .keptPair16]
     static let targetCells = allCases.filter { !pairCells.contains($0) }
 
@@ -211,8 +211,8 @@ struct RotatedCells {
             let plain = try await gpu.run { pass($0, reference) }.path
             beside.turnedRun = true
             let turned = try await gpu.run { pass($0, plane.texture) }.path
-            if referencePath.isEmpty || referencePath == "raw" { referencePath = plain }
-            if path.isEmpty || path == "raw" { path = turned }
+            if referencePath.isEmpty || referencePath == "gm20b" { referencePath = plain }
+            if path.isEmpty || path == "gm20b" { path = turned }
         }
         guard checked else { return Result(path: path, referencePath: referencePath, wrong: 0) }
         var wrongBeside = try await secondPlaneWrong()
@@ -228,7 +228,7 @@ struct RotatedCells {
         }
         defer { plane.surface.unlock(options: .readOnly, seed: nil) }
         // the plain run's 4x resolve into a private texture nothing reads as data takes the 2D engine, within one code
-        // of Metal (raw_resolve_rule.h resolve.twod); a turned target's takes the exact resolve pass
+        // of Metal (resolve_rule.h resolve.twod); a turned target's takes the exact resolve pass
         let slack = cell == .resolve ? 1 : 0
         var wrong = 0
         for y in 0..<h {

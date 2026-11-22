@@ -27,7 +27,7 @@ TEST(CompilerRepro, TheLinesStateThroughTheCompileContext)
         GTEST_SKIP() << "no SWITCH_REPRO_LINE";
     const std::string root = compiler_test::systemRoot(getenv("SWITCH_QUARTZCORE"));
     compiler_test::Requests made(root, {{"/repro.metallib", library}});
-    const std::vector<raw::CompileRequest> asked = made.of({line});
+    const std::vector<gm20b::CompileRequest> asked = made.of({line});
     ASSERT_EQ(asked.size(), 1u);
     const std::string dir = env("TEST_TMPDIR");
     switch_compiler::Engine engine;
@@ -35,7 +35,7 @@ TEST(CompilerRepro, TheLinesStateThroughTheCompileContext)
     ASSERT_TRUE(engine.open(0, {compiler_test::emptyPack(dir), root, {}}, why)) << why;
     switch_compiler::SystemLibraries system(root);
     switch_compiler::Prepared p;
-    ASSERT_TRUE(switch_compiler::prepare(raw::encodeRequest(asked[0]), 0, system, p, why)) << why;
+    ASSERT_TRUE(switch_compiler::prepare(gm20b::encodeRequest(asked[0]), 0, system, p, why)) << why;
     std::string entry;
     const int32_t result = engine.compile(p, entry, why);
     fprintf(stderr, "repro: result %d (%s), entry %zu bytes, why: %s\n", result,

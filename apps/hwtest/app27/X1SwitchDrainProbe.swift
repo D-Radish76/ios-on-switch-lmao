@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// barrier.switch_drain (raw/plan plan_barriers.cpp, nvk_cmd_buffer.c:678-687): a change of subchannel between the 3D
+/// barrier.switch_drain (plan plan_barriers.cpp, nvk_cmd_buffer.c:678-687): a change of subchannel between the 3D
 /// engine and the copy engine, the 2D engine or compute waits for the engine left behind, so no WAIT_FOR_IDLE is needed
 /// there; the tiled flush and the NO_WFI invalidates stay (nowfi), or the tiled flush goes too (noflush: are the tiled
 /// cache's contents visible to the other engine without it). Each trial, in one command buffer: pass A seeds target T,
@@ -13,7 +13,7 @@ import Metal
 /// readback's own engine change is not the arm's. Arms: control (today), nowfi, noflush, none, and hazard, the
 /// positive control: pass B taps T straight after pass A with no barrier between (3D to 3D), which the pass barrier
 /// probe saw corrupt at these sizes; a cell judges the switch arms only once hazard differed there. Every forced arm
-/// keeps today's pass barrier and job entry; rule forces nothing, so production's rules (raw_barrier_forms.h) pick every barrier, and
+/// keeps today's pass barrier and job entry; rule forces nothing, so production's rules (barrier_forms.h) pick every barrier, and
 /// rule_switches= counts the engine changes they relaxed. Every arm draws pass A with the same spins, so the control's
 /// race is the arms' race.
 enum X1SwitchDrainProbe {
@@ -124,7 +124,7 @@ enum X1SwitchDrainProbe {
         }
         finding.metrics.set("twod_ops", ops)
         finding.metrics.set(
-            "tiled_cache", try RawProbe.facts(gpu.device, try gpu.texture(.bgra8Unorm, 8, 8))["tiled_cache"] ?? -1)
+            "tiled_cache", try GM20BProbe.facts(gpu.device, try gpu.texture(.bgra8Unorm, 8, 8))["tiled_cache"] ?? -1)
         let control = ledger.cells.compactMap { ledger.tallies[$0]?["control"]?.mismatchedTrials }.reduce(0, +)
         finding.metrics.set("control_mismatched_trials", control)
         if control > 0 {
@@ -212,7 +212,7 @@ enum X1SwitchDrainProbe {
                             sourceSize: MTLSize(width: cell.width, height: cell.height, depth: 1), to: copy,
                             destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
                     } else {
-                        try RawProbe.engine(
+                        try GM20BProbe.engine(
                             commands, ["kind": "scale", "read": source, "written": copy, "unbracketed": 1])
                     }
                     blit.endEncoding()

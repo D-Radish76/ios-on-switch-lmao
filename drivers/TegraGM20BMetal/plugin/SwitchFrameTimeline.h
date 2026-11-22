@@ -228,7 +228,7 @@ inline uint64_t ticksPerMs()
 }
 
 // At the commit call's entry: the command buffer's sequence number and the stamps that start it. `since` is the caller's own
-// per-thread state: the raw facade's and the m2v frontend's commits interleave on one thread when a replay commits.
+// per-thread state: the facade's and the m2v frontend's commits interleave on one thread when a replay commits.
 // `frame` is the commit method's own frame (__builtin_frame_address(0)), for its callers; null leaves them out.
 inline void committed(Stamps &s, Since &since, const Churn &totals, const void *frame = nullptr)
 {

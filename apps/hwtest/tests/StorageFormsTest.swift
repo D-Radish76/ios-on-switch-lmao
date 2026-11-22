@@ -3,7 +3,7 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// Fetching draws of every kind of storage-form state keep Metal's order inside the pixel interlock on the raw path: a
+/// Fetching draws of every kind of storage-form state keep Metal's order inside the pixel interlock on the driver: a
 /// plain BGR5A1Unorm state (the default record's R16_UINT view), depth export and discard under each test class
 /// (LessEqual with writes, Always, LessEqual read-only, LessEqual with writes and stencil IncrementClamp; the tests=N
 /// variant records) and a 4x BGRA8Unorm_sRGB target with and without a 4x depth (StorageFormsCases). One draw a case of
@@ -26,7 +26,7 @@ import Metal
 struct StorageFormsTest: HWTest {
     typealias Cases = StorageFormsCases
 
-    let id = "gpu.raw.storage_forms"
+    let id = "gpu.gm20b.storage_forms"
     let name = "Fetching draws of every storage-form kind keep Metal's order inside the interlock, on raw"
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 180 }
@@ -40,18 +40,18 @@ struct StorageFormsTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let scene = try await Cases.Scene(gpu)
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         var routes = Routes()
         for c in Cases.cases {
             do {
-                let start = RawFacade.counters(of: gpu.device)
+                let start = GM20BFacade.counters(of: gpu.device)
                 Self.judge(c, try await scene.observe(c), &metrics, &checks)
-                routes.note(c.key, start, RawFacade.counters(of: gpu.device))
+                routes.note(c.key, start, GM20BFacade.counters(of: gpu.device))
             } catch {
                 checks.append(("\(c.key): \(GPU.describe(error))", false))
             }
@@ -59,9 +59,9 @@ struct StorageFormsTest: HWTest {
         for half in [false, true] {
             let key = half ? "bgr5a1_load_half" : "bgr5a1_load_float"
             do {
-                let start = RawFacade.counters(of: gpu.device)
+                let start = GM20BFacade.counters(of: gpu.device)
                 Self.judge(key, try await scene.loaded(half: half), &metrics, &checks)
-                routes.note(key, start, RawFacade.counters(of: gpu.device))
+                routes.note(key, start, GM20BFacade.counters(of: gpu.device))
             } catch {
                 checks.append(("\(key): \(GPU.describe(error))", false))
             }
@@ -69,9 +69,9 @@ struct StorageFormsTest: HWTest {
         metrics.set("wrong_cases", routes.wrong(metrics))
         routes.report(&metrics, &checks)
         metrics.set("readback_paths", gpu.paths.isEmpty ? "-" : String(gpu.paths.text.prefix(80)))
-        let judged = RawFacade.counters(of: gpu.device)
+        let judged = GM20BFacade.counters(of: gpu.device)
         await Self.time(scene, &metrics)
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: after))
         checks.append(FailedCounts.judged(before: before, after: after, own: gpu.paths, &metrics))
         metrics.set("timing_twins", (after["fetch_blend_twin"] ?? 0) - (judged["fetch_blend_twin"] ?? 0))
@@ -87,7 +87,7 @@ struct StorageFormsTest: HWTest {
             checks.append(("\(c.key): \(GPU.describe(error))", false))
             return
         }
-        checks.append(("\(c.key): drawn on raw (\(seen.path))", seen.path == "raw"))
+        checks.append(("\(c.key): drawn on raw (\(seen.path))", seen.path == "gm20b"))
         if c.reported {
             let distinct = Set(seen.pixels)
             metrics.set(c.key, distinct.count == 1 ? shown(c, seen.pixels[0]) : "mixed_\(distinct.count)")
@@ -107,7 +107,7 @@ struct StorageFormsTest: HWTest {
             checks.append(("\(key): \(GPU.describe(error))", false))
             return
         }
-        checks.append(("\(key): drawn on raw (\(seen.path))", seen.path == "raw"))
+        checks.append(("\(key): drawn on raw (\(seen.path))", seen.path == "gm20b"))
         metrics.set("\(key)_wrong", seen.lanesOff + seen.texelsChanged)
         metrics.set("\(key)_lanes_off", seen.lanesOff)
         metrics.set("\(key)_texels_changed", seen.texelsChanged)

@@ -4,14 +4,14 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The device's 2048 sampler header slots (drivers/TegraGM20BMetal/raw/runtime raw_gpu.cpp takeHeader). Samplers of one
+/// The device's 2048 sampler header slots (drivers/TegraGM20BMetal gpu.cpp takeHeader). Samplers of one
 /// descriptor share their compare form's slot, so 1500 of them all live. A draw sampling a converted '420f' texture
 /// through a wrapping sampler takes one more header for the texture's address map. With every slot taken, a new sampler
 /// is nil, and the draw's command buffer fails with MTLCommandBufferErrorOutOfMemory, as Metal does for a resource it
 /// has no room for: the only command buffer that fails, the facade's enc.planarclamp (failed_why=). Once the samplers
 /// are released, the same draw completes.
 struct SamplerTableTest: HWTest {
-    let id = "gpu.raw.sampler_table"
+    let id = "gpu.gm20b.sampler_table"
     let name = "Samplers share header slots; a full table is nil and an out-of-memory command buffer"
     let subsystem = Subsystem.metal
 
@@ -94,9 +94,9 @@ struct SamplerTableTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
-        let before = RawFacade.counters(of: gpu.device)
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
+        let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -143,7 +143,7 @@ struct SamplerTableTest: HWTest {
         withExtendedLifetime(pixels) {}
 
         let failed = FailedCounts.judged(
-            before: before, after: RawFacade.counters(of: gpu.device), expecting: ["enc.planarclamp": 1],
+            before: before, after: GM20BFacade.counters(of: gpu.device), expecting: ["enc.planarclamp": 1],
             own: gpu.paths, &metrics)
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)

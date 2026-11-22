@@ -4,10 +4,10 @@ import HWTestGPU
 import Metal
 
 /// Draws that fetch the colour they write (fetch_order_fragment: each full-screen triangle blends its step into what the
-/// one before it left), in the shapes whose raster order the raw path keeps differently: three instances in the middle of
+/// one before it left), in the shapes whose raster order the driver keeps differently: three instances in the middle of
 /// three render encoders of one command buffer, a strip of six vertices whose four triangles cover each other, and twelve
 /// overlapping triangles in one draw over a depth attachment and into four and two samples. Each pass must match the
-/// result of its triangles applied in order, and on the facade each pass must take the raw path and the fetch counters
+/// result of its triangles applied in order, and on the facade each pass must take the driver and the fetch counters
 /// show how it kept their order: inside the pixel interlock (fetch_interlocked), ordered on the GPU a triangle a draw
 /// (sequential) or on the CPU's proof (whole). A pass that moves none of them did not fetch its own colour.
 struct CAFetchRouteScene: GPUScene {
@@ -62,7 +62,7 @@ struct CAFetchRouteScene: GPUScene {
             descriptor.isDepthWriteEnabled = true
             return gpu.device.makeDepthStencilState(descriptor: descriptor)
         }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         let timing = try await gpu.run(tolerateError: true) { commands in
             func encoder(first: Bool, last: Bool) -> MTLRenderCommandEncoder {
                 let descriptor = MTLRenderPassDescriptor()
@@ -102,24 +102,24 @@ struct CAFetchRouteScene: GPUScene {
                 e.endEncoding()
             }
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         let name = pass.rawValue
         let moved = { (key: String) in (after[key] ?? 0) - (before[key] ?? 0) }
         result.metrics.set("path_" + name, timing.path)
-        result.metrics.set("fetch_" + name, RawFacade.fetchRoutes(before: before, after: after))
+        result.metrics.set("fetch_" + name, GM20BFacade.fetchRoutes(before: before, after: after))
         result.expect(!timing.path.hasPrefix("error:"), "\(name): \(timing.path)")
-        if RawFacade.kind(of: gpu.device) == "raw" {
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             let interlocked = moved("fetch_interlocked")
             let ordered = moved("fetch_sequential")
-            result.expect(timing.path == "raw", "\(name): not drawn on the raw path: \(timing.path)")
+            result.expect(timing.path == "gm20b", "\(name): not drawn on the driver: \(timing.path)")
             result.expect(
                 interlocked + ordered > 0,
                 "\(name): no fetch counter moved: the pipeline did not fetch the colour it writes in order")
             // twelve overlapping triangles over a depth attachment: one draw each behind the fetch barrier, no vertex read
             if pass == .depth {
                 result.expect(
-                    timing.path == "raw" && interlocked + moved("fetch_sequential") > 0,
-                    "depth: not ordered on the raw path: \(timing.path) \(RawFacade.fetchRoutes(before: before, after: after))"
+                    timing.path == "gm20b" && interlocked + moved("fetch_sequential") > 0,
+                    "depth: not ordered on the driver: \(timing.path) \(GM20BFacade.fetchRoutes(before: before, after: after))"
                 )
             }
         }

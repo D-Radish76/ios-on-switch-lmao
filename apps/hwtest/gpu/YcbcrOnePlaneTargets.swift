@@ -6,7 +6,7 @@ import Metal
 /// One-plane YCbCr render targets over a one-plane surface made by IOSurfaceCreate (every byte i * 31 + 7 first), each
 /// one command buffer: a Clear (0.5, 0.25, 0.75, 1) and Store pass, or (drawn) a DontCare pass drawing red
 /// (3y + x) & 255, green (x + 7y) & 255, blue (4x + y) & 255 (codes / 255). Each case's bytes are the whole allocation as
-/// an M4 Max leaves it (gpu.raw.ycbcr_onep_targets).
+/// an M4 Max leaves it (gpu.gm20b.ycbcr_onep_targets).
 public enum YcbcrOnePlaneTargets {
     public struct Case: Sendable {
         public let key: String

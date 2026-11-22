@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The macros Mesa's builder makes (gen/SwitchGM20BMacros.h) against the ones raw_mme.h hand-encoded before it installed
+// The macros Mesa's builder makes (gen/SwitchGM20BMacros.h) against the ones mme.h hand-encoded before it installed
 // the builder's (their words kept here), both run by Mesa's Fermi MME simulator (the in-tree copy) on the same
 // arguments: the same methods with the same values, every argument consumed, no shadow state read. The one difference
 // allowed: the builder sends the root table's two words to LOAD_CONSTANT_BUFFER(0) and (1), raw both to (0); the
@@ -53,7 +53,7 @@ struct Simulation {
 
     static uint32_t state(void *, uint16_t)
     {
-        ADD_FAILURE() << "the raw path's macros read no shadow state";
+        ADD_FAILURE() << "the driver's macros read no shadow state";
         return 0;
     }
 
@@ -239,7 +239,7 @@ TEST(EmitMme, TheFirstPassRuleRefusesTheWordsTheChipRefused)
         EXPECT_EQ(firstPassRefusal(word), nullptr) << std::hex << word;
 }
 
-// The draw parameters as the raw path wrote them from the CPU before each draw (raw_gpu.cpp prepare), then the draw loop
+// The draw parameters as the driver wrote them from the CPU before each draw (gpu.cpp prepare), then the draw loop
 std::vector<Method> withParams(bool indexed, uint32_t instances, uint32_t first, uint32_t count, uint32_t baseVertex,
                                uint32_t baseInstance)
 {
@@ -286,7 +286,7 @@ TEST(EmitMme, TheMacrosTakeNvksDrawSlots)
     EXPECT_EQ(SWITCH_GM20B_MACRO_CLEAR_LAYERS, 26);
     EXPECT_EQ(SWITCH_GM20B_MACRO_FETCH_DRAW, 27);
     EXPECT_EQ(SWITCH_GM20B_MACRO_FETCH_DRAW_INDEXED, 28);
-    EXPECT_EQ(SWITCH_GM20B_MACRO_RAW_END, 29);
+    EXPECT_EQ(SWITCH_GM20B_MACRO_METAL_END, 29);
 }
 
 TEST(EmitMme, TheScratchRangesAreTheTables)

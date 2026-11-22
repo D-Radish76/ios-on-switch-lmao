@@ -3,7 +3,7 @@ import HWTestCore
 import Metal
 
 /// gpu.path.transfer_beside_readback's work: one thread reads level 1 of a mipmapped 4096x4096 RGBA8 shared texture
-/// with getBytes over and over (a shared mip level's copy goes through the copy engine on the raw path), while the
+/// with getBytes over and over (a shared mip level's copy goes through the copy engine on the driver), while the
 /// caller writes level 1 of small mipmapped shared textures with replaceRegion and times each call
 public enum TransferBesideReadback {
     public static let bigSide = 4096, smallSide = 128, smalls = 8, uploads = 64

@@ -4,7 +4,7 @@ import IOSurface
 import Metal
 
 /// CPU copies of two-plane YCbCr textures over '420v' planes of rows under 16 bytes in 8 MiB + 16 KiB
-/// (gpu.raw.ycbcr_cpu_copies): a 500 8x8 over plane 0 of rows 8 at offset 8 (plane 1 of rows 8 at 4100), every byte
+/// (gpu.gm20b.ycbcr_cpu_copies): a 500 8x8 over plane 0 of rows 8 at offset 8 (plane 1 of rows 8 at 4100), every byte
 /// 0xee. An M4 Max's replaceRegion and getBytes move the luma plane alone, one code a texel, at the plane's exact
 /// offset and its stated rows; of a packed 10-bit 508 they move nothing; with a bytesPerRow under the luma row nothing
 /// moves.

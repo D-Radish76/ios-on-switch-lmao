@@ -4,8 +4,8 @@ import HWTestGPU
 import Metal
 
 /// An app dispatch longer than a band (TegraGM20BSchedPolicy.h TGM_APP_BAND_NS) launched in pieces of its threadgroup
-/// grid (raw/runtime/raw_dispatch_bands.h), each ending a batch. The kernel loops over an argument, so its few dozen
-/// instructions price it under a band: its first dispatch is whole and measured (raw_band_rates.h), and once its rate
+/// grid (dispatch_bands.h), each ending a batch. The kernel loops over an argument, so its few dozen
+/// instructions price it under a band: its first dispatch is whole and measured (band_rates.h), and once its rate
 /// is learned the same dispatch must go in pieces, writing what the whole dispatch writes (each thread its threadgroup,
 /// the grid's threadgroup and thread counts, and a value of its position), byte for byte, as with the facade's budget
 /// at 0. A device learns the measured dispatches at its next command buffer's begin, so a blit fill follows each
@@ -23,11 +23,11 @@ struct DispatchPiecesTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
         guard let production = DrawBandsTest.budget(gpu.device, Self.budgetUs * 1000) else {
-            return .skip(RawFacade.missing("switchRawBandBudget:", on: gpu.device))
+            return .skip(GM20BFacade.missing("switchMetalBandBudget:", on: gpu.device))
         }
         defer { DrawBandsTest.budget(gpu.device, production) }
         var metrics = Metrics()
@@ -54,10 +54,10 @@ struct DispatchPiecesTest: HWTest {
         var wholeMs = 0.0
         var pieces = 0
         for round in 0..<Self.rounds {
-            let before = RawFacade.counters(of: gpu.device)
+            let before = GM20BFacade.counters(of: gpu.device)
             let timing = try await gpu.run(encode)
             try await gpu.run(teach)
-            let after = RawFacade.counters(of: gpu.device)
+            let after = GM20BFacade.counters(of: gpu.device)
             let banded = (after["banded_dispatches"] ?? 0) - (before["banded_dispatches"] ?? 0)
             let bands = (after["bands"] ?? 0) - (before["bands"] ?? 0)
             let learned = (after["learned_draws"] ?? 0) - (before["learned_draws"] ?? 0)

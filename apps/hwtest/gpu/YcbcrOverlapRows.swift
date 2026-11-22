@@ -8,8 +8,8 @@ import Metal
 /// pass of one draw writing Y (x + 7y) & 255 and, over each chroma block b, Cb (b.x + 5 b.y) & 255, Cr
 /// (3 b.x + 11 b.y + 1) & 255 (overlap_codes). Each plane byte holds the code of the row whose store an M4 Max lands last
 /// there: tiles of 64x32 luma texels, the last tile row first, each row from its last tile back, inside a tile by
-/// 32-texel column, then row pair, a pair's even row after its odd one (raw_overlap_order.h, fit to the M4 Max's runs)
-/// (gpu.raw.ycbcr_overlap_rows).
+/// 32-texel column, then row pair, a pair's even row after its odd one (overlap_order.h, fit to the M4 Max's runs)
+/// (gpu.gm20b.ycbcr_overlap_rows).
 public enum YcbcrOverlapRows {
     public struct Shape: Sendable {
         public let key: String

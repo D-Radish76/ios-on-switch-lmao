@@ -3,8 +3,8 @@ import HWTestCore
 import HWTestGPU
 import Metal
 
-/// The scenes of gpu.raw.depth16_layered_tests: a fetching state with a Depth16Unorm depth (the raw path tests depth in
-/// its shader, RawMetalCubic.mm fragmentTests) drawing an off-centre rectangle at z 0.5 under Less with depth writes.
+/// The scenes of gpu.gm20b.depth16_layered_tests: a fetching state with a Depth16Unorm depth (the driver tests depth in
+/// its shader, TegraGM20BMetalCubic.mm fragmentTests) drawing an off-centre rectangle at z 0.5 under Less with depth writes.
 /// Layered: a 64x64 Depth16Unorm 2D array of 3 layers, layer l cleared to 0.25 + 0.3 l and loaded by a pass of 3 layers
 /// into an RGBA8Unorm array cleared black. Turned: one 96x64 layer cleared to 0.55, loaded by a pass into a plane Metal's
 /// rotation SPI turns once (RotatedCells), against the same pass into a plain texture.

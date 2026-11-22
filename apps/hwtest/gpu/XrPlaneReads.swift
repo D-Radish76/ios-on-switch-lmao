@@ -8,7 +8,7 @@ import Metal
 public enum XrPlaneReads {
     typealias P = SurfaceReads.Plane
 
-    /// gpu.raw.xr_next_plane: a three-plane 'b3a8' 32x8 (rows 128 at 0, 1024, 2048): over plane p the words of p with the
+    /// gpu.gm20b.xr_next_plane: a three-plane 'b3a8' 32x8 (rows 128 at 0, 1024, 2048): over plane p the words of p with the
     /// alpha bytes of p + 1 (texels_off), over the last plane alpha 0 (last_alpha_off); a kernel's (0.5, 0.25, -0.25,
     /// 0.75) into the 550 over plane 1 writes plane 1's words 0x27f80100 and plane 2's first 32 bytes a row 0xbf, and
     /// nothing else (store_bytes_off)
@@ -47,7 +47,7 @@ public enum XrPlaneReads {
         return result
     }
 
-    /// gpu.raw.xr_planes_off16: a 550 32x8 over plane 0 of a 'b3a8' of rows 136 (plane 1 rows 40 at 1088) and over a
+    /// gpu.gm20b.xr_planes_off16: a 550 32x8 over plane 0 of a 'b3a8' of rows 136 (plane 1 rows 40 at 1088) and over a
     /// 'w30r' of one plane of rows 136 (Metal asserts on a planeless one of rows off 16 bytes): the GPU reads and blits the words at rows rounded down to 16 bytes (128), the alpha bytes at
     /// rows of 32, while getBytes reads and replaceRegion writes the rows of 136
     public static func off16(_ gpu: GPU, planar: Bool) async throws -> (gpuOff: Int, blitOff: Int, cpuOff: Int) {
@@ -89,7 +89,7 @@ public enum XrPlaneReads {
         return (gpuOff, blitOff, cpuOff)
     }
 
-    /// gpu.raw.xr_alpha_sink: a 550 64x64 over a 'w30r' (rows 256, every byte 0xff): a kernel's (0.5, 0.25, -0.25, 0.75)
+    /// gpu.gm20b.xr_alpha_sink: a 550 64x64 over a 'w30r' (rows 256, every byte 0xff): a kernel's (0.5, 0.25, -0.25, 0.75)
     /// stores every word 0x27f80100 and nothing past the rows; read back, the colour with alpha 0
     public static func alphaSink(_ gpu: GPU) async throws -> (status: String, wordsOff: Int, pastChanged: Int, readOff: Int, alpha: Float) {
         guard let surface = SurfaceReads.surface("w30r", 64, 64, rows: 256, allocation: 256 * 64 + 4096, fill: { _ in 0xff }),

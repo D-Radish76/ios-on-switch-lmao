@@ -16,8 +16,8 @@ struct TransferBesideReadbackTest: HWTest {
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        let kind = RawFacade.kind(of: gpu.device)
-        guard kind == "raw" else { return .skip("the default device is not the raw facade (\(kind))") }
+        let kind = GM20BFacade.kind(of: gpu.device)
+        guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let timed = try TransferBesideReadback.run(gpu.device)
         let readP50 = Stats.percentile(timed.readsMs, 0.5), uploadP99 = Stats.percentile(timed.uploadsMs, 0.99)
         var metrics = Metrics()

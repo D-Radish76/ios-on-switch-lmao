@@ -1,7 +1,7 @@
-"""The raw path's direct-compiled records of direct/exec.metal's states and kernels, executed on the host.
+"""The driver's direct-compiled records of direct/exec.metal's states and kernels, executed on the host.
 
 directrun (direct/directrun.mm) makes each record as the runtime makes it at a state's creation: m2v's translation,
-NVK's stage compile, raw_direct.cpp's record. Each program then runs here (stage.py over interp.py), bound as the raw
+NVK's stage compile, direct.cpp's record. Each program then runs here (stage.py over interp.py), bound as the raw
 path binds it (direct_records.py) and fed the words a draw or dispatch writes from the record's own fields (control
 word, amplification id word, pulled stride words, stage-in region word). Every expected value is the Metal source's
 arithmetic on the CPU, on inputs a zero or a stub would not pass: patch factors culled, clamped and kept, tessellation
@@ -314,7 +314,7 @@ class LayeredFetch(Records):
     texel with its channels rotated, as the Metal source computes it on the CPU, compared as the RGBA8 codes stored.
     """
 
-    HEADER = 0x123  # the attachment view's header index set 0 holds (raw_gpu.cpp: tic | tsc << 20, no sampler)
+    HEADER = 0x123  # the attachment view's header index set 0 holds (gpu.cpp: tic | tsc << 20, no sampler)
     QUADS = ((2, 4), (13, 7))
 
     @staticmethod
@@ -469,7 +469,7 @@ class WideStride(Records):
                 self.assertEqual(outputs(environment, ATTR_GENERIC, 4), [0.25, 0.5, 0.75, 1.0])
 
     def test_a_buffer_load_past_its_descriptors_range_reads_the_memory_there(self):
-        """No buffer load is bounds-checked (raw_nak_target.h): colour[0] past a range of 0 reads the buffer's bytes."""
+        """No buffer load is bounds-checked (nak_target.h): colour[0] past a range of 0 reads the buffer's bytes."""
         twin = self.state('wide_dynamic')['stride_twin']
         pulled = [p for p in twin['pulled_stride'] if p[1]]
         binding = dr.Binding()
@@ -488,9 +488,9 @@ class WideStride(Records):
 class FiveDynamicStrides(Records):
     """A state of five dynamic-stride layouts: its stride twin pulls each at its bind's stride, a push word each.
 
-    The twin names a VertexBufferStride word per layout (runtime/raw_pack.h kPulledStrides, as many as a record's
+    The twin names a VertexBufferStride word per layout (runtime/pack.h kPulledStrides, as many as a record's
     streams); with four words a record held, the translation's fifth had no word and the state no twin, so its draws of
-    a stride past 4095 bytes failed (raw:draw.stride_twin).
+    a stride past 4095 bytes failed (gm20b:draw.stride_twin).
     """
 
     VERTICES = 3
@@ -566,7 +566,7 @@ class Interpolants(Records):
 class ArgumentBuffers(Records):
     """Read a fragment function's textures and sampler by ID in a tier-2 argument buffer.
 
-    They are read through the device's handle tables (raw/runtime/raw_heap_tables.h, as raw/test/argcheck.py models
+    They are read through the device's handle tables (heap_tables.h, as harness/argcheck.py models
     them for the pack's records). The draw's root table holds the handle tables' root and ExecutionStatus words, set 0
     the argument buffer and the texture and sampler tables, set 1 header i at element i of each array; an ID is
     1 << 32 | TIC or 1 << 32 | TSC << 20.
@@ -810,7 +810,7 @@ class ThreadgroupMemory(Records):
 
 
 class ShadowStencil(Records):
-    """A fragment function's [[stencil]] output: m2v's shader-side stencil (raw_shader_test_push.h shadowStencil).
+    """A fragment function's [[stencil]] output: m2v's shader-side stencil (shader_test_push.h shadowStencil).
 
     GM20B's fragment program header has no stencil output. The record binds the stencil stand-in alone and carries the
     ShadowStencilState word in PackShaderTests::reserved. On quads of the front and back face, the program reads the
@@ -967,7 +967,7 @@ class ShadowStencilTested(Records):
 
     def test_the_record_binds_both_stand_ins_for_stencil_writing_draws(self):
         self.assertEqual(self.flags, 3)
-        self.assertEqual(self.storage_tests, 4, 'its draws are StencilWrite (raw_fragment_tests.h)')
+        self.assertEqual(self.storage_tests, 4, 'its draws are StencilWrite (fragment_tests.h)')
         self.assertEqual(sorted(e[1] for e in self.record['entries'] if e[1] in (6, 7)), [6, 7])
 
     def test_each_fragment_runs_metals_stencil_then_depth_test(self):
@@ -1032,7 +1032,7 @@ class ShadowStencilTested(Records):
 
 class Kernels(Records):
     MASK = 0xFFFF_FFFF_FFFF_FFFF
-    ERROR = MASK  # raw_counters.h kErrorValue
+    ERROR = MASK  # counters.h kErrorValue
     # nanoseconds a PTIMER unit: 32 units a 19.2 MHz tick
     NUM, DEN = 625, 384
 
@@ -1063,7 +1063,7 @@ class Kernels(Records):
         """Run every thread of a dispatchThreadgroups: of `groups` threadgroups of `local` threads on x.
 
         The root table's group count (nvk_root_descriptor_table cs.group_count) and the record's DispatchRegion words as
-        raw_compute.cpp writes them (raw_dispatch_regions.h computeDispatch, computeRegionWords: base 0, the packed
+        compute.cpp writes them (dispatch_regions.h computeDispatch, computeRegionWords: base 0, the packed
         threadgroup size less 1, the grid's threads); each thread's TID, CTAID and lane in its warp of 32.
         """
         push = dr.record_push(record)
@@ -1102,7 +1102,7 @@ class Kernels(Records):
         """Give the counter resolve kernel's samples of `records`, each (payload, units).
 
         The kernel runs beside a clock anchor table of `published` anchors, `slots` its (units, ns) by slot, bound as
-        RawMetalCounterEncode.mm binds them.
+        TegraGM20BMetalCounterEncode.mm binds them.
         """
         layout = RECORDS['layouts']['counter']
         self.assertEqual(layout['sample_bytes'], 8, 'a sample is a 64-bit time')
@@ -1117,7 +1117,7 @@ class Kernels(Records):
         return list(struct.unpack(f'<{count}Q', binding.memory.read(out, 8 * count)))
 
     def test_the_byte_resolve_writes_the_word_resolves_bytes_past_a_word(self):
-        """The byte resolve bound at a 4-byte word, its samples `shift` bytes past it, as RawMetalCounterEncode.mm binds
+        """The byte resolve bound at a 4-byte word, samples `shift` bytes on, as TegraGM20BMetalCounterEncode.mm binds
         it for a destination offset off 4 bytes: the word resolve's bytes moved by `shift`, the bytes around them kept.
         """
         anchor_units, anchor_ns = 0x0000_0312_FFFF_FF00, 0x0000_0003_FFFF_FFF0
@@ -1170,18 +1170,17 @@ class Kernels(Records):
         self.assertEqual(self.resolve(records, published, table), [*expected, self.ERROR, self.ERROR, self.ERROR, 0])
 
 
-
 class ConvertedTextures(Records):
-    """Kernels over textures the raw path samples through an image it converts (NativeMetalKernelTextures.rs).
+    """Kernels over textures the driver samples through an image it converts (NativeMetalKernelTextures.rs).
 
     A kernel binding an R10Unorm_PACKED or RG10Unorm_PACKED texture (588, 589) is compiled to read the RGB10A2Unorm
-    image of its codes, so its texture entry's header word 0 is RGB10A2Unorm's (runtime/raw_gpu.cpp kFormats) and the
+    image of its codes, so its texture entry's header word 0 is RGB10A2Unorm's (runtime/gpu.cpp kFormats) and the
     device binds the image's own header there. A YCbCr texture's samplers are made under the map its key states: a
     repeating sampler of a 4:2:0 texture clamps to the edge; under a P3 matrix (map 3) the slot reads the codes image
     (RGBA8Unorm). A slot the kernel only writes stores nothing, as Metal's writes into such a texture store nothing.
     """
 
-    TEXTURE, SAMPLER = 1, 2  # runtime/raw_pack.h PackKernelEntryKind
+    TEXTURE, SAMPLER = 1, 2  # runtime/pack.h PackKernelEntryKind
     RGBA8, RGB10A2, RGBA16F = 0x58D24908, 0x58D24909, 0x58D7FF83  # kFormats' header word 0 of 70, 90 and 115
     ADDRESS, WRAP, EDGE = 0x1FF, 0, 2 | 2 << 3 | 2 << 6  # TEXSAMP0 ADDRESS_U, _V and _P (clb197tex.h)
 

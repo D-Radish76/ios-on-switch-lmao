@@ -11,18 +11,18 @@ import Metal
 /// the device opened: every clean is a store slot's (slot_cleans = store_slots_placed), and some pack slot ran from a
 /// bound grain (pack_slots_in_bound_grains).
 struct PackSlotCleanTest: HWTest {
-    let id = "gpu.raw.pack_slot_clean"
+    let id = "gpu.gm20b.pack_slot_clean"
     let name = "Pack program slots in bound grains run with no repeat cache clean; store slots are cleaned"
     var subsystem: Subsystem { .metal }
 
     func run(_: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
-        guard RawFacade.kind(of: gpu.device) == "raw" else {
-            return .skip("the default device is not the raw facade (\(RawFacade.kind(of: gpu.device)))")
+        guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
+            return .skip("the default device is not the facade (\(GM20BFacade.kind(of: gpu.device)))")
         }
-        let before = RawFacade.counters(of: gpu.device)
+        let before = GM20BFacade.counters(of: gpu.device)
         if before["state_segment_binds"] == nil {
-            return .skip(RawFacade.missing("state_segment_binds", on: gpu.device))
+            return .skip(GM20BFacade.missing("state_segment_binds", on: gpu.device))
         }
         let library: MTLLibrary
         do {
@@ -41,7 +41,7 @@ struct PackSlotCleanTest: HWTest {
                 refused.append(line.shortLabel)
             }
         }
-        let after = RawFacade.counters(of: gpu.device)
+        let after = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         metrics.set("states_made", made)
         if !refused.isEmpty { metrics.set("refused", refused.joined(separator: ",")) }
