@@ -462,7 +462,6 @@ void refreshRadio()
         if (!gActivationCommitted)
             switch_wlan_probe_activated();
         gActivationCommitted = true;
-        switch_wlan_probe_committed();
     }
     switch_awdl_core_radio_ready(gCore, resources && clockValid);
     if (gRadioError && awdl_core_running(gCore)) {
@@ -2439,12 +2438,5 @@ extern "C" int switch_wlan_awdl_vif_state(const void *payload, size_t length)
     const int status = gIf ? switch_a80211_awdl_parent_state(&gFacade, payload, length) : ENXIO;
     IOLockUnlock(gLock);
     return status;
-}
-#endif
-
-#if DEVELOPMENT || DEBUG
-bool switch_wlan_probe_awdl_committed()
-{
-    return __atomic_load_n(&gActivationCommitted, __ATOMIC_RELAXED);
 }
 #endif

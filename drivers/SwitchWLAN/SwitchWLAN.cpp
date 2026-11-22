@@ -388,9 +388,9 @@ private:
     // Once a boot, after the first bring-up: GET of every AWDL variable either firmware generation uses, one os_log
     // line each (status, bytes), so one boot settles which AWDL API this firmware's table has (gAwdlProbe).
     void awdlProbe();
-    void monitorProbe(unsigned first);
+    void monitorProbe();
 #if DEVELOPMENT || DEBUG
-    static const switch_wlan_probe_driver *probeDriver();
+    static bool probeRead(const uint32_t *addresses, uint32_t *values, unsigned count);
 #endif
 
     // Worker only.
@@ -816,12 +816,6 @@ void SwitchWLAN::onFrame(void *context, const uint8_t *frame, size_t length, uin
         return;
     }
     if (swlan::wpa::isEapol(frame, length)) {
-#if DEVELOPMENT || DEBUG
-        // The admission probe's accept-all window can pass another station's handshake up; the supplicant checks
-        // only its source and replay counter.
-        if (switch_wlan_probe_accept_all() && memcmp(frame, self->mac_, 6))
-            return;
-#endif
         self->pushEapol(frame, length);
         return;
     }
@@ -1110,8 +1104,7 @@ bool SwitchWLAN::radioInit()
         IOLog("SwitchWLAN: A3 backend: status %u, registration %d, features %#x\n", a3.status, a3.register_status,
               a3.features);
     }
-    monitorProbe(BCM_MONITOR_PROBE_MCHAN);
-    switch_wlan_probe_attached(probeDriver());
+    switch_wlan_probe_attached(probeRead);
 #endif
     if (capAwdl_ && !switch_wlan_a3_radio_present())
         awdlProbe();
@@ -1708,6 +1701,7 @@ void SwitchWLAN::linkDown(const FwEvent &e)
     counters(counts, sizeof(counts));
     IOLog("SwitchWLAN: link lost: %s, reason %u (status %u, flags %#x); %s\n", what, e.reason, e.status, e.flags,
           counts);
+    switch_wlan_probe_heap("link-lost");
     secured_ = false;
     sup_.wipe();
     setState(SWLAN_STA_IDLE);
@@ -2226,6 +2220,7 @@ void SwitchWLAN::run()
             nextStatsNs_ = swlan::nowNs() + kStatsMs * 1000000ULL;
 #if DEVELOPMENT || DEBUG
             logStats();
+            switch_wlan_probe_heap("periodic");
 #else
             refreshRates();
 #endif
@@ -3338,21 +3333,21 @@ int SwitchWLAN::awdlOpen(const swlan_awdl_caps **caps)
 
 #if DEVELOPMENT || DEBUG
 // GET results describe only the queried interface and direction; an unchanged request is inconclusive.
-void SwitchWLAN::monitorProbe(unsigned first)
+void SwitchWLAN::monitorProbe()
 {
     static bool tried;
     if (tried)
         return;
     tried = true;
-    for (unsigned i = first; i < BCM_MONITOR_PROBE_COUNT; ++i) {
+    for (unsigned i = 0; i < BCM_MONITOR_PROBE_COUNT; ++i) {
         uint8_t request[32];
         uint8_t reply[64] = {};
         size_t got = 0;
         int16_t fw = 0;
         const size_t n = bcm_monitor_probe_request(i, request, sizeof(request));
-        const size_t replySize = i == BCM_MONITOR_PROBE_TSF ? 8
-                                 : i == BCM_MONITOR_PROBE_STA_MONITOR || i >= BCM_MONITOR_PROBE_MCHAN ? sizeof(reply)
-                                                                                                       : 4;
+        const size_t replySize = i == BCM_MONITOR_PROBE_TSF           ? 8
+                                 : i == BCM_MONITOR_PROBE_STA_MONITOR ? sizeof(reply)
+                                                                      : 4;
         const bool ok = i == BCM_MONITOR_PROBE_GET_MONITOR
                             ? ioctlOn(0, BCM_WLC_GET_MONITOR, nullptr, 0, 4, reply, &got, &fw)
                             : n && ioctlOn(0, WLC_GET_VAR, request, n, replySize, reply, &got, &fw);
@@ -3360,47 +3355,26 @@ void SwitchWLAN::monitorProbe(unsigned first)
         int status = fw ? fw : BCM_PROBE_NO_ANSWER;
         if (ok && !echo)
             status = 0;
-        char hex[3 * 8 + 1] = {};
-        for (size_t k = 0; ok && k < got && k < 8; ++k)
-            snprintf(hex + 3 * k, 4, " %02x", reply[k]);
-        os_log(OS_LOG_DEFAULT, "SwitchWLAN: probe var %s: %d %s, request echo %u, %u bytes:%s",
-               bcm_monitor_probe_names[i], status, bcme_name(status), echo, static_cast<unsigned>(ok ? got : 0), hex);
+        os_log(OS_LOG_DEFAULT, "SwitchWLAN: monitor probe: %s: %d %s, %u bytes, first word %u%s",
+               bcm_monitor_probe_names[i], status, bcme_name(status), static_cast<unsigned>(ok ? got : 0),
+               static_cast<unsigned>(ok && got >= 4 ? swlan::le32(reply) : 0), echo ? " (request echo)" : "");
     }
 }
 
-// Every chip access the probes make holds the gate and checks the link first: after system sleep the PCIe partition
-// stays unpowered until recovery, and touching it then hangs the bus.
-const switch_wlan_probe_driver *SwitchWLAN::probeDriver()
+// The probe's reads hold the gate and check the link first: after system sleep the PCIe partition stays unpowered
+// until recovery, and touching it then hangs the bus.
+bool SwitchWLAN::probeRead(const uint32_t *addresses, uint32_t *values, unsigned count)
 {
-    static constexpr switch_wlan_probe_driver driver = {
-        [](uint32_t cmd, const void *in, size_t inLength, void *out, size_t outLength) {
-            int16_t fw = 0;
-            size_t got = 0;
-            if (gDriver && gDriver->ioctlOn(0, cmd, static_cast<const uint8_t *>(in), inLength, outLength,
-                                            static_cast<uint8_t *>(out), &got, &fw))
-                return 0;
-            return fw ? SWLAN_FWERR(fw) : -EIO;
-        },
-        [] {
-            bool reachable = false;
-            if (SwitchWLAN *self = gDriver)
-                self->locked([&] { reachable = self->recovery_.canSubmit(self->up_, self->gone_, self->halted_); });
-            return reachable;
-        },
-        [](const uint32_t *addresses, uint32_t *values, unsigned count) {
-            bool ok = false;
-            if (SwitchWLAN *self = gDriver)
-                self->locked([&] {
-                    ok = self->recovery_.canSubmit(self->up_, self->gone_, self->halted_);
-                    for (unsigned i = 0; ok && i < count; ++i)
-                        ok = self->chip_.containsRam(addresses[i], 4);
-                    for (unsigned i = 0; ok && i < count; ++i)
-                        values[i] = self->chip_.tcm().r32(addresses[i]);
-                });
-            return ok;
-        },
-    };
-    return &driver;
+    bool ok = false;
+    if (SwitchWLAN *self = gDriver)
+        self->locked([&] {
+            ok = self->recovery_.canSubmit(self->up_, self->gone_, self->halted_);
+            for (unsigned i = 0; ok && i < count; ++i)
+                ok = self->chip_.containsRam(addresses[i], 4);
+            for (unsigned i = 0; ok && i < count; ++i)
+                values[i] = self->chip_.tcm().r32(addresses[i]);
+        });
+    return ok;
 }
 #endif
 
@@ -3588,8 +3562,6 @@ int SwitchWLAN::awdlRawTransmit(const uint8_t *frame, size_t length)
         }
         result = mb_.awdlSend(0, frame, length, mac_) < 0 ? -ENOBUFS : 0;
     });
-    if (!result)
-        switch_wlan_probe_tx(frame, length);
     return result;
 }
 

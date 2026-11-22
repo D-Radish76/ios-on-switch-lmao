@@ -141,13 +141,6 @@ enum bcm_monitor_probe_item {
     BCM_MONITOR_PROBE_STA_MONITOR,
     BCM_MONITOR_PROBE_AF_FLYING_MAX,  // in the RAM image: the action frame machinery actframe sends through
     BCM_MONITOR_PROBE_TSF,            // the TSF, for receive times on the radio's clock
-#if DEVELOPMENT || DEBUG
-    // Stock engines whose code the ROM holds: whether this RAM build registers them.
-    BCM_MONITOR_PROBE_MCHAN,
-    BCM_MONITOR_PROBE_P2P_STATE,
-    BCM_MONITOR_PROBE_P2PO_FIND,
-    BCM_MONITOR_PROBE_TDLS_ENABLE,
-#endif
     BCM_MONITOR_PROBE_COUNT
 };
 
