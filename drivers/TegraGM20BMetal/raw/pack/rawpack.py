@@ -363,14 +363,16 @@ def build(work: Path, links: Links, metal_abi: Path, context_header: Path) -> tu
         ],
         tuple(RAW / f'runtime/{name}.cpp' for name in (*DIRECT_RUNTIME, 'raw_cache', 'raw_kernel_cache')),
     )
-    own = ('ycbcr', 'ycbcr_store', 'xr', 'resolve', 'mip', 'turn', 'stencil_bits', 'fmt')
+    own = ('ycbcr', 'ycbcr_store', 'xr', 'resolve', 'mip', 'turn', 'stencil_bits', 'fmt', 'decode')
     # resolve.metal's sums in sample order and its NaN tests kept; ycbcr_store.metal's NaN tests and half rounding;
-    # stencil_bits.metal's depth comparisons; fmt.metal's NaN tests and half rounding
+    # stencil_bits.metal's depth comparisons; fmt.metal's NaN tests and half rounding; decode.metal's integer decodes,
+    # which no fast-math rewrite may touch
     exact = {
         'resolve': ['-fno-fast-math'],
         'ycbcr_store': ['-fno-fast-math'],
         'stencil_bits': ['-fno-fast-math'],
         'fmt': ['-fno-fast-math'],
+        'decode': ['-fno-fast-math'],
     }
     for name in own:
         run(

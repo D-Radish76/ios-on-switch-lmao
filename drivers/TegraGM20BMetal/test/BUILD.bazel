@@ -1923,6 +1923,22 @@ host_test(
 )
 
 host_test(
+    name = "raw_decode_texels_test",
+    srcs = [
+        "raw_decode_texels_test.cpp",
+        "raw_decode_vectors.h",
+        "//drivers/TegraGM20BMetal:raw/pack/astc_decode.h",
+        "//drivers/TegraGM20BMetal:raw/pack/astc_endpoints.h",
+        "//drivers/TegraGM20BMetal:raw/pack/astc_ise.h",
+        "//drivers/TegraGM20BMetal:raw/pack/astc_texel.h",
+        "//drivers/TegraGM20BMetal:raw/pack/decode_bits.h",
+        "//drivers/TegraGM20BMetal:raw/pack/pvrtc_decode.h",
+        "//drivers/TegraGM20BMetal:raw/runtime/raw_decoded.h",
+    ],
+    cxx_std = "c++17",
+)
+
+host_test(
     name = "raw_comp_test",
     srcs = [
         "raw_comp_test.cpp",
