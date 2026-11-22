@@ -10,6 +10,26 @@
 
 namespace raw {
 
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+namespace {
+
+enum class FailArm : uint8_t {
+    Off,
+    Armed,
+    Fired
+};
+thread_local FailArm tFailArm = FailArm::Off;
+
+}  // namespace
+
+bool failNextTransfer(bool armed)
+{
+    const bool fired = tFailArm == FailArm::Fired;
+    tFailArm = armed ? FailArm::Armed : FailArm::Off;
+    return fired;
+}
+#endif
+
 void TextureTransfers::reset(Kernel &kernel)
 {
     if (channel_)
@@ -152,6 +172,12 @@ bool TextureTransfers::copy(Kernel &kernel, ResourceSet &set, raw::Mutex &alloca
     }
     KernelJob job;
     job.visibility = write ? JobVisibility::Internal : JobVisibility::External;
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+    if (tFailArm == FailArm::Armed) {
+        tFailArm = FailArm::Fired;
+        return false;
+    }
+#endif
     if (!submit(kernel, set, slot, commandOffset, start, push.at, uses, removals, job, std::move(owner)))
         return false;
     if (write)

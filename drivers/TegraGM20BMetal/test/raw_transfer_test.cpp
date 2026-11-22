@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "raw_transfer_fake.h"
 #include "../raw/runtime/raw_zeta_cpu.h"
+#include <thread>
 
 namespace {
 
@@ -220,6 +221,33 @@ TEST_F(RawTransfer, ARefusedCopyChannelIsAskedForAgainOnlyOnceTheEpochMoves)
     ASSERT_TRUE(copy(region, bytes.data(), 4, true));
     EXPECT_EQ(gpu.channelAsks, 2u);
     EXPECT_EQ(gpu.submissions, 1u);
+    gpu.complete(gpu.sequence);
+    EXPECT_EQ(target, bytes);
+}
+
+// HW Test's failed CPU copy (failNextTransfer): the armed thread's next copy fails as a refused submission does, the
+// caller's bytes and the texture untouched, nothing submitted; the arm fires once and says so
+TEST_F(RawTransfer, AnArmedThreadsNextCopyFailsAsARefusedSubmissionOnce)
+{
+    std::array<uint8_t, 4> target{1, 2, 3, 4}, bytes{9, 9, 9, 9};
+    const raw::TextureTransfer region{{reinterpret_cast<uint64_t>(target.data()), 4}, 1, 1, 1, 4};
+    EXPECT_FALSE(raw::failNextTransfer(true));
+    EXPECT_FALSE(copy(region, bytes.data(), 4, false));
+    EXPECT_EQ(bytes, (std::array<uint8_t, 4>{9, 9, 9, 9}));
+    EXPECT_EQ(gpu.submissions, 0u);
+    ASSERT_TRUE(copy(region, bytes.data(), 4, false)) << "the arm fired more than once";
+    EXPECT_EQ(bytes, target);
+    EXPECT_TRUE(raw::failNextTransfer(true));
+    EXPECT_FALSE(copy(region, bytes.data(), 4, true));
+    gpu.complete(gpu.sequence);
+    EXPECT_EQ(target, (std::array<uint8_t, 4>{1, 2, 3, 4}));
+    EXPECT_EQ(gpu.submissions, 1u);
+    EXPECT_TRUE(raw::failNextTransfer(false));
+    std::thread([&] {
+        EXPECT_FALSE(raw::failNextTransfer(true)) << "another thread's arm";
+        raw::failNextTransfer(false);
+    }).join();
+    ASSERT_TRUE(copy(region, bytes.data(), 4, true));
     gpu.complete(gpu.sequence);
     EXPECT_EQ(target, bytes);
 }

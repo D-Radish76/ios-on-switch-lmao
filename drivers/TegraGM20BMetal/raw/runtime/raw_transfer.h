@@ -41,6 +41,12 @@ struct TextureTransfer {
     uint8_t samples = 1, sxLog2 = 0, syLog2 = 0;
 };
 
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+// HW Test's failed CPU copy: while `armed`, the calling thread's next TextureTransfers::copy fails as the kernel's
+// refusal of its submission does (nothing moved, nothing published). Whether the thread's arm before this one fired.
+bool failNextTransfer(bool armed);
+#endif
+
 class TextureTransfers {
 public:
     // A job of the copy channel; it names `set` only when the texture is one of its members, so that job and the device

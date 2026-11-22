@@ -83,6 +83,13 @@ static raw::ProbeSurface probeSurface(const raw::Texture &t, uint32_t fmt2d)
     return nil;
 }
 
+// While `on`: the calling thread's next getBytes or replaceRegion the copy engine moves fails as the kernel's refusal of
+// its submission does (raw_transfer.h failNextTransfer). @YES where the arm before this call fired.
+- (NSNumber *)switchRawProbeFailTransfer:(NSNumber *)on
+{
+    return @(raw::failNextTransfer(on.boolValue));
+}
+
 // Private textures made while `on` is true stay on plain memory (raw_private_comp.h), for a probe's uncompressed
 // reference
 - (NSString *)switchRawProbePlainPrivate:(NSNumber *)on
