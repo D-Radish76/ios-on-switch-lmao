@@ -99,7 +99,8 @@ std::vector<KillRange> Device::failedSeqnos() const
     if (!k_.killRecords())  // nothing tells the seqnos the channel finished from those it took with it
         failed.push_back({1, lastSubmitted(), kWaitRefused});
     else if (k_.lost(channel_) && !liveKill(live))  // the kernel publishes the error before the record and the fence
-        failed.push_back({*fence_ + 1, lastSubmitted(), k_.lostError() ? k_.lostError() : kWaitRefused});
+        failed.push_back({__atomic_load_n(fence_, __ATOMIC_ACQUIRE) + 1, lastSubmitted(),
+                          k_.lostError() ? k_.lostError() : kWaitRefused});
     const auto *record = reinterpret_cast<const volatile TegraGM20BAbiFence *>(fence_);
     if (const uint32_t seqno =
             newestSemanticFailure(reinterpret_cast<const volatile TegraGM20BAbiFenceSemantic *>(record + 1)))

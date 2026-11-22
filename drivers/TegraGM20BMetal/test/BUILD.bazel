@@ -5067,9 +5067,6 @@ facade_test(
         "raw_scale_frames.h",
         "timed_gpu.h",
     ],
-    # the recording against the worker's encode ahead; the latency and cost measures time the model's GPU, whose fence
-    # writes race the device's reads of the fence page by design (the hardware writes it)
-    args = ["--gtest_filter=-*CommitLatency*:*RecordingCost*"],
     copts = ["-fsanitize=thread"],
     env = {"TSAN_OPTIONS": "halt_on_error=1:report_signal_unsafe=0"},
     linkopts = ["-fsanitize=thread"],

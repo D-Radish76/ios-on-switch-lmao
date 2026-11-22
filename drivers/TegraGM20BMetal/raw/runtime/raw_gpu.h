@@ -2605,7 +2605,7 @@ public:
 
     uint32_t completed() const
     {
-        return *fence_;
+        return __atomic_load_n(fence_, __ATOMIC_ACQUIRE);
     }
 
     // 0 before the channel is made (it may be made on another thread: a client's first mipmapped texture)
@@ -2616,8 +2616,8 @@ public:
 
     bool done(uint32_t seqno) const
     {
-        return fence_ == &kNoFence ||
-               (int32_t(*fence_ - seqno) >= 0 && semanticFence(seqno).status != SemanticFenceStatus::Pending);
+        return fence_ == &kNoFence || (int32_t(__atomic_load_n(fence_, __ATOMIC_ACQUIRE) - seqno) >= 0 &&
+                                       semanticFence(seqno).status != SemanticFenceStatus::Pending);
     }
 
     // In the kernel, on the fence interrupt. False: the submission failed, the channel died with it in flight (reopen).
@@ -3232,7 +3232,9 @@ private:
                               std::vector<HostAccess::Range> &ranges) const;
     bool hostArenaAccess(const ArenaStorage &storage, const void *cpu, uint64_t bytes, bool write, HostAccess &access);
     static void releaseHostArena(void *owner, uint32_t arena);
-    // the channel's fence word; before there is a channel a zero, which every seqno submitted so far (none) has passed
+    // the channel's fence word; before there is a channel a zero, which every seqno submitted so far (none) has passed.
+    // The GPU's semaphore release writes it while this process reads it unlocked: loaded with acquire, as the kernel
+    // loads it (SwitchGpuTimeline.cpp), so what the job wrote before its release is seen after the seqno
     const volatile uint32_t *fence_ = &kNoFence;
     static constexpr uint32_t kNoFence = 0;
 

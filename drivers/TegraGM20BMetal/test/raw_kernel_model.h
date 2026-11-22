@@ -304,7 +304,7 @@ struct Model {
         f.killed_first = f.completed + 1;
         f.killed_last = s.submitted;
         f.error = error;
-        f.completed = s.submitted;
+        __atomic_store_n(&f.completed, s.submitted, __ATOMIC_RELEASE);
         s.error = error;
     }
 
@@ -372,7 +372,7 @@ struct Model {
         }
         jobs.push_back(job);
         if (!inFlight && !jobAdded)
-            fence(channel - 1).completed = job.seqno;
+            __atomic_store_n(&fence(channel - 1).completed, job.seqno, __ATOMIC_RELEASE);
         reply = {job.seqno, 0};
         return KERN_SUCCESS;
     }
@@ -596,9 +596,12 @@ struct Model {
             notResponding--;
             return kIOReturnNotResponding;
         }
-        if (blockUntil && int32_t(fence(in.channel - 1).completed - in.seqno) < 0)
+        const auto reached = [&] {
+            return int32_t(__atomic_load_n(&fence(in.channel - 1).completed, __ATOMIC_ACQUIRE) - in.seqno) >= 0;
+        };
+        if (blockUntil && !reached())
             return blockUntil(in.channel, in.seqno) ? KERN_SUCCESS : kIOReturnTimeout;
-        return int32_t(fence(in.channel - 1).completed - in.seqno) >= 0 ? KERN_SUCCESS : kIOReturnTimeout;
+        return reached() ? KERN_SUCCESS : kIOReturnTimeout;
     }
 
     int status(const TegraGM20BAbiChannel &in, TegraGM20BAbiStatus &out)
