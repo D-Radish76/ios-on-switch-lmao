@@ -2406,16 +2406,12 @@ public:
     }
 
     void destroyTexture(Texture &t);
-    // Private render targets on compressed memory (raw_private_comp.h): made when compressed memory of the size is ready,
-    // moved to plain memory before anything names its pages through another binding (the caller serialises submissions
-    // and has no command buffer open)
+    // Private render targets on compressed memory (raw_private_comp.h): made when compressed memory of the size is
+    // ready
     bool createCompressedTexture(uint32_t width, uint32_t height, uint32_t format, uint32_t kind, Texture &t);
     // createOwnedZeta's zeta of `bytes` on compressed memory of kind `kind` where some of its size is ready, lock_ held
     bool createCompressedZeta(uint64_t bytes, uint32_t kind, Texture &t);
     bool privateCompressed(const Texture &t);
-    bool plainFromCompressed(Texture &t);
-    // The plain twin of a one-level 2D texture on compressed memory: block-linear memory and a header of its own
-    bool plainTiledTwin(const Texture &t, Texture &plain);
     // t, made plain where createCompressedTexture found no memory of `kind` ready, wants that memory (raw_private_comp.h);
     // `owner`, the facade's texture, is what the submit worker's look hands back; false: t takes none (its layout, a probe)
     bool wantCompressed(const Texture &t, uint32_t kind, void *owner);
@@ -2442,11 +2438,6 @@ public:
     uint64_t privateMade() const
     {
         return privateMade_.load(std::memory_order_relaxed);
-    }
-
-    uint64_t privateTransitions() const
-    {
-        return privateTransitions_.load(std::memory_order_relaxed);
     }
 
     TextureTransferResult transferTexture(const Texture &texture, uint32_t level, uint32_t slice,
@@ -3785,27 +3776,20 @@ private:
     // none held
     uint64_t compDeadline() const;
 
-    // private textures on compressed memory and their memory (raw_private_comp.h), lock_
-    struct PrivateCompTexture {
-        PrivateComp comp;
-        TextureAsk ask;                        // its layout's, which its plain memory takes (plainFromCompressed)
-        Texture::Chain *staleChain = nullptr;  // the chain work submitted before the move reads; freed with the texture
-        std::vector<Texture *> views;          // raw views of its compressed memory (createView, createPartView)
-        Buffer headers;                        // the views' moved headers the move's job copies in place
-    };
-
-    // `view` of memory `of` names: a view of a private texture on compressed memory follows it to plain memory, and one of
-    // a plain texture wanting compressed memory keeps that texture plain (compressedFromPlain), lock_ held
+    // `view` of memory `of` names: one of a plain texture wanting compressed memory keeps that texture plain
+    // (compressedFromPlain), lock_ held
     void noteView(const Texture &of, Texture &view);
     void forgetView(const Texture &view);  // lock_ held
-    std::unordered_map<const Texture *, PrivateCompTexture> privateComp_;
+    // private textures on compressed memory and their memory (raw_private_comp.h), lock_
+    std::unordered_map<const Texture *, PrivateComp> privateComp_;
     // Compressed memory of `kind` holding `bytes`, taken from what comp_ made; false (and asked for) where none is
     // ready or a debug probe holds private textures plain, lock_ held
     bool takeCompressed(uint64_t bytes, uint32_t kind, Bo &bo);
-    // `t` laid out as `ask` on memory `bo` takes (createLaidOut), recorded as a private compressed texture, lock_ held
+    // `t` laid out as `ask` on memory `bo` of kind ask.compressKind (createLaidOut), recorded as a private compressed
+    // texture, lock_ held
     void noteCompressed(const TextureAsk &ask, const Bo &bo, uint64_t bytes, Texture &t);
     // written under lock_, read without it by the counters
-    std::atomic<uint64_t> privateMade_{0}, privateTransitions_{0};
+    std::atomic<uint64_t> privateMade_{0};
     void releasePrivateCompressed(const Texture &t);  // lock_ held
 
     // plain private textures wanting compressed memory (wantCompressed), lock_

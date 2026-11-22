@@ -186,7 +186,6 @@ bool RMRangeEncode::closeEncoders()
 
 bool RMRangeEncode::seal(size_t to)
 {
-    const Encoding encoding;
     RMCommandBuffer *cb = cb_;
     raw::CommandBuffer *rc = rc_;
     to_ = to;

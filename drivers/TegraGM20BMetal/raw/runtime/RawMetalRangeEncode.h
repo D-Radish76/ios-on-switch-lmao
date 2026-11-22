@@ -63,19 +63,6 @@ public:
     }
 
 private:
-    // tRawEncoding (RawMetalPrivateComp.mm) while a step of it runs
-    struct Encoding {
-        Encoding()
-        {
-            tRawEncoding = true;
-        }
-
-        ~Encoding()
-        {
-            tRawEncoding = false;
-        }
-    };
-
     struct Resolve {
         uint32_t attachment;
         __unsafe_unretained RMTexture *into;

@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: MIT
-// The facade's half of private textures on compressed memory (raw_private_comp.h): which descriptors qualify, the move to
-// plain memory before anything names a texture's pages another way, and the submit worker's moves onto compressed memory.
+// The facade's half of private textures on compressed memory (raw_private_comp.h): which descriptors qualify, and the
+// submit worker's moves onto compressed memory.
 #import "RawMetalInternal.h"
 #import "RawMetalPipeline.h"
 #include <algorithm>
 #include <vector>
 #include "raw_view.h"
 #include "raw_xr.h"
-
-thread_local bool tRawEncoding = false;
 
 static thread_local bool tSubmitting = false;
 
@@ -49,27 +47,6 @@ uint32_t privateCompressedKind(MTLTextureDescriptor *d)
     facts.bpp = f ? f->bpp : 0;
     facts.compression = (gRM->raw->kernelInfo().flags & TegraGM20BInfoCompression) != 0;
     return raw::privateCompressedKind(facts);
-}
-
-bool rmTexturePlain(RMTexture *t)
-{
-    if (!t || !t->_rawOk || !gRM->raw->privateCompressed(t->_raw))
-        return true;
-    return rmExcludingSubmissions([t]() -> bool {
-        if (tRawEncoding) {
-            SWITCH_REFUSE_DETAIL("raw", "comp.private", t->_descriptor.pixelFormat,
-                                 "a compressed %ux%u texture of format %lu was asked for its pages inside a raw encode",
-                                 t->_raw.width, t->_raw.height, (unsigned long)t->_descriptor.pixelFormat);
-            return false;
-        }
-        @synchronized(t) {
-            if (!gRM->raw->privateCompressed(t->_raw))
-                return true;
-            if (!gRM->raw->plainFromCompressed(t->_raw))
-                return false;
-        }
-        return true;
-    });
 }
 
 void rmWantCompressed(id<MTLTexture> texture)

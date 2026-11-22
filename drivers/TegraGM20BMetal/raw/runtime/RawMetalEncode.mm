@@ -70,7 +70,6 @@ bool RMRangeEncode::refused()
 __attribute__((objc_externally_retained)) bool RMRangeEncode::open(RMCommandBuffer *cb, size_t from, size_t to,
                                                                    bool whole, const char **why)
 {
-    const Encoding encoding;
     cb_ = cb;
     d_ = gRM->raw;
     why_ = why;
@@ -288,7 +287,6 @@ bool RMRangeEncode::enter(size_t begin)
 
 bool RMRangeEncode::step(size_t until)
 {
-    const Encoding encoding;
     if (!whole_)
         if (const uint32_t veto = ineligible(at_, until)) {
             rc_->abandon();

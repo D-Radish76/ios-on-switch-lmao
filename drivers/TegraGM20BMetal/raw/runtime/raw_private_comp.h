@@ -1,26 +1,20 @@
 // SPDX-License-Identifier: MIT
-// Private render targets on compressed memory (rule comp.private). A private 2D texture of one sample (its mip chain too)
-// or 2D array of one level, or a stored multisampled one, that only the 3D engine renders, shaders store to and the texture
-// unit samples is bound with its texel size's compressible kind when
-// compressed memory of its size is ready (Device::comp_, made off the render thread), so its full clears to a ZBC value
-// write tags only and its draws move compressed tiles. The kind must be one the copy engine reads and writes as plain
-// texels (raw_comp.h copyEngineReadsCompressed: the move below is its copy); passes that view it as a storage image do so
-// in place (raw_storage_form.h rule storage.compressed).
-//
-// Raw views and gpuResourceIDs name the compressed memory through headers of their own over the same binding. An m2v twin
-// may not: it aliases the pages through NVK's plain binding and would read compressed bytes. So before a twin is taken
-// the texture moves to plain block-linear memory: the copy engine copies it there in a raw job, ordered before every later
-// raw job by the channel and before NVK's next submission by Order, and the same job then rewrites the texture's header
-// and each raw view's in place to name the plain memory (ticAt), so a gpuResourceID or view handed out before keeps its
-// index and reads what later work writes. Work already submitted reads the old memory, which stays until the texture goes.
+// Private render targets on compressed memory (rule comp.private). A private 2D texture of one sample (its mip chain
+// too) or 2D array of one level, or a stored multisampled one, that only the 3D engine renders, shaders store to and
+// the texture unit samples is bound with its texel size's compressible kind when compressed memory of its size is ready
+// (Device::comp_, made off the render thread), so its full clears to a ZBC value write tags only and its draws move
+// compressed tiles. The kind must be one the copy engine reads and writes as plain texels (raw_comp.h
+// copyEngineReadsCompressed: the move below is its copy); passes that view it as a storage image do so in place
+// (raw_storage_form.h rule storage.compressed). Raw views and gpuResourceIDs name the compressed memory through headers
+// of their own over the same binding, and nothing else binds its pages, so it stays on that memory until it goes.
 //
 // A private 2D target made plain because no compressed memory of its size was ready at its creation wants that memory
 // (Device::wantCompressed). Where memory that serves it is made or kept, the submit worker's next raw range submission
 // moves it, before that range's encode and whether or not the range uses it (Device::compressedFromPlain): the copy
-// engine copies it in a raw job of its own, which then rewrites its header and those made from it in place, and its
-// plain memory goes once that job completed. The worker alone writes its memory's fields, under lock_; no other thread
-// reads them but under lock_ (view creation). One with a raw view stays plain: a view may go, and its header index be
-// reused, before the job runs.
+// engine copies it in a raw job of its own, which then rewrites its header and those made from it in place (ticAt), so
+// a gpuResourceID or view handed out before keeps its index, and its plain memory goes once that job completed. The
+// worker alone writes its memory's fields, under lock_; no other thread reads them but under lock_ (view creation). One
+// with a raw view stays plain: a view may go, and its header index be reused, before the job runs.
 #pragma once
 #include <algorithm>
 #include <cstdint>

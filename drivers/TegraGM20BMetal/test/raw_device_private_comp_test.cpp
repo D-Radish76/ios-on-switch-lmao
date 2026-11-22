@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: MIT
 // raw/runtime/raw_private_comp.cpp on raw::Device over the kernel model: private chains, arrays and stored multisampled
-// textures on compressed memory made off the render thread (TextureAsk::compressKind), and the move to plain memory
-// before an m2v twin, every level, layer and sample copied by the copy engine. Then the clears of a pass over Core
-// Animation's zoom window target (boot 21: 1792x1472 BGRA8) whose memoryless second colour only its draws see
+// textures on compressed memory made off the render thread (TextureAsk::compressKind). Then the clears of a pass over
+// Core Animation's zoom window target (boot 21: 1792x1472 BGRA8) whose memoryless second colour only its draws see
 // (raw_clear_box.h).
 #include "raw_device_private_comp.h"
 #include "../raw/runtime/raw_record.h"
@@ -14,7 +13,6 @@
 
 namespace {
 
-using private_comp::copies;
 using private_comp::DevicePrivateComp;
 using private_comp::kBGRA8;
 using private_comp::kH;
@@ -22,7 +20,7 @@ using private_comp::kW;
 
 constexpr uint32_t kRGBA16F = 115, kTriangle = 3;
 
-TEST_F(DevicePrivateComp, AChainTakesCompressedMemoryAndMovesEveryLevelToPlain)
+TEST_F(DevicePrivateComp, AChainTakesCompressedMemoryForEveryLevel)
 {
     raw::Texture first, chain;
     compressedSecond(first, chain, [&](raw::Texture &t) {
@@ -37,52 +35,23 @@ TEST_F(DevicePrivateComp, AChainTakesCompressedMemoryAndMovesEveryLevelToPlain)
     EXPECT_TRUE(level.comptags) << "level 1 is rendered with SET_COLOR_COMPRESSION, as level 0 is";
     ASSERT_TRUE(raw::chainLevelTarget(chain, 2, level));
     EXPECT_TRUE(level.comptags);
-    const uint64_t compressed = chain.va;
-    const uint32_t tic = chain.tic;
-    const raw::fx::MipChain layout = chain.chain->layout;
-    const size_t jobs = kernel_model::model.jobs.size();
-    ASSERT_TRUE(dev.plainFromCompressed(chain));
-    EXPECT_FALSE(chain.comptags);
-    EXPECT_FALSE(dev.privateCompressed(chain));
-    EXPECT_EQ(chain.tic, tic) << "rewritten in place by the move's job";
-    ASSERT_TRUE(chain.chain);
-    EXPECT_EQ(chain.chain->va, chain.va);
-    EXPECT_NE(chain.va, compressed);
-    ASSERT_TRUE(raw::chainLevelImage(chain, 1, level));
-    EXPECT_FALSE(level.comptags);
-    const auto launched = copies(jobs);
-    for (uint32_t level = 0; level < layout.levels; level++)
-        EXPECT_NE(
-            std::find(launched.begin(), launched.end(),
-                      std::make_pair(compressed + layout.level[level].offset, chain.va + layout.level[level].offset)),
-            launched.end())
-            << "level " << level;
     dev.destroyTexture(chain);
     dev.destroyTexture(first);
 }
 
-TEST_F(DevicePrivateComp, AnArrayMovesEveryLayer)
+TEST_F(DevicePrivateComp, AnArrayTakesCompressedMemoryForEveryLayer)
 {
     raw::Texture first, array;
     compressedSecond(first, array, [&](raw::Texture &t) {
         return dev.createArray(128, 128, 3, kBGRA8, raw::fx::kTexTwoDArray, t, 1, nullptr, raw::kCompKindC32);
     });
-    const uint64_t compressed = array.va, stride = array.layerBytes;
     ASSERT_EQ(array.layers, 3u);
-    const size_t jobs = kernel_model::model.jobs.size();
-    ASSERT_TRUE(dev.plainFromCompressed(array));
-    EXPECT_FALSE(array.comptags);
-    const auto launched = copies(jobs);
-    for (uint32_t layer = 0; layer < 3; layer++)
-        EXPECT_NE(std::find(launched.begin(), launched.end(),
-                            std::make_pair(compressed + layer * stride, array.va + layer * stride)),
-                  launched.end())
-            << "layer " << layer;
+    EXPECT_GE(array.storage.bytes, 3 * array.layerBytes);
     dev.destroyTexture(array);
     dev.destroyTexture(first);
 }
 
-TEST_F(DevicePrivateComp, AStoredMultisampledTextureMovesAsItsSampleGrid)
+TEST_F(DevicePrivateComp, AStoredMultisampledTextureTakesItsSampleCountsKind)
 {
     raw::Texture first, ms;
     const uint32_t kind = raw::compressedKind(4, 0, 4);
@@ -90,25 +59,17 @@ TEST_F(DevicePrivateComp, AStoredMultisampledTextureMovesAsItsSampleGrid)
         return dev.createStoredMultisample(64, 64, kBGRA8, 4, t, nullptr, kind);
     });
     EXPECT_TRUE(bound(kind)) << "C32_MS4_2CRA";
-    const uint64_t compressed = ms.va;
-    const size_t jobs = kernel_model::model.jobs.size();
-    ASSERT_TRUE(dev.plainFromCompressed(ms));
-    EXPECT_FALSE(ms.comptags);
     EXPECT_EQ(ms.samples, 4u);
-    const auto launched = copies(jobs);
-    ASSERT_FALSE(launched.empty());
-    EXPECT_EQ(launched.front(), std::make_pair(compressed, ms.va));
     dev.destroyTexture(ms);
     dev.destroyTexture(first);
 }
 
-TEST_F(DevicePrivateComp, AMovedTexturesCompressedMemoryStaysMadeWhenItGoes)
+TEST_F(DevicePrivateComp, ACompressedTexturesMemoryStaysMadeWhenItGoes)
 {
     raw::Texture first, t;
     compressedSecond(first, t, [&](raw::Texture &x) {
         return dev.createMipTexture(128, 128, kBGRA8, 3, x, nullptr, raw::kCompKindC32);
     });
-    ASSERT_TRUE(dev.plainFromCompressed(t));
     const size_t freedBefore = kernel_model::model.freed.size(), ready = raw::DeviceHarness::compReady(dev);
     dev.destroyTexture(t);
     EXPECT_EQ(kernel_model::model.freed.size(), freedBefore);
@@ -176,10 +137,9 @@ TEST(PrivateCompHeaders, AMovedHeaderIsTheHeaderOfItsNewAddress)
     }
 }
 
-// RAWRT-61: a view of a compressed private texture names its compressed memory; the move before an m2v twin rewrites
-// the texture's header and the view's in place on the GPU (the same indices, so a gpuResourceID handed out stays good)
-// and moves the view's address with it
-TEST_F(DevicePrivateComp, AViewKeepsCompressedMemoryAndFollowsTheMove)
+// RAWRT-61: a view of a compressed private texture names its compressed memory through a header of its own over the
+// same binding
+TEST_F(DevicePrivateComp, AViewKeepsCompressedMemory)
 {
     raw::Texture first, t, view;
     compressedSecond(first, t, [&](raw::Texture &x) {
@@ -189,31 +149,7 @@ TEST_F(DevicePrivateComp, AViewKeepsCompressedMemoryAndFollowsTheMove)
     ASSERT_TRUE(dev.createView(t, 81, view));  // BGRA8Unorm_sRGB
     EXPECT_TRUE(view.comptags) << "a raw view names the compressed memory";
     EXPECT_EQ(view.va, t.va);
-    const uint32_t tic = t.tic, viewTic = view.tic;
-    const std::array<uint32_t, 8> before = raw::DeviceHarness::header(dev, tic);
-    const size_t jobs = kernel_model::model.jobs.size();
-    ASSERT_TRUE(dev.plainFromCompressed(t));
-    EXPECT_EQ(t.tic, tic) << "the texture's header index is kept";
-    EXPECT_FALSE(view.comptags);
-    EXPECT_EQ(view.va, t.va) << "the view names the plain memory";
-    EXPECT_EQ(view.tic, viewTic);
-    const auto launched = copies(jobs);
-    const auto into = [&](uint64_t va) {
-        return std::find_if(launched.begin(), launched.end(), [&](const auto &l) {
-                   return l.second == va;
-               }) != launched.end();
-    };
-    EXPECT_TRUE(into(raw::DeviceHarness::ticVa(dev, tic))) << "the texture's header rewritten by the move's job";
-    for (const auto &[src, dst] : launched)
-        if (dst == raw::DeviceHarness::ticVa(dev, tic)) {
-            uint32_t written[8];
-            memcpy(written, kernel_model::model.host(src), 32);
-            uint32_t want[8];
-            memcpy(want, before.data(), 32);
-            raw::ticAt(want, t.va);
-            EXPECT_EQ(memcmp(written, want, 32), 0) << "its own header (swizzle, format) naming the plain memory";
-        }
-    EXPECT_TRUE(into(raw::DeviceHarness::ticVa(dev, viewTic))) << "the view's header rewritten by the move's job";
+    EXPECT_NE(view.tic, t.tic);
     dev.destroyTexture(view);
     dev.destroyTexture(t);
     dev.destroyTexture(first);

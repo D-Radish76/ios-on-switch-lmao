@@ -89,8 +89,8 @@ protected:
         ASSERT_TRUE(raw::DeviceHarness::compReady(dev)) << "no compressed memory was made";
     }
 
-    // `make` once (plain: none of its size made yet, and asked for), then again on what was made
-    // (`colour`: one the colour move takes, plainFromCompressed; a zeta moves into its m2v twin's image instead)
+    // `make` once (plain: none of its size made yet, and asked for), then again on what was made (`colour`: one
+    // privateComp_ holds; a zeta's memory is held by its address, compZeta_)
     template <typename Make>
     void compressedSecond(raw::Texture &first, raw::Texture &second, Make make, bool colour = true)
     {

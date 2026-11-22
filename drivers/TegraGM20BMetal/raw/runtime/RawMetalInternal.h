@@ -525,9 +525,7 @@ template <typename Run> auto rmSubmission(Run &&run) -> decltype(run())
     return run();
 }
 
-extern thread_local bool tRawEncoding;
 uint32_t privateCompressedKind(MTLTextureDescriptor *d);
-bool rmTexturePlain(RMTexture *t);
 // A texture rmNewTexture made plain for want of compressed memory (its _movableBytes) registered as wanting it, once its
 // descriptor's swizzle is in its header: Device::swizzle writes that header in place, and from the registration on the
 // submit worker may move the texture, header words and all

@@ -9,19 +9,10 @@
 namespace raw {
 namespace {
 
-// `from`'s texels into `to`, the same layout on other memory, by the copy engine: each level of a chain (level 0 the
-// texture itself: chainLevelImage names the others), each layer, and a multisampled image as the grid of its samples
+// `from`'s texels into `to`, the same layout on other memory, by the copy engine: each layer, and a multisampled image
+// as the grid of its samples
 void copyImages(BlitEncoder &b, const Texture &from, const Texture &to)
 {
-    if (from.chain && to.chain) {
-        b.copyTexels(from, 0, 0, 0, to, 0, 0, 0, from.width, from.height);
-        for (uint32_t level = 1; level < from.chain->layout.levels; level++) {
-            Texture a, c;
-            if (chainLevelImage(from, level, a) && chainLevelImage(to, level, c))
-                b.copyTexels(a, 0, 0, 0, c, 0, 0, 0, a.width, a.height);
-        }
-        return;
-    }
     Texture a = from, c = to;
     uint32_t sx, sy;
     sampleGrid(from.samples, sx, sy);
@@ -60,10 +51,7 @@ void Device::noteCompressed(const TextureAsk &ask, const Bo &bo, uint64_t bytes,
     t.cpu = nullptr;
     t.storage = {t.va, bytes, false};
     t.comptags = true;
-    PrivateCompTexture &p = privateComp_[&t];
-    p.comp = {bo, ask.compressKind};
-    p.ask = ask;
-    p.ask.compressKind = 0;
+    privateComp_[&t] = {bo, ask.compressKind};
     privateMade_.store(privateMade_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
 }
 
@@ -134,127 +122,21 @@ bool Device::privateCompressed(const Texture &t)
     return it != privateComp_.end() && t.comptags;
 }
 
-bool Device::plainTiledTwin(const Texture &t, Texture &plain)
-{
-    tgm_layout bl;
-    if (!tgm_layout_tiled(t.width, t.height, t.bpp, &bl))
-        return false;
-    plain = t;
-    std::lock_guard<raw::Mutex> l(lock_);
-    if (!blAlloc(bl.bytes, bl.align, plain.span))
-        return false;
-    if (!(plain.tic = allocTic())) {
-        Lease *none = nullptr;
-        freeSpan(plain.span, Memory::Bl, none);
-        return false;
-    }
-    plain.va = plain.span.va;
-    plain.cpu = plain.span.cpu;
-    plain.storage = {};
-    plain.comptags = false;
-    writeTic(plain);
-    return true;
-}
-
 void Device::noteView(const Texture &of, Texture &view)
 {
-    if (!of.comptags) {
-        for (auto &[texture, w] : privateWants_)
-            if (of.va >= texture->va && of.va - texture->va < texture->span.bytes) {
-                w.views.push_back(&view);
-                return;
-            }
+    if (of.comptags)
         return;
-    }
-    for (auto &[texture, p] : privateComp_)
-        if (texture->comptags && of.va >= p.comp.bo.va && of.va - p.comp.bo.va < p.comp.bo.bytes) {
-            p.views.push_back(&view);
+    for (auto &[texture, w] : privateWants_)
+        if (of.va >= texture->va && of.va - texture->va < texture->span.bytes) {
+            w.views.push_back(&view);
             return;
         }
 }
 
 void Device::forgetView(const Texture &view)
 {
-    for (auto &[texture, p] : privateComp_)
-        p.views.erase(std::remove(p.views.begin(), p.views.end(), &view), p.views.end());
     for (auto &[texture, w] : privateWants_)
         w.views.erase(std::remove(w.views.begin(), w.views.end(), &view), w.views.end());
-}
-
-bool Device::plainFromCompressed(Texture &t)
-{
-    TextureAsk ask;
-    std::vector<Texture *> views;
-    {
-        std::lock_guard<raw::Mutex> l(lock_);
-        auto it = privateComp_.find(&t);
-        if (it == privateComp_.end() || !t.comptags)
-            return false;
-        ask = it->second.ask;
-        views = it->second.views;
-    }
-    Texture plain;
-    if (ask.kind == TextureAsk::Plain ? !plainTiledTwin(t, plain) : !createLaidOut(ask, plain, nullptr))
-        return false;
-    // the texture's own header first, then its views': each as it is (swizzle, format, levels), naming the plain memory
-    std::vector<uint32_t> tics{t.tic};
-    for (const Texture *v : views)
-        tics.push_back(v->tic);
-    Buffer headers;
-    if (!createBuffer(32 * tics.size(), headers, true)) {
-        destroyTexture(plain);
-        return false;
-    }
-    for (size_t i = 0; i < tics.size(); i++) {
-        uint32_t w[8];
-        memcpy(w, tic_.cpu + 32 * tics[i], 32);
-        ticAt(w, ticAddress(w) - t.va + plain.va);
-        memcpy(headers.cpu + 32 * i, w, 32);
-    }
-    uint32_t seq = 0;
-    CommandBuffer *rc = begin();
-    bool copied = rc != nullptr;
-    if (copied) {
-        rc->use(headers, false);
-        rc->useAddress(tic_.va, tic_.bytes, true);
-        BlitEncoder *b = rc->blit();
-        copyImages(*b, t, plain);
-        for (size_t i = 0; i < tics.size(); i++)
-            b->copyBytes(headers.va + 32 * i, tic_.va + 32ull * tics[i], 32);
-        b->end();
-        copied = rc->commit(seq);
-        if (!copied)
-            rc->abandon();
-    }
-    if (!copied) {
-        destroyTexture(plain);
-        destroyBuffer(headers);
-        os_log_error(OS_LOG_DEFAULT, "raw: a compressed %ux%u texture of format %u could not move to plain memory",
-                     t.width, t.height, t.format);
-        return false;
-    }
-    std::lock_guard<raw::Mutex> l(lock_);
-    PrivateCompTexture &p = privateComp_[&t];
-    freeTic(plain.tic);
-    p.staleChain = t.chain;
-    p.headers = headers;
-    const uint64_t from = t.va;
-    t.va = plain.va;
-    t.cpu = plain.cpu;
-    t.span = plain.span;
-    t.lease = plain.lease;
-    t.storage = plain.storage;
-    t.chain = plain.chain;
-    t.comptags = false;
-    for (Texture *v : p.views) {
-        v->va = v->va - from + plain.va;
-        v->cpu = plain.cpu ? plain.cpu + (v->va - plain.va) : nullptr;
-        v->storage = t.storageRange();
-        v->comptags = false;
-    }
-    p.views.clear();
-    privateTransitions_.store(privateTransitions_.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-    return true;
 }
 
 void Device::releasePrivateCompressed(const Texture &t)
@@ -266,15 +148,7 @@ void Device::releasePrivateCompressed(const Texture &t)
     auto it = privateComp_.find(&t);
     if (it == privateComp_.end())
         return;
-    if (Buffer &headers = it->second.headers; headers.va)
-        freeSpan(headers.span, headers.wc ? Memory::Wc : Memory::Pool, headers.lease);
-    if (Texture::Chain *stale = it->second.staleChain) {
-        for (const uint32_t level : stale->levelTic)
-            if (level)
-                freeTic(level);
-        delete stale;
-    }
-    PrivateComp comp = it->second.comp;
+    PrivateComp comp = it->second;
     privateComp_.erase(it);
     // Core Animation makes its large targets again at each app open and close (boot 21: its 1792x1472 BGRA8 zoom window
     // target): the memory stays made for the next target of its kind until compTrim finds it idle
@@ -431,12 +305,7 @@ bool Device::compressedFromPlain(Texture &t)
     t.span = {};
     t.storage = comp.storage;
     t.comptags = true;
-    PrivateCompTexture &p = privateComp_[&t];
-    p.comp = {bo, kind};
-    p.ask.width = t.width;
-    p.ask.height = t.height;
-    p.ask.format = t.format;
-    p.ask.tiled = true;
+    privateComp_[&t] = {bo, kind};
     // made on another thread while the job was built, so no work names them yet: their headers change here
     for (Texture *v : views) {
         ticAt(reinterpret_cast<uint32_t *>(tic_.cpu + 32 * v->tic), v->va - from + t.va);
@@ -444,7 +313,6 @@ bool Device::compressedFromPlain(Texture &t)
         v->cpu = nullptr;
         v->storage = t.storageRange();
         v->comptags = true;
-        p.views.push_back(v);
     }
     RAW_DIAGNOSTIC(stats.privateCompressedMoves++);
 #if SWITCH_RAW_DIAGNOSTICS

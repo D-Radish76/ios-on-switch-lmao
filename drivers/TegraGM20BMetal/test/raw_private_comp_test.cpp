@@ -62,12 +62,6 @@ TEST(RawPrivateComp, ShaderWriteUsageIsTakenWithStorageReadingCompressed)
     EXPECT_TRUE(raw::storageReadsCompressed());
 }
 
-TEST(RawPrivateComp, AResourceIdLeavesACompressedTextureOnItsMemory)
-{
-    EXPECT_THAT(Body(SourceText("../raw/runtime/RawMetalResourceIds.mm"), "- (MTLResourceID)gpuResourceID"),
-                Not(HasSubstr("rmTexturePlain")));
-}
-
 TEST(RawPrivateComp, AMipChainTakesItsKind)
 {
     raw::PrivateTextureFacts f = target(4);
@@ -84,8 +78,8 @@ TEST(RawPrivateComp, AOneLevelArrayTakesItsKind)
     EXPECT_EQ(raw::privateCompressedKind(f), 0u) << "an array's levels are no chain the move copies";
 }
 
-// A stored multisampled target takes its sample count's kind where the copy engine reads that kind (the move to plain
-// memory is its copy of the sample grid)
+// A stored multisampled target takes its sample count's kind where the copy engine reads that kind (the move onto
+// compressed memory is its copy of the sample grid)
 TEST(RawPrivateComp, AStoredMultisampledTargetTakesItsKindWhereTheCopyEngineReadsIt)
 {
     raw::PrivateTextureFacts f = target(4);
@@ -113,19 +107,8 @@ TEST(RawPrivateComp, AMultisampledTextureMovesAsItsSampleGrid)
     EXPECT_EQ(sy, 1u);
 }
 
-TEST(RawPrivateComp, EveryLaidOutShapeMovesWholeAndKeepsWhatWorkSubmittedReads)
+TEST(RawPrivateComp, EveryLaidOutShapeTakesCompressedMemoryAtItsCreation)
 {
-    const std::string source = SourceText("../raw/runtime/raw_private_comp.cpp");
-    const std::string move = Body(source, "bool Device::plainFromCompressed(");
-    EXPECT_THAT(move, HasSubstr("createLaidOut(ask, plain, nullptr)")) << "a chain, array or multisampled texture";
-    EXPECT_THAT(move, HasSubstr("copyImages(*b, t, plain);"));
-    EXPECT_THAT(move, HasSubstr("p.staleChain = t.chain;"));
-    const std::string copy = Body(source, "void copyImages(");
-    EXPECT_THAT(copy, HasSubstr("b.copyTexels(from, 0, 0, 0, to, 0, 0, 0, from.width, from.height);")) << "level 0";
-    EXPECT_THAT(copy, HasSubstr("chainLevelImage(from, level, a)")) << "every later level";
-    EXPECT_THAT(copy, HasSubstr("layer < std::max(from.layers, 1u)")) << "every layer";
-    EXPECT_THAT(copy, HasSubstr("sampleGrid(from.samples, sx, sy)")) << "every sample";
-    EXPECT_THAT(Body(source, "void Device::releasePrivateCompressed("), HasSubstr("delete stale;"));
     const std::string laid = Body(SourceText("../raw/runtime/raw_textures.cpp"), "bool Device::createLaidOut(");
     EXPECT_THAT(laid, HasSubstr("ask.compressKind && !at && !zeta && takeCompressed(bytes, ask.compressKind, comp)"));
     EXPECT_THAT(laid, HasSubstr("noteCompressed(ask, comp, bytes, t);"));

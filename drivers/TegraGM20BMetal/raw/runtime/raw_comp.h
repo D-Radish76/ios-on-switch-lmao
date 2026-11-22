@@ -6,9 +6,8 @@
 // reaching memory through such a binding sees plain texels (the L2 decompresses); anything else (the CPU, the display,
 // another binding of the same pages) would see compressed bytes. These targets are written and read only by the 3D engine,
 // the texture unit and the copy engine (copyEngineReadsCompressed), through their one compressed binding: never CPU-mapped,
-// never scanned out, never an m2v twin's memory (a memoryless texture's twin has its own). So none of them is ever resolved.
-// A texture the app made does not qualify while it can reach m2v: a replayed command buffer twins it in place, another
-// binding of its memory.
+// never scanned out. So none of them is ever resolved. Private textures the app made qualify on the same terms
+// (raw_private_comp.h).
 //
 // Kinds are NVN's on the Tegra X1 (deko3d pickImageMemoryKind; NIL nvc0_choose_pte_kind for the depth formats and sample
 // counts it adds), numbered as Maxwell's dev_mmu.h; the kernel's table (nvkm gm200_mmu_kind) demotes each to the kind an

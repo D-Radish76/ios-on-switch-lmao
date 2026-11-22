@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: MIT
-// A private texture moved off compressed memory from another thread (rmTexturePlain, as an m2v twin or
-// switchRawProbeMovePlain moves it) while the submit worker holds the device's one command buffer open for an encode
-// ahead (RawMetalPipeline.mm), through the raw facade over the kernel model: the move's job and the command buffer encoded
-// ahead must each reach the GPU as they were submitted, and so must the submit worker's own move of a target made plain
-// for want of compressed memory onto that memory (rmMoveWanting) inside the submission of a command buffer it encoded
-// ahead. The GPU here takes a set time for each job and compares, as it completes one, the words its pushes hold then
-// with those they held at its submission: words written over a job the GPU has not run yet are a corrupt job on
-// hardware.
+// The submit worker's move of a target made plain for want of compressed memory onto that memory (rmMoveWanting) inside
+// the submission of a command buffer it encoded ahead (RawMetalPipeline.mm), through the raw facade over the kernel
+// model: the move's job and the command buffer encoded ahead must each reach the GPU as they were submitted. The GPU
+// here takes a set time for each job and compares, as it completes one, the words its pushes hold then with those they
+// held at its submission: words written over a job the GPU has not run yet are a corrupt job on hardware.
 #include "raw_scale_frames.h"
 
 #include <gtest/gtest.h>
@@ -121,24 +118,6 @@ id probe(id<MTLDevice> device, const char *selector, id<MTLTexture> texture)
     return ((id (*)(id, SEL, id))objc_msgSend)((id)device, sel_registerName(selector), texture);
 }
 
-// A private BGRA8 target on compressed memory: the first of its size asks for the memory, a later one takes it
-id<MTLTexture> compressedTarget(id<MTLDevice> device)
-{
-    MTLTextureDescriptor *td = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
-                                                                                  width:256
-                                                                                 height:256
-                                                                              mipmapped:NO];
-    td.storageMode = MTLStorageModePrivate;
-    td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-    for (int i = 0; i < 500; i++) {
-        id<MTLTexture> t = [device newTextureWithDescriptor:td];
-        if ([(NSString *)probe(device, "switchRawProbeFacts:", t) containsString:@"comptags=1"])
-            return t;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    return nil;
-}
-
 NSDictionary *pipelined(id<MTLCommandBuffer> cb)
 {
     const SEL selector = sel_registerName("switchRawPipelined");
@@ -182,41 +161,6 @@ TEST(RawFacadeMoveAhead, APlainTargetMovesOntoItsMemoryInsideTheCommandBufferTha
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
     EXPECT_TRUE([(NSString *)probe(device, "switchRawProbeFacts:", into[0]) containsString:@"comptags=1"]);
     EXPECT_EQ(counted(device, "switchRawCounters", @"private_compressed_moves"), moves + 1);
-    NSDictionary *p = pipelined(cb);
-    printf("encode ahead: %s\n", p ? [[p description] UTF8String] : "-");
-    EXPECT_EQ(gpu.changed(), 0u) << "job " << gpu.firstChanged() << "'s pushes were written over before the GPU ran it";
-}
-
-TEST(RawFacadeMoveAhead, AMoveFromAnotherThreadLeavesEveryJobItMeetsAsSubmitted)
-{
-    {
-        std::lock_guard<std::mutex> l(kernel_model::callLock);
-        kernel_model::model.infoFlags |= TegraGM20BInfoCompression;
-    }
-    ASSERT_TRUE(opened().device != nil);
-    id<MTLDevice> device = opened().device;
-    id<MTLTexture> moved = compressedTarget(device);
-    ASSERT_NE(moved, nil) << "no compressed memory was made";
-    id<MTLCommandQueue> queue = [device newCommandQueue];
-    const scale_frames::Shape shape{15, 90, 4};
-    const auto into = scale_frames::targets(device, shape);
-    CheckingGpu gpu(std::chrono::milliseconds(3));
-    id<MTLCommandBuffer> cb = [queue commandBuffer];
-    NSNumber *answer = nil;
-    for (int p = 0; p < shape.passes; p++) {
-        scale_frames::pass(cb, opened().state, into, shape, p, 0);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        if (p == 9) {
-            std::thread other([&] {
-                answer = probe(device, "switchRawProbeMovePlain:", moved);
-            });
-            other.join();
-        }
-    }
-    [cb commit];
-    [cb waitUntilCompleted];
-    EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);
-    EXPECT_TRUE(answer.boolValue) << "the texture left compressed memory";
     NSDictionary *p = pipelined(cb);
     printf("encode ahead: %s\n", p ? [[p description] UTF8String] : "-");
     EXPECT_EQ(gpu.changed(), 0u) << "job " << gpu.firstChanged() << "'s pushes were written over before the GPU ran it";
