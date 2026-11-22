@@ -85,8 +85,8 @@ TEST_F(Power, TheCallReadsNoRegisterWhileTheGpuIsDown)
 	EXPECT_EQ(probedReaders, 0u);
 }
 
-// The power-down's drain killed the reader's and the maker's channels; a CPU copy still waits: memory work only, and
-// the copy is let go at its second.
+// The power-down's drain killed the reader's and the maker's channels; a CPU copy still waits: memory work only, nothing
+// given up, and the copy is let go by the maker's kill's retirement.
 TEST_F(Power, AGpuReaderRecordedOnADrainedChannelReadsNoRegister)
 {
 	readerSubmits();
@@ -98,10 +98,13 @@ TEST_F(Power, AGpuReaderRecordedOnADrainedChannelReadsNoRegister)
 	maker.fence = maker.submitted;
 	powerDown();
 	until(fake::now + 1000 * kMs);
-	ASSERT_EQ(lines.size(), 1u);
-	EXPECT_EQ(fake::pool[kOffset / 4], kValue);
+	EXPECT_TRUE(lines.empty());
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue - 1);
 	EXPECT_EQ(fake::hangLooks, 0u);
 	EXPECT_EQ(probedReaders, 0u);
+	makerRetires();
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue);
+	EXPECT_EQ(fake::abandoned.size(), 1u);
 }
 
 // Two promises parked 300 ms apart, the GPU down from 500 ms to 700 ms: both are judged a whole second from the

@@ -191,9 +191,9 @@ TEST_F(Fixture, AKernelQueuesReaderStillWaitsForTheMakersQueue)
 	EXPECT_TRUE(lines.empty());
 }
 
-// The hang rule's recovery kills the maker's channel: the promised job died with it, and the promise is given up at the
-// next look.
-TEST_P(GiveUp, AJobAheadWhoseChannelTheHangRuleKillsGivesThePromiseUp)
+// The hang rule's recovery kills the maker's channel: the promised job died with it, and that kill's retirement releases
+// the promise; the call gives nothing up.
+TEST_P(GiveUp, AJobAheadWhoseChannelTheHangRuleKillsIsReleasedByTheKillsRetirement)
 {
 	readerSubmits();
 	makerKeeps(1);
@@ -201,9 +201,34 @@ TEST_P(GiveUp, AJobAheadWhoseChannelTheHangRuleKillsGivesThePromiseUp)
 		return;
 	maker.recovery = 1;
 	until(fake::now + 1000 * kMs + 6000 * kMs);
-	ASSERT_EQ(lines.size(), 1u);
 	EXPECT_EQ(maker.error, 1u);
+	EXPECT_TRUE(lines.empty()) << "the call gave up a promise the kill's retirement releases";
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue - 1);
+	EXPECT_FALSE(fake::call.pending);
+	makerRetires();
+	EXPECT_EQ(reader.fence, reader.submitted);
 	EXPECT_EQ(shown(), kPrevious);
+	EXPECT_TRUE(lines.empty());
+}
+
+// The maker's channel is killed with the promised job on it (its fence passed by the kill, the word not released): every
+// reader, the compositor's included, is let go by that kill's retirement, not by the call due meanwhile.
+TEST_P(GiveUp, APromiseWhoseJobsChannelWasKilledIsReleasedByItsRetirementNotTheCall)
+{
+	readerSubmits();
+	makerKeeps(0);
+	maker.fence = maker.submitted;
+	maker.error = 1;
+	until(fake::now + 5000 * kMs);
+	EXPECT_TRUE(lines.empty()) << "the call gave up a promise the kill's retirement releases";
+	EXPECT_TRUE(fake::abandoned.empty());
+	EXPECT_EQ(fake::pool[kOffset / 4], kValue - 1);
+	EXPECT_NE(reader.fence, reader.submitted);
+	EXPECT_FALSE(fake::call.pending) << "nothing left for the call";
+	makerRetires();
+	EXPECT_EQ(reader.fence, reader.submitted) << "the reader's acquire passed at the release";
+	EXPECT_EQ(shown(), kPrevious);
+	EXPECT_TRUE(lines.empty());
 }
 
 INSTANTIATE_TEST_SUITE_P(Readers, GiveUp, testing::ValuesIn(kKinds),

@@ -148,6 +148,17 @@ protected:
 		pass();
 	}
 
+	// The maker's channel killed or destroyed is retired: its connection releases the kept promise the kill left
+	// (AGXDeviceUserClient::releasePromise), marked abandoned before the word moves, and the readers it lets go complete
+	void makerRetires()
+	{
+		tgm_promise_abandon(kOffset, kValue);
+		fake::pool[kOffset / 4] = kValue;
+		tgm_present_promise_released(kOffset, kValue);
+		gpuRuns();
+		pass();
+	}
+
 	// GPU readers parked on the word go on once it reaches the value
 	void gpuRuns()
 	{

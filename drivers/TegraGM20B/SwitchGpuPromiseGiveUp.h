@@ -11,9 +11,11 @@
  * The call does not give up a promise whose job is submitted but queued behind another job of its channel. It waits for
  * that job ahead through the channel's interrupt pass and judges the promised job from that job's completion. While it
  * waits it is that channel's waiter for the hang rule (tgm_chan_check_progress's two strikes): a job ahead that never
- * completes is the hang rule's to recover, never this rule's. Otherwise the promise is given up: marked abandoned, its
- * word raised by a plain store with the fence page's owner unchanged, one line naming its maker, its first reader and
- * the time since that reader parked. A present of the surface is then dropped and the panel keeps the frame before it. */
+ * completes is the hang rule's to recover, never this rule's, and a promise whose job's channel was killed or destroyed is
+ * released by that kill's retirement (AGXDeviceUserClient::releasePromises), never by this rule. Otherwise the promise is
+ * given up: marked abandoned, its word raised by a plain store with the fence page's owner unchanged, one line naming its
+ * maker, its first reader and the time since that reader parked. A present of the surface is then dropped and the panel
+ * keeps the frame before it. */
 #pragma once
 #include <stdint.h>
 #include "SwitchGpuWriterPromise.h"
@@ -110,6 +112,8 @@ struct switch_gpu_giveup_ops {
 	void (*moved)(uint32_t offset, uint32_t value);
 	/* the promised job keptPromises remembered while the call ran, taken into an entry that has none */
 	void (*recall)(struct switch_gpu_giveup *e);
+	/* the promised job's channel was killed or destroyed */
+	int (*killed)(const struct switch_gpu_giveup_job *job);
 };
 
 /* The call's arming, under its simple lock */
@@ -469,8 +473,9 @@ static inline void switch_gpu_giveup_run(struct switch_gpu_giveups *g,
 		}
 		if (!switch_gpu_giveup_judge(ops, e, now))
 			continue;
-		switch_gpu_promise_give_up(ops->fence, e->offset, e->value, e->owner, ops->stepped,
-					   e);
+		if (!e->kept || !ops->killed(&e->job))
+			switch_gpu_promise_give_up(ops->fence, e->offset, e->value, e->owner,
+						   ops->stepped, e);
 		switch_gpu_giveup_free(g, e);
 	}
 }

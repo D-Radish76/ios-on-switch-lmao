@@ -322,6 +322,7 @@ IOReturn AGXDeviceUserClient::channelDestroy(const TegraGM20BAbiChannel *in)
 				switch_gpu_set_killed(set, in->channel - 1);
 	hangHolder_ = current_thread();
 	tgm_chan_del(&chans_[in->channel - 1]);
+	releasePromises(false);
 	eventChannels_[in->channel - 1].reset();
 	admissions_[in->channel - 1].end();
 	admissionCookies_[in->channel - 1] = 0;

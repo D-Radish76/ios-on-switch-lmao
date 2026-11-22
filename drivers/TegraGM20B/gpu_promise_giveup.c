@@ -186,9 +186,18 @@ static void giveup_recall(struct switch_gpu_giveup *e)
 		giveup_need(e->job.uid, e->job_last);
 }
 
+/* tgm_live_lock held */
+static int giveup_killed(const struct switch_gpu_giveup_job *job)
+{
+	struct tgm_chan *chan = live_by_uid(job->uid);
+
+	return !chan || READ_ONCE(chan->error);
+}
+
 static const struct switch_gpu_giveup_ops giveup_ops = {
 	&tgm_promise_fence, promise_slot,   giveup_reader_parked,         giveup_job_ahead,
-	giveup_need,        giveup_stepped, tgm_present_promise_released, giveup_recall};
+	giveup_need,        giveup_stepped, tgm_present_promise_released, giveup_recall,
+	giveup_killed};
 
 static void giveup_after(uint64_t ns)
 {
