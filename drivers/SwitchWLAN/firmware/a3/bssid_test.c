@@ -8,6 +8,7 @@ extern int switch_bssid_native_set(void *, void *);
 extern void switch_bssid_native_clear(void *, void *);
 extern void switch_bssid_native_dispatch(void *);
 extern int switch_bssid_native_receiver(void *, unsigned, const uint8_t *);
+extern int switch_bssid_native_network(void *, unsigned, const uint8_t *, unsigned);
 
 struct switch_bssid_slot {
     uint8_t address[6];
@@ -21,7 +22,7 @@ static struct {
 } switch_bssid_fixture;
 
 #define SWITCH_REQUIRE(condition) do { if (!(condition)) return __LINE__; } while (0)
-enum { SWITCH_CUBBY = 944, SWITCH_RECEIVER = 9, SWITCH_KEY_SLOT = 14, SWITCH_BSSID = 41, SWITCH_PRIMARY = 62, SWITCH_CASES = 10 };
+enum { SWITCH_CUBBY = 944, SWITCH_RECEIVER = 9, SWITCH_KEY_SLOT = 14, SWITCH_BSSID = 41, SWITCH_PRIMARY = 62, SWITCH_CASES = 11 };
 
 static void switch_bssid_pointer(uint8_t *base, unsigned offset, void *value)
 {
@@ -189,8 +190,30 @@ static uint32_t switch_bssid_qualify(unsigned variant)
     return 0;
 }
 
+static uint32_t switch_bssid_network(void)
+{
+    static const uint8_t network[6] = {0x00, 0x25, 0x00, 0xff, 0x94, 0x73};
+    const unsigned index = 59;
+    uint8_t *wlc = switch_bssid_fixture.wlc;
+    struct switch_bssid_slot *slot = &switch_bssid_fixture.slots[index];
+    for (unsigned transmitter = 0; transmitter < 2; ++transmitter) {
+        switch_bssid_initialize();
+        SWITCH_REQUIRE(!switch_bssid_native_network(wlc, index, network, transmitter));
+        for (unsigned i = 0; i < sizeof network; ++i)
+            SWITCH_REQUIRE(slot->address[i] == network[i]);
+        SWITCH_REQUIRE(slot->flags == (transmitter ? 0x8006 : 0x8002) && switch_bssid_fixture.writes == 1);
+        SWITCH_REQUIRE(!switch_bssid_fixture.invalid);
+    }
+    switch_bssid_initialize();
+    wlc[25] = 0;
+    SWITCH_REQUIRE(switch_bssid_native_network(wlc, index, network, 0) == -11);
+    SWITCH_REQUIRE(!switch_bssid_fixture.writes && !slot->flags && !switch_bssid_fixture.invalid);
+    return 0;
+}
+
 void switch_bssid_test_run(volatile uint32_t *results)
 {
-    for (unsigned variant = 0; variant < SWITCH_CASES; ++variant)
+    for (unsigned variant = 0; variant + 1 < SWITCH_CASES; ++variant)
         results[variant] = switch_bssid_qualify(variant);
+    results[SWITCH_CASES - 1] = switch_bssid_network();
 }

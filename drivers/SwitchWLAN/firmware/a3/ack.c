@@ -6,6 +6,17 @@
 extern int32_t switch_a3_key_allocate(void *wlc, uint32_t first, uint32_t count, uint32_t consecutive);
 extern uint32_t switch_a3_amt_clear(void *wlc, int32_t index);
 extern int32_t switch_a3_receiver_set(void *wlc, int32_t index, const uint8_t address[6]);
+extern int32_t switch_a3_network_set(void *wlc, int32_t index, const uint8_t address[6], uint32_t transmitter);
+extern void switch_a3_amt_info_set(void *wlc, uint32_t index, uint32_t info);
+
+/* Stock firmware never writes AMT entry 59. Info bit 2 is what it sets on its own entries that match address 3 of a
+   network other than the joined one (52 to 56). */
+enum {
+    SWITCH_A3_NETWORK_INDEX = 59,
+    SWITCH_A3_AMT_INFO_BSSID = 4
+};
+
+static const uint8_t switch_a3_network_id[6] = {0x00, 0x25, 0x00, 0xff, 0x94, 0x73};
 
 static struct {
     void *wlc;
@@ -112,9 +123,14 @@ int32_t switch_a3_ack_reconcile(void *wlc)
         return -11;
     const int32_t address_index = switch_a3_ack_state.key_index - 4;
     switch_a3_amt_clear(wlc, address_index);
+    switch_a3_amt_clear(wlc, SWITCH_A3_NETWORK_INDEX);
     if (!switch_a3_ack_state.enabled)
         return 0;
-    return switch_a3_receiver_set(wlc, address_index, switch_a3_ack_state.address);
+    const int32_t receiver = switch_a3_receiver_set(wlc, address_index, switch_a3_ack_state.address);
+    if (receiver)
+        return receiver;
+    switch_a3_amt_info_set(wlc, SWITCH_A3_NETWORK_INDEX, SWITCH_A3_AMT_INFO_BSSID);
+    return switch_a3_network_set(wlc, SWITCH_A3_NETWORK_INDEX, switch_a3_network_id, 0);
 }
 
 int32_t switch_a3_ack_configure(void *wlc, const uint8_t address[6], int enabled)

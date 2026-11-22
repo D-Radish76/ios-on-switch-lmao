@@ -20,7 +20,7 @@ def switch_ack_results(qmp: socket.socket, qtest: socket.socket, symbols: dict[s
         switch_cpu.switch_qmp_command(control, 'cont')
         time.sleep(0.1)
         switch_cpu.switch_qmp_command(control, 'stop')
-        results = switch_cpu.switch_read_words(memory, symbols['switch_ack_test_results'], 42)
+        results = switch_cpu.switch_read_words(memory, symbols['switch_ack_test_results'], 44)
         if switch_cpu.switch_read_words(memory, symbols['switch_ack_test_done'], 1) != (0x53574133,):
             registers = switch_cpu.switch_qmp_command(
                 control, 'human-monitor-command', {'command-line': 'info registers'}
@@ -67,7 +67,13 @@ class AddressMatchCPU(unittest.TestCase):
             )
             disassembly = subprocess.check_output([objdump, '-d', str(elf)], text=True)
             self.assertNotIn('blx', disassembly)
-            for name, address in (('key_allocate', '550e4'), ('amt_clear', '2e0d0'), ('receiver_set', '5bc70')):
+            for name, address in (
+                ('key_allocate', '550e4'),
+                ('amt_clear', '2e0d0'),
+                ('receiver_set', '5bc70'),
+                ('network_set', '5bc2c'),
+                ('amt_info_set', '2ce48'),
+            ):
                 self.assertRegex(disassembly, rf'\b{address} <switch_a3_{name}>')
 
     def test_actual_thumb_reservation_lifecycle(self):
@@ -112,7 +118,7 @@ class AddressMatchCPU(unittest.TestCase):
                 if len(fields) == 3:
                     symbols[fields[2]] = int(fields[0], 16)
             results = switch_cpu.switch_run_arm(qemu, elf, path, symbols, switch_ack_results)
-            self.assertEqual(results, (0,) * 42, f'failing ACK/BSSID test line numbers: {results}')
+            self.assertEqual(results, (0,) * 44, f'failing ACK/BSSID test line numbers: {results}')
 
 
 if __name__ == '__main__':

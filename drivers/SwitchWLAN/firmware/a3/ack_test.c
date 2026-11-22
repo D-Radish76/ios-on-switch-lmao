@@ -19,7 +19,13 @@ static uint32_t switch_allocated, switch_cleared, switch_programmed, switch_faul
 static int32_t switch_allocate_error, switch_set_error, switch_bad_index;
 static uint8_t switch_empty_object;
 
-uint32_t switch_ack_test_results[42];
+static struct {
+    uint32_t sequence, clears, cleared_at, infos, info_at, info_index, info, sets, set_at, transmitter;
+    int32_t set_index, set_error;
+    uint8_t address[6];
+} switch_network;
+
+uint32_t switch_ack_test_results[44];
 volatile uint32_t switch_ack_test_done;
 
 #define SWITCH_REQUIRE(condition) \
@@ -66,6 +72,7 @@ static void switch_reset(void)
     switch_object_count = switch_allocated = switch_cleared = switch_programmed = switch_fault = 0;
     switch_allocate_error = switch_set_error = switch_bad_index = 0;
     switch_empty_object = 0;
+    switch_zero(&switch_network, sizeof switch_network);
     switch_receiver_wlc = NULL;
     switch_receiver_index = -1;
 }
@@ -100,8 +107,20 @@ int32_t switch_a3_key_allocate(void *wlc, uint32_t first, uint32_t count, uint32
     return -22;
 }
 
+static uint32_t switch_network_call(void *wlc, uint32_t *calls)
+{
+    if (!((uint8_t *)wlc)[25])
+        switch_fault = 5;
+    ++*calls;
+    return ++switch_network.sequence;
+}
+
 uint32_t switch_a3_amt_clear(void *wlc, int32_t index)
 {
+    if (index == 59) {
+        switch_network.cleared_at = switch_network_call(wlc, &switch_network.clears);
+        return 0x8008;
+    }
     void **keys = *(void ***)((uint8_t *)wlc + 0x2a0);
     if (!((uint8_t *)wlc)[25] || index < 0 || index >= 36 || !keys[index + 4])
         switch_fault = 3;
@@ -122,6 +141,23 @@ int32_t switch_a3_receiver_set(void *wlc, int32_t index, const uint8_t address[6
     for (size_t offset = 0; offset < 6; ++offset)
         switch_receiver_address[offset] = address[offset];
     return 0;
+}
+
+void switch_a3_amt_info_set(void *wlc, uint32_t index, uint32_t info)
+{
+    switch_network.info_at = switch_network_call(wlc, &switch_network.infos);
+    switch_network.info_index = index;
+    switch_network.info = info;
+}
+
+int32_t switch_a3_network_set(void *wlc, int32_t index, const uint8_t address[6], uint32_t transmitter)
+{
+    switch_network.set_at = switch_network_call(wlc, &switch_network.sets);
+    switch_network.set_index = index;
+    switch_network.transmitter = transmitter;
+    for (size_t offset = 0; offset < 6; ++offset)
+        switch_network.address[offset] = address[offset];
+    return switch_network.set_error;
 }
 
 static uint32_t switch_test_prepare(void)
@@ -358,6 +394,34 @@ static uint32_t switch_test_mutated(unsigned variant)
     return 0;
 }
 
+static uint32_t switch_test_network(void)
+{
+    static const uint8_t network[6] = {0x00, 0x25, 0x00, 0xff, 0x94, 0x73};
+    switch_reset();
+    SWITCH_REQUIRE(!switch_a3_ack_configure(switch_wlc[0].bytes, switch_address, 1));
+    SWITCH_REQUIRE(switch_network.cleared_at == 1 && switch_network.info_at == 2 && switch_network.set_at == 3);
+    SWITCH_REQUIRE(switch_network.info_index == 59 && switch_network.info == 4 && switch_network.set_index == 59);
+    SWITCH_REQUIRE(switch_equal(switch_network.address, network) && !switch_network.transmitter);
+    SWITCH_REQUIRE(!switch_a3_ack_reconcile(switch_wlc[0].bytes));
+    SWITCH_REQUIRE(switch_network.cleared_at == 4 && switch_network.info_at == 5 && switch_network.set_at == 6);
+    SWITCH_REQUIRE(!switch_a3_ack_configure(switch_wlc[0].bytes, NULL, 0));
+    SWITCH_REQUIRE(switch_network.cleared_at == 7 && switch_network.sequence == 7);
+    switch_wlc[0].bytes[25] = 0;
+    SWITCH_REQUIRE(switch_a3_ack_configure(switch_wlc[0].bytes, switch_address, 1) == -11);
+    SWITCH_REQUIRE(!switch_fault && switch_network.sequence == 7);
+
+    switch_reset();
+    switch_set_error = -11;
+    SWITCH_REQUIRE(switch_a3_ack_configure(switch_wlc[0].bytes, switch_address, 1) == -11);
+    SWITCH_REQUIRE(switch_network.clears == 1 && switch_network.sequence == 1);
+    switch_set_error = 0;
+    switch_network.set_error = -11;
+    SWITCH_REQUIRE(switch_a3_ack_reconcile(switch_wlc[0].bytes) == -11);
+    SWITCH_REQUIRE(switch_network.set_at == 4 && switch_network.sequence == 4);
+    SWITCH_REQUIRE(!switch_fault && switch_programmed == 2);
+    return 0;
+}
+
 void switch_bssid_test_run(volatile uint32_t *results);
 
 void switch_ack_test_run(void)
@@ -384,6 +448,7 @@ void switch_ack_test_run(void)
     switch_ack_test_results[20] = switch_test_disabled();
     for (unsigned index = 0; index < 11; ++index)
         switch_ack_test_results[21 + index] = switch_test_mutated(index);
-    switch_bssid_test_run(switch_ack_test_results + 32);
+    switch_ack_test_results[32] = switch_test_network();
+    switch_bssid_test_run(switch_ack_test_results + 33);
     switch_ack_test_done = 0x53574133;
 }
