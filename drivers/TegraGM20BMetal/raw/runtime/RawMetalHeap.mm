@@ -8,6 +8,7 @@
 #import "RawMetalInternal.h"
 #import "RawMetalMultisample.h"
 
+#include "raw_decoded.h"
 #include "raw_srgb_pair.h"
 #include "raw_xr.h"
 #include "raw_ycbcr.h"
@@ -59,13 +60,18 @@ id<MTLBuffer> makeArenaBuffer(RMHeap *h, NSUInteger length, MTLResourceOptions o
 }
 
 // X32_Stencil8: a Depth32Float_Stencil8 texture's memory read through its stencil, as rmNewTexture makes one
+// The descriptor a heap's texture of `d` is laid out by: X32_Stencil8's combined format; a decoded format's stored one
+// (raw_decoded.h), laid out as a render target as raw::shapes::heldShape lays it out; else `d`
 MTLTextureDescriptor *heldDescriptor(MTLTextureDescriptor *d)
 {
-    if (d.pixelFormat != MTLPixelFormatX32_Stencil8)
+    const raw::DecodedFormat *decoded = raw::decodedFormat(uint32_t(d.pixelFormat));
+    if (d.pixelFormat != MTLPixelFormatX32_Stencil8 && !decoded)
         return d;
-    MTLTextureDescriptor *combined = [d copy];
-    combined.pixelFormat = MTLPixelFormatDepth32Float_Stencil8;
-    return combined;
+    MTLTextureDescriptor *held = [d copy];
+    held.pixelFormat = decoded ? MTLPixelFormat(decoded->stored) : MTLPixelFormatDepth32Float_Stencil8;
+    if (decoded)
+        held.usage = d.usage | MTLTextureUsageRenderTarget;
+    return held;
 }
 
 id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::TextureAsk &ask,
@@ -73,8 +79,14 @@ id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::T
 {
     if (!matchingOptions(h, d.resourceOptions))
         return nil;
-    if (MTLTextureDescriptor *held = heldDescriptor(d); held != d)
-        return [makeArenaTexture(h, held, ask, offset) newTextureViewWithPixelFormat:d.pixelFormat];
+    if (MTLTextureDescriptor *held = heldDescriptor(d); held != d) {
+        id<MTLTexture> made = makeArenaTexture(h, held, ask, offset);
+        if (!raw::decodedFormat(uint32_t(d.pixelFormat)))
+            return [made newTextureViewWithPixelFormat:d.pixelFormat];
+        if (made)
+            ((RMTexture *)made)->_descriptor = [d copy];
+        return made;
+    }
     RMTexture *t = [RMTexture new];
     t->_device = h->_device;
     t->_descriptor = [d copy];
@@ -103,6 +115,11 @@ id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::T
 // with the stand-in a draw samples
 static bool textureAsk(MTLTextureDescriptor *d, bool blockLinear, raw::TextureAsk &ask, bool placed)
 {
+    // a decoded format's shape is judged as asked, before it is laid out as its stored format's
+    if (const raw::shapes::TextureShape s = textureShape(d);
+        raw::decodedFormat(s.format) &&
+        (raw::shapes::metalRefusal(s) || raw::shapes::identityRefusal(s, raw::answers::kThisKind)))
+        return false;
     d = heldDescriptor(d);
     bool tiled;
     const bool standIn = raw::xrConversionOf(uint32_t(d.pixelFormat)) || raw::srgbPair(uint32_t(d.pixelFormat));

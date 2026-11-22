@@ -108,6 +108,13 @@ id<MTLTexture> unmadeSurfaceTexture(MTLTextureDescriptor *d, IOSurfaceRef s, NSU
                              (unsigned long)format, IOSurfaceGetID(s), identity, shape);
         return nil;
     }
+    if (const char *decoded = raw::shapes::decodedSurfaceRefusal(format)) {
+        SWITCH_REFUSE_DETAIL("raw", "tex.decoded", uintptr_t(decoded),
+                             "no texture of format %lu over IOSurface %u: nil (%s; MTLDevice.h "
+                             "newTextureWithDescriptor:iosurface:plane:, nullable): %s",
+                             (unsigned long)format, IOSurfaceGetID(s), decoded, shape);
+        return nil;
+    }
     if (const char *gm20b = raw::packedPlaneChannels(format) ? nullptr : raw::shapes::hardwareRefusal(texture)) {
         SWITCH_REFUSE_DETAIL("raw", "tex.gm20b", uintptr_t(gm20b),
                              "no texture of format %lu over IOSurface %u: nil (%s; MTLDevice.h "

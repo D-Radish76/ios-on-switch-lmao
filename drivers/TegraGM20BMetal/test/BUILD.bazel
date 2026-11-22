@@ -5028,6 +5028,11 @@ facade_test(
 # A texture moved off compressed memory from another thread while the submit worker holds the device's command buffer open
 # for an encode ahead: every job it meets reaches the GPU as submitted (raw_facade_move_ahead_test.cpp)
 facade_test(
+    name = "raw_facade_decoded_test",
+    srcs = ["raw_facade_decoded_test.cpp"],
+)
+
+facade_test(
     name = "raw_facade_move_ahead_test",
     srcs = [
         "raw_facade_move_ahead_test.cpp",

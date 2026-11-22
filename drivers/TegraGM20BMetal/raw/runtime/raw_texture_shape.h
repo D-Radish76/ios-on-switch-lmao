@@ -70,6 +70,9 @@ bool blockShape(const TextureShape &s);
 StoredSamples storedSamples(const TextureShape &s);
 // Which rawShape term fails (1 type, 2 levels, 3 samples, 4 array/depth, 5 rotation, 6 format; 0 none)
 uint32_t rawShapeTerm(const TextureShape &s);
+// A decoded format's (raw_decoded.h) shape as the image it is held in: its stored format, private (block-linear), laid out
+// as a render target, since its decode passes draw into it; any other shape as it is. route and create take it so.
+TextureShape heldShape(const TextureShape &s);
 Route route(const TextureShape &s);
 // The texture header type (fx::kTexOneD to kTexThreeD) of MTLTextureType `type`
 uint8_t headerType(uint32_t type);
@@ -85,6 +88,8 @@ const char *metalRefusal(const TextureShape &s);
 const char *identityRefusal(const TextureShape &s, const answers::Kind &k);
 // Why GM20B holds no texture of `s` that the identity makes, null where it holds one
 const char *hardwareRefusal(const TextureShape &s);
+// Why a decoded format's texture is made over no IOSurface or buffer, null for any other format
+const char *decodedSurfaceRefusal(uint32_t format);
 // Why neither identity's Metal makes a texture of `format` over an IOSurface, null where one does
 const char *surfaceFormatRefusal(uint32_t format);
 

@@ -6,6 +6,7 @@
 #include "raw_device_harness.h"
 #include "../raw/runtime/raw_blend_kill.h"
 #include "../raw/runtime/raw_clear.h"
+#include "../raw/runtime/raw_decoded.h"
 #include "../raw/runtime/raw_format_standin.h"
 #include "../raw/runtime/raw_metal_formats.h"
 #include "../raw/runtime/raw_private_comp.h"
@@ -816,8 +817,9 @@ TEST(VolumeShapes, AMipmappedVolumeOfWordsIsLaidOutOnePlaneABlock)
 }
 
 // Every format Metal describes is answered without a twin: a header row of the raw path's (kFormats), a depth/stencil
-// one's zeta, or a named nil (Metal makes none from a descriptor alone, a YCbCr one is a surface plane's, or the GM20B has
-// no encoding of it); X32_Stencil8 is its combined format's texture seen through its stencil (RawMetalDevice.mm)
+// one's zeta, a format decoded on upload into a stored one's (raw_decoded.h), or a named nil (Metal makes none from a
+// descriptor alone, a YCbCr one is a surface plane's, or the GM20B has no encoding of it); X32_Stencil8 is its combined
+// format's texture seen through its stencil (RawMetalDevice.mm)
 TEST(TextureShapes, EveryFormatMetalDescribesHasAnAnswer)
 {
     std::vector<uint32_t> left;
@@ -827,7 +829,8 @@ TEST(TextureShapes, EveryFormatMetalDescribesHasAnAnswer)
         s.width = s.height = 16;
         s.ownMemory = true;
         const bool answered = raw::formatInfo(f.mtl) || raw::zetaFormatIndex(f.mtl) < raw::kZetaFormats ||
-                              f.mtl == 261 || raw::shapes::metalRefusal(s) || raw::shapes::hardwareRefusal(s);
+                              raw::decodedFormat(f.mtl) || f.mtl == 261 || raw::shapes::metalRefusal(s) ||
+                              raw::shapes::hardwareRefusal(s);
         if (!answered)
             left.push_back(f.mtl);
     }

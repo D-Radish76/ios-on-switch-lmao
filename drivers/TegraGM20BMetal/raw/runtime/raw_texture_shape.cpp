@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "raw_texture_shape.h"
 #include <algorithm>
+#include "raw_decoded.h"
 #include "raw_format_standin.h"
 #include "raw_gpu.h"
 #include "raw_metal_formats.h"
@@ -39,13 +40,7 @@ bool flatBlocks(uint32_t format)
 
 bool astcHdr(uint32_t format)
 {
-    return format >= 222 && format <= 236;
-}
-
-// Metal's private ASTC footprints of 4x2 and 8x4 texels (LDR, sRGB and the 4x2 HDR)
-bool astcNarrow(uint32_t format)
-{
-    return format == 185 || format == 191 || format == 203 || format == 209 || format == 221;
+    return format >= 221 && format <= 236;
 }
 
 // R16Bfloat, RG16Bfloat, RGBA16Bfloat
@@ -73,7 +68,7 @@ bool paddedOrTransferred(uint32_t format)
 
 bool compressed(uint32_t format)
 {
-    return blockCompressed(formatInfo(format)) || pvrtc(format) || astcHdr(format);
+    return blockCompressed(formatInfo(format)) || decodedFormat(format);
 }
 
 bool fourTwoTwo(uint32_t format)
@@ -283,8 +278,22 @@ uint32_t rawShapeTerm(const TextureShape &s)
                                           : 0;
 }
 
+TextureShape heldShape(const TextureShape &s)
+{
+    const DecodedFormat *f = decodedFormat(s.format);
+    if (!f)
+        return s;
+    TextureShape held = s;
+    held.format = f->stored;
+    held.storage = kPrivate;
+    held.usage = kUsageRead | kUsageTarget;
+    return held;
+}
+
 Route route(const TextureShape &s)
 {
+    if (decodedFormat(s.format))
+        return route(heldShape(s));
     if (s.storage == kManaged) {
         // Apple silicon holds a Managed texture as a Shared one (MTLResource.h: "Managed storage has no effect on Apple
         // Silicon")
@@ -339,8 +348,9 @@ uint8_t headerType(uint32_t type)
     }
 }
 
-bool create(Device &d, const TextureShape &s, Route route, bool tiled, uint32_t compressedKind, Texture &t)
+bool create(Device &d, const TextureShape &asked, Route route, bool tiled, uint32_t compressedKind, Texture &t)
 {
+    const TextureShape s = heldShape(asked);
     const uint32_t w = uint32_t(s.width), h = uint32_t(s.height), f = s.format;
     const uint32_t levels = uint32_t(std::max<uint64_t>(s.levels, 1)),
                    samples = uint32_t(std::max<uint64_t>(s.samples, 1));
@@ -405,8 +415,10 @@ const char *metalRefusal(const TextureShape &s)
         return "a depth/stencil format takes no 1D, 3D or buffer texture";
     if (fourTwoTwo(s.format) && s.type != kType2D)
         return "a 4:2:2 format takes a 2D texture alone";
-    if (compressed(s.format) && (line || ms || (flatBlocks(s.format) && s.type == kType3D)))
-        return "a block-compressed format takes no 1D or multisampled texture, and ETC, EAC and PVRTC no 3D one";
+    // a texture buffer of one: an M4 Max's validation stops it ("cannot be used for a texture buffer": BC1, PVRTC, ASTC LDR
+    // and HDR alike)
+    if (compressed(s.format) && (line || ms || buffer || (flatBlocks(s.format) && s.type == kType3D)))
+        return "a block-compressed format takes no 1D, buffer or multisampled texture, and ETC, EAC and PVRTC no 3D one";
     if (!s.width || !s.height || !s.depth)
         return "a side of 0";
     if (((line || buffer) && s.height != 1) || (s.type != kType3D && s.depth != 1))
@@ -455,14 +467,6 @@ const char *identityRefusal(const TextureShape &s, const answers::Kind &k)
 
 const char *hardwareRefusal(const TextureShape &s)
 {
-    if (pvrtc(s.format))
-        return "no GM20B texture format decodes PVRTC (NIL's nil_formats.csv lists none)";
-    if (astcHdr(s.format))
-        return "GM20B's texture unit decodes ASTC LDR alone (clb097tex.h names no HDR form; nil_formats.csv's "
-               "ASTC rows are UNORM and sRGB)";
-    if (astcNarrow(s.format))
-        return "GM20B's texture unit has no ASTC footprint of 4x2 or 8x4 texels (clb097tex.h COMPONENTS_SIZES ASTC_2D_4X4 "
-               "to 12X12, the Khronos footprints alone)";
     if (bfloat(s.format))
         return "GM20B's texture unit and colour targets have no bfloat16 component (clb097tex.h R_DATA_TYPE: SNORM, UNORM, "
                "SINT, UINT, their FORCE_FP16 forms, FLOAT as IEEE half; clb197.h COLOR_TARGET_FORMAT has none)";
@@ -471,6 +475,13 @@ const char *hardwareRefusal(const TextureShape &s)
                "8-bit components alone (clb097tex.h COMPONENTS_SIZES, S_R_G_B_CONVERSION), and no header over a word "
                "and a byte apart";
     return nullptr;
+}
+
+const char *decodedSurfaceRefusal(uint32_t format)
+{
+    return decodedFormat(format) ? "a format decoded on upload (raw_decoded.h) over memory the CPU writes, where no upload "
+                                   "decodes it"
+                                 : nullptr;
 }
 
 // The formats no donor iPad's GPU driver samples (AGXMetalA10's texture format table, 21H461, and AGXMetalA13's, 24B119,

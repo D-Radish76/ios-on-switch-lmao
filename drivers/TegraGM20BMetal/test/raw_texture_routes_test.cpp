@@ -2,6 +2,7 @@
 // Every descriptor shape that Metal, an identity and GM20B all make has a raw creator (raw_texture_shape.h route), so
 // newTextureWithDescriptor: never finds a shape with none: every format Metal describes, of every type and storage mode,
 // at the level, sample and layer counts that tell the creators apart.
+#include "../raw/runtime/raw_decoded.h"
 #include "../raw/runtime/raw_gpu.h"
 #include "../raw/runtime/raw_metal_formats.h"
 #include "../raw/runtime/raw_texture_shape.h"
@@ -77,6 +78,48 @@ TEST(TextureRoutes, AVolumeTargetOfAStandInFormatIsLaidOutOnePlaneABlock)
         EXPECT_TRUE(raw::shapes::volumeView2d(s)) << format;
         s.usage = raw::shapes::kUsageRead;
         EXPECT_FALSE(raw::shapes::volumeView2d(s)) << format << ": sampled alone";
+    }
+}
+
+// A texture of a format decoded on upload (PVRTC, ASTC 4x2 and 8x4, ASTC HDR) is made as the private image of its stored
+// format, laid out as a render target (its decode passes draw into it), whatever the storage mode asked: GM20B refuses none
+TEST(TextureRoutes, ADecodedFormatsTextureIsItsStoredFormatsImage)
+{
+    for (const raw::DecodedFormat &f : raw::kDecodedFormats)
+        for (uint32_t type : {raw::kType2D, raw::kType2DArray, raw::kTypeCube, raw::kType3D})
+            for (uint32_t storage : {raw::shapes::kShared, raw::shapes::kPrivate})
+                for (uint64_t levels : {1u, 3u}) {
+                    TextureShape s;
+                    s.format = f.format;
+                    s.type = type;
+                    s.storage = storage;
+                    s.levels = levels;
+                    s.width = s.height = 16;
+                    s.depth = type == raw::kType3D ? 4 : 1;
+                    s.array = type == raw::kType2DArray ? 3 : 1;
+                    s.usage = raw::shapes::kUsageRead;
+                    s.ownMemory = true;
+                    if (raw::shapes::metalRefusal(s))
+                        continue;
+                    EXPECT_EQ(raw::shapes::hardwareRefusal(s), nullptr) << describe(s);
+                    const TextureShape held = raw::shapes::heldShape(s);
+                    EXPECT_EQ(held.format, f.stored) << describe(s);
+                    EXPECT_EQ(held.storage, raw::shapes::kPrivate) << describe(s);
+                    EXPECT_NE(held.usage & raw::shapes::kUsageTarget, 0u) << describe(s);
+                    EXPECT_NE(raw::shapes::route(s), raw::shapes::Route::None) << describe(s);
+                    EXPECT_EQ(raw::shapes::route(s), raw::shapes::route(held)) << describe(s);
+                }
+}
+
+// Metal makes no texture buffer of a block-compressed format: an M4 Max's validation stops BC1, PVRTC and ASTC alike
+TEST(TextureRoutes, ABlockCompressedFormatTakesNoTextureBuffer)
+{
+    for (const uint32_t format : {130u, 166u, 203u, 204u, 222u}) {
+        TextureShape s;
+        s.format = format;
+        s.type = 9;
+        s.width = 64;
+        EXPECT_NE(raw::shapes::metalRefusal(s), nullptr) << format;
     }
 }
 
