@@ -3770,6 +3770,10 @@ private:
     void compStart();
     bool compRearm_ = false;  // shared plain memory was made: compThread_ takes its deadline (lock_)
     void compFree(Backing &b);
+    // This process gave compressed memory back, lock_ held: the asks refused for a shortage may be made again, and each
+    // a plain private texture still wants is (the one event that can change the kernel's answer that this process sees;
+    // another process's give-back raises none)
+    void compGaveBack();
     // Made buffers no backing took while stale, at `now`
     void compTrim(uint64_t now);
     // When compressed or shared plain memory, a made buffer or a retired backing next turns stale (compClock()), 0 with

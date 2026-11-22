@@ -5,7 +5,9 @@
 // memory that serves a want came.
 #include "raw_device_private_comp.h"
 #include <array>
+#include <chrono>
 #include <cstring>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -203,6 +205,34 @@ TEST_F(DevicePrivateComp, APlainTargetWithARawViewStaysPlain)
     EXPECT_FALSE(t.comptags);
     EXPECT_EQ(kernel_model::model.jobs.size(), jobs);
     dev.destroyTexture(view);
+    dev.destroyTexture(t);
+}
+
+// A want whose ask the kernel refused for a shortage asks again when this process gives compressed memory back (the
+// only event that changes the kernel's answer), and the memory then made serves it: no later texture of its size is
+// needed
+TEST_F(DevicePrivateComp, AWantRefusedForAShortageAsksAgainWhenMemoryIsGivenBack)
+{
+    raw::Texture t, asked, first, other;
+    // made plain before the refusal is armed: the next BoAlloc of any kind takes it, the compressed ask's alone here
+    ASSERT_TRUE(dev.createTexture(kW, kH, kBGRA8, t, false, true));
+    const uint64_t failed = dev.stats.compFailed.load();
+    kernel_model::model.refuseAllocCount = 1;
+    ASSERT_FALSE(dev.createCompressedTexture(kW, kH, kBGRA8, raw::kCompKindC32, asked)) << "none made yet: asked";
+    for (int i = 0; i < 5000 && dev.stats.compFailed.load() == failed; i++)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    ASSERT_GT(dev.stats.compFailed.load(), failed) << "its ask was refused";
+    ASSERT_TRUE(dev.wantCompressed(t, raw::kCompKindC32, &t));
+    compressedSecond(first, other, [&](raw::Texture &x) {
+        return dev.createCompressedTexture(256, 256, kBGRA8, raw::kCompKindC32, x) ||
+               dev.createTexture(256, 256, kBGRA8, x, false, true);
+    });
+    EXPECT_FALSE(dev.privateMoveDue());
+    dev.destroyTexture(other);
+    awaitMade();
+    EXPECT_TRUE(dev.privateMoveDue()) << "the zoom target's want asked again and made";
+    EXPECT_EQ(look(dev), std::vector<void *>{&t});
+    dev.destroyTexture(first);
     dev.destroyTexture(t);
 }
 

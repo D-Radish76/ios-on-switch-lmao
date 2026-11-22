@@ -112,7 +112,7 @@ void Device::freeCompressedZeta(uint64_t va)
                                              std::memory_order_relaxed));
     k_.free(it->second);
     compZeta_.erase(it);
-    comp_.freed();
+    compGaveBack();
 }
 
 bool Device::privateCompressed(const Texture &t)
@@ -162,7 +162,22 @@ void Device::releasePrivateCompressed(const Texture &t)
     RAW_DIAGNOSTIC(stats.compHeld--);
     RAW_DIAGNOSTIC(stats.compHeldBytes -= comp.bo.bytes);
     k_.free(comp.bo);
+    compGaveBack();
+}
+
+void Device::compGaveBack()
+{
+    std::vector<CompWant> again;
+    for (const auto &[texture, w] : privateWants_) {
+        const CompWant ask{compBytes(w.bytes), w.kind};
+        if (w.views.empty() && std::find(comp_.refused.begin(), comp_.refused.end(), ask) != comp_.refused.end())
+            again.push_back(ask);
+    }
     comp_.freed();
+    if (stopping_)
+        return;
+    for (const CompWant &w : again)
+        compAsk(w);
 }
 
 void Device::compReadyPush(const Bo &bo, uint32_t kind)

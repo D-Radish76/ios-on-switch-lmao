@@ -271,7 +271,7 @@ void Device::compFree(Backing &b)
     comp_.mems.erase(std::find_if(comp_.mems.begin(), comp_.mems.end(), [&](const std::unique_ptr<CompMem> &m) {
         return m.get() == mem;
     }));
-    comp_.freed();
+    compGaveBack();
 }
 
 uint64_t Device::compDeadline() const
@@ -299,7 +299,7 @@ void Device::compTrim(uint64_t now)
             RAW_DIAGNOSTIC(glassMemEvent("compressed memory freed unused", it->bo.bytes));
             k_.free(it->bo);
             it = comp_.ready.erase(it);
-            comp_.freed();
+            compGaveBack();
             continue;
         }
         ++it;
