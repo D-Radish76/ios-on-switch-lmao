@@ -14,7 +14,10 @@
 // decided as the depth/stencil state or the program changes, never per draw:
 //  - a depth write under ALWAYS or NOT_EQUAL, or a depth test or write of the other direction;
 //  - a stencil test whose fail or depth-fail operation writes: a fragment zcull rejects would skip it;
-//  - a program that writes depth (its output is not the depth zcull tested), or the shader's emulated tests.
+//  - a program that writes depth (its output is not the depth zcull tested), or the shader's emulated tests;
+//  - a program that can write memory (raw_program_stores.h): Metal runs it for every fragment unless it asks for early
+//    tests, and a tile zcull rejects is never shaded, so its stores would be lost. One with early tests loses only the
+//    region: the state keeps no early-test fact.
 // Discard needs nothing: zcull rejects only fragments the depth test would fail, and the region follows the depth the ROP
 // writes. NVK's sources gate none of these per draw; they are the hardware's documented zcull conditions mapped to the
 // states raw draws, kept conservative where the GM20B's behaviour is unmeasured.
@@ -182,13 +185,14 @@ inline bool zcullStencilWrites(const StencilFace &s)
 }
 
 // Whether INVALIDATE_ZCULL goes before a draw under depth/stencil state `ds` (the pass's targets have depth `depth` and
-// stencil `stencil`) of a program that writes depth (`fragmentDepth`) or under the shader's tests; once per pass
+// stencil `stencil`) of a program that writes depth (`fragmentDepth`) or memory (`fragmentStores`), or under the
+// shader's tests; once per pass
 inline bool zcullInvalidates(ZcullPass &z, const DepthStencilDesc &ds, bool depth, bool stencil, bool fragmentDepth,
-                             bool shaderTests)
+                             bool shaderTests, bool fragmentStores)
 {
     if (!z.candidate || z.invalidated)
         return false;
-    bool unsafe = fragmentDepth || shaderTests;
+    bool unsafe = fragmentDepth || shaderTests || fragmentStores;
     if (stencil)
         unsafe |= zcullStencilWrites(ds.front) || zcullStencilWrites(ds.back);
     if (depth) {

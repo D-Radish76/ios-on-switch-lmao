@@ -535,7 +535,7 @@ bool RenderEncoder::prepare(Pipeline *pl, uint32_t primitive, int32_t first, uin
     if (zcull_.candidate && (dsChanged || pl != zcullProgram_)) {
         zcullProgram_ = pl;
         if (zcullInvalidates(zcull_, ds_, zeta && zetaHasDepth(zeta->format), zeta && zetaHasStencil(zeta->format),
-                             pl->fragmentDepth, shaderTestsActive_ != 0)) {
+                             pl->fragmentDepth, shaderTestsActive_ != 0, pl->writesMemory[1])) {
             p.m(kInvalidateZcull, 0);
             RAW_DIAGNOSTIC(d.stats.zcullInvalidations++);
         }

@@ -105,22 +105,23 @@ TEST(Zcull, TrackableDepthStatesKeepTheRegion)
                                   {kAlways, false},
                                   {kNever, true},
                                   {kEqual, false}})
-        EXPECT_FALSE(raw::zcullInvalidates(z, depth(compare, write), true, false, false, false)) << int(compare);
+        EXPECT_FALSE(raw::zcullInvalidates(z, depth(compare, write), true, false, false, false, false)) << int(compare);
     EXPECT_EQ(z.dir, raw::kZcullLess);
     raw::ZcullPass reverse;
     reverse.candidate = true;
-    EXPECT_FALSE(raw::zcullInvalidates(reverse, depth(kGreaterEqual, true), true, false, false, false));
+    EXPECT_FALSE(raw::zcullInvalidates(reverse, depth(kGreaterEqual, true), true, false, false, false, false));
     EXPECT_EQ(reverse.dir, raw::kZcullGreater);
 }
 
 TEST(Zcull, UntrackableStatesInvalidateOnce)
 {
-    const auto invalidates = [](const raw::DepthStencilDesc &d, bool stencil, bool fragmentDepth, bool shaderTests) {
+    const auto invalidates = [](const raw::DepthStencilDesc &d, bool stencil, bool fragmentDepth, bool shaderTests,
+                                bool fragmentStores = false) {
         raw::ZcullPass z;
         z.candidate = true;
-        raw::zcullInvalidates(z, depth(kLess, true), true, stencil, false, false);
-        const bool first = raw::zcullInvalidates(z, d, true, stencil, fragmentDepth, shaderTests);
-        const bool again = raw::zcullInvalidates(z, d, true, stencil, fragmentDepth, shaderTests);
+        raw::zcullInvalidates(z, depth(kLess, true), true, stencil, false, false, false);
+        const bool first = raw::zcullInvalidates(z, d, true, stencil, fragmentDepth, shaderTests, fragmentStores);
+        const bool again = raw::zcullInvalidates(z, d, true, stencil, fragmentDepth, shaderTests, fragmentStores);
         return first && !again;
     };
     EXPECT_TRUE(invalidates(depth(kGreater, false), false, false, false));  // the direction flips
@@ -129,6 +130,9 @@ TEST(Zcull, UntrackableStatesInvalidateOnce)
     EXPECT_TRUE(invalidates(depth(kNotEqual, true), false, false, false));
     EXPECT_TRUE(invalidates(depth(kLess, true), false, true, false));  // the program writes depth
     EXPECT_TRUE(invalidates(depth(kLess, true), false, false, true));  // the shader's tests
+    // a program that writes memory: Metal runs it for the fragments its depth test then fails, which zcull never shades
+    EXPECT_TRUE(invalidates(depth(kLess, true), false, false, false, true));
+    EXPECT_TRUE(invalidates(depth(kLess, false), false, false, false, true));
     raw::DepthStencilDesc zfail = depth(kLess, false);
     zfail.back.depthFail = 6;  // IncrementWrap: shadow volumes
     EXPECT_TRUE(invalidates(zfail, true, false, false));
@@ -271,7 +275,7 @@ TEST(Zcull, ALoadedDepthLoadsTheRegionAnEarlierPassStored)
 TEST(Zcull, NothingWithoutARegion)
 {
     raw::ZcullPass z;
-    EXPECT_FALSE(raw::zcullInvalidates(z, depth(kAlways, true), true, false, true, true));
+    EXPECT_FALSE(raw::zcullInvalidates(z, depth(kAlways, true), true, false, true, true, true));
 }
 
 }  // namespace
