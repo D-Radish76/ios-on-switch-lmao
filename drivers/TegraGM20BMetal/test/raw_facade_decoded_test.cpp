@@ -1,10 +1,10 @@
-// SPDX-License-Identifier: MIT
-// Textures of the formats decoded on upload (raw_decoded.h: PVRTC, ASTC 4x2 and 8x4, ASTC HDR where the identity makes
-// it) through the raw facade over the kernel model: made as asked, their pixel format, levels and storage mode Metal's,
-// over a block-linear image; a PVRTC one not square and a power of two nil, as Metal makes none; a view of the same
-// decode made and one of another decode nil; getBytes moving nothing; an upload into part of a PVRTC level skipped as
-// Metal's validation stops it, and a whole level's drawn by the pack's decode state (this test's pack holds none, so its
-// command buffer fails where a copy of the blocks would have completed).
+// SPDX-License-Identifier: MIT Textures of the formats decoded on upload (raw_decoded.h: PVRTC, ASTC 4x2 and 8x4, ASTC
+// HDR where the identity makes it) through the raw facade over the kernel model: made as asked, their pixel format,
+// levels and storage mode Metal's, over a block-linear image; a PVRTC one not square and a power of two nil, as Metal
+// makes none; views of another form made, but not of a texture GM20B decodes itself; getBytes giving kept blocks back;
+// an upload into part of a PVRTC level skipped as Metal's validation stops it, and a whole level's drawn by the pack's
+// decode state (this test's pack holds none, so its command buffer fails where a copy of the blocks would have
+// completed).
 #include "raw_facade_harness.h"
 #include "../raw/runtime/raw_device_answers.h"
 #include "bazel/testing/fresh_process.h"
@@ -40,12 +40,14 @@ void decodedTexturesAreMadeAsAsked()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
     ASSERT_TRUE(device != nil);
+
     struct Ask {
         uint32_t format;
         NSUInteger width, height;
         bool mipmapped;
         MTLStorageMode storage;
     };
+
     for (const Ask &a : {Ask{166, 64, 64, true, MTLStorageModeShared}, Ask{161, 32, 32, false, MTLStorageModePrivate},
                          Ask{203, 30, 10, true, MTLStorageModePrivate}, Ask{209, 64, 32, false, MTLStorageModeShared},
                          Ask{185, 8, 2, false, MTLStorageModeShared}}) {
@@ -59,9 +61,8 @@ void decodedTexturesAreMadeAsAsked()
     }
     EXPECT_EQ(made(device, 166, 64, 32, false, MTLStorageModeShared), nil) << "not square";
     EXPECT_EQ(made(device, 166, 48, 48, false, MTLStorageModeShared), nil) << "not a power of two";
-    MTLTextureDescriptor *cube = [MTLTextureDescriptor textureCubeDescriptorWithPixelFormat:MTLPixelFormat(222)
-                                                                                      size:16
-                                                                                 mipmapped:YES];
+    MTLTextureDescriptor *cube =
+        [MTLTextureDescriptor textureCubeDescriptorWithPixelFormat:MTLPixelFormat(222) size:16 mipmapped:YES];
     cube.usage = MTLTextureUsageShaderRead;
     EXPECT_EQ([device newTextureWithDescriptor:cube] != nil, raw::answers::kThisKind.astcHdr)
         << "an ASTC HDR cube: the identity's answer";
@@ -79,15 +80,35 @@ void viewsOfTheSameDecodeAlone()
     id<MTLTexture> srgb = [pvrtc newTextureViewWithPixelFormat:MTLPixelFormat(167)];
     ASSERT_TRUE(srgb != nil) << "PVRTC's sRGB form reads the same codes";
     EXPECT_EQ(uint32_t(srgb.pixelFormat), 167u);
-    id<MTLTexture> narrow = made(device, 203, 32, 32, false, MTLStorageModePrivate, usage);
+    id<MTLTexture> narrow = made(device, 203, 32, 32, true, MTLStorageModePrivate, usage);
     ASSERT_TRUE(narrow != nil);
-    EXPECT_EQ([narrow newTextureViewWithPixelFormat:MTLPixelFormat(185)], nil) << "8-bit codes against 12-bit ones";
+    id<MTLTexture> codes = [narrow newTextureViewWithPixelFormat:MTLPixelFormat(185)];
+    ASSERT_TRUE(codes != nil) << "the sRGB form: an image of its own, of the kept blocks' other decode";
+    EXPECT_EQ(uint32_t(codes.pixelFormat), 185u);
+    EXPECT_EQ(codes.mipmapLevelCount, narrow.mipmapLevelCount);
+    id<MTLTexture> level = [narrow newTextureViewWithPixelFormat:MTLPixelFormat(185)
+                                                     textureType:MTLTextureType2D
+                                                          levels:NSMakeRange(1, 2)
+                                                          slices:NSMakeRange(0, 1)];
+    ASSERT_TRUE(level != nil) << "of two of its levels";
+    EXPECT_EQ(level.width, 16u);
+    EXPECT_EQ([narrow newTextureViewWithPixelFormat:MTLPixelFormat(221)] != nil, raw::answers::kThisKind.astcHdr)
+        << "its HDR form: the identity's answer, as for an HDR texture";
+    EXPECT_EQ([narrow newTextureViewWithPixelFormat:MTLPixelFormat(185)
+                                        textureType:MTLTextureType2D
+                                             levels:NSMakeRange(5, 3)
+                                             slices:NSMakeRange(0, 1)],
+              nil)
+        << "levels the texture does not have";
     id<MTLTexture> native = made(device, 204, 32, 32, false, MTLStorageModePrivate, usage);
     ASSERT_TRUE(native != nil);
-    EXPECT_EQ([native newTextureViewWithPixelFormat:MTLPixelFormat(222)], nil) << "LDR blocks read as HDR";
+    EXPECT_EQ([native newTextureViewWithPixelFormat:MTLPixelFormat(222)], nil)
+        << "a texture GM20B decodes itself keeps no blocks to decode as HDR";
 }
 
-void getBytesMovesNothing()
+// getBytes of a PVRTC texture, which keeps no blocks, moves nothing; of an ASTC one it gives its kept blocks back: a
+// new texture's are zeros
+void getBytesGivesKeptBlocksBack()
 {
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm)));
     ASSERT_TRUE(device != nil);
@@ -96,6 +117,11 @@ void getBytesMovesNothing()
     std::vector<uint8_t> bytes(512, 0xa5);
     [t getBytes:bytes.data() bytesPerRow:0 fromRegion:MTLRegionMake2D(0, 0, 32, 32) mipmapLevel:0];
     EXPECT_EQ(std::count(bytes.begin(), bytes.end(), 0xa5), 512);
+    id<MTLTexture> astc = made(device, 209, 32, 16, false, MTLStorageModeShared);
+    ASSERT_TRUE(astc != nil);
+    std::vector<uint8_t> blocks(4 * 4 * 16, 0xa5);
+    [astc getBytes:blocks.data() bytesPerRow:4 * 16 fromRegion:MTLRegionMake2D(0, 0, 32, 16) mipmapLevel:0];
+    EXPECT_EQ(std::count(blocks.begin(), blocks.end(), 0), 256);
 }
 
 // The command buffer of a blit of a buffer's PVRTC rows into `t`, waited for
@@ -144,9 +170,9 @@ TEST(RawFacadeDecoded, ViewsOfTheSameDecodeAlone)
     switch_ios::test::ExpectPassesInFreshProcess(viewsOfTheSameDecodeAlone);
 }
 
-TEST(RawFacadeDecoded, GetBytesMovesNothing)
+TEST(RawFacadeDecoded, GetBytesGivesKeptBlocksBack)
 {
-    switch_ios::test::ExpectPassesInFreshProcess(getBytesMovesNothing);
+    switch_ios::test::ExpectPassesInFreshProcess(getBytesGivesKeptBlocksBack);
 }
 
 TEST(RawFacadeDecoded, UploadsAreDecodedByThePacksState)

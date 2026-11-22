@@ -2,6 +2,7 @@
 // A raw texture: its memory's lifetime, and what Metal answers of it
 #import "RawMetalInternal.h"
 #import "RawMetalFresh.h"
+#import "RawMetalDecoded.h"
 
 // Before the raw path first renders into a surface texture: the kernel takes the surface's imports as only sampled until
 // then, so a CPU lock of a surface the GPU never writes invalidates nothing.
@@ -55,6 +56,8 @@ void traceSurfaceImage(RMTexture *t, const char *what, uint32_t seed)
 
 - (void)dealloc
 {
+    if (_ownForm)
+        rmForgetForm(self);
     if (_heap && !_raw.arena) {
         _heap->_used -= _heapBytes;
         const raw::Texture::StorageRange storage = _raw.storageRange();

@@ -339,7 +339,7 @@ RMTexture *cpuOwner(RMTexture *t)
                                   slice:_slicesBase + slice];
         return;
     }
-    if (packedPlaneMovesNothing(self) || rmDecodedReadback(self, "getBytes"))
+    if (packedPlaneMovesNothing(self) || rmDecodedGetBytes(self, r, level, slice, bytes, row, image))
         return;
     freshBeforeTransfer(self);
     if (xrPlaneWords(self, r, level, slice, (uint8_t *)bytes, row, false))

@@ -106,6 +106,35 @@ constexpr bool decodedViewShared(uint32_t source, uint32_t view)
     return source == view || (s->state == DecodeState::Pvrtc && (source ^ 1) == view);
 }
 
+// A format's ASTC footprint in Metal's order (4x2, 4x4, 5x4 .. 12x12) whatever its form (sRGB, LDR, HDR); -1 for
+// any other format
+constexpr int astcFootprint(uint32_t format)
+{
+    return format >= 185 && format <= 200   ? int(format - 185)
+           : format >= 203 && format <= 218 ? int(format - 203)
+           : format >= 221 && format <= 236 ? int(format - 221)
+                                            : -1;
+}
+
+// Whether a texture of `format` keeps a copy of its blocks beside its decode: an ASTC one, which Metal lets a view read
+// as another form of its footprint, whose decode of the same blocks differs (an M4 Max makes sRGB/linear views of every
+// texture and LDR/HDR ones of every texture too, with validation's warning where it lacks PixelFormatView usage). Its
+// readbacks give them back, as Apple's do. PVRTC's two forms read the same codes: it keeps none.
+constexpr bool keepsBlocks(uint32_t format)
+{
+    const DecodedFormat *f = decodedFormat(format);
+    return f && f->state != DecodeState::Pvrtc;
+}
+
+// Whether a view as `view` of a texture of `source` is a form of its own: the source keeps its blocks, and the view is
+// another ASTC form of its footprint (a decoded one, or one GM20B decodes, held as those blocks), so it holds an image
+// of its own decode, made from them
+constexpr bool decodedOwnForm(uint32_t source, uint32_t view)
+{
+    return keepsBlocks(source) && view != source && astcFootprint(view) >= 0 &&
+           astcFootprint(view) == astcFootprint(source);
+}
+
 // decode.metal's buffer 0: its DecodeStep
 struct DecodeStep {
     uint32_t x, y, blockW, blockH, blocksX, blocksY, rowBytes, form, first;
@@ -115,6 +144,35 @@ struct DecodeStep {
 constexpr uint32_t decodedBlocks(uint32_t texels, uint32_t block)
 {
     return texels ? (texels + block - 1) / block : 1;
+}
+
+// Where a level's blocks lie in a texture's kept copy of them: the levels one after another, each its planes (layers,
+// or a 3D level's depth planes) one after another, each its rows of blocks
+struct KeptLevel {
+    uint64_t offset, planeBytes;
+    uint32_t rowBytes, planes;
+};
+
+inline KeptLevel keptLevel(const DecodedFormat &f, uint32_t width, uint32_t height, uint32_t depth, uint32_t layers,
+                           uint32_t level)
+{
+    KeptLevel k = {};
+    for (uint32_t l = 0; l <= level; l++) {
+        k.offset += k.planeBytes * k.planes;
+        const uint32_t w = width >> l ? width >> l : 1, h = height >> l ? height >> l : 1,
+                       d = depth >> l ? depth >> l : 1;
+        k.rowBytes = decodedBlocks(w, f.blockW) * f.blockBytes;
+        k.planeBytes = uint64_t(k.rowBytes) * decodedBlocks(h, f.blockH);
+        k.planes = depth > 1 ? d : layers;
+    }
+    return k;
+}
+
+inline uint64_t keptBytes(const DecodedFormat &f, uint32_t width, uint32_t height, uint32_t depth, uint32_t layers,
+                          uint32_t levels)
+{
+    const KeptLevel k = keptLevel(f, width, height, depth, layers, levels ? levels - 1 : 0);
+    return k.offset + k.planeBytes * k.planes;
 }
 
 // The step of a region whose first texel is (x, y) in a level of width x height, its blocks `rowBytes` apart from byte

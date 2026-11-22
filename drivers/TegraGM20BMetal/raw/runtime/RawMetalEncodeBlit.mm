@@ -59,9 +59,9 @@ static uint32_t layerOrPlane(const raw::Texture &t, uint32_t slice, uint32_t z)
 
 // A buffer<->texture copy of `planes` planes from plane z, `image` bytes apart in the buffer (each plane's rows decided at
 // record: bufferPlanes); the buffer's lines cleaned before, or invalidated for the CPU after where the copy writes it
-static void copyPlanes(raw::BlitEncoder *be, raw::CommandBuffer *rc, const raw::Buffer &b, uint64_t offset,
-                       uint64_t row, uint64_t image, const raw::Texture &t, uint32_t x, uint32_t y, uint32_t z,
-                       uint32_t w, uint32_t h, uint32_t planes, bool intoTexture, uint8_t aspect)
+void rmCopyPlanes(raw::BlitEncoder *be, raw::CommandBuffer *rc, const raw::Buffer &b, uint64_t offset, uint64_t row,
+                  uint64_t image, const raw::Texture &t, uint32_t x, uint32_t y, uint32_t z, uint32_t w, uint32_t h,
+                  uint32_t planes, bool intoTexture, uint8_t aspect)
 {
     raw::toElements(t, x, y, w, h);  // (whole blocks: checked at record)
     const uint32_t unit = raw::bufferUnit(t, aspect);
@@ -92,7 +92,7 @@ static void copyToCallerPages(raw::BlitEncoder *be, raw::CommandBuffer *rc, RMTe
 
 // The image a buffer copy moves of `t`'s level: a texture held through a surface's planes moves plane 0's bytes, at the
 // rows its writes land at `into` it (raw_blit_planes.h; RGB10A8_2P_XR10's colour words: BlitEncoder::copyBufferTexels)
-static void bufferCopyImage(RMTexture *t, uint32_t level, raw::Texture &image, bool into)
+void rmBufferCopyImage(RMTexture *t, uint32_t level, raw::Texture &image, bool into)
 {
     blitImage(t, level, image);
     if (t->_raw.converted())
@@ -211,6 +211,12 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
             copyXrPlanes(be, s, ss, sx, sy, t, ds, dx, dy, w, h);
             break;
         }
+        if (rmFamilyOwner(t)) {
+            const uint32_t from[3] = {sx, sy, sz}, to[3] = {dx, dy, dz}, size[3] = {w, h, d};
+            if (!rmEncodeFamilyTextureCopy(rc, cb, be, s, ss, uint32_t(sl), from, t, ds, uint32_t(dl), to, size, why))
+                return false;
+            break;
+        }
         if (c.a == kCopyPlanes) {
             copyPlanePair(be, s->_raw, sx, sy, t->_raw, dx, dy, w, h);
             break;
@@ -304,7 +310,7 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         RMTexture *t = (__bridge RMTexture *)c.obj2;
         useBuffer(rc, s, false);
         useTexture(rc, t, true);
-        if (rmDecoded(t)) {
+        if (RMTexture *family = rmFamilyOwner(t); family || rmDecoded(t)) {
             const uint64_t x = c.x, o = extra(cb, x + 8);
             const uint32_t size[3] = {uint32_t(extra(cb, x + 3)), uint32_t(extra(cb, x + 4)),
                                       uint32_t(extra(cb, x + 5))};
@@ -312,11 +318,18 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
             if (!fresh.empty())
                 fresh.erase(t);
             standInFresh.erase(t);
-            be->end();
-            const bool decoded =
-                rmEncodeDecodedCopy(rc, s, t, extra(cb, x), extra(cb, x + 1), extra(cb, x + 2), size,
-                                    uint32_t(extra(cb, x + 6)), uint32_t(extra(cb, x + 7)), origin, why);
-            be = rc->blit();
+            be->access(memoryOf(s), memoryOf(t));
+            bool decoded;
+            if (family) {
+                decoded = rmEncodeFamilyUpload(rc, cb, be, s, extra(cb, x), extra(cb, x + 1), extra(cb, x + 2), t, size,
+                                               uint32_t(extra(cb, x + 6)), uint32_t(extra(cb, x + 7)), origin,
+                                               s == family->_keptBlocks, why);
+            } else {
+                be->end();
+                decoded = rmEncodeDecodedCopy(rc, s, t, extra(cb, x), extra(cb, x + 1), extra(cb, x + 2), size,
+                                              uint32_t(extra(cb, x + 6)), uint32_t(extra(cb, x + 7)), origin, why);
+                be = rc->blit();
+            }
             if (!decoded)
                 return false;
             break;
@@ -330,8 +343,8 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
             fresh.erase(t);
         standInFresh.erase(t);
         raw::Texture level;
-        bufferCopyImage(t, uint32_t(dl), level, true);
-        copyPlanes(be, rc, s->_raw, so, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(dz), uint32_t(w),
+        rmBufferCopyImage(t, uint32_t(dl), level, true);
+        rmCopyPlanes(be, rc, s->_raw, so, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(dz), uint32_t(w),
                    uint32_t(h), uint32_t(d), true, uint8_t(c.a));
         if (rmCopyClamps(nil, 0, t, uint32_t(dl)) &&
             !rmClampCopiedTexture(rc, be, t, uint32_t(dl), uint32_t(extra(cb, x + 6)), uint32_t(extra(cb, x + 9)),
@@ -345,14 +358,24 @@ bool encodeBlit(RMCommandBuffer *cb, const Cmd &c, raw::CommandBuffer *rc, raw::
         RMBuffer *t = (__bridge RMBuffer *)c.obj2;
         useTexture(rc, s, false);
         useBuffer(rc, t, true);
+        if (rmFamilyOwner(s)) {
+            be->access(memoryOf(s), memoryOf(t));
+            const uint64_t x = c.x, o = extra(cb, x + 2);
+            const uint32_t size[3] = {uint32_t(extra(cb, x + 4)), uint32_t(extra(cb, x + 5)),
+                                      uint32_t(extra(cb, x + 6))};
+            const uint32_t origin[3] = {uint32_t(o), uint32_t(o >> 32), uint32_t(extra(cb, x + 3))};
+            rmEncodeFamilyReadback(rc, be, s, t, extra(cb, x + 7), extra(cb, x + 8), extra(cb, x + 9), size,
+                                   uint32_t(extra(cb, x)), uint32_t(extra(cb, x + 1)), origin);
+            break;
+        }
         be->access(memoryOf(s), memoryOf(t));
         const uint64_t x = c.x, o = extra(cb, x + 2),
                        sz = layerOrPlane(s->_raw, uint32_t(extra(cb, x)), uint32_t(extra(cb, x + 3))),
                        w = extra(cb, x + 4), h = extra(cb, x + 5), d = extra(cb, x + 6), dof = extra(cb, x + 7),
                        row = extra(cb, x + 8), image = extra(cb, x + 9), sl = extra(cb, x + 1);
         raw::Texture level;
-        bufferCopyImage(s, uint32_t(sl), level, false);
-        copyPlanes(be, rc, t->_raw, dof, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(sz), uint32_t(w),
+        rmBufferCopyImage(s, uint32_t(sl), level, false);
+        rmCopyPlanes(be, rc, t->_raw, dof, row, image, level, uint32_t(o), uint32_t(o >> 32), uint32_t(sz), uint32_t(w),
                    uint32_t(h), uint32_t(d), false, uint8_t(c.a));
         if (rmCopyClamps(s, uint32_t(sl), nil, 0) &&
             !rmClampCopiedBuffer(rc, be, t, dof, row, image, uint32_t(w), uint32_t(h), uint32_t(d), why))

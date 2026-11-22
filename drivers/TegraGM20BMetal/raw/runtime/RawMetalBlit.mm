@@ -85,7 +85,7 @@ bool bufferCopy(__unsafe_unretained RMCommandBuffer *cb, const char *call, id<MT
         return false;
     }
     if (rmDecoded(t)) {
-        if (!intoTexture) {
+        if (!intoTexture && !rmFamilyOwner(t)) {
             rmDecodedReadback(t, call);
             return false;
         }

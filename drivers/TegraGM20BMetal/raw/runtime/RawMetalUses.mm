@@ -8,7 +8,7 @@
 __attribute__((objc_externally_retained)) void useTexture(raw::CommandBuffer *rc, RMTexture *texture, bool write)
 {
     __unsafe_unretained RMTexture *t = texture;
-    if (t && t->_levelsOwner)
+    if (t && t->_levelsOwner && !t->_ownForm)
         t = t->_levelsOwner;
     if (!t)
         return;

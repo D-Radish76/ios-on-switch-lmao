@@ -177,6 +177,13 @@ enum class RMShareable : uint8_t {
     uint32_t _levelsBase, _slicesBase;
     RMBuffer *_buffer;  // a texture over a buffer's
     NSUInteger _offset, _rowBytes;
+    // A decoded format's texture that keeps its blocks (raw_decoded.h keepsBlocks): the copy its uploads write and its
+    // readbacks read, and its views that hold a form of their own (_ownForm: an image of their own of the blocks' other
+    // decode, made from them), which every upload to the texture or a view of it decodes into in its own job. Only the
+    // submit worker's moves change _forms (RawMetalDecodedFamily.mm), and the encodes that read it run between them.
+    RMBuffer *_keptBlocks;
+    std::vector<RMTexture *__unsafe_unretained> _forms;
+    bool _ownForm;
     std::atomic<bool> _gpuDirty;
     MTLPurgeableState _purgeable;
     uint8_t _pred;  // why the raw path does not keep it (RMPred; 0: it does)

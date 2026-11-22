@@ -154,4 +154,41 @@ TEST(DecodeTexels, TheStepCarriesEachFormatsForm)
     }
 }
 
+// A texture's kept blocks: each level after the one above, each its planes (layers, or a 3D level's depth planes), each
+// its rows of whole blocks, a level ending inside a block holding that block
+TEST(DecodeTexels, KeptBlocksLieLevelAfterLevel)
+{
+    const raw::DecodedFormat &narrow = *raw::decodedFormat(203);  // 4x2, 16 bytes a block
+    const raw::KeptLevel l0 = raw::keptLevel(narrow, 30, 10, 1, 3, 0), l1 = raw::keptLevel(narrow, 30, 10, 1, 3, 1);
+    EXPECT_EQ(l0.offset, 0u);
+    EXPECT_EQ(l0.rowBytes, 8u * 16);  // 30 texels: 8 blocks
+    EXPECT_EQ(l0.planeBytes, 8u * 16 * 5);
+    EXPECT_EQ(l0.planes, 3u);
+    EXPECT_EQ(l1.offset, l0.planeBytes * 3);
+    EXPECT_EQ(l1.rowBytes, 4u * 16);        // 15 texels: 4 blocks
+    EXPECT_EQ(l1.planeBytes, 4u * 16 * 3);  // 5 rows: 3 blocks
+    EXPECT_EQ(raw::keptBytes(narrow, 30, 10, 1, 3, 2), l1.offset + l1.planeBytes * 3);
+    const raw::DecodedFormat &hdr = *raw::decodedFormat(222);  // a 3D texture: a level's planes halve with it
+    EXPECT_EQ(raw::keptLevel(hdr, 16, 16, 8, 1, 0).planes, 8u);
+    EXPECT_EQ(raw::keptLevel(hdr, 16, 16, 8, 1, 1).planes, 4u);
+    EXPECT_EQ(raw::keptLevel(hdr, 16, 16, 8, 1, 1).offset, 4u * 4 * 16 * 8);
+}
+
+// The views an M4 Max makes of these textures as another form (sRGB/linear of every texture, LDR/HDR of one footprint),
+// and which hold an image of their own: every ASTC one, never PVRTC's sRGB/linear pair, and none of a texture GM20B
+// decodes itself, which keeps no blocks
+TEST(DecodeTexels, OwnFormsAreAnotherAstcFormOfOneFootprint)
+{
+    for (const auto &[source, view] :
+         {std::pair{203u, 185u}, std::pair{185u, 203u}, std::pair{209u, 191u}, std::pair{203u, 221u},
+          std::pair{221u, 185u}, std::pair{222u, 204u}, std::pair{222u, 186u}, std::pair{236u, 218u}})
+        EXPECT_TRUE(raw::decodedOwnForm(source, view)) << source << " as " << view;
+    for (const auto &[source, view] : {std::pair{166u, 167u}, std::pair{204u, 222u}, std::pair{186u, 222u},
+                                       std::pair{203u, 203u}, std::pair{203u, 204u}, std::pair{221u, 222u}})
+        EXPECT_FALSE(raw::decodedOwnForm(source, view)) << source << " as " << view;
+    EXPECT_TRUE(raw::decodedViewShared(166, 167)) << "PVRTC's sRGB form reads the same codes: one image, two headers";
+    EXPECT_FALSE(raw::keepsBlocks(166));
+    EXPECT_TRUE(raw::keepsBlocks(185) && raw::keepsBlocks(203) && raw::keepsBlocks(236));
+}
+
 }  // namespace

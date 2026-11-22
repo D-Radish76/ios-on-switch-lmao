@@ -3,6 +3,7 @@
 #import "RawMetalRotated.h"
 #import "RawMetalXrPlanes.h"
 #import "RawMetalFresh.h"
+#import "RawMetalDecoded.h"
 #include "raw_surface_note.h"
 #include "raw_surface_refusal.h"
 #include <mach/vm_page_size.h>
@@ -505,6 +506,11 @@ static void announceTexture(raw::shapes::Route route, const raw::shapes::Texture
     }
     if (route != Route::Block)
         establishFresh(t, d);
+    if (!rmKeepDecodedBlocks(t)) {
+        os_log_error(rawLog(), "raw: %{public}s: no memory for the blocks a %lux%lu format %lu texture keeps: nil",
+                     getprogname(), (unsigned long)d.width, (unsigned long)d.height, (unsigned long)d.pixelFormat);
+        return nil;
+    }
     if (kind && !t->_raw.comptags && !t->_raw.chain)
         t->_movableBytes = t->_raw.storageRange().bytes;
     return (id<MTLTexture>)t;

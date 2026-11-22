@@ -61,8 +61,7 @@ bool rmEncodeDecodedCopy(raw::CommandBuffer *rc, RMBuffer *b, RMTexture *t, uint
     return true;
 }
 
-// The device's queue for the decodes replaceRegion hands it (one device a process)
-static id<MTLCommandQueue> decodeQueue(id<MTLDevice> device)
+id<MTLCommandQueue> rmDecodeQueue(id<MTLDevice> device)
 {
     static id<MTLCommandQueue> queue;
     static dispatch_once_t once;
@@ -110,7 +109,7 @@ bool rmDecodedReplace(RMTexture *t, MTLRegion r, NSUInteger level, NSUInteger sl
             for (uint32_t y = 0; y < down; y++)
                 memcpy(to + z * plane + y * line, static_cast<const uint8_t *>(bytes) + z * fromPlane + y * from, line);
     }
-    id<MTLCommandBuffer> cb = [decodeQueue((id<MTLDevice>)t->_device) commandBuffer];
+    id<MTLCommandBuffer> cb = [rmDecodeQueue((id<MTLDevice>)t->_device) commandBuffer];
     id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
     [blit copyFromBuffer:staging
                sourceOffset:0
@@ -133,8 +132,8 @@ bool rmDecodedReadback(RMTexture *t, const char *call)
     if (!f)
         return false;
     SWITCH_REFUSE_DETAIL("raw", "tex.decoded_readback", f->format,
-                         "%s of a format %u texture: nothing moved (its blocks were decoded as they were uploaded and "
-                         "are not kept; Apple's GPUs give the blocks back)",
+                         "%s of a format %u texture: nothing moved (its blocks were decoded as they were uploaded, and "
+                         "a format whose views read the same codes keeps none; Apple's GPUs give the blocks back)",
                          call, f->format);
     return true;
 }

@@ -7,6 +7,7 @@
 // resource's purgeable state is its heap's.
 #import "RawMetalInternal.h"
 #import "RawMetalMultisample.h"
+#import "RawMetalDecoded.h"
 
 #include "raw_decoded.h"
 #include "raw_srgb_pair.h"
@@ -85,7 +86,7 @@ id<MTLTexture> makeArenaTexture(RMHeap *h, MTLTextureDescriptor *d, const raw::T
             return [made newTextureViewWithPixelFormat:d.pixelFormat];
         if (made)
             ((RMTexture *)made)->_descriptor = [d copy];
-        return made;
+        return made && rmKeepDecodedBlocks((RMTexture *)made) ? made : nil;
     }
     RMTexture *t = [RMTexture new];
     t->_device = h->_device;

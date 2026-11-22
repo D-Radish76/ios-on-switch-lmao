@@ -3,6 +3,7 @@
 #import "RawMetalBlitRules.h"
 #import "RawMetalBlitImages.h"
 #include "raw_blit_planes.h"
+#include "raw_decoded.h"
 
 bool bufferRows(uint64_t offset, uint64_t bytesPerRow, uint32_t rows, uint32_t rowBytes, uint32_t bpp, bool intoTexture,
                 BufferRows &out)
@@ -252,6 +253,10 @@ CopyUnit copyUnit(RMTexture *t)
 {
     if (t->_descriptor.pixelFormat == MTLPixelFormatX32_Stencil8)
         return {1, 1, 1, false};
+    // a decoded format's block, not its stored image's texel, and into its own format alone: the stored images of two
+    // forms hold other values of the same blocks
+    if (const raw::DecodedFormat *f = raw::decodedFormat(uint32_t(t->_descriptor.pixelFormat)))
+        return {f->blockBytes, f->blockW, f->blockH, true};
     if (t->_descriptor.pixelFormat == MTLPixelFormatDepth32Float_Stencil8)
         return {8, 1, 1, true};
     return {t->_raw.bpp, t->_raw.blockW, t->_raw.blockH, false};

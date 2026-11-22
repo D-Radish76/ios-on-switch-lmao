@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // newTextureViewWithPixelFormat: of a raw texture: the same memory under another format's header, or nil with one line
-#import "RawMetalInternal.h"
+#import "RawMetalDecoded.h"
 #import "RawMetalXrPlanes.h"
 #include "raw_decoded.h"
 #include "raw_ycbcr.h"
@@ -41,10 +41,10 @@ static const char *viewFormatRefusal(uint32_t source, uint32_t view)
     const auto extended = [](uint32_t f) { return f >= 550 && f <= 555; };
     if ((extended(source) || extended(view)) && view != source && view != (source ^ 1))
         return "an extended-range format views as itself and its sRGB twin alone";
-    // Metal makes these (an M4 Max: ASTC sRGB and linear, LDR and HDR of one footprint), each reading the blocks by
-    // another decode, of which the texture keeps no image, nor the blocks to make one
-    if (!raw::decodedViewShared(source, view))
-        return "a view decoding the texture's blocks another way than it does: the texture holds its own decode alone";
+    // another ASTC form of a texture GM20B decodes: Metal makes one (an M4 Max), whose decode of the blocks differs,
+    // and the texture keeps no copy of its blocks to make it from
+    if (!raw::decodedViewShared(source, view) && !raw::decodedOwnForm(source, view))
+        return "a view decoding the blocks of a texture GM20B decodes another way: it keeps no copy of its blocks";
     return nullptr;
 }
 
@@ -61,8 +61,9 @@ static id<MTLTexture> unmadeView(RMTexture *of, RMTexture *v, const char *why)
 }
 
 // The raw format a view in `format` of `owner`'s memory takes: the owner's own where the view keeps its descriptor's
-// format (a converted texture's image is of another format than its descriptor's); an RGB10A8_2P_XR10 held as BGR10_XR's
-// words viewed as its sRGB twin, BGR10_XR_sRGB's (an M4 Max reads them so, alpha 0: m2v-textures4 probes/reads.mm view)
+// format (a converted texture's image is of another format than its descriptor's); an RGB10A8_2P_XR10 held as
+// BGR10_XR's words viewed as its sRGB twin, BGR10_XR_sRGB's (an M4 Max reads them so, alpha 0: m2v-textures4
+// probes/reads.mm view)
 static uint32_t viewRawFormat(RMTexture *owner, MTLPixelFormat format)
 {
     if (xrWordsTexture(owner) && raw::twoPlaneXr(uint32_t(format)))
@@ -83,8 +84,8 @@ static id<MTLTexture> madeView(RMTexture *owner, RMTexture *v)
 @implementation RMTexture (Views)
 
 // A view: the same memory under another format's header, with the stand-in and pool image its draws sample
-// (raw::Device::createView, createPartView), always over the memory's owner (the view's levels owner), so a view of a view
-// names its part of that memory
+// (raw::Device::createView, createPartView), always over the memory's owner (the view's levels owner), so a view of a
+// view names its part of that memory
 - (id<MTLTexture>)newTextureViewWithPixelFormat:(MTLPixelFormat)format
                                     textureType:(MTLTextureType)type
                                          levels:(NSRange)levels
@@ -124,6 +125,8 @@ static id<MTLTexture> madeView(RMTexture *owner, RMTexture *v)
     const char *why = viewFormatRefusal(uint32_t(_descriptor.pixelFormat), uint32_t(format));
     if (!why && (!inParent || header < 0 || multisampled != (_raw.samples > 1)))
         why = "levels, slices or a type its texture does not have";
+    if (!why && _rawOk && raw::decodedOwnForm(uint32_t(v->_levelsOwner->_descriptor.pixelFormat), uint32_t(format)))
+        return rmFormView(self, format, type, levels, slices);
     if (!why && _rawOk)
         v->_rawOk = gRM->raw->createPartView(v->_levelsOwner->_raw, viewRawFormat(v->_levelsOwner, format),
                                              uint32_t(header), v->_levelsBase, uint32_t(levels.length), v->_slicesBase,
@@ -164,6 +167,11 @@ static id<MTLTexture> madeView(RMTexture *owner, RMTexture *v)
     const char *why = viewFormatRefusal(uint32_t(_descriptor.pixelFormat), uint32_t(format));
     if (!why && _raw.memoryless)
         why = "a memoryless texture takes no view";
+    if (!why && _rawOk && raw::decodedOwnForm(uint32_t(owner->_descriptor.pixelFormat), uint32_t(format)))
+        return rmFormView(self, format, _descriptor.textureType, NSMakeRange(0, _descriptor.mipmapLevelCount),
+                          NSMakeRange(0, raw::textureLayers(uint32_t(_descriptor.textureType),
+                                                            uint32_t(std::min<NSUInteger>(_descriptor.arrayLength,
+                                                                                          2048)))));
     if (!why && _rawOk) {
         // a depth texture's X32_Stencil8 view reads its own header's stencil (createZetaView)
         if (_raw.zeta || whole)
@@ -178,8 +186,8 @@ static id<MTLTexture> madeView(RMTexture *owner, RMTexture *v)
     }
     if (v->_rawOk)
         return madeView(owner, v);
-    // a converted YCbCr texture as its _sRGB twin: the same planes converted the twin's way into an image of its own (m2v
-    // view_plan.rs ycbcr_twins: Metal reads the planes again, its other conversion)
+    // a converted YCbCr texture as its _sRGB twin: the same planes converted the twin's way into an image of its own
+    // (m2v view_plan.rs ycbcr_twins: Metal reads the planes again, its other conversion)
     if (!why && _rawOk && owner->_raw.ycbcr && owner->_surface && raw::isYcbcrFormat(uint32_t(format))) {
         MTLTextureDescriptor *d = [owner->_descriptor copy];
         d.pixelFormat = format;
