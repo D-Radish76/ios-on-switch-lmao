@@ -12,6 +12,7 @@ import subprocess
 import sys
 from collections.abc import Iterable, Iterator
 
+from tools.devicerun import renamed
 from tools.devicerun.checks import FRAME_PREFIX, GROUPS
 from tools.devicerun.morning import CHECKLIST
 from tools.devicerun.reports import crash_rows, frame_rows, headline, rolled_up
@@ -25,7 +26,9 @@ def quote(text: str) -> str:
 
 
 def clause(check: Check) -> str:
-    literals = ' OR '.join(f'eventMessage CONTAINS {quote(lit)}' for lit in check.literals())
+    literals = ' OR '.join(
+        f'eventMessage CONTAINS {quote(spelled)}' for lit in check.literals() for spelled in renamed.spellings(lit)
+    )
     parts = [f'({literals})']
     if check.process == 'kernel':
         parts.append('process BEGINSWITH "kernel"')

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import PurePosixPath
 
+from tools.devicerun import renamed
+
 PASS, FAIL, NO_DATA, INFO, NA = 'PASS', 'FAIL', 'NO-DATA', 'INFO', 'N/A'
 
 # count | rate (per minute over the log's span) | boots (with a match) | agg(field) or agg(a/b*k): then OP number.
@@ -103,7 +105,7 @@ class Event:
             subsystem=record.get('subsystem') or '',
             category=record.get('category') or '',
             level=record.get('messageType') or '',
-            message=record.get('eventMessage') or '',
+            message=renamed.current(record.get('eventMessage') or ''),
         )
 
 

@@ -49,6 +49,8 @@ BUNDLE = ADDONS + '/TegraGM20BMetal.bundle'
 SEED = ADDONS + '/TegraGM20BMetal.seed'
 RAW = ADDONS + '/TegraGM20BMetal.pack'
 OWNED = (BUNDLE, SEED, RAW)
+# What builds before the driver left raw/ staged in their place: a card staged then still holds them
+RENAMED_FROM = (ADDONS + '/TegraGM20BMetal.m2v-seed', ADDONS + '/TegraGM20BMetal.raw')
 STATE = 'ngpu/stage.tsv.gz'
 PENDING = 'ngpu/stage.pending'
 MANIFEST_HEADER = '# gpu stage 1 '
@@ -165,6 +167,14 @@ def _remove(data: Path, paths: list[str]) -> None:
             empty = empty.parent
 
 
+def _remove_renamed(data: Path) -> list[str]:
+    """Remove the folders RENAMED_FROM names; return those there were."""
+    removed = [old for old in RENAMED_FROM if (data / old).is_dir()]
+    for old in removed:
+        shutil.rmtree(data / old)
+    return removed
+
+
 def _copy_all(data: Path, wanted: Wanted, changed: list[str], report: Callable[[str], None]) -> None:
     total, done = sum(wanted[p][2] for p in changed), 0
     report(f'{done}/{total} bytes')
@@ -187,8 +197,9 @@ def sync(data: Path, wanted: Wanted, report: Callable[[str], None]) -> str:
         directory.chmod(0o755)
     whole = digest(wanted)
     known = read_state(data, whole)
+    renamed = ''.join(f'; removed {old}, which the rename replaced' for old in _remove_renamed(data))
     if known is True:
-        return f'unchanged ({len(wanted)} files)'
+        return f'unchanged ({len(wanted)} files){renamed}'
     if known is None:
         for top in OWNED:
             shutil.rmtree(data / top, ignore_errors=True)
@@ -211,7 +222,10 @@ def sync(data: Path, wanted: Wanted, report: Callable[[str], None]) -> str:
     _write_atomically(data / STATE, write_state)
     (data / PENDING).unlink()
     copied = sum(wanted[p][2] for p in changed)
-    return f'{len(changed)} copied ({copied >> 20} MiB), {len(stale)} removed, {len(wanted) - len(changed)} unchanged'
+    return (
+        f'{len(changed)} copied ({copied >> 20} MiB), {len(stale)} removed, {len(wanted) - len(changed)} unchanged'
+        + renamed
+    )
 
 
 def _merge_preferences(data: Path) -> None:
@@ -247,6 +261,8 @@ def main() -> None:
     if remove:
         for top in OWNED:
             shutil.rmtree(data / top, ignore_errors=True)
+        for old in _remove_renamed(data):
+            print('removed', data / old)
         for name in (STATE, PENDING):
             (data / name).unlink(missing_ok=True)
         print('removed', data / BUNDLE)

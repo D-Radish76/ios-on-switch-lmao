@@ -49,6 +49,7 @@ import argparse
 import json
 import os
 import plistlib
+import shutil
 import sys
 import time
 from collections.abc import Callable
@@ -214,7 +215,35 @@ def _confirmed(args: argparse.Namespace, card: cards.Card) -> None:
         raise cards.RefusedError('not confirmed')
 
 
+# The plugin's cache folders before the driver left raw/ (its cacheCandidates then, harvest.py's --volume list): the
+# plugin makes the new ones afresh and nothing reads these. Containers a process closed (no read and search) are left.
+RENAMED_CACHES = (
+    'tmp/m2v',
+    'tmp/m2v-*',
+    'mobile/tmp/*/m2v',
+    'mobile/Library/Caches/m2v',
+    'root/Library/Caches/m2v',
+    'folders/*/*/C/m2v',
+    'folders/*/*/T/m2v',
+    'containers/Data/System/*/Library/Caches/m2v',
+    'containers/Data/System/*/Library/Caches/m2v-*',
+    'containers/Data/System/*/tmp/m2v',
+    'mobile/Containers/Data/*/*/Library/Caches/m2v',
+    'mobile/Containers/Data/*/*/Library/Caches/m2v-*',
+    'mobile/Containers/Data/*/*/tmp/m2v',
+)
+
+
+def _remove_renamed_caches(data_root: Path, log: host.Log) -> None:
+    for pattern in RENAMED_CACHES:
+        for folder in sorted(data_root.glob(pattern)):
+            if folder.is_dir() and not folder.is_symlink():
+                shutil.rmtree(folder)
+                log('gpu: removed', folder.relative_to(data_root), '(the cache folder before the rename)')
+
+
 def _stage_gpu(args: argparse.Namespace, data_root: Path, log: host.Log) -> None:
+    _remove_renamed_caches(data_root, log)
     command = [sys.executable, args.stager, str(data_root)]
     command += ['--remove'] if args.remove_gpu else ['--build', args.gpu_bundle, '--progress']
     with progress.step('gpu: staging the Metal bundle'):
