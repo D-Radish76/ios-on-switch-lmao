@@ -249,6 +249,18 @@ TEST(RawComp, ZbcValuesAreAskedForOnceRepeated)
     EXPECT_TRUE(table.lookup(e, wanted));
 }
 
+// A full table refuses every later entry of its type for good (nothing empties it): the first refusal of each type is
+// logged, none after it
+TEST(RawComp, AFullZbcTableIsSaidOnceForEachType)
+{
+    raw::ZbcTable table;
+    EXPECT_TRUE(table.firstFull(TegraGM20BZbcColor));
+    EXPECT_FALSE(table.firstFull(TegraGM20BZbcColor));
+    EXPECT_TRUE(table.firstFull(TegraGM20BZbcDepth));
+    EXPECT_FALSE(table.firstFull(TegraGM20BZbcDepth));
+    EXPECT_FALSE(table.firstFull(TegraGM20BZbcColor));
+}
+
 // The kernel's answers for want of memory: boot 19 and boot 21 logged only NoMemory (its pool's floor or the client's
 // share, "compressible BoAlloc of ... refused"), never another
 TEST(RawComp, ShortagesAreTheKernelsMemoryAnswers)

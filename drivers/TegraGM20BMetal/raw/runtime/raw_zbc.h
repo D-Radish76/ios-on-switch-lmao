@@ -226,6 +226,17 @@ public:
             x->state = held ? Held : Refused;
     }
 
+    // Whether a refusal of an entry of `type` (TegraGM20BZbcColor or Depth) for want of room is the first this process
+    // met: the table is never emptied, so that one alone is worth a line
+    bool firstFull(uint32_t type)
+    {
+        std::lock_guard<raw::Mutex> l(lock_);
+        bool &said = fullSaid_[type == TegraGM20BZbcDepth];
+        const bool first = !said;
+        said = true;
+        return first;
+    }
+
     bool pending()
     {
         std::lock_guard<raw::Mutex> l(lock_);
@@ -271,6 +282,7 @@ private:
     raw::Mutex lock_;
     Entry entries_[kEntries] = {};
     uint32_t count_ = 0, evict_ = 0;
+    bool fullSaid_[2] = {};
 };
 
 }  // namespace raw

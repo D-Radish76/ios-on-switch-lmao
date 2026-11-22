@@ -362,7 +362,12 @@ void Device::zbcMake(std::unique_lock<raw::Mutex> &l)
         l.lock();
         zbc_.answer(e, kr == KERN_SUCCESS);
         RAW_DIAGNOSTIC((kr == KERN_SUCCESS ? stats.zbcAdded : stats.zbcFull)++);
-        if (kr != KERN_SUCCESS && kr != kIOReturnNoResources)
+        if (kr == kIOReturnNoResources && zbc_.firstFull(e.type))
+            os_log_error(compLog(),
+                         "raw: the GPU's ZBC %{public}s table is full (every process's, never emptied): full clears of "
+                         "compressed targets to values it lacks write their texels",
+                         e.type == TegraGM20BZbcDepth ? "depth" : "colour");
+        else if (kr != KERN_SUCCESS && kr != kIOReturnNoResources)
             os_log_error(compLog(), "raw: ZBC entry format 0x%x not added (0x%x): those clears write their texels",
                          e.format, unsigned(kr));
     }
