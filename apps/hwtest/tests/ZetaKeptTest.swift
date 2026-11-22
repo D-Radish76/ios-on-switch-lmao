@@ -4,7 +4,7 @@ import HWTestGPU
 import Metal
 
 /// A closed depth texture's compressed memory serves the next one of its kind at its creation
-/// (drivers/TegraGM20BMetal/raw/ runtime/raw_private_comp.cpp compRelease: kept made where that holds back no ask
+/// (drivers/TegraGM20BMetal/raw/runtime/raw_private_comp.cpp compRelease: kept made where that holds back no ask
 /// refused for a shortage). A private Depth32Float 1024x600 made, the compression thread settled (CompressionSettled),
 /// the first let go and a second made (`second_comptags_at_creation` 1); the second let go with nothing submitted
 /// meanwhile, and a third made at once: `third_comptags_at_creation` 1, no compressed memory made for it (`made_delta`
