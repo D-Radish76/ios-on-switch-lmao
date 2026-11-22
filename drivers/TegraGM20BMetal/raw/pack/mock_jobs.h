@@ -8,7 +8,7 @@ static struct {
     uint32_t live, generation;
 } mock_sets[TegraGM20BMaxResourceSets];
 
-static kern_return_t mock_set_create(const void *input, size_t bytes, void *out)
+static kern_return_t mock_set_create(uint32_t *page, const void *input, size_t bytes, void *out)
 {
     const struct TegraGM20BAbiResourceSetCreate *in = input;
     if (bytes != sizeof *in || !in->count || in->count > TegraGM20BMaxSetMembers || !in->uses_address ||
@@ -23,7 +23,7 @@ static kern_return_t mock_set_create(const void *input, size_t bytes, void *out)
         return kIOReturnNoResources;
     mock_sets[index].live = 1;
     const uint32_t word = TegraGM20BSetGenerationWord + index;
-    fence_page()[word] = ++mock_sets[index].generation;
+    page[word] = ++mock_sets[index].generation;
     const struct TegraGM20BAbiResourceSetCreateReply reply = {index + 1, mock_sets[index].generation, kFenceToken,
                                                               word * 4};
     memcpy(out, &reply, sizeof reply);
@@ -40,14 +40,15 @@ static kern_return_t mock_set_release(const void *input, size_t bytes)
     return KERN_SUCCESS;
 }
 
-static kern_return_t mock_job(const void *input, size_t bytes, void *out)
+static kern_return_t mock_job(mach_port_t c, const void *input, size_t bytes, void *out)
 {
     const struct TegraGM20BAbiSubmitAddress *address = input;
     if (bytes != sizeof *address || !address->address || address->reserved ||
         address->bytes < sizeof(struct TegraGM20BAbiJob))
         return kIOReturnBadArgument;
     const struct TegraGM20BAbiJob *job = (const void *)(uintptr_t)address->address;
-    if (job->channel >= 16 || job->push_count > TegraGM20BMaxJobPushes || job->shared_count > TegraGM20BMaxJobUses ||
+    const int ch = chan_of(c, job->channel);
+    if (ch < 0 || job->push_count > TegraGM20BMaxJobPushes || job->shared_count > TegraGM20BMaxJobUses ||
         job->set > TegraGM20BMaxResourceSets || !job->set != !job->set_generation ||
         address->bytes < sizeof *job + job->push_count * sizeof(struct TegraGM20BAbiPush) +
                              job->shared_count * sizeof(struct TegraGM20BAbiSurfaceUse))
@@ -56,5 +57,5 @@ static kern_return_t mock_job(const void *input, size_t bytes, void *out)
         return kIOReturnBadArgument;
     if (job->set && mock_sets[job->set - 1].generation != job->set_generation)
         return kIOReturnNotReady;
-    return mock_submit(job->channel, (const struct TegraGM20BAbiPush *)(job + 1), job->push_count, out);
+    return mock_submit((uint32_t)ch, (const struct TegraGM20BAbiPush *)(job + 1), job->push_count, out);
 }
