@@ -94,11 +94,6 @@ protected:
         std::string err;
         ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
     }
-
-    void TearDown() override
-    {
-        kernel_model::model.bound = nullptr;
-    }
 };
 
 // An M4 Max reads a plane alone's alpha as 0 and stores none of it (m2v-textures9 probes/xr.txt 6a-6c): its header is over

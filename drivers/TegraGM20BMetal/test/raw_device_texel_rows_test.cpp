@@ -140,6 +140,7 @@ protected:
     void TearDown() override
     {
         free(base);
+        DeviceTest::TearDown();
     }
 
     bool texelBuffer(uint64_t offset, uint32_t elements, raw::Texture &t, uint32_t rows = kRows)

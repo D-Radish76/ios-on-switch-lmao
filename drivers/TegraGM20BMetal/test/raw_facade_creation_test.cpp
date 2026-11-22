@@ -303,6 +303,9 @@ struct RefusingCompiler {
         };
         return true;
     }
+
+    // last: goes first, before what the compiler hook captures, which the device may still call
+    kernel_model::HooksCleared cleared;
 };
 
 // A state the shader compiler refused fails its creation with the refusal, as Metal's does for a state it could not

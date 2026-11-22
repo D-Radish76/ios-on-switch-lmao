@@ -621,6 +621,43 @@ inline Model &model = *new Model;
 inline std::mutex &callLock = *new std::mutex;
 constexpr io_connect_t kFirstConnection = 42;
 
+// What a test put in the model for a device's threads to call or read, under callLock: each connection's bound,
+// jobAdded and compiler hooks and the compiler store it served, which the model reads and calls only under callLock, so
+// none runs once this returns; arriving, a plain function the model calls before it takes the lock; and blockUntil,
+// which a WaitFence reads and calls holding no lock (it waits there): cleared only where set, by then by an owner that
+// ended its waits (model_gpu.h, timed_gpu.h), as an empty one written here would race that read. checkJob stays:
+// raw_job_methods.h installs it for every job, and it reaches no test's state.
+inline void clearHooks()
+{
+    std::lock_guard<std::mutex> l(callLock);
+    const auto clear = [](Model &m) {
+        m.bound = nullptr;
+        m.jobAdded = nullptr;
+        m.compiler = nullptr;
+        m.compilerFlags = 0;
+        m.store = nullptr;
+        m.storeBytes = 0;
+        if (m.blockUntil)
+            m.blockUntil = nullptr;
+    };
+    clear(model);
+    for (auto &[connection, other] : model.others)
+        clear(*other);
+    arriving.store(nullptr, std::memory_order_release);
+}
+
+// clearHooks at scope exit: declared after what a test's hooks capture, it goes before them
+struct HooksCleared {
+    HooksCleared() = default;
+    HooksCleared(const HooksCleared &) = delete;
+    HooksCleared &operator=(const HooksCleared &) = delete;
+
+    ~HooksCleared()
+    {
+        clearHooks();
+    }
+};
+
 inline Model &connected(io_connect_t connection)
 {
     return connection == kFirstConnection ? model : *model.others.at(connection);

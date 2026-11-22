@@ -42,6 +42,7 @@ protected:
             CFRelease(s.owner);
             free(s.pages);
         }
+        DeviceTest::TearDown();
     }
 
     // A texture over surface `s`, made and destroyed: the import it took

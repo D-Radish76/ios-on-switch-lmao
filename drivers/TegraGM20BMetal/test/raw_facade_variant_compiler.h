@@ -175,6 +175,9 @@ struct RenderCompiler {
         std::lock_guard<std::mutex> lock(mutex);
         return requests;
     }
+
+    // last: goes first, before what the compiler hook captures, which the device may still call
+    kernel_model::HooksCleared cleared;
 };
 
 // What `variant` settles to, once it has (Pending: not within 2 s)

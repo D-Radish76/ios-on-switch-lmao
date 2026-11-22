@@ -81,12 +81,10 @@ public:
         });
     }
 
+    // the hook itself is gone by now (harness::DeviceTest::TearDown); a call it holds is let go here
     ~HeldAsk()
     {
         std::lock_guard<std::mutex> l(lock_);
-        if (kernel_model::arriving.load(std::memory_order_acquire) != &arrive)
-            return;
-        kernel_model::arriving.store(nullptr, std::memory_order_release);
         open_ = true;
         wake_.notify_all();
     }
@@ -130,17 +128,6 @@ protected:
         };
         std::string err;
         ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
-    }
-
-    // The device's threads outlive this fixture's members (its base's `dev` goes after them) and bind through the
-    // model, which calls `bound` under callLock: taken here, no call reaches kindsLock once the teardown begins
-    void TearDown() override
-    {
-        {
-            std::lock_guard<std::mutex> l(kernel_model::callLock);
-            kernel_model::model.bound = nullptr;
-        }
-        harness::DeviceTest::TearDown();
     }
 
     bool bound(uint32_t kind)

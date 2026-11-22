@@ -172,6 +172,9 @@ struct AttributesCompiler {
         };
         return true;
     }
+
+    // last: goes first, before what the compiler hook captures, which the device may still call
+    kernel_model::HooksCleared cleared;
 };
 
 // A function made with constant values that has attributes: which its constants gate off is in its AIR, so the shader

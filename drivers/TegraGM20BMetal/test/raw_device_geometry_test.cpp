@@ -72,10 +72,10 @@ protected:
 
     void TearDown() override
     {
-        kernel_model::arriving.store(nullptr, std::memory_order_release);
         dev.destroyBuffer(vertices);
         dev.destroyBuffer(transform);
         dev.destroyBuffer(indices);
+        DeviceTest::TearDown();
     }
 
     // One command buffer of one cleared pass whose first draw `draw` records, over vertices and a transform in buffers

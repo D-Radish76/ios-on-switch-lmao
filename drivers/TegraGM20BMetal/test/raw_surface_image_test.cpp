@@ -50,6 +50,7 @@ protected:
         dev.destroyTexture(made);
         CFRelease(owner);
         free(pages);
+        DeviceTest::TearDown();
     }
 
     // The shared texture of `d` (format `format`) beside `privately`, the raw path's own texture of the same descriptor

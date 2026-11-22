@@ -390,11 +390,6 @@ protected:
         ASSERT_TRUE(dev.open(harness::emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
         addOwnState("raw.ycbcr.ycbcr_converted_frag", 115);
     }
-
-    void TearDown() override
-    {
-        kernel_model::model.bound = nullptr;
-    }
 };
 
 // Where the kernel maps VA sparse, the planes are read through a window: the import's pages bound again at its start, the
@@ -446,7 +441,7 @@ TEST_F(DeviceViews, RowsPastTheLastPageMakeNoTextureWithoutSparseMaps)
     void *base = aligned_alloc(page, page);
     raw::Texture t;
     EXPECT_FALSE(dev.createYcbcrTexture(0, base, 768, nullptr, pastTheLastPage(page), 64, 512, t));
-    kernel_model::model.bound = nullptr;
+    kernel_model::clearHooks();
     EXPECT_EQ(std::count(asked.begin(), asked.end(), uint32_t(TegraGM20BBindMapSparse)), 0);
     free(base);
 }

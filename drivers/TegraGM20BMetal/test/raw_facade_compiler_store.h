@@ -93,6 +93,9 @@ struct LibraryCompiler {
         };
         return true;
     }
+
+    // last: goes first, before what the compiler hook captures, which the device may still call
+    kernel_model::HooksCleared cleared;
 };
 
 inline id<MTLDevice> completing()

@@ -232,6 +232,14 @@ protected:
         ASSERT_TRUE(dev.open(emptyPack().c_str(), 0, err, raw::Device::Role::Client)) << err;
     }
 
+    // The device and its threads go with this base, after a derived fixture's members (C++ destroys those first), and
+    // GoogleTest runs TearDown before any of it: from here no hook a test put in the model runs into a fixture member.
+    // A fixture that overrides TearDown calls this one last.
+    void TearDown() override
+    {
+        kernel_model::clearHooks();
+    }
+
     // One command buffer of `copies` copies of `bytes` from `from` to `to`: its seqno, 0 when it was not submitted
     uint32_t copy(const raw::Buffer &from, const raw::Buffer &to, uint32_t bytes, uint32_t copies = 1)
     {

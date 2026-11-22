@@ -88,6 +88,7 @@ protected:
     void TearDown() override
     {
         free(base);
+        DeviceViews::TearDown();
     }
 
     // R10Unorm_PACKED 32x16 of `levels` levels over plane 0 of a 'p420' 32x16 of rows 64
