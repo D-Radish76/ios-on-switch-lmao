@@ -29,8 +29,8 @@ enum class ResolveEnd : uint8_t {
 
 // A pass of the pack's resolve state `state` sampling `from` into `into` over the render area (an 8-bit sRGB one as its
 // UNORM twin, whose codes the state writes); the resolve pass's prologue barrier orders its reads after the pass's writes
-static ResolveEnd resolveByState(raw::Device &d, raw::CommandBuffer &rc, raw::Pipeline *state, const raw::Texture &from,
-                                 const raw::Texture &into, uint32_t width, uint32_t height,
+static ResolveEnd resolveByState([[maybe_unused]] raw::Device &d, raw::CommandBuffer &rc, raw::Pipeline *state,
+                                 const raw::Texture &from, const raw::Texture &into, uint32_t width, uint32_t height,
                                  std::deque<raw::Texture> &targets, const char **why)
 {
     targets.push_back(into);
