@@ -133,8 +133,12 @@ size_t bcm_probe_request(unsigned item, uint8_t *out, size_t size)
     return n + params;
 }
 
-const char *const bcm_monitor_probe_names[BCM_MONITOR_PROBE_COUNT] = {"WLC_GET_MONITOR", "monitor_promisc_level",
-                                                                      "sta_monitor", "af_flying_max", "tsf"};
+const char *const bcm_monitor_probe_names[BCM_MONITOR_PROBE_COUNT] = {
+    "WLC_GET_MONITOR", "monitor_promisc_level", "sta_monitor", "af_flying_max", "tsf",
+#if DEVELOPMENT || DEBUG
+    "mchan",           "p2p_state",             "p2po_find",   "tdls_enable",
+#endif
+};
 
 size_t switch_awdl_probe_reply_size(unsigned item)
 {

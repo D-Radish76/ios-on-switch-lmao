@@ -47,6 +47,7 @@ extern "C" {
 #include "SwitchWLANAwdlNeighbor.h"
 #include "SwitchWLANAwdlPresence.h"
 #include "SwitchWLANAwdlSoft.h"
+#include "SwitchWLANProbeHooks.h"
 #include "SwitchWLANStation.h"
 #if (DEVELOPMENT || DEBUG) && defined(SWITCH_IPSW_KIND_24B119)
 #include <pexpert/pexpert.h>
@@ -458,7 +459,10 @@ void refreshRadio()
         if (!gActivationCommitted)
             gEchoRxCount = 0;
 #endif
+        if (!gActivationCommitted)
+            switch_wlan_probe_activated();
         gActivationCommitted = true;
+        switch_wlan_probe_committed();
     }
     switch_awdl_core_radio_ready(gCore, resources && clockValid);
     if (gRadioError && awdl_core_running(gCore)) {
@@ -2435,5 +2439,12 @@ extern "C" int switch_wlan_awdl_vif_state(const void *payload, size_t length)
     const int status = gIf ? switch_a80211_awdl_parent_state(&gFacade, payload, length) : ENXIO;
     IOLockUnlock(gLock);
     return status;
+}
+#endif
+
+#if DEVELOPMENT || DEBUG
+bool switch_wlan_probe_awdl_committed()
+{
+    return __atomic_load_n(&gActivationCommitted, __ATOMIC_RELAXED);
 }
 #endif

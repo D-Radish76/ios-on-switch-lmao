@@ -55,6 +55,8 @@ kernel_driver(
         "SwitchWLANA3Schedule.cpp",
         "SwitchWLANA3Clock.cpp",
         "SwitchWLANA3TxProbe.cpp",
+        "SwitchWLANAdmissionProbe.cpp",
+        "SwitchWLANChipProbe.cpp",
         "SwitchWLANRom.cpp",
         "SwitchWLANMsgbuf.cpp",
         "SwitchWLANDma.cpp",

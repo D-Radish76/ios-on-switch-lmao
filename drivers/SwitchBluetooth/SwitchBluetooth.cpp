@@ -147,6 +147,9 @@
 #include "SwitchBluetoothLinks.h"
 #include "SwitchBluetoothRxDma.h"
 #include "SwitchCoex.h"
+#if DEVELOPMENT || DEBUG
+#include "SwitchBluetoothProbe.h"
+#endif
 #include "../ArmGIC/SwitchInterrupts.h"
 #include "../TegraAPBDMA/TegraAPBDMA.h"
 #include "../SwitchSuspend/SwitchWake.h"
@@ -617,6 +620,9 @@ class SwitchBluetooth : public IOService {
     bool leApcf = false, leDirty = false, leScanning = false, leCapsLogged = false;
     bool answer(uint16_t opcode, uint8_t status, int sub);
     bool programLeFilter();
+#if DEVELOPMENT || DEBUG
+    switch_bt_probe hciProbe = {};
+#endif
 
     struct Traced {
         uint16_t opcode;
@@ -2056,6 +2062,7 @@ bool SwitchBluetooth::frameRx(uint32_t avail)
 #if DEVELOPMENT || DEBUG
             traceCompletion(opcode, status, static_cast<uint8_t>(was), ret, retLength);
             linkCompletion(opcode, status, static_cast<uint8_t>(was));
+            switch_bt_probe_completion(opcode, vendor, status, static_cast<uint8_t>(was), ret, retLength);
 #endif
         }
         if (stray) {  // not passed on (top of section)
@@ -2127,6 +2134,9 @@ errno_t SwitchBluetooth::clientCommand(uint8_t *packet, size_t size)
     const uint16_t opcode = le16(packet + 1);
     uint8_t *const params = packet + 4;
     const uint8_t length = packet[3];
+#if DEVELOPMENT || DEBUG
+    const switch_bt_probe_command issued = switch_bt_probe_issue(&hciProbe, opcode, params, length);
+#endif
     __atomic_fetch_add(&st.commands, 1, __ATOMIC_RELAXED);
     if ((opcode >> 10) == kOgfLe)
         __atomic_fetch_add(&st.leCommands, 1, __ATOMIC_RELAXED);
@@ -2141,11 +2151,16 @@ errno_t SwitchBluetooth::clientCommand(uint8_t *packet, size_t size)
         switch_le_filter_scan_enable(&leFilter, params, length);
     }
     const bool hostFilter = switch_le_filter_host_command(opcode, params, length);
-    if (hostFilter && !answer(opcode, kUnknownCommand, -1))
+    if (hostFilter && !answer(opcode, kUnknownCommand, -1)) {
+#if DEVELOPMENT || DEBUG
+        switch_bt_probe_dropped(&issued);
+#endif
         return ENOBUFS;
+    }
     if (hostFilter || answerHere(opcode, params, length)) {
 #if DEVELOPMENT || DEBUG
         traceCommand(opcode, params, length, true);
+        switch_bt_probe_answered(&issued, answers[(answerHead - 1u) % (sizeof(answers) / sizeof(answers[0]))]);
 #endif
         loop->runAction(&SwitchBluetooth::gated, this, reinterpret_cast<void *>(1));  // deliver(): the answer goes out
         return 0;
@@ -2157,6 +2172,7 @@ errno_t SwitchBluetooth::clientCommand(uint8_t *packet, size_t size)
 #if DEVELOPMENT || DEBUG
     traceCommand(opcode, params, length, false);
     linkCommand(opcode, params, length);
+    switch_bt_probe_forwarded(&issued, params);
 #endif
     coexCommand(opcode, params, length);
     coexAfh(opcode);
@@ -2237,6 +2253,9 @@ bool SwitchBluetooth::programLeFilter()
         uint8_t ret[8];
         uint8_t retLength = sizeof(ret);
         const uint8_t status = inject(commands[i].opcode, commands[i].params, commands[i].length, ret, &retLength);
+#if DEVELOPMENT || DEBUG
+        switch_bt_probe_injected(&commands[i], status, ret, retLength);
+#endif
         if (!status)
             continue;
         if (status == kInjectBusy || status == kInjectNotSent || status == kInjectNoAnswer) {
@@ -3486,6 +3505,9 @@ bool SwitchBluetooth::bringUp(uint32_t offMs, char *why, size_t whySize)
                   "filter in the %s\n",
                   capsError ? "refused" : "answered", capsLength > 6 ? caps[6] : 0, capsLength > 7 ? caps[7] : 0,
                   apcf ? "controller" : "host");
+#if DEVELOPMENT || DEBUG
+            switch_bt_probe_capabilities(capsError, caps, capsLength);
+#endif
         }
 
         // Sleep mode off (12 zero bytes, nxk): BT_WAKE stays asserted and host wake is unused. bluetoothd may
