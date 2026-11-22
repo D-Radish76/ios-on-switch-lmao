@@ -8,8 +8,6 @@
 
 #include <gtest/gtest.h>
 #include <objc/message.h>
-#include <atomic>
-#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -28,22 +26,6 @@ uint64_t counted(id<MTLDevice> device, const char *selector, NSString *key)
 NSString *facts(id<MTLDevice> device, id<MTLTexture> texture)
 {
     return ((NSString * (*)(id, SEL, id)) objc_msgSend)((id)device, sel_registerName("switchRawProbeFacts:"), texture);
-}
-
-// switchRawProbeCompressionSettled:'s block, waited for as the event it is; its calls (one), or 0 if it never ran
-int settled(id<MTLDevice> device)
-{
-    const auto calls = std::make_shared<std::atomic<int>>(0);
-    dispatch_semaphore_t ran = dispatch_semaphore_create(0);
-    NSString *refused = ((NSString * (*)(id, SEL, id)) objc_msgSend)(
-        (id)device, sel_registerName("switchRawProbeCompressionSettled:"), ^{
-            ++*calls;
-            dispatch_semaphore_signal(ran);
-        });
-    EXPECT_EQ(refused, nil) << refused.UTF8String;
-    if (refused || dispatch_semaphore_wait(ran, dispatch_time(DISPATCH_TIME_NOW, 10 * int64_t(NSEC_PER_SEC))))
-        return 0;
-    return calls->load();
 }
 
 id<MTLTexture> sharedTexture(id<MTLDevice> device, const scale_frames::Shape &shape)
@@ -69,7 +51,7 @@ TEST(RawFacadeCompressedMove, ARecordingThreadUsesATargetWhileTheWorkerMovesIt)
     const uint64_t made = counted(device, "switchRawCompression", @"made");
     const auto target = scale_frames::targets(device, shape);
     ASSERT_TRUE([facts(device, target[0]) containsString:@"comptags=0"]) << "none of its size made: asked for";
-    ASSERT_EQ(settled(device), 1) << "the compression thread did not settle the target's ask once";
+    ASSERT_EQ(harness::compressionSettled(device), 1) << "the compression thread did not settle the target's ask once";
     ASSERT_GT(counted(device, "switchRawCompression", @"made"), made) << "no compressed memory was made";
     const uint64_t moves = counted(device, "switchRawCounters", @"private_compressed_moves");
     const std::vector<id<MTLTexture>> beside = {sharedTexture(device, shape)};
@@ -129,8 +111,7 @@ TEST(RawFacadeCompressedMove, ARecordingThreadAttachesADepthTextureWhileTheWorke
     td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     id<MTLTexture> depth = [device newTextureWithDescriptor:td];
     ASSERT_TRUE([facts(device, depth) containsString:@"comptags=0"]) << "none of its size made: asked for";
-    for (int i = 0; i < 500 && counted(device, "switchRawCompression", @"made") == made; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ASSERT_EQ(harness::compressionSettled(device), 1);
     ASSERT_GT(counted(device, "switchRawCompression", @"made"), made) << "no compressed memory was made";
     const auto target = scale_frames::targets(device, scale_frames::Shape{1, 4, 1, 200, 120});
     id<MTLCommandQueue> queue = [device newCommandQueue];
@@ -162,7 +143,7 @@ TEST(RawFacadeCompressedMove, NothingAskedSettlesAtOnceOnTheCallersThread)
 {
     ASSERT_TRUE(opened().device != nil);
     id<MTLDevice> device = opened().device;
-    ASSERT_EQ(settled(device), 1);
+    ASSERT_EQ(harness::compressionSettled(device), 1);
     __block bool ran = false;
     NSString *refused = ((NSString * (*)(id, SEL, id)) objc_msgSend)(
         (id)device, sel_registerName("switchRawProbeCompressionSettled:"), ^{

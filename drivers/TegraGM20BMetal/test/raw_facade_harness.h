@@ -21,8 +21,10 @@
 #include "../raw/runtime/raw_pack.h"
 #include "../raw/runtime/raw_set_entries.h"
 #include <algorithm>
+#include <atomic>
 #include <dlfcn.h>
 #include <map>
+#include <memory>
 #include <libproc.h>
 #include <mach/mach.h>
 #include <sys/stat.h>
@@ -236,6 +238,25 @@ inline NSDictionary *ask(id<MTLDevice> device, const char *selector)
 inline NSDictionary *memory(id<MTLDevice> device)
 {
     return ask(device, "switchRawMemory");
+}
+
+// Blocks until every compressed memory the device was asked for so far is made or refused: the event
+// switchRawProbeCompressionSettled:'s block reports (debug builds), on the compression thread or at once on this one when
+// nothing is asked. The block's calls: one.
+inline int compressionSettled(id<MTLDevice> device)
+{
+    const auto calls = std::make_shared<std::atomic<int>>(0);
+    dispatch_semaphore_t ran = dispatch_semaphore_create(0);
+    NSString *refused = ((NSString * (*)(id, SEL, id)) objc_msgSend)(
+        (id)device, sel_registerName("switchRawProbeCompressionSettled:"), ^{
+            ++*calls;
+            dispatch_semaphore_signal(ran);
+        });
+    EXPECT_EQ(refused, nil) << refused.UTF8String;
+    if (refused)
+        return 0;
+    dispatch_semaphore_wait(ran, DISPATCH_TIME_FOREVER);
+    return calls->load();
 }
 
 inline NSDictionary *counters(id<MTLDevice> device)

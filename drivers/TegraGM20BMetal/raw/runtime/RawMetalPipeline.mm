@@ -35,23 +35,35 @@ uint32_t encodersBefore(RMCommandBuffer *cb, size_t position)
 }
 #endif
 
+// Debug builds: `cb`'s waiters for the worker (switchRawWaitAhead) woken, after what they read was stored
+void aheadChanged(RMCommandBuffer *cb)
+{
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+    rmChanged(cb);
+#else
+    (void)cb;
+#endif
+}
+
 // The encode ahead given back for `veto` (the first reason counted): the device's command buffer abandoned, and the
 // command buffer encoded at its commit
 void giveBack(uint32_t veto)
 {
     Ahead &a = ahead();
-    if (!a.cb)
+    RMCommandBuffer *cb = a.cb;
+    if (!cb)
         return;
     if (a.open) {
         rmRangeEncode().reset();
         gRM->committed.fetch_sub(1);
-        a.cb->_pipelineAbandons++;
-        a.cb->_pipelineGivenBack |= veto;
+        cb->_pipelineAbandons++;
+        cb->_pipelineGivenBack |= veto;
         RAW_DIAGNOSTIC(gRM->stats.pipelineAbandons[__builtin_ctz(veto ? veto : uint32_t(VetoFailed))]++);
     }
-    a.cb->_pipelineDeclined.store(true, std::memory_order_relaxed);
+    cb->_pipelineDeclined.store(true, std::memory_order_release);
     a.cb = nil;
     a.open = false;
+    aheadChanged(cb);
 }
 
 }  // namespace
@@ -85,7 +97,8 @@ void rmPipelineHanded(RMCommandBuffer *cb)
     if (cb->_pipelineDeclined.load(std::memory_order_relaxed) || cb->_committed.load(std::memory_order_acquire))
         return;
     if (a.cb) {
-        cb->_pipelineDeclined.store(true, std::memory_order_relaxed);
+        cb->_pipelineDeclined.store(true, std::memory_order_release);
+        aheadChanged(cb);
         return;
     }
     a.cb = cb;
@@ -136,8 +149,14 @@ bool rmPipelineStep()
                 return true;
             }
         }
-        if (!encode.step(until))
+        if (!encode.step(until)) {
             giveBack(encode.vetoed());
+            return true;
+        }
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+        cb->_aheadAt.store(encode.position(), std::memory_order_release);
+        aheadChanged(cb);
+#endif
         return true;
     });
 }

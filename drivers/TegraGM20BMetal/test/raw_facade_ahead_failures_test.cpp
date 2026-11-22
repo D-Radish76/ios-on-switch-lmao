@@ -75,7 +75,9 @@ void refuseChannels(bool refused)
 
 // The kernel refuses the channel while two frames record: the worker's encode ahead of each meets no channel and gives
 // the frame back (VetoChannel), failing neither. The first is committed with the channel still refused and fails at its
-// own encode (enc.nochannel); the second is committed once the kernel makes channels again and completes on raw.
+// own encode (enc.nochannel); the second is committed once the kernel makes channels again and completes on raw. The
+// worker is held through the second's recording, as on a loaded host, and each frame waits for the worker's give-back
+// before the channel changes or the commit.
 void anEncodeAheadWithNoChannelLeavesTheFailureToTheCommit()
 {
     ASSERT_TRUE(opened().device != nil);
@@ -87,6 +89,7 @@ void anEncodeAheadWithNoChannelLeavesTheFailureToTheCommit()
     ASSERT_EQ(settled.status, MTLCommandBufferStatusCompleted);
     refuseChannels(true);
     id<MTLCommandBuffer> refused = paced(queue, into, 1);
+    EXPECT_NE(scale_frames::waitAhead(refused) & uint32_t(VetoChannel), 0u);
     [refused commit];
     [refused waitUntilCompleted];
     EXPECT_EQ(refused.status, MTLCommandBufferStatusError);
@@ -94,7 +97,10 @@ void anEncodeAheadWithNoChannelLeavesTheFailureToTheCommit()
     NSDictionary *p = pipelined(refused);
     ASSERT_NE(p, nil);
     EXPECT_NE([p[@"given_back"] intValue] & int(VetoChannel), 0) << [[p description] UTF8String];
+    scale_frames::WorkerHold hold;
     id<MTLCommandBuffer> back = paced(queue, into, 2);
+    hold.release();
+    EXPECT_NE(scale_frames::waitAhead(back) & uint32_t(VetoChannel), 0u);
     refuseChannels(false);
     [back commit];
     [back waitUntilCompleted];
@@ -152,6 +158,7 @@ TEST(RawFacadeAheadFailures, ACommandBufferTheCommitFailsGivesTheDeviceBackBefor
         [e drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
         [blit endEncoding];
     });
+    EXPECT_EQ(scale_frames::waitAhead(cb), 0u) << "the worker gave back the encode ahead its turn gives back";
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusError);
@@ -160,6 +167,7 @@ TEST(RawFacadeAheadFailures, ACommandBufferTheCommitFailsGivesTheDeviceBackBefor
     ASSERT_NE(p, nil);
     EXPECT_EQ([p[@"veto"] intValue], 0) << [[p description] UTF8String];
     id<MTLCommandBuffer> next = paced(queue, into, 1);
+    EXPECT_EQ(scale_frames::waitAhead(next), 0u);
     [next commit];
     [next waitUntilCompleted];
     ASSERT_EQ(next.status, MTLCommandBufferStatusCompleted);

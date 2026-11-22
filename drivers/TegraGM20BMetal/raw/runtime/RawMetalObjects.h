@@ -505,6 +505,9 @@ struct RMSharedEventWait {
     // (of how many)
     std::atomic<bool> _pipelineDeclined;
     uint32_t _pipelinedEncoders, _pipelineEncoders, _pipelineAbandons, _pipelineGivenBack;
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+    std::atomic<size_t> _aheadAt;  // where the worker's encode ahead of it reached (switchRawWaitAhead)
+#endif
 #if SWITCH_RAW_DIAGNOSTICS
     uint64_t _committedTicks;  // mach_absolute_time as its commit began
 #endif

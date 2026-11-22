@@ -9,7 +9,6 @@
 #include <chrono>
 #include <cstring>
 #include <mutex>
-#include <thread>
 
 namespace {
 
@@ -110,8 +109,7 @@ TEST_F(DevicePrivateComp, AClosedTargetsMemoryGoesBackWhereARefusedAskWantsMore)
     const uint64_t refused = dev.stats.compFailed.load();
     kernel_model::model.refuseAllocCount = 1;
     ASSERT_FALSE(dev.createCompressedTexture(2 * kW, kH, kBGRA8, raw::kCompKindC32, larger));
-    for (int i = 0; i < 5000 && dev.stats.compFailed.load() == refused; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    settle();
     ASSERT_GT(dev.stats.compFailed.load(), refused) << "the larger ask was refused";
     const size_t freed = kernel_model::model.freed.size();
     dev.destroyTexture(opened);

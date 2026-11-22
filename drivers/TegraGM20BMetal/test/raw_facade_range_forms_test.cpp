@@ -118,7 +118,7 @@ TEST(RawFacadeRangeForms, ADrawMetalFailsFailsItsCommandBufferAtTheCommitOnly)
             [e setVertexAmplificationCount:2 viewMappings:nullptr];
         });
     });
-    std::this_thread::sleep_for(10 * kPace);
+    EXPECT_NE(scale_frames::waitAhead(cb) & uint32_t(VetoFailed), 0u);
     EXPECT_EQ(failure(cb), nil) << "failed before its commit";
     [cb commit];
     [cb waitUntilCompleted];
@@ -149,6 +149,7 @@ TEST(RawFacadeRangeForms, APassIntoAFormatStandInIsEncodedAhead)
         id<MTLCommandBuffer> cb = paced(queue, into, shape, 9, ^(id<MTLCommandBuffer> c, id<MTLTexture>) {
             loadStore(c, srgb8);
         });
+        EXPECT_EQ(scale_frames::waitAhead(cb), 0u);
         [cb commit];
         [cb waitUntilCompleted];
         ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted) << frame;
@@ -186,6 +187,7 @@ TEST(RawFacadeRangeForms, ASeparateDepthAndStencilFromTheirSlicesAreEncodedAhead
         d.stencilAttachment.storeAction = MTLStoreActionStore;
         [[c renderCommandEncoderWithDescriptor:d] endEncoding];
     });
+    EXPECT_EQ(scale_frames::waitAhead(cb), 0u);
     [cb commit];
     [cb waitUntilCompleted];
     ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted);
@@ -218,6 +220,8 @@ TEST(RawFacadeRangeForms, ExtendedRangeSamplesAndTheEncodeAhead)
                     [e setFragmentTexture:sampled atIndex:0];
             });
         });
+        if (!format)
+            EXPECT_EQ(scale_frames::waitAhead(cb), 0u);
         [cb commit];
         [cb waitUntilCompleted];
         if (format && cb.status == MTLCommandBufferStatusError) {

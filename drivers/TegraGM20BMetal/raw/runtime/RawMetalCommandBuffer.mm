@@ -864,6 +864,21 @@ static const raw::Pipeline *recordedPipeline(const raw::RasterState &raster)
     return [NSString stringWithFormat:@"error:%s", failedName(RMPred(_failedBy))];
 }
 
+#if !defined(SWITCH_DEBUG) || SWITCH_DEBUG
+// Host tests' wait for the submit worker, before its commit: returns once the worker encoded ahead everything it
+// published so far, or gave it back (answering the reasons given back, 0 where none). The worker reaches either once it
+// was handed the command buffer and no veto stands; a recorded veto it reads only at its next step.
+- (NSNumber *)switchRawWaitAhead
+{
+    const auto done = [&] {
+        return _pipelineDeclined.load(std::memory_order_acquire) ||
+               _aheadAt.load(std::memory_order_acquire) >= size_t(_published.load(std::memory_order_acquire) >> 32);
+    };
+    waitFor(self, done);
+    return @(_pipelineDeclined.load(std::memory_order_acquire) ? _pipelineGivenBack : 0u);
+}
+#endif
+
 // hw_test_app's gpu.path.commit_latency, final once it completed: of its raw ranges' encoders, those the worker encoded
 // ahead of its commit; the encodes ahead of it the worker gave back and why (given_back), the reasons the recording gave
 // (veto, both RMPipelineVeto); and, while its stamps' slot still holds them (kStampSlots command buffers on), the time

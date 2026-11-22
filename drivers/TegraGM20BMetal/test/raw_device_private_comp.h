@@ -7,9 +7,9 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <future>
 #include <mutex>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -81,11 +81,21 @@ protected:
         return std::find(kinds.begin(), kinds.end(), kind) != kinds.end();
     }
 
+    // The test's wait for the compressed-memory thread: returns once every compressed memory the device was asked for
+    // so far is made or refused (Device::compWhenSettled, on that thread or at once on this one when nothing is asked)
+    void settle()
+    {
+        std::promise<void> settled;
+        dev.compWhenSettled([&settled] {
+            settled.set_value();
+        });
+        settled.get_future().wait();
+    }
+
     // The test's wait for the compressed-memory thread to answer the device's first ask
     void awaitMade()
     {
-        for (int i = 0; i < 5000 && !raw::DeviceHarness::compReady(dev); i++)
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        settle();
         ASSERT_TRUE(raw::DeviceHarness::compReady(dev)) << "no compressed memory was made";
     }
 

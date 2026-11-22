@@ -4,8 +4,11 @@
 // of its own, as the render server's scale animations record them (boot 21: 10-16 passes, 67-134 draws a buffer).
 #pragma once
 #include "raw_facade_harness.h"
+#include <condition_variable>
 #include <cstdint>
+#include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace scale_frames {
@@ -128,5 +131,59 @@ inline std::string jobWords(size_t first)
     }
     return out;
 }
+
+// Blocks until the submit worker encoded ahead everything `cb` published so far, or gave it back (debug builds'
+// switchRawWaitAhead): the given-back reasons (RMPipelineVeto), 0 where none. Asked before the commit, of a command buffer
+// the worker was handed and no veto stands on: what the worker did is then done whatever the host's load.
+inline uint32_t waitAhead(id<MTLCommandBuffer> cb)
+{
+    return [((NSNumber * (*)(id, SEL)) objc_msgSend)((id)cb, sel_registerName("switchRawWaitAhead")) unsignedIntValue];
+}
+
+// The submit worker held inside another thread's move of its own (rmExcludingSubmissions runs it on the worker between
+// its submissions) from construction until release(): what it is handed meanwhile waits, as on a loaded host
+class WorkerHold {
+public:
+    WorkerHold()
+    {
+        mover_ = std::thread([this] {
+            rmExcludingSubmissions([this] {
+                std::unique_lock<std::mutex> l(lock_);
+                held_ = true;
+                changed_.notify_all();
+                changed_.wait(l, [&] {
+                    return released_;
+                });
+                return true;
+            });
+        });
+        std::unique_lock<std::mutex> l(lock_);
+        changed_.wait(l, [&] {
+            return held_;
+        });
+    }
+
+    ~WorkerHold()
+    {
+        release();
+    }
+
+    void release()
+    {
+        {
+            std::lock_guard<std::mutex> l(lock_);
+            released_ = true;
+        }
+        changed_.notify_all();
+        if (mover_.joinable())
+            mover_.join();
+    }
+
+private:
+    std::mutex lock_;
+    std::condition_variable changed_;
+    bool held_ = false, released_ = false;
+    std::thread mover_;
+};
 
 }  // namespace scale_frames

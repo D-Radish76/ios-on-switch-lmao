@@ -145,8 +145,7 @@ TEST(RawFacadeMoveAhead, APlainTargetMovesOntoItsMemoryInsideTheCommandBufferTha
     const scale_frames::Shape shape{15, 90, 1, 704, 392};
     const auto into = scale_frames::targets(device, shape);
     ASSERT_TRUE([(NSString *)probe(device, "switchRawProbeFacts:", into[0]) containsString:@"comptags=0"]);
-    for (int i = 0; i < 500 && counted(device, "switchRawCompression", @"made") == made; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    ASSERT_EQ(harness::compressionSettled(device), 1);
     ASSERT_GT(counted(device, "switchRawCompression", @"made"), made) << "no compressed memory was made";
     const uint64_t moves = counted(device, "switchRawCounters", @"private_compressed_moves");
     id<MTLCommandQueue> queue = [device newCommandQueue];
@@ -156,6 +155,7 @@ TEST(RawFacadeMoveAhead, APlainTargetMovesOntoItsMemoryInsideTheCommandBufferTha
         scale_frames::pass(cb, opened().state, into, shape, p, 0);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    EXPECT_EQ(scale_frames::waitAhead(cb), 0u) << "the commit's move meets the worker's open encode ahead";
     [cb commit];
     [cb waitUntilCompleted];
     EXPECT_EQ(cb.status, MTLCommandBufferStatusCompleted);

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <optional>
 #include <thread>
 
 // A buffer this device did not make
@@ -131,7 +132,13 @@ TEST(RawFacadeCommit, EncodersEndedBeforeTheCommitAreEncodedAhead)
     const auto into = scale_frames::targets(opened().device, shape);
     NSDictionary *before = counters(opened().device);
     for (uint32_t frame = 0; frame < 4; frame++) {
+        // the first frame with the worker held through its recording, as on a loaded host
+        std::optional<scale_frames::WorkerHold> hold;
+        if (!frame)
+            hold.emplace();
         id<MTLCommandBuffer> cb = paced(queue, into, shape, frame, std::chrono::milliseconds(1));
+        hold.reset();
+        EXPECT_EQ(scale_frames::waitAhead(cb), 0u);
         [cb commit];
         [cb waitUntilCompleted];
         ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted);
@@ -161,6 +168,7 @@ TEST(RawFacadeCommit, PassesBesideAMemorylessColourAreEncodedAhead)
     ASSERT_NE(beside, nil);
     for (uint32_t frame = 0; frame < 4; frame++) {
         id<MTLCommandBuffer> cb = paced(queue, into, shape, frame, std::chrono::milliseconds(1), beside);
+        EXPECT_EQ(scale_frames::waitAhead(cb), 0u);
         [cb commit];
         [cb waitUntilCompleted];
         ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted);
@@ -205,6 +213,7 @@ TEST(RawFacadeCommit, AnEncoderFailedAfterTheHandOffsGivesTheDeviceBack)
     EXPECT_EQ([p[@"pipelined"] intValue], 0);
     EXPECT_LE([p[@"abandons"] intValue], 1);
     id<MTLCommandBuffer> next = paced(queue, into, shape, 1, std::chrono::milliseconds(1));
+    EXPECT_EQ(scale_frames::waitAhead(next), 0u);
     [next commit];
     [next waitUntilCompleted];
     ASSERT_EQ(next.status, MTLCommandBufferStatusCompleted);
@@ -319,6 +328,7 @@ TEST(RawFacadeCommit, NewTargetsEachFrameAreEncodedAhead)
                 scale_frames::pass(cb, opened().state, into, shape, p, frame);
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+        EXPECT_EQ(scale_frames::waitAhead(cb), 0u);
         [cb commit];
         [cb waitUntilCompleted];
         ASSERT_EQ(cb.status, MTLCommandBufferStatusCompleted);
@@ -344,6 +354,7 @@ TEST(RawFacadeCommit, AnotherQueuesSubmissionTakesTheDeviceBack)
         scale_frames::pass(cb, opened().state, into, shape, p, 0);
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
         if (p == 9) {
+            EXPECT_EQ(scale_frames::waitAhead(cb), 0u) << "the worker holds the encode ahead the submission takes back";
             id<MTLCommandBuffer> between = scale_frames::record(other, opened().state, elsewhere, small, 0);
             [between commit];
             [between waitUntilCompleted];

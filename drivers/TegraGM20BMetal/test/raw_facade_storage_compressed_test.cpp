@@ -6,7 +6,6 @@
 #include "bazel/testing/fresh_process.h"
 
 #include <objc/message.h>
-#include <thread>
 #include <unistd.h>
 
 namespace {
@@ -44,13 +43,11 @@ id<MTLTexture> compressedTarget(id<MTLDevice> device)
                                                                               mipmapped:NO];
     td.storageMode = MTLStorageModePrivate;
     td.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
-    for (int i = 0; i < 500; i++) {
-        id<MTLTexture> t = [device newTextureWithDescriptor:td];
-        if ([facts(device, t) containsString:@"comptags=1"])
-            return t;
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    }
-    return nil;
+    id<MTLTexture> asking = [device newTextureWithDescriptor:td];
+    EXPECT_EQ(harness::compressionSettled(device), 1);
+    id<MTLTexture> t = [device newTextureWithDescriptor:td];
+    (void)asking;
+    return [facts(device, t) containsString:@"comptags=1"] ? t : nil;
 }
 
 void aStorageFormDrawsItsCompressedTargetInPlace()

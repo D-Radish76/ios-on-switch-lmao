@@ -7,7 +7,6 @@
 #include <array>
 #include <chrono>
 #include <cstring>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -314,8 +313,7 @@ TEST_F(DevicePrivateComp, AWantRefusedForAShortageAsksAgainWhenMemoryIsGivenBack
     const uint64_t failed = dev.stats.compFailed.load();
     kernel_model::model.refuseAllocCount = 1;
     ASSERT_FALSE(dev.createCompressedTexture(kW, kH, kBGRA8, raw::kCompKindC32, asked)) << "none made yet: asked";
-    for (int i = 0; i < 5000 && dev.stats.compFailed.load() == failed; i++)
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    settle();
     ASSERT_GT(dev.stats.compFailed.load(), failed) << "its ask was refused";
     ASSERT_TRUE(dev.wantCompressed(t, raw::kCompKindC32, &t));
     compressedSecond(first, other, [&](raw::Texture &x) {
