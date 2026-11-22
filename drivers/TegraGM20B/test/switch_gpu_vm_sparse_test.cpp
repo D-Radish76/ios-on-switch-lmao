@@ -81,6 +81,7 @@ TEST_F(VmSparse, EveryPageGetsTheSparsePteOverPageTablesItTakes)
 TEST_F(VmSparse, ARangeOutsideTheClientsWholePagesIsRefusedUntouched)
 {
 	tgm_vm unowned{};
+
 	const struct {
 		tgm_vm *vm;
 		u64 va, range;
@@ -89,6 +90,7 @@ TEST_F(VmSparse, ARangeOutsideTheClientsWholePagesIsRefusedUntouched)
 		       {&a, TGM_USER_VA_START - 0x1000, 0x2000},
 		       {&a, TGM_KERNEL_VA - 0x1000, 0x2000},
 		       {&unowned, kVa, 0x1000}};
+
 	for (const auto &each : refused) {
 		switch_gpu_mapping *mapping = nullptr;
 		EXPECT_EQ(switch_gpu_vm_sparse(each.vm, each.va, each.range, 1, &mapping), -EINVAL);

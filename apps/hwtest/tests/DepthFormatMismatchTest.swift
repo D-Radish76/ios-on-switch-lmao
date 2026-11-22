@@ -20,11 +20,13 @@ struct DepthFormatMismatchTest: HWTest {
     static let attached = DepthFormatMismatchTest(
         id: "gpu.gm20b.depth_format_mismatch",
         name: "States declaring another depth or stencil format draw and depth-test in a depth pass as Metal does",
-        passes: [.depth32Float, .depth32Float_stencil8])
+        passes: [.depth32Float, .depth32Float_stencil8]
+    )
     static let unattached = DepthFormatMismatchTest(
         id: "gpu.gm20b.depth_format_mismatch_no_depth",
         name: "States declaring a depth or stencil format depth-test in a pass with no depth attachment as Metal does",
-        passes: [.invalid])
+        passes: [.invalid]
+    )
 
     static let declared: [MTLPixelFormat] = [.invalid, .depth16Unorm, .depth32Float, .depth32Float_stencil8, .stencil8]
 
@@ -57,8 +59,11 @@ struct DepthFormatMismatchTest: HWTest {
             do {
                 state =
                     try declared == .stencil8
-                    ? scene.state(stencil: declared)
-                    : scene.state(depth: declared, stencil: declared == .depth32Float_stencil8 ? declared : .invalid)
+                        ? scene.state(stencil: declared)
+                        : scene.state(
+                            depth: declared,
+                            stencil: declared == .depth32Float_stencil8 ? declared : .invalid
+                        )
             } catch {
                 checks.append(("\(Self.key(declared)): \(GPU.describe(error))", false))
                 continue
@@ -92,7 +97,7 @@ struct DepthFormatMismatchTest: HWTest {
                     if let depth {
                         let options: MTLBlitOption = format == .depth32Float_stencil8 ? .depthFromDepthStencil : []
                         let bytes = try await gpu.read(depth, bytesPerPixel: 4, options: options)
-                        near = "\((0..<n * n).filter { bytes.loaded(as: Float.self, at: $0) == 0.25 }.count)"
+                        near = "\((0 ..< n * n).filter { bytes.loaded(as: Float.self, at: $0) == 0.25 }.count)"
                     }
                     let cell = "\(Self.key(declared))_\(Self.key(format))"
                     metrics.set(cell, "\(reds)/\(near)/\(String(path.prefix(60)))")

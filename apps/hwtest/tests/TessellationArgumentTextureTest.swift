@@ -17,23 +17,23 @@ struct TessellationArgumentTextureTest: HWTest {
     static let texel: [UInt8] = [40, 160, 220, 255]
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct ControlPoint { float4 position [[attribute(0)]]; };
-        struct QuadPatch { patch_control_point<ControlPoint> points; };
-        struct Arguments { texture2d<float> colour [[id(0)]]; };
-        struct Out { float4 position [[position]]; float4 colour; };
-        [[patch(quad, 4)]] vertex Out tess_argument_post(QuadPatch patch [[stage_in]], float2 uv [[position_in_patch]],
-                                                         constant Arguments &arguments [[buffer(1)]]) {
-            const float4 low = mix(patch.points[0].position, patch.points[1].position, uv.x);
-            const float4 high = mix(patch.points[3].position, patch.points[2].position, uv.x);
-            Out out;
-            out.position = mix(low, high, uv.y);
-            out.colour = arguments.colour.read(uint2(0, 0));
-            return out;
-        }
-        fragment float4 tess_argument_colour(Out in [[stage_in]]) { return in.colour; }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct ControlPoint { float4 position [[attribute(0)]]; };
+    struct QuadPatch { patch_control_point<ControlPoint> points; };
+    struct Arguments { texture2d<float> colour [[id(0)]]; };
+    struct Out { float4 position [[position]]; float4 colour; };
+    [[patch(quad, 4)]] vertex Out tess_argument_post(QuadPatch patch [[stage_in]], float2 uv [[position_in_patch]],
+                                                     constant Arguments &arguments [[buffer(1)]]) {
+        const float4 low = mix(patch.points[0].position, patch.points[1].position, uv.x);
+        const float4 high = mix(patch.points[3].position, patch.points[2].position, uv.x);
+        Out out;
+        out.position = mix(low, high, uv.y);
+        out.colour = arguments.colour.read(uint2(0, 0));
+        return out;
+    }
+    fragment float4 tess_argument_colour(Out in [[stage_in]]) { return in.colour; }
+    """
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -79,13 +79,14 @@ struct TessellationArgumentTextureTest: HWTest {
             render.setTessellationFactorBuffer(factors, offset: 0, instanceStride: 0)
             render.drawPatches(
                 numberOfPatchControlPoints: 4, patchStart: 0, patchCount: 1, patchIndexBuffer: nil,
-                patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0)
+                patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0
+            )
             render.endEncoding()
         }.path
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
         var wrong = 0
-        for y in 0..<n {
-            for x in 0..<n where Array(pixels.pixel(x, y, width: n)) != Self.texel { wrong += 1 }
+        for y in 0 ..< n {
+            for x in 0 ..< n where Array(pixels.pixel(x, y, width: n)) != Self.texel { wrong += 1 }
         }
         var metrics = Metrics()
         metrics.set("path", path)

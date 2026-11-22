@@ -18,8 +18,8 @@ struct MemorylessBurstScene: GPUScene {
     let name = "Memoryless attachments at a new size every frame: what the raw pool holds after"
 
     static let frames = 48
-    static let settle = 680  // a backing's 600 command buffers past its last use, then the trim at the next 64th
-    static let slack = 8 << 20  // two of a client's largest chunks
+    static let settle = 680 // a backing's 600 command buffers past its last use, then the trim at the next 64th
+    static let slack = 8 << 20 // two of a client's largest chunks
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
@@ -44,8 +44,8 @@ struct MemorylessBurstScene: GPUScene {
         _ = try await draw(try gpu.texture(.rgba16Float, 16, 16, usage: [.renderTarget], storage: .memoryless))
         let before = GM20BFacade.memory(of: gpu.device)
         let sizes =
-            (0..<Self.frames).map { (320 + 8 * $0, 180 + 5 * $0) }
-            + (0..<Self.frames).map { (316 + 8 * (Self.frames - 1 - $0), 176 + 5 * (Self.frames - 1 - $0)) }
+            (0 ..< Self.frames).map { (320 + 8 * $0, 180 + 5 * $0) }
+                + (0 ..< Self.frames).map { (316 + 8 * (Self.frames - 1 - $0), 176 + 5 * (Self.frames - 1 - $0)) }
         var grown: [String: Int] = [:]
         for (frame, (width, height)) in sizes.enumerated() {
             if frame == Self.frames { grown = GM20BFacade.memory(of: gpu.device) }
@@ -58,10 +58,11 @@ struct MemorylessBurstScene: GPUScene {
             result.metrics.set("backings_grow_kb", atGrown >> 10)
             result.metrics.set("backings_shrink_kb", atShrunk >> 10)
             result.expect(
-                atShrunk <= atGrown, "the shrinking frames made \((atShrunk - atGrown) >> 10) KiB of backings")
+                atShrunk <= atGrown, "the shrinking frames made \((atShrunk - atGrown) >> 10) KiB of backings"
+            )
         }
         let small = try gpu.texture(.bgra8Unorm, 16, 16)
-        for _ in 0..<Self.settle {
+        for _ in 0 ..< Self.settle {
             _ = try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = small
@@ -82,7 +83,8 @@ struct MemorylessBurstScene: GPUScene {
         result.metrics.set("grows_burst", (peak["grows"] ?? 0) - (before["grows"] ?? 0))
         result.expect(backings == 0, "\(backings >> 10) KiB of backings still held \(Self.settle) command buffers on")
         result.expect(
-            held - pool <= Self.slack, "the pool holds \((held - pool) >> 10) KiB more than before the burst")
+            held - pool <= Self.slack, "the pool holds \((held - pool) >> 10) KiB more than before the burst"
+        )
         return result
     }
 }

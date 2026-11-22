@@ -71,7 +71,7 @@ struct WordMipFormat {
         guard format == .rgb9e5Float else { return zip(codes(stored), codes(apple)).map { abs($0 - $1) }.max() ?? 0 }
         let value = { (w: UInt64, k: Int) in Double(w >> UInt64(9 * k) & 511) * pow(2, Double(w >> 27 & 31) - 24) }
         let step = pow(2, Double(apple >> 27 & 31) - 24)
-        return (0..<3).map { Int((abs(value(stored, $0) - value(apple, $0)) / step).rounded()) }.max() ?? 0
+        return (0 ..< 3).map { Int((abs(value(stored, $0) - value(apple, $0)) / step).rounded()) }.max() ?? 0
     }
 }
 
@@ -87,11 +87,11 @@ enum WordMipmapCases {
     /// Level 0's texels: random codes in every field (RGB9E5: random mantissas under every exponent, 0 to 31)
     static func level0(_ f: WordMipFormat, count: Int) -> [UInt8] {
         var state = UInt64(f.format.rawValue)
-        return (0..<count).flatMap { _ -> [UInt8] in
+        return (0 ..< count).flatMap { _ -> [UInt8] in
             var word = splitmix(&state)
             if f.format == .rgb9e5Float { word = word & 0x7ff_ffff | (word >> 40 & 31) << 27 }
             if f.bytes == 8 { word &= 0xffc0_ffc0_ffc0_ffc0 }
-            return (0..<f.bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
+            return (0 ..< f.bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
         }
     }
 
@@ -112,13 +112,14 @@ enum WordMipmapCases {
             blit.copy(
                 from: staging, sourceOffset: 0, sourceBytesPerRow: w * f.bytes, sourceBytesPerImage: w * h * f.bytes,
                 sourceSize: MTLSize(width: w, height: h, depth: depth), to: texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.generateMipmaps(for: texture)
             blit.endEncoding()
         }.path
         var levels: [UInt8] = []
-        for level in 1..<d.mipmapLevelCount {
-            for plane in 0..<(f.volume ? max(depth >> level, 1) : 1) {
+        for level in 1 ..< d.mipmapLevelCount {
+            for plane in 0 ..< (f.volume ? max(depth >> level, 1) : 1) {
                 levels += try await gpu.read(texture, bytesPerPixel: f.bytes, level: level, plane: plane)
             }
         }
@@ -129,7 +130,7 @@ enum WordMipmapCases {
     static func judged(_ f: WordMipFormat, _ levels: [UInt8], apple: [UInt8]) -> (worst: Int, off: Int) {
         guard levels.count == apple.count else { return (Int.max, levels.count / f.bytes) }
         let apart = stride(from: 0, to: levels.count, by: f.bytes).map {
-            f.apart(f.word(levels[$0..<$0 + f.bytes]), f.word(apple[$0..<$0 + f.bytes]))
+            f.apart(f.word(levels[$0 ..< $0 + f.bytes]), f.word(apple[$0 ..< $0 + f.bytes]))
         }
         return (apart.max() ?? 0, apart.filter { $0 > 0 }.count)
     }

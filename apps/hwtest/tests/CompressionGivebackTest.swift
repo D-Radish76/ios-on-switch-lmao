@@ -56,7 +56,7 @@ struct CompressionGivebackTest: HWTest {
         try await CompressionSettled.settle(gpu.device)
         let gaveBack = GM20BFacade.compression(of: gpu.device)
         let scratch = try gpu.texture(.bgra8Unorm, 16, 16, usage: [.renderTarget, .pixelFormatView])
-        for _ in 0..<2 {
+        for _ in 0 ..< 2 {
             try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = scratch
@@ -117,7 +117,8 @@ struct CompressionGivebackTest: HWTest {
         for (handle, _) in handles {
             _ = connection.call(
                 CompressedFloorTest.boFree,
-                GPUConnection.words([UInt32(truncatingIfNeeded: handle), UInt32(handle >> 32)]), outputSize: 0)
+                GPUConnection.words([UInt32(truncatingIfNeeded: handle), UInt32(handle >> 32)]), outputSize: 0
+            )
         }
     }
 }

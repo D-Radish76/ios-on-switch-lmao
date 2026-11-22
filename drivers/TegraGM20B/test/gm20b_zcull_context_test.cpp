@@ -21,7 +21,12 @@ constexpr int kNoMemory = -12, kNoSpace = -28;
 constexpr u32 kFecsZcullBytes = 0x1500;
 constexpr u32 kZcullWord = 0x1c, kZcullPtrWord = 0x20, kNoCtxsw = 1, kSeparateBuffer = 2;
 
-enum class Fail { None, Memory, Va, Map };
+enum class Fail {
+	None,
+	Memory,
+	Va,
+	Map
+};
 Fail failing;
 
 struct Memory : nvkm_memory {

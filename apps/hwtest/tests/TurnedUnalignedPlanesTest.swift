@@ -21,7 +21,7 @@ struct TurnedUnalignedPlanesTest: HWTest {
         let states = try RotatedStates(gpu)
         var metrics = Metrics()
         var failures: [String] = []
-        for turn in 1...4 {
+        for turn in 1 ... 4 {
             let cells = RotatedCells(gpu: gpu, states: states, turn: turn, width: 90, height: 60, aligned: false)
             guard let plane = try cells.makePlane() else {
                 return .fail("the device makes no texture with the rotation SPI", metrics, proof: gpu.proof)

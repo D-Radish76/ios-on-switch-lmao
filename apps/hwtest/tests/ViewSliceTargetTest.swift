@@ -33,8 +33,8 @@ struct ViewSliceTargetTest: HWTest {
             for (part, bytes) in parts {
                 if part.slice == 2 && part.level == 0 {
                     targetOff =
-                        stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0..<$0 + 4]) != Self.red }
-                        .count
+                        stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0 ..< $0 + 4]) != Self.red }
+                            .count
                     continue
                 }
                 let off = zip(bytes, Self.uploaded(slice: part.slice, level: part.level)).filter { $0 != $1 }.count
@@ -59,7 +59,7 @@ struct ViewSliceTargetTest: HWTest {
 
     static func uploaded(slice: Int, level: Int) -> [UInt8] {
         let width = side >> level
-        return (0..<width * width * 4).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ slice &* 41 &+ level &* 97) }
+        return (0 ..< width * width * 4).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ slice &* 41 &+ level &* 97) }
     }
 
     static func drawn(_ gpu: GPU) async throws -> [(part: (slice: Int, level: Int), bytes: [UInt8])] {
@@ -70,16 +70,18 @@ struct ViewSliceTargetTest: HWTest {
         d.usage = [.renderTarget, .shaderRead]
         d.storageMode = .private
         guard let array = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("no BGRA8 array") }
-        for slice in 0..<slices {
-            for level in 0..<levels {
+        for slice in 0 ..< slices {
+            for level in 0 ..< levels {
                 try await gpu.upload(
                     uploaded(slice: slice, level: level), to: array, bytesPerRow: (side >> level) * 4, level: level,
-                    slice: slice)
+                    slice: slice
+                )
             }
         }
         guard
             let view = array.makeTextureView(
-                pixelFormat: .bgra8Unorm, textureType: .type2DArray, levels: 0..<1, slices: 1..<3)
+                pixelFormat: .bgra8Unorm, textureType: .type2DArray, levels: 0 ..< 1, slices: 1 ..< 3
+            )
         else { throw TestFailure("no view of slices 1-2") }
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
@@ -91,8 +93,8 @@ struct ViewSliceTargetTest: HWTest {
             commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
         }
         var parts: [(part: (slice: Int, level: Int), bytes: [UInt8])] = []
-        for slice in 0..<slices {
-            for level in 0..<levels {
+        for slice in 0 ..< slices {
+            for level in 0 ..< levels {
                 parts.append(((slice, level), try await gpu.read(array, bytesPerPixel: 4, level: level, slice: slice)))
             }
         }

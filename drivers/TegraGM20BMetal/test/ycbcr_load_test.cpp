@@ -358,9 +358,11 @@ struct TurnedPass {
     struct Color {
         const TurnedPlane *texture = nullptr;
     } color[8];
+
     struct {
         const TurnedPlane *texture = nullptr;
     } depthStencil;
+
     uint32_t count = 1;
 };
 

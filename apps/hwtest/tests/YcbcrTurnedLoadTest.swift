@@ -43,7 +43,8 @@ struct YcbcrTurnedLoadTest: HWTest {
                             "\(c.key): \(r.lumaOutside) luma, \(r.chromaOutside) chroma and \(r.tailChanged) tail "
                                 + "bytes changed outside \(c.box) (changed \(r.changedBox.map { "\($0)" } ?? "none"))",
                             off == 0
-                        ))
+                        )
+                    )
                 } catch {
                     checks.append(("\(c.key): \(GPU.describe(error))", false))
                 }

@@ -219,7 +219,8 @@ struct Refill {
     Bytes pool = Bytes(size_t(kTexels) * 4, 0), standIn = Bytes(size_t(kTexels) * 4, 0);
     gm20b::KernelUse write = use(target, true), read;
 
-    explicit Refill(bool pooled) : read{&pool, {kSurfaceVa, surface.size()}, pooled, false, true} {}
+    explicit Refill(bool pooled) : read{&pool, {kSurfaceVa, surface.size()}, pooled, false, true}
+    {}
 
     void fill()
     {

@@ -32,7 +32,8 @@ struct ResolveOneSampleSwapTest: HWTest {
                 let off = Self.texelsOff(bytes, order: d.order)
                 metrics.set(d.key + "_off", off)
                 metrics.set(
-                    d.key + "_texel", bytes.pixel(5, 3, width: Self.side).map(String.init).joined(separator: "/"))
+                    d.key + "_texel", bytes.pixel(5, 3, width: Self.side).map(String.init).joined(separator: "/")
+                )
                 checks.append(("\(d.key): every texel the source's codes in its byte order", off == 0))
             } catch {
                 checks.append(("\(d.key): \(error)", false))
@@ -53,7 +54,8 @@ struct ResolveOneSampleSwapTest: HWTest {
     static func resolved(_ gpu: GPU, into format: MTLPixelFormat) async throws -> [UInt8] {
         let n = side
         let values = try gpu.buffer(
-            (0..<n * n).map { SIMD4<Float>(codes($0 % n, $0 / n).map { Float($0) / 255 }) })
+            (0 ..< n * n).map { SIMD4<Float>(codes($0 % n, $0 / n).map { Float($0) / 255 }) }
+        )
         let state = try gpu.render(fragment: "texel_values", format: .rgba8Unorm)
         let source = try gpu.texture(.rgba8Unorm, n, n, usage: [.renderTarget])
         let destination = try gpu.texture(format, n, n)
@@ -78,7 +80,7 @@ struct ResolveOneSampleSwapTest: HWTest {
 
     /// Texels whose bytes are not the source's codes in `order` (the source channel each byte holds)
     static func texelsOff(_ bytes: [UInt8], order: [Int]) -> Int {
-        (0..<side * side).filter { at in
+        (0 ..< side * side).filter { at in
             let want = codes(at % side, at / side)
             return order.enumerated().contains { Int(bytes[4 * at + $0.offset]) != want[$0.element] }
         }.count

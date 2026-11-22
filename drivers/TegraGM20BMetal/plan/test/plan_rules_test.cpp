@@ -11,8 +11,8 @@
 namespace gm20b::plan::test {
 namespace {
 
-const std::set<std::string> kTested = {"compute.image", "event", "enc.planarrt", "enc.pass", "enc.geometry",
-                                       "enc.storage"};
+const std::set<std::string> kTested = {"compute.image", "event",        "enc.planarrt",
+                                       "enc.pass",      "enc.geometry", "enc.storage"};
 
 bool has(const WorkGraph &g, Rule rule)
 {

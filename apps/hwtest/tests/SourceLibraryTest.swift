@@ -13,12 +13,12 @@ struct SourceLibraryTest: HWTest {
     let subsystem = Subsystem.metal
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        kernel void source_library_cube(device uint *data [[buffer(0)]], uint id [[thread_position_in_grid]]) {
-            data[id] = id * id * id + 3;
-        }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    kernel void source_library_cube(device uint *data [[buffer(0)]], uint id [[thread_position_in_grid]]) {
+        data[id] = id * id * id + 3;
+    }
+    """
     static let broken = "kernel void source_library_broken( {}"
     static let count = 1024
 
@@ -42,11 +42,12 @@ struct SourceLibraryTest: HWTest {
             encoder.setBuffer(data, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: Self.count, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }.path
         let values = data.contents().bindMemory(to: UInt32.self, capacity: Self.count)
-        let off = (0..<Self.count).filter { values[$0] != UInt32($0 * $0 * $0 + 3) }.count
+        let off = (0 ..< Self.count).filter { values[$0] != UInt32($0 * $0 * $0 + 3) }.count
 
         var refusedCode = -1
         var refusedLog = ""
@@ -65,7 +66,8 @@ struct SourceLibraryTest: HWTest {
         metrics.set("refused_code", refusedCode)
         metrics.set("refused_log", refusedLog.isEmpty ? "-" : refusedLog)
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         var wrong: [String] = []
         if off > 0 { wrong.append("words") }
         if path != "gm20b" { wrong.append("path") }

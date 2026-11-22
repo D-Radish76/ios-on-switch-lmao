@@ -13,7 +13,7 @@ extension RotatedCells {
     func reachedTiles(_ cell: RotatedCell) -> Set<Int>? {
         guard turn == 4 else { return nil }
         switch cell {
-        case .load: return Set(0..<(tilesX * ((height + 31) / 32)))
+        case .load: return Set(0 ..< (tilesX * ((height + 31) / 32)))
         case .partLoad, .pointLoad: return [1, tilesX + 2]
         case .edgeLoad: return [tilesX + 1, tilesX + 2]
         case .besideR4: return [1]
@@ -36,10 +36,10 @@ extension RotatedCells {
         let w = texture.width, h = texture.height
         let first = try await gpu.read(texture, bytesPerPixel: 4)
         var loaded = first
-        for y in 0..<h {
-            for x in 0..<w where tiles.contains((y / 32) * perRow + x / 32) {
+        for y in 0 ..< h {
+            for x in 0 ..< w where tiles.contains((y / 32) * perRow + x / 32) {
                 let to = (y * w + x) * 4, from = ((h - 1 - y) * w + x) * 4
-                loaded[to..<(to + 4)] = first[from..<(from + 4)]
+                loaded[to ..< (to + 4)] = first[from ..< (from + 4)]
             }
         }
         try await gpu.upload(loaded, to: texture, bytesPerRow: w * 4)

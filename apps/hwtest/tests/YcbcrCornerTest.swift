@@ -32,16 +32,20 @@ struct YcbcrCornerTest: HWTest {
     static let corners = [
         Corner(
             format: 540, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, width: 2, height: 2, surfaceWidth: 8,
-            surfaceHeight: 8),
+            surfaceHeight: 8
+        ),
         Corner(
             format: 500, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange, width: 2, height: 2, surfaceWidth: 8,
-            surfaceHeight: 8),
+            surfaceHeight: 8
+        ),
         Corner(
             format: 540, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, width: 4, height: 2,
-            surfaceWidth: 16, surfaceHeight: 16),
+            surfaceWidth: 16, surfaceHeight: 16
+        ),
         Corner(
             format: 500, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, width: 6, height: 4,
-            surfaceWidth: 16, surfaceHeight: 16),
+            surfaceWidth: 16, surfaceHeight: 16
+        ),
     ]
     static let usage: MTLTextureUsage = [.shaderRead, .shaderWrite, .renderTarget]
 
@@ -94,11 +98,12 @@ struct YcbcrCornerTest: HWTest {
         var textures: [MTLTexture] = []
         for corner in corners {
             guard let buffer = Self.pixelBuffer(corner.surfaceWidth, corner.surfaceHeight, corner.fourcc),
-                let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-                let format = MTLPixelFormat(rawValue: corner.format)
+                  let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+                  let format = MTLPixelFormat(rawValue: corner.format)
             else { throw TestFailure("no surface") }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: corner.width, height: corner.height, mipmapped: false)
+                pixelFormat: format, width: corner.width, height: corner.height, mipmapped: false
+            )
             descriptor.usage = Self.usage
             guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
                 result.note = "no texture"
@@ -136,10 +141,10 @@ struct YcbcrCornerTest: HWTest {
             let texels = index == 0 ? values : values.map { SIMD4<Float>($0.z, $0.x, $0.y, $0.w) }
             let want = Self.codes(corner, texels, .drawnFloat)
             let after = Self.planes(buffers[index])
-            for plane in 0..<2 {
+            for plane in 0 ..< 2 {
                 let rows = plane == 0 ? h : h / 2
-                for y in 0..<after[plane].count {
-                    for x in 0..<after[plane][y].count {
+                for y in 0 ..< after[plane].count {
+                    for x in 0 ..< after[plane][y].count {
                         if y < rows && x < w {
                             let wrong = UInt16(after[plane][y][x]) != want[plane][y * w + x] ? 1 : 0
                             if plane == 0 { result.luma += wrong } else { result.chroma += wrong }
@@ -161,14 +166,15 @@ struct YcbcrCornerTest: HWTest {
     func exercise(_ gpu: GPU, _ corner: Corner) async throws -> Result {
         var result = Result()
         guard let buffer = Self.pixelBuffer(corner.surfaceWidth, corner.surfaceHeight, corner.fourcc),
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-            let format = MTLPixelFormat(rawValue: corner.format)
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+              let format = MTLPixelFormat(rawValue: corner.format)
         else {
             result.note = "no surface"
             return result
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: corner.width, height: corner.height, mipmapped: false)
+            pixelFormat: format, width: corner.width, height: corner.height, mipmapped: false
+        )
         descriptor.usage = Self.usage
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             result.note = "no texture"
@@ -206,10 +212,10 @@ struct YcbcrCornerTest: HWTest {
             }
             let after = Self.planes(buffer)
             let want = Self.codes(corner, texels, source)
-            for plane in 0..<2 {
+            for plane in 0 ..< 2 {
                 let rows = plane == 0 ? h : h / 2
-                for y in 0..<after[plane].count {
-                    for x in 0..<after[plane][y].count {
+                for y in 0 ..< after[plane].count {
+                    for x in 0 ..< after[plane][y].count {
                         if y < rows && x < w {
                             let wrong = UInt16(after[plane][y][x]) != want[plane][y * w + x] ? 1 : 0
                             if plane == 0 { result.luma += wrong } else { result.chroma += wrong }
@@ -228,11 +234,12 @@ struct YcbcrCornerTest: HWTest {
     func readOff(_ gpu: GPU, _ corner: Corner, _ texture: MTLTexture, _ buffer: CVPixelBuffer) async throws -> Int {
         let (w, h) = (corner.width, corner.height)
         guard let own = Self.pixelBuffer(w, h, corner.fourcc),
-            let surface = CVPixelBufferGetIOSurface(own)?.takeUnretainedValue()
+              let surface = CVPixelBufferGetIOSurface(own)?.takeUnretainedValue()
         else { throw TestFailure("no \(w)x\(h) surface") }
         Self.copyCorner(from: buffer, to: own, width: w, height: h)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: texture.pixelFormat, width: w, height: h, mipmapped: false)
+            pixelFormat: texture.pixelFormat, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = Self.usage
         guard let twin = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no texture over a \(w)x\(h) surface")
@@ -256,18 +263,20 @@ struct YcbcrCornerTest: HWTest {
             }
             reads.append(try await gpu.read(target, bytesPerPixel: 16))
         }
-        return (0..<(w * h)).filter { reads[0][16 * $0..<16 * $0 + 16] != reads[1][16 * $0..<16 * $0 + 16] }.count
+        return (0 ..< (w * h)).filter { reads[0][16 * $0 ..< 16 * $0 + 16] != reads[1][16 * $0 ..< 16 * $0 + 16] }.count
     }
 
     /// Plane 0's codes of the corner, then plane 1's Cb, Cr pairs.
     static func codes(_ corner: Corner, _ texels: [SIMD4<Float>], _ source: YcbcrStore.Source) -> [[UInt16]] {
         let (luma, chroma) =
             corner.converted
-            ? YcbcrStore.converted(
-                texels, width: corner.width, height: corner.height, full: corner.full, halvedDown: true,
-                source: source)
-            : YcbcrStore.codes(
-                texels, width: corner.width, height: corner.height, max: 255, halvedDown: true, source: source)
+                ? YcbcrStore.converted(
+                    texels, width: corner.width, height: corner.height, full: corner.full, halvedDown: true,
+                    source: source
+                )
+                : YcbcrStore.codes(
+                    texels, width: corner.width, height: corner.height, max: 255, halvedDown: true, source: source
+                )
         return [luma, chroma]
     }
 
@@ -282,13 +291,13 @@ struct YcbcrCornerTest: HWTest {
     static func planes(_ buffer: CVPixelBuffer) -> [[[UInt8]]] {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        return (0..<2).map { plane in
+        return (0 ..< 2).map { plane in
             guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return [] }
             let row = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
             let bytes = CVPixelBufferGetWidthOfPlane(buffer, plane) * (plane == 0 ? 1 : 2)
             let bound = base.bindMemory(to: UInt8.self, capacity: row * CVPixelBufferGetHeightOfPlane(buffer, plane))
-            return (0..<CVPixelBufferGetHeightOfPlane(buffer, plane)).map { y in
-                (0..<bytes).map { bound[y * row + $0] }
+            return (0 ..< CVPixelBufferGetHeightOfPlane(buffer, plane)).map { y in
+                (0 ..< bytes).map { bound[y * row + $0] }
             }
         }
     }
@@ -300,14 +309,15 @@ struct YcbcrCornerTest: HWTest {
             CVPixelBufferUnlockBaseAddress(to, [])
             CVPixelBufferUnlockBaseAddress(from, .readOnly)
         }
-        for plane in 0..<2 {
+        for plane in 0 ..< 2 {
             guard let source = CVPixelBufferGetBaseAddressOfPlane(from, plane),
-                let destination = CVPixelBufferGetBaseAddressOfPlane(to, plane)
+                  let destination = CVPixelBufferGetBaseAddressOfPlane(to, plane)
             else { continue }
             let rows = plane == 0 ? height : height / 2
-            for y in 0..<rows {
+            for y in 0 ..< rows {
                 (destination + y * CVPixelBufferGetBytesPerRowOfPlane(to, plane)).copyMemory(
-                    from: source + y * CVPixelBufferGetBytesPerRowOfPlane(from, plane), byteCount: width)
+                    from: source + y * CVPixelBufferGetBytesPerRowOfPlane(from, plane), byteCount: width
+                )
             }
         }
     }

@@ -636,12 +636,12 @@ bool ComputeEncoder::icbBinds(const ComputeState &k, uint64_t va, std::vector<ic
         const uint32_t spillAt = spilled ? uint32_t(word) - kRootPushWords : 0;
         const bool inTable = spilled && k.spill && spillAt < r.spillWords && spillAt < kSpillResidualWords;
         const uint64_t residual = word < 0 || (spilled && !inTable) ? 0
-                                  : spilled ? va + icbRegionLayout(r).spill + 4 * spillAt
-                                            : rootVa + kRootPush + 4 * uint32_t(word);
+                                  : spilled                         ? va + icbRegionLayout(r).spill + 4 * spillAt
+                                                                    : rootVa + kRootPush + 4 * uint32_t(word);
         // what rootWords and composeSpill leave there for a base on 16 bytes, which the macro writes back at each
         // execute since an earlier one's residual stays in the region's memory
-        const uint32_t recorded = !residual ? 0
-                                  : inTable ? k.spill[spillAt]
+        const uint32_t recorded = !residual                  ? 0
+                                  : inTable                  ? k.spill[spillAt]
                                   : (r.pushMask >> word & 1) ? r.pushWords[word]
                                                              : 0;
         out.push_back({setVa + e.offset, residual, e.slot, kernelBufferWindow(e), recorded});

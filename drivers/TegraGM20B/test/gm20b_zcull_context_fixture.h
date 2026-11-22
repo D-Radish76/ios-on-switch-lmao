@@ -27,19 +27,23 @@ struct nvkm_vma {
 };
 
 struct nvkm_memory;
+
 struct nvkm_memory_func {
 	u64 (*size)(struct nvkm_memory *);
 	int (*map)(struct nvkm_memory *, u64 offset, struct nvkm_vmm *, struct nvkm_vma *,
 		   void *argv, u32 argc);
 };
+
 struct nvkm_memory {
 	const struct nvkm_memory_func *func;
 };
 
 struct nvkm_gpuobj;
+
 struct nvkm_gpuobj_func {
 	void (*wr32)(struct nvkm_gpuobj *, u32 offset, u32 data);
 };
+
 struct nvkm_gpuobj {
 	const struct nvkm_gpuobj_func *ptrs;
 };

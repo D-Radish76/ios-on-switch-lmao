@@ -23,8 +23,8 @@ enum StencilByteCopies {
             throw TestFailure("no X32_Stencil8 view")
         }
         let bytes = try gpu.texture(.r8Uint, n, n, usage: [.shaderRead])
-        let stencil = (0..<n * n).map { UInt8(truncatingIfNeeded: $0 &* 29 &+ 7) }
-        let back = (0..<n * n).map { UInt8(truncatingIfNeeded: $0 &* 53 &+ 101) }
+        let stencil = (0 ..< n * n).map { UInt8(truncatingIfNeeded: $0 &* 29 &+ 7) }
+        let back = (0 ..< n * n).map { UInt8(truncatingIfNeeded: $0 &* 53 &+ 101) }
         let staging = try gpu.buffer(stencil)
         let size = MTLSize(width: n, height: n, depth: 1)
         var result = Result()
@@ -45,12 +45,15 @@ enum StencilByteCopies {
                 blit.copy(
                     from: staging, sourceOffset: 0, sourceBytesPerRow: n, sourceBytesPerImage: n * n, sourceSize: size,
                     to: both, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin(),
-                    options: .stencilFromDepthStencil)
+                    options: .stencilFromDepthStencil
+                )
                 blit.copy(
                     from: view, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(), sourceSize: size, to: bytes,
-                    destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+                    destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin()
+                )
                 blit.endEncoding()
-            }.path)
+            }.path
+        )
         result.outWrong = zip(try await gpu.read(bytes, bytesPerPixel: 1), stencil).filter { $0 != $1 }.count
         try await gpu.upload(back, to: bytes, bytesPerRow: n)
         result.paths.append(
@@ -58,13 +61,15 @@ enum StencilByteCopies {
                 let blit = commands.makeBlitCommandEncoder()!
                 blit.copy(
                     from: bytes, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(), sourceSize: size, to: view,
-                    destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+                    destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin()
+                )
                 blit.endEncoding()
-            }.path)
+            }.path
+        )
         let read = try await gpu.read(both, bytesPerPixel: 1, options: .stencilFromDepthStencil)
         result.inWrong = zip(read, back).filter { $0 != $1 }.count
         let depth = try await gpu.read(both, bytesPerPixel: 4, options: .depthFromDepthStencil)
-        result.depthChanged = (0..<n * n).filter { depth.loaded(as: Float.self, at: $0) != 0.5 }.count
+        result.depthChanged = (0 ..< n * n).filter { depth.loaded(as: Float.self, at: $0) != 0.5 }.count
         return result
     }
 }

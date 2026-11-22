@@ -48,7 +48,8 @@ struct ResolveCodesPartsTest: HWTest {
                     metrics.set(key + "_max", judged.worst)
                     metrics.set(key + "_outside", outside)
                     checks.append(
-                        ("\(key): the codes' mean inside, the prior bytes outside", judged.off + outside == 0))
+                        ("\(key): the codes' mean inside, the prior bytes outside", judged.off + outside == 0)
+                    )
                 } catch {
                     checks.append(("\(key): \(GPU.describe(error))", false))
                 }
@@ -71,12 +72,12 @@ struct ResolveCodesPartsTest: HWTest {
         let codes = ResolveCodesTest.codes(f, samples: samples)
         let (width, height) = size(c)
         var judged = (off: 0, worst: 0)
-        for y in 0..<height {
-            for x in 0..<width {
+        for y in 0 ..< height {
+            for x in 0 ..< width {
                 let texel = y * side + x
                 let drawn = c != "area" || (x < area.width && y < area.height)
-                let offs = (0..<f.channels).map { channel -> Int in
-                    let sum = (0..<samples).reduce(0) { $0 + codes[($1 * side * side + texel) * 4 + channel] }
+                let offs = (0 ..< f.channels).map { channel -> Int in
+                    let sum = (0 ..< samples).reduce(0) { $0 + codes[($1 * side * side + texel) * 4 + channel] }
                     let mean = Int((Double(sum) / Double(samples) + 0.5).rounded(.down))
                     let want = drawn ? mean : clearCode(f, channel)
                     return f.code(inside, texel: y * width + x, channel: channel) - want
@@ -95,7 +96,8 @@ struct ResolveCodesPartsTest: HWTest {
 
     static func target(_ gpu: GPU, _ f: ResolveCodesTest.Format, _ c: String) async throws -> (MTLTexture, MTLBuffer?) {
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: f.format, width: side, height: side, mipmapped: false)
+            pixelFormat: f.format, width: side, height: side, mipmapped: false
+        )
         d.usage = [.renderTarget, .shaderRead]
         switch c {
         case "level":
@@ -113,12 +115,13 @@ struct ResolveCodesPartsTest: HWTest {
         }
         d.storageMode = .private
         guard let texture = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("no \(f.key) \(c) target") }
-        for level in 0..<d.mipmapLevelCount {
-            for slice in 0..<d.arrayLength {
+        for level in 0 ..< d.mipmapLevelCount {
+            for slice in 0 ..< d.arrayLength {
                 let width = max(1, d.width >> level), height = max(1, d.height >> level)
                 let bytes = [UInt8](repeating: fill, count: width * height * f.bytesPerTexel)
                 try await gpu.upload(
-                    bytes, to: texture, bytesPerRow: width * f.bytesPerTexel, level: level, slice: slice)
+                    bytes, to: texture, bytesPerRow: width * f.bytesPerTexel, level: level, slice: slice
+                )
             }
         }
         return (texture, nil)
@@ -128,9 +131,10 @@ struct ResolveCodesPartsTest: HWTest {
         let texels = side * side
         let codes = ResolveCodesTest.codes(f, samples: samples)
         let values = try gpu.buffer(
-            (0..<samples * texels).map { at in
-                SIMD4<Float>((0..<4).map { $0 < f.channels ? f.value(codes[at * 4 + $0]) : 0 })
-            })
+            (0 ..< samples * texels).map { at in
+                SIMD4<Float>((0 ..< 4).map { $0 < f.channels ? f.value(codes[at * 4 + $0]) : 0 })
+            }
+        )
         let state = try gpu.render(fragment: "masked_texel_values", format: f.format, samples: samples)
         let drawn = try gpu.texture(f.format, side, side, usage: [.renderTarget], samples: samples)
         let (into, shadow) = try await target(gpu, f, c)
@@ -147,7 +151,7 @@ struct ResolveCodesPartsTest: HWTest {
             encoder.setRenderPipelineState(state)
             var corners = GPU.fullScreen
             encoder.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
-            for sample in 0..<samples {
+            for sample in 0 ..< samples {
                 var at = SIMD2<UInt32>(UInt32(side), UInt32(sample))
                 encoder.setFragmentBuffer(values, offset: sample * texels * 16, index: 0)
                 encoder.setFragmentBytes(&at, length: 8, index: 1)
@@ -159,22 +163,22 @@ struct ResolveCodesPartsTest: HWTest {
         var read = Read()
         if let shadow {
             let bytes = [UInt8](UnsafeRawBufferPointer(start: shadow.contents(), count: shadowRow * side))
-            for y in 0..<side {
-                read.inside += bytes[y * shadowRow..<y * shadowRow + row]
-                read.outside += bytes[y * shadowRow + row..<(y + 1) * shadowRow]
+            for y in 0 ..< side {
+                read.inside += bytes[y * shadowRow ..< y * shadowRow + row]
+                read.outside += bytes[y * shadowRow + row ..< (y + 1) * shadowRow]
             }
             return read
         }
-        for level in 0..<into.mipmapLevelCount {
-            for slice in 0..<into.arrayLength {
+        for level in 0 ..< into.mipmapLevelCount {
+            for slice in 0 ..< into.arrayLength {
                 let bytes = try await gpu.read(into, bytesPerPixel: f.bytesPerTexel, level: level, slice: slice)
                 guard level == (c == "level" ? 1 : 0) && slice == (c == "slice" ? 1 : 0) else {
                     read.outside += bytes
                     continue
                 }
                 let (width, height) = size(c)
-                for y in 0..<side {
-                    let line = bytes[y * row..<(y + 1) * row]
+                for y in 0 ..< side {
+                    let line = bytes[y * row ..< (y + 1) * row]
                     if y >= height {
                         read.outside += line
                         continue

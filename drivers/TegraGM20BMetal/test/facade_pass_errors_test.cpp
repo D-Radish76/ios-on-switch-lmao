@@ -432,10 +432,8 @@ void layersPastBesideAStandInAreCountedSkipped()
     id<MTLDevice> device = open(writePack(packKey(MTLPixelFormatBGRA8Unorm), {}, {}, true, "", a1bgr5States(1)));
     ASSERT_TRUE(device != nil);
     const auto array = [&](MTLPixelFormat format, NSUInteger layers) {
-        MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
-                                                                                     width:64
-                                                                                    height:64
-                                                                                 mipmapped:NO];
+        MTLTextureDescriptor *d =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:64 height:64 mipmapped:NO];
         d.textureType = MTLTextureType2DArray;
         d.arrayLength = layers;
         d.storageMode = MTLStorageModePrivate;

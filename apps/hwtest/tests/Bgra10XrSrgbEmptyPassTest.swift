@@ -61,9 +61,10 @@ struct Bgra10XrSrgbEmptyPassTest: HWTest {
         -> MTLTexture
     {
         let texture = try gpu.texture(.bgra10_xr_srgb, side, side, usage: usage, storage: .shared)
-        let bytes = [UInt8]((0..<(side * side)).map { _ in XrSrgbFormat.bgra.texel(written) }.joined())
+        let bytes = [UInt8]((0 ..< (side * side)).map { _ in XrSrgbFormat.bgra.texel(written) }.joined())
         texture.replace(
-            region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: bytes, bytesPerRow: side * 8)
+            region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: bytes, bytesPerRow: side * 8
+        )
         return texture
     }
 
@@ -71,7 +72,8 @@ struct Bgra10XrSrgbEmptyPassTest: HWTest {
         var bytes = [UInt8](repeating: 0, count: texture.width * texture.height * 8)
         texture.getBytes(
             &bytes, bytesPerRow: texture.width * 8, from: MTLRegionMake2D(0, 0, texture.width, texture.height),
-            mipmapLevel: 0)
+            mipmapLevel: 0
+        )
         return XrSrgbFormat.bgra.codes(bytes)
     }
 
@@ -104,7 +106,8 @@ struct Bgra10XrSrgbEmptyPassTest: HWTest {
             encoder.setRenderPipelineState(state)
             GPU.draw(
                 encoder, corners: GPU.pixelQuad(4, 4, 12, 12, width: side, height: side),
-                color: SIMD4(0.5, 0.25, 0, 0.5))
+                color: SIMD4(0.5, 0.25, 0, 0.5)
+            )
             encoder.endEncoding()
         }
         let texels = codes(texture)

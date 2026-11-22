@@ -40,7 +40,7 @@ struct CAFetchRouteScene: GPUScene {
         switch pass {
         case .instanced: return [0, 0, 1, 2, 0]
         case .strip: return [0, 0, 0, 1]
-        case .depth, .msaa, .msaa2: return Array(0..<12)
+        case .depth, .msaa, .msaa2: return Array(0 ..< 12)
         }
     }
 
@@ -50,7 +50,8 @@ struct CAFetchRouteScene: GPUScene {
         let depthFormat: MTLPixelFormat = pass == .depth ? .depth32Float : .invalid
         let pipeline = try gpu.render(
             vertex: "fetch_vertex", fragment: "fetch_order_fragment", format: .bgra8Unorm, samples: samples,
-            depth: depthFormat)
+            depth: depthFormat
+        )
         let resolved = try gpu.texture(.bgra8Unorm, size, size, usage: [.renderTarget, .shaderRead])
         let target =
             try samples > 1 ? gpu.texture(.bgra8Unorm, size, size, usage: [.renderTarget], samples: samples) : resolved
@@ -69,7 +70,8 @@ struct CAFetchRouteScene: GPUScene {
                 descriptor.colorAttachments[0].texture = target
                 descriptor.colorAttachments[0].loadAction = first ? .clear : .load
                 descriptor.colorAttachments[0].clearColor = MTLClearColor(
-                    red: Double(Self.clear[0]), green: Double(Self.clear[1]), blue: Double(Self.clear[2]), alpha: 1)
+                    red: Double(Self.clear[0]), green: Double(Self.clear[1]), blue: Double(Self.clear[2]), alpha: 1
+                )
                 descriptor.colorAttachments[0].storeAction = samples > 1 && last ? .multisampleResolve : .store
                 if samples > 1 && last { descriptor.colorAttachments[0].resolveTexture = resolved }
                 if let depth {
@@ -114,7 +116,8 @@ struct CAFetchRouteScene: GPUScene {
             result.expect(timing.path == "gm20b", "\(name): not drawn on the driver: \(timing.path)")
             result.expect(
                 interlocked + ordered > 0,
-                "\(name): no fetch counter moved: the pipeline did not fetch the colour it writes in order")
+                "\(name): no fetch counter moved: the pipeline did not fetch the colour it writes in order"
+            )
             // twelve overlapping triangles over a depth attachment: one draw each behind the fetch barrier, no vertex read
             if pass == .depth {
                 result.expect(
@@ -127,7 +130,8 @@ struct CAFetchRouteScene: GPUScene {
         let expected = Patterns.repeated(Self.expected(Self.steps(pass)), count: size * size)
         result.compare(
             name, bytes: picture, expected: expected, format: .bgra8Unorm, width: size, height: size,
-            tolerance: 3.0 / 255)
+            tolerance: 3.0 / 255
+        )
     }
 
     /// fetch_order_fragment's steps over the clear colour, each stored as BGRA8 before the next reads it
@@ -139,7 +143,7 @@ struct CAFetchRouteScene: GPUScene {
         var value = stored(clear)
         for step in steps {
             let next = [Float((step * 3 + 1) % 7), Float((step * 5 + 2) % 7), Float((step + 3) % 7)]
-            value = stored((0..<3).map { value[$0] * 0.5 + next[$0] / 16 } + [1])
+            value = stored((0 ..< 3).map { value[$0] * 0.5 + next[$0] / 16 } + [1])
         }
         return format.encode(value)
     }

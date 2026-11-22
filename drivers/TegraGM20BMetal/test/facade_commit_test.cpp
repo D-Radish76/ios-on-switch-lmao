@@ -21,10 +21,12 @@
 @end
 
 @implementation ForeignBuffer
+
 - (NSUInteger)length
 {
     return 64;
 }
+
 @end
 
 namespace {

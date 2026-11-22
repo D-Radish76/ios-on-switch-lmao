@@ -61,7 +61,8 @@ struct ExactRoundTest: HWTest {
             }
         }
         for (key, count) in zip(
-            ["xr_decode_wrong", "xr_decode_half_wrong", "xr_encode_wrong", "xr_encode_half_wrong"], xr)
+            ["xr_decode_wrong", "xr_decode_half_wrong", "xr_encode_wrong", "xr_encode_half_wrong"], xr
+        )
         {
             metrics.set(key, count)
             checks.append(("\(key) 0", count == 0))
@@ -86,7 +87,8 @@ struct ExactRoundTest: HWTest {
             bind(encoder)
             encoder.dispatchThreads(
                 MTLSize(width: width, height: height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: height == 1 ? 64 : 8, height: height == 1 ? 1 : 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: height == 1 ? 64 : 8, height: height == 1 ? 1 : 8, depth: 1)
+            )
             encoder.endEncoding()
         }
     }
@@ -103,7 +105,7 @@ struct ExactRoundTest: HWTest {
         }
         let words = out.contents().bindMemory(to: UInt32.self, capacity: count * 5)
         return values.enumerated().map { i, v in
-            zip(ExactRoundModel.words(v), (0..<5).map { words[i * 5 + $0] }).filter { $0 != $1 }.count
+            zip(ExactRoundModel.words(v), (0 ..< 5).map { words[i * 5 + $0] }).filter { $0 != $1 }.count
         }.reduce(0, +)
     }
 
@@ -115,7 +117,7 @@ struct ExactRoundTest: HWTest {
             return [c[2], c[1], c[0], c[3]].flatMap { [UInt8(($0 << 6) & 0xff), UInt8($0 >> 2)] }
         }
         let word = UInt32(c[0]) << 20 | UInt32(c[1]) << 10 | UInt32(c[2])
-        return (0..<4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
+        return (0 ..< 4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
     }
 
     static func stored(_ format: XrFormat, _ bytes: [UInt8], _ i: Int) -> [Int] {
@@ -149,29 +151,31 @@ struct ExactRoundTest: HWTest {
         let count = side * side
         if format.pixel != XRTwoPlaneTest.format {
             let texture = try gpu.texture(format.pixel, side, side, usage: [.shaderRead, .shaderWrite])
-            let bytes = (0..<count).flatMap { texel(format, codes(format, ($0 + shift) % count)) }
+            let bytes = (0 ..< count).flatMap { texel(format, codes(format, ($0 + shift) % count)) }
             try await gpu.upload(bytes, to: texture, bytesPerRow: side * format.bytes)
             return (
                 texture,
                 {
                     let read = try await gpu.read(texture, bytesPerPixel: format.bytes)
-                    return (0..<count).map { stored(format, read, $0) }
+                    return (0 ..< count).map { stored(format, read, $0) }
                 }
             )
         }
         let (buffer, texture) = try XRTwoPlaneTest.surfaceTexture(
-            gpu, width: side, height: side, usage: [.shaderRead, .shaderWrite])
+            gpu, width: side, height: side, usage: [.shaderRead, .shaderWrite]
+        )
         CVPixelBufferLockBaseAddress(buffer, [])
         let word = CVPixelBufferGetBaseAddressOfPlane(buffer, 0)!,
             alpha = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!
         let (wordRow, alphaRow) = (
             CVPixelBufferGetBytesPerRowOfPlane(buffer, 0), CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
         )
-        for i in 0..<count {
+        for i in 0 ..< count {
             let c = codes(format, (i + shift) % count)
             word.storeBytes(
                 of: UInt32(c[0] << 20 | c[1] << 10 | c[2]), toByteOffset: (i / side) * wordRow + (i % side) * 4,
-                as: UInt32.self)
+                as: UInt32.self
+            )
             alpha.storeBytes(of: UInt8(c[3]), toByteOffset: (i / side) * alphaRow + i % side, as: UInt8.self)
         }
         CVPixelBufferUnlockBaseAddress(buffer, [])
@@ -197,15 +201,16 @@ struct ExactRoundTest: HWTest {
         }
         let halfBits = halves.contents().bindMemory(to: UInt16.self, capacity: count * 4)
         var counts = [0, 0, 0, 0]
-        for i in 0..<count {
-            for c in 0..<channels {
+        for i in 0 ..< count {
+            for c in 0 ..< channels {
                 let (f, h) = value(format, i, c)
                 counts[0] += floats[i][c].bitPattern == f.bitPattern ? 0 : 1
                 counts[1] += halfBits[i * 4 + c] == h ? 0 : 1
             }
         }
         let values = try gpu.buffer(
-            (0..<count).map { i in SIMD4<Float>((0..<4).map { c in c < channels ? value(format, i, c).0 : 1 }) })
+            (0 ..< count).map { i in SIMD4<Float>((0 ..< 4).map { c in c < channels ? value(format, i, c).0 : 1 }) }
+        )
         for (slot, kernel) in [(2, "exact_round_write_float"), (3, "exact_round_write_half")] {
             let (target, codes) = try await made(gpu, format, shift: count / 2)
             try await dispatch(gpu, kernel, width: side, height: side) {
@@ -213,7 +218,7 @@ struct ExactRoundTest: HWTest {
                 $0.setBuffer(values, offset: 0, index: 0)
             }
             let read = try await codes()
-            for i in 0..<count {
+            for i in 0 ..< count {
                 counts[slot] += zip(read[i], held(format, i)).filter { $0 != $1 }.count
             }
         }

@@ -59,7 +59,8 @@ struct CompareSamplerTest: HWTest {
                 encoder.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 encoder.endEncoding()
-            }.path)
+            }.path
+        )
         for function in [MTLCompareFunction.less, .greaterEqual] {
             let descriptor = MTLSamplerDescriptor()
             descriptor.compareFunction = function
@@ -86,12 +87,13 @@ struct CompareSamplerTest: HWTest {
                         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                         encoder.endEncoding()
                     }
-                }.path)
+                }.path
+            )
             let comparedBytes = try await gpu.read(comparedOut, bytesPerPixel: 4)
             let plainBytes = try await gpu.read(plainOut, bytesPerPixel: 4)
             var comparedOff = 0, plainWorst: Float = 0
-            for y in 0..<Self.side {
-                for x in 0..<Self.side {
+            for y in 0 ..< Self.side {
+                for x in 0 ..< Self.side {
                     let at = 4 * (x + Self.side * y)
                     let got = comparedBytes.withUnsafeBytes { $0.load(fromByteOffset: at, as: Float.self) }
                     let plain = plainBytes.withUnsafeBytes { $0.load(fromByteOffset: at, as: Float.self) }

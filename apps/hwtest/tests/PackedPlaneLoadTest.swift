@@ -53,7 +53,8 @@ struct PackedPlaneLoadTest: HWTest {
             [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
         guard
             CVPixelBufferCreate(
-                nil, YcbcrTargetTest.width, YcbcrTargetTest.height, view.fourcc, attributes, &made) == kCVReturnSuccess,
+                nil, YcbcrTargetTest.width, YcbcrTargetTest.height, view.fourcc, attributes, &made
+            ) == kCVReturnSuccess,
             let buffer = made, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
             let format = MTLPixelFormat(rawValue: view.format)
         else { throw TestFailure("no surface") }
@@ -61,13 +62,14 @@ struct PackedPlaneLoadTest: HWTest {
             CVPixelBufferGetWidthOfPlane(buffer, view.plane), CVPixelBufferGetHeightOfPlane(buffer, view.plane)
         )
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: w, height: h, mipmapped: false)
+            pixelFormat: format, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: view.plane) else {
             throw TestFailure("no texture")
         }
         let perRow = w * view.channels
-        var codes = (0..<(perRow * h)).map { UInt16(($0 % perRow * 7 + $0 / perRow * 13) % 1024) }
+        var codes = (0 ..< (perRow * h)).map { UInt16(($0 % perRow * 7 + $0 / perRow * 13) % 1024) }
         Self.fill(buffer, view.plane, codes, rows: h)
         try await Self.loadedPass(gpu, texture, nil, [], w, h)
         var first = ""
@@ -75,9 +77,9 @@ struct PackedPlaneLoadTest: HWTest {
         let floats = try gpu.render(fragment: "texel_values", format: format)
         let values = YcbcrTargetTest.values(w * h)
         try await Self.loadedPass(gpu, texture, floats, values, w, h)
-        for y in 0..<h {
-            for x in 0..<(w / 2) {
-                for c in 0..<view.channels {
+        for y in 0 ..< h {
+            for x in 0 ..< (w / 2) {
+                for c in 0 ..< view.channels {
                     let v = values[y * w + x][c]
                     codes[y * perRow + view.channels * x + c] = UInt16(YcbcrStore.code(v, .drawnFloat, max: 1023))
                 }
@@ -94,10 +96,10 @@ struct PackedPlaneLoadTest: HWTest {
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return }
         let pitch = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane), perRow = codes.count / rows
-        for y in 0..<rows {
-            for x in 0..<((perRow + 2) / 3) {
+        for y in 0 ..< rows {
+            for x in 0 ..< ((perRow + 2) / 3) {
                 var word: UInt32 = 0
-                for i in 0..<3 where 3 * x + i < perRow {
+                for i in 0 ..< 3 where 3 * x + i < perRow {
                     word |= UInt32(codes[y * perRow + 3 * x + i]) << (10 * i)
                 }
                 base.storeBytes(of: word, toByteOffset: y * pitch + 4 * x, as: UInt32.self)

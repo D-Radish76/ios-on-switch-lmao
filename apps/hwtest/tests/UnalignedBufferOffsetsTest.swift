@@ -28,8 +28,8 @@ struct UnalignedBufferOffsetsTest: HWTest {
         let gpu = try GPU.make()
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
-        let uniforms = try Self.values(gpu, bytes: 8192, at: (1...20).map(Self.uniformOffset))
-        let storage = try Self.values(gpu, bytes: 1024, at: (0...7).map(Self.storageOffset))
+        let uniforms = try Self.values(gpu, bytes: 8192, at: (1 ... 20).map(Self.uniformOffset))
+        let storage = try Self.values(gpu, bytes: 1024, at: (0 ... 7).map(Self.storageOffset))
         let state = try gpu.render(vertex: "residual_vertex", fragment: "residual_fragment", format: .rgba8Unorm)
         let target = try gpu.texture(.rgba8Unorm, 4, 4)
         let drawn = try await gpu.run { commands in
@@ -41,8 +41,8 @@ struct UnalignedBufferOffsetsTest: HWTest {
             e.setRenderPipelineState(state)
             var corners = GPU.fullScreen
             e.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * corners.count, index: 0)
-            for slot in 1...20 { e.setVertexBuffer(uniforms, offset: Self.uniformOffset(slot), index: slot) }
-            for slot in 0...7 { e.setFragmentBuffer(storage, offset: Self.storageOffset(slot), index: slot) }
+            for slot in 1 ... 20 { e.setVertexBuffer(uniforms, offset: Self.uniformOffset(slot), index: slot) }
+            for slot in 0 ... 7 { e.setFragmentBuffer(storage, offset: Self.storageOffset(slot), index: slot) }
             e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             e.endEncoding()
         }

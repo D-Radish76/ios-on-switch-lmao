@@ -102,8 +102,8 @@ struct ZetaColourTest: HWTest {
         }
         var (verdict, why) =
             raw
-            ? Self.verdict(colour: counts[.colour] ?? [:], control: counts[.bits] ?? [:])
-            : (ClaimVerdict.inconclusive, "off the facade: the device's own arm")
+                ? Self.verdict(colour: counts[.colour] ?? [:], control: counts[.bits] ?? [:])
+                : (ClaimVerdict.inconclusive, "off the facade: the device's own arm")
         let offPath = gpu.paths.paths.keys.filter { $0 != "gm20b" }.sorted()
         if verdict == .pass && !offPath.isEmpty {
             verdict = .inconclusive
@@ -128,7 +128,8 @@ struct ZetaColourTest: HWTest {
             metrics.set("direct_gpu_after", await GPUProbe.answers())
         }
         let finding = ProbeFinding(
-            verdict, metrics, note: ([why] + notes).filter { !$0.isEmpty }.joined(separator: "; "))
+            verdict, metrics, note: ([why] + notes).filter { !$0.isEmpty }.joined(separator: "; ")
+        )
         return finding.outcome(probe: "rop.zeta_colour", base: base, proof: gpu.proof)
     }
 
@@ -158,7 +159,7 @@ struct ZetaColourTest: HWTest {
                     arm.count.add(c)
                 }
                 if let t = await attempt("turn_\(name)", &arm, { try await cells.turn(format, w, h, seed: at + 100) }),
-                    let t
+                   let t
                 {
                     arm.count.add(t)
                     arm.turned += 1
@@ -173,14 +174,15 @@ struct ZetaColourTest: HWTest {
                 let result = try await scene.run(gpu)
                 return result.failed.count + result.problems.count
             } ?? 0
-        for turn in 1...4 {
+        for turn in 1 ... 4 {
             let rotated = RotatedCells(
-                gpu: gpu, states: cells.rotated, turn: turn, width: 96, height: 64, aligned: true)
+                gpu: gpu, states: cells.rotated, turn: turn, width: 96, height: 64, aligned: true
+            )
             arm.kept +=
-                await attempt("kept_r\(turn)", &arm) {
-                    guard let plane = try rotated.makePlane() else { return 0 }
-                    return try await rotated.run(.keptStencil, into: plane).wrong
-                } ?? 0
+            await attempt("kept_r\(turn)", &arm) {
+                guard let plane = try rotated.makePlane() else { return 0 }
+                return try await rotated.run(.keptStencil, into: plane).wrong
+            } ?? 0
         }
         return arm
     }

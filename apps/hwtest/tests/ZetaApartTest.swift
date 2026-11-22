@@ -61,7 +61,8 @@ struct ZetaApartTest: HWTest {
                 metrics.set(c.key + "_stencil_off", off[.stencil] ?? 0)
                 if let colour = off[.colour] { metrics.set(c.key + "_colour_off", colour) }
                 checks.append(
-                    ("\(c.key): each aspect in its own part, nothing else touched", off.values.allSatisfy { $0 == 0 }))
+                    ("\(c.key): each aspect in its own part, nothing else touched", off.values.allSatisfy { $0 == 0 })
+                )
             } catch {
                 checks.append(("\(c.key): \(GPU.describe(error))", false))
             }
@@ -145,9 +146,11 @@ struct ZetaApartTest: HWTest {
         }
         let state =
             drawn
-            ? try gpu.render(
-                fragment: colour == nil ? "zeta_no_colour" : "solid_fragment", format: colour?.pixelFormat ?? .invalid,
-                depth: stateFormat(depth), stencil: stateFormat(stencil)) : nil
+                ? try gpu.render(
+                    fragment: colour == nil ? "zeta_no_colour" : "solid_fragment",
+                    format: colour?.pixelFormat ?? .invalid,
+                    depth: stateFormat(depth), stencil: stateFormat(stencil)
+                ) : nil
         let written = try writes(gpu)
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
@@ -183,14 +186,15 @@ struct ZetaApartTest: HWTest {
         case .depth:
             let options: MTLBlitOption = t.pixelFormat == .depth32Float_stencil8 ? .depthFromDepthStencil : []
             let bytes = try await gpu.read(t, bytesPerPixel: 4, level: level, slice: slice, options: options)
-            words = (0..<bytes.count / 4).map { bytes.loaded(as: UInt32.self, at: $0) }
+            words = (0 ..< bytes.count / 4).map { bytes.loaded(as: UInt32.self, at: $0) }
         case .stencil:
             let options: MTLBlitOption = t.pixelFormat == .depth32Float_stencil8 ? .stencilFromDepthStencil : []
             words = try await gpu.read(t, bytesPerPixel: 1, level: level, slice: slice, options: options).map(
-                UInt32.init)
+                UInt32.init
+            )
         case .colour:
             let bytes = try await gpu.read(t, bytesPerPixel: 4, level: level, slice: slice)
-            words = (0..<bytes.count / 4).map { bytes.loaded(as: UInt32.self, at: $0) }
+            words = (0 ..< bytes.count / 4).map { bytes.loaded(as: UInt32.self, at: $0) }
         }
         return words.indices.filter { words[$0] != check.want($0 % width, $0 / width) }.count
     }
@@ -211,8 +215,8 @@ struct ZetaApartTest: HWTest {
     static func twoParts(_ gpu: GPU, slices: Bool, drawn: Bool) async throws -> [Check] {
         let t =
             slices
-            ? try zeta(gpu, .depth32Float_stencil8, slices: 2)
-            : try zeta(gpu, .depth32Float_stencil8, side: 64, levels: 2)
+                ? try zeta(gpu, .depth32Float_stencil8, slices: 2)
+                : try zeta(gpu, .depth32Float_stencil8, side: 64, levels: 2)
         let first = Part(texture: t)
         let second = slices ? Part(texture: t, slice: 1) : Part(texture: t, level: 1)
         try await clear(gpu, first, depth: 0.1, stencil: 1)
@@ -258,7 +262,8 @@ struct ZetaApartTest: HWTest {
 
     static func stencilView(_ gpu: GPU, alone: Bool) async throws -> [Check] {
         let a = Part(
-            texture: try zeta(gpu, .depth32Float_stencil8, usage: [.renderTarget, .shaderRead, .pixelFormatView]))
+            texture: try zeta(gpu, .depth32Float_stencil8, usage: [.renderTarget, .shaderRead, .pixelFormatView])
+        )
         guard let view = a.texture.makeTextureView(pixelFormat: .x32_stencil8) else {
             throw TestFailure("no X32_Stencil8 view")
         }

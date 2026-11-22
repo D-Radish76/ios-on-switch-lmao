@@ -35,7 +35,8 @@ struct MPSBlurScene: GPUScene {
             paths.append(timing.path)
             let want = TexelFormat.rgba8Unorm.quantized(Gaussian.blur(image, sigma: Double(sigma)))
             result.compare(
-                "sigma \(sigma)", try await gpu.raster(destination, .rgba8Unorm), want, tolerance: BlurTolerance.mps)
+                "sigma \(sigma)", try await gpu.raster(destination, .rgba8Unorm), want, tolerance: BlurTolerance.mps
+            )
         }
         result.metrics.set("paths", paths.joined(separator: ","))
         if GM20BFacade.kind(of: gpu.device) == "gm20b" {
@@ -61,10 +62,12 @@ struct CoreImageBlurScene: GPUScene {
         let image = TexelFormat.rgba8Unorm.raster(bytes, width: size, height: size)
         let context = CIContext(
             mtlCommandQueue: gpu.queue,
-            options: [.workingColorSpace: NSNull(), .outputColorSpace: NSNull(), .cacheIntermediates: false])
+            options: [.workingColorSpace: NSNull(), .outputColorSpace: NSNull(), .cacheIntermediates: false]
+        )
         let input = CIImage(
             bitmapData: Data(bytes), bytesPerRow: size * 4, size: CGSize(width: size, height: size), format: .RGBA8,
-            colorSpace: nil)
+            colorSpace: nil
+        )
         for (radius, tolerance) in [
             (2.0, BlurTolerance.coreImage), (6, BlurTolerance.coreImage), (16, BlurTolerance.coreImageLarge),
         ] {
@@ -72,12 +75,14 @@ struct CoreImageBlurScene: GPUScene {
             var out = [UInt8](repeating: 0, count: size * size * 4)
             let start = CFAbsoluteTimeGetCurrent()
             context.render(
-                blurred, toBitmap: &out, rowBytes: size * 4, bounds: input.extent, format: .RGBA8, colorSpace: nil)
+                blurred, toBitmap: &out, rowBytes: size * 4, bounds: input.extent, format: .RGBA8, colorSpace: nil
+            )
             result.metrics.set("ms_radius\(Int(radius))", (CFAbsoluteTimeGetCurrent() - start) * 1000, digits: 2)
             let want = TexelFormat.rgba8Unorm.quantized(Gaussian.blur(image, sigma: radius))
             result.compare(
                 "radius \(radius)", TexelFormat.rgba8Unorm.raster(out, width: size, height: size), want,
-                tolerance: tolerance)
+                tolerance: tolerance
+            )
         }
         return result
     }

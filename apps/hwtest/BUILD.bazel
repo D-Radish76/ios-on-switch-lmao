@@ -15,7 +15,12 @@ load(":apps.bzl", "hwtest_app", "ios_arm64e", "metal_airs", "reproducible_apps")
 
 package(default_visibility = ["//visibility:public"])
 
-lint_files()
+# Generated from drivers/TegraGM20BMetal/test/decode_vectors.h
+lint_files(exclude = [
+    "gpu/DecodeVectorsHdr.swift",
+    "gpu/DecodeVectorsLdr.swift",
+    "gpu/DecodeVectorsPvrtc.swift",
+])
 
 # Benchmarks and the pattern code run optimised in every profile; Swift 5 mode keeps strict concurrency checking out
 # of test code that hands buffers between VideoToolbox's and Metal's callback threads.

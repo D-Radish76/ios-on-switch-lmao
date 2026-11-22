@@ -22,7 +22,8 @@ public enum BlitsOpen {
         let texture = try gpu.texture(.rgba8Unorm, msSide, msSide, samples: msSamples)
         let state = try gpu.render(
             vertex: "mirrored_cover_vertex", fragment: "mirrored_sample_codes", format: .rgba8Unorm,
-            samples: msSamples)
+            samples: msSamples
+        )
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = texture
@@ -41,17 +42,18 @@ public enum BlitsOpen {
             blit.copy(
                 from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                 sourceSize: MTLSize(width: msSide, height: msSide, depth: 1), to: out, destinationOffset: 0,
-                destinationBytesPerRow: row, destinationBytesPerImage: image)
+                destinationBytesPerRow: row, destinationBytesPerImage: image
+            )
             blit.endEncoding()
         }.facadePath
         let bytes = UnsafeRawBufferPointer(start: out.contents(), count: image + 4096)
         var inOrder = 0
-        for y in 0..<msSide {
-            for x in 0..<msSide {
-                for s in 0..<msSamples {
+        for y in 0 ..< msSide {
+            for x in 0 ..< msSide {
+                for s in 0 ..< msSamples {
                     let at = y * row + (x * msSamples + s) * 4
                     let want: [UInt8] = [UInt8(x), UInt8(y), UInt8(s), 0xa0]
-                    if Array(bytes[at..<(at + 4)]) == want { inOrder += 1 }
+                    if Array(bytes[at ..< (at + 4)]) == want { inOrder += 1 }
                 }
             }
         }
@@ -74,16 +76,18 @@ public enum BlitsOpen {
     /// to its last column and row
     public static func integerMipmaps(_ gpu: GPU) async throws -> Mips {
         let texture = try gpu.texture(
-            .rgba8Uint, mipWidth, mipHeight, usage: [.shaderRead, .renderTarget], mipmaps: mipLevels)
+            .rgba8Uint, mipWidth, mipHeight, usage: [.shaderRead, .renderTarget], mipmaps: mipLevels
+        )
         var level0: [UInt8] = []
-        for y in 0..<mipHeight {
-            for x in 0..<mipWidth { level0 += [UInt8(x), UInt8(y), 7, 9] }
+        for y in 0 ..< mipHeight {
+            for x in 0 ..< mipWidth { level0 += [UInt8(x), UInt8(y), 7, 9] }
         }
         try await gpu.upload(level0, to: texture, bytesPerRow: mipWidth * 4)
-        for level in 1..<mipLevels {
+        for level in 1 ..< mipLevels {
             let (w, h) = (max(1, mipWidth >> level), max(1, mipHeight >> level))
             try await gpu.upload(
-                [UInt8](repeating: 0x22, count: w * h * 4), to: texture, bytesPerRow: w * 4, level: level)
+                [UInt8](repeating: 0x22, count: w * h * 4), to: texture, bytesPerRow: w * 4, level: level
+            )
         }
         var out = Mips()
         out.path = try await gpu.run(tolerateError: true) { commands in
@@ -92,15 +96,15 @@ public enum BlitsOpen {
             blit.endEncoding()
         }.facadePath
         var above = level0, (aw, ah) = (mipWidth, mipHeight)
-        for level in 1..<mipLevels {
+        for level in 1 ..< mipLevels {
             let (w, h) = (max(1, mipWidth >> level), max(1, mipHeight >> level))
             let got = try await gpu.read(texture, bytesPerPixel: 4, level: level)
             var off = 0
-            for y in 0..<h {
-                for x in 0..<w {
+            for y in 0 ..< h {
+                for x in 0 ..< w {
                     let (sx, sy) = (min(2 * x + 1, aw - 1), min(2 * y + 1, ah - 1))
                     let from = (sy * aw + sx) * 4, at = (y * w + x) * 4
-                    if got[at..<(at + 4)] != above[from..<(from + 4)] { off += 1 }
+                    if got[at ..< (at + 4)] != above[from ..< (from + 4)] { off += 1 }
                 }
             }
             out.off.append(off)

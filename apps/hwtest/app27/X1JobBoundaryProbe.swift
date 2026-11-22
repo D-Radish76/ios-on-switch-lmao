@@ -30,7 +30,8 @@ import Metal
 enum X1JobBoundaryProbe {
     static let probe = X1Probe(
         id: "gpu.x1.job_boundary_idle", name: "A job after the last one's fence needs no drain at its entry",
-        probe: "barrier.entry_no_drain", timeout: 240, body: run)
+        probe: "barrier.entry_no_drain", timeout: 240, body: run
+    )
 
     static let arms = [
         ("control", "entry=today pass=none switch=today"), ("planner", "entry=planner pass=none switch=today"),
@@ -78,17 +79,21 @@ enum X1JobBoundaryProbe {
                     continue
                 }
                 let first = trial[step.cell]
-                let seeds = (0..<batch).map { probeSeed(trial: first + $0, cell: index, seeds: 16) }
+                let seeds = (0 ..< batch).map { probeSeed(trial: first + $0, cell: index, seeds: 16) }
                 let ran =
                     arm == "injob_none"
-                    ? try await work.inJob(forms: forms, seeds: seeds) : try await work.jobs(forms: forms, seeds: seeds)
+                        ? try await work.inJob(forms: forms, seeds: seeds) : try await work.jobs(
+                            forms: forms,
+                            seeds: seeds
+                        )
                 var tally = judged.tally(name, arm)
-                for k in 0..<batch {
+                for k in 0 ..< batch {
                     let want = work.expected(seeds[k])
                     want.withUnsafeBytes {
                         tally.compare(
                             work.result(k), $0, trial: first + k, width: work.resultWidth,
-                            bytesPerTexel: 4)
+                            bytesPerTexel: 4
+                        )
                     }
                 }
                 trial[step.cell] += batch
@@ -97,7 +102,8 @@ enum X1JobBoundaryProbe {
         }
         var finding = judged.finding(
             relaxed: ["planner", "bare", "rule"], none: "entry_none", control: "control",
-            takenKey: "entries", rule: "barrier.entry_no_drain")
+            takenKey: "entries", rule: "barrier.entry_no_drain"
+        )
         let observable = judged.cells.contains { !(judged.tallies[$0]?["entry_none"]?.clean ?? true) }
         finding.metrics.set("observable", observable ? 1 : 0)
         if !observable {
@@ -124,7 +130,7 @@ enum X1JobBoundaryProbe {
         let pipelines: [String: MTLComputePipelineState]
         let writer: Writer, reader: Reader
         let textures: [MTLTexture]
-        let images: [MTLTexture]  // hdr: the images the textures' headers are rewritten to describe
+        let images: [MTLTexture] // hdr: the images the textures' headers are rewritten to describe
         let buffers: [MTLBuffer]
         let staging: [MTLBuffer]
         let primeAtlas: MTLTexture, atlas: MTLTexture
@@ -142,19 +148,20 @@ enum X1JobBoundaryProbe {
             let gpu = kit.gpu, n = X1JobBoundaryProbe.batch, side = X1JobBoundaryProbe.side
             textures =
                 reader == .tex
-                ? try (0..<n).map { _ in
-                    try gpu.texture(
-                        .bgra8Unorm, side, side, usage: [.renderTarget, .shaderRead],
-                        storage: writer == .chan || writer == .hdr ? .shared : .private)
-                } : []
+                    ? try (0 ..< n).map { _ in
+                        try gpu.texture(
+                            .bgra8Unorm, side, side, usage: [.renderTarget, .shaderRead],
+                            storage: writer == .chan || writer == .hdr ? .shared : .private
+                        )
+                    } : []
             images =
                 writer == .hdr
-                ? try (0..<n).map { _ in
-                    try gpu.texture(.bgra8Unorm, side, side, usage: [.shaderRead], storage: .shared)
-                }
-                : []
-            buffers = reader == .tex ? [] : try (0..<n).map { _ in try gpu.buffer(X1JobBoundaryProbe.words * 4) }
-            staging = writer == .ce ? try (0..<n).map { _ in try gpu.buffer(side * side * 4) } : []
+                    ? try (0 ..< n).map { _ in
+                        try gpu.texture(.bgra8Unorm, side, side, usage: [.shaderRead], storage: .shared)
+                    }
+                    : []
+            buffers = reader == .tex ? [] : try (0 ..< n).map { _ in try gpu.buffer(X1JobBoundaryProbe.words * 4) }
+            staging = writer == .ce ? try (0 ..< n).map { _ in try gpu.buffer(side * side * 4) } : []
             primeAtlas = try kit.atlas(n)
             atlas = try kit.atlas(n)
             primeOut = try gpu.buffer(n * X1JobBoundaryProbe.words * 4)
@@ -168,23 +175,25 @@ enum X1JobBoundaryProbe {
                 ? kit.tile(out, k)
                 : UnsafeRawBufferPointer(
                     start: out.contents() + k * X1JobBoundaryProbe.words * 4,
-                    count: X1JobBoundaryProbe.words * 4)
+                    count: X1JobBoundaryProbe.words * 4
+                )
         }
 
         func expected(_ seed: Int) -> [UInt8] {
             if reader == .tex {
                 return kit.expectedTap(
                     seed: seed, base: SIMD2(0, 0), step: SIMD2(1, 1), width: X1JobBoundaryProbe.side,
-                    height: X1JobBoundaryProbe.side)
+                    height: X1JobBoundaryProbe.side
+                )
             }
-            return (0..<X1JobBoundaryProbe.words).flatMap { i -> [UInt8] in
+            return (0 ..< X1JobBoundaryProbe.words).flatMap { i -> [UInt8] in
                 withUnsafeBytes(of: probeHash(UInt32(i), 0, UInt32(seed)).littleEndian, Array.init)
             }
         }
 
         func pattern(_ seed: Int) -> [UInt8] {
             let side = X1JobBoundaryProbe.side
-            return (0..<side * side).flatMap { kit.texel($0 % side, $0 / side, seed: seed) }
+            return (0 ..< side * side).flatMap { kit.texel($0 % side, $0 / side, seed: seed) }
         }
 
         /// Reads every trial's memory: into the prime outputs (job 0) or the results (job 2)
@@ -199,7 +208,8 @@ enum X1JobBoundaryProbe {
                 for (k, b) in buffers.enumerated() {
                     blit.copy(
                         from: b, sourceOffset: 0, to: results ? out : primeOut,
-                        destinationOffset: k * X1JobBoundaryProbe.words * 4, size: X1JobBoundaryProbe.words * 4)
+                        destinationOffset: k * X1JobBoundaryProbe.words * 4, size: X1JobBoundaryProbe.words * 4
+                    )
                 }
                 blit.endEncoding()
                 return
@@ -211,7 +221,8 @@ enum X1JobBoundaryProbe {
                 encoder.setBuffer(results ? out : primeOut, offset: k * X1JobBoundaryProbe.words * 4, index: 1)
                 encoder.dispatchThreads(
                     MTLSize(width: X1JobBoundaryProbe.words, height: 1, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+                )
             }
             if concurrent == nil { encoder.endEncoding() }
         }
@@ -230,7 +241,8 @@ enum X1JobBoundaryProbe {
                         from: staging[k], sourceOffset: 0, sourceBytesPerRow: X1JobBoundaryProbe.side * 4,
                         sourceBytesPerImage: 0,
                         sourceSize: MTLSize(width: X1JobBoundaryProbe.side, height: X1JobBoundaryProbe.side, depth: 1),
-                        to: t, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+                        to: t, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin()
+                    )
                 }
                 blit.endEncoding()
             case .sto:
@@ -242,7 +254,8 @@ enum X1JobBoundaryProbe {
                     encoder.setBytes(&seed, length: 4, index: 1)
                     encoder.dispatchThreads(
                         MTLSize(width: X1JobBoundaryProbe.words, height: 1, depth: 1),
-                        threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                        threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+                    )
                 }
                 if concurrent == nil { encoder.endEncoding() }
             case .cpu, .chan, .hdr:
@@ -253,26 +266,29 @@ enum X1JobBoundaryProbe {
         /// The CPU's writes (the CPU itself, the copy channel's replaceRegion, the copy engine's staging)
         func writeFromCPU(_ seeds: [Int]) {
             let side = X1JobBoundaryProbe.side
-            for k in 0..<seeds.count {
+            for k in 0 ..< seeds.count {
                 switch writer {
                 case .cpu:
                     let words = buffers[k].contents().bindMemory(to: UInt32.self, capacity: X1JobBoundaryProbe.words)
-                    for i in 0..<X1JobBoundaryProbe.words { words[i] = probeHash(UInt32(i), 0, UInt32(seeds[k])) }
+                    for i in 0 ..< X1JobBoundaryProbe.words { words[i] = probeHash(UInt32(i), 0, UInt32(seeds[k])) }
                 case .chan:
                     textures[k].replace(
                         region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: pattern(seeds[k]),
-                        bytesPerRow: side * 4)
+                        bytesPerRow: side * 4
+                    )
                 case .ce:
                     let bytes = pattern(seeds[k])
                     staging[k].contents().copyMemory(from: bytes, byteCount: bytes.count)
                 case .hdr:
                     images[k].replace(
                         region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: pattern(seeds[k]),
-                        bytesPerRow: side * 4)
+                        bytesPerRow: side * 4
+                    )
                     textures[k].replace(
                         region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0,
                         withBytes: pattern(seeds[k] ^ 0x5a5a),
-                        bytesPerRow: side * 4)
+                        bytesPerRow: side * 4
+                    )
                 default:
                     break
                 }
@@ -285,7 +301,8 @@ enum X1JobBoundaryProbe {
             if writer == .rop || writer == .ce || writer == .sto {
                 writeFromCPU(seeds)
                 return try gpu.runBackToBack(
-                    forms: forms, [{ read($0, results: false) }, { write($0, seeds) }, { read($0, results: true) }])
+                    forms: forms, [{ read($0, results: false) }, { write($0, seeds) }, { read($0, results: true) }]
+                )
             }
             if writer == .hdr { writeFromCPU(seeds) }
             _ = try await gpu.run(forms: forms) { read($0, results: false) }

@@ -24,23 +24,28 @@ enum TurnedStandInCases {
         Arm(
             key: "rot1_rg8srgb", format: 31, turn: 1,
             source: .plain(width: 32, height: 16, bytes: 2, fourcc: kCVPixelFormatType_TwoComponent8),
-            plane: 0, indexed: false),
+            plane: 0, indexed: false
+        ),
         Arm(
             key: "rot3_bgra10xrsrgb", format: 553, turn: 3,
             source: .plain(width: 32, height: 16, bytes: 8, fourcc: kCVPixelFormatType_64RGBAHalf), plane: 0,
-            indexed: false),
+            indexed: false
+        ),
         Arm(
             key: "rot2_bgr10xr", format: 554, turn: 2,
             source: .pixelBuffer(kCVPixelFormatType_30RGBLEPackedWideGamut, width: 32, height: 16),
-            plane: 0, indexed: false),
+            plane: 0, indexed: false
+        ),
         Arm(
             key: "rot1_r8_plane0", format: 10, turn: 1,
             source: .pixelBuffer(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, width: 32, height: 8), plane: 0,
-            indexed: true),
+            indexed: true
+        ),
         Arm(
             key: "rot3_rg8_plane1", format: 30, turn: 3,
             source: .pixelBuffer(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, width: 64, height: 32), plane: 1,
-            indexed: false),
+            indexed: false
+        ),
     ]
 
     struct Plane {
@@ -80,13 +85,14 @@ enum TurnedStandInCases {
             let attributes =
                 [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
             guard CVPixelBufferCreate(nil, width, height, fourcc, attributes, &made) == kCVReturnSuccess,
-                let buffer = made, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
+                  let buffer = made, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
             else { throw TestFailure("no pixel buffer of \(fourcc)") }
             let planar = IOSurfaceGetPlaneCount(surface) > 0
             return Plane(
                 surface: surface, owner: buffer, index: index,
                 width: planar ? IOSurfaceGetWidthOfPlane(surface, index) : IOSurfaceGetWidth(surface),
-                height: planar ? IOSurfaceGetHeightOfPlane(surface, index) : IOSurfaceGetHeight(surface))
+                height: planar ? IOSurfaceGetHeightOfPlane(surface, index) : IOSurfaceGetHeight(surface)
+            )
         }
     }
 
@@ -96,7 +102,8 @@ enum TurnedStandInCases {
         throws -> MTLTexture
     {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: format)!, width: frame.width, height: frame.height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: format)!, width: frame.width, height: frame.height, mipmapped: false
+        )
         descriptor.usage = .renderTarget
         descriptor.storageMode = .shared
         guard descriptor.responds(to: NSSelectorFromString("setRotation:")) else {
@@ -112,7 +119,8 @@ enum TurnedStandInCases {
     static func draw(_ gpu: GPU, into texture: MTLTexture, indexedWidth: Int?) async throws {
         let state = try gpu.render(
             fragment: indexedWidth == nil ? "turned_where_fragment" : "turned_index_fragment",
-            format: texture.pixelFormat)
+            format: texture.pixelFormat
+        )
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = texture
@@ -151,10 +159,11 @@ enum TurnedStandInCases {
             return step(v <= 0.04045 ? v / 12.92 : pow((v + 0.055) / 1.055, 2.4))
         }
         let xr = { (code: Int) in step((Double(code) - 384) / 510) }
-        return (0..<plane.height).flatMap { y in
-            (0..<plane.width).map { x -> SIMD2<Int> in
+        return (0 ..< plane.height).flatMap { y in
+            (0 ..< plane.width).map { x -> SIMD2<Int> in
                 let t = [UInt8](
-                    UnsafeRawBufferPointer(start: plane.base + y * plane.rowBytes + x * bytes, count: bytes))
+                    UnsafeRawBufferPointer(start: plane.base + y * plane.rowBytes + x * bytes, count: bytes)
+                )
                 if let width = indexedWidth {
                     let index = Int(format == 80 ? t[2] : t[0])
                     return SIMD2(index % width, index / width)
@@ -180,12 +189,13 @@ enum TurnedStandInCases {
     )
         -> String
     {
-        let misses = (0...3).map { turn -> Int in
+        let misses = (0 ... 3).map { turn -> Int in
             let cells = RotatedCells(
-                gpu: gpu, states: states, turn: max(turn, 1), width: frame.width, height: frame.height, aligned: false)
+                gpu: gpu, states: states, turn: max(turn, 1), width: frame.width, height: frame.height, aligned: false
+            )
             var missed = 0
-            for y in 0..<frame.height {
-                for x in 0..<frame.width {
+            for y in 0 ..< frame.height {
+                for x in 0 ..< frame.width {
                     let (px, py) = turn == 0 ? (x, y) : cells.stored(x, y)
                     if px >= plane.width || py >= plane.height || got[py * plane.width + px] != SIMD2(x, y) {
                         missed += 1
@@ -203,7 +213,8 @@ enum TurnedStandInCases {
         let frame = frame(arm, plane)
         let texture = try turned(gpu, arm.format, turn: arm.turn, over: plane, frame: frame)
         let cells = RotatedCells(
-            gpu: gpu, states: states, turn: arm.turn, width: frame.width, height: frame.height, aligned: false)
+            gpu: gpu, states: states, turn: arm.turn, width: frame.width, height: frame.height, aligned: false
+        )
         guard let made = try cells.makePlane() else { throw TestFailure("no BGRA8 texture of rotation \(arm.turn)") }
         let reference = Plane(surface: made.surface, owner: nil, index: 0, width: made.width, height: made.height)
         let indexedWidth = arm.indexed ? frame.width : nil

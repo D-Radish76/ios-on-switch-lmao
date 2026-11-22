@@ -26,7 +26,10 @@ struct XrCopyClampTest: HWTest {
                         let clamps = optimized && size == 64, off = clamps ? r.offClamped : r.offExact
                         metrics.set(arm.key + "_off", off)
                         if route == .blitOut { metrics.set(arm.key + "_source_changed", r.sourceChanged) }
-                        checks.append(("\(arm.key): \(off) fields off, \(r.sourceChanged) source fields changed", off == 0 && r.sourceChanged == 0))
+                        checks.append((
+                            "\(arm.key): \(off) fields off, \(r.sourceChanged) source fields changed",
+                            off == 0 && r.sourceChanged == 0
+                        ))
                     }
                 }
             }

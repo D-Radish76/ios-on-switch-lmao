@@ -58,7 +58,7 @@ struct FetchBlendOrderScene: GPUScene {
             let pieces: [FetchBlendPiece] = [
                 .rect(4, 4, 36, 28, 1), .whole(2), .rect(20, 16, 52, 60, 3), .rect(0, 40, 30, 64, 0),
             ]
-            let shifts = (0..<8).map {
+            let shifts = (0 ..< 8).map {
                 FetchBlendShift(dx: ($0 * 5) % 13 - 4, dy: ($0 * 3) % 11 - 3, tag: UInt32($0 & 3))
             }
             return Plan(mesh: .list(pieces), shifts: shifts)
@@ -67,10 +67,10 @@ struct FetchBlendOrderScene: GPUScene {
         case .memoryless:
             var mesh = FetchBlendMesh()
             var draws: [Range<Int>] = []
-            for draw in 0..<4 {
+            for draw in 0 ..< 4 {
                 let first = mesh.points.count
                 for piece in FetchBlendMesh.pieces(triangles: 24, seed: 40 * draw + 3) { mesh.add(piece) }
-                draws.append(first..<mesh.points.count)
+                draws.append(first ..< mesh.points.count)
             }
             return Plan(mesh: mesh, draws: draws)
         case .indirect:
@@ -141,7 +141,8 @@ struct FetchBlendOrderScene: GPUScene {
         let got = try await gpu.read(resources.target, bytesPerPixel: format.bytesPerTexel)
         let diff = result.compare(
             "\(shape.rawValue) \(Self.short(format))", bytes: got, expected: FetchBlendState.bytes(want, format),
-            format: format, width: Self.size, height: Self.size, tolerance: 0)
+            format: format, width: Self.size, height: Self.size, tolerance: 0
+        )
         guard !diff.matches else { return }
         tally.wrong += diff.wrong
         if tally.first == nil {
@@ -149,7 +150,7 @@ struct FetchBlendOrderScene: GPUScene {
             let seen = FetchBlendState.units(got, format, pixel: y * Self.size + x)
             tally.first =
                 "\(Self.short(format)):\(x),\(y):got:\(FetchBlendState.shown(seen))"
-                + ":want:\(FetchBlendState.shown(want[y * Self.size + x]))"
+                    + ":want:\(FetchBlendState.shown(want[y * Self.size + x]))"
         }
     }
 
@@ -185,19 +186,22 @@ extension FetchBlendOrderScene {
             let memoryless = shape == .memoryless
             let fragment =
                 shape == .primitiveID
-                ? "fetch_blend_primitive_fragment" : memoryless ? "fetch_blend_second_fragment" : "fetch_blend_fragment"
+                    ? "fetch_blend_primitive_fragment" : memoryless ? "fetch_blend_second_fragment" : "fetch_blend_fragment"
             target = try gpu.texture(format.metal, size, size)
             second =
                 try memoryless
-                ? gpu.texture(format.metal, size, size, usage: [.renderTarget], storage: .memoryless) : nil
+                    ? gpu.texture(format.metal, size, size, usage: [.renderTarget], storage: .memoryless) : nil
             pipeline = try FetchBlendPipeline.make(
                 gpu, fragment: fragment, format: format.metal, attachments: memoryless ? 2 : 1,
-                written: memoryless ? 1 : 0)
+                written: memoryless ? 1 : 0
+            )
             resolve =
                 try memoryless
-                ? FetchBlendPipeline.make(
-                    gpu, fragment: "fetch_blend_resolve_fragment", format: format.metal, blend: false, attachments: 2)
-                : nil
+                    ? FetchBlendPipeline.make(
+                        gpu, fragment: "fetch_blend_resolve_fragment", format: format.metal, blend: false,
+                        attachments: 2
+                    )
+                    : nil
             points = try gpu.buffer(mesh.points)
             instances = try gpu.buffer(plan.shifts.map { $0.clip(size: size) })
             whole = try gpu.buffer(FetchBlendMesh.whole.map { SIMD4<Float>($0.x, $0.y, 0, 0) })
@@ -220,7 +224,8 @@ extension FetchBlendOrderScene {
         let scale = Double(resources.scale)
         let cleared = MTLClearColor(
             red: Double(clear.x) / scale, green: Double(clear.y) / scale, blue: Double(clear.z) / scale,
-            alpha: Double(clear.w) / scale)
+            alpha: Double(clear.w) / scale
+        )
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = resources.target
         pass.colorAttachments[0].loadAction = .clear
@@ -235,18 +240,21 @@ extension FetchBlendOrderScene {
         let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
         encoder.setRenderPipelineState(resources.pipeline)
         FetchBlendPipeline.bind(
-            encoder, points: resources.points, instances: resources.instances, scale: resources.scale)
+            encoder, points: resources.points, instances: resources.instances, scale: resources.scale
+        )
         let vertices = plan.mesh.points.count
         switch shape {
         case .strip16, .strip32:
             encoder.drawIndexedPrimitives(
                 type: .triangleStrip, indexCount: plan.mesh.indices.count,
-                indexType: shape == .strip16 ? .uint16 : .uint32, indexBuffer: resources.indices!, indexBufferOffset: 0)
+                indexType: shape == .strip16 ? .uint16 : .uint32, indexBuffer: resources.indices!, indexBufferOffset: 0
+            )
         case .list300, .primitiveID:
             encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: vertices)
         case .instanced:
             encoder.drawPrimitives(
-                type: .triangle, vertexStart: 0, vertexCount: vertices, instanceCount: plan.shifts.count)
+                type: .triangle, vertexStart: 0, vertexCount: vertices, instanceCount: plan.shifts.count
+            )
         case .memoryless:
             for draw in plan.draws {
                 encoder.drawPrimitives(type: .triangle, vertexStart: draw.lowerBound, vertexCount: draw.count)
@@ -259,12 +267,14 @@ extension FetchBlendOrderScene {
         case .indirectStrip:
             encoder.drawIndexedPrimitives(
                 type: .triangleStrip, indexType: .uint16, indexBuffer: resources.indices!, indexBufferOffset: 0,
-                indirectBuffer: resources.arguments!, indirectBufferOffset: 0)
+                indirectBuffer: resources.arguments!, indirectBufferOffset: 0
+            )
         case .quad4:
-            for quad in 0..<(plan.mesh.indices.count / 4) {
+            for quad in 0 ..< (plan.mesh.indices.count / 4) {
                 encoder.drawIndexedPrimitives(
                     type: .triangleStrip, indexCount: 4, indexType: .uint16, indexBuffer: resources.indices!,
-                    indexBufferOffset: quad * 8)
+                    indexBufferOffset: quad * 8
+                )
             }
         }
         encoder.endEncoding()

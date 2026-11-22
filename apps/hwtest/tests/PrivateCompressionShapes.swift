@@ -13,7 +13,7 @@ extension PrivateCompressionTest {
         var bytes: [UInt8] = []
         var made = 0, compressed = 0
         var paths: [String] = []
-        var musts: [(String, Int)] = []  // facts of the compressed run that must read 1
+        var musts: [(String, Int)] = [] // facts of the compressed run that must read 1
     }
 
     static let shapeArms = ["mips", "array", "ms4", "shader_write", "view_id"]
@@ -69,7 +69,8 @@ extension PrivateCompressionTest {
                 e.setFragmentTexture(texture, index: 0)
                 e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         return try await gpu.read(grid, bytesPerPixel: 4)
     }
 
@@ -100,11 +101,11 @@ extension PrivateCompressionTest {
                 e.setRenderPipelineState(state ?? pattern)
                 var corners =
                     slant
-                    ? [
-                        SIMD4<Float>(-1, -1, 0.5, 1), SIMD4(0.3, -1, 0.5, 1), SIMD4(-1, 1, 0.5, 1),
-                        SIMD4(-0.2, 1, 0.5, 1),
-                    ]
-                    : half ? GPU.quad(x0: -1, y0: -1, x1: 0, y1: 1, z: 0.5) : GPU.fullScreen
+                        ? [
+                            SIMD4<Float>(-1, -1, 0.5, 1), SIMD4(0.3, -1, 0.5, 1), SIMD4(-1, 1, 0.5, 1),
+                            SIMD4(-0.2, 1, 0.5, 1),
+                        ]
+                        : half ? GPU.quad(x0: -1, y0: -1, x1: 0, y1: 1, z: 0.5) : GPU.fullScreen
                 e.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
                 e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 e.endEncoding()
@@ -120,16 +121,18 @@ extension PrivateCompressionTest {
                     let blit = commands.makeBlitCommandEncoder()!
                     blit.generateMipmaps(for: target)
                     blit.endEncoding()
-                }.path)
+                }.path
+            )
             run.paths.append(try await gpu.run(draw(target, level: 1, half: true, clear: 1)).path)
-            for level in 0..<target.mipmapLevelCount {
+            for level in 0 ..< target.mipmapLevelCount {
                 run.bytes += try await gpu.read(target, bytesPerPixel: 4, level: level)
             }
             run.compressed = comptags(facade, target)
         case "array":
             let target = try await made(facade, plain: plain) {
                 let d = MTLTextureDescriptor.texture2DDescriptor(
-                    pixelFormat: .bgra8Unorm, width: 128, height: 128, mipmapped: false)
+                    pixelFormat: .bgra8Unorm, width: 128, height: 128, mipmapped: false
+                )
                 d.textureType = .type2DArray
                 d.arrayLength = 3
                 d.storageMode = .private
@@ -138,8 +141,8 @@ extension PrivateCompressionTest {
                 return t
             }
             run.made = comptags(facade, target)
-            for slice in 0..<3 { run.paths.append(try await gpu.run(draw(target, slice: slice, half: true)).path) }
-            for slice in 0..<3 { run.bytes += try await gpu.read(target, bytesPerPixel: 4, slice: slice) }
+            for slice in 0 ..< 3 { run.paths.append(try await gpu.run(draw(target, slice: slice, half: true)).path) }
+            for slice in 0 ..< 3 { run.bytes += try await gpu.read(target, bytesPerPixel: 4, slice: slice) }
             run.compressed = comptags(facade, target)
         case "ms4":
             let target = try await made(facade, plain: plain) { try gpu.texture(.bgra8Unorm, 64, 64, samples: 4) }
@@ -167,9 +170,11 @@ extension PrivateCompressionTest {
                     e.setTexture(target, index: 0)
                     e.dispatchThreads(
                         MTLSize(width: 64, height: 128, depth: 1),
-                        threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                        threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+                    )
                     e.endEncoding()
-                }.path)
+                }.path
+            )
             run.bytes = try await gpu.read(target, bytesPerPixel: 4)
             run.compressed = comptags(facade, target)
         case "view_id":

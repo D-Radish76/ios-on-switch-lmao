@@ -35,6 +35,7 @@ struct TransferBesideReadbackTest: HWTest {
                     String(format: "uploads' p99 %.2f ms not under the reads' p50 %.2f ms", uploadP99, readP50),
                     uploadP99 < readP50
                 ),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }

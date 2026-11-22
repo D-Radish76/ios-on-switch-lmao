@@ -51,7 +51,7 @@ struct ZbcFullTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard !GM20BFacade.compression(of: gpu.device).isEmpty,
-            (gpu.device as? NSObject)?.responds(to: CompressionSettled.factsSelector) == true
+              (gpu.device as? NSObject)?.responds(to: CompressionSettled.factsSelector) == true
         else { return .skip(GM20BFacade.missing("switchMetalCompression", on: gpu.device)) }
         let start = Date()
         let run = Runs.shared.next()
@@ -64,13 +64,13 @@ struct ZbcFullTest: HWTest {
         guard compressed == 1 else { return .fail("no compressed 512x512 BGRA8 target", metrics) }
         let before = GM20BFacade.compression(of: gpu.device)
         var pixelsWrong = 0
-        for k in 0..<Self.colours {
-            for _ in 0..<3 { try await Self.clear(gpu, target, k) }
+        for k in 0 ..< Self.colours {
+            for _ in 0 ..< 3 { try await Self.clear(gpu, target, k) }
             pixelsWrong += try await Self.wrong(gpu, target, k)
         }
         let drained = try await Self.drain(gpu)
         let answered = GM20BFacade.compression(of: gpu.device)
-        for k in 0..<Self.colours {
+        for k in 0 ..< Self.colours {
             try await Self.clear(gpu, target, k)
             pixelsWrong += try await Self.wrong(gpu, target, k)
         }
@@ -108,7 +108,7 @@ struct ZbcFullTest: HWTest {
 
     static func wrong(_ gpu: GPU, _ target: MTLTexture, _ k: Int) async throws -> Int {
         let read = try await gpu.read(target, bytesPerPixel: 4), want = bytes(k)
-        return stride(from: 0, to: read.count, by: 4).filter { read[$0..<$0 + 4].elementsEqual(want) == false }.count
+        return stride(from: 0, to: read.count, by: 4).filter { read[$0 ..< $0 + 4].elementsEqual(want) == false }.count
     }
 
     /// Two passes of the compression thread, each making memory nothing made before holds: false where a texture found

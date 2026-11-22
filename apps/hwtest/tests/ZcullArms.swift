@@ -60,7 +60,7 @@ extension ZcullTest {
         for y in stride(from: 0, to: h, by: 3) {
             for x in stride(from: 0, to: w, by: 3) {
                 let want = x < w / 2 ? red : green
-                for ch in 0..<4 where abs(raster[x, y, ch] - want[ch]) > 0.002 { bad += 1 }
+                for ch in 0 ..< 4 where abs(raster[x, y, ch] - want[ch]) > 0.002 { bad += 1 }
             }
         }
         return bad
@@ -81,7 +81,7 @@ extension ZcullTest {
             e.setVertexBytes(&colours, length: MemoryLayout<SIMD4<Float>>.stride * colours.count, index: 1)
             var single = colour
             e.setFragmentBytes(&single, length: 16, index: 0)
-            for _ in 0..<count {
+            for _ in 0 ..< count {
                 e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: instances)
             }
         }
@@ -90,11 +90,14 @@ extension ZcullTest {
     func msaa4x(_ c: ArmContext) async throws -> (Int, String) {
         let gpu = c.gpu
         let colour = try gpu.texture(
-            .bgra8Unorm, c.width, c.height, usage: [.renderTarget], samples: 4, storage: .memoryless)
+            .bgra8Unorm, c.width, c.height, usage: [.renderTarget], samples: 4, storage: .memoryless
+        )
         let depth = try gpu.texture(
-            .depth32Float, c.width, c.height, usage: [.renderTarget], samples: 4, storage: .memoryless)
+            .depth32Float, c.width, c.height, usage: [.renderTarget], samples: 4, storage: .memoryless
+        )
         let pipeline = try gpu.render(
-            fragment: "exact_fragment", format: .bgra8Unorm, samples: 4, depth: .depth32Float)
+            fragment: "exact_fragment", format: .bgra8Unorm, samples: 4, depth: .depth32Float
+        )
         let ran = try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = colour
@@ -117,7 +120,8 @@ extension ZcullTest {
         let gpu = c.gpu
         func array(_ format: MTLPixelFormat, _ usage: MTLTextureUsage) throws -> MTLTexture {
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: c.width, height: c.height, mipmapped: false)
+                pixelFormat: format, width: c.width, height: c.height, mipmapped: false
+            )
             d.textureType = .type2DArray
             d.arrayLength = 2
             d.usage = usage
@@ -146,7 +150,7 @@ extension ZcullTest {
             e.endEncoding()
         }
         var bad = 0
-        for slice in 0..<2 {
+        for slice in 0 ..< 2 {
             bad += Self.misses(try await gpu.raster(colour, .bgra8Unorm, slice: slice), c.width, c.height)
         }
         return (bad, ran.path)
@@ -161,7 +165,7 @@ extension ZcullTest {
             for first in [true, false] {
                 if !first && apart {
                     let blit = commands.makeBlitCommandEncoder()!
-                    blit.fill(buffer: between, range: 0..<256, value: 0)
+                    blit.fill(buffer: between, range: 0 ..< 256, value: 0)
                     blit.endEncoding()
                 }
                 let pass = MTLRenderPassDescriptor()

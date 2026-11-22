@@ -29,8 +29,8 @@ void zetaOf(const char *what, id<MTLTexture> t, NSUInteger level = 0, NSUInteger
     snprintf(name, sizeof name, "%s level %lu slice %lu", what, (unsigned long)level, (unsigned long)slice);
     if (t.pixelFormat == kD32S8) {
         depths(name, bytes(t, 4, level, slice, MTLBlitOptionDepthFromDepthStencil));
-        histogram((std::string(name) + " stencil").c_str(), bytes(t, 1, level, slice, MTLBlitOptionStencilFromDepthStencil),
-                  1);
+        histogram((std::string(name) + " stencil").c_str(),
+                  bytes(t, 1, level, slice, MTLBlitOptionStencilFromDepthStencil), 1);
     } else if (t.pixelFormat == kS8) {
         histogram((std::string(name) + " stencil").c_str(), bytes(t, 1, level, slice), 1);
     } else {
@@ -306,8 +306,9 @@ void resolveZeta(const char *what, MTLPixelFormat from, id<MTLTexture> into, NSU
     id<MTLCommandBuffer> cb = [gQueue commandBuffer];
     id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
     const bool depthAspect = from != kS8;
-    id<MTLRenderPipelineState> st = state(MTLPixelFormatInvalid, "depth_by_sample", depthAspect ? from : MTLPixelFormatInvalid,
-                                          from == kS8 || from == kD32S8 ? from : MTLPixelFormatInvalid, 4);
+    id<MTLRenderPipelineState> st =
+        state(MTLPixelFormatInvalid, "depth_by_sample", depthAspect ? from : MTLPixelFormatInvalid,
+              from == kS8 || from == kD32S8 ? from : MTLPixelFormatInvalid, 4);
     if (st) {
         [e setRenderPipelineState:st];
         [e setDepthStencilState:writesBoth()];
@@ -326,8 +327,8 @@ void zetaResolves()
         id<MTLTexture> into = make(kD32, 64, 64, MTLTextureType2D, 1, 1, 2);
         clearZeta(into, 0, 0, 0.9, 0);
         clearZeta(into, 1, 0, 0.9, 0);
-        resolveZeta("4x Depth32Float max into level 1 of a 64x64", kD32, into, 1, 0, MTLMultisampleDepthResolveFilterMax,
-                    false);
+        resolveZeta("4x Depth32Float max into level 1 of a 64x64", kD32, into, 1, 0,
+                    MTLMultisampleDepthResolveFilterMax, false);
         zetaOf("into (.9)", into, 0);
         zetaOf("into (.9)", into, 1);
     }
@@ -343,7 +344,8 @@ void zetaResolves()
         id<MTLTexture> into = make(kS8, 64, 64, MTLTextureType2D, 1, 1, 2);
         clearZeta(into, 0, 0, 0, 2);
         clearZeta(into, 1, 0, 0, 2);
-        resolveZeta("4x Stencil8 into level 1 of a 64x64", kS8, into, 1, 0, MTLMultisampleDepthResolveFilterSample0, true);
+        resolveZeta("4x Stencil8 into level 1 of a 64x64", kS8, into, 1, 0, MTLMultisampleDepthResolveFilterSample0,
+                    true);
         zetaOf("into (2)", into, 0);
         zetaOf("into (2)", into, 1);
     }
@@ -360,10 +362,11 @@ void zetaResolves()
     }
     {
         id<MTLTexture> into = make(kD32, 32, 32, MTLTextureType2D, 1, 1, 1, MTLStorageModeMemoryless);
-        resolveZeta("4x Depth32Float into a memoryless Depth32Float", kD32, into, 0, 0, MTLMultisampleDepthResolveFilterMax,
-                    false);
+        resolveZeta("4x Depth32Float into a memoryless Depth32Float", kD32, into, 0, 0,
+                    MTLMultisampleDepthResolveFilterMax, false);
         id<MTLTexture> s = make(kS8, 32, 32, MTLTextureType2D, 1, 1, 1, MTLStorageModeMemoryless);
-        resolveZeta("4x Stencil8 into a memoryless Stencil8", kS8, s, 0, 0, MTLMultisampleDepthResolveFilterSample0, true);
+        resolveZeta("4x Stencil8 into a memoryless Stencil8", kS8, s, 0, 0, MTLMultisampleDepthResolveFilterSample0,
+                    true);
     }
     {
         id<MTLTexture> into = make(kD32);

@@ -119,7 +119,8 @@ def names(data: bytes, build: str | None = None) -> list[str] | None:
 
 def functions(data: bytes, build: str | None = None) -> dict[str, str] | None:
     """Return each named function's AIR hash in hex (its HASH tag, which raw keys a function by: metallib.cpp), or
-    None if not a library."""
+    None if not a library.
+    """
     entries = _entries(data, build)
     if entries is None:
         return None

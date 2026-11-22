@@ -55,11 +55,13 @@ struct UncheckedBufferLoadsTest: HWTest {
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         checks.append(
             FailedCounts.judged(
-                before: before, after: after, expecting: ["none": 1], own: gpu.paths, &metrics))
+                before: before, after: after, expecting: ["none": 1], own: gpu.paths, &metrics
+            )
+        )
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
-    static func data() -> [UInt32] { (0..<words).map { UInt32($0) &* 2_654_435_761 | 1 } }
+    static func data() -> [UInt32] { (0 ..< words).map { UInt32($0) &* 2_654_435_761 | 1 } }
 
     /// The command buffer's path and the words read off the buffer either way; `pointer` replaces the argument buffer's
     static func inRange(_ gpu: GPU, pointer: UInt64?) async throws -> (String, Int) {
@@ -76,12 +78,13 @@ struct UncheckedBufferLoadsTest: HWTest {
             encoder.useResource(source, usage: .read)
             encoder.dispatchThreads(
                 MTLSize(width: words, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         let got = out.contents().bindMemory(to: UInt32.self, capacity: words * 2)
         let want = data()
-        return (timing.path, (0..<words).filter { got[2 * $0] != want[$0] || got[2 * $0 + 1] != want[$0] }.count)
+        return (timing.path, (0 ..< words).filter { got[2 * $0] != want[$0] || got[2 * $0 + 1] != want[$0] }.count)
     }
 
     static func unbound(_ gpu: GPU) async throws -> (String, Int) {
@@ -93,10 +96,11 @@ struct UncheckedBufferLoadsTest: HWTest {
             encoder.setBuffer(out, offset: 0, index: 2)
             encoder.dispatchThreads(
                 MTLSize(width: words, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         let got = out.contents().bindMemory(to: UInt32.self, capacity: words)
-        return (timing.path.hasPrefix("error:") ? "error" : "completed", (0..<words).filter { got[$0] != 0 }.count)
+        return (timing.path.hasPrefix("error:") ? "error" : "completed", (0 ..< words).filter { got[$0] != 0 }.count)
     }
 }

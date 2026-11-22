@@ -13,9 +13,12 @@ static id<MTLCommandQueue> q;
 
 static IOSurfaceRef surface(OSType fourcc, CVPixelBufferRef &pb)
 {
-    NSDictionary *attrs = @{(id)kCVPixelBufferIOSurfacePropertiesKey : @{}, (id)kCVPixelBufferMetalCompatibilityKey : @YES};
-    return CVPixelBufferCreate(nullptr, 32, 32, fourcc, (__bridge CFDictionaryRef)attrs, &pb) ? nullptr
-                                                                                             : CVPixelBufferGetIOSurface(pb);
+    NSDictionary *attrs =
+        @{(id)kCVPixelBufferIOSurfacePropertiesKey : @{},
+          (id)kCVPixelBufferMetalCompatibilityKey : @YES};
+    return CVPixelBufferCreate(nullptr, 32, 32, fourcc, (__bridge CFDictionaryRef)attrs, &pb)
+               ? nullptr
+               : CVPixelBufferGetIOSurface(pb);
 }
 
 static std::vector<uint8_t> planes(IOSurfaceRef s)
@@ -46,7 +49,10 @@ static std::vector<uint8_t> passInto(MTLPixelFormat f, OSType fourcc, MTLTexture
     CVPixelBufferRef pb = nullptr;
     IOSurfaceRef s = surface(fourcc, pb);
     scribble(s);
-    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:f width:32 height:32 mipmapped:NO];
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:f
+                                                                                 width:32
+                                                                                height:32
+                                                                             mipmapped:NO];
     d.usage = usage;
     id<MTLTexture> t = [dev newTextureWithDescriptor:d iosurface:s plane:0];
     made = t != nil;
@@ -72,17 +78,21 @@ int main()
     @autoreleasepool {
         dev = MTLCreateSystemDefaultDevice();
         q = [dev newCommandQueue];
+
         const struct {
             uint32_t format;
             OSType fourcc;
         } cases[] = {{540, '420v'}, {500, '420v'}, {520, '420v'}, {502, '422v'}, {503, '444v'}, {505, 'x420'}};
+
         for (const auto &c : cases) {
-            for (MTLTextureUsage usage : {MTLTextureUsage(MTLTextureUsageShaderRead), MTLTextureUsage(MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite)}) {
+            for (MTLTextureUsage usage : {MTLTextureUsage(MTLTextureUsageShaderRead),
+                                          MTLTextureUsage(MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite)}) {
                 long sa = 0, sb = 0;
                 bool ma = false, mb = false;
                 const std::vector<uint8_t> a = passInto(MTLPixelFormat(c.format), c.fourcc, usage, sa, ma),
                                            b = passInto(MTLPixelFormat(c.format), c.fourcc,
-                                                        MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead, sb, mb);
+                                                        MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead, sb,
+                                                        mb);
                 size_t changed = 0, differ = 0;
                 CVPixelBufferRef pb = nullptr;
                 IOSurfaceRef s = surface(c.fourcc, pb);
@@ -96,8 +106,7 @@ int main()
                 const char fc[5] = {char(c.fourcc >> 24), char(c.fourcc >> 16), char(c.fourcc >> 8), char(c.fourcc), 0};
                 printf("format %u over %s usage 0x%lx: made %d (target-usage twin made %d), status %ld/%ld, "
                        "%zu of %zu bytes changed, %zu differ from the target-usage pass\n",
-                       c.format, fc, (unsigned long)usage, ma,
-                       mb, sa, sb, changed, a.size(), differ);
+                       c.format, fc, (unsigned long)usage, ma, mb, sa, sb, changed, a.size(), differ);
             }
         }
     }

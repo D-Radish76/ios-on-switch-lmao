@@ -23,20 +23,21 @@ struct XRKernelReadScene: GPUScene {
         }
         memset(out.contents(), 0xab, out.length)
         let path = try await XRKernelPlanes.dispatch(
-            gpu, try gpu.compute("xr_kernel_read"), planes, buffer: out, slots: [0, 1])
+            gpu, try gpu.compute("xr_kernel_read"), planes, buffer: out, slots: [0, 1]
+        )
         let got = out.contents().assumingMemoryBound(to: UInt32.self)
         var reads = 0, samples = 0
         var first: String?
-        for i in 0..<texels {
-            let want = (2..<6).map { table[6 * (i % cases) + $0] }
+        for i in 0 ..< texels {
+            let want = (2 ..< 6).map { table[6 * (i % cases) + $0] }
             for (k, form) in ["read", "sample"].enumerated() {
-                let lanes = (0..<4).map { got[8 * i + 4 * k + $0] }
+                let lanes = (0 ..< 4).map { got[8 * i + 4 * k + $0] }
                 guard lanes != want else { continue }
                 if k == 0 { reads += 1 } else { samples += 1 }
                 first =
                     first
-                    ?? "\(form) \(i) of \(String(format: "%08x %02x", table[6 * (i % cases)], table[6 * (i % cases) + 1])): "
-                    + lanes.map { String(format: "%08x", $0) }.joined(separator: " ")
+                        ?? "\(form) \(i) of \(String(format: "%08x %02x", table[6 * (i % cases)], table[6 * (i % cases) + 1])): "
+                        + lanes.map { String(format: "%08x", $0) }.joined(separator: " ")
             }
         }
         result.metrics.set("route", path)
@@ -45,7 +46,8 @@ struct XRKernelReadScene: GPUScene {
         result.metrics.set("samples_wrong", samples)
         if let first { result.metrics.set("first", first) }
         result.expect(
-            reads == 0 && samples == 0, "\(reads) reads and \(samples) samples are not Apple's: \(first ?? "")")
+            reads == 0 && samples == 0, "\(reads) reads and \(samples) samples are not Apple's: \(first ?? "")"
+        )
         if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             result.expect(path == "gm20b", "the reads took \(path), not raw")
         }

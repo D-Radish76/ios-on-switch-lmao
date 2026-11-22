@@ -25,7 +25,7 @@ struct SubmitJobPathTest: GPUPathTest {
         let pipeline = try gpu.render(fragment: "solid_fragment", format: .rgba8Unorm)
         var committed: [MTLCommandBuffer] = []
         var targets: [MTLTexture] = []
-        for frame in 0..<Self.frames {
+        for frame in 0 ..< Self.frames {
             let target = try gpu.texture(.rgba8Unorm, Self.width, Self.height)
             targets.append(target)
             committed.append(
@@ -40,22 +40,24 @@ struct SubmitJobPathTest: GPUPathTest {
                     encoder.setRenderPipelineState(pipeline)
                     var colour = Self.drawn(frame).map { Float($0) / 255 }
                     var corners = GPU.pixelQuad(
-                        0, 0, Self.width / 2, Self.height, width: Self.width, height: Self.height)
+                        0, 0, Self.width / 2, Self.height, width: Self.width, height: Self.height
+                    )
                     encoder.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
                     encoder.setFragmentBytes(&colour, length: MemoryLayout<Float>.stride * 4, index: 0)
                     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                     encoder.endEncoding()
-                })
+                }
+            )
         }
         try gpu.finish(committed)
         var wrong = 0
         for (frame, target) in targets.enumerated() {
             let bytes = try await gpu.read(target, bytesPerPixel: 4)
-            for y in 0..<Self.height {
-                for x in 0..<Self.width {
+            for y in 0 ..< Self.height {
+                for x in 0 ..< Self.width {
                     let at = (y * Self.width + x) * 4
                     let want = x < Self.width / 2 ? Self.drawn(frame) : Self.clear(frame)
-                    wrong += Self.wrong(Array(bytes[at..<(at + 4)]), want)
+                    wrong += Self.wrong(Array(bytes[at ..< (at + 4)]), want)
                 }
             }
         }

@@ -45,7 +45,7 @@ struct YcbcrTargetShapesTest: HWTest {
     /// taller: plane 0's rows 64..127 and the chroma of rows 0..127 both land in bytes 4096..8191, in the order the
     /// GPU writes them, and an M4 Max leaves them mixed (64 at 4096..6143 and 7168..8127, the pairs between, ef f7 in
     /// the last row), so only plane 0 is held to Apple's
-    static func taller(_ before: [UInt8], _ after: [UInt8]) -> Int { (0..<4096).filter { after[$0] != 0x64 }.count }
+    static func taller(_ before: [UInt8], _ after: [UInt8]) -> Int { (0 ..< 4096).filter { after[$0] != 0x64 }.count }
 
     static func filled(_ bytes: [UInt8], _ range: Range<Int>, _ pattern: [UInt8]) -> [UInt8] {
         var out = bytes
@@ -58,22 +58,27 @@ struct YcbcrTargetShapesTest: HWTest {
             key: "plane_one", format: 540, width: 32, height: 32, plane: 1, fourcc: fourcc420, planes: p420,
             off: exact { b in
                 var out = b
-                for y in 0..<32 { for x in 0..<32 { out[4096 + y * 64 + x] = 0x40 } }
+                for y in 0 ..< 32 { for x in 0 ..< 32 { out[4096 + y * 64 + x] = 0x40 } }
                 return out
-            }),
+            }
+        ),
         Shape(
             key: "taller", format: 500, width: 64, height: 128, plane: 0, fourcc: fourcc420, planes: p420,
-            off: taller),
+            off: taller
+        ),
         Shape(
             key: "chroma_finer", format: 502, width: 64, height: 64, plane: 0, fourcc: fourcc420, planes: p420,
-            off: exact { filled(filled($0, 0..<4096, [0x64]), 4096..<8192, [0xaf, 0x93]) }),
+            off: exact { filled(filled($0, 0 ..< 4096, [0x64]), 4096 ..< 8192, [0xaf, 0x93]) }
+        ),
         Shape(
             key: "chroma_coarser", format: 500, width: 64, height: 64, plane: 0, fourcc: fourcc422, planes: p422,
-            off: exact { filled(filled($0, 0..<4096, [0x64]), 4096..<(4096 + 32 * 64), [0xaf, 0x93]) }),
+            off: exact { filled(filled($0, 0 ..< 4096, [0x64]), 4096 ..< (4096 + 32 * 64), [0xaf, 0x93]) }
+        ),
         Shape(
             key: "odd_blocks", format: 540, width: 33, height: 17, plane: 0, fourcc: fourcc420, planes: p420,
             drawn: true,
-            off: exact(oddBlocks)),
+            off: exact(oddBlocks)
+        ),
     ]
 
     static func codes(_ x: Int, _ y: Int) -> (red: Int, green: Int, blue: Int) {
@@ -82,9 +87,9 @@ struct YcbcrTargetShapesTest: HWTest {
 
     static func oddBlocks(_ before: [UInt8]) -> [UInt8] {
         var out = before
-        for y in 0..<17 { for x in 0..<33 { out[y * 64 + x] = UInt8(codes(x, y).green) } }
-        for by in 0..<9 {
-            for bx in 0..<17 {
+        for y in 0 ..< 17 { for x in 0 ..< 33 { out[y * 64 + x] = UInt8(codes(x, y).green) } }
+        for by in 0 ..< 9 {
+            for bx in 0 ..< 17 {
                 let inside = [(0, 0), (1, 0), (0, 1), (1, 1)].map { (2 * bx + $0.0, 2 * by + $0.1) }
                     .filter { $0.0 < 33 && $0.1 < 17 }
                 let mean = { (sum: Int) in UInt8((sum + inside.count / 2) / inside.count) }
@@ -138,7 +143,7 @@ struct YcbcrTargetShapesTest: HWTest {
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { throw TestFailure("no surface") }
         IOSurfaceLock(surface, [], nil)
         let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
-        for i in 0..<IOSurfaceGetAllocSize(surface) { base[i] = UInt8(truncatingIfNeeded: i * 31 + 7) }
+        for i in 0 ..< IOSurfaceGetAllocSize(surface) { base[i] = UInt8(truncatingIfNeeded: i * 31 + 7) }
         IOSurfaceUnlock(surface, [], nil)
         return surface
     }
@@ -156,13 +161,14 @@ struct YcbcrTargetShapesTest: HWTest {
         let start = bytes(surface)
         let format = MTLPixelFormat(rawValue: shape.format)!
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: shape.width, height: shape.height, mipmapped: false)
+            pixelFormat: format, width: shape.width, height: shape.height, mipmapped: false
+        )
         descriptor.usage = shape.drawn ? [.shaderRead] : [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: shape.plane)
         else { return (2, 0) }
         let state = shape.drawn ? try gpu.render(fragment: "texel_values", format: format) : nil
-        let values = (0..<(shape.width * shape.height)).map { i -> SIMD4<Float> in
+        let values = (0 ..< (shape.width * shape.height)).map { i -> SIMD4<Float> in
             let c = codes(i % shape.width, i / shape.width)
             return SIMD4(Float(c.red), Float(c.green), Float(c.blue), 255) / 255
         }

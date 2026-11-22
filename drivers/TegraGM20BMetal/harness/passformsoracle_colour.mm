@@ -23,7 +23,8 @@ void unspecialized()
         [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
         finish(cb, "263 cleared (.25, .5, .75, 1)");
         histogram("bytes", bytes(t, 4), 4);
-        for (MTLPixelFormat sf : {MTLPixelFormatRGBA8Unorm, MTLPixelFormatR32Uint, MTLPixelFormatR32Float, MTLPixelFormat(263)}) {
+        for (MTLPixelFormat sf :
+             {MTLPixelFormatRGBA8Unorm, MTLPixelFormatR32Uint, MTLPixelFormatR32Float, MTLPixelFormat(263)}) {
             id<MTLRenderPipelineState> st = state(sf, sf == MTLPixelFormatR32Uint ? "bits_of" : "colour_of");
             if (!st)
                 continue;
@@ -101,7 +102,9 @@ void areaStore(NSUInteger side, NSUInteger aw, NSUInteger ah, MTLPixelFormat f)
         p.colorAttachments[0].texture = t;
         p.colorAttachments[0].loadAction = MTLLoadActionClear;
         p.colorAttachments[0].storeAction = MTLStoreActionStore;
-        p.colorAttachments[0].clearColor = pass ? MTLClearColorMake(1, 0, 0, 1) : MTLClearColorMake(0x11 / 255.0, 0x11 / 255.0, 0x11 / 255.0, 0x11 / 255.0);
+        p.colorAttachments[0].clearColor =
+            pass ? MTLClearColorMake(1, 0, 0, 1)
+                 : MTLClearColorMake(0x11 / 255.0, 0x11 / 255.0, 0x11 / 255.0, 0x11 / 255.0);
         if (pass) {
             p.renderTargetWidth = aw;
             p.renderTargetHeight = ah;
@@ -139,8 +142,8 @@ void rg8Srgb()
                 off += d != 0;
                 maxOff = std::max(maxOff, d);
             }
-        printf("  %s: %d of 8192 channels differ, max %d; texel 0 rg %02x%02x rgba %02x%02x%02x%02x\n", what, off, maxOff,
-               a[0], a[1], b[0], b[1], b[2], b[3]);
+        printf("  %s: %d of 8192 channels differ, max %d; texel 0 rg %02x%02x rgba %02x%02x%02x%02x\n", what, off,
+               maxOff, a[0], a[1], b[0], b[1], b[2], b[3]);
     };
     const auto pass = [&](id<MTLTexture> t, MTLLoadAction load, MTLClearColor k, const char *fragment, bool blend,
                           const float *colour) {
@@ -152,7 +155,8 @@ void rg8Srgb()
         id<MTLCommandBuffer> cb = [gQueue commandBuffer];
         id<MTLRenderCommandEncoder> e = [cb renderCommandEncoderWithDescriptor:p];
         if (fragment) {
-            [e setRenderPipelineState:state(t.pixelFormat, fragment, MTLPixelFormatInvalid, MTLPixelFormatInvalid, 1, blend)];
+            [e setRenderPipelineState:state(t.pixelFormat, fragment, MTLPixelFormatInvalid, MTLPixelFormatInvalid, 1,
+                                            blend)];
             const float z = 0.5f;
             [e setVertexBytes:&z length:4 atIndex:0];
             if (colour)
@@ -189,11 +193,11 @@ void textureBuffer()
 {
     id<MTLBuffer> b = [gDevice newBufferWithLength:256 * 4 options:MTLResourceStorageModeShared];
     memset(b.contents, 0x11, 256 * 4);
-    MTLTextureDescriptor *d = [MTLTextureDescriptor textureBufferDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-                                                                                     width:256
-                                                                           resourceOptions:MTLResourceStorageModeShared
-                                                                                     usage:MTLTextureUsageRenderTarget |
-                                                                                           MTLTextureUsageShaderRead];
+    MTLTextureDescriptor *d = [MTLTextureDescriptor
+        textureBufferDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                         width:256
+                               resourceOptions:MTLResourceStorageModeShared
+                                         usage:MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead];
     id<MTLTexture> t = [b newTextureWithDescriptor:d offset:0 bytesPerRow:256 * 4];
     printf("texture buffer with render target usage: %s\n", t ? "made" : "nil");
     if (!t) {

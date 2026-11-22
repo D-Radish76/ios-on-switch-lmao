@@ -56,13 +56,11 @@ TEST(GM20BSubmitLocksSource, AJobsRecordsGoUpBeforeItsKick)
 	const CodeText body =
 		Block(exec, "static inline __attribute__((always_inline)) int chan_exec_body(");
 	EXPECT_EQ(body.count("chan->chan.gpfifo.cur = ring_cur;"), 1u);
-	EXPECT_TRUE(
-		body.before("chan->chan.defer_kick = true;",
-			    "backing_waits(chan, dependencies, dependency_count, unsettled)"));
-	EXPECT_TRUE(
-		body.afterLast("backing_waits(chan, dependencies, dependency_count, unsettled)")
-			.before("mutex_unlock(&tgm_live_lock);",
-				"switch_gpu_backing_publish(owned);"));
+	EXPECT_TRUE(body.before("chan->chan.defer_kick = true;",
+				"backing_waits(chan, dependencies, dependency_count, unsettled)"));
+	EXPECT_TRUE(body.afterLast("backing_waits(chan, dependencies, dependency_count, unsettled)")
+			    .before("mutex_unlock(&tgm_live_lock);",
+				    "switch_gpu_backing_publish(owned);"));
 	const CodeText published = body.afterLast("switch_gpu_backing_publish(owned);");
 	EXPECT_FALSE(published.has("goto rollback;"));
 	EXPECT_TRUE(published.has("*seqno = chan_fence_job("));

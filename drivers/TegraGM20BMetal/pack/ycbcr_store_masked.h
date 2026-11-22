@@ -25,7 +25,6 @@ static bool reached(Reach reach, constant Tiles &t, uint2 pixel)
     return tile.x < t.tilesX && tile.y < t.tilesY && reach.read(uint2(tile)).r != 0;
 }
 
-
 static uint2 blockPixel(constant StoreShape &s, uint2 block)
 {
     return block * uint2(s.across ? 2 : 1, s.down ? 2 : 1);

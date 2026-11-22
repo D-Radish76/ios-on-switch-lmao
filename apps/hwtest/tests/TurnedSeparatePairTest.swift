@@ -23,7 +23,7 @@ struct TurnedSeparatePairTest: HWTest {
         let states = try RotatedStates(gpu)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        for turn in 1...4 {
+        for turn in 1 ... 4 {
             let cells = RotatedCells(gpu: gpu, states: states, turn: turn, width: 96, height: 64, aligned: true)
             guard let plane = try cells.makePlane() else {
                 return .fail("the device makes no texture with the rotation SPI", metrics, proof: gpu.proof)
@@ -45,16 +45,18 @@ extension RotatedCells {
     func keptPair(_ depthFormat: MTLPixelFormat) -> Pass {
         { commands, target in
             guard let depth = try? gpu.texture(depthFormat, width, height, usage: .renderTarget),
-                let stencil = try? gpu.texture(.stencil8, width, height, usage: .renderTarget),
-                let tested = try? gpu.render(
-                    vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: depthFormat,
-                    stencil: .stencil8),
-                let blue = try? gpu.render(
-                    vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: depthFormat,
-                    stencil: .stencil8, configure: { $0.colorAttachments[0].writeMask = .blue }),
-                let writes = pairState(.lessEqual, writes: true, stencil: .always, replace: true),
-                let equal = pairState(.always, writes: false, stencil: .equal, replace: false),
-                let beyond = pairState(.lessEqual, writes: false, stencil: .always, replace: false)
+                  let stencil = try? gpu.texture(.stencil8, width, height, usage: .renderTarget),
+                  let tested = try? gpu.render(
+                      vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: depthFormat,
+                      stencil: .stencil8
+                  ),
+                  let blue = try? gpu.render(
+                      vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: depthFormat,
+                      stencil: .stencil8, configure: { $0.colorAttachments[0].writeMask = .blue }
+                  ),
+                  let writes = pairState(.lessEqual, writes: true, stencil: .always, replace: true),
+                  let equal = pairState(.always, writes: false, stencil: .equal, replace: false),
+                  let beyond = pairState(.lessEqual, writes: false, stencil: .always, replace: false)
             else { return }
             let at = { (r: [SIMD4<Float>], z: Float) in r.map { SIMD4<Float>($0.x, $0.y, z, 1) } }
             let whole = rect(0, 0, width, height)

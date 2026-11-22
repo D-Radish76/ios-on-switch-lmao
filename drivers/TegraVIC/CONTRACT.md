@@ -126,20 +126,19 @@ min 4, max 16384 (dest height 16382), up 4x, down 8x H / 4x V, filter taps 9 V /
 [T]: min 4, max 8192, 16x up and down, Apple's filter geometry (so CA's tables keep their shape; VIC ignores custom
 coefficients), rotation iff all 8 transforms proved, IdentityCSC 1, FractionalXYOffsetsSupported 1 and
 FractionalDimensions 1 (16.16 source rectangles reach SourceRectLeft/Right/Top/Bottom; probe gpu.x1.vic_fractional
-judges both), formats ARGB8888, RGBA8888, 2Planes420,
-2Planes422, 2Planes444, LumaOnlyL008, ARGB2101010 and Interleaved422 ('2vuy', 'yuvs') in and out, and 0 for colour
-manager, HDR, film grain, enhancement, directional scaling, accessibility, histogram, tiling (Apple's GPU tiling),
-10-bit YCbCr and compressed formats. Colour manager is the only key of its kind VideoToolbox reads (both builds); with it set,
-VideoToolbox offers the scaler every transfer whose colour spaces differ, including BT.709 video to sRGB, which VIC
-refuses (§8) and VideoToolbox would offer again on every transfer (§5). Core Animation reads it too, on both builds
-[V: QuartzCore 24B119 0x18443dfc0, 21H461 0x189556fc0], in `AppleDisplay::detachable_layer_impl` on any display that
-supports detaching, the panel included: a layer whose `IOSurface::color_primaries` (bulk primaries 9 is BT.2020, 12
-Display P3, anything else 709) is outside the display's set (709 and P3 here; BT.2020 only with
-`IOSurfaceAcceleratorCapabilitiesHDR`) is composited without it, and with it detached through a copy into a Display P3
-surface ('BGRA', or '422f' from 4:2:0 in copy mode) carrying the source's transfer function, which VIC cannot make.
-So colour manager stays 0 while VIC takes only part of what either caller would then send.
-Core Animation reads none of the format keys. On iPadOS 27 its detached-layer copy (`IOMFBDisplay::detach_layer`,
-QuartzCore 24B119) asks for '422v'/'422f' from a '420v'/'420f' layer regardless [V].
+judges both), formats ARGB8888, RGBA8888, 2Planes420, 2Planes422, 2Planes444, LumaOnlyL008, ARGB2101010 and
+Interleaved422 ('2vuy', 'yuvs') in and out, and 0 for colour manager, HDR, film grain, enhancement, directional scaling,
+accessibility, histogram, tiling (Apple's GPU tiling), 10-bit YCbCr and compressed formats. Colour manager is the only
+key of its kind VideoToolbox reads (both builds); with it set, VideoToolbox offers the scaler every transfer whose
+colour spaces differ, including BT.709 video to sRGB, which VIC refuses (§8) and VideoToolbox would offer again on every
+transfer (§5). Core Animation reads it too, on both builds [V: QuartzCore 24B119 0x18443dfc0, 21H461 0x189556fc0], in
+`AppleDisplay::detachable_layer_impl` on any display that supports detaching, the panel included: a layer whose
+`IOSurface::color_primaries` (bulk primaries 9 is BT.2020, 12 Display P3, anything else 709) is outside the display's
+set (709 and P3 here; BT.2020 only with `IOSurfaceAcceleratorCapabilitiesHDR`) is composited without it, and with it
+detached through a copy into a Display P3 surface ('BGRA', or '422f' from 4:2:0 in copy mode) carrying the source's
+transfer function, which VIC cannot make. So colour manager stays 0 while VIC takes only part of what either caller
+would then send. Core Animation reads none of the format keys. On iPadOS 27 its detached-layer copy
+(`IOMFBDisplay::detach_layer`, QuartzCore 24B119) asks for '422v'/'422f' from a '420v'/'420f' layer regardless [V].
 
 ## 7. The service's identity [V]
 
@@ -226,10 +225,10 @@ codes with bit replication and truncation, so it is refused as well.
   (0x5b974d8, 0x5b97400, 0x5b97718, 0x5b96c88 [V], semantics [I]).
 - Colour management has never run on the unit. In bisect order it rests on: getBulkAttachments, bound by address
   (abi_check holds its words), returning the tags CoreVideo set, on iPadOS 17 as on 27 (QuartzCore 21H461 reads the
-  primaries at bulk +0x3b of 0x70 bytes too; the chroma location codes were not probed);
-  VIC's DegammaMode, ClipEnabled, RegammaMode and gamut matrix sitting where libdrm's vic40.h puts them; the gamut matrix
-  following the colour matrices' law at r_shift 11; the sRGB curves matching the standard to well under a code (the TRM
-  claims DirectX's srgb2linear accuracy); the output quantizing the regamma's result as the model does.
+  primaries at bulk +0x3b of 0x70 bytes too; the chroma location codes were not probed); VIC's DegammaMode, ClipEnabled,
+  RegammaMode and gamut matrix sitting where libdrm's vic40.h puts them; the gamut matrix following the colour matrices'
+  law at r_shift 11; the sRGB curves matching the standard to well under a code (the TRM claims DirectX's srgb2linear
+  accuracy); the output quantizing the regamma's result as the model does.
 - Colour manager is 0 (§6), so VideoToolbox never offers the scaler a colour-space change and the three gamut changes
   reach VIC only from direct IOSurfaceAccelerator clients. Publishing it needs every change either caller then sends
   taken: VideoToolbox's commonest, BT.709 video to sRGB, needs Apple's 709 decode, which no VIC stage has (Table 64's

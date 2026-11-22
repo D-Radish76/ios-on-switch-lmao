@@ -260,7 +260,8 @@ mod tests {
 
     #[test]
     fn the_checked_in_header_is_this_translators() {
-        let path = std::env::var("SWITCH_METAL_HEAP_CLASSES_H").expect("SWITCH_METAL_HEAP_CLASSES_H names the checked-in header");
+        let path = std::env::var("SWITCH_METAL_HEAP_CLASSES_H")
+            .expect("SWITCH_METAL_HEAP_CLASSES_H names the checked-in header");
         let checked_in = std::fs::read_to_string(&path).expect("the checked-in header");
         assert!(
             tokens(&checked_in) == tokens(&super::render()),

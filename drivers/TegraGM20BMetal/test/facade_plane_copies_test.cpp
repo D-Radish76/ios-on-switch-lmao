@@ -237,6 +237,7 @@ TEST_F(FacadePlaneCopies, PlaneOneMovesAtPlaneZerosRowsOnThroughItsEnd)
         MTLSize size;
         MTLOrigin to;
     };
+
     const uint32_t b3a8 = 'b3a8', yuv = '420v';
     const TwoPlanes alpha32{b3a8, 4, 128, 1024, 1, kWidth, kHeight, 32};
     const TwoPlanes alpha48{b3a8, 4, 160, 2048, 1, kWidth, kHeight, 48};
@@ -305,8 +306,9 @@ TEST_F(FacadePlaneCopies, CopiesAcrossFormatsMoveTheBytesAppleMovesAndCountAsSki
         uint32_t from, into;
         TwoPlanes s, d;
     };
-    for (const Case &c : {Case{550, 551, alpha32, alpha48}, Case{551, 550, alpha48, alpha32},
-                          Case{500, 550, chroma32, alpha48}}) {
+
+    for (const Case &c :
+         {Case{550, 551, alpha32, alpha48}, Case{551, 550, alpha48, alpha32}, Case{500, 550, chroma32, alpha48}}) {
         const std::string what = std::to_string(c.from) + " into " + std::to_string(c.into);
         IOSurfaceRef s = c.s.make(), t = c.d.make();
         ASSERT_TRUE(s && t) << what;
@@ -384,6 +386,7 @@ TEST_F(FacadePlaneCopies, OnePlaneFormatsCountTheirOwnUnit)
         uint32_t format, fourcc;
         NSUInteger unit;
     };
+
     for (const Kind k : {Kind{504, uint32_t('v410'), 4}, Kind{524, uint32_t('v410'), 4}, Kind{562, uint32_t('2vuy'), 2},
                          Kind{501, uint32_t('2vuy'), 2}}) {
         const std::string what = std::to_string(k.format);
@@ -447,6 +450,7 @@ TEST_F(FacadePlaneCopies, ASourceOfNoPlaneOneLeavesTheDestinationsAsItIs)
         TwoPlanes into;
         uint32_t intoFormat;
     };
+
     const TwoPlanes alpha32{'b3a8', 4, 128, 1024, 1, kWidth, kHeight, 32};
     const TwoPlanes chroma32{'420v', 1, 48, 1024, 2, kWidth / 2, kHeight / 2, 32};
     for (const Case &c : {Case{'v410', 504, 4, alpha32, 550}, Case{'2vuy', 501, 2, chroma32, 500},
@@ -459,7 +463,8 @@ TEST_F(FacadePlaneCopies, ASourceOfNoPlaneOneLeavesTheDestinationsAsItIs)
         std::vector<uint8_t> want = seeded(d, c.intoFormat);
         NSDictionary *counted = harness::counters(gDevice);
         EXPECT_TRUE(copied(one, MTLOriginMake(2, 1, 0), MTLSizeMake(4, 4, 1), planes, MTLOriginMake(3, 2, 0))) << what;
-        EXPECT_EQ(harness::skippedMoved(counted, harness::counters(gDevice)), harness::skippedOnce("call.blit")) << what;
+        EXPECT_EQ(harness::skippedMoved(counted, harness::counters(gDevice)), harness::skippedOnce("call.blit"))
+            << what;
         const NSUInteger unit = c.into.unit0;
         for (NSUInteger y = 0; y < 4; ++y)
             for (NSUInteger b = 0; b < 4 * unit; ++b)

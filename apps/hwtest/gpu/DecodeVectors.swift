@@ -67,14 +67,16 @@ public enum DecodeVectors {
                 let w = words(String(line))
                 guard w.count == 16 else { return nil }
                 return Block(
-                    words: Array(w[0..<4]),
+                    words: Array(w[0 ..< 4]),
                     texels: [
-                        Texel(x: Int(w[4]), y: Int(w[5]), want: Array(w[6..<10])),
-                        Texel(x: Int(w[10]), y: Int(w[11]), want: Array(w[12..<16])),
-                    ])
+                        Texel(x: Int(w[4]), y: Int(w[5]), want: Array(w[6 ..< 10])),
+                        Texel(x: Int(w[10]), y: Int(w[11]), want: Array(w[12 ..< 16])),
+                    ]
+                )
             }
             return (format, Astc(format: format, blockW: blockW, blockH: blockH, blocks: blocks))
-        })
+        }
+    )
 
     /// A format's vectors; none (which makes no texture: a test's FAIL, not a trap) where the table lacks them
     public static func set(_ format: Int) -> Astc {
@@ -91,12 +93,13 @@ public enum DecodeVectors {
         let w = words(text.split(separator: "\n").joined())
         let texels = min(side * side, w.count)
         return Pvrtc(
-            format: format, side: side, blocks: Array(w[0..<(w.count - texels)]), want: Array(w.suffix(texels)))
+            format: format, side: side, blocks: Array(w[0 ..< (w.count - texels)]), want: Array(w.suffix(texels))
+        )
     }
 
     /// Little-endian words as bytes
     public static func bytes(_ words: [UInt32]) -> [UInt8] {
-        words.flatMap { word in (0..<4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
+        words.flatMap { word in (0 ..< 4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
     }
 
     /// 256 floats; a table that did not decode reads as zeros, which no sRGB judge passes
@@ -108,14 +111,14 @@ public enum DecodeVectors {
     static func words(_ base64: String) -> [UInt32] {
         let data = Data(base64Encoded: base64) ?? Data()
         return stride(from: 0, to: data.count, by: 4).map { at in
-            (0..<4).reduce(UInt32(0)) { $0 | UInt32(data[data.startIndex + at + $1]) << (8 * $1) }
+            (0 ..< 4).reduce(UInt32(0)) { $0 | UInt32(data[data.startIndex + at + $1]) << (8 * $1) }
         }
     }
 
     /// The nearest code of Apple's sRGB table to `value`
     public static func nearestSrgbCode(_ value: Float) -> Int {
         var best = 0
-        for code in 1..<srgb.count where abs(srgb[code] - value) < abs(srgb[best] - value) { best = code }
+        for code in 1 ..< srgb.count where abs(srgb[code] - value) < abs(srgb[best] - value) { best = code }
         return best
     }
 

@@ -60,7 +60,7 @@ struct XrTexelBufferStoresTest: HWTest {
 
     static func judged(_ words: [UInt32], _ apple: [UInt32]) -> (off: Int, past: Int) {
         let stored = texels * apple.count
-        let off = stride(from: 0, to: stored, by: apple.count).filter { Array(words[$0..<$0 + apple.count]) != apple }
+        let off = stride(from: 0, to: stored, by: apple.count).filter { Array(words[$0 ..< $0 + apple.count]) != apple }
         return (off.count, words[stored...].filter { $0 != 0 }.count)
     }
 
@@ -73,10 +73,12 @@ struct XrTexelBufferStoresTest: HWTest {
         let buffer = try gpu.buffer([UInt32](repeating: 0, count: count))
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
             with: MTLPixelFormat(rawValue: format)!, width: texels, resourceOptions: .storageModeShared,
-            usage: [.shaderRead, .shaderWrite])
+            usage: [.shaderRead, .shaderWrite]
+        )
         guard
             let texture = buffer.makeTexture(
-                descriptor: descriptor, offset: 0, bytesPerRow: texels * 4 * wordsPerTexel)
+                descriptor: descriptor, offset: 0, bytesPerRow: texels * 4 * wordsPerTexel
+            )
         else { throw TestFailure("no \(format) texture buffer") }
         let pipeline = try gpu.compute("xr_texel_buffer_store")
         var value = Self.value
@@ -87,11 +89,13 @@ struct XrTexelBufferStoresTest: HWTest {
             encoder.setBytes(&value, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texels, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         let words = Array(
-            UnsafeBufferPointer(start: buffer.contents().bindMemory(to: UInt32.self, capacity: count), count: count))
-        return (words, Array(words[0..<wordsPerTexel]))
+            UnsafeBufferPointer(start: buffer.contents().bindMemory(to: UInt32.self, capacity: count), count: count)
+        )
+        return (words, Array(words[0 ..< wordsPerTexel]))
     }
 }

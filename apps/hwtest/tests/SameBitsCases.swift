@@ -47,7 +47,8 @@ enum SameBitsCases {
         let depth: MTLTexture
         if pitch {
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: false)
+                pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: false
+            )
             d.usage = [.renderTarget, .shaderRead]
             d.storageMode = .shared
             let backing = try gpu.buffer(rowBytes * side)
@@ -59,7 +60,8 @@ enum SameBitsCases {
             depth = try gpu.texture(.rgba8Unorm, side, side)
         }
         try await gpu.upload(
-            [UInt8](repeating: 0x11, count: rowBytes * side), to: depth, bytesPerRow: pitch ? rowBytes : side * 4)
+            [UInt8](repeating: 0x11, count: rowBytes * side), to: depth, bytesPerRow: pitch ? rowBytes : side * 4
+        )
         let colour = try gpu.texture(.rgba8Unorm, side, side)
         let pipeline = try gpu.render(fragment: "solid_fragment", format: .rgba8Unorm, depth: .depth32Float)
         let d = MTLDepthStencilDescriptor()
@@ -92,7 +94,7 @@ enum SameBitsCases {
     /// The facade's switchMetalProbeFacts: of `texture` (debug builds; empty elsewhere)
     static func facts(_ gpu: GPU, _ texture: MTLTexture) -> [String: Int] {
         guard let facade = gpu.device as? NSObject, facade.responds(to: factsSelector),
-            let line = facade.perform(factsSelector, with: texture)?.takeUnretainedValue() as? String
+              let line = facade.perform(factsSelector, with: texture)?.takeUnretainedValue() as? String
         else { return [:] }
         var out: [String: Int] = [:]
         for field in line.split(separator: " ") {
@@ -103,23 +105,23 @@ enum SameBitsCases {
     }
 
     static func word(_ bytes: [UInt8], _ texel: Int, _ size: Int) -> UInt32 {
-        (0..<size).reduce(UInt32(0)) { $0 | UInt32(bytes[texel * size + $1]) << (8 * $1) }
+        (0 ..< size).reduce(UInt32(0)) { $0 | UInt32(bytes[texel * size + $1]) << (8 * $1) }
     }
 
     /// Each half's texel in hex where every texel of the half holds it, else the centre texel's and "_mixed"
     static func halves(_ bytes: [UInt8], size: Int) -> (left: String, right: String) {
         func half(_ xs: Range<Int>) -> String {
-            let words = (0..<side).flatMap { y in xs.map { word(bytes, y * side + $0, size) } }
+            let words = (0 ..< side).flatMap { y in xs.map { word(bytes, y * side + $0, size) } }
             let centre = String(word(bytes, (side / 2) * side + xs.lowerBound + xs.count / 2, size), radix: 16)
             return Set(words).count == 1 ? centre : centre + "_mixed"
         }
-        return (half(0..<side / 2), half(side / 2..<side))
+        return (half(0 ..< side / 2), half(side / 2 ..< side))
     }
 
     /// Colour texels off the draw's reach: written over the left half, the clear's zero over the right
     static func colourOff(_ colour: [UInt8], written: Bool) -> Int {
-        (0..<side * side).filter { t in
-            let drawn = colour[4 * t..<4 * t + 4].contains { $0 != 0 }
+        (0 ..< side * side).filter { t in
+            let drawn = colour[4 * t ..< 4 * t + 4].contains { $0 != 0 }
             return drawn != (written && t % side < side / 2)
         }.count
     }

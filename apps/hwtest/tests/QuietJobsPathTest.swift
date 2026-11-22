@@ -42,9 +42,9 @@ struct QuietJobsPathTest: GPUPathTest {
         let done = DispatchSemaphore(value: 0)
         // Each frame's buffers are enqueued in order and committed last first, so the first is taken with the rest
         // behind it; no thread waits in waitUntilCompleted meanwhile, which would ask for every range's interrupt.
-        for frame in 0..<Self.frames {
+        for frame in 0 ..< Self.frames {
             var frameBuffers: [MTLCommandBuffer] = []
-            for index in 0..<Self.perFrame {
+            for index in 0 ..< Self.perFrame {
                 let target = try gpu.texture(.rgba8Unorm, Self.size, Self.size)
                 targets.append(target)
                 guard let commands = gpu.queue.makeCommandBuffer() else { throw TestFailure("no command buffer") }
@@ -90,7 +90,7 @@ struct QuietJobsPathTest: GPUPathTest {
             let bytes = try await gpu.read(target, bytesPerPixel: 4)
             let want = Self.colour(at / Self.perFrame, at % Self.perFrame)
             for pixel in stride(from: 0, to: bytes.count, by: 4) {
-                wrong += Self.wrong(Array(bytes[pixel..<(pixel + 4)]), want)
+                wrong += Self.wrong(Array(bytes[pixel ..< (pixel + 4)]), want)
             }
         }
         metrics.set("wrong_bytes", wrong)
@@ -122,12 +122,12 @@ struct QuietJobsPathTest: GPUPathTest {
         -> [String]
     {
         guard let event = gpu.device.makeSharedEvent(), let slow = gpu.queue.makeCommandBuffer(),
-            let first = gpu.queue.makeCommandBuffer(), let second = gpu.queue.makeCommandBuffer()
+              let first = gpu.queue.makeCommandBuffer(), let second = gpu.queue.makeCommandBuffer()
         else { throw TestFailure("no shared event or command buffer") }
         try longDraw(gpu, slow)
         let target = try gpu.texture(.rgba8Unorm, Self.size, Self.size)
         let long = try gpu.texture(.rgba8Unorm, Self.longSize, Self.longSize)
-        for pass in 0..<Self.longPasses { clear(first, long, [UInt8(pass), 2, 3, 255]) }
+        for pass in 0 ..< Self.longPasses { clear(first, long, [UInt8(pass), 2, 3, 255]) }
         clear(first, target, [1, 2, 3, 255])
         second.encodeWaitForEvent(event, value: 1)
         clear(second, try gpu.texture(.rgba8Unorm, Self.size, Self.size), [4, 5, 6, 255])
@@ -150,7 +150,8 @@ struct QuietJobsPathTest: GPUPathTest {
         }
         if waitedMs < Self.sleptMs {
             failures.append(
-                String(format: "the quiet job ended %.2f ms into its wait: its waiter never slept", waitedMs))
+                String(format: "the quiet job ended %.2f ms into its wait: its waiter never slept", waitedMs)
+            )
         }
         if waitedMs > Self.wakeBoundMs {
             failures.append(String(format: "its waiter woke after %.0f ms (at most %.0f)", waitedMs, Self.wakeBoundMs))

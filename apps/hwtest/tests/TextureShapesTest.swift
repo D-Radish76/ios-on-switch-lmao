@@ -25,7 +25,8 @@ struct TextureShapesTest: HWTest {
         let snormTexels = Array([[UInt8]](repeating: [127, 0, 127, 129], count: 16).joined())
         try await gpu.upload(snormTexels, to: snorm, bytesPerRow: 16)
         arms.off(
-            "snorm", try await arms.sampled(snorm), Array([[UInt8]](repeating: [255, 0, 255, 0], count: 16).joined()))
+            "snorm", try await arms.sampled(snorm), Array([[UInt8]](repeating: [255, 0, 255, 0], count: 16).joined())
+        )
 
         let snormTarget = try gpu.texture(.rgba8Snorm, 4, 4, usage: [.renderTarget, .shaderRead])
         arms.route("snorm_target", snormTarget, expect: "gm20b")
@@ -39,7 +40,8 @@ struct TextureShapesTest: HWTest {
         }
         arms.off(
             "snorm_target", try await gpu.read(snormTarget, bytesPerPixel: 4),
-            Array([[UInt8]](repeating: [129, 192, 64, 127], count: 16).joined()))
+            Array([[UInt8]](repeating: [129, 192, 64, 127], count: 16).joined())
+        )
 
         let chain = try gpu.texture(.r8Unorm_srgb, 4, 4, usage: [.shaderRead], storage: .shared, mipmaps: 3)
         arms.route("srgb_chain", chain, expect: "gm20b")
@@ -58,7 +60,8 @@ struct TextureShapesTest: HWTest {
         arms.route("bc1_cube", cube, expect: "gm20b")
         if let cube {
             arms.off(
-                "bc1_cube", try arms.cpuRoundTrip(cube, width: 8, height: 8, bytesPerRow: 16, rows: 2, slice: 3), [])
+                "bc1_cube", try arms.cpuRoundTrip(cube, width: 8, height: 8, bytesPerRow: 16, rows: 2, slice: 3), []
+            )
         }
 
         let samples = try gpu.texture(.rgba8Unorm, 4, 4, samples: 4, storage: .shared)
@@ -78,18 +81,23 @@ struct TextureShapesTest: HWTest {
         let a13 = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
         arms.route(
             "cube_array", arms.make(.rgba8Unorm, .typeCubeArray, 8, 8, array: 2, usage: .shaderRead),
-            expect: a13 ? "gm20b" : "nil")
+            expect: a13 ? "gm20b" : "nil"
+        )
         arms.route(
             "ms_array", arms.make(.rgba8Unorm, .type2DMultisampleArray, 8, 8, samples: 4, usage: .renderTarget),
-            expect: "nil")
+            expect: "nil"
+        )
         arms.route(
-            "pvrtc", arms.make(MTLPixelFormat(rawValue: 166)!, .type2D, 8, 8, usage: .shaderRead), expect: "gm20b")
+            "pvrtc", arms.make(MTLPixelFormat(rawValue: 166)!, .type2D, 8, 8, usage: .shaderRead), expect: "gm20b"
+        )
         arms.route(
             "astc_hdr", arms.make(MTLPixelFormat(rawValue: 222)!, .type2D, 8, 8, usage: .shaderRead),
-            expect: a13 ? "gm20b" : "nil")
+            expect: a13 ? "gm20b" : "nil"
+        )
         try await blockVolumes(arms)
         arms.route(
-            "line_levels", arms.make(.rgba8Unorm, .type1D, 16, 1, levels: 3, usage: .shaderRead), expect: "nil")
+            "line_levels", arms.make(.rgba8Unorm, .type1D, 16, 1, levels: 3, usage: .shaderRead), expect: "nil"
+        )
         return arms.outcome()
     }
 
@@ -102,7 +110,8 @@ struct TextureShapesTest: HWTest {
         if let blockVolume {
             arms.off(
                 "bc1_3d",
-                try arms.cpuRoundTrip(blockVolume, width: 8, height: 8, bytesPerRow: 16, rows: 2, plane: 2), [])
+                try arms.cpuRoundTrip(blockVolume, width: 8, height: 8, bytesPerRow: 16, rows: 2, plane: 2), []
+            )
             for (level, plane, colour) in [(0, 0, 0xf800), (0, 1, 0x07e0), (1, 0, 0x001f)] {
                 let lo = UInt8(colour & 0xff), hi = UInt8(colour >> 8)
                 let block: [UInt8] = [lo, hi, lo, hi, 0, 0, 0, 0]
@@ -110,11 +119,13 @@ struct TextureShapesTest: HWTest {
                 let solid = Array([[UInt8]](repeating: block, count: (side / 4) * (side / 4)).joined())
                 blockVolume.replace(
                     region: MTLRegionMake3D(0, 0, plane, side, side, 1), mipmapLevel: level, slice: 0,
-                    withBytes: solid, bytesPerRow: 8 * (side / 4), bytesPerImage: solid.count)
+                    withBytes: solid, bytesPerRow: 8 * (side / 4), bytesPerImage: solid.count
+                )
             }
             arms.off(
                 "bc1_3d_read", try await arms.drawn(blockVolume, fragment: "view_read_volume", width: 3),
-                [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255])
+                [255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255]
+            )
         }
         arms.route("astc_3d", arms.make(.astc_4x4_ldr, .type3D, 8, 8, depth: 4, usage: .shaderRead), expect: "gm20b")
     }

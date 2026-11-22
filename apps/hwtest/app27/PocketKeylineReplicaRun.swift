@@ -40,7 +40,8 @@ enum PocketKeylineReplicaRun {
         metrics.set(prefix + "_form", drawn.form)
         metrics.set(prefix + "_wrong", wrong.isEmpty ? "-" : wrong)
         metrics.set(prefix + "_wrong_texels", texels)
-        if GM20BFacade.kind(of: gpu.device) == "gm20b" && drawn.path != "gm20b" { return "off the driver: \(drawn.path)" }
+        if GM20BFacade.kind(of: gpu.device) == "gm20b" && drawn
+            .path != "gm20b" { return "off the driver: \(drawn.path)" }
         guard !memoryless else { return wrong }
         let text = { (values: [Int]) in values.map(String.init).joined(separator: ",") }
         for mark in KeylineReplica.marks {

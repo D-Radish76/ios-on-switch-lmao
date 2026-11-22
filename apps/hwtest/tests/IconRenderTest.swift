@@ -44,7 +44,8 @@ struct IconRenderTest: HWTest {
         if settled.footprintMB > Double(Self.inactiveHardMB) {
             return .fail(
                 "\(Self.agent) holds \(Int(settled.footprintMB)) MB once its GPU memory went back after an icon render, "
-                    + "over its \(Self.inactiveHardMB) MB inactive limit", metrics)
+                    + "over its \(Self.inactiveHardMB) MB inactive limit", metrics
+            )
         }
         return .pass(metrics)
     }
@@ -59,7 +60,7 @@ struct IconRenderTest: HWTest {
     /// peak footprint; nil when it is not running or its rusage is refused
     static func footprint(_ process: String) -> Reading? {
         guard let pid = RunningProcesses.pid(named: process, in: RunningProcesses.list(sysctl: "kern.proc.all")),
-            let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "proc_pid_rusage")
+              let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "proc_pid_rusage")
         else { return nil }
         let rusage = unsafeBitCast(symbol, to: Rusage.self)
         var info = rusage_info_v4()
@@ -67,7 +68,8 @@ struct IconRenderTest: HWTest {
         let mb = { (v: UInt64) in Double(v) / 1_048_576 }
         return Reading(
             footprintMB: mb(info.ri_phys_footprint), residentMB: mb(info.ri_resident_size),
-            peakMB: mb(info.ri_lifetime_max_phys_footprint))
+            peakMB: mb(info.ri_lifetime_max_phys_footprint)
+        )
     }
 
     static func icon(_ bundle: String) -> NSObject? {

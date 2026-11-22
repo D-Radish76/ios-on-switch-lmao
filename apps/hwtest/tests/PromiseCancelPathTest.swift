@@ -17,7 +17,7 @@ struct PromiseCancelPathTest: GPUPathTest {
     let name = "A job parked on the GPU for a writer promise goes on once the CPU cancels it"
     let counters = ["writer_promises", "promise_waits", "promise_cpu_releases"]
     static let size = 64, parkMs = 30.0, goesOnMs = 150.0
-    static let fill: [UInt8] = [255, 0, 0, 255]  // BGRA blue
+    static let fill: [UInt8] = [255, 0, 0, 255] // BGRA blue
     static let boImport: UInt32 = 3, boFree: UInt32 = 4, writerPromise: UInt32 = 34
     static let surfaceWrite: UInt32 = 1 << 1, promiseMake: UInt32 = 0, promiseCancel: UInt32 = 1
 
@@ -55,7 +55,8 @@ struct PromiseCancelPathTest: GPUPathTest {
         let made = use.withUnsafeBytes { uses -> (kern_return_t, [UInt8]) in
             let at = UInt64(UInt(bitPattern: uses.baseAddress!))
             return maker.call(
-                writerPromise, GPUConnection.words(halves(at) + [promiseMake, 1, 0, channel]), outputSize: 8)
+                writerPromise, GPUConnection.words(halves(at) + [promiseMake, 1, 0, channel]), outputSize: 8
+            )
         }
         return (made.0, GPUConnection.uint32(made.1, 0))
     }
@@ -83,17 +84,19 @@ struct PromiseCancelPathTest: GPUPathTest {
         defer { _ = maker.call(Self.boFree, GPUConnection.words(Self.halves(handle)), outputSize: 0) }
 
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         guard let source = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0),
-            let copied = gpu.device.makeBuffer(length: rowBytes * Self.size, options: .storageModeShared),
-            let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder()
+              let copied = gpu.device.makeBuffer(length: rowBytes * Self.size, options: .storageModeShared),
+              let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder()
         else { throw TestFailure("no surface texture, buffer or command buffer") }
         blit.copy(
             from: source, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
             sourceSize: MTLSize(width: Self.size, height: Self.size, depth: 1), to: copied, destinationOffset: 0,
-            destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * Self.size)
+            destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * Self.size
+        )
         blit.endEncoding()
         let start = DispatchTime.now()
         let cancel = Cancel()
@@ -121,7 +124,8 @@ struct PromiseCancelPathTest: GPUPathTest {
         }
         if afterMs > Self.goesOnMs {
             failures.append(
-                String(format: "the copy ended %.1f ms after the cancel (at most %.0f)", afterMs, Self.goesOnMs))
+                String(format: "the copy ended %.1f ms after the cancel (at most %.0f)", afterMs, Self.goesOnMs)
+            )
         }
         let got = Array(UnsafeRawBufferPointer(start: copied.contents(), count: 4))
         if got != Self.fill { failures.append("the copy read \(got), not the surface's \(Self.fill)") }

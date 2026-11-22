@@ -16,8 +16,8 @@ struct ArgumentGridsTest: HWTest {
 
     static let places =
         "3@8 4@16 5@24 6@32 9@40 10@48 11@56 12@64 13@72 14@80 20@88 21@96 22@104 23@112 24@120 25@128 "
-        + "30@136 31@144 32@152 33@160 34@168 35@176 36@184 37@192 40@200 41@208 42@216 43@224 44@232 45@240 "
-        + "70@248 71@256 72@264 73@272"
+            + "30@136 31@144 32@152 33@160 34@168 35@176 36@184 37@192 40@200 41@208 42@216 43@224 44@232 45@240 "
+            + "70@248 71@256 72@264 73@272"
 
     static let drawn: [[UInt8]] = [
         [0, 255, 0, 255], [51, 102, 153, 255], [0, 0, 255, 255], [51, 102, 153, 255], [255, 255, 0, 255],
@@ -38,7 +38,8 @@ struct ArgumentGridsTest: HWTest {
             wrong.append("threw")
         }
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
@@ -57,7 +58,8 @@ struct ArgumentGridsTest: HWTest {
             return
         }
         let (sized, places) = try FunctionArgumentEncoderTest.answer(
-            gpu, encoder, ids: FunctionArgumentEncoderTest.ids(Self.places))
+            gpu, encoder, ids: FunctionArgumentEncoderTest.ids(Self.places)
+        )
         if sized != "280/8" || places != Self.places {
             wrong.append("answers")
             metrics.set("answers", "\(sized) \(places)")
@@ -73,16 +75,16 @@ struct ArgumentGridsTest: HWTest {
         let cyan = try gpu.buffer([SIMD4<Float>(0, 1, 1, 1)])
         var used: [MTLResource] = [red, green, blue, yellow, miss, hit, cyan]
         encoder.constantData(at: 0).storeBytes(of: Float(1), as: Float.self)
-        for k in 0..<4 { encoder.setTexture(k == 1 ? green : red, index: 3 + k) }
-        for k in 0..<6 { encoder.setSamplerState(sampler, index: 9 + k) }
-        for k in 0..<6 { encoder.setBuffer(k == 5 ? hit : miss, offset: 0, index: 20 + k) }
-        for k in 0..<8 { encoder.setTexture(k == 5 ? blue : red, index: 30 + k) }
+        for k in 0 ..< 4 { encoder.setTexture(k == 1 ? green : red, index: 3 + k) }
+        for k in 0 ..< 6 { encoder.setSamplerState(sampler, index: 9 + k) }
+        for k in 0 ..< 6 { encoder.setBuffer(k == 5 ? hit : miss, offset: 0, index: 20 + k) }
+        for k in 0 ..< 8 { encoder.setTexture(k == 5 ? blue : red, index: 30 + k) }
         let consts: [SIMD2<Float>] = [[0.9, 0.9], [0.6, 0.9], [0.9, 0.9], [0.9, 0.9], [0.9, 0.9], [0.2, 0.4]]
         for (k, c) in consts.enumerated() {
             encoder.constantData(at: 40 + k).storeBytes(of: c, as: SIMD2<Float>.self)
         }
         var nested: [String] = []
-        for k in 0..<4 {
+        for k in 0 ..< 4 {
             guard let inner = encoder.makeArgumentEncoderForBuffer(atIndex: 70 + k) else {
                 nested.append("nil")
                 continue
@@ -108,7 +110,7 @@ struct ArgumentGridsTest: HWTest {
             NativeArgumentEncoderTest.cover(render, pipeline, arguments)
         }
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        let got = (0..<6).map { Array(pixels.pixel($0, 0, width: 6)) }
+        let got = (0 ..< 6).map { Array(pixels.pixel($0, 0, width: 6)) }
         metrics.set("draw", "\(timing.path)/\(got == Self.drawn ? "exact" : "wrong")")
         if got != Self.drawn {
             metrics.set("pixels", got.map { $0.map(String.init).joined(separator: ",") }.joined(separator: " "))

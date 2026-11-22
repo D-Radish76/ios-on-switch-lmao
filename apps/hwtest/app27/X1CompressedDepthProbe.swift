@@ -55,7 +55,7 @@ enum X1CompressedDepthProbe {
         let reference = try await scene.draw()
         _ = plainMemory(gpu.device, false)
         var bad = 0, compressed = 0
-        for _ in 0..<attempts where compressed < rounds {
+        for _ in 0 ..< attempts where compressed < rounds {
             let before = GM20BFacade.compression(of: gpu.device)["zeta_ce_copies"] ?? 0
             let picture = try await scene.draw()
             if (GM20BFacade.compression(of: gpu.device)["zeta_ce_copies"] ?? 0) > before {
@@ -149,10 +149,12 @@ enum X1CompressedDepthProbe {
             resolved = samples > 1 ? try gpu.texture(.rgba8Unorm, size, size) : nil
             fetch = try gpu.render(
                 vertex: "fetch_depth_vertex", fragment: "fetch_add_fragment", format: .rgba8Unorm, samples: samples,
-                depth: format, stencil: stencil ? format : .invalid)
+                depth: format, stencil: stencil ? format : .invalid
+            )
             plain = try gpu.render(
                 vertex: "fetch_depth_vertex", fragment: "solid_fragment", format: .rgba8Unorm, samples: samples,
-                depth: format, stencil: stencil ? format : .invalid)
+                depth: format, stencil: stencil ? format : .invalid
+            )
             let descriptor = MTLDepthStencilDescriptor()
             descriptor.depthCompareFunction = .less
             descriptor.isDepthWriteEnabled = true

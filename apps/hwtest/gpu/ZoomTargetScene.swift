@@ -34,8 +34,10 @@ public enum ZoomTargetScene {
             CAState.bind(
                 encoder,
                 vertices: CAState.rectangle(
-                    x0: -0.75, y0: -0.5, x1: 0.25, y1: 0.4, color: SIMD4<Float16>(0.75, 0.5, 0.25, 1)),
-                source: nil)
+                    x0: -0.75, y0: -0.5, x1: 0.25, y1: 0.4, color: SIMD4<Float16>(0.75, 0.5, 0.25, 1)
+                ),
+                source: nil
+            )
             encoder.setScissorRect(MTLScissorRect(x: 250, y: 130, width: 520, height: 250))
             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             encoder.endEncoding()
@@ -72,11 +74,13 @@ public enum ZoomTargetScene {
             encoder.setBuffer(out, offset: 0, index: 1)
             encoder.dispatchThreads(
                 MTLSize(width: points.count, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: points.count, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: points.count, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }.path
         let texels = UnsafeBufferPointer(
-            start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: points.count), count: points.count)
-        return (texels.map { texel in (0..<4).map { UInt8(max(0, min(255, (texel[$0] * 255).rounded()))) } }, path)
+            start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: points.count), count: points.count
+        )
+        return (texels.map { texel in (0 ..< 4).map { UInt8(max(0, min(255, (texel[$0] * 255).rounded()))) } }, path)
     }
 }

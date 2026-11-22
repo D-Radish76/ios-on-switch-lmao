@@ -10,10 +10,12 @@ public enum CAState {
     /// The system's QuartzCore library; the Mac's goldens writers point it at the IPSW's.
     #if os(macOS)
         nonisolated(unsafe) public static var library = URL(
-            fileURLWithPath: "/System/Library/Frameworks/QuartzCore.framework/Versions/A/Resources/default.metallib")
+            fileURLWithPath: "/System/Library/Frameworks/QuartzCore.framework/Versions/A/Resources/default.metallib"
+        )
     #else
         nonisolated(unsafe) public static var library = URL(
-            fileURLWithPath: "/System/Library/Frameworks/QuartzCore.framework/default.metallib")
+            fileURLWithPath: "/System/Library/Frameworks/QuartzCore.framework/default.metallib"
+        )
     #endif
 
     /// float4 position, float2 two texture coordinates, half4 colour: CA's 48-byte vertex (a0 to a3, buffer 1).
@@ -111,7 +113,7 @@ public enum CAState {
         encoder.setVertexBytes(&vertices, length: MemoryLayout<Vertex>.stride * vertices.count, index: 1)
         encoder.setVertexBytes(&identity, length: MemoryLayout<simd_float4x4>.size, index: 2)
         for slot in [0, 3] { encoder.setVertexBytes(zeros, length: zeros.count, index: slot) }
-        for slot in 0..<4 { encoder.setFragmentBytes(zeros, length: zeros.count, index: slot) }
+        for slot in 0 ..< 4 { encoder.setFragmentBytes(zeros, length: zeros.count, index: slot) }
         if let source {
             encoder.setFragmentTexture(source, index: 0)
             encoder.setFragmentTexture(source, index: 1)

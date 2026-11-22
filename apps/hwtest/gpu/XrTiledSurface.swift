@@ -15,8 +15,22 @@ public enum XrTiledSurface {
 
     /// The surface, its 554 cleared to (0.25, 0.5, 0.75, 1), and a 550 over it
     static func tiled(_ gpu: GPU) async throws -> (MTLTexture, MTLTexture?) {
-        guard let surface = SurfaceReads.surface("w30r", size, size, rows: 256, allocation: 256 * size, fill: { _ in 0 }),
-            let target = SurfaceReads.texture(gpu, 554, size, size, over: surface, usage: [.renderTarget, .shaderRead])
+        guard let surface = SurfaceReads.surface(
+            "w30r",
+            size,
+            size,
+            rows: 256,
+            allocation: 256 * size,
+            fill: { _ in 0 }
+        ),
+              let target = SurfaceReads.texture(
+                  gpu,
+                  554,
+                  size,
+                  size,
+                  over: surface,
+                  usage: [.renderTarget, .shaderRead]
+              )
         else { throw TestFailure("no 554 over a 'w30r'") }
         let timing = try await gpu.run(tolerateError: true) { commands in
             let pass = MTLRenderPassDescriptor()
@@ -27,10 +41,14 @@ public enum XrTiledSurface {
             commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
         }
         guard !timing.path.hasPrefix("error:") else { throw TestFailure("the 554 clear failed: \(timing.facadePath)") }
-        return (target, SurfaceReads.texture(gpu, 550, size, size, over: surface, usage: [.shaderRead, .shaderWrite, .renderTarget]))
+        return (
+            target,
+            SurfaceReads.texture(gpu, 550, size, size, over: surface, usage: [.shaderRead, .shaderWrite, .renderTarget])
+        )
     }
 
-    static func close(_ a: SIMD4<Float>, _ b: SIMD4<Float>) -> Bool { (0..<4).allSatisfy { abs(a[$0] - b[$0]) <= 1e-6 } }
+    static func close(_ a: SIMD4<Float>,
+                      _ b: SIMD4<Float>) -> Bool { (0 ..< 4).allSatisfy { abs(a[$0] - b[$0]) <= 1e-6 } }
 
     public static func observe(_ gpu: GPU) async throws -> Reading {
         var reading = Reading()
@@ -59,13 +77,15 @@ public enum XrTiledSurface {
             let encoder = commands.makeBlitCommandEncoder()!
             encoder.copy(
                 from: xr, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 8, y: 0, z: 0),
-                sourceSize: MTLSize(width: 16, height: 8, depth: 1), to: second, destinationSlice: 0, destinationLevel: 0,
-                destinationOrigin: MTLOrigin())
+                sourceSize: MTLSize(width: 16, height: 8, depth: 1), to: second, destinationSlice: 0,
+                destinationLevel: 0,
+                destinationOrigin: MTLOrigin()
+            )
             encoder.endEncoding()
         }
         guard !blit.path.hasPrefix("error:") else { throw TestFailure("the blit failed: \(blit.facadePath)") }
         let copied = try await SurfaceReads.read(gpu, secondTarget)
-        reading.blitOff = (0..<8).flatMap { y in (0..<16).map { (y, $0) } }
+        reading.blitOff = (0 ..< 8).flatMap { y in (0 ..< 16).map { (y, $0) } }
             .filter { !close(copied[$0.0 * size + $0.1], after[$0.0 * size + 8 + $0.1]) }.count
         return reading
     }

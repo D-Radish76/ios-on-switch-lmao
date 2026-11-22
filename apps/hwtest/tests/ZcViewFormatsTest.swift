@@ -35,7 +35,8 @@ struct ZcViewFormatsTest: HWTest {
         for compressed in [true, false] {
             if compressed { _ = facade.perform(Self.compressNext) }
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .rgba8Unorm, width: Self.side, height: Self.side, mipmapped: false)
+                pixelFormat: .rgba8Unorm, width: Self.side, height: Self.side, mipmapped: false
+            )
             d.usage = [.renderTarget, .shaderRead, .pixelFormatView]
             d.storageMode = .private
             guard let texture = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("no RGBA8 target made") }
@@ -65,7 +66,7 @@ struct ZcViewFormatsTest: HWTest {
 
     static func probe(_ gpu: GPU, _ texture: MTLTexture) async throws -> Counts {
         guard let asUint = texture.makeTextureView(pixelFormat: .r32Uint),
-            let asBgra = texture.makeTextureView(pixelFormat: .bgra8Unorm)
+              let asBgra = texture.makeTextureView(pixelFormat: .bgra8Unorm)
         else { throw TestFailure("no R32Uint or BGRA8 view made") }
         let renders: [(MTLTexture, String, MTLPixelFormat, UInt32)] = [
             (asUint, "zc_view_uint_fragment", .r32Uint, 1), (asBgra, "zc_view_float_fragment", .bgra8Unorm, 2),
@@ -75,7 +76,7 @@ struct ZcViewFormatsTest: HWTest {
         for (target, fragment, format, seed) in renders {
             let pipeline = try gpu.render(fragment: fragment, format: format)
             try await draw(gpu, target, pipeline, seed: seed)
-            let stored: [UInt32] = (0..<side * side).map { i in
+            let stored: [UInt32] = (0 ..< side * side).map { i in
                 let h = hash(i % side, i / side, seed)
                 return format == .bgra8Unorm ? swapped(h) : h
             }
@@ -99,7 +100,7 @@ struct ZcViewFormatsTest: HWTest {
 
     static func off(_ got: [UInt32], _ stored: [UInt32], _ model: (UInt32) -> UInt32) -> Int {
         var n = 0
-        for i in 0..<min(got.count, stored.count) where got[i] != model(stored[i]) { n += 1 }
+        for i in 0 ..< min(got.count, stored.count) where got[i] != model(stored[i]) { n += 1 }
         return n + abs(got.count - stored.count)
     }
 
@@ -134,7 +135,8 @@ struct ZcViewFormatsTest: HWTest {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: side, height: side, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }
         let read = out.contents().bindMemory(to: UInt32.self, capacity: side * side)
@@ -143,6 +145,6 @@ struct ZcViewFormatsTest: HWTest {
 
     static func blitWords(_ gpu: GPU, _ texture: MTLTexture) async throws -> [UInt32] {
         let bytes = try await gpu.read(texture, bytesPerPixel: 4)
-        return (0..<side * side).map { bytes.loaded(as: UInt32.self, at: $0) }
+        return (0 ..< side * side).map { bytes.loaded(as: UInt32.self, at: $0) }
     }
 }

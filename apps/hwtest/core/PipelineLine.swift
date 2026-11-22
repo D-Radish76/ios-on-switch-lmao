@@ -67,7 +67,7 @@ public struct PipelineLine: Equatable, Sendable {
         }
         let depths = (fields["ds"] ?? "0/0").split(separator: "/").compactMap { UInt($0) }
         guard colors.allSatisfy({ $0.fields.count == 9 }), attributes.allSatisfy({ $0.fields.count == 6 }),
-            depths.count == 2, let vertex = Self.function(parts[1], "v"), let fragment = Self.function(parts[2], "f")
+              depths.count == 2, let vertex = Self.function(parts[1], "v"), let fragment = Self.function(parts[2], "f")
         else { return nil }
         label = fields["label"] ?? "-"
         samples = Int(fields["samples"] ?? "1") ?? 1
@@ -89,7 +89,7 @@ public struct PipelineLine: Equatable, Sendable {
             guard pieces.count == 3, let type = UInt(pieces[1]), pieces[2].count % 2 == 0 else { return nil }
             let hex = Array(pieces[2])
             let bytes = stride(from: 0, to: hex.count, by: 2).compactMap {
-                UInt8(String(hex[$0..<($0 + 2)]), radix: 16)
+                UInt8(String(hex[$0 ..< ($0 + 2)]), radix: 16)
             }
             guard bytes.count * 2 == hex.count else { return nil }
             constants.append(Constant(name: pieces[0], type: type, bytes: bytes))

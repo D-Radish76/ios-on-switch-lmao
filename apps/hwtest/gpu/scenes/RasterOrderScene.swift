@@ -13,7 +13,7 @@ struct RasterOrderScene: GPUScene {
     static let size = 64
     static let quads = 48
 
-    static var expected: UInt32 { (0..<UInt32(quads)).reduce(0) { $0 &* 3 &+ $1 &+ 1 } }
+    static var expected: UInt32 { (0 ..< UInt32(quads)).reduce(0) { $0 &* 3 &+ $1 &+ 1 } }
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
@@ -30,7 +30,8 @@ struct RasterOrderScene: GPUScene {
             blit.copy(
                 from: zeros, sourceOffset: 0, sourceBytesPerRow: Self.size * 4, sourceBytesPerImage: 0,
                 sourceSize: MTLSize(width: Self.size, height: Self.size, depth: 1), to: words, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = target

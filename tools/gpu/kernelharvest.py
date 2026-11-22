@@ -63,10 +63,7 @@ SHAPE = (
 # constantsLast puts " | constants" and the key's constants part, after one space, last
 MADE = re.compile(
     r'SwitchMetal: a kernel the pack lacks, made at its first dispatch of \S+ threads in \d+ us(?: \([^)]*\))?: '
-    + r'(?P<function>\S+) '
-    + AIR
-    + SHAPE
-    + r' \| constants(?P<constants>.*)$',
+    r'(?P<function>\S+) ' + AIR + SHAPE + r' \| constants(?P<constants>.*)$',
     re.DOTALL,
 )
 REFUSED = re.compile(
@@ -174,7 +171,8 @@ def read_boots(stream: Iterable[dict]) -> dict[str, Boot]:
 
 class Libraries:
     """The library a kernel's function is made from: a data library holding it with its AIR (--libraries), else the one
-    library the corpus's D lines and specializations (S lines) name for its function name."""
+    library the corpus's D lines and specializations (S lines) name for its function name.
+    """
 
     def __init__(self, files: list[tuple[str, bytes]], corpus: list[str], build: str | None) -> None:
         self.by_air: dict[tuple[str, str], set[str]] = defaultdict(set)

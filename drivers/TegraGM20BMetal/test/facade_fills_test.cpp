@@ -38,10 +38,8 @@ protected:
     static id<MTLTexture> texture(MTLPixelFormat format, NSUInteger side, MTLTextureType type = MTLTextureType2D,
                                   NSUInteger depth = 1, NSUInteger samples = 1, bool mipmapped = false)
     {
-        auto *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
-                                                                     width:side
-                                                                    height:side
-                                                                 mipmapped:mipmapped];
+        auto *d =
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:side height:side mipmapped:mipmapped];
         d.textureType = type;
         d.depth = type == MTLTextureType3D ? depth : 1;
         d.arrayLength = type == MTLTextureType2DArray ? depth : 1;

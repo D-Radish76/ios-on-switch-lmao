@@ -35,31 +35,40 @@ public enum YcbcrTurnedLoad {
     public static let cases: [Case] = [
         Case(
             key: "r1_64x128", rotation: 1, frameWidth: 64, frameHeight: 128, rect: Box(0, 0, 4, 4),
-            box: Box(96, 0, 127, 31)),
+            box: Box(96, 0, 127, 31)
+        ),
         Case(
             key: "r1_56x120", rotation: 1, frameWidth: 56, frameHeight: 120, rect: Box(0, 0, 4, 4),
-            box: Box(88, 0, 119, 31)),
+            box: Box(88, 0, 119, 31)
+        ),
         Case(
             key: "r1_56x120_mid", rotation: 1, frameWidth: 56, frameHeight: 120, rect: Box(40, 40, 44, 44),
-            box: Box(56, 32, 87, 55)),
+            box: Box(56, 32, 87, 55)
+        ),
         Case(
             key: "r2_128x64", rotation: 2, frameWidth: 128, frameHeight: 64, rect: Box(0, 0, 4, 4),
-            box: Box(96, 32, 127, 63)),
+            box: Box(96, 32, 127, 63)
+        ),
         Case(
             key: "r2_120x56", rotation: 2, frameWidth: 120, frameHeight: 56, rect: Box(0, 0, 4, 4),
-            box: Box(88, 24, 119, 55)),
+            box: Box(88, 24, 119, 55)
+        ),
         Case(
             key: "r2_120x56_mid", rotation: 2, frameWidth: 120, frameHeight: 56, rect: Box(40, 40, 44, 44),
-            box: Box(56, 0, 87, 23)),
+            box: Box(56, 0, 87, 23)
+        ),
         Case(
             key: "r3_64x128", rotation: 3, frameWidth: 64, frameHeight: 128, rect: Box(0, 0, 4, 4),
-            box: Box(0, 32, 31, 63)),
+            box: Box(0, 32, 31, 63)
+        ),
         Case(
             key: "r3_56x120", rotation: 3, frameWidth: 56, frameHeight: 120, rect: Box(0, 0, 4, 4),
-            box: Box(0, 24, 31, 55)),
+            box: Box(0, 24, 31, 55)
+        ),
         Case(
             key: "r3_56x120_mid", rotation: 3, frameWidth: 56, frameHeight: 120, rect: Box(40, 40, 44, 44),
-            box: Box(32, 0, 63, 23)),
+            box: Box(32, 0, 63, 23)
+        ),
     ]
 
     public struct Reading: Sendable {
@@ -82,11 +91,13 @@ public enum YcbcrTurnedLoad {
         ]
         guard
             let surface = SurfaceReads.surface(
-                "420v", width, height, planes: planes, allocation: width * height * 3 / 2)
+                "420v", width, height, planes: planes, allocation: width * height * 3 / 2
+            )
         else { throw TestFailure("no '420v' 128x64") }
         var reading = Reading()
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 500)!, width: c.frameWidth, height: c.frameHeight, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 500)!, width: c.frameWidth, height: c.frameHeight, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         guard descriptor.responds(to: NSSelectorFromString("setRotation:")) else {
             throw TestFailure("MTLTextureDescriptor answers no setRotation:")
@@ -102,8 +113,8 @@ public enum YcbcrTurnedLoad {
         guard !reading.status.hasPrefix("error:") else { return reading }
         let after = SurfaceReads.bytes(surface)
         var x0 = Int.max, y0 = Int.max, x1 = -1, y1 = -1
-        for y in 0..<height {
-            for x in 0..<width where after[y * width + x] != before[y * width + x] {
+        for y in 0 ..< height {
+            for x in 0 ..< width where after[y * width + x] != before[y * width + x] {
                 reading.lumaChanged += 1
                 if !c.box.holds(x, y) { reading.lumaOutside += 1 }
                 (x0, y0, x1, y1) = (min(x0, x), min(y0, y), max(x1, x), max(y1, y))
@@ -111,24 +122,26 @@ public enum YcbcrTurnedLoad {
         }
         if x1 >= 0 { reading.changedBox = Box(x0, y0, x1, y1) }
         let chroma = Box(c.box.x0 & ~1, c.box.y0 / 2, c.box.x1 | 1, c.box.y1 / 2)
-        for y in 0..<(height / 2) {
-            for x in 0..<width where after[chromaOffset + y * width + x] != before[chromaOffset + y * width + x] {
+        for y in 0 ..< (height / 2) {
+            for x in 0 ..< width where after[chromaOffset + y * width + x] != before[chromaOffset + y * width + x] {
                 reading.chromaChanged += 1
                 if !chroma.holds(x, y) { reading.chromaOutside += 1 }
             }
         }
         let end = chromaOffset + width * height / 2
-        reading.tailChanged = (end..<after.count).filter { after[$0] != before[$0] }.count
+        reading.tailChanged = (end ..< after.count).filter { after[$0] != before[$0] }.count
         return reading
     }
 
     static func loaded(_ gpu: GPU, _ texture: MTLTexture, _ c: Case) async throws -> String {
         let pipeline = try gpu.render(
-            vertex: "surface_stores_rect", fragment: "ycbcr_turned_load_discard", format: texture.pixelFormat)
+            vertex: "surface_stores_rect", fragment: "ycbcr_turned_load_discard", format: texture.pixelFormat
+        )
         let w = Float(c.frameWidth), h = Float(c.frameHeight)
         var rect = SIMD4<Float>(
             Float(c.rect.x0) / w * 2 - 1, 1 - Float(c.rect.y0) / h * 2, Float(c.rect.x1) / w * 2 - 1,
-            1 - Float(c.rect.y1) / h * 2)
+            1 - Float(c.rect.y1) / h * 2
+        )
         return try await gpu.run(tolerateError: true) { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = texture

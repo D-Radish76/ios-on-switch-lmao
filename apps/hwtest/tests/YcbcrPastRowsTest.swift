@@ -30,16 +30,20 @@ struct YcbcrPastRowsTest: HWTest {
     static let arms = [
         Arm(
             name: "taller", format: 540, plane: 0, width: 16, height: 12, surfaceWidth: 16, surfaceHeight: 8,
-            reference: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+            reference: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        ),
         Arm(
             name: "finer", format: 541, plane: 0, width: 16, height: 8, surfaceWidth: 16, surfaceHeight: 8,
-            reference: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange),
+            reference: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange
+        ),
         Arm(
             name: "plane1", format: 540, plane: 1, width: 16, height: 16, surfaceWidth: 16, surfaceHeight: 8,
-            reference: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange),
+            reference: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange
+        ),
         Arm(
             name: "wider", format: 540, plane: 0, width: 80, height: 8, surfaceWidth: 16, surfaceHeight: 8,
-            reference: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+            reference: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+        ),
     ]
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -73,7 +77,8 @@ struct YcbcrPastRowsTest: HWTest {
     func armOff(_ gpu: GPU, _ arm: Arm) async throws -> Int? {
         guard
             let readBuffer = YcbcrCornerTest.pixelBuffer(
-                arm.surfaceWidth, arm.surfaceHeight, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+                arm.surfaceWidth, arm.surfaceHeight, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+            ),
             let read = CVPixelBufferGetIOSurface(readBuffer)?.takeUnretainedValue(),
             let referenceBuffer = YcbcrCornerTest.pixelBuffer(arm.width, arm.height, arm.reference),
             let reference = CVPixelBufferGetIOSurface(referenceBuffer)?.takeUnretainedValue()
@@ -84,14 +89,14 @@ struct YcbcrPastRowsTest: HWTest {
         guard rows.allSatisfy({ $0.offset + $0.pitch * ($0.rows - 1) + $0.bytes <= mapped }) else { return nil }
         IOSurfaceLock(read, [], nil)
         let bytes = IOSurfaceGetBaseAddress(read).bindMemory(to: UInt8.self, capacity: mapped)
-        for i in 0..<IOSurfaceGetAllocSize(read) { bytes[i] = UInt8(truncatingIfNeeded: i &* 37 &+ i >> 7) }
+        for i in 0 ..< IOSurfaceGetAllocSize(read) { bytes[i] = UInt8(truncatingIfNeeded: i &* 37 &+ i >> 7) }
         IOSurfaceLock(reference, [], nil)
         let referencePlanes = arm.plane == 1 ? [1] : [0, 1]
         for (k, plane) in referencePlanes.enumerated() {
             let r = rows[k]
             let to = IOSurfaceGetBaseAddressOfPlane(reference, plane).bindMemory(to: UInt8.self, capacity: 1)
             let toPitch = IOSurfaceGetBytesPerRowOfPlane(reference, plane)
-            for y in 0..<min(r.rows, IOSurfaceGetHeightOfPlane(reference, plane)) {
+            for y in 0 ..< min(r.rows, IOSurfaceGetHeightOfPlane(reference, plane)) {
                 memcpy(to + y * toPitch, bytes + r.offset + y * r.pitch, r.bytes)
             }
         }
@@ -100,7 +105,8 @@ struct YcbcrPastRowsTest: HWTest {
         let make = { (s: IOSurfaceRef) -> MTLTexture? in
             guard let format = MTLPixelFormat(rawValue: arm.format) else { return nil }
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: arm.width, height: arm.height, mipmapped: false)
+                pixelFormat: format, width: arm.width, height: arm.height, mipmapped: false
+            )
             d.usage = .shaderRead
             return gpu.device.makeTexture(descriptor: d, iosurface: s, plane: arm.plane)
         }

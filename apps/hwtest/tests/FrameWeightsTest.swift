@@ -65,7 +65,7 @@ struct FrameWeightsTest: HWTest {
                 let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
                 var colour = SIMD4<Float>(0.25, 0.5, 0.75, 1)
                 encoder.setFragmentBytes(&colour, length: 16, index: 0)
-                for _ in 0..<4 {
+                for _ in 0 ..< 4 {
                     for (state, corners) in [(0, covering), (1, covering), (2, covering), (0, point)] {
                         var corners = corners
                         encoder.setRenderPipelineState(states[state])
@@ -89,7 +89,7 @@ struct FrameWeightsTest: HWTest {
         let kinds = rows.map { $0["kind"] as? String ?? "?" }.joined()
         let draws = rows.filter { ($0["kind"] as? String) == "d" }
         let state = { (s: Int) in stride(from: s, to: draws.count, by: 4).map { draws[$0] } }
-        let byState = draws.count == 16 ? (0..<4).map(state) : []
+        let byState = draws.count == 16 ? (0 ..< 4).map(state) : []
         let ns = byState.map { $0.map { Double(int($0, "ns")) } }
         let keys = byState.map { Set($0.map { $0["key"] as? String ?? "" }) }
         let medians = ns.map(median)
@@ -100,7 +100,8 @@ struct FrameWeightsTest: HWTest {
         let scaling = medians.count == 4 ? (medians[2] - floor) / max(medians[1] - floor, 1) : 0
         let words =
             byState.count == 4
-            ? Double(int(byState[2][0], "fragment_words")) / Double(max(int(byState[1][0], "fragment_words"), 1)) : 0
+                ? Double(int(byState[2][0], "fragment_words")) / Double(max(int(byState[1][0], "fragment_words"), 1)) :
+                0
         metrics.set("rows", rows.count)
         metrics.set("draw_rows", draws.count)
         metrics.set("invocations_a", byState.first.map { int($0[0], "invocations") } ?? -1)
@@ -131,9 +132,9 @@ struct FrameWeightsTest: HWTest {
             ),
             (
                 "A, B, C 921,600 invocations, D none",
-                (0..<3).allSatisfy { counted($0, "invocations", pixels) } && counted(3, "invocations", 0)
+                (0 ..< 3).allSatisfy { counted($0, "invocations", pixels) } && counted(3, "invocations", 0)
             ),
-            ("A, B, C boxes of 921,600", (0..<3).allSatisfy { counted($0, "box", pixels) }),
+            ("A, B, C boxes of 921,600", (0 ..< 3).allSatisfy { counted($0, "box", pixels) }),
             ("each state's draws within 1.25", byState.count == 4 && spread <= 1.25),
             (
                 "medians C > B > A > D",

@@ -31,7 +31,8 @@ struct Depth16MultisampleResolveTest: HWTest {
         let depth = try gpu.texture(.depth16Unorm, n, n, usage: [.renderTarget], samples: samples)
         let stencil = try gpu.texture(.stencil8, n, n, usage: [.renderTarget], samples: samples)
         let state = try gpu.render(
-            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth16Unorm, stencil: .stencil8)
+            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth16Unorm, stencil: .stencil8
+        )
         let d = MTLDepthStencilDescriptor()
         d.depthCompareFunction = .always
         d.isDepthWriteEnabled = true
@@ -47,7 +48,8 @@ struct Depth16MultisampleResolveTest: HWTest {
                     p.depthAttachment.clearDepth = 0.75
                     p.depthAttachment.storeAction = .store
                     commands.makeRenderCommandEncoder(descriptor: p)!.endEncoding()
-                }.path)
+                }.path
+            )
             return out
         }
         func pass(_ commands: MTLCommandBuffer, load: Bool, store: MTLStoreAction, into out: MTLTexture) {
@@ -78,7 +80,7 @@ struct Depth16MultisampleResolveTest: HWTest {
         }
         func codes(_ texture: MTLTexture) async throws -> [UInt16] {
             let bytes = try await gpu.read(texture, bytesPerPixel: 2)
-            return (0..<n * n).map { UInt16(bytes[2 * $0]) | UInt16(bytes[2 * $0 + 1]) << 8 }
+            return (0 ..< n * n).map { UInt16(bytes[2 * $0]) | UInt16(bytes[2 * $0 + 1]) << 8 }
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []

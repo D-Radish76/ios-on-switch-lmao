@@ -25,7 +25,8 @@ struct SeparateZetaResolveTest: HWTest {
         let depthOut = try gpu.texture(.depth32Float, n, n, usage: [.renderTarget])
         let stencilOut = try gpu.texture(.stencil8, n, n, usage: [.renderTarget])
         let state = try gpu.render(
-            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth32Float, stencil: .stencil8)
+            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth32Float, stencil: .stencil8
+        )
         let d = MTLDepthStencilDescriptor()
         d.depthCompareFunction = .always
         d.isDepthWriteEnabled = true
@@ -70,20 +71,22 @@ struct SeparateZetaResolveTest: HWTest {
             b.copy(
                 from: depthOut, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                 sourceSize: MTLSize(width: n, height: n, depth: 1), to: depths, destinationOffset: 0,
-                destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4)
+                destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4
+            )
             if stencilResolves {
                 b.copy(
                     from: stencilOut, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                     sourceSize: MTLSize(width: n, height: n, depth: 1), to: stencils, destinationOffset: 0,
-                    destinationBytesPerRow: n, destinationBytesPerImage: n * n)
+                    destinationBytesPerRow: n, destinationBytesPerImage: n * n
+                )
             }
             b.endEncoding()
         }.path
         let z = depths.contents().bindMemory(to: Float.self, capacity: n * n)
         let s = stencils.contents().bindMemory(to: UInt8.self, capacity: n * n)
         var depthWrong = 0, stencilWrong = 0
-        for y in 0..<n {
-            for x in 0..<n {
+        for y in 0 ..< n {
+            for x in 0 ..< n {
                 let left = x < n / 2
                 depthWrong += z[y * n + x] == (left ? 0.5 : 0.25) ? 0 : 1
                 if stencilResolves { stencilWrong += s[y * n + x] == (left ? 0x5A : 0x33) ? 0 : 1 }

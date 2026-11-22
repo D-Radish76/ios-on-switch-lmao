@@ -55,12 +55,12 @@ public enum FetchRungScene {
             CAStateSweep.bind(encoder, source: source, sampler: sampler)
             var vertices = cover
             encoder.setVertexBytes(&vertices, length: MemoryLayout<CAState.Vertex>.stride * vertices.count, index: 1)
-            for _ in 0..<draws { encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4) }
+            for _ in 0 ..< draws { encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4) }
             encoder.endEncoding()
         }
         _ = try await gpu.run(tolerateError: true, draw)
         var timings: [GPU.Timing] = []
-        for _ in 0..<runs { timings.append(try await gpu.run(draw)) }
+        for _ in 0 ..< runs { timings.append(try await gpu.run(draw)) }
         guard timings.allSatisfy(\.gpuTimed) else { return (0, "untimed") }
         let perDraw = timings.map { $0.gpuMilliseconds * 1000 / Double(draws) }
         return (Stats.percentile(perDraw, 0.5), Set(timings.map(\.path)).sorted().joined(separator: ","))
@@ -103,7 +103,7 @@ public enum FetchRungScene {
         let layer = CAState.rectangle(x0: -1, y0: -1, x1: 1, y1: 1, color: SIMD4(0.45, 0.1, 0.3, 0.5))
         var counts: [Int] = []
         var paths: Set<String> = []
-        for frame in 0..<frames {
+        for frame in 0 ..< frames {
             let before = GM20BFacade.counters(of: gpu.device)["fetch_rung2"] ?? 0
             let timing = try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
@@ -118,8 +118,9 @@ public enum FetchRungScene {
                 CAStateSweep.bind(encoder, source: source, sampler: sampler)
                 var vertices = layer.map(CAStateSweep.premultiply)
                 encoder.setVertexBytes(
-                    &vertices, length: MemoryLayout<CAState.Vertex>.stride * vertices.count, index: 1)
-                for _ in 0..<layers { encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4) }
+                    &vertices, length: MemoryLayout<CAState.Vertex>.stride * vertices.count, index: 1
+                )
+                for _ in 0 ..< layers { encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4) }
                 encoder.endEncoding()
             }
             paths.insert(timing.path)

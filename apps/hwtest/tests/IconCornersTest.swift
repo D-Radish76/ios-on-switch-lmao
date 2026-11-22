@@ -49,7 +49,8 @@ struct IconCornersTest: HWTest {
                     let cell: RenderBoxCorner.Cell
                     do {
                         cell = try await RenderBoxCorner.cell(
-                            gpu, side: side, radius: Double(side) * Self.iconRadius, storage: storage)
+                            gpu, side: side, radius: Double(side) * Self.iconRadius, storage: storage
+                        )
                     } catch {
                         metrics.set("\(name)_error", "\(error)")
                         wrong.append(name)

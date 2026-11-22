@@ -49,7 +49,8 @@ struct AheadFailuresTest: HWTest {
             metrics.set("record_fails_handoffs", recordFails.handoffsAfterFailure)
             checks.append(
                 ("record_fails: \(recordFails.handoffsAfterFailure) hand-offs after the failure",
-                 recordFails.handoffsAfterFailure == 0))
+                 recordFails.handoffsAfterFailure == 0)
+            )
             checks += Self.valid("after_record", try await frames.run(4, .none), &metrics)
         } catch {
             checks.append(("\(GPU.describe(error))", false))
@@ -57,7 +58,8 @@ struct AheadFailuresTest: HWTest {
         metrics.set("paths", gpu.paths.isEmpty ? "-" : gpu.paths.text)
         let counted = GM20BFacade.counters(of: gpu.device)
         checks.append(
-            FailedCounts.judged(before: before, after: counted, expecting: ["none": 2], own: gpu.paths, &metrics))
+            FailedCounts.judged(before: before, after: counted, expecting: ["none": 2], own: gpu.paths, &metrics)
+        )
         checks.append(FailedCounts(before: before, after: counted).skipCheck())
         return .judged(checks, metrics, proof: gpu.proof)
     }
@@ -85,7 +87,7 @@ struct AheadFailuresTest: HWTest {
         metrics.set(arm + "_abandons", r.pipelined["abandons"] ?? -1)
         return [
             ("\(arm): \(r.status) code \(r.code) \(r.path), not error 9 error:none",
-             r.status == "error" && r.code == invalidResource && r.path == "error:none")
+             r.status == "error" && r.code == invalidResource && r.path == "error:none"),
         ]
     }
 }

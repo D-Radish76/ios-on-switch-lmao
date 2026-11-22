@@ -21,9 +21,9 @@ struct CAGlassSplitScene: GPUScene {
     static let tiles = 8
     static let line =
         "R ok=1 label=com.apple.coreanimation.PBGRABsovXmw_TgbhA3Xhf_Isrc_Isrc samples=1 topo=0 ds=0/0"
-        + " c0=80:15:1:1:5:0:1:5:0 c1=115:0:0:1:0:0:1:0:0 c2=55:0:0:1:0:0:1:0:0"
-        + " a0=31:0:1:48:1:1 a1=29:16:1:48:1:1 a2=29:24:1:48:1:1 a3=27:32:1:48:1:1"
-        + " | v variable_blur_vert_lph  | f glass_background_all_lph  | "
+            + " c0=80:15:1:1:5:0:1:5:0 c1=115:0:0:1:0:0:1:0:0 c2=55:0:0:1:0:0:1:0:0"
+            + " a0=31:0:1:48:1:1 a1=29:16:1:48:1:1 a2=29:24:1:48:1:1 a3=27:32:1:48:1:1"
+            + " | v variable_blur_vert_lph  | f glass_background_all_lph  | "
     static let xrLines = [
         ("b3a8", CAGlassSplitScene.xrLine("Pb3a8BsovXmw_TgsaA3Xhf_Isrc", format: 550)),
         ("xr", CAGlassSplitScene.xrLine("Pw30rBsovXmw_TgsaA3Xhf_Isrc", format: 554)),
@@ -48,15 +48,16 @@ struct CAGlassSplitScene: GPUScene {
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
         guard let parsed = PipelineLine(Self.line),
-            let library = try? gpu.device.makeLibrary(URL: CAState.library),
-            library.makeFunction(name: parsed.fragment.name) != nil
+              let library = try? gpu.device.makeLibrary(URL: CAState.library),
+              library.makeFunction(name: parsed.fragment.name) != nil
         else {
             result.expect(false, "the required QuartzCore glass shader is unavailable")
             return result
         }
         let size = Self.size
         let content = Patterns.bytes(
-            Patterns.opaque(Patterns.busy(width: size, height: size, channels: 4, seed: 3)), .bgra8Unorm)
+            Patterns.opaque(Patterns.busy(width: size, height: size, channels: 4, seed: 3)), .bgra8Unorm
+        )
         let target = try gpu.texture(.bgra8Unorm, size, size, usage: [.renderTarget, .shaderRead])
         let frame = try await make(gpu, parsed, library, target: target, content: content)
         let onFacade = GM20BFacade.kind(of: gpu.device) == "gm20b"
@@ -81,7 +82,8 @@ struct CAGlassSplitScene: GPUScene {
         for (name, half) in [("one draw", split), ("the tiles", whole)] {
             result.expect(
                 RasterDiff.compare(half.picture, reference, tolerance: 2.0 / 255).wrong > 0,
-                "\(name) left the content unchanged; no glass output was demonstrated")
+                "\(name) left the content unchanged; no glass output was demonstrated"
+            )
             result.expect(!Self.black(half.picture), "\(name) drew black over the content")
         }
         result.compare("one draw against tiles", split.picture, whole.picture, tolerance: 3.0 / 255)
@@ -105,7 +107,7 @@ struct CAGlassSplitScene: GPUScene {
         _ gpu: GPU, _ library: MTLLibrary, _ name: String, _ text: String, onFacade: Bool, _ result: inout SceneResult
     ) async throws {
         guard let parsed = PipelineLine(text), let format = parsed.colors.first?.format,
-            library.makeFunction(name: parsed.fragment.name) != nil
+              library.makeFunction(name: parsed.fragment.name) != nil
         else {
             result.notes.append("\(name): no QuartzCore sdf glass here")
             return
@@ -122,17 +124,19 @@ struct CAGlassSplitScene: GPUScene {
         let whole = try await draw(gpu, frame, tiles: Self.tiles, wholePrograms: true, &result)
         let split = try await draw(gpu, frame, tiles: 1, wholePrograms: false, &result)
         result.metrics.set(
-            name + "_fetch", GM20BFacade.fetchRoutes(before: before, after: GM20BFacade.counters(of: gpu.device)))
+            name + "_fetch", GM20BFacade.fetchRoutes(before: before, after: GM20BFacade.counters(of: gpu.device))
+        )
         let paths = Set(split.paths + whole.paths)
         result.metrics.set(name + "_paths", paths.sorted().joined(separator: ","))
         result.metrics.set(name + "_mean_split", Self.mean(split.picture))
         result.metrics.set(name + "_picture_split", Self.coarsePicture(split.picture))
         let read: (format: TexelFormat, metal: UInt) =
             frame.target.pixelFormat == .bgr10_xr
-            ? (.bgr10XR, 554) : (.rgba16Float, MTLPixelFormat.rgba16Float.rawValue)
+                ? (.bgr10XR, 554) : (.rgba16Float, MTLPixelFormat.rgba16Float.rawValue)
         result.picture(
             name, bytes: Patterns.bytes(split.picture, read.format), metalFormat: read.metal, width: Self.size,
-            height: Self.size, cleared: [0.5, 0.5, 0.5, 1])
+            height: Self.size, cleared: [0.5, 0.5, 0.5, 1]
+        )
         if let twins = split.twins { result.metrics.set(name + "_twins_split", twins) }
         if let twins = whole.twins { result.metrics.set(name + "_twins_whole", twins) }
         for (drawn, half) in [("one draw", split), ("the tiles", whole)] {
@@ -141,7 +145,8 @@ struct CAGlassSplitScene: GPUScene {
         result.compare("\(name): one draw against tiles", split.picture, whole.picture, tolerance: 3.0 / 255)
         if onFacade {
             result.expect(
-                paths == ["gm20b"], "\(name): the glass drew on \(paths.sorted().joined(separator: ",")), not raw")
+                paths == ["gm20b"], "\(name): the glass drew on \(paths.sorted().joined(separator: ",")), not raw"
+            )
         }
     }
 
@@ -153,11 +158,13 @@ struct CAGlassSplitScene: GPUScene {
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
         guard
             CVPixelBufferCreate(
-                nil, Self.size, Self.size, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &buffer)
-                == kCVReturnSuccess, let buffer, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
+                nil, Self.size, Self.size, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &buffer
+            )
+            == kCVReturnSuccess, let buffer, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { throw TestFailure("no b3a8 pixel buffer") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: Self.size, height: Self.size, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
@@ -181,18 +188,20 @@ struct CAGlassSplitScene: GPUScene {
         let scratch = try parsed.colors.dropFirst().map {
             try gpu.texture(
                 MTLPixelFormat(rawValue: $0.format) ?? .invalid, size, size, usage: [.renderTarget],
-                storage: .memoryless)
+                storage: .memoryless
+            )
         }
         // Initialize every byte the shader's constant windows may read, including the tail after the transform.
         var transform = Self.material(seed: 2)
-        withUnsafeBytes(of: matrix_identity_float4x4) { transform.replaceSubrange(0..<64, with: $0) }
+        withUnsafeBytes(of: matrix_identity_float4x4) { transform.replaceSubrange(0 ..< 64, with: $0) }
         let material =
             [(false, 3), (true, 1), (true, 6), (true, 9)].map { (fragment, slot) in
                 (fragment: fragment, slot: slot, bytes: Self.material(seed: slot + (fragment ? 16 : 0)))
             } + [(fragment: false, slot: 2, bytes: transform)]
         return Frame(
             pipeline: pipeline, content: content, target: target, scratch: scratch, pictures: pictures,
-            material: material)
+            material: material
+        )
     }
 
     struct Half {
@@ -209,7 +218,8 @@ struct CAGlassSplitScene: GPUScene {
         }
         let before = GM20BFacade.counters(of: gpu.device)["split_prologues"]
         let timing = try await gpu.run(tolerateError: true) { commands in
-            if wholePrograms && GM20BFacade.kind(of: gpu.device) == "gm20b" && !GM20BFacade.wholePrograms(in: commands) {
+            if wholePrograms && GM20BFacade.kind(of: gpu.device) == "gm20b" && !GM20BFacade
+                .wholePrograms(in: commands) {
                 throw TestFailure("the raw whole-program control was unavailable before commit")
             }
             let pass = MTLRenderPassDescriptor()
@@ -235,10 +245,11 @@ struct CAGlassSplitScene: GPUScene {
             encoder.setFragmentTexture(frame.pictures[0], index: 3)
             encoder.setFragmentTexture(frame.pictures[1], index: 4)
             let step = Self.size / tiles
-            for ty in 0..<tiles {
-                for tx in 0..<tiles {
+            for ty in 0 ..< tiles {
+                for tx in 0 ..< tiles {
                     encoder.setScissorRect(
-                        MTLScissorRect(x: tx * step, y: ty * step, width: step, height: step))
+                        MTLScissorRect(x: tx * step, y: ty * step, width: step, height: step)
+                    )
                     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 }
             }
@@ -264,7 +275,7 @@ struct CAGlassSplitScene: GPUScene {
     }
 
     static func material(seed: Int) -> [UInt8] {
-        (0..<64).flatMap { i -> [UInt8] in
+        (0 ..< 64).flatMap { i -> [UInt8] in
             let value = Float(16 + (i * 7 + seed * 13) % 33) / 64
             return withUnsafeBytes(of: value.bitPattern.littleEndian) { Array($0) }
         }
@@ -272,9 +283,9 @@ struct CAGlassSplitScene: GPUScene {
 
     static func mean(_ picture: Raster) -> String {
         let count = Float(picture.width * picture.height)
-        return (0..<3).map { c in
+        return (0 ..< 3).map { c in
             var sum: Float = 0
-            for y in 0..<picture.height { for x in 0..<picture.width { sum += picture[x, y, c] } }
+            for y in 0 ..< picture.height { for x in 0 ..< picture.width { sum += picture[x, y, c] } }
             return String(Int((sum / count * 255).rounded()))
         }.joined(separator: ",")
     }
@@ -290,8 +301,9 @@ struct CAGlassSplitScene: GPUScene {
     }
 
     static func black(_ picture: Raster) -> Bool {
-        for y in 0..<picture.height {
-            for x in 0..<picture.width where (0..<3).contains(where: { picture[x, y, $0] > 1.0 / 255 }) { return false }
+        for y in 0 ..< picture.height {
+            for x in 0 ..< picture.width
+                where (0 ..< 3).contains(where: { picture[x, y, $0] > 1.0 / 255 }) { return false }
         }
         return true
     }

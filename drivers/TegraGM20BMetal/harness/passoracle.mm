@@ -163,8 +163,8 @@ void drawQuad(id<MTLRenderCommandEncoder> e, float z, NSUInteger instances = 1, 
 // under LessEqual: white where the loaded depth >= 0.5
 void memorylessDepthLoaded(bool stored)
 {
-    id<MTLTexture> colour = make(MTLPixelFormatRGBA8Unorm), z = make(MTLPixelFormatDepth32Float, MTLTextureType2D, 1,
-                                                                    MTLStorageModeMemoryless);
+    id<MTLTexture> colour = make(MTLPixelFormatRGBA8Unorm),
+                   z = make(MTLPixelFormatDepth32Float, MTLTextureType2D, 1, MTLStorageModeMemoryless);
     id<MTLRenderPipelineState> s = state(MTLPixelFormatRGBA8Unorm, "cover", "white", MTLPixelFormatDepth32Float);
     id<MTLCommandBuffer> cb = [gQueue commandBuffer];
     for (int pass = 0; pass < 2; pass++) {
@@ -287,8 +287,8 @@ void slicePastOfPlain()
 void layersPast()
 {
     id<MTLTexture> t = make(MTLPixelFormatRGBA8Unorm, MTLTextureType2DArray, 1, MTLStorageModePrivate, 2);
-    id<MTLRenderPipelineState> s = state(MTLPixelFormatRGBA8Unorm, "cover", "layer_colour", MTLPixelFormatInvalid,
-                                         MTLPixelFormatInvalid, 1, true);
+    id<MTLRenderPipelineState> s =
+        state(MTLPixelFormatRGBA8Unorm, "cover", "layer_colour", MTLPixelFormatInvalid, MTLPixelFormatInvalid, 1, true);
     MTLRenderPassDescriptor *p = colourPass(t);
     p.colorAttachments[0].slice = 1;
     p.renderTargetArrayLength = 2;
@@ -304,8 +304,8 @@ void layersPast()
 
 void samplesMixed()
 {
-    id<MTLTexture> colour = make(MTLPixelFormatRGBA8Unorm), z = make(MTLPixelFormatDepth32Float,
-                                                                    MTLTextureType2DMultisample, 4);
+    id<MTLTexture> colour = make(MTLPixelFormatRGBA8Unorm),
+                   z = make(MTLPixelFormatDepth32Float, MTLTextureType2DMultisample, 4);
     id<MTLRenderPipelineState> s = state(MTLPixelFormatRGBA8Unorm, "cover", "white", MTLPixelFormatDepth32Float);
     MTLRenderPassDescriptor *p = colourPass(colour);
     p.depthAttachment.texture = z;
@@ -413,12 +413,12 @@ void wrongAspect(bool depthOfColour)
     p.depthAttachment.clearDepth = 0.5;
     id<MTLCommandBuffer> cb = [gQueue commandBuffer];
     [[cb renderCommandEncoderWithDescriptor:p] endEncoding];
-    finish(cb, depthOfColour ? "an RGBA8 texture as the depth attachment" : "a Stencil8 texture as the depth attachment");
+    finish(cb,
+           depthOfColour ? "an RGBA8 texture as the depth attachment" : "a Stencil8 texture as the depth attachment");
     histogram("colour", bytes(colour, 4));
     if (depthOfColour)
         histogram("the RGBA8 'depth'", bytes(z, 4));
 }
-
 
 // A memoryless 4-sample colour loaded (an earlier pass cleared it green and "stored" it), resolved into a plain texture
 void memorylessColourLoaded()
@@ -443,7 +443,10 @@ void memorylessColourLoaded()
 // A block texture's bytes before and after a pass that clears it as a colour attachment, and draws into it
 void blocksCleared(MTLPixelFormat f, NSUInteger blockBytes, bool draw)
 {
-    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:f width:16 height:16 mipmapped:NO];
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:f
+                                                                                 width:16
+                                                                                height:16
+                                                                             mipmapped:NO];
     d.storageMode = MTLStorageModeShared;
     d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     id<MTLTexture> t = [gDevice newTextureWithDescriptor:d];
@@ -461,7 +464,8 @@ void blocksCleared(MTLPixelFormat f, NSUInteger blockBytes, bool draw)
         drawQuad(e, 0.5);
     }
     [e endEncoding];
-    finish(cb, draw ? "a block texture drawn into as a colour attachment" : "a block texture cleared as a colour attachment");
+    finish(cb, draw ? "a block texture drawn into as a colour attachment"
+                    : "a block texture cleared as a colour attachment");
     std::vector<uint8_t> out(in.size());
     [t getBytes:out.data() bytesPerRow:row fromRegion:MTLRegionMake2D(0, 0, 16, 16) mipmapLevel:0];
     size_t changed = 0;
@@ -491,15 +495,14 @@ void depthAsColourDrawn()
     histogram("texture", bytes(t, 4));
 }
 
-
 // A Depth32Float_Stencil8 texture: pass 1 clears depth 0.25 and stencil 7 and stores both; pass 2 attaches one aspect alone
 // (`depthAlone`: the depth, cleared 0.75 and stored; else the stencil, cleared 9 and stored); pass 3 loads both and draws
 // white at z 0.5 under depth LessEqual and stencil Equal `gRef`: what the aspect pass 2 left unattached holds
 void oneAspect(bool depthAlone)
 {
     id<MTLTexture> colour = make(MTLPixelFormatRGBA8Unorm), z = make(MTLPixelFormatDepth32Float_Stencil8);
-    id<MTLRenderPipelineState> s = state(MTLPixelFormatRGBA8Unorm, "cover", "white", MTLPixelFormatDepth32Float_Stencil8,
-                                         MTLPixelFormatDepth32Float_Stencil8);
+    id<MTLRenderPipelineState> s = state(MTLPixelFormatRGBA8Unorm, "cover", "white",
+                                         MTLPixelFormatDepth32Float_Stencil8, MTLPixelFormatDepth32Float_Stencil8);
     MTLDepthStencilDescriptor *dd = [MTLDepthStencilDescriptor new];
     dd.depthCompareFunction = MTLCompareFunctionLessEqual;
     MTLStencilDescriptor *sd = [MTLStencilDescriptor new];
@@ -556,19 +559,52 @@ int main(int argc, char **argv)
         if (argc > 3)
             gRef = uint32_t(atoi(argv[3]));
         const std::map<std::string, void (*)()> cases = {
-            {"memoryless_depth_loaded", [] { memorylessDepthLoaded(false); }},
-            {"memoryless_depth_stored_loaded", [] { memorylessDepthLoaded(true); }},
-            {"memoryless_stencil", [] { memorylessStencilLoaded(); }},
+            {"memoryless_depth_loaded",
+             [] {
+                 memorylessDepthLoaded(false);
+             }},
+            {"memoryless_depth_stored_loaded",
+             [] {
+                 memorylessDepthLoaded(true);
+             }},
+            {"memoryless_stencil",
+             [] {
+                 memorylessStencilLoaded();
+             }},
             {"memoryless_colour", memorylessColourLoaded},
-            {"depth_alone", [] { oneAspect(true); }},
-            {"stencil_alone", [] { oneAspect(false); }},
-            {"astc_bytes", [] { blocksCleared(MTLPixelFormatASTC_4x4_LDR, 16, false); }},
-            {"astc_drawn", [] { blocksCleared(MTLPixelFormatASTC_4x4_LDR, 16, true); }},
-            {"bc1_bytes", [] { blocksCleared(MTLPixelFormatBC1_RGBA, 8, false); }},
+            {"depth_alone",
+             [] {
+                 oneAspect(true);
+             }},
+            {"stencil_alone",
+             [] {
+                 oneAspect(false);
+             }},
+            {"astc_bytes",
+             [] {
+                 blocksCleared(MTLPixelFormatASTC_4x4_LDR, 16, false);
+             }},
+            {"astc_drawn",
+             [] {
+                 blocksCleared(MTLPixelFormatASTC_4x4_LDR, 16, true);
+             }},
+            {"bc1_bytes",
+             [] {
+                 blocksCleared(MTLPixelFormatBC1_RGBA, 8, false);
+             }},
             {"depth_as_colour_drawn", depthAsColourDrawn},
-            {"astc_colour", [] { colourOf(MTLPixelFormatASTC_4x4_LDR, 0, "an ASTC 4x4 colour attachment cleared"); }},
-            {"bc1_colour", [] { colourOf(MTLPixelFormatBC1_RGBA, 0, "a BC1 colour attachment cleared"); }},
-            {"depth_colour", [] { colourOf(MTLPixelFormatDepth32Float, 4, "a Depth32Float colour attachment cleared"); }},
+            {"astc_colour",
+             [] {
+                 colourOf(MTLPixelFormatASTC_4x4_LDR, 0, "an ASTC 4x4 colour attachment cleared");
+             }},
+            {"bc1_colour",
+             [] {
+                 colourOf(MTLPixelFormatBC1_RGBA, 0, "a BC1 colour attachment cleared");
+             }},
+            {"depth_colour",
+             [] {
+                 colourOf(MTLPixelFormatDepth32Float, 4, "a Depth32Float colour attachment cleared");
+             }},
             {"level_past", levelPast},
             {"slice_past", slicePast},
             {"slice_of_plain", slicePastOfPlain},
@@ -578,8 +614,14 @@ int main(int argc, char **argv)
             {"resolve_one_sample_dontcare", resolveOneSampleDontCare},
             {"resolve_other_count", resolveOtherCount},
             {"depth_one_sample_resolved", depthOneSampleResolved},
-            {"rgba8_as_depth", [] { wrongAspect(true); }},
-            {"stencil8_as_depth", [] { wrongAspect(false); }},
+            {"rgba8_as_depth",
+             [] {
+                 wrongAspect(true);
+             }},
+            {"stencil8_as_depth",
+             [] {
+                 wrongAspect(false);
+             }},
         };
         if (c == "list") {
             for (const auto &[name, f] : cases)

@@ -63,10 +63,10 @@ struct RecoverKillOneTest: HWTest {
         let ring = try gpu.buffer((2 * Self.around + 1) * Self.slice)
         let scratch = try gpu.texture(.bgra8Unorm, 16, 16, usage: [.shaderRead])
         let ends = CompletionTimes()
-        let before = try (0..<Self.around).map { try fill(gpu, ring, slot: $0, ends) }
+        let before = try (0 ..< Self.around).map { try fill(gpu, ring, slot: $0, ends) }
         let (poisoned, refusal) = try poison(gpu, ring, slot: Self.around, scratch, ends)
         let killDone = await ends.wait(before + [poisoned], seconds: 10)
-        let after = try (0..<Self.around).map { try fill(gpu, ring, slot: Self.around + 1 + $0, ends) }
+        let after = try (0 ..< Self.around).map { try fill(gpu, ring, slot: Self.around + 1 + $0, ends) }
         let afterDone = await ends.wait(after, seconds: 10)
         try await Task.sleep(nanoseconds: 300_000_000)
 
@@ -81,13 +81,13 @@ struct RecoverKillOneTest: HWTest {
         let bytes = UnsafeRawBufferPointer(start: ring.contents(), count: ring.length)
         let kept = { (slots: Range<Int>) in
             slots.filter { slot in
-                bytes[(slot * Self.slice)..<((slot + 1) * Self.slice)].allSatisfy { $0 == UInt8(slot + 1) }
+                bytes[(slot * Self.slice) ..< ((slot + 1) * Self.slice)].allSatisfy { $0 == UInt8(slot + 1) }
             }.count
         }
         let beforeOK = before.filter { $0.status == .completed && $0.error == nil }.count
         let afterOK = after.filter { $0.status == .completed && $0.error == nil }.count
-        let beforeKept = kept(0..<Self.around)
-        let afterKept = kept((Self.around + 1)..<(2 * Self.around + 1))
+        let beforeKept = kept(0 ..< Self.around)
+        let afterKept = kept((Self.around + 1) ..< (2 * Self.around + 1))
         let delta = { (key: String) in (end[key] ?? 0) - (start[key] ?? 0) }
         let shown = Pacing(times: presented.sorted(), period: 1.0 / 60)
         let presentGapMs = shown.intervals.max() ?? 0
@@ -167,14 +167,15 @@ struct RecoverKillOneTest: HWTest {
                         : "the compositor probe's bench channel: \(firstFillError)",
                     fillErrors == 0
                 ),
-            ], metrics)
+            ], metrics
+        )
     }
 
     func fill(_ gpu: GPU, _ ring: MTLBuffer, slot: Int, _ ends: CompletionTimes) throws -> MTLCommandBuffer {
         guard let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder() else {
             throw TestFailure("no command buffer")
         }
-        blit.fill(buffer: ring, range: (slot * Self.slice)..<((slot + 1) * Self.slice), value: UInt8(slot + 1))
+        blit.fill(buffer: ring, range: (slot * Self.slice) ..< ((slot + 1) * Self.slice), value: UInt8(slot + 1))
         blit.endEncoding()
         ends.track(commands)
         commands.commit()
@@ -191,7 +192,7 @@ struct RecoverKillOneTest: HWTest {
         guard let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder() else {
             throw TestFailure("no command buffer")
         }
-        blit.fill(buffer: ring, range: (slot * Self.slice)..<((slot + 1) * Self.slice), value: UInt8(slot + 1))
+        blit.fill(buffer: ring, range: (slot * Self.slice) ..< ((slot + 1) * Self.slice), value: UInt8(slot + 1))
         let selector = NSSelectorFromString("switchMetalProbeEngine:")
         let op: NSDictionary = [
             "kind": "method", "method": Self.illegalMethod, "value": Self.illegalValue, "written": scratch,

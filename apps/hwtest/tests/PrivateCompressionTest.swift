@@ -73,7 +73,8 @@ struct PrivateCompressionTest: HWTest {
             keeping: [
                 "compressed_targets", "made_targets", "array_comptags_after", "ms_comptags_after", "moves",
                 "layer_wrong", "sample_wrong",
-            ])
+            ]
+        )
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
 
@@ -157,7 +158,7 @@ struct PrivateCompressionTest: HWTest {
         out.compressed = targets.map { comptags(facade, $0) }
         let clears = try await target(gpu, facade, .bgra8Unorm, 512, plain: plain)
         let clearOnly: (MTLCommandBuffer) -> Void = { commands in
-            for _ in 0..<16 {
+            for _ in 0 ..< 16 {
                 let p = MTLRenderPassDescriptor()
                 p.colorAttachments[0].texture = clears
                 p.colorAttachments[0].loadAction = .clear
@@ -166,7 +167,7 @@ struct PrivateCompressionTest: HWTest {
                 commands.makeRenderCommandEncoder(descriptor: p)!.endEncoding()
             }
         }
-        for _ in 0..<3 { out.clearMs += try await gpu.run(clearOnly).gpuMilliseconds / 3 }
+        for _ in 0 ..< 3 { out.clearMs += try await gpu.run(clearOnly).gpuMilliseconds / 3 }
         return out
     }
 }

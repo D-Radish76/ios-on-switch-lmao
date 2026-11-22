@@ -26,13 +26,16 @@ struct YcbcrOnePlaneTest: HWTest {
     static let arms = [
         Arm(
             format: 501, surface: "2vuy", one: kCVPixelFormatType_422YpCbCr8,
-            two: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange),
+            two: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange
+        ),
         Arm(
             format: 501, surface: "yuvs", one: kCVPixelFormatType_422YpCbCr8_yuvs,
-            two: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange),
+            two: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange
+        ),
         Arm(
             format: 521, surface: "yuvf", one: kCVPixelFormatType_422YpCbCr8FullRange,
-            two: kCVPixelFormatType_422YpCbCr8BiPlanarFullRange),
+            two: kCVPixelFormatType_422YpCbCr8BiPlanarFullRange
+        ),
     ]
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -64,9 +67,9 @@ struct YcbcrOnePlaneTest: HWTest {
     static func textures(_ gpu: GPU, _ arm: Arm) -> (one: MTLTexture, two: MTLTexture)? {
         let (w, h) = (34, 9)
         guard let oneBuffer = YcbcrCornerTest.pixelBuffer(w, h, arm.one),
-            let one = CVPixelBufferGetIOSurface(oneBuffer)?.takeUnretainedValue(),
-            let twoBuffer = YcbcrCornerTest.pixelBuffer(w, h, arm.two),
-            let two = CVPixelBufferGetIOSurface(twoBuffer)?.takeUnretainedValue()
+              let one = CVPixelBufferGetIOSurface(oneBuffer)?.takeUnretainedValue(),
+              let twoBuffer = YcbcrCornerTest.pixelBuffer(w, h, arm.two),
+              let two = CVPixelBufferGetIOSurface(twoBuffer)?.takeUnretainedValue()
         else { return nil }
         IOSurfaceLock(one, [], nil)
         IOSurfaceLock(two, [], nil)
@@ -75,10 +78,10 @@ struct YcbcrOnePlaneTest: HWTest {
         let y = IOSurfaceGetBaseAddressOfPlane(two, 0).bindMemory(to: UInt8.self, capacity: 1)
         let c = IOSurfaceGetBaseAddressOfPlane(two, 1).bindMemory(to: UInt8.self, capacity: 1)
         let (yRow, cRow) = (IOSurfaceGetBytesPerRowOfPlane(two, 0), IOSurfaceGetBytesPerRowOfPlane(two, 1))
-        for r in 0..<h {
-            for pair in 0..<(w / 2) {
+        for r in 0 ..< h {
+            for pair in 0 ..< (w / 2) {
                 let at = r * row + 4 * pair
-                for k in 0..<4 { bytes[at + k] = UInt8(truncatingIfNeeded: (at + k) &* 53 &+ r &* 7) }
+                for k in 0 ..< 4 { bytes[at + k] = UInt8(truncatingIfNeeded: (at + k) &* 53 &+ r &* 7) }
                 y[r * yRow + 2 * pair] = bytes[at]
                 y[r * yRow + 2 * pair + 1] = bytes[at + 2]
                 c[r * cRow + 2 * pair] = bytes[at + 1]
@@ -90,7 +93,8 @@ struct YcbcrOnePlaneTest: HWTest {
         let make = { (s: IOSurfaceRef, format: UInt) -> MTLTexture? in
             guard let pixelFormat = MTLPixelFormat(rawValue: format) else { return nil }
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: pixelFormat, width: w, height: h, mipmapped: false)
+                pixelFormat: pixelFormat, width: w, height: h, mipmapped: false
+            )
             d.usage = .shaderRead
             return gpu.device.makeTexture(descriptor: d, iosurface: s, plane: 0)
         }

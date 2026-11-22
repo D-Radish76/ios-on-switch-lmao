@@ -23,7 +23,7 @@ struct DepthBiasUnitsTest: HWTest {
         let stencil: Bool
         let z: Float
         let bias: Float
-        let expected: Double  // codes for Depth16Unorm, units of 2^-24 for the float formats
+        let expected: Double // codes for Depth16Unorm, units of 2^-24 for the float formats
         let tolerance: Double
     }
 
@@ -55,7 +55,8 @@ struct DepthBiasUnitsTest: HWTest {
             let stencil = arm.stencil ? try gpu.texture(.stencil8, n, n, usage: [.renderTarget]) : nil
             let state = try gpu.render(
                 fragment: "solid_fragment", format: .rgba8Unorm, depth: arm.depth,
-                stencil: arm.stencil ? .stencil8 : combined ? arm.depth : .invalid)
+                stencil: arm.stencil ? .stencil8 : combined ? arm.depth : .invalid
+            )
             let texel = sixteen ? 2 : 4
             let out = try gpu.buffer(n * n * texel)
             func value(_ bias: Float) async throws -> (Double, String) {
@@ -90,7 +91,8 @@ struct DepthBiasUnitsTest: HWTest {
                         from: depth, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                         sourceSize: MTLSize(width: n, height: n, depth: 1), to: out, destinationOffset: 0,
                         destinationBytesPerRow: n * texel, destinationBytesPerImage: n * n * texel,
-                        options: combined ? .depthFromDepthStencil : [])
+                        options: combined ? .depthFromDepthStencil : []
+                    )
                     b.endEncoding()
                 }.path
                 let at = (n / 2) * (n + 1)

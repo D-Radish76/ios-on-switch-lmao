@@ -40,7 +40,7 @@ struct NoRenderUsageTest: HWTest {
             let off = Self.notRed(volume[2])
             let others = [0, 1, 3].map { plane in
                 stride(from: 0, to: volume[plane].count, by: 4).filter { at in
-                    volume[plane][at..<at + 4].contains { $0 != Self.fill(plane) }
+                    volume[plane][at ..< at + 4].contains { $0 != Self.fill(plane) }
                 }.count
             }.reduce(0, +)
             metrics.set("plane_off", off)
@@ -63,7 +63,7 @@ struct NoRenderUsageTest: HWTest {
     static func fill(_ plane: Int) -> UInt8 { UInt8(0x11 * (plane + 1)) }
 
     static func notRed(_ bytes: [UInt8]) -> Int {
-        stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0..<$0 + 4]) != red }.count
+        stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0 ..< $0 + 4]) != red }.count
     }
 
     static func cleared(_ gpu: GPU, depth: Int, _ errors: inout [String]) async throws -> [[UInt8]] {
@@ -76,13 +76,14 @@ struct NoRenderUsageTest: HWTest {
         guard let texture = gpu.device.makeTexture(descriptor: d) else {
             throw TestFailure("no texture of depth \(depth)")
         }
-        let filled = try gpu.buffer((0..<depth).flatMap { [UInt8](repeating: fill($0), count: side * side * 4) })
+        let filled = try gpu.buffer((0 ..< depth).flatMap { [UInt8](repeating: fill($0), count: side * side * 4) })
         try await gpu.run { commands in
             let blit = commands.makeBlitCommandEncoder()!
             blit.copy(
                 from: filled, sourceOffset: 0, sourceBytesPerRow: side * 4, sourceBytesPerImage: side * side * 4,
                 sourceSize: MTLSize(width: side, height: side, depth: depth), to: texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
         }
         let path = try await gpu.run(tolerateError: true) { commands in
@@ -96,7 +97,7 @@ struct NoRenderUsageTest: HWTest {
         }.path
         if path.hasPrefix("error:") { errors.append(String(path.dropFirst("error:".count))) }
         var planes: [[UInt8]] = []
-        for plane in 0..<depth { planes.append(try await gpu.read(texture, bytesPerPixel: 4, plane: plane)) }
+        for plane in 0 ..< depth { planes.append(try await gpu.read(texture, bytesPerPixel: 4, plane: plane)) }
         return planes
     }
 }

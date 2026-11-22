@@ -166,22 +166,22 @@ public enum Registry {
 
     public static let all: [any HWTest] =
         [CPUAsyncTimersTest(), RegDumpQuietTest()] + gpuScenes + metal + gm20bRoutes + GPUPathTests.all
-        + NativeObjectTests.all
-        + NativeCallTests.all + video + images + audio
-        + display + compositor + sensorsAndInput + connectivityAndStorage
-        + cpuAndSystem
-        // Drives an NVDEC output mode nothing else uses: after every shared test.
-        + [DisplayBufferTest()]
-        // The shader compiler's generation covers every test before it.
-        + [CompilerAliveTest()]
-        // May stop the display's host1x channel for 50 ms: last.
-        + [DcHost1xClassTest()]
-        // Every client channel's RAMFC timeslice once the shared tests have run jobs on them.
-        + [RamfcTimesliceTest(), RamfcCreationTest()]
-        // Rail-gates the GPU under every other client four times: after the shared tests.
-        + [GpuRailCycleTest()]
-        // Leaves this app for Settings and opens it again: last, so no other test runs while it is away.
-        + [LaunchHitchTest()]
+            + NativeObjectTests.all
+            + NativeCallTests.all + video + images + audio
+            + display + compositor + sensorsAndInput + connectivityAndStorage
+            + cpuAndSystem
+            // Drives an NVDEC output mode nothing else uses: after every shared test.
+            + [DisplayBufferTest()]
+            // The shader compiler's generation covers every test before it.
+            + [CompilerAliveTest()]
+            // May stop the display's host1x channel for 50 ms: last.
+            + [DcHost1xClassTest()]
+            // Every client channel's RAMFC timeslice once the shared tests have run jobs on them.
+            + [RamfcTimesliceTest(), RamfcCreationTest()]
+            // Rail-gates the GPU under every other client four times: after the shared tests.
+            + [GpuRailCycleTest()]
+            // Leaves this app for Settings and opens it again: last, so no other test runs while it is away.
+            + [LaunchHitchTest()]
 
     /// A 1.6 GB cube first, where the process has the memory; then fills the GPU pool to its compressed floor and gives
     /// it back (gpu.gm20b.compression_giveback), then takes it down to that floor again, which refuses every other
@@ -189,7 +189,11 @@ public enum Registry {
     /// (gpu.gm20b.zbc_full: no test after it counts ZBC hits); then programs a unit no other driver here drives (across
     /// pass boundaries, then each program forced), which kills the channel when its setup is wrong: each app's last.
     public static let last: [any HWTest] = [
-        X1TextureExtentsTest(), CompressionGivebackTest(), CompressedFloorTest(), ZbcFullTest(), IteratedBlendPassesTest(), FetchRungTest(id: "gpu.gm20b.fetch_rung3", rung: 3),
+        X1TextureExtentsTest(), CompressionGivebackTest(), CompressedFloorTest(), ZbcFullTest(),
+        IteratedBlendPassesTest(), FetchRungTest(
+            id: "gpu.gm20b.fetch_rung3",
+            rung: 3
+        ),
     ]
     /// Reset the copy engine under the present, then kill the app's raw channel: each app runs them after all its other
     /// tests, so a failed recovery spoils none of them.

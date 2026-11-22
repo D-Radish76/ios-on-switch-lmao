@@ -35,7 +35,7 @@ struct StandInResolveTest: HWTest {
             for samples in StandInResolveCases.counts {
                 let key = "\(format.key)_x\(samples)"
                 guard let text = StandInResolveCases.apple[key],
-                    let apple = Data(base64Encoded: text, options: .ignoreUnknownCharacters)
+                      let apple = Data(base64Encoded: text, options: .ignoreUnknownCharacters)
                 else {
                     checks.append(("\(key): an M4 Max's resolve", false))
                     continue

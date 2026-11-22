@@ -36,7 +36,8 @@ struct ResolveCostTest: HWTest {
         Variant(label: "rgba8_4x_private", format: .rgba8Unorm, samples: 4, storage: .private, texel: rgba8),
         Variant(label: "rgba8_2x_memoryless", format: .rgba8Unorm, samples: 2, storage: .memoryless, texel: rgba8),
         Variant(
-            label: "rgba16f_4x_memoryless", format: .rgba16Float, samples: 4, storage: .memoryless, texel: rgba16f),
+            label: "rgba16f_4x_memoryless", format: .rgba16Float, samples: 4, storage: .memoryless, texel: rgba16f
+        ),
     ]
 
     struct Runs {
@@ -56,11 +57,13 @@ struct ResolveCostTest: HWTest {
             let resolved = try gpu.texture(variant.format, Self.width, Self.height)
             let target = try gpu.texture(
                 variant.format, Self.width, Self.height, usage: [.renderTarget], samples: variant.samples,
-                storage: variant.storage)
+                storage: variant.storage
+            )
             let with = try await median(gpu, target, resolve: resolved)
             let without = try await median(gpu, target, resolve: nil)
             let texel = Array(
-                try await gpu.read(resolved, bytesPerPixel: variant.texel.count).prefix(variant.texel.count))
+                try await gpu.read(resolved, bytesPerPixel: variant.texel.count).prefix(variant.texel.count)
+            )
             let resolveMs = max(0, with.ms - without.ms)
             let raw = with.paths == ["gm20b"] && without.paths == ["gm20b"]
             let gpuClocked = with.clocks == ["ns"] && without.clocks == ["ns"]
@@ -78,7 +81,8 @@ struct ResolveCostTest: HWTest {
             if variant.label == "rgba8_4x_memoryless" && raw && gpuClocked {
                 posterJudged = true
                 checks.append(
-                    ("the poster's 720x1280 4x resolve within \(Self.budgetMs) ms", resolveMs <= Self.budgetMs))
+                    ("the poster's 720x1280 4x resolve within \(Self.budgetMs) ms", resolveMs <= Self.budgetMs)
+                )
             }
         }
         try await ResolveArms.measure(gpu, into: &metrics)
@@ -92,7 +96,7 @@ struct ResolveCostTest: HWTest {
     func median(_ gpu: GPU, _ target: MTLTexture, resolve: MTLTexture?) async throws -> Runs {
         var times: [Double] = []
         var runs = Runs()
-        for _ in 0..<Self.runs {
+        for _ in 0 ..< Self.runs {
             let timing = try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = target

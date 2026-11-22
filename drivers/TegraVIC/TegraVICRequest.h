@@ -290,8 +290,8 @@ static inline const char *tegra_vic_plan(const TegraVICRequest *r, const TegraVI
         const TegraVICFormat *sf = tegra_vic_format(src->fourcc);
         const int rgb8 = (sf->vic == TEGRA_VIC_T_A8R8G8B8 || sf->vic == TEGRA_VIC_T_A8B8G8R8) &&
                          (df->vic == TEGRA_VIC_T_A8R8G8B8 || df->vic == TEGRA_VIC_T_A8B8G8R8);
-        const char *why = tegra_vic_color_plan(src->transfer, src->primaries, dst->transfer, dst->primaries, rgb8,
-                                               &o->gamut);
+        const char *why =
+            tegra_vic_color_plan(src->transfer, src->primaries, dst->transfer, dst->primaries, rgb8, &o->gamut);
         if (why) {
             *kind = TEGRA_VIC_PLAN_UNSUPPORTED;
             return why;

@@ -43,9 +43,10 @@ struct PlaneRows16Test: HWTest {
         }
         let surface = unsafeBitCast(made, to: IOSurfaceRef.self)
         let base = made.baseAddress.bindMemory(to: UInt8.self, capacity: 4096)
-        for i in 0..<4096 { base[i] = UInt8((i * 29 + 7) & 255) }
+        for i in 0 ..< 4096 { base[i] = UInt8((i * 29 + 7) & 255) }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 1) else {
             return .fail("no texture over plane 1", metrics)
@@ -73,10 +74,10 @@ struct PlaneRows16Test: HWTest {
         if drawn.status != .completed { wrong.append("draw") }
         let out = try await gpu.read(target, bytesPerPixel: 4)
         var mismatched = 0
-        for y in 0..<height {
-            for x in 0..<width {
+        for y in 0 ..< height {
+            for x in 0 ..< width {
                 let at = 384 + y * 48 + x * 4, pixel = (y * width + x) * 4
-                if Array(out[pixel..<(pixel + 4)]) != Array(UnsafeBufferPointer(start: base + at, count: 4)) {
+                if Array(out[pixel ..< (pixel + 4)]) != Array(UnsafeBufferPointer(start: base + at, count: 4)) {
                     mismatched += 1
                 }
             }
@@ -85,7 +86,8 @@ struct PlaneRows16Test: HWTest {
         if mismatched != 0 { wrong.append("gpu_layout") }
 
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

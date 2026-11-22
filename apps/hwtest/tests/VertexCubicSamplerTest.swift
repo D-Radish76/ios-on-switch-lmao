@@ -28,7 +28,8 @@ struct VertexCubicSamplerTest: HWTest {
         let texels = Self.reds.flatMap { r -> [UInt8] in [r, 255 - r, 0, 255] }
         try await gpu.upload(
             Array(Array(repeating: texels, count: Self.rows).joined()), to: texture,
-            bytesPerRow: 4 * Self.reds.count)
+            bytesPerRow: 4 * Self.reds.count
+        )
         func sampler(_ filter: UInt) throws -> MTLSamplerState {
             let d = MTLSamplerDescriptor()
             d.minFilter = MTLSamplerMinMagFilter(rawValue: filter)!
@@ -74,7 +75,7 @@ struct VertexCubicSamplerTest: HWTest {
             }.path
             paths.append(path)
             let pixels = try await gpu.read(out, bytesPerPixel: 4)
-            return (0..<n).map { pixels[4 * $0] }
+            return (0 ..< n).map { pixels[4 * $0] }
         }
         let vertexCubic = try await draw(vertexStage: true, cubic)
         let fragmentCubic = try await draw(vertexStage: false, cubic)
@@ -87,7 +88,7 @@ struct VertexCubicSamplerTest: HWTest {
         var failures: [String] = []
         if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         for (stage, values) in [("vertex", vertexCubic), ("fragment", fragmentCubic)]
-        where zip(values, Self.metal).contains(where: { abs(Int($0) - Int($1)) > 2 }) {
+            where zip(values, Self.metal).contains(where: { abs(Int($0) - Int($1)) > 2 }) {
             failures.append("the \(stage) stage's cubic samples are not Metal's")
         }
         return failures.isEmpty ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics)

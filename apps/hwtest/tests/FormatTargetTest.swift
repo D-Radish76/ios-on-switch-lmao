@@ -66,7 +66,7 @@ struct FormatTargetTest: HWTest {
             a.sourceAlphaBlendFactor = .one
             a.destinationAlphaBlendFactor = .oneMinusSourceAlpha
         }
-        let draws = kind == "clear" ? [] : (0..<(blended ? 3 : 1)).map { Self.values(format, w * h, UInt64($0 + 1)) }
+        let draws = kind == "clear" ? [] : (0 ..< (blended ? 3 : 1)).map { Self.values(format, w * h, UInt64($0 + 1)) }
         let buffers = try draws.map { try gpu.buffer($0) }
         let clear = MTLClearColor(red: 0.31, green: 0.52, blue: format == 93 ? 7.3 : 0.73, alpha: 0.6)
         let loaded = Self.loadedWords(format, w * h)
@@ -74,7 +74,8 @@ struct FormatTargetTest: HWTest {
             loaded.withUnsafeBytes {
                 texture.replace(
                     region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: $0.baseAddress!,
-                    bytesPerRow: w * bytes)
+                    bytesPerRow: w * bytes
+                )
             }
         }
         let drawnWidth = kind == "load" ? 24 : w
@@ -104,9 +105,9 @@ struct FormatTargetTest: HWTest {
         }
         let clearHeld = SIMD4<Float>(Float(clear.red), Float(clear.green), Float(clear.blue), Float(clear.alpha))
         var off = 0
-        for i in 0..<(w * h) {
+        for i in 0 ..< (w * h) {
             var stored: UInt32 = 0
-            for k in 0..<bytes { stored |= UInt32(got[i * bytes + k]) << (8 * k) }
+            for k in 0 ..< bytes { stored |= UInt32(got[i * bytes + k]) << (8 * k) }
             let drawn = i % w < drawnWidth && !draws.isEmpty
             let want: UInt32
             let bound: Int
@@ -131,14 +132,16 @@ struct FormatTargetTest: HWTest {
         let (w, h) = (Self.width, Self.height)
         let bytes = format == 11 ? 1 : format == 93 ? 4 : 2
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: pixelFormat, width: w, height: h, mipmapped: true)
+            pixelFormat: pixelFormat, width: w, height: h, mipmapped: true
+        )
         descriptor.usage = [.shaderRead, .renderTarget]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { throw TestFailure("no texture") }
         let top = Self.loadedWords(format, w * h)
         top.withUnsafeBytes {
             texture.replace(
-                region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: w * bytes)
+                region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: w * bytes
+            )
         }
         try await gpu.run { commands in
             let blit = commands.makeBlitCommandEncoder()!
@@ -149,18 +152,20 @@ struct FormatTargetTest: HWTest {
             var raw = [UInt8](repeating: 0, count: lw * lh * bytes)
             raw.withUnsafeMutableBytes {
                 texture.getBytes(
-                    $0.baseAddress!, bytesPerRow: lw * bytes, from: MTLRegionMake2D(0, 0, lw, lh), mipmapLevel: level)
+                    $0.baseAddress!, bytesPerRow: lw * bytes, from: MTLRegionMake2D(0, 0, lw, lh), mipmapLevel: level
+                )
             }
-            return (0..<(lw * lh)).map { i in (0..<bytes).reduce(0) { $0 | UInt32(raw[i * bytes + $1]) << (8 * $1) } }
+            return (0 ..< (lw * lh))
+                .map { i in (0 ..< bytes).reduce(0) { $0 | UInt32(raw[i * bytes + $1]) << (8 * $1) } }
         }
         var off = 0
         var (aw, ah) = (w, h)
         var above = words(0, w, h)
-        for level in 1..<texture.mipmapLevelCount {
+        for level in 1 ..< texture.mipmapLevelCount {
             let (lw, lh) = (Swift.max(1, aw / 2), Swift.max(1, ah / 2))
             let got = words(level, lw, lh)
-            for y in 0..<lh {
-                for x in 0..<lw {
+            for y in 0 ..< lh {
+                for x in 0 ..< lw {
                     let want = Self.mipWord(format, above, aw, ah, lw, lh, x, y)
                     off += Self.apart(format, got[y * lw + x], want) > (format == 93 ? 0 : 1) ? 1 : 0
                 }
@@ -217,7 +222,7 @@ struct FormatTargetTest: HWTest {
             state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
             return Float(state >> 40) / Float(1 << 24)
         }
-        return (0..<count).map { _ in
+        return (0 ..< count).map { _ in
             let scale: Float = format == 93 ? 4 : 1
             return SIMD4(next() * scale, next() * scale, next() * scale, next())
         }
@@ -225,7 +230,7 @@ struct FormatTargetTest: HWTest {
 
     /// The words a loaded texture holds: every code of A1BGR5 and ABGR4, RGB9E5 of its encoder's own words
     static func loadedWords(_ format: UInt, _ count: Int) -> [UInt8] {
-        (0..<count).flatMap { i -> [UInt8] in
+        (0 ..< count).flatMap { i -> [UInt8] in
             let v = UInt32(truncatingIfNeeded: i &* 2_654_435_761)
             switch format {
             case 11: return [UInt8(v >> 24)]
@@ -240,7 +245,7 @@ struct FormatTargetTest: HWTest {
     static func loadedWord(_ format: UInt, _ loaded: [UInt8], _ i: Int) -> UInt32 {
         let bytes = format == 11 ? 1 : format == 93 ? 4 : 2
         var word: UInt32 = 0
-        for k in 0..<bytes { word |= UInt32(loaded[i * bytes + k]) << (8 * k) }
+        for k in 0 ..< bytes { word |= UInt32(loaded[i * bytes + k]) << (8 * k) }
         return word
     }
 
@@ -257,7 +262,7 @@ struct FormatTargetTest: HWTest {
 
     /// RGB9E5: the largest channel's exponent shared, mantissas truncated or rounded
     static func rgb9e5(_ input: SIMD3<Float>, rounded: Bool = false) -> UInt32 {
-        let c = SIMD3<Float>((0..<3).map { input[$0] > 0 ? Swift.min(input[$0], 65408) : 0 })
+        let c = SIMD3<Float>((0 ..< 3).map { input[$0] > 0 ? Swift.min(input[$0], 65408) : 0 })
         let m = Swift.max(c.x, Swift.max(c.y, c.z))
         var e = m > 0 ? Swift.max(0, Int(m.bitPattern >> 23 & 255) - 127 + 16) : 0
         var scale = Float(sign: .plus, exponent: e - 24, significand: 1)
@@ -266,7 +271,7 @@ struct FormatTargetTest: HWTest {
             scale *= 2
         }
         var word = UInt32(e) << 27
-        for k in 0..<3 {
+        for k in 0 ..< 3 {
             let mantissa = rounded ? (c[k] / scale + 0.5).rounded(.down) : (c[k] / scale).rounded(.down)
             word |= UInt32(mantissa) << (9 * k)
         }
@@ -310,11 +315,12 @@ struct FormatTargetTest: HWTest {
     /// A cleared texel as the pass holds it before its blends
     static func held(_ format: UInt, _ clear: SIMD4<Float>) -> SIMD4<Float> {
         switch format {
-        case 42: return SIMD4((0..<4).map { Float(clearCode(clear[$0], 15)) / 15 })
+        case 42: return SIMD4((0 ..< 4).map { Float(clearCode(clear[$0], 15)) / 15 })
         case 41:
             return SIMD4(
                 Float(clearCode(clear.x, 31)) / 31, Float(clearCode(clear.y, 31)) / 31,
-                Float(clearCode(clear.z, 31)) / 31, Float(clearCode(clear.w, 1)))
+                Float(clearCode(clear.z, 31)) / 31, Float(clearCode(clear.w, 1))
+            )
         default: return SIMD4(rgb9e5Floats(rgb9e5(SIMD3(clear.x, clear.y, clear.z), rounded: true)), 1)
         }
     }
@@ -341,11 +347,11 @@ struct FormatTargetTest: HWTest {
         case 93:
             let unit = Float(sign: .plus, exponent: Int(Swift.min(a >> 27, b >> 27)) - 24, significand: 1)
             let (x, y) = (rgb9e5Floats(a), rgb9e5Floats(b))
-            return (0..<3).map { Int((abs(x[$0] - y[$0]) / unit).rounded(.up)) }.max()!
+            return (0 ..< 3).map { Int((abs(x[$0] - y[$0]) / unit).rounded(.up)) }.max()!
         default:
             let (shifts, masks): ([UInt32], [UInt32]) =
                 format == 42 ? ([12, 8, 4, 0], [15, 15, 15, 15]) : ([11, 6, 1, 0], [31, 31, 31, 1])
-            return (0..<4).map { abs(Int(a >> shifts[$0] & masks[$0]) - Int(b >> shifts[$0] & masks[$0])) }.max()!
+            return (0 ..< 4).map { abs(Int(a >> shifts[$0] & masks[$0]) - Int(b >> shifts[$0] & masks[$0])) }.max()!
         }
     }
 }

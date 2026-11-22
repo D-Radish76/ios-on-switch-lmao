@@ -26,7 +26,8 @@ struct PackedSpareBitsTest: HWTest {
         Surface(fourcc: YcbcrPackedTargetTest.pf20, twin: YcbcrPackedTargetTest.xf20, rgb10: 546, ycbcr10: 508),
         Surface(
             fourcc: YcbcrPackedTargetTest.p422, twin: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange, rgb10: 547,
-            ycbcr10: 509),
+            ycbcr10: 509
+        ),
         Surface(fourcc: YcbcrPackedTargetTest.p444, twin: YcbcrPackedTargetTest.x444, rgb10: 548, ycbcr10: 510),
     ]
 
@@ -74,15 +75,15 @@ struct PackedSpareBitsTest: HWTest {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         var state: UInt64 = 588
-        for plane in 0..<2 {
+        for plane in 0 ..< 2 {
             guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { continue }
             let codes = (plane + 1) * CVPixelBufferGetWidthOfPlane(buffer, plane),
                 pitch =
-                    CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
-            for y in 0..<CVPixelBufferGetHeightOfPlane(buffer, plane) {
-                for x in 0..<((codes + 2) / 3) {
+                CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+            for y in 0 ..< CVPixelBufferGetHeightOfPlane(buffer, plane) {
+                for x in 0 ..< ((codes + 2) / 3) {
                     var word: UInt32 = spare ? 3 << 30 : 0
-                    for i in 0..<3 {
+                    for i in 0 ..< 3 {
                         state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
                         if 3 * x + i < codes || spare { word |= UInt32(state >> 54) << (10 * i) }
                     }
@@ -98,11 +99,12 @@ struct PackedSpareBitsTest: HWTest {
         async throws -> [UInt8]
     {
         guard let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-            let pixelFormat = MTLPixelFormat(rawValue: format)
+              let pixelFormat = MTLPixelFormat(rawValue: format)
         else { return [] }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: pixelFormat, width: CVPixelBufferGetWidthOfPlane(buffer, plane),
-            height: CVPixelBufferGetHeightOfPlane(buffer, plane), mipmapped: false)
+            height: CVPixelBufferGetHeightOfPlane(buffer, plane), mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: plane) else {
             return []
@@ -116,14 +118,15 @@ struct PackedSpareBitsTest: HWTest {
         let attributes = [kCVPixelBufferIOSurfacePropertiesKey: [:]] as CFDictionary
         guard
             CVPixelBufferCreate(
-                nil, CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), twin, attributes, &made)
-                == kCVReturnSuccess, let to = made,
+                nil, CVPixelBufferGetWidth(buffer), CVPixelBufferGetHeight(buffer), twin, attributes, &made
+            )
+            == kCVReturnSuccess, let to = made,
             VTPixelTransferSessionTransferImage(session, from: buffer, to: to) == noErr
         else { return [] }
         CVPixelBufferLockBaseAddress(to, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(to, .readOnly) }
         var out: [UInt8] = []
-        for plane in 0..<2 {
+        for plane in 0 ..< 2 {
             guard let base = CVPixelBufferGetBaseAddressOfPlane(to, plane) else { return [] }
             let bytes = CVPixelBufferGetBytesPerRowOfPlane(to, plane) * CVPixelBufferGetHeightOfPlane(to, plane)
             out += UnsafeRawBufferPointer(start: base, count: bytes)
@@ -137,7 +140,8 @@ struct PackedSpareBitsTest: HWTest {
         context.render(
             CIImage(cvPixelBuffer: buffer), toBitmap: &out, rowBytes: 8 * w,
             bounds: CGRect(x: 0, y: 0, width: w, height: h),
-            format: .RGBAh, colorSpace: nil)
+            format: .RGBAh, colorSpace: nil
+        )
         return out
     }
 }

@@ -7,60 +7,60 @@ enum StorageFormsCases {
     static let side = 16
     static let clear = MTLClearColor(red: 0.25, green: 0, blue: 0.5, alpha: 1)
     static let timedWidth = 1280, timedHeight = 720, timedTriangles = 64, timedRuns = 5
-    static let steps: [Float] = (0..<16).map { k in Float((k * 7) % 16 + 1) / 64 }
+    static let steps: [Float] = (0 ..< 16).map { k in Float((k * 7) % 16 + 1) / 64 }
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct SFParams { float k[16]; float step; float z_step; };
-        struct SFOut { float4 position [[position]]; uint prim [[flat]]; };
+    #include <metal_stdlib>
+    using namespace metal;
+    struct SFParams { float k[16]; float step; float z_step; };
+    struct SFOut { float4 position [[position]]; uint prim [[flat]]; };
 
-        vertex SFOut sf_triangles(uint vid [[vertex_id]], constant SFParams &p [[buffer(0)]]) {
-            const float2 corners[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            const uint t = vid / 3;
-            return {float4(corners[vid % 3], 1.0 - float(t + 1) * p.z_step, 1.0), t};
-        }
+    vertex SFOut sf_triangles(uint vid [[vertex_id]], constant SFParams &p [[buffer(0)]]) {
+        const float2 corners[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        const uint t = vid / 3;
+        return {float4(corners[vid % 3], 1.0 - float(t + 1) * p.z_step, 1.0), t};
+    }
 
-        static float4 sf_step(float4 dst, uint t, constant SFParams &p) {
-            const float k = p.k[t % 16];
-            return float4(dst.r * 0.5 + k, dst.g + p.step, fract(dst.b * 3.0 + k), 1.0 - dst.a);
-        }
+    static float4 sf_step(float4 dst, uint t, constant SFParams &p) {
+        const float k = p.k[t % 16];
+        return float4(dst.r * 0.5 + k, dst.g + p.step, fract(dst.b * 3.0 + k), 1.0 - dst.a);
+    }
 
-        fragment float4 sf_order(SFOut in [[stage_in]], float4 dst [[color(0)]], constant SFParams &p [[buffer(0)]]) {
-            return sf_step(dst, in.prim, p);
-        }
+    fragment float4 sf_order(SFOut in [[stage_in]], float4 dst [[color(0)]], constant SFParams &p [[buffer(0)]]) {
+        return sf_step(dst, in.prim, p);
+    }
 
-        struct SFDepthOut { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
-        fragment SFDepthOut sf_order_depth(SFOut in [[stage_in]], float4 dst [[color(0)]],
-                                           constant SFParams &p [[buffer(0)]]) {
-            return {sf_step(dst, in.prim, p), (in.prim & 1) ? 0.9 : 0.5 - float(in.prim % 16) / 64.0};
-        }
+    struct SFDepthOut { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
+    fragment SFDepthOut sf_order_depth(SFOut in [[stage_in]], float4 dst [[color(0)]],
+                                       constant SFParams &p [[buffer(0)]]) {
+        return {sf_step(dst, in.prim, p), (in.prim & 1) ? 0.9 : 0.5 - float(in.prim % 16) / 64.0};
+    }
 
-        fragment float4 sf_order_discard(SFOut in [[stage_in]], float4 dst [[color(0)]],
-                                         constant SFParams &p [[buffer(0)]]) {
-            if ((in.prim % 3) == 1 && ((uint(in.position.x) ^ uint(in.position.y)) & 1)) discard_fragment();
-            return sf_step(dst, in.prim, p);
-        }
+    fragment float4 sf_order_discard(SFOut in [[stage_in]], float4 dst [[color(0)]],
+                                     constant SFParams &p [[buffer(0)]]) {
+        if ((in.prim % 3) == 1 && ((uint(in.position.x) ^ uint(in.position.y)) & 1)) discard_fragment();
+        return sf_step(dst, in.prim, p);
+    }
 
-        struct SFScreen { float4 position [[position]]; };
-        vertex SFScreen sf_screen(uint vid [[vertex_id]]) {
-            const float2 corners[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            return {float4(corners[vid], 0.5, 1)};
-        }
+    struct SFScreen { float4 position [[position]]; };
+    vertex SFScreen sf_screen(uint vid [[vertex_id]]) {
+        const float2 corners[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        return {float4(corners[vid], 0.5, 1)};
+    }
 
-        struct SFLoaded { float4 colour [[color(0)]]; float4 copy [[color(1)]]; };
-        fragment SFLoaded sf_load_float(SFScreen in [[stage_in]], float4 dst [[color(0)]]) { return {dst, dst}; }
+    struct SFLoaded { float4 colour [[color(0)]]; float4 copy [[color(1)]]; };
+    fragment SFLoaded sf_load_float(SFScreen in [[stage_in]], float4 dst [[color(0)]]) { return {dst, dst}; }
 
-        struct SFLoadedHalf { half4 colour [[color(0)]]; float4 copy [[color(1)]]; };
-        fragment SFLoadedHalf sf_load_half(SFScreen in [[stage_in]], half4 dst [[color(0)]]) {
-            return {dst, float4(dst)};
-        }
+    struct SFLoadedHalf { half4 colour [[color(0)]]; float4 copy [[color(1)]]; };
+    fragment SFLoadedHalf sf_load_half(SFScreen in [[stage_in]], half4 dst [[color(0)]]) {
+        return {dst, float4(dst)};
+    }
 
-        fragment float4 sf_unpack(SFScreen in [[stage_in]], texture2d_ms<float, access::read> samples [[texture(0)]]) {
-            const uint2 at = uint2(in.position.xy);
-            return samples.read(uint2(at.x / 4, at.y), at.x % 4);
-        }
-        """
+    fragment float4 sf_unpack(SFScreen in [[stage_in]], texture2d_ms<float, access::read> samples [[texture(0)]]) {
+        const uint2 at = uint2(in.position.xy);
+        return samples.read(uint2(at.x / 4, at.y), at.x % 4);
+    }
+    """
 
     enum Tests: String, CaseIterable { case depthwrite, pass, readonly, stencilwrite }
 
@@ -93,10 +93,12 @@ enum StorageFormsCases {
             return [
                 Case(
                     key: "depth_export_\(tests)", fragment: "sf_order_depth", format: .bgra8Unorm, tests: tests,
-                    triangles: 16, even: tests == .depthwrite || tests == .stencilwrite ? [207, 64, 39, 255] : ordered),
+                    triangles: 16, even: tests == .depthwrite || tests == .stencilwrite ? [207, 64, 39, 255] : ordered
+                ),
                 Case(
                     key: "discard_\(tests)", fragment: "sf_order_discard", format: .bgra8Unorm, tests: tests,
-                    triangles: 16, even: ordered, odd: [124, 88, 64, 0]),
+                    triangles: 16, even: ordered, odd: [124, 88, 64, 0]
+                ),
             ]
         }
         + [
@@ -107,13 +109,15 @@ enum StorageFormsCases {
                 Case(key: "ms4_srgb_order\(n)", format: .bgra8Unorm_srgb, samples: 4, triangles: n, even: drawn),
                 Case(
                     key: "ms4_srgb_discard\(n)", fragment: "sf_order_discard", format: .bgra8Unorm_srgb, samples: 4,
-                    tests: .depthwrite, triangles: n, even: drawn, odd: discarded),
+                    tests: .depthwrite, triangles: n, even: drawn, odd: discarded
+                ),
             ]
         }
 
     static func timedCase(_ fragment: String, _ format: MTLPixelFormat, samples: Int = 1, tests: Tests?) -> Case {
         Case(
-            key: "timed", fragment: fragment, format: format, samples: samples, tests: tests, triangles: timedTriangles)
+            key: "timed", fragment: fragment, format: format, samples: samples, tests: tests, triangles: timedTriangles
+        )
     }
 
     static let timed: [(kind: String, storage: Case, twin: Case)] = [

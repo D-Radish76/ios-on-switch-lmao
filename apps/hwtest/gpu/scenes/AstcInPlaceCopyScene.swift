@@ -73,7 +73,8 @@ extension AstcLayoutRun {
         layout.copy(Self.grid.bytes, rowBytes: Self.grid.rowBytes, region: Self.region, slice: 1, to: memory.base)
         guard
             let texture = TextureLayoutSPI.noCopyTexture(
-                gpu.device, memory.base, length: memory.bytes, descriptor, deallocator: memory.deallocator)
+                gpu.device, memory.base, length: memory.bytes, descriptor, deallocator: memory.deallocator
+            )
         else {
             memory.release()
             throw TestFailure("newTextureWithBytesNoCopy of the array returned nil")

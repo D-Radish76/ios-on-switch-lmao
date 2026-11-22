@@ -22,20 +22,21 @@ struct ReachShapesTest: HWTest {
     var timeout: TimeInterval { 60 }
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct Out { float4 position [[position]]; };
-        vertex Out reach_vertex(uint vid [[vertex_id]], constant float4 *corners [[buffer(0)]]) { return {corners[vid]}; }
-        fragment float4 reach_colour() { return float4(0.3f, 0.6f, 0.2f, 1); }
-        [[patch(quad, 4)]] vertex Out reach_patch(float2 uv [[position_in_patch]], constant float4 &box [[buffer(0)]]) {
-            return {float4(mix(box.xy, box.zw, uv), 0, 1)};
-        }
-        vertex void reach_store(uint vid [[vertex_id]], device uint *out [[buffer(1)]]) { out[vid] = vid + 1; }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct Out { float4 position [[position]]; };
+    vertex Out reach_vertex(uint vid [[vertex_id]], constant float4 *corners [[buffer(0)]]) { return {corners[vid]}; }
+    fragment float4 reach_colour() { return float4(0.3f, 0.6f, 0.2f, 1); }
+    [[patch(quad, 4)]] vertex Out reach_patch(float2 uv [[position_in_patch]], constant float4 &box [[buffer(0)]]) {
+        return {float4(mix(box.xy, box.zw, uv), 0, 1)};
+    }
+    vertex void reach_store(uint vid [[vertex_id]], device uint *out [[buffer(1)]]) { out[vid] = vid + 1; }
+    """
     static let width = 64, height = 48
     static let surface = YcbcrLoadTest.Case(
         format: 500, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-        matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2, metal: 0)
+        matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2, metal: 0
+    )
 
     enum Shape: String, CaseIterable {
         case icb, patch, noFragment = "no_fragment", noRaster = "no_raster", icbMixed = "icb_mixed"
@@ -81,11 +82,12 @@ struct ReachShapesTest: HWTest {
         let attributes =
             [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
         guard CVPixelBufferCreate(nil, w, h, Self.surface.fourcc, attributes, &made) == kCVReturnSuccess,
-            let buffer = made, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
+              let buffer = made, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { throw TestFailure("no '420f' surface") }
         IOSurfaceSetValue(surface, "IOSurfaceYCbCrMatrix" as CFString, kCVImageBufferYCbCrMatrix_ITU_R_709_2)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: Self.surface.format)!, width: w, height: h, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: Self.surface.format)!, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let target = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no format 500 texture")
@@ -132,7 +134,7 @@ struct ReachShapesTest: HWTest {
             switch shape {
             case .icb: Self.corners(40, 4, 60, 24)
             case .noFragment: Self.corners(36, 34, 60, 46)
-            case .icbMixed: Array(Self.corners(4, 4, 28, 28)[0..<3]) + Self.corners(36, 40, 60, 40)[2..<4]
+            case .icbMixed: Array(Self.corners(4, 4, 28, 28)[0 ..< 3]) + Self.corners(36, 40, 60, 40)[2 ..< 4]
             default: Self.corners(0, 0, 4, 4)
             }
         let vertices = try gpu.buffer(points)
@@ -151,13 +153,14 @@ struct ReachShapesTest: HWTest {
             encoder.setVertexBuffer(vertices, offset: 0, index: 0)
             switch shape {
             case .icb, .icbMixed:
-                encoder.executeCommandsInBuffer(commands!, range: 0..<(shape == .icb ? 1 : 2))
+                encoder.executeCommandsInBuffer(commands!, range: 0 ..< (shape == .icb ? 1 : 2))
             case .patch:
                 encoder.setVertexBytes(&box, length: 16, index: 0)
                 encoder.setTessellationFactorBuffer(factors, offset: 0, instanceStride: 0)
                 encoder.drawPatches(
                     numberOfPatchControlPoints: 4, patchStart: 0, patchCount: 1, patchIndexBuffer: nil,
-                    patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0)
+                    patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0
+                )
             case .noFragment:
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             case .noRaster:
@@ -183,12 +186,15 @@ struct ReachShapesTest: HWTest {
         }
         if shape == .icb {
             icb.indirectRenderCommandAt(0).drawPrimitives(
-                .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1, baseInstance: 0)
+                .triangleStrip, vertexStart: 0, vertexCount: 4, instanceCount: 1, baseInstance: 0
+            )
         } else {
             icb.indirectRenderCommandAt(0).drawPrimitives(
-                .triangle, vertexStart: 0, vertexCount: 3, instanceCount: 1, baseInstance: 0)
+                .triangle, vertexStart: 0, vertexCount: 3, instanceCount: 1, baseInstance: 0
+            )
             icb.indirectRenderCommandAt(1).drawPrimitives(
-                .line, vertexStart: 3, vertexCount: 2, instanceCount: 1, baseInstance: 0)
+                .line, vertexStart: 3, vertexCount: 2, instanceCount: 1, baseInstance: 0
+            )
         }
         return icb
     }
@@ -198,8 +204,8 @@ struct ReachShapesTest: HWTest {
         _ reached: Set<Int>, _ rows: [(bytes: Int, count: Int)], _ a: [[UInt8]], _ b: [[UInt8]]
     ) -> (reached: Int, untouched: Int) {
         var inside = 0, outside = 0
-        for plane in 0..<2 {
-            for i in 0..<a[plane].count where a[plane][i] != b[plane][i] {
+        for plane in 0 ..< 2 {
+            for i in 0 ..< a[plane].count where a[plane][i] != b[plane][i] {
                 let (y, x) = (i / rows[plane].bytes, i % rows[plane].bytes)
                 let pixel = plane == 0 ? (x, y) : (x / 2 * 2, y * 2)
                 if reached.contains(pixel.1 / 32 * 2 + pixel.0 / 32) { inside += 1 } else { outside += 1 }

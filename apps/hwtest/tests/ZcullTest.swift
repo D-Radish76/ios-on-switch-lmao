@@ -37,7 +37,8 @@ struct ZcullTest: HWTest {
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height, usage: [.renderTarget, .shaderRead])
         let depth = try gpu.texture(
-            .depth32Float, Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
+            .depth32Float, Self.width, Self.height, usage: [.renderTarget], storage: .memoryless
+        )
         let pipeline = try gpu.render(fragment: "exact_fragment", format: .bgra8Unorm, depth: .depth32Float)
         func state(_ compare: MTLCompareFunction) -> MTLDepthStencilState {
             let d = MTLDepthStencilDescriptor()
@@ -66,7 +67,7 @@ struct ZcullTest: HWTest {
                     encoder.setDepthStencilState(draw.state)
                     encoder.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
                     encoder.setFragmentBytes(&colour, length: 16, index: 0)
-                    for _ in 0..<draw.count {
+                    for _ in 0 ..< draw.count {
                         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                     }
                 }
@@ -82,20 +83,23 @@ struct ZcullTest: HWTest {
             [
                 Draw(corners: left(0.25), colour: Self.red, state: state(.less), count: 1),
                 Draw(corners: all(0.75), colour: Self.green, state: state(.less), count: Self.farQuads),
-            ])
+            ]
+        )
         let reversed = encode(
             0,
             [
                 Draw(corners: left(0.75), colour: Self.red, state: state(.greater), count: 1),
                 Draw(corners: all(0.25), colour: Self.green, state: state(.greaterEqual), count: Self.farQuads),
-            ])
+            ]
+        )
         let flipped = encode(
             1,
             [
                 Draw(corners: left(0.25), colour: Self.red, state: state(.less), count: 1),
                 Draw(corners: all(0.75), colour: Self.green, state: state(.lessEqual), count: 1),
                 Draw(corners: all(0.5), colour: Self.blue, state: state(.greater), count: 1),
-            ])
+            ]
+        )
         for (label, pass, leftColour) in [
             ("less", less, Self.red), ("reversed", reversed, Self.red),
             ("flipped", flipped, Self.blue),
@@ -110,7 +114,7 @@ struct ZcullTest: HWTest {
             for y in stride(from: 0, to: h, by: 3) {
                 for x in stride(from: 0, to: w, by: 3) {
                     let want = x < w / 2 ? leftColour : Self.green
-                    for c in 0..<4 where abs(raster[x, y, c] - want[c]) > 0.002 { bad += 1 }
+                    for c in 0 ..< 4 where abs(raster[x, y, c] - want[c]) > 0.002 { bad += 1 }
                 }
             }
             metrics.set("\(label)_wrong", bad)
@@ -124,7 +128,8 @@ struct ZcullTest: HWTest {
         if passes < 3 { wrong.append("zcull_passes") }
         if invalidations < 1 { wrong.append("zcull_invalidations") }
         await arms(
-            ArmContext(gpu: gpu, target: target, width: w, height: h, state: { state($0) }), &metrics, &wrong, &paths)
+            ArmContext(gpu: gpu, target: target, width: w, height: h, state: { state($0) }), &metrics, &wrong, &paths
+        )
         info(&metrics, &wrong)
         do {
             try await sideEffects(gpu, target, &metrics, &wrong, &paths)
@@ -139,7 +144,7 @@ struct ZcullTest: HWTest {
             wrong.append("fragment_stores")
         }
         var onMs = 0.0, offMs = 0.0, emitted = 0
-        for _ in 0..<Self.rounds {
+        for _ in 0 ..< Self.rounds {
             let on = try await gpu.run(less)
             onMs += on.gpuMilliseconds
             paths.insert(on.path)

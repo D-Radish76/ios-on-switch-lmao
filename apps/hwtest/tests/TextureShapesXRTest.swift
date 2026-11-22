@@ -26,12 +26,13 @@ struct TextureShapesXRTest: HWTest {
         arms.route("xr_cube", cube, expect: "gm20b")
         if let cube {
             var expect: [UInt8] = []
-            for face in 0..<6 {
+            for face in 0 ..< 6 {
                 let r = 384 + 100 * face, g = 1023 - 37 * face, b = 50 + 9 * face
                 let word = UInt32(0xc000_0000) | UInt32(r) << 20 | UInt32(g) << 10 | UInt32(b)
                 cube.replace(
                     region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0, slice: face,
-                    withBytes: [UInt32](repeating: word, count: 16), bytesPerRow: 16, bytesPerImage: 0)
+                    withBytes: [UInt32](repeating: word, count: 16), bytesPerRow: 16, bytesPerImage: 0
+                )
                 expect += half(r) + half(g) + half(b) + one
             }
             let read = try await arms.drawn(cube, fragment: "shapes_cube_face_half", width: 6, format: .rgba16Float)
@@ -48,7 +49,8 @@ struct TextureShapesXRTest: HWTest {
                 volume.replace(
                     region: MTLRegionMake3D(0, 0, plane, side, side, 1), mipmapLevel: level, slice: 0,
                     withBytes: Array([[UInt16]](repeating: texel, count: side * side).joined()),
-                    bytesPerRow: 8 * side, bytesPerImage: 8 * side * side)
+                    bytesPerRow: 8 * side, bytesPerImage: 8 * side * side
+                )
                 expect += half(r) + half(g) + half(b) + half(a)
             }
             let read = try await arms.drawn(volume, fragment: "shapes_volume_half", width: 3, format: .rgba16Float)
@@ -58,10 +60,12 @@ struct TextureShapesXRTest: HWTest {
         arms.route("xr_planes_shared", words, expect: "gm20b")
         if let words {
             arms.off(
-                "xr_planes_shared", try arms.cpuRoundTrip(words, width: 4, height: 4, bytesPerRow: 16, rows: 4), [])
+                "xr_planes_shared", try arms.cpuRoundTrip(words, width: 4, height: 4, bytesPerRow: 16, rows: 4), []
+            )
         }
         arms.route(
-            "xr_ms", arms.make(.bgr10_xr, .type2DMultisample, 8, 8, samples: 4, usage: .renderTarget), expect: "gm20b")
+            "xr_ms", arms.make(.bgr10_xr, .type2DMultisample, 8, 8, samples: 4, usage: .renderTarget), expect: "gm20b"
+        )
         arms.route("xr_chain", arms.make(.bgra10_xr, .type2D, 16, 16, levels: 3, usage: .shaderRead), expect: "gm20b")
         arms.route("xr_1d", arms.make(.bgr10_xr, .type1D, 16, 1, usage: .shaderRead), expect: "gm20b")
         return arms.outcome()

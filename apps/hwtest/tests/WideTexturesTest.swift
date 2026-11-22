@@ -23,16 +23,16 @@ struct WideTexturesTest: HWTest {
         let vertexSum = slots.map { " + v\($0).read(uint2(0)).x" }.joined()
         let fragmentSum = slots.map { " + f\($0).read(uint2(0)).x" }.joined()
         return """
-            #include <metal_stdlib>
-            using namespace metal;
-            struct Out { float4 position [[position]]; float sum; };
-            vertex Out wide_textures_vertex(uint vid [[vertex_id]]\(vertexArguments)) {
-                return {float4(float(vid & 1) * 4 - 1, float(vid >> 1) * 4 - 1, 0, 1), 0.0f\(vertexSum)};
-            }
-            fragment float4 wide_textures_fragment(Out in [[stage_in]]\(fragmentArguments)) {
-                return float4(0.0f\(fragmentSum), in.sum, 0, 1);
-            }
-            """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct Out { float4 position [[position]]; float sum; };
+        vertex Out wide_textures_vertex(uint vid [[vertex_id]]\(vertexArguments)) {
+            return {float4(float(vid & 1) * 4 - 1, float(vid >> 1) * 4 - 1, 0, 1), 0.0f\(vertexSum)};
+        }
+        fragment float4 wide_textures_fragment(Out in [[stage_in]]\(fragmentArguments)) {
+            return float4(0.0f\(fragmentSum), in.sum, 0, 1);
+        }
+        """
     }()
 
     /// Vertex slot k of `slots` holds 2^k, fragment slot k 2^(k + 3), each decoy 2^10
@@ -83,14 +83,14 @@ struct WideTexturesTest: HWTest {
         let texels = try await gpu.read(target, bytesPerPixel: 16)
         let floats = texels.withUnsafeBytes { Array($0.bindMemory(to: Float.self)) }
         var wrong = 0
-        for p in 0..<(n * n) where Array(floats[4 * p..<4 * p + 4]) != Self.want { wrong += 1 }
+        for p in 0 ..< (n * n) where Array(floats[4 * p ..< 4 * p + 4]) != Self.want { wrong += 1 }
         let middle = 4 * (n / 2 * n + n / 2)
         var metrics = Metrics()
         metrics.set("path", path)
         metrics.set("entries", GM20BFacade.entries(of: state).map(String.init) ?? "-")
         metrics.set("slots", Self.slots.map(String.init).joined(separator: "/"))
         metrics.set("wrong_pixels", wrong)
-        metrics.set("middle", floats[middle..<middle + 4].map { String($0) }.joined(separator: "/"))
+        metrics.set("middle", floats[middle ..< middle + 4].map { String($0) }.joined(separator: "/"))
         var failures: [String] = []
         if path != "gm20b" { failures.append("path") }
         if wrong > 0 { failures.append("wrong_pixels") }

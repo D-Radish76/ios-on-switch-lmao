@@ -20,7 +20,7 @@ struct Rg8SrgbTargetTest: HWTest {
     static let clears: [(Double, Double)] = [
         (0.5, 0.25), (0.0031, 0.04045), (0.2140, 0.7354), (1 / 3, 2 / 3), (0.99, 0.001),
     ]
-    static let sweep: [SIMD4<Float>] = (0..<side * side).map { i in
+    static let sweep: [SIMD4<Float>] = (0 ..< side * side).map { i in
         let f = Float(i)
         return SIMD4(f / 4095, (4095 - f) / 4095, (f * 0.37) - (f * 0.37).rounded(.down), 0.5)
     }
@@ -97,13 +97,14 @@ struct Rg8SrgbTargetTest: HWTest {
     static func off(_ gpu: GPU, _ targets: [MTLTexture]) async throws -> Int {
         let rg = try await gpu.read(targets[0], bytesPerPixel: 2)
         let rgba = try await gpu.read(targets[1], bytesPerPixel: 4)
-        return (0..<side * side * 2).filter { rg[$0] != rgba[$0 / 2 * 4 + $0 % 2] }.count
+        return (0 ..< side * side * 2).filter { rg[$0] != rgba[$0 / 2 * 4 + $0 % 2] }.count
     }
 
     static func swept(_ gpu: GPU, _ targets: [MTLTexture]) async throws -> Int {
         for t in targets {
             try await pass(
-                gpu, t, load: .clear, clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1), values: sweep)
+                gpu, t, load: .clear, clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1), values: sweep
+            )
         }
         return try await off(gpu, targets)
     }

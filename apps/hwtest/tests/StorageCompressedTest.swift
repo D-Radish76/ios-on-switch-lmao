@@ -55,7 +55,7 @@ struct StorageCompressedTest: HWTest {
                 e.setRenderPipelineState(state)
                 var corners = GPU.fullScreen
                 e.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
-                for layer in 0..<4 {
+                for layer in 0 ..< 4 {
                     var which = SIMD2<UInt32>(UInt32(layer), 1)
                     e.setFragmentBytes(&which, length: 8, index: 0)
                     e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)

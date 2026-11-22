@@ -1,11 +1,2 @@
 # Files //:format_test lets fail its format checks, and fails once they pass. Nothing joins this list; a file leaves it
 # when it is formatted.
-#
-# What //gpu:stack_key hashes (its `inputs` output group, and the sources of the NVK dylib it hashes) and the raw pack
-# generator's own sources (pack, gpu/seed, tools/gpu and the runtime headers it reads): formatting them moves the
-# raw stack key or the pack, so they are formatted with the next key batch.
-drivers/TegraGM20B/TegraGM20BABI.h
-drivers/TegraGM20BMetal/pack/mock_iokit.c
-drivers/TegraGM20BMetal/pack/native_seed.mm
-drivers/TegraGM20BMetal/pack/native_seed_analysis.h
-drivers/TegraGM20BMetal/pack/native_seed_manifest.h

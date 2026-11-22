@@ -55,8 +55,8 @@ public enum XrPlanesRows {
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { return nil }
         IOSurfaceLock(surface, [], nil)
         let base = IOSurfaceGetBaseAddress(surface)
-        for y in 0..<size {
-            for x in 0..<size {
+        for y in 0 ..< size {
+            for x in 0 ..< size {
                 base.storeBytes(of: word(x, y), toByteOffset: y * wordPitch + 4 * x, as: UInt32.self)
                 base.storeBytes(of: alpha(x, y), toByteOffset: alphaAt + y * alphaPitch + x, as: UInt8.self)
             }
@@ -88,12 +88,17 @@ public enum XrPlanesRows {
         guard !timing.path.hasPrefix("error:") else { return (-1, -1) }
         let bytes = try await gpu.read(target, bytesPerPixel: 8)
         var counts = (off: 0, inexact: 0)
-        for y in 0..<size {
-            for x in 0..<size {
-                let got = bytes.loaded(as: SIMD4<Float16>.self, at: y * size + x), want = texel(words(x, y), alpha(x, y))
+        for y in 0 ..< size {
+            for x in 0 ..< size {
+                let got = bytes.loaded(as: SIMD4<Float16>.self, at: y * size + x), want = texel(
+                    words(x, y),
+                    alpha(x, y)
+                )
                 guard got != want else { continue }
                 counts.inexact += 1
-                let steps = (0..<4).map { abs(Int(Int16(bitPattern: got[$0].bitPattern)) - Int(Int16(bitPattern: want[$0].bitPattern))) }
+                let steps = (0 ..< 4)
+                    .map {
+                        abs(Int(Int16(bitPattern: got[$0].bitPattern)) - Int(Int16(bitPattern: want[$0].bitPattern))) }
                 guard steps.contains(where: { $0 > 1 }) else { continue }
                 counts.off += 1
                 if reading.first == "-" { reading.first = "\(x),\(y):\(got)_not_\(want)" }
@@ -106,19 +111,22 @@ public enum XrPlanesRows {
         var reading = Reading()
         guard let surface = surface() else { throw TestFailure("no 'b3a8' surface") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: size, height: size, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: size, height: size, mipmapped: false
+        )
         descriptor.usage = [.shaderRead, .shaderWrite]
         descriptor.storageMode = .shared
-        guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else { return reading }
+        guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0)
+        else { return reading }
         reading.made = true
         (reading.filledOff, reading.filledInexact) = try await drawn(gpu, texture, word, &reading)
-        let words = try gpu.buffer((0..<(size * size)).map { blitWord($0 % size, $0 / size) })
+        let words = try gpu.buffer((0 ..< (size * size)).map { blitWord($0 % size, $0 / size) })
         let blit = try await gpu.run(tolerateError: true) { commands in
             let encoder = commands.makeBlitCommandEncoder()!
             encoder.copy(
                 from: words, sourceOffset: 0, sourceBytesPerRow: size * 4, sourceBytesPerImage: size * size * 4,
                 sourceSize: MTLSize(width: size, height: size, depth: 1), to: texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             encoder.endEncoding()
         }
         reading.paths.append(blit.facadePath)
@@ -129,16 +137,24 @@ public enum XrPlanesRows {
             encoder.setComputePipelineState(rewrite)
             encoder.setTexture(texture, index: 0)
             encoder.dispatchThreads(
-                MTLSize(width: size, height: size, depth: 1), threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                MTLSize(width: size, height: size, depth: 1), threadsPerThreadgroup: MTLSize(
+                    width: 8,
+                    height: 8,
+                    depth: 1
+                )
+            )
             encoder.endEncoding()
         }
         reading.paths.append(kernel.facadePath)
         IOSurfaceLock(surface, .readOnly, nil)
         let base = IOSurfaceGetBaseAddress(surface)
-        for y in 0..<size {
-            for x in 0..<size {
-                if base.load(fromByteOffset: y * wordPitch + 4 * x, as: UInt32.self) != blitWord(x, y) { reading.wordsOff += 1 }
-                if base.load(fromByteOffset: alphaAt + y * alphaPitch + x, as: UInt8.self) != 255 { reading.alphaOff += 1 }
+        for y in 0 ..< size {
+            for x in 0 ..< size {
+                if base
+                    .load(fromByteOffset: y * wordPitch + 4 * x, as: UInt32.self) !=
+                    blitWord(x, y) { reading.wordsOff += 1 }
+                if base
+                    .load(fromByteOffset: alphaAt + y * alphaPitch + x, as: UInt8.self) != 255 { reading.alphaOff += 1 }
             }
         }
         IOSurfaceUnlock(surface, .readOnly, nil)

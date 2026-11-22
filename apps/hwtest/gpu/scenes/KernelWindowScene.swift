@@ -25,7 +25,7 @@ struct KernelWindowScene: GPUScene {
             let length = offset + bytes + 16
             let source = try gpu.buffer(length)
             let destination = try gpu.buffer(length)
-            let values = (0..<Self.count * floats).map { Float($0 % 97) * 0.25 - 3.0 }
+            let values = (0 ..< Self.count * floats).map { Float($0 % 97) * 0.25 - 3.0 }
             (source.contents() + offset).copyMemory(from: values, byteCount: bytes)
             memset(destination.contents(), Int32(Self.sentinel), length)
             let timing = try await gpu.run { commands in
@@ -35,17 +35,18 @@ struct KernelWindowScene: GPUScene {
                 encoder.setBuffer(destination, offset: offset, index: 1)
                 encoder.dispatchThreads(
                     MTLSize(width: Self.count, height: 1, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: Self.count, height: 1, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: Self.count, height: 1, depth: 1)
+                )
                 encoder.endEncoding()
             }
             paths.append(timing.path)
             let out = destination.contents().assumingMemoryBound(to: UInt8.self)
             var wrong = 0
-            for at in 0..<length where at < offset || at >= offset + bytes {
+            for at in 0 ..< length where at < offset || at >= offset + bytes {
                 if out[at] != Self.sentinel { wrong += 1 }
             }
             let written = (destination.contents() + offset).assumingMemoryBound(to: Float.self)
-            for i in 0..<values.count where written[i] != values[i] * 2 + 1 { wrong += 1 }
+            for i in 0 ..< values.count where written[i] != values[i] * 2 + 1 { wrong += 1 }
             result.metrics.set("\(function)_wrong", wrong)
             result.expect(wrong == 0, "\(function) at \(offset): \(wrong) values or bytes around them wrong")
         }

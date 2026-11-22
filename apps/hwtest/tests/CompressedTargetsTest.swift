@@ -39,19 +39,24 @@ struct CompressedTargetsTest: HWTest {
     static let cases = [
         Case(
             label: "ms4_bgra8", colour: .bgra8Unorm, depth: .depth16Unorm, samples: 4, clear: exactCodes,
-            clearDepth: 0.75),
+            clearDepth: 0.75
+        ),
         Case(
             label: "ms4_rgba8", colour: .rgba8Unorm, depth: .depth16Unorm, samples: 4, clear: exactCodes,
-            clearDepth: 0.75),
+            clearDepth: 0.75
+        ),
         Case(
             label: "ms4_f16", colour: .rgba16Float, depth: .depth16Unorm, samples: 4,
-            clear: MTLClearColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 1), clearDepth: 0.75),
+            clear: MTLClearColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 1), clearDepth: 0.75
+        ),
         Case(
             label: "ms4_f16_bgra8_floats", colour: .rgba16Float, depth: .depth16Unorm, samples: 4, clear: exactCodes,
-            clearDepth: 0.75),
+            clearDepth: 0.75
+        ),
         Case(
             label: "d32s8", colour: .bgra8Unorm, depth: .depth32Float_stencil8, samples: 1,
-            clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1), clearDepth: 0.5),
+            clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1), clearDepth: 0.5
+        ),
     ]
 
     static func pass(_ c: Case, colour: MTLTexture, depth: MTLTexture, resolve: MTLTexture?) -> MTLRenderPassDescriptor
@@ -95,25 +100,32 @@ struct CompressedTargetsTest: HWTest {
                 d.depthCompareFunction = .less
                 d.isDepthWriteEnabled = true
                 return d
-            }())!
+            }()
+        )!
         for c in Self.cases {
             let colour = try gpu.texture(
-                c.colour, Self.width, Self.height, usage: [.renderTarget], samples: c.samples, storage: .memoryless)
+                c.colour, Self.width, Self.height, usage: [.renderTarget], samples: c.samples, storage: .memoryless
+            )
             let depth = try gpu.texture(
-                c.depth, Self.width, Self.height, usage: [.renderTarget], samples: c.samples, storage: .memoryless)
+                c.depth, Self.width, Self.height, usage: [.renderTarget], samples: c.samples, storage: .memoryless
+            )
             let out = try gpu.texture(c.colour, Self.width, Self.height, usage: [.renderTarget, .shaderRead])
             let state = try gpu.render(
                 fragment: "exact_fragment", format: c.colour, samples: c.samples, depth: c.depth,
-                stencil: c.depth == .depth32Float_stencil8 ? c.depth : .invalid)
+                stencil: c.depth == .depth32Float_stencil8 ? c.depth : .invalid
+            )
             var corners = GPU.pixelQuad(
-                0, 0, Self.width / 2, Self.height, width: Self.width, height: Self.height, z: 0.25)
-            for _ in 0..<Self.rounds {
+                0, 0, Self.width / 2, Self.height, width: Self.width, height: Self.height, z: 0.25
+            )
+            for _ in 0 ..< Self.rounds {
                 paths.insert(
                     try await gpu.run { commands in
                         let encoder = commands.makeRenderCommandEncoder(
                             descriptor: Self.pass(
                                 c, colour: c.samples > 1 ? colour : out, depth: depth,
-                                resolve: c.samples > 1 ? out : nil))!
+                                resolve: c.samples > 1 ? out : nil
+                            )
+                        )!
                         encoder.setRenderPipelineState(state)
                         encoder.setDepthStencilState(depthState)
                         var value = Self.quadColour
@@ -121,19 +133,21 @@ struct CompressedTargetsTest: HWTest {
                         encoder.setFragmentBytes(&value, length: 16, index: 0)
                         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                         encoder.endEncoding()
-                    }.path)
+                    }.path
+                )
                 try await Task.sleep(nanoseconds: 20_000_000)
             }
             let half = c.colour == .rgba16Float
             let raster = try await gpu.raster(
-                out, half ? .rgba16Float : c.colour == .rgba8Unorm ? .rgba8Unorm : .bgra8Unorm)
+                out, half ? .rgba16Float : c.colour == .rgba8Unorm ? .rgba8Unorm : .bgra8Unorm
+            )
             let clear = [c.clear.red, c.clear.green, c.clear.blue, c.clear.alpha].map {
                 half ? Double(Float(Float16(Float($0)))) : $0
             }
             var bad = 0
-            for y in 0..<Self.height {
-                for x in 0..<Self.width {
-                    for ch in 0..<4 {
+            for y in 0 ..< Self.height {
+                for x in 0 ..< Self.width {
+                    for ch in 0 ..< 4 {
                         let want = x < Self.width / 2 ? Double(Self.quadColour[ch]) : clear[ch]
                         if abs(Double(raster[x, y, ch]) - want) > (half ? 1e-6 : 0.5 / 255) { bad += 1 }
                     }
@@ -168,7 +182,7 @@ struct CompressedTargetsTest: HWTest {
         let target = try gpu.texture(.bgra8Unorm, 1280, 720, usage: [.renderTarget], samples: 4, storage: .memoryless)
         func clears(_ colour: MTLClearColor) async throws -> Double {
             var ms = 0.0
-            for _ in 0..<16 {
+            for _ in 0 ..< 16 {
                 ms += try await gpu.run { commands in
                     let pass = MTLRenderPassDescriptor()
                     pass.colorAttachments[0].texture = target

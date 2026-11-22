@@ -13,8 +13,9 @@ package(default_visibility = ["//visibility:public"])
 # pack/mesa is Mesa's code, kept as upstream has it; srgb_knots.h is m2v's SRGB_KNOTS table and srgb_encode.h its
 # inverse (ycbcr_converted_store_test holds it to the rule), generated; xr_srgb_decode.h and xr_srgb_encode.h are m2v's
 # BGR10_XR_sRGB tables (metal/format/extended_srgb.rs), copied. plugin/TwoPlaneStandIn.h is generated (TwoPlaneStandIn.sh
-# from TwoPlaneStandIn.metal).
+# from TwoPlaneStandIn.metal). fill_texel_tables.h is the fill codes an Apple M4 wrote, as measured.
 lint_files(exclude = [
+    "fill_texel_tables.h",
     "plugin/TwoPlaneStandIn.h",
     "pack/mesa/**",
     "pack/srgb_encode.h",

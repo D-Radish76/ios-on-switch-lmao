@@ -16,7 +16,8 @@ struct FramebufferFetchDepthScene: GPUScene {
                 for memoryless in [false, true] {
                     do {
                         try await draw(
-                            gpu, samples: samples, stencil: stencil, memoryless: memoryless, &packed, &result)
+                            gpu, samples: samples, stencil: stencil, memoryless: memoryless, &packed, &result
+                        )
                     } catch {
                         result.expect(false, "\(Self.key(samples, stencil, memoryless)): \(GPU.describe(error))")
                     }
@@ -43,16 +44,19 @@ struct FramebufferFetchDepthScene: GPUScene {
         let format: MTLPixelFormat = stencil ? .depth32Float_stencil8 : .depth32Float
         let depth = try gpu.texture(
             format, Self.size, Self.size, usage: [.renderTarget], samples: samples,
-            storage: memoryless ? .memoryless : .private)
+            storage: memoryless ? .memoryless : .private
+        )
         let target = try gpu.texture(.rgba8Unorm, Self.size, Self.size, samples: samples)
         let resolved = try gpu.texture(.rgba8Unorm, Self.size, Self.size)
         let snapshot = try gpu.texture(.rgba8Unorm, Self.size, Self.size)
         let fetch = try gpu.render(
             vertex: "fetch_depth_vertex", fragment: "fetch_add_fragment", format: .rgba8Unorm,
-            samples: samples, depth: format, stencil: stencil ? format : .invalid)
+            samples: samples, depth: format, stencil: stencil ? format : .invalid
+        )
         let ordinary = try gpu.render(
             vertex: "fetch_depth_vertex", fragment: "solid_fragment", format: .rgba8Unorm,
-            samples: samples, depth: format, stencil: stencil ? format : .invalid)
+            samples: samples, depth: format, stencil: stencil ? format : .invalid
+        )
         let less = try Self.state(gpu, stencil: stencil, depth: .less, stencilCompare: .always)
         let equalStencil = try Self.state(gpu, stencil: stencil, depth: .less, stencilCompare: .equal)
         let final = try Self.state(gpu, stencil: stencil, depth: .equal, stencilCompare: .equal)
@@ -107,7 +111,8 @@ struct FramebufferFetchDepthScene: GPUScene {
             blit.copy(
                 from: samples == 1 ? target : resolved, sourceSlice: 0, sourceLevel: 0,
                 sourceOrigin: MTLOrigin(), sourceSize: MTLSize(width: Self.size, height: Self.size, depth: 1),
-                to: snapshot, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+                to: snapshot, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
             if !memoryless {
                 let verify = commands.makeRenderCommandEncoder(descriptor: pass(clear: false))!
@@ -136,7 +141,8 @@ struct FramebufferFetchDepthScene: GPUScene {
             result.compare(
                 "\(key)_\(label)", bytes: bytes,
                 expected: Patterns.repeated(TexelFormat.rgba8Unorm.encode(expected), count: Self.size * Self.size),
-                format: .rgba8Unorm, width: Self.size, height: Self.size, tolerance: 2.0 / 255)
+                format: .rgba8Unorm, width: Self.size, height: Self.size, tolerance: 2.0 / 255
+            )
         }
     }
 

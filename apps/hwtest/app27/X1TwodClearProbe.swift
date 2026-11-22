@@ -67,7 +67,8 @@ extension X1TwodProbes {
                 let batch = try await gpu.run(forms: "") { commands in
                     let pass = X1RawProbes.pass(target, load: .clear)
                     pass.colorAttachments[0].clearColor = MTLClearColor(
-                        red: 0.125, green: 0.375, blue: 0.625, alpha: 0.875)
+                        red: 0.125, green: 0.375, blue: 0.625, alpha: 0.875
+                    )
                     commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
                     let blit = commands.makeBlitCommandEncoder()!
                     try GM20BProbe.engine(commands, op)
@@ -120,14 +121,15 @@ extension X1TwodProbes {
                 step.word ? channel.value(codes[c]) : exactValue(channel, Double(color[c]))
             }
             let border = format.codes(bytes, 0)
-            for t in 0..<w * h {
+            for t in 0 ..< w * h {
                 let (x, y) = (t % w, t / w)
                 if x == 0 || y == 0 || x == w - 1 || y == h - 1 {
                     if format.codes(bytes, t) != border { borders += 1 }
                     continue
                 }
                 tally.add(
-                    format.codes(bytes, t), exact: exact, channels: format.channels, metal: format.metalRounding, at: t)
+                    format.codes(bytes, t), exact: exact, channels: format.channels, metal: format.metalRounding, at: t
+                )
             }
             cells.append((label, tally))
             return true
@@ -153,7 +155,8 @@ extension X1TwodProbes {
             let source = try gpu.texture(.bgra8Unorm, w, h, usage: [.renderTarget, .shaderRead])
             let target = try gpu.texture(.bgra8Unorm, w, h, usage: [.renderTarget, .shaderRead])
             let scaled = await run(
-                "bgra8_scale_open", target, ["kind": "scale", "read": source, "written": target, "unbracketed": 1])
+                "bgra8_scale_open", target, ["kind": "scale", "read": source, "written": target, "unbracketed": 1]
+            )
             position = scaled == nil ? "scale_hung" : "scale_ran"
             if scaled != nil {
                 let filled = try await fill(bgra8, FillStep(reference: true, word: true, bracketed: false), colors[2])

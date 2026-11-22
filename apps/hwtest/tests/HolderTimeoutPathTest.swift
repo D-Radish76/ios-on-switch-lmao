@@ -23,7 +23,7 @@ struct HolderTimeoutPathTest: HWTest {
     let subsystem = Subsystem.metal
     var timeout: TimeInterval { 45 }
 
-    static let boundMs = 5000.0...5100.0
+    static let boundMs = 5000.0 ... 5100.0
     static let neverFailedSeconds = 10.0, behindMs = 50.0, otherQueueMs = 100.0, inTimeSeconds = 1.0
     static let description = "Caused GPU Timeout Error (00000002:kIOGPUCommandBufferCallbackErrorTimeout)"
     static let words = 8
@@ -33,9 +33,9 @@ struct HolderTimeoutPathTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let other = gpu.device.makeCommandQueue(), let event = gpu.device.makeSharedEvent(),
-            let inTimeEvent = gpu.device.makeSharedEvent(),
-            let words = gpu.device.makeBuffer(length: Self.words * 4, options: .storageModeShared),
-            let otherCommands = other.makeCommandBuffer()
+              let inTimeEvent = gpu.device.makeSharedEvent(),
+              let words = gpu.device.makeBuffer(length: Self.words * 4, options: .storageModeShared),
+              let otherCommands = other.makeCommandBuffer()
         else { throw TestFailure("no second queue, shared event, buffer or command buffer") }
         memset(words.contents(), 0, Self.words * 4)
         let before = GM20BFacade.counters(of: gpu.device)
@@ -93,7 +93,7 @@ struct HolderTimeoutPathTest: HWTest {
         let afterSignalMs = inTimeSignal.flatMap { signal in inTimeScheduledAt.map { $0 - signal } }
         let after = GM20BFacade.counters(of: gpu.device)
 
-        let written = (0..<Self.words).map { Self.written(words, $0) }
+        let written = (0 ..< Self.words).map { Self.written(words, $0) }
         let error = heldCommands.error as NSError?
         let underlying = error?.userInfo[NSUnderlyingErrorKey] as? NSError
         let heldMs = heldEnd.map { $0 - heldCommitted }
@@ -181,7 +181,7 @@ struct HolderTimeoutPathTest: HWTest {
 
     static func fill(_ commands: MTLCommandBuffer, _ words: MTLBuffer, _ word: Int) {
         let blit = commands.makeBlitCommandEncoder()!
-        blit.fill(buffer: words, range: (word * 4)..<(word * 4 + 4), value: UInt8(word + 1))
+        blit.fill(buffer: words, range: (word * 4) ..< (word * 4 + 4), value: UInt8(word + 1))
         blit.endEncoding()
     }
 

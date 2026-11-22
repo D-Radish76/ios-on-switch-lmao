@@ -8,11 +8,11 @@ copy, 3D state (render targets, viewport, scissor, clears, blending), barriers a
 bazel test //kits/SwitchGM20BEmit/...
 ```
 
-User space depends on `:emit` and `:macros_h`. The driver's host harnesses and the bench library link `:emit_ndebug` instead,
-built with NDEBUG as the Metal plugin builds its C units: their addresses are host pointers, wider than the 40-bit
-address fields the debug checks hold them to. Rules that take headers and include directories of their own (the plugin,
-`ios_binary`) list `:emit_headers` and `:macros` and put `mesa/` and `gen/` on the include path ahead of Mesa's headers
-directory, which has Mesa's own `nv_push.h`.
+User space depends on `:emit` and `:macros_h`. The driver's host harnesses and the bench library link `:emit_ndebug`
+instead, built with NDEBUG as the Metal plugin builds its C units: their addresses are host pointers, wider than the
+40-bit address fields the debug checks hold them to. Rules that take headers and include directories of their own (the
+plugin, `ios_binary`) list `:emit_headers` and `:macros` and put `mesa/` and `gen/` on the include path ahead of Mesa's
+headers directory, which has Mesa's own `nv_push.h`.
 
 A kernel driver names `kits/SwitchGM20B` and `kits/SwitchGM20BEmit` in `hdr_deps`, adds `SWITCH_GM20B_EMIT_INCLUDES`,
 and compiles `EMIT_SOURCES` with XNU's C headers (the kit includes `kern/assert.h`), so not in the nouveau units'

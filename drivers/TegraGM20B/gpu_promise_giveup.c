@@ -11,7 +11,8 @@ _Static_assert(TGM_FENCE_PROMISES == TegraGM20BMaxPromises &&
 _Static_assert(SWITCH_GPU_GIVEUP_PAGES == TGM_FENCE_USER_PAGES &&
 		       SWITCH_GPU_GIVEUP_PER_PAGE == TegraGM20BMaxPromises,
 	       "a give-up record for every promise slot that can exist");
-_Static_assert(SWITCH_GPU_GIVEUP_LOOK_NS == TGM_HANG_NS, "a kept promise's look is the hang rule's");
+_Static_assert(SWITCH_GPU_GIVEUP_LOOK_NS == TGM_HANG_NS,
+	       "a kept promise's look is the hang rule's");
 
 /* The promise slot whose word is at `offset` (page by page), -1 for any other word */
 static int promise_slot(uint32_t offset)
@@ -207,9 +208,8 @@ static int giveup_expire(struct switch_gpu_giveup *e, uint64_t now)
 }
 
 static const struct switch_gpu_giveup_ops giveup_ops = {
-	&tgm_promise_fence, promise_slot,  giveup_reader_parked,
-	giveup_job_ahead,   giveup_need,   giveup_stepped,
-	tgm_present_promise_released,      giveup_recall,
+	&tgm_promise_fence, promise_slot,   giveup_reader_parked,         giveup_job_ahead,
+	giveup_need,        giveup_stepped, tgm_present_promise_released, giveup_recall,
 	giveup_killed,      giveup_expire};
 
 static void giveup_after(uint64_t ns)
@@ -294,8 +294,8 @@ int switch_gpu_promise_park_locked(uint32_t offset, uint32_t value, const char *
 		spin_lock_irqsave(&giveup_lock, flags);
 		recalled = switch_gpu_giveup_recall(&giveups, e);
 		if (!recalled && !e->due_ns)
-			e->due_ns = switch_gpu_giveup_bound(&giveups, e,
-							    e->parked_ns + TegraGM20BPromiseBoundNs);
+			e->due_ns = switch_gpu_giveup_bound(
+				&giveups, e, e->parked_ns + TegraGM20BPromiseBoundNs);
 		spin_unlock_irqrestore(&giveup_lock, flags);
 		if (recalled)
 			giveup_need(e->job.uid, e->job_last);
@@ -356,8 +356,8 @@ void tgm_promise_rehold(uint32_t offset, uint32_t value)
 	reopened = switch_gpu_giveup_rehold(&giveups, slot, value, owner);
 	if (reopened && e->offset == offset && e->value == value && e->owner == owner && !e->kept &&
 	    !e->due_ns)
-		e->due_ns =
-			switch_gpu_giveup_bound(&giveups, e, e->parked_ns + TegraGM20BPromiseBoundNs);
+		e->due_ns = switch_gpu_giveup_bound(&giveups, e,
+						    e->parked_ns + TegraGM20BPromiseBoundNs);
 	spin_unlock_irqrestore(&giveup_lock, flags);
 	if (reopened)
 		giveup_arm();

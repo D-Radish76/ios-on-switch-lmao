@@ -48,14 +48,16 @@ struct PredicationLoops {
         e.setBytes(&pair, length: 8, index: 1)
         e.dispatchThreadgroups(
             MTLSize(width: 1, height: 1, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+            threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1)
+        )
         e.memoryBarrier(scope: .buffers)
     }
 
     func startWhile(_ e: MTLComputeCommandEncoder, word: Int) {
         let o = e as AnyObject
         unsafeBitCast(o.method(for: Self.startWhile), to: StartWhile.self)(
-            o, Self.startWhile, words, 4 * word, Self.notEqual, 0)
+            o, Self.startWhile, words, 4 * word, Self.notEqual, 0
+        )
     }
 
     mutating func endWhile(_ e: MTLComputeCommandEncoder) {
@@ -82,7 +84,9 @@ struct PredicationLoops {
         one(e, count, marks, doMark, 1)
         ends.append(
             unsafeBitCast(o.method(for: Self.endDoWhile), to: EndDoWhile.self)(
-                o, Self.endDoWhile, words, 4 * doWord, Self.notEqual, 0))
+                o, Self.endDoWhile, words, 4 * doWord, Self.notEqual, 0
+            )
+        )
         let outerWord = doWord + 1, innerWord = doWord + 2, nestedMark = doMark + 1
         one(e, store, words, outerWord, Self.nestedOuter)
         startWhile(e, word: outerWord)

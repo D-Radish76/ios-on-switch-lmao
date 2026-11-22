@@ -195,7 +195,12 @@ inline bool overlapPlanesWriters(const OverlapPlanes &s, uint32_t a, Reached rea
 
 inline bool overlapPlanesWriters(const OverlapPlanes &s, uint32_t a, OverlapWriters &out)
 {
-    return overlapPlanesWriters(s, a, [](uint32_t, uint32_t) { return true; }, out);
+    return overlapPlanesWriters(
+        s, a,
+        [](uint32_t, uint32_t) {
+            return true;
+        },
+        out);
 }
 
 // A plane of `rows` rows of `rowBytes`, `pitch` apart, drawn `elementBytes` a texel

@@ -41,7 +41,8 @@ struct ZoomTargetTest: HWTest {
         guard let line = CACorpus.state("PBGRAXm_A2Xhf") else { return .fail("CACorpus has no PBGRAXm_A2Xhf") }
         let pipeline = try CAState.pipeline(line, library: library, device: gpu.device)
         let scratch = try gpu.texture(
-            CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
+            CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless
+        )
         let before = GM20BFacade.counters(of: gpu.device)
         var metrics = Metrics()
         var wrong: [String] = []

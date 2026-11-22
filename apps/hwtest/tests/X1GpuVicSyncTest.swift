@@ -95,12 +95,12 @@ struct X1GpuVicSyncTest: HWTest {
     }
 
     /// RGBA codes of a sampled texel
-    static func codes(_ t: SIMD4<Float>) -> [Int] { (0..<4).map { Int((t[$0] * 255).rounded()) } }
+    static func codes(_ t: SIMD4<Float>) -> [Int] { (0 ..< 4).map { Int((t[$0] * 255).rounded()) } }
 
     static func near(_ a: [Int], _ b: [Int]) -> Bool { zip(a, b).allSatisfy { abs($0 - $1) <= 2 } }
 
     static func classify(_ texels: [SIMD4<Float>]) -> (stale: Int, unwritten: Int, torn: Int) {
-        let want = (0..<4).map { Int((drawn[$0] * 255).rounded()) }
+        let want = (0 ..< 4).map { Int((drawn[$0] * 255).rounded()) }
         let rgba = { (bgra: [UInt8]) in [Int(bgra[2]), Int(bgra[1]), Int(bgra[0]), Int(bgra[3])] }
         var reading = (stale: 0, unwritten: 0, torn: 0)
         for t in texels.map(codes) where !near(t, want) {
@@ -120,11 +120,11 @@ struct X1GpuVicSyncTest: HWTest {
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
         guard
             CVPixelBufferCreate(nil, width, height, kCVPixelFormatType_32BGRA, attributes as CFDictionary, &made)
-                == kCVReturnSuccess, let buffer = made
+            == kCVReturnSuccess, let buffer = made
         else { throw TestFailure("no \(width)x\(height) BGRA pixel buffer") }
         CVPixelBufferLockBaseAddress(buffer, [])
         let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
-        for i in 0..<(CVPixelBufferGetBytesPerRow(buffer) * height) { base[i] = fill[i % 4] }
+        for i in 0 ..< (CVPixelBufferGetBytesPerRow(buffer) * height) { base[i] = fill[i % 4] }
         CVPixelBufferUnlockBaseAddress(buffer, [])
         return buffer
     }
@@ -135,7 +135,8 @@ struct X1GpuVicSyncTest: HWTest {
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer),
-            mipmapped: false)
+            mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {

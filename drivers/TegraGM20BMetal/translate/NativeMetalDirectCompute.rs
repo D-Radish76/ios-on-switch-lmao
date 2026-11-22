@@ -339,8 +339,10 @@ fn dropped_stores(
                 t.slot
             ));
         }
-        if let Some(BoundTexture::Texture { facts, .. }) =
-            state.stages.get_mut(&Stage::Kernel).and_then(|table| table.textures.get_mut(&t.slot))
+        if let Some(BoundTexture::Texture { facts, .. }) = state
+            .stages
+            .get_mut(&Stage::Kernel)
+            .and_then(|table| table.textures.get_mut(&t.slot))
         {
             facts.pixel_format = WRITES_DROPPED;
         }
@@ -469,9 +471,12 @@ fn settle(
         None => compiled(compile, descriptor, key, budget),
     };
     let base = pipeline(&VariantKey::new())?;
-    let access = |slot: u32| match base.interface.slots.iter().find(|(s, _)| {
-        s.stage == Stage::Kernel && s.class == SlotClass::Texture && s.index == slot
-    }) {
+    let access = |slot: u32| match base
+        .interface
+        .slots
+        .iter()
+        .find(|(s, _)| s.stage == Stage::Kernel && s.class == SlotClass::Texture && s.index == slot)
+    {
         Some((_, SlotInterface::Texture(t))) => Some(t.access),
         _ => None,
     };
@@ -549,14 +554,22 @@ fn offset_change(
     let mut slots: std::collections::BTreeSet<u32> = aligned
         .psb_slots
         .symmetric_difference(&bound.psb_slots)
-        .chain(aligned.storage_view_slots.symmetric_difference(&bound.storage_view_slots))
+        .chain(
+            aligned
+                .storage_view_slots
+                .symmetric_difference(&bound.storage_view_slots),
+        )
         .filter(|s| s.class == SlotClass::Buffer)
         .map(|s| s.index)
         .collect();
     let apart = |a: &[(u32, u32, u32, i32, u32)], b: &[(u32, u32, u32, i32, u32)]| {
         a.iter().filter(|w| !b.contains(w)).map(|w| w.4).collect::<Vec<_>>()
     };
-    slots.extend(apart(aligned_layout, bound_layout).into_iter().chain(apart(bound_layout, aligned_layout)));
+    slots.extend(
+        apart(aligned_layout, bound_layout)
+            .into_iter()
+            .chain(apart(bound_layout, aligned_layout)),
+    );
     slots.remove(&u32::MAX);
     if !slots.is_empty() {
         let named: Vec<String> = slots.iter().map(u32::to_string).collect();
@@ -1111,7 +1124,10 @@ mod tests {
         assert_eq!(facts.address_modes, address_modes(3));
         assert!(!facts.two_planes, "bit 15 states a map, not two planes");
         let facts = facts_of(&bound(0, 500, 0)).unwrap();
-        assert_eq!((facts.pixel_format, facts.address_modes), (PixelFormat::YCBCR84202P, address_modes(1)));
+        assert_eq!(
+            (facts.pixel_format, facts.address_modes),
+            (PixelFormat::YCBCR84202P, address_modes(1))
+        );
         assert!(facts_of(&bound(0, 550, 1)).unwrap().two_planes);
     }
 
@@ -1213,6 +1229,10 @@ mod tests {
         assert!(why.contains("texture slot 3 of R10UnormPACKED"), "{why}");
         let sampled = |slot| Some(TextureAccess::new(true, false, slot == 0));
         let state = dropped_stores(sampled, &ask, kernel_state(&textures)).unwrap();
-        assert_eq!(format_at(&state, 3), PixelFormat::RGB10A2Unorm, "a slot only read keeps the image raw binds");
+        assert_eq!(
+            format_at(&state, 3),
+            PixelFormat::RGB10A2Unorm,
+            "a slot only read keeps the image raw binds"
+        );
     }
 }

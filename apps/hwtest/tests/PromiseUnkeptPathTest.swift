@@ -23,7 +23,8 @@ struct PromiseTotals {
             return PromiseTotals(
                 abandoned: fields["abandoned"] ?? -1, lastWaitedMs: fields["last_waited_ms"] ?? -1,
                 directPromised: fields["direct_promised"] ?? -1, directKept: fields["direct_kept"] ?? -1,
-                directGivenUp: fields["direct_given_up"] ?? -1)
+                directGivenUp: fields["direct_given_up"] ?? -1
+            )
         case .failed(let error):
             throw TestFailure(KernelSysctl.unreadable("kern.switch_gpu_promises", error))
         }
@@ -88,7 +89,7 @@ struct PromiseUnkeptPathTest: GPUPathTest {
     let name = "A promise nobody keeps or arms is given up at the 5 s bound, its readers seeing the frame before"
     let counters = ["writer_promises", "promise_waits"]
     static let size = 64
-    static let fill: [UInt8] = [0, 0, 255, 255]  // BGRA red: the frame before the promised one
+    static let fill: [UInt8] = [0, 0, 255, 255] // BGRA red: the frame before the promised one
     static let boundMs = 5000.0, boundLateMs = 50.0, safetySeconds = 8.0
     static let readerLateMs = boundLateMs + PromiseCancelPathTest.goesOnMs
 
@@ -110,24 +111,27 @@ struct PromiseUnkeptPathTest: GPUPathTest {
 
         let raw = PathParts.ownRouteRaw(gpu, part: "copy and CPU lock", counters: ["promise_waits"], &metrics)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         guard let source = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0),
-            let copied = gpu.device.makeBuffer(length: rowBytes * Self.size, options: .storageModeShared),
-            let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder()
+              let copied = gpu.device.makeBuffer(length: rowBytes * Self.size, options: .storageModeShared),
+              let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder()
         else { throw TestFailure("no surface texture, buffer or command buffer") }
         blit.copy(
             from: source, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
             sourceSize: MTLSize(width: Self.size, height: Self.size, depth: 1), to: copied, destinationOffset: 0,
-            destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * Self.size)
+            destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * Self.size
+        )
         blit.endEncoding()
 
         let start = try PromiseTotals.read()
         let (handle, promise) = try PromiseCancelPathTest.promise(surface, maker)
         defer {
             _ = maker.call(
-                PromiseCancelPathTest.boFree, GPUConnection.words(PromiseCancelPathTest.halves(handle)), outputSize: 0)
+                PromiseCancelPathTest.boFree, GPUConnection.words(PromiseCancelPathTest.halves(handle)), outputSize: 0
+            )
         }
         let shown = await context.onStage { stage -> UIView in
             let view = UIView(frame: CGRect(x: 0, y: 0, width: 96, height: 96))
@@ -164,7 +168,8 @@ struct PromiseUnkeptPathTest: GPUPathTest {
         metrics.set("waited_ms", after.lastWaitedMs)
         metrics.set("composite_ms", String(format: "%.1f", compositeMs))
         metrics.set(
-            "centre", centre.prefix(3).map { String(Int(($0 * render.levels).rounded())) }.joined(separator: ","))
+            "centre", centre.prefix(3).map { String(Int(($0 * render.levels).rounded())) }.joined(separator: ",")
+        )
         if safetyFired { failures.append("a reader went on only at the safety cancel, \(Self.safetySeconds) s on") }
         if safety.result != KERN_SUCCESS {
             failures.append("the maker's cancel after the give-up was refused: \(GPUConnection.hex(safety.result))")
@@ -172,7 +177,8 @@ struct PromiseUnkeptPathTest: GPUPathTest {
         if !compositeParked {
             PathParts.current?.skip(
                 String(format: "composite: the render server never parked on the promise (%.0f ms)", compositeMs),
-                counters: [])
+                counters: []
+            )
         }
         guard compositeParked || raw else {
             if givenUp != 0 { failures.append("a promise nobody waited on was given up \(givenUp) times") }
@@ -183,7 +189,9 @@ struct PromiseUnkeptPathTest: GPUPathTest {
             failures.append(
                 String(
                     format: "given up %ld ms after its first reader parked (the bound is %.0f, at most %.0f late)",
-                    after.lastWaitedMs, Self.boundMs, Self.boundLateMs))
+                    after.lastWaitedMs, Self.boundMs, Self.boundLateMs
+                )
+            )
         }
         if compositeParked {
             failures += Self.late("composite", compositeMs)
@@ -209,7 +217,8 @@ struct PromiseUnkeptPathTest: GPUPathTest {
         return [
             String(
                 format: "the %@ went on %.0f ms in (the bound is %.0f, at most %.0f late)", reader, ms, boundMs,
-                readerLateMs)
+                readerLateMs
+            ),
         ]
     }
 

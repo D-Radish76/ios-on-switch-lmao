@@ -16,21 +16,21 @@ struct LayeredShaderStencilTest: HWTest {
     var timeout: TimeInterval { 60 }
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct LayeredOut { float4 p [[position]]; uint layer [[render_target_array_index]]; };
-        vertex LayeredOut layered_stencil_vertex(uint v [[vertex_id]], uint i [[instance_id]]) {
-            const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            LayeredOut o;
-            o.p = float4(p[v], 0.5, 1);
-            o.layer = i;
-            return o;
-        }
-        struct StencilOut { float4 colour [[color(0)]]; uint stencil [[stencil]]; };
-        fragment StencilOut layered_stencil_fragment(LayeredOut in [[stage_in]], constant float4 &c [[buffer(0)]]) {
-            return {c, c.b > 0 ? 9u : (in.layer == 0 ? 5u : 9u)};
-        }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct LayeredOut { float4 p [[position]]; uint layer [[render_target_array_index]]; };
+    vertex LayeredOut layered_stencil_vertex(uint v [[vertex_id]], uint i [[instance_id]]) {
+        const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        LayeredOut o;
+        o.p = float4(p[v], 0.5, 1);
+        o.layer = i;
+        return o;
+    }
+    struct StencilOut { float4 colour [[color(0)]]; uint stencil [[stencil]]; };
+    fragment StencilOut layered_stencil_fragment(LayeredOut in [[stage_in]], constant float4 &c [[buffer(0)]]) {
+        return {c, c.b > 0 ? 9u : (in.layer == 0 ? 5u : 9u)};
+    }
+    """
 
     static let size = 8
     static let expected: [[UInt8]] = [[255, 0, 0, 255], [0, 255, 255, 255]]
@@ -60,13 +60,15 @@ struct LayeredShaderStencilTest: HWTest {
         }
         let write = try stencilState(.always, .replace), equal = try stencilState(.equal, .keep)
         let colors = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: .rgba8Unorm, width: Self.size, height: Self.size, mipmapped: false
+        )
         colors.textureType = .type2DArray
         colors.arrayLength = 2
         colors.usage = [.renderTarget, .shaderRead]
         colors.storageMode = .private
         let stencils = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .stencil8, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: .stencil8, width: Self.size, height: Self.size, mipmapped: false
+        )
         stencils.textureType = .type2DArray
         stencils.arrayLength = 2
         stencils.usage = [.renderTarget]
@@ -100,12 +102,13 @@ struct LayeredShaderStencilTest: HWTest {
         if timing.path.hasPrefix("error:") {
             wrong = -1
         } else {
-            for layer in 0..<2 {
+            for layer in 0 ..< 2 {
                 let bytes = try await gpu.read(color, bytesPerPixel: 4, slice: layer)
                 metrics.set(
-                    "layer\(layer)", bytes.pixel(3, 3, width: Self.size).map { String($0) }.joined(separator: "/"))
+                    "layer\(layer)", bytes.pixel(3, 3, width: Self.size).map { String($0) }.joined(separator: "/")
+                )
                 wrong +=
-                    (0..<Self.size * Self.size).filter {
+                    (0 ..< Self.size * Self.size).filter {
                         Array(bytes.pixel($0 % Self.size, $0 / Self.size, width: Self.size)) != Self.expected[layer]
                     }.count
             }

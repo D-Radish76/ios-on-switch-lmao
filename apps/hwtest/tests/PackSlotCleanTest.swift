@@ -56,7 +56,8 @@ struct PackSlotCleanTest: HWTest {
         var failures: [String] = []
         if after["slot_cleans"] != after["store_slots_placed"] {
             failures.append(
-                "cleans \(after["slot_cleans"] ?? 0) are not the store's \(after["store_slots_placed"] ?? 0)")
+                "cleans \(after["slot_cleans"] ?? 0) are not the store's \(after["store_slots_placed"] ?? 0)"
+            )
         }
         if (after["pack_slots_in_bound_grains"] ?? 0) == 0 {
             failures.append("no pack slot ran from a grain bound already")

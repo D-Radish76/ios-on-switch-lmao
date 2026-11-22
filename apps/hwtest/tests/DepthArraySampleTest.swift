@@ -28,7 +28,7 @@ struct DepthArraySampleTest: HWTest {
         guard let depths = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("no depth array") }
         let scratch = try gpu.texture(.rgba8Unorm, 8, 8)
         let fill = try await gpu.run { commands in
-            for slice in 0..<3 {
+            for slice in 0 ..< 3 {
                 let p = MTLRenderPassDescriptor()
                 p.colorAttachments[0].texture = scratch
                 p.colorAttachments[0].loadAction = .clear
@@ -57,7 +57,7 @@ struct DepthArraySampleTest: HWTest {
             e.endEncoding()
         }.path
         let bytes = try await gpu.read(target, bytesPerPixel: 4)
-        let values = (0..<3).map { bytes.loaded(as: Float.self, at: $0) }
+        let values = (0 ..< 3).map { bytes.loaded(as: Float.self, at: $0) }
         var metrics = Metrics()
         metrics.set("fill_path", fill)
         metrics.set("path", path)

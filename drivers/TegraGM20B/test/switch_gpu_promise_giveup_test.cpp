@@ -24,7 +24,8 @@ TEST_P(GiveUp, AStoppedHolderBeforeItsArmIsGivenUpAtTheDefaultBound)
 	EXPECT_TRUE(lines.empty());
 	EXPECT_NE(reader.fence, reader.submitted);
 	until(parked + 5000 * kMs);
-	ASSERT_EQ(lines.size(), 1u) << "a reader of a promise nobody armed still waits for its holder";
+	ASSERT_EQ(lines.size(), 1u)
+		<< "a reader of a promise nobody armed still waits for its holder";
 	const std::string expect =
 		"tegra-gm20b: maker-app's writer promise at fence offset " +
 		std::to_string(kOffset) + " (value 9) was not kept: " + GetParam().owner +
@@ -66,7 +67,8 @@ TEST_P(GiveUp, AnArmReplacesTheDefaultBound)
 	until(parked + 1000 * kMs);
 	holderArms(10000);
 	until(parked + 10999 * kMs);
-	EXPECT_TRUE(lines.empty()) << "given up at the default bound after the holder armed its own";
+	EXPECT_TRUE(lines.empty())
+		<< "given up at the default bound after the holder armed its own";
 	until(parked + 11000 * kMs);
 	ASSERT_EQ(lines.size(), 1u);
 	EXPECT_NE(lines[0].find("waited 11000 ms"), std::string::npos) << lines[0];
@@ -299,7 +301,8 @@ TEST_P(GiveUp, AJobQueuedBehindAnotherIsWaitedForNeverGivenUp)
 	EXPECT_TRUE(lines.empty());
 	EXPECT_EQ(fake::hangLooks, 1u) << "the hang rule's first look, as the job ahead's waiter";
 	ASSERT_FALSE(maker.asked.empty());
-	EXPECT_EQ(maker.asked.back(), maker.submitted - 1) << "the job ahead's interrupt is asked for";
+	EXPECT_EQ(maker.asked.back(), maker.submitted - 1)
+		<< "the job ahead's interrupt is asked for";
 	maker.fence = maker.submitted - 1;
 	const uint64_t ahead_done = fake::now + 500 * kMs;
 	fake::now = ahead_done;
@@ -419,7 +422,8 @@ TEST_P(Leaves, AStoppedHolderBeforeItsArmIsGivenUpAtTheDefaultBound)
 	until(fake::now + 4999 * kMs);
 	EXPECT_TRUE(lines.empty());
 	until(fake::now + 1 * kMs);
-	ASSERT_EQ(lines.size(), 1u) << "a waiter on a promise nobody armed still waits for its holder";
+	ASSERT_EQ(lines.size(), 1u)
+		<< "a waiter on a promise nobody armed still waits for its holder";
 	const std::string expect = "tegra-gm20b: maker-app's writer promise at fence offset " +
 				   std::to_string(kOffset) +
 				   " (value 9) was not kept: " + waiter().waiter +

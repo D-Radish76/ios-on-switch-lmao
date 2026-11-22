@@ -80,7 +80,8 @@ extension StorageFormsCases {
                 depth: try c.tests.map { _ in
                     try gpu.texture(.depth32Float_stencil8, width, height, usage: [.renderTarget], samples: c.samples)
                 },
-                tests: try c.tests.map(depthStencil))
+                tests: try c.tests.map(depthStencil)
+            )
         }
 
         func encode(
@@ -148,23 +149,24 @@ extension StorageFormsCases {
                 let lanes = try await gpu.read(unpacked, bytesPerPixel: 16).withUnsafeBytes {
                     Array($0.bindMemory(to: Float.self))
                 }
-                return (0..<count).map { i in
-                    [0, 3].flatMap { s in (0..<4).map { Int((lanes[(i * 4 + s) * 4 + $0] * 255).rounded()) } }
+                return (0 ..< count).map { i in
+                    [0, 3].flatMap { s in (0 ..< 4).map { Int((lanes[(i * 4 + s) * 4 + $0] * 255).rounded()) } }
                 }
             }
             if c.format == .bgr5A1Unorm {
                 let bytes = try await gpu.read(colour, bytesPerPixel: 2)
-                return (0..<count).map { [Int(bytes[2 * $0]) | Int(bytes[2 * $0 + 1]) << 8] }
+                return (0 ..< count).map { [Int(bytes[2 * $0]) | Int(bytes[2 * $0 + 1]) << 8] }
             }
             let bytes = try await gpu.read(colour, bytesPerPixel: 4)
-            return (0..<count).map { bytes[4 * $0..<4 * $0 + 4].map(Int.init) }
+            return (0 ..< count).map { bytes[4 * $0 ..< 4 * $0 + 4].map(Int.init) }
         }
 
         func loaded(half: Bool) async throws -> Loaded {
-            let texels = (0..<side * side).map(StorageFormsCases.loadedTexel)
+            let texels = (0 ..< side * side).map(StorageFormsCases.loadedTexel)
             let colour = try gpu.texture(.bgr5A1Unorm, side, side)
             try await gpu.upload(
-                texels.flatMap { [UInt8($0 & 0xff), UInt8($0 >> 8)] }, to: colour, bytesPerRow: side * 2)
+                texels.flatMap { [UInt8($0 & 0xff), UInt8($0 >> 8)] }, to: colour, bytesPerRow: side * 2
+            )
             let copy = try gpu.texture(.rgba32Float, side, side)
             let state = try await screen(half ? "sf_load_half" : "sf_load_float", [.bgr5A1Unorm, .rgba32Float])
             let buffer = try waited { commands in
@@ -189,7 +191,7 @@ extension StorageFormsCases {
             for (i, texel) in texels.enumerated() {
                 if UInt16(after[2 * i]) | UInt16(after[2 * i + 1]) << 8 != texel { seen.texelsChanged += 1 }
                 let want = StorageFormsCases.loadedLanes(texel)
-                seen.lanesOff += (0..<4).filter { words[4 * i + $0] != want[$0] }.count
+                seen.lanesOff += (0 ..< 4).filter { words[4 * i + $0] != want[$0] }.count
             }
             return seen
         }
@@ -200,7 +202,7 @@ extension StorageFormsCases {
             let zStep = 1 / Float(4 * timedTriangles)
             _ = try await gpu.run(tolerateError: true) { encode(c, state, targets, zStep: zStep, $0) }
             var best = Double.infinity
-            for _ in 0..<timedRuns {
+            for _ in 0 ..< timedRuns {
                 let timing = try await gpu.run { encode(c, state, targets, zStep: zStep, $0) }
                 guard timing.gpuTimed else { return 0 }
                 best = min(best, timing.gpuMilliseconds * 1000)

@@ -11,7 +11,7 @@
 
 // A drawable that counts its presents of every kind
 @interface CountingDrawable : NSObject <MTLDrawable>
-@property(nonatomic, readonly) int presents;
+@property (nonatomic, readonly) int presents;
 @end
 
 @implementation CountingDrawable {
@@ -139,7 +139,7 @@ inline void drawInto(id<MTLCommandBuffer> cb, id<MTLTexture> t, id<MTLRenderPipe
 // A command buffer drawing into `t` that presents `drawable` (nil: none) completed: the jobs it took. The first one
 // also makes the channel, so a later refusal is the submission's.
 inline size_t jobsOfDrawn(id<MTLCommandQueue> queue, id<MTLTexture> t, id<MTLRenderPipelineState> state,
-                   CountingDrawable *drawable)
+                          CountingDrawable *drawable)
 {
     const size_t before = kernel_model::model.jobs.size();
     id<MTLCommandBuffer> cb = [queue commandBuffer];

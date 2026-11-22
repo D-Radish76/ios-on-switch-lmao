@@ -70,9 +70,8 @@ inline bool parseComputeTexture(const std::string &one, BoundTexture &t)
     }
     if (at != one.size())
         return false;
-    t = {slot,  format,
-         type,  levels,
-         array, {uint8_t(swizzle >> 24), uint8_t(swizzle >> 16), uint8_t(swizzle >> 8), uint8_t(swizzle)},
+    t = {slot,   format, type,
+         levels, array,  {uint8_t(swizzle >> 24), uint8_t(swizzle >> 16), uint8_t(swizzle >> 8), uint8_t(swizzle)},
          planes, map};
     return true;
 }

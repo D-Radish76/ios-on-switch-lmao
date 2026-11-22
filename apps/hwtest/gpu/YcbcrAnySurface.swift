@@ -28,14 +28,29 @@ public enum YcbcrAnySurface {
     static func surface(_ scene: String) -> (IOSurfaceRef?, plane: Int) {
         switch scene {
         case "x420", "xf20":
-            return (SurfaceReads.surface(scene, 32, 16, planes: [P(at: 0, 32, 16, bpe: 2, rows: 64), P(at: 1024, 16, 8, bpe: 4, rows: 64)], allocation: 2048), 0)
+            return (
+                SurfaceReads.surface(scene, 32, 16, planes: [
+                    P(at: 0, 32, 16, bpe: 2, rows: 64),
+                    P(at: 1024, 16, 8, bpe: 4, rows: 64),
+                ], allocation: 2048),
+                0
+            )
         case "bgra":
-            return (SurfaceReads.surface("BGRA", 32, 16, planes: [P(at: 0, 32, 16, bpe: 4, rows: 128)], allocation: 2048), 0)
+            return (
+                SurfaceReads.surface("BGRA", 32, 16, planes: [P(at: 0, 32, 16, bpe: 4, rows: 128)], allocation: 2048),
+                0
+            )
         case "y3p8":
             let planes = [0, 512, 768].map { P(at: $0, 32, 8, bpe: 1, rows: 32) }
             return (SurfaceReads.surface("y3p8", 32, 8, planes: planes, allocation: 1024), 1)
         default:
-            return (SurfaceReads.surface("420v", 32, 16, planes: [P(at: 0, 32, 16, bpe: 1, rows: 40), P(at: 640, 16, 8, bpe: 2, rows: 40)], allocation: 1024), 0)
+            return (
+                SurfaceReads.surface("420v", 32, 16, planes: [
+                    P(at: 0, 32, 16, bpe: 1, rows: 40),
+                    P(at: 640, 16, 8, bpe: 2, rows: 40),
+                ], allocation: 1024),
+                0
+            )
         }
     }
 
@@ -44,7 +59,13 @@ public enum YcbcrAnySurface {
         case "x420", "xf20":
             return reference(source, height: 16, full: scene == "xf20", luma: { 64 * $0 }, chroma: { 1024 + 64 * $0 })
         case "bgra": return reference(source, height: 16, full: false, luma: { 128 * $0 }, chroma: nil)
-        case "y3p8": return reference(source, height: 8, full: false, luma: { 512 + 32 * $0 }, chroma: { 768 + 32 * $0 })
+        case "y3p8": return reference(
+                source,
+                height: 8,
+                full: false,
+                luma: { 512 + 32 * $0 },
+                chroma: { 768 + 32 * $0 }
+            )
         default: return reference(source, height: 16, full: false, luma: { 32 * $0 }, chroma: { 640 + 32 * $0 })
         }
     }
@@ -56,7 +77,7 @@ public enum YcbcrAnySurface {
         let height = scene == "y3p8" ? 8 : 16
         guard let texture = SurfaceReads.texture(gpu, 500, 32, height, over: source, plane: plane) else { return nil }
         guard let mirror = layout(scene, SurfaceReads.bytes(source)),
-            let alike = SurfaceReads.texture(gpu, 500, 32, height, over: mirror)
+              let alike = SurfaceReads.texture(gpu, 500, 32, height, over: mirror)
         else { throw TestFailure("no reference for '\(scene)'") }
         let got = try await SurfaceReads.read(gpu, texture), want = try await SurfaceReads.read(gpu, alike)
         return got.indices.filter { got[$0] != want[$0] }.count
@@ -69,7 +90,14 @@ public enum YcbcrAnySurface {
         for scene in ["rows40", "bgra"] {
             let (made, _) = surface(scene)
             guard let surface = made,
-                let texture = SurfaceReads.texture(gpu, 500, 32, 16, over: surface, usage: [.shaderRead, .renderTarget])
+                  let texture = SurfaceReads.texture(
+                      gpu,
+                      500,
+                      32,
+                      16,
+                      over: surface,
+                      usage: [.shaderRead, .renderTarget]
+                  )
             else { throw TestFailure("no 500 target over '\(scene)'") }
             let before = SurfaceReads.bytes(surface)
             let timing = try await gpu.run(tolerateError: true) { commands in
@@ -82,7 +110,7 @@ public enum YcbcrAnySurface {
             }
             guard !timing.path.hasPrefix("error:") else { throw TestFailure("the clear failed: \(timing.facadePath)") }
             let after = SurfaceReads.bytes(surface)
-            let inside = { (i: Int) in scene == "bgra" ? i % 128 < 32 : i < 512 || (640..<896).contains(i) }
+            let inside = { (i: Int) in scene == "bgra" ? i % 128 < 32 : i < 512 || (640 ..< 896).contains(i) }
             outside += after.indices.filter { !inside($0) && after[$0] != before[$0] }.count
             if scene == "bgra" { outside += after.indices.filter { inside($0) && after[$0] != 115 }.count }
         }

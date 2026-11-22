@@ -48,19 +48,20 @@ public enum RowsUnder16 {
 
     /// Bytes of the first 16 KiB off `want` but those `ignoring`, plus bytes past it neither `fill` nor `except`'s
     public static func off(
-        _ surface: IOSurfaceRef, _ want: [UInt8], fill: UInt8, ignoring: Range<Int> = 0..<0, except: [Int: UInt8] = [:]
+        _ surface: IOSurfaceRef, _ want: [UInt8], fill: UInt8, ignoring: Range<Int> = 0 ..< 0,
+        except: [Int: UInt8] = [:]
     ) -> Int {
         IOSurfaceLock(surface, .readOnly, nil)
         defer { IOSurfaceUnlock(surface, .readOnly, nil) }
         let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
-        var off = (0..<head).filter { !ignoring.contains($0) && base[$0] != want[$0] }.count
+        var off = (0 ..< head).filter { !ignoring.contains($0) && base[$0] != want[$0] }.count
         off += except.filter { base[$0.key] != $0.value }.count
         let filled = [UInt8](repeating: fill, count: head)
         var at = head
         while at < allocation {
             let n = min(head, allocation - at)
             if memcmp(base + at, filled, n) != 0 {
-                off += (at..<at + n).filter { base[$0] != fill && except[$0] == nil }.count
+                off += (at ..< at + n).filter { base[$0] != fill && except[$0] == nil }.count
             }
             at += n
         }
@@ -69,7 +70,7 @@ public enum RowsUnder16 {
 
     /// Writes `value` at `at` little-endian into `bytes`
     static func put(_ value: UInt32, _ bytes: inout [UInt8], at: Int) {
-        for k in 0..<4 { bytes[at + k] = UInt8(truncatingIfNeeded: value >> (8 * k)) }
+        for k in 0 ..< 4 { bytes[at + k] = UInt8(truncatingIfNeeded: value >> (8 * k)) }
     }
 
     /// One pass into `target`: cleared to `clear`, then the whole target drawn by `fragment` when one is named
@@ -103,7 +104,8 @@ public enum RowsUnder16 {
             encoder.setTexture(target, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: target.width, height: target.height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }.facadePath
     }

@@ -48,7 +48,8 @@ struct TextureBufferTargetTest: HWTest {
         let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
-            FailedCounts.judged(before: before, after: counted, expecting: ["pass.fmt": 1], own: gpu.paths, &metrics))
+            FailedCounts.judged(before: before, after: counted, expecting: ["pass.fmt": 1], own: gpu.paths, &metrics)
+        )
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
@@ -61,7 +62,8 @@ struct TextureBufferTargetTest: HWTest {
     static func cleared(_ gpu: GPU, texels: Int, usage: MTLTextureUsage) async throws -> (code: Int, words: [UInt32]) {
         let buffer = try gpu.buffer([UInt8](repeating: 0x11, count: texels * 4))
         let d = MTLTextureDescriptor.textureBufferDescriptor(
-            with: .rgba8Unorm, width: texels, resourceOptions: .storageModeShared, usage: usage)
+            with: .rgba8Unorm, width: texels, resourceOptions: .storageModeShared, usage: usage
+        )
         guard let texture = buffer.makeTexture(descriptor: d, offset: 0, bytesPerRow: texels * 4) else {
             throw TestFailure("no texture buffer of \(texels)")
         }
@@ -74,7 +76,8 @@ struct TextureBufferTargetTest: HWTest {
             commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
         }
         let words = UnsafeBufferPointer(
-            start: buffer.contents().bindMemory(to: UInt32.self, capacity: texels), count: texels)
+            start: buffer.contents().bindMemory(to: UInt32.self, capacity: texels), count: texels
+        )
         return (code, Array(words))
     }
 }

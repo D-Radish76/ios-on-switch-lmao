@@ -15,13 +15,13 @@ struct NativeVertexStreamsTest: NativeObjectTest {
     static let colourStride = 32
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct In { float2 position [[attribute(0)]]; float4 colour [[attribute(1)]]; };
-        struct Out { float4 position [[position]]; float4 colour [[flat]]; };
-        vertex Out two_stream_vertex(In in [[stage_in]]) { return {float4(in.position, 0, 1), in.colour}; }
-        fragment float4 two_stream_fragment(Out in [[stage_in]]) { return in.colour; }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct In { float2 position [[attribute(0)]]; float4 colour [[attribute(1)]]; };
+    struct Out { float4 position [[position]]; float4 colour [[flat]]; };
+    vertex Out two_stream_vertex(In in [[stage_in]]) { return {float4(in.position, 0, 1), in.colour}; }
+    fragment float4 two_stream_fragment(Out in [[stage_in]]) { return in.colour; }
+    """
 
     /// Each quad's two triangles over [x0, x1] of the whole height, and its colour
     static let quads: [(x0: Float, x1: Float, colour: SIMD4<Float>)] = [
@@ -36,7 +36,7 @@ struct NativeVertexStreamsTest: NativeObjectTest {
         let floats = colourStride / 4
         var out: [Float] = []
         for q in quads {
-            for _ in 0..<6 {
+            for _ in 0 ..< 6 {
                 out += [q.colour.x, q.colour.y, q.colour.z, q.colour.w]
                 out += [Float](repeating: 1e6, count: floats - 4)
             }
@@ -80,7 +80,7 @@ struct NativeVertexStreamsTest: NativeObjectTest {
         }
         work.paths.append(timing.path)
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        let wrong = (0..<Self.size * Self.size).filter {
+        let wrong = (0 ..< Self.size * Self.size).filter {
             let x = $0 % Self.size
             let expected: [UInt8] = x < Self.size / 2 ? [255, 0, 0, 255] : [0, 0, 255, 255]
             return Array(pixels.pixel(x, $0 / Self.size, width: Self.size)) != expected

@@ -322,8 +322,8 @@ IOReturn AGXDeviceUserClient::runJobUses(const SwitchGpuJobRecord &record, JobSc
 	if (keptCount && (!fenced || kept))
 		return refuseWrites(switch_gpu_refuse(
 			why, SwitchGpuRefusal::Promises,
-			kept == kIOReturnTimeout ? kIOReturnTimeout : kIOReturnBadArgument, keptCount,
-			count));
+			kept == kIOReturnTimeout ? kIOReturnTimeout : kIOReturnBadArgument,
+			keptCount, count));
 	switch_gpu_backing_transaction transaction = {};
 	switch_gpu_backing_token completion = {};
 	uint32_t seqno = 0, dependencies = 0, jobVisibility = 0, leaseCount = 0;
@@ -483,9 +483,8 @@ refresh:
 			: stage == SwitchGpuRefusal::Exec || stage == SwitchGpuRefusal::Room
 				? count
 				: useTotal;
-		return refuseWrites(switch_gpu_refuse(why, stage, ret,
-						      switch_gpu_refusal_errno(error), counted,
-						      dependencies));
+		return refuseWrites(switch_gpu_refuse(
+			why, stage, ret, switch_gpu_refusal_errno(error), counted, dependencies));
 	}
 	if (count) {
 		switch_gpu_path_job(jobVisibility, unlockedWrites, leanChannels_[slot], rangedUses);

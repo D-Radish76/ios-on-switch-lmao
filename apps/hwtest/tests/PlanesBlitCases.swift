@@ -89,7 +89,8 @@ enum PlanesBlitCases {
         for p in exactPitch {
             for q in [rgba16u, rgba32u] {
                 cases.append(
-                    ("c_\(p.key)_exact_\(q.key)", 1, { try await outOf($0, Surface($0, p, 16, 8, exact: true), q) }))
+                    ("c_\(p.key)_exact_\(q.key)", 1, { try await outOf($0, Surface($0, p, 16, 8, exact: true), q) })
+                )
             }
         }
         for p in planes {
@@ -118,7 +119,8 @@ enum PlanesBlitCases {
             $0.copy(
                 from: buffer, sourceOffset: 0, sourceBytesPerRow: line, sourceBytesPerImage: line * 3,
                 sourceSize: MTLSize(width: 12, height: 3, depth: 1), to: s.texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin(x: 6, y: 2, z: 0))
+                destinationLevel: 0, destinationOrigin: MTLOrigin(x: 6, y: 2, z: 0)
+            )
         }
         let u = p.unit
         let writes = rect(12 * u, 3) { i, k in (s.p0(6 * u + i, 2 + k), data[k * line + i]) }
@@ -135,7 +137,8 @@ enum PlanesBlitCases {
             $0.copy(
                 from: s.texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 6, y: 2, z: 0),
                 sourceSize: MTLSize(width: 12, height: 3, depth: 1), to: buffer, destinationOffset: 0,
-                destinationBytesPerRow: line, destinationBytesPerImage: line * 3)
+                destinationBytesPerRow: line, destinationBytesPerImage: line * 3
+            )
         }
         let u = p.unit
         let expected = patched(seeded, rect(12 * u, 3) { i, k in (k * line + i, before[s.p0(6 * u + i, 2 + k)]) })
@@ -178,7 +181,8 @@ enum PlanesBlitCases {
         let unjudged = Set(region.map(\.0)), after = s.bytes
         return Result(
             path: path, off: s.off(before, [], ignoring: unjudged) + [("plain", wrong(got, seeded))],
-            unjudged: unjudged.filter { after[$0] != before[$0] }.count)
+            unjudged: unjudged.filter { after[$0] != before[$0] }.count
+        )
     }
 
     /// E: 8x4 texels from (2,2) to (1,1) between two planes' textures, plane 0 in the destination's unit:
@@ -209,7 +213,8 @@ enum PlanesBlitCases {
         guard
             let path = try await FillShapeCases.filled(
                 gpu, s.texture, region: MTLRegionMake2D(5, 1, 6, 3),
-                MTLClearColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 1))
+                MTLClearColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 1)
+            )
         else { throw TestFailure("the blit encoder answers no fillTexture:level:slice:region:color:") }
         return Result(path: path, off: s.off(before, []))
     }
@@ -241,21 +246,23 @@ extension PlanesBlitCases {
                         kIOSurfaceWidth: w, kIOSurfaceHeight: h, kIOSurfacePixelFormat: planes.fourcc,
                         kIOSurfaceBytesPerRow: w * u, kIOSurfaceBytesPerElement: 4,
                         kIOSurfaceElementWidth: planes.elementWidth, kIOSurfaceAllocSize: w * u * h,
-                    ] as [CFString: Any] as CFDictionary)
+                    ] as [CFString: Any] as CFDictionary
+                )
             } else if exact {
                 made = Self.twoPlanes(planes, w, h, pitch: w * u, chroma: (w / 2, h / 2, w * u, 2 * u))
             } else {
                 let attributes =
                     [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true]
-                    as CFDictionary
+                        as CFDictionary
                 guard CVPixelBufferCreate(nil, w, h, planes.fourcc, attributes, &owner) == kCVReturnSuccess,
-                    let buffer = owner
+                      let buffer = owner
                 else { throw TestFailure("no \(planes.key) pixel buffer") }
                 made = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
             }
             guard let s = made else { throw TestFailure("no \(planes.key) surface") }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: MTLPixelFormat(rawValue: planes.format)!, width: w, height: h, mipmapped: false)
+                pixelFormat: MTLPixelFormat(rawValue: planes.format)!, width: w, height: h, mipmapped: false
+            )
             descriptor.usage = [.shaderRead, .shaderWrite]
             guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: s, plane: 0) else {
                 throw TestFailure("no \(planes.format) texture over \(planes.key)")
@@ -263,9 +270,9 @@ extension PlanesBlitCases {
             (surface, self.owner, self.texture) = (s, owner, texture)
             let count = IOSurfaceGetPlaneCount(s), base = Int(bitPattern: IOSurfaceGetBaseAddress(s))
             offset =
-                count == 0 ? [0] : (0..<count).map { Int(bitPattern: IOSurfaceGetBaseAddressOfPlane(s, $0)) - base }
+                count == 0 ? [0] : (0 ..< count).map { Int(bitPattern: IOSurfaceGetBaseAddressOfPlane(s, $0)) - base }
             pitch =
-                count == 0 ? [IOSurfaceGetBytesPerRow(s)] : (0..<count).map { IOSurfaceGetBytesPerRowOfPlane(s, $0) }
+                count == 0 ? [IOSurfaceGetBytesPerRow(s)] : (0 ..< count).map { IOSurfaceGetBytesPerRowOfPlane(s, $0) }
             let page = Int(vm_page_size)
             allocated = IOSurfaceGetAllocSize(s)
             mapped = (allocated + page - 1) / page * page
@@ -334,7 +341,7 @@ extension PlanesBlitCases {
 
     /// The `width` x `rows` bytes of a rule, each as (where it lands, the byte it holds)
     static func rect(_ width: Int, _ rows: Int, _ byte: (Int, Int) -> (Int, UInt8)) -> [(Int, UInt8)] {
-        (0..<rows).flatMap { k in (0..<width).map { i in byte(i, k) } }
+        (0 ..< rows).flatMap { k in (0 ..< width).map { i in byte(i, k) } }
     }
 
     static func patched(_ bytes: [UInt8], _ writes: [(Int, UInt8)]) -> [UInt8] {
@@ -377,7 +384,8 @@ extension PlanesBlitCases {
             $0.copy(
                 from: source, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: from.x, y: from.y, z: 0),
                 sourceSize: MTLSize(width: 8, height: 4, depth: 1), to: to, destinationSlice: 0, destinationLevel: 0,
-                destinationOrigin: MTLOrigin(x: 1, y: 1, z: 0))
+                destinationOrigin: MTLOrigin(x: 1, y: 1, z: 0)
+            )
         }
     }
 }

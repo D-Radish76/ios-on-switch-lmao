@@ -37,7 +37,8 @@ struct YcbcrOddSizeTest: HWTest {
             else { throw TestFailure("no 16x8 surface for \(shape.format)") }
             for usage in Self.writable + [[.shaderRead]] {
                 let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                    pixelFormat: format, width: shape.width, height: shape.height, mipmapped: false)
+                    pixelFormat: format, width: shape.width, height: shape.height, mipmapped: false
+                )
                 descriptor.usage = usage
                 let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0)
                 let label = "\(shape.format)_\(shape.width)x\(shape.height)_u\(usage.rawValue)"

@@ -23,7 +23,8 @@ public struct TextureLayoutSPI {
     static let newNoCopy = NSSelectorFromString("newTextureWithBytesNoCopy:length:descriptor:deallocator:")
     static let copyIn = NSSelectorFromString(
         "copyFromLinearBytes:linearOffset:linearBytesPerRow:linearBytesPerImage:toTextureMemory:textureSlice:"
-            + "textureLevel:textureRegion:")
+            + "textureLevel:textureRegion:"
+    )
 
     public let layout: NSObject
     public let size: Int
@@ -33,9 +34,10 @@ public struct TextureLayoutSPI {
     /// The device's layout of `descriptor` for memory the CPU fills; nil where the device has no such SPI or refuses.
     public init?(_ device: MTLDevice, _ descriptor: MTLTextureDescriptor) {
         guard let object = device as? NSObject, object.responds(to: Self.newLayout),
-            let made = unsafeBitCast(object.method(for: Self.newLayout), to: NewLayout.self)(
-                object, Self.newLayout, descriptor, false)?.takeRetainedValue() as? NSObject,
-            made.responds(to: Self.copyIn)
+              let made = unsafeBitCast(object.method(for: Self.newLayout), to: NewLayout.self)(
+                  object, Self.newLayout, descriptor, false
+              )?.takeRetainedValue() as? NSObject,
+              made.responds(to: Self.copyIn)
         else { return nil }
         layout = made
         className = NSStringFromClass(type(of: made))
@@ -53,7 +55,8 @@ public struct TextureLayoutSPI {
     ) {
         bytes.withUnsafeBytes {
             unsafeBitCast(layout.method(for: Self.copyIn), to: CopyIn.self)(
-                layout, Self.copyIn, $0.baseAddress!, 0, rowBytes, 0, memory, slice, 0, region)
+                layout, Self.copyIn, $0.baseAddress!, 0, rowBytes, 0, memory, slice, 0, region
+            )
         }
     }
 
@@ -64,7 +67,8 @@ public struct TextureLayoutSPI {
     ) -> MTLTexture? {
         guard let object = device as? NSObject, object.responds(to: newNoCopy) else { return nil }
         let made = unsafeBitCast(object.method(for: newNoCopy), to: NewNoCopy.self)(
-            object, newNoCopy, memory, length, descriptor, deallocator)
+            object, newNoCopy, memory, length, descriptor, deallocator
+        )
         return made?.takeRetainedValue() as? MTLTexture
     }
 }

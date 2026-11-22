@@ -198,7 +198,8 @@ public:
         const int input = bridge ? switch_gpu_bridge_why(bridge) : 0;
         if (input)
             return input;
-        const int host1x = switch_gpu_backing_tokens_failure(stages[slot].producers.tokens, SwitchHost1xProducers::kMax);
+        const int host1x =
+            switch_gpu_backing_tokens_failure(stages[slot].producers.tokens, SwitchHost1xProducers::kMax);
         return host1x ? host1x : SWITCH_GPU_BACKING_WRITER_FAILED;
     }
 

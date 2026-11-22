@@ -11,7 +11,8 @@ enum LayersPastCases {
 
     static func array(_ gpu: GPU, _ format: MTLPixelFormat, layers: Int) throws -> MTLTexture {
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: side, height: side, mipmapped: false)
+            pixelFormat: format, width: side, height: side, mipmapped: false
+        )
         d.textureType = .type2DArray
         d.arrayLength = layers
         d.usage = [.renderTarget, .shaderRead]
@@ -29,20 +30,22 @@ enum LayersPastCases {
         let out = try gpu.buffer(image * texture.arrayLength)
         try await gpu.run { commands in
             let blit = commands.makeBlitCommandEncoder()!
-            for slice in 0..<texture.arrayLength {
+            for slice in 0 ..< texture.arrayLength {
                 blit.copy(
                     from: texture, sourceSlice: slice, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                     sourceSize: MTLSize(width: side, height: side, depth: 1), to: out,
                     destinationOffset: slice * image, destinationBytesPerRow: side * bytesPerPixel,
-                    destinationBytesPerImage: image)
+                    destinationBytesPerImage: image
+                )
             }
             blit.endEncoding()
         }
         let bytes = UnsafeRawBufferPointer(start: out.contents(), count: image * texture.arrayLength)
-        return (0..<texture.arrayLength).map { Array(bytes[$0 * image..<($0 + 1) * image]) }
+        return (0 ..< texture.arrayLength).map { Array(bytes[$0 * image ..< ($0 + 1) * image]) }
     }
 
-    static func texel(_ bytes: [UInt8], _ t: Int, size: Int = 4) -> [UInt8] { Array(bytes[t * size..<(t + 1) * size]) }
+    static func texel(_ bytes: [UInt8], _ t: Int, size: Int = 4) -> [UInt8] { Array(bytes[t * size ..< (t + 1) * size])
+    }
 
     /// The quad over columns [x0, x1) of every row at depth z
     static func columns(_ x0: Int, _ x1: Int, z: Float) -> [SIMD4<Float>] {
@@ -63,8 +66,8 @@ enum LayersPastCases {
     }
 
     static func halves(_ bytes: [UInt8], size: Int, _ code: ([UInt8]) -> Character) -> String {
-        [0..<side / 2, side / 2..<side].map { xs -> String in
-            let codes = Set((0..<side).flatMap { y in xs.map { code(texel(bytes, y * side + $0, size: size)) } })
+        [0 ..< side / 2, side / 2 ..< side].map { xs -> String in
+            let codes = Set((0 ..< side).flatMap { y in xs.map { code(texel(bytes, y * side + $0, size: size)) } })
             return codes.count == 1 ? String(codes.first!) : "x"
         }.joined()
     }
@@ -117,6 +120,7 @@ enum LayersPastCases {
         }
         return Mixed(
             c0: try await slices(gpu, c0, bytesPerPixel: 4), c1: try await slices(gpu, c1, bytesPerPixel: 4),
-            depth: try await slices(gpu, depth, bytesPerPixel: 4))
+            depth: try await slices(gpu, depth, bytesPerPixel: 4)
+        )
     }
 }

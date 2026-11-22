@@ -43,10 +43,11 @@ struct NativeArgumentEncoderTest: NativeObjectTest {
             ]),
             let sampler = device.makeSamplerState(descriptor: MTLSamplerDescriptor())
         else { throw TestFailure("no argument encoder or sampler") }
-        let textures = try (0..<3).map { _ in try gpu.texture(.rgba8Unorm, 4, 4) }
+        let textures = try (0 ..< 3).map { _ in try gpu.texture(.rgba8Unorm, 4, 4) }
         var work = NativeWork(objects: [encoder, arrays, sampler, textures[0]])
         metrics.set(
-            "encoded", "\(encoder.encodedLength)/\(encoder.alignment),\(arrays.encodedLength)/\(arrays.alignment)")
+            "encoded", "\(encoder.encodedLength)/\(encoder.alignment),\(arrays.encodedLength)/\(arrays.alignment)"
+        )
         if encoder.encodedLength != 48 || encoder.alignment != 16 || arrays.encodedLength != 72 || arrays.alignment != 8
         {
             work.failures.append("an encoded length or alignment is not Metal's")
@@ -87,8 +88,8 @@ struct NativeArgumentEncoderTest: NativeObjectTest {
         if ids.count != textures.count || ids.contains(0) { work.failures.append("textures share a resource ID") }
         let arrayBuffer = try gpu.buffer(256)
         arrays.setArgumentBuffer(arrayBuffer, offset: 0)
-        arrays.setTextures(textures, range: 0..<3)
-        arrays.setSamplerStates([sampler, sampler], range: 9..<11)
+        arrays.setTextures(textures, range: 0 ..< 3)
+        arrays.setSamplerStates([sampler, sampler], range: 9 ..< 11)
         let placed = [0, 8, 16, 56, 64].map { Self.word(arrayBuffer, at: $0) }
         if placed != textures.map({ $0.gpuResourceID._impl }) + [samplerID, samplerID] {
             work.failures.append("an array's elements are not at their places")
@@ -128,7 +129,7 @@ struct NativeArgumentEncoderTest: NativeObjectTest {
     /// whether each half drew its own texture's colour
     func drawTexturesThroughArguments(_ gpu: GPU) async throws -> String {
         guard let function = gpu.library.makeFunction(name: "argument_textures_fragment"),
-            let sampler = gpu.device.makeSamplerState(descriptor: MTLSamplerDescriptor())
+              let sampler = gpu.device.makeSamplerState(descriptor: MTLSamplerDescriptor())
         else { return "no_function" }
         let encoder = function.makeArgumentEncoder(bufferIndex: 0)
         let first = try gpu.texture(.rgba8Unorm, 4, 4), second = try gpu.texture(.rgba8Unorm, 4, 4)
@@ -166,7 +167,7 @@ struct NativeArgumentEncoderTest: NativeObjectTest {
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
         let exact =
             Array(pixels.pixel(1, 4, width: 8)) == [255, 0, 0, 255]
-            && Array(pixels.pixel(6, 4, width: 8)) == [0, 0, 255, 255]
+                && Array(pixels.pixel(6, 4, width: 8)) == [0, 0, 255, 255]
         return "\(drawn.path)/\(exact ? "exact" : "wrong")"
     }
 

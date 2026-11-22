@@ -40,7 +40,7 @@ public enum PlainRows {
 
         /// The rows whose texels reach plane byte `a`, in order
         public func rows(reaching a: Int) -> [Int] {
-            (0..<height).filter { a - stride * $0 >= 0 && a - stride * $0 < width * bpp }
+            (0 ..< height).filter { a - stride * $0 >= 0 && a - stride * $0 < width * bpp }
         }
     }
 
@@ -54,7 +54,7 @@ public enum PlainRows {
     public static func code(_ bpp: Int, _ x: Int, _ y: Int) -> [UInt8] {
         if bpp == 1 { return [UInt8((x + 7 * y) & 255)] }
         let c = (x * 7 + y * 131 + 1) & 0xffff
-        return (0..<bpp).map { UInt8(truncatingIfNeeded: ($0 & 1 == 1 ? c >> 8 : c) ^ ($0 / 2) * 0x11) }
+        return (0 ..< bpp).map { UInt8(truncatingIfNeeded: ($0 & 1 == 1 ? c >> 8 : c) ^ ($0 / 2) * 0x11) }
     }
 
     /// A '420v' whose plane 0 holds `s`'s rows, declared as wide as its bytesPerRow holds (IOSurfaceCreate makes no
@@ -65,13 +65,15 @@ public enum PlainRows {
         let pages = (max(plane0, s.span) + 16383) / 16384 * 16384 + 16384
         let planes = [
             TurnedOverlapTiles.Plane(
-                offset: 0, width: max(1, min(s.width, s.pitch / s.bpp)), height: s.height, bpe: s.bpp, pitch: s.pitch),
+                offset: 0, width: max(1, min(s.width, s.pitch / s.bpp)), height: s.height, bpe: s.bpp, pitch: s.pitch
+            ),
             TurnedOverlapTiles.Plane(offset: (plane0 + 63) & ~63, width: 1, height: 1, bpe: 1, pitch: 16),
         ]
         let declared = planes[0].width
         guard
             let surface = TurnedOverlapTiles.surface(
-                "420v", declared, s.height, planes, allocation: allocation ?? pages)
+                "420v", declared, s.height, planes, allocation: allocation ?? pages
+            )
         else { return nil }
         seed(surface, fill)
         return surface
@@ -79,7 +81,7 @@ public enum PlainRows {
 
     static func seed(_ surface: IOSurfaceRef, _ fill: (Int) -> UInt8) {
         let mapped = (IOSurfaceGetAllocSize(surface) + page - 1) / page * page
-        RowsUnder16.edit(surface) { base in for i in 0..<mapped { base[i] = fill(i) } }
+        RowsUnder16.edit(surface) { base in for i in 0 ..< mapped { base[i] = fill(i) } }
     }
 
     static func mappedBytes(_ surface: IOSurfaceRef) -> [UInt8] {
@@ -96,7 +98,8 @@ public enum PlainRows {
         let frame = s.frame
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: MTLPixelFormat(rawValue: s.format)!, width: frame.width, height: frame.height,
-            mipmapped: false)
+            mipmapped: false
+        )
         descriptor.usage = usage
         descriptor.storageMode = .shared
         if s.turn != 0 {
@@ -120,7 +123,8 @@ public enum PlainRows {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texture.width, height: texture.height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }.facadePath
         let start = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count)
@@ -191,12 +195,13 @@ public enum PlainRows {
         let s = Shape(MTLPixelFormat.r8Unorm.rawValue, 136, 40, bpp: 1, pitch: 64)
         guard let surface = surface(s, fill: { _ in 0xee }) else { throw TestFailure("no '420v' of rows 64") }
         guard let texture = texture(gpu, s, over: surface) else { return (false, -1, -1, "-") }
-        let codes = (0..<s.width * s.height).map { code(1, $0 % s.width, $0 / s.width)[0] }
+        let codes = (0 ..< s.width * s.height).map { code(1, $0 % s.width, $0 / s.width)[0] }
         texture.replace(
-            region: MTLRegionMake2D(0, 0, s.width, s.height), mipmapLevel: 0, withBytes: codes, bytesPerRow: s.width)
+            region: MTLRegionMake2D(0, 0, s.width, s.height), mipmapLevel: 0, withBytes: codes, bytesPerRow: s.width
+        )
         let bytes = mappedBytes(surface)
         var first = "-"
-        let writeOff = (0..<bytes.count).filter { a in
+        let writeOff = (0 ..< bytes.count).filter { a in
             let want = a < s.span ? s.rows(reaching: a).last.map { code(1, a - 64 * $0, $0)[0] } ?? 0xee : 0xee
             if bytes[a] != want && first == "-" { first = "byte_\(a)_got_\(bytes[a])_want_\(want)" }
             return bytes[a] != want

@@ -48,7 +48,7 @@ bool compile(gm20b::Direct &direct, gm20b::RecordCache &cache, const precompile:
     const auto outcome = direct.make(input.descriptor, result.key.key, record, why, {}, nullptr, true);
     result.status = outcome == gm20b::CompileOutcome::Made      ? @"made"
                     : outcome == gm20b::CompileOutcome::Refused ? @"refused"
-                                                              : @"failed";
+                                                                : @"failed";
     result.reason = @(why.c_str());
     if (outcome != gm20b::CompileOutcome::Made)
         return outcome != gm20b::CompileOutcome::Failed;

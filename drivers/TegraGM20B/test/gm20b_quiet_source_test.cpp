@@ -194,9 +194,8 @@ TEST(GM20BPromiseSource, PresentsAndJobsOrderBehindWriterPromises)
 	EXPECT_FALSE(acquire.has("switch_gpu_promise_park_locked("));
 	const CodeText kick =
 		Block(exec, "static inline __attribute__((always_inline)) int chan_exec_body(");
-	EXPECT_TRUE(
-		kick.before("backing_waits(chan, dependencies, dependency_count, unsettled);",
-			    "PUSH_KICK(&chan->chan.push);"));
+	EXPECT_TRUE(kick.before("backing_waits(chan, dependencies, dependency_count, unsettled);",
+				"PUSH_KICK(&chan->chan.push);"));
 	EXPECT_TRUE(kick.before("PUSH_KICK(&chan->chan.push);",
 				"switch_gpu_chan_park_promises_locked(chan, dependencies, "
 				"dependency_count, unsettled);"));

@@ -18,7 +18,8 @@ extension PlainRows {
     ) async throws -> String {
         let unorm = s.format == MTLPixelFormat.r8Unorm.rawValue
         let pipeline = try gpu.render(
-            fragment: unorm ? "plain_rows_code_unorm" : "plain_rows_code_words", format: texture.pixelFormat)
+            fragment: unorm ? "plain_rows_code_unorm" : "plain_rows_code_words", format: texture.pixelFormat
+        )
         var shape = SIMD4<UInt32>(UInt32(s.bpp), UInt32(s.width), UInt32(s.height), UInt32(s.turn))
         return try await gpu.run(tolerateError: true) { commands in
             let descriptor = MTLRenderPassDescriptor()
@@ -45,13 +46,14 @@ extension PlainRows {
         guard let texture = texture(gpu, s, over: surface) else { return Stored() }
         var out = Stored()
         if blit {
-            let codes = (0..<s.width * s.height).flatMap { code(s.bpp, $0 % s.width, $0 / s.width) }
+            let codes = (0 ..< s.width * s.height).flatMap { code(s.bpp, $0 % s.width, $0 / s.width) }
             let source = try gpu.buffer(codes)
             out.path = try await RowsUnder16.blitPath(gpu) {
                 $0.copy(
                     from: source, sourceOffset: 0, sourceBytesPerRow: s.width * s.bpp, sourceBytesPerImage: codes.count,
                     sourceSize: MTLSize(width: s.width, height: s.height, depth: 1), to: texture, destinationSlice: 0,
-                    destinationLevel: 0, destinationOrigin: MTLOrigin())
+                    destinationLevel: 0, destinationOrigin: MTLOrigin()
+                )
             }
         } else {
             out.path = try await pass(gpu, texture, s, load: scissor == nil ? .dontCare : .load, scissor: scissor)
@@ -66,7 +68,7 @@ extension PlainRows {
         Swift.stride(from: 0, to: s.span, by: s.bpp).map { a in
             let rows = s.rows(reaching: a)
             guard !rows.isEmpty else { return -2 }
-            return rows.last { Array(bytes[a..<(a + s.bpp)]) == code(s.bpp, (a - s.stride * $0) / s.bpp, $0) } ?? -1
+            return rows.last { Array(bytes[a ..< (a + s.bpp)]) == code(s.bpp, (a - s.stride * $0) / s.bpp, $0) } ?? -1
         }
     }
 
@@ -87,13 +89,13 @@ extension PlainRows {
         let reached = s.rows(reaching: a).filter { r in
             guard let c = scissor else { return true }
             let x = (a - s.stride * r) / s.bpp
-            return (c.x / 32...(c.x + c.width - 1) / 32).contains(x / 32)
-                && (c.y / 32...(c.y + c.height - 1) / 32).contains(r / 32)
+            return (c.x / 32 ... (c.x + c.width - 1) / 32).contains(x / 32)
+                && (c.y / 32 ... (c.y + c.height - 1) / 32).contains(r / 32)
         }
         let order = { (r: Int) in overlapOrder((a - s.stride * r) / s.bpp, r) }
         guard let r = reached.max(by: { order($0) < order($1) }) else { return kept }
         let x = (a - s.stride * r) / s.bpp
-        if let c = scissor, !(c.x..<(c.x + c.width)).contains(x) || !(c.y..<(c.y + c.height)).contains(r) {
+        if let c = scissor, !(c.x ..< (c.x + c.width)).contains(x) || !(c.y ..< (c.y + c.height)).contains(r) {
             return kept
         }
         return code(s.bpp, x, r)
@@ -111,7 +113,7 @@ extension PlainRows {
         for a in Swift.stride(from: 0, to: s.span, by: s.bpp) {
             guard let w = want(a) else { continue }
             r.judged += 1
-            if Array(bytes[a..<(a + s.bpp)]) != w {
+            if Array(bytes[a ..< (a + s.bpp)]) != w {
                 if r.off == 0 { r.first = "element_\(a / s.bpp)_got_\(bytes[a])_want_\(w[0])" }
                 r.off += 1
             }
@@ -151,11 +153,11 @@ extension PlainRows {
         reader.getBytes(&rows, bytesPerRow: 8, from: MTLRegionMake2D(0, 0, 8, 3), mipmapLevel: 0)
         u.getBytesOff = rows.indices.filter { rows[$0] != seeded($0) }.count
         guard let blank = surface(s, allocation: allocation, fill: { _ in 0xee }),
-            let target = texture(gpu, s, over: blank)
+              let target = texture(gpu, s, over: blank)
         else { return u }
         u.passPath = try await pass(gpu, target, s, load: .dontCare)
         let bytes = mappedBytes(blank)
-        let judgedBytes = Array(0..<16384) + (1...2).flatMap { m in (m * mebibyte)..<(m * mebibyte + 16) }
+        let judgedBytes = Array(0 ..< 16384) + (1 ... 2).flatMap { m in (m * mebibyte) ..< (m * mebibyte + 16) }
         u.storeOff = judgedBytes.filter { a in
             let (y, x) = (a / 16, a % 16)
             return bytes[a] != (y < 3 && x < 8 ? code(1, x, y)[0] : 0xee)

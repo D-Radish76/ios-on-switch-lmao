@@ -36,9 +36,9 @@ struct YcbcrPackedTargetTest: HWTest {
     static let p420: OSType = 0x7034_3230, p422: OSType = 0x7034_3232, p444: OSType = 0x7034_3434
     static let pf20: OSType = 0x7066_3230
     static let x420 = kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
-        x422 = kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange
+               x422 = kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange
     static let x444 = kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange,
-        xf20 = kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
+               xf20 = kCVPixelFormatType_420YpCbCr10BiPlanarFullRange
 
     static let targets: [Packed] = [
         Packed(508, p420, twin: 505, over: x420), Packed(508, pf20, twin: 505, over: xf20),
@@ -88,7 +88,7 @@ struct YcbcrPackedTargetTest: HWTest {
     func exercise(_ gpu: GPU, _ target: Packed) async throws -> (Found, String?) {
         let (w, h) = (YcbcrTargetTest.width, YcbcrTargetTest.height)
         guard let (packed, packedTexture) = Self.surface(gpu, target.fourcc, target.format, w, h),
-            let (twin, twinTexture) = Self.surface(gpu, target.twin.fourcc, target.twin.format, w, h)
+              let (twin, twinTexture) = Self.surface(gpu, target.twin.fourcc, target.twin.format, w, h)
         else { return (Found(), "no surface or texture") }
         defer { withExtendedLifetime(twin) {} }
         let format = MTLPixelFormat(rawValue: target.format)!,
@@ -117,7 +117,7 @@ struct YcbcrPackedTargetTest: HWTest {
         }
         try await Self.pass(gpu, twinTexture, twinFloats, try gpu.buffer(values), w)
         try await Self.pass(gpu, packedTexture, floats, try gpu.buffer(values), w)
-        let reads = try await [packedTexture, twinTexture].asyncMap { try await Self.read(gpu, reader, $0) }
+        let reads = try await[packedTexture, twinTexture].asyncMap { try await Self.read(gpu, reader, $0) }
         found.reads = zip(reads[0], reads[1]).filter { $0 != $1 }.count
         return (found, nil)
     }
@@ -131,11 +131,12 @@ struct YcbcrPackedTargetTest: HWTest {
         let attributes =
             [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
         guard CVPixelBufferCreate(nil, w, h, fourcc, attributes, &made) == kCVReturnSuccess, let buffer = made,
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-            let pixelFormat = MTLPixelFormat(rawValue: format)
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+              let pixelFormat = MTLPixelFormat(rawValue: format)
         else { return nil }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: pixelFormat, width: w, height: h, mipmapped: false)
+            pixelFormat: pixelFormat, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return nil
@@ -189,7 +190,8 @@ struct YcbcrPackedTargetTest: HWTest {
         var texels = [SIMD4<Float>](repeating: .zero, count: texture.width * texture.height)
         image.getBytes(
             &texels, bytesPerRow: texture.width * 16, from: MTLRegionMake2D(0, 0, texture.width, texture.height),
-            mipmapLevel: 0)
+            mipmapLevel: 0
+        )
         return texels
     }
 
@@ -208,11 +210,11 @@ struct YcbcrPackedTargetTest: HWTest {
             let row = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
             let rows = CVPixelBufferGetHeightOfPlane(buffer, plane)
             let perRow = codes.count / rows
-            for y in 0..<rows {
+            for y in 0 ..< rows {
                 let line = base.advanced(by: y * row)
-                for x in 0..<((perRow + 2) / 3) {
+                for x in 0 ..< ((perRow + 2) / 3) {
                     var want: UInt32 = 0
-                    for i in 0..<3 where 3 * x + i < perRow {
+                    for i in 0 ..< 3 where 3 * x + i < perRow {
                         want |= UInt32(codes[y * perRow + 3 * x + i]) << (10 * i)
                     }
                     let stored = line.loadUnaligned(fromByteOffset: 4 * x, as: UInt32.self)

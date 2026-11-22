@@ -28,10 +28,12 @@ struct ShadowStencilDepthTest: HWTest {
         let zeta = try gpu.texture(.depth32Float_stencil8, n, n, usage: [.renderTarget])
         let solid = try gpu.render(
             fragment: "solid_fragment", format: .rgba8Unorm, depth: .depth32Float_stencil8,
-            stencil: .depth32Float_stencil8)
+            stencil: .depth32Float_stencil8
+        )
         let shadow = try gpu.render(
             fragment: "shadow_stencil_fragment", format: .rgba8Unorm, depth: .depth32Float_stencil8,
-            stencil: .depth32Float_stencil8)
+            stencil: .depth32Float_stencil8
+        )
         let writeDepth = MTLDepthStencilDescriptor()
         writeDepth.depthCompareFunction = .always
         writeDepth.isDepthWriteEnabled = true
@@ -45,7 +47,7 @@ struct ShadowStencilDepthTest: HWTest {
         tested.frontFaceStencil = face
         tested.backFaceStencil = face
         guard let first = gpu.device.makeDepthStencilState(descriptor: writeDepth),
-            let second = gpu.device.makeDepthStencilState(descriptor: tested)
+              let second = gpu.device.makeDepthStencilState(descriptor: tested)
         else { throw TestFailure("no depth state") }
         func quad(_ e: MTLRenderCommandEncoder, x1: Float, z: Float, _ rgba: SIMD4<Float>) {
             var corners: [SIMD4<Float>] = [[-1, -1, z, 1], [x1, -1, z, 1], [-1, 1, z, 1], [x1, 1, z, 1]]
@@ -85,17 +87,18 @@ struct ShadowStencilDepthTest: HWTest {
             b.copy(
                 from: zeta, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                 sourceSize: MTLSize(width: n, height: n, depth: 1), to: stencilBytes, destinationOffset: 0,
-                destinationBytesPerRow: n, destinationBytesPerImage: n * n, options: .stencilFromDepthStencil)
+                destinationBytesPerRow: n, destinationBytesPerImage: n * n, options: .stencilFromDepthStencil
+            )
             b.endEncoding()
         }
         let pixels = try await gpu.read(colour, bytesPerPixel: 4)
         let s = stencilBytes.contents().bindMemory(to: UInt8.self, capacity: n * n)
         var colourWrong = 0, stencilWrong = 0
-        for y in 0..<n {
-            for x in 0..<n {
+        for y in 0 ..< n {
+            for x in 0 ..< n {
                 let left = x < n / 2
                 let at = 4 * (x + n * y)
-                colourWrong += Array(pixels[at..<at + 4]) == (left ? [0, 0, 255, 255] : [0, 255, 0, 255]) ? 0 : 1
+                colourWrong += Array(pixels[at ..< at + 4]) == (left ? [0, 0, 255, 255] : [0, 255, 0, 255]) ? 0 : 1
                 stencilWrong += s[x + n * y] == (left ? 17 : UInt8(x)) ? 0 : 1
             }
         }

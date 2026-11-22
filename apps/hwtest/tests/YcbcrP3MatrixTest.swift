@@ -53,15 +53,15 @@ struct YcbcrP3MatrixTest: HWTest {
     func armOff(_ gpu: GPU, _ arm: Arm, _ matrix: String) async throws -> Int? {
         let (w, h) = (34, 18)
         guard let buffer = YcbcrCornerTest.pixelBuffer(w, h, arm.fourcc),
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { return nil }
         CVPixelBufferLockBaseAddress(buffer, [])
         var seed: UInt32 = 0x9e37_79b9 &* UInt32(arm.converted)
-        for plane in 0..<CVPixelBufferGetPlaneCount(buffer) {
+        for plane in 0 ..< CVPixelBufferGetPlaneCount(buffer) {
             guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { continue }
             let bytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane) * CVPixelBufferGetHeightOfPlane(buffer, plane)
             let p = base.bindMemory(to: UInt8.self, capacity: bytes)
-            for i in 0..<bytes {
+            for i in 0 ..< bytes {
                 seed = seed &* 1_664_525 &+ 1_013_904_223
                 p[i] = UInt8(truncatingIfNeeded: seed >> 24)
             }
@@ -71,7 +71,8 @@ struct YcbcrP3MatrixTest: HWTest {
         let make = { (format: UInt) -> MTLTexture? in
             guard let pixelFormat = MTLPixelFormat(rawValue: format) else { return nil }
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: pixelFormat, width: w, height: h, mipmapped: false)
+                pixelFormat: pixelFormat, width: w, height: h, mipmapped: false
+            )
             d.usage = .shaderRead
             return gpu.device.makeTexture(descriptor: d, iosurface: surface, plane: 0)
         }

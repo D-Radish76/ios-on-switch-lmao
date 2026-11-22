@@ -63,6 +63,7 @@ TEST_F(GpuMemoryReleaseTest, AStreamOfDrainsReleasesASecondAfterItsLast)
     struct Drain {
         Clock::time_point before, after;
     };
+
     auto *released = new Released;
     auto *inFlight = new std::atomic<uint32_t>{0};
     auto *release = new GpuMemoryRelease;

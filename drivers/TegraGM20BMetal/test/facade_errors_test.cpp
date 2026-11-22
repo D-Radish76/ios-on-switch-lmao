@@ -35,6 +35,7 @@
 {
     return nil;
 }
+
 @end
 
 // A visibility result buffer this device did not make
@@ -42,6 +43,7 @@
 @end
 
 @implementation ForeignBuffer
+
 - (id<MTLDevice>)device
 {
     return nil;
@@ -51,6 +53,7 @@
 {
     return 64;
 }
+
 @end
 
 namespace {
@@ -530,59 +533,62 @@ void blitsAnM4MaxCrashesOnFail()
     d.storageMode = MTLStorageModePrivate;
     id<MTLTexture> large = target(o.device, kPacked), small = [o.device newTextureWithDescriptor:d];
     ASSERT_TRUE(memoryless != nil && small != nil);
+
     const struct {
         const char *pred;
         void (^encode)(id<MTLBlitCommandEncoder>);
-    } calls[] = {
-        {"call.buf",
-         ^(id<MTLBlitCommandEncoder> b) {
-             [b fillBuffer:nothing() range:NSMakeRange(0, 64) value:7];
-         }},
-        {"call.buf",
-         ^(id<MTLBlitCommandEncoder> b) {
-             [b copyFromBuffer:nothing() sourceOffset:0 toBuffer:a destinationOffset:0 size:64];
-         }},
-        {"tex.foreign",
-         ^(id<MTLBlitCommandEncoder> b) {
-             [b copyFromTexture:nothing()
-                       sourceSlice:0
-                       sourceLevel:0
-                      sourceOrigin:MTLOriginMake(0, 0, 0)
-                        sourceSize:MTLSizeMake(16, 16, 1)
-                         toTexture:large
-                  destinationSlice:0
-                  destinationLevel:0
-                 destinationOrigin:MTLOriginMake(0, 0, 0)];
-         }},
-        {"call.blit",
-         ^(id<MTLBlitCommandEncoder> b) {
-             [b copyFromTexture:memoryless
-                       sourceSlice:0
-                       sourceLevel:0
-                      sourceOrigin:MTLOriginMake(0, 0, 0)
-                        sourceSize:MTLSizeMake(16, 16, 1)
-                         toTexture:large
-                  destinationSlice:0
-                  destinationLevel:0
-                 destinationOrigin:MTLOriginMake(0, 0, 0)];
-         }},
-        {"call.blit",
-         ^(id<MTLBlitCommandEncoder> b) {
-             [b copyFromTexture:large toTexture:small];
-         }},
-        {"call.counter",
-         ^(id<MTLBlitCommandEncoder> b) {
-             [b sampleCountersInBuffer:nothing() atSampleIndex:0 withBarrier:YES];
-         }},
-    };
-    for (const auto &c : calls) {
-        NSDictionary *before = counters(o.device);
-        id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
-        id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
-        c.encode(b);
-        [b endEncoding];
-        expectError(o.device, before, cb, c.pred, MTLCommandBufferErrorInvalidResource);
-    }
+    } calls[] = {{"call.buf", ^(id<MTLBlitCommandEncoder> b){
+                      [b fillBuffer:nothing() range:NSMakeRange(0, 64) value:7];
+}
+}
+
+, {"call.buf", ^(id<MTLBlitCommandEncoder> b){
+       [b copyFromBuffer:nothing() sourceOffset:0 toBuffer:a destinationOffset:0 size:64];
+}
+}
+, {"tex.foreign", ^(id<MTLBlitCommandEncoder> b){
+       [b copyFromTexture:nothing()
+                 sourceSlice:0
+                 sourceLevel:0
+                sourceOrigin:MTLOriginMake(0, 0, 0)
+                  sourceSize:MTLSizeMake(16, 16, 1)
+                   toTexture:large
+            destinationSlice:0
+            destinationLevel:0
+           destinationOrigin:MTLOriginMake(0, 0, 0)];
+}
+}
+, {"call.blit", ^(id<MTLBlitCommandEncoder> b){
+       [b copyFromTexture:memoryless
+                 sourceSlice:0
+                 sourceLevel:0
+                sourceOrigin:MTLOriginMake(0, 0, 0)
+                  sourceSize:MTLSizeMake(16, 16, 1)
+                   toTexture:large
+            destinationSlice:0
+            destinationLevel:0
+           destinationOrigin:MTLOriginMake(0, 0, 0)];
+}
+}
+, {"call.blit", ^(id<MTLBlitCommandEncoder> b){
+       [b copyFromTexture:large toTexture:small];
+}
+}
+, {"call.counter", ^(id<MTLBlitCommandEncoder> b){
+       [b sampleCountersInBuffer:nothing() atSampleIndex:0 withBarrier:YES];
+}
+}
+,
+}
+;
+for (const auto &c : calls) {
+    NSDictionary *before = counters(o.device);
+    id<MTLCommandBuffer> cb = [[o.device newCommandQueue] commandBuffer];
+    id<MTLBlitCommandEncoder> b = [cb blitCommandEncoder];
+    c.encode(b);
+    [b endEncoding];
+    expectError(o.device, before, cb, c.pred, MTLCommandBufferErrorInvalidResource);
+}
 }
 
 // A copy out of a level past its texture, which an M4 Max copies to no rule: nothing recorded, skipped as call.blit;
@@ -752,7 +758,9 @@ void anMmuFaultInFlightIsAPageFault()
     static bool killed = false;
     kernel_model::model.blockUntil = [](uint32_t, uint32_t) {
         std::unique_lock<std::mutex> l(held);
-        changed.wait(l, [] { return killed; });
+        changed.wait(l, [] {
+            return killed;
+        });
         return true;
     };
     kernel_model::model.inFlight = true;

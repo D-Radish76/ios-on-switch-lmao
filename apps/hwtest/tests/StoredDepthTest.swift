@@ -25,10 +25,10 @@ struct StoredDepthTest: HWTest {
         let format: MTLPixelFormat
         let depth: Bool, stencil: Bool
         let depthBytes: Int
-        let left: [UInt8]  // the drawn half's depth texel, as the copy engine reads it back
-        let right: [UInt8]  // the cleared half's
+        let left: [UInt8] // the drawn half's depth texel, as the copy engine reads it back
+        let right: [UInt8] // the cleared half's
         var type: MTLTextureType = .type2D
-        var slice = 0  // the layer drawn and read
+        var slice = 0 // the layer drawn and read
     }
 
     static func bytes(_ f: Float) -> [UInt8] { withUnsafeBytes(of: f.bitPattern.littleEndian) { Array($0) } }
@@ -38,20 +38,25 @@ struct StoredDepthTest: HWTest {
     static let cases: [Case] = [
         Case(
             name: "d32f", format: .depth32Float, depth: true, stencil: false, depthBytes: 4,
-            left: bytes(0.25), right: bytes(1)),
+            left: bytes(0.25), right: bytes(1)
+        ),
         Case(
             name: "d16", format: .depth16Unorm, depth: true, stencil: false, depthBytes: 2,
-            left: bytes16(16383), right: bytes16(65535)),
+            left: bytes16(16383), right: bytes16(65535)
+        ),
         Case(
             name: "d32fs8", format: .depth32Float_stencil8, depth: true, stencil: true, depthBytes: 4,
-            left: bytes(0.25), right: bytes(1)),
+            left: bytes(0.25), right: bytes(1)
+        ),
         Case(name: "s8", format: .stencil8, depth: false, stencil: true, depthBytes: 0, left: [], right: []),
         Case(
             name: "d32fs8_array", format: .depth32Float_stencil8, depth: true, stencil: true, depthBytes: 4,
-            left: bytes(0.25), right: bytes(1), type: .type2DArray, slice: 1),
+            left: bytes(0.25), right: bytes(1), type: .type2DArray, slice: 1
+        ),
         Case(
             name: "d32fs8_cube", format: .depth32Float_stencil8, depth: true, stencil: true, depthBytes: 4,
-            left: bytes(0.25), right: bytes(1), type: .typeCube, slice: 4),
+            left: bytes(0.25), right: bytes(1), type: .typeCube, slice: 4
+        ),
     ]
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -98,7 +103,8 @@ struct StoredDepthTest: HWTest {
         let colour = try gpu.texture(.rgba8Unorm, size, size)
         let pipeline = try gpu.render(
             fragment: "solid_fragment", format: .rgba8Unorm, depth: c.depth ? c.format : .invalid,
-            stencil: c.stencil ? c.format : .invalid)
+            stencil: c.stencil ? c.format : .invalid
+        )
         let descriptor = MTLDepthStencilDescriptor()
         descriptor.depthCompareFunction = c.depth ? .lessEqual : .always
         descriptor.isDepthWriteEnabled = c.depth
@@ -135,16 +141,18 @@ struct StoredDepthTest: HWTest {
                 encoder.setStencilReferenceValue(7)
                 GPU.draw(encoder, corners: GPU.quad(x0: -1, y0: -1, x1: 0, y1: 1, z: 0.25), color: SIMD4(1, 1, 1, 1))
                 encoder.endEncoding()
-            }.path)
+            }.path
+        )
         let both = c.depth && c.stencil
         if c.depth {
             let depths = try await read(
                 gpu, texture, slice: c.slice, bytesPerTexel: c.depthBytes, options: both ? .depthFromDepthStencil : [],
-                &ran)
-            for y in 0..<size {
-                for x in 0..<size {
+                &ran
+            )
+            for y in 0 ..< size {
+                for x in 0 ..< size {
                     let at = (y * size + x) * c.depthBytes
-                    let got = Array(depths[at..<at + c.depthBytes]), want = x < size / 2 ? c.left : c.right
+                    let got = Array(depths[at ..< at + c.depthBytes]), want = x < size / 2 ? c.left : c.right
                     if got != want && !(c.depthBytes == 2 && x < size / 2 && got == Self.bytes16(16384)) {
                         ran.wrongDepth += 1
                     }
@@ -153,9 +161,10 @@ struct StoredDepthTest: HWTest {
         }
         if c.stencil {
             let stencils = try await read(
-                gpu, texture, slice: c.slice, bytesPerTexel: 1, options: both ? .stencilFromDepthStencil : [], &ran)
-            for y in 0..<size {
-                for x in 0..<size where stencils[y * size + x] != (x < size / 2 ? 7 : 0) { ran.wrongStencil += 1 }
+                gpu, texture, slice: c.slice, bytesPerTexel: 1, options: both ? .stencilFromDepthStencil : [], &ran
+            )
+            for y in 0 ..< size {
+                for x in 0 ..< size where stencils[y * size + x] != (x < size / 2 ? 7 : 0) { ran.wrongStencil += 1 }
             }
         }
     }
@@ -171,15 +180,18 @@ struct StoredDepthTest: HWTest {
                 blit.copy(
                     from: texture, sourceSlice: slice, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                     sourceSize: MTLSize(width: size, height: size, depth: 1), to: out, destinationOffset: 0,
-                    destinationBytesPerRow: row, destinationBytesPerImage: row * size, options: options)
+                    destinationBytesPerRow: row, destinationBytesPerImage: row * size, options: options
+                )
                 blit.endEncoding()
-            }.path)
+            }.path
+        )
         return Array(UnsafeRawBufferPointer(start: out.contents(), count: row * size))
     }
 
     func check(_ gpu: GPU, _ c: Case) async throws -> Ran {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: c.format, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: c.format, width: Self.size, height: Self.size, mipmapped: false
+        )
         descriptor.textureType = c.type
         if c.type == .type2DArray { descriptor.arrayLength = 3 }
         descriptor.storageMode = .private
@@ -215,14 +227,15 @@ struct StoredDepthTest: HWTest {
                 encoder.setFragmentTexture(texture, index: 0)
                 GPU.draw(encoder, corners: GPU.fullScreen, color: SIMD4(0, 0, 0, 1))
                 encoder.endEncoding()
-            }.path)
+            }.path
+        )
         let red = try await gpu.read(out, bytesPerPixel: 4)
         let slack: Float = c.format == .depth16Unorm ? 2.0 / 65535 : 0
         var wrong = 0
-        for y in 0..<size {
-            for x in 0..<size {
+        for y in 0 ..< size {
+            for x in 0 ..< size {
                 let at = (y * size + x) * 4
-                let depth = Float(bitPattern: red[at..<at + 4].reversed().reduce(0) { $0 << 8 | UInt32($1) })
+                let depth = Float(bitPattern: red[at ..< at + 4].reversed().reduce(0) { $0 << 8 | UInt32($1) })
                 if abs(depth - (x < size / 2 ? 0.25 : 1)) > slack { wrong += 1 }
             }
         }
@@ -293,7 +306,7 @@ struct StoredDepthTest: HWTest {
         }
         for (name, target) in targets {
             let clears: (MTLCommandBuffer) -> Void = { commands in
-                for _ in 0..<16 {
+                for _ in 0 ..< 16 {
                     let pass = MTLRenderPassDescriptor()
                     pass.renderTargetWidth = 1280
                     pass.renderTargetHeight = 720
@@ -305,7 +318,7 @@ struct StoredDepthTest: HWTest {
                 }
             }
             var ms = 0.0
-            for _ in 0..<3 { ms += try await gpu.run(clears).gpuMilliseconds }
+            for _ in 0 ..< 3 { ms += try await gpu.run(clears).gpuMilliseconds }
             metrics.set("depth_clear16_\(name)_gpu_ms", ms / 3, digits: 3)
         }
     }

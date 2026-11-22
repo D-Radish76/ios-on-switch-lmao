@@ -39,14 +39,16 @@ struct FloatTestsTest: HWTest {
         try await CompilerShapeRun.judged { gpu, metrics in
             let (bits, timing) = try await CompilerShapes.floatBits(gpu)
             guard let bits else { return [("float_classes failed: \(timing.facadePath)", false)] }
-            let wrong = CompilerShapes.floatValues.indices.filter { bits[$0] != CompilerShapes.classes(CompilerShapes.floatValues[$0]) }
+            let wrong = CompilerShapes.floatValues.indices
+                .filter { bits[$0] != CompilerShapes.classes(CompilerShapes.floatValues[$0]) }
             metrics.set("wrong", wrong.count)
             metrics.set("values", bits.count)
             if let i = wrong.first {
                 let v = CompilerShapes.floatValues[i]
                 metrics.set(
                     "first_wrong",
-                    "0x\(String(v.bitPattern, radix: 16)):\(String(bits[i], radix: 2))_not_\(String(CompilerShapes.classes(v), radix: 2))")
+                    "0x\(String(v.bitPattern, radix: 16)):\(String(bits[i], radix: 2))_not_\(String(CompilerShapes.classes(v), radix: 2))"
+                )
             }
             return [("wrong=\(wrong.count) of \(bits.count)", wrong.isEmpty)]
         }

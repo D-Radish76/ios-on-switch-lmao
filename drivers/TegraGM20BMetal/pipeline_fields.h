@@ -29,9 +29,9 @@ struct TessellationFields {
 
 struct PipelineFields {
     uint64_t samples = 1, topology = 0, depthFormat = 0, stencilFormat = 0, rasterization = 1;
-    uint64_t amplification = 1;  // maxVertexAmplificationCount
+    uint64_t amplification = 1;         // maxVertexAmplificationCount
     uint64_t textureWriteRounding = 0;  // textureWriteRoundingMode (Apple SPI): 2 rounds to nearest even
-    uint64_t patchType = 0;      // the vertex function's MTLPatchType
+    uint64_t patchType = 0;             // the vertex function's MTLPatchType
     TessellationFields tessellation;
     ColorFields color[8];
     AttributeFields attributes[31];

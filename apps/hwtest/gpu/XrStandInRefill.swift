@@ -19,14 +19,17 @@ public enum XrStandInRefill {
 
     public static func observe(_ gpu: GPU, sameEncoder: Bool) async throws -> Reading {
         guard let surface = SurfaceReads.surface("w30r", 64, 64, rows: 256, allocation: 16384, fill: { _ in 0 }),
-            let target = SurfaceReads.texture(
-                gpu, 554, 64, 64, over: surface, usage: [.renderTarget, .shaderRead, .shaderWrite])
+              let target = SurfaceReads.texture(
+                  gpu, 554, 64, 64, over: surface, usage: [.renderTarget, .shaderRead, .shaderWrite]
+              )
         else { throw TestFailure("no 554 over a 'w30r' 64x64") }
         let drawn = try await RowsUnder16.pass(
-            gpu, target, clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1), fragment: "turned_order_colours")
+            gpu, target, clear: MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1), fragment: "turned_order_colours"
+        )
         guard !drawn.hasPrefix("error") else { throw TestFailure("the 554 pass failed: \(drawn)") }
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
-            with: MTLPixelFormat(rawValue: 550)!, width: texels, resourceOptions: [], usage: [.shaderRead])
+            with: MTLPixelFormat(rawValue: 550)!, width: texels, resourceOptions: [], usage: [.shaderRead]
+        )
         guard let buffer = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return Reading()
         }
@@ -39,7 +42,8 @@ public enum XrStandInRefill {
             encoder.setTexture(target, index: 0)
             encoder.setBytes(&value, length: 16, index: 0)
             encoder.dispatchThreads(
-                MTLSize(width: 64, height: 64, depth: 1), threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                MTLSize(width: 64, height: 64, depth: 1), threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             if sameEncoder {
                 encoder.memoryBarrier(scope: .textures)
             } else {

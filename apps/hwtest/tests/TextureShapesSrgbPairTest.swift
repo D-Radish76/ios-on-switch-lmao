@@ -23,7 +23,7 @@ struct TextureShapesSrgbPairTest: HWTest {
         if let pair, let reference {
             let bytes: [UInt8] = [0, 0, 64, 128, 188, 255, 255, 30]
             pair.replace(region: MTLRegionMake2D(0, 0, 4, 1), mipmapLevel: 0, withBytes: bytes, bytesPerRow: 8)
-            let wide = (0..<4).flatMap { i -> [UInt8] in [bytes[2 * i], bytes[2 * i + 1], 0, 255] }
+            let wide = (0 ..< 4).flatMap { i -> [UInt8] in [bytes[2 * i], bytes[2 * i + 1], 0, 255] }
             reference.replace(region: MTLRegionMake2D(0, 0, 4, 1), mipmapLevel: 0, withBytes: wide, bytesPerRow: 16)
             let read = { (texture: MTLTexture) in
                 try await arms.drawn(texture, fragment: "view_read_2d", width: 4, format: .rgba32Float)
@@ -32,9 +32,12 @@ struct TextureShapesSrgbPairTest: HWTest {
         }
         arms.route(
             "srgb_pair_array", arms.make(.rg8Unorm_srgb, .type2DArray, 8, 8, array: 3, usage: .shaderRead),
-            expect: "gm20b")
+            expect: "gm20b"
+        )
         arms.route(
-            "srgb_pair_chain", arms.make(.rg8Unorm_srgb, .type2D, 16, 16, levels: 3, usage: .shaderRead), expect: "gm20b")
+            "srgb_pair_chain", arms.make(.rg8Unorm_srgb, .type2D, 16, 16, levels: 3, usage: .shaderRead),
+            expect: "gm20b"
+        )
         return arms.outcome()
     }
 }

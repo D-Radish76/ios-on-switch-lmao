@@ -18,16 +18,16 @@ struct NativeUnsupportedTest: NativeObjectTest {
     static let loopDepth = 8
 
     static let patchSource = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct ControlPoint { float4 position [[attribute(0)]]; };
-        struct Patch { patch_control_point<ControlPoint> points; };
-        [[patch(triangle, 3)]] vertex float4 tri_post(Patch patch [[stage_in]], float3 uvw [[position_in_patch]]) {
-            return patch.points[0].position * uvw.x + patch.points[1].position * uvw.y +
-                   patch.points[2].position * uvw.z;
-        }
-        fragment float4 tri_fragment() { return float4(1); }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct ControlPoint { float4 position [[attribute(0)]]; };
+    struct Patch { patch_control_point<ControlPoint> points; };
+    [[patch(triangle, 3)]] vertex float4 tri_post(Patch patch [[stage_in]], float3 uvw [[position_in_patch]]) {
+        return patch.points[0].position * uvw.x + patch.points[1].position * uvw.y +
+               patch.points[2].position * uvw.z;
+    }
+    fragment float4 tri_fragment() { return float4(1); }
+    """
 
     /// What a device query answers through its selector (nil where the device has no method for it)
     static func answer(_ device: MTLDevice, _ selector: String) -> Int? {
@@ -91,7 +91,7 @@ struct NativeUnsupportedTest: NativeObjectTest {
         let vertices = MTLVertexDescriptor()
         vertices.attributes[0].format = .float4
         vertices.attributes[0].bufferIndex = 1
-        vertices.layouts[1].stride = Int(bitPattern: UInt.max)  // MTLBufferLayoutStrideDynamic
+        vertices.layouts[1].stride = Int(bitPattern: UInt.max) // MTLBufferLayoutStrideDynamic
         strided.vertexDescriptor = vertices
         var made: [String] = []
         for (what, descriptor) in [("tessellation64", tessellated), ("amplification8", amplified), ("stride", strided)]
@@ -149,7 +149,7 @@ struct NativeUnsupportedTest: NativeObjectTest {
         }
         work.paths.append(timing.path)
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        let wrong = (0..<size * size).filter {
+        let wrong = (0 ..< size * size).filter {
             Array(pixels.pixel($0 % size, $0 / size, width: size)) != [0, 255, 0, 255]
         }.count
         metrics.set("wrong_pixels", wrong)

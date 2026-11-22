@@ -58,7 +58,8 @@ struct ZetaResolvePartsTest: HWTest {
         let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
-            FailedCounts.judged(before: before, after: counted, expecting: ["pass.ds": 2], own: gpu.paths, &metrics))
+            FailedCounts.judged(before: before, after: counted, expecting: ["pass.ds": 2], own: gpu.paths, &metrics)
+        )
         return .judged(checks, metrics, proof: gpu.proof)
     }
 
@@ -103,7 +104,8 @@ struct ZetaResolvePartsTest: HWTest {
         let depth = ZetaApartTest.hasDepth(format)
         return try gpu.render(
             fragment: depth ? "zeta_depth_by_sample" : "zeta_no_colour", format: .invalid, samples: 4,
-            depth: depth ? format : .invalid, stencil: ZetaApartTest.hasStencil(format) ? format : .invalid)
+            depth: depth ? format : .invalid, stencil: ZetaApartTest.hasStencil(format) ? format : .invalid
+        )
     }
 
     static func resolve(
@@ -115,7 +117,8 @@ struct ZetaResolvePartsTest: HWTest {
         let written = try ZetaApartTest.writes(gpu)
         try await gpu.run { commands in
             encodeResolve(
-                commands, from: ms, stencil: stencil, into: part, filter: filter, state: state, written: written)
+                commands, from: ms, stencil: stencil, into: part, filter: filter, state: state, written: written
+            )
         }
     }
 
@@ -123,8 +126,8 @@ struct ZetaResolvePartsTest: HWTest {
         _ gpu: GPU, _ format: MTLPixelFormat, side: Int = side, levels: Int = 1, slices: Int = 1
     ) async throws -> MTLTexture {
         let t = try ZetaApartTest.zeta(gpu, format, side: side, levels: levels, slices: slices)
-        for level in 0..<levels {
-            for slice in 0..<slices {
+        for level in 0 ..< levels {
+            for slice in 0 ..< slices {
                 try await ZetaApartTest.clear(gpu, Part(texture: t, level: level, slice: slice), depth: 0.9, stencil: 2)
             }
         }
@@ -178,7 +181,8 @@ struct ZetaResolvePartsTest: HWTest {
             return try TextureBufferTargetTest.errorCode(gpu) { commands in
                 encodeResolve(
                     commands, from: ms, stencil: stencil, into: Part(texture: target),
-                    filter: stencil ? .sample0 : .max, state: state, written: written)
+                    filter: stencil ? .sample0 : .max, state: state, written: written
+                )
             }
         }
     }

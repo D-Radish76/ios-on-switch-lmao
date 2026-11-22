@@ -74,7 +74,8 @@ struct DecodeViewsTest: HWTest {
         metrics.set("decode_native_hdr_view_made", nativeHdrMade)
         metrics.set("unmade", forms.unmade.isEmpty ? "-" : forms.unmade.joined(separator: ","))
         let viewLines = ProcessLog.lines(
-            ProcessLog.refusal, "gm20b", containing: "tex.view: no view of format 222,", since: start)
+            ProcessLog.refusal, "gm20b", containing: "tex.view: no view of format 222,", since: start
+        )
         let formLines = ProcessLog.lines(ProcessLog.refusal, "gm20b", containing: "tex.decoded_form", since: start)
         metrics.set("decode_view_lines_want", viewLinesWant)
         metrics.set("decode_view_lines", viewLines?.count ?? -1)
@@ -100,15 +101,16 @@ struct DecodeViewsTest: HWTest {
     /// The 167 view of a 166 texture of the driver's 16x16 vector: texels off the sRGB decode of its codes
     static func pvrtcView(_ gpu: GPU, _ forms: inout Forms) async throws -> Int {
         guard let v = DecodeVectors.level(166, side: 16),
-            let texture = DecodeScene.texture(gpu, v.pixelFormat, 16, 16, storage: .shared),
-            let view = texture.makeTextureView(pixelFormat: MTLPixelFormat(rawValue: 167)!)
+              let texture = DecodeScene.texture(gpu, v.pixelFormat, 16, 16, storage: .shared),
+              let view = texture.makeTextureView(pixelFormat: MTLPixelFormat(rawValue: 167)!)
         else {
             forms.unmade.append("166_or_167")
             return 0
         }
         v.bytes.withUnsafeBytes {
             texture.replace(
-                region: MTLRegionMake2D(0, 0, 16, 16), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 0)
+                region: MTLRegionMake2D(0, 0, 16, 16), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 0
+            )
         }
         let read = try await DecodeScene.read(gpu, view, DecodeScene.everyTexel(16, 16))
         return DecodeJudge.rgba8(read, v.want, srgb: true).off
@@ -133,16 +135,18 @@ struct DecodeViewsTest: HWTest {
         }
         let at = set.points.map(\.at)
         var last = 0, before = 0
-        for step in 0..<3 {
+        for step in 0 ..< 3 {
             if step == 1 {
                 try await DecodeScene.upload(
                     gpu, set.bytes(rotated: 1), rowBytes: set.blocks.count * 16, into: texture, width: set.width,
-                    height: set.blockH)
+                    height: set.blockH
+                )
                 (before, last) = (0, 1)
             } else if step == 2, let through = views.first {
                 try await DecodeScene.upload(
                     gpu, set.bytes(), rowBytes: set.blocks.count * 16, into: through.view, width: set.width,
-                    height: set.blockH)
+                    height: set.blockH
+                )
                 (before, last) = (1, 0)
             }
             for (format, member) in [(base, texture)] + views.map({ ($0.format, $0.view) }) {

@@ -27,7 +27,8 @@ struct HeapAliasableUsedTest: HWTest {
             heapDescriptor.size = 4 << 20
             heapDescriptor.storageMode = .private
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: Self.side, height: Self.side, mipmapped: false)
+                pixelFormat: format, width: Self.side, height: Self.side, mipmapped: false
+            )
             descriptor.storageMode = .private
             descriptor.usage = [.renderTarget, .shaderRead]
             guard let heap = gpu.device.makeHeap(descriptor: heapDescriptor) else { throw TestFailure("no heap") }

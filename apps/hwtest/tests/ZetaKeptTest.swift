@@ -59,7 +59,8 @@ struct ZetaKeptTest: HWTest {
                 ("no compressed memory made for the third (\(madeDelta))", madeDelta == 0),
                 ("the bytes held stayed across the release (\(releaseDelta))", releaseDelta == 0),
                 ("and across the third's make (\(heldDelta))", heldDelta == 0),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 
     static func timed(_ make: () throws -> MTLTexture) throws -> (MTLTexture, Double) {

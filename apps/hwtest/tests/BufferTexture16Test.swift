@@ -25,9 +25,10 @@ struct BufferTexture16Test: HWTest {
         let width = 12, height = 8, offset = 48, rowBytes = 48
         let buffer = try gpu.buffer(offset + rowBytes * height)
         let bytes = buffer.contents().bindMemory(to: UInt8.self, capacity: offset + rowBytes * height)
-        for i in 0..<(rowBytes * height) { bytes[offset + i] = UInt8((i * 37 + 11) & 255) }
+        for i in 0 ..< (rowBytes * height) { bytes[offset + i] = UInt8((i * 37 + 11) & 255) }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
+            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         guard let texture = buffer.makeTexture(descriptor: descriptor, offset: offset, bytesPerRow: rowBytes) else {
@@ -46,7 +47,8 @@ struct BufferTexture16Test: HWTest {
         guard let narrow = IOSurface(properties: properties) else { throw TestFailure("no IOSurface") }
         metrics.set("narrow_bytes_per_row", narrow.bytesPerRow)
         let surfaceDescriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: 60, height: 16, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: 60, height: 16, mipmapped: false
+        )
         surfaceDescriptor.usage = [.shaderRead]
         let surface = unsafeBitCast(narrow, to: IOSurfaceRef.self)
         if narrow.bytesPerRow & 15 != 0
@@ -68,18 +70,19 @@ struct BufferTexture16Test: HWTest {
         if drawn.status != .completed { wrong.append("draw") }
         let out = try await gpu.read(target, bytesPerPixel: 4)
         var mismatched = 0
-        for y in 0..<height {
-            for x in 0..<width {
+        for y in 0 ..< height {
+            for x in 0 ..< width {
                 let texel = offset + y * rowBytes + x * 4, pixel = (y * width + x) * 4
                 let expected = [bytes[texel + 2], bytes[texel + 1], bytes[texel], bytes[texel + 3]]
-                if Array(out[pixel..<(pixel + 4)]) != expected { mismatched += 1 }
+                if Array(out[pixel ..< (pixel + 4)]) != expected { mismatched += 1 }
             }
         }
         metrics.set("wrong_texels", mismatched)
         if mismatched != 0 { wrong.append("texels") }
 
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

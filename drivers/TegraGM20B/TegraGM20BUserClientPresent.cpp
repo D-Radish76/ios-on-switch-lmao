@@ -243,7 +243,7 @@ uint32_t gShownAgain, gRefused;
 
 const char *whyUnshown(int status)
 {
-	return status == SWITCH_GPU_BACKING_WRITER_GONE	  ? "its writer's client is gone"
+	return status == SWITCH_GPU_BACKING_WRITER_GONE     ? "its writer's client is gone"
 	       : status == SWITCH_GPU_BACKING_WRITE_REFUSED ? "its write was never accepted"
 							    : "its writer failed on the GPU";
 }

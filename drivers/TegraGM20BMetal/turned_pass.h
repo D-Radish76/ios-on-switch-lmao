@@ -21,6 +21,7 @@ public:
     bool begin(CommandBuffer &rc, PassDesc &p, DrawReplay &draws, const char **why);
     // The stored stand-ins back, after the pass and its resolves
     bool end(CommandBuffer &rc, const char **why);
+
     // Whether begin() failed for want of memory: for a stand-in, a mirror's scratch or the reach's (PassReach::memory)
     bool failedForMemory() const
     {

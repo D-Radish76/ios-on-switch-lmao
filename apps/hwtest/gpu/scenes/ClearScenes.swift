@@ -43,7 +43,8 @@ struct ClearFormatsScene: GPUScene {
                         "\(format.rawValue) \(width)x\(height) clear \(value.map { "\($0)" }.joined(separator: ","))",
                         bytes: got, expected: Patterns.repeated(texel, count: width * height),
                         format: format, width: width, height: height,
-                        tolerance: format.step(near: value.max() ?? 1) * 1.01)
+                        tolerance: format.step(near: value.max() ?? 1) * 1.01
+                    )
                 }
             }
         }
@@ -87,7 +88,8 @@ struct ClearFormatsScene: GPUScene {
             pass.colorAttachments[0].texture = target
             pass.colorAttachments[0].loadAction = .clear
             pass.colorAttachments[0].clearColor = MTLClearColor(
-                red: Double(value[0]), green: Double(value[1]), blue: Double(value[2]), alpha: Double(value[3]))
+                red: Double(value[0]), green: Double(value[1]), blue: Double(value[2]), alpha: Double(value[3])
+            )
             pass.colorAttachments[0].storeAction = .store
         }
         return pass
@@ -124,7 +126,8 @@ struct ClearThenDrawScene: GPUScene {
                         pass.colorAttachments[0].loadAction = .clear
                         pass.colorAttachments[0].clearColor = MTLClearColor(
                             red: Double(clear[0]), green: Double(clear[1]), blue: Double(clear[2]),
-                            alpha: Double(clear[3]))
+                            alpha: Double(clear[3])
+                        )
                     } else {
                         pass.colorAttachments[0].loadAction = .load
                     }
@@ -134,7 +137,8 @@ struct ClearThenDrawScene: GPUScene {
                         let r = step.rect
                         GPU.draw(
                             encoder, corners: GPU.pixelQuad(r[0], r[1], r[2], r[3], width: width, height: height),
-                            color: SIMD4(step.color[0], step.color[1], step.color[2], step.color[3]))
+                            color: SIMD4(step.color[0], step.color[1], step.color[2], step.color[3])
+                        )
                     }
                     encoder.endEncoding()
                 }
@@ -143,8 +147,8 @@ struct ClearThenDrawScene: GPUScene {
                 }
                 if !step.rect.isEmpty {
                     let r = step.rect
-                    for y in r[1]..<r[3] {
-                        for x in r[0]..<r[2] { for c in 0..<4 { model[x, y, c] = step.color[c] } }
+                    for y in r[1] ..< r[3] {
+                        for x in r[0] ..< r[2] { for c in 0 ..< 4 { model[x, y, c] = step.color[c] } }
                     }
                 }
                 let got = try await gpu.raster(target, format)

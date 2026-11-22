@@ -509,8 +509,12 @@ pub fn render_descriptor<F: DescriptorFunction>(
         out.tessellation = Some(t);
     }
     out.max_vertex_amplification_count = d.max_amplification.max(1) as u32;
-    out.texture_write_rounding_mode = TextureWriteRoundingMode::from_raw(d.texture_write_rounding)
-        .map_err(|_| format!("textureWriteRoundingMode {} is not a Metal value", d.texture_write_rounding))?;
+    out.texture_write_rounding_mode = TextureWriteRoundingMode::from_raw(d.texture_write_rounding).map_err(|_| {
+        format!(
+            "textureWriteRoundingMode {} is not a Metal value",
+            d.texture_write_rounding
+        )
+    })?;
     Ok(out)
 }
 

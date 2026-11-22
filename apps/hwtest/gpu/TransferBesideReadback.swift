@@ -37,7 +37,8 @@ public enum TransferBesideReadback {
                     let start = DispatchTime.now().uptimeNanoseconds
                     bytes.withUnsafeMutableBytes {
                         texture.getBytes(
-                            $0.baseAddress!, bytesPerRow: row, from: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 1)
+                            $0.baseAddress!, bytesPerRow: row, from: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 1
+                        )
                     }
                     let ms = Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6
                     lock.lock()
@@ -79,27 +80,29 @@ public enum TransferBesideReadback {
     public static func run(_ device: MTLDevice) throws -> Timed {
         func texture(_ side: Int) throws -> MTLTexture {
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: true)
+                pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: true
+            )
             d.storageMode = .shared
             d.usage = [.shaderRead]
             guard let made = device.makeTexture(descriptor: d) else { throw TestFailure("no \(side)x\(side) texture") }
             return made
         }
         let big = try texture(bigSide)
-        let small = try (0..<smalls).map { _ in try texture(smallSide) }
+        let small = try (0 ..< smalls).map { _ in try texture(smallSide) }
         let half = smallSide / 2
         let bytes = [UInt8](repeating: 0x5a, count: half * half * 4)
         let reader = Reader()
         reader.start(big)
         reader.began.wait()
         var out = Timed()
-        for i in 0..<uploads {
+        for i in 0 ..< uploads {
             if reader.isReading { out.overlapped += 1 }
             let start = DispatchTime.now().uptimeNanoseconds
             bytes.withUnsafeBytes {
                 small[i % smalls].replace(
                     region: MTLRegionMake2D(0, 0, half, half), mipmapLevel: 1, withBytes: $0.baseAddress!,
-                    bytesPerRow: half * 4)
+                    bytesPerRow: half * 4
+                )
             }
             out.uploadsMs.append(Double(DispatchTime.now().uptimeNanoseconds - start) / 1e6)
         }

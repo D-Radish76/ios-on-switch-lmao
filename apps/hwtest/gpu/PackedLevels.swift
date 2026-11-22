@@ -37,7 +37,7 @@ public enum PackedLevels {
     static func texel(_ bytes: [UInt8], _ format: UInt, offset: Int, _ x: Int, _ y: Int) -> SIMD4<Float> {
         let k = format == 588 ? 1 : 2
         var value = SIMD4<Float>(0, 0, 0, 1)
-        for c in 0..<k {
+        for c in 0 ..< k {
             let n = k * x + c, bit = 8 * offset + 8 * rows * y + 32 * (n / 3) + 10 * (n % 3)
             let word = SurfaceReads.word(bytes, bit / 32 * 4)
             value[c] = Float((word >> UInt32(bit % 32)) & 0x3ff) / 1023
@@ -58,7 +58,8 @@ public enum PackedLevels {
             encoder.setBytes(&at, length: 4, index: 1)
             encoder.dispatchThreads(
                 MTLSize(width: width, height: height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }.facadePath
         guard !path.hasPrefix("error") else { throw TestFailure("\(name) at level \(level) failed: \(path)") }
@@ -72,7 +73,8 @@ public enum PackedLevels {
         var r = Reading()
         guard let surface = surface() else { throw TestFailure("no 'p420' 32x16") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: c.format)!, width: c.width, height: c.height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: c.format)!, width: c.width, height: c.height, mipmapped: false
+        )
         descriptor.mipmapLevelCount = levels
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
@@ -83,16 +85,16 @@ public enum PackedLevels {
         let bytes = SurfaceReads.bytes(surface), offset = c.plane * 1024
         let level0 = { (x: Int, y: Int) in texel(bytes, c.format, offset: offset, x, y) }
         let tolerance: Float = 0.5 / 1023
-        let near = { (a: SIMD4<Float>, b: SIMD4<Float>) in (0..<4).allSatisfy { abs(a[$0] - b[$0]) <= tolerance } }
+        let near = { (a: SIMD4<Float>, b: SIMD4<Float>) in (0 ..< 4).allSatisfy { abs(a[$0] - b[$0]) <= tolerance } }
         r.readWrong = 0
         r.sampleWrong = 0
-        for level in 0..<levels {
+        for level in 0 ..< levels {
             let (w, h) = (c.width >> level, c.height >> level)
             let read = try await kernel(gpu, "plevels_read", texture, level: level, width: w, height: h)
             let sampled = try await kernel(gpu, "plevels_sample", texture, level: level, width: w, height: h)
             let half = level == 0 ? 0 : 1 << (level - 1)
-            for y in 0..<h {
-                for x in 0..<w {
+            for y in 0 ..< h {
+                for x in 0 ..< w {
                     if !near(read[y * w + x], level0(x, y)) { r.readWrong += 1 }
                     let centre = level0((x << level) + half, (y << level) + half)
                     if !near(sampled[y * w + x], centre) { r.sampleWrong += 1 }
@@ -111,7 +113,7 @@ public enum PackedLevels {
         }
         let got = Array(UnsafeBufferPointer(start: seen.contents().bindMemory(to: UInt32.self, capacity: 7), count: 7))
         r.levelsWrong = (got[0] == UInt32(levels) ? 0 : 1) + (texture.mipmapLevelCount == levels ? 0 : 1)
-        r.dimsWrong = (0..<levels).filter { l in
+        r.dimsWrong = (0 ..< levels).filter { l in
             got[1 + 2 * l] != UInt32(c.width >> l) || got[2 + 2 * l] != UInt32(c.height >> l)
         }.count
         let (w1, h1) = (c.width >> 1, c.height >> 1)
@@ -119,7 +121,7 @@ public enum PackedLevels {
         r.minmagCode = Int((minmag[0].x * 1023).rounded())
 
         r.getBytesWritten = 0
-        for level in 0..<levels {
+        for level in 0 ..< levels {
             let (w, h) = (c.width >> level, c.height >> level)
             var out = [UInt8](repeating: 0xee, count: 8 * w * h)
             out.withUnsafeMutableBytes {
@@ -128,13 +130,14 @@ public enum PackedLevels {
             }
             r.getBytesWritten += out.filter { $0 != 0xee }.count
         }
-        let pattern = (0..<8 * c.width * c.height).map { UInt8(truncatingIfNeeded: $0 * 29 + 7) }
-        for level in 0..<2 {
+        let pattern = (0 ..< 8 * c.width * c.height).map { UInt8(truncatingIfNeeded: $0 * 29 + 7) }
+        for level in 0 ..< 2 {
             let (w, h) = (c.width >> level, c.height >> level)
             pattern.withUnsafeBytes {
                 texture.replace(
                     region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: level, withBytes: $0.baseAddress!,
-                    bytesPerRow: 8 * w)
+                    bytesPerRow: 8 * w
+                )
             }
         }
         let replaced = SurfaceReads.bytes(surface)

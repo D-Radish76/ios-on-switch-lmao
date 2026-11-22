@@ -18,7 +18,7 @@ struct InterlockSpinScene: GPUScene {
         let scale = FetchBlendState.scale(format)
         let target = try gpu.texture(format.metal, Self.width, Self.height)
         let points = try gpu.buffer(FetchBlendPipeline.quad)
-        let tags = (0..<16).map { SIMD4<Float>(0, 0, Float(($0 * 5 + 1) & 3), 0) }
+        let tags = (0 ..< 16).map { SIMD4<Float>(0, 0, Float(($0 * 5 + 1) & 3), 0) }
         let instances = try gpu.buffer(tags)
         var values = [FetchBlendState.clear]
         for tag in tags { values.append(FetchBlendState.step(values.last!, UInt32(tag.z))) }
@@ -39,15 +39,16 @@ struct InterlockSpinScene: GPUScene {
                     let clear = FetchBlendState.clear
                     pass.colorAttachments[0].clearColor = MTLClearColor(
                         red: Double(clear.x) / Double(scale), green: Double(clear.y) / Double(scale),
-                        blue: Double(clear.z) / Double(scale), alpha: Double(clear.w) / Double(scale))
+                        blue: Double(clear.z) / Double(scale), alpha: Double(clear.w) / Double(scale)
+                    )
                     let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
                     encoder.setRenderPipelineState(pipeline)
                     FetchBlendPipeline.bind(encoder, points: points, instances: instances, scale: scale)
-                    for layer in 0..<layers {
+                    for layer in 0 ..< layers {
                         encoder.setVertexBuffer(instances, offset: layer * MemoryLayout<SIMD4<Float>>.stride, index: 1)
                         if arm.0 == "plain" {
                             let delta = values[layer + 1] &- values[layer]
-                            var color = SIMD4<Float>((0..<4).map { Float(delta[$0]) / scale })
+                            var color = SIMD4<Float>((0 ..< 4).map { Float(delta[$0]) / scale })
                             encoder.setFragmentBytes(&color, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
                         }
                         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
@@ -61,7 +62,7 @@ struct InterlockSpinScene: GPUScene {
                 }
                 let before = GM20BFacade.counters(of: gpu.device)
                 var times: [Double] = []
-                for _ in 0..<Self.runs {
+                for _ in 0 ..< Self.runs {
                     let timing = try await gpu.run(draw)
                     result.expect(kind != "gm20b" || timing.path == "gm20b", "\(label): \(timing.path)")
                     result.expect(timing.gpuTimed && timing.gpuClock != "host", "\(label): no GPU timestamp")
@@ -69,7 +70,8 @@ struct InterlockSpinScene: GPUScene {
                     let bytes = try await gpu.read(target, bytesPerPixel: format.bytesPerTexel)
                     _ = result.compare(
                         label, bytes: bytes, expected: expected, format: format,
-                        width: Self.width, height: Self.height, tolerance: 0)
+                        width: Self.width, height: Self.height, tolerance: 0
+                    )
                 }
                 result.metrics.set("gpu_ms_" + label, Stats.percentile(times, 0.5), digits: 3)
                 if kind == "gm20b" {
@@ -78,14 +80,16 @@ struct InterlockSpinScene: GPUScene {
                     result.metrics.set("ilk_" + label, interlocked)
                     result.expect(
                         arm.0 == "plain" ? interlocked == 0 : interlocked >= layers * Self.runs,
-                        "\(label): unexpected interlock count \(interlocked)")
+                        "\(label): unexpected interlock count \(interlocked)"
+                    )
                 }
                 if arm.0 == "plain" {
                     baseline = times
                 } else {
                     result.expect(
                         InterlockSpinBound.accepts(times, baseline: baseline),
-                        "\(label): a draw exceeded 4x the non-interlocked GPU time or lacked a timestamp")
+                        "\(label): a draw exceeded 4x the non-interlocked GPU time or lacked a timestamp"
+                    )
                 }
             }
         }

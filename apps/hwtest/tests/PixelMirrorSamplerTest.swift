@@ -18,7 +18,7 @@ struct PixelMirrorSamplerTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         var texels: [UInt8] = []
-        for i in 0..<16 { texels += [UInt8(16 * i), UInt8(255 - 16 * i), UInt8(7 * i), 255] }
+        for i in 0 ..< 16 { texels += [UInt8(16 * i), UInt8(255 - 16 * i), UInt8(7 * i), 255] }
         let source = try gpu.texture(.rgba8Unorm, 4, 4, usage: [.shaderRead])
         try await gpu.upload(texels, to: source, bytesPerRow: 16)
         let descriptor = MTLSamplerDescriptor()
@@ -46,16 +46,16 @@ struct PixelMirrorSamplerTest: HWTest {
         }
         let bytes = try await gpu.read(target, bytesPerPixel: 4)
         var wrong = 0
-        for y in 4..<8 {
-            for x in 4..<8 {
+        for y in 4 ..< 8 {
+            for x in 4 ..< 8 {
                 let at = 4 * (x + 12 * y), i = 4 * ((x - 4) + 4 * (y - 4))
-                wrong += Array(bytes[at..<at + 4]) == Array(texels[i..<i + 4]) ? 0 : 1
+                wrong += Array(bytes[at ..< at + 4]) == Array(texels[i ..< i + 4]) ? 0 : 1
             }
         }
         var metrics = Metrics()
         metrics.set("path", timing.path)
         metrics.set("texels_wrong", wrong)
-        metrics.set("first", bytes[4 * (4 + 12 * 4)..<4 * (4 + 12 * 4) + 4].map { String($0) }.joined(separator: "/"))
+        metrics.set("first", bytes[4 * (4 + 12 * 4) ..< 4 * (4 + 12 * 4) + 4].map { String($0) }.joined(separator: "/"))
         var failures: [String] = []
         if timing.path != "gm20b" { failures.append("the draw went \(timing.path)") }
         if wrong != 0 { failures.append("\(wrong) of 16 texels wrong") }

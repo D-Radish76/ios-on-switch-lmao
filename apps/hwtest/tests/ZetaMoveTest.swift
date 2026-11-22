@@ -74,9 +74,10 @@ struct ZetaMoveTest: HWTest {
         let colour = try gpu.texture(.bgra8Unorm, w, h, usage: [.renderTarget, .pixelFormatView])
         let pipeline = try gpu.render(
             fragment: "solid_fragment", format: .bgra8Unorm, depth: arm.format,
-            stencil: arm.stencil ? arm.format : .invalid)
+            stencil: arm.stencil ? arm.format : .invalid
+        )
         let zbcBefore = GM20BFacade.compression(of: gpu.device)["zbc_hits"] ?? 0
-        for _ in 0..<3 {
+        for _ in 0 ..< 3 {
             try await gpu.run { commands in
                 let encoder = commands.makeRenderCommandEncoder(descriptor: Self.pass(arm, colour, depth, load: false))!
                 encoder.setRenderPipelineState(pipeline)
@@ -85,7 +86,8 @@ struct ZetaMoveTest: HWTest {
                     for cx in stride(from: 0, to: w, by: Self.cell) {
                         let corners = GPU.pixelQuad(
                             cx, cy, min(cx + Self.cell, w), min(cy + Self.cell, h), width: w, height: h,
-                            z: Self.cellDepth(cx, cy))
+                            z: Self.cellDepth(cx, cy)
+                        )
                         GPU.draw(encoder, corners: corners, color: SIMD4(0, 0, 1, 1))
                     }
                 }
@@ -101,16 +103,18 @@ struct ZetaMoveTest: HWTest {
             encoder.setDepthStencilState(Self.less(gpu, writes: false))
             GPU.draw(
                 encoder, corners: GPU.pixelQuad(0, 0, w, h, width: w, height: h, z: Self.colourDepth),
-                color: SIMD4(1, 0, 0, 1))
+                color: SIMD4(1, 0, 0, 1)
+            )
             encoder.endEncoding()
         }
         let depths = try await Self.read(
-            gpu, depth, bytesPerTexel: arm.depthBytes, options: arm.stencil ? .depthFromDepthStencil : [])
+            gpu, depth, bytesPerTexel: arm.depthBytes, options: arm.stencil ? .depthFromDepthStencil : []
+        )
         let (depthWrong, floorCodes) = Self.depthWrong(depths, arm)
         let pixels = try await gpu.read(colour, bytesPerPixel: 4)
         var colourWrong = 0
-        for y in 0..<h {
-            for x in 0..<w {
+        for y in 0 ..< h {
+            for x in 0 ..< w {
                 let red: UInt8 = Self.cellDepth(x, y) > Self.colourDepth ? 255 : 0
                 if Array(pixels.pixel(x, y, width: w)) != [0, 0, red, 255] { colourWrong += 1 }
             }
@@ -177,8 +181,8 @@ struct ZetaMoveTest: HWTest {
     /// Texels off the grid's depths, and of Depth16Unorm the texels at the code below the nearest one (not counted off)
     static func depthWrong(_ depths: [UInt8], _ arm: Arm) -> (Int, Int) {
         var wrong = 0, floors = 0
-        for y in 0..<height {
-            for x in 0..<width {
+        for y in 0 ..< height {
+            for x in 0 ..< width {
                 let z = cellDepth(x, y), at = (y * width + x) * arm.depthBytes
                 if arm.depthBytes == 2 {
                     let got = Int(depths[at]) | Int(depths[at + 1]) << 8, exact = Double(z) * 65535
@@ -205,7 +209,8 @@ struct ZetaMoveTest: HWTest {
             blit.copy(
                 from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                 sourceSize: MTLSize(width: width, height: height, depth: 1), to: out, destinationOffset: 0,
-                destinationBytesPerRow: row, destinationBytesPerImage: row * height, options: options)
+                destinationBytesPerRow: row, destinationBytesPerImage: row * height, options: options
+            )
             blit.endEncoding()
         }
         return Array(UnsafeRawBufferPointer(start: out.contents(), count: row * height))
@@ -222,11 +227,12 @@ struct ZetaMoveTest: HWTest {
         var words = [UInt32](repeating: 0, count: width * height)
         words.withUnsafeMutableBytes {
             shared.getBytes(
-                $0.baseAddress!, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0)
+                $0.baseAddress!, bytesPerRow: width * 4, from: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0
+            )
         }
         var wrong = 0
-        for y in 0..<height {
-            for x in 0..<width where words[y * width + x] != cellDepth(x, y).bitPattern { wrong += 1 }
+        for y in 0 ..< height {
+            for x in 0 ..< width where words[y * width + x] != cellDepth(x, y).bitPattern { wrong += 1 }
         }
         return wrong
     }

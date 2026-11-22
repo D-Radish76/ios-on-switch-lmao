@@ -18,7 +18,8 @@ struct HeapTwinScene: GPUScene {
         heapDescriptor.size = 2 << 20
         heapDescriptor.storageMode = .private
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: Self.width, height: Self.height, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: Self.width, height: Self.height, mipmapped: false
+        )
         descriptor.storageMode = .private
         descriptor.usage = [.renderTarget, .shaderRead]
         let samplerDescriptor = MTLSamplerDescriptor()
@@ -40,7 +41,7 @@ struct HeapTwinScene: GPUScene {
         var paths: [String] = []
         for round in ["fresh", "purged, non-volatile again", "purged, still volatile"] {
             guard let heap = gpu.device.makeHeap(descriptor: heapDescriptor),
-                let target = heap.makeTexture(descriptor: descriptor)
+                  let target = heap.makeTexture(descriptor: descriptor)
             else {
                 result.expect(false, "makeHeap or its texture returned nil")
                 return result
@@ -83,7 +84,7 @@ struct HeapTwinScene: GPUScene {
             result.expect(timing.path == "gm20b", "the border draw took \(timing.path), not raw")
         }
         let bordered = Raster(width: 64, height: 64, channels: 4) { x, y, c in
-            (16..<48).contains(x) && (16..<48).contains(y) ? Float(Self.color[c]) / 255 : 1
+            (16 ..< 48).contains(x) && (16 ..< 48).contains(y) ? Float(Self.color[c]) / 255 : 1
         }
         result.compare("border", try await gpu.raster(ring, .bgra8Unorm), bordered, tolerance: 1.51 / 255)
         result.metrics.set("paths", paths.joined(separator: ","))

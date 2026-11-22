@@ -45,8 +45,8 @@ inline TexelRowsParts texelRowsParts(const tgm_layout &l, uint64_t offset, uint3
         if (!rows || from >= to)
             return;
         const uint32_t mask = uint32_t(from | (to - from) | bytesPerRow | 16);
-        out.part[out.count++] = {uint32_t(row),  uint32_t(rows),  uint32_t(from), uint32_t(to - from),
-                                 mask & (0u - mask), row * bytesPerRow + from - offset};
+        out.part[out.count++] = {uint32_t(row),       uint32_t(rows),     uint32_t(from),
+                                 uint32_t(to - from), mask & (0u - mask), row * bytesPerRow + from - offset};
         out.held += rows * (to - from);
     };
     const uint64_t first = offset / bytesPerRow, last = (end - 1) / bytesPerRow;

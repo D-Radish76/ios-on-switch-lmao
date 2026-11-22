@@ -18,7 +18,7 @@ struct PresentPromisePathTest: GPUPathTest {
     let name = "A render of a surface a held command buffer writes shows that command buffer's finished frame"
     let counters = ["writer_promises"]
     static let size = 64, draws = 400
-    static let before: [UInt8] = [0, 0, 255, 255]  // BGRA red, the CPU's fill
+    static let before: [UInt8] = [0, 0, 255, 255] // BGRA red, the CPU's fill
     static let drawn: SIMD4<Float> = [0, 1, 0, 1]
 
     func exercise(_ gpu: GPU, _ context: TestContext, _ metrics: inout Metrics) async throws -> [String] {
@@ -37,11 +37,12 @@ struct PresentPromisePathTest: GPUPathTest {
         }
         surface.unlock(options: [], seed: nil)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard let target = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0),
-            let event = gpu.device.makeSharedEvent(), let commands = gpu.queue.makeCommandBuffer()
+              let event = gpu.device.makeSharedEvent(), let commands = gpu.queue.makeCommandBuffer()
         else { throw TestFailure("no surface texture, shared event or command buffer") }
         let pipeline = try gpu.render(fragment: "solid_fragment", format: .bgra8Unorm)
         let shown = await context.onStage { stage -> UIView in
@@ -60,7 +61,7 @@ struct PresentPromisePathTest: GPUPathTest {
         pass.colorAttachments[0].storeAction = .store
         let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
         encoder.setRenderPipelineState(pipeline)
-        for _ in 0..<Self.draws { GPU.draw(encoder, corners: GPU.fullScreen, color: Self.drawn) }
+        for _ in 0 ..< Self.draws { GPU.draw(encoder, corners: GPU.fullScreen, color: Self.drawn) }
         encoder.endEncoding()
         commands.commit()
         let committed = DispatchTime.now()
@@ -87,7 +88,8 @@ struct PresentPromisePathTest: GPUPathTest {
         metrics.set("scheduled_after_signal_ms", afterSignalMs ?? -1, digits: 2)
         metrics.set("render_ms", String(format: "%.1f", renderMs))
         metrics.set(
-            "centre", centre.prefix(3).map { String(Int(($0 * render.levels).rounded())) }.joined(separator: ","))
+            "centre", centre.prefix(3).map { String(Int(($0 * render.levels).rounded())) }.joined(separator: ",")
+        )
         var failures: [String] = []
         if (afterSignalMs ?? -1) < 0 {
             failures.append("waitUntilScheduled returned before the event's signal, at the hold")

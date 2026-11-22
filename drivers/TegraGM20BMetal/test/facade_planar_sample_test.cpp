@@ -29,7 +29,12 @@ std::string text(id object)
 
 // What the jobs pushed, in order: a pass's colour target 0, a kernel's launch, a copy engine launch's destination
 struct Event {
-    enum Kind { Target, Launch, Copy } kind;
+    enum Kind {
+        Target,
+        Launch,
+        Copy
+    } kind;
+
     uint64_t address;
 };
 

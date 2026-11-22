@@ -51,7 +51,8 @@ public struct GPUSceneTest: HWTest {
         let own = primary.paths
         if kind == "gm20b" && !after.isEmpty {
             let failed = FailedCounts.judged(
-                before: before, after: after, expecting: scene.expectedFailures, own: own, &metrics)
+                before: before, after: after, expecting: scene.expectedFailures, own: own, &metrics
+            )
             var checks = [failed]
             if scene.framework { checks.append(FailedCounts(before: before, after: after).skipCheck()) }
             reasons.insert(contentsOf: checks.filter { !$0.1 }.map { "SwitchMetal: \($0.0)" }, at: 0)
@@ -89,7 +90,7 @@ public struct GPUSceneTest: HWTest {
         for picture in pictures {
             let golden = goldens.golden(scene: scene.id, picture: picture.golden)
             if let golden, let blank = picture.blank,
-                GoldenVerdict.of(blank, against: golden, metalFormat: picture.metalFormat).holds
+               GoldenVerdict.of(blank, against: golden, metalFormat: picture.metalFormat).holds
             {
                 metrics.set("golden_" + picture.label, "blind")
                 reasons.append("\(picture.label): blind, the Mac's golden is the cleared target, so no draw changes it")
@@ -101,7 +102,8 @@ public struct GPUSceneTest: HWTest {
             reasons.append(
                 verdict == .missing
                     ? "\(picture.label): no Mac golden (bazel run --config=remote //apps/hwtest:scene_goldens)"
-                    : "\(picture.label): drew other pixels than the Mac's (\(goldens.header))")
+                    : "\(picture.label): drew other pixels than the Mac's (\(goldens.header))"
+            )
             if save(picture, prefix, documents) { saved += 1 }
         }
         return reasons
@@ -124,9 +126,10 @@ public struct GPUSceneTest: HWTest {
     func save(_ picture: ScenePicture, _ prefix: String, _ documents: URL) -> Bool {
         let directory = documents.appendingPathComponent("gpu").appendingPathComponent(scene.id)
         let bytes = Signature.blitted(
-            picture.bytes, metalFormat: picture.metalFormat, width: picture.width, height: picture.height)
+            picture.bytes, metalFormat: picture.metalFormat, width: picture.width, height: picture.height
+        )
         guard let format = Signature.format(metal: picture.metalFormat),
-            let png = format.raster(bytes, width: picture.width, height: picture.height).png()
+              let png = format.raster(bytes, width: picture.width, height: picture.height).png()
         else { return false }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return (try? png.write(to: directory.appendingPathComponent("\(prefix)-\(picture.label).png"))) != nil

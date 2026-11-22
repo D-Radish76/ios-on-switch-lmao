@@ -253,7 +253,7 @@ typedef struct NmbDirectBoundTexture {
 } NmbDirectBoundTexture;
 
 #define NMB_DIRECT_BOUND_TWO_PLANES 1u
-#define NMB_DIRECT_BOUND_MAP_SHIFT 8u
+#define NMB_DIRECT_BOUND_MAP_SHIFT  8u
 #define NMB_DIRECT_BOUND_MAP_STATED (1u << 15)
 
 typedef struct NmbDirectBoundSampler {

@@ -74,7 +74,8 @@ bool wordMipPasses(Device &d, CommandBuffer &rc, Texture &t, uint32_t first, uin
                     return false;
                 e->setPipeline(mip);
                 e->setTexture(0, &above);
-                const uint32_t step[8] = {from.width, from.height, into.width, into.height, from.depth, into.depth, z, 0};
+                const uint32_t step[8] = {from.width, from.height, into.width, into.height,
+                                          from.depth, into.depth,  z,          0};
                 e->setBytes(2, 0, step, volume ? sizeof step : 4 * sizeof *step);
                 if (!e->draw(4 /* MTLPrimitiveTypeTriangleStrip */, 0, 4, 1, 0, why))
                     return false;

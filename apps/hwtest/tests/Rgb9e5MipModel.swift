@@ -14,13 +14,13 @@ enum Rgb9e5MipModel {
     /// Texel (x, y) of a 2D level from its taps (x0 y0, x1 y0, x0 y1, x1 y1) at weights qx, qy of 256
     static func step(_ taps: [UInt32], qx: UInt32, qy: UInt32) -> UInt32 {
         var n = [UInt64](repeating: 0, count: 4)
-        for k in 0..<2 {
+        for k in 0 ..< 2 {
             let xz = UInt64(k == 1 ? qx : 256 - qx) * 256
             let y1 = (xz * UInt64(qy) + 127) >> 8
             n[k | 2] = y1
             n[k] = xz - y1
         }
-        let halves = (0..<3).map { c -> UInt32 in
+        let halves = (0 ..< 3).map { c -> UInt32 in
             let m = taps.map { UInt64($0 >> UInt32(9 * c) & 511) }
             let z = taps.map { Int($0 >> 27 & 31) - 24 }
             return half(sum(m, z, n))
@@ -30,7 +30,7 @@ enum Rgb9e5MipModel {
 
     /// The terms m 2^z n 2^-16 aligned to the largest's estimated top bit, 7 guard bits under a half's 10, each truncated
     static func sum(_ m: [UInt64], _ z: [Int], _ n: [UInt64]) -> (s: UInt64, sc: Int) {
-        let live = (0..<m.count).filter { m[$0] != 0 && n[$0] != 0 }
+        let live = (0 ..< m.count).filter { m[$0] != 0 && n[$0] != 0 }
         guard let e = live.map({ msb(m[$0]) + z[$0] + msb(n[$0]) - 16 }).max() else { return (0, 0) }
         let sc = e - 17
         return (live.reduce(0) { $0 + shifted(m[$1] * n[$1], z[$1] - 16 - sc) }, sc)

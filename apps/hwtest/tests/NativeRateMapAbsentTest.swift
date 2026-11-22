@@ -13,12 +13,13 @@ struct NativeRateMapAbsentTest: NativeObjectTest {
 
     func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
         var work = NativeWork()
-        let answered = (1...4).filter { gpu.device.supportsRasterizationRateMap(layerCount: $0) }
+        let answered = (1 ... 4).filter { gpu.device.supportsRasterizationRateMap(layerCount: $0) }
         metrics.set("supported_layer_counts", answered.isEmpty ? "-" : answered.map(String.init).joined(separator: ","))
         if !answered.isEmpty { work.failures.append("rate maps answered YES for \(answered)") }
         let layer = MTLRasterizationRateLayerDescriptor(sampleCount: MTLSize(width: 2, height: 2, depth: 0))
         let descriptor = MTLRasterizationRateMapDescriptor(
-            screenSize: MTLSize(width: 32, height: 32, depth: 0), layer: layer)
+            screenSize: MTLSize(width: 32, height: 32, depth: 0), layer: layer
+        )
         let made = gpu.device.makeRasterizationRateMap(descriptor: descriptor)
         metrics.set("made", made.map { NSStringFromClass(type(of: $0 as AnyObject)) } ?? "nil")
         if made != nil { work.failures.append("a rate map was made") }

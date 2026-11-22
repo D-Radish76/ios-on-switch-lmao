@@ -49,7 +49,7 @@ struct ComputeFactsTest: HWTest {
 
         let data = try gpu.buffer(Self.count * 4)
         let words = data.contents().bindMemory(to: UInt32.self, capacity: Self.count)
-        for i in 0..<Self.count { words[i] = UInt32(i) }
+        for i in 0 ..< Self.count { words[i] = UInt32(i) }
         var value: UInt32 = 5
         let width = min(state.maxTotalThreadsPerThreadgroup, 64)
         let path = try await gpu.run { commands in
@@ -59,11 +59,12 @@ struct ComputeFactsTest: HWTest {
             encoder.setBytes(&value, length: 4, index: 1)
             encoder.dispatchThreads(
                 MTLSize(width: Self.count, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }.path
         var off = 0
-        for i in 0..<Self.count where words[i] != UInt32(i) * 3 + 5 { off += 1 }
+        for i in 0 ..< Self.count where words[i] != UInt32(i) * 3 + 5 { off += 1 }
 
         var metrics = Metrics()
         metrics.set("max_threads", state.maxTotalThreadsPerThreadgroup)
@@ -74,7 +75,8 @@ struct ComputeFactsTest: HWTest {
         metrics.set("path", path)
         metrics.set("stage_input_max_threads", staged.maxTotalThreadsPerThreadgroup)
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         var wrong: [String] = []
         if state.maxTotalThreadsPerThreadgroup < 1 || state.maxTotalThreadsPerThreadgroup > 192 { wrong.append("max") }
         if state.threadExecutionWidth != 32 { wrong.append("width") }

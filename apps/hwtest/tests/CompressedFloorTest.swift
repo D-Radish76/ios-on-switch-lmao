@@ -55,7 +55,8 @@ struct CompressedFloorTest: HWTest {
         for handle in handles {
             _ = connection.call(
                 Self.boFree, GPUConnection.words([UInt32(truncatingIfNeeded: handle), UInt32(handle >> 32)]),
-                outputSize: 0)
+                outputSize: 0
+            )
         }
         var metrics = Metrics()
         metrics.set("ready_before_kib", before["ready_kib"] ?? -1)

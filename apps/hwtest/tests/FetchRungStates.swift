@@ -62,7 +62,7 @@ enum FetchRungStates {
     ]
 
     static let plain: [Int: [(label: String, key: String)]] = [
-        2: [("PBGRAXm_TimgBclrA2Xhf_Isrc", "clr"), ("PBGRAXm_TimgBclrA2Xhf_IsrcM1", "clr_m1")]
+        2: [("PBGRAXm_TimgBclrA2Xhf_Isrc", "clr"), ("PBGRAXm_TimgBclrA2Xhf_IsrcM1", "clr_m1")],
     ]
 
     /// Whether the pack holds no fetch-free form of the state on this IPSW: 21H461's plus darker

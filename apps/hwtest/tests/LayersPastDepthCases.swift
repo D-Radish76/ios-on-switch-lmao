@@ -80,10 +80,11 @@ enum LayersPastDepthCases {
         let layers = try await LayersPastCases.slices(gpu, colour, bytesPerPixel: 4)
         return String(
             layers.enumerated().map { l, bytes -> Character in
-                let texels = (0..<bytes.count / 4).map { LayersPastCases.texel(bytes, $0) }
+                let texels = (0 ..< bytes.count / 4).map { LayersPastCases.texel(bytes, $0) }
                 if texels.allSatisfy({ $0 == LayersPastCases.colour(l) }) { return "1" }
                 return texels.allSatisfy { $0 == LayersPastCases.clear } ? "0" : "m"
-            })
+            }
+        )
     }
 
     static func attach(
@@ -114,7 +115,7 @@ enum LayersPastDepthCases {
         d.depthCompareFunction = .less
         guard let less = gpu.device.makeDepthStencilState(descriptor: d) else { throw TestFailure("no depth state") }
         var least = Double.infinity
-        for _ in 0..<runs {
+        for _ in 0 ..< runs {
             try await gpu.run { commands in
                 let fill = MTLRenderPassDescriptor()
                 attach(fill, .d32f, depth, load: .clear, depth: 0.75, stencil: 0)

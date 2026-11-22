@@ -38,7 +38,7 @@ public enum XrRowsUnder16 {
 
     static func texture(_ gpu: GPU, fill: UInt8) -> (IOSurfaceRef, MTLTexture)? {
         guard let surface = RowsUnder16.surface("b3a8", 2, 8, planes: planes, fill: fill),
-            let texture = SurfaceReads.texture(gpu, 550, 2, 8, over: surface, usage: usage)
+              let texture = SurfaceReads.texture(gpu, 550, 2, 8, over: surface, usage: usage)
         else { return nil }
         return (surface, texture)
     }
@@ -50,13 +50,13 @@ public enum XrRowsUnder16 {
     {
         let got = try await SurfaceReads.read(gpu, texture)
         let row = RowsUnder16.mebibyte
-        let offsets = (0..<8).flatMap { y in (0..<8).map { y * row + $0 } + [64 + y * row, 65 + y * row] }
+        let offsets = (0 ..< 8).flatMap { y in (0 ..< 8).map { y * row + $0 } + [64 + y * row, 65 + y * row] }
         let bytes = RowsUnder16.bytes(surface, at: offsets)
         let off = SurfaceReads.off(got, tolerance: 0.5 / 510) { i in
             let (x, y) = (i % 2, i / 2)
             return SurfaceReads.xr(SurfaceReads.word(bytes, 10 * y + 4 * x), alpha: Float(bytes[10 * y + 8 + x]) / 255)
         }
-        let near = { (t: SIMD4<Float>, c: SIMD4<Float>) in (0..<4).allSatisfy { abs(t[$0] - c[$0]) <= 0.5 / 510 } }
+        let near = { (t: SIMD4<Float>, c: SIMD4<Float>) in (0 ..< 4).allSatisfy { abs(t[$0] - c[$0]) <= 0.5 / 510 } }
         let matching = colour.map { c in got.filter { near($0, c) }.count }
         return (off, matching ?? 0)
     }
@@ -66,8 +66,8 @@ public enum XrRowsUnder16 {
         guard let (patterned, readable) = texture(gpu, fill: 0) else { return r }
         r.made = true
         RowsUnder16.edit(patterned) { base in
-            for y in 0..<8 {
-                for b in 0..<128 { base[y * RowsUnder16.mebibyte + b] = SurfaceReads.pattern(y * 131 + b) }
+            for y in 0 ..< 8 {
+                for b in 0 ..< 128 { base[y * RowsUnder16.mebibyte + b] = SurfaceReads.pattern(y * 131 + b) }
             }
         }
         r.readOff = try await readOff(gpu, patterned, readable).off
@@ -76,15 +76,15 @@ public enum XrRowsUnder16 {
         let cleared16 = try await RowsUnder16.pass(gpu, target, clear: clear, fragment: nil)
         if cleared16.hasPrefix("error") { r.failures.append("clear \(cleared16)") }
         var want = [UInt8](repeating: 0xff, count: RowsUnder16.head)
-        for y in 0..<8 { for x in 0..<2 { RowsUnder16.put(clearWord, &want, at: 16 * y + 4 * x) } }
-        for k in 0..<4 { for x in 0..<2 { want[128 + 16 * k + x] = clearAlpha } }
+        for y in 0 ..< 8 { for x in 0 ..< 2 { RowsUnder16.put(clearWord, &want, at: 16 * y + 4 * x) } }
+        for k in 0 ..< 4 { for x in 0 ..< 2 { want[128 + 16 * k + x] = clearAlpha } }
         r.clearOff = RowsUnder16.off(cleared, want, fill: 0xff)
         let colour = SIMD4<Float>(SurfaceReads.xr(clearWord, alpha: 0))
         (r.readAfterOff, r.readAfterClear) = try await readOff(gpu, cleared, target, colour: colour)
 
         var stored = [UInt8](repeating: 0xff, count: RowsUnder16.head)
-        for y in 0..<8 { for x in 0..<2 { stored[64 + 16 * y + x] = coded(x, y).alpha } }
-        for y in 0..<8 { for x in 0..<2 { RowsUnder16.put(coded(x, y).word, &stored, at: 16 * y + 4 * x) } }
+        for y in 0 ..< 8 { for x in 0 ..< 2 { stored[64 + 16 * y + x] = coded(x, y).alpha } }
+        for y in 0 ..< 8 { for x in 0 ..< 2 { RowsUnder16.put(coded(x, y).word, &stored, at: 16 * y + 4 * x) } }
         guard let (drawn, drawTarget) = texture(gpu, fill: 0xff) else { throw TestFailure("no third 550") }
         let draw = try await RowsUnder16.pass(gpu, drawTarget, clear: clear, fragment: "rows16_xr_codes")
         if draw.hasPrefix("error") { r.failures.append("draw \(draw)") }

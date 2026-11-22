@@ -195,8 +195,8 @@ static uint meetByte(StandIn t, uint2 at, uint b, uint channel)
 }
 
 template <typename T>
-static uint meetValue(constant OverlapPlanes &s, Reach reach, texture2d<T, access::read> p0, texture2d<T, access::read> p1,
-                      uint a, thread bool &found)
+static uint meetValue(constant OverlapPlanes &s, Reach reach, texture2d<T, access::read> p0,
+                      texture2d<T, access::read> p1, uint a, thread bool &found)
 {
     found = false;
     uint best = 0, bestKey = 0, value = 0, kept = 0;
@@ -240,7 +240,8 @@ fragment uint ycbcr_overlap_planes_frag(Out in [[stage_in]], texture2d<uint, acc
                                         constant OverlapPlanes &s [[buffer(0)]])
 {
     bool found = false;
-    const uint value = meetValue(s, reach, words, alpha, s.base + uint(in.position.y) * s.pitch + uint(in.position.x), found);
+    const uint value =
+        meetValue(s, reach, words, alpha, s.base + uint(in.position.y) * s.pitch + uint(in.position.x), found);
     if (!found)
         discard_fragment();
     return value;
@@ -250,7 +251,8 @@ fragment uint ycbcr_overlap_meet_frag(Out in [[stage_in]], StandIn luma [[textur
                                       Reach reach [[texture(2)]], constant OverlapPlanes &s [[buffer(0)]])
 {
     bool found = false;
-    const uint value = meetValue(s, reach, luma, chroma, s.base + uint(in.position.y) * s.pitch + uint(in.position.x), found);
+    const uint value =
+        meetValue(s, reach, luma, chroma, s.base + uint(in.position.y) * s.pitch + uint(in.position.x), found);
     if (!found)
         discard_fragment();
     return value;

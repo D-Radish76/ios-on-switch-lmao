@@ -17,7 +17,7 @@ enum DecodeJudge {
         var tally = Tally()
         for (texel, word) in zip(read, want) {
             var off = false
-            for c in 0..<4 {
+            for c in 0 ..< 4 {
                 let code = Int((word >> (8 * UInt32(c))) & 255)
                 if srgb && c < 3 {
                     off = off || DecodeVectors.nearestSrgbCode(texel[c]) != code
@@ -56,7 +56,7 @@ enum DecodeJudge {
         var linear = Linear()
         for (texel, want) in zip(read, wants) {
             var off = false, eight = false
-            for c in 0..<4 {
+            for c in 0 ..< 4 {
                 let value = Double(texel[c]), k = Double(want[c])
                 off = off || Self.code(texel[c], 65535) != Int(DecodeVectors.unorm16(want[c]))
                 linear.appleMaxCodes = max(linear.appleMaxCodes, abs(value * 65535 - k * 65535 / 4095))
@@ -79,7 +79,7 @@ enum DecodeJudge {
         var halves = Halves()
         for (texel, want) in zip(read, wants) {
             var off = false
-            for c in 0..<4 {
+            for c in 0 ..< 4 {
                 if let value = DecodeVectors.half(want[c]) {
                     if texel[c].isNaN { halves.nanMismatch += 1 }
                     off = off || texel[c].bitPattern != value.bitPattern
@@ -95,6 +95,6 @@ enum DecodeJudge {
 
     /// Texels that are not a NaN in every channel (a never-written texel of an HDR form)
     static func notAllNaN(_ read: [SIMD4<Float>]) -> Int {
-        read.filter { texel in (0..<4).contains { !texel[$0].isNaN } }.count
+        read.filter { texel in (0 ..< 4).contains { !texel[$0].isNaN } }.count
     }
 }

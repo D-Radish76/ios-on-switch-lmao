@@ -293,6 +293,7 @@ inline std::string differences(const Window &a, const Window &b, Owner owner, co
         const Site *site[2] = {};
         long counted[2] = {};
     };
+
     std::map<std::vector<uintptr_t>, Pair> bySite;
     std::map<std::string, ArmCounts> byThread;
     const Window *windows[2] = {&a, &b};

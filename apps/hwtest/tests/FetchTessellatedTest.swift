@@ -33,7 +33,8 @@ struct FetchTessellatedTest: HWTest {
     static let kept: Set<String> = Set(
         Cases.arms.flatMap { [$0.key + "_order", $0.key + "_blocked"] } + [
             "tess_six_ordered", "tess_ms4_u2_samples_distinct", "readback_paths", "failed_cbs",
-        ])
+        ]
+    )
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -66,14 +67,15 @@ struct FetchTessellatedTest: HWTest {
         if let error = seen.error {
             let refused =
                 error.domain == MTLCommandBufferErrorDomain
-                && error.code == Int(MTLCommandBufferError.internal.rawValue)
+                    && error.code == Int(MTLCommandBufferError.internal.rawValue)
             if refused { metrics.set("\(key)_blocked", "fetch_patches") }
             metrics.set("\(key)_path", String(seen.path.prefix(60)))
             checks.append(
                 (
                     "\(key): \(refused ? "no storage form for its pass (gm20b:draw.fetch_patches)" : GPU.describe(error))",
                     false
-                ))
+                )
+            )
             return
         }
         checks.append(("\(key): drawn on raw (\(seen.path))", seen.path == "gm20b"))

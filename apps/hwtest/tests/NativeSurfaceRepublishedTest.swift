@@ -49,12 +49,14 @@ struct NativeSurfaceRepublishedPathTest: GPUPathTest {
         }
         let demuxed = try await Demux.load(clip, from: context.media)
         let destination = PatternPixels.attributes(
-            width: clip.width, height: clip.height, format: PatternPixels.format(bitDepth: 8))
+            width: clip.width, height: clip.height, format: PatternPixels.format(bitDepth: 8)
+        )
         let specification = [kVTVideoDecoderSpecification_RequireHardwareAcceleratedVideoDecoder: true] as CFDictionary
         var session: VTDecompressionSession?
         let created = VTDecompressionSessionCreate(
             allocator: nil, formatDescription: demuxed.format, decoderSpecification: specification,
-            imageBufferAttributes: destination as CFDictionary, outputCallback: nil, decompressionSessionOut: &session)
+            imageBufferAttributes: destination as CFDictionary, outputCallback: nil, decompressionSessionOut: &session
+        )
         guard created == noErr, let session else { throw TestFailure("VTDecompressionSessionCreate \(created)") }
         defer { VTDecompressionSessionInvalidate(session) }
         var made: CVMetalTextureCache?
@@ -69,9 +71,9 @@ struct NativeSurfaceRepublishedPathTest: GPUPathTest {
         let samples = Array(demuxed.samples.prefix(Self.pictures))
         for (index, sample) in samples.enumerated() {
             let status = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample, flags: [], infoFlagsOut: nil)
-            {
-                status, _, image, _, _ in pictures.add(status, image)
-            }
+                {
+                    status, _, image, _, _ in pictures.add(status, image)
+                }
             guard status == noErr else { throw TestFailure("VTDecompressionSessionDecodeFrame \(index): \(status)") }
             if index == samples.count - 1 {
                 VTDecompressionSessionFinishDelayedFrames(session)

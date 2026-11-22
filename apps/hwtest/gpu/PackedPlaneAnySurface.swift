@@ -46,13 +46,15 @@ public enum PackedPlaneAnySurface {
         Scene(key: "rows88_589", format: 589, plane: 1, width: 32, height: 8, make: { (rows88(), nil) }),
         Scene(
             key: "plane1_at1544", format: 589, plane: 1, width: 32, height: 8,
-            make: { (planar(64, 16, [luma(64, 16, 96, 0), chroma(32, 8, 96, 1544)], 2320), nil) }),
+            make: { (planar(64, 16, [luma(64, 16, 96, 0), chroma(32, 8, 96, 1544)], 2320), nil) }
+        ),
         Scene(
             key: "past_mapping", format: 589, plane: 1, width: 16, height: 8,
             make: {
                 let pairs = Plane(width: 16, height: 8, bytes: 2, pixels: 1, rows: 64, offset: 15904, size: 480)
                 return (planar(32, 16, [luma(32, 16, 64, 0), pairs], 16384), nil)
-            }),
+            }
+        ),
     ]
 
     static func rows88() -> IOSurfaceRef? { planar(64, 16, [luma(64, 16, 88, 0), chroma(32, 8, 88, 1408)], 2112) }
@@ -105,7 +107,7 @@ public enum PackedPlaneAnySurface {
         let count = IOSurfaceGetAllocSize(surface) / 4
         let words = IOSurfaceGetBaseAddress(surface).bindMemory(to: UInt32.self, capacity: count)
         var x = seed
-        for i in 0..<count {
+        for i in 0 ..< count {
             x ^= x << 13
             x ^= x >> 17
             x ^= x << 5
@@ -139,7 +141,7 @@ public enum PackedPlaneAnySurface {
         for (i, texel) in got.enumerated() {
             let (x, y) = (i % s.width, i / s.width)
             var wrong = false
-            for c in 0..<4 {
+            for c in 0 ..< 4 {
                 if c < k {
                     let distance = abs(texel[c] * 1023 - code(x, y, c))
                     reading.worst = max(reading.worst, distance)

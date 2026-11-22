@@ -25,7 +25,8 @@ public enum XrTexelBufferWritten {
         var arm = Arm()
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
             with: MTLPixelFormat(rawValue: format)!, width: texels, resourceOptions: [],
-            usage: [.shaderRead, .shaderWrite])
+            usage: [.shaderRead, .shaderWrite]
+        )
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return arm
         }
@@ -34,7 +35,7 @@ public enum XrTexelBufferWritten {
         guard !arm.status.hasPrefix("error:") else { return arm }
         let bytes = SurfaceReads.bytes(surface)
         arm.first = SurfaceReads.word(bytes, 0)
-        arm.wordsOff = (0..<texels).filter { SurfaceReads.word(bytes, 4 * $0) != word }.count
+        arm.wordsOff = (0 ..< texels).filter { SurfaceReads.word(bytes, 4 * $0) != word }.count
         arm.bytesOutside = bytes[(4 * texels)...].reduce(0) { $0 + ($1 == 0xff ? 0 : 1) }
         arm.read = try await read(gpu, texture)
         return arm
@@ -48,7 +49,8 @@ public enum XrTexelBufferWritten {
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { throw TestFailure("no 'BGRA' surface") }
         IOSurfaceLock(surface, [], nil)
         IOSurfaceGetBaseAddress(surface).initializeMemory(
-            as: UInt8.self, repeating: 0xff, count: IOSurfaceGetAllocSize(surface))
+            as: UInt8.self, repeating: 0xff, count: IOSurfaceGetAllocSize(surface)
+        )
         IOSurfaceUnlock(surface, [], nil)
         return surface
     }
@@ -63,7 +65,8 @@ public enum XrTexelBufferWritten {
             encoder.setBytes(&v, length: 16, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texels, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }.path
     }
@@ -71,7 +74,8 @@ public enum XrTexelBufferWritten {
     /// A 64x1 RGBA8 target the draw covers whole, its fragments each writing the value at their column
     static func drawn(_ gpu: GPU, _ texture: MTLTexture) async throws -> String {
         let pipeline = try gpu.render(
-            vertex: "surface_stores_rect", fragment: "xr_tbuf_written_fragment", format: .rgba8Unorm)
+            vertex: "surface_stores_rect", fragment: "xr_tbuf_written_fragment", format: .rgba8Unorm
+        )
         let target = try gpu.texture(.rgba8Unorm, texels, 1, usage: [.renderTarget], storage: .private)
         var rect = SIMD4<Float>(-1, -1, 1, 1), v = value
         return try await gpu.run(tolerateError: true) { commands in
@@ -99,7 +103,8 @@ public enum XrTexelBufferWritten {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texels, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }.path
         guard !path.hasPrefix("error:") else { throw TestFailure("the read failed: \(path)") }

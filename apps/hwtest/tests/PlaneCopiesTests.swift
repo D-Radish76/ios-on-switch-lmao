@@ -43,7 +43,8 @@ struct PlanesAcrossFormatsTest: HWTest {
         try await CompilerShapeRun.judged { gpu, metrics in
             let before = GM20BFacade.counters(of: gpu.device)
             var checks = try await PlaneCopiesRun.judged(
-                gpu, PlaneCopies.acrossFormats, prefix: "planes_across", &metrics)
+                gpu, PlaneCopies.acrossFormats, prefix: "planes_across", &metrics
+            )
             let counts = FailedCounts(before: before, after: GM20BFacade.counters(of: gpu.device))
             metrics.set("planes_across_skipped", counts.skippedPredicates["call.blit"] ?? 0)
             checks.append(counts.skipCheck(expecting: ["call.blit": PlaneCopies.acrossFormats.count]))

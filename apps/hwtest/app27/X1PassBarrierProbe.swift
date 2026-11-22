@@ -19,7 +19,8 @@ enum X1PassBarrierProbe {
     static let probe = X1Probe(
         id: "gpu.x1.pass_pixel_barrier",
         name: "A pixel barrier between passes orders a pass's samples after the last's",
-        probe: "barrier.pass_pixel", timeout: 420, body: run)
+        probe: "barrier.pass_pixel", timeout: 420, body: run
+    )
 
     static let arms = [
         ("control", "pass=today switch=today entry=today"), ("pixel", "pass=pixel switch=today entry=today"),
@@ -50,32 +51,44 @@ enum X1PassBarrierProbe {
                 out.append(
                     Cell(
                         format: format, layout: .blockLinear, shape: shape, width: 64, height: 64, trials: 1504,
-                        seconds: 8))
+                        seconds: 8
+                    )
+                )
                 out.append(
                     Cell(
                         format: format, layout: .blockLinear, shape: shape, width: 320, height: 180,
-                        trials: 1504, seconds: shape == .stride ? 14 : 4))
+                        trials: 1504, seconds: shape == .stride ? 14 : 4
+                    )
+                )
             }
             out.append(
                 Cell(
                     format: format, layout: .blockLinear, shape: .stride, width: 1280, height: 720,
-                    trials: 600, seconds: 36))
+                    trials: 600, seconds: 36
+                )
+            )
             out.append(
                 Cell(
                     format: format, layout: .blockLinear, shape: .pyramid, width: 1280, height: 720,
-                    trials: 600, seconds: 9))
+                    trials: 600, seconds: 9
+                )
+            )
             for layout in [BarrierKit.Layout.pitch, .compressed] {
                 for shape in [Shape.same, .pyramid] {
                     out.append(
                         Cell(
                             format: format, layout: layout, shape: shape, width: 320, height: 180,
-                            trials: 1504, seconds: 4))
+                            trials: 1504, seconds: 4
+                        )
+                    )
                 }
             }
             out.append(
                 Cell(
                     format: format, layout: .blockLinear, shape: .waw, width: 320, height: 180, trials: 1504,
-                    seconds: 4))
+                    seconds: 4
+                )
+            )
         }
         return out
     }
@@ -114,13 +127,13 @@ enum X1PassBarrierProbe {
                 let (arm, forms) = arms[step.cell]
                 if arm == "none" && !ledger.tally(name, arm).clean && step.round > 4 { continue }
                 let first = trial[step.cell]
-                let trialSeeds = (0..<batch).map { probeSeed(trial: first + $0, cell: index, seeds: seeds) }
-                let spins = (0..<batch).map { spinLadder(cell)[(first + $0) % 4] }
+                let trialSeeds = (0 ..< batch).map { probeSeed(trial: first + $0, cell: index, seeds: seeds) }
+                let spins = (0 ..< batch).map { spinLadder(cell)[(first + $0) % 4] }
                 let ran = try await gpu.run(forms: forms) { commands in
                     work.encode(commands, seeds: trialSeeds, spins: spins)
                 }
                 var tally = ledger.tally(name, arm)
-                for k in 0..<batch {
+                for k in 0 ..< batch {
                     let got = kit.tile(work.readback, k)
                     let seed = trialSeeds[k]
                     if arm == "control" {
@@ -134,7 +147,8 @@ enum X1PassBarrierProbe {
                     guard let want = references[seed] else { continue }
                     want.withUnsafeBytes {
                         tally.compare(
-                            got, $0, trial: first + k, width: BarrierKit.tile, bytesPerTexel: kit.bytesPerTexel)
+                            got, $0, trial: first + k, width: BarrierKit.tile, bytesPerTexel: kit.bytesPerTexel
+                        )
                     }
                 }
                 trial[step.cell] += batch
@@ -143,7 +157,8 @@ enum X1PassBarrierProbe {
         }
         var finding = ledger.finding(
             relaxed: ["pixel", "rule"], none: "none", control: "control",
-            takenKey: "passes", rule: "barrier.pass_pixel")
+            takenKey: "passes", rule: "barrier.pass_pixel"
+        )
         if ledger.failed("rule", none: "none") > 0 {
             finding.verdict = .fail
             finding.note = "production's pass barriers read other texels than today's"
@@ -171,7 +186,7 @@ enum X1PassBarrierProbe {
             self.kit = kit
             self.cell = cell
             var targets: [MTLTexture] = []
-            for _ in 0..<2 {
+            for _ in 0 ..< 2 {
                 guard let t = try kit.target(cell.width, cell.height, cell.layout) else { return nil }
                 targets.append(t)
             }
@@ -180,7 +195,7 @@ enum X1PassBarrierProbe {
             var levels: [MTLTexture] = []
             if cell.shape == .pyramid {
                 var (w, h) = (cell.width, cell.height)
-                for _ in 0..<3 {
+                for _ in 0 ..< 3 {
                     (w, h) = (max(1, w / 2), max(1, h / 2))
                     levels.append(try kit.gpu.texture(kit.format, w, h, usage: [.renderTarget, .shaderRead]))
                 }
@@ -215,7 +230,8 @@ enum X1PassBarrierProbe {
                     let t = BarrierKit.tile
                     kit.seed(
                         commands, views[k % 2], seed: seed ^ 0x5555, spin: 0,
-                        window: (cell.width - t, cell.height - t, cell.width, cell.height))
+                        window: (cell.width - t, cell.height - t, cell.width, cell.height)
+                    )
                 }
                 for level in levels {
                     kit.level(commands, source, into: level)

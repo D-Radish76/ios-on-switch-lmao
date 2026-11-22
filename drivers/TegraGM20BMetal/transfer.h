@@ -77,6 +77,7 @@ private:
             slot->claimed.store(false, std::memory_order_release);
         }
     };
+
     using Claim = std::unique_ptr<Slot, Unclaim>;
 
     bool retire(Kernel &kernel, std::unique_lock<gm20b::Mutex> &serial, Slot &slot);

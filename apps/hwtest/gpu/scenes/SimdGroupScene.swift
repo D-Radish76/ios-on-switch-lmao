@@ -12,9 +12,9 @@ struct SimdGroupScene: GPUScene {
     static let threads = 4096
     static let wordsPerThread = 24
     static let rows: [(name: String, answer: String, ops: ClosedRange<Int>)] = [
-        ("permute", "supportsSIMDGroup", 1...7),
-        ("reduction", "supportsSIMDReduction", 8...18),
-        ("fill", "supportsSIMDShuffleAndFill", 19...22),
+        ("permute", "supportsSIMDGroup", 1 ... 7),
+        ("reduction", "supportsSIMDReduction", 8 ... 18),
+        ("fill", "supportsSIMDShuffleAndFill", 19 ... 22),
     ]
 
     static func input(_ i: Int) -> UInt32 {
@@ -59,12 +59,12 @@ struct SimdGroupScene: GPUScene {
 
     /// The float sums compare as values: Apple's GPUs start an exclusive prefix sum at -0, which adds as +0 does
     static func same(_ op: Int, _ got: UInt32, _ want: UInt32) -> Bool {
-        (17...18).contains(op) ? Float(bitPattern: got) == Float(bitPattern: want) : got == want
+        (17 ... 18).contains(op) ? Float(bitPattern: got) == Float(bitPattern: want) : got == want
     }
 
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
-        let values = (0..<Self.threads).map(Self.input)
+        let values = (0 ..< Self.threads).map(Self.input)
         let out = try gpu.buffer(Self.threads * Self.wordsPerThread * 4)
         let pipeline = try gpu.compute("simd_group")
         let width = pipeline.threadExecutionWidth
@@ -75,17 +75,19 @@ struct SimdGroupScene: GPUScene {
             encoder.setBuffer(out, offset: 0, index: 1)
             encoder.dispatchThreads(
                 MTLSize(width: Self.threads, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 2 * width, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 2 * width, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         let words = UnsafeBufferPointer(
             start: out.contents().bindMemory(to: UInt32.self, capacity: Self.threads * Self.wordsPerThread),
-            count: Self.threads * Self.wordsPerThread)
+            count: Self.threads * Self.wordsPerThread
+        )
         var layoutWrong = 0
         var wrong = [Int](repeating: 0, count: Self.rows.count)
         var first: [String] = []
-        for id in 0..<Self.threads {
-            let lane = id % width, group = Array(values[(id - lane)..<(id - lane + width)])
+        for id in 0 ..< Self.threads {
+            let lane = id % width, group = Array(values[(id - lane) ..< (id - lane + width)])
             let word = { (op: Int) in words[id * Self.wordsPerThread + op] }
             if word(0) != UInt32(lane) | UInt32(width) << 16 || word(23) != UInt32(id) { layoutWrong += 1 }
             for (row, entry) in Self.rows.enumerated() {

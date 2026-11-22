@@ -85,7 +85,7 @@ public final class IteratedBlendPasses {
     public func run(_ between: Between) async throws -> Drawn {
         let targets = try formats.map { try gpu.texture($0, Self.width, Self.height) }
         let aside = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
-        let words = try gpu.buffer((0..<Self.words).map { UInt32($0) })
+        let words = try gpu.buffer((0 ..< Self.words).map { UInt32($0) })
         let counted = { self.counts ? GM20BFacade.counters(of: self.gpu.device)["fetch_rung3"] : nil }
         let before = counted()
         var paths: [String] = []
@@ -104,13 +104,15 @@ public final class IteratedBlendPasses {
                     self.pass(commands, targets, clear: true, quarter: 0)
                     self.work(between, commands, targets[0], aside, words)
                     self.pass(commands, targets, clear: between == .clears, quarter: 1)
-                }.path)
+                }.path
+            )
         }
         let draws = between == .single ? 1 : 2
         let rung3 = before.flatMap { b in counted().map { $0 - b } }
         let drawn: [Int] = between == .single ? [0] : between == .clears ? [1] : [0, 1]
         let (wrong, first) = Self.compare(
-            try await gpu.read(targets[0], bytesPerPixel: 4), Self.expected(drawnQuarters: drawn))
+            try await gpu.read(targets[0], bytesPerPixel: 4), Self.expected(drawnQuarters: drawn)
+        )
         var asideWrong: Int?
         switch between {
         case .clearPass, .state:
@@ -120,7 +122,8 @@ public final class IteratedBlendPasses {
             asideWrong = Self.compare(copied, Self.expected(drawnQuarters: [0])).wrong
         case .compute:
             let got = UnsafeBufferPointer(
-                start: words.contents().bindMemory(to: UInt32.self, capacity: Self.words), count: Self.words)
+                start: words.contents().bindMemory(to: UInt32.self, capacity: Self.words), count: Self.words
+            )
             asideWrong = got.enumerated().filter { $0.element != UInt32($0.offset) * 3 + 5 }.count
         default:
             break
@@ -143,7 +146,8 @@ public final class IteratedBlendPasses {
         let x = { (column: Int) in Float(column) / Float(Self.width) * 2 - 1 }
         var vertices = CAState.rectangle(
             x0: x(quarter * Self.quarter), y0: -1, x1: x((quarter + 1) * Self.quarter), y1: 1,
-            color: SIMD4<Float16>(1, 0, 1, 1))
+            color: SIMD4<Float16>(1, 0, 1, 1)
+        )
         encoder.setVertexBytes(&vertices, length: MemoryLayout<CAState.Vertex>.stride * vertices.count, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: vertices.count)
         encoder.endEncoding()
@@ -171,7 +175,8 @@ public final class IteratedBlendPasses {
             blit.copy(
                 from: colour, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                 sourceSize: MTLSize(width: Self.width, height: Self.height, depth: 1), to: aside, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
         case .compute:
             let encoder = commands.makeComputeCommandEncoder()!
@@ -181,7 +186,8 @@ public final class IteratedBlendPasses {
             encoder.setBytes(&value, length: 4, index: 1)
             encoder.dispatchThreads(
                 MTLSize(width: Self.words, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: min(fold.maxTotalThreadsPerThreadgroup, 64), height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: min(fold.maxTotalThreadsPerThreadgroup, 64), height: 1, depth: 1)
+            )
             encoder.endEncoding()
         default:
             break
@@ -210,16 +216,16 @@ public final class IteratedBlendPasses {
     /// Colour 0 cleared, then multiplied over in the quarters `drawnQuarters`
     static func expected(drawnQuarters: [Int]) -> [UInt8] {
         let drawn = bgra(multiply(image, over: clear)), cleared = bgra(clear)
-        return (0..<width * height).flatMap { at in drawnQuarters.contains(at % width / quarter) ? drawn : cleared }
+        return (0 ..< width * height).flatMap { at in drawnQuarters.contains(at % width / quarter) ? drawn : cleared }
     }
 
     static func compare(_ got: [UInt8], _ want: [UInt8]) -> (wrong: Int, first: String) {
         guard got.count == want.count else { return (width * height, "size \(got.count)") }
         var wrong = 0
         var first = "-"
-        for at in stride(from: 0, to: got.count, by: 4) where got[at..<at + 4] != want[at..<at + 4] {
+        for at in stride(from: 0, to: got.count, by: 4) where got[at ..< at + 4] != want[at ..< at + 4] {
             if wrong == 0 {
-                let pixel = at / 4, bytes = got[at..<at + 4].map { String($0) }
+                let pixel = at / 4, bytes = got[at ..< at + 4].map { String($0) }
                 first = "\(pixel % width),\(pixel / width):" + bytes.joined(separator: "/")
             }
             wrong += 1

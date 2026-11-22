@@ -53,6 +53,7 @@ TEST(FillTexel, MetalsMeasuredTexels)
         Format format;
         const char *a, *b, *c;
     };
+
     const double colours[3][4] = {{0.25, 0.5, 0.75, 1.0}, {2.0, -1.0, 0.5, 0.3}, {0, 0, 0, 0}};
     for (const Case &k : {Case{10, "40", "ff", "00"},
                           Case{12, "20", "7f", "00"},

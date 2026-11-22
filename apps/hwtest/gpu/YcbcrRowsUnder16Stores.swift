@@ -35,12 +35,12 @@ public enum YcbcrRowsUnder16Stores {
         let planes = [P(at: 0, 8, 8, bpe: 1, rows: luma), P(at: 4096, 4, 4, bpe: 2, rows: chroma)]
         let usage: MTLTextureUsage = [.shaderRead, .shaderWrite, .renderTarget]
         guard let surface = RowsUnder16.surface("420v", 8, 8, planes: planes, fill: fill),
-            let texture = SurfaceReads.texture(gpu, 500, 8, 8, over: surface, usage: usage)
+              let texture = SurfaceReads.texture(gpu, 500, 8, 8, over: surface, usage: usage)
         else { return nil }
         return (surface, texture)
     }
 
-    static func head(_ surface: IOSurfaceRef) -> [UInt8] { RowsUnder16.bytes(surface, at: Array(0..<16384)) }
+    static func head(_ surface: IOSurfaceRef) -> [UInt8] { RowsUnder16.bytes(surface, at: Array(0 ..< 16384)) }
 
     public static func observe(_ gpu: GPU) async throws -> Reading {
         var r = Reading()
@@ -92,8 +92,9 @@ public enum YcbcrRowsUnder16Stores {
     /// Luma read rows at y MiB and chroma read rows at 4096 + y MiB given distinct bytes; the bytes by offset
     public static func readRows(_ surface: IOSurfaceRef) -> [Int: UInt8] {
         var rows: [Int: UInt8] = [:]
-        for y in 0..<8 { for x in 0..<8 { rows[y * mebibyte + x] = UInt8(truncatingIfNeeded: 20 + 8 * y + x) } }
-        for y in 0..<4 { for b in 0..<8 { rows[4096 + y * mebibyte + b] = UInt8(truncatingIfNeeded: 100 + 8 * y + b) } }
+        for y in 0 ..< 8 { for x in 0 ..< 8 { rows[y * mebibyte + x] = UInt8(truncatingIfNeeded: 20 + 8 * y + x) } }
+        for y in 0 ..<
+            4 { for b in 0 ..< 8 { rows[4096 + y * mebibyte + b] = UInt8(truncatingIfNeeded: 100 + 8 * y + b) } }
         RowsUnder16.edit(surface) { base in for (at, byte) in rows { base[at] = byte } }
         return rows
     }
@@ -106,10 +107,10 @@ public enum YcbcrRowsUnder16Stores {
 
     static func blits(_ gpu: GPU) async throws -> [String: Int] {
         var off: [String: Int] = [:]
-        let pattern = (0..<64).map { UInt8(truncatingIfNeeded: 3 + 7 * $0) }
+        let pattern = (0 ..< 64).map { UInt8(truncatingIfNeeded: 3 + 7 * $0) }
         let region = MTLRegionMake2D(0, 0, 8, 8)
         guard let (into, intoTexture) = target(gpu), let (from, fromTexture) = target(gpu),
-            let (cpu, cpuTexture) = target(gpu), let (replaced, replacedTexture) = target(gpu)
+              let (cpu, cpuTexture) = target(gpu), let (replaced, replacedTexture) = target(gpu)
         else { throw TestFailure("no 500 for the blits") }
 
         let source = try gpu.buffer(pattern)
@@ -117,10 +118,11 @@ public enum YcbcrRowsUnder16Stores {
             $0.copy(
                 from: source, sourceOffset: 0, sourceBytesPerRow: 8, sourceBytesPerImage: 64,
                 sourceSize: MTLSize(width: 8, height: 8, depth: 1), to: intoTexture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
         }
         var landed = [UInt8](repeating: fill, count: 16384)
-        for y in 0..<8 { for x in 0..<8 { landed[16 * y + x] = pattern[8 * y + x] } }
+        for y in 0 ..< 8 { for x in 0 ..< 8 { landed[16 * y + x] = pattern[8 * y + x] } }
         off["from_buffer"] = up.hasPrefix("error") ? -1 : RowsUnder16.off(into, landed, fill: fill)
 
         let rows = readRows(from)
@@ -129,13 +131,14 @@ public enum YcbcrRowsUnder16Stores {
             $0.copy(
                 from: fromTexture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                 sourceSize: MTLSize(width: 8, height: 8, depth: 1), to: out, destinationOffset: 0,
-                destinationBytesPerRow: 8, destinationBytesPerImage: 64)
+                destinationBytesPerRow: 8, destinationBytesPerImage: 64
+            )
         }
         let got = [UInt8](UnsafeRawBufferPointer(start: out.contents(), count: 64))
-        let readOff = (0..<64).filter { got[$0] != rows[($0 / 8) * mebibyte + $0 % 8] }.count
+        let readOff = (0 ..< 64).filter { got[$0] != rows[($0 / 8) * mebibyte + $0 % 8] }.count
         off["to_buffer"] = down.hasPrefix("error") ? -1 : readOff
 
-        RowsUnder16.edit(cpu) { base in for i in 0..<64 { base[i] = pattern[i] } }
+        RowsUnder16.edit(cpu) { base in for i in 0 ..< 64 { base[i] = pattern[i] } }
         var read = [UInt8](repeating: 0, count: 64)
         read.withUnsafeMutableBytes {
             cpuTexture.getBytes($0.baseAddress!, bytesPerRow: 8, from: region, mipmapLevel: 0)
@@ -146,7 +149,7 @@ public enum YcbcrRowsUnder16Stores {
             replacedTexture.replace(region: region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 8)
         }
         var want = [UInt8](repeating: fill, count: 16384)
-        for i in 0..<64 { want[i] = pattern[i] }
+        for i in 0 ..< 64 { want[i] = pattern[i] }
         off["replace_region"] = RowsUnder16.off(replaced, want, fill: fill)
         return off
     }

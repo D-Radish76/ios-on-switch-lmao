@@ -24,7 +24,7 @@ struct DepthShapesTest: HWTest {
         if let skip = ShapeArms.skip(gpu) { return skip }
         let arms = ShapeArms(gpu)
 
-        let floats = (0..<64).flatMap { withUnsafeBytes(of: Float($0) / 64) { Array($0) } }
+        let floats = (0 ..< 64).flatMap { withUnsafeBytes(of: Float($0) / 64) { Array($0) } }
         let read = arms.make(.depth32Float, .type2D, 8, 8, usage: .shaderRead)
         arms.route("read", read, expect: "gm20b")
         if let read {
@@ -39,10 +39,12 @@ struct DepthShapesTest: HWTest {
         let a13 = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
         arms.route(
             "cube_array", arms.make(.depth32Float, .typeCubeArray, 8, 8, array: 2, usage: .shaderRead),
-            expect: a13 ? "gm20b" : "nil")
+            expect: a13 ? "gm20b" : "nil"
+        )
         arms.route(
             "ms_read", arms.make(.depth16Unorm, .type2DMultisample, 8, 8, samples: 4, usage: .shaderRead),
-            expect: "gm20b")
+            expect: "gm20b"
+        )
         return arms.outcome()
     }
 
@@ -61,7 +63,8 @@ struct DepthShapesTest: HWTest {
         arms.route("stencil_cube", cube, expect: "gm20b")
         if let cube {
             arms.off(
-                "stencil_cube", try arms.cpuRoundTrip(cube, width: 8, height: 8, bytesPerRow: 8, rows: 8, slice: 3), [])
+                "stencil_cube", try arms.cpuRoundTrip(cube, width: 8, height: 8, bytesPerRow: 8, rows: 8, slice: 3), []
+            )
         }
     }
 
@@ -88,7 +91,8 @@ struct DepthShapesTest: HWTest {
     private func levelArms(_ arms: ShapeArms) async throws {
         let levels = arms.make(.depth32Float, .type2D, 16, 16, levels: 3, usage: [.renderTarget, .shaderRead])
         let view = levels?.makeTextureView(
-            pixelFormat: .depth32Float, textureType: .type2D, levels: 1..<2, slices: 0..<1)
+            pixelFormat: .depth32Float, textureType: .type2D, levels: 1 ..< 2, slices: 0 ..< 1
+        )
         arms.route("level_view", view, expect: "gm20b")
         if let levels, let view {
             try await clear(arms.gpu, view, stencil: false)
@@ -96,15 +100,17 @@ struct DepthShapesTest: HWTest {
             arms.off("level_view", level, Array([[UInt8]](repeating: Self.quarter, count: 8 * 8).joined()))
         }
         let direct = arms.make(
-            .depth32Float, .type2DArray, 100, 60, levels: 4, array: 3, usage: [.renderTarget, .shaderRead])
+            .depth32Float, .type2DArray, 100, 60, levels: 4, array: 3, usage: [.renderTarget, .shaderRead]
+        )
         arms.route("level_direct", direct, expect: "gm20b")
         guard let direct else { return }
-        for level in 0..<4 {
-            for slice in 0..<3 {
+        for level in 0 ..< 4 {
+            for slice in 0 ..< 3 {
                 let word = withUnsafeBytes(of: Float(16 + 3 * level + slice) / 32) { Array($0) }
                 let bytes = Array([[UInt8]](repeating: word, count: (100 >> level) * (60 >> level)).joined())
                 try await arms.gpu.upload(
-                    bytes, to: direct, bytesPerRow: (100 >> level) * 4, level: level, slice: slice)
+                    bytes, to: direct, bytesPerRow: (100 >> level) * 4, level: level, slice: slice
+                )
             }
         }
         let timing = try await arms.gpu.run { commands in
@@ -120,8 +126,8 @@ struct DepthShapesTest: HWTest {
         arms.set("level_direct_completed", 1)
         arms.set("level_direct_raw", timing.path == "gm20b" ? 1 : 0)
         var neighbors: [UInt8] = [], expected: [UInt8] = []
-        for level in 0..<4 {
-            for slice in 0..<3 {
+        for level in 0 ..< 4 {
+            for slice in 0 ..< 3 {
                 let got = try await arms.gpu.read(direct, bytesPerPixel: 4, level: level, slice: slice)
                 let count = (100 >> level) * (60 >> level)
                 if level == 2 && slice == 1 {

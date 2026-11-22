@@ -14,7 +14,7 @@ public enum LogLine {
 
     public static func isValidKey(_ key: String) -> Bool {
         !key.isEmpty
-            && key.unicodeScalars.allSatisfy { ("a"..."z").contains($0) || ("0"..."9").contains($0) || $0 == "_" }
+            && key.unicodeScalars.allSatisfy { ("a" ... "z").contains($0) || ("0" ... "9").contains($0) || $0 == "_" }
     }
 
     public static func isValidID(_ id: String) -> Bool {

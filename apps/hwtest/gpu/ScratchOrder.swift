@@ -27,7 +27,7 @@ public enum ScratchOrder {
         let scratchA = try gpu.texture(format, a.width, a.height, usage: [.renderTarget], storage: .memoryless)
         let scratchB = try gpu.texture(format, b.width, b.height, usage: [.renderTarget], storage: .memoryless)
         var out = Read()
-        for round in 0..<rounds {
+        for round in 0 ..< rounds {
             let targetA = try gpu.texture(.bgra8Unorm, a.width, a.height)
             let targetB = try gpu.texture(.bgra8Unorm, b.width, b.height)
             out.paths.append(
@@ -44,7 +44,8 @@ public enum ScratchOrder {
                     second.setRenderPipelineState(fetch)
                     second.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                     second.endEncoding()
-                }.path)
+                }.path
+            )
             out.a.append(try await gpu.read(targetA, bytesPerPixel: 4))
             out.b.append(try await gpu.read(targetB, bytesPerPixel: 4))
         }
@@ -66,8 +67,8 @@ public enum ScratchOrder {
     /// Pass A's colour 0 as the CPU computes the shader's pattern for `seed` (BGRA8 bytes)
     public static func pattern(seed: UInt32) -> [UInt8] {
         var out = [UInt8](repeating: 0, count: a.width * a.height * 4)
-        for y in 0..<a.height {
-            for x in 0..<a.width {
+        for y in 0 ..< a.height {
+            for x in 0 ..< a.width {
                 let h = (UInt32(x) &* 73_856_093) ^ (UInt32(y) &* 19_349_663) ^ (seed &* 83_492_791)
                 let at = (y * a.width + x) * 4
                 out[at] = UInt8((h >> 16) & 255)

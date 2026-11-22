@@ -27,67 +27,78 @@ enum ReflectionWrongKind {
             "bufferAlignment",
             Failure(
                 own: 0, then: 0,
-                message: "Querying buffer alignment on an argument that is not a buffer")
+                message: "Querying buffer alignment on an argument that is not a buffer"
+            )
         ),
         (
             "bufferDataSize",
             Failure(
                 own: 0, then: 0,
-                message: "Querying buffer data size on an argument that is not a buffer")
+                message: "Querying buffer data size on an argument that is not a buffer"
+            )
         ),
         (
             "bufferDataType",
             Failure(
                 own: 0, then: 0,
-                message: "Querying buffer data type on an argument that is not a buffer")
+                message: "Querying buffer data type on an argument that is not a buffer"
+            )
         ),
         (
             "bufferStructType",
             Failure(
                 own: 0, then: 0,
-                message: "Querying buffer struct type on an argument that is not a buffer")
+                message: "Querying buffer struct type on an argument that is not a buffer"
+            )
         ),
         (
             "threadgroupMemoryAlignment",
             Failure(
                 own: 1, then: 0,
-                message: "Querying threadgroup memory alignment on an argument that is not a threadgroup memory")
+                message: "Querying threadgroup memory alignment on an argument that is not a threadgroup memory"
+            )
         ),
         (
             "threadgroupMemoryDataSize",
             Failure(
                 own: 1, then: 0,
-                message: "Querying threadgroup memory data size on an argument that is not a threadgroup memory")
+                message: "Querying threadgroup memory data size on an argument that is not a threadgroup memory"
+            )
         ),
         (
             "textureType",
             Failure(
                 own: 2, then: 2,
-                message: "Querying texture type on an argument that is not a texture")
+                message: "Querying texture type on an argument that is not a texture"
+            )
         ),
         (
             "textureDataType",
             Failure(
                 own: 2, then: 0,
-                message: "Querying texture data type on an argument that is not a texture")
+                message: "Querying texture data type on an argument that is not a texture"
+            )
         ),
         (
             "isDepthTexture",
             Failure(
                 own: 2, then: 0,
-                message: "Querying isDepthTexture on an argument that is not a texture")
+                message: "Querying isDepthTexture on an argument that is not a texture"
+            )
         ),
         (
             "objectPayloadAlignment",
             Failure(
                 own: 34, then: 0,
-                message: "Querying object payload alignment on an argument that is not an object payload")
+                message: "Querying object payload alignment on an argument that is not an object payload"
+            )
         ),
         (
             "objectPayloadDataSize",
             Failure(
                 own: 34, then: 0,
-                message: "Querying object payload size on an argument that is not an object payload")
+                message: "Querying object payload size on an argument that is not an object payload"
+            )
         ),
     ]
 
@@ -98,12 +109,13 @@ enum ReflectionWrongKind {
         static func load() -> Functions? {
             let all = UnsafeMutableRawPointer(bitPattern: -2)
             guard let set = dlsym(all, "MTLSetReportFailureBlock"), let get = dlsym(all, "MTLGetReportFailureBlock"),
-                let mode = dlsym(all, "MTLFailureTypeGetErrorModeType"),
-                let enabled = dlsym(all, "MTLFailureTypeGetEnabled")
+                  let mode = dlsym(all, "MTLFailureTypeGetErrorModeType"),
+                  let enabled = dlsym(all, "MTLFailureTypeGetEnabled")
             else { return nil }
             return Functions(
                 set: unsafeBitCast(set, to: SetBlock.self), get: unsafeBitCast(get, to: GetBlock.self),
-                mode: unsafeBitCast(mode, to: ErrorMode.self), enabled: unsafeBitCast(enabled, to: Enabled.self))
+                mode: unsafeBitCast(mode, to: ErrorMode.self), enabled: unsafeBitCast(enabled, to: Enabled.self)
+            )
         }
     }
 
@@ -118,7 +130,8 @@ enum ReflectionWrongKind {
         let saved = metal.get()
         metal.set { type, function, _, message in
             let report = Reported(
-                type: type, function: function.map { String(cString: $0) } ?? "", message: (message as String?) ?? "")
+                type: type, function: function.map { String(cString: $0) } ?? "", message: (message as String?) ?? ""
+            )
             lock.lock()
             reports.append(report)
             lock.unlock()

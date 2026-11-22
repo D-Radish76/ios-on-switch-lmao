@@ -29,7 +29,7 @@ public enum InterlockBound {
         var reasons: [String] = []
         let derived = ["gm20b_ilk_x_", "gm20b_ilk_ms_"]
         for key in metrics.keys.sorted()
-        where key.hasPrefix("gm20b_ilk_") && !derived.contains(where: { key.hasPrefix($0) }) {
+            where key.hasPrefix("gm20b_ilk_") && !derived.contains(where: { key.hasPrefix($0) }) {
             let label = String(key.dropFirst("gm20b_ilk_".count))
             guard let interlocked = value(metrics[key]), interlocked > 0, let raw = value(metrics["gm20b_us_" + label])
             else {
@@ -40,7 +40,7 @@ public enum InterlockBound {
                 continue
             }
             guard let bands = value(metrics["gm20b_apart_us_" + label]),
-                let pass = value(metrics["gm20b_pass_us_" + label]), bands > pass
+                  let pass = value(metrics["gm20b_pass_us_" + label]), bands > pass
             else {
                 reasons.append("\(label): interlocked, with no uncontended time to hold it to")
                 continue

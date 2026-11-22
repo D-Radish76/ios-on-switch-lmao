@@ -38,8 +38,8 @@ struct Channel {
     std::vector<uint32_t> arguments;
     size_t consumed = 0;
     std::vector<Draw> draws;
-    std::vector<uint32_t> begins;  // every BEGIN's word
-    uint32_t topology = 0;         // SET_PRIMITIVE_TOPOLOGY's, which a fetching execute's macro reads
+    std::vector<uint32_t> begins;        // every BEGIN's word
+    uint32_t topology = 0;               // SET_PRIMITIVE_TOPOLOGY's, which a fetching execute's macro reads
     std::map<uint32_t, uint32_t> calls;  // macro slot: calls, for a failure's message
     size_t words = 0;
 

@@ -37,7 +37,7 @@ public final class AheadFrames {
     public init(_ gpu: GPU) throws {
         self.gpu = gpu
         state = try gpu.render(fragment: "solid_fragment", format: .rgba8Unorm)
-        into = try (0..<Self.targets).map { _ in try gpu.texture(.rgba8Unorm, Self.size, Self.size) }
+        into = try (0 ..< Self.targets).map { _ in try gpu.texture(.rgba8Unorm, Self.size, Self.size) }
     }
 
     static func clearBytes(_ frame: Int) -> [UInt8] { [16, 32, UInt8(48 + 8 * frame), 255] }
@@ -51,13 +51,13 @@ public final class AheadFrames {
     /// Target `t`'s bytes after frame `frame`: its clear, then every pass into it in order
     static func model(_ frame: Int, target t: Int) -> [UInt8] {
         var bytes = [UInt8]()
-        for _ in 0..<(size * size) { bytes += clearBytes(frame) }
+        for _ in 0 ..< (size * size) { bytes += clearBytes(frame) }
         for pass in stride(from: t, to: passes, by: targets) {
-            for cell in 0..<cells {
+            for cell in 0 ..< cells {
                 let texel = cellBytes(frame, pass, cell)
-                for y in (pass / targets) * cellHeight..<(pass / targets + 1) * cellHeight {
-                    for x in cell * cellWidth..<(cell + 1) * cellWidth {
-                        bytes.replaceSubrange((y * size + x) * 4..<(y * size + x) * 4 + 4, with: texel)
+                for y in (pass / targets) * cellHeight ..< (pass / targets + 1) * cellHeight {
+                    for x in cell * cellWidth ..< (cell + 1) * cellWidth {
+                        bytes.replaceSubrange((y * size + x) * 4 ..< (y * size + x) * 4 + 4, with: texel)
                     }
                 }
             }
@@ -66,24 +66,27 @@ public final class AheadFrames {
     }
 
     func record(_ commands: MTLCommandBuffer, _ frame: Int, _ failure: Failure, handoffsAt: inout Int?) {
-        for pass in 0..<Self.passes {
+        for pass in 0 ..< Self.passes {
             let descriptor = MTLRenderPassDescriptor()
             descriptor.colorAttachments[0].texture = into[pass % Self.targets]
             descriptor.colorAttachments[0].loadAction = pass < Self.targets ? .clear : .load
             let clear = Self.colour(Self.clearBytes(frame))
             descriptor.colorAttachments[0].clearColor = MTLClearColor(
-                red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: Double(clear.w))
+                red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: Double(clear.w)
+            )
             descriptor.colorAttachments[0].storeAction = .store
             guard let encoder = commands.makeRenderCommandEncoder(descriptor: descriptor) else { return }
             encoder.setRenderPipelineState(state)
             let row = pass / Self.targets * Self.cellHeight
-            for cell in 0..<Self.cells {
+            for cell in 0 ..< Self.cells {
                 let x = cell * Self.cellWidth
                 GPU.draw(
                     encoder,
                     corners: GPU.pixelQuad(
-                        x, row, x + Self.cellWidth, row + Self.cellHeight, width: Self.size, height: Self.size),
-                    color: Self.colour(Self.cellBytes(frame, pass, cell)))
+                        x, row, x + Self.cellWidth, row + Self.cellHeight, width: Self.size, height: Self.size
+                    ),
+                    color: Self.colour(Self.cellBytes(frame, pass, cell))
+                )
             }
             encoder.endEncoding()
             if case .endedTwice(let at) = failure, at == pass {
@@ -93,7 +96,8 @@ public final class AheadFrames {
             if case .drawInBlit = failure, pass == Self.passes - 1, let blit = commands.makeBlitCommandEncoder() {
                 GPU.draw(
                     encoder, corners: GPU.pixelQuad(0, 0, Self.size, Self.size, width: Self.size, height: Self.size),
-                    color: SIMD4(1, 1, 1, 1))
+                    color: SIMD4(1, 1, 1, 1)
+                )
                 blit.endEncoding()
             }
             usleep(Self.paceMicroseconds)
@@ -118,10 +122,10 @@ public final class AheadFrames {
         if let buffer { reading.pipelined = GM20BFacade.pipelined(buffer).mapValues(\.intValue) }
         if let at = handoffsAt, let commit = handoffsBeforeCommit { reading.handoffsAfterFailure = commit - at }
         if reading.status == "completed" {
-            for t in 0..<Self.targets {
+            for t in 0 ..< Self.targets {
                 let got = try await gpu.read(into[t], bytesPerPixel: 4), want = Self.model(frame, target: t)
                 reading.pixelsOff += stride(from: 0, to: got.count, by: 4).filter { at in
-                    (0..<4).contains { abs(Int(got[at + $0]) - Int(want[at + $0])) > 1 }
+                    (0 ..< 4).contains { abs(Int(got[at + $0]) - Int(want[at + $0])) > 1 }
                 }.count
             }
         }

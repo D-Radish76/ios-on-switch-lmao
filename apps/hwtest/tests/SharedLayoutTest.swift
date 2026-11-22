@@ -38,7 +38,7 @@ struct SharedLayoutTest: HWTest {
     }
 
     static func pattern(_ c: Case, seed: UInt32, width: Int, height: Int) -> [UInt8] {
-        (0..<width * height * c.bpp).map { i in
+        (0 ..< width * height * c.bpp).map { i in
             var h = UInt32(truncatingIfNeeded: i) &* 2_654_435_761 ^ seed &* 40503
             h ^= h >> 15
             return UInt8(truncatingIfNeeded: h)
@@ -56,15 +56,17 @@ struct SharedLayoutTest: HWTest {
         let row = c.width * c.bpp
         var started = CFAbsoluteTimeGetCurrent()
         texture.replace(
-            region: MTLRegionMake2D(0, 0, c.width, c.height), mipmapLevel: 0, withBytes: model, bytesPerRow: row)
+            region: MTLRegionMake2D(0, 0, c.width, c.height), mipmapLevel: 0, withBytes: model, bytesPerRow: row
+        )
         metrics.set("\(c.name)_replace_ms", (CFAbsoluteTimeGetCurrent() - started) * 1000, digits: 3)
         let (x, y, w, h) = (c.width / 5 + 3, c.height / 7 + 1, c.width / 2 + 1, c.height / 3 + 2)
         let patch = Self.pattern(c, seed: 2, width: w, height: h)
         texture.replace(region: MTLRegionMake2D(x, y, w, h), mipmapLevel: 0, withBytes: patch, bytesPerRow: w * c.bpp)
-        for line in 0..<h {
+        for line in 0 ..< h {
             model.replaceSubrange(
-                (y + line) * row + x * c.bpp..<(y + line) * row + (x + w) * c.bpp,
-                with: patch[line * w * c.bpp..<(line + 1) * w * c.bpp])
+                (y + line) * row + x * c.bpp ..< (y + line) * row + (x + w) * c.bpp,
+                with: patch[line * w * c.bpp ..< (line + 1) * w * c.bpp]
+            )
         }
         var back = [UInt8](repeating: 0, count: model.count)
         started = CFAbsoluteTimeGetCurrent()
@@ -96,7 +98,7 @@ struct SharedLayoutTest: HWTest {
         metrics.set("\(c.name)_path", path)
         if sampledWrong > 0 { wrong.append("\(c.name)_sampled") }
         if path != "gm20b" { wrong.append("\(c.name)_path") }
-        let sixteen = try await gpu.run { commands in for _ in 0..<16 { sample(commands) } }
+        let sixteen = try await gpu.run { commands in for _ in 0 ..< 16 { sample(commands) } }
         metrics.set("\(c.name)_sample16_gpu_ms", sixteen.gpuMilliseconds, digits: 3)
     }
 }

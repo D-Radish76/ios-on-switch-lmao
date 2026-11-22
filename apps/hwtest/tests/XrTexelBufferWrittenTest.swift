@@ -31,7 +31,8 @@ struct XrTexelBufferWrittenTest: HWTest {
                     let label = "\(arm.format) \(fragment ? "fragment" : "kernel")"
                     do {
                         let got = try await XrTexelBufferWritten.observe(
-                            gpu, format: arm.format, fragment: fragment, word: arm.word)
+                            gpu, format: arm.format, fragment: fragment, word: arm.word
+                        )
                         made = made && got.made
                         guard got.made else {
                             checks.append(("\(label): no texture", false))
@@ -52,7 +53,8 @@ struct XrTexelBufferWrittenTest: HWTest {
                                     + "0x\(String(got.first, radix: 16))), \(got.bytesOutside) bytes past them "
                                     + "changed, \(off) texels read off",
                                 got.wordsOff == 0 && got.bytesOutside == 0 && off == 0
-                            ))
+                            )
+                        )
                     } catch {
                         made = false
                         checks.append(("\(label): \(GPU.describe(error))", false))
@@ -71,6 +73,6 @@ struct XrTexelBufferWrittenTest: HWTest {
 
     static func readOff(_ texels: [SIMD4<Float>], _ want: SIMD4<Float>) -> Int {
         let halfCode: Float = 0.5 / 510
-        return texels.filter { t in (0..<3).contains { abs(t[$0] - want[$0]) >= halfCode } || t.w != want.w }.count
+        return texels.filter { t in (0 ..< 3).contains { abs(t[$0] - want[$0]) >= halfCode } || t.w != want.w }.count
     }
 }

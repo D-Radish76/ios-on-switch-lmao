@@ -13,14 +13,14 @@ public enum FetchStrip {
     public struct Cell: Sendable {
         public let name, path, routes: String
         public let wrong: Int
-        public var error = ""  // what its command buffer or readback threw, "" for nothing
+        public var error = "" // what its command buffer or readback threw, "" for nothing
     }
 
     static let side = 32
     static let indices: [UInt16] = [0, 1, 2, 3, 0, 1, 2, 0xffff, 1, 2, 3]
-    static let want: [UInt8] = [96, 64, 128, 255]  // BGRA8 of the clear (0.25, 0.25, 0.25, 1) plus (0.25, 0, 0.125)
+    static let want: [UInt8] = [96, 64, 128, 255] // BGRA8 of the clear (0.25, 0.25, 0.25, 1) plus (0.25, 0, 0.125)
     static let clear: [UInt8] = [64, 64, 64, 255]
-    static let derivatives: [UInt8] = [96, 128, 128, 255]  // BGRA8 of (dfdx * 2, |dfdy|, fwidth / 2, 1)
+    static let derivatives: [UInt8] = [96, 128, 128, 255] // BGRA8 of (dfdx * 2, |dfdy|, fwidth / 2, 1)
     static let scissor = MTLScissorRect(x: 8, y: 8, width: 16, height: 16)
 
     public static func cells(_ gpu: GPU) async throws -> [Cell] {
@@ -32,12 +32,16 @@ public enum FetchStrip {
                 let name = "\(arm)_\(storage == .private ? "private" : "shared")"
                 out.append(
                     await guarded(
-                        gpu, name, state, indexBuffer, offset: offset, count: count, storage: storage, culled: false))
+                        gpu, name, state, indexBuffer, offset: offset, count: count, storage: storage, culled: false
+                    )
+                )
             }
         }
         out.append(
             await guarded(
-                gpu, "replay_scissor", state, indexBuffer, offset: 0, count: 4, storage: .private, culled: true))
+                gpu, "replay_scissor", state, indexBuffer, offset: 0, count: 4, storage: .private, culled: true
+            )
+        )
         for storage in [MTLStorageMode.private, .shared] {
             let name = "derivative_\(storage == .private ? "private" : "shared")"
             do {
@@ -45,7 +49,9 @@ public enum FetchStrip {
                 out.append(
                     await guarded(
                         gpu, name, derivative, indexBuffer, offset: 0, count: 4, storage: storage, culled: false,
-                        want: derivatives))
+                        want: derivatives
+                    )
+                )
             } catch {
                 var failed = Cell(name: name, path: "-", routes: "-", wrong: side * side)
                 failed.error = "\(error)"
@@ -63,7 +69,8 @@ public enum FetchStrip {
         do {
             return try await cell(
                 gpu, name, state, indexBuffer, offset: offset, count: count, storage: storage, culled: culled,
-                want: want)
+                want: want
+            )
         } catch {
             var failed = Cell(name: name, path: "-", routes: "-", wrong: side * side)
             failed.error = "\(error)"
@@ -96,19 +103,20 @@ public enum FetchStrip {
             e.setFragmentBytes(&value, length: 16, index: 0)
             e.drawIndexedPrimitives(
                 type: .triangleStrip, indexCount: count, indexType: .uint16, indexBuffer: indexBuffer,
-                indexBufferOffset: offset * 2)
+                indexBufferOffset: offset * 2
+            )
             e.endEncoding()
         }.path
         let routes = GM20BFacade.fetchRoutes(before: before, after: GM20BFacade.counters(of: gpu.device))
         let bytes = try await gpu.read(target, bytesPerPixel: 4)
-        let wrong = (0..<(side * side)).filter { p in
+        let wrong = (0 ..< (side * side)).filter { p in
             let x = p % side, y = p / side
             let inside =
                 !culled
-                || (scissor.x..<scissor.x + scissor.width).contains(x)
-                    && (scissor.y..<scissor.y + scissor.height).contains(y)
+                    || (scissor.x ..< scissor.x + scissor.width).contains(x)
+                    && (scissor.y ..< scissor.y + scissor.height).contains(y)
             let expected = inside ? want : clear
-            return (0..<4).contains { abs(Int(bytes[p * 4 + $0]) - Int(expected[$0])) > 1 }
+            return (0 ..< 4).contains { abs(Int(bytes[p * 4 + $0]) - Int(expected[$0])) > 1 }
         }.count
         return Cell(name: name, path: path, routes: routes, wrong: wrong)
     }

@@ -49,7 +49,8 @@ extension X1CompressedCopyProbe {
             wrong["\(name)_rendered"] = try await sampleGrid(gpu, compressed) == want ? 0 : 1
             let got = try await sampleGrid(gpu, copy)
             wrong["\(name)_wrong"] =
-                stride(from: 0, to: min(got.count, want.count), by: 4).filter { got[$0..<$0 + 4] != want[$0..<$0 + 4] }
+                stride(from: 0, to: min(got.count, want.count), by: 4)
+                .filter { got[$0 ..< $0 + 4] != want[$0 ..< $0 + 4] }
                 .count + abs(got.count - want.count) / 4
             metrics.set("\(name)_copy_comptags", try GM20BProbe.facts(gpu.device, copy)["comptags"] ?? -1)
         }

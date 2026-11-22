@@ -73,7 +73,8 @@ final class AstcLayoutRun {
 
     static func descriptor(_ storage: MTLStorageMode) -> MTLTextureDescriptor {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .astc_4x4_ldr, width: grid.texelWidth, height: grid.texelHeight, mipmapped: false)
+            pixelFormat: .astc_4x4_ldr, width: grid.texelWidth, height: grid.texelHeight, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = storage
         return descriptor
@@ -94,7 +95,8 @@ final class AstcLayoutRun {
                 Self.grid.bytes.withUnsafeBytes {
                     texture.replace(
                         region: Self.region, mipmapLevel: 0, withBytes: $0.baseAddress!,
-                        bytesPerRow: Self.grid.rowBytes)
+                        bytesPerRow: Self.grid.rowBytes
+                    )
                 }
             }
             let reading = try await sample(texture, noCopy: false)
@@ -147,7 +149,8 @@ final class AstcLayoutRun {
             guard
                 let buffer = gpu.device.makeBuffer(
                     bytesNoCopy: memory.base, length: memory.bytes, options: .storageModeShared,
-                    deallocator: { pointer, _ in free(pointer) })
+                    deallocator: { pointer, _ in free(pointer) }
+                )
             else {
                 memory.release()
                 throw TestFailure("no-copy buffer creation failed")
@@ -167,7 +170,8 @@ final class AstcLayoutRun {
         }
         guard
             let texture = TextureLayoutSPI.noCopyTexture(
-                gpu.device, at, length: length, Self.descriptor(.shared), deallocator: deallocator)
+                gpu.device, at, length: length, Self.descriptor(.shared), deallocator: deallocator
+            )
         else {
             if deallocator != nil { memory.release() }
             return nil
@@ -177,7 +181,8 @@ final class AstcLayoutRun {
         case "replace":
             Self.grid.bytes.withUnsafeBytes {
                 texture.replace(
-                    region: Self.region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: Self.grid.rowBytes)
+                    region: Self.region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: Self.grid.rowBytes
+                )
             }
         case "rewrite":
             layout.copy(Self.grid.bytes, rowBytes: Self.grid.rowBytes, region: Self.region, to: at)
@@ -197,7 +202,8 @@ final class AstcLayoutRun {
             blit.copy(
                 from: staging, sourceOffset: 0, sourceBytesPerRow: Self.grid.rowBytes, sourceBytesPerImage: 0,
                 sourceSize: MTLSize(width: Self.grid.texelWidth, height: Self.grid.texelHeight, depth: 1), to: texture,
-                destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
         }
         if timing.path != "gm20b" { throw TestFailure("the blit into it ran on \(timing.path)") }

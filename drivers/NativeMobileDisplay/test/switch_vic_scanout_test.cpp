@@ -624,10 +624,9 @@ TEST_F(VicScanout, TheKickTriesVicAfterTheGpuCopyAndBeforeTheCpu)
                 testing::HasSubstr("    void copyWork()\n    {\n        if (vicCopyWork())\n            return;"));
     EXPECT_THAT(source,
                 testing::HasSubstr("    void finishGpuSwap(int status)\n    {\n        if (finishVicCopy(status))"));
-    EXPECT_THAT(source,
-                testing::HasSubstr("    void gpuDeadlineCheck()\n    {\n        if (!gpuScanout || "
-                                   "__atomic_load_n(&gpuDonePending, __ATOMIC_ACQUIRE))\n            return;\n"
-                                   "        vicCopyLate();"));
+    EXPECT_THAT(source, testing::HasSubstr("    void gpuDeadlineCheck()\n    {\n        if (!gpuScanout || "
+                                           "__atomic_load_n(&gpuDonePending, __ATOMIC_ACQUIRE))\n            return;\n"
+                                           "        vicCopyLate();"));
     EXPECT_THAT(source, testing::HasSubstr("        startGpuCopy();\n        startVicCopy();"));
     EXPECT_THAT(source, testing::HasSubstr("                self->stopVicCopy();"));
 }

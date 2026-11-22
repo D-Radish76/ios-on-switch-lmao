@@ -42,18 +42,19 @@ struct DispatchPiecesTest: HWTest {
             encoder.setBytes(&steps, length: 4, index: 1)
             encoder.dispatchThreadgroups(
                 MTLSize(width: Self.threads / Self.groupSize, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: Self.groupSize, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: Self.groupSize, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         let teachBuffer = try gpu.buffer(4)
         let teach = { (commands: MTLCommandBuffer) in
             let blit = commands.makeBlitCommandEncoder()!
-            blit.fill(buffer: teachBuffer, range: 0..<4, value: 0)
+            blit.fill(buffer: teachBuffer, range: 0 ..< 4, value: 0)
             blit.endEncoding()
         }
         var wholeMs = 0.0
         var pieces = 0
-        for round in 0..<Self.rounds {
+        for round in 0 ..< Self.rounds {
             let before = GM20BFacade.counters(of: gpu.device)
             let timing = try await gpu.run(encode)
             try await gpu.run(teach)

@@ -12,13 +12,13 @@ struct TileRefusedTest: NativeObjectTest {
     let name = "Tile shading is refused as a device without Apple4 refuses it, on the driver"
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct Tile { half4 colour [[color(0)]]; };
-        kernel void tile_clear(imageblock<Tile, imageblock_layout_implicit> block, ushort2 at [[thread_position_in_threadgroup]]) {
-            block.write(Tile{half4(1)}, at);
-        }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct Tile { half4 colour [[color(0)]]; };
+    kernel void tile_clear(imageblock<Tile, imageblock_layout_implicit> block, ushort2 at [[thread_position_in_threadgroup]]) {
+        block.write(Tile{half4(1)}, at);
+    }
+    """
 
     func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
         let device = gpu.device
@@ -27,7 +27,7 @@ struct TileRefusedTest: NativeObjectTest {
         metrics.set("apple4", apple4 ? "yes" : "no")
         if apple4 { work.failures.append("the device claims Apple4, whose tile shaders it has no form of") }
         if let library = try? await device.makeLibrary(source: Self.source, options: nil),
-            let function = library.makeFunction(name: "tile_clear")
+           let function = library.makeFunction(name: "tile_clear")
         {
             let d = MTLTileRenderPipelineDescriptor()
             d.tileFunction = function

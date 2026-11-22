@@ -21,12 +21,13 @@ struct CAAskedFormsTest: HWTest {
     /// MobileGestalt cannot be asked
     static func cif10() -> Bool? {
         guard let gestalt = dlopen("/usr/lib/libMobileGestalt.dylib", RTLD_NOW),
-            let symbol = dlsym(gestalt, "MGGetBoolAnswer")
+              let symbol = dlsym(gestalt, "MGGetBoolAnswer")
         else { return nil }
         guard unsafeBitCast(symbol, to: BoolAnswer.self)("HasExtendedColorDisplay" as CFString) else { return false }
         var exists: DarwinBoolean = false
         let preference = CFPreferencesGetAppBooleanValue(
-            "CAEnableDeepFramebuffer" as CFString, kCFPreferencesCurrentApplication, &exists)
+            "CAEnableDeepFramebuffer" as CFString, kCFPreferencesCurrentApplication, &exists
+        )
         return exists.boolValue ? preference : true
     }
 
@@ -35,7 +36,7 @@ struct CAAskedFormsTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let url = Bundle.main.url(forResource: "ca_asked", withExtension: "log"),
-            let text = try? String(contentsOf: url, encoding: .utf8)
+              let text = try? String(contentsOf: url, encoding: .utf8)
         else { return .fail("ca_asked.log is not in the app's bundle") }
         let header = text.prefix { $0 != "\n" }
         let lines = text.split(separator: "\n").compactMap { PipelineLine(String($0)) }

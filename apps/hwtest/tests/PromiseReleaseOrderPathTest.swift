@@ -29,22 +29,24 @@ struct PromiseReleaseOrderPathTest: GPUPathTest {
             throw TestFailure("no IOSurface or TegraGM20B connection")
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: Self.size, height: Self.size, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         guard let source = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0),
-            let copied = gpu.device.makeBuffer(length: rowBytes * Self.size, options: .storageModeShared)
+              let copied = gpu.device.makeBuffer(length: rowBytes * Self.size, options: .storageModeShared)
         else { throw TestFailure("no surface texture or buffer") }
         let before = try PromiseTotals.read()
         let paths = GPUConnection()
         guard case .counts(let pathsBefore) = GPUPaths.read(paths) else { throw TestFailure("no path counters") }
         var ended = 0, lost = 0, refused = 0, worst = 0.0
-        for _ in 0..<Self.rounds {
+        for _ in 0 ..< Self.rounds {
             let (handle, promise) = try PromiseCancelPathTest.promise(surface, maker)
             defer {
                 _ = maker.call(
                     PromiseCancelPathTest.boFree, GPUConnection.words(PromiseCancelPathTest.halves(handle)),
-                    outputSize: 0)
+                    outputSize: 0
+                )
             }
             guard let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder() else {
                 throw TestFailure("no command buffer")
@@ -52,7 +54,8 @@ struct PromiseReleaseOrderPathTest: GPUPathTest {
             blit.copy(
                 from: source, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                 sourceSize: MTLSize(width: Self.size, height: Self.size, depth: 1), to: copied, destinationOffset: 0,
-                destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * Self.size)
+                destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * Self.size
+            )
             blit.endEncoding()
             commands.commit()
             Thread.sleep(forTimeInterval: Self.parkMs / 1000)
@@ -82,7 +85,9 @@ struct PromiseReleaseOrderPathTest: GPUPathTest {
             failures.append(
                 String(
                     format: "%d releases were not seen at once (the worst copy ended %.0f ms after its cancel)", lost,
-                    worst))
+                    worst
+                )
+            )
         }
         if after.abandoned != before.abandoned {
             failures.append("\(after.abandoned - before.abandoned) promises were given up: a release was lost")

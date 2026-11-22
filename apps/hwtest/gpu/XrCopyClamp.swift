@@ -19,7 +19,8 @@ public enum XrCopyClamp {
         public let size: Int
         public let route: Route
 
-        public var key: String { "\(format)_\(route.rawValue)_\(optimized ? "opt" : "plain")\(size == 64 ? "" : "_\(size)")" }
+        public var key: String {
+            "\(format)_\(route.rawValue)_\(optimized ? "opt" : "plain")\(size == 64 ? "" : "_\(size)")" }
 
         public init(format: UInt, optimized: Bool, size: Int, route: Route) {
             (self.format, self.optimized, self.size, self.route) = (format, optimized, size, route)
@@ -37,7 +38,7 @@ public enum XrCopyClamp {
     }
 
     public static func fields(_ count: Int) -> [UInt16] {
-        (0..<count).flatMap { i -> [UInt16] in
+        (0 ..< count).flatMap { i -> [UInt16] in
             [
                 UInt16((500 + i % 7) << 6 | i % 64), UInt16((300 + i % 5) << 6 | 3 * i % 64),
                 UInt16((900 + i % 3) << 6 | 5 * i % 64), UInt16((i % 1024) << 6 | 7 * i % 64),
@@ -54,34 +55,52 @@ public enum XrCopyClamp {
         let n = arm.size * arm.size, row = arm.size * 8
         let input = fields(n)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: arm.format)!, width: arm.size, height: arm.size, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: arm.format)!, width: arm.size, height: arm.size, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         descriptor.allowGPUOptimizedContents = arm.optimized
-        guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { throw TestFailure("no \(arm.key) texture") }
+        guard let texture = gpu.device.makeTexture(descriptor: descriptor)
+        else { throw TestFailure("no \(arm.key) texture") }
         let source = try gpu.buffer(input), out = try gpu.buffer(n * 8)
-        let region = MTLRegionMake2D(0, 0, arm.size, arm.size), size = MTLSize(width: arm.size, height: arm.size, depth: 1)
-        if arm.route == .blitOut { input.withUnsafeBytes { texture.replace(region: region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: row) } }
+        let region = MTLRegionMake2D(0, 0, arm.size, arm.size), size = MTLSize(
+            width: arm.size,
+            height: arm.size,
+            depth: 1
+        )
+        if arm.route == .blitOut { input.withUnsafeBytes { texture.replace(
+            region: region,
+            mipmapLevel: 0,
+            withBytes: $0.baseAddress!,
+            bytesPerRow: row
+        ) } }
         let timing = try await gpu.run(tolerateError: true) { commands in
             let blit = commands.makeBlitCommandEncoder()!
             if arm.route == .bufferIn {
                 blit.copy(
                     from: source, sourceOffset: 0, sourceBytesPerRow: row, sourceBytesPerImage: n * 8, sourceSize: size,
-                    to: texture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+                    to: texture, destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin()
+                )
             } else {
                 blit.copy(
                     from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(), sourceSize: size, to: out,
-                    destinationOffset: 0, destinationBytesPerRow: row, destinationBytesPerImage: n * 8)
+                    destinationOffset: 0, destinationBytesPerRow: row, destinationBytesPerImage: n * 8
+                )
             }
             blit.endEncoding()
         }
         var reading = Reading(path: timing.facadePath)
         guard !timing.path.hasPrefix("error:") else { throw TestFailure("\(arm.key): failed \(timing.facadePath)") }
         var kept = [UInt16](repeating: 0, count: 4 * n)
-        kept.withUnsafeMutableBytes { texture.getBytes($0.baseAddress!, bytesPerRow: row, from: region, mipmapLevel: 0) }
+        kept
+            .withUnsafeMutableBytes { texture.getBytes($0.baseAddress!, bytesPerRow: row, from: region, mipmapLevel: 0)
+            }
         let got = arm.route == .bufferIn
-            ? kept : Array(UnsafeBufferPointer(start: out.contents().bindMemory(to: UInt16.self, capacity: 4 * n), count: 4 * n))
-        for i in 0..<(4 * n) {
+            ? kept : Array(UnsafeBufferPointer(
+                start: out.contents().bindMemory(to: UInt16.self, capacity: 4 * n),
+                count: 4 * n
+            ))
+        for i in 0 ..< (4 * n) {
             if got[i] != clamped(input[i], channel: i % 4) { reading.offClamped += 1 }
             if got[i] != input[i] { reading.offExact += 1 }
             if arm.route == .blitOut && kept[i] != input[i] { reading.sourceChanged += 1 }

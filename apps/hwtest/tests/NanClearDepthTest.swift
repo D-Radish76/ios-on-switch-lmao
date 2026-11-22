@@ -38,16 +38,17 @@ struct NanClearDepthTest: HWTest {
                 b.copy(
                     from: depth, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                     sourceSize: MTLSize(width: n, height: n, depth: 1), to: out, destinationOffset: 0,
-                    destinationBytesPerRow: n * texel, destinationBytesPerImage: n * n * texel)
+                    destinationBytesPerRow: n * texel, destinationBytesPerImage: n * n * texel
+                )
                 b.endEncoding()
             }
             var wrong = 0
             var first: UInt32 = 0
-            for i in 0..<(n * n) {
+            for i in 0 ..< (n * n) {
                 let v: UInt32 =
                     texel == 2
-                    ? UInt32(out.contents().load(fromByteOffset: 2 * i, as: UInt16.self))
-                    : out.contents().load(fromByteOffset: 4 * i, as: UInt32.self)
+                        ? UInt32(out.contents().load(fromByteOffset: 2 * i, as: UInt16.self))
+                        : out.contents().load(fromByteOffset: 4 * i, as: UInt32.self)
                 if i == 0 { first = v }
                 wrong += v == want ? 0 : 1
             }

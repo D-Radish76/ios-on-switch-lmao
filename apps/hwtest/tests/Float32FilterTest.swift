@@ -59,14 +59,15 @@ struct Float32FilterTest: HWTest {
         var paths: [String] = []
         for (name, format, channels) in Self.formats {
             let texture = try gpu.texture(format, 4, 4, usage: [.shaderRead], mipmaps: 3)
-            for level in 0..<3 {
+            for level in 0 ..< 3 {
                 let side = 4 >> level
                 var floats: [Float] = []
-                for y in 0..<side {
-                    for x in 0..<side { for c in 0..<channels { floats.append(Float(Self.value(level, x, y, c))) } }
+                for y in 0 ..< side {
+                    for x in 0 ..< side { for c in 0 ..< channels { floats.append(Float(Self.value(level, x, y, c))) } }
                 }
                 try await gpu.upload(
-                    floats.withUnsafeBytes { Array($0) }, to: texture, bytesPerRow: side * channels * 4, level: level)
+                    floats.withUnsafeBytes { Array($0) }, to: texture, bytesPerRow: side * channels * 4, level: level
+                )
             }
             let out = try gpu.buffer(Self.points.count * 16)
             paths.append(
@@ -78,13 +79,15 @@ struct Float32FilterTest: HWTest {
                     encoder.setBuffer(out, offset: 0, index: 1)
                     encoder.dispatchThreads(
                         MTLSize(width: Self.points.count, height: 1, depth: 1),
-                        threadsPerThreadgroup: MTLSize(width: Self.points.count, height: 1, depth: 1))
+                        threadsPerThreadgroup: MTLSize(width: Self.points.count, height: 1, depth: 1)
+                    )
                     encoder.endEncoding()
-                }.path)
+                }.path
+            )
             let got = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: Self.points.count)
             var worst = 0.0
             for (i, point) in Self.points.enumerated() {
-                for c in 0..<channels { worst = max(worst, abs(Double(got[i][c]) - Self.expected(point, c))) }
+                for c in 0 ..< channels { worst = max(worst, abs(Double(got[i][c]) - Self.expected(point, c))) }
             }
             metrics.set("\(name)_max_diff", worst, digits: 3)
             if worst > 1 { wrong.append(name) }

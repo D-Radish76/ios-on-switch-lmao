@@ -116,7 +116,8 @@ enum {
 	SWITCH_GPU_GIVEUP_HEAD = 0,   /* everything before it on its channel is complete */
 	SWITCH_GPU_GIVEUP_BEHIND = 1, /* a job ahead of it is not */
 	SWITCH_GPU_GIVEUP_GONE = 2,   /* its channel died */
-	SWITCH_GPU_GIVEUP_DOWN = 3,   /* the GPU is powered down: nothing is looked at until the power-up */
+	SWITCH_GPU_GIVEUP_DOWN =
+		3, /* the GPU is powered down: nothing is looked at until the power-up */
 };
 
 /* The kernel under the table's lock (tgm_live_lock) */

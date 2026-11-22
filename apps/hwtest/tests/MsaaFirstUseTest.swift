@@ -31,7 +31,8 @@ struct MsaaFirstUseTest: HWTest {
             let width = arm == "made" ? 1024 : 1088
             let before = GM20BFacade.compression(of: gpu.device)
             let target = try gpu.texture(
-                .bgra8Unorm, width, Self.height, usage: [.renderTarget], samples: 4, storage: .memoryless)
+                .bgra8Unorm, width, Self.height, usage: [.renderTarget], samples: 4, storage: .memoryless
+            )
             if arm == "made" {
                 switch await CompressionSettled.wait(gpu.device) {
                 case .settled(let ms): metrics.set("made_settled_ms", ms, digits: 3)

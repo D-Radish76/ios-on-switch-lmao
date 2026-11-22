@@ -11,24 +11,24 @@ enum PlanarRenderThenSampleCases {
     static let copySize = MTLSize(width: 37, height: 29, depth: 1)
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct PlanarRtsOut { float4 position [[position]]; };
-        vertex PlanarRtsOut planar_rts_vertex(uint i [[vertex_id]]) {
-            float2 xy = float2((i << 1) & 2, i & 2);
-            return {float4(xy * 2 - 1, 0, 1)};
-        }
-        fragment float4 planar_rts_solid(constant float4 &colour [[buffer(0)]]) { return colour; }
-        fragment float4 planar_rts_sample(PlanarRtsOut in [[stage_in]], texture2d<float> t [[texture(0)]]) {
-            constexpr sampler s(coord::pixel, filter::nearest, address::clamp_to_edge);
-            return t.sample(s, in.position.xy);
-        }
-        kernel void planar_rts_kernel(texture2d<float> t [[texture(0)]], texture2d<float, access::write> out [[texture(1)]],
-                                      uint2 g [[thread_position_in_grid]]) {
-            constexpr sampler s(coord::pixel, filter::nearest, address::clamp_to_edge);
-            out.write(t.sample(s, float2(g) + 0.5), g);
-        }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct PlanarRtsOut { float4 position [[position]]; };
+    vertex PlanarRtsOut planar_rts_vertex(uint i [[vertex_id]]) {
+        float2 xy = float2((i << 1) & 2, i & 2);
+        return {float4(xy * 2 - 1, 0, 1)};
+    }
+    fragment float4 planar_rts_solid(constant float4 &colour [[buffer(0)]]) { return colour; }
+    fragment float4 planar_rts_sample(PlanarRtsOut in [[stage_in]], texture2d<float> t [[texture(0)]]) {
+        constexpr sampler s(coord::pixel, filter::nearest, address::clamp_to_edge);
+        return t.sample(s, in.position.xy);
+    }
+    kernel void planar_rts_kernel(texture2d<float> t [[texture(0)]], texture2d<float, access::write> out [[texture(1)]],
+                                  uint2 g [[thread_position_in_grid]]) {
+        constexpr sampler s(coord::pixel, filter::nearest, address::clamp_to_edge);
+        out.write(t.sample(s, float2(g) + 0.5), g);
+    }
+    """
 
     typealias Spot = (x: Int, y: Int, rgba: SIMD4<Float>)
 
@@ -154,35 +154,37 @@ enum PlanarRenderThenSampleCases {
         return States(
             solid: try await render("planar_rts_solid", MTLPixelFormat(rawValue: f.format)!),
             sample: try await render("planar_rts_sample", .rgba32Float),
-            kernel: try await gpu.device.makeComputePipelineState(function: kernel))
+            kernel: try await gpu.device.makeComputePipelineState(function: kernel)
+        )
     }
 
     static func scribble(_ offset: Int) -> UInt8 { UInt8(truncatingIfNeeded: offset * 31 + 7) }
 
     static func subject(_ gpu: GPU, _ f: Format, usage: MTLTextureUsage, outputs: Int) throws -> Subject {
         guard let pixels = YcbcrCornerTest.pixelBuffer(side, side, f.fourcc),
-            let surface = CVPixelBufferGetIOSurface(pixels)?.takeUnretainedValue()
+              let surface = CVPixelBufferGetIOSurface(pixels)?.takeUnretainedValue()
         else { throw TestFailure("no \(f.key) surface") }
         IOSurfaceSetValue(surface, "IOSurfaceYCbCrMatrix" as CFString, kCVImageBufferYCbCrMatrix_ITU_R_709_2)
         IOSurfaceLock(surface, [], nil)
-        for plane in 0..<2 {
+        for plane in 0 ..< 2 {
             let count = IOSurfaceGetBytesPerRowOfPlane(surface, plane) * IOSurfaceGetHeightOfPlane(surface, plane)
             let base = IOSurfaceGetBaseAddressOfPlane(surface, plane).bindMemory(to: UInt8.self, capacity: count)
-            for i in 0..<count { base[i] = scribble(i) }
+            for i in 0 ..< count { base[i] = scribble(i) }
         }
         let pitch = IOSurfaceGetBytesPerRowOfPlane(surface, 0)
         IOSurfaceUnlock(surface, [], nil)
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: f.format)!, width: side, height: side, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: f.format)!, width: side, height: side, mipmapped: false
+        )
         d.usage = usage
         guard let texture = gpu.device.makeTexture(descriptor: d, iosurface: surface, plane: 0) else {
             throw TestFailure("no format \(f.format) texture over its surface")
         }
-        let targets = try (0..<outputs).map { _ in
+        let targets = try (0 ..< outputs).map { _ in
             try gpu.texture(.rgba32Float, side, side, usage: [.renderTarget, .shaderRead, .shaderWrite])
         }
-        let copied = (0..<copySize.height).flatMap { k in
-            (0..<side).map { i in ~scribble((copyOrigin.y + k) * pitch + copyOrigin.x + i) }
+        let copied = (0 ..< copySize.height).flatMap { k in
+            (0 ..< side).map { i in ~scribble((copyOrigin.y + k) * pitch + copyOrigin.x + i) }
         }
         return Subject(pixels: pixels, texture: texture, outputs: targets, bytes: try gpu.buffer(copied))
     }
@@ -221,14 +223,16 @@ enum PlanarRenderThenSampleCases {
             encoder.setTexture(s.outputs[k], index: 1)
             encoder.dispatchThreads(
                 MTLSize(width: side, height: side, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         case .copy:
             let blit = commands.makeBlitCommandEncoder()!
             blit.copy(
                 from: s.bytes, sourceOffset: 0, sourceBytesPerRow: side, sourceBytesPerImage: side * copySize.height,
                 sourceSize: copySize, to: s.texture, destinationSlice: 0, destinationLevel: 0,
-                destinationOrigin: copyOrigin)
+                destinationOrigin: copyOrigin
+            )
             blit.endEncoding()
         }
     }
@@ -265,13 +269,13 @@ enum PlanarRenderThenSampleCases {
     }
 
     static func channelsOff(_ a: [UInt8], _ b: [UInt8]) -> Int {
-        stride(from: 0, to: a.count, by: 4).filter { a[$0..<$0 + 4] != b[$0..<$0 + 4] }.count
+        stride(from: 0, to: a.count, by: 4).filter { a[$0 ..< $0 + 4] != b[$0 ..< $0 + 4] }.count
     }
 
     static func spotOff(_ texels: [UInt8], _ spots: [Spot]) -> Int {
         spots.map { spot in
             let got = texels.loaded(as: SIMD4<Float>.self, at: spot.y * side + spot.x)
-            return (0..<4).filter { !(abs(got[$0] - spot.rgba[$0]) <= 0.001) }.count
+            return (0 ..< 4).filter { !(abs(got[$0] - spot.rgba[$0]) <= 0.001) }.count
         }.reduce(0, +)
     }
 }

@@ -29,7 +29,8 @@ struct DecodePvrtcTest: HWTest {
             v.bytes.withUnsafeBytes {
                 texture.replace(
                     region: MTLRegionMake2D(0, 0, v.side, v.side), mipmapLevel: 0, withBytes: $0.baseAddress!,
-                    bytesPerRow: 0)
+                    bytesPerRow: 0
+                )
             }
             let at = DecodeScene.everyTexel(v.side, v.side)
             guard v.srgb else {
@@ -157,10 +158,12 @@ struct DecodeAstcHdrTest: HWTest {
             let rowBytes = set.blocks.count * 16
             try await DecodeScene.upload(
                 gpu, set.bytes(), offset: 48, rowBytes: rowBytes, into: chain, width: set.width, height: set.blockH,
-                level: 1)
+                level: 1
+            )
             try await DecodeScene.upload(
                 gpu, set.bytes(), offset: 48, rowBytes: rowBytes, into: array, width: set.width, height: set.blockH,
-                slice: 2)
+                slice: 2
+            )
             let points = set.points, at = points.map(\.at), wants = points.map(\.texel.want)
             let levelRead = try await DecodeScene.read(gpu, chain, at, level: 1)
             let sliceRead = try await DecodeScene.read(gpu, array, at, slice: 2)
@@ -171,7 +174,7 @@ struct DecodeAstcHdrTest: HWTest {
                 texels += read.count
             }
             levelOff += DecodeJudge.notAllNaN(try await DecodeScene.read(gpu, chain, at, level: 0))
-            for slice in 0..<2 {
+            for slice in 0 ..< 2 {
                 sliceOff += DecodeJudge.notAllNaN(try await DecodeScene.read(gpu, array, at, slice: slice))
             }
         }
@@ -222,8 +225,8 @@ struct DecodeNativeAstcPrecisionTest: HWTest {
             var largest: Float = 0
             for (texel, point) in zip(read, points) {
                 let want = point.texel.want.map { Float($0) / 4095 }
-                if (0..<4).contains(where: { texel[$0].bitPattern != want[$0].bitPattern }) { off += 1 }
-                for c in 0..<4 { largest = max(largest, abs(texel[c] - want[c])) }
+                if (0 ..< 4).contains(where: { texel[$0].bitPattern != want[$0].bitPattern }) { off += 1 }
+                for c in 0 ..< 4 { largest = max(largest, abs(texel[c] - want[c])) }
             }
             metrics.set("native_astc_texels", read.count)
             metrics.set("native_astc_linear_off", off)

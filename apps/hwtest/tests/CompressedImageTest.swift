@@ -21,7 +21,9 @@ struct CompressedImageTest: HWTest {
             view.frame = Snapshots.aligned(
                 CGRect(
                     x: 40, y: 40, width: image.size.width * image.scale / scale,
-                    height: image.size.height * image.scale / scale))
+                    height: image.size.height * image.scale / scale
+                )
+            )
             stage.addSubview(view)
             return view
         } _: { view in

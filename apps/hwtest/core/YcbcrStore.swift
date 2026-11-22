@@ -33,12 +33,12 @@ public enum YcbcrStore {
         let luma = texels.map { UInt16(code($0.y, source, max: max)) }
         let across = halvedAcross ? 2 : 1, down = halvedDown ? 2 : 1, n = UInt32(across * down)
         var chroma: [UInt16] = []
-        for y in 0..<(height / down) {
-            for x in 0..<(width / across) {
+        for y in 0 ..< (height / down) {
+            for x in 0 ..< (width / across) {
                 for channel in [2, 0] {
                     var sum: UInt32 = 0
-                    for dy in 0..<down {
-                        for dx in 0..<across {
+                    for dy in 0 ..< down {
+                        for dx in 0 ..< across {
                             sum += code(texels[(y * down + dy) * width + across * x + dx][channel], source, max: max)
                         }
                     }
@@ -68,7 +68,7 @@ public enum YcbcrStore {
             ([8381, 16455, 3196], 18), ([-4845, -9491, 14336], 18), ([7168, -6007, -1161], 17),
         ]
         let ten: Int64 = bits == 10 ? 2 : 0
-        let rows: [[Int64]] = (0..<3).map { code in
+        let rows: [[Int64]] = (0 ..< 3).map { code in
             full
                 ? q15[code].map { $0 * (code == 0 ? (1 << bits) - 1 : 1 << bits) }
                 : video[code].0.map { $0 << (26 - video[code].1 + ten) }
@@ -84,21 +84,21 @@ public enum YcbcrStore {
         }
         let steps = texels.map { [step($0.x), step($0.y), step($0.z)] }
         let term = { (code: Int, texel: Int) -> Int64 in
-            (0..<3).reduce(Int64(0)) { $0 + rows[code][$1] * steps[texel][$1] } >> shift
+            (0 ..< 3).reduce(Int64(0)) { $0 + rows[code][$1] * steps[texel][$1] } >> shift
         }
         let encode = { (code: Int, sum: Int64, k: Int64) -> UInt16 in
             UInt16(Swift.min(Swift.max(offsets[code] + ((sum + (1 << (termBits - 1 + k))) >> (termBits + k)), 0), max))
         }
-        let luma = (0..<texels.count).map { encode(0, term(0, $0), 0) }
+        let luma = (0 ..< texels.count).map { encode(0, term(0, $0), 0) }
         let across = halvedAcross ? 2 : 1, down = halvedDown ? 2 : 1
         let k = Int64((halvedAcross ? 1 : 0) + (halvedDown ? 1 : 0))
         var chroma: [UInt16] = []
-        for y in 0..<(height / down) {
-            for x in 0..<(width / across) {
-                for code in 1...2 {
+        for y in 0 ..< (height / down) {
+            for x in 0 ..< (width / across) {
+                for code in 1 ... 2 {
                     var sum: Int64 = 0
-                    for dy in 0..<down {
-                        for dx in 0..<across { sum += term(code, (y * down + dy) * width + across * x + dx) }
+                    for dy in 0 ..< down {
+                        for dx in 0 ..< across { sum += term(code, (y * down + dy) * width + across * x + dx) }
                     }
                     chroma.append(encode(code, sum, k))
                 }

@@ -156,8 +156,8 @@ NSUInteger attachmentLayers(MTLRenderPassAttachmentDescriptor *a)
 {
     id<MTLTexture> t = a.texture;
     const bool volume = t.textureType == MTLTextureType3D;
-    const NSUInteger first = volume ? a.depthPlane : a.slice, has = volume ? std::max<NSUInteger>(1, t.depth >> a.level)
-                                                                           : slicesOf(t);
+    const NSUInteger first = volume ? a.depthPlane : a.slice,
+                     has = volume ? std::max<NSUInteger>(1, t.depth >> a.level) : slicesOf(t);
     return first < has ? has - first : 0;
 }
 

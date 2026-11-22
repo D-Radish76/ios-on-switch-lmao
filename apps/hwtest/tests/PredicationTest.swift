@@ -40,7 +40,7 @@ struct PredicationTest: HWTest {
         (5, 5), (4, 5), (6, 5), (0, 0), (0, 1), (1, 0), (0xffff_ffff, 0xffff_ffff), (0xffff_ffff, 0),
         (0x8000_0000, 0x7fff_ffff),
     ]
-    static let cases: [Case] = (0..<7).flatMap { c in pairs.map { Case(word: $0.0, compare: c, reference: $0.1) } }
+    static let cases: [Case] = (0 ..< 7).flatMap { c in pairs.map { Case(word: $0.0, compare: c, reference: $0.1) } }
     static let nested: [(Bool, Bool)] = [(true, true), (true, false), (false, true), (false, false)]
     static let side = 16
 
@@ -60,7 +60,8 @@ struct PredicationTest: HWTest {
             e.setBytes(&pair, length: 8, index: 1)
             e.dispatchThreadgroups(
                 MTLSize(width: 1, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1)
+            )
         }
 
         func startIf(
@@ -69,7 +70,8 @@ struct PredicationTest: HWTest {
         ) {
             let o = e as AnyObject
             unsafeBitCast(o.method(for: PredicationTest.startIf), to: StartIf.self)(
-                o, PredicationTest.startIf, buffer ?? words, word * 4 + offsetBias, compare, ref)
+                o, PredicationTest.startIf, buffer ?? words, word * 4 + offsetBias, compare, ref
+            )
         }
 
         func startElse(_ e: MTLComputeCommandEncoder) {
@@ -103,7 +105,8 @@ struct PredicationTest: HWTest {
         let caseCount = Self.cases.count, nestedMarks = Self.nested.count * 3
         var enc = Encoding(
             device: gpu, store: try gpu.compute("predication_store"), mark: try gpu.compute("predication_mark"),
-            words: try gpu.buffer(4 * 256), marks: try gpu.buffer(4 * 256), cpuWords: try gpu.buffer(16))
+            words: try gpu.buffer(4 * 256), marks: try gpu.buffer(4 * 256), cpuWords: try gpu.buffer(16)
+        )
         let cpu = enc.cpuWords.contents().bindMemory(to: UInt32.self, capacity: 4)
         cpu[0] = 42
         cpu[1] = 41
@@ -113,7 +116,7 @@ struct PredicationTest: HWTest {
         memset(enc.marks.contents(), 0, 4 * 256)
         memset(cleared.contents(), 0xab, 64)
         memset(copied.contents(), 0, 64)
-        for _ in 0..<2 {
+        for _ in 0 ..< 2 {
             _ = try await gpu.run { commands in self.encode(commands, &enc, target, solid, cleared, copied) }
         }
         memset(enc.marks.contents(), 0, 4 * 256)
@@ -126,7 +129,8 @@ struct PredicationTest: HWTest {
         var wrong: [String] = []
         let marks = UnsafeBufferPointer(
             start: enc.marks.contents().bindMemory(to: UInt32.self, capacity: 256),
-            count: 256)
+            count: 256
+        )
         var compareWrong: [String] = []
         for (i, c) in Self.cases.enumerated() where marks[i] != (c.holds ? 1 : 2) {
             compareWrong.append("\(c.compare):\(c.word):\(c.reference)=\(marks[i])")
@@ -135,7 +139,7 @@ struct PredicationTest: HWTest {
         for (n, (outer, inner)) in Self.nested.enumerated() {
             let base = caseCount + 3 * n
             let want: [UInt32] = [outer && inner ? 1 : 0, outer && !inner ? 1 : 0, outer ? 0 : 1]
-            for k in 0..<3 where marks[base + k] != want[k] { nestedWrong += 1 }
+            for k in 0 ..< 3 where marks[base + k] != want[k] { nestedWrong += 1 }
         }
         let span = marks[caseCount + nestedMarks]
         let spanFailed = marks[caseCount + nestedMarks + 1]
@@ -229,7 +233,7 @@ struct PredicationTest: HWTest {
         GPU.draw(r, corners: GPU.fullScreen, color: SIMD4<Float>(1, 0, 0, 1))
         r.endEncoding()
         let blit = commands.makeBlitCommandEncoder()!
-        blit.fill(buffer: cleared, range: 0..<64, value: 0x5a)
+        blit.fill(buffer: cleared, range: 0 ..< 64, value: 0x5a)
         blit.copy(from: cleared, sourceOffset: 0, to: copied, destinationOffset: 0, size: 64)
         blit.endEncoding()
     }

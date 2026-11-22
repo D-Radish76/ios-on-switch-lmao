@@ -399,7 +399,7 @@ TEST_F(Unshown, AnEngineJobThatFailedForItsInputAnswersTheInputsWhy)
 	kill_channel(app);
 	kill_channel(compositor);
 	const std::array<switch_gpu_backing_token, 2> fromApp = {done, app},
-							fromCompositor = {done, compositor};
+						      fromCompositor = {done, compositor};
 	EXPECT_EQ(switch_gpu_backing_tokens_failure(&done, 1), 0);
 	EXPECT_EQ(switch_gpu_backing_tokens_failure(fromCompositor.data(), 2),
 		  SWITCH_GPU_BACKING_WRITER_FAILED);

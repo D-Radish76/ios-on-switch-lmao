@@ -62,7 +62,8 @@ struct CompressionSettledTest: HWTest {
                 ("the settled block ran once (\(calls.count))", calls.count == 1),
                 ("the target made after it binds compressed memory (comptags \(comptags))", comptags == 1),
                 ("with nothing asked the block ran before the call returned", idleSync),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }
 

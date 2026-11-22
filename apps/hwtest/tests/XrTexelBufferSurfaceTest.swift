@@ -84,7 +84,8 @@ struct XrTexelBufferSurfaceTest: HWTest {
     static func read(_ gpu: GPU, _ surface: IOSurface, format: UInt) async throws -> [SIMD4<Float>] {
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
             with: MTLPixelFormat(rawValue: format)!, width: width, resourceOptions: [],
-            usage: [.shaderRead, .shaderWrite])
+            usage: [.shaderRead, .shaderWrite]
+        )
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no \(format) texture buffer over the surface")
         }
@@ -97,10 +98,12 @@ struct XrTexelBufferSurfaceTest: HWTest {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: width, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         return Array(
-            UnsafeBufferPointer(start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: width), count: width))
+            UnsafeBufferPointer(start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: width), count: width)
+        )
     }
 }

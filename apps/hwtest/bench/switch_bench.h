@@ -211,8 +211,8 @@ struct switch_bench_sparse {
     int32_t info_bit;
     int32_t head_bytes_kept, tail_read_zero, big_read_zero, beside_big_read_zero, write_dropped;
     int32_t replaces_map, map_replaces, bad_args_refused, faults, unmapped_read_faults;
-    int32_t bad_args_kr[2];  // the two VmBinds' kern_return_t
-    uint32_t fault_error;    // the throwaway channel's TegraGM20BAbiStatus.error after its read
+    int32_t bad_args_kr[2];          // the two VmBinds' kern_return_t
+    uint32_t fault_error;            // the throwaway channel's TegraGM20BAbiStatus.error after its read
     uint64_t fault_va, unmapped_va;  // its fault VA, and the VA it read
     char why[256];
 };
@@ -220,6 +220,7 @@ struct switch_bench_sparse {
 // Every step on a TegraGM20B connection of its own (no Metal device), on the caller's thread; the last kills a
 // throwaway channel of that connection with an MMU fault
 void switch_bench_sparse_map(struct switch_bench_sparse *r);
+
 // gpu.kernel.channel_epoch's readings (bench_channel_epoch.cpp): -1 where an earlier failure stopped the run (`why`
 // says which); epoch_* are the fence page's TegraGM20BChannelEpochWord: before the refused ask, after it, right after
 // a channel was destroyed (epoch_after) and in the other connection's page then (epoch_other)

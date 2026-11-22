@@ -86,7 +86,7 @@ struct VisibilityAccumulateTest: HWTest {
             let words = results.contents().bindMemory(to: UInt64.self, capacity: 6)
             for (i, v) in arm.preset.enumerated() { words[i] = v }
             var paths: [String] = []
-            for _ in 0..<arm.passes {
+            for _ in 0 ..< arm.passes {
                 paths.append(
                     try await gpu.run { commands in
                         let pass = MTLRenderPassDescriptor()
@@ -99,9 +99,10 @@ struct VisibilityAccumulateTest: HWTest {
                         encoder.setRenderPipelineState(state)
                         arm.encode(encoder)
                         encoder.endEncoding()
-                    }.path)
+                    }.path
+                )
             }
-            let got = (0..<6).map { words[$0] }
+            let got = (0 ..< 6).map { words[$0] }
             metrics.set("\(arm.name)_values", got.map { String($0, radix: 16) }.joined(separator: ","))
             metrics.set("\(arm.name)_paths", paths.joined(separator: ","))
             for (i, want) in arm.expected.enumerated() where got[i] != want { wrong.append("\(arm.name)_\(8 * i)") }

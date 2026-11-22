@@ -37,7 +37,8 @@ extension X1TwodProbes {
                         [
                             "kind": "scale", "read": src, "written": written, "du": du, "dv": du, "sx": du / 2,
                             "sy": du / 2, "bilinear": point ? 0 : 1, "corner": 1,
-                        ])
+                        ]
+                    )
                     blit.endEncoding()
                 }
                 paths.append(batch.path)
@@ -48,7 +49,7 @@ extension X1TwodProbes {
                 let bytes = try await gpu.read(written, bytesPerPixel: bgra.bytesPerTexel)
                 let filters = Filter.all(point: point, srgb: false)
                 var tallies = [X1RuleTally](repeating: X1RuleTally(), count: filters.count)
-                for t in 0..<to * to {
+                for t in 0 ..< to * to {
                     let px = Double(UInt64(t % to) * du + du / 2) / 4_294_967_296
                     let py = Double(UInt64(t / to) * du + du / 2) / 4_294_967_296
                     let got = bgra.codes(bytes, t)

@@ -28,7 +28,7 @@ public enum PlaneCopiesOpen {
 
     static func seeded(_ surface: IOSurfaceRef, _ seed: UInt64) -> [UInt8] {
         let fill = PlaneCopies.seeded(seed)
-        RowsUnder16.edit(surface) { base in for i in 0..<IOSurfaceGetAllocSize(surface) { base[i] = fill(i) } }
+        RowsUnder16.edit(surface) { base in for i in 0 ..< IOSurfaceGetAllocSize(surface) { base[i] = fill(i) } }
         return SurfaceReads.bytes(surface)
     }
 
@@ -39,7 +39,8 @@ public enum PlaneCopiesOpen {
                 kIOSurfaceWidth: 16, kIOSurfaceHeight: 8, kIOSurfacePixelFormat: fourcc(code),
                 kIOSurfaceBytesPerRow: 16 * unit, kIOSurfaceBytesPerElement: 4, kIOSurfaceElementWidth: 4 / unit,
                 kIOSurfaceAllocSize: 16 * unit * 8,
-            ] as [CFString: Any] as CFDictionary)
+            ] as [CFString: Any] as CFDictionary
+        )
     }
 
     /// A two-plane destination 16x8: 'b3a8' words rows 64 at 0, alpha rows 64 at 512; '420v' luma rows 16 at 0,
@@ -48,8 +49,8 @@ public enum PlaneCopiesOpen {
         typealias P = SurfaceReads.Plane
         let planes =
             code == "b3a8"
-            ? [P(at: 0, 16, 8, bpe: 4, rows: 64), P(at: 512, 16, 8, bpe: 1, rows: 64)]
-            : [P(at: 0, 16, 8, bpe: 1, rows: 16), P(at: 128, 8, 4, bpe: 2, rows: 16)]
+                ? [P(at: 0, 16, 8, bpe: 4, rows: 64), P(at: 512, 16, 8, bpe: 1, rows: 64)]
+                : [P(at: 0, 16, 8, bpe: 1, rows: 16), P(at: 128, 8, 4, bpe: 2, rows: 16)]
         return SurfaceReads.surface(code, 16, 8, planes: planes, allocation: 16384)
     }
 
@@ -61,18 +62,19 @@ public enum PlaneCopiesOpen {
         }
         let source = seeded(from, 11), before = seeded(into, 29)
         guard let s = SurfaceReads.texture(gpu, c.from.1, 16, 8, over: from),
-            let d = SurfaceReads.texture(gpu, c.to.1, 16, 8, over: into)
+              let d = SurfaceReads.texture(gpu, c.to.1, 16, 8, over: into)
         else { return Result(made: false) }
         let path = try await RowsUnder16.blitPath(gpu) {
             $0.copy(
                 from: s, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 2, y: 2, z: 0),
                 sourceSize: MTLSize(width: 8, height: 4, depth: 1), to: d, destinationSlice: 0, destinationLevel: 0,
-                destinationOrigin: MTLOrigin(x: 1, y: 1, z: 0))
+                destinationOrigin: MTLOrigin(x: 1, y: 1, z: 0)
+            )
         }
         let u = c.to.1 == 550 ? 4 : 1, rows = c.to.1 == 550 ? 64 : 16, sourceRows = 16 * c.from.2
         var want = before
-        for k in 0..<4 {
-            for i in 0..<8 * u { want[(1 + k) * rows + u + i] = source[(2 + k) * sourceRows + 2 * u + i] }
+        for k in 0 ..< 4 {
+            for i in 0 ..< 8 * u { want[(1 + k) * rows + u + i] = source[(2 + k) * sourceRows + 2 * u + i] }
         }
         let got = SurfaceReads.bytes(into)
         return Result(path: path, off: zip(got, want).filter { $0 != $1 }.count)
@@ -95,7 +97,7 @@ public enum PlaneCopiesOpen {
     /// The alpha a copy moves to linear alpha byte `dy * 128 + 3 + j` from the source's linear alpha byte
     /// `dy * 128 + 5 + j` (`dy` < 2, `j` < 8), each in its 32-wide texture's (x, y)
     static func alphaMoves() -> [(to: (Int, Int), from: (Int, Int))] {
-        (0..<2).flatMap { r in (0..<8).map { j in ((3 + j, 4 * r), (5 + j, 4 * r)) } }
+        (0 ..< 2).flatMap { r in (0 ..< 8).map { j in ((3 + j, 4 * r), (5 + j, 4 * r)) } }
     }
 
     /// A descriptor-made 550 32x8, every texel `coded`, copied into a 550 over a seeded 'b3a8'
@@ -108,7 +110,8 @@ public enum PlaneCopiesOpen {
         guard let d = SurfaceReads.texture(gpu, 550, 32, 8, over: into) else { return Result(made: false) }
         let path = try await copy(gpu, made, d)
         var want = before
-        for y in 0..<2 { for j in 0..<8 { RowsUnder16.put(coded(5 + j, y).word, &want, at: y * 128 + 4 * (3 + j)) } }
+        for y in 0 ..<
+            2 { for j in 0 ..< 8 { RowsUnder16.put(coded(5 + j, y).word, &want, at: y * 128 + 4 * (3 + j)) } }
         for m in alphaMoves() { want[1024 + m.to.1 * 32 + m.to.0] = coded(m.from.0, m.from.1).alpha }
         let got = SurfaceReads.bytes(into)
         return Result(path: path, off: zip(got, want).filter { $0 != $1 }.count)
@@ -124,9 +127,10 @@ public enum PlaneCopiesOpen {
         let source = seeded(from, 43)
         guard let s = SurfaceReads.texture(gpu, 550, 32, 8, over: from) else { return Result(made: false) }
         let path = try await copy(gpu, s, made)
-        var words = (0..<256).map { coded($0 % 32, $0 / 32).word }
-        var alphas = (0..<256).map { coded($0 % 32, $0 / 32).alpha }
-        for y in 0..<2 { for j in 0..<8 { words[32 * y + 3 + j] = SurfaceReads.word(source, y * 128 + 4 * (5 + j)) } }
+        var words = (0 ..< 256).map { coded($0 % 32, $0 / 32).word }
+        var alphas = (0 ..< 256).map { coded($0 % 32, $0 / 32).alpha }
+        for y in 0 ..<
+            2 { for j in 0 ..< 8 { words[32 * y + 3 + j] = SurfaceReads.word(source, y * 128 + 4 * (5 + j)) } }
         for m in alphaMoves() { alphas[32 * m.to.1 + m.to.0] = source[1024 + 32 * m.from.1 + m.from.0] }
         let got = try await SurfaceReads.read(gpu, made)
         let off = SurfaceReads.off(got, tolerance: 0.5 / 510) {
@@ -137,7 +141,8 @@ public enum PlaneCopiesOpen {
 
     static func descriptorMade(_ gpu: GPU) async throws -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: 32, height: 8, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: 32, height: 8, mipmapped: false
+        )
         descriptor.usage = [.shaderRead, .shaderWrite]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { return nil }
         let path = try await RowsUnder16.dispatch(gpu, "forms_open_xr_store", texture)
@@ -149,7 +154,8 @@ public enum PlaneCopiesOpen {
         try await RowsUnder16.blitPath(gpu) {
             $0.copy(
                 from: s, sourceSlice: 0, sourceLevel: 0, sourceOrigin: region.from, sourceSize: region.size, to: d,
-                destinationSlice: 0, destinationLevel: 0, destinationOrigin: region.to)
+                destinationSlice: 0, destinationLevel: 0, destinationOrigin: region.to
+            )
         }
     }
 }

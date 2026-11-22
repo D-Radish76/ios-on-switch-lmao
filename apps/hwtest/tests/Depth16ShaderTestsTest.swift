@@ -60,23 +60,23 @@ struct Depth16ShaderTestsTest: HWTest {
         let band = side * bandRows
         return depths.flatMap { z -> [UInt16] in
             let start = min(Int((Double(z) * 65535).rounded()) - band / 2, 65535 - (band - 1))
-            return (0..<band).map { UInt16(start + $0) }
+            return (0 ..< band).map { UInt16(start + $0) }
         }
     }
 
     static func fields(_ result: Result) -> Metrics {
         var metrics = Metrics()
         let band = side * bandRows
-        let codes = (0..<side * side).map { result.depth.loaded(as: UInt16.self, at: $0) }
-        let reached = (0..<side * side).map { result.colour[4 * $0] != 0 }
+        let codes = (0 ..< side * side).map { result.depth.loaded(as: UInt16.self, at: $0) }
+        let reached = (0 ..< side * side).map { result.colour[4 * $0] != 0 }
         for b in depths.indices {
-            let passed = (b * band..<(b + 1) * band).filter { reached[$0] }
+            let passed = (b * band ..< (b + 1) * band).filter { reached[$0] }
             metrics.set("b\(b)_passed", passed.count)
             metrics.set("b\(b)_code", passed.last.map { Int(codes[$0]) } ?? -1)
         }
         let ramp = ramp()
         metrics.set("kept_changed", codes.indices.filter { !reached[$0] && codes[$0] != ramp[$0] }.count)
-        metrics.set("stencil_passed", (0..<side * side).filter { result.colour[4 * $0 + 1] != 0 }.count)
+        metrics.set("stencil_passed", (0 ..< side * side).filter { result.colour[4 * $0 + 1] != 0 }.count)
         return metrics
     }
 
@@ -85,9 +85,11 @@ struct Depth16ShaderTestsTest: HWTest {
         let depth = try gpu.texture(.depth16Unorm, n, n, usage: [.renderTarget])
         let colour = try gpu.texture(.rgba8Unorm, n, n, usage: [.renderTarget])
         try await gpu.upload(
-            ramp().flatMap { [UInt8(truncatingIfNeeded: $0), UInt8($0 >> 8)] }, to: depth, bytesPerRow: 2 * n)
+            ramp().flatMap { [UInt8(truncatingIfNeeded: $0), UInt8($0 >> 8)] }, to: depth, bytesPerRow: 2 * n
+        )
         let state = try gpu.render(
-            vertex: "fetch_depth_vertex", fragment: "fetch_add_fragment", format: .rgba8Unorm, depth: .depth16Unorm)
+            vertex: "fetch_depth_vertex", fragment: "fetch_add_fragment", format: .rgba8Unorm, depth: .depth16Unorm
+        )
         let tested = MTLDepthStencilDescriptor()
         tested.depthCompareFunction = .lessEqual
         tested.isDepthWriteEnabled = true
@@ -97,7 +99,7 @@ struct Depth16ShaderTestsTest: HWTest {
         stencil.frontFaceStencil = face
         stencil.backFaceStencil = face
         guard let depthTest = gpu.device.makeDepthStencilState(descriptor: tested),
-            let stencilTest = gpu.device.makeDepthStencilState(descriptor: stencil)
+              let stencilTest = gpu.device.makeDepthStencilState(descriptor: stencil)
         else { throw TestFailure("no depth/stencil state") }
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
@@ -120,12 +122,13 @@ struct Depth16ShaderTestsTest: HWTest {
                 encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
             }
             for (band, z) in depths.enumerated() {
-                draw(depthTest, z: z, add: SIMD4(0.25, 0, 0, 1), rows: band * bandRows..<(band + 1) * bandRows)
+                draw(depthTest, z: z, add: SIMD4(0.25, 0, 0, 1), rows: band * bandRows ..< (band + 1) * bandRows)
             }
-            draw(stencilTest, z: 0.5, add: SIMD4(0, 0.5, 0, 1), rows: 0..<n)
+            draw(stencilTest, z: 0.5, add: SIMD4(0, 0.5, 0, 1), rows: 0 ..< n)
             encoder.endEncoding()
         }
         return Result(
-            depth: try await gpu.read(depth, bytesPerPixel: 2), colour: try await gpu.read(colour, bytesPerPixel: 4))
+            depth: try await gpu.read(depth, bytesPerPixel: 2), colour: try await gpu.read(colour, bytesPerPixel: 4)
+        )
     }
 }

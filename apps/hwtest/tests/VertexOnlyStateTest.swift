@@ -73,8 +73,8 @@ struct VertexOnlyStateTest: HWTest {
         let depths = try await gpu.read(depth, bytesPerPixel: 4, options: .depthFromDepthStencil)
         let stencils = try await gpu.read(depth, bytesPerPixel: 1, options: .stencilFromDepthStencil)
         var (wrongColor, wrongDepth, wrongStencil) = (0, 0, 0)
-        for y in 0..<size {
-            for x in 0..<size {
+        for y in 0 ..< size {
+            for x in 0 ..< size {
                 let left = x < size / 2
                 if Array(pixels.pixel(x, y, width: size)) != [0, 255, 0, 255] { wrongColor += 1 }
                 if depths.loaded(as: Float.self, at: y * size + x) != (left ? 0.5 : 1) { wrongDepth += 1 }
@@ -88,11 +88,13 @@ struct VertexOnlyStateTest: HWTest {
         metrics.set("corner_color", Array(pixels.pixel(0, 0, width: size)).map(String.init).joined(separator: ","))
         metrics.set("path", path)
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         return .judged(
             [
                 ("colour untouched (0,255,0,255)", wrongColor == 0), ("depth 0.5 | 1", wrongDepth == 0),
                 ("stencil 1 | 0", wrongStencil == 0), ("drawn by raw", path == "gm20b"), failed,
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }

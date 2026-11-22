@@ -39,7 +39,7 @@ enum GlassProbe {
     static func arm(lines: Bool = true) -> Bool {
         let before = count()?.generation
         post(lines ? "glass-probe" : "glass-record")
-        for _ in 0..<20 {
+        for _ in 0 ..< 20 {
             usleep(10_000)
             if let now = count()?.generation, now != before { return true }
         }
@@ -70,7 +70,7 @@ enum GlassProbe {
         guard let (_, count) = count() else { return (after, [], 0) }
         guard count >= after else { return (count, [], 0) }
         let first = max(after, count > recordSlots ? count - recordSlots : 0)
-        let buffers = (first..<count).compactMap { index in
+        let buffers = (first ..< count).compactMap { index in
             state("\(recordName).\(index % recordSlots)").map(Buffer.init(word:))
         }
         return (count, buffers, first - min(after, first))

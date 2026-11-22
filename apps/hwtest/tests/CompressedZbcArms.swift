@@ -20,12 +20,12 @@ enum CompressedZbcArms {
         let name: String
         let format: MTLPixelFormat
         let clear: [Double]
-        let texel: [UInt8]  // the bytes the clear writes
+        let texel: [UInt8] // the bytes the clear writes
     }
 
     static func linear(_ code: Double) -> Double { X1Channel.linear(code / 255) }
 
-    static func le(_ v: UInt32, _ n: Int) -> [UInt8] { (0..<n).map { UInt8(truncatingIfNeeded: v >> (8 * $0)) } }
+    static func le(_ v: UInt32, _ n: Int) -> [UInt8] { (0 ..< n).map { UInt8(truncatingIfNeeded: v >> (8 * $0)) } }
 
     static let srgb = [linear(51), linear(102), linear(204), 1]
 
@@ -34,14 +34,17 @@ enum CompressedZbcArms {
         Arm(name: "rgba8srgb", format: .rgba8Unorm_srgb, clear: srgb, texel: [51, 102, 204, 255]),
         Arm(
             name: "rgb10a2", format: .rgb10a2Unorm, clear: [300.0 / 1023, 600.0 / 1023, 900.0 / 1023, 2.0 / 3],
-            texel: le(300 | 600 << 10 | 900 << 20 | 2 << 30, 4)),
+            texel: le(300 | 600 << 10 | 900 << 20 | 2 << 30, 4)
+        ),
         Arm(
             name: "rgba16unorm", format: .rgba16Unorm,
             clear: [10000.0 / 65535, 20000.0 / 65535, 40000.0 / 65535, 1],
-            texel: le(10000, 2) + le(20000, 2) + le(40000, 2) + le(65535, 2)),
+            texel: le(10000, 2) + le(20000, 2) + le(40000, 2) + le(65535, 2)
+        ),
         Arm(
             name: "rgba32f", format: .rgba32Float, clear: [0.3, -1.5, 7.25, 0.5],
-            texel: [Float(0.3), -1.5, 7.25, 0.5].flatMap { le($0.bitPattern, 4) }),
+            texel: [Float(0.3), -1.5, 7.25, 0.5].flatMap { le($0.bitPattern, 4) }
+        ),
     ]
 
     static let depth16 = Float(39321) / 65535
@@ -52,9 +55,9 @@ enum CompressedZbcArms {
                 let (first, last) = try await colourRounds(gpu, arm)
                 let size = arm.texel.count
                 var firstOff = 0, lastOff = 0
-                for t in 0..<width * height {
-                    if Array(first[t * size..<(t + 1) * size]) != arm.texel { firstOff += 1 }
-                    if first[t * size..<(t + 1) * size] != last[t * size..<(t + 1) * size] { lastOff += 1 }
+                for t in 0 ..< width * height {
+                    if Array(first[t * size ..< (t + 1) * size]) != arm.texel { firstOff += 1 }
+                    if first[t * size ..< (t + 1) * size] != last[t * size ..< (t + 1) * size] { lastOff += 1 }
                 }
                 return (firstOff, lastOff)
             }
@@ -87,13 +90,14 @@ enum CompressedZbcArms {
     static func colourRounds(_ gpu: GPU, _ arm: Arm) async throws -> ([UInt8], [UInt8]) {
         let target = try await CompressionSettled.remade(gpu.device) { try gpu.texture(arm.format, width, height) }
         var first: [UInt8] = []
-        for round in 0..<rounds {
+        for round in 0 ..< rounds {
             _ = try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = target
                 pass.colorAttachments[0].loadAction = .clear
                 pass.colorAttachments[0].clearColor = MTLClearColor(
-                    red: arm.clear[0], green: arm.clear[1], blue: arm.clear[2], alpha: arm.clear[3])
+                    red: arm.clear[0], green: arm.clear[1], blue: arm.clear[2], alpha: arm.clear[3]
+                )
                 pass.colorAttachments[0].storeAction = .store
                 commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
             }
@@ -114,9 +118,10 @@ enum CompressedZbcArms {
                 d.depthCompareFunction = .equal
                 d.isDepthWriteEnabled = false
                 return d
-            }())!
+            }()
+        )!
         var first: [UInt8] = []
-        for round in 0..<rounds {
+        for round in 0 ..< rounds {
             _ = try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = colour
@@ -132,7 +137,8 @@ enum CompressedZbcArms {
                 e.setDepthStencilState(equal)
                 GPU.draw(
                     e, corners: GPU.pixelQuad(0, 0, width, height, width: width, height: height, z: depth16),
-                    color: SIMD4<Float>(1, 1, 1, 1))
+                    color: SIMD4<Float>(1, 1, 1, 1)
+                )
                 e.endEncoding()
             }
             if round == 0 { first = try await gpu.read(colour, bytesPerPixel: 4) }
@@ -142,6 +148,6 @@ enum CompressedZbcArms {
     }
 
     static func unwritten(_ bytes: [UInt8]) -> Int {
-        stride(from: 0, to: bytes.count, by: 4).filter { bytes[$0..<$0 + 4] != [255, 255, 255, 255] }.count
+        stride(from: 0, to: bytes.count, by: 4).filter { bytes[$0 ..< $0 + 4] != [255, 255, 255, 255] }.count
     }
 }

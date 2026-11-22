@@ -44,12 +44,12 @@ struct StateSegmentsPathTest: HWTest {
         }
         var targets: [MTLTexture] = []
         var committed: [MTLCommandBuffer] = []
-        for frame in 0..<Self.frames {
+        for frame in 0 ..< Self.frames {
             let target = try gpu.texture(.rgba8Unorm, Self.width, Self.height)
             targets.append(target)
             committed.append(
                 try gpu.commit { commands in
-                    for pass in 0..<2 {
+                    for pass in 0 ..< 2 {
                         let descriptor = MTLRenderPassDescriptor()
                         descriptor.colorAttachments[0].texture = target
                         descriptor.colorAttachments[0].loadAction = pass == 0 ? .clear : .load
@@ -61,17 +61,18 @@ struct StateSegmentsPathTest: HWTest {
                         Self.quad(encoder, a, Self.opaque(frame), x: Self.width / 2)
                         encoder.endEncoding()
                     }
-                })
+                }
+            )
         }
         try gpu.finish(committed)
         var wrong = 0
         for (frame, target) in targets.enumerated() {
             let bytes = try await gpu.read(target, bytesPerPixel: 4)
             let left = zip(Self.opaque(frame), Self.added).map { UInt8(min(255, Int($0) + Int($1))) }
-            for y in 0..<Self.height {
-                for x in 0..<Self.width {
+            for y in 0 ..< Self.height {
+                for x in 0 ..< Self.width {
                     let at = (y * Self.width + x) * 4
-                    wrong += Self.wrong(Array(bytes[at..<(at + 4)]), x < Self.width / 2 ? left : Self.opaque(frame))
+                    wrong += Self.wrong(Array(bytes[at ..< (at + 4)]), x < Self.width / 2 ? left : Self.opaque(frame))
                 }
             }
         }
@@ -107,12 +108,12 @@ struct StateSegmentsPathTest: HWTest {
         var encodeUs = [0.0, 0.0], gpuUs = [0.0, 0.0], execUs = [0.0, 0.0], encodes = [0, 0], pushes = [0, 0]
         var copies = [0, 0]
         var images: [[UInt8]] = [[], []]
-        for batch in 0..<Self.batches {
+        for batch in 0 ..< Self.batches {
             let arm = batch % 2
             let before = GM20BFacade.counters(of: gpu.device)
             var buffers: [MTLCommandBuffer] = []
             var target: MTLTexture?
-            for _ in 0..<Self.perBatch {
+            for _ in 0 ..< Self.perBatch {
                 let drawn = try gpu.texture(.rgba8Unorm, Self.width, Self.height)
                 target = drawn
                 buffers.append(
@@ -123,11 +124,12 @@ struct StateSegmentsPathTest: HWTest {
                         descriptor.colorAttachments[0].loadAction = .clear
                         descriptor.colorAttachments[0].storeAction = .store
                         let encoder = commands.makeRenderCommandEncoder(descriptor: descriptor)!
-                        for i in 0..<Self.switches {
+                        for i in 0 ..< Self.switches {
                             Self.quad(encoder, i % 2 == 0 ? a : b, i % 2 == 0 ? Self.opaque(i % 16) : Self.added, x: 0)
                         }
                         encoder.endEncoding()
-                    })
+                    }
+                )
             }
             try gpu.finish(buffers)
             let after = GM20BFacade.counters(of: gpu.device)
@@ -140,13 +142,13 @@ struct StateSegmentsPathTest: HWTest {
             if images[arm].isEmpty, let target { images[arm] = try await gpu.read(target, bytesPerPixel: 4) }
         }
         let buffers = Double(Self.batches / 2 * Self.perBatch)
-        let perEncode = (0..<2).map { encodes[$0] > 0 ? encodeUs[$0] / Double(encodes[$0]) : 0 }
+        let perEncode = (0 ..< 2).map { encodes[$0] > 0 ? encodeUs[$0] / Double(encodes[$0]) : 0 }
         metrics.set("inline_encode_us", String(format: "%.0f", perEncode[0]))
         metrics.set("segment_encode_us", String(format: "%.0f", perEncode[1]))
         let perBind = (perEncode[1] - perEncode[0]) * 1000 / Double(Self.switches)
         metrics.set("segment_cpu_ns_per_bind", String(format: "%.0f", perBind))
         let perCb = { (values: [Double], arm: Int) in encodes[arm] > 0 ? values[arm] / Double(encodes[arm]) : 0 }
-        let pushesPerCb = (0..<2).map { perCb(pushes.map(Double.init), $0) }
+        let pushesPerCb = (0 ..< 2).map { perCb(pushes.map(Double.init), $0) }
         metrics.set("inline_pushes_per_cb", String(format: "%.0f", pushesPerCb[0]))
         metrics.set("segment_pushes_per_cb", String(format: "%.0f", pushesPerCb[1]))
         metrics.set("inline_submit_us", String(format: "%.0f", perCb(execUs, 0)))
@@ -154,7 +156,8 @@ struct StateSegmentsPathTest: HWTest {
         let extraPushes = pushesPerCb[1] - pushesPerCb[0]
         metrics.set(
             "submit_ns_per_extra_push",
-            extraPushes > 0 ? String(format: "%.0f", (perCb(execUs, 1) - perCb(execUs, 0)) * 1000 / extraPushes) : "-")
+            extraPushes > 0 ? String(format: "%.0f", (perCb(execUs, 1) - perCb(execUs, 0)) * 1000 / extraPushes) : "-"
+        )
         metrics.set("segment_copied_binds", copies[1])
         metrics.set("inline_gpu_us", String(format: "%.0f", gpuUs[0] / buffers))
         metrics.set("segment_gpu_us", String(format: "%.0f", gpuUs[1] / buffers))

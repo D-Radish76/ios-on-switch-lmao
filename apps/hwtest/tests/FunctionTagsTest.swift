@@ -44,7 +44,8 @@ struct FunctionTagsTest: HWTest {
         guard let list else { return "nil" }
         return list.map {
             attribute(
-                $0.name, $0.attributeIndex, $0.attributeType, $0.isActive, $0.isPatchData, $0.isPatchControlPointData)
+                $0.name, $0.attributeIndex, $0.attributeType, $0.isActive, $0.isPatchData, $0.isPatchControlPointData
+            )
         }.joined()
     }
 
@@ -52,7 +53,8 @@ struct FunctionTagsTest: HWTest {
         guard let list else { return "nil" }
         return list.map {
             attribute(
-                $0.name, $0.attributeIndex, $0.attributeType, $0.isActive, $0.isPatchData, $0.isPatchControlPointData)
+                $0.name, $0.attributeIndex, $0.attributeType, $0.isActive, $0.isPatchData, $0.isPatchControlPointData
+            )
         }.joined()
     }
 
@@ -103,7 +105,8 @@ struct FunctionTagsTest: HWTest {
         }
 
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }

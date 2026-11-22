@@ -38,7 +38,8 @@ struct EventReleaseTest: HWTest {
             encoder.setBytes(&count, length: 4, index: 1)
             encoder.dispatchThreads(
                 MTLSize(width: EventReleaseTest.threads, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 256, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 256, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
 
@@ -46,7 +47,7 @@ struct EventReleaseTest: HWTest {
         func before(_ commands: MTLCommandBuffer, fill: UInt8, iterations: UInt32) {
             dispatch(commands, iterations: iterations)
             let blit = commands.makeBlitCommandEncoder()!
-            blit.fill(buffer: source, range: 0..<EventReleaseTest.bytes, value: fill)
+            blit.fill(buffer: source, range: 0 ..< EventReleaseTest.bytes, value: fill)
             blit.endEncoding()
         }
     }
@@ -71,8 +72,9 @@ struct EventReleaseTest: HWTest {
         }
         let work = Work(
             gpu: gpu, kernel: try gpu.compute("fma_loop"),
-            data: try gpu.buffer((0..<Self.threads * 4).map { Float($0 % 7) * 0.001 }),
-            source: try gpu.buffer(Self.bytes))
+            data: try gpu.buffer((0 ..< Self.threads * 4).map { Float($0 % 7) * 0.001 }),
+            source: try gpu.buffer(Self.bytes)
+        )
         var metrics = Metrics()
         var wrong: [String] = []
 
@@ -84,16 +86,16 @@ struct EventReleaseTest: HWTest {
         metrics.set("before_wall_ms", before.wallMilliseconds, digits: 3)
 
         var rounds: [Round] = []
-        for round in 0..<Self.rounds {
+        for round in 0 ..< Self.rounds {
             let value = UInt64(round + 1)
             rounds.append(try await signalled(work, event, value, iterations, waiter: round == 0 ? nil : other))
         }
         guard let privateData = gpu.device.makeBuffer(length: Self.threads * 4, options: .storageModePrivate),
-            let privateSource = gpu.device.makeBuffer(length: Self.bytes, options: .storageModePrivate)
+              let privateSource = gpu.device.makeBuffer(length: Self.bytes, options: .storageModePrivate)
         else { throw TestFailure("no private buffers") }
         let privateWork = Work(gpu: gpu, kernel: work.kernel, data: privateData, source: privateSource)
         let unflushedBefore = EventJobs.read(gpu.device)["unflushed_signals"] ?? 0
-        for round in 0..<Self.rounds {
+        for round in 0 ..< Self.rounds {
             let value = UInt64(Self.rounds + round + 1)
             rounds.append(try await signalled(privateWork, event, value, iterations, waiter: round == 0 ? nil : other))
         }

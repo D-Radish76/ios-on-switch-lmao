@@ -15,24 +15,24 @@ struct PatchCommandsWideSetTest: HWTest {
     var timeout: TimeInterval { 60 }
 
     static let size = 32
-    static let buffers = 2..<22
+    static let buffers = 2 ..< 22
 
     static var source: String {
         let parameters = buffers.map { "device const float *b\($0) [[buffer(\($0))]]" }.joined(separator: ", ")
         let sum = buffers.map { "b\($0)[0]" }.joined(separator: " + ")
         return """
-            #include <metal_stdlib>
-            using namespace metal;
-            struct WideControlPoint { float4 position [[attribute(0)]]; };
-            struct WideQuadPatch { patch_control_point<WideControlPoint> points; };
-            [[patch(quad, 4)]] vertex float4 wide_set_post(WideQuadPatch patch [[stage_in]],
-                                                          float2 uv [[position_in_patch]], \(parameters)) {
-                const float4 low = mix(patch.points[0].position, patch.points[1].position, uv.x);
-                const float4 high = mix(patch.points[3].position, patch.points[2].position, uv.x);
-                return mix(low, high, uv.y) + float4(\(sum), 0, 0, 0);
-            }
-            fragment float4 wide_set_green() { return float4(0, 1, 0, 1); }
-            """
+        #include <metal_stdlib>
+        using namespace metal;
+        struct WideControlPoint { float4 position [[attribute(0)]]; };
+        struct WideQuadPatch { patch_control_point<WideControlPoint> points; };
+        [[patch(quad, 4)]] vertex float4 wide_set_post(WideQuadPatch patch [[stage_in]],
+                                                      float2 uv [[position_in_patch]], \(parameters)) {
+            const float4 low = mix(patch.points[0].position, patch.points[1].position, uv.x);
+            const float4 high = mix(patch.points[3].position, patch.points[2].position, uv.x);
+            return mix(low, high, uv.y) + float4(\(sum), 0, 0, 0);
+        }
+        fragment float4 wide_set_green() { return float4(0, 1, 0, 1); }
+        """
     }
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -73,7 +73,8 @@ struct PatchCommandsWideSetTest: HWTest {
         commands.indirectRenderCommandAt(0).drawPatches(
             4, patchStart: 0, patchCount: 1, patchIndexBuffer: nil, patchIndexBufferOffset: 0, instanceCount: 1,
             baseInstance: 0, tessellationFactorBuffer: factors, tessellationFactorBufferOffset: 0,
-            tessellationFactorBufferInstanceStride: 0)
+            tessellationFactorBufferInstanceStride: 0
+        )
         let target = try gpu.texture(.rgba8Unorm, Self.size, Self.size)
         let timing = try await gpu.run(tolerateError: true) { buffer in
             let pass = MTLRenderPassDescriptor()
@@ -87,7 +88,7 @@ struct PatchCommandsWideSetTest: HWTest {
             for index in Self.buffers { encoder.setVertexBuffer(zeros, offset: 0, index: index) }
             encoder.setTessellationFactorBuffer(factors, offset: 0, instanceStride: 0)
             encoder.useResource(factors, usage: .read, stages: .vertex)
-            encoder.executeCommandsInBuffer(commands, range: 0..<1)
+            encoder.executeCommandsInBuffer(commands, range: 0 ..< 1)
             encoder.endEncoding()
         }
         var metrics = Metrics()
@@ -96,7 +97,7 @@ struct PatchCommandsWideSetTest: HWTest {
         if !timing.path.hasPrefix("error:") {
             let pixels = try await gpu.read(target, bytesPerPixel: 4)
             wrong =
-                (0..<Self.size * Self.size).filter { i in
+                (0 ..< Self.size * Self.size).filter { i in
                     let want: [UInt8] = i % Self.size < Self.size / 2 ? [0, 255, 0, 255] : [0, 0, 0, 255]
                     return Array(pixels.pixel(i % Self.size, i / Self.size, width: Self.size)) != want
                 }.count

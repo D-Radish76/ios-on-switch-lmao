@@ -125,7 +125,6 @@ API_AVAILABLE(ios(18.0), macos(15.0))
     });
 }
 
-
 // Any other selector a Metal protocol declares is answered zero; anything else is not recognized
 - (NSMethodSignature *)methodSignatureForSelector:(SEL)selector
 {

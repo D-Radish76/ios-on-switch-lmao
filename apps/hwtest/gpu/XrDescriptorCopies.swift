@@ -102,8 +102,8 @@ public enum XrDescriptorCopies {
         var writes: [[Int: Set<UInt8>]] = [[:], [:]]
         for (plane, words) in [(0, true), (1, false)] {
             let s = Plane(c.from, words: words, source: true), t = Plane(c.to, words: words, source: false)
-            for j in 0..<c.size.h {
-                for k in 0..<c.size.w * s.unit {
+            for j in 0 ..< c.size.h {
+                for k in 0 ..< c.size.w * s.unit {
                     let from = (c.origin.y + j) * s.pitch + s.unit * c.origin.x + k
                     let to = (c.at.y + j) * t.pitch + t.unit * c.at.x + k
                     guard let into = t.place(to, width: destinationWidth) else { continue }
@@ -141,12 +141,13 @@ extension XrDescriptorCopies {
         case .surface:
             let fill = PlaneCopies.seeded(UInt64(seed))
             guard let s = SurfaceReads.surface("b3a8", 32, 8, planes: surfacePlanes, allocation: 16384, fill: fill),
-                let t = SurfaceReads.texture(gpu, 550, 32, 8, over: s)
+                  let t = SurfaceReads.texture(gpu, 550, 32, 8, over: s)
             else { throw TestFailure("no 550 over a 'b3a8' 32x8") }
             return Made(texture: t, surface: s, bytes: Bytes(surface: SurfaceReads.bytes(s)))
         case .descriptor(let width, let height):
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: MTLPixelFormat(rawValue: 550)!, width: width, height: height, mipmapped: false)
+                pixelFormat: MTLPixelFormat(rawValue: 550)!, width: width, height: height, mipmapped: false
+            )
             descriptor.usage = [.shaderRead, .shaderWrite]
             descriptor.storageMode = storage
             guard let t = gpu.device.makeTexture(descriptor: descriptor) else {
@@ -161,13 +162,14 @@ extension XrDescriptorCopies {
                 encoder.setBytes(&value, length: 4, index: 0)
                 encoder.dispatchThreads(
                     MTLSize(width: width, height: height, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+                )
                 encoder.endEncoding()
             }.facadePath
             guard !path.hasPrefix("error") else { throw TestFailure("the descriptor's fill failed: \(path)") }
             var bytes = Bytes(width: width)
-            for y in 0..<height {
-                for x in 0..<width {
+            for y in 0 ..< height {
+                for x in 0 ..< width {
                     let (word, alpha) = filled(x, y, seed: seed)
                     bytes.words.append(word)
                     bytes.alpha.append(alpha)
@@ -197,7 +199,8 @@ extension XrDescriptorCopies {
                 from: from.texture, sourceSlice: 0, sourceLevel: 0,
                 sourceOrigin: MTLOrigin(x: c.origin.x, y: c.origin.y, z: 0),
                 sourceSize: MTLSize(width: c.size.w, height: c.size.h, depth: 1), to: to.texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin(x: c.at.x, y: c.at.y, z: 0))
+                destinationLevel: 0, destinationOrigin: MTLOrigin(x: c.at.x, y: c.at.y, z: 0)
+            )
             blit.endEncoding()
         }.facadePath
         var r = Result(path: path)
@@ -212,7 +215,7 @@ extension XrDescriptorCopies {
             let got = try await read(gpu, to.texture)
             var off = 0
             for i in got.words.indices {
-                for b in 0..<4 {
+                for b in 0 ..< 4 {
                     let mask: UInt8 = b == 3 ? 0x3f : 0xff
                     let now = UInt8(truncatingIfNeeded: got.words[i] >> (8 * b)) & mask
                     let was = UInt8(truncatingIfNeeded: to.bytes.words[i] >> (8 * b)) & mask
@@ -258,13 +261,14 @@ extension XrDescriptorCopies {
                 blit.copy(
                     from: s, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                     sourceSize: MTLSize(width: size.w, height: size.h, depth: 1), to: t, destinationSlice: 0,
-                    destinationLevel: 0, destinationOrigin: MTLOrigin())
+                    destinationLevel: 0, destinationOrigin: MTLOrigin()
+                )
                 blit.endEncoding()
             }.facadePath)
         }
         let a = SurfaceReads.bytes(firstSurface), b = SurfaceReads.bytes(lastSurface)
-        let region = (0..<size.h).flatMap { j in
-            (0..<4 * size.w).map { j * 128 + $0 } + (0..<size.w).map { 1024 + j * 128 + $0 }
+        let region = (0 ..< size.h).flatMap { j in
+            (0 ..< 4 * size.w).map { j * 128 + $0 } + (0 ..< size.w).map { 1024 + j * 128 + $0 }
         }
         let off = region.filter { a[$0] != b[$0] }.count
         return Result(path: paths.first { $0 != "gm20b" } ?? paths[0], off: off, sourceOff: 0, moved: region.count)

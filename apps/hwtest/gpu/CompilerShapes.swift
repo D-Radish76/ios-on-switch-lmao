@@ -28,7 +28,7 @@ public enum CompilerShapes {
             path = 3 + (x > y ? 30 : x == y ? 40 : 50 + (y & 1))
         }
         var sum: UInt32 = 0
-        for i in 0...(x & 15) {
+        for i in 0 ... (x & 15) {
             if (i + y) % 5 == 0 { continue }
             sum += i * (y % 9 + 1)
             if sum > 120 + (x & 63) { break }
@@ -55,7 +55,8 @@ public enum CompilerShapes {
         let v = v.isSubnormal ? Float(sign: v.sign, exponent: 0, significand: 0) : v
         let m = abs(v), small = Float.leastNormalMagnitude
         let flags: [Bool] = [
-            v.isNaN, v.isInfinite, v.isFinite, v.isNormal, m > 0, m < small, m >= small, m < 1, m <= .greatestFiniteMagnitude,
+            v.isNaN, v.isInfinite, v.isFinite, v.isNormal, m > 0, m < small, m >= small, m < 1,
+            m <= .greatestFiniteMagnitude,
             m == .infinity, m != .infinity, v < 0, v > 0, v == 0, v != v, v.sign == .minus,
         ]
         return flags.enumerated().reduce(0) { $0 | ($1.element ? 1 << UInt32($1.offset) : 0) }
@@ -86,7 +87,7 @@ public enum CompilerShapes {
 
     static func texels(_ gpu: GPU, _ texture: MTLTexture) async throws -> [SIMD4<Float>] {
         let bytes = try await gpu.read(texture, bytesPerPixel: 16)
-        return (0..<(width * height)).map { bytes.loaded(as: SIMD4<Float>.self, at: $0) }
+        return (0 ..< (width * height)).map { bytes.loaded(as: SIMD4<Float>.self, at: $0) }
     }
 
     public static func observeLayout(_ gpu: GPU) async throws -> Reading {

@@ -27,13 +27,14 @@ public enum YcbcrCpuCopies {
     }
 
     /// Code c[y][x] of the region, (16y + x) * 7 + 3, at byte 16y + x of a 64-byte source; the rest 0x99
-    static let codes: [UInt8] = (0..<64).map { i in i % 16 < 4 ? UInt8(truncatingIfNeeded: i * 7 + 3) : 0x99 }
+    static let codes: [UInt8] = (0 ..< 64).map { i in i % 16 < 4 ? UInt8(truncatingIfNeeded: i * 7 + 3) : 0x99 }
 
     static func surface(luma: Int, at offset: Int, chroma: Int, at chromaOffset: Int) -> IOSurfaceRef? {
         RowsUnder16.surface(
             "420v", 8, 8,
             planes: [P(at: offset, 8, 8, bpe: 1, rows: luma), P(at: chromaOffset, 4, 4, bpe: 2, rows: chroma)],
-            fill: fill)
+            fill: fill
+        )
     }
 
     static func replace(_ texture: MTLTexture, rows: Int) {
@@ -45,24 +46,24 @@ public enum YcbcrCpuCopies {
     public static func observe(_ gpu: GPU) throws -> Reading {
         var r = Reading()
         guard let written = surface(luma: 8, at: 8, chroma: 8, at: 4100),
-            let short = surface(luma: 8, at: 8, chroma: 8, at: 4100),
-            let packed = surface(luma: 16, at: 0, chroma: 16, at: 4096)
+              let short = surface(luma: 8, at: 8, chroma: 8, at: 4100),
+              let packed = surface(luma: 16, at: 0, chroma: 16, at: 4096)
         else { throw TestFailure("no '420v' 8x8 of rows 8") }
         guard let luma = SurfaceReads.texture(gpu, 500, 8, 8, over: written),
-            let shortRows = SurfaceReads.texture(gpu, 500, 8, 8, over: short)
+              let shortRows = SurfaceReads.texture(gpu, 500, 8, 8, over: short)
         else { return r }
         r.made = true
         replace(luma, rows: 16)
         var want = [UInt8](repeating: fill, count: 16384)
-        for y in 0..<4 { for x in 0..<4 { want[8 + (3 + y) * 8 + 2 + x] = codes[16 * y + x] } }
+        for y in 0 ..< 4 { for x in 0 ..< 4 { want[8 + (3 + y) * 8 + 2 + x] = codes[16 * y + x] } }
         r.writeOff = RowsUnder16.off(written, want, fill: fill)
 
         RowsUnder16.edit(written) { base in
-            for y in 0..<4 { for x in 0..<4 { base[8 + (3 + y) * 8 + 2 + x] = UInt8(200 - (16 * y + x)) } }
+            for y in 0 ..< 4 { for x in 0 ..< 4 { base[8 + (3 + y) * 8 + 2 + x] = UInt8(200 - (16 * y + x)) } }
         }
         var read = [UInt8](repeating: sentinel, count: 64)
         read.withUnsafeMutableBytes { luma.getBytes($0.baseAddress!, bytesPerRow: 16, from: region, mipmapLevel: 0) }
-        let expected = (0..<64).map { (i: Int) -> UInt8 in i % 16 < 4 ? UInt8(200 - i / 16 * 16 - i % 16) : sentinel }
+        let expected = (0 ..< 64).map { (i: Int) -> UInt8 in i % 16 < 4 ? UInt8(200 - i / 16 * 16 - i % 16) : sentinel }
         r.readOff = zip(read, expected).filter { $0 != $1 }.count
 
         replace(shortRows, rows: 2)

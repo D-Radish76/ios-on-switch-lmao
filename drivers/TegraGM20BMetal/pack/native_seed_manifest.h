@@ -25,7 +25,7 @@ inline int posixCode(NSError *error)
     NSError *underlying = error.userInfo[NSUnderlyingErrorKey];
     return [underlying.domain isEqualToString:NSPOSIXErrorDomain] ? int(underlying.code)
            : [error.domain isEqualToString:NSPOSIXErrorDomain]    ? int(error.code)
-                                                                   : 0;
+                                                                  : 0;
 }
 
 // `path` at `mode`, chmod only where it is not: a directory another user made refuses chmod (EPERM) even when it
@@ -211,8 +211,8 @@ inline bool restampRow(NSMutableDictionary *row, const std::string &input, uint6
     gm20b::RuntimeRecord record;
     gm20b::ComputeRecord compute;
     bool kernel = false;
-    if (!recordIdentity(bytes, decoded, record, compute, kernel) || decoded.stack != key.stack || decoded.key != key.key ||
-        memcmp(decoded.vertexAir, key.vertexAir, sizeof key.vertexAir) ||
+    if (!recordIdentity(bytes, decoded, record, compute, kernel) || decoded.stack != key.stack ||
+        decoded.key != key.key || memcmp(decoded.vertexAir, key.vertexAir, sizeof key.vertexAir) ||
         memcmp(decoded.fragmentAir, key.fragmentAir, sizeof key.fragmentAir))
         return false;
     if ((row[@"kind"] && ![row[@"kind"] isEqualToString:kernel ? @"compute" : @"render"]) ||
@@ -228,12 +228,13 @@ inline bool restampRow(NSMutableDictionary *row, const std::string &input, uint6
         gm20b::RuntimeRecord loaded;
         gm20b::ComputeRecord loadedCompute;
         std::string refusal;
-        const bool stored = kernel ?
-            cache.storeKernel(key, &compute, "") &&
-                cache.loadKernel(key, loadedCompute, refusal) == gm20b::RecordCache::Found::Record &&
-                gm20b::encodeKernelEntry(key, &loadedCompute, "") == encoded :
-            cache.store(key, &record, "") && cache.load(key, loaded, refusal) == gm20b::RecordCache::Found::Record &&
-                gm20b::encodeEntry(key, &loaded, "") == encoded;
+        const bool stored =
+            kernel ? cache.storeKernel(key, &compute, "") &&
+                         cache.loadKernel(key, loadedCompute, refusal) == gm20b::RecordCache::Found::Record &&
+                         gm20b::encodeKernelEntry(key, &loadedCompute, "") == encoded
+                   : cache.store(key, &record, "") &&
+                         cache.load(key, loaded, refusal) == gm20b::RecordCache::Found::Record &&
+                         gm20b::encodeEntry(key, &loaded, "") == encoded;
         if (!stored || !withMode(output + "/" + relative, 0644))
             return false;
     }

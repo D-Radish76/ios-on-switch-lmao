@@ -36,8 +36,8 @@ struct Depth16LayeredTestsTest: HWTest {
             let r = try await Depth16LayeredCases.layered(gpu)
             let centre =
                 (Depth16LayeredCases.rect.y0 + Depth16LayeredCases.rect.y1) / 2 * Depth16LayeredCases.side
-                + (Depth16LayeredCases.rect.x0 + Depth16LayeredCases.rect.x1) / 2
-            for l in 0..<Depth16LayeredCases.layers {
+                    + (Depth16LayeredCases.rect.x0 + Depth16LayeredCases.rect.x1) / 2
+            for l in 0 ..< Depth16LayeredCases.layers {
                 let off = Depth16LayeredCases.depthOff(r, layer: l, clear: clearCodes[l])
                 metrics.set("d16_layer\(l)_code", Int(r.depth[l][centre]))
                 metrics.set("d16_layer\(l)_off", off)

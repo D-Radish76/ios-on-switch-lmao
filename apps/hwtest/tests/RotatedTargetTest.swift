@@ -44,11 +44,12 @@ struct RotatedTargetTest: HWTest {
         var failures: [String] = []
         var r4Load = PathTally()
         var native = 0, nativeRaw = 0, tieWrong = 0, edgeWrong = 0
-        for turn in 1...4 {
+        for turn in 1 ... 4 {
             for shape in Self.shapes {
                 let cells = RotatedCells(
                     gpu: gpu, states: states, turn: turn, width: shape.width, height: shape.height,
-                    aligned: shape.aligned)
+                    aligned: shape.aligned
+                )
                 guard let plane = try cells.makePlane() else {
                     return .fail("the device makes no texture with the rotation SPI", metrics, proof: gpu.proof)
                 }
@@ -87,7 +88,7 @@ struct RotatedTargetTest: HWTest {
 
 enum RotatedCell: String, CaseIterable {
     case clear, draw, load, idleLoad, partLoad, pointLoad, edgeLoad, besideR4, points, fetch, position, derivative,
-        fwidth, depth, resolve, beside, keptDepth, keptStencil, turns, frames, sized, tie, keptPair, keptPair16
+         fwidth, depth, resolve, beside, keptDepth, keptStencil, turns, frames, sized, tie, keptPair, keptPair16
 
     /// gpu.gm20b.turned_separate_pair's (TurnedSeparatePairTest), and this test's: every other
     static let pairCells: [RotatedCell] = [.keptPair, .keptPair16]
@@ -113,9 +114,11 @@ struct RotatedStates {
         fetch = try make("rotated_fetch_fragment")
         discarded = try make("rotated_discard_fragment")
         depthTested = try gpu.render(
-            vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: .depth32Float)
+            vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: .depth32Float
+        )
         multisampled = try gpu.render(
-            vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, samples: 4)
+            vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, samples: 4
+        )
         pair = try gpu.render(vertex: "rotated_vertex", fragment: "rotated_pair_fragment", format: .bgra8Unorm) {
             $0.colorAttachments[1].pixelFormat = .bgra8Unorm
         }
@@ -181,7 +184,8 @@ struct RotatedCells {
         ]
         guard let surface = IOSurface(properties: properties) else { throw TestFailure("IOSurface creation failed") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = .renderTarget
         descriptor.storageMode = .shared
         guard descriptor.responds(to: NSSelectorFromString("setRotation:")) else { return nil }
@@ -217,7 +221,7 @@ struct RotatedCells {
         guard checked else { return Result(path: path, referencePath: referencePath, wrong: 0) }
         var wrongBeside = try await secondPlaneWrong()
         let pairs = beside.textures.count / 2
-        for i in 0..<pairs {
+        for i in 0 ..< pairs {
             let a = try await gpu.read(beside.textures[i], bytesPerPixel: 4)
             let b = try await gpu.read(beside.textures[i + pairs], bytesPerPixel: 4)
             wrongBeside += zip(a, b).filter { $0 != $1 }.count
@@ -231,8 +235,8 @@ struct RotatedCells {
         // of Metal (resolve_rule.h resolve.twod); a turned target's takes the exact resolve pass
         let slack = cell == .resolve ? 1 : 0
         var wrong = 0
-        for y in 0..<h {
-            for x in 0..<w {
+        for y in 0 ..< h {
+            for x in 0 ..< w {
                 let (px, py) = stored(x, y)
                 let at = plane.surface.baseAddress + py * plane.rowBytes + px * 4
                 let got = UnsafeRawBufferPointer(start: at, count: 4)
@@ -283,17 +287,18 @@ struct RotatedCells {
                     let points = centres.map { c in
                         SIMD4<Float>(
                             (Float(c.0) + 0.5) / Float(width) * 2 - 1,
-                            1 - (Float(c.1) + 0.5) / Float(height) * 2, 0.5, 1)
+                            1 - (Float(c.1) + 0.5) / Float(height) * 2, 0.5, 1
+                        )
                     }
                     shapes(e, points, [1, 1, 0, 1], states.plain, primitive: .point, perColor: points.count)
-                }
+                },
             ]
         case .fetch:
             return [
                 encode(load: .clear) { e in
                     shapes(e, rect(4, 2, 40, 30), [1, 0, 0, 1], states.plain)
                     shapes(e, rect(20, 10, 70, 50), [0, 0, 1, 1], states.fetch)
-                }
+                },
             ]
         case .position:
             return [encode(load: .clear) { e in shapes(e, rect(0, 0, 96, 64), [1, 1, 1, 1], states.position) }]
@@ -324,7 +329,7 @@ struct RotatedCells {
         case .tie:
             return [
                 encode(load: .clear) { e in shapes(e, halfPixelRect(10.5, 5.5, 30.5, 20.5), [1, 1, 1, 1], states.plain)
-                }
+                },
             ]
         }
     }
@@ -386,8 +391,9 @@ struct RotatedCells {
     /// rectangle of the first pass hides the second's where they overlap
     private func keptDepth(_ commands: MTLCommandBuffer, _ target: MTLTexture) {
         guard let depth = try? gpu.texture(.depth32Float, width, height, usage: .renderTarget),
-            let depthOnly = try? gpu.render(
-                vertex: "rotated_vertex", fragment: "rotated_fragment", format: .invalid, depth: .depth32Float)
+              let depthOnly = try? gpu.render(
+                  vertex: "rotated_vertex", fragment: "rotated_fragment", format: .invalid, depth: .depth32Float
+              )
         else { return }
         let at = { (r: [SIMD4<Float>], z: Float) in r.map { SIMD4<Float>($0.x, $0.y, z, 1) } }
         let first = MTLRenderPassDescriptor()
@@ -419,14 +425,16 @@ struct RotatedCells {
     private func keptStencil(_ commands: MTLCommandBuffer, _ target: MTLTexture) {
         let zs = MTLPixelFormat.depth32Float_stencil8
         guard let zeta = try? gpu.texture(zs, width, height, usage: .renderTarget),
-            let tested = try? gpu.render(
-                vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: zs, stencil: zs),
-            let blue = try? gpu.render(
-                vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: zs, stencil: zs,
-                configure: { $0.colorAttachments[0].writeMask = .blue }),
-            let writes = zetaState(.lessEqual, writes: true, stencil: .always, replace: true),
-            let equal = zetaState(.always, writes: false, stencil: .equal, replace: false),
-            let beyond = zetaState(.lessEqual, writes: false, stencil: .always, replace: false)
+              let tested = try? gpu.render(
+                  vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: zs, stencil: zs
+              ),
+              let blue = try? gpu.render(
+                  vertex: "rotated_vertex", fragment: "rotated_fragment", format: .bgra8Unorm, depth: zs, stencil: zs,
+                  configure: { $0.colorAttachments[0].writeMask = .blue }
+              ),
+              let writes = zetaState(.lessEqual, writes: true, stencil: .always, replace: true),
+              let equal = zetaState(.always, writes: false, stencil: .equal, replace: false),
+              let beyond = zetaState(.lessEqual, writes: false, stencil: .always, replace: false)
         else { return }
         let at = { (r: [SIMD4<Float>], z: Float) in r.map { SIMD4<Float>($0.x, $0.y, z, 1) } }
         let whole = rect(0, 0, width, height)
@@ -510,7 +518,8 @@ struct RotatedCells {
 
     func rect(_ x0: Int, _ y0: Int, _ x1: Int, _ y1: Int, reversed: Bool = false) -> [SIMD4<Float>] {
         let c = GPU.pixelQuad(
-            x0, y0, x1, y1, width: width, height: height)
+            x0, y0, x1, y1, width: width, height: height
+        )
         return reversed ? [c[0], c[2], c[1], c[1], c[2], c[3]] : [c[0], c[1], c[2], c[1], c[3], c[2]]
     }
 

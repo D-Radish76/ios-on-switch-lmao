@@ -15,7 +15,8 @@ struct NativeMemorylessCpuTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: false)
+            pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: false
+        )
         descriptor.storageMode = .memoryless
         descriptor.usage = .renderTarget
         guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { throw TestFailure("no texture") }

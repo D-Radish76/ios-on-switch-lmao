@@ -29,7 +29,7 @@ struct CompileAnswerLatencyTest: HWTest {
         }
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        let salt = UInt32.random(in: 1...UInt32.max)
+        let salt = UInt32.random(in: 1 ... UInt32.max)
         let spinners = Spinners(count: ProcessInfo.processInfo.activeProcessorCount, limit: Self.spinLimit)
         spinners.start()
         let account = try await MainActor.run { try Account(of: try pipeline(gpu, salt: salt)) }
@@ -112,7 +112,7 @@ struct CompileAnswerLatencyTest: HWTest {
         func start() {
             began = Date()
             let deadline = began.addingTimeInterval(limit)
-            for _ in 0..<count {
+            for _ in 0 ..< count {
                 let thread = Thread { [self] in
                     while !isStopped && Date() < deadline {}
                 }

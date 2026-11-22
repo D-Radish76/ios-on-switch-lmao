@@ -29,7 +29,7 @@ IOLock *connectionLock()
 	IOLock *made = IOLockAlloc();
 	IOLock *none = nullptr;
 	if (made && !__atomic_compare_exchange_n(&gConnectionLock, &none, made, false,
-						  __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+						 __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
 		IOLockFree(made);
 		return none;
 	}

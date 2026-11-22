@@ -29,7 +29,7 @@ struct XrPlanesImagesTest: HWTest {
 
     static let values: [SIMD4<Float>] = {
         var state: UInt64 = 550
-        return (0..<side * side).map { _ in
+        return (0 ..< side * side).map { _ in
             let w = WordMipmapCases.splitmix(&state)
             let colour = { (k: UInt64) in Float(w >> (16 * k) % 2001) / 1000 - 0.75 }
             return SIMD4(colour(0), colour(1), colour(2), Float(w >> 48 % 256) / 255)
@@ -93,7 +93,7 @@ struct XrPlanesImagesTest: HWTest {
             }
         }
         let held = { (v: SIMD4<Float>) in XRTwoPlaneTest.texel(SIMD4<Float>(SIMD4<Float16>(v))) }
-        return (0..<side * side).map { inside($0) ? held(draw(values[$0])) : texels[$0] }
+        return (0 ..< side * side).map { inside($0) ? held(draw(values[$0])) : texels[$0] }
     }
 
     static func judged(_ a: [UInt64], _ b: [UInt64]) -> (word: Int, alpha: Int, worst: Int) {
@@ -130,7 +130,8 @@ struct XrPlanesImagesTest: HWTest {
                 pass.colorAttachments[slot].texture = t
                 pass.colorAttachments[slot].loadAction = load
                 pass.colorAttachments[slot].clearColor = MTLClearColor(
-                    red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: Double(clear.w))
+                    red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: Double(clear.w)
+                )
                 pass.colorAttachments[slot].storeAction = .store
             }
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
@@ -147,7 +148,7 @@ struct XrPlanesImagesTest: HWTest {
     static func images(_ gpu: GPU) async throws -> (beside: [UInt64], alone: [UInt64]) {
         let (besideBuffer, beside) = try surface(gpu, written: true)
         let (aloneBuffer, alone) = try surface(gpu, written: true)
-        let others = try (0..<7).map { _ in try gpu.texture(.bgra8Unorm, side, side) }
+        let others = try (0 ..< 7).map { _ in try gpu.texture(.bgra8Unorm, side, side) }
         try await pass(gpu, others + [beside], fragment: "eight_target_values", load: .load, values: values)
         try await pass(gpu, [alone], fragment: "texel_values", load: .load, values: values)
         return (

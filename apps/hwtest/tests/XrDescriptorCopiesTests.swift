@@ -62,7 +62,8 @@ struct XrDescriptorPaddingTest: HWTest {
                     let key = "xr_desc_padding_off_\(w)_\(name)"
                     do {
                         let r = try await XrDescriptorCopies.roundTrip(
-                            gpu, width: w, height: h, size: size, storage: storage)
+                            gpu, width: w, height: h, size: size, storage: storage
+                        )
                         metrics.set(key, r.off)
                         checks += [
                             ("\(w) \(name): \(r.path)", r.path == "gm20b"), ("\(w) \(name): \(r.off) off", r.off == 0),

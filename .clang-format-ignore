@@ -9,6 +9,8 @@ drivers/SwitchVideoDecoders/AVD/VP9Tables.h
 drivers/SwitchVideoDecoders/test/vp9gen/vpx_config.h
 drivers/TegraGM20BMetal/plugin/TwoPlaneStandIn.h
 drivers/TegraGM20BMetal/pack/srgb_knots.h
+drivers/TegraGM20BMetal/fill_texel_tables.h
+drivers/TegraVIC/test/vic_color_reference.h
 bazel/pinned/*/**
 kernel/xnu-*/**
 third_party/**

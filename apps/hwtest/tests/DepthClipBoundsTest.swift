@@ -77,23 +77,25 @@ struct DepthClipBoundsTest: HWTest {
                 rows.append(
                     Row(
                         label: "\(name)/\(bias)", clamp: true, range: range, z: z, bias: value, metal: metalValue,
-                        model: biased))
+                        model: biased
+                    )
+                )
             }
         }
         return rows
     }()
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        vertex float4 bounds_vertex(uint v [[vertex_id]], constant float &z [[buffer(0)]]) {
-            const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            return float4(p[v], z, 1);
-        }
-        fragment float4 bounds_colour() { return float4(1, 0, 0, 1); }
-        struct Depth { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
-        fragment Depth bounds_depth(constant float &d [[buffer(0)]]) { return {float4(1, 0, 0, 1), d}; }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    vertex float4 bounds_vertex(uint v [[vertex_id]], constant float &z [[buffer(0)]]) {
+        const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        return float4(p[v], z, 1);
+    }
+    fragment float4 bounds_colour() { return float4(1, 0, 0, 1); }
+    struct Depth { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
+    fragment Depth bounds_depth(constant float &d [[buffer(0)]]) { return {float4(1, 0, 0, 1), d}; }
+    """
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -134,7 +136,9 @@ struct DepthClipBoundsTest: HWTest {
                 e.setViewport(
                     MTLViewport(
                         originX: 0, originY: 0, width: Double(n), height: Double(n), znear: arm.range.0,
-                        zfar: arm.range.1))
+                        zfar: arm.range.1
+                    )
+                )
                 if arm.clamp { e.setDepthClipMode(.clamp) }
                 e.setDepthBias(arm.bias, slopeScale: 0, clamp: 0)
                 var z = arm.z
@@ -146,7 +150,8 @@ struct DepthClipBoundsTest: HWTest {
                 b.copy(
                     from: depth, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                     sourceSize: MTLSize(width: n, height: n, depth: 1), to: out, destinationOffset: 0,
-                    destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4)
+                    destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4
+                )
                 b.endEncoding()
             }.path
             paths.append(path)
@@ -175,7 +180,9 @@ struct DepthClipBoundsTest: HWTest {
                     e.setViewport(
                         MTLViewport(
                             originX: 0, originY: 0, width: Double(n), height: Double(n), znear: row.range.0,
-                            zfar: row.range.1))
+                            zfar: row.range.1
+                        )
+                    )
                     if row.clamp { e.setDepthClipMode(.clamp) }
                     e.setDepthBias(row.bias.0, slopeScale: row.bias.1, clamp: row.bias.2)
                     var z = row.z
@@ -186,9 +193,11 @@ struct DepthClipBoundsTest: HWTest {
                     b.copy(
                         from: depth, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                         sourceSize: MTLSize(width: n, height: n, depth: 1), to: out, destinationOffset: 0,
-                        destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4)
+                        destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4
+                    )
                     b.endEncoding()
-                }.path)
+                }.path
+            )
             let got = Double(out.contents().load(fromByteOffset: 4 * (n / 2) * (n + 1), as: Float.self))
             measured.append(String(format: "%@=%.7f", row.label, got))
             if abs(got - row.model) > 1e-6 { offModel.append(row.label) }

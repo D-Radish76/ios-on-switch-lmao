@@ -81,10 +81,19 @@ public enum XrWrittenOnePlane {
         var reading = Reading()
         guard let surface = surface(arm) else { throw TestFailure("no surface for \(arm.rawValue)") }
         let format = MTLPixelFormat(rawValue: arm == .clear551 ? 551 : 550)!, size = arm == .plane1 ? 16 : 64
-        let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: format, width: size, height: size, mipmapped: false)
+        let descriptor = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: format,
+            width: size,
+            height: size,
+            mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
-        guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: arm == .plane1 ? 1 : 0)
+        guard let texture = gpu.device.makeTexture(
+            descriptor: descriptor,
+            iosurface: surface,
+            plane: arm == .plane1 ? 1 : 0
+        )
         else { return reading }
         reading.made = true
         reading.paths.append(try await pass(gpu, texture, load: false, nil).facadePath)
@@ -106,13 +115,17 @@ public enum XrWrittenOnePlane {
         IOSurfaceLock(surface, .readOnly, nil)
         let base = IOSurfaceGetBaseAddress(surface)
         reading.word = base.load(fromByteOffset: at, as: UInt32.self)
-        for y in 0..<size {
-            for x in 0..<size where base.load(fromByteOffset: at + y * rowBytes + 4 * x, as: UInt32.self) != reading.word {
+        for y in 0 ..< size {
+            for x in 0 ..< size
+                where base.load(fromByteOffset: at + y * rowBytes + 4 * x, as: UInt32.self) != reading.word {
                 reading.wordsOff += 1
             }
         }
         let end = at + rowBytes * (size - 1) + 4 * size
-        reading.pastChanged = (end..<IOSurfaceGetAllocSize(surface)).filter { base.load(fromByteOffset: $0, as: UInt8.self) != 0xff }.count
+        reading.pastChanged = (end ..< IOSurfaceGetAllocSize(surface)).filter { base.load(
+            fromByteOffset: $0,
+            as: UInt8.self
+        ) != 0xff }.count
         IOSurfaceUnlock(surface, .readOnly, nil)
         if arm == .read550 {
             let target = try gpu.texture(.rgba16Float, size, size)
@@ -132,9 +145,12 @@ public enum XrWrittenOnePlane {
             }
             reading.paths.append(timing.facadePath)
             let bytes = try await gpu.read(target, bytesPerPixel: 8), want = XrPlanesRows.texel(reading.word, 0)
-            reading.texelsOff = (0..<(size * size)).filter { i in
+            reading.texelsOff = (0 ..< (size * size)).filter { i in
                 let got = bytes.loaded(as: SIMD4<Float16>.self, at: i)
-                return (0..<4).contains { abs(Int(Int16(bitPattern: got[$0].bitPattern)) - Int(Int16(bitPattern: want[$0].bitPattern))) > 1 }
+                return (0 ..< 4)
+                    .contains {
+                        abs(Int(Int16(bitPattern: got[$0].bitPattern)) - Int(Int16(bitPattern: want[$0].bitPattern))) >
+                            1 }
             }.count
         }
         return reading

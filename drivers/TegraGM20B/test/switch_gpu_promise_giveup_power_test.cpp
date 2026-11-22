@@ -150,7 +150,8 @@ TEST_F(Power, AnUnarmedPromisesBoundRunsOnThroughAPowerDown)
 	until(parked + 4999 * kMs);
 	EXPECT_TRUE(lines.empty());
 	until(parked + 5000 * kMs);
-	ASSERT_EQ(lines.size(), 1u) << "a reader of a promise nobody armed waits across the power-down";
+	ASSERT_EQ(lines.size(), 1u)
+		<< "a reader of a promise nobody armed waits across the power-down";
 	EXPECT_EQ(fake::pool[kOffset / 4], kValue);
 	EXPECT_EQ(probedReaders, 0u);
 	powerUp();

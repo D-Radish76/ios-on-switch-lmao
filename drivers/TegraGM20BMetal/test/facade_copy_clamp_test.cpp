@@ -100,14 +100,14 @@ Work copiedBetween(id<MTLDevice> device, id<MTLTexture> from, id<MTLTexture> to)
 {
     return secondRun(device, ^(id<MTLBlitCommandEncoder> e) {
         [e copyFromTexture:from
-                 sourceSlice:0
-                 sourceLevel:0
-                sourceOrigin:MTLOriginMake(0, 0, 0)
-                  sourceSize:MTLSizeMake(kSide, kSide, 1)
-                   toTexture:to
-            destinationSlice:0
-            destinationLevel:0
-           destinationOrigin:MTLOriginMake(0, 0, 0)];
+                  sourceSlice:0
+                  sourceLevel:0
+                 sourceOrigin:MTLOriginMake(0, 0, 0)
+                   sourceSize:MTLSizeMake(kSide, kSide, 1)
+                    toTexture:to
+             destinationSlice:0
+             destinationLevel:0
+            destinationOrigin:MTLOriginMake(0, 0, 0)];
     });
 }
 

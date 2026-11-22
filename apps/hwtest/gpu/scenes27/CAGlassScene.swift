@@ -46,7 +46,8 @@ struct CAGlassScene: GPUScene {
         let source = try gpu.texture(.bgra8Unorm, size, size, usage: [.shaderRead])
         try await gpu.upload(
             Patterns.bytes(Patterns.busy(width: size, height: size, channels: 4), .bgra8Unorm), to: source,
-            bytesPerRow: size * 4)
+            bytesPerRow: size * 4
+        )
         let sdf = try gpu.texture(.rgba16Float, size, size, usage: [.shaderRead])
         let field = Raster(width: size, height: size, channels: 4) { x, y, _ in
             (hypotf(Float(x - size / 2), Float(y - size / 2)) - Float(size) / 3) / Float(size)
@@ -73,21 +74,23 @@ struct CAGlassScene: GPUScene {
             }
             var times: [Double] = []
             var paths: Set<String> = []
-            for _ in 0..<3 {
+            for _ in 0 ..< 3 {
                 let timing = try await gpu.run(tolerateError: true) { commands in
                     let pass = MTLRenderPassDescriptor()
                     for (index, texture) in attachments.enumerated() {
                         pass.colorAttachments[index].texture = texture
                         pass.colorAttachments[index].loadAction = .clear
                         pass.colorAttachments[index].clearColor = MTLClearColor(
-                            red: 0.1, green: 0.2, blue: 0.3, alpha: 1)
+                            red: 0.1, green: 0.2, blue: 0.3, alpha: 1
+                        )
                         pass.colorAttachments[index].storeAction = index == 0 ? .store : .dontCare
                     }
                     let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
                     encoder.setRenderPipelineState(pipeline)
                     CAState.bind(
                         encoder, vertices: CAState.rectangle(x0: -1, y0: -1, x1: 1, y1: 1, color: SIMD4(1, 1, 1, 1)),
-                        source: source)
+                        source: source
+                    )
                     if short == "glass" { CAUniforms.bindGlass(encoder, source: source, sdf: sdf) }
                     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                     encoder.endEncoding()
@@ -103,7 +106,8 @@ struct CAGlassScene: GPUScene {
             let bytesPerPixel = format == MTLPixelFormat.rgba16Float.rawValue ? 8 : 4
             let bytes = try await gpu.read(attachments[0], bytesPerPixel: bytesPerPixel)
             result.picture(
-                short, bytes: bytes, metalFormat: format, width: size, height: size, cleared: [0.1, 0.2, 0.3, 1])
+                short, bytes: bytes, metalFormat: format, width: size, height: size, cleared: [0.1, 0.2, 0.3, 1]
+            )
         }
         return result
     }

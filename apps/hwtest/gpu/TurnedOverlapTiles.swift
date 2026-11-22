@@ -49,7 +49,8 @@ public enum TurnedOverlapTiles {
         async throws -> String?
     {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: format)!, width: w, height: h, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: format)!, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard descriptor.responds(to: NSSelectorFromString("setRotation:")) else {
@@ -74,10 +75,12 @@ public enum TurnedOverlapTiles {
     public static func chromaRows(_ gpu: GPU) async throws -> Reading {
         let odd = surface(
             "420v", 128, 96, [Plane(offset: 0, width: 16, height: 96, bpe: 1, pitch: 16),
-                              Plane(offset: 16384, width: 8, height: 48, bpe: 2, pitch: 16)], allocation: 32768)
+                              Plane(offset: 16384, width: 8, height: 48, bpe: 2, pitch: 16)], allocation: 32768
+        )
         let control = surface(
             "420v", 128, 96, [Plane(offset: 0, width: 128, height: 96, bpe: 1, pitch: 128),
-                              Plane(offset: 16384, width: 64, height: 48, bpe: 2, pitch: 128)], allocation: 32768)
+                              Plane(offset: 16384, width: 64, height: 48, bpe: 2, pitch: 128)], allocation: 32768
+        )
         guard let odd, let control else { throw TestFailure("no '420v' 128x96 of rows 16 or 128") }
         var r = Reading(planeWidth: IOSurfaceGetWidthOfPlane(odd, 0), frameExtent: 128)
         guard try await pass(gpu, control, format: 500, 96, 128, rotation: 3, clearOnly: false) != nil else {
@@ -86,10 +89,11 @@ public enum TurnedOverlapTiles {
         guard let path = try await pass(gpu, odd, format: 500, 96, 128, rotation: 3, clearOnly: false) else { return r }
         let (o, c) = (SurfaceReads.bytes(odd), SurfaceReads.bytes(control))
         let row = { (k: Int, b: Int) in c[16384 + 128 * k + b] }
-        let judged = Array(16400..<16416) + Array(17232..<17248)
+        let judged = Array(16400 ..< 16416) + Array(17232 ..< 17248)
         (r.off, r.telling) = judge(
             o, judged, want: { $0 < 16416 ? row(0, $0 - 16400 + 16) : row(46, $0 - 17232 + 112) },
-            other: { $0 < 16416 ? row(1, $0 - 16400) : row(47, $0 - 17232 + 96) })
+            other: { $0 < 16416 ? row(1, $0 - 16400) : row(47, $0 - 17232 + 96) }
+        )
         (r.made, r.path) = (true, path)
         return r
     }
@@ -100,10 +104,12 @@ public enum TurnedOverlapTiles {
     public static func wordRows(_ gpu: GPU) async throws -> Reading {
         let odd = surface(
             "b3a8", 96, 72, [Plane(offset: 0, width: 24, height: 72, bpe: 4, pitch: 96),
-                             Plane(offset: 6912, width: 96, height: 72, bpe: 1, pitch: 96)], allocation: 16384)
+                             Plane(offset: 6912, width: 96, height: 72, bpe: 1, pitch: 96)], allocation: 16384
+        )
         let control = surface(
             "b3a8", 96, 72, [Plane(offset: 0, width: 96, height: 72, bpe: 4, pitch: 384),
-                             Plane(offset: 27648, width: 96, height: 72, bpe: 1, pitch: 96)], allocation: 49152)
+                             Plane(offset: 27648, width: 96, height: 72, bpe: 1, pitch: 96)], allocation: 49152
+        )
         guard let odd, let control else { throw TestFailure("no 'b3a8' 96x72 of word rows 96 or 384") }
         var r = Reading(planeWidth: IOSurfaceGetWidthOfPlane(odd, 0), frameExtent: 96)
         guard try await pass(gpu, control, format: 550, 72, 96, rotation: 1, clearOnly: false) != nil else {
@@ -111,7 +117,7 @@ public enum TurnedOverlapTiles {
         }
         guard let path = try await pass(gpu, odd, format: 550, 72, 96, rotation: 1, clearOnly: false) else { return r }
         let (o, c) = (SurfaceReads.bytes(odd), SurfaceReads.bytes(control))
-        (r.off, r.telling) = judge(o, Array(96..<128), want: { c[384 + $0 - 96] }, other: { c[$0] })
+        (r.off, r.telling) = judge(o, Array(96 ..< 128), want: { c[384 + $0 - 96] }, other: { c[$0] })
         (r.made, r.path) = (true, path)
         return r
     }
@@ -122,13 +128,14 @@ public enum TurnedOverlapTiles {
     public static func clearOrder(_ gpu: GPU) async throws -> Reading {
         let odd = surface(
             "b3a8", 96, 8, [Plane(offset: 0, width: 48, height: 8, bpe: 4, pitch: 192),
-                            Plane(offset: 1536, width: 96, height: 8, bpe: 1, pitch: 96)], allocation: 16384)
+                            Plane(offset: 1536, width: 96, height: 8, bpe: 1, pitch: 96)], allocation: 16384
+        )
         guard let odd else { throw TestFailure("no 'b3a8' 96x8 of word rows 192") }
         var r = Reading(planeWidth: IOSurfaceGetWidthOfPlane(odd, 0), frameExtent: 96)
         guard let path = try await pass(gpu, odd, format: 550, 8, 96, rotation: 1, clearOnly: true) else { return r }
         let o = SurfaceReads.bytes(odd)
         let word = { (i: Int) in UInt8(truncatingIfNeeded: UInt32(0x27f8_0100) >> (8 * ((i - 1344) % 4))) }
-        (r.off, r.telling) = judge(o, Array(1568..<1598) + Array(1696..<1707), want: word, other: { _ in 0xbf })
+        (r.off, r.telling) = judge(o, Array(1568 ..< 1598) + Array(1696 ..< 1707), want: word, other: { _ in 0xbf })
         (r.made, r.path) = (true, path)
         return r
     }

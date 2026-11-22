@@ -45,7 +45,8 @@ struct MPSControlFlowTest: HWTest {
                     results.add(inputs[0])
                     return graph.lessThan(inputs[0], limit, name: nil)
                 },
-                after: { args in [graph.addition(args[0], one, name: nil)] }, name: nil)[0]
+                after: { args in [graph.addition(args[0], one, name: nil)] }, name: nil
+            )[0]
         }
         metrics.set("while_result", Int(counted))
         metrics.set("while_path", whilePath)
@@ -57,7 +58,8 @@ struct MPSControlFlowTest: HWTest {
                 initialBodyArguments: [graph.constant(0, shape: [1], dataType: .int32)],
                 body: { _, args in
                     [graph.addition(args[0], graph.constant(2, shape: [1], dataType: .int32), name: nil)]
-                }, name: nil)[0]
+                }, name: nil
+            )[0]
         }
         metrics.set("for_result", Int(summed))
         metrics.set("for_path", forPath)
@@ -67,7 +69,8 @@ struct MPSControlFlowTest: HWTest {
             let pick = graph.lessThan(start, graph.constant(5, shape: [1], dataType: .int32), name: nil)
             return graph.if(
                 pick, then: { [graph.constant(11, shape: [1], dataType: .int32)] },
-                else: { [graph.constant(22, shape: [1], dataType: .int32)] }, name: nil)[0]
+                else: { [graph.constant(22, shape: [1], dataType: .int32)] }, name: nil
+            )[0]
         }
         metrics.set("if_result", Int(chosen))
         metrics.set("if_path", ifPath)
@@ -122,12 +125,14 @@ struct MPSControlFlowTest: HWTest {
                     results.add(inputs[1])
                     return graph.lessThan(inputs[0], times, name: nil)
                 },
-                after: { args in [graph.addition(args[0], int(graph, 1), name: nil), body(args[1])] }, name: nil)[1]
+                after: { args in [graph.addition(args[0], int(graph, 1), name: nil), body(args[1])] }, name: nil
+            )[1]
         }
         func counted(_ graph: MPSGraph, _ times: MPSGraphTensor, _ carried: MPSGraphTensor) -> MPSGraphTensor {
             graph.for(
                 numberOfIterations: times, initialBodyArguments: [carried],
-                body: { _, args in [graph.addition(args[0], int(graph, 1), name: nil)] }, name: nil)[0]
+                body: { _, args in [graph.addition(args[0], int(graph, 1), name: nil)] }, name: nil
+            )[0]
         }
         var shapes: [Nested] = []
         func shape(
@@ -143,7 +148,8 @@ struct MPSControlFlowTest: HWTest {
             return graph.if(
                 pick,
                 then: { [repeated(graph, start, int(graph, 0)) { graph.addition($0, int(graph, 1), name: nil) }] },
-                else: { [int(graph, -1)] }, name: nil)[0]
+                else: { [int(graph, -1)] }, name: nil
+            )[0]
         }
         try shape("for_in_while", Self.forInWhileCount, 3 * Self.forInWhileCount) { graph, start in
             repeated(graph, int(graph, 3), int(graph, 0)) { counted(graph, start, $0) }
@@ -156,8 +162,10 @@ struct MPSControlFlowTest: HWTest {
                     let even = graph.equal(graph.modulo(index, int(graph, 2), name: nil), int(graph, 0), name: nil)
                     return graph.if(
                         even, then: { [graph.addition(args[0], int(graph, 1), name: nil)] },
-                        else: { [graph.addition(args[0], int(graph, 3), name: nil)] }, name: nil)
-                }, name: nil)[0]
+                        else: { [graph.addition(args[0], int(graph, 3), name: nil)] }, name: nil
+                    )
+                }, name: nil
+            )[0]
         }
         try shape("three_deep", Self.threeDeepCount, 4 * Self.threeDeepCount) { graph, start in
             repeated(graph, int(graph, 2), int(graph, 0)) { outer in
@@ -181,7 +189,8 @@ struct MPSControlFlowTest: HWTest {
         let commands = MPSCommandBuffer(from: gpu.queue)
         let results = graph.encode(
             to: commands, feeds: [placeholder: fed], targetTensors: [out], targetOperations: nil,
-            executionDescriptor: nil)
+            executionDescriptor: nil
+        )
         commands.commit()
         commands.waitUntilCompleted()
         let root = commands.rootCommandBuffer
@@ -197,10 +206,10 @@ struct MPSControlFlowTest: HWTest {
     func cannyEdges(_ gpu: GPU) async throws -> (edges: Int, inside: Int, path: String) {
         let side = Self.side
         var bytes = [UInt8](repeating: 0, count: side * side * 4)
-        for y in 16..<48 {
-            for x in 16..<48 {
+        for y in 16 ..< 48 {
+            for x in 16 ..< 48 {
                 let at = (y * side + x) * 4
-                bytes.replaceSubrange(at..<at + 4, with: [255, 255, 255, 255])
+                bytes.replaceSubrange(at ..< at + 4, with: [255, 255, 255, 255])
             }
         }
         let source = try gpu.texture(.rgba8Unorm, side, side, usage: [.shaderRead])
@@ -212,9 +221,9 @@ struct MPSControlFlowTest: HWTest {
         }
         let out = try await gpu.read(destination, bytesPerPixel: 1)
         var edges = 0, inside = 0
-        for y in 0..<side {
-            for x in 0..<side where out[y * side + x] > 0 {
-                if (20..<44).contains(x) && (20..<44).contains(y) { inside += 1 } else { edges += 1 }
+        for y in 0 ..< side {
+            for x in 0 ..< side where out[y * side + x] > 0 {
+                if (20 ..< 44).contains(x) && (20 ..< 44).contains(y) { inside += 1 } else { edges += 1 }
             }
         }
         return (edges, inside, timing.path)

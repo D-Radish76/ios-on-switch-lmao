@@ -21,11 +21,11 @@ final class BenchCompetition {
                 [
                     "id": "competitor", "kind": "known", "draws": [64], "readback": "none",
                     "target": ["format": "bgra8unorm", "width": 1280, "height": 720],
-                ]
+                ],
             ],
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: batch),
-            let decoded = try? BenchBatch.decode(data), case .experiment(let e) = decoded.entries[0]
+              let decoded = try? BenchBatch.decode(data), case .experiment(let e) = decoded.entries[0]
         else { return nil }
         (self.runner, experiment) = (runner, e)
     }

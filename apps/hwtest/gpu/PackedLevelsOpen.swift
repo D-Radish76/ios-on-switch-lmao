@@ -14,7 +14,8 @@ public enum PackedLevelsOpen {
         _ gpu: GPU, _ c: (format: UInt, width: Int, height: Int, plane: Int), over surface: IOSurfaceRef
     ) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: c.format)!, width: c.width, height: c.height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: c.format)!, width: c.width, height: c.height, mipmapped: false
+        )
         descriptor.mipmapLevelCount = 3
         descriptor.usage = [.shaderRead, .pixelFormatView]
         descriptor.storageMode = .shared
@@ -32,8 +33,9 @@ public enum PackedLevelsOpen {
         for v in views {
             guard
                 let view = texture.makeTextureView(
-                    pixelFormat: texture.pixelFormat, textureType: .type2D, levels: v.first..<(v.first + v.count),
-                    slices: 0..<1)
+                    pixelFormat: texture.pixelFormat, textureType: .type2D, levels: v.first ..< (v.first + v.count),
+                    slices: 0 ..< 1
+                )
             else { continue }
             made += 1
             let (w, h) = (c.width >> v.first, c.height >> v.first)
@@ -66,7 +68,7 @@ public enum PackedLevelsOpen {
         guard let surface = PackedLevels.surface() else { throw TestFailure("no 'p420' 32x16") }
         guard let texture = texture(gpu, c, over: surface) else { return ("no texture", -1) }
         let plain = try gpu.texture(.rgba8Unorm, 8, 8, usage: [.shaderRead], storage: .shared)
-        let texels = (0..<256).map { UInt8(truncatingIfNeeded: $0 * 7 + 1) }
+        let texels = (0 ..< 256).map { UInt8(truncatingIfNeeded: $0 * 7 + 1) }
         try await gpu.upload(texels, to: plain, bytesPerRow: 32)
         let out = try gpu.buffer(64 * 16), packedOut = try gpu.buffer(64 * 16)
         let pipeline = try gpu.compute("plevels_shared")
@@ -78,13 +80,14 @@ public enum PackedLevelsOpen {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.setBuffer(packedOut, offset: 0, index: 1)
             encoder.dispatchThreads(
-                MTLSize(width: 8, height: 8, depth: 1), threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                MTLSize(width: 8, height: 8, depth: 1), threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }.facadePath
         guard !path.hasPrefix("error") else { return (path, -1) }
         let got = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: 64)
-        let off = (0..<64).filter { i in
-            (0..<4).contains { abs(got[i][$0] - Float(texels[4 * i + $0]) / 255) > 0.5 / 255 }
+        let off = (0 ..< 64).filter { i in
+            (0 ..< 4).contains { abs(got[i][$0] - Float(texels[4 * i + $0]) / 255) > 0.5 / 255 }
         }
         return (path, off.count)
     }

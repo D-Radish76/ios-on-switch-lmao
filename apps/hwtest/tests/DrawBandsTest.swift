@@ -141,17 +141,19 @@ struct DrawBandsTest: HWTest {
                     metrics.set(key + arm, sync.counts[key] ?? 0)
                 }
                 if arm.isEmpty, let windows = sync.counts["windows"], windows == 0,
-                    maxUs > Self.holdSlackUs && maxUs <= Self.holdCeilingUs
+                   maxUs > Self.holdSlackUs && maxUs <= Self.holdCeilingUs
                 {
                     failures.append(
                         "the app's preemption latency reached \(maxUs) us, worth a hold, and the compositor opened no "
-                            + "deadline window")
+                            + "deadline window"
+                    )
                 }
                 if arm.isEmpty && (sync.counts["behind"] ?? 0) > 0
                     && (sync.counts["sync_max_us"] ?? 0) > Self.waitBoundUs
                 {
                     failures.append(
-                        "a compositor submission's sync push waited \(sync.counts["sync_max_us"] ?? 0) us for GR")
+                        "a compositor submission's sync push waited \(sync.counts["sync_max_us"] ?? 0) us for GR"
+                    )
                 }
             }
             for key in Self.preemptKeys { metrics.set(key + arm, after.counts[key] ?? 0) }
@@ -183,7 +185,8 @@ struct DrawBandsTest: HWTest {
         halves.withUnsafeBytes {
             big.replace(
                 region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: $0.baseAddress!,
-                bytesPerRow: side * 8)
+                bytesPerRow: side * 8
+            )
         }
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
         let small = try gpu.texture(.bgra8Unorm, Self.smallSide, Self.smallSide)
@@ -204,12 +207,12 @@ struct DrawBandsTest: HWTest {
         let teachBuffer = try gpu.buffer(4)
         let teach = { (commands: MTLCommandBuffer) in
             let blit = commands.makeBlitCommandEncoder()!
-            blit.fill(buffer: teachBuffer, range: 0..<4, value: 0)
+            blit.fill(buffer: teachBuffer, range: 0 ..< 4, value: 0)
             blit.endEncoding()
         }
         var failures: [String] = []
         let smallBefore = GM20BFacade.counters(of: gpu.device)
-        for _ in 0..<Self.smallPasses {
+        for _ in 0 ..< Self.smallPasses {
             try await gpu.run { pass($0, small) }
             try await gpu.run(teach)
         }
@@ -220,7 +223,7 @@ struct DrawBandsTest: HWTest {
         var wholeMs = 0.0
         var learnedBands = 0
         var measuredUs: [Double] = [], unmeasuredUs: [Double] = []
-        for round in 0..<Self.learnRounds {
+        for round in 0 ..< Self.learnRounds {
             let before = GM20BFacade.counters(of: gpu.device)
             let timing = try await gpu.run(encode)
             try await gpu.run(teach)
@@ -254,11 +257,13 @@ struct DrawBandsTest: HWTest {
             metrics.set("us_unmeasured", unmeasured, digits: 0)
             if measured > unmeasured * 1.02 + Self.measuredSlackUs {
                 failures.append(
-                    "memory: a measured draw took \(Int(measured)) us, an unmeasured one \(Int(unmeasured)) us")
+                    "memory: a measured draw took \(Int(measured)) us, an unmeasured one \(Int(unmeasured)) us"
+                )
             }
         } else {
             failures.append(
-                "memory: \(measuredUs.count) measured and \(unmeasuredUs.count) unmeasured draws to compare")
+                "memory: \(measuredUs.count) measured and \(unmeasuredUs.count) unmeasured draws to compare"
+            )
         }
         let banded = try await gpu.read(target, bytesPerPixel: 4)
         _ = Self.budget(gpu.device, 0)
@@ -324,7 +329,7 @@ struct DrawBandsTest: HWTest {
         pass.colorAttachments[0].storeAction = resolve == nil ? .store : .multisampleResolve
         let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
         encoder.setRenderPipelineState(pipeline)
-        for _ in 0..<draws { encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3) }
+        for _ in 0 ..< draws { encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3) }
         encoder.endEncoding()
     }
 

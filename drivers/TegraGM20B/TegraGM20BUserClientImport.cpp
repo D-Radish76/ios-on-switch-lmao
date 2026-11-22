@@ -104,9 +104,10 @@ IOReturn AGXDeviceUserClient::boImport(const TegraGM20BAbiBoImport *in,
 				       TegraGM20BAbiBoAllocReply *out)
 {
 	if (!in->bytes || ((in->address | in->bytes) & 0xfff) || in->bytes > kMaxBoBytes) {
-		switch_refusal("bo-import", "arguments",
-			       "IOSurface %u: %llu bytes at %#llx are not whole pages, or past %llu",
-			       in->surface_id, in->bytes, in->address, uint64_t(kMaxBoBytes));
+		switch_refusal(
+			"bo-import", "arguments",
+			"IOSurface %u: %llu bytes at %#llx are not whole pages, or past %llu",
+			in->surface_id, in->bytes, in->address, uint64_t(kMaxBoBytes));
 		return kIOReturnBadArgument;
 	}
 	// before this import's own wiring, which sets the pages' modified bits
@@ -121,7 +122,8 @@ IOReturn AGXDeviceUserClient::boImport(const TegraGM20BAbiBoImport *in,
 	};
 	Bo *bo = IONew(Bo, 1);
 	if (!bo) {
-		switch_refusal("bo-import", "memory", "IOSurface %u: no memory for the BO of %llu bytes at %#llx",
+		switch_refusal("bo-import", "memory",
+			       "IOSurface %u: no memory for the BO of %llu bytes at %#llx",
 			       in->surface_id, in->bytes, in->address);
 		return kIOReturnNoMemory;
 	}
@@ -258,7 +260,8 @@ IOReturn AGXDeviceUserClient::boImport(const TegraGM20BAbiBoImport *in,
 	IOLockUnlock(lock_);
 	if (published) {
 		// NotOpen: the connection's submissions are shut; NoMemory: no room in its BO table
-		switch_refusal("bo-import", "publish", "IOSurface %u: %llu bytes at %#llx imported, not published (%#x)",
+		switch_refusal("bo-import", "publish",
+			       "IOSurface %u: %llu bytes at %#llx imported, not published (%#x)",
 			       in->surface_id, in->bytes, in->address, published);
 		releaseBo(bo);
 		return published;

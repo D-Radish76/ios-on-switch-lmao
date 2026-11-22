@@ -81,15 +81,17 @@ final class ShapeArms {
         _ texture: MTLTexture, width: Int, height: Int, bytesPerRow: Int, rows: Int, level: Int = 0, slice: Int = 0,
         plane: Int = 0
     ) throws -> [UInt8] {
-        let put = (0..<bytesPerRow * rows).map { UInt8(truncatingIfNeeded: $0 * 7 + 3) }
+        let put = (0 ..< bytesPerRow * rows).map { UInt8(truncatingIfNeeded: $0 * 7 + 3) }
         let region = MTLRegionMake3D(0, 0, plane, width, height, 1)
         let image = texture.textureType == .type3D ? put.count : 0
         texture.replace(
             region: region, mipmapLevel: level, slice: slice, withBytes: put, bytesPerRow: bytesPerRow,
-            bytesPerImage: image)
+            bytesPerImage: image
+        )
         var got = [UInt8](repeating: 0, count: put.count)
         texture.getBytes(
-            &got, bytesPerRow: bytesPerRow, bytesPerImage: image, from: region, mipmapLevel: level, slice: slice)
+            &got, bytesPerRow: bytesPerRow, bytesPerImage: image, from: region, mipmapLevel: level, slice: slice
+        )
         return zip(put, got).compactMap { $0 == $1 ? nil : $1 }
     }
 
@@ -138,6 +140,6 @@ final class ShapeArms {
             encoder.endEncoding()
         }
         let bytes = try await gpu.read(target, bytesPerPixel: 4)
-        return (4..<8).flatMap { y in (4..<8).flatMap { x in bytes[4 * (x + 12 * y)..<4 * (x + 12 * y) + 4] } }
+        return (4 ..< 8).flatMap { y in (4 ..< 8).flatMap { x in bytes[4 * (x + 12 * y) ..< 4 * (x + 12 * y) + 4] } }
     }
 }

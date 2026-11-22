@@ -30,12 +30,14 @@ public enum SurfaceCpuRoutes {
         ]
         guard let surface = IOSurface(properties: properties) else { throw TestFailure("IOSurface not made") }
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false
+        )
         d.usage = [.renderTarget, .shaderRead, .pixelFormatView]
         d.storageMode = .shared
         guard
             let texture = device.makeTexture(
-                descriptor: d, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0)
+                descriptor: d, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0
+            )
         else { throw TestFailure("no texture over the IOSurface") }
         return (surface, texture)
     }
@@ -53,26 +55,29 @@ public enum SurfaceCpuRoutes {
         let page = Int(vm_page_size)
         let pages = (surface.allocationSize + page - 1) / page * page
         if let whole = device.makeBuffer(
-            bytesNoCopy: surface.baseAddress, length: pages, options: .storageModeShared, deallocator: nil)
+            bytesNoCopy: surface.baseAddress, length: pages, options: .storageModeShared, deallocator: nil
+        )
         {
             out.surfaceNoCopy = true
             out.noCopyRows = rows(UnsafeRawPointer(whole.contents()), pitch: surface.bytesPerRow)
         }
         out.pageNoCopy =
             device.makeBuffer(
-                bytesNoCopy: surface.baseAddress + page, length: page, options: .storageModeShared, deallocator: nil)
+                bytesNoCopy: surface.baseAddress + page, length: page, options: .storageModeShared, deallocator: nil
+            )
             != nil
         var own: vm_address_t = 0
         if vm_allocate(mach_task_self_, &own, vm_size_t(4 * page), VM_FLAGS_ANYWHERE) == KERN_SUCCESS {
             out.ownNoCopy =
                 device.makeBuffer(
                     bytesNoCopy: UnsafeMutableRawPointer(bitPattern: own)!, length: 4 * page,
-                    options: .storageModeShared, deallocator: nil) != nil
+                    options: .storageModeShared, deallocator: nil
+                ) != nil
             vm_deallocate(mach_task_self_, own, vm_size_t(4 * page))
         }
         let spi = NSSelectorFromString("newBufferWithIOSurface:")
         if (device as AnyObject).responds(to: spi) {
-            out.surfaceBuffers = (0..<2).filter { _ in
+            out.surfaceBuffers = (0 ..< 2).filter { _ in
                 (device as AnyObject).perform(spi, with: surface)?.takeRetainedValue() is MTLBuffer
             }.count
         }
@@ -84,7 +89,8 @@ public enum SurfaceCpuRoutes {
         surface.lock(options: [], seed: nil)
         replaced.withUnsafeBytes {
             view.replace(
-                region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: row)
+                region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: row
+            )
         }
         surface.unlock(options: [], seed: nil)
         out.rows["view_locked_replace"] = getBytes(texture)
@@ -95,12 +101,13 @@ public enum SurfaceCpuRoutes {
         var out = [UInt8](repeating: 0, count: row * side)
         out.withUnsafeMutableBytes {
             texture.getBytes(
-                $0.baseAddress!, bytesPerRow: row, from: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0)
+                $0.baseAddress!, bytesPerRow: row, from: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0
+            )
         }
         return out
     }
 
     static func rows(_ base: UnsafeRawPointer, pitch: Int) -> [UInt8] {
-        (0..<side).flatMap { [UInt8](UnsafeRawBufferPointer(start: base + $0 * pitch, count: row)) }
+        (0 ..< side).flatMap { [UInt8](UnsafeRawBufferPointer(start: base + $0 * pitch, count: row)) }
     }
 }

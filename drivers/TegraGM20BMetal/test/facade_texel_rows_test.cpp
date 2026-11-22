@@ -59,7 +59,8 @@ gm20b::PackKernel storeRecord(uint32_t maxThreads)
 // every job submitted from `first` on, in order
 std::string moves(size_t first, uint64_t surface)
 {
-    constexpr uint32_t kOffsetInUpper = 0x400, kOffsetOutUpper = 0x408;  // NVB0B5_OFFSET_IN_UPPER, NVB0B5_OFFSET_OUT_UPPER
+    constexpr uint32_t kOffsetInUpper = 0x400,
+                       kOffsetOutUpper = 0x408;  // NVB0B5_OFFSET_IN_UPPER, NVB0B5_OFFSET_OUT_UPPER
     std::string out;
     uint32_t offsets[4] = {};
     const auto at = [&](uint32_t upper) {

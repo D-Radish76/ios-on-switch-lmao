@@ -60,8 +60,8 @@ class SwitchHost1xResults {
             State.retiredThrough = record.last;
         if (record.result >= 0 && record.physicalResult >= 0)
             return;
-        State.failures[State.nextFailure] = {record.first, record.last, record.generation, record.result,
-                                             record.physicalResult, record.why};
+        State.failures[State.nextFailure] = {record.first,  record.last,           record.generation,
+                                             record.result, record.physicalResult, record.why};
         State.nextFailure = (State.nextFailure + 1) % kRecent;
     }
 
@@ -235,8 +235,8 @@ public:
             return 0;
         IOLockLock(State.lock);
         const auto *record = find(*token);
-        const auto *retired = !record && retiredToken(*token) ? failure(token->value, &token->reset_generation)
-                                                              : nullptr;
+        const auto *retired =
+            !record && retiredToken(*token) ? failure(token->value, &token->reset_generation) : nullptr;
         const int found = record ? record->why : retired ? retired->why : 0;
         IOLockUnlock(State.lock);
         return found;

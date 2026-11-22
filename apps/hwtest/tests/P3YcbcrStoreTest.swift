@@ -66,17 +66,17 @@ struct P3YcbcrStoreTest: HWTest {
     /// p3storeoracle.mm's floats: std::mt19937(7)'s outputs % 4096 / 4095, four a texel
     static let values: [SIMD4<Float>] = {
         let words = mt19937(seed: 7, count: 4 * width * height).map { Float($0 % 4096) / 4095 }
-        return (0..<width * height).map {
+        return (0 ..< width * height).map {
             SIMD4(words[4 * $0], words[4 * $0 + 1], words[4 * $0 + 2], words[4 * $0 + 3])
         }
     }()
 
     static func mt19937(seed: UInt32, count: Int) -> [UInt32] {
         var mt = [UInt32](repeating: seed, count: 624)
-        for i in 1..<624 { mt[i] = 1_812_433_253 &* (mt[i - 1] ^ (mt[i - 1] >> 30)) &+ UInt32(i) }
+        for i in 1 ..< 624 { mt[i] = 1_812_433_253 &* (mt[i - 1] ^ (mt[i - 1] >> 30)) &+ UInt32(i) }
         var out: [UInt32] = []
         while out.count < count {
-            for i in 0..<624 {
+            for i in 0 ..< 624 {
                 let y = (mt[i] & 0x8000_0000) | (mt[(i + 1) % 624] & 0x7fff_ffff)
                 mt[i] = mt[(i + 397) % 624] ^ (y >> 1) ^ (y & 1 == 0 ? 0 : 0x9908_b0df)
             }
@@ -101,19 +101,21 @@ struct P3YcbcrStoreTest: HWTest {
         }
         let codes = YcbcrStore.codes(
             values, width: width, height: height, max: c.tenBit ? 1023 : 255, halvedAcross: false, halvedDown: false,
-            source: .drawnFloat)
+            source: .drawnFloat
+        )
         return [codes.luma.map { $0 << shift }, codes.chroma.map { $0 << shift }]
     }
 
     static func stored(_ gpu: GPU, _ c: Case) async throws -> CVPixelBuffer {
         guard let buffer = YcbcrCornerTest.pixelBuffer(width, height, c.fourcc),
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-            let format = MTLPixelFormat(rawValue: c.format)
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+              let format = MTLPixelFormat(rawValue: c.format)
         else { throw TestFailure("no surface") }
         IOSurfaceSetValue(surface, "IOSurfaceYCbCrMatrix" as CFString, "P3_D65" as CFString)
         YcbcrTargetTest.scribble(buffer, seed: 0)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: width, height: height, mipmapped: false)
+            pixelFormat: format, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no texture")

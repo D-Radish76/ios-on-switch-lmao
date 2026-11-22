@@ -50,7 +50,7 @@ class KernelShadows {
 public:
     struct Steps {
         std::vector<const void *> copyBack, fill;  // images into their texels, then texels into their images
-        std::vector<const void *> redraw;           // then stand-ins drawn again from their texels or images
+        std::vector<const void *> redraw;          // then stand-ins drawn again from their texels or images
 
         bool empty() const
         {

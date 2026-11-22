@@ -33,37 +33,48 @@ struct YcbcrLoadTest: HWTest {
     static let cases = [
         Case(
             format: 540, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, matrix: nil,
-            metal: 0x11ba_a8cf_6c3e_05b9),
+            metal: 0x11ba_a8cf_6c3e_05b9
+        ),
         Case(
             format: 500, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-            matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2, metal: 0x9310_1cdc_e779_635d),
+            matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2, metal: 0x9310_1cdc_e779_635d
+        ),
         Case(
             format: 520, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, matrix: nil,
-            metal: 0x1b55_873b_c381_acda),
+            metal: 0x1b55_873b_c381_acda
+        ),
         Case(
             format: 545, fourcc: kCVPixelFormatType_444YpCbCr10BiPlanarVideoRange, matrix: nil,
-            metal: 0x763b_3498_63a7_149f),
+            metal: 0x763b_3498_63a7_149f
+        ),
         Case(
             format: 503, fourcc: kCVPixelFormatType_444YpCbCr8BiPlanarFullRange, matrix: nil,
-            metal: 0xa37b_52d8_9dc1_71b7),
+            metal: 0xa37b_52d8_9dc1_71b7
+        ),
         Case(
             format: 541, fourcc: kCVPixelFormatType_422YpCbCr8BiPlanarVideoRange, matrix: nil,
-            metal: 0x96cf_2d54_459e_13a9),
+            metal: 0x96cf_2d54_459e_13a9
+        ),
         Case(
             format: 543, fourcc: kCVPixelFormatType_420YpCbCr10BiPlanarFullRange, matrix: nil,
-            metal: 0xf9c5_67a9_6d4f_d656),
+            metal: 0xf9c5_67a9_6d4f_d656
+        ),
         Case(
             format: 525, fourcc: kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange,
-            matrix: kCVImageBufferYCbCrMatrix_ITU_R_2020, metal: 0x329f_4c9f_31b0_4da9),
+            matrix: kCVImageBufferYCbCrMatrix_ITU_R_2020, metal: 0x329f_4c9f_31b0_4da9
+        ),
         Case(
             format: 527, fourcc: kCVPixelFormatType_444YpCbCr10BiPlanarFullRange, matrix: nil,
-            metal: 0x8d58_04ad_7f5b_74cd),
+            metal: 0x8d58_04ad_7f5b_74cd
+        ),
         Case(
             format: 506, fourcc: kCVPixelFormatType_422YpCbCr10BiPlanarVideoRange,
-            matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2, metal: 0x31e8_3eb4_5b2f_622b),
+            matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2, metal: 0x31e8_3eb4_5b2f_622b
+        ),
         Case(
             format: 500, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-            matrix: "P3_D65" as CFString, metal: 0x9a23_3bc3_a4df_4bdd),
+            matrix: "P3_D65" as CFString, metal: 0x9a23_3bc3_a4df_4bdd
+        ),
     ]
     static let width = 64, height = 48
     static let rect = MTLScissorRect(x: 13, y: 9, width: 30, height: 20)
@@ -115,12 +126,13 @@ struct YcbcrLoadTest: HWTest {
         let attributes =
             [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
         guard CVPixelBufferCreate(nil, w, h, c.fourcc, attributes, &made) == kCVReturnSuccess, let buffer = made,
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-            let format = MTLPixelFormat(rawValue: c.format)
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+              let format = MTLPixelFormat(rawValue: c.format)
         else { throw TestFailure("no surface") }
         if let matrix = c.matrix { IOSurfaceSetValue(surface, "IOSurfaceYCbCrMatrix" as CFString, matrix) }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: w, height: h, mipmapped: false)
+            pixelFormat: format, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no texture")
@@ -178,13 +190,14 @@ struct YcbcrLoadTest: HWTest {
     /// ycbcr_load_cases.h randomPlanes: the planes' row bytes from one generator, plane 0 first.
     static func fill(_ buffer: CVPixelBuffer, _ rows: [(bytes: Int, count: Int)], seed: UInt64) -> [[UInt8]] {
         var state = seed
-        let planes = rows.map { r in (0..<r.bytes * r.count).map { _ in UInt8(truncatingIfNeeded: splitmix(&state)) } }
+        let planes = rows
+            .map { r in (0 ..< r.bytes * r.count).map { _ in UInt8(truncatingIfNeeded: splitmix(&state)) } }
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         for (plane, r) in rows.enumerated() {
             guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { continue }
             let pitch = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
-            for y in 0..<r.count {
+            for y in 0 ..< r.count {
                 planes[plane].withUnsafeBytes { src in
                     (base + y * pitch).copyMemory(from: src.baseAddress! + y * r.bytes, byteCount: r.bytes)
                 }
@@ -199,7 +212,7 @@ struct YcbcrLoadTest: HWTest {
         return rows.enumerated().map { plane, r in
             guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return [] }
             let pitch = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
-            return (0..<r.count).flatMap { y in
+            return (0 ..< r.count).flatMap { y in
                 Array(UnsafeRawBufferPointer(start: base + y * pitch, count: r.bytes))
             }
         }
@@ -219,8 +232,8 @@ struct YcbcrLoadTest: HWTest {
         }
         let code = c.tenBit ? 2 : 1
         var changed = 0
-        for plane in 0..<2 {
-            for i in 0..<a[plane].count where a[plane][i] != b[plane][i] {
+        for plane in 0 ..< 2 {
+            for i in 0 ..< a[plane].count where a[plane][i] != b[plane][i] {
                 let (y, x) = (i / rows[plane].bytes, i % rows[plane].bytes / code)
                 let pixel = plane == 0 ? (x, y) : (x / 2 * (c.across ? 2 : 1), y * (c.down ? 2 : 1))
                 if !reached(pixel.0, pixel.1) { changed += 1 }
@@ -248,7 +261,7 @@ struct YcbcrLoadTest: HWTest {
             }
             return Float(bitPattern: f.bitPattern &+ UInt32(bitPattern: Int32((k >> 40) % 5) - 2))
         }
-        return (0..<count).map { _ in
+        return (0 ..< count).map { _ in
             let (r, g, b) = (value(), value(), value())
             return SIMD4(r, g, b, 1)
         }

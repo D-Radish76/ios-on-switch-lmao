@@ -60,7 +60,7 @@ struct FetchRungTest: HWTest {
     static func covered(_ bytes: [UInt8]) -> Int {
         var counts: [UInt32: Int] = [:]
         for at in stride(from: 0, to: bytes.count - 3, by: 4) {
-            counts[bytes[at..<at + 4].reduce(UInt32(0)) { $0 << 8 | UInt32($1) }, default: 0] += 1
+            counts[bytes[at ..< at + 4].reduce(UInt32(0)) { $0 << 8 | UInt32($1) }, default: 0] += 1
         }
         return bytes.count / 4 - (counts.values.max() ?? 0)
     }
@@ -81,13 +81,14 @@ struct FetchRungTest: HWTest {
         let blended = line.colors.min { $0.index < $1.index }?.format
         (m.worst, m.differing) =
             blended == Self.rgba16Float
-            ? FetchRungScene.halfDifference(storage.1, free.1) : FetchRungScene.difference(storage.1, free.1)
+                ? FetchRungScene.halfDifference(storage.1, free.1) : FetchRungScene.difference(storage.1, free.1)
         m.covered = Self.covered(storage.1)
         m.paths = "\(storage.0)/\(free.0)"
         for forced in [4, rung] {
             let timed = try await FetchRungScene.forcing(forced, gpu.device) {
                 try await FetchRungScene.microseconds(
-                    line, library: library, gpu: gpu, draws: Self.draws, runs: Self.runs)
+                    line, library: library, gpu: gpu, draws: Self.draws, runs: Self.runs
+                )
             }
             m.us.append(timed?.0 ?? 0)
         }
@@ -98,7 +99,7 @@ struct FetchRungTest: HWTest {
         let gpu = try GPU.make()
         guard GM20BFacade.kind(of: gpu.device) == "gm20b" else { return .skip("the default device is not the facade") }
         guard let statesURL = Bundle.main.url(forResource: "ca_states", withExtension: "log"),
-            let text = try? String(contentsOf: statesURL, encoding: .utf8)
+              let text = try? String(contentsOf: statesURL, encoding: .utf8)
         else { return .fail("ca_states.log is not in the app's bundle") }
         let states = Dictionary(uniqueKeysWithValues: (FetchRungStates.fetching[rung] ?? []).map { ($0.label, $0) })
         let plainKeys = Dictionary(uniqueKeysWithValues: (FetchRungStates.plain[rung] ?? []).map { ($0.label, $0.key) })
@@ -130,7 +131,8 @@ struct FetchRungTest: HWTest {
                 outcomes.append((program, false))
                 continue
             }
-            guard let m = measured else { return .skip(GM20BFacade.missing("switchMetalProbeFetchRung:", on: gpu.device)) }
+            guard let m = measured
+            else { return .skip(GM20BFacade.missing("switchMetalProbeFetchRung:", on: gpu.device)) }
             metrics.set("unforced_\(state.key)", m.unforced)
             if m.formless {
                 metrics.set("noform_\(state.key)", 1)
@@ -163,10 +165,11 @@ struct FetchRungTest: HWTest {
             if rung == 2 {
                 let stack = {
                     try await FetchRungScene.stack(
-                        line, layers: Self.stackLayers, frames: 2, library: library, gpu: gpu)
+                        line, layers: Self.stackLayers, frames: 2, library: library, gpu: gpu
+                    )
                 }
                 if let ruled = try await FetchRungScene.forcing(0, gpu.device, stack),
-                    let stored = try await FetchRungScene.forcing(4, gpu.device, stack)
+                   let stored = try await FetchRungScene.forcing(4, gpu.device, stack)
                 {
                     let (worst, _) = FetchRungScene.difference(stored.bytes, ruled.bytes)
                     metrics.set("worst_stack_\(state.key)", worst)
@@ -215,17 +218,17 @@ struct FetchRungTest: HWTest {
         if verdict == "PASS" { return .pass(metrics, proof: gpu.proof) }
         let why =
             !refused.isEmpty
-            ? "the GPU refused a draw"
-            : !formless.isEmpty
+                ? "the GPU refused a draw"
+                : !formless.isEmpty
                 ? "a forced draw took no fetch-free form where the pack should hold one"
                 : !onUnproven.isEmpty
-                    ? "the rules draw a program on rung \(rung) that is beyond the bound or slower"
-                    : !provenOff.isEmpty
-                        ? "a program within the bound and faster is not drawn on rung \(rung)"
-                        : !counted
-                            ? "the facade drew \(taken) of the forced draws on rung \(rung)"
-                            : !unstacked.isEmpty
-                                ? "rule fetch.blend's stack counts" : "a state that loads no colour fetched"
+                ? "the rules draw a program on rung \(rung) that is beyond the bound or slower"
+                : !provenOff.isEmpty
+                ? "a program within the bound and faster is not drawn on rung \(rung)"
+                : !counted
+                ? "the facade drew \(taken) of the forced draws on rung \(rung)"
+                : !unstacked.isEmpty
+                ? "rule fetch.blend's stack counts" : "a state that loads no colour fetched"
         return .fail(why, metrics)
     }
 }

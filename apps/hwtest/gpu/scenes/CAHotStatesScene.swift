@@ -48,7 +48,8 @@ struct CAHotStatesScene: GPUScene {
         try await gpu.blitUpload(
             [UploadRect(x: 0, y: 0, width: Self.width, height: Self.height)],
             [Patterns.bytes(Patterns.busy(width: Self.width, height: Self.height, channels: 4), .bgra8Unorm)],
-            into: source, texel: 4)
+            into: source, texel: 4
+        )
         var timed = 0
         var dumped = Metrics()
         dumped.set("regdump", "hot_states:no_state")
@@ -74,11 +75,12 @@ struct CAHotStatesScene: GPUScene {
                 }
                 let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
                 encoder.setRenderPipelineState(pipeline)
-                for band in 0..<draws {
+                for band in 0 ..< draws {
                     let (y0, y1) = bands ? Self.band(band) : (-1, 1)
                     CAState.bind(
                         encoder, vertices: CAState.rectangle(x0: -1, y0: y0, x1: 1, y1: y1, color: SIMD4(1, 1, 1, 1)),
-                        source: source)
+                        source: source
+                    )
                     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 }
                 encoder.endEncoding()
@@ -87,13 +89,13 @@ struct CAHotStatesScene: GPUScene {
             let label = line.shortLabel.lowercased()
             let before = GM20BFacade.counters(of: gpu.device)
             var runs: [GPU.Timing] = []
-            for _ in 0..<Self.runs {
+            for _ in 0 ..< Self.runs {
                 runs.append(try await gpu.run(tolerateError: true, overlapping))
             }
             let after = GM20BFacade.counters(of: gpu.device)
             if processDefault && line.fragment.name == Self.wideBlur {
                 let connection = GPUConnection()
-                let buffers = try (0..<Self.dumpBuffers).map { _ in try gpu.commit(overlapping) }
+                let buffers = try (0 ..< Self.dumpBuffers).map { _ in try gpu.commit(overlapping) }
                 dumped = RegDump.capture(.hotStates, on: connection)
                 do {
                     try gpu.finish(buffers)
@@ -116,14 +118,15 @@ struct CAHotStatesScene: GPUScene {
             result.metrics.set("wall_us_" + label, Stats.percentile(afterCommit.map { $0 * perDraw }, 0.5), digits: 1)
             result.metrics.set(
                 "cpu_us_" + label,
-                Stats.percentile(runs.map { ($0.encodeMilliseconds + $0.commitMilliseconds) * 1000 }, 0.5), digits: 0)
+                Stats.percentile(runs.map { ($0.encodeMilliseconds + $0.commitMilliseconds) * 1000 }, 0.5), digits: 0
+            )
             let stalls = zip(afterCommit, runs).map { ($0 - $1.gpuMilliseconds) * 1000 }
             result.metrics.set("stall_us_" + label, Stats.percentile(stalls, 0.5), digits: 0)
             var timings = runs
             if let interlocked = after["interlock_draws"], interlocked > before["interlock_draws"] ?? 0 {
                 result.metrics.set("ilk_" + label, interlocked - (before["interlock_draws"] ?? 0))
                 var apart: [Double] = [], pass: [Double] = []
-                for _ in 0..<Self.runs {
+                for _ in 0 ..< Self.runs {
                     let bands = try await gpu.run(tolerateError: true) { draw(true, Self.draws, $0) }
                     let empty = try await gpu.run(tolerateError: true) { draw(false, 0, $0) }
                     apart.append(bands.gpuMilliseconds * 1000)

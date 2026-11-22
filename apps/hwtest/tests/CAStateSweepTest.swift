@@ -26,9 +26,9 @@ public struct CAStateSweepTest: HWTest {
         let raw = try GPU.make()
         guard GM20BFacade.kind(of: raw.device) == "gm20b" else { return .skip("the default device is not the facade") }
         guard let statesURL = Bundle.main.url(forResource: "ca_states", withExtension: "log"),
-            let text = try? String(contentsOf: statesURL, encoding: .utf8),
-            let goldensURL = Bundle.main.url(forResource: "ca_goldens", withExtension: "txt"),
-            let goldenText = try? String(contentsOf: goldensURL, encoding: .utf8)
+              let text = try? String(contentsOf: statesURL, encoding: .utf8),
+              let goldensURL = Bundle.main.url(forResource: "ca_goldens", withExtension: "txt"),
+              let goldenText = try? String(contentsOf: goldensURL, encoding: .utf8)
         else { return .fail("ca_states.log or ca_goldens.txt is not in the app's bundle") }
         let goldens = CAGoldens(goldenText)
         let everyState = ProcessInfo.processInfo.environment["HWTEST_SWEEP_ALL"] == "1"
@@ -60,7 +60,8 @@ public struct CAStateSweepTest: HWTest {
         if !wrongStates.isEmpty || counts["failed", default: 0] > 0 {
             let failed = counts["failed", default: 0]
             return .fail(
-                "\(wrongStates.count) states drew other pixels than the Mac's, \(failed) failed", metrics, proof: proof)
+                "\(wrongStates.count) states drew other pixels than the Mac's, \(failed) failed", metrics, proof: proof
+            )
         }
         return .pass(metrics, proof: proof)
     }
@@ -75,8 +76,9 @@ public struct CAStateSweepTest: HWTest {
             if drawn.path != "gm20b" { return "failed off the driver: \(drawn.path)" }
             let (width, height) = (CAStateSweep.width, CAStateSweep.height)
             for (color, bytes) in zip(line.colors.sorted(by: { $0.index < $1.index }), drawn.attachments)
-            where !Signature.padUntouched(
-                bytes, metalFormat: color.format, width: width, height: height, sentinel: CAStateSweep.sentinel)
+                where !Signature.padUntouched(
+                    bytes, metalFormat: color.format, width: width, height: height, sentinel: CAStateSweep.sentinel
+                )
             {
                 return "wrong: the blit wrote past plane 0 of c\(color.index)"
             }
@@ -84,7 +86,8 @@ public struct CAStateSweepTest: HWTest {
             var verdict = Verdict.exact
             for (color, bytes) in zip(line.colors.sorted(by: { $0.index < $1.index }), drawn.attachments) {
                 let ours = Signature(
-                    bytes: bytes, metalFormat: color.format, width: CAStateSweep.width, height: CAStateSweep.height)
+                    bytes: bytes, metalFormat: color.format, width: CAStateSweep.width, height: CAStateSweep.height
+                )
                 switch GoldenVerdict.of(ours, against: golden[color.index], metalFormat: color.format) {
                 case .exact: continue
                 case .close: verdict = .close
@@ -107,10 +110,10 @@ public struct CAStateSweepTest: HWTest {
         let url = directory.appendingPathComponent("\(line.shortLabel)-c\(color.index)-raw")
         let (width, height) = (CAStateSweep.width, CAStateSweep.height)
         if let format = Signature.format(metal: color.format),
-            let png = format.raster(
-                Signature.blitted(bytes, metalFormat: color.format, width: width, height: height), width: width,
-                height: height
-            ).png()
+           let png = format.raster(
+               Signature.blitted(bytes, metalFormat: color.format, width: width, height: height), width: width,
+               height: height
+           ).png()
         {
             try? png.write(to: url.appendingPathExtension("png"))
         } else {

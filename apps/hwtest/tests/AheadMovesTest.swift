@@ -28,7 +28,8 @@ struct AheadMovesTest: HWTest {
             let side = AheadMovesTest.moveSide
             let bytes = [UInt8](repeating: 0x3c, count: side * side * 4)
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: false)
+                pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: false
+            )
             d.storageMode = .private
             d.usage = [.shaderRead]
             Thread { [self] in
@@ -41,7 +42,8 @@ struct AheadMovesTest: HWTest {
                     bytes.withUnsafeBytes {
                         texture.replace(
                             region: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0, withBytes: $0.baseAddress!,
-                            bytesPerRow: side * 4)
+                            bytesPerRow: side * 4
+                        )
                     }
                     lock.lock()
                     made += 1
@@ -78,18 +80,21 @@ struct AheadMovesTest: HWTest {
         let pipeline = try CAState.pipeline(line, library: library, device: gpu.device)
         let side = CommitLatencyPathTest.width
         let scratch = try gpu.texture(
-            CACorpus.colorFormat(line, 1), side, side, usage: [.renderTarget], storage: .memoryless)
+            CACorpus.colorFormat(line, 1), side, side, usage: [.renderTarget], storage: .memoryless
+        )
         var metrics = Metrics()
         var failures: [String] = []
         func frames(_ mover: Mover?) async throws -> [[UInt8]] {
-            let targets = try (0..<CommitLatencyPathTest.targets).map { _ in try gpu.texture(.bgra8Unorm, side, side) }
-            for round in 0..<Self.frames {
+            let targets = try (0 ..< CommitLatencyPathTest.targets)
+                .map { _ in try gpu.texture(.bgra8Unorm, side, side) }
+            for round in 0 ..< Self.frames {
                 guard let commands = gpu.queue.makeCommandBuffer() else { throw TestFailure("no command buffer") }
-                for pass in 0..<Self.passes {
+                for pass in 0 ..< Self.passes {
                     let target = targets[pass % targets.count]
                     CommitLatencyPathTest.encodePass(
                         commands, pipeline: pipeline, target: target, scratch: scratch, pass: pass, round: round,
-                        clear: pass < targets.count, draws: Self.drawsPerPass)
+                        clear: pass < targets.count, draws: Self.drawsPerPass
+                    )
                     mover?.ask()
                     usleep(CommitLatencyPathTest.paceMicroseconds)
                 }

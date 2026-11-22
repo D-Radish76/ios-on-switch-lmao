@@ -36,7 +36,10 @@ struct VICLumaTest: HWTest {
             checks.append(("\(key)=\(got) not \(want)", abs(got - want) <= 1))
         }
         do {
-            for (standard, tags) in [("601", [String: String]()), ("709", [kCVImageBufferYCbCrMatrixKey as String: kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String])] {
+            for (standard, tags) in [
+                ("601", [String: String]()),
+                ("709", [kCVImageBufferYCbCrMatrixKey as String: kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String]),
+            ] {
                 let (status, red, green) = try Self.halves(scaler, tags)
                 metrics.set("status_" + standard, Int(status))
                 checks.append(("status_\(standard)", status == 0))
@@ -71,10 +74,15 @@ struct VICLumaTest: HWTest {
     }
 
     static func halves(_ scaler: ScalerClient, _ tags: [String: String]) throws -> (Int32, Int, Int) {
-        let source = try ScalerClient.buffer(size, size, bgra), destination = try ScalerClient.buffer(size, size, l008, tags: tags)
+        let source = try ScalerClient.buffer(size, size, bgra), destination = try ScalerClient.buffer(
+            size,
+            size,
+            l008,
+            tags: tags
+        )
         ScalerClient.edit(source) { base, pitch in
-            for y in 0..<size {
-                for x in 0..<size {
+            for y in 0 ..< size {
+                for x in 0 ..< size {
                     let red = x < size / 2
                     (base[y * pitch + 4 * x], base[y * pitch + 4 * x + 1]) = (0, red ? 0 : 255)
                     (base[y * pitch + 4 * x + 2], base[y * pitch + 4 * x + 3]) = (red ? 255 : 0, 255)
@@ -89,10 +97,10 @@ struct VICLumaTest: HWTest {
         let source = try ScalerClient.buffer(size, size, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
         let destination = try ScalerClient.buffer(size, size, l008)
         ScalerClient.edit(source, plane: 0) { base, pitch in
-            for y in 0..<size { for x in 0..<size { base[y * pitch + x] = y < size / 2 ? 235 : 126 } }
+            for y in 0 ..< size { for x in 0 ..< size { base[y * pitch + x] = y < size / 2 ? 235 : 126 } }
         }
         ScalerClient.edit(source, plane: 1) { base, pitch in
-            for y in 0..<(size / 2) { for x in 0..<size { base[y * pitch + x] = 16 } }
+            for y in 0 ..< (size / 2) { for x in 0 ..< size { base[y * pitch + x] = 16 } }
         }
         let status = scaler.transform(source, destination)
         return (status, byte(destination, 8, 8), byte(destination, 8, 40))
@@ -102,15 +110,15 @@ struct VICLumaTest: HWTest {
         let source = try ScalerClient.buffer(size, size, l008), destination = try ScalerClient.buffer(size, size, bgra)
         let ramp = { (x: Int, y: Int) in UInt8(x * 4 + y / 16) }
         ScalerClient.edit(source) { base, pitch in
-            for y in 0..<size { for x in 0..<size { base[y * pitch + x] = ramp(x, y) } }
+            for y in 0 ..< size { for x in 0 ..< size { base[y * pitch + x] = ramp(x, y) } }
         }
         let status = scaler.transform(source, destination)
         var (worst, alpha) = (0, 255)
         ScalerClient.edit(destination) { base, pitch in
-            for y in 0..<size {
-                for x in 0..<size {
+            for y in 0 ..< size {
+                for x in 0 ..< size {
                     let at = y * pitch + 4 * x, luma = Int(ramp(x, y))
-                    for c in 0..<3 { worst = max(worst, abs(Int(base[at + c]) - luma)) }
+                    for c in 0 ..< 3 { worst = max(worst, abs(Int(base[at + c]) - luma)) }
                     alpha = min(alpha, Int(base[at + 3]))
                 }
             }

@@ -19,9 +19,10 @@ struct TurnedOffSurfaceTest: HWTest {
         }
         var made: [String] = []
         let buffer = try gpu.buffer(64 * 32 * 4)
-        for turn in 1...4 {
+        for turn in 1 ... 4 {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .bgra8Unorm, width: 64, height: 32, mipmapped: false)
+                pixelFormat: .bgra8Unorm, width: 64, height: 32, mipmapped: false
+            )
             descriptor.usage = [.renderTarget, .shaderRead]
             guard descriptor.responds(to: NSSelectorFromString("setRotation:")) else {
                 return .skip("no rotation SPI on this descriptor")

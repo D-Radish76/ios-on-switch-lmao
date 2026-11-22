@@ -41,10 +41,10 @@ struct MSAAResolveScene: GPUScene {
         /// Every (level, slice, plane) of the texture: the one named and the ones the pass must leave alone
         var subresources: [(level: Int, slice: Int, plane: Int)] {
             switch self {
-            case .level(let level), .viewLevel(let level): return (0...level).map { ($0, 0, 0) }
-            case .slice(_, let count): return (0..<count).map { (0, $0, 0) }
-            case .face: return (0..<6).map { (0, $0, 0) }
-            case .plane(_, let depth): return (0..<depth).map { (0, 0, $0) }
+            case .level(let level), .viewLevel(let level): return (0 ... level).map { ($0, 0, 0) }
+            case .slice(_, let count): return (0 ..< count).map { (0, $0, 0) }
+            case .face: return (0 ..< 6).map { (0, $0, 0) }
+            case .plane(_, let depth): return (0 ..< depth).map { (0, 0, $0) }
             }
         }
 
@@ -72,7 +72,7 @@ struct MSAAResolveScene: GPUScene {
         }
         let usable =
             Set(answered.map { "\($0)" }).count == 4
-            && answered.allSatisfy { $0.x >= 0 && $0.x < 1 && $0.y >= 0 && $0.y < 1 }
+                && answered.allSatisfy { $0.x >= 0 && $0.x < 1 && $0.y >= 0 && $0.y < 1 }
         result.metrics.set("positions", usable ? "device" : "standard")
         let resolved = Self.coverage(usable ? answered : Self.standard)
         let drawn = Self.coverage(Self.centre)
@@ -83,7 +83,8 @@ struct MSAAResolveScene: GPUScene {
                     do {
                         try await check(
                             gpu, format, destination, samples: samples, coverage: samples == 4 ? resolved : drawn,
-                            label: label, &result)
+                            label: label, &result
+                        )
                     } catch {
                         result.expect(false, "\(label): \(GPU.describe(error))")
                     }
@@ -169,7 +170,8 @@ struct MSAAResolveScene: GPUScene {
                 ) { _, _, c in colour[c] }
                 result.compare(
                     "\(label): level \(part.level) slice \(part.slice) plane \(part.plane) kept", got, want,
-                    tolerance: tolerance)
+                    tolerance: tolerance
+                )
             }
         }
     }
@@ -223,7 +225,7 @@ struct MSAAResolveScene: GPUScene {
         func edge(_ a: SIMD2<Double>, _ b: SIMD2<Double>, _ p: SIMD2<Double>) -> Double {
             (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
         }
-        return (0..<(size * size)).map { index in
+        return (0 ..< (size * size)).map { index in
             var covered = 0
             for offset in positions {
                 let p = SIMD2<Double>(Double(index % size), Double(index / size)) + offset

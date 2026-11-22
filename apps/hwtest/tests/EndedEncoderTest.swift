@@ -24,7 +24,8 @@ struct EndedEncoderTest: HWTest {
     static let white: [UInt8] = [255, 255, 255, 255], darkRed: [UInt8] = [128, 0, 0, 255]
     static let grey: [UInt8] = [128, 128, 128, 255]
     static let crashes = [
-        "draw_in_blit", "copy_after_pass", "copy_after_event", "end_twice_render", "end_twice_blit", "end_twice_compute",
+        "draw_in_blit", "copy_after_pass", "copy_after_event", "end_twice_render", "end_twice_blit",
+        "end_twice_compute",
         "begin_while_open",
     ]
 
@@ -34,22 +35,25 @@ struct EndedEncoderTest: HWTest {
     }
 
     static func word(_ bytes: [UInt8], _ i: Int) -> Int {
-        (0..<4).reduce(0) { $0 | Int(bytes[4 * i + $1]) << (8 * $1) }
+        (0 ..< 4).reduce(0) { $0 | Int(bytes[4 * i + $1]) << (8 * $1) }
     }
 
     /// Each expectation a case's reading misses
     static func misses(_ name: String, _ r: Reading) -> [String] {
         var misses: [String] = []
-        let near = { (a: [UInt8], b: [UInt8]) in a.count == b.count && zip(a, b).allSatisfy { abs(Int($0) - Int($1)) <= 1 } }
+        let near = { (a: [UInt8], b: [UInt8]) in
+            a.count == b.count && zip(a, b).allSatisfy { abs(Int($0) - Int($1)) <= 1 } }
         func pixels(_ want: [String: [UInt8]], snap: Bool = false) {
-            for (key, value) in want where !near(r.pixels[key] ?? [], value) { misses.append("\(key) \(r.pixels[key] ?? [])") }
+            for (key, value) in want
+                where !near(r.pixels[key] ?? [], value) { misses.append("\(key) \(r.pixels[key] ?? [])") }
             if snap { for (key, value) in want where !near(r.snap[key] ?? [], value) { misses.append("snap_\(key)") } }
         }
         func bytes(_ buffer: [UInt8], _ want: [Int: UInt8], _ label: String) {
             for (i, v) in want where buffer[i] != v { misses.append("\(label)[\(i)] \(buffer[i])") }
         }
         if crashes.contains(name) {
-            if r.status != "error" || r.code != 9 || r.path != "error:none" { misses.append("\(r.status) \(r.code) \(r.path)") }
+            if r.status != "error" || r.code != 9 || r
+                .path != "error:none" { misses.append("\(r.status) \(r.code) \(r.path)") }
             return misses
         }
         if r.status != "completed" { misses.append("\(r.status) \(r.code) \(r.path)") }
@@ -63,17 +67,29 @@ struct EndedEncoderTest: HWTest {
         case "parallel_sub": pixels(corners(red, blue, red, blue))
         case "parallel_after": pixels(["tl": blue, "bl": blue])
         case "blit_late_copy":
-            let want: [Int: UInt8] = [0: 0xaa, 31: 0xaa, 32: 0x20, 40: 0x28, 63: 0x3f, 64: 0, 128: 0x55, 159: 0x55, 160: 0]
+            let want: [Int: UInt8] = [
+                0: 0xaa,
+                31: 0xaa,
+                32: 0x20,
+                40: 0x28,
+                63: 0x3f,
+                64: 0,
+                128: 0x55,
+                159: 0x55,
+                160: 0,
+            ]
             bytes(r.out, want, "out")
             bytes(r.snapOut, want, "snap_out")
         case "blit_earlier": bytes(r.out, [0: 0xaa, 31: 0xaa, 32: 0x11, 63: 0x11], "out")
         case "late_dispatch":
-            for (i, v) in [0: 12, 63: 12, 64: 0] where word(r.out, i) != v { misses.append("out[\(i)] \(word(r.out, i))") }
+            for (i, v) in [0: 12, 63: 12, 64: 0]
+                where word(r.out, i) != v { misses.append("out[\(i)] \(word(r.out, i))") }
             if word(r.snapOut, 0) != 12 { misses.append("snap_out[0] \(word(r.snapOut, 0))") }
         case "late_kernel":
             for i in [0, 63] where word(r.out, i) != 4 { misses.append("out[\(i)] \(word(r.out, i))") }
         case "late_kernel_buf":
-            if word(r.out, 0) != 3 || word(r.out2, 0) != 3 { misses.append("out[0] \(word(r.out, 0)) out2[0] \(word(r.out2, 0))") }
+            if word(r.out, 0) != 3 || word(r.out2, 0) !=
+                3 { misses.append("out[0] \(word(r.out, 0)) out2[0] \(word(r.out2, 0))") }
         default: misses.append("no expectations")
         }
         return misses
@@ -107,7 +123,14 @@ struct EndedEncoderTest: HWTest {
         let counted = GM20BFacade.counters(of: gpu.device)
         let counts = FailedCounts(before: before, after: counted)
         checks.append(
-            FailedCounts.judged(before: before, after: counted, expecting: ["none": Self.crashes.count], own: gpu.paths, &metrics))
+            FailedCounts.judged(
+                before: before,
+                after: counted,
+                expecting: ["none": Self.crashes.count],
+                own: gpu.paths,
+                &metrics
+            )
+        )
         checks.append(counts.skipCheck(expecting: ["enc.pass": 1]))
         return .judged(checks, metrics, proof: gpu.proof)
     }

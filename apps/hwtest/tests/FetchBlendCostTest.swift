@@ -46,7 +46,13 @@ struct FetchBlendCostTest: HWTest {
                 Variant(suffix: "", pipeline: try make("fetch_blend_fragment", true), constant: scale),
                 Variant(suffix: "_noblend", pipeline: try make("fetch_blend_fragment", false), constant: scale),
                 Variant(
-                    suffix: "_nofetch", pipeline: try make("solid_fragment", true), constant: SIMD4(1.0 / 255, 0, 0, 0)),
+                    suffix: "_nofetch", pipeline: try make("solid_fragment", true), constant: SIMD4(
+                        1.0 / 255,
+                        0,
+                        0,
+                        0
+                    )
+                ),
             ]
         } catch {
             return .skip("no pipeline: \(GPU.describe(error))", metrics)
@@ -68,13 +74,13 @@ struct FetchBlendCostTest: HWTest {
                 encoder.setVertexBuffer(instances, offset: 0, index: 1)
                 var constant = variant.constant
                 encoder.setFragmentBytes(&constant, length: MemoryLayout<SIMD4<Float>>.stride, index: 0)
-                for _ in 0..<Self.draws {
+                for _ in 0 ..< Self.draws {
                     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 }
                 encoder.endEncoding()
             }
             var timings: [GPU.Timing] = []
-            for _ in 0..<Self.runs { timings.append(try await gpu.run(draw)) }
+            for _ in 0 ..< Self.runs { timings.append(try await gpu.run(draw)) }
             guard timings.allSatisfy(\.gpuTimed) else { return .skip("no GPU timestamps", metrics) }
             let perDraw = timings.map { $0.gpuMilliseconds * 1000 / Double(Self.draws) }
             metrics.set("us_per_draw" + variant.suffix, Stats.percentile(perDraw, 0.5), digits: 1)

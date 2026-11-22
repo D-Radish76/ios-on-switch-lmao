@@ -38,10 +38,11 @@ struct StitchedLibraryTest: HWTest {
             let a = MTLFunctionStitchingInputNode(argumentIndex: 0)
             let b = MTLFunctionStitchingInputNode(argumentIndex: 1)
             let output = MTLFunctionStitchingFunctionNode(
-                name: function.name, arguments: [a, b], controlDependencies: [])
+                name: function.name, arguments: [a, b], controlDependencies: []
+            )
             let stitching = MTLStitchedLibraryDescriptor()
             stitching.functionGraphs = [
-                MTLFunctionStitchingGraph(functionName: "stitch_scaled", nodes: [], outputNode: output, attributes: [])
+                MTLFunctionStitchingGraph(functionName: "stitch_scaled", nodes: [], outputNode: output, attributes: []),
             ]
             stitching.functions = [function]
             let library = try await gpu.device.makeLibrary(stitchedDescriptor: stitching)
@@ -63,11 +64,12 @@ struct StitchedLibraryTest: HWTest {
                 encoder.setBuffer(data, offset: 0, index: 0)
                 encoder.dispatchThreads(
                     MTLSize(width: words, height: 1, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: words, height: 1, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: words, height: 1, depth: 1)
+                )
                 encoder.endEncoding()
             }
             let out = data.contents().bindMemory(to: Float.self, capacity: words)
-            wrong += (0..<words).filter { out[$0] != Float($0) * Float(gain) + 3 }.count
+            wrong += (0 ..< words).filter { out[$0] != Float($0) * Float(gain) + 3 }.count
             last.append(out[words - 1])
         }
         return (wrong, last)
@@ -79,16 +81,17 @@ struct StitchedLibraryTest: HWTest {
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let before = GM20BFacade.counters(of: gpu.device)
         guard let add = gpu.library.makeFunction(name: "stitch_add"),
-            let mul = gpu.library.makeFunction(name: "stitch_mul")
+              let mul = gpu.library.makeFunction(name: "stitch_mul")
         else { throw TestFailure("no stitch_add or stitch_mul in the app library") }
         let a = MTLFunctionStitchingInputNode(argumentIndex: 0)
         let b = MTLFunctionStitchingInputNode(argumentIndex: 1)
         let sum = MTLFunctionStitchingFunctionNode(name: "stitch_add", arguments: [a, b], controlDependencies: [])
         let product = MTLFunctionStitchingFunctionNode(
-            name: "stitch_mul", arguments: [sum, b], controlDependencies: [])
+            name: "stitch_mul", arguments: [sum, b], controlDependencies: []
+        )
         let descriptor = MTLStitchedLibraryDescriptor()
         descriptor.functionGraphs = [
-            MTLFunctionStitchingGraph(functionName: "stitch_madd", nodes: [sum], outputNode: product, attributes: [])
+            MTLFunctionStitchingGraph(functionName: "stitch_madd", nodes: [sum], outputNode: product, attributes: []),
         ]
         descriptor.functions = [add, mul]
 
@@ -120,7 +123,8 @@ struct StitchedLibraryTest: HWTest {
         metrics.set("specialized_last", specialized.last.map { String($0) }.joined(separator: ","))
         metrics.set("specialized_failure", specializedFailure)
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         var wrong: [String] = []
         if made == nil { wrong.append("library") }
         if stitched?.functionType != .visible { wrong.append("function") }

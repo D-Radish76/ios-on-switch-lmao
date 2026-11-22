@@ -61,7 +61,7 @@ struct XrTwoPlanesAnyElementsTest: HWTest {
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { throw TestFailure("no b3a8 surface") }
         IOSurfaceLock(surface, [], nil)
         let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
-        for i in 0..<IOSurfaceGetAllocSize(surface) { base[i] = UInt8(truncatingIfNeeded: i * 37 + 11) }
+        for i in 0 ..< IOSurfaceGetAllocSize(surface) { base[i] = UInt8(truncatingIfNeeded: i * 37 + 11) }
         IOSurfaceUnlock(surface, [], nil)
         return surface
     }
@@ -70,7 +70,8 @@ struct XrTwoPlanesAnyElementsTest: HWTest {
     static func matched(_ gpu: GPU, _ b0: Int, _ b1: Int) async throws -> Int {
         let surface = try surface(b0, b1)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: XRTwoPlaneTest.format, width: width, height: height, mipmapped: false)
+            pixelFormat: XRTwoPlaneTest.format, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
@@ -81,12 +82,12 @@ struct XrTwoPlanesAnyElementsTest: HWTest {
         defer { IOSurfaceUnlock(surface, .readOnly, nil) }
         let words = IOSurfaceGetBaseAddressOfPlane(surface, 0), alphas = IOSurfaceGetBaseAddressOfPlane(surface, 1)
         let (p0, p1) = (IOSurfaceGetBytesPerRowOfPlane(surface, 0), IOSurfaceGetBytesPerRowOfPlane(surface, 1))
-        return (0..<(width * height)).filter { i in
+        return (0 ..< (width * height)).filter { i in
             let (x, y) = (i % width, i / width)
             let word = words.loadUnaligned(fromByteOffset: y * p0 + 4 * x, as: UInt32.self)
             let alpha = alphas.load(fromByteOffset: y * p1 + x, as: UInt8.self)
             let want = XRTwoPlaneModel.values(UInt64(alpha) << 32 | UInt64(word))
-            return (0..<4).allSatisfy { abs(Double(texels[i][$0]) - want[$0]) < 0.002 }
+            return (0 ..< 4).allSatisfy { abs(Double(texels[i][$0]) - want[$0]) < 0.002 }
         }.count
     }
 }

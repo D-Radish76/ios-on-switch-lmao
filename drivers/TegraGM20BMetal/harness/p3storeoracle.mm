@@ -169,7 +169,10 @@ struct Surface {
         IOSurfaceUnlock(s, 0, nullptr);
     }
 
-    ~Surface() { CVPixelBufferRelease(pb); }
+    ~Surface()
+    {
+        CVPixelBufferRelease(pb);
+    }
 };
 
 gm20b::YcbcrFacts factsOf(const ycbcrload::Case &c, IOSurfaceRef s)

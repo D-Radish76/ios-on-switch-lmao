@@ -43,7 +43,7 @@ public enum YcbcrOverlapRows {
         let last = min(a / pitch, rows - 1), first = a >= row ? (a - row) / pitch + 1 : 0
         guard first <= last else { return nil }
         let at = { (r: Int) in order((a - r * pitch) / texelBytes, r * down) }
-        return (first...last).max { at($0) < at($1) }.map { ($0, a - $0 * pitch) }
+        return (first ... last).max { at($0) < at($1) }.map { ($0, a - $0 * pitch) }
     }
 
     static func surface(_ s: Shape) -> IOSurfaceRef? {
@@ -60,7 +60,8 @@ public enum YcbcrOverlapRows {
             ],
         ]
         let properties: [CFString: Any] = [
-            kIOSurfaceWidth: min(s.width, s.pitch), kIOSurfaceHeight: s.height, kIOSurfacePixelFormat: OSType(0x3432_3076),
+            kIOSurfaceWidth: min(s.width, s.pitch), kIOSurfaceHeight: s.height,
+            kIOSurfacePixelFormat: OSType(0x3432_3076),
             kIOSurfaceAllocSize: allocation, kIOSurfacePlaneInfo: planes,
         ]
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { return nil }
@@ -73,7 +74,8 @@ public enum YcbcrOverlapRows {
     public static func observe(_ gpu: GPU, _ s: Shape) async throws -> Reading {
         guard let surface = surface(s) else { return Reading(status: 2) }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 540)!, width: s.width, height: s.height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 540)!, width: s.width, height: s.height, mipmapped: false
+        )
         descriptor.usage = s.height & 1 == 1 ? [.shaderRead] : [.shaderRead, .renderTarget]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
@@ -97,7 +99,7 @@ public enum YcbcrOverlapRows {
         var reading = Reading(path: timing.facadePath)
         let lumaEnd = s.pitch * (s.height - 1) + s.width, rows = (s.height + 1) / 2
         let chromaEnd = s.pitch * (rows - 1) + s.width
-        for a in 0..<lumaEnd {
+        for a in 0 ..< lumaEnd {
             guard let w = winner(a, pitch: s.pitch, row: s.width, rows: s.height, down: 1) else { continue }
             let want = UInt8((w.offset + 7 * w.row) & 255)
             if bytes[a] != want {
@@ -105,7 +107,7 @@ public enum YcbcrOverlapRows {
                 if reading.first == "-" { reading.first = "luma\(a):\(bytes[a])_not_\(want)_row\(w.row)" }
             }
         }
-        for a in 0..<chromaEnd {
+        for a in 0 ..< chromaEnd {
             guard let w = winner(a, pitch: s.pitch, row: s.width, rows: rows, down: 2) else { continue }
             let bx = w.offset / 2
             let want = UInt8((w.offset & 1 == 0 ? bx + 5 * w.row : 3 * bx + 11 * w.row + 1) & 255)
@@ -114,8 +116,8 @@ public enum YcbcrOverlapRows {
                 if reading.first == "-" { reading.first = "chroma\(a):\(bytes[chromaAt + a])_not_\(want)_row\(w.row)" }
             }
         }
-        reading.pastChanged = (lumaEnd..<chromaAt).filter { bytes[$0] != 0xee }.count
-            + ((chromaAt + chromaEnd)..<allocation).filter { bytes[$0] != 0xee }.count
+        reading.pastChanged = (lumaEnd ..< chromaAt).filter { bytes[$0] != 0xee }.count
+            + ((chromaAt + chromaEnd) ..< allocation).filter { bytes[$0] != 0xee }.count
         return reading
     }
 }

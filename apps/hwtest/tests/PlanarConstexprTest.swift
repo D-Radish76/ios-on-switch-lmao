@@ -45,12 +45,14 @@ struct PlanarConstexprTest: HWTest {
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let surface = try Self.surface()
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: Self.rgb8_444_2P, width: Self.width, height: Self.height, mipmapped: false)
+            pixelFormat: Self.rgb8_444_2P, width: Self.width, height: Self.height, mipmapped: false
+        )
         descriptor.usage = .shaderRead
         descriptor.storageMode = .shared
         guard
             let image = gpu.device.makeTexture(
-                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0)
+                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0
+            )
         else { throw TestFailure("makeTexture(iosurface:) RGB8_444_2P returned nil") }
         let (w, h) = (Self.width + 2, Self.height + 2)
         var states: [MTLRenderPipelineState] = []
@@ -81,13 +83,13 @@ struct PlanarConstexprTest: HWTest {
         for (mode, target) in zip(Self.modes, targets) {
             let bytes = try await gpu.read(target, bytesPerPixel: 4)
             var off = 0
-            for y in 0..<h {
-                for x in 0..<w {
+            for y in 0 ..< h {
+                for x in 0 ..< w {
                     let tx = Self.texel(x - 1, Self.width, mode.outside)
                     let ty = Self.texel(y - 1, Self.height, mode.outside)
                     let want = [Self.cr(tx, ty), Self.luma(tx, ty), Self.cb(tx, ty), 255]
                     let at = 4 * (x + w * y)
-                    off += zip(bytes[at..<at + 4], want).contains { abs(Int($0) - Int($1)) > 1 } ? 1 : 0
+                    off += zip(bytes[at ..< at + 4], want).contains { abs(Int($0) - Int($1)) > 1 } ? 1 : 0
                 }
             }
             metrics.set("\(mode.label)_wrong", off)
@@ -124,8 +126,8 @@ struct PlanarConstexprTest: HWTest {
         let ref = unsafeBitCast(surface, to: IOSurfaceRef.self)
         let y = IOSurfaceGetBaseAddressOfPlane(ref, 0).assumingMemoryBound(to: UInt8.self)
         let cbcr = IOSurfaceGetBaseAddressOfPlane(ref, 1).assumingMemoryBound(to: UInt8.self)
-        for row in 0..<height {
-            for x in 0..<width {
+        for row in 0 ..< height {
+            for x in 0 ..< width {
                 y[row * lumaRow + x] = luma(x, row)
                 cbcr[row * chromaRow + 2 * x] = cb(x, row)
                 cbcr[row * chromaRow + 2 * x + 1] = cr(x, row)

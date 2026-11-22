@@ -23,13 +23,13 @@ public enum MirroredRequests {
     public static func units(_ gpu: GPU) async throws -> Copied {
         let source = try gpu.texture(.rgba16Float, side, side, usage: [.shaderRead])
         var halves: [Float16] = []
-        for y in 0..<side {
-            for x in 0..<side { halves += [Float16(Float(x) / 64), Float16(Float(y) / 64), 0.5, 1] }
+        for y in 0 ..< side {
+            for x in 0 ..< side { halves += [Float16(Float(x) / 64), Float16(Float(y) / 64), 0.5, 1] }
         }
         try await gpu.upload(halves.withUnsafeBytes { [UInt8]($0) }, to: source, bytesPerRow: side * 8)
         let destination = try gpu.texture(.rgba8Unorm, side, side, usage: [.shaderRead])
         try await gpu.upload([UInt8](repeating: 0x22, count: side * side * 4), to: destination, bytesPerRow: side * 4)
-        let pattern = try gpu.buffer((0..<bytes).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) })
+        let pattern = try gpu.buffer((0 ..< bytes).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) })
         let first = try gpu.buffer(bytes), last = try gpu.buffer(bytes)
         var out = Copied()
         out.path = try await gpu.run(tolerateError: true) { commands in
@@ -38,7 +38,8 @@ public enum MirroredRequests {
             blit.copy(
                 from: source, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 4, y: 2, z: 0),
                 sourceSize: MTLSize(width: region, height: region, depth: 1), to: destination, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.copy(from: pattern, sourceOffset: 0, to: last, destinationOffset: 0, size: bytes)
             blit.endEncoding()
         }.facadePath
@@ -77,7 +78,8 @@ public enum MirroredRequests {
             : gpu.buffer(words.map(UInt16.init) + [UInt16](repeating: 0, count: 26))
         icb.indirectRenderCommandAt(0).drawIndexedPrimitives(
             .triangle, indexCount: 3, indexType: type, indexBuffer: indices, indexBufferOffset: offset,
-            instanceCount: 1, baseVertex: 0, baseInstance: 0)
+            instanceCount: 1, baseVertex: 0, baseInstance: 0
+        )
         let state = try gpu.render(
             vertex: "mirrored_grid_vertex", fragment: "mirrored_red_fragment", format: .rgba8Unorm
         ) { $0.supportIndirectCommandBuffers = true }
@@ -92,7 +94,7 @@ public enum MirroredRequests {
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
             encoder.setRenderPipelineState(state)
             encoder.useResource(indices, usage: .read, stages: .vertex)
-            encoder.executeCommandsInBuffer(icb, range: 0..<1)
+            encoder.executeCommandsInBuffer(icb, range: 0 ..< 1)
             encoder.endEncoding()
         }.facadePath
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
@@ -125,9 +127,10 @@ public enum MirroredRequests {
         out.paths.append(
             try await gpu.run(tolerateError: true) { commands in
                 let blit = commands.makeBlitCommandEncoder(descriptor: pass)!
-                blit.fill(buffer: filled, range: 0..<64, value: 1)
+                blit.fill(buffer: filled, range: 0 ..< 64, value: 1)
                 blit.endEncoding()
-            }.facadePath)
+            }.facadePath
+        )
         let atZero = try gpu.buffer([UInt8](repeating: 0x22, count: bytes))
         let atTwo = try gpu.buffer([UInt8](repeating: 0x22, count: bytes))
         for (destination, offset) in [(atZero, 0), (atTwo, 2)] {
@@ -135,9 +138,11 @@ public enum MirroredRequests {
                 try await gpu.run(tolerateError: true) { commands in
                     let blit = commands.makeBlitCommandEncoder()!
                     blit.resolveCounters(
-                        samples, range: 0..<4, destinationBuffer: destination, destinationOffset: offset)
+                        samples, range: 0 ..< 4, destinationBuffer: destination, destinationOffset: offset
+                    )
                     blit.endEncoding()
-                }.facadePath)
+                }.facadePath
+            )
         }
         out.atZero = [UInt8](UnsafeRawBufferPointer(start: atZero.contents(), count: bytes))
         out.atTwo = [UInt8](UnsafeRawBufferPointer(start: atTwo.contents(), count: bytes))
@@ -174,7 +179,7 @@ public enum MirroredRequests {
         descriptor.storageMode = .shared
         descriptor.size = gpu.device.heapBufferSizeAndAlign(length: heapBytes, options: .storageModeShared).size
         guard let heap = gpu.device.makeHeap(descriptor: descriptor),
-            let whole = heap.makeBuffer(length: heapBytes, options: .storageModeShared, offset: 0)
+              let whole = heap.makeBuffer(length: heapBytes, options: .storageModeShared, offset: 0)
         else { throw TestFailure("no placement heap of \(heapBytes) bytes") }
         memset(whole.contents(), 0, heapBytes)
         guard let range = heap.makeBuffer(length: bytes, options: .storageModeShared, offset: 0) else {
@@ -194,9 +199,10 @@ public enum MirroredRequests {
         descriptor.inheritBuffers = true
         guard let icb = gpu.device.makeIndirectCommandBuffer(descriptor: descriptor, maxCommandCount: 4, options: [])
         else { throw TestFailure("no indirect command buffer of draws") }
-        for i in 0..<4 {
+        for i in 0 ..< 4 {
             icb.indirectRenderCommandAt(i).drawPrimitives(
-                .triangle, vertexStart: 3 * i, vertexCount: 3, instanceCount: 1, baseInstance: 0)
+                .triangle, vertexStart: 3 * i, vertexCount: 3, instanceCount: 1, baseInstance: 0
+            )
         }
         let state = try gpu.render(
             vertex: "mirrored_quadrant_vertex", fragment: "mirrored_red_fragment", format: .rgba8Unorm
@@ -206,7 +212,7 @@ public enum MirroredRequests {
         let after = try gpu.buffer([UInt8](repeating: 0x11, count: bytes))
         guard let commands = gpu.queue.makeCommandBuffer() else { throw TestFailure("no command buffer") }
         let first = commands.makeBlitCommandEncoder()!
-        first.fill(buffer: before, range: 0..<bytes, value: 0x5a)
+        first.fill(buffer: before, range: 0 ..< bytes, value: 0x5a)
         first.endEncoding()
         let pass = MTLRenderPassDescriptor()
         pass.colorAttachments[0].texture = target
@@ -219,7 +225,7 @@ public enum MirroredRequests {
         encoder.executeCommandsInBuffer(icb, indirectBuffer: range, offset: offset)
         encoder.endEncoding()
         let last = commands.makeBlitCommandEncoder()!
-        last.fill(buffer: after, range: 0..<bytes, value: 0x5a)
+        last.fill(buffer: after, range: 0 ..< bytes, value: 0x5a)
         last.endEncoding()
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
             commands.addCompletedHandler { _ in done.resume() }
@@ -261,7 +267,8 @@ public enum MirroredRequests {
         var arrays: [MTLTexture] = []
         for (format, layers, bytesPerPixel) in formats {
             let d = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: layerSide, height: layerSide, mipmapped: false)
+                pixelFormat: format, width: layerSide, height: layerSide, mipmapped: false
+            )
             d.textureType = .type2DArray
             d.arrayLength = layers
             d.usage = [.renderTarget, .shaderRead]
@@ -270,13 +277,13 @@ public enum MirroredRequests {
                 throw TestFailure("no \(format.rawValue) array")
             }
             let fill = [UInt8](repeating: 0x11, count: layerSide * layerSide * bytesPerPixel)
-            for layer in 0..<layers {
+            for layer in 0 ..< layers {
                 try await gpu.upload(fill, to: t, bytesPerRow: layerSide * bytesPerPixel, slice: layer)
             }
             arrays.append(t)
         }
         var out = Layered()
-        for _ in 0..<runs {
+        for _ in 0 ..< runs {
             out.paths.append(
                 try await gpu.run(tolerateError: true) { commands in
                     let pass = MTLRenderPassDescriptor()
@@ -289,15 +296,16 @@ public enum MirroredRequests {
                     }
                     pass.renderTargetArrayLength = 3
                     commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
-                }.facadePath)
+                }.facadePath
+            )
         }
         for (t, (_, layers, bytesPerPixel)) in zip(arrays, formats) {
             var states: [Int] = []
-            for layer in 0..<layers {
+            for layer in 0 ..< layers {
                 let texels = try await gpu.read(t, bytesPerPixel: bytesPerPixel, slice: layer)
-                let first = Array(texels[0..<bytesPerPixel])
+                let first = Array(texels[0 ..< bytesPerPixel])
                 let uniform = stride(from: 0, to: texels.count, by: bytesPerPixel).allSatisfy {
-                    Array(texels[$0..<($0 + bytesPerPixel)]) == first
+                    Array(texels[$0 ..< ($0 + bytesPerPixel)]) == first
                 }
                 states.append(!uniform ? -1 : first.allSatisfy { $0 == 0x11 } ? 0 : 1)
             }

@@ -112,8 +112,8 @@ protected:
             const long n = switch_gm20b_push_decode(w.data(), w.size(), m.data(), m.size());
             for (long i = 0; i + 3 < n; i++)
                 if (!m[size_t(i)].subchannel && m[size_t(i)].method == NVB197_SET_INDEX_BUFFER_A)
-                    out.push_back({m[size_t(i)].value, m[size_t(i) + 1].value, m[size_t(i) + 2].value,
-                                   m[size_t(i) + 3].value});
+                    out.push_back(
+                        {m[size_t(i)].value, m[size_t(i) + 1].value, m[size_t(i) + 2].value, m[size_t(i) + 3].value});
         }
         return out;
     }

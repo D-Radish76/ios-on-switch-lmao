@@ -36,7 +36,8 @@ struct StorageFormsTest: HWTest {
             "bgr5a1_overlap8", "bgr5a1_overlap16", "wrong_cases", "not_interlocked", "interlocked", "sequential",
             "failed_cbs",
         ]
-            + Cases.timed.map { "ratio_" + $0.kind })
+            + Cases.timed.map { "ratio_" + $0.kind }
+    )
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -124,9 +125,11 @@ struct StorageFormsTest: HWTest {
             do {
                 guard
                     let storageUs = try await FetchRungScene.forcing(
-                        4, scene.gpu.device, { try await scene.microseconds(storage) }),
+                        4, scene.gpu.device, { try await scene.microseconds(storage) }
+                    ),
                     let twinUs = try await FetchRungScene.forcing(
-                        5, scene.gpu.device, { try await scene.microseconds(twin) })
+                        5, scene.gpu.device, { try await scene.microseconds(twin) }
+                    )
                 else {
                     metrics.set("gpu_us", "no_probe_channel")
                     return

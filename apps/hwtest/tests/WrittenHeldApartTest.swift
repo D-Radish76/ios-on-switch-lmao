@@ -61,7 +61,7 @@ struct WrittenXrTextureTest: HWTest {
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let n = Self.size
         let xr = try gpu.texture(.bgra10_xr, n, n, usage: [.shaderRead, .shaderWrite])
-        let values: [SIMD4<Float>] = (0..<(n * n)).map { (i: Int) -> SIMD4<Float> in
+        let values: [SIMD4<Float>] = (0 ..< (n * n)).map { (i: Int) -> SIMD4<Float> in
             SIMD4<Float>(Self.value(i, 0), Self.value(i, 1), Self.value(i, 2), Self.value(i, 3))
         }
         var paths = [try await drawWrittenHalves(gpu, xr, values, width: n)]
@@ -80,21 +80,22 @@ struct WrittenXrTextureTest: HWTest {
                 e.setFragmentTexture(xr, index: 0)
                 e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         let codes = try await gpu.read(xr, bytesPerPixel: 8)
         let reads = try await gpu.read(target, bytesPerPixel: 8)
         var codesWrong = 0, readsWrong = 0
         var first = "-"
-        for i in 0..<(n * n) {
+        for i in 0 ..< (n * n) {
             // BGRA10_XR: four 16-bit fields, blue first, the code in each field's top 10 bits
             let field = { (f: Int) in Int(codes[8 * i + 2 * f]) | Int(codes[8 * i + 2 * f + 1]) << 8 }
-            let want = (0..<4).map { Self.code(values[i][$0], alpha: $0 == 3) }
+            let want = (0 ..< 4).map { Self.code(values[i][$0], alpha: $0 == 3) }
             let got = [field(2) >> 6, field(1) >> 6, field(0) >> 6, field(3) >> 6]
             if got != want {
                 codesWrong += 1
                 if first == "-" { first = "\(i): \(got) want \(want)" }
             }
-            for k in 0..<4 {
+            for k in 0 ..< 4 {
                 let bits = UInt16(reads[8 * i + 2 * k]) | UInt16(reads[8 * i + 2 * k + 1]) << 8
                 let read = Float16(bitPattern: bits)
                 readsWrong += read == Float16(Double(want[k] - 384) / 510) ? 0 : 1
@@ -138,31 +139,33 @@ struct WrittenShadowedSurfaceTest: HWTest {
                     kIOSurfaceWidth as String: w, kIOSurfaceHeight as String: h,
                     kIOSurfaceBytesPerElement as String: 4, kIOSurfaceBytesPerRow as String: Self.rowBytes,
                     kIOSurfacePixelFormat as String: 0x4247_5241,
-                ] as CFDictionary)
+                ] as CFDictionary
+            )
         else { throw TestFailure("no IOSurface") }
         IOSurfaceLock(surface, [], nil)
         memset(IOSurfaceGetBaseAddress(surface), Int32(Self.padding), Self.rowBytes * h)
         IOSurfaceUnlock(surface, [], nil)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.shaderRead, .shaderWrite]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("no texture over the surface")
         }
-        let codes = (0..<(w * h)).map { i in (0..<4).map { UInt8((i * 29 + $0 * 71 + 3) % 256) } }
+        let codes = (0 ..< (w * h)).map { i in (0 ..< 4).map { UInt8((i * 29 + $0 * 71 + 3) % 256) } }
         let values = codes.map { SIMD4<Float>($0.map { Float($0) / 255 }) }
         let path = try await drawWrittenHalves(gpu, texture, values, width: w)
         IOSurfaceLock(surface, .readOnly, nil)
         let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
         var wrong = 0, paddingWrong = 0
-        for y in 0..<h {
-            for x in 0..<w {
+        for y in 0 ..< h {
+            for x in 0 ..< w {
                 let c = codes[y * w + x]
                 let at = y * Self.rowBytes + 4 * x
                 // BGRA8Unorm: blue first
                 wrong += [base[at], base[at + 1], base[at + 2], base[at + 3]] == [c[2], c[1], c[0], c[3]] ? 0 : 1
             }
-            for at in (y * Self.rowBytes + 4 * w)..<((y + 1) * Self.rowBytes) {
+            for at in (y * Self.rowBytes + 4 * w) ..< ((y + 1) * Self.rowBytes) {
                 paddingWrong += base[at] == Self.padding ? 0 : 1
             }
         }
@@ -204,12 +207,14 @@ struct WrittenXrPlanesTest: HWTest {
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
         guard
             CVPixelBufferCreate(
-                nil, w, h, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &made)
-                == kCVReturnSuccess, let buffer = made,
+                nil, w, h, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &made
+            )
+            == kCVReturnSuccess, let buffer = made,
             let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { throw TestFailure("no b3a8 pixel buffer") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: XRTwoPlaneTest.format, width: w, height: h, mipmapped: false)
+            pixelFormat: XRTwoPlaneTest.format, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.shaderRead, .shaderWrite]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
@@ -218,14 +223,14 @@ struct WrittenXrPlanesTest: HWTest {
         let value = { (i: Int, k: Int) -> Float in
             k == 3 ? Float((i * 17) % 101) / 100 : -0.7 + 1.9 * Float(((i * 4 + k) * 31) % 97) / 96
         }
-        let values: [SIMD4<Float>] = (0..<(w * h)).map { (i: Int) -> SIMD4<Float> in
+        let values: [SIMD4<Float>] = (0 ..< (w * h)).map { (i: Int) -> SIMD4<Float> in
             SIMD4<Float>(value(i, 0), value(i, 1), value(i, 2), value(i, 3))
         }
         let path = try await drawWrittenHalves(gpu, texture, values, width: w)
         let planes = XRTwoPlaneTest.planes(buffer, width: w, height: h)
         var wrong = 0
         var first = "-"
-        for i in 0..<(w * h) {
+        for i in 0 ..< (w * h) {
             let v = values[i]
             let held = { (x: Float) -> Float in Float(Float16(x)) }
             let halves = SIMD4<Float>(held(v.x), held(v.y), held(v.z), held(v.w))

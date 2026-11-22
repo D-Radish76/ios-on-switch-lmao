@@ -38,7 +38,8 @@ struct FillShapesTest: HWTest {
                 (
                     "\(key): the region at Metal's texel, the rest as it was",
                     result.insideWrong + result.outsideChanged == 0
-                ))
+                )
+            )
         }
         let counted = GM20BFacade.counters(of: gpu.device)
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))

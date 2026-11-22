@@ -16,7 +16,8 @@ final class ProbeTests: XCTestCase {
         XCTAssertEqual(
             line(finding),
             "HWTEST gpu.x1.rop_conversion PASS probe=d23 claim_verdict=FAIL paths=gm20b/1 srgb8_wrong=0 unorm16_wrong=3 "
-                + "hw=GM20B ms=1.0 why=wrong:_unorm16_wrong")
+                + "hw=GM20B ms=1.0 why=wrong:_unorm16_wrong"
+        )
     }
 
     func testLongFieldsGoToTheReportAndTheLineKeepsTheVerdicts() {
@@ -30,7 +31,8 @@ final class ProbeTests: XCTestCase {
         XCTAssertEqual(
             text,
             "HWTEST gpu.x1.twod_scale PASS probe=copy.twod claim_verdict=PASS rule=copy.twod exact_cells=80 "
-                + "report_only=1 hw=GM20B ms=1.0")
+                + "report_only=1 hw=GM20B ms=1.0"
+        )
         XCTAssertEqual(outcome.metrics["cells"], .text(String(repeating: "bgra8_1to1_point:exact:0,", count: 80)))
     }
 

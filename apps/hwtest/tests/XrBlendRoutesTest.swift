@@ -45,11 +45,13 @@ struct XrBlendRoutesTest: HWTest {
         Format(
             name: "xr550", pixel: MTLPixelFormat(rawValue: 550)!, surface: kCVPixelFormatType_30RGBLE_8A_BiPlanar,
             codes: { t in [20, 10, 0].map { Int(t >> $0 & 0x3ff) } + [Int(t >> 32 & 0xff)] },
-            golden: XrBlendRoutesGoldens.xr550),
+            golden: XrBlendRoutesGoldens.xr550
+        ),
         Format(
             name: "xr552", pixel: .bgra10_xr, surface: kCVPixelFormatType_40ARGBLEWideGamut,
             codes: { t in [2, 1, 0, 3].map { Int(t >> (16 * $0 + 6) & 0x3ff) } },
-            golden: XrBlendRoutesGoldens.xr552),
+            golden: XrBlendRoutesGoldens.xr552
+        ),
     ]
 
     static let routes = [Route(name: "planes", make: surfaceTarget)]
@@ -57,7 +59,7 @@ struct XrBlendRoutesTest: HWTest {
     static let band = 16, quads = 8, bands = 4
     static let clear = MTLClearColor(red: 0.1, green: 0.6, blue: -0.2, alpha: 0.5)
     static let colours: [[SIMD4<Float>]] = [
-        (0..<quads).map { k in
+        (0 ..< quads).map { k in
             let a = Float(k + 1) / 10
             return SIMD4(0.9 * a, 0.35 * a, Float(k % 3) * 0.3 * a, a)
         },
@@ -123,7 +125,8 @@ struct XrBlendRoutesTest: HWTest {
             [
                 ("a route drew a format", ran > 0), ("every command buffer on the driver", gpu.paths.offRaw.isEmpty),
                 FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 
     static func region(_ x: Int, _ y: Int) -> Int { (y / band) * quads + x / band }
@@ -147,11 +150,12 @@ struct XrBlendRoutesTest: HWTest {
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
         guard
             CVPixelBufferCreate(nil, width, height, format.surface, attributes as CFDictionary, &made)
-                == kCVReturnSuccess, let buffer = made,
+            == kCVReturnSuccess, let buffer = made,
             let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { throw TestFailure("no \(format.name) pixel buffer") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format.pixel, width: width, height: height, mipmapped: false)
+            pixelFormat: format.pixel, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
@@ -164,7 +168,7 @@ struct XrBlendRoutesTest: HWTest {
             CVPixelBufferLockBaseAddress(buffer, .readOnly)
             defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
             let base = CVPixelBufferGetBaseAddress(buffer)!, row = CVPixelBufferGetBytesPerRow(buffer)
-            return (0..<(width * height)).map { i in
+            return (0 ..< (width * height)).map { i in
                 base.loadUnaligned(fromByteOffset: (i / width) * row + (i % width) * 8, as: UInt64.self)
             }
         }
@@ -190,8 +194,8 @@ struct XrBlendRoutesTest: HWTest {
             pass.colorAttachments[0].storeAction = .store
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
             encoder.setRenderPipelineState(state)
-            for b in 0..<bands {
-                for k in 0..<quads {
+            for b in 0 ..< bands {
+                for k in 0 ..< quads {
                     let corners = GPU.pixelQuad(k * step, b * rows, width, (b + 1) * rows, width: width, height: height)
                     GPU.draw(encoder, corners: corners, color: colours[b][k])
                 }

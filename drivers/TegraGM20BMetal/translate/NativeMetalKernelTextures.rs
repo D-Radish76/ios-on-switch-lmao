@@ -162,7 +162,11 @@ mod tests {
                 let read = if p3 { 2 } else { reads };
                 let map = (if halved { WRAPPED } else { 0 }) | if read == 2 { CLAMPS } else { 0 };
                 let t = kernel_texture(pixel_format(raw), stating(map));
-                assert_eq!(direct_format(t.format), Some(raw_image(read, bits)), "format {raw}, P3 {p3}");
+                assert_eq!(
+                    direct_format(t.format),
+                    Some(raw_image(read, bits)),
+                    "format {raw}, P3 {p3}"
+                );
                 assert_eq!(t.map, map, "format {raw}, P3 {p3}");
                 assert_eq!(converted_map(t.format), map, "format {raw}, P3 {p3}: its own map");
             }
@@ -174,9 +178,17 @@ mod tests {
     fn a_packed_10_bit_plane_is_read_as_its_rgb10a2_image() {
         for raw in [588, 589] {
             let t = kernel_texture(pixel_format(raw), stating(0));
-            assert_eq!(direct_format(t.format), Some(Format::A2B10G10R10_UNORM_PACK32), "format {raw}");
+            assert_eq!(
+                direct_format(t.format),
+                Some(Format::A2B10G10R10_UNORM_PACK32),
+                "format {raw}"
+            );
             assert_eq!(t.map, 0);
-            assert_eq!(kernel_texture(pixel_format(raw), 0).format, t.format, "format {raw}: no map stated");
+            assert_eq!(
+                kernel_texture(pixel_format(raw), 0).format,
+                t.format,
+                "format {raw}: no map stated"
+            );
         }
     }
 
@@ -184,7 +196,10 @@ mod tests {
     fn metal_stores_no_kernel_write_into_a_packed_plane_or_a_one_plane_422_texture() {
         for raw in [588, 589, 501, 521] {
             assert!(!kernel_texture(pixel_format(raw), 0).stores, "format {raw}");
-            assert!(!kernel_texture(pixel_format(raw), stating(CLAMPS | WRAPPED)).stores, "format {raw}");
+            assert!(
+                !kernel_texture(pixel_format(raw), stating(CLAMPS | WRAPPED)).stores,
+                "format {raw}"
+            );
         }
         for raw in [70, 500, 540, 503] {
             assert!(kernel_texture(pixel_format(raw), stating(converted_map(pixel_format(raw)))).stores);

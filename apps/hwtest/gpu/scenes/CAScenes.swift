@@ -31,16 +31,18 @@ struct FirstTiledSurfaceScene: GPUScene {
             result.unavailable("clear only: no Core Animation fill state here (\(GPU.describe(error)))", on: gpu.device)
         }
         var hashes: Set<UInt64> = []
-        for round in 0..<3 {
+        for round in 0 ..< 3 {
             let target = try SurfaceTarget.make(
-                gpu, .bgra8Unorm, Self.width, Self.height, rowBytes: Self.rowBytes, usage: [.renderTarget, .shaderRead])
+                gpu, .bgra8Unorm, Self.width, Self.height, rowBytes: Self.rowBytes, usage: [.renderTarget, .shaderRead]
+            )
             let colour1 =
                 pipeline == nil
-                ? nil
-                : try gpu.texture(
-                    CACorpus.colorFormat(CACorpus.state("PBGRAXm_A2Xhf")!, 1), Self.width, Self.height,
-                    usage: [.renderTarget],
-                    storage: .memoryless)
+                    ? nil
+                    : try gpu.texture(
+                        CACorpus.colorFormat(CACorpus.state("PBGRAXm_A2Xhf")!, 1), Self.width, Self.height,
+                        usage: [.renderTarget],
+                        storage: .memoryless
+                    )
             let timing = try await gpu.run(tolerateError: true) { commands in
                 let encoder = commands.makeRenderCommandEncoder(descriptor: Self.pass(target.texture, colour1))!
                 if let pipeline {
@@ -53,7 +55,8 @@ struct FirstTiledSurfaceScene: GPUScene {
                     CAState.bind(
                         encoder,
                         vertices: CAState.rectangle(x0: x0, y0: y1, x1: x1, y1: y0, color: SIMD4(1, 0.5, 0, 1)),
-                        source: nil)
+                        source: nil
+                    )
                     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 }
                 encoder.endEncoding()
@@ -67,16 +70,19 @@ struct FirstTiledSurfaceScene: GPUScene {
             result.compare("round \(round) blit: clear outside the fill", got, Self.model(drawn), tolerance: 1.01 / 255)
             result.compare(
                 "round \(round) CPU lock = blit", bytes: try target.cpuRead(), expected: blit, format: .bgra8Unorm,
-                width: Self.width, height: Self.height, tolerance: 1.01 / 255)
+                width: Self.width, height: Self.height, tolerance: 1.01 / 255
+            )
             result.compare(
                 "round \(round) shader = blit", try await gpu.computeRaster(target.texture, .bgra8Unorm), got,
-                tolerance: 1.01 / 255)
+                tolerance: 1.01 / 255
+            )
             if let drawn {
                 let region = TexelImage(.bgra8Unorm, Self.width, Self.height, got).read(drawn)
                 if hashes.isEmpty {
                     result.picture(
                         "fill", bytes: region, metalFormat: MTLPixelFormat.bgra8Unorm.rawValue, width: drawn.width,
-                        height: drawn.height, cleared: Self.clear)
+                        height: drawn.height, cleared: Self.clear
+                    )
                 }
                 hashes.insert(Self.fnv(region))
                 result.metrics.set("fill_px\(round)", got.shown(got.pixel(drawn.x + 1, drawn.y + 1)))
@@ -94,7 +100,8 @@ struct FirstTiledSurfaceScene: GPUScene {
         pass.colorAttachments[0].texture = target
         pass.colorAttachments[0].loadAction = .clear
         pass.colorAttachments[0].clearColor = MTLClearColor(
-            red: Double(clear[0]), green: Double(clear[1]), blue: Double(clear[2]), alpha: Double(clear[3]))
+            red: Double(clear[0]), green: Double(clear[1]), blue: Double(clear[2]), alpha: Double(clear[3])
+        )
         pass.colorAttachments[0].storeAction = .store
         if let colour1 {
             pass.colorAttachments[1].texture = colour1

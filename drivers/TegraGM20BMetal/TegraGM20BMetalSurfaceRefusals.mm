@@ -24,13 +24,14 @@ NSString *surfaceFacts(IOSurfaceRef s, NSUInteger plane)
     size_t pitch;
     planeAt(s, plane, offset, pitch);
     const OSType fourcc = IOSurfaceGetPixelFormat(s);
-    return [NSString stringWithFormat:@"surface %u %ux%u '%c%c%c%c' bytesPerRow %lu planes %lu plane %lu alloc %lu "
-                                      @"base&0xfff 0x%lx",
-                                      IOSurfaceGetID(s), unsigned(IOSurfaceGetWidth(s)), unsigned(IOSurfaceGetHeight(s)),
-                                      char(fourcc >> 24), char(fourcc >> 16), char(fourcc >> 8), char(fourcc),
-                                      (unsigned long)pitch, (unsigned long)IOSurfaceGetPlaneCount(s),
-                                      (unsigned long)plane, (unsigned long)IOSurfaceGetAllocSize(s),
-                                      (unsigned long)(uintptr_t(IOSurfaceGetBaseAddress(s)) & 0xfff)];
+    return
+        [NSString stringWithFormat:@"surface %u %ux%u '%c%c%c%c' bytesPerRow %lu planes %lu plane %lu alloc %lu "
+                                   @"base&0xfff 0x%lx",
+                                   IOSurfaceGetID(s), unsigned(IOSurfaceGetWidth(s)), unsigned(IOSurfaceGetHeight(s)),
+                                   char(fourcc >> 24), char(fourcc >> 16), char(fourcc >> 8), char(fourcc),
+                                   (unsigned long)pitch, (unsigned long)IOSurfaceGetPlaneCount(s), (unsigned long)plane,
+                                   (unsigned long)IOSurfaceGetAllocSize(s),
+                                   (unsigned long)(uintptr_t(IOSurfaceGetBaseAddress(s)) & 0xfff)];
 }
 
 // Metal's stop or nil for a texture over a surface, null where Metal makes one: an IOSurface texture is 2D (or a texture

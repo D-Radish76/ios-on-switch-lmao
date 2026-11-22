@@ -53,7 +53,8 @@ enum X1PrecisionProbe {
         var paths: [String] = []
         for arm in arms {
             journal.starting(
-                "\(arm.name) set=\(arm.set.map { String(format: "%04x=%x", $0.0, $0.1) }.joined(separator: ","))")
+                "\(arm.name) set=\(arm.set.map { String(format: "%04x=%x", $0.0, $0.1) }.joined(separator: ","))"
+            )
             var fields: [String] = []
             var emitted = 0
             do {
@@ -61,7 +62,8 @@ enum X1PrecisionProbe {
                     let target = try gpu.texture(format, 256, 256, usage: [.renderTarget, .shaderRead])
                     let ran = try await run(gpu, arm) { commands in
                         let encoder = commands.makeRenderCommandEncoder(
-                            descriptor: X1RawProbes.pass(target, load: .clear))!
+                            descriptor: X1RawProbes.pass(target, load: .clear)
+                        )!
                         encoder.setRenderPipelineState(state)
                         var corners = GPU.fullScreen
                         encoder.setVertexBytes(&corners, length: 64, index: 0)
@@ -71,7 +73,8 @@ enum X1PrecisionProbe {
                     paths.append(ran.path)
                     emitted += ran.emitted
                     fields.append(
-                        "store\(bits):" + storeMisses(try await gpu.read(target, bytesPerPixel: 4), bits: bits))
+                        "store\(bits):" + storeMisses(try await gpu.read(target, bytesPerPixel: 4), bits: bits)
+                    )
                 }
                 for (pair, state) in zip(pairs, states) {
                     let ran = try await run(gpu, arm) { rig.encode($0, state) }
@@ -108,8 +111,8 @@ enum X1PrecisionProbe {
             !offPath.isEmpty || base == ["refused"] || judged == 0 ? .inconclusive : changed.isEmpty ? .pass : .fail
         let note =
             !offPath.isEmpty
-            ? "not on the driver: \(offPath.joined(separator: ","))"
-            : judged == 0
+                ? "not on the driver: \(offPath.joined(separator: ","))"
+                : judged == 0
                 ? "no arm's controls reached a draw" : changed.isEmpty ? "" : "a control moved the ROP: see arms"
         return ProbeFinding(verdict, metrics, note: note)
     }
@@ -128,7 +131,7 @@ enum X1PrecisionProbe {
     /// "<misses of the chip's rule>/<misses of Metal's>" over the first channel of all 65,536 halves
     static func storeMisses(_ bytes: [UInt8], bits: Int) -> String {
         var chip = 0, metal = 0
-        for i in 0..<65536 {
+        for i in 0 ..< 65536 {
             let have = bits == 8 ? Int(bytes[i * 4 + 2]) : (Int(bytes[i * 4]) | Int(bytes[i * 4 + 1]) << 8) & 1023
             let v = Double(Float16(bitPattern: UInt16(i)))
             if have != X1Reference.store(v, bits: bits) { chip += 1 }

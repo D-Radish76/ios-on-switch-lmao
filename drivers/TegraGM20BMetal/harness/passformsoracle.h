@@ -35,10 +35,10 @@ inline id<MTLDevice> gDevice;
 inline id<MTLLibrary> gLibrary;
 inline id<MTLCommandQueue> gQueue;
 
-inline id<MTLTexture> make(MTLPixelFormat f, NSUInteger w = 32, NSUInteger h = 32, MTLTextureType type = MTLTextureType2D,
-                    NSUInteger samples = 1, NSUInteger layers = 1, NSUInteger levels = 1,
-                    MTLStorageMode storage = MTLStorageModePrivate,
-                    MTLTextureUsage usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead)
+inline id<MTLTexture> make(MTLPixelFormat f, NSUInteger w = 32, NSUInteger h = 32,
+                           MTLTextureType type = MTLTextureType2D, NSUInteger samples = 1, NSUInteger layers = 1,
+                           NSUInteger levels = 1, MTLStorageMode storage = MTLStorageModePrivate,
+                           MTLTextureUsage usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead)
 {
     MTLTextureDescriptor *d = [MTLTextureDescriptor new];
     d.pixelFormat = f;
@@ -57,9 +57,10 @@ inline id<MTLTexture> make(MTLPixelFormat f, NSUInteger w = 32, NSUInteger h = 3
     return t;
 }
 
-inline id<MTLRenderPipelineState> state(MTLPixelFormat colour, const char *fragment, MTLPixelFormat depth = MTLPixelFormatInvalid,
-                                 MTLPixelFormat stencil = MTLPixelFormatInvalid, NSUInteger samples = 1,
-                                 bool blend = false)
+inline id<MTLRenderPipelineState> state(MTLPixelFormat colour, const char *fragment,
+                                        MTLPixelFormat depth = MTLPixelFormatInvalid,
+                                        MTLPixelFormat stencil = MTLPixelFormatInvalid, NSUInteger samples = 1,
+                                        bool blend = false)
 {
     MTLRenderPipelineDescriptor *d = [MTLRenderPipelineDescriptor new];
     d.vertexFunction = [gLibrary newFunctionWithName:@"cover"];
@@ -91,7 +92,7 @@ inline void finish(id<MTLCommandBuffer> cb, const char *what)
 }
 
 inline std::vector<uint8_t> bytes(id<MTLTexture> t, NSUInteger bpp, NSUInteger level = 0, NSUInteger slice = 0,
-                           MTLBlitOption option = MTLBlitOptionNone)
+                                  MTLBlitOption option = MTLBlitOptionNone)
 {
     const NSUInteger w = std::max<NSUInteger>(t.width >> level, 1), h = std::max<NSUInteger>(t.height >> level, 1);
     id<MTLBuffer> b = [gDevice newBufferWithLength:w * h * bpp options:MTLResourceStorageModeShared];

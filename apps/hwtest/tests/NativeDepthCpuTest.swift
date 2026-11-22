@@ -22,7 +22,8 @@ struct NativeDepthCpuTest: HWTest {
             ("depth32f", MTLPixelFormat.depth32Float, 4), ("depth16", .depth16Unorm, 2), ("stencil8", .stencil8, 1),
         ] {
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: size, height: size, mipmapped: false)
+                pixelFormat: format, width: size, height: size, mipmapped: false
+            )
             descriptor.storageMode = .private
             descriptor.usage = [.renderTarget, .shaderRead]
             guard let texture = gpu.device.makeTexture(descriptor: descriptor) else {

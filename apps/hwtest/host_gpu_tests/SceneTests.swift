@@ -33,7 +33,8 @@ final class SceneTests: XCTestCase {
         for scene in Scenes.all {
             let result = try await scene.run(Self.safeMathScenes.contains(scene.id) ? safeMath : gpu)
             XCTAssertTrue(
-                result.passed, "\(scene.id) on \(host): \(result.reasons(limit: 4).joined(separator: "; "))")
+                result.passed, "\(scene.id) on \(host): \(result.reasons(limit: 4).joined(separator: "; "))"
+            )
         }
     }
 

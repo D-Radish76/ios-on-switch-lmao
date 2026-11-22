@@ -43,10 +43,10 @@ struct InvalidRequestsTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         let start = GM20BFacade.counters(of: gpu.device)
-        let pattern = try gpu.buffer((0..<Self.bytes).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) })
+        let pattern = try gpu.buffer((0 ..< Self.bytes).map { UInt8(truncatingIfNeeded: $0 &* 7 &+ 3) })
         let junk = try gpu.buffer([UInt8](repeating: 0xee, count: Self.bytes))
         let source = try gpu.texture(.rgba8Unorm, Self.side, Self.side, mipmaps: 7)
-        let sourceLevel = (0..<Self.levelSide * Self.levelSide * 4).map { UInt8(truncatingIfNeeded: $0 &* 29 &+ 5) }
+        let sourceLevel = (0 ..< Self.levelSide * Self.levelSide * 4).map { UInt8(truncatingIfNeeded: $0 &* 29 &+ 5) }
         try await gpu.upload(sourceLevel, to: source, bytesPerRow: Self.levelSide * 4, level: Self.level)
         let chain = try gpu.texture(.rgba8Unorm, Self.side, Self.side, mipmaps: 7)
         let narrow = try gpu.texture(.r8Unorm, Self.side, Self.side, mipmaps: 7)
@@ -61,7 +61,8 @@ struct InvalidRequestsTest: HWTest {
                 {
                     $0.copy(
                         from: multisampled, sourceSlice: 0, sourceLevel: 0, sourceOrigin: o, sourceSize: size(8, 8),
-                        to: chain, destinationSlice: 0, destinationLevel: level, destinationOrigin: o)
+                        to: chain, destinationSlice: 0, destinationLevel: level, destinationOrigin: o
+                    )
                 }
             ),
             (
@@ -69,7 +70,8 @@ struct InvalidRequestsTest: HWTest {
                 {
                     $0.copy(
                         from: source, sourceSlice: 0, sourceLevel: level, sourceOrigin: o, sourceSize: size(4, 4),
-                        to: narrow, destinationSlice: 0, destinationLevel: level, destinationOrigin: o)
+                        to: narrow, destinationSlice: 0, destinationLevel: level, destinationOrigin: o
+                    )
                 }
             ),
             (
@@ -77,8 +79,12 @@ struct InvalidRequestsTest: HWTest {
                 {
                     $0.copy(
                         from: source, sourceSlice: 0, sourceLevel: level,
-                        sourceOrigin: MTLOrigin(x: Self.pastX, y: 0, z: 0), sourceSize: size(Self.pastSize, Self.pastSize),
-                        to: chain, destinationSlice: 0, destinationLevel: level, destinationOrigin: o)
+                        sourceOrigin: MTLOrigin(x: Self.pastX, y: 0, z: 0), sourceSize: size(
+                            Self.pastSize,
+                            Self.pastSize
+                        ),
+                        to: chain, destinationSlice: 0, destinationLevel: level, destinationOrigin: o
+                    )
                 }
             ),
             (
@@ -87,7 +93,8 @@ struct InvalidRequestsTest: HWTest {
                     $0.copy(
                         from: junk, sourceOffset: 0, sourceBytesPerRow: 32, sourceBytesPerImage: 0,
                         sourceSize: size(16, 16), to: chain, destinationSlice: 0, destinationLevel: level,
-                        destinationOrigin: o)
+                        destinationOrigin: o
+                    )
                 }
             ),
             (
@@ -95,7 +102,8 @@ struct InvalidRequestsTest: HWTest {
                 {
                     $0.copy(
                         from: source, sourceSlice: 0, sourceLevel: level, sourceOrigin: o, sourceSize: size(16, 16),
-                        to: out, destinationOffset: 0, destinationBytesPerRow: 32, destinationBytesPerImage: 0)
+                        to: out, destinationOffset: 0, destinationBytesPerRow: 32, destinationBytesPerImage: 0
+                    )
                 }
             ),
         ]
@@ -120,7 +128,8 @@ struct InvalidRequestsTest: HWTest {
             let untouched = try await Self.read(destination, gpu) == left
             let label = past ? "the part inside its level copied, the rest as it was" : "its destination as it was"
             Self.report(
-                key, path: timing.path, neighbours: neighbours, untouched: untouched, label: label, &metrics, &checks)
+                key, path: timing.path, neighbours: neighbours, untouched: untouched, label: label, &metrics, &checks
+            )
             var own = PathTally()
             own.add(timing.facadePath)
             attributions.append(Self.judge(key, counts, own: own, skipped: ["call.blit": 1], &metrics, &checks))
@@ -131,7 +140,9 @@ struct InvalidRequestsTest: HWTest {
         let resolved = FailedCounts(before: resolveCounters, after: GM20BFacade.counters(of: gpu.device))
         attributions.append(
             Self.judge(
-                "resolves", resolved, own: gpu.paths.since(resolvePaths), skipped: ["pass.ds": 2], &metrics, &checks))
+                "resolves", resolved, own: gpu.paths.since(resolvePaths), skipped: ["pass.ds": 2], &metrics, &checks
+            )
+        )
         attributions += await mirrored(gpu, &metrics, &checks)
         metrics.merge(FailedCounts(before: start, after: GM20BFacade.counters(of: gpu.device)).metrics)
         metrics.merge(FailedAttribution.metrics(attributions))
@@ -176,10 +187,10 @@ struct InvalidRequestsTest: HWTest {
     static func insideCopied(_ kept: [UInt8], from source: [UInt8]) -> [UInt8] {
         var left = kept
         let row = levelSide * 4
-        for y in 0..<pastSize {
-            for x in pastX..<levelSide {
+        for y in 0 ..< pastSize {
+            for x in pastX ..< levelSide {
                 let to = y * row + (x - pastX) * 4, from = y * row + x * 4
-                left.replaceSubrange(to..<(to + 4), with: source[from..<(from + 4)])
+                left.replaceSubrange(to ..< (to + 4), with: source[from ..< (from + 4)])
             }
         }
         return left
@@ -189,7 +200,7 @@ struct InvalidRequestsTest: HWTest {
     static func fill(_ destination: Destination, _ gpu: GPU) async throws -> [UInt8] {
         switch destination {
         case .level(let texture, let bytesPerPixel):
-            let bytes = (0..<levelSide * levelSide * bytesPerPixel).map { UInt8(truncatingIfNeeded: $0 &* 13 &+ 1) }
+            let bytes = (0 ..< levelSide * levelSide * bytesPerPixel).map { UInt8(truncatingIfNeeded: $0 &* 13 &+ 1) }
             try await gpu.upload(bytes, to: texture, bytesPerRow: levelSide * bytesPerPixel, level: level)
             return bytes
         case .buffer(let buffer):
@@ -223,7 +234,8 @@ extension InvalidRequestsTest {
         let colour = try gpu.texture(.rgba8Unorm, n, n, samples: samples)
         let depth = try gpu.texture(.depth32Float, n, n, usage: [.renderTarget], samples: samples)
         let state = try gpu.render(
-            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth32Float)
+            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth32Float
+        )
         func depthState(_ compare: MTLCompareFunction, write: Bool) throws -> MTLDepthStencilState {
             let d = MTLDepthStencilDescriptor()
             d.depthCompareFunction = compare
@@ -253,7 +265,8 @@ extension InvalidRequestsTest {
         }
         func off(_ seen: MTLTexture, left: [UInt8], right: [UInt8]) async throws -> Int {
             let pixels = try await gpu.read(seen, bytesPerPixel: 4)
-            return (0..<n * n).filter { Array(pixels[4 * $0..<4 * $0 + 4]) != ($0 % n < n / 2 ? left : right) }.count
+            return (0 ..< n * n).filter { Array(pixels[4 * $0 ..< 4 * $0 + 4]) != ($0 % n < n / 2 ? left : right) }
+                .count
         }
         let red: [UInt8] = [255, 0, 0, 255], green: [UInt8] = [0, 255, 0, 255], black: [UInt8] = [0, 0, 0, 255]
         let decisions: [(String, MTLStoreAction)] = [

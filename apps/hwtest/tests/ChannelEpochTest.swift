@@ -52,7 +52,8 @@ struct ChannelEpochTest: HWTest {
                 ("job_kr=\(Self.hex(r.job_kr)) not 0", r.job_kr == 0),
                 ("wait_kr=\(Self.hex(r.wait_kr)) not 0", r.wait_kr == 0),
                 ("job_filled=\(r.job_filled) not 1", r.job_filled == 1),
-            ], metrics, detail: why)
+            ], metrics, detail: why
+        )
     }
 
     static func hex(_ kr: Int32) -> String { kr == -1 ? "unreached" : "0x" + String(UInt32(bitPattern: kr), radix: 16) }

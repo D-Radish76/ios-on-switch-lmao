@@ -66,7 +66,8 @@ struct PlanesBlitsTest: HWTest {
             metrics.set(field + "_repeats", repeats ?? -1)
             let seen = lines.map { "\($0.count) lines, \($0.count - Set($0).count) repeated" } ?? "no log"
             checks.append(
-                ("gm20b:\(reason) logged, no rule's line twice (\(seen))", (lines?.count ?? 0) > 0 && repeats == 0))
+                ("gm20b:\(reason) logged, no rule's line twice (\(seen))", (lines?.count ?? 0) > 0 && repeats == 0)
+            )
         }
         let counted = GM20BFacade.counters(of: gpu.device)
         let skips = cases.reduce(0) { $0 + $1.skips }
@@ -83,10 +84,12 @@ struct PlanesBlitsTest: HWTest {
     static func refusalLines(_ reason: String) -> [String]? {
         let subsystem = "com.brunostjohn.switch.refusal", text = " \(reason): "
         guard let store = try? OSLogStore(scope: .currentProcessIdentifier),
-            let entries = try? store.getEntries(
-                matching: NSPredicate(
-                    format: "subsystem == %@ AND category == %@ AND composedMessage CONTAINS %@", subsystem, "gm20b", text
-                ))
+              let entries = try? store.getEntries(
+                  matching: NSPredicate(
+                      format: "subsystem == %@ AND category == %@ AND composedMessage CONTAINS %@", subsystem, "gm20b",
+                      text
+                  )
+              )
         else { return nil }
         return entries.compactMap { $0 as? OSLogEntryLog }.filter {
             $0.subsystem == subsystem && $0.category == "gm20b" && $0.composedMessage.contains(text)

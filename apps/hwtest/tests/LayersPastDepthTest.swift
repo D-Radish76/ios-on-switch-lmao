@@ -35,7 +35,7 @@ struct LayersPastDepthTest: HWTest {
 
     /// Per layer, each run's answer for it in run order
     static func byLayer(_ answers: [String]) -> [String] {
-        (0..<4).map { l in String(answers.map { Array($0)[l] }) }
+        (0 ..< 4).map { l in String(answers.map { Array($0)[l] }) }
     }
 
     static func offFields(
@@ -44,7 +44,7 @@ struct LayersPastDepthTest: HWTest {
         -> Metrics
     {
         var metrics = Metrics()
-        for l in 0..<4 {
+        for l in 0 ..< 4 {
             for (i, (got, want)) in zip(layers[l], expected[l]).enumerated() where got != want {
                 let key = "\(prefix)_\(names[i])_l\(l)"
                 if let bit = Int(String(got)) { metrics.set(key, bit) } else { metrics.set(key, String(got)) }
@@ -72,8 +72,8 @@ struct LayersPastDepthTest: HWTest {
                 metrics.set("past_\(f.key)", layers.joined(separator: "/"))
                 kept.insert("past_\(f.key)")
                 metrics.merge(offFields("past_\(f.key)", compares.map(\.key), layers, expected))
-                checks.append(("\(f.key): layers 0-1 against 0.25", Array(layers[0..<2]) == [ownLayers, ownLayers]))
-                checks.append(("\(f.key): layers 2-3 as Metal's (\(past))", Array(layers[2..<4]) == [past, past]))
+                checks.append(("\(f.key): layers 0-1 against 0.25", Array(layers[0 ..< 2]) == [ownLayers, ownLayers]))
+                checks.append(("\(f.key): layers 2-3 as Metal's (\(past))", Array(layers[2 ..< 4]) == [past, past]))
             } catch {
                 checks.append(("\(f.key): \(GPU.describe(error))", false))
             }
@@ -86,7 +86,9 @@ struct LayersPastDepthTest: HWTest {
                 for r in references {
                     answers.append(
                         try await LayersPastDepthCases.drawn(
-                            gpu, f, state, .init(stencilCompare: .equal, reference: r, z: 0.5)))
+                            gpu, f, state, .init(stencilCompare: .equal, reference: r, z: 0.5)
+                        )
+                    )
                 }
                 let layers = byLayer(answers)
                 let own = String(references.map { $0 == 5 ? "1" : "0" }.joined())
@@ -94,9 +96,10 @@ struct LayersPastDepthTest: HWTest {
                 metrics.set("past_stencil_\(f.key)", layers.joined(separator: "/"))
                 kept.insert("past_stencil_\(f.key)")
                 metrics.merge(
-                    offFields("past_stencil_\(f.key)", references.map { "ref\($0)" }, layers, [own, own, past, past]))
-                checks.append(("\(f.key) stencil: layers 0-1 hold 5", Array(layers[0..<2]) == [own, own]))
-                checks.append(("\(f.key) stencil: layers 2-3 hold 0xff", Array(layers[2..<4]) == [past, past]))
+                    offFields("past_stencil_\(f.key)", references.map { "ref\($0)" }, layers, [own, own, past, past])
+                )
+                checks.append(("\(f.key) stencil: layers 0-1 hold 5", Array(layers[0 ..< 2]) == [own, own]))
+                checks.append(("\(f.key) stencil: layers 2-3 hold 0xff", Array(layers[2 ..< 4]) == [past, past]))
             } catch {
                 checks.append(("\(f.key) stencil: \(GPU.describe(error))", false))
             }
@@ -109,7 +112,8 @@ struct LayersPastDepthTest: HWTest {
                 for c in compares {
                     let run = LayersPastDepthCases.Run(
                         depthCompare: c.function, z: 0.5, load: .dontCare, filledDepth: Double(1 - clear),
-                        clearDepth: Double(clear))
+                        clearDepth: Double(clear)
+                    )
                     answers.append(try await LayersPastDepthCases.drawn(gpu, .d32f, state, run))
                 }
                 metrics.set(key, answers.joined(separator: "/"))

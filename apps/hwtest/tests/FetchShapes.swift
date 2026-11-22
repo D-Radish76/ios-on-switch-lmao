@@ -56,13 +56,13 @@ struct FetchShape {
     /// two vertices swapped, and a restart index begins a run
     static func triangles(_ primitive: MTLPrimitiveType, _ indices: [Int]) -> [[Int]] {
         if primitive == .triangle {
-            return stride(from: 0, to: indices.count - 2, by: 3).map { Array(indices[$0..<$0 + 3]) }
+            return stride(from: 0, to: indices.count - 2, by: 3).map { Array(indices[$0 ..< $0 + 3]) }
         }
         var made: [[Int]] = []
         var run: [Int] = []
         for index in indices + [Int(restart)] {
             if index == Int(restart) {
-                for k in 0..<max(run.count - 2, 0) {
+                for k in 0 ..< max(run.count - 2, 0) {
                     made.append(k % 2 == 0 ? [run[k], run[k + 1], run[k + 2]] : [run[k + 1], run[k], run[k + 2]])
                 }
                 run = []
@@ -80,7 +80,7 @@ struct FetchShape {
 
     /// Per pixel, the triangles of `draw` that cover its centre and are not culled
     static func coverage(_ draw: FetchDraw, side: Int, cull: MTLCullMode) -> [Int] {
-        let indices = draw.indices.map { $0.map(Int.init) } ?? Array(draw.vertexStart..<draw.vertexStart + draw.count)
+        let indices = draw.indices.map { $0.map(Int.init) } ?? Array(draw.vertexStart ..< draw.vertexStart + draw.count)
         let window = draw.points.map { p in
             SIMD2((p.x / p.w + 1) / 2 * Float(side), (1 - p.y / p.w) / 2 * Float(side))
         }
@@ -89,10 +89,10 @@ struct FetchShape {
             let t = triangle.map { window[$0] }
             let area = windowArea(t)
             if area == 0 || (cull == .back && area < 0) || (cull == .front && area > 0) { continue }
-            for y in 0..<side {
-                for x in 0..<side {
+            for y in 0 ..< side {
+                for x in 0 ..< side {
                     let c = SIMD2(Float(x) + 0.5, Float(y) + 0.5)
-                    let edges = (0..<3).map { i -> Float in
+                    let edges = (0 ..< 3).map { i -> Float in
                         let a = t[i], b = t[(i + 1) % 3]
                         return ((b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)) * (area > 0 ? 1 : -1)
                     }
@@ -110,20 +110,22 @@ extension FetchShape {
     /// fetch_list: 8 full-screen triangles; every pixel at red 8
     static let list = FetchShape(
         side: 8, draws: [FetchDraw(primitive: .triangle, points: repeated(screen, 8), count: 24)],
-        codes: uniform(8, [8, 0, 0]))
+        codes: uniform(8, [8, 0, 0])
+    )
 
     /// fetch_long: 128 triangles on a 32x32 target, four slivers over each pixel row's centres; every pixel at red 4
     static let long: FetchShape = {
         var points: [SIMD4<Float>] = []
-        for row in 0..<32 {
+        for row in 0 ..< 32 {
             let y = Float(row) + 0.5
-            for _ in 0..<4 {
+            for _ in 0 ..< 4 {
                 points += [clip(-200, y - 0.45, side: 32), clip(-200, y + 0.45, side: 32), clip(232, y, side: 32)]
             }
         }
         return FetchShape(
             side: 32, draws: [FetchDraw(primitive: .triangle, points: points, count: 384)],
-            codes: uniform(32, [4, 0, 0]))
+            codes: uniform(32, [4, 0, 0])
+        )
     }()
 
     /// fetch_strip_restart: one indexed strip of three runs, back faces culled. The first run's three triangles face
@@ -139,48 +141,54 @@ extension FetchShape {
         let indices: [UInt16] = [0, 1, 2, 3, 4, restart, 5, 6, 7, 8, restart, 9, 11, 10]
         return FetchDraw(
             primitive: .triangleStrip, points: pixels.map { clip($0.x, $0.y, side: 8) }, indices: indices,
-            count: indices.count)
+            count: indices.count
+        )
     }()
 
     static let stripRestart = FetchShape(
-        side: 8, cull: .back, draws: [stripRestartDraw], codes: reds(coverage(stripRestartDraw, side: 8, cull: .back)))
+        side: 8, cull: .back, draws: [stripRestartDraw], codes: reds(coverage(stripRestartDraw, side: 8, cull: .back))
+    )
 
     /// fetch_points: 16 points on pixel (3, 5): red 16 there, 0 elsewhere
     static let points = FetchShape(
         side: 8, vertex: "fetch_count_point_vertex",
         draws: [FetchDraw(primitive: .point, points: repeated([clip(3.5, 5.5, side: 8)], 16), count: 16)],
-        codes: (0..<64).map { $0 == 5 * 8 + 3 ? SIMD3(16, 0, 0) : SIMD3(0, 0, 0) })
+        codes: (0 ..< 64).map { $0 == 5 * 8 + 3 ? SIMD3(16, 0, 0) : SIMD3(0, 0, 0) }
+    )
 
     /// fetch_lines: 8 identical lines across row 2 and a line strip of 8 segments back and forth across row 5, each past
     /// both edges: red 8 on those rows, 0 elsewhere
     static let lines: FetchShape = {
         let across = [clip(-2, 2.5, side: 8), clip(10, 2.5, side: 8)]
-        let strip = (0..<9).map { clip($0 % 2 == 0 ? -2 : 10, 5.5, side: 8) }
+        let strip = (0 ..< 9).map { clip($0 % 2 == 0 ? -2 : 10, 5.5, side: 8) }
         return FetchShape(
             side: 8,
             draws: [
                 FetchDraw(primitive: .line, points: repeated(across, 8), count: 16),
                 FetchDraw(primitive: .lineStrip, points: strip, count: 9),
-            ], codes: (0..<64).map { [2, 5].contains($0 / 8) ? SIMD3(8, 0, 0) : SIMD3(0, 0, 0) })
+            ], codes: (0 ..< 64).map { [2, 5].contains($0 / 8) ? SIMD3(8, 0, 0) : SIMD3(0, 0, 0) }
+        )
     }()
 
     /// fetch_primitive_id: 8 full-screen triangles writing green primitive_id / 31: red 8, green 7
     static let primitiveID = FetchShape(
         side: 8, fragment: "fetch_count_primitive_fragment",
-        draws: [FetchDraw(primitive: .triangle, points: repeated(screen, 8), count: 24)], codes: uniform(8, [8, 7, 0]))
+        draws: [FetchDraw(primitive: .triangle, points: repeated(screen, 8), count: 24)], codes: uniform(8, [8, 7, 0])
+    )
 
     /// fetch_instances: 3 full-screen triangles, 4 instances, writing blue instance_id / 31: red 12, blue 3
     static let instances = FetchShape(
         side: 8, fragment: "fetch_count_instance_fragment",
         draws: [FetchDraw(primitive: .triangle, points: repeated(screen, 3), count: 9, instances: 4)],
-        codes: uniform(8, [12, 0, 3]))
+        codes: uniform(8, [12, 0, 3])
+    )
 
     /// fetch_vertex_id: 8 triangles from vertexStart 5, triangle k's right edge at column k + 1, so column c is at
     /// red 8 - c; the five points before vertexStart sit at the origin, where an ID counted from the draw's first vertex
     /// would take them
     static let vertexIDDraw: FetchDraw = {
         var points = [SIMD4<Float>](repeating: [0, 0, 0.5, 1], count: 5)
-        for k in 0..<8 {
+        for k in 0 ..< 8 {
             let x = Float(k + 1)
             points += [clip(x, -24, side: 8), clip(x, 32, side: 8), clip(-800, 4, side: 8)]
         }
@@ -188,12 +196,14 @@ extension FetchShape {
     }()
 
     static let vertexID = FetchShape(
-        side: 8, draws: [vertexIDDraw], codes: (0..<64).map { SIMD3(UInt8(8 - $0 % 8), 0, 0) })
+        side: 8, draws: [vertexIDDraw], codes: (0 ..< 64).map { SIMD3(UInt8(8 - $0 % 8), 0, 0) }
+    )
 
     /// fetch_indirect: the list and the strip with restarts, each drawn indirect, in a pass each
     static let indirectList = FetchShape(
         side: 8, draws: [FetchDraw(primitive: .triangle, points: repeated(screen, 8), count: 24, indirect: true)],
-        codes: uniform(8, [8, 0, 0]))
+        codes: uniform(8, [8, 0, 0])
+    )
 
     static let indirectStrip: FetchShape = {
         var draw = stripRestartDraw
@@ -205,10 +215,10 @@ extension FetchShape {
     /// triangles, the strip's first run (a 5-vertex strip) and 4 points on pixel (6, 1). Red is 8, the strip's
     /// triangles over a pixel, and 4 more on the points' pixel
     static func commands(indexed: Bool) -> FetchShape {
-        let strip = Array(stripRestartDraw.points[0..<5])
+        let strip = Array(stripRestartDraw.points[0 ..< 5])
         let points = repeated(screen, 8) + strip + repeated([clip(6.5, 1.5, side: 8)], 4)
         let ranges: [(MTLPrimitiveType, Range<Int>)] = [
-            (.triangle, 0..<24), (.triangleStrip, 24..<29), (.point, 29..<33),
+            (.triangle, 0 ..< 24), (.triangleStrip, 24 ..< 29), (.point, 29 ..< 33),
         ]
         let draws = ranges.map { primitive, range in
             indexed
@@ -218,13 +228,14 @@ extension FetchShape {
         let covered = coverage(draws[1], side: 8, cull: .none)
         return FetchShape(
             side: 8, vertex: "fetch_count_point_vertex", icb: true, draws: draws,
-            codes: (0..<64).map { SIMD3(UInt8(8 + covered[$0] + ($0 == 1 * 8 + 6 ? 4 : 0)), 0, 0) })
+            codes: (0 ..< 64).map { SIMD3(UInt8(8 + covered[$0] + ($0 == 1 * 8 + 6 ? 4 : 0)), 0, 0) }
+        )
     }
 
     static let icbDraws = commands(indexed: false)
     static let icbIndexedDraws = commands(indexed: true)
 
     static func repeated(_ points: [SIMD4<Float>], _ times: Int) -> [SIMD4<Float>] {
-        (0..<times).flatMap { _ in points }
+        (0 ..< times).flatMap { _ in points }
     }
 }

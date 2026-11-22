@@ -37,9 +37,12 @@ struct ResolveTwodTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let facade = gpu.device as? NSObject, facade.responds(to: Self.drawSelector),
-            facade.responds(to: Self.exactSelector)
+              facade.responds(to: Self.exactSelector)
         else {
-            return .skip(GM20BFacade.missing("switchMetalProbeResolveDraw:/switchMetalProbeResolveExact:", on: gpu.device))
+            return .skip(GM20BFacade.missing(
+                "switchMetalProbeResolveDraw:/switchMetalProbeResolveExact:",
+                on: gpu.device
+            ))
         }
         var metrics = Metrics()
         var wrong: [String] = []
@@ -101,7 +104,8 @@ struct ResolveTwodTest: HWTest {
                 let compressedDiffer = zip(compressed.bytes, picked.bytes).filter { $0 != $1 }.count
                 let compressedRoute = compressed.twod > 0 ? "twod" : "pass"
                 metrics.set(
-                    "\(tag)_compressed", "\(compressedRoute):\(compressed.compressedGrids):\(compressedDiffer)")
+                    "\(tag)_compressed", "\(compressedRoute):\(compressed.compressedGrids):\(compressedDiffer)"
+                )
                 if compressed.compressedGrids == 0 { wrong.append("\(tag)_compressed_grid_plain") }
                 if compressedRoute != "twod" { wrong.append("\(tag)_compressed_not_twod") }
                 if compressedDiffer > 0 { wrong.append("\(tag)_compressed_differ") }
@@ -115,7 +119,7 @@ struct ResolveTwodTest: HWTest {
 
     static func compare(_ a: [UInt8], _ b: [UInt8]) -> (beyond: Int, oneOff: [Int]) {
         var oneOff = [0, 0, 0, 0], beyond = 0
-        for i in 0..<min(a.count, b.count) where a[i] != b[i] {
+        for i in 0 ..< min(a.count, b.count) where a[i] != b[i] {
             if abs(Int(a[i]) - Int(b[i])) > 1 { beyond += 1 } else { oneOff[i % 4] += 1 }
         }
         return (beyond, oneOff)
@@ -153,11 +157,12 @@ struct ResolveTwodTest: HWTest {
         bytesPerTexel: Int = 4, grid: MTLStorageMode = .private
     ) async throws -> Resolved {
         let ms = try gpu.texture(
-            format, Self.width, Self.height, usage: [.renderTarget], samples: samples, storage: grid)
+            format, Self.width, Self.height, usage: [.renderTarget], samples: samples, storage: grid
+        )
         let into = try gpu.texture(format, Self.width, Self.height, usage: [.renderTarget, .shaderRead])
         let before = GM20BFacade.counters(of: gpu.device)
         var out = Resolved()
-        for _ in 0..<3 {
+        for _ in 0 ..< 3 {
             let timing = try await gpu.run { commands in
                 draw(commands, pass(ms, into: into, load: .clear, store: .multisampleResolve), state)
             }
@@ -190,7 +195,8 @@ struct ResolveTwodTest: HWTest {
         try await switched(facade, Self.drawSelector) {
             _ = try await gpu.run { commands in
                 commands.makeRenderCommandEncoder(
-                    descriptor: pass(ms, into: again, load: .load, store: .multisampleResolve))!
+                    descriptor: pass(ms, into: again, load: .load, store: .multisampleResolve)
+                )!
                     .endEncoding()
             }
         }

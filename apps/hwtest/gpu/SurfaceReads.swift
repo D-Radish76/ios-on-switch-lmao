@@ -10,7 +10,13 @@ public enum SurfaceReads {
         let offset, width, height, bytesPerElement, pitch: Int
 
         public init(at offset: Int, _ width: Int, _ height: Int, bpe: Int, rows pitch: Int) {
-            (self.offset, self.width, self.height, self.bytesPerElement, self.pitch) = (offset, width, height, bpe, pitch)
+            (self.offset, self.width, self.height, self.bytesPerElement, self.pitch) = (
+                offset,
+                width,
+                height,
+                bpe,
+                pitch
+            )
         }
     }
 
@@ -41,7 +47,7 @@ public enum SurfaceReads {
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { return nil }
         IOSurfaceLock(surface, [], nil)
         let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
-        for i in 0..<IOSurfaceGetAllocSize(surface) { base[i] = fill(i) }
+        for i in 0 ..< IOSurfaceGetAllocSize(surface) { base[i] = fill(i) }
         IOSurfaceUnlock(surface, [], nil)
         return surface
     }
@@ -51,7 +57,8 @@ public enum SurfaceReads {
         usage: MTLTextureUsage = [.shaderRead]
     ) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: format)!, width: width, height: height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: format)!, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = usage
         descriptor.storageMode = .shared
         return gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: plane)
@@ -69,11 +76,15 @@ public enum SurfaceReads {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texture.width, height: texture.height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }
         guard !timing.path.hasPrefix("error:") else { throw TestFailure("the read failed: \(timing.facadePath)") }
-        return Array(UnsafeBufferPointer(start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count), count: count))
+        return Array(UnsafeBufferPointer(
+            start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count),
+            count: count
+        ))
     }
 
     /// A kernel writing `value` to every texel of `texture` (xr_fill_kernel); the facade's path
@@ -87,7 +98,8 @@ public enum SurfaceReads {
             encoder.setBytes(&v, length: 16, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texture.width, height: texture.height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }.facadePath
     }
@@ -95,7 +107,7 @@ public enum SurfaceReads {
     public static func bytes(_ surface: IOSurfaceRef) -> [UInt8] { YcbcrOnePlaneTargets.bytes(surface) }
 
     public static func word(_ bytes: [UInt8], _ at: Int) -> UInt32 {
-        (0..<4).reduce(UInt32(0)) { $0 | UInt32(bytes[at + $1]) << (8 * $1) }
+        (0 ..< 4).reduce(UInt32(0)) { $0 | UInt32(bytes[at + $1]) << (8 * $1) }
     }
 
     /// An XR10 word's colour, codes from bit 20 down as (code - 384) / 510, with `alpha`
@@ -106,6 +118,6 @@ public enum SurfaceReads {
 
     /// Texels with a channel further than `tolerance` from `want`'s
     public static func off(_ got: [SIMD4<Float>], tolerance: Float = 1e-6, _ want: (Int) -> SIMD4<Float>) -> Int {
-        got.indices.filter { i in (0..<4).contains { abs(got[i][$0] - want(i)[$0]) > tolerance } }.count
+        got.indices.filter { i in (0 ..< 4).contains { abs(got[i][$0] - want(i)[$0]) > tolerance } }.count
     }
 }

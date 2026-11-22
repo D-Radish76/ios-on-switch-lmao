@@ -9,21 +9,21 @@ import Metal
 /// stride read wrong reads junk.
 enum DynamicStrides {
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct In {
-            float2 position [[attribute(0)]];
-            float r [[attribute(1)]];
-            float g [[attribute(2)]];
-            float b [[attribute(3)]];
-            float a [[attribute(4)]];
-        };
-        struct Out { float4 position [[position]]; float4 colour; };
-        vertex Out five_strides_vertex(In in [[stage_in]]) {
-            return {float4(in.position, 0, 1), float4(in.r, in.g, in.b, in.a)};
-        }
-        fragment float4 five_strides_fragment(Out in [[stage_in]]) { return in.colour; }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct In {
+        float2 position [[attribute(0)]];
+        float r [[attribute(1)]];
+        float g [[attribute(2)]];
+        float b [[attribute(3)]];
+        float a [[attribute(4)]];
+    };
+    struct Out { float4 position [[position]]; float4 colour; };
+    vertex Out five_strides_vertex(In in [[stage_in]]) {
+        return {float4(in.position, 0, 1), float4(in.r, in.g, in.b, in.a)};
+    }
+    fragment float4 five_strides_fragment(Out in [[stage_in]]) { return in.colour; }
+    """
     static let strides = [4112, 4128, 4160, 4224, 8192]
     static let side = 16
     static let corners: [SIMD2<Float>] = [[-1, -1], [1, -1], [-1, 1], [1, 1]]
@@ -32,10 +32,10 @@ enum DynamicStrides {
     static func run(_ gpu: GPU) async throws -> (wrong: Int, path: String) {
         let library = try await gpu.device.makeLibrary(source: source, options: nil)
         let vertices = MTLVertexDescriptor()
-        for k in 0..<5 {
+        for k in 0 ..< 5 {
             vertices.attributes[k].format = k == 0 ? .float2 : .float
             vertices.attributes[k].bufferIndex = k + 1
-            vertices.layouts[k + 1].stride = Int(bitPattern: UInt.max)  // MTLBufferLayoutStrideDynamic
+            vertices.layouts[k + 1].stride = Int(bitPattern: UInt.max) // MTLBufferLayoutStrideDynamic
         }
         let descriptor = MTLRenderPipelineDescriptor()
         descriptor.vertexFunction = library.makeFunction(name: "five_strides_vertex")
@@ -72,7 +72,7 @@ enum DynamicStrides {
             encoder.endEncoding()
         }.path
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        let wrong = (0..<side * side).filter { Array(pixels[4 * $0..<4 * $0 + 4]) != [51, 102, 153, 255] }.count
+        let wrong = (0 ..< side * side).filter { Array(pixels[4 * $0 ..< 4 * $0 + 4]) != [51, 102, 153, 255] }.count
         return (wrong, path)
     }
 }

@@ -21,7 +21,8 @@ public enum ReflectionCheck {
     public static func compute(_ device: MTLDevice, _ function: MTLFunction) throws -> MTLComputePipelineReflection? {
         var reflection: MTLComputePipelineReflection?
         _ = try device.makeComputePipelineState(
-            function: function, options: [.bindingInfo, .bufferTypeInfo], reflection: &reflection)
+            function: function, options: [.bindingInfo, .bufferTypeInfo], reflection: &reflection
+        )
         return reflection
     }
 }
@@ -62,7 +63,8 @@ public enum ReflectionKinds {
         bindings.map { binding in
             let object = binding as AnyObject as! NSObject
             return Seen(
-                key: "\(function).\(binding.name)", name: binding.name, type: answer(object, "type"), object: object)
+                key: "\(function).\(binding.name)", name: binding.name, type: answer(object, "type"), object: object
+            )
         }
     }
 

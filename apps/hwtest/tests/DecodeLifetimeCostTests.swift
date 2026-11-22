@@ -31,7 +31,7 @@ struct DecodeViewLifetimeTest: HWTest {
         let settled = try gpu.buffer(16)
         try await gpu.run { commands in
             let blit = commands.makeBlitCommandEncoder()!
-            blit.fill(buffer: settled, range: 0..<16, value: 0)
+            blit.fill(buffer: settled, range: 0 ..< 16, value: 0)
             blit.endEncoding()
         }
         let after = GM20BFacade.memory(of: gpu.device)
@@ -63,7 +63,8 @@ struct DecodeViewLifetimeTest: HWTest {
         texture = nil
         try await DecodeScene.upload(
             gpu, set.bytes(rotated: 1), rowBytes: set.blocks.count * 16, into: view, width: set.width,
-            height: set.blockH)
+            height: set.blockH
+        )
         let at = set.points.map(\.at)
         let read = try await DecodeScene.read(gpu, view, at)
         let want = try await DecodeViewsTest.reference(gpu, set, 185, rotated: 1, at)
@@ -88,9 +89,11 @@ struct DecodeViewLifetimeTest: HWTest {
                         from: staging, sourceOffset: 0, sourceBytesPerRow: set.blocks.count * 16,
                         sourceBytesPerImage: 0,
                         sourceSize: MTLSize(width: set.width, height: set.blockH, depth: 1), to: texture,
-                        destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin())
+                        destinationSlice: 0, destinationLevel: 0, destinationOrigin: MTLOrigin()
+                    )
                     blit.endEncoding()
-                })
+                }
+            )
             views[index] = nil
         }
         // a failed one is counted by the caller (commandBufferErrors), with the texels it left
@@ -141,14 +144,15 @@ struct DecodeUploadCostTest: HWTest {
             }
             let blocks =
                 pvrtc
-                ? DecodeVectors.bytes(DecodeReadbackTest.words(bytes / 4, seed: UInt32(format)))
-                : (0..<bytes).map { vectors[$0 % vectors.count] }
+                    ? DecodeVectors.bytes(DecodeReadbackTest.words(bytes / 4, seed: UInt32(format)))
+                    : (0 ..< bytes).map { vectors[$0 % vectors.count] }
             let rowBytes = pvrtc ? 0 : width / blockW * 16
             let start = CFAbsoluteTimeGetCurrent()
             blocks.withUnsafeBytes {
                 texture.replace(
                     region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: $0.baseAddress!,
-                    bytesPerRow: rowBytes)
+                    bytesPerRow: rowBytes
+                )
             }
             try await Self.sampleOnce(gpu, texture)
             metrics.set(key, (CFAbsoluteTimeGetCurrent() - start) * 1000, digits: 2)
@@ -161,7 +165,8 @@ struct DecodeUploadCostTest: HWTest {
         try await timed("decode_ms_8x4_1024", 209, 1024, 512, blockW: 8, bytes: 1024 * 512 / 2)
         try await timed(
             "decode_ms_8x4_1024_three_forms", 209, 1024, 512, blockW: 8, bytes: 1024 * 512 / 2,
-            forms: hdr ? [191, 227] : [191])
+            forms: hdr ? [191, 227] : [191]
+        )
         let after = GM20BFacade.memory(of: gpu.device)
         metrics.set("decode_pool_grows", (after["grows"] ?? 0) - (before["grows"] ?? 0))
         metrics.set("unmade", unmade.isEmpty ? "-" : unmade.joined(separator: ","))
@@ -182,7 +187,8 @@ struct DecodeUploadCostTest: HWTest {
             e.setTexture(texture, index: 0)
             e.setBuffer(out, offset: 0, index: 0)
             e.dispatchThreadgroups(
-                MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+                MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1)
+            )
             e.endEncoding()
         }
     }

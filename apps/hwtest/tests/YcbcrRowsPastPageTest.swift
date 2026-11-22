@@ -34,7 +34,10 @@ struct YcbcrRowsPastPageTest: HWTest {
             if sparse == 1 {
                 checks.append(("made over sparse pages", r.made))
                 checks.append(("rows_matched=\(r.rowsMatched) of \(YcbcrRowsPastPage.height)", r.rowsMatched == 512))
-                checks.append(("no failed read: \(r.paths.joined(separator: ","))", !r.paths.contains { $0.hasPrefix("error:") }))
+                checks.append((
+                    "no failed read: \(r.paths.joined(separator: ","))",
+                    !r.paths.contains { $0.hasPrefix("error:") }
+                ))
             } else {
                 checks.append(("nil without TegraGM20BInfoSparse", !r.made))
             }

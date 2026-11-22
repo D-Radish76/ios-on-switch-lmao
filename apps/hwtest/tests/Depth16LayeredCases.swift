@@ -34,7 +34,8 @@ enum Depth16LayeredCases {
 
     static func array(_ gpu: GPU, _ format: MTLPixelFormat) throws -> MTLTexture {
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: side, height: side, mipmapped: false)
+            pixelFormat: format, width: side, height: side, mipmapped: false
+        )
         d.textureType = .type2DArray
         d.arrayLength = layers
         d.usage = [.renderTarget, .shaderRead]
@@ -60,7 +61,7 @@ enum Depth16LayeredCases {
         ) { $0.inputPrimitiveTopology = .triangle }
         let less = try depthState(gpu)
         try await gpu.run { commands in
-            for l in 0..<layers { cleared(commands, depth, slice: l, to: 0.25 + 0.3 * Double(l)) }
+            for l in 0 ..< layers { cleared(commands, depth, slice: l, to: 0.25 + 0.3 * Double(l)) }
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = colour
             pass.colorAttachments[0].loadAction = .clear
@@ -81,9 +82,9 @@ enum Depth16LayeredCases {
             e.endEncoding()
         }
         var result = Layered()
-        for l in 0..<layers {
+        for l in 0 ..< layers {
             let bytes = try await gpu.read(depth, bytesPerPixel: 2, slice: l)
-            result.depth.append((0..<side * side).map { bytes.loaded(as: UInt16.self, at: $0) })
+            result.depth.append((0 ..< side * side).map { bytes.loaded(as: UInt16.self, at: $0) })
             result.colour.append(try await gpu.read(colour, bytesPerPixel: 4, slice: l))
         }
         return result
@@ -105,9 +106,9 @@ enum Depth16LayeredCases {
 
     /// Colour texels off the draw's reach: written inside the rectangle of layers 1 and 2, black everywhere else
     static func colourOff(_ r: Layered) -> Int {
-        (0..<layers).map { l in
-            (0..<side * side).filter { t in
-                let written = r.colour[l][4 * t..<4 * t + 3].contains { $0 != 0 }
+        (0 ..< layers).map { l in
+            (0 ..< side * side).filter { t in
+                let written = r.colour[l][4 * t ..< 4 * t + 3].contains { $0 != 0 }
                 return written != (l > 0 && inside(t))
             }.count
         }.reduce(0, +)
@@ -140,7 +141,8 @@ enum Depth16LayeredCases {
                 let r = turnedRect
                 GPU.draw(
                     e, corners: GPU.pixelQuad(r.x0, r.y0, r.x1, r.y1, width: cells.width, height: cells.height),
-                    color: SIMD4(0.25, 0.5, 0.75, 1))
+                    color: SIMD4(0.25, 0.5, 0.75, 1)
+                )
                 e.endEncoding()
             }.path
             if target === plane.texture { result.path = path }
@@ -153,11 +155,12 @@ enum Depth16LayeredCases {
         let expected = try await gpu.read(plain, bytesPerPixel: 4)
         guard plane.surface.lock(options: .readOnly, seed: nil) == 0 else { throw TestFailure("IOSurfaceLock failed") }
         defer { plane.surface.unlock(options: .readOnly, seed: nil) }
-        for y in 0..<cells.height {
-            for x in 0..<cells.width {
+        for y in 0 ..< cells.height {
+            for x in 0 ..< cells.width {
                 let (px, py) = cells.stored(x, y)
                 let got = UnsafeRawBufferPointer(
-                    start: plane.surface.baseAddress + py * plane.rowBytes + px * 4, count: 4)
+                    start: plane.surface.baseAddress + py * plane.rowBytes + px * 4, count: 4
+                )
                 if !got.elementsEqual(expected.pixel(x, y, width: cells.width)) { result.colourOff += 1 }
             }
         }

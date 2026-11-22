@@ -14,7 +14,8 @@ extension X1FilterProbes {
         WeightFormat(name: "bgra8", format: .bgra8Unorm, texels: [0, 0, 0, 0, 255, 255, 255, 255]),
         WeightFormat(
             name: "rgba16f", format: .rgba16Float,
-            texels: [0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c]),
+            texels: [0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c, 0x00, 0x3c]
+        ),
         WeightFormat(name: "r32f", format: .r32Float, texels: [0, 0, 0, 0, 0x00, 0x00, 0x80, 0x3f]),
     ]
 
@@ -27,7 +28,7 @@ extension X1FilterProbes {
     /// What the sweep's samples say of the filter: the distinct values over every point and over the 1/1024 points, the
     /// largest difference from the ideal lerp, and the mean signed difference (below zero: the weights truncate)
     static func weightReading(_ got: [Float]) -> (distinct: Int, coarse: Int, worst: Double, bias: Double) {
-        let points = 0...weightSteps
+        let points = 0 ... weightSteps
         let errors = points.map { Double(got[$0]) - weightPoint($0) }
         let coarse = Set(points.filter { $0 % coarseStride == 0 }.map { got[$0].bitPattern }).count
         return (
@@ -49,7 +50,7 @@ extension X1FilterProbes {
     /// and r32f.
     public static func filterWeights(_ gpu: GPU) async throws -> ProbeFinding {
         let count = weightSteps + coarseStride
-        let uv = (0..<count).map { SIMD2<Float>(Float(0.5 + weightPoint(min($0, weightSteps))) / 2, 0.5) }
+        let uv = (0 ..< count).map { SIMD2<Float>(Float(0.5 + weightPoint(min($0, weightSteps))) / 2, 0.5) }
         let points = try gpu.buffer(uv)
         let kernel = try gpu.compute("x1_sample_points")
         var metrics = Metrics()
@@ -67,7 +68,8 @@ extension X1FilterProbes {
                 encoder.setBuffer(out, offset: 0, index: 1)
                 encoder.dispatchThreads(
                     MTLSize(width: count, height: 1, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: coarseStride, height: 1, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: coarseStride, height: 1, depth: 1)
+                )
                 encoder.endEncoding()
             }
             paths.append(timing.path)
@@ -76,7 +78,8 @@ extension X1FilterProbes {
                 continue
             }
             let got = Array(
-                UnsafeBufferPointer(start: out.contents().bindMemory(to: Float.self, capacity: count), count: count))
+                UnsafeBufferPointer(start: out.contents().bindMemory(to: Float.self, capacity: count), count: count)
+            )
             let reading = weightReading(got)
             bits[f.name] = weightBits(reading.distinct)
             metrics.set(f.name + "_distinct", reading.distinct)

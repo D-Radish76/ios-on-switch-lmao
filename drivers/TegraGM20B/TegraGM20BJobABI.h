@@ -138,9 +138,11 @@ enum {
 	TegraGM20BPromiseWithdraw = 2,
 	TegraGM20BPromiseArm = 3,
 };
+
 enum {
 	TegraGM20BPromiseArmFails = 1u,
 };
+
 /* Metal's bound on a committed command buffer that waits on a shared event, which IOGPU's kernel enforces whatever its
  * process does (kIOGPUCommandBufferCallbackErrorTimeout): 5.0 s from the wait becoming its queue's head (an M4 Max,
  * macOS 27.2.1: 5004.3-5005.5 ms over 26 held command buffers). The runtime fails a held command buffer there and arms

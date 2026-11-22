@@ -87,18 +87,20 @@ struct DecodeReadbackTest: HWTest {
         let uploaded = Array(DecodeVectors.set(209).bytes().prefix(1024))
         guard uploaded.count == 1024 else { return .fail("the 209 vectors hold fewer than 64 blocks") }
         guard let pvrtc = DecodeScene.texture(gpu, MTLPixelFormat(rawValue: 166)!, 32, 32, storage: .shared),
-            let small = DecodeScene.texture(gpu, MTLPixelFormat(rawValue: 164)!, 16, 16, storage: .shared),
-            let kept = DecodeScene.texture(gpu, MTLPixelFormat(rawValue: 209)!, 64, 32, storage: .shared),
-            let vector = DecodeVectors.level(164, side: 16)
+              let small = DecodeScene.texture(gpu, MTLPixelFormat(rawValue: 164)!, 16, 16, storage: .shared),
+              let kept = DecodeScene.texture(gpu, MTLPixelFormat(rawValue: 209)!, 64, 32, storage: .shared),
+              let vector = DecodeVectors.level(164, side: 16)
         else { return .fail("a 166, 164 or 209 texture not made") }
         let blocks = DecodeVectors.bytes(Self.words(128, seed: 0x5eed))
         blocks.withUnsafeBytes {
             pvrtc.replace(
-                region: MTLRegionMake2D(0, 0, 32, 32), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 0)
+                region: MTLRegionMake2D(0, 0, 32, 32), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 0
+            )
         }
         vector.bytes.withUnsafeBytes {
             small.replace(
-                region: MTLRegionMake2D(0, 0, 16, 16), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 0)
+                region: MTLRegionMake2D(0, 0, 16, 16), mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 0
+            )
         }
         var fills = [UInt8](repeating: 0xa5, count: 512)
         var linesWant = Self.lined.insert(166).inserted ? 1 : 0
@@ -142,7 +144,8 @@ struct DecodeReadbackTest: HWTest {
                 from: texture, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
                 sourceSize: MTLSize(width: texture.width, height: texture.height, depth: 1), to: out,
                 destinationOffset: 0, destinationBytesPerRow: rowBytes, destinationBytesPerImage: rowBytes * rows,
-                options: options)
+                options: options
+            )
             blit.endEncoding()
         }
         return [UInt8](UnsafeRawBufferPointer(start: out.contents(), count: rowBytes * rows))
@@ -151,7 +154,7 @@ struct DecodeReadbackTest: HWTest {
     /// `count` words of a xorshift from `seed`: blocks whose contents do not matter, only that they are not zeros
     static func words(_ count: Int, seed: UInt32) -> [UInt32] {
         var x = seed
-        return (0..<count).map { _ in
+        return (0 ..< count).map { _ in
             x ^= x << 13
             x ^= x >> 17
             x ^= x << 5

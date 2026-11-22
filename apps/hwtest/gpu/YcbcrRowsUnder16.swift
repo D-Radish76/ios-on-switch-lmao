@@ -15,17 +15,20 @@ public enum YcbcrRowsUnder16 {
     public static func off(_ gpu: GPU, packed: Bool) async throws -> Int? {
         let source: IOSurfaceRef?, reference: IOSurfaceRef?
         if packed {
-            source = SurfaceReads.surface("2vuy", 4, 4, planes: [P(at: 0, 4, 4, bpe: 2, rows: 8)], allocation: 32) { UInt8(16 + $0) }
+            source = SurfaceReads
+                .surface("2vuy", 4, 4, planes: [P(at: 0, 4, 4, bpe: 2, rows: 8)], allocation: 32) { UInt8(16 + $0) }
             reference = SurfaceReads.surface("2vuy", 4, 4, planes: [P(at: 0, 4, 4, bpe: 2, rows: 16)], allocation: 64) {
                 $0 < 8 ? UInt8(16 + $0) : 0
             }
         } else {
             source = SurfaceReads.surface(
-                "420v", 8, 8, planes: [P(at: 0, 8, 8, bpe: 1, rows: 8), P(at: 64, 4, 4, bpe: 2, rows: 8)], allocation: 96
+                "420v", 8, 8, planes: [P(at: 0, 8, 8, bpe: 1, rows: 8), P(at: 64, 4, 4, bpe: 2, rows: 8)],
+                allocation: 96
             ) { $0 < 64 ? UInt8(16 + $0) : 128 }
             reference = SurfaceReads.surface(
-                "420v", 8, 8, planes: [P(at: 0, 8, 8, bpe: 1, rows: 16), P(at: 128, 4, 4, bpe: 2, rows: 16)], allocation: 192
-            ) { i in i < 8 ? UInt8(16 + i) : (128..<136).contains(i) ? 128 : 0 }
+                "420v", 8, 8, planes: [P(at: 0, 8, 8, bpe: 1, rows: 16), P(at: 128, 4, 4, bpe: 2, rows: 16)],
+                allocation: 192
+            ) { i in i < 8 ? UInt8(16 + i) : (128 ..< 136).contains(i) ? 128 : 0 }
         }
         let (format, size) = packed ? (UInt(501), 4) : (UInt(500), 8)
         guard let source, let reference else { throw TestFailure("no surface") }

@@ -160,8 +160,8 @@ int Kernel::promise(uint32_t channel, const std::vector<uint64_t> &handles, uint
 
 int Kernel::cancelPromise(uint32_t promise, bool withdrawn)
 {
-    const TegraGM20BAbiWriterPromise in = {
-        0, uint32_t(withdrawn ? TegraGM20BPromiseWithdraw : TegraGM20BPromiseCancel), 0, promise, 0};
+    const TegraGM20BAbiWriterPromise in = {0, uint32_t(withdrawn ? TegraGM20BPromiseWithdraw : TegraGM20BPromiseCancel),
+                                           0, promise, 0};
     TegraGM20BAbiWriterPromiseReply reply = {};
     return call(TegraGM20BMethodWriterPromise, &in, sizeof in, &reply, sizeof reply);
 }

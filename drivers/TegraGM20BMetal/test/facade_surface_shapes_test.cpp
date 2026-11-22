@@ -58,10 +58,14 @@ MTLTextureDescriptor *flat(uint32_t format, MTLTextureUsage usage, NSUInteger si
 
 std::vector<std::pair<std::string, MTLPixelFormat>> conversions()
 {
-    return {{"raw.xr.xr_bgr10_frag", MTLPixelFormatRGBA16Float},       {"raw.xr.xr_bgra10_frag", MTLPixelFormatRGBA16Float},
-            {"raw.xr.xr_bgr10_srgb_frag", MTLPixelFormatRGBA16Float},  {"raw.xr.xr_bgra10_srgb_frag", MTLPixelFormatRGBA16Float},
-            {"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},  {"raw.xr.xr_two_planes_srgb_frag", MTLPixelFormatRGBA16Float},
-            {"raw.xr.xr_planes_merge_frag", MTLPixelFormatRG32Uint},   {"raw.xr.xr_planes_split_frag", MTLPixelFormatR32Uint}};
+    return {{"raw.xr.xr_bgr10_frag", MTLPixelFormatRGBA16Float},
+            {"raw.xr.xr_bgra10_frag", MTLPixelFormatRGBA16Float},
+            {"raw.xr.xr_bgr10_srgb_frag", MTLPixelFormatRGBA16Float},
+            {"raw.xr.xr_bgra10_srgb_frag", MTLPixelFormatRGBA16Float},
+            {"raw.xr.xr_two_planes_frag", MTLPixelFormatRGBA16Float},
+            {"raw.xr.xr_two_planes_srgb_frag", MTLPixelFormatRGBA16Float},
+            {"raw.xr.xr_planes_merge_frag", MTLPixelFormatRG32Uint},
+            {"raw.xr.xr_planes_split_frag", MTLPixelFormatR32Uint}};
 }
 
 // A texel buffer of each extended-range format, over a buffer and the device's own, is raw's with the stand-in a draw

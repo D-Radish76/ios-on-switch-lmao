@@ -250,8 +250,8 @@ int main(int argc, char **argv)
                     worst = std::max(worst, off);
                     one += off <= 1.0;
                 }
-                printf("93 x%u stand-in route: texels within one mantissa code of Apple's %zu, max %.2f codes\n", samples,
-                       one, worst);
+                printf("93 x%u stand-in route: texels within one mantissa code of Apple's %zu, max %.2f codes\n",
+                       samples, one, worst);
                 const auto encode = [](const double in[3], bool rounded) {
                     double c[3];
                     for (int k = 0; k < 3; k++)
@@ -293,11 +293,12 @@ int main(int argc, char **argv)
                     }
                 }
                 printf("93 x%u decoded samples' mean: truncated exact %zu within one %zu; rounded exact %zu within one "
-                       "%zu\n", samples, truncHits, truncOne, roundHits, roundOne);
+                       "%zu\n",
+                       samples, truncHits, truncOne, roundHits, roundOne);
             }
         }
-        printf("%u x%u stand-in route (resolve in %u, then stored): exact texels %zu of %zu\n", format, samples, standIn,
-               sameStandIn, size_t(W * H));
+        printf("%u x%u stand-in route (resolve in %u, then stored): exact texels %zu of %zu\n", format, samples,
+               standIn, sameStandIn, size_t(W * H));
         for (int c = 0; c < k.count; c++)
             printf("%u x%u field %d (%d bits): code mean half up %zu, ties down %zu, half even %zu of %zu; within one "
                    "%zu, max off %d; ties %zu, of them up %zu\n",

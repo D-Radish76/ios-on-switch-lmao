@@ -41,7 +41,8 @@ struct ReflectionKindsTest: HWTest {
         metrics.set("unmade", made.unmade.isEmpty ? "-" : made.unmade.joined(separator: ","))
         metrics.set(
             "qc_kernels",
-            system.isEmpty ? "absent" : system.allSatisfy(made.functions.contains) ? "compared" : "unmade")
+            system.isEmpty ? "absent" : system.allSatisfy(made.functions.contains) ? "compared" : "unmade"
+        )
         metrics.set("bindings", compared.bindings)
         metrics.set("mismatches", compared.mismatches)
         metrics.set("array_length_mismatches", compared.arrayLengthMismatches)

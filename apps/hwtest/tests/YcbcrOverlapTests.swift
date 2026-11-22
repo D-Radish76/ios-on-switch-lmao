@@ -20,12 +20,23 @@ struct YcbcrOverlapRowsTest: HWTest {
             var checks: [(String, Bool)] = []
             for shape in YcbcrOverlapRows.shapes {
                 let r = try await YcbcrOverlapRows.observe(gpu, shape)
-                for (key, value) in [("status", r.status), ("luma_off", r.lumaOff), ("chroma_off", r.chromaOff), ("past_changed", r.pastChanged)] {
+                for (key, value) in [
+                    ("status", r.status),
+                    ("luma_off", r.lumaOff),
+                    ("chroma_off", r.chromaOff),
+                    ("past_changed", r.pastChanged),
+                ] {
                     metrics.set("\(shape.key)_\(key)", value)
                 }
-                checks.append(("\(shape.key): status \(r.status) \(r.path), past_changed \(r.pastChanged)", r.status == 0 && r.pastChanged == 0))
+                checks.append((
+                    "\(shape.key): status \(r.status) \(r.path), past_changed \(r.pastChanged)",
+                    r.status == 0 && r.pastChanged == 0
+                ))
                 if shape.key != "c" {
-                    checks.append(("\(shape.key): luma_off \(r.lumaOff) chroma_off \(r.chromaOff), first \(r.first)", r.lumaOff == 0 && r.chromaOff == 0))
+                    checks.append((
+                        "\(shape.key): luma_off \(r.lumaOff) chroma_off \(r.chromaOff), first \(r.first)",
+                        r.lumaOff == 0 && r.chromaOff == 0
+                    ))
                 }
             }
             return checks
@@ -51,7 +62,10 @@ struct YcbcrOverlapWordsTest: HWTest {
                 metrics.set("\(shape.key)_status", r.status)
                 metrics.set("\(shape.key)_bytes_off", r.bytesOff)
                 metrics.set("\(shape.key)_past_changed", r.pastChanged)
-                checks.append(("\(shape.key): status \(r.status) \(r.path), past_changed \(r.pastChanged)", r.status == 0 && r.pastChanged == 0))
+                checks.append((
+                    "\(shape.key): status \(r.status) \(r.path), past_changed \(r.pastChanged)",
+                    r.status == 0 && r.pastChanged == 0
+                ))
             }
             return checks
         }

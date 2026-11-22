@@ -7,15 +7,15 @@ import Metal
 /// triangle at depth `z` in a solid colour.
 struct DepthProbeScene {
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct Out { float4 p [[position]]; };
-        vertex Out v(uint id [[vertex_id]], constant float &z [[buffer(0)]]) {
-            const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            Out o; o.p = float4(p[id], z, 1); return o;
-        }
-        fragment float4 f(constant float4 &c [[buffer(0)]]) { return c; }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct Out { float4 p [[position]]; };
+    vertex Out v(uint id [[vertex_id]], constant float &z [[buffer(0)]]) {
+        const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        Out o; o.p = float4(p[id], z, 1); return o;
+    }
+    fragment float4 f(constant float4 &c [[buffer(0)]]) { return c; }
+    """
     static let side = 8
     static let red: [UInt8] = [255, 0, 0, 255]
     static let green: [UInt8] = [0, 255, 0, 255]
@@ -61,6 +61,6 @@ struct DepthProbeScene {
     /// The target's pixels that are not `want`
     func off(_ colour: MTLTexture, _ want: [UInt8]) async throws -> Int {
         let pixels = try await gpu.read(colour, bytesPerPixel: 4)
-        return (0..<Self.side * Self.side).filter { Array(pixels[4 * $0..<4 * $0 + 4]) != want }.count
+        return (0 ..< Self.side * Self.side).filter { Array(pixels[4 * $0 ..< 4 * $0 + 4]) != want }.count
     }
 }

@@ -32,7 +32,8 @@ uint32_t epoch(const volatile uint32_t *word)
 
 class EpochRun {
 public:
-    explicit EpochRun(switch_bench_channel_epoch &r) : r_(r) {}
+    explicit EpochRun(switch_bench_channel_epoch &r) : r_(r)
+    {}
 
     ~EpochRun()
     {
@@ -150,8 +151,8 @@ private:
 void switch_bench_channel_epoch_run(struct switch_bench_channel_epoch *r)
 {
     *r = {};
-    for (int32_t *each : {&r->epoch_flag, &r->slots_made, &r->refused_kr, &r->recreate_kr, &r->job_kr, &r->wait_kr,
-                          &r->job_filled})
+    for (int32_t *each :
+         {&r->epoch_flag, &r->slots_made, &r->refused_kr, &r->recreate_kr, &r->job_kr, &r->wait_kr, &r->job_filled})
         *each = -1;
     EpochRun(*r).run();
 }

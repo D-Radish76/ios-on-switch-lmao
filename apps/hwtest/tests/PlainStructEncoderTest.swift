@@ -34,7 +34,8 @@ struct PlainStructEncoderTest: HWTest {
             wrong.append("threw")
         }
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
@@ -51,7 +52,8 @@ struct PlainStructEncoderTest: HWTest {
                 continue
             }
             let (gotSized, gotPlaces) = try FunctionArgumentEncoderTest.answer(
-                gpu, encoder, ids: FunctionArgumentEncoderTest.ids(places))
+                gpu, encoder, ids: FunctionArgumentEncoderTest.ids(places)
+            )
             if gotSized != sized || gotPlaces != places {
                 wrong.append("buffer\(index)")
                 metrics.set("buffer\(index)", "\(gotSized) \(gotPlaces)")
@@ -79,10 +81,11 @@ struct PlainStructEncoderTest: HWTest {
             compute.setBuffer(out, offset: 0, index: 3)
             compute.setBuffer(v, offset: 0, index: 4)
             compute.dispatchThreads(
-                MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1))
+                MTLSize(width: 1, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 1, height: 1, depth: 1)
+            )
             compute.endEncoding()
         }
-        let words = (0..<12).map { out.contents().load(fromByteOffset: 4 * $0, as: Float.self) }
+        let words = (0 ..< 12).map { out.contents().load(fromByteOffset: 4 * $0, as: Float.self) }
         let count = counter.contents().load(as: UInt32.self)
         let exact = words == [2.5, 7, 1.25, 0, 1, 2, 3, 0, 9, 0, 0, 0] && count == 1
         metrics.set("dispatch", "\(timing.path)/\(exact ? "exact" : "wrong")")

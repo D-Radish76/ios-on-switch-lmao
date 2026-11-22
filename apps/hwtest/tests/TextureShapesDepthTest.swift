@@ -23,7 +23,8 @@ struct TextureShapesDepthTest: HWTest {
         if let skip = ShapeArms.skip(gpu) { return skip }
         let arms = ShapeArms(gpu)
         let depthChain = arms.make(
-            .depth32Float, .type2DArray, 8, 8, levels: 3, array: 2, usage: [.renderTarget, .shaderRead])
+            .depth32Float, .type2DArray, 8, 8, levels: 3, array: 2, usage: [.renderTarget, .shaderRead]
+        )
         arms.route("depth_chain", depthChain, expect: "gm20b")
         if let depthChain {
             try await gpu.run { commands in
@@ -36,7 +37,7 @@ struct TextureShapesDepthTest: HWTest {
                 commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
             }
             let read = try await arms.drawn(depthChain, fragment: "view_read_depth_layers", width: 2, format: .r32Float)
-            arms.off("depth_chain", Array(read[4..<8]), [0, 0, 0x80, 0x3e])
+            arms.off("depth_chain", Array(read[4 ..< 8]), [0, 0, 0x80, 0x3e])
         }
         arms.route("depth_read_only", arms.make(.depth16Unorm, .type2D, 8, 8, usage: .shaderRead), expect: "gm20b")
         try await sharedDepth(arms)
@@ -46,20 +47,22 @@ struct TextureShapesDepthTest: HWTest {
             arms.off("shared_stencil", try arms.cpuRoundTrip(stencil, width: 4, height: 4, bytesPerRow: 4, rows: 4), [])
         }
         let packed = arms.make(
-            .depth32Float_stencil8, .type2D, 4, 4, storage: .shared, usage: [.renderTarget, .shaderRead])
+            .depth32Float_stencil8, .type2D, 4, 4, storage: .shared, usage: [.renderTarget, .shaderRead]
+        )
         arms.route("shared_depth_stencil", packed, expect: "gm20b")
         if let packed {
-            let floats = (0..<16).flatMap { i in withUnsafeBytes(of: Float(i) / 16) { Array($0) } }
+            let floats = (0 ..< 16).flatMap { i in withUnsafeBytes(of: Float(i) / 16) { Array($0) } }
             packed.replace(region: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0, withBytes: floats, bytesPerRow: 16)
             var got = [UInt8](repeating: 0, count: 64)
             packed.getBytes(&got, bytesPerRow: 16, from: MTLRegionMake2D(0, 0, 4, 4), mipmapLevel: 0)
             arms.off("shared_depth_stencil", got, floats)
         }
         let samples = arms.make(
-            .depth32Float, .type2DMultisample, 4, 2, samples: 4, storage: .shared, usage: [.renderTarget, .shaderRead])
+            .depth32Float, .type2DMultisample, 4, 2, samples: 4, storage: .shared, usage: [.renderTarget, .shaderRead]
+        )
         arms.route("shared_depth_ms", samples, expect: "gm20b")
         if let samples {
-            let floats = (0..<32).flatMap { i in withUnsafeBytes(of: Float(i) / 64) { Array($0) } }
+            let floats = (0 ..< 32).flatMap { i in withUnsafeBytes(of: Float(i) / 64) { Array($0) } }
             samples.replace(region: MTLRegionMake2D(0, 0, 4, 2), mipmapLevel: 0, withBytes: floats, bytesPerRow: 64)
             var got = [UInt8](repeating: 0, count: 128)
             samples.getBytes(&got, bytesPerRow: 64, from: MTLRegionMake2D(0, 0, 4, 2), mipmapLevel: 0)
@@ -94,7 +97,8 @@ struct TextureShapesDepthTest: HWTest {
         if let shared {
             arms.off(
                 "heap_shared", try arms.cpuRoundTrip(shared, width: 8, height: 8, bytesPerRow: 16, rows: 8, slice: 1),
-                [])
+                []
+            )
         }
     }
 
@@ -116,7 +120,8 @@ struct TextureShapesDepthTest: HWTest {
         arms.route("shared_compressed", made, expect: "gm20b")
         arms.set("comptags_shared", probe.facts(arms.gpu, made).contains("comptags=1") ? 1 : 0)
         arms.off(
-            "shared_compressed", try arms.cpuRoundTrip(made, width: 64, height: 64, bytesPerRow: 256, rows: 64), [])
+            "shared_compressed", try arms.cpuRoundTrip(made, width: 64, height: 64, bytesPerRow: 256, rows: 64), []
+        )
     }
 
     private func sharedDepth(_ arms: ShapeArms) async throws {
@@ -124,7 +129,7 @@ struct TextureShapesDepthTest: HWTest {
         let depth = arms.make(.depth32Float, .type2D, 8, 8, storage: .shared, usage: [.renderTarget, .shaderRead])
         arms.route("shared_depth", depth, expect: "gm20b")
         guard let depth else { return }
-        let halves = (0..<64).map { Float($0 % 8 < 4 ? 0.25 : 0.75) }
+        let halves = (0 ..< 64).map { Float($0 % 8 < 4 ? 0.25 : 0.75) }
         depth.replace(region: MTLRegionMake2D(0, 0, 8, 8), mipmapLevel: 0, withBytes: halves, bytesPerRow: 32)
         let colour = try gpu.texture(.rgba8Unorm, 8, 8)
         let state = try gpu.render(fragment: "solid_fragment", format: .rgba8Unorm, depth: .depth32Float)
@@ -154,7 +159,7 @@ struct TextureShapesDepthTest: HWTest {
         }
         var got = [UInt8](repeating: 0, count: 256)
         depth.getBytes(&got, bytesPerRow: 32, from: MTLRegionMake2D(0, 0, 8, 8), mipmapLevel: 0)
-        let want = (0..<64).flatMap { i in withUnsafeBytes(of: Float(i % 8 < 4 ? 0.25 : 0.5)) { Array($0) } }
+        let want = (0 ..< 64).flatMap { i in withUnsafeBytes(of: Float(i % 8 < 4 ? 0.25 : 0.5)) { Array($0) } }
         arms.off("shared_depth", got, want)
     }
 }

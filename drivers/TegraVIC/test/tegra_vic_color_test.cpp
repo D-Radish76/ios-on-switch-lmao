@@ -109,8 +109,8 @@ Transfer transfer(const TegraVICSurfaceDesc &src, const TegraVICSurfaceDesc &dst
     if (!t.why)
         t.why = tegra_vic_image_from(&dst, kDstIova, &di);
     if (!t.why)
-        t.why = tegra_vic_build(&si, &di, &t.plan.op[t.plan.count - 1], &kTegraVICTraits, 0x30000000, 0x30001000,
-                                &t.job);
+        t.why =
+            tegra_vic_build(&si, &di, &t.plan.op[t.plan.count - 1], &kTegraVICTraits, 0x30000000, 0x30001000, &t.job);
     return t;
 }
 }  // namespace
@@ -203,6 +203,7 @@ TEST(TegraVICColor, ChangesVICDoesNotMatchAreRefusedAsUnsupported)
         {{TEGRA_VIC_TF_SRGB, 1, TEGRA_VIC_TF_SRGB, 11}, false, "primaries change VIC does not take"},
         {{TEGRA_VIC_TF_SRGB, 12, TEGRA_VIC_TF_SRGB, 1}, true, "gamut change with a side that is not 8-bit RGB"},
     };
+
     for (const auto &c : cases) {
         TegraVICSurfaceDesc src = bgra(64, 64, c.tags[0], c.tags[1]);
         if (c.ycc) {

@@ -212,9 +212,9 @@ void expectLayersMoved(size_t jobs, uint64_t plain, uint64_t to, uint64_t stride
 {
     const auto launched = copies(jobs);
     for (uint32_t layer = 0; layer < layers; layer++)
-        EXPECT_NE(std::find(launched.begin(), launched.end(),
-                            std::make_pair(plain + layer * stride, to + layer * stride)),
-                  launched.end())
+        EXPECT_NE(
+            std::find(launched.begin(), launched.end(), std::make_pair(plain + layer * stride, to + layer * stride)),
+            launched.end())
             << "layer " << layer;
 }
 

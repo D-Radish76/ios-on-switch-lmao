@@ -50,8 +50,10 @@ id<MTLTexture> planesTexture(id<MTLDevice> device)
         (id)kIOSurfaceAllocSize : @(kSide * kSide * 5),
         (id)kIOSurfacePlaneInfo : planes
     });
-    MTLTextureDescriptor *d =
-        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(550) width:kSide height:kSide mipmapped:NO];
+    MTLTextureDescriptor *d = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormat(550)
+                                                                                 width:kSide
+                                                                                height:kSide
+                                                                             mipmapped:NO];
     d.storageMode = MTLStorageModeShared;
     d.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
     id<MTLTexture> t = surface ? [device newTextureWithDescriptor:d iosurface:surface plane:0] : nil;

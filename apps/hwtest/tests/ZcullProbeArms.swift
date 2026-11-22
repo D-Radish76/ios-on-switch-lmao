@@ -29,7 +29,13 @@ extension ZcullTest {
     func sideEffects(
         _ gpu: GPU, _ target: MTLTexture, _ metrics: inout Metrics, _ wrong: inout [String], _ paths: inout Set<String>
     ) async throws {
-        let depth = try gpu.texture(.depth32Float, target.width, target.height, usage: [.renderTarget], storage: .memoryless)
+        let depth = try gpu.texture(
+            .depth32Float,
+            target.width,
+            target.height,
+            usage: [.renderTarget],
+            storage: .memoryless
+        )
         let expected = ZcullSideEffects.farQuads * target.width * target.height
         var counts: [Int] = []
         for invalidated in [false, true] {

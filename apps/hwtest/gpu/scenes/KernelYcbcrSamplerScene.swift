@@ -69,19 +69,20 @@ struct KernelYcbcrSampling {
             [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
         guard
             CVPixelBufferCreate(nil, w, h, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, attributes, &made)
-                == kCVReturnSuccess,
+            == kCVReturnSuccess,
             let buffer = made, let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
             let format = MTLPixelFormat(rawValue: Self.codes)
         else { throw TestFailure("no '420v' surface") }
         Self.fill(buffer)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: w, height: h, mipmapped: false)
+            pixelFormat: format, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         guard let ycbcr = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             throw TestFailure("makeTexture(540 over '420v') returned nil")
         }
         let rgba = try gpu.texture(.rgba8Unorm, w, h, usage: [.shaderRead])
-        try await gpu.upload((0..<w * h).flatMap { Self.rgba($0 % w, $0 / w) }, to: rgba, bytesPerRow: w * 4)
+        try await gpu.upload((0 ..< w * h).flatMap { Self.rgba($0 % w, $0 / w) }, to: rgba, bytesPerRow: w * 4)
         let samplerDescriptor = MTLSamplerDescriptor()
         samplerDescriptor.sAddressMode = .repeat
         samplerDescriptor.tAddressMode = .repeat
@@ -101,7 +102,8 @@ struct KernelYcbcrSampling {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: 2 * w, height: h, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }
         result.metrics.set("path", String(timing.path.prefix(80)))
@@ -109,18 +111,19 @@ struct KernelYcbcrSampling {
             let internalError = "error:\(MTLCommandBufferErrorDomain)/\(MTLCommandBufferError.internal.rawValue) "
             result.expect(
                 timing.path.hasPrefix(internalError) && timing.facadePath == "error:none",
-                "the command buffer took \(timing.path) (\(timing.facadePath)), not Internal with no predicate")
+                "the command buffer took \(timing.path) (\(timing.facadePath)), not Internal with no predicate"
+            )
             return result
         }
         let got = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count)
         var wrong = [0, 0]
         var maxError: Float = 0
-        for y in 0..<h {
-            for x in 0..<2 * w {
+        for y in 0 ..< h {
+            for x in 0 ..< 2 * w {
                 for (k, ycbcrSample) in samples.enumerated() {
                     let want = ycbcrSample ? Self.ycbcr(min(x, w - 1), y) : Self.rgba(x % w, y)
                     let sample = got[(y * 2 * w + x) * samples.count + k] * 255
-                    let error = (0..<4).map { abs(sample[$0] - Float(want[$0])) }.max() ?? 0
+                    let error = (0 ..< 4).map { abs(sample[$0] - Float(want[$0])) }.max() ?? 0
                     maxError = max(maxError, error.isNaN ? .infinity : error)
                     if !(error < 0.01) { wrong[ycbcrSample ? 0 : 1] += 1 }
                 }
@@ -133,7 +136,8 @@ struct KernelYcbcrSampling {
         result.expect(
             wrong == [0, 0],
             "samples off their texel's codes: \(wrong[0]) YCbCr (clamped to its edge), \(wrong[1]) RGBA (repeated); "
-                + "largest error \(maxError) codes")
+                + "largest error \(maxError) codes"
+        )
         if raw {
             result.expect(timing.path == "gm20b", "the kernel took \(timing.path), not raw")
         }
@@ -148,11 +152,11 @@ struct KernelYcbcrSampling {
         let lumaRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0)
         let chroma = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!.assumingMemoryBound(to: UInt8.self)
         let chromaRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
-        for y in 0..<height {
-            for x in 0..<width { luma[y * lumaRow + x] = UInt8(32 + 11 * x + 3 * y) }
+        for y in 0 ..< height {
+            for x in 0 ..< width { luma[y * lumaRow + x] = UInt8(32 + 11 * x + 3 * y) }
         }
-        for y in 0..<height / 2 {
-            for x in 0..<width / 2 {
+        for y in 0 ..< height / 2 {
+            for x in 0 ..< width / 2 {
                 chroma[y * chromaRow + 2 * x] = cb
                 chroma[y * chromaRow + 2 * x + 1] = cr
             }

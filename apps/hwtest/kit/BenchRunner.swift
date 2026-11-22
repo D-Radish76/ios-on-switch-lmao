@@ -64,7 +64,8 @@ public final class BenchRunner {
     func fill(_ surface: IOSurfaceRef, format: MTLPixelFormat, color: UInt32) -> String {
         var r = switch_bench_result()
         switch_bench_fill_surface(
-            bench, Unmanaged.passUnretained(surface).toOpaque(), UInt32(format.rawValue), color, &r)
+            bench, Unmanaged.passUnretained(surface).toOpaque(), UInt32(format.rawValue), color, &r
+        )
         let status = Self.statuses[Int(r.status)]
         return status == "ok" ? status : "\(status):\(Self.text(&r.why))"
     }
@@ -82,7 +83,8 @@ public final class BenchRunner {
         x.program = switch_bench_program(
             sph: pinned.bytes(program.sph), code: pinned.bytes(program.code), code_bytes: program.code.count,
             data: pinned.bytes(program.data), data_bytes: program.data.count, gprs: program.gprs,
-            data_bound: program.dataBound)
+            data_bound: program.dataBound
+        )
         x.threads = (e.threads[0], e.threads[1], e.threads[2])
         x.groups = (e.groups[0], e.groups[1], e.groups[2])
         (x.draws, x.draw_counts) = (pinned.words(e.draws), UInt32(e.draws.count))
@@ -106,7 +108,8 @@ public final class BenchRunner {
         }
         if let s = e.source {
             x.source = switch_bench_source(
-                format: s.formatRaw, width: s.width, height: s.height, data: pinned.bytes(s.data))
+                format: s.formatRaw, width: s.width, height: s.height, data: pinned.bytes(s.data)
+            )
         }
         x.compare = (e.compare.flatMap { Self.compares[$0] } ?? SWITCH_BENCH_COMPARE_NONE).rawValue
         x.compressed = e.compressed ? 1 : 0
@@ -115,25 +118,30 @@ public final class BenchRunner {
             e.chain.map { link in
                 switch_bench_program(
                     sph: nil, code: pinned.bytes(link.code), code_bytes: link.code.count, data: pinned.bytes(link.data),
-                    data_bytes: link.data.count, gprs: link.gprs, data_bound: 0)
-            })
+                    data_bytes: link.data.count, gprs: link.gprs, data_bound: 0
+                )
+            }
+        )
         (x.chain_links, x.chain_schedule) = (UInt32(e.chain.count), e.chainSchedule)
         if let p = e.pack {
             let quads = p.quads.map { quad in
                 let blocks = quad.blocks.map {
                     switch_bench_block(
                         stage: $0.stage, slot: $0.slot, offset: $0.offset, bytes: UInt32($0.data.count),
-                        data: pinned.bytes($0.data))
+                        data: pinned.bytes($0.data)
+                    )
                 }
                 return switch_bench_quad(
                     rect: (quad.rect[0], quad.rect[1], quad.rect[2], quad.rect[3]), blocks: pinned.values(blocks),
                     block_count: UInt32(blocks.count), vertices: quad.vertices.flatMap(pinned.bytes),
                     vertex_bytes: UInt32(quad.vertices?.count ?? 0), primitive: quad.primitive, first: quad.first,
-                    count: quad.count)
+                    count: quad.count
+                )
             }
             x.pack = switch_bench_pack(
                 form: Self.packForms[p.form]!.rawValue, ca_transform: p.ca ? 1 : 0, quads: pinned.values(quads),
-                quad_count: UInt32(quads.count))
+                quad_count: UInt32(quads.count)
+            )
         }
         (x.storage_bytes, x.storage_va_at) = (e.storage?.bytes ?? 0, e.storage?.vaAt ?? 0)
         let timed = e.draws.count * Int(e.repeats)
@@ -166,7 +174,7 @@ public final class BenchRunner {
         let repeats = Int(e.repeats)
         if outcome.status == "ok" {
             outcome.runs = e.draws.enumerated().map { index, draws in
-                let slice = (index * repeats)..<((index + 1) * repeats)
+                let slice = (index * repeats) ..< ((index + 1) * repeats)
                 return (draws, Array(gpu[slice]), Array(wall[slice]))
             }
             if let texels = r.texels { outcome.texels = Data(bytes: texels, count: texelBytes) }

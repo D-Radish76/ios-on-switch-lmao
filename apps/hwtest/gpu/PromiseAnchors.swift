@@ -27,13 +27,14 @@ public enum PromiseAnchors {
             .pixelFormat: 0x4247_5241,
         ]
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard let surface = IOSurface(properties: properties),
-            let target = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0),
-            let queue = gpu.device.makeCommandQueue(), let event = gpu.device.makeSharedEvent(),
-            let head = queue.makeCommandBuffer(), let writer = queue.makeCommandBuffer()
+              let target = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0),
+              let queue = gpu.device.makeCommandQueue(), let event = gpu.device.makeSharedEvent(),
+              let head = queue.makeCommandBuffer(), let writer = queue.makeCommandBuffer()
         else { throw TestFailure("no surface texture, queue, shared event or command buffer") }
         let pipeline = try gpu.render(fragment: "solid_fragment", format: .bgra8Unorm)
         head.encodeWaitForEvent(event, value: 1)
@@ -116,17 +117,19 @@ public enum PromiseAnchors {
         try gpu.finish([sampling])
         out.after = gpu.device.sampleTimestamps().gpu
         out.gpuMicroseconds = (sampling.gpuEndTime - sampling.gpuStartTime) * 1e6
-        out.samples = words(try counters.resolveCounterRange(0..<samples))
+        out.samples = words(try counters.resolveCounterRange(0 ..< samples))
         let resolved = try gpu.buffer(samples * 8)
         let resolving = try gpu.commit { commands in
             let blit = commands.makeBlitCommandEncoder()!
-            blit.resolveCounters(counters, range: 0..<samples, destinationBuffer: resolved, destinationOffset: 0)
+            blit.resolveCounters(counters, range: 0 ..< samples, destinationBuffer: resolved, destinationOffset: 0)
             blit.endEncoding()
         }
         try gpu.finish([resolving])
         out.blitted = Array(
             UnsafeBufferPointer(
-                start: resolved.contents().bindMemory(to: UInt64.self, capacity: samples), count: samples))
+                start: resolved.contents().bindMemory(to: UInt64.self, capacity: samples), count: samples
+            )
+        )
         out.paths = [GM20BFacade.path(of: sampling), GM20BFacade.path(of: resolving)]
         return out
     }

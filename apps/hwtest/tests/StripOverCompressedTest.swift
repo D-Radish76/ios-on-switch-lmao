@@ -34,7 +34,8 @@ struct StripOverCompressedTest: HWTest {
         let indices: [UInt16] = [0, 1, 2, 3]
         guard
             let strip = gpu.device.makeBuffer(
-                bytes: indices, length: MemoryLayout<UInt16>.stride * indices.count, options: .storageModeShared)
+                bytes: indices, length: MemoryLayout<UInt16>.stride * indices.count, options: .storageModeShared
+            )
         else { throw TestFailure("no index buffer") }
         var metrics = Metrics()
         var wrong: [String] = []
@@ -43,7 +44,8 @@ struct StripOverCompressedTest: HWTest {
             let target: MTLTexture
             if arm == "reference" {
                 target = try gpu.texture(
-                    .bgra8Unorm, Self.width, Self.height, usage: [.renderTarget, .shaderRead, .shaderWrite])
+                    .bgra8Unorm, Self.width, Self.height, usage: [.renderTarget, .shaderRead, .shaderWrite]
+                )
             } else {
                 target = try await CompressionSettled.remade(gpu.device) {
                     try gpu.texture(.bgra8Unorm, Self.width, Self.height)
@@ -61,7 +63,7 @@ struct StripOverCompressedTest: HWTest {
                 e.setRenderPipelineState(state)
                 var corners = GPU.fullScreen
                 e.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
-                for layer in 0..<4 {
+                for layer in 0 ..< 4 {
                     var which = SIMD2<UInt32>(UInt32(layer), 1)
                     e.setFragmentBytes(&which, length: 8, index: 0)
                     if arm == "control" {
@@ -69,7 +71,8 @@ struct StripOverCompressedTest: HWTest {
                     } else {
                         e.drawIndexedPrimitives(
                             type: .triangleStrip, indexCount: 4, indexType: .uint16, indexBuffer: strip,
-                            indexBufferOffset: 0)
+                            indexBufferOffset: 0
+                        )
                     }
                 }
                 e.endEncoding()

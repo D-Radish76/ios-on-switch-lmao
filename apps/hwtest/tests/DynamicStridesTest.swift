@@ -26,6 +26,7 @@ struct DynamicStridesTest: HWTest {
             [
                 ("every pixel at the buffers' colour", wrong == 0), ("on the driver", path == "gm20b"),
                 FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }

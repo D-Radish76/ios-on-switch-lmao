@@ -27,8 +27,8 @@ struct YcbcrTargetTest: HWTest {
 
         var bits: Int { [500, 502, 503, 520, 522, 523, 540, 541].contains(format) ? 8 : 10 }
         var tenBit: Bool { bits == 10 }
-        var converted: Bool { (500...527).contains(format) }
-        var srgb: Bool { (520...527).contains(format) }
+        var converted: Bool { (500 ... 527).contains(format) }
+        var srgb: Bool { (520 ... 527).contains(format) }
         var halvedAcross: Bool { ![503, 507, 523, 527, 545].contains(format) }
         var halvedDown: Bool { [500, 505, 520, 525, 540, 543].contains(format) }
         var full: Bool {
@@ -102,11 +102,12 @@ struct YcbcrTargetTest: HWTest {
         let attributes =
             [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
         guard CVPixelBufferCreate(nil, w, h, target.fourcc, attributes, &made) == kCVReturnSuccess, let buffer = made,
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-            let format = MTLPixelFormat(rawValue: target.format)
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+              let format = MTLPixelFormat(rawValue: target.format)
         else { return ((0, 0), "no surface") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: w, height: h, mipmapped: false)
+            pixelFormat: format, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return ((0, 0), "no texture")
@@ -164,12 +165,14 @@ struct YcbcrTargetTest: HWTest {
     static func codes(_ target: Target, _ texels: [SIMD4<Float>], _ source: YcbcrStore.Source) -> [[UInt16]] {
         let (luma, chroma) =
             target.converted
-            ? YcbcrStore.converted(
-                texels, width: width, height: height, bits: target.bits, full: target.full,
-                halvedAcross: target.halvedAcross, halvedDown: target.halvedDown, srgb: target.srgb, source: source)
-            : YcbcrStore.codes(
-                texels, width: width, height: height, max: target.tenBit ? 1023 : 255,
-                halvedAcross: target.halvedAcross, halvedDown: target.halvedDown, source: source)
+                ? YcbcrStore.converted(
+                    texels, width: width, height: height, bits: target.bits, full: target.full,
+                    halvedAcross: target.halvedAcross, halvedDown: target.halvedDown, srgb: target.srgb, source: source
+                )
+                : YcbcrStore.codes(
+                    texels, width: width, height: height, max: target.tenBit ? 1023 : 255,
+                    halvedAcross: target.halvedAcross, halvedDown: target.halvedDown, source: source
+                )
         return [luma, chroma]
     }
 
@@ -186,14 +189,14 @@ struct YcbcrTargetTest: HWTest {
             let row = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
             let rows = CVPixelBufferGetHeightOfPlane(buffer, plane)
             let perRow = codes.count / rows
-            for y in 0..<rows {
+            for y in 0 ..< rows {
                 let line = base.advanced(by: y * row)
-                for x in 0..<perRow {
+                for x in 0 ..< perRow {
                     let stored =
                         wide
-                        ? UInt16(line.load(fromByteOffset: 2 * x, as: UInt8.self))
+                            ? UInt16(line.load(fromByteOffset: 2 * x, as: UInt8.self))
                             | UInt16(line.load(fromByteOffset: 2 * x + 1, as: UInt8.self)) << 8
-                        : UInt16(line.load(fromByteOffset: x, as: UInt8.self))
+                            : UInt16(line.load(fromByteOffset: x, as: UInt8.self))
                     wrong[plane] += stored == codes[y * perRow + x] ? 0 : 1
                 }
             }
@@ -205,11 +208,11 @@ struct YcbcrTargetTest: HWTest {
     static func scribble(_ buffer: CVPixelBuffer, seed: UInt8) {
         CVPixelBufferLockBaseAddress(buffer, [])
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-        for plane in 0..<CVPixelBufferGetPlaneCount(buffer) {
+        for plane in 0 ..< CVPixelBufferGetPlaneCount(buffer) {
             guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { continue }
             let bytes = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane) * CVPixelBufferGetHeightOfPlane(buffer, plane)
             let out = base.bindMemory(to: UInt8.self, capacity: bytes)
-            for i in 0..<bytes { out[i] = UInt8(truncatingIfNeeded: i &* 37) &+ seed }
+            for i in 0 ..< bytes { out[i] = UInt8(truncatingIfNeeded: i &* 37) &+ seed }
         }
     }
 
@@ -234,7 +237,7 @@ struct YcbcrTargetTest: HWTest {
             default: return Float(next() % 1_000_001) / 1_000_000 * 1.1 - 0.05
             }
         }
-        return (0..<count).map { _ in SIMD4(value(), value(), value(), 1) }
+        return (0 ..< count).map { _ in SIMD4(value(), value(), value(), 1) }
     }
 }
 

@@ -91,7 +91,7 @@ enum X1IAdd3FormsProbe {
     /// `value` as ±a±b±c plus at most two, e.g. "-a-b+c+1"; "?" when it is none of them
     static func reading(_ value: UInt32) -> String {
         for k: Int32 in [0, 1, -1, 2, -2] {
-            for signs in 0..<8 {
+            for signs in 0 ..< 8 {
                 let (na, nb, nc) = (signs & 4 != 0, signs & 2 != 0, signs & 1 != 0)
                 guard sum(na, nb, nc) &+ UInt32(bitPattern: k) == value else { continue }
                 let terms = (na ? "-a" : "a") + (nb ? "-b" : "+b") + (nc ? "-c" : "+c")

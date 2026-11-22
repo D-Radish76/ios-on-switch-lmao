@@ -35,7 +35,7 @@ enum NativeAnswers {
 
     /// The largest count supportsVertexAmplificationCount: answers YES for, up to 16
     static func largestAmplification(_ device: MTLDevice) -> Int {
-        (1...16).last(where: device.supportsVertexAmplificationCount) ?? 0
+        (1 ... 16).last(where: device.supportsVertexAmplificationCount) ?? 0
     }
 
     /// Logs `selector`'s answer as `field` and gives a failure where it is not `want`

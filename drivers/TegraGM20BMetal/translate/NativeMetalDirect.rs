@@ -1896,7 +1896,9 @@ mod tests {
         let xr = PixelFormat::RGB10A82PXR10;
         let mut table = StageTable::default();
         for (slot, ty) in [(3, TextureType::TextureBuffer), (4, TextureType::Type2D)] {
-            table.textures.insert(slot, declared_texture(ty, TextureFacts::new(ty, xr)));
+            table
+                .textures
+                .insert(slot, declared_texture(ty, TextureFacts::new(ty, xr)));
         }
         assert!(matches!(table.textures[&3], BoundTexture::Buffer { pixel_format, .. } if pixel_format == xr));
         assert!(matches!(table.textures[&4], BoundTexture::Texture { .. }));

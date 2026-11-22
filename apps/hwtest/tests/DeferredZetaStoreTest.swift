@@ -53,7 +53,8 @@ struct DeferredZetaStoreTest: HWTest {
                 quad(e, x0: -1, x1: 0, z: 0.5, [0, 0, 0, 1])
                 e.setDepthStoreAction(.store)
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         paths.append(
             try await gpu.run { commands in
                 let p = MTLRenderPassDescriptor()
@@ -68,14 +69,15 @@ struct DeferredZetaStoreTest: HWTest {
                 e.setDepthStencilState(less)
                 quad(e, x0: -1, x1: 1, z: 0.75, [1, 0, 0, 1])
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         let pixels = try await gpu.read(colour, bytesPerPixel: 4)
         var wrong = 0
-        for y in 0..<n {
-            for x in 0..<n {
+        for y in 0 ..< n {
+            for x in 0 ..< n {
                 let at = 4 * (x + n * y)
                 let want: [UInt8] = x < n / 2 ? [0, 0, 0, 255] : [255, 0, 0, 255]
-                wrong += Array(pixels[at..<at + 4]) == want ? 0 : 1
+                wrong += Array(pixels[at ..< at + 4]) == want ? 0 : 1
             }
         }
         var metrics = Metrics()

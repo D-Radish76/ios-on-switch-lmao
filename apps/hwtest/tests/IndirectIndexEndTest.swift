@@ -16,18 +16,18 @@ struct IndirectIndexEndTest: HWTest {
     var timeout: TimeInterval { 60 }
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct IndexEndPoint { float4 p [[position]]; float s [[point_size]]; uint id [[flat]]; };
-        vertex IndexEndPoint index_end_vertex(uint vid [[vertex_id]]) {
-            IndexEndPoint o;
-            o.p = float4((float(vid) + 0.5) / 16.0 * 2.0 - 1.0, 0, 0.5, 1);
-            o.s = 1;
-            o.id = vid;
-            return o;
-        }
-        fragment uint index_end_fragment(IndexEndPoint in [[stage_in]]) { return in.id + 1; }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct IndexEndPoint { float4 p [[position]]; float s [[point_size]]; uint id [[flat]]; };
+    vertex IndexEndPoint index_end_vertex(uint vid [[vertex_id]]) {
+        IndexEndPoint o;
+        o.p = float4((float(vid) + 0.5) / 16.0 * 2.0 - 1.0, 0, 0.5, 1);
+        o.s = 1;
+        o.id = vid;
+        return o;
+    }
+    fragment uint index_end_fragment(IndexEndPoint in [[stage_in]]) { return in.id + 1; }
+    """
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -61,13 +61,14 @@ struct IndirectIndexEndTest: HWTest {
                 encoder.setRenderPipelineState(state)
                 encoder.drawIndexedPrimitives(
                     type: .point, indexType: .uint32, indexBuffer: indices, indexBufferOffset: arm.offset,
-                    indirectBuffer: arguments, indirectBufferOffset: 0)
+                    indirectBuffer: arguments, indirectBufferOffset: 0
+                )
                 encoder.endEncoding()
             }
             var lit = "-"
             if !timing.path.hasPrefix("error:") {
                 let bytes = try await gpu.read(target, bytesPerPixel: 4)
-                let ids = (0..<16).map { bytes.loaded(as: UInt32.self, at: $0) }
+                let ids = (0 ..< 16).map { bytes.loaded(as: UInt32.self, at: $0) }
                 lit = ids.enumerated().filter { $0.element != 0 }.map { "x\($0.offset)=\($0.element)" }
                     .joined(separator: ",")
             }

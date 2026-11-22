@@ -51,8 +51,8 @@ void BlitEncoder::copyStencilTexels(const Texture &zeta, uint32_t x, uint32_t y,
             if (intoZeta) {
                 copyRemapped(p_, plain, temp, cw, ch, remapOf(0, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 1, 1, 2),
                              1, dev_->stats, true);
-                copyRemapped(p_, temp, texels, cw, ch,
-                             remapOf(kRemapNoWrite, kRemapNoWrite, 0, kRemapNoWrite, 2, 1, 4), 2, dev_->stats, true);
+                copyRemapped(p_, temp, texels, cw, ch, remapOf(kRemapNoWrite, kRemapNoWrite, 0, kRemapNoWrite, 2, 1, 4),
+                             2, dev_->stats, true);
             } else {
                 copyRemapped(p_, texels, temp, cw, ch, remapOf(2, kRemapNoWrite, kRemapNoWrite, kRemapNoWrite, 2, 4, 1),
                              2, dev_->stats, true);

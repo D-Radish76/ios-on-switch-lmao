@@ -12,7 +12,7 @@ enum StandInResolveCases {
 
     static let side = 64
     static let counts = [2, 4]
-    static let compared = (0..<256).map { 16 * $0 + $0 % 16 }
+    static let compared = (0 ..< 256).map { 16 * $0 + $0 % 16 }
     static let argb8: [(shift: Int, width: Int)] = [(8, 8), (16, 8), (24, 8), (0, 8)]
 
     static let formats: [WordMipFormat] = [
@@ -34,7 +34,8 @@ enum StandInResolveCases {
     static func values(_ f: WordMipFormat, samples: Int) -> [SIMD4<Float>] {
         let raw = f.format.rawValue
         let words = P3YcbcrStoreTest.mt19937(
-            seed: UInt32(raw * 131) + UInt32(samples), count: side * side * samples * 4)
+            seed: UInt32(raw * 131) + UInt32(samples), count: side * side * samples * 4
+        )
         let floats = words.enumerated().map { i, word -> Float in
             let u = Float(word % 65536) / 65535
             switch raw {
@@ -44,7 +45,7 @@ enum StandInResolveCases {
             default: return u
             }
         }
-        return stride(from: 0, to: floats.count, by: 4).map { SIMD4<Float>(floats[$0..<$0 + 4]) }
+        return stride(from: 0, to: floats.count, by: 4).map { SIMD4<Float>(floats[$0 ..< $0 + 4]) }
     }
 
     static func resolved(_ gpu: GPU, _ f: WordMipFormat, samples: Int) async throws -> Drawn {
@@ -54,16 +55,21 @@ enum StandInResolveCases {
         try await drawSamples(gpu, values, into: drawn, resolve: one, store: .storeAndMultisampleResolve)
         let bytes = try await gpu.read(one, bytesPerPixel: f.bytes)
         return Drawn(
-            texture: drawn, values: values, resolved: compared.flatMap { bytes[$0 * f.bytes..<($0 + 1) * f.bytes] })
+            texture: drawn, values: values, resolved: compared.flatMap { bytes[$0 * f.bytes ..< ($0 + 1) * f.bytes] }
+        )
     }
 
     static func samplesOff(_ gpu: GPU, _ f: WordMipFormat, _ drawn: Drawn) async throws -> Int {
         let samples = drawn.texture.sampleCount
         let stored = try await sampleReads(gpu, drawn.texture)
         var off = 0
-        for sample in 0..<samples {
-            let alone = try await oneSampleReads(gpu, f, (0..<side * side).map { drawn.values[$0 * samples + sample] })
-            off += (0..<side * side).filter { stored[$0 * samples + sample] != alone[$0] }.count
+        for sample in 0 ..< samples {
+            let alone = try await oneSampleReads(
+                gpu,
+                f,
+                (0 ..< side * side).map { drawn.values[$0 * samples + sample] }
+            )
+            off += (0 ..< side * side).filter { stored[$0 * samples + sample] != alone[$0] }.count
         }
         return off
     }
@@ -73,7 +79,8 @@ enum StandInResolveCases {
         clear: MTLClearColor = MTLClearColor()
     ) async throws {
         let state = try gpu.render(
-            fragment: "standin_sample_values", format: drawn.pixelFormat, samples: drawn.sampleCount)
+            fragment: "standin_sample_values", format: drawn.pixelFormat, samples: drawn.sampleCount
+        )
         let data = try gpu.buffer(values ?? [])
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
@@ -115,7 +122,7 @@ enum StandInResolveCases {
             encoder.endEncoding()
         }
         let bytes = try await gpu.read(target, bytesPerPixel: 16)
-        return (0..<width * height * samples).map { bytes.loaded(as: SIMD4<Float>.self, at: $0) }
+        return (0 ..< width * height * samples).map { bytes.loaded(as: SIMD4<Float>.self, at: $0) }
     }
 
     static func oneSampleReads(_ gpu: GPU, _ f: WordMipFormat, _ values: [SIMD4<Float>]) async throws -> [SIMD4<Float>]
@@ -145,7 +152,7 @@ enum StandInResolveCases {
         guard got.count == apple.count else { return (compared.count, compared.count, Int.max) }
         var judged = (off: 0, far: 0, worst: 0)
         for at in stride(from: 0, to: got.count, by: f.bytes) {
-            let stored = f.word(got[at..<at + f.bytes]), wanted = f.word(apple[at..<at + f.bytes])
+            let stored = f.word(got[at ..< at + f.bytes]), wanted = f.word(apple[at ..< at + f.bytes])
             let apart = f.apart(stored, wanted)
             let exact = f.format == .rgb9e5Float ? stored == wanted : f.codes(stored) == f.codes(wanted)
             judged.off += exact ? 0 : 1

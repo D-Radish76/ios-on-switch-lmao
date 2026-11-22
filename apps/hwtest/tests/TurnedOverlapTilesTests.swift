@@ -41,7 +41,8 @@ struct XrTurnedClearOrderTest: HWTest {
     func run(_ context: TestContext) async throws -> Outcome {
         try await CompilerShapeRun.judged { gpu, metrics in
             try await TurnedOverlapRun.judged(
-                gpu, [("xr_clear_order_off", TurnedOverlapTiles.clearOrder)], status: "xr_clear_order_status", &metrics)
+                gpu, [("xr_clear_order_off", TurnedOverlapTiles.clearOrder)], status: "xr_clear_order_status", &metrics
+            )
         }
     }
 }

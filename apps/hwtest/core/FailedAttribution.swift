@@ -107,7 +107,7 @@ public struct FailedAttribution: Sendable {
         if !foreign.isEmpty {
             var part =
                 "foreign failure: foreign_failed=\(foreign.values.reduce(0, +)) \(FailedCounts.text(foreign)) in "
-                + "command buffers it did not commit (a framework's, another queue's or thread's)"
+                    + "command buffers it did not commit (a framework's, another queue's or thread's)"
             if parts.isEmpty {
                 part += committed == 0 ? "; it committed none itself" : "; its own \(committed) ended as expected"
             }

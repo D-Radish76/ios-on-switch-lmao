@@ -26,7 +26,8 @@ struct SeparateDepth16StencilMultisampleTest: HWTest {
         let depth = try gpu.texture(.depth16Unorm, n, n, usage: [.renderTarget], samples: samples)
         let stencil = try gpu.texture(.stencil8, n, n, usage: [.renderTarget], samples: samples)
         let state = try gpu.render(
-            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth16Unorm, stencil: .stencil8)
+            fragment: "solid_fragment", format: .rgba8Unorm, samples: samples, depth: .depth16Unorm, stencil: .stencil8
+        )
         func ds(
             _ compare: MTLCompareFunction, stencil test: MTLCompareFunction, replace: Bool
         ) throws -> MTLDepthStencilState {
@@ -77,9 +78,10 @@ struct SeparateDepth16StencilMultisampleTest: HWTest {
         func wrong(_ left: [UInt8], _ right: [UInt8]) async throws -> Int {
             let pixels = try await gpu.read(resolved, bytesPerPixel: 4)
             var count = 0
-            for y in 0..<n {
-                for x in 0..<n {
-                    count += Array(pixels[4 * (y * n + x)..<4 * (y * n + x) + 4]) == (x < n / 2 ? left : right) ? 0 : 1
+            for y in 0 ..< n {
+                for x in 0 ..< n {
+                    count += Array(pixels[4 * (y * n + x) ..< 4 * (y * n + x) + 4]) == (x < n / 2 ? left : right) ? 0 :
+                        1
                 }
             }
             return count

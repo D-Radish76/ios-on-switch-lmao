@@ -50,10 +50,10 @@ public enum YcbcrSrgb {
 
     /// E[q], q = 0 ... 8192
     public static let encode: [UInt16] = {
-        let decoded = (0...8192).map(decode)
+        let decoded = (0 ... 8192).map(decode)
         var table = [UInt16](repeating: 0, count: 8193)
         var first = 0
-        for q in UInt32(1)...8192 {
+        for q in UInt32(1) ... 8192 {
             while decoded[first] < q { first += 1 }
             var end = first
             while end <= 8192 && decoded[end] == q { end += 1 }

@@ -65,7 +65,8 @@ public enum YcbcrTurnedOverlapOrder {
         guard let surface = surface() else { throw TestFailure("no '420v' of rows 16") }
         let size = frameSize(turn)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 540)!, width: size.width, height: size.height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 540)!, width: size.width, height: size.height, mipmapped: false
+        )
         descriptor.usage = [.renderTarget]
         descriptor.storageMode = .shared
         if turn != 0 {
@@ -93,10 +94,10 @@ public enum YcbcrTurnedOverlapOrder {
         guard !timing.path.hasPrefix("error:") else { return reading }
         let bytes = SurfaceReads.bytes(surface)
         let p = plane
-        for a in 0..<(p.pitch * (p.height - 1) + p.width) {
+        for a in 0 ..< (p.pitch * (p.height - 1) + p.width) {
             let last = min(a / p.pitch, p.height - 1), first = a >= p.width ? (a - p.width) / p.pitch + 1 : 0
             guard last > first else { continue }
-            let texels = (first...last).map { frameTexel(turn, a - $0 * p.pitch, $0) }
+            let texels = (first ... last).map { frameTexel(turn, a - $0 * p.pitch, $0) }
             let code = { (t: (x: Int, y: Int)) in UInt8((t.x + 7 * t.y) & 255) }
             let key = { (t: (x: Int, y: Int)) in (t.y % 32 / 2) << 1 | (t.y & 1 == 0 ? 1 : 0) }
             let tiles = Dictionary(grouping: texels) { ($0.x / 32) << 16 | ($0.y / 32) }

@@ -22,35 +22,45 @@ struct FetchShapeTest: HWTest {
 
     static let all: [any HWTest] = [
         FetchShapeTest(
-            id: "gpu.gm20b.fetch_list", name: "A fetching list's triangles each read the last", shapes: [.list]),
+            id: "gpu.gm20b.fetch_list", name: "A fetching list's triangles each read the last", shapes: [.list]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_long", name: "A fetching list of 128 triangles, past the old 96-triangle cap",
-            shapes: [.long]),
+            shapes: [.long]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_strip_restart",
-            name: "A fetching indexed strip keeps its winding across primitives and restarts", shapes: [.stripRestart]),
+            name: "A fetching indexed strip keeps its winding across primitives and restarts", shapes: [.stripRestart]
+        ),
         FetchShapeTest(id: "gpu.gm20b.fetch_points", name: "Fetching points each read the last", shapes: [.points]),
         FetchShapeTest(
-            id: "gpu.gm20b.fetch_lines", name: "Fetching lines and a line strip each read the last", shapes: [.lines]),
+            id: "gpu.gm20b.fetch_lines", name: "Fetching lines and a line strip each read the last", shapes: [.lines]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_primitive_id", name: "A fetching draw's primitive_id counts across its primitives",
-            shapes: [.primitiveID]),
+            shapes: [.primitiveID]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_instances", name: "A fetching draw's instances each draw every primitive, in order",
-            shapes: [.instances]),
+            shapes: [.instances]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_vertex_id", name: "A fetching draw's vertex_id counts from its vertexStart",
-            shapes: [.vertexID]),
+            shapes: [.vertexID]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_indirect", name: "Indirect fetching draws, a list and a restarted strip",
-            shapes: [.indirectList, .indirectStrip]),
+            shapes: [.indirectList, .indirectStrip]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_icb", name: "An indirect command buffer's fetching draws: a list, a strip and points",
-            shapes: [.icbDraws]),
+            shapes: [.icbDraws]
+        ),
         FetchShapeTest(
             id: "gpu.gm20b.fetch_icb_indexed",
             name: "An indirect command buffer's indexed fetching draws: a list, a strip and points",
-            shapes: [.icbIndexedDraws]),
+            shapes: [.icbIndexedDraws]
+        ),
     ]
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -91,7 +101,8 @@ struct FetchShapeTest: HWTest {
         checks.append(("every pixel at the scene's codes", wrong == 0))
         if !draws.isEmpty {
             checks.append(
-                ("fetch_sequential rose by \(draws.count), one a draw", moved("fetch_sequential") == draws.count))
+                ("fetch_sequential rose by \(draws.count), one a draw", moved("fetch_sequential") == draws.count)
+            )
             checks.append(("fetch_triangles rose by \(counted)", moved("fetch_triangles") == counted))
         }
         checks.append(FailedCounts.judged(before: before, after: after, own: gpu.paths, &metrics))
@@ -121,24 +132,30 @@ struct FetchShapeTest: HWTest {
             case (nil, false):
                 encoder.drawPrimitives(
                     type: draw.primitive, vertexStart: draw.vertexStart, vertexCount: draw.count,
-                    instanceCount: draw.instances)
+                    instanceCount: draw.instances
+                )
             case (let indices?, false):
                 encoder.drawIndexedPrimitives(
                     type: draw.primitive, indexCount: draw.count, indexType: .uint16,
-                    indexBuffer: try gpu.buffer(indices), indexBufferOffset: 0, instanceCount: draw.instances)
+                    indexBuffer: try gpu.buffer(indices), indexBufferOffset: 0, instanceCount: draw.instances
+                )
             case (nil, true):
                 let arguments = MTLDrawPrimitivesIndirectArguments(
                     vertexCount: UInt32(draw.count), instanceCount: UInt32(draw.instances),
-                    vertexStart: UInt32(draw.vertexStart), baseInstance: 0)
+                    vertexStart: UInt32(draw.vertexStart), baseInstance: 0
+                )
                 encoder.drawPrimitives(
-                    type: draw.primitive, indirectBuffer: try gpu.buffer([arguments]), indirectBufferOffset: 0)
+                    type: draw.primitive, indirectBuffer: try gpu.buffer([arguments]), indirectBufferOffset: 0
+                )
             case (let indices?, true):
                 let arguments = MTLDrawIndexedPrimitivesIndirectArguments(
                     indexCount: UInt32(draw.count), instanceCount: UInt32(draw.instances), indexStart: 0,
-                    baseVertex: 0, baseInstance: 0)
+                    baseVertex: 0, baseInstance: 0
+                )
                 encoder.drawIndexedPrimitives(
                     type: draw.primitive, indexType: .uint16, indexBuffer: try gpu.buffer(indices),
-                    indexBufferOffset: 0, indirectBuffer: try gpu.buffer([arguments]), indirectBufferOffset: 0)
+                    indexBufferOffset: 0, indirectBuffer: try gpu.buffer([arguments]), indirectBufferOffset: 0
+                )
             }
         }
         encoder.endEncoding()
@@ -153,7 +170,8 @@ struct FetchShapeTest: HWTest {
         descriptor.inheritBuffers = true
         guard
             let icb = gpu.device.makeIndirectCommandBuffer(
-                descriptor: descriptor, maxCommandCount: shape.draws.count, options: [])
+                descriptor: descriptor, maxCommandCount: shape.draws.count, options: []
+            )
         else { throw TestFailure("no indirect command buffer") }
         encoder.setVertexBuffer(try gpu.buffer(shape.draws[0].points), offset: 0, index: 0)
         for (index, draw) in shape.draws.enumerated() {
@@ -163,14 +181,16 @@ struct FetchShapeTest: HWTest {
                 encoder.useResource(buffer, usage: .read, stages: .vertex)
                 command.drawIndexedPrimitives(
                     draw.primitive, indexCount: draw.count, indexType: .uint16, indexBuffer: buffer,
-                    indexBufferOffset: 0, instanceCount: draw.instances, baseVertex: 0, baseInstance: 0)
+                    indexBufferOffset: 0, instanceCount: draw.instances, baseVertex: 0, baseInstance: 0
+                )
             } else {
                 command.drawPrimitives(
                     draw.primitive, vertexStart: draw.vertexStart, vertexCount: draw.count,
-                    instanceCount: draw.instances, baseInstance: 0)
+                    instanceCount: draw.instances, baseInstance: 0
+                )
             }
         }
-        encoder.executeCommandsInBuffer(icb, range: 0..<shape.draws.count)
+        encoder.executeCommandsInBuffer(icb, range: 0 ..< shape.draws.count)
     }
 
     /// BGR5A1Unorm's texels as (red, green, blue) codes: blue in bits 0-4, green 5-9, red 10-14 (fill_texel.h)

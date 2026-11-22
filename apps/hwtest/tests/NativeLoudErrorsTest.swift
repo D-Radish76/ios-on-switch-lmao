@@ -13,7 +13,8 @@ enum ClientErrors {
 
     static func state(_ gpu: GPU, _ format: MTLPixelFormat, samples: Int = 1) throws -> MTLRenderPipelineState {
         try gpu.render(
-            vertex: "answers_full_vertex", fragment: "client_colour_fragment", format: format, samples: samples)
+            vertex: "answers_full_vertex", fragment: "client_colour_fragment", format: format, samples: samples
+        )
     }
 
     static func pass(_ t: MTLTexture, resolve: MTLTexture? = nil) -> MTLRenderPassDescriptor {
@@ -52,7 +53,12 @@ enum ClientErrors {
         if status != .completed { work.failures.append("the command buffer did not complete") }
         var own = PathTally()
         own.add(timing.facadePath)
-        let failed = FailedCounts.judged(before: before, after: GM20BFacade.counters(of: gpu.device), own: own, &metrics)
+        let failed = FailedCounts.judged(
+            before: before,
+            after: GM20BFacade.counters(of: gpu.device),
+            own: own,
+            &metrics
+        )
         if !failed.1 { work.failures.append(failed.0) }
     }
 
@@ -87,7 +93,7 @@ struct NativeErrorBufferCopyTest: NativeObjectTest {
         let timing = try await gpu.run(tolerateError: true) { commands in
             let blit = commands.makeBlitCommandEncoder()!
             blit.copy(from: a, sourceOffset: 2048, to: b, destinationOffset: 0, size: 4096)
-            blit.fill(buffer: c, range: 1024..<(1024 + 8192), value: 7)
+            blit.fill(buffer: c, range: 1024 ..< (1024 + 8192), value: 7)
             blit.endEncoding()
             commands.addCompletedHandler { status = $0.status }
         }
@@ -95,8 +101,8 @@ struct NativeErrorBufferCopyTest: NativeObjectTest {
         ClientErrors.record(gpu, before, timing, status, &work, &metrics)
         let copied = b.contents().bindMemory(to: UInt8.self, capacity: 8192)
         let filled = c.contents().bindMemory(to: UInt8.self, capacity: 4096)
-        let copyWrong = (0..<8192).filter { copied[$0] != ($0 < 2048 ? 0xAA : 0x55) }.count
-        let fillWrong = (0..<4096).filter { filled[$0] != ($0 < 1024 ? 0x11 : 7) }.count
+        let copyWrong = (0 ..< 8192).filter { copied[$0] != ($0 < 2048 ? 0xAA : 0x55) }.count
+        let fillWrong = (0 ..< 4096).filter { filled[$0] != ($0 < 1024 ? 0x11 : 7) }.count
         metrics.set("copy_wrong", copyWrong)
         metrics.set("fill_wrong", fillWrong)
         if copyWrong != 0 { work.failures.append("\(copyWrong) bytes of the clamped copy wrong") }
@@ -181,7 +187,8 @@ struct NativeErrorSamplesTest: NativeObjectTest {
         work.objects += [ms, resolved, one, target, four]
         try await ClientErrors.draw(gpu, ClientErrors.pass(ms, resolve: resolved), one, &work, &metrics)
         try await ClientErrors.texel(
-            gpu, resolved, want: [0x26, 0x1a, 0x0d, 0x33], slack: 1, field: "one_in_four", &work, &metrics)
+            gpu, resolved, want: [0x26, 0x1a, 0x0d, 0x33], slack: 1, field: "one_in_four", &work, &metrics
+        )
         try await ClientErrors.draw(gpu, ClientErrors.pass(target), four, &work, &metrics)
         try await ClientErrors.texel(gpu, target, want: ClientErrors.colour, field: "four_in_one", &work, &metrics)
         return work
@@ -206,7 +213,8 @@ struct NativeErrorPositionsTest: NativeObjectTest {
         ])
         try await ClientErrors.draw(gpu, pass, state, &work, &metrics)
         try await ClientErrors.texel(
-            gpu, resolved, want: ClientErrors.colour, slack: 1, field: "texel", &work, &metrics)
+            gpu, resolved, want: ClientErrors.colour, slack: 1, field: "texel", &work, &metrics
+        )
         return work
     }
 }

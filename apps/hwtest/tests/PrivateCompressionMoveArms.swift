@@ -32,7 +32,8 @@ extension PrivateCompressionTest {
     func moveArms(_ gpu: GPU, _ facade: NSObject, _ metrics: inout Metrics, _ wrong: inout [String]) async throws {
         let movesBefore = GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: Self.moveArraySide, height: Self.moveArraySide, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: Self.moveArraySide, height: Self.moveArraySide, mipmapped: false
+        )
         d.textureType = .type2DArray
         d.arrayLength = Self.moveLayers
         d.storageMode = .private
@@ -47,32 +48,35 @@ extension PrivateCompressionTest {
         var run = ShapeRun()
         run.paths.append(
             try await gpu.run { commands in
-                for layer in 0..<Self.moveLayers {
+                for layer in 0 ..< Self.moveLayers {
                     let pass = MTLRenderPassDescriptor()
                     pass.colorAttachments[0].texture = array
                     pass.colorAttachments[0].slice = layer
                     pass.colorAttachments[0].loadAction = .clear
                     let clear = Self.floats(Self.layerBytes(layer, drawn: false))
                     pass.colorAttachments[0].clearColor = MTLClearColor(
-                        red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: 1)
+                        red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: 1
+                    )
                     pass.colorAttachments[0].storeAction = .store
                     let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
                     encoder.setRenderPipelineState(solid)
                     GPU.draw(
                         encoder, corners: GPU.pixelQuad(0, 0, side / 2, side, width: side, height: side),
-                        color: Self.floats(Self.layerBytes(layer, drawn: true)))
+                        color: Self.floats(Self.layerBytes(layer, drawn: true))
+                    )
                     encoder.endEncoding()
                 }
                 Self.slanted(commands, samples, pattern)
-            }.path)
+            }.path
+        )
         let arrayAfter = comptags(facade, array), samplesAfter = comptags(facade, samples)
         let moves = (GM20BFacade.counters(of: gpu.device)["private_compressed_moves"] ?? 0) - movesBefore
         var layerWrong = 0
-        for layer in 0..<Self.moveLayers {
+        for layer in 0 ..< Self.moveLayers {
             let bytes = try await gpu.read(array, bytesPerPixel: 4, slice: layer)
             let clear = Self.layerBytes(layer, drawn: false), drawn = Self.layerBytes(layer, drawn: true)
-            for y in 0..<side {
-                for x in 0..<side where !bytes.pixel(x, y, width: side).elementsEqual(x < side / 2 ? drawn : clear) {
+            for y in 0 ..< side {
+                for x in 0 ..< side where !bytes.pixel(x, y, width: side).elementsEqual(x < side / 2 ? drawn : clear) {
                     layerWrong += 1
                 }
             }
@@ -87,8 +91,8 @@ extension PrivateCompressionTest {
         run.paths.append(try await gpu.run { Self.slanted($0, reference, pattern) }.path)
         let want = try await sampleGrid(gpu, reference, &run)
         let sampleWrong =
-            stride(from: 0, to: min(got.count, want.count), by: 4).filter { got[$0..<$0 + 4] != want[$0..<$0 + 4] }
-            .count + abs(got.count - want.count) / 4
+            stride(from: 0, to: min(got.count, want.count), by: 4).filter { got[$0 ..< $0 + 4] != want[$0 ..< $0 + 4] }
+                .count + abs(got.count - want.count) / 4
         let wantMoves = (arrayAt == 0 ? 1 : 0) + (samplesAt == 0 ? 1 : 0)
         metrics.set("array_at_creation", arrayAt)
         metrics.set("ms_at_creation", samplesAt)

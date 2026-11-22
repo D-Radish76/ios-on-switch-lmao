@@ -22,7 +22,7 @@ struct SetSurvivesTrimPathTest: GPUPathTest {
         let before = GM20BFacade.counters(of: gpu.device)
         guard before["set_refusals"] != nil else { throw TestFailure("no resource set counters: a release runtime") }
         do {
-            let held = (0..<8).compactMap { _ in
+            let held = (0 ..< 8).compactMap { _ in
                 gpu.device.makeBuffer(length: Self.pooled, options: .storageModePrivate)
             }
             metrics.set("private_buffers", held.count)
@@ -50,14 +50,15 @@ struct SetSurvivesTrimPathTest: GPUPathTest {
         }
         let target = try gpu.buffer(Self.own), readback = try gpu.buffer(Self.small)
         var wrong = 0
-        for round in 0..<Self.rounds {
+        for round in 0 ..< Self.rounds {
             let value = UInt8(0x30 + round)
             try await gpu.run { commands in
                 let blit = commands.makeBlitCommandEncoder()!
-                blit.fill(buffer: target, range: 0..<Self.own, value: value)
+                blit.fill(buffer: target, range: 0 ..< Self.own, value: value)
                 blit.copy(
                     from: target, sourceOffset: Self.own - Self.small, to: readback, destinationOffset: 0,
-                    size: Self.small)
+                    size: Self.small
+                )
                 blit.endEncoding()
             }
             wrong += UnsafeRawBufferPointer(start: readback.contents(), count: Self.small).filter { $0 != value }.count

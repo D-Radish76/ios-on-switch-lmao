@@ -58,7 +58,8 @@ struct GM20BReadbackRoutesTest: HWTest {
         judge("shared_blit", try await gpu.read(sharedTarget, bytesPerPixel: 4))
         judge(
             "ci_texture", Self.ciRows(CIImage(mtlTexture: sharedTarget)?.oriented(.downMirrored), gpu.device),
-            gobOnly: true)
+            gobOnly: true
+        )
 
         for storage in [MTLStorageMode.private, .shared] {
             let label = storage == .private ? "heap_private" : "heap_shared"
@@ -86,7 +87,8 @@ struct GM20BReadbackRoutesTest: HWTest {
         judge(
             "ci_surface",
             Self.ciRows(CIImage(ioSurface: unsafeBitCast(surface.surface, to: IOSurfaceRef.self)), gpu.device),
-            gobOnly: true)
+            gobOnly: true
+        )
 
         try await surfaceCpu(gpu, draw, &metrics, &checks)
 
@@ -119,7 +121,7 @@ struct GM20BReadbackRoutesTest: HWTest {
 
     static func pattern() -> [UInt8] {
         var out = [UInt8](repeating: 0, count: row * side)
-        for y in 0..<side { for x in 0..<side { for c in 0..<4 { out[y * row + x * 4 + c] = byte(x, y, c) } } }
+        for y in 0 ..< side { for x in 0 ..< side { for c in 0 ..< 4 { out[y * row + x * 4 + c] = byte(x, y, c) } } }
         return out
     }
 
@@ -132,7 +134,8 @@ struct GM20BReadbackRoutesTest: HWTest {
             blit.copy(
                 from: from, sourceOffset: 0, sourceBytesPerRow: row, sourceBytesPerImage: 0,
                 sourceSize: MTLSize(width: side, height: side, depth: 1), to: texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
         }
         return texture
@@ -168,7 +171,7 @@ struct GM20BReadbackRoutesTest: HWTest {
         pass.colorAttachments[0].loadAction = .dontCare
         pass.colorAttachments[0].storeAction = .store
         if others.count == 3 {
-            for (index, texture) in others[0..<2].enumerated() {
+            for (index, texture) in others[0 ..< 2].enumerated() {
                 pass.colorAttachments[index + 1].texture = texture
                 pass.colorAttachments[index + 1].loadAction = .clear
                 pass.colorAttachments[index + 1].storeAction = .dontCare
@@ -195,7 +198,8 @@ struct GM20BReadbackRoutesTest: HWTest {
         var out = [UInt8](repeating: 0, count: row * side)
         out.withUnsafeMutableBytes {
             texture.getBytes(
-                $0.baseAddress!, bytesPerRow: row, from: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0)
+                $0.baseAddress!, bytesPerRow: row, from: MTLRegionMake2D(0, 0, side, side), mipmapLevel: 0
+            )
         }
         return out
     }
@@ -203,7 +207,8 @@ struct GM20BReadbackRoutesTest: HWTest {
     /// A target placed in a heap of `storage` (RenderBox's ResourceHeap places its textures so)
     static func heapTexture(_ gpu: GPU, _ storage: MTLStorageMode) throws -> MTLTexture {
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false
+        )
         d.usage = [.renderTarget, .shaderRead]
         d.storageMode = storage
         let h = MTLHeapDescriptor()
@@ -221,7 +226,8 @@ struct GM20BReadbackRoutesTest: HWTest {
         let pitch = (row + alignment - 1) / alignment * alignment
         let backing = try gpu.buffer(pitch * side)
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false
+        )
         d.usage = [.renderTarget, .shaderRead]
         d.storageMode = .shared
         guard let texture = backing.makeTexture(descriptor: d, offset: 0, bytesPerRow: pitch) else {
@@ -236,12 +242,14 @@ struct GM20BReadbackRoutesTest: HWTest {
         ]
         guard let surface = IOSurface(properties: properties) else { throw TestFailure("IOSurface not made") }
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false
+        )
         d.usage = [.renderTarget, .shaderRead]
         d.storageMode = .shared
         guard
             let texture = gpu.device.makeTexture(
-                descriptor: d, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0)
+                descriptor: d, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0
+            )
         else { throw TestFailure("no texture over the IOSurface") }
         return (surface, texture)
     }
@@ -249,7 +257,7 @@ struct GM20BReadbackRoutesTest: HWTest {
     static func rows(_ base: UnsafeRawPointer, pitch: Int) -> [UInt8] {
         var out = [UInt8](repeating: 0, count: row * side)
         out.withUnsafeMutableBytes {
-            for y in 0..<side {
+            for y in 0 ..< side {
                 $0.baseAddress!.advanced(by: y * row).copyMemory(from: base + y * pitch, byteCount: row)
             }
         }
@@ -260,7 +268,8 @@ struct GM20BReadbackRoutesTest: HWTest {
     static func ciRows(_ image: CIImage?, _ device: MTLDevice) -> [UInt8]? {
         guard let image else { return nil }
         let context = CIContext(
-            mtlDevice: device, options: [.workingColorSpace: NSNull(), .outputColorSpace: NSNull()])
+            mtlDevice: device, options: [.workingColorSpace: NSNull(), .outputColorSpace: NSNull()]
+        )
         return context.createCGImage(image, from: CGRect(x: 0, y: 0, width: side, height: side)).map(cgRows)
     }
 
@@ -272,13 +281,16 @@ struct GM20BReadbackRoutesTest: HWTest {
             let image = bytes.withUnsafeMutableBytes({
                 CGContext(
                     data: $0.baseAddress, width: side, height: side, bitsPerComponent: 8, bytesPerRow: row,
-                    space: space, bitmapInfo: bgraInfo)?.makeImage()
+                    space: space, bitmapInfo: bgraInfo
+                )?.makeImage()
             })
         else { return nil }
         return await MainActor.run {
             let renderer = ImageRenderer(
                 content: Image(decorative: image, scale: 1).interpolation(.none).frame(
-                    width: CGFloat(side), height: CGFloat(side)))
+                    width: CGFloat(side), height: CGFloat(side)
+                )
+            )
             renderer.scale = 1
             renderer.isOpaque = true
             return renderer.cgImage.map(cgRows)
@@ -292,7 +304,8 @@ struct GM20BReadbackRoutesTest: HWTest {
         out.withUnsafeMutableBytes {
             let context = CGContext(
                 data: $0.baseAddress, width: side, height: side, bitsPerComponent: 8, bytesPerRow: row,
-                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: bgraInfo)
+                space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: bgraInfo
+            )
             context?.setBlendMode(.copy)
             context?.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
         }
@@ -302,9 +315,10 @@ struct GM20BReadbackRoutesTest: HWTest {
     /// Colour bytes (the alpha byte is the route's own) further than `tolerance` from the pattern's
     static func wrong(_ got: [UInt8], tolerance: Int) -> Int {
         var wrong = 0
-        for y in 0..<side {
-            for x in 0..<side {
-                for c in 0..<3 where abs(Int(got[y * row + x * 4 + c]) - Int(byte(x, y, c))) > tolerance { wrong += 1 }
+        for y in 0 ..< side {
+            for x in 0 ..< side {
+                for c in 0 ..< 3
+                    where abs(Int(got[y * row + x * 4 + c]) - Int(byte(x, y, c))) > tolerance { wrong += 1 }
             }
         }
         return wrong
@@ -316,13 +330,13 @@ struct GM20BReadbackRoutesTest: HWTest {
         let yLog2 = SurfaceCrossProcessTest.blockHeightLog2(side)
         let rowBytes = (row + 63) & ~63
         var tiled = [UInt8](repeating: 0, count: rowBytes * side + 64 * 8 * 16)
-        for y in 0..<side {
-            for xB in 0..<row {
+        for y in 0 ..< side {
+            for xB in 0 ..< row {
                 let at = SurfaceCrossProcessTest.gobOffset(rowBytes, yLog2, xB, y)
                 if at < tiled.count { tiled[at] = byte(xB / 4, y, xB % 4) }
             }
         }
-        for xB in 0..<row where xB % 4 < 3 && abs(Int(got[xB]) - Int(tiled[xB])) > tolerance { return false }
+        for xB in 0 ..< row where xB % 4 < 3 && abs(Int(got[xB]) - Int(tiled[xB])) > tolerance { return false }
         return true
     }
 }

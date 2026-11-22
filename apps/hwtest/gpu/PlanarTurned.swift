@@ -30,21 +30,26 @@ public enum PlanarTurned {
     public static let cases = [
         Case(
             key: "b3a8_550_r1", format: 550, turn: 1, fourcc: "b3a8", planes: xrPlanes, reference: xrReference,
-            allocation: 20480, referenceAllocation: 10240),
+            allocation: 20480, referenceAllocation: 10240
+        ),
         Case(
             key: "b3a8_550_r3", format: 550, turn: 3, fourcc: "b3a8", planes: xrPlanes, reference: xrReference,
-            allocation: 20480, referenceAllocation: 10240),
+            allocation: 20480, referenceAllocation: 10240
+        ),
         Case(
             key: "w30r_550_r2", format: 550, turn: 2, fourcc: "w30r", planes: wordPlane, reference: wordReference,
-            allocation: 16384, referenceAllocation: 8192),
+            allocation: 16384, referenceAllocation: 8192
+        ),
         Case(
             key: "w30r_551_r4", format: 551, turn: 4, fourcc: "w30r", planes: wordPlane, reference: wordReference,
-            allocation: 16384, referenceAllocation: 8192),
+            allocation: 16384, referenceAllocation: 8192
+        ),
         Case(
             key: "420v_500_r1", format: 500, turn: 1, fourcc: "420v",
             planes: [P(at: 0, 64, 64, bpe: 1, rows: 64), P(at: 4096, 32, 32, bpe: 2, rows: 64)],
             reference: [P(at: 0, 32, 64, bpe: 1, rows: 32), P(at: 2048, 16, 32, bpe: 2, rows: 32)], allocation: 6144,
-            referenceAllocation: 3072),
+            referenceAllocation: 3072
+        ),
     ]
 
     public struct Reading: Sendable {
@@ -74,7 +79,8 @@ public enum PlanarTurned {
     static func target(_ gpu: GPU, _ c: Case, _ surface: IOSurfaceRef, turn: Int) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: MTLPixelFormat(rawValue: c.format)!, width: frame.width, height: frame.height,
-            mipmapped: false)
+            mipmapped: false
+        )
         descriptor.usage = [.renderTarget]
         descriptor.storageMode = .shared
         if turn != 0 {
@@ -97,7 +103,8 @@ public enum PlanarTurned {
             encoder.setRenderPipelineState(state)
             GPU.draw(
                 encoder, corners: GPU.pixelQuad(0, 0, 16, 16, width: frame.width, height: frame.height),
-                color: SIMD4(0.75, 0.25, 0.5, 0.6))
+                color: SIMD4(0.75, 0.25, 0.5, 0.6)
+            )
             encoder.endEncoding()
         }.facadePath
     }
@@ -114,7 +121,7 @@ public enum PlanarTurned {
 
     static func layout(_ surface: IOSurfaceRef) -> [(offset: Int, pitch: Int)] {
         let base = Int(bitPattern: IOSurfaceGetBaseAddress(surface))
-        return (0..<IOSurfaceGetPlaneCount(surface)).map {
+        return (0 ..< IOSurfaceGetPlaneCount(surface)).map {
             (
                 Int(bitPattern: IOSurfaceGetBaseAddressOfPlane(surface, $0)) - base,
                 IOSurfaceGetBytesPerRowOfPlane(surface, $0)
@@ -126,9 +133,11 @@ public enum PlanarTurned {
         let (w, h) = (frame.width, frame.height)
         guard
             let surface = SurfaceReads.surface(
-                c.fourcc, 64, 64, planes: c.planes, allocation: c.allocation, fill: { _ in blank }),
+                c.fourcc, 64, 64, planes: c.planes, allocation: c.allocation, fill: { _ in blank }
+            ),
             let plain = SurfaceReads.surface(
-                c.fourcc, w, h, planes: c.reference, allocation: c.referenceAllocation, fill: { _ in blank })
+                c.fourcc, w, h, planes: c.reference, allocation: c.referenceAllocation, fill: { _ in blank }
+            )
         else { throw TestFailure("no '\(c.fourcc)' surfaces for \(c.key)") }
         guard let reference = target(gpu, c, plain, turn: 0) else { throw TestFailure("no unturned \(c.format)") }
         var reading = Reading()
@@ -139,16 +148,16 @@ public enum PlanarTurned {
         let ycbcr = c.format == 500, word = ycbcr ? 1 : 4
         let from = layout(plain), to = layout(surface)
         var inside = [Bool](repeating: false, count: got.count)
-        for y in 0..<h {
-            for x in 0..<w {
+        for y in 0 ..< h {
+            for x in 0 ..< w {
                 let p = stored(c.turn, x, y)
                 var wrong = false
-                for k in 0..<to.count {
+                for k in 0 ..< to.count {
                     let (a, n) = at(from, k, x, y, ycbcr: ycbcr, word: word)
                     let (b, _) = at(to, k, p.x, p.y, ycbcr: ycbcr, word: word)
-                    if k == 0 && want[a..<(a + n)].allSatisfy({ $0 == blank }) { reading.referenceUnstored += 1 }
-                    for i in 0..<n { inside[b + i] = true }
-                    wrong = wrong || !want[a..<(a + n)].elementsEqual(got[b..<(b + n)])
+                    if k == 0 && want[a ..< (a + n)].allSatisfy({ $0 == blank }) { reading.referenceUnstored += 1 }
+                    for i in 0 ..< n { inside[b + i] = true }
+                    wrong = wrong || !want[a ..< (a + n)].elementsEqual(got[b ..< (b + n)])
                 }
                 guard wrong else { continue }
                 reading.texelsOff += 1

@@ -18,7 +18,8 @@ public enum YcbcrRowsPastPage {
         public var paths: [String] = []
     }
 
-    static func surface(width: Int, height: Int, chromaAt: Int, allocation: Int, bytes: [UInt8]?) throws -> IOSurfaceRef {
+    static func surface(width: Int, height: Int, chromaAt: Int, allocation: Int,
+                        bytes: [UInt8]?) throws -> IOSurfaceRef {
         let planes: [[CFString: Any]] = [
             [
                 kIOSurfacePlaneWidth: width, kIOSurfacePlaneHeight: height, kIOSurfacePlaneBytesPerElement: 1,
@@ -37,7 +38,7 @@ public enum YcbcrRowsPastPage {
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { throw TestFailure("no surface") }
         IOSurfaceLock(surface, [], nil)
         let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
-        for i in 0..<IOSurfaceGetAllocSize(surface) {
+        for i in 0 ..< IOSurfaceGetAllocSize(surface) {
             base[i] = bytes.map { i < $0.count ? $0[i] : 0 } ?? UInt8(truncatingIfNeeded: i * 31 + 7)
         }
         IOSurfaceUnlock(surface, [], nil)
@@ -47,14 +48,15 @@ public enum YcbcrRowsPastPage {
     /// The reference's bytes: luma row r is the source's bytes [64r, 64r + 64), chroma row j its [512 + 64j, ...)
     static func reference(_ source: [UInt8]) -> [UInt8] {
         let at = { (i: Int) in i < source.count ? source[i] : 0 }
-        let luma = (0..<(width * height)).map(at)
-        let chroma = (0..<(width * height / 2)).map { at(chromaAt + $0) }
+        let luma = (0 ..< (width * height)).map(at)
+        let chroma = (0 ..< (width * height / 2)).map { at(chromaAt + $0) }
         return luma + chroma
     }
 
     static func texture(_ gpu: GPU, over surface: IOSurfaceRef) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 500)!, width: width, height: height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 500)!, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         return gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0)
@@ -70,7 +72,8 @@ public enum YcbcrRowsPastPage {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: width, height: height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }
         let texels = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: width * height)
@@ -85,13 +88,14 @@ public enum YcbcrRowsPastPage {
         let sourceBytes = YcbcrOnePlaneTargets.bytes(source)
         let mirror = try surface(
             width: width, height: height, chromaAt: width * height, allocation: width * height * 3 / 2,
-            bytes: reference(sourceBytes))
+            bytes: reference(sourceBytes)
+        )
         guard let alike = texture(gpu, over: mirror) else { throw TestFailure("no texture over the reference surface") }
         let (got, path) = try await read(gpu, past)
         let (want, referencePath) = try await read(gpu, alike)
         reading.paths = [path, referencePath]
-        for row in 0..<height {
-            let range = (row * width)..<((row + 1) * width)
+        for row in 0 ..< height {
+            let range = (row * width) ..< ((row + 1) * width)
             if range.allSatisfy({ got[$0] == want[$0] }) {
                 reading.rowsMatched += 1
             } else if reading.first == "-" {

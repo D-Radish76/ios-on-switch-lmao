@@ -53,7 +53,7 @@ struct XRTwoPlaneTest: HWTest {
         let words = try await gpu.read(texture, bytesPerPixel: 4)
         let copiedOut = want.indices.filter { words.loaded(as: UInt32.self, at: $0) != UInt32(want[$0] & 0xffff_ffff) }
             .count
-        let incoming = (0..<want.count).map { UInt32(($0 &* 2_654_435_761) & 0x3fff_ffff) }
+        let incoming = (0 ..< want.count).map { UInt32(($0 &* 2_654_435_761) & 0x3fff_ffff) }
         try await gpu.upload(incoming.withUnsafeBytes { Array($0) }, to: texture, bytesPerRow: Self.width * 4)
         want = zip(want, incoming).map { $0 & 0xff_0000_0000 | UInt64($1) }
         let copiedIn = Self.wrongTexels(Self.planes(buffer), want)
@@ -78,7 +78,8 @@ struct XRTwoPlaneTest: HWTest {
         let linearApart = XRTwoPlaneModel.linearApart(
             linear.halves,
             exact: XRTwoPlaneModel.bilinear(texels, width: Self.width, height: Self.height, weight: 1.0 / 3),
-            fixed: XRTwoPlaneModel.bilinear(texels, width: Self.width, height: Self.height, weight: 85.0 / 256))
+            fixed: XRTwoPlaneModel.bilinear(texels, width: Self.width, height: Self.height, weight: 85.0 / 256)
+        )
 
         var metrics = Metrics()
         let planePasses = moved("xr_plane_passes")
@@ -152,7 +153,8 @@ struct XRTwoPlaneTest: HWTest {
                     "gathers of alpha and red through the header pair are the texels' values",
                     gatherAlpha.paired && gatherRed.paired && gatherAlpha.wrong == 0 && gatherRed.wrong == 0
                 ),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 
     /// xr.h writeCode: a channel's code, or the alpha byte
@@ -171,7 +173,7 @@ struct XRTwoPlaneTest: HWTest {
     static func paint(
         _ texels: inout [UInt64], _ r: (Int, Int, Int, Int), _ value: UInt64, width: Int = XRTwoPlaneTest.width
     ) {
-        for y in r.1..<r.3 { for x in r.0..<r.2 { texels[y * width + x] = value } }
+        for y in r.1 ..< r.3 { for x in r.0 ..< r.2 { texels[y * width + x] = value } }
     }
 
     static func surfaceTexture(
@@ -182,12 +184,14 @@ struct XRTwoPlaneTest: HWTest {
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
         guard
             CVPixelBufferCreate(
-                nil, width, height, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &made)
-                == kCVReturnSuccess, let buffer = made,
+                nil, width, height, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &made
+            )
+            == kCVReturnSuccess, let buffer = made,
             let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { throw TestFailure("no b3a8 pixel buffer") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: width, height: height, mipmapped: false)
+            pixelFormat: format, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = usage
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
@@ -206,13 +210,15 @@ struct XRTwoPlaneTest: HWTest {
             pass.colorAttachments[0].texture = texture
             pass.colorAttachments[0].loadAction = load
             pass.colorAttachments[0].clearColor = MTLClearColor(
-                red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: Double(clear.w))
+                red: Double(clear.x), green: Double(clear.y), blue: Double(clear.z), alpha: Double(clear.w)
+            )
             pass.colorAttachments[0].storeAction = .store
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
             encoder.setRenderPipelineState(pipeline)
             let r = draw.rect
             GPU.draw(
-                encoder, corners: GPU.pixelQuad(r.0, r.1, r.2, r.3, width: width, height: height), color: draw.color)
+                encoder, corners: GPU.pixelQuad(r.0, r.1, r.2, r.3, width: width, height: height), color: draw.color
+            )
             encoder.endEncoding()
         }
     }
@@ -227,7 +233,7 @@ struct XRTwoPlaneTest: HWTest {
             alpha = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!
         let wordRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0),
             alphaRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
-        return (0..<(width * height)).map { i in
+        return (0 ..< (width * height)).map { i in
             let (x, y) = (i % width, i / width)
             let w = word.loadUnaligned(fromByteOffset: y * wordRow + x * 4, as: UInt32.self)
             let a = alpha.load(fromByteOffset: y * alphaRow + x, as: UInt8.self)
@@ -248,8 +254,8 @@ struct XRTwoPlaneTest: HWTest {
             alpha = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!
         let wordRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 0),
             alphaRow = CVPixelBufferGetBytesPerRowOfPlane(buffer, 1)
-        for y in r.1..<r.3 {
-            for x in r.0..<r.2 {
+        for y in r.1 ..< r.3 {
+            for x in r.0 ..< r.2 {
                 word.storeBytes(of: texel.word, toByteOffset: y * wordRow + x * 4, as: UInt32.self)
                 alpha.storeBytes(of: texel.alpha, toByteOffset: y * alphaRow + x, as: UInt8.self)
             }
@@ -281,13 +287,13 @@ struct XRTwoPlaneTest: HWTest {
         }
         let bytes = try await gpu.read(target, bytesPerPixel: 8)
         let value = { (n: Int, d: Double) in Float16(Double(n) / d).bitPattern }
-        return (0..<(width * height)).filter { i in
+        return (0 ..< (width * height)).filter { i in
             let t = want[i]
             let expected: [UInt16] = [
                 value(Int(t >> 20 & 0x3ff) - 384, 510), value(Int(t >> 10 & 0x3ff) - 384, 510),
                 value(Int(t & 0x3ff) - 384, 510), value(Int(t >> 32 & 0xff), 255),
             ]
-            let got = (0..<4).map { c in bytes.loaded(as: UInt16.self, at: i * 4 + c) }
+            let got = (0 ..< 4).map { c in bytes.loaded(as: UInt16.self, at: i * 4 + c) }
             return got != expected
         }.count
     }

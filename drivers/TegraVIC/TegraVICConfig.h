@@ -417,7 +417,7 @@ typedef struct {
     uint32_t fillAlpha10;             // and its alpha (10-bit)
     uint32_t alphaOverride;           // 1: every alpha written is alphaOverride8 (IOSurfaceAccelerator's AlphaOverride)
     uint32_t alphaOverride8;
-    const TegraVICGamut *gamut;       // the request path's primaries change (TegraVICRequest.h); null for other callers
+    const TegraVICGamut *gamut;  // the request path's primaries change (TegraVICRequest.h); null for other callers
 } TegraVICOp;
 
 // What this engine does with the configurations tegra_vic_build makes.
@@ -654,7 +654,6 @@ static inline const char *tegra_vic_build(const TegraVICImage *src, const TegraV
                      (rgbLuma && dst->standard > TEGRA_VIC_YCC_2020) ||
                      (!op->fill && src->format->kind != TEGRA_VIC_KIND_RGB && src->standard > TEGRA_VIC_YCC_2020)))
         return "YCbCr matrix requires color conversion outside VIC's contract";
-
 
     memset(job, 0, sizeof(*job));
     uint8_t *c = job->config;

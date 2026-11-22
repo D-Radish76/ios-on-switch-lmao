@@ -21,9 +21,21 @@ int main(int argc, char **argv)
             return 1;
         }
         const std::map<std::string, void (*)()> cases = {
-            {"zeta_two_textures", [] { zetaTwoTextures(true); zetaTwoTextures(false); }},
-            {"zeta_two_levels", [] { zetaTwoLevels(true); zetaTwoLevels(false); }},
-            {"zeta_two_slices", [] { zetaTwoSlices(true); zetaTwoSlices(false); }},
+            {"zeta_two_textures",
+             [] {
+                 zetaTwoTextures(true);
+                 zetaTwoTextures(false);
+             }},
+            {"zeta_two_levels",
+             [] {
+                 zetaTwoLevels(true);
+                 zetaTwoLevels(false);
+             }},
+            {"zeta_two_slices",
+             [] {
+                 zetaTwoSlices(true);
+                 zetaTwoSlices(false);
+             }},
             {"pair_sizes", pairSizes},
             {"pair_samples", pairSamples},
             {"mixed_pairs", mixedPairs},
@@ -33,8 +45,13 @@ int main(int argc, char **argv)
             {"rg8_srgb", rg8Srgb},
             {"texture_buffer", textureBuffer},
             {"unspecialized_views", unspecializedViews},
-            {"area_store", [] { areaStore(64, 40, 24); areaStore(256, 40, 80); areaStore(256, 100, 20);
-                                areaStore(256, 40, 80, MTLPixelFormatRGBA16Float); }},
+            {"area_store",
+             [] {
+                 areaStore(64, 40, 24);
+                 areaStore(256, 40, 80);
+                 areaStore(256, 100, 20);
+                 areaStore(256, 40, 80, MTLPixelFormatRGBA16Float);
+             }},
         };
         if (argc < 2 || !cases.count(argv[1])) {
             for (const auto &[name, run] : cases)

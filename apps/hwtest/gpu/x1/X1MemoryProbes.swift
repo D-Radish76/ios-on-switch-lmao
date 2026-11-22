@@ -22,14 +22,15 @@ public enum X1MemoryProbes {
             var reused = 0
             var seen = Set<UInt>()
             for length in [4096, 65536, 1 << 20] {
-                for _ in 0..<64 {
+                for _ in 0 ..< 64 {
                     try autoreleasepool {
                         guard let buffer = gpu.device.makeBuffer(length: length, options: options) else {
                             throw TestFailure("makeBuffer(\(length)) returned nil")
                         }
                         if !seen.insert(UInt(bitPattern: buffer.contents())).inserted { reused += 1 }
                         let bytes = UnsafeBufferPointer(
-                            start: buffer.contents().bindMemory(to: UInt8.self, capacity: length), count: length)
+                            start: buffer.contents().bindMemory(to: UInt8.self, capacity: length), count: length
+                        )
                         let dirty = bytes.reduce(0) { $0 + ($1 != 0 ? 1 : 0) }
                         if dirty > 0 {
                             dirtyBuffers += 1
@@ -78,9 +79,10 @@ public enum X1MemoryProbes {
             let rowBytes = width * 4
             let source = try gpu.buffer(offset + rowBytes * height)
             let bytes = source.contents().bindMemory(to: UInt8.self, capacity: offset + rowBytes * height)
-            for i in 0..<(rowBytes * height) { bytes[offset + i] = UInt8((i * 37 + 11) & 255) }
+            for i in 0 ..< (rowBytes * height) { bytes[offset + i] = UInt8((i * 37 + 11) & 255) }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
+                pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false
+            )
             descriptor.usage = [.shaderRead]
             descriptor.storageMode = .shared
             guard let texture = source.makeTexture(descriptor: descriptor, offset: offset, bytesPerRow: rowBytes) else {
@@ -95,12 +97,13 @@ public enum X1MemoryProbes {
                 encoder.setBuffer(out, offset: 0, index: 0)
                 encoder.dispatchThreads(
                     MTLSize(width: width, height: height, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: 4, height: 4, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: 4, height: 4, depth: 1)
+                )
                 encoder.endEncoding()
             }.path
             let texels = out.contents().bindMemory(to: Float.self, capacity: width * height * 4)
             var count = 0
-            for i in 0..<(width * height * 4) where UInt8((texels[i] * 255).rounded()) != bytes[offset + i] {
+            for i in 0 ..< (width * height * 4) where UInt8((texels[i] * 255).rounded()) != bytes[offset + i] {
                 count += 1
             }
             if judged {
@@ -122,9 +125,10 @@ public enum X1MemoryProbes {
         let width = 128
         let source = try gpu.buffer(offset + width * 4)
         let bytes = source.contents().bindMemory(to: UInt8.self, capacity: offset + width * 4)
-        for i in 0..<(width * 4) { bytes[offset + i] = UInt8((i * 53 + 7) & 255) }
+        for i in 0 ..< (width * 4) { bytes[offset + i] = UInt8((i * 53 + 7) & 255) }
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
-            with: .rgba8Unorm, width: width, resourceOptions: .storageModeShared, usage: .shaderRead)
+            with: .rgba8Unorm, width: width, resourceOptions: .storageModeShared, usage: .shaderRead
+        )
         guard let texture = source.makeTexture(descriptor: descriptor, offset: offset, bytesPerRow: width * 4) else {
             throw TestFailure("no texture buffer at offset \(offset)")
         }
@@ -137,11 +141,12 @@ public enum X1MemoryProbes {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: width, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 32, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 32, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }.path
         let texels = out.contents().bindMemory(to: Float.self, capacity: width * 4)
-        let wrong = (0..<(width * 4)).filter { UInt8((texels[$0] * 255).rounded()) != bytes[offset + $0] }.count
+        let wrong = (0 ..< (width * 4)).filter { UInt8((texels[$0] * 255).rounded()) != bytes[offset + $0] }.count
         return (path, wrong)
     }
 }

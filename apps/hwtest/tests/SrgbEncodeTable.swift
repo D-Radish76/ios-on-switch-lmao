@@ -17,7 +17,7 @@ enum SrgbEncodeTable {
         3862, 3897, 3933, 3969, 4005, 4041, 4077,
     ]
 
-    static let byIndex: [Int] = (0...4095).map { i in first.lastIndex { $0 <= i } ?? 0 }
+    static let byIndex: [Int] = (0 ... 4095).map { i in first.lastIndex { $0 <= i } ?? 0 }
 
     static func byte(_ value: Double) -> Int {
         value.isNaN ? 0 : byIndex[Int((min(max(value, 0), 1) * 4095).rounded(.toNearestOrEven))]

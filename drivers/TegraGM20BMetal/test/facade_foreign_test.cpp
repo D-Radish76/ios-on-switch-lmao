@@ -12,10 +12,12 @@
 @end
 
 @implementation ForeignBuffer
+
 - (NSUInteger)length
 {
     return 64;
 }
+
 @end
 
 // A render or depth/stencil state this device did not make
@@ -30,10 +32,12 @@
 @end
 
 @implementation ForeignTexture
+
 - (MTLPixelFormat)pixelFormat
 {
     return MTLPixelFormatBGRA8Unorm;
 }
+
 @end
 
 namespace {

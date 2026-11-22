@@ -24,9 +24,9 @@ void appendSlots(PushBatches &segments, uint64_t va, uint64_t count, uint64_t st
     if (stride <= kEntryWords) {
         const uint64_t perEntry = kEntryWords / stride;
         for (uint64_t at = 0; at < count; at += perEntry)
-            segments.append({va + at * stride * 4, uint32_t(std::min(perEntry, count - at) * stride),
-                             TegraGM20BPushNoPrefetch},
-                            false);
+            segments.append(
+                {va + at * stride * 4, uint32_t(std::min(perEntry, count - at) * stride), TegraGM20BPushNoPrefetch},
+                false);
         return;
     }
     for (uint64_t slot = 0; slot < count; slot++)

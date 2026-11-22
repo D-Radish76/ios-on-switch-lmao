@@ -123,13 +123,15 @@ public final class GPU: @unchecked Sendable {
             if !tolerateError { throw TestFailure("command buffer failed: \(error)") }
             return Timing(
                 gpuMilliseconds: 0, wallMilliseconds: wall, path: "error:" + error, encodeMilliseconds: encodeMs,
-                commitMilliseconds: commitMs, facadePath: path)
+                commitMilliseconds: commitMs, facadePath: path
+            )
         }
         let clock = GM20BFacade.gpuClock(of: buffer)
         if clock == "host" { locked { hostClocked += 1 } }
         return Timing(
             gpuMilliseconds: max(0, buffer.gpuEndTime - buffer.gpuStartTime) * 1000, wallMilliseconds: wall, path: path,
-            encodeMilliseconds: encodeMs, commitMilliseconds: commitMs, gpuClock: clock, facadePath: path)
+            encodeMilliseconds: encodeMs, commitMilliseconds: commitMs, gpuClock: clock, facadePath: path
+        )
     }
 
     /// Commits one command buffer without waiting: `finish` waits for a batch of them, so work queued back to back
@@ -188,7 +190,8 @@ public final class GPU: @unchecked Sendable {
         samples: Int = 1, storage: MTLStorageMode = .private, mipmaps: Int = 1
     ) throws -> MTLTexture {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: width, height: height, mipmapped: false)
+            pixelFormat: format, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = usage
         descriptor.storageMode = storage
         descriptor.sampleCount = samples
@@ -218,12 +221,14 @@ public final class GPU: @unchecked Sendable {
             if options.isEmpty {
                 blit.copy(
                     from: texture, sourceSlice: slice, sourceLevel: level, sourceOrigin: origin, sourceSize: size,
-                    to: out, destinationOffset: 0, destinationBytesPerRow: rowBytes, destinationBytesPerImage: 0)
+                    to: out, destinationOffset: 0, destinationBytesPerRow: rowBytes, destinationBytesPerImage: 0
+                )
             } else {
                 blit.copy(
                     from: texture, sourceSlice: slice, sourceLevel: level, sourceOrigin: origin, sourceSize: size,
                     to: out, destinationOffset: 0, destinationBytesPerRow: rowBytes, destinationBytesPerImage: 0,
-                    options: options)
+                    options: options
+                )
             }
             blit.endEncoding()
         }
@@ -237,7 +242,8 @@ public final class GPU: @unchecked Sendable {
         -> Raster
     {
         let bytes = try await read(
-            texture, bytesPerPixel: format.bytesPerTexel, level: level, slice: slice, plane: plane)
+            texture, bytesPerPixel: format.bytesPerTexel, level: level, slice: slice, plane: plane
+        )
         return format.raster(bytes, width: max(1, texture.width >> level), height: max(1, texture.height >> level))
     }
 
@@ -254,11 +260,13 @@ public final class GPU: @unchecked Sendable {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texture.width, height: texture.height, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+            )
             encoder.endEncoding()
         }
         return Array(
-            UnsafeBufferPointer(start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count), count: count))
+            UnsafeBufferPointer(start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count), count: count)
+        )
     }
 
     /// The compute readback as a raster of `channels` (texels' first channels; alpha alone for A8).
@@ -284,7 +292,8 @@ public final class GPU: @unchecked Sendable {
             blit.copy(
                 from: staging, sourceOffset: 0, sourceBytesPerRow: bytesPerRow, sourceBytesPerImage: 0,
                 sourceSize: MTLSize(width: width, height: height, depth: 1), to: texture, destinationSlice: slice,
-                destinationLevel: level, destinationOrigin: MTLOrigin())
+                destinationLevel: level, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
         }
     }
@@ -319,7 +328,7 @@ public final class GPU: @unchecked Sendable {
 extension Array where Element == UInt8 {
     public func pixel(_ x: Int, _ y: Int, width: Int, bytesPerPixel: Int = 4) -> ArraySlice<UInt8> {
         let at = (y * width + x) * bytesPerPixel
-        return self[at..<(at + bytesPerPixel)]
+        return self[at ..< (at + bytesPerPixel)]
     }
 
     public func loaded<T>(as type: T.Type, at index: Int) -> T {

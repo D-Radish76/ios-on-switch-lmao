@@ -25,7 +25,8 @@ struct CAGenericStateScene: GPUScene {
             + "fc_has_color_trc0:53:01 fc_has_color_trc1:53:01 fc_has_gamma_luts:53:01 fc_has_image_0A:53:01 "
             + "fc_has_image_0B:53:01 fc_has_image_0C:53:01 fc_has_image_1A:53:01 fc_has_image_1B:53:01 "
             + "fc_has_image_1C:53:01 fc_has_lod_bias:53:01 fc_has_lut_tex:53:01 fc_has_noise_scale:53:01 "
-            + "fc_has_noise_tex:53:01 fc_has_ycbcr_matrix:53:01 fc_vertex_layout:49:00 | ")!
+            + "fc_has_noise_tex:53:01 fc_has_ycbcr_matrix:53:01 fc_vertex_layout:49:00 | "
+    )!
     static let size = 256
     static let mistyped = "leftover_2d"
 
@@ -63,10 +64,11 @@ struct CAGenericStateScene: GPUScene {
                 encoder.setRenderPipelineState(pipeline)
                 CAState.bind(
                     encoder, vertices: CAState.rectangle(x0: -1, y0: -1, x1: 1, y1: 1, color: SIMD4(1, 1, 1, 1)),
-                    source: nil)
-                for slot in 4..<8 { encoder.setVertexBytes(zeros, length: zeros.count, index: slot) }
-                for slot in 4..<16 { encoder.setFragmentBytes(zeros, length: zeros.count, index: slot) }
-                encoder.setFragmentTextures(cubes, range: 12..<15)
+                    source: nil
+                )
+                for slot in 4 ..< 8 { encoder.setVertexBytes(zeros, length: zeros.count, index: slot) }
+                for slot in 4 ..< 16 { encoder.setFragmentBytes(zeros, length: zeros.count, index: slot) }
+                encoder.setFragmentTextures(cubes, range: 12 ..< 15)
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 encoder.endEncoding()
             }
@@ -77,7 +79,8 @@ struct CAGenericStateScene: GPUScene {
                 let pixels = try await gpu.read(target, bytesPerPixel: 4)
                 result.picture(
                     label, bytes: pixels, metalFormat: target.pixelFormat.rawValue, width: Self.size,
-                    height: Self.size, golden: label == Self.mistyped ? "nothing" : label, cleared: [0, 0, 0, 1])
+                    height: Self.size, golden: label == Self.mistyped ? "nothing" : label, cleared: [0, 0, 0, 1]
+                )
             }
             guard raw else { continue }
             result.expect(!timing.path.hasPrefix("error:"), "\(label): \(timing.path)")

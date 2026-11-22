@@ -16,7 +16,11 @@ struct VICGamutTest: HWTest {
     let subsystem = Subsystem.images
     var timeout: TimeInterval { 30 }
 
-    static let keys = ["ITU_R_709_2>P3_D65": "709_p3", "ITU_R_709_2>ITU_R_2020": "709_2020", "P3_D65>ITU_R_2020": "p3_2020"]
+    static let keys = [
+        "ITU_R_709_2>P3_D65": "709_p3",
+        "ITU_R_709_2>ITU_R_2020": "709_2020",
+        "P3_D65>ITU_R_2020": "p3_2020",
+    ]
 
     func run(_ context: TestContext) async throws -> Outcome {
         guard case .success(let scaler) = ScalerClient.open() else { return .fail("no IOSurfaceAccelerator client") }
@@ -29,7 +33,10 @@ struct VICGamutTest: HWTest {
                 metrics.set("worst_hw_" + key, g.worst)
                 metrics.set("alpha_" + key, g.alpha)
                 if g.worst > 1 { metrics.set("worst3_" + key, g.worstSamples) }
-                checks.append(("\(key): status \(g.status) worst \(g.worst) alpha \(g.alpha)", g.status == 0 && g.worst <= 1 && g.alpha == 255))
+                checks.append((
+                    "\(key): status \(g.status) worst \(g.worst) alpha \(g.alpha)",
+                    g.status == 0 && g.worst <= 1 && g.alpha == 255
+                ))
             }
             let (status, worst) = try VICColour.copy(scaler, from: [:], to: [:])
             metrics.set("status_untagged", Int(status))
@@ -74,19 +81,27 @@ struct VICTagsTest: HWTest {
             let (s709, red709, green709) = try VICColour.ycbcr(scaler, VICColour.matrixTag("ITU_R_709_2"))
             metrics.set("tag_709_red", red709)
             metrics.set("tag_709_green", green709)
-            checks.append(("tag_709: status \(s709) red \(red709) green \(green709)", s709 == 0 && red709 >= 254 && green709 <= 1))
+            checks.append((
+                "tag_709: status \(s709) red \(red709) green \(green709)",
+                s709 == 0 && red709 >= 254 && green709 <= 1
+            ))
             let (sNone, redNone, _) = try VICColour.ycbcr(scaler, [:])
             metrics.set("tag_none_red", redNone)
-            checks.append(("tag_none: status \(sNone) red \(redNone)", sNone == 0 && (233...234).contains(redNone)))
+            checks.append(("tag_none: status \(sNone) red \(redNone)", sNone == 0 && (233 ... 234).contains(redNone)))
             let (chroma, _, _) = try VICColour.ycbcr(scaler, ["IOSurfaceChromaLocationTopField": "TopLeft"])
             metrics.set("status_chroma", Int(chroma))
             checks.append(("status_chroma=\(chroma)", chroma == 0))
             let (mixed, _, _) = try VICColour.ycbcr(
-                scaler, ["IOSurfaceChromaLocationTopField": "Left", "IOSurfaceChromaLocationBottomField": "Center"])
+                scaler, ["IOSurfaceChromaLocationTopField": "Left", "IOSurfaceChromaLocationBottomField": "Center"]
+            )
             metrics.set("status_chroma_mixed", "0x" + String(UInt32(bitPattern: mixed), radix: 16))
             for (key, primaries) in [("smptec", "SMPTE_C"), ("ebu", "EBU_3213")] {
                 let (status, worst) = try VICColour.copy(
-                    scaler, from: VICColour.tags(primaries, VICColour.tf709), to: VICColour.tags("ITU_R_709_2", VICColour.tf709))
+                    scaler, from: VICColour.tags(primaries, VICColour.tf709), to: VICColour.tags(
+                        "ITU_R_709_2",
+                        VICColour.tf709
+                    )
+                )
                 metrics.set("status_\(key)_copy", Int(status))
                 metrics.set("worst_\(key)_copy", worst)
                 checks.append(("\(key)_copy: status \(status) worst \(worst)", status == 0 && worst == 0))

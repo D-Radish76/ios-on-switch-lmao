@@ -40,7 +40,8 @@ struct Depth16ClearTest: HWTest {
                 b.copy(
                     from: depth, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 1, y: 1, z: 0),
                     sourceSize: MTLSize(width: 1, height: 1, depth: 1), to: out, destinationOffset: 2 * i,
-                    destinationBytesPerRow: 2, destinationBytesPerImage: 2)
+                    destinationBytesPerRow: 2, destinationBytesPerImage: 2
+                )
                 b.endEncoding()
             }
             paths.insert(timing.path)

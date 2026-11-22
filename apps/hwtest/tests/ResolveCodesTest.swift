@@ -25,7 +25,7 @@ struct ResolveCodesTest: HWTest {
         /// The largest snorm code; 0 for BGR10_XR's codes 0...1023, value (c - 384) / 510
         let snorm: Int
 
-        var range: ClosedRange<Int> { snorm > 0 ? -snorm...snorm : 0...1023 }
+        var range: ClosedRange<Int> { snorm > 0 ? -snorm ... snorm : 0 ... 1023 }
         var bytesPerTexel: Int { snorm == 0 ? 4 : channels * (snorm == 127 ? 1 : 2) }
         var ties: [(Int, Int)] {
             snorm > 0
@@ -102,22 +102,22 @@ struct ResolveCodesTest: HWTest {
         }
         let patterns = [[0, 0, 1, 1], [-1, 1, 1, 1], [2, 0, 0, 0], [3, -1, 0, 0], [-2, 2, 1, 1]]
         var codes = [Int](repeating: 0, count: samples * texels * 4)
-        for texel in 0..<texels {
-            for channel in 0..<f.channels {
+        for texel in 0 ..< texels {
+            for channel in 0 ..< f.channels {
                 var drawn: [Int]
                 if texel < f.ties.count {
                     let (a, b) = f.ties[texel]
                     drawn = samples == 2 ? [a, b] : [a, a, b, b]
                 } else if texel < tieTexels && samples == 2 {
-                    let c = pick(f.range.lowerBound...f.range.upperBound - 1)
-                    drawn = pick(0...1) == 0 ? [c, c + 1] : [c + 1, c]
+                    let c = pick(f.range.lowerBound ... f.range.upperBound - 1)
+                    drawn = pick(0 ... 1) == 0 ? [c, c + 1] : [c + 1, c]
                 } else if texel < tieTexels {
-                    let k = pick(f.range.lowerBound + 2...f.range.upperBound - 3)
-                    let pattern = patterns[pick(0...patterns.count - 1)]
-                    let turn = pick(0...3)
-                    drawn = (0..<4).map { k + pattern[($0 + turn) % 4] }
+                    let k = pick(f.range.lowerBound + 2 ... f.range.upperBound - 3)
+                    let pattern = patterns[pick(0 ... patterns.count - 1)]
+                    let turn = pick(0 ... 3)
+                    drawn = (0 ..< 4).map { k + pattern[($0 + turn) % 4] }
                 } else {
-                    drawn = (0..<samples).map { _ in pick(f.range) }
+                    drawn = (0 ..< samples).map { _ in pick(f.range) }
                 }
                 for (sample, code) in drawn.enumerated() { codes[(sample * texels + texel) * 4 + channel] = code }
             }
@@ -129,9 +129,10 @@ struct ResolveCodesTest: HWTest {
         let texels = side * side
         let codes = codes(f, samples: samples)
         let values = try gpu.buffer(
-            (0..<samples * texels).map { at in
-                SIMD4<Float>((0..<4).map { $0 < f.channels ? f.value(codes[at * 4 + $0]) : 0 })
-            })
+            (0 ..< samples * texels).map { at in
+                SIMD4<Float>((0 ..< 4).map { $0 < f.channels ? f.value(codes[at * 4 + $0]) : 0 })
+            }
+        )
         let state = try gpu.render(fragment: "masked_texel_values", format: f.format, samples: samples)
         let drawn = try gpu.texture(f.format, side, side, usage: [.renderTarget], samples: samples)
         let resolved = try gpu.texture(f.format, side, side)
@@ -145,7 +146,7 @@ struct ResolveCodesTest: HWTest {
             encoder.setRenderPipelineState(state)
             var corners = GPU.fullScreen
             encoder.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
-            for sample in 0..<samples {
+            for sample in 0 ..< samples {
                 var at = SIMD2<UInt32>(UInt32(side), UInt32(sample))
                 encoder.setFragmentBuffer(values, offset: sample * texels * 16, index: 0)
                 encoder.setFragmentBytes(&at, length: 8, index: 1)
@@ -155,10 +156,10 @@ struct ResolveCodesTest: HWTest {
         }
         let bytes = try await gpu.read(resolved, bytesPerPixel: f.bytesPerTexel)
         var result = Result()
-        for texel in 0..<texels {
+        for texel in 0 ..< texels {
             var offs: [Int] = []
-            for channel in 0..<f.channels {
-                let sum = (0..<samples).reduce(0) { $0 + codes[($1 * texels + texel) * 4 + channel] }
+            for channel in 0 ..< f.channels {
+                let sum = (0 ..< samples).reduce(0) { $0 + codes[($1 * texels + texel) * 4 + channel] }
                 let want = Int((Double(sum) / Double(samples) + 0.5).rounded(.down))
                 let off = f.code(bytes, texel: texel, channel: channel) - want
                 result.off += off == 0 ? 0 : 1

@@ -30,7 +30,7 @@ struct GridSlicesScene: GPUScene {
             let words = out.contents().assumingMemoryBound(to: UInt32.self)
             var wrong = 0
             var first = -1
-            for i in 0..<count where words[i] != UInt32(i + 1) {
+            for i in 0 ..< count where words[i] != UInt32(i + 1) {
                 wrong += 1
                 if first < 0 { first = i }
             }

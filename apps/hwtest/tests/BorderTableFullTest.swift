@@ -67,7 +67,7 @@ struct BorderTableFullTest: HWTest {
         var checks: [(String, Bool)] = []
 
         var held: [MTLSamplerState] = []
-        for i in 0..<4096 {
+        for i in 0 ..< 4096 {
             guard let s = gpu.device.makeSamplerState(descriptor: SamplerTableTest.distinct(i)) else { break }
             held.append(s)
         }
@@ -86,18 +86,22 @@ struct BorderTableFullTest: HWTest {
             (
                 "the draw failed MTLCommandBufferErrorOutOfMemory",
                 failed.status == .error && code == Int(MTLCommandBufferError.Code.outOfMemory.rawValue)
-            ))
+            )
+        )
         checks.append(("its path is error:call.sampler", failedPath == "error:call.sampler"))
 
         held.removeAll()
         let freed = try draw(gpu, state, red, sampler, into: target)
         let freedPath = GM20BFacade.path(of: freed)
         metrics.set("freed_path", freedPath)
-        checks.append(("with headers free the draw completes on raw", freed.status == .completed && freedPath == "gm20b"))
+        checks.append((
+            "with headers free the draw completes on raw",
+            freed.status == .completed && freedPath == "gm20b"
+        ))
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        let wrong = (0..<144).filter { at in
-            let inside = (4..<8).contains(at % 12) && (4..<8).contains(at / 12)
-            return Array(pixels[4 * at..<4 * at + 4]) != (inside ? [Self.texel, 0, 0, 255] : [255, 0, 0, 255])
+        let wrong = (0 ..< 144).filter { at in
+            let inside = (4 ..< 8).contains(at % 12) && (4 ..< 8).contains(at / 12)
+            return Array(pixels[4 * at ..< 4 * at + 4]) != (inside ? [Self.texel, 0, 0, 255] : [255, 0, 0, 255])
         }.count
         metrics.set("freed_wrong", wrong)
         checks.append(("the texture and its border read Metal's texels", wrong == 0))
@@ -105,7 +109,9 @@ struct BorderTableFullTest: HWTest {
         metrics.merge(PathTally.counterMetrics(before: before, after: counted))
         checks.append(
             FailedCounts.judged(
-                before: before, after: counted, expecting: ["call.sampler": 1], own: gpu.paths, &metrics))
+                before: before, after: counted, expecting: ["call.sampler": 1], own: gpu.paths, &metrics
+            )
+        )
         return .judged(checks, metrics, proof: gpu.proof)
     }
 }

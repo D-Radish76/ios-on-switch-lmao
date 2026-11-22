@@ -344,8 +344,14 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
     out.output = outputOf(*format, lumaFirst);
     out.addressMap = addressMapOf(*format);
     out.image = imageFormat(out.output);
-    out.lumaFormat = words ? 90 : format->packed ? 53 : bytes == 1 ? 10 : 20;    // RGB10A2Unorm, R32Uint, R8Unorm, R16Unorm
-    out.chromaFormat = words ? 90 : format->packed ? 53 : bytes == 1 ? 30 : 60;  // RGB10A2Unorm, R32Uint, RG8Unorm, RG16Unorm
+    out.lumaFormat = words            ? 90
+                     : format->packed ? 53
+                     : bytes == 1     ? 10
+                                      : 20;  // RGB10A2Unorm, R32Uint, R8Unorm, R16Unorm
+    out.chromaFormat = words            ? 90
+                       : format->packed ? 53
+                       : bytes == 1     ? 30
+                                        : 60;  // RGB10A2Unorm, R32Uint, RG8Unorm, RG16Unorm
     out.luma = luma;
     out.lumaPitch = lumaPitch;
     if (!onePlane && planeStoreStride(f.pitch[f.plane]) != lumaPitch)
@@ -380,8 +386,8 @@ const char *planYcbcr(const YcbcrFacts &f, YcbcrPlan &out)
                                            : ycbcrConvertedShape({format->bits, format->reads == Srgb, surface->full,
                                                                   YcbcrMatrix(matrix), across, down});
         if (srgbStored)
-            out.store = format->sub == Sub444 ? p3SrgbShape(format->bits)
-                                              : p3SrgbCodesShape(format->bits, across, down);
+            out.store =
+                format->sub == Sub444 ? p3SrgbShape(format->bits) : p3SrgbCodesShape(format->bits, across, down);
         if (format->packed)
             out.store = ycbcrPackedShape(out.store);
         out.store.words = words;

@@ -13,8 +13,11 @@
 load("//bazel/lint:defs.bzl", "lint_files")
 load("//bazel/testing:defs.bzl", "host_library", "host_shims", "host_test")
 
-# libdrm/ is NVIDIA's (MIT), kept as upstream has it.
-lint_files(exclude = ["libdrm/**"])
+# libdrm/ is NVIDIA's (MIT), kept as upstream has it; vic_color_reference.h is the lattice the colour probe wrote.
+lint_files(exclude = [
+    "libdrm/**",
+    "vic_color_reference.h",
+])
 
 exports_files([
     "TegraVICProbe.h",

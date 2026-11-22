@@ -39,12 +39,16 @@ public final class GPUConnection {
 
     public init?() {
         guard let iokit = dlopen("/System/Library/Frameworks/IOKit.framework/IOKit", RTLD_NOW),
-            let matching = dlsym(iokit, "IOServiceMatching"), let service = dlsym(iokit, "IOServiceGetMatchingService"),
-            let open = dlsym(iokit, "IOServiceOpen"), let release = dlsym(iokit, "IOObjectRelease"),
-            let close = dlsym(iokit, "IOServiceClose"), let call = dlsym(iokit, "IOConnectCallStructMethod")
+              let matching = dlsym(iokit, "IOServiceMatching"), let service = dlsym(
+                  iokit,
+                  "IOServiceGetMatchingService"
+              ),
+              let open = dlsym(iokit, "IOServiceOpen"), let release = dlsym(iokit, "IOObjectRelease"),
+              let close = dlsym(iokit, "IOServiceClose"), let call = dlsym(iokit, "IOConnectCallStructMethod")
         else { return nil }
         let accelerator = unsafeBitCast(service, to: Service.self)(
-            0, unsafeBitCast(matching, to: Matching.self)("IOAcceleratorES"))
+            0, unsafeBitCast(matching, to: Matching.self)("IOAcceleratorES")
+        )
         guard accelerator != 0 else { return nil }
         var connection: mach_port_t = 0
         let kr = unsafeBitCast(open, to: Open.self)(accelerator, mach_task_self_, Self.openType, &connection)
@@ -54,7 +58,7 @@ public final class GPUConnection {
         callStruct = unsafeBitCast(call, to: Call.self)
         self.close = unsafeBitCast(close, to: Release.self)
         let probe = Self.words([Self.tunnelMagic, Self.tunnelProbe])
-        tunnel = (0..<256).map(UInt32.init).first { send($0, probe, 0).0 == KERN_SUCCESS }
+        tunnel = (0 ..< 256).map(UInt32.init).first { send($0, probe, 0).0 == KERN_SUCCESS }
     }
 
     deinit { _ = close(connection) }
@@ -74,7 +78,8 @@ public final class GPUConnection {
         let address = mapping.address
         _ = call(
             Self.unmapMethod, Self.words([mapping.token, 0, UInt32(address & 0xffff_ffff), UInt32(address >> 32)]),
-            outputSize: 0)
+            outputSize: 0
+        )
     }
 
     public func call(_ method: UInt32, _ input: [UInt8], outputSize: Int) -> (kern_return_t, [UInt8]) {

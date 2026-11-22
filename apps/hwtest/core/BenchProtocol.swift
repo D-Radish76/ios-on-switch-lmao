@@ -113,7 +113,7 @@ public enum BenchProtocol {
 
     public static func validName(_ name: String) -> Bool {
         guard let first = name.unicodeScalars.first, name.unicodeScalars.count <= 64 else { return false }
-        let lower = { (c: Unicode.Scalar) in ("a"..."z").contains(c) || ("0"..."9").contains(c) }
+        let lower = { (c: Unicode.Scalar) in ("a" ... "z").contains(c) || ("0" ... "9").contains(c) }
         return lower(first) && name.unicodeScalars.allSatisfy { lower($0) || $0 == "_" || $0 == "." || $0 == "-" }
     }
 }
@@ -266,7 +266,7 @@ public struct BenchBatch: Sendable {
         guard let name = top["batch"] as? String, BenchProtocol.validName(name) else {
             throw BenchInvalid("batch name")
         }
-        guard let list = top["experiments"] as? [Any], (1...BenchProtocol.maxExperiments).contains(list.count) else {
+        guard let list = top["experiments"] as? [Any], (1 ... BenchProtocol.maxExperiments).contains(list.count) else {
             throw BenchInvalid("1...\(BenchProtocol.maxExperiments) experiments a batch")
         }
         var seen = Set<String>()

@@ -36,34 +36,38 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
     static let targets = [
         Target(
             format: 520, fourcc: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, matrix: "P3_D65", tenBit: false,
-            down: true, luma: luma8, chromaEven: (77, 72), chromaOdd: (77, 72), cleared: (17, 171, 184)),
+            down: true, luma: luma8, chromaEven: (77, 72), chromaOdd: (77, 72), cleared: (17, 171, 184)
+        ),
         Target(
             format: 522, fourcc: kCVPixelFormatType_422YpCbCr8BiPlanarFullRange, matrix: "DCI_P3", tenBit: false,
-            down: false, luma: luma8, chromaEven: (130, 24), chromaOdd: (24, 119), cleared: (17, 171, 184)),
+            down: false, luma: luma8, chromaEven: (130, 24), chromaOdd: (24, 119), cleared: (17, 171, 184)
+        ),
         Target(
             format: 525, fourcc: kCVPixelFormatType_420YpCbCr10BiPlanarVideoRange, matrix: "P3_D65", tenBit: true,
-            down: true, luma: luma10, chromaEven: (349, 224), chromaOdd: (349, 224), cleared: (728, 438, 564)),
+            down: true, luma: luma10, chromaEven: (349, 224), chromaOdd: (349, 224), cleared: (728, 438, 564)
+        ),
         Target(
             format: 526, fourcc: kCVPixelFormatType_422YpCbCr10BiPlanarFullRange, matrix: "DCI_P3", tenBit: true,
-            down: false, luma: luma10, chromaEven: (644, 55), chromaOdd: (55, 394), cleared: (728, 438, 564)),
+            down: false, luma: luma10, chromaEven: (644, 55), chromaOdd: (55, 394), cleared: (728, 438, 564)
+        ),
     ]
     static let width = 64, height = 32
     static let clear = MTLClearColor(red: 0.25, green: 0.30066001415252686, blue: 0.6, alpha: 1)
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct P3Out { float4 position [[position]]; };
-        vertex P3Out p3_store_vertex(uint vid [[vertex_id]], constant float4 *corners [[buffer(0)]]) {
-            return {corners[vid]};
-        }
-        fragment float4 p3_store_pattern(P3Out in [[stage_in]]) {
-            const float4 colours[4] = {float4(1.0, 0.5, 0.25, 1), float4(0.0, 1.0, 0.75, 1), float4(0.5, 0.0, 1.0, 1),
-                                       float4(0.25, 0.75, 0.0, 1)};
-            const uint2 q = uint2(in.position.xy) & 1;
-            return colours[q.y * 2 + q.x];
-        }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct P3Out { float4 position [[position]]; };
+    vertex P3Out p3_store_vertex(uint vid [[vertex_id]], constant float4 *corners [[buffer(0)]]) {
+        return {corners[vid]};
+    }
+    fragment float4 p3_store_pattern(P3Out in [[stage_in]]) {
+        const float4 colours[4] = {float4(1.0, 0.5, 0.25, 1), float4(0.0, 1.0, 0.75, 1), float4(0.5, 0.0, 1.0, 1),
+                                   float4(0.25, 0.75, 0.0, 1)};
+        const uint2 q = uint2(in.position.xy) & 1;
+        return colours[q.y * 2 + q.x];
+    }
+    """
 
     struct Tally {
         var codes = 0
@@ -89,12 +93,13 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
             let attributes =
                 [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
             guard CVPixelBufferCreate(nil, w, h, t.fourcc, attributes, &made) == kCVReturnSuccess, let buffer = made,
-                let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-                let format = MTLPixelFormat(rawValue: t.format)
+                  let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+                  let format = MTLPixelFormat(rawValue: t.format)
             else { throw TestFailure("no \(t.format) surface") }
             IOSurfaceSetValue(surface, "IOSurfaceYCbCrMatrix" as CFString, t.matrix as CFString)
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: format, width: w, height: h, mipmapped: false)
+                pixelFormat: format, width: w, height: h, mipmapped: false
+            )
             descriptor.usage = [.renderTarget, .shaderRead]
             guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
                 throw TestFailure("no \(t.format) texture")
@@ -106,7 +111,8 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
                     d.fragmentFunction = library.makeFunction(name: "p3_store_pattern")
                     d.colorAttachments[0].pixelFormat = format
                     return d
-                }())
+                }()
+            )
             for drawn in [true, false] {
                 tally.paths.append(
                     try await gpu.run(tolerateError: true) { commands in
@@ -120,11 +126,13 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
                             encoder.setRenderPipelineState(state)
                             var corners = GPU.fullScreen
                             encoder.setVertexBytes(
-                                &corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
+                                &corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0
+                            )
                             encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                         }
                         encoder.endEncoding()
-                    }.path)
+                    }.path
+                )
                 compare(buffer, t, drawn: drawn, &tally)
             }
         }
@@ -137,21 +145,21 @@ struct P3YcbcrStoreSubsampledTest: HWTest {
         func code(_ plane: Int, _ x: Int, _ y: Int) -> Int {
             let row =
                 CVPixelBufferGetBaseAddressOfPlane(buffer, plane)!
-                + y * CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
+                    + y * CVPixelBufferGetBytesPerRowOfPlane(buffer, plane)
             let bytes = row.assumingMemoryBound(to: UInt8.self)
             if !t.tenBit { return Int(bytes[x]) }
             let word = Int(bytes[2 * x]) | Int(bytes[2 * x + 1]) << 8
             return word & 63 == 0 ? word >> 6 : -word
         }
-        for y in 0..<height {
-            for x in 0..<width {
+        for y in 0 ..< height {
+            for x in 0 ..< width {
                 let want = drawn ? t.luma[(y & 1) * 2 + (x & 1)] : t.cleared.0
                 tally.add(t.format, 0, x, y, got: code(0, x, y), want: want)
             }
         }
-        for y in 0..<(t.down ? height / 2 : height) {
+        for y in 0 ..< (t.down ? height / 2 : height) {
             let pair = drawn ? (y & 1 == 0 ? t.chromaEven : t.chromaOdd) : (t.cleared.1, t.cleared.2)
-            for x in 0..<width / 2 {
+            for x in 0 ..< width / 2 {
                 tally.add(t.format, 1, 2 * x, y, got: code(1, 2 * x, y), want: pair.0)
                 tally.add(t.format, 1, 2 * x + 1, y, got: code(1, 2 * x + 1, y), want: pair.1)
             }

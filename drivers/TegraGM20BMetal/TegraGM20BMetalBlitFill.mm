@@ -65,8 +65,25 @@ void fillUnit(SwitchMetalTexture *t, const uint8_t packed[16], uint32_t size, gm
 bool integerFormat(uint32_t format)
 {
     switch (format) {
-    case 13: case 14: case 23: case 24: case 33: case 34: case 53: case 54: case 63: case 64:
-    case 73: case 74: case 91: case 103: case 104: case 113: case 114: case 123: case 124:
+    case 13:
+    case 14:
+    case 23:
+    case 24:
+    case 33:
+    case 34:
+    case 53:
+    case 54:
+    case 63:
+    case 64:
+    case 73:
+    case 74:
+    case 91:
+    case 103:
+    case 104:
+    case 113:
+    case 114:
+    case 123:
+    case 124:
         return true;
     default:
         return false;

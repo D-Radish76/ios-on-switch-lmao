@@ -60,7 +60,7 @@ struct YcbcrNoRenderUsageTest: HWTest {
     static func planes(_ buffer: CVPixelBuffer) -> [UInt8] {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
-        return (0..<CVPixelBufferGetPlaneCount(buffer)).flatMap { plane -> [UInt8] in
+        return (0 ..< CVPixelBufferGetPlaneCount(buffer)).flatMap { plane -> [UInt8] in
             guard let base = CVPixelBufferGetBaseAddressOfPlane(buffer, plane) else { return [] }
             let count = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane) * CVPixelBufferGetHeightOfPlane(buffer, plane)
             return [UInt8](UnsafeRawBufferPointer(start: base, count: count))
@@ -70,12 +70,13 @@ struct YcbcrNoRenderUsageTest: HWTest {
     static func cleared(_ gpu: GPU, _ format: UInt, _ fourcc: OSType, _ usage: MTLTextureUsage) async throws -> [UInt8]
     {
         guard let buffer = YcbcrCornerTest.pixelBuffer(side, side, fourcc),
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
-            let pixelFormat = MTLPixelFormat(rawValue: format)
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue(),
+              let pixelFormat = MTLPixelFormat(rawValue: format)
         else { throw TestFailure("no \(format) surface") }
         YcbcrTargetTest.scribble(buffer, seed: 0)
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: pixelFormat, width: side, height: side, mipmapped: false)
+            pixelFormat: pixelFormat, width: side, height: side, mipmapped: false
+        )
         d.usage = usage
         guard let texture = gpu.device.makeTexture(descriptor: d, iosurface: surface, plane: 0) else {
             throw TestFailure("no \(format) texture of usage \(usage.rawValue)")

@@ -19,7 +19,8 @@ extension ZcullTest {
         let depth = try gpu.texture(.depth32Float, w, h, usage: [.renderTarget], storage: .memoryless)
         let near = try gpu.render(fragment: "exact_fragment", format: target.pixelFormat, depth: .depth32Float)
         let far = try gpu.render(
-            fragment: "zcull_side_effect_fragment", format: target.pixelFormat, depth: .depth32Float)
+            fragment: "zcull_side_effect_fragment", format: target.pixelFormat, depth: .depth32Float
+        )
         let d = MTLDepthStencilDescriptor()
         d.depthCompareFunction = .less
         d.isDepthWriteEnabled = true
@@ -46,7 +47,8 @@ extension ZcullTest {
                 encoder.setFragmentBuffer(count, offset: 0, index: 1)
                 GPU.draw(encoder, corners: GPU.pixelQuad(0, 0, w, h, width: w, height: h, z: 0.75), color: Self.green)
                 encoder.endEncoding()
-            }.path)
+            }.path
+        )
         let after = GM20BFacade.counters(of: gpu.device)
         let delta = { (key: String) in (after[key] ?? 0) - (before[key] ?? 0) }
         let counted = Int(count.contents().load(as: UInt32.self))

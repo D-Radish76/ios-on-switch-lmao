@@ -17,26 +17,26 @@ struct IcbComputeFormsTest: HWTest {
     let subsystem = Subsystem.metal
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct IcbArgs { texture2d<uint> t; device const uint *b; };
-        kernel void icb_handle_table(constant IcbArgs &a [[buffer(0)]], device uint *out [[buffer(1)]]) {
-            out[0] = a.t.read(uint2(1, 2)).x + a.b[3];
-        }
-        kernel void icb_root_slots(device uint *x [[buffer(1)]], device uint *y [[buffer(2)]],
-                                   device uint *out [[buffer(3)]], uint i [[thread_position_in_grid]]) {
-            device uint *p = i ? y : x;
-            out[i] = p[i];
-        }
-        kernel void icb_binds(\((0..<24).map { "device const uint *b\($0) [[buffer(\($0))]]," }.joined(separator: " "))
-                              device uint *out [[buffer(24)]]) {
-            out[0] = \((0..<24).map { "b\($0)[0]" }.joined(separator: " + "));
-        }
-        kernel void icb_residual(device const uint *b [[buffer(1)]], device uint *out [[buffer(2)]]) {
-            out[0] = b[0];
-            out[1] = b[1];
-        }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    struct IcbArgs { texture2d<uint> t; device const uint *b; };
+    kernel void icb_handle_table(constant IcbArgs &a [[buffer(0)]], device uint *out [[buffer(1)]]) {
+        out[0] = a.t.read(uint2(1, 2)).x + a.b[3];
+    }
+    kernel void icb_root_slots(device uint *x [[buffer(1)]], device uint *y [[buffer(2)]],
+                               device uint *out [[buffer(3)]], uint i [[thread_position_in_grid]]) {
+        device uint *p = i ? y : x;
+        out[i] = p[i];
+    }
+    kernel void icb_binds(\((0 ..< 24).map { "device const uint *b\($0) [[buffer(\($0))]]," }.joined(separator: " "))
+                          device uint *out [[buffer(24)]]) {
+        out[0] = \((0 ..< 24).map { "b\($0)[0]" }.joined(separator: " + "));
+    }
+    kernel void icb_residual(device const uint *b [[buffer(1)]], device uint *out [[buffer(2)]]) {
+        out[0] = b[0];
+        out[1] = b[1];
+    }
+    """
 
     struct Ran {
         var words: [UInt32] = []
@@ -61,12 +61,13 @@ struct IcbComputeFormsTest: HWTest {
         command.setComputePipelineState(state)
         command.concurrentDispatchThreads(
             MTLSize(width: threads, height: 1, depth: 1),
-            threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1))
+            threadsPerThreadgroup: MTLSize(width: threads, height: 1, depth: 1)
+        )
         var ran = Ran()
         ran.path = try await gpu.run(tolerateError: true) { commands in
             let encoder = commands.makeComputeCommandEncoder()!
             bind(encoder, command)
-            encoder.executeCommandsInBuffer(icb, range: 0..<1)
+            encoder.executeCommandsInBuffer(icb, range: 0 ..< 1)
             encoder.endEncoding()
         }.path
         return ran
@@ -87,8 +88,9 @@ struct IcbComputeFormsTest: HWTest {
         let state = try await state(gpu, library, "icb_handle_table")
         let texture = try gpu.texture(.r32Uint, 4, 4, usage: [.shaderRead])
         try await gpu.upload(
-            (0..<16).flatMap { i in withUnsafeBytes(of: UInt32(16 * (i / 4) + i % 4)) { Array($0) } }, to: texture,
-            bytesPerRow: 16)
+            (0 ..< 16).flatMap { i in withUnsafeBytes(of: UInt32(16 * (i / 4) + i % 4)) { Array($0) } }, to: texture,
+            bytesPerRow: 16
+        )
         let table = try gpu.buffer([UInt32]([7, 8, 9, 10]))
         guard let function = library.makeFunction(name: "icb_handle_table") else { throw TestFailure("no kernel") }
         let encoder = function.makeArgumentEncoder(bufferIndex: 0)
@@ -127,7 +129,7 @@ struct IcbComputeFormsTest: HWTest {
 
     static func bindsOver20(_ gpu: GPU, _ library: MTLLibrary) async throws -> Ran {
         let state = try await state(gpu, library, "icb_binds")
-        let buffers = try (0..<24).map { try gpu.buffer([UInt32(1 + $0)]) }
+        let buffers = try (0 ..< 24).map { try gpu.buffer([UInt32(1 + $0)]) }
         let out = try gpu.buffer(64)
         var ran = try await execute(gpu, state, threads: 1, inherit: true) { compute, _ in
             for (index, buffer) in buffers.enumerated() { compute.setBuffer(buffer, offset: 0, index: index) }
@@ -139,7 +141,7 @@ struct IcbComputeFormsTest: HWTest {
 
     static func residual(_ gpu: GPU, _ library: MTLLibrary, offset: Int) async throws -> Ran {
         let state = try await state(gpu, library, "icb_residual")
-        let words16 = try gpu.buffer((0..<16).map { UInt32(100 + $0) })
+        let words16 = try gpu.buffer((0 ..< 16).map { UInt32(100 + $0) })
         let out = try gpu.buffer(64)
         var ran = try await execute(gpu, state, threads: 1, inherit: true) { compute, _ in
             compute.setBuffer(words16, offset: offset, index: 1)

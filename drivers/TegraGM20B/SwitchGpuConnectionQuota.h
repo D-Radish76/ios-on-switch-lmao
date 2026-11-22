@@ -49,5 +49,6 @@ private:
 		int pid;
 		uint32_t count;
 	} entries_[kTasks] = {};
+
 	uint32_t held_ = 0;
 };

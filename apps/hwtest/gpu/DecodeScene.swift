@@ -12,7 +12,8 @@ public enum DecodeScene {
         levels: Int = 1, layers: Int = 1, usage: MTLTextureUsage = [.shaderRead, .pixelFormatView]
     ) -> MTLTexture? {
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: width, height: height, mipmapped: false)
+            pixelFormat: format, width: width, height: height, mipmapped: false
+        )
         d.textureType = layers > 1 ? .type2DArray : .type2D
         d.arrayLength = layers
         d.mipmapLevelCount = levels
@@ -39,7 +40,8 @@ public enum DecodeScene {
             e.setBytes(&which, length: 8, index: 2)
             e.dispatchThreadgroups(
                 MTLSize(width: (at.count + 63) / 64, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             e.endEncoding()
         }
         let texels = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: at.count)
@@ -48,7 +50,7 @@ public enum DecodeScene {
 
     /// Every texel of a level of `width` x `height`, row by row
     public static func everyTexel(_ width: Int, _ height: Int) -> [SIMD2<UInt32>] {
-        (0..<height).flatMap { y in (0..<width).map { SIMD2(UInt32($0), UInt32(y)) } }
+        (0 ..< height).flatMap { y in (0 ..< width).map { SIMD2(UInt32($0), UInt32(y)) } }
     }
 
     /// A blit of `bytes`, placed at `offset` of a shared buffer, into a region of `texture` at the origin
@@ -64,7 +66,8 @@ public enum DecodeScene {
             blit.copy(
                 from: staging, sourceOffset: offset, sourceBytesPerRow: rowBytes, sourceBytesPerImage: 0,
                 sourceSize: MTLSize(width: width, height: height, depth: 1), to: texture, destinationSlice: slice,
-                destinationLevel: level, destinationOrigin: MTLOrigin(), options: options)
+                destinationLevel: level, destinationOrigin: MTLOrigin(), options: options
+            )
             blit.endEncoding()
         }.path
     }
@@ -80,7 +83,8 @@ public enum DecodeScene {
         }
         try await upload(
             gpu, set.bytes(rotated: rotated), offset: offset, rowBytes: set.blocks.count * 16, into: texture,
-            width: set.width, height: set.blockH)
+            width: set.width, height: set.blockH
+        )
         return texture
     }
 
@@ -88,7 +92,7 @@ public enum DecodeScene {
     public static func differing(_ a: [SIMD4<Float>], _ b: [SIMD4<Float>]) -> Int {
         guard a.count == b.count else { return max(a.count, b.count) }
         return zip(a, b).filter { pair in
-            (0..<4).contains { c in
+            (0 ..< 4).contains { c in
                 let x = pair.0[c], y = pair.1[c]
                 return !(x.isNaN && y.isNaN) && x.bitPattern != y.bitPattern
             }

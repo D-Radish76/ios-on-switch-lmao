@@ -25,7 +25,8 @@ struct SeparateDepthStencilTest: HWTest {
         let depth = try gpu.texture(.depth32Float, n, n, usage: [.renderTarget])
         let stencil = try gpu.texture(.stencil8, n, n, usage: [.renderTarget])
         let state = try gpu.render(
-            fragment: "solid_fragment", format: .rgba8Unorm, depth: .depth32Float, stencil: .stencil8)
+            fragment: "solid_fragment", format: .rgba8Unorm, depth: .depth32Float, stencil: .stencil8
+        )
         func depthStencil(
             _ compare: MTLCompareFunction, write: Bool, stencil: MTLCompareFunction, replace: Bool
         )
@@ -78,7 +79,8 @@ struct SeparateDepthStencilTest: HWTest {
                 e.setStencilReferenceValue(0x5A)
                 quad(e, x0: -1, x1: 0, z: 0.5, [0, 0, 1, 1])
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         paths.append(
             try await gpu.run { commands in
                 let e = commands.makeRenderCommandEncoder(descriptor: pass(true))!
@@ -88,22 +90,24 @@ struct SeparateDepthStencilTest: HWTest {
                 quad(e, x0: -1, x1: 1, z: 0.25, [1, 0, 0, 1])
                 quad(e, x0: -1, x1: 1, z: 0.75, [0, 1, 0, 1])
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         metrics.set("paths", paths.joined(separator: ","))
         if paths.contains(where: { $0 != "gm20b" }) { failures.append("a pass went off the driver") }
         let pixels = try await gpu.read(colour, bytesPerPixel: 4)
         var colourWrong = 0
-        for y in 0..<n {
-            for x in 0..<n {
+        for y in 0 ..< n {
+            for x in 0 ..< n {
                 let at = 4 * (x + n * y)
                 let want: [UInt8] = x < n / 2 ? [255, 0, 0, 255] : [0, 0, 0, 255]
-                colourWrong += Array(pixels[at..<at + 4]) == want ? 0 : 1
+                colourWrong += Array(pixels[at ..< at + 4]) == want ? 0 : 1
             }
         }
         metrics.set("colour_wrong", colourWrong)
         metrics.set(
             "colour_left_right",
-            "\(pixels[4 * 2]).\(pixels[4 * 2 + 1])/\(pixels[4 * (n - 2)]).\(pixels[4 * (n - 2) + 1])")
+            "\(pixels[4 * 2]).\(pixels[4 * 2 + 1])/\(pixels[4 * (n - 2)]).\(pixels[4 * (n - 2) + 1])"
+        )
         if colourWrong != 0 { failures.append("\(colourWrong) colour pixels wrong") }
         let depthBytes = try gpu.buffer(n * n * 4)
         let stencilBytes = try gpu.buffer(n * n)
@@ -112,11 +116,13 @@ struct SeparateDepthStencilTest: HWTest {
             b.copy(
                 from: depth, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                 sourceSize: MTLSize(width: n, height: n, depth: 1), to: depthBytes, destinationOffset: 0,
-                destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4)
+                destinationBytesPerRow: n * 4, destinationBytesPerImage: n * n * 4
+            )
             b.copy(
                 from: stencil, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                 sourceSize: MTLSize(width: n, height: n, depth: 1), to: stencilBytes, destinationOffset: 0,
-                destinationBytesPerRow: n, destinationBytesPerImage: n * n)
+                destinationBytesPerRow: n, destinationBytesPerImage: n * n
+            )
             b.endEncoding()
         }
         metrics.set("readback_path", readback.path)
@@ -124,8 +130,8 @@ struct SeparateDepthStencilTest: HWTest {
         let s = stencilBytes.contents().bindMemory(to: UInt8.self, capacity: n * n)
         var depthWrong = 0
         var stencilWrong = 0
-        for y in 0..<n {
-            for x in 0..<n {
+        for y in 0 ..< n {
+            for x in 0 ..< n {
                 let left = x < n / 2
                 depthWrong += d[x + n * y] == (left ? 0.5 : 1.0) ? 0 : 1
                 stencilWrong += s[x + n * y] == (left ? 0x5A : 0) ? 0 : 1

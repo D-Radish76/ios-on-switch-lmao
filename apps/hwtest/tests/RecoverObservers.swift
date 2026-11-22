@@ -44,7 +44,7 @@ final class RecoverBystander: @unchecked Sendable {
                     "id": "bystander", "kind": "twod", "readback": "full", "repeats": 4,
                     "target": ["format": "rgba8unorm", "width": side, "height": side],
                     "twod": twod,
-                ]
+                ],
             ],
         ]
         let data = try JSONSerialization.data(withJSONObject: batch)
@@ -72,8 +72,8 @@ final class RecoverBystander: @unchecked Sendable {
                         if self.firstError.isEmpty {
                             self.firstError =
                                 wrong
-                                ? "texels:not the fill"
-                                : "\(outcome.status):\(outcome.why) (kernel error \(outcome.lostError))"
+                                    ? "texels:not the fill"
+                                    : "\(outcome.status):\(outcome.why) (kernel error \(outcome.lostError))"
                         }
                     }
                     self.longestNs = max(self.longestNs, now - self.lastNs)
@@ -121,7 +121,7 @@ extension RecoverKillOneTest {
         guard let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder() else {
             throw TestFailure("no command buffer")
         }
-        blit.fill(buffer: scratch, range: 0..<256, value: 0)
+        blit.fill(buffer: scratch, range: 0 ..< 256, value: 0)
         blit.endEncoding()
         commands.commit()
         commands.waitUntilCompleted()

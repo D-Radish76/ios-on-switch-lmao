@@ -20,7 +20,8 @@ enum X1LayerPastCountProbe {
 
     static func array(_ gpu: GPU) throws -> MTLTexture {
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: false)
+            pixelFormat: .rgba8Unorm, width: side, height: side, mipmapped: false
+        )
         d.textureType = .type2DArray
         d.arrayLength = 4
         d.usage = [.renderTarget, .shaderRead]
@@ -30,22 +31,24 @@ enum X1LayerPastCountProbe {
     }
 
     static func holder(_ bytes: [UInt8], filled: UInt8) -> String {
-        let texels = Set(stride(from: 0, to: bytes.count, by: 4).map { Array(bytes[$0..<$0 + 4]) })
+        let texels = Set(stride(from: 0, to: bytes.count, by: 4).map { Array(bytes[$0 ..< $0 + 4]) })
         guard texels.count == 1, let texel = texels.first else { return "x" }
         if texel == [UInt8](repeating: filled, count: 4) { return "k" }
-        return (0..<4).first { colour($0) == texel }.map(String.init) ?? "x"
+        return (0 ..< 4).first { colour($0) == texel }.map(String.init) ?? "x"
     }
 
     /// Target 0 zeros, target 1 zeros in layers 0-1 and 0x5a bytes in layers 2-3
     static func targets(_ gpu: GPU) async throws -> [MTLTexture] {
         let targets = [try array(gpu), try array(gpu)]
         let image = side * side * 4
-        for slice in 0..<4 {
+        for slice in 0 ..< 4 {
             try await gpu.upload(
-                [UInt8](repeating: 0, count: image), to: targets[0], bytesPerRow: side * 4, slice: slice)
+                [UInt8](repeating: 0, count: image), to: targets[0], bytesPerRow: side * 4, slice: slice
+            )
             try await gpu.upload(
                 [UInt8](repeating: slice < 2 ? 0 : 0x5a, count: image), to: targets[1], bytesPerRow: side * 4,
-                slice: slice)
+                slice: slice
+            )
         }
         return targets
     }
@@ -70,7 +73,7 @@ enum X1LayerPastCountProbe {
             e.setRenderPipelineState(state)
             var corners = GPU.fullScreen
             e.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
-            for l in 0..<4 {
+            for l in 0 ..< 4 {
                 var first = UInt32(l)
                 e.setVertexBytes(&first, length: 4, index: 1)
                 e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
@@ -82,7 +85,7 @@ enum X1LayerPastCountProbe {
     static func holders(_ gpu: GPU, _ targets: [MTLTexture]) async throws -> [[String]] {
         var holders: [[String]] = [[], []]
         for (j, target) in targets.enumerated() {
-            for slice in 0..<4 {
+            for slice in 0 ..< 4 {
                 let filled: UInt8 = j == 1 && slice >= 2 ? 0x5a : 0
                 holders[j].append(holder(try await gpu.read(target, bytesPerPixel: 4, slice: slice), filled: filled))
             }
@@ -111,7 +114,8 @@ enum X1LayerPastCountProbe {
         let targets = try await targets(gpu)
         let drawn = try await GM20BMethods.draw(
             gpu, before: [(setColorTargetThirdDimension1, 2)], after: [(setColorTargetThirdDimension1, 4)],
-            encode(targets, try state(gpu)))
+            encode(targets, try state(gpu))
+        )
         return finding(try await holders(gpu, targets), path: drawn.path).emitting(drawn.emitted)
     }
 }

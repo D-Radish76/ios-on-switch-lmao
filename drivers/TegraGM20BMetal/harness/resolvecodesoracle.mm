@@ -81,9 +81,9 @@ std::vector<uint8_t> bytesOf(id<MTLTexture> t, NSUInteger bpp)
 struct Kind {
     int snormBits = 0;  // signed normalized: the channels' bits
     int channels = 4;
-    bool xr = false;    // an extended-range code format (code (c - 384) / 510)
+    bool xr = false;  // an extended-range code format (code (c - 384) / 510)
     bool halves = false;
-    float scale = 1;    // a plain float format's sample range
+    float scale = 1;  // a plain float format's sample range
     NSUInteger bpp = 4;
 };
 
@@ -270,7 +270,8 @@ int main(int argc, char **argv)
                         n++;
                     }
                 printf("best forms over %zu channels: code mean half up %zu exact, max |off| %d; linear mean (colour) "
-                       "%zu exact, max |off| %d\n", n, exactCode, maxCode, exactLinear, maxLinear);
+                       "%zu exact, max |off| %d\n",
+                       n, exactCode, maxCode, exactLinear, maxLinear);
             } else {
                 auto decode = [](uint32_t w, float out[3]) {
                     const int e = int(w >> 27) - 15 - 9;
@@ -301,8 +302,9 @@ int main(int argc, char **argv)
                     }
                     exact += same3;
                 }
-                printf("best form (decoded samples' mean): %zu of %zu texels within one mantissa code, max %.2f codes\n",
-                       exact, size_t(W * H), maxUlps);
+                printf(
+                    "best form (decoded samples' mean): %zu of %zu texels within one mantissa code, max %.2f codes\n",
+                    exact, size_t(W * H), maxUlps);
             }
         }
         if (!k.snormBits && !k.xr)
@@ -337,9 +339,9 @@ int main(int argc, char **argv)
                 const double exact = double(sum) / samples;
                 const int32_t up = int32_t(std::floor(exact + 0.5)), even = int32_t(std::nearbyint(exact)),
                               away = int32_t(std::round(exact)), zero = int32_t(std::trunc(exact));
-                const int32_t floatMean = k.snormBits ? int32_t(std::nearbyint(double(mean[t * 4 + c]) *
-                                                                                ((1 << (k.snormBits - 1)) - 1)))
-                                                      : int32_t(std::nearbyint(double(mean[t * 4 + c]) * 510 + 384));
+                const int32_t floatMean =
+                    k.snormBits ? int32_t(std::nearbyint(double(mean[t * 4 + c]) * ((1 << (k.snormBits - 1)) - 1)))
+                                : int32_t(std::nearbyint(double(mean[t * 4 + c]) * 510 + 384));
                 const int32_t g = codeOf(t, c);
                 rules[0] += g == up;
                 rules[1] += g == even;

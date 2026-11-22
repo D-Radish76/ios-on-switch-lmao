@@ -63,20 +63,20 @@ struct Bgra10XrResolveTest: HWTest {
         }
         let patterns = [[0, 0, 1, 1], [-1, 1, 1, 1], [2, 0, 0, 0], [3, -1, 0, 0], [-2, 2, 1, 1]]
         var codes = [[Int]](repeating: [0, 0, 0, 0], count: side * side * samples)
-        for texel in 0..<side * side {
-            for channel in 0..<4 {
-                let range = channel == 3 ? 384...894 : 0...1023
+        for texel in 0 ..< side * side {
+            for channel in 0 ..< 4 {
+                let range = channel == 3 ? 384 ... 894 : 0 ... 1023
                 var drawn: [Int]
                 if texel < tieTexels && samples == 2 {
-                    let c = pick(range.lowerBound...range.upperBound - 1)
-                    drawn = pick(0...1) == 0 ? [c, c + 1] : [c + 1, c]
+                    let c = pick(range.lowerBound ... range.upperBound - 1)
+                    drawn = pick(0 ... 1) == 0 ? [c, c + 1] : [c + 1, c]
                 } else if texel < tieTexels {
-                    let k = pick(range.lowerBound + 2...range.upperBound - 3)
-                    let pattern = patterns[pick(0...patterns.count - 1)]
-                    let turn = pick(0...3)
-                    drawn = (0..<4).map { k + pattern[($0 + turn) % 4] }
+                    let k = pick(range.lowerBound + 2 ... range.upperBound - 3)
+                    let pattern = patterns[pick(0 ... patterns.count - 1)]
+                    let turn = pick(0 ... 3)
+                    drawn = (0 ..< 4).map { k + pattern[($0 + turn) % 4] }
                 } else {
-                    drawn = (0..<samples).map { _ in pick(range) }
+                    drawn = (0 ..< samples).map { _ in pick(range) }
                 }
                 for (sample, code) in drawn.enumerated() { codes[texel * samples + sample][channel] = code }
             }
@@ -92,11 +92,11 @@ struct Bgra10XrResolveTest: HWTest {
         try await StandInResolveCases.drawSamples(gpu, values, into: drawn, resolve: one, store: .multisampleResolve)
         let bytes = try await gpu.read(one, bytesPerPixel: 8)
         var judged = Judged()
-        for texel in 0..<side * side {
-            for channel in 0..<4 {
+        for texel in 0 ..< side * side {
+            for channel in 0 ..< 4 {
                 let field = channel == 3 ? 3 : 2 - channel
                 let got = Int(bytes.loaded(as: UInt16.self, at: texel * 4 + field) >> 6)
-                let sum = (0..<samples).reduce(0) { $0 + codes[texel * samples + $1][channel] }
+                let sum = (0 ..< samples).reduce(0) { $0 + codes[texel * samples + $1][channel] }
                 let tiesDown = channel == 3 ? 1 : 0
                 let want = Int((Double(sum - tiesDown) / Double(samples) + 0.5).rounded(.down))
                 let off = abs(got - want)

@@ -28,15 +28,18 @@ public enum XrOverlapRows {
         Scene(
             key: "rows64_16", width: 32, height: 8,
             planes: [P(at: 0, 32, 8, bpe: 2, rows: 64), P(at: 1024, 16, 8, bpe: 1, rows: 16)], allocation: 2048,
-            words: (0, 64), alpha: (1024, 16)),
+            words: (0, 64), alpha: (1024, 16)
+        ),
         Scene(
             key: "rows64_32", width: 32, height: 8,
             planes: [P(at: 0, 32, 8, bpe: 2, rows: 64), P(at: 512, 32, 8, bpe: 1, rows: 32)], allocation: 1024,
-            words: (0, 64), alpha: (512, 32)),
+            words: (0, 64), alpha: (512, 32)
+        ),
         Scene(
             key: "planes32x4", width: 32, height: 8,
             planes: [P(at: 0, 32, 4, bpe: 4, rows: 128), P(at: 512, 32, 4, bpe: 1, rows: 32)], allocation: 1024,
-            words: (0, 128), alpha: (512, 32)),
+            words: (0, 128), alpha: (512, 32)
+        ),
     ]
 
     public static let written = [
@@ -44,7 +47,8 @@ public enum XrOverlapRows {
         Scene(
             key: "rows128_64", width: 64, height: 64,
             planes: [P(at: 0, 64, 64, bpe: 2, rows: 128), P(at: 16384, 64, 64, bpe: 1, rows: 64)], allocation: 32768,
-            words: (0, 128), alpha: (16384, 64)),
+            words: (0, 128), alpha: (16384, 64)
+        ),
     ]
 
     public struct Reading: Sendable {
@@ -70,7 +74,8 @@ public enum XrOverlapRows {
             let (x, y) = (i % s.width, i / s.width)
             return SurfaceReads.xr(
                 SurfaceReads.word(start, s.words.at + y * s.words.pitch + 4 * x),
-                alpha: Float(start[s.alpha.at + y * s.alpha.pitch + x]) / 255)
+                alpha: Float(start[s.alpha.at + y * s.alpha.pitch + x]) / 255
+            )
         }
     }
 
@@ -79,7 +84,7 @@ public enum XrOverlapRows {
     /// The rows reaching byte `a` of a plane whose rows of `row` bytes lie `pitch` apart, each with its byte's offset
     static func reaching(_ a: Int, pitch: Int, row: Int, rows: Int) -> [(row: Int, offset: Int)] {
         let last = min(a / pitch, rows - 1), first = a >= row ? (a - row) / pitch + 1 : 0
-        return first <= last ? (first...last).map { ($0, a - $0 * pitch) } : []
+        return first <= last ? (first ... last).map { ($0, a - $0 * pitch) } : []
     }
 
     /// Each word group and alpha byte of the planes' rows, with the rows that reach it: (where, the value each row
@@ -92,7 +97,7 @@ public enum XrOverlapRows {
             let stores = c.map { (word($0.offset / 4, $0.row), overlapOrder($0.offset / 4, $0.row)) }
             out.append((s.words.at + a, stores, true))
         }
-        for a in 0..<(s.alpha.pitch * (s.height - 1) + s.width) {
+        for a in 0 ..< (s.alpha.pitch * (s.height - 1) + s.width) {
             let c = reaching(a, pitch: s.alpha.pitch, row: s.width, rows: s.height)
             out.append((s.alpha.at + a, c.map { (UInt32($0.row), overlapOrder($0.offset, $0.row)) }, false))
         }
@@ -103,16 +108,18 @@ public enum XrOverlapRows {
 
     public static func observe(_ gpu: GPU, _ s: Scene) async throws -> Reading? {
         guard let surface = SurfaceReads.surface(
-            "b3a8", s.width, s.height, planes: s.planes, allocation: s.allocation, fill: { _ in blank })
+            "b3a8", s.width, s.height, planes: s.planes, allocation: s.allocation, fill: { _ in blank }
+        )
         else { throw TestFailure("no 'b3a8' for \(s.key)") }
         guard let texture = SurfaceReads.texture(
-            gpu, 550, s.width, s.height, over: surface, usage: [.shaderRead, .shaderWrite, .renderTarget])
+            gpu, 550, s.width, s.height, over: surface, usage: [.shaderRead, .shaderWrite, .renderTarget]
+        )
         else { return nil }
         let state = try gpu.render(fragment: "xr_overlap_rows_frag", format: texture.pixelFormat)
         let kernel = try gpu.compute("xr_overlap_rows_kernel")
         let spans = spans(s)
         var inside = Set<Int>()
-        for span in spans { for k in 0..<(span.word ? 4 : 1) { inside.insert(span.at + k) } }
+        for span in spans { for k in 0 ..< (span.word ? 4 : 1) { inside.insert(span.at + k) } }
         var reading = Reading()
         for arm in ["pass", "kernel", "clear"] {
             reset(surface)
@@ -123,7 +130,8 @@ public enum XrOverlapRows {
                     encoder.setTexture(texture, index: 0)
                     encoder.dispatchThreads(
                         MTLSize(width: s.width, height: s.height, depth: 1),
-                        threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                        threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+                    )
                     encoder.endEncoding()
                     return
                 }

@@ -24,13 +24,16 @@ struct NativeHeapBlockTest: HWTest {
         }
         let privateHeap = try heap(.private), sharedHeap = try heap(.shared)
         let mips = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .astc_4x4_ldr, width: 100, height: 60, mipmapped: true)
+            pixelFormat: .astc_4x4_ldr, width: 100, height: 60, mipmapped: true
+        )
         let layers = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .etc2_rgb8, width: 64, height: 64, mipmapped: false)
+            pixelFormat: .etc2_rgb8, width: 64, height: 64, mipmapped: false
+        )
         layers.textureType = .type2DArray
         layers.arrayLength = 3
         let single = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .astc_4x4_ldr, width: 64, height: 64, mipmapped: false)
+            pixelFormat: .astc_4x4_ldr, width: 64, height: 64, mipmapped: false
+        )
         mips.storageMode = .private
         layers.storageMode = .private
         single.storageMode = .shared

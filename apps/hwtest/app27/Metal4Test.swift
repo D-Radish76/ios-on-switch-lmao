@@ -39,7 +39,7 @@ struct Metal4Test: HWTest {
             return .fail("the Metal 4 family without \(missing.joined(separator: ", "))", metrics)
         }
         guard let queue = device.makeMTL4CommandQueue(), let allocator = device.makeCommandAllocator(),
-            let commands = device.makeCommandBuffer(), let event = device.makeSharedEvent()
+              let commands = device.makeCommandBuffer(), let event = device.makeSharedEvent()
         else { return .fail("an MTL4 queue, allocator, command buffer or event was nil", metrics) }
         commands.beginCommandBuffer(allocator: allocator)
         commands.endCommandBuffer()
@@ -57,7 +57,7 @@ struct Metal4Test: HWTest {
     /// The families base+1 ... base+count the device supports, as "1,2,3" ("-" for none). By raw value: iOS 27
     /// deprecates the Common names.
     static func families(_ device: MTLDevice, base: Int, count: Int) -> String {
-        let supported = (1...count).filter { MTLGPUFamily(rawValue: base + $0).map(device.supportsFamily) ?? false }
+        let supported = (1 ... count).filter { MTLGPUFamily(rawValue: base + $0).map(device.supportsFamily) ?? false }
         return supported.isEmpty ? "-" : supported.map(String.init).joined(separator: ",")
     }
 }

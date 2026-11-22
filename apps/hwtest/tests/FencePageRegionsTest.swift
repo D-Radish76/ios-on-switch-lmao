@@ -62,21 +62,23 @@ struct FencePageRegionsTest: HWTest {
         metrics.set("anchors_offset", offset)
         checks.append(("anchors_kr=\(GPUConnection.hex(anchorsKr)) not 0", anchorsKr == KERN_SUCCESS))
         checks.append(
-            ("anchors_offset=\(offset) not the mirror's \(Page.anchorsFirst)", offset == Page.anchorsFirst))
+            ("anchors_offset=\(offset) not the mirror's \(Page.anchorsFirst)", offset == Page.anchorsFirst)
+        )
         let token = GPUConnection.uint32(info, Page.infoFenceToken)
         guard let page = connection.map(token, bytes: Page.promisesFirst + 4 * Page.promiseWords) else {
             throw TestFailure("the fence page (token \(token)) did not map")
         }
         defer { connection.unmap(page) }
         let word = { (byte: Int) in page.base.load(fromByteOffset: byte, as: UInt32.self) }
-        let anchors = { (0..<Page.anchorsBytes / 4).map { word(Page.anchorsFirst + 4 * $0) } }
-        let promiseWords = { (0..<Page.promiseWords).map { word(Page.promisesFirst + 4 * $0) } }
+        let anchors = { (0 ..< Page.anchorsBytes / 4).map { word(Page.anchorsFirst + 4 * $0) } }
+        let promiseWords = { (0 ..< Page.promiseWords).map { word(Page.promisesFirst + 4 * $0) } }
         let published = word(Page.anchorsFirst)
         metrics.set("anchors_published", Int(published))
         checks.append(("anchors_published=\(published): not even the boot's anchor", published >= 1))
 
         let (channelKr, created) = connection.call(
-            Page.channelCreate, GPUConnection.words([Page.copyOnlyEngines, 0]), outputSize: Page.channelReplyBytes)
+            Page.channelCreate, GPUConnection.words([Page.copyOnlyEngines, 0]), outputSize: Page.channelReplyBytes
+        )
         guard channelKr == KERN_SUCCESS else {
             throw TestFailure("ChannelCreate refused: \(GPUConnection.hex(channelKr))")
         }
@@ -91,7 +93,7 @@ struct FencePageRegionsTest: HWTest {
             }
             withExtendedLifetime(surfaces) {}
         }
-        for _ in 0..<Self.surfaces {
+        for _ in 0 ..< Self.surfaces {
             let rowBytes = PromiseAnchors.side * 4
             let properties: [IOSurfacePropertyKey: Any] = [
                 .width: PromiseAnchors.side, .height: PromiseAnchors.side, .bytesPerElement: 4,
@@ -109,7 +111,7 @@ struct FencePageRegionsTest: HWTest {
         let ids = Set(made.filter { $0.0 == KERN_SUCCESS }.map(\.1).filter { $0 < UInt32(Page.promiseWords) })
         var changed = 0, refused = 0
         var stepped = [Bool](repeating: true, count: Page.promiseWords)
-        for round in 1...Self.rounds {
+        for round in 1 ... Self.rounds {
             for (kr, promise) in made where kr == KERN_SUCCESS {
                 if PromiseCancelPathTest.cancel(promise, connection) != KERN_SUCCESS { refused += 1 }
             }
@@ -133,13 +135,14 @@ struct FencePageRegionsTest: HWTest {
         checks.append(("promises_made=\(ids.count) not \(Self.surfaces), ids 0 to 31", ids.count == Self.surfaces))
         checks.append(("anchor_bytes_changed=\(changed) not 0", changed == 0))
         checks.append(
-            ("anchors_published_after=\(publishedAfter) not \(published)", publishedAfter == published))
+            ("anchors_published_after=\(publishedAfter) not \(published)", publishedAfter == published)
+        )
         checks.append(("promise_words_set=\(set) not \(Page.promiseWords)", set == Page.promiseWords))
     }
 
     static func bytesOff(_ a: UInt32, _ b: UInt32) -> Int {
         let x = a ^ b
-        return (0..<4).filter { (x >> (8 * UInt32($0))) & 0xff != 0 }.count
+        return (0 ..< 4).filter { (x >> (8 * UInt32($0))) & 0xff != 0 }.count
     }
 
     /// Part B's hold: this process's writer_promises path count across it (debug kernels, GPUPaths)

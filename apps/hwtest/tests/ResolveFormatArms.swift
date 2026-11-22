@@ -25,7 +25,8 @@ extension ResolveTwodTest {
             [2, 4].map { n in
                 FormatCell(
                     format: format, samples: n, exact: format.name == "rgba16f" && n == 2,
-                    pass: format.name != "rgb10a2")
+                    pass: format.name != "rgb10a2"
+                )
             }
         }
     }
@@ -46,10 +47,12 @@ extension ResolveTwodTest {
     ) async throws {
         let format = cell.format, size = format.bytesPerTexel
         let state = try gpu.render(
-            fragment: "resolve_twod_fragment", format: format.pixelFormat, samples: cell.samples)
+            fragment: "resolve_twod_fragment", format: format.pixelFormat, samples: cell.samples
+        )
         let stored = try await storedSamples(gpu, format, samples: cell.samples)
         let picked = try await resolved(
-            gpu, state, samples: cell.samples, format: format.pixelFormat, bytesPerTexel: size)
+            gpu, state, samples: cell.samples, format: format.pixelFormat, bytesPerTexel: size
+        )
         let (off, beyond) = Self.offMetal(format, picked.bytes, stored)
         let route = picked.twod > 0 ? "twod" : "pass"
         metrics.set(cell.name, "\(route):\(off == 0 ? "exact" : beyond == 0 ? "near" : "wrong"):\(off):\(beyond)")
@@ -57,7 +60,8 @@ extension ResolveTwodTest {
         if cell.pass {
             let pass = try await switched(facade, Self.drawSelector) {
                 try await resolved(
-                    gpu, state, samples: cell.samples, format: format.pixelFormat, bytesPerTexel: size)
+                    gpu, state, samples: cell.samples, format: format.pixelFormat, bytesPerTexel: size
+                )
             }
             let (passOff, passBeyond) = Self.offMetal(format, pass.bytes, stored)
             metrics.set("\(cell.name)_pass", "\(pass.path):\(passOff):\(passBeyond)")
@@ -70,7 +74,8 @@ extension ResolveTwodTest {
         if cell.exact && off > 0 { wrong.append("\(cell.name)_off_metal") }
         guard cell.exact else { return }
         let read = try await readInCommandBuffer(
-            gpu, state, samples: cell.samples, format: format.pixelFormat, bytesPerTexel: size)
+            gpu, state, samples: cell.samples, format: format.pixelFormat, bytesPerTexel: size
+        )
         let (readOff, _) = Self.offMetal(format, read.bytes, stored)
         let readRoute = read.twod > 0 ? "twod" : "pass"
         metrics.set("\(cell.name)_read", "\(readRoute):\(readOff)")
@@ -82,7 +87,7 @@ extension ResolveTwodTest {
     func storedSamples(_ gpu: GPU, _ format: X1Format, samples: Int) async throws -> [[UInt8]] {
         let state = try gpu.render(fragment: "resolve_twod_sample_fragment", format: format.pixelFormat)
         var out: [[UInt8]] = []
-        for s in 0..<samples {
+        for s in 0 ..< samples {
             let target = try gpu.texture(format.pixelFormat, Self.width, Self.height)
             _ = try await gpu.run { commands in
                 let pass = MTLRenderPassDescriptor()
@@ -111,7 +116,7 @@ extension ResolveTwodTest {
                 let t = y * width + x
                 let codes = format.codes(got, t), want = metalResolve(format, stored.map { format.codes($0, t) })
                 var differs = false
-                for c in 0..<want.count where codes[c] != want[c] {
+                for c in 0 ..< want.count where codes[c] != want[c] {
                     differs = true
                     if abs(Int64(codes[c]) - Int64(want[c])) > 1 { beyond += 1 }
                 }

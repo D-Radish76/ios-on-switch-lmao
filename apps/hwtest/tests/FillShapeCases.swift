@@ -39,7 +39,8 @@ enum FillShapeCases {
             let object = blit as AnyObject
             if let format, object.responds(to: fillAs) {
                 unsafeBitCast(object.method(for: fillAs), to: FillAs.self)(
-                    object, fillAs, texture, 0, slice, region, colour, format)
+                    object, fillAs, texture, 0, slice, region, colour, format
+                )
             } else if format == nil, object.responds(to: fill) {
                 unsafeBitCast(object.method(for: fill), to: Fill.self)(object, fill, texture, 0, slice, region, colour)
             } else {
@@ -51,7 +52,7 @@ enum FillShapeCases {
     }
 
     static func pattern(_ count: Int, seed: Int) -> [UInt8] {
-        (0..<count).map { UInt8(truncatingIfNeeded: $0 &* 37 &+ seed) }
+        (0 ..< count).map { UInt8(truncatingIfNeeded: $0 &* 37 &+ seed) }
     }
 
     /// A 2D texture's bytes after a fill of `region` against `texel` inside (a nil byte: one Metal leaves undefined) and
@@ -61,15 +62,15 @@ enum FillShapeCases {
     ) -> FillShapeResult {
         var result = FillShapeResult(path: path)
         let size = texel.count
-        for at in 0..<got.count / size {
+        for at in 0 ..< got.count / size {
             let (x, y) = (at % width, at / width)
             let inside =
                 x >= region.origin.x && x < region.origin.x + region.size.width && y >= region.origin.y
-                && y < region.origin.y + region.size.height
-            let bytes = Array(got[at * size..<(at + 1) * size])
+                    && y < region.origin.y + region.size.height
+            let bytes = Array(got[at * size ..< (at + 1) * size])
             if inside { result.insideWrong += zip(bytes, texel).filter { $1 != nil && $0 != $1 }.count }
             if !inside {
-                result.outsideChanged += zip(bytes, before[at * size..<(at + 1) * size]).filter { $0 != $1 }.count
+                result.outsideChanged += zip(bytes, before[at * size ..< (at + 1) * size]).filter { $0 != $1 }.count
             }
         }
         return result
@@ -105,19 +106,21 @@ enum FillShapeCases {
             blit.copy(
                 from: staging, sourceOffset: 0, sourceBytesPerRow: side * 4, sourceBytesPerImage: plane,
                 sourceSize: MTLSize(width: side, height: side, depth: depth), to: texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
         }
         let region = MTLRegionMake3D(1, 2, 1, 5, 4, 3)
         let colour = MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 0.8)
         guard let path = try await filled(gpu, texture, region: region, colour) else { return nil }
         var result = FillShapeResult(path: path)
-        for z in 0..<depth {
+        for z in 0 ..< depth {
             let got = try await gpu.read(texture, bytesPerPixel: 4, plane: z)
             let inside = z >= 1 && z < 4 ? region : MTLRegionMake2D(0, 0, 0, 0)
             let one = judged(
-                got, before: Array(before[z * plane..<(z + 1) * plane]), width: side, texel: [51, 102, 153, 204],
-                region: inside, path: path)
+                got, before: Array(before[z * plane ..< (z + 1) * plane]), width: side, texel: [51, 102, 153, 204],
+                region: inside, path: path
+            )
             result.insideWrong += one.insideWrong
             result.outsideChanged += one.outsideChanged
         }
@@ -172,7 +175,8 @@ enum FillShapeCases {
         }
         guard
             let path = try await filled(
-                gpu, texture, MTLClearColor(red: 0.25, green: 0.75, blue: 0.125, alpha: 0.375), as: .r32Float)
+                gpu, texture, MTLClearColor(red: 0.25, green: 0.75, blue: 0.125, alpha: 0.375), as: .r32Float
+            )
         else { return nil }
         let depth = try await gpu.read(texture, bytesPerPixel: 4, options: .depthFromDepthStencil)
         let stencil = try await gpu.read(texture, bytesPerPixel: 1, options: .stencilFromDepthStencil)
@@ -191,7 +195,8 @@ enum FillShapeCases {
         try await gpu.upload(before, to: texture, bytesPerRow: side * 16)
         guard
             let path = try await filled(
-                gpu, texture, MTLClearColor(red: 0.25, green: 0, blue: 0, alpha: 0), as: .r8Unorm)
+                gpu, texture, MTLClearColor(red: 0.25, green: 0, blue: 0, alpha: 0), as: .r8Unorm
+            )
         else { return nil }
         let got = try await gpu.read(texture, bytesPerPixel: 16)
         let texel: [UInt8?] = [0x40] + [UInt8?](repeating: nil, count: 15)
@@ -206,7 +211,8 @@ enum FillShapeCases {
         try await gpu.upload(before, to: texture, bytesPerRow: side * 4)
         guard
             let path = try await filled(
-                gpu, texture, MTLClearColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 1), as: .rgba16Float)
+                gpu, texture, MTLClearColor(red: 0.25, green: 0.5, blue: 0.75, alpha: 1), as: .rgba16Float
+            )
         else { return nil }
         let got = try await gpu.read(texture, bytesPerPixel: 4)
         return judged(got, before: before, width: side, texel: [0x00, 0x34, 0x00, 0x38], path: path)
@@ -224,26 +230,28 @@ enum FillShapeCases {
         guard let texture = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("no cube array") }
         let face = side * side * 4
         var before: [[UInt8]] = []
-        for slice in 0..<12 {
+        for slice in 0 ..< 12 {
             before.append(pattern(face, seed: 11 * slice + 1))
             try await gpu.upload(before[slice], to: texture, bytesPerRow: side * 4, slice: slice)
         }
         let whole = MTLRegionMake2D(0, 0, side, side)
         guard
             let path = try await filled(
-                gpu, texture, slice: 7, region: whole, MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 0.8))
+                gpu, texture, slice: 7, region: whole, MTLClearColor(red: 0.2, green: 0.4, blue: 0.6, alpha: 0.8)
+            )
         else { return nil }
         var result = FillShapeResult(path: path)
-        for slice in 0..<12 {
+        for slice in 0 ..< 12 {
             let got = try await gpu.read(texture, bytesPerPixel: 4, slice: slice)
             let one = judged(
                 got, before: before[slice], width: side, texel: [51, 102, 153, 204],
-                region: slice == 7 ? whole : MTLRegionMake2D(0, 0, 0, 0), path: path)
+                region: slice == 7 ? whole : MTLRegionMake2D(0, 0, 0, 0), path: path
+            )
             result.insideWrong += one.insideWrong
             result.outsideChanged += one.outsideChanged
         }
         return result
     }
 
-    static func le(_ word: UInt32) -> [UInt8] { (0..<4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
+    static func le(_ word: UInt32) -> [UInt8] { (0 ..< 4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
 }

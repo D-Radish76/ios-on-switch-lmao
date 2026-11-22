@@ -49,7 +49,8 @@ struct PlanarSampledTargetTest: HWTest {
                 (
                     "the ShaderRead texture's planes are its twin's",
                     sampled.luma == target.luma && sampled.chroma == target.chroma
-                ))
+                )
+            )
             checks.append(("the twin holds Apple's bytes", metrics["apple_bytes_off"] == .integer(0)))
         } catch {
             checks.append(("\(GPU.describe(error))", false))
@@ -72,8 +73,8 @@ struct PlanarSampledTargetTest: HWTest {
 
     static func offApple(_ drawn: Drawn) -> Int {
         var off = 0
-        for y in 0..<side {
-            for x in 0..<side {
+        for y in 0 ..< side {
+            for x in 0 ..< side {
                 let want = inside(x, y) ? apple.quad : apple.clear
                 let at = y * side + x
                 off += drawn.luma[at] == want.green ? 0 : 1
@@ -102,7 +103,7 @@ struct PlanarSampledTargetTest: HWTest {
         guard let surface = IOSurface(properties: properties) else { throw TestFailure("no '_RB4' surface") }
         surface.lock(options: [], seed: nil)
         let base = surface.baseAddress.assumingMemoryBound(to: UInt8.self)
-        for i in 0..<surface.allocationSize { base[i] = UInt8(truncatingIfNeeded: i * 31 + 7) }
+        for i in 0 ..< surface.allocationSize { base[i] = UInt8(truncatingIfNeeded: i * 31 + 7) }
         surface.unlock(options: [], seed: nil)
         return surface
     }
@@ -110,12 +111,14 @@ struct PlanarSampledTargetTest: HWTest {
     static func drawn(_ gpu: GPU, usage: MTLTextureUsage) async throws -> Drawn {
         let surface = try surface()
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: side, height: side, mipmapped: false)
+            pixelFormat: format, width: side, height: side, mipmapped: false
+        )
         descriptor.usage = usage
         descriptor.storageMode = .shared
         guard
             let texture = gpu.device.makeTexture(
-                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0)
+                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0
+            )
         else { throw TestFailure("no 542 texture over the '_RB4' surface (usage \(usage.rawValue))") }
         let state = try gpu.render(fragment: "solid_fragment", format: format)
         var paths: [String] = []
@@ -132,10 +135,12 @@ struct PlanarSampledTargetTest: HWTest {
                         encoder.setRenderPipelineState(state)
                         GPU.draw(
                             encoder, corners: GPU.pixelQuad(quad.0, quad.1, quad.2, quad.3, width: side, height: side),
-                            color: SIMD4(1, 0, 0, 1))
+                            color: SIMD4(1, 0, 0, 1)
+                        )
                     }
                     encoder.endEncoding()
-                }.path)
+                }.path
+            )
         }
         surface.lock(options: .readOnly, seed: nil)
         defer { surface.unlock(options: .readOnly, seed: nil) }
@@ -144,6 +149,7 @@ struct PlanarSampledTargetTest: HWTest {
         let chroma = IOSurfaceGetBaseAddressOfPlane(ref, 1).assumingMemoryBound(to: UInt8.self)
         return Drawn(
             paths: paths, luma: Array(UnsafeBufferPointer(start: luma, count: side * side)),
-            chroma: Array(UnsafeBufferPointer(start: chroma, count: 2 * side * side)))
+            chroma: Array(UnsafeBufferPointer(start: chroma, count: 2 * side * side))
+        )
     }
 }

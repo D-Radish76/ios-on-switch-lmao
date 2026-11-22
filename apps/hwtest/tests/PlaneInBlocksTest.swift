@@ -65,8 +65,8 @@ struct PlaneInBlocksTest: HWTest {
         let filled = [UInt8](repeating: 0x11, count: f.bytes)
         var judged = (plane: 0, others: 0)
         for (z, bytes) in planes.enumerated() {
-            for texel in 0..<side * side {
-                let got = Array(bytes[texel * f.bytes..<(texel + 1) * f.bytes])
+            for texel in 0 ..< side * side {
+                let got = Array(bytes[texel * f.bytes ..< (texel + 1) * f.bytes])
                 guard z == plane else {
                     judged.others += got == filled ? 0 : 1
                     continue
@@ -93,7 +93,8 @@ struct PlaneInBlocksTest: HWTest {
             blit.copy(
                 from: filled, sourceOffset: 0, sourceBytesPerRow: side * f.bytes, sourceBytesPerImage: image,
                 sourceSize: MTLSize(width: side, height: side, depth: depth), to: texture, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin())
+                destinationLevel: 0, destinationOrigin: MTLOrigin()
+            )
             blit.endEncoding()
         }
         let state = try gpu.render(fragment: "solid_fragment", format: f.format)
@@ -113,7 +114,7 @@ struct PlaneInBlocksTest: HWTest {
             encoder.endEncoding()
         }
         var planes: [[UInt8]] = []
-        for z in 0..<depth { planes.append(try await gpu.read(texture, bytesPerPixel: f.bytes, plane: z)) }
+        for z in 0 ..< depth { planes.append(try await gpu.read(texture, bytesPerPixel: f.bytes, plane: z)) }
         return planes
     }
 }

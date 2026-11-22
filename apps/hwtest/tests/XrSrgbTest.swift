@@ -27,11 +27,13 @@ struct XrSrgbTest: HWTest {
 
     static let bgr = XrSrgbTest(
         id: "gpu.gm20b.xr_srgb", name: "BGR10_XR_sRGB reads, stores, draws, blends and clears as Metal does, on raw",
-        format: .bgr)
+        format: .bgr
+    )
     static let bgra = XrSrgbTest(
         id: "gpu.gm20b.xr_srgb_alpha",
         name: "BGRA10_XR_sRGB reads, stores, draws, blends and clears as Metal does, alpha linear, on raw",
-        format: .bgra)
+        format: .bgra
+    )
 
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
@@ -67,12 +69,12 @@ struct XrSrgbTest: HWTest {
     }
 
     func bytes(_ words: [UInt64]) -> [UInt8] {
-        words.flatMap { word in (0..<format.bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
+        words.flatMap { word in (0 ..< format.bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
     }
 
     func words(_ bytes: [UInt8]) -> [UInt64] {
         stride(from: 0, to: bytes.count, by: format.bytes).map { at in
-            (0..<format.bytes).reduce(UInt64(0)) { $0 | UInt64(bytes[at + $1]) << (8 * $1) }
+            (0 ..< format.bytes).reduce(UInt64(0)) { $0 | UInt64(bytes[at + $1]) << (8 * $1) }
         }
     }
 
@@ -81,7 +83,7 @@ struct XrSrgbTest: HWTest {
         var off = 0
         var worst: Float = 0
         for (texel, code) in zip(texels, codes) {
-            for channel in 0..<format.channels {
+            for channel in 0 ..< format.channels {
                 let want = XrSrgb.decoded(code[channel], alpha: channel == 3)
                 let difference = abs(texel[channel] - want)
                 worst = max(worst, difference)
@@ -151,7 +153,7 @@ struct XrSrgbTest: HWTest {
         if !format.alpha { metrics.set("drawn_pad", pads(words(got))) }
         checks.append(("an unblended draw stores Metal's codes", off == 0))
         if format.alpha {
-            let oracle = got[0..<8].map { String(format: "%02x", $0) }.joined()
+            let oracle = got[0 ..< 8].map { String(format: "%02x", $0) }.joined()
             metrics.set("oracle", oracle)
             checks.append(("0.5 in every channel stores c0bdc0bdc0bdc09f", oracle == "c0bdc0bdc0bdc09f"))
         }
@@ -198,7 +200,7 @@ struct XrSrgbTest: HWTest {
     func compressedUpload(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let side = 64
         let texture = try gpu.texture(format.format, side, side, usage: [.shaderRead, .renderTarget])
-        let bytes = (0..<(side * side)).flatMap { format.texel([500, 500, 500, $0 % 1024]) }
+        let bytes = (0 ..< (side * side)).flatMap { format.texel([500, 500, 500, $0 % 1024]) }
         try await gpu.upload(bytes, to: texture, bytesPerRow: side * format.bytes)
         let codes = format.codes(try await gpu.read(texture, bytesPerPixel: format.bytes))
         var kept = 0, clamped = 0

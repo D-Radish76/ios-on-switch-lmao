@@ -64,7 +64,8 @@ struct SameBitsTest: HWTest {
                 checks.append(("\(key): 3e800000 left, 3f000000 right", left == "3e800000" && right == "3f000000"))
                 if let blockLinear = r.blockLinear {
                     checks.append(
-                        ("\(key): \(pitch ? "pitch" : "block-linear") memory", blockLinear == (pitch ? 0 : 1)))
+                        ("\(key): \(pitch ? "pitch" : "block-linear") memory", blockLinear == (pitch ? 0 : 1))
+                    )
                 }
             } catch {
                 checks.append(("\(key): \(GPU.describe(error))", false))

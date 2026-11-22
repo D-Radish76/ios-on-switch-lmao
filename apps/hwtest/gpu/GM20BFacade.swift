@@ -148,7 +148,8 @@ extension Outcome {
         let after = GM20BFacade.counters(of: gpu.device)
         guard !after.isEmpty else { return marked.failing(offRaw: own.offRaw) }
         let failed = FailedCounts.judged(
-            before: gpu.startCounters, after: after, expecting: expected, own: own, &marked.metrics)
+            before: gpu.startCounters, after: after, expecting: expected, own: own, &marked.metrics
+        )
         marked = marked.failing(unless: failed)
         guard framework else { return marked }
         return marked.failing(unless: FailedCounts(before: gpu.startCounters, after: after).skipCheck())

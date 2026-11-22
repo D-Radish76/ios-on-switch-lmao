@@ -13,23 +13,24 @@ extension NativeArgumentEncoderTest {
     /// drew its texture's colour, and the encode profile's events of its command buffer
     func drawHeapThroughArguments(_ gpu: GPU, textures count: Int) async throws -> (String, [String: Double]) {
         guard let function = gpu.library.makeFunction(name: "argument_textures_fragment"),
-            let sampler = gpu.device.makeSamplerState(descriptor: MTLSamplerDescriptor())
+              let sampler = gpu.device.makeSamplerState(descriptor: MTLSamplerDescriptor())
         else { return ("no_function", [:]) }
         let heapDescriptor = MTLHeapDescriptor()
         heapDescriptor.storageMode = .shared
         heapDescriptor.size = count * 64 * 1024
         guard let heap = gpu.device.makeHeap(descriptor: heapDescriptor) else { return ("no_heap", [:]) }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: false)
+            pixelFormat: .rgba8Unorm, width: 16, height: 16, mipmapped: false
+        )
         descriptor.storageMode = .shared
         descriptor.usage = [.shaderRead]
-        let textures = (0..<count).compactMap { _ in heap.makeTexture(descriptor: descriptor) }
+        let textures = (0 ..< count).compactMap { _ in heap.makeTexture(descriptor: descriptor) }
         guard textures.count == count else { return ("heap_full", [:]) }
         let colours: [(MTLTexture, [UInt8])] = [
             (textures[0], [255, 0, 0, 255]), (textures[count - 1], [0, 0, 255, 255]),
         ]
         for (texture, texel) in colours {
-            let bytes = (0..<256).flatMap { _ in texel }
+            let bytes = (0 ..< 256).flatMap { _ in texel }
             texture.replace(region: MTLRegionMake2D(0, 0, 16, 16), mipmapLevel: 0, withBytes: bytes, bytesPerRow: 64)
         }
         let encoder = function.makeArgumentEncoder(bufferIndex: 0)
@@ -42,7 +43,7 @@ extension NativeArgumentEncoderTest {
         let target = try gpu.texture(.rgba8Unorm, 8, 8)
         var drawn: GPU.Timing?
         var events: [String: Double] = [:]
-        for _ in 0..<2 {
+        for _ in 0 ..< 2 {
             let before = GM20BFacade.encodeProfile(of: gpu.device)
             drawn = try await gpu.run { commands in
                 let render = commands.makeRenderCommandEncoder(descriptor: Self.pass(target))!
@@ -55,7 +56,7 @@ extension NativeArgumentEncoderTest {
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
         let exact =
             Array(pixels.pixel(1, 4, width: 8)) == [255, 0, 0, 255]
-            && Array(pixels.pixel(6, 4, width: 8)) == [0, 0, 255, 255]
+                && Array(pixels.pixel(6, 4, width: 8)) == [0, 0, 255, 255]
         return ("\(drawn?.path ?? "none")/\(exact ? "exact" : "wrong")", events)
     }
 

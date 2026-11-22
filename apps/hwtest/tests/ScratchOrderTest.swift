@@ -43,10 +43,11 @@ struct ScratchOrderTest: HWTest {
         var a = 0, b = 0
         for (round, bytes) in read.a.enumerated() {
             let want = ScratchOrder.pattern(seed: UInt32(round + 1))
-            a += stride(from: 0, to: bytes.count, by: 4).filter { bytes[$0..<($0 + 4)] != want[$0..<($0 + 4)] }.count
+            a += stride(from: 0, to: bytes.count, by: 4).filter { bytes[$0 ..< ($0 + 4)] != want[$0 ..< ($0 + 4)] }
+                .count
         }
         for bytes in read.b {
-            b += stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0..<($0 + 4)]) != clearStored }.count
+            b += stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0 ..< ($0 + 4)]) != clearStored }.count
         }
         return (a, b)
     }

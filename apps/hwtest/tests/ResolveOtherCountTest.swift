@@ -55,16 +55,17 @@ struct ResolveOtherCountTest: HWTest {
 
     static func values(_ format: MTLPixelFormat) -> [SIMD4<Float>] {
         var state = UInt64(format.rawValue)
-        return (0..<side * side * 4).map { _ in
+        return (0 ..< side * side * 4).map { _ in
             SIMD4<Float>(
-                (0..<4).map { _ -> Float in
+                (0 ..< 4).map { _ -> Float in
                     let w = WordMipmapCases.splitmix(&state)
                     switch format {
                     case .rgba8Snorm: return Float(Int(w % 255) - 127) / 127
                     case .rgba16Float: return Float(Float16(Float(w % 4096) / 1024 - 2))
                     default: return Float(w % 256) / 255
                     }
-                })
+                }
+            )
         }
     }
 
@@ -90,7 +91,8 @@ struct ResolveOtherCountTest: HWTest {
         let green = try await StandInResolveCases.sampleReads(gpu, two)
         for target in [two, one] {
             try await StandInResolveCases.drawSamples(
-                gpu, values, into: four, resolve: target, store: .multisampleResolve, clear: cleared)
+                gpu, values, into: four, resolve: target, store: .multisampleResolve, clear: cleared
+            )
         }
         let samples = try await StandInResolveCases.sampleReads(gpu, two)
         let reference = try await gpu.texels(one)
@@ -98,7 +100,7 @@ struct ResolveOtherCountTest: HWTest {
         for at in samples.indices {
             let (got, want) = (samples[at], drawn ? green[at] : reference[at / 2])
             judged.off += got == want ? 0 : 1
-            judged.worst = max(judged.worst, (0..<4).map { steps(got[$0], want[$0], format) }.max()!)
+            judged.worst = max(judged.worst, (0 ..< 4).map { steps(got[$0], want[$0], format) }.max()!)
         }
         return judged
     }

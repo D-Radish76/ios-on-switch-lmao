@@ -29,13 +29,15 @@ struct CompressionChurnTest: HWTest {
         }
         var metrics = Metrics()
         var failures: [String] = []
-        let sizes = (0..<24).map { (width: 720 - $0 * 27, height: 1280 - $0 * 50) }
+        let sizes = (0 ..< 24).map { (width: 720 - $0 * 27, height: 1280 - $0 * 50) }
         var targets: [(colour: MTLTexture, zeta: MTLTexture)] = []
         for size in sizes {
             let colour = try gpu.texture(
-                .rgba16Float, size.width, size.height, usage: [.renderTarget], storage: .memoryless)
+                .rgba16Float, size.width, size.height, usage: [.renderTarget], storage: .memoryless
+            )
             let zeta = try gpu.texture(
-                .depth32Float_stencil8, size.width, size.height, usage: [.renderTarget], storage: .memoryless)
+                .depth32Float_stencil8, size.width, size.height, usage: [.renderTarget], storage: .memoryless
+            )
             targets.append((colour: colour, zeta: zeta))
         }
         let start = GM20BFacade.compression(of: gpu.device)
@@ -64,7 +66,7 @@ struct CompressionChurnTest: HWTest {
         try await CompressionSettled.settle(gpu.device)
         let warm = GM20BFacade.compression(of: gpu.device)
         var held: [Int] = []
-        for round in 1..<Self.sweeps {
+        for round in 1 ..< Self.sweeps {
             try await sweep(sizes.indices.map { ($0 * 7 + round) % sizes.count })
             held.append(GM20BFacade.compression(of: gpu.device)["held_bytes"] ?? -1)
         }
@@ -94,7 +96,8 @@ struct CompressionChurnTest: HWTest {
         if (idle["held"] ?? -1) != 0 || (idle["views"] ?? -1) != 0 {
             failures.append(
                 "\(idle["held"] ?? -1) compressed buffers (\((idle["held_bytes"] ?? 0) >> 10) KiB) and "
-                    + "\(idle["views"] ?? -1) backings still held \(Int(Self.idleSeconds)) s after the last pass")
+                    + "\(idle["views"] ?? -1) backings still held \(Int(Self.idleSeconds)) s after the last pass"
+            )
         }
         return failures.isEmpty
             ? .pass(metrics, proof: gpu.proof) : .fail(failures.joined(separator: "; "), metrics, proof: gpu.proof)

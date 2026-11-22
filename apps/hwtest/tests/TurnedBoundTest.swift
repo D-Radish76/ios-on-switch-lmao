@@ -22,7 +22,7 @@ struct TurnedBoundTest: HWTest {
         let state = try gpu.render(fragment: "texel_read", format: .rgba32Float)
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
-        for turn in 1...4 {
+        for turn in 1 ... 4 {
             let quarter = turn != 2
             let (w, h) = (24, 16)
             let (pw, ph) = quarter ? (h, w) : (w, h)
@@ -32,7 +32,8 @@ struct TurnedBoundTest: HWTest {
             ]
             guard let surface = IOSurface(properties: properties) else { throw TestFailure("no surface") }
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false)
+                pixelFormat: .bgra8Unorm, width: w, height: h, mipmapped: false
+            )
             descriptor.usage = [.renderTarget, .shaderRead]
             descriptor.storageMode = .shared
             guard descriptor.responds(to: NSSelectorFromString("setRotation:")) else {

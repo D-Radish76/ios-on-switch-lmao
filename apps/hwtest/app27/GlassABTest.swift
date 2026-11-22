@@ -48,7 +48,7 @@ struct UIGlassABTest: HWTest {
         var firstInProcess: String?
         for arm in Arm.allCases {
             var (armed, control) = ([GlassRound](), [GlassRound]())
-            for _ in 0..<Self.rounds {
+            for _ in 0 ..< Self.rounds {
                 let plain = await GlassRound.run(context, lines: true)
                 if firstInProcess == nil {
                     firstInProcess = plain.firstInProcess ? (plain.black ? "black" : "good") : "-"
@@ -62,7 +62,9 @@ struct UIGlassABTest: HWTest {
                         arm: arm.rawValue, control: isControl, black: round.black,
                         level: Int((round.level / 3 * 255).rounded()), encoding: round.recording.encoding,
                         buffers: round.recording.signature, lost: round.recording.lost,
-                        generation: round.recording.generation))
+                        generation: round.recording.generation
+                    )
+                )
                 if round.black {
                     let name = "\(arm.rawValue)-\(isControl ? "control" : "arm")-\(entries.count).png"
                     try? round.picture.png()?.write(to: directory.appendingPathComponent(name))
@@ -117,27 +119,31 @@ enum GlassDirt {
         let panes = await context.onStage(fullScreen: true) { stage -> [UIView] in
             let screen = UIScreen.main.bounds
             var generator = SystemRandomNumberGenerator()
-            for _ in 0..<160 {
+            for _ in 0 ..< 160 {
                 let block = UIView(
                     frame: CGRect(
-                        x: CGFloat.random(in: 0..<screen.width, using: &generator),
-                        y: CGFloat.random(in: 0..<screen.height, using: &generator), width: 48, height: 48))
+                        x: CGFloat.random(in: 0 ..< screen.width, using: &generator),
+                        y: CGFloat.random(in: 0 ..< screen.height, using: &generator), width: 48, height: 48
+                    )
+                )
                 block.backgroundColor = UIColor(
-                    hue: CGFloat.random(in: 0..<1, using: &generator), saturation: 1, brightness: 1, alpha: 1)
+                    hue: CGFloat.random(in: 0 ..< 1, using: &generator), saturation: 1, brightness: 1, alpha: 1
+                )
                 stage.addSubview(block)
             }
-            return (0..<6).map { i -> UIView in
+            return (0 ..< 6).map { i -> UIView in
                 let effect: UIVisualEffect =
                     i % 2 == 0 ? UIGlassEffect(style: .regular) : UIBlurEffect(style: .systemThinMaterial)
                 let pane = UIVisualEffectView(effect: effect)
                 pane.frame = CGRect(
                     x: CGFloat(i % 3) * screen.width / 3, y: CGFloat(i / 3) * screen.height / 2,
-                    width: screen.width / 3, height: screen.height / 2)
+                    width: screen.width / 3, height: screen.height / 2
+                )
                 stage.addSubview(pane)
                 return pane
             }
         }
-        for step in 0..<30 {
+        for step in 0 ..< 30 {
             await MainActor.run {
                 for (i, pane) in panes.enumerated() {
                     pane.transform = CGAffineTransform(translationX: CGFloat((step + i) % 8) * 3, y: 0)

@@ -33,7 +33,7 @@ struct XrSrgbFormat: Sendable {
             return [codes[2], codes[1], codes[0], codes[3]].flatMap { [UInt8(($0 << 6) & 0xff), UInt8($0 >> 2)] }
         }
         let word = UInt32(pad) << 30 | UInt32(codes[0]) << 20 | UInt32(codes[1]) << 10 | UInt32(codes[2])
-        return (0..<4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
+        return (0 ..< 4).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
     }
 }
 
@@ -58,15 +58,16 @@ enum XrSrgb {
 
     /// An unblended draw's values, one a texel: past both ends of the range, through the curve's linear foot, and
     /// alpha past [0, 1]; texel 0 is 0.5 in every channel
-    static let drawn: [SIMD4<Float>] = (0..<64).map { i in
+    static let drawn: [SIMD4<Float>] = (0 ..< 64).map { i in
         if i == 0 { return SIMD4(repeating: 0.5) }
         let f = Float(i)
         return SIMD4(
-            -0.6 + f * 2.2 / 63, 1.6 - f * 2.2 / 63, Float(i % 9) / 8 * 0.005, Float(i * 5 % 64) / 63 * 1.4 - 0.2)
+            -0.6 + f * 2.2 / 63, 1.6 - f * 2.2 / 63, Float(i % 9) / 8 * 0.005, Float(i * 5 % 64) / 63 * 1.4 - 0.2
+        )
     }
 
     /// The source-over draw's values over Metal's codes of `drawn`
-    static let blended: [SIMD4<Float>] = (0..<64).map { i in
+    static let blended: [SIMD4<Float>] = (0 ..< 64).map { i in
         let f = Float(i)
         return SIMD4(Float(i * 13 % 64) / 63 * 1.4 - 0.2, Float(i % 7) / 6, 1.2 - f / 63, Float(i * 3 % 16) / 15)
     }
@@ -80,6 +81,6 @@ enum XrSrgb {
 
     /// Every code in every channel, a texel each, on a 32x32 texture (555: the two bits above them 0 to 3 in turn)
     static func everyCode(_ f: XrSrgbFormat) -> [UInt8] {
-        (0..<1024).flatMap { f.texel([Int](repeating: $0, count: 4), pad: $0 & 3) }
+        (0 ..< 1024).flatMap { f.texel([Int](repeating: $0, count: 4), pad: $0 & 3) }
     }
 }

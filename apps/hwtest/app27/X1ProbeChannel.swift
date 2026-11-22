@@ -18,7 +18,8 @@ enum GM20BProbe {
     static func call(_ object: AnyObject, _ selector: Selector, _ argument: Any? = nil) throws -> String? {
         guard let object = object as? NSObject, object.responds(to: selector) else {
             throw TestFailure(
-                "the facade has no \(NSStringFromSelector(selector)) (a release plug-in or another device)")
+                "the facade has no \(NSStringFromSelector(selector)) (a release plug-in or another device)"
+            )
         }
         let answer = argument == nil ? object.perform(selector) : object.perform(selector, with: argument)
         return answer?.takeUnretainedValue() as? String

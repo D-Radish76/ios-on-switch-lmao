@@ -71,36 +71,46 @@ enum X1Probes {
     static let all: [any HWTest] = [
         X1Probe(
             id: "gpu.x1.buffer_zero", name: "New MTLBuffers read zero after freed ones held 0xAB", probe: "d1/F11",
-            body: X1MemoryProbes.bufferZero),
+            body: X1MemoryProbes.bufferZero
+        ),
         X1Probe(
             id: "gpu.x1.linear_align", name: "Textures over buffers at offsets and rows 16 mod 32", probe: "d24",
-            body: X1MemoryProbes.linearAlign),
+            body: X1MemoryProbes.linearAlign
+        ),
         X1Probe(
             id: "gpu.x1.rop_conversion", name: "ROP float to unorm, sRGB, 10-bit and half: all 65,536 halves",
-            probe: "E3/d23", body: X1ConversionProbes.rop),
+            probe: "E3/d23", body: X1ConversionProbes.rop
+        ),
         X1Probe(
             id: "gpu.x1.sampler_conversion", name: "Sampler unorm8 and unorm16 texels as half: every code",
-            probe: "E3b", body: X1ConversionProbes.sampler),
+            probe: "E3b", body: X1ConversionProbes.sampler
+        ),
         X1Probe(
             id: "gpu.x1.blend_exact", name: "ROP blend on BGRA8 against Metal's half arithmetic, 8.4 M cases a pair",
-            probe: "E4", timeout: 300, body: X1BlendProbes.exact),
+            probe: "E4", timeout: 300, body: X1BlendProbes.exact
+        ),
         X1Probe(
             id: "gpu.x1.f32_filter", name: "RGBA32F linear filtering: {0, 1e6} sampled a quarter of the way",
-            probe: "d7", body: X1FilterProbes.f32Filter),
+            probe: "d7", body: X1FilterProbes.f32Filter
+        ),
         X1Probe(
             id: "gpu.x1.mip_filter", name: "generateMipmaps' first level against an exact 2x2 box, five formats",
-            probe: "G13/d4", body: X1FilterProbes.mipFilter),
+            probe: "G13/d4", body: X1FilterProbes.mipFilter
+        ),
         X1Probe(
             id: "gpu.x1.filter_weight_bits",
             name: "Linear filter sub-texel weights: a two-texel ramp in 1/65,536 steps, BGRA8, RGBA16F, R32F",
-            probe: "ffs2", body: { try await X1FilterProbes.filterWeights($0) }),
+            probe: "ffs2", body: { try await X1FilterProbes.filterWeights($0) }
+        ),
         X1Probe(
             id: "gpu.x1.rop_unorm10_rounding",
             name: "Float to RGB10A2 and BGR10A2 codes at every code boundary: unblended, source-over, max",
-            probe: "d23", body: { try await X1Unorm10Probe.rounding($0) }),
+            probe: "d23", body: { try await X1Unorm10Probe.rounding($0) }
+        ),
         X1Probe(
             id: "gpu.x1.visibility", name: "Visibility results: counting within and across passes, boolean",
-            probe: "d17", body: X1PassProbes.visibility),
+            probe: "d17", body: X1PassProbes.visibility
+        ),
         X1PassBarrierProbe.probe, X1JobBoundaryProbe.probe, X1SwitchDrainProbe.probe,
         X1RawProbes.blendKills, X1RawProbes.viewportSwizzle, X1PrecisionProbe.probe, X1IteratedBlendProbe.probe,
         X1CompressedCopyProbe.probe, X1CompressedDepthProbe.probe, X1TwodProbes.scale, X1TwodProbes.clear,

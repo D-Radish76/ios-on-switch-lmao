@@ -81,13 +81,15 @@ struct XrShadowTest: HWTest {
         let (w, h) = (Self.width, Self.height)
         guard let format = MTLPixelFormat(rawValue: c.format) else { throw TestFailure("no format") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: w, height: h, mipmapped: false)
+            pixelFormat: format, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = [.renderTarget]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor) else { throw TestFailure("no texture") }
         let zero = [UInt8](repeating: 0, count: w * h * c.bytes)
         texture.replace(
-            region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: zero, bytesPerRow: w * c.bytes)
+            region: MTLRegionMake2D(0, 0, w, h), mipmapLevel: 0, withBytes: zero, bytesPerRow: w * c.bytes
+        )
         let plain = try gpu.render(fragment: "texel_values", format: format)
         let blended = try gpu.render(fragment: "texel_values", format: format) {
             let a = $0.colorAttachments[0]!
@@ -147,7 +149,7 @@ struct XrShadowTest: HWTest {
             let u = Double(splitmix(&state) >> 11) / Double(UInt64(1) << 53)
             return Float(alpha ? u : u * 2.0 - 0.75)
         }
-        return (0..<(width * height)).map { _ in
+        return (0 ..< (width * height)).map { _ in
             let (r, g, b, a) = (next(false), next(false), next(false), next(true))
             return SIMD4(r, g, b, a)
         }
@@ -161,6 +163,6 @@ struct XrShadowTest: HWTest {
 
     static func texelsMoved(_ a: [UInt8], _ b: [UInt8], _ bytes: Int) -> Int {
         guard a.count == b.count, !a.isEmpty else { return -1 }
-        return stride(from: 0, to: a.count, by: bytes).filter { a[$0..<$0 + bytes] != b[$0..<$0 + bytes] }.count
+        return stride(from: 0, to: a.count, by: bytes).filter { a[$0 ..< $0 + bytes] != b[$0 ..< $0 + bytes] }.count
     }
 }

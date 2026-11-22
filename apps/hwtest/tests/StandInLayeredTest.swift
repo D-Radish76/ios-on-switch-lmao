@@ -23,18 +23,21 @@ struct StandInLayeredTest: HWTest {
         let drawn: [UInt64]
     }
 
-    static let side = 16, quad = 4..<12
+    static let side = 16, quad = 4 ..< 12
     static let cases = [
         Case(
             format: StandInResolveCases.formats[1],
             colours: [SIMD4(3 / 31, 17 / 31, 29 / 31, 1), SIMD4(30 / 31, 0, 12 / 31, 0)],
-            drawn: [0x1c7b, 0xf018]),
+            drawn: [0x1c7b, 0xf018]
+        ),
         Case(
             format: StandInResolveCases.formats[4], colours: [SIMD4(0.5, 0.25, 0.125, 1), SIMD4(3, 0, 1.5, 1)],
-            drawn: [0x7901_0100, 0x8b00_0180]),
+            drawn: [0x7901_0100, 0x8b00_0180]
+        ),
         Case(
             format: StandInResolveCases.formats[5], colours: [SIMD4(1, 0, 0.5, 1), SIMD4(0, 1, -0.25, 0.5)],
-            drawn: [0xdf80_df80_6000_bdc0, 0x9fc0_6000_df80_1b80]),
+            drawn: [0xdf80_df80_6000_bdc0, 0x9fc0_6000_df80_1b80]
+        ),
     ]
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -48,11 +51,12 @@ struct StandInLayeredTest: HWTest {
             let key = c.format.key
             do {
                 let slices = try await Self.layered(gpu, c)
-                let judged = (0..<3).map { Self.judged(c, slice: $0, slices[$0]) }
+                let judged = (0 ..< 3).map { Self.judged(c, slice: $0, slices[$0]) }
                 metrics.set(key + "_off", judged.map { String($0.off) }.joined(separator: "/"))
                 metrics.set(key + "_max", judged.map(\.worst).max() ?? 0)
                 checks.append(
-                    ("\(key): slice 0 kept, slices 1 and 2 loaded and drawn", judged.allSatisfy { $0.off == 0 }))
+                    ("\(key): slice 0 kept, slices 1 and 2 loaded and drawn", judged.allSatisfy { $0.off == 0 })
+                )
             } catch {
                 checks.append(("\(key): \(GPU.describe(error))", false))
             }
@@ -67,7 +71,7 @@ struct StandInLayeredTest: HWTest {
 
     static func pattern(_ f: WordMipFormat, slice: Int) -> [UInt64] {
         var state = UInt64(f.format.rawValue) &* 7 &+ UInt64(slice)
-        return (0..<side * side).map { _ in
+        return (0 ..< side * side).map { _ in
             let w = WordMipmapCases.splitmix(&state)
             switch f.format.rawValue {
             case 93: return w & 0x7ff_ffff | 0x100 | (13 + (w >> 40) % 5) << 27
@@ -80,7 +84,7 @@ struct StandInLayeredTest: HWTest {
     }
 
     static func bytes(_ f: WordMipFormat, _ words: [UInt64]) -> [UInt8] {
-        words.flatMap { word in (0..<f.bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
+        words.flatMap { word in (0 ..< f.bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) } }
     }
 
     static func layered(_ gpu: GPU, _ c: Case) async throws -> [[UInt64]] {
@@ -92,9 +96,10 @@ struct StandInLayeredTest: HWTest {
         d.usage = [.renderTarget, .shaderRead]
         d.storageMode = .private
         guard let array = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("no \(f.key) array") }
-        for slice in 0..<3 {
+        for slice in 0 ..< 3 {
             try await gpu.upload(
-                bytes(f, pattern(f, slice: slice)), to: array, bytesPerRow: side * f.bytes, slice: slice)
+                bytes(f, pattern(f, slice: slice)), to: array, bytesPerRow: side * f.bytes, slice: slice
+            )
         }
         let state = try gpu.render(vertex: "layered_vertex", fragment: "flat_color_fragment", format: f.format) {
             $0.inputPrimitiveTopology = .triangle
@@ -109,7 +114,8 @@ struct StandInLayeredTest: HWTest {
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
             encoder.setRenderPipelineState(state)
             var corners = GPU.pixelQuad(
-                quad.lowerBound, quad.lowerBound, quad.upperBound, quad.upperBound, width: side, height: side)
+                quad.lowerBound, quad.lowerBound, quad.upperBound, quad.upperBound, width: side, height: side
+            )
             var colours = c.colours
             encoder.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
             encoder.setVertexBytes(&colours, length: MemoryLayout<SIMD4<Float>>.stride * 2, index: 1)
@@ -117,9 +123,9 @@ struct StandInLayeredTest: HWTest {
             encoder.endEncoding()
         }
         var slices: [[UInt64]] = []
-        for slice in 0..<3 {
+        for slice in 0 ..< 3 {
             let got = try await gpu.read(array, bytesPerPixel: f.bytes, slice: slice)
-            slices.append(stride(from: 0, to: got.count, by: f.bytes).map { f.word(got[$0..<$0 + f.bytes]) })
+            slices.append(stride(from: 0, to: got.count, by: f.bytes).map { f.word(got[$0 ..< $0 + f.bytes]) })
         }
         return slices
     }

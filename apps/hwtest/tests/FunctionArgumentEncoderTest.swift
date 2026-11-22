@@ -83,7 +83,8 @@ struct FunctionArgumentEncoderTest: HWTest {
         }
 
         let failed = FailedCounts.judged(
-            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics)
+            before: before, after: GM20BFacade.counters(of: gpu.device), own: gpu.paths, &metrics
+        )
         if !failed.1 { wrong.append(failed.0) }
         return wrong.isEmpty ? .pass(metrics) : .fail(wrong.joined(separator: ","), metrics)
     }
@@ -98,9 +99,9 @@ struct FunctionArgumentEncoderTest: HWTest {
     /// Every member argenc_mixed_fragment reads, written through its own encoder and the nested one at id 8
     func draw(_ gpu: GPU, _ metrics: inout Metrics, _ wrong: inout [String]) async throws {
         guard let function = gpu.library.makeFunction(name: "argenc_mixed_fragment"),
-            let encoder = Self.made(function.makeArgumentEncoder(bufferIndex: 0)),
-            let nested = encoder.makeArgumentEncoderForBuffer(atIndex: 8),
-            let sampler = gpu.device.makeSamplerState(descriptor: MTLSamplerDescriptor())
+              let encoder = Self.made(function.makeArgumentEncoder(bufferIndex: 0)),
+              let nested = encoder.makeArgumentEncoderForBuffer(atIndex: 8),
+              let sampler = gpu.device.makeSamplerState(descriptor: MTLSamplerDescriptor())
         else {
             wrong.append("draw_setup")
             return
@@ -112,7 +113,7 @@ struct FunctionArgumentEncoderTest: HWTest {
         let arguments = try gpu.buffer(encoder.encodedLength), inner = try gpu.buffer(nested.encodedLength)
         encoder.setArgumentBuffer(arguments, offset: 0)
         encoder.constantData(at: 0).storeBytes(of: Float(0.5), as: Float.self)
-        encoder.setTextures([red, green], range: 1..<3)
+        encoder.setTextures([red, green], range: 1 ..< 3)
         encoder.setSamplerState(sampler, index: 3)
         encoder.setBuffer(colour, offset: 0, index: 4)
         encoder.constantData(at: 5).storeBytes(of: SIMD4<UInt32>(0, 17, 0, 0), as: SIMD4<UInt32>.self)
@@ -132,12 +133,13 @@ struct FunctionArgumentEncoderTest: HWTest {
         let timing = try await gpu.run { commands in
             let render = commands.makeRenderCommandEncoder(descriptor: NativeArgumentEncoderTest.pass(target))!
             render.useResources(
-                [red, green, blue, inner, colour, yellow] as [MTLResource], usage: .read, stages: .fragment)
+                [red, green, blue, inner, colour, yellow] as [MTLResource], usage: .read, stages: .fragment
+            )
             render.setFragmentBuffer(plain, offset: 0, index: 1)
             NativeArgumentEncoderTest.cover(render, pipeline, arguments)
         }
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        let got = (0..<6).map { Array(pixels.pixel($0, 0, width: 6)) }
+        let got = (0 ..< 6).map { Array(pixels.pixel($0, 0, width: 6)) }
         metrics.set("draw", "\(timing.path)/\(got == Self.drawn ? "exact" : "wrong")")
         if got != Self.drawn {
             metrics.set("pixels", got.map { $0.map(String.init).joined(separator: ",") }.joined(separator: " "))

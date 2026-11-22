@@ -9,7 +9,7 @@ enum EventJobs {
     static func read(_ device: MTLDevice) -> [String: Int] {
         let selector = NSSelectorFromString("switchMetalEvents")
         guard let device = device as? NSObject, device.responds(to: selector),
-            let answer = device.perform(selector)?.takeUnretainedValue() as? [String: NSNumber]
+              let answer = device.perform(selector)?.takeUnretainedValue() as? [String: NSNumber]
         else { return [:] }
         return answer.mapValues(\.intValue)
     }
@@ -64,7 +64,7 @@ struct NativeSharedEventTest: NativeObjectTest {
     func exercise(_ gpu: GPU, _ metrics: inout Metrics) async throws -> NativeWork {
         let device = gpu.device
         guard let plain = device.makeEvent(), let shared = device.makeSharedEvent(),
-            let other = device.makeCommandQueue()
+              let other = device.makeCommandQueue()
         else { throw TestFailure("no event or second queue") }
         guard let alias = device.makeSharedEvent(handle: shared.makeSharedEventHandle()) else {
             throw TestFailure("no event from the shared event's handle")
@@ -83,16 +83,16 @@ struct NativeSharedEventTest: NativeObjectTest {
         let heard = DispatchSemaphore(value: 0)
         let reached = HandlerValue<UInt64>(0)
         alias.notify(MTLSharedEventListener(dispatchQueue: DispatchQueue(label: "hwtest.native.listener")), atValue: 2)
-        {
-            _, value in
-            reached.value = value
-            heard.signal()
-        }
+            {
+                _, value in
+                reached.value = value
+                heard.signal()
+            }
         let length = 1 << 16
         let source = try gpu.buffer(length), target = try gpu.buffer(length)
         let filled = try await gpu.run { commands in
             let fill = commands.makeBlitCommandEncoder()!
-            fill.fill(buffer: source, range: 0..<length, value: 0x3c)
+            fill.fill(buffer: source, range: 0 ..< length, value: 0x3c)
             fill.endEncoding()
             commands.encodeSignalEvent(shared, value: 2)
         }
@@ -111,7 +111,7 @@ struct NativeSharedEventTest: NativeObjectTest {
         let copied = Self.completion(of: waiter)
         waiter.commit()
         let fill = producer.makeBlitCommandEncoder()!
-        fill.fill(buffer: source, range: 0..<length, value: 0x5a)
+        fill.fill(buffer: source, range: 0 ..< length, value: 0x5a)
         fill.endEncoding()
         producer.encodeSignalEvent(plain, value: 1)
         producer.commit()
@@ -133,7 +133,7 @@ struct NativeSharedEventTest: NativeObjectTest {
         let tailDone = Self.completion(of: tail)
         tail.commit()
         let lateFill = late.makeBlitCommandEncoder()!
-        lateFill.fill(buffer: target, range: 0..<length, value: 0x11)
+        lateFill.fill(buffer: target, range: 0 ..< length, value: 0x11)
         lateFill.endEncoding()
         late.encodeSignalEvent(shared, value: 3)
         late.commit()
@@ -155,7 +155,8 @@ struct NativeSharedEventTest: NativeObjectTest {
             encoder.setBytes(&iterations, length: 4, index: 1)
             encoder.dispatchThreadgroups(
                 indirectBuffer: arguments, indirectBufferOffset: 0,
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
             commands.encodeSignalEvent(shared, value: 4)
         }

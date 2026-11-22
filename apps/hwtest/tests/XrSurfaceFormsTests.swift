@@ -72,7 +72,11 @@ struct XrPlanesOff16Test: HWTest {
                 let r = try await XrPlaneReads.off16(gpu, planar: planar)
                 total = (total.gpu + r.gpuOff, total.blit + r.blitOff, total.cpu + r.cpuOff)
             }
-            let counts = [("xr_off16_gpu_off", total.gpu), ("xr_off16_blit_off", total.blit), ("xr_off16_cpu_off", total.cpu)]
+            let counts = [
+                ("xr_off16_gpu_off", total.gpu),
+                ("xr_off16_blit_off", total.blit),
+                ("xr_off16_cpu_off", total.cpu),
+            ]
             for (key, value) in counts { metrics.set(key, value) }
             return counts.map { ("\($0.0)=\($0.1)", $0.1 == 0) }
         }

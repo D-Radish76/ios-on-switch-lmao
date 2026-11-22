@@ -18,15 +18,19 @@ struct BlitUploadScene: GPUScene {
             for (width, height) in [(64, 64), (333, 77), (1024, 16)] {
                 let texture = try gpu.texture(format.metal, width, height, usage: [.shaderRead])
                 var model = TexelImage(
-                    format, width, height, Patterns.busy(width: width, height: height, channels: format.channels))
+                    format, width, height, Patterns.busy(width: width, height: height, channels: format.channels)
+                )
                 try await gpu.blitUpload(
                     [UploadRect(x: 0, y: 0, width: width, height: height)], [model.bytes], into: texture,
-                    texel: format.bytesPerTexel)
+                    texel: format.bytesPerTexel
+                )
                 let rects = UploadRect.unaligned(width: width, height: height)
                 let sources = rects.enumerated().map { index, rect in
                     Patterns.bytes(
                         Patterns.busy(
-                            width: rect.width, height: rect.height, channels: format.channels, seed: index + 2), format)
+                            width: rect.width, height: rect.height, channels: format.channels, seed: index + 2
+                        ), format
+                    )
                 }
                 for (rect, source) in zip(rects, sources) { model.write(rect, source) }
                 try await gpu.blitUpload(rects, sources, into: texture, texel: format.bytesPerTexel)
@@ -57,21 +61,26 @@ struct ReplaceRegionScene: GPUScene {
                 let label = "\(format.rawValue) \(storage == .shared ? "shared" : "private")"
                 let texture = try gpu.texture(format.metal, width, height, usage: [.shaderRead], storage: storage)
                 var model = TexelImage(
-                    format, width, height, Patterns.busy(width: width, height: height, channels: format.channels))
+                    format, width, height, Patterns.busy(width: width, height: height, channels: format.channels)
+                )
                 texture.replace(
                     region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: model.bytes,
-                    bytesPerRow: model.rowBytes)
+                    bytesPerRow: model.rowBytes
+                )
                 for (index, rect) in UploadRect.unaligned(width: width, height: height).enumerated() {
                     let source = Patterns.bytes(
                         Patterns.busy(
-                            width: rect.width, height: rect.height, channels: format.channels, seed: index + 5),
-                        format)
+                            width: rect.width, height: rect.height, channels: format.channels, seed: index + 5
+                        ),
+                        format
+                    )
                     GPU.replace(rect, source, in: texture, texel: format.bytesPerTexel)
                     model.write(rect, source)
                     let back = GPU.getBytes(rect, from: texture, texel: format.bytesPerTexel)
                     result.compare(
                         "\(label) getBytes \(rect.name)", bytes: back, expected: model.read(rect), format: format,
-                        width: rect.width, height: rect.height, tolerance: format.step() * 1.01)
+                        width: rect.width, height: rect.height, tolerance: format.step() * 1.01
+                    )
                 }
                 try await result.compareBothWays(label, texture, model, gpu: gpu)
                 let copy = try gpu.texture(format.metal, width, height, usage: [.shaderRead])
@@ -112,7 +121,8 @@ struct ChainLevelZeroScene: GPUScene {
         var result = SceneResult()
         let (width, height, format) = (64, 64, TexelFormat.bgra8Unorm)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format.metal, width: width, height: height, mipmapped: true)
+            pixelFormat: format.metal, width: width, height: height, mipmapped: true
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor) else {
@@ -121,22 +131,28 @@ struct ChainLevelZeroScene: GPUScene {
         let before = GM20BFacade.counters(of: gpu.device)
         let levelOne = UploadRect(x: 0, y: 0, width: width / 2, height: height / 2)
         let one = Patterns.bytes(
-            Patterns.busy(width: levelOne.width, height: levelOne.height, channels: format.channels, seed: 9), format)
+            Patterns.busy(width: levelOne.width, height: levelOne.height, channels: format.channels, seed: 9), format
+        )
         texture.replace(
-            region: levelOne.region, mipmapLevel: 1, withBytes: one, bytesPerRow: levelOne.width * format.bytesPerTexel)
+            region: levelOne.region, mipmapLevel: 1, withBytes: one, bytesPerRow: levelOne.width * format.bytesPerTexel
+        )
         let whole = UploadRect(x: 0, y: 0, width: width, height: height)
         let zero = Patterns.bytes(
-            Patterns.busy(width: width, height: height, channels: format.channels, seed: 3), format)
+            Patterns.busy(width: width, height: height, channels: format.channels, seed: 3), format
+        )
         GPU.replace(whole, zero, in: texture, texel: format.bytesPerTexel)
         let back = GPU.getBytes(whole, from: texture, texel: format.bytesPerTexel)
         result.compare(
-            "level 0 getBytes", bytes: back, expected: zero, format: format, width: width, height: height, tolerance: 0)
+            "level 0 getBytes", bytes: back, expected: zero, format: format, width: width, height: height, tolerance: 0
+        )
         var levelOneBack = [UInt8](repeating: 0, count: one.count)
         texture.getBytes(
-            &levelOneBack, bytesPerRow: levelOne.width * format.bytesPerTexel, from: levelOne.region, mipmapLevel: 1)
+            &levelOneBack, bytesPerRow: levelOne.width * format.bytesPerTexel, from: levelOne.region, mipmapLevel: 1
+        )
         result.compare(
             "level 1 kept", bytes: levelOneBack, expected: one, format: format, width: levelOne.width,
-            height: levelOne.height, tolerance: 0)
+            height: levelOne.height, tolerance: 0
+        )
         guard GM20BFacade.kind(of: gpu.device) == "gm20b" else {
             result.notes.append("the copy-engine route is the facade's")
             return result

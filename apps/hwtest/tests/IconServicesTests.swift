@@ -75,7 +75,8 @@ enum IconArm {
             for size in points where (size * scale).rounded() == size * scale {
                 let missing = placeholder(source, points: size, scale: scale)
                 failures += judge(
-                    name, source, points: size, scale: scale, placeholder: missing, store: store, &metrics)
+                    name, source, points: size, scale: scale, placeholder: missing, store: store, &metrics
+                )
             }
         }
         return failures.isEmpty ? .pass(metrics) : .fail(failures.joined(separator: ","), metrics)
@@ -150,7 +151,8 @@ struct IconCacheTest: HWTest {
             [
                 ("__cache_info__ is readable", found.at != "none"),
                 ("__cache_info__ holds the system's build", found.build == system),
-            ], metrics)
+            ], metrics
+        )
     }
 }
 
@@ -189,7 +191,8 @@ struct IconCacheResetTest: HWTest {
                     request.text == "none" || request.text == dropped.text
                 ),
                 ("a drop this boot is followed by the agent's reset", !dropped.thisBoot || found.resetThisBoot == true),
-            ], metrics)
+            ], metrics
+        )
     }
 
     /// A record's first line, at most 12 characters (`empty` for an empty line, `none` without the file, or why the app

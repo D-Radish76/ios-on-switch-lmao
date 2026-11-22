@@ -34,12 +34,14 @@ public enum XrWrittenOverlaps {
         guard
             let surface = SurfaceReads.surface(
                 "b3a8", 32, 4, planes: [P(at: 0, 32, 4, bpe: 4, rows: 128), P(at: 512, 32, 4, bpe: 1, rows: 32)],
-                allocation: 1024)
+                allocation: 1024
+            )
         else { throw TestFailure("no 'b3a8' 32x4") }
         var result = IntoAlpha()
         guard
             let texture = SurfaceReads.texture(
-                gpu, 550, 32, 8, over: surface, usage: [.shaderRead, .shaderWrite, .renderTarget])
+                gpu, 550, 32, 8, over: surface, usage: [.shaderRead, .shaderWrite, .renderTarget]
+            )
         else { return result }
         result.made = true
         let start = SurfaceReads.bytes(surface)
@@ -53,18 +55,18 @@ public enum XrWrittenOverlaps {
         guard !result.status.hasPrefix("error:") else { return result }
         let after = SurfaceReads.bytes(surface)
         let want = intoAlphaCleared()
-        result.clearOff = (0..<1024).filter { $0 != tieByte && after[$0] != want[$0] }.count
+        result.clearOff = (0 ..< 1024).filter { $0 != tieByte && after[$0] != want[$0] }.count
         result.tie = Int(after[tieByte])
-        result.tailChanged = (1024..<after.count).filter { after[$0] != start[$0] }.count
+        result.tailChanged = (1024 ..< after.count).filter { after[$0] != start[$0] }.count
         return result
     }
 
     /// An M4 Max's bytes after the clear, three runs alike: words everywhere but alpha rows 4 to 7 (bytes 640 to 767),
     /// which hold alpha but row 5's first 10 bytes, which hold the words' bytes, and its 11th, the tie byte
     public static func intoAlphaCleared() -> [UInt8] {
-        (0..<1024).map { o in
+        (0 ..< 1024).map { o in
             let word = UInt8(truncatingIfNeeded: clearedWord >> (8 * UInt32(o % 4)))
-            guard (640..<768).contains(o) else { return word }
+            guard (640 ..< 768).contains(o) else { return word }
             if o == tieByte { return word | clearedAlpha }
             let (row, column) = ((o - 512) / 32, (o - 512) % 32)
             return row == 5 && column < 10 ? word : clearedAlpha
@@ -78,7 +80,8 @@ public enum XrWrittenOverlaps {
             pass.colorAttachments[0].loadAction = .clear
             pass.colorAttachments[0].storeAction = .store
             pass.colorAttachments[0].clearColor = MTLClearColor(
-                red: Double(cleared.x), green: Double(cleared.y), blue: Double(cleared.z), alpha: Double(cleared.w))
+                red: Double(cleared.x), green: Double(cleared.y), blue: Double(cleared.z), alpha: Double(cleared.w)
+            )
             commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
         }.path
     }
@@ -101,7 +104,8 @@ public enum XrWrittenOverlaps {
     public static func alonePastLastPage(_ gpu: GPU) async throws -> AlonePastLastPage {
         guard
             let surface = SurfaceReads.surface(
-                "w30r", 32, 8, planes: [P(at: aloneOffset, 32, 4, bpe: 2, rows: 64)], allocation: alonePage)
+                "w30r", 32, 8, planes: [P(at: aloneOffset, 32, 4, bpe: 2, rows: 64)], allocation: alonePage
+            )
         else { throw TestFailure("no 'w30r' of a plane 256 bytes before its page's end") }
         var result = AlonePastLastPage()
         guard let texture = SurfaceReads.texture(gpu, 550, 32, 8, over: surface, usage: [.shaderRead, .shaderWrite])
@@ -116,7 +120,7 @@ public enum XrWrittenOverlaps {
         result.status = try await SurfaceReads.fill(gpu, texture, cleared)
         guard !result.status.hasPrefix("error:") else { return result }
         let after = SurfaceReads.bytes(surface)
-        let before = (0..<aloneOffset).filter { after[$0] != start[$0] }.count
+        let before = (0 ..< aloneOffset).filter { after[$0] != start[$0] }.count
         let words = stride(from: aloneOffset, to: alonePage, by: 4).filter {
             SurfaceReads.word(after, $0) != clearedWord
         }

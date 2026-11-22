@@ -160,8 +160,8 @@ static void noteHeldReturn(SwitchMetalCommandBuffer *cb, uint64_t returnedUs, co
 // report's termination reason
 extern "C" void abort_with_reason(uint32_t reason_namespace, uint64_t reason_code, const char *reason_string,
                                   uint64_t reason_flags) __attribute__((noreturn));
-static constexpr uint32_t kOsReasonLibsystem = 18;        // OS_REASON_LIBSYSTEM
-static constexpr uint64_t kOsReasonCrashReport = 0x2;     // OS_REASON_FLAG_GENERATE_CRASH_REPORT
+static constexpr uint32_t kOsReasonLibsystem = 18;     // OS_REASON_LIBSYSTEM
+static constexpr uint64_t kOsReasonCrashReport = 0x2;  // OS_REASON_FLAG_GENERATE_CRASH_REPORT
 
 // It failed before all its work was submitted, so what it was to present was never wholly rendered: its drawables are
 // not presented, as Metal's presentDrawable handler presents only from a command buffer with no error. Dropped, a
@@ -455,8 +455,7 @@ static NSError *killError(uint32_t kernelError)
                            @"Caused GPU Address Fault Error (0000000b:kIOGPUCommandBufferCallbackErrorPageFault)",
                        NSUnderlyingErrorKey : pageFaultUnderlying()
                    }];
-    const MTLCommandBufferError code =
-        kernelError == 4 ? MTLCommandBufferErrorTimeout : MTLCommandBufferErrorInternal;
+    const MTLCommandBufferError code = kernelError == 4 ? MTLCommandBufferErrorTimeout : MTLCommandBufferErrorInternal;
     return [NSError errorWithDomain:MTLCommandBufferErrorDomain code:code userInfo:nil];
 }
 

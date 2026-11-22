@@ -55,7 +55,8 @@ public enum YcbcrTexelBuffers {
     static func buffer(_ gpu: GPU, _ format: UInt, _ width: Int, over surface: IOSurfaceRef) -> MTLTexture? {
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
             with: MTLPixelFormat(rawValue: format)!, width: width, resourceOptions: .storageModeShared,
-            usage: [.shaderRead])
+            usage: [.shaderRead]
+        )
         return gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0)
     }
 
@@ -70,7 +71,8 @@ public enum YcbcrTexelBuffers {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: count, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.setComputePipelineState(seen)
             encoder.setBuffer(width, offset: 0, index: 0)
             let one = MTLSize(width: 1, height: 1, depth: 1)
@@ -85,7 +87,7 @@ public enum YcbcrTexelBuffers {
     static func tolerance(_ format: UInt) -> Float { packed(format) ? 0.5 / 1023 : 0.5 / 255 }
 
     static func near(_ a: SIMD4<Float>, _ b: SIMD4<Float>, _ tolerance: Float) -> Bool {
-        (0..<4).allSatisfy { abs(a[$0] - b[$0]) <= tolerance }
+        (0 ..< 4).allSatisfy { abs(a[$0] - b[$0]) <= tolerance }
     }
 
     /// A buffer of `width` texels (64 over a 64x8 of rows 256, chroma at 4096; 16384 over two rows) against the 2D
@@ -102,7 +104,7 @@ public enum YcbcrTexelBuffers {
         }
         let (texels, seen) = try await read(gpu, buffer: texture)
         let reference = try await SurfaceReads.read(gpu, flat)
-        let off = (0..<width).filter { !near(texels[$0], reference[$0], tolerance(format)) }.count
+        let off = (0 ..< width).filter { !near(texels[$0], reference[$0], tolerance(format)) }.count
         return Reading(made: true, width: seen, off: off)
     }
 
@@ -122,14 +124,15 @@ public enum YcbcrTexelBuffers {
         }
         let (texels, seen) = try await read(gpu, buffer: texture)
         let reference = try await SurfaceReads.read(gpu, flat)
-        let tolerance = tolerance(format), back = periodTexels(format), past = 16384..<width
-        let off = (0..<width).filter { !near(texels[$0], reference[$0], tolerance) }.count
+        let tolerance = tolerance(format), back = periodTexels(format), past = 16384 ..< width
+        let off = (0 ..< width).filter { !near(texels[$0], reference[$0], tolerance) }.count
         let fits = (
             period: past.filter { near(texels[$0], texels[$0 - back], tolerance) }.count,
             zero: past.filter { near(texels[$0], .zero, tolerance) }.count,
             wrap: past.filter { near(texels[$0], texels[$0 - 16384], tolerance) }.count,
             clamp: past.filter { near(texels[$0], texels[16383], tolerance) }.count,
-            row: past.filter { near(texels[$0], reference[$0], tolerance) }.count)
+            row: past.filter { near(texels[$0], reference[$0], tolerance) }.count
+        )
         return Reading(made: true, width: seen, off: off, fits: fits)
     }
 
@@ -140,7 +143,8 @@ public enum YcbcrTexelBuffers {
         }
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
             with: MTLPixelFormat(rawValue: 500)!, width: 64, resourceOptions: .storageModeShared,
-            usage: [.shaderRead, .renderTarget])
+            usage: [.shaderRead, .renderTarget]
+        )
         return gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) != nil
     }
 }

@@ -61,7 +61,10 @@ struct XrWrittenOnePlaneTest: HWTest {
                 metrics.set(key + "_past_changed", r.pastChanged)
                 if arm == .read550 { metrics.set(key + "_texels_off", r.texelsOff) }
                 let holds = r.word == want && r.wordsOff == 0 && r.pastChanged == 0 && r.texelsOff == 0
-                checks.append(("\(key): word 0x\(String(r.word, radix: 16)) (\(r.paths.joined(separator: ",")))", holds))
+                checks.append((
+                    "\(key): word 0x\(String(r.word, radix: 16)) (\(r.paths.joined(separator: ",")))",
+                    holds
+                ))
             }
             return checks
         }

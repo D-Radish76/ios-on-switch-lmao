@@ -71,9 +71,10 @@ struct EncodeCostPathTest: HWTest {
         let target = try gpu.texture(.bgra8Unorm, Self.width, Self.height)
         let keptPlain = target.makeTextureView(pixelFormat: .bgra8Unorm)
         let scratch = try gpu.texture(
-            CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
+            CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless
+        )
         let encode = { (commands: MTLCommandBuffer, draws: Int) in
-            for pass in 0..<Self.passes {
+            for pass in 0 ..< Self.passes {
                 let descriptor = MTLRenderPassDescriptor()
                 descriptor.colorAttachments[0].texture = target
                 descriptor.colorAttachments[0].loadAction = pass == 0 ? .clear : .load
@@ -83,12 +84,13 @@ struct EncodeCostPathTest: HWTest {
                 descriptor.colorAttachments[1].storeAction = .dontCare
                 let encoder = commands.makeRenderCommandEncoder(descriptor: descriptor)!
                 encoder.setRenderPipelineState(pipeline)
-                for draw in 0..<draws {
+                for draw in 0 ..< draws {
                     let x = Float(draw % 8) / 4 - 1, y = Float(pass) / 3 - 1
                     let colour = SIMD4<Float16>(Float16(draw % 4) / 4, Float16(pass) / 8, 0.5, 1)
                     CAState.bind(
                         encoder, vertices: CAState.rectangle(x0: x, y0: y, x1: x + 0.25, y1: y + 0.3, color: colour),
-                        source: nil)
+                        source: nil
+                    )
                     encoder.setScissorRect(MTLScissorRect(x: (draw % 8) * 32, y: pass * 32, width: 32, height: 64))
                     encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 }
@@ -104,16 +106,17 @@ struct EncodeCostPathTest: HWTest {
         // every count's batch once before any is measured: a process that just began (boot 22's, after a crash) pays its
         // pools' first growth inside the first arm otherwise
         for draws in Self.drawCounts {
-            try gpu.finish((0..<Self.buffers).map { _ in try gpu.commit { encode($0, draws) } })
+            try gpu.finish((0 ..< Self.buffers).map { _ in try gpu.commit { encode($0, draws) } })
         }
         var metrics = Metrics()
         metrics.set("warm", warm)
         var arms: [[String: Double]] = []
         for draws in Self.drawCounts {
-            try gpu.finish((0..<Self.buffers).map { _ in try gpu.commit { encode($0, draws) } })
+            try gpu.finish((0 ..< Self.buffers).map { _ in try gpu.commit { encode($0, draws) } })
             let before = GM20BFacade.encodeProfile(of: gpu.device)
             let blocks = Self.blocksInUse()
-            let held = try (0..<Self.buffers).map { _ in try autoreleasepool { try gpu.commit { encode($0, draws) } } }
+            let held = try (0 ..< Self.buffers)
+                .map { _ in try autoreleasepool { try gpu.commit { encode($0, draws) } } }
             let heldBlocks = (Self.blocksInUse() - blocks) / Double(Self.buffers)
             try gpu.finish(held)
             var measured = Self.perCommandBuffer(before, GM20BFacade.encodeProfile(of: gpu.device))
@@ -156,7 +159,8 @@ struct EncodeCostPathTest: HWTest {
             if abs(counts[1] - counts[0]) >= 0.5 {
                 failures.append(
                     "\(event) per command buffer grew with its draws: \(Self.drawCounts[0]) draws \(counts[0]), "
-                        + "\(Self.drawCounts[1]) draws \(counts[1])")
+                        + "\(Self.drawCounts[1]) draws \(counts[1])"
+                )
             }
         }
         withExtendedLifetime(keptPlain) {}

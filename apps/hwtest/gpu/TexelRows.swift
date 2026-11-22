@@ -32,19 +32,21 @@ public enum TexelRows {
     static let green = rgba(0, 255, 0, 255)
 
     static func off(_ got: ArraySlice<SIMD4<Float>>, _ want: (Int) -> SIMD4<Float>) -> Int {
-        got.indices.filter { i in (0..<4).contains { abs(got[i][$0] - want(i)[$0]) > 0.5 / 255 } }.count
+        got.indices.filter { i in (0 ..< 4).contains { abs(got[i][$0] - want(i)[$0]) > 0.5 / 255 } }.count
     }
 
     public static func observe(_ gpu: GPU) async throws -> Reading {
         var r = Reading()
         guard let surface = SurfaceReads.surface("BGRA", 64, 16, rows: 320, allocation: 320 * 16, fill: { _ in 0 }),
-            let target = SurfaceReads.texture(
-                gpu, MTLPixelFormat.bgra8Unorm.rawValue, 64, 16, over: surface, usage: [.renderTarget, .shaderRead])
+              let target = SurfaceReads.texture(
+                  gpu, MTLPixelFormat.bgra8Unorm.rawValue, 64, 16, over: surface, usage: [.renderTarget, .shaderRead]
+              )
         else { throw TestFailure("no BGRA8 target over a 'BGRA' 64x16 of rows 320") }
         let red = MTLClearColor(red: 1, green: 0, blue: 0, alpha: 1)
         r.paths.append(try await RowsUnder16.pass(gpu, target, clear: red, fragment: "texel_rows_colours"))
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
-            with: .bgra8Unorm, width: texels, resourceOptions: [], usage: [.shaderRead, .shaderWrite, .renderTarget])
+            with: .bgra8Unorm, width: texels, resourceOptions: [], usage: [.shaderRead, .shaderWrite, .renderTarget]
+        )
         guard let buffer = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return r
         }
@@ -64,8 +66,8 @@ public enum TexelRows {
         }.facadePath)
         let read4 = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: texels)
         let elements = Array(UnsafeBufferPointer(start: read4, count: texels))
-        r.readsOff = off(elements[0..<64]) { drawn($0, 0) }
-        r.paddingOff = off(elements[64..<texels]) { _ in SIMD4() }
+        r.readsOff = off(elements[0 ..< 64]) { drawn($0, 0) }
+        r.paddingOff = off(elements[64 ..< texels]) { _ in SIMD4() }
 
         let store = try gpu.compute("texel_rows_kernel_store")
         r.paths.append(try await gpu.run(tolerateError: true) { commands in
@@ -76,14 +78,15 @@ public enum TexelRows {
             encoder.endEncoding()
         }.facadePath)
         var image = try await SurfaceReads.read(gpu, target)
-        r.kernelOff = off(image[0..<64], kernelStored)
+        r.kernelOff = off(image[0 ..< 64], kernelStored)
 
         let scratch = try gpu.texture(.bgra8Unorm, texels, 1)
         let fragment = try gpu.render(fragment: "texel_rows_fragment_store", format: .bgra8Unorm)
         r.paths.append(
-            try await draw(gpu, into: scratch, fragment, load: false) { $0.setFragmentTexture(buffer, index: 0) })
+            try await draw(gpu, into: scratch, fragment, load: false) { $0.setFragmentTexture(buffer, index: 0) }
+        )
         image = try await SurfaceReads.read(gpu, target)
-        r.fragmentOff = off(image[0..<64], fragmentStored)
+        r.fragmentOff = off(image[0 ..< 64], fragmentStored)
 
         let solid = try gpu.render(fragment: "solid_fragment", format: .bgra8Unorm)
         var colour = green
@@ -91,24 +94,24 @@ public enum TexelRows {
             $0.setFragmentBytes(&colour, length: 16, index: 0)
         })
         image = try await SurfaceReads.read(gpu, target)
-        r.attachmentOff = off(image[0..<64]) { (20..<60).contains($0) ? green : fragmentStored($0) }
+        r.attachmentOff = off(image[0 ..< 64]) { (20 ..< 60).contains($0) ? green : fragmentStored($0) }
 
-        for x in 0..<64 { row[x] = image[x] }
+        for x in 0 ..< 64 { row[x] = image[x] }
         var got = [UInt8](repeating: 0, count: 50 * 4)
         got.withUnsafeMutableBytes {
             buffer.getBytes($0.baseAddress!, bytesPerRow: 200, from: MTLRegionMake1D(10, 50), mipmapLevel: 0)
         }
         let bgra = { (k: Int) in rgba(Int(got[4 * k + 2]), Int(got[4 * k + 1]), Int(got[4 * k]), Int(got[4 * k + 3])) }
-        r.getOff = off((0..<50).map(bgra)[...]) { row[10 + $0] }
+        r.getOff = off((0 ..< 50).map(bgra)[...]) { row[10 + $0] }
 
-        let pattern = (0..<200).map { UInt8(truncatingIfNeeded: 11 * $0 + 3) }
+        let pattern = (0 ..< 200).map { UInt8(truncatingIfNeeded: 11 * $0 + 3) }
         pattern.withUnsafeBytes {
             let region = MTLRegionMake1D(10, 50)
             buffer.replace(region: region, mipmapLevel: 0, withBytes: $0.baseAddress!, bytesPerRow: 200)
         }
         image = try await SurfaceReads.read(gpu, target)
-        r.replaceOff = off(image[0..<64]) { x in
-            guard (10..<60).contains(x) else { return row[x] }
+        r.replaceOff = off(image[0 ..< 64]) { x in
+            guard (10 ..< 60).contains(x) else { return row[x] }
             let k = 4 * (x - 10)
             return rgba(Int(pattern[k + 2]), Int(pattern[k + 1]), Int(pattern[k]), Int(pattern[k + 3]))
         }

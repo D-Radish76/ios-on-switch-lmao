@@ -5,8 +5,8 @@ import Metal
 /// A 64x64 pattern whose neighbouring texels differ in every channel, uploaded to a private texture.
 private func pattern(_ gpu: GPU, size: Int) async throws -> (MTLTexture, Raster) {
     var bytes = [UInt8](repeating: 0, count: size * size * 4)
-    for y in 0..<size {
-        for x in 0..<size {
+    for y in 0 ..< size {
+        for x in 0 ..< size {
             let at = (y * size + x) * 4
             bytes[at] = UInt8((x * 4) & 255)
             bytes[at + 1] = UInt8((y * 4) & 255)
@@ -43,7 +43,8 @@ struct StorageOffsetScene: GPUScene {
         }
         let target = try gpu.texture(.rgba8Unorm, size, size)
         let pipeline = try gpu.render(
-            vertex: "device_textured_vertex", fragment: "nearest_fragment", format: .rgba8Unorm)
+            vertex: "device_textured_vertex", fragment: "nearest_fragment", format: .rgba8Unorm
+        )
         let timing = try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = target
@@ -150,7 +151,7 @@ struct TraceIdScene: GPUScene {
         let timing = try await gpu.run { commands in
             let blit = commands.makeBlitCommandEncoder()!
             asked.append(("blit", traceId(blit), traceId(blit)))
-            blit.fill(buffer: buffer, range: 0..<256, value: 1)
+            blit.fill(buffer: buffer, range: 0 ..< 256, value: 1)
             blit.endEncoding()
             let compute = commands.makeComputeCommandEncoder()!
             asked.append(("compute", traceId(compute), traceId(compute)))
@@ -191,7 +192,7 @@ struct KernelOffsetScene: GPUScene {
     func run(_ gpu: GPU) async throws -> SceneResult {
         var result = SceneResult()
         guard let library = try? gpu.device.makeLibrary(URL: CAState.library),
-            let function = library.makeFunction(name: "compute_sum_luma")
+              let function = library.makeFunction(name: "compute_sum_luma")
         else {
             result.unavailable("no compute_sum_luma in QuartzCore here", on: gpu.device)
             return result
@@ -200,9 +201,9 @@ struct KernelOffsetScene: GPUScene {
         // tex_origin, tex_bounds (ushort2 each), iterations, thread_group_count (uint), pxl_per_sample, level (uchar)
         var uniforms = [UInt8](repeating: 0, count: 256)
         let words: [UInt32] = [0, 64 | 64 << 16, 1, UInt32(Self.threads)]
-        words.withUnsafeBytes { uniforms.replaceSubrange(0..<16, with: $0) }
+        words.withUnsafeBytes { uniforms.replaceSubrange(0 ..< 16, with: $0) }
         uniforms[16] = 1
-        let sums = (0..<Self.threads * 4).map { Float($0 % 7) * 0.125 + 0.0625 }
+        let sums = (0 ..< Self.threads * 4).map { Float($0 % 7) * 0.125 + 0.0625 }
         let uniformBuffer = try gpu.buffer(uniforms)
         let sumBuffer = try gpu.buffer(sums)
         // the texture Core Animation leaves bound at slot 0, which the pack's key names
@@ -221,7 +222,8 @@ struct KernelOffsetScene: GPUScene {
                 encoder.setThreadgroupMemoryLength(16 * Self.threads, index: 0)
                 encoder.dispatchThreadgroups(
                     MTLSize(width: 1, height: 1, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: Self.threads, height: 1, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: Self.threads, height: 1, depth: 1)
+                )
                 encoder.endEncoding()
             }
             paths.append(timing.path)
@@ -233,10 +235,12 @@ struct KernelOffsetScene: GPUScene {
         let written = aligned.firstIndex { $0 != Self.sentinel } != nil
         result.expect(written, "the aligned dispatch wrote nothing")
         result.expect(
-            Array(shifted[Self.offset..<64]) == Array(aligned[0..<(64 - Self.offset)]),
-            "the shifted result differs from the aligned one moved by \(Self.offset) bytes")
+            Array(shifted[Self.offset ..< 64]) == Array(aligned[0 ..< (64 - Self.offset)]),
+            "the shifted result differs from the aligned one moved by \(Self.offset) bytes"
+        )
         result.expect(
-            shifted[0..<Self.offset].allSatisfy { $0 == Self.sentinel }, "bytes before the bind offset were written")
+            shifted[0 ..< Self.offset].allSatisfy { $0 == Self.sentinel }, "bytes before the bind offset were written"
+        )
         if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             result.expect(paths == ["gm20b", "gm20b"], "the aligned and shifted dispatches took \(paths), not raw")
         }
@@ -302,23 +306,26 @@ struct CubicSamplerScene: GPUScene {
             drawn.append(try await gpu.raster(out, .rgba8Unorm))
         }
         let (rampOut, impulseOut) = (drawn[0], drawn[1])
-        let inner = 8..<(t - 8)
+        let inner = 8 ..< (t - 8)
         let rampWant = Raster(width: t, height: t, channels: 4) { x, y, c in
             [(Float(x) + 0.5) / Float(t), (Float(y) + 0.5) / Float(t), 0, 1][c]
         }
         var rampWrong = 0
         for y in inner {
-            for x in inner where (0..<2).contains(where: { abs(rampOut[x, y, $0] - rampWant[x, y, $0]) > 2.01 / 255 }) {
+            for x in inner
+                where (0 ..< 2).contains(where: { abs(rampOut[x, y, $0] - rampWant[x, y, $0]) > 2.01 / 255 }) {
                 rampWrong += 1
             }
         }
         result.expect(rampWrong == 0, "the ramp is not a ramp at \(rampWrong) inner pixels")
         let (linear, nearest) = (Self.magnified(impulse, linear: true), Self.magnified(impulse, linear: false))
         let differs = { (other: Raster) in
-            (0..<t).contains { y in (0..<t).contains { x in abs(impulseOut[x, y, 0] - other[x, y, 0]) > 4.01 / 255 } }
+            (0 ..< t)
+                .contains { y in (0 ..< t).contains { x in abs(impulseOut[x, y, 0] - other[x, y, 0]) > 4.01 / 255 } }
         }
         result.expect(
-            differs(linear) && differs(nearest), "the impulse came out as a linear or nearest filter draws it")
+            differs(linear) && differs(nearest), "the impulse came out as a linear or nearest filter draws it"
+        )
         let bytes = impulseOut.samples.map { UInt8(($0 * 255).rounded()) }
         result.picture("impulse", bytes: bytes, metalFormat: MTLPixelFormat.rgba8Unorm.rawValue, width: t, height: t)
         result.metrics.set("paths", paths.joined(separator: ","))

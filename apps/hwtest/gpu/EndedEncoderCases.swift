@@ -29,14 +29,23 @@ public final class EndedEncoderBench {
             try gpu.render(vertex: "ended_quad", fragment: fragment, format: .rgba8Unorm)
         }
         (flat, dark, colour) = (try state("ended_flat"), try state("ended_dark"), try state("ended_buffer"))
-        (set, double, increment) = (try gpu.compute("ended_set"), try gpu.compute("ended_double"), try gpu.compute("ended_increment"))
+        (set, double, increment) = (
+            try gpu.compute("ended_set"),
+            try gpu.compute("ended_double"),
+            try gpu.compute("ended_increment")
+        )
         target = try gpu.texture(.rgba8Unorm, 64, 64, usage: [.renderTarget, .shaderRead])
-        (src, src2, out, out2) = (try gpu.buffer(4096), try gpu.buffer(4096), try gpu.buffer(4096), try gpu.buffer(4096))
+        (src, src2, out, out2) = (
+            try gpu.buffer(4096),
+            try gpu.buffer(4096),
+            try gpu.buffer(4096),
+            try gpu.buffer(4096)
+        )
         (snapTarget, snapOut) = (try gpu.buffer(64 * 64 * 4), try gpu.buffer(4096))
     }
 
     func reset() throws {
-        src = try gpu.buffer((0..<4096).map { UInt8(truncatingIfNeeded: $0 < 256 ? $0 : 0) })
+        src = try gpu.buffer((0 ..< 4096).map { UInt8(truncatingIfNeeded: $0 < 256 ? $0 : 0) })
         src2 = try gpu.buffer([UInt8](repeating: 0xaa, count: 4096))
         (out, out2) = (try gpu.buffer(4096), try gpu.buffer(4096))
         (snapTarget, snapOut) = (try gpu.buffer(64 * 64 * 4), try gpu.buffer(4096))
@@ -51,7 +60,8 @@ public final class EndedEncoderBench {
         return pass
     }
 
-    func render(_ commands: MTLCommandBuffer, _ state: MTLRenderPipelineState, load: Bool = false) -> MTLRenderCommandEncoder {
+    func render(_ commands: MTLCommandBuffer, _ state: MTLRenderPipelineState,
+                load: Bool = false) -> MTLRenderCommandEncoder {
         let encoder = commands.makeRenderCommandEncoder(descriptor: pass(commands, load: load))!
         encoder.setRenderPipelineState(state)
         return encoder
@@ -70,7 +80,8 @@ public final class EndedEncoderBench {
 
     static func dispatch(_ encoder: MTLComputeCommandEncoder) {
         encoder.dispatchThreads(
-            MTLSize(width: 64, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+            MTLSize(width: 64, height: 1, depth: 1), threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+        )
     }
 
     func snap(_ commands: MTLCommandBuffer) {
@@ -78,7 +89,8 @@ public final class EndedEncoderBench {
         blit.copy(
             from: target, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(),
             sourceSize: MTLSize(width: 64, height: 64, depth: 1), to: snapTarget, destinationOffset: 0,
-            destinationBytesPerRow: 256, destinationBytesPerImage: 0)
+            destinationBytesPerRow: 256, destinationBytesPerImage: 0
+        )
         blit.copy(from: out, sourceOffset: 0, to: snapOut, destinationOffset: 0, size: 4096)
         blit.endEncoding()
     }
@@ -157,7 +169,7 @@ public final class EndedEncoderBench {
                 blit.copy(from: b.src, sourceOffset: 0, to: b.out, destinationOffset: 0, size: 64)
                 blit.endEncoding()
                 blit.copy(from: b.src2, sourceOffset: 0, to: b.out, destinationOffset: 0, size: 32)
-                blit.fill(buffer: b.out, range: 128..<160, value: 0x55)
+                blit.fill(buffer: b.out, range: 128 ..< 160, value: 0x55)
                 b.snap(c)
             }
         case "blit_earlier":
@@ -166,7 +178,7 @@ public final class EndedEncoderBench {
                 first.copy(from: b.src, sourceOffset: 0, to: b.out, destinationOffset: 0, size: 64)
                 first.endEncoding()
                 let second = c.makeBlitCommandEncoder()!
-                second.fill(buffer: b.out, range: 0..<64, value: 0x11)
+                second.fill(buffer: b.out, range: 0 ..< 64, value: 0x11)
                 second.endEncoding()
                 first.copy(from: b.src2, sourceOffset: 0, to: b.out, destinationOffset: 0, size: 32)
             }
@@ -193,14 +205,14 @@ public final class EndedEncoderBench {
                 Self.draw(e, Self.whole)
                 e.endEncoding()
                 let blit = c.makeBlitCommandEncoder()!
-                blit.fill(buffer: b.out2, range: 0..<64, value: 0x22)
+                blit.fill(buffer: b.out2, range: 0 ..< 64, value: 0x22)
                 Self.draw(e, Self.left)
                 blit.endEncoding()
             }
         case "copy_after_pass", "copy_after_event":
             return { c in
                 let blit = c.makeBlitCommandEncoder()!
-                blit.fill(buffer: b.out, range: 0..<64, value: 0x33)
+                blit.fill(buffer: b.out, range: 0 ..< 64, value: 0x33)
                 blit.endEncoding()
                 if name == "copy_after_pass" {
                     b.render(c, b.flat).endEncoding()
@@ -219,7 +231,7 @@ public final class EndedEncoderBench {
         case "end_twice_blit":
             return { c in
                 let blit = c.makeBlitCommandEncoder()!
-                blit.fill(buffer: b.out, range: 0..<64, value: 0x44)
+                blit.fill(buffer: b.out, range: 0 ..< 64, value: 0x44)
                 blit.endEncoding()
                 blit.endEncoding()
             }
@@ -233,9 +245,9 @@ public final class EndedEncoderBench {
         case "begin_while_open":
             return { c in
                 let first = c.makeBlitCommandEncoder()!
-                first.fill(buffer: b.out, range: 0..<64, value: 0x55)
+                first.fill(buffer: b.out, range: 0 ..< 64, value: 0x55)
                 let second = c.makeBlitCommandEncoder()!
-                second.fill(buffer: b.out2, range: 0..<64, value: 0x66)
+                second.fill(buffer: b.out2, range: 0 ..< 64, value: 0x66)
                 first.endEncoding()
                 second.endEncoding()
             }
@@ -257,8 +269,8 @@ public final class EndedEncoderBench {
         let bytes = try await gpu.read(target, bytesPerPixel: 4)
         let snapped = [UInt8](UnsafeRawBufferPointer(start: snapTarget.contents(), count: 64 * 64 * 4))
         for (key, x, y) in Self.corners {
-            reading.pixels[key] = Array(bytes[(y * 64 + x) * 4..<(y * 64 + x) * 4 + 4])
-            reading.snap[key] = Array(snapped[(y * 64 + x) * 4..<(y * 64 + x) * 4 + 4])
+            reading.pixels[key] = Array(bytes[(y * 64 + x) * 4 ..< (y * 64 + x) * 4 + 4])
+            reading.snap[key] = Array(snapped[(y * 64 + x) * 4 ..< (y * 64 + x) * 4 + 4])
         }
         let copy = { (buffer: MTLBuffer) in [UInt8](UnsafeRawBufferPointer(start: buffer.contents(), count: 512)) }
         (reading.out, reading.out2, reading.snapOut) = (copy(out), copy(out2), copy(snapOut))

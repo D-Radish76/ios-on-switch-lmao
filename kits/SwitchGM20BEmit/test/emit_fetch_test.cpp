@@ -117,6 +117,7 @@ std::vector<Method> run(const uint32_t (&words)[N], uint32_t primitive, const st
 struct Begin {
     uint32_t word = 0, first = 0, count = 0, firstMethod = 0;
     bool barrier = false;
+
     bool operator==(const Begin &o) const
     {
         return word == o.word && first == o.first && count == o.count && barrier == o.barrier;

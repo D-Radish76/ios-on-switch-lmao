@@ -17,7 +17,7 @@ struct XRKernelPlanes {
         let (w, h) = (Self.width, (texels + Self.width - 1) / Self.width)
         guard
             let surface = IOSurface(properties: [
-                .width: w, .height: h, .pixelFormat: UInt32(0x6233_6138),  // 'b3a8'
+                .width: w, .height: h, .pixelFormat: UInt32(0x6233_6138), // 'b3a8'
                 .allocSize: w * 5 * h,
                 .planeInfo: [
                     [
@@ -32,12 +32,14 @@ struct XRKernelPlanes {
             ])
         else { throw TestFailure("IOSurface creation failed") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: Self.format, width: w, height: h, mipmapped: false)
+            pixelFormat: Self.format, width: w, height: h, mipmapped: false
+        )
         descriptor.usage = usage
         descriptor.storageMode = .shared
         guard
             let texture = gpu.device.makeTexture(
-                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0)
+                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0
+            )
         else { throw TestFailure("makeTexture(RGB10A8_2P_XR10, usage \(usage.rawValue)) over two planes returned nil") }
         self.surface = surface
         self.texture = texture
@@ -59,7 +61,7 @@ struct XRKernelPlanes {
         defer { surface.unlock(options: [], seed: nil) }
         let words = surface.baseAddressOfPlane(at: 0).assumingMemoryBound(to: UInt32.self)
         let bytes = surface.baseAddressOfPlane(at: 1).assumingMemoryBound(to: UInt8.self)
-        for i in 0..<(Self.width * height) {
+        for i in 0 ..< (Self.width * height) {
             (words[i], bytes[i]) = fill(i)
         }
     }
@@ -75,7 +77,8 @@ struct XRKernelPlanes {
             encoder.setBuffer(buffer, offset: 0, index: 0)
             encoder.dispatchThreadgroups(
                 MTLSize(width: planes.height, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: width, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         return timing.path

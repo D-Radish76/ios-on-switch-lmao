@@ -66,12 +66,14 @@ struct XrImagesManyTest: HWTest {
         let attributes: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary]
         guard
             CVPixelBufferCreate(
-                nil, side, side, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &made)
-                == kCVReturnSuccess, let buffer = made,
+                nil, side, side, kCVPixelFormatType_30RGBLE_8A_BiPlanar, attributes as CFDictionary, &made
+            )
+            == kCVReturnSuccess, let buffer = made,
             let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { throw TestFailure("no b3a8 pixel buffer") }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: XRTwoPlaneTest.format, width: side, height: side, mipmapped: false)
+            pixelFormat: XRTwoPlaneTest.format, width: side, height: side, mipmapped: false
+        )
         descriptor.usage = [.shaderRead, .shaderWrite]
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
@@ -82,7 +84,7 @@ struct XrImagesManyTest: HWTest {
 
     /// The pass's path, and each texture's texels (the alpha byte above the word) when it completed
     static func written(_ gpu: GPU, _ count: Int) async throws -> (String, [[UInt64]]?) {
-        let images = try (0..<count).map { _ in try image(gpu) }
+        let images = try (0 ..< count).map { _ in try image(gpu) }
         let colour = try gpu.texture(.bgra8Unorm, side, side)
         let state = try gpu.render(fragment: "xr_write_sixteen", format: .bgra8Unorm)
         let timing = try await gpu.run(tolerateError: true) { commands in
@@ -95,7 +97,7 @@ struct XrImagesManyTest: HWTest {
             var corners = GPU.fullScreen
             encoder.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
             for first in stride(from: 0, to: count, by: slots) {
-                for slot in 0..<slots {
+                for slot in 0 ..< slots {
                     let i = first + slot < count ? first + slot : first
                     encoder.setFragmentTexture(images[i].1, index: slot)
                 }

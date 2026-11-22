@@ -80,10 +80,12 @@ static uint32_t submitted[kChannels];
  * TegraGM20BAbiFence, TegraGM20BAbiFenceSemantic and TegraGM20BAbiFenceIdentity */
 static uint32_t *pages[kConns];
 static uint32_t dead[kChannels]; /* method 11's error of a killed channel */
-static uint32_t made[kChannels]; /* channels made in each slot: a wait on one destroyed and made again answers NotResponding */
+static uint32_t
+    made[kChannels]; /* channels made in each slot: a wait on one destroyed and made again answers NotResponding */
 static uint64_t dead_va[kChannels]; /* and its fault VA */
 static uint32_t engines[kChannels];
-static uint8_t live[kChannels]; /* slots in use: a connection gets its lowest free one, its seqnos continuing (the kext's) */
+static uint8_t
+    live[kChannels]; /* slots in use: a connection gets its lowest free one, its seqnos continuing (the kext's) */
 static uint32_t kill_next;
 
 /* The slot of live handle `h`, or 0 */
@@ -113,7 +115,11 @@ static unsigned bo_new(struct bo o)
 }
 
 static uint64_t kill_next_va;
-enum { kMethods = 64 };
+
+enum {
+    kMethods = 64
+};
+
 static atomic_ulong calls[kMethods];
 static atomic_uint fail_left[kMethods]; /* mock_iokit_fail_next's, by method */
 static atomic_uint fail_skip[kMethods]; /* mock_iokit_fail_after's calls that go through first */
@@ -655,9 +661,8 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
         memcpy(record(ch) + 8, &uid, sizeof uid);
         pthread_cond_broadcast(&gpu_cond);
         pthread_mutex_unlock(&gpu_lock);
-        struct TegraGM20BAbiChannelCreateReply r = {.channel = slot + 1,
-                                                    .fence_token = kFenceToken,
-                                                    .fence_offset = slot * TegraGM20BFencePageRecordBytes};
+        struct TegraGM20BAbiChannelCreateReply r = {
+            .channel = slot + 1, .fence_token = kFenceToken, .fence_offset = slot * TegraGM20BFencePageRecordBytes};
         memcpy(out, &r, sizeof(r));
         return KERN_SUCCESS;
     }
@@ -733,10 +738,8 @@ static kern_return_t mock_call(mach_port_t c, uint32_t sel, const void *in, size
         const int ch = chan_of(c, ((const struct TegraGM20BAbiChannel *)in)->channel);
         if (ch < 0 || !live[ch])
             return kIOReturnBadArgument;
-        struct TegraGM20BAbiStatus s = {.completed = record(ch)[0],
-                                        .submitted = submitted[ch],
-                                        .error = dead[ch],
-                                        .fault_va = dead_va[ch]};
+        struct TegraGM20BAbiStatus s = {
+            .completed = record(ch)[0], .submitted = submitted[ch], .error = dead[ch], .fault_va = dead_va[ch]};
         memcpy(out, &s, sizeof(s));
         return KERN_SUCCESS;
     }

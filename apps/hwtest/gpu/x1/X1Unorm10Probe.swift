@@ -38,13 +38,15 @@ public enum X1Unorm10Probe {
                 $0.destinationRGBBlendFactor = .oneMinusSourceAlpha
                 $0.sourceAlphaBlendFactor = .one
                 $0.destinationAlphaBlendFactor = .oneMinusSourceAlpha
-            }, apple: .nearest),
+            }, apple: .nearest
+        ),
         Arm(
             name: "max",
             blend: {
                 $0.rgbBlendOperation = .max
                 $0.alphaBlendOperation = .max
-            }, apple: .nearest),
+            }, apple: .nearest
+        ),
     ]
 
     static let formats: [(name: String, format: MTLPixelFormat, redShift: UInt32)] = [
@@ -60,7 +62,7 @@ public enum X1Unorm10Probe {
 
     /// Columns 0 to 1022 hold code c's upper boundary (c + 0.5) / 1023 and the values 8 steps of 2^-17 each side of it,
     /// a row a step; column 1023 the specials.
-    static let values: [Float] = (0..<(width * offsets)).map { i in
+    static let values: [Float] = (0 ..< (width * offsets)).map { i in
         let (x, y) = (i % width, i / width)
         if x == width - 1 { return specials[y] }
         return Float((Double(x) + 0.5) / 1023) + Float(y - offsets / 2) * step
@@ -100,7 +102,7 @@ public enum X1Unorm10Probe {
         }
         guard !timing.path.hasPrefix("error:") else { return (timing.path, nil) }
         let bytes = try await gpu.read(target, bytesPerPixel: 4)
-        return (timing.path, (0..<(width * offsets)).map { bytes.loaded(as: UInt32.self, at: $0) })
+        return (timing.path, (0 ..< (width * offsets)).map { bytes.loaded(as: UInt32.self, at: $0) })
     }
 
     /// Each format under each arm (Arm): unblended over a clear, which the translator lowers to Metal's code written as

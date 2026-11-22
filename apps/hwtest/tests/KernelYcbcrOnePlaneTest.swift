@@ -31,12 +31,15 @@ struct KernelYcbcrOnePlaneTest: HWTest {
                 encoder.setBuffer(out, offset: 0, index: 0)
                 encoder.dispatchThreads(
                     MTLSize(width: texture.width, height: texture.height, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: 8, height: 8, depth: 1)
+                )
                 encoder.endEncoding()
             }
             return Array(
                 UnsafeBufferPointer(
-                    start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count), count: count))
+                    start: out.contents().bindMemory(to: SIMD4<Float>.self, capacity: count), count: count
+                )
+            )
         }
         let readOff = zip(try await gpu.texels(one), try await gpu.texels(two)).filter { $0 != $1 }.count
         let linearOff = zip(try await sampled(one), try await sampled(two)).filter { $0 != $1 }.count
@@ -51,6 +54,7 @@ struct KernelYcbcrOnePlaneTest: HWTest {
                 ("read() of 501 is 502's", readOff == 0), ("a linear sample of 501 is 502's", linearOff == 0),
                 ("every command buffer raw", gpu.paths.offRaw.isEmpty),
                 FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }

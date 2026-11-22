@@ -17,17 +17,17 @@ struct DrawErrorsTest: HWTest {
     var timeout: TimeInterval { 60 }
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        [[patch(triangle, 3)]] vertex float4 errors_post(float3 uvw [[position_in_patch]]) {
-            return float4(uvw.xy * 2 - 1, 0, 1);
-        }
-        vertex float4 errors_vertex(uint v [[vertex_id]]) {
-            const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            return float4(p[v], 0, 1);
-        }
-        fragment float4 errors_fragment() { return float4(1); }
-        """
+    #include <metal_stdlib>
+    using namespace metal;
+    [[patch(triangle, 3)]] vertex float4 errors_post(float3 uvw [[position_in_patch]]) {
+        return float4(uvw.xy * 2 - 1, 0, 1);
+    }
+    vertex float4 errors_vertex(uint v [[vertex_id]]) {
+        const float2 p[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        return float4(p[v], 0, 1);
+    }
+    fragment float4 errors_fragment() { return float4(1); }
+    """
 
     static let internalError = "MTLCommandBufferErrorDomain/\(MTLCommandBufferError.internal.rawValue) "
 
@@ -63,7 +63,8 @@ struct DrawErrorsTest: HWTest {
                     encoder.setTessellationFactorBuffer(factors, offset: 0, instanceStride: 0)
                     encoder.drawPatches(
                         numberOfPatchControlPoints: 3, patchStart: 0, patchCount: 1, patchIndexBuffer: nil,
-                        patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0)
+                        patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0
+                    )
                 }
             ),
             (
@@ -74,7 +75,8 @@ struct DrawErrorsTest: HWTest {
                     encoder.setTessellationFactorScale(0)
                     encoder.drawPatches(
                         numberOfPatchControlPoints: 3, patchStart: 0, patchCount: 1, patchIndexBuffer: nil,
-                        patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0)
+                        patchIndexBufferOffset: 0, instanceCount: 1, baseInstance: 0
+                    )
                 }
             ),
             (
@@ -83,7 +85,9 @@ struct DrawErrorsTest: HWTest {
                     encoder.setRenderPipelineState(plain)
                     var maps = [MTLVertexAmplificationViewMapping](
                         repeating: MTLVertexAmplificationViewMapping(
-                            viewportArrayIndexOffset: 0, renderTargetArrayIndexOffset: 0), count: 2)
+                            viewportArrayIndexOffset: 0, renderTargetArrayIndexOffset: 0
+                        ), count: 2
+                    )
                     encoder.setVertexAmplificationCount(2, viewMappings: &maps)
                     encoder.drawPrimitives(type: .triangle, vertexStart: 0, vertexCount: 3)
                 }

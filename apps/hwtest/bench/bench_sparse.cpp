@@ -33,7 +33,8 @@ struct Use {
 
 class SparseRun {
 public:
-    explicit SparseRun(switch_bench_sparse &r) : r_(r) {}
+    explicit SparseRun(switch_bench_sparse &r) : r_(r)
+    {}
 
     ~SparseRun()
     {
@@ -118,7 +119,8 @@ private:
             return stopped("no GPU VA left to reserve");
         TegraGM20BAbiBoAlloc a = {kBigPage, 17, TegraGM20BBoContiguous};
         TegraGM20BAbiBoAllocReply reply = {};
-        if (const int kr = k_.debugCall(TegraGM20BMethodBoAlloc, &a, sizeof a, &reply, sizeof reply); kr != KERN_SUCCESS)
+        if (const int kr = k_.debugCall(TegraGM20BMethodBoAlloc, &a, sizeof a, &reply, sizeof reply);
+            kr != KERN_SUCCESS)
             return stopped("BoAlloc of a contiguous big page: 0x" + hex(kr));
         c_.handle = reply.handle;
         c_.bytes = kBigPage;
@@ -362,9 +364,9 @@ private:
 void switch_bench_sparse_map(struct switch_bench_sparse *r)
 {
     *r = {};
-    for (int32_t *each : {&r->head_bytes_kept, &r->tail_read_zero, &r->big_read_zero, &r->beside_big_read_zero,
-                          &r->write_dropped, &r->replaces_map, &r->map_replaces, &r->bad_args_refused, &r->faults,
-                          &r->unmapped_read_faults})
+    for (int32_t *each :
+         {&r->head_bytes_kept, &r->tail_read_zero, &r->big_read_zero, &r->beside_big_read_zero, &r->write_dropped,
+          &r->replaces_map, &r->map_replaces, &r->bad_args_refused, &r->faults, &r->unmapped_read_faults})
         *each = -1;
     SparseRun(*r).run();
 }

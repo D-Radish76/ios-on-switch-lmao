@@ -26,7 +26,8 @@ struct NativeLinearRowTest: HWTest {
         typealias Row = @convention(c) (AnyObject, Selector, MTLTextureDescriptor) -> Int
         let row = unsafeBitCast((gpu.device as AnyObject).method(for: selector), to: Row.self)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .r8Snorm, width: Self.width, height: 4, mipmapped: false)
+            pixelFormat: .r8Snorm, width: Self.width, height: 4, mipmapped: false
+        )
         var metrics = Metrics()
         var wrong: [String] = []
         for (name, format, bytes) in Self.formats {

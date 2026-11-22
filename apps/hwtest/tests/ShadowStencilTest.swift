@@ -28,9 +28,11 @@ struct ShadowStencilTest: HWTest {
         let depthOnly = try gpu.texture(.depth32Float, n, n, usage: [.renderTarget])
         let state = try gpu.render(
             fragment: "shadow_stencil_fragment", format: .rgba8Unorm, depth: .depth32Float_stencil8,
-            stencil: .depth32Float_stencil8)
+            stencil: .depth32Float_stencil8
+        )
         let unattached = try gpu.render(
-            fragment: "shadow_stencil_fragment", format: .rgba8Unorm, depth: .depth32Float)
+            fragment: "shadow_stencil_fragment", format: .rgba8Unorm, depth: .depth32Float
+        )
         func depthStencil(
             _ compare: MTLCompareFunction, pass: MTLStencilOperation, fail: MTLStencilOperation
         )
@@ -83,7 +85,8 @@ struct ShadowStencilTest: HWTest {
                 e.setDepthStencilState(second)
                 quad(e, z: 0.25, [0, 1, 0, 1], offset: 256)
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         let plain = try gpu.texture(.rgba8Unorm, n, n)
         paths.append(
             try await gpu.run { commands in
@@ -99,27 +102,29 @@ struct ShadowStencilTest: HWTest {
                 e.setRenderPipelineState(unattached)
                 quad(e, z: 0.5, [0, 0, 1, 1], offset: 0)
                 e.endEncoding()
-            }.path)
+            }.path
+        )
         let stencilBytes = try gpu.buffer(n * n)
         try await gpu.run { commands in
             let b = commands.makeBlitCommandEncoder()!
             b.copy(
                 from: zeta, sourceSlice: 0, sourceLevel: 0, sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
                 sourceSize: MTLSize(width: n, height: n, depth: 1), to: stencilBytes, destinationOffset: 0,
-                destinationBytesPerRow: n, destinationBytesPerImage: n * n, options: .stencilFromDepthStencil)
+                destinationBytesPerRow: n, destinationBytesPerImage: n * n, options: .stencilFromDepthStencil
+            )
             b.endEncoding()
         }
         let pixels = try await gpu.read(colour, bytesPerPixel: 4)
         let blue = try await gpu.read(plain, bytesPerPixel: 4)
         let s = stencilBytes.contents().bindMemory(to: UInt8.self, capacity: n * n)
         var colourWrong = 0, stencilWrong = 0, unattachedWrong = 0
-        for y in 0..<n {
-            for x in 0..<n {
+        for y in 0 ..< n {
+            for x in 0 ..< n {
                 let kept = x <= Int(Self.cleared)
                 let at = 4 * (x + n * y)
-                colourWrong += Array(pixels[at..<at + 4]) == (kept ? [0, 255, 0, 255] : [0, 0, 0, 255]) ? 0 : 1
+                colourWrong += Array(pixels[at ..< at + 4]) == (kept ? [0, 255, 0, 255] : [0, 0, 0, 255]) ? 0 : 1
                 stencilWrong += s[x + n * y] == (kept ? UInt8(x + 1) : 0) ? 0 : 1
-                unattachedWrong += Array(blue[at..<at + 4]) == [0, 0, 255, 255] ? 0 : 1
+                unattachedWrong += Array(blue[at ..< at + 4]) == [0, 0, 255, 255] ? 0 : 1
             }
         }
         var metrics = Metrics()

@@ -51,10 +51,11 @@ struct TexelBufferReachTest: HWTest {
                 e.setBuffer(out, offset: 0, index: 1)
                 e.dispatchThreadgroups(
                     MTLSize(width: 1, height: 1, depth: 1),
-                    threadsPerThreadgroup: MTLSize(width: Self.marks.count, height: 1, depth: 1))
+                    threadsPerThreadgroup: MTLSize(width: Self.marks.count, height: 1, depth: 1)
+                )
                 e.endEncoding()
             }.path
-            let values = (0..<Self.marks.count).map {
+            let values = (0 ..< Self.marks.count).map {
                 Int(out.contents().load(fromByteOffset: 4 * $0, as: UInt32.self))
             }
             for (key, value) in zip(["v0", "v_last_in", "v_past"], values) { metrics.set(key, value) }

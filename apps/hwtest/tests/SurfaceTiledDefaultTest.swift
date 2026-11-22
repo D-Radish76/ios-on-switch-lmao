@@ -43,7 +43,8 @@ struct SurfaceTiledDefaultTest: HWTest {
             checks.append(("\(label) block-linear (kernel said \(answer))", answer == "1"))
             surface.lock(options: .readOnly, seed: nil)
             let seen = Array(
-                UnsafeRawBufferPointer(start: surface.baseAddress + (height / 2) * rowBytes + width * 2, count: 4))
+                UnsafeRawBufferPointer(start: surface.baseAddress + (height / 2) * rowBytes + width * 2, count: 4)
+            )
             surface.unlock(options: .readOnly, seed: nil)
             checks.append(("\(label) the clear reads back as rows", seen == Self.clearSeen))
             withExtendedLifetime(texture) {}
@@ -60,12 +61,14 @@ struct SurfaceTiledDefaultTest: HWTest {
             throw TestFailure("IOSurface \(width)x\(height) not made")
         }
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard
             let texture = gpu.device.makeTexture(
-                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0)
+                descriptor: descriptor, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0
+            )
         else { throw TestFailure("makeTexture(iosurface:) \(width)x\(height) returned nil") }
         return (surface, texture)
     }
@@ -85,13 +88,15 @@ extension GPUConnection {
         let bytes = UInt64((surface.allocationSize + page - 1) / page * page)
         let id = IOSurfaceGetID(unsafeBitCast(surface, to: IOSurfaceRef.self))
         let (imported, reply) = call(
-            Self.boImportMethod, Self.words(split(address) + split(bytes) + [id, Self.importGpuReads]), outputSize: 16)
+            Self.boImportMethod, Self.words(split(address) + split(bytes) + [id, Self.importGpuReads]), outputSize: 16
+        )
         guard imported == KERN_SUCCESS else { return (imported, 0) }
         let handle = Self.uint64(reply, 0)
         defer { _ = call(Self.boFreeMethod, Self.words(split(handle)), outputSize: 0) }
         let shape = [surface.width, surface.height, surface.bytesPerElement, surface.bytesPerRow].map { UInt32($0) }
         let (asked, info) = call(
-            Self.surfaceLayoutInfoMethod, Self.words(split(handle) + shape + [0, 0]), outputSize: 48)
+            Self.surfaceLayoutInfoMethod, Self.words(split(handle) + shape + [0, 0]), outputSize: 48
+        )
         return (asked, asked == KERN_SUCCESS ? Self.uint32(info, 0) : 0)
     }
 

@@ -5,61 +5,61 @@ import Metal
 
 enum FetchTessellatedCases {
     static let side = 64
-    static let interior = 2..<62
+    static let interior = 2 ..< 62
     static let interiorPixels = 3600
     static let runs = 10
 
     static let source = """
-        #include <metal_stdlib>
-        using namespace metal;
-        struct FetchTessParams { uint mode; float first, second, step; };
-        struct FetchTessOut { float4 position [[position]]; float u; float v; uint group [[flat]]; };
+    #include <metal_stdlib>
+    using namespace metal;
+    struct FetchTessParams { uint mode; float first, second, step; };
+    struct FetchTessOut { float4 position [[position]]; float u; float v; uint group [[flat]]; };
 
-        [[patch(quad, 4)]] vertex FetchTessOut fetch_tess_vertex(float2 uv [[position_in_patch]],
-                                                                 uint pid [[patch_id]], uint iid [[instance_id]],
-                                                                 constant FetchTessParams &p [[buffer(0)]]) {
-            const float x = p.mode == 0 ? 1.0 - abs(2.0 * uv.x - 1.0) : uv.x;
-            const float y = p.mode == 1 ? 1.0 - abs(2.0 * uv.y - 1.0) : uv.y;
-            FetchTessOut o;
-            o.position = float4(2.0 * x - 1.0, 2.0 * y - 1.0, 0.5, 1.0);
-            o.u = uv.x;
-            o.v = uv.y;
-            o.group = p.mode == 2 ? pid : p.mode == 3 ? iid : 0;
-            return o;
-        }
-
-        static float4 fetch_tess_mix(FetchTessOut in, float4 dst, constant FetchTessParams &p) {
-            const bool first = p.mode == 0 ? in.u < 0.5 : p.mode == 1 ? in.v < 0.5 : in.group == 0;
-            return float4(dst.r * 0.5 + (first ? p.first : p.second), dst.g + p.step, 0.0, 1.0);
-        }
-
-        fragment float4 fetch_tess_fragment(FetchTessOut in [[stage_in]], float4 dst [[color(0)]],
-                                            constant FetchTessParams &p [[buffer(0)]]) {
-            return fetch_tess_mix(in, dst, p);
-        }
-
-        struct FetchTessDepthOut { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
-        fragment FetchTessDepthOut fetch_tess_depth_fragment(FetchTessOut in [[stage_in]], float4 dst [[color(0)]],
+    [[patch(quad, 4)]] vertex FetchTessOut fetch_tess_vertex(float2 uv [[position_in_patch]],
+                                                             uint pid [[patch_id]], uint iid [[instance_id]],
                                                              constant FetchTessParams &p [[buffer(0)]]) {
-            return {fetch_tess_mix(in, dst, p), 0.25};
-        }
+        const float x = p.mode == 0 ? 1.0 - abs(2.0 * uv.x - 1.0) : uv.x;
+        const float y = p.mode == 1 ? 1.0 - abs(2.0 * uv.y - 1.0) : uv.y;
+        FetchTessOut o;
+        o.position = float4(2.0 * x - 1.0, 2.0 * y - 1.0, 0.5, 1.0);
+        o.u = uv.x;
+        o.v = uv.y;
+        o.group = p.mode == 2 ? pid : p.mode == 3 ? iid : 0;
+        return o;
+    }
 
-        struct FetchTessScreen { float4 position [[position]]; };
-        vertex FetchTessScreen fetch_tess_screen(uint vid [[vertex_id]]) {
-            const float2 corners[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
-            return {float4(corners[vid], 0.5, 1)};
-        }
+    static float4 fetch_tess_mix(FetchTessOut in, float4 dst, constant FetchTessParams &p) {
+        const bool first = p.mode == 0 ? in.u < 0.5 : p.mode == 1 ? in.v < 0.5 : in.group == 0;
+        return float4(dst.r * 0.5 + (first ? p.first : p.second), dst.g + p.step, 0.0, 1.0);
+    }
 
-        fragment float4 fetch_tess_sample_codes(FetchTessScreen in [[stage_in]], uint s [[sample_id]]) {
-            return float4(float(s * 40u) / 255.0, 0.0, 0.0, 1.0);
-        }
+    fragment float4 fetch_tess_fragment(FetchTessOut in [[stage_in]], float4 dst [[color(0)]],
+                                        constant FetchTessParams &p [[buffer(0)]]) {
+        return fetch_tess_mix(in, dst, p);
+    }
 
-        fragment float4 fetch_tess_unpack(FetchTessScreen in [[stage_in]],
-                                          texture2d_ms<float, access::read> samples [[texture(0)]]) {
-            const uint2 at = uint2(in.position.xy);
-            return samples.read(uint2(at.x / 4, at.y), at.x % 4);
-        }
-        """
+    struct FetchTessDepthOut { float4 colour [[color(0)]]; float depth [[depth(any)]]; };
+    fragment FetchTessDepthOut fetch_tess_depth_fragment(FetchTessOut in [[stage_in]], float4 dst [[color(0)]],
+                                                         constant FetchTessParams &p [[buffer(0)]]) {
+        return {fetch_tess_mix(in, dst, p), 0.25};
+    }
+
+    struct FetchTessScreen { float4 position [[position]]; };
+    vertex FetchTessScreen fetch_tess_screen(uint vid [[vertex_id]]) {
+        const float2 corners[3] = {float2(-1, -1), float2(3, -1), float2(-1, 3)};
+        return {float4(corners[vid], 0.5, 1)};
+    }
+
+    fragment float4 fetch_tess_sample_codes(FetchTessScreen in [[stage_in]], uint s [[sample_id]]) {
+        return float4(float(s * 40u) / 255.0, 0.0, 0.0, 1.0);
+    }
+
+    fragment float4 fetch_tess_unpack(FetchTessScreen in [[stage_in]],
+                                      texture2d_ms<float, access::read> samples [[texture(0)]]) {
+        const uint2 at = uint2(in.position.xy);
+        return samples.read(uint2(at.x / 4, at.y), at.x % 4);
+    }
+    """
 
     enum Mode: UInt32 { case foldU = 0, foldV, patches, instances }
     enum Submit { case direct, indirect, icb }
@@ -91,7 +91,8 @@ enum FetchTessellatedCases {
             let c = codes
             return Params(
                 mode: mode.rawValue, first: Float(c.first) / maximum, second: Float(c.second) / maximum,
-                step: Float(c.step) / maximum)
+                step: Float(c.step) / maximum
+            )
         }
         var stateKey: String { "\(target)_\(submit == .icb)" }
     }
@@ -124,7 +125,8 @@ enum FetchTessellatedCases {
         static func + (a: Tally, b: Tally) -> Tally {
             Tally(
                 firstThenSecond: a.firstThenSecond + b.firstThenSecond,
-                secondThenFirst: a.secondThenFirst + b.secondThenFirst, torn: a.torn + b.torn, other: a.other + b.other)
+                secondThenFirst: a.secondThenFirst + b.secondThenFirst, torn: a.torn + b.torn, other: a.other + b.other
+            )
         }
     }
 
@@ -155,14 +157,14 @@ enum FetchTessellatedCases {
     }
 
     static func samplesDistinct(_ image: [UInt16]) -> Int {
-        stride(from: 0, to: image.count, by: 4).filter { Set(image[$0..<$0 + 4].map { $0 >> 8 }).count == 4 }.count
+        stride(from: 0, to: image.count, by: 4).filter { Set(image[$0 ..< $0 + 4].map { $0 >> 8 }).count == 4 }.count
     }
 
     static func interiorCodes(samples: Int, _ code: (Int, Int, Int) -> UInt16) -> [UInt16] {
         var codes: [UInt16] = []
         for y in interior {
             for x in interior {
-                for s in 0..<samples { codes.append(code(x, y, s)) }
+                for s in 0 ..< samples { codes.append(code(x, y, s)) }
             }
         }
         return codes
@@ -183,7 +185,8 @@ enum FetchTessellatedCases {
             let d = MTLRenderPipelineDescriptor()
             d.vertexFunction = library.makeFunction(name: "fetch_tess_vertex")
             d.fragmentFunction = library.makeFunction(
-                name: arm.target == .depth ? "fetch_tess_depth_fragment" : "fetch_tess_fragment")
+                name: arm.target == .depth ? "fetch_tess_depth_fragment" : "fetch_tess_fragment"
+            )
             d.colorAttachments[0].pixelFormat = arm.format
             d.rasterSampleCount = arm.samples
             d.depthAttachmentPixelFormat = arm.target == .depth ? .depth32Float : .invalid
@@ -236,11 +239,13 @@ enum FetchTessellatedCases {
         func observe(_ arm: Arm) async throws -> Observation {
             let factors = try gpu.buffer([Float16](repeating: Float16(arm.factor), count: 6))
             let arguments = MTLDrawPatchIndirectArguments(
-                patchCount: UInt32(arm.patches), instanceCount: UInt32(arm.instances), patchStart: 0, baseInstance: 0)
+                patchCount: UInt32(arm.patches), instanceCount: UInt32(arm.instances), patchStart: 0, baseInstance: 0
+            )
             var draw = Draw(
                 arm: arm, state: try await state(arm),
                 target: try gpu.texture(arm.format, side, side, samples: arm.samples), factors: factors,
-                indirect: try gpu.buffer([arguments]))
+                indirect: try gpu.buffer([arguments])
+            )
             if arm.submit == .icb { draw.commands = try patchCommands(arm, factors) }
             if arm.target == .depth {
                 draw.depth = try gpu.texture(.depth32Float, side, side, usage: [.renderTarget])
@@ -252,7 +257,7 @@ enum FetchTessellatedCases {
                 draw.unpacked = try gpu.texture(.bgra8Unorm, side * 4, side)
             }
             var seen = Observation()
-            for _ in 0..<runs {
+            for _ in 0 ..< runs {
                 let buffer = try drawn(draw)
                 seen.path = GM20BFacade.path(of: buffer)
                 if buffer.status == .error {
@@ -293,14 +298,16 @@ enum FetchTessellatedCases {
                     encoder.drawPatches(
                         numberOfPatchControlPoints: 4, patchStart: 0, patchCount: draw.arm.patches,
                         patchIndexBuffer: nil, patchIndexBufferOffset: 0, instanceCount: draw.arm.instances,
-                        baseInstance: 0)
+                        baseInstance: 0
+                    )
                 case .indirect:
                     encoder.drawPatches(
                         numberOfPatchControlPoints: 4, patchIndexBuffer: nil, patchIndexBufferOffset: 0,
-                        indirectBuffer: draw.indirect, indirectBufferOffset: 0)
+                        indirectBuffer: draw.indirect, indirectBufferOffset: 0
+                    )
                 case .icb:
                     encoder.useResource(draw.factors, usage: .read, stages: .vertex)
-                    encoder.executeCommandsInBuffer(draw.commands!, range: 0..<1)
+                    encoder.executeCommandsInBuffer(draw.commands!, range: 0 ..< 1)
                 }
                 encoder.endEncoding()
             }
@@ -318,7 +325,8 @@ enum FetchTessellatedCases {
             commands.indirectRenderCommandAt(0).drawPatches(
                 4, patchStart: 0, patchCount: arm.patches, patchIndexBuffer: nil, patchIndexBufferOffset: 0,
                 instanceCount: arm.instances, baseInstance: 0, tessellationFactorBuffer: factors,
-                tessellationFactorBufferOffset: 0, tessellationFactorBufferInstanceStride: 0)
+                tessellationFactorBufferOffset: 0, tessellationFactorBufferInstanceStride: 0
+            )
             return commands
         }
 

@@ -29,7 +29,7 @@ struct CompileStageLibraryTest: HWTest {
         metrics.set("nvk_loaded", Self.imageLoaded("libvulkan_nouveau.dylib") ? 1 : 0)
 
         let before = GM20BFacade.counters(of: gpu.device)
-        let salt = UInt32.random(in: 1...UInt32.max) ^ 0x6e61_6b6c
+        let salt = UInt32.random(in: 1 ... UInt32.max) ^ 0x6e61_6b6c
         let state = try pipeline(gpu, salt: salt)
         let compile = GM20BFacade.compile(of: state) ?? [:]
         let how = compile["how"] as? String ?? "none"
@@ -48,7 +48,8 @@ struct CompileStageLibraryTest: HWTest {
                 ("compiled by the shader compiler", how == "compiled"),
                 ("the salted kernel's every element exact", wrong == 0),
                 failed,
-            ], metrics, proof: "salt \(salt)")
+            ], metrics, proof: "salt \(salt)"
+        )
     }
 
     func pipeline(_ gpu: GPU, salt: UInt32) throws -> MTLRenderPipelineState {
@@ -76,16 +77,17 @@ struct CompileStageLibraryTest: HWTest {
             encoder.setBuffer(data, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: count, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }
         let values = data.contents().bindMemory(to: UInt32.self, capacity: count)
-        return (0..<count).filter { values[$0] != UInt32($0) ^ salt }.count
+        return (0 ..< count).filter { values[$0] != UInt32($0) ^ salt }.count
     }
 
     /// The loaded TegraGM20BMetal plugin's path
     static func pluginImage() -> String? {
-        for i in 0..<_dyld_image_count() {
+        for i in 0 ..< _dyld_image_count() {
             guard let name = _dyld_get_image_name(i) else { continue }
             let path = String(cString: name)
             if path.hasSuffix("/TegraGM20BMetal.bundle/TegraGM20BMetal") { return path }
@@ -94,7 +96,7 @@ struct CompileStageLibraryTest: HWTest {
     }
 
     static func imageLoaded(_ suffix: String) -> Bool {
-        (0..<_dyld_image_count()).contains { i in
+        (0 ..< _dyld_image_count()).contains { i in
             _dyld_get_image_name(i).map { String(cString: $0).hasSuffix("/" + suffix) } ?? false
         }
     }

@@ -90,7 +90,9 @@ public struct SceneResult: Sendable {
         pictures.append(
             ScenePicture(
                 label: label, golden: golden ?? label, metalFormat: metalFormat, signature: signature, bytes: bytes,
-                width: width, height: height, before: before, cleared: cleared))
+                width: width, height: height, before: before, cleared: cleared
+            )
+        )
         metrics.set("hash_" + label, String(signature.hash, radix: 16))
     }
 
@@ -116,7 +118,8 @@ public struct SceneResult: Sendable {
         }
         return compare(
             label, format.raster(got, width: width, height: height), format.raster(want, width: width, height: height),
-            tolerance: tolerance)
+            tolerance: tolerance
+        )
     }
 
     /// A failure that is no picture (a value out of range, a call that returned nil).

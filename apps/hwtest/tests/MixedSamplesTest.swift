@@ -42,7 +42,7 @@ struct MixedSamplesTest: HWTest {
                 let key = "mixed_r\(raster)"
                 do {
                     var runs: [MixedSamplesCases.Run] = []
-                    for mask in 0..<16 { runs.append(try await scene.run(mask: UInt32(mask), raster: raster)) }
+                    for mask in 0 ..< 16 { runs.append(try await scene.run(mask: UInt32(mask), raster: raster)) }
                     let u = MixedSamplesCases.uniform(runs, raster: raster)
                     grey += u.grey
                     metrics.set(key + "_white", u.white)

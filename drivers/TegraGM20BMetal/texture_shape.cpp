@@ -405,7 +405,8 @@ const char *metalRefusal(const TextureShape &s)
     if (const char *why = formatRefusal(s.format))
         return why;
     if (noTextureAlone(s.format))
-        return "nil: a format Metal makes no texture of from a descriptor alone (a YCbCr one, RGBA16Float_XR, AnyDepth, "
+        return "nil: a format Metal makes no texture of from a descriptor alone (a YCbCr one, RGBA16Float_XR, "
+               "AnyDepth, "
                "AnyStencil: m2v texture_descriptor.rs no_texture_alone)";
     if (ms && (isYcbcrFormat(s.format) || twoPlaneXr(s.format)))
         return "a two-plane format takes no multisampled texture";
@@ -418,7 +419,8 @@ const char *metalRefusal(const TextureShape &s)
     // a texture buffer of one: an M4 Max's validation stops it ("cannot be used for a texture buffer": BC1, PVRTC, ASTC LDR
     // and HDR alike)
     if (compressed(s.format) && (line || ms || buffer || (flatBlocks(s.format) && s.type == kType3D)))
-        return "a block-compressed format takes no 1D, buffer or multisampled texture, and ETC, EAC and PVRTC no 3D one";
+        return "a block-compressed format takes no 1D, buffer or multisampled texture, and ETC, EAC and PVRTC no 3D "
+               "one";
     if (!s.width || !s.height || !s.depth)
         return "a side of 0";
     if (((line || buffer) && s.height != 1) || (s.type != kType3D && s.depth != 1))
@@ -468,10 +470,12 @@ const char *identityRefusal(const TextureShape &s, const answers::Kind &k)
 const char *hardwareRefusal(const TextureShape &s)
 {
     if (bfloat(s.format))
-        return "GM20B's texture unit and colour targets have no bfloat16 component (clb097tex.h R_DATA_TYPE: SNORM, UNORM, "
+        return "GM20B's texture unit and colour targets have no bfloat16 component (clb097tex.h R_DATA_TYPE: SNORM, "
+               "UNORM, "
                "SINT, UINT, their FORCE_FP16 forms, FLOAT as IEEE half; clb197.h COLOR_TARGET_FORMAT has none)";
     if (paddedOrTransferred(s.format))
-        return "GM20B's texture unit has no 10- or 12-bit component in a 16-bit field, no PQ or HLG transfer and sRGB for "
+        return "GM20B's texture unit has no 10- or 12-bit component in a 16-bit field, no PQ or HLG transfer and sRGB "
+               "for "
                "8-bit components alone (clb097tex.h COMPONENTS_SIZES, S_R_G_B_CONVERSION), and no header over a word "
                "and a byte apart";
     return nullptr;
@@ -490,7 +494,8 @@ const char *decodedSurfaceRefusal(uint32_t format)
 // families, the padded and transferred 10- and 12-bit forms, the RGB10A8_2P forms and AnyDepth and AnyStencil
 const char *surfaceFormatRefusal(uint32_t format)
 {
-    const bool none = format == 556 || format == 560 || (format >= 563 && format <= 587) || (format >= 590 && format <= 652);
+    const bool none =
+        format == 556 || format == 560 || (format >= 563 && format <= 587) || (format >= 590 && format <= 652);
     return none ? "a format neither donor GPU's driver samples, or 24B119's on a GPU family the device's answers never "
                   "claim (the AGX format tables of both identities)"
                 : nullptr;

@@ -27,31 +27,41 @@ public enum YcbcrOnePlaneTargets {
     public static let cases: [Case] = [
         Case(
             key: "pairs_clear", format: 501, width: 64, height: 16, usage: target, fourcc: fourcc2vuy, surfaceWidth: 64,
-            bytesPerElement: 2, pitch: 128, expected: { rows($0, pitch: 128, [0x64, 0xaf, 0x64, 0x93], count: 128) }),
+            bytesPerElement: 2, pitch: 128, expected: { rows($0, pitch: 128, [0x64, 0xaf, 0x64, 0x93], count: 128) }
+        ),
         Case(
             key: "pairs_rev_clear", format: 562, width: 64, height: 16, usage: target, fourcc: fourccYuvs,
             surfaceWidth: 64, bytesPerElement: 2, pitch: 128,
-            expected: { rows($0, pitch: 128, [0xaf, 0x64, 0x93, 0x64], count: 128) }),
+            expected: { rows($0, pitch: 128, [0xaf, 0x64, 0x93, 0x64], count: 128) }
+        ),
         Case(
             key: "pairs_odd", format: 501, width: 33, height: 16, usage: read, fourcc: fourcc2vuy, surfaceWidth: 64,
             bytesPerElement: 2, pitch: 128,
             expected: { before in
                 var out = rows(before, pitch: 128, [0x64, 0xaf, 0x64, 0x93], count: 64)
-                for y in 0..<surfaceHeight { (out[y * 128 + 64], out[y * 128 + 65], out[y * 128 + 67]) = (0x64, 0xaf, 0x93) }
+                for y in 0 ..< surfaceHeight { (out[y * 128 + 64], out[y * 128 + 65], out[y * 128 + 67]) = (
+                    0x64,
+                    0xaf,
+                    0x93
+                ) }
                 return out
-            }),
+            }
+        ),
         Case(
             key: "pairs_odd_drawn", format: 501, width: 33, height: 16, usage: read, fourcc: fourcc2vuy,
-            surfaceWidth: 64, bytesPerElement: 2, pitch: 128, drawn: true, expected: { oddDrawn($0) }),
+            surfaceWidth: 64, bytesPerElement: 2, pitch: 128, drawn: true, expected: { oddDrawn($0) }
+        ),
         Case(
             key: "words_clear", format: 504, width: 33, height: 16, usage: read, fourcc: fourccV410, surfaceWidth: 64,
-            bytesPerElement: 4, pitch: 256, expected: { rows($0, pitch: 256, [0x8e, 0xe9, 0xca, 0x24], count: 33 * 4) }),
+            bytesPerElement: 4, pitch: 256,
+            expected: { rows($0, pitch: 256, [0x8e, 0xe9, 0xca, 0x24], count: 33 * 4) }
+        ),
     ]
 
     /// `before` with the first `count` bytes of every row `pattern` repeated
     static func rows(_ before: [UInt8], pitch: Int, _ pattern: [UInt8], count: Int) -> [UInt8] {
         var out = before
-        for y in 0..<surfaceHeight { for i in 0..<count { out[y * pitch + i] = pattern[i % pattern.count] } }
+        for y in 0 ..< surfaceHeight { for i in 0 ..< count { out[y * pitch + i] = pattern[i % pattern.count] } }
         return out
     }
 
@@ -64,14 +74,16 @@ public enum YcbcrOnePlaneTargets {
     static func oddDrawn(_ before: [UInt8]) -> [UInt8] {
         let height = surfaceHeight
         let pairs = YcbcrStore.converted(
-            (0..<(32 * height)).map { codes($0 % 32, $0 / 32) }, width: 32, height: height, full: false,
-            halvedDown: false)
+            (0 ..< (32 * height)).map { codes($0 % 32, $0 / 32) }, width: 32, height: height, full: false,
+            halvedDown: false
+        )
         let last = YcbcrStore.converted(
-            (0..<height).map { codes(32, $0) }, width: 1, height: height, full: false, halvedAcross: false,
-            halvedDown: false)
+            (0 ..< height).map { codes(32, $0) }, width: 1, height: height, full: false, halvedAcross: false,
+            halvedDown: false
+        )
         var out = before
-        for y in 0..<height {
-            for p in 0..<16 {
+        for y in 0 ..< height {
+            for p in 0 ..< 16 {
                 let at = y * 128 + 4 * p, block = (y * 16 + p) * 2
                 out[at] = UInt8(pairs.luma[y * 32 + 2 * p])
                 out[at + 1] = UInt8(pairs.chroma[block])
@@ -102,7 +114,7 @@ public enum YcbcrOnePlaneTargets {
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { throw TestFailure("no surface") }
         IOSurfaceLock(surface, [], nil)
         let base = IOSurfaceGetBaseAddress(surface).assumingMemoryBound(to: UInt8.self)
-        for i in 0..<IOSurfaceGetAllocSize(surface) { base[i] = UInt8(truncatingIfNeeded: i * 31 + 7) }
+        for i in 0 ..< IOSurfaceGetAllocSize(surface) { base[i] = UInt8(truncatingIfNeeded: i * 31 + 7) }
         IOSurfaceUnlock(surface, [], nil)
         return surface
     }
@@ -119,14 +131,15 @@ public enum YcbcrOnePlaneTargets {
         let start = bytes(surface)
         let format = MTLPixelFormat(rawValue: c.format)!
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: format, width: c.width, height: c.height, mipmapped: false)
+            pixelFormat: format, width: c.width, height: c.height, mipmapped: false
+        )
         descriptor.usage = c.usage
         descriptor.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return Reading(status: 2, bytesOff: 0, path: "-", first: "-")
         }
         let state = c.drawn ? try gpu.render(fragment: "texel_values", format: format) : nil
-        let data = try gpu.buffer((0..<(c.width * c.height)).map { codes($0 % c.width, $0 / c.width) })
+        let data = try gpu.buffer((0 ..< (c.width * c.height)).map { codes($0 % c.width, $0 / c.width) })
         let timing = try await gpu.run(tolerateError: true) { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = texture
@@ -145,9 +158,10 @@ public enum YcbcrOnePlaneTargets {
             }
             encoder.endEncoding()
         }
-        if timing.path.hasPrefix("error:") { return Reading(status: 1, bytesOff: 0, path: timing.facadePath, first: "-") }
+        if timing.path
+            .hasPrefix("error:") { return Reading(status: 1, bytesOff: 0, path: timing.facadePath, first: "-") }
         let got = bytes(surface), want = c.expected(start)
-        let wrong = (0..<got.count).filter { got[$0] != want[$0] }
+        let wrong = (0 ..< got.count).filter { got[$0] != want[$0] }
         let first = wrong.first.map { "\($0):\(String(got[$0], radix: 16))/\(String(want[$0], radix: 16))" } ?? "-"
         return Reading(status: 0, bytesOff: wrong.count, path: timing.facadePath, first: first)
     }

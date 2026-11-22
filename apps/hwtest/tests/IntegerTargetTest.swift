@@ -63,7 +63,7 @@ struct IntegerTargetTest: HWTest {
                 at += bits
             } else {
                 let start = bytes.startIndex + out.count * bytesEach
-                field = bytes[start..<(start + bytesEach)].enumerated().reduce(UInt64(0)) {
+                field = bytes[start ..< (start + bytesEach)].enumerated().reduce(UInt64(0)) {
                     $0 | UInt64($1.element) << (8 * $1.offset)
                 }
             }
@@ -85,7 +85,8 @@ struct IntegerTargetTest: HWTest {
             do {
                 let target = try gpu.texture(c.format, Self.size, Self.size)
                 let state = try gpu.render(
-                    fragment: c.signed ? "integer_sint_fragment" : "integer_uint_fragment", format: c.format)
+                    fragment: c.signed ? "integer_sint_fragment" : "integer_uint_fragment", format: c.format
+                )
                 var value = Self.drawn(c) + Array(repeating: 0, count: 4 - c.bits.count)
                 try await gpu.run { commands in
                     let pass = MTLRenderPassDescriptor()
@@ -106,10 +107,10 @@ struct IntegerTargetTest: HWTest {
                 let wantCleared = zip(clears, c.bits).map { Self.cleared($0, bits: $1, signed: c.signed) }
                 let wantDrawn = Self.drawn(c)
                 var wrong = 0
-                for y in 0..<Self.size {
-                    for x in 0..<Self.size {
+                for y in 0 ..< Self.size {
+                    for x in 0 ..< Self.size {
                         let at = (y * Self.size + x) * pixelBytes
-                        let got = Self.words(pixels[at..<(at + pixelBytes)], c)
+                        let got = Self.words(pixels[at ..< (at + pixelBytes)], c)
                         wrong += got == (x < Self.size / 2 ? wantDrawn : wantCleared) ? 0 : 1
                     }
                 }

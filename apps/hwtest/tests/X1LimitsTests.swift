@@ -21,12 +21,13 @@ struct X1ViewportsTest: HWTest {
     func run(_ context: TestContext) async throws -> Outcome {
         let gpu = try GPU.make()
         let state = try gpu.render(
-            vertex: "limits_viewport_vertex", fragment: "limits_viewport_fragment", format: .bgra8Unorm)
+            vertex: "limits_viewport_vertex", fragment: "limits_viewport_fragment", format: .bgra8Unorm
+        )
         let wide = try await Self.drawn(gpu, state, origin: -16352, size: 32768)
         let widest = try await Self.drawn(gpu, state, origin: -32704, size: 65535)
         var off = 0
-        for y in 0..<Self.side {
-            for x in 0..<Self.side where Array(wide.pixel(x, y, width: Self.side)) != Self.placed(x, y) { off += 1 }
+        for y in 0 ..< Self.side {
+            for x in 0 ..< Self.side where Array(wide.pixel(x, y, width: Self.side)) != Self.placed(x, y) { off += 1 }
         }
         let centre = Array(wide.pixel(32, 32, width: Self.side))
         let widestCentre = Array(widest.pixel(32, 32, width: Self.side))
@@ -60,7 +61,8 @@ struct X1ViewportsTest: HWTest {
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
             encoder.setRenderPipelineState(state)
             encoder.setViewport(
-                MTLViewport(originX: origin, originY: origin, width: size, height: size, znear: 0, zfar: 1))
+                MTLViewport(originX: origin, originY: origin, width: size, height: size, znear: 0, zfar: 1)
+            )
             encoder.setScissorRect(MTLScissorRect(x: 0, y: 0, width: side, height: side))
             var half = SIMD2<Float>(Float(size / 2), Float(size / 2))
             encoder.setVertexBytes(&half, length: 8, index: 0)
@@ -100,7 +102,7 @@ struct X1ThreadsPerThreadgroupTest: HWTest {
                 encoder.endEncoding()
             }
             let words = out.contents().bindMemory(to: UInt32.self, capacity: 1024)
-            let wrong = (0..<1024).filter { words[$0] != UInt32($0) }.count
+            let wrong = (0 ..< 1024).filter { words[$0] != UInt32($0) }.count
             metrics.set("all_1024_written_\(name)", wrong == 0)
             metrics.set("words_off_\(name)", wrong)
             checks.append(("\(name): every word written with its index (\(wrong) off)", wrong == 0))
@@ -129,7 +131,8 @@ struct X1TextureExtentsTest: HWTest {
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         let array = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .r8Unorm, width: 4, height: 4, mipmapped: false)
+            pixelFormat: .r8Unorm, width: 4, height: 4, mipmapped: false
+        )
         array.textureType = .type2DArray
         array.arrayLength = Self.layers
         array.usage = [.renderTarget, .shaderRead]
@@ -145,7 +148,8 @@ struct X1TextureExtentsTest: HWTest {
             metrics.set("cube_skipped_mb", available >> 20)
         } else {
             let cube = MTLTextureDescriptor.textureCubeDescriptor(
-                pixelFormat: .r8Unorm, size: Self.cubeSide, mipmapped: false)
+                pixelFormat: .r8Unorm, size: Self.cubeSide, mipmapped: false
+            )
             cube.usage = [.renderTarget, .shaderRead]
             cube.storageMode = .private
             let at = SIMD3<UInt32>(UInt32(Self.cubeSide - 1), UInt32(Self.cubeSide - 1), 5)
@@ -166,13 +170,14 @@ struct X1TextureExtentsTest: HWTest {
         let out = try gpu.buffer(16)
         for first in stride(from: 0, to: slices, by: 256) {
             try await gpu.run { commands in
-                for slice in first..<min(first + 256, slices) {
+                for slice in first ..< min(first + 256, slices) {
                     let pass = MTLRenderPassDescriptor()
                     pass.colorAttachments[0].texture = texture
                     pass.colorAttachments[0].slice = slice
                     pass.colorAttachments[0].loadAction = .clear
                     pass.colorAttachments[0].clearColor = MTLClearColor(
-                        red: Double(code(slice)) / 255, green: 0, blue: 0, alpha: 1)
+                        red: Double(code(slice)) / 255, green: 0, blue: 0, alpha: 1
+                    )
                     pass.colorAttachments[0].storeAction = .store
                     commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
                 }
@@ -211,9 +216,10 @@ struct X1Mme2Test: HWTest {
         descriptor.inheritBuffers = true
         guard let icb = gpu.device.makeIndirectCommandBuffer(descriptor: descriptor, maxCommandCount: 8, options: [])
         else { throw TestFailure("no indirect command buffer of draws") }
-        for k in 0..<8 {
+        for k in 0 ..< 8 {
             icb.indirectRenderCommandAt(k).drawPrimitives(
-                .triangle, vertexStart: 6 * k, vertexCount: 6, instanceCount: 1, baseInstance: 0)
+                .triangle, vertexStart: 6 * k, vertexCount: 6, instanceCount: 1, baseInstance: 0
+            )
         }
         let state = try gpu.render(
             vertex: "limits_column_vertex", fragment: "limits_column_fragment", format: .bgra8Unorm
@@ -241,8 +247,8 @@ struct X1Mme2Test: HWTest {
             encoder.endEncoding()
         }
         let pixels = try await gpu.read(target, bytesPerPixel: 4)
-        let reds = (0..<8).map { Int(Array(pixels.pixel(8 * $0 + 4, 4, width: 64))[2]) }
-        let drawn = (0..<8).filter { reds[$0] != 0 }
+        let reds = (0 ..< 8).map { Int(Array(pixels.pixel(8 * $0 + 4, 4, width: 64))[2]) }
+        let drawn = (0 ..< 8).filter { reds[$0] != 0 }
         let inCode = drawn.allSatisfy { reds[$0] == 30 * ($0 + 1) }
         var metrics = Metrics()
         metrics.set("drawn_commands", drawn.isEmpty ? "-" : drawn.map(String.init).joined(separator: ","))

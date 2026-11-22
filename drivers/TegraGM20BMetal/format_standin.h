@@ -46,8 +46,8 @@ constexpr uint32_t kFormatStandInTag = 112;
 // A resolve target's stand-in's (slot 8 + colour): a multisampled stand-in and its resolve's share no memory
 constexpr uint32_t kFormatResolveSlot = 8;
 
-constexpr uint32_t kR8UnormSrgb = 11, kRg8UnormSrgb = 31, kA1Bgr5Unorm = 41, kAbgr4Unorm = 42, kBgra4Unorm = 44, kArgb8Unorm = 84,
-                   kArgb8UnormSrgb = 85, kRgb9e5Float = 93, kBgra10XrSrgb = 553, kBgr10XrSrgb = 555;
+constexpr uint32_t kR8UnormSrgb = 11, kRg8UnormSrgb = 31, kA1Bgr5Unorm = 41, kAbgr4Unorm = 42, kBgra4Unorm = 44,
+                   kArgb8Unorm = 84, kArgb8UnormSrgb = 85, kRgb9e5Float = 93, kBgra10XrSrgb = 553, kBgr10XrSrgb = 555;
 
 // The format a pass renders such an attachment into, 0 for any other
 constexpr uint32_t formatStandIn(uint32_t format)
@@ -163,7 +163,7 @@ constexpr uint32_t formatStoreView(uint32_t format)
 {
     return format == kBgra10XrSrgb    ? 113 /* RGBA16Uint */
            : format == kRgb10A8XrSrgb ? 103 /* RG32Uint */
-           : formatLoadsWords(format) ? 53 /* R32Uint */
+           : formatLoadsWords(format) ? 53  /* R32Uint */
                                       : 23 /* R16Uint */;
 }
 

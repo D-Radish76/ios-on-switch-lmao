@@ -56,7 +56,7 @@ struct FillTextureTest: HWTest {
             }
             if plain { _ = facade?.perform(Self.plainSelector, with: NSNumber(value: false)) }
             let texture = try made.get()
-            let pattern = (0..<Self.side * Self.side * cell.bytes).map { UInt8(truncatingIfNeeded: $0 &* 37) }
+            let pattern = (0 ..< Self.side * Self.side * cell.bytes).map { UInt8(truncatingIfNeeded: $0 &* 37) }
             try await gpu.upload(pattern, to: texture, bytesPerRow: Self.side * cell.bytes)
             let before = GM20BFacade.counters(of: gpu.device)["fill_twod"]
             var responded = true
@@ -64,7 +64,8 @@ struct FillTextureTest: HWTest {
                 let blit = commands.makeBlitCommandEncoder()!
                 if let object = blit as AnyObject?, object.responds(to: Self.selector) {
                     unsafeBitCast(object.method(for: Self.selector), to: Fill.self)(
-                        object, Self.selector, texture, 0, 0, Self.region, Self.colour)
+                        object, Self.selector, texture, 0, 0, Self.region, Self.colour
+                    )
                 } else {
                     responded = false
                 }
@@ -76,11 +77,11 @@ struct FillTextureTest: HWTest {
             let got = try await gpu.read(texture, bytesPerPixel: cell.bytes)
             let want = Self.codes(cell)
             var inside = 0, outside = 0
-            for y in 0..<Self.side {
-                for x in 0..<Self.side {
+            for y in 0 ..< Self.side {
+                for x in 0 ..< Self.side {
                     let at = (y * Self.side + x) * cell.bytes
                     let inRegion = x >= 5 && x < 45 && y >= 7 && y < 38
-                    for c in 0..<cell.bytes {
+                    for c in 0 ..< cell.bytes {
                         if inRegion && got[at + c] != want[c] { inside += 1 }
                         if !inRegion && got[at + c] != pattern[at + c] { outside += 1 }
                     }
@@ -106,7 +107,7 @@ struct FillTextureTest: HWTest {
             return UInt32(min(max(e, 0), 1) * top + 0.5)
         }
         func le(_ word: UInt32, _ bytes: Int) -> [UInt8] {
-            (0..<bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
+            (0 ..< bytes).map { UInt8(truncatingIfNeeded: word >> (8 * $0)) }
         }
         let r = code(colour.red, 255, srgb), g = code(colour.green, 255, srgb), b = code(colour.blue, 255, srgb)
         let a = code(colour.alpha, 255, false)
@@ -115,7 +116,8 @@ struct FillTextureTest: HWTest {
         case .rgb10a2Unorm:
             return le(
                 code(colour.alpha, 3, false) << 30 | code(colour.blue, 1023, false) << 20
-                    | code(colour.green, 1023, false) << 10 | code(colour.red, 1023, false), 4)
+                    | code(colour.green, 1023, false) << 10 | code(colour.red, 1023, false), 4
+            )
         case .r8Unorm: return [UInt8(r)]
         case .r16Unorm: return le(code(colour.red, 65535, false), 2)
         default: return le(a << 24 | r << 16 | g << 8 | b, 4)

@@ -32,19 +32,21 @@ struct SrgbEncodeTest: HWTest {
     ]
     static let half = Sweep(
         fragment: "texel_halves",
-        values: (0...0x3c00).map { Float(Float16(bitPattern: UInt16($0))) }
+        values: (0 ... 0x3c00).map { Float(Float16(bitPattern: UInt16($0))) }
             + halfSpecials.map { Float(Float16(bitPattern: $0)) },
-        special: { !($0 >= 0 && $0 <= 1) || $0.sign == .minus })
+        special: { !($0 >= 0 && $0 <= 1) || $0.sign == .minus }
+    )
     static let floatSpecials: [Float] = [.nan, .infinity, -.infinity, -0.0, 1.5, 1e30, .leastNormalMagnitude / 4]
     static let float = Sweep(
         fragment: "texel_values",
-        values: (0...4095).flatMap { i -> [Float] in
+        values: (0 ... 4095).flatMap { i -> [Float] in
             [Double(i) - 0.5, Double(i) + 0.5].flatMap { edge -> [Float] in
                 let x = Float(edge / 4095)
                 return [x.nextDown.nextDown, x.nextDown, x, x.nextUp, x.nextUp.nextUp]
             }
-        } + (0...16384).map { Float($0) / 16384 } + floatSpecials,
-        special: { v in floatSpecials.contains { $0.bitPattern == v.bitPattern } })
+        } + (0 ... 16384).map { Float($0) / 16384 } + floatSpecials,
+        special: { v in floatSpecials.contains { $0.bitPattern == v.bitPattern } }
+    )
     static let formats: [(MTLPixelFormat, red: Int)] = [(.bgra8Unorm_srgb, 2), (.rgba8Unorm_srgb, 0)]
 
     func run(_ context: TestContext) async throws -> Outcome {
@@ -90,10 +92,11 @@ struct SrgbEncodeTest: HWTest {
         let target = try gpu.texture(format.0, width, height)
         let state = try gpu.render(fragment: sweep.fragment, format: format.0)
         let data = try gpu.buffer(
-            (0..<(width * height)).map { i in
+            (0 ..< (width * height)).map { i in
                 let v = i < sweep.values.count ? sweep.values[i] : 0
                 return SIMD4<Float>(v, v, v, 1)
-            })
+            }
+        )
         try await gpu.run { commands in
             let pass = MTLRenderPassDescriptor()
             pass.colorAttachments[0].texture = target

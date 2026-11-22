@@ -112,6 +112,7 @@ inline void *current_thread()
 	static thread_local char self;
 	return &self;
 }
+
 using thread_call_param_t = void *;
 
 struct SwitchEventCall {

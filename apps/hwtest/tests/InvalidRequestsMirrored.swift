@@ -50,7 +50,9 @@ extension InvalidRequestsTest {
             let counts = FailedCounts(before: before, after: GM20BFacade.counters(of: gpu.device))
             attributions.append(
                 Self.judge(
-                    key, counts, own: gpu.paths.since(paths), expecting: expected, skipped: skipped, &metrics, &checks))
+                    key, counts, own: gpu.paths.since(paths), expecting: expected, skipped: skipped, &metrics, &checks
+                )
+            )
         }
         return attributions
     }
@@ -60,11 +62,12 @@ extension InvalidRequestsTest {
     static func units(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let r = try await MirroredRequests.units(gpu)
         let side = MirroredRequests.side
-        let off = (0..<side * side).filter { i in r.texels[(4 * i)..<(4 * i + 4)].contains { $0 != 0x22 } }.count
+        let off = (0 ..< side * side).filter { i in r.texels[(4 * i) ..< (4 * i + 4)].contains { $0 != 0x22 } }.count
         metrics.set("units_off", off)
         report(
             "units", path: r.path, neighbours: r.neighbours, untouched: off == 0,
-            label: "its destination as it was (units_off=\(off))", &metrics, &checks)
+            label: "its destination as it was (units_off=\(off))", &metrics, &checks
+        )
     }
 
     static func indicesOff(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
@@ -84,9 +87,9 @@ extension InvalidRequestsTest {
 
     static func resolveOff(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let r = try await MirroredRequests.resolveOff(gpu)
-        let moved = Array(r.atTwo[2..<34]) == Array(r.atZero[0..<32])
-        let kept = r.atTwo[0..<2].allSatisfy { $0 == 0x22 } && r.atTwo[34...].allSatisfy { $0 == 0x22 }
-        let stamps = stride(from: 0, to: 32, by: 8).filter { k in r.atZero[k..<(k + 8)].contains { $0 != 0 } }.count
+        let moved = Array(r.atTwo[2 ..< 34]) == Array(r.atZero[0 ..< 32])
+        let kept = r.atTwo[0 ..< 2].allSatisfy { $0 == 0x22 } && r.atTwo[34...].allSatisfy { $0 == 0x22 }
+        let stamps = stride(from: 0, to: 32, by: 8).filter { k in r.atZero[k ..< (k + 8)].contains { $0 != 0 } }.count
         metrics.set("resolve_off_path", r.paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : r.paths.joined(separator: ","))
         metrics.set("resolve_off_moved", moved)
         metrics.set("resolve_off_kept", kept)
@@ -124,23 +127,28 @@ extension InvalidRequestsTest {
             (
                 "\(key): the blits around it wrote \(r.beforeWritten) and \(r.afterWritten) of \(all)",
                 r.beforeWritten == all && r.afterWritten == all
-            ))
+            )
+        )
     }
 
     static func layersPast(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let r = try await MirroredRequests.layered(
-            gpu, [(.bgra8Unorm, 3, 4), (.a1bgr5Unorm, 2, 2)], slice: 0, runs: 2)
+            gpu, [(.bgra8Unorm, 3, 4), (.a1bgr5Unorm, 2, 2)], slice: 0, runs: 2
+        )
         metrics.set("layers_past_path", r.paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : r.paths.joined(separator: ","))
         metrics.set("layers_past_bgra8_l2", r.cleared[0][2])
         checks.append(("layers_past: both passes raw", r.paths.allSatisfy { $0 == "gm20b" }))
-        let drawnLayers = r.cleared[0][0..<2].allSatisfy { $0 == 1 }
+        let drawnLayers = r.cleared[0][0 ..< 2].allSatisfy { $0 == 1 }
         checks.append(("layers_past: BGRA8 layers 0-1 cleared (\(r.cleared[0]))", drawnLayers))
         checks.append(("layers_past: A1BGR5 layers cleared (\(r.cleared[1]))", r.cleared[1] == [1, 1]))
     }
 
     static func layersPlain(_ gpu: GPU, _ metrics: inout Metrics, _ checks: inout [(String, Bool)]) async throws {
         let r = try await MirroredRequests.layered(gpu, [(.bgra8Unorm, 3, 4)], slice: 1, runs: 1)
-        metrics.set("layers_plain_path", r.paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : r.paths.joined(separator: ","))
+        metrics.set(
+            "layers_plain_path",
+            r.paths.allSatisfy { $0 == "gm20b" } ? "gm20b" : r.paths.joined(separator: ",")
+        )
         checks.append(("layers_plain: the pass raw", r.paths.allSatisfy { $0 == "gm20b" }))
         checks.append(("layers_plain: slices 1-2 cleared, 0 kept (\(r.cleared[0]))", r.cleared[0] == [0, 1, 1]))
     }

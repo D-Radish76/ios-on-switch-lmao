@@ -134,9 +134,10 @@ public enum PlaneCopies {
             sourceZero = shape.planes[0].offset & ~15
         case .r8OverBuffer:
             let pitch = max(16, gpu.device.minimumLinearTextureAlignment(for: .r8Unorm))
-            let buffer = try gpu.buffer((0..<pitch * 8).map { UInt8(truncatingIfNeeded: 13 * $0 + 5) })
+            let buffer = try gpu.buffer((0 ..< pitch * 8).map { UInt8(truncatingIfNeeded: 13 * $0 + 5) })
             let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-                pixelFormat: .r8Unorm, width: 16, height: 8, mipmapped: false)
+                pixelFormat: .r8Unorm, width: 16, height: 8, mipmapped: false
+            )
             descriptor.storageMode = .shared
             descriptor.usage = [.shaderRead]
             guard let texture = buffer.makeTexture(descriptor: descriptor, offset: 0, bytesPerRow: pitch) else {
@@ -149,16 +150,16 @@ public enum PlaneCopies {
         }
         let rows = c.destination.planes[0].pitch & ~15, planeZero = c.destination.planes[0].offset & ~15
         let read = { (i: Int) in i < sourceBytes.count ? sourceBytes[i] : 0 }
-        for k in 0..<c.size.h {
-            for i in 0..<c.size.w * u {
+        for k in 0 ..< c.size.h {
+            for i in 0 ..< c.size.w * u {
                 let at = planeZero + (c.to.y + k) * rows + c.to.x * u + i
                 if at < want.count { want[at] = read(sourceZero + (c.from.y + k) * sourceRows + c.from.x * u + i) }
             }
         }
         let planeOne = c.destination.planes[1].offset & ~15
         if let (offset, sourceStep) = sourcePlaneOne {
-            for k in 0..<c.size.h {
-                for i in 0..<c.size.w {
+            for k in 0 ..< c.size.h {
+                for i in 0 ..< c.size.w {
                     let at = planeOne + (c.to.y + k) * rows + c.to.x + i
                     if at < want.count { want[at] = read(offset + (c.from.y + k) * sourceStep + c.from.x + i) }
                 }
@@ -170,17 +171,20 @@ public enum PlaneCopies {
                 from: sourceTexture, sourceSlice: 0, sourceLevel: 0,
                 sourceOrigin: MTLOrigin(x: c.from.x, y: c.from.y, z: 0),
                 sourceSize: MTLSize(width: c.size.w, height: c.size.h, depth: 1), to: destination, destinationSlice: 0,
-                destinationLevel: 0, destinationOrigin: MTLOrigin(x: c.to.x, y: c.to.y, z: 0))
+                destinationLevel: 0, destinationOrigin: MTLOrigin(x: c.to.x, y: c.to.y, z: 0)
+            )
             blit.endEncoding()
         }.facadePath
         let got = SurfaceReads.bytes(into)
-        let planeOneEnd = c.destination.planes[1].offset + c.destination.planes[1].pitch * c.destination.planes[1].height
+        let planeOneEnd = c.destination.planes[1].offset + c.destination.planes[1].pitch * c.destination.planes[1]
+            .height
         let wrong = got.indices.filter { got[$0] != want[$0] }
         let after = sourceAfter()
         withExtendedLifetime(keep) {}
         return Result(
             path: path, off: wrong.count, offPastPlaneOne: wrong.filter { $0 >= planeOneEnd }.count,
             sourceChanged: zip(after, sourceBytes).filter { $0 != $1 }.count,
-            moved: zip(want, before).filter { $0 != $1 }.count)
+            moved: zip(want, before).filter { $0 != $1 }.count
+        )
     }
 }

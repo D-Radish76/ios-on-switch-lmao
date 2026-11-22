@@ -29,11 +29,13 @@ enum MixedSamplesCases {
         init(_ gpu: GPU) throws {
             self.gpu = gpu
             fill = try gpu.render(
-                fragment: "r5_mask_depth_fragment", format: .invalid, samples: 4, depth: .depth32Float)
+                fragment: "r5_mask_depth_fragment", format: .invalid, samples: 4, depth: .depth32Float
+            )
             var mixed: [Int: MTLRenderPipelineState] = [:]
             for raster in [1, 4] {
                 mixed[raster] = try gpu.render(
-                    fragment: "solid_fragment", format: .rgba8Unorm, samples: raster, depth: .depth32Float)
+                    fragment: "solid_fragment", format: .rgba8Unorm, samples: raster, depth: .depth32Float
+                )
             }
             self.mixed = mixed
             unpack = try gpu.render(fragment: "ms_depth_fragment", format: .r32Float)
@@ -88,7 +90,8 @@ enum MixedSamplesCases {
                 e.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * corners.count, index: 0)
                 e.setFragmentBytes(&white, length: 16, index: 0)
                 e.drawPrimitives(
-                    type: triangle ? .triangle : .triangleStrip, vertexStart: 0, vertexCount: corners.count)
+                    type: triangle ? .triangle : .triangleStrip, vertexStart: 0, vertexCount: corners.count
+                )
                 e.endEncoding()
             }
         }
@@ -112,7 +115,7 @@ enum MixedSamplesCases {
                 e.endEncoding()
             }
             let bytes = try await gpu.read(out, bytesPerPixel: 4)
-            return (0..<side * side * 4).map { bytes.loaded(as: Float.self, at: $0) }
+            return (0 ..< side * side * 4).map { bytes.loaded(as: Float.self, at: $0) }
         }
 
         func run(mask: UInt32, raster: Int, triangle: Bool = false) async throws -> Run {
@@ -143,7 +146,7 @@ enum MixedSamplesCases {
         var bits: UInt32 = 0
         for (s, p) in positions.enumerated() {
             let at = SIMD2<Float>(Float(x), Float(y)) + p
-            let edges = (0..<3).map { i -> Float in
+            let edges = (0 ..< 3).map { i -> Float in
                 let a = window[i], b = window[(i + 1) % 3]
                 return (b.x - a.x) * (at.y - a.y) - (b.y - a.y) * (at.x - a.x)
             }
@@ -153,7 +156,7 @@ enum MixedSamplesCases {
     }
 
     static func mask(_ samples: [Float], pixel: Int, equal value: Float) -> UInt32 {
-        (0..<4).reduce(0) { $0 | (samples[pixel * 4 + $1] == value ? 1 << $1 : 0) }
+        (0 ..< 4).reduce(0) { $0 | (samples[pixel * 4 + $1] == value ? 1 << $1 : 0) }
     }
 
     struct Uniform {
@@ -168,14 +171,14 @@ enum MixedSamplesCases {
     static func uniform(_ runs: [Run], raster: Int) -> Uniform {
         var u = Uniform()
         for (m, run) in runs.enumerated() {
-            let whites = (0..<side * side).filter { run.colour[4 * $0] == 255 }.count
+            let whites = (0 ..< side * side).filter { run.colour[4 * $0] == 255 }.count
             let shown = whites == side * side ? "1" : whites == 0 ? "0" : "m\(whites)"
             u.white += shown.count == 1 ? shown : "m"
             let expected = raster == 1 ? m != 0 : m & 1 != 0
             if shown != (expected ? "1" : "0") { u.off.append((m, shown)) }
             u.grey += run.colour.filter { $0 != 0 && $0 != 255 }.count
-            for p in 0..<side * side {
-                for s in 0..<4 where run.after[p * 4 + s] != (m >> s & 1 != 0 ? 0.5 : 0) { u.wrongSamples |= 1 << s }
+            for p in 0 ..< side * side {
+                for s in 0 ..< 4 where run.after[p * 4 + s] != (m >> s & 1 != 0 ? 0.5 : 0) { u.wrongSamples |= 1 << s }
             }
         }
         return u
@@ -193,12 +196,12 @@ enum MixedSamplesCases {
     static func edge(_ run: Run, raster: Int) -> Edge {
         var e = Edge()
         e.grey = run.colour.filter { $0 != 0 && $0 != 255 }.count
-        for y in 0..<side {
+        for y in 0 ..< side {
             var row = ""
-            for x in 0..<side {
+            for x in 0 ..< side {
                 let p = y * side + x
                 let passing = mask(run.before, pixel: p, equal: 1)
-                for s in 0..<4 where (passing >> s & 1) != (hashedMask(x, y) >> s & 1) { e.fillOff += 1 }
+                for s in 0 ..< 4 where (passing >> s & 1) != (hashedMask(x, y) >> s & 1) { e.fillOff += 1 }
                 let cov = covered(x, y)
                 let live = cov & passing
                 let white = run.colour[4 * p] == 255

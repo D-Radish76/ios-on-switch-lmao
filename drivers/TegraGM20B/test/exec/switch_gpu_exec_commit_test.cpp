@@ -55,7 +55,8 @@ TEST(ExecEmpty, FirstWordWaitNeedsNoRegisteredBacking)
 					      nullptr),
 		  0);
 	EXPECT_EQ(doorbells, 1u);
-	EXPECT_EQ(ioLockTakes().load() - own, 0u) << "a job with no records took the ownership order";
+	EXPECT_EQ(ioLockTakes().load() - own, 0u)
+		<< "a job with no records took the ownership order";
 	EXPECT_EQ(switch_exec_mutex_takes() - live, 0u);
 	EXPECT_EQ(switch_exec_chan_word_acquires(chan, 0x100, 1), 1u);
 	EXPECT_TRUE(ioLocksHeld().empty());
@@ -476,6 +477,7 @@ TEST_F(ExecCommit, AnIdleClockGoesUpOutsideTheOwnershipOrderBeforeTheDoorbell)
 		uint32_t raises;
 		bool ordered, after_doorbell;
 	} raise = {&kicks, 0, false, false};
+
 	ASSERT_EQ(begin({{written, SWITCH_GPU_BACKING_WRITE, 0}}), 0);
 	switch_exec_idle_low(
 		[](void *context) {

@@ -18,7 +18,7 @@ struct MipmapVolumeTest: HWTest {
         let name: String
         let format: MTLPixelFormat
         let channels: Int
-        let bytes: Int  // per channel
+        let bytes: Int // per channel
         let tolerance: Double
     }
 
@@ -33,7 +33,7 @@ struct MipmapVolumeTest: HWTest {
         case 1: return Double(raw[i]) / 255
         case 2: return Double(Float(Float16(bitPattern: UInt16(raw[2 * i]) | UInt16(raw[2 * i + 1]) << 8)))
         default:
-            return Double(Float(bitPattern: (0..<4).reduce(UInt32(0)) { $0 | UInt32(raw[4 * i + $1]) << (8 * $1) }))
+            return Double(Float(bitPattern: (0 ..< 4).reduce(UInt32(0)) { $0 | UInt32(raw[4 * i + $1]) << (8 * $1) }))
         }
     }
 
@@ -90,7 +90,8 @@ struct MipmapVolumeTest: HWTest {
                 }
                 t.replace(
                     region: MTLRegionMake3D(0, 0, 0, w, h, d), mipmapLevel: 0, slice: 0, withBytes: bytes,
-                    bytesPerRow: w * texel, bytesPerImage: w * h * texel)
+                    bytesPerRow: w * texel, bytesPerImage: w * h * texel
+                )
                 let path = try await gpu.run { commands in
                     let b = commands.makeBlitCommandEncoder()!
                     b.generateMipmaps(for: t)
@@ -98,26 +99,28 @@ struct MipmapVolumeTest: HWTest {
                 }.path
                 var wrong = 0, largest = 0.0
                 var above = bytes
-                for l in 1..<levels {
+                for l in 1 ..< levels {
                     let s = (max(1, w >> (l - 1)), max(1, h >> (l - 1)), max(1, d >> (l - 1)))
                     let n = (max(1, w >> l), max(1, h >> l), max(1, d >> l))
                     var level = [UInt8](repeating: 0, count: n.0 * n.1 * n.2 * texel)
                     t.getBytes(
                         &level, bytesPerRow: n.0 * texel, bytesPerImage: n.0 * n.1 * texel,
-                        from: MTLRegionMake3D(0, 0, 0, n.0, n.1, n.2), mipmapLevel: l, slice: 0)
-                    for z in 0..<n.2 {
-                        for y in 0..<n.1 {
-                            for x in 0..<n.0 {
+                        from: MTLRegionMake3D(0, 0, 0, n.0, n.1, n.2), mipmapLevel: l, slice: 0
+                    )
+                    for z in 0 ..< n.2 {
+                        for y in 0 ..< n.1 {
+                            for x in 0 ..< n.0 {
                                 let tx = Self.taps(x, s.0, n.0), ty = Self.taps(y, s.1, n.1),
                                     tz = Self.taps(z, s.2, n.2)
-                                for c in 0..<arm.channels {
+                                for c in 0 ..< arm.channels {
                                     let read = { (xx: Int, yy: Int, zz: Int) -> Float in
                                         Float(Self.value(above, ((zz * s.1 + yy) * s.0 + xx) * arm.channels + c, arm))
                                     }
                                     let plane = { (zz: Int) -> Float in
                                         Self.lerp(
                                             Self.lerp(read(tx.0, ty.0, zz), read(tx.1, ty.0, zz), tx.2),
-                                            Self.lerp(read(tx.0, ty.1, zz), read(tx.1, ty.1, zz), tx.2), ty.2)
+                                            Self.lerp(read(tx.0, ty.1, zz), read(tx.1, ty.1, zz), tx.2), ty.2
+                                        )
                                     }
                                     let want = Self.lerp(plane(tz.0), plane(tz.1), tz.2)
                                     let got = Self.value(level, ((z * n.1 + y) * n.0 + x) * arm.channels + c, arm)
@@ -150,12 +153,12 @@ struct MipmapVolumeTest: HWTest {
         desc.storageMode = .shared
         guard let texture = gpu.device.makeTexture(descriptor: desc) else { throw TestFailure("no volume view parent") }
         var initial: [[UInt8]] = []
-        for level in 0..<4 {
+        for level in 0 ..< 4 {
             let w = max(1, 9 >> level), h = max(1, 6 >> level), d = max(1, 5 >> level)
             var bytes = [UInt8](repeating: 255, count: w * h * d * 4)
-            for z in 0..<d {
-                for y in 0..<h {
-                    for x in 0..<w {
+            for z in 0 ..< d {
+                for y in 0 ..< h {
+                    for x in 0 ..< w {
                         let p = ((z * h + y) * w + x) * 4
                         bytes[p] = UInt8(40 + level * 40 + z * 32)
                         bytes[p + 1] = UInt8(16 + level * 24 + y * 4)
@@ -165,12 +168,14 @@ struct MipmapVolumeTest: HWTest {
             }
             texture.replace(
                 region: MTLRegionMake3D(0, 0, 0, w, h, d), mipmapLevel: level, slice: 0, withBytes: bytes,
-                bytesPerRow: w * 4, bytesPerImage: w * h * 4)
+                bytesPerRow: w * 4, bytesPerImage: w * h * 4
+            )
             initial.append(bytes)
         }
         guard
             let view = texture.makeTextureView(
-                pixelFormat: .rgba8Unorm, textureType: .type3D, levels: 1..<3, slices: 0..<1)
+                pixelFormat: .rgba8Unorm, textureType: .type3D, levels: 1 ..< 3, slices: 0 ..< 1
+            )
         else { throw TestFailure("no volume mip view") }
         let viewPath = try await gpu.run { commands in
             let blit = commands.makeBlitCommandEncoder()!
@@ -178,12 +183,13 @@ struct MipmapVolumeTest: HWTest {
             blit.endEncoding()
         }.path
         var viewWrong = 0
-        for level in 0..<4 {
+        for level in 0 ..< 4 {
             let w = max(1, 9 >> level), h = max(1, 6 >> level), d = max(1, 5 >> level)
             var bytes = [UInt8](repeating: 0, count: w * h * d * 4)
             texture.getBytes(
                 &bytes, bytesPerRow: w * 4, bytesPerImage: w * h * 4,
-                from: MTLRegionMake3D(0, 0, 0, w, h, d), mipmapLevel: level, slice: 0)
+                from: MTLRegionMake3D(0, 0, 0, w, h, d), mipmapLevel: level, slice: 0
+            )
             let expected = level == 2 ? [UInt8](arrayLiteral: 96, 44, 12, 255, 96, 44, 28, 255) : initial[level]
             for i in expected.indices where bytes[i] != expected[i] { viewWrong += 1 }
         }

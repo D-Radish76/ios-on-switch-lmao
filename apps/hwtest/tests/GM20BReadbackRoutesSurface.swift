@@ -33,7 +33,7 @@ extension GM20BReadbackRoutesTest {
         }
         metrics.set("surface_cpu_layout", layout)
         let pattern = Self.pattern()
-        let inverted = (0..<Self.side).reversed().flatMap { pattern[($0 * Self.row)..<(($0 + 1) * Self.row)] }
+        let inverted = (0 ..< Self.side).reversed().flatMap { pattern[($0 * Self.row) ..< (($0 + 1) * Self.row)] }
         let r = try SurfaceCpuRoutes.run(gpu.device, surface, texture, replaced: inverted)
         let routes = ["getbytes", "view_getbytes", "after_nocopy", "locked_getbytes", "view_locked_getbytes"]
         for (route, want) in routes.map({ ($0, pattern) }) + [("view_locked_replace", inverted)] {
@@ -46,7 +46,12 @@ extension GM20BReadbackRoutesTest {
         let id = IOSurfaceGetID(unsafeBitCast(surface, to: IOSurfaceRef.self))
         let refusedNoCopy = "imported block-linear, whose pages hold its texels in GOBs: no buffer"
         let noCopyLines = ProcessLog.lines(ProcessLog.metal, "gm20b", containing: refusedNoCopy, since: start)?.count
-        let tiledLines = ProcessLog.lines(ProcessLog.refusal, "gm20b", containing: " buf.surface.tiled: ", since: start)?
+        let tiledLines = ProcessLog.lines(
+            ProcessLog.refusal,
+            "gm20b",
+            containing: " buf.surface.tiled: ",
+            since: start
+        )?
             .filter { $0.contains("of IOSurface \(id),") }.count
         metrics.set("surface_nocopy_buffer", r.surfaceNoCopy ? 1 : 0)
         metrics.set("surface_page_nocopy_buffer", r.pageNoCopy ? 1 : 0)
@@ -65,7 +70,7 @@ extension GM20BReadbackRoutesTest {
 
     static func off(_ got: [UInt8], _ want: [UInt8]) -> Int {
         guard got.count == want.count else { return want.count }
-        return (0..<want.count).filter { $0 % 4 < 3 && got[$0] != want[$0] }.count
+        return (0 ..< want.count).filter { $0 % 4 < 3 && got[$0] != want[$0] }.count
     }
 
     /// The first row's bytes of `rows` laid out block-linear at NIL's block height
@@ -73,8 +78,8 @@ extension GM20BReadbackRoutesTest {
         let yLog2 = SurfaceCrossProcessTest.blockHeightLog2(side)
         let rowBytes = (row + 63) & ~63
         var tiled = [UInt8](repeating: 0, count: row)
-        for y in 0..<side {
-            for xB in 0..<row {
+        for y in 0 ..< side {
+            for xB in 0 ..< row {
                 let at = SurfaceCrossProcessTest.gobOffset(rowBytes, yLog2, xB, y)
                 if at < row { tiled[at] = rows[y * row + xB] }
             }

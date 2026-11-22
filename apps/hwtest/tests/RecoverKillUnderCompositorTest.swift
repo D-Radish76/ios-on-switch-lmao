@@ -59,14 +59,14 @@ struct RecoverKillUnderCompositorTest: HWTest {
         var poisoned: [MTLCommandBuffer] = []
         var refusal: String?
         var allEnded = true
-        for round in 0..<Self.rounds {
+        for round in 0 ..< Self.rounds {
             fills.append(try kill.fill(gpu, ring, slot: 2 * round, ends))
             let (bad, refused) = try kill.poison(gpu, ring, slot: 2 * round + 1, scratch, ends)
             refusal = refusal ?? refused
             poisoned.append(bad)
             allEnded = await ends.wait(fills + poisoned, seconds: 10) && allEnded
             // a different point of the compositor's frame for each kill
-            try await Task.sleep(nanoseconds: UInt64.random(in: 3_000_000...29_000_000))
+            try await Task.sleep(nanoseconds: UInt64.random(in: 3_000_000 ... 29_000_000))
         }
         let last = try kill.fill(gpu, ring, slot: 2 * Self.rounds - 1, ends)
         allEnded = await ends.wait([last], seconds: 10) && allEnded
@@ -80,8 +80,8 @@ struct RecoverKillUnderCompositorTest: HWTest {
 
         let bytes = UnsafeRawBufferPointer(start: ring.contents(), count: ring.length)
         let slice = RecoverKillOneTest.slice
-        let kept = (0..<Self.rounds).filter { round in
-            bytes[(2 * round * slice)..<((2 * round + 1) * slice)].allSatisfy { $0 == UInt8(2 * round + 1) }
+        let kept = (0 ..< Self.rounds).filter { round in
+            bytes[(2 * round * slice) ..< ((2 * round + 1) * slice)].allSatisfy { $0 == UInt8(2 * round + 1) }
         }.count
         let fillsOK = (fills + [last]).filter { $0.status == .completed && $0.error == nil }.count
         let killed = poisoned.filter { $0.status == .error && GM20BFacade.path(of: $0) == "error:none" }.count
@@ -99,7 +99,8 @@ struct RecoverKillUnderCompositorTest: HWTest {
         var own = PathTally()
         for buffer in fills + poisoned + [last] { own.add(GM20BFacade.path(of: buffer)) }
         let failed = FailedCounts.judged(
-            before: start, after: end, expecting: ["none": Self.rounds], own: own, &metrics)
+            before: start, after: end, expecting: ["none": Self.rounds], own: own, &metrics
+        )
         metrics.set("present_gap_ms", presentGapMs, digits: 1)
         metrics.set("gap_bound_ms", Self.gapBoundMs, digits: 0)
         metrics.set("kill_ms_max", killMs, digits: 1)
@@ -132,6 +133,7 @@ struct RecoverKillUnderCompositorTest: HWTest {
                         : "the compositor probe's bench channel: \(firstFillError)",
                     fillErrors == 0
                 ),
-            ], metrics)
+            ], metrics
+        )
     }
 }

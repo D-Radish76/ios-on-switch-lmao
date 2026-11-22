@@ -87,9 +87,9 @@ bool Device::createYcbcrTexture(uint64_t surfaceId, void *base, uint64_t allocBy
     if (!createSurfaceTexture(surfaceId, base, allocBytes, surface, plan.luma, plan.lumaWidth, imageHeight,
                               plan.lumaPitch, plan.lumaFormat, *y, false, plan.readable, plan.meet))
         return undo();
-    if (c && !createSurfaceTexture(surfaceId, base, allocBytes, surface, plan.chroma, plan.chromaWidth,
-                                   plan.chromaHeight, plan.chromaPitch, plan.chromaFormat, *c, false, plan.readable,
-                                   plan.meet))
+    if (c &&
+        !createSurfaceTexture(surfaceId, base, allocBytes, surface, plan.chroma, plan.chromaWidth, plan.chromaHeight,
+                              plan.chromaPitch, plan.chromaFormat, *c, false, plan.readable, plan.meet))
         return undo();
     constexpr uint8_t kGreenBlue[4] = {3, 4, 0, 1};  // MTLTextureSwizzle Green, Blue, Zero, One
     if (c && plan.chromaGreenBlue)

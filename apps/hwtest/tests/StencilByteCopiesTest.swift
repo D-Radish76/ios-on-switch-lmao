@@ -31,6 +31,7 @@ struct StencilByteCopiesTest: HWTest {
                 ("the copy in keeps the depth", result.depthChanged == 0),
                 ("both copies on the driver", result.paths.allSatisfy { $0 == "gm20b" }),
                 FailedCounts.judged(before: before, after: counted, own: gpu.paths, &metrics),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }

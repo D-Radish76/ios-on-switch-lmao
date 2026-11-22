@@ -25,7 +25,8 @@ public enum YcbcrOverlapWords {
 
     static func surface(height: Int, pitch: Int) -> IOSurfaceRef? {
         let properties: [CFString: Any] = [
-            kIOSurfaceWidth: min(width, pitch / 4), kIOSurfaceHeight: height, kIOSurfacePixelFormat: OSType(0x7634_3130),
+            kIOSurfaceWidth: min(width, pitch / 4), kIOSurfaceHeight: height,
+            kIOSurfacePixelFormat: OSType(0x7634_3130),
             kIOSurfaceBytesPerElement: 4, kIOSurfaceBytesPerRow: pitch, kIOSurfaceAllocSize: pitch * height + 4096,
         ]
         guard let surface = IOSurfaceCreate(properties as CFDictionary) else { return nil }
@@ -38,10 +39,12 @@ public enum YcbcrOverlapWords {
     /// The pass into a 504 over `surface`: the facade's path, nil without a texture
     static func draw(_ gpu: GPU, _ surface: IOSurfaceRef, height: Int) async throws -> GPU.Timing? {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 504)!, width: width, height: height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 504)!, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.shaderRead, .renderTarget]
         descriptor.storageMode = .shared
-        guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else { return nil }
+        guard let texture = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0)
+        else { return nil }
         let state = try gpu.render(fragment: "overlap_hash", format: texture.pixelFormat)
         return try await gpu.run(tolerateError: true) { commands in
             let pass = MTLRenderPassDescriptor()
@@ -58,23 +61,31 @@ public enum YcbcrOverlapWords {
     }
 
     public static func observe(_ gpu: GPU, _ s: Shape) async throws -> Reading {
-        guard let overlapped = surface(height: s.height, pitch: s.pitch), let apart = surface(height: s.height, pitch: apart)
+        guard let overlapped = surface(height: s.height, pitch: s.pitch), let apart = surface(
+            height: s.height,
+            pitch: apart
+        )
         else { return Reading(status: 2) }
-        guard let timing = try await draw(gpu, overlapped, height: s.height), let reference = try await draw(gpu, apart, height: s.height)
+        guard let timing = try await draw(gpu, overlapped, height: s.height), let reference = try await draw(
+            gpu,
+            apart,
+            height: s.height
+        )
         else { return Reading(status: 2) }
         for t in [timing, reference] where t.path.hasPrefix("error:") { return Reading(status: 1, path: t.facadePath) }
         let got = YcbcrOnePlaneTargets.bytes(overlapped), want = YcbcrOnePlaneTargets.bytes(apart)
         var reading = Reading(path: timing.facadePath)
         let row = width * 4, end = s.pitch * (s.height - 1) + row
-        for a in 0..<end {
-            guard let w = YcbcrOverlapRows.winner(a, pitch: s.pitch, row: row, rows: s.height, down: 1, texelBytes: 4) else { continue }
+        for a in 0 ..< end {
+            guard let w = YcbcrOverlapRows.winner(a, pitch: s.pitch, row: row, rows: s.height, down: 1, texelBytes: 4)
+            else { continue }
             let expected = want[w.row * Self.apart + w.offset]
             if got[a] != expected {
                 reading.bytesOff += 1
                 if reading.first == "-" { reading.first = "\(a):\(got[a])_not_\(expected)_row\(w.row)" }
             }
         }
-        reading.pastChanged = (end..<got.count).filter { got[$0] != 0xee }.count
+        reading.pastChanged = (end ..< got.count).filter { got[$0] != 0xee }.count
         return reading
     }
 }

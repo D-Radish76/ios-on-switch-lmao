@@ -71,7 +71,7 @@ struct TextureTransferFailedTest: HWTest {
         metrics.set("read_untouched", armedRead.allSatisfy { $0 == 0x5a })
         metrics.set("next_write_ok", nextWrite == written)
         let clearOff = stride(from: 0, to: reference.count, by: 4).filter {
-            Array(reference[$0..<$0 + 4]) != Self.clear
+            Array(reference[$0 ..< $0 + 4]) != Self.clear
         }.count
         metrics.set("reference_off", clearOff)
         return .judged(
@@ -94,12 +94,14 @@ struct TextureTransferFailedTest: HWTest {
         ]
         guard let surface = IOSurface(properties: properties) else { throw TestFailure("IOSurface not made") }
         let d = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: side, height: side, mipmapped: false
+        )
         d.usage = [.renderTarget, .shaderRead]
         d.storageMode = .shared
         guard
             let texture = device.makeTexture(
-                descriptor: d, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0)
+                descriptor: d, iosurface: unsafeBitCast(surface, to: IOSurfaceRef.self), plane: 0
+            )
         else { throw TestFailure("no texture over the IOSurface") }
         return (surface, texture)
     }
@@ -107,13 +109,15 @@ struct TextureTransferFailedTest: HWTest {
     static func read(_ texture: MTLTexture, fill: UInt8) -> [UInt8] {
         var bytes = [UInt8](repeating: fill, count: region * region * 4)
         texture.getBytes(
-            &bytes, bytesPerRow: region * 4, from: MTLRegionMake2D(0, 0, region, region), mipmapLevel: 0)
+            &bytes, bytesPerRow: region * 4, from: MTLRegionMake2D(0, 0, region, region), mipmapLevel: 0
+        )
         return bytes
     }
 
     static func write(_ texture: MTLTexture, _ value: UInt8) {
         let bytes = [UInt8](repeating: value, count: region * region * 4)
         texture.replace(
-            region: MTLRegionMake2D(0, 0, region, region), mipmapLevel: 0, withBytes: bytes, bytesPerRow: region * 4)
+            region: MTLRegionMake2D(0, 0, region, region), mipmapLevel: 0, withBytes: bytes, bytesPerRow: region * 4
+        )
     }
 }

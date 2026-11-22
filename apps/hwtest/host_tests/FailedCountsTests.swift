@@ -15,14 +15,16 @@ final class FailedCountsTests: XCTestCase {
         for key in fields.keys.sorted() { metrics.set(key, fields[key]!) }
         return TestRecord(
             id: id, subsystem: "metal", name: id, interactive: false, outcome: Outcome(verdict, metrics),
-            milliseconds: 1, finished: Date(timeIntervalSince1970: 0))
+            milliseconds: 1, finished: Date(timeIntervalSince1970: 0)
+        )
     }
 
     func testCountsReadFailuresAndSkipsBetweenTwoReads() {
         let before = ["failed": 2, "failed.call.buf": 2, "skipped": 1, "skipped.call.blit": 1]
         let counts = FailedCounts(
             before: before,
-            after: ["failed": 5, "failed.call.buf": 3, "failed.none": 2, "skipped": 4, "skipped.call.blit": 4])
+            after: ["failed": 5, "failed.call.buf": 3, "failed.none": 2, "skipped": 4, "skipped.call.blit": 4]
+        )
         XCTAssertEqual(counts.metrics["failed_cbs"], .integer(3))
         XCTAssertEqual(counts.metrics["failed_why"], .text("none/2,call.buf/1"))
         XCTAssertEqual(counts.metrics["skipped_calls"], .integer(3))
@@ -32,7 +34,8 @@ final class FailedCountsTests: XCTestCase {
         XCTAssertEqual(unanswered.metrics["failed_cbs"], .text("unanswered"))
         XCTAssertEqual(
             unanswered.check(own: paths(["gm20b": 4])).0,
-            "no command buffer failed: the facade's counters answer no failed count")
+            "no command buffer failed: the facade's counters answer no failed count"
+        )
         XCTAssertFalse(unanswered.skipCheck().1)
         XCTAssertEqual(FailedCounts.counts("none/2,call.buf/1"), ["none": 2, "call.buf": 1])
     }
@@ -53,7 +56,8 @@ final class FailedCountsTests: XCTestCase {
         XCTAssertEqual(
             attribution.check.0,
             "foreign failure: foreign_failed=2 none/2 in command buffers it did not commit (a framework's, another "
-                + "queue's or thread's); its own 14 ended as expected")
+                + "queue's or thread's); its own 14 ended as expected"
+        )
         XCTAssertEqual(attribution.metrics["foreign_failed"], .integer(2))
         XCTAssertEqual(attribution.metrics["foreign_why"], .text("none/2"))
         XCTAssertNil(attribution.metrics["own_why"])
@@ -62,7 +66,8 @@ final class FailedCountsTests: XCTestCase {
         XCTAssertEqual(
             both.check(own: paths(["error:enc.pass": 1])).0,
             "own failure: its own command buffers failed enc.pass/1; foreign failure: foreign_failed=2 none/2 in "
-                + "command buffers it did not commit (a framework's, another queue's or thread's)")
+                + "command buffers it did not commit (a framework's, another queue's or thread's)"
+        )
     }
 
     func testExpectedFailuresAreTheTestsOwnAndExact() {
@@ -73,21 +78,27 @@ final class FailedCountsTests: XCTestCase {
         let two = FailedCounts(before: [:], after: ["failed": 2, "failed.compute": 2])
         XCTAssertEqual(
             two.check(expecting: ["compute": 1], own: paths(["error:compute": 2])).0,
-            "own failure: its own command buffers failed compute/1 past the expected compute/1")
+            "own failure: its own command buffers failed compute/1 past the expected compute/1"
+        )
         XCTAssertTrue(
             two.check(expecting: ["compute": 1], own: paths(["error:compute": 1])).0.hasPrefix(
-                "foreign failure: foreign_failed=1 compute/1"))
+                "foreign failure: foreign_failed=1 compute/1"
+            )
+        )
         let none = FailedCounts(before: [:], after: ["failed": 0])
         XCTAssertEqual(
             none.check(expecting: ["compute": 1], own: paths(["gm20b": 1])).0,
-            "own failure: expected compute/1 more to fail (failed -)")
+            "own failure: expected compute/1 more to fail (failed -)"
+        )
         XCTAssertEqual(
             none.check(own: paths(["gm20b": 1, "pending": 1])).0,
-            "own failure: its own command buffers off the driver pending/1")
+            "own failure: its own command buffers off the driver pending/1"
+        )
         XCTAssertEqual(
             none.check(own: paths(["error:pass.fmt": 1])).0,
             "own failure: its own command buffers failed pass.fmt/1; own failure: its own paths failed pass.fmt/1 the "
-                + "counters did not count")
+                + "counters did not count"
+        )
     }
 
     func testSkipsAreJudgedExactlyAndAMissingCountFails() {
@@ -123,10 +134,12 @@ final class FailedCountsTests: XCTestCase {
         XCTAssertEqual(
             LogLine.rollUp(records, milliseconds: 5),
             "HWTEST suite.reds FAIL failed_reds=enc.pass/2@b:own,none/2@c:foreign "
-                + "skipped_tests=call.blit/2@e,call.icb/1@f ms=5.0")
+                + "skipped_tests=call.blit/2@e,call.icb/1@f ms=5.0"
+        )
         XCTAssertEqual(
             LogLine.rollUp(Array(records.prefix(1)), milliseconds: 5),
-            "HWTEST suite.reds PASS failed_reds=- skipped_tests=- ms=5.0")
+            "HWTEST suite.reds PASS failed_reds=- skipped_tests=- ms=5.0"
+        )
     }
 
     func testACutLineKeepsTheCauseOfItsRed() {

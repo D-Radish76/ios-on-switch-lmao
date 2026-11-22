@@ -31,7 +31,8 @@ struct RenderReflectionTest: HWTest {
                 ("a reflection given", reflection != nil),
                 ("corners: vertex buffer 0", corners?.index == 0 && corners?.type == .buffer),
                 ("color: fragment buffer 0", color?.index == 0 && color?.type == .buffer),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }
 
@@ -59,6 +60,7 @@ struct ComputeReflectionTest: HWTest {
         return .judged(
             [
                 ("a reflection given", reflection != nil), ("a, b, out, counter: buffers 0-3", named),
-            ], metrics, proof: gpu.proof)
+            ], metrics, proof: gpu.proof
+        )
     }
 }

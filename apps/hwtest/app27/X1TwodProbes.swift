@@ -74,7 +74,7 @@ enum X1TwodProbes {
         let t = try gpu.texture(format.pixelFormat, w, h, usage: [.renderTarget, .shaderRead])
         var codes: [[UInt32]] = []
         var bytes: [UInt8] = []
-        for i in 0..<w * h {
+        for i in 0 ..< w * h {
             let texel = format.channels.enumerated().map { c, channel in
                 code(channel, probeHash(UInt32(i % w), UInt32(i / w), UInt32(7 + c)))
             }

@@ -50,10 +50,12 @@ final class InterlockBoundTests: XCTestCase {
         metrics.set("gm20b_ilk_pbgraxm_tn27a2xhf_isrc", 8)
         XCTAssertEqual(
             InterlockBound.judge(&metrics),
-            ["pbgraxm_tn27a2xhf_isrc: interlocked, with no uncontended time to hold it to"])
+            ["pbgraxm_tn27a2xhf_isrc: interlocked, with no uncontended time to hold it to"]
+        )
         metrics.set("gm20b_apart_us_pbgraxm_tn27a2xhf_isrc", 800.0, digits: 1)
         metrics.set("gm20b_pass_us_pbgraxm_tn27a2xhf_isrc", 80.0, digits: 1)
         XCTAssertEqual(
-            InterlockBound.judge(&metrics), ["pbgraxm_tn27a2xhf_isrc: interlocked, and its class has no stated factor"])
+            InterlockBound.judge(&metrics), ["pbgraxm_tn27a2xhf_isrc: interlocked, and its class has no stated factor"]
+        )
     }
 }

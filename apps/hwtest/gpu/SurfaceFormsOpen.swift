@@ -22,14 +22,15 @@ public enum SurfaceFormsOpen {
     public static func texelBufferTiled(_ gpu: GPU) async throws -> Reading {
         let texelCount = 128
         guard let surface = SurfaceReads.surface("w30r", 64, 64, rows: 256, allocation: 16384, fill: { _ in 0 }),
-            let target = SurfaceReads.texture(gpu, 554, 64, 64, over: surface, usage: [.renderTarget, .shaderRead])
+              let target = SurfaceReads.texture(gpu, 554, 64, 64, over: surface, usage: [.renderTarget, .shaderRead])
         else { throw TestFailure("no 554 over a 'w30r'") }
         let clear = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
         let drawn = try await RowsUnder16.pass(gpu, target, clear: clear, fragment: "forms_open_pixel_colours")
         guard !drawn.hasPrefix("error") else { throw TestFailure("the 554 pass failed: \(drawn)") }
         let image = try await SurfaceReads.read(gpu, target)
         let descriptor = MTLTextureDescriptor.textureBufferDescriptor(
-            with: MTLPixelFormat(rawValue: 550)!, width: texelCount, resourceOptions: [], usage: [.shaderRead])
+            with: MTLPixelFormat(rawValue: 550)!, width: texelCount, resourceOptions: [], usage: [.shaderRead]
+        )
         guard let texels = gpu.device.makeTexture(descriptor: descriptor, iosurface: surface, plane: 0) else {
             return Reading()
         }
@@ -42,7 +43,8 @@ public enum SurfaceFormsOpen {
             encoder.setBuffer(out, offset: 0, index: 0)
             encoder.dispatchThreads(
                 MTLSize(width: texelCount, height: 1, depth: 1),
-                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1))
+                threadsPerThreadgroup: MTLSize(width: 64, height: 1, depth: 1)
+            )
             encoder.endEncoding()
         }.facadePath
         let read = out.contents().bindMemory(to: SIMD4<Float>.self, capacity: texelCount)
@@ -59,11 +61,12 @@ public enum SurfaceFormsOpen {
         let attributes =
             [kCVPixelBufferIOSurfacePropertiesKey: [:], kCVPixelBufferMetalCompatibilityKey: true] as CFDictionary
         guard CVPixelBufferCreate(nil, 32, 16, 0x7034_3230, attributes, &owner) == kCVReturnSuccess, let buffer = owner,
-            let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
+              let surface = CVPixelBufferGetIOSurface(buffer)?.takeUnretainedValue()
         else { throw TestFailure("no 'p420' pixel buffer") }
         let (width, height, plane) = format == 588 ? (32, 16, 0) : (16, 8, 1)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: format)!, width: width, height: height, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: format)!, width: width, height: height, mipmapped: false
+        )
         descriptor.mipmapLevelCount = levels
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
@@ -83,7 +86,7 @@ public enum SurfaceFormsOpen {
         }.facadePath
         let seen = Array(UnsafeBufferPointer(start: out.contents().bindMemory(to: UInt32.self, capacity: 7), count: 7))
         var want: [UInt32] = [UInt32(levels)]
-        for level in 0..<3 {
+        for level in 0 ..< 3 {
             want += level < levels ? [UInt32(width >> level), UInt32(height >> level)] : [0, 0]
         }
         let off = zip(seen, want).filter { $0 != $1 }.count + (texture.mipmapLevelCount == levels ? 0 : 1)
@@ -106,15 +109,16 @@ public enum SurfaceFormsOpen {
         }
         var read: [Int: UInt8] = [:]
         if pass == .load {
-            for y in 0..<8 {
-                for b in 0..<8 { read[y * mebibyte + b] = UInt8(1 + 7 * y + b) }
-                for x in 0..<2 { read[64 + y * mebibyte + x] = UInt8(truncatingIfNeeded: 9 + 16 * y + x) }
+            for y in 0 ..< 8 {
+                for b in 0 ..< 8 { read[y * mebibyte + b] = UInt8(1 + 7 * y + b) }
+                for x in 0 ..< 2 { read[64 + y * mebibyte + x] = UInt8(truncatingIfNeeded: 9 + 16 * y + x) }
             }
             RowsUnder16.edit(surface) { base in for (at, byte) in read { base[at] = byte } }
         }
         let (fw, fh) = rotation == 2 ? (2, 8) : (8, 2)
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: fw, height: fh, mipmapped: false)
+            pixelFormat: MTLPixelFormat(rawValue: 550)!, width: fw, height: fh, mipmapped: false
+        )
         descriptor.usage = [.renderTarget, .shaderRead]
         descriptor.storageMode = .shared
         guard descriptor.responds(to: NSSelectorFromString("setRotation:")) else {
@@ -127,12 +131,13 @@ public enum SurfaceFormsOpen {
         }
         let fragment = ["draw": "rows16_xr_codes", "load": "rows16_discard"][pass.rawValue]
         let path = try await RowsUnder16.pass(
-            gpu, texture, clear: XrRowsUnder16.clear, fragment: fragment, load: pass == .load)
+            gpu, texture, clear: XrRowsUnder16.clear, fragment: fragment, load: pass == .load
+        )
         var want = [UInt8](repeating: 0xff, count: 16384)
         for (at, byte) in read where at < 16384 { want[at] = byte }
-        let texels = (0..<fh).flatMap { fy in (0..<fw).map { fx in plane(rotation, fx, fy) } }
-        let frame = Dictionary(uniqueKeysWithValues: (0..<fh).flatMap { fy in
-            (0..<fw).map { fx in ("\(plane(rotation, fx, fy))", (fx, fy)) }
+        let texels = (0 ..< fh).flatMap { fy in (0 ..< fw).map { fx in plane(rotation, fx, fy) } }
+        let frame = Dictionary(uniqueKeysWithValues: (0 ..< fh).flatMap { fy in
+            (0 ..< fw).map { fx in ("\(plane(rotation, fx, fy))", (fx, fy)) }
         })
         let value = { (p: (x: Int, y: Int)) -> (word: UInt32, alpha: UInt8) in
             switch pass {
@@ -142,7 +147,7 @@ public enum SurfaceFormsOpen {
                 return XrRowsUnder16.coded(f.0, f.1)
             case .load:
                 let at = p.y * mebibyte + 4 * p.x
-                let word = (0..<4).reduce(UInt32(0)) { $0 | UInt32(read[at + $1] ?? 0xff) << (8 * $1) }
+                let word = (0 ..< 4).reduce(UInt32(0)) { $0 | UInt32(read[at + $1] ?? 0xff) << (8 * $1) }
                 return (word, read[64 + p.y * mebibyte + p.x] ?? 0xff)
             }
         }

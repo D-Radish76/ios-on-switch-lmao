@@ -22,13 +22,13 @@ struct InstancedDrawScene: GPUScene {
         for shape in Self.shapes {
             let (w, h) = (shape.width, shape.height)
             let quad: [SIMD2<Float>] = [SIMD2(0, 0), SIMD2(w, 0), SIMD2(0, h), SIMD2(w, h)]
-            corners.replaceSubrange(shape.base..<(shape.base + 4), with: quad)
+            corners.replaceSubrange(shape.base ..< (shape.base + 4), with: quad)
         }
-        let offsets = (0..<64).map { (i: Int) -> SIMD2<Float> in
+        let offsets = (0 ..< 64).map { (i: Int) -> SIMD2<Float> in
             let (x, y): (Int, Int) = (4 + (i % 16) * 15, 4 + (i / 16) * 15)
             return SIMD2<Float>(Float(x), Float(y))
         }
-        let colors = (0..<64).map { (i: Int) -> SIMD4<Float> in
+        let colors = (0 ..< 64).map { (i: Int) -> SIMD4<Float> in
             let (r, g, b): (Int, Int, Int) = ((i * 37) % 256, (i * 91 + 40) % 256, 255 - i * 3)
             return SIMD4<Float>(Float(r) / 255, Float(g) / 255, Float(b) / 255, 1)
         }
@@ -60,21 +60,23 @@ struct InstancedDrawScene: GPUScene {
             for (type, buffer, offset, shape, first, count) in indexed {
                 encoder.drawIndexedPrimitives(
                     type: .triangle, indexCount: 6, indexType: type, indexBuffer: buffer, indexBufferOffset: offset,
-                    instanceCount: count, baseVertex: Self.shapes[shape].base, baseInstance: first)
+                    instanceCount: count, baseVertex: Self.shapes[shape].base, baseInstance: first
+                )
                 drawn.append((shape, first, count))
             }
             encoder.drawPrimitives(
-                type: .triangleStrip, vertexStart: 8, vertexCount: 4, instanceCount: 4, baseInstance: 20)
+                type: .triangleStrip, vertexStart: 8, vertexCount: 4, instanceCount: 4, baseInstance: 20
+            )
             drawn.append((2, 20, 4))
             encoder.endEncoding()
         }
         var want = Raster(width: width, height: height, channels: 4) { _, _, c in c == 3 ? 1 : 0 }
         for (shape, first, count) in drawn {
-            for instance in first..<(first + count) {
+            for instance in first ..< (first + count) {
                 let (x0, y0) = (Int(offsets[instance].x), Int(offsets[instance].y))
-                for y in y0..<(y0 + Int(Self.shapes[shape].height)) {
-                    for x in x0..<(x0 + Int(Self.shapes[shape].width)) {
-                        for c in 0..<4 { want[x, y, c] = colors[instance][c] }
+                for y in y0 ..< (y0 + Int(Self.shapes[shape].height)) {
+                    for x in x0 ..< (x0 + Int(Self.shapes[shape].width)) {
+                        for c in 0 ..< 4 { want[x, y, c] = colors[instance][c] }
                     }
                 }
             }
@@ -116,14 +118,15 @@ struct RenderThenSampleScene: GPUScene {
             for (r, color) in rects {
                 GPU.draw(
                     encoder, corners: GPU.pixelQuad(r.x, r.y, r.x + r.width, r.y + r.height, width: size, height: size),
-                    color: SIMD4(color[0], color[1], color[2], color[3]))
+                    color: SIMD4(color[0], color[1], color[2], color[3])
+                )
             }
             encoder.endEncoding()
         }
         var model = Raster(width: size, height: size, channels: 4) { _, _, c in c == 3 ? 1 : 0 }
         for (r, color) in rects {
-            for y in r.y..<(r.y + r.height) {
-                for x in r.x..<(r.x + r.width) { for c in 0..<4 { model[x, y, c] = color[c] } }
+            for y in r.y ..< (r.y + r.height) {
+                for x in r.x ..< (r.x + r.width) { for c in 0 ..< 4 { model[x, y, c] = color[c] } }
             }
         }
         result.compare("rendered", try await gpu.raster(source, .rgba8Unorm), model, tolerance: 1.01 / 255)

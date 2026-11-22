@@ -29,7 +29,8 @@ struct WidgetsRenderTest: HWTest {
         var failures: [String] = []
         // the site is 24B119's; 21H461's WidgetKit is not patched
         let twentySeven = ProcessInfo.processInfo.isOperatingSystemAtLeast(
-            OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0))
+            OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)
+        )
         if twentySeven, let limit = Self.archiveImageLimit() {
             metrics.set("limit_stock", limit.stock)
             metrics.set("limit_2x", limit.patched)
@@ -56,7 +57,8 @@ struct WidgetsRenderTest: HWTest {
             let encoder = commands.makeRenderCommandEncoder(descriptor: pass)!
             encoder.setRenderPipelineState(pipeline)
             GPU.draw(
-                encoder, corners: GPU.quad(x0: -0.5, y0: -0.5, x1: 0.5, y1: 0.5, z: 0), color: SIMD4(1, 0.5, 0, 1))
+                encoder, corners: GPU.quad(x0: -0.5, y0: -0.5, x1: 0.5, y1: 0.5, z: 0), color: SIMD4(1, 0.5, 0, 1)
+            )
             encoder.endEncoding()
         }
         let grown = Self.footprint() &- before
@@ -102,10 +104,10 @@ struct WidgetsRenderTest: HWTest {
     /// WidgetKit is not loaded or holds no such helper.
     static func archiveImageLimit() -> (stock: Int, patched: Int)? {
         guard dlopen("/System/Library/Frameworks/WidgetKit.framework/WidgetKit", RTLD_NOW) != nil else { return nil }
-        for image in 0..<_dyld_image_count() {
+        for image in 0 ..< _dyld_image_count() {
             guard let name = _dyld_get_image_name(image),
-                String(cString: name).hasSuffix("/WidgetKit.framework/WidgetKit"),
-                let header = _dyld_get_image_header(image)
+                  String(cString: name).hasSuffix("/WidgetKit.framework/WidgetKit"),
+                  let header = _dyld_get_image_header(image)
             else { continue }
             var size: UInt = 0
             let text = header.withMemoryRebound(to: mach_header_64.self, capacity: 1) {
@@ -113,7 +115,8 @@ struct WidgetsRenderTest: HWTest {
             }
             guard let text else { return nil }
             let words = UnsafeBufferPointer(
-                start: UnsafeRawPointer(text).assumingMemoryBound(to: UInt32.self), count: Int(size) / 4)
+                start: UnsafeRawPointer(text).assumingMemoryBound(to: UInt32.self), count: Int(size) / 4
+            )
             let found = count(words)
             return found.stock + found.patched > 0 ? found : nil
         }
@@ -126,8 +129,8 @@ struct WidgetsRenderTest: HWTest {
         var stock = 0
         var patched = 0
         guard w.count > 8 else { return (0, 0) }
-        for i in 1..<(w.count - 6)
-        where w[i] == 0x4ea0_1c0a && w[i + 1] == 0x4ea1_1c2b && w[i + 2] == 0xaa14_03e0 && w[i + 4] == 0x1e60_094a
+        for i in 1 ..< (w.count - 6)
+            where w[i] == 0x4ea0_1c0a && w[i + 1] == 0x4ea1_1c2b && w[i + 2] == 0xaa14_03e0 && w[i + 4] == 0x1e60_094a
             && w[i + 5] == 0xaa14_03e0 && isBl(w[i - 1])
         {
             if isBl(w[i + 3]) && isBl(w[i + 6]) {

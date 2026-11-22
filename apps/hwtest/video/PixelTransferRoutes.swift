@@ -27,7 +27,8 @@ public enum PixelTransferRoutes {
     static let p422 = OSType(0x7034_3232), p444 = OSType(0x7034_3434), x422 = OSType(0x7834_3232)
     static let x444 = OSType(0x7834_3434)
     static let srgb709 = [
-        function: kCVImageBufferTransferFunction_sRGB as String, primaries: kCVImageBufferColorPrimaries_ITU_R_709_2 as String,
+        function: kCVImageBufferTransferFunction_sRGB as String,
+        primaries: kCVImageBufferColorPrimaries_ITU_R_709_2 as String,
     ]
 
     public static let pairs: [Pair] = [
@@ -35,26 +36,33 @@ public enum PixelTransferRoutes {
             key: "420f_bgra",
             source: Side(
                 width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
-                tags: [matrix: kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String]),
-            destinations: [Side(width: 1280, height: 720, format: bgra)], expected: "hardware"),
+                tags: [matrix: kCVImageBufferYCbCrMatrix_ITU_R_601_4 as String]
+            ),
+            destinations: [Side(width: 1280, height: 720, format: bgra)], expected: "hardware"
+        ),
         Pair(
             key: "420v_bgra",
             source: Side(
                 width: 1920, height: 1080, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-                tags: [matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String]),
-            destinations: [Side(width: 1280, height: 720, format: bgra)], expected: "hardware"),
+                tags: [matrix: kCVImageBufferYCbCrMatrix_ITU_R_709_2 as String]
+            ),
+            destinations: [Side(width: 1280, height: 720, format: bgra)], expected: "hardware"
+        ),
         Pair(
             key: "bgra_bgra", source: Side(width: 1920, height: 1080, format: bgra, tags: srgb709),
             destinations: [
                 Side(width: 1920, height: 1080, format: bgra, tags: srgb709),
                 Side(width: 960, height: 540, format: bgra, tags: srgb709),
-            ], expected: "hardware"),
+            ], expected: "hardware"
+        ),
         Pair(
             key: "l008_bgra", source: Side(width: 640, height: 480, format: l008),
-            destinations: [Side(width: 640, height: 480, format: bgra)], expected: "hardware", ramp: true),
+            destinations: [Side(width: 640, height: 480, format: bgra)], expected: "hardware", ramp: true
+        ),
         Pair(
             key: "bgra_l008", source: Side(width: 640, height: 480, format: bgra),
-            destinations: [Side(width: 640, height: 480, format: l008)], expected: "metal"),
+            destinations: [Side(width: 640, height: 480, format: l008)], expected: "metal"
+        ),
         Pair(
             key: "420f_bgra_cm",
             source: Side(
@@ -62,21 +70,26 @@ public enum PixelTransferRoutes {
                 tags: [
                     function: kCVImageBufferTransferFunction_ITU_R_709_2 as String,
                     primaries: kCVImageBufferColorPrimaries_ITU_R_709_2 as String,
-                ]),
+                ]
+            ),
             destinations: [
                 Side(
                     width: 1920, height: 1080, format: bgra,
                     tags: [
                         function: kCVImageBufferTransferFunction_sRGB as String,
                         primaries: kCVImageBufferColorPrimaries_P3_D65 as String,
-                    ])
-            ], expected: "metal"),
+                    ]
+                ),
+            ], expected: "metal"
+        ),
         Pair(
             key: "p422_x422", source: Side(width: 640, height: 480, format: p422),
-            destinations: [Side(width: 640, height: 480, format: x422)], expected: "metal"),
+            destinations: [Side(width: 640, height: 480, format: x422)], expected: "metal"
+        ),
         Pair(
             key: "p444_x444", source: Side(width: 640, height: 480, format: p444),
-            destinations: [Side(width: 640, height: 480, format: x444)], expected: "metal"),
+            destinations: [Side(width: 640, height: 480, format: x444)], expected: "metal"
+        ),
     ]
 
     public struct Reading: Sendable {
@@ -125,7 +138,12 @@ public enum PixelTransferRoutes {
         ]
         let status = CVPixelBufferCreate(nil, side.width, side.height, side.format, attributes as CFDictionary, &buffer)
         guard status == kCVReturnSuccess, let buffer else { throw PixelTransferRouteError(side: side, status: status) }
-        for (key, value) in side.tags { CVBufferSetAttachment(buffer, key as CFString, value as CFString, .shouldPropagate) }
+        for (key, value) in side.tags { CVBufferSetAttachment(
+            buffer,
+            key as CFString,
+            value as CFString,
+            .shouldPropagate
+        ) }
         return buffer
     }
 
@@ -135,8 +153,8 @@ public enum PixelTransferRoutes {
         defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
         let base = CVPixelBufferGetBaseAddress(buffer)!.assumingMemoryBound(to: UInt8.self)
         let pitch = CVPixelBufferGetBytesPerRow(buffer)
-        for y in 0..<CVPixelBufferGetHeight(buffer) {
-            for x in 0..<CVPixelBufferGetWidth(buffer) { base[y * pitch + x] = UInt8((x + 3 * y) & 255) }
+        for y in 0 ..< CVPixelBufferGetHeight(buffer) {
+            for x in 0 ..< CVPixelBufferGetWidth(buffer) { base[y * pitch + x] = UInt8((x + 3 * y) & 255) }
         }
     }
 
@@ -151,10 +169,10 @@ public enum PixelTransferRoutes {
         let c = CVPixelBufferGetBaseAddress(bgra)!.assumingMemoryBound(to: UInt8.self)
         let lp = CVPixelBufferGetBytesPerRow(gray), cp = CVPixelBufferGetBytesPerRow(bgra)
         var worst = 0
-        for y in 0..<CVPixelBufferGetHeight(bgra) {
-            for x in 0..<CVPixelBufferGetWidth(bgra) {
+        for y in 0 ..< CVPixelBufferGetHeight(bgra) {
+            for x in 0 ..< CVPixelBufferGetWidth(bgra) {
                 let luma = Int(l[y * lp + x])
-                for channel in 0..<3 { worst = max(worst, abs(Int(c[y * cp + 4 * x + channel]) - luma)) }
+                for channel in 0 ..< 3 { worst = max(worst, abs(Int(c[y * cp + 4 * x + channel]) - luma)) }
             }
         }
         return worst
@@ -163,7 +181,8 @@ public enum PixelTransferRoutes {
     /// The pair's transfers, each `runs` times on one session; the route after the last
     public static func run(_ pair: Pair, runs: Int = 5) throws -> Reading {
         var session: VTPixelTransferSession?
-        guard VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &session) == noErr, let session else {
+        guard VTPixelTransferSessionCreate(allocator: nil, pixelTransferSessionOut: &session) == noErr,
+              let session else {
             throw PixelTransferRouteError(side: pair.source, status: -1)
         }
         defer { VTPixelTransferSessionInvalidate(session) }
@@ -173,7 +192,7 @@ public enum PixelTransferRoutes {
         var routes: [String] = []
         for side in pair.destinations {
             let destination = try buffer(side)
-            for _ in 0..<runs where reading.status == noErr {
+            for _ in 0 ..< runs where reading.status == noErr {
                 reading.status = VTPixelTransferSessionTransferImage(session, from: source, to: destination)
             }
             routes.append(route(session))

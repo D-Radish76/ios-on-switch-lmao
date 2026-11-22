@@ -164,7 +164,8 @@ bool CommandBuffer::spreadSamples(const Texture &resolved, const Texture &multis
         !fx::msLayout(multisampled.width, multisampled.height, multisampled.samples, multisampled.bpp, grid))
         return false;
     BlitEncoder *b = blit();
-    b->spreadTwod(resolved, multisampled, grid.sxLog2, grid.syLog2, std::min({width, resolved.width, multisampled.width}),
+    b->spreadTwod(resolved, multisampled, grid.sxLog2, grid.syLog2,
+                  std::min({width, resolved.width, multisampled.width}),
                   std::min({height, resolved.height, multisampled.height}), fmt2d);
     b->end();
     return true;

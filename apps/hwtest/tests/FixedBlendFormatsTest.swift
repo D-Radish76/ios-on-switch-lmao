@@ -78,29 +78,29 @@ struct FixedBlendFormatsTest: HWTest {
         let half = format == .rgba16Float
         var out = Worst()
         var farthest = -1.0
-        for y in 0..<size {
-            for x in 0..<size {
-                var d = (0..<4).map { c in Rule.store(Rule.clear[c], format, colour: c < 3) }
+        for y in 0 ..< size {
+            for x in 0 ..< size {
+                var d = (0 ..< 4).map { c in Rule.store(Rule.clear[c], format, colour: c < 3) }
                 var m = d
-                for layer in 0..<layers {
+                for layer in 0 ..< layers {
                     let s = Rule.source(x, y, layer: layer, computed: false)
-                    d = (0..<4).map { c in
+                    d = (0 ..< 4).map { c in
                         Rule.store(s[c] + Rule.load(d[c], format, colour: c < 3) * (1 - s[3]), format, colour: c < 3)
                     }
                     let h = s.map { Double(Float(Float16(Float($0)))) }
-                    m = (0..<4).map { c in
+                    m = (0 ..< 4).map { c in
                         Rule.store(h[c] + Rule.load(m[c], format, colour: c < 3) * (1 - h[3]), format, colour: c < 3)
                     }
                 }
                 let got = Rule.codes(bytes, x, y, format).map { half && $0 == 0x8000 ? 0 : $0 }
-                for c in 0..<4 {
+                for c in 0 ..< 4 {
                     let steps = abs(got[c] - d[c])
                     out.codes = max(out.codes, steps)
                     out.model = max(out.model, abs(got[c] - m[c]))
                     let distance =
                         half
-                        ? abs(Rule.load(got[c], format, colour: false) - Rule.load(d[c], format, colour: false))
-                        : Double(steps)
+                            ? abs(Rule.load(got[c], format, colour: false) - Rule.load(d[c], format, colour: false))
+                            : Double(steps)
                     out.value = max(out.value, half ? distance : 0)
                     if distance > farthest {
                         farthest = distance

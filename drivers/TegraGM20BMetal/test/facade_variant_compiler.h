@@ -239,8 +239,10 @@ inline std::vector<uint32_t> drawnPrograms(size_t firstJob, uint32_t stage)
 inline id<MTLTexture> image(id<MTLDevice> device, MTLTextureUsage usage,
                             MTLPixelFormat format = MTLPixelFormatBGRA8Unorm)
 {
-    MTLTextureDescriptor *descriptor =
-        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format width:64 height:64 mipmapped:NO];
+    MTLTextureDescriptor *descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                          width:64
+                                                                                         height:64
+                                                                                      mipmapped:NO];
     descriptor.storageMode = MTLStorageModePrivate;
     descriptor.usage = usage;
     return [device newTextureWithDescriptor:descriptor];

@@ -146,7 +146,8 @@ protected:
 	{
 		if (maker.submitted == maker.fence) {
 			maker.submitted += 1;
-			switch_gpu_jobs_kick(&maker.jobs, maker.submitted, maker.submitted, fake::now, 1);
+			switch_gpu_jobs_kick(&maker.jobs, maker.submitted, maker.submitted,
+					     fake::now, 1);
 		}
 		const switch_gpu_backing_token job = {maker.submitted, uint32_t(maker.id >> 32) + 1,
 						      SWITCH_GPU_ENGINE_GM20B, uint32_t(maker.id)};
@@ -155,7 +156,8 @@ protected:
 
 	// The holder's runtime arms its bound on the promise (method 34 Arm), `ms` from now; `fails`: its command buffer fails
 	// there, so a keep after it is refused
-	static void holderArms(uint64_t ms, int fails = 1, uint32_t offset = kOffset, uint32_t value = kValue)
+	static void holderArms(uint64_t ms, int fails = 1, uint32_t offset = kOffset,
+			       uint32_t value = kValue)
 	{
 		tgm_promise_hold(offset, value, ms * kMs, fails);
 	}

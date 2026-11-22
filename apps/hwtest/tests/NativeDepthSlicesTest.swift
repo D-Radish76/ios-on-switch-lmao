@@ -38,7 +38,7 @@ struct NativeDepthSlicesTest: NativeObjectTest {
         var work = NativeWork(objects: [color, less])
         let black: [UInt8] = [0, 0, 0, 255], red: [UInt8] = [255, 0, 0, 255]
         let timing = try await gpu.run { commands in
-            for slice in 0..<Self.layers {
+            for slice in 0 ..< Self.layers {
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = color
                 pass.colorAttachments[0].slice = slice
@@ -52,7 +52,7 @@ struct NativeDepthSlicesTest: NativeObjectTest {
                 pass.depthAttachment.storeAction = .store
                 commands.makeRenderCommandEncoder(descriptor: pass)!.endEncoding()
             }
-            for slice in 0..<Self.layers {
+            for slice in 0 ..< Self.layers {
                 let pass = MTLRenderPassDescriptor()
                 pass.colorAttachments[0].texture = color
                 pass.colorAttachments[0].slice = slice

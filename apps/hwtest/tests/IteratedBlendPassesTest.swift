@@ -26,7 +26,7 @@ struct IteratedBlendPassesTest: HWTest {
         let kind = GM20BFacade.kind(of: gpu.device)
         guard kind == "gm20b" else { return .skip("the default device is not the facade (\(kind))") }
         guard let url = Bundle.main.url(forResource: "ca_states", withExtension: "log"),
-            let text = try? String(contentsOf: url, encoding: .utf8)
+              let text = try? String(contentsOf: url, encoding: .utf8)
         else { return .fail("ca_states.log is not in the app's bundle") }
         guard
             let line = CAStateSweep.states(text, everyState: true).first(where: {
@@ -34,7 +34,8 @@ struct IteratedBlendPassesTest: HWTest {
             })
         else { return .skip("this QuartzCore makes no \(IteratedBlendPasses.label)") }
         let scene = try IteratedBlendPasses(
-            line: line, library: try gpu.device.makeLibrary(URL: CAState.library), gpu: gpu)
+            line: line, library: try gpu.device.makeLibrary(URL: CAState.library), gpu: gpu
+        )
         var metrics = Metrics()
         var checks: [(String, Bool)] = []
         for between in IteratedBlendPasses.Between.allCases {

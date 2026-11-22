@@ -34,7 +34,8 @@ bool xrLastPlane(IOSurfaceRef s, NSUInteger plane)
 
 size_t xrGpuRows(IOSurfaceRef s, NSUInteger plane)
 {
-    return (IOSurfaceGetPlaneCount(s) ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s)) & ~size_t(15);
+    return (IOSurfaceGetPlaneCount(s) ? IOSurfaceGetBytesPerRowOfPlane(s, plane) : IOSurfaceGetBytesPerRow(s)) &
+           ~size_t(15);
 }
 
 bool xrPlanesShape(MTLTextureDescriptor *d, IOSurfaceRef s, NSUInteger plane)

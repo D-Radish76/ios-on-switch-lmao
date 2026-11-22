@@ -23,7 +23,7 @@ struct WordMipmapsTest: HWTest {
         var checks: [(String, Bool)] = []
         for format in WordMipFormat.all {
             guard let text = WordMipmapCases.apple[format.key],
-                let apple = Data(base64Encoded: text, options: .ignoreUnknownCharacters)
+                  let apple = Data(base64Encoded: text, options: .ignoreUnknownCharacters)
             else {
                 checks.append(("\(format.key): an M4 Max's chain", false))
                 continue

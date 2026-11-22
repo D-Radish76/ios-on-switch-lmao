@@ -52,7 +52,7 @@ struct RtalPastLayersTest: HWTest {
     }
 
     static func off(_ bytes: [UInt8], _ texel: [UInt8]) -> Int {
-        stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0..<$0 + 4]) != texel }.count
+        stride(from: 0, to: bytes.count, by: 4).filter { Array(bytes[$0 ..< $0 + 4]) != texel }.count
     }
 
     static func contents(_ bytes: [UInt8]) -> String {
@@ -67,9 +67,10 @@ struct RtalPastLayersTest: HWTest {
         d.usage = [.renderTarget, .shaderRead]
         d.storageMode = .private
         guard let array = gpu.device.makeTexture(descriptor: d) else { throw TestFailure("no BGRA8 array") }
-        for slice in 0..<2 {
+        for slice in 0 ..< 2 {
             try await gpu.upload(
-                [UInt8](repeating: 0x11, count: side * side * 4), to: array, bytesPerRow: side * 4, slice: slice)
+                [UInt8](repeating: 0x11, count: side * side * 4), to: array, bytesPerRow: side * 4, slice: slice
+            )
         }
         let state = try gpu.render(vertex: "layered_vertex", fragment: "flat_color_fragment", format: .bgra8Unorm) {
             $0.inputPrimitiveTopology = .triangle
@@ -92,7 +93,7 @@ struct RtalPastLayersTest: HWTest {
             encoder.endEncoding()
         }
         var slices: [[UInt8]] = []
-        for slice in 0..<2 { slices.append(try await gpu.read(array, bytesPerPixel: 4, slice: slice)) }
+        for slice in 0 ..< 2 { slices.append(try await gpu.read(array, bytesPerPixel: 4, slice: slice)) }
         return (timing.path, slices)
     }
 }

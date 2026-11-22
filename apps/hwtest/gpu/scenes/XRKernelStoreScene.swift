@@ -27,26 +27,29 @@ struct XRKernelStoreScene: GPUScene {
             let texels = (cases + XRKernelPlanes.width - 1) / XRKernelPlanes.width * XRKernelPlanes.width
             let planes = try XRKernelPlanes(gpu, texels: texels, usage: [.shaderWrite])
             planes.plant { _ in (0x5a5a_5a5a, 0x5a) }
-            let lanes = (0..<texels).flatMap { i in (0..<4).map { table[6 * (i % cases) + $0] } }
+            let lanes = (0 ..< texels).flatMap { i in (0 ..< 4).map { table[6 * (i % cases) + $0] } }
             let input =
                 half
-                ? lanes.map { UInt16(truncatingIfNeeded: $0) }.withUnsafeBytes { Data($0) }
-                : lanes.withUnsafeBytes { Data($0) }
+                    ? lanes.map { UInt16(truncatingIfNeeded: $0) }.withUnsafeBytes { Data($0) }
+                    : lanes.withUnsafeBytes { Data($0) }
             guard
                 let buffer = input.withUnsafeBytes({
                     gpu.device.makeBuffer(bytes: $0.baseAddress!, length: $0.count, options: .storageModeShared)
                 })
             else { throw TestFailure("makeBuffer returned nil") }
             paths.append(
-                try await XRKernelPlanes.dispatch(gpu, try gpu.compute(kernel), planes, buffer: buffer, slots: [0]))
-            for i in 0..<texels {
+                try await XRKernelPlanes.dispatch(gpu, try gpu.compute(kernel), planes, buffer: buffer, slots: [0])
+            )
+            for i in 0 ..< texels {
                 let row = 6 * (i % cases)
                 let got = planes.texel(i)
                 if got.word != table[row + 4] || UInt32(got.byte) != table[row + 5] {
                     wrong.append(
                         String(
                             format: "%@ %d: %08x %02x not %08x %02x", kernel, i, got.word, got.byte, table[row + 4],
-                            table[row + 5]))
+                            table[row + 5]
+                        )
+                    )
                 }
             }
             rows += cases
@@ -56,7 +59,8 @@ struct XRKernelStoreScene: GPUScene {
         result.metrics.set("mismatches", wrong.count)
         if let first = wrong.first { result.metrics.set("first", first) }
         result.expect(
-            wrong.isEmpty, "\(wrong.count) texels hold another word or byte than Apple's: \(wrong.first ?? "")")
+            wrong.isEmpty, "\(wrong.count) texels hold another word or byte than Apple's: \(wrong.first ?? "")"
+        )
         if GM20BFacade.kind(of: gpu.device) == "gm20b" {
             result.expect(paths.allSatisfy { $0 == "gm20b" }, "the stores took \(paths), not raw")
         }

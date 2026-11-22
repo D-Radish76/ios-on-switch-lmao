@@ -111,7 +111,8 @@ bool copyLayers(CommandBuffer &rc, const Texture &t, const Texture &standIn, uin
 // header of the texture it is a part of
 uint32_t layerTic(Device &d, const ColorAttachment &a, const Texture &one, uint32_t layer)
 {
-    return a.image ? d.attachmentTic(*a.image, one, a.level, a.slice + layer) : d.attachmentTic(*a.texture, one, 0, layer);
+    return a.image ? d.attachmentTic(*a.image, one, a.level, a.slice + layer)
+                   : d.attachmentTic(*a.texture, one, 0, layer);
 }
 
 // A one-layer image's fill: from both planes of one held in a surface's two planes, else through its pool image where its

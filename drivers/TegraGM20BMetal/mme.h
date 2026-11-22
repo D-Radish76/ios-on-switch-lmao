@@ -279,6 +279,7 @@ inline void fetchShape(Push &push, uint32_t primitive)
 // An indirect command buffer's execute of a state the fetch macros draw: its commands' draw macros draw a primitive at a
 // time (`on`), each command's sizes from the topology it sets, until the execute is over (`on` false)
 constexpr uint32_t kFetchCommandsWords = 7;
+
 inline void fetchCommands(Push &push, bool on)
 {
     if (on)

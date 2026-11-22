@@ -51,7 +51,7 @@ struct ImportBesideSubmitsTest: GPUPathTest {
 
         func start(_ device: MTLDevice) {
             Thread { [self] in
-                for _ in 0..<ImportBesideSubmitsTest.imports {
+                for _ in 0 ..< ImportBesideSubmitsTest.imports {
                     guard let surface = ImportBesideSubmitsTest.surface() else {
                         failure = "an IOSurface was not made"
                         break
@@ -59,7 +59,8 @@ struct ImportBesideSubmitsTest: GPUPathTest {
                     let start = ImportBesideSubmitsTest.nowMs()
                     guard
                         let texture = device.makeTexture(
-                            descriptor: ImportBesideSubmitsTest.sampled, iosurface: surface, plane: 0)
+                            descriptor: ImportBesideSubmitsTest.sampled, iosurface: surface, plane: 0
+                        )
                     else {
                         failure = "makeTexture(iosurface:) returned nil"
                         break
@@ -79,7 +80,8 @@ struct ImportBesideSubmitsTest: GPUPathTest {
 
     static var sampled: MTLTextureDescriptor {
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)
+            pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false
+        )
         descriptor.usage = [.shaderRead]
         descriptor.storageMode = .shared
         return descriptor
@@ -115,8 +117,8 @@ struct ImportBesideSubmitsTest: GPUPathTest {
     static func beside(
         _ gpu: GPU, _ target: MTLBuffer, wireMs: Double, _ arm: String, _ metrics: inout Metrics
     ) throws -> [String] {
-        for _ in 0..<Self.warmFills { _ = try Self.submit(gpu, target) }
-        let quiet = try (0..<Self.quiet).map { _ in try Self.submit(gpu, target) }
+        for _ in 0 ..< Self.warmFills { _ = try Self.submit(gpu, target) }
+        let quiet = try (0 ..< Self.quiet).map { _ in try Self.submit(gpu, target) }
         let importer = Importer()
         importer.start(gpu.device)
         var during: [Span] = []
@@ -136,7 +138,8 @@ struct ImportBesideSubmitsTest: GPUPathTest {
         withExtendedLifetime(importer.made) {}
         return (importer.failure.map { [$0] } ?? [])
             + ImportBesideVerdict.failures(
-                wireMs: wireMs, quiet: quietMs, beside: besideMs, minimumBeside: Self.minimumBeside)
+                wireMs: wireMs, quiet: quietMs, beside: besideMs, minimumBeside: Self.minimumBeside
+            )
     }
 
     /// One fill of the private buffer: commit to scheduled, then waited for to completion outside the span.
@@ -144,7 +147,7 @@ struct ImportBesideSubmitsTest: GPUPathTest {
         guard let commands = gpu.queue.makeCommandBuffer(), let blit = commands.makeBlitCommandEncoder() else {
             throw TestFailure("no command buffer")
         }
-        blit.fill(buffer: target, range: 0..<fillBytes, value: 0x5a)
+        blit.fill(buffer: target, range: 0 ..< fillBytes, value: 0x5a)
         blit.endEncoding()
         let start = nowMs()
         commands.commit()
@@ -158,13 +161,14 @@ struct ImportBesideSubmitsTest: GPUPathTest {
     /// same pages, and each import's own time, in ms.
     static func wiring(_ connection: GPUConnection) throws -> (Double, Double, Double) {
         var wires: [Double] = [], firsts: [Double] = [], seconds: [Double] = []
-        for _ in 0..<calibrations {
+        for _ in 0 ..< calibrations {
             guard let surface = surface() else { throw TestFailure("an IOSurface was not made") }
             let first = try boImport(connection, surface)
             let second = try boImport(connection, surface)
             for (handle, _) in [first, second] {
                 _ = connection.call(
-                    GPUConnection.boFreeMethod, GPUConnection.words(halves(handle)), outputSize: 0)
+                    GPUConnection.boFreeMethod, GPUConnection.words(halves(handle)), outputSize: 0
+                )
             }
             firsts.append(first.ms)
             seconds.append(second.ms)
@@ -181,7 +185,8 @@ struct ImportBesideSubmitsTest: GPUPathTest {
         let start = nowMs()
         let (kr, reply) = connection.call(
             GPUConnection.boImportMethod,
-            GPUConnection.words(halves(address) + halves(bytes) + [id, boImportGpuReads]), outputSize: 16)
+            GPUConnection.words(halves(address) + halves(bytes) + [id, boImportGpuReads]), outputSize: 16
+        )
         let ms = nowMs() - start
         guard kr == KERN_SUCCESS else { throw TestFailure("BoImport of a fresh surface: \(GPUConnection.hex(kr))") }
         return (GPUConnection.uint64(reply, 0), ms)

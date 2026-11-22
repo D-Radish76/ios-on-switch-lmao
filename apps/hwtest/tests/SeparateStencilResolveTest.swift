@@ -81,7 +81,7 @@ struct SeparateStencilResolveTest: HWTest {
 
     static func off(_ result: Result, _ filter: MTLMultisampleDepthResolveFilter) -> (stencil: Int, depth: Int) {
         var off = (stencil: 0, depth: 0)
-        for at in 0..<n * n {
+        for at in 0 ..< n * n {
             let half = at % n < n / 2 ? 0 : 1
             let sample = picked(filter, half: half)
             off.stencil += Int(result.stencil[at]) == sample + 1 ? 0 : 1
@@ -100,7 +100,8 @@ struct SeparateStencilResolveTest: HWTest {
         let depthOut = try gpu.texture(.depth32Float, n, n, usage: [.renderTarget])
         let stencilOut = try gpu.texture(.stencil8, n, n, usage: [.renderTarget])
         let state = try gpu.render(
-            fragment: "masked_texel_values", format: .rgba8Unorm, samples: 4, depth: .depth32Float, stencil: .stencil8)
+            fragment: "masked_texel_values", format: .rgba8Unorm, samples: 4, depth: .depth32Float, stencil: .stencil8
+        )
         let d = MTLDepthStencilDescriptor()
         d.depthCompareFunction = .always
         d.isDepthWriteEnabled = true
@@ -130,13 +131,14 @@ struct SeparateStencilResolveTest: HWTest {
             e.setRenderPipelineState(state)
             e.setDepthStencilState(write)
             e.setFragmentBuffer(values, offset: 0, index: 0)
-            for sample in 0..<4 {
+            for sample in 0 ..< 4 {
                 var at = SIMD2<UInt32>(UInt32(n), UInt32(sample))
                 e.setFragmentBytes(&at, length: 8, index: 1)
                 e.setStencilReferenceValue(UInt32(sample + 1))
-                for half in 0..<2 {
+                for half in 0 ..< 2 {
                     var corners = GPU.pixelQuad(
-                        half * n / 2, 0, (half + 1) * n / 2, n, width: n, height: n, z: depths[half][sample])
+                        half * n / 2, 0, (half + 1) * n / 2, n, width: n, height: n, z: depths[half][sample]
+                    )
                     e.setVertexBytes(&corners, length: MemoryLayout<SIMD4<Float>>.stride * 4, index: 0)
                     e.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                 }
@@ -146,6 +148,7 @@ struct SeparateStencilResolveTest: HWTest {
         let depths = try await gpu.read(depthOut, bytesPerPixel: 4)
         return Result(
             stencil: try await gpu.read(stencilOut, bytesPerPixel: 1),
-            depth: (0..<n * n).map { depths.loaded(as: Float.self, at: $0) })
+            depth: (0 ..< n * n).map { depths.loaded(as: Float.self, at: $0) }
+        )
     }
 }

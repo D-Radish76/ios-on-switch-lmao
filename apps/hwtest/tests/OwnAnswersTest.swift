@@ -29,7 +29,7 @@ struct OwnAnswersTest: HWTest {
         metrics.set("function_names", names.count)
         let externs =
             (gpu.library as AnyObject).perform(NSSelectorFromString("externFunctionNames"))?
-            .takeUnretainedValue() as? [String]
+                .takeUnretainedValue() as? [String]
         metrics.set("extern_names", externs?.count ?? -1)
         if names.isEmpty || externs == nil || gpu.library.type != .executable { wrong.append("library") }
 
@@ -47,14 +47,16 @@ struct OwnAnswersTest: HWTest {
         guard let unmapped = mapped, unmapped != MAP_FAILED else { throw TestFailure("mmap failed") }
         munmap(unmapped, length)
         let unwired = gpu.device.makeBuffer(
-            bytesNoCopy: unmapped, length: length, options: .storageModeShared, deallocator: nil)
+            bytesNoCopy: unmapped, length: length, options: .storageModeShared, deallocator: nil
+        )
         if unwired != nil { wrong.append("unwired_pages") }
 
         let layoutSelector = NSSelectorFromString("newTextureLayoutWithDescriptor:isHeapOrBufferBacked:")
         typealias Layout = @convention(c) (AnyObject, Selector, MTLTextureDescriptor, Bool) -> Unmanaged<AnyObject>?
         let layoutOf = unsafeBitCast((gpu.device as AnyObject).method(for: layoutSelector), to: Layout.self)
         let plain = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: 64, height: 32, mipmapped: false)
+            pixelFormat: .rgba8Unorm, width: 64, height: 32, mipmapped: false
+        )
         let layout = layoutOf(gpu.device as AnyObject, layoutSelector, plain, false)?.takeRetainedValue()
         let layoutBytes = (layout?.value(forKey: "size") as? NSNumber)?.intValue ?? -1
         metrics.set("plain_layout_bytes", layoutBytes)
@@ -66,13 +68,15 @@ struct OwnAnswersTest: HWTest {
 
         let ci = CIContext(mtlDevice: gpu.device, options: [.cacheIntermediates: false])
         let flat = CIImage(color: CIColor(red: 0.2, green: 0.4, blue: 0.6)).cropped(
-            to: CGRect(x: 0, y: 0, width: 64, height: 64))
+            to: CGRect(x: 0, y: 0, width: 64, height: 64)
+        )
         let chain = flat.applyingFilter("CIColorInvert").applyingGaussianBlur(sigma: 2)
         var pixel = [UInt8](repeating: 0, count: 4)
         ci.render(
             chain.cropped(to: CGRect(x: 32, y: 32, width: 1, height: 1)), toBitmap: &pixel, rowBytes: 4,
             bounds: CGRect(x: 32, y: 32, width: 1, height: 1), format: .RGBA8,
-            colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+            colorSpace: CGColorSpace(name: CGColorSpace.sRGB)
+        )
         metrics.set("core_image_rgb", pixel.prefix(3).map(String.init).joined(separator: ","))
         // inverted in Core Image's linear working space: 1 - linear(0.2, 0.4, 0.6), back to sRGB
         if !zip(pixel.prefix(3), [251, 239, 215]).allSatisfy({ abs(Int($0) - $1) <= 2 }) { wrong.append("core_image") }

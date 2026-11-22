@@ -38,17 +38,20 @@ struct OpaqueBorderTest: HWTest {
         let swizzle = MTLTextureSwizzleChannels(red: .alpha, green: .blue, blue: .green, alpha: .red)
         guard
             let swizzled = rgba.makeTextureView(
-                pixelFormat: .rgba8Unorm, textureType: .type2D, levels: 0..<1, slices: 0..<1, swizzle: swizzle)
+                pixelFormat: .rgba8Unorm, textureType: .type2D, levels: 0 ..< 1, slices: 0 ..< 1, swizzle: swizzle
+            )
         else { throw TestFailure("no swizzled view") }
         let t = Self.texel
         let arms = [
             Arm(label: "rgba8", texture: rgba, inside: t, white: [255, 255, 255, 255], black: [0, 0, 0, 255]),
             Arm(
-                label: "r8", texture: red, inside: [t[0], 0, 0, 255], white: [255, 0, 0, 255], black: [0, 0, 0, 255]),
+                label: "r8", texture: red, inside: [t[0], 0, 0, 255], white: [255, 0, 0, 255], black: [0, 0, 0, 255]
+            ),
             Arm(label: "a8", texture: alpha, inside: [0, 0, 0, t[3]], white: [0, 0, 0, 255], black: [0, 0, 0, 0]),
             Arm(
                 label: "abgr_view", texture: swizzled, inside: [t[3], t[2], t[1], t[0]], white: [255, 255, 255, 255],
-                black: [255, 0, 0, 0]),
+                black: [255, 0, 0, 0]
+            ),
         ]
         let state = try gpu.render(fragment: "opaque_border_fragment", format: .rgba8Unorm)
         var metrics = Metrics()
@@ -79,21 +82,22 @@ struct OpaqueBorderTest: HWTest {
                         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
                         encoder.endEncoding()
                     }
-                }.path)
+                }.path
+            )
             for (arm, target) in zip(arms, targets) {
                 let bytes = try await gpu.read(target, bytesPerPixel: 4)
                 let want = colour == "white" ? arm.white : arm.black
                 var off = 0
-                for y in 0..<12 {
-                    for x in 0..<12 {
-                        let inside = (4..<8).contains(x) && (4..<8).contains(y)
+                for y in 0 ..< 12 {
+                    for x in 0 ..< 12 {
+                        let inside = (4 ..< 8).contains(x) && (4 ..< 8).contains(y)
                         let at = 4 * (x + 12 * y)
-                        off += Array(bytes[at..<at + 4]) == (inside ? arm.inside : want) ? 0 : 1
+                        off += Array(bytes[at ..< at + 4]) == (inside ? arm.inside : want) ? 0 : 1
                     }
                 }
                 let label = "\(arm.label)_\(colour)"
                 metrics.set("\(label)_wrong", off)
-                metrics.set("\(label)_border", bytes[0..<4].map { String($0) }.joined(separator: "/"))
+                metrics.set("\(label)_border", bytes[0 ..< 4].map { String($0) }.joined(separator: "/"))
                 if off > 0 { wrong.append(label) }
             }
         }

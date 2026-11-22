@@ -73,7 +73,8 @@ TextureTransferResult Device::transferTexelRows(const Texture &t, const uint32_t
     const TexelRows &r = *t.texelRows;
     const Import &i = *r.import;
     const uint64_t length = uint64_t(size[0]) * t.bpp;
-    const TexelRowsParts parts = texelRowsParts(i.layout, r.offset + uint64_t(origin[0]) * t.bpp, r.bytesPerRow, length);
+    const TexelRowsParts parts =
+        texelRowsParts(i.layout, r.offset + uint64_t(origin[0]) * t.bpp, r.bytesPerRow, length);
     if (!texelRowsAddressable(parts))
         return TextureTransferResult::Unsupported;
     if (!write && parts.held < length)

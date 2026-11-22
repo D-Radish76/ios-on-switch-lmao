@@ -58,10 +58,11 @@ struct CommitLatencyPathTest: HWTest {
         }
         guard let line = CACorpus.state("PBGRAXm_A2Xhf") else { return .fail("CACorpus has no PBGRAXm_A2Xhf") }
         let pipeline = try CAState.pipeline(line, library: library, device: gpu.device)
-        let targets = try (0..<Self.targets).map { _ in try gpu.texture(.bgra8Unorm, Self.width, Self.height) }
+        let targets = try (0 ..< Self.targets).map { _ in try gpu.texture(.bgra8Unorm, Self.width, Self.height) }
         let keptPlain = targets.map { $0.makeTextureView(pixelFormat: .bgra8Unorm) }
         let scratch = try gpu.texture(
-            CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless)
+            CACorpus.colorFormat(line, 1), Self.width, Self.height, usage: [.renderTarget], storage: .memoryless
+        )
         guard let event = gpu.device.makeSharedEvent() else { return .fail("makeSharedEvent returned nil") }
         let layer = CAMetalLayer()
         layer.device = gpu.device
@@ -73,7 +74,8 @@ struct CommitLatencyPathTest: HWTest {
             guard let commands = gpu.queue.makeCommandBuffer() else { return .fail("makeCommandBuffer nil") }
             Self.encodePass(
                 commands, pipeline: pipeline, target: targets[0], scratch: scratch, pass: 0, round: 0, clear: true,
-                draws: 6)
+                draws: 6
+            )
             commands.commit()
             commands.waitUntilCompleted()
             if GM20BFacade.path(of: commands) == "gm20b" { break }
@@ -90,19 +92,20 @@ struct CommitLatencyPathTest: HWTest {
             var commitUs: [Double] = [], scheduledUs: [Double] = [], gpuStartUs: [Double] = []
             var pipelined = 0.0, encoders = 0.0, abandons = 0.0, vetoes: UInt64 = 0, measuredCount = 0.0
             var openings: [Double] = []
-            for round in 0..<(Self.warmups + Self.measured) {
+            for round in 0 ..< (Self.warmups + Self.measured) {
                 guard let commands = gpu.queue.makeCommandBuffer() else { return .fail("makeCommandBuffer nil") }
                 let drawable = shape.present ? layer.nextDrawable() : nil
                 let openingsBefore = GM20BFacade.counters(of: gpu.device)["pass_pixel_openings"]
                 if shape.present && drawable == nil { return .fail("nextDrawable returned nil") }
-                for pass in 0..<shape.passes {
+                for pass in 0 ..< shape.passes {
                     let last = pass == shape.passes - 1
                     let target = last && drawable != nil ? drawable!.texture : targets[pass % Self.targets]
                     Self.encodePass(
                         commands, pipeline: pipeline, target: target, scratch: scratch, pass: pass, round: round,
                         clear: pass < Self.targets || target !== targets[pass % Self.targets],
                         draws: shape.draws / shape.passes + (pass < shape.draws % shape.passes ? 1 : 0),
-                        geometry: shape.geometry ? geometry : nil)
+                        geometry: shape.geometry ? geometry : nil
+                    )
                     if shape.event && pass == 7 {
                         signalled += 1
                         commands.encodeSignalEvent(event, value: signalled)
@@ -134,7 +137,8 @@ struct CommitLatencyPathTest: HWTest {
                 abandons += ahead["abandons"]?.doubleValue ?? 0
                 vetoes |= ahead["veto"]?.uint64Value ?? 0
                 measuredCount += 1
-                if let before = openingsBefore, let after = GM20BFacade.counters(of: gpu.device)["pass_pixel_openings"] {
+                if let before = openingsBefore,
+                   let after = GM20BFacade.counters(of: gpu.device)["pass_pixel_openings"] {
                     openings.append(Double(after - before))
                 }
                 if shape.geometry {
@@ -158,7 +162,8 @@ struct CommitLatencyPathTest: HWTest {
             if measuredCount == 0 { continue }
             if !shape.event && shape.passes > 3 && pipelined / n < encoders / n - 5 {
                 failures.append(
-                    "\(shape.name): \(pipelined / n) of \(encoders / n) encoders encoded ahead (veto \(vetoes))")
+                    "\(shape.name): \(pipelined / n) of \(encoders / n) encoders encoded ahead (veto \(vetoes))"
+                )
             }
             if shape.event && pipelined > 0 {
                 failures.append("\(shape.name): encoders encoded ahead of a command buffer with an event")
@@ -181,7 +186,8 @@ struct CommitLatencyPathTest: HWTest {
                     failures.append("\(shape.name): \(gpuStartUs.count) GPU start stamps read")
                 } else if Self.median(gpuStartUs) > most {
                     failures.append(
-                        "\(shape.name): commit to GPU start \(Int(Self.median(gpuStartUs))) us, over \(Int(most))")
+                        "\(shape.name): commit to GPU start \(Int(Self.median(gpuStartUs))) us, over \(Int(most))"
+                    )
                 }
             }
         }
@@ -191,7 +197,8 @@ struct CommitLatencyPathTest: HWTest {
         metrics.set(
             "pipeline_abandons",
             counters.filter { $0.key.hasPrefix("pipeline_abandons.") }.map { "\($0.key.dropFirst(18))=\($0.value)" }
-                .sorted().joined(separator: ","))
+                .sorted().joined(separator: ",")
+        )
         if counters["sealed_encoders"] == nil {
             return counters["gm20b"] == nil
                 ? .skip("no pipelining counters: a release runtime")
@@ -216,19 +223,21 @@ struct CommitLatencyPathTest: HWTest {
         descriptor.colorAttachments[1].storeAction = .dontCare
         let encoder = commands.makeRenderCommandEncoder(descriptor: descriptor)!
         encoder.setRenderPipelineState(pipeline)
-        for draw in 0..<draws {
+        for draw in 0 ..< draws {
             let x = Float((draw * 37 + round) % 97) / 97 - 0.5, y = Float(pass % 8) / 4 - 1
             let colour = SIMD4<Float16>(Float16(draw % 4) / 4, Float16(pass % 8) / 8, 0.5, 1)
             CAState.bind(
                 encoder, vertices: CAState.rectangle(x0: x, y0: y, x1: x + 0.25, y1: y + 0.3, color: colour),
-                source: nil)
+                source: nil
+            )
             encoder.setScissorRect(MTLScissorRect(x: (draw % 8) * 32, y: (pass % 8) * 32, width: 32, height: 64))
             if let geometry, draw == 0 {
                 encoder.setVertexBuffer(geometry.vertices, offset: 0, index: 1)
                 encoder.setVertexBuffer(geometry.transform, offset: 0, index: 2)
                 encoder.drawIndexedPrimitives(
                     type: .triangle, indexCount: 6, indexType: .uint16, indexBuffer: geometry.indices,
-                    indexBufferOffset: 0)
+                    indexBufferOffset: 0
+                )
             } else {
                 encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
             }
