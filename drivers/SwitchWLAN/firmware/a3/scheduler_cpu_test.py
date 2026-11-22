@@ -1,10 +1,10 @@
 import unittest
 
-import control_cpu_test as switch_control
+from drivers.SwitchWLAN.firmware.a3 import control_cpu_test as switch_control
 
 
 class SchedulerCPU(switch_control.ControlCPU):
-    switch_sources = ('diagnostic.c', 'scheduler.c', 'timer.c', 'scheduler_test.c', 'control_test_start.S')
+    switch_image = 'scheduler_cpu'
     switch_cases = 37
 
 

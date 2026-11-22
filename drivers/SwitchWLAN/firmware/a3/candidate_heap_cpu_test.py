@@ -1,17 +1,14 @@
 import json
-import shutil
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-import payload_header
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
-import a3_rx_cpu_test as switch_cpu
+from drivers.SwitchWLAN.firmware.a3 import payload_header
+from drivers.SwitchWLAN.firmware.tools import a3_cpu_harness as switch_cpu
+from drivers.SwitchWLAN.firmware.tools.arm_tools import switch_tool
 
 SWITCH_BEGIN = 0x20E670
 SWITCH_END = 0x23DF6C
@@ -62,9 +59,7 @@ def switch_heap_command(gcc: str, source: Path, elf: Path, case: tuple[int, ...]
 
 class CandidateHeap(unittest.TestCase):
     def test_original_layout_and_exact_station_floor(self):
-        qemu, gcc = shutil.which('qemu-system-arm'), shutil.which('arm-none-eabi-gcc')
-        if not all((qemu, gcc)):
-            self.skipTest('requires qemu-system-arm and arm-none-eabi GCC/binutils')
+        qemu, gcc = switch_tool('qemu-system-arm'), switch_tool('arm-none-eabi-gcc')
         source = Path(__file__).resolve().parent
         cases = [
             (SWITCH_BEGIN, SWITCH_END, SWITCH_END, SWITCH_MAX_END, 1),

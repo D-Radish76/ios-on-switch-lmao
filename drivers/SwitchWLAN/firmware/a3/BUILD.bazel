@@ -1,7 +1,8 @@
 load("@rules_python//python:py_binary.bzl", "py_binary")
+load("@rules_python//python:py_library.bzl", "py_library")
 load("@rules_python//python:py_test.bzl", "py_test")
 load("//bazel/lint:defs.bzl", "lint_files")
-load(":defs.bzl", "switch_wlan_a3_payload")
+load(":defs.bzl", "switch_wlan_a3_payload", "switch_wlan_a3_test_image")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -18,6 +19,11 @@ exports_files([
 
 py_binary(
     name = "payload_header",
+    srcs = ["payload_header.py"],
+)
+
+py_library(
+    name = "payload_header_lib",
     srcs = ["payload_header.py"],
 )
 
@@ -134,196 +140,453 @@ switch_wlan_a3_payload(
     retain_symbols = _CANDIDATE_ROOTS,
 )
 
+# The payloads' ELFs and flat binaries (bootstrap_elf, bootstrap_binary, candidate_elf, candidate_binary), development
+# and release, as their tests read them.
+[
+    filegroup(
+        name = "%s_%s" % (payload, group),
+        srcs = [
+            ":" + payload,
+            ":%s_release" % payload,
+        ],
+        output_group = group,
+    )
+    for payload in [
+        "bootstrap",
+        "candidate",
+    ]
+    for group in [
+        "elf",
+        "binary",
+    ]
+]
+
+# The CPU tests' images. Each is one gcc compile and link, and srcs order is the link order.
+_TEST_HDRS = glob(["*.h"])
+
+_TEST_COPTS = [
+    "-mcpu=cortex-r4",
+    "-mthumb",
+    "-mno-unaligned-access",
+    "-Os",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-ffreestanding",
+    "-fno-builtin",
+    "-nostdlib",
+]
+
+# The native-symbol checks link at the island's address without running, for objdump.
+_LINK_COPTS = [
+    "-mcpu=cortex-r4",
+    "-mthumb",
+    "-mno-unaligned-access",
+    "-Os",
+    "-ffreestanding",
+    "-fno-builtin",
+    "-nostdlib",
+]
+
+_ASM_LINK_COPTS = [
+    "-mcpu=cortex-r4",
+    "-mthumb",
+    "-nostdlib",
+]
+
+_FIRMWARE = "//drivers/SwitchWLAN:firmware/brcm/brcmfmac4356A3-pcie.bin"
+
+_LTO = {
+    "": [],
+    "_lto": ["-flto"],
+}
+
+switch_wlan_a3_test_image(
+    name = "bootstrap_harness",
+    srcs = ["bootstrap_test_harness.S"],
+    copts = [
+        "-mcpu=cortex-r4",
+        "-mno-unaligned-access",
+        "-DDEVELOPMENT=1",
+        "-mthumb",
+        "-mfloat-abi=soft",
+        "-Os",
+        "-ffreestanding",
+        "-fno-builtin",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-fno-stack-protector",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-nostdlib",
+        "-Wl,--build-id=none,--gc-sections,--no-warn-rwx-segments",
+        "-Wl,-Ttext=0x10000,--entry=switch_test_start",
+    ],
+)
+
 py_test(
     name = "bootstrap_cpu_test",
-    srcs = [
-        "bootstrap_cpu_test.py",
-        "payload_header.py",
+    srcs = ["bootstrap_cpu_test.py"],
+    data = [
+        ":bootstrap_binary",
+        ":bootstrap_elf",
+        ":bootstrap_harness",
     ],
-    data = [":bootstrap_sources"],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        ":payload_header_lib",
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
 )
 
-filegroup(
-    name = "bootstrap_sources",
+py_test(
+    name = "candidate_link_test",
+    srcs = ["candidate_link_test.py"],
+    data = [
+        ":candidate_binary",
+        ":candidate_elf",
+    ],
+    deps = [":payload_header_lib"],
+)
+
+switch_wlan_a3_test_image(
+    name = "rx_link",
     srcs = [
-        "abi.h",
-        "ack.c",
-        "ack.h",
-        "ack_symbols.S",
-        "bootstrap.S",
-        "bootstrap.c",
-        "bootstrap.ld",
+        "rx.c",
         "clock.c",
-        "clock.h",
-        "control.c",
-        "control.h",
-        "diagnostic.c",
-        "beacon.h",
-        "diagnostic.h",
-        "fault.h",
-        "rom.c",
-        "rom.h",
         "rx.S",
-        "rx.c",
-        "rx.h",
-        "rx_status.h",
         "rx_symbols.S",
-        "timer.c",
-        "timer.h",
-        "timer_symbols.S",
-        "wire.h",
     ],
+    hdrs = _TEST_HDRS,
+    copts = _LINK_COPTS + ["-Wl,-Ttext=0x20e900,--entry=switch_a3_rx_entry,--build-id=none"],
 )
 
-filegroup(
-    name = "rx_test_sources",
+switch_wlan_a3_test_image(
+    name = "rx_cpu",
     srcs = [
-        "//drivers/SwitchWLAN/awdl/test:switch_apple_frames.h",
-        "diagnostic.c",
-        "beacon.h",
-        "diagnostic.h",
-        "fault.h",
-        "rx.S",
         "rx.c",
-        "rx.h",
-        "rx_status.h",
-        "rx_symbols.S",
+        "clock.c",
+        "rx.S",
         "rx_test.c",
         "rx_test_start.S",
-        "clock.c",
-        "clock.h",
-        "wire.h",
     ],
+    hdrs = _TEST_HDRS + ["//drivers/SwitchWLAN/awdl/test:switch_apple_frames.h"],
+    copts = _TEST_COPTS + [
+        "-std=c11",
+        "-Wl,-Ttext=0x10000,--entry=switch_rx_test_start,--build-id=none",
+    ],
+)
+
+switch_wlan_a3_test_image(
+    name = "ack_link",
+    srcs = [
+        "ack.c",
+        "ack_symbols.S",
+    ],
+    hdrs = _TEST_HDRS,
+    copts = _LINK_COPTS + [
+        "-mfloat-abi=soft",
+        "-Wl,-Ttext=0x20e900,--entry=switch_a3_ack_prepare,--build-id=none",
+    ],
+)
+
+switch_wlan_a3_test_image(
+    name = "ack_cpu",
+    srcs = [
+        "ack.c",
+        "ack_test.c",
+        "bssid_test.c",
+        "bssid_native_test.S",
+        "ack_test_start.S",
+    ],
+    hdrs = _TEST_HDRS,
+    copts = _TEST_COPTS + [
+        "-mfloat-abi=soft",
+        "-std=c11",
+        "-Wl,-Ttext=0x200000,--section-start=.switch_bssid_rom=0x2000,--entry=switch_ack_test_start,--build-id=none",
+    ],
+    incbin = [_FIRMWARE],
 )
 
 py_test(
     name = "ack_cpu_test",
     srcs = ["ack_cpu_test.py"],
     data = [
-        "ack.c",
-        "ack.h",
-        "ack_symbols.S",
-        "ack_test.c",
-        "ack_test_start.S",
-        "bssid_native_test.S",
-        "bssid_test.c",
-        "//drivers/SwitchWLAN:firmware/brcm/brcmfmac4356A3-pcie.bin",
+        ":ack_cpu",
+        ":ack_link",
+        _FIRMWARE,
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
+
+_CONTROL_TESTS = {
+    "control_cpu": [
+        "control.c",
+        "control_test.c",
+    ],
+    "candidate_control_cpu": [
+        "diagnostic.c",
+        "candidate_control.c",
+        "scheduler.c",
+        "candidate_control_test.c",
+    ],
+    "scheduler_cpu": [
+        "diagnostic.c",
+        "scheduler.c",
+        "timer.c",
+        "scheduler_test.c",
+    ],
+    "timer_native_cpu": [
+        "timer.c",
+        "timer_native_test.c",
+        "timer_native_test.S",
+    ],
+    "timer_owned_cpu": [
+        "timer.c",
+        "timer_owned_test.c",
+    ],
+}
+
+_CONTROL_LINK_COPTS = {
+    "candidate_control_lto_cpu": ["-flto"],
+    "timer_native_cpu": ["-Wl,--section-start=.switch_native_timeout=0x5444c"],
+}
+
+[
+    switch_wlan_a3_test_image(
+        name = "%s_dev%d" % (image, development),
+        srcs = _CONTROL_TESTS[image.replace("_lto", "")] + ["control_test_start.S"],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + [
+            "-std=c11",
+            "-DDEVELOPMENT=%d" % development,
+            "-Wl,-Ttext=0x10000,--entry=switch_control_test_start,--build-id=none",
+        ] + _CONTROL_LINK_COPTS.get(image, []),
+    )
+    for image in _CONTROL_TESTS.keys() + ["candidate_control_lto_cpu"]
+    for development in [
+        0,
+        1,
+    ]
+]
 
 py_test(
     name = "control_cpu_test",
     srcs = ["control_cpu_test.py"],
     data = [
-        "ack.h",
-        "clock.h",
-        "control.c",
-        "control.h",
-        "control_test.c",
-        "control_test_start.S",
-        "rx.h",
-        "rx_status.h",
-        "timer.h",
-        "wire.h",
+        ":control_cpu_dev0",
+        ":control_cpu_dev1",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
+
+py_test(
+    name = "candidate_control_cpu_test",
+    srcs = [
+        "candidate_control_cpu_test.py",
+        "control_cpu_test.py",
+    ],
+    data = [
+        ":candidate_control_cpu_dev0",
+        ":candidate_control_cpu_dev1",
+        ":candidate_control_lto_cpu_dev0",
+        ":candidate_control_lto_cpu_dev1",
+    ],
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
+    ],
+)
+
+[
+    py_test(
+        name = image + "_test",
+        srcs = [
+            "control_cpu_test.py",
+            image + "_test.py",
+        ],
+        data = [
+            ":%s_dev0" % image,
+            ":%s_dev1" % image,
+        ],
+        tags = ["no-sandbox"],
+        deps = [
+            "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+            "//drivers/SwitchWLAN/firmware/tools:arm_tools",
+        ],
+    )
+    for image in [
+        "scheduler_cpu",
+        "timer_native_cpu",
+        "timer_owned_cpu",
+    ]
+]
+
+[
+    switch_wlan_a3_test_image(
+        name = "timer_cpu_variant%d" % variant,
+        srcs = [
+            "timer.c",
+            "clock.c",
+            "timer_test.c",
+            "timer_test_start.S",
+        ],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + [
+            "-std=c11",
+            "-DSWITCH_QUEUE_VARIANT=%d" % variant,
+            "-Wl,-Ttext=0x10000,--entry=switch_timer_test_start,--build-id=none",
+        ],
+    )
+    for variant in range(5)
+]
 
 py_test(
     name = "timer_cpu_test",
     srcs = ["timer_cpu_test.py"],
-    data = [
-        "clock.c",
-        "clock.h",
-        "timer.c",
-        "timer.h",
-        "timer_test.c",
-        "timer_test_start.S",
-        "wire.h",
+    data = [":timer_cpu_variant%d" % variant for variant in range(5)],
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
-    ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
+
+switch_wlan_a3_test_image(
+    name = "pm_status_link",
+    srcs = [
+        "pm_status.S",
+        "pm_symbols.S",
+        "pm_status_link_test.S",
+    ],
+    hdrs = _TEST_HDRS,
+    copts = _ASM_LINK_COPTS + ["-Wl,-Ttext=0x20e900,--entry=switch_a3_pm_status_entry,--build-id=none"],
+)
+
+switch_wlan_a3_test_image(
+    name = "tx_link",
+    srcs = [
+        "tx.c",
+        "tx.S",
+        "tx_symbols.S",
+        "tx_timing.c",
+        "clock.c",
+        "rx_symbols.S",
+        "tx_link_test.S",
+    ],
+    hdrs = _TEST_HDRS,
+    copts = _LINK_COPTS + [
+        "-mfloat-abi=soft",
+        "-ffunction-sections",
+        "-fdata-sections",
+        "-Wl,-Ttext=0x20e900,--entry=switch_a3_tx_entry,--build-id=none",
+    ],
+)
+
+[
+    switch_wlan_a3_test_image(
+        name = "tx_cpu" + suffix,
+        srcs = [
+            "diagnostic.c",
+            "tx.c",
+            "rx.c",
+            "tx.S",
+            "tx_timing.c",
+            "tx_test.c",
+            "tx_test_start.S",
+            "tx_timing_test.c",
+            "pm_status.S",
+        ],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + lto + [
+            "-mfloat-abi=soft",
+            "-std=c11",
+            "-ffunction-sections",
+            "-fdata-sections",
+            "-DDEVELOPMENT=1",
+            "-Wl,-Ttext=0x10000,--entry=switch_tx_test_start,--build-id=none,--gc-sections",
+        ],
+    )
+    for suffix, lto in _LTO.items()
+]
 
 py_test(
     name = "tx_cpu_test",
     srcs = ["tx_cpu_test.py"],
     data = [
-        "clock.c",
-        "clock.h",
-        "control.h",
-        "diagnostic.c",
-        "beacon.h",
-        "diagnostic.h",
-        "fault.h",
-        "pm_status.S",
-        "pm_symbols.S",
-        "rx.c",
-        "rx.h",
-        "rx_status.h",
-        "rx_symbols.S",
-        "scheduler.h",
-        "timer.h",
-        "tx.S",
-        "tx.c",
-        "tx.h",
-        "tx_timing.c",
-        "tx_timing.h",
-        "tx_symbols.S",
-        "tx_test.c",
-        "tx_test_start.S",
-        "tx_timing_test.c",
-        "wire.h",
+        ":pm_status_link",
+        ":tx_cpu",
+        ":tx_cpu_lto",
+        ":tx_link",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
+
+switch_wlan_a3_test_image(
+    name = "channel_link",
+    srcs = [
+        "channel_gate.S",
+        "channel_symbols.S",
+        "channel_link_test.S",
+    ],
+    hdrs = _TEST_HDRS,
+    copts = _ASM_LINK_COPTS + ["-Wl,-Ttext=0x20e900,--entry=switch_a3_channel_gate,--build-id=none"],
+)
+
+[
+    switch_wlan_a3_test_image(
+        name = "channel_cpu" + suffix,
+        srcs = [
+            "diagnostic.c",
+            "channel.c",
+            "channel_gate.S",
+            "channel_test.c",
+            "channel_test_start.S",
+        ],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + lto + [
+            "-std=c11",
+            "-DDEVELOPMENT=1",
+            "-Wl,-Ttext=0x10000,--entry=switch_channel_test_start,--build-id=none",
+        ],
+    )
+    for suffix, lto in _LTO.items()
+]
 
 py_test(
     name = "channel_cpu_test",
     srcs = ["channel_cpu_test.py"],
     data = [
-        "channel.c",
-        "channel.h",
-        "diagnostic.c",
-        "beacon.h",
-        "diagnostic.h",
-        "fault.h",
-        "channel_gate.S",
-        "channel_symbols.S",
-        "channel_test.c",
-        "channel_test_start.S",
-        "clock.c",
-        "clock.h",
-        "rx_symbols.S",
-        "wire.h",
+        ":channel_cpu",
+        ":channel_cpu_lto",
+        ":channel_link",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
 
+# The power-management fixture links -Wl,--undefined for the stubs pm_cpu_test.py's SWITCH_STUBS patches in at run
+# time, so it compiles at test time from that one table.
 py_test(
     name = "pm_cpu_test",
     srcs = [
@@ -344,261 +607,186 @@ py_test(
         "pm_test.c",
         "pm_test_start.S",
         "wire.h",
-        "//drivers/SwitchWLAN:firmware/brcm/brcmfmac4356A3-pcie.bin",
+        _FIRMWARE,
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
 
-py_test(
-    name = "timer_native_cpu_test",
+switch_wlan_a3_test_image(
+    name = "excursion_link",
     srcs = [
-        "control_cpu_test.py",
-        "timer_native_cpu_test.py",
+        "excursion_symbols.S",
+        "excursion_link_test.S",
     ],
-    data = [
-        "clock.h",
-        "control_test_start.S",
-        "fault.h",
-        "timer.c",
-        "timer.h",
-        "timer_native_test.c",
-        "timer_native_test.S",
-        "wire.h",
-    ],
-    tags = [
-        "manual",
-        "no-sandbox",
-    ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
+    hdrs = _TEST_HDRS,
+    copts = _ASM_LINK_COPTS + ["-Wl,-Ttext=0x20e900,--entry=switch_excursion_link,--build-id=none"],
 )
+
+[
+    switch_wlan_a3_test_image(
+        name = "excursion_cpu" + suffix,
+        srcs = [
+            "diagnostic.c",
+            "excursion.c",
+            "excursion_test.c",
+            "excursion_test_start.S",
+        ],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + lto + [
+            "-mfloat-abi=soft",
+            "-std=c11",
+            "-DDEVELOPMENT=1",
+            "-Wl,-Ttext=0x10000,--entry=switch_excursion_test_start,--build-id=none",
+        ],
+    )
+    for suffix, lto in _LTO.items()
+]
 
 py_test(
     name = "excursion_cpu_test",
     srcs = ["excursion_cpu_test.py"],
     data = [
-        "channel.h",
-        "control.h",
-        "diagnostic.c",
-        "beacon.h",
-        "diagnostic.h",
-        "fault.h",
-        "clock.h",
-        "excursion.c",
-        "excursion.h",
-        "excursion_symbols.S",
-        "excursion_test.c",
-        "excursion_test_start.S",
-        "timer.h",
-        "wire.h",
+        ":excursion_cpu",
+        ":excursion_cpu_lto",
+        ":excursion_link",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
 
-py_test(
-    name = "candidate_link_test",
-    srcs = [
-        "candidate_link_test.py",
-        "payload_header.py",
-    ],
-    data = [
-        ":bootstrap_sources",
-        "beacon.c",
-        "beacon.h",
-        "candidate.ld",
-        "candidate_control.c",
-        "channel.c",
-        "channel.h",
-        "channel_gate.S",
-        "channel_symbols.S",
-        "excursion.c",
-        "excursion.h",
-        "excursion_symbols.S",
-        "pm_status.S",
-        "pm_symbols.S",
-        "rom_candidate.c",
-        "pm.S",
-        "scheduler.c",
-        "scheduler.h",
-        "tx.S",
-        "tx.c",
-        "tx.h",
-        "tx_timing.c",
-        "tx_timing.h",
-        "tx_symbols.S",
-    ],
-    tags = ["manual"],
-)
+[
+    switch_wlan_a3_test_image(
+        name = "rom_candidate_cpu_dev%d%s" % (development, suffix),
+        srcs = [
+            "rom_candidate.c",
+            "rom_candidate_test.c",
+            "rom_candidate_test_start.S",
+            "rom_candidate_test_install.S",
+        ],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + lto + [
+            "-DDEVELOPMENT=%d" % development,
+            "-Wl,-Ttext=0x10000,--entry=switch_rom_test_start,--build-id=none",
+        ],
+        incbin = [_FIRMWARE],
+    )
+    for development in [
+        0,
+        1,
+    ]
+    for suffix, lto in _LTO.items()
+]
 
 py_test(
     name = "rom_candidate_cpu_test",
     srcs = ["rom_candidate_cpu_test.py"],
     data = [
-        "abi.h",
-        "rom.h",
-        "rom_candidate.c",
-        "rom_candidate_test.c",
-        "rom_candidate_test_start.S",
-        "//drivers/SwitchWLAN:firmware/brcm/brcmfmac4356A3-pcie.bin",
+        ":rom_candidate_cpu_dev0",
+        ":rom_candidate_cpu_dev0_lto",
+        ":rom_candidate_cpu_dev1",
+        ":rom_candidate_cpu_dev1_lto",
+        _FIRMWARE,
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
 
+# Each case's begin, end, boundary and island end are both the fixture's defines and its expected values, so it compiles
+# at test time from candidate_heap_cpu_test.py's one table.
 py_test(
     name = "candidate_heap_cpu_test",
-    srcs = [
-        "candidate_heap_cpu_test.py",
-        "payload_header.py",
-    ],
+    srcs = ["candidate_heap_cpu_test.py"],
     data = [
         "abi.h",
         "bootstrap.S",
         "candidate_heap_test.S",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        ":payload_header_lib",
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
 
-py_test(
-    name = "candidate_control_cpu_test",
-    srcs = [
-        "candidate_control_cpu_test.py",
-        "control_cpu_test.py",
-    ],
-    data = [
-        "ack.h",
-        "beacon.h",
-        "channel.h",
-        "candidate_control.c",
-        "candidate_contract_cases.h",
-        "candidate_control_test.c",
-        "clock.h",
-        "diagnostic.c",
-        "diagnostic.h",
-        "fault.h",
-        "control.h",
-        "control_test_start.S",
-        "excursion.h",
-        "rx.h",
-        "rx_status.h",
-        "scheduler.c",
-        "scheduler.h",
-        "timer.h",
-        "tx.h",
-        "wire.h",
-    ],
-    tags = [
-        "manual",
-        "no-sandbox",
-    ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
-)
+[
+    switch_wlan_a3_test_image(
+        name = "rx_limit_cpu_candidate%d%s" % (candidate, suffix),
+        srcs = [
+            "diagnostic.c",
+            "rx.c",
+            "rx_limit_test.c",
+            "rx_limit_test_start.S",
+        ],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + lto + [
+            "-DSWITCH_A3_CANDIDATE=%d" % candidate,
+            "-DDEVELOPMENT=1",
+            "-Wl,-Ttext=0x10000,--entry=switch_rx_limit_test_start,--build-id=none",
+        ],
+    )
+    for candidate in [
+        0,
+        1,
+    ]
+    for suffix, lto in _LTO.items()
+]
 
 py_test(
     name = "rx_limit_cpu_test",
     srcs = ["rx_limit_cpu_test.py"],
     data = [
-        "diagnostic.c",
-        "diagnostic.h",
-        "fault.h",
-        "clock.h",
-        "beacon.h",
-        "scheduler.h",
-        "rx.c",
-        "rx.h",
-        "rx_status.h",
-        "rx_limit_test.c",
-        "rx_limit_test_start.S",
-        "wire.h",
+        ":rx_limit_cpu_candidate0",
+        ":rx_limit_cpu_candidate0_lto",
+        ":rx_limit_cpu_candidate1",
+        ":rx_limit_cpu_candidate1_lto",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )
 
-py_test(
-    name = "scheduler_cpu_test",
-    srcs = [
-        "control_cpu_test.py",
-        "scheduler_cpu_test.py",
-    ],
-    data = [
-        "diagnostic.c",
-        "diagnostic.h",
-        "fault.h",
-        "ack.h",
-        "beacon.h",
-        "channel.h",
-        "clock.h",
-        "control.h",
-        "control_test_start.S",
-        "excursion.h",
-        "scheduler.c",
-        "scheduler.h",
-        "scheduler_test.c",
-        "timer.c",
-        "timer.h",
-        "tx.h",
-        "wire.h",
-    ],
-    tags = [
-        "manual",
-        "no-sandbox",
-    ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
-)
+[
+    switch_wlan_a3_test_image(
+        name = "beacon_cpu" + suffix,
+        srcs = [
+            "beacon.c",
+            "beacon_test.c",
+            "beacon_test_start.S",
+        ],
+        hdrs = _TEST_HDRS,
+        copts = _TEST_COPTS + lto + [
+            "-mfloat-abi=soft",
+            "-std=c11",
+            "-DDEVELOPMENT=1",
+            "-Wl,-Ttext=0x10000,--entry=switch_beacon_test_start,--build-id=none",
+        ],
+    )
+    for suffix, lto in _LTO.items()
+]
 
 py_test(
     name = "beacon_cpu_test",
     srcs = ["beacon_cpu_test.py"],
     data = [
-        "beacon.c",
-        "beacon.h",
-        "beacon_test.c",
-        "beacon_test_start.S",
-        "channel.h",
-        "rx_status.h",
+        ":beacon_cpu",
+        ":beacon_cpu_lto",
     ],
-    tags = [
-        "manual",
-        "no-sandbox",
+    tags = ["no-sandbox"],
+    deps = [
+        "//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness",
+        "//drivers/SwitchWLAN/firmware/tools:arm_tools",
     ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
-)
-
-py_test(
-    name = "timer_owned_cpu_test",
-    srcs = [
-        "control_cpu_test.py",
-        "timer_owned_cpu_test.py",
-    ],
-    data = [
-        "clock.h",
-        "control_test_start.S",
-        "timer.c",
-        "timer.h",
-        "timer_owned_test.c",
-        "wire.h",
-    ],
-    tags = [
-        "manual",
-        "no-sandbox",
-    ],
-    deps = ["//drivers/SwitchWLAN/firmware/tools:a3_cpu_harness"],
 )

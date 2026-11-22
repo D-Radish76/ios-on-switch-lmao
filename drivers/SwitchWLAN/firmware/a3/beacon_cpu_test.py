@@ -1,15 +1,13 @@
 import json
-import shutil
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
-import a3_rx_cpu_test as switch_cpu
+from drivers.SwitchWLAN.firmware.tools import a3_cpu_harness as switch_cpu
+from drivers.SwitchWLAN.firmware.tools.arm_tools import switch_tool
 
 
 def switch_beacon_results(qmp: socket.socket, qtest: socket.socket, symbols: dict[str, int]) -> tuple[int, ...]:
@@ -26,44 +24,14 @@ def switch_beacon_results(qmp: socket.socket, qtest: socket.socket, symbols: dic
 
 class BeaconCPU(unittest.TestCase):
     def test_station_beacon_bounds(self):
-        qemu, gcc, nm = (shutil.which(name) for name in ('qemu-system-arm', 'arm-none-eabi-gcc', 'arm-none-eabi-nm'))
-        if not all((qemu, gcc, nm)):
-            self.skipTest('requires qemu-system-arm and arm-none-eabi GCC/binutils')
-        source = Path(__file__).resolve().parent
+        qemu, nm = switch_tool('qemu-system-arm'), switch_tool('arm-none-eabi-nm')
         for lto in (False, True):
             with (
                 self.subTest(lto=lto),
                 tempfile.TemporaryDirectory(prefix='switch-a3-beacon-', dir='/private/tmp') as tmp,
             ):
                 path = Path(tmp)
-                elf = path / 'beacon.elf'
-                subprocess.run(
-                    [
-                        gcc,
-                        '-mcpu=cortex-r4',
-                        '-mthumb',
-                        '-mfloat-abi=soft',
-                        '-mno-unaligned-access',
-                        '-Os',
-                        '-std=c11',
-                        '-Wall',
-                        '-Wextra',
-                        '-Werror',
-                        '-ffreestanding',
-                        '-fno-builtin',
-                        '-DDEVELOPMENT=1',
-                        '-nostdlib',
-                        *(['-flto'] if lto else []),
-                        '-Wl,-Ttext=0x10000,--entry=switch_beacon_test_start,--build-id=none',
-                        str(source / 'beacon.c'),
-                        str(source / 'beacon_test.c'),
-                        str(source / 'beacon_test_start.S'),
-                        '-o',
-                        str(elf),
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
+                elf = Path(__file__).with_name('beacon_cpu_lto.elf' if lto else 'beacon_cpu.elf')
                 symbols = {}
                 for line in subprocess.check_output([nm, str(elf)], text=True).splitlines():
                     fields = line.split()

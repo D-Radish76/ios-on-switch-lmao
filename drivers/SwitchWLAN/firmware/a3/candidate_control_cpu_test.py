@@ -1,15 +1,15 @@
 import unittest
 
-import control_cpu_test as switch_control
+from drivers.SwitchWLAN.firmware.a3 import control_cpu_test as switch_control
 
 
 class CandidateControlCPU(switch_control.ControlCPU):
-    switch_sources = ('diagnostic.c', 'candidate_control.c', 'scheduler.c', 'candidate_control_test.c', 'control_test_start.S')
+    switch_image = 'candidate_control_cpu'
     switch_cases = 38
 
 
 class SwitchCandidateControlLTOCPU(CandidateControlCPU):
-    switch_link_flags = ('-flto',)
+    switch_image = 'candidate_control_lto_cpu'
 
 
 if __name__ == '__main__':

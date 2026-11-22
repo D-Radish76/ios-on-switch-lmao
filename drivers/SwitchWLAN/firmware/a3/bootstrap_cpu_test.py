@@ -1,15 +1,14 @@
 import json
 import re
-import shutil
-import socket
 import struct
-import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-import payload_header
+from drivers.SwitchWLAN.firmware.a3 import payload_header
+from drivers.SwitchWLAN.firmware.tools.a3_cpu_harness import switch_qemu
+from drivers.SwitchWLAN.firmware.tools.arm_tools import switch_tool
 
 SWITCH_CONFIG = 0x110000
 SWITCH_RESULT = 0x110100
@@ -19,144 +18,7 @@ SWITCH_HEAP_END = 0x23DF6C
 SWITCH_HEAP_MIN = 186256
 SWITCH_WLC = 0x120000
 SWITCH_PUB = 0x120100
-SWITCH_PAYLOAD_SOURCES = (
-    'bootstrap.S',
-    'bootstrap.c',
-    'control.c',
-    'clock.c',
-    'rom.c',
-    'rx.c',
-    'rx.S',
-    'rx_symbols.S',
-    'ack.c',
-    'ack_symbols.S',
-    'timer.c',
-    'timer_symbols.S',
-)
 SWITCH_REGISTER_PREFIX = bytes.fromhex('2de9f0478a461146984691460468fff7dfff')
-
-SWITCH_HARNESS = r"""
-.syntax unified
-.thumb
-.cpu cortex-r4
-.text
-.global switch_test_start
-.global switch_test_heap_return
-.global switch_test_heap
-.global switch_test_register
-.thumb_func
-switch_test_start:
-    cpsid if
-    ldr sp, =0x23f000
-    ldr r0, =0x20e670
-    ldr r1, =0x110000
-    ldr r1, [r1]
-    mov r2, r1
-    ldr r4, =0x44444444
-    b.w 0x1e006c
-.thumb_func
-switch_test_heap:
-    ldr r3, =0x110100
-    stmia r3, {r0-r2}
-    str r4, [r3, #12]
-    str lr, [r3, #24]
-    movw r0, #0x777
-    bx lr
-.thumb_func
-switch_test_heap_return:
-    ldr r3, =0x110100
-    str r4, [r3, #16]
-    mov r2, sp
-    str r2, [r3, #20]
-    sub sp, #104
-    add r1, sp, #68
-    movw r0, #0x4404
-    movs r2, #8
-1:
-    str r0, [r1], #4
-    adds r0, #1
-    subs r2, #1
-    bne 1b
-    ldr r0, =switch_test_attach_return
-    str r0, [sp, #100]
-    ldr r4, =0x110000
-    ldr r4, [r4, #4]
-    b.w 0x1e9b8e
-.thumb_func
-switch_test_register:
-    ldr r12, =0x110100
-    ldr r1, [r12, #68]
-    adds r1, #1
-    str r1, [r12, #68]
-    str r0, [r12, #72]
-    str r10, [r12, #76]
-    str r9, [r12, #80]
-    str r8, [r12, #84]
-    add r0, sp, #32
-    add r1, r12, #88
-    movs r2, #6
-2:
-    ldr r3, [r0], #4
-    str r3, [r1], #4
-    subs r2, #1
-    bne 2b
-    ldr r0, =0x110000
-    ldr r0, [r0, #8]
-    ldmia sp!, {r4-r10, pc}
-.thumb_func
-switch_test_attach_return:
-    ldr r3, =0x110100
-    str r0, [r3, #28]
-    mov r0, sp
-    str r0, [r3, #32]
-    add r0, r3, #36
-    stmia r0, {r4-r11}
-    ldr r0, =0x1df9ac
-    ldr r1, =0x20e670
-    movs r2, #0
-6:
-    str r2, [r0], #4
-    cmp r0, r1
-    blo 6b
-    ldr r4, =0x110000
-    ldr r2, [r4, #12]
-    cmn r2, #1
-    beq 3f
-    ldr r12, [r3, #88]
-    cmp r12, #0
-    beq 3f
-    sub sp, #24
-    movs r0, #0
-    str r0, [sp]
-    str r0, [sp, #4]
-    ldr r0, [r4, #20]
-    str r0, [sp, #8]
-    ldr r0, [r4, #16]
-    str r0, [sp, #12]
-    movs r0, #0
-    str r0, [sp, #16]
-    str r0, [sp, #20]
-    ldr r0, [r3, #84]
-    ldr r1, [r4, #24]
-    cbz r1, 4f
-    mov r0, r1
-4:
-    ldr r1, [r3, #76]
-    ldr r3, [r3, #80]
-    blx r12
-    add sp, #24
-    ldr r3, =0x110100
-    str r0, [r3, #112]
-3:
-    ldr r3, =0x110100
-    movs r0, #1
-    str r0, [r3, #116]
-5:
-    dsb sy
-    wfi
-    b 5b
-    .ltorg
-"""
 
 
 def switch_branch(source: int, target: int, link: bool = False) -> bytes:
@@ -178,64 +40,17 @@ def switch_branch(source: int, target: int, link: bool = False) -> bytes:
 class BootstrapCPU(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.qemu = shutil.which('qemu-system-arm')
-        gcc, objcopy = shutil.which('arm-none-eabi-gcc'), shutil.which('arm-none-eabi-objcopy')
-        if not all((cls.qemu, gcc, objcopy)):
-            raise unittest.SkipTest('requires qemu-system-arm and arm-none-eabi GCC/binutils')
+        cls.qemu = switch_tool('qemu-system-arm')
         cls.directory = tempfile.TemporaryDirectory(prefix='switch-a3-cpu-', dir='/private/tmp')
         cls.path = Path(cls.directory.name)
-        source = Path(__file__).parent
-        cls.elf = cls.path / 'bootstrap.elf'
-        flags = [
-            gcc,
-            '-mcpu=cortex-r4',
-            '-mno-unaligned-access',
-            '-DDEVELOPMENT=1',
-            '-mthumb',
-            '-mfloat-abi=soft',
-            '-Os',
-            '-ffreestanding',
-            '-fno-builtin',
-            '-ffunction-sections',
-            '-fdata-sections',
-            '-fno-stack-protector',
-            '-fno-unwind-tables',
-            '-fno-asynchronous-unwind-tables',
-            '-Wall',
-            '-Wextra',
-            '-Werror',
-            '-nostdlib',
-            '-Wl,--build-id=none,--gc-sections,--no-warn-rwx-segments',
-        ]
-        cls.flags = flags
-        subprocess.run(
-            [
-                *flags,
-                '-T',
-                str(source / 'bootstrap.ld'),
-                *[str(source / name) for name in SWITCH_PAYLOAD_SOURCES],
-                '-o',
-                str(cls.elf),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        binary = cls.path / 'bootstrap.bin'
-        subprocess.run([objcopy, '-O', 'binary', str(cls.elf), str(binary)], check=True)
-        cls.binary = binary.read_bytes()
+        cls.elf = Path(__file__).with_name('bootstrap.elf')
+        cls.binary = cls.elf.with_suffix('.bin').read_bytes()
         cls.symbols = payload_header.switch_a3_symbols(cls.elf.read_bytes())
         cls.header = payload_header.switch_a3_header(cls.elf.read_bytes(), cls.binary)
         cls.begin = cls.symbols['switch_a3_island_start']
         cls.end = cls.symbols['switch_a3_island_end']
         cls.state = cls.symbols['switch_a3_state']
-        harness = cls.path / 'harness.S'
-        harness.write_text(SWITCH_HARNESS)
-        cls.harness = cls.path / 'harness.elf'
-        subprocess.run(
-            [*flags, '-Wl,-Ttext=0x10000,--entry=switch_test_start', str(harness), '-o', str(cls.harness)],
-            check=True,
-            capture_output=True,
-        )
+        cls.harness = Path(__file__).with_name('bootstrap_harness.elf')
         cls.test_symbols = payload_header.switch_a3_symbols(cls.harness.read_bytes())
 
     @classmethod
@@ -254,7 +69,7 @@ class BootstrapCPU(unittest.TestCase):
             guard_offset += 24
         return blocks
 
-    def run_arm(  # noqa: C901, PLR0913
+    def run_arm(  # noqa: PLR0913
         self,
         *,
         heap_end: int = SWITCH_HEAP_END,
@@ -309,66 +124,44 @@ class BootstrapCPU(unittest.TestCase):
                 f'loader,file={self.harness},cpu-num=0',
                 '-device',
                 f'loader,file={self.elf}',
-                '-qtest',
-                f'unix:{path}/qtest,server=on,wait=off',
-                '-qmp',
-                f'unix:{path}/qmp,server=on,wait=off',
-                '-S',
             ]
             for name, (address, data) in blocks.items():
                 file = path / name
                 file.write_bytes(data)
                 args += ['-device', f'loader,file={file},addr={address:#x},force-raw=on']
-            proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-            try:
-                deadline = time.monotonic() + 3
-                while not (path / 'qtest').exists() or not (path / 'qmp').exists():
-                    if proc.poll() is not None or time.monotonic() >= deadline:
-                        detail = proc.stderr.read().decode() if proc.poll() is not None else 'timeout'
-                        raise RuntimeError('QEMU did not open control sockets: ' + detail)
-                    time.sleep(0.01)
-                with socket.socket(socket.AF_UNIX) as qmp, socket.socket(socket.AF_UNIX) as qtest:
-                    qmp.settimeout(3)
-                    qtest.settimeout(3)
-                    qmp.connect(str(path / 'qmp'))
-                    qtest.connect(str(path / 'qtest'))
-                    with qmp.makefile('rwb', buffering=0) as control, qtest.makefile('rwb', buffering=0) as memory:
-                        json.loads(control.readline())
+            with (
+                switch_qemu(args, path) as (qmp, qtest),
+                qmp.makefile('rwb', buffering=0) as control,
+                qtest.makefile('rwb', buffering=0) as memory,
+            ):
+                json.loads(control.readline())
 
-                        def command(name: str) -> None:
-                            control.write(json.dumps({'execute': name}).encode() + b'\n')
-                            while True:
-                                reply = json.loads(control.readline())
-                                if 'error' in reply:
-                                    raise RuntimeError(reply)
-                                if 'return' in reply:
-                                    return
+                def command(name: str) -> None:
+                    control.write(json.dumps({'execute': name}).encode() + b'\n')
+                    while True:
+                        reply = json.loads(control.readline())
+                        if 'error' in reply:
+                            raise RuntimeError(reply)
+                        if 'return' in reply:
+                            return
 
-                        def read(address: int, size: int) -> bytes:
-                            memory.write(f'read {address:#x} {size}\n'.encode())
-                            reply = memory.readline().decode().split()
-                            if len(reply) != 2 or reply[0] != 'OK':
-                                raise RuntimeError(reply)
-                            return bytes.fromhex(reply[1][2:])
+                def read(address: int, size: int) -> bytes:
+                    memory.write(f'read {address:#x} {size}\n'.encode())
+                    reply = memory.readline().decode().split()
+                    if len(reply) != 2 or reply[0] != 'OK':
+                        raise RuntimeError(reply)
+                    return bytes.fromhex(reply[1][2:])
 
-                        command('qmp_capabilities')
-                        command('cont')
-                        time.sleep(0.05)
-                        command('stop')
-                        return (
-                            struct.unpack('<32I', read(SWITCH_RESULT, 128)),
-                            struct.unpack('<16I', read(self.state, 64)),
-                            read(SWITCH_OUTPUT - 4, 88),
-                            read(self.begin, self.end - self.begin),
-                        )
-            finally:
-                proc.terminate()
-                try:
-                    proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
-                    proc.kill()
-                    proc.wait()
-                proc.stderr.close()
+                command('qmp_capabilities')
+                command('cont')
+                time.sleep(0.05)
+                command('stop')
+                return (
+                    struct.unpack('<32I', read(SWITCH_RESULT, 128)),
+                    struct.unpack('<16I', read(self.state, 64)),
+                    read(SWITCH_OUTPUT - 4, 88),
+                    read(self.begin, self.end - self.begin),
+                )
 
     def assert_attach_return(self, result: tuple[int, ...], wlc: int) -> None:
         self.assertEqual(result[4:6], (0x44444444, SWITCH_STACK))
@@ -377,23 +170,8 @@ class BootstrapCPU(unittest.TestCase):
         self.assertEqual(result[29], 1)
 
     def test_release_payload_excludes_diagnostics(self):
-        source = Path(__file__).parent
-        elf, binary = self.path / 'release.elf', self.path / 'release.bin'
-        flags = [flag.replace('-DDEVELOPMENT=1', '-DDEVELOPMENT=0') for flag in self.flags]
-        subprocess.run(
-            [
-                *flags,
-                '-T',
-                str(source / 'bootstrap.ld'),
-                *[str(source / name) for name in SWITCH_PAYLOAD_SOURCES],
-                '-o',
-                str(elf),
-            ],
-            check=True,
-            capture_output=True,
-        )
-        subprocess.run([shutil.which('arm-none-eabi-objcopy'), '-O', 'binary', str(elf), str(binary)], check=True)
-        payload = binary.read_bytes()
+        elf = Path(__file__).with_name('bootstrap_release.elf')
+        payload = elf.with_suffix('.bin').read_bytes()
         self.assertIn(b'switch_awdl_deadline', self.binary)
         self.assertNotIn(b'switch_awdl_deadline', payload)
         symbols = payload_header.switch_a3_symbols(elf.read_bytes())

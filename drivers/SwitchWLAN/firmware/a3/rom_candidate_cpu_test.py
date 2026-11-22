@@ -1,17 +1,15 @@
 import hashlib
 import json
-import shutil
 import socket
 import struct
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
-import a3_rx_cpu_test as switch_cpu
+from drivers.SwitchWLAN.firmware.tools import a3_cpu_harness as switch_cpu
+from drivers.SwitchWLAN.firmware.tools.arm_tools import switch_tool
 
 
 def switch_rom_results(qmp: socket.socket, qtest: socket.socket, symbols: dict[str, int]) -> tuple[int, ...]:
@@ -52,52 +50,14 @@ class CandidateROM(unittest.TestCase):
                 self.assertEqual(rom + 4 + offset - (sign << 25), target)
 
     def test_every_guarded_byte_rejects_corruption(self):
-        qemu, gcc, nm = (shutil.which(name) for name in ('qemu-system-arm', 'arm-none-eabi-gcc', 'arm-none-eabi-nm'))
-        if not all((qemu, gcc, nm)):
-            self.skipTest('requires qemu-system-arm and arm-none-eabi GCC/binutils')
-        source = Path(__file__).resolve().parent
+        qemu, nm = switch_tool('qemu-system-arm'), switch_tool('arm-none-eabi-nm')
         for development, lto in ((0, False), (1, False), (0, True), (1, True)):
             with (
                 self.subTest(development=development, lto=lto),
                 tempfile.TemporaryDirectory(prefix='switch-a3-rom-', dir='/private/tmp') as directory,
             ):
                 path = Path(directory)
-                elf = path / 'rom.elf'
-                image = (source.parent / 'brcm/brcmfmac4356A3-pcie.bin').read_bytes()
-                installer = path / 'stock_install.S'
-                installer.write_text(
-                    '.syntax unified\n.thumb\n.text\n.balign 2\n'
-                    '.global switch_rom_test_install\n.type switch_rom_test_install,%function\n'
-                    '.thumb_func\nswitch_rom_test_install:\n.byte '
-                    + ','.join(str(byte) for byte in image[0x1E0344 - 0x180000 : 0x1E0404 - 0x180000])
-                    + '\n.size switch_rom_test_install, .-switch_rom_test_install\n',
-                )
-                subprocess.run(
-                    [
-                        gcc,
-                        *(['-flto'] if lto else []),
-                        f'-DDEVELOPMENT={development}',
-                        '-mcpu=cortex-r4',
-                        '-mthumb',
-                        '-mno-unaligned-access',
-                        '-Os',
-                        '-Wall',
-                        '-Wextra',
-                        '-Werror',
-                        '-ffreestanding',
-                        '-fno-builtin',
-                        '-nostdlib',
-                        '-Wl,-Ttext=0x10000,--entry=switch_rom_test_start,--build-id=none',
-                        str(source / 'rom_candidate.c'),
-                        str(source / 'rom_candidate_test.c'),
-                        str(source / 'rom_candidate_test_start.S'),
-                        str(installer),
-                        '-o',
-                        str(elf),
-                    ],
-                    check=True,
-                    capture_output=True,
-                )
+                elf = Path(__file__).with_name(f'rom_candidate_cpu_dev{development}{"_lto" if lto else ""}.elf')
                 symbols = {}
                 for line in subprocess.check_output([nm, str(elf)], text=True).splitlines():
                     fields = line.split()

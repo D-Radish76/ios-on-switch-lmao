@@ -1,15 +1,13 @@
 import json
-import shutil
 import socket
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
-import a3_rx_cpu_test as switch_cpu
+from drivers.SwitchWLAN.firmware.tools import a3_cpu_harness as switch_cpu
+from drivers.SwitchWLAN.firmware.tools.arm_tools import switch_tool
 
 
 def switch_tx_results(qmp: socket.socket, qtest: socket.socket, symbols: dict[str, int]) -> tuple[int, ...]:
@@ -33,96 +31,25 @@ def switch_tx_results(qmp: socket.socket, qtest: socket.socket, symbols: dict[st
 
 class TransmitCPU(unittest.TestCase):
     def test_native_pm_tailcall_preserves_thumb_state(self):
-        gcc, objdump = shutil.which('arm-none-eabi-gcc'), shutil.which('arm-none-eabi-objdump')
-        if not all((gcc, objdump)):
-            self.skipTest('requires arm-none-eabi GCC/binutils')
-        source = Path(__file__).resolve().parent
-        with tempfile.TemporaryDirectory(prefix='switch-a3-pm-link-', dir='/private/tmp') as directory:
-            elf, observer = Path(directory) / 'pm.elf', Path(directory) / 'observer.S'
-            observer.write_text(
-                '.syntax unified\n.thumb\n.global switch_a3_channel_pm_status\n'
-                '.thumb_func\nswitch_a3_channel_pm_status:\n bx lr\n',
-            )
-            subprocess.run(
-                [
-                    gcc,
-                    '-mcpu=cortex-r4',
-                    '-mthumb',
-                    '-nostdlib',
-                    '-Wl,-Ttext=0x20e900,--entry=switch_a3_pm_status_entry,--build-id=none',
-                    str(source / 'pm_status.S'),
-                    str(source / 'pm_symbols.S'),
-                    str(observer),
-                    '-o',
-                    str(elf),
-                ],
-                check=True,
-                capture_output=True,
-            )
-            disassembly = subprocess.check_output([objdump, '-d', str(elf)], text=True)
-            self.assertNotIn('blx', disassembly)
-            self.assertRegex(disassembly, r'\b195f30 <switch_a3_pm_status_original>')
+        objdump = switch_tool('arm-none-eabi-objdump')
+        disassembly = subprocess.check_output(
+            [objdump, '-d', str(Path(__file__).with_name('pm_status_link.elf'))], text=True
+        )
+        self.assertNotIn('blx', disassembly)
+        self.assertRegex(disassembly, r'\b195f30 <switch_a3_pm_status_original>')
 
     def test_native_symbols_preserve_thumb_calls(self):
-        gcc, objdump = shutil.which('arm-none-eabi-gcc'), shutil.which('arm-none-eabi-objdump')
-        if not all((gcc, objdump)):
-            self.skipTest('requires arm-none-eabi GCC/binutils')
-        source = Path(__file__).resolve().parent
-        with tempfile.TemporaryDirectory(prefix='switch-a3-tx-link-', dir='/private/tmp') as directory:
-            elf = Path(directory) / 'tx.elf'
-            observer = Path(directory) / 'owned.S'
-            names = (
-                'switch_a3_scheduler_admit',
-                'switch_a3_control_retired',
-                'switch_a3_control_fault',
-                'switch_a3_control_timer_fault',
-                'switch_a3_rx_event',
-                'switch_a3_timer_initialize_owned',
-                'switch_a3_timer_arm_owned',
-                'switch_a3_timer_defer_owned',
-                'switch_a3_timer_cancel_owned',
-            )
-            observer.write_text(
-                '.syntax unified\n.thumb\n'
-                + ''.join(f'.global {name}\n.thumb_func\n{name}:\n bx lr\n' for name in names)
-            )
-            subprocess.run(
-                [
-                    gcc,
-                    '-mcpu=cortex-r4',
-                    '-mthumb',
-                    '-mfloat-abi=soft',
-                    '-mno-unaligned-access',
-                    '-Os',
-                    '-ffreestanding',
-                    '-fno-builtin',
-                    '-ffunction-sections',
-                    '-fdata-sections',
-                    '-nostdlib',
-                    '-Wl,-Ttext=0x20e900,--entry=switch_a3_tx_entry,--build-id=none',
-                    str(source / 'tx.c'),
-                    str(source / 'tx.S'),
-                    str(source / 'tx_symbols.S'),
-                    str(source / 'tx_timing.c'),
-                    str(source / 'clock.c'),
-                    str(source / 'rx_symbols.S'),
-                    str(observer),
-                    '-o',
-                    str(elf),
-                ],
-                check=True,
-                capture_output=True,
-            )
-            disassembly = subprocess.check_output([objdump, '-d', str(elf)], text=True)
-            self.assertNotIn('blx', disassembly)
-            for name, address in (
-                ('sendctl', '197754'),
-                ('register', '5d6f0'),
-                ('unregister', '1b20c8'),
-                ('original', '18c7a4'),
-                ('status_original', '5d6cc'),
-            ):
-                self.assertRegex(disassembly, rf'\b{address} <switch_a3_tx_{name}>')
+        objdump = switch_tool('arm-none-eabi-objdump')
+        disassembly = subprocess.check_output([objdump, '-d', str(Path(__file__).with_name('tx_link.elf'))], text=True)
+        self.assertNotIn('blx', disassembly)
+        for name, address in (
+            ('sendctl', '197754'),
+            ('register', '5d6f0'),
+            ('unregister', '1b20c8'),
+            ('original', '18c7a4'),
+            ('status_original', '5d6cc'),
+        ):
+            self.assertRegex(disassembly, rf'\b{address} <switch_a3_tx_{name}>')
 
     def test_actual_thumb_ingress_dma_and_completion(self):
         for lto in (False, True):
@@ -130,48 +57,10 @@ class TransmitCPU(unittest.TestCase):
                 self.switch_check_cpu(lto)
 
     def switch_check_cpu(self, lto: bool):
-        qemu, gcc, nm = (shutil.which(name) for name in ('qemu-system-arm', 'arm-none-eabi-gcc', 'arm-none-eabi-nm'))
-        if not all((qemu, gcc, nm)):
-            self.skipTest('requires qemu-system-arm and arm-none-eabi GCC/binutils')
-        source = Path(__file__).resolve().parent
+        qemu, nm = switch_tool('qemu-system-arm'), switch_tool('arm-none-eabi-nm')
+        elf = Path(__file__).with_name('tx_cpu_lto.elf' if lto else 'tx_cpu.elf')
         with tempfile.TemporaryDirectory(prefix='switch-a3-tx-', dir='/private/tmp') as directory:
             path = Path(directory)
-            elf = path / 'tx.elf'
-            subprocess.run(
-                [
-                    gcc,
-                    '-mcpu=cortex-r4',
-                    '-mthumb',
-                    '-mfloat-abi=soft',
-                    '-mno-unaligned-access',
-                    '-Os',
-                    '-std=c11',
-                    '-ffunction-sections',
-                    '-fdata-sections',
-                    *(['-flto'] if lto else []),
-                    '-Wall',
-                    '-Wextra',
-                    '-Werror',
-                    '-ffreestanding',
-                    '-fno-builtin',
-                    '-nostdlib',
-                    '-DDEVELOPMENT=1',
-                    str(source / 'diagnostic.c'),
-                    '-Wl,-Ttext=0x10000,--entry=switch_tx_test_start,--build-id=none,--gc-sections',
-                    str(source / 'tx.c'),
-                    str(source / 'rx.c'),
-                    str(source / 'tx.S'),
-                    str(source / 'tx_timing.c'),
-                    str(source / 'tx_test.c'),
-                    str(source / 'tx_test_start.S'),
-                    str(source / 'tx_timing_test.c'),
-                    str(source / 'pm_status.S'),
-                    '-o',
-                    str(elf),
-                ],
-                check=True,
-                capture_output=True,
-            )
             symbols = {}
             for line in subprocess.check_output([nm, str(elf)], text=True).splitlines():
                 fields = line.split()

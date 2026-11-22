@@ -1,17 +1,15 @@
 import json
-import shutil
 import socket
 import struct
 import subprocess
-import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'tools'))
-import a3_rx_cpu_test as switch_cpu
-from pm_native import SWITCH_ROM
+from drivers.SwitchWLAN.firmware.a3.pm_native import SWITCH_ROM
+from drivers.SwitchWLAN.firmware.tools import a3_cpu_harness as switch_cpu
+from drivers.SwitchWLAN.firmware.tools.arm_tools import switch_tool
 
 SWITCH_RAM_RANGES = (
     (0x18EBAE, 0x18EC0A), (0x193662, 0x19368A), (0x19528C, 0x195360),
@@ -83,9 +81,7 @@ def switch_pm_results(qmp: socket.socket, qtest: socket.socket, symbols: dict[st
 
 class SwitchNativePM(unittest.TestCase):
     def test_captured_native_preparation_packets_and_completion(self):
-        qemu, gcc, nm = (shutil.which(name) for name in ('qemu-system-arm', 'arm-none-eabi-gcc', 'arm-none-eabi-nm'))
-        if not all((qemu, gcc, nm)):
-            self.skipTest('requires qemu-system-arm and arm-none-eabi GCC/binutils')
+        qemu, gcc, nm = (switch_tool(name) for name in ('qemu-system-arm', 'arm-none-eabi-gcc', 'arm-none-eabi-nm'))
         source = Path(__file__).resolve().parent
         for lto in (False, True):
             with self.subTest(lto=lto), tempfile.TemporaryDirectory(prefix='switch-a3-pm-', dir='/private/tmp') as directory:
